@@ -20,6 +20,7 @@ export interface ChunkTaskInput {
 	spice: number;
 	target: string;
 	rulesPath: string | null;
+	improvements: boolean;
 	extraPrompt: string | null;
 }
 
@@ -34,6 +35,7 @@ export function renderChunkTask(input: ChunkTaskInput): string {
 		`CHUNK: ${input.chunk.id} of ${input.chunkCount}`,
 		`SPICE: ${input.spice}`,
 		"MIN_TIER: none",
+		`IMPROVEMENTS: ${input.improvements ? "on" : "off"}`,
 		`TARGET: ${input.target}`,
 		...(input.rulesPath ? [`REVIEW_RULES: ${input.rulesPath}`] : []),
 		`Open only ${input.rulesPath ? "ANNOTATED_DIFF, CONTEXT and REVIEW_RULES" : "ANNOTATED_DIFF and CONTEXT"}. Phrase any claim that needs other code as a question.`,
@@ -67,6 +69,7 @@ export interface CompileInput {
 	verdict: string;
 	reviewer: string;
 	sass: boolean;
+	improvements: boolean;
 }
 
 export function compileArgs(input: CompileInput): string[] {
@@ -92,6 +95,7 @@ export function compileArgs(input: CompileInput): string[] {
 	if (input.maxComments !== undefined)
 		args.push("--max-comments", String(input.maxComments));
 	if (input.sass) args.push("--sass");
+	if (input.improvements) args.push("--improvements");
 	return args;
 }
 

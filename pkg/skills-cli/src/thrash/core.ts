@@ -19,7 +19,7 @@ import {
 	type ReviewThread,
 	type ReviewVerdict,
 } from "../provider/types";
-import { THRASH_REVIEW_MARKER, TIERS, type Tier } from "./constants";
+import { THRASH_CLASSES_MARKER_PREFIX, THRASH_REVIEW_MARKER, TIERS, type Tier } from "./constants";
 import { type ReviewPolicy, selectPhase } from "./policy";
 import { pickSass } from "./sass";
 
@@ -58,6 +58,11 @@ export interface Finding {
 	tier: Tier;
 	title: string;
 	body: string;
+	class?: string;
+	otherPlaces?: string[];
+	preExisting?: boolean;
+	tag?: string;
+	kind?: "improvement";
 }
 
 export interface AgentOutput {
@@ -99,7 +104,7 @@ export interface Anchor {
 	oldLine?: number;
 }
 
-export type DropReason = "duplicate" | "settled" | "below-min-tier" | "nit-ladder" | "max-comments";
+export type DropReason = "duplicate" | "settled" | "below-min-tier" | "nit-ladder" | "max-comments" | "max-improvements";
 
 export interface DroppedFinding {
 	finding: Finding;
@@ -109,6 +114,7 @@ export interface DroppedFinding {
 export interface CompiledComment extends ReviewCommentInput {
 	tier: Tier;
 	title: string;
+	kind?: "improvement";
 }
 
 export interface CompileOptions {
@@ -125,7 +131,33 @@ export interface CompileOptions {
 	sassSeed?: number;
 	/** Login whose threads count as this reviewer's own; unset treats every tier-marked thread as thrash's. */
 	reviewer?: string;
+	improvements?: boolean;
+	maxImprovements?: number;
+	reReview?: ReReview;
+	cleared?: Cleared;
 }
+
+export interface ReReview {
+	sha: string;
+	files: number;
+	lines: number;
+}
+
+export interface Cleared {
+	fixed: number;
+	sha?: string;
+	answered: number;
+}
+
+export interface BugClass {
+	name: string;
+	places: string[];
+}
+
+const DEFAULT_RECONSIDER_AFTER = 3;
+const DEFAULT_MAX_IMPROVEMENTS = 3;
+const IMPROVEMENT_EMOJI = "💡";
+const PRE_EXISTING_MARKER = "`Pre-existing`";
 
 export type ReviewTrigger = "daemon" | "action" | "manual";
 
@@ -156,6 +188,9 @@ export interface CompiledReview {
 	comments: CompiledComment[];
 	unanchored: Finding[];
 	dropped: DroppedFinding[];
+	preExisting: Finding[];
+	classes: BugClass[];
+	improvements?: number;
 	trigger: ReviewTrigger;
 	heading?: string;
 	round?: number;
@@ -672,13 +707,15 @@ export function parseAgentOutput(text: string): AgentOutput {
 		const path = typeof raw.path === "string" ? raw.path.trim() : "";
 		const body = typeof raw.body === "string" ? raw.body.trim() : "";
 		if (!body) throw new Error(`finding ${index}: body is required`);
+		const improvement = raw.kind === "improvement";
 		return {
 			path,
 			line: coerceLine(raw.line, index),
 			side: raw.side === "old" ? "old" : "new",
-			tier: coerceTier(raw.tier, index),
+			tier: improvement && raw.tier === undefined ? "nit" : coerceTier(raw.tier, index),
 			title: typeof raw.title === "string" ? raw.title.trim() : "",
 			body,
+			...optionalFields(raw, improvement),
 		};
 	});
 	return {
@@ -686,6 +723,19 @@ export function parseAgentOutput(text: string): AgentOutput {
 		strengths: stringList(parsed.strengths),
 		opportunities: stringList(parsed.opportunities),
 		findings,
+	};
+}
+
+function optionalFields(raw: Record<string, unknown>, improvement: boolean): Partial<Finding> {
+	const bugClass = typeof raw.class === "string" ? raw.class.trim() : "";
+	const tag = typeof raw.tag === "string" ? raw.tag.trim() : "";
+	const otherPlaces = stringList(raw.otherPlaces);
+	return {
+		...(bugClass && { class: bugClass }),
+		...(bugClass && otherPlaces.length > 0 && { otherPlaces }),
+		...(raw.preExisting === true && { preExisting: true }),
+		...(tag && { tag }),
+		...(improvement && { kind: "improvement" as const }),
 	};
 }
 
@@ -750,7 +800,16 @@ export function capVerdict(decided: Verdict, maxEvent: ReviewVerdict | undefined
 }
 
 export function renderComment(finding: Finding): string {
-	return `${TIER_EMOJI[finding.tier]} **${TIER_LABEL[finding.tier]}** ${finding.body}`;
+	const tag = finding.tag ? ` \`${finding.tag}\`` : "";
+	if (finding.kind === "improvement") {
+		return `${IMPROVEMENT_EMOJI} **Improvement**${tag} ${finding.body}\n\nOptional. This does not count toward the verdict, and you do not need to reply.`;
+	}
+	const preExisting = finding.preExisting ? ` ${PRE_EXISTING_MARKER}` : "";
+	const note = finding.preExisting ? " This PR did not add it, and it does not block." : "";
+	const sameClass = finding.otherPlaces?.length
+		? `\n\nSame class (${finding.class}) at: ${finding.otherPlaces.join(", ")}`
+		: "";
+	return `${TIER_EMOJI[finding.tier]} **${TIER_LABEL[finding.tier]}**${tag}${preExisting} ${finding.body}${note}${sameClass}`;
 }
 
 const THRASH_MARKERS = Object.values(TIER_EMOJI);
@@ -762,13 +821,14 @@ function sameLogin(a: string, b: string): boolean {
 
 function threadTier(thread: ReviewThread): Tier | undefined {
 	const first = thread.comments[0]?.body ?? "";
+	if (first.includes(PRE_EXISTING_MARKER)) return undefined;
 	return TIERS.find((tier) => first.startsWith(TIER_EMOJI[tier]));
 }
 
-function isThrashThread(thread: ReviewThread, reviewer?: string): boolean {
+function isThrashThread(thread: ReviewThread, reviewer?: string, markers: readonly string[] = THRASH_MARKERS): boolean {
 	const first = thread.comments[0];
 	if (!first || (reviewer !== undefined && !sameLogin(first.author, reviewer))) return false;
-	return THRASH_MARKERS.some((m) => first.body.startsWith(m));
+	return markers.some((m) => first.body.startsWith(m));
 }
 
 /** Someone other than the thread's opener replied in it. */
@@ -799,6 +859,10 @@ function priorThreadAt(anchor: Anchor, existing: ReviewThread[], reviewer?: stri
 	const prior = existing.filter((t) => threadAtAnchor(t, anchor) && isThrashThread(t, reviewer));
 	if (prior.some((t) => !t.resolved)) return "unresolved";
 	return prior.length > 0 ? "resolved" : null;
+}
+
+function improvementThreadAt(anchor: Anchor, existing: ReviewThread[], reviewer?: string): boolean {
+	return existing.some((t) => threadAtAnchor(t, anchor) && isThrashThread(t, reviewer, [IMPROVEMENT_EMOJI]));
 }
 
 /** Tiers of this reviewer's earlier findings that are neither resolved nor answered. */
@@ -833,10 +897,21 @@ function tableCell(text: string): string {
 	return text.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
 }
 
-function renderAlert(kind: string, heading: string, items: string[]): string[] {
-	if (items.length === 0) return [];
-	const text = items.length === 1 ? [items[0]] : items.map((item) => `- ${item}`);
-	return [`> [!${kind}]`, `> **${heading}**`, ">", ...text.map((line) => `> ${line}`), ""];
+interface AlertSection {
+	heading: string;
+	items: string[];
+}
+
+function renderAlert(kind: string, sections: AlertSection[]): string[] {
+	const filled = sections.filter((section) => section.items.length > 0);
+	if (filled.length === 0) return [];
+	const body = filled.flatMap(({ heading, items }, i) => [
+		...(i > 0 ? [">"] : []),
+		`> **${heading}**`,
+		">",
+		...items.map((item) => `> - ${item}`),
+	]);
+	return [`> [!${kind}]`, ...body, ""];
 }
 
 function verdictLabel(verdict: ReviewVerdict): string {
@@ -850,7 +925,52 @@ function commentCounts(comments: CompiledComment[]): string {
 	return `${plural(comments.length - files, "line comment")}, ${plural(files, "file comment")}`;
 }
 
-function renderBody(review: Omit<CompiledReview, "body">): string {
+export function classKey(name: string): string {
+	return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function placeOf(finding: Finding): string {
+	return finding.line === null ? finding.path : `${finding.path}:${finding.line}`;
+}
+
+function groupClasses(findings: Finding[]): BugClass[] {
+	const groups = new Map<string, BugClass>();
+	for (const finding of findings) {
+		const key = classKey(finding.class ?? "");
+		if (!key) continue;
+		const group = groups.get(key) ?? { name: finding.class as string, places: [] };
+		for (const place of [placeOf(finding), ...(finding.otherPlaces ?? [])]) {
+			if (!group.places.includes(place)) group.places.push(place);
+		}
+		groups.set(key, group);
+	}
+	return [...groups.values()];
+}
+
+function classNote({ name, places }: BugClass): string {
+	const label = name.charAt(0).toUpperCase() + name.slice(1);
+	return `${label} in ${plural(places.length, "place")}: ${places.map((place) => `\`${place}\``).join(", ")}`;
+}
+
+function shortSha(sha: string): string {
+	return sha.slice(0, 7);
+}
+
+function clearedText({ fixed, sha, answered }: Cleared): string {
+	const parts = [
+		...(fixed > 0 ? [`${fixed} fixed${sha ? ` in \`${shortSha(sha)}\`` : ""}`] : []),
+		...(answered > 0 ? [`${answered} answered`] : []),
+	];
+	return parts.length > 0 ? `${parts.join(", ")}.` : "";
+}
+
+interface BodySlots {
+	reconsider: boolean;
+	reReview?: ReReview;
+	cleared?: Cleared;
+}
+
+function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): string {
 	const folded = review.dropped.filter((d) => d.reason === "nit-ladder");
 	const duplicates = review.dropped.filter((d) => d.reason === "duplicate").length;
 	const settled = review.dropped.filter((d) => d.reason === "settled").length;
@@ -859,25 +979,64 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 		const count = t === "nit" && folded.length > 0 ? `${review.tally.nit} (${folded.length} folded)` : review.tally[t];
 		return `${titled(TIER_EMOJI[t], TIER_LABEL[t])} ${count}`;
 	});
+	const suggestions =
+		review.improvements === undefined ? [] : [`${titled(IMPROVEMENT_EMOJI, "Improvement")} ${review.improvements}`];
 	const spice = titled(spiceLabel(review.spice), `Spice ${review.spice} of ${SPICE_MAX}`);
 	const round =
 		review.round === undefined ? [] : [`**Round:** ${review.round}${review.phase ? `, ${review.phase}` : ""}`];
+	const cleared = slots.cleared ? clearedText(slots.cleared) : "";
 	const lines: string[] = [
 		review.heading ? `## ${review.heading}` : `${THRASH_REVIEW_HEADING_PREFIX}${spice}`,
 		"",
-		...renderAlert("NOTE", "What changed", review.changed ? [review.changed] : []),
-		...renderAlert("TIP", "Strengths", review.strengths),
-		...renderAlert("WARNING", "Opportunities", review.opportunities),
 		[
 			...counts,
+			...suggestions,
 			...round,
 			`**Verdict:** ${verdictLabel(review.verdict)}. ${review.reason}.`,
 			commentCounts(review.comments),
 		].join(" · "),
 		...(review.sass ? ["", `_${review.sass}_`] : []),
 		"",
-		`**Trigger:** ${TRIGGER_LABEL[review.trigger]}`,
+		...(slots.reconsider
+			? renderAlert("IMPORTANT", [
+					{
+						heading: `Round ${review.round}, and a blocker is still open.`,
+						items: ["Try a new approach, or ask a person to review."],
+					},
+				])
+			: []),
+		...renderAlert("NOTE", [
+			{ heading: "What changed", items: review.changed ? [review.changed] : [] },
+			{
+				heading: "Re-review",
+				items: slots.reReview
+					? [
+							`Only the diff since \`${shortSha(slots.reReview.sha)}\`: ${plural(slots.reReview.files, "file")}, ${plural(slots.reReview.lines, "line")}.`,
+						]
+					: [],
+			},
+		]),
+		...renderAlert("TIP", [{ heading: "Strengths", items: review.strengths }]),
+		...renderAlert("WARNING", [
+			{
+				heading: "Opportunities",
+				items: [...review.opportunities, ...review.classes.filter((c) => c.places.length > 1).map(classNote)],
+			},
+		]),
 	];
+	const bullets = [
+		...(cleared ? [`- **Cleared:** ${cleared}`] : []),
+		...(review.preExisting.length > 0
+			? [
+					`- **Pre-existing:** ${review.preExisting.length}, not counted.`,
+					...review.preExisting.map(
+						(finding) => `  - ${TIER_EMOJI[finding.tier]} \`${placeOf(finding)}\` ${finding.title}`,
+					),
+				]
+			: []),
+	];
+	if (bullets.length > 0) lines.push(...bullets, "");
+	lines.push(`**Trigger:** ${TRIGGER_LABEL[review.trigger]}`);
 	if (duplicates > 0) {
 		lines.push("", `${plural(duplicates, "finding")} already flagged on an open thread and not reposted.`);
 	}
@@ -897,6 +1056,9 @@ function renderBody(review: Omit<CompiledReview, "body">): string {
 		for (const finding of review.unanchored) {
 			lines.push(`- ${TIER_EMOJI[finding.tier]} ${finding.title}`);
 		}
+	}
+	if (review.classes.length > 0) {
+		lines.push("", `${THRASH_CLASSES_MARKER_PREFIX}${JSON.stringify(review.classes.map((c) => classKey(c.name)))} -->`);
 	}
 	lines.push("", THRASH_REVIEW_MARKER);
 	return lines.join("\n");
@@ -926,7 +1088,11 @@ function policyTally(files: DiffFile[], findings: Finding[], opts: CompileOption
 }
 
 export function compileReview(files: DiffFile[], output: AgentOutput, opts: CompileOptions): CompiledReview {
-	const findings = [...output.findings].sort((a, b) => ordinal(sortKey(a), sortKey(b)));
+	const sorted = [...output.findings].sort((a, b) => ordinal(sortKey(a), sortKey(b)));
+	const findings = sorted.filter((f) => f.kind !== "improvement");
+	const improvementsOn = opts.improvements ?? opts.policy?.improvements ?? false;
+	const suggestions = improvementsOn ? sorted.filter((f) => f.kind === "improvement") : [];
+	const maxImprovements = opts.maxImprovements ?? opts.policy?.maxImprovements ?? DEFAULT_MAX_IMPROVEMENTS;
 	const openPrior = opts.policy ? openPriorTally(opts.existing, opts.reviewer) : emptyTally();
 	const phase = opts.policy ? selectPhase(opts.policy, opts.round ?? 1, openPrior) : undefined;
 	const phaseFloor: Tier | undefined = phase && !phase.nits ? "low" : undefined;
@@ -979,9 +1145,26 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		kept = posted.filter((p) => keep.has(p));
 		for (const p of posted) if (!keep.has(p)) dropped.push({ finding: p.finding, reason: "max-comments" });
 	}
+	const suggestionComments: CompiledComment[] = [];
+	for (const finding of suggestions) {
+		const anchor = resolveAnchor(files, finding) ?? resolveFileAnchor(files, finding);
+		if (!anchor || improvementThreadAt(anchor, opts.existing, opts.reviewer)) continue;
+		if (suggestionComments.length >= maxImprovements) {
+			dropped.push({ finding, reason: "max-improvements" });
+			continue;
+		}
+		suggestionComments.push({
+			...anchor,
+			tier: finding.tier,
+			title: finding.title,
+			kind: "improvement",
+			body: renderComment(finding),
+		});
+	}
+	const counted = findings.filter((f) => !f.preExisting);
 	const tally = phase
-		? policyTally(files, findings, opts)
-		: tallyFindings(findings);
+		? policyTally(files, counted, opts)
+		: tallyFindings(counted);
 	const decided = phase
 		? verdictWithin(tally, phase.block, opts.commentOnly, phase.name ? `in a ${phase.name} round` : "by policy")
 		: decideVerdict(tally, opts.spice, opts.commentOnly);
@@ -995,16 +1178,23 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		changed: output.changed,
 		strengths: output.strengths,
 		opportunities: output.opportunities,
-		comments: kept.map((p) => p.comment),
+		comments: [...kept.map((p) => p.comment), ...suggestionComments],
 		unanchored,
 		dropped,
+		preExisting: kept.filter((p) => p.finding.preExisting).map((p) => p.finding),
+		classes: groupClasses(kept.filter((p) => !p.finding.preExisting).map((p) => p.finding)),
+		improvements: improvementsOn ? suggestionComments.length : undefined,
 		trigger: opts.trigger ?? "manual",
 		heading: opts.heading,
 		round: opts.round,
 		phase: phase?.name || undefined,
 		sass: opts.sassSeed === undefined ? undefined : pickSass(verdict, tally, opts.sassSeed),
 	};
-	return { ...compiled, body: renderBody(compiled) };
+	const reconsider =
+		decided.verdict === "request_changes" &&
+		opts.round !== undefined &&
+		opts.round > (opts.policy?.reconsiderAfter ?? DEFAULT_RECONSIDER_AFTER);
+	return { ...compiled, body: renderBody(compiled, { reconsider, reReview: opts.reReview, cleared: opts.cleared }) };
 }
 
 export function toPostReviewInput(review: CompiledReview): PostReviewInput {
@@ -1035,7 +1225,10 @@ export function renderPreview(review: CompiledReview, target: string): string {
 	const lines: string[] = [
 		`Thrash preview · ${spiceLabel(review.spice)} (${review.spice}/${SPICE_MAX}) · ${target}`,
 		`Verdict: ${verdictLabel(review.verdict).toUpperCase()} (${review.reason})`,
-		TIERS.map((tier) => `${TIER_EMOJI[tier]} ${t[tier]}`).join("  "),
+		[
+			...TIERS.map((tier) => `${TIER_EMOJI[tier]} ${t[tier]}`),
+			...(review.improvements === undefined ? [] : [`${IMPROVEMENT_EMOJI} ${review.improvements}`]),
+		].join("  "),
 		`Posting ${commentCounts(review.comments)}; ` +
 			`${folded} folded, ${duplicates} duplicate, ${belowMin} below min tier, ` +
 			`${review.unanchored.length} unanchored.`,
@@ -1161,7 +1354,7 @@ export function renderTallyTable(rows: Array<TallyRow | StackStatusRow>): string
 
 /** One `## path:line` or `## path (whole file)` section per posted comment, for /address to parse. */
 export function renderAddressFile(review: CompiledReview): string {
-	const sections = review.comments.map((c) => {
+	const sections = review.comments.filter((c) => c.kind !== "improvement").map((c) => {
 		const where = isFileComment(c) ? `${c.path} (whole file)` : `${c.path}:${c.newLine ?? c.oldLine}`;
 		return `## ${where}\n\nseverity: ${ADDRESS_SEVERITY[c.tier]}\n\n${c.body}\n`;
 	});

@@ -9,11 +9,13 @@ import {
 	compileReview,
 	decideVerdict,
 	diffStats,
+	emptyTally,
 	type Finding,
 	LARGE_DIFF_LINES,
 	MAX_CHUNKS,
 	mergeOutputs,
 	NIT_LADDER,
+	openPriorTally,
 	parseAgentOutput,
 	parseSpice,
 	parseTier,
@@ -31,6 +33,7 @@ import {
 	VERDICT_LIMITS,
 	relativePlanPath,
 	resolvePlanPath,
+	renderComment,
 	reviewTrigger,
 } from "../src/thrash/core";
 
@@ -384,8 +387,8 @@ describe("compileReview", () => {
 			{ ...NO_OPTS, spice: 3 },
 		);
 		expect(review.body).toStartWith('## Thrash review <span title="Spice 3 of 5">🌶️🌶️🌶️○○</span>\n');
-		expect(review.body).toContain("> [!NOTE]\n> **What changed**\n>\n> Adds a.\n");
-		expect(review.body).toContain("> [!TIP]\n> **Strengths**\n>\n> Tested.\n");
+		expect(review.body).toContain("> [!NOTE]\n> **What changed**\n>\n> - Adds a.\n");
+		expect(review.body).toContain("> [!TIP]\n> **Strengths**\n>\n> - Tested.\n");
 		expect(review.body).toContain("> [!WARNING]\n> **Opportunities**\n>\n> - Split it.\n> - Name it.\n");
 		expect(review.body).not.toContain("### Findings");
 
@@ -1016,5 +1019,265 @@ describe("thrash review hardening", () => {
 		const findings = [finding("a_b.ts", 1, "low"), finding("a-b.ts", 1, "low")];
 		const review = compileReview(FILES, { ...NO_SWOT, findings }, NO_OPTS);
 		expect(review.unanchored.map((f) => f.path)).toEqual(["a-b.ts", "a_b.ts"]);
+	});
+});
+
+describe("review rounds, slice A", () => {
+	const swallowed = (path: string, line: number, others: string[] = []): Finding => ({
+		...finding(path, line, "high", "swallows the error"),
+		class: "swallowed error",
+		otherPlaces: others,
+	});
+	const improvement = (line: number, tag = "new API"): Finding => ({
+		...finding("src/a.ts", line, "nit", "use structuredClone"),
+		kind: "improvement",
+		tag,
+	});
+	const WITH_IMPROVEMENTS = { ...NO_OPTS, improvements: true };
+
+	describe("parseAgentOutput", () => {
+		test("reads class, otherPlaces, preExisting, tag and kind", () => {
+			const text = JSON.stringify({
+				findings: [
+					{ path: "a", line: 1, tier: "high", body: "x", class: " swallowed error ", otherPlaces: ["b:2", "c:3"], preExisting: true, tag: "security" },
+					{ path: "a", line: 2, kind: "improvement", body: "y", tag: "cleanup" },
+					{ path: "a", line: 3, tier: "low", body: "z" },
+				],
+			});
+			const [first, second, third] = parseAgentOutput(text).findings;
+			expect(first).toMatchObject({ class: "swallowed error", otherPlaces: ["b:2", "c:3"], preExisting: true, tag: "security" });
+			expect(second).toMatchObject({ kind: "improvement", tag: "cleanup", tier: "nit" });
+			expect(third.class).toBeUndefined();
+			expect(third.preExisting).toBeUndefined();
+			expect(third.kind).toBeUndefined();
+		});
+	});
+
+	describe("renderComment", () => {
+		test("adds the same-class line after the body", () => {
+			expect(renderComment(swallowed("src/a.ts", 2, ["src/b.ts:8", "src/c.ts:9"]))).toBe(
+				`${TIER_EMOJI.high} **High** swallows the error\n\nSame class (swallowed error) at: src/b.ts:8, src/c.ts:9`,
+			);
+		});
+
+		test("shows the tag after the tier", () => {
+			expect(renderComment({ ...finding("a", 1, "medium", "token in log"), tag: "security" })).toBe(
+				`${TIER_EMOJI.medium} **Medium** \`security\` token in log`,
+			);
+		});
+
+		test("marks a pre-existing finding and says it does not block", () => {
+			expect(renderComment({ ...finding("a", 1, "medium", "empty TIMEOUT"), preExisting: true })).toBe(
+				`${TIER_EMOJI.medium} **Medium** \`Pre-existing\` empty TIMEOUT This PR did not add it, and it does not block.`,
+			);
+		});
+
+		test("renders an improvement as optional", () => {
+			expect(renderComment(improvement(2))).toBe(
+				"💡 **Improvement** `new API` use structuredClone\n\nOptional. This does not count toward the verdict, and you do not need to reply.",
+			);
+		});
+	});
+
+	describe("bug class", () => {
+		test("posts one comment for the class and lists the places in the Warning callout", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [swallowed("src/a.ts", 2, ["src/new.ts:1", "src/new.ts:2"])] },
+				NO_OPTS,
+			);
+			expect(review.comments).toHaveLength(1);
+			expect(review.comments[0].body).toContain("Same class (swallowed error) at: src/new.ts:1, src/new.ts:2");
+			expect(review.body).toContain(
+				"> [!WARNING]\n> **Opportunities**\n>\n> - Swallowed error in 3 places: `src/a.ts:2`, `src/new.ts:1`, `src/new.ts:2`\n",
+			);
+		});
+
+		test("writes the class names into a hidden marker, once per class", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [swallowed("src/a.ts", 2, ["src/new.ts:1"]), swallowed("src/a.ts", 3), finding("src/new.ts", 2, "low")] },
+				NO_OPTS,
+			);
+			expect(review.body).toContain('<!-- dg:thrash-classes ["swallowed error"] -->');
+		});
+
+		test("writes no class marker when no finding has a class", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [finding("src/a.ts", 2, "low")] }, NO_OPTS);
+			expect(review.body).not.toContain("dg:thrash-classes");
+		});
+	});
+
+	describe("pre-existing", () => {
+		test("never counts toward the tally or the verdict, and is listed in the summary", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [{ ...finding("src/a.ts", 2, "critical"), preExisting: true }] },
+				NO_OPTS,
+			);
+			expect(review.tally.critical).toBe(0);
+			expect(review.verdict).toBe("approve");
+			expect(review.comments).toHaveLength(1);
+			expect(review.body).toContain("- **Pre-existing:** 1, not counted.\n  - 💀 `src/a.ts:2` critical title");
+		});
+
+		test("an earlier pre-existing thread is not an open finding", () => {
+			const earlier = thread("src/a.ts", 2, `${TIER_EMOJI.high} **High** \`Pre-existing\` old`);
+			expect(openPriorTally([earlier])).toEqual(emptyTally());
+		});
+	});
+
+	describe("improvements", () => {
+		test("are dropped and not shown when the option is off", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [improvement(2)] }, NO_OPTS);
+			expect(review.comments).toHaveLength(0);
+			expect(review.body).not.toContain("💡");
+		});
+
+		test("post as optional comments, show 💡 after 🔬, and never count", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [improvement(2)] }, WITH_IMPROVEMENTS);
+			expect(review.comments).toHaveLength(1);
+			expect(review.comments[0].body).toStartWith("💡 **Improvement** `new API`");
+			expect(review.tally).toEqual(emptyTally());
+			expect(review.verdict).toBe("approve");
+			expect(review.body).toContain('<span title="Nit">🔬</span> 0 · <span title="Improvement">💡</span> 1 · ');
+		});
+
+		test("show 💡 0 when enabled and none were found", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, findings: [] }, WITH_IMPROVEMENTS);
+			expect(review.body).toContain("💡</span> 0");
+		});
+
+		test("stop at three by default and at maxImprovements when set", () => {
+			const five = [improvement(1), improvement(2), improvement(3), improvement(4), improvement(5)];
+			const byDefault = compileReview(FILES, { ...NO_SWOT, findings: five }, WITH_IMPROVEMENTS);
+			expect(byDefault.comments).toHaveLength(3);
+			const capped = compileReview(FILES, { ...NO_SWOT, findings: five }, { ...WITH_IMPROVEMENTS, maxImprovements: 1 });
+			expect(capped.comments).toHaveLength(1);
+			expect(capped.dropped.map((d) => d.reason)).toEqual(Array(4).fill("max-improvements"));
+		});
+
+		test("do not use the comment cap or the nit ladder", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [finding("src/a.ts", 2, "high"), improvement(3)] },
+				{ ...WITH_IMPROVEMENTS, maxComments: 1, minTier: "high" },
+			);
+			expect(review.comments).toHaveLength(2);
+		});
+
+		test("an earlier improvement thread is not an open finding and is not reposted", () => {
+			const earlier = thread("src/a.ts", 2, "💡 **Improvement** `new API` old");
+			expect(openPriorTally([earlier])).toEqual(emptyTally());
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [improvement(2)] },
+				{ ...WITH_IMPROVEMENTS, existing: [earlier] },
+			);
+			expect(review.comments).toHaveLength(0);
+		});
+
+		test("stay out of the local address file", () => {
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [finding("src/a.ts", 2, "high"), improvement(3)] },
+				WITH_IMPROVEMENTS,
+			);
+			expect(review.comments).toHaveLength(2);
+			expect(renderAddressFile(review)).not.toContain("Improvement");
+			expect(renderAddressFile(review)).toContain("src/a.ts:2");
+		});
+
+		test("the policy turns them on and sets the cap", () => {
+			const policy = parsePolicy("improvements: true\nmaxImprovements: 1\nphases:\n  - block: { critical: 0 }\n");
+			const review = compileReview(
+				FILES,
+				{ ...NO_SWOT, findings: [improvement(1), improvement(2)] },
+				{ ...NO_OPTS, policy, round: 1 },
+			);
+			expect(review.comments).toHaveLength(1);
+		});
+	});
+
+	describe("round note", () => {
+		const BLOCKING = { ...NO_SWOT, findings: [finding("src/a.ts", 2, "high")] };
+		const policy = (extra = "") => parsePolicy(`${extra}phases:\n  - block: { critical: 0, high: 0 }\n`);
+
+		test("adds an Important callout after the default three rounds while a blocker is open", () => {
+			const review = compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: policy(), round: 4 });
+			expect(review.verdict).toBe("request_changes");
+			expect(review.body).toContain(
+				"> [!IMPORTANT]\n> **Round 4, and a blocker is still open.**\n>\n> - Try a new approach, or ask a person to review.\n",
+			);
+		});
+
+		test("waits for round to pass reconsiderAfter", () => {
+			expect(compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: policy(), round: 3 }).body).not.toContain("[!IMPORTANT]");
+			const custom = policy("reconsiderAfter: 1\n");
+			expect(compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: custom, round: 2 }).body).toContain("Round 2, and a blocker");
+		});
+
+		test("is absent when nothing blocks, and never changes the verdict", () => {
+			const clean = compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, policy: policy(), round: 9 });
+			expect(clean.body).not.toContain("[!IMPORTANT]");
+			const capped = compileReview(FILES, BLOCKING, { ...NO_OPTS, policy: policy(), round: 5, maxEvent: "comment" });
+			expect(capped.verdict).toBe("comment");
+			expect(capped.body).toContain("[!IMPORTANT]");
+		});
+	});
+
+	describe("summary order", () => {
+		test("tally line, Important, Note, Tip, Warning, then the plain bullets", () => {
+			const review = compileReview(
+				FILES,
+				{
+					changed: "Adds a.",
+					strengths: ["Tested."],
+					opportunities: ["Split it."],
+					findings: [finding("src/a.ts", 2, "high"), { ...finding("src/a.ts", 3, "low"), preExisting: true }],
+				},
+				{
+					...NO_OPTS,
+					policy: parsePolicy("phases:\n  - block: { high: 0 }\n"),
+					round: 4,
+					reReview: { sha: "4b7a9d0aaaa", files: 3, lines: 42 },
+					cleared: { fixed: 2, sha: "9f3c2e1bbbb", answered: 1 },
+				},
+			);
+			const at = (text: string) => {
+				const index = review.body.indexOf(text);
+				expect(index).toBeGreaterThan(-1);
+				return index;
+			};
+			const order = [
+				at("## Thrash review"),
+				at("**Round:** 4"),
+				at("[!IMPORTANT]"),
+				at("[!NOTE]"),
+				at("[!TIP]"),
+				at("[!WARNING]"),
+				at("- **Cleared:**"),
+				at("- **Pre-existing:**"),
+				at("**Trigger:**"),
+			];
+			expect(order).toEqual([...order].sort((a, b) => a - b));
+			expect(review.body).toContain("> **Re-review**\n>\n> - Only the diff since `4b7a9d0`: 3 files, 42 lines.\n");
+			expect(review.body).toContain("- **Cleared:** 2 fixed in `9f3c2e1`, 1 answered.");
+		});
+
+		test("leaves the Re-review and Cleared slots out when no data is given", () => {
+			const review = compileReview(FILES, { ...NO_SWOT, changed: "Adds a.", findings: [] }, NO_OPTS);
+			expect(review.body).not.toContain("Re-review");
+			expect(review.body).not.toContain("Cleared");
+			expect(review.body).not.toContain("Pre-existing");
+		});
+
+		test("Cleared names only the parts that are non-zero", () => {
+			const only = (cleared: { fixed: number; sha?: string; answered: number }) =>
+				compileReview(FILES, { ...NO_SWOT, findings: [] }, { ...NO_OPTS, cleared }).body;
+			expect(only({ fixed: 0, answered: 2 })).toContain("- **Cleared:** 2 answered.");
+			expect(only({ fixed: 1, sha: "abcdef0123", answered: 0 })).toContain("- **Cleared:** 1 fixed in `abcdef0`.");
+			expect(only({ fixed: 0, answered: 0 })).not.toContain("Cleared");
+		});
 	});
 });

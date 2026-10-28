@@ -21,11 +21,11 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 ## Usage
 
 ```
-/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]
-/dg:thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]
+/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--improvements] [--proxy <backend>]
+/dg:thrash . | <path>     [-s N] [-b <ref>] [-t <tier>] [--improvements] [--proxy <backend>]
 ```
 
-**Usage:** `/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--proxy <backend>]` · `/dg:thrash . | <path> [-s N] [-b <ref>] [-t <tier>] [--proxy <backend>]`
+**Usage:** `/dg:thrash <pr-or-mr-url> [--stacked] [-s N] [-c] [--confirm] [-n] [-t <tier>] [--improvements] [--proxy <backend>]` · `/dg:thrash . | <path> [-s N] [-b <ref>] [-t <tier>] [--improvements] [--proxy <backend>]`
 
 ## Flags
 
@@ -37,6 +37,7 @@ model, so cost scales with size up to 8x. One publish. An approve or request-cha
 | `--confirm` | none | Confirm before posting any review. An approve or request-changes event always needs a confirm, because `post` refuses it without `--confirm`. | off |
 | `--dry-run` | `-n` | Preview only. Exports `DG_THRASH_DRY_RUN=1` for the run and calls `post --dry-run`, so nothing reaches the provider even if a step runs. | off |
 | `--min-tier <tier>` | `-t` | Post no comments below this tier. Overrides the spice nit ladder. Dropped findings still count toward the verdict. | spice ladder |
+| `--improvements` | none | Also post up to 3 optional improvement ideas (💡). They never count toward the verdict. Pass `IMPROVEMENTS: on` to the agents and `--improvements` to `compile`. A policy with `improvements: true` does the same. | off |
 | `--base <ref>` | `-b` | Local mode only. Override fork-point detection. | detected fork point |
 | `--proxy <backend>` | none | Run each chunk review on an external CLI (`codex`, `copilot`, `pi`, `opencode`, `grok`) through `/dg:proxy`, in the background, briefed as the `thrash` persona. Compile, verdict and post stay the same. | off (host agents) |
 
@@ -57,7 +58,8 @@ round. Earlier blocking findings that are now fixed or answered do not hold it b
 | 4 | 0 | 0 | 2 | |
 | 5 | 0 | 0 | 0 | 4 |
 
-Nits never fail a review. `--comment` replaces the event. Spice never moves a tier.
+Nits never fail a review. Pre-existing findings and improvements never count either.
+`--comment` replaces the event. Spice never moves a tier.
 `VERDICT_LIMITS` in `pkg/skills-cli/src/thrash/core.ts` owns these numbers.
 
 ## Runtime and skill paths
@@ -108,7 +110,7 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
    With `--proxy <backend>`, start one background `~/.dg/bin/dg-skills proxy` job per chunk instead,
    per the "Proxy backend" section of that file, and wait for every job to finish.
 3. **Compile.** `~/.dg/bin/dg-skills thrash compile "$TARGET" --diff "$diffPath" --spice N [--min-tier t]
-   [--comment]`. It merges every chunk's findings, dedupes them, validates anchors,
+   [--comment] [--improvements]`. It merges every chunk's findings, dedupes them, validates anchors,
    dedupes against earlier thrash threads, applies the nit ladder, decides the verdict, and
    prints the preview plus `REVIEW_JSON=` and `VERDICT=`. Show the preview. On a rejected
    or missing file, follow the retry in `references/agent-prompt.md`.
@@ -123,6 +125,19 @@ agent, while the helper writes the chunk plan, compiles findings, and publishes.
 6. **Tally.** `~/.dg/bin/dg-skills thrash tally "$REVIEW_JSON"...` prints a markdown table: PR, review link,
    findings per tier, comment count (line and file), and Approve, Request changes or Comment. Show it
    verbatim as the final report.
+
+## Findings and summary
+
+A finding can carry more than a tier. `references/details.md` has the full rules.
+
+- **Bug class.** One inline comment on the first copy, with a "Same class (name) at: file:line" line. The Warning callout lists each class with its places.
+- **Pre-existing.** The diff did not cause it. It is marked, never counts toward the verdict, and is listed in the summary.
+- **Security.** The persona's checklist tags findings `security`. The tag shows after the tier.
+- **Improvement (💡).** Opt-in, not a tier. At most 3 per review. Never counts, never holds a thread open.
+- **Round note.** After round `reconsiderAfter` (policy, default 3) with a blocker still open, an Important callout says so. The verdict does not change.
+
+The summary reads in this order: tally line (counts, round, verdict), the Important round
+note, then the Note, Tip and Warning callouts, then the Cleared and Pre-existing bullets.
 
 ## Large diffs
 

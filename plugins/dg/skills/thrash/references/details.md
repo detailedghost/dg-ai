@@ -51,6 +51,52 @@ Policy compilation requires a successful thread lookup. A failed lookup stops co
 instead of treating unavailable history as empty. Without a policy, dedupe remains best
 effort and compilation can continue after a lookup failure.
 
+## Finding fields and summary shape
+
+`compile` reads these optional fields from each finding and renders them. The tier rules
+above are unchanged.
+
+| Field | Effect |
+|---|---|
+| `class`, `otherPlaces` | One inline comment on the first copy, ending "Same class (`class`) at: `file:line`, ...". The Warning callout adds "`Class` in N places: ..." (the first copy plus `otherPlaces`). Classes merge by lowercase name. |
+| `preExisting: true` | Inline: tier, a `Pre-existing` marker, then "This PR did not add it, and it does not block." Never in the tally or the verdict, and an earlier thread with the marker is not an open finding. The summary lists it under a "Pre-existing" bullet. |
+| `tag` | Shown as inline code after the tier. The persona's security checklist (secrets, injection, authn and authz, workflow permissions, unsafe deserialization, SSRF) sets `security`. It runs in the same pass; there is no extra agent. |
+| `kind: "improvement"` | See Improvements below. `tier` is optional for these. |
+
+The body hides the bug class names of this review's posted findings in
+`<!-- dg:thrash-classes ["swallowed error"] -->`: a JSON array of lowercase names, written
+only when a finding has a class. A later run reads it back to spot a class that keeps
+coming back. Reading it is not part of this build.
+
+Summary order: a heading, then the tally line (`💀 🔥 ⚠️ 🧹 🔬`, then `💡` when improvements
+are on, `**Round:**`, `**Verdict:**`, comment counts), then the optional sass line. Next come
+the callouts, each a bold label and one short bullet per item: Important (the round note),
+Note (**What changed**, then **Re-review** when given), Tip (**Strengths**), Warning
+(**Opportunities**, then bug classes). Plain bullets follow: **Cleared** when given, and
+**Pre-existing**. Then the trigger line and the notes about dropped findings.
+
+`compileReview` takes the Re-review and Cleared values as options, so a caller only supplies
+data: `reReview: { sha, files, lines }` renders "Only the diff since `sha7`: N files, M lines."
+and `cleared: { fixed, sha, answered }` renders "N fixed in `sha7`, M answered." Each part
+shows only when non-zero, and a missing option leaves its slot out.
+
+### Round note
+
+With a `round` above the policy's `reconsiderAfter` (default 3) and a verdict that would
+request changes, the summary adds an Important callout: "Round N, and a blocker is still
+open." and "Try a new approach, or ask a person to review." The verdict does not change.
+It still shows when `--max-event` turns the post into a comment.
+
+### Improvements
+
+Opt-in: `compile --improvements`, or a policy with `improvements: true`; the Thrashley
+action reads the `improvements` input (`THRASHLEY_IMPROVEMENTS`). At most 3 post, or the
+policy's `maxImprovements`; the rest drop. An improvement posts as "💡 **Improvement** `topic`
+body" plus "Optional. This does not count toward the verdict, and you do not need to
+reply." It skips `--min-tier`, the nit ladder and the comment cap. It never counts in the
+tally and never holds a thread open. An earlier improvement thread on the same line, resolved
+or not, stops a repost. The tally line shows `💡 N` only when improvements are on.
+
 ## Nit ladder and `--min-tier`
 
 Spice 1 posts no nits, 2 up to 5, 3 up to 10, 4 up to 20, 5 posts all. Overflow is not
@@ -131,6 +177,7 @@ in the diff is terminal-only in this mode. Nothing posts.
 | `--max-comments N` | Posts at most N inline comments, highest tier first. The rest are listed in the summary and still count. Overrides the policy's `maxComments`. |
 | `--max-event <event>` | The highest event the review may submit: `auto` (default), `approve`, `request-changes` or `comment`. A verdict above it posts as a comment, and the reason says so. |
 | `--reviewer <login>` | Only threads this login opened count as thrash's, for dedupe and for open findings. A trailing `[bot]` is ignored. |
+| `--improvements` | Turns improvements on. A policy `improvements: true` does the same. |
 | `--sass` | Adds one line from the fixed list in `thrash/sass.ts` to the summary, picked from the verdict and the highest tier, seeded by the PR number and round. Never in an inline comment. It changes no verdict or tier. |
 
 `THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (GitHub Action)".
@@ -148,6 +195,9 @@ A policy file:
 
 ```yaml
 maxComments: 10
+reconsiderAfter: 3
+improvements: true
+maxImprovements: 3
 phases:
   - name: strict
     through: 3
@@ -157,6 +207,9 @@ phases:
     nits: false
     block: { critical: 0, high: 1 }
 ```
+
+`reconsiderAfter`, `improvements` and `maxImprovements` are optional; the values above are the
+defaults for the first and last, and `improvements` defaults to off.
 
 Each `block` entry is the count a tier may reach; one more requests changes. Only open findings count, so a round
 with no open finding approves in every phase, strict or relaxed. A missing tier

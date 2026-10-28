@@ -321,6 +321,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		maxComments: parseOptionalFlag(wholeNumber(0), optionalOption(args, "--max-comments"), "--max-comments"),
 		maxEvent: parseMaxEvent(optionalOption(args, "--max-event")),
 		reviewer: optionalOption(args, "--reviewer"),
+		improvements: args.includes("--improvements") || undefined,
 		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
@@ -508,7 +509,7 @@ const command = defineCommand({
 		},
 		compile: {
 			description:
-				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment] [--heading text] [--round N] [--policy file] [--max-comments N] [--max-event auto|approve|request-changes|comment] [--reviewer login] [--sass]",
+				"Merge every chunk's agent findings, validate them against the diff, apply spice and --min-tier, decide the verdict, write review JSON; --diff <file> [--spice N] [--min-tier t] [--comment] [--heading text] [--round N] [--policy file] [--max-comments N] [--max-event auto|approve|request-changes|comment] [--reviewer login] [--sass] [--improvements]",
 			args: ["target"],
 			run: (args, opts) => cmdCompile(args, opts),
 		},

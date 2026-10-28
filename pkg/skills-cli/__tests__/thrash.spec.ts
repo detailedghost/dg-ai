@@ -254,6 +254,23 @@ describe("local mode", () => {
 		expect(readFileSync(next.addressFile, "utf8")).toBe(addressBody);
 	});
 
+	test("compile --improvements posts optional suggestions that stay out of the tally", () => {
+		const repo = fixtureRepo();
+		const diff = JSON.parse(run(["diff", "."], { cwd: repo }).stdout);
+		findingsFile(diff, [
+			{ path: "src/a.ts", line: 2, kind: "improvement", tag: "cleanup", body: "Inline this." },
+		]);
+		const compile = (extra: string[]) =>
+			JSON.parse(run(["compile", ".", "--diff", diff.diffPath, "--json", ...extra], { cwd: repo }).stdout);
+		const off = compile([]);
+		expect(JSON.parse(readFileSync(off.reviewPath, "utf8")).review.comments).toHaveLength(0);
+		const on = compile(["--improvements"]);
+		const stored = JSON.parse(readFileSync(on.reviewPath, "utf8")).review;
+		expect(stored.improvements).toBe(1);
+		expect(stored.comments[0].body).toStartWith("\u{1F4A1} **Improvement** `cleanup`");
+		expect(on.tally).toEqual(off.tally);
+	});
+
 	test("compile refuses a missing chunk findings file before writing a review or address file", () => {
 		const repo = fixtureRepo();
 		const diffResult = run(["diff", "."], { cwd: repo });

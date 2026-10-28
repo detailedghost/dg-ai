@@ -25,9 +25,15 @@ describe("readConfig", () => {
 			heading: "Code Review",
 			botLogin: "github-actions[bot]",
 			sass: false,
+			improvements: false,
 			failOnRequestChanges: true,
 		});
 		expect(cfg.maxComments).toBeUndefined();
+	});
+
+	test("reads the improvements input and rejects a bad value", () => {
+		expect(readConfig({ THRASHLEY_IMPROVEMENTS: "true" }).improvements).toBe(true);
+		expect(() => readConfig({ THRASHLEY_IMPROVEMENTS: "yes" })).toThrow("improvements");
 	});
 
 	test("rejects a bad spice, verdict or flag", () => {
@@ -116,6 +122,7 @@ describe("renderChunkTask", () => {
 			spice: 3,
 			target: "https://github.com/acme/app/pull/7",
 			rulesPath: "/s/review-rules.md",
+			improvements: false,
 			extraPrompt: "Check the SQL migrations twice.",
 		});
 		expect(task).toContain("REVIEW_RULES: /s/review-rules.md");
@@ -129,6 +136,20 @@ describe("renderChunkTask", () => {
 		);
 	});
 
+	test("tells the agent whether improvements are on", () => {
+		const input = {
+			chunk,
+			chunkCount: 1,
+			contextPath: "/s/ctx.md",
+			spice: 2,
+			target: "t",
+			rulesPath: null,
+			extraPrompt: null,
+		};
+		expect(renderChunkTask({ ...input, improvements: true })).toContain("IMPROVEMENTS: on");
+		expect(renderChunkTask({ ...input, improvements: false })).toContain("IMPROVEMENTS: off");
+	});
+
 	test("leaves the rules lines out when the repo has none", () => {
 		const task = renderChunkTask({
 			chunk,
@@ -137,6 +158,7 @@ describe("renderChunkTask", () => {
 			spice: 2,
 			target: "t",
 			rulesPath: null,
+			improvements: false,
 			extraPrompt: null,
 		});
 		expect(task).not.toContain("REVIEW_RULES");
@@ -156,24 +178,28 @@ describe("compileArgs", () => {
 			verdict: "auto",
 			reviewer: "thrashley[bot]",
 			sass: false,
+			improvements: false,
 		};
 		const args = compileArgs(base);
 		expect(args.slice(0, 4)).toEqual(["thrash", "compile", "u", "--json"]);
 		expect(args).toContain("--round");
 		expect(args).not.toContain("--policy");
 		expect(args).not.toContain("--sass");
+		expect(args).not.toContain("--improvements");
 		const full = compileArgs({
 			...base,
 			policyPath: "/p.yml",
 			maxComments: 10,
 			sass: true,
+			improvements: true,
 		});
-		expect(full.slice(-5)).toEqual([
+		expect(full.slice(-6)).toEqual([
 			"--policy",
 			"/p.yml",
 			"--max-comments",
 			"10",
 			"--sass",
+			"--improvements",
 		]);
 	});
 });

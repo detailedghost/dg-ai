@@ -23,6 +23,7 @@ CONTEXT: <contextPath>
 CHUNK: <id> of <chunk count>
 SPICE: <1-5>
 MIN_TIER: <tier or "none">
+IMPROVEMENTS: <on or off>
 TARGET: <URL or local path>
 
 Read ANNOTATED_DIFF, then CONTEXT. Run the checklists for SPICE per your system prompt. Classify each
@@ -31,6 +32,14 @@ number from your own file-reading tool.
 Write exactly one fenced json block with "changed", "strengths", "opportunities" and "findings" to FINDINGS_PATH.
 Reply with only: WROTE <path> <count> findings
 ```
+
+`IMPROVEMENTS` is `on` only with `--improvements` or a policy that sets `improvements: true`.
+Pass the same value to `compile`. The persona's security checklist runs on every review and
+needs no input; the agent tags those findings `security`.
+
+Each finding may also carry `class` and `otherPlaces` (one comment for a repeated mistake),
+`preExisting`, `tag`, and `kind: "improvement"`. The persona explains each field. `compile`
+validates and renders them; never edit them by hand.
 
 ## After return
 

@@ -31,6 +31,7 @@ export interface Config {
 	botLogin: string;
 	maxComments?: number;
 	sass: boolean;
+	improvements: boolean;
 	dryRun: boolean;
 	failOnRequestChanges: boolean;
 	unsafeAllowShell: boolean;
@@ -70,6 +71,7 @@ export function readConfig(env: Env): Config {
 		botLogin: input(env, "bot-login", text) ?? "github-actions[bot]",
 		maxComments: input(env, "max-comments", wholeNumber(0, 100)),
 		sass: input(env, "sass", trueOrFalse) ?? false,
+		improvements: input(env, "improvements", trueOrFalse) ?? false,
 		dryRun: input(env, "dry-run", trueOrFalse) ?? false,
 		failOnRequestChanges:
 			input(env, "fail-on-request-changes", trueOrFalse) ?? true,

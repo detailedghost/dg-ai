@@ -460,3 +460,17 @@ describe("sass", () => {
 		}
 	});
 });
+
+describe("review-round policy keys", () => {
+	test("reads reconsiderAfter, improvements and maxImprovements", () => {
+		const policy = parsePolicy("reconsiderAfter: 5\nimprovements: true\nmaxImprovements: 2\nphases:\n  - block: {}\n");
+		expect(policy).toMatchObject({ reconsiderAfter: 5, improvements: true, maxImprovements: 2 });
+	});
+
+	test("leaves them unset by default and rejects a bad value", () => {
+		const policy = parsePolicy("phases:\n  - block: {}\n");
+		expect(policy.reconsiderAfter).toBeUndefined();
+		expect(policy.improvements).toBeUndefined();
+		expect(() => parsePolicy("improvements: 3\nphases:\n  - block: {}\n")).toThrow("improvements");
+	});
+});
