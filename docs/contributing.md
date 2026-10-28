@@ -86,7 +86,9 @@ When all four are true:
 - To run the workflow by hand, open Actions, pick **Release**, and choose **Run workflow**. Pick `auto`, or force `patch`, `minor`, or `major`.
   Run it on a release commit to publish again a release whose upload failed.
 - The workflow never force-pushes `master` and never deletes a tag. A failed release is fixed by running the workflow again.
-- Manual step, once. The workflow pushes to `master` as the GitHub Actions app. The `main protection` ruleset must list that app as a bypass actor.
+- Manual step, once. The release job pushes to `master` with a deploy key, because a personal-account repo cannot make the GitHub Actions app a ruleset bypass actor.
+  Add a write deploy key to the repo, store its private key as the `RELEASE_DEPLOY_KEY` secret, and add deploy keys as a bypass actor on the `main protection` ruleset.
+  A push with a deploy key starts workflows, so the release workflow skips a push whose head is its own release commit.
 - The first release under this scheme also publishes a `skills-vX.Y.Z` release. It holds the `dg-skills` binaries only and is never marked Latest.
   It lets `dg-skills` 1.21.1 and older find the new release once.
 - Users install a release with the bootstrap script or `dg-skills install`. See [docs/install.md](install.md).

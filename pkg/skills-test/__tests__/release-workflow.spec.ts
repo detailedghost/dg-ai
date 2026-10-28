@@ -132,6 +132,23 @@ describe("every workflow is valid YAML and pins every action by commit", () => {
 	}
 });
 
+describe("the release job pushes with the deploy key that bypasses the master ruleset", () => {
+	test("only the release job checks out with RELEASE_DEPLOY_KEY", () => {
+		const workflow = parseWorkflow("release.yml");
+		const users = Object.entries(workflow.jobs)
+			.filter(([, job]) =>
+				(job.steps ?? []).some((s) => JSON.stringify(s.with ?? {}).includes("RELEASE_DEPLOY_KEY")),
+			)
+			.map(([id]) => id);
+		expect(users).toEqual(["release"]);
+		const checkout = (workflow.jobs.release.steps ?? []).find((s) =>
+			String(s.uses ?? "").startsWith("actions/checkout@"),
+		);
+		expect(checkout?.with?.["ssh-key"]).toBe("${{ secrets.RELEASE_DEPLOY_KEY }}");
+		expect(checkout?.with?.["persist-credentials"]).toBe(true);
+	});
+});
+
 describe("the release workflow changes no repository settings", () => {
 	test("it never touches rulesets, branch protection or repo settings", () => {
 		expect(text).not.toContain("rulesets");

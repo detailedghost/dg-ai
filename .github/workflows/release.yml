@@ -470,6 +470,8 @@ jobs:
           ref: master
           fetch-depth: 0
           fetch-tags: true
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          persist-credentials: true
 
       - name: Mask secrets in later log output
         uses: ./.github/actions/mask-secrets
