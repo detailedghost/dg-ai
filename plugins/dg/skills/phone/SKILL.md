@@ -291,9 +291,8 @@ has no way to receive a push either. `phone open` starts a detached listener
 there, and it should run `voicemail` on its own schedule to read what that
 listener stored.
 
-**`phone-friend` is the old name.** `dial`, `on`, `off`, and `card` are hidden
-synonyms for `accept`, `open`, `close`, and `number` under either name.
-`answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright; each
-fails with its replacement named and exits 2. The alias itself still works,
-hidden, for two minor releases, with a one-line notice on stderr naming the
-removal release.
+**`phone-friend` is the old name.** The `phone-friend` alias was removed in
+1.23.x; only `phone` works. `dial`, `on`, `off`, and `card` are hidden
+synonyms for `accept`, `open`, `close`, and `number`. `answer`, `deliver`,
+`whoami`, `name`, and `--line` are gone outright; each fails with its
+replacement named and exits 2.

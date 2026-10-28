@@ -192,10 +192,9 @@ back to `~/.dg/phone-friend` and run the previous `dg-agent` binary.
 `status` reports `"legacy_root_present": true` if the old root is still
 sitting next to the new database.
 
-`dg-agent phone-friend <verb>` keeps working, hidden, for two minor
-releases past this rename, printing one notice to stderr. `dial`, `on`,
-`off`, and `card` are hidden synonyms for `accept`, `open`, `close`, and
-`number` under both names. `answer`, `deliver`, `whoami`, `name`, and
+The `dg-agent phone-friend` alias was removed in 1.23.x; only `phone`
+works. `dial`, `on`, `off`, and `card` are hidden synonyms for `accept`,
+`open`, `close`, and `number`. `answer`, `deliver`, `whoami`, `name`, and
 `--line` are gone outright; each fails with its replacement named and exits
 2.
 

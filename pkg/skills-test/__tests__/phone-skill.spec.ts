@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { readRepoFile } from "./test-support";
 
 const skill = readRepoFile("plugins/dg/skills/phone/SKILL.md");
-const stub = readRepoFile("plugins/dg/skills/phone-friend/SKILL.md");
 const safety = readRepoFile("plugins/dg/skills/phone/references/safety.md");
 const guide = readRepoFile("docs/phone.md");
 const SAFETY_REF = "plugins/dg/skills/phone/references/safety.md";
@@ -89,28 +88,13 @@ describe("phone skill", () => {
 		expect(skill).not.toContain("phone unsubscribe");
 	});
 
-	test("the skills README lists phone after overwatch, then phone-friend, in the table and tree", () => {
+	test("the skills README lists phone after overwatch, in the table and tree", () => {
 		const readme = readRepoFile("plugins/dg/skills/README.md");
 		const names = readme
 			.split("\n")
 			.filter((line) => line.startsWith("| `"))
 			.map((line) => /`([^`]+)`/.exec(line)?.[1]);
 		expect(names.indexOf("phone/")).toBe(names.indexOf("overwatch/") + 1);
-		expect(names.indexOf("phone-friend/")).toBe(names.indexOf("phone/") + 1);
-		expect(readme).toMatch(/^ {2}overwatch\/\n {2}phone\/\n {2}phone-friend\/$/m);
-	});
-});
-
-describe("phone-friend stub", () => {
-	test("has no bootstrap block and points at the new skill", () => {
-		expect(stub).not.toMatch(/bootstrap\.sh \| sh/);
-		expect(stub).not.toContain("curl -fsSL");
-		expect(stub).toContain("/dg:phone");
-	});
-
-	test("frontmatter names it phone-friend and says it was renamed", () => {
-		const front = /^---\n([\s\S]*?)\n---\n/.exec(stub)?.[1] ?? "";
-		expect(front).toMatch(/^name: phone-friend$/m);
-		expect(front).toMatch(/renamed to phone/i);
+		expect(readme).toMatch(/^ {2}overwatch\/\n {2}phone\/$/m);
 	});
 });

@@ -83,7 +83,6 @@ export const INSTALLED_SKILL_FILES = [
 	"monolith/references/template.md",
 	"nope/SKILL.md",
 	"overwatch/SKILL.md",
-	"phone-friend/SKILL.md",
 	"phone/SKILL.md",
 	"phone/references/safety.md",
 	"pickup/SKILL.md",
