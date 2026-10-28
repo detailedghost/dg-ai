@@ -278,10 +278,19 @@ describe("proto skill local mode", () => {
 			"assets/prototype-endpoint.next.ts",
 			"assets/prototype-endpoint.astro.ts",
 			"assets/webmcp-tools.json",
+			"assets/dg-icons.js",
 			"assets/README.md",
 		]) {
 			expect(skillFile(file).length).toBeGreaterThan(0);
 		}
+		const bar = skillFile("assets/prototype-decision-bar.html");
+		for (const icon of ["moon", "all", "note", "check", "rework"])
+			expect(bar).toContain(`data-icon="${icon}"`);
+		expect(bar).toContain('role="menuitemradio" data-w="tablet"');
+		expect(bar).toContain("window.dgIcons");
+		expect(bar).toContain("Add a note first. A rework needs direction.");
+		expect(bar).not.toContain('data-icon="skip"');
+		expect(skillFile("assets/dg-icons.js")).toContain("globalThis.dgIcons");
 		expect(skillFile("references/local-build.md")).toContain(
 			"prototype components",
 		);

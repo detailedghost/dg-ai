@@ -74,12 +74,15 @@ describe("prototype serve", () => {
 		expect(html.indexOf("window.prototypeDecide")).toBeLessThan(
 			html.indexOf("</body>"),
 		);
+		expect(html.indexOf("globalThis.dgIcons")).toBeGreaterThan(html.indexOf("<head>"));
+		expect(html.indexOf("globalThis.dgIcons")).toBeLessThan(html.indexOf("</head>"));
 	});
 
 	test("appends the client when the page has no body or head", () => {
 		const page = injectIntoHtml("<p>x</p>", "demo", TOOLS);
 		expect(page.startsWith("<p>x</p>")).toBe(true);
 		expect(page).toContain("prototypePlanDecision");
+		expect(page).toContain("globalThis.dgIcons");
 	});
 
 	test("a confirm writes the notes, the source, and then the selection sentinel", async () => {

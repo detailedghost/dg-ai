@@ -38,13 +38,23 @@ export function injectIntoHtml(
 	name: string,
 	tools: unknown,
 ): string {
+	const icons = `<script>\n${sharedIcons()}</script>\n`;
 	const script = injectScript(name, tools);
 	const head = raw.includes("<head>")
-		? raw.replace("<head>", `<head>\n${FAVICON_LINK}`)
+		? raw.replace("<head>", `<head>\n${FAVICON_LINK}\n${icons}`)
 		: raw;
+	const tail = raw.includes("<head>") ? script : icons + script;
 	return head.includes("</body>")
-		? head.replace("</body>", `${script}</body>`)
-		: head + script;
+		? head.replace("</body>", `${tail}</body>`)
+		: head + tail;
+}
+
+let iconsSource: string | undefined;
+
+/** The icon set /dg:proto and /dg:verify share, so both toolbars draw the same glyphs. */
+function sharedIcons(): string {
+	iconsSource ??= readFileSync(resolveSkillAsset("proto", join("assets", "dg-icons.js")), "utf8");
+	return iconsSource;
 }
 
 async function findPort(start: number): Promise<number> {

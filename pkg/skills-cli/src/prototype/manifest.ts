@@ -265,69 +265,95 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:-a
 #proto-root{min-height:100vh;padding:2.5rem 2rem 7rem;}
 section[data-variant]{display:none;max-width:960px;margin:0 auto;}
 section[data-variant].is-active{display:block;}
-#protobar{position:fixed;left:50%;bottom:1.1rem;transform:translateX(-50%);z-index:90;display:flex;align-items:center;
-  gap:0.45rem;background:var(--bar-bg);color:var(--bar-fg);border-radius:999px;padding:0.5rem 0.6rem 0.5rem 0.9rem;
-  border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  box-shadow:0 10px 34px rgba(0,0,0,0.42);flex-wrap:wrap;max-width:calc(100vw - 2rem);font-size:0.85rem;}
-#protobar button{font:inherit;border:none;border-radius:999px;padding:0.45rem 0.8rem;cursor:pointer;color:inherit;
-  transition:transform .14s cubic-bezier(.34,1.56,.64,1),box-shadow .14s ease,filter .14s ease,background .14s ease;}
-#protobar button:active{transform:translateY(1px) scale(.97);}
-#proto-prev,#proto-next{background:rgba(255,255,255,0.12);color:var(--bar-fg);font-weight:700;padding:0.4rem 0.62rem;}
-#proto-prev:hover,#proto-next:hover,#proto-notes-toggle:hover{background:rgba(255,255,255,0.22);transform:translateY(-1px);}
-#proto-label{padding:0 0.4rem;color:var(--bar-fg);opacity:0.92;white-space:nowrap;font-weight:600;letter-spacing:.2px;}
-.proto-divider{width:1px;height:1.25rem;background:rgba(255,255,255,0.16);margin:0 0.2rem;border-radius:1px;}
-#proto-notes-toggle{background:rgba(255,255,255,0.12);}
-#proto-notes-toggle.has-notes{box-shadow:0 0 0 2px var(--accent) inset;color:#fff;}
-#proto-approve{color:#fff;font-weight:700;letter-spacing:.2px;padding:0.5rem 1.05rem;
-  background:linear-gradient(180deg,#2bbd6b,#1f9d55);
-  box-shadow:0 2px 10px rgba(31,157,85,.45),inset 0 1px 0 rgba(255,255,255,.28);
-  animation:proto-approve-pulse 3.6s ease-in-out infinite;}
-#proto-approve:hover{transform:translateY(-2px);filter:brightness(1.08);
-  box-shadow:0 7px 22px rgba(31,157,85,.62),inset 0 1px 0 rgba(255,255,255,.34);}
-#proto-reject{color:#fff;font-weight:700;letter-spacing:.2px;padding:0.5rem 1.05rem;
-  background:linear-gradient(180deg,#f0991f,#d97706);
-  box-shadow:0 2px 10px rgba(217,119,6,.4),inset 0 1px 0 rgba(255,255,255,.24);}
-#proto-reject:hover{transform:translateY(-2px);filter:brightness(1.08);
-  box-shadow:0 7px 22px rgba(217,119,6,.58),inset 0 1px 0 rgba(255,255,255,.3);}
-#protobar button:disabled{opacity:0.5;cursor:not-allowed;transform:none;box-shadow:none;animation:none;filter:none;}
-@keyframes proto-approve-pulse{
-  0%,100%{box-shadow:0 2px 10px rgba(31,157,85,.42),inset 0 1px 0 rgba(255,255,255,.28);}
-  50%{box-shadow:0 3px 13px rgba(43,189,107,.58),inset 0 1px 0 rgba(255,255,255,.32);}
-}
-@media (prefers-reduced-motion:reduce){
-  #proto-approve{animation:none;}
-  #protobar button{transition:none;}
-}
-#proto-notes-panel{position:fixed;left:50%;bottom:4.5rem;transform:translateX(-50%);z-index:91;background:var(--surface);
-  color:var(--fg);border:1px solid var(--border);border-radius:12px;padding:0.9rem 1rem;width:min(420px,calc(100vw - 2rem));
-  box-shadow:0 8px 30px rgba(0,0,0,0.35);}
+#proto-root[data-width="mobile"] section[data-variant]{max-width:390px;}
+#proto-root[data-width="tablet"] section[data-variant]{max-width:768px;}
+#proto-root[data-width="desktop"] section[data-variant]{max-width:1440px;}
+#protobar{
+  --pk-surface:#ffffff;--pk-surface-2:#fafaf8;--pk-fg:#18181b;--pk-mut:#5f5f66;--pk-line:#cfcfc8;--pk-acc:#0f766e;--pk-acc-soft:#e6f4f2;
+  --pk-ok:#15803d;--pk-ok-soft:#e8f6ec;--pk-bad:#dc2626;--pk-bad-soft:#fdecec;--pk-note:#a16207;--pk-note-soft:#fef6c7;
+  position:fixed;left:50%;bottom:1.1rem;transform:translateX(-50%);z-index:90;max-width:calc(100vw - 2rem);padding:6px;
+  background:var(--pk-surface);color:var(--pk-fg);border:1px solid var(--pk-line);border-radius:10px;box-shadow:0 8px 24px rgb(15 23 42/.18);font-size:13px;}
+html[data-theme="dark"] #protobar{
+  --pk-surface:#1b1b1e;--pk-surface-2:#202024;--pk-fg:#f4f4f5;--pk-mut:#a1a1aa;--pk-line:#3f3f46;--pk-acc:#2dd4bf;--pk-acc-soft:#123430;
+  --pk-ok:#4ade80;--pk-ok-soft:#14301f;--pk-bad:#f87171;--pk-bad-soft:#3a1616;--pk-note:#facc15;--pk-note-soft:#36310f;}
+#protobar[data-verdict="approved"]{border-color:var(--pk-ok);}
+#protobar[data-verdict="approvedNote"]{border-color:var(--pk-note);}
+#protobar[data-verdict="changes"]{border-color:var(--pk-bad);}
+.pk-bar{display:flex;align-items:center;gap:4px;justify-content:center;}
+#protobar .ic{width:38px;height:38px;padding:0;display:inline-grid;place-items:center;border:1px solid transparent;border-radius:8px;
+  background:transparent;color:var(--pk-mut);cursor:pointer;position:relative;font:inherit;}
+#protobar .ic:hover{background:var(--pk-surface-2);color:var(--pk-fg);}
+#protobar .ic:disabled{opacity:.35;cursor:default;background:none;}
+#protobar .pk-approve{color:var(--pk-ok);border-color:var(--pk-ok);background:var(--pk-ok-soft);}
+#protobar .pk-approve.with-note{color:var(--pk-note);border-color:var(--pk-note);background:var(--pk-note-soft);}
+#protobar .pk-reject{color:var(--pk-bad);border-color:var(--pk-bad);background:var(--pk-bad-soft);}
+#protobar .pk-note[aria-pressed="true"]{background:var(--pk-acc-soft);color:var(--pk-acc);border-color:var(--pk-acc);}
+#protobar .pk-note.has-note::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--pk-note);box-shadow:0 0 0 2px var(--pk-surface);}
+#protobar.is-working{border-color:transparent;background:linear-gradient(var(--pk-surface),var(--pk-surface)) padding-box,
+  conic-gradient(from var(--pk-spin),var(--pk-acc),transparent 35%,transparent 65%,var(--pk-acc)) border-box;animation:pk-ring 1.6s linear infinite;}
+@property --pk-spin{syntax:"<angle>";inherits:false;initial-value:0deg;}
+@keyframes pk-ring{to{--pk-spin:360deg;}}
+.pk-sep{width:1px;height:22px;background:var(--pk-line);margin:0 4px;}
+#proto-label{padding:0 6px;color:var(--pk-fg);white-space:nowrap;font-weight:600;}
+.pk-menu-wrap{position:relative;}
+.pk-menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:170px;padding:4px;background:var(--pk-surface);border:1px solid var(--pk-line);
+  border-radius:10px;box-shadow:0 10px 30px rgb(0 0 0/.18);display:grid;gap:2px;z-index:10;}
+.pk-menu[hidden]{display:none;}
+.pk-menu button{display:flex;align-items:center;gap:10px;width:100%;min-height:34px;padding:6px 10px;border:0;border-radius:7px;background:none;
+  font:inherit;font-size:13px;font-weight:550;text-align:left;color:var(--pk-fg);cursor:pointer;}
+.pk-menu button span{display:inline-grid;color:var(--pk-mut);}
+.pk-menu button:hover,.pk-menu button:focus-visible{background:var(--pk-surface-2);}
+.pk-menu button[aria-checked="true"]{background:var(--pk-acc-soft);color:var(--pk-acc);}
+.pk-menu button[aria-checked="true"] span{color:var(--pk-acc);}
+#proto-notes-panel{padding:4px 4px 8px;}
 #proto-notes-panel[hidden]{display:none;}
-#proto-notes{width:100%;min-height:5.5rem;resize:vertical;font:inherit;padding:0.5rem;border-radius:8px;
-  border:1px solid var(--border);background:var(--bg);color:var(--fg);}
+#proto-notes{width:100%;min-width:min(520px,80vw);min-height:4.5rem;resize:vertical;font:inherit;font-size:13px;padding:9px 11px;border-radius:8px;
+  border:1px solid var(--pk-line);background:var(--pk-surface);color:var(--pk-fg);}
+#protobar:has(.pk-approve.with-note) #proto-notes{border-color:var(--pk-note);background:var(--pk-note-soft);}
 #proto-reject-chips{display:flex;flex-wrap:wrap;gap:0.35rem;margin-top:0.5rem;}
-.proto-chip{font-size:0.75rem;padding:0.3rem 0.6rem;border-radius:999px;border:1px solid var(--border);
-  background:var(--bg);color:var(--fg);cursor:pointer;}
-#proto-notes-hint{font-size:0.75rem;color:var(--muted);margin-top:0.4rem;}
+.proto-chip{font-size:0.75rem;padding:0.3rem 0.6rem;border-radius:999px;border:1px solid var(--pk-line);background:var(--pk-surface-2);color:var(--pk-fg);cursor:pointer;}
+#proto-toast{position:fixed;left:50%;bottom:84px;transform:translate(-50%,6px);max-width:min(60ch,calc(100vw - 32px));padding:10px 14px;
+  background:#fff;color:#18181b;border:1px solid #cfcfc8;border-radius:10px;box-shadow:0 8px 24px rgb(15 23 42/.18);font-size:13px;
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:95;}
+html[data-theme="dark"] #proto-toast{background:#1b1b1e;color:#f4f4f5;border-color:#3f3f46;}
+#proto-toast.show{opacity:1;transform:translate(-50%,0);}
+@keyframes proto-burst{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0}}
+.proto-confetti{position:fixed;top:38vh;left:50%;width:10px;height:14px;border-radius:2px;pointer-events:none;z-index:96;animation:proto-burst .9s ease-out forwards;}
+@media (max-width:760px){#protobar{width:calc(100vw - 2rem);}.pk-bar{flex-wrap:wrap;}#proto-notes{min-width:0;}}
+@media (prefers-reduced-motion:reduce){#protobar,#protobar *{animation:none!important;transition:none!important;}}
 </style>
 </head>
 <body>
 <div id="proto-root">
 ${sections}
 </div>
-<div id="protobar">
-  <button type="button" id="proto-prev" title="Previous variant (←)">←</button>
-  <span id="proto-label"></span>
-  <button type="button" id="proto-next" title="Next variant (→)">→</button>
-  <span class="proto-divider" aria-hidden="true"></span>
-  <button type="button" id="proto-notes-toggle" title="Add notes to send with your choice">Notes</button>
-  <button type="button" id="proto-approve" title="Keep this variant — notes optional">Approve ✓</button>
-  <button type="button" id="proto-reject" title="Discard all and start over — note required">Reject ⟲</button>
+<div id="protobar" role="toolbar" aria-label="Prototype decision">
+  <div id="proto-notes-panel" hidden>
+    <textarea id="proto-notes" aria-label="Note" placeholder="Note: optional for Approve, required for Reject. What should change?"></textarea>
+    <div id="proto-reject-chips">${reasonChips}</div>
+  </div>
+  <div class="pk-bar">
+    <button type="button" id="proto-mode" class="ic" data-icon="moon" title="Dark mode" aria-label="Dark mode"></button>
+    <div class="pk-menu-wrap">
+      <button type="button" id="proto-width" class="ic" data-icon="all" aria-haspopup="menu" aria-expanded="false" aria-controls="proto-width-menu" title="Width: all" aria-label="Width: all"></button>
+      <div id="proto-width-menu" class="pk-menu" role="menu" aria-label="Preview width" hidden>
+        <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>All widths</button>
+        <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
+        <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
+        <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+      </div>
+    </div>
+    <span class="pk-sep" aria-hidden="true"></span>
+    <button type="button" id="proto-prev" class="ic" data-icon="left" title="Previous variant (←)" aria-label="Previous variant"></button>
+    <span id="proto-label"></span>
+    <button type="button" id="proto-next" class="ic" data-icon="right" title="Next variant (→)" aria-label="Next variant"></button>
+    <span class="pk-sep" aria-hidden="true"></span>
+    <button type="button" id="proto-notes-toggle" class="ic pk-note" data-icon="note" aria-pressed="false" aria-controls="proto-notes-panel" title="Note" aria-label="Note"></button>
+    <button type="button" id="proto-approve" class="ic pk-approve" data-icon="check" title="Approve" aria-label="Approve"></button>
+    <button type="button" id="proto-reject" class="ic pk-reject" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+  </div>
 </div>
-<div id="proto-notes-panel" hidden>
-  <textarea id="proto-notes" placeholder="Optional for Approve. Required for Reject — what should change?"></textarea>
-  <div id="proto-reject-chips">${reasonChips}</div>
-  <div id="proto-notes-hint">Notes ride along with whichever button you click next.</div>
-</div>
+<div id="proto-toast" role="status" aria-live="polite"></div>
 <script type="application/json" id="prototype-data">${scriptSafeJson({ name: m.name, variants: variantKeys, labels: m.labels })}</script>
 <script>
 (function(){
@@ -374,36 +400,155 @@ ${sections}
     if (e.key === 'ArrowRight') nav(1);
   });
 
+  var bar = document.getElementById('protobar');
   var notesPanel = document.getElementById('proto-notes-panel');
   var notesArea = document.getElementById('proto-notes');
   var notesToggle = document.getElementById('proto-notes-toggle');
-  function syncNotesGlow(){ notesToggle.classList.toggle('has-notes', notesArea.value.trim().length > 0); }
-  notesToggle.addEventListener('click', function(){
-    notesPanel.hidden = !notesPanel.hidden;
+  var approveBtn = document.getElementById('proto-approve');
+  var modeBtn = document.getElementById('proto-mode');
+  var widthBtn = document.getElementById('proto-width');
+  var widthMenu = document.getElementById('proto-width-menu');
+  var WIDTH_ICONS = { all: 'all', mobile: 'phone', tablet: 'tablet', desktop: 'monitor' };
+  var WIDTH_NAMES = { all: 'all', mobile: 'mobile 390', tablet: 'tablet 768', desktop: 'desktop 1440' };
+  var TEXT_ICONS = { sun: '☀', moon: '☾', all: '▦', phone: '▯', tablet: '▭', monitor: '▬', left: '‹', right: '›', note: '✎', check: '✓', rework: '⟳' };
+
+  function setIcon(node, name){
+    node.setAttribute('data-icon', name);
+    if (window.dgIcons) node.innerHTML = window.dgIcons.svg(name);
+    else node.textContent = TEXT_ICONS[name] || '';
+  }
+  document.querySelectorAll('#protobar [data-icon]').forEach(function(node){ setIcon(node, node.getAttribute('data-icon')); });
+
+  var toastEl = document.getElementById('proto-toast');
+  var toastTimer = null;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 4000);
+  }
+
+  var CONFETTI = ['#22c55e', '#4c8dff', '#a855f7', '#f59e0b', '#f43f5e', '#14b8a6'];
+  function confetti(){
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    for (var i = 0; i < 28; i++) {
+      var angle = (2 * Math.PI * i) / 28 + (i % 3) * 0.12;
+      var dist = 160 + (i % 5) * 44;
+      var bit = document.createElement('div');
+      bit.className = 'proto-confetti';
+      bit.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+      bit.style.setProperty('--dy', Math.sin(angle) * dist - 40 + 'px');
+      bit.style.setProperty('--rot', i * 47 + 'deg');
+      bit.style.background = CONFETTI[i % CONFETTI.length];
+      bit.style.animationDelay = (i % 6) * 0.03 + 's';
+      document.body.appendChild(bit);
+      setTimeout(function(node){ node.remove(); }, 1200, bit);
+    }
+  }
+
+  function setParam(key, value){
+    var url = new URL(window.location.href);
+    url.searchParams.set(key, value);
+    history.replaceState(null, '', url);
+  }
+  function applyMode(mode){
+    document.documentElement.setAttribute('data-theme', mode);
+    setIcon(modeBtn, mode === 'dark' ? 'sun' : 'moon');
+    var label = mode === 'dark' ? 'Light mode' : 'Dark mode';
+    modeBtn.title = label;
+    modeBtn.setAttribute('aria-label', label);
+  }
+  var startMode = new URL(window.location.href).searchParams.get('mode');
+  applyMode(startMode === 'dark' || startMode === 'light' ? startMode
+    : (document.documentElement.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')));
+  modeBtn.addEventListener('click', function(){
+    var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyMode(next);
+    setParam('mode', next);
   });
-  notesArea.addEventListener('input', syncNotesGlow);
+
+  var widthItems = Array.prototype.slice.call(widthMenu.querySelectorAll('[role="menuitemradio"]'));
+  function applyWidth(w){
+    if (!WIDTH_ICONS[w]) w = 'all';
+    root.setAttribute('data-width', w);
+    setIcon(widthBtn, WIDTH_ICONS[w]);
+    widthBtn.title = 'Width: ' + WIDTH_NAMES[w];
+    widthBtn.setAttribute('aria-label', 'Width: ' + WIDTH_NAMES[w]);
+    widthItems.forEach(function(item){ item.setAttribute('aria-checked', String(item.getAttribute('data-w') === w)); });
+  }
+  function openMenu(open){
+    widthMenu.hidden = !open;
+    widthBtn.setAttribute('aria-expanded', String(open));
+    if (open) (widthMenu.querySelector('[aria-checked="true"]') || widthItems[0]).focus();
+  }
+  applyWidth(new URL(window.location.href).searchParams.get('width') || 'all');
+  widthBtn.addEventListener('click', function(){ openMenu(widthMenu.hidden); });
+  widthItems.forEach(function(item){
+    item.addEventListener('click', function(){
+      var w = item.getAttribute('data-w');
+      applyWidth(w);
+      setParam('width', w);
+      openMenu(false);
+      widthBtn.focus();
+    });
+  });
+  widthMenu.addEventListener('keydown', function(e){
+    var i = widthItems.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      widthItems[(i + (e.key === 'ArrowDown' ? 1 : -1) + widthItems.length) % widthItems.length].focus();
+    }
+    if (e.key === 'Escape') { openMenu(false); widthBtn.focus(); }
+  });
+  document.addEventListener('click', function(e){
+    if (!widthMenu.hidden && !e.target.closest('.pk-menu-wrap')) openMenu(false);
+  });
+
+  function syncNote(){
+    var has = notesArea.value.trim().length > 0;
+    notesToggle.classList.toggle('has-note', has);
+    approveBtn.classList.toggle('with-note', has);
+    approveBtn.title = has ? 'Approve + note' : 'Approve';
+    approveBtn.setAttribute('aria-label', approveBtn.title);
+  }
+  function showNotes(open){
+    notesPanel.hidden = !open;
+    notesToggle.setAttribute('aria-pressed', String(open));
+    if (open) notesArea.focus();
+  }
+  notesToggle.addEventListener('click', function(){ showNotes(notesPanel.hidden); });
+  notesArea.addEventListener('input', syncNote);
   document.querySelectorAll('#proto-reject-chips .proto-chip').forEach(function(chip){
     chip.addEventListener('click', function(){
       var reason = chip.getAttribute('data-reason') || '';
       notesArea.value = notesArea.value ? (notesArea.value + '; ' + reason) : reason;
-      notesPanel.hidden = false;
-      syncNotesGlow();
+      showNotes(true);
+      syncNote();
     });
   });
 
-  document.getElementById('proto-approve').addEventListener('click', function(){
+  function decided(key){
+    bar.setAttribute('data-verdict', key);
+    if (key !== 'approved') bar.classList.add('is-working');
+  }
+  approveBtn.addEventListener('click', function(){
     var notes = notesArea.value.trim();
     window.prototypeDecide('confirm', current, notes);
+    decided(notes ? 'approvedNote' : 'approved');
+    if (!notes) confetti();
+    toast(notes ? 'Approved ' + current + '. Your note starts the next round.' : 'Approved ' + current + '.');
   });
   document.getElementById('proto-reject').addEventListener('click', function(){
     var notes = notesArea.value.trim();
     if (!notes) {
-      notesPanel.hidden = false;
-      notesArea.focus();
-      notesArea.placeholder = 'Reject requires a note — what should change?';
+      showNotes(true);
+      toast('Add a note first. A rework needs direction.');
       return;
     }
     window.prototypeDecide('reject', '', '[was viewing ' + current + '] ' + notes);
+    decided('changes');
+    toast('Sent back for rework.');
   });
 
   show(current);

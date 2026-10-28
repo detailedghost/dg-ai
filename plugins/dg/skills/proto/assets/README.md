@@ -13,6 +13,7 @@ then copy the template that fits instead of writing one from scratch.
 | `prototype-endpoint.next.ts` | Next App Router | Copy to `app/prototype-confirm/route.ts` |
 | `prototype-endpoint.astro.ts` | Astro | Copy to `src/pages/api/prototype-confirm.ts` |
 | `webmcp-tools.json` | Any | Read-only WebMCP tool definitions the served page registers |
+| `dg-icons.js` | Plain JS | Icon set shared with `/dg:verify`. `prototype serve` inlines it, so `window.dgIcons` exists in a served page |
 
 The page served by `dg-skills prototype serve` or `prototype ui` injects its own decision client
 and endpoint (`window.prototypeDecide`, `window.prototypePlanDecision`, `POST /prototype-decision`).
