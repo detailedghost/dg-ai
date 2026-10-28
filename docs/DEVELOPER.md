@@ -329,11 +329,13 @@ The job graph is `detect`, then the four BLT workflows, then the builds and the 
 Only `release` has `contents: write`. It does the steps below in this order:
 
 1. Check that `origin/master` is still the commit the run started from. If not, it fails and creates no tag.
+   If the tag already exists, check that the run's commit produced it. A run for an older commit that computes the same version stops here.
 2. Stamp the version, write the changelog entry, and commit as `dg-release <dante+release@detailedghost.com>`.
 3. Push the commit and the tag in one `git push --atomic`.
-4. Create the release as a draft with every file, then publish it as Latest in one call.
-5. Move the `latest` tag to the release commit. This is the only forced push.
-6. On the first release under this scheme only, publish a `skills-vX.Y.Z` bridge release with the `dg-skills` binaries. It is never marked Latest.
+4. Create the release as a draft with every file, then publish it. It is marked Latest only when its version is the highest `vX.Y.Z`.
+5. Move the `latest` tag to the release commit, again only for the highest `vX.Y.Z`. This is the only forced push.
+6. For the first version above 1.21.1 only, publish a `skills-vX.Y.Z` bridge release with the `dg-skills` binaries. It is never marked Latest.
+   A retry of that version publishes the bridge even after later releases exist. A leftover bridge draft is deleted first.
 
 To recover from a failed run, run **Release** again from `master`. If the tag exists, the job publishes from the tag.
 If a draft exists, the job deletes the draft and uploads again. No step deletes a tag.

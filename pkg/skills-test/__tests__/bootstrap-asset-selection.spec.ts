@@ -85,6 +85,7 @@ esac
 `;
 
 type BootstrapRun = {
+	dir: string;
 	code: number;
 	stdout: string;
 	stderr: string;
@@ -99,13 +100,17 @@ function fakeBinary(url: string): string {
 	return `#!/bin/sh\n# ${url}\nexit 0\n`;
 }
 
-/** Builds a real .tar.gz fixture so bootstrap.sh's own `tar -xzf` can extract it. */
-function buildCodexArchive(stubDir: string, tag: string, skillName: string, skillBody: string): void {
-	const srcRoot = join(stubDir, `codex-src-${tag}`);
-	const skillDir = join(srcRoot, `dg-ai-${tag}`, "plugins", "dg", "skills", skillName);
+function archiveRoot(tag: string): string {
+	return `dg-ai-${tag.replace(/^v/, "")}`;
+}
+
+/** Builds a real .tar.gz fixture in GitHub's layout so bootstrap.sh's own `tar -xzf` can extract it. */
+function buildSourceArchive(stubDir: string, tag: string, skillName: string, skillBody: string): void {
+	const srcRoot = join(stubDir, `source-${tag}`);
+	const skillDir = join(srcRoot, archiveRoot(tag), "plugins", "dg", "skills", skillName);
 	mkdirSync(skillDir, { recursive: true });
 	writeFileSync(join(skillDir, "SKILL.md"), skillBody);
-	const result = Bun.spawnSync(["tar", "-czf", join(stubDir, `archive-${tag}.tar.gz`), "-C", srcRoot, `dg-ai-${tag}`]);
+	const result = Bun.spawnSync(["tar", "-czf", join(stubDir, `archive-${tag}.tar.gz`), "-C", srcRoot, archiveRoot(tag)]);
 	if (result.exitCode !== 0) {
 		throw new Error(`failed to build fixture archive for ${tag}: ${result.stderr.toString()}`);
 	}
@@ -120,7 +125,8 @@ async function runBootstrap(
 		skillsOnly?: boolean;
 		args?: string[];
 		env?: Record<string, string>;
-		codexArchives?: { tag: string; skillName: string; skillBody: string }[];
+		sourceArchives?: { tag: string; skillName: string; skillBody: string }[];
+		outsideCheckout?: boolean;
 	} = {},
 ): Promise<BootstrapRun> {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
@@ -132,8 +138,8 @@ async function runBootstrap(
 	if (options.sums !== undefined) {
 		writeFileSync(join(dir, "SHA256SUMS"), options.sums);
 	}
-	for (const { tag, skillName, skillBody } of options.codexArchives ?? []) {
-		buildCodexArchive(dir, tag, skillName, skillBody);
+	for (const { tag, skillName, skillBody } of options.sourceArchives ?? []) {
+		buildSourceArchive(dir, tag, skillName, skillBody);
 	}
 	const counterFile = join(dir, "counter");
 	writeFileSync(counterFile, "0");
@@ -146,16 +152,23 @@ async function runBootstrap(
 	const skillsSource = join(dir, "skills-src");
 	mkdirSync(join(skillsSource, "probe"), { recursive: true });
 	writeFileSync(join(skillsSource, "probe", "SKILL.md"), "probe\n");
+	let script = BOOTSTRAP;
+	if (options.outsideCheckout) {
+		script = join(dir, "remote", "nested", "bootstrap.sh");
+		mkdirSync(join(dir, "remote", "nested"), { recursive: true });
+		writeFileSync(script, readFileSync(BOOTSTRAP));
+	}
 	const proc = Bun.spawn(
-		["sh", BOOTSTRAP, ...(options.skillsOnly ? ["--skills-only"] : []), ...(options.args ?? [])],
+		["sh", script, ...(options.skillsOnly ? ["--skills-only"] : []), ...(options.args ?? [])],
 		{
+			cwd: options.outsideCheckout ? dir : undefined,
 			env: {
 				...process.env,
 				PATH: `${binDir}:${process.env.PATH}`,
 				HOME: home,
 				DG_HOME: options.dgHome ?? "",
 				STUBDIR: dir,
-				DG_SKILLS_SOURCE: skillsSource,
+				DG_SKILLS_SOURCE: options.outsideCheckout ? "" : skillsSource,
 				DG_SKILLS_DEST: join(dir, "skills-out"),
 				COUNTER: counterFile,
 				...(options.installBody ? { INSTALL_BODY: options.installBody } : {}),
@@ -188,6 +201,7 @@ async function runBootstrap(
 		: [];
 
 	return {
+		dir,
 		code,
 		stdout,
 		stderr,
@@ -534,6 +548,58 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 	});
 });
 
+describe("bootstrap.sh reads the root directory GitHub puts in a source archive", () => {
+	test("--skills-only finds the skills in dg-ai-1.22.0, the root GitHub gives the v1.22.0 tag", async () => {
+		const run = await runBootstrap([[release("v1.22.0", [SKILLS_ASSET])]], {
+			skillsOnly: true,
+			outsideCheckout: true,
+			sourceArchives: [{ tag: "v1.22.0", skillName: "probe", skillBody: "new scheme probe\n" }],
+		});
+		expect(run.code, run.stderr).toBe(0);
+		expect(readFileSync(join(run.dir, "skills-out", "probe", "SKILL.md"), "utf8")).toBe("new scheme probe\n");
+	});
+
+	test("--skills-only finds the skills in dg-ai-skills-v1.21.1, the root GitHub gives a prefixed tag", async () => {
+		const run = await runBootstrap(
+			[[release("v1.22.0", [SKILLS_ASSET]), release("skills-v1.21.1", [SKILLS_ASSET])]],
+			{
+				args: ["--version", "1.21.1"],
+				skillsOnly: true,
+				outsideCheckout: true,
+				sourceArchives: [{ tag: "skills-v1.21.1", skillName: "probe", skillBody: "legacy probe\n" }],
+			},
+		);
+		expect(run.code, run.stderr).toBe(0);
+		expect(readFileSync(join(run.dir, "skills-out", "probe", "SKILL.md"), "utf8")).toBe("legacy probe\n");
+	});
+
+	test("the Codex install finds the skills in dg-ai-1.22.0 for an unpinned run", async () => {
+		const codexHome = mkdtempSync(join(tmpdir(), "dg-codex-home-"));
+		try {
+			const run = await runBootstrap([[release("v1.22.0", [SKILLS_ASSET])]], {
+				installBody: '#!/bin/sh\necho "install ran: $*"',
+				env: { DG_INSTALL_CODEX: "1", CODEX_HOME: codexHome },
+				sourceArchives: [{ tag: "v1.22.0", skillName: "probe", skillBody: "new scheme probe\n" }],
+			});
+			expect(run.code, run.stderr).toBe(0);
+			expect(readFileSync(join(codexHome, "skills", "probe", "SKILL.md"), "utf8")).toBe("new scheme probe\n");
+		} finally {
+			rmSync(codexHome, { recursive: true, force: true });
+		}
+	});
+
+	test("bootstrap.ps1 finds the one extracted root instead of building dg-ai-<tag>", () => {
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		const fn = ps1.slice(ps1.indexOf("function Expand-DgSourceArchive"), ps1.indexOf("function Get-DgSkillsSource"));
+		expect(fn).toContain("Expand-Archive");
+		expect(fn).toContain("Get-ChildItem -LiteralPath $Destination -Directory");
+		expect(fn).toContain("$roots.Count -ne 1");
+		expect(ps1).not.toContain('"dg-ai-$tag');
+		expect(ps1).not.toContain('"dg-ai-$codexTag');
+		expect(ps1.match(/Expand-DgSourceArchive -Archive/g)).toHaveLength(2);
+	});
+});
+
 describe("bootstrap.sh DG_INSTALL_CODEX uses the pinned tag, not the newest", () => {
 	const TWO_RELEASES = [
 		release("v3.0.0", [SKILLS_ASSET]),
@@ -547,7 +613,7 @@ describe("bootstrap.sh DG_INSTALL_CODEX uses the pinned tag, not the newest", ()
 				args: ["--version", "2.0.0"],
 				installBody: '#!/bin/sh\necho "install ran: $*"',
 				env: { DG_INSTALL_CODEX: "1", CODEX_HOME: codexHome },
-				codexArchives: [
+				sourceArchives: [
 					{ tag: "v3.0.0", skillName: "probe", skillBody: "newest probe\n" },
 					{ tag: "v2.0.0", skillName: "probe", skillBody: "pinned probe\n" },
 				],
@@ -572,7 +638,7 @@ describe("bootstrap.sh DG_INSTALL_CODEX with a pin at or below 1.21.1", () => {
 					args: ["--version", "1.21.1"],
 					installBody: '#!/bin/sh\necho "install ran: $*"',
 					env: { DG_INSTALL_CODEX: "1", CODEX_HOME: codexHome },
-					codexArchives: [
+					sourceArchives: [
 						{ tag: "v1.22.0", skillName: "probe", skillBody: "newest probe\n" },
 						{ tag: "skills-v1.21.1", skillName: "probe", skillBody: "legacy probe\n" },
 					],
@@ -595,6 +661,6 @@ describe("bootstrap.ps1 DG_INSTALL_CODEX uses the pinned tag, not the newest", (
 			'$codexTag = if (-not $script:pinnedVersion) { $rel.tag_name } elseif (Test-DgPrefixedVersion $script:pinnedVersion) { "skills-v$($script:pinnedVersion)" } else { "v$($script:pinnedVersion)" }',
 		);
 		expect(codexBlock).toContain("archive/refs/tags/$codexTag.zip");
-		expect(codexBlock).toContain("dg-ai-$codexTag\\plugins\\dg\\skills");
+		expect(codexBlock).toContain('Join-Path $sourceRoot "plugins\\dg\\skills"');
 	});
 });

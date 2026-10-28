@@ -239,6 +239,19 @@ resolve_release() {
   fi
 }
 
+extract_source_archive() {
+  archive_file=$1
+  extract_dir=$2
+  mkdir -p "$extract_dir"
+  tar -xzf "$archive_file" -C "$extract_dir"
+  set -- "$extract_dir"/*/
+  if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
+    echo "dg-skills: expected one directory in the source archive" >&2
+    exit 1
+  fi
+  printf '%s' "${1%/}"
+}
+
 skills_tree_source() {
   if [ -n "${DG_SKILLS_SOURCE:-}" ]; then
     SKILLS_SRC="$DG_SKILLS_SOURCE"
@@ -260,8 +273,8 @@ skills_tree_source() {
   resolve_release
   curl -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "$archive"
-  tar -xzf "$archive" -C "$tmp"
-  SKILLS_SRC="${tmp}/dg-ai-${tag}/plugins/dg/skills"
+  source_root=$(extract_source_archive "$archive" "${tmp}/source")
+  SKILLS_SRC="${source_root}/plugins/dg/skills"
 }
 
 if [ "$SKILLS_ONLY" = "1" ]; then
@@ -447,8 +460,8 @@ if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   curl -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${CODEX_TAG}.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
-  tar -xzf "${archive}" -C "${tmpdir}"
-  for skill in "${tmpdir}/dg-ai-${CODEX_TAG}/plugins/dg/skills"/*/; do
+  source_root=$(extract_source_archive "${archive}" "${tmpdir}/source")
+  for skill in "${source_root}/plugins/dg/skills"/*/; do
     if { [ "${CLI_ONLY}" = "1" ] || [ "${AGENT_ONLY}" = "1" ]; } && grep -qE '^requires:.*extension' "${skill}SKILL.md"; then
       continue
     fi

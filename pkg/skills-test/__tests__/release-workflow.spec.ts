@@ -499,13 +499,15 @@ describe("the commit, the tag and the push behave as one release", () => {
 
 	test("the tagged commit must be the release commit for this version", () => {
 		withSandbox((sandbox) => {
+			const start = sandbox.git(["rev-parse", "HEAD"]);
+			const run = { ...env, MODE: "release", GITHUB_SHA: start };
 			sandbox.git(["tag", "v1.22.0"]);
-			const wrong = sandbox.run(step(STEP.tagged), env);
+			const wrong = sandbox.run(step(STEP.tagged), run);
 
 			writeFileSync(join(sandbox.work, "CHANGELOG.md"), "# Changelog\n");
 			sandbox.run(step(STEP.commit), { VERSION: "1.22.0", TAG: "v1.22.1" });
 			sandbox.git(["tag", "--force", "v1.22.0", "HEAD"]);
-			const right = sandbox.run(step(STEP.tagged), env);
+			const right = sandbox.run(step(STEP.tagged), run);
 
 			expect(wrong.code).not.toBe(0);
 			expect(right.code, right.stderr).toBe(0);
@@ -552,6 +554,135 @@ describe("the commit, the tag and the push behave as one release", () => {
 	});
 });
 
+describe("an older release never moves latest backward", () => {
+	function originRef(sandbox: StepSandbox, ref: string): string {
+		return sandbox.git(["--git-dir", sandbox.origin, "rev-parse", ref]);
+	}
+
+	function tagTwoReleases(
+		sandbox: StepSandbox,
+		older: string,
+		newer: string,
+	): { first: string; second: string } {
+		const first = sandbox.git(["rev-parse", "HEAD"]);
+		sandbox.git(["tag", older]);
+		writeFileSync(join(sandbox.work, "next.txt"), "next\n");
+		sandbox.git(["add", "next.txt"]);
+		sandbox.git(["commit", "--message", "chore(release): cut next"]);
+		sandbox.git(["tag", newer]);
+		sandbox.git(["tag", "skills-v9.9.9"]);
+		return { first, second: sandbox.git(["rev-parse", "HEAD"]) };
+	}
+
+	test("rerunning an older release leaves the latest tag on the newest release", () => {
+		withSandbox((sandbox) => {
+			const { second } = tagTwoReleases(sandbox, "v1.0.1", "v1.0.2");
+			expect(sandbox.run(step(STEP.latest), { TAG: "v1.0.2" }).code).toBe(0);
+
+			const result = sandbox.run(step(STEP.latest), { TAG: "v1.0.1" });
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(originRef(sandbox, "refs/tags/latest^{commit}")).toBe(second);
+		});
+	});
+
+	test("rerunning the newest release still moves the latest tag", () => {
+		withSandbox((sandbox) => {
+			const { first, second } = tagTwoReleases(sandbox, "v1.0.1", "v1.0.2");
+			sandbox.git(["push", "origin", `${first}:refs/tags/latest`]);
+			expect(originRef(sandbox, "refs/tags/latest^{commit}")).toBe(first);
+
+			const result = sandbox.run(step(STEP.latest), { TAG: "v1.0.2" });
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(originRef(sandbox, "refs/tags/latest^{commit}")).toBe(second);
+		});
+	});
+
+	test("versions compare as numbers, so v1.10.0 is newer than v1.9.0", () => {
+		withSandbox((sandbox) => {
+			const { second } = tagTwoReleases(sandbox, "v1.9.0", "v1.10.0");
+
+			expect(sandbox.run(step(STEP.latest), { TAG: "v1.9.0" }).code).toBe(0);
+			expect(
+				sandbox.git(["--git-dir", sandbox.origin, "tag", "--list", "latest"]),
+			).toBe("");
+
+			expect(sandbox.run(step(STEP.latest), { TAG: "v1.10.0" }).code).toBe(0);
+			expect(originRef(sandbox, "refs/tags/latest^{commit}")).toBe(second);
+		});
+	});
+});
+
+describe("a rerun accepts a tag only when its own commit produced it", () => {
+	const env = { VERSION: "1.22.0", TAG: "v1.22.0" };
+
+	function cutRelease(sandbox: StepSandbox): {
+		older: string;
+		start: string;
+		release: string;
+	} {
+		const older = sandbox.git(["rev-parse", "HEAD"]);
+		writeFileSync(join(sandbox.work, "fix.txt"), "fix\n");
+		sandbox.git(["add", "fix.txt"]);
+		sandbox.git(["commit", "--message", "fix(other): newer fix"]);
+		const start = sandbox.git(["rev-parse", "HEAD"]);
+		writeFileSync(join(sandbox.work, "CHANGELOG.md"), "# Changelog\n");
+		sandbox.run(step(STEP.commit), env);
+		return { older, start, release: sandbox.git(["rev-parse", "HEAD"]) };
+	}
+
+	test("a release run takes the tag whose parent is the commit it started from", () => {
+		withSandbox((sandbox) => {
+			const { start } = cutRelease(sandbox);
+
+			const result = sandbox.run(step(STEP.tagged), {
+				...env,
+				MODE: "release",
+				GITHUB_SHA: start,
+			});
+
+			expect(result.code, result.stderr + result.stdout).toBe(0);
+		});
+	});
+
+	test("an older failed run that computes the same version refuses the tag a later run created", () => {
+		withSandbox((sandbox) => {
+			const { older } = cutRelease(sandbox);
+
+			const result = sandbox.run(step(STEP.tagged), {
+				...env,
+				MODE: "release",
+				GITHUB_SHA: older,
+			});
+
+			expect(result.code).not.toBe(0);
+			expect(result.stderr + result.stdout).toContain("different commit");
+		});
+	});
+
+	test("a republish run takes the tag on its own commit and refuses a tag on any other", () => {
+		withSandbox((sandbox) => {
+			const { start, release } = cutRelease(sandbox);
+
+			const own = sandbox.run(step(STEP.tagged), {
+				...env,
+				MODE: "republish",
+				GITHUB_SHA: release,
+			});
+			const other = sandbox.run(step(STEP.tagged), {
+				...env,
+				MODE: "republish",
+				GITHUB_SHA: start,
+			});
+
+			expect(own.code, own.stderr + own.stdout).toBe(0);
+			expect(other.code).not.toBe(0);
+			expect(other.stderr + other.stdout).toContain("different commit");
+		});
+	});
+});
+
 describe("publishing is a draft first, then one call that publishes and marks latest", () => {
 	function prepare(sandbox: StepSandbox): { target: string; files: string[] } {
 		sandbox.git(["tag", "v1.22.0"]);
@@ -585,6 +716,22 @@ describe("publishing is a draft first, then one call that publishes and marks la
 			expect(calls[create]).toContain(`--target ${target}`);
 			for (const name of files) expect(calls[create]).toContain(`dist/${name}`);
 			expect(calls.some((call) => call.includes("DELETE"))).toBe(false);
+		});
+	});
+
+	test("an older release is published without the latest mark when a newer release exists", () => {
+		withSandbox((sandbox) => {
+			prepare(sandbox);
+			sandbox.git(["tag", "v1.23.0"]);
+			sandbox.git(["tag", "skills-v9.9.9"]);
+
+			const result = sandbox.run(step(STEP.publish), env);
+			const edits = ghCalls(sandbox).filter((call) =>
+				call.startsWith("release edit"),
+			);
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(edits).toEqual(["release edit v1.22.0 --draft=false --latest=false"]);
 		});
 	});
 
@@ -651,8 +798,7 @@ describe("the bridge release reaches CLIs that still look for skills-v tags, onc
 
 		expect(script).toContain('gh release view "$bridge"');
 		expect(script).toContain("git tag --list 'v[0-9]*'");
-		expect(script).toContain("grep -vxE");
-		expect(script).toContain("v1\\.[0-2]\\.[0-9]+");
+		expect(script).toContain("v1.21.1");
 		expect(JSON.stringify(workflow.on)).not.toContain("bridge");
 	});
 
@@ -730,6 +876,85 @@ describe("the bridge release reaches CLIs that still look for skills-v tags, onc
 			expect(
 				ghCalls(sandbox).some((call) => call.startsWith("release create")),
 			).toBe(false);
+		});
+	});
+
+	test("retrying the first release after a later one exists still publishes its missing bridge", () => {
+		withSandbox((sandbox) => {
+			prepare(sandbox, [...OLD_SCHEME, "v1.22.0", "v1.23.0"]);
+
+			const result = sandbox.run(gate, { ...env, MODE: "republish" });
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(
+				ghCalls(sandbox).some((call) =>
+					call.startsWith("release create skills-v1.22.0"),
+				),
+			).toBe(true);
+		});
+	});
+
+	test("the first version above 1.21.1 gets the bridge even when it is a patch, and no other does", () => {
+		for (const [version, bridged] of [
+			["1.21.2", true],
+			["1.22.0", false],
+		] as const) {
+			withSandbox((sandbox) => {
+				prepare(sandbox, [...OLD_SCHEME, "v1.21.2", "v1.22.0"]);
+
+				const result = sandbox.run(gate, {
+					VERSION: version,
+					TAG: `v${version}`,
+				});
+
+				expect(result.code, result.stderr).toBe(0);
+				expect(
+					ghCalls(sandbox).some((call) =>
+						call.startsWith(`release create skills-v${version}`),
+					),
+				).toBe(bridged);
+			});
+		}
+	});
+
+	test("an interrupted bridge leaves a draft that is deleted before the bridge counts as done", () => {
+		withSandbox((sandbox) => {
+			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
+
+			const result = sandbox.run(gate, {
+				...env,
+				STUB_DRAFTS: "21",
+				STUB_DRAFT_TAG: "skills-v1.22.0",
+			});
+			const calls = ghCalls(sandbox);
+			const remove = calls.findIndex((call) => call.includes("DELETE"));
+			const create = calls.findIndex((call) =>
+				call.startsWith("release create skills-v1.22.0"),
+			);
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(calls.filter((call) => call.includes("DELETE"))).toEqual([
+				"api --method DELETE repos/owner/repo/releases/21",
+			]);
+			expect(remove).toBeGreaterThan(-1);
+			expect(create).toBeGreaterThan(remove);
+		});
+	});
+
+	test("a draft that belongs to another tag is left alone", () => {
+		withSandbox((sandbox) => {
+			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
+
+			const result = sandbox.run(gate, {
+				...env,
+				STUB_DRAFTS: "31",
+				STUB_DRAFT_TAG: "v1.22.0",
+			});
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(ghCalls(sandbox).some((call) => call.includes("DELETE"))).toBe(
+				false,
+			);
 		});
 	});
 

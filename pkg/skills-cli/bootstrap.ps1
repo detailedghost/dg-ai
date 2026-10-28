@@ -110,6 +110,14 @@ function Resolve-DgRelease {
 	return $script:rel
 }
 
+function Expand-DgSourceArchive {
+	param([string]$Archive, [string]$Destination)
+	Expand-Archive -Path $Archive -DestinationPath $Destination -Force
+	$roots = @(Get-ChildItem -LiteralPath $Destination -Directory)
+	if ($roots.Count -ne 1) { throw "dg-skills: expected one directory in the source archive, found $($roots.Count)" }
+	return $roots[0].FullName
+}
+
 function Get-DgSkillsSource {
 	if ($env:DG_SKILLS_SOURCE) { return $env:DG_SKILLS_SOURCE }
 	if ($PSScriptRoot) {
@@ -124,8 +132,8 @@ function Get-DgSkillsSource {
 	$archive = Join-Path $tmp "dg-ai.zip"
 	$tag = (Resolve-DgRelease).tag_name
 	Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$tag.zip" -OutFile $archive
-	Expand-Archive -Path $archive -DestinationPath $tmp -Force
-	return (Join-Path $tmp "dg-ai-$tag\plugins\dg\skills")
+	$sourceRoot = Expand-DgSourceArchive -Archive $archive -Destination (Join-Path $tmp "source")
+	return (Join-Path $sourceRoot "plugins\dg\skills")
 }
 
 if ($env:DG_SKILLS_ONLY -eq "1" -and $env:DG_CLI_ONLY -eq "1") {
@@ -285,10 +293,10 @@ if ($env:DG_INSTALL_CODEX -eq "1") {
 	New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
 	try {
 		Invoke-WebRequest -Headers $headers -Uri "https://github.com/$repo/archive/refs/tags/$codexTag.zip" -OutFile $archive
-		Expand-Archive -Path $archive -DestinationPath $tmpDir -Force
+		$sourceRoot = Expand-DgSourceArchive -Archive $archive -Destination (Join-Path $tmpDir "source")
 		$skillsDir = Join-Path $codexRoot "skills"
 		New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-		foreach ($skill in Get-ChildItem -Directory (Join-Path $tmpDir "dg-ai-$codexTag\plugins\dg\skills")) {
+		foreach ($skill in Get-ChildItem -Directory (Join-Path $sourceRoot "plugins\dg\skills")) {
 			if (($env:DG_CLI_ONLY -eq "1" -or $env:DG_AGENT_ONLY -eq "1") -and (Select-String -Path (Join-Path $skill.FullName "SKILL.md") -Pattern "^requires:.*extension" -Quiet)) { continue }
 			Copy-Item -Recurse -Force $skill.FullName $skillsDir
 		}

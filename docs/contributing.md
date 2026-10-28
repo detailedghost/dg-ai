@@ -82,7 +82,7 @@ When all four are true:
   Then the `release` job stamps the version into the matched set, writes the `CHANGELOG.md` entry, and pushes one `chore(release): cut X.Y.Z` commit by
   `dg-release` to `master`, together with the tag `vX.Y.Z`.
 - The `release` job publishes one GitHub release for that tag. It holds every binary, the extension zips, `bootstrap.sh`, `bootstrap.ps1`, and one `SHA256SUMS`.
-  It marks the release Latest and moves the `latest` tag to the release commit.
+  It marks the release Latest and moves the `latest` tag to the release commit, unless a higher `vX.Y.Z` release exists.
 - To run the workflow by hand, open Actions, pick **Release**, and choose **Run workflow**. Pick `auto`, or force `patch`, `minor`, or `major`.
   Run it on a release commit to publish again a release whose upload failed.
 - The workflow never force-pushes `master` and never deletes a tag. A failed release is fixed by running the workflow again.

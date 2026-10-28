@@ -514,6 +514,15 @@ jobs:
             echo "::error::${TAG} does not point at the release commit for ${VERSION}."
             exit 1
           fi
+          if [ "$MODE" = release ]; then
+            built_from="$(git rev-parse --verify --quiet HEAD^ || true)"
+          else
+            built_from="$(git rev-parse HEAD)"
+          fi
+          if [ "$built_from" != "$GITHUB_SHA" ]; then
+            echo "::error::${TAG} was cut from a different commit than ${GITHUB_SHA}, so this run's build does not belong to it."
+            exit 1
+          fi
 
       - name: Stamp the release version
         if: steps.tag.outputs.exists == 'false'
@@ -570,10 +579,21 @@ jobs:
             --title "$TAG" \
             --target "$target" \
             --notes-file "$RUNNER_TEMP/notes.md"
-          gh release edit "$TAG" --draft=false --latest
+          newest="$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          if [ "$newest" = "$TAG" ]; then
+            gh release edit "$TAG" --draft=false --latest
+          else
+            echo "A newer release exists, so ${TAG} is not marked Latest."
+            gh release edit "$TAG" --draft=false --latest=false
+          fi
 
       - name: Move the latest tag to the release commit
         run: |
+          newest="$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          if [ "$newest" != "$TAG" ]; then
+            echo "A newer release exists, so the latest tag stays where it is."
+            exit 0
+          fi
           sha="$(git rev-parse "refs/tags/${TAG}^{commit}")"
           git push origin "+${sha}:refs/tags/latest"
 
@@ -582,13 +602,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bridge="skills-v${VERSION}"
-          if gh release view "$bridge" >/dev/null 2>&1; then
-            echo "Release ${bridge} already exists."
+          first="$({ git tag --list 'v[0-9]*'; echo v1.21.1; } | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vu | awk 'seen { print; exit } $0 == "v1.21.1" { seen = 1 }')"
+          if [ "$first" != "$TAG" ]; then
+            echo "${TAG} is not the first release of this scheme, so no bridge is needed."
             exit 0
           fi
-          earlier="$(git tag --list 'v[0-9]*' | grep -vxE "v1\.[0-2]\.[0-9]+|${TAG}" || true)"
-          if [ -n "$earlier" ]; then
-            echo "An earlier release exists, so no bridge is needed."
+          drafts="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.draft and .tag_name == \"${bridge}\") | .id")"
+          for id in $drafts; do
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+          done
+          if gh release view "$bridge" >/dev/null 2>&1; then
+            echo "Release ${bridge} already exists."
             exit 0
           fi
           target="$(git rev-parse "refs/tags/${TAG}^{commit}")"

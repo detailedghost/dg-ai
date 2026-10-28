@@ -102,11 +102,27 @@ export type StepSandbox = {
 
 const GH_STUB = `#!/usr/bin/env bash
 echo "$*" >> "$GH_LOG"
+draft_is_open() {
+  [ -n "\${STUB_DRAFTS:-}" ] || return 1
+  for id in $STUB_DRAFTS; do
+    grep -qx "api --method DELETE repos/$GITHUB_REPOSITORY/releases/$id" "$GH_LOG" || return 0
+  done
+  return 1
+}
 case "$1 $2" in
-  "release view") [ "$3" = "\${STUB_PUBLISHED:-}" ]; exit ;;
+  "release view")
+    [ "$3" = "\${STUB_PUBLISHED:-}" ] && exit 0
+    [ "$3" = "\${STUB_DRAFT_TAG:-}" ] && draft_is_open
+    exit
+    ;;
   "api repos/"*)
     case "$2" in
-      */releases) for id in \${STUB_DRAFTS:-}; do echo "$id"; done ;;
+      */releases)
+        needle='tag_name == "'"\${STUB_DRAFT_TAG:-}"'"'
+        if [ -z "\${STUB_DRAFT_TAG:-}" ] || [[ "$*" == *"$needle"* ]]; then
+          for id in \${STUB_DRAFTS:-}; do echo "$id"; done
+        fi
+        ;;
     esac
     ;;
 esac
