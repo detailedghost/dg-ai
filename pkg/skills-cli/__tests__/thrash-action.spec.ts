@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { THRASH_REVIEW_MARKER } from "../src/thrash/constants";
 import { readConfig } from "../src/thrash/action/config";
 import { isFork, nextRound, type Review, readEvent } from "../src/thrash/action/github";
+import * as gitlab from "../src/thrash/action/gitlab";
 import { compileArgs, lastJson, renderChunkTask } from "../src/thrash/action/tasks";
 
 const PAYLOAD = {
@@ -54,6 +55,34 @@ describe("readConfig", () => {
 				THRASHLEY_UNSAFE_ALLOW_SHELL: "true",
 			}).backend,
 		).toBe("codex");
+	});
+});
+
+describe("merge request pipeline", () => {
+	const CI = {
+		GITLAB_CI: "true",
+		CI_PIPELINE_SOURCE: "merge_request_event",
+		CI_MERGE_REQUEST_IID: "7",
+		CI_MERGE_REQUEST_PROJECT_PATH: "acme/sub/app",
+		CI_MERGE_REQUEST_PROJECT_URL: "https://git.acme.dev/acme/sub/app",
+		CI_MERGE_REQUEST_SOURCE_PROJECT_PATH: "acme/sub/app",
+		CI_MERGE_REQUEST_DIFF_BASE_SHA: "abc123",
+	};
+
+	test("reads the merge request from the CI variables", () => {
+		expect(gitlab.isGitlabCi(CI)).toBe(true);
+		expect(gitlab.readEvent(CI)).toEqual({
+			repo: "acme/sub/app",
+			number: 7,
+			url: "https://git.acme.dev/acme/sub/app/-/merge_requests/7",
+			baseSha: "abc123",
+			headRepo: "acme/sub/app",
+		});
+	});
+
+	test("refuses a pipeline that is not for a merge request", () => {
+		expect(() => gitlab.readEvent({ ...CI, CI_PIPELINE_SOURCE: "push" })).toThrow("merge request pipelines only");
+		expect(() => gitlab.readEvent({ ...CI, CI_MERGE_REQUEST_IID: "" })).toThrow("CI_MERGE_REQUEST_IID");
 	});
 });
 

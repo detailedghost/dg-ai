@@ -603,7 +603,7 @@ A proxy persona does not select a model. Distinct worker backends/models remain 
 compiled artifact and public label; the parent model is not substituted.
 
 Public bodies, previews, tallies, and compile/post JSON show `Automatic (daemon)`,
-`Automatic (GitHub Action)` (origin `action`, set by a CI runner) or `Manual (CLI)` and reviewer models. No private runtime fields belong in public metadata.
+`Automatic (CI)` (origin `action`, set by a GitHub Actions or GitLab CI runner) or `Manual (CLI)` and reviewer models. No private runtime fields belong in public metadata.
 The helper freezes origin in a unique diff plan and does not trust review contents for
 attribution. It preserves verdicts, dedupe, partial coverage, gates, and provider fallback.
 Ship the helper and the skill instructions together with the runner change; old

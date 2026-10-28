@@ -297,16 +297,21 @@ in the diff is terminal-only in this mode. Nothing posts.
 | `--improvements` | Turns improvements on. A policy `improvements: true` does the same. |
 | `--sass` | Adds one line from the fixed list in `thrash/sass.ts` to the summary, picked from the verdict and the highest tier, seeded by the PR number and round. Never in an inline comment. It changes no verdict or tier. |
 
-`THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (GitHub Action)".
+`THRASH_EXECUTION_CONTEXT={"origin":"action"}` labels the trigger "Automatic (CI)".
 
-`dg-skills thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action. It reads its
-inputs from `THRASHLEY_*` variables, counts rounds from the bot's own reviews, reads the rules doc and policy from
-the PR's base commit, and runs one `proxy` job per chunk with `DG_PROXY_NO_SHELL=1`. State passes between phases in
+`dg-skills thrash action prepare|review|publish` runs these steps for the Thrashley GitHub Action and its GitLab CI
+template. It reads its inputs from `THRASHLEY_*` variables, counts rounds from the bot's own reviews, reads the rules
+doc and policy from the PR's base commit, and runs one `proxy` job per chunk with `DG_PROXY_NO_SHELL=1`. State passes between phases in
 `$THRASHLEY_WORK/state.json`. `prepare` reads the PR head SHA before and after fetching the
 diff, rejects a head change, and saves the reviewed `headSha` in that state. `publish`
 passes it to `post --head-sha`, so a push during review requires fresh preparation and
 review before publication. The review remains pinned to the saved SHA if a push races
 with submission.
+
+With `GITLAB_CI=true`, it reads the MR from the `CI_MERGE_REQUEST_*` variables instead of the event file and calls
+`glab api` instead of `gh`. It skips an MR whose source project differs from the target project. It counts rounds
+from the bot's summary notes. With no `THRASHLEY_BOT_LOGIN`, it posts as the username of the `glab` token. Every
+GitLab round reviews the full diff, because GitLab has no review object to anchor a delta to.
 
 A policy file:
 

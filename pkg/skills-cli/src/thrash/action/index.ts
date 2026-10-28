@@ -8,15 +8,9 @@ import {
 import path from "node:path";
 import { parsePolicy } from "../policy";
 import { type Config, readConfig } from "./config";
-import {
-	isFork,
-	listReviews,
-	nextRound,
-	type PullRequestEvent,
-	readBaseFile,
-	readEvent,
-	readHeadSha,
-} from "./github";
+import * as github from "./github";
+import { isFork, nextRound, type PullRequestEvent } from "./github";
+import * as gitlab from "./gitlab";
 import {
 	compileArgs,
 	type DiffPlan,
@@ -29,6 +23,7 @@ interface State {
 	skipped: boolean;
 	event: PullRequestEvent;
 	headSha: string;
+	botLogin: string;
 	round: number;
 	policyPath: string | null;
 	improvements: boolean;
@@ -74,6 +69,23 @@ let scratch = "";
 let statePath = "";
 let failedCheck = false;
 
+type Level = "notice" | "warning" | "error";
+
+function annotate(level: Level, message: string): void {
+	console.log(env.GITHUB_ACTIONS === "true" ? `::${level}::${message}` : `Thrashley ${level}: ${message}`);
+}
+
+function host() {
+	if (gitlab.isGitlabCi(env)) {
+		return { ...gitlab, event: gitlab.readEvent(env), label: (n: number) => `MR !${n}` };
+	}
+	const event = github.readEvent(
+		JSON.parse(readFileSync(required("GITHUB_EVENT_PATH"), "utf8")),
+		required("GITHUB_REPOSITORY"),
+	);
+	return { ...github, event, label: (n: number) => `PR #${n}` };
+}
+
 function setOutput(name: string, value: string): void {
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(env.GITHUB_OUTPUT, `${name}=${value}\n`);
@@ -91,32 +103,33 @@ function scratchEnv(): Record<string, string> {
 }
 
 async function prepare(cfg: Config): Promise<void> {
-	const event = readEvent(
-		JSON.parse(readFileSync(required("GITHUB_EVENT_PATH"), "utf8")),
-		required("GITHUB_REPOSITORY"),
-	);
+	const forge = host();
+	const { event } = forge;
 	if (isFork(event) && !cfg.reviewForks) {
-		console.log(
-			`::notice::Thrashley skips PR #${event.number} from fork ${event.headRepo}; set review-forks: true to review forks.`,
+		annotate(
+			"notice",
+			`Thrashley skips ${forge.label(event.number)} from fork ${event.headRepo}; set review-forks: true to review forks.`,
 		);
 		writeFileSync(statePath, JSON.stringify({ skipped: true }));
 		setOutput("skipped", "true");
 		return;
 	}
-	const headSha = await readHeadSha(event);
-	const diff = dgSkills(["thrash", "diff", event.url, "--reviewer", cfg.botLogin], scratchEnv());
+	const headSha = await forge.readHeadSha(event);
+	const botLogin =
+		gitlab.isGitlabCi(env) && !env.THRASHLEY_BOT_LOGIN ? await gitlab.readTokenLogin(event) : cfg.botLogin;
+	const diff = dgSkills(["thrash", "diff", event.url, "--reviewer", botLogin], scratchEnv());
 	const [reviews, rules, policy, extraPrompt, agent] = await Promise.all([
-		listReviews(event),
-		readBaseFile(event, cfg.reviewRules),
-		readBaseFile(event, cfg.policy),
-		cfg.promptFile ? readBaseFile(event, cfg.promptFile) : null,
-		cfg.agentFile ? readBaseFile(event, cfg.agentFile) : null,
+		forge.listReviews(event),
+		forge.readBaseFile(event, cfg.reviewRules),
+		forge.readBaseFile(event, cfg.policy),
+		cfg.promptFile ? forge.readBaseFile(event, cfg.promptFile) : null,
+		cfg.agentFile ? forge.readBaseFile(event, cfg.agentFile) : null,
 	]);
-	const round = nextRound(reviews, cfg.botLogin);
+	const round = nextRound(reviews, botLogin);
 	if (rules === null)
-		console.log(`::notice::No review rules at ${cfg.reviewRules} on the base branch; using the thrash defaults.`);
+		annotate("notice", `No review rules at ${cfg.reviewRules} on the base branch; using the thrash defaults.`);
 	if (policy === null)
-		console.log(`::notice::No policy at ${cfg.policy} on the base branch; using the spice ${cfg.spice} verdict table.`);
+		annotate("notice", `No policy at ${cfg.policy} on the base branch; using the spice ${cfg.spice} verdict table.`);
 	if (cfg.promptFile && extraPrompt === null) throw new Error(`prompt-file ${cfg.promptFile} is not on the base branch`);
 	if (cfg.agentFile && agent === null) throw new Error(`agent-file ${cfg.agentFile} is not on the base branch`);
 
@@ -134,11 +147,11 @@ async function prepare(cfg: Config): Promise<void> {
 		policy === null ? null : writeIn(work, "policy.yml", policy);
 	const improvements = cfg.improvements || (policy !== null && parsePolicy(policy).improvements === true);
 	const plan = lastJson<DiffPlan>(await diff);
-	if (await readHeadSha(event) !== headSha) {
+	if (await forge.readHeadSha(event) !== headSha) {
 		throw new Error("PR head changed while preparing the diff; run prepare again");
 	}
 	if (plan.chunks.length === 0) {
-		console.log(`::notice::Thrashley skips PR #${event.number}: no reviewable changes.`);
+		annotate("notice", `Thrashley skips ${forge.label(event.number)}: no reviewable changes.`);
 		writeFileSync(statePath, JSON.stringify({ skipped: true, reason: "no reviewable changes" }));
 		setOutput("skipped", "true");
 		return;
@@ -163,6 +176,7 @@ async function prepare(cfg: Config): Promise<void> {
 		skipped: false,
 		event,
 		headSha,
+		botLogin,
 		round,
 		policyPath,
 		improvements,
@@ -276,7 +290,7 @@ async function publish(cfg: Config): Promise<void> {
 				policyPath: state.policyPath,
 				maxComments: cfg.maxComments,
 				verdict: cfg.verdict,
-				reviewer: cfg.botLogin,
+				reviewer: state.botLogin,
 				headSha: state.headSha,
 				sass: cfg.sass,
 				improvements: cfg.improvements,
@@ -304,8 +318,9 @@ async function publish(cfg: Config): Promise<void> {
 		),
 	);
 	if (posted.degraded)
-		console.log(
-			"::warning::GitHub refused the verdict, so the review posted as a comment. The summary still states the verdict.",
+		annotate(
+			"warning",
+			"The host refused the verdict, so the review posted as a comment. The summary still states the verdict.",
 		);
 
 	setOutput("verdict", compiled.verdict);
@@ -321,7 +336,7 @@ async function publish(cfg: Config): Promise<void> {
 		`Verdict: ${compiled.verdict} (${compiled.reason})${cfg.dryRun ? " [dry run, nothing posted]" : ""}`,
 	);
 	if (compiled.verdict === "request_changes" && cfg.failOnRequestChanges) {
-		console.log(`::error::Thrashley requested changes: ${compiled.reason}.`);
+		annotate("error", `Thrashley requested changes: ${compiled.reason}.`);
 		failedCheck = true;
 	}
 }
@@ -330,7 +345,7 @@ const PHASES: Record<string, (cfg: Config) => Promise<void>> = { prepare, review
 
 export const ACTION_PHASES = Object.keys(PHASES);
 
-/** Runs one GitHub Action phase; failures print a workflow error and return a non-zero exit code. */
+/** Runs one CI phase; failures print an error and return a non-zero exit code. */
 export async function runAction(name: string | undefined): Promise<number> {
 	const phase = PHASES[name ?? ""];
 	if (!phase) {
@@ -345,7 +360,7 @@ export async function runAction(name: string | undefined): Promise<number> {
 		await phase(readConfig(env));
 		return failedCheck ? 1 : 0;
 	} catch (err) {
-		console.log(`::error::${err instanceof Error ? err.message : String(err)}`);
+		annotate("error", err instanceof Error ? err.message : String(err));
 		return 1;
 	}
 }

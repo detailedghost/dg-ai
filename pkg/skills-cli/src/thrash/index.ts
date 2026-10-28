@@ -609,7 +609,7 @@ const command = defineCommand({
 		},
 		action: {
 			description:
-				"Run one GitHub Action phase (prepare, review or publish) from THRASHLEY_* inputs; used by the Thrashley action",
+				"Run one CI phase (prepare, review or publish) from THRASHLEY_* inputs; used by the Thrashley GitHub Action and GitLab CI template",
 			args: ["phase"],
 			run: async (args) => {
 				const { runAction } = await import("./action/index");

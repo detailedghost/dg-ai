@@ -80,7 +80,7 @@ function stripRawControlChars(raw: string): string {
 }
 
 /** GitLab embeds raw control characters in descriptions and notes carrying code-review markdown. */
-function parseGlabJson<T = Record<string, unknown>>(raw: string): T {
+export function parseGlabJson<T = Record<string, unknown>>(raw: string): T {
 	return JSON.parse(stripRawControlChars(raw)) as T;
 }
 
