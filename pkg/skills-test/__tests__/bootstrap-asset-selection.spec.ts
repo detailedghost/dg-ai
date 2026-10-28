@@ -560,20 +560,19 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 		expect(run.stdout).not.toContain("dg-skills already current");
 	});
 
-	test("finishes when piped into bash and the installer reads stdin", async () => {
+	test("gives the installer no stdin when the script is piped into bash", async () => {
 		const run = await runBootstrap([[release("v1.12.0", [SKILLS_ASSET])]], {
 			piped: true,
 			args: ["--cli-only"],
 			installBody: [
 				"#!/bin/sh",
-				"head -c 20 >/dev/null",
+				`[ "$(head -c 1 | wc -c)" -eq 0 ] || { echo 'installer read stdin' >&2; exit 9; }`,
 				"printf '%s\\n' 'dg-skills already current (v1.12.0).'",
 				"exit 0",
 			].join("\n"),
 		});
 		expect(run.code, run.stderr).toBe(0);
-		expect(run.stderr).not.toContain("command not found");
-		expect(run.stderr).not.toContain("syntax error");
+		expect(run.stderr).not.toContain("installer read stdin");
 		expect(run.stdout).toContain("dg-skills verified (v1.12.0).");
 	});
 
