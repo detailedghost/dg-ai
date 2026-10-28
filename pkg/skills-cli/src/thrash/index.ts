@@ -47,6 +47,7 @@ import {
 	stackFor,
 	type TallyRow,
 	toPostReviewInput,
+	unpostedBlockers,
 } from "./core";
 
 const TOOL = "thrash";
@@ -73,6 +74,7 @@ type DiffTarget = RemoteTarget | (LocalTarget & { base: string });
 interface PlanFile extends Coverage {
 	contextPath: string;
 	reReview?: ReReview;
+	prDiffPath?: string;
 	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string }>;
 }
 
@@ -155,16 +157,28 @@ function warn(message: string, err: unknown): void {
 	process.stderr.write(`thrash: ${message}: ${err instanceof Error ? err.message : String(err)}\n`);
 }
 
-/** From round 2, the diff since the bot's latest review; the full diff when that commit is gone or not an ancestor. */
-async function fetchReviewDiff(target: DiffTarget, reviewer?: string): Promise<{ text: string; since?: string }> {
+interface ReviewDiff {
+	text: string;
+	since?: string;
+	prText?: string;
+}
+
+/** From round 2, the diff since the bot's latest review, with the full PR diff beside it; any doubt falls back to the full diff alone. */
+async function fetchReviewDiff(target: DiffTarget, reviewer?: string): Promise<ReviewDiff> {
 	if (target.mode === "local") return { text: await fetchDiffText(target) };
 	const provider = await getProviderForUrl(target.url);
 	try {
-		const since = lastReviewedSha(await provider.listReviews(prRef(target)), reviewer);
-		const text = since === undefined ? null : await provider.fetchDiffSince(prRef(target), since);
-		if (since !== undefined && text !== null) return { text, since };
+		const reviews = await provider.listReviews(prRef(target));
+		const since = lastReviewedSha(reviews, reviewer);
+		if (since !== undefined && unpostedBlockers(reviews, reviewer).length > 0) {
+			process.stderr.write("thrash: the last review left a blocker unposted, reviewing the full diff\n");
+		} else if (since !== undefined) {
+			await existingThreads(target, true);
+			const text = await provider.fetchDiffSince(prRef(target), since);
+			if (text !== null) return { text, since, prText: await provider.fetchDiff(prRef(target)) };
+		}
 	} catch (err) {
-		warn("could not read the last reviewed commit, reviewing the full diff", err);
+		warn("could not read the last review or the review threads, reviewing the full diff", err);
 	}
 	return { text: await provider.fetchDiff(prRef(target)) };
 }
@@ -222,7 +236,7 @@ async function renderContext(
 }
 
 async function writeDiff(target: DiffTarget, reviewer?: string) {
-	const { text, since } = await fetchReviewDiff(target, reviewer);
+	const { text, since, prText } = await fetchReviewDiff(target, reviewer);
 	const files = parseUnifiedDiff(text);
 	const stats = diffStats(files);
 	const reReview = since === undefined ? undefined : { sha: since, files: stats.files, lines: stats.changed };
@@ -238,12 +252,15 @@ async function writeDiff(target: DiffTarget, reviewer?: string) {
 	for (const { findingsPath } of chunks) rmSync(findingsPath, { force: true });
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
+	const prDiffPath = scratchPath(TOOL, `${slug}.pr.diff`);
+	if (prText !== undefined) writeFileSync(prDiffPath, prText);
 	writeFileSync(contextPath, await renderContext(target, files, plan, since));
 	const planPath = planPathFor(diffPath);
 	const planRoot = path.dirname(planPath);
 	const planFile: PlanFile = {
 		contextPath: relativePlanPath(planRoot, contextPath),
 		...(reReview && { reReview }),
+		...(prText !== undefined && { prDiffPath: relativePlanPath(planRoot, prDiffPath) }),
 		chunks: chunks.map((chunk) => ({
 			...chunk,
 			annotatedPath: relativePlanPath(planRoot, chunk.annotatedPath),
@@ -340,6 +357,9 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const planPath = planPathFor(diffPath);
 	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
 	const planRoot = path.dirname(path.resolve(planPath));
+	const prFiles = plan.prDiffPath
+		? parseUnifiedDiff(readFileSync(resolvePlanPath(planRoot, plan.prDiffPath), "utf8"))
+		: undefined;
 	const output = mergeOutputs(
 		plan.chunks.map((chunk) => {
 			const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
@@ -357,7 +377,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		spice: parseSpice(optionalOption(args, "--spice")),
 		minTier: minTierRaw === undefined ? undefined : parseTier(minTierRaw),
 		commentOnly: args.includes("--comment"),
-		existing: await existingThreads(target, policyPath !== undefined),
+		existing: await existingThreads(target, policyPath !== undefined || plan.reReview !== undefined),
 		trigger: reviewTrigger(process.env.THRASH_EXECUTION_CONTEXT),
 		heading: optionalOption(args, "--heading"),
 		round,
@@ -367,6 +387,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		reviewer,
 		headSha: optionalOption(args, "--head-sha"),
 		reReview: plan.reReview,
+		prFiles,
 		classHistory: output.findings.some((f) => f.class) ? await readClassHistory(target, reviewer) : undefined,
 		improvements: args.includes("--improvements") || undefined,
 		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,

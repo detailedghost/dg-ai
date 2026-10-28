@@ -15,3 +15,6 @@ export const CLASS_HISTORY_PRS = 10;
 
 /** Recent PRs that must share a class before the summary suggests a rule or a lint check. */
 export const CLASS_HINT_MIN_PRS = 3;
+
+/** Hidden tag that opens a JSON array of keys for blocking findings a review did not post inline. */
+export const THRASH_UNPOSTED_MARKER_PREFIX = "<!-- dg:thrash-unposted ";

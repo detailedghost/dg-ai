@@ -138,8 +138,8 @@ A finding can carry more than a tier. `references/details.md` has the full rules
 - **Pre-existing.** The diff did not cause it. It is marked, never counts toward the verdict, and is listed in the summary.
 - **Security.** The persona's checklist tags findings `"tag": "security"`. The tag shows after the tier.
 - **Improvement (💡).** Opt-in, not a tier. At most 3 per review. Never counts, never holds a thread open.
-- **Cleared.** A thread cleared by a reply is "answered". An outdated thread whose finding the re-review does not find again is "fixed in `sha`". Same file plus the same class or title key means the same finding.
-- **Re-review.** The Note callout says "Only the diff since `sha`: N files, M lines." when the review used the diff since the last review.
+- **Cleared.** A thread cleared by a reply is "answered". An outdated thread whose finding the re-review does not find again is "fixed in `sha`". Same file plus the same class or title key means the same finding. A grouped class clears only when every file it names is in the reviewed diff.
+- **Re-review.** The Note callout says "Only the diff since `sha`: N files, M lines." when the review used the diff since the last review. It falls back to the full diff when a thread lookup fails or a blocker went unposted.
 - **Repeated class.** A class that came up in 3 or more of the last 10 merged PRs adds a hint to consider a rule in `docs/code_review.md` or a lint check. A failed history read skips it.
 - **Round note.** After round `reconsiderAfter` (policy, default 3) with a blocker still open, an Important callout says so. The verdict does not change.
 

@@ -47,9 +47,10 @@ A thread matches a finding only when path, line and diff side all agree, so a co
 removed code (LEFT) never pairs with or settles a finding on added code (RIGHT) at the same
 line number. A thread whose provider reports no side matches either side.
 
-Policy compilation requires a successful thread lookup. A failed lookup stops compilation
-instead of treating unavailable history as empty. Without a policy, dedupe remains best
-effort and compilation can continue after a lookup failure.
+Policy compilation requires a successful thread lookup, and so does compiling a delta review
+(see Re-review diff). A failed lookup stops compilation instead of treating unavailable
+history as empty. Otherwise dedupe remains best effort and compilation can continue after a
+lookup failure.
 
 ## Finding fields and summary shape
 
@@ -63,10 +64,17 @@ above are unchanged.
 | `tag` | Shown as inline code after the tier. The persona's security checklist (secrets, injection, authn and authz, workflow permissions, unsafe deserialization, SSRF) sets `"tag": "security"`. It runs in the same pass; there is no extra agent. |
 | `kind: "improvement"` | See Improvements below. `tier` is optional for these. |
 
+`compile` merges findings of one class before it posts or tallies, so chunks that each
+report the class leave one finding. The first copy by path and line stays, its tier rises
+to the highest in the group, and every other place joins `otherPlaces` once. A pre-existing
+finding merges only with other pre-existing findings of that class, so it never hides a
+blocking one.
+
 The body hides the bug class names of this review's posted findings in
 `<!-- dg:thrash-classes ["swallowed error"] -->`: a JSON array of lowercase names, written
 only when a finding has a class. A later run reads it back for the repeated-class hint
-(see below).
+(see below). A second hidden tag, `<!-- dg:thrash-unposted ["key"] -->`, lists the keys of
+blocking findings that no inline comment carries (see Re-review diff).
 
 Summary order: a heading, then the tally line (`💀 🔥 ⚠️ 🧹 🔬`, then `💡` when improvements
 are on, `**Round:**`, `**Verdict:**`, comment counts), then the optional sass line. Next come
@@ -93,17 +101,30 @@ A thrash thread stops counting as open in the verdict tally when either of these
 "The same finding" means the same file and the same key. The key is the class key (the
 lowercase class name with punctuation turned into spaces) when the finding has a class, and
 the title key otherwise. Each inline comment ends with a hidden
-`<!-- dg:thrash-finding "key" -->` so a later round reads the key back. When the re-review
-finds the same finding at a new line, the old thread stays open and the new finding is not
-counted a second time; the pair counts once at the higher tier.
+`<!-- dg:thrash-finding "key" -->` so a later round reads the key back. A grouped class
+(one with `otherPlaces`) writes `{"key":"...","places":["a.ts:2","b.ts:9"]}` instead: the
+first copy plus every other place. When the re-review finds the same finding at a new line,
+or anywhere in a file the thread recorded, the old thread stays open and the new finding is
+not counted a second time; the pair counts once at the higher tier.
+
+A thread with recorded places clears only when every file in them is in the diff under
+review. After a delta review, a class fixed in some of its files stays open until the
+others show up in a delta, a person replies, or the thread is resolved. A thread with one
+place clears as described above, whether or not its file is in the delta.
+
+Clearing runs before the policy phase is chosen. `requiresClear` and the `nits` filter see
+the open earlier findings that remain after clearing, so a fixed blocker no longer holds
+the review in an earlier phase.
 
 A thread without that marker (posted by an earlier version, or a finding with no title and no
 class) cannot be judged. It is never cleared by a fix and never absorbs a new finding, so it
 stays open until someone answers or resolves it.
 
 Clearing changes the verdict tally and the Cleared line only. It never resolves a thread and
-never posts a reply. Without `--policy` the tally holds only the current findings, so there
-the Cleared line is the only effect.
+never posts a reply. Without `--policy`, a full review's tally holds only the current
+findings, so there the Cleared line is the only effect. A delta review shows only part of
+the PR, so without a policy its tally also holds the open earlier findings that remain after
+clearing, and an open blocker in an untouched file keeps blocking.
 
 ### Re-review diff
 
@@ -114,14 +135,34 @@ and asks the provider for the diff from that commit to the head. On GitHub that 
 API: `compare/<sha>...<head>` must report status `ahead`, then the diff is fetched with the
 `application/vnd.github.diff` media type. The review falls back to the full PR diff when the
 commit is gone (force push), is not an ancestor of the head, equals the head, the compare call
-fails with 404 or 422, or the review list cannot be read. GitLab has no review objects here,
-so it always reviews the full diff.
+fails with 404 or 422, the review list cannot be read, or the thread lookup fails, because
+the delta tally needs the open earlier threads. It also falls back while the latest thrash
+review lists unposted blockers.
+
+Unposted blockers are findings that count in the tally but have no inline thread, so a delta
+review would lose them: those over the comment cap, below `--min-tier`, folded by the nit
+ladder, or naming no file in the diff, and only when their tier has a limit in the active
+verdict table (the policy phase or the spice table). `compile` writes their keys, or their
+place when a finding has no key, into `<!-- dg:thrash-unposted ["key"] -->`. Reviews stay on
+the full diff until one lists none. Only the tier limits of the phase the round selected
+count, so an unposted finding in a tier that only a later phase limits is not recorded.
+Compiling a delta review fails when the thread lookup fails, since approving without the
+earlier threads could drop an open blocker.
 
 `diff` prints `reReview: { sha, files, lines }` and stores it in the plan file. `compile`
 reads it from there, so the summary says "Only the diff since `sha7`: N files, M lines."
 `lines` counts added plus deleted lines. The context file names the sha, so the agents know
 they see part of the PR. A base branch merged into the PR since the last review shows up in
 that diff too.
+
+The agents read the delta, but a provider reads comment lines against the whole PR, and a
+delta's old-side numbers belong to the last reviewed head, not the PR base. So `diff` also
+saves the full PR diff beside the delta (`<slug>.pr.diff`, `prDiffPath` in the plan) and
+`compile` maps every anchor onto it. A new-side line stays a line comment only when the PR
+diff shows that line. Any other finding posts as a file comment on its file: a line the PR
+diff lacks, and an old-side line on removed code. A finding on a file the PR diff does not
+contain, for example one the delta reverted, is not posted and counts like an unanchored
+finding. Dedupe and clearing use the same mapped anchors.
 
 `dg-skills thrash action prepare` passes `--reviewer` with the bot login and `publish`
 passes `--head-sha`, so the Action follows the same rules.
@@ -180,8 +221,9 @@ and the verdict.
 
 `diff` writes `<slug>.plan.json` next to the diff. `compile` reads it, requires a
 findings file for every reviewed chunk, merges them, and drops a finding that repeats the
-same path, line, side, and text, keeping the higher tier. The merged set then gets the
-usual tally, verdict, nit ladder, and thread dedupe. The body does not list the chunks.
+same path, line, side, and text, keeping the higher tier. The merged set is then coalesced
+by bug class, and gets the usual tally, verdict, nit ladder, and thread dedupe. The body does
+not list the chunks.
 
 `plan.json` stores the context, annotated and findings paths relative to its own folder,
 and `compile` resolves them against the folder that holds the plan. A copied scratch
@@ -230,7 +272,7 @@ in the diff is terminal-only in this mode. Nothing posts.
 | `--heading <text>` | Starts the summary with `## <text>` in place of `## Thrash review` and the spice. A hidden `<!-- dg:thrash-review -->` tag stays at the end, so the stale-pending-review cleanup still knows the review. |
 | `--round N` | Adds `**Round:** N` to the summary, and picks the policy phase. The caller counts its own earlier reviews. |
 | `--policy <file>` | YAML verdict rules in place of the spice table (example below). The verdict counts the new findings plus every open earlier thrash finding (not resolved, no reply from someone else), and a re-found open finding counts once. |
-| `--max-comments N` | Posts at most N inline comments, highest tier first. The rest are listed in the summary and still count. Overrides the policy's `maxComments`. |
+| `--max-comments N` | Posts at most N inline comments, highest tier first. The rest are listed in the summary and still count; blocking ones also go into the unposted marker (see Re-review diff). Overrides the policy's `maxComments`. |
 | `--max-event <event>` | The highest event the review may submit: `auto` (default), `approve`, `request-changes` or `comment`. A verdict above it posts as a comment, and the reason says so. |
 | `--reviewer <login>` | Only threads this login opened count as thrash's, for dedupe and for open findings. A trailing `[bot]` is ignored. `diff` takes it too, to find the bot's last review. |
 | `--head-sha <sha>` | The head being reviewed. Names the commit in the Cleared line. |

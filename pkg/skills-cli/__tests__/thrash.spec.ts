@@ -928,6 +928,8 @@ describe("review rounds via the GitHub adapter", () => {
 		merged?: number;
 		history?: unknown;
 		historyFails?: boolean;
+		prDiff?: string;
+		delta?: string;
 	}
 
 	function rounds(setup: Setup = {}) {
@@ -966,15 +968,18 @@ describe("review rounds via the GitHub adapter", () => {
     cat "$FAKE_HISTORY"
     ;;
   *"api graphql"*)
+    if [ -e "$FAKE_THREADS_DOWN" ]; then echo 'threads unavailable' >&2; exit 1; fi
     echo '${EMPTY_THREADS}'
     ;;`),
 		);
+		const threadsDown = join(dir, "threads.down");
 		const env: Record<string, string> = {
 			GH_BIN: gh.bin,
 			AI_VCS_PROVIDER: "github",
 			FAKE_CALL_LOG: gh.log,
-			FAKE_DIFF: write("pr.diff", GH_DIFF),
-			FAKE_DELTA: write("delta.diff", DELTA_DIFF),
+			FAKE_THREADS_DOWN: threadsDown,
+			FAKE_DIFF: write("pr.diff", setup.prDiff ?? GH_DIFF),
+			FAKE_DELTA: write("delta.diff", setup.delta ?? DELTA_DIFF),
 			FAKE_STATUS: setup.status ?? "ahead",
 			FAKE_REVIEWS: write("reviews.json", JSON.stringify(setup.reviews ?? [[]])),
 			FAKE_PRS: write("prs.json", JSON.stringify(mergedPrs)),
@@ -994,7 +999,12 @@ describe("review rounds via the GitHub adapter", () => {
 			const { review } = JSON.parse(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8"));
 			return { review, stderr: result.stderr };
 		};
-		return { diff, compile, gh };
+		const breakThreads = () => writeFileSync(threadsDown, "");
+		const compileRaw = (plan: { diffPath: string; chunks: Array<{ findingsPath: string }> }) => {
+			findingsFile(plan, []);
+			return run(["compile", PR_URL, "--diff", plan.diffPath, "--json"], { cwd, env });
+		};
+		return { diff, compile, compileRaw, breakThreads, gh };
 	}
 
 	test("reviews only the diff since the last reviewed commit and names it in the summary", () => {
@@ -1016,6 +1026,69 @@ describe("review rounds via the GitHub adapter", () => {
 		expect(plan.reReview).toBeUndefined();
 		expect(plan.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
 		expect(compile(plan).review.body).not.toContain("Re-review");
+	});
+
+	test("reviews the full diff when the thread lookup fails", () => {
+		const { diff, breakThreads } = rounds({ reviews: thrashReview(classMarker([]), LAST_SHA) });
+		breakThreads();
+		const plan = diff();
+		expect(plan.reReview).toBeUndefined();
+		expect(plan.stats).toMatchObject({ added: 2, deleted: 1 });
+	});
+
+	test("refuses to compile a delta review when the thread lookup fails", () => {
+		const { diff, compileRaw, breakThreads } = rounds({ reviews: thrashReview(classMarker([]), LAST_SHA) });
+		const plan = diff();
+		expect(plan.reReview).toBeDefined();
+		breakThreads();
+		const result = compileRaw(plan);
+		expect(result.exitCode).toBe(EXIT.ERR);
+		expect(result.stderr).toContain("threads unavailable");
+		expect(result.stdout).not.toContain('"verdict"');
+	});
+
+	test("reviews the full diff while the last review left a blocker unposted", () => {
+		const unposted = `<!-- dg:thrash-unposted ["missing await"] -->\n${THRASH_REVIEW_MARKER}`;
+		const { diff } = rounds({ reviews: thrashReview(unposted, LAST_SHA) });
+		const plan = diff();
+		expect(plan.reReview).toBeUndefined();
+		expect(plan.stats).toMatchObject({ added: 2, deleted: 1 });
+	});
+
+	test("posts delta findings at lines the full PR diff shows and as file comments elsewhere", () => {
+		const prDiff = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1,3 +1,3 @@
+ const a = 1;
+-const b = 2;
++const b = 3;
+ export { a, b };
+`;
+		const delta = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1,6 +1,5 @@
+ const a = 1;
+ const b = 3;
+-const c = 4;
+ export { a, b };
+ const t1 = 1;
+ const t2 = 2;
+`;
+		const { diff, compile } = rounds({ reviews: thrashReview(classMarker([]), LAST_SHA), prDiff, delta });
+		const plan = diff();
+		expect(plan.reReview).toMatchObject({ sha: LAST_SHA });
+		const { review } = compile(plan, [
+			{ path: "src/a.ts", line: 2, tier: "high", title: "On the PR diff", body: "First." },
+			{ path: "src/a.ts", line: 4, tier: "medium", title: "Only in the delta", body: "Second." },
+		]);
+		const comments = review.comments as Array<{ title: string; newLine?: number; oldLine?: number }>;
+		expect(comments.find((c) => c.title === "On the PR diff")?.newLine).toBe(2);
+		const second = comments.find((c) => c.title === "Only in the delta");
+		expect(second).toBeDefined();
+		expect(second?.newLine).toBeUndefined();
+		expect(second?.oldLine).toBeUndefined();
 	});
 
 	test("reviews the full diff in round 1", () => {
