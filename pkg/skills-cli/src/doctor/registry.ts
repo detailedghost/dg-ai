@@ -1,4 +1,5 @@
 import { addressChecks } from "../address/doctor";
+import { assignChecks } from "../assign/doctor";
 import { batchOpenChecks } from "../batch-open/doctor";
 import { bgChecks } from "../bg/doctor";
 import { catchupChecks } from "../catchup/doctor";
@@ -63,6 +64,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"overwatch-snapshot": overwatchSnapshotChecks,
 	worktree: worktreeChecks,
 	spec: specChecks,
+	assign: assignChecks,
 	monolith: monolithChecks,
 	jot: jotChecks,
 	bg: bgChecks,

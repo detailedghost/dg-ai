@@ -1,0 +1,65 @@
+{
+  "roles": {
+    "qa-writer": {
+      "agentType": "dg:qa-writer",
+      "effort": "medium",
+      "model": "grok-4.7"
+    },
+    "security": {
+      "agentType": "dg:security",
+      "effort": "high",
+      "model": "grok-4.7"
+    },
+    "wave": {
+      "agentType": "dg:wave",
+      "effort": "low",
+      "model": "grok-4.7-build-fast"
+    }
+  },
+  "scratchPath": "",
+  "slices": [
+    {
+      "brief": "## Engineering\n\n### Slice 1 — Parser\n- [ ] Parse input\n",
+      "id": 1,
+      "name": "Parser",
+      "primary": {
+        "agentType": "dg:js",
+        "effort": "medium",
+        "model": "grok-4.7"
+      },
+      "qa": [
+        {
+          "agentType": "dg:qa-code",
+          "effort": "medium",
+          "model": "grok-4.7"
+        }
+      ],
+      "testingCriteria": "### Slice 1 — Parser\n- [ ] Parser round-trips\n"
+    },
+    {
+      "brief": "## Engineering\n\n### Slice 2 — Migration\n- [ ] Add table\n",
+      "id": 2,
+      "name": "Migration",
+      "primary": {
+        "agentType": "dg:dba",
+        "effort": "xhigh",
+        "model": "grok-4.7"
+      },
+      "qa": [
+        {
+          "agentType": "dg:security",
+          "effort": "high",
+          "model": "grok-4.7"
+        }
+      ],
+      "testingCriteria": "### Slice 2 — Migration\n- [ ] Table exists\n"
+    }
+  ],
+  "templateKeys": [
+    "correction",
+    "green",
+    "red",
+    "wave",
+    "yellow"
+  ]
+}

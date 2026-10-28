@@ -6,6 +6,7 @@
 
 import { Command } from "commander";
 import { registerAddress } from "./commands/address";
+import { registerAssign } from "./commands/assign";
 import { registerBatchOpen } from "./commands/batch-open";
 import { registerBg } from "./commands/bg";
 import { registerCatchup } from "./commands/catchup";
@@ -81,6 +82,7 @@ registerProxy(program);
 registerOverwatchSnapshot(program);
 registerWorktree(program);
 registerSpec(program);
+registerAssign(program);
 registerMonolith(program);
 registerJot(program);
 registerBg(program);

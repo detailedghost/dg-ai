@@ -20,7 +20,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor batch-open chain proxy spec stash vcs-provider worktree.
+If a step fails, run ~/.dg/bin/dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
 
 **Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] "<request>"`.
 

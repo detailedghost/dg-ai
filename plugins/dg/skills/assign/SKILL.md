@@ -17,7 +17,7 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor proxy spec.
+If a step fails, run ~/.dg/bin/dg-skills doctor assign proxy spec.
 
 ## Invocation
 
@@ -78,12 +78,13 @@ without a spec path is an error, not a no-op.
    - `qa` — zero or more. Add `dg:qa-code` for non-trivial logic, `dg:qa-perf` for hot paths / large data, `dg:qa-devops` for
      CI/Docker/Terraform touches, `dg:qa-writer` for test-authoring work, `dg:reviewer` for cross-cutting refactors,
      `dg:security` for auth/secrets/crypto/PII.
-   - `effort` — leave unset unless this work needs to deviate from `primary`'s model-tier default. The default itself
-     lives in one place, `EFFORT_BY_MODEL` in [`sdlc/references/templates/slice-wave.workflow.js`](../sdlc/references/templates/slice-wave.workflow.js) (currently
-     `haiku→low, sonnet→medium, opus→xhigh`) — the workflow applies it automatically when `effort` is absent, so
-     emitting the default value would just restate derivable state. Only set `effort` to override that default upward
-     for the hardest-call case at its tier (cross-cutting architecture, security-sensitive design, ambiguous
-     trade-offs on an otherwise-`sonnet` primary) — never emit `high`, the table skips it.
+   - `effort` — leave unset unless this work needs to deviate from `primary`'s tier default. The default lives in one
+     place, [`references/model-tiers.json`](references/model-tiers.json) (`dg-skills assign resolve` reads it at run
+     time), so emitting the default value would only restate derivable state. Set `effort` to `low`, `medium` or `xhigh`
+     (never `high`; the table skips it) only to deviate. A complex slice (cross-cutting architecture, security-sensitive
+     design, ambiguous trade-offs, even on a `sonnet` primary) may get `xhigh` with no question.
+   - `confidence` — `high` or `low`, always written. `high` means the roster, heuristics and the slice text agree on one
+     primary. `low` means two or more agents fit about equally, or the slice text is too thin to choose.
 3. **Validate.** Every name must exist in that roster. Mismatch → fail loud, write nothing.
 
 Then run the mode-specific steps for whichever mode `Dispatch` picked — see Routing below.

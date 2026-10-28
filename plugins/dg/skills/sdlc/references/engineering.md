@@ -21,35 +21,21 @@ From `slices[]` + `depends_on`, topologically sort slices into **layers**: layer
 For each layer in order:
 
 1. Record `slice_base_sha=$(git -C "$cwd" rev-parse HEAD)` and set spec frontmatter `current_slice` to the layer's lead slice.
-1. Inline the five template bodies (`templates/qa-writer-red.md`, `slice-engineering.md`, `qa-writer-green.md`, `wave.md`, `correction.md`) into `templates: { red, yellow, green, wave, correction }`. Tokens the script substitutes per slice: `{SLICE_ID} {SLICE_BRIEF} {TESTING_CRITERIA} {CHANGED_FILES} {FINDINGS} {SPEC_PATH} {SCRATCH_PATH}`. If any slice in this layer has `proxyBackend` set, additionally inline `templates/slice-engineering-proxy.md` into `templates.proxy` — otherwise omit that key. The proxy template additionally uses `{PROXY_BACKEND}` (← `slice.proxyBackend`) and `{PRIMARY_AGENT}` (← `slice.primaryAgent`), substituted on every template regardless (no-op when the token isn't present).
-1. Copy the script to a path Workflow can read. Workflow refuses a `scriptPath` outside the
-   working directory and the directories added to the session, and the installed plugin cache is
-   outside both. Copy `<sdlc-skill-dir>/references/templates/slice-wave.workflow.js` into the host's
-   session scratchpad (or another added directory) once per run, and pass that copy as
-   `<script-copy>`. When the host has no readable directory, pass the file's text through
-   Workflow's `script` input instead.
-1. Call:
+1. Resolve the layer and write its runner in one call. Workflow refuses a `scriptPath` outside the working directory and the directories added to the session, and the installed plugin cache is outside both, so the helper writes into the session scratchpad (`<scratchpad>`):
 
 ```
-Workflow({
-  scriptPath: "<script-copy>",
-  args: {
-    slices: [{ id, name, primaryAgent, primaryEffort, proxyBackend, qaAgents, brief, testingCriteria }, ...],  // this layer only
-    specPath, scratchPath,
-    templates: { red, yellow, green, wave, correction, proxy },  // proxy undefined when no slice delegates
-    maxCorrectionRounds: 2,
-    model, effort  // optional tier override (haiku|sonnet|opus / low|medium|xhigh) from the spec's ## Execution pin; omit for the in-script defaults
-  }
-})
+~/.dg/bin/dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad>
 ```
 
-`<sdlc-skill-dir>` is this skill's base directory — the installed folder that holds `SKILL.md`; pass it as an absolute path. Arg mapping from spec frontmatter (`~/.dg/bin/dg-skills spec get <spec> 'slices[i].<key>'` or a direct Read): `name` ← `slices[].name` (per-slice progress label `<name> (S<id>)`; falls back to `slice <id>`). `primaryAgent` ← `slices[].agents.primary` (script falls back to `general-purpose` if unset — `/dg:assign` is responsible for a real pick before this runs). `primaryEffort` ← `slices[].agents.effort`, present only when `/dg:assign` overrode the tier default. `proxyBackend` ← `slices[].agents.proxy` (absent for the common case). `qaAgents` ← `slices[].agents.qa[]`. `model`/`effort` ← the spec's `## Execution` section (`model:` / `effort:` lines) when present; omit otherwise.
+   The helper layers `slices[]` the way `spec lint-waves` does and picks each slice's stages from `plugins/dg/skills/assign/references/model-tiers.json`: the primary agent (honoring `agents.effort` and the spec's `## Execution` `model:`/`effort:` pin), each `agents.qa[]` reviewer, and the shared `dg:qa-writer`, `dg:wave` and `dg:security` roles. It inlines the five templates (`qa-writer-red.md`, `slice-engineering.md`, `qa-writer-green.md`, `wave.md`, `correction.md`), plus `slice-engineering-proxy.md` when a slice sets `agents.proxy`, each behind the return-contract reminder below. It bakes the result into the runner as `const WAVE_ARGS` and prints the file path. Exit 1 means a slice has no `agents.primary` (run `/dg:assign`), the layer is empty, or the pin asks for `fable` on a primary that is not `dg:arch`, `dg:design` or `dg:foreman`. Add `--runtime codex|grok` to resolve for another runtime. Without `--wave` it prints the `WAVE_ARGS` JSON instead.
 
-The script runs each slice through Red (qa-writer) → Yellow (engineering) → Green (qa-writer) → MiniQA (`dg:wave` + any `qaAgents` + `dg:security` when the slice flags `securitySensitive`) → up to 2 correction rounds. **Model tiering is pinned in-script** (`modelFor`): `dg:wave` → haiku, `dg:arch`/`dg:design`/`dg:dba`/`dg:security` → opus, everything else → sonnet — mirroring each agent's own frontmatter pin. `args.model` overrides every stage's model and `args.effort` every stage's effort; the spec's `## Execution` pin is the source when present. **Effort** (`effortFor`) derives from `EFFORT_BY_MODEL` in the script — the single source of truth for the tier→effort default — unless `primaryEffort` overrides it. Each stage returns its own changed-file list; the script unions them per slice.
+1. Call `Workflow({ scriptPath: "<printed path>" })` with no `args`. The runner reads `WAVE_ARGS`; an explicit `args` object still wins when given.
 
-It returns `{ slices: [{ sliceId, status, changedFiles, deferrals, residualFindings, notes, summary }] }`, where `status` is `clean` | `needs-attention` | `blocked`.
+The script runs each slice through Red (qa-writer) → Yellow (engineering) → Green (qa-writer) → MiniQA (`dg:wave` + any `agents.qa` + `dg:security` when the slice flags `securitySensitive`) → up to 2 correction rounds. **Model and effort come from `model-tiers.json`**, resolved by the helper and never hard-coded in the script: `dg:wave` and `dg:checkpoint` run on haiku, `dg:arch`/`dg:design`/`dg:foreman` on fable, `dg:dba`/`dg:security` on opus, everything else on sonnet. Effort precedence is the slice's `agents.effort`, then the tier default. The `## Execution` pin overrides the primary and `dg:qa-writer` stages, never the wave audit. A `fable` pin moves only a fable-eligible primary; `dg:qa-writer` then takes only the pinned effort. Each stage returns its own changed-file list; the script unions them per slice.
 
-> **Workflow return contract (overrides the templates' inline-marker prose).** The slice agents run unattended under a forced schema, so they must **map their intent into the return object, never act on it**: a `[SPEC]`/`[TEST]` ambiguity → a `deferrals[]` entry (do **not** call `AskUserQuestion` — it can't pause); `[NOTE-DURABLE]`/`[NOTE-SCRATCH]` → `notes.durable[]`/`notes.scratch[]` (do **not** write the spec/scratchpad directly — the orchestrator routes them in 4.3); every file touched → that stage's changed-file list. When you inline a template into `templates:{}`, prepend this one-line reminder so the agent honors the contract.
+It returns `{ slices: [{ sliceId, status, changedFiles, deferrals, residualFindings, notes, summary }] }`, where `status` is `clean` | `needs-attention` | `unverified` | `blocked`.
+
+> **Workflow return contract (overrides the templates' inline-marker prose).** The slice agents run unattended under a forced schema, so they must **map their intent into the return object, never act on it**: a `[SPEC]`/`[TEST]` ambiguity → a `deferrals[]` entry (do **not** call `AskUserQuestion` — it can't pause); `[NOTE-DURABLE]`/`[NOTE-SCRATCH]` → `notes.durable[]`/`notes.scratch[]` (do **not** write the spec/scratchpad directly — the orchestrator routes them in 4.3); every file touched → that stage's changed-file list. The helper prepends a one-line reminder of this contract to every template it inlines.
 
 ## 4.3 Per-slice orchestrator post-processing
 

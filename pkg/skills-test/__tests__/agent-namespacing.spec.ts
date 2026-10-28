@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { bareAgent } from "@dg/common";
+import { qualifiedAgent } from "../../skills-cli/src/proxy/packaged-personas";
+import { loadTiers, resolveAgent, type Tier } from "../../skills-cli/src/tiers";
 import { REPO_ROOT } from "./test-support";
 
 const PLUGIN_DIR = join(REPO_ROOT, "plugins", "dg");
@@ -50,26 +53,6 @@ const NOT_AN_AGENT = new Set([
 	"deps-upgrade/references/ecosystems.md",
 ]);
 
-function loadTierMap(): {
-	typeFor: (name: string) => string;
-	modelFor: (name: string) => string;
-	plugin: Set<string>;
-} {
-	const source = readFileSync(SLICE_WAVE, "utf8");
-	const startMarker = "const PLUGIN_AGENTS";
-	const endMarker = "// Delegation-table effort default";
-	const start = source.indexOf(startMarker);
-	const end = source.indexOf(endMarker);
-	if (start < 0) throw new Error(`marker not found in slice-wave: ${startMarker}`);
-	if (end <= start)
-		throw new Error(`marker not found after ${startMarker}: ${endMarker}`);
-	const block = source.slice(start, end);
-	return new Function(
-		"modelOverride",
-		`${block}\nreturn { typeFor, modelFor, plugin: PLUGIN_AGENTS };`,
-	)(undefined);
-}
-
 describe("packaged skills name plugin agents as dg:<agent>", () => {
 	test("no skill document launches a shipped agent by its bare name", () => {
 		const offenders = LAUNCH_FILES.filter(({ name }) => !NOT_AN_AGENT.has(name))
@@ -82,38 +65,36 @@ describe("packaged skills name plugin agents as dg:<agent>", () => {
 		expect(offenders).toEqual([]);
 	});
 
-	test("the slice-wave workflow knows exactly the agents that ship", () => {
-		expect([...loadTierMap().plugin].sort()).toEqual(AGENTS);
-	});
-
-	test("the slice-wave workflow namespaces shipped agents and leaves others bare", () => {
-		const { typeFor } = loadTierMap();
-		expect(typeFor("qa-writer")).toBe("dg:qa-writer");
-		expect(typeFor("dg:js")).toBe("dg:js");
-		expect(typeFor("general-purpose")).toBe("general-purpose");
-		expect(typeFor("Explore")).toBe("Explore");
-	});
-
-	test("the slice-wave model tiers match the bare and the namespaced name", () => {
-		const { modelFor } = loadTierMap();
-		for (const [agent, model] of [
-			["wave", "haiku"],
-			["foreman", "fable"],
-			["arch", "fable"],
-			["design", "fable"],
-			["security", "opus"],
-			["dba", "opus"],
-			["qa-writer", "sonnet"],
-		] as const) {
-			expect(modelFor(agent)).toBe(model);
-			expect(modelFor(`dg:${agent}`)).toBe(model);
-		}
-	});
-
-	test("every agentType in the slice-wave workflow goes through typeFor", () => {
+	test("the slice-wave workflow names no agent and reads every agentType from a resolved stage", () => {
 		const source = readFileSync(SLICE_WAVE, "utf8");
 		const calls = source.match(/agentType:.*/g) ?? [];
 		expect(calls.length).toBeGreaterThan(0);
-		expect(calls.filter((call) => !call.includes("typeFor("))).toEqual([]);
+		expect(calls.filter((call) => !call.includes("stage.agentType"))).toEqual([]);
+		expect(AGENTS.filter((name) => source.includes(`"${name}"`))).toEqual([
+			"qa-writer",
+		]);
+	});
+
+	test("the helper namespaces shipped agents, accepts either spelling and leaves others bare", () => {
+		for (const name of AGENTS) {
+			expect(qualifiedAgent(name)).toBe(`dg:${name}`);
+			expect(qualifiedAgent(`dg:${name}`)).toBe(`dg:${name}`);
+		}
+		expect(qualifiedAgent("general-purpose")).toBe("general-purpose");
+		expect(qualifiedAgent("Explore")).toBe("Explore");
+	});
+
+	test("every shipped agent resolves to its table tier by bare and namespaced name", () => {
+		const table = loadTiers();
+		expect(Object.keys(table.agents).sort()).toEqual(AGENTS);
+		for (const name of AGENTS) {
+			const row = table.tiers[table.agents[name] as Tier].claude;
+			expect(resolveAgent(bareAgent(name), { runtime: "claude" }).model).toBe(
+				row.model,
+			);
+			expect(resolveAgent(bareAgent(`dg:${name}`), { runtime: "claude" }).model).toBe(
+				row.model,
+			);
+		}
 	});
 });

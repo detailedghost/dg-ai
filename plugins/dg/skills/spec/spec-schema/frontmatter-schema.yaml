@@ -95,10 +95,15 @@ fields:
               Skill-behaviors a proxied slice needs (e.g. [db, polish]); /dg:spec -s inlines these into the
               /dg:proxy prompt because /dg:proxy injects only the persona file and can't run /db or /dg:polish as
               slash-commands.
+          confidence:
+            type: string
+            enum: [high, low]
+            mutability: mutable
+            description: 'How sure /dg:assign is of the primary pick: high|low. Only low slices get a question.'
           effort:
             type: string
             mutability: mutable
-            description: 'Primary agent reasoning effort: low|medium|xhigh (defaults per model tier if unset).'
+            description: 'Primary agent reasoning effort: low|medium|xhigh (defaults per tier in assign/references/model-tiers.json if unset).'
           qa:
             type: array
             mutability: mutable

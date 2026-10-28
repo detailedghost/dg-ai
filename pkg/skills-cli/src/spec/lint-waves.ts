@@ -149,6 +149,35 @@ function rowsFromData(data: Record<string, unknown>): WaveRows {
 	return rows;
 }
 
+function layersOf(rows: WaveRows): Map<string, number> {
+	const known = new Set(rows.ids);
+	const done = new Map<string, number>();
+	const visiting = new Set<string>();
+	const layerOf = (id: string): number => {
+		const cached = done.get(id);
+		if (cached !== undefined) return cached;
+		if (visiting.has(id)) die(`dependency cycle through slice ${id}`);
+		visiting.add(id);
+		let deepest = -1;
+		for (const dep of awkSplit(rows.deps.get(id) ?? "", ",")) {
+			if (dep === "") continue;
+			if (!known.has(dep)) die(`slice ${id} depends on unknown slice ${dep}`);
+			deepest = Math.max(deepest, layerOf(dep));
+		}
+		visiting.delete(id);
+		done.set(id, deepest + 1);
+		return deepest + 1;
+	};
+	const layers = new Map<string, number>();
+	for (const id of rows.ids) layers.set(id, layerOf(id));
+	return layers;
+}
+
+/** Dependency layer of every slice id in a parsed plan, as lint-waves computes it. */
+export function sliceLayers(data: Record<string, unknown>): Map<string, number> {
+	return layersOf(rowsFromData(data));
+}
+
 function lintRows(rows: WaveRows): LintReport {
 	for (const id of rows.ids)
 		for (const generator of rows.generators) {
@@ -171,31 +200,8 @@ function lintRows(rows: WaveRows): LintReport {
 				);
 		}
 
-	const known = new Set(rows.ids);
-	const done = new Map<string, number>();
-	const visiting = new Set<string>();
-	const layerOf = (id: string): number => {
-		const cached = done.get(id);
-		if (cached !== undefined) return cached;
-		if (visiting.has(id)) die(`dependency cycle through slice ${id}`);
-		visiting.add(id);
-		let deepest = -1;
-		for (const dep of awkSplit(rows.deps.get(id) ?? "", ",")) {
-			if (dep === "") continue;
-			if (!known.has(dep)) die(`slice ${id} depends on unknown slice ${dep}`);
-			deepest = Math.max(deepest, layerOf(dep));
-		}
-		visiting.delete(id);
-		done.set(id, deepest + 1);
-		return deepest + 1;
-	};
-	const layers = new Map<string, number>();
-	let maxLayer = 0;
-	for (const id of rows.ids) {
-		const layer = layerOf(id);
-		layers.set(id, layer);
-		maxLayer = Math.max(maxLayer, layer);
-	}
+	const layers = layersOf(rows);
+	const maxLayer = Math.max(0, ...layers.values());
 
 	const out: string[] = [];
 	for (let layer = 0; layer <= maxLayer; layer += 1) {
