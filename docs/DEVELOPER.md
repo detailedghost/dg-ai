@@ -278,13 +278,10 @@ bun test       # install logic + skill manifests + CLI smoke
 | Workflow | Trigger (paths) | Result |
 | ------------------- | ------------------------------------------- | --------------------------------------- |
 | `ext-blt` | PR: extension, common | required on master |
-| `ext-release` | push master: extension | tags `ext-v*` |
 | `skills-blt` | PR: skills-cli, inbox, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
-| `skills-release` | push master: skills-cli, inbox, channel-review, dg-agent, common, bun.lock | `skills-v*`, 6 bins |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
-| `dg-daemon-release` | push master: dg-daemon, common | `daemon-v*`, 6 bins |
-| `dg-agent-release` | push master: dg-agent, common | `agent-v*`, 6 bins |
+| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: 18 binaries, 2 extension zips, both bootstraps, `SHA256SUMS` |
 
 The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
 Each shard and the job that follows it has a 30 minute backstop.
@@ -302,21 +299,47 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 
 ## Matched release versions
 
-| Artifact | Version source | Release tag |
-| --------------------- | ----------------------------- | ------------------- |
-| `dg-ai-extension` zip | `pkg/extension/package.json` | `ext-v*` |
-| `dg-skills` binary | `pkg/skills-cli/package.json` | `skills-v*` |
-| `dg-daemon` binary | `pkg/dg-daemon/package.json` | `daemon-v*` |
-| `dg-agent` binary | `pkg/dg-agent/package.json` | `agent-v*` |
-| skill tree | the repository itself | tracked in `master` |
+The extension zip, `dg-skills`, `dg-daemon` and `dg-agent` ship as one matched set.
+The `release` workflow stamps one version into every file below and tags the release commit `vX.Y.Z`.
+Do not bump a version by hand.
 
-The four released packages and both plugin manifests share version 1.21.1.
-Keep those versions and `DG_DAEMON_PACKAGE_VERSION` equal when releasing.
+| Artifact | Files the release stamps |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| `dg-ai-extension` zip | `pkg/extension/package.json` |
+| `dg-skills` binary | `pkg/skills-cli/package.json`, the source of the current version |
+| `dg-daemon` binary | `pkg/dg-daemon/package.json`, `DG_DAEMON_PACKAGE_VERSION` in `src/server/status.ts` |
+| `dg-agent` binary | `pkg/dg-agent/package.json`, `DG_AGENT_PACKAGE_VERSION` in `src/version.ts` |
+| plugin manifests | `.claude-plugin/plugin.json`, `plugins/dg/.codex-plugin/plugin.json` |
+| lockfile | the workspace versions in `bun.lock` |
+| skill tree | the repository itself, tracked in `master` |
+
 `@dg/common` stays at 1.0.0; it is not part of this matched release set.
-Each workflow publishes its own tag. `dg-skills install` refreshes the extension
-zip, `dg-skills`, `dg-daemon` and `dg-agent` in one pass, skipping any that is already
-current. A platform with no published binary warns and continues rather than
-failing the whole install.
+
+## Releases
+
+Each push to `master` runs `.github/workflows/release.yml`. `scripts/release-version.ts` holds the logic:
+
+- `detect` reads the commits since the last release and prints `mode`, `version` and `previous_tag`.
+  `feat` gives a minor bump, `fix` and `perf` give a patch bump, and `!` or `BREAKING CHANGE:` gives a major bump.
+  Other types give no release, and the workflow skips.
+- `stamp --version X.Y.Z` writes the version into the files above. Every build job stamps first, and the `release` job stamps the same way.
+- `changelog` and `notes` write the entry from the same commits. The release page and `CHANGELOG.md` show the same text.
+
+The job graph is `detect`, then the four BLT workflows, then the builds and the smoke runs, then `release`.
+Only `release` has `contents: write`. It does the steps below in this order:
+
+1. Check that `origin/master` is still the commit the run started from. If not, it fails and creates no tag.
+2. Stamp the version, write the changelog entry, and commit as `dg-release <dante+release@detailedghost.com>`.
+3. Push the commit and the tag in one `git push --atomic`.
+4. Create the release as a draft with every file, then publish it as Latest in one call.
+5. Move the `latest` tag to the release commit. This is the only forced push.
+6. On the first release under this scheme only, publish a `skills-vX.Y.Z` bridge release with the `dg-skills` binaries. It is never marked Latest.
+
+To recover from a failed run, run **Release** again from `master`. If the tag exists, the job publishes from the tag.
+If a draft exists, the job deletes the draft and uploads again. No step deletes a tag.
+
+`dg-skills install` refreshes the extension zip, `dg-skills`, `dg-daemon` and `dg-agent` from one release in one pass, skipping any that is already
+current. A platform with no published binary warns and continues rather than failing the whole install.
 
 ## Manual post-merge cutover
 

@@ -2,12 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { cliAssetName } from "@dg/skills-cli/lib";
 import { SUPPORTED_PLATFORMS } from "./supported-platforms";
 import { readRepoFile } from "./test-support";
+import { parseWorkflow, workflowText } from "./workflow-support";
+
+const release = parseWorkflow("release.yml");
 
 function workflow(name: string): string {
-	return readRepoFile(".github", "workflows", name);
+	return workflowText(name);
 }
 
-describe("the dg-daemon workflows are path-filtered to their own packages", () => {
+function matrixOf(job: string): Array<Record<string, string>> {
+	return release.jobs[job]?.strategy?.matrix?.include ?? [];
+}
+
+describe("the dg-daemon build workflow is path-filtered to its own packages", () => {
 	test("the build workflow fires on dg-daemon and common, and on itself", () => {
 		const blt = workflow("dg-daemon-blt.yml");
 		expect(blt).toContain("pkg/dg-daemon/**");
@@ -21,39 +28,17 @@ describe("the dg-daemon workflows are path-filtered to their own packages", () =
 		expect(blt).not.toContain("pkg/skills-cli/**");
 		expect(blt).not.toContain("plugins/dg/skills/**");
 	});
-
-	test("the release workflow carries the same filter and gates on the build workflow", () => {
-		const rel = workflow("dg-daemon-release.yml");
-		expect(rel).toContain("pkg/dg-daemon/**");
-		expect(rel).toContain("pkg/common/**");
-		expect(rel).toContain("uses: ./.github/workflows/dg-daemon-blt.yml");
-		expect(rel).not.toContain("pkg/extension/**");
-		expect(rel).not.toContain("pkg/skills-cli/**");
-	});
 });
 
 type ReleasedBinary = {
 	binaryName: string;
-	workflow: string;
-	tagPrefix: string;
+	job: string;
 };
 
 const RELEASED_BINARIES: ReleasedBinary[] = [
-	{
-		binaryName: "dg-skills",
-		workflow: "skills-release.yml",
-		tagPrefix: "skills-v",
-	},
-	{
-		binaryName: "dg-daemon",
-		workflow: "dg-daemon-release.yml",
-		tagPrefix: "daemon-v",
-	},
-	{
-		binaryName: "dg-agent",
-		workflow: "dg-agent-release.yml",
-		tagPrefix: "agent-v",
-	},
+	{ binaryName: "dg-skills", job: "skills" },
+	{ binaryName: "dg-daemon", job: "daemon" },
+	{ binaryName: "dg-agent", job: "agent" },
 ];
 
 /**
@@ -69,74 +54,51 @@ const NATIVE_RUNNERS: Record<string, string[]> = {
 	"win32-arm64": ["windows-11-arm"],
 };
 
-for (const {
-	binaryName,
-	workflow: workflowFile,
-	tagPrefix,
-} of RELEASED_BINARIES) {
+for (const { binaryName, job } of RELEASED_BINARIES) {
 	describe(`${binaryName}: the release matrix and the install resolver agree, asset for asset`, () => {
-		test("every asset the resolver can ask for is published by the matrix", () => {
-			const rel = workflow(workflowFile);
+		const built = matrixOf(`build-${job}`).map((entry) => entry.asset);
+		const smoked = matrixOf(`smoke-${job}`);
 
+		test("every asset the resolver can ask for is published by the matrix", () => {
 			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
 				const name = cliAssetName(binaryName, platform, arch);
 				expect(name).toBeDefined();
-				expect(rel).toContain(`asset: ${name}`);
+				expect(built).toContain(name as string);
 			}
 		});
 
 		test("the matrix publishes nothing the resolver cannot name", () => {
-			const rel = workflow(workflowFile);
-			const declared = new Set(
-				[...rel.matchAll(/asset:\s*(\S+)/g)].map((m) => m[1]),
-			);
 			const resolvable = new Set(
 				SUPPORTED_PLATFORMS.map(({ platform, arch }) =>
 					cliAssetName(binaryName, platform, arch),
 				),
 			);
 
-			expect(declared.size).toBe(SUPPORTED_PLATFORMS.length);
-			for (const asset of declared) expect(resolvable.has(asset)).toBe(true);
+			expect(new Set(built).size).toBe(SUPPORTED_PLATFORMS.length);
+			for (const asset of built) expect(resolvable.has(asset)).toBe(true);
 		});
 
 		test("every published binary is executed on a runner of its own platform", () => {
-			const rel = workflow(workflowFile);
-			const smoke = rel.slice(rel.indexOf("\n  smoke:"), rel.indexOf("\n  release:"));
-			expect(smoke).not.toBe("");
-
-			const pairs = [...smoke.matchAll(/asset:\s*(\S+)\s*\n\s*os:\s*(\S+)/g)];
-			expect(pairs.length).toBe(SUPPORTED_PLATFORMS.length);
+			expect(smoked.length).toBe(SUPPORTED_PLATFORMS.length);
 
 			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
 				const asset = cliAssetName(binaryName, platform, arch);
-				const runner = pairs.find(([, name]) => name === asset)?.[2] ?? "";
+				const runner = smoked.find((entry) => entry.asset === asset)?.os ?? "";
 				expect(NATIVE_RUNNERS[`${platform}-${arch}`]).toContain(runner);
 			}
 		});
 
-		test("install asks for the tag prefix this workflow publishes", () => {
-			expect(workflow(workflowFile)).toContain(tagPrefix);
-			expect(
-				readRepoFile("pkg", "skills-cli", "src", "commands", "install.ts"),
-			).toContain(`tagPrefix: "${tagPrefix}"`);
+		test("the smoke matrix runs exactly the assets the build matrix produces", () => {
+			expect(smoked.map((entry) => entry.asset).sort()).toEqual([...built].sort());
 		});
 	});
 }
 
 describe("the retired dg-server name reaches no new release", () => {
-	test("the daemon release publishes only its own tag, with no alias and no renamed copies", () => {
-		const rel = workflow("dg-daemon-release.yml");
+	test("the release publishes no alias and no renamed copies", () => {
+		const rel = workflow("release.yml");
 
-		expect(rel).toContain('tag="daemon-v');
 		expect(rel).not.toContain("server-v");
-		expect(rel).not.toContain("dg-server");
-		expect(rel).not.toContain("legacy");
-	});
-
-	test("the agent release publishes no alias, having never shipped under another name", () => {
-		const rel = workflow("dg-agent-release.yml");
-
 		expect(rel).not.toContain("dg-server");
 		expect(rel).not.toContain("legacy");
 	});
@@ -144,9 +106,10 @@ describe("the retired dg-server name reaches no new release", () => {
 
 describe("the skills CLI presents itself under its shipped name", () => {
 	const entry = readRepoFile("pkg", "skills-cli", "src", "index.ts");
-	const shipped = RELEASED_BINARIES.find(
-		(b) => b.workflow === "skills-release.yml",
-	)?.binaryName;
+	const shipped = matrixOf("build-skills")[0]?.asset.replace(
+		/-(linux|macos|windows)-.*$/,
+		"",
+	);
 
 	test("the program name and the release asset name are the same word", () => {
 		expect(shipped).toBeDefined();
@@ -167,34 +130,25 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 		"install.ts",
 	);
 
-	test("every released binary is declared with its own tag prefix, and no others are", () => {
-		const declared = /const BINARIES: BinarySpec\[\] = \[([\s\S]*?)\];/.exec(
-			install,
-		)?.[1];
+	const declared =
+		/const BINARIES: BinarySpec\[\] = \[([\s\S]*?)\];/.exec(install)?.[1] ??
+		"";
+	const declaredNames = [...declared.matchAll(/"(dg-[a-z]+)"/g)].map((m) => m[1]);
 
-		for (const { binaryName, tagPrefix } of RELEASED_BINARIES) {
-			expect(declared).toContain(`binaryName: "${binaryName}"`);
-			expect(declared).toContain(`tagPrefix: "${tagPrefix}"`);
-		}
-		expect([...(declared ?? "").matchAll(/binaryName:/g)].length).toBe(
-			RELEASED_BINARIES.length,
+	test("every released binary is declared once, and no others are", () => {
+		expect(declaredNames.sort()).toEqual(
+			RELEASED_BINARIES.map((b) => b.binaryName).sort(),
 		);
 	});
 
 	test("the command description names every binary it refreshes", () => {
-		const declared =
-			/const BINARIES: BinarySpec\[\] = \[([\s\S]*?)\];/.exec(install)?.[1] ??
-			"";
-		const names = [...declared.matchAll(/binaryName: "([^"]+)"/g)].map(
-			(m) => m[1],
-		);
 		const description = /\.description\(\s*"([^"]*refresh[^"]*)"/.exec(
 			install,
 		)?.[1];
 
-		expect(names.length).toBe(RELEASED_BINARIES.length);
+		expect(declaredNames.length).toBe(RELEASED_BINARIES.length);
 		expect(description).toBeDefined();
-		for (const name of names) {
+		for (const name of declaredNames) {
 			expect(description).toContain(name);
 		}
 	});
@@ -221,7 +175,7 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 	test("the not-found warning distinguishes an unbuilt platform from an unpublished release", () => {
 		expect(install).toContain("describeMissingCliAsset(spec, releases)");
 		expect(install).toMatch(/has no published asset/);
-		expect(install).toMatch(/no release with tag prefix/);
+		expect(install).toMatch(/no\s+(vX\.Y\.Z\s+)?release/);
 	});
 });
 

@@ -42,7 +42,7 @@ describe("classify maps a commit to a semver bump", () => {
 		["Merge branch 'master'", "none"],
 		["update stuff", "none"],
 	])("%s -> %s", (subject, level) => {
-		expect(classify(commit(subject))).toBe(level);
+		expect<string>(classify(commit(subject))).toBe(level);
 	});
 
 	test("a BREAKING CHANGE footer in the body makes a major bump", () => {
@@ -146,7 +146,7 @@ describe("prependChangelog", () => {
 
 describe("stampTargets and stamp", () => {
 	test("lists the nine version files", () => {
-		expect([...stampTargets].sort()).toEqual(
+		expect<string[]>([...stampTargets].sort()).toEqual(
 			[
 				".claude-plugin/plugin.json",
 				"bun.lock",

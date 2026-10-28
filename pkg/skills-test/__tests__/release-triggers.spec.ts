@@ -1,180 +1,127 @@
 import { describe, expect, test } from "bun:test";
-import { readRepoFile } from "./test-support";
+import {
+	jobNeeds,
+	parseWorkflow,
+	reaches,
+	workflowFiles,
+	workflowText,
+} from "./workflow-support";
 
-const RELEASE_WORKFLOWS = [
-	"ext-release.yml",
-	"skills-release.yml",
-	"dg-daemon-release.yml",
-	"dg-agent-release.yml",
+const BLT_GATES = [
+	{ job: "blt-skills", file: "skills-blt.yml" },
+	{ job: "blt-ext", file: "ext-blt.yml" },
+	{ job: "blt-daemon", file: "dg-daemon-blt.yml" },
+	{ job: "blt-agent", file: "dg-agent-blt.yml" },
 ] as const;
 
-const RELEASED = [
-	{ pkg: "extension", release: "ext-release.yml", blt: "ext-blt.yml" },
-	{ pkg: "skills-cli", release: "skills-release.yml", blt: "skills-blt.yml" },
-	{
-		pkg: "dg-daemon",
-		release: "dg-daemon-release.yml",
-		blt: "dg-daemon-blt.yml",
-	},
-	{ pkg: "dg-agent", release: "dg-agent-release.yml", blt: "dg-agent-blt.yml" },
-] as const;
+const SKIP_GUARD = "needs.detect.outputs.mode != 'skip'";
 
-function workflow(name: string): string {
-	return readRepoFile(".github", "workflows", name);
-}
+const release = parseWorkflow("release.yml");
 
-function watchedPackages(name: string): string[] {
-	const block = /paths:\n((?: {6}- \S+\n)+)/.exec(workflow(name))?.[1] ?? "";
-	return [...block.matchAll(/- pkg\/(\S+?)\/\*\*/g)].map((m) => m[1]);
-}
+describe("one workflow cuts every release", () => {
+	test("release.yml is the only release workflow", () => {
+		const files = workflowFiles();
 
-function workspaceDeps(pkg: string, field: string): string[] {
-	const json = JSON.parse(readRepoFile("pkg", pkg, "package.json"));
-	return Object.entries(json[field] ?? {})
-		.filter(([, range]) => String(range).startsWith("workspace:"))
-		.map(([name]) => name.replace("@dg/", ""));
-}
+		expect(files).toContain("release.yml");
+		expect(files.filter((name) => name.endsWith("-release.yml"))).toEqual([]);
+		expect(files).not.toContain("release-all.yml");
+	});
 
-/** Job id → the jobs it lists under `needs`. Walks only the `jobs:` block. */
-function jobNeeds(text: string): Map<string, string[]> {
-	const needs = new Map<string, string[]>();
-	let inJobs = false;
-	let current: string | null = null;
-	let readingNeeds = false;
+	test("a push to master triggers it, with no path filter", () => {
+		expect(release.on.push?.branches).toEqual(["master"]);
+		expect(release.on.push?.paths).toBeUndefined();
+		expect(workflowText("release.yml")).not.toContain("paths-ignore");
+	});
 
-	for (const line of text.split("\n")) {
-		if (line === "jobs:") {
-			inJobs = true;
-			continue;
-		}
-		if (!inJobs) continue;
+	test("a manual dispatch takes a bump input of auto, patch, minor or major", () => {
+		const bump = release.on.workflow_dispatch?.inputs?.bump;
 
-		const job = /^  ([a-z0-9-]+):\s*$/.exec(line);
-		if (job) {
-			current = job[1];
-			needs.set(current, []);
-			readingNeeds = false;
-			continue;
-		}
-		if (!current) continue;
+		expect(bump?.type).toBe("choice");
+		expect(bump?.options).toEqual(["auto", "patch", "minor", "major"]);
+	});
 
-		if (/^    needs:\s*$/.test(line)) {
-			readingNeeds = true;
-			continue;
-		}
+	test("nothing but a push to master or a dispatch can start it", () => {
+		expect(Object.keys(release.on).sort()).toEqual([
+			"push",
+			"workflow_dispatch",
+		]);
+	});
 
-		const inline = /^    needs:\s*(.+)$/.exec(line);
-		if (inline) {
-			const value = inline[1].trim();
-			const listed = value.startsWith("[")
-				? value
-						.slice(1, value.endsWith("]") ? -1 : undefined)
-						.split(",")
-						.map((name) => name.trim())
-						.filter(Boolean)
-				: [value];
-			needs.get(current)!.push(...listed);
-			readingNeeds = value.startsWith("[") && !value.endsWith("]");
-			continue;
-		}
+	test("one release runs at a time and an in-progress release is never canceled", () => {
+		expect(release.concurrency?.group).toBe("release");
+		expect(release.concurrency?.["cancel-in-progress"]).toBe(false);
+	});
+});
 
-		const item = /^      - (\S+)\s*$/.exec(line);
-		if (readingNeeds && item) {
-			needs.get(current)!.push(item[1]);
-			continue;
-		}
-		readingNeeds = false;
-	}
-
-	return needs;
-}
-
-function reaches(
-	needs: Map<string, string[]>,
-	from: string,
-	target: string,
-): boolean {
-	const seen = new Set<string>();
-	const stack = [from];
-	while (stack.length > 0) {
-		const job = stack.pop()!;
-		if (job === target) return true;
-		if (seen.has(job)) continue;
-		seen.add(job);
-		for (const dep of needs.get(job) ?? []) stack.push(dep);
-	}
-	return false;
-}
-
-describe("a release fires for exactly the source its artifact is built from", () => {
-	for (const { pkg, release } of RELEASED) {
-		test(`${release} watches ${pkg} and every package it ships`, () => {
-			const watched = watchedPackages(release);
-
-			expect(watched).toContain(pkg);
-			for (const dep of workspaceDeps(pkg, "dependencies")) {
-				expect(watched).toContain(dep);
-			}
+describe("a release publishes only after every build workflow passes", () => {
+	for (const { job, file } of BLT_GATES) {
+		test(`${job} calls ${file} and the release job waits on it`, () => {
+			expect(release.jobs[job]?.uses).toBe(`./.github/workflows/${file}`);
+			expect(reaches(release, "release", job)).toBe(true);
 		});
 	}
 
-	test("no release fires for a package its binary does not contain", () => {
-		for (const { pkg, release } of RELEASED) {
-			const shipped = new Set([pkg, ...workspaceDeps(pkg, "dependencies")]);
-
-			for (const watched of watchedPackages(release)) {
-				expect(shipped).toContain(watched);
-			}
+	test("every gate and every build starts only after detect", () => {
+		for (const { job } of BLT_GATES) {
+			expect(jobNeeds(release.jobs[job])).toContain("detect");
+		}
+		for (const job of [
+			"build-skills",
+			"build-daemon",
+			"build-agent",
+			"build-ext",
+		]) {
+			expect(jobNeeds(release.jobs[job])).toContain("detect");
 		}
 	});
 
-	test("a build watches its test-only dependencies too, which a release must not", () => {
-		for (const { pkg, release, blt } of RELEASED) {
-			for (const dep of workspaceDeps(pkg, "devDependencies")) {
-				expect(watchedPackages(blt)).toContain(dep);
-				expect(watchedPackages(release)).not.toContain(dep);
-			}
+	test("each part is built only after its own gate, and each binary smoked only after its build", () => {
+		expect(jobNeeds(release.jobs["build-skills"])).toContain("blt-skills");
+		expect(jobNeeds(release.jobs["build-daemon"])).toContain("blt-daemon");
+		expect(jobNeeds(release.jobs["build-agent"])).toContain("blt-agent");
+		expect(jobNeeds(release.jobs["build-ext"])).toContain("blt-ext");
+		expect(jobNeeds(release.jobs["smoke-skills"])).toEqual(["build-skills"]);
+		expect(jobNeeds(release.jobs["smoke-daemon"])).toEqual(["build-daemon"]);
+		expect(jobNeeds(release.jobs["smoke-agent"])).toEqual(["build-agent"]);
+	});
+
+	test("the release job waits on every smoke run and the extension build", () => {
+		const needs = jobNeeds(release.jobs.release);
+
+		for (const job of [
+			"detect",
+			"smoke-skills",
+			"smoke-daemon",
+			"smoke-agent",
+			"build-ext",
+		]) {
+			expect(needs).toContain(job);
 		}
 	});
 });
 
-describe("one dispatch cuts the whole matched set", () => {
-	const all = workflow("release-all.yml");
+describe("a skipped detection skips everything after it", () => {
+	test("every job that reads the detection says so in its own condition", () => {
+		const reading = Object.entries(release.jobs).filter(([, job]) =>
+			jobNeeds(job).includes("detect"),
+		);
 
-	test("release-all calls every release workflow, and only those", () => {
-		const called = [
-			...all.matchAll(/uses: \.\/\.github\/workflows\/(\S+)/g),
-		].map((m) => m[1]);
-
-		expect(called.sort()).toEqual([...RELEASE_WORKFLOWS].sort());
-	});
-
-	test("every release workflow accepts being called, or release-all cannot run it", () => {
-		for (const name of RELEASE_WORKFLOWS) {
-			expect(workflow(name)).toContain("workflow_call:");
+		expect(reading.length).toBeGreaterThan(1);
+		for (const [id, job] of reading) {
+			expect([id, job.if]).toEqual([id, SKIP_GUARD]);
 		}
 	});
 
-	test("release-all is dispatch-only, so it never doubles a push-triggered release", () => {
-		expect(all).toContain("workflow_dispatch:");
-		expect(all).not.toContain("push:");
+	test("the smoke jobs name no condition, and a skipped build skips them", () => {
+		for (const job of ["smoke-skills", "smoke-daemon", "smoke-agent"]) {
+			expect(release.jobs[job].if).toBeUndefined();
+			expect(reaches(release, job, "detect")).toBe(true);
+		}
 	});
-});
 
-describe("a release publishes only after its own build workflow passes", () => {
-	for (const { release, blt } of RELEASED) {
-		test(`${release} calls ${blt} and the publish job waits on that call`, () => {
-			const text = workflow(release);
-			const needs = jobNeeds(text);
-			const bltJob = [...needs.keys()].find((job) =>
-				new RegExp(
-					`^  ${job}:\\n    uses: \\./\\.github/workflows/${blt}\\s*$`,
-					"m",
-				).test(text),
-			);
-
-			expect(bltJob).toBe("blt");
-			expect(reaches(needs, "release", "blt")).toBe(true);
-		});
-	}
+	test("detect refuses to run from any ref but master", () => {
+		expect(workflowText("release.yml")).toContain(
+			"github.ref != 'refs/heads/master'",
+		);
+	});
 });

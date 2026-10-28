@@ -17,7 +17,7 @@ Use Conventional Commits with a scope, like `feat(skills): add the doctor comman
 Use these types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`. Write the scope in lowercase kebab-case. Reuse a scope that exists
 in the history, such as `skills`, `skills-cli`, `dg-agent`, `channel-review`, `proto`, or `deps`.
 
-A release uses its own commit: `chore(release): bump the matched set to X.Y.Z`. See "How does it get to users?".
+The release workflow makes its own commit, `chore(release): cut X.Y.Z`. Do not write one by hand. See "How does it get to users?".
 
 Bots that commit or submit a review use the address in the [bot-commit-email skill](../plugins/dg/skills/bot-commit-email/SKILL.md).
 
@@ -71,16 +71,24 @@ When all four are true:
 ## How does it get to users?
 
 - A release ships four things as one matched set: the extension, `dg-skills`, `dg-daemon`, and `dg-agent`. All four `package.json` files and both plugin
-  manifests carry the same version.
-- To release, open a PR with one `chore(release)` commit that moves the whole matched set to the new version. The release tests fail if the versions differ.
-- Merging a change to a package runs that package's release workflow. The workflow runs the BLT checks again, builds the binaries, and tags from the version in
-  `package.json`. It skips a tag that already exists.
-- Tag prefixes:
-  - `skills-v*` for `dg-skills`
-  - `ext-v*` for the extension
-  - `daemon-v*` for `dg-daemon`
-  - `agent-v*` for `dg-agent`
-- The **Release All** workflow cuts all four from one manual run.
+  manifests carry the same version. Nobody bumps a version by hand.
+- Each push to `master` runs the `Release` workflow. It reads the commits since the last release and picks the next version:
+  - `feat` bumps the minor version.
+  - `fix` and `perf` bump the patch version.
+  - A `!` after the type, or a `BREAKING CHANGE:` line in the commit body, bumps the major version.
+  - `docs`, `chore`, `ci`, `test`, `style`, and `refactor` cut no release.
+- The repo squashes every PR. The PR title and body become the commit, so the PR title decides the bump. Write it as a Conventional Commit.
+- When a release is due, the workflow runs the BLT checks again, builds every binary and the extension, and runs each binary on its own platform.
+  Then the `release` job stamps the version into the matched set, writes the `CHANGELOG.md` entry, and pushes one `chore(release): cut X.Y.Z` commit by
+  `dg-release` to `master`, together with the tag `vX.Y.Z`.
+- The `release` job publishes one GitHub release for that tag. It holds every binary, the extension zips, `bootstrap.sh`, `bootstrap.ps1`, and one `SHA256SUMS`.
+  It marks the release Latest and moves the `latest` tag to the release commit.
+- To run the workflow by hand, open Actions, pick **Release**, and choose **Run workflow**. Pick `auto`, or force `patch`, `minor`, or `major`.
+  Run it on a release commit to publish again a release whose upload failed.
+- The workflow never force-pushes `master` and never deletes a tag. A failed release is fixed by running the workflow again.
+- Manual step, once. The workflow pushes to `master` as the GitHub Actions app. The `main protection` ruleset must list that app as a bypass actor.
+- The first release under this scheme also publishes a `skills-vX.Y.Z` release. It holds the `dg-skills` binaries only and is never marked Latest.
+  It lets `dg-skills` 1.21.1 and older find the new release once.
 - Users install a release with the bootstrap script or `dg-skills install`. See [docs/install.md](install.md).
 
 ## What if I am stuck?
@@ -142,7 +150,6 @@ Ask a person. Do not turn off a check to get past it.
 - Give each command a `doctor.ts` with its checks. The doctor coverage guard fails without one.
 - Ship `dg-skills` as a compiled binary (`bun build.ts`). Commands that must work compiled have a `*-compiled.spec.ts` test.
 - The `skills-cli` tests build and load the extension. CI sets `DG_VERIFY_NO_SANDBOX=1` for them.
-- The release workflow pins the bootstrap URLs to the release tag. Run `bun scripts/pin-bootstrap-tag.ts` when you bump the version.
 
 ### pkg/skills-test
 

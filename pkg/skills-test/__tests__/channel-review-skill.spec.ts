@@ -576,11 +576,10 @@ describe("channel-review release wiring", () => {
 		expect(cli.dependencies["@dg/channel-review"]).toBe("workspace:*");
 	});
 
-	test("both skills workflows watch the channel-review sources", () => {
-		for (const name of ["skills-release.yml", "skills-blt.yml"])
-			expect(readRepoFile(".github/workflows", name)).toContain(
-				"- pkg/channel-review/**",
-			);
+	test("the skills build workflow watches the channel-review sources", () => {
+		expect(readRepoFile(".github/workflows", "skills-blt.yml")).toContain(
+			"- pkg/channel-review/**",
+		);
 	});
 
 	test("every released package, the daemon constant, and both manifests sit at the target version", () => {
@@ -666,14 +665,12 @@ describe("channel-review catalog entries", () => {
 			expect(doc).toContain(word);
 	});
 
-	test("DEVELOPER documents the layout, the integration, and both CI path rows", () => {
+	test("DEVELOPER documents the layout, the integration, and the skills-blt CI rows", () => {
 		const doc = readRepoFile("docs/DEVELOPER.md");
 		expect(doc).toMatch(/channel-review\//);
 		expect(doc).toMatch(/## Channel review/i);
-		const ciRows = doc
-			.split("\n")
-			.filter((l) => /skills-blt|skills-release/.test(l));
-		expect(ciRows.length).toBeGreaterThanOrEqual(2);
+		const ciRows = doc.split("\n").filter((l) => /skills-blt/.test(l));
+		expect(ciRows.length).toBeGreaterThanOrEqual(1);
 		for (const row of ciRows) expect(row).toContain("channel-review");
 	});
 
