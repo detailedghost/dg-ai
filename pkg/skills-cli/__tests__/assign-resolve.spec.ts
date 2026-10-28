@@ -450,3 +450,11 @@ describe("confidence fixtures", () => {
 		expect(lowSlices("plan-low.md")).toBe(1);
 	});
 });
+
+describe("assign resolve --help", () => {
+	test.each([["--help"], ["-h"]])("%s prints usage and exits 0", async (flag) => {
+		const result = await run(["resolve", flag]);
+		expect(result.status).toBe(0);
+		expect(result.out).toContain("usage: dg-skills assign resolve");
+	});
+});

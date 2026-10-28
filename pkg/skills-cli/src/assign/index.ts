@@ -281,6 +281,10 @@ function bake(runner: string, args: Record<string, unknown>): string {
 }
 
 export async function main(argv: string[]): Promise<number> {
+	if (argv.includes("--help") || argv.includes("-h")) {
+		process.stdout.write(USAGE);
+		return 0;
+	}
 	try {
 		const options = parseOptions(argv);
 		if (!options) {
