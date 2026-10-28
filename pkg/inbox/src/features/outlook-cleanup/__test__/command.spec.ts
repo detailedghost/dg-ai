@@ -145,9 +145,10 @@ async function writeFixture() {
 		.words(2)
 		.replace(/\s+/g, "-")
 		.toLowerCase();
-	const projectKeyword = faker.word.noun().toLowerCase();
-	const companyKeyword = faker.word.noun().toLowerCase();
-	const reviewKeyword = faker.word.noun().toLowerCase();
+	const token = suffix.toLowerCase();
+	const projectKeyword = `project${token}`;
+	const companyKeyword = `company${token}`;
+	const reviewKeyword = `review${token}`;
 	const refusedDomain = `${faker.word.noun()}-${faker.string.alphanumeric(8)}.example.test`;
 
 	const fixture = {
