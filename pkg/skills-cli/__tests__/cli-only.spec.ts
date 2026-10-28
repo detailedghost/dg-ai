@@ -7,6 +7,7 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -258,6 +259,7 @@ fi
 
 		expect(result).toEqual({ exitCode: 0, calls: "install" });
 		expect(readFileSync(dest, "utf8")).not.toBe("old");
+		expect(statSync(dest).mode & 0o777).toBe(0o755);
 		expect(readdirSync(join(home, ".dg", "bin")).filter((f) => f.startsWith(".dg-skills-installer"))).toEqual([]);
 	});
 

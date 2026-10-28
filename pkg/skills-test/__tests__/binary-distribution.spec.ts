@@ -259,8 +259,11 @@ describe("the bootstrap scripts reach dg-daemon through install, not a second cu
 	test("bootstrap.ps1 renames a running dg-skills.exe aside instead of writing over it", () => {
 		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
 		expect(ps1).not.toMatch(/-OutFile \$dest\b/);
-		expect(ps1).toMatch(/Move-Item -LiteralPath \$dest -Destination "\$dest\.old"/);
+		expect(ps1).toMatch(/\$old = "\$dest\.old-" \+ \[guid\]::NewGuid\(\)/);
+		expect(ps1).toMatch(/Move-Item -LiteralPath \$dest -Destination \$old/);
 		expect(ps1).toMatch(/Move-Item -LiteralPath \$installer -Destination \$dest/);
+		expect(ps1).toMatch(/Move-Item -LiteralPath \$old -Destination \$dest/);
+		expect(ps1).toMatch(/Remove-Item -Path "\$dest\.old-\*" -Force -ErrorAction SilentlyContinue/);
 	});
 
 	test("bootstrap.ps1 never hands a pinned install off to the binary it just downloaded", () => {

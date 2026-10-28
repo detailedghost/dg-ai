@@ -198,11 +198,20 @@ try {
 	}
 
 	if (-not $delegate) {
+		Remove-Item -Path "$dest.old-*" -Force -ErrorAction SilentlyContinue
+		$old = $null
 		if (Test-Path -LiteralPath $dest) {
-			Remove-Item -LiteralPath "$dest.old" -Force -ErrorAction SilentlyContinue
-			Move-Item -LiteralPath $dest -Destination "$dest.old" -Force
+			$old = "$dest.old-" + [guid]::NewGuid()
+			Move-Item -LiteralPath $dest -Destination $old
 		}
-		Move-Item -LiteralPath $installer -Destination $dest -Force
+		try {
+			Move-Item -LiteralPath $installer -Destination $dest
+		} catch {
+			if ($old -and -not (Test-Path -LiteralPath $dest)) {
+				Move-Item -LiteralPath $old -Destination $dest
+			}
+			throw
+		}
 		$installer = $dest
 		# Stamp the installed version so `dg-skills install` won't re-download the binary.
 		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")

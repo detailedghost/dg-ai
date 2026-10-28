@@ -377,7 +377,7 @@ track_tmp "${INSTALLER}"
 
 curl -fsSL -H "User-Agent: dg-ai" -o "${INSTALLER}" "${url}"
 verify_sha256 "${INSTALLER}"
-chmod +x "${INSTALLER}"
+chmod 755 "${INSTALLER}"
 
 if [ "${DELEGATE}" = "0" ]; then
   mv -f "${INSTALLER}" "${DEST}"
