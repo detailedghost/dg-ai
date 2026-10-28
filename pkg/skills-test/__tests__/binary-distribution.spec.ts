@@ -263,7 +263,11 @@ describe("the bootstrap scripts reach dg-daemon through install, not a second cu
 		expect(ps1).toMatch(/Move-Item -LiteralPath \$dest -Destination \$old/);
 		expect(ps1).toMatch(/Move-Item -LiteralPath \$installer -Destination \$dest/);
 		expect(ps1).toMatch(/Move-Item -LiteralPath \$old -Destination \$dest/);
-		expect(ps1).toMatch(/Remove-Item -Path "\$dest\.old-\*" -Force -ErrorAction SilentlyContinue/);
+		expect(ps1).not.toMatch(/Remove-Item -Path/);
+		expect(ps1).toMatch(/Get-ChildItem -LiteralPath \$binDir -File/);
+		const swap = ps1.indexOf("Move-Item -LiteralPath $installer -Destination $dest");
+		const cleanup = ps1.indexOf("Get-ChildItem -LiteralPath $binDir -File");
+		expect(cleanup).toBeGreaterThan(swap);
 	});
 
 	test("bootstrap.ps1 never hands a pinned install off to the binary it just downloaded", () => {

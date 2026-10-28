@@ -198,7 +198,6 @@ try {
 	}
 
 	if (-not $delegate) {
-		Remove-Item -Path "$dest.old-*" -Force -ErrorAction SilentlyContinue
 		$old = $null
 		if (Test-Path -LiteralPath $dest) {
 			$old = "$dest.old-" + [guid]::NewGuid()
@@ -213,6 +212,10 @@ try {
 			throw
 		}
 		$installer = $dest
+		$oldPrefix = (Split-Path -Leaf $dest) + ".old-"
+		Get-ChildItem -LiteralPath $binDir -File |
+			Where-Object { $_.Name.StartsWith($oldPrefix) } |
+			ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
 		# Stamp the installed version so `dg-skills install` won't re-download the binary.
 		Set-Content -Path (Join-Path $binDir ".dg-skills.version") -Value $rel.tag_name.Replace("skills-v", "")
 		Write-Host "dg-skills installed at $dest"
