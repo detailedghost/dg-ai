@@ -346,14 +346,14 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 		deleteTargets.flatMap((target) => [target.id, target.name]),
 	);
 	assertKnownSelectors("approve-delete", approveDelete, deleteSelectors);
-	assertUnambiguousDeletes(approveDelete, deleteTargets);
+	const approvedDeleteIds = resolveDeleteIds(approveDelete, deleteTargets);
 
 	for (const candidate of deleteCandidates) {
 		pushDelete(
 			"filter",
 			candidate.id,
 			candidate.name,
-			approveDelete,
+			approvedDeleteIds,
 			actions,
 			notices,
 		);
@@ -363,7 +363,7 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 			"folder",
 			candidate.id,
 			candidate.path,
-			approveDelete,
+			approvedDeleteIds,
 			actions,
 			notices,
 		);
@@ -374,7 +374,7 @@ export function buildSyncPlan(input: SyncPlanInput): SyncPlan {
 		liveFolders,
 		pull,
 		revert,
-		approveDelete,
+		approvedDeleteIds,
 		actions,
 	);
 
@@ -492,12 +492,16 @@ export function assertApprovedDeletes(
 	actions: PlanAction[],
 	approved: string[],
 ): void {
-	for (const action of actions) {
-		if (action.op !== "delete-filter" && action.op !== "delete-folder") {
-			continue;
-		}
+	const deletes = actions.filter(
+		(action) => action.op === "delete-filter" || action.op === "delete-folder",
+	);
+	const idSelectors = new Set(
+		deletes.map((action) => action.id).filter((id) => approved.includes(id)),
+	);
+	for (const action of deletes) {
 		const label = action.op === "delete-filter" ? action.name : action.path;
-		if (!approved.includes(action.id) && !approved.includes(label)) {
+		const byLabel = approved.includes(label) && !idSelectors.has(label);
+		if (!approved.includes(action.id) && !byLabel) {
 			throw new Error(`Refusing to delete ${label} without per-item approval`);
 		}
 	}
@@ -659,7 +663,7 @@ function resolveAddedDrift(
 	liveFolders: LiveFolder[],
 	pull: string[],
 	revert: string[],
-	approveDelete: string[],
+	approvedDeleteIds: string[],
 	actions: PlanAction[],
 ): void {
 	for (const notice of [...notices]) {
@@ -698,7 +702,7 @@ function resolveAddedDrift(
 			}
 			continue;
 		}
-		if (!restore || !matchesSelector(approveDelete, notice.id, notice.name)) {
+		if (!restore || !approvedDeleteIds.includes(notice.id)) {
 			continue;
 		}
 		notices.splice(notices.indexOf(notice), 1);
@@ -769,11 +773,11 @@ function pushDelete(
 	target: "filter" | "folder",
 	id: string,
 	name: string,
-	approved: string[],
+	approvedIds: string[],
 	actions: PlanAction[],
 	notices: PlanNotice[],
 ): void {
-	if (matchesSelector(approved, id, name)) {
+	if (approvedIds.includes(id)) {
 		if (target === "filter") {
 			actions.push({ op: "delete-filter", id, name });
 		} else {
@@ -858,12 +862,12 @@ function assertKnownSelectors(
 	}
 }
 
-function assertUnambiguousDeletes(
+function resolveDeleteIds(
 	selectors: string[],
 	targets: { id: string; name: string }[],
-): void {
-	for (const selector of selectors) {
-		if (targets.some((target) => target.id === selector)) continue;
+): string[] {
+	return selectors.flatMap((selector) => {
+		if (targets.some((target) => target.id === selector)) return [selector];
 		const ids = targets
 			.filter((target) => target.name === selector)
 			.map((target) => target.id);
@@ -872,7 +876,8 @@ function assertUnambiguousDeletes(
 				`Ambiguous approve-delete target: ${selector} matches ${ids.join(", ")}. Pass one Proton id.`,
 			);
 		}
-	}
+		return ids;
+	});
 }
 
 function sameList(left: string[], right: string[]): boolean {
