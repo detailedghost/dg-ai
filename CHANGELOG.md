@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.24.0 (2026-10-28)
+
+### Features
+
+- feat(assign): one model and effort tier table ([#92](https://github.com/detailedghost/dg-ai/pull/92))
+
+### Fixes
+
+- fix(phone): remove the phone-friend alias as announced ([#101](https://github.com/detailedghost/dg-ai/pull/101))
+
 ## v1.23.0 (2026-10-28)
 
 ### Features
