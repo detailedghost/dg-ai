@@ -91,7 +91,7 @@ Use seed roles only.
 `beforeRef` and `afterRef` are labels (a branch or a worktree).
 This command does not check out branches or boot apps.
 Start the before stack and the after stack yourself, then put their URLs in the manifest.
-`stackUrl` is the after stack Dante can click.
+`stackUrl` is the after stack. Each captured round shows an "Open in app" link to it.
 `targetUrl` is optional.
 Set it only when a prototype page is already running.
 The column says there is no prototype target when the field is absent.

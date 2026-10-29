@@ -103,6 +103,7 @@ describe("verify review", () => {
 		const paths = verifyPaths(dir);
 		const board = readBoard(paths, "review");
 		expect(board.pending).toEqual([]);
+		expect(board.stackUrl).toBe(`${after.url}/`);
 		const home = board.sections.find((section) => section.id === "home-r1") as Section;
 		expect(home).toMatchObject({ title: "Home", round: 1, item: "home", branch: "feat/home", what_changed: "New search field." });
 		expect(home.checks?.tests).toEqual({ status: "passed", summary: "4 passed" });

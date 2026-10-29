@@ -518,6 +518,19 @@ aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--a
   .picker .ic{width:36px;height:40px;min-height:40px}
   .picker{padding:6px}
 }
+.zoom-btn{display:block;width:100%;padding:0;border:0;background:none;cursor:zoom-in;border-radius:6px}
+.zoom-btn img{display:block;width:100%}
+.zoom-btn:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.live-link{text-decoration:none;color:var(--acc);border:1px solid var(--acc)}
+.live-link:hover{background:var(--acc-soft)}
+@media (max-width:1000px){
+  #toc > li.has-fold{display:flex;align-items:center;gap:4px}
+  #toc > li.has-fold > .fold{display:inline-flex;position:static;flex:none}
+  #toc .timeline:not([hidden]){display:flex;align-items:center;gap:4px;margin:0;padding:0;border:0;list-style:none}
+  #toc .timeline:not([hidden]) > li{flex:none;margin:0}
+  #toc .timeline:not([hidden]) .dot{margin-left:0}
+  #toc .timeline:not([hidden]) button{min-height:36px;padding:4px 10px!important}
+}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}

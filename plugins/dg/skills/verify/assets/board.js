@@ -41,8 +41,12 @@ function figure(caption, path, reason) {
     img.src = src;
     img.alt = `${caption} screenshot`;
     img.loading = "lazy";
-    img.addEventListener("click", () => openZoom(src, img.alt));
-    fig.append(img);
+    const zoom = el("button", "zoom-btn");
+    zoom.type = "button";
+    zoom.setAttribute("aria-label", `Zoom: ${img.alt}`);
+    zoom.addEventListener("click", () => openZoom(src, img.alt));
+    zoom.append(img);
+    fig.append(zoom);
   } else {
     const box = document.createElement("div");
     box.className = "missing";
@@ -216,6 +220,14 @@ function renderSection(stay = false) {
   branch.className = "pill";
   branch.textContent = s.branch || "bundle";
   $("sec-branch").replaceChildren(step, branch);
+  const live = safeUrl(s.stackUrl || stackUrl);
+  if (live) {
+    const a = el("a", "pill live-link", "Open in app ↗");
+    a.href = live;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    $("sec-branch").append(a);
+  }
   $("sec-title").textContent = s.title;
   $("sec-what").textContent = s.what_changed || "";
   const checks = [];
@@ -313,7 +325,6 @@ const successorOf = (s) => sections.find((x) => x.follows === s.id);
 function resolved(s) {
   const v = verdicts[s.id] || {};
   if (v.status === "approved" && !v.note) return true;
-  if (v.status === "skip" || !v.status) return false;
   const next = successorOf(s);
   return next ? resolved(next) : false;
 }
@@ -567,6 +578,17 @@ function renderSummary() {
 
 const firstUnreviewed = () => sections.findIndex((s) => !verdicts[s.id]?.status);
 
+let stackUrl = "";
+const safeUrl = (u) => {
+  if (!u) return "";
+  try {
+    const url = new URL(u, location.href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+};
+
 function applyManifest(text) {
   manifestText = text;
   const m = JSON.parse(text);
@@ -576,6 +598,7 @@ function applyManifest(text) {
     $("board-title").textContent = `${m.name} · review`;
   }
   if (m.title) document.querySelector("aside h1").textContent = m.title;
+  stackUrl = m.stackUrl || "";
 }
 
 async function poll() {

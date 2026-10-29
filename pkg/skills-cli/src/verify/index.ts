@@ -360,7 +360,7 @@ async function captureRounds(
 		writeBoard(paths, targets.reduce((next, target) => dropPending(next, target.sectionId), readBoard(paths, name)));
 		throw error;
 	}
-	board = readBoard(paths, name);
+	board = { ...readBoard(paths, name), stackUrl: manifest.stackUrl };
 	for (const [index, result] of captured.entries()) {
 		const entry = plan[index];
 		if (!entry) continue;

@@ -58,6 +58,7 @@ export interface Pending {
 export interface Board {
 	name: string;
 	title?: string;
+	stackUrl?: string;
 	sections: Section[];
 	pending: Pending[];
 }
@@ -140,6 +141,7 @@ export function readBoard(paths: VerifyPaths, name: string): Board {
 		throw new Error("board.json needs sections and pending arrays");
 	const board: Board = { name, sections: record.sections, pending: record.pending };
 	if (typeof record.title === "string" && record.title) board.title = record.title;
+	if (typeof record.stackUrl === "string" && record.stackUrl) board.stackUrl = record.stackUrl;
 	return board;
 }
 

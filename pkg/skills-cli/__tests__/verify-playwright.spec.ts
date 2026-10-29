@@ -1,6 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { pngSize } from "../src/verify/capture-model";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
@@ -100,6 +100,72 @@ describe("review board in a browser", () => {
 			await page.click("#approve");
 			await page.waitForFunction(() => location.hash === "#overview");
 			expect(readVerdicts(paths)["home-r1"]).toMatchObject({ status: "approved", note: "" });
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test.skipIf(!browser)("zoom opens from the keyboard, a skip then approve resolves, and the app link and narrow rounds show", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-fixes-"));
+		const paths = verifyPaths(dir);
+		const image = { label: "desktop · light · a", before: "/shots/a-r1/before.png", after: "/shots/a-r1/after.png" };
+		writeBoard(paths, {
+			name: "fixes",
+			stackUrl: "http://127.0.0.1:4002/",
+			sections: [
+				{ id: "a-r1", title: "A", round: 1, images: [image] },
+				{ id: "a-r2", title: "A", round: 2, follows: "a-r1", images: [image] },
+				{ id: "b-r1", title: "B", round: 1, images: [image], stackUrl: "javascript:alert(1)" } as never,
+			],
+			pending: [],
+		});
+		writeFileSync(
+			paths.verdicts,
+			JSON.stringify({ "a-r1": { status: "skip", note: "", at: "t" }, "a-r2": { status: "approved", note: "", at: "t" } }),
+		);
+		const server = await startVerifyServer({ name: "fixes", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			await page.addInitScript(() => localStorage.setItem("verify-mode", "light"));
+			await page.goto(`http://127.0.0.1:${server.port}/#a-r2`);
+			await page.waitForSelector(".zoom-btn");
+			expect(await page.getAttribute(".live-link", "href")).toBe("http://127.0.0.1:4002/");
+			expect(await page.getAttribute(".live-link", "rel")).toBe("noopener noreferrer");
+			await page.focus(".zoom-btn");
+			await page.keyboard.press("Enter");
+			expect(await page.evaluate(() => (document.getElementById("zoom") as HTMLDialogElement).open)).toBe(true);
+			await page.keyboard.press("Escape");
+
+			await page.goto(`http://127.0.0.1:${server.port}/#b-r1`);
+			await page.reload();
+			await page.waitForSelector(".zoom-btn");
+			expect(await page.locator(".live-link").count()).toBe(0);
+
+			writeFileSync(
+				paths.verdicts,
+				JSON.stringify({
+					"a-r1": { status: "skip", note: "", at: "t" },
+					"a-r2": { status: "approved", note: "", at: "t" },
+					"b-r1": { status: "approved", note: "", at: "t" },
+				}),
+			);
+			await page.goto(`http://127.0.0.1:${server.port}/#overview`);
+			await page.reload();
+			await page.waitForSelector("#end h2");
+			expect(await page.textContent("#end h2")).toBe("All approved");
+
+			await page.setViewportSize({ width: 768, height: 1024 });
+			const fold = page.locator("#toc li.has-fold .fold").first();
+			if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+			expect(await page.locator("#toc .timeline:not([hidden]) li").count()).toBe(2);
+			expect(await page.locator("#toc .timeline li button").first().isVisible()).toBe(true);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(768);
 			expect(errors).toEqual([]);
 		} finally {
 			await pw.close();
