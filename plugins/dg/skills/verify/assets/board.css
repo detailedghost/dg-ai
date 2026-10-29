@@ -400,6 +400,16 @@ aside::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--mu
   .panel{padding:14px 12px}
   #sec-title{font-size:20px;line-height:1.25}
 }
+@media (max-width:760px){
+  #summary table,#summary tbody,#summary tr,#summary td{display:block;width:100%}
+  #summary thead{display:none}
+  #summary tr{padding:12px 0;border-bottom:1px solid var(--line)}
+  #summary td{padding:4px 0;border:0;overflow-wrap:anywhere}
+  #summary td::before{content:attr(data-label);display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin-bottom:2px}
+  #summary td:first-child{font-weight:600}
+  #summary td:first-child::before{display:none}
+  #summary .chips{flex-wrap:wrap}
+}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}

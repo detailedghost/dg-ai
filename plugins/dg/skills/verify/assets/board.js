@@ -433,10 +433,12 @@ function renderSummary() {
   $("summary").hidden = false;
   const body = $("sum-body");
   body.replaceChildren();
+  const heads = [...document.querySelectorAll("#summary thead th")].map((th) => th.textContent);
   const row = (cells) => {
     const tr = el("tr");
-    for (const cell of cells) {
+    for (const [i, cell] of cells.entries()) {
       const td = el("td");
+      td.dataset.label = heads[i] || "";
       td.append(cell);
       tr.append(td);
     }
