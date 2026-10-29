@@ -209,7 +209,7 @@ describe("PhoneDb", () => {
 			db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
 			db.putContact({ npub: "npub1x", handle: "velora", relays: "[]", key_id: "work", added_at: NOW, via: "migrated" });
 
-			db.setContactKeyId("npub1x", "default", NOW + 1);
+			db.setContactKeyId("npub1x", "default");
 
 			expect(db.getContactByNpub("npub1x")?.key_id).toBe("default");
 		});

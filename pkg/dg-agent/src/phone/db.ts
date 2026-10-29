@@ -101,9 +101,6 @@ const SCHEMA: MigrationStep[] = [
 	},
 ];
 
-const KEY_SET_AT_PREFIX = "contact_key_set_at:";
-const REMOVED_AT_PREFIX = "contact_removed_at:";
-
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
 export class PhoneDb {
 	private constructor(
@@ -220,7 +217,6 @@ export class PhoneDb {
 	}
 
 	putContact(row: ContactRow): void {
-		const keyChanged = this.getContactByNpub(row.npub)?.key_id !== row.key_id;
 		this.db
 			.query(
 				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
@@ -235,25 +231,14 @@ export class PhoneDb {
 				addedAt: row.added_at,
 				via: row.via,
 			});
-		if (keyChanged) this.set(`${KEY_SET_AT_PREFIX}${row.npub}`, this.now());
 	}
 
-	/** Moves the contact's key only when `at` is newer than the last time that key was set, so a replayed old ring cannot undo a newer one. */
-	setContactKeyId(npub: string, keyId: string, at: number): void {
-		if (at < (this.get<number>(`${KEY_SET_AT_PREFIX}${npub}`) ?? 0)) return;
+	setContactKeyId(npub: string, keyId: string): void {
 		this.db.query("UPDATE contacts SET key_id = $keyId WHERE npub = $npub").run({ keyId, npub });
-		this.set(`${KEY_SET_AT_PREFIX}${npub}`, at);
 	}
 
 	removeContact(npub: string): void {
 		this.db.query("DELETE FROM contacts WHERE npub = $npub").run({ npub });
-		this.unset(`${KEY_SET_AT_PREFIX}${npub}`);
-		this.set(`${REMOVED_AT_PREFIX}${npub}`, this.now());
-	}
-
-	/** When the contact was last removed, in seconds; undefined if it never was. */
-	contactRemovedAt(npub: string): number | undefined {
-		return this.get<number>(`${REMOVED_AT_PREFIX}${npub}`);
 	}
 
 	listLiveInvites(): InviteRow[] {

@@ -185,8 +185,8 @@ export function removeContact(db: PhoneDb, handle: string): ContactRecord {
 }
 
 /** Moves a contact to the key the listener saw it ring on; the "re-accept" a known caller's ring triggers. */
-export function setContactKeyId(db: PhoneDb, npub: string, keyId: string, at: number): void {
-	db.setContactKeyId(npub, keyId, at);
+export function setContactKeyId(db: PhoneDb, npub: string, keyId: string): void {
+	db.setContactKeyId(npub, keyId);
 }
 
 function toInviteRecord(row: InviteRow): InviteRecord {
