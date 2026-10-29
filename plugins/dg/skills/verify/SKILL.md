@@ -44,9 +44,9 @@ The open tab finds the new round by itself.
 | `stop <name>` | Stop the board server. |
 | `capture <name> [--manifest=FILE] [--items=a,b] [--summary=S]` | Capture items from the manifest. An item with no round gets round 1. An item with rounds gets the next round. |
 | `rerun <name> [--summary=S]` | Capture the next round only for items whose latest round was sent back or approved with a note. Prints `nothing-to-recapture` when there are none. |
-| `add <name> <id> --title=T ...` | Add a round from screenshots you took yourself. Use `--shots=DIR --prefix=P` to pair `P*before-<x>.png` with `P*after-<x>.png`, or repeat `--img="label\|before\|after[\|reason]"`. Add `--follows=ID --round=N` for a later round. |
+| `add <name> <id> --title=T ...` | Add a round from screenshots you took yourself. Use `--shots=DIR --prefix=P` to pair `P*before-<x>.png` with `P*after-<x>.png`, or repeat `--img="label\|before\|after[\|reason]"`. Add `--follows=ID --round=N` for a later round. Add `--variant=KEY [--variant-label=L] [--variant-summary=S]` to add one version of the round; see [Versions](#versions). |
 | `pending add <name> <key> --title=T [--detail=D] [--follows=ID]` | Show an "agent working" entry. `--follows` puts it under that round. |
-| `pending done <name> <key>` | Remove that entry. `add --pending=KEY` also removes it. |
+| `pending done <name> <key>` | Remove that entry. `add --pending=KEY` also removes it. A plain `add` with `--follows` also removes the entry under that round. |
 
 Every command takes `--dir=PATH`. The default session is `.agents/verify/<name>/` in the current repo.
 `capture` and `rerun` take `--engine=http|playwright`. The default is `playwright`. `http` records HTML only and labels every image `html fetch`.
@@ -108,9 +108,30 @@ Capture details, viewports, and the accessibility check: [references/capture.md]
 
 Each item becomes a section with the id `<item>-r<round>`.
 Rounds of one item link through `follows`.
-The left sidebar shows one entry per item and a timeline of its rounds.
+The left panel shows the title, the progress, and one entry per item with a timeline of its rounds.
+Overview and Needs attention stay pinned at the top. Needs attention goes to the next round with no verdict.
+Drag the panel edge, or focus it and use the arrow keys, to change its width. Enter or a double-click resets it.
+The board checks for changes every 5 seconds. A changed round that is open updates in place and keeps the note draft. A new round opens by itself, unless Dante is typing a note.
+The theme button shows the board and the screenshots in light or dark.
+A screenshot is dark when its label or file name has the word `dark`. Every other screenshot is light.
+Put `light` or `dark` in the names of shots you add yourself.
 `wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
+
+## Versions
+
+A round can hold more than one version, like `/dg:proto` variants.
+Run `add` once per version with the same round id:
+
+```bash
+~/.dg/bin/dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=A --variant-label="Tabs" --shots=./shots/a
+~/.dg/bin/dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=B --variant-label="Rail" --shots=./shots/b --pending=nav-r2
+```
+
+A version key is 1 to 16 letters or digits.
+Dante flips versions with the switcher, the arrow keys, or the keys 1 to 9. The captions read "Now" and "Version B".
+Approve records the shown version. `status` and `watch` print `picked B`.
+A version `add` clears a pending entry only when you pass `--pending=KEY`.
 
 ## Send notes back and rerun
 

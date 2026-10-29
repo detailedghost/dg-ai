@@ -7,21 +7,21 @@
 <link rel="stylesheet" href="/board/board.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">
-    <div class="logo" aria-hidden="true">V</div>
-    <div>
-      <h1 id="board-title">Verify · review</h1>
-      <p id="progress" class="muted" aria-live="polite"></p>
-      <div class="meter" aria-hidden="true"><span id="meter"></span></div>
-    </div>
-  </div>
-</header>
 <div class="layout">
   <aside>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">V</div>
+      <div class="brand-text">
+        <h1 id="board-title">Verify · review</h1>
+        <p id="progress" class="muted" aria-live="polite"></p>
+      </div>
+      <button type="button" id="mode" class="ic brand-mode" data-icon="moon"></button>
+    </div>
+    <div class="meter" aria-hidden="true"><span id="meter"></span></div>
     <h2>Sections</h2>
     <ol id="toc"></ol>
   </aside>
+  <div id="nav-resize" class="nav-resize" role="separator" aria-orientation="vertical" aria-label="Resize sections panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
   <main id="main">
     <section id="section" class="panel" aria-labelledby="sec-title">
       <p class="eyebrow" id="sec-branch"></p>
@@ -39,7 +39,7 @@
           <input id="note" autocomplete="off" placeholder="Note: what to change, or anything you noticed">
         </div>
         <div class="pk-bar">
-          <button type="button" id="mode" class="ic" data-icon="moon"></button>
+          <button type="button" id="shot-mode" class="ic mode-toggle" data-icon="moon"></button>
           <div class="pk-menu-wrap">
             <button type="button" id="width-btn" class="ic" aria-haspopup="menu" aria-expanded="false" aria-controls="width-menu" data-icon="all"></button>
             <div id="width-menu" class="pk-menu" role="menu" aria-label="Screen width" hidden>
@@ -50,6 +50,12 @@
             </div>
           </div>
           <span class="pk-sep" aria-hidden="true"></span>
+          <div id="variants" class="pk-variants" role="group" aria-label="Versions" hidden>
+            <button type="button" id="v-prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous version (←)" aria-label="Previous version"></button>
+            <span id="v-label" class="v-label" aria-live="polite"></span>
+            <button type="button" id="v-next" class="ic" data-icon="right" aria-keyshortcuts="ArrowRight" title="Next version (→)" aria-label="Next version"></button>
+            <span class="pk-sep" aria-hidden="true"></span>
+          </div>
           <button type="button" id="prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous (←)" aria-label="Previous section"></button>
           <button type="button" id="next" class="ic" data-icon="right" aria-keyshortcuts="ArrowRight" title="Next (→)" aria-label="Next section"></button>
           <span class="pk-sep" aria-hidden="true"></span>

@@ -9,6 +9,7 @@ export interface Verdict {
 	status: VerdictStatus;
 	note: string;
 	at: string;
+	variant?: string;
 }
 
 export interface BoardImage {
@@ -17,6 +18,13 @@ export interface BoardImage {
 	after: string;
 	target?: string;
 	reason?: string;
+}
+
+export interface Variant {
+	key: string;
+	label?: string;
+	summary?: string;
+	images: BoardImage[];
 }
 
 export interface SectionChecks {
@@ -35,6 +43,7 @@ export interface Section {
 	item?: string;
 	checks?: SectionChecks;
 	images: BoardImage[];
+	variants?: Variant[];
 }
 
 export interface Pending {
@@ -81,6 +90,11 @@ export interface VerifyPaths {
 
 const NOTE_MAX = 4000;
 const STATUSES = new Set<string>(["approved", "changes", "skip"]);
+const VARIANT_KEY = /^[A-Za-z0-9]{1,16}$/;
+
+export function assertVariantKey(key: string): void {
+	if (!VARIANT_KEY.test(key)) throw new Error(`invalid variant ${JSON.stringify(key)}: use 1-16 letters or digits`);
+}
 
 export function verifyPaths(dir: string): VerifyPaths {
 	return {
@@ -139,6 +153,7 @@ export function readVerdicts(paths: VerifyPaths): Record<string, Verdict> {
 		if (!record || !STATUSES.has(String(record.status)) || typeof record.note !== "string")
 			throw new Error(`verdict for ${id} is incomplete`);
 		verdicts[id] = { status: record.status as VerdictStatus, note: record.note, at: String(record.at ?? "") };
+		if (typeof record.variant === "string") verdicts[id].variant = record.variant;
 	}
 	return verdicts;
 }
@@ -157,8 +172,8 @@ export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, a
 	if (!body || typeof body !== "object" || Array.isArray(body)) throw new VerifyRequestError("Invalid JSON", 400);
 	const verdicts = readVerdicts(paths);
 	for (const [id, value] of Object.entries(body)) {
-		if (!board.sections.some((section) => section.id === id))
-			throw new VerifyRequestError(`unknown section ${JSON.stringify(id)}`, 400);
+		const section = board.sections.find((candidate) => candidate.id === id);
+		if (!section) throw new VerifyRequestError(`unknown section ${JSON.stringify(id)}`, 400);
 		const record = value as Record<string, unknown> | null;
 		const status = record?.status;
 		if (typeof status !== "string" || !STATUSES.has(status))
@@ -166,7 +181,11 @@ export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, a
 		const note = typeof record?.note === "string" ? record.note.trim() : "";
 		if (status === "changes" && !note) throw new VerifyRequestError("a note is required", 400);
 		if (note.length > NOTE_MAX) throw new VerifyRequestError(`note must be at most ${NOTE_MAX} characters`, 400);
+		const variant = record?.variant;
+		if (variant !== undefined && (status !== "approved" || !section.variants?.some((entry) => entry.key === variant)))
+			throw new VerifyRequestError("variant must name a version of this section and come with approved", 400);
 		verdicts[id] = { status: status as VerdictStatus, note, at };
+		if (typeof variant === "string") verdicts[id].variant = variant;
 	}
 	writeJson(paths, paths.verdicts, verdicts);
 }
@@ -187,7 +206,8 @@ export function chains(board: Board): Chain[] {
 
 export function verdictLabel(verdict?: Verdict): string {
 	if (!verdict) return "unreviewed";
-	if (verdict.status === "approved") return verdict.note ? "approved+note" : "approved";
+	if (verdict.status === "approved")
+		return `${verdict.variant ? `picked ${verdict.variant}` : "approved"}${verdict.note ? "+note" : ""}`;
 	return verdict.status === "changes" ? "sent back" : "skipped";
 }
 
@@ -238,6 +258,15 @@ export function addSection(board: Board, section: Section, pendingKey?: string):
 			(entry) => entry.key !== pendingKey && !(section.follows && entry.follows === section.follows),
 		),
 	};
+}
+
+/** Add or replace one version of a round and clear only the named pending entry. */
+export function addVariant(board: Board, section: Omit<Section, "images">, variant: Variant, pendingKey?: string): Board {
+	assertVariantKey(variant.key);
+	const previous = board.sections.find((other) => other.id === section.id)?.variants ?? [];
+	const variants = [...previous.filter((entry) => entry.key !== variant.key), variant].sort((a, b) => a.key.localeCompare(b.key));
+	const next = addSection({ ...board, pending: [] }, { ...section, images: [], variants });
+	return { ...next, pending: board.pending.filter((entry) => entry.key !== pendingKey) };
 }
 
 export function setPending(board: Board, entry: Pending): Board {

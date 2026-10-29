@@ -185,6 +185,30 @@ describe("verify review", () => {
 		expect((await run(["pending", "add", "review", "k", `--dir=${session}`])).code).toBe(1);
 	});
 
+	test("adds one version per call to the same round and reports the pick", async () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-variant-"));
+		const shots = join(dir, "mine");
+		Bun.spawnSync(["mkdir", "-p", shots]);
+		writeFileSync(join(shots, "after-nav-light-1440.png"), PNG);
+		const session = join(dir, "s");
+		const flags = ["--title=Nav", `--shots=${shots}`, `--dir=${session}`];
+		expect((await run(["pending", "add", "review", "nav", "--title=Nav", `--dir=${session}`])).code).toBe(0);
+		const first = await run(["add", "review", "nav-r1", "--variant=B", "--variant-label=Rail", ...flags]);
+		expect(first.out).toBe("added nav-r1 version B (1 versions): 1 images (1 without before)\n");
+		const second = await run(["add", "review", "nav-r1", "--variant=A", "--variant-summary=Tabs on top", "--pending=nav", ...flags]);
+		expect(second.out).toBe("added nav-r1 version A (2 versions): 1 images (1 without before)\n");
+		const paths = verifyPaths(session);
+		const board = readBoard(paths, "review");
+		expect(board.pending).toEqual([]);
+		expect(board.sections[0]?.variants).toEqual([
+			{ key: "A", summary: "Tabs on top", images: [{ label: "desktop · nav-light-1440", before: "missing", after: "/shots/nav-r1/v-a/after-nav-light-1440.png", reason: "no before captured" }] },
+			{ key: "B", label: "Rail", images: [{ label: "desktop · nav-light-1440", before: "missing", after: "/shots/nav-r1/v-b/after-nav-light-1440.png", reason: "no before captured" }] },
+		]);
+		writeFileSync(paths.verdicts, JSON.stringify({ "nav-r1": { status: "approved", note: "", at: "t", variant: "B" } }));
+		expect((await run(["status", "review", `--dir=${session}`])).out).toBe("✓ Nav | r1 picked B\nALL APPROVED\n");
+		expect((await run(["add", "review", "nav-r1", "--variant=a/b", ...flags])).code).toBe(1);
+	});
+
 	test("help lists every command, a missing name fails, and sessions stay out of git", async () => {
 		const help = await run(["--help"]);
 		expect(help.code).toBe(0);

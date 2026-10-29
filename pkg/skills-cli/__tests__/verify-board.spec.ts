@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	addSection,
+	addVariant,
 	chains,
 	dropPending,
 	formatStatus,
@@ -96,13 +97,12 @@ describe("status", () => {
 	});
 
 	test("labels each verdict", () => {
-		expect([undefined, verdict("approved"), verdict("approved", "n"), verdict("changes", "n"), verdict("skip")].map(verdictLabel)).toEqual([
-			"unreviewed",
-			"approved",
-			"approved+note",
-			"sent back",
-			"skipped",
-		]);
+		const picked = { ...verdict("approved"), variant: "C" };
+		expect(
+			[undefined, verdict("approved"), verdict("approved", "n"), verdict("changes", "n"), verdict("skip"), picked, { ...picked, note: "n" }].map(
+				verdictLabel,
+			),
+		).toEqual(["unreviewed", "approved", "approved+note", "sent back", "skipped", "picked C", "picked C+note"]);
 	});
 });
 
@@ -118,6 +118,26 @@ describe("rounds and pending", () => {
 		expect(b.sections.filter((entry) => entry.id === "home-r2").map((entry) => entry.summary)).toEqual(["new"]);
 		expect(() => addSection(b, section("x-r2", { follows: "missing" }))).toThrow("follows missing not found");
 		expect(dropPending(setPending(b, { key: "k", title: "K" }), "k").pending).toEqual([]);
+	});
+
+	test("versions merge into one round, stay sorted, and clear only the named pending entry", () => {
+		let b = setPending(board([section("nav-r1")]), { key: "nav-r2", title: "Nav", follows: "nav-r1" });
+		b = setPending(b, { key: "nav-v", title: "Nav" });
+		const round = { id: "nav-r2", title: "Nav", follows: "nav-r1" };
+		const shot = (after: string) => [{ label: "desktop · a", before: "missing", after }];
+		b = addVariant(b, round, { key: "B", label: "Rail", images: shot("/b.png") });
+		expect(b.pending.map((entry) => entry.key)).toEqual(["nav-r2", "nav-v"]);
+		b = addVariant(b, round, { key: "A", images: shot("/a.png") }, "nav-v");
+		b = addVariant(b, round, { key: "B", images: shot("/b2.png") }, "nav-r2");
+		const nav = b.sections.find((entry) => entry.id === "nav-r2");
+		expect(nav?.images).toEqual([]);
+		expect(nav?.variants?.map((entry) => [entry.key, entry.images[0]?.after])).toEqual([
+			["A", "/a.png"],
+			["B", "/b2.png"],
+		]);
+		expect(b.pending).toEqual([]);
+		expect(() => addVariant(b, round, { key: "B:1", images: [] })).toThrow("invalid variant");
+		expect(() => addVariant(b, { ...round, follows: "gone" }, { key: "C", images: [] })).toThrow("follows gone not found");
 	});
 
 	test("rework picks rounds sent back or approved with a note that have no next round", () => {
@@ -161,6 +181,19 @@ describe("files", () => {
 		expect(() => mergeVerdicts(paths, b, { "zz-r1": { status: "skip" } })).toThrow("unknown section");
 		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "n".repeat(4001) } })).toThrow("at most 4000");
 		expect(() => mergeVerdicts(paths, b, [])).toThrow("Invalid JSON");
+	});
+
+	test("a picked version is stored only with approve and only when the round has it", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const versions = [{ key: "A", images: [] }, { key: "B", images: [] }];
+		const b = board([section("nav-r1", { images: [], variants: versions }), section("x-r1")]);
+		mergeVerdicts(paths, b, { "nav-r1": { status: "approved", note: "", variant: "B" } }, "t1");
+		expect(readVerdicts(paths)["nav-r1"]).toEqual({ status: "approved", note: "", at: "t1", variant: "B" });
+		expect(() => mergeVerdicts(paths, b, { "nav-r1": { status: "approved", note: "", variant: "C" } })).toThrow("variant must");
+		expect(() => mergeVerdicts(paths, b, { "nav-r1": { status: "skip", note: "", variant: "A" } })).toThrow("variant must");
+		expect(() => mergeVerdicts(paths, b, { "x-r1": { status: "approved", note: "", variant: "A" } })).toThrow("variant must");
+		expect(statusReport(b, readVerdicts(paths)).items[0]?.rounds).toEqual(["r1 picked B"]);
 	});
 
 	test("a corrupt verdict file throws instead of reading as empty", () => {

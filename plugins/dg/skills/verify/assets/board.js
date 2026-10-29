@@ -9,9 +9,26 @@ let pollTimer = null;
 const POLL_MS = 5000;
 let verdicts = {};
 let index = 0;
+let variant = 0;
+let variantFor = null;
+let pendingVariant = null;
+const hasVariants = () => !$("section").hidden && (sections[index]?.variants || []).length > 0;
+function stepVariant(d) {
+  const vs = sections[index].variants;
+  variant = (variant + d + vs.length) % vs.length;
+  const note = $("note").value;
+  renderSection(true);
+  if (!verdicts[sections[index].id]?.status) $("note").value = note;
+  syncVerdictUi();
+}
 let width = "all";
 
-const imgSrc = (path) => (path && path !== "missing" ? path : null);
+const revs = {};
+const themeOf = (im) => {
+  const text = `${im.label || ""} ${im.after || ""}`.toLowerCase();
+  return /(^|[^a-z])dark([^a-z]|$)/.test(text) ? "dark" : /(^|[^a-z])light([^a-z]|$)/.test(text) ? "light" : null;
+};
+const imgSrc = (path) => (path && path !== "missing" ? `${path}${revs[sections[index]?.id] ? `?v=${revs[sections[index].id]}` : ""}` : null);
 
 function figure(caption, path, reason) {
   const fig = document.createElement("figure");
@@ -43,7 +60,7 @@ function openZoom(src, alt) {
 
 const statusText = (v) => {
   if (!v?.status) return "not reviewed";
-  if (v.status === "approved") return v.note ? "approved + note" : "approved";
+  if (v.status === "approved") return `${v.variant ? `picked ${v.variant}` : "approved"}${v.note ? " + note" : ""}`;
   return v.status === "changes" ? "sent back" : "skipped";
 };
 
@@ -85,12 +102,34 @@ function setFold(key, collapsed) {
   } catch {}
 }
 
+const needsAttention = (s) => !verdicts[s.id]?.status;
+
+function orb(count) {
+  const o = el("span", count ? "orb orb-count" : "orb", count ? String(count) : "");
+  o.setAttribute("aria-hidden", "true");
+  return o;
+}
+
+function goNextAttention() {
+  const from = $("section").hidden ? -1 : index;
+  const order = [...sections.keys()].map((k) => (from + 1 + k) % sections.length);
+  const next = order.find((k) => needsAttention(sections[k]));
+  if (next !== undefined) go(next);
+}
+
 function renderToc() {
   const toc = $("toc");
   toc.replaceChildren();
-  const overview = el("li", "overview");
+  const pinned = el("li", "pinned");
+  const overview = el("div", "overview");
   overview.append(tocButton("", "≡", "Overview", "Overview of every item and round", renderSummary, !$("summary").hidden));
-  toc.append(overview);
+  const needs = sections.filter(needsAttention);
+  const attn = el("div", "attention");
+  const ab = tocButton("", "!", needs.length ? "Needs attention" : "All caught up", needs.length ? `Needs attention: ${needs.length} waiting. Go to the next one` : "Nothing needs your attention", needs.length ? goNextAttention : null, false);
+  if (needs.length) ab.append(orb(needs.length));
+  attn.append(ab);
+  pinned.append(overview, attn);
+  toc.append(pinned);
   const showing = $("section").hidden ? null : sections[index];
   for (const chain of chains()) {
     const { rounds, last, waiting } = chain;
@@ -100,7 +139,9 @@ function renderToc() {
     const headDot = waiting ? "working" : verdictCls(v);
     const headMark = waiting ? "" : (marks[v?.status] || "○");
     const target = rounds.find((r) => !verdicts[r.id]?.status) || last;
-    li.append(tocButton(headDot, headMark, last.title, `${last.title}: ${waiting ? "agent working" : statusText(v)}`, () => go(sections.indexOf(target)), rounds.includes(showing) && rounds.length === 1));
+    const headBtn = tocButton(headDot, headMark, last.title, `${last.title}: ${waiting ? "agent working" : statusText(v)}${rounds.some(needsAttention) ? ", needs attention" : ""}`, () => go(sections.indexOf(target)), rounds.includes(showing) && rounds.length === 1);
+    if (rounds.some(needsAttention)) headBtn.append(orb());
+    li.append(headBtn);
     if (rounds.length > 1 || waiting) {
       const key = rounds[0].id;
       const collapsed = folds[key] ?? (!waiting && resolved(last));
@@ -126,7 +167,9 @@ function renderToc() {
       rounds.forEach((r, i) => {
         const rv = verdicts[r.id];
         const sub = el("li");
-        sub.append(tocButton(verdictCls(rv), String(roundOf(r, i)), r.summary || shortWhat(r), `${r.title}, round ${roundOf(r, i)}: ${statusText(rv)}`, () => go(sections.indexOf(r)), r === showing));
+        const rb = tocButton(verdictCls(rv), String(roundOf(r, i)), r.summary || shortWhat(r), `${r.title}, round ${roundOf(r, i)}: ${statusText(rv)}`, () => go(sections.indexOf(r)), r === showing);
+        if (needsAttention(r)) rb.append(orb());
+        sub.append(rb);
         line.append(sub);
       });
       if (waiting) {
@@ -149,7 +192,7 @@ function renderToc() {
   $("meter").style.width = sections.length ? `${(done / sections.length) * 100}%` : "0";
 }
 
-function renderSection() {
+function renderSection(stay = false) {
   const s = sections[index];
   $("summary").hidden = true;
   $("section").hidden = false;
@@ -174,23 +217,41 @@ function renderSection() {
     return pill;
   }));
   $("sec-checks").hidden = !checks.length;
+  const vs = s.variants || [];
+  const picked = verdicts[s.id]?.variant;
+  if (variantFor !== s.id) {
+    variantFor = s.id;
+    variant = Math.max(0, vs.findIndex((x) => x.key === (pendingVariant || picked)));
+    pendingVariant = null;
+  }
+  const cur = vs[variant];
+  $("variants").hidden = !vs.length;
+  if (cur) {
+    $("v-label").textContent = `${cur.key} · ${cur.label || `Version ${cur.key}`}`;
+    $("v-label").title = cur.summary || "";
+    $("sec-what").textContent = [s.what_changed, cur.summary && `${cur.key}: ${cur.summary}`].filter(Boolean).join(" ");
+  }
   const shots = $("shots");
   shots.replaceChildren();
-  for (const im of s.images || []) {
+  const list = (cur ? cur.images : s.images) || [];
+  const theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  for (const im of list) {
     const w = widthOf(im.label || "");
     if (width !== "all" && w !== width) continue;
+    const t = themeOf(im);
+    if ((t || "light") !== theme) continue;
     const card = document.createElement("div");
     card.className = "shot";
     const h = document.createElement("h3");
     h.textContent = im.label;
     const pair = document.createElement("div");
     pair.className = `pair w-${w}${im.target ? " has-target" : ""}`;
-    pair.append(figure("Before", im.before, im.reason), figure("After", im.after, im.reason));
+    pair.append(figure(cur ? "Now" : "Before", im.before, im.reason), figure(cur ? `Version ${cur.key}` : "After", im.after, im.reason));
     if (im.target) pair.append(figure("Prototype", im.target));
     card.append(h, pair);
     shots.append(card);
   }
-  if (!shots.children.length) shots.textContent = "No screenshots for this width.";
+  if (!shots.children.length) shots.textContent = list.some((im) => (themeOf(im) || "light") === theme) ? "No screenshots for this width." : `No ${theme} screenshots for this round. Switch the theme to see the ${theme === "dark" ? "light" : "dark"} ones.`;
   const v = verdicts[s.id] || {};
   $("note").value = v.note || "";
   $("section").dataset.verdict = keyOf(v.status, v.note);
@@ -198,8 +259,11 @@ function renderSection() {
   setLocked(Boolean(v.status), v);
   syncVerdictUi();
   $("prev").disabled = index === 0;
-  history.replaceState(null, "", `${location.search}#${encodeURIComponent(s.id)}`);
+  $("prev").hidden = $("next").hidden = Boolean(cur);
+  $("prev").nextElementSibling.nextElementSibling.hidden = Boolean(cur);
+  history.replaceState(null, "", `${location.search}#${encodeURIComponent(s.id)}${cur ? `:${cur.key}` : ""}`);
   renderToc();
+  if (stay) return;
   $("sec-title").focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
 }
@@ -251,7 +315,7 @@ function setLocked(locked, v = {}) {
   showNote(!locked && Boolean($("note").value));
   $("decided-pill").hidden = !locked;
   $("change").hidden = !locked;
-  $("decided-pill").textContent = decidedText[key] || "";
+  $("decided-pill").textContent = v.variant && v.status === "approved" ? `${decidedText[key]} · ${v.variant}` : decidedText[key] || "";
   $("decided-pill").className = `pill decided-pill ${key}`;
   const pop = locked && v.note;
   $("note-pop").hidden = !pop;
@@ -312,7 +376,6 @@ function renderEnd() {
   const skipped = sections.filter((s) => verdicts[s.id]?.status === "skip");
   const allGood = sections.length > 0 && !pending.length && sections.every(resolved);
   if (allGood) {
-    stopPoll();
     end.append(
       el("div", "badge", "✓"),
       el("h2", "", "All approved"),
@@ -428,15 +491,42 @@ async function poll() {
     const stamp = $("poll-stamp");
     if (stamp) stamp.textContent = `Last checked ${new Date().toLocaleTimeString()}`;
     if (text === manifestText) return;
+    const old = new Map(sections.map((s) => [s.id, JSON.stringify(s)]));
+    const current = $("section").hidden ? null : sections[index];
+    const draft = $("note").value;
     applyManifest(text);
-    const next = firstUnreviewed();
-    if (next >= 0) {
-      stopPoll();
-      go(next);
-    } else {
-      renderSummary();
+    const changed = sections.filter((s) => old.has(s.id) && old.get(s.id) !== JSON.stringify(s));
+    for (const s of changed) revs[s.id] = Date.now();
+    const arrived = sections.filter((s) => !old.has(s.id) && !verdicts[s.id]?.status);
+    if (!current) {
+      if (arrived.length) return go(sections.indexOf(arrived[0]));
+      return refreshSummary();
     }
+    const busy = !verdicts[current.id]?.status && draft.trim();
+    if (arrived.length && !busy) {
+      toast(`New round ready: ${arrived[0].title}`);
+      return go(sections.indexOf(arrived[0]));
+    }
+    const at = sections.findIndex((s) => s.id === current.id);
+    if (at < 0) return go(Math.min(index, sections.length - 1));
+    index = at;
+    if (changed.includes(sections[at])) {
+      const y = window.scrollY;
+      renderSection(true);
+      if (busy) $("note").value = draft;
+      syncVerdictUi();
+      window.scrollTo({ top: y });
+    } else {
+      renderToc();
+    }
+    if (arrived.length) toast(`New round ready: ${arrived[0].title}. Open it from Sections.`);
   } catch {}
+}
+
+function refreshSummary() {
+  const y = window.scrollY;
+  renderSummary();
+  window.scrollTo({ top: y });
 }
 
 function startPoll() {
@@ -450,7 +540,7 @@ function stopPoll() {
 
 function go(i) {
   if (i >= sections.length) return renderSummary();
-  stopPoll();
+  startPoll();
   index = Math.max(0, i);
   renderSection();
 }
@@ -458,6 +548,8 @@ function go(i) {
 async function save(status) {
   const s = sections[index];
   const entry = { status, note: $("note").value.trim(), at: new Date().toISOString() };
+  const cur = s.variants?.[variant];
+  if (cur && status === "approved") entry.variant = cur.key;
   try {
     const res = await fetch("/api/verdicts", {
       method: "POST",
@@ -502,23 +594,36 @@ $("verdict").addEventListener("submit", async (e) => {
   const key = keyOf(status, note);
   $("section").dataset.verdict = key;
   if (key === "approved") confetti();
-  toast(sentMsg[key]);
+  const pick = verdicts[sections[index].id].variant;
+  toast(pick && status === "approved" ? `Picked ${pick}. ${note ? "Your note goes back as a follow-up round." : ""}`.trim() : sentMsg[key]);
   setTimeout(() => go(index + 1), 450);
 });
 function applyMode(mode) {
   document.documentElement.dataset.theme = mode;
-  setIcon($("mode"), mode === "dark" ? "sun" : "moon");
-  const label = mode === "dark" ? "Switch to light" : "Switch to dark";
-  $("mode").title = label;
-  $("mode").setAttribute("aria-label", label);
+  const label = mode === "dark" ? "Switch to light (board and screenshots)" : "Switch to dark (board and screenshots)";
+  for (const b of [$("mode"), $("shot-mode")]) {
+    setIcon(b, mode === "dark" ? "sun" : "moon");
+    b.title = label;
+    b.setAttribute("aria-label", label);
+  }
 }
-$("mode").addEventListener("click", () => {
+const toggleMode = () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   applyMode(next);
   try {
     localStorage.setItem("verify-mode", next);
   } catch {}
-});
+  if (!$("section").hidden && sections[index]) {
+    const y = window.scrollY;
+    const note = $("note").value;
+    renderSection(true);
+    if (!verdicts[sections[index].id]?.status) $("note").value = note;
+    syncVerdictUi();
+    window.scrollTo({ top: y });
+  }
+};
+$("mode").addEventListener("click", toggleMode);
+$("shot-mode").addEventListener("click", toggleMode);
 try {
   applyMode(localStorage.getItem("verify-mode") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 } catch {
@@ -569,20 +674,90 @@ $("width-menu").addEventListener("keydown", (e) => {
 syncWidthBtn();
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("textarea,input,.pk-menu")) return;
+  if (hasVariants()) {
+    if (e.key === "ArrowRight") return stepVariant(1);
+    if (e.key === "ArrowLeft") return stepVariant(-1);
+    const n = Number(e.key);
+    if (n >= 1 && n <= sections[index].variants.length) {
+      variant = n - 1;
+      return stepVariant(0);
+    }
+  }
   if (e.key === "ArrowRight") go(index + 1);
   if (e.key === "ArrowLeft") go(index - 1);
 });
+$("v-prev").addEventListener("click", () => stepVariant(-1));
+$("v-next").addEventListener("click", () => stepVariant(1));
 $("sec-title").tabIndex = -1;
 
 (async () => {
   const [text, v] = await Promise.all([fetch(`/api/manifest${location.search}`).then((r) => r.text()), fetch("/api/verdicts").then((r) => r.json())]);
   applyManifest(text);
   verdicts = v || {};
-  const hash = decodeURIComponent(location.hash.slice(1));
+  const [hash, hashVariant] = decodeURIComponent(location.hash.slice(1)).split(":");
+  pendingVariant = hashVariant || null;
   const remembered = sections.findIndex((x) => x.id === hash);
   const next = firstUnreviewed();
   if (hash === "overview") renderSummary();
   else if (remembered >= 0) go(remembered);
   else if (next >= 0) go(next);
   else renderSummary();
+})();
+(() => {
+  const handle = $("nav-resize");
+  const root = document.documentElement;
+  const min = 240;
+  const max = () => Math.round(innerWidth * 0.6);
+  const clamp = (w) => Math.min(max(), Math.max(min, Math.round(w)));
+  const current = () => document.querySelector("aside").getBoundingClientRect().width;
+  const sync = () => {
+    const w = Math.round(current());
+    handle.setAttribute("aria-valuenow", String(w));
+    handle.setAttribute("aria-valuemin", String(min));
+    handle.setAttribute("aria-valuemax", String(max()));
+  };
+  const set = (w, save = true) => {
+    if (w === null) root.style.removeProperty("--nav-w");
+    else root.style.setProperty("--nav-w", `${clamp(w)}px`);
+    sync();
+    if (!save) return;
+    try {
+      if (w === null) localStorage.removeItem("verify-nav-w");
+      else localStorage.setItem("verify-nav-w", String(clamp(w)));
+    } catch {}
+  };
+  try {
+    const saved = Number(localStorage.getItem("verify-nav-w"));
+    if (saved) set(saved, false);
+  } catch {}
+  sync();
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    document.body.classList.add("resizing");
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (handle.classList.contains("dragging")) set(e.clientX, false);
+  });
+  const end = () => {
+    if (!handle.classList.contains("dragging")) return;
+    handle.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+    set(current());
+  };
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+  handle.addEventListener("dblclick", () => set(null));
+  handle.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 64 : 16;
+    if (e.key === "ArrowLeft") set(current() - step);
+    else if (e.key === "ArrowRight") set(current() + step);
+    else if (e.key === "Home") set(min);
+    else if (e.key === "End") set(max());
+    else if (e.key === "Enter") set(null);
+    else return;
+    e.preventDefault();
+  });
+  addEventListener("resize", sync);
 })();

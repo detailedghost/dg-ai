@@ -4,6 +4,8 @@ import { selfCommand } from "@dg/common/node";
 import { openInBrowser } from "../prototype/ui";
 import {
 	addSection,
+	addVariant,
+	assertVariantKey,
 	chains,
 	clip,
 	dropPending,
@@ -36,7 +38,9 @@ export const USAGE = `Usage: verify <command> <name> [options]
   status <name> [--json]                        One line per item: rounds, state, latest note
   add <name> <id> --title=T [--summary=S] [--what=W] [--branch=B] [--follows=ID] [--round=N] [--pending=KEY]
       (--shots=DIR [--prefix=P] | --img="label|before|after[|reason]" ...)
-                                                Add a round from screenshots you took yourself
+      [--variant=KEY [--variant-label=L] [--variant-summary=S]]
+                                                Add a round from screenshots you took yourself.
+                                                With --variant, add one version; run once per version
   pending add <name> <key> --title=T [--detail=D] [--follows=ID]
   pending done <name> <key>                     Show or clear an "agent working" entry
   watch <name>                                  Print one line per new verdict until stopped
@@ -231,18 +235,18 @@ function servedName(file: string): string {
 	return basename(file).toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^[^a-z0-9]+/, "");
 }
 
-function importShot(paths: VerifyPaths, sectionId: string, file: string): string {
+function importShot(paths: VerifyPaths, folder: string, file: string): string {
 	const source = resolve(file);
 	if (!source.endsWith(".png")) throw new Error(`not a png: ${file}`);
 	if (!existsSync(source)) throw new Error(`no such file: ${file}`);
-	const dir = join(paths.shotsDir, sectionId, "added");
+	const dir = join(paths.shotsDir, folder);
 	mkdirSync(dir, { recursive: true });
 	const name = servedName(source);
 	copyFileSync(source, join(dir, name));
-	return `/shots/${sectionId}/added/${name}`;
+	return `/shots/${folder}/${name}`;
 }
 
-function imagesFromDir(paths: VerifyPaths, sectionId: string, dir: string, prefix: string): BoardImage[] {
+function imagesFromDir(paths: VerifyPaths, folder: string, dir: string, prefix: string): BoardImage[] {
 	const files = new Set(readdirSync(resolve(dir)));
 	const names = [...files]
 		.filter((file) => file.startsWith(`${prefix}after-`) && file.endsWith(".png"))
@@ -251,9 +255,9 @@ function imagesFromDir(paths: VerifyPaths, sectionId: string, dir: string, prefi
 	if (names.length === 0) throw new Error(`no ${prefix}after-*.png in ${dir}`);
 	return names.map((shot) => {
 		const before = `${prefix}before-${shot}.png`;
-		const after = importShot(paths, sectionId, join(dir, `${prefix}after-${shot}.png`));
+		const after = importShot(paths, folder, join(dir, `${prefix}after-${shot}.png`));
 		if (!files.has(before)) return { label: `${widthOf(shot)} · ${shot}`, before: "missing", after, reason: "no before captured" };
-		return { label: `${widthOf(shot)} · ${shot}`, before: importShot(paths, sectionId, join(dir, before)), after };
+		return { label: `${widthOf(shot)} · ${shot}`, before: importShot(paths, folder, join(dir, before)), after };
 	});
 }
 
@@ -262,19 +266,22 @@ function runAdd(name: string, paths: VerifyPaths, flags: Flags): number {
 	const title = one(flags, "title");
 	if (!id || !title) return fail("add needs <name> <id> --title=T");
 	assertVerifyName(id, "section");
+	const variant = one(flags, "variant");
+	if (variant) assertVariantKey(variant);
 	const board = readBoard(paths, name);
 	const follows = one(flags, "follows");
 	if (follows && !board.sections.some((section) => section.id === follows)) return fail(`follows ${follows} not found`);
+	const folder = `${id}/${variant ? `v-${variant.toLowerCase()}` : "added"}`;
 	const shots = one(flags, "shots");
 	const images = shots
-		? imagesFromDir(paths, id, shots, one(flags, "prefix") ?? "")
+		? imagesFromDir(paths, folder, shots, one(flags, "prefix") ?? "")
 		: (flags.values.get("img") ?? []).map((spec) => {
 				const [label, before, after, reason] = spec.split("|");
 				if (!label || !after) throw new Error(`--img needs "label|before|after": ${spec}`);
 				const image: BoardImage = {
 					label,
-					before: before && before !== "missing" ? importShot(paths, id, before) : "missing",
-					after: importShot(paths, id, after),
+					before: before && before !== "missing" ? importShot(paths, folder, before) : "missing",
+					after: importShot(paths, folder, after),
 				};
 				if (reason) image.reason = reason;
 				return image;
@@ -285,8 +292,18 @@ function runAdd(name: string, paths: VerifyPaths, flags: Flags): number {
 	for (const [key, value] of Object.entries(optional)) if (value) Object.assign(section, { [key]: value });
 	const round = integer(flags, "round", 1, 999);
 	if (round) section.round = round;
-	writeBoard(paths, addSection(board, section, one(flags, "pending")));
-	write(`added ${id}: ${images.length} images (${images.filter((image) => image.before === "missing").length} without before)\n`);
+	const missing = `${images.length} images (${images.filter((image) => image.before === "missing").length} without before)`;
+	if (!variant) {
+		writeBoard(paths, addSection(board, section, one(flags, "pending")));
+		write(`added ${id}: ${missing}\n`);
+		return 0;
+	}
+	const entry = { key: variant, images, label: one(flags, "variant-label"), summary: one(flags, "variant-summary") };
+	for (const key of ["label", "summary"] as const) if (!entry[key]) delete entry[key];
+	const next = addVariant(board, section, entry, one(flags, "pending"));
+	const count = next.sections.find((candidate) => candidate.id === id)?.variants?.length ?? 0;
+	writeBoard(paths, next);
+	write(`added ${id} version ${variant} (${count} versions): ${missing}\n`);
 	return 0;
 }
 
