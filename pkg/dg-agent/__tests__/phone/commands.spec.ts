@@ -371,6 +371,33 @@ describe("accept", () => {
 		expect(findHandle(peer, "grok-2")).toBeUndefined();
 	});
 
+	it("keeps the first contact when two accepts of the same new npub race with different names", async () => {
+		const peer = deps(freshHome(), pool);
+		const { card } = ownedCard("dg");
+
+		const results = await Promise.allSettled([
+			phoneAccept(card, "hi", peer, { name: "first" }),
+			phoneAccept(card, "hi", peer, { name: "second" }),
+		]);
+
+		expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+		expect(listContacts(peer.db)).toHaveLength(1);
+		expect(listContacts(peer.db)[0]?.handle).toBe("first");
+	});
+
+	it("stores a v1 card with an uppercase npub under the lowercase npub and reuses the contact", async () => {
+		const owned = ownedCard("ignored");
+		const v1 = `dgcall1${Buffer.from(
+			JSON.stringify({ v: 1, npub: owned.npub.toUpperCase(), relays: ["wss://a.example"], secret: "ab".repeat(32), exp: 9_999_999_999 }),
+		).toString("base64url")}`;
+		const peer = deps(freshHome(), pool);
+
+		await phoneAccept(v1, "hi", peer, { name: "grok" });
+		await expect(phoneAccept(v1, "hi", peer, { name: "other" })).rejects.toThrow("this npub is already +grok");
+
+		expect(listContacts(peer.db)).toMatchObject([{ handle: "grok", npub: owned.npub }]);
+	});
+
 	it('refuses a card whose self name is "default" and writes nothing', async () => {
 		const peer = deps(freshHome());
 		const card = callCard(realNpub(), "default");
@@ -411,7 +438,7 @@ describe("accept", () => {
 
 		await expectRefused(
 			peer,
-			"+dg already belongs to a different contact; rename or remove it before accepting this card",
+			"+dg already belongs to a different contact; pass --name <other handle>, or rename or remove it",
 			() => phoneAccept(card, "hi", peer),
 		);
 		expect(listContacts(peer.db)).toEqual([kept]);
@@ -445,7 +472,7 @@ describe("accept", () => {
 
 		await expectRefused(
 			peer,
-			"+grok already belongs to a different contact; rename or remove it before accepting this card",
+			"+grok already belongs to a different contact; pass --name <other handle>, or rename or remove it",
 			() => phoneAccept(card, "hi", peer, { name: "+grok" }),
 		);
 		expect(listContacts(peer.db)).toEqual([kept]);
@@ -599,7 +626,7 @@ describe("accept", () => {
 		const other = ownedCard("default");
 		await expect(
 			program.parseAsync(["phone", "dial", "--name", "grok", other.card, "hi"], { from: "user" }),
-		).rejects.toThrow("+grok already belongs to a different contact; rename or remove it before accepting this card");
+		).rejects.toThrow("+grok already belongs to a different contact; pass --name <other handle>, or rename or remove it");
 		expect(listContacts(peer.db)).toHaveLength(1);
 		expect(listContacts(peer.db)[0]).toMatchObject({ handle: "grok", npub: owned.npub, keyId: "work" });
 	});

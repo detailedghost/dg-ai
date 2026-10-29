@@ -91,7 +91,7 @@ carries `dg`, not `default`. `default` is the key a fresh phone signs with,
 and the old phone-friend line name.
 
 If that handle already belongs to a different npub, accept exits 1 and tells
-you to rename or remove that contact first. It does not replace the contact
+you to pass `--name <other handle>`, or rename or remove that contact first. It does not replace the contact
 and it does not invent a `-2` handle. Accepting a card whose npub you already
 have keeps that contact's handle and key. Rename a contact afterward with
 `phone contacts rename +<old> <new>`.

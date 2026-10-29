@@ -197,6 +197,25 @@ export class PhoneDb {
 		return this.db.query("SELECT * FROM contacts ORDER BY handle").all() as ContactRow[];
 	}
 
+	/** Inserts only when neither the npub nor the handle exists; false means another writer got there first. */
+	insertContact(row: ContactRow): boolean {
+		const { changes } = this.db
+			.query(
+				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
+				VALUES ($npub, $handle, $relays, $keyId, $addedAt, $via)
+				ON CONFLICT DO NOTHING`,
+			)
+			.run({
+				npub: row.npub,
+				handle: row.handle,
+				relays: row.relays,
+				keyId: row.key_id,
+				addedAt: row.added_at,
+				via: row.via,
+			});
+		return changes > 0;
+	}
+
 	putContact(row: ContactRow): void {
 		this.db
 			.query(

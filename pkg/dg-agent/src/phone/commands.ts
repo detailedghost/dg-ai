@@ -29,6 +29,7 @@ import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, run
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
+	insertNewContact,
 	addInvite,
 	addPhoneNotice,
 	findContactByHandle,
@@ -292,7 +293,15 @@ export async function phoneAccept(
 	const selfName = resolvedSelfName(deps.db);
 	const words = textArg || "hello";
 	if (!existing) {
-		addContact(deps.db, { npub: card.npub, handle, relays: card.relays, keyId, addedAt: deps.now(), via: "accept" });
+		const inserted = insertNewContact(deps.db, {
+			npub: card.npub,
+			handle,
+			relays: card.relays,
+			keyId,
+			addedAt: deps.now(),
+			via: "accept",
+		});
+		if (!inserted) throw new DgCliError("another accept just saved this npub or handle; run the accept again");
 	}
 	const pool = deps.createPool();
 	try {
@@ -704,7 +713,7 @@ function attachPhoneVerbs(
 		.description("accept a call card: ring its owner and save them as a contact")
 		.argument("[card]", "the call card, or - to read it from stdin", "-")
 		.argument("[text]", "first words to send", "hello")
-		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing or "default"')
+		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing, "default", or taken')
 		.option("--key <id>", "existing key id to sign a new contact with, instead of the number key")
 		.action((card: string, text: string, opts: AcceptOpts) => phoneAccept(card, text, getDeps(), opts));
 
@@ -781,7 +790,7 @@ function attachPhoneVerbs(
 		.command("dial", { hidden: true })
 		.argument("[card]", "the call card, or - to read it from stdin", "-")
 		.argument("[text]", "first words to send", "hello")
-		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing or "default"')
+		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing, "default", or taken')
 		.option("--key <id>", "existing key id to sign a new contact with, instead of the number key")
 		.action((card: string, text: string, opts: AcceptOpts) => phoneAccept(card, text, getDeps(), opts));
 

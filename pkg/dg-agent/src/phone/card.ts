@@ -21,15 +21,6 @@ const MAX_RELAY_URL_BYTES = 255;
 /** Exp sentinel for a card that never expires; a number card carries this, not a far-future date. */
 export const NO_EXPIRY = 0xffffffff;
 
-function isNpub(value: unknown): value is string {
-	if (typeof value !== "string") return false;
-	try {
-		return nip19.decode(value).type === "npub";
-	} catch {
-		return false;
-	}
-}
-
 /** Checks a relay list against the rules every card must meet. */
 export function isCardRelays(relays: unknown): relays is string[] {
 	return (
@@ -152,12 +143,12 @@ function decodeCardV1(trimmed: string, now: number): Card {
 	if (typeof body !== "object" || body === null) invalid("it does not decode");
 	const { v, npub, relays, secret, exp } = body;
 	if (v !== 1) invalid(`unknown version ${String(v)}`);
-	if (!isNpub(npub)) invalid("bad npub");
+	if (typeof npub !== "string") invalid("bad npub");
 	if (!isCardRelays(relays)) invalid(`relays must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	if (typeof secret !== "string" || !SECRET_HEX_PATTERN.test(secret)) invalid("bad secret");
 	if (typeof exp !== "number" || !Number.isInteger(exp)) invalid("bad expiry");
 	if (exp <= now) throw new DgCliError("this call card has expired; ask for a new one");
-	return { npub: npub as string, relays, secret, exp };
+	return { npub: pubkeyBytesToNpub(npubToPubkeyBytes(npub)), relays, secret, exp };
 }
 
 /** Accepts a v1 or v2 card; validates every field, so a pasted card can be trusted only as far as its own contents. */

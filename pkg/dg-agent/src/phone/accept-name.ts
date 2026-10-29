@@ -25,7 +25,7 @@ const UNNAMED_CARD_MESSAGE =
 	'this call card\'s self name is missing or "default"; pass --name <handle> to accept it';
 
 function differentContactMessage(handle: string): string {
-	return `+${handle} already belongs to a different contact; rename or remove it before accepting this card`;
+	return `+${handle} already belongs to a different contact; pass --name <other handle>, or rename or remove it`;
 }
 
 /** Handle to store for this card, or a `DgCliError` before any contact or key row is written.

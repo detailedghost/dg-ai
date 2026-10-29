@@ -138,6 +138,17 @@ export function addContact(db: PhoneDb, record: ContactRecord): void {
 	});
 }
 
+export function insertNewContact(db: PhoneDb, record: ContactRecord): boolean {
+	return db.insertContact({
+		npub: record.npub,
+		handle: record.handle,
+		relays: JSON.stringify(record.relays),
+		key_id: record.keyId,
+		added_at: record.addedAt,
+		via: record.via,
+	});
+}
+
 export function renameContact(db: PhoneDb, handle: string, newHandle: string): ContactRecord {
 	const existing = db.getContactByHandle(handle);
 	if (!existing) throw new DgCliError(`no contact +${handle}`);
