@@ -11,7 +11,9 @@ import { type GroupColor, getConfig, resolveColor } from "../config";
 /**
  * Marker-driven tab grouping. Only tabs whose URL carries a `_tab_group=<name>`
  * marker (added by the CLI) are grouped — into <name> — after which the marker is
- * stripped from the URL. Pages the user browses normally are never touched.
+ * stripped from the URL. Pages the user browses normally are never touched, and a
+ * tab acts on its marker once: a marked URL that replays later (Back, history
+ * autocomplete) is stripped but never regroups the tab.
  */
 
 /** Does this browser expose the grouping APIs? Chrome, Edge, and Firefox 139+. */
@@ -41,8 +43,11 @@ type BatchSlot = { batch: string; pos: number };
 
 const batchSlots = new Map<number, BatchSlot>();
 
+const handledKey = (tabId: number) => `tabGroupingHandled:${tabId}`;
+
 export function forgetTab(tabId: number): void {
 	batchSlots.delete(tabId);
+	void browser.storage.session.remove(handledKey(tabId));
 }
 
 async function findGroup(
@@ -120,7 +125,9 @@ export async function onTabComplete(tabId: number): Promise<void> {
 		const alreadyGrouped =
 			typeof current.groupId === "number" &&
 			current.groupId !== TAB_GROUP_ID_NONE;
-		if (!alreadyGrouped) {
+		const key = handledKey(tabId);
+		const handled = key in (await browser.storage.session.get(key));
+		if (!alreadyGrouped && !handled) {
 			const { color } = await getConfig();
 			const groupId = await addToGroup(
 				tabId,
@@ -135,6 +142,8 @@ export async function onTabComplete(tabId: number): Promise<void> {
 				await positionInBatch(tabId, groupId, slot);
 			}
 		}
+
+		await browser.storage.session.set({ [key]: true });
 
 		const clean = stripGroupMarker(url);
 		if (clean !== url) await browser.tabs.update(tabId, { url: clean });

@@ -8,6 +8,8 @@ type FakeTab = {
 };
 type FakeGroup = { id: number; windowId: number; title: string };
 
+const sessionStore = new Map<string, unknown>();
+
 const state = {
 	windows: new Map<number, number[]>(),
 	tabs: new Map<number, FakeTab>(),
@@ -44,6 +46,17 @@ mock.module("wxt/browser", () => ({
 	browser: {
 		storage: {
 			sync: { get: mock(async () => ({ color: "blue" })) },
+			session: {
+				get: mock(async (key: string) =>
+					sessionStore.has(key) ? { [key]: sessionStore.get(key) } : {},
+				),
+				set: mock(async (items: Record<string, unknown>) => {
+					for (const [k, v] of Object.entries(items)) sessionStore.set(k, v);
+				}),
+				remove: mock(async (key: string) => {
+					sessionStore.delete(key);
+				}),
+			},
 		},
 		tabGroups: {
 			TAB_GROUP_ID_NONE: -1,
@@ -117,7 +130,7 @@ mock.module("wxt/browser", () => ({
 
 import { addGroupMarker } from "../../skills-cli/src/utils/marker";
 
-const { onTabComplete } = await import("@/lib/features/tab-grouping");
+const { onTabComplete, forgetTab } = await import("@/lib/features/tab-grouping");
 
 function addTab(id: number, windowId: number, url: string, groupId = -1) {
 	state.tabs.set(id, { id, windowId, groupId, url });
@@ -155,6 +168,7 @@ beforeEach(() => {
 	state.tabs.clear();
 	state.groups = [];
 	state.nextGroupId = 1;
+	sessionStore.clear();
 });
 
 describe("onTabComplete", () => {
@@ -248,5 +262,63 @@ describe("onTabComplete", () => {
 
 		expect(state.groups).toHaveLength(0);
 		expect(state.tabs.get(72)?.groupId).toBe(-1);
+	});
+
+	it.each([
+		"https://github.com/o/r/pull/5",
+		"https://github.com/o/r/issues/5",
+		"https://github.com/o/r",
+		"https://github.com/o/r/pull/5#issuecomment-1",
+	])("leaves a hand-opened %s tab alone", async (url) => {
+		addTab(73, 1, url);
+		await onTabComplete(73);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(73)?.groupId).toBe(-1);
+		expect(state.tabs.get(73)?.url).toBe(url);
+	});
+
+	it("keeps an existing GitHub anchor when stripping the marker", async () => {
+		addTab(
+			74,
+			1,
+			addGroupMarker("https://github.com/o/r/pull/5#issuecomment-1", "IP"),
+		);
+		await onTabComplete(74);
+
+		expect(state.tabs.get(74)?.groupId).toBe(state.groups[0].id);
+		expect(state.tabs.get(74)?.url).toBe(
+			"https://github.com/o/r/pull/5#issuecomment-1",
+		);
+	});
+
+	it("does not regroup a tab the user ungrouped when its marked URL replays", async () => {
+		const marked = addGroupMarker("https://github.com/o/r/pull/5", "IP");
+		addTab(75, 1, marked);
+		await onTabComplete(75);
+		const tab = state.tabs.get(75);
+		expect(tab?.groupId).not.toBe(-1);
+
+		if (tab) {
+			tab.groupId = -1;
+			tab.url = marked;
+		}
+		await onTabComplete(75);
+
+		expect(tab?.groupId).toBe(-1);
+		expect(tab?.url).toBe("https://github.com/o/r/pull/5");
+	});
+
+	it("groups a new tab that reuses the id of a closed one", async () => {
+		const marked = addGroupMarker("https://github.com/o/r/pull/5", "IP");
+		addTab(76, 1, marked);
+		await onTabComplete(76);
+		forgetTab(76);
+		await Promise.resolve();
+		state.tabs.delete(76);
+		addTab(76, 1, marked);
+		await onTabComplete(76);
+
+		expect(state.tabs.get(76)?.groupId).not.toBe(-1);
 	});
 });
