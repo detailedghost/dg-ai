@@ -37,7 +37,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
 | `--relay <url>...` | none | Relays a `number` or `invite` card should use instead of the saved ones. | the saved relay list |
 | `--ttl <hours>` | none | Hours until an `invite` card expires. | `24` |
-| `--name <handle>` | none | On `invite`, the handle to store for whoever answers. On `accept`, the handle to give a new contact. `accept` requires it when the card's self name is missing or `default`. | invite: the caller's self name. accept: the card's self name |
+| `--name <handle>` | none | On `invite`, the handle to store for whoever answers. On `accept`, the handle to give a new contact. `accept` requires it for a new npub when the card's self name is missing or `default`. | invite: the caller's self name. accept: the card's self name |
 | `--key <id>` | none | On `accept`, an existing key id to sign a new contact with. Accept will not create a key you name, and it will not switch a contact you already have. | the number key |
 | `--count <n>` | `-n` | How many `inbox` rows to print. | `50` |
 | `--on-message <exe> [args...]` | none | Command `open` runs for each delivered message, saved for next time; stdin carries the message JSON. | none (messages wait for `voicemail`/`inbox`) |
@@ -85,8 +85,9 @@ CARD
 This saves the card's owner as a contact, rings them, and prints
 `{"handle": "+<name>", "npub": "...", "id": "...", "relays_ok": [...]}`.
 The new handle is the card's self name (`as`), unless that name is missing
-or exactly `default`. Those two are refused: the command exits 1 and writes
-nothing, until you pass `--name <handle>`. A current card with no `--as`
+or exactly `default`. For a new npub those two are refused: the command exits 1
+before it saves a contact or key, until you pass `--name <handle>`. A known
+contact is rung on its saved handle without `--name`. A current card with no `--as`
 carries `dg`, not `default`. `default` is the key a fresh phone signs with,
 and the old phone-friend line name.
 

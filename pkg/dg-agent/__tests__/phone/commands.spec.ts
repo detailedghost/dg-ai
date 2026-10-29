@@ -398,6 +398,15 @@ describe("accept", () => {
 		expect(listContacts(peer.db)).toMatchObject([{ handle: "grok", npub: owned.npub }]);
 	});
 
+	it("refuses a card whose key is not a valid public key and saves no contact", async () => {
+		const peer = deps(freshHome(), pool);
+		const card = callCard(nip19.npubEncode("ff".repeat(32)), "grok");
+
+		await expect(phoneAccept(card, "hi", peer)).rejects.toThrow(DgCliError);
+
+		expect(listContacts(peer.db)).toEqual([]);
+	});
+
 	it('refuses a card whose self name is "default" and writes nothing', async () => {
 		const peer = deps(freshHome());
 		const card = callCard(realNpub(), "default");

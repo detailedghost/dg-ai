@@ -1,5 +1,5 @@
 import { DgCliError } from "@dg/common";
-import { nip19 } from "nostr-tools";
+import { generateSecretKey, nip19, nip44 } from "nostr-tools";
 import { DEFAULT_RELAYS, isHandle } from "./store";
 
 export type Card = { npub: string; relays: string[]; secret: string; exp: number; handle?: string };
@@ -55,7 +55,13 @@ function npubToPubkeyBytes(npub: string): Buffer {
 }
 
 function pubkeyBytesToNpub(bytes: Buffer): string {
-	return nip19.npubEncode(bytes.toString("hex"));
+	const hex = bytes.toString("hex");
+	try {
+		nip44.getConversationKey(generateSecretKey(), hex);
+	} catch {
+		invalid("bad npub");
+	}
+	return nip19.npubEncode(hex);
 }
 
 function encodeRelays(relays: string[]): Buffer {
