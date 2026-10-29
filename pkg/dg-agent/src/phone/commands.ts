@@ -6,11 +6,12 @@ import { DgCliError } from "@dg/common";
 import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { SimplePool } from "nostr-tools";
+import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
 import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
 import { PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
-import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey, loadKey } from "./keys";
+import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
 import {
 	defaultOnSignal,
 	defaultSchedule,
@@ -28,6 +29,7 @@ import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, run
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
+	insertNewContact,
 	addInvite,
 	addPhoneNotice,
 	findContactByHandle,
@@ -35,7 +37,6 @@ import {
 	FALLBACK_SELF_NAME,
 	isHandle,
 	liveInvites,
-	nextFreeHandle,
 	normalizeHandle,
 	numberKeyId,
 	type OnMessageConfig,
@@ -281,29 +282,26 @@ export async function phoneAccept(
 	cardArg: string | undefined,
 	textArg: string | undefined,
 	deps: PhoneDeps,
+	opts: AcceptOpts = {},
 ): Promise<void> {
 	migrateIfNeeded(deps.paths);
 	const pasted = cardArg === undefined || cardArg === "-" ? await deps.readStdin() : cardArg;
 	if (!pasted) throw new DgCliError("no call card given");
 	const card = decodeCard(pasted, deps.now());
-	if (card.handle === undefined) throw new DgCliError("this call card carries no handle; ask for a new card");
+	const { handle, existing } = resolveAcceptHandle(deps.db, card.handle, card.npub, opts.name);
+	const { keyId, sk } = await signingKeyForAccept(deps, existing, opts.key);
 	const selfName = resolvedSelfName(deps.db);
 	const words = textArg || "hello";
-	const existing = findContactByNpub(deps.db, card.npub);
-	const handle = existing?.handle ?? nextFreeHandle(deps.db, card.handle);
-	let keyId: string;
-	let sk: Uint8Array;
-	if (existing) {
-		keyId = existing.keyId;
-		const loaded = await loadKey(deps, keyId);
-		if (!loaded) throw new DgCliError(`the key for +${existing.handle} is not available`);
-		sk = loaded.sk;
-	} else {
-		keyId = numberKeyId(deps.db);
-		sk = (await ensureKey(deps, keyId)).sk;
-	}
 	if (!existing) {
-		addContact(deps.db, { npub: card.npub, handle, relays: card.relays, keyId, addedAt: deps.now(), via: "accept" });
+		const inserted = insertNewContact(deps.db, {
+			npub: card.npub,
+			handle,
+			relays: card.relays,
+			keyId,
+			addedAt: deps.now(),
+			via: "accept",
+		});
+		if (!inserted) throw new DgCliError("another accept just saved this npub or handle; run the accept again");
 	}
 	const pool = deps.createPool();
 	try {
@@ -715,7 +713,9 @@ function attachPhoneVerbs(
 		.description("accept a call card: ring its owner and save them as a contact")
 		.argument("[card]", "the call card, or - to read it from stdin", "-")
 		.argument("[text]", "first words to send", "hello")
-		.action((card: string, text: string) => phoneAccept(card, text, getDeps()));
+		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing, "default", or taken')
+		.option("--key <id>", "existing key id to sign a new contact with, instead of the number key")
+		.action((card: string, text: string, opts: AcceptOpts) => phoneAccept(card, text, getDeps(), opts));
 
 	const contacts = group
 		.command("contacts")
@@ -790,7 +790,9 @@ function attachPhoneVerbs(
 		.command("dial", { hidden: true })
 		.argument("[card]", "the call card, or - to read it from stdin", "-")
 		.argument("[text]", "first words to send", "hello")
-		.action((card: string, text: string) => phoneAccept(card, text, getDeps()));
+		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing, "default", or taken')
+		.option("--key <id>", "existing key id to sign a new contact with, instead of the number key")
+		.action((card: string, text: string, opts: AcceptOpts) => phoneAccept(card, text, getDeps(), opts));
 
 	group
 		.command("on", { hidden: true })

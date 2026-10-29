@@ -200,6 +200,15 @@ describe("call cards v1 (legacy, accept only)", () => {
 		}
 	});
 
+	it("returns a lowercase npub for an uppercase v1 npub", () => {
+		expect(decodeCard(rawV1({ ...v1Card, npub: npub.toUpperCase() }), 1_000).npub).toBe(npub);
+	});
+
+	it("rejects a v1 npub whose decoded key is not 32 bytes", () => {
+		const short = nip19.npubEncode(pubkeyHex.slice(0, 62));
+		expect(() => decodeCard(rawV1({ ...v1Card, npub: short }), 1_000)).toThrow(DgCliError);
+	});
+
 	it("rejects a v1 card that is not base64 JSON", () => {
 		expect(() => decodeCard(`${CARD_PREFIX_V1}%%%`, 1_000)).toThrow(DgCliError);
 	});

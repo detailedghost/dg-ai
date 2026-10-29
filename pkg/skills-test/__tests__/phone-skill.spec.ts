@@ -72,6 +72,17 @@ describe("phone skill", () => {
 		expect(skill).not.toMatch(/invite\.json|config\.json|phone-friend\/key\b/);
 	});
 
+	test("documents the accept name guard and the accept key option", () => {
+		expect(skill).toContain("until you pass `--name <handle>`");
+		expect(skill).toContain("or exactly `default`");
+		expect(skill).toContain("it does not invent a `-2` handle");
+		expect(skill).toContain("`--key <id>` signs a new contact");
+		expect(guide).toContain("`--name <handle>`");
+		expect(guide).toContain("`--key <id>`");
+		expect(guide).toContain("rename or remove that contact first");
+		expect(guide).toContain("does not allocate a `-2` handle");
+	});
+
 	test("sends replies through a file redirect or a quoted heredoc, not a shell argument", () => {
 		expect(skill).toContain(`say +grok - < "$REPLY_FILE"`);
 		expect(safety).toContain("Never copy message text into the heredoc.");

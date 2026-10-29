@@ -22,7 +22,7 @@ import {
 	registerPhoneCommands,
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
-import { createFileKey, ensureNumberKey } from "../../src/phone/keys";
+import { createFileKey, ensureNumberKey, readFileKey } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
 import {
 	addContact,
@@ -36,6 +36,7 @@ import {
 	removeContact,
 	subscriptionRelays,
 	writeListener,
+	writeNumberKeyId,
 } from "../../src/phone/store";
 import { createFakePool, freshNpub as realNpub, makeHomeTracker, makePhoneDeps, parseNdjson, type FakePool } from "./fake-pool";
 
@@ -56,6 +57,44 @@ function freshHome(): string {
 
 function lines(): unknown[] {
 	return parseNdjson(out);
+}
+
+function findHandle(peer: PhoneDeps, handle: string): ContactRecord | undefined {
+	return listContacts(peer.db).find((contact) => contact.handle === handle);
+}
+
+function callCard(npub: string, handle: string, relays: string[] = ["wss://a.example"]): string {
+	return encodeCard({ npub, relays, secret: "cd".repeat(32), exp: NO_EXPIRY, handle });
+}
+
+function ownedCard(handle: string, relays: string[] = ["wss://a.example"]): { card: string; npub: string; sk: Uint8Array } {
+	const sk = generateSecretKey();
+	const npub = nip19.npubEncode(getPublicKey(sk));
+	return { card: callCard(npub, handle, relays), npub, sk };
+}
+
+/** Asserts a refused accept exits 1 and leaves contacts, keys, the number-key setting, messages, and stdout untouched. */
+async function expectRefused(peer: PhoneDeps, message: string, run: () => Promise<void>): Promise<void> {
+	const contacts = listContacts(peer.db);
+	const keys = peer.db.listKeyIds();
+	const numberKey = peer.db.get<string>("number_key");
+	out = [];
+	let thrown: unknown;
+	try {
+		await run();
+	} catch (err) {
+		thrown = err;
+	}
+	expect(thrown).toBeInstanceOf(DgCliError);
+	const error = thrown as DgCliError;
+	expect(error.exitCode).toBe(1);
+	expect(error.message).toBe(message);
+	expect(listContacts(peer.db)).toEqual(contacts);
+	expect(peer.db.listKeyIds()).toEqual(keys);
+	expect(peer.db.get<string>("number_key")).toBe(numberKey);
+	expect(peer.db.recentMessages(20)).toEqual([]);
+	expect(out).toEqual([]);
+	expect(pool.events).toEqual([]);
 }
 
 function addTestContact(db: PhoneDb, overrides: Partial<ContactRecord> = {}): ContactRecord {
@@ -305,14 +344,262 @@ describe("accept", () => {
 		expect(system).toMatchObject({ system: true });
 	});
 
-	it("fails on a v1 card, which carries no handle", async () => {
+	it("refuses a v1 card, which carries no self name, and writes nothing", async () => {
 		const peer = deps(freshHome());
 		const npub = realNpub();
 		const v1 = `dgcall1${Buffer.from(
 			JSON.stringify({ v: 1, npub, relays: ["wss://a.example"], secret: "ab".repeat(32), exp: 9_999_999_999 }),
 		).toString("base64url")}`;
 
-		await expect(phoneAccept(v1, "hi", peer)).rejects.toThrow("no handle");
+		await expectRefused(
+			peer,
+			'this call card\'s self name is missing or "default"; pass --name <handle> to accept it',
+			() => phoneAccept(v1, "hi", peer),
+		);
+	});
+
+	it("accepts a v1 card when --name is set", async () => {
+		const owned = ownedCard("ignored");
+		const v1 = `dgcall1${Buffer.from(
+			JSON.stringify({ v: 1, npub: owned.npub, relays: ["wss://a.example"], secret: "ab".repeat(32), exp: 9_999_999_999 }),
+		).toString("base64url")}`;
+		const peer = deps(freshHome(), pool);
+
+		await phoneAccept(v1, "hi", peer, { name: "grok" });
+
+		expect(listContacts(peer.db)).toMatchObject([{ handle: "grok", npub: owned.npub, keyId: "default", via: "accept" }]);
+		expect(findHandle(peer, "grok-2")).toBeUndefined();
+	});
+
+	it("keeps the first contact when two accepts of the same new npub race with different names", async () => {
+		const peer = deps(freshHome(), pool);
+		const { card } = ownedCard("dg");
+
+		const results = await Promise.allSettled([
+			phoneAccept(card, "hi", peer, { name: "first" }),
+			phoneAccept(card, "hi", peer, { name: "second" }),
+		]);
+
+		expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+		expect(listContacts(peer.db)).toHaveLength(1);
+		expect(listContacts(peer.db)[0]?.handle).toBe("first");
+	});
+
+	it("stores a v1 card with an uppercase npub under the lowercase npub and reuses the contact", async () => {
+		const owned = ownedCard("ignored");
+		const v1 = `dgcall1${Buffer.from(
+			JSON.stringify({ v: 1, npub: owned.npub.toUpperCase(), relays: ["wss://a.example"], secret: "ab".repeat(32), exp: 9_999_999_999 }),
+		).toString("base64url")}`;
+		const peer = deps(freshHome(), pool);
+
+		await phoneAccept(v1, "hi", peer, { name: "grok" });
+		await expect(phoneAccept(v1, "hi", peer, { name: "other" })).rejects.toThrow("this npub is already +grok");
+
+		expect(listContacts(peer.db)).toMatchObject([{ handle: "grok", npub: owned.npub }]);
+	});
+
+	it("refuses a card whose key is not a valid public key and saves no contact", async () => {
+		const peer = deps(freshHome(), pool);
+		const card = callCard(nip19.npubEncode("ff".repeat(32)), "grok");
+
+		await expect(phoneAccept(card, "hi", peer)).rejects.toThrow(DgCliError);
+
+		expect(listContacts(peer.db)).toEqual([]);
+	});
+
+	it('refuses a card whose self name is "default" and writes nothing', async () => {
+		const peer = deps(freshHome());
+		const card = callCard(realNpub(), "default");
+
+		await expectRefused(
+			peer,
+			'this call card\'s self name is missing or "default"; pass --name <handle> to accept it',
+			() => phoneAccept(card, "hi", peer),
+		);
+	});
+
+	it("accepts a default-named card when --name is an explicit handle, including the word default", async () => {
+		const peer = deps(freshHome(), pool);
+		const named = ownedCard("default");
+		const explicitDefault = ownedCard("default");
+
+		await phoneAccept(named.card, "hi", peer, { name: "+grok" });
+		expect(listContacts(peer.db).map((contact) => contact.handle)).toEqual(["grok"]);
+
+		await phoneAccept(explicitDefault.card, "hi", peer, { name: "default" });
+		expect(listContacts(peer.db).map((contact) => contact.handle).sort()).toEqual(["default", "grok"]);
+	});
+
+	it('accepts a self name that merely contains "default", such as default-2', async () => {
+		const peer = deps(freshHome(), pool);
+		const owned = ownedCard("default-2");
+
+		await phoneAccept(owned.card, "hi", peer);
+
+		expect(listContacts(peer.db)).toMatchObject([{ handle: "default-2", npub: owned.npub, via: "accept" }]);
+	});
+
+	it("does not overwrite a contact when the card self name matches its handle but the npub differs", async () => {
+		const peer = deps(freshHome());
+		createFileKey(peer.db, "dg");
+		const kept = addTestContact(peer.db, { handle: "dg", keyId: "dg", relays: ["wss://kept.example"], via: "migrated" });
+		const card = callCard(realNpub(), "dg", ["wss://new.example"]);
+
+		await expectRefused(
+			peer,
+			"+dg already belongs to a different contact; pass --name <other handle>, or rename or remove it",
+			() => phoneAccept(card, "hi", peer),
+		);
+		expect(listContacts(peer.db)).toEqual([kept]);
+		expect(peer.db.getContactByHandle("dg-2")).toBeUndefined();
+	});
+
+	it('does not overwrite a contact whose key id is "default" when the card self name is "default"', async () => {
+		const peer = deps(freshHome());
+		createFileKey(peer.db, "default");
+		const kept = addTestContact(peer.db, {
+			handle: "merc",
+			keyId: "default",
+			relays: ["wss://kept.example"],
+			via: "migrated",
+		});
+		const card = callCard(realNpub(), "default", ["wss://new.example"]);
+
+		await expectRefused(
+			peer,
+			'this call card\'s self name is missing or "default"; pass --name <handle> to accept it',
+			() => phoneAccept(card, "hi", peer),
+		);
+		expect(listContacts(peer.db)).toEqual([kept]);
+	});
+
+	it("refuses --name that belongs to a different npub and does not suffix it", async () => {
+		const peer = deps(freshHome());
+		createFileKey(peer.db, "default");
+		const kept = addTestContact(peer.db, { handle: "grok", relays: ["wss://kept.example"] });
+		const card = callCard(realNpub(), "default");
+
+		await expectRefused(
+			peer,
+			"+grok already belongs to a different contact; pass --name <other handle>, or rename or remove it",
+			() => phoneAccept(card, "hi", peer, { name: "+grok" }),
+		);
+		expect(listContacts(peer.db)).toEqual([kept]);
+		expect(peer.db.getContactByHandle("grok-2")).toBeUndefined();
+	});
+
+	it("keeps a known npub's handle and key when the card self name is default or some other name", async () => {
+		const peer = deps(freshHome(), pool);
+		const workSk = createFileKey(peer.db, "work") as Uint8Array;
+		const owned = ownedCard("default", ["wss://fresh.example"]);
+		const saved = addTestContact(peer.db, {
+			npub: owned.npub,
+			handle: "velora",
+			keyId: "work",
+			relays: ["wss://old.example"],
+			via: "migrated",
+		});
+
+		await phoneAccept(owned.card, "again", peer);
+		await phoneAccept(callCard(owned.npub, "someone", ["wss://fresh.example"]), "third", peer, { name: "+velora" });
+
+		expect(listContacts(peer.db)).toEqual([{ ...saved, relays: ["wss://fresh.example"] }]);
+		expect(peer.db.getContactByHandle("velora-2")).toBeUndefined();
+		expect(peer.db.getContactByHandle("default")).toBeUndefined();
+		expect(peer.db.getKey("default")).toBeUndefined();
+		const rumor = nip59.unwrapEvent(pool.events[0], owned.sk);
+		expect(rumor.pubkey).toBe(getPublicKey(workSk));
+	});
+
+	it("refuses to rename a known npub through --name", async () => {
+		const peer = deps(freshHome());
+		createFileKey(peer.db, "work");
+		const kept = addTestContact(peer.db, { handle: "velora", keyId: "work" });
+
+		await expectRefused(
+			peer,
+			"this npub is already +velora; rename or remove that contact before accepting it under a new name",
+			() => phoneAccept(callCard(kept.npub, "velora"), "hi", peer, { name: "renamed" }),
+		);
+		expect(listContacts(peer.db)).toEqual([kept]);
+	});
+
+	it("rejects a --name that is not a handle and writes nothing", async () => {
+		const peer = deps(freshHome());
+		const card = callCard(realNpub(), "alice");
+
+		await expectRefused(
+			peer,
+			'--name must be 1-32 lowercase letters, digits, or dashes, got "+Grok"',
+			() => phoneAccept(card, "hi", peer, { name: "+Grok" }),
+		);
+	});
+
+	it("signs a new contact with the number key, which is default until number_key says otherwise", async () => {
+		const peer = deps(freshHome(), pool);
+		const dgSk = createFileKey(peer.db, "dg") as Uint8Array;
+		const owned = ownedCard("merc");
+
+		await phoneAccept(owned.card, "hi", peer);
+
+		const contact = listContacts(peer.db)[0];
+		expect(contact).toMatchObject({ handle: "merc", npub: owned.npub, keyId: "default", via: "accept" });
+		expect(peer.db.get<string>("number_key")).toBe("default");
+		const defaultSk = readFileKey(peer.db, "default") as Uint8Array;
+		const rumor = nip59.unwrapEvent(pool.events[0], owned.sk);
+		expect(rumor.pubkey).toBe(getPublicKey(defaultSk));
+		expect(getPublicKey(defaultSk)).not.toBe(getPublicKey(dgSk));
+	});
+
+	it("signs a new contact with number_key when migration pointed that at an old line", async () => {
+		const peer = deps(freshHome(), pool);
+		const dgSk = createFileKey(peer.db, "dg") as Uint8Array;
+		writeNumberKeyId(peer.db, "dg");
+		const owned = ownedCard("merc");
+
+		await phoneAccept(owned.card, "hi", peer);
+
+		expect(listContacts(peer.db)[0]).toMatchObject({ handle: "merc", keyId: "dg", via: "accept" });
+		expect(peer.db.getKey("default")).toBeUndefined();
+		const rumor = nip59.unwrapEvent(pool.events[0], owned.sk);
+		expect(rumor.pubkey).toBe(getPublicKey(dgSk));
+	});
+
+	it("signs a new contact with --key and does not mint the number key", async () => {
+		const peer = deps(freshHome(), pool);
+		const workSk = createFileKey(peer.db, "work") as Uint8Array;
+		const owned = ownedCard("default");
+
+		await phoneAccept(owned.card, "hi", peer, { name: "grok", key: "work" });
+
+		expect(listContacts(peer.db)).toMatchObject([{ handle: "grok", npub: owned.npub, keyId: "work", via: "accept" }]);
+		expect(peer.db.getKey("default")).toBeUndefined();
+		expect(peer.db.get<string>("number_key")).toBeUndefined();
+		const rumor = nip59.unwrapEvent(pool.events[0], owned.sk);
+		expect(rumor.pubkey).toBe(getPublicKey(workSk));
+	});
+
+	it("refuses --key when that key does not exist and writes nothing", async () => {
+		const peer = deps(freshHome());
+		const card = callCard(realNpub(), "merc");
+
+		await expectRefused(peer, 'no phone key "missing"; phone accept will not create one', () =>
+			phoneAccept(card, "hi", peer, { key: "missing" }),
+		);
+	});
+
+	it("refuses to switch an existing contact onto --key", async () => {
+		const peer = deps(freshHome());
+		createFileKey(peer.db, "work");
+		createFileKey(peer.db, "dg");
+		const kept = addTestContact(peer.db, { handle: "velora", keyId: "work" });
+
+		await expectRefused(
+			peer,
+			'+velora stays on key "work"; phone accept will not switch its key',
+			() => phoneAccept(callCard(kept.npub, "velora"), "hi", peer, { key: "dg" }),
+		);
+		expect(listContacts(peer.db)[0]?.keyId).toBe("work");
 	});
 
 	it("errors with 'no call card given' on empty stdin", async () => {
@@ -329,6 +616,28 @@ describe("accept", () => {
 		peer.now = () => NOW + 3601;
 
 		await expect(phoneAccept(card, "hi", peer)).rejects.toThrow("expired");
+	});
+
+	it("wires --name and --key on accept and on the dial synonym", async () => {
+		const peer = deps(freshHome(), pool);
+		const workSk = createFileKey(peer.db, "work") as Uint8Array;
+		const owned = ownedCard("default");
+		const program = new Command();
+		program.exitOverride();
+		registerPhoneCommands(program, () => peer);
+
+		await program.parseAsync(["phone", "accept", "--name", "grok", "--key", "work", owned.card, "hi"], { from: "user" });
+
+		expect(listContacts(peer.db)).toMatchObject([{ handle: "grok", npub: owned.npub, keyId: "work", via: "accept" }]);
+		const rumor = nip59.unwrapEvent(pool.events[0], owned.sk);
+		expect(rumor.pubkey).toBe(getPublicKey(workSk));
+
+		const other = ownedCard("default");
+		await expect(
+			program.parseAsync(["phone", "dial", "--name", "grok", other.card, "hi"], { from: "user" }),
+		).rejects.toThrow("+grok already belongs to a different contact; pass --name <other handle>, or rename or remove it");
+		expect(listContacts(peer.db)).toHaveLength(1);
+		expect(listContacts(peer.db)[0]).toMatchObject({ handle: "grok", npub: owned.npub, keyId: "work" });
 	});
 });
 
