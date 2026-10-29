@@ -180,6 +180,19 @@ describe("verify review", () => {
 		expect(second.out).toBe("added nav-r2: 1 images (1 without before)\n");
 		expect(readBoard(verifyPaths(session), "review").pending).toEqual([]);
 		expect((await run(["pending", "done", "review", "nav-r2", `--dir=${session}`])).out).toBe("pending done nav-r2: 0 open\n");
+		const same = (side: string, bytes: number[]) => {
+			Bun.spawnSync(["mkdir", "-p", join(dir, side)]);
+			writeFileSync(join(dir, side, "home.png"), new Uint8Array([...PNG, ...bytes]));
+			return join(dir, side, "home.png");
+		};
+		const pair = `--img=desktop · home|${same("before", [1])}|${same("after", [2])}`;
+		expect((await run(["add", "review", "home-r1", "--title=Home", pair, pair, `--dir=${session}`])).code).toBe(0);
+		const home = readBoard(verifyPaths(session), "review").sections.find((entry) => entry.id === "home-r1");
+		expect(home?.images.map((image) => [image.before, image.after])).toEqual([
+			["/shots/home-r1/added/1-before-home.png", "/shots/home-r1/added/1-after-home.png"],
+			["/shots/home-r1/added/2-before-home.png", "/shots/home-r1/added/2-after-home.png"],
+		]);
+		expect(readFileSync(join(session, "shots/home-r1/added/1-before-home.png")).at(-1)).toBe(1);
 		expect((await run(["add", "review", "x-r1", "--title=X", `--img=a|missing|${join(dir, "nope.png")}`, `--dir=${session}`])).code).toBe(1);
 		expect((await run(["add", "review", "x-r2", "--title=X", "--follows=gone", `--shots=${shots}`, "--prefix=p-", `--dir=${session}`])).code).toBe(1);
 		expect((await run(["pending", "add", "review", "k", `--dir=${session}`])).code).toBe(1);

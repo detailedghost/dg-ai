@@ -106,6 +106,14 @@ describe("axe summary", () => {
 		]);
 	});
 
+	test("does not read data-* attributes as alt, lang, or id, and sees an unquoted id", () => {
+		const ids = (html: string) => axeSummary(html).violations.map((item) => item.id);
+		expect(ids(page('<img data-alt="Logo" src="/a.png">'))).toContain("image-alt");
+		expect(ids(`<html data-lang="en"><head><title>T</title></head></html>`)).toContain("html-has-lang");
+		expect(ids(`${CLEAN}<div data-id="x"></div><div data-id="x"></div>`)).not.toContain("duplicate-id");
+		expect(ids(`${CLEAN}<div id=x></div><div id=x></div>`)).toContain("duplicate-id");
+	});
+
 	test("keeps at most three nodes for one rule", () => {
 		const html = page([1, 2, 3, 4].map((n) => `<img src="/${n}.png">`).join(""));
 		const images = axeSummary(html).violations.find((item) => item.id === "image-alt");

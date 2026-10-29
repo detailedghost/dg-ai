@@ -148,7 +148,7 @@ run = """
 bun test \
   __tests__/verify-axe.spec.ts \
   __tests__/verify-manifest.spec.ts \
-  __tests__/verify-verdict.spec.ts \
+  __tests__/verify-board.spec.ts \
   __tests__/verify-capture.spec.ts \
   __tests__/verify-serve.spec.ts \
   __tests__/verify-review.spec.ts \

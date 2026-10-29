@@ -26,6 +26,13 @@ export function looksSecret(value: string): boolean {
 	return SECRET_MARKS.some((mark) => value.includes(mark));
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+/** True for an http(s) URL on localhost, 127.0.0.1, or ::1. */
+export function isLoopbackUrl(url: URL): boolean {
+	return (url.protocol === "http:" || url.protocol === "https:") && LOOPBACK_HOSTS.has(url.hostname.replace(/^\[|\]$/g, ""));
+}
+
 /** Accept only a loopback http(s) URL with no userinfo. */
 export function assertLoopbackUrl(raw: string, label: string): string {
 	let url: URL;
@@ -36,9 +43,7 @@ export function assertLoopbackUrl(raw: string, label: string): string {
 	}
 	if (url.protocol !== "http:" && url.protocol !== "https:")
 		throw new Error(`${label} must use http or https`);
-	const host = url.hostname.replace(/^\[|\]$/g, "");
-	if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1")
-		throw new Error(`${label} must stay on loopback`);
+	if (!isLoopbackUrl(url)) throw new Error(`${label} must stay on loopback`);
 	if (url.username !== "" || url.password !== "")
 		throw new Error(`${label} must not carry userinfo`);
 	return url.toString();

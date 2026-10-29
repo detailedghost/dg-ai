@@ -7,6 +7,7 @@ import {
 	type CaptureRequest,
 	type CaptureShot,
 } from "./capture-model";
+import { isLoopbackUrl } from "./urls";
 
 const STABLE_BROWSERS = ["google-chrome", "google-chrome-stable"];
 
@@ -71,19 +72,36 @@ export async function openPlaywrightCapturer(options?: {
 						})),
 					);
 				}
+				const refused: string[] = [];
+				await context.route("**/*", async (route) => {
+					const url = route.request().url();
+					if (!isLoopbackUrl(new URL(url))) {
+						refused.push(url);
+						return route.abort("blockedbyclient");
+					}
+					if (!route.request().isNavigationRequest()) return route.continue();
+					const response = await route.fetch({ maxRedirects: 0 });
+					const location = response.headers().location;
+					if (location && !isLoopbackUrl(new URL(location, url))) {
+						refused.push(new URL(location, url).toString());
+						return route.abort("blockedbyclient");
+					}
+					return route.fulfill({ response });
+				});
 				const page = await context.newPage();
 				const target = withCaptureQuery(request.url, request.theme, request.state);
-				await page.goto(target, { waitUntil: "domcontentloaded", timeout: 10_000 });
-				const landed = new URL(page.url());
-				const host = landed.hostname.replace(/^\[|\]$/g, "");
-				if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1")
-					throw new Error(`verify refused a navigation to ${page.url()}`);
+				const response = await page.goto(target, { waitUntil: "domcontentloaded", timeout: 10_000 }).catch((error) => {
+					if (refused.length > 0) throw new Error(`verify refused a request to ${refused[0]}`);
+					throw error;
+				});
+				if (!isLoopbackUrl(new URL(page.url()))) throw new Error(`verify refused a navigation to ${page.url()}`);
+				if (response && !response.ok()) throw new Error(`verify capture HTTP ${response.status()} for ${page.url()}`);
 				let menuFound = false;
 				if (request.state === "scrolled")
 					await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 				if (request.state === "menu") {
 					const control = page.locator(request.menuSelector).first();
-					if ((await control.count()) > 0) {
+					if (await control.isVisible()) {
 						await control.click();
 						menuFound = true;
 					}

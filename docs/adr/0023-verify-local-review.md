@@ -33,7 +33,7 @@ The CLI shape follows `prototype`: `serve`, `status`, `wait`, `stop`, plus `add`
 `rerun` captures the next round only for items sent back or approved with a note.
 The board polls `/api/manifest` and opens a new round by itself.
 
-The board is three static files in the skill's `assets/` folder. The server sends a Content-Security-Policy of `'self'` only.
+The board is three static files in the skill's `assets/` folder. The server sends a Content-Security-Policy that allows only `'self'` for scripts, styles, and connections. Images also allow `data:`, because the board draws its tab icon on a canvas.
 `POST /api/verdicts` accepts only same-origin JSON.
 The icon set is one file, `proto/assets/dg-icons.js`. The verify board loads it as `/board/icons.js`, and `prototype serve` inlines it into every served page, so both toolbars match.
 

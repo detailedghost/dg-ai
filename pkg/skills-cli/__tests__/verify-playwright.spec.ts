@@ -44,6 +44,40 @@ describe("playwright capture", () => {
 			server.stop(true);
 		}
 	});
+
+	test.skipIf(!browser)("fails on an error status, refuses off-machine requests, and skips a hidden menu", async () => {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch(req) {
+				const path = new URL(req.url).pathname;
+				if (path === "/missing") return new Response("gone", { status: 404 });
+				if (path === "/away") return Response.redirect("http://example.invalid/", 302);
+				const html = `<!doctype html><html lang="en"><head><title>T</title></head><body><img src="http://example.invalid/x.png" alt=""><button type="button" data-verify-menu style="display:none">Menu</button></body></html>`;
+				return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+			},
+		});
+		const capturer = await openPlaywrightCapturer({ noSandbox: true });
+		const request = (path: string, state: "default" | "menu" = "default") => ({
+			url: `http://127.0.0.1:${server.port}${path}`,
+			headers: {},
+			cookies: [],
+			width: 1440,
+			height: 900,
+			theme: "light" as const,
+			state,
+			menuSelector: "[data-verify-menu]",
+		});
+		try {
+			await expect(capturer.shot(request("/missing"))).rejects.toThrow("HTTP 404");
+			await expect(capturer.shot(request("/away"))).rejects.toThrow("verify refused a request to http://example.invalid/");
+			const shot = await capturer.shot(request("/", "menu"));
+			expect(shot.menuFound).toBe(false);
+		} finally {
+			await capturer.close();
+			server.stop(true);
+		}
+	});
 });
 
 describe("review board in a browser", () => {

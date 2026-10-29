@@ -236,13 +236,12 @@ function servedName(file: string): string {
 	return basename(file).toLowerCase().replace(/[^a-z0-9._-]/g, "-").replace(/^[^a-z0-9]+/, "");
 }
 
-function importShot(paths: VerifyPaths, folder: string, file: string): string {
+function importShot(paths: VerifyPaths, folder: string, file: string, name = servedName(file)): string {
 	const source = resolve(file);
 	if (!source.endsWith(".png")) throw new Error(`not a png: ${file}`);
 	if (!existsSync(source)) throw new Error(`no such file: ${file}`);
 	const dir = join(paths.shotsDir, folder);
 	mkdirSync(dir, { recursive: true });
-	const name = servedName(source);
 	copyFileSync(source, join(dir, name));
 	return `/shots/${folder}/${name}`;
 }
@@ -276,13 +275,13 @@ function runAdd(name: string, paths: VerifyPaths, flags: Flags): number {
 	const shots = one(flags, "shots");
 	const images = shots
 		? imagesFromDir(paths, folder, shots, one(flags, "prefix") ?? "")
-		: (flags.values.get("img") ?? []).map((spec) => {
+		: (flags.values.get("img") ?? []).map((spec, index) => {
 				const [label, before, after, reason] = spec.split("|");
 				if (!label || !after) throw new Error(`--img needs "label|before|after": ${spec}`);
 				const image: BoardImage = {
 					label,
-					before: before && before !== "missing" ? importShot(paths, folder, before) : "missing",
-					after: importShot(paths, folder, after),
+					before: before && before !== "missing" ? importShot(paths, folder, before, `${index + 1}-before-${servedName(before)}`) : "missing",
+					after: importShot(paths, folder, after, `${index + 1}-after-${servedName(after)}`),
 				};
 				if (reason) image.reason = reason;
 				return image;

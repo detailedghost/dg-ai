@@ -116,12 +116,39 @@ describe("http capturer", () => {
 			server.stop(true);
 		}
 	});
+
+	test("fails a shot when the stack never finishes its body", async () => {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch() {
+				return new Response(new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("<html>")) }));
+			},
+		});
+		const capturer = createHttpCapturer(200);
+		const started = Date.now();
+		try {
+			const shot = capturer.shot({
+				url: `http://127.0.0.1:${server.port}/`,
+				headers: {},
+				cookies: [],
+				width: 390,
+				height: 844,
+				theme: "light",
+				state: "default",
+				menuSelector: "[data-verify-menu]",
+			});
+			await expect(shot).rejects.toThrow();
+			expect(Date.now() - started).toBeLessThan(3000);
+		} finally {
+			await capturer.close();
+			server.stop(true);
+		}
+	});
 });
 
 describe("declared tests", () => {
-	test("rejects a shell and a path", () => {
-		expect(() => assertArgv(["bash", "-c", "true"])).toThrow(/shell/);
-		expect(() => assertArgv(["sh"])).toThrow(/shell/);
+	test("rejects a path and a multi-line argument", () => {
 		expect(() => assertArgv(["/usr/bin/bun"])).toThrow(/bare executable/);
 		expect(() => assertArgv(["bun", "a\nb"])).toThrow(/single line/);
 	});
@@ -147,17 +174,16 @@ describe("declared tests", () => {
 		expect(failed.exitCode).toBe(2);
 	});
 
-	test("clips command output at 4000 characters and kills a stuck command", async () => {
+	test("keeps the last 4000 characters of output and kills a stuck command with its children", async () => {
 		const long = await runDeclaredTests(
-			{ cmd: ["bun", "-e", "console.log('x'.repeat(5000))"] },
+			{ cmd: ["bun", "-e", "console.log('x'.repeat(20000) + 'TOTALS 3 failed')"] },
 			process.cwd(),
 		);
 		expect(long.summary).toHaveLength(4000);
-		const stuck = await runDeclaredTests(
-			{ cmd: ["bun", "-e", "setTimeout(() => {}, 10000)"] },
-			process.cwd(),
-			300,
-		);
+		expect(long.summary.endsWith("TOTALS 3 failed")).toBe(true);
+		const started = Date.now();
+		const stuck = await runDeclaredTests({ cmd: ["env", "sh", "-c", "sleep 8 & sleep 8"] }, process.cwd(), 300);
+		expect(Date.now() - started).toBeLessThan(3000);
 		expect(stuck.status).toBe("failed");
 		expect(stuck.exitCode).not.toBe(0);
 	}, 10_000);

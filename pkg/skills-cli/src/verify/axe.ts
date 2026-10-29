@@ -36,7 +36,7 @@ function stripEmbedded(html: string): string {
 
 function attr(tag: string, name: string): string | undefined {
 	const match = new RegExp(
-		`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+		`(?<![\\w-])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
 		"i",
 	).exec(tag);
 	return match?.[1] ?? match?.[2] ?? match?.[3];
@@ -180,8 +180,8 @@ function fields(html: string): AxeViolation | undefined {
 
 function duplicateIds(html: string): AxeViolation | undefined {
 	const counts = new Map<string, number>();
-	for (const match of html.matchAll(/\bid\s*=\s*(?:"([^"]+)"|'([^']+)')/gi)) {
-		const id = (match[1] ?? match[2] ?? "").trim();
+	for (const match of html.matchAll(/(?<![\w-])id\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>"']+))/gi)) {
+		const id = (match[1] ?? match[2] ?? match[3] ?? "").trim();
 		if (id.length === 0) continue;
 		counts.set(id, (counts.get(id) ?? 0) + 1);
 	}

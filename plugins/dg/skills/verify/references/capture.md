@@ -44,9 +44,9 @@ The board shows the rule ids in an Accessibility pill under the title.
 
 The manifest `tests` object is shown as a Tests pill on each round.
 `summary` records a suite that already ran.
-`cmd` is an argv of a bare executable, not a shell.
-It runs in the current working directory with a 15 second limit.
-Output is clipped at 4000 characters.
+`cmd` is an argv of a bare executable. It goes to spawn directly, never through a shell, but the manifest author is trusted to run it like any command.
+It runs in the current working directory with a 15 second limit. A timeout kills the command and every child it started.
+Output keeps the last 4000 characters, where test runners print their totals.
 Item `tests` replace the session summary for that item when they are present.
 
 ## Seed data

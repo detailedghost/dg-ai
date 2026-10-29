@@ -96,7 +96,7 @@ Start the before stack and the after stack yourself, then put their URLs in the 
 Set it only when a prototype page is already running.
 The column says there is no prototype target when the field is absent.
 
-`tests` is the suite result for the change. A `cmd` array is an argv, never a shell. A `summary` is enough when the suite already ran.
+`tests` is the suite result for the change. A `cmd` array is an argv that runs without a shell. Only put a command in it that you would run yourself. A `summary` is enough when the suite already ran.
 
 Capture details, viewports, and the accessibility check: [references/capture.md](references/capture.md).
 
