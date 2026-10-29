@@ -16,6 +16,7 @@ import {
 	type PhonePool,
 	type Reaccept,
 	type Seen,
+	capIds,
 	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
 	type SubscribeHooks,
@@ -738,13 +739,16 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		if (nextEpoch === replayedEpoch && sameList(wanted, relays)) return;
 		const caught = await fetchNew(pool, wanted, keys, gateFor(deps.db), seen, deps.now, logDrop);
 		if (stopped) return;
-		seen = applyCaught(caught);
+		const caughtSeen = applyCaught(caught);
+		seen = { cursor: Math.max(caughtSeen.cursor, seen.cursor), ids: capIds([...new Set([...caughtSeen.ids, ...seen.ids])], STRANGER_ID_LIMIT) };
 		replayedEpoch = nextEpoch;
 		rememberAdmission();
 		writeCursor(deps.db, seen.cursor);
 		void hookRunner.notify();
+		const dropped = relays.filter((relay) => !wanted.includes(relay));
 		relays = wanted;
 		sub.close();
+		pool.close(dropped);
 		if (stopped) return;
 		sub = openSub();
 		writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));

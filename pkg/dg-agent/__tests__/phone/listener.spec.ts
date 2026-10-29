@@ -31,6 +31,8 @@ import {
 	addContact,
 	addInvite,
 	bumpAdmissionEpoch,
+	consumeInvite,
+	readCursor,
 	DEFAULT_NUMBER_KEY_ID,
 	findContactByHandle,
 	findContactByNpub,
@@ -483,6 +485,50 @@ describe("runListener", () => {
 		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
 
 		await waitUntil(() => pool.relaysUsed.some((relays) => relays.includes("wss://invite-late.example")), 1500);
+		stop();
+		await run;
+	});
+
+	it("keeps the live cursor when catch-up finishes after a live message advanced it", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const caller = identity();
+		addContact(db, { npub: caller.npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		const held = holdFirstWatchQuery();
+		let clock = NOW;
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule: held.schedule, createPool: held.createPool, now: () => clock }));
+		await ready;
+		bumpAdmissionEpoch(db);
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		clock = NOW + 100;
+		await publish(pool, RELAYS, wrap("live while catching up", caller.sk, getPublicKey(numberSk)));
+		await waitUntil(() => readCursor(db) === NOW + 100);
+		held.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(readCursor(db)).toBe(NOW + 100);
+	});
+
+	it("closes a relay that drops out of the subscription when the watcher replaces it", async () => {
+		setUpNumber("ab".repeat(32));
+		const secret = "33".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 10_000, asName: "dg", keyId: numberKeyId(db), relays: ["wss://gone.example"] });
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			scheduled.push({ delay, run });
+			return () => {};
+		};
+		const closed: string[][] = [];
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule, createPool: () => ({ ...pool, close: (relays: string[]) => closed.push(relays) }) }));
+		await ready;
+		consumeInvite(db, secret);
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => closed.some((relays) => relays.includes("wss://gone.example")), 1000);
 		stop();
 		await run;
 	});
