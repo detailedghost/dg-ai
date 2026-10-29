@@ -21,7 +21,7 @@ function stepVariant(d) {
   if (!verdicts[sections[index].id]?.status) $("note").value = note;
   syncVerdictUi();
 }
-let width = "all";
+let width = matchMedia("(max-width:760px)").matches ? "mobile" : "all";
 
 const revs = {};
 const themeOf = (im) => {
@@ -50,6 +50,74 @@ function figure(caption, path, reason) {
     fig.append(box);
   }
   return fig;
+}
+
+let compare = (() => {
+  try {
+    return localStorage.getItem("verify-compare") || "side";
+  } catch {
+    return "side";
+  }
+})();
+const compareName = { side: "Side by side", slider: "Slider", fade: "Fade", flip: "Flip", diff: "Difference" };
+
+function compareView(im, beforeCap, afterCap) {
+  const fig = el("figure", `cmp cmp-${compare}`);
+  const cap = el("figcaption", "cmp-cap");
+  const stage = el("div", "cmp-stage");
+  const before = el("img", "cmp-before");
+  before.src = imgSrc(im.before);
+  before.alt = `${beforeCap} screenshot`;
+  const after = el("img", "cmp-after");
+  after.src = imgSrc(im.after);
+  after.alt = `${afterCap} screenshot`;
+  stage.append(before, after);
+  stage.addEventListener("click", (e) => {
+    if (e.target.closest("input,button")) return;
+    openZoom(after.src, after.alt);
+  });
+  const range = (label, value, apply) => {
+    const r = el("input");
+    r.type = "range";
+    r.min = "0";
+    r.max = "100";
+    r.value = String(value);
+    r.setAttribute("aria-label", label);
+    r.addEventListener("input", () => apply(Number(r.value)));
+    apply(value);
+    return r;
+  };
+  if (compare === "slider") {
+    cap.append(el("span", "", beforeCap), el("span", "muted", "◀ drag ▶"), el("span", "", afterCap));
+    stage.append(el("span", "cmp-line"));
+    fig.append(cap, stage, range(`Slide between ${beforeCap} and ${afterCap}`, 50, (v) => stage.style.setProperty("--pos", `${v}%`)));
+  } else if (compare === "fade") {
+    cap.append(el("span", "", beforeCap), el("span", "muted", "fade"), el("span", "", afterCap));
+    fig.append(cap, stage, range(`Fade from ${beforeCap} to ${afterCap}`, 50, (v) => stage.style.setProperty("--op", String(v / 100))));
+  } else if (compare === "flip") {
+    const btn = el("button", "cmp-flip", "");
+    btn.type = "button";
+    const show = (a) => {
+      stage.classList.toggle("show-before", !a);
+      btn.textContent = a ? `Showing ${afterCap} · show ${beforeCap}` : `Showing ${beforeCap} · show ${afterCap}`;
+      btn.setAttribute("aria-pressed", String(!a));
+    };
+    let a = true;
+    btn.addEventListener("click", () => show((a = !a)));
+    show(a);
+    cap.append(el("span", "", "Flip between the two"));
+    fig.append(cap, stage, btn);
+  } else {
+    cap.append(el("span", "", `Difference: ${beforeCap} vs ${afterCap}`), el("span", "muted", "unchanged areas go black, changes glow"));
+    fig.append(cap, stage);
+  }
+  return fig;
+}
+
+function syncCmpBtn() {
+  $("cmp-btn").title = `Compare: ${compareName[compare]}`;
+  $("cmp-btn").setAttribute("aria-label", `Compare: ${compareName[compare]}`);
+  $("cmp-btn").classList.toggle("on", compare !== "side");
 }
 
 function openZoom(src, alt) {
@@ -115,6 +183,13 @@ function goNextAttention() {
   const order = [...sections.keys()].map((k) => (from + 1 + k) % sections.length);
   const next = order.find((k) => needsAttention(sections[k]));
   if (next !== undefined) go(next);
+}
+
+const CALM_GROUPS = ["#toc .orb:not(.orb-count)", "#toc .dot.working", "#summary .chip.working", "#end li.working"];
+function calm() {
+  for (const sel of CALM_GROUPS) {
+    document.querySelectorAll(sel).forEach((node, i) => node.classList.toggle("calm", i > 0));
+  }
 }
 
 function renderToc() {
@@ -190,6 +265,7 @@ function renderToc() {
   const done = sections.filter((s) => verdicts[s.id]?.status).length;
   $("progress").textContent = `${done} of ${sections.length} rounds reviewed${pending.length ? ` · ${pending.length} in progress` : ""}`;
   $("meter").style.width = sections.length ? `${(done / sections.length) * 100}%` : "0";
+  calm();
 }
 
 function renderSection(stay = false) {
@@ -244,19 +320,28 @@ function renderSection(stay = false) {
     card.className = "shot";
     const h = document.createElement("h3");
     h.textContent = im.label;
+    const head = el("div", "shot-head");
+    head.append(h);
     const pair = document.createElement("div");
     pair.className = `pair w-${w}${im.target ? " has-target" : ""}`;
-    pair.append(figure(cur ? "Now" : "Before", im.before, im.reason), figure(cur ? `Version ${cur.key}` : "After", im.after, im.reason));
-    if (im.target) pair.append(figure("Prototype", im.target));
-    card.append(h, pair);
+    const beforeCap = cur ? "Now" : "Before";
+    const afterCap = cur ? `Version ${cur.key}` : "After";
+    if (compare !== "side" && imgSrc(im.before) && imgSrc(im.after)) {
+      pair.className = "pair cmp-pair";
+      pair.append(compareView(im, beforeCap, afterCap));
+    } else {
+      pair.append(figure(beforeCap, im.before, im.reason), figure(afterCap, im.after, im.reason));
+      if (im.target) pair.append(figure("Prototype", im.target));
+    }
+    card.append(head, pair, shotNote(s, im.label, head));
     shots.append(card);
   }
   if (!shots.children.length) shots.textContent = list.some((im) => (themeOf(im) || "light") === theme) ? "No screenshots for this width." : `No ${theme} screenshots for this round. Switch the theme to see the ${theme === "dark" ? "light" : "dark"} ones.`;
   const v = verdicts[s.id] || {};
-  $("note").value = v.note || "";
+  $("note").value = mainNoteOf(v);
   $("section").dataset.verdict = keyOf(v.status, v.note);
-  $("note").dataset.saved = v.note || "";
-  setLocked(Boolean(v.status), v);
+  $("note").dataset.saved = mainNoteOf(v);
+  setLocked(Boolean(v.status) && editing !== s.id, v);
   syncVerdictUi();
   $("prev").disabled = index === 0;
   $("prev").hidden = $("next").hidden = Boolean(cur);
@@ -307,6 +392,71 @@ for (const node of document.querySelectorAll("[data-icon]")) node.innerHTML = sv
 
 const decidedText = { approved: "Approved", approvedNote: "Approved + note", changes: "Sent back", skip: "Skipped" };
 
+const shotDrafts = {};
+let editing = null;
+const shotKey = (s, label) => `${s.id}::${label}`;
+const mainNoteOf = (v) => (v.mainNote ?? v.note ?? "");
+
+function shotNotesFor(s) {
+  const out = {};
+  for (const [k, text] of Object.entries(shotDrafts)) {
+    if (k.startsWith(`${s.id}::`) && text.trim()) out[k.slice(s.id.length + 2)] = text.trim();
+  }
+  return out;
+}
+
+function shotNote(s, label, head) {
+  const key = shotKey(s, label);
+  const v = verdicts[s.id] || {};
+  if (!(key in shotDrafts)) shotDrafts[key] = v.shotNotes?.[label] || "";
+  const wrap = el("div", "shot-note");
+  if (v.status && editing !== s.id) {
+    if (shotDrafts[key]) wrap.append(el("blockquote", "", shotDrafts[key]));
+    else wrap.hidden = true;
+    return wrap;
+  }
+  const btn = el("button", "ic shot-note-btn");
+  btn.type = "button";
+  setIcon(btn, "note");
+  btn.title = `Note on ${label}`;
+  btn.setAttribute("aria-label", `Note on ${label}`);
+  const input = el("input");
+  input.id = `sn-${btoa(unescape(encodeURIComponent(key))).replace(/[^a-z0-9]/gi, "")}`;
+  input.autocomplete = "off";
+  input.placeholder = `Note on ${label}`;
+  input.setAttribute("aria-label", `Note on ${label}`);
+  input.value = shotDrafts[key];
+  btn.setAttribute("aria-controls", input.id);
+  const sync = () => {
+    const has = Boolean(input.value.trim());
+    btn.classList.toggle("has-note", has);
+    btn.setAttribute("aria-pressed", String(!wrap.hidden));
+  };
+  wrap.hidden = !input.value;
+  input.addEventListener("input", () => {
+    shotDrafts[key] = input.value;
+    sync();
+    syncVerdictUi();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") e.preventDefault();
+    if (e.key === "Escape" && !input.value) {
+      wrap.hidden = true;
+      sync();
+      btn.focus();
+    }
+  });
+  btn.addEventListener("click", () => {
+    wrap.hidden = !wrap.hidden;
+    sync();
+    if (!wrap.hidden) input.focus();
+  });
+  wrap.append(input);
+  head.append(btn);
+  sync();
+  return wrap;
+}
+
 function setLocked(locked, v = {}) {
   const key = keyOf(v.status, v.note);
   $("note").readOnly = locked;
@@ -324,7 +474,7 @@ function setLocked(locked, v = {}) {
     $("note-pop-verdict").textContent = decidedText[key];
     $("note-pop-verdict").className = `pill ${key}`;
     $("note-pop-at").textContent = v.at ? new Date(v.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
-    $("note-pop-text").textContent = v.note;
+    $("note-pop-text").textContent = mainNoteOf(v) || "Notes on the screenshots below.";
   }
 }
 
@@ -334,7 +484,7 @@ function showNote(open) {
 }
 
 function syncVerdictUi() {
-  const note = Boolean($("note").value.trim());
+  const note = Boolean($("note").value.trim()) || (sections[index] && Object.keys(shotNotesFor(sections[index])).length > 0);
   const label = note ? "Approve with note (starts a follow-up round)" : "Approve";
   $("approve").title = label;
   $("approve").setAttribute("aria-label", label);
@@ -415,6 +565,7 @@ function renderEnd() {
   const stamp = el("p", "muted poll", "");
   stamp.id = "poll-stamp";
   end.append(stamp);
+  calm();
   startPoll();
 }
 
@@ -541,6 +692,7 @@ function stopPoll() {
 }
 
 function go(i) {
+  editing = null;
   if (i >= sections.length) return renderSummary();
   startPoll();
   index = Math.max(0, i);
@@ -549,7 +701,11 @@ function go(i) {
 
 async function save(status) {
   const s = sections[index];
-  const entry = { status, note: $("note").value.trim(), at: new Date().toISOString() };
+  const mainNote = $("note").value.trim();
+  const notes = shotNotesFor(s);
+  const lines = Object.entries(notes).map(([label, text]) => `[${label}] ${text}`);
+  const entry = { status, note: [mainNote, ...lines].filter(Boolean).join("\n"), at: new Date().toISOString() };
+  if (lines.length) Object.assign(entry, { mainNote, shotNotes: notes });
   const cur = s.variants?.[variant];
   if (cur && status === "approved") entry.variant = cur.key;
   try {
@@ -571,7 +727,10 @@ const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes
 
 $("note").addEventListener("input", syncVerdictUi);
 $("change").addEventListener("click", () => {
-  setLocked(false);
+  editing = sections[index].id;
+  const y = window.scrollY;
+  renderSection(true);
+  window.scrollTo({ top: y });
   syncVerdictUi();
   if (!$("note-row").hidden) $("note").focus();
 });
@@ -581,18 +740,19 @@ $("note-btn").addEventListener("click", () => {
   if (open) $("note").focus();
 });
 $("note").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) e.preventDefault();
+  if (e.key === "Enter" && !(e.ctrlKey || e.metaKey || e.shiftKey)) e.preventDefault();
 });
 $("verdict").addEventListener("submit", async (e) => {
   e.preventDefault();
   const status = e.submitter?.value || "approved";
-  const note = $("note").value.trim();
+  const note = $("note").value.trim() || Object.values(shotNotesFor(sections[index])).join(" ");
   if (status === "changes" && !note) {
     toast("Add a note first. A rework needs direction.");
     showNote(true);
     return $("note").focus();
   }
   if (!(await save(status))) return;
+  editing = null;
   const key = keyOf(status, note);
   $("section").dataset.verdict = key;
   if (key === "approved") confetti();
@@ -646,7 +806,10 @@ function openWidthMenu(open) {
   $("width-btn").setAttribute("aria-expanded", String(open));
   if (open) $("width-menu").querySelector('[aria-checked="true"]').focus();
 }
-$("width-btn").addEventListener("click", () => openWidthMenu($("width-menu").hidden));
+$("width-btn").addEventListener("click", () => {
+  openCmpMenu(false);
+  openWidthMenu($("width-menu").hidden);
+});
 for (const item of document.querySelectorAll("#width-menu [data-w]")) {
   item.addEventListener("click", () => {
     width = item.dataset.w;
@@ -657,8 +820,50 @@ for (const item of document.querySelectorAll("#width-menu [data-w]")) {
     renderSection();
   });
 }
+function openCmpMenu(open) {
+  $("cmp-menu").hidden = !open;
+  $("cmp-btn").setAttribute("aria-expanded", String(open));
+  if (open) $("cmp-menu").querySelector('[aria-checked="true"]').focus();
+}
+$("cmp-btn").addEventListener("click", () => {
+  openWidthMenu(false);
+  openCmpMenu($("cmp-menu").hidden);
+});
+for (const item of document.querySelectorAll("#cmp-menu [data-c]")) {
+  item.setAttribute("aria-checked", String(item.dataset.c === compare));
+  item.addEventListener("click", () => {
+    compare = item.dataset.c;
+    try {
+      localStorage.setItem("verify-compare", compare);
+    } catch {}
+    for (const t of document.querySelectorAll("#cmp-menu [data-c]")) t.setAttribute("aria-checked", String(t === item));
+    syncCmpBtn();
+    openCmpMenu(false);
+    $("cmp-btn").focus();
+    const y = window.scrollY;
+    renderSection(true);
+    window.scrollTo({ top: y });
+  });
+}
+$("cmp-menu").addEventListener("keydown", (e) => {
+  const items = [...$("cmp-menu").querySelectorAll("[data-c]")];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === "Escape") {
+    openCmpMenu(false);
+    $("cmp-btn").focus();
+  }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    e.stopPropagation();
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+  }
+});
+syncCmpBtn();
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".pk-menu-wrap")) openWidthMenu(false);
+  if (!e.target.closest(".pk-menu-wrap")) {
+    openWidthMenu(false);
+    openCmpMenu(false);
+  }
 });
 $("width-menu").addEventListener("keydown", (e) => {
   const items = [...$("width-menu").querySelectorAll("[data-w]")];
@@ -673,6 +878,7 @@ $("width-menu").addEventListener("keydown", (e) => {
     items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
   }
 });
+for (const t of document.querySelectorAll("#width-menu [data-w]")) t.setAttribute("aria-checked", String(t.dataset.w === width));
 syncWidthBtn();
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("textarea,input,.pk-menu")) return;
@@ -762,4 +968,36 @@ $("sec-title").tabIndex = -1;
     e.preventDefault();
   });
   addEventListener("resize", sync);
+})();
+
+(() => {
+  const btn = $("nav-compact");
+  const root = document.documentElement;
+  const apply = (on, save = true) => {
+    root.classList.toggle("nav-compact", on);
+    btn.setAttribute("aria-pressed", String(on));
+    setIcon(btn, on ? "right" : "left");
+    const label = on ? "Expand sections panel to the default size" : "Compact sections panel";
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+    if (!save) return;
+    try {
+      localStorage.setItem("verify-nav-compact", on ? "1" : "");
+    } catch {}
+  };
+  try {
+    apply(localStorage.getItem("verify-nav-compact") === "1", false);
+  } catch {
+    apply(false, false);
+  }
+  btn.addEventListener("click", () => {
+    const on = !root.classList.contains("nav-compact");
+    if (!on) {
+      root.style.removeProperty("--nav-w");
+      try {
+        localStorage.removeItem("verify-nav-w");
+      } catch {}
+    }
+    apply(on);
+  });
 })();

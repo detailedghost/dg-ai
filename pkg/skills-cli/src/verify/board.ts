@@ -10,6 +10,8 @@ export interface Verdict {
 	note: string;
 	at: string;
 	variant?: string;
+	mainNote?: string;
+	shotNotes?: Record<string, string>;
 }
 
 export interface BoardImage {
@@ -154,6 +156,8 @@ export function readVerdicts(paths: VerifyPaths): Record<string, Verdict> {
 			throw new Error(`verdict for ${id} is incomplete`);
 		verdicts[id] = { status: record.status as VerdictStatus, note: record.note, at: String(record.at ?? "") };
 		if (typeof record.variant === "string") verdicts[id].variant = record.variant;
+		if (typeof record.mainNote === "string" && record.shotNotes && typeof record.shotNotes === "object")
+			Object.assign(verdicts[id], { mainNote: record.mainNote, shotNotes: record.shotNotes });
 	}
 	return verdicts;
 }
@@ -165,6 +169,20 @@ export class VerifyRequestError extends Error {
 	) {
 		super(message);
 	}
+}
+
+function postedShotNotes(section: Section, raw: unknown): Record<string, string> | undefined {
+	if (raw === undefined) return undefined;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new VerifyRequestError("shotNotes must be an object", 400);
+	const labels = new Set([...section.images, ...(section.variants ?? []).flatMap((entry) => entry.images)].map((image) => image.label));
+	const notes: Record<string, string> = {};
+	for (const [label, text] of Object.entries(raw)) {
+		if (!labels.has(label)) throw new VerifyRequestError(`unknown screenshot ${JSON.stringify(label)}`, 400);
+		if (typeof text !== "string" || text.length > NOTE_MAX)
+			throw new VerifyRequestError(`a screenshot note must be text of at most ${NOTE_MAX} characters`, 400);
+		if (text.trim()) notes[label] = text.trim();
+	}
+	return Object.keys(notes).length ? notes : undefined;
 }
 
 /** Validate a posted verdict batch against the board and merge it into verdicts.json. */
@@ -186,6 +204,12 @@ export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, a
 			throw new VerifyRequestError("variant must name a version of this section and come with approved", 400);
 		verdicts[id] = { status: status as VerdictStatus, note, at };
 		if (typeof variant === "string") verdicts[id].variant = variant;
+		const shotNotes = postedShotNotes(section, record?.shotNotes);
+		if (shotNotes) {
+			const mainNote = typeof record?.mainNote === "string" ? record.mainNote.trim() : "";
+			if (mainNote.length > NOTE_MAX) throw new VerifyRequestError(`note must be at most ${NOTE_MAX} characters`, 400);
+			Object.assign(verdicts[id], { mainNote, shotNotes });
+		}
 	}
 	writeJson(paths, paths.verdicts, verdicts);
 }

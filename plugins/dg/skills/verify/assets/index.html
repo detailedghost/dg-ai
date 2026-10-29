@@ -16,6 +16,7 @@
         <p id="progress" class="muted" aria-live="polite"></p>
       </div>
       <button type="button" id="mode" class="ic brand-mode" data-icon="moon"></button>
+      <button type="button" id="nav-compact" class="ic brand-mode" data-icon="left" aria-pressed="false" title="Compact sections panel" aria-label="Compact sections panel"></button>
     </div>
     <div class="meter" aria-hidden="true"><span id="meter"></span></div>
     <h2>Sections</h2>
@@ -36,7 +37,7 @@
         </figure>
         <div id="note-row" class="note-row" hidden>
           <label for="note" class="sr">Note for this section</label>
-          <input id="note" autocomplete="off" placeholder="Note: what to change, or anything you noticed">
+          <textarea id="note" rows="2" autocomplete="off" placeholder="Note: what to change, or anything you noticed (Shift+Enter for a new line)"></textarea>
         </div>
         <div class="pk-bar">
           <button type="button" id="shot-mode" class="ic mode-toggle" data-icon="moon"></button>
@@ -47,6 +48,16 @@
               <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
               <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
               <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+            </div>
+          </div>
+          <div class="pk-menu-wrap">
+            <button type="button" id="cmp-btn" class="ic" aria-haspopup="menu" aria-expanded="false" aria-controls="cmp-menu" data-icon="compare"></button>
+            <div id="cmp-menu" class="pk-menu" role="menu" aria-label="Compare mode" hidden>
+              <button type="button" role="menuitemradio" data-c="side" aria-checked="true">Side by side</button>
+              <button type="button" role="menuitemradio" data-c="slider" aria-checked="false">Slider</button>
+              <button type="button" role="menuitemradio" data-c="fade" aria-checked="false">Fade</button>
+              <button type="button" role="menuitemradio" data-c="flip" aria-checked="false">Flip</button>
+              <button type="button" role="menuitemradio" data-c="diff" aria-checked="false">Difference</button>
             </div>
           </div>
           <span class="pk-sep" aria-hidden="true"></span>

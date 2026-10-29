@@ -115,6 +115,14 @@ The board checks for changes every 5 seconds. A changed round that is open updat
 The theme button shows the board and the screenshots in light or dark.
 A screenshot is dark when its label or file name has the word `dark`. Every other screenshot is light.
 Put `light` or `dark` in the names of shots you add yourself.
+The compare menu shows a pair side by side, as a slider, as a fade, as a flip, or as a difference image. It falls back to side by side when a pair has no before.
+The collapse button in the panel head shrinks the panel to an icon rail. Expanding it resets the panel to the default width.
+The note field grows with its text and can be resized. Shift+Enter adds a line. Enter alone does not save.
+Each screenshot has its own note button.
+A verdict keeps the screenshot notes in `shotNotes` and the main note in `mainNote`.
+`note` holds the main note and one `[label] text` line per screenshot note, so `status`, `wait`, and `watch` show all of them.
+A screenshot note alone counts as a note: Approve becomes approve with a note, and Needs changes is allowed.
+When several items wait, only the first one in each list animates.
 `wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
 

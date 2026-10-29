@@ -183,6 +183,25 @@ describe("files", () => {
 		expect(() => mergeVerdicts(paths, b, [])).toThrow("Invalid JSON");
 	});
 
+	test("screenshot notes are stored with the main note only for labels the round has", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const versions = [{ key: "A", images: [{ label: "mobile · a", before: "missing", after: "/a.png" }] }];
+		const b = board([section("a-r1"), section("v-r1", { images: [], variants: versions })]);
+		const note = "Tighten the gap\n[desktop · a] Header clips";
+		mergeVerdicts(paths, b, { "a-r1": { status: "changes", note, mainNote: " Tighten the gap ", shotNotes: { "desktop · a": " Header clips " } } }, "t1");
+		expect(readVerdicts(paths)["a-r1"]).toEqual({ status: "changes", note, at: "t1", mainNote: "Tighten the gap", shotNotes: { "desktop · a": "Header clips" } });
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "x", shotNotes: { other: "y" } } })).toThrow("unknown screenshot");
+		mergeVerdicts(paths, b, { "v-r1": { status: "approved", note: "[mobile · a] ok", mainNote: "", shotNotes: { "mobile · a": "ok" } } }, "t2");
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "x", shotNotes: { "desktop · a": 1 } } })).toThrow("screenshot note must");
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "x", shotNotes: [] } })).toThrow("shotNotes must");
+		mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "", mainNote: "", shotNotes: { "desktop · a": "  " } } }, "t3");
+		expect(readVerdicts(paths)).toEqual({
+			"a-r1": { status: "approved", note: "", at: "t3" },
+			"v-r1": { status: "approved", note: "[mobile · a] ok", at: "t2", mainNote: "", shotNotes: { "mobile · a": "ok" } },
+		});
+	});
+
 	test("a picked version is stored only with approve and only when the round has it", () => {
 		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
 		const paths = verifyPaths(dir);

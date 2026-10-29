@@ -74,6 +74,129 @@ describe("review board in a browser", () => {
 		}
 	});
 
+	test.skipIf(!browser)("compare modes, the compact nav, and the multi-line note work under the CSP", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-compare-"));
+		const paths = verifyPaths(dir);
+		writeBoard(paths, {
+			name: "cmp",
+			sections: [
+				{
+					id: "a-r1",
+					title: "A",
+					images: [
+						{ label: "desktop · light · both", before: "/shots/a/before.png", after: "/shots/a/after.png" },
+						{ label: "desktop · light · new", before: "missing", after: "/shots/a/new.png" },
+					],
+				},
+			],
+			pending: [],
+		});
+		const server = await startVerifyServer({ name: "cmp", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			page.on("console", (message) => {
+				if (message.text().includes("Content Security Policy")) errors.push(message.text());
+			});
+			await page.addInitScript(() => localStorage.setItem("verify-mode", "light"));
+			await page.goto(`http://127.0.0.1:${server.port}/#a-r1`);
+			await page.waitForSelector("#cmp-btn svg");
+			const pick = async (mode: string) => {
+				await page.click("#cmp-btn");
+				await page.click(`#cmp-menu [data-c="${mode}"]`);
+			};
+			for (const mode of ["slider", "fade", "flip", "diff"]) {
+				await pick(mode);
+				expect(await page.locator(`figure.cmp-${mode}`).count()).toBe(1);
+				expect(await page.locator(".shot").nth(1).locator("figure").count()).toBe(2);
+			}
+			await pick("slider");
+			await page.fill(".cmp-slider input[type=range]", "20");
+			expect(await page.evaluate(() => (document.querySelector(".cmp-stage") as HTMLElement).style.getPropertyValue("--pos"))).toBe("20%");
+			await pick("flip");
+			await page.click("button.cmp-flip");
+			expect(await page.getAttribute(".cmp-stage", "class")).toContain("show-before");
+			expect(await page.evaluate(() => localStorage.getItem("verify-compare"))).toBe("flip");
+			await pick("side");
+			expect(await page.locator(".cmp").count()).toBe(0);
+
+			await page.evaluate(() => localStorage.setItem("verify-nav-w", "500"));
+			await page.reload();
+			await page.waitForSelector("#nav-compact svg");
+			await page.click("#nav-compact");
+			expect(await page.evaluate(() => document.documentElement.classList.contains("nav-compact"))).toBe(true);
+			expect(Math.round(await page.evaluate(() => document.querySelector("aside")?.getBoundingClientRect().width ?? 0))).toBe(76);
+			await page.click("#nav-compact");
+			expect(await page.evaluate(() => [document.documentElement.style.getPropertyValue("--nav-w"), localStorage.getItem("verify-nav-w")])).toEqual(["", null]);
+
+			await page.click("#note-btn");
+			await page.type("#note", "one");
+			await page.keyboard.press("Shift+Enter");
+			await page.type("#note", "two");
+			await page.keyboard.press("Enter");
+			expect(await page.inputValue("#note")).toBe("one\ntwo");
+			expect(readVerdicts(paths)).toEqual({});
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test.skipIf(!browser)("a screenshot note saves with the verdict and only the first waiting item animates", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-shotnote-"));
+		const paths = verifyPaths(dir);
+		const round = (id: string) => ({ id, title: id, images: [{ label: "desktop · light · a", before: "missing", after: "missing" }] });
+		writeBoard(paths, {
+			name: "notes",
+			sections: [round("a-r1"), round("b-r1"), round("c-r1")],
+			pending: [
+				{ key: "d", title: "D" },
+				{ key: "e", title: "E" },
+			],
+		});
+		const server = await startVerifyServer({ name: "notes", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			await page.addInitScript(() => localStorage.setItem("verify-mode", "light"));
+			await page.goto(`http://127.0.0.1:${server.port}/#a-r1`);
+			await page.waitForSelector(".shot-note-btn svg");
+			const animated = (selector: string) =>
+				page.evaluate((sel) => [...document.querySelectorAll(sel)].map((node) => node.classList.contains("calm")), selector);
+			expect(await animated("#toc .orb:not(.orb-count)")).toEqual([false, true, true]);
+			expect(await animated("#toc .dot.working")).toEqual([false, true]);
+			await page.click(".shot-note-btn");
+			await page.fill(".shot-note input", "Header clips");
+			expect(await page.getAttribute("#approve", "class")).toContain("with-note");
+			await page.click("#approve");
+			await page.waitForFunction(() => location.hash === "#b-r1");
+			expect(readVerdicts(paths)["a-r1"]).toMatchObject({
+				status: "approved",
+				note: "[desktop · light · a] Header clips",
+				mainNote: "",
+				shotNotes: { "desktop · light · a": "Header clips" },
+			});
+			expect(await animated("#toc .orb:not(.orb-count)")).toEqual([false, true]);
+			await page.goto(`http://127.0.0.1:${server.port}/#a-r1`);
+			await page.reload();
+			await page.waitForSelector("#decided-pill:not([hidden])");
+			expect(await page.textContent(".shot-note blockquote")).toBe("Header clips");
+			await page.click("#change");
+			expect(await page.inputValue(".shot-note input")).toBe("Header clips");
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test.skipIf(!browser)("a version round switches by key, filters by theme, refreshes live, and saves the pick", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-variant-"));
 		const paths = verifyPaths(dir);
