@@ -141,6 +141,25 @@ description = "Mutation-test the channel-review runners against the runner suite
 dir = "pkg/channel-review"
 run = "bunx stryker run"
 
+[tasks."test:verify"]
+description = "Run the dg-skills verify unit tests and the fixture review"
+dir = "pkg/skills-cli"
+run = """
+bun test \
+  __tests__/verify-axe.spec.ts \
+  __tests__/verify-manifest.spec.ts \
+  __tests__/verify-board.spec.ts \
+  __tests__/verify-capture.spec.ts \
+  __tests__/verify-serve.spec.ts \
+  __tests__/verify-review.spec.ts \
+  __tests__/verify-playwright.spec.ts
+"""
+
+[tasks."test:verify:mutate"]
+description = "Mutation-test the verify manifest, URL gate, and axe summary"
+dir = "pkg/skills-cli"
+run = "bunx stryker run stryker.verify.conf.mjs"
+
 # Optional: gitleaks is installed for this task only, not for `mise install`.
 [tasks."security:scan"]
 description = "Scan git history for secrets with gitleaks"

@@ -6,6 +6,8 @@ node_modules/
 !.agents/spec/
 !.agents/decisions/
 !.agents/decisions/**
+# Local verify shots and verdicts. Never commit them.
+.agents/verify/
 dist/
 .output/
 .env

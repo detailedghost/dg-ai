@@ -38,13 +38,30 @@ export function injectIntoHtml(
 	name: string,
 	tools: unknown,
 ): string {
+	const source = sharedIcons();
+	const icons = source ? `<script>\n${source}</script>\n` : "";
 	const script = injectScript(name, tools);
 	const head = raw.includes("<head>")
-		? raw.replace("<head>", `<head>\n${FAVICON_LINK}`)
+		? raw.replace("<head>", `<head>\n${FAVICON_LINK}\n${icons}`)
 		: raw;
+	const tail = raw.includes("<head>") ? script : icons + script;
 	return head.includes("</body>")
-		? head.replace("</body>", `${script}</body>`)
-		: head + script;
+		? head.replace("</body>", `${tail}</body>`)
+		: head + tail;
+}
+
+let iconsSource: string | undefined;
+
+/** The icon set /dg:proto and /dg:verify share; empty when the skill files are missing, so the bars fall back to text glyphs. */
+function sharedIcons(): string {
+	if (iconsSource === undefined) {
+		try {
+			iconsSource = readFileSync(resolveSkillAsset("proto", join("assets", "dg-icons.js")), "utf8");
+		} catch {
+			iconsSource = "";
+		}
+	}
+	return iconsSource;
 }
 
 async function findPort(start: number): Promise<number> {

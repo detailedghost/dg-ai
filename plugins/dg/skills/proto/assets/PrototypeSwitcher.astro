@@ -8,7 +8,7 @@ interface Props {
   labels?: Record<string, string>;
   /** App basePath prefixed to the confirm and reload-token fetch URLs. */
   basePath?: string;
-  /** Quick-pick reasons shown as chips in the (required) reject-note popup. */
+  /** Quick-pick reasons shown as chips in the note row. */
   rejectReasons?: string[];
 }
 
@@ -38,107 +38,81 @@ if (import.meta.env.PROD) {
 
 <script is:inline define:vars={{ variants, current, prototypeName, labels, basePath, rejectReasons }}>
   (function () {
-
     var css = `
-      @keyframes ps-burst { 0%{transform:translate(0,0) rotate(0);opacity:1} 100%{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0} }
-      @keyframes ps-glow { 0%,100%{box-shadow:0 0 0 8px rgba(34,197,94,.16),0 10px 40px rgba(34,197,94,.35)} 50%{box-shadow:0 0 0 14px rgba(34,197,94,.06),0 10px 60px rgba(34,197,94,.6)} }
-      @keyframes ps-pop { 0%{transform:scale(.3);opacity:0} 100%{transform:scale(1);opacity:1} }
-      @keyframes ps-draw { to { stroke-dashoffset:0 } }
-      #ps-bar {
-        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-        z-index: 9999; display: flex; align-items: center; gap: 8px;
-        background: linear-gradient(135deg,#1b2440 0%,#241a3a 55%,#3a1730 100%);
-        color: #fff; border-radius: 16px; border: 1px solid rgba(120,140,255,.35);
-        padding: 8px 16px; box-shadow: 0 6px 28px rgba(60,40,120,.55);
-        font-family: system-ui, sans-serif; font-size: 14px;
-        user-select: none; white-space: nowrap;
-      }
-      #ps-bar button {
-        background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.2);
-        color: #fff; border-radius: 8px; padding: 4px 10px;
-        cursor: pointer; font-size: 14px; line-height: 1;
-        transition: filter .15s ease, transform .15s ease;
-      }
-      #ps-bar button:hover { filter: brightness(1.18); transform: translateY(-1px); }
-      #ps-prev, #ps-next {
-        background: linear-gradient(135deg,#4c8dff,#6f5cff); border-color: transparent; font-weight: 700;
-      }
-      #ps-label {
-        border-radius: 999px; padding: 4px 12px;
-      }
-      #ps-notes-btn { margin-left: 8px; font-weight: 600; border-color: transparent; background: linear-gradient(135deg,#f59e0b,#f97316); }
-      #ps-notes-btn.has-notes { background: linear-gradient(135deg,#0d9488,#14b8a6); box-shadow: 0 0 0 2px rgba(20,184,166,.55), 0 0 14px rgba(20,184,166,.4); }
-      #ps-notes-btn.active { outline: 2px solid rgba(255,255,255,.5); }
-      #ps-approve-btn { background: linear-gradient(135deg,#16a34a,#22c55e); border-color: transparent; font-weight: 700; }
-      #ps-reject-btn  { background: linear-gradient(135deg,#e11d48,#b45309); border-color: transparent; font-weight: 700; }
-      .ps-confetti-particle {
-        position: fixed; top: 38vh; left: 50%; width: 10px; height: 14px;
-        border-radius: 2px; pointer-events: none; z-index: 10001;
-        animation: ps-burst .9s ease-out forwards;
-      }
-      #ps-check-badge {
-        width: 96px; height: 96px; border-radius: 50%;
-        background: linear-gradient(135deg,#16a34a,#22c55e);
-        display: flex; align-items: center; justify-content: center;
-        animation: ps-pop .4s ease, ps-glow 2s ease-in-out .4s infinite;
-      }
-      #ps-check-badge path {
-        stroke-dasharray: 48; stroke-dashoffset: 48; animation: ps-draw .5s .25s ease forwards;
-      }
-      #ps-overlay-notes {
-        font-style: italic; border-left: 3px solid #22c55e; padding-left: 12px; text-align: left;
-      }
-      #ps-notes-panel {
-        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
-        z-index: 9999; width: 420px; max-width: 90vw;
-        background: #111; color: #fff; border-radius: 12px;
-        padding: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.45);
-        font-family: system-ui, sans-serif; font-size: 13px; display: none;
-      }
-      #ps-notes-panel.visible { display: block; }
-      #ps-notes-panel textarea {
-        width: 100%; box-sizing: border-box; background: #1b1b1b; color: #fff;
-        border: 1px solid #333; border-radius: 6px; padding: 8px;
-        font-family: system-ui, sans-serif; font-size: 13px; resize: vertical;
-      }
-      #ps-rework-banner {
-        display: none; position: fixed; bottom: 80px; left: 50%;
-        transform: translateX(-50%); z-index: 9999;
-        width: 460px; max-width: 92vw;
-        background: #3a2a0a; color: #fde68a; border: 1px solid #b45309;
-        border-radius: 12px; padding: 10px 14px;
-        box-shadow: 0 4px 24px rgba(0,0,0,.45);
-        font-family: system-ui, sans-serif; font-size: 13px; line-height: 1.4;
-      }
-      #ps-rework-banner.visible { display: block; }
-      #ps-overlay {
-        display: none; position: fixed; inset: 0; z-index: 10000;
-        background: radial-gradient(120% 120% at 50% 0%, #10371f 0%, rgba(8,12,16,.98) 60%);
-        color: #fff;
-        flex-direction: column; align-items: center; justify-content: center;
-        gap: 16px; font-family: system-ui, sans-serif;
-      }
-      #ps-overlay.visible { display: flex; }
-      #ps-reject-panel {
-        display: none; position: fixed; bottom: 80px; left: 50%;
-        transform: translateX(-50%); z-index: 9999;
-        width: 440px; max-width: 92vw;
-        background: #111; color: #fff; border: 1px solid #b45309;
-        border-radius: 12px; padding: 16px;
-        box-shadow: 0 4px 24px rgba(0,0,0,.45);
-        font-family: system-ui, sans-serif; font-size: 13px;
-      }
-      #ps-reject-panel.visible { display: block; }
-      #ps-reject-panel textarea {
-        width: 100%; box-sizing: border-box; background: #1b1b1b; color: #fff;
-        border: 1px solid #333; border-radius: 6px; padding: 8px;
-        font-family: system-ui, sans-serif; font-size: 13px; resize: vertical;
-      }
-      .ps-chip {
-        background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.25);
-        color: #fff; border-radius: 999px; padding: 4px 10px;
-        cursor: pointer; font-size: 12px; line-height: 1.2;
-      }
+.ps-bar{--ps-surface:#ffffff;--ps-surface-2:#fafaf8;--ps-fg:#18181b;--ps-mut:#5f5f66;--ps-line:#cfcfc8;--ps-acc:#0f766e;--ps-acc-soft:#e6f4f2;
+  --ps-ok:#15803d;--ps-ok-soft:#e8f6ec;--ps-bad:#dc2626;--ps-bad-soft:#fdecec;--ps-note:#a16207;--ps-note-soft:#fef6c7;
+  position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:9999;max-width:calc(100vw - 32px);padding:6px;box-sizing:border-box;
+  background:var(--ps-surface);color:var(--ps-fg);border:1px solid var(--ps-line);border-radius:10px;box-shadow:0 8px 24px rgb(15 23 42/.18);
+  font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none}
+html.dark .ps-bar,html.dark .ps-toast{--ps-surface:#1b1b1e;--ps-surface-2:#202024;--ps-fg:#f4f4f5;--ps-mut:#a1a1aa;--ps-line:#3f3f46;--ps-acc:#2dd4bf;--ps-acc-soft:#123430;
+  --ps-ok:#4ade80;--ps-ok-soft:#14301f;--ps-bad:#f87171;--ps-bad-soft:#3a1616;--ps-note:#facc15;--ps-note-soft:#36310f}
+.ps-bar[data-verdict="changes"]{border-color:var(--ps-bad)}
+.ps-bar.is-working{border-color:transparent;background:linear-gradient(var(--ps-surface),var(--ps-surface)) padding-box,
+  conic-gradient(from var(--ps-spin),var(--ps-acc),transparent 35%,transparent 65%,var(--ps-acc)) border-box;animation:ps-ring 1.6s linear infinite}
+@property --ps-spin{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes ps-ring{to{--ps-spin:360deg}}
+.ps-row{display:flex;align-items:center;gap:4px;justify-content:center;flex-wrap:wrap}
+.ps-ic{width:38px;height:38px;padding:0;display:inline-grid;place-items:center;position:relative;border:1px solid transparent;border-radius:8px;
+  background:transparent;color:var(--ps-mut);font:inherit;cursor:pointer}
+.ps-ic:hover{background:var(--ps-surface-2);color:var(--ps-fg)}
+.ps-ic:disabled{opacity:.35;cursor:default}
+.ps-glyph{display:inline-grid;place-items:center}
+.ps-approve{color:var(--ps-ok);border-color:var(--ps-ok);background:var(--ps-ok-soft)}
+.ps-approve.with-note{color:var(--ps-note);border-color:var(--ps-note);background:var(--ps-note-soft)}
+.ps-reject{color:var(--ps-bad);border-color:var(--ps-bad);background:var(--ps-bad-soft)}
+.ps-note[aria-pressed="true"]{background:var(--ps-acc-soft);color:var(--ps-acc);border-color:var(--ps-acc)}
+.ps-note.has-note::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ps-note);box-shadow:0 0 0 2px var(--ps-surface)}
+.ps-sep{width:1px;height:22px;background:var(--ps-line);margin:0 4px}
+.ps-group{display:contents}
+.ps-label{padding:0 6px;white-space:nowrap;font-weight:600;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.ps-label small{font-weight:400;color:var(--ps-mut);margin-left:4px}
+.ps-menu-wrap{position:relative}
+.ps-bar [hidden],.ps-toast[hidden],.ps-overlay [hidden]{display:none!important}
+.ps-menu{position:absolute;bottom:calc(100% + 8px);left:0;min-width:170px;padding:4px;display:grid;gap:2px;background:var(--ps-surface);
+  border:1px solid var(--ps-line);border-radius:10px;box-shadow:0 10px 30px rgb(0 0 0/.18)}
+.ps-menu button{display:flex;align-items:center;gap:10px;width:100%;min-height:34px;padding:6px 10px;border:0;border-radius:7px;background:none;
+  color:var(--ps-fg);font:inherit;text-align:left;cursor:pointer}
+.ps-menu button:hover,.ps-menu button:focus-visible{background:var(--ps-surface-2)}
+.ps-menu button[aria-checked="true"]{background:var(--ps-acc-soft);color:var(--ps-acc)}
+.ps-note-row{padding:4px 4px 8px}
+.ps-note-row textarea{width:100%;min-width:min(480px,80vw);min-height:4.5rem;box-sizing:border-box;resize:vertical;font:inherit;color:inherit;
+  background:var(--ps-surface-2);border:1px solid var(--ps-line);border-radius:8px;padding:9px 11px}
+.ps-bar:has(.with-note) .ps-note-row textarea{border-color:var(--ps-note);background:var(--ps-note-soft)}
+.ps-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.ps-chips button{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--ps-line);background:var(--ps-surface-2);color:var(--ps-fg);cursor:pointer}
+.ps-error{color:var(--ps-bad);font-size:12px;padding:4px 6px 0;text-align:center}
+.ps-toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:9999;max-width:min(60ch,calc(100vw - 32px));padding:10px 14px;
+  background:var(--ps-surface,#fff);color:var(--ps-fg,#18181b);border:1px solid var(--ps-line,#cfcfc8);border-radius:10px;box-shadow:0 8px 24px rgb(15 23 42/.18);
+  font:13px ui-sans-serif,system-ui,sans-serif}
+html[data-proto-width="mobile"] body{max-width:390px;margin-inline:auto}
+html[data-proto-width="tablet"] body{max-width:768px;margin-inline:auto}
+html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
+@keyframes burst { 0%{transform:translate(0,0) rotate(0);opacity:1} 100%{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0} }
+@keyframes glow { 0%,100%{box-shadow:0 0 0 8px rgba(34,197,94,.16),0 10px 40px rgba(34,197,94,.35)} 50%{box-shadow:0 0 0 14px rgba(34,197,94,.06),0 10px 60px rgba(34,197,94,.6)} }
+@keyframes pop { 0%{transform:scale(.3);opacity:0} 100%{transform:scale(1);opacity:1} }
+@keyframes draw { to { stroke-dashoffset:0 } }
+.ps-confetti-particle {
+  position: fixed; top: 38vh; left: 50%; width: 10px; height: 14px;
+  border-radius: 2px; pointer-events: none; z-index: 10001;
+  animation: burst .9s ease-out forwards;
+}
+.ps-check-badge { animation: pop .4s ease, glow 2s ease-in-out .4s infinite; }
+.ps-check-badge.is-working { animation: pop .4s ease; border: 3px solid transparent;
+  background: linear-gradient(#16a34a,#22c55e) padding-box, conic-gradient(from var(--ps-spin),#2dd4bf,transparent 35%,transparent 65%,#2dd4bf) border-box;
+  animation: pop .4s ease, ps-ring 1.6s linear infinite; }
+.ps-check-path { stroke-dasharray: 48; stroke-dashoffset: 48; animation: draw .5s .25s ease forwards; }
+@media (max-width:760px){.ps-bar{width:calc(100vw - 32px)}.ps-note-row textarea{min-width:0}
+  .ps-row{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"nav nav nav" "tools . act";row-gap:4px}
+  .ps-row>.ps-sep{display:none}.ps-group{display:flex;align-items:center;gap:4px}
+  .ps-nav{grid-area:nav;justify-content:space-between;border-bottom:1px solid var(--ps-line);padding-bottom:4px}.ps-nav .ps-label{max-width:none;text-align:center}
+  .ps-tools{grid-area:tools}.ps-act{grid-area:act}}
+@media (prefers-reduced-motion:reduce){.ps-bar,.ps-bar *,.ps-check-badge,.ps-check-path,.ps-confetti-particle{animation:none!important;transition:none!important}.ps-check-path{stroke-dashoffset:0}}
+.ps-overlay{display:none;position:fixed;inset:0;z-index:10000;background:radial-gradient(120% 120% at 50% 0%, #10371f 0%, rgba(8,12,16,.98) 60%);
+  color:#fff;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:system-ui,sans-serif}
+.ps-overlay.visible{display:flex}
+.ps-check-badge{width:96px;height:96px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#22c55e);display:flex;align-items:center;justify-content:center}
+.ps-overlay-notes{font-size:14px;opacity:.85;max-width:420px;font-style:italic;border-left:3px solid #22c55e;padding-left:12px;text-align:left}
+.ps-overlay button{background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px}
     `;
     var style = document.createElement("style");
     style.textContent = css;
@@ -150,129 +124,96 @@ if (import.meta.env.PROD) {
     root.addEventListener("focusin", function (e) { e.stopPropagation(); });
 
     root.innerHTML = `
-      <div id="ps-reject-panel">
-        <div id="ps-reject-header" style="margin-bottom:8px;font-weight:600;font-size:14px"></div>
-        <div id="ps-reject-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
-        <textarea id="ps-reject-area" rows="3"
-          placeholder="Pick a reason above or type your own — e.g. 'omnibar is closest but keep Add as a real button'"
-        ></textarea>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-          <button type="button" id="ps-reject-clear"
-            style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">
-            Clear
-          </button>
-          <button type="button" id="ps-reject-cancel"
-            style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">
-            Cancel
-          </button>
-          <button type="button" id="ps-reject-submit"
-            style="background:#b45309;border:1px solid #d97706;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px"
-            disabled>
-            Reject ⟲
-          </button>
+      <div id="ps-toast" class="ps-toast" role="status" aria-live="polite" hidden></div>
+      <div id="ps-bar" class="ps-bar" role="toolbar" aria-label="Prototype decision">
+        <div id="ps-note-row" class="ps-note-row" hidden>
+          <textarea id="ps-notes-area" rows="3" aria-label="Note"
+            placeholder="Note: optional for Approve, required for Reject. What should change?"></textarea>
+          <div id="ps-chips" class="ps-chips"></div>
         </div>
-        <div id="ps-reject-error" style="color:#f87171;margin-top:6px;font-size:12px;display:none"></div>
-      </div>
-      <div id="ps-notes-panel">
-        <div id="ps-notes-header" style="margin-bottom:10px;font-weight:600;font-size:14px"></div>
-        <label for="ps-notes-area" style="display:block;margin-bottom:4px;opacity:.7;font-size:12px">
-          Optional — applies to whichever you click next, Approve or Reject
-        </label>
-        <textarea id="ps-notes-area" rows="3"
-          placeholder="e.g. 'C outlines but keep Add filled like B', or for Reject: 'all too loud, try flatter neutral secondaries'"
-        ></textarea>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
-          <button type="button" id="ps-notes-clear">Clear</button>
-          <button type="button" id="ps-notes-done">Done</button>
+        <div class="ps-row">
+          <div class="ps-group ps-tools">
+          <button type="button" id="ps-mode" class="ps-ic" data-icon="moon" title="Dark mode" aria-label="Dark mode"></button>
+          <div class="ps-menu-wrap">
+            <button type="button" id="ps-width" class="ps-ic" data-icon="all" aria-haspopup="menu" aria-expanded="false" aria-controls="ps-width-menu" title="Width: all" aria-label="Width: all"></button>
+            <div id="ps-width-menu" class="ps-menu" role="menu" aria-label="Preview width" hidden>
+              <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>All widths</button>
+              <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
+              <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
+              <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+            </div>
+          </div>
+          </div>
+          <span class="ps-sep" aria-hidden="true"></span>
+          <div class="ps-group ps-nav">
+          <button type="button" id="ps-prev" class="ps-ic" data-icon="left" title="Previous variant (←)" aria-label="Previous variant"></button>
+          <span id="ps-label" class="ps-label"></span>
+          <button type="button" id="ps-next" class="ps-ic" data-icon="right" title="Next variant (→)" aria-label="Next variant"></button>
+          </div>
+          <span class="ps-sep" aria-hidden="true"></span>
+          <div class="ps-group ps-act">
+          <button type="button" id="ps-notes-btn" class="ps-ic ps-note" data-icon="note" aria-pressed="false" aria-controls="ps-note-row" title="Note" aria-label="Note"></button>
+          <button type="button" id="ps-approve-btn" class="ps-ic ps-approve" data-icon="check" title="Approve" aria-label="Approve"></button>
+          <button type="button" id="ps-reject-btn" class="ps-ic ps-reject" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+          </div>
         </div>
+        <div id="ps-error" class="ps-error" hidden></div>
       </div>
-      <div id="ps-rework-banner">
-        <span style="font-weight:600">⟲ Reworking options…</span>
-        <span id="ps-rework-msg"></span>
-        Keep this tab open — it refreshes when new options are ready.
-        <button type="button" id="ps-rework-dismiss"
-          style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#fde68a;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;margin-left:10px">
-          Dismiss
-        </button>
-      </div>
-      <div id="ps-bar">
-        <button type="button" id="ps-mode" title="Toggle light/dark"></button>
-        <span style="width:1px;height:18px;background:rgba(255,255,255,.2)"></span>
-        <button type="button" id="ps-prev" title="Previous variant">←</button>
-        <span id="ps-label" style="min-width:90px;max-width:280px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-        <button type="button" id="ps-next" title="Next variant">→</button>
-        <span style="width:1px;height:18px;background:rgba(255,255,255,.2);margin-left:4px"></span>
-        <button type="button" id="ps-notes-btn" title="Add notes for your decision">📝 Notes</button>
-        <button type="button" id="ps-approve-btn" title="Approve this variant">Approve ✓</button>
-        <button type="button" id="ps-reject-btn" title="Reject all — ask for new options (note required)">Reject ⟲</button>
-        <span id="ps-error" style="color:#f87171;margin-left:8px;font-size:12px;display:none"></span>
-      </div>
-      <div id="ps-overlay">
-        <div id="ps-check-badge">
+      <div id="ps-overlay" class="ps-overlay">
+        <div id="ps-check-badge" class="ps-check-badge">
           <svg viewBox="0 0 52 52" width="52" height="52" aria-hidden="true">
-            <path fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M14 27 l8 8 l16 -18"/>
+            <path class="ps-check-path" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M14 27 l8 8 l16 -18"/>
           </svg>
         </div>
         <div id="ps-overlay-msg" style="font-size:24px;font-weight:700"></div>
-        <div id="ps-overlay-notes" style="font-size:14px;opacity:.85;max-width:420px;display:none"></div>
+        <div id="ps-overlay-notes" class="ps-overlay-notes" hidden></div>
         <div id="ps-overlay-sub" style="font-size:16px;opacity:.7">You may close this tab.</div>
-        <button type="button" id="ps-close"
-          style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px">
-          Close tab
-        </button>
+        <button type="button" id="ps-close">Close tab</button>
       </div>
     `;
 
-    var labelEl        = document.getElementById("ps-label");
-    var errorEl        = document.getElementById("ps-error");
-    var overlay        = document.getElementById("ps-overlay");
-    var overlayMsg     = document.getElementById("ps-overlay-msg");
-    var overlayNotes   = document.getElementById("ps-overlay-notes");
-    var overlaySub     = document.getElementById("ps-overlay-sub");
-    var reworkBanner   = document.getElementById("ps-rework-banner");
-    var reworkMsg      = document.getElementById("ps-rework-msg");
-    var notesPanel     = document.getElementById("ps-notes-panel");
-    var notesHeader    = document.getElementById("ps-notes-header");
-    var notesArea      = document.getElementById("ps-notes-area");
-    var notesClear     = document.getElementById("ps-notes-clear");
-    var notesDone      = document.getElementById("ps-notes-done");
-    var notesBtnEl     = document.getElementById("ps-notes-btn");
-    var approveBtn     = document.getElementById("ps-approve-btn");
-    var rejectBtn      = document.getElementById("ps-reject-btn");
-    var modeBtn        = document.getElementById("ps-mode");
-    var rejectPanel    = document.getElementById("ps-reject-panel");
-    var rejectHeader   = document.getElementById("ps-reject-header");
-    var rejectChips    = document.getElementById("ps-reject-chips");
-    var rejectArea     = document.getElementById("ps-reject-area");
-    var rejectClear    = document.getElementById("ps-reject-clear");
-    var rejectCancel   = document.getElementById("ps-reject-cancel");
-    var rejectSubmit   = document.getElementById("ps-reject-submit");
-    var rejectErrorEl  = document.getElementById("ps-reject-error");
+    var TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", left: "‹", right: "›", note: "✎", check: "✓", rework: "⟳" };
+    function setIcon(node, name) {
+      node.setAttribute("data-icon", name);
+      if (window.dgIcons) node.innerHTML = window.dgIcons.svg(name);
+      else node.textContent = TEXT_ICONS[name] || "";
+    }
+    root.querySelectorAll("[data-icon]").forEach(function (node) { setIcon(node, node.getAttribute("data-icon")); });
+
+    var bar          = document.getElementById("ps-bar");
+    var labelEl      = document.getElementById("ps-label");
+    var errorEl      = document.getElementById("ps-error");
+    var toastEl      = document.getElementById("ps-toast");
+    var overlay      = document.getElementById("ps-overlay");
+    var overlayMsg   = document.getElementById("ps-overlay-msg");
+    var overlayNotes = document.getElementById("ps-overlay-notes");
+    var overlaySub   = document.getElementById("ps-overlay-sub");
+    var badge        = document.getElementById("ps-check-badge");
+    var noteRow      = document.getElementById("ps-note-row");
+    var notesArea    = document.getElementById("ps-notes-area");
+    var chipsEl      = document.getElementById("ps-chips");
+    var notesBtnEl   = document.getElementById("ps-notes-btn");
+    var approveBtn   = document.getElementById("ps-approve-btn");
+    var rejectBtn    = document.getElementById("ps-reject-btn");
+    var modeBtn      = document.getElementById("ps-mode");
+    var widthBtn     = document.getElementById("ps-width");
+    var widthMenu    = document.getElementById("ps-width-menu");
+    var widthItems   = Array.prototype.slice.call(widthMenu.querySelectorAll("[role=menuitemradio]"));
 
     var activeCurrent = current;
-    var notesOpen = false;
-    var rejectOpen = false;
     var submitting = false;
-
-    var VARIANT_HUES = ["#4c8dff", "#a855f7", "#22c55e", "#f59e0b", "#f43f5e", "#14b8a6"];
     var CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
-
-    function hueForKey(key) {
-      var idx = variants.indexOf(key);
-      var n = VARIANT_HUES.length;
-      return VARIANT_HUES[((idx % n) + n) % n];
-    }
-
+    var WIDTH_ICONS = { all: "all", mobile: "phone", tablet: "tablet", desktop: "monitor" };
+    var WIDTH_NAMES = { all: "all", mobile: "mobile 390", tablet: "tablet 768", desktop: "desktop 1440" };
     var FAVICON_EMOJI = { waiting: "⏳", processing: "🔄", done: "✅" };
 
     function faviconHref(state) {
-      var emoji = FAVICON_EMOJI[state];
       return (
         "data:image/svg+xml," +
         encodeURIComponent(
           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
           '<text x="50" y="54" font-size="80" text-anchor="middle" dominant-baseline="central">' +
-          emoji +
+          FAVICON_EMOJI[state] +
           "</text></svg>"
         )
       );
@@ -290,199 +231,138 @@ if (import.meta.env.PROD) {
 
     setFavicon("waiting");
 
-    function readMode() {
-      return new URLSearchParams(window.location.search).get("mode") === "dark" ? "dark" : "light";
+    var toastTimer = null;
+    function say(msg) {
+      toastEl.textContent = msg;
+      toastEl.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toastEl.hidden = true; }, 4000);
     }
 
-    function syncMode() {
-      var m = readMode();
-      document.documentElement.classList.toggle("dark", m === "dark");
-      if (modeBtn) modeBtn.textContent = m === "dark" ? "☀ Light" : "☾ Dark";
-    }
-
-    syncMode();
-    window.addEventListener("popstate", syncMode);
-
-    if (modeBtn) {
-      modeBtn.addEventListener("click", function () {
-        var next = readMode() === "dark" ? "light" : "dark";
-        var url = new URL(window.location.href);
-        url.searchParams.set("mode", next);
-        history.replaceState(null, "", url.toString());
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      });
-    }
-
-    function renderLabel(key) {
-      if (!labelEl) return;
-      var desc = labels && labels[key];
-      var hue = hueForKey(key);
-      labelEl.style.background = hue + "22";
-      labelEl.style.border = "1px solid " + hue;
-      var html =
-        '<span style="opacity:.6">' + prototypeName + "</span>" +
-        '<span style="margin:0 6px;opacity:.4">·</span>' +
-        "<strong>" + key + "</strong>";
-      if (desc) {
-        html +=
-          '<span style="opacity:.55;font-weight:400;margin-left:6px;font-size:12px">— ' +
-          desc + "</span>";
-      }
-      labelEl.innerHTML = html;
-    }
-
-    function renderNotesHeader(key) {
-      if (!notesHeader) return;
-      var desc = labels && labels[key];
-      var html = "Notes for variant <strong>" + key + "</strong>";
-      if (desc) {
-        html += '<span style="font-weight:400;opacity:.75"> — ' + desc + "</span>";
-      }
-      notesHeader.innerHTML = html;
-    }
-
-    function renderNotesBtn() {
-      if (!notesBtnEl || !notesArea) return;
-      var hasNotes = notesArea.value.trim().length > 0;
-      notesBtnEl.textContent = hasNotes ? "📝 Note added ✓" : "📝 Notes";
-      notesBtnEl.classList.toggle("has-notes", hasNotes);
-      notesBtnEl.classList.toggle("active", notesOpen);
-    }
-
-    function renderRejectHeader(key) {
-      if (!rejectHeader) return;
-      rejectHeader.innerHTML =
-        "Why reject variant <strong>" + key + "</strong>?" +
-        ' <span style="font-weight:400;color:#fca5a5">(required — it\'s how I rework)</span>';
-    }
-
-    function syncRejectSubmit() {
-      if (!rejectSubmit || !rejectArea) return;
-      rejectSubmit.disabled = rejectArea.value.trim().length === 0;
-    }
-
-    function addReason(r) {
-      if (!rejectArea) return;
-      var lines = rejectArea.value.split("\n").map(function (s) { return s.trim(); });
-      if (lines.indexOf(r) !== -1) return;
-      rejectArea.value = rejectArea.value ? rejectArea.value + "\n" + r : r;
-      syncRejectSubmit();
-    }
-
-    function buildChips() {
-      if (!rejectChips) return;
-      rejectChips.innerHTML = "";
-      rejectReasons.forEach(function (r) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "ps-chip";
-        btn.textContent = "+ " + r;
-        btn.addEventListener("click", function () { addReason(r); });
-        rejectChips.appendChild(btn);
-      });
-    }
-
-    function openRejectPanel() {
-      notesOpen = false;
-      if (notesPanel) notesPanel.classList.remove("visible");
-      renderNotesBtn();
-
-      rejectOpen = true;
-      renderRejectHeader(activeCurrent);
-      buildChips();
-      if (notesArea && rejectArea && !rejectArea.value && notesArea.value.trim()) {
-        rejectArea.value = notesArea.value;
-      }
-      syncRejectSubmit();
-      if (rejectPanel) rejectPanel.classList.add("visible");
-      if (rejectArea) rejectArea.focus();
-    }
-
-    function closeRejectPanel() {
-      rejectOpen = false;
-      if (rejectPanel) rejectPanel.classList.remove("visible");
-    }
-
-    renderLabel(activeCurrent);
-    renderNotesHeader(activeCurrent);
-    renderRejectHeader(activeCurrent);
-    buildChips();
-    renderNotesBtn();
-
-    function getIdx() {
-      return variants.indexOf(activeCurrent);
-    }
-
-    function go(key) {
-      activeCurrent = key;
-      renderLabel(key);
-      renderNotesHeader(key);
-      renderRejectHeader(key);
+    function setParam(key, value) {
       var url = new URL(window.location.href);
-      url.searchParams.set("variant", key);
+      url.searchParams.set(key, value);
       history.replaceState(null, "", url.toString());
       window.dispatchEvent(new PopStateEvent("popstate"));
     }
 
-    document.getElementById("ps-prev").addEventListener("click", function () {
-      var idx = getIdx();
-      go(variants[(idx - 1 + variants.length) % variants.length]);
+    function readMode() {
+      return new URLSearchParams(window.location.search).get("mode") === "dark" ? "dark" : "light";
+    }
+
+    function readWidth() {
+      var w = new URLSearchParams(window.location.search).get("width");
+      return WIDTH_ICONS[w] ? w : "all";
+    }
+
+    function syncView() {
+      var m = readMode();
+      document.documentElement.classList.toggle("dark", m === "dark");
+      setIcon(modeBtn, m === "dark" ? "sun" : "moon");
+      modeBtn.title = m === "dark" ? "Light mode" : "Dark mode";
+      modeBtn.setAttribute("aria-label", modeBtn.title);
+      var w = readWidth();
+      if (w === "all") document.documentElement.removeAttribute("data-proto-width");
+      else document.documentElement.setAttribute("data-proto-width", w);
+      setIcon(widthBtn, WIDTH_ICONS[w]);
+      widthBtn.title = "Width: " + WIDTH_NAMES[w];
+      widthBtn.setAttribute("aria-label", widthBtn.title);
+      widthItems.forEach(function (item) { item.setAttribute("aria-checked", String(item.getAttribute("data-w") === w)); });
+    }
+
+    syncView();
+    window.addEventListener("popstate", syncView);
+    modeBtn.addEventListener("click", function () { setParam("mode", readMode() === "dark" ? "light" : "dark"); });
+
+    function openMenu(open) {
+      widthMenu.hidden = !open;
+      widthBtn.setAttribute("aria-expanded", String(open));
+      if (open) (widthMenu.querySelector("[aria-checked=true]") || widthItems[0]).focus();
+    }
+    widthBtn.addEventListener("click", function () { openMenu(widthMenu.hidden); });
+    widthItems.forEach(function (item) {
+      item.addEventListener("click", function () {
+        setParam("width", item.getAttribute("data-w"));
+        openMenu(false);
+        widthBtn.focus();
+      });
+    });
+    widthMenu.addEventListener("keydown", function (e) {
+      var i = widthItems.indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        widthItems[(i + (e.key === "ArrowDown" ? 1 : -1) + widthItems.length) % widthItems.length].focus();
+      }
+      if (e.key === "Escape") { openMenu(false); widthBtn.focus(); }
+    });
+    document.addEventListener("click", function (e) {
+      if (!widthMenu.hidden && !e.target.closest(".ps-menu-wrap")) openMenu(false);
     });
 
-    document.getElementById("ps-next").addEventListener("click", function () {
-      var idx = getIdx();
-      go(variants[(idx + 1) % variants.length]);
+    function renderLabel(key) {
+      labelEl.textContent = key;
+      var desc = labels && labels[key];
+      if (desc) {
+        var small = document.createElement("small");
+        small.textContent = desc;
+        labelEl.appendChild(small);
+      }
+    }
+
+    function syncNote() {
+      var has = notesArea.value.trim().length > 0;
+      notesBtnEl.classList.toggle("has-note", has);
+      approveBtn.classList.toggle("with-note", has);
+      approveBtn.title = has ? "Approve + note" : "Approve";
+      approveBtn.setAttribute("aria-label", approveBtn.title);
+    }
+
+    function showNotes(open) {
+      noteRow.hidden = !open;
+      notesBtnEl.setAttribute("aria-pressed", String(open));
+      if (open) notesArea.focus();
+    }
+
+    function addReason(r) {
+      var lines = notesArea.value.split("\n").map(function (s) { return s.trim(); });
+      if (lines.indexOf(r) !== -1) return;
+      notesArea.value = notesArea.value ? notesArea.value + "\n" + r : r;
+      syncNote();
+    }
+
+    rejectReasons.forEach(function (r) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "+ " + r;
+      btn.addEventListener("click", function () { addReason(r); });
+      chipsEl.appendChild(btn);
     });
+
+    renderLabel(activeCurrent);
+
+    function go(key) {
+      activeCurrent = key;
+      renderLabel(key);
+      setParam("variant", key);
+    }
+
+    function step(dir) {
+      var idx = variants.indexOf(activeCurrent);
+      go(variants[(idx + dir + variants.length) % variants.length]);
+    }
+
+    document.getElementById("ps-prev").addEventListener("click", function () { step(-1); });
+    document.getElementById("ps-next").addEventListener("click", function () { step(1); });
 
     document.addEventListener("keydown", function (e) {
       var tag = e.target.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
-      if (e.key === "ArrowLeft") {
-        var idx = getIdx();
-        go(variants[(idx - 1 + variants.length) % variants.length]);
-      }
-      if (e.key === "ArrowRight") {
-        var idx = getIdx();
-        go(variants[(idx + 1) % variants.length]);
-      }
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable || !widthMenu.hidden) return;
+      if (e.key === "ArrowLeft") step(-1);
+      if (e.key === "ArrowRight") step(1);
     });
 
-    if (notesArea) {
-      notesArea.addEventListener("input", function () { renderNotesBtn(); });
-    }
-
-    if (notesBtnEl) {
-      notesBtnEl.addEventListener("click", function () {
-        notesOpen = !notesOpen;
-        if (notesOpen) {
-          closeRejectPanel();
-        }
-        if (notesPanel) {
-          if (notesOpen) {
-            notesPanel.classList.add("visible");
-          } else {
-            notesPanel.classList.remove("visible");
-          }
-        }
-        renderNotesBtn();
-        if (notesOpen && notesArea) notesArea.focus();
-      });
-    }
-
-    if (notesClear) {
-      notesClear.addEventListener("click", function () {
-        if (notesArea) notesArea.value = "";
-        renderNotesBtn();
-      });
-    }
-
-    if (notesDone) {
-      notesDone.addEventListener("click", function () {
-        notesOpen = false;
-        if (notesPanel) notesPanel.classList.remove("visible");
-        renderNotesBtn();
-      });
-    }
+    notesArea.addEventListener("input", syncNote);
+    notesBtnEl.addEventListener("click", function () { showNotes(noteRow.hidden); });
 
     function closeTab() {
       try { window.open("", "_self"); } catch (_) {}
@@ -490,17 +370,15 @@ if (import.meta.env.PROD) {
     }
 
     function confettiBurst() {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
       for (var i = 0; i < 28; i++) {
         var angle = (2 * Math.PI * i) / 28 + (i % 3) * 0.12;
         var dist = 160 + (i % 5) * 44;
-        var dx = Math.cos(angle) * dist;
-        var dy = Math.sin(angle) * dist - 40;
-        var rot = i * 47;
         var el = document.createElement("div");
         el.className = "ps-confetti-particle";
-        el.style.setProperty("--dx", dx + "px");
-        el.style.setProperty("--dy", dy + "px");
-        el.style.setProperty("--rot", rot + "deg");
+        el.style.setProperty("--dx", Math.cos(angle) * dist + "px");
+        el.style.setProperty("--dy", Math.sin(angle) * dist - 40 + "px");
+        el.style.setProperty("--rot", i * 47 + "deg");
         el.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
         el.style.animationDelay = (i % 6) * 0.03 + "s";
         document.body.appendChild(el);
@@ -511,73 +389,59 @@ if (import.meta.env.PROD) {
     }
 
     function showConfirmOverlay() {
-      var notes = notesArea ? notesArea.value.trim() : "";
+      var notes = notesArea.value.trim();
       var isBuilding = notes.length > 0;
-      if (overlayMsg) {
-        overlayMsg.textContent = isBuilding
-          ? "Building the next round from " + activeCurrent + "…"
-          : "Selected variant " + activeCurrent;
-      }
-      if (overlaySub) {
-        overlaySub.textContent = isBuilding
-          ? "Keep this tab open — it reloads in place when the next round is ready."
-          : "You may close this tab.";
-      }
-      if (overlayNotes) {
-        if (notes) {
-          overlayNotes.textContent = "“" + notes + "”";
-          overlayNotes.style.display = "";
-        } else {
-          overlayNotes.style.display = "none";
-        }
-      }
-      var closeBtnEl = document.getElementById("ps-close");
-      if (closeBtnEl) closeBtnEl.style.display = isBuilding ? "none" : "";
-      if (overlay) overlay.classList.add("visible");
-      confettiBurst();
-    }
-
-    function showReworkBanner(hadNotes) {
-      if (reworkMsg) {
-        reworkMsg.textContent = hadNotes
-          ? " Your reject was sent with notes. "
-          : " Your reject was sent. ";
-      }
-      if (reworkBanner) reworkBanner.classList.add("visible");
+      overlayMsg.textContent = isBuilding
+        ? "Building the next round from " + activeCurrent + "…"
+        : "Selected variant " + activeCurrent;
+      overlaySub.textContent = isBuilding
+        ? "Keep this tab open — it reloads in place when the next round is ready."
+        : "You may close this tab.";
+      overlayNotes.textContent = notes ? "“" + notes + "”" : "";
+      overlayNotes.hidden = !notes;
+      badge.classList.toggle("is-working", isBuilding);
+      document.getElementById("ps-close").hidden = isBuilding;
+      overlay.classList.add("visible");
+      if (!isBuilding) confettiBurst();
     }
 
     function setDecisionBtns(disabled) {
-      if (approveBtn) {
-        approveBtn.textContent = disabled ? "…" : "Approve ✓";
-        approveBtn.disabled = disabled;
-      }
-      if (rejectBtn) {
-        rejectBtn.textContent = disabled ? "…" : "Reject ⟲";
-        rejectBtn.disabled = disabled;
-      }
+      approveBtn.disabled = disabled;
+      rejectBtn.disabled = disabled;
+      bar.classList.toggle("is-working", disabled || bar.getAttribute("data-verdict") === "changes");
     }
 
-    function onSuccess(action, hadNotes, closeAfter) {
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.hidden = false;
+    }
+
+    function onSuccess(action, closeAfter) {
       if (action === "confirm") {
         setFavicon("done");
         showConfirmOverlay();
         if (closeAfter) setTimeout(closeTab, 2200);
       } else {
         setFavicon("processing");
-        showReworkBanner(hadNotes);
+        bar.setAttribute("data-verdict", "changes");
+        bar.classList.add("is-working");
+        say("Sent back for rework. Keep this tab open. It refreshes when new options are ready.");
       }
     }
 
     function submit(action) {
       if (submitting) return;
-      submitting = true;
-      if (errorEl) { errorEl.style.display = "none"; errorEl.textContent = ""; }
-      setDecisionBtns(true);
-
-      var notes = notesArea ? notesArea.value : "";
+      var notes = notesArea.value;
       var hadNotes = notes.trim().length > 0;
+      if (action === "reject" && !hadNotes) {
+        showNotes(true);
+        say("Add a note first. A rework needs direction.");
+        return;
+      }
+      submitting = true;
+      errorEl.hidden = true;
+      setDecisionBtns(true);
       var closeAfter = action === "confirm" && !hadNotes;
-
       var url = window.location.origin + basePath + "/prototype-confirm";
       var payload = JSON.stringify({
         name: prototypeName,
@@ -599,7 +463,7 @@ if (import.meta.env.PROD) {
       if (queued) {
         submitting = false;
         setDecisionBtns(false);
-        onSuccess(action, hadNotes, closeAfter);
+        onSuccess(action, closeAfter);
         return;
       }
 
@@ -607,69 +471,23 @@ if (import.meta.env.PROD) {
         .then(function (res) {
           if (!res.ok) {
             return res.json().catch(function () { return {}; }).then(function (body) {
-              if (errorEl) {
-                errorEl.textContent = body.error || "HTTP " + res.status;
-                errorEl.style.display = "";
-              }
-              submitting = false;
-              setDecisionBtns(false);
+              showError(body.error || "HTTP " + res.status);
             });
           }
-          submitting = false;
-          setDecisionBtns(false);
-          onSuccess(action, hadNotes, closeAfter);
+          onSuccess(action, closeAfter);
         })
         .catch(function (err) {
-          if (errorEl) {
-            errorEl.textContent = (err && err.message) || "Network error";
-            errorEl.style.display = "";
-          }
+          showError((err && err.message) || "Network error");
+        })
+        .finally(function () {
           submitting = false;
           setDecisionBtns(false);
         });
     }
 
-    if (approveBtn) approveBtn.addEventListener("click", function () { submit("confirm"); });
-
-    if (rejectBtn) {
-      rejectBtn.addEventListener("click", function () {
-        if (rejectOpen) { closeRejectPanel(); } else { openRejectPanel(); }
-      });
-    }
-
-    if (rejectArea) {
-      rejectArea.addEventListener("input", function () { syncRejectSubmit(); });
-    }
-
-    if (rejectClear) {
-      rejectClear.addEventListener("click", function () {
-        if (rejectArea) rejectArea.value = "";
-        syncRejectSubmit();
-      });
-    }
-
-    if (rejectCancel) {
-      rejectCancel.addEventListener("click", function () { closeRejectPanel(); });
-    }
-
-    if (rejectSubmit) {
-      rejectSubmit.addEventListener("click", function () {
-        if (rejectErrorEl) { rejectErrorEl.style.display = "none"; rejectErrorEl.textContent = ""; }
-        if (notesArea && rejectArea) notesArea.value = rejectArea.value;
-        submit("reject");
-        closeRejectPanel();
-      });
-    }
-
-    var closeBtn = document.getElementById("ps-close");
-    if (closeBtn) closeBtn.addEventListener("click", function () { closeTab(); });
-
-    var dismissBtn = document.getElementById("ps-rework-dismiss");
-    if (dismissBtn) {
-      dismissBtn.addEventListener("click", function () {
-        if (reworkBanner) reworkBanner.classList.remove("visible");
-      });
-    }
+    approveBtn.addEventListener("click", function () { submit("confirm"); });
+    rejectBtn.addEventListener("click", function () { submit("reject"); });
+    document.getElementById("ps-close").addEventListener("click", function () { closeTab(); });
 
     var confirmUrl = window.location.origin + basePath + "/prototype-confirm";
     var lastToken = null;

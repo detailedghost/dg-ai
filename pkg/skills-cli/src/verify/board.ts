@@ -1,0 +1,328 @@
+import { mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { writeSentinel } from "../prototype/sentinels";
+import { assertVerifyName } from "./names";
+
+export type VerdictStatus = "approved" | "changes" | "skip" | "more";
+
+export interface Verdict {
+	status: VerdictStatus;
+	note: string;
+	at: string;
+	variant?: string;
+	mainNote?: string;
+	shotNotes?: Record<string, string>;
+}
+
+export interface BoardImage {
+	label: string;
+	before: string;
+	after: string;
+	target?: string;
+	reason?: string;
+}
+
+export interface Variant {
+	key: string;
+	label?: string;
+	summary?: string;
+	images: BoardImage[];
+}
+
+export interface SectionChecks {
+	tests?: { status: string; summary: string };
+	axe?: { violations: string[]; passes: number };
+}
+
+export interface Section {
+	id: string;
+	title: string;
+	summary?: string;
+	branch?: string;
+	what_changed?: string;
+	follows?: string;
+	round?: number;
+	item?: string;
+	owner?: string;
+	checks?: SectionChecks;
+	images: BoardImage[];
+	variants?: Variant[];
+}
+
+export interface Pending {
+	key: string;
+	title: string;
+	detail?: string;
+	follows?: string;
+}
+
+export interface Board {
+	name: string;
+	title?: string;
+	stackUrl?: string;
+	sections: Section[];
+	pending: Pending[];
+}
+
+export interface Chain {
+	rounds: Section[];
+	last: Section;
+	waiting?: Pending;
+}
+
+export interface StatusRow {
+	item: string;
+	itemId?: string;
+	owner?: string;
+	last: string;
+	rounds: string[];
+	done: boolean;
+	note: string;
+}
+
+export interface StatusReport {
+	allApproved: boolean;
+	reviewed: boolean;
+	items: StatusRow[];
+}
+
+export interface VerifyPaths {
+	dir: string;
+	manifest: string;
+	board: string;
+	verdicts: string;
+	server: string;
+	shotsDir: string;
+}
+
+const NOTE_MAX = 4000;
+const STATUSES = new Set<string>(["approved", "changes", "skip", "more"]);
+const VARIANT_KEY = /^[A-Za-z0-9]{1,16}$/;
+
+export function assertVariantKey(key: string): void {
+	if (!VARIANT_KEY.test(key)) throw new Error(`invalid variant ${JSON.stringify(key)}: use 1-16 letters or digits`);
+}
+
+export function verifyPaths(dir: string): VerifyPaths {
+	return {
+		dir,
+		manifest: join(dir, "manifest.json"),
+		board: join(dir, "board.json"),
+		verdicts: join(dir, "verdicts.json"),
+		server: join(dir, "server.json"),
+		shotsDir: join(dir, "shots"),
+	};
+}
+
+/** Resolve the session directory. An explicit dir is the session itself. */
+export function resolveSessionDir(name: string, cwd: string, explicit?: string): string {
+	assertVerifyName(name);
+	if (explicit !== undefined && explicit.trim() !== "") return explicit;
+	return join(cwd, ".agents", "verify", name);
+}
+
+function readJson(file: string): unknown {
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+function writeJson(paths: VerifyPaths, file: string, value: unknown): void {
+	mkdirSync(paths.dir, { recursive: true });
+	writeSentinel(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+export function readBoard(paths: VerifyPaths, name: string): Board {
+	const raw = readJson(paths.board);
+	if (raw === undefined) return { name, sections: [], pending: [] };
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("board.json must be an object");
+	const record = raw as Partial<Board>;
+	if (!Array.isArray(record.sections) || !Array.isArray(record.pending))
+		throw new Error("board.json needs sections and pending arrays");
+	const board: Board = { name, sections: record.sections, pending: record.pending };
+	if (typeof record.title === "string" && record.title) board.title = record.title;
+	if (typeof record.stackUrl === "string" && record.stackUrl) board.stackUrl = record.stackUrl;
+	return board;
+}
+
+export function writeBoard(paths: VerifyPaths, board: Board): void {
+	writeJson(paths, paths.board, board);
+}
+
+export function readVerdicts(paths: VerifyPaths): Record<string, Verdict> {
+	const raw = readJson(paths.verdicts);
+	if (raw === undefined) return {};
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("verdicts.json must be an object");
+	const verdicts: Record<string, Verdict> = {};
+	for (const [id, value] of Object.entries(raw)) {
+		if (id.startsWith("_")) continue;
+		const record = value as Partial<Verdict> | null;
+		if (!record || !STATUSES.has(String(record.status)) || typeof record.note !== "string")
+			throw new Error(`verdict for ${id} is incomplete`);
+		verdicts[id] = { status: record.status as VerdictStatus, note: record.note, at: String(record.at ?? "") };
+		if (typeof record.variant === "string") verdicts[id].variant = record.variant;
+		if (typeof record.mainNote === "string" && record.shotNotes && typeof record.shotNotes === "object")
+			Object.assign(verdicts[id], { mainNote: record.mainNote, shotNotes: record.shotNotes });
+	}
+	return verdicts;
+}
+
+export class VerifyRequestError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+	}
+}
+
+function postedShotNotes(section: Section, raw: unknown): Record<string, string> | undefined {
+	if (raw === undefined) return undefined;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new VerifyRequestError("shotNotes must be an object", 400);
+	const labels = new Set([...section.images, ...(section.variants ?? []).flatMap((entry) => entry.images)].map((image) => image.label));
+	const notes: Record<string, string> = {};
+	for (const [label, text] of Object.entries(raw)) {
+		if (!labels.has(label)) throw new VerifyRequestError(`unknown screenshot ${JSON.stringify(label)}`, 400);
+		if (typeof text !== "string" || text.length > NOTE_MAX)
+			throw new VerifyRequestError(`a screenshot note must be text of at most ${NOTE_MAX} characters`, 400);
+		if (text.trim()) notes[label] = text.trim();
+	}
+	return Object.keys(notes).length ? notes : undefined;
+}
+
+/** Validate a posted verdict batch against the board and merge it into verdicts.json. */
+export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, at = new Date().toISOString()): void {
+	if (!body || typeof body !== "object" || Array.isArray(body)) throw new VerifyRequestError("Invalid JSON", 400);
+	const verdicts = readVerdicts(paths);
+	for (const [id, value] of Object.entries(body)) {
+		const section = board.sections.find((candidate) => candidate.id === id);
+		if (!section) throw new VerifyRequestError(`unknown section ${JSON.stringify(id)}`, 400);
+		const record = value as Record<string, unknown> | null;
+		const status = record?.status;
+		if (typeof status !== "string" || !STATUSES.has(status))
+			throw new VerifyRequestError("status must be approved, changes, skip, or more", 400);
+		const note = typeof record?.note === "string" ? record.note.trim() : "";
+		if (status === "changes" && !note) throw new VerifyRequestError("a note is required", 400);
+		if (note.length > NOTE_MAX) throw new VerifyRequestError(`note must be at most ${NOTE_MAX} characters`, 400);
+		const variant = record?.variant;
+		if (variant !== undefined && (status !== "approved" || !section.variants?.some((entry) => entry.key === variant)))
+			throw new VerifyRequestError("variant must name a version of this section and come with approved", 400);
+		verdicts[id] = { status: status as VerdictStatus, note, at };
+		if (typeof variant === "string") verdicts[id].variant = variant;
+		const shotNotes = postedShotNotes(section, record?.shotNotes);
+		if (shotNotes) {
+			const mainNote = typeof record?.mainNote === "string" ? record.mainNote.trim() : "";
+			if (mainNote.length > NOTE_MAX) throw new VerifyRequestError(`note must be at most ${NOTE_MAX} characters`, 400);
+			Object.assign(verdicts[id], { mainNote, shotNotes });
+		}
+	}
+	writeJson(paths, paths.verdicts, verdicts);
+}
+
+const successorOf = (board: Board, section: Section) => board.sections.find((next) => next.follows === section.id);
+
+/** Group sections into chains linked by follows, each with any pending next round. */
+export function chains(board: Board): Chain[] {
+	return board.sections
+		.filter((section) => !section.follows || !board.sections.some((other) => other.id === section.follows))
+		.map((root) => {
+			const rounds = [root];
+			for (let next = successorOf(board, root); next; next = successorOf(board, next)) rounds.push(next);
+			const last = rounds[rounds.length - 1] ?? root;
+			return { rounds, last, waiting: board.pending.find((entry) => entry.follows === last.id) };
+		});
+}
+
+export function verdictLabel(verdict?: Verdict): string {
+	if (!verdict) return "unreviewed";
+	if (verdict.status === "approved")
+		return `${verdict.variant ? `picked ${verdict.variant}` : "approved"}${verdict.note ? "+note" : ""}`;
+	if (verdict.status === "more") return "more versions";
+	return verdict.status === "changes" ? "sent back" : "skipped";
+}
+
+export const roundOf = (chain: Chain, index: number): number =>
+	chain.rounds[index]?.round ?? (chain.rounds[0]?.round ?? 1) + index;
+
+export function statusReport(board: Board, verdicts: Record<string, Verdict>): StatusReport {
+	const items: StatusRow[] = chains(board).map((chain) => {
+		const steps = chain.rounds.map((round, index) => `r${roundOf(chain, index)} ${verdictLabel(verdicts[round.id])}`);
+		if (chain.waiting) steps.push(`r${roundOf(chain, chain.rounds.length - 1) + 1} working`);
+		const note = [...chain.rounds].reverse().map((round) => verdicts[round.id]?.note).find(Boolean) ?? "";
+		const latest = verdicts[chain.last.id];
+		const done = !chain.waiting && latest?.status === "approved" && !latest.note;
+		const row: StatusRow = { item: chain.last.title, last: chain.last.id, rounds: steps, done, note };
+		const source = [...chain.rounds].reverse().find((round) => round.item);
+		if (source?.item) row.itemId = source.item;
+		if (source?.owner) row.owner = source.owner;
+		return row;
+	});
+	for (const entry of board.pending.filter((pending) => !pending.follows))
+		items.push({ item: entry.title, last: entry.key, rounds: ["r1 working"], done: false, note: "" });
+	return {
+		allApproved: items.length > 0 && items.every((row) => row.done) && board.pending.length === 0,
+		reviewed: board.sections.length > 0 && board.sections.every((section) => verdicts[section.id] !== undefined),
+		items,
+	};
+}
+
+/** Fold a note onto one line, then cut it to max characters. */
+export function clip(text: string, max: number): string {
+	const line = text.trim().replace(/\s*\n\s*/g, " / ");
+	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** One line per item, then ALL APPROVED or the open count. */
+export function formatStatus(report: StatusReport, json: boolean, noteMax = 160): string {
+	if (json) return `${JSON.stringify(report)}\n`;
+	const lines = report.items.map(
+		(row) =>
+			`${row.done ? "✓" : "·"} ${row.item} | ${row.rounds.join(" → ")}${row.note && !row.done ? ` | ${clip(row.note, noteMax)}` : ""}`,
+	);
+	lines.push(report.allApproved ? "ALL APPROVED" : `${report.items.filter((row) => !row.done).length} open`);
+	return `${lines.join("\n")}\n`;
+}
+
+/** Add or replace a round and clear the pending entry it fulfills. */
+export function addSection(board: Board, section: Section, pendingKey?: string): Board {
+	if (section.follows && !board.sections.some((other) => other.id === section.follows))
+		throw new Error(`follows ${section.follows} not found`);
+	return {
+		...board,
+		sections: [...board.sections.filter((other) => other.id !== section.id), section],
+		pending: board.pending.filter(
+			(entry) => entry.key !== pendingKey && !(section.follows && entry.follows === section.follows),
+		),
+	};
+}
+
+/** Add or replace one version of a round and clear only the named pending entry. */
+export function addVariant(board: Board, section: Omit<Section, "images">, variant: Variant, pendingKey?: string): Board {
+	assertVariantKey(variant.key);
+	const previous = board.sections.find((other) => other.id === section.id)?.variants ?? [];
+	const clash = previous.find((entry) => entry.key !== variant.key && entry.key.toLowerCase() === variant.key.toLowerCase());
+	if (clash) throw new Error(`variant ${variant.key} clashes with ${clash.key}; keys must differ by more than case`);
+	const variants = [...previous.filter((entry) => entry.key !== variant.key), variant].sort((a, b) => a.key.localeCompare(b.key));
+	const next = addSection({ ...board, pending: [] }, { ...section, images: [], variants });
+	return { ...next, pending: board.pending.filter((entry) => entry.key !== pendingKey) };
+}
+
+export function setPending(board: Board, entry: Pending): Board {
+	return { ...board, pending: [...board.pending.filter((other) => other.key !== entry.key), entry] };
+}
+
+export function dropPending(board: Board, key: string): Board {
+	return { ...board, pending: board.pending.filter((entry) => entry.key !== key) };
+}
+
+/** Chains whose latest round was sent back, approved with a note, or asked for more versions, with no next round yet. */
+export function reworkChains(board: Board, verdicts: Record<string, Verdict>): Chain[] {
+	return chains(board).filter((chain) => {
+		if (chain.waiting) return false;
+		const verdict = verdicts[chain.last.id];
+		return verdict?.status === "changes" || verdict?.status === "more" || (verdict?.status === "approved" && verdict.note !== "");
+	});
+}

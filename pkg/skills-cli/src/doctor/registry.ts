@@ -21,6 +21,7 @@ import { monolithChecks } from "../monolith/doctor";
 import { overwatchSnapshotChecks } from "../overwatch-snapshot/doctor";
 import { polishChecks } from "../polish/doctor";
 import { protoChecks, prototypeChecks } from "../proto/doctor";
+import { verifyChecks } from "../verify/doctor";
 import { proxyChecks } from "../proxy/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
@@ -60,6 +61,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"clipboard-image": clipboardImageChecks,
 	proto: protoChecks,
 	prototype: prototypeChecks,
+	verify: verifyChecks,
 	proxy: proxyChecks,
 	"overwatch-snapshot": overwatchSnapshotChecks,
 	worktree: worktreeChecks,

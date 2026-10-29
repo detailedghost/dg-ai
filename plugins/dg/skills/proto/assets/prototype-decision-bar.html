@@ -1,55 +1,111 @@
-<div id="proto-decision-bar">
-  <button type="button" id="proto-decision-mode" title="Toggle light/dark"></button>
-  <span class="proto-decision-sep"></span>
-  <input id="proto-decision-notes" placeholder="notes (optional)">
-  <button type="button" id="proto-decision-approve">Approve &#10003;</button>
-  <button type="button" id="proto-decision-reject">Reject &#10227;</button>
+<div id="proto-decision-bar" role="toolbar" aria-label="Prototype decision">
+  <div id="proto-decision-note-row" hidden>
+    <input id="proto-decision-notes" aria-label="Note" autocomplete="off" placeholder="Note: optional for Approve, required for Reject">
+  </div>
+  <div class="proto-decision-row">
+    <button type="button" id="proto-decision-mode" class="proto-decision-ic" data-icon="moon" title="Dark mode" aria-label="Dark mode"></button>
+    <div class="proto-decision-menu-wrap">
+      <button type="button" id="proto-decision-width" class="proto-decision-ic" data-icon="all" aria-haspopup="menu" aria-expanded="false" aria-controls="proto-decision-width-menu" title="Width: all" aria-label="Width: all"></button>
+      <div id="proto-decision-width-menu" class="proto-decision-menu" role="menu" aria-label="Preview width" hidden>
+        <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>All widths</button>
+        <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
+        <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
+        <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+      </div>
+    </div>
+    <span class="proto-decision-sep" aria-hidden="true"></span>
+    <button type="button" id="proto-decision-note" class="proto-decision-ic" data-icon="note" aria-pressed="false" aria-controls="proto-decision-note-row" title="Note" aria-label="Note"></button>
+    <button type="button" id="proto-decision-approve" class="proto-decision-ic" data-icon="check" title="Approve" aria-label="Approve"></button>
+    <button type="button" id="proto-decision-reject" class="proto-decision-ic" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+  </div>
 </div>
-<div id="proto-decision-toast"></div>
+<div id="proto-decision-toast" role="status" aria-live="polite"></div>
 
 <style>
   :root {
-    --pd-bg: #ffffff; --pd-fg: #0f172a; --pd-border: #cbd5e1; --pd-field: #f8fafc;
-    --pd-muted: #64748b; --pd-approve-fg: #15803d; --pd-reject-fg: #b45309;
+    --pd-bg: #ffffff; --pd-fg: #18181b; --pd-border: #cfcfc8; --pd-field: #fafaf8; --pd-muted: #5f5f66;
+    --pd-acc: #0f766e; --pd-acc-soft: #e6f4f2; --pd-ok: #15803d; --pd-ok-soft: #e8f6ec;
+    --pd-bad: #dc2626; --pd-bad-soft: #fdecec; --pd-note: #a16207; --pd-note-soft: #fef6c7;
     --pd-shadow: 0 8px 24px rgba(15, 23, 42, .18); --pd-scheme: light;
   }
   html.dark {
-    --pd-bg: #0f172a; --pd-fg: #e2e8f0; --pd-border: #334155; --pd-field: #1e293b;
-    --pd-muted: #94a3b8; --pd-approve-fg: #86efac; --pd-reject-fg: #fcd34d;
+    --pd-bg: #1b1b1e; --pd-fg: #f4f4f5; --pd-border: #3f3f46; --pd-field: #202024; --pd-muted: #a1a1aa;
+    --pd-acc: #2dd4bf; --pd-acc-soft: #123430; --pd-ok: #4ade80; --pd-ok-soft: #14301f;
+    --pd-bad: #f87171; --pd-bad-soft: #3a1616; --pd-note: #facc15; --pd-note-soft: #36310f;
     --pd-shadow: 0 8px 24px rgba(0, 0, 0, .35); --pd-scheme: dark;
   }
+  html[data-proto-width="mobile"] body { max-width: 390px; margin-inline: auto; }
+  html[data-proto-width="tablet"] body { max-width: 768px; margin-inline: auto; }
+  html[data-proto-width="desktop"] body { max-width: 1440px; margin-inline: auto; }
 
   #proto-decision-bar, #proto-decision-toast {
-    position: fixed; left: 50%; transform: translateX(-50%); width: max-content;
+    position: fixed; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px);
     background: var(--pd-bg); color: var(--pd-fg); border: 1px solid var(--pd-border);
     border-radius: 10px; box-shadow: var(--pd-shadow); z-index: 9999;
     color-scheme: var(--pd-scheme);
     font: 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  #proto-decision-bar {
-    bottom: 14px; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  #proto-decision-bar { bottom: 14px; padding: 6px; }
+  #proto-decision-bar[data-verdict="approved"] { border-color: var(--pd-ok); }
+  #proto-decision-bar[data-verdict="approvedNote"] { border-color: var(--pd-note); }
+  #proto-decision-bar[data-verdict="changes"] { border-color: var(--pd-bad); }
+  #proto-decision-bar.is-working {
+    border-color: transparent;
+    background: linear-gradient(var(--pd-bg), var(--pd-bg)) padding-box,
+      conic-gradient(from var(--pd-spin), var(--pd-acc), transparent 35%, transparent 65%, var(--pd-acc)) border-box;
+    animation: proto-decision-ring 1.6s linear infinite;
   }
+  @property --pd-spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+  @keyframes proto-decision-ring { to { --pd-spin: 360deg; } }
+  .proto-decision-row { display: flex; align-items: center; gap: 4px; justify-content: center; }
+  .proto-decision-ic {
+    width: 38px; height: 38px; padding: 0; display: inline-grid; place-items: center; position: relative;
+    border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--pd-muted);
+    font: inherit; cursor: pointer;
+  }
+  .proto-decision-ic:hover { background: var(--pd-field); color: var(--pd-fg); }
+  #proto-decision-approve { color: var(--pd-ok); border-color: var(--pd-ok); background: var(--pd-ok-soft); }
+  #proto-decision-approve.with-note { color: var(--pd-note); border-color: var(--pd-note); background: var(--pd-note-soft); }
+  #proto-decision-reject { color: var(--pd-bad); border-color: var(--pd-bad); background: var(--pd-bad-soft); }
+  #proto-decision-note[aria-pressed="true"] { background: var(--pd-acc-soft); color: var(--pd-acc); border-color: var(--pd-acc); }
+  #proto-decision-note.has-note::after {
+    content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--pd-note); box-shadow: 0 0 0 2px var(--pd-bg);
+  }
+  .proto-decision-sep { width: 1px; height: 22px; background: var(--pd-border); margin: 0 4px; }
+  #proto-decision-note-row { padding: 4px 4px 8px; }
+  #proto-decision-note-row[hidden], .proto-decision-menu[hidden] { display: none; }
+  #proto-decision-notes {
+    width: 100%; min-width: min(420px, 80vw); box-sizing: border-box; font: inherit; color: inherit;
+    background: var(--pd-field); border: 1px solid var(--pd-border); border-radius: 8px; padding: 9px 11px;
+  }
+  #proto-decision-bar:has(.with-note) #proto-decision-notes { border-color: var(--pd-note); background: var(--pd-note-soft); }
+  #proto-decision-notes::placeholder { color: var(--pd-muted); }
+  .proto-decision-menu-wrap { position: relative; }
+  .proto-decision-menu {
+    position: absolute; bottom: calc(100% + 8px); left: 0; min-width: 170px; padding: 4px; display: grid; gap: 2px;
+    background: var(--pd-bg); border: 1px solid var(--pd-border); border-radius: 10px; box-shadow: var(--pd-shadow);
+  }
+  .proto-decision-menu button {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px 10px;
+    border: 0; border-radius: 7px; background: none; color: var(--pd-fg); font: inherit; text-align: left; cursor: pointer;
+  }
+  .proto-decision-menu button span { display: inline-grid; color: var(--pd-muted); }
+  .proto-decision-menu button:hover, .proto-decision-menu button:focus-visible { background: var(--pd-field); }
+  .proto-decision-menu button[aria-checked="true"] { background: var(--pd-acc-soft); color: var(--pd-acc); }
   #proto-decision-toast {
-    bottom: 68px; padding: 10px 14px; max-width: 60ch;
+    bottom: 76px; padding: 10px 14px; max-width: min(60ch, calc(100vw - 32px));
     opacity: 0; pointer-events: none; transition: opacity .2s ease-out;
   }
-  #proto-decision-bar button {
-    border: 1px solid var(--pd-border); color: var(--pd-fg); background: transparent;
-    border-radius: 8px; padding: 7px 11px; font-size: 12px; cursor: pointer;
-  }
-  #proto-decision-bar #proto-decision-approve { border-color: #15803d; color: var(--pd-approve-fg); }
-  #proto-decision-bar #proto-decision-reject { border-color: #b45309; color: var(--pd-reject-fg); }
-  #proto-decision-notes {
-    background: var(--pd-field); border: 1px solid var(--pd-border); color: var(--pd-fg);
-    border-radius: 8px; padding: 7px 9px; font-size: 12px; width: 170px;
-  }
-  #proto-decision-notes::placeholder { color: var(--pd-muted); }
-  .proto-decision-sep { width: 1px; height: 18px; background: var(--pd-border); }
+  #proto-decision-toast.show { opacity: 1; }
 
   @keyframes proto-decision-burst { 0% { transform:translate(0,0) rotate(0); opacity:1 } 100% { transform:translate(var(--dx),var(--dy)) rotate(var(--rot)); opacity:0 } }
   .proto-decision-confetti-particle {
     position:fixed;top:38vh;left:50%;width:10px;height:14px;border-radius:2px;
     pointer-events:none;z-index:10000;animation:proto-decision-burst .9s ease-out forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #proto-decision-bar, #proto-decision-bar *, #proto-decision-toast { animation: none !important; transition: none !important; }
   }
 </style>
 
@@ -60,6 +116,15 @@
     setVariant: (v) => { currentVariant = String(v); },
   };
 
+  var TEXT_ICONS = { sun: "☀", moon: "☾", all: "▦", phone: "▯", tablet: "▭", monitor: "▬", note: "✎", check: "✓", rework: "⟳" };
+  function setIcon(node, name) {
+    node.setAttribute("data-icon", name);
+    if (window.dgIcons) node.innerHTML = window.dgIcons.svg(name);
+    else node.textContent = TEXT_ICONS[name] || "";
+  }
+  document.querySelectorAll("#proto-decision-bar [data-icon]").forEach((node) => setIcon(node, node.getAttribute("data-icon")));
+
+  var bar = document.getElementById("proto-decision-bar");
   var modeBtn = document.getElementById("proto-decision-mode");
   function readMode() {
     return new URLSearchParams(window.location.search).get("mode") === "dark" ? "dark" : "light";
@@ -67,7 +132,9 @@
   function syncMode() {
     var m = readMode();
     document.documentElement.classList.toggle("dark", m === "dark");
-    modeBtn.textContent = m === "dark" ? "☀ Light" : "☾ Dark";
+    setIcon(modeBtn, m === "dark" ? "sun" : "moon");
+    modeBtn.title = m === "dark" ? "Light mode" : "Dark mode";
+    modeBtn.setAttribute("aria-label", modeBtn.title);
   }
   syncMode();
   window.addEventListener("popstate", syncMode);
@@ -78,12 +145,73 @@
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
 
+  var WIDTH_ICONS = { all: "all", mobile: "phone", tablet: "tablet", desktop: "monitor" };
+  var WIDTH_NAMES = { all: "all", mobile: "mobile 390", tablet: "tablet 768", desktop: "desktop 1440" };
+  var widthBtn = document.getElementById("proto-decision-width");
+  var widthMenu = document.getElementById("proto-decision-width-menu");
+  var widthItems = Array.from(widthMenu.querySelectorAll("[role=menuitemradio]"));
+  function applyWidth(w) {
+    if (!WIDTH_ICONS[w]) w = "all";
+    if (w === "all") document.documentElement.removeAttribute("data-proto-width");
+    else document.documentElement.setAttribute("data-proto-width", w);
+    setIcon(widthBtn, WIDTH_ICONS[w]);
+    widthBtn.title = "Width: " + WIDTH_NAMES[w];
+    widthBtn.setAttribute("aria-label", widthBtn.title);
+    widthItems.forEach((item) => item.setAttribute("aria-checked", String(item.dataset.w === w)));
+  }
+  function openMenu(open) {
+    widthMenu.hidden = !open;
+    widthBtn.setAttribute("aria-expanded", String(open));
+    if (open) (widthMenu.querySelector("[aria-checked=true]") || widthItems[0]).focus();
+  }
+  applyWidth(new URLSearchParams(window.location.search).get("width") || "all");
+  widthBtn.addEventListener("click", () => openMenu(widthMenu.hidden));
+  widthItems.forEach((item) => item.addEventListener("click", () => {
+    applyWidth(item.dataset.w);
+    var url = new URL(window.location.href);
+    url.searchParams.set("width", item.dataset.w);
+    history.replaceState(null, "", url.toString());
+    openMenu(false);
+    widthBtn.focus();
+  }));
+  widthMenu.addEventListener("keydown", (e) => {
+    var i = widthItems.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      widthItems[(i + (e.key === "ArrowDown" ? 1 : -1) + widthItems.length) % widthItems.length].focus();
+    }
+    if (e.key === "Escape") { openMenu(false); widthBtn.focus(); }
+  });
+  document.addEventListener("click", (e) => {
+    if (!widthMenu.hidden && !e.target.closest(".proto-decision-menu-wrap")) openMenu(false);
+  });
+
+  var notes = document.getElementById("proto-decision-notes");
+  var noteRow = document.getElementById("proto-decision-note-row");
+  var noteBtn = document.getElementById("proto-decision-note");
+  var approveBtn = document.getElementById("proto-decision-approve");
+  function showNote(open) {
+    noteRow.hidden = !open;
+    noteBtn.setAttribute("aria-pressed", String(open));
+    if (open) notes.focus();
+  }
+  function syncNote() {
+    var has = notes.value.trim().length > 0;
+    noteBtn.classList.toggle("has-note", has);
+    approveBtn.classList.toggle("with-note", has);
+    approveBtn.title = has ? "Approve + note" : "Approve";
+    approveBtn.setAttribute("aria-label", approveBtn.title);
+  }
+  noteBtn.addEventListener("click", () => showNote(noteRow.hidden));
+  notes.addEventListener("input", syncNote);
+  notes.addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
+
   var toast = document.getElementById("proto-decision-toast");
   function say(msg) {
     toast.textContent = msg;
-    toast.style.opacity = "1";
+    toast.classList.add("show");
     clearTimeout(say._t);
-    say._t = setTimeout(() => { toast.style.opacity = "0"; }, 5000);
+    say._t = setTimeout(() => { toast.classList.remove("show"); }, 5000);
   }
 
   var CONFETTI_COLORS = ["#22c55e", "#4c8dff", "#a855f7", "#f59e0b", "#f43f5e", "#14b8a6"];
@@ -105,21 +233,27 @@
   }
 
   function decide(action) {
-    var notes = document.getElementById("proto-decision-notes").value.trim();
-    if (action === "reject" && !notes) {
-      say("Add a note first — a rework needs direction.");
+    var text = notes.value.trim();
+    if (action === "reject" && !text) {
+      showNote(true);
+      say("Add a note first. A rework needs direction.");
       return;
     }
     if (typeof window.prototypeDecide !== "function") {
-      say(`No server here — open the localhost URL prototype-serve printed, or just tell the agent variant ${currentVariant}.`);
+      say(`No server here. Open the localhost URL prototype-serve printed, or tell the agent variant ${currentVariant}.`);
       return;
     }
-    window.prototypeDecide(action, currentVariant, notes);
-    if (action === "confirm") confettiBurst();
-    say(action === "confirm" ? `Approved variant ${currentVariant} in ${readMode()} mode. You can close this tab.` : "Sent back for rework.");
+    window.prototypeDecide(action, currentVariant, text);
+    var key = action === "reject" ? "changes" : text ? "approvedNote" : "approved";
+    bar.dataset.verdict = key;
+    if (key !== "approved") bar.classList.add("is-working");
+    if (key === "approved") confettiBurst();
+    say(key === "approved"
+      ? `Approved variant ${currentVariant} in ${readMode()} mode. You can close this tab.`
+      : key === "approvedNote" ? `Approved variant ${currentVariant}. Your note starts the next round.` : "Sent back for rework.");
   }
 
-  document.getElementById("proto-decision-approve").addEventListener("click", () => { decide("confirm"); });
+  approveBtn.addEventListener("click", () => { decide("confirm"); });
   document.getElementById("proto-decision-reject").addEventListener("click", () => { decide("reject"); });
 })();
 </script>

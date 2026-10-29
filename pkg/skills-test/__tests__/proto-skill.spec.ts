@@ -268,6 +268,45 @@ describe("proto skill local mode", () => {
 		expect(astro).toMatch(/addEventListener\("focusin",\s*function \(e\) \{ e\.stopPropagation\(\); \}\)/);
 	});
 
+	test("both switchers use the shared icon toolbar with a width menu and no skip", () => {
+		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"]) {
+			const source = skillFile(file);
+			expect(source).toContain("dgIcons");
+			for (const icon of ["sun", "moon", "all", "phone", "tablet", "monitor", "left", "right", "note", "check", "rework"])
+				expect(source).toContain(`${icon}:`);
+			expect(source).toContain('role="menuitemradio"');
+			expect(source).toContain("data-proto-width");
+			expect(source).toContain("Add a note first. A rework needs direction.");
+			expect(source).toContain("Approve + note");
+			expect(source).toContain("prefers-reduced-motion");
+			expect(source).toContain("conic-gradient(from var(--ps-spin)");
+			expect(source).not.toMatch(/skip/i);
+		}
+		expect(skillFile("assets/PrototypeSwitcher.astro")).toContain("navigator.sendBeacon");
+		expect(skillFile("assets/README.md")).toContain('<script src="/dg-icons.js"></script>');
+	});
+
+	test("the React switcher renders text icons on the server and swaps in shared icons after mount", () => {
+		const source = skillFile("assets/PrototypeSwitcher.tsx");
+		const icon = source.slice(source.indexOf("function Icon("), source.indexOf("const SWITCHER_STYLE_ID"));
+		expect(icon).toContain("useEffect(() => setSvg(window.dgIcons?.svg(name)), [name]);");
+		expect(icon).not.toContain('typeof window');
+	});
+
+	test("both switchers put the variant row first and the verdict actions together on mobile", () => {
+		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"]) {
+			const source = skillFile(file);
+			const groups = ["ps-group ps-tools", "ps-group ps-nav", "ps-group ps-act"].map((name) => source.indexOf(name));
+			expect(groups.every((at) => at > 0)).toBe(true);
+			expect(groups).toEqual([...groups].sort((a, b) => a - b));
+			const act = source.slice(groups[2]);
+			expect(act.indexOf("ps-note")).toBeLessThan(act.indexOf("ps-approve"));
+			expect(act.indexOf("ps-approve")).toBeLessThan(act.indexOf("ps-reject"));
+			expect(source).toContain('grid-template-areas:"nav nav nav" "tools . act"');
+			expect(source).toContain(".ps-group{display:contents}");
+		}
+	});
+
 	test("ships the copyable switcher and endpoint assets", () => {
 		for (const file of [
 			"assets/PrototypeSwitcher.tsx",
@@ -277,10 +316,19 @@ describe("proto skill local mode", () => {
 			"assets/prototype-endpoint.next.ts",
 			"assets/prototype-endpoint.astro.ts",
 			"assets/webmcp-tools.json",
+			"assets/dg-icons.js",
 			"assets/README.md",
 		]) {
 			expect(skillFile(file).length).toBeGreaterThan(0);
 		}
+		const bar = skillFile("assets/prototype-decision-bar.html");
+		for (const icon of ["moon", "all", "note", "check", "rework"])
+			expect(bar).toContain(`data-icon="${icon}"`);
+		expect(bar).toContain('role="menuitemradio" data-w="tablet"');
+		expect(bar).toContain("window.dgIcons");
+		expect(bar).toContain("Add a note first. A rework needs direction.");
+		expect(bar).not.toContain('data-icon="skip"');
+		expect(skillFile("assets/dg-icons.js")).toContain("globalThis.dgIcons");
 		expect(skillFile("references/local-build.md")).toContain(
 			"prototype components",
 		);

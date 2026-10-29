@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verify board</title>
+<link id="favicon" rel="icon" href="data:,">
+<link rel="stylesheet" href="/board/board.css">
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">V</div>
+      <div class="brand-text">
+        <h1 id="board-title">Verify · review</h1>
+        <p id="progress" class="muted" aria-live="polite"></p>
+      </div>
+      <button type="button" id="mode" class="ic brand-mode" data-icon="moon"></button>
+      <button type="button" id="nav-compact" class="ic brand-mode" data-icon="left" aria-pressed="false" title="Compact sections panel" aria-label="Compact sections panel"></button>
+    </div>
+    <div class="meter" aria-hidden="true"><span id="meter"></span></div>
+    <h2>Sections</h2>
+    <ol id="toc"></ol>
+  </aside>
+  <div id="nav-resize" class="nav-resize" role="separator" aria-orientation="vertical" aria-label="Resize sections panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+  <main id="main">
+    <section id="section" class="panel" aria-labelledby="sec-title">
+      <p class="eyebrow" id="sec-branch"></p>
+      <h2 id="sec-title"></h2>
+      <p id="sec-what" class="what"></p>
+      <p id="sec-checks" class="eyebrow checks" hidden></p>
+      <div id="shots"></div>
+      <form id="verdict" class="picker" aria-label="Your verdict for this section">
+        <figure id="note-pop" class="note-pop" hidden>
+          <figcaption><span id="note-pop-verdict" class="pill"></span><span id="note-pop-at" class="muted"></span></figcaption>
+          <blockquote id="note-pop-text"></blockquote>
+        </figure>
+        <div id="note-row" class="note-row" hidden>
+          <label for="note" class="sr">Note for this section</label>
+          <textarea id="note" rows="2" autocomplete="off" placeholder="Note: what to change, or anything you noticed (Shift+Enter for a new line)"></textarea>
+        </div>
+        <div class="pk-bar">
+          <button type="button" id="shot-mode" class="ic mode-toggle" data-icon="moon"></button>
+          <div class="pk-menu-wrap">
+            <button type="button" id="width-btn" class="ic" aria-haspopup="menu" aria-expanded="false" aria-controls="width-menu" data-icon="all"></button>
+            <div id="width-menu" class="pk-menu" role="menu" aria-label="Screen width" hidden>
+              <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>All widths</button>
+              <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
+              <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
+              <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+            </div>
+          </div>
+          <button type="button" id="hl-btn" class="ic" data-icon="compare" aria-pressed="true"></button>
+          <span class="pk-sep" aria-hidden="true"></span>
+          <div id="variants" class="pk-variants" role="group" aria-label="Versions" hidden>
+            <button type="button" id="v-prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous version (←)" aria-label="Previous version"></button>
+            <span id="v-label" class="v-label" aria-live="polite"></span>
+            <button type="button" id="v-next" class="ic" data-icon="right" aria-keyshortcuts="ArrowRight" title="Next version (→)" aria-label="Next version"></button>
+            <span class="pk-sep" aria-hidden="true"></span>
+          </div>
+          <button type="button" id="prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous (←)" aria-label="Previous section"></button>
+          <button type="button" id="next" class="ic" data-icon="right" aria-keyshortcuts="ArrowRight" title="Next (→)" aria-label="Next section"></button>
+          <span class="pk-sep" aria-hidden="true"></span>
+          <button type="button" id="note-btn" class="ic pk-note" data-icon="note" aria-pressed="false" aria-controls="note-row" title="Note" aria-label="Note"></button>
+          <button type="submit" value="approved" id="approve" class="ic pk-approve" data-icon="check" title="Approve" aria-label="Approve"></button>
+          <button type="submit" value="changes" class="ic pk-reject" data-icon="rework" title="Needs changes (note required)" aria-label="Needs changes"></button>
+          <button type="submit" value="more" id="v-more" class="ic pk-more" data-icon="plus" title="Reject these and get new versions" aria-label="Reject these and get new versions" hidden></button>
+          <button type="submit" value="skip" class="ic pk-skip" data-icon="skip" title="Skip for now" aria-label="Skip for now"></button>
+          <span id="decided-pill" class="pill decided-pill" hidden></span>
+          <button type="button" id="change" class="ic" data-icon="edit" title="Change this decision" aria-label="Change this decision" hidden></button>
+        </div>
+      </form>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </section>
+    <section id="summary" class="panel" hidden aria-labelledby="sum-title">
+      <div id="end" class="end" aria-live="polite"></div>
+      <h2 id="sum-title">Overview</h2>
+      <table><thead><tr><th>Item</th><th>Rounds</th><th>Status</th><th>Latest note</th></tr></thead><tbody id="sum-body"></tbody></table>
+    </section>
+  </main>
+</div>
+<dialog id="zoom"><button type="button" id="zoom-close" aria-label="Close">✕</button><img id="zoom-img" alt=""></dialog>
+<script src="/board/icons.js"></script>
+<script src="/board/board.js"></script>
+</body>
+</html>
