@@ -3,17 +3,23 @@ import { createHash } from "node:crypto";
 import { chmodSync, closeSync, existsSync, linkSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, isAlive, selfCommand, writeFileAtomic } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
+	addBounded,
+	type DroppedRing,
 	fetchNew,
+	type Gate,
 	type KeyEntry,
 	type Message,
 	type NewContact,
 	type PhonePool,
 	type Reaccept,
 	type Seen,
+	capIds,
+	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
+	type SubscribeHooks,
 	subscribe,
 	UNKNOWN_CALLER_HANDLE,
 } from "./chat";
@@ -29,15 +35,15 @@ import {
 	gateFor,
 	isHandle,
 	nextFreeHandle,
+	readAdmissionEpoch,
+	readNumber,
 	readCursor,
-	readListener,
 	readRelays,
 	notePhoneDrift,
 	setContactKeyId,
 	subscriptionRelays,
 	writeCursor,
 } from "./store";
-import { managedRestartCommands, type AutostartKind } from "./autostart";
 
 export type ListenerDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
@@ -351,6 +357,11 @@ function logClaim(message: string): void {
 	process.stderr.write(`phone: ${message}\n`);
 }
 
+/** One stderr line for a wrap the listener did not store. The pubkey is a short prefix, never a secret. */
+export function formatDroppedRing(drop: DroppedRing): string {
+	return `phone: dropped ${drop.pubkeyPrefix ?? "unknown"}: ${drop.reason}\n`;
+}
+
 function sleepClaim(ms: number): void {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -581,7 +592,9 @@ function repeat(schedule: Schedule, intervalMs: number, run: () => void): Cancel
 /** Applies one admitted message's side effects: a fresh handle and contact row for a new caller, the
  * key move for a re-accept, then the message itself, `contact` keyed by the sender (as `fetchNew`'s
  * wiring contract requires). Guarded by `findContactByNpub` so a caught-up follow-up from the same
- * new caller, or a redelivered live event, never renames the contact it already created. */
+ * new caller, or a redelivered live event, never renames the contact it already created. A new caller
+ * holding an invite is stored only when this call consumes that invite, so a snapshot that is stale
+ * by the time it lands cannot admit a second caller. Returns false when the message was not stored. */
 function admitMessage(
 	db: PhoneDb,
 	now: () => number,
@@ -589,24 +602,29 @@ function admitMessage(
 	message: Message,
 	newContact?: NewContact,
 	reaccept?: Reaccept,
-): void {
-	if (newContact && !findContactByNpub(db, newContact.npub)) {
-		const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
-		const handle = nextFreeHandle(db, base);
-		const contactRelays = newContact.relays?.length ? newContact.relays : relays;
-		addContact(db, { npub: newContact.npub, handle, relays: contactRelays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
-		addPhoneNotice(db, `new contact +${handle}`, now());
-		if (newContact.inviteSecret) consumeInvite(db, newContact.inviteSecret);
-	}
-	if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
-	db.addMessage({
-		id: message.id,
-		direction: "in",
-		ts: message.ts,
-		sender: message.from,
-		contact: message.from,
-		text: message.text,
-		call: message.call ? 1 : 0,
+): boolean {
+	return db.transaction(() => {
+		if (newContact && !findContactByNpub(db, newContact.npub)) {
+			if (newContact.numberSecret !== undefined && readNumber(db)?.secret !== newContact.numberSecret) return false;
+			if (newContact.inviteSecret && !consumeInvite(db, newContact.inviteSecret)) return false;
+			const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
+			const handle = nextFreeHandle(db, base);
+			const contactRelays = newContact.relays?.length ? newContact.relays : relays;
+			addContact(db, { npub: newContact.npub, handle, relays: contactRelays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
+			addPhoneNotice(db, `new contact +${handle}`, now());
+		}
+		if (!findContactByNpub(db, message.from)) return false;
+		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
+		db.addMessage({
+			id: message.id,
+			direction: "in",
+			ts: message.ts,
+			sender: message.from,
+			contact: message.from,
+			text: message.text,
+			call: message.call ? 1 : 0,
+		});
+		return true;
 	});
 }
 
@@ -642,45 +660,99 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const initialKeys = await loadAllKeys(deps);
 	let keys = initialKeys.keys;
 	let unreadBefore = new Set(initialKeys.unreadable);
-	const contactRelays = readRelays(deps.db);
-	const relays = subscriptionRelays(deps.db);
+	let relays = subscriptionRelays(deps.db);
 	const pool = deps.createPool();
 	const since = deps.now();
+	let epoch = readAdmissionEpoch(deps.db);
+	let replayedEpoch = epoch;
+	let gateCache: Gate = gateFor(deps.db);
+	const loggedDrops = new Set<string>();
 
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
 
+	const logDrop = (drop: DroppedRing) => {
+		if (loggedDrops.has(drop.id)) return;
+		addBounded(loggedDrops, drop.id, STRANGER_ID_LIMIT);
+		process.stderr.write(formatDroppedRing(drop));
+	};
+
+	const rememberAdmission = () => {
+		epoch = readAdmissionEpoch(deps.db);
+		gateCache = gateFor(deps.db);
+	};
+
+	const applyCaught = (caught: Awaited<ReturnType<typeof fetchNew>>) => {
+		const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
+		const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
+		const refused = new Set<string>();
+		for (const message of caught.messages) {
+			if (refused.has(message.from)) continue;
+			const stored = admitMessage(
+				deps.db,
+				deps.now,
+				readRelays(deps.db),
+				message,
+				message.call ? newContactByNpub.get(message.from) : undefined,
+				reacceptByNpub.get(message.from),
+			);
+			if (!stored) refused.add(message.from);
+		}
+		return caught.seen;
+	};
+
 	const startingSeen: Seen = { cursor: readCursor(deps.db), ids: [] };
-	const caught = await fetchNew(pool, relays, keys, gateFor(deps.db), startingSeen, deps.now);
-	const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
-	const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
-	for (const message of caught.messages) {
-		admitMessage(
-			deps.db,
-			deps.now,
-			contactRelays,
-			message,
-			message.call ? newContactByNpub.get(message.from) : undefined,
-			reacceptByNpub.get(message.from),
-		);
-	}
-	writeCursor(deps.db, caught.seen.cursor);
+	let seen = applyCaught(await fetchNew(pool, relays, keys, gateCache, startingSeen, deps.now));
+	rememberAdmission();
+	writeCursor(deps.db, seen.cursor);
 
 	await hookRunner.notify();
 	await hookRunner.retryStuck();
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
 
-	let seen = caught.seen;
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
-		admitMessage(deps.db, deps.now, contactRelays, message, extra.newContact, extra.reaccept);
+		admitMessage(deps.db, deps.now, readRelays(deps.db), message, extra.newContact, extra.reaccept);
+		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
 		void hookRunner.notify();
 	};
-	let sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
+	const cachedGate = (): Gate => {
+		const next = readAdmissionEpoch(deps.db);
+		if (next !== epoch) rememberAdmission();
+		return gateCache;
+	};
+	const rereadGate = (): Gate => {
+		rememberAdmission();
+		return gateCache;
+	};
+	const hooks: SubscribeHooks = { reread: rereadGate, onDrop: logDrop };
+	const openSub = () => subscribe(pool, relays, keys, cachedGate, seen, onLive, deps.now, hooks);
+	let sub = openSub();
 	let stopped = false;
 	let watching = false;
+	const sameList = (left: string[], right: string[]) => left.length === right.length && left.every((item, index) => item === right[index]);
+	const watchAdmission = async () => {
+		const nextEpoch = readAdmissionEpoch(deps.db);
+		const wanted = subscriptionRelays(deps.db);
+		if (nextEpoch === replayedEpoch && sameList(wanted, relays)) return;
+		const caught = await fetchNew(pool, wanted, keys, gateFor(deps.db), seen, deps.now, logDrop);
+		if (stopped) return;
+		const caughtSeen = applyCaught(caught);
+		seen = { cursor: Math.max(caughtSeen.cursor, seen.cursor), ids: capIds([...new Set([...caughtSeen.ids, ...seen.ids])], STRANGER_ID_LIMIT) };
+		replayedEpoch = nextEpoch;
+		rememberAdmission();
+		writeCursor(deps.db, seen.cursor);
+		void hookRunner.notify();
+		const dropped = relays.filter((relay) => !wanted.includes(relay));
+		relays = wanted;
+		sub.close();
+		pool.close(dropped);
+		if (stopped) return;
+		sub = openSub();
+		writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
+	};
 	const watchKeys = () => {
 		if (stopped || watching) return;
 		watching = true;
@@ -690,18 +762,19 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				if (stopped) return;
 				const merged = mergeHeldKeys(loaded, keys);
 				const nextPrint = keyFingerprint(merged);
-				if (nextPrint === keyFingerprint(keys)) {
+				if (nextPrint !== keyFingerprint(keys)) {
+					const notice = subscriptionNotice(keys, merged, unreadBefore);
 					unreadBefore = new Set(loaded.unreadable);
-					return;
+					sub.close();
+					if (stopped) return;
+					keys = merged;
+					sub = openSub();
+					writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
+					notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
+				} else {
+					unreadBefore = new Set(loaded.unreadable);
 				}
-				const notice = subscriptionNotice(keys, merged, unreadBefore);
-				unreadBefore = new Set(loaded.unreadable);
-				sub.close();
-				if (stopped) return;
-				keys = merged;
-				sub = subscribe(pool, relays, keys, () => gateFor(deps.db), seen, onLive, deps.now);
-				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
-				notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
+				if (!stopped) await watchAdmission();
 			} catch {
 			} finally {
 				watching = false;
@@ -727,116 +800,4 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		deps.onSignal("SIGTERM", shutdown);
 		deps.onSignal("SIGINT", shutdown);
 	});
-}
-
-/** Long enough for an in-flight `--on-message` to finish draining after SIGTERM. */
-const REFRESH_WAIT_MS = 60_000;
-
-function refreshSleep(ms: number): void {
-	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-export type ListenerRefreshDeps = {
-	isOurListener: (pid: number) => boolean;
-	isAlive: (pid: number) => boolean;
-	kill: (pid: number) => void;
-	sleepSync: (ms: number) => void;
-	spawn: (argv: string[], logPath: string) => number;
-	now: () => number;
-	argvFor: (extraArgs: string[]) => string[];
-	/** Command line of the running listener, captured before it is stopped. */
-	commandArgs?: (pid: number) => string[] | undefined;
-	/** Restarts a systemd, launchd, or Task Scheduler listener instead of detaching a second one. */
-	restartManaged?: (kind: AutostartKind) => void;
-};
-
-function defaultRefreshDeps(): ListenerRefreshDeps {
-	return {
-		isOurListener,
-		isAlive,
-		kill: (pid) => process.kill(pid, "SIGTERM"),
-		sleepSync: refreshSleep,
-		spawn: spawnDetachedListener,
-		now: () => Math.floor(Date.now() / 1000),
-		argvFor: (extraArgs) => selfCommand(["phone", "__run", ...extraArgs]),
-	};
-}
-
-function hookArgs(hook: ListenerPid["hook"]): string[] {
-	if (!hook) return [];
-	return ["--on-message", ...hook.argv, "--on-message-timeout", String(hook.timeoutS)];
-}
-
-function managedKind(kind: string | undefined): AutostartKind | undefined {
-	if (kind === "systemd" || kind === "launchd" || kind === "task") return kind;
-	return undefined;
-}
-
-function restartManagedListener(kind: AutostartKind): void {
-	const commands = managedRestartCommands(kind, process.getuid?.() ?? 0);
-	for (let index = 0; index < commands.length; index += 1) {
-		const [command, ...args] = commands[index] ?? [];
-		const result = spawnSync(command ?? "", args, { encoding: "utf8" });
-		const last = index === commands.length - 1;
-		if (result.status !== 0 && (last || kind !== "task")) {
-			const detail = (result.stderr || result.stdout || "").trim().split("\n")[0];
-			throw new DgCliError(`could not restart the ${kind} phone listener${detail ? `: ${detail}` : ""}`);
-		}
-	}
-}
-
-function waitForExit(pid: number, deps: ListenerRefreshDeps): boolean {
-	for (let waited = 0; deps.isAlive(pid) && waited < REFRESH_WAIT_MS; waited += 100) deps.sleepSync(100);
-	return !deps.isAlive(pid);
-}
-
-/** When a live listener is not subscribed to every invite relay, stop it and start exactly one
- * replacement. A service-managed listener is restarted through that manager, so it stays supervised.
- * The wait covers a hook that is still draining. If the process never exits, this throws and does
- * not start a second listener. If a detached replacement fails to start, the command line captured
- * before the stop is started again. */
-export function ensureListenerSubscribed(paths: DgPaths, db: PhoneDb, deps: ListenerRefreshDeps = defaultRefreshDeps()): void {
-	const running = readListenerPid(paths);
-	if (!running || !deps.isOurListener(running.pid)) return;
-	// A pid file written before relays were recorded is not proof the process missed an invite.
-	if (!running.relays) return;
-	const wanted = subscriptionRelays(db);
-	if (wanted.every((relay) => running.relays?.includes(relay))) return;
-
-	const previous = (deps.commandArgs ?? listenerCommandArgs)(running.pid);
-	const managed = managedKind(readListener(db)?.autostart?.kind);
-	if (managed) {
-		(deps.restartManaged ?? restartManagedListener)(managed);
-		if (!waitForExit(running.pid, deps)) {
-			throw new DgCliError(
-				`the phone listener (pid ${running.pid}) did not exit; left the ${managed} service in place and did not start another`,
-			);
-		}
-		return;
-	}
-
-	deps.kill(running.pid);
-	if (!waitForExit(running.pid, deps)) {
-		throw new DgCliError(`the phone listener (pid ${running.pid}) did not exit; no replacement was started`);
-	}
-
-	const nextArgv = deps.argvFor(hookArgs(running.hook));
-	try {
-		const pid = deps.spawn(nextArgv, listenerLogPath(paths));
-		adoptListenerPid(paths, { pid, since: deps.now(), hook: running.hook, relays: wanted });
-	} catch (err) {
-		if (previous && previous.length > 0) {
-			try {
-				const pid = deps.spawn(previous, listenerLogPath(paths));
-				adoptListenerPid(paths, {
-					pid,
-					since: deps.now(),
-					hook: running.hook,
-					relays: running.relays,
-					...(running.adopted === "legacy" ? { adopted: "legacy" as const } : {}),
-				});
-			} catch {}
-		}
-		throw err instanceof DgCliError ? err : new DgCliError("the phone listener stopped and the replacement failed to start");
-	}
 }

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { publish, ring, wrap } from "../../src/phone/chat";
+import { phoneAccept, phoneContactsRemove, phoneInvite, phoneNumber } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, keyName, markKeyInStore, type KeyClient } from "../../src/phone/keys";
@@ -13,7 +14,6 @@ import {
 	claimListener,
 	commandLookupFromText,
 	displaceStaleLock,
-	ensureListenerSubscribed,
 	holderVerdict,
 	isListenerArgs,
 	isOurListener,
@@ -30,17 +30,21 @@ import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
 	addInvite,
+	bumpAdmissionEpoch,
+	consumeInvite,
+	readCursor,
 	DEFAULT_NUMBER_KEY_ID,
 	findContactByHandle,
 	findContactByNpub,
 	listContacts,
 	numberKeyId,
+	readNumber,
 	DEFAULT_RELAYS,
 	writeListener,
 	writeNumber,
 	writeRelays,
 } from "../../src/phone/store";
-import { blockingSleep, createFakePool, type FakePool } from "./fake-pool";
+import { blockingSleep, createFakePool, makePhoneDeps, type FakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
 let home: string;
@@ -94,6 +98,41 @@ function deps(overrides: Partial<ListenerDeps> = {}): ListenerDeps {
 		schedule: noopSchedule(),
 		onSignal: () => {},
 		...overrides,
+	};
+}
+
+function holdFirstWatchQuery() {
+	const scheduled: { delay: number; run: () => void }[] = [];
+	const schedule: Schedule = (delay, run) => {
+		scheduled.push({ delay, run });
+		return () => {};
+	};
+	let holding = false;
+	let queried = false;
+	let release: () => void = () => {};
+	const released = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	return {
+		schedule,
+		createPool: () => ({
+			...pool,
+			querySync: async (...args: Parameters<FakePool["querySync"]>) => {
+				const events = await pool.querySync(...args);
+				if (holding) {
+					queried = true;
+					await released;
+				}
+				return events;
+			},
+			close: () => {},
+		}),
+		arm: () => {
+			holding = true;
+		},
+		tick: () => scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run(),
+		queried: () => queried,
+		release,
 	};
 }
 
@@ -184,6 +223,372 @@ describe("runListener", () => {
 		await run;
 
 		expect(findContactByNpub(db, caller.npub)?.handle).toBe("dg");
+	});
+
+	it("admits an invite created after the listener started, from a second key, without a restart", async () => {
+		setUpNumber("ab".repeat(32));
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		const printed: string[] = [];
+		const owner = makePhoneDeps({ home, pool, write: (text) => printed.push(text), now: NOW });
+		const peerHome = mkdtempSync(join(tmpdir(), "dg-phone-peer-"));
+		const peer = makePhoneDeps({ home: peerHome, pool, write: () => {}, now: NOW });
+		try {
+			await phoneInvite({ name: "barron", as: "merck" }, owner);
+			const card = (JSON.parse(printed[0] ?? "") as { card: string; expires_at: string }).card;
+			expect((JSON.parse(printed[0] ?? "") as { expires_at: string }).expires_at).not.toBeNull();
+
+			await phoneAccept(card, "hello from the other key", peer);
+			await waitUntil(() => findContactByHandle(db, "barron") !== undefined);
+			expect(findContactByHandle(db, "barron")).toMatchObject({ via: "invite" });
+			expect(db.unreadMessages().some((row) => row.text === "hello from the other key")).toBe(true);
+		} finally {
+			stop();
+			await run;
+			owner.db.close();
+			peer.db.close();
+			rmSync(peerHome, { recursive: true, force: true });
+		}
+	});
+
+	it("admits a re-invite after contacts remove, without a restart", async () => {
+		setUpNumber("ab".repeat(32));
+		const peerHome = mkdtempSync(join(tmpdir(), "dg-phone-peer-"));
+		const peerOut: string[] = [];
+		const peer = makePhoneDeps({ home: peerHome, pool, write: (text) => peerOut.push(text), now: NOW });
+		const owner = makePhoneDeps({ home, pool, write: () => {}, now: NOW });
+		try {
+			await phoneNumber({ as: "barron" }, peer);
+			const peerNpub = (JSON.parse(peerOut[0] ?? "") as { npub: string }).npub;
+			addContact(db, { npub: peerNpub, handle: "barron", relays: RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+			const { onSignal, ready, stop } = captureShutdown();
+			const run = runListener(deps({ onSignal }));
+			await ready;
+			const invited: string[] = [];
+			owner.write = (text) => invited.push(text);
+			phoneContactsRemove("+barron", owner);
+			invited.length = 0;
+			await phoneInvite({ name: "barron", as: "merck" }, owner);
+			const card = (JSON.parse(invited[0] ?? "") as { card: string }).card;
+
+			await phoneAccept(card, "called back", peer);
+			await waitUntil(() => findContactByHandle(db, "barron") !== undefined);
+			expect(findContactByNpub(db, peerNpub)).toMatchObject({ handle: "barron", via: "invite" });
+			stop();
+			await run;
+		} finally {
+			owner.db.close();
+			peer.db.close();
+			rmSync(peerHome, { recursive: true, force: true });
+		}
+	});
+
+	it("drops the pre-rotate number secret after number --rotate, without a restart", async () => {
+		const secret = "ab".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal }));
+		const owner = makePhoneDeps({ home, pool, write: () => {}, now: NOW });
+		try {
+			await ready;
+			await phoneNumber({ rotate: true }, owner);
+			await publish(pool, RELAYS, ring("old card", caller.sk, getPublicKey(numberSk), secret, "late"));
+			expect(findContactByHandle(db, "late")).toBeUndefined();
+			const fresh = readNumber(db)?.secret;
+			expect(fresh).toBeDefined();
+			expect(fresh).not.toBe(secret);
+			await publish(pool, RELAYS, ring("new card", caller.sk, getPublicKey(numberSk), fresh ?? "", "late"));
+			await waitUntil(() => findContactByHandle(db, "late") !== undefined);
+			expect(findContactByHandle(db, "late")?.via).toBe("number");
+		} finally {
+			stop();
+			await run;
+			owner.db.close();
+		}
+	});
+
+	it("stores a ring that missed its invite once the invite is saved, without a restart", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const secret = "cd".repeat(32);
+		const caller = identity();
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule }));
+		await ready;
+		await publish(pool, RELAYS, ring("too soon", caller.sk, getPublicKey(numberSk), secret, "barron"));
+		expect(findContactByHandle(db, "barron")).toBeUndefined();
+
+		addInvite(db, {
+			secret,
+			expiresAt: NOW + 10_000,
+			asName: "merck",
+			name: "barron",
+			keyId: numberKeyId(db),
+			relays: RELAYS,
+		});
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => findContactByHandle(db, "barron") !== undefined);
+		stop();
+		await run;
+
+		expect(findContactByHandle(db, "barron")).toMatchObject({ via: "invite" });
+	});
+
+	it("stores a ring that missed its invite even when another event reaches the gate before the next tick", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const secret = "cd".repeat(32);
+		const caller = identity();
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule }));
+		await ready;
+		await publish(pool, RELAYS, ring("too soon", caller.sk, getPublicKey(numberSk), secret, "barron"));
+		addInvite(db, { secret, expiresAt: NOW + 10_000, asName: "merck", name: "barron", keyId: numberKeyId(db), relays: DEFAULT_RELAYS });
+		await publish(pool, RELAYS, wrap("unrelated", identity().sk, getPublicKey(numberSk)));
+
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => findContactByHandle(db, "barron") !== undefined);
+		stop();
+		await run;
+
+		expect(findContactByHandle(db, "barron")).toMatchObject({ via: "invite" });
+	});
+
+	it("admits one caller for a one-time invite when a live ring lands while catch-up holds a stale snapshot", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const secret = "cd".repeat(32);
+		const first = identity();
+		const second = identity();
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		let holding = false;
+		let queried = false;
+		let release: () => void = () => {};
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const slowPool = () => ({
+			...pool,
+			querySync: async (...args: Parameters<FakePool["querySync"]>) => {
+				const events = await pool.querySync(...args);
+				if (holding) {
+					queried = true;
+					await released;
+				}
+				return events;
+			},
+			close: () => {},
+		});
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule, createPool: slowPool }));
+		await ready;
+		await publish(pool, RELAYS, ring("second", second.sk, getPublicKey(numberSk), secret, "beta"));
+		addInvite(db, { secret, expiresAt: NOW + 10_000, asName: "merck", keyId: numberKeyId(db), relays: DEFAULT_RELAYS });
+		holding = true;
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => queried);
+		await publish(pool, RELAYS, ring("first", first.sk, getPublicKey(numberSk), secret, "alpha"));
+		await waitUntil(() => findContactByNpub(db, first.npub) !== undefined);
+		release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, second.npub)).toBeUndefined();
+		expect(db.unreadMessages().some((row) => row.text === "second")).toBe(false);
+	});
+
+	it("does not store a caught-up message from a contact removed while the catch-up was in flight", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const caller = identity();
+		addContact(db, { npub: caller.npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		const held = holdFirstWatchQuery();
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule: held.schedule, createPool: held.createPool }));
+		await ready;
+		pool.events.push(wrap("from a removed contact", caller.sk, getPublicKey(numberSk)));
+		bumpAdmissionEpoch(db);
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		phoneContactsRemove("+barron", makePhoneDeps({ home, pool, write: () => {}, now: NOW }));
+		held.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(db.unreadMessages().some((row) => row.text === "from a removed contact")).toBe(false);
+	});
+
+	it("does not create a contact from a caught-up ring whose number secret was rotated while the catch-up was in flight", async () => {
+		const secret = "ee".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		const held = holdFirstWatchQuery();
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule: held.schedule, createPool: held.createPool }));
+		await ready;
+		pool.events.push(ring("old card", caller.sk, getPublicKey(numberSk), secret, "late"));
+		bumpAdmissionEpoch(db);
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		writeNumber(db, { secret: "ff".repeat(32), as: "dg" });
+		held.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, caller.npub)).toBeUndefined();
+	});
+
+	it("adds an invite relay while an --on-message hook is still running", async () => {
+		setUpNumber("ab".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			scheduled.push({ delay, run });
+			return () => {};
+		};
+		const hook: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "await Bun.sleep(2500)"], timeoutMs: 10_000 };
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule, hook }));
+		await ready;
+		addContact(db, { npub: identity().npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		db.addMessage({ id: "pending", direction: "in", ts: NOW, sender: "npub1w", contact: "npub1w", text: "pending", call: 0 });
+		addInvite(db, { secret: "33".repeat(32), expiresAt: NOW + 10_000, asName: "dg", keyId: numberKeyId(db), relays: ["wss://invite-late.example"] });
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+
+		await waitUntil(() => pool.relaysUsed.some((relays) => relays.includes("wss://invite-late.example")), 1500);
+		stop();
+		await run;
+	});
+
+	it("keeps the live cursor when catch-up finishes after a live message advanced it", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const caller = identity();
+		addContact(db, { npub: caller.npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		const held = holdFirstWatchQuery();
+		let clock = NOW;
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule: held.schedule, createPool: held.createPool, now: () => clock }));
+		await ready;
+		bumpAdmissionEpoch(db);
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		clock = NOW + 100;
+		await publish(pool, RELAYS, wrap("live while catching up", caller.sk, getPublicKey(numberSk)));
+		await waitUntil(() => readCursor(db) === NOW + 100);
+		held.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(readCursor(db)).toBe(NOW + 100);
+	});
+
+	it("closes a relay that drops out of the subscription when the watcher replaces it", async () => {
+		setUpNumber("ab".repeat(32));
+		const secret = "33".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 10_000, asName: "dg", keyId: numberKeyId(db), relays: ["wss://gone.example"] });
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			scheduled.push({ delay, run });
+			return () => {};
+		};
+		const closed: string[][] = [];
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule, createPool: () => ({ ...pool, close: (relays: string[]) => closed.push(relays) }) }));
+		await ready;
+		consumeInvite(db, secret);
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => closed.some((relays) => relays.includes("wss://gone.example")), 1000);
+		stop();
+		await run;
+	});
+
+	it("subscribes to an invite relay saved after startup, without a restart", async () => {
+		setUpNumber("ab".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			const entry = { delay, run };
+			scheduled.push(entry);
+			return () => {
+				const index = scheduled.indexOf(entry);
+				if (index >= 0) scheduled.splice(index, 1);
+			};
+		};
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule }));
+		await ready;
+		addInvite(db, {
+			secret: "33".repeat(32),
+			expiresAt: NOW + 10_000,
+			asName: "dg",
+			keyId: numberKeyId(db),
+			relays: ["wss://invite-late.example"],
+		});
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+		await waitUntil(() => pool.relaysUsed.some((relays) => relays.includes("wss://invite-late.example") && relays.includes("wss://saved.example")));
+		const recorded = JSON.parse(readFileSync(listenerPidPath(paths), "utf8")) as { relays?: string[] };
+		expect(recorded.relays).toEqual(expect.arrayContaining(["wss://saved.example", "wss://invite-late.example"]));
+		stop();
+		await run;
+	});
+
+	it("logs an unmatched ring with a pubkey prefix and without the secret or the text", async () => {
+		const numberSk = setUpNumber("ff".repeat(32));
+		const caller = identity();
+		const secret = "11".repeat(32);
+		const logs: string[] = [];
+		const stderr = spyOn(process.stderr, "write").mockImplementation((chunk) => {
+			logs.push(String(chunk));
+			return true;
+		});
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal }));
+		try {
+			await ready;
+			await publish(pool, RELAYS, ring("do-not-log-this-body", caller.sk, getPublicKey(numberSk), secret, "x"));
+		} finally {
+			stop();
+			await run;
+			stderr.mockRestore();
+		}
+
+		const line = logs.find((entry) => entry.includes("dropped"));
+		expect(line).toContain(caller.pub.slice(0, 8));
+		expect(line).not.toContain(caller.pub.slice(8));
+		expect(line).toContain("no matching contact or invite");
+		expect(line).not.toContain("do-not-log-this-body");
+		expect(line).not.toContain(secret);
 	});
 
 	it("admits a live ring the same way once the subscription is open", async () => {
@@ -454,7 +859,7 @@ describe("runListener", () => {
 
 		down = false;
 		const alice = identity();
-		addContact(db, { npub: alice.npub, handle: "alice", relays: RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		addContact(db, { npub: alice.npub, handle: "alice", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
 		NOW += 50_000;
 		await publish(pool, RELAYS, wrap("ping", alice.sk, getPublicKey(sk)));
 		const readsWhileBack = storeReads;
@@ -663,182 +1068,6 @@ describe("one listener at a time", () => {
 		} finally {
 			holder.kill();
 		}
-	});
-
-	it("stops a listener that is missing an invite relay and starts exactly one replacement", () => {
-		setUpNumber("ab".repeat(32));
-		writeRelays(db, ["wss://saved.example"]);
-		addInvite(db, {
-			secret: "33".repeat(32),
-			expiresAt: NOW + 10_000,
-			asName: "dg",
-			keyId: DEFAULT_NUMBER_KEY_ID,
-			relays: ["wss://invite.example"],
-		});
-		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
-		let alive = true;
-		const spawned: number[] = [];
-
-		ensureListenerSubscribed(paths, db, {
-			isOurListener: () => true,
-			isAlive: () => alive,
-			kill: () => {
-				alive = false;
-			},
-			sleepSync: () => {},
-			spawn: () => {
-				spawned.push(1);
-				return 777;
-			},
-			now: () => NOW,
-			argvFor: (extra) => ["phone", "__run", ...extra],
-		});
-
-		expect(spawned).toEqual([1]);
-		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8"))).toMatchObject({
-			pid: 777,
-			relays: ["wss://saved.example", "wss://invite.example"],
-		});
-	});
-
-	it("does not start a second listener when the running one will not exit", () => {
-		setUpNumber("cd".repeat(32));
-		writeRelays(db, ["wss://saved.example"]);
-		addInvite(db, {
-			secret: "44".repeat(32),
-			expiresAt: NOW + 10_000,
-			asName: "dg",
-			keyId: DEFAULT_NUMBER_KEY_ID,
-			relays: ["wss://invite.example"],
-		});
-		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
-		const spawned: number[] = [];
-
-		expect(() =>
-			ensureListenerSubscribed(paths, db, {
-				isOurListener: () => true,
-				isAlive: () => true,
-				kill: () => {},
-				sleepSync: () => {},
-				spawn: () => {
-					spawned.push(1);
-					return 777;
-				},
-				now: () => NOW,
-				argvFor: (extra) => ["phone", "__run", ...extra],
-			}),
-		).toThrow(`the phone listener (pid ${process.pid}) did not exit; no replacement was started`);
-
-		expect(spawned).toEqual([]);
-		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(process.pid);
-	});
-
-	it("restarts a systemd listener through the service instead of detaching a second one", () => {
-		setUpNumber("ef".repeat(32));
-		writeRelays(db, ["wss://saved.example"]);
-		writeListener(db, { autostart: { kind: "systemd" } });
-		addInvite(db, {
-			secret: "55".repeat(32),
-			expiresAt: NOW + 10_000,
-			asName: "dg",
-			keyId: DEFAULT_NUMBER_KEY_ID,
-			relays: ["wss://invite.example"],
-		});
-		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
-		let alive = true;
-		const restarted: string[] = [];
-		const spawned: number[] = [];
-
-		ensureListenerSubscribed(paths, db, {
-			isOurListener: () => true,
-			isAlive: () => alive,
-			kill: () => {
-				throw new Error("a managed listener is restarted by its service, not signaled here");
-			},
-			sleepSync: () => {},
-			spawn: () => {
-				spawned.push(1);
-				return 777;
-			},
-			now: () => NOW,
-			argvFor: (extra) => ["phone", "__run", ...extra],
-			restartManaged: (kind) => {
-				restarted.push(kind);
-				alive = false;
-			},
-		});
-
-		expect(restarted).toEqual(["systemd"]);
-		expect(spawned).toEqual([]);
-	});
-
-	it("starts the command line captured before the stop when the replacement spawn fails", () => {
-		setUpNumber("ab".repeat(32));
-		writeRelays(db, ["wss://saved.example"]);
-		addInvite(db, {
-			secret: "66".repeat(32),
-			expiresAt: NOW + 10_000,
-			asName: "dg",
-			keyId: DEFAULT_NUMBER_KEY_ID,
-			relays: ["wss://invite.example"],
-		});
-		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null, relays: ["wss://saved.example"] }));
-		let alive = true;
-		const spawned: string[][] = [];
-
-		expect(() =>
-			ensureListenerSubscribed(paths, db, {
-				isOurListener: () => true,
-				isAlive: () => alive,
-				kill: () => {
-					alive = false;
-				},
-				sleepSync: () => {},
-				spawn: (argv) => {
-					spawned.push(argv);
-					if (spawned.length === 1) throw new Error("spawn failed");
-					return 888;
-				},
-				now: () => NOW,
-				argvFor: (extra) => ["phone", "__run", ...extra],
-				commandArgs: () => ["/old/dg-agent", "phone", "__run"],
-			}),
-		).toThrow("the phone listener stopped and the replacement failed to start");
-
-		expect(spawned).toEqual([
-			["phone", "__run"],
-			["/old/dg-agent", "phone", "__run"],
-		]);
-		expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(888);
-	});
-
-	it("does not restart a listener whose pid file never recorded relays", () => {
-		setUpNumber("cd".repeat(32));
-		writeRelays(db, ["wss://saved.example"]);
-		addInvite(db, {
-			secret: "77".repeat(32),
-			expiresAt: NOW + 10_000,
-			asName: "dg",
-			keyId: DEFAULT_NUMBER_KEY_ID,
-			relays: ["wss://invite.example"],
-		});
-		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.pid, since: NOW, hook: null }));
-		const spawned: number[] = [];
-
-		ensureListenerSubscribed(paths, db, {
-			isOurListener: () => true,
-			isAlive: () => true,
-			kill: () => {},
-			sleepSync: () => {},
-			spawn: () => {
-				spawned.push(1);
-				return 777;
-			},
-			now: () => NOW,
-			argvFor: (extra) => ["phone", "__run", ...extra],
-		});
-
-		expect(spawned).toEqual([]);
 	});
 });
 

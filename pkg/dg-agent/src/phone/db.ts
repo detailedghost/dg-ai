@@ -263,8 +263,10 @@ export class PhoneDb {
 			});
 	}
 
-	consumeInvite(secret: string): void {
-		this.db.query("DELETE FROM invites WHERE secret = $secret").run({ secret });
+	/** True only for the one call that removed a live invite, so two callers cannot both win it. */
+	consumeInvite(secret: string): boolean {
+		const result = this.db.query("DELETE FROM invites WHERE secret = $secret AND expires_at > $now").run({ secret, now: this.now() });
+		return result.changes > 0;
 	}
 
 	addMessage(message: Omit<MessageRow, "read_at" | "attempts">): boolean {

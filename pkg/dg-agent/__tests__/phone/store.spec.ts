@@ -19,6 +19,8 @@ import {
 	nextFreeHandle,
 	normalizeHandle,
 	numberKeyId,
+	bumpAdmissionEpoch,
+	readAdmissionEpoch,
 	readCursor,
 	readListener,
 	readNumber,
@@ -28,6 +30,7 @@ import {
 	requireFreeHandle,
 	resolvedSelfName,
 	setContactKeyId,
+	subscriptionRelays,
 	writeCursor,
 	writeListener,
 	writeNumber,
@@ -83,12 +86,23 @@ describe("number", () => {
 
 		expect(readNumber(db)).toEqual({ secret: "ab".repeat(32), as: "dante" });
 		expect(resolvedSelfName(db)).toBe("dante");
+		expect(readAdmissionEpoch(db)).toBe(1);
+
+		writeNumber(db, { secret: "ab".repeat(32), as: "merck" });
+		expect(readAdmissionEpoch(db)).toBe(1);
+
+		writeNumber(db, { secret: "cd".repeat(32), as: "merck" });
+		expect(readAdmissionEpoch(db)).toBe(2);
 	});
 
 	it("round-trips a custom relay list", () => {
 		writeRelays(db, ["wss://x.example"]);
 
 		expect(readRelays(db)).toEqual(["wss://x.example"]);
+		expect(readAdmissionEpoch(db)).toBe(1);
+
+		writeRelays(db, ["wss://x.example"]);
+		expect(readAdmissionEpoch(db)).toBe(1);
 	});
 
 	it("picks the default key id once and keeps it for later readers", () => {
@@ -176,10 +190,44 @@ describe("invites", () => {
 		expect(liveInvites(db)).toEqual([]);
 	});
 
+	it("consumes an invite once and leaves the epoch alone when nothing was consumed", () => {
+		const secret = "ab".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 100, asName: "dg", keyId: "default" });
+		const epoch = readAdmissionEpoch(db);
+
+		expect(consumeInvite(db, secret)).toBe(true);
+		expect(readAdmissionEpoch(db)).toBe(epoch + 1);
+		expect(consumeInvite(db, secret)).toBe(false);
+		expect(readAdmissionEpoch(db)).toBe(epoch + 1);
+	});
+
+	it("keeps an established contact's relays in the subscription once its invite is consumed", () => {
+		const secret = "ab".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 100, asName: "dg", keyId: "default", relays: ["wss://custom.example"] });
+		addContact(db, { npub: npub(), handle: "barron", relays: ["wss://custom.example"], keyId: "default", addedAt: NOW, via: "invite" });
+		consumeInvite(db, secret);
+
+		expect(subscriptionRelays(db)).toEqual([...DEFAULT_RELAYS, "wss://custom.example"]);
+	});
+
 	it("leaves an expired invite out of the live list", () => {
 		addInvite(db, { secret: "cd".repeat(32), expiresAt: NOW - 1, asName: "dg", keyId: "default" });
 
 		expect(liveInvites(db)).toEqual([]);
+	});
+
+	it("bumps the admission epoch when an invite is saved or consumed, and when a contact is removed", () => {
+		expect(readAdmissionEpoch(db)).toBe(0);
+		addInvite(db, { secret: "ab".repeat(32), expiresAt: NOW + 100, asName: "dg", keyId: "default" });
+		expect(readAdmissionEpoch(db)).toBe(1);
+		consumeInvite(db, "ab".repeat(32));
+		expect(readAdmissionEpoch(db)).toBe(2);
+
+		const who = npub();
+		addContact(db, { npub: who, handle: "barron", relays: DEFAULT_RELAYS, keyId: "default", addedAt: NOW, via: "accept" });
+		removeContact(db, "barron");
+		expect(readAdmissionEpoch(db)).toBe(3);
+		expect(bumpAdmissionEpoch(db)).toBe(4);
 	});
 });
 

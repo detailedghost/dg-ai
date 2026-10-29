@@ -236,6 +236,16 @@ describe("PhoneDb", () => {
 
 			expect(db.listLiveInvites()).toEqual([]);
 		});
+
+		it("consumes an invite once and reports whether this call won it", () => {
+			db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
+			db.putInvite({ secret: "live", expires_at: NOW + 100, as_name: "dg", name: null, key_id: "default" });
+			db.putInvite({ secret: "dead", expires_at: NOW - 100, as_name: "dg", name: null, key_id: "default" });
+
+			expect(db.consumeInvite("live")).toBe(true);
+			expect(db.consumeInvite("live")).toBe(false);
+			expect(db.consumeInvite("dead")).toBe(false);
+		});
 	});
 
 	describe("settings", () => {
