@@ -124,6 +124,7 @@ describe("review board in a browser", () => {
 			expect(await page.getAttribute("#favicon", "href")).toStartWith("data:image/png;base64,");
 			expect(await page.textContent(".shot-note-btn")).toBe("Note on this");
 
+			expect(await page.evaluate(() => Boolean(document.getElementById("notify")?.closest("#toc .attention")))).toBe(true);
 			await page.click("#notify");
 			expect(await page.getAttribute("#notify", "aria-pressed")).toBe("true");
 			expect(await page.evaluate(() => localStorage.getItem("verify-notify"))).toBe("1");

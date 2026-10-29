@@ -128,7 +128,7 @@ When several items wait, only the first one in each list animates.
 The browser tab shows the number of rounds that wait, the open round, and the board title, for example `(2) Settings r2 · Settings polish`.
 It adds `● New round` when a round arrives while the tab is in the background.
 The tab icon shows the same count in a red dot.
-The bell button in the panel head turns on desktop alerts. An alert shows only when a round arrives and the tab is in the background.
+The bell at the end of the Needs attention row turns on desktop alerts. An alert shows only when a round arrives and the tab is in the background.
 `status` and `watch` print `more versions` for a round where Dante asked for more versions. `rerun` treats it like a round that was sent back.
 `wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.

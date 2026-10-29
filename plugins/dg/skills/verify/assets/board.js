@@ -172,6 +172,14 @@ function setFold(key, collapsed) {
 }
 
 const needsAttention = (s) => !verdicts[s.id]?.status;
+const notifyBtn = (() => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.id = "notify";
+  b.className = "attn-bell";
+  b.setAttribute("aria-pressed", "false");
+  return b;
+})();
 
 function orb(count) {
   const o = el("span", count ? "orb orb-count" : "orb", count ? String(count) : "");
@@ -203,7 +211,7 @@ function renderToc() {
   const attn = el("div", "attention");
   const ab = tocButton("", "!", needs.length ? "Needs attention" : "All caught up", needs.length ? `Needs attention: ${needs.length} waiting. Go to the next one` : "Nothing needs your attention", needs.length ? goNextAttention : null, false);
   if (needs.length) ab.append(orb(needs.length));
-  attn.append(ab);
+  attn.append(ab, notifyBtn);
   pinned.append(overview, attn);
   toc.append(pinned);
   const showing = $("section").hidden ? null : sections[index];
@@ -1067,13 +1075,14 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 (() => {
-  const btn = $("notify");
+  const btn = notifyBtn;
   const sync = () => {
     let on = false;
     try {
       on = localStorage.getItem("verify-notify") === "1";
     } catch {}
     const blocked = typeof Notification === "undefined" || Notification.permission === "denied";
+    btn.innerHTML = svg("bell");
     btn.setAttribute("aria-pressed", String(on && !blocked));
     btn.classList.toggle("on", on && !blocked);
     const label = blocked ? "Desktop alerts are blocked in this browser" : on ? "Desktop alerts are on. Turn them off" : "Turn on desktop alerts when a round is ready";

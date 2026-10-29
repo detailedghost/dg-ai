@@ -496,6 +496,13 @@ aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--a
 .note-pop.more{border-color:var(--more)}
 .pk-more{color:var(--more)!important;border-color:color-mix(in srgb,var(--more) 45%,transparent)!important}
 .pk-more:hover{background:var(--more-soft)!important}
+#toc .attention{display:flex;align-items:center;gap:4px}
+#toc .attention > button:first-child{flex:1;min-width:0}
+#toc .attention .attn-bell{flex:none;width:32px!important;min-height:32px!important;height:32px;padding:0!important;display:inline-grid;place-items:center;border:1px solid transparent;border-radius:8px;background:none;color:var(--mut);cursor:pointer}
+#toc .attention .attn-bell:hover{color:var(--fg);border-color:var(--line)}
+#toc .attention .attn-bell[aria-pressed="true"]{color:var(--acc);background:var(--acc-soft);border-color:var(--acc)}
+#toc .attention .attn-bell svg{width:16px;height:16px}
+.nav-compact #toc .attention .attn-bell{display:none}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}

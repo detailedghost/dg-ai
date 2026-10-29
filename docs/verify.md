@@ -16,7 +16,7 @@ It includes scrolled pages and open menus.
 `dg-skills verify serve <name>` opens one local board.
 The board steps through one round of one item at a time.
 Dante approves, approves with a note, sends back with a note, or skips. On a round with versions, Dante can also ask for more versions.
-The browser tab and its icon show how many rounds wait. A bell button turns on desktop alerts.
+The browser tab and its icon show how many rounds wait. A bell next to Needs attention turns on desktop alerts.
 A round can hold more than one version. Dante flips between them and approves the one to keep.
 The board checks for changes every 5 seconds and shows light or dark screenshots to match its theme.
 
