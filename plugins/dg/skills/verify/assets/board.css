@@ -434,8 +434,8 @@ aside::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--mu
 .cmp-flip-wrap,.cmp-stage.show-before .cmp-after{visibility:hidden}
 .cmp-diff .cmp-after{mix-blend-mode:difference}
 .cmp input[type=range]{width:100%;margin-top:8px;accent-color:var(--acc)}
-.cmp-flip{margin-top:8px;min-height:36px;padding:6px 12px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--fg);font:inherit;cursor:pointer}
-.cmp-flip:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.cmp-flip-btn{margin-top:8px;min-height:36px;padding:6px 12px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--fg);font:inherit;cursor:pointer}
+.cmp-flip-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .picker .ic.on{color:var(--acc);border-color:var(--acc)}
 .cmp figcaption.cmp-cap{display:flex;width:auto;justify-content:space-between;align-items:center;background:none;border:0;padding:0;letter-spacing:.06em}
 .cmp figcaption.cmp-cap span:first-child{color:var(--before)}

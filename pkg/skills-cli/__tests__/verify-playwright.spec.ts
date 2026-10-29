@@ -116,7 +116,7 @@ describe("review board in a browser", () => {
 			await page.fill(".cmp-slider input[type=range]", "20");
 			expect(await page.evaluate(() => (document.querySelector(".cmp-stage") as HTMLElement).style.getPropertyValue("--pos"))).toBe("20%");
 			await pick("flip");
-			await page.click("button.cmp-flip");
+			await page.click(".cmp-flip-btn");
 			expect(await page.getAttribute(".cmp-stage", "class")).toContain("show-before");
 			expect(await page.evaluate(() => localStorage.getItem("verify-compare"))).toBe("flip");
 			await pick("side");

@@ -95,7 +95,7 @@ function compareView(im, beforeCap, afterCap) {
     cap.append(el("span", "", beforeCap), el("span", "muted", "fade"), el("span", "", afterCap));
     fig.append(cap, stage, range(`Fade from ${beforeCap} to ${afterCap}`, 50, (v) => stage.style.setProperty("--op", String(v / 100))));
   } else if (compare === "flip") {
-    const btn = el("button", "cmp-flip", "");
+    const btn = el("button", "cmp-flip-btn", "");
     btn.type = "button";
     const show = (a) => {
       stage.classList.toggle("show-before", !a);
