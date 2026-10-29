@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.25.1 (2026-10-29)
+
+### Fixes
+
+- fix(thrash): encode the GitLab target ref in file reads ([#103](https://github.com/detailedghost/dg-ai/pull/103))
+
 ## v1.25.0 (2026-10-29)
 
 ### Features
