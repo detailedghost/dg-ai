@@ -152,7 +152,14 @@ describe("verify review", () => {
 		expect(existsSync(join(dir, "shots/settings-r1/after/admin/mobile/light/menu.png"))).toBe(true);
 		const second = readBoard(paths, "review").sections.find((section) => section.id === "settings-r2");
 		expect(second).toMatchObject({ follows: "settings-r1", round: 2, summary: "Rework: The menu clips on mobile" });
-		expect((await run(["status", "review", `--dir=${dir}`, "--json"])).out).toContain('"rounds":["r1 approved+note","r2 unreviewed"]');
+		const report = JSON.parse((await run(["status", "review", `--dir=${dir}`, "--json"])).out);
+		expect(report.items.find((row: { itemId?: string }) => row.itemId === "settings")).toMatchObject({
+			item: "Settings",
+			owner: "bc-owner",
+			last: "settings-r2",
+			rounds: ["r1 approved+note", "r2 unreviewed"],
+		});
+		expect(report.items.find((row: { itemId?: string }) => row.itemId === "home")?.owner).toBe("dg:implementer");
 		expect((await run(["rerun", "review", ...flags])).out).toBe("nothing-to-recapture\n");
 		expect((await run(["wait", "review", `--dir=${dir}`, "--timeout=0"])).out).toBe("timeout\n");
 	});

@@ -141,6 +141,7 @@ describe("rounds and pending", () => {
 		]);
 		expect(b.pending).toEqual([]);
 		expect(() => addVariant(b, round, { key: "B:1", images: [] })).toThrow("invalid variant");
+		expect(() => addVariant(b, round, { key: "b", images: [] })).toThrow("variant b clashes with B");
 		expect(() => addVariant(b, { ...round, follows: "gone" }, { key: "C", images: [] })).toThrow("follows gone not found");
 	});
 

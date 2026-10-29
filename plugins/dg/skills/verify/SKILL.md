@@ -39,7 +39,7 @@ The open tab finds the new round by itself.
 | Command | Effect |
 |---|---|
 | `serve <name> [--port=N] [--no-open]` | Start the board in the background and print its URL. A second call reuses the running server. |
-| `status <name> [--json]` | One line per item: its rounds, its state, and the latest note. The last line is `ALL APPROVED` or `<n> open`. |
+| `status <name> [--json]` | One line per item: its rounds, its state, and the latest note. The last line is `ALL APPROVED` or `<n> open`. With `--json`, a captured item also has `itemId` and `owner`. |
 | `wait <name> [--timeout=SEC] [--json]` | Block until every round has a verdict, then print the same lines as `status`. Exit 1 and print `timeout` when time runs out. The default is 900 seconds. |
 | `watch <name>` | Print one line per new verdict until stopped. |
 | `stop <name>` | Stop the board server. |

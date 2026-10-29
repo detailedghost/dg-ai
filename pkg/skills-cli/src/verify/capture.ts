@@ -139,6 +139,7 @@ export function sectionFromCapture(
 		title: item.title,
 		round: round.round,
 		item: item.id,
+		owner: item.owner,
 		checks: {
 			tests: { status: captured.tests.status, summary: captured.tests.summary },
 			axe: { violations: axe.violations.map((violation) => violation.id), passes: axe.passes.length },

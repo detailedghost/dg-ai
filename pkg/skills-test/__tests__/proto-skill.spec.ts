@@ -287,6 +287,13 @@ describe("proto skill local mode", () => {
 		expect(skillFile("assets/README.md")).toContain('<script src="/dg-icons.js"></script>');
 	});
 
+	test("the React switcher renders text icons on the server and swaps in shared icons after mount", () => {
+		const source = skillFile("assets/PrototypeSwitcher.tsx");
+		const icon = source.slice(source.indexOf("function Icon("), source.indexOf("const SWITCHER_STYLE_ID"));
+		expect(icon).toContain("useEffect(() => setSvg(window.dgIcons?.svg(name)), [name]);");
+		expect(icon).not.toContain('typeof window');
+	});
+
 	test("both switchers put the variant row first and the verdict actions together on mobile", () => {
 		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"]) {
 			const source = skillFile(file);

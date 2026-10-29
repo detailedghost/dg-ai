@@ -42,7 +42,8 @@ declare global {
 }
 
 function Icon({ name }: { name: string }) {
-  const svg = typeof window !== "undefined" ? window.dgIcons?.svg(name) : undefined;
+  const [svg, setSvg] = useState<string | undefined>(undefined);
+  useEffect(() => setSvg(window.dgIcons?.svg(name)), [name]);
   if (svg) return <span className="ps-glyph" aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />;
   return <span className="ps-glyph" aria-hidden="true">{TEXT_ICONS[name] ?? ""}</span>;
 }

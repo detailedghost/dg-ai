@@ -43,6 +43,7 @@ export interface Section {
 	follows?: string;
 	round?: number;
 	item?: string;
+	owner?: string;
 	checks?: SectionChecks;
 	images: BoardImage[];
 	variants?: Variant[];
@@ -71,6 +72,8 @@ export interface Chain {
 
 export interface StatusRow {
 	item: string;
+	itemId?: string;
+	owner?: string;
 	last: string;
 	rounds: string[];
 	done: boolean;
@@ -251,7 +254,11 @@ export function statusReport(board: Board, verdicts: Record<string, Verdict>): S
 		const note = [...chain.rounds].reverse().map((round) => verdicts[round.id]?.note).find(Boolean) ?? "";
 		const latest = verdicts[chain.last.id];
 		const done = !chain.waiting && latest?.status === "approved" && !latest.note;
-		return { item: chain.last.title, last: chain.last.id, rounds: steps, done, note };
+		const row: StatusRow = { item: chain.last.title, last: chain.last.id, rounds: steps, done, note };
+		const source = [...chain.rounds].reverse().find((round) => round.item);
+		if (source?.item) row.itemId = source.item;
+		if (source?.owner) row.owner = source.owner;
+		return row;
 	});
 	for (const entry of board.pending.filter((pending) => !pending.follows))
 		items.push({ item: entry.title, last: entry.key, rounds: ["r1 working"], done: false, note: "" });
@@ -296,6 +303,8 @@ export function addSection(board: Board, section: Section, pendingKey?: string):
 export function addVariant(board: Board, section: Omit<Section, "images">, variant: Variant, pendingKey?: string): Board {
 	assertVariantKey(variant.key);
 	const previous = board.sections.find((other) => other.id === section.id)?.variants ?? [];
+	const clash = previous.find((entry) => entry.key !== variant.key && entry.key.toLowerCase() === variant.key.toLowerCase());
+	if (clash) throw new Error(`variant ${variant.key} clashes with ${clash.key}; keys must differ by more than case`);
 	const variants = [...previous.filter((entry) => entry.key !== variant.key), variant].sort((a, b) => a.key.localeCompare(b.key));
 	const next = addSection({ ...board, pending: [] }, { ...section, images: [], variants });
 	return { ...next, pending: board.pending.filter((entry) => entry.key !== pendingKey) };
