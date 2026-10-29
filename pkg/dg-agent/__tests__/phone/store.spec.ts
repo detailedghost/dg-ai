@@ -173,9 +173,31 @@ describe("contacts", () => {
 		const who = npub();
 		addContact(db, { npub: who, handle: "velora", relays: DEFAULT_RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
 
-		setContactKeyId(db, who, "default");
+		setContactKeyId(db, who, "default", NOW + 1);
 
 		expect(findContactByNpub(db, who)?.keyId).toBe("default");
+	});
+
+	it("ignores a key move from a ring older than the key the contact already holds", () => {
+		const who = npub();
+		addContact(db, { npub: who, handle: "velora", relays: DEFAULT_RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
+		setContactKeyId(db, who, "default", NOW + 10);
+
+		setContactKeyId(db, who, "work", NOW + 5);
+		expect(findContactByNpub(db, who)?.keyId).toBe("default");
+
+		setContactKeyId(db, who, "work", NOW + 11);
+		expect(findContactByNpub(db, who)?.keyId).toBe("work");
+	});
+
+	it("ignores a key move from a ring older than a key an accept just saved", () => {
+		const who = npub();
+		addContact(db, { npub: who, handle: "velora", relays: DEFAULT_RELAYS, keyId: "default", addedAt: NOW, via: "accept" });
+		addContact(db, { npub: who, handle: "velora", relays: DEFAULT_RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
+
+		setContactKeyId(db, who, "default", NOW - 1);
+
+		expect(findContactByNpub(db, who)?.keyId).toBe("work");
 	});
 });
 

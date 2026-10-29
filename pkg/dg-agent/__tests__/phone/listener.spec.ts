@@ -36,6 +36,7 @@ import {
 	DEFAULT_NUMBER_KEY_ID,
 	findContactByHandle,
 	findContactByNpub,
+	removeContact,
 	listContacts,
 	numberKeyId,
 	readNumber,
@@ -531,6 +532,45 @@ describe("runListener", () => {
 		await waitUntil(() => closed.some((relays) => relays.includes("wss://gone.example")), 1000);
 		stop();
 		await run;
+	});
+
+	it("does not recreate a contact from a ring sent before the contact was removed", async () => {
+		const secret = "ee".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		pool.events.push(ring("before removal", caller.sk, getPublicKey(numberSk), secret, "barron"));
+		addContact(db, { npub: caller.npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "number" });
+		NOW += 100;
+		removeContact(db, "barron");
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, caller.npub)).toBeUndefined();
+	});
+
+	it("closes the relays of a catch-up that was still querying when the listener stopped", async () => {
+		setUpNumber("ab".repeat(32));
+		const held = holdFirstWatchQuery();
+		const closed: string[][] = [];
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(
+			deps({ onSignal, schedule: held.schedule, createPool: () => ({ ...held.createPool(), close: (relays: string[]) => closed.push(relays) }) }),
+		);
+		await ready;
+		addInvite(db, { secret: "33".repeat(32), expiresAt: NOW + 10_000, asName: "dg", keyId: numberKeyId(db), relays: ["wss://late.example"] });
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		stop();
+		held.release();
+		await run;
+		await new Promise((resolve) => setTimeout(resolve, 50));
+
+		expect(closed.some((relays) => relays.includes("wss://late.example"))).toBe(true);
 	});
 
 	it("subscribes to an invite relay saved after startup, without a restart", async () => {

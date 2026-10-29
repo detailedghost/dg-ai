@@ -606,6 +606,7 @@ function admitMessage(
 	return db.transaction(() => {
 		if (newContact && !findContactByNpub(db, newContact.npub)) {
 			if (newContact.numberSecret !== undefined && readNumber(db)?.secret !== newContact.numberSecret) return false;
+			if (message.ts <= (db.contactRemovedAt(newContact.npub) ?? 0)) return false;
 			if (newContact.inviteSecret && !consumeInvite(db, newContact.inviteSecret)) return false;
 			const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
 			const handle = nextFreeHandle(db, base);
@@ -614,7 +615,7 @@ function admitMessage(
 			addPhoneNotice(db, `new contact +${handle}`, now());
 		}
 		if (!findContactByNpub(db, message.from)) return false;
-		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
+		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId, message.ts);
 		db.addMessage({
 			id: message.id,
 			direction: "in",
@@ -738,7 +739,10 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		const wanted = subscriptionRelays(deps.db);
 		if (nextEpoch === replayedEpoch && sameList(wanted, relays)) return;
 		const caught = await fetchNew(pool, wanted, keys, gateFor(deps.db), seen, deps.now, logDrop);
-		if (stopped) return;
+		if (stopped) {
+			pool.close(wanted);
+			return;
+		}
 		const caughtSeen = applyCaught(caught);
 		seen = { cursor: Math.max(caughtSeen.cursor, seen.cursor), ids: capIds([...new Set([...caughtSeen.ids, ...seen.ids])], STRANGER_ID_LIMIT) };
 		replayedEpoch = nextEpoch;
