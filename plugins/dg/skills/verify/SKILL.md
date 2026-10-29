@@ -117,7 +117,7 @@ The board checks for changes every 5 seconds. A changed round that is open updat
 The theme button shows the board and the screenshots in light or dark.
 A screenshot is dark when its label or file name has the word `dark`. Every other screenshot is light.
 Put `light` or `dark` in the names of shots you add yourself.
-The compare menu shows a pair side by side, as a slider, as a fade, as a flip, or as a difference image. It falls back to side by side when a pair has no before.
+Each pair shows side by side. The board marks what changed with numbered boxes on both images and a count such as `2 changed areas` in the card header. The highlight button in the picker turns the boxes off and on, and the board remembers the choice. A pair with no before has no highlights.
 The collapse button in the panel head shrinks the panel to an icon rail. Expanding it resets the panel to the default width.
 The note field grows with its text and can be resized. Shift+Enter adds a line. Enter alone does not save.
 Each screenshot has its own "Note on this" button.

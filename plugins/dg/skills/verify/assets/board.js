@@ -52,74 +52,6 @@ function figure(caption, path, reason) {
   return fig;
 }
 
-let compare = (() => {
-  try {
-    return localStorage.getItem("verify-compare") || "side";
-  } catch {
-    return "side";
-  }
-})();
-const compareName = { side: "Side by side", slider: "Slider", fade: "Fade", flip: "Flip", diff: "Difference" };
-
-function compareView(im, beforeCap, afterCap) {
-  const fig = el("figure", `cmp cmp-${compare}`);
-  const cap = el("figcaption", "cmp-cap");
-  const stage = el("div", "cmp-stage");
-  const before = el("img", "cmp-before");
-  before.src = imgSrc(im.before);
-  before.alt = `${beforeCap} screenshot`;
-  const after = el("img", "cmp-after");
-  after.src = imgSrc(im.after);
-  after.alt = `${afterCap} screenshot`;
-  stage.append(before, after);
-  stage.addEventListener("click", (e) => {
-    if (e.target.closest("input,button")) return;
-    openZoom(after.src, after.alt);
-  });
-  const range = (label, value, apply) => {
-    const r = el("input");
-    r.type = "range";
-    r.min = "0";
-    r.max = "100";
-    r.value = String(value);
-    r.setAttribute("aria-label", label);
-    r.addEventListener("input", () => apply(Number(r.value)));
-    apply(value);
-    return r;
-  };
-  if (compare === "slider") {
-    cap.append(el("span", "", beforeCap), el("span", "muted", "◀ drag ▶"), el("span", "", afterCap));
-    stage.append(el("span", "cmp-line"));
-    fig.append(cap, stage, range(`Slide between ${beforeCap} and ${afterCap}`, 50, (v) => stage.style.setProperty("--pos", `${v}%`)));
-  } else if (compare === "fade") {
-    cap.append(el("span", "", beforeCap), el("span", "muted", "fade"), el("span", "", afterCap));
-    fig.append(cap, stage, range(`Fade from ${beforeCap} to ${afterCap}`, 50, (v) => stage.style.setProperty("--op", String(v / 100))));
-  } else if (compare === "flip") {
-    const btn = el("button", "cmp-flip-btn", "");
-    btn.type = "button";
-    const show = (a) => {
-      stage.classList.toggle("show-before", !a);
-      btn.textContent = a ? `Showing ${afterCap} · show ${beforeCap}` : `Showing ${beforeCap} · show ${afterCap}`;
-      btn.setAttribute("aria-pressed", String(!a));
-    };
-    let a = true;
-    btn.addEventListener("click", () => show((a = !a)));
-    show(a);
-    cap.append(el("span", "", "Flip between the two"));
-    fig.append(cap, stage, btn);
-  } else {
-    cap.append(el("span", "", `Difference: ${beforeCap} vs ${afterCap}`), el("span", "muted", "unchanged areas go black, changes glow"));
-    fig.append(cap, stage);
-  }
-  return fig;
-}
-
-function syncCmpBtn() {
-  $("cmp-btn").title = `Compare: ${compareName[compare]}`;
-  $("cmp-btn").setAttribute("aria-label", `Compare: ${compareName[compare]}`);
-  $("cmp-btn").classList.toggle("on", compare !== "side");
-}
-
 function openZoom(src, alt) {
   $("zoom-img").src = src;
   $("zoom-img").alt = alt;
@@ -336,13 +268,11 @@ function renderSection(stay = false) {
     pair.className = `pair w-${w}${im.target ? " has-target" : ""}`;
     const beforeCap = cur ? "Now" : "Before";
     const afterCap = cur ? `Version ${cur.key}` : "After";
-    if (compare !== "side" && imgSrc(im.before) && imgSrc(im.after)) {
-      pair.className = "pair cmp-pair";
-      pair.append(compareView(im, beforeCap, afterCap));
-    } else {
-      pair.append(figure(beforeCap, im.before, im.reason), figure(afterCap, im.after, im.reason));
-      if (im.target) pair.append(figure("Prototype", im.target));
-    }
+    const fb = figure(beforeCap, im.before, im.reason);
+    const fa = figure(afterCap, im.after, im.reason);
+    pair.append(fb, fa);
+    if (im.target) pair.append(figure("Prototype", im.target));
+    if (highlight && imgSrc(im.before) && imgSrc(im.after)) markChanges(head, fb, fa, imgSrc(im.before), imgSrc(im.after));
     card.append(head, pair, shotNote(s, im.label, head));
     shots.append(card);
   }
@@ -819,10 +749,7 @@ function openWidthMenu(open) {
   $("width-btn").setAttribute("aria-expanded", String(open));
   if (open) $("width-menu").querySelector('[aria-checked="true"]').focus();
 }
-$("width-btn").addEventListener("click", () => {
-  openCmpMenu(false);
-  openWidthMenu($("width-menu").hidden);
-});
+$("width-btn").addEventListener("click", () => openWidthMenu($("width-menu").hidden));
 for (const item of document.querySelectorAll("#width-menu [data-w]")) {
   item.addEventListener("click", () => {
     width = item.dataset.w;
@@ -833,50 +760,8 @@ for (const item of document.querySelectorAll("#width-menu [data-w]")) {
     renderSection();
   });
 }
-function openCmpMenu(open) {
-  $("cmp-menu").hidden = !open;
-  $("cmp-btn").setAttribute("aria-expanded", String(open));
-  if (open) $("cmp-menu").querySelector('[aria-checked="true"]').focus();
-}
-$("cmp-btn").addEventListener("click", () => {
-  openWidthMenu(false);
-  openCmpMenu($("cmp-menu").hidden);
-});
-for (const item of document.querySelectorAll("#cmp-menu [data-c]")) {
-  item.setAttribute("aria-checked", String(item.dataset.c === compare));
-  item.addEventListener("click", () => {
-    compare = item.dataset.c;
-    try {
-      localStorage.setItem("verify-compare", compare);
-    } catch {}
-    for (const t of document.querySelectorAll("#cmp-menu [data-c]")) t.setAttribute("aria-checked", String(t === item));
-    syncCmpBtn();
-    openCmpMenu(false);
-    $("cmp-btn").focus();
-    const y = window.scrollY;
-    renderSection(true);
-    window.scrollTo({ top: y });
-  });
-}
-$("cmp-menu").addEventListener("keydown", (e) => {
-  const items = [...$("cmp-menu").querySelectorAll("[data-c]")];
-  const i = items.indexOf(document.activeElement);
-  if (e.key === "Escape") {
-    openCmpMenu(false);
-    $("cmp-btn").focus();
-  }
-  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    e.preventDefault();
-    e.stopPropagation();
-    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
-  }
-});
-syncCmpBtn();
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".pk-menu-wrap")) {
-    openWidthMenu(false);
-    openCmpMenu(false);
-  }
+  if (!e.target.closest(".pk-menu-wrap")) openWidthMenu(false);
 });
 $("width-menu").addEventListener("keydown", (e) => {
   const items = [...$("width-menu").querySelectorAll("[data-w]")];
@@ -1115,3 +1000,162 @@ document.addEventListener("visibilitychange", () => {
   });
   sync();
 })();
+
+let highlight = (() => {
+  try {
+    return localStorage.getItem("verify-highlight") !== "off";
+  } catch {
+    return true;
+  }
+})();
+const DIFF_CACHE = new Map();
+const DIFF_CELL = 12;
+const DIFF_MAX = 12;
+
+const loadImage = (src) =>
+  new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image.naturalWidth > 0 ? image : null);
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+
+function pixelsOf(image, w, h) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0);
+  return ctx.getImageData(0, 0, w, h).data;
+}
+
+function diffRegions(cells, cols, rows, bounds) {
+  const seen = new Uint8Array(cols * rows);
+  const found = [];
+  for (let start = 0; start < cells.length; start++) {
+    if (seen[start] || cells[start] < 2) continue;
+    const stack = [start];
+    seen[start] = 1;
+    let x0 = 1e9;
+    let y0 = 1e9;
+    let x1 = -1;
+    let y1 = -1;
+    let px = 0;
+    while (stack.length) {
+      const c = stack.pop();
+      px += cells[c];
+      x0 = Math.min(x0, bounds[c * 4]);
+      y0 = Math.min(y0, bounds[c * 4 + 1]);
+      x1 = Math.max(x1, bounds[c * 4 + 2]);
+      y1 = Math.max(y1, bounds[c * 4 + 3]);
+      const cx = c % cols;
+      const cy = (c / cols) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+          const n = ny * cols + nx;
+          if (seen[n] || cells[n] < 2) continue;
+          seen[n] = 1;
+          stack.push(n);
+        }
+      }
+    }
+    if (px >= 24) found.push({ x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, px });
+  }
+  const kept = found.sort((a, b) => b.px - a.px).slice(0, DIFF_MAX);
+  kept.sort((a, b) => a.y - b.y || a.x - b.x);
+  kept.forEach((r, i) => (r.n = i + 1));
+  return kept;
+}
+
+async function computeDiff(beforeSrc, afterSrc) {
+  const [a, b] = await Promise.all([loadImage(beforeSrc), loadImage(afterSrc)]);
+  if (!a || !b) return null;
+  const w = Math.max(a.naturalWidth, b.naturalWidth);
+  const h = Math.max(a.naturalHeight, b.naturalHeight);
+  const pa = pixelsOf(a, w, h);
+  const pb = pixelsOf(b, w, h);
+  const cols = Math.ceil(w / DIFF_CELL);
+  const rows = Math.ceil(h / DIFF_CELL);
+  const cells = new Uint16Array(cols * rows);
+  const bounds = new Int32Array(cols * rows * 4);
+  for (let c = 0; c < cols * rows; c++) {
+    bounds[c * 4] = 1e9;
+    bounds[c * 4 + 1] = 1e9;
+    bounds[c * 4 + 2] = -1;
+    bounds[c * 4 + 3] = -1;
+  }
+  let changed = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const j = (y * w + x) * 4;
+      const d = Math.abs(pa[j] - pb[j]) + Math.abs(pa[j + 1] - pb[j + 1]) + Math.abs(pa[j + 2] - pb[j + 2]) + Math.abs(pa[j + 3] - pb[j + 3]);
+      if (d <= 48) continue;
+      changed++;
+      const c = ((y / DIFF_CELL) | 0) * cols + ((x / DIFF_CELL) | 0);
+      cells[c]++;
+      const k = c * 4;
+      if (x < bounds[k]) bounds[k] = x;
+      if (y < bounds[k + 1]) bounds[k + 1] = y;
+      if (x > bounds[k + 2]) bounds[k + 2] = x;
+      if (y > bounds[k + 3]) bounds[k + 3] = y;
+    }
+  }
+  return { w, h, regions: diffRegions(cells, cols, rows, bounds), pct: (changed / (w * h)) * 100 };
+}
+
+const diffOf = (beforeSrc, afterSrc) => {
+  const key = `${beforeSrc}|${afterSrc}`;
+  if (!DIFF_CACHE.has(key)) DIFF_CACHE.set(key, computeDiff(beforeSrc, afterSrc).catch(() => null));
+  return DIFF_CACHE.get(key);
+};
+
+function overlay(fig, d) {
+  const img = fig.querySelector("img");
+  if (!img) return;
+  const wrap = el("div", "hl-wrap");
+  img.replaceWith(wrap);
+  wrap.append(img);
+  for (const r of d.regions) {
+    const box = el("span", "hl-box");
+    box.style.left = `${(r.x / d.w) * 100}%`;
+    box.style.top = `${(r.y / d.h) * 100}%`;
+    box.style.width = `${(r.w / d.w) * 100}%`;
+    box.style.height = `${(r.h / d.h) * 100}%`;
+    box.append(el("span", "hl-badge", String(r.n)));
+    wrap.append(box);
+  }
+}
+
+async function markChanges(head, fb, fa, beforeSrc, afterSrc) {
+  const d = await diffOf(beforeSrc, afterSrc);
+  if (!fa.isConnected) return;
+  const n = d ? d.regions.length : 0;
+  const stat = el("span", "hl-stat", d ? (n ? `${n} changed area${n === 1 ? "" : "s"}` : "No visible change") : "");
+  if (d) head.insertBefore(stat, head.children[1] || null);
+  if (!d || !n) return;
+  overlay(fb, d);
+  overlay(fa, d);
+}
+
+function syncHlBtn() {
+  const b = $("hl-btn");
+  const label = highlight ? "Hide change highlights" : "Highlight what changed";
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.setAttribute("aria-pressed", String(highlight));
+  b.classList.toggle("on", highlight);
+}
+$("hl-btn").addEventListener("click", () => {
+  highlight = !highlight;
+  try {
+    localStorage.setItem("verify-highlight", highlight ? "on" : "off");
+  } catch {}
+  syncHlBtn();
+  const y = window.scrollY;
+  renderSection(true);
+  window.scrollTo({ top: y });
+});
+syncHlBtn();

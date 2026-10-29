@@ -157,25 +157,35 @@ describe("review board in a browser", () => {
 		}
 	});
 
-	test.skipIf(!browser)("compare modes, the compact nav, and the multi-line note work under the CSP", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-compare-"));
+	test.skipIf(!browser)("change highlights, the compact nav, and the multi-line note work under the CSP", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-highlight-"));
 		const paths = verifyPaths(dir);
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		const draw = async (file: string, boxes: string) => {
+			const shot = await pw.newPage({ viewport: { width: 240, height: 160 } });
+			await shot.setContent(`<body style="margin:0;background:#fff">${boxes}</body>`);
+			await shot.screenshot({ path: join(paths.shotsDir, "a-r1", file) });
+			await shot.close();
+		};
+		const box = (x: number, y: number) => `<div style="position:absolute;left:${x}px;top:${y}px;width:40px;height:30px;background:#c00"></div>`;
+		Bun.spawnSync(["mkdir", "-p", join(paths.shotsDir, "a-r1")]);
+		await draw("before.png", "");
+		await draw("after.png", box(20, 20) + box(150, 100));
 		writeBoard(paths, {
-			name: "cmp",
+			name: "hl",
 			sections: [
 				{
 					id: "a-r1",
 					title: "A",
 					images: [
-						{ label: "desktop · light · both", before: "/shots/a/before.png", after: "/shots/a/after.png" },
-						{ label: "desktop · light · new", before: "missing", after: "/shots/a/new.png" },
+						{ label: "desktop · light · both", before: "/shots/a-r1/before.png", after: "/shots/a-r1/after.png" },
+						{ label: "desktop · light · new", before: "missing", after: "/shots/a-r1/after.png" },
 					],
 				},
 			],
 			pending: [],
 		});
-		const server = await startVerifyServer({ name: "cmp", paths, port: 0 });
-		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		const server = await startVerifyServer({ name: "hl", paths, port: 0 });
 		try {
 			const page = await pw.newPage();
 			const errors: string[] = [];
@@ -185,25 +195,24 @@ describe("review board in a browser", () => {
 			});
 			await page.addInitScript(() => localStorage.setItem("verify-mode", "light"));
 			await page.goto(`http://127.0.0.1:${server.port}/#a-r1`);
-			await page.waitForSelector("#cmp-btn svg");
-			const pick = async (mode: string) => {
-				await page.click("#cmp-btn");
-				await page.click(`#cmp-menu [data-c="${mode}"]`);
-			};
-			for (const mode of ["slider", "fade", "flip", "diff"]) {
-				await pick(mode);
-				expect(await page.locator(`figure.cmp-${mode}`).count()).toBe(1);
-				expect(await page.locator(".shot").nth(1).locator("figure").count()).toBe(2);
-			}
-			await pick("slider");
-			await page.fill(".cmp-slider input[type=range]", "20");
-			expect(await page.evaluate(() => (document.querySelector(".cmp-stage") as HTMLElement).style.getPropertyValue("--pos"))).toBe("20%");
-			await pick("flip");
-			await page.click(".cmp-flip-btn");
-			expect(await page.getAttribute(".cmp-stage", "class")).toContain("show-before");
-			expect(await page.evaluate(() => localStorage.getItem("verify-compare"))).toBe("flip");
-			await pick("side");
-			expect(await page.locator(".cmp").count()).toBe(0);
+			await page.waitForSelector(".hl-stat");
+			const first = page.locator(".shot").nth(0);
+			expect(await first.locator(".hl-stat").textContent()).toBe("2 changed areas");
+			expect(await first.locator(".hl-box").count()).toBe(4);
+			expect(await first.locator("figure").nth(1).locator(".hl-badge").allTextContents()).toEqual(["1", "2"]);
+			const second = page.locator(".shot").nth(1);
+			expect(await second.locator(".hl-stat, .hl-box").count()).toBe(0);
+			expect(await page.getAttribute("#hl-btn", "aria-pressed")).toBe("true");
+			await page.click("#hl-btn");
+			expect(await page.locator(".hl-box, .hl-stat").count()).toBe(0);
+			expect(await page.evaluate(() => localStorage.getItem("verify-highlight"))).toBe("off");
+			await page.reload();
+			await page.waitForSelector("#hl-btn svg");
+			expect(await page.getAttribute("#hl-btn", "aria-pressed")).toBe("false");
+			expect(await page.locator(".hl-box").count()).toBe(0);
+			await page.click("#hl-btn");
+			await page.waitForSelector(".hl-stat");
+			expect(await page.locator(".hl-box").count()).toBe(4);
 
 			await page.evaluate(() => localStorage.setItem("verify-nav-w", "500"));
 			await page.reload();
