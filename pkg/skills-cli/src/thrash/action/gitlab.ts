@@ -24,7 +24,7 @@ export function readEvent(env: Env): PullRequestEvent {
 		repo: need("CI_MERGE_REQUEST_PROJECT_PATH"),
 		number: Number(iid),
 		url: `${need("CI_MERGE_REQUEST_PROJECT_URL")}/-/merge_requests/${iid}`,
-		baseSha: need("CI_MERGE_REQUEST_DIFF_BASE_SHA"),
+		baseSha: env.CI_MERGE_REQUEST_TARGET_BRANCH_SHA || need("CI_MERGE_REQUEST_TARGET_BRANCH_NAME"),
 		headRepo: need("CI_MERGE_REQUEST_SOURCE_PROJECT_PATH"),
 	};
 }
@@ -38,6 +38,15 @@ function mrPath(event: PullRequestEvent): string {
 	return `projects/${encodeURIComponent(event.repo)}/merge_requests/${event.number}`;
 }
 
+class GlabError extends Error {
+	constructor(
+		message: string,
+		readonly stderr: string,
+	) {
+		super(message);
+	}
+}
+
 async function glab(args: string[]): Promise<string> {
 	const proc = Bun.spawn([process.env.GLAB_BIN ?? "glab", ...args], {
 		stdout: "pipe",
@@ -49,8 +58,9 @@ async function glab(args: string[]): Promise<string> {
 		proc.exited,
 	]);
 	if (code !== 0)
-		throw new Error(
+		throw new GlabError(
 			`glab ${args[0]} ${args[1] ?? ""} failed: ${stderr.trim()}`,
+			stderr,
 		);
 	return stdout;
 }
@@ -62,7 +72,7 @@ export async function readHeadSha(event: PullRequestEvent): Promise<string> {
 	return sha;
 }
 
-/** A file at the base commit, so the MR under review cannot change its own rules; null when absent. */
+/** A file at the target branch, so the MR under review cannot change its own rules; null when absent. */
 export async function readBaseFile(
 	event: PullRequestEvent,
 	path: string,
@@ -74,7 +84,7 @@ export async function readBaseFile(
 			...hostFlags(event),
 		]);
 	} catch (err) {
-		if (err instanceof Error && /404|Not Found/i.test(err.message)) return null;
+		if (err instanceof GlabError && /\b404\b/.test(err.stderr)) return null;
 		throw err;
 	}
 }

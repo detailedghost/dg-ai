@@ -66,7 +66,7 @@ describe("merge request pipeline", () => {
 		CI_MERGE_REQUEST_PROJECT_PATH: "acme/sub/app",
 		CI_MERGE_REQUEST_PROJECT_URL: "https://git.acme.dev/acme/sub/app",
 		CI_MERGE_REQUEST_SOURCE_PROJECT_PATH: "acme/sub/app",
-		CI_MERGE_REQUEST_DIFF_BASE_SHA: "abc123",
+		CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "main",
 	};
 
 	test("reads the merge request from the CI variables", () => {
@@ -75,9 +75,13 @@ describe("merge request pipeline", () => {
 			repo: "acme/sub/app",
 			number: 7,
 			url: "https://git.acme.dev/acme/sub/app/-/merge_requests/7",
-			baseSha: "abc123",
+			baseSha: "main",
 			headRepo: "acme/sub/app",
 		});
+	});
+
+	test("reads rules at the target commit of a merged results pipeline", () => {
+		expect(gitlab.readEvent({ ...CI, CI_MERGE_REQUEST_TARGET_BRANCH_SHA: "def456" }).baseSha).toBe("def456");
 	});
 
 	test("refuses a pipeline that is not for a merge request", () => {

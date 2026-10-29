@@ -164,7 +164,7 @@ function gitlabFixture() {
   *"--version"*) echo 'glab version 1.50.0' ;;
   *"api user"*) echo '{"username":"thrashley-bot"}' ;;
   *"merge_requests/12/notes"*) echo '[]' ;;
-  *"repository/files/"*) echo '404 Not Found' >&2; exit 1 ;;
+  *"repository/files/"*) echo "\${FAKE_FILES_ERROR:-404 Not Found}" >&2; exit 1 ;;
   *"merge_requests/12/discussions"*) echo '[]' ;;
   *"draft_notes/bulk_publish"*) cat > "$FAKE_CAPTURE"; echo '{}' ;;
   *"draft_notes"*) cat >/dev/null; echo '{"id":1}' ;;
@@ -186,7 +186,7 @@ function gitlabFixture() {
 		CI_MERGE_REQUEST_PROJECT_PATH: "acme/widgets",
 		CI_MERGE_REQUEST_PROJECT_URL: "https://gitlab.com/acme/widgets",
 		CI_MERGE_REQUEST_SOURCE_PROJECT_PATH: "acme/widgets",
-		CI_MERGE_REQUEST_DIFF_BASE_SHA: "base123",
+		CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "main",
 		THRASHLEY_WORK: dir,
 		THRASHLEY_POLICY: ".gitlab/missing.yml",
 		DG_THRASH_DRY_RUN: "0",
@@ -201,7 +201,7 @@ function gitlabFixture() {
 		});
 		return { code: result.exitCode, output: result.stdout.toString() + result.stderr.toString() };
 	}
-	return { dir, capture, calls, run };
+	return { dir, head, capture, calls, run };
 }
 
 describe("thrash action in GitLab CI", () => {
@@ -219,7 +219,27 @@ describe("thrash action in GitLab CI", () => {
 		const published = f.run("publish");
 		expect(published.code, published.output).toBe(0);
 		expect(JSON.parse(readFileSync(f.capture, "utf8"))).toMatchObject({ reviewer_state: "reviewed" });
-		expect(readFileSync(f.calls, "utf8")).toContain("merge_requests/12/approve");
+		expect(readFileSync(f.calls, "utf8")).toContain("merge_requests/12/approve -X POST -f sha=abc123");
+	});
+
+	test("publish refuses a newer head without posting", () => {
+		const f = gitlabFixture();
+		expect(f.run("prepare").code).toBe(0);
+		const state = JSON.parse(readFileSync(join(f.dir, "state.json"), "utf8"));
+		for (const chunk of state.plan.chunks) writeFileSync(chunk.findingsPath, '```json\n{"findings":[]}\n```');
+		writeFileSync(f.head, "def456");
+		const result = f.run("publish");
+		expect(result.code, result.output).toBe(1);
+		expect(result.output).toContain("head changed");
+		expect(existsSync(f.capture)).toBe(false);
+		expect(readFileSync(f.calls, "utf8")).not.toContain("draft_notes");
+	});
+
+	test("prepare fails when the policy read fails for a reason other than a missing file", () => {
+		const f = gitlabFixture();
+		const result = f.run("prepare", { FAKE_FILES_ERROR: "glab: 403 Forbidden (HTTP 403)" });
+		expect(result.code, result.output).toBe(1);
+		expect(result.output).toContain("403");
 	});
 
 	test("skips a merge request from a fork", () => {

@@ -1783,7 +1783,7 @@ describe("postReview — draft notes, bulk_publish, approve", () => {
 		fakeGlab(reviewScript());
 
 		const provider = createGitlabProvider();
-		const posted = await provider.postReview(ref, { verdict: "approve", body: "summary", comments });
+		const posted = await provider.postReview(ref, { verdict: "approve", body: "summary", comments, commitId: "h1" });
 
 		expect(posted).toEqual({
 			url: "https://gitlab.com/acme/widgets/-/merge_requests/7",
@@ -1815,7 +1815,7 @@ describe("postReview — draft notes, bulk_publish, approve", () => {
 		expect(
 			calls.filter((c) => c.endsWith("draft_notes/bulk_publish -X POST --input - -H Content-Type: application/json")),
 		).toHaveLength(1);
-		expect(calls.filter((c) => c.endsWith("merge_requests/7/approve -X POST"))).toHaveLength(1);
+		expect(calls.filter((c) => c.endsWith("merge_requests/7/approve -X POST -f sha=h1"))).toHaveLength(1);
 		expect(calls[0]).toBe("api projects/acme%2Fwidgets/merge_requests/7");
 	});
 

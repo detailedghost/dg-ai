@@ -615,6 +615,9 @@ async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Pr
 	if (!refs?.head_sha) {
 		throw new ProviderError("PARSE_ERROR", "glab api merge request response is missing diff_refs");
 	}
+	if (input.commitId !== undefined && input.commitId !== refs.head_sha) {
+		throw new Error("MR head changed since preparation; run prepare and review again");
+	}
 	const draftIds: string[] = [];
 	try {
 		for (const c of input.comments) {
@@ -652,7 +655,7 @@ async function postReview(tag: ShellTag, ref: PrRef, input: PostReviewInput): Pr
 	let degraded = false;
 	if (input.verdict === "approve") {
 		try {
-			await tag`api projects/${project}/merge_requests/${iid}/approve -X POST ${hostFlags}`;
+			await tag`api projects/${project}/merge_requests/${iid}/approve -X POST -f ${`sha=${refs.head_sha}`} ${hostFlags}`;
 		} catch (err) {
 			if (!isApprovalRefusal(err)) throw err;
 			verdict = "comment";
