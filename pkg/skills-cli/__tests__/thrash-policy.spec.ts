@@ -400,7 +400,7 @@ describe("summary", () => {
 			{ ...NO_SWOT, findings: [] },
 			{ ...BASE, trigger: "action" },
 		);
-		expect(review.body).toContain("**Trigger:** Automatic (GitHub Action)");
+		expect(review.body).toContain("**Trigger:** Automatic (CI)");
 	});
 });
 

@@ -190,7 +190,7 @@ export function reviewTrigger(context: string | undefined): ReviewTrigger {
 
 const TRIGGER_LABEL: Record<ReviewTrigger, string> = {
 	daemon: "Automatic (daemon)",
-	action: "Automatic (GitHub Action)",
+	action: "Automatic (CI)",
 	manual: "Manual (CLI)",
 };
 
