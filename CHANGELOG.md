@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.26.0 (2026-10-29)
+
+### Features
+
+- feat(verify): add /dg:verify round-based review board ([#97](https://github.com/detailedghost/dg-ai/pull/97))
+
 ## v1.25.2 (2026-10-29)
 
 ### Fixes
