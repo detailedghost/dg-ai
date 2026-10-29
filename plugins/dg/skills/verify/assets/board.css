@@ -513,6 +513,11 @@ aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--a
 #toc .attention button.alerts-on .dot{background:var(--acc-soft);color:var(--acc);border-color:var(--acc)}
 #toc .attention button.caught-up{color:var(--mut)}
 #toc .attention button.caught-up .dot{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+@media (max-width:420px){
+  .pk-bar{gap:2px}
+  .picker .ic{width:36px;height:40px;min-height:40px}
+  .picker{padding:6px}
+}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}
