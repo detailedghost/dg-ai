@@ -367,9 +367,6 @@ aside::-webkit-scrollbar-thumb{background:transparent;border-radius:99px;border:
 aside:hover::-webkit-scrollbar-thumb,aside:focus-within::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--mut) 45%,transparent)}
 aside::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--mut) 70%,transparent)}
 @media (min-width:1001px){aside{height:100vh;height:100dvh;max-height:100dvh}}
-@media (min-width:1001px){aside{width:40vw}main{margin-left:calc(40vw + 28px)}}
-@media (min-width:1001px){aside{width:37.5vw}main{margin-left:calc(37.5vw + 28px)}}
-@media (min-width:1001px){aside{width:12.5vw}main{margin-left:calc(12.5vw + 28px)}}
 @media (min-width:1001px){aside{width:25vw}main{margin-left:calc(25vw + 28px)}}
 @media (min-width:1001px){
   aside{width:var(--nav-w,25vw)}
@@ -381,6 +378,28 @@ aside::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--mu
   body.resizing{cursor:col-resize;user-select:none}
 }
 @media (max-width:1000px){.nav-resize{display:none}}
+@media (max-width:1000px){
+  .layout{display:block;max-width:none;margin:0;padding:12px}
+  aside{position:static;width:auto;height:auto;max-height:none;margin-bottom:12px;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;overflow:visible}
+  main{margin-left:0;padding:0}
+  aside .brand{padding:0 2px}
+  aside .meter{margin:10px 2px 0}
+  aside > h2{display:none}
+  #toc{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding:10px 0 4px;margin:0;scrollbar-width:thin}
+  #toc > li{flex:none;margin:0}
+  #toc li.pinned{position:static;display:flex;gap:6px;margin:0;padding:0;background:none;box-shadow:none}
+  #toc li.pinned .overview,#toc li.pinned .attention{padding:0;border:0;margin:0}
+  #toc button{width:auto;min-height:40px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;white-space:nowrap}
+  #toc button span:last-child{white-space:nowrap}
+  #toc .fold,#toc .timeline{display:none}
+  #toc li.has-fold{padding-right:0}
+  .panel{padding:16px 14px}
+}
+@media (max-width:760px){
+  .layout{padding:8px}
+  .panel{padding:14px 12px}
+  #sec-title{font-size:20px;line-height:1.25}
+}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}
