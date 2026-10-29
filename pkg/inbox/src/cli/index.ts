@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { exitAfterDrain } from "@dg/common/async";
 import type { InboxRuntime } from "../runtime";
 import { parseArgs } from "./args";
 import { commandRegistry } from "./commands";
@@ -28,6 +29,6 @@ if (import.meta.main) {
 		await main();
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : String(error));
-		process.exit(1);
+		await exitAfterDrain(1);
 	}
 }

@@ -5,15 +5,9 @@
  */
 
 import type { Command } from "commander";
-import { findPlan } from "../demo/plan-file";
+import type { CommandOpts, DemoDeps } from "../demo/cli";
 import { addExtOption } from "../utils/ext-flag";
-import {
-	addLocalOptions,
-	type CommandOpts,
-	type DemoDeps,
-	dispatchPlay,
-	loadScript,
-} from "./demo";
+import { addLocalOptions } from "./demo";
 
 export function registerRerun(
 	program: Command,
@@ -32,7 +26,8 @@ export function registerRerun(
 			"record the replay to a video now, with no start screen",
 		)
 		.option("--print", "--ext only: print the marked URL instead of opening it")
-		.action((plan: string, opts: CommandOpts) =>
-			dispatchPlay("rerun", loadScript(findPlan(plan)), opts, deps),
-		);
+		.action(async (plan: string, opts: CommandOpts) => {
+			const { runRerun } = await import("../demo/cli");
+			await runRerun(plan, opts, deps);
+		});
 }

@@ -23,7 +23,7 @@ test("compiled connect initializes Playwright after removing its source, without
 		writeFileSync(
 			entry,
 			`
-import { defaultConnectDeps } from ${JSON.stringify(resolve(import.meta.dir, "../src/commands/channel-review-connect.ts"))};
+import { defaultConnectDeps } from ${JSON.stringify(resolve(import.meta.dir, "../src/channel-review/connect.ts"))};
 import { chromium } from ${JSON.stringify(fileURLToPath(import.meta.resolve("playwright-core")))};
 const launch = chromium.launchPersistentContext.bind(chromium);
 chromium.launchPersistentContext = (profile, options) => launch(profile, {

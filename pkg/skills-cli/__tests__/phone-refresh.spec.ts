@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { refreshPhoneListener } from "../src/commands/phone-listener";
+import { refreshPhoneListener } from "../src/install/phone-listener";
 
 const homes: string[] = [];
 

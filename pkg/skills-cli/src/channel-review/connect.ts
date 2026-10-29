@@ -19,7 +19,7 @@ import {
 	resolveDgPaths,
 	wslChromiumArgs,
 } from "@dg/common/node";
-import { promptHidden } from "./credentials";
+import { promptHidden } from "../credentials/cli";
 
 export const CONNECT_TOKEN_NAME = "channel-review-daemon";
 export const CONNECT_PROVIDERS = ["datadog", "sentry", "relay"] as const;

@@ -7,7 +7,7 @@ const config = {
 	coverageAnalysis: "perTest",
 	inPlace: true,
 	concurrency: 2,
-	mutate: ["src/commands/skills-only.ts"],
+	mutate: ["src/install/skills-only.ts"],
 	testFiles: ["__tests__/skills-only.spec.ts"],
 	reporters: ["clear-text", "progress"],
 	thresholds: { high: 90, low: 80, break: 90 },

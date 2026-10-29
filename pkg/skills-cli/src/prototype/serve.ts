@@ -5,6 +5,8 @@ import {
 	statSync,
 } from "node:fs";
 import { join } from "node:path";
+import { forever } from "@dg/common";
+import { exitAfterDrain } from "@dg/common/async";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import { injectScript } from "./inject";
 import { protoDir, type SentinelPaths, sentinelPaths } from "./paths";
@@ -336,7 +338,7 @@ function webmcpTools(): unknown {
 }
 
 /** Run the long-lived serve process; resolves once it is listening and the event loop keeps it alive. */
-export async function runServe(argv: string[]): Promise<number | undefined> {
+export async function runServe(argv: string[]): Promise<number> {
 	if (argv.includes("--help")) {
 		process.stdout.write(SERVE_USAGE);
 		return 0;
@@ -355,10 +357,10 @@ export async function runServe(argv: string[]): Promise<number | undefined> {
 		port: args.port,
 		idleSec: args.idleSec,
 		tools: webmcpTools(),
-		onIdle: () => process.exit(0),
+		onIdle: () => void exitAfterDrain(0),
 	});
 	process.stdout.write(
 		`prototype-serve: http://127.0.0.1:${running.port}/\n  html  : ${args.htmlFile}\n  name  : ${args.name}${args.light ? " (--light)" : ""}\n  Press Ctrl-C to stop.\n`,
 	);
-	return undefined;
+	return forever();
 }

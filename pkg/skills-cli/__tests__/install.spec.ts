@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { currentBinaryLine } from "../src/commands/install";
+import { currentBinaryLine } from "../src/install/cli";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

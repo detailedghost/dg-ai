@@ -9,8 +9,8 @@ const install = readRepoFile(
 	"pkg",
 	"skills-cli",
 	"src",
-	"commands",
-	"install.ts",
+	"install",
+	"cli.ts",
 );
 
 describe("install retires the pre-rename daemon binary", () => {
@@ -44,8 +44,8 @@ describe("install retires the pre-rename daemon binary", () => {
 			"pkg",
 			"skills-cli",
 			"src",
-			"commands",
-			"install.ts",
+			"install",
+			"cli.ts",
 		);
 		const { code, stderr } = await runInHarness(
 			`const mod = await import(${JSON.stringify(installPath)});\nmod.removeRetiredBinaries();\n`,

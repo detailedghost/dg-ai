@@ -4,6 +4,7 @@ import { chmodSync, closeSync, existsSync, linkSync, openSync, readFileSync, ren
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
+import { launcherCommand } from "@dg/common/node/program";
 import { nip19 } from "nostr-tools";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
@@ -589,6 +590,11 @@ export function adoptListenerPid(paths: DgPaths, record: ListenerPid, alive: (pi
 /** Ignores SIGHUP so a listener started in its own session survives the login shell that spawned it. */
 export function ignoreHangup(): void {
 	process.on("SIGHUP", () => {});
+}
+
+/** argv for a listener unit or detached spawn, through the stable runtime and lib links. */
+export function defaultListenerArgv(root: string, extraArgs: string[]): string[] {
+	return launcherCommand(root, "dg-agent", ["phone", "__run", ...extraArgs]);
 }
 
 /** Detached listener process. `detached` calls setsid, so the child is its own session. It writes `listener.pid` once `phone __run` is up. */

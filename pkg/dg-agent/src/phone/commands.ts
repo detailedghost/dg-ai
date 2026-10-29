@@ -3,7 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { DgCliError } from "@dg/common";
-import { ensurePrivateDir, isAlive, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
+import { ensurePrivateDir, isAlive, readCappedStdin, resolveDgPaths, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
@@ -31,6 +31,7 @@ import {
 } from "./ensure";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey, readFileKey } from "./keys";
 import {
+	defaultListenerArgv,
 	defaultOnSignal,
 	defaultSchedule,
 	holderVerdict,
@@ -61,7 +62,8 @@ import {
 	threadSendSucceeded,
 	type ThreadRecipient,
 } from "./thread";
-import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
+import { parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
+import { DEFAULT_INVITE_HOURS, type PhoneApi, registerPhoneGroup, WATCH_DEFAULT_FOR_S } from "./register";
 import {
 	addContact,
 	insertNewContact,
@@ -96,6 +98,8 @@ import {
 	notePhoneDrift,
 } from "./store";
 
+export { defaultListenerArgv };
+
 export type PhoneDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
 	write: (text: string) => void;
@@ -121,8 +125,8 @@ export type RunDeps = PhoneDeps & {
 export type OpenCloseDeps = PhoneDeps &
 	AutostartDeps & {
 		which: (name: string) => string | undefined;
-		/** The full argv a unit file or a detached spawn should run; production resolves this
-		 * binary's own invocation with `selfCommand`, tests fake it with a deterministic path. */
+		/** The full argv a unit file or a detached spawn should run; production uses the stable
+		 * runtime and lib links through `defaultListenerArgv`, tests fake it with a deterministic path. */
 		listenerArgv: (extraArgs: string[]) => string[];
 		spawnListener: (argv: string[], logPath: string) => number;
 		kill: (pid: number, signal: NodeJS.Signals) => void;
@@ -134,7 +138,6 @@ export type OpenCloseDeps = PhoneDeps &
 	};
 
 const MAX_SEND_BYTES = 64 * 1024;
-const DEFAULT_INVITE_HOURS = 24;
 const STOP_WAIT_MS = 5000;
 
 function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
@@ -205,7 +208,7 @@ function defaultDeps(session?: string): PhoneDeps {
 		run: runArgv,
 		uid: process.getuid?.() ?? 0,
 		sleep: (ms) => Bun.sleep(ms),
-		listenerArgv: (extraArgs) => selfCommand(["phone", "__run", ...extraArgs]),
+		listenerArgv: (extraArgs) => defaultListenerArgv(paths.stateDir, extraArgs),
 	};
 }
 
@@ -229,7 +232,7 @@ function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
 		fileExists: existsSync,
 		run: runArgv,
 		which: (name) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? undefined,
-		listenerArgv: (extraArgs) => selfCommand(["phone", "__run", ...extraArgs]),
+		listenerArgv: (extraArgs) => defaultListenerArgv(resolveDgPaths().stateDir, extraArgs),
 		spawnListener: defaultSpawnListener,
 		kill: (pid, signal) => process.kill(pid, signal),
 		isOurListener,
@@ -789,7 +792,6 @@ export async function phoneVoicemail(deps: PhoneDeps): Promise<void> {
 /** Lower and upper bounds of the gap between `watch` checks. The gap is chosen inside this range, never a fixed interval. */
 export const WATCH_MIN_DELAY_MS = 2_000;
 export const WATCH_MAX_DELAY_MS = 8_000;
-export const WATCH_DEFAULT_FOR_S = 120;
 
 export function watchDelayMs(random: () => number): number {
 	const span = WATCH_MAX_DELAY_MS - WATCH_MIN_DELAY_MS;
@@ -1080,187 +1082,33 @@ export async function phoneRefresh(deps: OpenCloseDeps): Promise<void> {
 	deps.spawnListener(deps.listenerArgv(onMessageArgvFor(saved?.onMessage)), listenerLogPath(deps.paths));
 }
 
-const EXIT_REMOVED_VERB = 2;
-
-/** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
-const REMOVED_VERBS: Record<string, string> = {
-	answer: "answer is gone; run phone open to start the listener, then phone voicemail to read what came in",
-	deliver: "deliver is gone; use phone open --on-message to run a program for each message",
-	whoami: "whoami is gone; use phone number --as <name>",
-	name: "name is gone; use phone contacts rename +old <new>",
+export const defaultPhoneApi: PhoneApi = {
+	phoneNumber,
+	phoneInvite,
+	phoneAccept,
+	phoneContacts,
+	phoneContactsRename,
+	phoneContactsRemove,
+	phoneSay,
+	phoneInbox,
+	phoneVoicemail,
+	phoneWatch,
+	phoneStatus,
+	phoneOpen,
+	phoneClose,
+	phoneRefresh,
+	phoneRun,
+	phoneThreadNew,
+	phoneThreadList,
+	phoneThreadShow,
+	ignoreHangup,
+	deps: defaultDeps,
+	openCloseDeps: defaultOpenCloseDeps,
+	runDeps: (session) => runDepsFor(defaultDeps(session)),
 };
 
-/** Attaches every phone verb to `group`, plus the hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
-function attachPhoneVerbs(
-	group: Command,
-	getDeps: () => PhoneDeps,
-	getOpenCloseDeps: () => OpenCloseDeps,
-): void {
-	group
-		.command("number")
-		.description("print your number card, with your npub, relays, and listener state")
-		.option("--as <name>", "self name your card carries, saved for next time")
-		.option("--rotate", "roll a new secret, so every card printed before this stops admitting")
-		.option("--relay <url...>", "relays your own card should use from now on")
-		.action((opts: { as?: string; rotate?: boolean; relay?: string[] }) => phoneNumber(opts, getDeps()));
-
-	group
-		.command("invite")
-		.description("make a one-time call card; the first ring it admits becomes a new contact")
-		.option("--relay <url...>", "relays this card should use instead of the saved ones")
-		.option("--ttl <hours>", "hours until the card expires", String(DEFAULT_INVITE_HOURS))
-		.option("--as <name>", "self name this card carries instead of your saved one")
-		.option("--name <handle>", "handle to give the contact once the call is answered")
-		.action((opts: { relay?: string[]; ttl?: string; as?: string; name?: string }) => phoneInvite(opts, getDeps()));
-
-	group
-		.command("accept")
-		.description("accept a call card: ring its owner and save them as a contact")
-		.argument("[card]", "the call card, or - to read it from stdin", "-")
-		.argument("[text]", "first words to send", "hello")
-		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing, "default", or taken')
-		.option("--key <id>", "existing key id to sign a new contact with, instead of the number key")
-		.action((card: string, text: string, opts: AcceptOpts) => phoneAccept(card, text, getDeps(), opts));
-
-	const contacts = group
-		.command("contacts")
-		.description("list every contact, in handle order")
-		.action(() => phoneContacts(getDeps()));
-
-	contacts
-		.command("rename")
-		.argument("<old>", "the contact's current handle")
-		.argument("<new>", "the new handle")
-		.action((oldHandle: string, newHandle: string) => phoneContactsRename(oldHandle, newHandle, getDeps()));
-
-	contacts
-		.command("remove")
-		.argument("<handle>", "the contact to remove")
-		.action((handle: string) => phoneContactsRemove(handle, getDeps()));
-
-	group
-		.command("say")
-		.description("send one message to a contact, or to a #thread")
-		.argument("<handle>", "the contact's +handle, or a #thread")
-		.argument("<text>", "message text, or - to read it from stdin")
-		.action((handle: string, text: string) => phoneSay(handle, text, getDeps()));
-
-	const threads = group.command("thread").description("a static multi-party room with a #handle");
-
-	threads
-		.command("new")
-		.description("create a thread from existing contacts")
-		.argument("<handle>", "thread handle, starting with #")
-		.argument("<members...>", "contacts to include, each a +handle")
-		.option("--subject <text>", "subject stored on the thread and sent with each message")
-		.action((handle: string, members: string[], opts: { subject?: string }) => phoneThreadNew(handle, members, opts, getDeps()));
-
-	threads
-		.command("list")
-		.description("list threads, in handle order")
-		.action(() => phoneThreadList(getDeps()));
-
-	threads
-		.command("show")
-		.description("show one thread and its members")
-		.argument("<handle>", "the thread handle")
-		.action((handle: string) => phoneThreadShow(handle, getDeps()));
-
-	group
-		.command("inbox")
-		.description("print stored messages, oldest first; never marks anything read")
-		.option("-n, --count <count>", "how many messages to print", "50")
-		.option("--meta", "print metadata only, omitting message text")
-		.argument("[handle]", "limit to one contact's messages")
-		.action((handle: string | undefined, opts: { count?: string; meta?: boolean }) =>
-			phoneInbox({ n: opts.count, handle, meta: opts.meta }, getDeps()),
-		);
-
-	group
-		.command("voicemail")
-		.description("print unread messages, oldest first, and mark them read")
-		.action(() => phoneVoicemail(getDeps()));
-
-	group
-		.command("watch")
-		.description("print unread voicemail until --for seconds elapse, waiting a jittered gap between checks")
-		.option("--for <seconds>", "seconds to keep checking", String(WATCH_DEFAULT_FOR_S))
-		.option("--new", "print only messages that arrive after watch starts; the default also prints the unread backlog")
-		.action((opts: { for?: string; new?: boolean }) => phoneWatch(opts, getDeps()));
-
-	group
-		.command("status")
-		.description("print your self name, contact count, and pending voicemail count")
-		.action(() => phoneStatus(getDeps()));
-
-	group
-		.command("open")
-		.description("start the listener and install it to start on login, where a service manager exists")
-		.option("--on-message <argv...>", "command and args to run for each delivered message, saved for next time")
-		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.option("--ensure", "start a detached listener when the pidfile is not a live copy of this binary; safe to repeat from cron")
-		.option("--print-cron", "include a crontab line for --ensure in the output; does not change the crontab")
-		.option("--install-cron", "install that crontab line; never implied by --ensure")
-		.action((opts: { onMessage?: string[]; onMessageTimeout?: string; ensure?: boolean; printCron?: boolean; installCron?: boolean }) =>
-			phoneOpen(opts, getOpenCloseDeps()),
-		);
-
-	group
-		.command("close")
-		.description("stop the listener and remove it from login autostart")
-		.action(() => phoneClose(getOpenCloseDeps()));
-
-	group
-		.command("__refresh", { hidden: true })
-		.description("internal: restart a listener whose binary or keys drifted")
-		.action(() => phoneRefresh(getOpenCloseDeps()));
-
-	group
-		.command("__run", { hidden: true })
-		.description("internal: run the always-on listener in the foreground (never call directly)")
-		.option("--on-message <argv...>", "command and args to run for each delivered message")
-		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.option("--dg-home <dir>", "state directory for this listener; overrides DG_HOME")
-		.action(async (opts: { onMessage?: string[]; onMessageTimeout?: string; dgHome?: string }) => {
-			if (opts.dgHome) process.env.DG_HOME = opts.dgHome;
-			ignoreHangup();
-			await phoneRun(opts, { ...getDeps(), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal });
-			process.exit(0);
-		});
-
-	group
-		.command("dial", { hidden: true })
-		.argument("[card]", "the call card, or - to read it from stdin", "-")
-		.argument("[text]", "first words to send", "hello")
-		.option("--name <handle>", 'handle for a new contact; required when the card self name is missing, "default", or taken')
-		.option("--key <id>", "existing key id to sign a new contact with, instead of the number key")
-		.action((card: string, text: string, opts: AcceptOpts) => phoneAccept(card, text, getDeps(), opts));
-
-	group
-		.command("on", { hidden: true })
-		.option("--on-message <argv...>", "command and args to run for each delivered message, saved for next time")
-		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) => phoneOpen(opts, getOpenCloseDeps()));
-
-	group
-		.command("off", { hidden: true })
-		.action(() => phoneClose(getOpenCloseDeps()));
-
-	group
-		.command("card", { hidden: true })
-		.option("--as <name>", "self name your card carries, saved for next time")
-		.option("--rotate", "roll a new secret, so every card printed before this stops admitting")
-		.option("--relay <url...>", "relays your own card should use from now on")
-		.action((opts: { as?: string; rotate?: boolean; relay?: string[] }) => phoneNumber(opts, getDeps()));
-
-	for (const [verb, message] of Object.entries(REMOVED_VERBS)) {
-		group
-			.command(verb, { hidden: true })
-			.argument("[args...]")
-			.action(() => {
-				throw new DgCliError(message, EXIT_REMOVED_VERB);
-			});
-	}
+function runDepsFor(deps: PhoneDeps): RunDeps {
+	return { ...deps, pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal };
 }
 
 export function registerPhoneCommands(
@@ -1268,17 +1116,10 @@ export function registerPhoneCommands(
 	makeDeps: (session?: string) => PhoneDeps = defaultDeps,
 	makeOpenCloseDeps: (session?: string) => OpenCloseDeps = defaultOpenCloseDeps,
 ): void {
-	let session: string | undefined;
-
-	const group = program
-		.command("phone")
-		.description("one phone number, many contacts: private NIP-17 chat over public Nostr relays")
-		.option("--line <name>", "removed; one phone holds every contact now")
-		.hook("preAction", (hooked, action) => {
-			({ session } = action.optsWithGlobals<{ session?: string }>());
-			if (hooked.getOptionValueSource("line") === "cli") {
-				throw new DgCliError("--line is gone: one phone holds every contact; use +handle on say and inbox", EXIT_REMOVED_VERB);
-			}
-		});
-	attachPhoneVerbs(group, () => makeDeps(session), () => makeOpenCloseDeps(session));
+	registerPhoneGroup(program, async () => ({
+		...defaultPhoneApi,
+		deps: makeDeps,
+		openCloseDeps: makeOpenCloseDeps,
+		runDeps: (session) => runDepsFor(makeDeps(session)),
+	}));
 }

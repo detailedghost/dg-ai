@@ -105,7 +105,7 @@ describe("the retired dg-server name reaches no new release", () => {
 });
 
 describe("the skills CLI presents itself under its shipped name", () => {
-	const entry = readRepoFile("pkg", "skills-cli", "src", "index.ts");
+	const entry = readRepoFile("pkg", "skills-cli", "src", "main.ts");
 	const shipped = matrixOf("build-skills")[0]?.asset.replace(
 		/-(linux|macos|windows)-.*$/,
 		"",
@@ -126,6 +126,13 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 		"pkg",
 		"skills-cli",
 		"src",
+		"install",
+		"cli.ts",
+	);
+	const installCommand = readRepoFile(
+		"pkg",
+		"skills-cli",
+		"src",
 		"commands",
 		"install.ts",
 	);
@@ -143,7 +150,7 @@ describe("install refreshes every prebuilt binary through one fetcher", () => {
 
 	test("the command description names every binary it refreshes", () => {
 		const description = /\.description\(\s*"([^"]*refresh[^"]*)"/.exec(
-			install,
+			installCommand,
 		)?.[1];
 
 		expect(declaredNames.length).toBe(RELEASED_BINARIES.length);

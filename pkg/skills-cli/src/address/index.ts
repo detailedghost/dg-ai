@@ -57,6 +57,8 @@ function extractPrFlag(args: string[]): { prArg?: string; rest: string[] } {
 	};
 }
 
+const EXIT_TIMEOUT = 124;
+
 /** Optional trailing ref for the three thread methods; omitted, they resolve the current branch's PR/MR. */
 function toThreadRef(prArg?: string): PrRef | undefined {
 	return prArg ? { number: parsePrNumberArg(prArg) } : undefined;
@@ -459,7 +461,7 @@ function nonNegativeInt(arg: string, prefix: string): number {
 	return value;
 }
 
-async function cmdVerifyCopilotEngaged(args: string[]): Promise<void> {
+async function cmdVerifyCopilotEngaged(args: string[]): Promise<number> {
 	await requireCopilotBot("Copilot engagement verification");
 	if (args.length < 2) die("verify-copilot-engaged: pr_url and since_iso required");
 	const prUrl = args[0];
@@ -498,7 +500,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 			consecutiveErrors++;
 			if (consecutiveErrors >= maxConsecutiveErrors) {
 				process.stderr.write(`verify-copilot-engaged: gh api failed ${consecutiveErrors} consecutive times\n`);
-				process.exit(1);
+				return EXIT.ERR;
 			}
 		}
 
@@ -534,12 +536,12 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 						body: hit.body.length > 240 ? hit.body.slice(0, 240) + "…" : hit.body,
 					}) + "\n",
 				);
-				process.exit(0);
+				return EXIT.OK;
 			}
 		}
 
 		const now = Date.now();
-		if (now >= deadline) process.exit(124);
+		if (now >= deadline) return EXIT_TIMEOUT;
 		const remaining = deadline - now;
 		await Bun.sleep(Math.min(remaining, interval * 1000));
 	}
@@ -621,7 +623,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 	}
 }
 
-async function cmdAwaitCopilotReview(args: string[]): Promise<void> {
+async function cmdAwaitCopilotReview(args: string[]): Promise<number> {
 	await requireCopilotBot("Copilot review wait");
 	if (args.length < 2) die("await-copilot-review: pr_url and since_iso required");
 	const prUrl = args[0];
@@ -666,7 +668,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 			consecutiveErrors++;
 			if (consecutiveErrors >= maxConsecutiveErrors) {
 				process.stderr.write(`await-copilot-review: gh api failed ${consecutiveErrors} consecutive times\n`);
-				process.exit(1);
+				return EXIT.ERR;
 			}
 		}
 
@@ -702,7 +704,7 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 
 			if (reviewHit) {
 				process.stdout.write(JSON.stringify({ landed: true, submittedAt: reviewHit.submittedAt }) + "\n");
-				process.exit(0);
+				return EXIT.OK;
 			}
 
 			const ackHit = (pr?.comments.nodes ?? [])
@@ -721,12 +723,12 @@ query($owner:String!,$repo:String!,$pr:Int!) {
 						bodyExcerpt: ackHit.body.length > 240 ? ackHit.body.slice(0, 240) + "…" : ackHit.body,
 					}) + "\n",
 				);
-				process.exit(0);
+				return EXIT.OK;
 			}
 		}
 
 		const now = Date.now();
-		if (now >= deadline) process.exit(124);
+		if (now >= deadline) return EXIT_TIMEOUT;
 		const remaining = deadline - now;
 		await Bun.sleep(Math.min(remaining, interval * 1000));
 	}
@@ -1050,9 +1052,7 @@ export const commandSpec = {
 			description:
 				"block until copilot-swe-agent posts an issue comment after since_iso [--timeout=<sec>] [--interval=<sec>]",
 			args: ["pr_url", "since_iso"],
-			run: async (args) => {
-				await cmdVerifyCopilotEngaged(args);
-			},
+			run: (args) => cmdVerifyCopilotEngaged(args),
 		},
 		"check-no-findings": {
 			description: "one-shot (non-blocking) scan for a copilot-swe-agent no-findings ack after since_iso",
@@ -1065,9 +1065,7 @@ export const commandSpec = {
 			description:
 				"block until copilot review lands or no-findings ack after since_iso [--timeout=<sec>] [--interval=<sec>]",
 			args: ["pr_url", "since_iso"],
-			run: async (args) => {
-				await cmdAwaitCopilotReview(args);
-			},
+			run: (args) => cmdAwaitCopilotReview(args),
 		},
 	},
 } satisfies CommandSpec;

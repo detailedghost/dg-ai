@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { localBuildScripts, resolveLocalRepo } from "../src/commands/install";
+import { localBuildScripts, resolveLocalRepo } from "../src/install/cli";
 import { scratchFixtures } from "./git-repo-fixtures";
 
 const fixtures = scratchFixtures();

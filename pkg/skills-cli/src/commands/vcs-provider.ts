@@ -1,8 +1,12 @@
 import type { Command } from "commander";
-import { registerLegacyCommand } from "../utils/legacy-command";
-import { commandSpec } from "../vcs-provider";
+import { registerLazyLegacy } from "../utils/lazy-command";
 
 /** Register the provider compatibility dispatcher without detecting a provider during import or registration. */
 export function registerVcsProvider(program: Command): void {
-	registerLegacyCommand(program, commandSpec);
+	registerLazyLegacy(program, {
+		name: "vcs-provider",
+		description:
+			"Query the detected VCS provider (GitHub or GitLab) for repo info, issues, and pull requests. Run dg-skills vcs-provider <subcommand>.",
+		load: async () => (await import("../vcs-provider")).commandSpec,
+	});
 }

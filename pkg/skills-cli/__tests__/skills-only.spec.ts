@@ -15,7 +15,7 @@ import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
 	skillsOnlyReport,
-} from "../src/commands/skills-only";
+} from "../src/install/skills-only";
 
 const PERSONAS = [
 	"arch",

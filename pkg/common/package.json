@@ -6,7 +6,9 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./async": "./src/async.ts",
 		"./node": "./src/node/index.ts",
+		"./node/program": "./src/node/program.ts",
 		"./msal": "./src/msal/index.ts",
 		"./daemon-db": "./src/node/daemon-db.ts"
 	},

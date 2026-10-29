@@ -480,10 +480,10 @@ function parseArgs(argv: string[]): {
 	return { layers, independent, repo, mark, target, native };
 }
 
-async function run(argv: string[]): Promise<void> {
+async function run(argv: string[]): Promise<number> {
 	if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
 		printHelp();
-		process.exit(argv.length === 0 ? 1 : 0);
+		return argv.length === 0 ? EXIT.ERR : EXIT.OK;
 	}
 
 	const [sub, ...rest] = argv;
@@ -493,7 +493,7 @@ async function run(argv: string[]): Promise<void> {
 		process.stderr.write(
 			"Error: provide at least one layer (branch/PR ref) or --independent refs.\n",
 		);
-		process.exit(1);
+		return EXIT.ERR;
 	}
 
 	const opts: RenderOptions = { target, mark, repo, independent };
@@ -520,20 +520,21 @@ async function run(argv: string[]): Promise<void> {
 		default:
 			process.stderr.write(`Unknown subcommand: ${sub}\n`);
 			printHelp();
-			process.exit(1);
+			return EXIT.ERR;
 	}
+	return EXIT.OK;
 }
 
 /** Run the chain parser explicitly; importing the domain performs no work. */
-export async function main(argv: string[]): Promise<number | void> {
+export async function main(argv: string[]): Promise<number> {
 	try {
-		await run(argv);
+		return await run(argv);
 	} catch (err) {
 		if (err instanceof ProviderError && err.code === NATIVE_STACK_UNSUPPORTED) {
 			process.stderr.write(`chain: ${err.message}\n`);
-			process.exit(EXIT.UNSUPPORTED);
+			return EXIT.UNSUPPORTED;
 		}
 		process.stderr.write(`Error: ${(err as Error).message}\n`);
-		process.exit(EXIT.ERR);
+		return EXIT.ERR;
 	}
 }
