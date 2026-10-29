@@ -123,7 +123,7 @@ await exitAfterDrain(0);
 });
 
 const SRC_ROOT = join(import.meta.dir, "..", "..");
-const EXIT_OWNER = join("common", "src", "async.ts");
+const EXIT_OWNER = join("common", "src", "exit.ts");
 const EXIT_CALL = "process.exit(";
 
 function sourceFiles(dir: string): string[] {

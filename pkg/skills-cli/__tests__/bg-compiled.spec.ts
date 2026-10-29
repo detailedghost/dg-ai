@@ -26,7 +26,7 @@ import {
 	until,
 } from "./bg-fixtures";
 import {
-	compileProxyCli,
+	relocatedProxyCli,
 	proxyFixtures,
 	runProxyProcess,
 } from "./proxy-fixtures";
@@ -36,11 +36,11 @@ setDefaultTimeout(60_000);
 const installation = proxyFixtures();
 const command: string[] = [];
 const world = bgWorld(command);
-let binary: string;
+let binary: string[];
 
 beforeAll(() => {
-	binary = compileProxyCli(installation);
-	command.push(binary);
+	binary = relocatedProxyCli(installation);
+	command.push(...binary);
 }, 240_000);
 
 afterEach(() => world.cleanup());
@@ -75,7 +75,7 @@ describe("compiled dg-skills bg detachment", () => {
 		const ready = join(dir, "ready");
 		const caller = script(
 			"caller.sh",
-			`${shellCommand([binary, "bg", "run", "sleep 30"])} > ${shellCommand([out])} || exit 1\n: > ${shellCommand([ready])}\nsleep 30`,
+			`${shellCommand([...binary, "bg", "run", "sleep 30"])} > ${shellCommand([out])} || exit 1\n: > ${shellCommand([ready])}\nsleep 30`,
 		);
 		const { child, exited } = inOwnGroup(caller);
 		const groupPid = child.pid;
@@ -108,9 +108,9 @@ describe("compiled dg-skills bg detachment", () => {
 		const caller = script(
 			"cancel-caller.sh",
 			[
-				`out=$(${shellCommand([binary, "bg", "run", "sleep 30"])}) || exit 1`,
+				`out=$(${shellCommand([...binary, "bg", "run", "sleep 30"])}) || exit 1`,
 				`id=$(printf '%s' "$out" | sed -n 's/.*"id": *"\\([^"]*\\)".*/\\1/p')`,
-				`${shellCommand([binary, "bg", "cancel"])} "$id" > ${shellCommand([join(dir, "cancel.json")])} || exit 2`,
+				`${shellCommand([...binary, "bg", "cancel"])} "$id" > ${shellCommand([join(dir, "cancel.json")])} || exit 2`,
 				`: > ${shellCommand([marker])}`,
 			].join("\n"),
 		);
@@ -235,7 +235,7 @@ describe("compiled dg-skills bg prune", () => {
 
 describe("compiled dg-skills bg proxy jobs", () => {
 	const run = (args: string[]) =>
-		runProxyProcess([binary, "bg", ...args], installation);
+		runProxyProcess([...binary, "bg", ...args], installation);
 	async function json(args: string[]) {
 		const result = await run(args);
 		expect(result.exitCode, result.stderr).toBe(0);
@@ -262,7 +262,7 @@ describe("compiled dg-skills bg proxy jobs", () => {
 		const gate = join(installation.root, "release ' gate");
 		installation.fakeBackend("pi", { gate });
 		const inner = shellCommand([
-			binary,
+			...binary,
 			"proxy",
 			"pi",
 			"--prompt",
@@ -321,7 +321,7 @@ describe("compiled dg-skills bg proxy jobs", () => {
 			result: "resumed",
 		});
 		const resumed = proxyJobs().find((value) => value.id !== job.id) as BgJob;
-		expect(resumed.command).toContain(shellCommand([binary]));
+		expect(resumed.command).toContain(shellCommand(binary));
 		expect(resumed.command).not.toMatch(/\$bunfs|~BUN/);
 		expect(await json(["drain", job.id])).toMatchObject({
 			result: "nothing-pending",
@@ -333,7 +333,7 @@ describe("compiled dg-skills bg proxy jobs", () => {
 		installation.fakeBackend("pi");
 		const job: BgJob = await json([
 			"run",
-			shellCommand([binary, "proxy", "pi", "--prompt", "quick"]),
+			shellCommand([...binary, "proxy", "pi", "--prompt", "quick"]),
 		]);
 		const settled = await until(
 			() => json(["status", job.id]),
@@ -351,7 +351,7 @@ describe("compiled dg-skills bg proxy jobs", () => {
 		});
 		const job: BgJob = await json([
 			"run",
-			shellCommand([binary, "proxy", "pi", "--prompt", "wait"]),
+			shellCommand([...binary, "proxy", "pi", "--prompt", "wait"]),
 			"--cwd",
 			installation.root,
 		]);
@@ -385,7 +385,7 @@ describe("compiled dg-skills bg proxy jobs", () => {
 describe("compiled dg-skills bg from an external cwd", () => {
 	test("--help runs with only sh on PATH and starts nothing", async () => {
 		const result = await runProxyProcess(
-			[binary, "bg", "--help"],
+			[...binary, "bg", "--help"],
 			installation,
 		);
 		expect(result.exitCode, result.stderr).toBe(0);

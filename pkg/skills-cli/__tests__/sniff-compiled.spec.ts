@@ -8,7 +8,7 @@ import {
 } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { buildCompiledBinary } from "./compiled-binary";
+import { bundleCommand } from "./bundle-build";
 import {
 	FAKE_VALUES,
 	type SniffJson,
@@ -25,7 +25,7 @@ let emptyPath: Record<string, string>;
 
 beforeAll(() => {
 	const base = world.tmp("sniff-compiled-");
-	command.push(buildCompiledBinary());
+	command.push(...bundleCommand("dg-skills"));
 	const bin = join(base, "empty bin");
 	mkdirSync(bin, { recursive: true });
 	emptyPath = { PATH: bin };

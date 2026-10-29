@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSkillsCli } from "../build";
+import { relocatedBundleCommand } from "./bundle-build";
 import { mergeEnv } from "./module-call";
 
 setDefaultTimeout(60_000);
@@ -24,15 +24,14 @@ const root = mkdtempSync(join(tmpdir(), "dg-db-compiled-"));
 const cwd = join(root, "external-cwd");
 const home = join(root, "home");
 const emptyPath = join(root, "empty-bin");
-const binary = join(root, "moved-install", "dg-skills");
-const entrypoint = join(root, "db-entry.ts");
+let binary: string[] = [];
 const dgHome = join(home, ".dg");
 const sessionId = "db-compiled-session";
 const operations: string[] = [];
 let server: ReturnType<typeof Bun.serve> | undefined;
 
 beforeAll(async () => {
-	for (const directory of [cwd, home, emptyPath, join(binary, "..")])
+	for (const directory of [cwd, home, emptyPath])
 		mkdirSync(directory, { recursive: true });
 	server = Bun.serve({
 		port: 0,
@@ -89,16 +88,7 @@ beforeAll(async () => {
 			agentIdentity: "db-compiled-test",
 		}),
 	);
-	writeFileSync(
-		entrypoint,
-		`import { Command } from ${JSON.stringify(Bun.resolveSync("commander", import.meta.dir))};
-import { registerDb } from ${JSON.stringify(join(import.meta.dir, "../src/commands/db.ts"))};
-const program = new Command().name("dg-skills").enablePositionalOptions();
-registerDb(program);
-await program.parseAsync(process.argv);
-`,
-	);
-	await buildSkillsCli({ outfile: binary, entrypoint });
+	binary = relocatedBundleCommand(root, "dg-skills");
 }, 240_000);
 
 afterAll(() => {
@@ -107,7 +97,7 @@ afterAll(() => {
 });
 
 async function run(args: string[]) {
-	const proc = Bun.spawn([binary, "db", ...args], {
+	const proc = Bun.spawn([...binary, "db", ...args], {
 		cwd,
 		env: mergeEnv({ HOME: home, DG_HOME: dgHome, PATH: emptyPath }),
 		stdout: "pipe",

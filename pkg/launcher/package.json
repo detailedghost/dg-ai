@@ -1,0 +1,20 @@
+{
+	"name": "@dg/launcher",
+	"version": "1.26.0",
+	"private": true,
+	"type": "module",
+	"description": "Dispatcher, bundle build and runtime pin for the shared dg runtime.",
+	"scripts": {
+		"build": "bun build.ts",
+		"lint": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@dg/common": "workspace:*",
+		"@dg/dg-agent": "workspace:*",
+		"@dg/dg-daemon": "workspace:*",
+		"@dg/skills-cli": "workspace:*",
+		"bun-types": "^1.4.3",
+		"typescript": "^7.0.2"
+	}
+}

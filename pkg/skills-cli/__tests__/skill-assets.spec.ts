@@ -10,23 +10,13 @@ import {
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveSkillAsset } from "../src/utils/skill-assets";
-import { proxyFixtures, runProxyProcess } from "./proxy-fixtures";
+import { proxyFixtures, relocatedProxyCli, runProxyProcess } from "./proxy-fixtures";
 
 let installation: ReturnType<typeof proxyFixtures>;
-let probe: string;
+let probe: string[];
 beforeAll(() => {
 	installation = proxyFixtures();
-	const source = join(installation.root, "asset-probe.ts");
-	writeFileSync(
-		source,
-		`import { resolveSkillAsset } from ${JSON.stringify(join(import.meta.dir, "../src/utils/skill-assets.ts"))};\ntry { console.log(JSON.stringify(resolveSkillAsset('proxy', 'references/guide.md', JSON.parse(process.argv[2] || '{}')))); } catch (error) { console.error(String(error)); process.exit(1); }\n`,
-	);
-	probe = join(installation.root, "relocated ' asset probe");
-	const build = Bun.spawnSync(
-		[process.execPath, "build", source, "--compile", "--outfile", probe],
-		{ env: installation.env(), stdout: "pipe", stderr: "pipe" },
-	);
-	if (build.exitCode !== 0) throw new Error(build.stderr.toString());
+	probe = [...relocatedProxyCli(installation), "prototype", "components"];
 }, 120000);
 afterAll(() => installation.cleanup());
 
@@ -35,6 +25,13 @@ beforeEach(() => {
 	fixture = proxyFixtures();
 });
 afterEach(() => fixture.cleanup());
+function protoAssets(root: string): string {
+	const directory = join(root, "proto", "assets");
+	mkdirSync(directory, { recursive: true });
+	writeFileSync(join(directory, "dg-icons.js"), "icons");
+	return directory;
+}
+
 function asset(root: string, content: string): string {
 	const path = join(root, "proxy", "references", "guide.md");
 	mkdirSync(join(path, ".."), { recursive: true });
@@ -43,6 +40,25 @@ function asset(root: string, content: string): string {
 }
 
 describe("resolveSkillAsset", () => {
+	test("honors an explicit root over the configured root without cache fallback", () => {
+		const explicit = join(fixture.root, "explicit");
+		const configured = join(fixture.root, "configured");
+		const explicitPath = asset(explicit, "explicit");
+		asset(configured, "configured");
+		expect(
+			resolveSkillAsset("proxy", "references/guide.md", {
+				skillsRoot: explicit,
+				configuredSkillsRoot: configured,
+			}),
+		).toBe(explicitPath);
+		expect(() =>
+			resolveSkillAsset("proxy", "references/guide.md", {
+				skillsRoot: join(fixture.root, "missing"),
+				configuredSkillsRoot: configured,
+			}),
+		).toThrow(/Skill asset not found/);
+	});
+
 	test("chooses explicit, configured, then real source install roots", () => {
 		const explicit = join(fixture.root, "explicit skills");
 		const configured = join(fixture.root, "configured skills");
@@ -141,65 +157,56 @@ describe("resolveSkillAsset", () => {
 		"C:\\~BUN\\root\\skills",
 	])("rejects virtual installed root %s", async (skillsRoot) => {
 		const result = await runProxyProcess(
-			[probe, JSON.stringify({ skillsRoot })],
+			probe,
 			fixture,
+			{ DG_SKILLS_DIR: skillsRoot },
 		);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain("real filesystem path");
 	});
 
 	test.each(["DG_SKILLS_DIR", "DG_SKILLS_DEST"])(
-		"loads real compiled resources selected by %s",
+		"loads real bundled resources selected by %s",
 		async (variable) => {
 			const root = join(fixture.root, "configured ' installed skills");
-			const path = asset(root, "configured");
-			const result = await runProxyProcess([probe], fixture, {
+			const path = protoAssets(root);
+			const result = await runProxyProcess(probe, fixture, {
 				[variable]: root,
 			});
 			expect(result.exitCode, result.stderr).toBe(0);
-			expect(JSON.parse(result.stdout)).toBe(path);
+			expect(result.stdout.trim()).toBe(path);
 		},
 	);
 
-	test("honors explicit root over both configured environment variables without cache fallback", async () => {
-		const explicit = join(fixture.root, "explicit");
+	test("honors the configured root over the destination root without cache fallback", async () => {
 		const configured = join(fixture.root, "configured");
 		const destination = join(fixture.root, "destination");
-		const explicitPath = asset(explicit, "explicit");
-		const configuredPath = asset(configured, "configured");
-		asset(destination, "destination");
+		const configuredPath = protoAssets(configured);
+		protoAssets(destination);
 		const env = { DG_SKILLS_DIR: configured, DG_SKILLS_DEST: destination };
-		const selected = await runProxyProcess(
-			[probe, JSON.stringify({ skillsRoot: explicit })],
-			fixture,
-			env,
-		);
-		expect(selected.exitCode, selected.stderr).toBe(0);
-		expect(JSON.parse(selected.stdout)).toBe(explicitPath);
-		const automatic = await runProxyProcess([probe], fixture, env);
+		const automatic = await runProxyProcess(probe, fixture, env);
 		expect(automatic.exitCode, automatic.stderr).toBe(0);
-		expect(JSON.parse(automatic.stdout)).toBe(configuredPath);
-		const missing = await runProxyProcess(
-			[probe, JSON.stringify({ skillsRoot: join(fixture.root, "missing") })],
-			fixture,
-			env,
-		);
+		expect(automatic.stdout.trim()).toBe(configuredPath);
+		const missing = await runProxyProcess(probe, fixture, {
+			...env,
+			DG_SKILLS_DIR: join(fixture.root, "missing"),
+		});
 		expect(missing.exitCode).toBe(1);
 		expect(missing.stderr).toContain("Skill asset not found");
 	});
 
 	test("loads DG_HOME resources before plugin roots and defaults to the isolated HOME", async () => {
 		const dgHome = join(fixture.root, "dg ' home");
-		const configuredPath = asset(join(dgHome, "skills"), "dg home");
-		const homePath = asset(join(fixture.home, ".dg", "skills"), "home default");
-		const configured = await runProxyProcess([probe], fixture, {
+		const configuredPath = protoAssets(join(dgHome, "skills"));
+		const homePath = protoAssets(join(fixture.home, ".dg", "skills"));
+		const configured = await runProxyProcess(probe, fixture, {
 			DG_HOME: dgHome,
 		});
 		expect(configured.exitCode, configured.stderr).toBe(0);
-		expect(JSON.parse(configured.stdout)).toBe(configuredPath);
-		const defaults = await runProxyProcess([probe], fixture);
+		expect(configured.stdout.trim()).toBe(configuredPath);
+		const defaults = await runProxyProcess(probe, fixture);
 		expect(defaults.exitCode, defaults.stderr).toBe(0);
-		expect(JSON.parse(defaults.stdout)).toBe(homePath);
+		expect(defaults.stdout.trim()).toBe(homePath);
 	});
 
 	for (const variable of [
@@ -208,15 +215,15 @@ describe("resolveSkillAsset", () => {
 		"CODEX_PLUGIN_ROOT",
 	]) {
 		test.each(["skills", "plugins/dg/skills"])(
-			`loads relocated compiled ${variable}/%s resources`,
+			`loads relocated bundled ${variable}/%s resources`,
 			async (layout) => {
 				const plugin = join(fixture.root, "moved ' plugin");
-				const path = asset(join(plugin, layout), "relocated plugin");
-				const result = await runProxyProcess([probe], fixture, {
+				const path = protoAssets(join(plugin, layout));
+				const result = await runProxyProcess(probe, fixture, {
 					[variable]: plugin,
 				});
 				expect(result.exitCode, result.stderr).toBe(0);
-				expect(JSON.parse(result.stdout)).toBe(path);
+				expect(result.stdout.trim()).toBe(path);
 			},
 		);
 	}
@@ -237,8 +244,8 @@ describe("resolveSkillAsset", () => {
 		},
 	);
 
-	test("compiled execution with no installed assets reports an actionable error", async () => {
-		const result = await runProxyProcess([probe], fixture);
+	test("bundled execution with no installed assets reports an actionable error", async () => {
+		const result = await runProxyProcess(probe, fixture);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain("DG_SKILLS_DIR");
 		expect(result.stderr).not.toMatch(/\$bunfs|~BUN/);

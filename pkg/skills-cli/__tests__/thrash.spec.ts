@@ -8,6 +8,7 @@ import {
 	test,
 } from "bun:test";
 import {
+	chmodSync,
 	cpSync,
 	existsSync,
 	mkdirSync,
@@ -19,13 +20,14 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { shellCommand } from "@dg/common/node";
 import { BACKENDS } from "../src/proxy";
 import { THRASH_REVIEW_MARKER } from "../src/thrash/constants";
 import { EXIT } from "../src/utils/legacy-command";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { makeTempDir } from "./git-repo-fixtures";
-import { compileProxyCli, proxyFixtures } from "./proxy-fixtures";
+import { proxyFixtures, relocatedProxyCli } from "./proxy-fixtures";
 
 const CLI = join(import.meta.dir, "../src/index.ts");
 const BUN_BIN = process.execPath;
@@ -1493,16 +1495,12 @@ describe("thrash command dispatch", () => {
 describe("compiled thrash workflow", () => {
 	let installation: ReturnType<typeof proxyFixtures>;
 	let fixture: ReturnType<typeof proxyFixtures>;
-	let binary: string;
+	let binary: string[];
 	let skills: string;
 
 	beforeAll(() => {
 		installation = proxyFixtures();
-		const original = compileProxyCli(installation);
-		const moved = join(installation.root, "relocated binary ' directory");
-		mkdirSync(moved);
-		binary = join(moved, "dg skills");
-		renameSync(original, binary);
+		binary = relocatedProxyCli(installation);
 		const staging = installation.tmp("thrash skill staging ");
 		for (const name of ["thrash", "address", "proxy"]) {
 			cpSync(
@@ -1524,7 +1522,9 @@ describe("compiled thrash workflow", () => {
 		}
 		const bin = join(fixture.home, ".dg", "bin");
 		mkdirSync(bin, { recursive: true });
-		symlinkSync(binary, join(bin, "dg-skills"));
+		const shim = join(bin, "dg-skills");
+		writeFileSync(shim, `#!/bin/sh\nexec ${shellCommand(binary)} "$@"\n`);
+		chmodSync(shim, 0o755);
 	});
 	afterEach(() => fixture?.cleanup());
 
@@ -1532,7 +1532,7 @@ describe("compiled thrash workflow", () => {
 		args: string[],
 		options: { cwd?: string; env?: Record<string, string> } = {},
 	): RunResult {
-		const proc = Bun.spawnSync([binary, ...args], {
+		const proc = Bun.spawnSync([...binary, ...args], {
 			cwd: options.cwd ?? fixture.root,
 			env: fixture.env({ DG_SKILLS_DIR: skills, ...options.env }),
 		});

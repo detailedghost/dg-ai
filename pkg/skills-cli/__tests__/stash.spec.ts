@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cwdHash, projectHash } from "../../common/src/node/scratch-paths";
 import { parseArgs } from "../src/stash/index";
+import { relocatedBundleCommand } from "./bundle-build";
 import { scratchFixtures } from "./git-repo-fixtures";
 
 setDefaultTimeout(30_000);
@@ -334,14 +335,7 @@ describe("compiled stash", () => {
 		const f = fixture();
 		const external = join(f.home, "external cwd");
 		mkdirSync(external);
-		const binary = join(tmp("stash-binary-"), "dg-skills");
-		const build = Bun.spawnSync([
-			process.execPath,
-			`${import.meta.dir}/../build.ts`,
-			"--outfile",
-			binary,
-		]);
-		expect(build.exitCode, build.stderr.toString()).toBe(0);
+		const binary = relocatedBundleCommand(tmp("stash-binary-"), "dg-skills");
 		const env = {
 			...process.env,
 			HOME: f.home,
@@ -361,13 +355,13 @@ describe("compiled stash", () => {
 			};
 		};
 		const source = [process.execPath, "run", CLI_TS];
-		const help = run([binary], ["-a", "--help"]);
+		const help = run(binary, ["-a", "--help"]);
 		expect(help).toEqual(run(source, ["-a", "--help"]));
 		expect(help.code).toBe(0);
 		expect(existsSync(env.AI_SCRATCH_DIR)).toBe(false);
 		expect(existsSync(env.AI_STATE_DIR)).toBe(false);
 		expect(existsSync(join(external, ".agents"))).toBe(false);
-		const operation = run([binary], ["-G", "viz"]);
+		const operation = run(binary, ["-G", "viz"]);
 		expect(operation).toEqual(run(source, ["-G", "viz"]));
 		expect(operation).toEqual({
 			code: 0,
@@ -379,7 +373,7 @@ describe("compiled stash", () => {
 			["--", "-G", "viz"],
 			["-G", "--", "viz"],
 		]) {
-			const result = run([binary], args);
+			const result = run(binary, args);
 			expect(result).toEqual(run(source, args));
 			expect(result).toEqual({
 				code: 1,

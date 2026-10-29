@@ -1,19 +1,25 @@
-import {
-	DgCliError,
-	describeError,
-	emitRedacted,
-	EXIT_GENERAL_FAILURE,
-	forever,
-} from "@dg/common";
-import { Command, CommanderError } from "commander";
-import { registerJobCommands } from "./commands/jobs";
-import { registerOriginCommands } from "./commands/origin";
-import { registerPairCommand } from "./commands/pair";
-import { registerSessionCommands } from "./commands/sessions";
-import { registerServiceCommands } from "./commands/service";
-import { cmdServe, cmdStatus } from "./server/bootstrap";
-
 export async function main(argv: readonly string[]): Promise<number> {
+	if (argv.length === 1 && argv[0] === "--version") {
+		process.stdout.write(`${process.env.DG_BUILD_SHA ?? "dev"}\n`);
+		return 0;
+	}
+	const [
+		{ Command, CommanderError },
+		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE, forever },
+		{ registerJobCommands },
+		{ registerOriginCommands },
+		{ registerPairCommand },
+		{ registerSessionCommands },
+		{ registerServiceCommands },
+	] = await Promise.all([
+		import("commander"),
+		import("@dg/common"),
+		import("./commands/jobs"),
+		import("./commands/origin"),
+		import("./commands/pair"),
+		import("./commands/sessions"),
+		import("./commands/service"),
+	]);
 	const program = new Command();
 	program
 		.name("dg-daemon")
@@ -29,6 +35,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 			"internal: run the daemon in the foreground (never call directly)",
 		)
 		.action(async () => {
+			const { cmdServe } = await import("./server/bootstrap");
 			if ((await cmdServe()) === "serving") await forever();
 		});
 
@@ -36,6 +43,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.command("status")
 		.description("report the live daemon's status, or that none is running")
 		.action(async () => {
+			const { cmdStatus } = await import("./server/bootstrap");
 			await cmdStatus();
 		});
 

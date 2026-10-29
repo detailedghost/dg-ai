@@ -1,25 +1,23 @@
-import {
-	DgCliError,
-	describeError,
-	emitRedacted,
-	EXIT_GENERAL_FAILURE,
-	type SessionRole,
-} from "@dg/common";
-import { Command, CommanderError } from "commander";
-import { registerAgentCommands } from "./commands";
-import { registerMemoryCommands } from "./memory/commands";
-import { registerLazyPhoneCommands } from "./phone/register";
-import { claimWaitingSession } from "./attach";
-import { cliNextStep } from "./next-step";
-import { cmdStart, openUrlOrHint } from "./start";
-import {
-	buildBootstrapUrl,
-	isDaemonLive,
-	readPidFile,
-	resolveDgPaths,
-} from "@dg/common/node";
+import type { SessionRole } from "@dg/common";
 
 export async function main(argv: readonly string[]): Promise<number> {
+	if (argv.length === 1 && argv[0] === "--version") {
+		process.stdout.write(`${process.env.DG_BUILD_SHA ?? "dev"}\n`);
+		return 0;
+	}
+	const [
+		{ Command, CommanderError },
+		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
+		{ registerAgentCommands },
+		{ registerMemoryCommands },
+		{ registerLazyPhoneCommands },
+	] = await Promise.all([
+		import("commander"),
+		import("@dg/common"),
+		import("./commands"),
+		import("./memory/commands"),
+		import("./phone/register"),
+	]);
 	const program = new Command();
 	program
 		.name("dg-agent")
@@ -64,6 +62,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 				ext?: boolean;
 			}) => {
 				const role: SessionRole = opts.orchestrator ? "orchestrator" : "agent";
+				const { cmdStart } = await import("./start");
 				await cmdStart({
 					workset: opts.workset,
 					role,
@@ -86,6 +85,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.option("-s, --session <id>", "session id to claim")
 		.option("--open", "open the bootstrap URL in the default browser")
 		.action(async (opts: { session?: string; open?: boolean }) => {
+			const [{ buildBootstrapUrl, isDaemonLive, readPidFile, resolveDgPaths }, { claimWaitingSession }, { cliNextStep }, { openUrlOrHint }] =
+				await Promise.all([import("@dg/common/node"), import("./attach"), import("./next-step"), import("./start")]);
 			const paths = resolveDgPaths();
 			const handle = readPidFile(paths);
 			if (!handle || !(await isDaemonLive(handle))) {

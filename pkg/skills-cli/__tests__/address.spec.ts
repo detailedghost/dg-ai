@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { EXIT } from "../src/utils/legacy-command";
+import { installBundleShim } from "./bundle-build";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { makeGitRepo } from "./git-repo-fixtures";
@@ -4772,21 +4773,9 @@ describe("Copilot polling input and data guards", () => {
 
 describe("compiled address", () => {
 	test("runs both providers after relocation, preserving batch stdin, reply ordering, exact bodies and status streams", async () => {
-		const buildDir = cliFixtures.tmp(createdDirs, "address build ");
-		const original = join(buildDir, "dg skills");
-		const build = Bun.spawnSync(
-			[BUN_BIN, join(import.meta.dir, "../build.ts"), "--outfile", original],
-			{
-				env: { ...process.env },
-			},
+		const binary = installBundleShim(
+			join(cliFixtures.tmp(createdDirs, "address relocated "), "dg skills"),
 		);
-		expect(build.exitCode, build.stderr.toString()).toBe(0);
-		const binary = join(
-			cliFixtures.tmp(createdDirs, "address relocated "),
-			"dg skills",
-		);
-		renameSync(original, binary);
-		rmSync(buildDir, { recursive: true, force: true });
 		const external = cliFixtures.tmp(createdDirs, "address external ");
 		const command = [binary, "address"];
 		const summary =

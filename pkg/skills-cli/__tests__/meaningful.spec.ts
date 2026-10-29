@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { installBundleShim } from "./bundle-build";
 import { isolateCliTests, runGit } from "./cli-fixtures";
 import { makeTempDir, scratchFixtures } from "./git-repo-fixtures";
 import { writeFakeCli } from "./fake-cli";
@@ -852,11 +853,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   skills = join(install, "skills");
   binary = join(install, "bin", "dg-skills");
   mkdirSync(stage, { recursive: true });
-  mkdirSync(dirname(binary), { recursive: true });
-  const compiled = join(stage, "dg-skills");
-  const build = Bun.spawnSync([BUN_BIN, join(import.meta.dir, "../build.ts"), "--outfile", compiled], { cwd: join(import.meta.dir, "../../.."), env: process.env });
-  if (build.exitCode !== 0) throw new Error(`Compile failed: ${build.stderr.toString()}`);
-  renameSync(compiled, binary);
+  installBundleShim(binary);
 
   const copiedRepo = join(stage, "synthetic source checkout");
   const bootstrap = join(copiedRepo, "pkg", "skills-cli", "bootstrap.sh");

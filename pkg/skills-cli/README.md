@@ -122,11 +122,11 @@ or the extension, and it does not execute skill content. From the repo root,
 `mise run install:skills` is the same command. `bootstrap.sh --skills-only`
 and `DG_SKILLS_ONLY=1` do that copy on a machine without Bun.
 
-## Build standalone binary
+## Build the bundle
 
 ```bash
 cd pkg/skills-cli
-bun run build       # produces dist/dg-skills (current platform)
+bun run build       # runs pkg/launcher's build: ../launcher/dist/lib/dg.js and dist/dg-lib-<version>.tar.gz
 ```
 
 Pre-built binaries for Linux, macOS, and Windows (x64 and arm64) appear in

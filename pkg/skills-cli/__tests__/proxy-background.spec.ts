@@ -24,17 +24,17 @@ import { shellCommand } from "@dg/common/node";
 import { carriedFlags } from "../src/bg/jobs";
 import { loadTiers } from "../src/tiers";
 import {
-	compileProxyCli,
+	relocatedProxyCli,
 	proxyFixtures,
 	runProxyProcess,
 } from "./proxy-fixtures";
 
 let installation: ReturnType<typeof proxyFixtures>;
 let fixture: ReturnType<typeof proxyFixtures>;
-let binary: string;
+let binary: string[];
 beforeAll(() => {
 	installation = proxyFixtures();
-	binary = compileProxyCli(installation);
+	binary = relocatedProxyCli(installation);
 }, 120000);
 afterAll(() => installation.cleanup());
 beforeEach(() => {
@@ -53,7 +53,7 @@ interface Job {
 	pendingUpdate: string | null;
 }
 const run = (args: string[]) =>
-	runProxyProcess([binary, "proxy", ...args], fixture);
+	runProxyProcess([...binary, "proxy", ...args], fixture);
 async function json(args: string[]) {
 	const result = await run(args);
 	expect(result.exitCode, result.stderr).toBe(0);
@@ -281,7 +281,7 @@ describe("compiled proxy background", () => {
 		const job: Job = await json([
 			"background",
 			"run",
-			shellCommand([binary, "proxy", "pi", "--prompt", "wait"]),
+			shellCommand([...binary, "proxy", "pi", "--prompt", "wait"]),
 		]);
 		await until(
 			() => fixture.readCalls(),
@@ -306,14 +306,14 @@ describe("compiled proxy background", () => {
 		const job: Job = await json(["background", "run", ":"]);
 		await finished(job);
 		const viaAlias = await runProxyProcess(
-			[binary, "proxy", "background", "list"],
+			[...binary, "proxy", "background", "list"],
 			fixture,
 		);
 		expect(viaAlias.exitCode, viaAlias.stderr).toBe(0);
 		expect(
 			JSON.parse(viaAlias.stdout).jobs.map((value: Job) => value.id),
 		).toEqual([job.id]);
-		const viaBg = await runProxyProcess([binary, "bg", "list"], fixture);
+		const viaBg = await runProxyProcess([...binary, "bg", "list"], fixture);
 		expect(JSON.parse(viaBg.stdout)).toEqual(JSON.parse(viaAlias.stdout));
 	});
 
@@ -385,7 +385,7 @@ describe("compiled proxy background", () => {
 		);
 		expect(fixture.readCalls()).toEqual([]);
 		expect(plan.command).not.toMatch(/\$bunfs|~BUN|\/src\/index/);
-		expect(plan.command).toContain(shellCommand([binary, "bg", "run"]));
+		expect(plan.command).toContain(shellCommand([...binary, "bg", "run"]));
 		const launched = await runProxyProcess(
 			["/bin/sh", "-c", plan.command],
 			fixture,
@@ -483,7 +483,7 @@ describe("compiled proxy background", () => {
 		const gate = join(fixture.root, "release ' gate");
 		fixture.fakeBackend("pi", { gate });
 		const command = shellCommand([
-			binary,
+			...binary,
 			"proxy",
 			"pi",
 			"--prompt",
@@ -566,7 +566,7 @@ describe("compiled proxy background", () => {
 		const job: Job = await json([
 			"background",
 			"run",
-			shellCommand([binary, "proxy", "grok", "--prompt", "task", "--tier", "haiku"]),
+			shellCommand([...binary, "proxy", "grok", "--prompt", "task", "--tier", "haiku"]),
 			"--cwd",
 			fixture.root,
 		]);
@@ -597,7 +597,7 @@ describe("compiled proxy background", () => {
 		const job: Job = await json([
 			"background",
 			"run",
-			shellCommand([binary, "proxy", "pi", "--prompt", "wait"]),
+			shellCommand([...binary, "proxy", "pi", "--prompt", "wait"]),
 			"--cwd",
 			fixture.root,
 		]);
@@ -639,7 +639,7 @@ describe("compiled proxy background", () => {
 			const job: Job = await json([
 				"background",
 				"run",
-				shellCommand([binary, "proxy", "pi", "--prompt", "fail"]),
+				shellCommand([...binary, "proxy", "pi", "--prompt", "fail"]),
 			]);
 			expect(await finished(job)).toMatchObject({ state: "done", exitCode });
 			const result = readFileSync(job.logFile, "utf8")

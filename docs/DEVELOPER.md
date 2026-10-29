@@ -6,12 +6,13 @@
 pkg/
   common/      @dg/common — shared types + pure functions
   extension/   WXT MV3 browser extension (was extension-src/)
-  dg-daemon/   loopback HTTP+WS chat daemon — bun build --compile distributable
-  dg-agent/    agent-facing CLI for the daemon — bun build --compile distributable
+  dg-daemon/   loopback HTTP+WS chat daemon — runs from the shared launcher bundle
+  dg-agent/    agent-facing CLI for the daemon — runs from the shared launcher bundle
   inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
   ssms/        SMS providers (google Messages for Web, signal-cli) and the ssms CLI
   channel-review/ Teams review daemon, runners, reactions, and verdict readers
-  skills-cli/  CLI framework — bun build --compile distributable
+  skills-cli/  CLI framework — runs from the shared launcher bundle
+  launcher/    @dg/launcher — dispatcher, bundle build, pinned Bun runtime
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
   skills/      AI instruction layer — SKILL.md + references for each skill
@@ -186,7 +187,7 @@ cd pkg/dg-daemon
 bun src/index.ts --help   # run locally
 bun run lint              # tsc --noEmit
 bun test                  # daemon, store, dispatch and asset tests
-bun run build             # compile binary to dist/dg-daemon
+bun run build             # bundle to dist/lib and dist/dg-lib-<version>.tar.gz
 ```
 
 The daemon is loopback-only and capability-gated. Its private record fields
@@ -236,7 +237,7 @@ cd pkg/dg-agent
 bun src/index.ts --help   # run locally
 bun run lint              # tsc --noEmit
 bun test                  # CLI, memory store and agent-to-agent tests
-bun run build             # compile binary to dist/dg-agent
+bun run build             # bundle to dist/lib and dist/dg-lib-<version>.tar.gz
 ```
 
 `dg-agent` depends on `dg-daemon` only in its devDependencies. The chat
