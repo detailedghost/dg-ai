@@ -80,7 +80,7 @@ export async function readBaseFile(
 	try {
 		return await glab([
 			"api",
-			`projects/${encodeURIComponent(event.repo)}/repository/files/${encodeURIComponent(path)}/raw?ref=${event.baseSha}`,
+			`projects/${encodeURIComponent(event.repo)}/repository/files/${encodeURIComponent(path)}/raw?ref=${encodeURIComponent(event.baseSha)}`,
 			...hostFlags(event),
 		]);
 	} catch (err) {
