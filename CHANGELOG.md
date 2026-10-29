@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.25.0 (2026-10-29)
+
+### Features
+
+- feat(thrash): run the action in GitLab CI ([#102](https://github.com/detailedghost/dg-ai/pull/102))
+
+### Fixes
+
+- fix(phone): refuse an unnamed or colliding accept ([#98](https://github.com/detailedghost/dg-ai/pull/98))
+
 ## v1.24.0 (2026-10-28)
 
 ### Features
