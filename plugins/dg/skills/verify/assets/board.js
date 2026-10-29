@@ -104,14 +104,6 @@ function setFold(key, collapsed) {
 }
 
 const needsAttention = (s) => !verdicts[s.id]?.status;
-const notifyBtn = (() => {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.id = "notify";
-  b.className = "attn-bell";
-  b.setAttribute("aria-pressed", "false");
-  return b;
-})();
 
 function orb(count) {
   const o = el("span", count ? "orb orb-count" : "orb", count ? String(count) : "");
@@ -141,9 +133,12 @@ function renderToc() {
   overview.append(tocButton("", "≡", "Overview", "Overview of every item and round", renderSummary, !$("summary").hidden));
   const needs = sections.filter(needsAttention);
   const attn = el("div", "attention");
-  const ab = tocButton("", "!", needs.length ? "Needs attention" : "All caught up", needs.length ? `Needs attention: ${needs.length} waiting. Go to the next one` : "Nothing needs your attention", needs.length ? goNextAttention : null, false);
+  const ab = tocButton("", "", needs.length ? "Needs attention" : "All caught up", needs.length ? `Needs attention: ${needs.length} waiting. Go to the next one` : "Nothing needs your attention", attentionClick, false);
+  ab.querySelector(".dot").innerHTML = svg("bell");
+  ab.classList.toggle("alerts-on", alertsOn());
+  ab.classList.toggle("caught-up", !needs.length);
   if (needs.length) ab.append(orb(needs.length));
-  attn.append(ab, notifyBtn);
+  attn.append(ab);
   pinned.append(overview, attn);
   toc.append(pinned);
   const showing = $("section").hidden ? null : sections[index];
@@ -244,6 +239,7 @@ function renderSection(stay = false) {
   }
   const cur = vs[variant];
   $("variants").hidden = !vs.length;
+  $("v-more").dataset.versions = vs.length ? "1" : "";
   if (cur) {
     $("v-label").textContent = `${cur.key} · ${cur.label || `Version ${cur.key}`}`;
     $("v-label").title = cur.summary || "";
@@ -272,6 +268,7 @@ function renderSection(stay = false) {
     const fa = figure(afterCap, im.after, im.reason);
     pair.append(fb, fa);
     if (im.target) pair.append(figure("Prototype", im.target));
+    if (imgSrc(im.before) && imgSrc(im.after)) head.append(viewSwitch(pair, `${s.id}::${im.label}`, beforeCap, afterCap));
     if (highlight && imgSrc(im.before) && imgSrc(im.after)) markChanges(head, fb, fa, imgSrc(im.before), imgSrc(im.after));
     card.append(head, pair, shotNote(s, im.label, head));
     shots.append(card);
@@ -401,7 +398,8 @@ function setLocked(locked, v = {}) {
   const key = keyOf(v.status, v.note);
   $("note").readOnly = locked;
   $("note").value = locked ? "" : $("note").dataset.saved || "";
-  for (const b of document.querySelectorAll(".pk-approve,.pk-reject,.pk-skip,.pk-note,.pk-more")) b.hidden = locked;
+  for (const b of document.querySelectorAll(".pk-approve,.pk-reject,.pk-skip,.pk-note")) b.hidden = locked;
+  $("v-more").hidden = locked || !$("v-more").dataset.versions;
   showNote(!locked && Boolean($("note").value));
   $("decided-pill").hidden = !locked;
   $("change").hidden = !locked;
@@ -666,7 +664,7 @@ async function save(status) {
   }
 }
 
-const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now.", more: "Asked for more versions." };
+const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now.", more: "Sent back for new versions." };
 
 $("note").addEventListener("input", syncVerdictUi);
 $("change").addEventListener("click", () => {
@@ -939,11 +937,7 @@ function updateTab() {
 function alertArrival(arrived) {
   if (document.hidden) unseen += arrived.length;
   updateTab();
-  let on = false;
-  try {
-    on = localStorage.getItem("verify-notify") === "1";
-  } catch {}
-  if (!on || !document.hidden || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  if (!document.hidden || !alertsOn()) return;
   const n = new Notification(`${boardName()}: ${arrived.length === 1 ? "a round is" : `${arrived.length} rounds are`} ready`, {
     body: arrived.map((s) => s.title).join(", "),
     tag: `verify-${location.search}`,
@@ -959,47 +953,18 @@ document.addEventListener("visibilitychange", () => {
     updateTab();
   }
 });
-(() => {
-  const btn = notifyBtn;
-  const sync = () => {
-    let on = false;
-    try {
-      on = localStorage.getItem("verify-notify") === "1";
-    } catch {}
-    const blocked = typeof Notification === "undefined" || Notification.permission === "denied";
-    btn.innerHTML = svg("bell");
-    btn.setAttribute("aria-pressed", String(on && !blocked));
-    btn.classList.toggle("on", on && !blocked);
-    const label = blocked ? "Desktop alerts are blocked in this browser" : on ? "Desktop alerts are on. Turn them off" : "Turn on desktop alerts when a round is ready";
-    btn.title = label;
-    btn.setAttribute("aria-label", label);
-  };
-  btn.addEventListener("click", async () => {
-    if (typeof Notification === "undefined") return toast("This browser does not support desktop alerts.");
-    let on = false;
-    try {
-      on = localStorage.getItem("verify-notify") === "1";
-    } catch {}
-    if (on) {
-      try {
-        localStorage.setItem("verify-notify", "");
-      } catch {}
-      toast("Desktop alerts are off. The tab title and icon still show what is waiting.");
-      return sync();
-    }
-    const p = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-    if (p !== "granted") {
-      toast("Desktop alerts were not allowed. The tab title and icon still show what is waiting.");
-      return sync();
-    }
-    try {
-      localStorage.setItem("verify-notify", "1");
-    } catch {}
-    toast("Desktop alerts are on. You get one when a new round is ready and this tab is in the background.");
-    sync();
-  });
-  sync();
-})();
+const alertsOn = () => typeof Notification !== "undefined" && Notification.permission === "granted";
+let alertsAsked = false;
+async function attentionClick() {
+  if (!alertsAsked && typeof Notification !== "undefined" && Notification.permission === "default") {
+    alertsAsked = true;
+    const p = await Notification.requestPermission();
+    toast(p === "granted" ? "Desktop alerts are on while this tab is in the background." : "No desktop alerts. The tab title and icon still show what is waiting.");
+    renderToc();
+  }
+  if (sections.some(needsAttention)) goNextAttention();
+  else toast("All caught up.");
+}
 
 let highlight = (() => {
   try {
@@ -1159,3 +1124,36 @@ $("hl-btn").addEventListener("click", () => {
   window.scrollTo({ top: y });
 });
 syncHlBtn();
+
+const pairViews = {};
+function viewSwitch(pair, key, beforeCap, afterCap) {
+  const group = el("div", "view-switch");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Show");
+  const opts = [["both", "Side by side"], ["before", beforeCap], ["after", afterCap]];
+  const apply = (v) => {
+    pairViews[key] = v;
+    pair.classList.toggle("only-before", v === "before");
+    pair.classList.toggle("only-after", v === "after");
+    for (const b of group.children) b.setAttribute("aria-pressed", String(b.dataset.v === v));
+  };
+  for (const [v, text] of opts) {
+    const b = el("button", "", text);
+    b.type = "button";
+    b.dataset.v = v;
+    b.addEventListener("click", () => apply(v));
+    group.append(b);
+  }
+  group.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const list = [...group.children];
+    const i = list.indexOf(document.activeElement);
+    const next = list[(i + (e.key === "ArrowRight" ? 1 : list.length - 1)) % list.length];
+    next.focus();
+    apply(next.dataset.v);
+  });
+  apply(pairViews[key] || "both");
+  return group;
+}

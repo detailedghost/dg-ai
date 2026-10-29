@@ -118,16 +118,18 @@ describe("review board in a browser", () => {
 				Object.assign(window, { Notification: FakeNotification });
 			});
 			await page.goto(`http://127.0.0.1:${server.port}/#nav-r1`);
-			await page.waitForSelector("#notify svg");
+			await page.waitForSelector("#toc .attention button svg");
 			expect(await page.title()).toBe("(2) Nav r1 · Settings polish");
 			expect(await page.textContent("aside h1")).toBe("Settings polish");
 			expect(await page.getAttribute("#favicon", "href")).toStartWith("data:image/png;base64,");
 			expect(await page.textContent(".shot-note-btn")).toBe("Note on this");
 
-			expect(await page.evaluate(() => Boolean(document.getElementById("notify")?.closest("#toc .attention")))).toBe(true);
-			await page.click("#notify");
-			expect(await page.getAttribute("#notify", "aria-pressed")).toBe("true");
-			expect(await page.evaluate(() => localStorage.getItem("verify-notify"))).toBe("1");
+			const attention = "#toc .attention button";
+			expect(await page.locator("#notify").count()).toBe(0);
+			expect((await page.getAttribute(attention, "class")) ?? "").not.toContain("alerts-on");
+			await page.click(attention);
+			await page.waitForFunction(() => location.hash === "#home-r1");
+			expect((await page.getAttribute(attention, "class")) ?? "").toContain("alerts-on");
 			await page.evaluate(() => Object.defineProperty(document, "hidden", { configurable: true, get: () => true }));
 			writeBoard(paths, { ...board, sections: [...board.sections, { id: "forms-r1", title: "Forms", round: 1, images: [image("desktop · light · forms")] }] });
 			await page.waitForFunction(() => document.title.includes("● New round"), undefined, { timeout: 15_000 });
@@ -144,11 +146,26 @@ describe("review board in a browser", () => {
 			await page.goto(`http://127.0.0.1:${server.port}/#nav-r1`);
 			await page.reload();
 			await page.waitForSelector("#v-more svg");
+			expect(await page.evaluate(() => document.getElementById("v-more")?.previousElementSibling?.classList.contains("pk-reject"))).toBe(true);
 			await page.click("#v-more");
 			await page.waitForFunction(() => location.hash === "#home-r1");
 			expect(readVerdicts(paths)["nav-r1"]).toMatchObject({ status: "more", note: "" });
 			expect(readVerdicts(paths)["nav-r1"]?.variant).toBeUndefined();
 			expect(await page.title()).toBe("(2) Home r1 · Settings polish");
+			expect(await page.isHidden("#v-more")).toBe(true);
+
+			await page.evaluate(() =>
+				fetch("/api/verdicts", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ "home-r1": { status: "approved", note: "" }, "forms-r1": { status: "approved", note: "" } }),
+				}),
+			);
+			await page.reload();
+			await page.waitForSelector(`${attention} svg`);
+			expect((await page.getAttribute(attention, "class")) ?? "").toContain("caught-up");
+			await page.click(attention);
+			expect(await page.textContent("#toast")).toBe("All caught up.");
 			expect(errors).toEqual([]);
 		} finally {
 			await pw.close();
@@ -202,6 +219,20 @@ describe("review board in a browser", () => {
 			expect(await first.locator("figure").nth(1).locator(".hl-badge").allTextContents()).toEqual(["1", "2"]);
 			const second = page.locator(".shot").nth(1);
 			expect(await second.locator(".hl-stat, .hl-box").count()).toBe(0);
+			const views = first.locator(".view-switch button");
+			expect(await views.allTextContents()).toEqual(["Side by side", "Before", "After"]);
+			expect(await views.evaluateAll((list) => list.map((b) => b.getAttribute("aria-pressed")))).toEqual(["true", "false", "false"]);
+			expect(await second.locator(".view-switch").count()).toBe(0);
+			await views.nth(2).click();
+			expect(await first.locator(".pair").getAttribute("class")).toContain("only-after");
+			expect(await first.locator("figure").nth(0).isHidden()).toBe(true);
+			expect(await first.locator("figure").nth(1).isVisible()).toBe(true);
+			await page.keyboard.press("ArrowLeft");
+			expect(await first.locator(".pair").getAttribute("class")).toContain("only-before");
+			expect(await views.evaluateAll((list) => list.map((b) => b.getAttribute("aria-pressed")))).toEqual(["false", "true", "false"]);
+			expect(await first.locator("figure").nth(1).isHidden()).toBe(true);
+			await page.keyboard.press("ArrowLeft");
+			expect(await first.locator(".pair").getAttribute("class")).not.toMatch(/only-/);
 			expect(await page.getAttribute("#hl-btn", "aria-pressed")).toBe("true");
 			await page.click("#hl-btn");
 			expect(await page.locator(".hl-box, .hl-stat").count()).toBe(0);

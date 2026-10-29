@@ -496,6 +496,23 @@ aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--a
 .hl-box{border:1.5px solid color-mix(in srgb,#e11d74 55%,transparent);background:color-mix(in srgb,#e11d74 4%,transparent)}
 :root[data-theme="dark"] .hl-box{border-color:color-mix(in srgb,#f472b6 55%,transparent);background:color-mix(in srgb,#f472b6 5%,transparent)}
 .hl-badge{opacity:.85;min-width:16px;height:16px;line-height:16px;font-size:10px;top:-8px;left:-8px}
+.hl-box{border-color:color-mix(in srgb,#e11d74 40%,transparent);background:color-mix(in srgb,#e11d74 3%,transparent)}
+:root[data-theme="dark"] .hl-box{border-color:color-mix(in srgb,#f472b6 40%,transparent);background:color-mix(in srgb,#f472b6 3%,transparent)}
+.hl-badge{opacity:.75}
+.view-switch{display:inline-flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;flex:none}
+.view-switch button{min-height:30px;padding:4px 10px;border:0;border-right:1px solid var(--line);background:var(--surface);color:var(--mut);font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.view-switch button:last-child{border-right:0}
+.view-switch button[aria-pressed="true"]{background:var(--acc-soft);color:var(--acc)}
+.view-switch button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.pair.only-before,.pair.only-after{grid-template-columns:1fr!important}
+.pair.only-before > figure:nth-child(2),.pair.only-after > figure:nth-child(1){display:none}
+.pair.only-before > figure:nth-child(n+3),.pair.only-after > figure:nth-child(n+3){display:none}
+.shot-head{flex-wrap:wrap}
+@media (max-width:760px){.view-switch button{padding:4px 8px}}
+#toc .attention .dot svg{width:13px;height:13px}
+#toc .attention button.alerts-on .dot{background:var(--acc-soft);color:var(--acc);border-color:var(--acc)}
+#toc .attention button.caught-up{color:var(--mut)}
+#toc .attention button.caught-up .dot{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}

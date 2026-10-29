@@ -28,7 +28,7 @@ Dante picks a verdict per round:
 | Approve with a note | Approved. The note starts a follow-up round. |
 | Needs changes | A note is required. The owning agent reworks the item. |
 | Skip | The item stays open. |
-| More versions | Only on a round with versions. None fits yet. Add a new round with more versions. |
+| More versions | Only on a round with versions. The button next to Needs changes rejects these versions. Add a new round with more versions. |
 
 `verify status` and `verify wait` read the verdicts.
 `verify rerun` captures the next round for each item that was sent back or approved with a note.
@@ -117,7 +117,7 @@ The board checks for changes every 5 seconds. A changed round that is open updat
 The theme button shows the board and the screenshots in light or dark.
 A screenshot is dark when its label or file name has the word `dark`. Every other screenshot is light.
 Put `light` or `dark` in the names of shots you add yourself.
-Each pair shows side by side. The board marks what changed with numbered boxes on both images and a count such as `2 changed areas` in the card header. The highlight button in the picker turns the boxes off and on, and the board remembers the choice. A pair with no before has no highlights.
+Each pair shows side by side. The board marks what changed with numbered boxes on both images and a count such as `2 changed areas` in the card header. The highlight button in the picker turns the boxes off and on, and the board remembers the choice. Each pair also has a Side by side, Before, and After switch to see one image at full width. A pair with no before has no highlights.
 The collapse button in the panel head shrinks the panel to an icon rail. Expanding it resets the panel to the default width.
 The note field grows with its text and can be resized. Shift+Enter adds a line. Enter alone does not save.
 Each screenshot has its own "Note on this" button.
@@ -128,7 +128,7 @@ When several items wait, only the first one in each list animates.
 The browser tab shows the number of rounds that wait, the open round, and the board title, for example `(2) Settings r2 · Settings polish`.
 It adds `● New round` when a round arrives while the tab is in the background.
 The tab icon shows the same count in a red dot.
-The bell at the end of the Needs attention row turns on desktop alerts. An alert shows only when a round arrives and the tab is in the background.
+Needs attention is also the alert bell. The first click asks the browser once for alert permission. After that, a click goes to the next waiting round. An alert shows only when a round arrives and the tab is in the background.
 `status` and `watch` print `more versions` for a round where Dante asked for more versions. `rerun` treats it like a round that was sent back.
 `wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
