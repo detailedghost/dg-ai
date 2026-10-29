@@ -71,8 +71,9 @@ a change to a key it can read. A key that was unreadable at startup and later
 loads is announced as "a key became readable". A real key change resubscribes
 from the cursor it has already reached. `status` sets `listener.stale` for
 that change even while `keys_unreadable` is true. `say`, `accept`,
-`invite`, `number`, and `voicemail` restart a listener whose binary or keys
-drifted. An invite reload is not that restart. If the drifted process will
+`invite`, `number`, `voicemail`, and `watch` restart a listener whose binary or keys
+drifted. An invite reload is not that restart, and neither is an invite with a new
+`--relay`: the listener adds that relay itself within seconds. If the drifted process will
 not exit, the command finishes and writes a warning. The listener never
 restarts the service unit it is running under.
 

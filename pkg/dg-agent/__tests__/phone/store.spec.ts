@@ -30,6 +30,7 @@ import {
 	requireFreeHandle,
 	resolvedSelfName,
 	setContactKeyId,
+	subscriptionRelays,
 	writeCursor,
 	writeListener,
 	writeNumber,
@@ -187,6 +188,26 @@ describe("invites", () => {
 		consumeInvite(db, secret);
 
 		expect(liveInvites(db)).toEqual([]);
+	});
+
+	it("consumes an invite once and leaves the epoch alone when nothing was consumed", () => {
+		const secret = "ab".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 100, asName: "dg", keyId: "default" });
+		const epoch = readAdmissionEpoch(db);
+
+		expect(consumeInvite(db, secret)).toBe(true);
+		expect(readAdmissionEpoch(db)).toBe(epoch + 1);
+		expect(consumeInvite(db, secret)).toBe(false);
+		expect(readAdmissionEpoch(db)).toBe(epoch + 1);
+	});
+
+	it("keeps an established contact's relays in the subscription once its invite is consumed", () => {
+		const secret = "ab".repeat(32);
+		addInvite(db, { secret, expiresAt: NOW + 100, asName: "dg", keyId: "default", relays: ["wss://custom.example"] });
+		addContact(db, { npub: npub(), handle: "barron", relays: ["wss://custom.example"], keyId: "default", addedAt: NOW, via: "invite" });
+		consumeInvite(db, secret);
+
+		expect(subscriptionRelays(db)).toEqual([...DEFAULT_RELAYS, "wss://custom.example"]);
 	});
 
 	it("leaves an expired invite out of the live list", () => {

@@ -18,7 +18,6 @@ import {
 	isOurListener,
 	listenerDrift,
 	listenerLogPath,
-	ensureListenerSubscribed,
 	readListenerPid,
 	removeListenerPid,
 	runListener,
@@ -279,7 +278,6 @@ export async function phoneInvite(
 		safety: PHONE_SAFETY_REF,
 	});
 	await restartStaleListener(deps, { spawn: true });
-	ensureListenerSubscribed(deps.paths, deps.db);
 }
 
 export async function phoneAccept(
@@ -499,7 +497,7 @@ export async function phoneWatch(opts: { for?: string }, deps: PhoneDeps, random
 	await restartStaleListener(deps, { spawn: true });
 	const deadline = deps.now() + seconds;
 	const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
-	while (deps.now() < deadline) {
+	for (;;) {
 		emitUnread(deps);
 		const remainingMs = (deadline - deps.now()) * 1000;
 		if (remainingMs <= 0) return;

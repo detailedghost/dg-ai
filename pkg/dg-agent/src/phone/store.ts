@@ -72,11 +72,14 @@ export function writeRelays(db: PhoneDb, relays: string[]): void {
 	if (previous.length !== relays.length || previous.some((relay, index) => relay !== relays[index])) bumpAdmissionEpoch(db);
 }
 
-/** Relays the listener must read: the saved number relays, plus every live invite's own list. */
+/** Relays the listener must read: the saved number relays, plus every live invite's and contact's own list. */
 export function subscriptionRelays(db: PhoneDb): string[] {
 	const relays = new Set(readRelays(db));
 	for (const invite of liveInvites(db)) {
 		for (const relay of invite.relays) relays.add(relay);
+	}
+	for (const contact of listContacts(db)) {
+		for (const relay of contact.relays) relays.add(relay);
 	}
 	return [...relays];
 }
@@ -220,9 +223,10 @@ export function addInvite(db: PhoneDb, record: Omit<InviteRecord, "relays"> & { 
 	bumpAdmissionEpoch(db);
 }
 
-export function consumeInvite(db: PhoneDb, secret: string): void {
-	db.consumeInvite(secret);
-	bumpAdmissionEpoch(db);
+export function consumeInvite(db: PhoneDb, secret: string): boolean {
+	const consumed = db.consumeInvite(secret);
+	if (consumed) bumpAdmissionEpoch(db);
+	return consumed;
 }
 
 export function readListener(db: PhoneDb): ListenerConfig | undefined {

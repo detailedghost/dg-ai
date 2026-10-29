@@ -852,6 +852,24 @@ describe("watch", () => {
 		expect(now).toBeGreaterThanOrEqual(NOW + 10);
 	});
 
+	it("prints voicemail that lands during the last sleep before the bound", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		out = [];
+		let now = NOW;
+		d.now = () => now;
+		d.sleep = async (ms) => {
+			now += Math.ceil(ms / 1000);
+			if (now >= NOW + 5) {
+				d.db.addMessage({ id: "last", direction: "in", ts: NOW, sender: "npub1w", contact: "npub1w", text: "at-the-bound", call: 0 });
+			}
+		};
+
+		await phoneWatch({ for: "5" }, d, () => 0);
+
+		expect((lines() as { text?: string }[]).some((row) => row.text === "at-the-bound")).toBe(true);
+	});
+
 	it("rejects a non-positive --for", async () => {
 		const d = deps(freshHome());
 
