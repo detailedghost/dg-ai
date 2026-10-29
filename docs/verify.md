@@ -29,6 +29,7 @@ dg-skills verify rerun <name>
 `status` prints one line per item.
 `wait` blocks until every round has a verdict.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
+The board then closes its own tab after a short countdown, and the agent runs `verify stop`.
 `rerun` captures the next round for items that were sent back or approved with a note.
 The open tab finds the new round by itself.
 

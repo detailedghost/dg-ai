@@ -132,6 +132,8 @@ Needs attention is also the alert bell. The first click asks the browser once fo
 `status` and `watch` print `more versions` for a round where Dante asked for more versions. `rerun` treats it like a round that was sent back.
 `wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
+When Dante approves the last open round and no agent work is pending, the board counts down 5 seconds and closes its tab. Keep open cancels it. A board that was already finished when it opened does not close itself.
+After `wait` prints `ALL APPROVED`, run `verify stop <name>` to stop the board server.
 
 ## Versions
 

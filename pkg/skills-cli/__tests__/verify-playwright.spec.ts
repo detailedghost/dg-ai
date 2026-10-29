@@ -108,6 +108,56 @@ describe("review board in a browser", () => {
 		}
 	});
 
+	test.skipIf(!browser)("the tab closes itself after the last approve, but not when opened already finished or kept open", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-close-"));
+		const paths = verifyPaths(dir);
+		const round = (id: string) => ({ id, title: id, images: [{ label: "desktop · light · a", before: "missing", after: "missing" }] });
+		const approved = { status: "approved", note: "", at: "t" };
+		writeBoard(paths, { name: "close", sections: [round("a-r1")], pending: [] });
+		writeFileSync(paths.verdicts, JSON.stringify({ "a-r1": approved }));
+		const server = await startVerifyServer({ name: "close", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			await page.addInitScript(() => {
+				localStorage.setItem("verify-mode", "light");
+				window.close = () => Object.assign(window, { closed_: true });
+			});
+			const closed = () => page.evaluate(() => Boolean((window as unknown as { closed_?: boolean }).closed_));
+			await page.goto(`http://127.0.0.1:${server.port}/#overview`);
+			await page.waitForSelector("#end h2");
+			await page.waitForTimeout(1500);
+			expect(await page.textContent("#end")).not.toContain("Closing this tab");
+			expect(await closed()).toBe(false);
+
+			writeBoard(paths, { name: "close", sections: [round("a-r1"), round("b-r1")], pending: [] });
+			await page.goto(`http://127.0.0.1:${server.port}/#b-r1`);
+			await page.reload();
+			await page.waitForSelector("#approve svg");
+			await page.click("#approve");
+			await page.waitForFunction(() => document.getElementById("end")?.textContent?.includes("Closing this tab in"));
+			await page.waitForFunction(() => Boolean((window as unknown as { closed_?: boolean }).closed_), undefined, { timeout: 8000 });
+
+			writeBoard(paths, { name: "close", sections: [round("a-r1"), round("b-r1"), round("c-r1")], pending: [] });
+			await page.goto(`http://127.0.0.1:${server.port}/#c-r1`);
+			await page.reload();
+			await page.waitForSelector("#approve svg");
+			await page.click("#approve");
+			await page.waitForFunction(() => document.getElementById("end")?.textContent?.includes("Closing this tab in"));
+			await page.click("#end button:text('Keep open')");
+			expect(await page.textContent("#end")).toContain("This tab stays open.");
+			await page.waitForTimeout(6000);
+			expect(await closed()).toBe(false);
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test.skipIf(!browser)("zoom opens from the keyboard, a skip then approve resolves, and the app link and narrow rounds show", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-fixes-"));
 		const paths = verifyPaths(dir);

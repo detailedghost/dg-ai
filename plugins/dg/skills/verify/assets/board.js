@@ -130,6 +130,7 @@ function calm() {
 }
 
 function renderToc() {
+  if (!(sections.length > 0 && !pending.length && sections.every(resolved))) sawOpen = true;
   const toc = $("toc");
   toc.replaceChildren();
   const pinned = el("li", "pinned");
@@ -466,6 +467,41 @@ function confetti() {
   }
 }
 
+let sawOpen = false;
+let closeTimer = null;
+function closeSoon(end, actions) {
+  clearInterval(closeTimer);
+  let left = 5;
+  const note = el("p", "muted", "");
+  note.setAttribute("aria-live", "polite");
+  const keep = el("button", "", "Keep open");
+  keep.type = "button";
+  const tick = () => {
+    note.textContent = `Closing this tab in ${left} second${left === 1 ? "" : "s"}.`;
+  };
+  keep.addEventListener("click", () => {
+    clearInterval(closeTimer);
+    sawOpen = false;
+    note.textContent = "This tab stays open.";
+    keep.remove();
+  });
+  actions.append(keep);
+  end.append(note);
+  tick();
+  closeTimer = setInterval(() => {
+    if ($("summary").hidden) return clearInterval(closeTimer);
+    left -= 1;
+    if (left > 0) return tick();
+    clearInterval(closeTimer);
+    sawOpen = false;
+    window.close();
+    setTimeout(() => {
+      note.textContent = "Your browser kept this tab open. You can close it now.";
+      keep.remove();
+    }, 300);
+  }, 1000);
+}
+
 function renderEnd() {
   const end = $("end");
   end.replaceChildren();
@@ -487,6 +523,7 @@ function renderEnd() {
     close.addEventListener("click", () => window.close());
     actions.append(close);
     end.append(actions);
+    if (sawOpen) closeSoon(end, actions);
     return;
   }
   end.append(
