@@ -129,7 +129,7 @@ function openZoom(src, alt) {
 const statusText = (v) => {
   if (!v?.status) return "not reviewed";
   if (v.status === "approved") return `${v.variant ? `picked ${v.variant}` : "approved"}${v.note ? " + note" : ""}`;
-  if (v.status === "more") return "more versions requested";
+  if (v.status === "more") return "more versions";
   return v.status === "changes" ? "sent back" : "skipped";
 };
 
@@ -392,7 +392,7 @@ function setIcon(node, name) {
 }
 for (const node of document.querySelectorAll("[data-icon]")) node.innerHTML = svg(node.dataset.icon);
 
-const decidedText = { approved: "Approved", approvedNote: "Approved + note", changes: "Sent back", skip: "Skipped", more: "More versions requested" };
+const decidedText = { approved: "Approved", approvedNote: "Approved + note", changes: "Sent back", skip: "Skipped", more: "More versions" };
 
 const shotDrafts = {};
 let editing = null;
@@ -728,7 +728,7 @@ async function save(status) {
   }
 }
 
-const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now.", more: "More versions requested. The next round will have new versions to pick from." };
+const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now.", more: "Asked for more versions." };
 
 $("note").addEventListener("input", syncVerdictUi);
 $("change").addEventListener("click", () => {

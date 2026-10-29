@@ -487,6 +487,15 @@ aside .brand .brand-mode + .brand-mode{margin-left:6px}
 .shot-note-btn svg{width:16px;height:16px}
 .shot-note-btn.has-note span::after{content:" ·";color:var(--note)}
 aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--acc-soft)}
+:root{--more:#7c3aed;--more-soft:#f3edff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--more:#c4b5fd;--more-soft:#2a2140}}
+:root[data-theme="dark"]{--more:#c4b5fd;--more-soft:#2a2140}
+#section[data-verdict="more"]{border-color:var(--more);box-shadow:inset 4px 0 0 var(--more),var(--shadow)}
+#section[data-verdict="more"] .picker{border-color:var(--more)}
+.dot.more,.chip.more,.decided-pill.more,.pill.more,.tag.more{background:var(--more-soft);border-color:var(--more);color:var(--more)}
+.note-pop.more{border-color:var(--more)}
+.pk-more{color:var(--more)!important;border-color:color-mix(in srgb,var(--more) 45%,transparent)!important}
+.pk-more:hover{background:var(--more-soft)!important}
 
 .checks{margin:0 0 14px}
 .checks .pill{font-family:var(--font)}
