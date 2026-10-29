@@ -186,7 +186,7 @@ function gitlabFixture() {
 		CI_MERGE_REQUEST_PROJECT_PATH: "acme/widgets",
 		CI_MERGE_REQUEST_PROJECT_URL: "https://gitlab.com/acme/widgets",
 		CI_MERGE_REQUEST_SOURCE_PROJECT_PATH: "acme/widgets",
-		CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "main",
+		CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "release/1.0+hotfix",
 		THRASHLEY_WORK: dir,
 		THRASHLEY_POLICY: ".gitlab/missing.yml",
 		DG_THRASH_DRY_RUN: "0",
@@ -220,6 +220,7 @@ describe("thrash action in GitLab CI", () => {
 		expect(published.code, published.output).toBe(0);
 		expect(JSON.parse(readFileSync(f.capture, "utf8"))).toMatchObject({ reviewer_state: "reviewed" });
 		expect(readFileSync(f.calls, "utf8")).toContain("merge_requests/12/approve -X POST -f sha=abc123");
+		expect(readFileSync(f.calls, "utf8")).toContain("raw?ref=release%2F1.0%2Bhotfix");
 	});
 
 	test("publish refuses a newer head without posting", () => {
