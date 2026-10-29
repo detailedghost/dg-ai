@@ -30,6 +30,7 @@ import type { CommandPushTarget } from "../../src/phone/push";
 import {
 	addContact,
 	addInvite,
+	bumpAdmissionEpoch,
 	DEFAULT_NUMBER_KEY_ID,
 	findContactByHandle,
 	findContactByNpub,
@@ -95,6 +96,41 @@ function deps(overrides: Partial<ListenerDeps> = {}): ListenerDeps {
 		schedule: noopSchedule(),
 		onSignal: () => {},
 		...overrides,
+	};
+}
+
+function holdFirstWatchQuery() {
+	const scheduled: { delay: number; run: () => void }[] = [];
+	const schedule: Schedule = (delay, run) => {
+		scheduled.push({ delay, run });
+		return () => {};
+	};
+	let holding = false;
+	let queried = false;
+	let release: () => void = () => {};
+	const released = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	return {
+		schedule,
+		createPool: () => ({
+			...pool,
+			querySync: async (...args: Parameters<FakePool["querySync"]>) => {
+				const events = await pool.querySync(...args);
+				if (holding) {
+					queried = true;
+					await released;
+				}
+				return events;
+			},
+			close: () => {},
+		}),
+		arm: () => {
+			holding = true;
+		},
+		tick: () => scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run(),
+		queried: () => queried,
+		release,
 	};
 }
 
@@ -383,6 +419,72 @@ describe("runListener", () => {
 
 		expect(findContactByNpub(db, second.npub)).toBeUndefined();
 		expect(db.unreadMessages().some((row) => row.text === "second")).toBe(false);
+	});
+
+	it("does not store a caught-up message from a contact removed while the catch-up was in flight", async () => {
+		const numberSk = setUpNumber("ee".repeat(32));
+		const caller = identity();
+		addContact(db, { npub: caller.npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		const held = holdFirstWatchQuery();
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule: held.schedule, createPool: held.createPool }));
+		await ready;
+		pool.events.push(wrap("from a removed contact", caller.sk, getPublicKey(numberSk)));
+		bumpAdmissionEpoch(db);
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		phoneContactsRemove("+barron", makePhoneDeps({ home, pool, write: () => {}, now: NOW }));
+		held.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(db.unreadMessages().some((row) => row.text === "from a removed contact")).toBe(false);
+	});
+
+	it("does not create a contact from a caught-up ring whose number secret was rotated while the catch-up was in flight", async () => {
+		const secret = "ee".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		const held = holdFirstWatchQuery();
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule: held.schedule, createPool: held.createPool }));
+		await ready;
+		pool.events.push(ring("old card", caller.sk, getPublicKey(numberSk), secret, "late"));
+		bumpAdmissionEpoch(db);
+		held.arm();
+		held.tick();
+		await waitUntil(() => held.queried());
+		writeNumber(db, { secret: "ff".repeat(32), as: "dg" });
+		held.release();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, caller.npub)).toBeUndefined();
+	});
+
+	it("adds an invite relay while an --on-message hook is still running", async () => {
+		setUpNumber("ab".repeat(32));
+		writeRelays(db, ["wss://saved.example"]);
+		const scheduled: { delay: number; run: () => void }[] = [];
+		const schedule: Schedule = (delay, run) => {
+			scheduled.push({ delay, run });
+			return () => {};
+		};
+		const hook: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "await Bun.sleep(2500)"], timeoutMs: 10_000 };
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal, schedule, hook }));
+		await ready;
+		addContact(db, { npub: identity().npub, handle: "barron", relays: DEFAULT_RELAYS, keyId: numberKeyId(db), addedAt: NOW, via: "accept" });
+		db.addMessage({ id: "pending", direction: "in", ts: NOW, sender: "npub1w", contact: "npub1w", text: "pending", call: 0 });
+		addInvite(db, { secret: "33".repeat(32), expiresAt: NOW + 10_000, asName: "dg", keyId: numberKeyId(db), relays: ["wss://invite-late.example"] });
+		scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+
+		await waitUntil(() => pool.relaysUsed.some((relays) => relays.includes("wss://invite-late.example")), 1500);
+		stop();
+		await run;
 	});
 
 	it("subscribes to an invite relay saved after startup, without a restart", async () => {

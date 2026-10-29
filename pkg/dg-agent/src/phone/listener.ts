@@ -35,6 +35,7 @@ import {
 	isHandle,
 	nextFreeHandle,
 	readAdmissionEpoch,
+	readNumber,
 	readCursor,
 	readRelays,
 	notePhoneDrift,
@@ -601,29 +602,29 @@ function admitMessage(
 	newContact?: NewContact,
 	reaccept?: Reaccept,
 ): boolean {
-	if (newContact && !findContactByNpub(db, newContact.npub)) {
-		const stored = db.transaction(() => {
+	return db.transaction(() => {
+		if (newContact && !findContactByNpub(db, newContact.npub)) {
+			if (newContact.numberSecret !== undefined && readNumber(db)?.secret !== newContact.numberSecret) return false;
 			if (newContact.inviteSecret && !consumeInvite(db, newContact.inviteSecret)) return false;
 			const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
 			const handle = nextFreeHandle(db, base);
 			const contactRelays = newContact.relays?.length ? newContact.relays : relays;
 			addContact(db, { npub: newContact.npub, handle, relays: contactRelays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
 			addPhoneNotice(db, `new contact +${handle}`, now());
-			return true;
+		}
+		if (!findContactByNpub(db, message.from)) return false;
+		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
+		db.addMessage({
+			id: message.id,
+			direction: "in",
+			ts: message.ts,
+			sender: message.from,
+			contact: message.from,
+			text: message.text,
+			call: message.call ? 1 : 0,
 		});
-		if (!stored) return false;
-	}
-	if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
-	db.addMessage({
-		id: message.id,
-		direction: "in",
-		ts: message.ts,
-		sender: message.from,
-		contact: message.from,
-		text: message.text,
-		call: message.call ? 1 : 0,
+		return true;
 	});
-	return true;
 }
 
 /**
@@ -741,7 +742,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		replayedEpoch = nextEpoch;
 		rememberAdmission();
 		writeCursor(deps.db, seen.cursor);
-		await hookRunner.notify();
+		void hookRunner.notify();
 		relays = wanted;
 		sub.close();
 		if (stopped) return;

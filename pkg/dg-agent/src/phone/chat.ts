@@ -25,6 +25,7 @@ export type NewContact = {
 	via: "number" | "invite";
 	suggestedHandle: string;
 	inviteSecret?: string;
+	numberSecret?: string;
 	/** The matched invite's own relays; unset for a number-secret admission, which uses the default relays. */
 	relays?: string[];
 };
@@ -118,7 +119,7 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 			admitted: {
 				message: { ...message, call: true },
 				gate: { ...gate, contacts },
-				newContact: { pubkeyHex: rumor.pubkey, npub, keyId, via: "number", suggestedHandle: handle },
+				newContact: { pubkeyHex: rumor.pubkey, npub, keyId, via: "number", suggestedHandle: handle, numberSecret: gate.secrets.number },
 			},
 		};
 	}
