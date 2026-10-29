@@ -28,6 +28,7 @@ Dante picks a verdict per round:
 | Approve with a note | Approved. The note starts a follow-up round. |
 | Needs changes | A note is required. The owning agent reworks the item. |
 | Skip | The item stays open. |
+| More versions | Only on a round with versions. None fits yet. Add a new round with more versions. |
 
 `verify status` and `verify wait` read the verdicts.
 `verify rerun` captures the next round for each item that was sent back or approved with a note.
@@ -42,6 +43,7 @@ The open tab finds the new round by itself.
 | `wait <name> [--timeout=SEC] [--json]` | Block until every round has a verdict, then print the same lines as `status`. Exit 1 and print `timeout` when time runs out. The default is 900 seconds. |
 | `watch <name>` | Print one line per new verdict until stopped. |
 | `stop <name>` | Stop the board server. |
+| `title <name> <text>` | Set the board title shown in the nav and the browser tab. Empty text clears it, and the board then shows `<name> · review`. |
 | `capture <name> [--manifest=FILE] [--items=a,b] [--summary=S]` | Capture items from the manifest. An item with no round gets round 1. An item with rounds gets the next round. |
 | `rerun <name> [--summary=S]` | Capture the next round only for items whose latest round was sent back or approved with a note. Prints `nothing-to-recapture` when there are none. |
 | `add <name> <id> --title=T ...` | Add a round from screenshots you took yourself. Use `--shots=DIR --prefix=P` to pair `P*before-<x>.png` with `P*after-<x>.png`, or repeat `--img="label\|before\|after[\|reason]"`. Add `--follows=ID --round=N` for a later round. Add `--variant=KEY [--variant-label=L] [--variant-summary=S]` to add one version of the round; see [Versions](#versions). |
@@ -118,11 +120,16 @@ Put `light` or `dark` in the names of shots you add yourself.
 The compare menu shows a pair side by side, as a slider, as a fade, as a flip, or as a difference image. It falls back to side by side when a pair has no before.
 The collapse button in the panel head shrinks the panel to an icon rail. Expanding it resets the panel to the default width.
 The note field grows with its text and can be resized. Shift+Enter adds a line. Enter alone does not save.
-Each screenshot has its own note button.
+Each screenshot has its own "Note on this" button.
 A verdict keeps the screenshot notes in `shotNotes` and the main note in `mainNote`.
 `note` holds the main note and one `[label] text` line per screenshot note, so `status`, `wait`, and `watch` show all of them.
 A screenshot note alone counts as a note: Approve becomes approve with a note, and Needs changes is allowed.
 When several items wait, only the first one in each list animates.
+The browser tab shows the number of rounds that wait, the open round, and the board title, for example `(2) Settings r2 · Settings polish`.
+It adds `● New round` when a round arrives while the tab is in the background.
+The tab icon shows the same count in a red dot.
+The bell button in the panel head turns on desktop alerts. An alert shows only when a round arrives and the tab is in the background.
+`status` and `watch` print `more versions` for a round where Dante asked for more versions. `rerun` treats it like a round that was sent back.
 `wait` returns when every round has a verdict. Read its lines. They name each item, its rounds, and the latest note.
 `ALL APPROVED` shows only when every item ends in a plain approve and no agent work is pending.
 
@@ -170,7 +177,7 @@ Use `--summary` to say in a few words what changed. Without it, the summary is t
 The board is static files that ship with the skill in `assets/`: `index.html`, `board.js`, and `board.css`.
 The icons come from `/dg:proto`'s `assets/dg-icons.js`, so both skills draw the same toolbar.
 The HTML has no inline script and no inline style.
-The server sends a Content-Security-Policy that allows only `'self'` for scripts, styles, images, and connections.
+The server sends a Content-Security-Policy that allows only `'self'` for scripts, styles, and connections. Images also allow `data:`, so the board can draw its tab icon.
 Nothing is loaded from a CDN.
 
 Screenshots and verdicts stay in `.agents/verify/<name>/`.

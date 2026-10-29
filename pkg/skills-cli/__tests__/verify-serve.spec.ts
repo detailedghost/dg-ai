@@ -45,6 +45,8 @@ describe("verify server", () => {
 		const url = await boot();
 		const page = await fetch(url);
 		expect(page.headers.get("content-security-policy")).toBe(VERIFY_CSP);
+		expect(VERIFY_CSP).toContain("script-src 'self';");
+		expect(VERIFY_CSP).toContain("img-src 'self' data:;");
 		const html = await page.text();
 		expect(html).toBe(readFileSync(join(ASSETS, "index.html"), "utf8"));
 		expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script src="/board/icons.js">', '<script src="/board/board.js">']);

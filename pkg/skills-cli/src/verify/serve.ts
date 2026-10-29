@@ -4,7 +4,7 @@ import { resolveSkillAsset } from "../utils/skill-assets";
 import { mergeVerdicts, readBoard, readVerdicts, VerifyRequestError, type VerifyPaths } from "./board";
 
 export const VERIFY_CSP =
-	"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+	"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 const ASSETS: Record<string, { skill: string; file: string; type: string }> = {
 	"/": { skill: "verify", file: "index.html", type: "text/html; charset=utf-8" },

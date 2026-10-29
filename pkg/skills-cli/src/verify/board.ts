@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { writeSentinel } from "../prototype/sentinels";
 import { assertVerifyName } from "./names";
 
-export type VerdictStatus = "approved" | "changes" | "skip";
+export type VerdictStatus = "approved" | "changes" | "skip" | "more";
 
 export interface Verdict {
 	status: VerdictStatus;
@@ -57,6 +57,7 @@ export interface Pending {
 
 export interface Board {
 	name: string;
+	title?: string;
 	sections: Section[];
 	pending: Pending[];
 }
@@ -91,7 +92,7 @@ export interface VerifyPaths {
 }
 
 const NOTE_MAX = 4000;
-const STATUSES = new Set<string>(["approved", "changes", "skip"]);
+const STATUSES = new Set<string>(["approved", "changes", "skip", "more"]);
 const VARIANT_KEY = /^[A-Za-z0-9]{1,16}$/;
 
 export function assertVariantKey(key: string): void {
@@ -137,7 +138,9 @@ export function readBoard(paths: VerifyPaths, name: string): Board {
 	const record = raw as Partial<Board>;
 	if (!Array.isArray(record.sections) || !Array.isArray(record.pending))
 		throw new Error("board.json needs sections and pending arrays");
-	return { name, sections: record.sections, pending: record.pending };
+	const board: Board = { name, sections: record.sections, pending: record.pending };
+	if (typeof record.title === "string" && record.title) board.title = record.title;
+	return board;
 }
 
 export function writeBoard(paths: VerifyPaths, board: Board): void {
@@ -195,7 +198,7 @@ export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, a
 		const record = value as Record<string, unknown> | null;
 		const status = record?.status;
 		if (typeof status !== "string" || !STATUSES.has(status))
-			throw new VerifyRequestError("status must be approved, changes, or skip", 400);
+			throw new VerifyRequestError("status must be approved, changes, skip, or more", 400);
 		const note = typeof record?.note === "string" ? record.note.trim() : "";
 		if (status === "changes" && !note) throw new VerifyRequestError("a note is required", 400);
 		if (note.length > NOTE_MAX) throw new VerifyRequestError(`note must be at most ${NOTE_MAX} characters`, 400);
@@ -232,6 +235,7 @@ export function verdictLabel(verdict?: Verdict): string {
 	if (!verdict) return "unreviewed";
 	if (verdict.status === "approved")
 		return `${verdict.variant ? `picked ${verdict.variant}` : "approved"}${verdict.note ? "+note" : ""}`;
+	if (verdict.status === "more") return "more versions";
 	return verdict.status === "changes" ? "sent back" : "skipped";
 }
 
@@ -303,11 +307,11 @@ export function dropPending(board: Board, key: string): Board {
 	return { ...board, pending: board.pending.filter((entry) => entry.key !== key) };
 }
 
-/** Chains whose latest round was sent back or approved with a note and has no next round yet. */
+/** Chains whose latest round was sent back, approved with a note, or asked for more versions, with no next round yet. */
 export function reworkChains(board: Board, verdicts: Record<string, Verdict>): Chain[] {
 	return chains(board).filter((chain) => {
 		if (chain.waiting) return false;
 		const verdict = verdicts[chain.last.id];
-		return verdict?.status === "changes" || (verdict?.status === "approved" && verdict.note !== "");
+		return verdict?.status === "changes" || verdict?.status === "more" || (verdict?.status === "approved" && verdict.note !== "");
 	});
 }

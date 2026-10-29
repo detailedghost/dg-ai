@@ -74,6 +74,88 @@ describe("review board in a browser", () => {
 		}
 	});
 
+	test.skipIf(!browser)("the tab title, favicon, and desktop alert report waiting rounds, and more versions saves", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-tab-"));
+		const paths = verifyPaths(dir);
+		const image = (label: string) => ({ label, before: "missing", after: "missing" });
+		const nav = {
+			id: "nav-r1",
+			title: "Nav",
+			round: 1,
+			images: [],
+			variants: [
+				{ key: "A", images: [image("desktop · light · a")] },
+				{ key: "B", images: [image("desktop · light · b")] },
+			],
+		};
+		const board = { name: "tab", title: "Settings polish", sections: [nav, { id: "home-r1", title: "Home", round: 1, images: [image("desktop · light · home")] }], pending: [] };
+		writeBoard(paths, board);
+		const server = await startVerifyServer({ name: "tab", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			page.on("console", (message) => {
+				if (message.text().includes("Content Security Policy")) errors.push(message.text());
+			});
+			await page.addInitScript(() => {
+				localStorage.setItem("verify-mode", "light");
+				const shown: { title: string; body: string }[] = [];
+				Object.assign(window, { shown });
+				class FakeNotification {
+					static permission = "default";
+					static requestPermission = async () => {
+						FakeNotification.permission = "granted";
+						return "granted";
+					};
+					onclick: (() => void) | null = null;
+					constructor(title: string, options: { body: string }) {
+						shown.push({ title, body: options.body });
+					}
+					close() {}
+				}
+				Object.assign(window, { Notification: FakeNotification });
+			});
+			await page.goto(`http://127.0.0.1:${server.port}/#nav-r1`);
+			await page.waitForSelector("#notify svg");
+			expect(await page.title()).toBe("(2) Nav r1 · Settings polish");
+			expect(await page.textContent("aside h1")).toBe("Settings polish");
+			expect(await page.getAttribute("#favicon", "href")).toStartWith("data:image/png;base64,");
+			expect(await page.textContent(".shot-note-btn")).toBe("Note on this");
+
+			await page.click("#notify");
+			expect(await page.getAttribute("#notify", "aria-pressed")).toBe("true");
+			expect(await page.evaluate(() => localStorage.getItem("verify-notify"))).toBe("1");
+			await page.evaluate(() => Object.defineProperty(document, "hidden", { configurable: true, get: () => true }));
+			writeBoard(paths, { ...board, sections: [...board.sections, { id: "forms-r1", title: "Forms", round: 1, images: [image("desktop · light · forms")] }] });
+			await page.waitForFunction(() => document.title.includes("● New round"), undefined, { timeout: 15_000 });
+			expect(await page.title()).toBe("(3) ● New round · Forms r1 · Settings polish");
+			expect(await page.evaluate(() => (window as unknown as { shown: unknown[] }).shown)).toEqual([
+				{ title: "Settings polish: a round is ready", body: "Forms" },
+			]);
+			await page.evaluate(() => {
+				Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+				document.dispatchEvent(new Event("visibilitychange"));
+			});
+			expect(await page.title()).toBe("(3) Forms r1 · Settings polish");
+
+			await page.goto(`http://127.0.0.1:${server.port}/#nav-r1`);
+			await page.reload();
+			await page.waitForSelector("#v-more svg");
+			await page.click("#v-more");
+			await page.waitForFunction(() => location.hash === "#home-r1");
+			expect(readVerdicts(paths)["nav-r1"]).toMatchObject({ status: "more", note: "" });
+			expect(readVerdicts(paths)["nav-r1"]?.variant).toBeUndefined();
+			expect(await page.title()).toBe("(2) Home r1 · Settings polish");
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test.skipIf(!browser)("compare modes, the compact nav, and the multi-line note work under the CSP", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-compare-"));
 		const paths = verifyPaths(dir);

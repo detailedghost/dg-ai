@@ -46,6 +46,7 @@ export const USAGE = `Usage: verify <command> <name> [options]
   watch <name>                                  Print one line per new verdict until stopped
   wait <name> [--timeout=SEC] [--json]          Block until every round has a verdict, then print status
   stop <name>                                   Stop the board server
+  title <name> <text>                           Set the board title shown in the nav and the tab; empty text clears it
   capture <name> [--manifest=FILE] [--items=a,b] [--summary=S] [--engine=http|playwright]
                                                 Capture items from the manifest as their next round
   rerun <name> [--summary=S] [--engine=http|playwright]
@@ -307,6 +308,15 @@ function runAdd(name: string, paths: VerifyPaths, flags: Flags): number {
 	return 0;
 }
 
+function runTitle(name: string, paths: VerifyPaths, flags: Flags): number {
+	const text = flags.rest.slice(1).join(" ").trim();
+	if (text.length > 120) return fail("title must be at most 120 characters");
+	const { title: _old, ...board } = readBoard(paths, name);
+	writeBoard(paths, text ? { ...board, title: text } : board);
+	write(text ? `title ${name}: ${text}\n` : `title ${name}: cleared\n`);
+	return 0;
+}
+
 function runPending(name: string, paths: VerifyPaths, flags: Flags, sub: string): number {
 	const key = flags.rest[1];
 	if (!key) return fail("pending needs <name> <key>");
@@ -419,6 +429,7 @@ export async function main(argv: string[]): Promise<number | undefined> {
 		if (command === "watch") return await runWatch(paths);
 		if (command === "add") return runAdd(name, paths, flags);
 		if (command === "pending") return runPending(name, paths, flags, sub ?? "");
+		if (command === "title") return runTitle(name, paths, flags);
 		if (command === "capture") return await runCapture(name, paths, flags);
 		if (command === "rerun") return await runRerun(name, paths, flags);
 		process.stderr.write(USAGE);

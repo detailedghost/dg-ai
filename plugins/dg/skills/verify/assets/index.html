@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Verify board</title>
+<link id="favicon" rel="icon" href="data:,">
 <link rel="stylesheet" href="/board/board.css">
 </head>
 <body>
@@ -16,6 +17,7 @@
         <p id="progress" class="muted" aria-live="polite"></p>
       </div>
       <button type="button" id="mode" class="ic brand-mode" data-icon="moon"></button>
+      <button type="button" id="notify" class="ic brand-mode" data-icon="bell" aria-pressed="false" title="Desktop alerts when a round is ready" aria-label="Desktop alerts when a round is ready"></button>
       <button type="button" id="nav-compact" class="ic brand-mode" data-icon="left" aria-pressed="false" title="Compact sections panel" aria-label="Compact sections panel"></button>
     </div>
     <div class="meter" aria-hidden="true"><span id="meter"></span></div>
@@ -65,6 +67,7 @@
             <button type="button" id="v-prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous version (←)" aria-label="Previous version"></button>
             <span id="v-label" class="v-label" aria-live="polite"></span>
             <button type="button" id="v-next" class="ic" data-icon="right" aria-keyshortcuts="ArrowRight" title="Next version (→)" aria-label="Next version"></button>
+            <button type="submit" value="more" id="v-more" class="ic pk-more" data-icon="plus" title="Request more versions for the next round" aria-label="Request more versions for the next round"></button>
             <span class="pk-sep" aria-hidden="true"></span>
           </div>
           <button type="button" id="prev" class="ic" data-icon="left" aria-keyshortcuts="ArrowLeft" title="Previous (←)" aria-label="Previous section"></button>

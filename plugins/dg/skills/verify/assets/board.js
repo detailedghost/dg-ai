@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const marks = { approved: "✓", changes: "✎", skip: "–" };
+const marks = { approved: "✓", changes: "✎", skip: "–", more: "+" };
 const verdictCls = (v) => (v?.status === "approved" && v.note ? "note" : v?.status || "");
 const widthOf = (label) => (label.match(/mobile|tablet|desktop/) || ["other"])[0];
 let sections = [];
@@ -129,6 +129,7 @@ function openZoom(src, alt) {
 const statusText = (v) => {
   if (!v?.status) return "not reviewed";
   if (v.status === "approved") return `${v.variant ? `picked ${v.variant}` : "approved"}${v.note ? " + note" : ""}`;
+  if (v.status === "more") return "more versions requested";
   return v.status === "changes" ? "sent back" : "skipped";
 };
 
@@ -266,6 +267,7 @@ function renderToc() {
   $("progress").textContent = `${done} of ${sections.length} rounds reviewed${pending.length ? ` · ${pending.length} in progress` : ""}`;
   $("meter").style.width = sections.length ? `${(done / sections.length) * 100}%` : "0";
   calm();
+  updateTab();
 }
 
 function renderSection(stay = false) {
@@ -390,7 +392,7 @@ function setIcon(node, name) {
 }
 for (const node of document.querySelectorAll("[data-icon]")) node.innerHTML = svg(node.dataset.icon);
 
-const decidedText = { approved: "Approved", approvedNote: "Approved + note", changes: "Sent back", skip: "Skipped" };
+const decidedText = { approved: "Approved", approvedNote: "Approved + note", changes: "Sent back", skip: "Skipped", more: "More versions requested" };
 
 const shotDrafts = {};
 let editing = null;
@@ -415,9 +417,9 @@ function shotNote(s, label, head) {
     else wrap.hidden = true;
     return wrap;
   }
-  const btn = el("button", "ic shot-note-btn");
+  const btn = el("button", "shot-note-btn");
   btn.type = "button";
-  setIcon(btn, "note");
+  btn.innerHTML = `${svg("note")}<span>Note on this</span>`;
   btn.title = `Note on ${label}`;
   btn.setAttribute("aria-label", `Note on ${label}`);
   const input = el("input");
@@ -461,7 +463,7 @@ function setLocked(locked, v = {}) {
   const key = keyOf(v.status, v.note);
   $("note").readOnly = locked;
   $("note").value = locked ? "" : $("note").dataset.saved || "";
-  for (const b of document.querySelectorAll(".pk-approve,.pk-reject,.pk-skip,.pk-note")) b.hidden = locked;
+  for (const b of document.querySelectorAll(".pk-approve,.pk-reject,.pk-skip,.pk-note,.pk-more")) b.hidden = locked;
   showNote(!locked && Boolean($("note").value));
   $("decided-pill").hidden = !locked;
   $("change").hidden = !locked;
@@ -522,6 +524,7 @@ function renderEnd() {
   end.replaceChildren();
   const open = sections.filter((s) => !successorOf(s) && !pending.some((p) => p.follows === s.id));
   const changes = open.filter((s) => verdicts[s.id]?.status === "changes");
+  const moreReq = open.filter((s) => verdicts[s.id]?.status === "more");
   const followUps = open.filter((s) => verdicts[s.id]?.status === "approved" && verdicts[s.id]?.note);
   const skipped = sections.filter((s) => verdicts[s.id]?.status === "skip");
   const allGood = sections.length > 0 && !pending.length && sections.every(resolved);
@@ -551,6 +554,7 @@ function renderEnd() {
     list.append(li);
   }
   for (const s of changes) list.append(item("sent back", "changes", s.title));
+  for (const s of moreReq) list.append(item("more versions", "more", s.title));
   for (const s of followUps) list.append(item("follow-up", "", `${s.title} · approved with a note`));
   for (const s of skipped) list.append(item("skipped", "skip", s.title));
   if (list.children.length) end.append(list);
@@ -574,7 +578,7 @@ function chainState(chain) {
   const v = verdicts[chain.last.id];
   if (!v?.status) return "Needs review";
   if (v.status === "skip") return "Skipped";
-  if (v.status === "changes" || v.note) return "Waiting on agent";
+  if (v.status === "changes" || v.status === "more" || v.note) return "Waiting on agent";
   return "Done";
 }
 
@@ -634,8 +638,8 @@ function applyManifest(text) {
   pending = m.pending || [];
   if (m.name) {
     $("board-title").textContent = `${m.name} · review`;
-    document.title = `Verify ${m.name}`;
   }
+  if (m.title) document.querySelector("aside h1").textContent = m.title;
 }
 
 async function poll() {
@@ -651,6 +655,7 @@ async function poll() {
     const changed = sections.filter((s) => old.has(s.id) && old.get(s.id) !== JSON.stringify(s));
     for (const s of changed) revs[s.id] = Date.now();
     const arrived = sections.filter((s) => !old.has(s.id) && !verdicts[s.id]?.status);
+    if (arrived.length) alertArrival(arrived);
     if (!current) {
       if (arrived.length) return go(sections.indexOf(arrived[0]));
       return refreshSummary();
@@ -723,7 +728,7 @@ async function save(status) {
   }
 }
 
-const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now." };
+const sentMsg = { approved: "Approved.", approvedNote: "Approved. Your note goes back as a follow-up round.", changes: "Sent back for rework.", skip: "Skipped for now.", more: "More versions requested. The next round will have new versions to pick from." };
 
 $("note").addEventListener("input", syncVerdictUi);
 $("change").addEventListener("click", () => {
@@ -1000,4 +1005,104 @@ $("sec-title").tabIndex = -1;
     }
     apply(on);
   });
+})();
+
+let unseen = 0;
+const boardName = () => document.querySelector("aside h1")?.textContent.trim() || "Review board";
+function drawFavicon(count) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  g.fillStyle = css.getPropertyValue("--acc").trim() || "#0f766e";
+  g.beginPath();
+  g.roundRect(4, 4, 56, 56, 14);
+  g.fill();
+  g.fillStyle = "#fff";
+  g.font = "bold 36px system-ui, sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText("V", 32, 35);
+  if (count > 0) {
+    g.fillStyle = "#dc2626";
+    g.beginPath();
+    g.arc(46, 18, 16, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#fff";
+    g.font = "bold 20px system-ui, sans-serif";
+    g.fillText(count > 9 ? "9+" : String(count), 46, 19);
+  }
+  $("favicon").href = c.toDataURL("image/png");
+}
+function updateTab() {
+  const waiting = sections.filter(needsAttention).length;
+  const s = !$("section").hidden && sections[index];
+  const where = s ? `${s.title}${s.round ? ` r${s.round}` : ""}` : "Overview";
+  const lead = unseen ? "● New round · " : "";
+  const count = waiting ? `(${waiting}) ` : "";
+  document.title = `${count}${lead}${where} · ${boardName()}`;
+  drawFavicon(waiting);
+}
+function alertArrival(arrived) {
+  if (document.hidden) unseen += arrived.length;
+  updateTab();
+  let on = false;
+  try {
+    on = localStorage.getItem("verify-notify") === "1";
+  } catch {}
+  if (!on || !document.hidden || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const n = new Notification(`${boardName()}: ${arrived.length === 1 ? "a round is" : `${arrived.length} rounds are`} ready`, {
+    body: arrived.map((s) => s.title).join(", "),
+    tag: `verify-${location.search}`,
+  });
+  n.onclick = () => {
+    window.focus();
+    n.close();
+  };
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && unseen) {
+    unseen = 0;
+    updateTab();
+  }
+});
+(() => {
+  const btn = $("notify");
+  const sync = () => {
+    let on = false;
+    try {
+      on = localStorage.getItem("verify-notify") === "1";
+    } catch {}
+    const blocked = typeof Notification === "undefined" || Notification.permission === "denied";
+    btn.setAttribute("aria-pressed", String(on && !blocked));
+    btn.classList.toggle("on", on && !blocked);
+    const label = blocked ? "Desktop alerts are blocked in this browser" : on ? "Desktop alerts are on. Turn them off" : "Turn on desktop alerts when a round is ready";
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  };
+  btn.addEventListener("click", async () => {
+    if (typeof Notification === "undefined") return toast("This browser does not support desktop alerts.");
+    let on = false;
+    try {
+      on = localStorage.getItem("verify-notify") === "1";
+    } catch {}
+    if (on) {
+      try {
+        localStorage.setItem("verify-notify", "");
+      } catch {}
+      toast("Desktop alerts are off. The tab title and icon still show what is waiting.");
+      return sync();
+    }
+    const p = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (p !== "granted") {
+      toast("Desktop alerts were not allowed. The tab title and icon still show what is waiting.");
+      return sync();
+    }
+    try {
+      localStorage.setItem("verify-notify", "1");
+    } catch {}
+    toast("Desktop alerts are on. You get one when a new round is ready and this tab is in the background.");
+    sync();
+  });
+  sync();
 })();

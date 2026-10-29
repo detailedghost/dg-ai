@@ -207,12 +207,19 @@ describe("verify review", () => {
 		writeFileSync(paths.verdicts, JSON.stringify({ "nav-r1": { status: "approved", note: "", at: "t", variant: "B" } }));
 		expect((await run(["status", "review", `--dir=${session}`])).out).toBe("✓ Nav | r1 picked B\nALL APPROVED\n");
 		expect((await run(["add", "review", "nav-r1", "--variant=a/b", ...flags])).code).toBe(1);
+		expect((await run(["title", "review", "Nav", "polish", `--dir=${session}`])).out).toBe("title review: Nav polish\n");
+		expect(readBoard(paths, "review")).toMatchObject({ title: "Nav polish", sections: [{ id: "nav-r1" }] });
+		expect((await run(["title", "review", `--dir=${session}`])).out).toBe("title review: cleared\n");
+		expect(readBoard(paths, "review").title).toBeUndefined();
+		expect((await run(["title", "review", "x".repeat(121), `--dir=${session}`])).code).toBe(1);
+		writeFileSync(paths.verdicts, JSON.stringify({ "nav-r1": { status: "more", note: "", at: "t" } }));
+		expect((await run(["status", "review", `--dir=${session}`])).out).toBe("· Nav | r1 more versions\n1 open\n");
 	});
 
 	test("help lists every command, a missing name fails, and sessions stay out of git", async () => {
 		const help = await run(["--help"]);
 		expect(help.code).toBe(0);
-		for (const command of ["serve", "status", "add", "pending", "watch", "wait", "stop", "capture", "rerun"])
+		for (const command of ["serve", "status", "add", "pending", "watch", "wait", "stop", "title", "capture", "rerun"])
 			expect(help.out).toContain(`  ${command} `);
 		expect((await run(["status"])).code).toBe(1);
 		dir = mkdtempSync(join(tmpdir(), "dg-verify-missing-"));

@@ -106,6 +106,7 @@ describe("status", () => {
 				verdictLabel,
 			),
 		).toEqual(["unreviewed", "approved", "approved+note", "sent back", "skipped", "picked C", "picked C+note"]);
+		expect(verdictLabel(verdict("more"))).toBe("more versions");
 	});
 });
 
@@ -145,7 +146,7 @@ describe("rounds and pending", () => {
 
 	test("rework picks rounds sent back or approved with a note that have no next round", () => {
 		const b = board(
-			[section("a-r1"), section("b-r1"), section("c-r1"), section("d-r1"), section("e-r1")],
+			[section("a-r1"), section("b-r1"), section("c-r1"), section("d-r1"), section("e-r1"), section("f-r1")],
 			[{ key: "e-r2", title: "e", follows: "e-r1" }],
 		);
 		const picks = reworkChains(b, {
@@ -154,8 +155,9 @@ describe("rounds and pending", () => {
 			"c-r1": verdict("approved"),
 			"d-r1": verdict("skip"),
 			"e-r1": verdict("changes", "redo"),
+			"f-r1": verdict("more"),
 		});
-		expect(picks.map((chain) => chain.last.id)).toEqual(["a-r1", "b-r1"]);
+		expect(picks.map((chain) => chain.last.id)).toEqual(["a-r1", "b-r1", "f-r1"]);
 	});
 });
 
@@ -165,8 +167,9 @@ describe("files", () => {
 		const paths = verifyPaths(dir);
 		expect(readBoard(paths, "review")).toEqual({ name: "review", sections: [], pending: [] });
 		expect(readVerdicts(paths)).toEqual({});
-		writeBoard(paths, board([section("a-r1")]));
+		writeBoard(paths, { ...board([section("a-r1")]), title: "Settings polish" });
 		expect(readBoard(paths, "review").sections.map((entry) => entry.id)).toEqual(["a-r1"]);
+		expect(readBoard(paths, "review").title).toBe("Settings polish");
 	});
 
 	test("merging verdicts validates status, note, and section", () => {
@@ -174,10 +177,10 @@ describe("files", () => {
 		const paths = verifyPaths(dir);
 		const b = board([section("a-r1"), section("b-r1")]);
 		mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "  tidy  " } }, "t1");
-		mergeVerdicts(paths, b, { "b-r1": { status: "skip" } }, "t2");
+		mergeVerdicts(paths, b, { "b-r1": { status: "more" } }, "t2");
 		expect(readVerdicts(paths)).toEqual({
 			"a-r1": { status: "approved", note: "tidy", at: "t1" },
-			"b-r1": { status: "skip", note: "", at: "t2" },
+			"b-r1": { status: "more", note: "", at: "t2" },
 		});
 		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "changes", note: " " } })).toThrow("a note is required");
 		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "reject", note: "n" } })).toThrow("status must be");
