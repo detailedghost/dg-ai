@@ -256,8 +256,10 @@ export function statusReport(board: Board, verdicts: Record<string, Verdict>): S
 	};
 }
 
+/** Fold a note onto one line, then cut it to max characters. */
 export function clip(text: string, max: number): string {
-	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+	const line = text.trim().replace(/\s*\n\s*/g, " / ");
+	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
 /** One line per item, then ALL APPROVED or the open count. */

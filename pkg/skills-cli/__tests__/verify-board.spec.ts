@@ -93,6 +93,9 @@ describe("status", () => {
 		const clipped = formatStatus(statusReport(board([section("a-r1")]), { "a-r1": verdict("changes", "y".repeat(200)) }), false);
 		expect(clipped).toContain(`${"y".repeat(159)}…`);
 		expect(formatStatus(statusReport(board([section("a-r1")]), { "a-r1": verdict("approved") }), false)).toBe("✓ a | r1 approved\nALL APPROVED\n");
+		expect(formatStatus(statusReport(board([section("a-r1")]), { "a-r1": verdict("changes", "Main\n[desktop · a] Clips\n") }), false)).toBe(
+			"· a | r1 sent back | Main / [desktop · a] Clips\n1 open\n",
+		);
 		expect(JSON.parse(formatStatus(statusReport(b, {}), true)).items).toHaveLength(3);
 	});
 
