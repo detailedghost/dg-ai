@@ -1,6 +1,6 @@
 {
 	"name": "@dg/dg-agent",
-	"version": "1.25.1",
+	"version": "1.25.2",
 	"private": true,
 	"type": "module",
 	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.25.2 (2026-10-29)
+
+### Fixes
+
+- fix(phone): reload invites without restarting the listener ([#96](https://github.com/detailedghost/dg-ai/pull/96))
+
 ## v1.25.1 (2026-10-29)
 
 ### Fixes
