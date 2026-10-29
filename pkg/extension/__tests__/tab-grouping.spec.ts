@@ -8,8 +8,6 @@ type FakeTab = {
 };
 type FakeGroup = { id: number; windowId: number; title: string };
 
-const sessionStore = new Map<string, unknown>();
-
 const state = {
 	windows: new Map<number, number[]>(),
 	tabs: new Map<number, FakeTab>(),
@@ -46,17 +44,6 @@ mock.module("wxt/browser", () => ({
 	browser: {
 		storage: {
 			sync: { get: mock(async () => ({ color: "blue" })) },
-			session: {
-				get: mock(async (key: string) =>
-					sessionStore.has(key) ? { [key]: sessionStore.get(key) } : {},
-				),
-				set: mock(async (items: Record<string, unknown>) => {
-					for (const [k, v] of Object.entries(items)) sessionStore.set(k, v);
-				}),
-				remove: mock(async (key: string) => {
-					sessionStore.delete(key);
-				}),
-			},
 		},
 		tabGroups: {
 			TAB_GROUP_ID_NONE: -1,
@@ -70,13 +57,7 @@ mock.module("wxt/browser", () => ({
 		},
 		tabs: {
 			group: mock(
-				async ({
-					tabIds,
-					groupId,
-				}: {
-					tabIds: number[];
-					groupId?: number;
-				}) => {
+				async ({ tabIds, groupId }: { tabIds: number[]; groupId?: number }) => {
 					const tab = state.tabs.get(tabIds[0]);
 					if (!tab) throw new Error("no tab");
 					let id = groupId;
@@ -128,9 +109,10 @@ mock.module("wxt/browser", () => ({
 	},
 }));
 
+import { BATCH_MAX_AGE_MS, newBatchId } from "@dg/common";
 import { addGroupMarker } from "../../skills-cli/src/utils/marker";
 
-const { onTabComplete, forgetTab } = await import("@/lib/features/tab-grouping");
+const { onTabComplete } = await import("@/lib/features/tab-grouping");
 
 function addTab(id: number, windowId: number, url: string, groupId = -1) {
 	state.tabs.set(id, { id, windowId, groupId, url });
@@ -142,11 +124,13 @@ function addGroup(id: number, windowId: number, title: string) {
 	state.nextGroupId = Math.max(state.nextGroupId, id + 1);
 }
 
+const defaultBatch = newBatchId();
+
 function markedTab(
 	id: number,
 	windowId: number,
 	pos: number,
-	batch = "b1",
+	batch = defaultBatch,
 	group = "IP",
 ) {
 	addTab(
@@ -168,7 +152,6 @@ beforeEach(() => {
 	state.tabs.clear();
 	state.groups = [];
 	state.nextGroupId = 1;
-	sessionStore.clear();
 });
 
 describe("onTabComplete", () => {
@@ -240,10 +223,12 @@ describe("onTabComplete", () => {
 	});
 
 	it("does not mix tabs from two batches", async () => {
-		markedTab(61, 1, 0, "old");
+		const oldBatch = newBatchId();
+		markedTab(61, 1, 0, oldBatch);
 		await onTabComplete(61);
-		markedTab(62, 1, 1, "new");
-		markedTab(63, 1, 0, "new");
+		const newBatch = newBatchId(Date.now() + 1);
+		markedTab(62, 1, 1, newBatch);
+		markedTab(63, 1, 0, newBatch);
 		await Promise.all([62, 63].map(onTabComplete));
 
 		expect(groupOrder(state.groups[0].id)).toEqual([61, 63, 62]);
@@ -282,7 +267,12 @@ describe("onTabComplete", () => {
 		addTab(
 			74,
 			1,
-			addGroupMarker("https://github.com/o/r/pull/5#issuecomment-1", "IP"),
+			addGroupMarker(
+				"https://github.com/o/r/pull/5#issuecomment-1",
+				"IP",
+				0,
+				defaultBatch,
+			),
 		);
 		await onTabComplete(74);
 
@@ -292,33 +282,44 @@ describe("onTabComplete", () => {
 		);
 	});
 
-	it("does not regroup a tab the user ungrouped when its marked URL replays", async () => {
-		const marked = addGroupMarker("https://github.com/o/r/pull/5", "IP");
-		addTab(75, 1, marked);
-		await onTabComplete(75);
-		const tab = state.tabs.get(75);
-		expect(tab?.groupId).not.toBe(-1);
-
-		if (tab) {
-			tab.groupId = -1;
-			tab.url = marked;
-		}
+	it("strips but does not group a marker from a batch older than the window", async () => {
+		const stale = newBatchId(Date.now() - BATCH_MAX_AGE_MS - 60_000);
+		addTab(
+			75,
+			1,
+			addGroupMarker("https://github.com/o/r/pull/5", "IP", 0, stale),
+		);
 		await onTabComplete(75);
 
-		expect(tab?.groupId).toBe(-1);
-		expect(tab?.url).toBe("https://github.com/o/r/pull/5");
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(75)?.groupId).toBe(-1);
+		expect(state.tabs.get(75)?.url).toBe("https://github.com/o/r/pull/5");
 	});
 
-	it("groups a new tab that reuses the id of a closed one", async () => {
-		const marked = addGroupMarker("https://github.com/o/r/pull/5", "IP");
-		addTab(76, 1, marked);
-		await onTabComplete(76);
-		forgetTab(76);
-		await Promise.resolve();
-		state.tabs.delete(76);
-		addTab(76, 1, marked);
+	it("groups a marker from a batch just inside the window", async () => {
+		const fresh = newBatchId(Date.now() - BATCH_MAX_AGE_MS + 60_000);
+		addTab(
+			76,
+			1,
+			addGroupMarker("https://github.com/o/r/pull/5", "IP", 0, fresh),
+		);
 		await onTabComplete(76);
 
 		expect(state.tabs.get(76)?.groupId).not.toBe(-1);
 	});
+
+	it.each([undefined, "b1"])(
+		"strips but does not group a marker with batch %s",
+		async (batch) => {
+			addTab(
+				77,
+				1,
+				addGroupMarker("https://github.com/o/r/pull/5", "IP", 0, batch),
+			);
+			await onTabComplete(77);
+
+			expect(state.groups).toHaveLength(0);
+			expect(state.tabs.get(77)?.url).toBe("https://github.com/o/r/pull/5");
+		},
+	);
 });

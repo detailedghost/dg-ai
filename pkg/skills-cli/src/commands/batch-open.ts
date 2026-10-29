@@ -3,6 +3,7 @@
  * grouped into a named tab group via the `_tab_group` marker.
  */
 
+import { newBatchId } from "@dg/common";
 import { tryOpen } from "@dg/common/node";
 import type { Command } from "commander";
 import { addGroupMarker } from "../utils/marker";
@@ -21,7 +22,7 @@ export function registerBatchOpen(program: Command): void {
 		.action(async (refs: string[], opts: Opts) => {
 			const cfg = loadConfig();
 			// Marker groups these tabs into `group`; the index sets their order in it.
-			const batch = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+			const batch = newBatchId();
 			const urls = refs.map((r, i) =>
 				addGroupMarker(resolveRef(r, cfg, opts.repo), opts.group, i, batch),
 			);
