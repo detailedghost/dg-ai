@@ -287,6 +287,20 @@ describe("proto skill local mode", () => {
 		expect(skillFile("assets/README.md")).toContain('<script src="/dg-icons.js"></script>');
 	});
 
+	test("both switchers put the variant row first and the verdict actions together on mobile", () => {
+		for (const file of ["assets/PrototypeSwitcher.tsx", "assets/PrototypeSwitcher.astro"]) {
+			const source = skillFile(file);
+			const groups = ["ps-group ps-tools", "ps-group ps-nav", "ps-group ps-act"].map((name) => source.indexOf(name));
+			expect(groups.every((at) => at > 0)).toBe(true);
+			expect(groups).toEqual([...groups].sort((a, b) => a - b));
+			const act = source.slice(groups[2]);
+			expect(act.indexOf("ps-note")).toBeLessThan(act.indexOf("ps-approve"));
+			expect(act.indexOf("ps-approve")).toBeLessThan(act.indexOf("ps-reject"));
+			expect(source).toContain('grid-template-areas:"nav nav nav" "tools . act"');
+			expect(source).toContain(".ps-group{display:contents}");
+		}
+	});
+
 	test("ships the copyable switcher and endpoint assets", () => {
 		for (const file of [
 			"assets/PrototypeSwitcher.tsx",

@@ -64,6 +64,8 @@ input, textarea, or `[contenteditable]` has focus. A change writes `?variant=<ke
 
 All three bars (both switchers and the decision bar) use one icon toolbar: theme, width, the variant arrows where the bar has them, note, Approve, and Reject. Every icon has a `title` and an `aria-label`.
 
+At 760px and below, both switchers use two rows. The variant arrows and label fill the top row. Theme and width sit on the left of the second row, and note, Approve, and Reject sit together on the right.
+
 - **Note** toggles a note row above the icons, with the reject reason chips in the switchers. A yellow dot shows when it has text. The note rides along with the next decision.
 - **Approve** POSTs `{ name, variant, variants, notes, action: "confirm" }`. It turns yellow when the note has text. It closes the tab only when the note is empty, after a confetti burst. A noted approval shows "Building the next round from &lt;key&gt;…" with a rotating border and keeps the tab open until the reload token changes.
 - **Reject** needs a note. With no note it opens the note row and shows the toast "Add a note first. A rework needs direction." It POSTs `action: "reject"`, never closes the tab, and gives the bar a red, rotating border. The open tab reloads when the agent bumps the reload token.

@@ -73,6 +73,7 @@ html.dark .ps-bar,html.dark .ps-toast{--ps-surface:#1b1b1e;--ps-surface-2:#20202
 .ps-note[aria-pressed="true"]{background:var(--ps-acc-soft);color:var(--ps-acc);border-color:var(--ps-acc)}
 .ps-note.has-note::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ps-note);box-shadow:0 0 0 2px var(--ps-surface)}
 .ps-sep{width:1px;height:22px;background:var(--ps-line);margin:0 4px}
+.ps-group{display:contents}
 .ps-label{padding:0 6px;white-space:nowrap;font-weight:600;max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .ps-label small{font-weight:400;color:var(--ps-mut);margin-left:4px}
 .ps-menu-wrap{position:relative}
@@ -110,7 +111,11 @@ html[data-proto-width="desktop"] body{max-width:1440px;margin-inline:auto}
   background: linear-gradient(#16a34a,#22c55e) padding-box, conic-gradient(from var(--ps-spin),#2dd4bf,transparent 35%,transparent 65%,#2dd4bf) border-box;
   animation: pop .4s ease, ps-ring 1.6s linear infinite; }
 .ps-check-path { stroke-dasharray: 48; stroke-dashoffset: 48; animation: draw .5s .25s ease forwards; }
-@media (max-width:760px){.ps-bar{width:calc(100vw - 32px)}.ps-note-row textarea{min-width:0}}
+@media (max-width:760px){.ps-bar{width:calc(100vw - 32px)}.ps-note-row textarea{min-width:0}
+  .ps-row{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"nav nav nav" "tools . act";row-gap:4px}
+  .ps-row>.ps-sep{display:none}.ps-group{display:flex;align-items:center;gap:4px}
+  .ps-nav{grid-area:nav;justify-content:space-between;border-bottom:1px solid var(--ps-line);padding-bottom:4px}.ps-nav .ps-label{max-width:none;text-align:center}
+  .ps-tools{grid-area:tools}.ps-act{grid-area:act}}
 @media (prefers-reduced-motion:reduce){.ps-bar,.ps-bar *,.ps-check-badge,.ps-check-path,.ps-confetti-particle{animation:none!important;transition:none!important}.ps-check-path{stroke-dashoffset:0}}
 `;
 
@@ -466,6 +471,7 @@ export default function PrototypeSwitcher({
           </div>
         )}
         <div className="ps-row">
+          <div className="ps-group ps-tools">
           <button
             type="button"
             className="ps-ic"
@@ -510,7 +516,9 @@ export default function PrototypeSwitcher({
               </div>
             )}
           </div>
+          </div>
           <span className="ps-sep" aria-hidden="true" />
+          <div className="ps-group ps-nav">
           <button type="button" className="ps-ic" onClick={() => go(prev)} title="Previous variant (←)" aria-label="Previous variant">
             <Icon name="left" />
           </button>
@@ -521,7 +529,9 @@ export default function PrototypeSwitcher({
           <button type="button" className="ps-ic" onClick={() => go(next)} title="Next variant (→)" aria-label="Next variant">
             <Icon name="right" />
           </button>
+          </div>
           <span className="ps-sep" aria-hidden="true" />
+          <div className="ps-group ps-act">
           <button
             type="button"
             className={`ps-ic ps-note${hasNotes ? " has-note" : ""}`}
@@ -553,6 +563,7 @@ export default function PrototypeSwitcher({
           >
             <Icon name="rework" />
           </button>
+          </div>
         </div>
         {error && <div className="ps-error">{error}</div>}
       </div>
