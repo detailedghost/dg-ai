@@ -14,11 +14,11 @@
 		"test": "bun test"
 	},
 	"devDependencies": {
-		"bun-types": "^1.4.3",
+		"bun-types": "^1.4.4",
 		"typescript": "^7.0.2"
 	},
 	"dependencies": {
-		"@azure/msal-node": "^7.0.1",
+		"@azure/msal-node": "^7.1.1",
 		"unique-names-generator": "^4.7.1",
 		"zod": "^4.6.7"
 	}
