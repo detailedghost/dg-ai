@@ -16,7 +16,7 @@
 	},
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",
-		"bun-types": "^1.4.3",
+		"bun-types": "^1.4.4",
 		"typescript": "^7.0.2"
 	}
 }

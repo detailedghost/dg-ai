@@ -22,9 +22,9 @@
 	},
 	"devDependencies": {
 		"@types/lodash-es": "4.17.12",
-		"bun-types": "1.4.3",
+		"bun-types": "1.4.4",
 		"typescript": "^7.0.2",
 		"@faker-js/faker": "^10.2.0",
-		"@azure/msal-node": "^7.0.1"
+		"@azure/msal-node": "^7.1.1"
 	}
 }
