@@ -47,12 +47,33 @@ export const CALL_TAG = "dg-call";
 export const SELF_NAME_TAG = "dg-as";
 /** Handle a new contact gets when neither an invite name nor a `dg-as` tag supplies one. */
 export const UNKNOWN_CALLER_HANDLE = "dg";
+/** Topic tag on a listener liveness rumor. It sits inside the seal, so a restart can still tell a probe from mail. */
+export const PROBE_TOPIC = "dg-probe";
 const QUERY_MAX_WAIT_MS = 8000;
 /** Caps the live subscription's non-admitted id cache so relay spam cannot grow it without bound. */
 export const STRANGER_ID_LIMIT = 10000;
 
 export function wrap(text: string, sk: Uint8Array, contactPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: contactPub }, text);
+}
+
+/** A gift wrap whose rumor is tagged as a liveness probe. The tag is inside the seal. */
+export function wrapProbe(sk: Uint8Array, toPub: string): NostrEvent {
+	return nip59.wrapEvent(
+		{
+			kind: CHAT_MESSAGE_KIND,
+			content: PROBE_TOPIC,
+			tags: [["p", toPub], ["t", PROBE_TOPIC]],
+		},
+		sk,
+		toPub,
+	);
+}
+
+/** True when this rumor is one of our own liveness probes. A contact cannot hide a message by adding the tag. */
+export function isSelfProbe(rumor: { pubkey: string; tags: string[][] }, ownPubs: readonly string[]): boolean {
+	if (!ownPubs.includes(rumor.pubkey)) return false;
+	return rumor.tags.some((tag) => tag[0] === "t" && tag[1] === PROBE_TOPIC);
 }
 
 export function ring(text: string, sk: Uint8Array, toPub: string, secret: string, selfName: string): NostrEvent {
@@ -345,7 +366,8 @@ export async function fetchNew(
 		const key = pickKey(event, keys);
 		if (!key) continue;
 		const rumor = open(event, key.sk);
-		if (rumor) opened.push({ event, rumor, keyId: key.id });
+		if (!rumor || isSelfProbe(rumor, keys.map((held) => held.pub))) continue;
+		opened.push({ event, rumor, keyId: key.id });
 	}
 	opened.sort((a, b) => a.rumor.created_at - b.rumor.created_at);
 	const messages: Message[] = [];
@@ -414,12 +436,18 @@ function open(event: NostrEvent, sk: Uint8Array): Rumor | null {
 /**
  * One look at a wrap: admitted, or a drop reason. `pubkeyPrefix` is set only after the rumor opens.
  */
-export function classifyIncoming(event: NostrEvent, keys: KeyEntry[], gate: Gate, now: number): { admitted: Admitted } | { drop: DroppedRing } {
+export function classifyIncoming(
+	event: NostrEvent,
+	keys: KeyEntry[],
+	gate: Gate,
+	now: number,
+): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } {
 	const key = pickKey(event, keys);
 	if (!key) return { drop: { id: event.id, reason: "not addressed to a loaded key" } };
 	const opened = openDetailed(event, key.sk);
 	if (opened.kind === "undecryptable") return { drop: { id: event.id, reason: "could not open the wrap" } };
 	if (opened.kind === "not-chat") return { drop: { id: event.id, reason: "not a chat message" } };
+	if (isSelfProbe(opened.rumor, keys.map((held) => held.pub))) return { probe: true };
 	const decided = admit(event, opened.rumor, key.id, gate, now);
 	if (!decided.ok) return { drop: { id: event.id, reason: decided.reason, pubkeyPrefix: decided.pubkeyPrefix } };
 	return { admitted: decided.admitted };
@@ -455,7 +483,15 @@ export function subscribe(
 			hooks.onEvent?.(event.id);
 			if (known.has(event.id) || strangers.has(event.id)) return;
 			let result = classifyIncoming(event, keys, gate(), now());
+			if ("probe" in result) {
+				addBounded(known, event.id, STRANGER_ID_LIMIT);
+				return;
+			}
 			if (!("admitted" in result) && hooks.reread) result = classifyIncoming(event, keys, hooks.reread(), now());
+			if ("probe" in result) {
+				addBounded(known, event.id, STRANGER_ID_LIMIT);
+				return;
+			}
 			if (!("admitted" in result)) {
 				hooks.onDrop?.(result.drop);
 				addBounded(strangers, event.id, STRANGER_ID_LIMIT);

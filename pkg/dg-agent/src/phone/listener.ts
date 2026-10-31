@@ -23,7 +23,7 @@ import {
 	publish,
 	subscribe,
 	UNKNOWN_CALLER_HANDLE,
-	wrap,
+	wrapProbe,
 } from "./chat";
 import { resolvePublishConfirmMs, PUBLISH_CONFIRM_ENV } from "./delivery";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
@@ -61,8 +61,8 @@ export type ListenerDeps = KeyDeps & {
 	liveness?: LivenessConfig;
 };
 
-/** Text of the self-addressed liveness probe. Logged nowhere. Not a user message. */
-export const LISTENER_PROBE_TEXT = "phone-probe";
+/** Rumor content of the self-addressed liveness probe. Logged nowhere. Not a user message. */
+export { PROBE_TOPIC as LISTENER_PROBE_TEXT } from "./chat";
 
 /** Lower bound of the jittered liveness gap. */
 export const LIVENESS_MIN_MS = 2 * 60 * 1000;
@@ -638,18 +638,27 @@ function repeatJitter(schedule: Schedule, delayMs: () => number, run: () => Prom
 	};
 }
 
-function logListener(kind: "heartbeat" | "resubscribe"): void {
+function logListener(kind: "heartbeat" | "resubscribe" | "probe-failed"): void {
 	process.stderr.write(`phone: listener ${kind}\n`);
 }
 
-async function waitForId(seen: Set<string>, id: string, waitMs: number): Promise<boolean> {
-	if (seen.has(id) || waitMs <= 0) return seen.has(id);
-	const started = Date.now();
-	while (Date.now() - started < waitMs) {
+export type WaitClock = { now: () => number; sleep: (ms: number) => Promise<void> };
+
+const wallClock: WaitClock = {
+	now: () => Date.now(),
+	sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/** Resolves true once `id` is in `seen`, or false when `waitMs` elapses. `waitMs <= 0` does not sleep. */
+export async function waitForId(seen: Set<string>, id: string, waitMs: number, clock: WaitClock = wallClock): Promise<boolean> {
+	if (seen.has(id)) return true;
+	if (waitMs <= 0) return false;
+	const started = clock.now();
+	do {
+		await clock.sleep(Math.min(10, waitMs));
 		if (seen.has(id)) return true;
-		await new Promise((resolve) => setTimeout(resolve, Math.min(10, waitMs)));
-	}
-	return seen.has(id);
+	} while (clock.now() - started < waitMs);
+	return false;
 }
 
 /** Applies one admitted message's side effects: a fresh handle and contact row for a new caller, the
@@ -730,7 +739,6 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	let replayedEpoch = epoch;
 	let gateCache: Gate = gateFor(deps.db);
 	const loggedDrops = new Set<string>();
-	const probeIds = new Set<string>();
 	const deliveredIds = new Set<string>();
 	const liveness: LivenessConfig = deps.liveness ?? {
 		minMs: LIVENESS_MIN_MS,
@@ -745,7 +753,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
 
 	const logDrop = (drop: DroppedRing) => {
-		if (probeIds.has(drop.id) || loggedDrops.has(drop.id)) return;
+		if (loggedDrops.has(drop.id)) return;
 		addBounded(loggedDrops, drop.id, STRANGER_ID_LIMIT);
 		process.stderr.write(formatDroppedRing(drop));
 	};
@@ -760,7 +768,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
 		const refused = new Set<string>();
 		for (const message of caught.messages) {
-			if (probeIds.has(message.id) || refused.has(message.from)) continue;
+			if (refused.has(message.from)) continue;
 			const stored = admitMessage(
 				deps.db,
 				deps.now,
@@ -784,7 +792,6 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
-		if (probeIds.has(message.id)) return;
 		seen = seenNow;
 		admitMessage(deps.db, deps.now, readRelays(deps.db), message, extra.newContact, extra.reaccept);
 		rememberAdmission();
@@ -859,10 +866,13 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 					if (stopped) return;
 					keys = merged;
 					sub = openSub();
-					await catchUp(relays);
-					if (stopped) return;
 					writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 					notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
+					try {
+						await catchUp(relays);
+					} catch {
+						// A fetch error must not skip the notice or the pid rewrite above.
+					}
 				} else {
 					unreadBefore = new Set(loaded.unreadable);
 				}
@@ -874,18 +884,20 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		})();
 	};
 	const cancelWatch = repeat(deps.schedule, KEY_WATCH_INTERVAL_MS, watchKeys);
+	let probeCursor = 0;
 	const checkLiveness = async () => {
 		if (stopped || watching) return;
 		watching = true;
 		try {
 			const probeKey = keys.find((key) => key.id === numberKeyId(deps.db)) ?? keys[0];
 			if (!probeKey || relays.length === 0) {
-				logListener("heartbeat");
+				logListener("probe-failed");
 				return;
 			}
-			const probe = wrap(LISTENER_PROBE_TEXT, probeKey.sk, probeKey.pub);
-			addBounded(probeIds, probe.id, STRANGER_ID_LIMIT);
-			const report = await publish(pool, relays, probe, { confirmMs: liveness.confirmMs, confirmById: false });
+			const relay = relays[probeCursor % relays.length]!;
+			probeCursor += 1;
+			const probe = wrapProbe(probeKey.sk, probeKey.pub);
+			const report = await publish(pool, [relay], probe, { confirmMs: liveness.confirmMs, confirmById: false });
 			const saw = await waitForId(deliveredIds, probe.id, liveness.waitMs);
 			if (stopped) return;
 			const owed = report.ok.length > 0 || report.unconfirmed.length > 0;
@@ -898,11 +910,13 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				await catchUp(relays);
 				if (stopped) return;
 				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
-			} else {
+			} else if (owed) {
 				logListener("heartbeat");
+			} else {
+				logListener("probe-failed");
 			}
 		} catch {
-			if (!stopped) logListener("heartbeat");
+			if (!stopped) logListener("probe-failed");
 		} finally {
 			watching = false;
 		}

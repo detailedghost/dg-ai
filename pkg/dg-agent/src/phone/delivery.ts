@@ -1,4 +1,4 @@
-import { SimplePool, type NostrEvent } from "nostr-tools";
+import { SimplePool, verifyEvent, type NostrEvent } from "nostr-tools";
 import { isCardRelays } from "./card";
 import type { PhonePool } from "./chat";
 
@@ -53,18 +53,44 @@ export function canonicalRelay(url: string): string | undefined {
 	return isCardRelays([canonical]) ? canonical : undefined;
 }
 
-/**
- * Union of the recipient's kind 10050 relays, the contact card relays, and our relays.
- * Duplicates collapse. The list stops at {@link MAX_PUBLISH_RELAYS}, keeping inbox relays first.
- */
-export function publishRelaySet(input: { inbox: string[]; card: string[]; own: string[] }): string[] {
+function canonicalList(urls: string[]): string[] {
 	const out: string[] = [];
 	const seen = new Set<string>();
-	for (const url of [...input.inbox, ...input.card, ...input.own]) {
+	for (const url of urls) {
 		const canonical = canonicalRelay(url);
 		if (!canonical || seen.has(canonical)) continue;
 		seen.add(canonical);
 		out.push(canonical);
+	}
+	return out;
+}
+
+/**
+ * Union of the recipient's kind 10050 relays, the contact card relays, and our relays.
+ * Duplicates collapse. The list stops at {@link MAX_PUBLISH_RELAYS}. Inbox relays come first,
+ * but one card relay and one of our relays are kept even when the inbox list would fill the cap.
+ */
+export function publishRelaySet(input: { inbox: string[]; card: string[]; own: string[] }): string[] {
+	const inbox = canonicalList(input.inbox);
+	const card = canonicalList(input.card);
+	const own = canonicalList(input.own);
+	const keepCard = card[0];
+	const keepOwn = own.find((url) => url !== keepCard);
+	const protectedRelays = [keepCard, keepOwn].filter((url): url is string => url !== undefined);
+	const inboxCap = MAX_PUBLISH_RELAYS - protectedRelays.length;
+	const ordered = [
+		...inbox.slice(0, Math.max(0, inboxCap)),
+		...protectedRelays,
+		...inbox.slice(Math.max(0, inboxCap)),
+		...card.slice(1),
+		...own.filter((url) => url !== keepOwn),
+	];
+	const out: string[] = [];
+	const seen = new Set<string>();
+	for (const url of ordered) {
+		if (seen.has(url)) continue;
+		seen.add(url);
+		out.push(url);
 		if (out.length >= MAX_PUBLISH_RELAYS) break;
 	}
 	return out;
@@ -117,7 +143,8 @@ export async function lookupInboxRelays(
 			}),
 		]);
 		if (!finished) return [];
-		const newest = [...events].sort((a, b) => b.created_at - a.created_at)[0];
+		const trusted = events.filter((event) => event.kind === INBOX_RELAY_KIND && event.pubkey === pubkey && verifyEvent(event));
+		const newest = [...trusted].sort((a, b) => b.created_at - a.created_at)[0];
 		const found = newest ? relaysFromInboxEvent(newest) : [];
 		cache.write(found);
 		return found;

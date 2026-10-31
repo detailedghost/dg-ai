@@ -52,8 +52,10 @@ contact with an existing key. Rename a contact afterward with
 `say` and `accept` publish to one combined list: the contact's saved relays,
 the recipient's NIP-17 kind 10050 relay list when that replaceable event is
 on the relays we already know, and this phone's own relays. The list drops
-duplicates and stops at 10. Kind 10050 relays are kept first, because that
-is where the recipient reads gift wraps. The lookup waits at most 2 seconds
+duplicates and stops at 10. Kind 10050 relays are kept first, and the list
+still keeps one card relay and one of our own relays when that inbox list
+would otherwise fill all 10. The lookup checks the event's signature, author,
+and kind. It waits at most 2 seconds
 and the answer, including an empty one, is reused for 10 minutes. A timeout
 or a relay error skips the cache and still sends on the card relays and our
 own relays.
@@ -94,12 +96,17 @@ it arrived (within the 7-day window relays and this database both keep).
 The relay pool turns on ping and reconnect. A TCP connection that stays open
 after a checkpoint restore or a NAT drop fails the ping, and the pool dials
 the relay again. That is not the only check. Every 2 to 5 minutes, on a
-jittered gap rather than a fixed interval, the listener publishes a
-self-addressed probe. If any relay accepts the probe or leaves it
-unconfirmed, and the live subscription does not deliver it, the listener
-closes those sockets, subscribes again, and fetches what arrived since the
-last cursor. Each check writes one stderr line, `phone: listener heartbeat`
-or `phone: listener resubscribe`. The line has no secret and no message text.
+jittered gap rather than a fixed interval, the listener publishes one
+self-addressed probe to a single relay, rotating through the subscription
+list. The probe rumor is tagged inside the seal, so a later catch-up does
+not store it or log it as a drop. If that relay accepts the probe or leaves
+it unconfirmed, and the live subscription does not deliver it, the listener
+closes its sockets, subscribes again, and fetches what arrived since the
+last cursor. Each check writes one stderr line: `phone: listener heartbeat`
+when the probe comes back, `phone: listener resubscribe` when the
+subscription missed it, or `phone: listener probe-failed` when no relay
+confirmed the probe or the check threw. The line has no secret and no
+message text.
 The same catch-up fetch runs after a resubscribe caused by a key change or
 an admission-epoch change.
 

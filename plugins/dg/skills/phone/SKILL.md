@@ -136,9 +136,9 @@ key change, or a binary change. `contacts` may include `marker` (`accepted` or
 to `<phoneRoot>/listener.log`. On Linux, read the log through
 `journalctl --user -u dg-phone` instead, since systemd owns it there. The
 listener pings its sockets and, every 2 to 5 minutes on a jittered gap,
-checks that the subscription is still delivering. A quiet subscription is
-replaced and then caught up. The log line is `phone: listener heartbeat` or
-`phone: listener resubscribe`.
+checks one relay with a self-addressed probe. A quiet subscription is
+replaced and then caught up. The log line is `phone: listener heartbeat`,
+`phone: listener resubscribe`, or `phone: listener probe-failed`.
 
 A new contact admitted through your `number` card arrives like any message,
 with `call: true` on it, so you are told about it the same way — this is
@@ -226,7 +226,8 @@ typing peer-adjacent text on the command line.
 
 The send goes to the contact's saved relays, the recipient's NIP-17 kind
 10050 relays when that list is published, and this phone's own relays. The
-list is deduplicated and capped at 10. Kind 10050 is looked up with a 2
+list is deduplicated and capped at 10, and still keeps one card relay and
+one of our relays when the kind 10050 list is long. Kind 10050 is looked up with a 2
 second bound and cached for 10 minutes. The printed JSON is
 `{"handle": "+name", "id": "...", "relays_ok": [...], "relays_unconfirmed": [...], "relays_failed": [{"relay": "wss://...", "reason": "..."}]}`.
 `relays_ok` confirmed the event. `relays_unconfirmed` timed out waiting for
@@ -242,10 +243,11 @@ key. `relays_ok` means relays stored the gift wrap. It is silent about
 whether that npub is still the one they read.
 
 `phone open` pings its relay sockets and reconnects when a ping fails. Every
-2 to 5 minutes, on a jittered gap, the listener checks that the subscription
-is still delivering. If it has gone quiet, the process subscribes again and
-fetches what it missed. The log line is `phone: listener heartbeat` or
-`phone: listener resubscribe`, with no message text.
+2 to 5 minutes, on a jittered gap, the listener probes one relay. If that
+subscription has gone quiet, the process subscribes again and fetches what
+it missed. The log line is `phone: listener heartbeat`,
+`phone: listener resubscribe`, or `phone: listener probe-failed`, with no
+message text.
 
 ## Contacts
 

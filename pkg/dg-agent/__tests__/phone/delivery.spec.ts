@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { generateSecretKey, getPublicKey, nip19, type Filter, type NostrEvent } from "nostr-tools";
+import { readFileSync, writeFileSync } from "node:fs";
+import { finalizeEvent, generateSecretKey, getPublicKey, nip19, type Filter, type NostrEvent } from "nostr-tools";
 import { phoneAccept, phoneNumber, phoneSay, type PhoneDeps } from "../../src/phone/commands";
-import { publish, shouldSaveOutgoing, wrap, type PhonePool } from "../../src/phone/chat";
+import { PROBE_TOPIC, isSelfProbe, publish, shouldSaveOutgoing, wrap, wrapProbe, type PhonePool } from "../../src/phone/chat";
 import {
 	INBOX_RELAY_CACHE_SECONDS,
 	INBOX_RELAY_KIND,
@@ -25,10 +26,13 @@ import {
 	LISTENER_PROBE_TEXT,
 	LIVENESS_MAX_MS,
 	LIVENESS_MIN_MS,
+	KEY_WATCH_INTERVAL_MS,
 	keyFingerprint,
+	listenerPidPath,
 	livenessDelayMs,
 	readListenerPid,
 	runListener,
+	waitForId,
 	type ListenerDeps,
 } from "../../src/phone/listener";
 import { DG_AGENT_PACKAGE_VERSION } from "../../src/version";
@@ -37,6 +41,9 @@ import {
 	addContact,
 	numberKeyId,
 	readAdmissionEpoch,
+	readCursor,
+	readInboxRelayCache,
+	writeInboxRelayCache,
 	writeNumber,
 	writeRelays,
 } from "../../src/phone/store";
@@ -61,6 +68,27 @@ function inboxEvent(pubkey: string, relays: string[], created_at = NOW): NostrEv
 		tags: relays.map((relay) => ["relay", relay]),
 		content: "",
 		sig: "b".repeat(128),
+	};
+}
+
+function signInbox(sk: Uint8Array, relays: string[], created_at = NOW): NostrEvent {
+	return finalizeEvent(
+		{ kind: INBOX_RELAY_KIND, created_at, tags: relays.map((relay) => ["relay", relay]), content: "" },
+		sk,
+	);
+}
+
+/** Drops nostr-tools' verified mark so `verifyEvent` checks the signature bytes. */
+function unsignedCopy(event: NostrEvent, patch: Partial<NostrEvent> = {}): NostrEvent {
+	return {
+		id: event.id,
+		pubkey: event.pubkey,
+		created_at: event.created_at,
+		kind: event.kind,
+		tags: event.tags.map((tag) => [...tag]),
+		content: event.content,
+		sig: event.sig,
+		...patch,
 	};
 }
 
@@ -119,13 +147,15 @@ describe("resolvePublishConfirmMs", () => {
 });
 
 describe("publishRelaySet", () => {
-	it("keeps kind 10050 relays first, dedupes, and caps at 10", () => {
+	it("keeps kind 10050 relays first, dedupes, caps at 10, and still keeps a card relay and an own relay", () => {
 		const inbox = Array.from({ length: 11 }, (_, i) => `wss://inbox-${i}.example`);
-		const set = publishRelaySet({ inbox, card: [inbox[0]!, CARD, "wss://Card.Example/"], own: [OWN, CARD] });
+		const set = publishRelaySet({ inbox, card: [CARD, "wss://Card.Example/"], own: [OWN, CARD] });
 
 		expect(set).toHaveLength(MAX_PUBLISH_RELAYS);
-		expect(set).toEqual(inbox.slice(0, MAX_PUBLISH_RELAYS));
-		expect(set).not.toContain(CARD);
+		expect(set.slice(0, 8)).toEqual(inbox.slice(0, 8));
+		expect(set).toContain(CARD);
+		expect(set).toContain(OWN);
+		expect(set).not.toContain(inbox[8]);
 		expect(set).not.toContain(inbox[10]);
 		expect(canonicalRelay("wss://A.Example/path/")).toBe("wss://a.example/path");
 		expect(canonicalRelay("https://a.example")).toBeUndefined();
@@ -194,13 +224,39 @@ describe("publish", () => {
 		expect(shouldSaveOutgoing(report)).toBe(false);
 		expect(script.queries).toEqual([]);
 	});
+
+	it("does not upgrade a timeout when the id query is still in flight", async () => {
+		const event = wrap("hi", alice.sk, bob.pub);
+		let sawQuery = false;
+		const pool: PhonePool = {
+			publish() {
+				return [Promise.reject(new Error("publish timed out"))];
+			},
+			querySync() {
+				sawQuery = true;
+				return new Promise((resolve) => setTimeout(() => resolve([event]), 250));
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const started = Date.now();
+
+		const report = await publish(pool, [CARD], event, { confirmMs: 20, reqTimeoutMs: 30 });
+
+		expect(Date.now() - started).toBeLessThan(200);
+		expect(sawQuery).toBe(true);
+		expect(report.unconfirmed).toEqual([CARD]);
+		expect(report.ok).toEqual([]);
+	});
 });
 
 describe("lookupInboxRelays", () => {
 	it("returns the newest kind 10050 list and caches it", async () => {
-		const pubkey = "cd".repeat(32);
-		const older = inboxEvent(pubkey, ["wss://old.example"], NOW - 10);
-		const newer = inboxEvent(pubkey, [INBOX, "wss://also.example"], NOW);
+		const sk = generateSecretKey();
+		const pubkey = getPublicKey(sk);
+		const older = signInbox(sk, ["wss://old.example"], NOW - 10);
+		const newer = signInbox(sk, [INBOX, "wss://also.example"], NOW);
 		const { pool, queries } = scriptedPool({}, { events: [older, newer] });
 		let saved: string[] | undefined;
 		const cache = {
@@ -255,6 +311,130 @@ describe("lookupInboxRelays", () => {
 		expect(await lookupInboxRelays(empty.pool, [OWN], pubkey, caching, 30)).toEqual([]);
 		expect(await lookupInboxRelays(empty.pool, [OWN], pubkey, caching, 30)).toEqual([]);
 		expect(empty.queries.filter((filter) => filter.kinds?.includes(INBOX_RELAY_KIND))).toHaveLength(1);
+	});
+
+	it("ignores a newer kind 10050 event whose signature, author, or kind does not check out", async () => {
+		const sk = generateSecretKey();
+		const pubkey = getPublicKey(sk);
+		const valid = signInbox(sk, [INBOX], 100);
+		const forged = unsignedCopy(signInbox(sk, ["wss://evil.example"], 300), { sig: "f".repeat(128) });
+		const other = generateSecretKey();
+		const wrongAuthor = signInbox(other, ["wss://other.example"], 250);
+		const wrongKind = unsignedCopy(signInbox(sk, ["wss://kind.example"], 400), { kind: 1 });
+		const pool: PhonePool = {
+			publish() {
+				return [];
+			},
+			async querySync() {
+				return [forged, wrongAuthor, wrongKind, valid];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+
+		const relays = await lookupInboxRelays(pool, [OWN], pubkey, { read: () => undefined, write: () => {} }, 50);
+
+		expect(relays).toEqual([INBOX]);
+	});
+
+	it("returns nothing and does not cache when the kind 10050 query throws", async () => {
+		let reads = 0;
+		const pool: PhonePool = {
+			publish() {
+				return [];
+			},
+			querySync() {
+				reads += 1;
+				throw new Error("relay down");
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		let saved: string[] | undefined;
+		const cache = {
+			read: () => saved,
+			write: (relays: string[]) => {
+				saved = relays;
+			},
+		};
+
+		expect(await lookupInboxRelays(pool, [OWN], "ab".repeat(32), cache, 50)).toEqual([]);
+		expect(saved).toBeUndefined();
+		expect(await lookupInboxRelays(pool, [OWN], "ab".repeat(32), cache, 50)).toEqual([]);
+		expect(reads).toBe(2);
+	});
+});
+
+describe("inbox relay cache", () => {
+	const tracker = makeHomeTracker("dg-phone-cache-");
+
+	afterEach(() => tracker.cleanup());
+
+	it("expires an entry at the ttl boundary and keeps the one just inside it", () => {
+		const home = tracker.freshHome();
+		const db = PhoneDb.open(resolveDgPaths({ env: { DG_HOME: home } }), () => NOW);
+		tracker.trackDb(db);
+		const pubkey = "ab".repeat(32);
+		writeInboxRelayCache(db, pubkey, [INBOX], 1_000);
+
+		expect(readInboxRelayCache(db, pubkey, 1_000 + INBOX_RELAY_CACHE_SECONDS - 1, INBOX_RELAY_CACHE_SECONDS)).toEqual([INBOX]);
+		expect(readInboxRelayCache(db, pubkey, 1_000 + INBOX_RELAY_CACHE_SECONDS, INBOX_RELAY_CACHE_SECONDS)).toBeUndefined();
+	});
+});
+
+describe("livenessDelayMs", () => {
+	it("lands on the endpoints and the midpoint of the gap", () => {
+		expect(livenessDelayMs(0, 120_000, 300_000)).toBe(120_000);
+		expect(livenessDelayMs(0.5, 120_000, 300_000)).toBe(210_000);
+		expect(livenessDelayMs(1, 120_000, 300_000)).toBe(300_000);
+		expect(livenessDelayMs(-2, 120_000, 300_000)).toBe(120_000);
+		expect(livenessDelayMs(4, 120_000, 300_000)).toBe(300_000);
+	});
+});
+
+describe("waitForId", () => {
+	it("does not sleep when the wait is zero, and stops when the elapsed time reaches the bound", async () => {
+		const absent = new Set<string>();
+		const sleeps: number[] = [];
+		let now = 0;
+		const clock = {
+			now: () => now,
+			sleep: async (ms: number) => {
+				sleeps.push(ms);
+				now += ms;
+			},
+		};
+
+		const present = new Set(["here"]);
+		expect(await waitForId(present, "here", 0, clock)).toBe(true);
+		expect(sleeps).toEqual([]);
+
+		expect(await waitForId(absent, "missing", 0, clock)).toBe(false);
+		expect(sleeps).toEqual([]);
+
+		expect(await waitForId(absent, "missing", 10, clock)).toBe(false);
+		expect(sleeps).toEqual([10]);
+
+		now = 100;
+		sleeps.length = 0;
+		expect(await waitForId(absent, "missing", 25, clock)).toBe(false);
+		expect(sleeps).toEqual([10, 10, 10]);
+
+		const seen = new Set<string>();
+		now = 0;
+		sleeps.length = 0;
+		const appeared = waitForId(seen, "late", 50, {
+			now: () => now,
+			sleep: async (ms: number) => {
+				sleeps.push(ms);
+				now += ms;
+				if (now >= 20) seen.add("late");
+			},
+		});
+		expect(await appeared).toBe(true);
+		expect(sleeps).toEqual([10, 10]);
 	});
 });
 
@@ -331,10 +511,10 @@ describe("phoneSay and phoneAccept delivery", () => {
 		const script = scriptedPool({ [INBOX]: "ok", [CARD]: "ok", [OWN]: "ok" });
 		const out: string[] = [];
 		const d = deps(script.pool, out);
-		const contactPub = identity().pub;
-		script.stored.push(inboxEvent(contactPub, [INBOX, CARD]));
+		const contact = identity();
+		script.stored.push(signInbox(contact.sk, [INBOX, CARD]));
 		addContact(d.db, {
-			npub: nip19.npubEncode(contactPub),
+			npub: nip19.npubEncode(contact.pub),
 			handle: "ada",
 			relays: [CARD],
 			keyId: numberKeyId(d.db),
@@ -394,6 +574,29 @@ describe("phoneSay and phoneAccept delivery", () => {
 		expect(rejected.published[0]?.length).toBeGreaterThan(0);
 	});
 
+	it("names every rejected relay in the error", async () => {
+		const out: string[] = [];
+		const reasons: Record<string, string> = { [CARD]: "nope", [OWN]: "blocked" };
+		const pool: PhonePool & { close(relays: string[]): void } = {
+			publish(relays) {
+				return relays.map((relay) => Promise.reject(new Error(reasons[relay] ?? "blocked")));
+			},
+			async querySync() {
+				return [];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+			close() {},
+		};
+		const d = deps(pool, out);
+		addContact(d.db, { npub: freshNpub(), handle: "ada", relays: [CARD], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+
+		await expect(phoneSay("+ada", "nope", d)).rejects.toThrow(
+			`no relay accepted the message: ${CARD}: nope; ${OWN}: blocked`,
+		);
+	});
+
 	it("arms the real confirm window from the setting, clamped to the floor, unless the env var is set", async () => {
 		const script = scriptedPool({});
 		const out: string[] = [];
@@ -443,7 +646,7 @@ describe("runListener liveness", () => {
 			expect(first?.delay).not.toBe(5_000);
 			first?.run();
 			await harness.waitForLog("phone: listener heartbeat\n");
-			const nextDelay = livenessDelayMs(0.5, LIVENESS_MIN_MS, LIVENESS_MAX_MS);
+			const nextDelay = 210_000;
 			const started = Date.now();
 			while (!harness.scheduled.some((entry) => entry.delay === nextDelay)) {
 				if (Date.now() - started > 2000) throw new Error(`missing jittered delay ${nextDelay}`);
@@ -475,6 +678,7 @@ describe("runListener liveness", () => {
 			harness.store.push(wrap("sitting on the relay", caller.sk, getPublicKey(harness.numberSk)));
 			const epoch = readAdmissionEpoch(harness.db);
 			await harness.ready;
+			harness.clock.current = NOW + 500;
 
 			const tick = harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS);
 			expect(tick).toBeDefined();
@@ -485,6 +689,9 @@ describe("runListener liveness", () => {
 			expect(harness.db.recentMessages(10).some((row) => row.text === LISTENER_PROBE_TEXT)).toBe(false);
 			expect(harness.logs.some((line) => line.includes(LISTENER_PROBE_TEXT) || line.includes("sitting on the relay"))).toBe(false);
 			expect(harness.closed.length).toBeGreaterThan(0);
+			expect(harness.subCloses()).toBeGreaterThan(0);
+			expect(harness.filters.some((filter) => filter.ids !== undefined)).toBe(false);
+			expect(readCursor(harness.db)).toBe(NOW + 500);
 			expect(readAdmissionEpoch(harness.db)).toBe(epoch);
 			const pid = readListenerPid(harness.paths, () => true);
 			expect(pid?.version).toBe(DG_AGENT_PACKAGE_VERSION);
@@ -494,7 +701,233 @@ describe("runListener liveness", () => {
 			await harness.done;
 		}
 	});
+
+	it("does not resubscribe when every relay rejects the probe, and logs probe-failed", async () => {
+		const harness = startListener({ publishMode: "reject", random: () => 0 });
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener probe-failed\n");
+			expect(harness.closed).toEqual([]);
+			expect(harness.logs.some((line) => line.includes("heartbeat") || line.includes("resubscribe"))).toBe(false);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("logs probe-failed when the probe publish throws", async () => {
+		const harness = startListener({ publishMode: "throw", random: () => 0 });
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener probe-failed\n");
+			expect(harness.logs.some((line) => line.startsWith("phone: listener heartbeat"))).toBe(false);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("probes one relay per check and rotates to the next relay", async () => {
+		const other = "wss://other.example";
+		const harness = startListener({ relays: [OWN, other], random: () => 0 });
+		try {
+			await harness.ready;
+			const tick = () => harness.scheduled.filter((entry) => entry.delay === LIVENESS_MIN_MS).at(-1)?.run();
+			tick();
+			await harness.waitForLog("phone: listener heartbeat\n");
+			tick();
+			const started = Date.now();
+			while (harness.published.length < 2) {
+				if (Date.now() - started > 2000) throw new Error(`published ${JSON.stringify(harness.published)}`);
+				await Bun.sleep(10);
+			}
+			expect(harness.published[0]).toEqual([OWN]);
+			expect(harness.published[1]).toEqual([other]);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("rewrites listener.pid after a liveness resubscribe", async () => {
+		const harness = startListener({ deaf: true, random: () => 0 });
+		try {
+			await harness.ready;
+			const path = listenerPidPath(harness.paths);
+			const stamped = JSON.parse(readFileSync(path, "utf8")) as { relays: string[] };
+			stamped.relays = ["wss://stale.example"];
+			writeFileSync(path, JSON.stringify(stamped));
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener resubscribe\n");
+			const rewritten = JSON.parse(readFileSync(path, "utf8")) as { relays: string[]; keys?: string };
+			expect(rewritten.relays).toEqual([OWN]);
+			expect(rewritten.keys).toBe(keyFingerprint([{ id: numberKeyId(harness.db), pub: getPublicKey(harness.numberSk) }]));
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("records the key-change notice and rewrites the pid when catch-up throws", async () => {
+		let failQueries = false;
+		const harness = startListener({ random: () => 0, failQueries: () => failQueries });
+		try {
+			await harness.ready;
+			const replacement = identity();
+			harness.db.putKey({ id: numberKeyId(harness.db), nsec: nip19.nsecEncode(replacement.sk), in_store: 0 });
+			failQueries = true;
+			harness.scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+			const started = Date.now();
+			while (!harness.db.unreadMessages().some((row) => row.sender === "phone" && row.text === "key changed")) {
+				if (Date.now() - started > 2000) throw new Error("key change notice was not recorded");
+				await Bun.sleep(10);
+			}
+			const written = JSON.parse(readFileSync(listenerPidPath(harness.paths), "utf8")) as { keys?: string };
+			expect(written.keys).toBe(keyFingerprint([{ id: numberKeyId(harness.db), pub: replacement.pub }]));
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("logs probe-failed and does not publish when there is no relay", async () => {
+		const harness = startListener({ relays: [], random: () => 0 });
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener probe-failed\n");
+			expect(harness.published).toEqual([]);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("signs the probe with the number key when another key is loaded first", async () => {
+		const harness = startListener({
+			random: () => 0,
+			beforeStart: (db) => {
+				createFileKey(db, "aaa");
+			},
+		});
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener heartbeat\n");
+			const rumor = (await import("nostr-tools")).nip17.unwrapEvent(harness.probes[0]!, harness.numberSk);
+			expect(rumor.pubkey).toBe(getPublicKey(harness.numberSk));
+			expect(rumor.tags).toContainEqual(["t", PROBE_TOPIC]);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("does not start a second probe while one check is still running", async () => {
+		const harness = startListener({ publishMode: "hold", random: () => 0 });
+		try {
+			await harness.ready;
+			const ticks = () => harness.scheduled.filter((entry) => entry.delay === LIVENESS_MIN_MS);
+			ticks().at(-1)?.run();
+			const started = Date.now();
+			while (harness.published.length < 1) {
+				if (Date.now() - started > 2000) throw new Error("probe did not start");
+				await Bun.sleep(5);
+			}
+			ticks().at(-1)?.run();
+			await Bun.sleep(30);
+			expect(harness.published).toHaveLength(1);
+			harness.releaseHold();
+			await Bun.sleep(40);
+			expect(harness.published).toHaveLength(1);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
 });
+
+describe("probe catch-up after a restart", () => {
+	it("does not inbox a self-probe when our npub is a contact, and still stores a real self message", async () => {
+		const seen = await runCatchUp((db, sk) => {
+			const pub = getPublicKey(sk);
+			addContact(db, {
+				npub: nip19.npubEncode(pub),
+				handle: "self",
+				relays: [OWN],
+				keyId: numberKeyId(db),
+				addedAt: NOW,
+				via: "accept",
+			});
+			return [wrapProbe(sk, pub), wrap("real-self", sk, pub)];
+		});
+		expect(seen.texts).toContain("real-self");
+		expect(seen.texts).not.toContain(PROBE_TOPIC);
+		expect(seen.logs.some((line) => line.includes("phone: dropped"))).toBe(false);
+		expect(isSelfProbe({ pubkey: seen.pub, tags: [["t", PROBE_TOPIC]] }, [seen.pub])).toBe(true);
+	});
+
+	it("does not log a drop for a self-probe when our npub is not a contact", async () => {
+		const seen = await runCatchUp((db, sk) => {
+			void db;
+			return [wrapProbe(sk, getPublicKey(sk))];
+		});
+		expect(seen.texts).not.toContain(PROBE_TOPIC);
+		expect(seen.logs.some((line) => line.includes("phone: dropped"))).toBe(false);
+	});
+});
+
+async function runCatchUp(seed: (db: PhoneDb, sk: Uint8Array) => NostrEvent[]): Promise<{ texts: string[]; logs: string[]; pub: string }> {
+	const tracker = makeHomeTracker("dg-phone-restart-");
+	const home = tracker.freshHome();
+	const paths = resolveDgPaths({ env: { DG_HOME: home } });
+	const db = PhoneDb.open(paths, () => NOW);
+	tracker.trackDb(db);
+	writeRelays(db, [OWN]);
+	const sk = createFileKey(db, numberKeyId(db)) as Uint8Array;
+	writeNumber(db, { secret: "cd".repeat(32), as: "dg" });
+	const pool = createFakePool();
+	for (const event of seed(db, sk)) pool.events.push(event);
+	const logs: string[] = [];
+	const stderr = spyOn(process.stderr, "write").mockImplementation((chunk) => {
+		logs.push(String(chunk));
+		return true;
+	});
+	let stopHandler: (() => void) | undefined;
+	let resolveReady: () => void = () => {};
+	const opened = new Promise<void>((resolve) => {
+		resolveReady = resolve;
+	});
+	const done = runListener({
+		paths,
+		db,
+		sessionClient: async () => undefined,
+		grantClient: (): KeyClient => {
+			throw new Error("no grant");
+		},
+		createPool: () => ({ ...pool, close: () => {} }),
+		now: () => NOW,
+		pid: 5151,
+		schedule: () => () => {},
+		onSignal: (signal, handler) => {
+			if (signal === "SIGTERM") {
+				stopHandler = handler;
+				resolveReady();
+			}
+		},
+		liveness: { minMs: LIVENESS_MIN_MS, maxMs: LIVENESS_MAX_MS, confirmMs: 20, waitMs: 10, random: () => 0 },
+	}).finally(() => {
+		stderr.mockRestore();
+		tracker.cleanup();
+	});
+	await opened;
+	const texts = db.recentMessages(20).map((row) => row.text);
+	stopHandler?.();
+	await done;
+	return { texts, logs: [...logs], pub: getPublicKey(sk) };
+}
 
 function timeoutAllPool(): PhonePool & { close(relays: string[]): void } {
 	return scriptedPool(new Proxy({}, { get: () => "timeout" }) as Record<string, Mode>).pool;
@@ -554,20 +987,41 @@ function startMockRelay(script: { okDelayMs?: number; rejectReason?: string; sil
 	};
 }
 
-function startListener(opts: { deaf?: boolean; random: () => number }) {
+function startListener(opts: {
+	deaf?: boolean;
+	random: () => number;
+	relays?: string[];
+	publishMode?: "ok" | "reject" | "throw" | "hold";
+	failQueries?: () => boolean;
+	beforeStart?: (db: PhoneDb, numberSk: Uint8Array) => void;
+}) {
 	const tracker = makeHomeTracker("dg-phone-live-");
 	const home = tracker.freshHome();
 	const paths: DgPaths = resolveDgPaths({ env: { DG_HOME: home } });
 	const db = PhoneDb.open(paths, () => NOW);
 	tracker.trackDb(db);
-	writeRelays(db, [OWN]);
+	writeRelays(db, opts.relays ?? [OWN]);
 	const numberSk = createFileKey(db, numberKeyId(db)) as Uint8Array;
 	writeNumber(db, { secret: "ab".repeat(32), as: "dg" });
+	opts.beforeStart?.(db, numberSk);
 	const inner = createFakePool();
 	let deaf = opts.deaf === true;
 	const closed: string[][] = [];
+	const published: string[][] = [];
+	const probes: NostrEvent[] = [];
+	let subCloses = 0;
+	let releaseHold: () => void = () => {};
+	const hold = new Promise<void>((resolve) => {
+		releaseHold = resolve;
+	});
+	const clock = { current: NOW };
 	const pool: PhonePool & { close(relays: string[]): void } = {
 		publish(relays, event) {
+			published.push([...relays]);
+			probes.push(event);
+			if (opts.publishMode === "throw") throw new Error("probe boom");
+			if (opts.publishMode === "hold") return relays.map(() => hold.then(() => ""));
+			if (opts.publishMode === "reject") return relays.map(() => Promise.reject(new Error("blocked")));
 			if (deaf) {
 				inner.events.push(event);
 				return relays.map(() => Promise.reject(new Error("publish timed out")));
@@ -575,6 +1029,7 @@ function startListener(opts: { deaf?: boolean; random: () => number }) {
 			return inner.publish(relays, event);
 		},
 		async querySync(relays, filter, params) {
+			if (opts.failQueries?.()) throw new Error("fetch down");
 			if (deaf) {
 				inner.filters.push(filter);
 				return [];
@@ -584,9 +1039,19 @@ function startListener(opts: { deaf?: boolean; random: () => number }) {
 		subscribe(relays, filter, params) {
 			if (deaf) {
 				inner.filters.push(filter);
-				return { close() {} };
+				return {
+					close() {
+						subCloses += 1;
+					},
+				};
 			}
-			return inner.subscribe(relays, filter, params);
+			const sub = inner.subscribe(relays, filter, params);
+			return {
+				close() {
+					subCloses += 1;
+					sub.close();
+				},
+			};
 		},
 		close(relays) {
 			closed.push([...relays]);
@@ -620,7 +1085,7 @@ function startListener(opts: { deaf?: boolean; random: () => number }) {
 			throw new Error("no grant");
 		},
 		createPool: () => pool,
-		now: () => NOW,
+		now: () => clock.current,
 		pid: 4242,
 		schedule,
 		onSignal: (signal, handler) => {
@@ -649,6 +1114,12 @@ function startListener(opts: { deaf?: boolean; random: () => number }) {
 		logs,
 		closed,
 		store: inner.events,
+		published,
+		probes,
+		filters: inner.filters,
+		clock,
+		releaseHold,
+		subCloses: () => subCloses,
 		ready,
 		done,
 		stop: () => stopHandler?.(),
