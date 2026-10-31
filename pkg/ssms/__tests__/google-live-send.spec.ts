@@ -18,11 +18,12 @@ function createLivePage(input: {
 	urlDelayMs: number;
 	paneDelayMs: number;
 	headerDelayMs: number;
+	paneId?: string;
 }) {
 	let href = input.href;
 	let header = input.header;
 	let selectedId = idOf(input.href);
-	let pane = `pane-${selectedId || "start"}`;
+	let paneId = input.paneId ?? (selectedId || "start");
 	let slept = 0;
 	let clicked: { id: string; at: number } | null = null;
 	const clicks: string[] = [];
@@ -33,7 +34,7 @@ function createLivePage(input: {
 	Object.defineProperty(proto, "value", {
 		configurable: true,
 		set(value: string) {
-			typed.push(`${pane}:${value}`);
+			typed.push(`${paneId}:${value}`);
 		},
 		get() {
 			return typed.at(-1)?.split(":").slice(1).join(":") ?? "";
@@ -50,7 +51,7 @@ function createLivePage(input: {
 			return name === "aria-label" ? "Send" : null;
 		},
 		click() {
-			sentAt.push(`${pane}|${href}`);
+			sentAt.push(`${paneId}|${href}`);
 		},
 	};
 	const heading = {
@@ -62,11 +63,19 @@ function createLivePage(input: {
 		},
 	};
 	const main = {
-		getAttribute(name: string) {
-			return name === "data-dg-pane" ? pane : null;
+		getAttribute() {
+			return null;
 		},
 		setAttribute() {},
 		querySelector(selector: string) {
+			if (selector.includes("data-conversation-id") || selector.includes("data-participant-id")) {
+				return {
+					getAttribute(name: string) {
+						if (name === "data-conversation-id" || name === "data-participant-id") return paneId;
+						return null;
+					},
+				};
+			}
 			if (selector.includes("h1") || selector.includes("heading")) return heading;
 			if (selector.includes("textarea") || selector.includes("contenteditable")) return box;
 			return null;
@@ -111,7 +120,7 @@ function createLivePage(input: {
 			selectedId = clicked.id;
 		}
 		if (link && age >= input.headerDelayMs) header = link.name;
-		if (age >= input.paneDelayMs) pane = `pane-${clicked.id}`;
+		if (age >= input.paneDelayMs) paneId = clicked.id;
 	}
 	return {
 		clicks,
@@ -170,7 +179,7 @@ describe("live Google send", () => {
 		expect(sent.reason).toBe("sent");
 		expect(live.clicks).toEqual(["12"]);
 		expect(live.sleeps.length).toBeGreaterThan(0);
-		expect(live.typed).toEqual(["pane-12:hello there"]);
+		expect(live.typed).toEqual(["12:hello there"]);
 		expect(live.sentAt[0]).toMatch(/\/conversations\/12$/);
 	});
 
@@ -188,7 +197,7 @@ describe("live Google send", () => {
 		expect(sent.reason).toBe("sent");
 		expect(live.clicks).toEqual(["12"]);
 		expect(live.sentAt[0]).toMatch(/\/conversations\/12$/);
-		expect(live.typed).toEqual(["pane-12:hello there"]);
+		expect(live.typed).toEqual(["12:hello there"]);
 	});
 
 	test("id 12 does not send into the open thread 123", async () => {
@@ -204,9 +213,30 @@ describe("live Google send", () => {
 		const sent = (await send(live, "12", "Ada Lovelace")) as { reason: string };
 		expect(sent.reason).toBe("sent");
 		expect(live.clicks).toEqual(["12"]);
-		expect(live.sentAt[0]).toContain("pane-12|");
+		expect(live.sentAt[0]).toContain("12|");
 		expect(live.sentAt[0]).toMatch(/\/conversations\/12$/);
 		expect(live.sentAt[0]).not.toMatch(/\/conversations\/123$/);
+	});
+
+	test("a stale url and selection do not send until the pane id matches", async () => {
+		const live = createLivePage({
+			href: "https://messages.google.com/web/u/0/conversations/12",
+			header: "Ada",
+			paneId: "99",
+			urlDelayMs: 0,
+			headerDelayMs: 0,
+			paneDelayMs: 3000,
+			links: [
+				{ id: "99", name: "Bea" },
+				{ id: "12", name: "Ada" },
+			],
+		});
+		const sent = (await send(live, "12", "Ada")) as { reason: string };
+		expect(sent.reason).toBe("sent");
+		expect(live.typed).toEqual(["12:hello there"]);
+		expect(live.sentAt[0]).toContain("12|");
+		expect(live.sentAt[0]).not.toContain("99|");
+		expect(live.sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(3000);
 	});
 
 	test("the URL can update before the message pane", async () => {
@@ -223,8 +253,8 @@ describe("live Google send", () => {
 		});
 		const sent = (await send(live, "2", "Cara")) as { reason: string };
 		expect(sent.reason).toBe("sent");
-		expect(live.typed).toEqual(["pane-2:hello there"]);
-		expect(live.sentAt[0]).toContain("pane-2|");
+		expect(live.typed).toEqual(["2:hello there"]);
+		expect(live.sentAt[0]).toContain("2|");
 		expect(live.sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(3000);
 	});
 
@@ -242,9 +272,9 @@ describe("live Google send", () => {
 		});
 		const sent = (await send(live, "12", "Al")) as { reason: string };
 		expect(sent.reason).toBe("sent");
-		expect(live.typed).toEqual(["pane-12:hello there"]);
-		expect(live.sentAt[0]).toContain("pane-12|");
-		expect(live.sentAt[0]).not.toContain("pane-123|");
+		expect(live.typed).toEqual(["12:hello there"]);
+		expect(live.sentAt[0]).toContain("12|");
+		expect(live.sentAt[0]).not.toContain("123|");
 		expect(live.sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(3000);
 	});
 
@@ -262,7 +292,7 @@ describe("live Google send", () => {
 		});
 		await expect(
 			send(early, "9", "Mom", { ambiguous: true, timeoutMs: 500 }),
-		).rejects.toThrow("ambiguous recipient");
+		).rejects.toThrow("open conversation timed out");
 		expect(early.typed).toEqual([]);
 		expect(early.sentAt).toEqual([]);
 
@@ -279,9 +309,9 @@ describe("live Google send", () => {
 		});
 		const sent = (await send(live, "9", "Mom", { ambiguous: true })) as { reason: string };
 		expect(sent.reason).toBe("sent");
-		expect(live.typed).toEqual(["pane-9:hello there"]);
-		expect(live.sentAt[0]).toContain("pane-9|");
-		expect(live.sentAt[0]).not.toContain("pane-5|");
+		expect(live.typed).toEqual(["9:hello there"]);
+		expect(live.sentAt[0]).toContain("9|");
+		expect(live.sentAt[0]).not.toContain("5|");
 		expect(live.sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(3000);
 	});
 });

@@ -1,6 +1,6 @@
 import { scopeDays } from "../config/parse";
 import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
-import { claimDraft, finishDraft, releaseDraft, writeDraft } from "../drafts/store";
+import { claimDraft, finishDraft, readDraft, releaseDraft, writeDraft } from "../drafts/store";
 import { ConfirmationRequired, HookSendRefused, SendUncertainError } from "../errors";
 import { nextGapMs, type Rng } from "../pace/jitter";
 import { withCapabilities } from "../provider";
@@ -203,9 +203,7 @@ export function createGoogleProvider(input: {
 			return { conversationId: request.conversationId, reason: "blocked" };
 		},
 		async draftReply(request) {
-			const rows = conversationsFrom(
-				await browser.act("list", { scopeDays: scopeDays(config.scope) ?? null }),
-			);
+			const rows = conversationsFrom(await browser.act("list", { scopeDays: null }));
 			const row = rows.find((item) => item.id === request.conversationId);
 			if (!row?.title) throw new Error("conversation not found");
 			const name = normalizeRecipientName(row.title);
@@ -233,6 +231,8 @@ export function createGoogleProvider(input: {
 		async sendDraft(request) {
 			if (request.hook) throw new HookSendRefused();
 			if (!request.confirmed) throw new ConfirmationRequired();
+			const lookedUp = readDraft(input.home, request.draftId);
+			if (lookedUp.ambiguousRecipient) throw new Error("ambiguous recipient");
 			const draft = claimDraft(input.home, request.draftId, "google");
 			try {
 				if (draft.emoji || draft.quote || draft.attachments.length > 0) {

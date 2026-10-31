@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { applyCleanup, conversationToClassifiable, planCleanup } from "../cleanup/apply";
@@ -57,6 +57,7 @@ export interface SsmsRuntime {
 	revealToken?: (draftId: string, token: string) => void;
 	openTerminal?: (path: string, flags: string) => number;
 	configHome?: string;
+	passwdHome?: string | null;
 	stdio?: "inherit";
 	spawn?: (cmd: string[]) => Spawned;
 }
@@ -71,46 +72,85 @@ function isProvider(value: string | undefined): value is SmsProviderId {
 	return (PROVIDER_NAMES as readonly string[]).includes(value ?? "");
 }
 
-export function accountHome(uid = process.getuid?.() ?? -1): string | undefined {
-	if (process.platform !== "linux" || uid < 0) return undefined;
-	try {
-		const listed = execFileSync("getent", ["passwd", String(uid)], {
-			encoding: "utf8",
-			timeout: 1000,
-		});
-		const home = listed.split(":")[5];
-		if (home) return home;
-	} catch {
-		// getent is missing or the uid is only in /etc/passwd.
-	}
-	try {
-		const text = readFileSync("/etc/passwd", "utf8");
-		for (const line of text.split("\n")) {
-			const parts = line.split(":");
-			if (parts.length >= 6 && Number(parts[2]) === uid && parts[5]) return parts[5];
+function runAccountCommand(command: string, args: string[]): string {
+	return execFileSync(command, args, { encoding: "utf8", timeout: 1000 });
+}
+
+export function accountHome(
+	uid = process.getuid?.() ?? -1,
+	platform: NodeJS.Platform = process.platform,
+	run: (command: string, args: string[]) => string = runAccountCommand,
+): string | undefined {
+	if (uid < 0) return undefined;
+	if (platform === "linux") {
+		try {
+			const listed = run("getent", ["passwd", String(uid)]);
+			const home = listed.split(":")[5];
+			if (home) return home;
+		} catch {
+			// getent is missing or the uid is only in /etc/passwd.
 		}
-	} catch {
+		try {
+			const text = readFileSync("/etc/passwd", "utf8");
+			for (const line of text.split("\n")) {
+				const parts = line.split(":");
+				if (parts.length >= 6 && Number(parts[2]) === uid && parts[5]) return parts[5];
+			}
+		} catch {
+			return undefined;
+		}
+		return undefined;
+	}
+	if (platform === "darwin") {
+		try {
+			const listed = run("id", ["-P"]);
+			const home = listed.trim().split(":")[8];
+			if (home) return home;
+		} catch {
+			// id -P is unavailable; try Directory Services.
+		}
+		try {
+			const name = run("id", ["-un"]).trim();
+			const listed = run("dscl", [".", "-read", `/Users/${name}`, "NFSHomeDirectory"]);
+			const match = /NFSHomeDirectory:\s*(\S+)/.exec(listed);
+			if (match?.[1]) return match[1];
+		} catch {
+			return undefined;
+		}
 		return undefined;
 	}
 	return undefined;
 }
 
-export function allowSendHome(homeDir = accountHome() ?? userInfo().homedir): string {
-	return join(homeDir, ".dg");
+export function allowSendHome(homeDir?: string): string | undefined {
+	const dir = homeDir === undefined ? accountHome() : homeDir;
+	if (!dir) return undefined;
+	return join(dir, ".dg");
 }
 
 export function fixedConfigPath(home: string): string {
 	return join(home, "ssms", "config.yaml");
 }
 
-export function readFixedAllowSend(home: string): boolean {
+export function readFixedAllowSend(home: string | undefined): boolean {
+	if (!home) return false;
 	const path = fixedConfigPath(home);
 	if (!existsSync(path)) return false;
 	const value = parseYaml(readFileSync(path, "utf8")) as { allow_send?: unknown } | null;
 	return value?.allow_send === true;
 }
 
-function loadConfig(path: string | undefined, home: string): SmsCleanupConfig {
+export function readFixedGoogleSendEnabled(home: string | undefined): boolean {
+	if (!home) return false;
+	const path = fixedConfigPath(home);
+	if (!existsSync(path)) return false;
+	const value = parseYaml(readFileSync(path, "utf8")) as {
+		google?: { send_enabled?: unknown };
+	} | null;
+	return value?.google?.send_enabled === true;
+}
+
+function loadConfig(path: string | undefined, home: string | undefined): SmsCleanupConfig {
 	let overlay: unknown;
 	if (path) {
 		const text = readFileSync(path, "utf8");
@@ -122,6 +162,13 @@ function loadConfig(path: string | undefined, home: string): SmsCleanupConfig {
 	const config = parseCleanupConfig(overlay);
 	config.allow_send = readFixedAllowSend(home);
 	return config;
+}
+
+function allowDirectory(runtime: SsmsRuntime): string | undefined {
+	if (runtime.passwdHome === null) return undefined;
+	if (typeof runtime.passwdHome === "string") return join(runtime.passwdHome, ".dg");
+	if (runtime.configHome) return runtime.configHome;
+	return allowSendHome();
 }
 
 function revealToken(
@@ -180,13 +227,13 @@ export async function runSsms(
 		}
 		const home =
 			runtime.home ?? runtime.env?.DG_HOME ?? process.env.DG_HOME ?? join(homedir(), ".dg");
-		const allowHome = runtime.configHome ?? allowSendHome();
+		const allowHome = allowDirectory(runtime);
 		const env = runtime.env ?? process.env;
 		const config = loadConfig(args.config, allowHome);
 		const session = await openSession(args.provider, runtime, home, env, config, log, args.verb);
 		stop = session.stop;
 		opened = session.opened;
-		await dispatch(args, session.provider, config, runtime, home, writeOut, log);
+		await dispatch(args, session.provider, config, runtime, home, allowHome, writeOut, log);
 		return { code: 0, stdout, stderr };
 	} catch (error) {
 		const message = redactSecrets(error instanceof Error ? error.message : String(error));
@@ -287,6 +334,7 @@ async function dispatch(
 	config: SmsCleanupConfig,
 	runtime: SsmsRuntime,
 	home: string,
+	allowHome: string | undefined,
 	writeOut: (text: string) => void,
 	log: (event: LogEvent) => void,
 ): Promise<void> {
@@ -439,6 +487,9 @@ async function dispatch(
 			log({ id: args.draft, reason: "send-refused", provider: provider.id, verb: "send" });
 			if (decision.message === "send declined") throw new SendDeclined();
 			throw new Error(decision.message);
+		}
+		if (provider.id === "google" && !readFixedGoogleSendEnabled(allowHome)) {
+			throw new Error("google send is disabled; set google.send_enabled: true in the ssms config");
 		}
 		const result = await provider.sendDraft({
 			draftId: args.draft,

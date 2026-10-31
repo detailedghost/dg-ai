@@ -38,12 +38,17 @@ const selectedExpr = `(() => {
 const paneExpr = `(() => {
   const main = document.querySelector('[role="main"]') || document.querySelector("main");
   if (!main) return "";
-  const node = main.querySelector("[data-dg-pane], mws-message-list, mws-conversation-view, [role='log']") || main;
-  const mark = node.getAttribute("data-dg-pane");
-  if (mark) return mark;
-  const next = "p" + Math.random().toString(36).slice(2);
-  node.setAttribute("data-dg-pane", next);
-  return next;
+  const marked = main.querySelector("[data-conversation-id], [data-participant-id], form[data-conversation-id]");
+  if (marked) {
+    const id = marked.getAttribute("data-conversation-id") || marked.getAttribute("data-participant-id") || "";
+    if (id) return id;
+  }
+  const link = main.querySelector("a[href*='/conversations/']");
+  if (!link) return "";
+  const href = link.getAttribute("href") || "";
+  const match = /\\/conversations\\/([^/?#]+)/.exec(href);
+  if (!match) return "";
+  try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
 })()`;
 
 function sameConversation(hrefCode: string, id: string): string {
@@ -147,8 +152,8 @@ async function sendOnEvalPage(
 				const href = String(await page.evaluate("location.href"));
 				const header = String(await page.evaluate(headerExpr));
 				const selectedId = String(await page.evaluate(selectedExpr));
-				const pane = String(await page.evaluate(paneExpr));
-				return { href, header, selectedId, pane };
+				const paneId = String(await page.evaluate(paneExpr));
+				return { href, header, selectedId, paneId };
 			},
 			async clickConversation(id) {
 				return Boolean(await page.evaluate(clickExpr(id)));

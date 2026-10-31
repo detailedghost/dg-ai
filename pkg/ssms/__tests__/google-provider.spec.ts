@@ -102,4 +102,46 @@ describe("google provider", () => {
 		expect(existsSync(join(home, "ssms", "drafts", "draft-1.sending"))).toBe(false);
 		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
 	});
+
+	test("two conversations with the same name are not sent", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-moms-"));
+		let sends = 0;
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "9";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "9";
+		const doc = createDocument(
+			[
+				node("Mom", { href: "/web/conversations/5", "aria-label": "Mom" }),
+				node("Mom", { href: "/web/conversations/9", "aria-label": "Mom" }),
+				box,
+				send,
+			],
+			"",
+		);
+		readyThread(doc, "9", "Mom");
+		const browser = createLocalMessagesBrowser(doc);
+		const act = browser.act.bind(browser);
+		browser.act = async (action, args) => {
+			if (action === "send") sends += 1;
+			return act(action, args);
+		};
+		const provider = createGoogleProvider({
+			browser,
+			home,
+			ids: () => "draft-mom",
+			now: () => 0,
+		});
+		const draft = await provider.draftReply({ conversationId: "9", text: "hello there" });
+		expect(draft.ambiguousRecipient).toBe(true);
+		await expect(
+			provider.sendDraft({ draftId: draft.id, confirmed: true, hook: false }),
+		).rejects.toThrow("ambiguous recipient");
+		expect(sends).toBe(0);
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+		const stored = JSON.parse(readFileSync(join(home, "ssms", "drafts", "draft-mom.json"), "utf8")) as {
+			status: string;
+		};
+		expect(stored.status).toBe("pending");
+	});
 });

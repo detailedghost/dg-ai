@@ -39,8 +39,10 @@ only for an interactive yes on a real terminal, or for `--approve` with the
 token that hashes to the stored value. `--yes` alone does not send. The gate
 blocks accidental and non-interactive sends. Same-user code that evades it,
 for example by allocating its own pty, is out of scope. `allow_send` is read
-only from `~/.dg/ssms/config.yaml` in the account's passwd home, not from
-`$HOME` or `$DG_HOME`.
+only from `~/.dg/ssms/config.yaml` in the account's passwd home (Linux
+`getent` or `/etc/passwd`, macOS `id -P` or `dscl`). An unresolved home does
+not send. Not from `$HOME` or `$DG_HOME`. `google.send_enabled` defaults to
+false until a signed-in Messages for Web session has been checked.
 `--config` cannot set it. `allow_send: false` never sends. Cleanup never
 deletes and never sends. Logs go through `sanitizeLogLine` and carry an id
 and a reason only.

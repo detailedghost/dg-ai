@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
-import { accountHome, allowSendHome, readFixedAllowSend, runSsms } from "../src/cli/run";
+import { accountHome, allowSendHome, runSsms } from "../src/cli/run";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
@@ -56,7 +56,8 @@ describe("ssms cli", () => {
 		expect(result.stdout).toContain("google");
 		expect(result.stdout).toContain("signal");
 		expect(result.stdout).toContain("The token is shown on the terminal device only");
-		expect(result.stdout).toContain("passwd home, not from HOME or DG_HOME");
+		expect(result.stdout).toContain("not from HOME or DG_HOME");
+		expect(result.stdout).toContain("google.send_enabled defaults to false");
 		expect(result.stdout).toContain("accidental and non-interactive sends");
 		expect(result.stdout).not.toContain("A hook cannot send");
 	});
@@ -87,7 +88,10 @@ describe("ssms cli", () => {
 		expect(drafted.stdout).toContain("hello there");
 		expect(drafted.stderr).not.toContain("hello there");
 		mkdirSync(join(home, "ssms"), { recursive: true });
-		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
+		writeFileSync(
+			join(home, "ssms", "config.yaml"),
+			"allow_send: true\ngoogle:\n  send_enabled: true\n",
+		);
 		const refused = await runSsms(["google", "send", "--draft", "draft-1"], runtime);
 		expect(refused.code).toBe(1);
 		expect(refused.stderr).toContain("interactive yes");
@@ -288,26 +292,31 @@ describe("ssms cli", () => {
 		expect(allowSendHome("/home/ada")).toBe(join("/home/ada", ".dg"));
 	});
 
-	test("allow_send follows the passwd home when HOME points somewhere else", async () => {
-		const passwdHome = accountHome();
-		expect(passwdHome && passwdHome.length > 0).toBe(true);
-		const temp = mkdtempSync(join(tmpdir(), "ssms-home-"));
-		mkdirSync(join(temp, ".dg", "ssms"), { recursive: true });
-		writeFileSync(join(temp, ".dg", "ssms", "config.yaml"), "allow_send: true\n");
+	test("allow_send uses the injected passwd home, not HOME", async () => {
+		const homeViaEnv = mkdtempSync(join(tmpdir(), "ssms-home-env-"));
+		const passwd = mkdtempSync(join(tmpdir(), "ssms-passwd-"));
+		mkdirSync(join(homeViaEnv, ".dg", "ssms"), { recursive: true });
+		writeFileSync(join(homeViaEnv, ".dg", "ssms", "config.yaml"), "allow_send: true\ngoogle:\n  send_enabled: true\n");
+		mkdirSync(join(passwd, ".dg", "ssms"), { recursive: true });
 		const previous = process.env.HOME;
-		process.env.HOME = temp;
+		process.env.HOME = homeViaEnv;
 		try {
-			expect(allowSendHome()).toBe(join(passwdHome ?? "", ".dg"));
-			expect(allowSendHome().startsWith(temp)).toBe(false);
-			expect(readFixedAllowSend(join(temp, ".dg"))).toBe(true);
-			expect(readFixedAllowSend(allowSendHome())).toBe(
-				readFixedAllowSend(join(passwdHome ?? "", ".dg")),
-			);
+			expect(accountHome(501, "darwin", (command, args) => {
+				if (command === "id" && args[0] === "-P") {
+					return "ada:*:501:20:staff:0:0:Ada:/Users/ada:/bin/zsh\n";
+				}
+				throw new Error(command);
+			})).toBe("/Users/ada");
+			expect(accountHome(501, "darwin", () => {
+				throw new Error("missing");
+			})).toBeUndefined();
+			expect(allowSendHome()).not.toBe(join(homeViaEnv, ".dg"));
 			let token = "";
 			const runtime = {
-				...googleRuntime(temp),
-				home: temp,
-				env: { HOME: temp, DG_HOME: temp },
+				...googleRuntime(homeViaEnv),
+				home: homeViaEnv,
+				passwdHome: passwd,
+				env: { HOME: homeViaEnv, DG_HOME: homeViaEnv },
 				revealToken: (_id: string, value: string) => {
 					token = value;
 				},
@@ -321,15 +330,35 @@ describe("ssms cli", () => {
 				["google", "send", "--draft", "draft-1", "--approve", token, "--yes"],
 				runtime,
 			);
-			if (!readFixedAllowSend(join(passwdHome ?? "", ".dg"))) {
-				expect(sent.code).toBe(1);
-				expect(sent.stderr).toContain("allow_send");
-				expect(sent.stdout).not.toContain("sent ");
-			}
+			expect(sent.code).toBe(1);
+			expect(sent.stderr).toContain("allow_send");
+			expect(sent.stdout).not.toContain("sent ");
 		} finally {
 			if (previous === undefined) delete process.env.HOME;
 			else process.env.HOME = previous;
 		}
+	});
+
+	test("google send stays disabled until google.send_enabled is set", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-gsend-"));
+		mkdirSync(join(home, "ssms"), { recursive: true });
+		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
+		let token = "";
+		const runtime = {
+			...googleRuntime(home),
+			configHome: home,
+			revealToken: (_id: string, value: string) => {
+				token = value;
+			},
+		};
+		await runSsms(["google", "draft", "--conversation", "keep", "--text", "hello there"], runtime);
+		const sent = await runSsms(
+			["google", "send", "--draft", "draft-1", "--approve", token],
+			runtime,
+		);
+		expect(sent.code).toBe(1);
+		expect(sent.stderr).toContain("google.send_enabled");
+		expect(sent.stdout).not.toContain("sent ");
 	});
 
 	test("draft fails when the terminal cannot show the token", async () => {

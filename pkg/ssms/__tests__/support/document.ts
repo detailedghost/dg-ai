@@ -48,7 +48,7 @@ export function readyThread(doc: object, id: string, header = id): void {
 	Object.assign(doc, {
 		location: { href: `https://messages.google.com/web/u/0/conversations/${id}` },
 		threadHeader: header,
-		pane: `pane-${id}`,
+		paneConversationId: id,
 	});
 	for (const item of page.querySelectorAll?.("*") ?? []) {
 		const href = item.attrs?.href ?? "";

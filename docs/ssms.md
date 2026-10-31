@@ -75,16 +75,22 @@ terminal, or after `--approve` with the token from the terminal. `--yes` does
 not send. The gate blocks accidental and non-interactive sends. Same-user code
 that evades it, for example by allocating its own pty, is out of scope.
 `allow_send` is read only from `~/.dg/ssms/config.yaml` in the account's passwd
-home (`getent` or `/etc/passwd` for the current uid; `os.userInfo()` only when
-that is unavailable), not from `$HOME` or `$DG_HOME`. `--config` cannot set it.
+home. Linux uses `getent` or `/etc/passwd`. macOS uses `id -P` or `dscl`. If
+that home cannot be resolved, send stays off. `$HOME` and `$DG_HOME` do not
+choose it. `--config` cannot set it. `google.send_enabled` in that same file
+defaults to false. Google send is unverified against a signed-in Messages for
+Web session until someone runs it there, so leave the flag false until then.
 `false` means never send, and that is the default when the fixed file is
 missing. If `/dev/tty` cannot be opened, `draft` fails and does not keep the
 draft. A Google draft stores the contact's display name and matches the open
 thread header to that name exactly, after trimming and collapsing whitespace.
-The list item for that conversation id must be selected, and the message pane
-must be a different generation than before the click unless that thread was
-already open. A display name shared by more than one conversation is refused
-when that switch cannot be shown.
+The list item for that conversation id must be selected, and an identifier
+inside the message pane (a `data-conversation-id`, participant id, or
+conversation link) must equal the conversation id stored when the draft was
+created. That check runs again immediately before Send. If the pane does not
+expose an id, send is refused. A display name shared by more than one
+conversation is refused before the page is touched. The pane does not have to
+be a new DOM node.
 Cleanup never sends and never deletes. `--dry-run` leaves the draft pending.
 
 Signal drafts can be plain text, a reaction (`--emoji`), an image

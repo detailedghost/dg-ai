@@ -34,6 +34,11 @@ describe("nextGapMs", () => {
 		expect(nextGapMs(seq([0.9, 0, 0]), [2000, 2600])).toBe(3000);
 	});
 
+	test("one earlier gap is not a stride", () => {
+		expect(nextGapMs(seq([0.9, 0, 0]), [2500])).toBe(3000);
+		expect(nextGapMs(seq([0.9, 0, 0]), [])).toBe(3000);
+	});
+
 	test("eight draws from a cycling source are not one interval", () => {
 		const rng = seq([0.1, 0.2, 0.95, 0.1, 0.7, 0.4]);
 		const gaps: number[] = [];

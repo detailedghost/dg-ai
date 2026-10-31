@@ -12,11 +12,8 @@ export function nextGapMs(rng: Rng, previous: readonly number[] = []): number {
 		gap += 137 + Math.floor(rng() * 200);
 	}
 	const prior = previous.at(-2);
-	if (
-		prior !== undefined &&
-		last !== undefined &&
-		gap - last === last - prior
-	) {
+	if (prior === undefined || last === undefined) return gap;
+	if (gap - last === last - prior) {
 		gap += 89 + Math.floor(rng() * 100);
 	}
 	return gap;

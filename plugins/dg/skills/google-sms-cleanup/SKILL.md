@@ -54,7 +54,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
 
 ## Config (defaults)
 
-`allow_send` is not in this file. It is read only from `~/.dg/ssms/config.yaml` in the account's passwd home, not from `$HOME` or `$DG_HOME`. `--config` cannot set it.
+`allow_send` is not in this file. It is read only from `~/.dg/ssms/config.yaml` in the passwd home (not from `$HOME` or `$DG_HOME`). `google.send_enabled` in that file defaults to false. `--config` cannot set either.
 
 ```yaml
 allow_delete: false            # never delete conversations or messages
@@ -100,7 +100,8 @@ Pass the same map as `--config` when the user overrides a value.
    Never touch compose. With `allow_delete` false, never delete a conversation
    or a message. With `allow_send` false, never send; any outgoing text needs
    explicit per-message approval from the user. `allow_send` is read only from
-   `~/.dg/ssms/config.yaml` in the account's passwd home, not from `$HOME` or `$DG_HOME`.
+   `~/.dg/ssms/config.yaml` in the passwd home, not from `$HOME` or `$DG_HOME`.
+   `google.send_enabled` defaults to false until a signed-in Messages session is checked.
    `--config` cannot change it. `false` means never send. The gate blocks
    accidental and non-interactive sends. Same-user code that evades it, for
    example by allocating its own pty, is out of scope.

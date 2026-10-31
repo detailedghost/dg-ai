@@ -319,18 +319,18 @@ describe("Messages page actions", () => {
 		) as ReturnType<typeof createDocument> & {
 			location: { href: string };
 			threadHeader: string;
-			pane?: string;
+			paneConversationId?: string;
 			sleep?: () => void;
 		};
 		waiting.location = { href: "https://messages.google.com/web/u/0/" };
 		waiting.threadHeader = "";
-		waiting.pane = "pane-old";
+		waiting.paneConversationId = "old";
 		let slept = 0;
 		waiting.sleep = () => {
 			slept += 1;
 			waiting.location = { href: "https://messages.google.com/web/u/0/conversations/c1" };
 			waiting.threadHeader = "Ada";
-			waiting.pane = "pane-c1";
+			waiting.paneConversationId = "c1";
 			link.attrs["aria-selected"] = "true";
 		};
 		const sent = (await evaluateMessagesAction(waiting, "send", {
@@ -363,7 +363,7 @@ describe("Messages page actions", () => {
 			href: "https://messages.google.com/web/u/0/conversations/other",
 			header: "Bea",
 			selectedId: "other",
-			pane: "same",
+			paneId: "other",
 		};
 		await expect(
 			prepareSend(
@@ -395,6 +395,150 @@ describe("Messages page actions", () => {
 		).rejects.toThrow("open conversation timed out");
 		expect(sleeps).toEqual([200, 50]);
 		expect(sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(250);
+	});
+
+	test("a selected row that stays on the other thread does not send", async () => {
+		const writes: string[] = [];
+		const view = {
+			href: "https://messages.google.com/web/u/0/conversations/c1",
+			header: "Ada",
+			selectedId: "other",
+			paneId: "c1",
+		};
+		await expect(
+			prepareSend(
+				{
+					href: async () => view.href,
+					header: async () => view.header,
+					view: async () => view,
+					clickConversation: async () => true,
+					compose: async () => ({
+						write(text: string) {
+							writes.push(text);
+						},
+					}),
+					sendControl: async () => ({ disabled: false, click() {} }),
+					sleep: async () => undefined,
+				},
+				{
+					conversationId: "c1",
+					recipient: "Ada",
+					text: "hi",
+					confirmed: true,
+					timeoutMs: 1,
+					rng: () => 0,
+				},
+			),
+		).rejects.toThrow("open conversation timed out");
+		expect(writes).toEqual([]);
+	});
+
+	test("a matching url and header with the wrong row selected before the click does not send", async () => {
+		const writes: string[] = [];
+		await expect(
+			prepareSend(
+				{
+					href: async () => "https://messages.google.com/web/u/0/conversations/c1",
+					header: async () => "Ada",
+					view: async () => ({
+						href: "https://messages.google.com/web/u/0/conversations/c1",
+						header: "Ada",
+						selectedId: "other",
+						paneId: "c1",
+					}),
+					clickConversation: async () => true,
+					compose: async () => ({
+						write(text: string) {
+							writes.push(text);
+						},
+					}),
+					sendControl: async () => ({ disabled: false, click() {} }),
+				},
+				{
+					conversationId: "c1",
+					recipient: "Ada",
+					text: "hi",
+					confirmed: true,
+					timeoutMs: 1,
+				},
+			),
+		).rejects.toThrow("open conversation timed out");
+		expect(writes).toEqual([]);
+	});
+
+	test("the pre-send check still requires the selected row", async () => {
+		const writes: string[] = [];
+		let reads = 0;
+		await expect(
+			prepareSend(
+				{
+					href: async () => "https://messages.google.com/web/u/0/conversations/c1",
+					header: async () => "Ada",
+					view: async () => {
+						reads += 1;
+						return {
+							href: "https://messages.google.com/web/u/0/conversations/c1",
+							header: "Ada",
+							selectedId: reads === 1 ? "c1" : "other",
+							paneId: "c1",
+						};
+					},
+					clickConversation: async () => true,
+					compose: async () => ({
+						write(text: string) {
+							writes.push(text);
+						},
+					}),
+					sendControl: async () => ({ disabled: false, click() {} }),
+				},
+				{
+					conversationId: "c1",
+					recipient: "Ada",
+					text: "hi",
+					confirmed: true,
+				},
+			),
+		).rejects.toThrow("pane does not match the draft");
+		expect(writes).toEqual([]);
+	});
+
+	test("the pane id is checked again after typing and before Send", async () => {
+		let reads = 0;
+		let clicks = 0;
+		await expect(
+			prepareSend(
+				{
+					href: async () => "https://messages.google.com/web/u/0/conversations/c1",
+					header: async () => "Ada",
+					view: async () => {
+						reads += 1;
+						return {
+							href: "https://messages.google.com/web/u/0/conversations/c1",
+							header: "Ada",
+							selectedId: "c1",
+							paneId: reads < 3 ? "c1" : "other",
+						};
+					},
+					clickConversation: async () => true,
+					compose: async () => ({
+						write() {},
+					}),
+					sendControl: async () => ({
+						disabled: false,
+						click() {
+							clicks += 1;
+						},
+					}),
+				},
+				{
+					conversationId: "c1",
+					recipient: "Ada",
+					text: "hi",
+					confirmed: true,
+				},
+			),
+		).rejects.toThrow("pane does not match the draft");
+		expect(clicks).toBe(0);
 	});
 
 	test("conversation id 12 does not match a thread whose id is 123", async () => {

@@ -40,7 +40,17 @@ export interface ThreadView {
 	href: string;
 	header: string;
 	selectedId: string;
-	pane: string;
+	paneId: string;
+}
+
+export function viewMatchesDraft(view: ThreadView, id: string, recipient: string): boolean {
+	const selected = view.selectedId === id;
+	return (
+		hrefSelectsConversation(view.href, id) &&
+		headerNamesRecipient(view.header, recipient) &&
+		selected &&
+		view.paneId === id
+	);
 }
 
 export interface SendSurface {
@@ -73,32 +83,40 @@ export async function prepareSend(
 	const alreadyOpen =
 		hrefSelectsConversation(before.href, id) &&
 		headerNamesRecipient(before.header, recipient) &&
-		before.selectedId === id;
+		before.selectedId === id &&
+		before.paneId === id;
 	if (!(await surface.clickConversation(id))) throw new Error("conversation not found");
 	const timeout = resolveOpenTimeout(args.timeoutMs);
 	const rng = args.rng ?? Math.random;
 	const gaps: number[] = [];
 	let elapsed = 0;
-	for (;;) {
-		const view = await surface.view();
-		const urlReady = hrefSelectsConversation(view.href, id);
-		const headerReady = headerNamesRecipient(view.header, recipient);
-		const selected = view.selectedId === id;
-		const paneChanged = view.pane !== before.pane && view.pane !== "";
-		if (urlReady && headerReady && selected && (paneChanged || alreadyOpen)) break;
-		if (elapsed >= timeout || !surface.sleep) {
-			if (args.ambiguous) throw new Error("ambiguous recipient");
-			throw new Error("open conversation timed out");
-		}
+	if (!alreadyOpen) {
+		for (;;) {
+			const view = await surface.view();
+			const urlReady = hrefSelectsConversation(view.href, id);
+			const headerReady = headerNamesRecipient(view.header, recipient);
+			const selected = view.selectedId === id;
+			const paneBound = view.paneId === id;
+			if (urlReady && headerReady && selected && paneBound) break;
+			if (elapsed >= timeout || !surface.sleep) {
+				throw new Error("open conversation timed out");
+			}
 		const remaining = timeout - elapsed;
 		const gap = Math.max(1, Math.min(nextGapMs(rng, gaps), remaining));
 		gaps.push(gap);
 		await surface.sleep(gap);
 		elapsed += gap;
+		}
+	}
+	if (!viewMatchesDraft(await surface.view(), id, recipient)) {
+		throw new Error("pane does not match the draft");
 	}
 	const box = await surface.compose(id);
 	if (!box) throw new Error("compose box missing");
 	await box.write(args.text);
+	if (!viewMatchesDraft(await surface.view(), id, recipient)) {
+		throw new Error("pane does not match the draft");
+	}
 	try {
 		const send = await surface.sendControl(id);
 		if (!send) throw new SendUncertainError("send control missing");
@@ -127,7 +145,7 @@ export interface SendDocument {
 	location?: { href?: string };
 	href?: string;
 	threadHeader?: string;
-	pane?: string;
+	paneConversationId?: string;
 	querySelectorAll?: (selector: string) => PageNode[];
 	sleep?: (ms: number) => void;
 }
@@ -186,7 +204,7 @@ export function surfaceFromDocument(document: SendDocument): SendSurface {
 			href: String(document.location?.href ?? document.href ?? ""),
 			header: String(document.threadHeader ?? ""),
 			selectedId: selectedConversationId(document),
-			pane: String(document.pane ?? ""),
+			paneId: String(document.paneConversationId ?? ""),
 		}),
 		clickConversation(id) {
 			const link = nodesOf(document).find(
