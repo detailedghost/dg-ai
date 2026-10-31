@@ -49,7 +49,7 @@ async function googleFixture(): Promise<Fixture> {
 		],
 		"Conversations",
 	);
-	readyThread(doc, "c1", "c1");
+	readyThread(doc, "c1", "Ada");
 	const browser = createLocalMessagesBrowser(doc, async () => undefined);
 	const real = browser.act.bind(browser);
 	browser.act = async (action, args) => {
@@ -232,6 +232,7 @@ async function assertContract(name: string, open: () => Promise<Fixture>) {
 			const before = fixture.sent();
 			const draft = await fixture.provider.draftReply({ conversationId: "c1", text: "hello" });
 			expect(draft.status).toBe("pending");
+			if (name === "google") expect(draft.recipient).toBe("Ada");
 			expect(fixture.sent()).toBe(before);
 			await expect(
 				fixture.provider.sendDraft({ draftId: draft.id, confirmed: false, hook: false }),

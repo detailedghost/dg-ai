@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { applyCleanup, conversationToClassifiable, planCleanup } from "../cleanup/apply";
@@ -9,7 +9,7 @@ import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
 import { SendDeclined, UnsupportedCapability } from "../errors";
 import type { MessagesBrowser } from "../google/browser";
 import { createGoogleProvider } from "../google/provider";
-import { readDraft, writeDraft } from "../drafts/store";
+import { draftPath, readDraft, writeDraft } from "../drafts/store";
 import { createLogger, type LogEvent } from "../privacy/log";
 import { redactSecrets } from "../privacy/redact";
 import { authorizeSend, isHookEnv } from "./authorize";
@@ -54,6 +54,8 @@ export interface SsmsRuntime {
 	stdinIsTTY?: boolean;
 	ask?: (draftId: string) => Promise<boolean>;
 	revealToken?: (draftId: string, token: string) => void;
+	openTerminal?: (path: string, flags: string) => number;
+	configHome?: string;
 	stdio?: "inherit";
 	spawn?: (cmd: string[]) => Spawned;
 }
@@ -66,6 +68,10 @@ export interface RunResult {
 
 function isProvider(value: string | undefined): value is SmsProviderId {
 	return (PROVIDER_NAMES as readonly string[]).includes(value ?? "");
+}
+
+export function allowSendHome(homeDir = userInfo().homedir): string {
+	return join(homeDir, ".dg");
 }
 
 export function fixedConfigPath(home: string): string {
@@ -93,17 +99,26 @@ function loadConfig(path: string | undefined, home: string): SmsCleanupConfig {
 	return config;
 }
 
-function revealToken(draftId: string, token: string, reveal?: (id: string, value: string) => void): void {
+function revealToken(
+	draftId: string,
+	token: string,
+	reveal?: (id: string, value: string) => void,
+	openTerminal: (path: string, flags: string) => number = openSync,
+): void {
 	if (reveal) {
 		reveal(draftId, token);
 		return;
 	}
+	let fd: number;
 	try {
-		const fd = openSync("/dev/tty", "w");
-		writeSync(fd, `approve ${draftId} ${token}\n`);
-		closeSync(fd);
+		fd = openTerminal("/dev/tty", "w");
 	} catch {
-		return;
+		throw new Error("approval token not shown: no terminal");
+	}
+	try {
+		writeSync(fd, `approve ${draftId} ${token}\n`);
+	} finally {
+		closeSync(fd);
 	}
 }
 
@@ -140,8 +155,9 @@ export async function runSsms(
 		}
 		const home =
 			runtime.home ?? runtime.env?.DG_HOME ?? process.env.DG_HOME ?? join(homedir(), ".dg");
+		const allowHome = runtime.configHome ?? allowSendHome();
 		const env = runtime.env ?? process.env;
-		const config = loadConfig(args.config, home);
+		const config = loadConfig(args.config, allowHome);
 		const session = await openSession(args.provider, runtime, home, env, config, log, args.verb);
 		stop = session.stop;
 		opened = session.opened;
@@ -352,7 +368,12 @@ async function dispatch(
 		const approvalToken = randomBytes(16).toString("hex");
 		const draft = { ...created, approvalTokenHash: hashToken(approvalToken) };
 		writeDraft(home, draft);
-		revealToken(draft.id, approvalToken, runtime.revealToken);
+		try {
+			revealToken(draft.id, approvalToken, runtime.revealToken, runtime.openTerminal);
+		} catch (error) {
+			rmSync(draftPath(home, draft.id), { force: true });
+			throw error;
+		}
 		const body = [
 			args.text ? `text: ${args.text}` : "",
 			args.emoji ? `emoji: ${args.emoji}` : "",

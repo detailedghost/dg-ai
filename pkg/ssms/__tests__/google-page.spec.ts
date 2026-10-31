@@ -194,11 +194,12 @@ describe("Messages page actions", () => {
 			[node("c1", { href: "/web/conversations/c1" }), box, send],
 			"",
 		);
-		readyThread(disabled, "c1", "c1");
+		readyThread(disabled, "c1", "Ada");
 		await expect(
 			evaluateMessagesAction(disabled, "send", {
 				confirmed: true,
 				conversationId: "c1",
+				recipient: "Ada",
 				text: "hi",
 				draftId: "d1",
 			}),
@@ -336,34 +337,65 @@ describe("Messages page actions", () => {
 		})) as { reason: string };
 		expect(sent.reason).toBe("sent");
 		expect(slept).toBeGreaterThan(0);
-		const stuck = createDocument(
-			[node("c1", { href: "/web/conversations/c1" }), box, send],
-			"",
-		) as ReturnType<typeof createDocument> & {
-			location: { href: string };
-			threadHeader: string;
-			sleep?: () => void;
-		};
-		stuck.location = { href: "https://messages.google.com/web/u/0/" };
-		stuck.threadHeader = "";
-		let stuckSleeps = 0;
-		stuck.sleep = () => {
-			stuckSleeps += 1;
-			stuck.location = { href: "https://messages.google.com/web/u/0/conversations/c1" };
-			stuck.threadHeader = "Ada";
-		};
+	});
+
+	test("the open wait stops when the budget is spent", async () => {
+		const { prepareSend } = await import("../src/google/thread");
+		const sleeps: number[] = [];
 		await expect(
-			evaluateMessagesAction(stuck, "send", {
+			prepareSend(
+				{
+					href: async () => "https://messages.google.com/web/u/0/conversations/other",
+					header: async () => "Bea",
+					clickConversation: async () => true,
+					compose: async () => {
+						throw new Error("typed");
+					},
+					sendControl: async () => {
+						throw new Error("clicked");
+					},
+					sleep: async (ms) => {
+						sleeps.push(ms);
+						if (sleeps.length > 4) throw new Error("waited forever");
+					},
+				},
+				{
+					conversationId: "c1",
+					recipient: "Ada",
+					text: "hi",
+					confirmed: true,
+					timeoutMs: 250,
+					rng: () => 0,
+				},
+			),
+		).rejects.toThrow("open conversation timed out");
+		expect(sleeps).toEqual([200, 50]);
+		expect(sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(250);
+	});
+
+	test("conversation id 12 does not match a thread whose id is 123", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "12";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "12";
+		const doc = createDocument(
+			[node("12", { href: "/web/conversations/12" }), box, send],
+			"",
+		) as ReturnType<typeof createDocument> & { location: { href: string }; threadHeader: string };
+		doc.location = { href: "https://messages.google.com/web/u/0/conversations/123" };
+		doc.threadHeader = "Ada";
+		await expect(
+			evaluateMessagesAction(doc, "send", {
 				confirmed: true,
-				conversationId: "c1",
+				conversationId: "12",
 				recipient: "Ada",
 				text: "hello there",
 				draftId: "d1",
-				timeoutMs: 0,
+				timeoutMs: 1,
 			}),
 		).rejects.toThrow("open conversation timed out");
-		expect(stuckSleeps).toBe(0);
-		expect(stuck.clicks).not.toContain("Send");
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+		expect(doc.clicks).not.toContain("Send");
 	});
 
 	test("send refuses a missing thread, a missing Send control, and a disabled button", async () => {
@@ -437,16 +469,17 @@ describe("Messages page actions", () => {
 			[node("Delete"), node("c1", { href: "/web/conversations/c1" }), box, send],
 			"",
 		);
-		readyThread(doc, "c1", "c1");
+		readyThread(doc, "c1", "Ada");
 		expect(() => evaluateMessagesAction(doc, "delete", {})).toThrow("delete is disabled");
 		expect(doc.clicks).toEqual([]);
 		await expect(
-			evaluateMessagesAction(doc, "send", { confirmed: false, text: "hi", conversationId: "c1" }),
+			evaluateMessagesAction(doc, "send", { confirmed: false, text: "hi", conversationId: "c1", recipient: "Ada" }),
 		).rejects.toThrow("send requires confirmation");
 		expect(doc.clicks).toEqual([]);
 		const sent = (await evaluateMessagesAction(doc, "send", {
 			confirmed: true,
 			conversationId: "c1",
+			recipient: "Ada",
 			text: "hi",
 			draftId: "d1",
 		})) as { reason: string };

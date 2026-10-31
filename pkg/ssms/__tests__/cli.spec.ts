@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
-import { runSsms } from "../src/cli/run";
+import { allowSendHome, runSsms } from "../src/cli/run";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
@@ -34,13 +34,14 @@ function googleRuntime(home: string) {
 		],
 		"Conversations",
 	);
-	readyThread(doc, "keep", "keep");
+	readyThread(doc, "keep", "Ada");
 	return {
 		home,
 		browser: createLocalMessagesBrowser(doc),
 		ids: () => "draft-1",
 		now: () => Date.parse("2026-10-31T00:00:00Z"),
 		env: {},
+		openTerminal: () => openSync("/dev/null", "w"),
 	};
 }
 
@@ -55,8 +56,9 @@ describe("ssms cli", () => {
 		expect(result.stdout).toContain("google");
 		expect(result.stdout).toContain("signal");
 		expect(result.stdout).toContain("The token is shown on the terminal device only");
-		expect(result.stdout).toContain("allow_send is read only from the fixed ssms config");
-		expect(result.stdout).toContain("A hook cannot send");
+		expect(result.stdout).toContain("OS user home, not from DG_HOME");
+		expect(result.stdout).toContain("accidental and non-interactive sends");
+		expect(result.stdout).not.toContain("A hook cannot send");
 	});
 
 	test("google cleanup archives the promo and does not delete or send", async () => {
@@ -75,7 +77,7 @@ describe("ssms cli", () => {
 
 	test("a draft is not sent until --yes, and a hook cannot send", async () => {
 		const home = mkdtempSync(join(tmpdir(), "ssms-draft-"));
-		const runtime = googleRuntime(home);
+		const runtime = { ...googleRuntime(home), configHome: home };
 		const drafted = await runSsms(
 			["google", "draft", "--conversation", "keep", "--text", "hello there"],
 			runtime,
@@ -152,6 +154,7 @@ describe("ssms cli", () => {
 		writeFileSync(overlay, JSON.stringify({ allow_send: true }));
 		const runtime = {
 			...googleRuntime(home),
+			configHome: home,
 			env: { CLAUDE_PROJECT_DIR: "/x", CLAUDE_CODE_ENTRYPOINT: "cli" },
 			stdinIsTTY: false,
 		};
@@ -191,6 +194,7 @@ describe("ssms cli", () => {
 		const home = mkdtempSync(join(tmpdir(), "ssms-nosend-"));
 		const runtime = {
 			...googleRuntime(home),
+			configHome: home,
 			stdinIsTTY: true,
 			ask: async () => true,
 		};
@@ -213,6 +217,7 @@ describe("ssms cli", () => {
 		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
 		const runtime = {
 			...googleRuntime(home),
+			configHome: home,
 			stdinIsTTY: true,
 			ask: async () => false,
 		};
@@ -251,6 +256,63 @@ describe("ssms cli", () => {
 		expect(dry.stdout).not.toContain("sent ");
 		const stored = readFileSync(join(home, "ssms", "drafts", "draft-1.json"), "utf8");
 		expect(stored).toContain("\"pending\"");
+	});
+
+	test("DG_HOME cannot turn allow_send on", async () => {
+		const evil = mkdtempSync(join(tmpdir(), "ssms-evil-"));
+		const real = mkdtempSync(join(tmpdir(), "ssms-real-"));
+		mkdirSync(join(evil, "ssms"), { recursive: true });
+		writeFileSync(join(evil, "ssms", "config.yaml"), "allow_send: true\n");
+		let token = "";
+		const runtime = {
+			...googleRuntime(evil),
+			home: evil,
+			env: { DG_HOME: evil },
+			configHome: real,
+			revealToken: (_id: string, value: string) => {
+				token = value;
+			},
+		};
+		const drafted = await runSsms(
+			["google", "draft", "--conversation", "keep", "--text", "hello there"],
+			runtime,
+		);
+		expect(drafted.code).toBe(0);
+		const sent = await runSsms(
+			["google", "send", "--draft", "draft-1", "--approve", token, "--yes"],
+			runtime,
+		);
+		expect(sent.code).toBe(1);
+		expect(sent.stderr).toContain("allow_send");
+		expect(sent.stdout).not.toContain("sent ");
+		expect(allowSendHome("/home/ada")).toBe(join("/home/ada", ".dg"));
+		const previous = process.env.DG_HOME;
+		process.env.DG_HOME = evil;
+		try {
+			expect(allowSendHome()).toBe(join(userInfo().homedir, ".dg"));
+			expect(allowSendHome()).not.toBe(evil);
+		} finally {
+			if (previous === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = previous;
+		}
+	});
+
+	test("draft fails when the terminal cannot show the token", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-notty-"));
+		const result = await runSsms(
+			["google", "draft", "--conversation", "keep", "--text", "hello there"],
+			{
+				...googleRuntime(home),
+				openTerminal: () => {
+					throw new Error("ENXIO");
+				},
+			},
+		);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("approval token not shown: no terminal");
+		expect(result.stderr).not.toMatch(/\b[0-9a-f]{32}\b/);
+		expect(result.stdout).not.toContain("draft draft-1");
+		expect(existsSync(join(home, "ssms", "drafts", "draft-1.json"))).toBe(false);
 	});
 
 	test("delete is rejected", async () => {

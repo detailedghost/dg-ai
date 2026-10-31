@@ -1,3 +1,23 @@
+import { SendUncertainError } from "../errors";
+import { nextGapMs, type Rng } from "../pace/jitter";
+
+export const DEFAULT_OPEN_TIMEOUT_MS = 10_000;
+
+export function resolveOpenTimeout(value: unknown): number {
+	if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+	return DEFAULT_OPEN_TIMEOUT_MS;
+}
+
+export function hrefSelectsConversation(href: string, id: string): boolean {
+	const match = /\/conversations\/([^/?#]+)/.exec(href);
+	if (!match?.[1]) return false;
+	try {
+		return decodeURIComponent(match[1]) === id;
+	} catch {
+		return match[1] === id;
+	}
+}
+
 export interface ComposeBox {
 	write(text: string): void | Promise<void>;
 }
@@ -24,6 +44,7 @@ export async function prepareSend(
 		text: string;
 		confirmed: boolean;
 		timeoutMs?: number;
+		rng?: Rng;
 	},
 ): Promise<{ reason: "sent"; conversationId: string }> {
 	if (args.confirmed !== true) throw new Error("send requires confirmation");
@@ -31,28 +52,38 @@ export async function prepareSend(
 	const recipient = args.recipient;
 	if (!id || !recipient) throw new Error("conversation not found");
 	if (!(await surface.clickConversation(id))) throw new Error("conversation not found");
-	const timeout = args.timeoutMs ?? 0;
+	const timeout = resolveOpenTimeout(args.timeoutMs);
+	const rng = args.rng ?? Math.random;
+	const gaps: number[] = [];
 	let elapsed = 0;
 	for (;;) {
 		const href = await surface.href();
 		const header = await surface.header();
-		const urlReady = href.includes(`/conversations/${id}`);
+		const urlReady = hrefSelectsConversation(href, id);
 		const headerReady = header.toLowerCase().includes(recipient.toLowerCase());
 		if (urlReady && headerReady) break;
 		if (elapsed >= timeout || !surface.sleep) {
 			throw new Error("open conversation timed out");
 		}
-		const gap = Math.max(1, Math.min(50, timeout - elapsed));
+		const remaining = timeout - elapsed;
+		const gap = Math.max(1, Math.min(nextGapMs(rng, gaps), remaining));
+		gaps.push(gap);
 		await surface.sleep(gap);
 		elapsed += gap;
 	}
 	const box = await surface.compose(id);
 	if (!box) throw new Error("compose box missing");
 	await box.write(args.text);
-	const send = await surface.sendControl(id);
-	if (!send) throw new Error("send control missing");
-	if (send.disabled) throw new Error("send control disabled");
-	await send.click();
+	try {
+		const send = await surface.sendControl(id);
+		if (!send) throw new SendUncertainError("send control missing");
+		if (send.disabled) throw new SendUncertainError("send control disabled");
+		await send.click();
+	} catch (error) {
+		if (error instanceof SendUncertainError) throw error;
+		const message = error instanceof Error ? error.message : "send failed";
+		throw new SendUncertainError(message);
+	}
 	return { reason: "sent", conversationId: id };
 }
 
@@ -146,13 +177,13 @@ export async function sendOnDocument(
 	args: Record<string, unknown>,
 ): Promise<{ reason: "sent"; conversationId: string; draftId: string }> {
 	const conversationId = String(args.conversationId ?? "");
-	const recipient = String(args.recipient ?? args.conversationId ?? "");
+	const recipient = String(args.recipient ?? "");
 	const sent = await prepareSend(surfaceFromDocument(document), {
 		conversationId,
 		recipient,
 		text: String(args.text ?? ""),
 		confirmed: args.confirmed === true,
-		timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : 0,
+		timeoutMs: resolveOpenTimeout(args.timeoutMs),
 	});
 	return { ...sent, draftId: String(args.draftId ?? "") };
 }

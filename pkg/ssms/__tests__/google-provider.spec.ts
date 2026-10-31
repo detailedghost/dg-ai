@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { createGoogleProvider } from "../src/google/provider";
-import { createDocument, node } from "./support/document";
+import { asTextArea, createDocument, node, readyThread } from "./support/document";
 
 describe("google provider", () => {
 	test("receive waits with irregular gaps until a message appears", async () => {
@@ -66,5 +66,40 @@ describe("google provider", () => {
 		expect(waits.length).toBeGreaterThan(1);
 		expect(waits[0]).not.toBe(waits[1]);
 		expect(new Set(waits).size).toBeGreaterThan(1);
+	});
+
+	test("a draft stores the contact name, and a miss before typing stays pending", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-gdraft-"));
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
+		const doc = createDocument(
+			[
+				node("hello", { href: "/web/conversations/c1", "aria-label": "Ada Lovelace" }),
+				box,
+				send,
+			],
+			"",
+		);
+		readyThread(doc, "c1", "Pat");
+		const provider = createGoogleProvider({
+			browser: createLocalMessagesBrowser(doc),
+			home,
+			ids: () => "draft-1",
+			now: () => 0,
+		});
+		const draft = await provider.draftReply({ conversationId: "c1", text: "hello there" });
+		expect(draft.recipient).toBe("Ada Lovelace");
+		expect(draft.recipient).not.toBe(draft.conversationId);
+		await expect(
+			provider.sendDraft({ draftId: draft.id, confirmed: true, hook: false }),
+		).rejects.toThrow("open conversation timed out");
+		const stored = JSON.parse(readFileSync(join(home, "ssms", "drafts", "draft-1.json"), "utf8")) as {
+			status: string;
+		};
+		expect(stored.status).toBe("pending");
+		expect(existsSync(join(home, "ssms", "drafts", "draft-1.sending"))).toBe(false);
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
 	});
 });

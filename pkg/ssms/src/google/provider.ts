@@ -1,7 +1,7 @@
 import { scopeDays } from "../config/parse";
 import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
-import { claimDraft, finishDraft, writeDraft } from "../drafts/store";
-import { ConfirmationRequired, HookSendRefused } from "../errors";
+import { claimDraft, finishDraft, releaseDraft, writeDraft } from "../drafts/store";
+import { ConfirmationRequired, HookSendRefused, SendUncertainError } from "../errors";
 import { nextGapMs, type Rng } from "../pace/jitter";
 import { withCapabilities } from "../provider";
 import type { Logger } from "../privacy/log";
@@ -202,10 +202,16 @@ export function createGoogleProvider(input: {
 			return { conversationId: request.conversationId, reason: "blocked" };
 		},
 		async draftReply(request) {
+			const rows = conversationsFrom(
+				await browser.act("list", { scopeDays: scopeDays(config.scope) ?? null }),
+			);
+			const row = rows.find((item) => item.id === request.conversationId);
+			if (!row?.title) throw new Error("conversation not found");
 			const draft: DraftRecord = {
 				id: ids(),
 				provider: "google",
 				conversationId: request.conversationId,
+				recipient: row.title,
 				text: request.text,
 				emoji: request.emoji,
 				remove: request.remove,
@@ -228,6 +234,7 @@ export function createGoogleProvider(input: {
 				if (draft.emoji || draft.quote || draft.attachments.length > 0) {
 					throw new Error("google send supports plain text only");
 				}
+				if (!draft.recipient) throw new Error("conversation not found");
 				const text = draft.text ?? "";
 				const result = record(
 					await browser.act("send", {
@@ -235,19 +242,20 @@ export function createGoogleProvider(input: {
 						text,
 						draftId: draft.id,
 						conversationId: draft.conversationId,
-						recipient: draft.conversationId,
+						recipient: draft.recipient,
 					}),
 					"page-unrecognized",
 				);
-				if (result.reason !== "sent") throw new Error("send failed");
+				if (result.reason !== "sent") throw new SendUncertainError("send failed");
 				if (result.conversationId !== draft.conversationId) {
-					throw new Error("open conversation does not match the draft");
+					throw new SendUncertainError("open conversation does not match the draft");
 				}
 				finishDraft(input.home, draft, "sent");
 				log({ id: draft.id, reason: "send", provider: "google", verb: "send" });
 				return { draftId: draft.id, reason: "sent" as const };
 			} catch (error) {
-				finishDraft(input.home, draft, "uncertain");
+				if (error instanceof SendUncertainError) finishDraft(input.home, draft, "uncertain");
+				else releaseDraft(input.home, draft);
 				throw error;
 			}
 		},

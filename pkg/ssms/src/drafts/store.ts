@@ -47,6 +47,13 @@ export function claimDraft(home: string, id: string, provider: SmsProviderId): D
 	return draft;
 }
 
+export function releaseDraft(home: string, draft: DraftRecord): void {
+	const pending: DraftRecord = { ...draft, status: "pending" };
+	const src = claimedPath(home, draft.id);
+	writePrivateFile(draftsDir(home), src, `${JSON.stringify(pending)}\n`);
+	renameSync(src, draftPath(home, draft.id));
+}
+
 export function finishDraft(
 	home: string,
 	draft: DraftRecord,

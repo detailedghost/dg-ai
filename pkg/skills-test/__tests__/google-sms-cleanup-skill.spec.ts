@@ -43,7 +43,7 @@ describe("google-sms-cleanup skill distribution", () => {
 		const skill = readFileSync(join(skillRoot, "SKILL.md"), "utf8");
 		for (const line of [
 			"allow_delete: false            # never delete conversations or messages",
-			"It is read only from `$DG_HOME/ssms/config.yaml`",
+			"It is read only from `~/.dg/ssms/config.yaml` under the OS user home, not from `$DG_HOME`",
 			"flag_ambiguous: true           # list unsure items for the user instead of acting",
 			"never_misclassify_as_spam: []  # senders the user confirmed legitimate",
 		])

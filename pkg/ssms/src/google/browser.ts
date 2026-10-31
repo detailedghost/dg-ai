@@ -1,5 +1,5 @@
 import { evaluateMessagesAction, messagesPageSource, type PageAction } from "./page";
-import { prepareSend, type SendSurface } from "./thread";
+import { prepareSend, resolveOpenTimeout, type SendSurface } from "./thread";
 
 export interface EvalPage {
 	evaluate<T>(expression: string): Promise<T>;
@@ -22,13 +22,22 @@ const headerExpr = `(() => {
   return heading ? (heading.innerText || heading.textContent || "") : "";
 })()`;
 
-function clickExpr(id: string): string {
+function sameConversation(hrefCode: string, id: string): string {
 	const wanted = JSON.stringify(id);
+	return `(() => {
+    var match = /\\/conversations\\/([^/?#]+)/.exec(String(${hrefCode} || ""));
+    var found = "";
+    if (match) { try { found = decodeURIComponent(match[1]); } catch (e) { found = match[1]; } }
+    return found === ${wanted};
+  })()`;
+}
+
+function clickExpr(id: string): string {
 	return `(() => {
   const links = Array.from(document.querySelectorAll("a[href*='/conversations/'], mws-conversation-list-item[href*='/conversations/']"));
   const link = links.find((el) => {
     const href = el.getAttribute("href") || "";
-    return href.indexOf("/conversations/" + ${wanted}) !== -1;
+    return ${sameConversation("href", id)};
   });
   if (!link) return false;
   link.click();
@@ -37,45 +46,38 @@ function clickExpr(id: string): string {
 }
 
 function composeExpr(id: string): string {
-	const wanted = JSON.stringify(id);
 	return `(() => {
   const main = document.querySelector('[role="main"]') || document.querySelector("main");
   if (!main) return false;
   const href = location.href || "";
-  if (href.indexOf("/conversations/" + ${wanted}) === -1) return false;
+  if (!${sameConversation("href", id)}) return false;
   const box = main.querySelector("textarea, [contenteditable='true']");
   return !!box;
 })()`;
 }
 
 function writeExpr(id: string, text: string): string {
-	const wanted = JSON.stringify(id);
 	const body = JSON.stringify(text);
 	return `(() => {
   const main = document.querySelector('[role="main"]') || document.querySelector("main");
   if (!main) return false;
-  if ((location.href || "").indexOf("/conversations/" + ${wanted}) === -1) return false;
+  if (!${sameConversation("location.href || \"\"", id)}) return false;
   const box = main.querySelector("textarea, [contenteditable='true']");
   if (!box) return false;
-  const name = (box.tagName || "").toUpperCase();
-  if (name === "TEXTAREA" || name === "INPUT") {
-    const Ctor = name === "TEXTAREA" ? HTMLTextAreaElement : HTMLInputElement;
-    const desc = Object.getOwnPropertyDescriptor(Ctor.prototype, "value");
-    if (!desc || !desc.set) return false;
-    desc.set.call(box, ${body});
-    box.dispatchEvent(new Event("input", { bubbles: true }));
-    return true;
-  }
-  return false;
+  const proto = Object.getPrototypeOf(box);
+  const desc = proto ? Object.getOwnPropertyDescriptor(proto, "value") : null;
+  if (!desc || !desc.set) return false;
+  desc.set.call(box, ${body});
+  box.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
 })()`;
 }
 
 function sendStateExpr(id: string): string {
-	const wanted = JSON.stringify(id);
 	return `(() => {
   const main = document.querySelector('[role="main"]') || document.querySelector("main");
   if (!main) return null;
-  if ((location.href || "").indexOf("/conversations/" + ${wanted}) === -1) return null;
+  if (!${sameConversation("location.href || \"\"", id)}) return null;
   const buttons = Array.from(main.querySelectorAll("button, [role='button']"));
   const send = buttons.find((el) => {
     const label = el.getAttribute("aria-label") || "";
@@ -88,11 +90,10 @@ function sendStateExpr(id: string): string {
 }
 
 function clickSendExpr(id: string): string {
-	const wanted = JSON.stringify(id);
 	return `(() => {
   const main = document.querySelector('[role="main"]') || document.querySelector("main");
   if (!main) return false;
-  if ((location.href || "").indexOf("/conversations/" + ${wanted}) === -1) return false;
+  if (!${sameConversation("location.href || \"\"", id)}) return false;
   const buttons = Array.from(main.querySelectorAll("button, [role='button']"));
   const send = buttons.find((el) => {
     const label = el.getAttribute("aria-label") || "";
@@ -108,6 +109,7 @@ function clickSendExpr(id: string): string {
 async function sendOnEvalPage(
 	page: EvalPage,
 	args: Record<string, unknown>,
+	sleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms),
 ): Promise<{ reason: "sent"; conversationId: string; draftId: string }> {
 	const sent = await prepareSend(
 		{
@@ -141,23 +143,26 @@ async function sendOnEvalPage(
 					},
 				};
 			},
-			sleep: (ms) => Bun.sleep(ms),
+			sleep,
 		},
 		{
 			conversationId: String(args.conversationId ?? ""),
-			recipient: String(args.recipient ?? args.conversationId ?? ""),
+			recipient: String(args.recipient ?? ""),
 			text: String(args.text ?? ""),
 			confirmed: args.confirmed === true,
-			timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : 0,
+			timeoutMs: resolveOpenTimeout(args.timeoutMs),
 		},
 	);
 	return { ...sent, draftId: String(args.draftId ?? "") };
 }
 
-export function createScriptedMessagesBrowser(page: EvalPage): MessagesBrowser {
+export function createScriptedMessagesBrowser(
+	page: EvalPage,
+	options: { sleep?: (ms: number) => Promise<void> } = {},
+): MessagesBrowser {
 	return {
 		async act(action, args) {
-			if (action === "send") return sendOnEvalPage(page, args);
+			if (action === "send") return sendOnEvalPage(page, args, options.sleep);
 			return page.evaluate(expressionFor(action, args));
 		},
 		close: () => page.close?.() ?? Promise.resolve(),

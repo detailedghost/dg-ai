@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSignalProvider } from "../src/signal/provider";
@@ -191,6 +191,11 @@ describe("attachment approval", () => {
 			provider.sendDraft({ draftId: draft.id, confirmed: true, hook: false }),
 		).rejects.toThrow(/changed/);
 		expect(server.calls.filter((call) => call.method === "send")).toEqual([]);
+		const stored = JSON.parse(readFileSync(join(home, "ssms", "drafts", "d1.json"), "utf8")) as {
+			status: string;
+		};
+		expect(stored.status).toBe("pending");
+		expect(existsSync(join(home, "ssms", "drafts", "d1.sending"))).toBe(false);
 		await rpc.close();
 		await server.close();
 	});

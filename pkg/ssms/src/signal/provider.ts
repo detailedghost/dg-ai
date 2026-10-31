@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { claimDraft, finishDraft, writeDraft } from "../drafts/store";
+import { claimDraft, finishDraft, releaseDraft, writeDraft } from "../drafts/store";
 import { ConfirmationRequired, HookSendRefused } from "../errors";
 import { nextGapMs, timeoutSeconds, type Rng } from "../pace/jitter";
 import { withCapabilities } from "../provider";
@@ -215,10 +215,12 @@ export function createSignalProvider(input: {
 			throw new Error("unreachable");
 		},
 		async draftReply(request) {
+			const known = readIndex(input.home).find((item) => item.id === request.conversationId);
 			const draft: DraftRecord = {
 				id: ids(),
 				provider: "signal",
 				conversationId: request.conversationId,
+				recipient: known?.title ?? request.conversationId,
 				text: request.text,
 				emoji: request.emoji,
 				remove: request.remove,
@@ -237,49 +239,53 @@ export function createSignalProvider(input: {
 			if (request.hook) throw new HookSendRefused();
 			if (!request.confirmed) throw new ConfirmationRequired();
 			const draft = claimDraft(input.home, request.draftId, "signal");
+			let submitted = false;
 			try {
-			const id = await account();
-			const known = readIndex(input.home).find((item) => item.id === draft.conversationId);
-			const group = known?.kind === "group";
-			const target: Record<string, unknown> = { account: id };
-			if (group) target.groupId = draft.conversationId;
-			else target.recipient = [draft.conversationId];
-			if (draft.emoji) {
-				await input.rpc.call(
-					"sendReaction",
-					{
-						...target,
-						emoji: draft.emoji,
-						targetAuthor: draft.targetAuthorId,
-						targetTimestamp: draft.targetTimestamp,
-						remove: draft.remove === true,
-					},
-					callTimeoutMs,
-				);
-			} else {
-				for (const attachment of draft.attachments) assertAttachmentUnchanged(attachment);
-				await input.rpc.call(
-					"send",
-					{
-						...target,
-						message: draft.text ?? "",
-						attachment: draft.attachments.map((item) => item.path),
-						...(draft.quote
-							? {
-									quoteTimestamp: draft.quote.timestamp,
-									quoteAuthor: draft.quote.authorId,
-									quoteMessage: draft.quote.text ?? "",
-								}
-							: {}),
-					},
-					callTimeoutMs,
-				);
-			}
-			finishDraft(input.home, draft, "sent");
-			log({ id: draft.id, reason: "send", provider: "signal", verb: "send" });
-			return { draftId: draft.id, reason: "sent" as const };
+				const id = await account();
+				const known = readIndex(input.home).find((item) => item.id === draft.conversationId);
+				const group = known?.kind === "group";
+				const target: Record<string, unknown> = { account: id };
+				if (group) target.groupId = draft.conversationId;
+				else target.recipient = [draft.conversationId];
+				if (draft.emoji) {
+					submitted = true;
+					await input.rpc.call(
+						"sendReaction",
+						{
+							...target,
+							emoji: draft.emoji,
+							targetAuthor: draft.targetAuthorId,
+							targetTimestamp: draft.targetTimestamp,
+							remove: draft.remove === true,
+						},
+						callTimeoutMs,
+					);
+				} else {
+					for (const attachment of draft.attachments) assertAttachmentUnchanged(attachment);
+					submitted = true;
+					await input.rpc.call(
+						"send",
+						{
+							...target,
+							message: draft.text ?? "",
+							attachment: draft.attachments.map((item) => item.path),
+							...(draft.quote
+								? {
+										quoteTimestamp: draft.quote.timestamp,
+										quoteAuthor: draft.quote.authorId,
+										quoteMessage: draft.quote.text ?? "",
+									}
+								: {}),
+						},
+						callTimeoutMs,
+					);
+				}
+				finishDraft(input.home, draft, "sent");
+				log({ id: draft.id, reason: "send", provider: "signal", verb: "send" });
+				return { draftId: draft.id, reason: "sent" as const };
 			} catch (error) {
-				finishDraft(input.home, draft, "uncertain");
+				if (submitted) finishDraft(input.home, draft, "uncertain");
+				else releaseDraft(input.home, draft);
 				throw error;
 			}
 		},

@@ -14,6 +14,9 @@ describe("redactSecrets", () => {
 		expect(redactSecrets("read (555) 123-4567")).toBe("read [phone]");
 		expect(redactSecrets("read 555 123 4567")).toBe("read [phone]");
 		expect(redactSecrets("read 555-123-4567")).not.toContain("555");
+		expect(redactSecrets("read 1-555-123-4567")).toBe("read [phone]");
+		expect(redactSecrets("read 5551234")).toBe("read [phone]");
+		expect(redactSecrets("room 123456")).toBe("room 123456");
 	});
 });
 

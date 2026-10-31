@@ -33,6 +33,15 @@ export class HookSendRefused extends Error {
 	}
 }
 
+export class SendUncertainError extends Error {
+	readonly code = "send-uncertain";
+
+	constructor(message: string) {
+		super(message);
+		this.name = "SendUncertainError";
+	}
+}
+
 export class SendDeclined extends Error {
 	readonly code = "send-declined";
 

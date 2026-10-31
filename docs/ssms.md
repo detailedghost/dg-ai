@@ -72,9 +72,14 @@ token is shown only on the terminal device (`/dev/tty`), never on stdout and
 never in `--json`. The draft file stores a hash of that token, not the token.
 `send --draft ID` sends that one draft only after an interactive yes on a real
 terminal, or after `--approve` with the token from the terminal. `--yes` does
-not send. A hook environment cannot send, even with a token. `allow_send` is
-read only from `$DG_HOME/ssms/config.yaml`. `--config` cannot set it. `false`
-means never send, and that is the default when the fixed file is missing.
+not send. The gate blocks accidental and non-interactive sends. Same-user code
+that evades it, for example by allocating its own pty, is out of scope.
+`allow_send` is read only from `~/.dg/ssms/config.yaml` under the OS user home
+(`os.userInfo().homedir`), not from `$DG_HOME`. `--config` cannot set it.
+`false` means never send, and that is the default when the fixed file is
+missing. If `/dev/tty` cannot be opened, `draft` fails and does not keep the
+draft. A Google draft stores the contact's display name and matches the open
+thread header against that name.
 Cleanup never sends and never deletes. `--dry-run` leaves the draft pending.
 
 Signal drafts can be plain text, a reaction (`--emoji`), an image

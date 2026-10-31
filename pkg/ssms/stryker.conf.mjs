@@ -21,6 +21,7 @@ const config = {
 		"__tests__/cleanup.spec.ts",
 		"__tests__/cli.spec.ts",
 		"__tests__/google-page.spec.ts",
+		"__tests__/google-live-send.spec.ts",
 		"__tests__/authorize.spec.ts",
 	],
 	bun: { timeout: 60_000 },

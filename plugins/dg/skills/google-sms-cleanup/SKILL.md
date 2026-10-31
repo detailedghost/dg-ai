@@ -54,7 +54,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
 
 ## Config (defaults)
 
-`allow_send` is not in this file. It is read only from `$DG_HOME/ssms/config.yaml`. `--config` cannot set it.
+`allow_send` is not in this file. It is read only from `~/.dg/ssms/config.yaml` under the OS user home, not from `$DG_HOME`. `--config` cannot set it.
 
 ```yaml
 allow_delete: false            # never delete conversations or messages
@@ -100,16 +100,19 @@ Pass the same map as `--config` when the user overrides a value.
    Never touch compose. With `allow_delete` false, never delete a conversation
    or a message. With `allow_send` false, never send; any outgoing text needs
    explicit per-message approval from the user. `allow_send` is read only from
-   `$DG_HOME/ssms/config.yaml`. `--config` cannot change it. `false` means never
-   send. A hook cannot send.
+   `~/.dg/ssms/config.yaml` under the OS user home, not from `$DG_HOME`.
+   `--config` cannot change it. `false` means never send. The gate blocks
+   accidental and non-interactive sends. Same-user code that evades it, for
+   example by allocating its own pty, is out of scope.
 5. Leave ambiguous items untouched and list them with the sender, the date, and
    a one-line preview. `flag_ambiguous` stays true unless the user overrides it.
 6. To answer one thread, draft then send that draft only:
    `~/.dg/bin/dg-skills ssms google draft --conversation ID --text TEXT`. The
    approval token appears on the terminal device only, not in command output.
    On a terminal, `send --draft ID` asks for yes. Off a terminal, the user
-   passes `--approve` with the token they saw. `--yes` does not send. Do not
-   send from a hook. `--dry-run` does not send.
+   passes `--approve` with the token they saw. `--yes` does not send. The gate
+   blocks accidental and non-interactive sends. `--dry-run` does not send.
+   If there is no terminal, `draft` fails instead of hiding the token.
 7. Report the totals, the archived threads, the blocked and reported threads,
    what was kept by category and group, and the ambiguous items.
 

@@ -92,8 +92,8 @@ export function renderHelp(): string {
 		"",
 		"Sends go through draft, then an interactive yes or --approve TOKEN.",
 		"The token is shown on the terminal device only. It is not printed on stdout.",
-		"--yes never sends. allow_send is read only from the fixed ssms config.",
-		"A hook cannot send.",
+		"--yes never sends. allow_send is read only from ~/.dg/ssms/config.yaml under the OS user home, not from DG_HOME.",
+		"The gate blocks accidental and non-interactive sends. Same-user code that evades it, for example by allocating its own pty, is out of scope.",
 		"Logs record ids and reasons only.",
 	];
 	return `${lines.join("\n")}\n`;
