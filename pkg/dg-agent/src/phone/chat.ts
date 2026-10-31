@@ -33,7 +33,10 @@ export type Reaccept = { npub: string; keyId: string };
 
 export type Admitted = { message: Message; gate: Gate; newContact?: NewContact; reaccept?: Reaccept };
 
-export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subscribe">;
+export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subscribe"> & {
+	/** Sets the OK wait on each relay before `publish`. The real pool does this; fakes omit it. */
+	armPublishTimeout?(relays: string[], confirmMs: number): Promise<void>;
+};
 
 export const GIFT_WRAP_KIND = 1059;
 /** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
@@ -157,10 +160,132 @@ export function unwrapIncoming(event: NostrEvent, keys: KeyEntry[], gate: Gate, 
 	return "admitted" in result ? result.admitted : null;
 }
 
-/** Never rejects on a relay failure; `ok` lists only the relays that accepted the event. */
-export async function publish(pool: PhonePool, relays: string[], event: NostrEvent): Promise<{ ok: string[] }> {
-	const results = await Promise.allSettled(pool.publish(relays, event));
-	return { ok: relays.filter((_, i) => results[i]?.status === "fulfilled") };
+/** How long `publish` waits for a relay OK when the caller does not pass `confirmMs`. The CLI passes `resolvePublishConfirmMs` instead. */
+const DEFAULT_PUBLISH_CONFIRM_MS = 10_000;
+/** REQ-by-id wait for a relay that did not OK in time. Capped by the confirm window. */
+export const DEFAULT_PUBLISH_REQ_MS = 2_000;
+
+export type RelayResult =
+	| { relay: string; status: "ok" }
+	| { relay: string; status: "rejected"; reason: string }
+	| { relay: string; status: "unconfirmed"; reason: string };
+
+export type RelayFailure = { relay: string; reason: string };
+
+/** Per-relay outcome of one publish. `ok` kept its old meaning: relays that confirmed. */
+export type PublishReport = {
+	ok: string[];
+	unconfirmed: string[];
+	failed: RelayFailure[];
+	results: RelayResult[];
+};
+
+export type PublishOptions = {
+	/** Milliseconds to wait for each relay's OK. Defaults to {@link DEFAULT_PUBLISH_CONFIRM_MS}. */
+	confirmMs?: number;
+	/** After a timeout, REQ the event id. On by default so a late OK that already stored the event still counts. */
+	confirmById?: boolean;
+	/** Bound for that REQ. Defaults to the shorter of {@link DEFAULT_PUBLISH_REQ_MS} and `confirmMs`. */
+	reqTimeoutMs?: number;
+};
+
+const RELAY_REASON_LIMIT = 200;
+
+function cleanReason(reason: string): string {
+	const flat = reason.replace(/[\u0000-\u001f]+/g, " ").trim();
+	if (!flat) return "rejected";
+	return flat.length > RELAY_REASON_LIMIT ? flat.slice(0, RELAY_REASON_LIMIT) : flat;
+}
+
+function failureReason(err: unknown): string {
+	if (err instanceof Error) return err.message;
+	if (typeof err === "string") return err;
+	return "rejected";
+}
+
+/** nostr-tools rejects with `publish timed out` when the OK wait elapses. That is not a relay rejection. */
+function isTimeoutReason(reason: string): boolean {
+	const text = reason.trim().toLowerCase();
+	return text === "publish timed out" || text === "timeout";
+}
+
+function reportFrom(results: RelayResult[]): PublishReport {
+	return {
+		results,
+		ok: results.filter((result) => result.status === "ok").map((result) => result.relay),
+		unconfirmed: results.filter((result) => result.status === "unconfirmed").map((result) => result.relay),
+		failed: results
+			.filter((result): result is Extract<RelayResult, { status: "rejected" }> => result.status === "rejected")
+			.map((result) => ({ relay: result.relay, reason: result.reason })),
+	};
+}
+
+async function settleRelay(relay: string, promise: Promise<string>, confirmMs: number): Promise<RelayResult> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const guarded = promise.then(
+		() => ({ kind: "ok" as const }),
+		(err: unknown) => ({ kind: "error" as const, reason: cleanReason(failureReason(err)) }),
+	);
+	const outcome = await Promise.race([
+		guarded,
+		new Promise<{ kind: "timeout" }>((resolve) => {
+			timer = setTimeout(() => resolve({ kind: "timeout" }), confirmMs);
+		}),
+	]);
+	if (timer) clearTimeout(timer);
+	if (outcome.kind === "ok") return { relay, status: "ok" };
+	if (outcome.kind === "timeout" || isTimeoutReason(outcome.reason)) return { relay, status: "unconfirmed", reason: "timeout" };
+	return { relay, status: "rejected", reason: outcome.reason };
+}
+
+async function relayHasEvent(pool: PhonePool, relay: string, id: string, timeoutMs: number): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let finished = false;
+	try {
+		const events = await Promise.race([
+			pool.querySync([relay], { ids: [id] }, { maxWait: timeoutMs }).then((found) => {
+				finished = true;
+				if (timer) clearTimeout(timer);
+				return found;
+			}),
+			new Promise<NostrEvent[]>((resolve) => {
+				timer = setTimeout(() => resolve([]), timeoutMs);
+			}),
+		]);
+		return finished && events.some((event) => event.id === id);
+	} catch {
+		if (timer) clearTimeout(timer);
+		return false;
+	}
+}
+
+/**
+ * Publishes one event and reports each relay as ok, rejected(reason), or unconfirmed(timeout).
+ * A timeout is not a rejection: the event may already be stored. When `confirmById` is set, a
+ * follow-up REQ upgrades that relay to ok if the event is there.
+ */
+export async function publish(pool: PhonePool, relays: string[], event: NostrEvent, opts: PublishOptions = {}): Promise<PublishReport> {
+	const confirmMs = opts.confirmMs ?? DEFAULT_PUBLISH_CONFIRM_MS;
+	const confirmById = opts.confirmById ?? true;
+	const reqTimeoutMs = opts.reqTimeoutMs ?? Math.min(DEFAULT_PUBLISH_REQ_MS, confirmMs);
+	await pool.armPublishTimeout?.(relays, confirmMs);
+	const settled = await Promise.all(pool.publish(relays, event).map((promise, index) => settleRelay(relays[index] ?? "", promise, confirmMs)));
+	if (confirmById) {
+		await Promise.all(
+			settled.map(async (result, index) => {
+				if (result.status !== "unconfirmed") return;
+				const relay = relays[index];
+				if (!relay) return;
+				if (await relayHasEvent(pool, relay, event.id, reqTimeoutMs)) settled[index] = { relay, status: "ok" };
+			}),
+		);
+	}
+	return reportFrom(settled);
+}
+
+/** True when at least one relay did not explicitly reject. An empty target list does not count. */
+export function shouldSaveOutgoing(report: PublishReport): boolean {
+	return report.results.some((result) => result.status !== "rejected");
 }
 
 function inboxFilter(pubs: string[], cursor: number, now: number) {
@@ -304,6 +429,8 @@ export type SubscribeHooks = {
 	/** Called once when `gate()` does not admit, before the event is dropped. */
 	reread?: () => Gate;
 	onDrop?: (drop: DroppedRing) => void;
+	/** Called for every event the subscription delivers, before admission. Used by the liveness probe. */
+	onEvent?: (id: string) => void;
 };
 
 /**
@@ -325,6 +452,7 @@ export function subscribe(
 	const strangers = new Set<string>();
 	return pool.subscribe(relays, inboxFilter(keys.map((key) => key.pub), seen.cursor, now()), {
 		onevent(event) {
+			hooks.onEvent?.(event.id);
 			if (known.has(event.id) || strangers.has(event.id)) return;
 			let result = classifyIncoming(event, keys, gate(), now());
 			if (!("admitted" in result) && hooks.reread) result = classifyIncoming(event, keys, hooks.reread(), now());

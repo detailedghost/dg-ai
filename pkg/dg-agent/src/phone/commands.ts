@@ -5,11 +5,18 @@ import { dirname } from "node:path";
 import { DgCliError } from "@dg/common";
 import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
-import { SimplePool } from "nostr-tools";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
-import { npubOf, type PhonePool, publish, ring, wrap } from "./chat";
+import { npubOf, type PhonePool, type PublishReport, publish, ring, shouldSaveOutgoing, wrap } from "./chat";
+import {
+	INBOX_RELAY_CACHE_SECONDS,
+	createPhonePool,
+	lookupInboxRelays,
+	publishRelaySet,
+	resolvePublishConfirmMs,
+	PUBLISH_CONFIRM_ENV,
+} from "./delivery";
 import { PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
 import {
@@ -43,11 +50,14 @@ import {
 	readListener,
 	readNumber,
 	readRelays,
+	readInboxRelayCache,
+	readPublishConfirmSetting,
 	removeContact,
 	renameContact,
 	clearListener,
 	requireFreeHandle,
 	resolvedSelfName,
+	writeInboxRelayCache,
 	writeListener,
 	writeNumber,
 	writeRelays,
@@ -149,7 +159,7 @@ function defaultDeps(session?: string): PhoneDeps {
 			return db;
 		},
 		...defaultKeyClients(paths, session),
-		createPool: () => new SimplePool({ enableReconnect: true }),
+		createPool: () => createPhonePool(),
 		write: writeStdout,
 		writeErr: (text) => {
 			process.stderr.write(text);
@@ -196,6 +206,32 @@ function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
 
 function printJson(deps: PhoneDeps, value: unknown): void {
 	deps.write(`${JSON.stringify(value)}\n`);
+}
+
+function confirmMsFor(deps: PhoneDeps): number {
+	return resolvePublishConfirmMs(process.env[PUBLISH_CONFIRM_ENV], readPublishConfirmSetting(deps.db));
+}
+
+function relayFields(report: PublishReport): { relays_ok: string[]; relays_unconfirmed: string[]; relays_failed: { relay: string; reason: string }[] } {
+	return { relays_ok: report.ok, relays_unconfirmed: report.unconfirmed, relays_failed: report.failed };
+}
+
+function rejectedSend(kind: "call" | "message", report: PublishReport): string {
+	const lead = kind === "call" ? "no relay accepted the call" : "no relay accepted the message";
+	if (report.failed.length === 0) return lead;
+	return `${lead}: ${report.failed.map((failure) => `${failure.relay}: ${failure.reason}`).join("; ")}`;
+}
+
+/** Card relays, the recipient's kind 10050 relays, and our relays. A lookup miss still returns the other two. */
+async function outgoingRelays(deps: PhoneDeps, pool: PhonePool, cardRelays: string[], npub: string): Promise<string[]> {
+	const own = readRelays(deps.db);
+	const pubkey = pubkeyHex(npub);
+	const queried = publishRelaySet({ inbox: [], card: cardRelays, own });
+	const inbox = await lookupInboxRelays(pool, queried, pubkey, {
+		read: () => readInboxRelayCache(deps.db, pubkey, deps.now(), INBOX_RELAY_CACHE_SECONDS),
+		write: (relays) => writeInboxRelayCache(deps.db, pubkey, relays, deps.now()),
+	});
+	return publishRelaySet({ inbox, card: cardRelays, own });
 }
 
 const MIGRATION_HINT = `${JSON.stringify({ migration_pending: true, next: "run phone open to migrate" })}\n`;
@@ -306,12 +342,14 @@ export async function phoneAccept(
 		if (!inserted) throw new DgCliError("another accept just saved this npub or handle; run the accept again");
 	}
 	const pool = deps.createPool();
+	let relays = card.relays;
 	try {
 		const event = ring(words, sk, pubkeyHex(card.npub), card.secret, selfName);
-		const { ok } = await publish(pool, card.relays, event);
-		if (ok.length === 0) {
+		relays = await outgoingRelays(deps, pool, card.relays, card.npub);
+		const report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
+		if (!shouldSaveOutgoing(report)) {
 			if (!existing) removeContact(deps.db, handle);
-			throw new DgCliError("no relay accepted the call");
+			throw new DgCliError(rejectedSend("call", report));
 		}
 		if (existing) addContact(deps.db, { ...existing, relays: card.relays });
 		deps.db.addMessage({
@@ -325,9 +363,9 @@ export async function phoneAccept(
 		});
 		if (!existing) addPhoneNotice(deps.db, `accepted +${handle}`, deps.now());
 		await restartStaleListener(deps, { spawn: true });
-		printJson(deps, { handle: `+${handle}`, npub: card.npub, id: event.id, relays_ok: ok });
+		printJson(deps, { handle: `+${handle}`, npub: card.npub, id: event.id, ...relayFields(report) });
 	} finally {
-		pool.close(card.relays);
+		pool.close(relays);
 	}
 }
 
@@ -387,9 +425,11 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 	const sk = (await ensureKey(deps, contact.keyId)).sk;
 	const event = wrap(body, sk, pubkeyHex(contact.npub));
 	const pool = deps.createPool();
+	let relays = contact.relays;
 	try {
-		const { ok } = await publish(pool, contact.relays, event);
-		if (ok.length === 0) throw new DgCliError("no relay accepted the message");
+		relays = await outgoingRelays(deps, pool, contact.relays, contact.npub);
+		const report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
+		if (!shouldSaveOutgoing(report)) throw new DgCliError(rejectedSend("message", report));
 		deps.db.addMessage({
 			id: event.id,
 			direction: "out",
@@ -400,9 +440,9 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 			call: 0,
 		});
 		await restartStaleListener(deps, { spawn: true });
-		printJson(deps, { handle: `+${handle}`, id: event.id, relays_ok: ok });
+		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report) });
 	} finally {
-		pool.close(contact.relays);
+		pool.close(relays);
 	}
 }
 

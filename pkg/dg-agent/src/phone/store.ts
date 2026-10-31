@@ -28,6 +28,12 @@ const DRIFT_SETTING = "listener_drift";
 const ADMISSION_EPOCH = "admission_epoch";
 /** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
 const CURSOR_SETTING = "cursor";
+/** Milliseconds `say` and `accept` wait for a relay OK. The env var overrides this. */
+export const PUBLISH_CONFIRM_SETTING = "publish_confirm_ms";
+/** Short-lived kind 10050 lookup results, keyed by recipient pubkey hex. */
+const INBOX_RELAYS_SETTING = "inbox_relays";
+
+export type InboxRelayCacheEntry = { relays: string[]; at: number };
 
 export function isHandle(value: string): boolean {
 	return HANDLE_PATTERN.test(value);
@@ -102,6 +108,27 @@ export function readCursor(db: PhoneDb): number {
 
 export function writeCursor(db: PhoneDb, cursor: number): void {
 	db.set(CURSOR_SETTING, cursor);
+}
+
+/** The saved OK-wait, in milliseconds, when a command has stored one. Absent means use the default. */
+export function readPublishConfirmSetting(db: PhoneDb): number | undefined {
+	const value = db.get<unknown>(PUBLISH_CONFIRM_SETTING);
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Cached kind 10050 relays for `pubkey`, or undefined when missing or older than `ttlSeconds`. */
+export function readInboxRelayCache(db: PhoneDb, pubkey: string, now: number, ttlSeconds: number): string[] | undefined {
+	const cache = db.get<Record<string, InboxRelayCacheEntry>>(INBOX_RELAYS_SETTING);
+	const entry = cache?.[pubkey];
+	if (!entry || !Array.isArray(entry.relays)) return undefined;
+	if (now - entry.at >= ttlSeconds) return undefined;
+	return entry.relays.filter((relay): relay is string => typeof relay === "string");
+}
+
+export function writeInboxRelayCache(db: PhoneDb, pubkey: string, relays: string[], now: number): void {
+	const cache = db.get<Record<string, InboxRelayCacheEntry>>(INBOX_RELAYS_SETTING) ?? {};
+	cache[pubkey] = { relays, at: now };
+	db.set(INBOX_RELAYS_SETTING, cache);
 }
 
 function toContactRecord(row: ContactRow): ContactRecord {

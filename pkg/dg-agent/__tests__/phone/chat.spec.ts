@@ -85,6 +85,8 @@ describe("publish", () => {
 		const result = await publish(pool, RELAYS, wrap("hi", alice.sk, bob.pub));
 
 		expect(result.ok).toEqual([RELAYS[1]]);
+		expect(result.unconfirmed).toEqual([]);
+		expect(result.failed).toEqual([{ relay: RELAYS[0], reason: `${RELAYS[0]} refused` }]);
 	});
 
 	it("returns an empty list when every relay refuses", async () => {
@@ -95,6 +97,8 @@ describe("publish", () => {
 		const result = await publish(pool, RELAYS, wrap("hi", alice.sk, bob.pub));
 
 		expect(result.ok).toEqual([]);
+		expect(result.unconfirmed).toEqual([]);
+		expect(result.failed.map((failure) => failure.relay)).toEqual(RELAYS);
 	});
 });
 

@@ -20,9 +20,12 @@ import {
 	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
 	type SubscribeHooks,
+	publish,
 	subscribe,
 	UNKNOWN_CALLER_HANDLE,
+	wrap,
 } from "./chat";
+import { resolvePublishConfirmMs, PUBLISH_CONFIRM_ENV } from "./delivery";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
 import type { PhoneDb } from "./db";
@@ -35,9 +38,11 @@ import {
 	gateFor,
 	isHandle,
 	nextFreeHandle,
+	numberKeyId,
 	readAdmissionEpoch,
 	readNumber,
 	readCursor,
+	readPublishConfirmSetting,
 	readRelays,
 	notePhoneDrift,
 	setContactKeyId,
@@ -52,7 +57,34 @@ export type ListenerDeps = KeyDeps & {
 	hook?: CommandPushTarget;
 	schedule: Schedule;
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
+	/** Overrides the jittered probe. Tests pass a short confirm and wait so the check stays fast. */
+	liveness?: LivenessConfig;
 };
+
+/** Text of the self-addressed liveness probe. Logged nowhere. Not a user message. */
+export const LISTENER_PROBE_TEXT = "phone-probe";
+
+/** Lower bound of the jittered liveness gap. */
+export const LIVENESS_MIN_MS = 2 * 60 * 1000;
+/** Upper bound of the jittered liveness gap. `livenessDelayMs(1)` lands here. */
+export const LIVENESS_MAX_MS = 5 * 60 * 1000;
+/** How long a healthy subscription is given to deliver the probe after publish returns. */
+export const LIVENESS_PROBE_WAIT_MS = 3_000;
+
+export type LivenessConfig = {
+	minMs: number;
+	maxMs: number;
+	confirmMs: number;
+	waitMs: number;
+	/** Returns a unit interval. `0` schedules the minimum gap and `1` the maximum. */
+	random: () => number;
+};
+
+/** Gap until the next liveness check. `random` is clamped to 0..1 so a bad source cannot schedule a negative delay. */
+export function livenessDelayMs(random: number, min = LIVENESS_MIN_MS, max = LIVENESS_MAX_MS): number {
+	const unit = Math.min(1, Math.max(0, random));
+	return min + Math.round(unit * (max - min));
+}
 
 export type ListenerPid = {
 	pid: number;
@@ -589,6 +621,37 @@ function repeat(schedule: Schedule, intervalMs: number, run: () => void): Cancel
 	return () => cancel();
 }
 
+/** Like `repeat`, but each gap comes from `delayMs` and the next gap waits until `run` settles. */
+function repeatJitter(schedule: Schedule, delayMs: () => number, run: () => Promise<void> | void): Cancel {
+	let cancel: Cancel = () => {};
+	let off = false;
+	const arm = () => {
+		if (off) return;
+		cancel = schedule(delayMs(), () => {
+			void Promise.resolve(run()).finally(arm);
+		});
+	};
+	arm();
+	return () => {
+		off = true;
+		cancel();
+	};
+}
+
+function logListener(kind: "heartbeat" | "resubscribe"): void {
+	process.stderr.write(`phone: listener ${kind}\n`);
+}
+
+async function waitForId(seen: Set<string>, id: string, waitMs: number): Promise<boolean> {
+	if (seen.has(id) || waitMs <= 0) return seen.has(id);
+	const started = Date.now();
+	while (Date.now() - started < waitMs) {
+		if (seen.has(id)) return true;
+		await new Promise((resolve) => setTimeout(resolve, Math.min(10, waitMs)));
+	}
+	return seen.has(id);
+}
+
 /** Applies one admitted message's side effects: a fresh handle and contact row for a new caller, the
  * key move for a re-accept, then the message itself, `contact` keyed by the sender (as `fetchNew`'s
  * wiring contract requires). Guarded by `findContactByNpub` so a caught-up follow-up from the same
@@ -667,13 +730,22 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	let replayedEpoch = epoch;
 	let gateCache: Gate = gateFor(deps.db);
 	const loggedDrops = new Set<string>();
+	const probeIds = new Set<string>();
+	const deliveredIds = new Set<string>();
+	const liveness: LivenessConfig = deps.liveness ?? {
+		minMs: LIVENESS_MIN_MS,
+		maxMs: LIVENESS_MAX_MS,
+		confirmMs: resolvePublishConfirmMs(process.env[PUBLISH_CONFIRM_ENV], readPublishConfirmSetting(deps.db)),
+		waitMs: LIVENESS_PROBE_WAIT_MS,
+		random: Math.random,
+	};
 
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
 
 	const logDrop = (drop: DroppedRing) => {
-		if (loggedDrops.has(drop.id)) return;
+		if (probeIds.has(drop.id) || loggedDrops.has(drop.id)) return;
 		addBounded(loggedDrops, drop.id, STRANGER_ID_LIMIT);
 		process.stderr.write(formatDroppedRing(drop));
 	};
@@ -688,7 +760,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
 		const refused = new Set<string>();
 		for (const message of caught.messages) {
-			if (refused.has(message.from)) continue;
+			if (probeIds.has(message.id) || refused.has(message.from)) continue;
 			const stored = admitMessage(
 				deps.db,
 				deps.now,
@@ -712,6 +784,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
+		if (probeIds.has(message.id)) return;
 		seen = seenNow;
 		admitMessage(deps.db, deps.now, readRelays(deps.db), message, extra.newContact, extra.reaccept);
 		rememberAdmission();
@@ -727,8 +800,23 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		rememberAdmission();
 		return gateCache;
 	};
-	const hooks: SubscribeHooks = { reread: rereadGate, onDrop: logDrop };
+	const hooks: SubscribeHooks = {
+		reread: rereadGate,
+		onDrop: logDrop,
+		onEvent: (id) => addBounded(deliveredIds, id, STRANGER_ID_LIMIT),
+	};
 	const openSub = () => subscribe(pool, relays, keys, cachedGate, seen, onLive, deps.now, hooks);
+	const catchUp = async (target: string[]) => {
+		const caught = await fetchNew(pool, target, keys, gateFor(deps.db), seen, deps.now, logDrop);
+		if (stopped) return;
+		const caughtSeen = applyCaught(caught);
+		seen = {
+			cursor: Math.max(caughtSeen.cursor, seen.cursor),
+			ids: capIds([...new Set([...caughtSeen.ids, ...seen.ids])], STRANGER_ID_LIMIT),
+		};
+		writeCursor(deps.db, seen.cursor);
+		void hookRunner.notify();
+	};
 	let sub = openSub();
 	let stopped = false;
 	let watching = false;
@@ -751,6 +839,8 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		pool.close(dropped);
 		if (stopped) return;
 		sub = openSub();
+		await catchUp(relays);
+		if (stopped) return;
 		writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 	};
 	const watchKeys = () => {
@@ -769,6 +859,8 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 					if (stopped) return;
 					keys = merged;
 					sub = openSub();
+					await catchUp(relays);
+					if (stopped) return;
 					writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 					notePhoneDrift(deps.db, `keys:${nextPrint}`, notice, deps.now());
 				} else {
@@ -782,6 +874,40 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		})();
 	};
 	const cancelWatch = repeat(deps.schedule, KEY_WATCH_INTERVAL_MS, watchKeys);
+	const checkLiveness = async () => {
+		if (stopped || watching) return;
+		watching = true;
+		try {
+			const probeKey = keys.find((key) => key.id === numberKeyId(deps.db)) ?? keys[0];
+			if (!probeKey || relays.length === 0) {
+				logListener("heartbeat");
+				return;
+			}
+			const probe = wrap(LISTENER_PROBE_TEXT, probeKey.sk, probeKey.pub);
+			addBounded(probeIds, probe.id, STRANGER_ID_LIMIT);
+			const report = await publish(pool, relays, probe, { confirmMs: liveness.confirmMs, confirmById: false });
+			const saw = await waitForId(deliveredIds, probe.id, liveness.waitMs);
+			if (stopped) return;
+			const owed = report.ok.length > 0 || report.unconfirmed.length > 0;
+			if (owed && !saw) {
+				logListener("resubscribe");
+				sub.close();
+				pool.close(relays);
+				if (stopped) return;
+				sub = openSub();
+				await catchUp(relays);
+				if (stopped) return;
+				writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
+			} else {
+				logListener("heartbeat");
+			}
+		} catch {
+			if (!stopped) logListener("heartbeat");
+		} finally {
+			watching = false;
+		}
+	};
+	const cancelLiveness = repeatJitter(deps.schedule, () => livenessDelayMs(liveness.random(), liveness.minMs, liveness.maxMs), checkLiveness);
 
 	return new Promise<void>((resolve) => {
 		const shutdown = () => {
@@ -790,6 +916,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 			pool.close(relays);
 			cancelStuckRetry();
 			cancelWatch();
+			cancelLiveness();
 			hookRunner.stop();
 			void hookRunner.settle().finally(() => {
 				removeListenerPid(deps.paths);

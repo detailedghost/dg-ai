@@ -15,9 +15,9 @@ Codex:      $dg:phone
 | --- | --- |
 | `number [--as <name>] [--rotate] [--relay <url>...]` | Prints `{card, npub, as, relays, expires_at: null, open_invites, rotated, key_store, listener, safety}`. The number card never expires, so `expires_at` stays null. `open_invites` lists each live one-time card as `{handle, expires_at}`, the same expiry `invite` printed. `--rotate` prints a new number card and the old secret stops admitting. |
 | `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. A running listener reloads that invite; it does not need `close` and `open`. |
-| `accept [card] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin by default (`-`, in a short heredoc) so the one-time secret never shows in the process list or shell history; one argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
+| `accept [card] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin by default (`-`, in a short heredoc) so the one-time secret never shows in the process list or shell history; one argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok, relays_unconfirmed, relays_failed}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
-| `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok}`. |
+| `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. |
 | `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
 | `watch [--for <seconds>]` | Repeats `voicemail` until `--for` seconds have passed (default 120). The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
@@ -47,6 +47,41 @@ already a contact keeps that handle and that key. `--key <id>` signs a new
 contact with an existing key. Rename a contact afterward with
 `contacts rename` if you want a different handle.
 
+## Sending
+
+`say` and `accept` publish to one combined list: the contact's saved relays,
+the recipient's NIP-17 kind 10050 relay list when that replaceable event is
+on the relays we already know, and this phone's own relays. The list drops
+duplicates and stops at 10. Kind 10050 relays are kept first, because that
+is where the recipient reads gift wraps. The lookup waits at most 2 seconds
+and the answer, including an empty one, is reused for 10 minutes. A timeout
+or a relay error skips the cache and still sends on the card relays and our
+own relays.
+
+Each relay comes back as one of three results. `relays_ok` confirmed the
+event. `relays_unconfirmed` did not answer in time (`timeout`).
+`relays_failed` is `{relay, reason}` for a relay that explicitly rejected
+the event or could not be dialed. The command waits 10 seconds for each OK.
+Set `DG_PHONE_PUBLISH_CONFIRM_MS` to change that, or store the same
+millisecond count as the setting `publish_confirm_ms`. The environment
+variable wins when it is set. A value below 5000 is raised to 5000, and a
+value above 60000 is lowered to 60000. After a timeout, the command asks
+that relay for the event id. If the event is already stored, that relay
+moves to `relays_ok`.
+
+The outgoing message is saved when at least one relay confirmed it or left
+the OK unconfirmed. A slow OK, and a timeout on a relay that may already
+have stored the event, both keep the local copy. A later retry is a second
+message, and `inbox` still shows the first. The command exits 1 when every
+relay is in `relays_failed`. A relay that cannot be dialed counts as a
+failure, so a send that reached no relay is not saved. A new `accept`
+removes the contact it just added in that case.
+
+A message addressed to an npub the recipient has rotated away from stays
+sealed to the old key. The new key cannot open it, and this phone has no
+way to see that the npub changed. `relays_ok` means relays stored the gift
+wrap. The person who holds the current key may still not have it.
+
 ## The listener and delivery
 
 `open` runs one always-on listener (`phone __run` under the hood) that holds
@@ -55,6 +90,18 @@ known contacts and valid cards, and stores them. `voicemail`, `watch`, and
 `inbox` only read what the listener has already caught. None of them query
 the relays, so a message never shows up if the listener has not run since
 it arrived (within the 7-day window relays and this database both keep).
+
+The relay pool turns on ping and reconnect. A TCP connection that stays open
+after a checkpoint restore or a NAT drop fails the ping, and the pool dials
+the relay again. That is not the only check. Every 2 to 5 minutes, on a
+jittered gap rather than a fixed interval, the listener publishes a
+self-addressed probe. If any relay accepts the probe or leaves it
+unconfirmed, and the live subscription does not deliver it, the listener
+closes those sockets, subscribes again, and fetches what arrived since the
+last cursor. Each check writes one stderr line, `phone: listener heartbeat`
+or `phone: listener resubscribe`. The line has no secret and no message text.
+The same catch-up fetch runs after a resubscribe caused by a key change or
+an admission-epoch change.
 
 Every few seconds the listener re-reads its keys and its admission epoch.
 The epoch changes when `invite` saves a card, `number --rotate` rolls the
@@ -159,8 +206,9 @@ All state is in one SQLite database, `~/.dg/phone/phone.db` (mode 0600):
 - `invites` — pending one-time cards.
 - `messages` — both directions, the read mark, and the delivery attempt
   count for `--on-message`.
-- `settings` — the number, the listener's saved `--on-message`, and the
-  last autostart outcome.
+- `settings` — the number, the listener's saved `--on-message`, the
+  last autostart outcome, the optional `publish_confirm_ms` OK wait, and a
+  short-lived cache of kind 10050 relay lists.
 
 Messages older than **7 days** are deleted, including unread voicemail, so
 an agent away for more than a week loses what it missed; relay queries

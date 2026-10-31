@@ -671,8 +671,8 @@ describe("say", () => {
 		await phoneSay("+bbb", "hello second", d);
 		const second = lines()[0] as { handle: string; id: string; relays_ok: string[] };
 
-		expect(first).toMatchObject({ handle: "+aaa", relays_ok: ["wss://a.example"] });
-		expect(second).toMatchObject({ handle: "+bbb", relays_ok: ["wss://b.example"] });
+		expect(first).toMatchObject({ handle: "+aaa", relays_ok: ["wss://a.example", ...DEFAULT_RELAYS] });
+		expect(second).toMatchObject({ handle: "+bbb", relays_ok: ["wss://b.example", ...DEFAULT_RELAYS] });
 		expect(first.id).not.toBe(second.id);
 	});
 
