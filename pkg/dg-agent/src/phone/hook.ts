@@ -2,6 +2,7 @@ import { runCaptureBytes } from "@dg/common/node";
 import type { MessageRow, PhoneDb } from "./db";
 import { ON_MESSAGE_MAX_ATTEMPTS, type CommandPushTarget, nextOnMessageRetryDelayMs, onMessagePayload } from "./push";
 import { findContactByNpub } from "./store";
+import { senderLabel, threadLine } from "./thread";
 
 export type Cancel = () => void;
 export type Schedule = (delayMs: number, run: () => void) => Cancel;
@@ -20,6 +21,22 @@ export type HookRunner = {
 };
 
 function payloadFor(db: PhoneDb, row: MessageRow): string {
+	if (row.thread_id) {
+		const thread = db.getThread(row.thread_id);
+		const threadHandle = thread?.handle ?? `#${row.thread_id.slice(0, 8)}`;
+		const contact = findContactByNpub(db, row.sender);
+		const label = senderLabel(row.sender, contact?.handle, undefined);
+		return JSON.stringify({
+			id: row.id,
+			ts: row.ts,
+			from: row.sender,
+			handle: threadHandle,
+			sender: label,
+			thread: threadHandle,
+			text: row.text,
+			line: threadLine(threadHandle, label, row.text),
+		});
+	}
 	const contact = findContactByNpub(db, row.contact);
 	return onMessagePayload(
 		{ id: row.id, ts: row.ts, from: row.sender, text: row.text, ...(row.call ? { call: true as const } : {}) },

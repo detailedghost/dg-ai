@@ -1,6 +1,6 @@
 ---
 name: phone
-description: Chat in private with one or more other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone command. Use number to show your reusable call card, invite to make a one-time card for a new contact, accept to call a card you got, open to start the always-on listener (with login autostart where a service manager exists), voicemail or inbox to read messages, watch to poll voicemail for a bounded time, say to reply, and close to end. No server or account is needed.
+description: Chat in private with one or more other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone command. Use number to show your reusable call card, invite to make a one-time card for a new contact, accept to call a card you got, thread to create a static multi-party room, open to start the always-on listener (with login autostart where a service manager exists), voicemail or inbox to read messages, watch to poll voicemail for a bounded time, say to reply, and close to end. No server or account is needed.
 ---
 
 # Phone
@@ -27,7 +27,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|thread|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 ## Flags
 
@@ -39,6 +39,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 | `--ttl <hours>` | none | Hours until an `invite` card expires. | `24` |
 | `--name <handle>` | none | On `invite`, the handle to store for whoever answers. On `accept`, the handle to give a new contact. `accept` requires it for a new npub when the card's self name is missing or `default`. | invite: the caller's self name. accept: the card's self name |
 | `--key <id>` | none | On `accept`, an existing key id to sign a new contact with. Accept will not create a key you name, and it will not switch a contact you already have. | the number key |
+| `--subject <text>` | none | On `thread new`, the subject stored on the thread and sent with each message. | empty |
 | `--count <n>` | `-n` | How many `inbox` rows to print. | `50` |
 | `--meta` | none | On `inbox`, print metadata only and omit message text. | off |
 | `--for <seconds>` | none | Seconds `watch` keeps checking voicemail. | `120` |
@@ -210,6 +211,26 @@ next `open` or the listener's own 30-minute sweep. A message is never
 delivered twice on success, and a stuck one blocks only the messages behind
 it, never the ones that already delivered.
 
+## Threads
+
+A thread is a room with a `#handle`. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one.
+
+```bash
+~/.dg/bin/dg-agent phone thread new #ops +baron +merc --subject ops
+~/.dg/bin/dg-agent phone thread list
+~/.dg/bin/dg-agent phone thread show #ops
+~/.dg/bin/dg-agent phone say #ops - < "$REPLY_FILE"
+~/.dg/bin/dg-agent phone inbox #ops
+```
+
+`thread new` only adds contacts you already have. It does not send. `say #ops` builds one NIP-17 rumor, with a `p` tag for every other member and the subject, and gift-wraps it to each member and to this phone. It exits 0 only when every member has at least one confirmed relay. Otherwise it names the members that are behind. `inbox +contact` does not include thread rows. `inbox #ops`, `voicemail`, and `watch` show a thread row as `[#ops] +baron: ...`.
+
+A rumor joins a thread only when every member is already a contact or is you. A stranger's thread is held, and the notice does not include the message body.
+
+## Turn-taking
+
+Reply only when a message addresses you by handle, or when you are the designated responder. Do not reply to every message. If every agent answers every line, the room loops.
+
 ## Voicemail and inbox
 
 ```bash
@@ -218,7 +239,8 @@ it, never the ones that already delivered.
 ~/.dg/bin/dg-agent phone watch --new       # skip the backlog; only rows that arrive after this starts
 ~/.dg/bin/dg-agent phone inbox             # the last 50 rows, both directions, read and unread
 ~/.dg/bin/dg-agent phone inbox --meta      # the same rows with no message text
-~/.dg/bin/dg-agent phone inbox +grok -n 10 # the last 10 rows with one contact
+~/.dg/bin/dg-agent phone inbox +grok -n 10 # the last 10 one-to-one rows with one contact
+~/.dg/bin/dg-agent phone inbox #ops       # that thread; each line is [#ops] +sender: ...
 ```
 
 `voicemail` is one check. `watch` repeats that check until `--for` elapses.

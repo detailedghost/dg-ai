@@ -11,6 +11,8 @@ const config = {
 		"src/phone/ensure.ts",
 		"src/phone/watch.ts",
 		"src/phone/chat.ts",
+		"src/phone/thread.ts",
+		"src/phone/thread-schema.ts",
 	],
 	testFiles: [
 		"__tests__/phone/admit-pass.spec.ts",
@@ -20,6 +22,9 @@ const config = {
 		"__tests__/phone/reconnect.spec.ts",
 		"__tests__/phone/listener.spec.ts",
 		"__tests__/phone/db.spec.ts",
+		"__tests__/phone/thread.spec.ts",
+		"__tests__/phone/thread-migrate.spec.ts",
+		"__tests__/phone/thread-live.spec.ts",
 	],
 	bun: { timeout: 60_000 },
 	reporters: ["clear-text", "json"],

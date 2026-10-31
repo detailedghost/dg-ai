@@ -4,6 +4,7 @@ import { chmodSync, closeSync, existsSync, linkSync, openSync, readFileSync, ren
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
+import { nip19 } from "nostr-tools";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
 	addBounded,
@@ -11,6 +12,7 @@ import {
 	fetchNew,
 	type Gate,
 	type KeyEntry,
+	type HeldThread,
 	type Message,
 	type NewContact,
 	type PhonePool,
@@ -49,6 +51,7 @@ import {
 	subscriptionRelays,
 	writeCursor,
 } from "./store";
+import { dedupeHandle, pendingNotice, threadDirection, threadHandleBody } from "./thread";
 
 export type ListenerDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
@@ -676,15 +679,81 @@ type AdmitStore = "stored" | "duplicate" | "rejected";
  * holding an invite is stored only when this call consumes that invite, so a snapshot that is stale
  * by the time it lands cannot admit a second caller. A row that is already stored is a duplicate:
  * the key is not moved again. `rejected` is the only result that blocks later messages from that sender. */
+function ownNpubsOf(keys: readonly { pub: string }[]): string[] {
+	return keys.map((key) => nip19.npubEncode(key.pub));
+}
+
+/** Stores a held thread once. The notice names the room, never the message body. */
+function holdThread(db: PhoneDb, now: () => number, held: HeldThread): void {
+	const inserted = db.insertPending({
+		rumor_id: held.rumorId,
+		room_id: held.roomId,
+		sender: held.senderNpub,
+		members: JSON.stringify(held.memberNpubs),
+		subject: held.subject,
+		text: held.text,
+		ts: held.ts,
+	});
+	if (!inserted || db.roomNoticed(held.roomId)) return;
+	db.markRoomNoticed(held.roomId);
+	const notice = pendingNotice(held.roomId);
+	addPhoneNotice(db, notice, now());
+	process.stderr.write(`phone: ${notice}\n`);
+}
+
+function membersStillKnown(db: PhoneDb, npubs: readonly string[], ownNpubs: readonly string[]): boolean {
+	return npubs.every((npub) => ownNpubs.includes(npub) || findContactByNpub(db, npub) !== undefined);
+}
+
 function admitMessage(
 	db: PhoneDb,
 	now: () => number,
 	relays: string[],
 	message: Message,
+	ownNpubs: readonly string[],
 	newContact?: NewContact,
 	reaccept?: Reaccept,
 ): AdmitStore {
 	return db.transaction(() => {
+		if (message.thread) {
+			if (!membersStillKnown(db, message.thread.memberNpubs, ownNpubs)) {
+				holdThread(db, now, {
+					rumorId: message.id,
+					roomId: message.thread.roomId,
+					senderNpub: message.from,
+					memberNpubs: message.thread.memberNpubs,
+					subject: message.thread.subject,
+					text: message.text,
+					ts: message.ts,
+				});
+				return "duplicate";
+			}
+			if (!db.getThread(message.thread.roomId)) {
+				const handle = dedupeHandle(threadHandleBody(message.thread.subject, message.thread.roomId), (candidate) =>
+					db.getThreadByHandle(candidate) !== undefined,
+				);
+				db.insertThread({
+					id: message.thread.roomId,
+					handle,
+					subject: message.thread.subject ?? "",
+					key_id: message.thread.keyId,
+					created_at: now(),
+					via: "admit",
+				});
+				for (const npub of message.thread.memberNpubs) db.insertThreadMember(message.thread.roomId, npub);
+			}
+			const inserted = db.addMessage({
+				id: message.id,
+				direction: threadDirection(message.from, ownNpubs),
+				ts: message.ts,
+				sender: message.from,
+				contact: message.from,
+				text: message.text,
+				call: 0,
+				thread_id: message.thread.roomId,
+			});
+			return inserted ? "stored" : "duplicate";
+		}
 		if (newContact && !findContactByNpub(db, newContact.npub)) {
 			if (newContact.numberSecret !== undefined && readNumber(db)?.secret !== newContact.numberSecret) return "rejected";
 			if (newContact.inviteSecret && !consumeInvite(db, newContact.inviteSecret)) return "rejected";
@@ -776,13 +845,20 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const applyCaught = (caught: Awaited<ReturnType<typeof fetchNew>>) => {
 		const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
 		const refused = new Set<string>();
+		const ownNpubs = ownNpubsOf(keys);
+		for (const held of caught.held) holdThread(deps.db, deps.now, held);
 		for (const message of caught.messages) {
+			if (message.thread) {
+				admitMessage(deps.db, deps.now, readRelays(deps.db), message, ownNpubs);
+				continue;
+			}
 			if (refused.has(message.from)) continue;
 			const stored = admitMessage(
 				deps.db,
 				deps.now,
 				readRelays(deps.db),
 				message,
+				ownNpubs,
 				message.call ? newContactByNpub.get(message.from) : undefined,
 				caught.reacceptByMessageId.get(message.id),
 			);
@@ -802,7 +878,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
-		admitMessage(deps.db, deps.now, readRelays(deps.db), message, extra.newContact, extra.reaccept);
+		admitMessage(deps.db, deps.now, readRelays(deps.db), message, ownNpubsOf(keys), extra.newContact, extra.reaccept);
 		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
 		void hookRunner.notify();
@@ -817,6 +893,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		return gateCache;
 	};
 	const hooks: SubscribeHooks = {
+		onHeld: (held) => holdThread(deps.db, deps.now, held),
 		reread: rereadGate,
 		onDrop: logDrop,
 		onEvent: (id) => addBounded(deliveredIds, id, STRANGER_ID_LIMIT),

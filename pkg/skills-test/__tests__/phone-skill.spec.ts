@@ -23,7 +23,7 @@ describe("phone skill", () => {
 	});
 
 	test("documents every phone verb it drives", () => {
-		for (const verb of ["number", "invite", "accept", "contacts", "say", "inbox", "voicemail", "watch", "status", "open", "close"]) {
+		for (const verb of ["number", "invite", "accept", "contacts", "thread", "say", "inbox", "voicemail", "watch", "status", "open", "close"]) {
 			expect(skill).toContain(`phone ${verb}`);
 		}
 		expect(skill).toContain("--meta");
@@ -85,6 +85,20 @@ describe("phone skill", () => {
 		expect(guide).toContain("`--key <id>`");
 		expect(guide).toContain("rename or remove that contact first");
 		expect(guide).toContain("does not allocate a `-2` handle");
+		expect(skill).toContain('a contact handle cannot start with `#`');
+		expect(guide).toContain("A contact handle cannot start with `#`.");
+	});
+
+	test("documents threads and the turn-taking rule", () => {
+		expect(skill).toContain("phone thread new");
+		expect(skill).toContain("phone thread list");
+		expect(skill).toContain("phone thread show");
+		expect(skill).toContain("--subject");
+		expect(skill).toContain("Reply only when a message addresses you by handle, or when you are the designated responder.");
+		expect(skill).toContain("Do not reply to every message.");
+		expect(guide).toContain("Reply only when a message addresses you by handle, or when you are the designated responder.");
+		expect(guide).toContain("Do not reply to every message.");
+		expect(guide).toContain("[#ops] +baron:");
 	});
 
 	test("sends replies through a file redirect or a quoted heredoc, not a shell argument", () => {

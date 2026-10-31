@@ -862,6 +862,49 @@ describe("self probes", () => {
 	});
 });
 
+describe("thread rumors", () => {
+	function groupWrap(sender: ReturnType<typeof identity>, to: ReturnType<typeof identity>, pubs: string[], content: string, createdAt: number, subject?: string) {
+		const tags = pubs.map((pub) => ["p", pub]);
+		if (subject !== undefined) tags.push(["subject", subject]);
+		const rumor = nip59.createRumor({ kind: 14, content, created_at: createdAt, tags }, sender.sk);
+		return { rumor, event: nip59.createWrap(nip59.createSeal(rumor, sender.sk, to.pub), to.pub) };
+	}
+
+	it("admits a rumor with several p tags when every member is us or a contact, once, by rumor id", async () => {
+		const alice = identity();
+		const bob = identity();
+		const cara = identity();
+		const pool = createFakePool();
+		const sent = groupWrap(alice, bob, [bob.pub, cara.pub], "later", 2_000, "ops");
+		const earlier = groupWrap(alice, bob, [bob.pub], "plain", 1_000);
+		pool.events.push(sent.event, earlier.event);
+		const gate = gateWithContact(alice.pub);
+		gate.contacts.set(cara.pub, { npub: nip19.npubEncode(cara.pub), handle: "cara" });
+
+		const { messages, held } = await fetchNew(pool, RELAYS, [bob], gate, { cursor: 0, ids: [] }, () => 2_005);
+
+		expect(held).toEqual([]);
+		expect(messages.map((message) => message.text)).toEqual(["plain", "later"]);
+		expect(messages[1]).toMatchObject({ id: sent.rumor.id, thread: { roomId: expect.any(String) } });
+		expect(messages[0]?.thread).toBeUndefined();
+	});
+
+	it("holds a thread when a member is not a contact and does not admit it as one-to-one", async () => {
+		const alice = identity();
+		const bob = identity();
+		const cara = identity();
+		const pool = createFakePool();
+		const sent = groupWrap(alice, bob, [bob.pub, cara.pub], "secret-body", 2_000, "ops");
+		pool.events.push(sent.event);
+
+		const { messages, held } = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, () => 2_005);
+
+		expect(messages).toEqual([]);
+		expect(held.map((row) => row.rumorId)).toEqual([sent.rumor.id]);
+		expect(held[0]?.text).toBe("secret-body");
+	});
+});
+
 describe("addBounded", () => {
 	it("evicts the oldest entry once the set exceeds `limit`, so a long-running subscription cannot grow it without bound", () => {
 		const set = new Set<string>();
