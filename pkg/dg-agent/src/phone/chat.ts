@@ -243,17 +243,15 @@ function reportFrom(results: RelayResult[]): PublishReport {
 
 async function settleRelay(relay: string, promise: Promise<string>, confirmMs: number): Promise<RelayResult> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const guarded = promise.then(
-		() => ({ kind: "ok" as const }),
-		(err: unknown) => ({ kind: "error" as const, reason: cleanReason(failureReason(err)) }),
-	);
 	const outcome = await Promise.race([
-		guarded,
+		promise.then(
+			() => ({ kind: "ok" as const }),
+			(err: unknown) => ({ kind: "error" as const, reason: cleanReason(failureReason(err)) }),
+		),
 		new Promise<{ kind: "timeout" }>((resolve) => {
 			timer = setTimeout(() => resolve({ kind: "timeout" }), confirmMs);
 		}),
-	]);
-	if (timer) clearTimeout(timer);
+	]).finally(() => clearTimeout(timer));
 	if (outcome.kind === "ok") return { relay, status: "ok" };
 	if (outcome.kind === "timeout" || isTimeoutReason(outcome.reason)) return { relay, status: "unconfirmed", reason: "timeout" };
 	return { relay, status: "rejected", reason: outcome.reason };
@@ -261,22 +259,18 @@ async function settleRelay(relay: string, promise: Promise<string>, confirmMs: n
 
 async function relayHasEvent(pool: PhonePool, relay: string, id: string, timeoutMs: number): Promise<boolean> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	let finished = false;
 	try {
 		const events = await Promise.race([
-			pool.querySync([relay], { ids: [id] }, { maxWait: timeoutMs }).then((found) => {
-				finished = true;
-				if (timer) clearTimeout(timer);
-				return found;
-			}),
+			pool.querySync([relay], { ids: [id] }, { maxWait: timeoutMs }),
 			new Promise<NostrEvent[]>((resolve) => {
 				timer = setTimeout(() => resolve([]), timeoutMs);
 			}),
 		]);
-		return finished && events.some((event) => event.id === id);
+		return events.some((event) => event.id === id);
 	} catch {
-		if (timer) clearTimeout(timer);
 		return false;
+	} finally {
+		clearTimeout(timer);
 	}
 }
 
@@ -359,14 +353,20 @@ export async function fetchNew(
 		maxWait: QUERY_MAX_WAIT_MS,
 	});
 	const known = new Set(seen.ids);
+	const ownPubs = keys.map((held) => held.pub);
 	const opened: { event: NostrEvent; rumor: Rumor; keyId: string }[] = [];
+	const skipped: string[] = [];
 	for (const event of events) {
 		if (known.has(event.id)) continue;
 		known.add(event.id);
 		const key = pickKey(event, keys);
 		if (!key) continue;
 		const rumor = open(event, key.sk);
-		if (!rumor || isSelfProbe(rumor, keys.map((held) => held.pub))) continue;
+		if (!rumor) continue;
+		if (isSelfProbe(rumor, ownPubs)) {
+			skipped.push(event.id);
+			continue;
+		}
 		opened.push({ event, rumor, keyId: key.id });
 	}
 	opened.sort((a, b) => a.rumor.created_at - b.rumor.created_at);
@@ -387,11 +387,7 @@ export async function fetchNew(
 	}
 	return {
 		messages,
-		seen: remember(
-			seen,
-			startedAt,
-			messages.map((message) => message.id),
-		),
+		seen: remember(seen, startedAt, [...messages.map((message) => message.id), ...skipped]),
 		gate: current,
 		newContacts,
 		reaccepts,
@@ -441,13 +437,14 @@ export function classifyIncoming(
 	keys: KeyEntry[],
 	gate: Gate,
 	now: number,
+	ownPubs: readonly string[] = keys.map((held) => held.pub),
 ): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } {
 	const key = pickKey(event, keys);
 	if (!key) return { drop: { id: event.id, reason: "not addressed to a loaded key" } };
 	const opened = openDetailed(event, key.sk);
 	if (opened.kind === "undecryptable") return { drop: { id: event.id, reason: "could not open the wrap" } };
 	if (opened.kind === "not-chat") return { drop: { id: event.id, reason: "not a chat message" } };
-	if (isSelfProbe(opened.rumor, keys.map((held) => held.pub))) return { probe: true };
+	if (isSelfProbe(opened.rumor, ownPubs)) return { probe: true };
 	const decided = admit(event, opened.rumor, key.id, gate, now);
 	if (!decided.ok) return { drop: { id: event.id, reason: decided.reason, pubkeyPrefix: decided.pubkeyPrefix } };
 	return { admitted: decided.admitted };
@@ -478,16 +475,15 @@ export function subscribe(
 	let state = seen;
 	const known = new Set(seen.ids);
 	const strangers = new Set<string>();
-	return pool.subscribe(relays, inboxFilter(keys.map((key) => key.pub), seen.cursor, now()), {
+	const ownPubs = keys.map((held) => held.pub);
+	return pool.subscribe(relays, inboxFilter(ownPubs, seen.cursor, now()), {
 		onevent(event) {
 			hooks.onEvent?.(event.id);
 			if (known.has(event.id) || strangers.has(event.id)) return;
-			let result = classifyIncoming(event, keys, gate(), now());
-			if ("probe" in result) {
-				addBounded(known, event.id, STRANGER_ID_LIMIT);
-				return;
+			let result = classifyIncoming(event, keys, gate(), now(), ownPubs);
+			if (!("admitted" in result) && !("probe" in result) && hooks.reread) {
+				result = classifyIncoming(event, keys, hooks.reread(), now(), ownPubs);
 			}
-			if (!("admitted" in result) && hooks.reread) result = classifyIncoming(event, keys, hooks.reread(), now());
 			if ("probe" in result) {
 				addBounded(known, event.id, STRANGER_ID_LIMIT);
 				return;

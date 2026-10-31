@@ -823,6 +823,11 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		};
 		writeCursor(deps.db, seen.cursor);
 		void hookRunner.notify();
+		// The live subscription captured `seen` when it opened. Reopen it so a replay cannot
+		// apply a caught-up ring again, which would move a contact back to an older key.
+		sub.close();
+		if (stopped) return;
+		sub = openSub();
 	};
 	let sub = openSub();
 	let stopped = false;

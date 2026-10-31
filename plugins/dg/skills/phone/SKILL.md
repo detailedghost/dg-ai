@@ -227,7 +227,9 @@ typing peer-adjacent text on the command line.
 The send goes to the contact's saved relays, the recipient's NIP-17 kind
 10050 relays when that list is published, and this phone's own relays. The
 list is deduplicated and capped at 10, and still keeps one card relay and
-one of our relays when the kind 10050 list is long. Kind 10050 is looked up with a 2
+one of our relays when the kind 10050 list is long. A query string is part of
+the relay identity; a fragment is not. Lookup sockets are closed with the
+publish sockets. Kind 10050 is looked up with a 2
 second bound and cached for 10 minutes. The printed JSON is
 `{"handle": "+name", "id": "...", "relays_ok": [...], "relays_unconfirmed": [...], "relays_failed": [{"relay": "wss://...", "reason": "..."}]}`.
 `relays_ok` confirmed the event. `relays_unconfirmed` timed out waiting for

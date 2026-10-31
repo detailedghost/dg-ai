@@ -223,7 +223,12 @@ function rejectedSend(kind: "call" | "message", report: PublishReport): string {
 }
 
 /** Card relays, the recipient's kind 10050 relays, and our relays. A lookup miss still returns the other two. */
-async function outgoingRelays(deps: PhoneDeps, pool: PhonePool, cardRelays: string[], npub: string): Promise<string[]> {
+async function outgoingRelays(
+	deps: PhoneDeps,
+	pool: PhonePool,
+	cardRelays: string[],
+	npub: string,
+): Promise<{ relays: string[]; queried: string[] }> {
 	const own = readRelays(deps.db);
 	const pubkey = pubkeyHex(npub);
 	const queried = publishRelaySet({ inbox: [], card: cardRelays, own });
@@ -231,7 +236,11 @@ async function outgoingRelays(deps: PhoneDeps, pool: PhonePool, cardRelays: stri
 		read: () => readInboxRelayCache(deps.db, pubkey, deps.now(), INBOX_RELAY_CACHE_SECONDS),
 		write: (relays) => writeInboxRelayCache(deps.db, pubkey, relays, deps.now()),
 	});
-	return publishRelaySet({ inbox, card: cardRelays, own });
+	return { relays: publishRelaySet({ inbox, card: cardRelays, own }), queried };
+}
+
+function closeRelayPool(pool: PhonePool & { close(relays: string[]): void }, relays: string[]): void {
+	pool.close([...new Set(relays)]);
 }
 
 const MIGRATION_HINT = `${JSON.stringify({ migration_pending: true, next: "run phone open to migrate" })}\n`;
@@ -343,9 +352,12 @@ export async function phoneAccept(
 	}
 	const pool = deps.createPool();
 	let relays = card.relays;
+	let queried: string[] = [];
 	try {
 		const event = ring(words, sk, pubkeyHex(card.npub), card.secret, selfName);
-		relays = await outgoingRelays(deps, pool, card.relays, card.npub);
+		const outgoing = await outgoingRelays(deps, pool, card.relays, card.npub);
+		relays = outgoing.relays;
+		queried = outgoing.queried;
 		const report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
 		if (!shouldSaveOutgoing(report)) {
 			if (!existing) removeContact(deps.db, handle);
@@ -365,7 +377,7 @@ export async function phoneAccept(
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, npub: card.npub, id: event.id, ...relayFields(report) });
 	} finally {
-		pool.close(relays);
+		closeRelayPool(pool, [...queried, ...relays]);
 	}
 }
 
@@ -426,8 +438,11 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 	const event = wrap(body, sk, pubkeyHex(contact.npub));
 	const pool = deps.createPool();
 	let relays = contact.relays;
+	let queried: string[] = [];
 	try {
-		relays = await outgoingRelays(deps, pool, contact.relays, contact.npub);
+		const outgoing = await outgoingRelays(deps, pool, contact.relays, contact.npub);
+		relays = outgoing.relays;
+		queried = outgoing.queried;
 		const report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
 		if (!shouldSaveOutgoing(report)) throw new DgCliError(rejectedSend("message", report));
 		deps.db.addMessage({
@@ -442,7 +457,7 @@ export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDe
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report) });
 	} finally {
-		pool.close(relays);
+		closeRelayPool(pool, [...queried, ...relays]);
 	}
 }
 

@@ -44,22 +44,18 @@ export function canonicalRelay(url: string): string | undefined {
 		return undefined;
 	}
 	if (parsed.protocol !== "wss:") return undefined;
-	parsed.hostname = parsed.hostname.toLowerCase();
-	if (parsed.port === "443") parsed.port = "";
+	// `URL` already lowercases the host and drops the default 443 port.
 	parsed.hash = "";
-	parsed.search = "";
 	if (parsed.pathname.length > 1 && parsed.pathname.endsWith("/")) parsed.pathname = parsed.pathname.slice(0, -1);
-	const canonical = parsed.pathname === "/" ? parsed.origin : parsed.toString();
+	const canonical = parsed.pathname === "/" && parsed.search === "" ? parsed.origin : parsed.toString();
 	return isCardRelays([canonical]) ? canonical : undefined;
 }
 
 function canonicalList(urls: string[]): string[] {
 	const out: string[] = [];
-	const seen = new Set<string>();
 	for (const url of urls) {
 		const canonical = canonicalRelay(url);
-		if (!canonical || seen.has(canonical)) continue;
-		seen.add(canonical);
+		if (!canonical) continue;
 		out.push(canonical);
 	}
 	return out;
@@ -81,9 +77,8 @@ export function publishRelaySet(input: { inbox: string[]; card: string[]; own: s
 	const ordered = [
 		...inbox.slice(0, Math.max(0, inboxCap)),
 		...protectedRelays,
-		...inbox.slice(Math.max(0, inboxCap)),
-		...card.slice(1),
-		...own.filter((url) => url !== keepOwn),
+		...card,
+		...own,
 	];
 	const out: string[] = [];
 	const seen = new Set<string>();
@@ -135,7 +130,6 @@ export async function lookupInboxRelays(
 				.querySync(relays, { kinds: [INBOX_RELAY_KIND], authors: [pubkey], limit: 5 }, { maxWait: timeoutMs })
 				.then((found) => {
 					finished = true;
-					if (timer) clearTimeout(timer);
 					return found;
 				}),
 			new Promise<NostrEvent[]>((resolve) => {
@@ -149,8 +143,9 @@ export async function lookupInboxRelays(
 		cache.write(found);
 		return found;
 	} catch {
-		if (timer) clearTimeout(timer);
 		return [];
+	} finally {
+		clearTimeout(timer);
 	}
 }
 

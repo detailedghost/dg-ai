@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { readFileSync, writeFileSync } from "node:fs";
-import { finalizeEvent, generateSecretKey, getPublicKey, nip19, type Filter, type NostrEvent } from "nostr-tools";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { finalizeEvent, generateSecretKey, getPublicKey, nip19, nip59, type Filter, type NostrEvent } from "nostr-tools";
 import { phoneAccept, phoneNumber, phoneSay, type PhoneDeps } from "../../src/phone/commands";
-import { PROBE_TOPIC, isSelfProbe, publish, shouldSaveOutgoing, wrap, wrapProbe, type PhonePool } from "../../src/phone/chat";
+import { CALL_TAG, PROBE_TOPIC, isSelfProbe, publish, shouldSaveOutgoing, wrap, wrapProbe, type PhonePool } from "../../src/phone/chat";
 import {
 	INBOX_RELAY_CACHE_SECONDS,
 	INBOX_RELAY_KIND,
@@ -40,9 +40,11 @@ import {
 	PUBLISH_CONFIRM_SETTING,
 	addContact,
 	numberKeyId,
+	findContactByNpub,
 	readAdmissionEpoch,
 	readCursor,
 	readInboxRelayCache,
+	readPublishConfirmSetting,
 	writeInboxRelayCache,
 	writeNumber,
 	writeRelays,
@@ -142,6 +144,8 @@ describe("resolvePublishConfirmMs", () => {
 		expect(resolvePublishConfirmMs(undefined, 1000)).toBe(MIN_PUBLISH_CONFIRM_MS);
 		expect(resolvePublishConfirmMs(undefined, 99_999)).toBe(MAX_PUBLISH_CONFIRM_MS);
 		expect(resolvePublishConfirmMs("9000", 1000)).toBe(9000);
+		expect(resolvePublishConfirmMs("  ", 20_000)).toBe(20_000);
+		expect(resolvePublishConfirmMs("\n", undefined)).toBe(10_000);
 		expect(MIN_PUBLISH_CONFIRM_MS).toBeGreaterThan(4400);
 	});
 });
@@ -159,6 +163,12 @@ describe("publishRelaySet", () => {
 		expect(set).not.toContain(inbox[10]);
 		expect(canonicalRelay("wss://A.Example/path/")).toBe("wss://a.example/path");
 		expect(canonicalRelay("https://a.example")).toBeUndefined();
+		expect(canonicalRelay("wss://relay.example/?auth=token")).toBe("wss://relay.example/?auth=token");
+		expect(canonicalRelay("wss://Relay.Example/?auth=a")).not.toBe(canonicalRelay("wss://relay.example/?auth=b"));
+		expect(canonicalRelay("wss://relay.example:443/path")).toBe("wss://relay.example/path");
+		expect(canonicalRelay("wss://relay.example:4443/path")).toBe("wss://relay.example:4443/path");
+		expect(canonicalRelay("not a url")).toBeUndefined();
+		expect(publishRelaySet({ inbox: ["not a url", INBOX, INBOX], card: [], own: [] })).toEqual([INBOX]);
 	});
 
 	it("reads relay tags off a kind 10050 event and ignores anything else", () => {
@@ -166,7 +176,26 @@ describe("publishRelaySet", () => {
 		event.tags.push(["p", "ab".repeat(32)]);
 		event.tags.push(["r", "wss://not-a-10050-tag.example"]);
 
+		event.tags.push(["p", "wss://evil.example"]);
+		event.tags.push(["relay", INBOX]);
+		event.tags.push(["relay", "not a url"]);
 		expect(relaysFromInboxEvent(event)).toEqual([INBOX, "wss://second.example"]);
+	});
+
+	it("keeps nine inbox relays when the card relay and our relay are the same url", () => {
+		const inbox = Array.from({ length: 10 }, (_, i) => `wss://inbox-${i}.example`);
+		const set = publishRelaySet({ inbox, card: [CARD], own: [CARD] });
+
+		expect(set.filter((url) => url.startsWith("wss://inbox-"))).toHaveLength(9);
+		expect(set).toContain(CARD);
+		expect(set).toHaveLength(10);
+
+		const extraCard = "wss://card-2.example";
+		const extraOwn = "wss://own-2.example";
+		const capped = publishRelaySet({ inbox: inbox.slice(0, 8), card: [CARD, extraCard], own: [OWN, extraOwn] });
+		expect(capped).toHaveLength(10);
+		expect(capped).not.toContain(extraCard);
+		expect(capped).not.toContain(extraOwn);
 	});
 });
 
@@ -225,6 +254,86 @@ describe("publish", () => {
 		expect(script.queries).toEqual([]);
 	});
 
+	it("keeps a newline-free reason, treats only an exact timeout as unconfirmed, and ignores a different event id", async () => {
+		const noisy = scriptedPool({});
+		noisy.pool.publish = (relays) => relays.map((relay) => Promise.reject(new Error(relay === CARD ? "bad\nreason" : "timeout please")));
+		const mixed = await publish(noisy.pool, [CARD, OWN], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(mixed.failed).toEqual([
+			{ relay: CARD, reason: "bad reason" },
+			{ relay: OWN, reason: "timeout please" },
+		]);
+		expect(mixed.unconfirmed).toEqual([]);
+
+		const blank = scriptedPool({});
+		blank.pool.publish = (relays) => relays.map(() => Promise.reject(new Error("  \n  ")));
+		const emptied = await publish(blank.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(emptied.failed).toEqual([{ relay: CARD, reason: "rejected" }]);
+
+		const long = scriptedPool({});
+		long.pool.publish = (relays) => relays.map(() => Promise.reject(new Error("x".repeat(250))));
+		const clipped = await publish(long.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(clipped.failed[0]?.reason).toHaveLength(200);
+
+		const timed = scriptedPool({});
+		timed.pool.publish = (relays) => relays.map(() => Promise.reject(new Error("Publish Timed Out")));
+		const late = await publish(timed.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(late.unconfirmed).toEqual([CARD]);
+		expect(late.results).toEqual([{ relay: CARD, status: "unconfirmed", reason: "timeout" }]);
+		expect(late.failed).toEqual([]);
+
+		const plain = scriptedPool({});
+		plain.pool.publish = (relays) => relays.map(() => Promise.reject("plain-reason"));
+		const asString = await publish(plain.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(asString.failed).toEqual([{ relay: CARD, reason: "plain-reason" }]);
+
+		const exact = scriptedPool({});
+		exact.pool.publish = (relays) => relays.map(() => Promise.reject("  timeout  "));
+		const spaced = await publish(exact.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(spaced.unconfirmed).toEqual([CARD]);
+
+		const doubled = scriptedPool({});
+		doubled.pool.publish = (relays) => relays.map(() => Promise.reject(new Error("a\n\nb")));
+		const flattened = await publish(doubled.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(flattened.failed).toEqual([{ relay: CARD, reason: "a b" }]);
+
+		const exactLength = scriptedPool({});
+		exactLength.pool.publish = (relays) => relays.map(() => Promise.reject(new Error("y".repeat(200))));
+		const kept = await publish(exactLength.pool, [CARD], wrap("hi", alice.sk, bob.pub), { confirmMs: 50, confirmById: false });
+		expect(kept.failed[0]?.reason).toBe("y".repeat(200));
+
+		const event = wrap("hi", alice.sk, bob.pub);
+		const other = wrap("other", alice.sk, bob.pub);
+		const mismatched: PhonePool = {
+			publish() {
+				return [Promise.reject(new Error("publish timed out"))];
+			},
+			async querySync() {
+				return [other];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const missed = await publish(mismatched, [CARD], event, { confirmMs: 50, reqTimeoutMs: 50 });
+		expect(missed.unconfirmed).toEqual([CARD]);
+		expect(missed.ok).toEqual([]);
+
+		const broken: PhonePool = {
+			publish() {
+				return [Promise.reject(new Error("publish timed out"))];
+			},
+			querySync() {
+				throw new Error("req failed");
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const errored = await publish(broken, [CARD], event, { confirmMs: 50, reqTimeoutMs: 50 });
+		expect(errored.unconfirmed).toEqual([CARD]);
+		expect(errored.ok).toEqual([]);
+	});
+
 	it("does not upgrade a timeout when the id query is still in flight", async () => {
 		const event = wrap("hi", alice.sk, bob.pub);
 		let sawQuery = false;
@@ -248,6 +357,78 @@ describe("publish", () => {
 		expect(sawQuery).toBe(true);
 		expect(report.unconfirmed).toEqual([CARD]);
 		expect(report.ok).toEqual([]);
+	});
+
+	it("uses the shorter default REQ bound, and only the relay that was actually published to", async () => {
+		const event = wrap("hi", alice.sk, bob.pub);
+		const decoy = wrap("other", alice.sk, bob.pub);
+		const selective: PhonePool = {
+			publish() {
+				return [Promise.reject(new Error("publish timed out")), new Promise(() => {})];
+			},
+			async querySync(relays, filter, params) {
+				if (!params || typeof params.maxWait !== "number") return [];
+				if (!Array.isArray(relays) || relays[0] !== CARD || !filter.ids?.includes(event.id)) return [decoy];
+				return new Promise((resolve) => setTimeout(() => resolve([event]), 40));
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+
+		const upgraded = await publish(selective, [CARD], event, { confirmMs: 80 });
+		expect(upgraded.ok).toEqual([CARD]);
+		expect(upgraded.unconfirmed.map((relay) => relay)).toEqual([""]);
+
+		const slow: PhonePool = {
+			publish() {
+				return [Promise.reject(new Error("publish timed out"))];
+			},
+			querySync() {
+				return new Promise((resolve) => setTimeout(() => resolve([event]), 150));
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const started = Date.now();
+		const bounded = await publish(slow, [CARD], event, { confirmMs: 50 });
+		expect(Date.now() - started).toBeLessThan(140);
+		expect(bounded.unconfirmed).toEqual([CARD]);
+		expect(bounded.ok).toEqual([]);
+	});
+
+	it("times out a publish that never answers, and records a non-error rejection as rejected", async () => {
+		const hung: PhonePool = {
+			publish() {
+				return [new Promise(() => {})];
+			},
+			async querySync() {
+				return [];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const started = Date.now();
+		const pending = wrap("hi", alice.sk, bob.pub);
+		const stalled = await publish(hung, [CARD], pending, { confirmMs: 40, confirmById: false });
+		expect(Date.now() - started).toBeLessThan(300);
+		expect(stalled.unconfirmed).toEqual([CARD]);
+
+		const opaque: PhonePool = {
+			publish() {
+				return [Promise.reject({ code: 1 })];
+			},
+			async querySync() {
+				return [];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const rejected = await publish(opaque, [CARD], pending, { confirmMs: 40, confirmById: false });
+		expect(rejected.failed).toEqual([{ relay: CARD, reason: "rejected" }]);
 	});
 });
 
@@ -289,23 +470,30 @@ describe("lookupInboxRelays", () => {
 				return { close() {} };
 			},
 		};
-		const cache = { read: () => undefined, write: () => {} };
+		let saved: string[] | undefined;
+		const cache = {
+			read: () => saved,
+			write: (relays: string[]) => {
+				saved = relays;
+			},
+		};
 		const started = Date.now();
 
 		const missed = await lookupInboxRelays(hanging, [OWN], pubkey, cache, 30);
 
 		expect(missed).toEqual([]);
+		expect(saved).toBeUndefined();
 		expect(Date.now() - started).toBeLessThan(INBOX_RELAY_LOOKUP_MS);
 		expect(reads).toBe(1);
 		await lookupInboxRelays(hanging, [OWN], pubkey, cache, 30);
 		expect(reads).toBe(2);
 
 		const empty = scriptedPool({});
-		let saved: string[] | undefined;
+		let emptySaved: string[] | undefined;
 		const caching = {
-			read: () => saved,
+			read: () => emptySaved,
 			write: (relays: string[]) => {
-				saved = relays;
+				emptySaved = relays;
 			},
 		};
 		expect(await lookupInboxRelays(empty.pool, [OWN], pubkey, caching, 30)).toEqual([]);
@@ -320,7 +508,10 @@ describe("lookupInboxRelays", () => {
 		const forged = unsignedCopy(signInbox(sk, ["wss://evil.example"], 300), { sig: "f".repeat(128) });
 		const other = generateSecretKey();
 		const wrongAuthor = signInbox(other, ["wss://other.example"], 250);
-		const wrongKind = unsignedCopy(signInbox(sk, ["wss://kind.example"], 400), { kind: 1 });
+		const wrongKind = finalizeEvent(
+			{ kind: 1, created_at: 400, tags: [["relay", "wss://kind.example"]], content: "" },
+			sk,
+		);
 		const pool: PhonePool = {
 			publish() {
 				return [];
@@ -336,6 +527,28 @@ describe("lookupInboxRelays", () => {
 		const relays = await lookupInboxRelays(pool, [OWN], pubkey, { read: () => undefined, write: () => {} }, 50);
 
 		expect(relays).toEqual([INBOX]);
+	});
+
+	it("returns a cached list without querying, and does not query when the author or the relay list is empty", async () => {
+		let queries = 0;
+		const pool: PhonePool = {
+			publish() {
+				return [];
+			},
+			querySync() {
+				queries += 1;
+				throw new Error("lookup should not run");
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+		const cache = { read: () => [INBOX], write: () => {} };
+
+		expect(await lookupInboxRelays(pool, [OWN], "ab".repeat(32), cache, 50)).toEqual([INBOX]);
+		expect(await lookupInboxRelays(pool, [], "ab".repeat(32), { read: () => undefined, write: () => {} }, 50)).toEqual([]);
+		expect(await lookupInboxRelays(pool, [OWN], "", { read: () => undefined, write: () => {} }, 50)).toEqual([]);
+		expect(queries).toBe(0);
 	});
 
 	it("returns nothing and does not cache when the kind 10050 query throws", async () => {
@@ -365,6 +578,25 @@ describe("lookupInboxRelays", () => {
 		expect(await lookupInboxRelays(pool, [OWN], "ab".repeat(32), cache, 50)).toEqual([]);
 		expect(reads).toBe(2);
 	});
+
+	it("passes the lookup bound through to the query", async () => {
+		const sk = generateSecretKey();
+		const pubkey = getPublicKey(sk);
+		const pool: PhonePool = {
+			publish() {
+				return [];
+			},
+			querySync(_relays, _filter, params) {
+				if (!params || typeof params.maxWait !== "number") return new Promise(() => {});
+				return Promise.resolve([signInbox(sk, [INBOX])]);
+			},
+			subscribe() {
+				return { close() {} };
+			},
+		};
+
+		expect(await lookupInboxRelays(pool, [OWN], pubkey, { read: () => undefined, write: () => {} }, 40)).toEqual([INBOX]);
+	});
 });
 
 describe("inbox relay cache", () => {
@@ -381,6 +613,14 @@ describe("inbox relay cache", () => {
 
 		expect(readInboxRelayCache(db, pubkey, 1_000 + INBOX_RELAY_CACHE_SECONDS - 1, INBOX_RELAY_CACHE_SECONDS)).toEqual([INBOX]);
 		expect(readInboxRelayCache(db, pubkey, 1_000 + INBOX_RELAY_CACHE_SECONDS, INBOX_RELAY_CACHE_SECONDS)).toBeUndefined();
+		db.set("inbox_relays", { [pubkey]: { relays: "wss://not-a-list.example", at: 1_000 } });
+		expect(readInboxRelayCache(db, pubkey, 1_000, INBOX_RELAY_CACHE_SECONDS)).toBeUndefined();
+		db.set(PUBLISH_CONFIRM_SETTING, Number.NaN);
+		expect(readPublishConfirmSetting(db)).toBeUndefined();
+		db.set(PUBLISH_CONFIRM_SETTING, "7000");
+		expect(readPublishConfirmSetting(db)).toBeUndefined();
+		db.set("inbox_relays", { [pubkey]: { relays: [INBOX, 4, null], at: 1_000 } });
+		expect(readInboxRelayCache(db, pubkey, 1_000, INBOX_RELAY_CACHE_SECONDS)).toEqual([INBOX]);
 	});
 });
 
@@ -574,6 +814,54 @@ describe("phoneSay and phoneAccept delivery", () => {
 		expect(rejected.published[0]?.length).toBeGreaterThan(0);
 	});
 
+	it("closes lookup relays that the capped publish list does not keep", async () => {
+		const inbox = Array.from({ length: 8 }, (_, i) => `wss://in-${i}.example`);
+		const cardOnly = "wss://card-extra.example";
+		const sk = generateSecretKey();
+		const pubkey = getPublicKey(sk);
+		const closed: string[][] = [];
+		const pool: PhonePool & { close(relays: string[]): void } = {
+			publish(relays) {
+				return relays.map(() => Promise.resolve(""));
+			},
+			async querySync() {
+				return [signInbox(sk, inbox)];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+			close(relays) {
+				closed.push([...relays]);
+			},
+		};
+		const out: string[] = [];
+		const d = deps(pool, out);
+		d.createPool = () => pool;
+		addContact(d.db, {
+			npub: nip19.npubEncode(pubkey),
+			handle: "ada",
+			relays: [CARD, cardOnly],
+			keyId: numberKeyId(d.db),
+			addedAt: NOW,
+			via: "accept",
+		});
+
+		await phoneSay("+ada", "hello", d);
+
+		expect(closed.at(-1)).toContain(cardOnly);
+		expect(closed.at(-1)).toContain(CARD);
+		expect(closed.at(-1)).toContain(OWN);
+	});
+
+	it("reports an empty target with the bare rejection and no relay suffix", async () => {
+		const script = scriptedPool({});
+		const d = deps(script.pool, []);
+		writeRelays(d.db, []);
+		addContact(d.db, { npub: freshNpub(), handle: "ada", relays: [], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+
+		await expect(phoneSay("+ada", "nowhere", d)).rejects.toThrow(/^no relay accepted the message$/);
+	});
+
 	it("names every rejected relay in the error", async () => {
 		const out: string[] = [];
 		const reasons: Record<string, string> = { [CARD]: "nope", [OWN]: "blocked" };
@@ -595,6 +883,33 @@ describe("phoneSay and phoneAccept delivery", () => {
 		await expect(phoneSay("+ada", "nope", d)).rejects.toThrow(
 			`no relay accepted the message: ${CARD}: nope; ${OWN}: blocked`,
 		);
+	});
+
+	it("closes the contact relays when the npub cannot be published to", async () => {
+		const closed: string[][] = [];
+		const pool: PhonePool & { close(relays: string[]): void } = {
+			publish() {
+				return [];
+			},
+			async querySync() {
+				return [];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+			close(relays) {
+				closed.push([...relays]);
+			},
+		};
+		const d = deps(pool, []);
+		d.createPool = () => pool;
+		d.now = () => {
+			throw new Error("clock down");
+		};
+		addContact(d.db, { npub: freshNpub(), handle: "ada", relays: [CARD], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+
+		await expect(phoneSay("+ada", "hello", d)).rejects.toThrow(/clock down/);
+		expect(closed.at(-1)).toEqual([CARD]);
 	});
 
 	it("arms the real confirm window from the setting, clamped to the floor, unless the env var is set", async () => {
@@ -629,6 +944,53 @@ describe("phoneSay and phoneAccept delivery", () => {
 		const rejecting = deps(rejectAllPool(), []);
 		await expect(phoneAccept(card, "nope", rejecting)).rejects.toThrow("no relay accepted the call");
 		expect(rejecting.db.listContacts()).toEqual([]);
+	});
+
+	it("arms the accept confirm window from the setting", async () => {
+		const ownerOut: string[] = [];
+		const owner = deps(scriptedPool({}).pool, ownerOut);
+		await phoneNumber({}, owner);
+		const card = (parseNdjson(ownerOut)[0] as { card: string }).card;
+		const script = scriptedPool({});
+		const peer = deps(script.pool, []);
+		peer.db.set(PUBLISH_CONFIRM_SETTING, 7000);
+
+		await phoneAccept(card, "hi", peer);
+
+		expect(script.armed).toEqual([7000]);
+	});
+
+	it("closes the card relays when the inbox lookup throws before the send", async () => {
+		const ownerOut: string[] = [];
+		const owner = deps(scriptedPool({}).pool, ownerOut);
+		await phoneNumber({}, owner);
+		const card = (parseNdjson(ownerOut)[0] as { card: string }).card;
+		const closed: string[][] = [];
+		const pool: PhonePool & { close(relays: string[]): void } = {
+			publish() {
+				return [];
+			},
+			async querySync() {
+				return [];
+			},
+			subscribe() {
+				return { close() {} };
+			},
+			close(relays) {
+				closed.push([...relays]);
+			},
+		};
+		const peer = deps(pool, []);
+		peer.createPool = () => pool;
+		const read = peer.db.get.bind(peer.db);
+		peer.db.get = ((key: string) => {
+			if (key === "inbox_relays") throw new Error("cache down");
+			return read(key);
+		}) as typeof peer.db.get;
+
+		await expect(phoneAccept(card, "hi", peer)).rejects.toThrow(/cache down/);
+		expect(closed.at(-1)?.length).toBeGreaterThan(0);
+		expect(closed.at(-1)).not.toContain("Stryker was here");
 	});
 });
 
@@ -818,7 +1180,65 @@ describe("runListener liveness", () => {
 			await harness.waitForLog("phone: listener heartbeat\n");
 			const rumor = (await import("nostr-tools")).nip17.unwrapEvent(harness.probes[0]!, harness.numberSk);
 			expect(rumor.pubkey).toBe(getPublicKey(harness.numberSk));
+			expect(rumor.tags).toContainEqual(["p", getPublicKey(harness.numberSk)]);
 			expect(rumor.tags).toContainEqual(["t", PROBE_TOPIC]);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("does not move a contact back to an older key when a caught-up ring is replayed", async () => {
+		const caller = identity();
+		const secret = "ab".repeat(32);
+		let oldSk: Uint8Array = new Uint8Array();
+		const harness = startListener({
+			deaf: true,
+			random: () => 0,
+			beforeStart: (db, numberSk) => {
+				oldSk = createFileKey(db, "old") as Uint8Array;
+				addContact(db, {
+					npub: nip19.npubEncode(caller.pub),
+					handle: "ada",
+					relays: [OWN],
+					keyId: "old",
+					addedAt: NOW,
+					via: "accept",
+				});
+				void numberSk;
+			},
+		});
+		try {
+			await harness.ready;
+			const older = nip59.wrapEvent(
+				{
+					kind: 14,
+					content: "old-ring",
+					created_at: NOW - 20,
+					tags: [["p", getPublicKey(oldSk)], [CALL_TAG, secret]],
+				},
+				caller.sk,
+				getPublicKey(oldSk),
+			);
+			const newer = nip59.wrapEvent(
+				{
+					kind: 14,
+					content: "new-ring",
+					created_at: NOW - 10,
+					tags: [["p", getPublicKey(harness.numberSk)], [CALL_TAG, secret]],
+				},
+				caller.sk,
+				getPublicKey(harness.numberSk),
+			);
+			harness.store.push(older, newer);
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener resubscribe\n");
+			expect(findContactByNpub(harness.db, nip19.npubEncode(caller.pub))?.keyId).toBe(numberKeyId(harness.db));
+
+			for (const listener of harness.listeners()) listener(older);
+			await Bun.sleep(20);
+
+			expect(findContactByNpub(harness.db, nip19.npubEncode(caller.pub))?.keyId).toBe(numberKeyId(harness.db));
 		} finally {
 			harness.stop();
 			await harness.done;
@@ -844,6 +1264,115 @@ describe("runListener liveness", () => {
 			expect(harness.published).toHaveLength(1);
 		} finally {
 			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("does not resubscribe or arm another check after shutdown", async () => {
+		const harness = startListener({ publishMode: "hold", random: () => 0 });
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			const started = Date.now();
+			while (harness.published.length < 1) {
+				if (Date.now() - started > 2000) throw new Error("probe did not start");
+				await Bun.sleep(5);
+			}
+			harness.stop();
+			harness.releaseHold();
+			await Bun.sleep(40);
+			expect(harness.logs.some((line) => line.includes("resubscribe") || line.includes("probe-failed"))).toBe(false);
+			expect(harness.scheduled.filter((entry) => entry.delay === LIVENESS_MIN_MS)).toEqual([]);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("keeps a single live subscription after a resubscribe", async () => {
+		const harness = startListener({ publishMode: "unheard", random: () => 0 });
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			await harness.waitForLog("phone: listener resubscribe\n");
+			await Bun.sleep(40);
+			expect(harness.listeners()).toHaveLength(1);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("does not reopen the subscription or rewrite the pid when shutdown lands during catch-up", async () => {
+		const harness = startListener({ publishMode: "unheard", random: () => 0 });
+		try {
+			await harness.ready;
+			const path = listenerPidPath(harness.paths);
+			const before = harness.queryStarts();
+			harness.allowQueries(0);
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			const started = Date.now();
+			while (harness.queryStarts() <= before) {
+				if (Date.now() - started > 2000) throw new Error("catch-up did not query");
+				await Bun.sleep(5);
+			}
+			harness.stop();
+			await harness.done;
+			harness.releaseQuery();
+			await Bun.sleep(40);
+			expect(existsSync(path)).toBe(false);
+			expect(harness.listeners()).toHaveLength(0);
+		} finally {
+			harness.stop();
+			harness.releaseQuery();
+			await harness.done;
+		}
+	});
+
+	it("does not log a probe failure for a publish that rejects after shutdown", async () => {
+		const harness = startListener({ publishMode: "hold", random: () => 0 });
+		try {
+			await harness.ready;
+			harness.scheduled.find((entry) => entry.delay === LIVENESS_MIN_MS)?.run();
+			const started = Date.now();
+			while (harness.published.length < 1) {
+				if (Date.now() - started > 2000) throw new Error("probe did not start");
+				await Bun.sleep(5);
+			}
+			harness.stop();
+			harness.releaseHold(new Error("boom"));
+			await harness.done;
+			await Bun.sleep(40);
+			expect(harness.logs.some((line) => line.includes("probe-failed"))).toBe(false);
+		} finally {
+			harness.stop();
+			await harness.done;
+		}
+	});
+
+	it("does not rewrite the pid when a relay watch is still catching up at shutdown", async () => {
+		const harness = startListener({ random: () => 0 });
+		try {
+			await harness.ready;
+			const path = listenerPidPath(harness.paths);
+			const before = harness.queryStarts();
+			harness.allowQueries(1);
+			writeRelays(harness.db, [OWN, "wss://extra.example"]);
+			harness.scheduled.find((entry) => entry.delay === KEY_WATCH_INTERVAL_MS)?.run();
+			const started = Date.now();
+			while (harness.queryStarts() < before + 2) {
+				if (Date.now() - started > 2000) throw new Error(`watch queried ${harness.queryStarts() - before} times`);
+				await Bun.sleep(5);
+			}
+			harness.stop();
+			await harness.done;
+			harness.releaseQuery();
+			await Bun.sleep(40);
+			expect(existsSync(path)).toBe(false);
+			expect(harness.listeners()).toHaveLength(0);
+		} finally {
+			harness.stop();
+			harness.releaseQuery();
 			await harness.done;
 		}
 	});
@@ -991,7 +1520,7 @@ function startListener(opts: {
 	deaf?: boolean;
 	random: () => number;
 	relays?: string[];
-	publishMode?: "ok" | "reject" | "throw" | "hold";
+	publishMode?: "ok" | "reject" | "throw" | "hold" | "unheard";
 	failQueries?: () => boolean;
 	beforeStart?: (db: PhoneDb, numberSk: Uint8Array) => void;
 }) {
@@ -1010,10 +1539,13 @@ function startListener(opts: {
 	const published: string[][] = [];
 	const probes: NostrEvent[] = [];
 	let subCloses = 0;
-	let releaseHold: () => void = () => {};
-	const hold = new Promise<void>((resolve) => {
-		releaseHold = resolve;
+	let releaseHold: (error?: Error) => void = () => {};
+	const hold = new Promise<void>((resolve, reject) => {
+		releaseHold = (error) => (error ? reject(error) : resolve());
 	});
+	let queryBudget = Number.POSITIVE_INFINITY;
+	let queryStarts = 0;
+	let releaseQuery: () => void = () => {};
 	const clock = { current: NOW };
 	const pool: PhonePool & { close(relays: string[]): void } = {
 		publish(relays, event) {
@@ -1021,6 +1553,7 @@ function startListener(opts: {
 			probes.push(event);
 			if (opts.publishMode === "throw") throw new Error("probe boom");
 			if (opts.publishMode === "hold") return relays.map(() => hold.then(() => ""));
+			if (opts.publishMode === "unheard") return relays.map(() => Promise.reject(new Error("publish timed out")));
 			if (opts.publishMode === "reject") return relays.map(() => Promise.reject(new Error("blocked")));
 			if (deaf) {
 				inner.events.push(event);
@@ -1029,6 +1562,12 @@ function startListener(opts: {
 			return inner.publish(relays, event);
 		},
 		async querySync(relays, filter, params) {
+			queryStarts += 1;
+			if (queryStarts > queryBudget) {
+				return new Promise((resolve) => {
+					releaseQuery = () => resolve([]);
+				});
+			}
 			if (opts.failQueries?.()) throw new Error("fetch down");
 			if (deaf) {
 				inner.filters.push(filter);
@@ -1116,13 +1655,23 @@ function startListener(opts: {
 		store: inner.events,
 		published,
 		probes,
+		listeners: () => inner.listeners,
 		filters: inner.filters,
 		clock,
 		releaseHold,
+		allowQueries(count: number) {
+			queryBudget = queryStarts + count;
+		},
+		queryStarts: () => queryStarts,
+		releaseQuery: () => releaseQuery(),
 		subCloses: () => subCloses,
 		ready,
 		done,
-		stop: () => stopHandler?.(),
+		stop: () => {
+			const handler = stopHandler;
+			stopHandler = undefined;
+			handler?.();
+		},
 		waitForLog: async (line: string) => {
 			const start = Date.now();
 			while (!logs.includes(line)) {

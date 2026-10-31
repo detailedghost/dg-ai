@@ -58,7 +58,9 @@ would otherwise fill all 10. The lookup checks the event's signature, author,
 and kind. It waits at most 2 seconds
 and the answer, including an empty one, is reused for 10 minutes. A timeout
 or a relay error skips the cache and still sends on the card relays and our
-own relays.
+own relays. Two relay URLs that differ only by a query string stay different,
+and a fragment is ignored. Sockets opened for that lookup are closed with
+the publish sockets, including a card relay the cap of 10 left out of the send.
 
 Each relay comes back as one of three results. `relays_ok` confirmed the
 event. `relays_unconfirmed` did not answer in time (`timeout`).
