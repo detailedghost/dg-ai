@@ -15,14 +15,14 @@ Codex:      $dg:phone
 | --- | --- |
 | `number [--as <name>] [--rotate] [--relay <url>...]` | Prints `{card, npub, as, relays, expires_at: null, open_invites, rotated, key_store, listener, safety}`. The number card never expires, so `expires_at` stays null. `open_invites` lists each live one-time card as `{handle, expires_at}`, the same expiry `invite` printed. `--rotate` prints a new number card and the old secret stops admitting. |
 | `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. A running listener reloads that invite; it does not need `close` and `open`. |
-| `accept [card] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin by default (`-`, in a short heredoc) so the one-time secret never shows in the process list or shell history; one argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok, relays_unconfirmed, relays_failed}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
+| `accept [-] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin first (`accept - '<msg>' <<'CARD'`), so the one-time secret never shows in the process list or shell history. Passing the card as an argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok, relays_unconfirmed, relays_failed}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
 | `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. |
-| `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. |
+| `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. A handle selects the contact's npub and matches `messages.contact`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
-| `watch [--for <seconds>]` | Repeats `voicemail` until `--for` seconds have passed (default 120). The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
+| `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
-| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. |
+| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg-agent versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
 
 A message is `{id, ts, from, handle, text}`; the message that paired a new
@@ -110,7 +110,12 @@ subscription missed it, or `phone: listener probe-failed` when no relay
 confirmed the probe or the check threw. The line has no secret and no
 message text.
 The same catch-up fetch runs after a resubscribe caused by a key change or
-an admission-epoch change.
+an admission-epoch change. The query reaches one hour further back than the
+two-day gift-wrap backdate, so a cursor saved at wall-clock time does not
+skip a wrap that was not stored yet. In one batch, a plain message whose
+rumor is older than the ring that introduces its sender is admitted after
+that ring, once, and a ring that is already stored does not move the
+contact's key again.
 
 Every few seconds the listener re-reads its keys and its admission epoch.
 The epoch changes when `invite` saves a card, `number --rotate` rolls the
@@ -174,6 +179,36 @@ When `DG_HOME` is set, the Windows task passes it to the listener as
 after `/Create` registered the task, that task is deleted. The XML file is
 kept only when the delete fails, so `close` can retry the cleanup.
 
+On a machine with no user systemd bus (`DBUS_SESSION_BUS_ADDRESS` and
+`XDG_RUNTIME_DIR` unset, which is common in containers and some shared
+Linux accounts), `open` still reports `autostart: "unavailable: …"` and its
+fallback process dies with the login session. `open --ensure` is the
+fallback supervisor. It does not call `systemctl`. It holds a lock in the
+phone directory, then starts one detached listener (`setsid`, and the
+listener ignores `SIGHUP`) only when `listener.pid` is missing, names a dead
+process, or names a live process that is not this binary. A live listener,
+or a live pid whose command line cannot be read, is left as it is. Running
+it again is a no-op, so cron can call it every few minutes. It does not
+edit the crontab unless you pass `--install-cron`. `--print-cron` only
+prints the line, for example:
+
+```text
+*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); /path/to/dg-agent phone open --ensure >/dev/null 2>&1 # dg-phone-ensure home=
+```
+
+The sleep uses `/dev/urandom`, not `$RANDOM`, because cron runs `/bin/sh`
+and on Debian that shell is dash. The pause is 0 to 59 seconds so a fleet
+does not hit the relays in the same second. The line has no `%`: cron ends
+the command at the first unescaped `%` and would feed the rest to the shell
+as stdin. When `DG_HOME` is set, the line includes it and the marker ends
+with `home=<that path>`. A later `--install-cron` replaces only the line
+whose comment is exactly `# dg-phone-ensure home=<that path>`. A home of
+`/home/a` does not remove `/home/ab`, and an empty home does not remove
+every other home. Blank lines and every other crontab row stay. `--ensure`
+restarts a listener when its recorded version or keys drifted, and only if
+this binary is the same version or newer. Two copies of dg-agent that share
+one phone directory do not restart each other under `--ensure`.
+
 `close` runs each platform's stop-and-disable command
 (`systemctl --user disable --now`, `launchctl bootout`, `schtasks /End` then
 `/Delete /F`), removes the file, and sends SIGTERM to any pid still in
@@ -181,9 +216,10 @@ kept only when the delete fails, so `close` can retry the cleanup.
 fails, it starts that previous listener again and reports the error, so the
 phone is not left with nothing listening. Where no service manager answers
 at all (WSL without `systemd=true` in `/etc/wsl.conf`, most containers), `open` falls back to a
-detached spawn and reports `"autostart": "unavailable: <reason>"`; nothing
-else restarts that process if it crashes, by design — a fallback supervisor
-would be a second owner of one process.
+detached spawn and reports `"autostart": "unavailable: <reason>"`. That
+process still dies with the login session. `open --ensure`, usually from the
+cron line above, is what starts it again. The lock keeps two ensures from
+starting two listeners.
 
 Either name of the listener (`phone __run` or the old `phone-friend __run`)
 is recognized as "ours" by pid, so a running listener survives the alias

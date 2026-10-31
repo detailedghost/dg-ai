@@ -324,9 +324,9 @@ export class PhoneDb {
 		});
 	}
 
-	takeUnread(): MessageRow[] {
+	takeUnread(skip?: ReadonlySet<string>): MessageRow[] {
 		return this.transaction(() => {
-			const rows = this.unreadMessages();
+			const rows = this.unreadMessages().filter((row) => !skip?.has(row.id));
 			this.markRead(rows.map((row) => row.id));
 			return rows;
 		});

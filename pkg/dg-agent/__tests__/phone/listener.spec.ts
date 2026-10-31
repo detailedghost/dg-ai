@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { publish, ring, wrap } from "../../src/phone/chat";
-import { phoneAccept, phoneContactsRemove, phoneInvite, phoneNumber } from "../../src/phone/commands";
+import { phoneAccept, phoneContactsRemove, phoneInbox, phoneInvite, phoneNumber, type PhoneDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, ensureKey, keyName, markKeyInStore, type KeyClient } from "../../src/phone/keys";
@@ -167,6 +167,52 @@ afterEach(() => {
 });
 
 describe("runListener", () => {
+	it("inbox shows an incoming row the listener stored, read or unread, under the sender npub", async () => {
+		const secret = "ab".repeat(32);
+		const numberSk = setUpNumber(secret);
+		const caller = identity();
+		pool.events.push(ring("from-mary", caller.sk, getPublicKey(numberSk), secret, "mary"));
+		const { onSignal, ready, stop } = captureShutdown();
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		const stored = db.recentMessages(10).find((row) => row.text === "from-mary");
+		expect(stored).toMatchObject({ direction: "in", contact: caller.npub, sender: caller.npub });
+		expect(stored?.ts).toBeGreaterThan(1_000_000_000);
+		expect(stored?.ts).toBeLessThan(10_000_000_000);
+
+		const printed: string[] = [];
+		const phone: PhoneDeps = {
+			paths,
+			db,
+			createPool: () => ({ ...pool, close() {} }),
+			write: (text) => printed.push(text),
+			readStdin: async () => undefined,
+			now: () => NOW,
+			sessionClient: async () => undefined,
+			grantClient: (): KeyClient => {
+				throw new Error("no grant");
+			},
+		};
+		const readRows = (handle?: string) => {
+			printed.length = 0;
+			phoneInbox(handle === undefined ? {} : { handle }, phone);
+			return printed
+				.join("")
+				.trim()
+				.split("\n")
+				.filter(Boolean)
+				.map((line) => JSON.parse(line) as { text?: string; direction?: string; read?: boolean; handle?: string });
+		};
+
+		expect(readRows().some((row) => row.text === "from-mary" && row.direction === "in" && row.handle === "+mary")).toBe(true);
+		expect(readRows("+mary").some((row) => row.text === "from-mary" && row.read === false)).toBe(true);
+		db.markRead([stored?.id ?? ""]);
+		expect(readRows("mary").find((row) => row.text === "from-mary")?.read).toBe(true);
+	});
+
 	it("catches up on a ring sent before it started, admitting a new contact and delivering it through the hook", async () => {
 		const secret = "ab".repeat(32);
 		const numberSk = setUpNumber(secret);
@@ -645,6 +691,26 @@ describe("runListener", () => {
 		await run;
 
 		expect(findContactByHandle(db, "velora")?.relays).toEqual(["wss://invite.example"]);
+	});
+
+	it("does not move a stored ring onto an older key, and still stores a newer message from that sender", async () => {
+		const secret = "33".repeat(32);
+		const numberSk = setUpNumber(secret);
+		await ensureKey(deps(), "work");
+		const caller = identity();
+		addContact(db, { npub: caller.npub, handle: "alice", relays: RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
+		const again = ring("hi again", caller.sk, getPublicKey(numberSk), secret, "alice");
+		db.addMessage({ id: again.id, direction: "in", ts: NOW - 30, sender: caller.npub, contact: caller.npub, text: "hi again", call: 1 });
+		pool.events.push(again, wrap("fresh", caller.sk, getPublicKey(numberSk)));
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, caller.npub)?.keyId).toBe("work");
+		expect(db.recentMessages(10).map((row) => row.text).sort()).toEqual(["fresh", "hi again"]);
 	});
 
 	it("moves a known contact's key id when they ring the number secret from a new key", async () => {

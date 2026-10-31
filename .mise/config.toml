@@ -123,6 +123,11 @@ description = "Run the dg-agent unit tests"
 dir = "pkg/dg-agent"
 run = "bun test"
 
+[tasks."test:phone:mutate"]
+description = "Mutation-test the phone inbox, catch-up, and ensure changes"
+dir = "pkg/dg-agent"
+run = "bunx stryker run stryker.phone.conf.mjs"
+
 [tasks."test:daemon"]
 description = "Run the dg-daemon unit tests"
 dir = "pkg/dg-daemon"

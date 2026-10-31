@@ -339,6 +339,28 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 				expect(findContactByHandle(db, "velora")?.npub).toBe(workContact);
 				expect(db.recentMessages(100)).toHaveLength(6);
 				expect(db.unreadMessages()).toHaveLength(1);
+				const inboxOut: string[] = [];
+				const inboxDeps = {
+					paths,
+					db,
+					write: (text: string) => inboxOut.push(text),
+					readStdin: async () => undefined,
+					now: () => NOW,
+					sessionClient: async () => undefined,
+					grantClient: () => {
+						throw new Error("no grant");
+					},
+					createPool: () => {
+						throw new Error("no pool");
+					},
+				} as PhoneDeps;
+				phoneInbox({ handle: "+velora" }, inboxDeps);
+				const velora = inboxOut.map((line) => JSON.parse(line) as { id: string; direction: string });
+				expect(velora.map((row) => row.id)).toEqual(["w1", "w2"]);
+				expect(velora.every((row) => row.direction === "in")).toBe(true);
+				inboxOut.length = 0;
+				phoneInbox({ handle: "+default" }, inboxDeps);
+				expect(inboxOut.map((line) => JSON.parse(line) as { id: string }).map((row) => row.id)).toEqual(["d1", "d2", "d3", "d4"]);
 				expect(numberKeyId(db)).toBe("default");
 				expect(readCursor(db)).toBe(50);
 			} finally {
@@ -689,7 +711,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				paths,
 				fakeMigrateDeps({
 					classifyListener: (pid) => (pid === 4242 ? "legacy" : undefined),
-					isAlive: (pid) => pid === 4242 && alive,
+					isAlive: (pid) => (pid === 4242 && alive) || pid === 9001,
 					kill: (pid) => {
 						killed.push(pid);
 						alive = false;
@@ -773,6 +795,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				paths,
 				fakeMigrateDeps({
 					classifyListener: (pid) => (pid === 4242 ? "current" : undefined),
+					isAlive: (pid) => pid === 9001,
 					startListener: () => {
 						started.push(9001);
 						return 9001;
@@ -803,6 +826,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 				paths,
 				fakeMigrateDeps({
 					classifyListener: (pid) => (pid === process.pid ? "current" : undefined),
+					isAlive: (pid) => pid === process.pid,
 					startListener: () => {
 						started.push("start");
 						return 0;
@@ -880,7 +904,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				paths,
 				fakeMigrateDeps({
 					classifyListener: (pid) => (alive.has(pid) || pid === 4242 || pid === 4243 ? "legacy" : undefined),
-					isAlive: (pid) => alive.has(pid),
+					isAlive: (pid) => alive.has(pid) || pid === 5150,
 					kill: (pid) => {
 						order.push(`kill:${pid}`);
 						alive.delete(pid);
@@ -1110,7 +1134,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				paths,
 				fakeMigrateDeps({
 					classifyListener: (pid) => (alive.has(pid) || pid === 4242 || pid === 4243 ? "legacy" : undefined),
-					isAlive: (pid) => alive.has(pid),
+					isAlive: (pid) => alive.has(pid) || pid === process.pid,
 					kill: (pid) => {
 						alive.delete(pid);
 					},

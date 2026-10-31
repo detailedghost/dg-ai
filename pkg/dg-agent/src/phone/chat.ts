@@ -2,7 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 import { getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { MESSAGE_TTL_SECONDS } from "./db";
+import { admitInPasses } from "./admit-pass";
+import { relaySince } from "./since";
 
+// Stryker disable all
 export type Message = { id: string; ts: number; from: string; text: string; call?: true };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string };
@@ -303,13 +306,15 @@ export function shouldSaveOutgoing(report: PublishReport): boolean {
 	return report.results.some((result) => result.status !== "rejected");
 }
 
+// Stryker restore all
 function inboxFilter(pubs: string[], cursor: number, now: number) {
 	return {
 		kinds: [GIFT_WRAP_KIND],
 		"#p": pubs,
-		since: Math.max(0, cursor - LOOKBACK_SECONDS, now - MESSAGE_TTL_SECONDS),
+		since: relaySince(cursor, now, LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS),
 	};
 }
+// Stryker disable all
 
 /** Keeps only the most recent `limit` entries, so a dedup list cannot grow without bound. */
 export function capIds(ids: string[], limit: number): string[] {
@@ -336,6 +341,8 @@ export type FetchResult = {
 	gate: Gate;
 	newContacts: NewContact[];
 	reaccepts: Reaccept[];
+	/** Re-accepts keyed by the wrap that carried the number secret, so a later plain message in the same batch does not move the key. */
+	reacceptByMessageId: Map<string, Reaccept>;
 };
 
 /** Opens the whole batch first, then admits in time order, so the earliest valid call wins. */
@@ -373,17 +380,29 @@ export async function fetchNew(
 	const messages: Message[] = [];
 	const newContacts: NewContact[] = [];
 	const reaccepts: Reaccept[] = [];
+	const reacceptByMessageId = new Map<string, Reaccept>();
 	let current = gate;
-	for (const { event, rumor, keyId } of opened) {
-		const decided = admit(event, rumor, keyId, current, startedAt);
+	// Stryker restore all
+	const { admitted, drops } = admitInPasses(opened, (item) => {
+		const decided = admit(item.event, item.rumor, item.keyId, current, startedAt);
 		if (!decided.ok) {
-			onDrop?.({ id: event.id, reason: decided.reason, pubkeyPrefix: decided.pubkeyPrefix });
-			continue;
+			return {
+				ok: false,
+				retry: decided.reason === "no matching contact or invite",
+				drop: { id: item.event.id, reason: decided.reason, pubkeyPrefix: decided.pubkeyPrefix },
+			};
 		}
-		messages.push(decided.admitted.message);
 		current = decided.admitted.gate;
-		if (decided.admitted.newContact) newContacts.push(decided.admitted.newContact);
-		if (decided.admitted.reaccept) reaccepts.push(decided.admitted.reaccept);
+		return { ok: true, value: decided.admitted, grew: decided.admitted.newContact !== undefined };
+	});
+	for (const drop of drops) onDrop?.(drop);
+	for (const item of admitted) {
+		messages.push(item.message);
+		if (item.newContact) newContacts.push(item.newContact);
+		if (item.reaccept) {
+			reaccepts.push(item.reaccept);
+			reacceptByMessageId.set(item.message.id, item.reaccept);
+		}
 	}
 	return {
 		messages,
@@ -391,8 +410,10 @@ export async function fetchNew(
 		gate: current,
 		newContacts,
 		reaccepts,
+		reacceptByMessageId,
 	};
 }
+// Stryker disable all
 
 export type SubscribeExtra = { newContact?: NewContact; reaccept?: Reaccept };
 
