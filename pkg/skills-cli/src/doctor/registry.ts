@@ -26,6 +26,7 @@ import { proxyChecks } from "../proxy/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
 import { sniffChecks } from "../sniff/doctor";
+import { ssmsChecks } from "../ssms/doctor";
 import { specChecks } from "../spec/doctor";
 import { stashChecks } from "../stash/doctor";
 import { statChecks } from "../stat/doctor";
@@ -72,6 +73,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	bg: bgChecks,
 	stat: statChecks,
 	sniff: sniffChecks,
+	ssms: ssmsChecks,
 	"require-extension": requireExtensionChecks,
 	polish: polishChecks,
 };

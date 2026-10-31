@@ -187,6 +187,13 @@ Ask a person. Do not turn off a check to get past it.
 - `filters sync` is the Proton write path. See [ADR 0022](adr/0022-proton-filter-policy.md) and
   [the filter policy guide](inbox-filter-policy.md).
 
+### pkg/ssms
+
+- `ssms <provider> <verb>` is the SMS command. `google` and `signal` share one provider interface.
+- Run `mise run test:ssms`. Google tests use a fake page. Signal tests use a fake JSON-RPC server.
+  Do not point those tests at Messages for Web or a live `signal-cli`.
+- Check the send gate, classifier, redaction, and gap picker with `mise run test:ssms:mutate`.
+
 ### pkg/dg-daemon
 
 - The daemon listens on loopback only. It checks origin and capability on its connections. See [ADR 0004](adr/0004-loopback-pairing.md).

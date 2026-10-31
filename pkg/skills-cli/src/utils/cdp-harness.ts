@@ -10,7 +10,7 @@
  * reusable harness.
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { wait } from "@dg/common";
@@ -58,6 +58,7 @@ export function browserArgs(
 	profileDir: string,
 	extensionDir: string | undefined,
 	noSandbox: boolean,
+	headless = true,
 ): string[] {
 	return [
 		"--remote-debugging-port=0",
@@ -71,7 +72,7 @@ export function browserArgs(
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-dev-shm-usage",
-		"--headless=new",
+		...(headless ? ["--headless=new"] : []),
 		...(noSandbox ? ["--no-sandbox"] : []),
 	];
 }
@@ -577,5 +578,51 @@ export class DemoVerifyHarness {
 		await this.conn.waitForEvent("Page.loadEventFired", sessionId, 15000);
 
 		return new CdpPageHandle(this.conn, sessionId);
+	}
+}
+
+export async function launchCdpBrowser(options: {
+	profileDir: string;
+	url: string;
+	headless: boolean;
+}): Promise<{ evaluate<T>(expression: string): Promise<T>; close(): Promise<void> }> {
+	mkdirSync(options.profileDir, { recursive: true });
+	const bin = resolveBrowserBinary();
+	const proc = Bun.spawn(
+		[
+			bin,
+			...browserArgs(options.profileDir, undefined, sandboxDisabled(), options.headless),
+			...wslChromiumArgs(),
+			"about:blank",
+		],
+		{ stdout: "ignore", stderr: "pipe" },
+	);
+	try {
+		const wsUrl = await waitForDevtoolsUrl(proc.stderr, DEVTOOLS_URL_TIMEOUT_MS);
+		const conn = await CdpConnection.connect(wsUrl);
+		const { targetId } = (await conn.send("Target.createTarget", { url: options.url })) as {
+			targetId: string;
+		};
+		const { sessionId } = (await conn.send("Target.attachToTarget", {
+			targetId,
+			flatten: true,
+		})) as { sessionId: string };
+		await conn.send("Page.enable", {}, sessionId);
+		await conn.send("Runtime.enable", {}, sessionId);
+		await wait(1000);
+		await conn.send("Page.reload", {}, sessionId);
+		await conn.waitForEvent("Page.loadEventFired", sessionId, 15000);
+		const page = new CdpPageHandle(conn, sessionId);
+		return {
+			evaluate: (expression) => page.evaluate(expression),
+			close: async () => {
+				page.dispose();
+				conn.close();
+				await killAndWait(proc);
+			},
+		};
+	} catch (error) {
+		proc.kill();
+		throw error;
 	}
 }

@@ -516,6 +516,8 @@ describe("browser sandbox flag", () => {
 	test("an environment that asks for nothing keeps the sandbox", () => {
 		expect(sandboxDisabled({})).toBe(false);
 		expect(browserArgs("/p", "/e", false)).not.toContain("--no-sandbox");
+		expect(browserArgs("/p", undefined, false)).toContain("--headless=new");
+		expect(browserArgs("/p", undefined, false, false)).not.toContain("--headless=new");
 	});
 
 	test("DG_VERIFY_NO_SANDBOX turns it off, for a kernel that gives Chrome no usable one", () => {

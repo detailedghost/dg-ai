@@ -66,8 +66,8 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 does the same from an installed binary. Combined with `DG_INSTALL_CODEX=1`, only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
-- CLI-only skills: `channel-review`, `google-sms-cleanup` (instruction-only;
-  it drives Messages for Web), `inbox-cleanup` with explicit
+- CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg-skills ssms`;
+  it drives Messages for Web and can wrap `signal-cli`), `inbox-cleanup` with explicit
   `--data-path` fixtures, and `proto`, whose default local mode needs no
   extension. Only `proto --ext` needs the dg-ai-extension.
 - Extension skills: `browser`, `demo`, `chat` and `overwatch`. Each
@@ -330,12 +330,14 @@ ______________________________________________________________________
 
 ## Google SMS cleanup
 
-The shared google-sms-cleanup skill is instruction-only. It does not call
-`dg-skills`, `dg-agent`, or the extension. Open Messages for Web in the browser.
-The defaults never delete a conversation or message, never send without
-explicit per-message approval, and list ambiguous threads instead of acting.
-Messages for Web cannot star, rename, or file conversations; give the user the
-phone steps for those.
+The shared google-sms-cleanup skill runs `dg-skills ssms`. `ssms google` drives
+Messages for Web through the CDP browser harness. `ssms signal` wraps
+`signal-cli` and does not open Signal Desktop. The defaults never delete a
+conversation or message, never send without explicit per-message approval, and
+list ambiguous threads instead of acting. A draft send needs `--yes` and is
+refused from a hook. The CLI does not install `signal-cli`. Messages for Web
+cannot star, rename, or file conversations; give the user the phone steps for
+those. See [SMS providers](ssms.md).
 
 ## Inbox cleanup
 

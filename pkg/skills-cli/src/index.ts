@@ -33,6 +33,7 @@ import { registerVerify } from "./commands/verify";
 import { registerProxy } from "./commands/proxy";
 import { registerRerun } from "./commands/rerun";
 import { registerSniff } from "./commands/sniff";
+import { registerSsms } from "./commands/ssms";
 import { registerSpec } from "./commands/spec";
 import { registerStash } from "./commands/stash";
 import { registerStat } from "./commands/stat";
@@ -90,6 +91,7 @@ registerJot(program);
 registerBg(program);
 registerStat(program);
 registerSniff(program);
+registerSsms(program);
 registerDoctor(program);
 registerRequireExtension(program);
 

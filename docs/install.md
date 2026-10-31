@@ -138,7 +138,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `ticket` | Yes — needs a stored `ticket/jira` credential |
 | `test-live` | Yes — needs Git and an authenticated `gh` (GitHub only) |
 | `nope` | No CLI needed — it calls no CLI and no other skill |
-| `google-sms-cleanup` | Yes — instruction-only |
+| `google-sms-cleanup` | Yes — `dg-skills ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |
 

@@ -5,27 +5,59 @@ description: Sort, archive, and spam-block a Google Messages inbox through Messa
 
 # Google SMS cleanup
 
-Clean up a Google Messages inbox through Messages for Web. Every behavior below
-is a configurable default. Override any value from the user's instructions, or
-from notes they asked to keep, before starting, and state the effective config
-back to the user.
+Clean up a Google Messages inbox through Messages for Web. The work runs as
+`ssms` on `dg-skills`: `ssms google <verb>`. `ssms signal <verb>` is the other
+provider and wraps `signal-cli` in daemon JSON-RPC mode. It does not touch
+Signal Desktop. Every behavior below is a configurable default. Override any
+value from the user's instructions, or from notes they asked to keep, before
+starting, and state the effective config back to the user.
 
-This skill does not run a `dg-skills` command. Open Messages for Web in the
-browser and follow the steps below.
+The executable is `~/.dg/bin/dg-skills`.
+On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
+
+```sh
+~/.dg/bin/dg-skills ssms --help >/dev/null 2>&1 ||
+  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
+~/.dg/bin/dg-skills ssms --help
+```
+
+**Usage:** `~/.dg/bin/dg-skills ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--approve TOKEN]`
+
+If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
+
+## Flags
+
+| Flag | Short | Effect | Default |
+| --- | --- | --- | --- |
+| `--config` | | YAML or JSON cleanup config | skill defaults |
+| `--dry-run` | | Report the action and do not change the account | false |
+| `--limit` | | Maximum messages to read or receive | 20 |
+| `--timeout-ms` | | How long receive or watch may wait | 0, or 60000 for watch |
+| `--conversation` | | Conversation id for draft, read, or receive | |
+| `--text` | | Draft body | |
+| `--draft` | | Draft id to send | |
+| `--approve` | | Token shown on the terminal for that draft. Not printed on stdout | required off a terminal |
+| `--yes` | | Ignored. It does not approve a send | |
+| `--name` | | Linked-device name for `signal link` | dg-cli |
 
 ## Prerequisites
 
+- `~/.dg/bin/dg-skills ssms --help` runs. If it does not, install or refresh the CLI.
 - Messages for Web is paired at
   https://messages.google.com/web/u/0/conversations. Google sign-in may be
-  required first; the user completes it.
+  required first; the user completes it. The CLI opens that page with the same
+  CDP browser harness demo uses, and keeps the profile under the dg home.
 - If a `Trying to reach your phone` banner appears, ask the user to open
   Messages on the phone.
+- `signal` needs `signal-cli` on PATH. The CLI will not install it. On Arch
+  Linux the package is `signal-cli`.
 
 ## Config (defaults)
 
+`allow_send` is not in this file. It is read only from `~/.dg/ssms/config.yaml` in the passwd home (not from `$HOME` or `$DG_HOME`). `google.send_enabled` in that file defaults to false. `--config` cannot set either.
+
 ```yaml
 allow_delete: false            # never delete conversations or messages
-allow_send: false              # never send; any outgoing text needs explicit per-message user approval
 flag_ambiguous: true           # list unsure items for the user instead of acting
 dry_run: false                 # true = report proposed actions only
 scope: all                     # all | last_N_days
@@ -50,25 +82,50 @@ block_and_report_spam:         # clear-cut only
 never_misclassify_as_spam: []  # senders the user confirmed legitimate
 ```
 
+Pass the same map as `--config` when the user overrides a value.
+
 ## Steps
 
 1. Load the config. Confirm overrides with the user when anything is destructive
-   or unclear.
-2. Open the conversation list. Click `Load more conversations` until the end,
-   or until the scope limit.
-3. For each thread, read the preview and open the thread when the preview is
-   unclear. Classify it as keep, group, archive, spam, or ambiguous. Keep rules
-   always win over archive or spam rules.
-4. Unless `dry_run` is true, act on clear-cut cases only. Archive through the
-   thread's Options menu. Report spam through Details, then Block & report spam.
+   or unclear. Run `~/.dg/bin/dg-skills ssms google status`.
+2. Run `~/.dg/bin/dg-skills ssms google list`. The command clicks
+   `Load more conversations` until the end, or until the scope limit.
+3. Run `~/.dg/bin/dg-skills ssms google classify`. It marks each thread keep,
+   group, archive, spam, or ambiguous. Keep rules always win over archive or
+   spam rules. Open a thread with `ssms google read <conversation> --limit 20`
+   when the preview is unclear.
+4. Unless `dry_run` is true, act on clear-cut cases only:
+   `~/.dg/bin/dg-skills ssms google cleanup`. Archive through the thread's
+   Options menu. Report spam through Details, then Block & report spam.
    Never touch compose. With `allow_delete` false, never delete a conversation
    or a message. With `allow_send` false, never send; any outgoing text needs
-   explicit per-message approval from the user.
+   explicit per-message approval from the user. `allow_send` is read only from
+   `~/.dg/ssms/config.yaml` in the passwd home, not from `$HOME` or `$DG_HOME`.
+   `google.send_enabled` defaults to false until a signed-in Messages session is checked.
+   `--config` cannot change it. `false` means never send. The gate blocks
+   accidental and non-interactive sends. Same-user code that evades it, for
+   example by allocating its own pty, is out of scope.
 5. Leave ambiguous items untouched and list them with the sender, the date, and
    a one-line preview. `flag_ambiguous` stays true unless the user overrides it.
-6. Report the totals, the archived threads, the blocked and reported threads,
-   what was kept by category and group, and the ambiguous items. Include
-   screenshots of the final list.
+6. To answer one thread, draft then send that draft only:
+   `~/.dg/bin/dg-skills ssms google draft --conversation ID --text TEXT`. The
+   approval token appears on the terminal device only, not in command output.
+   On a terminal, `send --draft ID` asks for yes. Off a terminal, the user
+   passes `--approve` with the token they saw. `--yes` does not send. The gate
+   blocks accidental and non-interactive sends. `--dry-run` does not send.
+   If there is no terminal, `draft` fails instead of hiding the token.
+7. Report the totals, the archived threads, the blocked and reported threads,
+   what was kept by category and group, and the ambiguous items.
+
+## Signal
+
+`ssms signal link` prints a QR and a linking URI for a device named `dg-cli`.
+`list`, `read`, `receive`, `draft`, and `send --draft ID` are the same
+shape. Reactions, images, and quotes are drafted, then sent after an
+interactive yes or `--approve`. `--yes` does not send. The approval token
+is shown on the terminal only.
+Archive and spam-block are Google only. Logs carry ids and reasons, not phone
+numbers, linking URIs, keys, or message bodies.
 
 ## Web-client limits (as of Oct 2026)
 

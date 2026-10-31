@@ -41,6 +41,19 @@ Review decisions and run `apply --dry-run` before `apply --confirm`. Read
 [provider setup](../../plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [the workflow](../../plugins/dg/skills/inbox-cleanup/references/workflow.md).
 
+## SMS
+
+`dg-skills ssms <provider> <verb>` reads Google Messages for Web and Signal.
+`google` uses the CDP browser harness. `signal` wraps `signal-cli` in daemon
+JSON-RPC mode and does not touch Signal Desktop. Sends are `draft`, then
+`send --draft ID` after an interactive yes or `--approve`. `--yes` does not send. See [SMS providers](../../docs/ssms.md).
+
+```sh
+dg-skills ssms --help
+dg-skills ssms google status
+dg-skills ssms signal link
+```
+
 ## Channel review
 
 The installed `dg-skills channel-review` command runs local thrash reviews for
