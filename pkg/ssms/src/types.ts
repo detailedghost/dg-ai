@@ -97,6 +97,7 @@ export interface DraftRecord {
 	provider: SmsProviderId;
 	conversationId: string;
 	recipient?: string;
+	ambiguousRecipient?: boolean;
 	text?: string;
 	emoji?: string;
 	remove?: boolean;

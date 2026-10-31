@@ -15,6 +15,7 @@ import type {
 	StatusResult,
 } from "../types";
 import type { MessagesBrowser } from "./browser";
+import { normalizeRecipientName } from "./thread";
 
 export const GOOGLE_CAPABILITIES: CapabilityMap = {
 	link: true,
@@ -207,11 +208,14 @@ export function createGoogleProvider(input: {
 			);
 			const row = rows.find((item) => item.id === request.conversationId);
 			if (!row?.title) throw new Error("conversation not found");
+			const name = normalizeRecipientName(row.title);
 			const draft: DraftRecord = {
 				id: ids(),
 				provider: "google",
 				conversationId: request.conversationId,
 				recipient: row.title,
+				ambiguousRecipient:
+					rows.filter((item) => normalizeRecipientName(item.title) === name).length > 1,
 				text: request.text,
 				emoji: request.emoji,
 				remove: request.remove,
@@ -243,6 +247,7 @@ export function createGoogleProvider(input: {
 						draftId: draft.id,
 						conversationId: draft.conversationId,
 						recipient: draft.recipient,
+						ambiguous: draft.ambiguousRecipient === true,
 					}),
 					"page-unrecognized",
 				);

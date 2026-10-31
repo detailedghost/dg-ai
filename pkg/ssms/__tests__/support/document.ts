@@ -42,10 +42,21 @@ export function asTextArea(el: FakeNode): FakeNode {
 }
 
 export function readyThread(doc: object, id: string, header = id): void {
+	const page = doc as {
+		querySelectorAll?: (selector: string) => FakeNode[];
+	};
 	Object.assign(doc, {
 		location: { href: `https://messages.google.com/web/u/0/conversations/${id}` },
 		threadHeader: header,
+		pane: `pane-${id}`,
 	});
+	for (const item of page.querySelectorAll?.("*") ?? []) {
+		const href = item.attrs?.href ?? "";
+		const match = /\/conversations\/([^/?#]+)/.exec(href);
+		const found = match ? decodeURIComponent(match[1]) : "";
+		if (found === id) item.attrs["aria-selected"] = "true";
+		else if (item.attrs["aria-selected"] === "true") delete item.attrs["aria-selected"];
+	}
 }
 
 export function createDocument(nodes: FakeNode[], bodyText: string) {

@@ -39,7 +39,8 @@ only for an interactive yes on a real terminal, or for `--approve` with the
 token that hashes to the stored value. `--yes` alone does not send. The gate
 blocks accidental and non-interactive sends. Same-user code that evades it,
 for example by allocating its own pty, is out of scope. `allow_send` is read
-only from `~/.dg/ssms/config.yaml` under the OS user home, not from `$DG_HOME`.
+only from `~/.dg/ssms/config.yaml` in the account's passwd home, not from
+`$HOME` or `$DG_HOME`.
 `--config` cannot set it. `allow_send: false` never sends. Cleanup never
 deletes and never sends. Logs go through `sanitizeLogLine` and carry an id
 and a reason only.

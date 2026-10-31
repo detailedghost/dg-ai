@@ -8,6 +8,15 @@ export function resolveOpenTimeout(value: unknown): number {
 	return DEFAULT_OPEN_TIMEOUT_MS;
 }
 
+export function normalizeRecipientName(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
+}
+
+export function headerNamesRecipient(header: string, recipient: string): boolean {
+	const name = normalizeRecipientName(recipient);
+	return name.length > 0 && normalizeRecipientName(header) === name;
+}
+
 export function hrefSelectsConversation(href: string, id: string): boolean {
 	const match = /\/conversations\/([^/?#]+)/.exec(href);
 	if (!match?.[1]) return false;
@@ -27,9 +36,17 @@ export interface SendControl {
 	click(): void | Promise<void>;
 }
 
+export interface ThreadView {
+	href: string;
+	header: string;
+	selectedId: string;
+	pane: string;
+}
+
 export interface SendSurface {
 	href(): string | Promise<string>;
 	header(): string | Promise<string>;
+	view(): ThreadView | Promise<ThreadView>;
 	clickConversation(id: string): boolean | Promise<boolean>;
 	compose(conversationId: string): ComposeBox | null | Promise<ComposeBox | null>;
 	sendControl(conversationId: string): SendControl | null | Promise<SendControl | null>;
@@ -45,24 +62,32 @@ export async function prepareSend(
 		confirmed: boolean;
 		timeoutMs?: number;
 		rng?: Rng;
+		ambiguous?: boolean;
 	},
 ): Promise<{ reason: "sent"; conversationId: string }> {
 	if (args.confirmed !== true) throw new Error("send requires confirmation");
 	const id = args.conversationId;
 	const recipient = args.recipient;
 	if (!id || !recipient) throw new Error("conversation not found");
+	const before = await surface.view();
+	const alreadyOpen =
+		hrefSelectsConversation(before.href, id) &&
+		headerNamesRecipient(before.header, recipient) &&
+		before.selectedId === id;
 	if (!(await surface.clickConversation(id))) throw new Error("conversation not found");
 	const timeout = resolveOpenTimeout(args.timeoutMs);
 	const rng = args.rng ?? Math.random;
 	const gaps: number[] = [];
 	let elapsed = 0;
 	for (;;) {
-		const href = await surface.href();
-		const header = await surface.header();
-		const urlReady = hrefSelectsConversation(href, id);
-		const headerReady = header.toLowerCase().includes(recipient.toLowerCase());
-		if (urlReady && headerReady) break;
+		const view = await surface.view();
+		const urlReady = hrefSelectsConversation(view.href, id);
+		const headerReady = headerNamesRecipient(view.header, recipient);
+		const selected = view.selectedId === id;
+		const paneChanged = view.pane !== before.pane && view.pane !== "";
+		if (urlReady && headerReady && selected && (paneChanged || alreadyOpen)) break;
 		if (elapsed >= timeout || !surface.sleep) {
+			if (args.ambiguous) throw new Error("ambiguous recipient");
 			throw new Error("open conversation timed out");
 		}
 		const remaining = timeout - elapsed;
@@ -102,6 +127,7 @@ export interface SendDocument {
 	location?: { href?: string };
 	href?: string;
 	threadHeader?: string;
+	pane?: string;
 	querySelectorAll?: (selector: string) => PageNode[];
 	sleep?: (ms: number) => void;
 }
@@ -117,6 +143,19 @@ function attr(el: PageNode, name: string): string | null {
 
 function textOf(el: PageNode): string {
 	return String(el.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function selectedConversationId(document: SendDocument): string {
+	const selected = nodesOf(document).find((el) => {
+		const current = attr(el, "aria-current");
+		const on =
+			attr(el, "aria-selected") === "true" ||
+			current === "true" ||
+			current === "page" ||
+			current === "step";
+		return on && hrefId(attr(el, "href") ?? "") !== "";
+	});
+	return selected ? hrefId(attr(selected, "href") ?? "") : "";
 }
 
 function hrefId(href: string): string {
@@ -143,6 +182,12 @@ export function surfaceFromDocument(document: SendDocument): SendSurface {
 	return {
 		href: () => String(document.location?.href ?? document.href ?? ""),
 		header: () => String(document.threadHeader ?? ""),
+		view: () => ({
+			href: String(document.location?.href ?? document.href ?? ""),
+			header: String(document.threadHeader ?? ""),
+			selectedId: selectedConversationId(document),
+			pane: String(document.pane ?? ""),
+		}),
 		clickConversation(id) {
 			const link = nodesOf(document).find(
 				(el) => hrefId(attr(el, "href") ?? "") === id,
@@ -184,6 +229,7 @@ export async function sendOnDocument(
 		text: String(args.text ?? ""),
 		confirmed: args.confirmed === true,
 		timeoutMs: resolveOpenTimeout(args.timeoutMs),
+		ambiguous: args.ambiguous === true,
 	});
 	return { ...sent, draftId: String(args.draftId ?? "") };
 }

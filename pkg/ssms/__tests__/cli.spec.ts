@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
-import { allowSendHome, runSsms } from "../src/cli/run";
+import { accountHome, allowSendHome, readFixedAllowSend, runSsms } from "../src/cli/run";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
@@ -56,7 +56,7 @@ describe("ssms cli", () => {
 		expect(result.stdout).toContain("google");
 		expect(result.stdout).toContain("signal");
 		expect(result.stdout).toContain("The token is shown on the terminal device only");
-		expect(result.stdout).toContain("OS user home, not from DG_HOME");
+		expect(result.stdout).toContain("passwd home, not from HOME or DG_HOME");
 		expect(result.stdout).toContain("accidental and non-interactive sends");
 		expect(result.stdout).not.toContain("A hook cannot send");
 	});
@@ -286,14 +286,49 @@ describe("ssms cli", () => {
 		expect(sent.stderr).toContain("allow_send");
 		expect(sent.stdout).not.toContain("sent ");
 		expect(allowSendHome("/home/ada")).toBe(join("/home/ada", ".dg"));
-		const previous = process.env.DG_HOME;
-		process.env.DG_HOME = evil;
+	});
+
+	test("allow_send follows the passwd home when HOME points somewhere else", async () => {
+		const passwdHome = accountHome();
+		expect(passwdHome && passwdHome.length > 0).toBe(true);
+		const temp = mkdtempSync(join(tmpdir(), "ssms-home-"));
+		mkdirSync(join(temp, ".dg", "ssms"), { recursive: true });
+		writeFileSync(join(temp, ".dg", "ssms", "config.yaml"), "allow_send: true\n");
+		const previous = process.env.HOME;
+		process.env.HOME = temp;
 		try {
-			expect(allowSendHome()).toBe(join(userInfo().homedir, ".dg"));
-			expect(allowSendHome()).not.toBe(evil);
+			expect(allowSendHome()).toBe(join(passwdHome ?? "", ".dg"));
+			expect(allowSendHome().startsWith(temp)).toBe(false);
+			expect(readFixedAllowSend(join(temp, ".dg"))).toBe(true);
+			expect(readFixedAllowSend(allowSendHome())).toBe(
+				readFixedAllowSend(join(passwdHome ?? "", ".dg")),
+			);
+			let token = "";
+			const runtime = {
+				...googleRuntime(temp),
+				home: temp,
+				env: { HOME: temp, DG_HOME: temp },
+				revealToken: (_id: string, value: string) => {
+					token = value;
+				},
+			};
+			const drafted = await runSsms(
+				["google", "draft", "--conversation", "keep", "--text", "hello there"],
+				runtime,
+			);
+			expect(drafted.code).toBe(0);
+			const sent = await runSsms(
+				["google", "send", "--draft", "draft-1", "--approve", token, "--yes"],
+				runtime,
+			);
+			if (!readFixedAllowSend(join(passwdHome ?? "", ".dg"))) {
+				expect(sent.code).toBe(1);
+				expect(sent.stderr).toContain("allow_send");
+				expect(sent.stdout).not.toContain("sent ");
+			}
 		} finally {
-			if (previous === undefined) delete process.env.DG_HOME;
-			else process.env.DG_HOME = previous;
+			if (previous === undefined) delete process.env.HOME;
+			else process.env.HOME = previous;
 		}
 	});
 

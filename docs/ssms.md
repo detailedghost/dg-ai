@@ -74,12 +74,17 @@ never in `--json`. The draft file stores a hash of that token, not the token.
 terminal, or after `--approve` with the token from the terminal. `--yes` does
 not send. The gate blocks accidental and non-interactive sends. Same-user code
 that evades it, for example by allocating its own pty, is out of scope.
-`allow_send` is read only from `~/.dg/ssms/config.yaml` under the OS user home
-(`os.userInfo().homedir`), not from `$DG_HOME`. `--config` cannot set it.
+`allow_send` is read only from `~/.dg/ssms/config.yaml` in the account's passwd
+home (`getent` or `/etc/passwd` for the current uid; `os.userInfo()` only when
+that is unavailable), not from `$HOME` or `$DG_HOME`. `--config` cannot set it.
 `false` means never send, and that is the default when the fixed file is
 missing. If `/dev/tty` cannot be opened, `draft` fails and does not keep the
 draft. A Google draft stores the contact's display name and matches the open
-thread header against that name.
+thread header to that name exactly, after trimming and collapsing whitespace.
+The list item for that conversation id must be selected, and the message pane
+must be a different generation than before the click unless that thread was
+already open. A display name shared by more than one conversation is refused
+when that switch cannot be shown.
 Cleanup never sends and never deletes. `--dry-run` leaves the draft pending.
 
 Signal drafts can be plain text, a reaction (`--emoji`), an image

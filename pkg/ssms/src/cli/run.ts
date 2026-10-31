@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -70,7 +71,31 @@ function isProvider(value: string | undefined): value is SmsProviderId {
 	return (PROVIDER_NAMES as readonly string[]).includes(value ?? "");
 }
 
-export function allowSendHome(homeDir = userInfo().homedir): string {
+export function accountHome(uid = process.getuid?.() ?? -1): string | undefined {
+	if (process.platform !== "linux" || uid < 0) return undefined;
+	try {
+		const listed = execFileSync("getent", ["passwd", String(uid)], {
+			encoding: "utf8",
+			timeout: 1000,
+		});
+		const home = listed.split(":")[5];
+		if (home) return home;
+	} catch {
+		// getent is missing or the uid is only in /etc/passwd.
+	}
+	try {
+		const text = readFileSync("/etc/passwd", "utf8");
+		for (const line of text.split("\n")) {
+			const parts = line.split(":");
+			if (parts.length >= 6 && Number(parts[2]) === uid && parts[5]) return parts[5];
+		}
+	} catch {
+		return undefined;
+	}
+	return undefined;
+}
+
+export function allowSendHome(homeDir = accountHome() ?? userInfo().homedir): string {
 	return join(homeDir, ".dg");
 }
 

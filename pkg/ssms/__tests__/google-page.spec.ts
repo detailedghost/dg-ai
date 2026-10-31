@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateMessagesAction } from "../src/google/page";
+import { prepareSend, resolveOpenTimeout, DEFAULT_OPEN_TIMEOUT_MS } from "../src/google/thread";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
 
 describe("Messages page actions", () => {
@@ -311,21 +312,26 @@ describe("Messages page actions", () => {
 		box.paneId = "c1";
 		const send = node("Send", { "aria-label": "Send" });
 		send.paneId = "c1";
+		const link = node("c1", { href: "/web/conversations/c1" });
 		const waiting = createDocument(
-			[node("c1", { href: "/web/conversations/c1" }), box, send],
+			[link, box, send],
 			"",
 		) as ReturnType<typeof createDocument> & {
 			location: { href: string };
 			threadHeader: string;
+			pane?: string;
 			sleep?: () => void;
 		};
 		waiting.location = { href: "https://messages.google.com/web/u/0/" };
 		waiting.threadHeader = "";
+		waiting.pane = "pane-old";
 		let slept = 0;
 		waiting.sleep = () => {
 			slept += 1;
 			waiting.location = { href: "https://messages.google.com/web/u/0/conversations/c1" };
 			waiting.threadHeader = "Ada";
+			waiting.pane = "pane-c1";
+			link.attrs["aria-selected"] = "true";
 		};
 		const sent = (await evaluateMessagesAction(waiting, "send", {
 			confirmed: true,
@@ -339,14 +345,32 @@ describe("Messages page actions", () => {
 		expect(slept).toBeGreaterThan(0);
 	});
 
+	test("the open timeout defaults to 10 seconds for missing and invalid values", () => {
+		expect(resolveOpenTimeout(undefined)).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout(Number.NaN)).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout(0)).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout(-5)).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout(Number.POSITIVE_INFINITY)).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout(Number.NEGATIVE_INFINITY)).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout("10")).toBe(DEFAULT_OPEN_TIMEOUT_MS);
+		expect(resolveOpenTimeout(250)).toBe(250);
+		expect(DEFAULT_OPEN_TIMEOUT_MS).toBe(10_000);
+	});
+
 	test("the open wait stops when the budget is spent", async () => {
-		const { prepareSend } = await import("../src/google/thread");
 		const sleeps: number[] = [];
+		const stuck = {
+			href: "https://messages.google.com/web/u/0/conversations/other",
+			header: "Bea",
+			selectedId: "other",
+			pane: "same",
+		};
 		await expect(
 			prepareSend(
 				{
-					href: async () => "https://messages.google.com/web/u/0/conversations/other",
-					header: async () => "Bea",
+					href: async () => stuck.href,
+					header: async () => stuck.header,
+					view: async () => stuck,
 					clickConversation: async () => true,
 					compose: async () => {
 						throw new Error("typed");

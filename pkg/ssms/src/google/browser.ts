@@ -22,6 +22,30 @@ const headerExpr = `(() => {
   return heading ? (heading.innerText || heading.textContent || "") : "";
 })()`;
 
+const selectedExpr = `(() => {
+  const links = Array.from(document.querySelectorAll("a[href*='/conversations/'], mws-conversation-list-item[href*='/conversations/']"));
+  const link = links.find((el) => {
+    const current = el.getAttribute("aria-current");
+    return el.getAttribute("aria-selected") === "true" || current === "true" || current === "page" || current === "step";
+  });
+  if (!link) return "";
+  const href = link.getAttribute("href") || "";
+  const match = /\\/conversations\\/([^/?#]+)/.exec(href);
+  if (!match) return "";
+  try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+})()`;
+
+const paneExpr = `(() => {
+  const main = document.querySelector('[role="main"]') || document.querySelector("main");
+  if (!main) return "";
+  const node = main.querySelector("[data-dg-pane], mws-message-list, mws-conversation-view, [role='log']") || main;
+  const mark = node.getAttribute("data-dg-pane");
+  if (mark) return mark;
+  const next = "p" + Math.random().toString(36).slice(2);
+  node.setAttribute("data-dg-pane", next);
+  return next;
+})()`;
+
 function sameConversation(hrefCode: string, id: string): string {
 	const wanted = JSON.stringify(id);
 	return `(() => {
@@ -119,6 +143,13 @@ async function sendOnEvalPage(
 			async header() {
 				return String(await page.evaluate(headerExpr));
 			},
+			async view() {
+				const href = String(await page.evaluate("location.href"));
+				const header = String(await page.evaluate(headerExpr));
+				const selectedId = String(await page.evaluate(selectedExpr));
+				const pane = String(await page.evaluate(paneExpr));
+				return { href, header, selectedId, pane };
+			},
 			async clickConversation(id) {
 				return Boolean(await page.evaluate(clickExpr(id)));
 			},
@@ -151,6 +182,8 @@ async function sendOnEvalPage(
 			text: String(args.text ?? ""),
 			confirmed: args.confirmed === true,
 			timeoutMs: resolveOpenTimeout(args.timeoutMs),
+			ambiguous: args.ambiguous === true,
+			rng: typeof args.rng === "function" ? (args.rng as () => number) : undefined,
 		},
 	);
 	return { ...sent, draftId: String(args.draftId ?? "") };
