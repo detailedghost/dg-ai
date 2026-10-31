@@ -64,6 +64,7 @@ flowchart LR
 - [0021 — Relay `--ext` scrape and plant through the daemon instead of Downloads](0021-proto-daemon-relay.md)
 - [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
+- [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
 
 ## Adding an ADR
 

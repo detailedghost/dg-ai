@@ -9,6 +9,7 @@ pkg/
   dg-daemon/   loopback HTTP+WS chat daemon — bun build --compile distributable
   dg-agent/    agent-facing CLI for the daemon — bun build --compile distributable
   inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
+  ssms/        SMS providers (google Messages for Web, signal-cli) and the ssms CLI
   channel-review/ Teams review daemon, runners, reactions, and verdict readers
   skills-cli/  CLI framework — bun build --compile distributable
   skills-test/ smoke tests — skills reference the right packages, install logic
@@ -17,7 +18,7 @@ plugins/dg/
                (the canonical tree; both .claude-plugin/plugin.json and
                plugins/dg/.codex-plugin/plugin.json point here)
     channel-review/ SKILL.md and setup/command references
-    google-sms-cleanup/ SKILL.md for Messages for Web cleanup
+    google-sms-cleanup/ SKILL.md for Messages for Web cleanup (`dg-skills ssms`)
 docs/          Documentation
 .github/       CI workflows
 ```
@@ -278,7 +279,7 @@ bun test       # install logic + skill manifests + CLI smoke
 | Workflow | Trigger (paths) | Result |
 | ------------------- | ------------------------------------------- | --------------------------------------- |
 | `ext-blt` | PR: extension, common | required on master |
-| `skills-blt` | PR: skills-cli, inbox, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
+| `skills-blt` | PR: skills-cli, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
 | `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: 18 binaries, 2 extension zips, both bootstraps, `SHA256SUMS` |

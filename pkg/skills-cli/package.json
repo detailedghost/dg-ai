@@ -17,6 +17,7 @@
 		"@dg/common": "workspace:*",
 		"@dg/dg-agent": "workspace:*",
 		"@dg/inbox": "workspace:*",
+		"@dg/ssms": "workspace:*",
 		"commander": "^15.0.0",
 		"marked": "^18.1.0",
 		"pg": "^8.23.1",

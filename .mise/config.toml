@@ -87,6 +87,26 @@ description = "Run the browser extension unit tests"
 dir = "pkg/extension"
 run = "bun test"
 
+[tasks."test:ssms"]
+description = "Run the ssms provider unit tests"
+dir = "pkg/ssms"
+run = "bun test"
+
+[tasks."test:ssms:google"]
+description = "Run the Google Messages provider tests"
+dir = "pkg/ssms"
+run = "bun test __tests__/google-page.spec.ts __tests__/google-provider.spec.ts __tests__/contract.spec.ts"
+
+[tasks."test:ssms:signal"]
+description = "Run the signal-cli provider tests against the fake JSON-RPC server"
+dir = "pkg/ssms"
+run = "bun test __tests__/signal-rpc.spec.ts __tests__/signal-provider.spec.ts __tests__/contract.spec.ts"
+
+[tasks."test:ssms:mutate"]
+description = "Mutation-test the ssms send gate, classifier, redaction, and gap picker"
+dir = "pkg/ssms"
+run = "bunx stryker run"
+
 [tasks."test:inbox"]
 description = "Run the inbox unit tests"
 dir = "pkg/inbox"

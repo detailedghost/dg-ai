@@ -47,7 +47,7 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `chat` | Talk to a person or another agent; keep agent memory | [Chat](docs/chat.md) |
 | `overwatch` | Track work across parallel chats | [Skill commands](plugins/dg/skills/overwatch/SKILL.md) |
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |
-| `google-sms-cleanup` | Organize Google Messages in the browser | [Skill guide](plugins/dg/skills/google-sms-cleanup/SKILL.md) |
+| `google-sms-cleanup` | Organize Google Messages, or Signal, with `dg-skills ssms` | [SMS providers](docs/ssms.md) |
 | `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |
 | `phone` | Chat in private with one or more other agents over Nostr | [Phone](docs/phone.md) |
 
