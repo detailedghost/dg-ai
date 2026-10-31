@@ -1,17 +1,19 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveDgPaths } from "@dg/common/node";
+import { isAlive, resolveDgPaths } from "@dg/common/node";
 import { phoneOpen, type OpenCloseDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import {
 	CRON_MARKER,
+	ENSURE_EMPTY_LOCK_MS,
 	ENSURE_LOCK_MAX_AGE_MS,
 	type CrontabIO,
 	commandOwnsEnsure,
 	cronJitterCommand,
+	cronShellCommand,
 	ensureCronLine,
 	ensureListener,
 	ensureLockPath,
@@ -19,11 +21,14 @@ import {
 	ensureMarker,
 	type EnsureDeps,
 	installCrontabLine,
+	isNewerVersion,
 	mergeCrontab,
 	openEnsureArgv,
 	ownsEnsureProcess,
 	readRecordedPid,
+	releaseEnsureLock,
 	shQuote,
+	shouldEnsureRestart,
 	shouldReplaceListener,
 } from "../../src/phone/ensure";
 import type { KeyClient } from "../../src/phone/keys";
@@ -70,7 +75,7 @@ afterEach(() => {
 describe("ensureListener", () => {
 	it("replaces a stale pidfile and does not signal that pid", async () => {
 		const dir = tempHome();
-		const phone = deps(dir, { verdict: () => "ours" });
+		const phone = deps(dir, { verdict: () => "ours", isAlive: (pid) => pid === 6100 });
 		writeRaw(listenerPidPath(phone.paths), JSON.stringify({ pid: 999_999_999, since: 1, hook: null }));
 		const spawned: number[] = [];
 		phone.spawnListener = () => {
@@ -140,21 +145,26 @@ describe("ensureListener", () => {
 
 	it("takes over a lock whose holder is dead", async () => {
 		const dir = tempHome();
-		const phone = deps(dir);
+		const phone = deps(dir, { isAlive: (pid) => pid === 6300 });
 		writeRaw(ensureLockPath(phone.paths), "999999");
 		phone.spawnListener = () => 6300;
 
 		expect(await ensureListener(phone)).toEqual({ pid: 6300, status: "started" });
 	});
 
-	it("takes over an empty lock and a lock whose live pid is not our process", async () => {
+	it("takes over an empty lock only after it has aged, and a lock whose live pid is not our process", async () => {
 		const dir = tempHome();
-		const empty = deps(dir);
-		writeRaw(ensureLockPath(empty.paths), "");
+		const empty = deps(dir, { isAlive: (pid) => pid === 6310 });
+		const emptyPath = ensureLockPath(empty.paths);
+		writeRaw(emptyPath, "");
 		empty.spawnListener = () => 6310;
+		await expect(ensureListener(empty)).rejects.toThrow("already running");
+
+		const old = new Date(Date.now() - 2_000);
+		utimesSync(emptyPath, old, old);
 		expect(await ensureListener(empty)).toEqual({ pid: 6310, status: "started" });
 
-		const reused = deps(dir, { isAlive: () => true, ownsProcess: () => false });
+		const reused = deps(dir, { isAlive: (pid) => pid === 6311, ownsProcess: () => false });
 		writeRaw(ensureLockPath(reused.paths), "12345");
 		reused.spawnListener = () => 6311;
 		expect(await ensureListener(reused)).toEqual({ pid: 6311, status: "started" });
@@ -214,13 +224,14 @@ describe("ensureListener", () => {
 		await second;
 
 		expect(spawns).toBe(1);
+		expect(existsSync(ensureLockPath(phone.paths))).toBe(false);
 	});
 
 	it("starts when the pidfile is missing even if a verdict would refuse a live pid", async () => {
 		const dir = tempHome();
 		let spawned = 0;
 		const phone = deps(dir, {
-			isAlive: () => false,
+			isAlive: (pid) => pid === 6500,
 			verdict: () => {
 				throw new Error("verdict");
 			},
@@ -234,12 +245,16 @@ describe("ensureListener", () => {
 		expect(spawned).toBe(1);
 	});
 
-	it("takes over a lock whose contents are not a pid", async () => {
+	it("takes over a lock whose contents are not a pid once it is a second old", async () => {
 		const dir = tempHome();
-		const phone = deps(dir, { isAlive: () => false });
-		writeRaw(ensureLockPath(phone.paths), "not-a-pid");
+		const phone = deps(dir, { isAlive: (pid) => pid === 6330 });
+		const path = ensureLockPath(phone.paths);
+		writeRaw(path, "not-a-pid");
 		phone.spawnListener = () => 6330;
+		await expect(ensureListener(phone)).rejects.toThrow("already running");
 
+		const old = new Date(Date.now() - 2_000);
+		utimesSync(path, old, old);
 		expect(await ensureListener(phone)).toEqual({ pid: 6330, status: "started" });
 	});
 
@@ -265,17 +280,22 @@ describe("ensureListener", () => {
 		const dir = tempHome();
 		const path = ensureLockPath(deps(dir).paths);
 		writeRaw(path, "");
-		const young = { isAlive: () => true, ownsProcess: () => true as boolean | undefined, nowMs: () => Date.now() };
-		expect(ensureLockStale(path, young)).toBe(true);
+		const mtime = statSync(path).mtimeMs;
+		const young = { isAlive: () => true, ownsProcess: () => true as boolean | undefined, nowMs: () => mtime };
+		expect(ensureLockStale(path, young)).toBe(false);
+		expect(ensureLockStale(path, { ...young, nowMs: () => mtime + ENSURE_EMPTY_LOCK_MS - 1 })).toBe(false);
+		expect(ensureLockStale(path, { ...young, nowMs: () => mtime + ENSURE_EMPTY_LOCK_MS })).toBe(true);
 		writeRaw(path, "0");
-		expect(ensureLockStale(path, young)).toBe(true);
+		const zero = statSync(path).mtimeMs;
+		expect(ensureLockStale(path, { ...young, nowMs: () => zero })).toBe(false);
+		expect(ensureLockStale(path, { ...young, nowMs: () => zero + ENSURE_EMPTY_LOCK_MS })).toBe(true);
 		writeRaw(path, "42");
 		expect(ensureLockStale(path, { ...young, isAlive: () => false })).toBe(true);
 		expect(ensureLockStale(path, { ...young, ownsProcess: () => false })).toBe(true);
 		expect(ensureLockStale(path, { ...young, ownsProcess: () => undefined })).toBe(false);
-		const mtime = statSync(path).mtimeMs;
-		expect(ensureLockStale(path, { ...young, nowMs: () => mtime + ENSURE_LOCK_MAX_AGE_MS })).toBe(true);
-		expect(ensureLockStale(path, { ...young, nowMs: () => mtime + ENSURE_LOCK_MAX_AGE_MS - 1 })).toBe(false);
+		const held = statSync(path).mtimeMs;
+		expect(ensureLockStale(path, { ...young, nowMs: () => held + ENSURE_LOCK_MAX_AGE_MS })).toBe(true);
+		expect(ensureLockStale(path, { ...young, nowMs: () => held + ENSURE_LOCK_MAX_AGE_MS - 1 })).toBe(false);
 	});
 
 	it("reads only a safe positive pid out of listener.pid", () => {
@@ -305,16 +325,99 @@ describe("ensureListener", () => {
 		await expect(ensureListener(phone)).rejects.toThrow("phone open --ensure is already running");
 		expect(spawned).toBe(0);
 	});
+
+	it("puts a lock back when it stops being stale after the rename, and does not delete another pid's lock", async () => {
+		const dir = tempHome();
+		const path = ensureLockPath(deps(dir).paths);
+		writeRaw(path, "");
+		const written = statSync(path).mtimeMs;
+		let reads = 0;
+		let spawned = 0;
+		const phone = deps(dir, {
+			nowMs: () => {
+				reads += 1;
+				return reads === 1 ? written + 5_000 : written;
+			},
+			isAlive: (pid) => pid === 6600,
+			spawnListener: () => {
+				spawned += 1;
+				return 6600;
+			},
+		});
+
+		await expect(ensureListener(phone)).rejects.toThrow("already running");
+		expect(spawned).toBe(0);
+		expect(existsSync(path)).toBe(true);
+		expect(readFileSync(path, "utf8")).toBe("");
+		expect(readdirSync(phone.paths.phoneRoot).filter((name) => name.startsWith("ensure.lock."))).toEqual([]);
+
+		writeFileSync(path, String(process.pid));
+		releaseEnsureLock(path, process.pid);
+		expect(existsSync(path)).toBe(false);
+		writeFileSync(path, "4242");
+		releaseEnsureLock(path, process.pid);
+		expect(readFileSync(path, "utf8")).toBe("4242");
+		releaseEnsureLock(path, 4242);
+		expect(existsSync(path)).toBe(false);
+	});
+
+	it("does not record a listener that has already exited, and does record a live sleep", async () => {
+		const dir = tempHome();
+		const dead = deps(dir, { isAlive: () => false, spawnListener: () => 424242 });
+		await expect(ensureListener(dead)).rejects.toThrow("exited before it could be recorded");
+		expect(existsSync(listenerPidPath(dead.paths))).toBe(false);
+		expect(existsSync(ensureLockPath(dead.paths))).toBe(false);
+
+		const child = spawn("/bin/sleep", ["30"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("sleep did not start");
+		try {
+			const phone = deps(dir, { isAlive, spawnListener: () => pid });
+			expect(await ensureListener(phone)).toEqual({ pid, status: "started" });
+			expect(JSON.parse(readFileSync(listenerPidPath(phone.paths), "utf8")).pid).toBe(pid);
+		} finally {
+			try {
+				process.kill(pid, "SIGTERM");
+			} catch {}
+		}
+	});
+
+	it("does not delete a lock another ensure wrote while this one held it", async () => {
+		const dir = tempHome();
+		let releaseHold = () => {};
+		const phone = deps(dir, {
+			sleep: (ms) =>
+				new Promise((resolve) => {
+					if (ms === 0) {
+						releaseHold = resolve;
+						return;
+					}
+					resolve();
+				}),
+			isAlive: (pid) => pid === 6700,
+			spawnListener: () => 6700,
+		});
+		const pending = ensureListener(phone);
+		for (let i = 0; i < 5; i += 1) await Promise.resolve();
+		const path = ensureLockPath(phone.paths);
+		expect(readFileSync(path, "utf8")).toBe(String(process.pid));
+		writeFileSync(path, "4242");
+		releaseHold();
+		await pending;
+		expect(readFileSync(path, "utf8")).toBe("4242");
+	});
 });
 
 describe("ensure cron line", () => {
-	it("quotes the command, jitters with RANDOM, and never includes a message body", () => {
+	it("quotes the command, jitters without a percent, and never includes a message body", () => {
 		const line = ensureCronLine(["/opt/dg agent", "phone", "open", "--ensure"], "/home/a");
 
+		expect(cronJitterCommand()).toBe("sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 ))");
 		expect(line.startsWith(`*/5 * * * * ${cronJitterCommand()}; `)).toBe(true);
 		expect(line).toContain(`DG_HOME=${shQuote("/home/a")}`);
 		expect(line).toContain(`'/opt/dg agent' 'phone' 'open' '--ensure'`);
 		expect(line.endsWith("# dg-phone-ensure home=/home/a")).toBe(true);
+		expect(line).not.toContain("%");
 		expect(line).not.toContain("$RANDOM");
 		expect(line).not.toContain("nsec");
 		expect(line).not.toContain("hello");
@@ -322,7 +425,31 @@ describe("ensure cron line", () => {
 		expect(bare.endsWith("# dg-phone-ensure home=")).toBe(true);
 		expect(bare).not.toContain("DG_HOME=");
 		expect(shQuote("a'b")).toBe(`'a'\\''b'`);
-		expect(spawnSync("dash", ["-n", "-c", cronJitterCommand()]).status).toBe(0);
+		expect(cronShellCommand("* * * * * echo a\\%b%c")).toBe("echo a%b");
+		expect(cronShellCommand("nospace")).toBe("");
+	});
+
+	it("runs the command cron keeps, under dash -n and for real", () => {
+		const dir = tempHome();
+		const bin = join(dir, "bin");
+		mkdirSync(bin);
+		const od = join(bin, "od");
+		writeFileSync(od, "#!/bin/sh\necho 0\n");
+		chmodSync(od, 0o755);
+		const stamp = join(dir, "stamp");
+		const stub = join(dir, "dg-agent");
+		writeFileSync(stub, `#!/bin/sh\nprintf '%s\\n' "$@" > '${stamp}'\n`);
+		chmodSync(stub, 0o755);
+		const line = ensureCronLine([stub, "phone", "open", "--ensure"], "/tmp/dg-home");
+		const command = cronShellCommand(line);
+
+		expect(command).not.toContain("%");
+		expect(spawnSync("dash", ["-n", "-c", command]).status).toBe(0);
+		const ran = spawnSync("dash", ["-c", command], {
+			env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+		});
+		expect(ran.status).toBe(0);
+		expect(readFileSync(stamp, "utf8")).toBe("phone\nopen\n--ensure\n");
 	});
 
 	it("builds phone open --ensure from the listener argv", () => {
@@ -349,6 +476,20 @@ describe("ensure cron line", () => {
 		expect(merged.split(marker).length - 1).toBe(1);
 		expect(mergeCrontab(merged, line, marker)).toBe(merged);
 		expect(line).toContain(CRON_MARKER);
+
+		const longer = ensureCronLine(["/bin/dg-agent", "phone", "open", "--ensure"], "/home/ab");
+		const reinstalled = mergeCrontab(`${longer}\n${line}\n`, line, marker);
+		const rows = reinstalled.split("\n").filter((row) => row.length > 0);
+		expect(rows.filter((row) => row.endsWith("# dg-phone-ensure home=/home/ab"))).toHaveLength(1);
+		expect(rows.filter((row) => row.endsWith("# dg-phone-ensure home=/home/a"))).toHaveLength(1);
+
+		const emptyHome = ensureCronLine(["/bin/dg-agent", "phone", "open", "--ensure"]);
+		const keptHomes = mergeCrontab(`${line}\n${longer}\n`, emptyHome, ensureMarker());
+		expect(keptHomes).toContain("home=/home/a");
+		expect(keptHomes).toContain("home=/home/ab");
+		expect(keptHomes.endsWith(`${emptyHome}\n`)).toBe(true);
+		const mentioned = `0 * * * * echo ${marker} stays`;
+		expect(mergeCrontab(`${mentioned}\n`, line, marker)).toContain("stays");
 	});
 
 	it("installs into an empty crontab and refuses a list failure that is not 'no crontab'", async () => {
@@ -525,6 +666,68 @@ describe("phone open --ensure", () => {
 
 		expect(h.spawned).toEqual([]);
 		expect(parseNdjson(h.out)[0]).toMatchObject({ pid: process.pid, status: "running" });
+	});
+
+	it("does not replace a newer listener, and does replace key drift at this version", async () => {
+		const newer = harness();
+		newer.deps.isAlive = (pid) => pid === process.pid;
+		newer.deps.verdict = () => "ours";
+		writeFileSync(
+			listenerPidPath(newer.deps.paths),
+			JSON.stringify({ pid: process.pid, since: 1, hook: null, version: "99.0.0" }),
+		);
+		await phoneOpen({ ensure: true }, newer.deps);
+		expect(newer.spawned).toEqual([]);
+		expect(parseNdjson(newer.out)[0]).toMatchObject({ pid: process.pid, status: "running" });
+
+		const named = harness();
+		named.deps.isAlive = (pid) => pid === process.pid;
+		named.deps.verdict = () => "ours";
+		writeFileSync(
+			listenerPidPath(named.deps.paths),
+			JSON.stringify({ pid: process.pid, since: 1, hook: null, version: "latest" }),
+		);
+		await phoneOpen({ ensure: true }, named.deps);
+		expect(named.spawned).toEqual([]);
+
+		const missing = harness();
+		missing.deps.isAlive = (pid) => pid === process.pid || pid === 6400;
+		missing.deps.verdict = () => "ours";
+		missing.deps.kill = () => {
+			rmSync(listenerPidPath(missing.deps.paths), { force: true });
+		};
+		writeFileSync(listenerPidPath(missing.deps.paths), JSON.stringify({ pid: process.pid, since: 1, hook: null }));
+		await phoneOpen({ ensure: true }, missing.deps);
+		expect(missing.spawned).toHaveLength(1);
+		expect(parseNdjson(missing.out)[0]).toMatchObject({ status: "restarted" });
+
+		const keys = harness();
+		keys.deps.isAlive = (pid) => pid === process.pid || pid === 6400;
+		keys.deps.verdict = () => "ours";
+		keys.deps.kill = () => {
+			rmSync(listenerPidPath(keys.deps.paths), { force: true });
+		};
+		writeFileSync(
+			listenerPidPath(keys.deps.paths),
+			JSON.stringify({ pid: process.pid, since: 1, hook: null, version: DG_AGENT_PACKAGE_VERSION, keys: "different" }),
+		);
+		await phoneOpen({ ensure: true }, keys.deps);
+		expect(keys.spawned).toHaveLength(1);
+		expect(parseNdjson(keys.out)[0]).toMatchObject({ status: "restarted" });
+
+		expect(shouldEnsureRestart("1.2.0", "1.2.0")).toBe(true);
+		expect(shouldEnsureRestart("1.2.0", "1.0.0")).toBe(true);
+		expect(shouldEnsureRestart("1.2.0", "9.0.0")).toBe(false);
+		expect(shouldEnsureRestart("1.2.0", undefined)).toBe(true);
+		expect(shouldEnsureRestart("1.2.0", "")).toBe(true);
+		expect(shouldEnsureRestart("1.2.0", "latest")).toBe(false);
+		expect(isNewerVersion("1.10.0", "1.9.0")).toBe(true);
+		expect(isNewerVersion("2.0.0", "1.9.9")).toBe(true);
+		expect(isNewerVersion("1.2.0", "1.2.1")).toBe(false);
+		expect(isNewerVersion("1.2", "1.2.0")).toBe(false);
+		expect(isNewerVersion("1.2.3", "1.2.3")).toBe(false);
+		expect(isNewerVersion("latest", "1.0.0")).toBe(false);
+		expect(isNewerVersion("1.2.0", "1.2.0-dev")).toBe(false);
 	});
 
 	it("prints the cron line without installing it, and installs only when asked", async () => {

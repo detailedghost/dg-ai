@@ -570,8 +570,9 @@ export function releaseListenerClaim(paths: DgPaths, pid: number): void {
 	} catch {}
 }
 
-/** Points `listener.pid` at a process that is already running, so nothing else starts a second one. */
-export function adoptListenerPid(paths: DgPaths, record: ListenerPid): void {
+/** Points `listener.pid` at a process that is already running, so nothing else starts a second one. A child that has already exited is not recorded. */
+export function adoptListenerPid(paths: DgPaths, record: ListenerPid, alive: (pid: number) => boolean = isAlive): void {
+	if (!alive(record.pid)) return;
 	writeListenerPid(paths, record);
 }
 

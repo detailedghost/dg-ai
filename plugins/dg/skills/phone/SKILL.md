@@ -45,7 +45,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 | `--new` | none | On `watch`, skip the unread backlog and print only messages that arrive after it starts. | off |
 | `--on-message <exe> [args...]` | none | Command `open` runs for each delivered message, saved for next time; stdin carries the message JSON. | none (messages wait for `voicemail`/`inbox`) |
 | `--on-message-timeout <seconds>` | none | Seconds before a running `--on-message` command is killed. | `30` |
-| `--ensure` | none | On `open`, start a detached listener when the pidfile is not a live copy of this binary. Safe to repeat from cron. Does not call systemd and does not edit the crontab. | off |
+| `--ensure` | none | On `open`, start a detached listener when the pidfile is not a live copy of this binary. Also restart it when the recorded version or keys drifted, if this binary is the same version or newer. An older binary does not replace a newer listener that shares the phone directory. Safe to repeat from cron. Does not call systemd and does not edit the crontab. | off |
 | `--print-cron` | none | On `open`, include a `*/5` crontab line for `--ensure` in the JSON. Does not change the crontab. | off |
 | `--install-cron` | none | On `open`, install that crontab line. Never implied by `--ensure` or `--print-cron`. | off |
 
@@ -138,10 +138,12 @@ the crontab. `--print-cron` prints a line you can install yourself;
 ~/.dg/bin/dg-agent phone open --ensure --print-cron
 ```
 
-The line is `*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) % 60 )); … phone open --ensure`.
-That sleep is POSIX, so dash can run it. The listener's pid, start time, binary version, and key fingerprint live at
+The line is `*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); … phone open --ensure`.
+That sleep is POSIX, so dash can run it, and it has no `%` because cron cuts the command at the first unescaped `%`. The listener's pid, start time, binary version, and key fingerprint live at
 `<phoneRoot>/listener.pid`. `open` restarts a listener whose version or keys
-differ from the database. `status` sets `listener.stale` to true, with a
+differ from the database. `open --ensure` does that too, except an older
+binary leaves a newer listener in place, so two dg-agent versions that share
+one phone directory do not restart each other. `status` sets `listener.stale` to true, with a
 reason, when that happens, and `notice` to the newest local message. When a
 key's credential-store read fails, `status` includes `keys_unreadable: true`
 and leaves `stale` false, unless a key it can read has changed. A local

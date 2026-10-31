@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
@@ -8,8 +8,12 @@ export const ENSURE_LOCK_ATTEMPTS = 40;
 export const ENSURE_LOCK_WAIT_MS = 25;
 /** A lock older than this is not a live ensure, even when its pid is still alive. */
 export const ENSURE_LOCK_MAX_AGE_MS = 15_000;
+/** An empty or non-pid lock is a writer still filling the file until it is this old. */
+export const ENSURE_EMPTY_LOCK_MS = 1_000;
 export const CRON_MARKER = "dg-phone-ensure";
 export const CRON_JITTER_SECONDS = 60;
+/** `65535 / 1093` is 59, so one urandom uint16 divided by this is 0–59 seconds, with no `%`. */
+export const CRON_JITTER_DIVISOR = 1093;
 
 export type ListenerVerdict = "ours" | "foreign" | "unknown";
 
@@ -69,10 +73,11 @@ function lockAgeMs(path: string, nowMs: number): number {
 	}
 }
 
-/** Empty, dead, reused by another program, or older than the max age. A young lock held by our own process is kept. */
+/** Dead, reused by another program, or older than the max age. An empty lock is stale only after `ENSURE_EMPTY_LOCK_MS`. A young lock held by our own process is kept. */
 export function ensureLockStale(path: string, deps: Pick<EnsureDeps, "isAlive" | "nowMs" | "ownsProcess">): boolean {
 	const holder = readLockPid(path);
-	if (holder === undefined || !deps.isAlive(holder)) return true;
+	if (holder === undefined) return lockAgeMs(path, deps.nowMs()) >= ENSURE_EMPTY_LOCK_MS;
+	if (!deps.isAlive(holder)) return true;
 	const owns = deps.ownsProcess(holder);
 	if (owns === false) return true;
 	return lockAgeMs(path, deps.nowMs()) >= ENSURE_LOCK_MAX_AGE_MS;
@@ -98,6 +103,40 @@ export function shouldReplaceListener(pid: number | undefined, alive: boolean, w
 	return who === "foreign";
 }
 
+/** Deletes the lock only when it still names `pid`, so a finished ensure cannot remove a lock someone else took over. */
+export function releaseEnsureLock(path: string, pid: number): void {
+	try {
+		if (readLockPid(path) === pid) rmSync(path, { force: true });
+	} catch {
+		// Stryker disable next-line all
+		return;
+	}
+}
+
+let ensureLockBreaks = 0;
+
+/** Moves a stale lock aside, deletes it only if it is still stale, and puts it back otherwise. */
+function displaceEnsureLock(path: string, deps: EnsureDeps): boolean {
+	const aside = `${path}.${process.pid}.${(ensureLockBreaks += 1)}`;
+	try {
+		renameSync(path, aside);
+	} catch {
+		// Stryker disable next-line all
+		return false;
+	}
+	if (ensureLockStale(aside, deps)) {
+		rmSync(aside, { force: true });
+		return true;
+	}
+	try {
+		renameSync(aside, path);
+	} catch {
+		// Stryker disable next-line all
+		return false;
+	}
+	return false;
+}
+
 async function acquireEnsureLock(deps: EnsureDeps): Promise<() => void> {
 	ensurePrivateDir(deps.paths.phoneRoot);
 	const path = ensureLockPath(deps.paths);
@@ -110,14 +149,11 @@ async function acquireEnsureLock(deps: EnsureDeps): Promise<() => void> {
 				closeSync(fd);
 			}
 			return () => {
-				rmSync(path, { force: true });
+				releaseEnsureLock(path, process.pid);
 			};
 		} catch (err) {
 			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-			if (ensureLockStale(path, deps)) {
-				rmSync(path, { force: true });
-				continue;
-			}
+			if (ensureLockStale(path, deps) && displaceEnsureLock(path, deps)) continue;
 			await deps.sleep(ENSURE_LOCK_WAIT_MS);
 		}
 	}
@@ -143,7 +179,10 @@ export async function ensureListener(deps: EnsureDeps): Promise<{ pid: number; s
 		const current = readRecordedPid(deps.paths);
 		if (!shouldStart(current, deps)) return { pid: current as number, status: "running" };
 		const pid = deps.spawnListener(deps.argv, listenerLogPath(deps.paths));
-		adoptListenerPid(deps.paths, { pid, since: deps.now(), hook: deps.hook });
+		adoptListenerPid(deps.paths, { pid, since: deps.now(), hook: deps.hook }, deps.isAlive);
+		if (readRecordedPid(deps.paths) !== pid) {
+			throw new DgCliError("the phone listener exited before it could be recorded");
+		}
 		return { pid, status: "started" };
 	} finally {
 		release();
@@ -159,9 +198,64 @@ export function ensureMarker(dgHome?: string): string {
 	return `${CRON_MARKER} home=${dgHome ?? ""}`;
 }
 
-/** POSIX sleep. `/bin/sh` on Debian is dash, which has no `$RANDOM`. One `/dev/urandom` byte-pair modulo the cap. */
-export function cronJitterCommand(maxSeconds = CRON_JITTER_SECONDS): string {
-	return `sleep $(( $(od -An -N2 -tu2 /dev/urandom) % ${maxSeconds} ))`;
+/** POSIX sleep. `/bin/sh` on Debian is dash, which has no `$RANDOM`. One urandom uint16 divided by 1093 is 0–59s, and the line has no `%` for cron to cut on. */
+export function cronJitterCommand(): string {
+	return `sleep $(( $(od -An -N2 -tu2 /dev/urandom) / ${CRON_JITTER_DIVISOR} ))`;
+}
+
+/**
+ * The command cron will execute. The first five fields are the schedule.
+ * An unescaped `%` ends the command (the rest becomes stdin). `\%` is a literal `%`.
+ */
+export function cronShellCommand(line: string): string {
+	let rest = line.trimStart();
+	for (let field = 0; field < 5; field += 1) {
+		const at = rest.search(/\s/);
+		if (at === -1) return "";
+		rest = rest.slice(at).trimStart();
+	}
+	let command = "";
+	for (let index = 0; index < rest.length; index += 1) {
+		const ch = rest[index] ?? "";
+		if (ch === "\\" && rest[index + 1] === "%") {
+			command += "%";
+			index += 1;
+			continue;
+		}
+		if (ch === "%") break;
+		command += ch;
+	}
+	return command;
+}
+
+/** True when this binary should replace a drifted listener. Same version restarts for key drift. A newer recorded version is left alone, including a non-numeric one. A missing version is older. */
+export function shouldEnsureRestart(ours: string, recorded: string | undefined): boolean {
+	if (recorded === ours) return true;
+	return isNewerVersion(ours, recorded);
+}
+
+/** True when `ours` is a strictly newer dotted numeric version than `recorded`. */
+export function isNewerVersion(ours: string, recorded: string | undefined): boolean {
+	if (recorded === undefined || recorded.length === 0) return true;
+	const left = versionParts(ours);
+	const right = versionParts(recorded);
+	if (left === undefined || right === undefined) return false;
+	for (let index = 0; index < 3; index += 1) {
+		const a = left[index] ?? 0;
+		const b = right[index] ?? 0;
+		if (a !== b) return a > b;
+	}
+	return false;
+}
+
+function versionParts(value: string): [number, number, number] | undefined {
+	const bits = value.split(".");
+	const nums: number[] = [];
+	for (const bit of bits) {
+		if (!/^[0-9]+$/.test(bit)) return undefined;
+		nums.push(Number(bit));
+	}
+	return [nums[0] ?? 0, nums[1] ?? 0, nums[2] ?? 0];
 }
 
 /** Crontab line that runs `phone open --ensure`. The marker names the home so a later install replaces only that line. */
@@ -186,7 +280,7 @@ export function mergeCrontab(current: string, line: string, marker: string): str
 	for (let index = 0; index < rows.length; index += 1) {
 		const row = rows[index] ?? "";
 		if (index === rows.length - 1 && row === "") continue;
-		if (marker.length > 0 && row.includes(marker)) continue;
+		if (marker.length > 0 && row.endsWith(` # ${marker}`)) continue;
 		kept.push(row);
 	}
 	kept.push(line);

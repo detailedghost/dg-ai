@@ -440,7 +440,7 @@ function restorePrevious(paths: DgPaths, deps: MigrateDeps, saved: SavedListener
 		deps.sleepSync(50);
 	}
 	if (!deps.isAlive(pid) || isZombie(pid)) return { stayedUp: false };
-	adoptListenerPid(paths, { pid, since: deps.now(), hook: null });
+	adoptListenerPid(paths, { pid, since: deps.now(), hook: null }, deps.isAlive);
 	return { stayedUp: true, pid };
 }
 
@@ -486,12 +486,12 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 
 	let listener: "adopted" | "replaced" | "none" = "none";
 	if (plan.action === "adopt" || plan.action === "keep") {
-		adoptListenerPid(paths, { pid: plan.pid, since: deps.now(), hook: null, relays });
+		adoptListenerPid(paths, { pid: plan.pid, since: deps.now(), hook: null, relays }, deps.isAlive);
 		listener = "adopted";
 	} else if (plan.action === "replace") {
 		try {
 			const pid = deps.startListener(paths);
-			adoptListenerPid(paths, { pid, since: deps.now(), hook: null, relays });
+			adoptListenerPid(paths, { pid, since: deps.now(), hook: null, relays }, deps.isAlive);
 			listener = "replaced";
 		} catch (err) {
 			const restored = restorePrevious(paths, deps, saved);

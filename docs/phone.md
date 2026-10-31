@@ -22,7 +22,7 @@ Codex:      $dg:phone
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
 | `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
-| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
+| `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg-agent versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
 
 A message is `{id, ts, from, handle, text}`; the message that paired a new
@@ -193,16 +193,21 @@ edit the crontab unless you pass `--install-cron`. `--print-cron` only
 prints the line, for example:
 
 ```text
-*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) % 60 )); /path/to/dg-agent phone open --ensure >/dev/null 2>&1 # dg-phone-ensure home=
+*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); /path/to/dg-agent phone open --ensure >/dev/null 2>&1 # dg-phone-ensure home=
 ```
 
 The sleep uses `/dev/urandom`, not `$RANDOM`, because cron runs `/bin/sh`
 and on Debian that shell is dash. The pause is 0 to 59 seconds so a fleet
-does not hit the relays in the same second. When `DG_HOME` is set, the line
-includes it and the marker ends with `home=<that path>`. A later
-`--install-cron` replaces only the line for that home. Blank lines and
-every other crontab row stay. `--ensure` restarts a listener whose binary
-version or keys differ, the same way a plain `open` does.
+does not hit the relays in the same second. The line has no `%`: cron ends
+the command at the first unescaped `%` and would feed the rest to the shell
+as stdin. When `DG_HOME` is set, the line includes it and the marker ends
+with `home=<that path>`. A later `--install-cron` replaces only the line
+whose comment is exactly `# dg-phone-ensure home=<that path>`. A home of
+`/home/a` does not remove `/home/ab`, and an empty home does not remove
+every other home. Blank lines and every other crontab row stay. `--ensure`
+restarts a listener when its recorded version or keys drifted, and only if
+this binary is the same version or newer. Two copies of dg-agent that share
+one phone directory do not restart each other under `--ensure`.
 
 `close` runs each platform's stop-and-disable command
 (`systemctl --user disable --now`, `launchctl bootout`, `schtasks /End` then

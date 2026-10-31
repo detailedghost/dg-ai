@@ -27,6 +27,7 @@ import {
 	type ListenerVerdict,
 	openEnsureArgv,
 	ownsEnsureProcess,
+	shouldEnsureRestart,
 } from "./ensure";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
 import {
@@ -44,6 +45,7 @@ import {
 	type ListenerPid,
 } from "./listener";
 import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
+import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
@@ -715,7 +717,7 @@ async function phoneOpenEnsure(
 	const running = readListenerPid(deps.paths);
 	if (running && deps.isOurListener(running.pid)) {
 		const drift = await listenerDrift(deps, running);
-		if (drift.restart) {
+		if (drift.restart && shouldEnsureRestart(DG_AGENT_PACKAGE_VERSION, running.version)) {
 			restarted = true;
 			if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
 			await stopRunningListener(deps, running.pid);
