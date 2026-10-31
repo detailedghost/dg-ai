@@ -4,16 +4,19 @@ import {
 	addBounded,
 	CALL_TAG,
 	capIds,
+	classifyIncoming,
 	fetchNew,
 	type Gate,
 	LOOKBACK_SECONDS,
 	pickKey,
+	PROBE_TOPIC,
 	publish,
 	ring,
 	SELF_NAME_TAG,
 	subscribe,
 	unwrapIncoming,
 	wrap,
+	wrapProbe,
 } from "../../src/phone/chat";
 import { MESSAGE_TTL_SECONDS } from "../../src/phone/db";
 import { createFakePool } from "./fake-pool";
@@ -85,6 +88,8 @@ describe("publish", () => {
 		const result = await publish(pool, RELAYS, wrap("hi", alice.sk, bob.pub));
 
 		expect(result.ok).toEqual([RELAYS[1]]);
+		expect(result.unconfirmed).toEqual([]);
+		expect(result.failed).toEqual([{ relay: RELAYS[0], reason: `${RELAYS[0]} refused` }]);
 	});
 
 	it("returns an empty list when every relay refuses", async () => {
@@ -95,6 +100,8 @@ describe("publish", () => {
 		const result = await publish(pool, RELAYS, wrap("hi", alice.sk, bob.pub));
 
 		expect(result.ok).toEqual([]);
+		expect(result.unconfirmed).toEqual([]);
+		expect(result.failed.map((failure) => failure.relay)).toEqual(RELAYS);
 	});
 });
 
@@ -597,6 +604,141 @@ describe("capIds", () => {
 		expect(capIds(["a", "b", "c"], 2)).toEqual(["b", "c"]);
 		expect(capIds(["a", "b"], 5)).toEqual(["a", "b"]);
 		expect(capIds([], 2)).toEqual([]);
+	});
+});
+
+function wrapTagged(sk: Uint8Array, toPub: string, text: string, extra: string[][]): ReturnType<typeof wrap> {
+	return nip59.wrapEvent(
+		{
+			kind: 14,
+			content: text,
+			created_at: Math.floor(Date.now() / 1000),
+			tags: [["p", toPub], ...extra],
+		},
+		sk,
+		toPub,
+	);
+}
+
+describe("self probes", () => {
+	const now = () => Math.floor(Date.now() / 1000);
+
+	it("stores a contact message tagged dg-probe on catch-up and on the live subscription", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const event = wrapTagged(alice.sk, bob.pub, "visible", [["t", PROBE_TOPIC]]);
+		pool.events.push(event);
+		const gate = gateWithContact(alice.pub);
+
+		const caught = await fetchNew(pool, RELAYS, [bob], gate, { cursor: 0, ids: [] }, now);
+		expect(caught.messages.map((message) => message.text)).toEqual(["visible"]);
+
+		const received: string[] = [];
+		const dropped: string[] = [];
+		const sub = subscribe(pool, RELAYS, [bob], () => gate, { cursor: 0, ids: [] }, (message) => received.push(message.text), now, {
+			onDrop: () => dropped.push("drop"),
+		});
+		pool.listeners.forEach((listener) => listener(event));
+		sub.close();
+
+		expect(received).toEqual(["visible"]);
+		expect(dropped).toEqual([]);
+	});
+
+	it("skips a real self probe on catch-up and live, and remembers the id", async () => {
+		const bob = identity();
+		const pool = createFakePool();
+		const probe = wrapProbe(bob.sk, bob.pub);
+		pool.events.push(probe);
+		const gate = gateWithContact(bob.pub, "self");
+		const drops: string[] = [];
+
+		const first = await fetchNew(pool, RELAYS, [bob], gate, { cursor: 0, ids: [] }, now, () => drops.push("drop"));
+		expect(first.messages).toEqual([]);
+		expect(drops).toEqual([]);
+		expect(first.seen.ids).toEqual([probe.id]);
+		expect(classifyIncoming(probe, [bob], gate, now())).toEqual({ probe: true });
+		expect(unwrapIncoming(probe, [bob], gate, now())).toBeNull();
+
+		const second = await fetchNew(pool, RELAYS, [bob], gate, first.seen, now, () => drops.push("again"));
+		expect(second.messages).toEqual([]);
+		expect(drops).toEqual([]);
+		expect(second.seen.ids).toContain(probe.id);
+
+		const received: string[] = [];
+		let deliveries = 0;
+		const sub = subscribe(pool, RELAYS, [bob], () => gate, { cursor: 0, ids: [] }, (message) => received.push(message.text), now, {
+			onDrop: () => drops.push("live"),
+			onEvent() {
+				deliveries += 1;
+				if (deliveries > 1) probe.kind = 1;
+			},
+			reread: () => {
+				throw new Error("a probe must not be reread");
+			},
+		});
+		const live = pool.listeners.at(-1);
+		if (!live) throw new Error("live subscription did not register");
+		live(probe);
+		live(probe);
+		sub.close();
+
+		expect(received).toEqual([]);
+		expect(drops).toEqual([]);
+	});
+
+	it("does not skip a self message whose topic tag is not dg-probe, or whose dg-probe value is not a t tag", async () => {
+		const bob = identity();
+		const pool = createFakePool();
+		const otherTopic = wrapTagged(bob.sk, bob.pub, "other-topic", [["t", "hello"]]);
+		const otherName = wrapTagged(bob.sk, bob.pub, "other-name", [["x", PROBE_TOPIC]]);
+		pool.events.push(otherTopic, otherName);
+
+		const caught = await fetchNew(pool, RELAYS, [bob], gateWithContact(bob.pub, "self"), { cursor: 0, ids: [] }, now);
+
+		expect(caught.messages.map((message) => message.text).sort()).toEqual(["other-name", "other-topic"]);
+	});
+
+	it("does not store a seal whose rumor claims our pubkey but was sealed by someone else", async () => {
+		const alice = identity();
+		const bob = identity();
+		const rumor = nip59.createRumor(
+			{
+				kind: 14,
+				content: "forged-probe",
+				created_at: Math.floor(Date.now() / 1000),
+				tags: [["p", bob.pub], ["t", PROBE_TOPIC]],
+			},
+			alice.sk,
+		);
+		const seal = nip59.createSeal({ ...rumor, pubkey: bob.pub }, alice.sk, bob.pub);
+		const gift = nip59.createWrap(seal, bob.pub);
+		const pool = createFakePool();
+		pool.events.push(gift);
+		const received: string[] = [];
+
+		const caught = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, now);
+		const sub = subscribe(pool, RELAYS, [bob], () => gateWithContact(alice.pub), { cursor: 0, ids: [] }, (message) => {
+			received.push(message.text);
+		}, now);
+		pool.listeners.forEach((listener) => listener(gift));
+		sub.close();
+
+		expect(caught.messages).toEqual([]);
+		expect(received).toEqual([]);
+	});
+
+	it("ignores a wrap that is not addressed to a held key", async () => {
+		const alice = identity();
+		const bob = identity();
+		const carol = identity();
+		const pool = createFakePool();
+		pool.events.push(wrap("for carol", alice.sk, carol.pub), wrap("for bob", alice.sk, bob.pub));
+
+		const caught = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, now);
+
+		expect(caught.messages.map((message) => message.text)).toEqual(["for bob"]);
 	});
 });
 

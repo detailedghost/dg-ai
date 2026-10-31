@@ -103,12 +103,15 @@ export function createFakePool(accepting: string[] | "all" = "all"): FakePool {
 		async querySync(relays, filter) {
 			pool.relaysUsed.push(relays);
 			pool.filters.push(filter);
-			return pool.events.filter(
-				(event) =>
-					event.created_at >= (filter.since ?? 0) &&
-					(!filter.kinds || filter.kinds.includes(event.kind)) &&
-					(!filter["#p"] || event.tags.some((tag) => tag[0] === "p" && filter["#p"]?.includes(tag[1] as string))),
-			);
+			return pool.events.filter((event) => {
+				if (event.created_at < (filter.since ?? 0)) return false;
+				if (filter.until !== undefined && event.created_at > filter.until) return false;
+				if (filter.kinds && !filter.kinds.includes(event.kind)) return false;
+				if (filter.ids && !filter.ids.includes(event.id)) return false;
+				if (filter.authors && !filter.authors.includes(event.pubkey)) return false;
+				if (filter["#p"] && !event.tags.some((tag) => tag[0] === "p" && filter["#p"]?.includes(tag[1] as string))) return false;
+				return true;
+			});
 		},
 		subscribe(relays, filter, params: SubscribeManyParams) {
 			pool.relaysUsed.push(relays);
