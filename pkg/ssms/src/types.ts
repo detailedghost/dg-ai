@@ -103,9 +103,9 @@ export interface DraftRecord {
 	targetAuthorId?: string;
 	attachments: DraftAttachment[];
 	quote?: SmsQuote;
-	approvalToken?: string;
+	approvalTokenHash?: string;
 	createdAt: string;
-	status: "pending" | "sent";
+	status: "pending" | "sending" | "sent" | "uncertain";
 }
 
 export interface DraftReplyInput {

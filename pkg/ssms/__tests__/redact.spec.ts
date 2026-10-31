@@ -10,7 +10,10 @@ describe("redactSecrets", () => {
 		expect(redactSecrets("pub_key=SECRETKEY")).toBe("pub_key=[redacted]");
 		expect(redactSecrets("conversation c1")).toBe("conversation c1");
 		expect(redactSecrets("read 5551234567")).toBe("read [phone]");
-		expect(redactSecrets("read 5551234567")).not.toContain("5551234567");
+		expect(redactSecrets("read 555-123-4567")).toBe("read [phone]");
+		expect(redactSecrets("read (555) 123-4567")).toBe("read [phone]");
+		expect(redactSecrets("read 555 123 4567")).toBe("read [phone]");
+		expect(redactSecrets("read 555-123-4567")).not.toContain("555");
 	});
 });
 

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
 import { runSsms } from "../src/cli/run";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
-import { createDocument, node } from "./support/document";
+import { asTextArea, createDocument, node, readyThread } from "./support/document";
 import { startFakeSignalServer } from "./support/rpc";
 
 function googleRuntime(home: string) {
@@ -21,11 +21,20 @@ function googleRuntime(home: string) {
 			node("Options"),
 			node("Archive"),
 			node("Delete"),
-			node("Send", { "aria-label": "Send" }),
-			node("", { "aria-label": "Text message" }, "TEXTAREA"),
+			(() => {
+				const send = node("Send", { "aria-label": "Send" });
+				send.paneId = "keep";
+				return send;
+			})(),
+			(() => {
+				const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+				box.paneId = "keep";
+				return box;
+			})(),
 		],
 		"Conversations",
 	);
+	readyThread(doc, "keep", "keep");
 	return {
 		home,
 		browser: createLocalMessagesBrowser(doc),
@@ -45,7 +54,9 @@ describe("ssms cli", () => {
 		}
 		expect(result.stdout).toContain("google");
 		expect(result.stdout).toContain("signal");
-		expect(result.stdout).toContain("allow_send false never sends");
+		expect(result.stdout).toContain("The token is shown on the terminal device only");
+		expect(result.stdout).toContain("allow_send is read only from the fixed ssms config");
+		expect(result.stdout).toContain("A hook cannot send");
 	});
 
 	test("google cleanup archives the promo and does not delete or send", async () => {
@@ -73,21 +84,25 @@ describe("ssms cli", () => {
 		expect(drafted.stdout).toContain("draft draft-1");
 		expect(drafted.stdout).toContain("hello there");
 		expect(drafted.stderr).not.toContain("hello there");
-		const config = join(home, "allow.yaml");
-		writeFileSync(config, "allow_send: true\n");
-		const refused = await runSsms(["google", "send", "--draft", "draft-1", "--config", config], runtime);
+		mkdirSync(join(home, "ssms"), { recursive: true });
+		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
+		const refused = await runSsms(["google", "send", "--draft", "draft-1"], runtime);
 		expect(refused.code).toBe(1);
 		expect(refused.stderr).toContain("interactive yes");
 		expect(refused.stdout).not.toContain("sent ");
-		const token = /approve: ([0-9a-f]{32})/.exec(drafted.stdout)?.[1] ?? "";
+		let token = "";
+		const revealed = await runSsms(
+			["google", "draft", "--conversation", "keep", "--text", "hello there"],
+			{ ...runtime, ids: () => "draft-2", revealToken: (_id, value) => { token = value; } },
+		);
+		expect(revealed.stdout).not.toContain(token);
 		expect(token).toMatch(/^[0-9a-f]{32}$/);
-		expect(drafted.stderr).not.toContain(token);
 		const sent = await runSsms(
-			["google", "send", "--draft", "draft-1", "--approve", token, "--config", config],
+			["google", "send", "--draft", "draft-2", "--approve", token],
 			runtime,
 		);
 		expect(sent.code).toBe(0);
-		expect(sent.stdout).toContain("sent draft-1");
+		expect(sent.stdout).toContain("sent draft-2");
 		expect(sent.stderr).not.toContain(token);
 	});
 
@@ -129,49 +144,113 @@ describe("ssms cli", () => {
 		expect(spawned).toBe(0);
 	});
 
-	test("a Claude-style hook cannot send with --yes when stdin is not a terminal", async () => {
+	test("a hook that can only read stdout and the draft file cannot send", async () => {
 		const home = mkdtempSync(join(tmpdir(), "ssms-hook-"));
-		const config = join(home, "cleanup.yaml");
-		writeFileSync(config, "allow_send: true\n");
+		mkdirSync(join(home, "ssms"), { recursive: true });
+		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
+		const overlay = join(home, "hook.json");
+		writeFileSync(overlay, JSON.stringify({ allow_send: true }));
 		const runtime = {
 			...googleRuntime(home),
 			env: { CLAUDE_PROJECT_DIR: "/x", CLAUDE_CODE_ENTRYPOINT: "cli" },
 			stdinIsTTY: false,
 		};
 		const drafted = await runSsms(
-			["google", "draft", "--conversation", "keep", "--text", "hello there", "--config", config],
+			["google", "draft", "--conversation", "keep", "--text", "hello there", "--json"],
 			runtime,
 		);
 		expect(drafted.code).toBe(0);
-		const sent = await runSsms(
-			["google", "send", "--draft", "draft-1", "--yes", "--config", config],
+		expect(drafted.stdout).not.toMatch(/--approve [0-9a-f]{32}/);
+		expect(drafted.stdout).not.toMatch(/\b[0-9a-f]{32}\b/);
+		expect(drafted.stdout).not.toContain("approvalToken");
+		const bare = await runSsms(["google", "send", "--draft", "draft-1", "--yes"], runtime);
+		expect(bare.code).toBe(1);
+		expect(bare.stderr).toContain("hook");
+		expect(bare.stdout).not.toContain("sent ");
+		const file = readFileSync(join(home, "ssms", "drafts", "draft-1.json"), "utf8");
+		expect(file).not.toContain("approvalToken\":");
+		expect(file).toContain("approvalTokenHash");
+		const leaked = [...`${drafted.stdout}\n${file}`.matchAll(/\b[0-9a-f]{32,64}\b/g)].map((match) => match[0]);
+		for (const candidate of leaked) {
+			const sent = await runSsms(
+				["google", "send", "--draft", "draft-1", "--approve", candidate, "--yes"],
+				runtime,
+			);
+			expect(sent.code).toBe(1);
+			expect(sent.stdout).not.toContain("sent ");
+		}
+		const override = await runSsms(
+			["google", "send", "--draft", "draft-1", "--config", overlay],
 			runtime,
 		);
-		expect(sent.code).toBe(1);
-		expect(sent.stdout).not.toContain("sent ");
-		expect(sent.stderr).not.toContain("hello there");
+		expect(override.code).toBe(1);
+		expect(override.stderr).toContain("allow_send cannot be set with --config");
 	});
 
 	test("allow_send false never sends, even with a terminal yes", async () => {
 		const home = mkdtempSync(join(tmpdir(), "ssms-nosend-"));
-		const config = join(home, "cleanup.yaml");
-		writeFileSync(config, "allow_send: false\n");
 		const runtime = {
 			...googleRuntime(home),
 			stdinIsTTY: true,
 			ask: async () => true,
 		};
 		await runSsms(
-			["google", "draft", "--conversation", "keep", "--text", "hello there", "--config", config],
+			["google", "draft", "--conversation", "keep", "--text", "hello there"],
 			runtime,
 		);
 		const sent = await runSsms(
-			["google", "send", "--draft", "draft-1", "--yes", "--config", config],
+			["google", "send", "--draft", "draft-1", "--yes"],
 			runtime,
 		);
 		expect(sent.code).toBe(1);
 		expect(sent.stderr).toContain("allow_send");
 		expect(sent.stdout).not.toContain("sent ");
+	});
+
+	test("a declined prompt and a wrong token do not send", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-decline-"));
+		mkdirSync(join(home, "ssms"), { recursive: true });
+		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
+		const runtime = {
+			...googleRuntime(home),
+			stdinIsTTY: true,
+			ask: async () => false,
+		};
+		await runSsms(["google", "draft", "--conversation", "keep", "--text", "hello there"], runtime);
+		const declined = await runSsms(["google", "send", "--draft", "draft-1"], runtime);
+		expect(declined.code).toBe(1);
+		expect(declined.stderr).toContain("send declined");
+		expect(declined.stdout).not.toContain("sent ");
+		const wrong = await runSsms(
+			["google", "send", "--draft", "draft-1", "--approve", "not-the-token"],
+			{ ...runtime, ask: async () => true },
+		);
+		expect(wrong.code).toBe(1);
+		expect(wrong.stderr).toContain("does not match");
+		expect(wrong.stdout).not.toContain("sent ");
+	});
+
+	test("dry-run does not send the draft", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-dry-"));
+		mkdirSync(join(home, "ssms"), { recursive: true });
+		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
+		let token = "";
+		const runtime = {
+			...googleRuntime(home),
+			revealToken: (_id: string, value: string) => {
+				token = value;
+			},
+		};
+		await runSsms(["google", "draft", "--conversation", "keep", "--text", "hello there"], runtime);
+		const dry = await runSsms(
+			["google", "send", "--draft", "draft-1", "--approve", token, "--dry-run"],
+			runtime,
+		);
+		expect(dry.code).toBe(0);
+		expect(dry.stdout).toContain("dry-run");
+		expect(dry.stdout).not.toContain("sent ");
+		const stored = readFileSync(join(home, "ssms", "drafts", "draft-1.json"), "utf8");
+		expect(stored).toContain("\"pending\"");
 	});
 
 	test("delete is rejected", async () => {

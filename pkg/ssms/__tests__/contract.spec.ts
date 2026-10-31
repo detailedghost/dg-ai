@@ -9,7 +9,7 @@ import { appendJournal } from "../src/signal/journal";
 import { createSignalProvider } from "../src/signal/provider";
 import { connectJsonRpc } from "../src/signal/rpc";
 import type { SmsCapability, SmsProvider } from "../src/types";
-import { createDocument, node } from "./support/document";
+import { asTextArea, createDocument, node, readyThread } from "./support/document";
 import { startFakeSignalServer, type RpcCall } from "./support/rpc";
 
 interface Fixture {
@@ -36,11 +36,20 @@ async function googleFixture(): Promise<Fixture> {
 			node("Details"),
 			node("Block & report spam"),
 			node("Delete"),
-			node("Send", { "aria-label": "Send" }),
-			node("", { "aria-label": "Text message" }, "TEXTAREA"),
+			(() => {
+				const send = node("Send", { "aria-label": "Send" });
+				send.paneId = "c1";
+				return send;
+			})(),
+			(() => {
+				const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+				box.paneId = "c1";
+				return box;
+			})(),
 		],
 		"Conversations",
 	);
+	readyThread(doc, "c1", "c1");
 	const browser = createLocalMessagesBrowser(doc, async () => undefined);
 	const real = browser.act.bind(browser);
 	browser.act = async (action, args) => {

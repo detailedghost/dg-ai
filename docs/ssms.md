@@ -26,13 +26,13 @@ dg-skills ssms google list
 dg-skills ssms google classify
 dg-skills ssms google cleanup --dry-run
 dg-skills ssms google draft --conversation ID --text "hello"
-dg-skills ssms google send --draft ID --yes
+dg-skills ssms google send --draft ID
 dg-skills ssms signal link
 dg-skills ssms signal list
 dg-skills ssms signal read CONVERSATION --limit 20
 dg-skills ssms signal receive --limit 20
 dg-skills ssms signal draft --conversation ID --emoji "👍" --target-timestamp 123 --target-author ID
-dg-skills ssms signal send --draft ID --yes
+dg-skills ssms signal send --draft ID
 ```
 
 ## Providers
@@ -52,7 +52,12 @@ paired Messages for Web session can be reused. Sign-in stays with the user.
 `signal` does not read Signal Desktop, its GUI, or its database key. `link`
 calls `startLink`, prints the `sgnl://` URI and a QR, then `finishLink` with
 the device name `dg-cli` unless `--name` says otherwise. Later calls use
-`--data-dir $DG_HOME/ssms/signal-data` and `daemon --tcp=127.0.0.1:PORT`.
+`--data-dir $DG_HOME/ssms/signal-data` and
+`daemon --receive-mode=manual --socket=<data-dir>/daemon.sock`. The socket
+directory is mode 0700 and owned by the current user. The socket's owner is
+checked; its mode bits are not, because `signal-cli` creates the socket as
+0755 under umask 022. Receive stays manual so the daemon does not download
+messages in the background.
 The account id in output is the ACI, not the phone number.
 
 If `signal-cli` is missing, the command prints an install hint and stops. It
@@ -62,14 +67,15 @@ on `PATH`.
 
 ## Drafts
 
-`draft` writes a pending draft under `$DG_HOME/ssms/drafts` and prints an
-approval token for that draft id. `send --draft ID` sends that one draft only
-after an interactive yes on a real terminal, or after `--approve TOKEN` with
-the token printed for that draft. `--yes` alone does not send. A hook has no
-terminal and cannot send unless it also has that draft's token, which the hook
-must not invent. `allow_send: false` means never send, and it is the default.
-Set `allow_send: true` in the config before a token or a terminal yes can send.
-Cleanup never sends and never deletes.
+`draft` writes a pending draft under `$DG_HOME/ssms/drafts`. The approval
+token is shown only on the terminal device (`/dev/tty`), never on stdout and
+never in `--json`. The draft file stores a hash of that token, not the token.
+`send --draft ID` sends that one draft only after an interactive yes on a real
+terminal, or after `--approve` with the token from the terminal. `--yes` does
+not send. A hook environment cannot send, even with a token. `allow_send` is
+read only from `$DG_HOME/ssms/config.yaml`. `--config` cannot set it. `false`
+means never send, and that is the default when the fixed file is missing.
+Cleanup never sends and never deletes. `--dry-run` leaves the draft pending.
 
 Signal drafts can be plain text, a reaction (`--emoji`), an image
 (`--attachment`), or a reply (`--quote-timestamp`, `--quote-author`,

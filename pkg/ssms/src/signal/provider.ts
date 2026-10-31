@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { assertDraftProvider, readDraft, writeDraft } from "../drafts/store";
+import { claimDraft, finishDraft, writeDraft } from "../drafts/store";
 import { ConfirmationRequired, HookSendRefused } from "../errors";
 import { nextGapMs, timeoutSeconds, type Rng } from "../pace/jitter";
 import { withCapabilities } from "../provider";
@@ -236,8 +236,8 @@ export function createSignalProvider(input: {
 		async sendDraft(request) {
 			if (request.hook) throw new HookSendRefused();
 			if (!request.confirmed) throw new ConfirmationRequired();
-			const draft = readDraft(input.home, request.draftId);
-			assertDraftProvider(draft, "signal");
+			const draft = claimDraft(input.home, request.draftId, "signal");
+			try {
 			const id = await account();
 			const known = readIndex(input.home).find((item) => item.id === draft.conversationId);
 			const group = known?.kind === "group";
@@ -275,9 +275,13 @@ export function createSignalProvider(input: {
 					callTimeoutMs,
 				);
 			}
-			writeDraft(input.home, { ...draft, status: "sent" });
+			finishDraft(input.home, draft, "sent");
 			log({ id: draft.id, reason: "send", provider: "signal", verb: "send" });
 			return { draftId: draft.id, reason: "sent" as const };
+			} catch (error) {
+				finishDraft(input.home, draft, "uncertain");
+				throw error;
+			}
 		},
 	});
 }

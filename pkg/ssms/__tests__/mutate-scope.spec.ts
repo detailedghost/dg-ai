@@ -8,7 +8,8 @@ describe("mutation task", () => {
 		expect(mise).toMatch(/^node = "22"$/m);
 		const stryker = readFileSync(join(import.meta.dir, "..", "stryker.conf.mjs"), "utf8");
 		expect(stryker).toContain("src/cli/authorize.ts");
-		expect(stryker).toContain("src/google/page.ts");
+		expect(stryker).toContain("src/google/thread.ts");
+		expect(stryker).not.toContain("src/google/page.ts");
 		expect(stryker).toContain("src/safety/send-gate.ts");
 	});
 });

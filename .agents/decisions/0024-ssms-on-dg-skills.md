@@ -7,7 +7,7 @@ ADR: [docs/adr/0024-ssms-on-dg-skills.md](../../docs/adr/0024-ssms-on-dg-skills.
 - Do not open Signal Desktop, its GUI, or its database key.
 - Do not auto-install `signal-cli`. Missing binary: print the Arch hint and stop.
 - Device name default `dg-cli`. `startLink` then `finishLink` with `deviceName`.
-- Sends: `draft` prints a token for that draft id. `send` needs an interactive yes on a real TTY, or `--approve` with that token. `--yes` does not send. `allow_send: false` never sends.
+- Sends: `draft` shows the approval token on the terminal only and stores a hash. `send` needs an interactive yes on a real TTY, or `--approve` with that token. `--yes` does not send. A hook cannot send. `allow_send` is read only from `$DG_HOME/ssms/config.yaml`. `allow_send: false` never sends.
 - Cleanup never deletes and never sends. Keep rules win. Ambiguous rows are not changed.
 - Logs: id and reason only. No phone numbers, `sgnl://` URIs, keys, or message bodies.
 - Gaps and receive timeouts come from `nextGapMs`. Do not use a fixed sleep.

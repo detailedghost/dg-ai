@@ -8,9 +8,13 @@ export async function decideSend(input: {
 	expectedToken?: string;
 	ask?: (draftId: string) => Promise<boolean>;
 	draftId: string;
+	matches?: (token: string, expected: string) => boolean;
 }): Promise<SendDecision> {
+	const matches = input.matches ?? ((token, expected) => token === expected);
 	if (typeof input.token === "string" && input.token.length > 0) {
-		if (input.expectedToken === input.token) return { ok: true, via: "token" };
+		if (input.expectedToken && matches(input.token, input.expectedToken)) {
+			return { ok: true, via: "token" };
+		}
 		return { ok: false, reason: "token" };
 	}
 	if (input.tty === true && input.ask) {

@@ -36,7 +36,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
 | `--conversation` | | Conversation id for draft, read, or receive | |
 | `--text` | | Draft body | |
 | `--draft` | | Draft id to send | |
-| `--approve` | | Token printed for that draft | required off a terminal |
+| `--approve` | | Token shown on the terminal for that draft. Not printed on stdout | required off a terminal |
 | `--yes` | | Ignored. It does not approve a send | |
 | `--name` | | Linked-device name for `signal link` | dg-cli |
 
@@ -54,9 +54,10 @@ If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
 
 ## Config (defaults)
 
+`allow_send` is not in this file. It is read only from `$DG_HOME/ssms/config.yaml`. `--config` cannot set it.
+
 ```yaml
 allow_delete: false            # never delete conversations or messages
-allow_send: false              # never send; any outgoing text needs explicit per-message user approval
 flag_ambiguous: true           # list unsure items for the user instead of acting
 dry_run: false                 # true = report proposed actions only
 scope: all                     # all | last_N_days
@@ -98,24 +99,27 @@ Pass the same map as `--config` when the user overrides a value.
    Options menu. Report spam through Details, then Block & report spam.
    Never touch compose. With `allow_delete` false, never delete a conversation
    or a message. With `allow_send` false, never send; any outgoing text needs
-   explicit per-message approval from the user. `allow_send: false` means never
-   send, even with `--yes` or a token. Set it true only when the user wants a
-   send to be possible.
+   explicit per-message approval from the user. `allow_send` is read only from
+   `$DG_HOME/ssms/config.yaml`. `--config` cannot change it. `false` means never
+   send. A hook cannot send.
 5. Leave ambiguous items untouched and list them with the sender, the date, and
    a one-line preview. `flag_ambiguous` stays true unless the user overrides it.
 6. To answer one thread, draft then send that draft only:
-   `~/.dg/bin/dg-skills ssms google draft --conversation ID --text TEXT`. Show
-   the printed draft. On a terminal, `send --draft ID` asks for yes. Off a
-   terminal, pass `--approve` with the token printed for that draft. `--yes`
-   does not send. Do not send from a hook.
+   `~/.dg/bin/dg-skills ssms google draft --conversation ID --text TEXT`. The
+   approval token appears on the terminal device only, not in command output.
+   On a terminal, `send --draft ID` asks for yes. Off a terminal, the user
+   passes `--approve` with the token they saw. `--yes` does not send. Do not
+   send from a hook. `--dry-run` does not send.
 7. Report the totals, the archived threads, the blocked and reported threads,
    what was kept by category and group, and the ambiguous items.
 
 ## Signal
 
 `ssms signal link` prints a QR and a linking URI for a device named `dg-cli`.
-`list`, `read`, `receive`, `draft`, and `send --draft ID --yes` are the same
-shape. Reactions, images, and quotes are drafted, then sent with `--yes`.
+`list`, `read`, `receive`, `draft`, and `send --draft ID` are the same
+shape. Reactions, images, and quotes are drafted, then sent after an
+interactive yes or `--approve`. `--yes` does not send. The approval token
+is shown on the terminal only.
 Archive and spam-block are Google only. Logs carry ids and reasons, not phone
 numbers, linking URIs, keys, or message bodies.
 

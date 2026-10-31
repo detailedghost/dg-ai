@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -12,7 +12,8 @@ import { createGoogleProvider } from "../google/provider";
 import { readDraft, writeDraft } from "../drafts/store";
 import { createLogger, type LogEvent } from "../privacy/log";
 import { redactSecrets } from "../privacy/redact";
-import { authorizeSend } from "./authorize";
+import { authorizeSend, isHookEnv } from "./authorize";
+import { hashToken } from "../safety/token";
 import { startSignalDaemon, type Spawned } from "../signal/daemon";
 import { resolveSignalBinary } from "../signal/hint";
 import { createSignalProvider } from "../signal/provider";
@@ -52,6 +53,7 @@ export interface SsmsRuntime {
 	ids?: () => string;
 	stdinIsTTY?: boolean;
 	ask?: (draftId: string) => Promise<boolean>;
+	revealToken?: (draftId: string, token: string) => void;
 	stdio?: "inherit";
 	spawn?: (cmd: string[]) => Spawned;
 }
@@ -66,11 +68,43 @@ function isProvider(value: string | undefined): value is SmsProviderId {
 	return (PROVIDER_NAMES as readonly string[]).includes(value ?? "");
 }
 
-function loadConfig(path: string | undefined): SmsCleanupConfig {
-	if (!path) return defaultCleanupConfig();
-	const text = readFileSync(path, "utf8");
-	const value = path.endsWith(".json") ? JSON.parse(text) : parseYaml(text);
-	return parseCleanupConfig(value);
+export function fixedConfigPath(home: string): string {
+	return join(home, "ssms", "config.yaml");
+}
+
+export function readFixedAllowSend(home: string): boolean {
+	const path = fixedConfigPath(home);
+	if (!existsSync(path)) return false;
+	const value = parseYaml(readFileSync(path, "utf8")) as { allow_send?: unknown } | null;
+	return value?.allow_send === true;
+}
+
+function loadConfig(path: string | undefined, home: string): SmsCleanupConfig {
+	let overlay: unknown;
+	if (path) {
+		const text = readFileSync(path, "utf8");
+		overlay = path.endsWith(".json") ? JSON.parse(text) : parseYaml(text);
+		if (overlay && typeof overlay === "object" && "allow_send" in overlay) {
+			throw new Error("allow_send cannot be set with --config; edit the fixed ssms config");
+		}
+	}
+	const config = parseCleanupConfig(overlay);
+	config.allow_send = readFixedAllowSend(home);
+	return config;
+}
+
+function revealToken(draftId: string, token: string, reveal?: (id: string, value: string) => void): void {
+	if (reveal) {
+		reveal(draftId, token);
+		return;
+	}
+	try {
+		const fd = openSync("/dev/tty", "w");
+		writeSync(fd, `approve ${draftId} ${token}\n`);
+		closeSync(fd);
+	} catch {
+		return;
+	}
 }
 
 export async function runSsms(
@@ -107,7 +141,7 @@ export async function runSsms(
 		const home =
 			runtime.home ?? runtime.env?.DG_HOME ?? process.env.DG_HOME ?? join(homedir(), ".dg");
 		const env = runtime.env ?? process.env;
-		const config = loadConfig(args.config);
+		const config = loadConfig(args.config, home);
 		const session = await openSession(args.provider, runtime, home, env, config, log, args.verb);
 		stop = session.stop;
 		opened = session.opened;
@@ -316,8 +350,9 @@ async function dispatch(
 						},
 		});
 		const approvalToken = randomBytes(16).toString("hex");
-		const draft = { ...created, approvalToken };
+		const draft = { ...created, approvalTokenHash: hashToken(approvalToken) };
 		writeDraft(home, draft);
+		revealToken(draft.id, approvalToken, runtime.revealToken);
 		const body = [
 			args.text ? `text: ${args.text}` : "",
 			args.emoji ? `emoji: ${args.emoji}` : "",
@@ -326,21 +361,32 @@ async function dispatch(
 		]
 			.filter(Boolean)
 			.join("\n");
+		const published = { ...draft, approvalTokenHash: undefined };
 		emit(
-			{ ok: true, draft: { ...draft, approvalToken: undefined }, approvalToken },
-			`draft ${draft.id}\nprovider: ${draft.provider}\nconversation: ${draft.conversationId}\n${body}\napprove: ${approvalToken}\nconfirm: ssms ${provider.id} send --draft ${draft.id} --approve ${approvalToken}\n`,
+			{ ok: true, draft: published },
+			`draft ${draft.id}\nprovider: ${draft.provider}\nconversation: ${draft.conversationId}\n${body}\n`,
 		);
 		return;
 	}
 	if (verb === "send") {
 		if (!args.draft) throw new UsageError("send needs --draft ID");
+		if (args.dryRun || config.dry_run) {
+			readDraft(home, args.draft);
+			log({ id: args.draft, reason: "dry-run", provider: provider.id, verb: "send" });
+			emit(
+				{ ok: true, dryRun: true, draftId: args.draft },
+				`dry-run send ${args.draft}\n`,
+			);
+			return;
+		}
 		const pending = readDraft(home, args.draft);
 		const decision = await authorizeSend({
 			allowSend: config.allow_send,
+			hook: isHookEnv(runtime.env ?? process.env),
 			draftId: args.draft,
 			tty: runtime.stdinIsTTY === true,
 			token: args.approve,
-			expectedToken: pending.approvalToken,
+			expectedTokenHash: pending.approvalTokenHash,
 			ask: runtime.ask,
 		});
 		if (!decision.ok) {

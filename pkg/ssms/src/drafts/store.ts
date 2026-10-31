@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { writePrivateFile } from "../privacy/files";
 import type { DraftRecord, SmsProviderId } from "../types";
@@ -25,6 +25,38 @@ export function readDraft(home: string, id: string): DraftRecord {
 	const draft = JSON.parse(text) as DraftRecord;
 	if (draft.id !== id) throw new Error(`draft not found: ${id}`);
 	return draft;
+}
+
+function claimedPath(home: string, id: string): string {
+	return join(draftsDir(home), `${id}.sending`);
+}
+
+export function claimDraft(home: string, id: string, provider: SmsProviderId): DraftRecord {
+	const src = draftPath(home, id);
+	const dest = claimedPath(home, id);
+	try {
+		renameSync(src, dest);
+	} catch {
+		throw new Error(`draft ${id} is already being sent`);
+	}
+	const draft = JSON.parse(readFileSync(dest, "utf8")) as DraftRecord;
+	if (draft.id !== id || draft.provider !== provider || draft.status !== "pending") {
+		writePrivateFile(draftsDir(home), dest, `${JSON.stringify({ ...draft, status: "uncertain" })}\n`);
+		throw new Error(`draft ${id} is uncertain`);
+	}
+	return draft;
+}
+
+export function finishDraft(
+	home: string,
+	draft: DraftRecord,
+	status: "sent" | "uncertain",
+): void {
+	writePrivateFile(
+		draftsDir(home),
+		claimedPath(home, draft.id),
+		`${JSON.stringify({ ...draft, status })}\n`,
+	);
 }
 
 export function assertDraftProvider(draft: DraftRecord, provider: SmsProviderId): void {

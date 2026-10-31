@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { daemonArgs, startSignalDaemon, type Spawned } from "../src/signal/daemon";
 import { messageFromEnvelope } from "../src/signal/envelope";
@@ -68,7 +69,14 @@ describe("daemon startup", () => {
 			spawn: () => child,
 			rng: () => 0,
 			uid: 1000,
-			stat: () => ({ isSocket: () => true, mode: 0o140600, uid: 1000 }),
+			lstat: (path: string) =>
+				({
+					isSymbolicLink: () => false,
+					isDirectory: () => !path.endsWith(".sock"),
+					isSocket: () => path.endsWith(".sock"),
+					mode: path.endsWith(".sock") ? 0o100755 : 0o40700,
+					uid: 1000,
+				}) as import("node:fs").Stats,
 			sleep: async (ms) => {
 				waits.push(ms);
 			},
@@ -95,7 +103,7 @@ describe("daemon startup", () => {
 				spawn: () => child,
 				rng: () => 0,
 				sleep: async () => undefined,
-				stat: () => {
+				lstat: () => {
 					throw new Error("ENOENT");
 				},
 				connect: async () => {
@@ -122,6 +130,7 @@ describe("daemon command", () => {
 			"--data-dir",
 			"/tmp/signal-data",
 			"daemon",
+			"--receive-mode=manual",
 			"--socket=/tmp/signal-data/daemon.sock",
 		]);
 		expect(args.join(" ")).not.toContain("+");
@@ -129,7 +138,7 @@ describe("daemon command", () => {
 		expect(args.join(" ")).not.toContain("--tcp");
 	});
 
-	test("refuses a group-accessible socket before connecting", async () => {
+	test("refuses a group-accessible socket directory before connecting", async () => {
 		let connected = false;
 		const child = fakeChild();
 		await expect(
@@ -141,7 +150,14 @@ describe("daemon command", () => {
 				rng: () => 0,
 				sleep: async () => undefined,
 				uid: 1000,
-				stat: () => ({ isSocket: () => true, mode: 0o140777, uid: 1000 }),
+				lstat: (path: string) =>
+					({
+						isSymbolicLink: () => false,
+						isDirectory: () => !path.endsWith(".sock"),
+						isSocket: () => path.endsWith(".sock"),
+						mode: path.endsWith(".sock") ? 0o100755 : 0o40755,
+						uid: 1000,
+					}) as import("node:fs").Stats,
 				connect: async () => {
 					connected = true;
 					throw new Error("connected");
@@ -150,6 +166,27 @@ describe("daemon command", () => {
 		).rejects.toThrow("group or world accessible");
 		expect(connected).toBe(false);
 		expect(child.killed).toBe(true);
+	});
+
+	test("accepts a real socket created under umask 022", async () => {
+		const { chmodSync, lstatSync, mkdtempSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const net = await import("node:net");
+		const { assertSocketSafe } = await import("../src/signal/daemon");
+		const previous = process.umask(0o022);
+		const dir = mkdtempSync(join(tmpdir(), "ssms-sock-"));
+		chmodSync(dir, 0o700);
+		const sock = join(dir, "daemon.sock");
+		const server = net.createServer();
+		await new Promise<void>((resolve) => server.listen(sock, () => resolve()));
+		try {
+			const mode = lstatSync(sock).mode & 0o777;
+			expect(mode & 0o077).not.toBe(0);
+			expect(() => assertSocketSafe(sock, process.getuid?.() ?? -1)).not.toThrow();
+		} finally {
+			server.close();
+			process.umask(previous);
+		}
 	});
 });
 

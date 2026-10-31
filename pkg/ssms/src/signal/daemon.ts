@@ -17,7 +17,14 @@ export interface SocketStat {
 }
 
 export function daemonArgs(binary: string, dataDir: string, socketPath: string): string[] {
-	return [binary, "--data-dir", dataDir, "daemon", `--socket=${socketPath}`];
+	return [
+		binary,
+		"--data-dir",
+		dataDir,
+		"daemon",
+		"--receive-mode=manual",
+		`--socket=${socketPath}`,
+	];
 }
 
 export function prepareSocketDir(dir: string): void {
@@ -25,17 +32,26 @@ export function prepareSocketDir(dir: string): void {
 	chmodSync(dir, 0o700);
 }
 
-export function assertSocketSafe(stat: SocketStat, uid: number): void {
-	if (!stat.isSocket()) throw new Error("signal-cli endpoint is not a unix socket");
-	if ((stat.mode & 0o077) !== 0) {
-		throw new Error("signal-cli socket is group or world accessible");
+export function assertSocketSafe(socketPath: string, uid: number, read: (path: string) => import("node:fs").Stats = lstatSync): void {
+	const dir = dirname(socketPath);
+	const directory = read(dir);
+	if (directory.isSymbolicLink()) throw new Error("signal-cli socket directory is a symlink");
+	if (!directory.isDirectory()) throw new Error("signal-cli socket directory is not a directory");
+	if ((directory.mode & 0o077) !== 0) {
+		throw new Error("signal-cli socket directory is group or world accessible");
 	}
-	if (stat.uid !== uid) throw new Error("signal-cli socket is owned by another user");
+	if (directory.uid !== uid) throw new Error("signal-cli socket directory is owned by another user");
+	const socket = read(socketPath);
+	if (socket.isSymbolicLink()) throw new Error("signal-cli socket is a symlink");
+	if (!socket.isSocket()) throw new Error("signal-cli endpoint is not a unix socket");
+	if (socket.uid !== uid) throw new Error("signal-cli socket is owned by another user");
 }
 
 function socketUnsafe(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : "";
-	return /group or world accessible|owned by another user|not a unix socket/.test(message);
+	return /symlink|not a directory|group or world accessible|owned by another user|not a unix socket/.test(
+		message,
+	);
 }
 
 async function readStderr(stream: ReadableStream<Uint8Array>, limit = 500): Promise<string> {
@@ -63,7 +79,7 @@ export async function startSignalDaemon(input: {
 	socketPath?: string;
 	spawn: (cmd: string[]) => Spawned;
 	connect?: (socketPath: string) => Promise<RpcTransport>;
-	stat?: (path: string) => SocketStat;
+	lstat?: (path: string) => import("node:fs").Stats;
 	uid?: number;
 	sleep?: (ms: number) => Promise<void>;
 	rng?: Rng;
@@ -73,7 +89,7 @@ export async function startSignalDaemon(input: {
 	const cmd = daemonArgs(input.binary, input.dataDir, socketPath);
 	const child = input.spawn(cmd);
 	const connect = input.connect ?? ((path: string) => connectJsonRpcPath(path));
-	const stat = input.stat ?? ((path: string) => lstatSync(path));
+	const read = input.lstat ?? lstatSync;
 	const uid = input.uid ?? process.getuid?.() ?? -1;
 	const sleep = input.sleep ?? ((ms: number) => Bun.sleep(ms));
 	const rng = input.rng ?? Math.random;
@@ -81,8 +97,7 @@ export async function startSignalDaemon(input: {
 	let lastError: unknown;
 	for (let attempt = 0; attempt < 5; attempt += 1) {
 		try {
-			const info = stat(socketPath);
-			assertSocketSafe(info, uid);
+			assertSocketSafe(socketPath, uid, read);
 			const transport = await connect(socketPath);
 			return {
 				transport,

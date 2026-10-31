@@ -1,9 +1,10 @@
 export interface FakeNode {
 	textContent: string;
 	tagName: string;
+	paneId?: string;
 	attrs: Record<string, string>;
 	click(): void;
-	dispatchEvent(): void;
+	dispatchEvent(event?: Event): void;
 	getAttribute(name: string): string | null;
 }
 
@@ -22,6 +23,29 @@ export function node(
 			return Object.prototype.hasOwnProperty.call(attrs, name) ? (attrs[name] ?? null) : null;
 		},
 	};
+}
+
+export function asTextArea(el: FakeNode): FakeNode {
+	const proto = {};
+	Object.defineProperty(proto, "value", {
+		configurable: true,
+		set(this: { usedNativeSetter?: boolean; nativeValue?: string }, value: string) {
+			this.usedNativeSetter = true;
+			this.nativeValue = value;
+		},
+		get(this: { nativeValue?: string }) {
+			return this.nativeValue ?? "";
+		},
+	});
+	Object.setPrototypeOf(el, proto);
+	return el;
+}
+
+export function readyThread(doc: object, id: string, header = id): void {
+	Object.assign(doc, {
+		location: { href: `https://messages.google.com/web/u/0/conversations/${id}` },
+		threadHeader: header,
+	});
 }
 
 export function createDocument(nodes: FakeNode[], bodyText: string) {

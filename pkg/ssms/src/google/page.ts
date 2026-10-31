@@ -1,3 +1,5 @@
+import { sendOnDocument, type SendDocument } from "./thread";
+
 export const MESSAGES_URL = "https://messages.google.com/web/u/0/conversations";
 
 export const PAGE_ACTIONS = [
@@ -198,21 +200,7 @@ export function messagesPageSource(): string {
     clickLabel("Block & report spam");
     return { conversationId: id, reason: "blocked", clicks: clicks };
   }
-  if (action === "send") {
-    if (args.confirmed !== true) throw new Error("send requires confirmation");
-    var target = String(args.conversationId || "");
-    if (!target) throw new Error("conversation not found");
-    openConversation(target);
-    var box = nodes().find(isCompose);
-    if (!box) throw new Error("compose box missing");
-    writeCompose(box, String(args.text || ""));
-    var send = labeled("Send") || labeled("Send message");
-    if (!send) throw new Error("send control missing");
-    if (disabled(send)) throw new Error("send control disabled");
-    var sent = clickLabel("Send") || clickLabel("Send message");
-    if (!sent) throw new Error("send control missing");
-    return { draftId: String(args.draftId || ""), conversationId: target, reason: "sent", clicks: clicks };
-  }
+  if (action === "send") throw new Error("send is handled outside the page script");
   throw new Error("unknown page action");
 }`;
 }
@@ -222,26 +210,7 @@ export function evaluateMessagesAction(
 	action: PageAction,
 	args: Record<string, unknown>,
 ): unknown {
-	const realm = globalThis as {
-		HTMLTextAreaElement?: { prototype: object };
-	};
-	if (typeof realm.HTMLTextAreaElement !== "function") {
-		function HTMLTextAreaElement() {}
-		Object.defineProperty(HTMLTextAreaElement.prototype, "value", {
-			configurable: true,
-			set(value: string) {
-				Object.defineProperty(this, "nativeValue", {
-					value,
-					writable: true,
-					configurable: true,
-				});
-			},
-			get() {
-				return "";
-			},
-		});
-		realm.HTMLTextAreaElement = HTMLTextAreaElement as { prototype: object };
-	}
+	if (action === "send") return sendOnDocument(document as SendDocument, args);
 	const fn = new Function(
 		"document",
 		"action",

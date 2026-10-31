@@ -1,4 +1,5 @@
-const PHONE = /(?:\+\d[\d\s().-]{6,}\d|\b\d{7,}\b)/g;
+const PHONE =
+	/(?:\+\d(?:[\s().-]*\d){6,}|\(\d{3}\)(?:[\s.-]*\d){7,}|\b\d{3}[\s.-]\d{3}[\s.-]\d{4}\b|\b\d{7,}\b)/g;
 const LINK_URI = /sgnl:\/\/\S+/gi;
 const PUB_KEY = /pub_key=[^\s&"]+/gi;
 

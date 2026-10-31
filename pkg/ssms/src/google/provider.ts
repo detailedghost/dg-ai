@@ -1,6 +1,6 @@
 import { scopeDays } from "../config/parse";
 import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
-import { assertDraftProvider, readDraft, writeDraft } from "../drafts/store";
+import { claimDraft, finishDraft, writeDraft } from "../drafts/store";
 import { ConfirmationRequired, HookSendRefused } from "../errors";
 import { nextGapMs, type Rng } from "../pace/jitter";
 import { withCapabilities } from "../provider";
@@ -223,28 +223,33 @@ export function createGoogleProvider(input: {
 		async sendDraft(request) {
 			if (request.hook) throw new HookSendRefused();
 			if (!request.confirmed) throw new ConfirmationRequired();
-			const draft = readDraft(input.home, request.draftId);
-			assertDraftProvider(draft, "google");
-			if (draft.emoji || draft.quote || draft.attachments.length > 0) {
-				throw new Error("google send supports plain text only");
+			const draft = claimDraft(input.home, request.draftId, "google");
+			try {
+				if (draft.emoji || draft.quote || draft.attachments.length > 0) {
+					throw new Error("google send supports plain text only");
+				}
+				const text = draft.text ?? "";
+				const result = record(
+					await browser.act("send", {
+						confirmed: true,
+						text,
+						draftId: draft.id,
+						conversationId: draft.conversationId,
+						recipient: draft.conversationId,
+					}),
+					"page-unrecognized",
+				);
+				if (result.reason !== "sent") throw new Error("send failed");
+				if (result.conversationId !== draft.conversationId) {
+					throw new Error("open conversation does not match the draft");
+				}
+				finishDraft(input.home, draft, "sent");
+				log({ id: draft.id, reason: "send", provider: "google", verb: "send" });
+				return { draftId: draft.id, reason: "sent" as const };
+			} catch (error) {
+				finishDraft(input.home, draft, "uncertain");
+				throw error;
 			}
-			const text = draft.text ?? "";
-			const result = record(
-				await browser.act("send", {
-					confirmed: true,
-					text,
-					draftId: draft.id,
-					conversationId: draft.conversationId,
-				}),
-				"page-unrecognized",
-			);
-			if (result.reason !== "sent") throw new Error("send failed");
-			if (result.conversationId !== draft.conversationId) {
-				throw new Error("open conversation does not match the draft");
-			}
-			writeDraft(input.home, { ...draft, status: "sent" });
-			log({ id: draft.id, reason: "send", provider: "google", verb: "send" });
-			return { draftId: draft.id, reason: "sent" as const };
 		},
 	});
 }

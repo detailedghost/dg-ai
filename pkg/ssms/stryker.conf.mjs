@@ -11,7 +11,7 @@ const config = {
 		"src/privacy/redact.ts",
 		"src/pace/jitter.ts",
 		"src/cli/authorize.ts",
-		"src/google/page.ts",
+		"src/google/thread.ts",
 	],
 	testFiles: [
 		"__tests__/send-gate.spec.ts",
@@ -21,6 +21,7 @@ const config = {
 		"__tests__/cleanup.spec.ts",
 		"__tests__/cli.spec.ts",
 		"__tests__/google-page.spec.ts",
+		"__tests__/authorize.spec.ts",
 	],
 	bun: { timeout: 60_000 },
 	reporters: ["clear-text", "json"],

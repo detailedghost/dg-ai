@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateMessagesAction } from "../src/google/page";
-import { createDocument, node } from "./support/document";
+import { asTextArea, createDocument, node, readyThread } from "./support/document";
 
 describe("Messages page actions", () => {
 	test("status reports the phone banner, sign-in, and a paired list", () => {
@@ -128,89 +128,81 @@ describe("Messages page actions", () => {
 		expect(block.clicks).not.toContain("Send");
 	});
 
-	test("send opens the draft conversation, types through the value setter, and refuses a mismatch", () => {
-		function HTMLTextAreaElement() {}
-		Object.defineProperty(HTMLTextAreaElement.prototype, "value", {
-			set(this: { nativeValue?: string; usedNativeSetter?: boolean }, value: string) {
-				this.usedNativeSetter = true;
-				this.nativeValue = value;
-			},
-			get(this: { nativeValue?: string }) {
-				return this.nativeValue ?? "";
-			},
-		});
-		const previous = (globalThis as { HTMLTextAreaElement?: unknown }).HTMLTextAreaElement;
-		(globalThis as { HTMLTextAreaElement?: unknown }).HTMLTextAreaElement = HTMLTextAreaElement;
-		try {
-			const box = node("", { "data-compose": "true", "aria-label": "Text message" });
-			(box as { tagName?: string; dispatchEvent?: (event: Event) => void; events?: string[] }).tagName =
-				"TEXTAREA";
-			(box as { events?: string[] }).events = [];
-			(box as { dispatchEvent?: (event: Event) => void }).dispatchEvent = (event) => {
-				((box as { events?: string[] }).events ?? []).push(event.type);
-			};
-			const wrong = createDocument(
-				[
-					node("c1", { href: "/web/conversations/c1" }),
-					node("c2", { href: "/web/conversations/c2" }),
-					box,
-					node("Send", { "aria-label": "Send" }),
-				],
-				"",
-			);
-			(wrong as { openConversationId?: string }).openConversationId = "c2";
-			expect(() =>
-				evaluateMessagesAction(wrong, "send", {
-					confirmed: true,
-					conversationId: "c1",
-					text: "hello there",
-					draftId: "d1",
-				}),
-			).toThrow(/does not match/);
-			expect(wrong.clicks).not.toContain("Send");
-			const matched = createDocument(
-				[
-					node("c1", { href: "/web/conversations/c1" }),
-					box,
-					node("Send", { "aria-label": "Send" }),
-				],
-				"",
-			);
-			(matched as { openConversationId?: string }).openConversationId = "c1";
-			const sent = evaluateMessagesAction(matched, "send", {
-				confirmed: true,
-				conversationId: "c1",
-				text: "hello there",
-				draftId: "d1",
-			}) as { reason: string; clicks: string[] };
-			expect(sent.reason).toBe("sent");
-			expect(sent.clicks).toContain("Send");
-			expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).toBe(true);
-			expect((box as { events?: string[] }).events).toContain("input");
-			expect((box as { nativeValue?: string }).nativeValue).toBe("hello there");
-		} finally {
-			(globalThis as { HTMLTextAreaElement?: unknown }).HTMLTextAreaElement = previous;
-		}
-	});
-
-	test("a disabled Send button and a data-attribute-only row fail closed", () => {
-		const disabled = createDocument(
+	test("send waits for the open URL and refuses the thread that is still showing", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c2";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c2";
+		const wrong = createDocument(
 			[
+				node("Search", { "aria-label": "Search" }, "INPUT"),
 				node("c1", { href: "/web/conversations/c1" }),
-				node("", { "aria-label": "Text message" }, "TEXTAREA"),
-				node("Send", { "aria-label": "Send", "aria-disabled": "true" }),
+				box,
+				send,
 			],
 			"",
 		);
-		(disabled as { openConversationId?: string }).openConversationId = "c1";
-		expect(() =>
+		readyThread(wrong, "c2", "Bea");
+		await expect(
+			evaluateMessagesAction(wrong, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hello there",
+				draftId: "d1",
+				timeoutMs: 0,
+			}),
+		).rejects.toThrow("open conversation timed out");
+		expect(wrong.clicks).not.toContain("Send");
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+	});
+
+	test("send types into the open conversation pane after the URL and header match", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const events: string[] = [];
+		box.dispatchEvent = (event) => {
+			if (event) events.push(event.type);
+		};
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
+		const matched = createDocument(
+			[node("Search", { "aria-label": "Search" }, "INPUT"), node("c1", { href: "/web/conversations/c1" }), box, send],
+			"",
+		);
+		readyThread(matched, "c1", "Ada");
+		const sent = (await evaluateMessagesAction(matched, "send", {
+			confirmed: true,
+			conversationId: "c1",
+			recipient: "Ada",
+			text: "hello there",
+			draftId: "d1",
+		})) as { reason: string };
+		expect(sent.reason).toBe("sent");
+		expect(matched.clicks).toContain("Send");
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).toBe(true);
+		expect((box as { nativeValue?: string }).nativeValue).toBe("hello there");
+		expect(events).toContain("input");
+	});
+
+	test("a disabled Send button and a data-attribute-only row fail closed", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const send = node("Send", { "aria-label": "Send", "aria-disabled": "true" });
+		send.paneId = "c1";
+		const disabled = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), box, send],
+			"",
+		);
+		readyThread(disabled, "c1", "c1");
+		await expect(
 			evaluateMessagesAction(disabled, "send", {
 				confirmed: true,
 				conversationId: "c1",
 				text: "hi",
 				draftId: "d1",
 			}),
-		).toThrow("send control disabled");
+		).rejects.toThrow("send control disabled");
 		expect(disabled.clicks).not.toContain("Send");
 		const fixtureOnly = createDocument(
 			[node("", { "data-conversation-id": "c1" }), node("Archive"), node("Options")],
@@ -221,30 +213,245 @@ describe("Messages page actions", () => {
 		);
 	});
 
-	test("delete is refused and send waits for confirmation", () => {
+	test("send fails closed unless the URL and the recipient header both match", async () => {
+		const open = (hrefId: string, header: string) => {
+			const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+			box.paneId = "c1";
+			const send = node("Send", { "aria-label": "Send" });
+			send.paneId = "c1";
+			const doc = createDocument(
+				[node(hrefId, { href: `/web/conversations/${hrefId}` }), box, send],
+				"",
+			);
+			readyThread(doc, hrefId, header);
+			return { doc, box };
+		};
+		const urlOnly = open("c1", "Bea");
+		await expect(
+			evaluateMessagesAction(urlOnly.doc, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hello there",
+				draftId: "d1",
+				timeoutMs: 0,
+			}),
+		).rejects.toThrow("open conversation timed out");
+		expect(urlOnly.doc.clicks).not.toContain("Send");
+		const headerOnly = open("c1", "Ada");
+		(headerOnly.doc as unknown as { location: { href: string } }).location = {
+			href: "https://messages.google.com/web/u/0/conversations/c2",
+		};
+		await expect(
+			evaluateMessagesAction(headerOnly.doc, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hello there",
+				draftId: "d1",
+			}),
+		).rejects.toThrow("open conversation timed out");
+		expect(headerOnly.doc.clicks).not.toContain("Send");
+		expect((headerOnly.box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+	});
+
+	test("send uses only the compose box and Send control inside the open pane", async () => {
+		const otherBox = asTextArea(node("other-box", { "aria-label": "Text message" }, "TEXTAREA"));
+		otherBox.paneId = "other";
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const otherSend = node("Send message", { "aria-label": "Send message" });
+		otherSend.paneId = "other";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
 		const doc = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), otherBox, box, otherSend, send],
+			"",
+		);
+		readyThread(doc, "c1", "Ada");
+		const sent = (await evaluateMessagesAction(doc, "send", {
+			confirmed: true,
+			conversationId: "c1",
+			recipient: "Ada",
+			text: "hello there",
+			draftId: "d1",
+		})) as { reason: string };
+		expect(sent.reason).toBe("sent");
+		expect((box as { nativeValue?: string }).nativeValue).toBe("hello there");
+		expect((otherBox as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+		expect(doc.clicks).toContain("Send");
+		expect(doc.clicks).not.toContain("Send message");
+		const stray = createDocument(
 			[
-				node("Delete"),
 				node("c1", { href: "/web/conversations/c1" }),
-				node("", { "aria-label": "Text message" }, "TEXTAREA"),
+				otherBox,
 				node("Send", { "aria-label": "Send" }),
 			],
 			"",
 		);
+		(stray.clicks as unknown[]).length = 0;
+		const straySend = stray.querySelectorAll("*")[2] as { paneId?: string };
+		straySend.paneId = "other";
+		readyThread(stray, "c1", "Ada");
+		await expect(
+			evaluateMessagesAction(stray, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hello there",
+				draftId: "d1",
+			}),
+		).rejects.toThrow("compose box missing");
+		expect(stray.clicks).not.toContain("Send");
+	});
+
+	test("send waits for the thread to open and does not wait past the timeout", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
+		const waiting = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), box, send],
+			"",
+		) as ReturnType<typeof createDocument> & {
+			location: { href: string };
+			threadHeader: string;
+			sleep?: () => void;
+		};
+		waiting.location = { href: "https://messages.google.com/web/u/0/" };
+		waiting.threadHeader = "";
+		let slept = 0;
+		waiting.sleep = () => {
+			slept += 1;
+			waiting.location = { href: "https://messages.google.com/web/u/0/conversations/c1" };
+			waiting.threadHeader = "Ada";
+		};
+		const sent = (await evaluateMessagesAction(waiting, "send", {
+			confirmed: true,
+			conversationId: "c1",
+			recipient: "Ada",
+			text: "hello there",
+			draftId: "d1",
+			timeoutMs: 200,
+		})) as { reason: string };
+		expect(sent.reason).toBe("sent");
+		expect(slept).toBeGreaterThan(0);
+		const stuck = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), box, send],
+			"",
+		) as ReturnType<typeof createDocument> & {
+			location: { href: string };
+			threadHeader: string;
+			sleep?: () => void;
+		};
+		stuck.location = { href: "https://messages.google.com/web/u/0/" };
+		stuck.threadHeader = "";
+		let stuckSleeps = 0;
+		stuck.sleep = () => {
+			stuckSleeps += 1;
+			stuck.location = { href: "https://messages.google.com/web/u/0/conversations/c1" };
+			stuck.threadHeader = "Ada";
+		};
+		await expect(
+			evaluateMessagesAction(stuck, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hello there",
+				draftId: "d1",
+				timeoutMs: 0,
+			}),
+		).rejects.toThrow("open conversation timed out");
+		expect(stuckSleeps).toBe(0);
+		expect(stuck.clicks).not.toContain("Send");
+	});
+
+	test("send refuses a missing thread, a missing Send control, and a disabled button", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const missingThread = createDocument([box], "");
+		readyThread(missingThread, "c1", "Ada");
+		await expect(
+			evaluateMessagesAction(missingThread, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hi",
+				draftId: "d1",
+			}),
+		).rejects.toThrow("conversation not found");
+		const blankRecipient = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), box],
+			"",
+		);
+		readyThread(blankRecipient, "c1", "Ada");
+		await expect(
+			evaluateMessagesAction(blankRecipient, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "",
+				text: "hi",
+				draftId: "d1",
+			}),
+		).rejects.toThrow("conversation not found");
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
+		(send as { disabled?: boolean }).disabled = true;
+		const disabled = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), box, send],
+			"",
+		);
+		readyThread(disabled, "c1", "Ada");
+		await expect(
+			evaluateMessagesAction(disabled, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hi",
+				draftId: "d1",
+			}),
+		).rejects.toThrow("send control disabled");
+		expect(disabled.clicks).not.toContain("Send");
+		const noSend = createDocument(
+			[node("c1", { href: "/web/conversations/c1" }), box],
+			"",
+		);
+		readyThread(noSend, "c1", "Ada");
+		await expect(
+			evaluateMessagesAction(noSend, "send", {
+				confirmed: true,
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hi",
+				draftId: "d1",
+			}),
+		).rejects.toThrow("send control missing");
+	});
+
+	test("delete is refused and send waits for confirmation", async () => {
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
+		const doc = createDocument(
+			[node("Delete"), node("c1", { href: "/web/conversations/c1" }), box, send],
+			"",
+		);
+		readyThread(doc, "c1", "c1");
 		expect(() => evaluateMessagesAction(doc, "delete", {})).toThrow("delete is disabled");
 		expect(doc.clicks).toEqual([]);
-		expect(() => evaluateMessagesAction(doc, "send", { confirmed: false, text: "hi" })).toThrow(
-			"send requires confirmation",
-		);
+		await expect(
+			evaluateMessagesAction(doc, "send", { confirmed: false, text: "hi", conversationId: "c1" }),
+		).rejects.toThrow("send requires confirmation");
 		expect(doc.clicks).toEqual([]);
-		const sent = evaluateMessagesAction(doc, "send", {
+		const sent = (await evaluateMessagesAction(doc, "send", {
 			confirmed: true,
 			conversationId: "c1",
 			text: "hi",
 			draftId: "d1",
-		}) as { reason: string; clicks: string[] };
+		})) as { reason: string };
 		expect(sent.reason).toBe("sent");
-		expect(sent.clicks).toContain("Send");
-		expect(sent.clicks).not.toContain("Delete");
+		expect(doc.clicks).toContain("Send");
+		expect(doc.clicks).not.toContain("Delete");
 	});
 });
