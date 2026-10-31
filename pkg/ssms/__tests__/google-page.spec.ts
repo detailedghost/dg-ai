@@ -502,6 +502,46 @@ describe("Messages page actions", () => {
 		expect(writes).toEqual([]);
 	});
 
+	test("a url that leaves the thread after typing does not click Send", async () => {
+		let reads = 0;
+		let clicks = 0;
+		await expect(
+			prepareSend(
+				{
+					href: async () => "https://messages.google.com/web/u/0/conversations/c1",
+					header: async () => "Ada",
+					view: async () => {
+						reads += 1;
+						return {
+							href:
+								reads < 3
+									? "https://messages.google.com/web/u/0/conversations/c1"
+									: "https://messages.google.com/web/u/0/conversations/other",
+							header: "Ada",
+							selectedId: "c1",
+							paneId: "c1",
+						};
+					},
+					clickConversation: async () => true,
+					compose: async () => ({ write() {} }),
+					sendControl: async () => ({
+						disabled: false,
+						click() {
+							clicks += 1;
+						},
+					}),
+				},
+				{
+					conversationId: "c1",
+					recipient: "Ada",
+					text: "hi",
+					confirmed: true,
+				},
+			),
+		).rejects.toThrow("pane does not match the draft");
+		expect(clicks).toBe(0);
+	});
+
 	test("the pane id is checked again after typing and before Send", async () => {
 		let reads = 0;
 		let clicks = 0;

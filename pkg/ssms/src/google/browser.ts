@@ -38,17 +38,13 @@ const selectedExpr = `(() => {
 const paneExpr = `(() => {
   const main = document.querySelector('[role="main"]') || document.querySelector("main");
   if (!main) return "";
-  const marked = main.querySelector("[data-conversation-id], [data-participant-id], form[data-conversation-id]");
-  if (marked) {
-    const id = marked.getAttribute("data-conversation-id") || marked.getAttribute("data-participant-id") || "";
-    if (id) return id;
-  }
-  const link = main.querySelector("a[href*='/conversations/']");
-  if (!link) return "";
-  const href = link.getAttribute("href") || "";
-  const match = /\\/conversations\\/([^/?#]+)/.exec(href);
-  if (!match) return "";
-  try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+  const pane = main.querySelector("[data-message-pane], mws-messages-list, mws-conversation-view, [role='log']");
+  if (!pane) return "";
+  const own = pane.getAttribute("data-conversation-id") || "";
+  if (own) return own;
+  const inner = pane.querySelector("[data-conversation-id]");
+  if (!inner) return "";
+  return inner.getAttribute("data-conversation-id") || "";
 })()`;
 
 function sameConversation(hrefCode: string, id: string): string {

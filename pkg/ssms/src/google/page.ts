@@ -10,6 +10,8 @@ export const PAGE_ACTIONS = [
 	"block",
 	"send",
 	"delete",
+	"rows",
+	"load-more",
 ] as const;
 
 export type PageAction = (typeof PAGE_ACTIONS)[number];
@@ -163,6 +165,17 @@ export function messagesPageSource(): string {
       listed = listed.filter(function (row) { return row.ageDays <= scopeDays; });
     }
     return { conversations: listed, clicks: clicks };
+  }
+  if (action === "rows") {
+    return {
+      conversations: conversationRows(),
+      more: !!labeled("Load more conversations"),
+      clicks: clicks
+    };
+  }
+  if (action === "load-more") {
+    var clicked = clickLabel("Load more conversations");
+    return { clicked: clicked, conversations: conversationRows(), more: !!labeled("Load more conversations"), clicks: clicks };
   }
   if (action === "read") {
     var wanted = String(args.conversationId || "");

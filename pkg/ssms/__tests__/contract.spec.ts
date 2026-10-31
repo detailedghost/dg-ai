@@ -63,6 +63,8 @@ async function googleFixture(): Promise<Fixture> {
 			log: (event) => logs.push(JSON.stringify(event)),
 			ids: () => "draft-google",
 			now: () => 0,
+			rng: () => 0,
+			sleep: async () => undefined,
 		}),
 		logs,
 		sent: () => sent.n,

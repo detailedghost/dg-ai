@@ -144,4 +144,82 @@ describe("google provider", () => {
 		};
 		expect(stored.status).toBe("pending");
 	});
+
+	test("a second Mom past the first page makes the draft ambiguous", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-page-mom-"));
+		let revealed = false;
+		const mom5 = node("hi", { href: "/web/conversations/5", "aria-label": "Mom" });
+		const mom9 = node("hi", { href: "/web/conversations/9", "aria-label": "Mom" });
+		const more = node("Load more conversations");
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "5";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "5";
+		const nodes = [mom5, more, box, send];
+		const doc = {
+			clicks: [] as string[],
+			body: { textContent: "Conversations" },
+			location: { href: "https://messages.google.com/web/u/0/conversations/5" },
+			threadHeader: "Mom",
+			paneConversationId: "5",
+			querySelectorAll(selector: string) {
+				if (selector !== "*") return [];
+				return revealed ? [mom5, mom9, box, send] : nodes;
+			},
+		};
+		mom5.attrs["aria-selected"] = "true";
+		const provider = createGoogleProvider({
+			browser: createLocalMessagesBrowser(doc),
+			home,
+			ids: () => "draft-page",
+			now: () => 0,
+			sleep: async () => {
+				revealed = true;
+			},
+			rng: () => 0,
+		});
+		const draft = await provider.draftReply({ conversationId: "5", text: "hello there" });
+		expect(draft.ambiguousRecipient).toBe(true);
+		await expect(
+			provider.sendDraft({ draftId: draft.id, confirmed: true, hook: false }),
+		).rejects.toThrow("ambiguous recipient");
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+	});
+
+	test("a draft without the duplicate-name flag is refused", async () => {
+		const home = mkdtempSync(join(tmpdir(), "ssms-old-draft-"));
+		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
+		box.paneId = "c1";
+		const send = node("Send", { "aria-label": "Send" });
+		send.paneId = "c1";
+		const doc = createDocument(
+			[node("hello", { href: "/web/conversations/c1", "aria-label": "Ada" }), box, send],
+			"",
+		);
+		readyThread(doc, "c1", "Ada");
+		const { mkdirSync, writeFileSync } = await import("node:fs");
+		mkdirSync(join(home, "ssms", "drafts"), { recursive: true });
+		writeFileSync(
+			join(home, "ssms", "drafts", "old.json"),
+			`${JSON.stringify({
+				id: "old",
+				provider: "google",
+				conversationId: "c1",
+				recipient: "Ada",
+				text: "hello there",
+				attachments: [],
+				createdAt: "2026-10-31T00:00:00.000Z",
+				status: "pending",
+			})}\n`,
+		);
+		const provider = createGoogleProvider({
+			browser: createLocalMessagesBrowser(doc),
+			home,
+			now: () => 0,
+		});
+		await expect(
+			provider.sendDraft({ draftId: "old", confirmed: true, hook: false }),
+		).rejects.toThrow("ambiguous recipient");
+		expect((box as { usedNativeSetter?: boolean }).usedNativeSetter).not.toBe(true);
+	});
 });

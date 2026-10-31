@@ -84,13 +84,14 @@ Web session until someone runs it there, so leave the flag false until then.
 missing. If `/dev/tty` cannot be opened, `draft` fails and does not keep the
 draft. A Google draft stores the contact's display name and matches the open
 thread header to that name exactly, after trimming and collapsing whitespace.
-The list item for that conversation id must be selected, and an identifier
-inside the message pane (a `data-conversation-id`, participant id, or
-conversation link) must equal the conversation id stored when the draft was
-created. That check runs again immediately before Send. If the pane does not
-expose an id, send is refused. A display name shared by more than one
-conversation is refused before the page is touched. The pane does not have to
-be a new DOM node.
+The list item for that conversation id must be selected, and a
+`data-conversation-id` inside the message-pane container must equal the
+conversation id stored when the draft was created. The compose form, a
+participant id, and the conversation list are not that container. The check
+runs again immediately before Send. If the pane does not expose an id, send
+is refused. Load more is polled, with jitter, until the row count grows or
+stops. A display name shared by more than one loaded conversation, or a list
+that never finishes loading, is refused before the page is asked to send.
 Cleanup never sends and never deletes. `--dry-run` leaves the draft pending.
 
 Signal drafts can be plain text, a reaction (`--emoji`), an image

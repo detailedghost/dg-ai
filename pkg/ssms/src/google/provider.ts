@@ -113,6 +113,39 @@ export function createGoogleProvider(input: {
 	const ids = input.ids ?? (() => crypto.randomUUID());
 	const browser = input.browser;
 
+	async function listedRows(): Promise<{ rows: Conversation[]; more: boolean }> {
+		const body = record(await browser.act("rows", {}), "page-unrecognized");
+		return {
+			rows: conversationsFrom({ conversations: body.conversations }),
+			more: body.more === true,
+		};
+	}
+
+	async function loadConversationsForDraft(): Promise<{ rows: Conversation[]; complete: boolean }> {
+		const gaps: number[] = [];
+		let snap = await listedRows();
+		let attempts = 0;
+		while (snap.more && attempts < 6) {
+			const before = snap.rows.length;
+			await browser.act("load-more", {});
+			let settled = false;
+			for (let wait = 0; wait < 3; wait += 1) {
+				const gap = nextGapMs(rng, gaps);
+				gaps.push(gap);
+				await sleep(gap);
+				snap = await listedRows();
+				if (!snap.more || snap.rows.length > before) {
+					settled = true;
+					break;
+				}
+			}
+			if (!settled) return { rows: snap.rows, complete: false };
+			attempts += 1;
+		}
+		if (snap.more) return { rows: snap.rows, complete: false };
+		return { rows: snap.rows, complete: true };
+	}
+
 	return withCapabilities("google", GOOGLE_CAPABILITIES, {
 		async link() {
 			const status = statusFrom(await browser.act("status", {}));
@@ -203,7 +236,8 @@ export function createGoogleProvider(input: {
 			return { conversationId: request.conversationId, reason: "blocked" };
 		},
 		async draftReply(request) {
-			const rows = conversationsFrom(await browser.act("list", { scopeDays: null }));
+			const loaded = await loadConversationsForDraft();
+			const rows = loaded.rows;
 			const row = rows.find((item) => item.id === request.conversationId);
 			if (!row?.title) throw new Error("conversation not found");
 			const name = normalizeRecipientName(row.title);
@@ -213,6 +247,7 @@ export function createGoogleProvider(input: {
 				conversationId: request.conversationId,
 				recipient: row.title,
 				ambiguousRecipient:
+					!loaded.complete ||
 					rows.filter((item) => normalizeRecipientName(item.title) === name).length > 1,
 				text: request.text,
 				emoji: request.emoji,
@@ -232,7 +267,7 @@ export function createGoogleProvider(input: {
 			if (request.hook) throw new HookSendRefused();
 			if (!request.confirmed) throw new ConfirmationRequired();
 			const lookedUp = readDraft(input.home, request.draftId);
-			if (lookedUp.ambiguousRecipient) throw new Error("ambiguous recipient");
+			if (lookedUp.ambiguousRecipient !== false) throw new Error("ambiguous recipient");
 			const draft = claimDraft(input.home, request.draftId, "google");
 			try {
 				if (draft.emoji || draft.quote || draft.attachments.length > 0) {

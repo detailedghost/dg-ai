@@ -19,11 +19,14 @@ function createLivePage(input: {
 	paneDelayMs: number;
 	headerDelayMs: number;
 	paneId?: string;
+	participantOnly?: boolean;
+	participantId?: string;
 }) {
 	let href = input.href;
 	let header = input.header;
 	let selectedId = idOf(input.href);
-	let paneId = input.paneId ?? (selectedId || "start");
+	let messagePaneId = input.paneId ?? (selectedId || "start");
+	let formId = messagePaneId;
 	let slept = 0;
 	let clicked: { id: string; at: number } | null = null;
 	const clicks: string[] = [];
@@ -34,7 +37,7 @@ function createLivePage(input: {
 	Object.defineProperty(proto, "value", {
 		configurable: true,
 		set(value: string) {
-			typed.push(`${paneId}:${value}`);
+			typed.push(`${messagePaneId}:${value}`);
 		},
 		get() {
 			return typed.at(-1)?.split(":").slice(1).join(":") ?? "";
@@ -51,7 +54,7 @@ function createLivePage(input: {
 			return name === "aria-label" ? "Send" : null;
 		},
 		click() {
-			sentAt.push(`${paneId}|${href}`);
+			sentAt.push(`${messagePaneId}|${href}`);
 		},
 	};
 	const heading = {
@@ -68,13 +71,38 @@ function createLivePage(input: {
 		},
 		setAttribute() {},
 		querySelector(selector: string) {
-			if (selector.includes("data-conversation-id") || selector.includes("data-participant-id")) {
+			if (
+				selector.includes("data-message-pane") ||
+				selector.includes("mws-messages") ||
+				selector.includes("role='log'") ||
+				selector.includes('role="log"')
+			) {
+				if (input.participantOnly) return null;
 				return {
 					getAttribute(name: string) {
-						if (name === "data-conversation-id" || name === "data-participant-id") return paneId;
+						return name === "data-conversation-id" ? messagePaneId : null;
+					},
+					querySelector() {
 						return null;
 					},
 				};
+			}
+			if (selector.includes("data-participant-id")) {
+				return {
+					getAttribute(name: string) {
+						return name === "data-participant-id" ? (input.participantId ?? "") : null;
+					},
+				};
+			}
+			if (selector.includes("form")) {
+				return {
+					getAttribute(name: string) {
+						return name === "data-conversation-id" ? formId : null;
+					},
+				};
+			}
+			if (selector.includes("a[href") || selector.includes("conversations")) {
+				return links[0] ?? null;
 			}
 			if (selector.includes("h1") || selector.includes("heading")) return heading;
 			if (selector.includes("textarea") || selector.includes("contenteditable")) return box;
@@ -118,9 +146,10 @@ function createLivePage(input: {
 		if (age >= input.urlDelayMs) {
 			href = `https://messages.google.com/web/u/0/conversations/${clicked.id}`;
 			selectedId = clicked.id;
+			formId = clicked.id;
 		}
 		if (link && age >= input.headerDelayMs) header = link.name;
-		if (age >= input.paneDelayMs) paneId = clicked.id;
+		if (age >= input.paneDelayMs && input.paneId !== "") messagePaneId = clicked.id;
 	}
 	return {
 		clicks,
@@ -313,5 +342,60 @@ describe("live Google send", () => {
 		expect(live.sentAt[0]).toContain("9|");
 		expect(live.sentAt[0]).not.toContain("5|");
 		expect(live.sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(3000);
+	});
+
+	test("an id on the compose form is not the message pane", async () => {
+		const live = createLivePage({
+			href: "https://messages.google.com/web/u/0/conversations/5",
+			header: "Ada",
+			paneId: "5",
+			urlDelayMs: 30,
+			headerDelayMs: 30,
+			paneDelayMs: 3000,
+			links: [
+				{ id: "5", name: "Ada" },
+				{ id: "9", name: "Ada" },
+			],
+		});
+		const sent = (await send(live, "9", "Ada")) as { reason: string };
+		expect(sent.reason).toBe("sent");
+		expect(live.typed).toEqual(["9:hello there"]);
+		expect(live.sleeps.reduce((sum, gap) => sum + gap, 0)).toBeGreaterThanOrEqual(3000);
+	});
+
+	test("a conversation list inside main is not the message pane", async () => {
+		const live = createLivePage({
+			href: "https://messages.google.com/web/u/0/conversations/9",
+			header: "Ada",
+			paneId: "",
+			urlDelayMs: 0,
+			headerDelayMs: 0,
+			paneDelayMs: 0,
+			links: [
+				{ id: "9", name: "Ada" },
+				{ id: "5", name: "Bea" },
+			],
+		});
+		await expect(send(live, "9", "Ada", { timeoutMs: 200 })).rejects.toThrow(
+			"open conversation timed out",
+		);
+		expect(live.typed).toEqual([]);
+	});
+
+	test("a participant id alone does not bind the pane", async () => {
+		const live = createLivePage({
+			href: "https://messages.google.com/web/u/0/conversations/9",
+			header: "Ada",
+			urlDelayMs: 0,
+			headerDelayMs: 0,
+			paneDelayMs: 0,
+			participantOnly: true,
+			participantId: "9",
+			links: [{ id: "9", name: "Ada" }],
+		});
+		await expect(send(live, "9", "Ada", { timeoutMs: 200 })).rejects.toThrow(
+			"open conversation timed out",
+		);
+		expect(live.typed).toEqual([]);
 	});
 });
