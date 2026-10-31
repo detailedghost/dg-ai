@@ -3,7 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { DgCliError } from "@dg/common";
-import { ensurePrivateDir, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
+import { ensurePrivateDir, isAlive, readCappedStdin, resolveDgPaths, selfCommand, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
@@ -18,10 +18,22 @@ import {
 	PUBLISH_CONFIRM_ENV,
 } from "./delivery";
 import { PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
+import {
+	defaultCrontab,
+	type CrontabIO,
+	ensureCronLine,
+	ensureListener,
+	installCrontabLine,
+	type ListenerVerdict,
+	openEnsureArgv,
+} from "./ensure";
+import { selectInbox } from "./inbox";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
 import {
 	defaultOnSignal,
 	defaultSchedule,
+	holderVerdict,
+	ignoreHangup,
 	isOurListener,
 	listenerDrift,
 	listenerLogPath,
@@ -98,6 +110,9 @@ export type OpenCloseDeps = PhoneDeps &
 		kill: (pid: number, signal: NodeJS.Signals) => void;
 		isOurListener: (pid: number) => boolean;
 		sleep: (ms: number) => Promise<void>;
+		isAlive?: (pid: number) => boolean;
+		verdict?: (pid: number) => ListenerVerdict;
+		crontab?: CrontabIO;
 	};
 
 const MAX_SEND_BYTES = 64 * 1024;
@@ -488,14 +503,14 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		}
 		return;
 	}
-	let contactNpub: string | undefined;
+	let peer: { npub: string; handle: string } | undefined;
 	if (opts.handle !== undefined) {
 		const handle = normalizeHandle(opts.handle);
 		const contact = findContactByHandle(deps.db, handle);
 		if (!contact) throw new DgCliError(`no contact +${handle}`);
-		contactNpub = contact.npub;
+		peer = { npub: contact.npub, handle: contact.handle };
 	}
-	for (const row of deps.db.recentMessages(limit, contactNpub)) {
+	for (const row of selectInbox(deps.db.messagesNewestFirst(), limit, peer)) {
 		const contact = findContactByNpub(deps.db, row.contact);
 		printJson(deps, {
 			id: row.id,
@@ -511,8 +526,8 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 	}
 }
 
-function emitUnread(deps: PhoneDeps): void {
-	for (const row of deps.db.takeUnread()) {
+function emitUnread(deps: PhoneDeps, skip?: ReadonlySet<string>): void {
+	for (const row of deps.db.takeUnread(skip)) {
 		const contact = findContactByNpub(deps.db, row.contact);
 		printJson(deps, {
 			id: row.id,
@@ -542,18 +557,25 @@ export function watchDelayMs(random: () => number): number {
 	return WATCH_MIN_DELAY_MS + Math.floor(random() * (span + 1));
 }
 
-/** Prints unread voicemail until `for` seconds have passed, sleeping a jittered gap between checks. */
-export async function phoneWatch(opts: { for?: string }, deps: PhoneDeps, random: () => number = Math.random): Promise<void> {
+/** Prints unread voicemail until `for` seconds have passed, sleeping a jittered gap between checks.
+ * Rows already unread when this starts are left unread unless `backlog` is set. `--new` is that default. */
+export async function phoneWatch(
+	opts: { for?: string; backlog?: boolean; new?: boolean },
+	deps: PhoneDeps,
+	random: () => number = Math.random,
+): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	if (opts.backlog && opts.new) throw new DgCliError("pass only one of --new and --backlog");
 	const seconds = opts.for === undefined ? WATCH_DEFAULT_FOR_S : Number(opts.for);
 	if (!Number.isFinite(seconds) || seconds <= 0) {
 		throw new DgCliError(`--for must be a positive number of seconds, got "${opts.for}"`);
 	}
 	await restartStaleListener(deps, { spawn: true });
+	const skip = opts.backlog ? undefined : new Set(deps.db.unreadMessages().map((row) => row.id));
 	const deadline = deps.now() + seconds;
 	const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
 	for (;;) {
-		emitUnread(deps);
+		emitUnread(deps, skip);
 		const remainingMs = (deadline - deps.now()) * 1000;
 		if (remainingMs <= 0) return;
 		await sleep(Math.min(watchDelayMs(random), remainingMs));
@@ -673,8 +695,48 @@ async function stopRunningListener(deps: OpenCloseDeps, pid: number): Promise<vo
 	if (readListenerPid(deps.paths)?.pid === pid) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
 }
 
-export async function phoneOpen(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: OpenCloseDeps): Promise<void> {
+async function phoneOpenEnsure(
+	opts: { onMessage?: string[]; onMessageTimeout?: string; ensure?: boolean; printCron?: boolean; installCron?: boolean },
+	deps: OpenCloseDeps,
+): Promise<void> {
+	const cron = opts.printCron || opts.installCron ? ensureCronLine(openEnsureArgv(deps.listenerArgv), deps.env.DG_HOME) : undefined;
+	if (opts.installCron && cron) await installCrontabLine(cron, deps.crontab ?? defaultCrontab());
+	if (!opts.ensure) {
+		printJson(deps, { ...(cron ? { cron } : {}), ...(opts.installCron ? { cron_installed: true } : {}) });
+		return;
+	}
+	const saved = readListener(deps.db);
+	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
+	if (onMessage) writeListener(deps.db, { ...saved, onMessage });
+	const ensured = await ensureListener({
+		paths: deps.paths,
+		now: deps.now,
+		sleep: deps.sleep,
+		isAlive: deps.isAlive ?? isAlive,
+		verdict: deps.verdict ?? ((pid) => holderVerdict(pid)),
+		argv: deps.listenerArgv(onMessageArgvFor(onMessage)),
+		hook: onMessage ? { argv: onMessage.argv, timeoutS: Math.round(onMessage.timeoutMs / 1000) } : null,
+		spawnListener: deps.spawnListener,
+	});
+	printJson(deps, {
+		pid: ensured.pid,
+		status: ensured.status,
+		autostart: "ensure",
+		hook: onMessage ? "command" : null,
+		...(cron ? { cron } : {}),
+		...(opts.installCron ? { cron_installed: true } : {}),
+	});
+}
+
+export async function phoneOpen(
+	opts: { onMessage?: string[]; onMessageTimeout?: string; ensure?: boolean; printCron?: boolean; installCron?: boolean },
+	deps: OpenCloseDeps,
+): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	if (opts.ensure || opts.printCron || opts.installCron) {
+		await phoneOpenEnsure(opts, deps);
+		return;
+	}
 	const saved = readListener(deps.db);
 	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
 
@@ -848,7 +910,9 @@ function attachPhoneVerbs(
 		.command("watch")
 		.description("print unread voicemail until --for seconds elapse, waiting a jittered gap between checks")
 		.option("--for <seconds>", "seconds to keep checking", String(WATCH_DEFAULT_FOR_S))
-		.action((opts: { for?: string }) => phoneWatch(opts, getDeps()));
+		.option("--new", "print only messages that arrive after watch starts")
+		.option("--backlog", "also print unread messages already stored")
+		.action((opts: { for?: string; backlog?: boolean; new?: boolean }) => phoneWatch(opts, getDeps()));
 
 	group
 		.command("status")
@@ -860,7 +924,12 @@ function attachPhoneVerbs(
 		.description("start the listener and install it to start on login, where a service manager exists")
 		.option("--on-message <argv...>", "command and args to run for each delivered message, saved for next time")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
-		.action((opts: { onMessage?: string[]; onMessageTimeout?: string }) => phoneOpen(opts, getOpenCloseDeps()));
+		.option("--ensure", "start a detached listener when the pidfile is not a live copy of this binary; safe to repeat from cron")
+		.option("--print-cron", "include a crontab line for --ensure in the output; does not change the crontab")
+		.option("--install-cron", "install that crontab line; never implied by --ensure")
+		.action((opts: { onMessage?: string[]; onMessageTimeout?: string; ensure?: boolean; printCron?: boolean; installCron?: boolean }) =>
+			phoneOpen(opts, getOpenCloseDeps()),
+		);
 
 	group
 		.command("close")
@@ -880,6 +949,7 @@ function attachPhoneVerbs(
 		.option("--dg-home <dir>", "state directory for this listener; overrides DG_HOME")
 		.action(async (opts: { onMessage?: string[]; onMessageTimeout?: string; dgHome?: string }) => {
 			if (opts.dgHome) process.env.DG_HOME = opts.dgHome;
+			ignoreHangup();
 			await phoneRun(opts, { ...getDeps(), pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal });
 			process.exit(0);
 		});

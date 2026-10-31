@@ -575,7 +575,12 @@ export function adoptListenerPid(paths: DgPaths, record: ListenerPid): void {
 	writeListenerPid(paths, record);
 }
 
-/** Detached listener process. The child writes `listener.pid` once `phone __run` is up. */
+/** Ignores SIGHUP so a listener started in its own session survives the login shell that spawned it. */
+export function ignoreHangup(): void {
+	process.on("SIGHUP", () => {});
+}
+
+/** Detached listener process. `detached` calls setsid, so the child is its own session. It writes `listener.pid` once `phone __run` is up. */
 export function spawnDetachedListener(argv: string[], logPath: string): number {
 	ensurePrivateDir(dirname(logPath));
 	const log = openSync(logPath, "a", 0o600);
@@ -661,12 +666,15 @@ export async function waitForId(seen: Set<string>, id: string, waitMs: number, c
 	return false;
 }
 
+type AdmitStore = "stored" | "duplicate" | "rejected";
+
 /** Applies one admitted message's side effects: a fresh handle and contact row for a new caller, the
  * key move for a re-accept, then the message itself, `contact` keyed by the sender (as `fetchNew`'s
  * wiring contract requires). Guarded by `findContactByNpub` so a caught-up follow-up from the same
  * new caller, or a redelivered live event, never renames the contact it already created. A new caller
  * holding an invite is stored only when this call consumes that invite, so a snapshot that is stale
- * by the time it lands cannot admit a second caller. Returns false when the message was not stored. */
+ * by the time it lands cannot admit a second caller. A row that is already stored is a duplicate:
+ * the key is not moved again. `rejected` is the only result that blocks later messages from that sender. */
 function admitMessage(
 	db: PhoneDb,
 	now: () => number,
@@ -674,20 +682,19 @@ function admitMessage(
 	message: Message,
 	newContact?: NewContact,
 	reaccept?: Reaccept,
-): boolean {
+): AdmitStore {
 	return db.transaction(() => {
 		if (newContact && !findContactByNpub(db, newContact.npub)) {
-			if (newContact.numberSecret !== undefined && readNumber(db)?.secret !== newContact.numberSecret) return false;
-			if (newContact.inviteSecret && !consumeInvite(db, newContact.inviteSecret)) return false;
+			if (newContact.numberSecret !== undefined && readNumber(db)?.secret !== newContact.numberSecret) return "rejected";
+			if (newContact.inviteSecret && !consumeInvite(db, newContact.inviteSecret)) return "rejected";
 			const base = isHandle(newContact.suggestedHandle) ? newContact.suggestedHandle : UNKNOWN_CALLER_HANDLE;
 			const handle = nextFreeHandle(db, base);
 			const contactRelays = newContact.relays?.length ? newContact.relays : relays;
 			addContact(db, { npub: newContact.npub, handle, relays: contactRelays, keyId: newContact.keyId, addedAt: now(), via: newContact.via });
 			addPhoneNotice(db, `new contact +${handle}`, now());
 		}
-		if (!findContactByNpub(db, message.from)) return false;
-		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
-		db.addMessage({
+		if (!findContactByNpub(db, message.from)) return "rejected";
+		const inserted = db.addMessage({
 			id: message.id,
 			direction: "in",
 			ts: message.ts,
@@ -696,7 +703,9 @@ function admitMessage(
 			text: message.text,
 			call: message.call ? 1 : 0,
 		});
-		return true;
+		if (!inserted) return "duplicate";
+		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
+		return "stored";
 	});
 }
 
@@ -765,7 +774,6 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	const applyCaught = (caught: Awaited<ReturnType<typeof fetchNew>>) => {
 		const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
-		const reacceptByNpub = new Map(caught.reaccepts.map((reaccept) => [reaccept.npub, reaccept]));
 		const refused = new Set<string>();
 		for (const message of caught.messages) {
 			if (refused.has(message.from)) continue;
@@ -775,15 +783,15 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				readRelays(deps.db),
 				message,
 				message.call ? newContactByNpub.get(message.from) : undefined,
-				reacceptByNpub.get(message.from),
+				caught.reacceptByMessageId.get(message.id),
 			);
-			if (!stored) refused.add(message.from);
+			if (stored === "rejected") refused.add(message.from);
 		}
 		return caught.seen;
 	};
 
 	const startingSeen: Seen = { cursor: readCursor(deps.db), ids: [] };
-	let seen = applyCaught(await fetchNew(pool, relays, keys, gateCache, startingSeen, deps.now));
+	let seen = applyCaught(await fetchNew(pool, relays, keys, gateCache, startingSeen, deps.now, logDrop));
 	rememberAdmission();
 	writeCursor(deps.db, seen.cursor);
 

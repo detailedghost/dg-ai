@@ -324,12 +324,19 @@ export class PhoneDb {
 		});
 	}
 
-	takeUnread(): MessageRow[] {
+	takeUnread(skip?: ReadonlySet<string>): MessageRow[] {
 		return this.transaction(() => {
-			const rows = this.unreadMessages();
+			const rows = this.unreadMessages().filter((row) => !skip?.has(row.id));
 			this.markRead(rows.map((row) => row.id));
 			return rows;
 		});
+	}
+
+	/** Every stored message, newest first. Both directions. Read state is not a filter. */
+	messagesNewestFirst(): MessageRow[] {
+		return this.db
+			.query("SELECT * FROM messages WHERE direction IN ('in', 'out') ORDER BY ts DESC, id DESC")
+			.all() as MessageRow[];
 	}
 
 	/** The oldest unread message still under the hook's attempt cap, or undefined once the queue is empty. */

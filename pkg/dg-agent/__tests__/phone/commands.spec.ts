@@ -624,6 +624,21 @@ describe("accept", () => {
 		await expect(phoneAccept("-", undefined, peer)).rejects.toThrow("no call card given");
 	});
 
+	it("reads a card from stdin when the argument is - and also accepts the card as an argument", async () => {
+		const peer = deps(freshHome(), pool);
+		const fromStdin = ownedCard("ada");
+		const fromArg = ownedCard("bea");
+		peer.readStdin = async () => `${fromStdin.card}\n`;
+		const program = new Command();
+		program.exitOverride();
+		registerPhoneCommands(program, () => peer);
+
+		await program.parseAsync(["phone", "accept", "-", "from-stdin"], { from: "user" });
+		await program.parseAsync(["phone", "accept", fromArg.card, "from-arg"], { from: "user" });
+
+		expect(listContacts(peer.db).map((contact) => contact.handle).sort()).toEqual(["ada", "bea"]);
+	});
+
 	it("errors on an expired card", async () => {
 		const owner = deps(freshHome());
 		await phoneInvite({ ttl: "1" }, owner);
@@ -798,6 +813,71 @@ describe("inbox", () => {
 
 		expect((lines()[0] as { handle: string | null }).handle).toBeNull();
 	});
+
+	it("includes read and unread incoming rows with outgoing rows", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		addTestContact(d.db, { npub: "npub1a", handle: "mary" });
+		d.db.addMessage({ id: "in-unread", direction: "in", ts: NOW + 1, sender: "npub1a", contact: "npub1a", text: "unread-from-mary", call: 0 });
+		d.db.addMessage({ id: "in-read", direction: "in", ts: NOW + 2, sender: "npub1a", contact: "npub1a", text: "read-from-mary", call: 0 });
+		d.db.markRead(["in-read"]);
+		d.db.addMessage({ id: "out", direction: "out", ts: NOW + 3, sender: "npub1us", contact: "npub1a", text: "to-mary", call: 0 });
+		out = [];
+
+		phoneInbox({}, d);
+		const all = lines() as { id: string; direction: string; read: boolean }[];
+		out = [];
+		phoneInbox({ handle: "+mary" }, d);
+		const filtered = lines() as { id: string; read: boolean }[];
+
+		expect(all.map((row) => row.id)).toEqual(["in-unread", "in-read", "out"]);
+		expect(all.find((row) => row.id === "in-read")?.read).toBe(true);
+		expect(all.find((row) => row.id === "in-unread")?.read).toBe(false);
+		expect(filtered.map((row) => row.id)).toEqual(["in-unread", "in-read", "out"]);
+		expect(d.db.unreadMessages().map((row) => row.id)).toEqual(["in-unread"]);
+	});
+
+	it("matches a renamed contact and a row stored under the default key id", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		const mary = addTestContact(d.db, { npub: "npub1mary", handle: "mary", keyId: "default" });
+		const other = addTestContact(d.db, { npub: "npub1other", handle: "other", keyId: "default" });
+		d.db.addMessage({ id: "by-npub", direction: "in", ts: NOW + 1, sender: mary.npub, contact: mary.npub, text: "by-npub", call: 0 });
+		d.db.addMessage({ id: "by-key", direction: "in", ts: NOW + 2, sender: mary.npub, contact: "default", text: "stored-under-default-key", call: 0 });
+		d.db.addMessage({ id: "by-old-handle", direction: "in", ts: NOW + 3, sender: mary.npub, contact: "mary", text: "stored-under-old-handle", call: 0 });
+		d.db.addMessage({ id: "other-in", direction: "in", ts: NOW + 4, sender: other.npub, contact: "default", text: "other-incoming", call: 0 });
+		d.db.addMessage({ id: "notice", direction: "in", ts: NOW + 5, sender: "phone", contact: "phone", text: "accepted +maria", call: 0 });
+		d.db.addMessage({ id: "other-notice", direction: "in", ts: NOW + 6, sender: "phone", contact: "phone", text: "accepted +other", call: 0 });
+		phoneContactsRename("+mary", "maria", d);
+		out = [];
+
+		phoneInbox({ handle: "maria" }, d);
+		const ids = (lines() as { id: string }[]).map((row) => row.id);
+
+		expect(ids).toEqual(["by-npub", "by-key", "by-old-handle", "notice"]);
+		expect(() => phoneInbox({ handle: "+mary" }, d)).toThrow("no contact +mary");
+	});
+
+	it("prints incoming rows from the commander entry, with and without a handle", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		addTestContact(d.db, { npub: "npub1mary", handle: "mary", keyId: "default" });
+		d.db.addMessage({ id: "in", direction: "in", ts: NOW, sender: "npub1mary", contact: "default", text: "from-mary", call: 0 });
+		d.db.addMessage({ id: "out", direction: "out", ts: NOW + 1, sender: "npub1us", contact: "npub1mary", text: "to-mary", call: 0 });
+		const program = new Command();
+		program.exitOverride();
+		registerPhoneCommands(program, () => d);
+		out = [];
+
+		await program.parseAsync(["phone", "inbox"], { from: "user" });
+		const all = lines() as { id: string }[];
+		out = [];
+		await program.parseAsync(["phone", "inbox", "+mary"], { from: "user" });
+		const filtered = lines() as { id: string }[];
+
+		expect(all.map((row) => row.id)).toEqual(["in", "out"]);
+		expect(filtered.map((row) => row.id)).toEqual(["in", "out"]);
+	});
 });
 
 describe("voicemail", () => {
@@ -874,6 +954,28 @@ describe("watch", () => {
 		const d = deps(freshHome());
 
 		await expect(phoneWatch({ for: "0" }, d, () => 0)).rejects.toThrow("--for must be a positive number of seconds");
+	});
+
+	it("skips unread rows already stored unless --backlog is set", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		d.db.addMessage({ id: "old", direction: "in", ts: NOW, sender: "npub1w", contact: "npub1w", text: "already-there", call: 0 });
+		out = [];
+		let now = NOW;
+		d.now = () => now;
+		d.sleep = async (ms) => {
+			now += Math.ceil(ms / 1000);
+		};
+
+		await phoneWatch({ for: "3" }, d, () => 0);
+		expect((lines() as { text?: string }[]).some((row) => row.text === "already-there")).toBe(false);
+		expect(d.db.unreadMessages().map((row) => row.id)).toEqual(["old"]);
+
+		out = [];
+		now = NOW;
+		await phoneWatch({ for: "3", backlog: true }, d, () => 0);
+		expect((lines() as { id?: string }[]).some((row) => row.id === "old")).toBe(true);
+		expect(d.db.unreadMessages()).toEqual([]);
 	});
 });
 

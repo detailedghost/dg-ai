@@ -19,6 +19,7 @@ import {
 	wrapProbe,
 } from "../../src/phone/chat";
 import { MESSAGE_TTL_SECONDS } from "../../src/phone/db";
+import { SINCE_MARGIN_SECONDS } from "../../src/phone/since";
 import { createFakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
@@ -116,7 +117,7 @@ describe("fetchNew", () => {
 		expect(pool.filters[0]).toEqual({
 			kinds: [1059],
 			"#p": [bob.pub],
-			since: cursor - LOOKBACK_SECONDS,
+			since: cursor - LOOKBACK_SECONDS - SINCE_MARGIN_SECONDS,
 		});
 		expect(LOOKBACK_SECONDS).toBe(172800);
 	});
@@ -188,6 +189,104 @@ describe("fetchNew", () => {
 			["first", 1_000],
 			["second", 2_000],
 		]);
+	});
+
+	it("still returns a wrap dated one minute behind the two-day lookback", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const cursor = 1_800_000_000;
+		const createdAt = cursor - LOOKBACK_SECONDS - 60;
+		const rumor = nip59.createRumor(
+			{ kind: 14, content: "on the boundary", created_at: cursor, tags: [["p", bob.pub]] },
+			alice.sk,
+		);
+		const seal = nip59.createSeal(rumor, alice.sk, bob.pub);
+		const random = Math.random;
+		const clock = Date.now;
+		Math.random = () => 0;
+		Date.now = () => createdAt * 1000;
+		const event = nip59.createWrap(seal, bob.pub);
+		Math.random = random;
+		Date.now = clock;
+		pool.events.push(event);
+
+		const { messages } = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor, ids: [] }, () => cursor);
+
+		expect(event.created_at).toBe(createdAt);
+		expect(messages.map((message) => message.text)).toEqual(["on the boundary"]);
+	});
+
+	it("leaves a wrap that is older than the lookback plus the margin", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const cursor = 1_800_000_000;
+		const createdAt = cursor - LOOKBACK_SECONDS - SINCE_MARGIN_SECONDS - 120;
+		const rumor = nip59.createRumor(
+			{ kind: 14, content: "too old", created_at: cursor, tags: [["p", bob.pub]] },
+			alice.sk,
+		);
+		const seal = nip59.createSeal(rumor, alice.sk, bob.pub);
+		const random = Math.random;
+		const clock = Date.now;
+		Math.random = () => 0;
+		Date.now = () => createdAt * 1000;
+		const event = nip59.createWrap(seal, bob.pub);
+		Math.random = random;
+		Date.now = clock;
+		pool.events.push(event);
+
+		const { messages } = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor, ids: [] }, () => cursor);
+
+		expect(messages).toEqual([]);
+	});
+
+	it("admits a plain message whose rumor is older than the ring that introduces its sender", async () => {
+		const alice = identity();
+		const bob = identity();
+		const secret = "ab".repeat(32);
+		const pool = createFakePool();
+		const now = Math.floor(Date.now() / 1000);
+		const say = nip59.createWrap(
+			nip59.createSeal(
+				nip59.createRumor(
+					{ kind: 14, content: "after the ring", created_at: now - 100, tags: [["p", bob.pub]] },
+					alice.sk,
+				),
+				alice.sk,
+				bob.pub,
+			),
+			bob.pub,
+		);
+		const call = nip59.createWrap(
+			nip59.createSeal(
+				nip59.createRumor(
+					{
+						kind: 14,
+						content: "the ring",
+						created_at: now - 10,
+						tags: [["p", bob.pub], [CALL_TAG, secret], [SELF_NAME_TAG, "ada"]],
+					},
+					alice.sk,
+				),
+				alice.sk,
+				bob.pub,
+			),
+			bob.pub,
+		);
+		pool.events.push(say, call);
+
+		const { messages } = await fetchNew(
+			pool,
+			RELAYS,
+			[bob],
+			{ contacts: new Map(), secrets: { number: secret, invites: [] } },
+			{ cursor: 0, ids: [] },
+			() => now,
+		);
+
+		expect(messages.map((message) => message.text).sort()).toEqual(["after the ring", "the ring"]);
 	});
 });
 

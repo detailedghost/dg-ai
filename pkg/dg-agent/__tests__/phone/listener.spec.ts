@@ -647,6 +647,26 @@ describe("runListener", () => {
 		expect(findContactByHandle(db, "velora")?.relays).toEqual(["wss://invite.example"]);
 	});
 
+	it("does not move a stored ring onto an older key, and still stores a newer message from that sender", async () => {
+		const secret = "33".repeat(32);
+		const numberSk = setUpNumber(secret);
+		await ensureKey(deps(), "work");
+		const caller = identity();
+		addContact(db, { npub: caller.npub, handle: "alice", relays: RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
+		const again = ring("hi again", caller.sk, getPublicKey(numberSk), secret, "alice");
+		db.addMessage({ id: again.id, direction: "in", ts: NOW - 30, sender: caller.npub, contact: caller.npub, text: "hi again", call: 1 });
+		pool.events.push(again, wrap("fresh", caller.sk, getPublicKey(numberSk)));
+		const { onSignal, ready, stop } = captureShutdown();
+
+		const run = runListener(deps({ onSignal }));
+		await ready;
+		stop();
+		await run;
+
+		expect(findContactByNpub(db, caller.npub)?.keyId).toBe("work");
+		expect(db.recentMessages(10).map((row) => row.text).sort()).toEqual(["fresh", "hi again"]);
+	});
+
 	it("moves a known contact's key id when they ring the number secret from a new key", async () => {
 		const secret = "33".repeat(32);
 		const numberSk = setUpNumber(secret);
