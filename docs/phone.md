@@ -18,9 +18,9 @@ Codex:      $dg:phone
 | `accept [-] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin first (`accept - '<msg>' <<'CARD'`), so the one-time secret never shows in the process list or shell history. Passing the card as an argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok, relays_unconfirmed, relays_failed}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
 | `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. |
-| `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. A handle matches the contact's npub on either `contact` or `sender`, so a rename or a row stored under the `default` key still shows. |
+| `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. A handle selects the contact's npub and matches `messages.contact`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
-| `watch [--for <seconds>] [--new] [--backlog]` | Repeats `voicemail` until `--for` seconds have passed (default 120). By default, and with `--new`, it prints only messages that arrive after it starts and leaves older unread rows unread. `--backlog` also prints what was already unread. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
+| `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
 | `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
@@ -193,13 +193,16 @@ edit the crontab unless you pass `--install-cron`. `--print-cron` only
 prints the line, for example:
 
 ```text
-*/5 * * * * sleep $((RANDOM % 60)); /path/to/dg-agent phone open --ensure >/dev/null 2>&1 # dg-phone-ensure
+*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) % 60 )); /path/to/dg-agent phone open --ensure >/dev/null 2>&1 # dg-phone-ensure home=
 ```
 
-`$RANDOM` sleeps up to 60 seconds so a fleet does not hit the relays in the
-same second. When `DG_HOME` is set, the line includes it. A later
-`--install-cron` replaces a previous `dg-phone-ensure` line and leaves every
-other crontab row in place.
+The sleep uses `/dev/urandom`, not `$RANDOM`, because cron runs `/bin/sh`
+and on Debian that shell is dash. The pause is 0 to 59 seconds so a fleet
+does not hit the relays in the same second. When `DG_HOME` is set, the line
+includes it and the marker ends with `home=<that path>`. A later
+`--install-cron` replaces only the line for that home. Blank lines and
+every other crontab row stay. `--ensure` restarts a listener whose binary
+version or keys differ, the same way a plain `open` does.
 
 `close` runs each platform's stop-and-disable command
 (`systemctl --user disable --now`, `launchctl bootout`, `schtasks /End` then

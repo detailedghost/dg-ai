@@ -339,6 +339,28 @@ describe("migrateIfNeeded: moving legacy data into phone.db", () => {
 				expect(findContactByHandle(db, "velora")?.npub).toBe(workContact);
 				expect(db.recentMessages(100)).toHaveLength(6);
 				expect(db.unreadMessages()).toHaveLength(1);
+				const inboxOut: string[] = [];
+				const inboxDeps = {
+					paths,
+					db,
+					write: (text: string) => inboxOut.push(text),
+					readStdin: async () => undefined,
+					now: () => NOW,
+					sessionClient: async () => undefined,
+					grantClient: () => {
+						throw new Error("no grant");
+					},
+					createPool: () => {
+						throw new Error("no pool");
+					},
+				} as PhoneDeps;
+				phoneInbox({ handle: "+velora" }, inboxDeps);
+				const velora = inboxOut.map((line) => JSON.parse(line) as { id: string; direction: string });
+				expect(velora.map((row) => row.id)).toEqual(["w1", "w2"]);
+				expect(velora.every((row) => row.direction === "in")).toBe(true);
+				inboxOut.length = 0;
+				phoneInbox({ handle: "+default" }, inboxDeps);
+				expect(inboxOut.map((line) => JSON.parse(line) as { id: string }).map((row) => row.id)).toEqual(["d1", "d2", "d3", "d4"]);
 				expect(numberKeyId(db)).toBe("default");
 				expect(readCursor(db)).toBe(50);
 			} finally {

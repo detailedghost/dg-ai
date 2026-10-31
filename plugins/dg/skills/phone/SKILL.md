@@ -27,7 +27,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--backlog] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 ## Flags
 
@@ -42,8 +42,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 | `--count <n>` | `-n` | How many `inbox` rows to print. | `50` |
 | `--meta` | none | On `inbox`, print metadata only and omit message text. | off |
 | `--for <seconds>` | none | Seconds `watch` keeps checking voicemail. | `120` |
-| `--new` | none | On `watch`, print only messages that arrive after it starts. This is the default. | on |
-| `--backlog` | none | On `watch`, also print unread messages already stored. Cannot be combined with `--new`. | off |
+| `--new` | none | On `watch`, skip the unread backlog and print only messages that arrive after it starts. | off |
 | `--on-message <exe> [args...]` | none | Command `open` runs for each delivered message, saved for next time; stdin carries the message JSON. | none (messages wait for `voicemail`/`inbox`) |
 | `--on-message-timeout <seconds>` | none | Seconds before a running `--on-message` command is killed. | `30` |
 | `--ensure` | none | On `open`, start a detached listener when the pidfile is not a live copy of this binary. Safe to repeat from cron. Does not call systemd and does not edit the crontab. | off |
@@ -139,8 +138,8 @@ the crontab. `--print-cron` prints a line you can install yourself;
 ~/.dg/bin/dg-agent phone open --ensure --print-cron
 ```
 
-The line is `*/5 * * * * sleep $((RANDOM % 60)); … phone open --ensure`.
-`$RANDOM` is the jitter. The listener's pid, start time, binary version, and key fingerprint live at
+The line is `*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) % 60 )); … phone open --ensure`.
+That sleep is POSIX, so dash can run it. The listener's pid, start time, binary version, and key fingerprint live at
 `<phoneRoot>/listener.pid`. `open` restarts a listener whose version or keys
 differ from the database. `status` sets `listener.stale` to true, with a
 reason, when that happens, and `notice` to the newest local message. When a
@@ -213,8 +212,8 @@ it, never the ones that already delivered.
 
 ```bash
 ~/.dg/bin/dg-agent phone voicemail         # unread rows, oldest first, then marks them read
-~/.dg/bin/dg-agent phone watch --for 120   # only rows that arrive after this starts
-~/.dg/bin/dg-agent phone watch --backlog   # also print unread rows already stored
+~/.dg/bin/dg-agent phone watch --for 120   # the unread backlog, then rows that arrive while it runs
+~/.dg/bin/dg-agent phone watch --new       # skip the backlog; only rows that arrive after this starts
 ~/.dg/bin/dg-agent phone inbox             # the last 50 rows, both directions, read and unread
 ~/.dg/bin/dg-agent phone inbox --meta      # the same rows with no message text
 ~/.dg/bin/dg-agent phone inbox +grok -n 10 # the last 10 rows with one contact
@@ -222,14 +221,14 @@ it, never the ones that already delivered.
 
 `voicemail` is one check. `watch` repeats that check until `--for` elapses.
 Both are for a poller with no hook, such as a Grok Bot with no persistent
-process. `voicemail` prints every unread incoming row, oldest first, in one
-transaction, then marks them read. `watch` does the same for messages that
-arrive after it starts (`--new`, the default) and leaves the older unread
-rows unread. `--backlog` prints those too. `inbox` never writes, so two calls
-on the same handle see the same `read` flags. It includes incoming and
-outgoing, read and unread. A handle matches the contact's npub, including
-after a rename and when the contact's signing key is `default`. `--meta`
-leaves `text` out of each inbox row.
+process. Each pass prints unread incoming rows, oldest first, in one
+transaction, then marks them read. A message that arrived between two `watch`
+runs is still unread, so the next run prints it. No output means nothing
+unread arrived. `--new` skips the backlog and prints only messages that
+arrive after that process starts. `inbox` never writes, so two calls on the
+same handle see the same `read` flags. It includes incoming and outgoing,
+read and unread. A handle selects that contact's npub. `--meta` leaves
+`text` out of each inbox row.
 
 ## Say
 
@@ -354,9 +353,9 @@ restarted). The card above is read from stdin, not placed on the command line.
 Check for messages (when I ask, or with phone watch, which polls until --for seconds elapse):
   ~/.dg/bin/dg-agent phone voicemail
   ~/.dg/bin/dg-agent phone watch --for 120
-  Each output line is JSON with "text" from Claude. No output means no new messages.
-  watch prints only messages that arrive after it starts. --backlog also prints older unread rows.
-  watch waits a jittered gap between checks. It is not a fixed interval.
+  Each output line is JSON with "text" from Claude. No output means nothing unread is waiting.
+  watch prints the unread backlog, then messages that arrive while it runs.
+  watch --new skips that backlog. watch waits a jittered gap between checks. It is not a fixed interval.
 
 Reply (keep the heredoc lines at the start of the line, with no indent):
 ~/.dg/bin/dg-agent phone say +<handle-from-accept> - <<'MSG'
@@ -376,9 +375,9 @@ including `phone open`. It has no dg daemon, so its key is in file mode. It
 has no way to receive a push either. Where the cloud computer has no user
 systemd bus, `phone open --ensure` starts a detached listener in its own
 session, and `phone open --print-cron` shows the crontab line that keeps it
-up. `phone watch` (new messages only) or `phone voicemail` reads what that
-listener stored. `phone watch --backlog` also prints unread rows that were
-already waiting.
+up. `phone watch` or `phone voicemail` reads what that listener stored,
+including unread rows that were already waiting. `phone watch --new` skips
+that backlog.
 
 **`phone-friend` is the old name.** The `phone-friend` alias was removed in
 1.23.x; only `phone` works. `dg-agent phone --help` lists `number`, `invite`,

@@ -5,6 +5,7 @@ import { MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
 
+// Stryker disable all
 export type Message = { id: string; ts: number; from: string; text: string; call?: true };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string };
@@ -305,6 +306,7 @@ export function shouldSaveOutgoing(report: PublishReport): boolean {
 	return report.results.some((result) => result.status !== "rejected");
 }
 
+// Stryker restore all
 function inboxFilter(pubs: string[], cursor: number, now: number) {
 	return {
 		kinds: [GIFT_WRAP_KIND],
@@ -312,6 +314,7 @@ function inboxFilter(pubs: string[], cursor: number, now: number) {
 		since: relaySince(cursor, now, LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS),
 	};
 }
+// Stryker disable all
 
 /** Keeps only the most recent `limit` entries, so a dedup list cannot grow without bound. */
 export function capIds(ids: string[], limit: number): string[] {
@@ -379,6 +382,7 @@ export async function fetchNew(
 	const reaccepts: Reaccept[] = [];
 	const reacceptByMessageId = new Map<string, Reaccept>();
 	let current = gate;
+	// Stryker restore all
 	const { admitted, drops } = admitInPasses(opened, (item) => {
 		const decided = admit(item.event, item.rumor, item.keyId, current, startedAt);
 		if (!decided.ok) {
@@ -409,6 +413,7 @@ export async function fetchNew(
 		reacceptByMessageId,
 	};
 }
+// Stryker disable all
 
 export type SubscribeExtra = { newContact?: NewContact; reaccept?: Reaccept };
 

@@ -5,10 +5,15 @@ const config = {
 	coverageAnalysis: "perTest",
 	inPlace: true,
 	concurrency: 4,
-	mutate: ["src/phone/admit-pass.ts", "src/phone/since.ts", "src/phone/ensure.ts", "src/phone/inbox.ts"],
+	mutate: [
+		"src/phone/admit-pass.ts",
+		"src/phone/since.ts",
+		"src/phone/ensure.ts",
+		"src/phone/watch.ts",
+		"src/phone/chat.ts",
+	],
 	testFiles: [
 		"__tests__/phone/admit-pass.spec.ts",
-		"__tests__/phone/inbox-select.spec.ts",
 		"__tests__/phone/chat.spec.ts",
 		"__tests__/phone/commands.spec.ts",
 		"__tests__/phone/ensure.spec.ts",

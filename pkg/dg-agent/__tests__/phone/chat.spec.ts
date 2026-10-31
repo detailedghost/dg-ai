@@ -287,6 +287,27 @@ describe("fetchNew", () => {
 		);
 
 		expect(messages.map((message) => message.text).sort()).toEqual(["after the ring", "the ring"]);
+		const caught = await fetchNew(
+			pool,
+			RELAYS,
+			[bob],
+			{ contacts: new Map([[alice.pub, { npub: nip19.npubEncode(alice.pub), handle: "ada" }]]), secrets: { number: secret, invites: [] } },
+			{ cursor: 0, ids: [] },
+			() => now,
+		);
+		const again = ring("reaccept", alice.sk, bob.pub, secret, "ada");
+		pool.events.push(again);
+		const reaccepted = await fetchNew(
+			pool,
+			RELAYS,
+			[bob],
+			{ contacts: new Map([[alice.pub, { npub: nip19.npubEncode(alice.pub), handle: "ada" }]]), secrets: { number: secret, invites: [] } },
+			{ cursor: 0, ids: [] },
+			() => now,
+		);
+		expect(reaccepted.reacceptByMessageId.get(again.id)?.keyId).toBe(bob.id);
+		expect(reaccepted.messages.every((message) => message.text !== "after the ring" || reaccepted.reacceptByMessageId.has(message.id) === false)).toBe(true);
+		expect(caught.messages.length).toBeGreaterThan(0);
 	});
 });
 

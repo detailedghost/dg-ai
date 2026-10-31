@@ -26,8 +26,8 @@ import {
 	installCrontabLine,
 	type ListenerVerdict,
 	openEnsureArgv,
+	ownsEnsureProcess,
 } from "./ensure";
-import { selectInbox } from "./inbox";
 import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
 import {
 	defaultOnSignal,
@@ -44,6 +44,7 @@ import {
 	type ListenerPid,
 } from "./listener";
 import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
+import { watchSkipIds } from "./watch";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
@@ -503,14 +504,14 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		}
 		return;
 	}
-	let peer: { npub: string; handle: string } | undefined;
+	let contactNpub: string | undefined;
 	if (opts.handle !== undefined) {
 		const handle = normalizeHandle(opts.handle);
 		const contact = findContactByHandle(deps.db, handle);
 		if (!contact) throw new DgCliError(`no contact +${handle}`);
-		peer = { npub: contact.npub, handle: contact.handle };
+		contactNpub = contact.npub;
 	}
-	for (const row of selectInbox(deps.db.messagesNewestFirst(), limit, peer)) {
+	for (const row of deps.db.recentMessages(limit, contactNpub)) {
 		const contact = findContactByNpub(deps.db, row.contact);
 		printJson(deps, {
 			id: row.id,
@@ -558,20 +559,22 @@ export function watchDelayMs(random: () => number): number {
 }
 
 /** Prints unread voicemail until `for` seconds have passed, sleeping a jittered gap between checks.
- * Rows already unread when this starts are left unread unless `backlog` is set. `--new` is that default. */
+ * The backlog is printed unless `--new` is set, so a message that arrived between two polls is not skipped. */
 export async function phoneWatch(
-	opts: { for?: string; backlog?: boolean; new?: boolean },
+	opts: { for?: string; new?: boolean },
 	deps: PhoneDeps,
 	random: () => number = Math.random,
 ): Promise<void> {
 	migrateIfNeeded(deps.paths);
-	if (opts.backlog && opts.new) throw new DgCliError("pass only one of --new and --backlog");
 	const seconds = opts.for === undefined ? WATCH_DEFAULT_FOR_S : Number(opts.for);
 	if (!Number.isFinite(seconds) || seconds <= 0) {
 		throw new DgCliError(`--for must be a positive number of seconds, got "${opts.for}"`);
 	}
 	await restartStaleListener(deps, { spawn: true });
-	const skip = opts.backlog ? undefined : new Set(deps.db.unreadMessages().map((row) => row.id));
+	const skip = watchSkipIds(
+		deps.db.unreadMessages().map((row) => row.id),
+		opts.new === true,
+	);
 	const deadline = deps.now() + seconds;
 	const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
 	for (;;) {
@@ -708,19 +711,32 @@ async function phoneOpenEnsure(
 	const saved = readListener(deps.db);
 	const onMessage = resolveOnMessageOpt(opts, deps) ?? saved?.onMessage;
 	if (onMessage) writeListener(deps.db, { ...saved, onMessage });
+	let restarted = false;
+	const running = readListenerPid(deps.paths);
+	if (running && deps.isOurListener(running.pid)) {
+		const drift = await listenerDrift(deps, running);
+		if (drift.restart) {
+			restarted = true;
+			if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
+			await stopRunningListener(deps, running.pid);
+		}
+	}
+	const listenerArgv = deps.listenerArgv(onMessageArgvFor(onMessage));
 	const ensured = await ensureListener({
 		paths: deps.paths,
 		now: deps.now,
+		nowMs: () => Date.now(),
 		sleep: deps.sleep,
 		isAlive: deps.isAlive ?? isAlive,
 		verdict: deps.verdict ?? ((pid) => holderVerdict(pid)),
-		argv: deps.listenerArgv(onMessageArgvFor(onMessage)),
+		ownsProcess: (pid) => ownsEnsureProcess(pid, listenerArgv[0]),
+		argv: listenerArgv,
 		hook: onMessage ? { argv: onMessage.argv, timeoutS: Math.round(onMessage.timeoutMs / 1000) } : null,
 		spawnListener: deps.spawnListener,
 	});
 	printJson(deps, {
 		pid: ensured.pid,
-		status: ensured.status,
+		status: restarted && ensured.status === "started" ? "restarted" : ensured.status,
 		autostart: "ensure",
 		hook: onMessage ? "command" : null,
 		...(cron ? { cron } : {}),
@@ -910,9 +926,8 @@ function attachPhoneVerbs(
 		.command("watch")
 		.description("print unread voicemail until --for seconds elapse, waiting a jittered gap between checks")
 		.option("--for <seconds>", "seconds to keep checking", String(WATCH_DEFAULT_FOR_S))
-		.option("--new", "print only messages that arrive after watch starts")
-		.option("--backlog", "also print unread messages already stored")
-		.action((opts: { for?: string; backlog?: boolean; new?: boolean }) => phoneWatch(opts, getDeps()));
+		.option("--new", "print only messages that arrive after watch starts; the default also prints the unread backlog")
+		.action((opts: { for?: string; new?: boolean }) => phoneWatch(opts, getDeps()));
 
 	group
 		.command("status")

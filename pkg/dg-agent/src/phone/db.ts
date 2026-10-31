@@ -332,13 +332,6 @@ export class PhoneDb {
 		});
 	}
 
-	/** Every stored message, newest first. Both directions. Read state is not a filter. */
-	messagesNewestFirst(): MessageRow[] {
-		return this.db
-			.query("SELECT * FROM messages WHERE direction IN ('in', 'out') ORDER BY ts DESC, id DESC")
-			.all() as MessageRow[];
-	}
-
 	/** The oldest unread message still under the hook's attempt cap, or undefined once the queue is empty. */
 	nextDeliverable(cap: number): MessageRow | undefined {
 		return (
