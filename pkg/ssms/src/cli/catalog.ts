@@ -41,8 +41,8 @@ export const COMMANDS: readonly CommandHelp[] = [
 		summary: "Write a pending draft and print it. Does not send.",
 	},
 	{
-		usage: "ssms <provider> send --draft ID [--yes]",
-		summary: "Send one draft after --yes or an interactive yes. Refuses hooks.",
+		usage: "ssms <provider> send --draft ID [--approve TOKEN]",
+		summary: "Send one draft after an interactive yes, or --approve TOKEN. --yes does not send.",
 	},
 	{
 		usage: "ssms google classify [--config PATH]",
@@ -73,7 +73,8 @@ export function renderHelp(): string {
 		"  --json                 Print one JSON object on stdout",
 		"  --config PATH          Cleanup config (YAML or JSON). Defaults match the skill.",
 		"  --dry-run              Report the action and do not change the account",
-		"  --yes                  Confirm one draft send",
+		"  --yes                  Ignored. It does not approve a send",
+		"  --approve TOKEN        Approval token printed with that draft",
 		"  --name NAME            Linked device name (default dg-cli)",
 		"  --limit N              Maximum messages (default 20)",
 		"  --timeout-ms N         Receive budget in milliseconds (default 0, watch 60000)",
@@ -89,8 +90,9 @@ export function renderHelp(): string {
 		"  --draft ID             Draft to send",
 		"  --remove               Remove a reaction instead of adding one",
 		"",
-		"Sends go through draft, then send --draft ID --yes.",
-		"A hook (DG_HOOK, CLAUDE_HOOK, or DG_SSMS_HOOK) cannot send.",
+		"Sends go through draft, then an interactive yes or send --draft ID --approve TOKEN.",
+		"--yes alone never sends. allow_send false never sends.",
+		"A hook cannot send: it has no terminal yes and must not reuse another draft's token.",
 		"Logs record ids and reasons only.",
 	];
 	return `${lines.join("\n")}\n`;

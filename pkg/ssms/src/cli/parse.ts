@@ -17,6 +17,7 @@ const FLAGS = [
 	"quote-author",
 	"quote-text",
 	"draft",
+	"approve",
 	"remove",
 ] as const;
 
@@ -35,6 +36,7 @@ const VALUE_FLAGS = new Set([
 	"quote-author",
 	"quote-text",
 	"draft",
+	"approve",
 ]);
 
 export interface ParsedArgs {
@@ -51,6 +53,7 @@ export interface ParsedArgs {
 	text?: string;
 	emoji?: string;
 	draft?: string;
+	approve?: string;
 	quoteText?: string;
 	targetAuthor?: string;
 	quoteAuthor?: string;
@@ -126,7 +129,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 		else if (name === "target-author") parsed.targetAuthor = value;
 		else if (name === "quote-author") parsed.quoteAuthor = value;
 		else if (name === "quote-text") parsed.quoteText = value;
-		else parsed.draft = value;
+		else if (name === "draft") parsed.draft = value;
+		else parsed.approve = value;
 	}
 	parsed.provider = positionals[0];
 	parsed.verb = positionals[1];

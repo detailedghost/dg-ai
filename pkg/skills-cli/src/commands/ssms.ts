@@ -1,10 +1,25 @@
 import { join } from "node:path";
 import type { Command } from "commander";
-import { MESSAGES_URL, createScriptedMessagesBrowser, runSsms } from "@dg/ssms";
+import { MESSAGES_URL, askSendApproval, createScriptedMessagesBrowser, runSsms } from "@dg/ssms";
 import { launchCdpBrowser } from "../utils/cdp-harness";
 
 function ssmsHome(env: NodeJS.ProcessEnv): string {
 	return env.DG_HOME ?? join(env.HOME ?? "", ".dg");
+}
+
+export function ssmsCommandRuntime(stdin: {
+	isTTY?: boolean;
+	resume?: () => void;
+	pause?: () => void;
+	once: (event: "data", listener: (chunk: Uint8Array) => void) => void;
+} = process.stdin): { stdinIsTTY: boolean; ask?: (draftId: string) => Promise<boolean> } {
+	const stdinIsTTY = stdin.isTTY === true;
+	return {
+		stdinIsTTY,
+		ask: stdinIsTTY
+			? (draftId) => askSendApproval(draftId, stdin, (line) => process.stderr.write(line))
+			: undefined,
+	};
 }
 
 export function registerSsms(program: Command): void {
@@ -26,6 +41,7 @@ export function registerSsms(program: Command): void {
 				stdio: "inherit",
 				env: process.env,
 				home,
+				...ssmsCommandRuntime(),
 				openBrowser: needsBrowser
 					? async () => {
 							const page = await launchCdpBrowser({

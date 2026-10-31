@@ -10,6 +10,8 @@ const config = {
 		"src/classifier/classify.ts",
 		"src/privacy/redact.ts",
 		"src/pace/jitter.ts",
+		"src/cli/authorize.ts",
+		"src/google/page.ts",
 	],
 	testFiles: [
 		"__tests__/send-gate.spec.ts",
@@ -17,6 +19,8 @@ const config = {
 		"__tests__/redact.spec.ts",
 		"__tests__/jitter.spec.ts",
 		"__tests__/cleanup.spec.ts",
+		"__tests__/cli.spec.ts",
+		"__tests__/google-page.spec.ts",
 	],
 	bun: { timeout: 60_000 },
 	reporters: ["clear-text", "json"],

@@ -234,10 +234,14 @@ export function createGoogleProvider(input: {
 					confirmed: true,
 					text,
 					draftId: draft.id,
+					conversationId: draft.conversationId,
 				}),
 				"page-unrecognized",
 			);
 			if (result.reason !== "sent") throw new Error("send failed");
+			if (result.conversationId !== draft.conversationId) {
+				throw new Error("open conversation does not match the draft");
+			}
 			writeDraft(input.home, { ...draft, status: "sent" });
 			log({ id: draft.id, reason: "send", provider: "google", verb: "send" });
 			return { draftId: draft.id, reason: "sent" as const };

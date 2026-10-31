@@ -19,8 +19,15 @@ interface Pending {
 }
 
 export function connectJsonRpc(port: number, host = "127.0.0.1"): Promise<RpcTransport> {
+	return attachRpc(net.connect({ port, host }));
+}
+
+export function connectJsonRpcPath(socketPath: string): Promise<RpcTransport> {
+	return attachRpc(net.connect({ path: socketPath }));
+}
+
+function attachRpc(socket: net.Socket): Promise<RpcTransport> {
 	return new Promise((resolve, reject) => {
-		const socket = net.connect({ port, host });
 		const pending = new Map<string, Pending>();
 		const notes: RpcNotification[] = [];
 		let buf = "";

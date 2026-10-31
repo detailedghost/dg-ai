@@ -18,7 +18,7 @@ export class ConfirmationRequired extends Error {
 
 	constructor() {
 		super(
-			"send requires --yes or an interactive yes; drafts are never sent on their own",
+			"send requires an interactive yes on a terminal, or --approve TOKEN for this draft",
 		);
 		this.name = "ConfirmationRequired";
 	}

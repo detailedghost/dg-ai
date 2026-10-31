@@ -65,9 +65,10 @@ describe("daemon startup", () => {
 		const started = await startSignalDaemon({
 			binary: "signal-cli",
 			dataDir: "/tmp/signal-data",
-			freePort: async () => 9,
 			spawn: () => child,
 			rng: () => 0,
+			uid: 1000,
+			stat: () => ({ isSocket: () => true, mode: 0o140600, uid: 1000 }),
 			sleep: async (ms) => {
 				waits.push(ms);
 			},
@@ -90,10 +91,13 @@ describe("daemon startup", () => {
 			startSignalDaemon({
 				binary: "signal-cli",
 				dataDir: "/tmp/signal-data",
-				freePort: async () => 9,
+				socketPath: "/tmp/signal-data/daemon.sock",
 				spawn: () => child,
 				rng: () => 0,
 				sleep: async () => undefined,
+				stat: () => {
+					throw new Error("ENOENT");
+				},
 				connect: async () => {
 					throw new Error("not listening");
 				},
@@ -104,17 +108,48 @@ describe("daemon startup", () => {
 });
 
 describe("daemon command", () => {
+	test("starts signal-cli on a unix socket and never on localhost tcp", () => {
+		const args = daemonArgs("/usr/bin/signal-cli", "/tmp/signal-data", "/tmp/signal-data/daemon.sock");
+		expect(args).toContain("--socket=/tmp/signal-data/daemon.sock");
+		expect(args.join(" ")).not.toContain("--tcp");
+		expect(args.join(" ")).not.toContain("127.0.0.1");
+	});
+
 	test("starts multi-account daemon mode without a phone number on the command line", () => {
-		const args = daemonArgs("/usr/bin/signal-cli", "/tmp/signal-data", 7583);
+		const args = daemonArgs("/usr/bin/signal-cli", "/tmp/signal-data", "/tmp/signal-data/daemon.sock");
 		expect(args).toEqual([
 			"/usr/bin/signal-cli",
 			"--data-dir",
 			"/tmp/signal-data",
 			"daemon",
-			"--tcp=127.0.0.1:7583",
+			"--socket=/tmp/signal-data/daemon.sock",
 		]);
 		expect(args.join(" ")).not.toContain("+");
 		expect(args).not.toContain("-a");
+		expect(args.join(" ")).not.toContain("--tcp");
+	});
+
+	test("refuses a group-accessible socket before connecting", async () => {
+		let connected = false;
+		const child = fakeChild();
+		await expect(
+			startSignalDaemon({
+				binary: "signal-cli",
+				dataDir: "/tmp/signal-data",
+				socketPath: "/tmp/signal-data/daemon.sock",
+				spawn: () => child,
+				rng: () => 0,
+				sleep: async () => undefined,
+				uid: 1000,
+				stat: () => ({ isSocket: () => true, mode: 0o140777, uid: 1000 }),
+				connect: async () => {
+					connected = true;
+					throw new Error("connected");
+				},
+			}),
+		).rejects.toThrow("group or world accessible");
+		expect(connected).toBe(false);
+		expect(child.killed).toBe(true);
 	});
 });
 

@@ -27,6 +27,11 @@ describe("nextGapMs", () => {
 
 	test("an even stride across three gaps is broken", () => {
 		expect(nextGapMs(seq([0.9, 0, 0]), [2000, 2500])).toBe(3089);
+		expect(nextGapMs(seq([0.9, 0, 0.5]), [2000, 2500])).toBe(3139);
+	});
+
+	test("a stride that is not even stays on the raw gap", () => {
+		expect(nextGapMs(seq([0.9, 0, 0]), [2000, 2600])).toBe(3000);
 	});
 
 	test("eight draws from a cycling source are not one interval", () => {

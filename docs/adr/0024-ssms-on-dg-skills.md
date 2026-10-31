@@ -32,11 +32,12 @@ CDP launcher. `dg-agent` does not grow an SMS command. The daemon does not embed
 one interface and a capability map. A false capability throws
 `UnsupportedCapability` instead of a silent no-op.
 
-Sends go through `draft`, then `send --draft <id>` with `--yes` or an
-interactive yes. `decideSend` in `pkg/ssms/src/safety/send-gate.ts` refuses the
-send when `DG_HOOK`, `CLAUDE_HOOK`, or `DG_SSMS_HOOK` is set. Cleanup never
-deletes and never sends. Logs go through `sanitizeLogLine` and carry an id and
-a reason only.
+Sends go through `draft`, then `send --draft <id>`. `decideSend` in
+`pkg/ssms/src/safety/send-gate.ts` allows the send only for an interactive yes
+on a real terminal, or for the approval token stored on that draft. `--yes`
+alone does not send. `allow_send: false` never sends. Cleanup never deletes
+and never sends. Logs go through `sanitizeLogLine` and carry an id and a reason
+only.
 
 ## Consequences
 

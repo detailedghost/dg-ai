@@ -15,7 +15,7 @@ Command lines, matching `ssms --help`:
 - `ssms google archive <conversation> [--dry-run] [--config PATH]`
 - `ssms google block-report <conversation> [--dry-run] [--config PATH]`
 - `ssms <provider> draft --conversation ID [--text TEXT] [--emoji EMOJI] [--attachment PATH] [--quote-timestamp N]`
-- `ssms <provider> send --draft ID [--yes]`
+- `ssms <provider> send --draft ID [--approve TOKEN]`
 - `ssms google classify [--config PATH]`
 - `ssms google cleanup [--dry-run] [--config PATH]`
 
@@ -62,12 +62,14 @@ on `PATH`.
 
 ## Drafts
 
-`draft` writes a pending draft under `$DG_HOME/ssms/drafts` and prints it.
-`send --draft ID` sends that one draft only after `--yes`, or after an
-interactive yes on a terminal. A hook (`DG_HOOK`, `CLAUDE_HOOK`, or
-`DG_SSMS_HOOK`) cannot send, even with `--yes`. Cleanup never sends and never
-deletes. `allow_send: false` is the cleanup default; a draft the user approves
-is the per-message approval.
+`draft` writes a pending draft under `$DG_HOME/ssms/drafts` and prints an
+approval token for that draft id. `send --draft ID` sends that one draft only
+after an interactive yes on a real terminal, or after `--approve TOKEN` with
+the token printed for that draft. `--yes` alone does not send. A hook has no
+terminal and cannot send unless it also has that draft's token, which the hook
+must not invent. `allow_send: false` means never send, and it is the default.
+Set `allow_send: true` in the config before a token or a terminal yes can send.
+Cleanup never sends and never deletes.
 
 Signal drafts can be plain text, a reaction (`--emoji`), an image
 (`--attachment`), or a reply (`--quote-timestamp`, `--quote-author`,

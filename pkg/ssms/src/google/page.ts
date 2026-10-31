@@ -23,6 +23,20 @@ export function messagesPageSource(): string {
   function attr(el, name) {
     return el && typeof el.getAttribute === "function" ? el.getAttribute(name) : null;
   }
+  function tag(el) {
+    return String(el && el.tagName || "").toUpperCase();
+  }
+  function conversationIdFromHref(href) {
+    var match = /\\/conversations\\/([^/?#]+)/.exec(String(href || ""));
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+  function isMessage(el) {
+    return tag(el) === "MWS-MESSAGE-WRAPPER";
+  }
+  function isConversation(el) {
+    if (!el || isMessage(el)) return false;
+    return conversationIdFromHref(attr(el, "href")).length > 0;
+  }
   function labeled(name) {
     var hits = nodes().filter(function (el) { return textOf(el) === name; });
     if (hits.length) return hits[hits.length - 1];
@@ -33,34 +47,87 @@ export function messagesPageSource(): string {
   }
   var clicks = [];
   function clickLabel(name) {
+    if (/delete/i.test(name)) throw new Error("delete is disabled");
     var el = labeled(name);
     if (!el || typeof el.click !== "function") return false;
     el.click();
     clicks.push(name);
     return true;
   }
+  function ageDaysOf(el) {
+    var raw = attr(el, "datetime");
+    if (!raw) return 0;
+    var parsed = Date.parse(raw);
+    if (!Number.isFinite(parsed)) return 0;
+    var now = Number(args && args.nowMs);
+    if (!Number.isFinite(now)) now = Date.now();
+    return Math.max(0, Math.floor((now - parsed) / 86400000));
+  }
   function rowFrom(el) {
-    var id = attr(el, "data-conversation-id") || attr(el, "href") || "";
-    var parts = String(id).split("/").filter(Boolean);
+    var id = conversationIdFromHref(attr(el, "href"));
     return {
-      id: parts.length ? parts[parts.length - 1] : String(id),
-      sender: attr(el, "data-sender") || textOf(el).slice(0, 80),
-      preview: attr(el, "data-preview") || "",
-      pinned: attr(el, "data-pinned") === "true",
-      savedContact: attr(el, "data-saved") === "true",
-      ageDays: Number(attr(el, "data-age-days") || "0")
+      id: id,
+      sender: attr(el, "aria-label") || textOf(el).slice(0, 80),
+      preview: textOf(el),
+      pinned: attr(el, "aria-pressed") === "true",
+      savedContact: false,
+      ageDays: ageDaysOf(el)
     };
   }
   function conversationRows() {
-    var marked = nodes().filter(function (el) {
-      return attr(el, "data-conversation-id") && !attr(el, "data-message-id");
-    });
-    if (marked.length) return marked.map(rowFrom);
-    var links = nodes().filter(function (el) {
-      var href = attr(el, "href");
-      return typeof href === "string" && href.indexOf("/conversations/") !== -1;
-    });
-    return links.map(rowFrom);
+    return nodes().filter(isConversation).map(rowFrom);
+  }
+  function findConversation(id) {
+    return nodes().find(function (el) {
+      return isConversation(el) && conversationIdFromHref(attr(el, "href")) === id;
+    }) || null;
+  }
+  function openConversation(id) {
+    var link = findConversation(id);
+    if (!link) throw new Error("conversation not found");
+    if (typeof link.click === "function") link.click();
+    clicks.push("open:" + id);
+    var open = typeof document.openConversationId === "string"
+      ? document.openConversationId
+      : conversationIdFromHref(attr(link, "href"));
+    if (open !== id) throw new Error("open conversation does not match the draft");
+    return link;
+  }
+  function isCompose(el) {
+    var name = tag(el);
+    if (name === "TEXTAREA" || name === "INPUT") return true;
+    if (attr(el, "contenteditable") === "true" || el.isContentEditable === true) return true;
+    var label = attr(el, "aria-label");
+    return label === "Text message";
+  }
+  function writeCompose(box, text) {
+    var name = tag(box);
+    if (name === "TEXTAREA" || name === "INPUT") {
+      var Ctor = name === "TEXTAREA" ? HTMLTextAreaElement : HTMLInputElement;
+      if (typeof Ctor !== "function") throw new Error("compose box missing");
+      var desc = Object.getOwnPropertyDescriptor(Ctor.prototype, "value");
+      if (!desc || typeof desc.set !== "function") throw new Error("compose box missing");
+      desc.set.call(box, text);
+      if (typeof box.dispatchEvent !== "function") throw new Error("compose box missing");
+      box.dispatchEvent(typeof Event === "function" ? new Event("input", { bubbles: true }) : { type: "input" });
+      return;
+    }
+    if (attr(box, "contenteditable") === "true" || box.isContentEditable === true) {
+      if (typeof box.focus === "function") box.focus();
+      var inserted = false;
+      if (typeof document.execCommand === "function") inserted = document.execCommand("insertText", false, text) === true;
+      if (!inserted) throw new Error("compose box missing");
+      if (typeof box.dispatchEvent === "function") {
+        box.dispatchEvent(typeof InputEvent === "function"
+          ? new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" })
+          : { type: "input" });
+      }
+      return;
+    }
+    throw new Error("compose box missing");
+  }
+  function disabled(el) {
+    return !el || el.disabled === true || attr(el, "aria-disabled") === "true";
   }
   if (action === "delete") throw new Error("delete is disabled");
   if (action === "status") {
@@ -99,16 +166,17 @@ export function messagesPageSource(): string {
     var wanted = String(args.conversationId || "");
     var limit = Number(args.limit);
     if (!Number.isFinite(limit) || limit < 0) limit = 0;
-    var messages = nodes().filter(function (el) {
-      return attr(el, "data-message-id") && (!wanted || attr(el, "data-conversation-id") === wanted);
-    }).map(function (el) {
+    if (wanted) openConversation(wanted);
+    var messages = nodes().filter(isMessage).map(function (el) {
+      var raw = attr(el, "datetime") || "0";
+      var timestamp = /^\\d+$/.test(raw) ? Number(raw) : Date.parse(raw);
       return {
-        id: attr(el, "data-message-id"),
-        conversationId: attr(el, "data-conversation-id") || wanted,
-        timestamp: Number(attr(el, "data-timestamp") || "0"),
-        senderId: attr(el, "data-sender-id") || "",
-        text: attr(el, "data-text") || textOf(el),
-        contentType: attr(el, "data-content-type") || ""
+        id: attr(el, "id") || "",
+        conversationId: wanted,
+        timestamp: Number.isFinite(timestamp) ? timestamp : 0,
+        senderId: attr(el, "aria-label") || "",
+        text: textOf(el),
+        contentType: attr(el, "type") || ""
       };
     });
     messages.sort(function (a, b) { return b.timestamp - a.timestamp; });
@@ -116,30 +184,34 @@ export function messagesPageSource(): string {
   }
   if (action === "archive" || action === "block") {
     var id = String(args.conversationId || "");
-    var row = nodes().find(function (el) { return attr(el, "data-conversation-id") === id; });
-    if (!row) throw new Error("conversation not found");
-    if (typeof row.click === "function") row.click();
-    clicks.push("open:" + id);
+    openConversation(id);
     if (action === "archive") {
+      if (!labeled("Options")) throw new Error("archive control missing");
       clickLabel("Options");
       if (!labeled("Archive")) throw new Error("archive control missing");
       clickLabel("Archive");
-      if (clicks.indexOf("Delete") !== -1) throw new Error("delete is disabled");
       return { conversationId: id, reason: "archived", clicks: clicks };
     }
+    if (!labeled("Details")) throw new Error("spam control missing");
     clickLabel("Details");
     if (!labeled("Block & report spam")) throw new Error("spam control missing");
     clickLabel("Block & report spam");
-    if (clicks.indexOf("Delete") !== -1) throw new Error("delete is disabled");
     return { conversationId: id, reason: "blocked", clicks: clicks };
   }
   if (action === "send") {
     if (args.confirmed !== true) throw new Error("send requires confirmation");
-    var box = nodes().find(function (el) { return attr(el, "data-compose") === "true"; });
+    var target = String(args.conversationId || "");
+    if (!target) throw new Error("conversation not found");
+    openConversation(target);
+    var box = nodes().find(isCompose);
     if (!box) throw new Error("compose box missing");
-    box.textContent = String(args.text || "");
-    if (!clickLabel("Send")) throw new Error("send control missing");
-    return { draftId: String(args.draftId || ""), reason: "sent", clicks: clicks };
+    writeCompose(box, String(args.text || ""));
+    var send = labeled("Send") || labeled("Send message");
+    if (!send) throw new Error("send control missing");
+    if (disabled(send)) throw new Error("send control disabled");
+    var sent = clickLabel("Send") || clickLabel("Send message");
+    if (!sent) throw new Error("send control missing");
+    return { draftId: String(args.draftId || ""), conversationId: target, reason: "sent", clicks: clicks };
   }
   throw new Error("unknown page action");
 }`;
@@ -150,6 +222,26 @@ export function evaluateMessagesAction(
 	action: PageAction,
 	args: Record<string, unknown>,
 ): unknown {
+	const realm = globalThis as {
+		HTMLTextAreaElement?: { prototype: object };
+	};
+	if (typeof realm.HTMLTextAreaElement !== "function") {
+		function HTMLTextAreaElement() {}
+		Object.defineProperty(HTMLTextAreaElement.prototype, "value", {
+			configurable: true,
+			set(value: string) {
+				Object.defineProperty(this, "nativeValue", {
+					value,
+					writable: true,
+					configurable: true,
+				});
+			},
+			get() {
+				return "";
+			},
+		});
+		realm.HTMLTextAreaElement = HTMLTextAreaElement as { prototype: object };
+	}
 	const fn = new Function(
 		"document",
 		"action",

@@ -164,6 +164,38 @@ describe("signal provider", () => {
 	});
 });
 
+describe("attachment approval", () => {
+	test("send refuses an attachment whose bytes changed after the draft", async () => {
+		const server = await startFakeSignalServer((method) => {
+			if (method === "send") return { timestamp: 1 };
+			throw new Error(method);
+		});
+		const rpc = await connectJsonRpc(server.port);
+		const home = mkdtempSync(join(tmpdir(), "ssms-hash-"));
+		const image = join(home, "pic.jpg");
+		writeFileSync(image, "jpeg-approved");
+		const provider = createSignalProvider({
+			home,
+			rpc,
+			accountId: "acct-1",
+			ids: () => "d1",
+			now: () => 0,
+		});
+		const draft = await provider.draftReply({
+			conversationId: "u2",
+			text: "pic",
+			attachments: [{ path: image, contentType: "image/jpeg" }],
+		});
+		writeFileSync(image, "jpeg-replaced");
+		await expect(
+			provider.sendDraft({ draftId: draft.id, confirmed: true, hook: false }),
+		).rejects.toThrow(/changed/);
+		expect(server.calls.filter((call) => call.method === "send")).toEqual([]);
+		await rpc.close();
+		await server.close();
+	});
+});
+
 describe("signal-cli install hint", () => {
 	test("names the Arch package and does not pretend to install it", () => {
 		const hint = signalCliInstallHint();

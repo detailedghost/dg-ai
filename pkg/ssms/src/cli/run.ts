@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -5,17 +6,13 @@ import { parse as parseYaml } from "yaml";
 import { applyCleanup, conversationToClassifiable, planCleanup } from "../cleanup/apply";
 import { parseCleanupConfig } from "../config/parse";
 import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
-import {
-	ConfirmationRequired,
-	HookSendRefused,
-	SendDeclined,
-	UnsupportedCapability,
-} from "../errors";
+import { SendDeclined, UnsupportedCapability } from "../errors";
 import type { MessagesBrowser } from "../google/browser";
 import { createGoogleProvider } from "../google/provider";
+import { readDraft, writeDraft } from "../drafts/store";
 import { createLogger, type LogEvent } from "../privacy/log";
 import { redactSecrets } from "../privacy/redact";
-import { decideSend, hookEnvName } from "../safety/send-gate";
+import { authorizeSend } from "./authorize";
 import { startSignalDaemon, type Spawned } from "../signal/daemon";
 import { resolveSignalBinary } from "../signal/hint";
 import { createSignalProvider } from "../signal/provider";
@@ -114,7 +111,7 @@ export async function runSsms(
 		const session = await openSession(args.provider, runtime, home, env, config, log, args.verb);
 		stop = session.stop;
 		opened = session.opened;
-		await dispatch(args, session.provider, config, runtime, env, writeOut, log);
+		await dispatch(args, session.provider, config, runtime, home, writeOut, log);
 		return { code: 0, stdout, stderr };
 	} catch (error) {
 		const message = redactSecrets(error instanceof Error ? error.message : String(error));
@@ -205,7 +202,7 @@ async function signalTransport(
 		runtime.spawn ??
 		((cmd: string[]) => Bun.spawn(cmd, { stdout: "ignore", stderr: "pipe" }));
 	const started = await startSignalDaemon({ binary, dataDir, spawn });
-	log({ id: `port:${started.port}`, reason: "daemon-start", provider: "signal", verb });
+	log({ id: "signal-daemon", reason: "daemon-start", provider: "signal", verb });
 	return { transport: started.transport, stop: started.stop };
 }
 
@@ -214,7 +211,7 @@ async function dispatch(
 	provider: SmsProvider,
 	config: SmsCleanupConfig,
 	runtime: SsmsRuntime,
-	env: NodeJS.ProcessEnv,
+	home: string,
 	writeOut: (text: string) => void,
 	log: (event: LogEvent) => void,
 ): Promise<void> {
@@ -298,7 +295,7 @@ async function dispatch(
 	}
 	if (verb === "draft") {
 		if (!args.conversation) throw new UsageError("draft needs --conversation");
-		const draft = await provider.draftReply({
+		const created = await provider.draftReply({
 			conversationId: args.conversation,
 			text: args.text,
 			emoji: args.emoji,
@@ -318,6 +315,9 @@ async function dispatch(
 							text: args.quoteText,
 						},
 		});
+		const approvalToken = randomBytes(16).toString("hex");
+		const draft = { ...created, approvalToken };
+		writeDraft(home, draft);
 		const body = [
 			args.text ? `text: ${args.text}` : "",
 			args.emoji ? `emoji: ${args.emoji}` : "",
@@ -327,30 +327,31 @@ async function dispatch(
 			.filter(Boolean)
 			.join("\n");
 		emit(
-			{ ok: true, draft },
-			`draft ${draft.id}\nprovider: ${draft.provider}\nconversation: ${draft.conversationId}\n${body}\nconfirm: ssms ${provider.id} send --draft ${draft.id} --yes\n`,
+			{ ok: true, draft: { ...draft, approvalToken: undefined }, approvalToken },
+			`draft ${draft.id}\nprovider: ${draft.provider}\nconversation: ${draft.conversationId}\n${body}\napprove: ${approvalToken}\nconfirm: ssms ${provider.id} send --draft ${draft.id} --approve ${approvalToken}\n`,
 		);
 		return;
 	}
 	if (verb === "send") {
 		if (!args.draft) throw new UsageError("send needs --draft ID");
-		const decision = await decideSend({
-			yes: args.yes,
-			hook: hookEnvName(env) !== undefined,
-			tty: runtime.stdinIsTTY === true,
+		const pending = readDraft(home, args.draft);
+		const decision = await authorizeSend({
+			allowSend: config.allow_send,
 			draftId: args.draft,
+			tty: runtime.stdinIsTTY === true,
+			token: args.approve,
+			expectedToken: pending.approvalToken,
 			ask: runtime.ask,
 		});
 		if (!decision.ok) {
 			log({ id: args.draft, reason: "send-refused", provider: provider.id, verb: "send" });
-			if (decision.reason === "hook") throw new HookSendRefused();
-			if (decision.reason === "declined") throw new SendDeclined();
-			throw new ConfirmationRequired();
+			if (decision.message === "send declined") throw new SendDeclined();
+			throw new Error(decision.message);
 		}
 		const result = await provider.sendDraft({
 			draftId: args.draft,
 			confirmed: true,
-			hook: hookEnvName(env) !== undefined,
+			hook: false,
 		});
 		emit(result, `sent ${result.draftId}\n`);
 		return;

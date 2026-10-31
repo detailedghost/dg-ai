@@ -21,7 +21,7 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 ~/.dg/bin/dg-skills ssms --help
 ```
 
-**Usage:** `~/.dg/bin/dg-skills ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--yes]`
+**Usage:** `~/.dg/bin/dg-skills ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--approve TOKEN]`
 
 If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
 
@@ -36,7 +36,8 @@ If a step fails, run ~/.dg/bin/dg-skills doctor ssms.
 | `--conversation` | | Conversation id for draft, read, or receive | |
 | `--text` | | Draft body | |
 | `--draft` | | Draft id to send | |
-| `--yes` | | Confirm that one draft send | required to send |
+| `--approve` | | Token printed for that draft | required off a terminal |
+| `--yes` | | Ignored. It does not approve a send | |
 | `--name` | | Linked-device name for `signal link` | dg-cli |
 
 ## Prerequisites
@@ -97,13 +98,16 @@ Pass the same map as `--config` when the user overrides a value.
    Options menu. Report spam through Details, then Block & report spam.
    Never touch compose. With `allow_delete` false, never delete a conversation
    or a message. With `allow_send` false, never send; any outgoing text needs
-   explicit per-message approval from the user.
+   explicit per-message approval from the user. `allow_send: false` means never
+   send, even with `--yes` or a token. Set it true only when the user wants a
+   send to be possible.
 5. Leave ambiguous items untouched and list them with the sender, the date, and
    a one-line preview. `flag_ambiguous` stays true unless the user overrides it.
 6. To answer one thread, draft then send that draft only:
-   `~/.dg/bin/dg-skills ssms google draft --conversation ID --text TEXT`, show
-   the printed draft, then `~/.dg/bin/dg-skills ssms google send --draft ID --yes`
-   after the user approves that message. Do not send from a hook.
+   `~/.dg/bin/dg-skills ssms google draft --conversation ID --text TEXT`. Show
+   the printed draft. On a terminal, `send --draft ID` asks for yes. Off a
+   terminal, pass `--approve` with the token printed for that draft. `--yes`
+   does not send. Do not send from a hook.
 7. Report the totals, the archived threads, the blocked and reported threads,
    what was kept by category and group, and the ambiguous items.
 

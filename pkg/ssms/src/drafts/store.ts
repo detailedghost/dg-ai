@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writePrivateFile } from "../privacy/files";
 import type { DraftRecord, SmsProviderId } from "../types";
 
 export function draftsDir(home: string): string {
@@ -11,8 +12,7 @@ export function draftPath(home: string, id: string): string {
 }
 
 export function writeDraft(home: string, draft: DraftRecord): void {
-	mkdirSync(draftsDir(home), { recursive: true });
-	writeFileSync(draftPath(home, draft.id), `${JSON.stringify(draft)}\n`);
+	writePrivateFile(draftsDir(home), draftPath(home, draft.id), `${JSON.stringify(draft)}\n`);
 }
 
 export function readDraft(home: string, id: string): DraftRecord {

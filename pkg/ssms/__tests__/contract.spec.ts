@@ -26,40 +26,18 @@ async function googleFixture(): Promise<Fixture> {
 	const doc = createDocument(
 		[
 			node("Load more conversations"),
-			node("", {
-				"data-conversation-id": "c1",
-				"data-sender": "Ada",
-				"data-preview": "secret-body",
-			}),
-			node("", { "data-conversation-id": "c2", "data-sender": "Bea", "data-preview": "other" }),
-			node("m1", {
-				"data-message-id": "m1",
-				"data-conversation-id": "c1",
-				"data-timestamp": "1",
-				"data-text": "secret-body",
-				"data-sender-id": "ada",
-			}),
-			node("m2", {
-				"data-message-id": "m2",
-				"data-conversation-id": "c1",
-				"data-timestamp": "2",
-				"data-text": "second",
-				"data-sender-id": "ada",
-			}),
-			node("m3", {
-				"data-message-id": "m3",
-				"data-conversation-id": "c1",
-				"data-timestamp": "3",
-				"data-text": "third",
-				"data-sender-id": "ada",
-			}),
+			node("secret-body", { href: "/web/conversations/c1", "aria-label": "Ada" }),
+			node("other", { href: "/web/conversations/c2", "aria-label": "Bea" }),
+			node("secret-body", { id: "m1", datetime: "1", "aria-label": "ada" }, "MWS-MESSAGE-WRAPPER"),
+			node("second", { id: "m2", datetime: "2", "aria-label": "ada" }, "MWS-MESSAGE-WRAPPER"),
+			node("third", { id: "m3", datetime: "3", "aria-label": "ada" }, "MWS-MESSAGE-WRAPPER"),
 			node("Options"),
 			node("Archive"),
 			node("Details"),
 			node("Block & report spam"),
 			node("Delete"),
-			node("Send"),
-			node("", { "data-compose": "true" }),
+			node("Send", { "aria-label": "Send" }),
+			node("", { "aria-label": "Text message" }, "TEXTAREA"),
 		],
 		"Conversations",
 	);
@@ -248,7 +226,7 @@ async function assertContract(name: string, open: () => Promise<Fixture>) {
 			expect(fixture.sent()).toBe(before);
 			await expect(
 				fixture.provider.sendDraft({ draftId: draft.id, confirmed: false, hook: false }),
-			).rejects.toThrow("send requires --yes");
+			).rejects.toThrow("interactive yes");
 			expect(fixture.sent()).toBe(before);
 			await expect(
 				fixture.provider.sendDraft({ draftId: draft.id, confirmed: true, hook: true }),

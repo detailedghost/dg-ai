@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { assertDraftProvider, readDraft, writeDraft } from "../drafts/store";
 import { ConfirmationRequired, HookSendRefused } from "../errors";
@@ -31,6 +32,23 @@ export const SIGNAL_CAPABILITIES: CapabilityMap = {
 };
 
 export const DEFAULT_DEVICE_NAME = "dg-cli";
+
+function fileSha256(path: string): string {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function pinAttachments(
+	items: { path: string; contentType: string; sha256?: string }[] | undefined,
+) {
+	return (items ?? []).map((item) => ({ ...item, sha256: fileSha256(item.path) }));
+}
+
+function assertAttachmentUnchanged(item: { path: string; sha256?: string }): void {
+	const current = fileSha256(item.path);
+	if (!item.sha256 || current !== item.sha256) {
+		throw new Error("attachment changed since the draft was approved");
+	}
+}
 
 function rows(value: unknown): Record<string, unknown>[] {
 	if (!Array.isArray(value)) return [];
@@ -206,7 +224,7 @@ export function createSignalProvider(input: {
 				remove: request.remove,
 				targetTimestamp: request.targetTimestamp,
 				targetAuthorId: request.targetAuthorId,
-				attachments: request.attachments ?? [],
+				attachments: pinAttachments(request.attachments),
 				quote: request.quote,
 				createdAt: new Date(now()).toISOString(),
 				status: "pending",
@@ -239,7 +257,7 @@ export function createSignalProvider(input: {
 					callTimeoutMs,
 				);
 			} else {
-				for (const attachment of draft.attachments) readFileSync(attachment.path);
+				for (const attachment of draft.attachments) assertAttachmentUnchanged(attachment);
 				await input.rpc.call(
 					"send",
 					{

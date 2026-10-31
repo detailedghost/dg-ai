@@ -9,6 +9,8 @@ describe("redactSecrets", () => {
 		expect(redactSecrets("sgnl://linkdevice?uuid=abc&pub_key=SECRETKEY")).toBe("[link]");
 		expect(redactSecrets("pub_key=SECRETKEY")).toBe("pub_key=[redacted]");
 		expect(redactSecrets("conversation c1")).toBe("conversation c1");
+		expect(redactSecrets("read 5551234567")).toBe("read [phone]");
+		expect(redactSecrets("read 5551234567")).not.toContain("5551234567");
 	});
 });
 

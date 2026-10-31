@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writePrivateFile } from "../privacy/files";
 import type { Conversation, SmsMessage } from "../types";
 
 function file(home: string, name: string): string {
@@ -20,8 +21,11 @@ export function readJournal(home: string): SmsMessage[] {
 }
 
 export function writeJournal(home: string, messages: SmsMessage[]): void {
-	mkdirSync(join(home, "ssms", "signal"), { recursive: true });
-	writeFileSync(file(home, "journal.json"), `${JSON.stringify(messages)}\n`);
+	writePrivateFile(
+		join(home, "ssms", "signal"),
+		file(home, "journal.json"),
+		`${JSON.stringify(messages)}\n`,
+	);
 }
 
 export function appendJournal(home: string, incoming: SmsMessage[]): SmsMessage[] {
@@ -39,8 +43,11 @@ export function readIndex(home: string): Conversation[] {
 }
 
 export function writeIndex(home: string, rows: Conversation[]): void {
-	mkdirSync(join(home, "ssms", "signal"), { recursive: true });
-	writeFileSync(file(home, "index.json"), `${JSON.stringify(rows)}\n`);
+	writePrivateFile(
+		join(home, "ssms", "signal"),
+		file(home, "index.json"),
+		`${JSON.stringify(rows)}\n`,
+	);
 }
 
 export function recentMessages(

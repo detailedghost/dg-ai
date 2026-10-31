@@ -89,6 +89,7 @@ export interface SmsMessage {
 export interface DraftAttachment {
 	path: string;
 	contentType: string;
+	sha256?: string;
 }
 
 export interface DraftRecord {
@@ -102,6 +103,7 @@ export interface DraftRecord {
 	targetAuthorId?: string;
 	attachments: DraftAttachment[];
 	quote?: SmsQuote;
+	approvalToken?: string;
 	createdAt: string;
 	status: "pending" | "sent";
 }

@@ -12,13 +12,8 @@ describe("google provider", () => {
 		let reads = 0;
 		const doc = createDocument(
 			[
-				node("later", {
-					"data-message-id": "m9",
-					"data-conversation-id": "c1",
-					"data-timestamp": "9",
-					"data-text": "secret-body",
-					"data-sender-id": "ada",
-				}),
+				node("c1", { href: "/web/conversations/c1" }),
+				node("secret-body", { id: "m9", datetime: "9", "aria-label": "ada" }, "MWS-MESSAGE-WRAPPER"),
 			],
 			"Conversations",
 		);
@@ -51,7 +46,7 @@ describe("google provider", () => {
 
 	test("a second quiet poll does not reuse the same gap", async () => {
 		const home = mkdtempSync(join(tmpdir(), "ssms-gquiet-"));
-		const doc = createDocument([], "");
+		const doc = createDocument([node("c1", { href: "/web/conversations/c1" })], "");
 		const browser = createLocalMessagesBrowser(doc);
 		const waits: number[] = [];
 		let clock = 0;

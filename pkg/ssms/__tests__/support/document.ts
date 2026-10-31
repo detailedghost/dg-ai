@@ -1,15 +1,23 @@
 export interface FakeNode {
 	textContent: string;
+	tagName: string;
 	attrs: Record<string, string>;
 	click(): void;
+	dispatchEvent(): void;
 	getAttribute(name: string): string | null;
 }
 
-export function node(text: string, attrs: Record<string, string> = {}): FakeNode {
+export function node(
+	text: string,
+	attrs: Record<string, string> = {},
+	tagName = "",
+): FakeNode {
 	return {
 		textContent: text,
+		tagName,
 		attrs,
 		click() {},
+		dispatchEvent() {},
 		getAttribute(name) {
 			return Object.prototype.hasOwnProperty.call(attrs, name) ? (attrs[name] ?? null) : null;
 		},
