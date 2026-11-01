@@ -109,10 +109,17 @@ mock.module("wxt/browser", () => ({
 	},
 }));
 
-import { BATCH_MAX_AGE_MS, newBatchId } from "@dg/common";
+import {
+	BATCH_MAX_AGE_MS,
+	MARKER_BATCH_KEY,
+	MARKER_KEY,
+	newBatchId,
+} from "@dg/common";
 import { addGroupMarker } from "../../skills-cli/src/utils/marker";
 
-const { onTabComplete } = await import("@/lib/features/tab-grouping");
+const { forgetTab, onTabComplete } = await import(
+	"@/lib/features/tab-grouping"
+);
 
 function addTab(id: number, windowId: number, url: string, groupId = -1) {
 	state.tabs.set(id, { id, windowId, groupId, url });
@@ -148,6 +155,7 @@ function groupOrder(groupId: number): number[] {
 }
 
 beforeEach(() => {
+	for (const id of state.tabs.keys()) forgetTab(id);
 	state.windows.clear();
 	state.tabs.clear();
 	state.groups = [];
@@ -306,6 +314,56 @@ describe("onTabComplete", () => {
 		await onTabComplete(76);
 
 		expect(state.tabs.get(76)?.groupId).not.toBe(-1);
+	});
+
+	it("does not regroup a tab after the user ungroups it", async () => {
+		markedTab(78, 1, 0);
+		const marked = state.tabs.get(78)!.url;
+		await onTabComplete(78);
+		const tab = state.tabs.get(78)!;
+		tab.groupId = -1;
+		tab.url = marked;
+		await onTabComplete(78);
+
+		expect(state.tabs.get(78)?.groupId).toBe(-1);
+		expect(state.tabs.get(78)?.url).toBe("https://github.com/o/r/pull/78");
+	});
+
+	it("does not group a tab whose first marker was stale", async () => {
+		const stale = newBatchId(Date.now() - BATCH_MAX_AGE_MS - 60_000);
+		markedTab(79, 1, 0, stale);
+		await onTabComplete(79);
+		state.tabs.get(79)!.url = addGroupMarker(
+			"https://github.com/o/r/pull/79",
+			"IP",
+			0,
+			defaultBatch,
+		);
+		await onTabComplete(79);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(79)?.groupId).toBe(-1);
+	});
+
+	it("groups a reused tab id again after the tab is forgotten", async () => {
+		markedTab(80, 1, 0);
+		await onTabComplete(80);
+		forgetTab(80);
+		state.tabs.delete(80);
+		state.windows.clear();
+		markedTab(80, 1, 0);
+		await onTabComplete(80);
+
+		expect(state.tabs.get(80)?.groupId).not.toBe(-1);
+	});
+
+	it("strips but does not group a marker whose batch is malformed", async () => {
+		const url = `https://github.com/o/r/pull/5#${MARKER_KEY}=IP&${MARKER_BATCH_KEY}=%`;
+		addTab(81, 1, url);
+		await onTabComplete(81);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(81)?.url).toBe("https://github.com/o/r/pull/5");
 	});
 
 	it.each([undefined, "b1"])(

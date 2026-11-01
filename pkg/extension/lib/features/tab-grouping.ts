@@ -42,9 +42,11 @@ function queueFor(title: string) {
 type BatchSlot = { batch: string; pos: number };
 
 const batchSlots = new Map<number, BatchSlot>();
+const markedTabs = new Set<number>();
 
 export function forgetTab(tabId: number): void {
 	batchSlots.delete(tabId);
+	markedTabs.delete(tabId);
 }
 
 async function findGroup(
@@ -122,7 +124,9 @@ export async function onTabComplete(tabId: number): Promise<void> {
 		const alreadyGrouped =
 			typeof current.groupId === "number" &&
 			current.groupId !== TAB_GROUP_ID_NONE;
-		if (!alreadyGrouped && isBatchFresh(readGroupBatch(url))) {
+		const firstMarker = !markedTabs.has(tabId);
+		markedTabs.add(tabId);
+		if (firstMarker && !alreadyGrouped && isBatchFresh(readGroupBatch(url))) {
 			const { color } = await getConfig();
 			const groupId = await addToGroup(
 				tabId,

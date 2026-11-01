@@ -10,6 +10,14 @@ import { MARKER_BATCH_KEY, MARKER_KEY, MARKER_POS_KEY } from "@dg/common";
 
 export { MARKER_BATCH_KEY, MARKER_KEY, MARKER_POS_KEY };
 
+function decodeOrUndefined(value: string): string | undefined {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return undefined;
+	}
+}
+
 function fragParts(url: string): string[] {
 	const hash = url.split("#")[1];
 	return hash ? hash.split("&") : [];
@@ -19,7 +27,7 @@ function fragParts(url: string): string[] {
 export function readGroupMarker(url: string): string | undefined {
 	for (const part of fragParts(url)) {
 		const [k, v] = part.split("=");
-		if (k === MARKER_KEY && v) return decodeURIComponent(v);
+		if (k === MARKER_KEY && v) return decodeOrUndefined(v);
 	}
 	return undefined;
 }
@@ -40,7 +48,7 @@ export function readGroupPos(url: string): number | undefined {
 export function readGroupBatch(url: string): string | undefined {
 	for (const part of fragParts(url)) {
 		const [k, v] = part.split("=");
-		if (k === MARKER_BATCH_KEY && v) return decodeURIComponent(v);
+		if (k === MARKER_BATCH_KEY && v) return decodeOrUndefined(v);
 	}
 	return undefined;
 }
