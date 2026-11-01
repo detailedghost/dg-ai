@@ -91,13 +91,16 @@ describe("format hook xml write-back through xmlformat", () => {
 });
 
 describe("format hook failures", () => {
-	test("leaves the file alone when jq output was truncated", async () => {
+	test("leaves the file alone and says so when jq output was truncated", async () => {
 		const file = world.seed("big.json", '{"a":1}');
-		await world.run("format", editing(file), {
+		const r = await world.run("format", editing(file), {
 			which: only("jq"),
 			reply: { status: 0, stdout: '{\n  "a"', truncated: true },
 		});
 		expect(readFileSync(file, "utf8")).toBe('{"a":1}');
+		expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe(
+			"format: jq output was incomplete, so the file was left unchanged",
+		);
 	});
 
 	test("leaves the file alone when xmlformat output was truncated", async () => {

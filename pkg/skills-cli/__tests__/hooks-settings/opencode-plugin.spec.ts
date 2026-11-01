@@ -26,6 +26,17 @@ cat > "$d/stdin.$3.json"
 if [ -f "$d/context" ]; then
   cat "$d/context"
 fi
+if [ -f "$d/noisy" ]; then
+  printf '{"pad":"'
+  head -c 1100000 /dev/zero | tr '\\0' a
+  printf '","hookSpecificOutput":{"additionalContext":"big"}}'
+  exit 0
+fi
+if [ -f "$d/hang" ]; then
+  trap '' TERM
+  sleep 3 &
+  wait
+fi
 if [ -f "$d/signal" ]; then
   kill -9 $$
 fi
@@ -179,6 +190,43 @@ describe.skipIf(process.platform === "win32")(
 				output,
 			);
 			expect(output.output).toBe("edited\n\nformat: biome failed (status 1)");
+		});
+
+		test("stops a hook that ignores SIGTERM and keeps its pipes open", async () => {
+			await enableFor("pr-prose");
+			writeFileSync(join(binDir(), "hang"), "");
+			process.env["DG_HOOKS_TIMEOUT_MS"] = "200";
+			const errors = spyOn(console, "error").mockImplementation(() => {});
+			try {
+				const plugin = await loadPlugin();
+				const started = performance.now();
+				await plugin["tool.execute.before"](
+					{ tool: "bash", callID: "c10" },
+					{ args: { command: "echo hi" } },
+				);
+				expect(performance.now() - started).toBeLessThan(2500);
+				expect(String(errors.mock.calls[0]?.[0])).toContain(
+					"dg hook pr-prose did not finish",
+				);
+			} finally {
+				delete process.env["DG_HOOKS_TIMEOUT_MS"];
+				errors.mockRestore();
+			}
+		});
+
+		test("ignores additional context when the hook output is over the cap", async () => {
+			await enableFor("format");
+			writeFileSync(join(binDir(), "noisy"), "");
+			const plugin = await loadPlugin();
+			const output: Record<string, unknown> = {
+				args: { filePath: "/work/tree/a.ts" },
+				output: "edited",
+			};
+			await plugin["tool.execute.after"](
+				{ tool: "edit", callID: "c11" },
+				output,
+			);
+			expect(output.output).toBe("edited");
 		});
 
 		test("reports a hook killed by a signal without throwing", async () => {

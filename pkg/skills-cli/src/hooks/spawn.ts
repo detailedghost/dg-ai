@@ -36,6 +36,7 @@ const defaultDeps: SpawnDeps = {
 interface Captured {
 	text: string;
 	truncated: boolean;
+	failure?: string;
 }
 
 function readCapped(stream: ReadableStream<Uint8Array>, capBytes: number) {
@@ -43,12 +44,13 @@ function readCapped(stream: ReadableStream<Uint8Array>, capBytes: number) {
 	const kept: Uint8Array[] = [];
 	let size = 0;
 	let truncated = false;
+	let failure: string | undefined;
 	const done = (async (): Promise<Captured> => {
 		for (;;) {
-			const { done, value } = await reader.read().catch(() => ({
-				done: true as const,
-				value: undefined,
-			}));
+			const { done, value } = await reader.read().catch((error: unknown) => {
+				failure = error instanceof Error ? error.message : String(error);
+				return { done: true as const, value: undefined };
+			});
 			if (done) break;
 			if (size >= capBytes) {
 				truncated = true;
@@ -61,7 +63,11 @@ function readCapped(stream: ReadableStream<Uint8Array>, capBytes: number) {
 			size += piece.length;
 		}
 		const text = Buffer.concat(kept).toString("utf8");
-		return { text: truncated ? `${text}${TRUNCATED_NOTE}` : text, truncated };
+		return {
+			text: truncated ? `${text}${TRUNCATED_NOTE}` : text,
+			truncated: truncated || failure !== undefined,
+			...(failure === undefined ? {} : { failure }),
+		};
 	})();
 	return { done, cancel: () => reader.cancel().catch(() => {}) };
 }
@@ -94,6 +100,10 @@ export async function spawnCapture(
 				proc.exited,
 			]);
 			const flag = out.truncated ? { truncated: true } : {};
+			const lost = [out.failure, err.failure]
+				.filter((f): f is string => f !== undefined)
+				.map((f) => `${argv[0]} output could not be read: ${f}\n`)
+				.join("");
 			return timedOut
 				? {
 						status: TIMED_OUT_STATUS,
@@ -101,7 +111,7 @@ export async function spawnCapture(
 						stderr: `${err.text}${argv[0]} timed out after ${timeoutMs} ms and was killed\n`,
 						...flag,
 					}
-				: { status, stdout: out.text, stderr: err.text, ...flag };
+				: { status, stdout: out.text, stderr: `${err.text}${lost}`, ...flag };
 		} finally {
 			clearTimeout(timer);
 			clearTimeout(drain);

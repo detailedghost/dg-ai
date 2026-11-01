@@ -92,6 +92,24 @@ describe("spawnCapture", () => {
 		expect(r.truncated).toBeUndefined();
 	});
 
+	test("marks stdout incomplete when reading it fails", async () => {
+		const r = await spawnCapture(["x"], undefined, {
+			spawn: () => ({
+				stdout: new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode("par"));
+						controller.error(new Error("pipe broke"));
+					},
+				}),
+				stderr: streamOf(),
+				exited: Promise.resolve(0),
+				kill: () => {},
+			}),
+		});
+		expect(r.truncated).toBe(true);
+		expect(r.stderr).toContain("x output could not be read: pipe broke");
+	});
+
 	test("returns after the timeout even when a descendant keeps the pipe open", async () => {
 		const killed: string[] = [];
 		const r = await spawnCapture(["parent"], undefined, {

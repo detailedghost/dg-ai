@@ -24,11 +24,14 @@ const TOOLS = { edit: "Edit", write: "Write", multiedit: "MultiEdit", bash: "Bas
 const RENAMED = { filePath: "file_path", oldString: "old_string", newString: "new_string" };
 const claudeShaped = (args) =>
   Object.fromEntries(Object.entries(args ?? {}).map(([k, v]) => [RENAMED[k] ?? k, v]));
-const TIMEOUT_MS = 120000;
+const TIMEOUT_MS = Number(process.env.DG_HOOKS_TIMEOUT_MS) || 120000;
+const DRAIN_MS = 1000;
+const CAP = 1024 * 1024;
 const calls = new Map();
-const contextOf = (stdout) => {
+const contextOf = (result) => {
+  if (result.truncated) return undefined;
   try {
-    return JSON.parse(stdout)?.hookSpecificOutput?.additionalContext;
+    return JSON.parse(result.stdout)?.hookSpecificOutput?.additionalContext;
   } catch {
     return undefined;
   }
@@ -37,13 +40,32 @@ export default async ({ directory }) => {
   const { spawn } = await import("node:child_process");
   const exec = (argv, payload) =>
     new Promise((resolve) => {
-      const child = spawn(argv[0], argv.slice(1), { stdio: ["pipe", "pipe", "pipe"], timeout: TIMEOUT_MS });
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (d) => (stdout += d));
-      child.stderr.on("data", (d) => (stderr += d));
-      child.on("error", (error) => resolve({ status: null, signal: null, stdout, stderr, error }));
-      child.on("close", (status, signal) => resolve({ status, signal, stdout, stderr }));
+      const child = spawn(argv[0], argv.slice(1), { stdio: ["pipe", "pipe", "pipe"] });
+      const out = { stdout: "", stderr: "", truncated: false };
+      let settled = false;
+      let drain;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(drain);
+        child.stdout.destroy();
+        child.stderr.destroy();
+        resolve({ ...out, ...result });
+      };
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        drain = setTimeout(() => finish({ status: null, signal: "SIGKILL" }), DRAIN_MS);
+      }, TIMEOUT_MS);
+      for (const name of ["stdout", "stderr"]) {
+        child[name].setEncoding("utf8");
+        child[name].on("data", (d) => {
+          if (out[name].length + d.length > CAP) out.truncated = true;
+          else out[name] += d;
+        });
+      }
+      child.on("error", (error) => finish({ status: null, signal: null, error }));
+      child.on("close", (status, signal) => finish({ status, signal }));
       child.stdin.on("error", () => {});
       child.stdin.end(payload);
     });
@@ -67,7 +89,7 @@ export default async ({ directory }) => {
         console.error("dg hook " + hook.id + " did not finish: " + (result.error?.message ?? result.signal ?? "killed"));
         continue;
       }
-      const context = contextOf(result.stdout);
+      const context = contextOf(result);
       if (event === "PostToolUse" && context && typeof output?.output === "string")
         output.output += "\\n\\n" + context;
     }

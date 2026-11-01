@@ -434,6 +434,17 @@ describe("pruneWorktrees", () => {
 			.map((c) => c.argv.at(-1));
 		expect(removed).toEqual(["merged_one"]);
 	});
+
+	test("treats a worktree named with two leading dots as inside the root", async () => {
+		const { main, wtRoot } = fixture();
+		sh(["worktree", "add", "-q", "-b", "dots", join(wtRoot, "..dots")], main);
+		const o = opts();
+		await pruneWorktrees(wtRoot, o);
+		const removed = o.calls
+			.filter((c) => c.argv.at(-2) === "remove")
+			.map((c) => c.argv.at(-1));
+		expect(removed).toEqual(["dots"]);
+	});
 });
 
 describe("pruneAgents", () => {
@@ -753,6 +764,19 @@ describe("daily-prune hook failure and race", () => {
 			await world.run("daily-prune", sessionStart);
 			expect(world.spawned).toEqual([]);
 			expect(existsSync(lock)).toBe(true);
+		} finally {
+			world.cleanup();
+		}
+	});
+
+	test("leaves a lock that another run took over during this run", async () => {
+		const world = hookWorld();
+		try {
+			const lock = join(world.state, "hooks", "daily-prune.stamp.lock");
+			await world.run("daily-prune", sessionStart, {
+				spawn: () => writeFileSync(lock, "another-owner"),
+			});
+			expect(readFileSync(lock, "utf8")).toBe("another-owner");
 		} finally {
 			world.cleanup();
 		}

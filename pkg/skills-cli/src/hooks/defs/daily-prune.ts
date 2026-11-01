@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import {
 	existsSync,
+	linkSync,
 	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
+	renameSync,
 	rmSync,
 	type Stats,
 	statSync,
@@ -176,7 +179,12 @@ export function linkedBranches(repo: string): string[] {
 
 function isUnder(child: string, root: string): boolean {
 	const rel = path.relative(root, child);
-	return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+	return (
+		rel !== "" &&
+		rel !== ".." &&
+		!rel.startsWith(`..${path.sep}`) &&
+		!path.isAbsolute(rel)
+	);
 }
 
 /** Prunes then removes linked worktrees under `worktreeRoot`; refused removals stay. */
@@ -368,20 +376,44 @@ export async function runNow(
 
 const LOCK_STALE_MS = 10 * 60_000;
 
-function takeLock(lock: string): boolean {
+const isStale = (file: string) =>
+	Date.now() - statSync(file).mtimeMs >= LOCK_STALE_MS;
+
+function createLock(lock: string, token: string): boolean {
 	try {
-		writeFileSync(lock, String(process.pid), { flag: "wx" });
+		writeFileSync(lock, token, { flag: "wx" });
 		return true;
 	} catch {
-		try {
-			if (Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) return false;
-			rmSync(lock, { force: true });
-			writeFileSync(lock, String(process.pid), { flag: "wx" });
-			return true;
-		} catch {
-			return false;
-		}
+		return false;
 	}
+}
+
+/** Claims the lock and returns its owner token; a stale lock is moved aside first, and a fresh one moved by mistake is put back. */
+function takeLock(lock: string): string | undefined {
+	const token = `${process.pid}-${randomUUID()}`;
+	if (createLock(lock, token)) return token;
+	try {
+		if (!isStale(lock)) return undefined;
+		const aside = `${lock}.${token}`;
+		renameSync(lock, aside);
+		if (!isStale(aside)) {
+			try {
+				linkSync(aside, lock);
+			} catch {}
+			rmSync(aside, { force: true });
+			return undefined;
+		}
+		rmSync(aside, { force: true });
+	} catch {
+		return undefined;
+	}
+	return createLock(lock, token) ? token : undefined;
+}
+
+function releaseLock(lock: string, token: string): void {
+	try {
+		if (readFileSync(lock, "utf8") === token) rmSync(lock, { force: true });
+	} catch {}
 }
 
 const handler: HookHandler = async (_input, ctx) => {
@@ -389,7 +421,8 @@ const handler: HookHandler = async (_input, ctx) => {
 	if (stampFresh(stamp, Date.now())) return { exitCode: 0 };
 	mkdirSync(path.dirname(stamp), { recursive: true });
 	const lock = `${stamp}.lock`;
-	if (!takeLock(lock)) return { exitCode: 0 };
+	const token = takeLock(lock);
+	if (!token) return { exitCode: 0 };
 	try {
 		if (stampFresh(stamp, Date.now())) return { exitCode: 0 };
 		const previous = existsSync(stamp) ? statSync(stamp).mtime : undefined;
@@ -405,7 +438,7 @@ const handler: HookHandler = async (_input, ctx) => {
 		}
 		return { exitCode: 0 };
 	} finally {
-		rmSync(lock, { force: true });
+		releaseLock(lock, token);
 	}
 };
 
