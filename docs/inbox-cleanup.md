@@ -3,8 +3,10 @@
 Review Proton Mail, Gmail, or Outlook with /dg:inbox-cleanup in Claude Code or
 $dg:inbox-cleanup in Codex. The compiled dg-skills inbox CLI prepares redacted
 samples, supports bounded generator paging, and requires review/dry-run before
-confirmed mailbox changes. Proton uses extension JavaScript in a signed-in mail
-tab; Gmail/Outlook use OAuth and profiles in dg-ai's encrypted database.
+confirmed mailbox changes. Proton runs locally through a pw-managed profile: run
+`dg-skills inbox proton sign-in` once, then inbox commands use the profile
+headless. Pass `--ext` to use extension JavaScript in a signed-in mail tab
+instead. Gmail/Outlook use OAuth and profiles in dg-ai's encrypted database.
 
 Read [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
 [the workflow](../plugins/dg/skills/inbox-cleanup/references/workflow.md). Proton

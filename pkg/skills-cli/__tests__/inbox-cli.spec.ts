@@ -269,6 +269,7 @@ describe("dg-skills inbox daemon integration", () => {
 				});
 			});
 			const args = [
+				"--ext",
 				"--provider",
 				"protonmail",
 				"--dir",

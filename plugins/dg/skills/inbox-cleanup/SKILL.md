@@ -23,10 +23,17 @@ Profiles and OAuth caches use dg-ai's encrypted database. Explicit fixture
 datasets work without a daemon, extension, or credentials. Default state lives
 under DG_HOME/inbox and remains stable when the working directory changes.
 
-Gmail and Outlook run locally. Proton runs through a pw-managed profile by default
-and through the extension with `--ext`. `--ext` is a skill-level instruction to
-the agent to use the extension path. It is not a flag of `dg-skills inbox`.
-Gate the extension path with this line, and run only the command after the colon:
+Gmail and Outlook run locally. Proton runs locally through a pw-managed profile
+under DG_HOME/inbox. Before the first Proton command, ask the human whether to
+sign in, then run `~/.dg/bin/dg-skills inbox proton sign-in`. It opens the profile
+once for the human to sign in (on WSL it uses the Windows browser through pw) and
+closes it. Later commands run the profile headless. A signed-out profile exits 4
+and names the sign-in command. `dg-skills doctor inbox` reports the transport and
+whether the profile is signed in. Pass `--ext` to `dg-skills inbox` to use the
+extension instead. Never run `dg-skills pw` commands on the `inbox-proton` session
+and never read `DG_HOME/inbox/proton-profile`: they hold the signed-in session.
+Gate the extension path with this line, and run only the
+command after the colon:
 
 ```text
 --ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1

@@ -411,12 +411,16 @@ async function protonSessionStatus(context: CliContext): Promise<{
 	check?: string;
 	detail?: string;
 }> {
-	const request = inboxRuntimeFor(context.config).runtime.browserRequest;
+	const { runtime } = inboxRuntimeFor(context.config);
+	const request = runtime.ext
+		? runtime.browserRequest
+		: runtime.pwBrowserRequest;
 	if (!request) {
 		return {
 			checked: false,
-			detail:
-				"Pass --session ID to check the extension peer, the mail.proton.me/u/N tab, and x-pm-uid. Local message counts are still reported.",
+			detail: runtime.ext
+				? "Pass --session ID to check the extension peer, the mail.proton.me/u/N tab, and x-pm-uid. Local message counts are still reported."
+				: "The pw profile is not available. Local message counts are still reported.",
 		};
 	}
 	try {

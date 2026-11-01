@@ -36,6 +36,35 @@ async function fixture(root: string) {
 }
 
 describe("main inbox runtime", () => {
+	test("status checks the Proton session through pw without ext and through the extension with ext", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-status-transport-"));
+		try {
+			await Bun.write(
+				join(root, "messages", "_status.json"),
+				JSON.stringify({ kind: "message-status", total: 0, counts: {}, items: [] }),
+			);
+			for (const ext of [false, true]) {
+				const pw: string[] = [];
+				const extension: string[] = [];
+				await run(["status", "--provider", "protonmail", "--dir", root], {
+					ext,
+					pwBrowserRequest: async (request) => {
+						pw.push(request.operation);
+						return {};
+					},
+					browserRequest: async (request) => {
+						extension.push(request.operation);
+						return {};
+					},
+				});
+				expect(ext ? extension : pw).toEqual(["session-status"]);
+				expect(ext ? pw : extension).toEqual([]);
+			}
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	test("refuses an explicitly missing DB profile before contacting a mailbox", async () => {
 		const root = await mkdtemp(join(tmpdir(), "inbox-missing-profile-"));
 		const names: string[] = [];
@@ -183,6 +212,7 @@ describe("main inbox runtime", () => {
 				accountHint: "private-account@example.test",
 			}),
 			protonGate: immediateProtonGate(),
+			ext: true,
 			browserRequest: async (request) => {
 				operations.push(request.operation);
 				expect(request.tabId).toBe(7);

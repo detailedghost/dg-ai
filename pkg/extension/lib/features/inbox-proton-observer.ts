@@ -1,9 +1,10 @@
-/** Observed Proton headers are private page-memory state and must never enter relay responses. */
-export type ProtonSessionHeaders = {
-	uid: string;
-	appVersion?: string;
-	locale?: string;
-};
+import {
+	isProtonMailOrigin,
+	type ProtonSessionHeaders,
+} from "../../../inbox/src/protonmail/page-session";
+
+export { isProtonMailOrigin, type ProtonSessionHeaders };
+
 type PageFetch = (
 	input: RequestInfo | URL,
 	init?: RequestInit,
@@ -13,14 +14,6 @@ type ObserverHost = {
 	fetch: PageFetch;
 	XMLHttpRequest: typeof XMLHttpRequest;
 };
-
-/** Accepts only the two supported HTTPS Proton Mail origins, without subdomain or suffix matching. */
-export function isProtonMailOrigin(origin: string): boolean {
-	return (
-		origin === "https://mail.proton.me" ||
-		origin === "https://mail.protonmail.com"
-	);
-}
 
 /** Observes trusted mail fetch/XHR headers in memory, invalidates account switches, and returns a restoration handle. */
 export function installProtonSessionObserver(host: ObserverHost): {
