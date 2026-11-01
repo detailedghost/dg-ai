@@ -24,7 +24,7 @@ exists.
 | `spelling` | PostToolUse | Edit, Write, MultiEdit | `claude`, `codex`, `opencode` | Rejects spellings from the other English locale. Setting `locale`: `en-US` or `en-GB`. |
 | `format` | PostToolUse | Edit, Write, MultiEdit | `claude`, `codex`, `opencode` | Formats the edited file with the formatter installed for its type. |
 | `pr-prose` | PreToolUse | Bash | `claude`, `codex`, `opencode` | Blocks a PR or MR body that does not read as plain English. |
-| `pr-confirm` | PreToolUse | Bash | `claude`, `codex` | Asks before a PR or MR is created. |
+| `pr-confirm` | PreToolUse | Bash | `claude` | Asks before a PR or MR is created. Codex reports an `ask` decision as a hook failure and runs the command anyway, so this hook is Claude only. |
 | `spec-plan-lint` | PostToolUse | Edit, Write, MultiEdit | `claude`, `codex`, `opencode` | Validates a spec `plan.md` after it is written. |
 | `daily-prune` | SessionStart | none | `claude`, `codex` | Once a day, removes scratch and state past TTL and merged clean worktrees. |
 
@@ -36,7 +36,7 @@ prints `<runtime>: skipped <id> (not supported)` for a hook a runtime cannot run
 | Runtime | File | Shape |
 | --- | --- | --- |
 | Claude | `~/.claude/settings.json` | `hooks.<event>[]` groups with a `matcher` and a `command` entry |
-| Codex | `~/.codex/hooks.json` | Same shape as Claude |
+| Codex | `$CODEX_HOME/hooks.json` (default `~/.codex/hooks.json`) | Same shape as Claude. Edit hooks match `apply_patch\|Edit\|Write`. |
 | opencode | `~/.config/opencode/plugins/dg-hooks.js` | A generated plugin file. `XDG_CONFIG_HOME` replaces `~/.config`. |
 
 opencode loads `dg-hooks.js` from its `plugins` folder. It never loads a bare

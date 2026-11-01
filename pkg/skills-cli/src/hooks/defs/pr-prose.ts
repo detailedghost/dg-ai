@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { bashCommand } from "../io";
-import { prCommandIndex } from "../pr-command";
+import { prInvocation, shellWords } from "../pr-command";
 import type { HookContext, HookHandler } from "../types";
 
 interface Finding {
@@ -40,46 +40,6 @@ const VALE_UNCONFIGURED =
 	"pr-prose: Vale is installed but HOOK_PR_PROSE_VALE_CONFIG is not set, so style checks are off. The built-in checks still ran.\n";
 const VALE_FAILED =
 	"pr-prose: the Vale run failed, so style checks were skipped. The built-in checks still ran.\n";
-
-export function tokenize(source: string): string[] {
-	const tokens: string[] = [];
-	let current = "";
-	let started = false;
-	let quote = "";
-	for (let i = 0; i < source.length; i++) {
-		const c = source[i]!;
-		if (quote === "") {
-			if (c === "'" || c === '"') {
-				quote = c;
-				started = true;
-			} else if (c === "\\") {
-				i++;
-				current += source[i] ?? "";
-				started = true;
-			} else if (c === " " || c === "\t" || c === "\n") {
-				if (started) tokens.push(current);
-				current = "";
-				started = false;
-			} else {
-				current += c;
-				started = true;
-			}
-		} else if (c === quote) quote = "";
-		else if (
-			quote === '"' &&
-			c === "\\" &&
-			'$`"\\\n'.includes(source[i + 1] ?? "")
-		) {
-			i++;
-			if (source[i] !== "\n") current += source[i] ?? "";
-		} else {
-			current += c;
-			started = true;
-		}
-	}
-	if (started) tokens.push(current);
-	return tokens;
-}
 
 function collectHeredocs(lines: string[]) {
 	const heredocs: { flagged: boolean; text: string }[] = [];
@@ -118,7 +78,7 @@ export function extractBody(command: string, cwd: string): string {
 	if (flagged.length > 0) return flagged.map((h) => h.text).join("");
 
 	const isLiteral = (v: string) => v !== "" && !VARIABLE_ONLY.test(v);
-	const tokens = tokenize(command);
+	const tokens = shellWords(command);
 	for (const [i, token] of tokens.entries()) {
 		const next = tokens[i + 1];
 		if (["--body", "-b", "--description", "-d"].includes(token)) {
@@ -290,10 +250,12 @@ function firstHint(ctx: HookContext): boolean {
 }
 
 const handler: HookHandler = async (input, ctx) => {
-	const full = bashCommand(input);
-	const at = prCommandIndex(full, ["create", "edit", "update"]);
-	if (at < 0) return { exitCode: 0 };
-	const command = full.slice(at);
+	const command = prInvocation(bashCommand(input), [
+		"create",
+		"edit",
+		"update",
+	]);
+	if (command === undefined) return { exitCode: 0 };
 	if (ctx.bypassed("pr-prose-disabled")) return { exitCode: 0 };
 	const body = extractBody(command, input.cwd ?? process.cwd()).replace(
 		/\n+$/,

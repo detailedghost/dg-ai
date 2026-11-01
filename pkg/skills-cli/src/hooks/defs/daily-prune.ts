@@ -17,6 +17,7 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 import {
+	assertSafeRoot,
 	scratchRoot,
 	selfCommand,
 	stateRoot,
@@ -350,12 +351,14 @@ export async function runNow(
 	const worktreeRoot =
 		env["DAILY_PRUNE_WORKTREE_ROOT"] ??
 		path.join(codeRoot ?? path.join(homedir(), "code"), "worktrees");
-	await phase("scratch prune", () =>
-		pruneRoot(scratchRoot(env), SCRATCH_TTL_MS, true, opts),
-	);
-	await phase("state prune", () =>
-		pruneRoot(stateRoot(env), STATE_TTL_MS, false, opts),
-	);
+	await phase("scratch prune", () => {
+		assertSafeRoot(scratchRoot(env), !!env["AI_SCRATCH_DIR"]);
+		return pruneRoot(scratchRoot(env), SCRATCH_TTL_MS, true, opts);
+	});
+	await phase("state prune", () => {
+		assertSafeRoot(stateRoot(env), !!env["AI_STATE_DIR"]);
+		return pruneRoot(stateRoot(env), STATE_TTL_MS, false, opts);
+	});
 	await phase("worktree prune", () => pruneWorktrees(worktreeRoot, opts));
 	await phase("agents prune", () =>
 		pruneAgents(

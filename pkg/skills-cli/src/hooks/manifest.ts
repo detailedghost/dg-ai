@@ -1,6 +1,6 @@
 import type { HookDefinition } from "./types";
 
-const EDIT_TOOLS = "Edit|Write|MultiEdit";
+export const EDIT_TOOLS = "Edit|Write|MultiEdit";
 
 export const HOOKS: readonly HookDefinition[] = [
 	{
@@ -34,7 +34,7 @@ export const HOOKS: readonly HookDefinition[] = [
 		summary: "Ask before a PR or MR is created",
 		event: "PreToolUse",
 		matcher: "Bash",
-		runtimes: ["claude", "codex"],
+		runtimes: ["claude"],
 		load: () => import("./defs/pr-confirm"),
 	},
 	{

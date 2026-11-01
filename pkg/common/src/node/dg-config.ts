@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { writeFileAtomic } from "./fs";
+import { writeFilePreserving } from "./fs";
 import { resolveDgPaths } from "./paths";
 
 export type DgConfig = Record<string, unknown>;
@@ -45,7 +45,7 @@ export function readDgConfig(env: ConfigEnv = process.env): DgConfig {
 	return parsed;
 }
 
-/** Deep-merges the patch into config.json and replaces the file by atomic rename. */
+/** Deep-merges the patch into config.json and atomically replaces it through a symlink, keeping its mode. */
 export function writeDgConfig(
 	patch: DgConfig,
 	env: ConfigEnv = process.env,
@@ -53,6 +53,6 @@ export function writeDgConfig(
 	const next = merge(readDgConfig(env), patch);
 	const file = configFile(env);
 	mkdirSync(dirname(file), { recursive: true });
-	writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`);
+	writeFilePreserving(file, `${JSON.stringify(next, null, 2)}\n`, 0o600);
 	return next;
 }

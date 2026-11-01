@@ -121,3 +121,38 @@ describe("pr-confirm hook", () => {
 		},
 	);
 });
+
+describe("pr-confirm shell parsing", () => {
+	test("asks when a backslash-newline splits gh and pr", async () => {
+		const r = await decision("gh \\\n  pr create --title x");
+		expect(r.json.hookSpecificOutput.permissionDecision).toBe("ask");
+	});
+
+	test.each([
+		"git commit -m 'docs: examples; gh pr create --title x'",
+		'echo "run gh pr create later"',
+		"cat <<'EOF'\ngh pr create --title x\nEOF",
+	])(
+		"prints nothing for PR text that the shell does not run: %s",
+		async (command) => {
+			const r = await world.run("pr-confirm", bashInput(command));
+			expect(r.stdout).toBe("");
+		},
+	);
+
+	test.each([
+		"bash -lc 'gh pr create --title x'",
+		'out="$(gh pr create --title x)"',
+		"(cd repo && gh pr create --title x)",
+	])("asks for a create inside a subshell or sh -c: %s", async (command) => {
+		const r = await decision(command);
+		expect(r.json.hookSpecificOutput.permissionDecision).toBe("ask");
+	});
+
+	test("ships for Claude only, because Codex runs the command when a hook asks", async () => {
+		const { HOOKS } = await import("../../src/hooks/manifest");
+		expect(HOOKS.find((h) => h.id === "pr-confirm")?.runtimes).toEqual([
+			"claude",
+		]);
+	});
+});

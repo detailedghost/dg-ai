@@ -22,7 +22,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor hooks.
 - `spelling`: reject the other English locale's spellings in text from Edit or Write. Setting `locale`: `en-US` (default) or `en-GB`.
 - `format`: format the edited file with the formatter installed for its type.
 - `pr-prose`: block a PR or MR body that is not plain English.
-- `pr-confirm`: ask before a PR or MR is created. Claude and Codex only.
+- `pr-confirm`: ask before a PR or MR is created. Claude only, because Codex runs the command when a hook asks.
 - `spec-plan-lint`: validate a spec `plan.md` after it is written.
 - `daily-prune`: once a day, remove scratch and state past TTL and merged clean worktrees. Claude and Codex only.
 

@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+	chmodSync,
+	lstatSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -116,4 +121,43 @@ describe("writeDgConfig", () => {
 		expect(Object.hasOwn(stored.hooks, "__proto__")).toBe(false);
 		expect(stored.hooks["y"]).toBe(2);
 	});
+});
+
+describe("writeDgConfig file handling", () => {
+	test.skipIf(process.platform === "win32")(
+		"creates a new config.json with mode 0600",
+		() => {
+			writeDgConfig({ a: 1 }, env);
+			expect(statSync(join(home, "config.json")).mode & 0o777).toBe(0o600);
+		},
+	);
+
+	test.skipIf(process.platform === "win32")(
+		"writes through a symlink and keeps the link and the target mode",
+		() => {
+			const target = join(home, "dotfiles", "config.json");
+			mkdirSync(join(home, "dotfiles"));
+			writeFileSync(target, JSON.stringify({ keep: true }));
+			chmodSync(target, 0o640);
+			symlinkSync(target, join(home, "config.json"));
+			writeDgConfig({ a: 1 }, env);
+			expect(lstatSync(join(home, "config.json")).isSymbolicLink()).toBe(true);
+			expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({
+				keep: true,
+				a: 1,
+			});
+			expect(statSync(target).mode & 0o777).toBe(0o640);
+		},
+	);
+
+	test.skipIf(process.platform === "win32")(
+		"refuses a dangling symlink and keeps the link",
+		() => {
+			symlinkSync(join(home, "missing.json"), join(home, "config.json"));
+			expect(() => writeDgConfig({ a: 1 }, env)).toThrow(
+				"symlink to a missing file",
+			);
+			expect(lstatSync(join(home, "config.json")).isSymbolicLink()).toBe(true);
+		},
+	);
 });

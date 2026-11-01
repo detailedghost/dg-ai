@@ -25,7 +25,7 @@ interface OwnedEntry {
 
 function writerFor(runtime: HookRuntime, ctx: DoctorContext): SettingsWriter {
 	if (runtime === "claude") return claudeWriter(ctx.home);
-	if (runtime === "codex") return codexWriter(ctx.home);
+	if (runtime === "codex") return codexWriter(ctx.home, ctx.env.CODEX_HOME);
 	return opencodeWriter(ctx.home, "dg-skills", ctx.env.XDG_CONFIG_HOME);
 }
 

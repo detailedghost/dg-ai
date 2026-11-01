@@ -816,3 +816,31 @@ describe("daily-prune hook failure and race", () => {
 		}
 	});
 });
+
+describe("runNow root safety", () => {
+	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"skips a group-writable scratch root and leaves its files",
+		async () => {
+			const base = makeTempDir("prune-unsafe-");
+			const scratch = join(base, "scratch");
+			const bucket = join(scratch, "thrash", "aaaaaaaa");
+			fs.mkdirSync(bucket, { recursive: true });
+			fs.writeFileSync(join(bucket, "f.md"), "x");
+			const old = new Date(Date.now() - SCRATCH_TTL_MS - 86_400_000);
+			fs.utimesSync(join(bucket, "f.md"), old, old);
+			fs.utimesSync(bucket, old, old);
+			fs.chmodSync(scratch, 0o777);
+			const lines: string[] = [];
+			await runNow(
+				{ AI_SCRATCH_DIR: scratch, AI_STATE_DIR: join(base, "state") },
+				async () => ({ status: 0, stdout: "", stderr: "" }),
+				false,
+				(l) => lines.push(l),
+			);
+			expect(fs.existsSync(join(bucket, "f.md"))).toBe(true);
+			expect(
+				lines.some((l) => l.startsWith("scratch prune failed: unsafe")),
+			).toBe(true);
+		},
+	);
+});

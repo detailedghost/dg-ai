@@ -225,3 +225,13 @@ describe("spelling hook", () => {
 		expect(r.stderr).toContain("config.json is unreadable");
 	});
 });
+
+describe("spelling session id precedence", () => {
+	test("CLAUDE_CODE_SESSION_ID wins over CLAUDE_SESSION_ID", async () => {
+		world.disableMarker("comment-disabled", "CODE_ENV");
+		const r = await world.run("spelling", editInput("colour"), {
+			env: { CLAUDE_CODE_SESSION_ID: "CODE_ENV", CLAUDE_SESSION_ID: "OLD_ENV" },
+		});
+		expect(r.code).toBe(0);
+	});
+});

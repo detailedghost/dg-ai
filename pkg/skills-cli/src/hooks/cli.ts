@@ -42,10 +42,11 @@ function writers(
 	home: string,
 	launcher: string,
 	configHome?: string,
+	codexHome?: string,
 ): Record<HookRuntime, SettingsWriter> {
 	return {
 		claude: claudeWriter(home),
-		codex: codexWriter(home),
+		codex: codexWriter(home, codexHome),
 		opencode: opencodeWriter(home, launcher, configHome),
 	};
 }
@@ -298,7 +299,12 @@ export async function main(
 		const launcher = io.launcher ?? defaultLauncher(io.env);
 		if (!isAbsolute(launcher))
 			throw new UsageError(`launcher ${launcher} must be an absolute path`);
-		const all = writers(io.home ?? homedir(), launcher, io.env.XDG_CONFIG_HOME);
+		const all = writers(
+			io.home ?? homedir(),
+			launcher,
+			io.env.XDG_CONFIG_HOME,
+			io.env.CODEX_HOME,
+		);
 		switch (command) {
 			case "list":
 				return list(io);

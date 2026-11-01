@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
-import { writeFileAtomic } from "@dg/common/node";
+import { writeFilePreserving } from "@dg/common/node";
 import { HOOKS } from "../manifest";
 import type { SettingsWriter } from "../types";
 import { readJsonObject, updateJsonFile } from "./json-file";
@@ -170,7 +170,7 @@ export function opencodeWriter(
 				...supported.map((d) => d.id),
 			]);
 			mkdirSync(dirname(file), { recursive: true });
-			writeFileAtomic(file, renderFor(wanted), PLUGIN_MODE);
+			writeFilePreserving(file, renderFor(wanted), PLUGIN_MODE);
 			return supported.map((d) => d.id);
 		},
 		async disable(ids) {
@@ -179,7 +179,8 @@ export function opencodeWriter(
 			const removed = current.filter((id) => !ids || ids.includes(id));
 			if (removed.length === 0) return [];
 			const kept = new Set(current.filter((id) => !removed.includes(id)));
-			if (kept.size > 0) writeFileAtomic(file, renderFor(kept), PLUGIN_MODE);
+			if (kept.size > 0)
+				writeFilePreserving(file, renderFor(kept), PLUGIN_MODE);
 			else rmSync(file, { force: true });
 			return removed;
 		},

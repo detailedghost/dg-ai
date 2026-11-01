@@ -75,7 +75,7 @@ describe("pr-prose body extraction", () => {
 	});
 
 	test("keeps a backslash that the shell keeps inside double quotes", async () => {
-		const { tokenize } = await import("../../src/hooks/defs/pr-prose");
+		const { shellWords: tokenize } = await import("../../src/hooks/pr-command");
 		expect(
 			tokenize(String.raw`--body "C:\temp\new \"x\" \$HOME \\ end"`),
 		).toEqual(["--body", String.raw`C:\temp\new "x" $HOME \ end`]);
@@ -101,16 +101,45 @@ describe("pr-prose body extraction", () => {
 		).toBe(0);
 	});
 
-	test("reads -b, --body=VALUE and flags on separate lines", async () => {
+	test("reads -b and --body=VALUE", async () => {
 		expect((await judge("gh pr create -b 'TBD later'")).code).toBe(2);
 		expect((await judge("gh pr create --body=TBD")).code).toBe(2);
+	});
+
+	test("reads a body after an escaped newline", async () => {
+		expect(
+			(await judge("gh pr create --title x --body \\\n    'TBD'")).code,
+		).toBe(2);
 		expect(
 			(
 				await judge(
-					'gh pr create --title "x"\n--body "We fixed the parser bug here.\nTBD"',
+					'gh pr create --title "x" \\\n--body "We fixed the parser bug here.\nTBD"',
 				)
 			).code,
 		).toBe(2);
+	});
+
+	test("ignores a flag line that the shell runs as its own command", async () => {
+		expect((await judge('gh pr create --title "x"\n--body "TBD"')).code).toBe(
+			0,
+		);
+	});
+
+	test("reads the body only from the matched PR invocation", async () => {
+		expect((await judge(`sh -c "gh pr create --body 'TBD'"`)).code).toBe(2);
+		expect(
+			(await judge("gh pr edit 42 --add-label bug && echo --body TODO")).code,
+		).toBe(0);
+	});
+
+	test("skips PR text inside a quoted argument", async () => {
+		expect(
+			(
+				await judge(
+					"git commit -m 'docs: examples; gh pr create --title x --body TBD'",
+				)
+			).code,
+		).toBe(0);
 	});
 
 	test("reads a backslash-continued command", async () => {

@@ -54,6 +54,7 @@ function contextFor(
 
 function sessionOf(env: HookEnv, fromInput: string | undefined): string {
 	const raw =
+		env["CLAUDE_CODE_SESSION_ID"] ||
 		env["CLAUDE_SESSION_ID"] ||
 		env["CODEX_THREAD_ID"] ||
 		fromInput ||

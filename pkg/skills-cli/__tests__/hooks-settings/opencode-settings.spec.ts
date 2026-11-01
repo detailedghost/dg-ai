@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { statSync } from "node:fs";
-import { join } from "node:path";
+import {
+	chmodSync,
+	lstatSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	symlinkSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { ownedCommand } from "../../src/hooks/settings/marker";
 import { settingsWorld } from "./settings-fixtures";
 
@@ -138,4 +146,26 @@ describe("opencode settings writer", () => {
 		expect(plugin).not.toContain(ownedCommand(world.launcher, "spelling"));
 		expect(plugin).toContain(ownedCommand(world.launcher, "format"));
 	});
+});
+
+describe("opencode plugin file handling", () => {
+	test.skipIf(process.platform === "win32")(
+		"enabling another hook keeps a symlinked dg-hooks.js and its mode",
+		async () => {
+			expect(
+				(await world.cli(["enable", "spelling", "--runtime", "opencode"])).code,
+			).toBe(0);
+			const target = join(world.dgHome, "dotfiles", "dg-hooks.js");
+			mkdirSync(dirname(target), { recursive: true });
+			renameSync(world.paths.opencodePlugin, target);
+			chmodSync(target, 0o600);
+			symlinkSync(target, world.paths.opencodePlugin);
+			expect(
+				(await world.cli(["enable", "format", "--runtime", "opencode"])).code,
+			).toBe(0);
+			expect(lstatSync(world.paths.opencodePlugin).isSymbolicLink()).toBe(true);
+			expect(statSync(target).mode & 0o777).toBe(0o600);
+			expect(readFileSync(target, "utf8")).toContain("format");
+		},
+	);
 });

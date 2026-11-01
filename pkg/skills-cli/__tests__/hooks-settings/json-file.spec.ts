@@ -108,3 +108,18 @@ describe("updateJsonFile", () => {
 		expect(world.has(world.paths.claude)).toBe(false);
 	});
 });
+
+describe("updateJsonFile with a dangling symlink", () => {
+	test.skipIf(process.platform === "win32")(
+		"refuses to replace a link whose target is missing",
+		async () => {
+			const link = world.paths.claude;
+			world.seed(join(world.home, ".claude", "keep"), "");
+			symlinkSync(join(world.dgHome, "gone", "settings.json"), link);
+			await expect(
+				updateJsonFile(link, (doc) => ({ ...doc, a: 1 })),
+			).rejects.toThrow("symlink to a missing file");
+			expect(lstatSync(link).isSymbolicLink()).toBe(true);
+		},
+	);
+});

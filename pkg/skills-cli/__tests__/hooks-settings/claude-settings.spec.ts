@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { HOOKS } from "../../src/hooks/manifest";
 import { ownedCommand } from "../../src/hooks/settings/marker";
 import {
@@ -317,9 +318,14 @@ describe("codex settings writer", () => {
 		const after = world.readJson(world.paths.codex);
 		expect(ownedObjects(after)).toHaveLength(1);
 		const expected = structuredClone(before);
-		expected.hooks?.PostToolUse?.[1]?.hooks.push({
-			type: "command",
-			command: ownedCommand(world.launcher, "spelling"),
+		expected.hooks?.PostToolUse?.push({
+			matcher: "apply_patch|Edit|Write",
+			hooks: [
+				{
+					type: "command",
+					command: ownedCommand(world.launcher, "spelling"),
+				},
+			],
 		});
 		expect(after).toEqual(expected);
 		expect(result.stdout).toContain(
@@ -337,5 +343,65 @@ describe("codex settings writer", () => {
 		]);
 		expect(result.code).toBe(1);
 		expect(world.text(world.paths.codex)).toBe("nope");
+	});
+});
+
+describe("codex settings writer matchers and home", () => {
+	test("moves an owned edit hook from the Claude matcher to the Codex matcher", async () => {
+		const command = ownedCommand(world.launcher, "spelling");
+		world.seed(world.paths.codex, {
+			hooks: {
+				PostToolUse: [
+					{
+						matcher: "Edit|Write|MultiEdit",
+						hooks: [
+							{ type: "command", command: "user-check" },
+							{ type: "command", command },
+						],
+					},
+				],
+			},
+		});
+		const result = await world.cli([
+			"enable",
+			"spelling",
+			"--runtime",
+			"codex",
+		]);
+		expect(result.code).toBe(0);
+		expect(world.readJson(world.paths.codex)).toEqual({
+			hooks: {
+				PostToolUse: [
+					{
+						matcher: "Edit|Write|MultiEdit",
+						hooks: [{ type: "command", command: "user-check" }],
+					},
+					{
+						matcher: "apply_patch|Edit|Write",
+						hooks: [{ type: "command", command }],
+					},
+				],
+			},
+		});
+	});
+
+	test("writes hooks.json under an absolute CODEX_HOME", async () => {
+		const codexHome = join(world.home, "relocated-codex");
+		const result = await world.cli(
+			["enable", "spelling", "--runtime", "codex"],
+			{ env: { CODEX_HOME: codexHome } },
+		);
+		expect(result.code).toBe(0);
+		expect(world.has(join(codexHome, "hooks.json"))).toBe(true);
+		expect(world.has(world.paths.codex)).toBe(false);
+	});
+
+	test("ignores a relative CODEX_HOME", async () => {
+		const result = await world.cli(
+			["enable", "spelling", "--runtime", "codex"],
+			{ env: { CODEX_HOME: "relative/codex" } },
+		);
+		expect(result.code).toBe(0);
+		expect(world.has(world.paths.codex)).toBe(true);
 	});
 });

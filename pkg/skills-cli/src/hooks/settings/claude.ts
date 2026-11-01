@@ -44,6 +44,7 @@ function withHook(
 	doc: JsonObject,
 	def: HookDefinition,
 	launcher: string,
+	matcher: string | undefined,
 ): JsonObject {
 	const hooks = hooksOf(file, doc);
 	if (Object.hasOwn(hooks, def.event) && !Array.isArray(hooks[def.event]))
@@ -52,31 +53,34 @@ function withHook(
 	const command = ownedCommand(launcher, def.id);
 	const entry: HookEntry = { type: "command", command };
 	let present = false;
-	const refreshed = groups.map((g) => {
-		if (!isGroup(g) || !g.hooks.some((h) => idOf(h) === def.id)) return g;
+	const refreshed = groups.flatMap((g) => {
+		if (!isGroup(g) || !g.hooks.some((h) => idOf(h) === def.id)) return [g];
+		if (g.matcher !== matcher) {
+			const rest = g.hooks.filter((h) => idOf(h) !== def.id);
+			return rest.length > 0 ? [{ ...g, hooks: rest }] : [];
+		}
 		present = true;
 		if (g.hooks.every((h) => idOf(h) !== def.id || h.command === command))
-			return g;
-		return {
-			...g,
-			hooks: g.hooks.map((h) =>
-				idOf(h) === def.id && h.command !== command ? { ...h, command } : h,
-			),
-		};
+			return [g];
+		return [
+			{
+				...g,
+				hooks: g.hooks.map((h) =>
+					idOf(h) === def.id && h.command !== command ? { ...h, command } : h,
+				),
+			},
+		];
 	});
 	let next = refreshed;
 	if (!present) {
-		const target = refreshed.find(
-			(g) => isGroup(g) && g.matcher === def.matcher,
-		) as HookGroup | undefined;
+		const target = refreshed.find((g) => isGroup(g) && g.matcher === matcher) as
+			| HookGroup
+			| undefined;
 		next = target
 			? refreshed.map((g) =>
 					g === target ? { ...target, hooks: [...target.hooks, entry] } : g,
 				)
-			: [
-					...refreshed,
-					{ ...(def.matcher ? { matcher: def.matcher } : {}), hooks: [entry] },
-				];
+			: [...refreshed, { ...(matcher ? { matcher } : {}), hooks: [entry] }];
 	}
 	return { ...doc, hooks: { ...hooks, [def.event]: next } };
 }
@@ -119,7 +123,12 @@ function withoutHooks(
 	return next;
 }
 
-export function hookGroupsWriter(dir: string, file: string): SettingsWriter {
+/** Writer for a hooks JSON file shaped like Claude settings; matcherOf maps a hook to the runtime's tool matcher. */
+export function hookGroupsWriter(
+	dir: string,
+	file: string,
+	matcherOf: (def: HookDefinition) => string | undefined = (def) => def.matcher,
+): SettingsWriter {
 	return {
 		dir,
 		file,
@@ -128,7 +137,10 @@ export function hookGroupsWriter(dir: string, file: string): SettingsWriter {
 		},
 		async enable(defs, launcher) {
 			await updateJsonFile(file, (doc) =>
-				defs.reduce((acc, def) => withHook(file, acc, def, launcher), doc),
+				defs.reduce(
+					(acc, def) => withHook(file, acc, def, launcher, matcherOf(def)),
+					doc,
+				),
 			);
 			return defs.map((d) => d.id);
 		},

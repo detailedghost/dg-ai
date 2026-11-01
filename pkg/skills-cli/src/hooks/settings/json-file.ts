@@ -3,11 +3,10 @@ import {
 	constants,
 	mkdirSync,
 	readFileSync,
-	realpathSync,
 	statSync,
 } from "node:fs";
 import { dirname } from "node:path";
-import { writeFileAtomic } from "@dg/common/node";
+import { writeFileAtomic, writeTarget } from "@dg/common/node";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -23,15 +22,6 @@ function readText(file: string): string | undefined {
 		return readFileSync(file, "utf8");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw error;
-	}
-}
-
-function resolveTarget(file: string): string {
-	try {
-		return realpathSync(file);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return file;
 		throw error;
 	}
 }
@@ -63,7 +53,7 @@ export async function updateJsonFile(
 	mutate: (doc: JsonObject) => JsonObject,
 	seams: UpdateSeams = {},
 ): Promise<void> {
-	const target = resolveTarget(file);
+	const target = writeTarget(file);
 	for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
 		const before = readText(target);
 		const current = parseJsonObject(file, before);
