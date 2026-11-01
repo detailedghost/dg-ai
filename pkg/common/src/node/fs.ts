@@ -5,6 +5,7 @@ import {
 	existsSync,
 	mkdirSync,
 	renameSync,
+	rmSync,
 	statSync,
 	truncateSync,
 	writeFileSync,
@@ -19,10 +20,17 @@ export function writeFileAtomic(
 	path: string,
 	data: string | Buffer,
 	mode?: number,
+	rename: typeof renameSync = renameSync,
 ): void {
 	const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
-	writeFileSync(tmp, data, mode === undefined ? undefined : { mode });
-	renameSync(tmp, path);
+	try {
+		writeFileSync(tmp, data, mode === undefined ? undefined : { mode });
+		if (mode !== undefined) chmodSync(tmp, mode);
+		rename(tmp, path);
+	} catch (error) {
+		rmSync(tmp, { force: true });
+		throw error;
+	}
 }
 
 /** Copy-truncates so a writer holding the file open in append mode keeps logging to the same path. */
