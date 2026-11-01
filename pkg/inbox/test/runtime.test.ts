@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { main } from "../src/cli/index";
 import { immediateProtonGate } from "../src/features/filter-policy/jitter";
+import { ProtonSignedOutError } from "../src/protonmail/pw-client";
 import { workspaceDirForProfile } from "../src/workspace/profile";
 
 type Runtime = NonNullable<Parameters<typeof main>[1]>;
@@ -41,7 +42,12 @@ describe("main inbox runtime", () => {
 		try {
 			await Bun.write(
 				join(root, "messages", "_status.json"),
-				JSON.stringify({ kind: "message-status", total: 0, counts: {}, items: [] }),
+				JSON.stringify({
+					kind: "message-status",
+					total: 0,
+					counts: {},
+					items: [],
+				}),
 			);
 			for (const ext of [false, true]) {
 				const pw: string[] = [];
@@ -196,6 +202,74 @@ describe("main inbox runtime", () => {
 				JSON.parse(await run([...args, "--provider", "gmail"], runtime)),
 			).toMatchObject({ provider: "gmail", count: 1 });
 			expect(names).toEqual(["work", "work"]);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("probe stops with the signed-out error when the live folder fetch finds the session signed out", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-probe-signed-out-"));
+		const folders = {
+			folders: [
+				{ id: "inbox", name: "Inbox", type: "system", aliases: ["inbox"] },
+			],
+		};
+		let signedOut = false;
+		const runtime: Runtime = {
+			protonGate: immediateProtonGate(),
+			pwBrowserRequest: async (request) => {
+				if (request.operation === "list-folders") {
+					if (signedOut) throw new ProtonSignedOutError();
+					return folders;
+				}
+				return { messages: [], hasMore: false };
+			},
+		};
+		try {
+			const args = ["--provider", "protonmail", "--dir", root];
+			await run(["load", "folders", ...args], runtime);
+			signedOut = true;
+			await expect(
+				run(["probe", "--folder", "inbox", "--limit", "1", ...args], runtime),
+			).rejects.toBeInstanceOf(ProtonSignedOutError);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("probe falls back to the folder snapshot when the live folder fetch fails for another reason", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-probe-snapshot-"));
+		let liveFails = false;
+		const runtime: Runtime = {
+			protonGate: immediateProtonGate(),
+			pwBrowserRequest: async (request) => {
+				if (request.operation === "list-folders") {
+					if (liveFails) throw new Error("folder list unavailable");
+					return {
+						folders: [
+							{
+								id: "inbox",
+								name: "Inbox",
+								type: "system",
+								aliases: ["inbox"],
+							},
+						],
+					};
+				}
+				return { messages: [], hasMore: false };
+			},
+		};
+		try {
+			const args = ["--provider", "protonmail", "--dir", root];
+			await run(["load", "folders", ...args], runtime);
+			liveFails = true;
+			const output = JSON.parse(
+				await run(
+					["probe", "--folder", "inbox", "--limit", "1", ...args],
+					runtime,
+				),
+			);
+			expect(output.folder.countsFrom).toBe("snapshot");
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

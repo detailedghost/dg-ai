@@ -1,17 +1,25 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { isWSL } from "@dg/common/node";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { isWSL } from "@dg/common/node";
 import {
+	assertProtonSignedIn,
+	isProtonSignedIn,
 	openProtonSession,
+	ProtonSignedOutError,
+	type PwRunner,
 	protonProfilePaths,
 	protonPwRuntime,
-	ProtonSignedOutError,
 	readSignedInMarker,
 	runProtonSignIn,
 	writeSignedInMarker,
-	type PwRunner,
 } from "../src/inbox/proton-pw";
 import { inboxCliHarness } from "./inbox-cli-harness";
 
@@ -129,16 +137,17 @@ describe("proton-pw openProtonSession", () => {
 		for (const headless of [true, false]) {
 			const { run, calls } = recordingRunner();
 			await openProtonSession(spec(headless), run);
-			placements.push(
-				calls[0]!.filter((arg) => arg !== "--headless"),
-			);
+			placements.push(calls[0]!.filter((arg) => arg !== "--headless"));
 		}
 		expect(placements[0]).toEqual(placements[1]!);
 	});
 
 	test("opens the spec url when one is given", async () => {
 		const { run, calls } = recordingRunner();
-		await openProtonSession({ ...spec(true), url: "https://mail.proton.me/u/1" }, run);
+		await openProtonSession(
+			{ ...spec(true), url: "https://mail.proton.me/u/1" },
+			run,
+		);
 		expect(calls[0]).toContain("https://mail.proton.me/u/1");
 		expect(calls[0]).not.toContain("https://mail.proton.me");
 	});
@@ -216,17 +225,14 @@ describe("proton-pw marker handling", () => {
 		}) as never);
 		try {
 			writeSignedInMarker(data.dir);
-			const runtime = protonPwRuntime(
-				data.dir,
-				async () => ({
+			const runtime = protonPwRuntime(data.dir, async () => ({
 				page: {
 					url: () => "https://mail.proton.me/u/0/inbox",
 					observedHeaders: () => undefined,
 					evaluate: async () => ({}),
 				},
 				close: async () => {},
-			}),
-			);
+			}));
 			await expect(
 				runtime.pwBrowserRequest({ operation: "list-folders" }),
 			).rejects.toThrow(/did not make an API request/);
@@ -241,17 +247,14 @@ describe("proton-pw marker handling", () => {
 		const data = tempDataDir();
 		try {
 			writeSignedInMarker(data.dir);
-			const runtime = protonPwRuntime(
-				data.dir,
-				async () => ({
+			const runtime = protonPwRuntime(data.dir, async () => ({
 				page: {
 					url: () => "https://account.proton.me/login",
 					observedHeaders: () => undefined,
 					evaluate: async () => ({}),
 				},
 				close: async () => {},
-			}),
-			);
+			}));
 			await expect(
 				runtime.pwBrowserRequest({ operation: "list-folders" }),
 			).rejects.toBeInstanceOf(ProtonSignedOutError);
@@ -303,7 +306,10 @@ describe("proton-pw runProtonSignIn", () => {
 	test("times out without a marker and still closes the session", async () => {
 		const data = tempDataDir();
 		try {
-			const { deps, closed } = signInSeam("https://account.proton.me/login", undefined);
+			const { deps, closed } = signInSeam(
+				"https://account.proton.me/login",
+				undefined,
+			);
 			await expect(
 				runProtonSignIn(data.dir, { ...deps, timeoutMs: 0 } as never),
 			).rejects.toThrow(/dg-skills inbox proton sign-in/);
@@ -354,16 +360,36 @@ describe("proton-pw protonPwRuntime", () => {
 		try {
 			const { markerPath } = protonProfilePaths(data.dir);
 			mkdirSync(dirname(markerPath), { recursive: true });
-			writeFileSync(markerPath, JSON.stringify({ signedInAt: "2026-11-01T00:00:00Z" }));
+			writeFileSync(
+				markerPath,
+				JSON.stringify({ signedInAt: "2026-11-01T00:00:00Z" }),
+			);
 			expect(readSignedInMarker(data.dir)).toEqual({
 				signedInAt: "2026-11-01T00:00:00Z",
 			});
-			writeFileSync(markerPath, "not json");
-			expect(readSignedInMarker(data.dir)).toEqual({});
 		} finally {
 			data.cleanup();
 		}
 	});
+
+	test.each([["not json"], ["null"], ["[]"], ['"text"']])(
+		"a damaged marker %p counts as signed out",
+		(content) => {
+			const data = tempDataDir();
+			try {
+				const { markerPath } = protonProfilePaths(data.dir);
+				mkdirSync(dirname(markerPath), { recursive: true });
+				writeFileSync(markerPath, content);
+				expect(readSignedInMarker(data.dir)).toBeUndefined();
+				expect(isProtonSignedIn(data.dir)).toBe(false);
+				expect(() => assertProtonSignedIn(data.dir)).toThrow(
+					ProtonSignedOutError,
+				);
+			} finally {
+				data.cleanup();
+			}
+		},
+	);
 
 	test("sign-in records the profile location of this host", async () => {
 		const data = tempDataDir();

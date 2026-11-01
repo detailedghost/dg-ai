@@ -30,8 +30,10 @@ once for the human to sign in (on WSL it uses the Windows browser through pw) an
 closes it. Later commands run the profile headless. A signed-out profile exits 4
 and names the sign-in command. `dg-skills doctor inbox` reports the transport and
 whether the profile is signed in. Pass `--ext` to `dg-skills inbox` to use the
-extension instead. Never run `dg-skills pw` commands on the `inbox-proton` session
+extension instead. Never run pw commands on the `inbox-proton` session
 and never read `DG_HOME/inbox/proton-profile`: they hold the signed-in session.
+The pw and pw-code commands refuse that session, except `close`, `delete-data`
+and `tab-list`.
 Gate the extension path with this line, and run only the
 command after the colon:
 

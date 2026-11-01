@@ -2,11 +2,12 @@ import { commandName, normalize, optionArgs } from "./args";
 
 export const PROTECTED_SESSIONS: readonly string[] = ["inbox-proton"];
 
-const SECRET_COMMANDS = new Set(["cookie-list", "cookie-get", "state-save"]);
+const ALLOWED_COMMANDS = new Set(["close", "delete-data", "tab-list"]);
 
-/** Refuses the public pw commands that would copy credentials out of a signed-in mailbox session. */
+/** Refuses public pw and pw-code access to a signed-in mailbox session, except closing or clearing it. */
 export function protectedSessionRefusal(
 	argv: readonly string[],
+	program: "pw" | "pw-code" = "pw",
 ): string | undefined {
 	let args: string[];
 	try {
@@ -20,11 +21,8 @@ export function protectedSessionRefusal(
 			.findLast((arg) => arg.startsWith("--session="))
 			?.slice("--session=".length) ?? process.env["PLAYWRIGHT_CLI_SESSION"];
 	if (!session || !PROTECTED_SESSIONS.includes(session)) return undefined;
-	const name = commandName(args);
-	const refused =
-		(name !== undefined && SECRET_COMMANDS.has(name)) ||
-		(name === "network" && options.includes("--request-headers"));
-	return refused
-		? `pw refuses ${name} on the ${session} session: it holds a signed-in mailbox.`
-		: undefined;
+	const name = program === "pw-code" ? program : commandName(args);
+	if (name !== undefined && program === "pw" && ALLOWED_COMMANDS.has(name))
+		return undefined;
+	return `${program} refuses ${name ?? "this command"} on the ${session} session: it holds a signed-in mailbox. Use dg-skills inbox, or close it with pw -s=${session} close.`;
 }

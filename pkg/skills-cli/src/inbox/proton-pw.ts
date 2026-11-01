@@ -1,17 +1,4 @@
 import {
-	createPwBrowserRequest,
-	isProtonMailOrigin,
-	PROTON_MAIL_URL,
-	PROTON_SESSION_NAME,
-	PROTON_SIGN_IN_COMMAND,
-	protonProfilePaths,
-	ProtonSignedOutError,
-	type ProtonPwSession,
-	type ProtonPwSessionSpec,
-} from "@dg/inbox";
-import { isWSL, resolveDgPaths } from "@dg/common/node";
-import type { InboxBrowserRequest, InboxBrowserResponse } from "@dg/common";
-import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
@@ -20,8 +7,21 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import type { InboxBrowserRequest, InboxBrowserResponse } from "@dg/common";
+import { isWSL, resolveDgPaths } from "@dg/common/node";
+import {
+	createPwBrowserRequest,
+	isProtonMailOrigin,
+	PROTON_MAIL_URL,
+	PROTON_SESSION_NAME,
+	PROTON_SIGN_IN_COMMAND,
+	type ProtonPwSession,
+	type ProtonPwSessionSpec,
+	ProtonSignedOutError,
+	protonProfilePaths,
+} from "@dg/inbox";
 
-export { protonProfilePaths, PROTON_SIGN_IN_COMMAND, ProtonSignedOutError };
+export { PROTON_SIGN_IN_COMMAND, ProtonSignedOutError, protonProfilePaths };
 
 const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
 const SIGN_IN_POLL_MS = 2_000;
@@ -40,7 +40,7 @@ export type SignInDeps = {
 export const protonDataDir = (): string => resolveDgPaths().stateDir;
 
 export const isProtonSignedIn = (dataDir: string): boolean =>
-	existsSync(protonProfilePaths(dataDir).markerPath);
+	readSignedInMarker(dataDir) !== undefined;
 
 export function assertProtonSignedIn(dataDir: string): void {
 	if (!isProtonSignedIn(dataDir)) throw new ProtonSignedOutError();
@@ -71,16 +71,20 @@ export function writeSignedInMarker(
 	renameSync(temporary, markerPath);
 }
 
-export function readSignedInMarker(dataDir: string): ProtonSignInMarker | undefined {
+export function readSignedInMarker(
+	dataDir: string,
+): ProtonSignInMarker | undefined {
 	const { markerPath } = protonProfilePaths(dataDir);
 	if (!existsSync(markerPath)) return undefined;
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(readFileSync(markerPath, "utf8"));
 	} catch {
-		return {};
+		return undefined;
 	}
-	const { signedInAt, profile } = (parsed ?? {}) as Record<string, unknown>;
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+		return undefined;
+	const { signedInAt, profile } = parsed as Record<string, unknown>;
 	return {
 		...(typeof signedInAt === "string" ? { signedInAt } : {}),
 		...(profile === "windows" || profile === "local" ? { profile } : {}),
@@ -104,7 +108,9 @@ async function runPw(argv: string[]) {
 }
 
 function headerValue(text: string, name: string): string | undefined {
-	const matches = [...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim"))];
+	const matches = [
+		...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim")),
+	];
 	return matches.at(-1)?.[1]?.trim();
 }
 
@@ -130,8 +136,7 @@ export async function openProtonSession(
 		);
 	const evaluate = async (source: string): Promise<unknown> => {
 		const result = await run([session, "--raw", "eval", source]);
-		if (result.code !== 0)
-			throw new Error("Proton page evaluation failed.");
+		if (result.code !== 0) throw new Error("Proton page evaluation failed.");
 		return JSON.parse(result.out);
 	};
 	return {
@@ -165,7 +170,9 @@ export async function openProtonSession(
 
 export function protonPwRuntime(
 	dataDir: string,
-	openSession: (spec: ProtonPwSessionSpec) => Promise<ProtonPwSession> = openProtonSession,
+	openSession: (
+		spec: ProtonPwSessionSpec,
+	) => Promise<ProtonPwSession> = openProtonSession,
 ): {
 	pwBrowserRequest(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
 	close(): Promise<void>;
@@ -205,7 +212,9 @@ export async function runProtonSignIn(
 		headless: false,
 	});
 	try {
-		deps.log("Sign in to Proton Mail in the browser window. This command waits.");
+		deps.log(
+			"Sign in to Proton Mail in the browser window. This command waits.",
+		);
 		const deadline = Date.now() + (deps.timeoutMs ?? SIGN_IN_TIMEOUT_MS);
 		for (;;) {
 			const url = await session.page.url();

@@ -63,7 +63,7 @@ By default Proton runs through a pw profile under `DG_HOME/inbox/proton-profile`
 Ask the human before running `~/.dg/bin/dg-skills inbox proton sign-in`. It opens
 the profile once so the human can sign in, then closes it. On WSL it uses the
 Windows browser through pw, keeps the profile on the Windows side, and never
-opens a headed browser inside WSL. Cookies stay in that profile, and the agent never runs `dg-skills pw` on the
+opens a headed browser inside WSL. Cookies stay in that profile, and the agent never runs pw commands on the
 `inbox-proton` session or reads the profile directory. Sign-in and headless runs
 pass the same pw placement arguments, so they share one profile. On WSL that
 profile is pw's Windows-side profile for the `inbox-proton` session, while the

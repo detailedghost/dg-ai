@@ -29,7 +29,10 @@ function context() {
 function markSignedIn(): void {
 	const { markerPath } = protonProfilePaths(dgHome);
 	mkdirSync(join(markerPath, ".."), { recursive: true });
-	writeFileSync(markerPath, JSON.stringify({ signedInAt: "2026-11-01T00:00:00Z" }));
+	writeFileSync(
+		markerPath,
+		JSON.stringify({ signedInAt: "2026-11-01T00:00:00Z" }),
+	);
 }
 
 describe("inbox doctor protonTransportCheck", () => {
@@ -55,12 +58,25 @@ describe("inbox doctor protonTransportCheck", () => {
 		expect(result.status).toBe("ok");
 	});
 
+	test("reports a damaged marker as signed out and names the sign-in command", async () => {
+		const { markerPath } = protonProfilePaths(dgHome);
+		mkdirSync(join(markerPath, ".."), { recursive: true });
+		writeFileSync(markerPath, "{ broken");
+		const result = await protonTransportCheck.run(context());
+		expect(result.status).toBe("warn");
+		expect(result.detail).toMatch(/signed out/i);
+		expect(result.fix).toContain(SIGN_IN_COMMAND);
+	});
+
 	test("names the Windows profile and the last verified date from the marker", async () => {
 		const { markerPath } = protonProfilePaths(dgHome);
 		mkdirSync(join(markerPath, ".."), { recursive: true });
 		writeFileSync(
 			markerPath,
-			JSON.stringify({ signedInAt: "2026-10-30T12:00:00Z", profile: "windows" }),
+			JSON.stringify({
+				signedInAt: "2026-10-30T12:00:00Z",
+				profile: "windows",
+			}),
 		);
 		const result = await protonTransportCheck.run(context());
 		expect(result.status).toBe("ok");
@@ -113,6 +129,8 @@ describe("inbox doctor protonTransportCheck", () => {
 		);
 		expect(source).not.toMatch(/from\s+["'](?:node:)?child_process["']/);
 		expect(source).not.toMatch(/import\s*\(\s*["'](?:node:)?child_process["']/);
-		expect(source).not.toMatch(/require\s*\(\s*["'](?:node:)?child_process["']/);
+		expect(source).not.toMatch(
+			/require\s*\(\s*["'](?:node:)?child_process["']/,
+		);
 	});
 });

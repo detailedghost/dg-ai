@@ -24,6 +24,16 @@ describe("pw protectedSessionRefusal", () => {
 		[["--session", "inbox-proton", "state-save", "out.json"]],
 		[["--session=inbox-proton", "network", "--request-headers"]],
 		[["network", "-s=inbox-proton", "--filter", "/api/", "--request-headers"]],
+		[["-s=inbox-proton", "network"]],
+		[["-s=inbox-proton", "eval", "document.cookie"]],
+		[["-s=inbox-proton", "snapshot"]],
+		[["-s=inbox-proton", "localstorage-list"]],
+		[["-s=inbox-proton", "sessionstorage-get", "key"]],
+		[["-s=inbox-proton", "tracing-start"]],
+		[["-s=inbox-proton", "route", "**/*"]],
+		[["-s=inbox-proton", "screenshot"]],
+		[["-s=inbox-proton", "goto", "https://example.test"]],
+		[["-s=inbox-proton", "eval", "--", "--request-headers"]],
 	])("refuses %p", (argv) => {
 		delete process.env[ENV_KEY];
 		expect(protectedSessionRefusal(argv)).toContain("inbox-proton");
@@ -35,14 +45,35 @@ describe("pw protectedSessionRefusal", () => {
 	});
 
 	test.each([
-		[["-s=inbox-proton", "network"]],
-		[["-s=inbox-proton", "snapshot"]],
+		[["-s=inbox-proton", "close"]],
+		[["-s=inbox-proton", "delete-data"]],
+		[["-s=inbox-proton", "tab-list"]],
+		[["list"]],
 		[["-s=web", "cookie-list"]],
 		[["-s=web", "network", "--request-headers"]],
+		[["-s=web", "eval", "1"]],
 		[["cookie-list"]],
-		[["-s=inbox-proton", "eval", "--", "--request-headers"]],
 	])("allows %p", (argv) => {
 		delete process.env[ENV_KEY];
 		expect(protectedSessionRefusal(argv)).toBeUndefined();
+	});
+
+	test("pw-code refuses any code on the protected session", () => {
+		delete process.env[ENV_KEY];
+		expect(
+			protectedSessionRefusal(["-s=inbox-proton", "return 1"], "pw-code"),
+		).toContain("inbox-proton");
+		process.env[ENV_KEY] = "inbox-proton";
+		expect(protectedSessionRefusal(["--filename=x.js"], "pw-code")).toContain(
+			"inbox-proton",
+		);
+	});
+
+	test("pw-code allows other sessions", () => {
+		delete process.env[ENV_KEY];
+		expect(
+			protectedSessionRefusal(["-s=web", "return 1"], "pw-code"),
+		).toBeUndefined();
+		expect(protectedSessionRefusal(["return 1"], "pw-code")).toBeUndefined();
 	});
 });
