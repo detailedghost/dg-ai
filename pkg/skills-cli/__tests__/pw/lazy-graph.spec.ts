@@ -67,12 +67,23 @@ describe("pw lazy loading", () => {
 		expect(staticClosure(path.join(SRC, "pw", "cli.ts")).packages.has("playwright-core")).toBe(false);
 	});
 
-	test("only the pw and pw-code registrations import the pw tree outside it", () => {
+	test("the doctor registry statically reaches neither playwright-core nor the daemon", () => {
+		const { files, packages } = staticClosure(path.join(SRC, "doctor", "registry.ts"));
+		expect(packages.has("playwright-core")).toBe(false);
+		expect(files.has(path.join(SRC, "pw", "daemon.ts"))).toBe(false);
+		expect(files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);
+	});
+
+	test("only the pw and pw-code registrations and the doctor registry import the pw tree outside it", () => {
 		const importers = sourceFiles(SRC)
 			.filter((file) => !file.startsWith(path.join(SRC, "pw") + path.sep))
 			.filter((file) => /["'](?:\.\.?\/)+pw\//.test(readFileSync(file, "utf8")))
 			.map((file) => path.relative(SRC, file))
 			.sort();
-		expect(importers).toEqual([path.join("commands", "pw-code.ts"), path.join("commands", "pw.ts")]);
+		expect(importers).toEqual([
+			path.join("commands", "pw-code.ts"),
+			path.join("commands", "pw.ts"),
+			path.join("doctor", "registry.ts"),
+		]);
 	});
 });

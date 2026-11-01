@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { browserStatus, installBrowser } from "../../src/pw/browsers";
+import { browserStatus, installBrowser, removeBrowser } from "../../src/pw/browsers";
 import { downloadedChromium, markerPath } from "../../src/pw/core/downloaded";
 
 function withDir(
@@ -117,6 +117,26 @@ describe("browserStatus", () => {
 				}),
 			);
 			expect(downloadedChromium(dir)).toBeNull();
+		}),
+	);
+});
+
+describe("removeBrowser", () => {
+	test(
+		"deletes the browsers directory and reports it",
+		withDir((dir) => {
+			const browsers = path.join(dir, "browsers");
+			fakeChromium(browsers);
+			expect(removeBrowser(browsers)).toBe(true);
+			expect(downloadedChromium(browsers)).toBeNull();
+			expect(readdirSync(dir)).toEqual([]);
+		}),
+	);
+
+	test(
+		"reports false when nothing was downloaded",
+		withDir((dir) => {
+			expect(removeBrowser(path.join(dir, "browsers"))).toBe(false);
 		}),
 	);
 });

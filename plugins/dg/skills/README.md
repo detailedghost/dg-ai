@@ -45,6 +45,7 @@ binaries. The skills-root README itself is not installed.
 | `spring-break/` | Consolidate `.agents/school/` into topic clusters and trim the agent context files |
 | `review-loop/` | Loop an antagonistic review over a branch and address findings |
 | `polish/` | Clean up a diff for quality, then apply the fixes |
+| `pw/` | Drive a browser with `dg-skills pw`; `pw-code` always needs approval |
 | `jot/` | Save a short note or a session handoff (`dg-skills jot`) |
 | `bg/` | Run a task in the background and track the jobs (`dg-skills bg`) |
 | `cls/` | Close out a git worktree and return to the main repo |
@@ -102,6 +103,7 @@ skills/
   spring-break/
   review-loop/
   polish/
+  pw/
   jot/
   bg/
   cls/

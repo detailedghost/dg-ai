@@ -1,3 +1,4 @@
+import { existsSync, rmSync } from "node:fs";
 import { writeFileAtomic } from "@dg/common/node";
 import { type SystemChannel, systemBrowserPresent } from "./core/browser";
 import { browsersDir, downloadedChromium, markerPath } from "./core/downloaded";
@@ -53,4 +54,10 @@ export function browserStatus(
 		system: channel ?? "none",
 		downloaded: downloadedChromium(dir)?.version ?? "none",
 	};
+}
+
+export function removeBrowser(dir: string = browsersDir()): boolean {
+	if (!existsSync(dir)) return false;
+	rmSync(dir, { recursive: true, force: true });
+	return true;
 }

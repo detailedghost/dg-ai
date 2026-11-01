@@ -3,7 +3,7 @@ import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
 import { installedPlugins, isOlder, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
 
-function rootCheck(
+export function rootCheck(
 	id: string,
 	label: string,
 	root: (ctx: DoctorContext) => string,

@@ -77,6 +77,7 @@ Claude Code also accepts the bare `/<name>`.
 | `monolith` | Consolidate a codebase's domain vocabulary into `.agents/monolith.md` |
 | `nope` | Reset to the correct file-search defaults and record a feedback note |
 | `polish` | Clean up a diff for reuse, simplification, and hygiene, then apply the fixes |
+| `pw` | Drive a browser with `dg-skills pw`; `pw-code` always needs approval. See [Pw](docs/pw.md) |
 | `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
 | `refactor` | Find refactor candidates and discuss the chosen one |
