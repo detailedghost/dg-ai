@@ -462,8 +462,9 @@ describe("thread hold limits and partial sends", () => {
 		expect(notice?.text).toBe("5 held threads");
 		expect(notice?.text).not.toContain("held-body");
 		const keptId = pending[0]?.rumor_id ?? "";
+		const received = clock - MESSAGE_TTL_SECONDS - 10;
 		const raw = new Database(PhoneDb.path(bob.deps.paths));
-		raw.query("UPDATE pending_threads SET received_at = $received").run({ received: clock - MESSAGE_TTL_SECONDS - 10 });
+		raw.run(`UPDATE pending_threads SET received_at = ${received}`);
 		raw.close();
 		pool.events.length = 0;
 		const extra = getPublicKey(generateSecretKey());
