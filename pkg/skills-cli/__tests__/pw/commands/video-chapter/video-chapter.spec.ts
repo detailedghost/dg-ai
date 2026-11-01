@@ -59,3 +59,16 @@ describe("video-chapter target", () => {
 		);
 	});
 });
+
+describe("video-chapter duration bounds", () => {
+	test.each(["9".repeat(400), "9007199254740993"])(
+		"rejects %p",
+		async (value) => {
+			const { ctx, page } = fakeCtx(scratch.dir);
+			ctx.state.video = { page: page as never, file: "/tmp/v.webm" };
+			await expect(
+				handler(ctx, argsFor(spec, "Intro", `--duration=${value}`)),
+			).rejects.toThrow("Invalid --duration");
+		},
+	);
+});

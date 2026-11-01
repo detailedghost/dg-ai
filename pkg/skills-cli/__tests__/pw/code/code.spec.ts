@@ -95,3 +95,10 @@ describe("formatResult", () => {
 		expect(formatResult(circular)).toStartWith("[object Object] (not JSON:");
 	});
 });
+
+describe("formatResult without a string form", () => {
+	test("still returns text for a null-prototype object holding a BigInt", () => {
+		const value = Object.assign(Object.create(null), { n: 1n });
+		expect(formatResult(value)).toStartWith("[object Object] (not JSON:");
+	});
+});

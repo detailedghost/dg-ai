@@ -233,7 +233,11 @@ async function listeners(port: number): Promise<string[]> {
 	return addresses;
 }
 
-export const PROFILE_PATTERN = `$pwProfile = [regex]::Escape($env:PW_PROFILE); $pattern = '--user-data-dir=(?:"' + $pwProfile + '"|' + $pwProfile + '(?=["\\s]|$))'`;
+/** Regex source that matches --user-data-dir set to exactly the escaped profile, quoted or not. */
+export const profileMatcher = (escaped: string): string =>
+	`--user-data-dir=(?:"${escaped}"|${escaped}(?=["\\s]|$))`;
+
+export const PROFILE_PATTERN = `$pwProfile = [regex]::Escape($env:PW_PROFILE); $pattern = '${profileMatcher("' + $pwProfile + '")}'`;
 
 const FIND_PROFILE_PROCESSES = `@(Get-CimInstance Win32_Process -Filter "Name='chrome.exe' or Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern })`;
 

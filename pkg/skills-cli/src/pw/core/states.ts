@@ -46,12 +46,7 @@ export class StateNotFoundError extends Error {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isCookie = (value: unknown): boolean =>
-	isRecord(value) &&
-	typeof value["name"] === "string" &&
-	typeof value["value"] === "string";
-
-const isStorageItem = (value: unknown): boolean =>
+const isNameValue = (value: unknown): boolean =>
 	isRecord(value) &&
 	typeof value["name"] === "string" &&
 	typeof value["value"] === "string";
@@ -61,7 +56,7 @@ const isOrigin = (value: unknown): boolean =>
 	typeof value["origin"] === "string" &&
 	(value["localStorage"] === undefined ||
 		(Array.isArray(value["localStorage"]) &&
-			value["localStorage"].every(isStorageItem))) &&
+			value["localStorage"].every(isNameValue))) &&
 	(value["indexedDB"] === undefined || Array.isArray(value["indexedDB"]));
 
 export function parseStorageState(text: string, file: string): StorageState {
@@ -77,7 +72,7 @@ export function parseStorageState(text: string, file: string): StorageState {
 		candidate !== null &&
 		(candidate.cookies === undefined ||
 			(Array.isArray(candidate.cookies) &&
-				candidate.cookies.every(isCookie))) &&
+				candidate.cookies.every(isNameValue))) &&
 		(candidate.origins === undefined ||
 			(Array.isArray(candidate.origins) &&
 				candidate.origins.every(isOrigin))) &&
@@ -220,6 +215,11 @@ export function importLegacyOnce(out: (text: string) => void): number {
 		let text: string;
 		try {
 			text = readFileSync(from, "utf8");
+		} catch {
+			failed.push(file);
+			continue;
+		}
+		try {
 			parseStorageState(text, from);
 		} catch {
 			continue;

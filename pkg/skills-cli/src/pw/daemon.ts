@@ -73,7 +73,7 @@ async function serveSession(spec: LaunchSpec): Promise<void> {
 					return false;
 				},
 			);
-			remove(spec.key);
+			if (closed) remove(spec.key);
 			return closed;
 		})();
 		const closed = await cleanup;

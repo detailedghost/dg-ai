@@ -36,7 +36,13 @@ export function formatResult(value: unknown): string {
 		return JSON.stringify(value, null, 2) ?? String(value);
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
-		return `${String(value)} (not JSON: ${reason})`;
+		let text: string;
+		try {
+			text = String(value);
+		} catch {
+			text = Object.prototype.toString.call(value);
+		}
+		return `${text} (not JSON: ${reason})`;
 	}
 }
 

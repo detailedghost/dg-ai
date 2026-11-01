@@ -95,8 +95,16 @@ describe("state-load code", () => {
 		expect(code.split("\n")).toEqual([
 			'const state = JSON.parse(await fs.promises.readFile("/tmp/s.json", "utf8"));',
 			"await page.context().addCookies(state.cookies ?? []);",
-			'await page.goto("https://a.test/");',
-			'await page.evaluate((items) => { for (const item of items) localStorage.setItem(item.name, item.value); }, state.origins.find((o) => o.origin === "https://a.test").localStorage);',
+			"{",
+			"\tconst tab = await page.context().newPage();",
+			"\ttry {",
+			'\t\tawait tab.goto("https://a.test/");',
+			'\t\tconst items = state.origins.find((o) => o.origin === "https://a.test").localStorage;',
+			"\t\tawait tab.evaluate((list) => { for (const item of list) localStorage.setItem(item.name, item.value); }, items);",
+			"\t} finally {",
+			"\t\tawait tab.close();",
+			"\t}",
+			"}",
 		]);
 	});
 });

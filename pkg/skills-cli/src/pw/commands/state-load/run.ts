@@ -31,8 +31,16 @@ export function stateLoadCode(file: string, origins: StoredOrigin[]): string {
 	for (const stored of origins) {
 		const origin = JSON.stringify(stored.origin);
 		lines.push(
-			`await page.goto(${JSON.stringify(`${stored.origin}/`)});`,
-			`await page.evaluate((items) => { for (const item of items) localStorage.setItem(item.name, item.value); }, state.origins.find((o) => o.origin === ${origin}).localStorage);`,
+			"{",
+			"\tconst tab = await page.context().newPage();",
+			"\ttry {",
+			`\t\tawait tab.goto(${JSON.stringify(`${stored.origin}/`)});`,
+			`\t\tconst items = state.origins.find((o) => o.origin === ${origin}).localStorage;`,
+			"\t\tawait tab.evaluate((list) => { for (const item of list) localStorage.setItem(item.name, item.value); }, items);",
+			"\t} finally {",
+			"\t\tawait tab.close();",
+			"\t}",
+			"}",
 		);
 	}
 	return lines.join("\n");

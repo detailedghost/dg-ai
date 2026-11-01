@@ -8,6 +8,7 @@ import {
 	PROFILE_PATTERN,
 	pickFreePort,
 	powerShellPath,
+	profileMatcher,
 	resolveWindowsBrowser,
 	runPowerShell,
 	START_SCRIPT,
@@ -215,13 +216,11 @@ describe("PowerShell scripts", () => {
 	});
 
 	test("a quoted profile must close right after the full path", () => {
-		const jsPattern = (profile: string) => {
-			const escaped = profile.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
-			return new RegExp(
-				`--user-data-dir=(?:"${escaped}"|${escaped}(?=["\\s]|$))`,
+		const jsPattern = (profile: string) =>
+			new RegExp(
+				profileMatcher(profile.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")),
 				"i",
 			);
-		};
 		expect(PROFILE_PATTERN).toContain(
 			`--user-data-dir=(?:"' + $pwProfile + '"|' + $pwProfile + '(?=["\\s]|$))`,
 		);

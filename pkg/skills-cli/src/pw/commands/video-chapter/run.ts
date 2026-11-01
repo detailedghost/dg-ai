@@ -5,7 +5,10 @@ const videoChapter: DaemonHandler = async (ctx, args) => {
 	const title = args.positionals[0] as string;
 	const description = stringFlag(args, "description");
 	const duration = stringFlag(args, "duration");
-	if (duration !== undefined && !/^\d+$/.test(duration)) {
+	if (
+		duration !== undefined &&
+		(!/^\d+$/.test(duration) || !Number.isSafeInteger(Number(duration)))
+	) {
 		throw new UsageError(
 			`Invalid --duration '${duration}': use milliseconds as an integer`,
 		);
