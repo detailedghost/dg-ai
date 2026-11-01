@@ -13,6 +13,7 @@ const state = {
 	tabs: new Map<number, FakeTab>(),
 	groups: [] as FakeGroup[],
 	nextGroupId: 1,
+	session: new Map<string, unknown>(),
 };
 
 function indexOf(tabId: number): { windowId: number; index: number } {
@@ -44,6 +45,17 @@ mock.module("wxt/browser", () => ({
 	browser: {
 		storage: {
 			sync: { get: mock(async () => ({ color: "blue" })) },
+			session: {
+				get: mock(async (key: string) =>
+					state.session.has(key) ? { [key]: state.session.get(key) } : {},
+				),
+				set: mock(async (items: Record<string, unknown>) => {
+					for (const [k, v] of Object.entries(items)) state.session.set(k, v);
+				}),
+				remove: mock(async (key: string) => {
+					state.session.delete(key);
+				}),
+			},
 		},
 		tabGroups: {
 			TAB_GROUP_ID_NONE: -1,
@@ -57,13 +69,7 @@ mock.module("wxt/browser", () => ({
 		},
 		tabs: {
 			group: mock(
-				async ({
-					tabIds,
-					groupId,
-				}: {
-					tabIds: number[];
-					groupId?: number;
-				}) => {
+				async ({ tabIds, groupId }: { tabIds: number[]; groupId?: number }) => {
 					const tab = state.tabs.get(tabIds[0]);
 					if (!tab) throw new Error("no tab");
 					let id = groupId;
@@ -115,9 +121,17 @@ mock.module("wxt/browser", () => ({
 	},
 }));
 
+import {
+	BATCH_MAX_AGE_MS,
+	MARKER_BATCH_KEY,
+	MARKER_KEY,
+	newBatchId,
+} from "@dg/common";
 import { addGroupMarker } from "../../skills-cli/src/utils/marker";
 
-const { onTabComplete } = await import("@/lib/features/tab-grouping");
+const { forgetTab, onTabComplete } = await import(
+	"@/lib/features/tab-grouping"
+);
 
 function addTab(id: number, windowId: number, url: string, groupId = -1) {
 	state.tabs.set(id, { id, windowId, groupId, url });
@@ -129,11 +143,13 @@ function addGroup(id: number, windowId: number, title: string) {
 	state.nextGroupId = Math.max(state.nextGroupId, id + 1);
 }
 
+const defaultBatch = newBatchId();
+
 function markedTab(
 	id: number,
 	windowId: number,
 	pos: number,
-	batch = "b1",
+	batch = defaultBatch,
 	group = "IP",
 ) {
 	addTab(
@@ -151,10 +167,12 @@ function groupOrder(groupId: number): number[] {
 }
 
 beforeEach(() => {
+	for (const id of state.tabs.keys()) forgetTab(id);
 	state.windows.clear();
 	state.tabs.clear();
 	state.groups = [];
 	state.nextGroupId = 1;
+	state.session.clear();
 });
 
 describe("onTabComplete", () => {
@@ -226,10 +244,12 @@ describe("onTabComplete", () => {
 	});
 
 	it("does not mix tabs from two batches", async () => {
-		markedTab(61, 1, 0, "old");
+		const oldBatch = newBatchId();
+		markedTab(61, 1, 0, oldBatch);
 		await onTabComplete(61);
-		markedTab(62, 1, 1, "new");
-		markedTab(63, 1, 0, "new");
+		const newBatch = newBatchId(Date.now() + 1);
+		markedTab(62, 1, 1, newBatch);
+		markedTab(63, 1, 0, newBatch);
 		await Promise.all([62, 63].map(onTabComplete));
 
 		expect(groupOrder(state.groups[0].id)).toEqual([61, 63, 62]);
@@ -249,4 +269,147 @@ describe("onTabComplete", () => {
 		expect(state.groups).toHaveLength(0);
 		expect(state.tabs.get(72)?.groupId).toBe(-1);
 	});
+
+	it.each([
+		"https://github.com/o/r/pull/5",
+		"https://github.com/o/r/issues/5",
+		"https://github.com/o/r",
+		"https://github.com/o/r/pull/5#issuecomment-1",
+	])("leaves a hand-opened %s tab alone", async (url) => {
+		addTab(73, 1, url);
+		await onTabComplete(73);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(73)?.groupId).toBe(-1);
+		expect(state.tabs.get(73)?.url).toBe(url);
+	});
+
+	it("keeps an existing GitHub anchor when stripping the marker", async () => {
+		addTab(
+			74,
+			1,
+			addGroupMarker(
+				"https://github.com/o/r/pull/5#issuecomment-1",
+				"IP",
+				0,
+				defaultBatch,
+			),
+		);
+		await onTabComplete(74);
+
+		expect(state.tabs.get(74)?.groupId).toBe(state.groups[0].id);
+		expect(state.tabs.get(74)?.url).toBe(
+			"https://github.com/o/r/pull/5#issuecomment-1",
+		);
+	});
+
+	it("strips but does not group a marker from a batch older than the window", async () => {
+		const stale = newBatchId(Date.now() - BATCH_MAX_AGE_MS - 60_000);
+		addTab(
+			75,
+			1,
+			addGroupMarker("https://github.com/o/r/pull/5", "IP", 0, stale),
+		);
+		await onTabComplete(75);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(75)?.groupId).toBe(-1);
+		expect(state.tabs.get(75)?.url).toBe("https://github.com/o/r/pull/5");
+	});
+
+	it("groups a marker from a batch just inside the window", async () => {
+		const fresh = newBatchId(Date.now() - BATCH_MAX_AGE_MS + 60_000);
+		addTab(
+			76,
+			1,
+			addGroupMarker("https://github.com/o/r/pull/5", "IP", 0, fresh),
+		);
+		await onTabComplete(76);
+
+		expect(state.tabs.get(76)?.groupId).not.toBe(-1);
+	});
+
+	it("does not regroup a tab after the user ungroups it", async () => {
+		markedTab(78, 1, 0);
+		const marked = state.tabs.get(78)!.url;
+		await onTabComplete(78);
+		const tab = state.tabs.get(78)!;
+		tab.groupId = -1;
+		tab.url = marked;
+		await onTabComplete(78);
+
+		expect(state.tabs.get(78)?.groupId).toBe(-1);
+		expect(state.tabs.get(78)?.url).toBe("https://github.com/o/r/pull/78");
+	});
+
+	it("does not group a tab whose first marker was stale", async () => {
+		const stale = newBatchId(Date.now() - BATCH_MAX_AGE_MS - 60_000);
+		markedTab(79, 1, 0, stale);
+		await onTabComplete(79);
+		state.tabs.get(79)!.url = addGroupMarker(
+			"https://github.com/o/r/pull/79",
+			"IP",
+			0,
+			defaultBatch,
+		);
+		await onTabComplete(79);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(79)?.groupId).toBe(-1);
+	});
+
+	it("groups a reused tab id again after the tab is forgotten", async () => {
+		markedTab(80, 1, 0);
+		await onTabComplete(80);
+		forgetTab(80);
+		state.tabs.delete(80);
+		state.windows.clear();
+		markedTab(80, 1, 0);
+		await onTabComplete(80);
+
+		expect(state.tabs.get(80)?.groupId).not.toBe(-1);
+	});
+
+	it("does not group a tab that consumed a marker before a worker restart", async () => {
+		state.session.set("tab_group_marked:82", true);
+		markedTab(82, 1, 0);
+		await onTabComplete(82);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(82)?.url).toBe("https://github.com/o/r/pull/82");
+	});
+
+	it("records the consumed marker in session storage and clears it on forget", async () => {
+		markedTab(83, 1, 0);
+		await onTabComplete(83);
+		expect(state.session.has("tab_group_marked:83")).toBe(true);
+		forgetTab(83);
+		await Promise.resolve();
+
+		expect(state.session.has("tab_group_marked:83")).toBe(false);
+	});
+
+	it("strips but does not group a marker whose batch is malformed", async () => {
+		const url = `https://github.com/o/r/pull/5#${MARKER_KEY}=IP&${MARKER_BATCH_KEY}=%`;
+		addTab(81, 1, url);
+		await onTabComplete(81);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(81)?.url).toBe("https://github.com/o/r/pull/5");
+	});
+
+	it.each([undefined, "b1"])(
+		"strips but does not group a marker with batch %s",
+		async (batch) => {
+			addTab(
+				77,
+				1,
+				addGroupMarker("https://github.com/o/r/pull/5", "IP", 0, batch),
+			);
+			await onTabComplete(77);
+
+			expect(state.groups).toHaveLength(0);
+			expect(state.tabs.get(77)?.url).toBe("https://github.com/o/r/pull/5");
+		},
+	);
 });

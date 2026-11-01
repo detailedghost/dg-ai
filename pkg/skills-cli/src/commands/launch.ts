@@ -9,6 +9,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { newBatchId } from "@dg/common";
 import { isWSL, run } from "@dg/common/node";
 import type { Command } from "commander";
 import { type DetectedBrowser, detectBrowsers } from "../utils/detect";
@@ -106,8 +107,9 @@ async function launch(refs: string[], opts: Opts): Promise<void> {
 		process.exit(1);
 	}
 
+	const batch = newBatchId();
 	const urls = resolveRefs(refs, opts.repo).map((u) =>
-		addGroupMarker(u, opts.group),
+		addGroupMarker(u, opts.group, undefined, batch),
 	);
 
 	if (isRunning(chosen.exe)) {

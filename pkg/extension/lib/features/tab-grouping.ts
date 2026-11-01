@@ -1,4 +1,4 @@
-import { createSerialQueue } from "@dg/common";
+import { createSerialQueue, isBatchFresh } from "@dg/common";
 import { browser } from "wxt/browser";
 import {
 	readGroupBatch,
@@ -11,7 +11,9 @@ import { type GroupColor, getConfig, resolveColor } from "../config";
 /**
  * Marker-driven tab grouping. Only tabs whose URL carries a `_tab_group=<name>`
  * marker (added by the CLI) are grouped — into <name> — after which the marker is
- * stripped from the URL. Pages the user browses normally are never touched.
+ * stripped from the URL. Pages the user browses normally are never touched. A
+ * marker whose batch id is missing, unparseable, or older than BATCH_MAX_AGE_MS
+ * is stale (replayed from history or autocomplete): it is stripped, never grouped.
  */
 
 /** Does this browser expose the grouping APIs? Chrome, Edge, and Firefox 139+. */
@@ -40,9 +42,26 @@ function queueFor(title: string) {
 type BatchSlot = { batch: string; pos: number };
 
 const batchSlots = new Map<number, BatchSlot>();
+const markedTabs = new Set<number>();
+
+const markedKey = (tabId: number) => `tab_group_marked:${tabId}`;
 
 export function forgetTab(tabId: number): void {
 	batchSlots.delete(tabId);
+	markedTabs.delete(tabId);
+	void browser.storage?.session?.remove(markedKey(tabId)).catch(() => {});
+}
+
+/** True the first time this tab sees a marker, across MV3 worker restarts. */
+async function consumeFirstMarker(tabId: number): Promise<boolean> {
+	if (markedTabs.has(tabId)) return false;
+	markedTabs.add(tabId);
+	const key = markedKey(tabId);
+	const session = browser.storage?.session;
+	if (!session) return true;
+	const stored = await session.get(key).catch(() => ({}));
+	await session.set({ [key]: true }).catch(() => {});
+	return !(key in stored);
 }
 
 async function findGroup(
@@ -120,7 +139,8 @@ export async function onTabComplete(tabId: number): Promise<void> {
 		const alreadyGrouped =
 			typeof current.groupId === "number" &&
 			current.groupId !== TAB_GROUP_ID_NONE;
-		if (!alreadyGrouped) {
+		const firstMarker = await consumeFirstMarker(tabId);
+		if (firstMarker && !alreadyGrouped && isBatchFresh(readGroupBatch(url))) {
 			const { color } = await getConfig();
 			const groupId = await addToGroup(
 				tabId,
