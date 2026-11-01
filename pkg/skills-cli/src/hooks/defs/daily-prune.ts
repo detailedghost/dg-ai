@@ -388,7 +388,7 @@ function createLock(lock: string, token: string): boolean {
 	}
 }
 
-/** Claims the lock and returns its owner token; a stale lock is moved aside first, and a fresh one moved by mistake is put back. */
+/** Claims the lock and returns its owner token, or undefined when another run holds it. */
 function takeLock(lock: string): string | undefined {
 	const token = `${process.pid}-${randomUUID()}`;
 	if (createLock(lock, token)) return token;
