@@ -7,6 +7,7 @@ export const EDIT_MARKER_KEY = "_edit";
 export const PROTO_MARKER_KEY = "_proto";
 
 export const BATCH_MAX_AGE_MS = 10 * 60 * 1000;
+export const BATCH_MAX_SKEW_MS = 60 * 1000;
 
 const BATCH_RANDOM_LENGTH = 4;
 const BATCH_PATTERN = new RegExp(
@@ -30,11 +31,13 @@ export function batchIssuedAt(batch: string | undefined): number | undefined {
 	return Number.isFinite(ms) ? ms : undefined;
 }
 
-/** True when the batch was issued within BATCH_MAX_AGE_MS of `now`. */
+/** True when the batch was issued within BATCH_MAX_AGE_MS before `now` and no more than BATCH_MAX_SKEW_MS after it. */
 export function isBatchFresh(
 	batch: string | undefined,
 	now = Date.now(),
 ): boolean {
 	const issuedAt = batchIssuedAt(batch);
-	return issuedAt !== undefined && now - issuedAt <= BATCH_MAX_AGE_MS;
+	if (issuedAt === undefined) return false;
+	const age = now - issuedAt;
+	return age <= BATCH_MAX_AGE_MS && age >= -BATCH_MAX_SKEW_MS;
 }

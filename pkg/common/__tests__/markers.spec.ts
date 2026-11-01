@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	BATCH_MAX_AGE_MS,
+	BATCH_MAX_SKEW_MS,
 	batchIssuedAt,
 	DEMO_MARKER_KEY,
 	EDIT_MARKER_KEY,
@@ -40,6 +41,15 @@ describe("batch ids", () => {
 		const batch = newBatchId(now);
 		expect(isBatchFresh(batch, now + BATCH_MAX_AGE_MS)).toBe(true);
 		expect(isBatchFresh(batch, now + BATCH_MAX_AGE_MS + 1)).toBe(false);
+	});
+
+	it("allows a future issue time only within the clock-skew allowance", () => {
+		const batch = newBatchId(now + BATCH_MAX_SKEW_MS);
+		expect(isBatchFresh(batch, now)).toBe(true);
+		expect(isBatchFresh(newBatchId(now + BATCH_MAX_SKEW_MS + 1), now)).toBe(
+			false,
+		);
+		expect(isBatchFresh(newBatchId(now + BATCH_MAX_AGE_MS), now)).toBe(false);
 	});
 
 	it("is stale when missing or unparseable", () => {
