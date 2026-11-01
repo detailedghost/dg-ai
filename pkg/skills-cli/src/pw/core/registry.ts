@@ -12,7 +12,7 @@ import path from "node:path";
 import { cwdHash, scratchDir } from "@dg/common/node";
 import { ensurePrivateDir } from "./files";
 import { call } from "./socket";
-import { closeWindowsBrowser } from "./windows";
+import { browserSurvived, closeWindowsBrowser } from "./windows";
 
 export const BROWSERS = [
 	"chrome",
@@ -211,7 +211,7 @@ export async function reapStale(
 			!live.some((other) => other.profileDir === record.profileDir)
 		) {
 			const closed = await closeBrowser(record.profileDir).then(
-				() => true,
+				(exit) => !browserSurvived(exit),
 				() => false,
 			);
 			if (!closed) continue;

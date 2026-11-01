@@ -153,6 +153,25 @@ describe("killRegistered and Windows browsers", () => {
 		}
 	});
 
+	test("keeps the record when Windows browser processes survive the close", async () => {
+		const daemon = await startFakeDaemon("win", {
+			mode: "cdp",
+			winPid: 77,
+			profileDir: "C:\\p\\win",
+		});
+		try {
+			const failed = await killRegistered(list(), async () => ({
+				forced: 1,
+				remaining: 2,
+			}));
+			await daemon.child.exited;
+			expect(failed).toEqual(["C:\\p\\win"]);
+			expect(read("win")).not.toBeNull();
+		} finally {
+			daemon.dispose();
+		}
+	});
+
 	test("does not signal a pid that no longer runs the recorded daemon", async () => {
 		const bystander = Bun.spawn(["sleep", "30"]);
 		const daemon = await startFakeDaemon("ghost");

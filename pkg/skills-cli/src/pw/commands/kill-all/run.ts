@@ -11,7 +11,7 @@ import {
 	signalDaemon,
 } from "../../core/registry";
 import type { ClientHandler } from "../../core/spec";
-import { closeWindowsBrowser } from "../../core/windows";
+import { browserSurvived, closeWindowsBrowser } from "../../core/windows";
 
 /** Returns the Windows profiles whose browser did not close; their records stay for a retry. */
 export async function killRegistered(
@@ -26,7 +26,7 @@ export async function killRegistered(
 	const outcomes = await Promise.all(
 		profiles.map((profileDir) =>
 			closeBrowser(profileDir).then(
-				() => null,
+				(exit) => (browserSurvived(exit) ? profileDir : null),
 				() => profileDir,
 			),
 		),

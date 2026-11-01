@@ -269,6 +269,12 @@ export async function closeWindowsBrowser(
 	return { forced, remaining };
 }
 
+/** True when a close result reports Windows browser processes that still run. */
+export function browserSurvived(exit: unknown): boolean {
+	if (typeof exit !== "object" || exit === null) return false;
+	return Number((exit as Partial<WindowsExit>).remaining ?? 0) > 0;
+}
+
 export async function startWindowsBrowser(options: {
 	browser?: WindowsBrowser | undefined;
 	profileDir: string;

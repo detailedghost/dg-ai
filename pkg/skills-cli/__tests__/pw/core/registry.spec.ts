@@ -296,6 +296,12 @@ describe("reapStale", () => {
 		expect(existsSync(recordPath("gh"))).toBe(true);
 	});
 
+	test("keeps the record when Windows browser processes survive the close", async () => {
+		write(windowsRecord("gh", { pid: 2_147_483_646 }));
+		await reapStale(async () => ({ forced: 0, remaining: 1 }));
+		expect(existsSync(recordPath("gh"))).toBe(true);
+	});
+
 	test("keeps the list-time cleanup from deleting the record before reaping", async () => {
 		write(windowsRecord("gh", { pid: 2_147_483_646 }));
 		expect(list()).toEqual([]);
