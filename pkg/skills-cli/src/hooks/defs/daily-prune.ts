@@ -214,15 +214,15 @@ export async function pruneWorktrees(
 		const inside = linkedWorktrees(repo).filter((w) =>
 			isUnder(existsSync(w.path) ? realpathSync(w.path) : w.path, root),
 		);
-		for (const { branch } of inside) {
-			const r = await opts.run(selfCommand(["worktree", "remove", branch]), {
+		for (const worktree of inside) {
+			const r = await opts.run(selfCommand(["worktree", "remove", worktree.path]), {
 				cwd: repo,
 			});
 			const detail = r.stderr.trim().split("\n").pop()?.replace(ANSI, "");
 			opts.log(
 				r.status === 0
-					? `removed worktree ${repo} ${branch}`
-					: `kept worktree ${repo} ${branch}: ${detail ?? ""}`,
+					? `removed worktree ${repo} ${worktree.branch}`
+					: `kept worktree ${repo} ${worktree.branch}: ${detail ?? ""}`,
 			);
 		}
 	}
