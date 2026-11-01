@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler, { parseLevel } from "../../../../src/pw/commands/console/run";
 import spec from "../../../../src/pw/commands/console/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 

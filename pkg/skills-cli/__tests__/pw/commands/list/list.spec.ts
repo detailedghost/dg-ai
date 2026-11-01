@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/list/run";
 import spec from "../../../../src/pw/commands/list/spec";
-import { argsFor, clientEnv, startFakeDaemon, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	clientEnv,
+	startFakeDaemon,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 useTempScratch();
 
@@ -56,7 +61,9 @@ describe("list", () => {
 		const env = clientEnv();
 		try {
 			await handler(argsFor(spec), env);
-			expect(env.stdout[0]).toEndWith("  - mode: cdp\n  - cdp: http://127.0.0.1:9333");
+			expect(env.stdout[0]).toEndWith(
+				"  - mode: cdp\n  - cdp: http://127.0.0.1:9333",
+			);
 		} finally {
 			daemon.dispose();
 		}

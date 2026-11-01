@@ -3,7 +3,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import handler from "../../../../src/pw/commands/upload/run";
 import spec from "../../../../src/pw/commands/upload/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -19,7 +23,9 @@ describe("upload", () => {
 
 	test("fails with the fixed message when no file chooser is pending", async () => {
 		const { ctx } = fakeCtx(scratch.dir);
-		await expect(handler(ctx, argsFor(spec, "/tmp/x.png"))).rejects.toThrow("No file chooser visible");
+		await expect(handler(ctx, argsFor(spec, "/tmp/x.png"))).rejects.toThrow(
+			"No file chooser visible",
+		);
 	});
 
 	test("sets the files as payloads with their mime types, from any absolute path", async () => {
@@ -33,8 +39,12 @@ describe("upload", () => {
 			takeChooser: () => pending as never,
 		});
 		const result = await handler(ctx, argsFor(spec, png, pdf));
-		const [files] = pending.calls as [{ name: string; mimeType: string; buffer: Buffer }[]];
-		expect(files.map((file) => [file.name, file.mimeType, file.buffer.toString()])).toEqual([
+		const [files] = pending.calls as [
+			{ name: string; mimeType: string; buffer: Buffer }[],
+		];
+		expect(
+			files.map((file) => [file.name, file.mimeType, file.buffer.toString()]),
+		).toEqual([
 			["x.png", "image/png", "png-bytes"],
 			["y.pdf", "application/pdf", "pdf-bytes"],
 		]);
@@ -64,7 +74,9 @@ describe("upload", () => {
 			},
 		});
 		const missing = path.join(scratch.dir, "nope.png");
-		await expect(handler(ctx, argsFor(spec, missing))).rejects.toThrow(`File not found: ${missing}`);
+		await expect(handler(ctx, argsFor(spec, missing))).rejects.toThrow(
+			`File not found: ${missing}`,
+		);
 		expect(taken).toBe(false);
 	});
 });

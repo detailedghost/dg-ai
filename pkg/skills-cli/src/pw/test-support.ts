@@ -5,7 +5,12 @@ import path from "node:path";
 import type { Page } from "playwright-core";
 import { parse } from "./core/args";
 import type { Events } from "./core/events";
-import { readCmdline, type SessionRecord, socketPathFor, write } from "./core/registry";
+import {
+	readCmdline,
+	type SessionRecord,
+	socketPathFor,
+	write,
+} from "./core/registry";
 import { type DaemonRequest, serve } from "./core/socket";
 import type { ClientEnv, CommandSpec, Ctx, ParsedArgs } from "./core/spec";
 
@@ -25,25 +30,36 @@ export function useTempEnv(name: string): { readonly dir: string } {
 	return holder;
 }
 
-export const useTempScratch = (): { readonly dir: string } => useTempEnv("AI_SCRATCH_DIR");
+export const useTempScratch = (): { readonly dir: string } =>
+	useTempEnv("AI_SCRATCH_DIR");
 
-export const argsFor = (spec: CommandSpec, ...argv: string[]): ParsedArgs => parse([spec.name, ...argv], spec);
+export const argsFor = (spec: CommandSpec, ...argv: string[]): ParsedArgs =>
+	parse([spec.name, ...argv], spec);
 
 function writeFakeOutput(method: string, args: unknown[]): void {
 	const target = (args[0] as { path?: unknown } | undefined)?.path;
-	if (typeof target === "string" && (method === "pdf" || method === "stop")) writeFileSync(target, "x");
+	if (typeof target === "string" && (method === "pdf" || method === "stop"))
+		writeFileSync(target, "x");
 }
 
 export type Recorded<T extends object> = T & {
 	returns: Record<string, unknown>;
 };
 
-function recording<T extends object>(target: T, calls: string[], label: string): Recorded<T> {
+function recording<T extends object>(
+	target: T,
+	calls: string[],
+	label: string,
+): Recorded<T> {
 	const returns: Record<string, unknown> = {};
 	return new Proxy(target, {
 		get(object, property, receiver) {
 			if (property === "returns") return returns;
-			if (typeof property !== "string" || property === "then" || property in object) {
+			if (
+				typeof property !== "string" ||
+				property === "then" ||
+				property in object
+			) {
 				return Reflect.get(object, property, receiver);
 			}
 			return async (...args: unknown[]) => {
@@ -143,7 +159,11 @@ export class FakePage {
 		return this.evaluated;
 	}
 
-	async screenshot(options: { path: string; type: string; fullPage: boolean }): Promise<void> {
+	async screenshot(options: {
+		path: string;
+		type: string;
+		fullPage: boolean;
+	}): Promise<void> {
 		this.calls.push(`screenshot ${options.type} fullPage=${options.fullPage}`);
 		writeFileSync(options.path, "image");
 	}
@@ -175,7 +195,8 @@ function installFallback(prototype: object): void {
 		{},
 		{
 			get(_target, property, receiver: Fallback) {
-				if (typeof property !== "string" || property === "then") return undefined;
+				if (typeof property !== "string" || property === "then")
+					return undefined;
 				return async (...args: unknown[]) => {
 					receiver.calls.push(`${property} ${JSON.stringify(args)}`);
 					writeFakeOutput(property, args);
@@ -245,7 +266,9 @@ export function fakeCtx(
 	return { ctx, page, context };
 }
 
-export function clientEnv(cwd = "/work"): ClientEnv & { stdout: string[]; stderr: string[] } {
+export function clientEnv(
+	cwd = "/work",
+): ClientEnv & { stdout: string[]; stderr: string[] } {
 	const stdout: string[] = [];
 	const stderr: string[] = [];
 	return {
@@ -261,7 +284,11 @@ let fakeDaemonPath: string | undefined;
 
 function fakeDaemon(): string {
 	if (fakeDaemonPath === undefined) {
-		const dir = path.join(mkdtempSync(path.join(tmpdir(), "pw-fake-daemon-")), "skills-cli", "src");
+		const dir = path.join(
+			mkdtempSync(path.join(tmpdir(), "pw-fake-daemon-")),
+			"skills-cli",
+			"src",
+		);
 		mkdirSync(dir, { recursive: true });
 		fakeDaemonPath = path.join(dir, "index.ts");
 		writeFileSync(fakeDaemonPath, "await Bun.sleep(60_000);\n");
@@ -269,11 +296,20 @@ function fakeDaemon(): string {
 	return fakeDaemonPath;
 }
 
-export function spawnFakeDaemonProcess(key: string): ReturnType<typeof Bun.spawn> {
+export function spawnFakeDaemonProcess(
+	key: string,
+): ReturnType<typeof Bun.spawn> {
 	const script = fakeDaemon();
-	const child = Bun.spawn([process.execPath, script, "pw", "__daemon", JSON.stringify({ key })]);
+	const child = Bun.spawn([
+		process.execPath,
+		script,
+		"pw",
+		"__daemon",
+		JSON.stringify({ key }),
+	]);
 	const deadline = Date.now() + 2_000;
-	while (!readCmdline(child.pid)?.includes(script) && Date.now() < deadline) Bun.sleepSync(2);
+	while (!readCmdline(child.pid)?.includes(script) && Date.now() < deadline)
+		Bun.sleepSync(2);
 	return child;
 }
 
@@ -306,7 +342,10 @@ export async function startFakeDaemon(
 		if (request.method === "stop") child.kill();
 		return {
 			id: request.id,
-			result: request.method === "stop" ? { text: "", exitCode: 0 } : respond(request),
+			result:
+				request.method === "stop"
+					? { text: "", exitCode: 0 }
+					: respond(request),
 		};
 	});
 	const record: SessionRecord = {

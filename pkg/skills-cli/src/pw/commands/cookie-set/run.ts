@@ -9,11 +9,15 @@ const cookieSet: DaemonHandler = async (ctx, args) => {
 	const expires = stringFlag(args, "expires");
 	const sameSite = stringFlag(args, "sameSite");
 	if (expires !== undefined && !/^\d+$/.test(expires)) {
-		throw new UsageError(`Invalid --expires '${expires}': use a unix timestamp in seconds`);
+		throw new UsageError(
+			`Invalid --expires '${expires}': use a unix timestamp in seconds`,
+		);
 	}
 	const site = SAME_SITE.find((candidate) => candidate === sameSite);
 	if (sameSite !== undefined && !site) {
-		throw new UsageError(`Invalid --sameSite '${sameSite}': use ${SAME_SITE.join(", ")}`);
+		throw new UsageError(
+			`Invalid --sameSite '${sameSite}': use ${SAME_SITE.join(", ")}`,
+		);
 	}
 	const cookie: Cookie = {
 		name,

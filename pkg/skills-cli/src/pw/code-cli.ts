@@ -20,7 +20,10 @@ export const CODE_HELP = [
 	...GLOBAL_HELP,
 ].join("\n");
 
-export async function main(argv: readonly string[], env: ClientEnv = defaultEnv()): Promise<number> {
+export async function main(
+	argv: readonly string[],
+	env: ClientEnv = defaultEnv(),
+): Promise<number> {
 	const versionError = bunVersionError(Bun.version);
 	if (versionError) {
 		env.err(versionError);
@@ -38,8 +41,13 @@ export async function main(argv: readonly string[], env: ClientEnv = defaultEnv(
 		}
 		const forwarded = [CODE_COMMAND.spec.name, ...args];
 		const parsed = parse(forwarded, CODE_COMMAND.spec);
-		if (parsed.positionals.length === 0 && stringFlag(parsed, "filename") === undefined) {
-			throw new UsageError(`Provide the code as an argument or with --filename\n\n${CODE_HELP}`);
+		if (
+			parsed.positionals.length === 0 &&
+			stringFlag(parsed, "filename") === undefined
+		) {
+			throw new UsageError(
+				`Provide the code as an argument or with --filename\n\n${CODE_HELP}`,
+			);
 		}
 		return await forward(parsed, "code", forwarded, env);
 	} catch (error) {

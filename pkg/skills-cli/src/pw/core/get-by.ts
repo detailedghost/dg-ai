@@ -59,7 +59,8 @@ function skipRegex(source: string, start: number): number {
 		if (char === "\\") i++;
 		else if (char === "[") inClass = true;
 		else if (char === "]") inClass = false;
-		else if (char === "/" && !inClass) return i + 1 + (FLAGS.exec(source.slice(i + 1))?.[0].length ?? 0);
+		else if (char === "/" && !inClass)
+			return i + 1 + (FLAGS.exec(source.slice(i + 1))?.[0].length ?? 0);
 	}
 	return -1;
 }
@@ -80,8 +81,12 @@ export function assertSafeGetBy(source: string): void {
 		}
 		const rest = source.slice(i);
 		let next = -1;
-		if (char === '"' || char === "'" || char === "`") next = skipString(source, i);
-		else if (char === "/" && (previous === "" || REGEX_PRECEDERS.has(previous))) {
+		if (char === '"' || char === "'" || char === "`")
+			next = skipString(source, i);
+		else if (
+			char === "/" &&
+			(previous === "" || REGEX_PRECEDERS.has(previous))
+		) {
 			if (source[i + 1] === "/" || source[i + 1] === "*") reject();
 			next = skipRegex(source, i);
 		} else if (PUNCTUATION.has(char)) next = i + 1;
@@ -91,7 +96,8 @@ export function assertSafeGetBy(source: string): void {
 			if (identifier && ALLOWED.has(identifier)) next = i + identifier.length;
 		}
 		if (next === -1) reject();
-		previous = char === '"' || char === "'" || char === "`" || char === "/" ? "x" : char;
+		previous =
+			char === '"' || char === "'" || char === "`" || char === "/" ? "x" : char;
 		i = next;
 	}
 }

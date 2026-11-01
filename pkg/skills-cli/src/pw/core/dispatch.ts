@@ -11,7 +11,13 @@ import {
 	snapshotLine,
 	writeSnapshot,
 } from "./response";
-import type { CommandSpec, Ctx, DaemonHandler, HandlerResult, ParsedArgs } from "./spec";
+import type {
+	CommandSpec,
+	Ctx,
+	DaemonHandler,
+	HandlerResult,
+	ParsedArgs,
+} from "./spec";
 import { resolveTarget } from "./targets";
 
 export type DispatchState = { lastHeader?: string };
@@ -36,7 +42,11 @@ export function describeError(error: unknown): string {
 	return stripVTControlCharacters(message)
 		.split("\n")
 		.slice(0, ERROR_LINES)
-		.map((line) => (line.length > ERROR_LINE_MAX ? `${line.slice(0, ERROR_LINE_MAX)}...` : line))
+		.map((line) =>
+			line.length > ERROR_LINE_MAX
+				? `${line.slice(0, ERROR_LINE_MAX)}...`
+				: line,
+		)
 		.join("\n")
 		.trim();
 }
@@ -62,24 +72,38 @@ async function attachSnapshot(
 ): Promise<void> {
 	if (!outcome.snapshot) return;
 	const request = outcome.snapshot === true ? {} : outcome.snapshot;
-	const scope = request.target ? await resolveTarget(page, request.target) : undefined;
+	const scope = request.target
+		? await resolveTarget(page, request.target)
+		: undefined;
 	parts.snapshot = await writeSnapshot(page, ctx.outputDir, {
-		depth: request.depth ?? options.sessionDepth ?? options.envDepth ?? DEFAULT_DEPTH,
+		depth:
+			request.depth ??
+			options.sessionDepth ??
+			options.envDepth ??
+			DEFAULT_DEPTH,
 		filename: request.filename,
 		scope,
 	});
-	if (options.raw && outcome.snapshot !== true) parts.result = snapshotLine(parts.snapshot);
+	if (options.raw && outcome.snapshot !== true)
+		parts.result = snapshotLine(parts.snapshot);
 }
 
 const MODAL_OPENED = Symbol("modal-opened");
 
-async function runHandler(handler: DaemonHandler, ctx: Ctx, args: ParsedArgs): Promise<HandlerResult> {
+async function runHandler(
+	handler: DaemonHandler,
+	ctx: Ctx,
+	args: ParsedArgs,
+): Promise<HandlerResult> {
 	const work = handler(ctx, args);
 	const page = currentPage(ctx);
 	if (!page) return work;
 	const watch = ctx.events.watchDialog(page);
 	try {
-		const winner = await Promise.race([work, watch.opened.then(() => MODAL_OPENED)]);
+		const winner = await Promise.race([
+			work,
+			watch.opened.then(() => MODAL_OPENED),
+		]);
 		if (typeof winner !== "symbol") return winner;
 		work.catch(() => undefined);
 		return {};
@@ -106,7 +130,10 @@ export async function dispatch(
 	const parts: Parts = { code: outcome.code };
 	if (outcome.error) parts.error = outcome.error;
 	else if (outcome.result !== undefined) {
-		parts.result = typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result, null, 2);
+		parts.result =
+			typeof outcome.result === "string"
+				? outcome.result
+				: JSON.stringify(outcome.result, null, 2);
 	}
 
 	const page = currentPage(ctx);
@@ -116,17 +143,21 @@ export async function dispatch(
 			return { text: render(parts, options), exitCode: parts.error ? 1 : 0 };
 		}
 		if (!outcome.error && spec.changesPage) {
-			await page.waitForLoadState("domcontentloaded", { timeout: 3_000 }).catch(() => undefined);
+			await page
+				.waitForLoadState("domcontentloaded", { timeout: 3_000 })
+				.catch(() => undefined);
 		}
 		try {
-			if (!outcome.error) await attachSnapshot(ctx, page, outcome, parts, options);
+			if (!outcome.error)
+				await attachSnapshot(ctx, page, outcome, parts, options);
 		} catch (error) {
 			parts.error = describeError(error);
 			parts.snapshot = undefined;
 		}
 		const header = await headerOf(ctx, page);
 		const key = `${header.url}\n${header.title}`;
-		if (parts.snapshot || parts.error || key !== options.state.lastHeader) parts.page = header;
+		if (parts.snapshot || parts.error || key !== options.state.lastHeader)
+			parts.page = header;
 		options.state.lastHeader = key;
 		parts.events = ctx.events.drain(page);
 		parts.notices = ctx.events.drainNotices(page);

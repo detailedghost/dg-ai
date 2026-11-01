@@ -28,5 +28,7 @@ const BY_LOWERCASE = new Map(NAMED.map((name) => [name.toLowerCase(), name]));
 export const normalizeKey = (key: string): string =>
 	key
 		.split("+")
-		.map((part) => (part.length > 1 ? (BY_LOWERCASE.get(part.toLowerCase()) ?? part) : part))
+		.map((part) =>
+			part.length > 1 ? (BY_LOWERCASE.get(part.toLowerCase()) ?? part) : part,
+		)
 		.join("+");

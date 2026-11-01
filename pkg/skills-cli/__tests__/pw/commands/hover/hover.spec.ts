@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/hover/run";
 import spec from "../../../../src/pw/commands/hover/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -19,6 +23,8 @@ describe("hover", () => {
 	test("fails with the fixed message when the ref is gone", async () => {
 		const { ctx, page } = fakeCtx(scratch.dir);
 		page.missing("aria-ref=e9");
-		await expect(handler(ctx, argsFor(spec, "e9"))).rejects.toThrow("Ref not found: e9. Take a new snapshot.");
+		await expect(handler(ctx, argsFor(spec, "e9"))).rejects.toThrow(
+			"Ref not found: e9. Take a new snapshot.",
+		);
 	});
 });

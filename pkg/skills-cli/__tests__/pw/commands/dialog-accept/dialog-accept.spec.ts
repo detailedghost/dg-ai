@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/dialog-accept/run";
 import spec from "../../../../src/pw/commands/dialog-accept/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -37,6 +41,8 @@ describe("dialog-accept", () => {
 
 	test("fails when no dialog is pending", async () => {
 		const { ctx } = fakeCtx(scratch.dir);
-		await expect(handler(ctx, argsFor(spec))).rejects.toThrow("No dialog visible");
+		await expect(handler(ctx, argsFor(spec))).rejects.toThrow(
+			"No dialog visible",
+		);
 	});
 });

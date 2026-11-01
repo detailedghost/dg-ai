@@ -3,7 +3,8 @@ import type { Ctx } from "./spec";
 
 export async function listTabs(ctx: Ctx): Promise<string> {
 	const pages = ctx.context.pages();
-	if (pages.length === 0) return "No open tabs. Navigate to a URL to create one.";
+	if (pages.length === 0)
+		return "No open tabs. Navigate to a URL to create one.";
 	let current: Page | undefined;
 	try {
 		current = ctx.page();
@@ -12,8 +13,12 @@ export async function listTabs(ctx: Ctx): Promise<string> {
 	}
 	const lines: string[] = [];
 	for (const [index, page] of pages.entries()) {
-		const title = ctx.events.hasDialog(page) ? "" : await page.title().catch(() => "");
-		lines.push(`- ${index}:${page === current ? " (current)" : ""} [${title}](${page.url()})`);
+		const title = ctx.events.hasDialog(page)
+			? ""
+			: await page.title().catch(() => "");
+		lines.push(
+			`- ${index}:${page === current ? " (current)" : ""} [${title}](${page.url()})`,
+		);
 	}
 	return lines.join("\n");
 }

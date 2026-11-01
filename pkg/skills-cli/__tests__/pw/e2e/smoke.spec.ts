@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { call } from "../../../src/pw/core/socket";
 import { COOKIE_NAME, startFixtureSite } from "./fixture-site";
@@ -44,13 +51,16 @@ describe.skipIf(process.env["PW_E2E"] !== "1")("pw smoke", () => {
 
 	const snapshotText = (run: Run): string => {
 		const link = /\[Snapshot\]\(([^)]+)\)/.exec(run.out);
-		if (!link?.[1]) throw new Error(`no snapshot link in:\n${run.out}\n${run.err}`);
+		if (!link?.[1])
+			throw new Error(`no snapshot link in:\n${run.out}\n${run.err}`);
 		return readFileSync(link[1], "utf8");
 	};
 
 	const refFor = (yaml: string, label: string): string => {
 		const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		const match = new RegExp(`${escaped}[^\\n]*\\[ref=((?:f\\d+)?e\\d+)\\]`).exec(yaml);
+		const match = new RegExp(
+			`${escaped}[^\\n]*\\[ref=((?:f\\d+)?e\\d+)\\]`,
+		).exec(yaml);
 		if (!match?.[1]) throw new Error(`no ref for ${label} in:\n${yaml}`);
 		return match[1];
 	};
@@ -86,28 +96,69 @@ describe.skipIf(process.env["PW_E2E"] !== "1")("pw smoke", () => {
 			expect(form.code).toBe(0);
 			const yaml = snapshotText(form);
 			expect(yaml).toContain("Sign in");
-			const snapshotFile = /\[Snapshot\]\(([^)]+)\)/.exec(form.out)?.[1] as string;
+			const snapshotFile = /\[Snapshot\]\(([^)]+)\)/.exec(
+				form.out,
+			)?.[1] as string;
 			expect(statSync(snapshotFile).mode & 0o777).toBe(0o600);
 			expect(statSync(path.dirname(snapshotFile)).mode & 0o777).toBe(0o700);
 
-			expect((await pw(`-s=${SESSION}`, "fill", refFor(yaml, 'textbox "Username"'), "alice")).code).toBe(0);
-			expect((await pw(`-s=${SESSION}`, "fill", refFor(yaml, 'textbox "Password"'), "not-a-secret")).code).toBe(0);
-			const submitted = await pw(`-s=${SESSION}`, "click", refFor(yaml, 'button "Log in"'));
+			expect(
+				(
+					await pw(
+						`-s=${SESSION}`,
+						"fill",
+						refFor(yaml, 'textbox "Username"'),
+						"alice",
+					)
+				).code,
+			).toBe(0);
+			expect(
+				(
+					await pw(
+						`-s=${SESSION}`,
+						"fill",
+						refFor(yaml, 'textbox "Password"'),
+						"not-a-secret",
+					)
+				).code,
+			).toBe(0);
+			const submitted = await pw(
+				`-s=${SESSION}`,
+				"click",
+				refFor(yaml, 'button "Log in"'),
+			);
 			expect(submitted.code).toBe(0);
 			expect(snapshotText(submitted)).toContain("Welcome back");
 
-			expect((await pw(`-s=${SESSION}`, "goto", `${site.url}/upload`)).code).toBe(0);
+			expect(
+				(await pw(`-s=${SESSION}`, "goto", `${site.url}/upload`)).code,
+			).toBe(0);
 			const uploadPage = snapshotText(await pw(`-s=${SESSION}`, "snapshot"));
-			const chooser = await pw(`-s=${SESSION}`, "click", refFor(uploadPage, 'button "Attachment"'));
+			const chooser = await pw(
+				`-s=${SESSION}`,
+				"click",
+				refFor(uploadPage, 'button "Attachment"'),
+			);
 			expect(chooser.out).toContain("[File chooser]");
 			const uploaded = await pw(`-s=${SESSION}`, "upload", uploadFile);
 			expect(uploaded.code).toBe(0);
-			const picked = await pw(`-s=${SESSION}`, "--raw", "eval", "document.getElementById('picked').textContent");
+			const picked = await pw(
+				`-s=${SESSION}`,
+				"--raw",
+				"eval",
+				"document.getElementById('picked').textContent",
+			);
 			expect(picked.out.trim()).toBe('"upload-me.txt"');
 
 			const saved = await pw(`-s=${SESSION}`, "state", "save", STATE);
 			expect(saved.code).toBe(0);
-			const stateFile = path.join(root, "state", "pw", "states", `${STATE}.json`);
+			const stateFile = path.join(
+				root,
+				"state",
+				"pw",
+				"states",
+				`${STATE}.json`,
+			);
 			expect(statSync(stateFile).mode & 0o777).toBe(0o600);
 			expect(readFileSync(stateFile, "utf8")).toContain(COOKIE_NAME);
 
@@ -121,7 +172,12 @@ describe.skipIf(process.env["PW_E2E"] !== "1")("pw smoke", () => {
 	test(
 		"reopens the persistent profile still logged in",
 		async () => {
-			const reopened = await pw(`-s=${SESSION}`, "open", "--headless", `${site.url}/protected`);
+			const reopened = await pw(
+				`-s=${SESSION}`,
+				"open",
+				"--headless",
+				`${site.url}/protected`,
+			);
 			expect(reopened.code).toBe(0);
 			expect(snapshotText(reopened)).toContain("Welcome back");
 			expect((await pw(`-s=${SESSION}`, "close")).code).toBe(0);
@@ -132,9 +188,15 @@ describe.skipIf(process.env["PW_E2E"] !== "1")("pw smoke", () => {
 	test(
 		"runs code only through pw-code and keeps run-code out of pw",
 		async () => {
-			expect((await pw(`-s=${SESSION}`, "open", "--headless", site.url)).code).toBe(0);
+			expect(
+				(await pw(`-s=${SESSION}`, "open", "--headless", site.url)).code,
+			).toBe(0);
 
-			const title = await pwCode(`-s=${SESSION}`, "--raw", "async (page) => page.url()");
+			const title = await pwCode(
+				`-s=${SESSION}`,
+				"--raw",
+				"async (page) => page.url()",
+			);
 			expect(title.code).toBe(0);
 			expect(title.out.trim()).toBe(JSON.stringify(`${site.url}/`));
 
@@ -143,7 +205,10 @@ describe.skipIf(process.env["PW_E2E"] !== "1")("pw smoke", () => {
 			expect(moved.err).toContain("run-code moved to pw-code");
 
 			const record = JSON.parse(
-				readFileSync(path.join(root, "scratch", "pw", "sessions", `${SESSION}.json`), "utf8"),
+				readFileSync(
+					path.join(root, "scratch", "pw", "sessions", `${SESSION}.json`),
+					"utf8",
+				),
 			) as { socketPath: string };
 			const crafted = await call(record, {
 				id: "crafted",

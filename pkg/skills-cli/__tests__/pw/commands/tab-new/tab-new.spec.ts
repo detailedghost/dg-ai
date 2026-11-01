@@ -16,7 +16,7 @@ describe("tab-new", () => {
 		context.returns["newPage"] = created;
 		const result = await handler(ctx, argsFor(spec));
 		expect(page.calls).toContain("context.newPage []");
-		expect(result.code).toBe("await page.context().newPage();");
+		expect(result.code).toBe("page = await page.context().newPage();");
 		expect(result.snapshot).toBe(true);
 	});
 
@@ -29,7 +29,7 @@ describe("tab-new", () => {
 			'goto https://example.com {"waitUntil":"load"}',
 		]);
 		expect(result.code).toBe(
-			'const newPage = await page.context().newPage();\nawait newPage.goto("https://example.com");',
+			'page = await page.context().newPage();\nawait page.goto("https://example.com");',
 		);
 	});
 });

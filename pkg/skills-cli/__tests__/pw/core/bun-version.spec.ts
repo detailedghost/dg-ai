@@ -6,8 +6,11 @@ describe("bunVersionError", () => {
 		expect(bunVersionError(version)).toBeNull();
 	});
 
-	test.each(["1.3.11", "1.2.22", "0.9.0", ""])("refuses %p with an upgrade hint", (version) => {
-		expect(bunVersionError(version)).toContain("pw needs Bun >= 1.4.0");
-		expect(bunVersionError(version)).toContain("bun upgrade");
-	});
+	test.each(["1.3.11", "1.2.22", "0.9.0", ""])(
+		"refuses %p with an upgrade hint",
+		(version) => {
+			expect(bunVersionError(version)).toContain("pw needs Bun >= 1.4.0");
+			expect(bunVersionError(version)).toContain("bun upgrade");
+		},
+	);
 });

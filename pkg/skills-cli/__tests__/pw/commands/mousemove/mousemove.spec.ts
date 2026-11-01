@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/mousemove/run";
 import spec from "../../../../src/pw/commands/mousemove/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -15,6 +19,8 @@ describe("mousemove", () => {
 
 	test("rejects a coordinate that is not a number", async () => {
 		const { ctx } = fakeCtx(scratch.dir);
-		await expect(handler(ctx, argsFor(spec, "left", "20"))).rejects.toThrow("Invalid x 'left'");
+		await expect(handler(ctx, argsFor(spec, "left", "20"))).rejects.toThrow(
+			"Invalid x 'left'",
+		);
 	});
 });

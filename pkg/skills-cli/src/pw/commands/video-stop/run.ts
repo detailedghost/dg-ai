@@ -1,4 +1,4 @@
-import { restrictFile } from "../../core/files";
+import { publishStaged } from "../../core/files";
 import type { DaemonHandler } from "../../core/spec";
 
 const videoStop: DaemonHandler = async (ctx) => {
@@ -7,7 +7,7 @@ const videoStop: DaemonHandler = async (ctx) => {
 		throw new Error("No video recording in progress. Run: pw video-start");
 	await video.page.screencast.stop();
 	ctx.state.video = undefined;
-	restrictFile(video.file);
+	publishStaged(video.recording, video.file);
 	return {
 		result: `- [Video](${video.file})`,
 		code: "await page.screencast.stop();",

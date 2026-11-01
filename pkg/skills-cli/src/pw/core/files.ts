@@ -32,20 +32,37 @@ export function writePrivate(file: string, data: string): void {
 	restrictFile(file);
 }
 
+/** A 0700 staging dir beside the target, holding a file with the target's name. */
+export function stagingPathFor(file: string): string {
+	return path.join(
+		mkdtempSync(path.join(path.dirname(file), ".pw-")),
+		path.basename(file),
+	);
+}
+
+/** Sets 0600 on a staged file, renames it over the target, and removes its staging dir. */
+export function publishStaged(staging: string, file: string): void {
+	try {
+		restrictFile(staging);
+		renameSync(staging, file);
+	} finally {
+		rmSync(path.dirname(staging), { recursive: true, force: true });
+	}
+}
+
 /** Produces into a 0700 staging dir beside the target, then renames the 0600 result over it. */
 export async function publishPrivate(
 	file: string,
 	produce: (staging: string) => Promise<unknown>,
 ): Promise<void> {
-	const dir = mkdtempSync(path.join(path.dirname(file), ".pw-"));
+	const staging = stagingPathFor(file);
 	try {
-		const staging = path.join(dir, path.basename(file));
 		await produce(staging);
-		restrictFile(staging);
-		renameSync(staging, file);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
+	} catch (error) {
+		rmSync(path.dirname(staging), { recursive: true, force: true });
+		throw error;
 	}
+	publishStaged(staging, file);
 }
 
 export function ensurePrivateDir(dir: string): void {

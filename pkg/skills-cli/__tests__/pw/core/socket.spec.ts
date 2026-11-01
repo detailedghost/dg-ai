@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { statSync } from "node:fs";
 import type net from "node:net";
 import path from "node:path";
-import { call, type DaemonRequest, type DaemonResponse, serve } from "../../../src/pw/core/socket";
+import {
+	call,
+	type DaemonRequest,
+	type DaemonResponse,
+	serve,
+} from "../../../src/pw/core/socket";
 import { useTempScratch } from "../../../src/pw/test-support";
 
 const scratch = useTempScratch();
@@ -31,7 +36,9 @@ describe("socket", () => {
 			id: "1",
 			result: { text: "hi", exitCode: 0 },
 		});
-		expect(await call({ socketPath: socketPath() }, { id: "2", method: "ping" })).toMatchObject({ id: "2" });
+		expect(
+			await call({ socketPath: socketPath() }, { id: "2", method: "ping" }),
+		).toMatchObject({ id: "2" });
 		expect(seen.map((r) => r.id)).toEqual(["1", "2"]);
 	});
 
@@ -54,14 +61,21 @@ describe("socket", () => {
 	});
 
 	test("rejects when nobody listens", async () => {
-		await expect(call({ socketPath: socketPath() }, { id: "1", method: "ping" })).rejects.toMatchObject({
+		await expect(
+			call({ socketPath: socketPath() }, { id: "1", method: "ping" }),
+		).rejects.toMatchObject({
 			code: "ENOENT",
 		});
 	});
 
 	test("rejects when the daemon takes longer than the timeout", async () => {
-		server = await serve(socketPath(), () => new Promise<DaemonResponse>(() => undefined));
-		await expect(call({ socketPath: socketPath() }, { id: "1", method: "ping" }, 100)).rejects.toThrow("Timed out");
+		server = await serve(
+			socketPath(),
+			() => new Promise<DaemonResponse>(() => undefined),
+		);
+		await expect(
+			call({ socketPath: socketPath() }, { id: "1", method: "ping" }, 100),
+		).rejects.toThrow("Timed out");
 	});
 
 	test("replaces a stale socket file left by a crashed daemon", async () => {
@@ -70,7 +84,9 @@ describe("socket", () => {
 			id: request.id,
 			result: { text: "up", exitCode: 0 },
 		}));
-		expect(await call({ socketPath: socketPath() }, { id: "1", method: "ping" })).toMatchObject({
+		expect(
+			await call({ socketPath: socketPath() }, { id: "1", method: "ping" }),
+		).toMatchObject({
 			result: { text: "up" },
 		});
 	});

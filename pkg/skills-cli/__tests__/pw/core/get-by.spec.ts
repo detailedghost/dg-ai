@@ -29,6 +29,8 @@ describe("assertSafeGetBy", () => {
 		'getByText("x").click()',
 		"getByText(globalThis)",
 	])("rejects %p", (source) => {
-		expect(() => assertSafeGetBy(source)).toThrow("Unsupported locator expression");
+		expect(() => assertSafeGetBy(source)).toThrow(
+			"Unsupported locator expression",
+		);
 	});
 });

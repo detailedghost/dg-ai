@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/tab-close/run";
 import spec from "../../../../src/pw/commands/tab-close/spec";
-import { argsFor, FakePage, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	FakePage,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -33,6 +38,8 @@ describe("tab-close", () => {
 
 	test("rejects an index that does not exist", async () => {
 		const { ctx } = twoTabs();
-		await expect(handler(ctx, argsFor(spec, "5"))).rejects.toThrow("Tab 5 does not exist");
+		await expect(handler(ctx, argsFor(spec, "5"))).rejects.toThrow(
+			"Tab 5 does not exist",
+		);
 	});
 });

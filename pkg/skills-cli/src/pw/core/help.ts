@@ -34,7 +34,8 @@ export function commandHelp(spec: CommandSpec): string {
 	if (spec.flags.length > 0) {
 		lines.push("", "Options:");
 		for (const flag of spec.flags) {
-			const name = flag.type === "string" ? `--${flag.name}=<value>` : `--${flag.name}`;
+			const name =
+				flag.type === "string" ? `--${flag.name}=<value>` : `--${flag.name}`;
 			const note = flag.multiple ? " (repeatable)" : "";
 			lines.push(`  ${name.padEnd(24)}${flag.help}${note}`);
 		}
@@ -44,13 +45,24 @@ export function commandHelp(spec: CommandSpec): string {
 }
 
 export function indexHelp(specs: readonly CommandSpec[]): string {
-	const lines = ["Usage: pw [-s=<session>] <command> [args] [options]", "", "Global options:", ...GLOBAL_HELP];
-	const width = Math.max(30, ...specs.map((spec) => usageLine(spec).length + 2));
+	const lines = [
+		"Usage: pw [-s=<session>] <command> [args] [options]",
+		"",
+		"Global options:",
+		...GLOBAL_HELP,
+	];
+	const width = Math.max(
+		30,
+		...specs.map((spec) => usageLine(spec).length + 2),
+	);
 	for (const group of GROUP_ORDER) {
 		const inGroup = specs.filter((s) => s.group === group);
 		if (inGroup.length === 0) continue;
 		lines.push("", `${group}:`);
-		for (const spec of inGroup) lines.push(`  ${usageLine(spec).padEnd(width)}${spec.help.split("\n")[0]}`);
+		for (const spec of inGroup)
+			lines.push(
+				`  ${usageLine(spec).padEnd(width)}${spec.help.split("\n")[0]}`,
+			);
 	}
 	return lines.join("\n");
 }

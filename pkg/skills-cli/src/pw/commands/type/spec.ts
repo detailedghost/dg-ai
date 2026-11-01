@@ -5,7 +5,9 @@ export default defineCommand({
 	group: "core",
 	side: "daemon",
 	positionals: [{ name: "text", required: true }],
-	flags: [{ name: "submit", type: "boolean", help: "press Enter after typing" }],
+	flags: [
+		{ name: "submit", type: "boolean", help: "press Enter after typing" },
+	],
 	help: "Type text into the focused element",
 	changesPage: true,
 });

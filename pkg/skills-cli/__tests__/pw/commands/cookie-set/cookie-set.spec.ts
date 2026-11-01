@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/cookie-set/run";
 import spec from "../../../../src/pw/commands/cookie-set/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -37,7 +41,11 @@ describe("cookie-set", () => {
 
 	test("rejects an unparsable expiry or SameSite value with a usage error", async () => {
 		const { ctx } = fakeCtx(scratch.dir);
-		await expect(handler(ctx, argsFor(spec, "a", "b", "--expires=soon"))).rejects.toThrow("Invalid --expires 'soon'");
-		await expect(handler(ctx, argsFor(spec, "a", "b", "--sameSite=Wide"))).rejects.toThrow("Invalid --sameSite 'Wide'");
+		await expect(
+			handler(ctx, argsFor(spec, "a", "b", "--expires=soon")),
+		).rejects.toThrow("Invalid --expires 'soon'");
+		await expect(
+			handler(ctx, argsFor(spec, "a", "b", "--sameSite=Wide")),
+		).rejects.toThrow("Invalid --sameSite 'Wide'");
 	});
 });

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { Page } from "playwright-core";
-import { isRef, locatorCode, RefNotFoundError, resolveTarget, toSelector } from "../../../src/pw/core/targets";
+import {
+	isRef,
+	locatorCode,
+	RefNotFoundError,
+	resolveTarget,
+	toSelector,
+} from "../../../src/pw/core/targets";
 import { FakePage } from "../../../src/pw/test-support";
 
 const asPage = (page: FakePage) => page as unknown as Page;
@@ -29,7 +35,9 @@ describe("resolveTarget", () => {
 	test("returns the locator for a known ref", async () => {
 		const page = new FakePage();
 		const locator = await resolveTarget(asPage(page), "e12");
-		expect((locator as unknown as { selector: string }).selector).toBe("aria-ref=e12");
+		expect((locator as unknown as { selector: string }).selector).toBe(
+			"aria-ref=e12",
+		);
 	});
 
 	test("throws the fixed message for a ref that no longer exists", async () => {
@@ -37,7 +45,9 @@ describe("resolveTarget", () => {
 		page.missing("aria-ref=e9");
 		const attempt = resolveTarget(asPage(page), "e9");
 		await expect(attempt).rejects.toBeInstanceOf(RefNotFoundError);
-		await expect(attempt).rejects.toThrow("Ref not found: e9. Take a new snapshot.");
+		await expect(attempt).rejects.toThrow(
+			"Ref not found: e9. Take a new snapshot.",
+		);
 	});
 
 	test("does not pre-check selectors that are not refs", async () => {
@@ -58,14 +68,18 @@ describe("resolveTarget", () => {
 
 	test("rejects a getBy target that does not return a locator", async () => {
 		const page = { getByRole: () => "nope" } as unknown as Page;
-		await expect(resolveTarget(page, "getByRole('button')")).rejects.toThrow("must evaluate to a locator");
+		await expect(resolveTarget(page, "getByRole('button')")).rejects.toThrow(
+			"must evaluate to a locator",
+		);
 	});
 });
 
 describe("locatorCode", () => {
 	test("prefixes the locator expression with page", async () => {
 		const page = new FakePage();
-		expect(locatorCode(await resolveTarget(asPage(page), "e1"))).toBe("page.locator('aria-ref=e1')");
+		expect(locatorCode(await resolveTarget(asPage(page), "e1"))).toBe(
+			"page.locator('aria-ref=e1')",
+		);
 	});
 });
 
@@ -78,9 +92,9 @@ describe("getBy target safety", () => {
 				return {};
 			},
 		} as unknown as Page;
-		await expect(resolveTarget(page, 'getByText("x"), (called = true)')).rejects.toThrow(
-			"Unsupported locator expression",
-		);
+		await expect(
+			resolveTarget(page, 'getByText("x"), (called = true)'),
+		).rejects.toThrow("Unsupported locator expression");
 		expect(called).toBe(false);
 	});
 });

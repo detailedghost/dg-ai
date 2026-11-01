@@ -8,7 +8,9 @@ export default defineCommand({
 		{ name: "target", required: true },
 		{ name: "text", required: true },
 	],
-	flags: [{ name: "submit", type: "boolean", help: "press Enter after filling" }],
+	flags: [
+		{ name: "submit", type: "boolean", help: "press Enter after filling" },
+	],
 	help: "Fill text into an editable element",
 	changesPage: true,
 });

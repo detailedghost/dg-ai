@@ -4,7 +4,9 @@ import { registerPw } from "../../src/commands/pw";
 import { registerPwCode } from "../../src/commands/pw-code";
 
 function program(): Command {
-	const root = new Command("dg-skills").exitOverride().enablePositionalOptions();
+	const root = new Command("dg-skills")
+		.exitOverride()
+		.enablePositionalOptions();
 	registerPw(root);
 	registerPwCode(root);
 	return root;
@@ -21,6 +23,8 @@ describe("registerPw and registerPwCode", () => {
 
 	test("do not register code as a pw subcommand", () => {
 		const pw = program().commands.find((command) => command.name() === "pw");
-		expect(pw?.commands.map((command) => command.name()) ?? []).not.toContain("code");
+		expect(pw?.commands.map((command) => command.name()) ?? []).not.toContain(
+			"code",
+		);
 	});
 });

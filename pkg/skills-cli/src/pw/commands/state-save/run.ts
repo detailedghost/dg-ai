@@ -3,7 +3,10 @@ import { resolveOutput, timestampedName } from "../../core/response";
 import type { DaemonHandler } from "../../core/spec";
 
 const stateSave: DaemonHandler = async (ctx, args) => {
-	const file = resolveOutput(ctx.outputDir, args.positionals[0] ?? timestampedName("storage-state", "json"));
+	const file = resolveOutput(
+		ctx.outputDir,
+		args.positionals[0] ?? timestampedName("storage-state", "json"),
+	);
 	const state = await ctx.context.storageState({ indexedDB: true });
 	writePrivate(file, `${JSON.stringify(state, null, 2)}\n`);
 	return {

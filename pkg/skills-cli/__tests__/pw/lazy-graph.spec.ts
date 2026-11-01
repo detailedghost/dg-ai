@@ -26,7 +26,9 @@ function staticClosure(entry: string): {
 		const file = queue.pop() as string;
 		if (files.has(file)) continue;
 		files.add(file);
-		for (const { path: specifier, kind } of transpiler.scanImports(readFileSync(file, "utf8"))) {
+		for (const { path: specifier, kind } of transpiler.scanImports(
+			readFileSync(file, "utf8"),
+		)) {
 			if (kind !== "import-statement") continue;
 			if (specifier.startsWith(".")) {
 				const resolved = resolveLocal(file, specifier);
@@ -47,28 +49,42 @@ function sourceFiles(dir: string): string[] {
 
 describe("pw lazy loading", () => {
 	test("the pw command registration statically reaches neither playwright-core nor the daemon", () => {
-		const { files, packages } = staticClosure(path.join(SRC, "commands", "pw.ts"));
+		const { files, packages } = staticClosure(
+			path.join(SRC, "commands", "pw.ts"),
+		);
 		expect(packages.has("playwright-core")).toBe(false);
 		expect(files.has(path.join(SRC, "pw", "daemon.ts"))).toBe(false);
 		expect(files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);
 	});
 
 	test("the pw-code registration statically reaches neither playwright-core nor the daemon", () => {
-		const { files, packages } = staticClosure(path.join(SRC, "commands", "pw-code.ts"));
+		const { files, packages } = staticClosure(
+			path.join(SRC, "commands", "pw-code.ts"),
+		);
 		expect(packages.has("playwright-core")).toBe(false);
 		expect(files.has(path.join(SRC, "pw", "daemon.ts"))).toBe(false);
 	});
 
 	test("the pw client entry does not statically reach the browser installer", () => {
-		expect(staticClosure(path.join(SRC, "pw", "cli.ts")).files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);
+		expect(
+			staticClosure(path.join(SRC, "pw", "cli.ts")).files.has(
+				path.join(SRC, "pw", "browsers.ts"),
+			),
+		).toBe(false);
 	});
 
 	test("the pw client entry statically reaches no playwright-core", () => {
-		expect(staticClosure(path.join(SRC, "pw", "cli.ts")).packages.has("playwright-core")).toBe(false);
+		expect(
+			staticClosure(path.join(SRC, "pw", "cli.ts")).packages.has(
+				"playwright-core",
+			),
+		).toBe(false);
 	});
 
 	test("the doctor registry statically reaches neither playwright-core nor the daemon", () => {
-		const { files, packages } = staticClosure(path.join(SRC, "doctor", "registry.ts"));
+		const { files, packages } = staticClosure(
+			path.join(SRC, "doctor", "registry.ts"),
+		);
 		expect(packages.has("playwright-core")).toBe(false);
 		expect(files.has(path.join(SRC, "pw", "daemon.ts"))).toBe(false);
 		expect(files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);

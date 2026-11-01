@@ -7,7 +7,8 @@ export type Modifier = (typeof MODIFIERS)[number];
 export function parseButton(value: string | undefined): Button {
 	if (value === undefined) return "left";
 	const match = BUTTONS.find((button) => button === value);
-	if (!match) throw new Error(`Unsupported button '${value}': use ${BUTTONS.join(", ")}`);
+	if (!match)
+		throw new Error(`Unsupported button '${value}': use ${BUTTONS.join(", ")}`);
 	return match;
 }
 
@@ -15,7 +16,10 @@ export function parseModifiers(value: string | undefined): Modifier[] {
 	if (!value) return [];
 	return value.split(",").map((raw) => {
 		const match = MODIFIERS.find((modifier) => modifier === raw.trim());
-		if (!match) throw new Error(`Unsupported modifier '${raw}': use ${MODIFIERS.join(", ")}`);
+		if (!match)
+			throw new Error(
+				`Unsupported modifier '${raw}': use ${MODIFIERS.join(", ")}`,
+			);
 		return match;
 	});
 }

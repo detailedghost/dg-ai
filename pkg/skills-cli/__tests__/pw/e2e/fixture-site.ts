@@ -2,12 +2,17 @@ export const COOKIE_NAME = "pw_e2e_sid";
 export const COOKIE_VALUE = "e2e-ok";
 
 const page = (body: string): Response =>
-	new Response(`<!doctype html><html><head><title>fixture</title></head><body>${body}</body></html>`, {
-		headers: { "content-type": "text/html; charset=utf-8" },
-	});
+	new Response(
+		`<!doctype html><html><head><title>fixture</title></head><body>${body}</body></html>`,
+		{
+			headers: { "content-type": "text/html; charset=utf-8" },
+		},
+	);
 
 const loggedIn = (request: Request): boolean =>
-	(request.headers.get("cookie") ?? "").split(/;\s*/).includes(`${COOKIE_NAME}=${COOKIE_VALUE}`);
+	(request.headers.get("cookie") ?? "")
+		.split(/;\s*/)
+		.includes(`${COOKIE_NAME}=${COOKIE_VALUE}`);
 
 const LOGIN_FORM = `<h1>Sign in</h1>
 <form method="post" action="/login">
@@ -36,7 +41,9 @@ export function startFixtureSite(): { url: string; stop: () => void } {
 				});
 			}
 			if (pathname === "/protected") {
-				return loggedIn(request) ? page("<h1>Welcome back</h1>") : page("<h1>Signed out</h1>");
+				return loggedIn(request)
+					? page("<h1>Welcome back</h1>")
+					: page("<h1>Signed out</h1>");
 			}
 			if (pathname === "/upload") return page(UPLOAD_PAGE);
 			return page(LOGIN_FORM);

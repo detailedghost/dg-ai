@@ -17,7 +17,8 @@ const listSessions: ClientHandler = async (_args, env) => {
 			`  - profile: ${record.profileDir ?? "<in-memory>"}`,
 			`  - pid: ${record.pid}`,
 		);
-		if (record.mode === "cdp") lines.push("  - mode: cdp", `  - cdp: ${record.cdpUrl}`);
+		if (record.mode === "cdp")
+			lines.push("  - mode: cdp", `  - cdp: ${record.cdpUrl}`);
 	}
 	env.out(lines.join("\n"));
 	return 0;

@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/close-all/run";
 import spec from "../../../../src/pw/commands/close-all/spec";
 import { list } from "../../../../src/pw/core/registry";
-import { argsFor, clientEnv, startFakeDaemon, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	clientEnv,
+	startFakeDaemon,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 useTempScratch();
 
@@ -19,7 +24,9 @@ describe("close-all", () => {
 		const env = clientEnv();
 		try {
 			expect(await handler(argsFor(spec), env)).toBe(0);
-			expect(env.stdout[0]).toBe("### Browser `alpha` closed.\n### Browser `beta@abc12345` closed.");
+			expect(env.stdout[0]).toBe(
+				"### Browser `alpha` closed.\n### Browser `beta@abc12345` closed.",
+			);
 			expect(list()).toEqual([]);
 		} finally {
 			a.dispose();

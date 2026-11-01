@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { statSync, writeFileSync } from "node:fs";
 import type { BrowserContext, Page } from "playwright-core";
-import { attach, levelOf, meetsLevel, safeExtension } from "../../../src/pw/core/events";
+import {
+	attach,
+	levelOf,
+	meetsLevel,
+	safeExtension,
+} from "../../../src/pw/core/events";
 import { useTempScratch } from "../../../src/pw/test-support";
 
 class FakeTab extends EventEmitter {
@@ -75,19 +80,27 @@ describe("attach", () => {
 		context.emit("page", popup);
 		popup.log("log", "from popup");
 		expect(events.drain(asPage(existing))).toEqual([]);
-		expect(events.drain(asPage(popup))).toEqual([{ type: "log", text: "from popup" }]);
+		expect(events.drain(asPage(popup))).toEqual([
+			{ type: "log", text: "from popup" },
+		]);
 	});
 });
 
 describe("console levels", () => {
 	test("collapses Playwright console types into four levels", () => {
-		expect(["log", "dir", "table", "trace", "info"].map(levelOf)).toEqual(["info", "info", "info", "info", "info"]);
-		expect([levelOf("error"), levelOf("assert"), levelOf("warning"), levelOf("debug")]).toEqual([
-			"error",
-			"error",
-			"warning",
-			"debug",
+		expect(["log", "dir", "table", "trace", "info"].map(levelOf)).toEqual([
+			"info",
+			"info",
+			"info",
+			"info",
+			"info",
 		]);
+		expect([
+			levelOf("error"),
+			levelOf("assert"),
+			levelOf("warning"),
+			levelOf("debug"),
+		]).toEqual(["error", "error", "warning", "debug"]);
 	});
 
 	test("a level includes the more severe ones", () => {
@@ -105,7 +118,9 @@ describe("retained buffers", () => {
 		const { existing, events, asPage } = setup();
 		existing.log("log", "a");
 		events.drain(asPage(existing));
-		expect(events.console(asPage(existing))).toEqual([{ type: "log", text: "a" }]);
+		expect(events.console(asPage(existing))).toEqual([
+			{ type: "log", text: "a" },
+		]);
 		events.clearConsole(asPage(existing));
 		expect(events.console(asPage(existing))).toEqual([]);
 		expect(events.totals(asPage(existing))).toEqual({ errors: 0, warnings: 0 });
@@ -123,10 +138,11 @@ describe("retained buffers", () => {
 		existing.request(false, "a");
 		existing.request(true, "page");
 		existing.request(false, "b");
-		expect(events.requests(asPage(existing)).map((request) => (request as unknown as { id: string }).id)).toEqual([
-			"page",
-			"b",
-		]);
+		expect(
+			events
+				.requests(asPage(existing))
+				.map((request) => (request as unknown as { id: string }).id),
+		).toEqual(["page", "b"]);
 		events.clearRequests(asPage(existing));
 		expect(events.requests(asPage(existing))).toEqual([]);
 	});
@@ -154,7 +170,9 @@ describe("modal state", () => {
 		const chooser = {};
 		existing.emit("filechooser", chooser);
 		expect(events.hasChooser(asPage(existing))).toBe(true);
-		expect(events.modal(asPage(existing))).toEqual(['- [File chooser]: can be handled by the "upload" command']);
+		expect(events.modal(asPage(existing))).toEqual([
+			'- [File chooser]: can be handled by the "upload" command',
+		]);
 		expect(events.takeChooser(asPage(existing))).toBe(chooser as never);
 		expect(events.hasChooser(asPage(existing))).toBe(false);
 	});
@@ -189,7 +207,9 @@ describe("downloads", () => {
 		await new Promise((resolve) => setTimeout(resolve, 5));
 		expect(saved[0]).toStartWith(`${scratch.dir}/download-`);
 		expect(statSync(saved[0] as string).mode & 0o777).toBe(0o600);
-		expect(events.drainNotices(asPage(existing))).toEqual([`- Downloaded report.csv to ${saved[0]}`]);
+		expect(events.drainNotices(asPage(existing))).toEqual([
+			`- Downloaded report.csv to ${saved[0]}`,
+		]);
 		expect(events.drainNotices(asPage(existing))).toEqual([]);
 	});
 
@@ -202,7 +222,9 @@ describe("downloads", () => {
 			},
 		});
 		await new Promise((resolve) => setTimeout(resolve, 5));
-		expect(events.drainNotices(asPage(existing))).toEqual(["- Download of x.bin failed: disk full"]);
+		expect(events.drainNotices(asPage(existing))).toEqual([
+			"- Download of x.bin failed: disk full",
+		]);
 	});
 });
 

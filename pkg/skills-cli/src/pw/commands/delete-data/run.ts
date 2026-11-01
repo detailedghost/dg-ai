@@ -21,6 +21,10 @@ function insideRoot(profileDir: string, root: string): boolean {
 const deleteData: ClientHandler = async (args, env) => {
 	const name = args.session;
 	const record = resolve(name);
+	if (record && record.profileDir === null) {
+		env.out(`No saved data for session '${name}'.`);
+		return 0;
+	}
 	const profileDir = record?.profileDir ?? defaultProfileDir(name);
 	const root = profilesRoot();
 	if (!insideRoot(profileDir, root)) {

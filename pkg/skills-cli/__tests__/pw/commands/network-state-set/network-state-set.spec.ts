@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/network-state-set/run";
 import spec from "../../../../src/pw/commands/network-state-set/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -18,6 +22,8 @@ describe("network-state-set", () => {
 
 	test("rejects another state with a usage error", async () => {
 		const { ctx } = fakeCtx(scratch.dir);
-		await expect(handler(ctx, argsFor(spec, "flaky"))).rejects.toThrow("Invalid state 'flaky'");
+		await expect(handler(ctx, argsFor(spec, "flaky"))).rejects.toThrow(
+			"Invalid state 'flaky'",
+		);
 	});
 });

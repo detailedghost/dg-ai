@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/localstorage-get/run";
 import spec from "../../../../src/pw/commands/localstorage-get/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -17,6 +21,8 @@ describe("localstorage-get", () => {
 	test("says so when the key is missing", async () => {
 		const { ctx, page } = fakeCtx(scratch.dir);
 		page.evaluated = null;
-		expect((await handler(ctx, argsFor(spec, "theme"))).result).toBe("Key 'theme' not found in localStorage");
+		expect((await handler(ctx, argsFor(spec, "theme"))).result).toBe(
+			"Key 'theme' not found in localStorage",
+		);
 	});
 });

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { main, RUN_CODE_MOVED } from "../../src/pw/cli";
 import type { DaemonRequest } from "../../src/pw/core/socket";
-import { clientEnv, startFakeDaemon, useTempScratch } from "../../src/pw/test-support";
+import {
+	clientEnv,
+	startFakeDaemon,
+	useTempScratch,
+} from "../../src/pw/test-support";
 
 useTempScratch();
 

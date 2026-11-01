@@ -29,7 +29,8 @@ const ARITY: Record<Subcommand, { min: number; max: number; usage: string }> = {
 	import: { min: 1, max: 2, usage: "pw state import <file> [name]" },
 };
 
-const notOpen = (session: string): string => `Browser '${session}' is not open. Run: pw open`;
+const notOpen = (session: string): string =>
+	`Browser '${session}' is not open. Run: pw open`;
 
 function parseSubcommand(args: ParsedArgs): {
 	sub: Subcommand;
@@ -37,13 +38,21 @@ function parseSubcommand(args: ParsedArgs): {
 } {
 	const [word, ...rest] = args.positionals;
 	const sub = SUBCOMMANDS.find((candidate) => candidate === word);
-	if (!sub) throw new UsageError(`Unknown state subcommand '${word ?? ""}': use ${SUBCOMMANDS.join(", ")}`);
+	if (!sub)
+		throw new UsageError(
+			`Unknown state subcommand '${word ?? ""}': use ${SUBCOMMANDS.join(", ")}`,
+		);
 	const { min, max, usage } = ARITY[sub];
-	if (rest.length < min || rest.length > max) throw new UsageError(`Usage: ${usage}`);
+	if (rest.length < min || rest.length > max)
+		throw new UsageError(`Usage: ${usage}`);
 	return { sub, rest };
 }
 
-async function saveSession(args: ParsedArgs, env: ClientEnv, name: string): Promise<number> {
+async function saveSession(
+	args: ParsedArgs,
+	env: ClientEnv,
+	name: string,
+): Promise<number> {
 	const record = resolve(args.session);
 	if (!record) {
 		env.err(notOpen(args.session));
@@ -65,14 +74,20 @@ async function saveSession(args: ParsedArgs, env: ClientEnv, name: string): Prom
 		}
 		const state = parseStorageState(readFileSync(file, "utf8"), file);
 		save(name, state);
-		env.out(`Saved state '${name}' (${state.cookies?.length ?? 0} cookies, ${state.origins?.length ?? 0} origins).`);
+		env.out(
+			`Saved state '${name}' (${state.cookies?.length ?? 0} cookies, ${state.origins?.length ?? 0} origins).`,
+		);
 		return 0;
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
 }
 
-async function loadSession(args: ParsedArgs, env: ClientEnv, name: string): Promise<number> {
+async function loadSession(
+	args: ParsedArgs,
+	env: ClientEnv,
+	name: string,
+): Promise<number> {
 	const state = load(name);
 	const record = resolve(args.session);
 	if (!record) {
@@ -82,7 +97,12 @@ async function loadSession(args: ParsedArgs, env: ClientEnv, name: string): Prom
 	return restoreState(record, name, state, env);
 }
 
-function run(sub: Subcommand, rest: string[], args: ParsedArgs, env: ClientEnv): Promise<number> | number {
+function run(
+	sub: Subcommand,
+	rest: string[],
+	args: ParsedArgs,
+	env: ClientEnv,
+): Promise<number> | number {
 	const [first = "", second] = rest;
 	switch (sub) {
 		case "save":
@@ -91,7 +111,8 @@ function run(sub: Subcommand, rest: string[], args: ParsedArgs, env: ClientEnv):
 			return loadSession(args, env, first);
 		case "list": {
 			const summaries = list();
-			if (summaries.length === 0) env.out("(no saved states) — run: pw state save <name>");
+			if (summaries.length === 0)
+				env.out("(no saved states) — run: pw state save <name>");
 			else env.out(summaries.map(formatSummary).join("\n"));
 			return 0;
 		}

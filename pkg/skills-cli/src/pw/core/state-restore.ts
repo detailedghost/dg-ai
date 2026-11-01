@@ -3,12 +3,23 @@ import { call } from "./socket";
 import type { ClientEnv } from "./spec";
 import { type StorageState, statePathFor } from "./states";
 
-export type RestoreTarget = Pick<SessionRecord, "name" | "scratch" | "socketPath">;
+export type RestoreTarget = Pick<
+	SessionRecord,
+	"name" | "scratch" | "socketPath"
+>;
 
-export function restoreMessage(target: RestoreTarget, name: string, state: StorageState): string {
+export function restoreMessage(
+	target: RestoreTarget,
+	name: string,
+	state: StorageState,
+): string {
 	const cookies = state.cookies?.length ?? 0;
-	const origins = (state.origins ?? []).filter((stored) => (stored.localStorage?.length ?? 0) > 0).length;
-	const hasIndexedDb = (state.origins ?? []).some((stored) => (stored.indexedDB?.length ?? 0) > 0);
+	const origins = (state.origins ?? []).filter(
+		(stored) => (stored.localStorage?.length ?? 0) > 0,
+	).length;
+	const hasIndexedDb = (state.origins ?? []).some(
+		(stored) => (stored.indexedDB?.length ?? 0) > 0,
+	);
 	const base = `Loaded ${cookies} cookies, ${origins} origins into session '${target.name}'.`;
 	if (!hasIndexedDb) return base;
 	return target.scratch

@@ -52,7 +52,7 @@ export type RouteEntry = {
 export type DaemonState = {
 	routes: RouteEntry[];
 	tracing: boolean;
-	video?: { page: Page; file: string };
+	video?: { page: Page; file: string; recording: string };
 };
 
 export type Ctx = {
@@ -78,7 +78,10 @@ export type HandlerResult = {
 	snapshot?: true | SnapshotRequest;
 };
 
-export type DaemonHandler = (ctx: Ctx, args: ParsedArgs) => Promise<HandlerResult>;
+export type DaemonHandler = (
+	ctx: Ctx,
+	args: ParsedArgs,
+) => Promise<HandlerResult>;
 
 export type ClientEnv = {
 	cwd: string;
@@ -86,7 +89,10 @@ export type ClientEnv = {
 	err(text: string): void;
 };
 
-export type ClientHandler = (args: ParsedArgs, env: ClientEnv) => Promise<number>;
+export type ClientHandler = (
+	args: ParsedArgs,
+	env: ClientEnv,
+) => Promise<number>;
 
 export type Loader = () => Promise<{ default: DaemonHandler | ClientHandler }>;
 

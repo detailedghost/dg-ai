@@ -6,4 +6,5 @@ export function profilesRoot(): string {
 	return path.join(cache, "playwright-cli", "profiles");
 }
 
-export const defaultProfileDir = (name: string): string => path.join(profilesRoot(), name);
+export const defaultProfileDir = (name: string): string =>
+	path.join(profilesRoot(), name);

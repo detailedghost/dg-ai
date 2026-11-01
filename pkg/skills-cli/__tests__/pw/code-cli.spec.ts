@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { CODE_HELP, main } from "../../src/pw/code-cli";
 import type { DaemonRequest } from "../../src/pw/core/socket";
-import { clientEnv, startFakeDaemon, useTempScratch } from "../../src/pw/test-support";
+import {
+	clientEnv,
+	startFakeDaemon,
+	useTempScratch,
+} from "../../src/pw/test-support";
 
 useTempScratch();
 
@@ -41,7 +45,12 @@ describe("pw-code", () => {
 	test("passes --raw and --filename through", async () => {
 		const { seen, daemon } = await withDaemon({ text: "1", exitCode: 0 });
 		try {
-			expect(await main(["-s=web", "--raw", "--filename=snippet.js"], clientEnv("/w"))).toBe(0);
+			expect(
+				await main(
+					["-s=web", "--raw", "--filename=snippet.js"],
+					clientEnv("/w"),
+				),
+			).toBe(0);
 			expect(seen[0]).toMatchObject({
 				method: "code",
 				params: {
@@ -61,7 +70,12 @@ describe("pw-code", () => {
 		});
 		try {
 			const env = clientEnv();
-			expect(await main(["-s=web", "async (page) => { throw new Error('boom'); }"], env)).toBe(1);
+			expect(
+				await main(
+					["-s=web", "async (page) => { throw new Error('boom'); }"],
+					env,
+				),
+			).toBe(1);
 			expect(env.stderr).toEqual(["### Error\nboom"]);
 		} finally {
 			daemon.dispose();
@@ -71,7 +85,9 @@ describe("pw-code", () => {
 	test("asks for code or a filename before it contacts a browser", async () => {
 		const env = clientEnv();
 		expect(await main(["-s=web"], env)).toBe(2);
-		expect(env.stderr[0]).toContain("Provide the code as an argument or with --filename");
+		expect(env.stderr[0]).toContain(
+			"Provide the code as an argument or with --filename",
+		);
 	});
 
 	test("rejects an option it does not know", async () => {

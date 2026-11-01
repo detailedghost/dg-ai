@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import handler, { renderRequest } from "../../../../src/pw/commands/network/run";
+import handler, {
+	renderRequest,
+} from "../../../../src/pw/commands/network/run";
 import spec from "../../../../src/pw/commands/network/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -21,7 +27,10 @@ const fake = (item: Fake) =>
 		method: () => item.method ?? "GET",
 		resourceType: () => item.type ?? "document",
 		failure: () => (item.failure ? { errorText: item.failure } : null),
-		existingResponse: () => (item.status ? { status: () => item.status, statusText: () => "OK" } : null),
+		existingResponse: () =>
+			item.status
+				? { status: () => item.status, statusText: () => "OK" }
+				: null,
 		postData: () => item.body ?? null,
 		headers: () => item.headers ?? {},
 	}) as never;
@@ -58,7 +67,9 @@ const run = (...argv: string[]) => {
 
 describe("renderRequest", () => {
 	test("shows method, url, and response status", () => {
-		expect(renderRequest(requests[2] as never, false, false)).toBe("[POST] https://a.test/api/users => [200] OK");
+		expect(renderRequest(requests[2] as never, false, false)).toBe(
+			"[POST] https://a.test/api/users => [200] OK",
+		);
 	});
 
 	test("adds the body and headers on request", () => {
@@ -91,7 +102,9 @@ describe("network", () => {
 	});
 
 	test("--filter returns only matching urls", async () => {
-		expect((await run("--static", "--filter=/api/")).result).toBe("[POST] https://a.test/api/users => [200] OK");
+		expect((await run("--static", "--filter=/api/")).result).toBe(
+			"[POST] https://a.test/api/users => [200] OK",
+		);
 	});
 
 	test("rejects an invalid expression with a usage error", async () => {

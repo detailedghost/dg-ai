@@ -11,8 +11,8 @@ const tabNew: DaemonHandler = async (ctx, args) => {
 	return {
 		result: await listTabs(ctx),
 		code: url
-			? `const newPage = await page.context().newPage();\nawait newPage.goto(${JSON.stringify(normalizeUrl(url))});`
-			: "await page.context().newPage();",
+			? `page = await page.context().newPage();\nawait page.goto(${JSON.stringify(normalizeUrl(url))});`
+			: "page = await page.context().newPage();",
 		snapshot: true,
 	};
 };

@@ -6,7 +6,9 @@ describe("defaultProfileDir", () => {
 		const previous = process.env["XDG_CACHE_HOME"];
 		process.env["XDG_CACHE_HOME"] = "/cache";
 		try {
-			expect(defaultProfileDir("timesheet")).toBe("/cache/playwright-cli/profiles/timesheet");
+			expect(defaultProfileDir("timesheet")).toBe(
+				"/cache/playwright-cli/profiles/timesheet",
+			);
 		} finally {
 			if (previous === undefined) delete process.env["XDG_CACHE_HOME"];
 			else process.env["XDG_CACHE_HOME"] = previous;

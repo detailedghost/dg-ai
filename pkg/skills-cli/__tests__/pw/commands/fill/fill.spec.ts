@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/fill/run";
 import spec from "../../../../src/pw/commands/fill/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -28,13 +32,18 @@ describe("fill handler", () => {
 	test("presses Enter on the element after filling when --submit is set", async () => {
 		const { ctx, page } = fakeCtx(scratch.dir);
 		const result = await handler(ctx, argsFor(spec, "e6", "x", "--submit"));
-		expect(page.locator("aria-ref=e6").calls).toEqual(["fill x", "press Enter"]);
+		expect(page.locator("aria-ref=e6").calls).toEqual([
+			"fill x",
+			"press Enter",
+		]);
 		expect(result.code).toContain('.press("Enter")');
 	});
 
 	test("fails with the fixed message when the ref is gone", async () => {
 		const { ctx, page } = fakeCtx(scratch.dir);
 		page.missing("aria-ref=e6");
-		await expect(handler(ctx, argsFor(spec, "e6", "x"))).rejects.toThrow("Ref not found: e6");
+		await expect(handler(ctx, argsFor(spec, "e6", "x"))).rejects.toThrow(
+			"Ref not found: e6",
+		);
 	});
 });

@@ -9,7 +9,7 @@ const tabSelect: DaemonHandler = async (ctx, args) => {
 	await (pages[index] as Page).bringToFront();
 	return {
 		result: await listTabs(ctx),
-		code: `await page.context().pages()[${index}].bringToFront();`,
+		code: `page = page.context().pages()[${index}];\nawait page.bringToFront();`,
 		snapshot: true,
 	};
 };

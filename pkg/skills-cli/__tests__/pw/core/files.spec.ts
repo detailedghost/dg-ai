@@ -114,8 +114,13 @@ describe("publishPrivate", () => {
 		expect(staged).not.toBe(file);
 		expect(readFileSync(file, "utf8")).toBe("new");
 		expect(statSync(file).mode & 0o777).toBe(0o600);
-		expect(readFileSync(path.join(scratch.dir, "out", "other.zip"), "utf8")).toBe("old");
-		expect(readdirSync(path.dirname(file)).sort()).toEqual(["other.zip", "trace.zip"]);
+		expect(
+			readFileSync(path.join(scratch.dir, "out", "other.zip"), "utf8"),
+		).toBe("old");
+		expect(readdirSync(path.dirname(file)).sort()).toEqual([
+			"other.zip",
+			"trace.zip",
+		]);
 	});
 
 	test("removes the staging dir and leaves the target alone when production fails", async () => {

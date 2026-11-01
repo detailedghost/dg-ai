@@ -6,7 +6,9 @@ const closeAll: ClientHandler = async (_args, env) => {
 	const records = list();
 	await Promise.all(records.map((record) => stopSession(record)));
 	env.out(
-		records.length === 0 ? "### No open browsers." : records.map((r) => `### Browser \`${r.key}\` closed.`).join("\n"),
+		records.length === 0
+			? "### No open browsers."
+			: records.map((r) => `### Browser \`${r.key}\` closed.`).join("\n"),
 	);
 	return 0;
 };

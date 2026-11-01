@@ -10,7 +10,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { browserStatus, installBrowser, removeBrowser } from "../../src/pw/browsers";
+import {
+	browserStatus,
+	installBrowser,
+	removeBrowser,
+} from "../../src/pw/browsers";
 import { downloadedChromium, markerPath } from "../../src/pw/core/downloaded";
 
 function withDir(

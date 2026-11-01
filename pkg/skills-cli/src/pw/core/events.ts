@@ -1,4 +1,12 @@
-import type { BrowserContext, ConsoleMessage, Dialog, Download, FileChooser, Page, Request } from "playwright-core";
+import type {
+	BrowserContext,
+	ConsoleMessage,
+	Dialog,
+	Download,
+	FileChooser,
+	Page,
+	Request,
+} from "playwright-core";
 import { restrictFile } from "./files";
 import { resolveOutput, timestampedName } from "./response";
 
@@ -6,7 +14,12 @@ export type ConsoleEntry = { type: string; text: string };
 
 export type ConsoleLevel = "error" | "warning" | "info" | "debug";
 
-export const CONSOLE_LEVELS: readonly ConsoleLevel[] = ["error", "warning", "info", "debug"];
+export const CONSOLE_LEVELS: readonly ConsoleLevel[] = [
+	"error",
+	"warning",
+	"info",
+	"debug",
+];
 
 export type DialogWatch = { opened: Promise<void>; dispose(): void };
 
@@ -48,8 +61,12 @@ export function levelOf(type: string): ConsoleLevel {
 	return "info";
 }
 
-export const meetsLevel = (entry: ConsoleEntry, minimum: ConsoleLevel): boolean =>
-	CONSOLE_LEVELS.indexOf(levelOf(entry.type)) <= CONSOLE_LEVELS.indexOf(minimum);
+export const meetsLevel = (
+	entry: ConsoleEntry,
+	minimum: ConsoleLevel,
+): boolean =>
+	CONSOLE_LEVELS.indexOf(levelOf(entry.type)) <=
+	CONSOLE_LEVELS.indexOf(minimum);
 
 function push<T>(items: T[], item: T): void {
 	items.push(item);
@@ -94,26 +111,40 @@ export function attach(context: BrowserContext, outputDir: string): Events {
 		if (kind === "warning") tab.warnings++;
 	};
 
-	const saveDownload = async (page: Page, download: Download): Promise<void> => {
+	const saveDownload = async (
+		page: Page,
+		download: Download,
+	): Promise<void> => {
 		const tab = tabFor(page);
 		const name = download.suggestedFilename();
 		try {
-			const file = resolveOutput(outputDir, timestampedName("download", safeExtension(name)));
+			const file = resolveOutput(
+				outputDir,
+				timestampedName("download", safeExtension(name)),
+			);
 			await download.saveAs(file);
 			restrictFile(file);
 			push(tab.notices, `- Downloaded ${name} to ${file}`);
 		} catch (error) {
-			push(tab.notices, `- Download of ${name} failed: ${error instanceof Error ? error.message : String(error)}`);
+			push(
+				tab.notices,
+				`- Download of ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
 	};
 
 	const track = (page: Page): void => {
 		const tab = tabFor(page);
-		page.on("console", (message: ConsoleMessage) => record(page, { type: message.type(), text: message.text() }));
-		page.on("pageerror", (error: Error) => record(page, { type: "error", text: error.message }));
+		page.on("console", (message: ConsoleMessage) =>
+			record(page, { type: message.type(), text: message.text() }),
+		);
+		page.on("pageerror", (error: Error) =>
+			record(page, { type: "error", text: error.message }),
+		);
 		page.on("request", (request) => {
 			if (request.serviceWorker()) return;
-			if (request.isNavigationRequest() && request.frame() === page.mainFrame()) tab.requests = [];
+			if (request.isNavigationRequest() && request.frame() === page.mainFrame())
+				tab.requests = [];
 			push(tab.requests, request);
 		});
 		page.on("framenavigated", (frame) => {
@@ -173,7 +204,8 @@ export function attach(context: BrowserContext, outputDir: string): Events {
 						'can be handled by the "dialog-accept" or "dialog-dismiss" command',
 				);
 			}
-			if (chooser) lines.push('- [File chooser]: can be handled by the "upload" command');
+			if (chooser)
+				lines.push('- [File chooser]: can be handled by the "upload" command');
 			return lines;
 		},
 		hasDialog: (page) => tabFor(page).dialog !== undefined,

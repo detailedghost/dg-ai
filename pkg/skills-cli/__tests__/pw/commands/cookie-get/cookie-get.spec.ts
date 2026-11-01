@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/cookie-get/run";
 import spec from "../../../../src/pw/commands/cookie-get/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -29,6 +33,8 @@ describe("cookie-get", () => {
 	test("says so when the cookie does not exist", async () => {
 		const { ctx, context } = fakeCtx(scratch.dir);
 		context.returns["cookies"] = [];
-		expect((await handler(ctx, argsFor(spec, "sid"))).result).toBe("Cookie 'sid' not found");
+		expect((await handler(ctx, argsFor(spec, "sid"))).result).toBe(
+			"Cookie 'sid' not found",
+		);
 	});
 });

@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import handler, { parseDepth } from "../../../../src/pw/commands/snapshot/run";
 import spec from "../../../../src/pw/commands/snapshot/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
-const run = (...argv: string[]) => handler(fakeCtx(scratch.dir).ctx, argsFor(spec, ...argv));
+const run = (...argv: string[]) =>
+	handler(fakeCtx(scratch.dir).ctx, argsFor(spec, ...argv));
 
 describe("snapshot spec", () => {
 	test("takes an optional element and the filename, depth, and full flags", () => {

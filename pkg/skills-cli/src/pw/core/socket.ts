@@ -14,7 +14,9 @@ export type DaemonRequest =
 	| { id: string; method: "stop" }
 	| { id: string; method: "ping" };
 
-export type DaemonResponse = { id: string; result: { text: string; exitCode: number } } | { id: string; error: string };
+export type DaemonResponse =
+	| { id: string; result: { text: string; exitCode: number } }
+	| { id: string; error: string };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -28,7 +30,11 @@ export function call(
 		let buffer = "";
 		socket.setEncoding("utf8");
 		socket.setTimeout(timeoutMs, () => {
-			socket.destroy(new Error(`Timed out after ${Math.round(timeoutMs / 1000)} s waiting for the browser`));
+			socket.destroy(
+				new Error(
+					`Timed out after ${Math.round(timeoutMs / 1000)} s waiting for the browser`,
+				),
+			);
 		});
 		socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));
 		socket.on("data", (chunk: string) => {
@@ -44,7 +50,9 @@ export function call(
 			}
 		});
 		socket.on("error", reject);
-		socket.on("close", () => reject(new Error("Daemon closed the connection before replying")));
+		socket.on("close", () =>
+			reject(new Error("Daemon closed the connection before replying")),
+		);
 	});
 }
 
