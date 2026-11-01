@@ -3,6 +3,7 @@ import {
 	chmodSync,
 	linkSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	statSync,
 	truncateSync,
@@ -15,6 +16,7 @@ import {
 	MAX_UPLOAD_BYTES,
 	readInput,
 	restrictFile,
+	publishPrivate,
 	writePrivate,
 } from "../../../src/pw/core/files";
 import { useTempScratch } from "../../../src/pw/test-support";
@@ -93,6 +95,38 @@ describe("writePrivate replacement", () => {
 		expect(readFileSync(file, "utf8")).toBe("secret");
 		expect(readFileSync(other, "utf8")).toBe("old");
 		expect(statSync(file).mode & 0o777).toBe(0o600);
+	});
+});
+
+describe("publishPrivate", () => {
+	test("produces into a private staging path and renames the 0600 result over the target", async () => {
+		const file = path.join(scratch.dir, "out", "trace.zip");
+		mkdirSync(path.dirname(file), { recursive: true });
+		writeFileSync(file, "old");
+		chmodSync(file, 0o644);
+		linkSync(file, path.join(scratch.dir, "out", "other.zip"));
+		let staged = "";
+		await publishPrivate(file, async (staging) => {
+			staged = staging;
+			expect(statSync(path.dirname(staging)).mode & 0o777).toBe(0o700);
+			writeFileSync(staging, "new");
+		});
+		expect(staged).not.toBe(file);
+		expect(readFileSync(file, "utf8")).toBe("new");
+		expect(statSync(file).mode & 0o777).toBe(0o600);
+		expect(readFileSync(path.join(scratch.dir, "out", "other.zip"), "utf8")).toBe("old");
+		expect(readdirSync(path.dirname(file)).sort()).toEqual(["other.zip", "trace.zip"]);
+	});
+
+	test("removes the staging dir and leaves the target alone when production fails", async () => {
+		const file = path.join(scratch.dir, "fail", "a.pdf");
+		mkdirSync(path.dirname(file), { recursive: true });
+		await expect(
+			publishPrivate(file, async () => {
+				throw new Error("boom");
+			}),
+		).rejects.toThrow("boom");
+		expect(readdirSync(path.dirname(file))).toEqual([]);
 	});
 });
 

@@ -1,4 +1,11 @@
-import { chmodSync, mkdirSync, statSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	renameSync,
+	rmSync,
+	statSync,
+} from "node:fs";
 import path from "node:path";
 import { writeFileAtomic } from "@dg/common/node";
 
@@ -23,6 +30,22 @@ export function restrictFile(file: string): void {
 export function writePrivate(file: string, data: string): void {
 	writeFileAtomic(file, data, 0o600);
 	restrictFile(file);
+}
+
+/** Produces into a 0700 staging dir beside the target, then renames the 0600 result over it. */
+export async function publishPrivate(
+	file: string,
+	produce: (staging: string) => Promise<unknown>,
+): Promise<void> {
+	const dir = mkdtempSync(path.join(path.dirname(file), ".pw-"));
+	try {
+		const staging = path.join(dir, path.basename(file));
+		await produce(staging);
+		restrictFile(staging);
+		renameSync(staging, file);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 }
 
 export function ensurePrivateDir(dir: string): void {
