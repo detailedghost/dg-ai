@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.27.0 (2026-11-01)
+
+### Features
+
+- feat(phone): multi-party threads v1 ([#111](https://github.com/detailedghost/dg-ai/pull/111))
+- feat(ssms): add Google Messages and Signal providers ([#107](https://github.com/detailedghost/dg-ai/pull/107))
+
+### Fixes
+
+- fix(phone): supervise the listener with open --ensure, widen catch-up, watch --new ([#109](https://github.com/detailedghost/dg-ai/pull/109))
+- fix(phone): relay publish reliability and listener liveness ([#108](https://github.com/detailedghost/dg-ai/pull/108))
+
 ## v1.26.0 (2026-10-29)
 
 ### Features
