@@ -359,16 +359,17 @@ describe("pruneWorktrees", () => {
 
 	test("runs a guarded remove for each linked branch from the main repo", async () => {
 		const { main, wtRoot, add } = fixture();
-		const mergedOne = add("merged_one");
-		const mergedTwo = add("merged_two");
+		add("merged_one");
+		add("merged_two");
 		const o = opts();
 		await pruneWorktrees(wtRoot, o);
 		const removes = o.calls.filter(
 			(c) => c.argv.at(-2) === "remove" && c.argv.at(-3) === "worktree",
 		);
-		expect(removes.map((c) => c.argv.at(-1)).sort()).toEqual(
-			[mergedOne, mergedTwo].sort(),
-		);
+		expect(removes.map((c) => c.argv.at(-1)).sort()).toEqual([
+			"merged_one",
+			"merged_two",
+		]);
 		for (const r of removes) expect(r.cwd).toBe(main);
 		expect(o.calls[0]?.argv.slice(-2)).toEqual(["worktree", "prune"]);
 		expect(o.lines).toContain(`removed worktree ${main} merged_one`);
@@ -423,7 +424,7 @@ describe("pruneWorktrees", () => {
 
 	test("removes only worktrees under the worktree root", async () => {
 		const { main, wtRoot, add } = fixture();
-		const merged = add("merged_one");
+		add("merged_one");
 		const outside = join(tmp("prune-elsewhere-"), "side");
 		sh(["worktree", "add", "-q", "-b", "elsewhere", outside], main);
 		const o = opts();
@@ -431,19 +432,18 @@ describe("pruneWorktrees", () => {
 		const removed = o.calls
 			.filter((c) => c.argv.at(-2) === "remove")
 			.map((c) => c.argv.at(-1));
-		expect(removed).toEqual([merged]);
+		expect(removed).toEqual(["merged_one"]);
 	});
 
 	test("treats a worktree named with two leading dots as inside the root", async () => {
 		const { main, wtRoot } = fixture();
-		const dots = join(wtRoot, "..dots");
-		sh(["worktree", "add", "-q", "-b", "dots", dots], main);
+		sh(["worktree", "add", "-q", "-b", "dots", join(wtRoot, "..dots")], main);
 		const o = opts();
 		await pruneWorktrees(wtRoot, o);
 		const removed = o.calls
 			.filter((c) => c.argv.at(-2) === "remove")
 			.map((c) => c.argv.at(-1));
-		expect(removed).toEqual([dots]);
+		expect(removed).toEqual(["dots"]);
 	});
 });
 
