@@ -36,12 +36,10 @@ export function formatResult(value: unknown): string {
 		return JSON.stringify(value, null, 2) ?? String(value);
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
-		let text: string;
+		let text = "[unprintable value]";
 		try {
 			text = String(value);
-		} catch {
-			text = Object.prototype.toString.call(value);
-		}
+		} catch {}
 		return `${text} (not JSON: ${reason})`;
 	}
 }

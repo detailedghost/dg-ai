@@ -99,6 +99,18 @@ describe("formatResult", () => {
 describe("formatResult without a string form", () => {
 	test("still returns text for a null-prototype object holding a BigInt", () => {
 		const value = Object.assign(Object.create(null), { n: 1n });
-		expect(formatResult(value)).toStartWith("[object Object] (not JSON:");
+		expect(formatResult(value)).toStartWith("[unprintable value] (not JSON:");
+	});
+});
+
+describe("formatResult with a hostile value", () => {
+	test("returns a fixed label when no string form can be read", () => {
+		const value = Object.assign(Object.create(null), { n: 1n });
+		Object.defineProperty(value, Symbol.toStringTag, {
+			get() {
+				throw new Error("nope");
+			},
+		});
+		expect(formatResult(value)).toStartWith("[unprintable value] (not JSON:");
 	});
 });
