@@ -7,6 +7,7 @@ import {
 	readFileSync,
 	statSync,
 	symlinkSync,
+	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { editInput, hookWorld, SESSION } from "./hook-fixtures";
@@ -166,5 +167,20 @@ describe("format hook biome probe", () => {
 		await world.run("format", editing(file), options);
 		const probes = world.calls.filter((c) => c.argv[1] === "--version");
 		expect(probes).toHaveLength(1);
+	});
+});
+
+describe("format write-back with a concurrent edit", () => {
+	test("leaves a file that changed while jq ran", async () => {
+		const file = world.seed("data.json", '{"a":1}');
+		const r = await world.run("format", editing(file), {
+			which: (bin) => (bin === "jq" ? "/bin/jq" : undefined),
+			replyFor: () => {
+				writeFileSync(file, '{"a":2}');
+				return { status: 0, stdout: '{\n  "a": 1\n}\n' };
+			},
+		});
+		expect(readFileSync(file, "utf8")).toBe('{"a":2}');
+		expect(`${r.stdout}${r.stderr}`).toContain("changed while jq ran");
 	});
 });

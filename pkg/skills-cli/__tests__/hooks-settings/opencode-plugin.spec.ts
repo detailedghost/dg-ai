@@ -148,6 +148,20 @@ describe.skipIf(process.platform === "win32")(
 			).rejects.toThrow("blocked-by-hook");
 		});
 
+		test("runs every PostToolUse hook before it reports their failures", async () => {
+			await enableFor("spelling");
+			await enableFor("format");
+			writeFileSync(join(binDir(), "exit"), "2");
+			const plugin = await loadPlugin();
+			await expect(
+				plugin["tool.execute.after"](
+					{ tool: "edit", callID: "c9" },
+					{ args: { filePath: "/work/tree/a.md" }, output: "ok" },
+				),
+			).rejects.toThrow("blocked-by-hook");
+			expect(ranIds()).toEqual(["spelling", "format"]);
+		});
+
 		test("a hook that exits 1 does not throw", async () => {
 			await enableFor("pr-prose");
 			writeFileSync(join(binDir(), "exit"), "1");

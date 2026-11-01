@@ -260,3 +260,13 @@ describe("hook scratch directory safety", () => {
 		},
 	);
 });
+
+describe("disable marker without Claude session variables", () => {
+	test("honors the NOSESSION marker the disable skill writes", async () => {
+		world.disableMarker("comment-disabled", "NOSESSION");
+		const r = await world.run("spelling", editInput("colour"), {
+			env: { CODEX_THREAD_ID: "codex-thread" },
+		});
+		expect(r.code).toBe(0);
+	});
+});

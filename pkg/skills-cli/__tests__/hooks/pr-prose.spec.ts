@@ -543,3 +543,28 @@ describe("pr-prose with several PR calls", () => {
 		).toBe(2);
 	});
 });
+
+describe("pr-prose shell edge cases", () => {
+	test("reads quoted heredoc-like text as body text", async () => {
+		expect((await judge("gh pr create --body 'TBD <<EOF'")).code).toBe(2);
+	});
+
+	test("resolves a relative --body-file against a prior cd", async () => {
+		world.seed("subdir/body.md", "TBD\n");
+		const r = await world.run("pr-prose", {
+			...bashInput("cd subdir && gh pr create --body-file body.md"),
+			cwd: world.work,
+		});
+		expect(r.code).toBe(2);
+	});
+
+	test("checks a create that follows a heredoc on the next line", async () => {
+		expect(
+			(
+				await judge(
+					"gh pr edit 1 --body-file - <<'EOF'\nWe fixed the parser.\nEOF\ngh pr create --body TBD",
+				)
+			).code,
+		).toBe(2);
+	});
+});

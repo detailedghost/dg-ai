@@ -1,7 +1,20 @@
+import { isAbsolute, resolve } from "node:path";
+
 export type PrAction = "create" | "edit" | "update";
 
 const WRAPPERS = new Set(["sudo", "env", "command", "time", "exec", "nice"]);
 const SHELLS = new Set(["sh", "bash", "zsh", "dash"]);
+const RESERVED = new Set([
+	"if",
+	"then",
+	"else",
+	"elif",
+	"do",
+	"while",
+	"until",
+	"!",
+	"{",
+]);
 const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const HEREDOC = /^<<(-?)[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/;
 
@@ -60,11 +73,18 @@ function scan(src: string, i: number, close: string, split: boolean): Scan {
 		}
 		if (close && c === close) return { end: at, inner };
 		if (split && ";&|)".includes(c)) return { end: at, inner };
+		if (c === "#" && (at === i || /[\s;&|()]/.test(src[at - 1] ?? " "))) {
+			const nl = src.indexOf("\n", at);
+			at = nl < 0 ? src.length : nl;
+			continue;
+		}
 		if (c === "\n") {
 			if (heredocs.length > 0) {
 				let body = at + 1;
 				for (const h of heredocs.splice(0))
 					body = skipHeredoc(src, body, h.delimiter, h.tabs);
+				if (split)
+					return { end: body >= src.length ? src.length : body - 1, inner };
 				at = body;
 				continue;
 			}
@@ -173,7 +193,7 @@ function commandStart(words: string[]): number {
 	let at = 0;
 	while (at < words.length) {
 		const word = words[at]!;
-		if (ASSIGNMENT.test(word)) at++;
+		if (ASSIGNMENT.test(word) || RESERVED.has(word)) at++;
 		else if (WRAPPERS.has(word)) {
 			at++;
 			while (
@@ -208,24 +228,41 @@ function shellScript(words: string[]): string | undefined {
 	return undefined;
 }
 
-/** Source of every GitHub or GitLab PR CLI call with one of the actions at command position. */
+export interface PrCall {
+	source: string;
+	cwd: string | undefined;
+}
+
+function changedDir(words: string[], cwd: string | undefined) {
+	const at = commandStart(words);
+	if (words[at] !== "cd") return cwd;
+	const target = words[at + 1];
+	if (!target || target === "-" || target.startsWith("~")) return undefined;
+	if (isAbsolute(target)) return target;
+	return cwd === undefined ? undefined : resolve(cwd, target);
+}
+
+/** Every GitHub or GitLab PR CLI call with one of the actions at command position, with the directory a prior cd left. */
 export function prInvocations(
 	command: string,
 	actions: readonly PrAction[],
+	cwd?: string,
 	depth = 0,
-): string[] {
+): PrCall[] {
 	if (depth > 4) return [];
 	const { segments, nested } = commandSegments(command);
-	const found: string[] = [];
+	const found: PrCall[] = [];
+	let dir = cwd;
 	for (const segment of segments) {
 		const words = shellWords(segment);
-		if (matchesPr(words, actions)) found.push(segment);
+		if (matchesPr(words, actions)) found.push({ source: segment, cwd: dir });
 		const inner = shellScript(words);
 		if (inner !== undefined)
-			found.push(...prInvocations(inner, actions, depth + 1));
+			found.push(...prInvocations(inner, actions, dir, depth + 1));
+		dir = changedDir(words, dir);
 	}
 	for (const script of nested)
-		found.push(...prInvocations(script, actions, depth + 1));
+		found.push(...prInvocations(script, actions, dir, depth + 1));
 	return found;
 }
 

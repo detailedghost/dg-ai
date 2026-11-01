@@ -16,7 +16,7 @@ interface Finding {
 	message: string;
 }
 
-const HEREDOC = /(?<!<)<<(?!<)-?[ \t]*['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/;
+const HEREDOC = /^<<(?!<)-?[ \t]*['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/;
 const BODY_FLAG =
 	/--body|(^|[ \t])-b([ \t]|$)|(^|[ \t])-F([ \t]|$)|--description|(^|[ \t])-d([ \t]|$)/;
 const VARIABLE_ONLY = /^\$[{(]?[A-Za-z_][A-Za-z0-9_]*[})]?$/;
@@ -41,20 +41,53 @@ const VALE_UNCONFIGURED =
 const VALE_FAILED =
 	"pr-prose: the Vale run failed, so style checks were skipped. The built-in checks still ran.\n";
 
-function collectHeredocs(lines: string[]) {
+function collectHeredocs(command: string) {
 	const heredocs: { flagged: boolean; text: string }[] = [];
-	for (let i = 0; i < lines.length; i++) {
-		const match = HEREDOC.exec(lines[i]!);
-		if (!match) continue;
-		const opener = lines[i]!.slice(0, match.index);
-		const delimiter = match[0].replace(/^<<-?[ \t]*/, "").replace(/['"]/g, "");
-		let text = "";
-		i++;
-		while (i < lines.length && lines[i]!.trim() !== delimiter) {
-			text += `${lines[i]}\n`;
+	const pending: { flagged: boolean; delimiter: string }[] = [];
+	let quote = "";
+	const outer: string[] = [];
+	let lineStart = 0;
+	for (let i = 0; i < command.length; i++) {
+		const c = command[i]!;
+		if (quote === '"' && c === "$" && command[i + 1] === "(") {
+			outer.push(quote);
+			quote = "";
 			i++;
+			continue;
 		}
-		heredocs.push({ flagged: BODY_FLAG.test(opener), text });
+		if (quote) {
+			if (c === "\\" && quote === '"') i++;
+			else if (c === quote) quote = "";
+			continue;
+		}
+		if (c === "\\") i++;
+		else if (c === ")" && outer.length > 0) quote = outer.pop()!;
+		else if (c === "'" || c === '"') quote = c;
+		else if (c === "<") {
+			const match = HEREDOC.exec(command.slice(i));
+			if (match && command[i - 1] !== "<") {
+				pending.push({
+					flagged: BODY_FLAG.test(command.slice(lineStart, i)),
+					delimiter: match[0].replace(/^<<-?[ \t]*/, "").replace(/['"]/g, ""),
+				});
+				i += match[0].length - 1;
+			}
+		} else if (c === "\n") {
+			for (const h of pending.splice(0)) {
+				let text = "";
+				let at = i + 1;
+				while (at < command.length) {
+					const nl = command.indexOf("\n", at);
+					const line = command.slice(at, nl < 0 ? command.length : nl);
+					at = nl < 0 ? command.length : nl + 1;
+					if (line.trim() === h.delimiter) break;
+					text += `${line}\n`;
+				}
+				heredocs.push({ flagged: h.flagged, text });
+				i = at - 1;
+			}
+			lineStart = i + 1;
+		}
 	}
 	return heredocs;
 }
@@ -73,7 +106,7 @@ function readBodyFile(path: string, cwd: string): string | undefined {
 }
 
 export function extractBody(command: string, cwd: string): string {
-	const heredocs = collectHeredocs(command.split("\n"));
+	const heredocs = collectHeredocs(command);
 	const flagged = heredocs.filter((h) => h.flagged);
 	if (flagged.length > 0) return flagged.map((h) => h.text).join("");
 
@@ -250,17 +283,17 @@ function firstHint(ctx: HookContext): boolean {
 }
 
 const handler: HookHandler = async (input, ctx) => {
-	const commands = prInvocations(bashCommand(input), [
-		"create",
-		"edit",
-		"update",
-	]);
+	const commands = prInvocations(
+		bashCommand(input),
+		["create", "edit", "update"],
+		input.cwd,
+	);
 	if (commands.length === 0) return { exitCode: 0 };
 	if (ctx.bypassed("pr-prose-disabled")) return { exitCode: 0 };
 	const cwd = input.cwd ?? process.cwd();
 	let result: HookResult = { exitCode: 0 };
-	for (const command of commands) {
-		const body = extractBody(command, cwd).replace(/\n+$/, "");
+	for (const call of commands) {
+		const body = extractBody(call.source, call.cwd ?? cwd).replace(/\n+$/, "");
 		if (body.trim() === "") continue;
 		result = await checkBody(body, input.cwd, ctx);
 		if (result.exitCode !== 0) return result;

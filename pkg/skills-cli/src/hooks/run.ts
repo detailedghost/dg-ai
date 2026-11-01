@@ -52,8 +52,20 @@ function contextFor(
 			const value = Number(env[name]);
 			return env[name] && Number.isFinite(value) ? value : fallback;
 		},
-		bypassed: (name) => existsSync(join(scratchDir, `${name}.${sessionId}`)),
+		bypassed: (name) =>
+			[sessionId, markerSession(env)].some((id) =>
+				existsSync(join(scratchDir, `${name}.${id}`)),
+			),
 	};
+}
+
+const sanitize = (raw: string) => raw.replace(/[^A-Za-z0-9_-]/g, "_");
+
+/** Session id the hook-comment-disable skill names its marker with: Claude env vars only, else NOSESSION. */
+function markerSession(env: HookEnv): string {
+	return sanitize(
+		env["CLAUDE_CODE_SESSION_ID"] || env["CLAUDE_SESSION_ID"] || "NOSESSION",
+	);
 }
 
 function sessionOf(env: HookEnv, fromInput: string | undefined): string {
@@ -63,7 +75,7 @@ function sessionOf(env: HookEnv, fromInput: string | undefined): string {
 		env["CODEX_THREAD_ID"] ||
 		fromInput ||
 		"NOSESSION";
-	return raw.replace(/[^A-Za-z0-9_-]/g, "_");
+	return sanitize(raw);
 }
 
 /** Runs one hook against the stdin event and returns the process exit code. */

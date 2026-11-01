@@ -75,6 +75,7 @@ export default async ({ directory }) => {
     const args = output?.args ?? input.args ?? calls.get(key);
     if (event === "PostToolUse" && key) calls.delete(key);
     const tool = TOOLS[String(input.tool).toLowerCase()] ?? input.tool;
+    const failures = [];
     for (const hook of HOOKS) {
       if (hook.event !== event || !new RegExp("^(?:" + hook.matcher + ")$").test(tool)) continue;
       const payload = JSON.stringify({
@@ -84,7 +85,11 @@ export default async ({ directory }) => {
         ...(input.sessionID ? { session_id: input.sessionID } : {}),
       });
       const result = await exec(hook.argv, payload);
-      if (result.status === 2) throw new Error(result.stderr);
+      if (result.status === 2) {
+        if (event === "PreToolUse") throw new Error(result.stderr);
+        failures.push(result.stderr);
+        continue;
+      }
       if (result.status === null) {
         console.error("dg hook " + hook.id + " did not finish: " + (result.error?.message ?? result.signal ?? "killed"));
         continue;
@@ -93,6 +98,7 @@ export default async ({ directory }) => {
       if (event === "PostToolUse" && context && typeof output?.output === "string")
         output.output += "\\n\\n" + context;
     }
+    if (failures.length > 0) throw new Error(failures.join("\\n"));
   };
   return { "tool.execute.before": run("PreToolUse"), "tool.execute.after": run("PostToolUse") };
 };

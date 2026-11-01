@@ -156,3 +156,23 @@ describe("pr-confirm shell parsing", () => {
 		]);
 	});
 });
+
+describe("pr-confirm shell structures", () => {
+	test.each([
+		"cat <<'EOF'\nnotes\nEOF\ngh pr create --title x",
+		"if true; then gh pr create --title x; fi",
+		"if gh pr create --title x; then echo opened; fi",
+		"while false; do gh pr create --title x; done",
+	])("asks for a create in %s", async (command) => {
+		const r = await decision(command);
+		expect(r.json.hookSpecificOutput.permissionDecision).toBe("ask");
+	});
+
+	test.each(["# example; gh pr create --title x", "echo hi # gh pr create"])(
+		"prints nothing for a commented-out create: %s",
+		async (command) => {
+			const r = await world.run("pr-confirm", bashInput(command));
+			expect(r.stdout).toBe("");
+		},
+	);
+});

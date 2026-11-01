@@ -144,7 +144,10 @@ class Formatting {
 		}
 	}
 
-	private writeBack(bin: string, result: CommandResult): void {
+	private async formatToStdout(bin: string, argv: string[]): Promise<void> {
+		const target = realpathSync(this.file);
+		const before = readFileSync(target, "utf8");
+		const result = await this.exec(argv);
 		if (result.status !== 0 || !result.stdout) return;
 		if (result.truncated) {
 			this.failed.push(
@@ -152,7 +155,12 @@ class Formatting {
 			);
 			return;
 		}
-		const target = realpathSync(this.file);
+		if (readFileSync(target, "utf8") !== before) {
+			this.failed.push(
+				`${this.file} changed while ${bin} ran, so the formatted output was not written`,
+			);
+			return;
+		}
 		writeFileAtomic(target, result.stdout, statSync(target).mode & 0o7777);
 	}
 
@@ -207,7 +215,7 @@ class Formatting {
 	async json(): Promise<void> {
 		if (await this.biome(false)) return;
 		if (!this.ctx.seams.which("jq")) return;
-		this.writeBack("jq", await this.exec(["jq", ".", this.file]));
+		await this.formatToStdout("jq", ["jq", ".", this.file]);
 	}
 
 	async shell(): Promise<void> {
@@ -237,7 +245,7 @@ class Formatting {
 
 	async xml(): Promise<void> {
 		if (this.ctx.seams.which("xmlformat")) {
-			this.writeBack("xmlformat", await this.exec(["xmlformat", this.file]));
+			await this.formatToStdout("xmlformat", ["xmlformat", this.file]);
 		} else if (this.ctx.seams.which("xmlformatter"))
 			await this.exec(["xmlformatter", "--overwrite", this.file]);
 		else this.missing.add("xmlformat");
