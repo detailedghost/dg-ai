@@ -54,6 +54,12 @@ function indexTests(wave: string, skills: readonly string[]): void {
 	});
 }
 
+const WAVE_6_SKILLS = ["pw"] as const;
+
+describe("skill indexes list every Wave 6 skill", () => {
+	indexTests("Wave 6", WAVE_6_SKILLS);
+});
+
 describe("skill indexes list every Wave 5 skill", () => {
 	indexTests("Wave 5", WAVE_5_SKILLS);
 });

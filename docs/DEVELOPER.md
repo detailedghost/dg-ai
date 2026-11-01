@@ -376,6 +376,10 @@ commands are `dg-skills db`, `dg-skills erd`, and `dg-skills test-live`;
 has no GitLab port. After the merge, smoke `db`, `erd`, and `test-live`
 from outside the checkout with the installed plugin tree.
 
+Wave 6 adds `pw`. The compiled commands are `dg-skills pw` and `dg-skills pw-code`.
+`doctor pw` reports the browser in one line and `doctor pw-code` warns when an
+allow rule covers `pw-code`. Smoke only with `PW_E2E=1`, never on a shared desktop.
+
 The legacy `viz`, `review`, `lineage`, and `clockout` skills are retired, not
 ported. Delete their local copies at the manual cutover.
 

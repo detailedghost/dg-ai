@@ -24,7 +24,7 @@ interface Report {
 	items: { item: string; checks: { id: string; status: string }[] }[];
 }
 
-const NO_ALLOW_RULE = new Set(["shared"]);
+const NO_ALLOW_RULE = new Set(["shared", "pw-code"]);
 
 let home = "";
 let registered: string[] = [];

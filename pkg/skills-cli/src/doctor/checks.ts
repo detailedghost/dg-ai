@@ -244,6 +244,26 @@ export function allowRuleCheck(sub: string): DoctorCheck {
 	};
 }
 
+export function noAllowRuleCheck(sub: string): DoctorCheck {
+	return {
+		id: `no-${sub}-allow-rule`,
+		run(ctx) {
+			const allowed = readAllowRules(ctx.home);
+			if ("error" in allowed)
+				return warn(
+					`cannot read ~/.claude/settings.json: ${allowed.error}`,
+					"jq . ~/.claude/settings.json",
+				);
+			if (hasAllowRule(allowed.rules, sub))
+				return warn(
+					`~/.claude/settings.json allows ${CLI_PATH} ${sub}, so Claude runs arbitrary page code without asking`,
+					`remove ${allowRuleFor(sub)}, Bash(${CLI_PATH}:*), Bash and Bash(*) from permissions.allow in ~/.claude/settings.json`,
+				);
+			return ok(`no allow rule covers ${CLI_PATH} ${sub}, so Claude asks before each call`);
+		},
+	};
+}
+
 export function credentialChecks(names: string[]): DoctorCheck[] {
 	return names.map((name) => ({
 		id: `credential-${name.replaceAll("/", "-")}`,

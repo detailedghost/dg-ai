@@ -134,6 +134,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `worktree`, `spec`, `sdlc`, `assign`, `monolith`, `spring-break`, `review-loop`, `polish` | Yes — they call other skills and tools that must be available |
 | `jot`, `bg`, `cls`, `stat`, `sniff`, `find-work`, `doctor` | Yes — they call other skills and tools that must be available |
 | `db`, `erd` | Yes |
+| `pw` | Yes — needs Bun 1.4.0 or later and Chrome, Edge, or a Chromium from `install-browser` |
 | `eli5` | Yes for `-v`/`-p` (stash) or `--erd`; a plain `/dg:eli5 <thing>` needs no CLI |
 | `ticket` | Yes — needs a stored `ticket/jira` credential |
 | `test-live` | Yes — needs Git and an authenticated `gh` (GitHub only) |
@@ -235,3 +236,15 @@ The standalone path copies the skills to `$CODEX_HOME/skills` (or
 See the [agent install guide](AGENT-INSTALL.md) for pairing, local builds, and
 the steps that need a person. Read the [browser guide](browser.md) for the
 extension’s URL markers and browser-specific behavior.
+
+## Browser download for pw
+
+`dg-skills pw` uses a system Chrome or Edge first. With neither, it exits 3 and
+names `dg-skills pw install-browser`. Run that command only when you agree to a
+download of about 150 MB. It stores Chromium under `browsers/` in the dg data
+directory (`~/.dg/browsers` by default) and records it in `chromium.json`.
+
+`dg-skills doctor pw` reports the result on one line, such as
+`browser: chrome (system)`. To remove the download, run
+`dg-skills pw install-browser --remove`. It deletes the `browsers/` directory
+and nothing else.

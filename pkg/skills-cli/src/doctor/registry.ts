@@ -23,6 +23,7 @@ import { polishChecks } from "../polish/doctor";
 import { protoChecks, prototypeChecks } from "../proto/doctor";
 import { verifyChecks } from "../verify/doctor";
 import { proxyChecks } from "../proxy/doctor";
+import { pwChecks, pwCodeChecks } from "../pw/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
 import { sniffChecks } from "../sniff/doctor";
@@ -76,4 +77,6 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	ssms: ssmsChecks,
 	"require-extension": requireExtensionChecks,
 	polish: polishChecks,
+	pw: pwChecks,
+	"pw-code": pwCodeChecks,
 };
