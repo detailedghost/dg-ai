@@ -3,6 +3,7 @@ import { chmodSync, closeSync, openSync, readFileSync } from "node:fs";
 import type { LaunchSpec } from "./browser";
 import { daemonCommand } from "./daemon-command";
 import {
+	closeFailure,
 	isLive,
 	logPathFor,
 	read,
@@ -46,7 +47,10 @@ export async function releaseKey(
 			env.err(refusal(existing));
 			return 1;
 		}
-		await stopSession(existing, { closeBrowser });
+		if (!(await stopSession(existing, { closeBrowser }))) {
+			env.err(closeFailure(existing));
+			return 1;
+		}
 	} else if (existing) await reapStale(closeBrowser);
 	return null;
 }

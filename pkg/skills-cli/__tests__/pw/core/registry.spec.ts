@@ -365,6 +365,94 @@ describe("stopSession force path", () => {
 		}
 	});
 
+	test("keeps the record and reports failure when the forced Windows close leaves processes", async () => {
+		const daemon = await startFakeDaemon(
+			"gh",
+			{ mode: "cdp", winPid: 1, profileDir: "C:\\p\\gh" },
+			undefined,
+			{ keepRecordOnStop: true },
+		);
+		try {
+			const closed = await stopSession(
+				{
+					...daemon.record,
+					socketPath: path.join(scratch.dir, "missing.sock"),
+				},
+				{
+					graceMs: 50,
+					termMs: 500,
+					closeBrowser: async () => ({ forced: 1, remaining: 2 }),
+				},
+			);
+			await daemon.child.exited;
+			expect(closed).toBe(false);
+			expect(existsSync(recordPath("gh"))).toBe(true);
+		} finally {
+			daemon.dispose();
+		}
+	});
+
+	test("keeps the record and reports failure when the forced Windows close throws", async () => {
+		const daemon = await startFakeDaemon(
+			"gh",
+			{ mode: "cdp", winPid: 1, profileDir: "C:\\p\\gh" },
+			undefined,
+			{ keepRecordOnStop: true },
+		);
+		try {
+			const closed = await stopSession(
+				{
+					...daemon.record,
+					socketPath: path.join(scratch.dir, "missing.sock"),
+				},
+				{
+					graceMs: 50,
+					termMs: 500,
+					closeBrowser: async () => {
+						throw new Error("powershell failed");
+					},
+				},
+			);
+			await daemon.child.exited;
+			expect(closed).toBe(false);
+			expect(existsSync(recordPath("gh"))).toBe(true);
+		} finally {
+			daemon.dispose();
+		}
+	});
+
+	test("reports failure and keeps the record when the daemon could not close its browser", async () => {
+		const daemon = await startFakeDaemon(
+			"gh",
+			{ mode: "cdp", winPid: 1, profileDir: "C:\\p\\gh" },
+			undefined,
+			{ keepRecordOnStop: true },
+		);
+		try {
+			const closed = await stopSession(daemon.record, {
+				closeBrowser: async () => ({ forced: 0, remaining: 0 }),
+			});
+			expect(closed).toBe(false);
+			expect(existsSync(recordPath("gh"))).toBe(true);
+		} finally {
+			daemon.dispose();
+		}
+	});
+
+	test("reports success and drops the record when the daemon closed cleanly", async () => {
+		const daemon = await startFakeDaemon("gh", {
+			mode: "cdp",
+			winPid: 1,
+			profileDir: "C:\\p\\gh",
+		});
+		try {
+			expect(await stopSession(daemon.record)).toBe(true);
+			expect(existsSync(recordPath("gh"))).toBe(false);
+		} finally {
+			daemon.dispose();
+		}
+	});
+
 	test("skips the Windows close when the daemon exits on its own", async () => {
 		const daemon = await startFakeDaemon("gh", {
 			mode: "cdp",

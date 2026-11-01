@@ -253,6 +253,7 @@ export type StopOptions = {
 	closeBrowser?: (profileDir: string) => Promise<unknown>;
 };
 
+/** Returns false, and keeps the record for a retry, when the browser did not close. */
 export async function stopSession(
 	record: SessionRecord,
 	{
@@ -260,16 +261,24 @@ export async function stopSession(
 		termMs = 5_000,
 		closeBrowser = closeWindowsBrowser,
 	}: StopOptions = {},
-): Promise<void> {
+): Promise<boolean> {
 	await call(record, { id: "stop", method: "stop" }, 5_000).catch(
 		() => undefined,
 	);
-	if (!(await waitForExit(record.pid, graceMs))) {
-		signalDaemon(record, "SIGTERM");
-		if (!(await waitForExit(record.pid, termMs)))
-			signalDaemon(record, "SIGKILL");
-		if (isWindowsSession(record))
-			await closeBrowser(record.profileDir).catch(() => undefined);
+	if (await waitForExit(record.pid, graceMs)) return read(record.key) === null;
+	signalDaemon(record, "SIGTERM");
+	if (!(await waitForExit(record.pid, termMs))) signalDaemon(record, "SIGKILL");
+	if (isWindowsSession(record)) {
+		const closed = await closeBrowser(record.profileDir).then(
+			(exit) => !browserSurvived(exit),
+			() => false,
+		);
+		if (!closed) return false;
 	}
 	remove(record.key);
+	return true;
+}
+
+export function closeFailure(record: SessionRecord): string {
+	return `Could not close the browser for session '${record.name}'${record.profileDir ? ` (${record.profileDir})` : ""}. Run pw close again, or pw kill-all.`;
 }

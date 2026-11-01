@@ -2,7 +2,7 @@ import { existsSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 import { isPathInside } from "@dg/common/node";
 import { defaultProfileDir, profilesRoot } from "../../core/profiles";
-import { resolve, stopSession } from "../../core/registry";
+import { closeFailure, resolve, stopSession } from "../../core/registry";
 import type { ClientHandler } from "../../core/spec";
 
 /** True when the profile dir, after resolving symlinks, sits strictly inside the profiles root. */
@@ -22,7 +22,10 @@ const deleteData: ClientHandler = async (args, env) => {
 	const name = args.session;
 	const record = resolve(name);
 	if (record && record.profileDir === null) {
-		await stopSession(record);
+		if (!(await stopSession(record))) {
+			env.err(closeFailure(record));
+			return 1;
+		}
 		env.out(`No saved data for session '${name}'.`);
 		return 0;
 	}
@@ -32,7 +35,10 @@ const deleteData: ClientHandler = async (args, env) => {
 		env.err(`Refusing to delete ${profileDir}: it is outside ${root}`);
 		return 1;
 	}
-	if (record) await stopSession(record);
+	if (record && !(await stopSession(record))) {
+		env.err(closeFailure(record));
+		return 1;
+	}
 	if (!existsSync(profileDir)) {
 		env.out(`No saved data for session '${name}'.`);
 		return 0;

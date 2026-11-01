@@ -7,6 +7,7 @@ import { parse } from "./core/args";
 import type { Events } from "./core/events";
 import {
 	readCmdline,
+	remove,
 	type SessionRecord,
 	socketPathFor,
 	write,
@@ -336,10 +337,14 @@ export async function startFakeDaemon(
 		text: "",
 		exitCode: 0,
 	}),
+	{ keepRecordOnStop = false }: { keepRecordOnStop?: boolean } = {},
 ) {
 	const child = spawnFakeDaemonProcess(key);
 	const server = await serve(socketPathFor(key), async (request) => {
-		if (request.method === "stop") child.kill();
+		if (request.method === "stop") {
+			if (!keepRecordOnStop) remove(key);
+			child.kill();
+		}
 		return {
 			id: request.id,
 			result:

@@ -153,7 +153,7 @@ async function connectCdp(spec: LaunchSpec): Promise<BrowserHandle> {
 				`Windows browser ignored Browser.close; force-stopped ${exit.forced} process(es)`,
 			);
 		if (exit.remaining > 0)
-			console.error(
+			throw new Error(
 				`${exit.remaining} Windows browser process(es) still use ${spec.profileDir}`,
 			);
 	};
