@@ -31,7 +31,7 @@ export function batchIssuedAt(batch: string | undefined): number | undefined {
 	return Number.isFinite(ms) ? ms : undefined;
 }
 
-/** True when the batch was issued within BATCH_MAX_AGE_MS before `now` and no more than BATCH_MAX_SKEW_MS after it. */
+/** True when the batch age is within BATCH_MAX_AGE_MS, allowing BATCH_MAX_SKEW_MS of clock skew. */
 export function isBatchFresh(
 	batch: string | undefined,
 	now = Date.now(),
