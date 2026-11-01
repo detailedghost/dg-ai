@@ -50,6 +50,17 @@ describe("screenshot handler", () => {
 		expect(result.result).toBe(
 			`- [Screenshot of full page](${path.join(scratch.dir, "full.png")})`,
 		);
+		expect(result.code).toBe(
+			`await page.screenshot({ path: ${JSON.stringify(path.join(scratch.dir, "full.png"))}, type: "png", fullPage: true });`,
+		);
+	});
+
+	test("prints code that writes the viewport to the same file and type", async () => {
+		const { ctx } = fakeCtx(scratch.dir);
+		const result = await handler(ctx, argsFor(spec, "--filename=view"));
+		expect(result.code).toBe(
+			`await page.screenshot({ path: ${JSON.stringify(path.join(scratch.dir, "view"))}, type: "png" });`,
+		);
 	});
 
 	test("keeps an absolute filename where it is", async () => {
@@ -67,6 +78,9 @@ describe("screenshot handler", () => {
 		);
 		expect(page.locator("aria-ref=e7").calls).toEqual(["screenshot jpeg"]);
 		expect(result.result).toContain("Screenshot of element");
+		expect(result.code).toEndWith(
+			`.screenshot({ path: ${JSON.stringify(path.join(scratch.dir, "btn.jpg"))}, type: "jpeg" });`,
+		);
 	});
 });
 

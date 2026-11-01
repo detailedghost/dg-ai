@@ -56,6 +56,10 @@ describe("commandName", () => {
 	test("returns undefined when only flags are present", () => {
 		expect(commandName(["--help"])).toBeUndefined();
 	});
+
+	test("never takes a command name from after the -- terminator", () => {
+		expect(commandName(["--raw", "--", "open"])).toBeUndefined();
+	});
 });
 
 describe("parse", () => {

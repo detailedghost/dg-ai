@@ -14,6 +14,7 @@ const screenshot: DaemonHandler = async (ctx, args) => {
 	);
 	const type = imageType(file);
 	const page = ctx.page();
+	const options = `path: ${JSON.stringify(file)}, type: "${type}"`;
 	const target = args.positionals[0];
 	if (target) {
 		const locator = await resolveTarget(page, target);
@@ -22,7 +23,7 @@ const screenshot: DaemonHandler = async (ctx, args) => {
 		);
 		return {
 			result: `- [Screenshot of element](${file})`,
-			code: `await ${locatorCode(locator)}.screenshot();`,
+			code: `await ${locatorCode(locator)}.screenshot({ ${options} });`,
 		};
 	}
 	const fullPage = args.flags["full-page"] === true;
@@ -31,7 +32,7 @@ const screenshot: DaemonHandler = async (ctx, args) => {
 	);
 	return {
 		result: `- [Screenshot of ${fullPage ? "full page" : "viewport"}](${file})`,
-		code: `await page.screenshot(${fullPage ? "{ fullPage: true }" : ""});`,
+		code: `await page.screenshot({ ${options}${fullPage ? ", fullPage: true" : ""} });`,
 	};
 };
 

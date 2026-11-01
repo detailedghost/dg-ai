@@ -59,3 +59,30 @@ describe("pw run-code", () => {
 		}
 	});
 });
+
+describe("pw and the -- terminator", () => {
+	test("forwards --help after -- as text, not as a help request", async () => {
+		const seen: DaemonRequest[] = [];
+		const daemon = await startFakeDaemon("web", {}, (request) => {
+			seen.push(request);
+			return { text: "### Filled", exitCode: 0 };
+		});
+		try {
+			const env = clientEnv("/w");
+			expect(await main(["-s=web", "fill", "e1", "--", "--help"], env)).toBe(0);
+			expect(env.stdout).toEqual(["### Filled"]);
+			expect(seen[0]).toMatchObject({
+				method: "run",
+				params: { argv: ["--session=web", "fill", "e1", "--", "--help"] },
+			});
+		} finally {
+			daemon.dispose();
+		}
+	});
+
+	test("does not treat --version after -- as the version flag", async () => {
+		const env = clientEnv();
+		expect(await main(["--", "--version"], env)).toBe(2);
+		expect(env.stdout.join("\n")).not.toMatch(/^pw \d/);
+	});
+});

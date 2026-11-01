@@ -44,8 +44,14 @@ export function normalize(argv: readonly string[]): string[] {
 	return out;
 }
 
+/** The arguments before the -- terminator, where flags and the command name live. */
+export function optionArgs(argv: readonly string[]): readonly string[] {
+	const end = argv.indexOf("--");
+	return end === -1 ? argv : argv.slice(0, end);
+}
+
 export function commandName(argv: readonly string[]): string | undefined {
-	return argv.find((arg) => !arg.startsWith("-"));
+	return optionArgs(argv).find((arg) => !arg.startsWith("-"));
 }
 
 function usageFailure(message: string, spec: CommandSpec): UsageError {

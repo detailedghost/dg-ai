@@ -108,4 +108,19 @@ describe("pw-code", () => {
 		expect(env.stdout).toEqual([CODE_HELP]);
 		expect(CODE_HELP).toContain("asks you before every run");
 	});
+
+	test("sends --help after -- to the daemon as code", async () => {
+		const { seen, daemon } = await withDaemon({
+			text: "### Result\nok",
+			exitCode: 0,
+		});
+		try {
+			const env = clientEnv("/w");
+			expect(await main(["-s=web", "--", "--help"], env)).toBe(0);
+			expect(env.stdout).toEqual(["### Result\nok"]);
+			expect(seen).toHaveLength(1);
+		} finally {
+			daemon.dispose();
+		}
+	});
 });

@@ -1,5 +1,11 @@
 import { CODE_COMMAND } from "./code/index";
-import { normalize, parse, stringFlag, UsageError } from "./core/args";
+import {
+	normalize,
+	optionArgs,
+	parse,
+	stringFlag,
+	UsageError,
+} from "./core/args";
 import { bunVersionError } from "./core/bun-version";
 import { defaultEnv, forward, VERSION } from "./core/client";
 import { GLOBAL_HELP } from "./core/help";
@@ -31,11 +37,12 @@ export async function main(
 	}
 	try {
 		const args = normalize(argv);
-		if (args.includes("--version")) {
+		const options = optionArgs(args);
+		if (options.includes("--version")) {
 			env.out(`pw-code ${VERSION}`);
 			return 0;
 		}
-		if (args.includes("--help")) {
+		if (options.includes("--help")) {
 			env.out(CODE_HELP);
 			return 0;
 		}

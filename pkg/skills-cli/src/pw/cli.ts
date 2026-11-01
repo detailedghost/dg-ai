@@ -1,5 +1,11 @@
 import { COMMANDS, type CommandEntry } from "./commands/index";
-import { commandName, normalize, parse, UsageError } from "./core/args";
+import {
+	commandName,
+	normalize,
+	optionArgs,
+	parse,
+	UsageError,
+} from "./core/args";
 import { BrowserMissingError } from "./core/browser";
 import { bunVersionError } from "./core/bun-version";
 import { defaultEnv, forward, VERSION } from "./core/client";
@@ -26,13 +32,14 @@ export async function main(
 	try {
 		const args = normalize(argv);
 		const name = commandName(args);
-		if (args.includes("--version")) {
+		const options = optionArgs(args);
+		if (options.includes("--version")) {
 			env.out(`pw ${VERSION}`);
 			return 0;
 		}
 		if (!name) {
 			env.out(indexHelp(commands.map((entry) => entry.spec)));
-			return args.includes("--help") ? 0 : 2;
+			return options.includes("--help") ? 0 : 2;
 		}
 		if (name === "run-code") {
 			env.err(RUN_CODE_MOVED);
@@ -43,7 +50,7 @@ export async function main(
 			env.err(`Unknown command: ${name}\nRun: pw --help`);
 			return 2;
 		}
-		if (args.includes("--help")) {
+		if (options.includes("--help")) {
 			env.out(commandHelp(entry.spec));
 			return 0;
 		}
