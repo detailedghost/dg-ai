@@ -44,9 +44,24 @@ type BatchSlot = { batch: string; pos: number };
 const batchSlots = new Map<number, BatchSlot>();
 const markedTabs = new Set<number>();
 
+const markedKey = (tabId: number) => `tab_group_marked:${tabId}`;
+
 export function forgetTab(tabId: number): void {
 	batchSlots.delete(tabId);
 	markedTabs.delete(tabId);
+	void browser.storage?.session?.remove(markedKey(tabId)).catch(() => {});
+}
+
+/** True the first time this tab sees a marker, across MV3 worker restarts. */
+async function consumeFirstMarker(tabId: number): Promise<boolean> {
+	if (markedTabs.has(tabId)) return false;
+	markedTabs.add(tabId);
+	const key = markedKey(tabId);
+	const session = browser.storage?.session;
+	if (!session) return true;
+	const stored = await session.get(key).catch(() => ({}));
+	await session.set({ [key]: true }).catch(() => {});
+	return !(key in stored);
 }
 
 async function findGroup(
@@ -124,8 +139,7 @@ export async function onTabComplete(tabId: number): Promise<void> {
 		const alreadyGrouped =
 			typeof current.groupId === "number" &&
 			current.groupId !== TAB_GROUP_ID_NONE;
-		const firstMarker = !markedTabs.has(tabId);
-		markedTabs.add(tabId);
+		const firstMarker = await consumeFirstMarker(tabId);
 		if (firstMarker && !alreadyGrouped && isBatchFresh(readGroupBatch(url))) {
 			const { color } = await getConfig();
 			const groupId = await addToGroup(

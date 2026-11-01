@@ -13,6 +13,7 @@ const state = {
 	tabs: new Map<number, FakeTab>(),
 	groups: [] as FakeGroup[],
 	nextGroupId: 1,
+	session: new Map<string, unknown>(),
 };
 
 function indexOf(tabId: number): { windowId: number; index: number } {
@@ -44,6 +45,17 @@ mock.module("wxt/browser", () => ({
 	browser: {
 		storage: {
 			sync: { get: mock(async () => ({ color: "blue" })) },
+			session: {
+				get: mock(async (key: string) =>
+					state.session.has(key) ? { [key]: state.session.get(key) } : {},
+				),
+				set: mock(async (items: Record<string, unknown>) => {
+					for (const [k, v] of Object.entries(items)) state.session.set(k, v);
+				}),
+				remove: mock(async (key: string) => {
+					state.session.delete(key);
+				}),
+			},
 		},
 		tabGroups: {
 			TAB_GROUP_ID_NONE: -1,
@@ -160,6 +172,7 @@ beforeEach(() => {
 	state.tabs.clear();
 	state.groups = [];
 	state.nextGroupId = 1;
+	state.session.clear();
 });
 
 describe("onTabComplete", () => {
@@ -355,6 +368,25 @@ describe("onTabComplete", () => {
 		await onTabComplete(80);
 
 		expect(state.tabs.get(80)?.groupId).not.toBe(-1);
+	});
+
+	it("does not group a tab that consumed a marker before a worker restart", async () => {
+		state.session.set("tab_group_marked:82", true);
+		markedTab(82, 1, 0);
+		await onTabComplete(82);
+
+		expect(state.groups).toHaveLength(0);
+		expect(state.tabs.get(82)?.url).toBe("https://github.com/o/r/pull/82");
+	});
+
+	it("records the consumed marker in session storage and clears it on forget", async () => {
+		markedTab(83, 1, 0);
+		await onTabComplete(83);
+		expect(state.session.has("tab_group_marked:83")).toBe(true);
+		forgetTab(83);
+		await Promise.resolve();
+
+		expect(state.session.has("tab_group_marked:83")).toBe(false);
 	});
 
 	it("strips but does not group a marker whose batch is malformed", async () => {
