@@ -27,7 +27,9 @@ then the bootstrap URL, so an agent does not have to decode the fragment.
 `dg-agent start --json` prints one object `{"sessionId","port","url"}` instead
 of those lines. The token stays inside the URL fragment.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
-Proton also needs exactly one extension connected to that session. Install or
+both run locally. Proton runs through a pw-managed profile by default. With
+`--ext`, Proton also needs exactly one extension connected to that session, and the
+gate line (run only the command after the colon) is `--ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1`. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
 Proton inbox operations require extension version 1.11.0 or newer.
 

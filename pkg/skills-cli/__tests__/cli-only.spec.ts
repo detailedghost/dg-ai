@@ -204,12 +204,7 @@ describe("skill metadata", () => {
 		const names = readdirSync(skillsDir).filter((entry) =>
 			existsSync(join(skillsDir, entry, "SKILL.md")),
 		);
-		expect(names.filter(requiresExtension).sort()).toEqual([
-			"browser",
-			"chat",
-			"demo",
-			"overwatch",
-		]);
+		expect(names.filter(requiresExtension).sort()).toEqual(["chat", "demo", "overwatch"]);
 	});
 
 	test("guards a dg-skills command for every extension skill that runs one", () => {

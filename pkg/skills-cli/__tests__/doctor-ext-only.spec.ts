@@ -116,3 +116,19 @@ describe("dg-skills doctor on a CLI-only home", () => {
 		expect(daemon?.status).toBe("warn");
 	});
 });
+
+describe("dg-skills doctor require-extension on a CLI-only home", () => {
+	test("reports the extension checks as info with the --ext only prefix", async () => {
+		mkdirSync(join(world.home, ".dg"), { recursive: true });
+		writeFileSync(join(world.home, ".dg", "cli-only"), "");
+		const { report } = await world.report(["require-extension"], {
+			DG_HOME: join(world.home, ".dg"),
+		});
+		const checks = checksOf(report, "require-extension");
+		for (const id of ["extension-installed", "daemon", "extension-paired"]) {
+			const check = checks.find((c) => c.id === id);
+			expect(check?.status).toBe("info");
+			expect(check?.detail.startsWith(PREFIX)).toBe(true);
+		}
+	});
+});

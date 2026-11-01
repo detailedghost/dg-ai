@@ -7,13 +7,14 @@ description: Create a dedicated worktree on a timestamped branch, apply all open
 
 Batch-apply all open Dependabot PRs (GitHub) or Renovate MRs (GitLab) into a single branch, fix security vulnerabilities, resolve breaking changes, verify the project builds/lints/tests, and open one combined PR/MR.
 
-**Usage:** `/dg:deps-upgrade [--cooldown-days N]` — only upgrade to versions published at least N days ago (default 7, `0` turns it off). Pass the same N to every `cooldown` call.
+**Usage:** `/dg:deps-upgrade [--cooldown-days N] [--ext]` — only upgrade to versions published at least N days ago (default 7, `0` turns it off). Pass the same N to every `cooldown` call.
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--cooldown-days N` | none | Only upgrade to versions published at least N days ago. `0` turns the cooldown off. | `7` |
+| `--ext` | none | Open the PR through the dg-ai-extension so it lands in the `Deps` tab group. | off (local is the default) |
 
 **Keep it light.** Each step is mechanical. Do not over-explain, do not speculate, do not refactor unrelated code. Read only the files you need. Produce minimal diffs.
 

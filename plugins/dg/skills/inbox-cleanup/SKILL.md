@@ -14,7 +14,7 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 ~/.dg/bin/dg-skills inbox --help
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor inbox install.
+If a step fails, run ~/.dg/bin/dg-skills doctor inbox install require-extension.
 
 For PowerShell, use the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
 and [the cleanup workflow](references/workflow.md) before planning changes.
@@ -23,7 +23,16 @@ Profiles and OAuth caches use dg-ai's encrypted database. Explicit fixture
 datasets work without a daemon, extension, or credentials. Default state lives
 under DG_HOME/inbox and remains stable when the working directory changes.
 
-For Proton, use the extension in a signed-in mail tab. Its fixed JavaScript
+Gmail and Outlook run locally. Proton runs through a pw-managed profile by default
+and through the extension with `--ext`. `--ext` is a skill-level instruction to
+the agent to use the extension path. It is not a flag of `dg-skills inbox`.
+Gate the extension path with this line, and run only the command after the colon:
+
+```text
+--ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1
+```
+
+For Proton with `--ext`, use the extension in a signed-in mail tab. Its fixed JavaScript
 operations return metadata through the daemon as CLI JSON for the current model.
 Reload the tab when asked to observe session headers. Tab/account hints resolve
 multiple tabs; cookies and headers stay in page memory. Keep a
