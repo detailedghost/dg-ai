@@ -21,12 +21,20 @@ import {
 	touch,
 	write,
 } from "../../../src/pw/core/registry";
-import { spawnFakeDaemonProcess, startFakeDaemon, useFakeDaemons, useTempScratch } from "../../../src/pw/test-support";
+import {
+	spawnFakeDaemonProcess,
+	startFakeDaemon,
+	useFakeDaemons,
+	useTempScratch,
+} from "../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 const daemons = useFakeDaemons();
 
-function record(key: string, overrides: Partial<SessionRecord> = {}): SessionRecord {
+function record(
+	key: string,
+	overrides: Partial<SessionRecord> = {},
+): SessionRecord {
 	return {
 		name: key.split("@")[0] as string,
 		key,
@@ -51,7 +59,9 @@ describe("sessionKey", () => {
 	});
 
 	test("keys a scratch session to name@cwdHash", () => {
-		expect(sessionKey({ name: "default", scratch: true })).toBe(`default@${cwdHash()}`);
+		expect(sessionKey({ name: "default", scratch: true })).toBe(
+			`default@${cwdHash()}`,
+		);
 	});
 });
 
@@ -83,7 +93,9 @@ describe("registry files", () => {
 		const old = new Date(Date.now() - 86_400_000);
 		utimesSync(recordPath("alpha"), old, old);
 		touch("alpha");
-		expect(statSync(recordPath("alpha")).mtimeMs).toBeGreaterThan(old.getTime() + 60_000);
+		expect(statSync(recordPath("alpha")).mtimeMs).toBeGreaterThan(
+			old.getTime() + 60_000,
+		);
 	});
 
 	test("touch ignores a missing record", () => {
@@ -162,9 +174,22 @@ describe("isDaemonOf", () => {
 
 	test("accepts the bundled, source and compiled daemon of the same key", () => {
 		expect(isDaemonOf({ pid: 1, key: "gh" }, argv("gh"))).toBe(true);
-		const source = ["/h/.bun/bin/bun", "/r/pkg/skills-cli/src/index.ts", "pw", "__daemon", '{"key":"gh"}'];
+		const source = [
+			"/h/.bun/bin/bun",
+			"/r/pkg/skills-cli/src/index.ts",
+			"pw",
+			"__daemon",
+			'{"key":"gh"}',
+		];
 		expect(isDaemonOf({ pid: 1, key: "gh" }, source)).toBe(true);
-		expect(isDaemonOf({ pid: 1, key: "gh" }, ["/h/.dg/bin/dg-skills", "pw", "__daemon", '{"key":"gh"}'])).toBe(true);
+		expect(
+			isDaemonOf({ pid: 1, key: "gh" }, [
+				"/h/.dg/bin/dg-skills",
+				"pw",
+				"__daemon",
+				'{"key":"gh"}',
+			]),
+		).toBe(true);
 	});
 
 	test("rejects a daemon that serves another key", () => {
@@ -172,13 +197,28 @@ describe("isDaemonOf", () => {
 	});
 
 	test("rejects an unrelated process that reused the pid", () => {
-		expect(isDaemonOf({ pid: 1, key: "gh" }, ["/usr/bin/vim", "notes.md"])).toBe(false);
-		expect(isDaemonOf({ pid: 1, key: "gh" }, ["/bin/zsh", "-c", "pgrep -f dg-skills pw __daemon gh"])).toBe(false);
+		expect(
+			isDaemonOf({ pid: 1, key: "gh" }, ["/usr/bin/vim", "notes.md"]),
+		).toBe(false);
+		expect(
+			isDaemonOf({ pid: 1, key: "gh" }, [
+				"/bin/zsh",
+				"-c",
+				"pgrep -f dg-skills pw __daemon gh",
+			]),
+		).toBe(false);
 	});
 
 	test("rejects a daemon whose last argument is not the launch spec", () => {
 		expect(
-			isDaemonOf({ pid: 1, key: "gh" }, ["/h/.bun/bin/bun", "/opt/dg/dg.js", "dg-skills", "pw", "__daemon", "gh"]),
+			isDaemonOf({ pid: 1, key: "gh" }, [
+				"/h/.bun/bin/bun",
+				"/opt/dg/dg.js",
+				"dg-skills",
+				"pw",
+				"__daemon",
+				"gh",
+			]),
 		).toBe(false);
 	});
 
@@ -227,7 +267,10 @@ describe("stale records for a reused pid", () => {
 	});
 });
 
-const windowsRecord = (key: string, overrides: Partial<SessionRecord> = {}): SessionRecord =>
+const windowsRecord = (
+	key: string,
+	overrides: Partial<SessionRecord> = {},
+): SessionRecord =>
 	record(key, {
 		mode: "cdp",
 		winPid: 4242,
@@ -245,6 +288,14 @@ describe("reapStale", () => {
 		expect(existsSync(recordPath("gh"))).toBe(false);
 	});
 
+	test("keeps the record for a retry when the Windows browser does not close", async () => {
+		write(windowsRecord("gh", { pid: 2_147_483_646 }));
+		await reapStale(async () => {
+			throw new Error("close failed");
+		});
+		expect(existsSync(recordPath("gh"))).toBe(true);
+	});
+
 	test("keeps the list-time cleanup from deleting the record before reaping", async () => {
 		write(windowsRecord("gh", { pid: 2_147_483_646 }));
 		expect(list()).toEqual([]);
@@ -252,7 +303,9 @@ describe("reapStale", () => {
 	});
 
 	test("does not close a browser that a live session shares through the same profile", async () => {
-		write(windowsRecord("gh", { pid: 2_147_483_646, profileDir: "C:\\p\\shared" }));
+		write(
+			windowsRecord("gh", { pid: 2_147_483_646, profileDir: "C:\\p\\shared" }),
+		);
 		write(windowsRecord("other", { profileDir: "C:\\p\\shared" }));
 		const closed: string[] = [];
 		await reapStale(async (profileDir) => void closed.push(profileDir));
@@ -278,10 +331,14 @@ describe("reapStale", () => {
 
 describe("stopSession force path", () => {
 	test("closes the Windows browser after it had to signal a daemon that ignored stop", async () => {
-		const daemon = await startFakeDaemon("gh", { mode: "cdp", winPid: 1, profileDir: "C:\\p\\gh" }, () => ({
-			text: "",
-			exitCode: 0,
-		}));
+		const daemon = await startFakeDaemon(
+			"gh",
+			{ mode: "cdp", winPid: 1, profileDir: "C:\\p\\gh" },
+			() => ({
+				text: "",
+				exitCode: 0,
+			}),
+		);
 		const closed: string[] = [];
 		try {
 			await stopSession(

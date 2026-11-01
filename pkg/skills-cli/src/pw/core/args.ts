@@ -101,7 +101,7 @@ export function parse(argv: readonly string[], spec: CommandSpec): ParsedArgs {
 			process.env["PLAYWRIGHT_CLI_SESSION"] ??
 			"default",
 	);
-	if (!SESSION_NAME.test(session)) {
+	if (!SESSION_NAME.test(session) || session.includes("..")) {
 		throw usageFailure(
 			`Invalid session name '${session}': use letters, digits, '.', '_' or '-'`,
 			spec,

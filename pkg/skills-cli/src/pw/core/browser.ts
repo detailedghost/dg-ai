@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { wslChromiumArgs } from "@dg/common/node";
 import type { BrowserContext, BrowserType } from "playwright-core";
+import { MIN_BUN } from "./bun-version";
 import { downloadedChromium } from "./downloaded";
 import type { BrowserName, SessionRecord } from "./registry";
 import { closeWindowsBrowser } from "./windows";
@@ -95,7 +96,6 @@ export type BrowserHandle = {
 const ACTION_TIMEOUT_MS = 5_000;
 const NAVIGATION_TIMEOUT_MS = 60_000;
 const CDP_CONNECT_TIMEOUT_MS = 15_000;
-const MIN_BUN_FOR_CDP = "1.4.0";
 
 async function engine(
 	browser: BrowserName,
@@ -130,11 +130,11 @@ async function connectCdp(spec: LaunchSpec): Promise<BrowserHandle> {
 	const browser = await chromium
 		.connectOverCDP(spec.cdpUrl, { timeout: CDP_CONNECT_TIMEOUT_MS })
 		.catch((error: unknown) => {
-			if (Bun.semver.order(Bun.version, MIN_BUN_FOR_CDP) >= 0) throw error;
+			if (Bun.semver.order(Bun.version, MIN_BUN) >= 0) throw error;
 			const detail =
 				error instanceof Error ? error.message.split("\n")[0] : String(error);
 			throw new Error(
-				`${detail}\nBun ${Bun.version} cannot finish a CDP WebSocket upgrade. Use Bun ${MIN_BUN_FOR_CDP} or newer.`,
+				`${detail}\nBun ${Bun.version} cannot finish a CDP WebSocket upgrade. Use Bun ${MIN_BUN} or newer.`,
 			);
 		});
 	const context = browser.contexts()[0] ?? (await browser.newContext());
@@ -182,11 +182,16 @@ export async function start(spec: LaunchSpec): Promise<BrowserHandle> {
 		closeBrowser = () => context.close();
 	} else {
 		const browser = await type.launch(launchOptions);
-		context = await browser.newContext({
-			...viewport,
-			...(spec.storageState ? { storageState: spec.storageState } : {}),
-		});
-		await context.newPage();
+		try {
+			context = await browser.newContext({
+				...viewport,
+				...(spec.storageState ? { storageState: spec.storageState } : {}),
+			});
+			await context.newPage();
+		} catch (error) {
+			await browser.close().catch(() => undefined);
+			throw error;
+		}
 		closeBrowser = () => browser.close();
 	}
 

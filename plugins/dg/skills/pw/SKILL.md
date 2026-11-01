@@ -41,7 +41,7 @@ Tell the human that `install-browser --remove` deletes the download.
 ## WSL
 
 On WSL, `pw open` drives Windows Chrome or Edge over CDP when one exists, and headless Chromium inside WSL otherwise. `pw open --windows` forces the Windows browser.
-Agents never pass `--wsl-headed` unless the human asks. Never launch a headed browser on WSL: the window needs WSLg and is experimental. Details in `references/windows.md`.
+Agents never pass `--wsl-headed` unless the human asks. Without that request, never launch a headed browser on WSL: the window needs WSLg and is experimental. Details in `references/windows.md`.
 
 ## Quick start
 

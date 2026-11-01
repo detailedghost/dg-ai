@@ -43,6 +43,27 @@ export class StateNotFoundError extends Error {
 	}
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isCookie = (value: unknown): boolean =>
+	isRecord(value) &&
+	typeof value["name"] === "string" &&
+	typeof value["value"] === "string";
+
+const isStorageItem = (value: unknown): boolean =>
+	isRecord(value) &&
+	typeof value["name"] === "string" &&
+	typeof value["value"] === "string";
+
+const isOrigin = (value: unknown): boolean =>
+	isRecord(value) &&
+	typeof value["origin"] === "string" &&
+	(value["localStorage"] === undefined ||
+		(Array.isArray(value["localStorage"]) &&
+			value["localStorage"].every(isStorageItem))) &&
+	(value["indexedDB"] === undefined || Array.isArray(value["indexedDB"]));
+
 export function parseStorageState(text: string, file: string): StorageState {
 	let state: unknown;
 	try {
@@ -54,15 +75,20 @@ export function parseStorageState(text: string, file: string): StorageState {
 	const valid =
 		typeof candidate === "object" &&
 		candidate !== null &&
-		(candidate.cookies === undefined || Array.isArray(candidate.cookies)) &&
-		(candidate.origins === undefined || Array.isArray(candidate.origins)) &&
+		(candidate.cookies === undefined ||
+			(Array.isArray(candidate.cookies) &&
+				candidate.cookies.every(isCookie))) &&
+		(candidate.origins === undefined ||
+			(Array.isArray(candidate.origins) &&
+				candidate.origins.every(isOrigin))) &&
 		(candidate.cookies !== undefined || candidate.origins !== undefined);
 	if (!valid) throw new Error(`Not a storage state file: ${file}`);
 	return candidate;
 }
 
 export function validateName(name: string): string {
-	if (!STATE_NAME.test(name)) throw new UsageError(`state name must match ${STATE_NAME.source}`);
+	if (!STATE_NAME.test(name))
+		throw new UsageError(`state name must match ${STATE_NAME.source}`);
 	return name;
 }
 
@@ -73,7 +99,8 @@ export function statesDir(): string {
 	return dir;
 }
 
-export const statePathFor = (name: string): string => path.join(statesDir(), `${validateName(name)}.json`);
+export const statePathFor = (name: string): string =>
+	path.join(statesDir(), `${validateName(name)}.json`);
 
 function legacyDir(): string {
 	const cache = process.env["XDG_CACHE_HOME"] ?? path.join(homedir(), ".cache");
@@ -81,7 +108,10 @@ function legacyDir(): string {
 }
 
 function writeAtomicPrivate(file: string, text: string): void {
-	const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.tmp`);
+	const temp = path.join(
+		path.dirname(file),
+		`.${path.basename(file)}.${process.pid}.tmp`,
+	);
 	try {
 		writeFileSync(temp, text, { mode: 0o600 });
 		chmodSync(temp, 0o600);
@@ -108,7 +138,11 @@ export function remove(name: string): void {
 	rmSync(file);
 }
 
-function summarize(name: string, state: StorageState, savedAt: Date): StateSummary {
+function summarize(
+	name: string,
+	state: StorageState,
+	savedAt: Date,
+): StateSummary {
 	const counts = new Map<string, number>();
 	for (const cookie of state.cookies ?? []) {
 		const domain = (cookie.domain ?? "").replace(/^\./, "");
@@ -135,7 +169,13 @@ export function list(): StateSummary[] {
 		if (!file.endsWith(".json") || !STATE_NAME.test(name)) continue;
 		try {
 			const full = path.join(dir, file);
-			summaries.push(summarize(name, parseStorageState(readFileSync(full, "utf8"), full), statSync(full).mtime));
+			summaries.push(
+				summarize(
+					name,
+					parseStorageState(readFileSync(full, "utf8"), full),
+					statSync(full).mtime,
+				),
+			);
 		} catch {}
 	}
 	return summaries;
@@ -147,12 +187,15 @@ export function formatSummary(summary: StateSummary): string {
 }
 
 export function importFile(file: string, name?: string): string {
-	const target = validateName(name ?? path.basename(file).replace(/\.json$/, ""));
+	const target = validateName(
+		name ?? path.basename(file).replace(/\.json$/, ""),
+	);
 	let text: string;
 	try {
 		text = readFileSync(file, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`File not found: ${file}`);
+		if ((error as NodeJS.ErrnoException).code === "ENOENT")
+			throw new Error(`File not found: ${file}`);
 		throw error;
 	}
 	parseStorageState(text, file);
@@ -166,22 +209,38 @@ export function importLegacyOnce(out: (text: string) => void): number {
 	if (existsSync(marker)) return 0;
 
 	let imported = 0;
+	const failed: string[] = [];
 	const source = legacyDir();
 	for (const file of existsSync(source) ? readdirSync(source).sort() : []) {
 		const name = file.slice(0, -".json".length);
 		const target = path.join(dir, file);
-		if (!file.endsWith(".json") || !STATE_NAME.test(name) || existsSync(target)) continue;
+		if (!file.endsWith(".json") || !STATE_NAME.test(name) || existsSync(target))
+			continue;
 		const from = path.join(source, file);
+		let text: string;
 		try {
-			const text = readFileSync(from, "utf8");
+			text = readFileSync(from, "utf8");
 			parseStorageState(text, from);
+		} catch {
+			continue;
+		}
+		try {
 			writeAtomicPrivate(target, text);
 			const { atime, mtime } = statSync(from);
 			utimesSync(target, atime, mtime);
 			imported++;
-		} catch {}
+		} catch {
+			failed.push(file);
+		}
+	}
+	if (failed.length > 0) {
+		out(
+			`Could not import saved states: ${failed.join(", ")}. They will be retried next time.`,
+		);
+		return imported;
 	}
 	writeFileSync(marker, "", { mode: 0o600 });
-	if (imported > 0) out(`Imported ${imported} legacy states from ${LEGACY_LABEL}`);
+	if (imported > 0)
+		out(`Imported ${imported} legacy states from ${LEGACY_LABEL}`);
 	return imported;
 }

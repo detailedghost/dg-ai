@@ -2,8 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import handler from "../../../../src/pw/commands/close/run";
 import spec from "../../../../src/pw/commands/close/spec";
-import { read, recordPath, socketPathFor } from "../../../../src/pw/core/registry";
-import { argsFor, clientEnv, startFakeDaemon, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	read,
+	recordPath,
+	socketPathFor,
+} from "../../../../src/pw/core/registry";
+import {
+	argsFor,
+	clientEnv,
+	startFakeDaemon,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 useTempScratch();
 
@@ -23,7 +32,11 @@ describe("close", () => {
 			expect(read("github")).toBeNull();
 			expect(existsSync(recordPath("github"))).toBe(false);
 			expect(existsSync(socketPathFor("github"))).toBe(false);
-			expect(daemon.child.killed || daemon.child.exitCode !== null).toBe(true);
+			const exited = await Promise.race([
+				daemon.child.exited.then(() => true),
+				Bun.sleep(5_000).then(() => false),
+			]);
+			expect(exited).toBe(true);
 		} finally {
 			daemon.dispose();
 		}

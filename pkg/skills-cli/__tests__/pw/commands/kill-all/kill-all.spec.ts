@@ -141,11 +141,13 @@ describe("killRegistered and Windows browsers", () => {
 			profileDir: "C:\\p\\win",
 		});
 		try {
-			await killRegistered(list(), async () => {
+			const failed = await killRegistered(list(), async () => {
 				throw new Error("powershell failed");
 			});
 			await daemon.child.exited;
 			expect(daemon.child.signalCode).toBe("SIGKILL");
+			expect(failed).toEqual(["C:\\p\\win"]);
+			expect(read("win")).not.toBeNull();
 		} finally {
 			daemon.dispose();
 		}

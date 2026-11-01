@@ -217,7 +217,7 @@ describe("parseSessionDepth", () => {
 		expect(parseSessionDepth("8")).toBe(8);
 	});
 
-	test.each(["-1", "2.5", "deep", ""])(
+	test.each(["-1", "2.5", "deep", "", "9".repeat(400), "9007199254740993"])(
 		"rejects %p with a usage error",
 		(value) => {
 			expect(() => parseSessionDepth(value)).toThrow("Invalid --depth");

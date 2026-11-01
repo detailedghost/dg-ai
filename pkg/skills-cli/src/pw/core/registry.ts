@@ -210,7 +210,11 @@ export async function reapStale(
 			isWindowsSession(record) &&
 			!live.some((other) => other.profileDir === record.profileDir)
 		) {
-			await closeBrowser(record.profileDir).catch(() => undefined);
+			const closed = await closeBrowser(record.profileDir).then(
+				() => true,
+				() => false,
+			);
+			if (!closed) continue;
 		}
 		remove(record.key);
 	}

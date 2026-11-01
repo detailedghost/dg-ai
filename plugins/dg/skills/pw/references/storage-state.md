@@ -79,9 +79,12 @@ dg-skills pw-code "async page => {
 
 ```bash
 dg-skills pw-code "async page => {
-  await page.evaluate(() => {
-    indexedDB.deleteDatabase('myDatabase');
-  });
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase('myDatabase');
+    request.onsuccess = () => resolve('deleted');
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('deletion blocked by an open connection'));
+  }));
 }"
 ```
 

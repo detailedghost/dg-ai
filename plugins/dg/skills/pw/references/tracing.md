@@ -5,9 +5,10 @@ Capture detailed execution traces for debugging and analysis. Traces include DOM
 ## Basic Usage
 
 ```bash
+dg-skills pw open
 dg-skills pw tracing-start
 
-dg-skills pw open https://example.com
+dg-skills pw goto https://example.com
 dg-skills pw click e1
 dg-skills pw fill e2 "test"
 
@@ -34,8 +35,9 @@ dg-skills pw tracing-stop
 ### Debugging Failed Actions
 
 ```bash
+dg-skills pw open
 dg-skills pw tracing-start
-dg-skills pw open https://app.example.com
+dg-skills pw goto https://app.example.com
 
 dg-skills pw click e5
 
@@ -45,17 +47,19 @@ dg-skills pw tracing-stop
 ### Analyzing Performance
 
 ```bash
+dg-skills pw open
 dg-skills pw tracing-start
-dg-skills pw open https://slow-site.com
+dg-skills pw goto https://slow-site.com
 dg-skills pw tracing-stop
 ```
 
 ### Capturing Evidence
 
 ```bash
+dg-skills pw open
 dg-skills pw tracing-start
 
-dg-skills pw open https://app.example.com/checkout
+dg-skills pw goto https://app.example.com/checkout
 dg-skills pw fill e1 "4111111111111111"
 dg-skills pw fill e2 "12/25"
 dg-skills pw fill e3 "123"
@@ -68,7 +72,7 @@ dg-skills pw tracing-stop
 
 | Feature | Trace | Video | Screenshot |
 |---------|-------|-------|------------|
-| **Format** | .trace file | .webm video | .png/.jpeg image |
+| **Format** | .zip trace | .webm video | .png/.jpeg image |
 | **DOM inspection** | Yes | No | No |
 | **Network details** | Yes | No | No |
 | **Step-by-step replay** | Yes | Continuous | Single frame |
@@ -80,8 +84,9 @@ dg-skills pw tracing-stop
 ### 1. Start Tracing Before the Problem
 
 ```bash
+dg-skills pw open
 dg-skills pw tracing-start
-dg-skills pw open https://example.com
+dg-skills pw goto https://example.com
 dg-skills pw tracing-stop
 ```
 

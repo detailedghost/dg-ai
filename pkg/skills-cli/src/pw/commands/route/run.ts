@@ -1,5 +1,5 @@
 import { stringFlag } from "../../core/args";
-import { addRoute, buildRoute } from "../../core/routes";
+import { addRoute, buildRoute, routeCode } from "../../core/routes";
 import type { DaemonHandler } from "../../core/spec";
 
 const route: DaemonHandler = async (ctx, args) => {
@@ -15,7 +15,7 @@ const route: DaemonHandler = async (ctx, args) => {
 	await addRoute(ctx, entry);
 	return {
 		result: `Route added for pattern: ${pattern}`,
-		code: `await page.context().route(${JSON.stringify(pattern)}, async route => { /* route handler */ });`,
+		code: routeCode(entry),
 	};
 };
 

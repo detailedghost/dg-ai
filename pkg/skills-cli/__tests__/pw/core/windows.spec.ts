@@ -213,6 +213,24 @@ describe("PowerShell scripts", () => {
 		expect(PROFILE_PATTERN).toContain("[regex]::Escape($env:PW_PROFILE)");
 		expect(PROFILE_PATTERN).toContain('(?=["\\s]|$)');
 	});
+
+	test("a quoted profile must close right after the full path", () => {
+		const jsPattern = (profile: string) => {
+			const escaped = profile.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+			return new RegExp(
+				`--user-data-dir=(?:"${escaped}"|${escaped}(?=["\\s]|$))`,
+				"i",
+			);
+		};
+		expect(PROFILE_PATTERN).toContain(
+			`--user-data-dir=(?:"' + $pwProfile + '"|' + $pwProfile + '(?=["\\s]|$))`,
+		);
+		const pattern = jsPattern("C:\\p\\gh");
+		expect(pattern.test('--user-data-dir="C:\\p\\gh extra"')).toBe(false);
+		expect(pattern.test('--user-data-dir="C:\\p\\gh"')).toBe(true);
+		expect(pattern.test('"--user-data-dir=C:\\p\\gh" --x')).toBe(true);
+		expect(pattern.test("--user-data-dir=C:\\p\\gh-work")).toBe(false);
+	});
 });
 
 describe("powerShellPath", () => {

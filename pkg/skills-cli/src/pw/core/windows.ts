@@ -204,11 +204,13 @@ async function runCmd(command: string): Promise<string> {
 		stderr: "pipe",
 		stdin: "ignore",
 	});
-	const [stdout, exitCode] = await Promise.all([
+	const [stdout, stderr, exitCode] = await Promise.all([
 		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
 		child.exited,
 	]);
-	if (exitCode !== 0) throw new Error(`cmd.exe failed: ${command}`);
+	if (exitCode !== 0)
+		throw new Error(`cmd.exe failed: ${command}: ${stderr.trim()}`);
 	return stdout.trim();
 }
 
@@ -231,7 +233,7 @@ async function listeners(port: number): Promise<string[]> {
 	return addresses;
 }
 
-export const PROFILE_PATTERN = `$pattern = '--user-data-dir="?' + [regex]::Escape($env:PW_PROFILE) + '(?=["\\s]|$)'`;
+export const PROFILE_PATTERN = `$pwProfile = [regex]::Escape($env:PW_PROFILE); $pattern = '--user-data-dir=(?:"' + $pwProfile + '"|' + $pwProfile + '(?=["\\s]|$))'`;
 
 const FIND_PROFILE_PROCESSES = `@(Get-CimInstance Win32_Process -Filter "Name='chrome.exe' or Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine -match $pattern })`;
 

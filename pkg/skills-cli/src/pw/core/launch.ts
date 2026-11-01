@@ -81,6 +81,7 @@ function startDaemon(spec: LaunchSpec): Promise<number> {
 			output += chunk;
 			const line = output
 				.split("\n")
+				.slice(0, -1)
 				.find((l) => l.startsWith("READY ") || l.startsWith("ERROR "));
 			if (!line) return;
 			if (line.startsWith("ERROR ")) return fail(line.slice("ERROR ".length));

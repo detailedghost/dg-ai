@@ -43,7 +43,7 @@ export function parseSessionDepth(
 	value: string | undefined,
 ): number | undefined {
 	if (value === undefined) return undefined;
-	if (!/^\d+$/.test(value))
+	if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
 		throw new UsageError(
 			`Invalid --depth '${value}': use a non-negative integer`,
 		);
@@ -192,6 +192,7 @@ async function openWindows(
 		deps.closeWindowsBrowser,
 	);
 	if (refused !== null) return refused;
+	const base = baseSpec(args, env, key, false);
 
 	let windows: Awaited<ReturnType<OpenDeps["startWindowsBrowser"]>>;
 	try {
@@ -210,7 +211,7 @@ async function openWindows(
 	}
 
 	const spec: LaunchSpec = {
-		...baseSpec(args, env, key, false),
+		...base,
 		mode: "cdp",
 		browser: windows.browser,
 		profileDir: windows.profileDir,

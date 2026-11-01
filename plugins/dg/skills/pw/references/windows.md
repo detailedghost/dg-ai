@@ -6,7 +6,7 @@
 dg-skills pw open --windows
 dg-skills pw open --windows https://example.com
 dg-skills pw open --windows --browser=msedge https://example.com
-dg-skills pw -s=win close
+dg-skills pw close
 ```
 
 ## Default on WSL

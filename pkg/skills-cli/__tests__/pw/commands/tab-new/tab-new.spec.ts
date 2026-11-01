@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import handler from "../../../../src/pw/commands/tab-new/run";
 import spec from "../../../../src/pw/commands/tab-new/spec";
-import { argsFor, fakeCtx, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	fakeCtx,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 const scratch = useTempScratch();
 
@@ -21,7 +25,22 @@ describe("tab-new", () => {
 		const created = new (page.constructor as new () => typeof page)();
 		context.returns["newPage"] = created;
 		const result = await handler(ctx, argsFor(spec, "example.com"));
-		expect(created.calls).toEqual(['goto https://example.com {"waitUntil":"load"}']);
-		expect(result.code).toContain('await page.goto("https://example.com");');
+		expect(created.calls).toEqual([
+			'goto https://example.com {"waitUntil":"load"}',
+		]);
+		expect(result.code).toBe(
+			'const newPage = await page.context().newPage();\nawait newPage.goto("https://example.com");',
+		);
+	});
+});
+
+describe("tab-new selection", () => {
+	test("makes the new tab the current page", async () => {
+		const { ctx, page, context } = fakeCtx(scratch.dir);
+		const created = new (page.constructor as new () => typeof page)();
+		context.returns["newPage"] = created;
+		context.pages().push(created as never);
+		await handler(ctx, argsFor(spec));
+		expect(ctx.page()).toBe(created as never);
 	});
 });

@@ -237,3 +237,26 @@ describe("runOpen specs pass the daemon validator", () => {
 		});
 	});
 });
+
+describe("runOpen Windows mode input checks", () => {
+	test("rejects a bad --depth before it starts a Windows browser", async () => {
+		const started: string[] = [];
+		const { deps } = harness({
+			windowsBrowserPresent: () => true,
+			startWindowsBrowser: async ({ profileDir }) => {
+				started.push(profileDir);
+				return {
+					browser: "chrome",
+					profileDir,
+					port: 1,
+					cdpUrl: "http://127.0.0.1:1",
+					winPid: 7,
+				};
+			},
+		});
+		await expect(
+			runOpen(argsFor(spec, "--depth=-1"), clientEnv(), deps),
+		).rejects.toThrow();
+		expect(started).toEqual([]);
+	});
+});

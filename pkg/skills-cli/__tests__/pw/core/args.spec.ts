@@ -1,22 +1,42 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import click from "../../../src/pw/commands/click/spec";
 import open from "../../../src/pw/commands/open/spec";
 import snapshot from "../../../src/pw/commands/snapshot/spec";
-import { commandName, normalize, parse, UsageError } from "../../../src/pw/core/args";
+import {
+	commandName,
+	normalize,
+	parse,
+	UsageError,
+} from "../../../src/pw/core/args";
 import { commandHelp } from "../../../src/pw/core/help";
 import { defineCommand } from "../../../src/pw/core/spec";
 
-afterEach(() => {
+let savedSession: string | undefined;
+
+beforeEach(() => {
+	savedSession = process.env["PLAYWRIGHT_CLI_SESSION"];
 	delete process.env["PLAYWRIGHT_CLI_SESSION"];
+});
+
+afterEach(() => {
+	if (savedSession === undefined) delete process.env["PLAYWRIGHT_CLI_SESSION"];
+	else process.env["PLAYWRIGHT_CLI_SESSION"] = savedSession;
 });
 
 describe("normalize", () => {
 	test("rewrites -s=X to --session=X", () => {
-		expect(normalize(["-s=github", "click", "e5"])).toEqual(["--session=github", "click", "e5"]);
+		expect(normalize(["-s=github", "click", "e5"])).toEqual([
+			"--session=github",
+			"click",
+			"e5",
+		]);
 	});
 
 	test("joins a separated --session value", () => {
-		expect(normalize(["--session", "github", "click"])).toEqual(["--session=github", "click"]);
+		expect(normalize(["--session", "github", "click"])).toEqual([
+			"--session=github",
+			"click",
+		]);
 	});
 
 	test("leaves tokens after the terminator alone", () => {
@@ -40,7 +60,10 @@ describe("commandName", () => {
 
 describe("parse", () => {
 	test("parses session, command, positionals, and flags", () => {
-		const args = parse(["-s=github", "click", "e5", "--modifiers=Shift"], click);
+		const args = parse(
+			["-s=github", "click", "e5", "--modifiers=Shift"],
+			click,
+		);
 		expect(args).toMatchObject({
 			session: "github",
 			command: "click",
@@ -52,7 +75,10 @@ describe("parse", () => {
 	});
 
 	test("reads global flags anywhere in the argv", () => {
-		const args = parse(["--raw", "snapshot", "--codegen", "--depth=2"], snapshot);
+		const args = parse(
+			["--raw", "snapshot", "--codegen", "--depth=2"],
+			snapshot,
+		);
 		expect(args).toMatchObject({
 			raw: true,
 			codegen: true,
@@ -84,7 +110,9 @@ describe("parse", () => {
 	});
 
 	test("rejects an extra positional", () => {
-		expect(() => parse(["click", "e1", "left", "extra"], click)).toThrow("Unexpected argument: extra");
+		expect(() => parse(["click", "e1", "left", "extra"], click)).toThrow(
+			"Unexpected argument: extra",
+		);
 	});
 
 	test("accepts text that starts with a dash after the terminator", () => {
@@ -100,11 +128,29 @@ describe("parse", () => {
 	});
 
 	test("rejects a session name that could escape the profile directory", () => {
-		expect(() => parse(["-s=../evil", "snapshot"], snapshot)).toThrow("Invalid session name");
+		expect(() => parse(["-s=../evil", "snapshot"], snapshot)).toThrow(
+			"Invalid session name",
+		);
+	});
+
+	test("rejects a session name with a double dot that the registry would refuse", () => {
+		expect(() => parse(["-s=work..demo", "snapshot"], snapshot)).toThrow(
+			"Invalid session name",
+		);
 	});
 
 	test("parses the full open flag set", () => {
-		const args = parse(["open", "--scratch", "--headless", "--browser=msedge", "--out=/tmp/x", "https://a.test"], open);
+		const args = parse(
+			[
+				"open",
+				"--scratch",
+				"--headless",
+				"--browser=msedge",
+				"--out=/tmp/x",
+				"https://a.test",
+			],
+			open,
+		);
 		expect(args.flags).toEqual({
 			scratch: true,
 			headless: true,
@@ -130,12 +176,20 @@ describe("negative numbers", () => {
 	});
 
 	test("treats a negative number as a positional, not an option", () => {
-		expect(parse(["mousewheel", "0", "-120"], spec).positionals).toEqual(["0", "-120"]);
-		expect(parse(["mousewheel", "-1.5", "2"], spec).positionals).toEqual(["-1.5", "2"]);
+		expect(parse(["mousewheel", "0", "-120"], spec).positionals).toEqual([
+			"0",
+			"-120",
+		]);
+		expect(parse(["mousewheel", "-1.5", "2"], spec).positionals).toEqual([
+			"-1.5",
+			"2",
+		]);
 	});
 
 	test("still rejects an unknown option", () => {
-		expect(() => parse(["mousewheel", "0", "-x"], spec)).toThrow("Unknown option");
+		expect(() => parse(["mousewheel", "0", "-x"], spec)).toThrow(
+			"Unknown option",
+		);
 	});
 });
 
@@ -151,7 +205,9 @@ describe("repeatable flags", () => {
 	});
 
 	test("joins repeated values with a newline", () => {
-		expect(parse(["route", "**/x", "--header=A: 1", "--header=B: 2"], spec).flags).toEqual({ header: "A: 1\nB: 2" });
+		expect(
+			parse(["route", "**/x", "--header=A: 1", "--header=B: 2"], spec).flags,
+		).toEqual({ header: "A: 1\nB: 2" });
 	});
 
 	test("shows the flag as repeatable in the help", () => {

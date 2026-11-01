@@ -63,14 +63,21 @@ async function serveSession(spec: LaunchSpec): Promise<void> {
 		state: { routes: [], tracing: false },
 	};
 
-	let cleanup: Promise<void> | undefined;
+	let cleanup: Promise<boolean> | undefined;
 	const shutdown = async (code: number): Promise<never> => {
 		cleanup ??= (async () => {
-			await handle.close().catch(() => undefined);
+			const closed = await handle.close().then(
+				() => true,
+				(error) => {
+					console.error(`browser close failed: ${describeError(error)}`);
+					return false;
+				},
+			);
 			remove(spec.key);
+			return closed;
 		})();
-		await cleanup;
-		return process.exit(code);
+		const closed = await cleanup;
+		return process.exit(closed ? code : code || 1);
 	};
 
 	let queue: Promise<unknown> = Promise.resolve();
@@ -136,8 +143,13 @@ async function serveSession(spec: LaunchSpec): Promise<void> {
 		return enqueue(() => run(request));
 	};
 
-	await serve(spec.socketPath, onRequest);
-	write({ ...spec, pid: process.pid, startedAt: new Date().toISOString() });
+	try {
+		await serve(spec.socketPath, onRequest);
+		write({ ...spec, pid: process.pid, startedAt: new Date().toISOString() });
+	} catch (error) {
+		await handle.close().catch(() => undefined);
+		throw error;
+	}
 	void handle.closed.then(() => shutdown(0));
 	for (const signal of ["SIGTERM", "SIGINT"] as const)
 		process.on(signal, () => void shutdown(0));
@@ -173,7 +185,11 @@ function absolutePath(wire: Wire, field: string): string {
 
 function sessionName(wire: Wire): string {
 	const name = wire["name"];
-	if (typeof name !== "string" || !SESSION_NAME.test(name)) {
+	if (
+		typeof name !== "string" ||
+		!SESSION_NAME.test(name) ||
+		name.includes("..")
+	) {
 		throw new Error(`Invalid session name '${String(name)}'`);
 	}
 	return name;

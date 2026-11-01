@@ -27,29 +27,38 @@ const everything: Parts = {
 	modal: ["- [File chooser]: can be handled by upload"],
 };
 
-const headings = (text: string) => text.split("\n").filter((line) => line.startsWith("### "));
+const headings = (text: string) =>
+	text.split("\n").filter((line) => line.startsWith("### "));
 
 describe("render", () => {
 	test("orders sections Error, Result, Ran Playwright code, Page, Snapshot, Events, Modal state", () => {
-		expect(headings(render(everything, { raw: false, codegen: true }))).toEqual([
-			"### Error",
-			"### Result",
-			"### Ran Playwright code",
-			"### Page",
-			"### Snapshot",
-			"### Events",
-			"### Modal state",
-		]);
+		expect(headings(render(everything, { raw: false, codegen: true }))).toEqual(
+			[
+				"### Error",
+				"### Result",
+				"### Ran Playwright code",
+				"### Page",
+				"### Snapshot",
+				"### Events",
+				"### Modal state",
+			],
+		);
 	});
 
 	test("omits empty sections", () => {
-		expect(render({ result: "ok" }, { raw: false, codegen: false })).toBe("### Result\nok");
+		expect(render({ result: "ok" }, { raw: false, codegen: false })).toBe(
+			"### Result\nok",
+		);
 		expect(render({}, { raw: false, codegen: false })).toBe("");
 	});
 
 	test("hides the generated code unless codegen is on", () => {
-		expect(render(everything, { raw: false, codegen: false })).not.toContain("Ran Playwright code");
-		expect(render(everything, { raw: false, codegen: true })).toContain("```js\nawait page.click();\n```");
+		expect(render(everything, { raw: false, codegen: false })).not.toContain(
+			"Ran Playwright code",
+		);
+		expect(render(everything, { raw: false, codegen: true })).toContain(
+			"```js\nawait page.click();\n```",
+		);
 	});
 
 	test("raw prints only the error and result content", () => {
@@ -64,9 +73,14 @@ describe("render", () => {
 	});
 
 	test("prints the console counts in the page section only when non-zero", () => {
-		const quiet = render({ page: { url: "u", title: "", errors: 0, warnings: 0 } }, { raw: false, codegen: false });
+		const quiet = render(
+			{ page: { url: "u", title: "", errors: 0, warnings: 0 } },
+			{ raw: false, codegen: false },
+		);
 		expect(quiet).toBe("### Page\n- Page URL: u");
-		expect(render(everything, { raw: false, codegen: false })).toContain("- Console: 1 errors, 2 warnings");
+		expect(render(everything, { raw: false, codegen: false })).toContain(
+			"- Console: 1 errors, 2 warnings",
+		);
 	});
 });
 
@@ -78,7 +92,9 @@ describe("formatting", () => {
 	});
 
 	test("uses the singular for one line", () => {
-		expect(snapshotLine({ path: "/p", bytes: 10, lines: 1 })).toBe("[Snapshot](/p) 10 B, 1 line");
+		expect(snapshotLine({ path: "/p", bytes: 10, lines: 1 })).toBe(
+			"[Snapshot](/p) 10 B, 1 line",
+		);
 	});
 });
 
@@ -88,7 +104,9 @@ describe("eventLines", () => {
 	});
 
 	test("lists counts and only the first three entries", () => {
-		const entries = ["error", "warning", "log", "log", "log"].map((type, i) => ({ type, text: `m${i}` }));
+		const entries = ["error", "warning", "log", "log", "log"].map(
+			(type, i) => ({ type, text: `m${i}` }),
+		);
 		expect(eventLines(entries)).toEqual([
 			"- Console: 5 new (1 error, 1 warning, 3 log)",
 			"  - [error] m0",
@@ -99,7 +117,9 @@ describe("eventLines", () => {
 	});
 
 	test("truncates long messages to their first line", () => {
-		const [, entry] = eventLines([{ type: "log", text: `${"x".repeat(400)}\nsecond` }]);
+		const [, entry] = eventLines([
+			{ type: "log", text: `${"x".repeat(400)}\nsecond` },
+		]);
 		expect(entry?.length).toBeLessThan(220);
 		expect(entry).not.toContain("second");
 	});
@@ -107,7 +127,9 @@ describe("eventLines", () => {
 
 describe("resolveOutput", () => {
 	test("resolves a relative name against the output directory", () => {
-		expect(resolveOutput(scratch.dir, "shot.png")).toBe(path.join(scratch.dir, "shot.png"));
+		expect(resolveOutput(scratch.dir, "shot.png")).toBe(
+			path.join(scratch.dir, "shot.png"),
+		);
 	});
 
 	test("keeps an absolute name unchanged and creates its directory", () => {
@@ -117,7 +139,12 @@ describe("resolveOutput", () => {
 	});
 
 	test("builds a sortable timestamped name", () => {
-		expect(timestampedName("page", "yml")).toMatch(/^page-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.yml$/);
+		expect(timestampedName("page", "yml")).toMatch(
+			/^page-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f]{6}\.yml$/,
+		);
+		expect(timestampedName("download", "bin")).not.toBe(
+			timestampedName("download", "bin"),
+		);
 	});
 });
 
@@ -158,11 +185,15 @@ describe("event notices", () => {
 			},
 			{ raw: false, codegen: false },
 		);
-		expect(text).toBe("### Events\n- Console: 1 new (1 log)\n  - [log] hi\n- Downloaded a.csv to /tmp/a.csv");
+		expect(text).toBe(
+			"### Events\n- Console: 1 new (1 log)\n  - [log] hi\n- Downloaded a.csv to /tmp/a.csv",
+		);
 	});
 
 	test("shows notices alone when there are no console entries", () => {
-		expect(render({ notices: ["- n"] }, { raw: false, codegen: false })).toBe("### Events\n- n");
+		expect(render({ notices: ["- n"] }, { raw: false, codegen: false })).toBe(
+			"### Events\n- n",
+		);
 	});
 });
 
@@ -171,14 +202,21 @@ describe("private output", () => {
 		const existing = path.join(scratch.dir, "mine");
 		mkdirSync(existing, { mode: 0o755 });
 		chmodSync(existing, 0o755);
-		const file = resolveOutput(scratch.dir, path.join(existing, "new", "deep", "x.png"));
+		const file = resolveOutput(
+			scratch.dir,
+			path.join(existing, "new", "deep", "x.png"),
+		);
 		expect(statSync(existing).mode & 0o777).toBe(0o755);
 		expect(statSync(path.dirname(file)).mode & 0o777).toBe(0o700);
 		expect(statSync(path.join(existing, "new")).mode & 0o777).toBe(0o700);
 	});
 
 	test("writeSnapshot writes the file as 0600", async () => {
-		const link = await writeSnapshot(new FakePage() as unknown as Page, scratch.dir, { filename: "private.yml" });
+		const link = await writeSnapshot(
+			new FakePage() as unknown as Page,
+			scratch.dir,
+			{ filename: "private.yml" },
+		);
 		expect(statSync(link.path).mode & 0o777).toBe(0o600);
 	});
 });

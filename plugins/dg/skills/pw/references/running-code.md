@@ -182,6 +182,7 @@ dg-skills pw-code "async page => {
     await page.getByRole('button', { name: 'Submit' }).click({ timeout: 1000 });
     return 'clicked';
   } catch (e) {
+    if (e.name !== 'TimeoutError') throw e;
     return 'element not found';
   }
 }"
@@ -196,9 +197,9 @@ dg-skills pw-code "async page => {
   await page.getByRole('textbox', { name: 'Password' }).fill('secret');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('**/dashboard');
-  await page.context().storageState({ path: 'auth.json' });
   return 'Login successful';
 }"
+dg-skills pw state save app-login
 
 dg-skills pw-code "async page => {
   const results = [];

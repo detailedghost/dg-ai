@@ -3,9 +3,10 @@ import type { DaemonHandler } from "../../core/spec";
 
 const videoStop: DaemonHandler = async (ctx) => {
 	const video = ctx.state.video;
-	if (!video) throw new Error("No video recording in progress. Run: pw video-start");
-	ctx.state.video = undefined;
+	if (!video)
+		throw new Error("No video recording in progress. Run: pw video-start");
 	await video.page.screencast.stop();
+	ctx.state.video = undefined;
 	restrictFile(video.file);
 	return {
 		result: `- [Video](${video.file})`,
