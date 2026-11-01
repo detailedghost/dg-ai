@@ -124,7 +124,7 @@ dir = "pkg/dg-agent"
 run = "bun test"
 
 [tasks."test:phone:mutate"]
-description = "Mutation-test the phone inbox, catch-up, and ensure changes"
+description = "Mutation-test phone catch-up, ensure, and thread modules"
 dir = "pkg/dg-agent"
 run = "bunx stryker run stryker.phone.conf.mjs"
 

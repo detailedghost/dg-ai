@@ -8,6 +8,7 @@ import {
 	runMigrations,
 } from "@dg/common/node";
 import { join } from "node:path";
+import { migrateThreadSchema } from "./thread-schema";
 
 export type Direction = "in" | "out";
 
@@ -24,6 +25,7 @@ export type MessageRow = {
 	call: number;
 	read_at: number | null;
 	attempts: number;
+	thread_id: string | null;
 };
 
 export type KeyRow = { id: string; nsec: string | null; in_store: number; created_at: number };
@@ -35,6 +37,27 @@ export type ContactRow = {
 	key_id: string;
 	added_at: number;
 	via: string;
+};
+
+export type ThreadRow = {
+	id: string;
+	handle: string;
+	subject: string;
+	key_id: string;
+	created_at: number;
+	via: string;
+};
+
+export type PendingThreadRow = {
+	rumor_id: string;
+	room_id: string;
+	sender: string;
+	members: string;
+	subject: string | null;
+	text: string;
+	ts: number;
+	noticed: number;
+	received_at: number;
 };
 
 export type InviteRow = {
@@ -99,6 +122,18 @@ const SCHEMA: MigrationStep[] = [
 			db.run("ALTER TABLE invites ADD COLUMN relays TEXT NOT NULL DEFAULT '[]'");
 		},
 	},
+	{
+		version: 3,
+		run: (db) => {
+			migrateThreadSchema(db);
+		},
+	},
+	{
+		version: 4,
+		run: (db) => {
+			migrateThreadSchema(db);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -145,7 +180,11 @@ export class PhoneDb {
 	}
 
 	pruneMessages(): void {
-		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff: this.cutoff() });
+		const cutoff = this.cutoff();
+		const pendingBefore = this.listPending().length;
+		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
+		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 	}
 
 	getKey(id: string): KeyRow | undefined {
@@ -269,13 +308,13 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
-	addMessage(message: Omit<MessageRow, "read_at" | "attempts">): boolean {
+	addMessage(message: Omit<MessageRow, "read_at" | "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
 		this.pruneMessages();
 		if (message.ts < this.cutoff()) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
-				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0)`,
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId)`,
 			)
 			.run({
 				id: message.id,
@@ -286,13 +325,14 @@ export class PhoneDb {
 				text: message.text,
 				call: message.call,
 				readAt: message.direction === "out" ? this.now() : null,
+				threadId: message.thread_id ?? null,
 			});
 		return result.changes > 0;
 	}
 
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts">): boolean {
+	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
@@ -360,16 +400,135 @@ export class PhoneDb {
 		});
 	}
 
-	/** The most recent `limit` messages for a contact (or every contact), oldest first. */
-	recentMessages(limit: number, contactNpub?: string): MessageRow[] {
+	/**
+	 * The most recent `limit` messages, oldest first.
+	 * A contact filter is one-to-one only (`thread_id` null). A thread filter is that room.
+	 * With neither, every row is returned, thread rows included.
+	 */
+	recentMessages(limit: number, contactNpub?: string, threadId?: string): MessageRow[] {
 		const rows = (
-			contactNpub === undefined
-				? this.db.query("SELECT * FROM messages ORDER BY ts DESC, id DESC LIMIT $limit").all({ limit })
-				: this.db
-						.query("SELECT * FROM messages WHERE contact = $contact ORDER BY ts DESC, id DESC LIMIT $limit")
-						.all({ contact: contactNpub, limit })
+			threadId !== undefined
+				? this.db
+						.query("SELECT * FROM messages WHERE thread_id = $thread ORDER BY ts DESC, id DESC LIMIT $limit")
+						.all({ thread: threadId, limit })
+				: contactNpub !== undefined
+					? this.db
+							.query(
+								"SELECT * FROM messages WHERE contact = $contact AND thread_id IS NULL ORDER BY ts DESC, id DESC LIMIT $limit",
+							)
+							.all({ contact: contactNpub, limit })
+					: this.db.query("SELECT * FROM messages ORDER BY ts DESC, id DESC LIMIT $limit").all({ limit })
 		) as MessageRow[];
 		return rows.reverse();
+	}
+
+	getThread(id: string): ThreadRow | undefined {
+		return (this.db.query("SELECT * FROM threads WHERE id = $id").get({ id }) as ThreadRow | null) ?? undefined;
+	}
+
+	getThreadByHandle(handle: string): ThreadRow | undefined {
+		return (
+			(this.db.query("SELECT * FROM threads WHERE handle = $handle").get({ handle }) as ThreadRow | null) ?? undefined
+		);
+	}
+
+	listThreads(): ThreadRow[] {
+		return this.db.query("SELECT * FROM threads ORDER BY handle").all() as ThreadRow[];
+	}
+
+	insertThread(row: ThreadRow): void {
+		this.db
+			.query(
+				`INSERT INTO threads (id, handle, subject, key_id, created_at, via)
+				VALUES ($id, $handle, $subject, $keyId, $createdAt, $via)`,
+			)
+			.run({
+				id: row.id,
+				handle: row.handle,
+				subject: row.subject,
+				keyId: row.key_id,
+				createdAt: row.created_at,
+				via: row.via,
+			});
+	}
+
+	listThreadMemberNpubs(threadId: string): string[] {
+		return (
+			this.db.query("SELECT npub FROM thread_members WHERE thread_id = $threadId ORDER BY npub").all({ threadId }) as {
+				npub: string;
+			}[]
+		).map((row) => row.npub);
+	}
+
+	insertThreadMember(threadId: string, npub: string): void {
+		this.db
+			.query("INSERT INTO thread_members (thread_id, npub) VALUES ($threadId, $npub)")
+			.run({ threadId, npub });
+	}
+
+	/** True when this rumor was not already held. `received_at` is this phone's clock, not the sender's. */
+	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at">): boolean {
+		const result = this.db
+			.query(
+				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at)
+				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt)`,
+			)
+			.run({
+				rumorId: row.rumor_id,
+				roomId: row.room_id,
+				sender: row.sender,
+				members: row.members,
+				subject: row.subject,
+				text: row.text,
+				ts: row.ts,
+				receivedAt: this.now(),
+			});
+		return result.changes > 0;
+	}
+
+	pendingByRumor(rumorId: string): PendingThreadRow | undefined {
+		return (
+			(this.db.query("SELECT * FROM pending_threads WHERE rumor_id = $rumorId").get({ rumorId }) as PendingThreadRow | null) ??
+			undefined
+		);
+	}
+
+	listPending(): PendingThreadRow[] {
+		return this.db.query("SELECT * FROM pending_threads ORDER BY received_at, rumor_id").all() as PendingThreadRow[];
+	}
+
+	deletePending(ids: readonly string[]): void {
+		const remove = this.db.query("DELETE FROM pending_threads WHERE rumor_id = $id");
+		for (const id of ids) remove.run({ id });
+	}
+
+	heldNotice(): { text: string; ts: number } | undefined {
+		const row = this.db.query("SELECT text, ts FROM messages WHERE id = 'phone-held-threads'").get() as
+			| { text: string; ts: number }
+			| null;
+		return row ?? undefined;
+	}
+
+	/** Rewrites or removes the single held-threads notice so it matches the rows still stored. */
+	syncHeldNotice(): void {
+		const rooms = new Set(this.listPending().map((row) => row.room_id)).size;
+		if (rooms === 0) {
+			this.db.query("DELETE FROM messages WHERE id = 'phone-held-threads'").run();
+			return;
+		}
+		const text = rooms === 1 ? "1 held thread" : `${rooms} held threads`;
+		this.upsertHeldNotice(text);
+	}
+
+	/** One unread system row for every currently held room. Rewriting it marks it unread again. */
+	upsertHeldNotice(text: string): void {
+		this.db
+			.query(
+				`INSERT INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id)
+				VALUES ($id, 'in', $ts, $sender, $sender, $text, 0, NULL, 0, NULL)
+				ON CONFLICT(id) DO UPDATE SET text = $text, ts = $ts, read_at = NULL, attempts = 0`,
+			)
+			.run({ id: "phone-held-threads", ts: this.now(), sender: PHONE_SYSTEM_SENDER, text });
 	}
 
 	get<T>(key: string): T | undefined {

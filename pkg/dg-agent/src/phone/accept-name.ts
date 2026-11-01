@@ -5,6 +5,7 @@ import {
 	type ContactRecord,
 	findContactByHandle,
 	findContactByNpub,
+	assertContactHandle,
 	isHandle,
 	normalizeHandle,
 	numberKeyId,
@@ -40,6 +41,7 @@ export function resolveAcceptHandle(
 	let explicit: string | undefined;
 	if (explicitName !== undefined) {
 		explicit = normalizeHandle(explicitName);
+		assertContactHandle(explicit);
 		if (!isHandle(explicit)) {
 			throw new DgCliError(
 				`--name must be 1-32 lowercase letters, digits, or dashes, got "${explicitName}"`,

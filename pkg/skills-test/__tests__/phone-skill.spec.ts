@@ -23,7 +23,7 @@ describe("phone skill", () => {
 	});
 
 	test("documents every phone verb it drives", () => {
-		for (const verb of ["number", "invite", "accept", "contacts", "say", "inbox", "voicemail", "watch", "status", "open", "close"]) {
+		for (const verb of ["number", "invite", "accept", "contacts", "thread", "say", "inbox", "voicemail", "watch", "status", "open", "close"]) {
 			expect(skill).toContain(`phone ${verb}`);
 		}
 		expect(skill).toContain("--meta");
@@ -85,6 +85,74 @@ describe("phone skill", () => {
 		expect(guide).toContain("`--key <id>`");
 		expect(guide).toContain("rename or remove that contact first");
 		expect(guide).toContain("does not allocate a `-2` handle");
+		expect(skill).toContain('a contact handle cannot start with `#`');
+		expect(guide).toContain("A contact handle cannot start with `#`.");
+	});
+
+	test("documents threads and the turn-taking rule", () => {
+		expect(skill).toContain("phone thread new");
+		expect(skill).toContain("phone thread list");
+		expect(skill).toContain("phone thread show");
+		expect(skill).toContain("--subject");
+		expect(skill).toContain("Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder.");
+		expect(skill).toContain("Address other agents by the name on their card.");
+		expect(skill).toContain("Name a designated responder in the room's first message.");
+		expect(skill).toContain("Do not reply to every message.");
+		expect(guide).toContain("Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder.");
+		expect(guide).toContain("Address other agents by the name on their card.");
+		expect(guide).toContain("Name a designated responder in the room's first message.");
+		expect(guide).toContain("Do not reply to every message.");
+		expect(guide).toContain("[#ops] +baron:");
+		expect(skill).toContain("unquoted, `#` starts a comment.");
+		expect(guide).toContain("unquoted, `#` starts a comment.");
+		expect(skill).toContain("'#ops'");
+		expect(guide).toContain("'#ops'");
+		expect(skill).toContain('"handle": "#ops"');
+		expect(skill).toContain('"sender": "+baron"');
+		expect(guide).toContain("`handle` and `thread`");
+		expect(guide).toContain("Running `say` again sends a new message.");
+	});
+
+	test("shell examples quote every thread handle", () => {
+		const unquotedWord = (snippet: string): boolean => {
+			let index = 0;
+			while (index < snippet.length) {
+				const ch = snippet[index] ?? "";
+				if (ch === "\\") {
+					index += 2;
+					continue;
+				}
+				if (ch === "'" || ch === '"') {
+					const quote = ch;
+					index += 1;
+					while (index < snippet.length && snippet[index] !== quote) {
+						if (snippet[index] === "\\") index += 2;
+						else index += 1;
+					}
+					index += 1;
+					continue;
+				}
+				if (ch === "#" && (index === 0 || /\s/.test(snippet[index - 1] ?? ""))) {
+					return /^[A-Za-z0-9]/.test(snippet.slice(index + 1));
+				}
+				index += 1;
+			}
+			return false;
+		};
+		const hits: string[] = [];
+		for (const text of [skill, guide]) {
+			for (const match of text.matchAll(/```(?:bash|sh|shell)?\n([\s\S]*?)```/g)) {
+				for (const line of (match[1] ?? "").split("\n")) {
+					if (unquotedWord(line)) hits.push(line);
+				}
+			}
+			for (const match of text.matchAll(/`([^`\n]+)`/g)) {
+				const snippet = match[1] ?? "";
+				if (!/^(?:say|thread|inbox|phone)\b/.test(snippet)) continue;
+				if (unquotedWord(snippet)) hits.push(snippet);
+			}
+		}
+		expect(hits).toEqual([]);
 	});
 
 	test("sends replies through a file redirect or a quoted heredoc, not a shell argument", () => {

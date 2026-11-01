@@ -29,7 +29,7 @@ import {
 	ownsEnsureProcess,
 	shouldEnsureRestart,
 } from "./ensure";
-import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey } from "./keys";
+import { defaultKeyClients, ensureKey, type KeyDeps, ensureNumberKey, readFileKey } from "./keys";
 import {
 	defaultOnSignal,
 	defaultSchedule,
@@ -47,12 +47,27 @@ import {
 import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
+import {
+	behindHandles,
+	fanoutThread,
+	formatBehind,
+	MAX_THREAD_MEMBERS,
+	parseThreadHandle,
+	selfCopyOk,
+	senderLabel,
+	threadLine,
+	threadRoomId,
+	threadSendKept,
+	threadSendSucceeded,
+	type ThreadRecipient,
+} from "./thread";
 import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS, parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
 import {
 	addContact,
 	insertNewContact,
 	addInvite,
 	addPhoneNotice,
+	assertContactHandle,
 	findContactByHandle,
 	findContactByNpub,
 	FALLBACK_SELF_NAME,
@@ -277,8 +292,11 @@ export async function phoneNumber(
 	deps: PhoneDeps,
 ): Promise<void> {
 	migrateIfNeeded(deps.paths);
-	if (opts.as !== undefined && !isHandle(opts.as)) {
-		throw new DgCliError(`--as must be 1-32 lowercase letters, digits, or dashes, got "${opts.as}"`);
+	if (opts.as !== undefined) {
+		assertContactHandle(opts.as);
+		if (!isHandle(opts.as)) {
+			throw new DgCliError(`--as must be 1-32 lowercase letters, digits, or dashes, got "${opts.as}"`);
+		}
 	}
 	const { sk, mode } = await ensureNumberKey(deps);
 	if (opts.relay?.length) {
@@ -321,8 +339,11 @@ export async function phoneInvite(
 	if (!Number.isFinite(hours) || hours <= 0) {
 		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
 	}
-	if (opts.as !== undefined && !isHandle(opts.as)) {
-		throw new DgCliError(`--as must be 1-32 lowercase letters, digits, or dashes, got "${opts.as}"`);
+	if (opts.as !== undefined) {
+		assertContactHandle(opts.as);
+		if (!isHandle(opts.as)) {
+			throw new DgCliError(`--as must be 1-32 lowercase letters, digits, or dashes, got "${opts.as}"`);
+		}
 	}
 	if (opts.name !== undefined) requireFreeHandle(deps.db, opts.name);
 	const relays = opts.relay?.length ? opts.relay : readRelays(deps.db);
@@ -445,8 +466,231 @@ export function phoneContactsRemove(handleArg: string, deps: PhoneDeps): void {
 	printJson(deps, { removed: `+${removed.handle}` });
 }
 
+function selfNames(deps: PhoneDeps): Map<string, string> {
+	const label = resolvedSelfName(deps.db);
+	const names = new Map<string, string>();
+	for (const id of deps.db.listKeyIds()) {
+		const sk = readFileKey(deps.db, id);
+		if (!sk) continue;
+		names.set(npubOf(sk), label);
+	}
+	return names;
+}
+
+function emitStored(
+	deps: PhoneDeps,
+	row: { id: string; ts: number; direction: "in" | "out"; sender: string; contact: string; text: string; call: number; read_at: number | null; thread_id: string | null },
+	self: Map<string, string>,
+	fields: { direction: boolean; read: boolean; meta: boolean },
+): void {
+	if (row.thread_id) {
+		const thread = deps.db.getThread(row.thread_id);
+		const threadHandle = thread?.handle ?? `#${row.thread_id.slice(0, 8)}`;
+		const contact = findContactByNpub(deps.db, row.sender);
+		const label = senderLabel(row.sender, contact?.handle, self.get(row.sender));
+		printJson(deps, {
+			id: row.id,
+			ts: row.ts,
+			...(fields.direction ? { direction: row.direction } : {}),
+			thread: threadHandle,
+			handle: label,
+			from: row.sender,
+			...(fields.meta ? {} : { text: row.text, line: threadLine(threadHandle, label, row.text) }),
+			...(fields.read ? { read: row.read_at !== null } : {}),
+			...(row.call ? { call: true } : {}),
+			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
+		});
+		return;
+	}
+	const contact = findContactByNpub(deps.db, row.contact);
+	printJson(deps, {
+		id: row.id,
+		ts: row.ts,
+		...(fields.direction ? { direction: row.direction } : {}),
+		handle: contact ? `+${contact.handle}` : null,
+		from: row.sender,
+		...(fields.meta ? {} : { text: row.text }),
+		...(fields.read ? { read: row.read_at !== null } : {}),
+		...(row.call ? { call: true } : {}),
+		...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
+	});
+}
+
+export function phoneThreadNew(
+	handleArg: string,
+	memberArgs: string[],
+	opts: { subject?: string },
+	deps: PhoneDeps,
+): Promise<void> {
+	return phoneThreadNewAt(handleArg, memberArgs, opts, deps);
+}
+
+async function phoneThreadNewAt(
+	handleArg: string,
+	memberArgs: string[],
+	opts: { subject?: string },
+	deps: PhoneDeps,
+): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	const handle = parseThreadHandle(handleArg);
+	if (deps.db.getThreadByHandle(handle)) throw new DgCliError(`"${handle}" is already a thread`);
+	if (memberArgs.length === 0) throw new DgCliError("name at least one contact");
+	if (memberArgs.length + 1 > MAX_THREAD_MEMBERS) {
+		throw new DgCliError(`a thread can have at most ${MAX_THREAD_MEMBERS} members`);
+	}
+	if (opts.subject !== undefined && opts.subject.trim() === "") throw new DgCliError("subject is empty");
+	const subject = opts.subject ?? "";
+	const members = memberArgs.map((arg) => {
+		if (arg.startsWith("#")) throw new DgCliError(`a thread member must be a contact, got "${arg}"`);
+		const memberHandle = normalizeHandle(arg);
+		const contact = findContactByHandle(deps.db, memberHandle);
+		if (!contact) throw new DgCliError(`no contact +${memberHandle}`);
+		return contact;
+	});
+	const seenNpubs = new Set<string>();
+	for (const member of members) {
+		if (seenNpubs.has(member.npub)) throw new DgCliError(`+${member.handle} is listed more than once`);
+		seenNpubs.add(member.npub);
+	}
+	const keyId = members[0]?.keyId;
+	if (keyId === undefined || members.some((member) => member.keyId !== keyId)) {
+		throw new DgCliError("thread members must share one key");
+	}
+	const loaded = await ensureKey(deps, keyId);
+	const selfNpub = npubOf(loaded.sk);
+	if (members.some((member) => member.npub === selfNpub)) throw new DgCliError("a thread already includes you");
+	const id = threadRoomId([selfNpub, ...members.map((member) => member.npub)]);
+	if (deps.db.getThread(id)) throw new DgCliError(`a thread with these members already exists: ${deps.db.getThread(id)?.handle}`);
+	const createdAt = deps.now();
+	deps.db.transaction(() => {
+		deps.db.insertThread({ id, handle, subject, key_id: keyId, created_at: createdAt, via: "local" });
+		deps.db.insertThreadMember(id, selfNpub);
+		for (const member of members) deps.db.insertThreadMember(id, member.npub);
+	});
+	printJson(deps, {
+		handle,
+		id,
+		subject,
+		members: [`+${resolvedSelfName(deps.db)}`, ...members.map((member) => `+${member.handle}`)],
+		key: keyId,
+	});
+}
+
+export function phoneThreadList(deps: PhoneDeps): void {
+	const self = selfNames(deps);
+	for (const thread of deps.db.listThreads()) {
+		const npubs = deps.db.listThreadMemberNpubs(thread.id);
+		printJson(deps, {
+			handle: thread.handle,
+			id: thread.id,
+			subject: thread.subject,
+			key: thread.key_id,
+			created_at: thread.created_at,
+			via: thread.via,
+			members: npubs.map((npub) => senderLabel(npub, findContactByNpub(deps.db, npub)?.handle, self.get(npub))),
+		});
+	}
+}
+
+export function phoneThreadShow(handleArg: string, deps: PhoneDeps): void {
+	const handle = parseThreadHandle(handleArg);
+	const thread = deps.db.getThreadByHandle(handle);
+	if (!thread) throw new DgCliError(`no thread ${handle}`);
+	const self = selfNames(deps);
+	printJson(deps, {
+		handle: thread.handle,
+		id: thread.id,
+		subject: thread.subject,
+		key: thread.key_id,
+		created_at: thread.created_at,
+		via: thread.via,
+		members: deps.db.listThreadMemberNpubs(thread.id).map((npub) => {
+			const mine = self.get(npub);
+			return {
+				npub,
+				handle: senderLabel(npub, findContactByNpub(deps.db, npub)?.handle, mine),
+				...(mine !== undefined ? { self: true } : {}),
+			};
+		}),
+	});
+}
+
+async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDeps): Promise<void> {
+	const handle = parseThreadHandle(handleArg);
+	const thread = deps.db.getThreadByHandle(handle);
+	if (!thread) throw new DgCliError(`no thread ${handle}`);
+	const body = textArg === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : textArg;
+	if (!body) throw new DgCliError("message text is empty");
+	const loaded = await ensureKey(deps, thread.key_id);
+	const selfNpub = npubOf(loaded.sk);
+	const others = deps.db.listThreadMemberNpubs(thread.id).filter((npub) => npub !== selfNpub);
+	const recipients: ThreadRecipient[] = [];
+	for (const npub of others) {
+		const contact = findContactByNpub(deps.db, npub);
+		if (!contact) throw new DgCliError(`thread member ${npub.slice(0, 16)} is not a contact`);
+		recipients.push({ handle: `+${contact.handle}`, npub, pub: pubkeyHex(npub), self: false });
+	}
+	recipients.push({ handle: `+${resolvedSelfName(deps.db)}`, npub: selfNpub, pub: pubkeyHex(selfNpub), self: true });
+	const pool = deps.createPool();
+	const relaysUsed: string[] = [];
+	const createdAt = deps.now();
+	try {
+		const delivered = await fanoutThread({
+			sk: loaded.sk,
+			text: body,
+			createdAt,
+			subject: thread.subject,
+			fallbackSubject: handle.slice(1),
+			recipients,
+			relaysFor: async (recipient) => {
+				const card = recipient.self ? readRelays(deps.db) : (findContactByNpub(deps.db, recipient.npub)?.relays ?? []);
+				const outgoing = await outgoingRelays(deps, pool, card, recipient.npub);
+				relaysUsed.push(...outgoing.queried, ...outgoing.relays);
+				return outgoing.relays;
+			},
+			publishTo: (relays, event) => publish(pool, relays, event, { confirmMs: confirmMsFor(deps) }),
+		});
+		const behind = behindHandles(delivered.members);
+		const kept = threadSendKept(delivered.members);
+		if (kept) {
+			deps.db.addMessage({
+				id: delivered.rumorId,
+				direction: "out",
+				ts: createdAt,
+				sender: selfNpub,
+				contact: selfNpub,
+				text: body,
+				call: 0,
+				thread_id: thread.id,
+			});
+			await restartStaleListener(deps, { spawn: true });
+		}
+		const payload = {
+			handle,
+			id: delivered.rumorId,
+			members: delivered.members.map((member) => ({
+				handle: member.handle,
+				npub: member.npub,
+				relays_ok: member.relays_ok,
+				relays_unconfirmed: member.relays_unconfirmed,
+				relays_failed: member.relays_failed,
+			})),
+			behind,
+			self_ok: selfCopyOk(delivered.members),
+		};
+		if (!threadSendSucceeded(delivered.members)) {
+			if (kept) printJson(deps, payload);
+			throw new DgCliError(behind.length > 0 ? `members behind: ${behind.join(", ")}` : formatBehind(delivered.members));
+		}
+		printJson(deps, payload);
+	} finally {
+		closeRelayPool(pool, relaysUsed);
+	}
+}
+
 export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDeps): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	if (handleArg.startsWith("#")) return phoneSayThread(handleArg, textArg, deps);
 	const handle = normalizeHandle(handleArg);
 	const contact = findContactByHandle(deps.db, handle);
 	if (!contact) throw new DgCliError(`no contact +${handle}`);
@@ -488,6 +732,7 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		warnMigrationPending(deps);
 		let rows = view.messages;
 		if (opts.handle !== undefined) {
+			if (opts.handle.startsWith("#")) throw new DgCliError(`no thread ${opts.handle}`);
 			const handle = normalizeHandle(opts.handle);
 			if (!view.contactRows.some((contact) => contact.handle === handle)) throw new DgCliError(`no contact +${handle}`);
 			rows = rows.filter((row) => row.handle === `+${handle}`);
@@ -506,6 +751,16 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		}
 		return;
 	}
+	const self = selfNames(deps);
+	if (opts.handle?.startsWith("#")) {
+		const handle = parseThreadHandle(opts.handle);
+		const thread = deps.db.getThreadByHandle(handle);
+		if (!thread) throw new DgCliError(`no thread ${handle}`);
+		for (const row of deps.db.recentMessages(limit, undefined, thread.id)) {
+			emitStored(deps, row, self, { direction: true, read: true, meta: opts.meta === true });
+		}
+		return;
+	}
 	let contactNpub: string | undefined;
 	if (opts.handle !== undefined) {
 		const handle = normalizeHandle(opts.handle);
@@ -514,33 +769,14 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		contactNpub = contact.npub;
 	}
 	for (const row of deps.db.recentMessages(limit, contactNpub)) {
-		const contact = findContactByNpub(deps.db, row.contact);
-		printJson(deps, {
-			id: row.id,
-			ts: row.ts,
-			direction: row.direction,
-			handle: contact ? `+${contact.handle}` : null,
-			from: row.sender,
-			...(opts.meta ? {} : { text: row.text }),
-			read: row.read_at !== null,
-			...(row.call ? { call: true } : {}),
-			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
-		});
+		emitStored(deps, row, self, { direction: true, read: true, meta: opts.meta === true });
 	}
 }
 
 function emitUnread(deps: PhoneDeps, skip?: ReadonlySet<string>): void {
+	const self = selfNames(deps);
 	for (const row of deps.db.takeUnread(skip)) {
-		const contact = findContactByNpub(deps.db, row.contact);
-		printJson(deps, {
-			id: row.id,
-			ts: row.ts,
-			handle: contact ? `+${contact.handle}` : null,
-			from: row.sender,
-			text: row.text,
-			...(row.call ? { call: true } : {}),
-			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
-		});
+		emitStored(deps, row, self, { direction: false, read: false, meta: false });
 	}
 }
 
@@ -904,10 +1140,31 @@ function attachPhoneVerbs(
 
 	group
 		.command("say")
-		.description("send one message to a contact")
-		.argument("<handle>", "the contact's handle")
+		.description("send one message to a contact, or to a #thread")
+		.argument("<handle>", "the contact's +handle, or a #thread")
 		.argument("<text>", "message text, or - to read it from stdin")
 		.action((handle: string, text: string) => phoneSay(handle, text, getDeps()));
+
+	const threads = group.command("thread").description("a static multi-party room with a #handle");
+
+	threads
+		.command("new")
+		.description("create a thread from existing contacts")
+		.argument("<handle>", "thread handle, starting with #")
+		.argument("<members...>", "contacts to include, each a +handle")
+		.option("--subject <text>", "subject stored on the thread and sent with each message")
+		.action((handle: string, members: string[], opts: { subject?: string }) => phoneThreadNew(handle, members, opts, getDeps()));
+
+	threads
+		.command("list")
+		.description("list threads, in handle order")
+		.action(() => phoneThreadList(getDeps()));
+
+	threads
+		.command("show")
+		.description("show one thread and its members")
+		.argument("<handle>", "the thread handle")
+		.action((handle: string) => phoneThreadShow(handle, getDeps()));
 
 	group
 		.command("inbox")

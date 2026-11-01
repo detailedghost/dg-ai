@@ -4,11 +4,21 @@ import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
+import {
+	classifyThreadRumor,
+	heldFrom,
+	type HeldThread,
+	sortByTime,
+	threadMessageFields,
+	type ThreadMeta,
+} from "./thread";
+
+export type { HeldThread, ThreadMeta };
 
 // Stryker disable all
-export type Message = { id: string; ts: number; from: string; text: string; call?: true };
+export type Message = { id: string; ts: number; from: string; text: string; call?: true; thread?: ThreadMeta };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
-export type Contact = { npub: string; handle: string };
+export type Contact = { npub: string; handle: string; keyId?: string };
 /** The admission-time view of a live invite: just enough for the gate to match and name a new caller, with its own relays when it has them. */
 export type Invite = { secret: string; expiresAt: number; name?: string; relays?: string[] };
 export type Seen = { cursor: number; ids: string[] };
@@ -140,7 +150,7 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 	if (holdsSecret(rumor, gate.secrets.number)) {
 		const handle = selfNameOf(rumor) ?? UNKNOWN_CALLER_HANDLE;
 		const contacts = new Map(gate.contacts);
-		contacts.set(rumor.pubkey, { npub, handle });
+		contacts.set(rumor.pubkey, { npub, handle, keyId });
 		return {
 			ok: true,
 			admitted: {
@@ -154,7 +164,7 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 	if (invite) {
 		const handle = invite.name ?? selfNameOf(rumor) ?? UNKNOWN_CALLER_HANDLE;
 		const contacts = new Map(gate.contacts);
-		contacts.set(rumor.pubkey, { npub, handle });
+		contacts.set(rumor.pubkey, { npub, handle, keyId });
 		return {
 			ok: true,
 			admitted: {
@@ -343,6 +353,8 @@ export type FetchResult = {
 	reaccepts: Reaccept[];
 	/** Re-accepts keyed by the wrap that carried the number secret, so a later plain message in the same batch does not move the key. */
 	reacceptByMessageId: Map<string, Reaccept>;
+	/** Thread rumors that were not admitted. The listener holds these and does not store them as mail. */
+	held: HeldThread[];
 };
 
 /** Opens the whole batch first, then admits in time order, so the earliest valid call wins. */
@@ -381,9 +393,42 @@ export async function fetchNew(
 	const newContacts: NewContact[] = [];
 	const reaccepts: Reaccept[] = [];
 	const reacceptByMessageId = new Map<string, Reaccept>();
+	const held: HeldThread[] = [];
+	const direct: typeof opened = [];
+	const deferredThreads: typeof opened = [];
+	const threadContactsOf = (source: Gate) => [...source.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
+	const classifyItem = (item: (typeof opened)[number], source: Gate) => {
+		const openingPub = keys.find((key) => key.id === item.keyId)?.pub ?? "";
+		return classifyThreadRumor(item.rumor, ownPubs, threadContactsOf(source), startedAt, item.keyId, openingPub);
+	};
+	const keepThread = (item: (typeof opened)[number], view: NonNullable<ReturnType<typeof classifyThreadRumor>>) => {
+		if (view.kind === "hold") {
+			held.push(heldFrom(view));
+			skipped.push(item.event.id);
+			return;
+		}
+		if (view.kind === "message") {
+			messages.push(threadMessageFields(view, view.keyId ?? item.keyId));
+			skipped.push(item.event.id);
+			return;
+		}
+		onDrop?.({ id: item.event.id, reason: view.reason ?? "older than the message window", pubkeyPrefix: view.pubkeyPrefix });
+	};
+	for (const item of opened) {
+		const view = classifyItem(item, gate);
+		if (view === null) {
+			direct.push(item);
+			continue;
+		}
+		if (view.kind === "drop" && view.reason === "no matching contact or invite") {
+			deferredThreads.push(item);
+			continue;
+		}
+		keepThread(item, view);
+	}
 	let current = gate;
 	// Stryker restore all
-	const { admitted, drops } = admitInPasses(opened, (item) => {
+	const { admitted, drops } = admitInPasses(direct, (item) => {
 		const decided = admit(item.event, item.rumor, item.keyId, current, startedAt);
 		if (!decided.ok) {
 			return {
@@ -404,6 +449,12 @@ export async function fetchNew(
 			reacceptByMessageId.set(item.message.id, item.reaccept);
 		}
 	}
+	for (const item of deferredThreads) {
+		const view = classifyItem(item, current);
+		if (view === null) continue;
+		keepThread(item, view);
+	}
+	sortByTime(messages);
 	return {
 		messages,
 		seen: remember(seen, startedAt, [...messages.map((message) => message.id), ...skipped]),
@@ -411,6 +462,7 @@ export async function fetchNew(
 		newContacts,
 		reaccepts,
 		reacceptByMessageId,
+		held,
 	};
 }
 // Stryker disable all
@@ -425,7 +477,9 @@ export type DropReason =
 	| "could not open the wrap"
 	| "not a chat message"
 	| "older than the message window"
-	| "no matching contact or invite";
+	| "no matching contact or invite"
+	| "thread is too large"
+	| "ahead of the clock";
 
 /** Why a wrap was not stored. No secret, invite secret, or message text. */
 export type DroppedRing = { id: string; reason: DropReason; pubkeyPrefix?: string };
@@ -459,13 +513,20 @@ export function classifyIncoming(
 	gate: Gate,
 	now: number,
 	ownPubs: readonly string[] = keys.map((held) => held.pub),
-): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } {
+): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } | { held: HeldThread } {
 	const key = pickKey(event, keys);
 	if (!key) return { drop: { id: event.id, reason: "not addressed to a loaded key" } };
 	const opened = openDetailed(event, key.sk);
 	if (opened.kind === "undecryptable") return { drop: { id: event.id, reason: "could not open the wrap" } };
 	if (opened.kind === "not-chat") return { drop: { id: event.id, reason: "not a chat message" } };
 	if (isSelfProbe(opened.rumor, ownPubs)) return { probe: true };
+	const threadContacts = [...gate.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
+	const view = classifyThreadRumor(opened.rumor, ownPubs, threadContacts, now, key.id, key.pub);
+	if (view?.kind === "drop") {
+		return { drop: { id: event.id, reason: view.reason ?? "older than the message window", pubkeyPrefix: view.pubkeyPrefix } };
+	}
+	if (view?.kind === "hold") return { held: heldFrom(view) };
+	if (view?.kind === "message") return { admitted: { message: threadMessageFields(view, view.keyId ?? key.id), gate } };
 	const decided = admit(event, opened.rumor, key.id, gate, now);
 	if (!decided.ok) return { drop: { id: event.id, reason: decided.reason, pubkeyPrefix: decided.pubkeyPrefix } };
 	return { admitted: decided.admitted };
@@ -477,6 +538,8 @@ export type SubscribeHooks = {
 	onDrop?: (drop: DroppedRing) => void;
 	/** Called for every event the subscription delivers, before admission. Used by the liveness probe. */
 	onEvent?: (id: string) => void;
+	/** A thread rumor that was not admitted. The body stays out of the log line the listener prints. */
+	onHeld?: (held: HeldThread) => void;
 };
 
 /**
@@ -506,6 +569,11 @@ export function subscribe(
 				result = classifyIncoming(event, keys, hooks.reread(), now(), ownPubs);
 			}
 			if ("probe" in result) {
+				addBounded(known, event.id, STRANGER_ID_LIMIT);
+				return;
+			}
+			if ("held" in result) {
+				hooks.onHeld?.(result.held);
 				addBounded(known, event.id, STRANGER_ID_LIMIT);
 				return;
 			}

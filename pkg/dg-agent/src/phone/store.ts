@@ -39,6 +39,13 @@ export function isHandle(value: string): boolean {
 	return HANDLE_PATTERN.test(value);
 }
 
+/** Contact handles share the command namespace with threads, and threads own the `#` prefix. */
+export function assertContactHandle(handle: string): void {
+	if (handle.startsWith("#")) {
+		throw new DgCliError(`a contact handle cannot start with "#", got "${handle}"`);
+	}
+}
+
 /** Strips a leading `+`, the only prefix the new commands accept on a handle argument. */
 export function normalizeHandle(value: string): string {
 	return value.startsWith("+") ? value.slice(1) : value;
@@ -157,6 +164,7 @@ export function findContactByNpub(db: PhoneDb, npub: string): ContactRecord | un
 }
 
 export function requireFreeHandle(db: PhoneDb, handle: string): void {
+	assertContactHandle(handle);
 	if (!isHandle(handle)) {
 		throw new DgCliError(`a handle must be 1-32 lowercase letters, digits, or dashes, got "${handle}"`);
 	}
@@ -305,9 +313,9 @@ export function pubkeyHex(npub: string): string {
 
 /** Builds the live admission gate from the current contacts, number secret, and unexpired invites. */
 export function gateFor(db: PhoneDb): Gate {
-	const contacts = new Map<string, { npub: string; handle: string }>();
+	const contacts = new Map<string, { npub: string; handle: string; keyId: string }>();
 	for (const row of db.listContacts()) {
-		contacts.set(pubkeyHex(row.npub), { npub: row.npub, handle: row.handle });
+		contacts.set(pubkeyHex(row.npub), { npub: row.npub, handle: row.handle, keyId: row.key_id });
 	}
 	return {
 		contacts,

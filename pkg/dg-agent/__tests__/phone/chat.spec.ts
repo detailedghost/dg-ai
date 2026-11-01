@@ -472,7 +472,7 @@ describe("the number secret (reusable, no expiry)", () => {
 
 		expect(admitted?.message).toMatchObject({ text: "hello", from: nip19.npubEncode(alice.pub), call: true });
 		expect(admitted?.newContact).toMatchObject({ npub: nip19.npubEncode(alice.pub), via: "number", suggestedHandle: "grok", keyId: bob.id });
-		expect(admitted?.gate.contacts.get(alice.pub)).toEqual({ npub: nip19.npubEncode(alice.pub), handle: "grok" });
+		expect(admitted?.gate.contacts.get(alice.pub)).toEqual({ npub: nip19.npubEncode(alice.pub), handle: "grok", keyId: bob.id });
 	});
 
 	it("drops a ring with a wrong secret", () => {
@@ -859,6 +859,104 @@ describe("self probes", () => {
 		const caught = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, now);
 
 		expect(caught.messages.map((message) => message.text)).toEqual(["for bob"]);
+	});
+});
+
+describe("thread rumors", () => {
+	function groupWrap(sender: ReturnType<typeof identity>, to: ReturnType<typeof identity>, pubs: string[], content: string, createdAt: number, subject?: string) {
+		const tags = pubs.map((pub) => ["p", pub]);
+		if (subject !== undefined) tags.push(["subject", subject]);
+		const rumor = nip59.createRumor({ kind: 14, content, created_at: createdAt, tags }, sender.sk);
+		return { rumor, event: nip59.createWrap(nip59.createSeal(rumor, sender.sk, to.pub), to.pub) };
+	}
+
+	it("admits a rumor with several p tags when every member is us or a contact, once, by rumor id", async () => {
+		const alice = identity();
+		const bob = identity();
+		const cara = identity();
+		const pool = createFakePool();
+		const sent = groupWrap(alice, bob, [bob.pub, cara.pub], "later", 2_000, "ops");
+		const earlier = groupWrap(alice, bob, [bob.pub], "plain", 1_000);
+		pool.events.push(sent.event, earlier.event);
+		const gate = gateWithContact(alice.pub);
+		const aliceContact = gate.contacts.get(alice.pub);
+		if (aliceContact) aliceContact.keyId = bob.id;
+		gate.contacts.set(cara.pub, { npub: nip19.npubEncode(cara.pub), handle: "cara", keyId: bob.id });
+
+		const { messages, held } = await fetchNew(pool, RELAYS, [bob], gate, { cursor: 0, ids: [] }, () => 2_005);
+
+		expect(held).toEqual([]);
+		expect(messages.map((message) => message.text)).toEqual(["plain", "later"]);
+		expect(messages[1]).toMatchObject({ id: sent.rumor.id, thread: { roomId: expect.any(String) } });
+		expect(messages[0]?.thread).toBeUndefined();
+	});
+
+	it("holds a thread when a member is not a contact and does not admit it as one-to-one", async () => {
+		const alice = identity();
+		const bob = identity();
+		const cara = identity();
+		const pool = createFakePool();
+		const sent = groupWrap(alice, bob, [bob.pub, cara.pub], "secret-body", 2_000, "ops");
+		pool.events.push(sent.event);
+
+		const { messages, held } = await fetchNew(pool, RELAYS, [bob], gateWithContact(alice.pub), { cursor: 0, ids: [] }, () => 2_005);
+
+		expect(messages).toEqual([]);
+		expect(held.map((row) => row.rumorId)).toEqual([sent.rumor.id]);
+		expect(held[0]?.text).toBe("secret-body");
+	});
+
+	it("drops a stranger thread instead of holding it", async () => {
+		const stranger = identity("s");
+		const bob = identity();
+		const pool = createFakePool();
+		const sent = groupWrap(stranger, bob, [bob.pub], "stranger-body", 2_000, "x");
+		pool.events.push(sent.event);
+		const drops: string[] = [];
+
+		const { messages, held } = await fetchNew(pool, RELAYS, [bob], emptyGate(), { cursor: 0, ids: [] }, () => 2_005, (drop) => {
+			drops.push(drop.reason);
+		});
+
+		expect(messages).toEqual([]);
+		expect(held).toEqual([]);
+		expect(drops).toEqual(["no matching contact or invite"]);
+	});
+
+	it("admits a thread once when the sender pairs in the same catch-up batch", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const secret = "ab".repeat(32);
+		const callRumor = nip59.createRumor(
+			{
+				kind: 14,
+				content: "hello",
+				created_at: 1_000,
+				tags: [["p", bob.pub], [CALL_TAG, secret], [SELF_NAME_TAG, "alice"]],
+			},
+			alice.sk,
+		);
+		const call = nip59.createWrap(nip59.createSeal(callRumor, alice.sk, bob.pub), bob.pub);
+		const sent = groupWrap(alice, bob, [bob.pub], "room-line", 2_000, "ops");
+		pool.events.push(sent.event, call);
+		const drops: string[] = [];
+
+		const { messages, held } = await fetchNew(
+			pool,
+			RELAYS,
+			[bob],
+			{ contacts: new Map(), secrets: { number: secret, invites: [] } },
+			{ cursor: 0, ids: [] },
+			() => 5_000,
+			(drop) => drops.push(drop.reason),
+		);
+
+		expect(drops).toEqual([]);
+		expect(held).toEqual([]);
+		expect(messages.filter((message) => message.call).map((message) => message.text)).toEqual(["hello"]);
+		expect(messages.filter((message) => message.thread).map((message) => message.text)).toEqual(["room-line"]);
+		expect(messages.filter((message) => message.id === sent.rumor.id)).toHaveLength(1);
 	});
 });
 

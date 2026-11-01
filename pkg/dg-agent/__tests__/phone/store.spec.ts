@@ -241,7 +241,7 @@ describe("gateFor", () => {
 		const gate = gateFor(db);
 
 		const hex = nip19.decode(who).data as string;
-		expect(gate.contacts.get(hex)).toEqual({ npub: who, handle: "velora" });
+		expect(gate.contacts.get(hex)).toEqual({ npub: who, handle: "velora", keyId: "default" });
 		expect(gate.secrets.number).toBe("ab".repeat(32));
 		expect(gate.secrets.invites).toEqual([{ secret: "cd".repeat(32), expiresAt: NOW + 100, name: "grok", relays: [] }]);
 	});

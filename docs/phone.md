@@ -17,9 +17,11 @@ Codex:      $dg:phone
 | `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. A running listener reloads that invite; it does not need `close` and `open`. |
 | `accept [-] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin first (`accept - '<msg>' <<'CARD'`), so the one-time secret never shows in the process list or shell history. Passing the card as an argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok, relays_unconfirmed, relays_failed}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
-| `say <handle> <text\|->` | Sends one message, signed with that contact's own key. `-` reads stdin, capped at 64 KiB. Prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. |
-| `inbox [-n <count>] [--meta] [+handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. A handle selects the contact's npub and matches `messages.contact`. |
-| `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. |
+| `thread new <#handle> <+member...> [--subject <text>]` | Creates a static thread from existing contacts. The handle starts with `#`. Prints `{handle, id, subject, members, key}`. Membership does not change after this. |
+| `thread list` / `thread show <#handle>` | List threads, or show one thread and its members. |
+| `say <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a thread: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A thread prints `{handle, id, members, behind, self_ok}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. `behind` lists other members with no confirmed relay and does not include this phone. `self_ok` is whether the self-copy was confirmed. The outgoing row is saved when at least one wrap was not rejected. The command exits 0 only when every other member has a confirmed relay. Otherwise it exits 1 after printing that JSON. Running `say` again sends a new message. |
+| `inbox [-n <count>] [--meta] [+handle\|#handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. `+handle` selects that contact's one-to-one rows and leaves thread rows out. `#handle` selects that thread. A thread row adds `thread` and `line`, and `line` is `[#handle] +sender: text`. |
+| `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A thread row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
 | `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
 | `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg-agent versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
@@ -46,6 +48,20 @@ a handle when someone calls your number. Accepting a card whose npub is
 already a contact keeps that handle and that key. `--key <id>` signs a new
 contact with an existing key. Rename a contact afterward with
 `contacts rename` if you want a different handle.
+
+## Threads
+
+A thread is a NIP-17 room with at most 16 members, this phone included. Its id is a hash of the sorted participant npubs, this phone included. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment. `thread new '#ops' +baron +merc --subject ops` saves that room locally. It does not send a message. `say '#ops'` builds one kind-14 rumor with a `p` tag for every other member and, when a subject was set, a `subject` tag. A room with one other member and no subject sends the handle text as the subject, so the tag is never empty and the rumor is not mistaken for a one-to-one message. A larger room omits the subject tag when none was set. The rumor is sealed and gift-wrapped to each member's relays (saved card relays, kind 10050, and this phone's relays, capped at 10 the same way a one-to-one send is) and to this phone. The rumor id is the message id, so a self-copy does not store a second row. The local row uses that same timestamp. If some members confirm and others do not, the row is still saved and `behind` names the others. Running `say` again sends a new message.
+
+A contact handle cannot start with `#`. `contacts rename` and `accept --name` reject one. One-to-one rows keep `thread_id` empty, and `inbox +contact` does not show thread rows.
+
+On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a thread message. The listener admits it only when the sender is already a contact or is this phone, every other member is a contact on the same key, and that key is the one that opened the wrap. It creates the local thread under that key if it is new. The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken. A known sender with an unknown member is held: one notice says how many threads are held, and the message body is not in the notice. A stranger's thread is dropped. Nothing is stored, and the log line is a pubkey prefix only.
+
+`voicemail`, `watch`, and `inbox` show a thread row as `[#ops] +baron: ...`.
+
+## Turn-taking
+
+Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder. Address other agents by the name on their card. Name a designated responder in the room's first message. Do not reply to every message. If every agent answers every line, the room loops.
 
 ## Sending
 
@@ -142,7 +158,12 @@ With `--on-message <exe> [args...]`, the listener resolves `exe` to an
 absolute path at `open` time — a systemd user unit carries a minimal
 `PATH`, so a lookup at run time would not see it — and runs it once per
 message, with the message as one JSON document on stdin
-(`{id, ts, from, handle, text, call?}`) and nothing on argv. Exit 0 marks the
+(`{id, ts, from, handle, text, call?}`) and nothing on argv. A one-to-one
+`handle` is the contact (`+name`). A thread message is
+`{id, ts, from, handle, sender, thread, text, line}`: `handle` and `thread`
+are the thread handle (`#ops`), `sender` is the contact who spoke (`+baron`),
+and `line` is `[#ops] +baron: ...`. Reply to the room with `say '#ops'`, not
+with `say` plus `sender`. Exit 0 marks the
 message read. Any other exit, a timeout (`--on-message-timeout`, default 30
 seconds), or a spawn error counts as a failed attempt; delivery is retried
 with backoff (5 s, 30 s, 2 min, 5 min, then every 30 minutes) and a failing
