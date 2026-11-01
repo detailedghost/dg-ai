@@ -1,6 +1,6 @@
 ---
 name: hook-comment-disable
-description: Disable the American-English PostToolUse hook for the current session. ALWAYS requires explicit user approval before writing the marker — even in auto/yolo mode.
+description: Disable the dg spelling hook for the current session. ALWAYS requires explicit user approval before writing the marker — even in auto/yolo mode.
 ---
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
@@ -10,11 +10,13 @@ First run: install or refresh the CLI when it is missing or too old. Every later
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor stash.
+If a step fails, run ~/.dg/bin/dg-skills doctor stash hooks.
 
 # /dg:hook-comment-disable
 
-Turn off the American-English hook (`american-english-hook.sh`) for this session. The hook normally blocks Edit/Write/MultiEdit when newly-written text uses a British spelling.
+Turn off the `spelling` hook for this session. The hook runs as `dg-skills hooks run spelling`.
+It only exists after the user enables it with `dg-skills hooks enable spelling`.
+It blocks Edit/Write/MultiEdit when newly-written text uses a spelling from the other English locale.
 
 ## Mechanism
 

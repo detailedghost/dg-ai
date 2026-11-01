@@ -12,6 +12,7 @@ import { demoChecks } from "../demo/doctor";
 import { depsUpgradeChecks } from "../deps-upgrade/doctor";
 import { erdChecks } from "../erd/doctor";
 import { fileChecks } from "../file/doctor";
+import { hooksChecks } from "../hooks/doctor";
 import { inboxChecks } from "../inbox/doctor";
 import { installChecks } from "../install/doctor";
 import { jotChecks } from "../jot/doctor";
@@ -75,6 +76,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	stat: statChecks,
 	sniff: sniffChecks,
 	ssms: ssmsChecks,
+	hooks: hooksChecks,
 	"require-extension": requireExtensionChecks,
 	polish: polishChecks,
 	pw: pwChecks,

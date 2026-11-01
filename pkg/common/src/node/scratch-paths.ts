@@ -171,6 +171,46 @@ function safeAncestors(
 		unsafeDirectory(dir);
 }
 
+/** Throw when a managed root, or any ancestor, is a non-directory, a foreign or group/world-writable dir, or a disallowed link. */
+export function assertSafeRoot(base: string, allowRootLink: boolean): void {
+	const root = path.resolve(base);
+	const uid = process.getuid?.();
+	const systemUid = lstatSync(path.parse(root).root).uid;
+	safeAncestors(path.dirname(root), uid, systemUid);
+	const entry = directoryEntry(root);
+	if (entry.isSymbolicLink()) {
+		if (!allowRootLink || (uid !== undefined && entry.uid !== uid))
+			unsafeDirectory(root);
+		safeAncestors(realpathSync(root), uid, systemUid);
+	}
+	const rootStat = statSync(root);
+	if (
+		!rootStat.isDirectory() ||
+		(uid !== undefined &&
+			(rootStat.uid !== uid || (rootStat.mode & 0o022) !== 0))
+	)
+		unsafeDirectory(root);
+}
+
+/** A private direct child of a safe managed root, created 0700; throws when it is a link, foreign or writable by others. */
+export function privateRootChild(
+	base: string,
+	name: string,
+	allowRootLink: boolean,
+): string {
+	assertSafeRoot(base, allowRootLink);
+	const dir = path.join(path.resolve(base), name);
+	const entry = directoryEntry(dir);
+	const uid = process.getuid?.();
+	if (
+		entry.isSymbolicLink() ||
+		!entry.isDirectory() ||
+		(uid !== undefined && (entry.uid !== uid || (entry.mode & 0o022) !== 0))
+	)
+		unsafeDirectory(dir);
+	return dir;
+}
+
 function rootedDir(
 	base: string,
 	bucket: string,
@@ -192,21 +232,7 @@ function rootedDir(
 	)
 		unsafeDirectory(dir);
 	const uid = process.getuid?.();
-	const systemUid = lstatSync(path.parse(root).root).uid;
-	safeAncestors(path.dirname(root), uid, systemUid);
-	const entry = directoryEntry(root);
-	if (entry.isSymbolicLink()) {
-		if (!allowRootLink || (uid !== undefined && entry.uid !== uid))
-			unsafeDirectory(root);
-		safeAncestors(realpathSync(root), uid, systemUid);
-	}
-	const rootStat = statSync(root);
-	if (
-		!rootStat.isDirectory() ||
-		(uid !== undefined &&
-			(rootStat.uid !== uid || (rootStat.mode & 0o022) !== 0))
-	)
-		unsafeDirectory(root);
+	assertSafeRoot(root, allowRootLink);
 	let child = root;
 	for (const segment of relative.split(path.sep)) {
 		child = path.join(child, segment);
@@ -342,7 +368,9 @@ export function agentsPath(
 	const dir = path.join(root, tool);
 	const full = name ? path.join(dir, name) : dir;
 	if (!isPathInside(dir, root) || !isPathInside(full, dir))
-		throw new Error(`agentsPath: path must stay inside .agents, got: ${tool}/${name ?? ""}`);
+		throw new Error(
+			`agentsPath: path must stay inside .agents, got: ${tool}/${name ?? ""}`,
+		);
 	if (!name) {
 		mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
 		return dir;
