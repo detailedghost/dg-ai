@@ -76,46 +76,32 @@ describe("updateJsonFile", () => {
 	);
 
 	test.skipIf(process.platform === "win32")(
-		"writes through a symlink and keeps it a symlink",
+		"creates a new file with mode 0600",
 		async () => {
-			const target = world.seed(
-				join(world.dgHome, "dotfiles", "settings.json"),
-				{ a: 1 },
-			);
-			const link = world.paths.claude;
-			world.seed(join(dirname(link), "keep"), "");
-			symlinkSync(target, link);
-			await updateJsonFile(link, (doc) => ({ ...doc, b: 2 }));
-			expect(lstatSync(link).isSymbolicLink()).toBe(true);
-			expect(world.readJson(target)).toEqual({ a: 1, b: 2 });
+			await updateJsonFile(world.paths.claude, () => ({ a: 1 }));
+			expect(statSync(world.paths.claude).mode & 0o777).toBe(0o600);
 		},
 	);
 
-	test("keeps the mode of an existing 0600 file", async () => {
-		const file = world.seed(world.paths.claude, { env: { TOKEN: "x" } });
-		chmodSync(file, 0o600);
-		await updateJsonFile(file, (doc) => ({ ...doc, a: 1 }));
-		expect(statSync(file).mode & 0o777).toBe(0o600);
-	});
-
-	test("creates a new file with mode 0600", async () => {
-		await updateJsonFile(world.paths.claude, () => ({ a: 1 }));
-		expect(statSync(world.paths.claude).mode & 0o777).toBe(0o600);
-	});
-
-	test("writes through a symlink and keeps the link, the target mode and the target", async () => {
-		const target = world.seed(join(world.dgHome, "dotfiles", "settings.json"), {
-			theme: "dark",
-		});
-		chmodSync(target, 0o600);
-		const link = join(world.home, ".claude", "settings.json");
-		world.seed(join(world.home, ".claude", "keep"), "");
-		symlinkSync(target, link);
-		await updateJsonFile(link, (doc) => ({ ...doc, a: 1 }));
-		expect(lstatSync(link).isSymbolicLink()).toBe(true);
-		expect(world.readJson(target)).toEqual({ theme: "dark", a: 1 });
-		expect(statSync(target).mode & 0o777).toBe(0o600);
-	});
+	test.skipIf(process.platform === "win32")(
+		"writes through a symlink and keeps the link, the target mode and the target",
+		async () => {
+			const target = world.seed(
+				join(world.dgHome, "dotfiles", "settings.json"),
+				{
+					theme: "dark",
+				},
+			);
+			chmodSync(target, 0o600);
+			const link = join(world.home, ".claude", "settings.json");
+			world.seed(join(world.home, ".claude", "keep"), "");
+			symlinkSync(target, link);
+			await updateJsonFile(link, (doc) => ({ ...doc, a: 1 }));
+			expect(lstatSync(link).isSymbolicLink()).toBe(true);
+			expect(world.readJson(target)).toEqual({ theme: "dark", a: 1 });
+			expect(statSync(target).mode & 0o777).toBe(0o600);
+		},
+	);
 
 	test("skips the write and creates no file when nothing changes", async () => {
 		await updateJsonFile(world.paths.claude, (doc) => doc);

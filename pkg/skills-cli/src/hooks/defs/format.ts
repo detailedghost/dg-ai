@@ -10,9 +10,9 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, extname, join, parse } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { scratchRoot, writeFileAtomic } from "@dg/common/node";
-import type { HookContext, HookHandler } from "../types";
+import type { CommandResult, HookContext, HookHandler } from "../types";
 
 interface Formatter {
 	bin: string;
@@ -44,6 +44,7 @@ const MD_SKIP =
 
 class Formatting {
 	readonly missing = new Set<string>();
+	readonly failed: string[] = [];
 
 	constructor(
 		private readonly file: string,
@@ -56,8 +57,19 @@ class Formatting {
 		return false;
 	}
 
-	exec(argv: string[], cwd?: string) {
+	probe(argv: string[], cwd?: string) {
 		return this.ctx.seams.run(argv, { cwd });
+	}
+
+	async exec(argv: string[], cwd?: string): Promise<CommandResult> {
+		const result = await this.probe(argv, cwd);
+		if (result.status !== 0) {
+			const reason = result.stderr.trim().split("\n", 1)[0] ?? "";
+			this.failed.push(
+				`${basename(argv[0] ?? "")} failed (status ${result.status})${reason ? `: ${reason}` : ""}`,
+			);
+		}
+		return result;
 	}
 
 	async biomeIsReal(bin: string): Promise<boolean> {
@@ -71,7 +83,7 @@ class Formatting {
 		try {
 			real = readFileSync(marker, "utf8") === "1";
 		} catch {
-			const { stdout } = await this.exec([bin, "--version"]);
+			const { stdout } = await this.probe([bin, "--version"]);
 			real = stdout.includes("Biome") || stdout.includes("Version:");
 			mkdirSync(this.ctx.scratchDir, { recursive: true, mode: 0o700 });
 			writeFileSync(marker, real ? "1" : "0");
@@ -88,7 +100,7 @@ class Formatting {
 		const home = this.ctx.env["HOME"];
 		for (
 			let dir = dirname(this.file);
-			dir !== parse(dir).root;
+			dir !== dirname(dir);
 			dir = dirname(dir)
 		) {
 			const local = join(dir, "node_modules", ".bin", "biome");
@@ -122,7 +134,7 @@ class Formatting {
 		try {
 			return readFileSync(marker, "utf8") === "1";
 		} catch {
-			const help = await this.exec([bin, "check", "--help"], configDir);
+			const help = await this.probe([bin, "check", "--help"], configDir);
 			const organize = `${help.stdout}${help.stderr}`.includes(
 				"--organize-imports-enabled",
 			);
@@ -132,17 +144,21 @@ class Formatting {
 		}
 	}
 
-	private writeStdout(stdout: string): void {
+	private writeBack(result: CommandResult): void {
+		if (result.status !== 0 || !result.stdout || result.truncated) return;
 		const target = realpathSync(this.file);
-		writeFileAtomic(target, stdout, statSync(target).mode & 0o7777);
+		writeFileAtomic(target, result.stdout, statSync(target).mode & 0o7777);
 	}
 
 	async biome(fix: boolean): Promise<boolean> {
 		const resolved = await this.resolveBiome();
 		if (!resolved) return false;
 		const { bin, configDir } = resolved;
-		await this.exec([bin, "format", "--write", this.file], configDir);
-		if (fix) {
+		const formatted = await this.exec(
+			[bin, "format", "--write", this.file],
+			configDir,
+		);
+		if (fix && formatted.status === 0) {
 			const organize = await this.supportsOrganize(bin, configDir);
 			await this.exec(
 				[
@@ -162,7 +178,7 @@ class Formatting {
 		const home = this.ctx.env["HOME"];
 		for (
 			let dir = dirname(this.file);
-			dir !== parse(dir).root;
+			dir !== dirname(dir);
 			dir = dirname(dir)
 		) {
 			const tools = join(dir, ".config", "dotnet-tools.json");
@@ -185,8 +201,7 @@ class Formatting {
 	async json(): Promise<void> {
 		if (await this.biome(false)) return;
 		if (!this.ctx.seams.which("jq")) return;
-		const result = await this.exec(["jq", ".", this.file]);
-		if (result.status === 0 && result.stdout) this.writeStdout(result.stdout);
+		this.writeBack(await this.exec(["jq", ".", this.file]));
 	}
 
 	async shell(): Promise<void> {
@@ -216,8 +231,7 @@ class Formatting {
 
 	async xml(): Promise<void> {
 		if (this.ctx.seams.which("xmlformat")) {
-			const result = await this.exec(["xmlformat", this.file]);
-			if (result.status === 0 && result.stdout) this.writeStdout(result.stdout);
+			this.writeBack(await this.exec(["xmlformat", this.file]));
 		} else if (this.ctx.seams.which("xmlformatter"))
 			await this.exec(["xmlformatter", "--overwrite", this.file]);
 		else this.missing.add("xmlformat");
@@ -265,16 +279,20 @@ function firstWarning(ctx: HookContext, tools: string[]): string[] {
 
 const handler: HookHandler = async (input, ctx) => {
 	if (!EDIT_TOOLS.has(input.tool_name ?? "")) return { exitCode: 0 };
-	const file = String(input.tool_input?.["file_path"] ?? "");
-	if (!file || !existsSync(file)) return { exitCode: 0 };
+	const raw = String(input.tool_input?.["file_path"] ?? "");
+	if (!raw) return { exitCode: 0 };
+	const file = resolve(input.cwd ?? process.cwd(), raw);
+	if (!existsSync(file)) return { exitCode: 0 };
 	const formatting = new Formatting(file, ctx);
 	await formatting.run();
 	const fresh = firstWarning(ctx, [...formatting.missing]);
-	if (fresh.length === 0) return { exitCode: 0 };
-	return {
-		exitCode: 0,
-		additionalContext: `format: NOT FORMATTED - formatter unavailable: ${fresh.join(" ")}. Matching files were skipped, not formatted.`,
-	};
+	const notes = formatting.failed.map((failure) => `format: ${failure}`);
+	if (fresh.length > 0)
+		notes.push(
+			`format: NOT FORMATTED - formatter unavailable: ${fresh.join(" ")}. Matching files were skipped, not formatted.`,
+		);
+	if (notes.length === 0) return { exitCode: 0 };
+	return { exitCode: 0, additionalContext: notes.join("\n") };
 };
 
 export default handler;

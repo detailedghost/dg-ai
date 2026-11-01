@@ -8,6 +8,7 @@ export interface CommandReply {
 	status: number;
 	stdout?: string;
 	stderr?: string;
+	truncated?: boolean;
 }
 
 export interface CommandCall {
@@ -126,6 +127,7 @@ export function hookWorld() {
 						status: reply.status,
 						stdout: reply.stdout ?? "",
 						stderr: reply.stderr ?? "",
+						...(reply.truncated ? { truncated: true } : {}),
 					};
 				},
 				which: opts.which ?? (() => undefined),

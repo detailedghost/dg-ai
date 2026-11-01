@@ -82,6 +82,33 @@ describe("spawnCapture", () => {
 		expect(r.stdout).toContain("[output truncated]");
 		expect(r.stdout.replace(/\n\[output truncated\]\n$/, "")).toHaveLength(150);
 		expect(r.stderr).toBe(big);
+		expect(r.truncated).toBe(true);
+	});
+
+	test("leaves truncated unset when stdout fits", async () => {
+		const r = await spawnCapture(["x"], undefined, {
+			spawn: () => finished(["small"]),
+		});
+		expect(r.truncated).toBeUndefined();
+	});
+
+	test("returns after the timeout even when a descendant keeps the pipe open", async () => {
+		const killed: string[] = [];
+		const r = await spawnCapture(["parent"], undefined, {
+			spawn: () => ({
+				stdout: new ReadableStream<Uint8Array>({ start() {} }),
+				stderr: streamOf(),
+				exited: Promise.resolve(137),
+				kill: (signal) => {
+					killed.push(signal ?? "SIGTERM");
+				},
+			}),
+			timeoutMs: 20,
+			drainMs: 20,
+		});
+		expect(killed).toEqual(["SIGKILL"]);
+		expect(r.status).toBe(124);
+		expect(r.stderr).toContain("parent timed out after 20 ms");
 	});
 
 	test("caps each stream at 1 MiB by default", async () => {

@@ -32,7 +32,14 @@ function merge(base: DgConfig, patch: DgConfig): DgConfig {
 export function readDgConfig(env: ConfigEnv = process.env): DgConfig {
 	const file = configFile(env);
 	if (!existsSync(file)) return {};
-	const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(file, "utf8"));
+	} catch (error) {
+		throw new Error(
+			`${file} is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+		);
+	}
 	if (!isRecord(parsed)) throw new Error(`${file} is not a JSON object`);
 	return parsed;
 }

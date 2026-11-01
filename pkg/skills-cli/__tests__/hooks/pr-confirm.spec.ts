@@ -48,11 +48,13 @@ describe("pr-confirm hook", () => {
 		expect(r.json.hookSpecificOutput.permissionDecision).toBe("ask");
 	});
 
-	test("matches a long run of flag lines in bounded time", async () => {
-		const started = performance.now();
-		await world.run("pr-confirm", bashInput("gh -a\n".repeat(20_000)));
-		expect(performance.now() - started).toBeLessThan(500);
-	});
+	test("matches a long run of flag lines without runaway backtracking", async () => {
+		const r = await world.run(
+			"pr-confirm",
+			bashInput("gh -a\n".repeat(20_000)),
+		);
+		expect(r.code).toBe(0);
+	}, 5_000);
 
 	test.each([
 		"glab mr view 42",

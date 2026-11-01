@@ -33,6 +33,24 @@ function userSettings(): SettingsFile {
 }
 
 describe("claude settings writer", () => {
+	test("enable and disable track a quoted launcher under a path with spaces", async () => {
+		world.seed(world.paths.claude, {});
+		const launcher = `${world.dgHome}/My Apps/dg-skills`;
+		const enabled = await world.cli(
+			["enable", "spelling", "--runtime", "claude"],
+			{ launcher },
+		);
+		expect(enabled.code).toBe(0);
+		const owned = ownedObjects(world.readJson(world.paths.claude));
+		expect(owned.map((h) => h.command)).toEqual([
+			ownedCommand(launcher, "spelling"),
+		]);
+		await world.cli(["disable", "spelling", "--runtime", "claude"], {
+			launcher,
+		});
+		expect(ownedObjects(world.readJson(world.paths.claude))).toEqual([]);
+	});
+
 	test("enable adds one owned object under PostToolUse and keeps every user entry", async () => {
 		const before = userSettings();
 		world.seed(world.paths.claude, before);
@@ -110,13 +128,13 @@ describe("claude settings writer", () => {
 		]);
 		expect(result.stdout).toContain("skipped pr-confirm");
 		expect(world.has(world.paths.opencodePlugin)).toBe(false);
-		const codex = await world.cli([
+		const dailyPrune = await world.cli([
 			"enable",
 			"daily-prune",
 			"--runtime",
 			"opencode",
 		]);
-		expect(codex.code).toBe(0);
+		expect(dailyPrune.code).toBe(0);
 		expect(world.has(world.paths.opencodeJson)).toBe(false);
 	});
 

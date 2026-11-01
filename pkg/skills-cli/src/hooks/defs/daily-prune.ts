@@ -4,15 +4,21 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
+	realpathSync,
 	rmSync,
 	type Stats,
 	statSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { scratchRoot, selfCommand, stateRoot } from "@dg/common/node";
+import {
+	scratchRoot,
+	selfCommand,
+	stateRoot,
+	writeFileAtomic,
+} from "@dg/common/node";
 import type { CommandRunner, HookEnv, HookHandler } from "../types";
 
 const DAY_MS = 86_400_000;
@@ -145,22 +151,42 @@ export function mainReposFor(worktreeRoot: string): string[] {
 	return [...repos].sort();
 }
 
-/** Linked worktree branches of `repo`; the main worktree and detached trees are left out. */
-export function linkedBranches(repo: string): string[] {
+interface LinkedWorktree {
+	path: string;
+	branch: string;
+}
+
+function linkedWorktrees(repo: string): LinkedWorktree[] {
 	const out = git(["worktree", "list", "--porcelain"], repo);
 	if (!out) return [];
 	return out
 		.split("\n\n")
 		.slice(1)
-		.map((block) => block.match(/^branch refs\/heads\/(.+)$/m)?.[1])
-		.filter((b): b is string => Boolean(b));
+		.flatMap((block) => {
+			const path = block.match(/^worktree (.+)$/m)?.[1];
+			const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1];
+			return path && branch ? [{ path, branch }] : [];
+		});
 }
 
-/** Prunes then removes linked worktrees; refused removals stay. */
+/** Linked worktree branches of `repo`; the main worktree and detached trees are left out. */
+export function linkedBranches(repo: string): string[] {
+	return linkedWorktrees(repo).map((w) => w.branch);
+}
+
+function isUnder(child: string, root: string): boolean {
+	const rel = path.relative(root, child);
+	return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+/** Prunes then removes linked worktrees under `worktreeRoot`; refused removals stay. */
 export async function pruneWorktrees(
 	worktreeRoot: string,
 	opts: PruneOptions,
 ): Promise<void> {
+	const root = existsSync(worktreeRoot)
+		? realpathSync(worktreeRoot)
+		: worktreeRoot;
 	for (const repo of mainReposFor(worktreeRoot)) {
 		if (opts.dryRun) {
 			opts.log(
@@ -168,8 +194,18 @@ export async function pruneWorktrees(
 			);
 			continue;
 		}
-		await opts.run(selfCommand(["worktree", "prune"]), { cwd: repo });
-		for (const branch of linkedBranches(repo)) {
+		const pruned = await opts.run(selfCommand(["worktree", "prune"]), {
+			cwd: repo,
+		});
+		if (pruned.status !== 0) {
+			const detail = pruned.stderr.trim().split("\n").pop()?.replace(ANSI, "");
+			opts.log(`worktree prune failed in ${repo}: ${detail ?? ""}`);
+			continue;
+		}
+		const inside = linkedWorktrees(repo).filter((w) =>
+			isUnder(existsSync(w.path) ? realpathSync(w.path) : w.path, root),
+		);
+		for (const { branch } of inside) {
 			const r = await opts.run(selfCommand(["worktree", "remove", branch]), {
 				cwd: repo,
 			});
@@ -330,33 +366,47 @@ export async function runNow(
 	writeFileSync(path.join(logDir, "daily-prune.log"), `${lines.join("\n")}\n`);
 }
 
+const LOCK_STALE_MS = 10 * 60_000;
+
+function takeLock(lock: string): boolean {
+	try {
+		writeFileSync(lock, String(process.pid), { flag: "wx" });
+		return true;
+	} catch {
+		try {
+			if (Date.now() - statSync(lock).mtimeMs < LOCK_STALE_MS) return false;
+			rmSync(lock, { force: true });
+			writeFileSync(lock, String(process.pid), { flag: "wx" });
+			return true;
+		} catch {
+			return false;
+		}
+	}
+}
+
 const handler: HookHandler = async (_input, ctx) => {
 	const stamp = path.join(ctx.stateDir, "daily-prune.stamp");
 	if (stampFresh(stamp, Date.now())) return { exitCode: 0 };
 	mkdirSync(path.dirname(stamp), { recursive: true });
-	if (existsSync(stamp)) {
-		const claimed = `${stamp}.${process.pid}`;
+	const lock = `${stamp}.lock`;
+	if (!takeLock(lock)) return { exitCode: 0 };
+	try {
+		if (stampFresh(stamp, Date.now())) return { exitCode: 0 };
+		const previous = existsSync(stamp) ? statSync(stamp).mtime : undefined;
+		writeFileAtomic(stamp, "");
 		try {
-			renameSync(stamp, claimed);
-		} catch {
-			return { exitCode: 0 };
+			ctx.seams.spawnDetached(
+				selfCommand(["hooks", "run", "daily-prune", "--now"]),
+			);
+		} catch (error) {
+			if (previous) utimesSync(stamp, previous, previous);
+			else rmSync(stamp, { force: true });
+			throw error;
 		}
-		rmSync(claimed, { force: true });
-	}
-	try {
-		writeFileSync(stamp, "", { flag: "wx" });
-	} catch {
 		return { exitCode: 0 };
+	} finally {
+		rmSync(lock, { force: true });
 	}
-	try {
-		ctx.seams.spawnDetached(
-			selfCommand(["hooks", "run", "daily-prune", "--now"]),
-		);
-	} catch (error) {
-		rmSync(stamp, { force: true });
-		throw error;
-	}
-	return { exitCode: 0 };
 };
 
 export default handler;

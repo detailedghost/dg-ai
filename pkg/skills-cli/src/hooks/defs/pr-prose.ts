@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { bashCommand } from "../io";
-import { invokesPrCommand } from "../pr-command";
+import { prCommandIndex } from "../pr-command";
 import type { HookContext, HookHandler } from "../types";
 
 interface Finding {
@@ -65,9 +65,13 @@ export function tokenize(source: string): string[] {
 				started = true;
 			}
 		} else if (c === quote) quote = "";
-		else if (quote === '"' && c === "\\") {
+		else if (
+			quote === '"' &&
+			c === "\\" &&
+			'$`"\\\n'.includes(source[i + 1] ?? "")
+		) {
 			i++;
-			current += source[i] ?? "";
+			if (source[i] !== "\n") current += source[i] ?? "";
 		} else {
 			current += c;
 			started = true;
@@ -286,9 +290,10 @@ function firstHint(ctx: HookContext): boolean {
 }
 
 const handler: HookHandler = async (input, ctx) => {
-	const command = bashCommand(input);
-	if (!invokesPrCommand(command, ["create", "edit", "update"]))
-		return { exitCode: 0 };
+	const full = bashCommand(input);
+	const at = prCommandIndex(full, ["create", "edit", "update"]);
+	if (at < 0) return { exitCode: 0 };
+	const command = full.slice(at);
 	if (ctx.bypassed("pr-prose-disabled")) return { exitCode: 0 };
 	const body = extractBody(command, input.cwd ?? process.cwd()).replace(
 		/\n+$/,

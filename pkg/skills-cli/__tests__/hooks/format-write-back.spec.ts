@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { editInput, hookWorld } from "./hook-fixtures";
 
@@ -87,5 +87,65 @@ describe("format hook xml write-back through xmlformat", () => {
 			reply: { status: 0, stdout: "" },
 		});
 		expect(readFileSync(file, "utf8")).toBe("<a/>");
+	});
+});
+
+describe("format hook failures", () => {
+	test("leaves the file alone when jq output was truncated", async () => {
+		const file = world.seed("big.json", '{"a":1}');
+		await world.run("format", editing(file), {
+			which: only("jq"),
+			reply: { status: 0, stdout: '{\n  "a"', truncated: true },
+		});
+		expect(readFileSync(file, "utf8")).toBe('{"a":1}');
+	});
+
+	test("leaves the file alone when xmlformat output was truncated", async () => {
+		const file = world.seed("big.xml", "<a/>");
+		await world.run("format", editing(file), {
+			which: only("xmlformat"),
+			reply: { status: 0, stdout: "<a", truncated: true },
+		});
+		expect(readFileSync(file, "utf8")).toBe("<a/>");
+	});
+
+	test("reports a formatter that exits non-zero", async () => {
+		const file = world.seed("src/a.py", "x = 1\n");
+		const r = await world.run("format", editing(file), {
+			which: only("ruff"),
+			reply: { status: 2, stderr: "error: cannot parse a.py\nmore" },
+		});
+		expect(r.code).toBe(0);
+		expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe(
+			"format: ruff failed (status 2): error: cannot parse a.py",
+		);
+	});
+
+	test("reports a biome format failure instead of a missing formatter", async () => {
+		const file = world.seed("src/a.ts", "const a=1\n");
+		world.seed("node_modules/.bin/biome", "");
+		world.seed(".git/HEAD", "");
+		const r = await world.run("format", editing(file), {
+			replyFor: (argv) =>
+				argv[1] === "format"
+					? { status: 1, stderr: "parse error" }
+					: { status: 0 },
+		});
+		const context = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+		expect(context).toContain("biome failed (status 1): parse error");
+		expect(context).not.toContain("formatter unavailable");
+	});
+
+	test("resolves a relative file_path against the event cwd", async () => {
+		const file = world.seed("proj/a.py", "x = 1\n");
+		const r = await world.run(
+			"format",
+			{ ...editing("a.py"), cwd: join(world.work, "proj") },
+			{ which: only("ruff") },
+		);
+		expect(r.code).toBe(0);
+		expect(world.calls.map((c) => c.argv)).toEqual([
+			["ruff", "format", "--quiet", file],
+		]);
 	});
 });

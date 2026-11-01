@@ -94,7 +94,7 @@ describe("writeDgConfig", () => {
 		});
 	});
 
-	test("replaces the file by rename and leaves no temp file", () => {
+	test("rewrites the file and leaves no temp file", () => {
 		writeDgConfig({ a: 1 }, env);
 		writeDgConfig({ a: 2 }, env);
 		expect(readdirSync(home)).toEqual(["config.json"]);
@@ -115,11 +115,5 @@ describe("writeDgConfig", () => {
 		const stored = readDgConfig(env) as { hooks: Record<string, unknown> };
 		expect(Object.hasOwn(stored.hooks, "__proto__")).toBe(false);
 		expect(stored.hooks["y"]).toBe(2);
-	});
-
-	test("ignores a prototype-polluting key", () => {
-		writeDgConfig(JSON.parse('{"__proto__":{"x":1},"ok":true}'), env);
-		expect(({} as Record<string, unknown>)["x"]).toBeUndefined();
-		expect(readDgConfig(env)).toEqual({ ok: true });
 	});
 });

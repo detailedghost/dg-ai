@@ -3,6 +3,7 @@ import type { CommandResult, CommandRunner } from "./types";
 export const COMMAND_TIMEOUT_MS = 30_000;
 export const OUTPUT_CAP_BYTES = 1024 * 1024;
 export const TIMED_OUT_STATUS = 124;
+export const DRAIN_AFTER_KILL_MS = 1000;
 const TRUNCATED_NOTE = "\n[output truncated]\n";
 
 export interface SpawnedProcess {
@@ -16,6 +17,7 @@ export interface SpawnDeps {
 	spawn: (argv: string[], cwd: string | undefined) => SpawnedProcess;
 	timeoutMs: number;
 	capBytes: number;
+	drainMs: number;
 }
 
 const defaultDeps: SpawnDeps = {
@@ -28,28 +30,40 @@ const defaultDeps: SpawnDeps = {
 		}),
 	timeoutMs: COMMAND_TIMEOUT_MS,
 	capBytes: OUTPUT_CAP_BYTES,
+	drainMs: DRAIN_AFTER_KILL_MS,
 };
 
-async function readCapped(
-	stream: ReadableStream<Uint8Array>,
-	capBytes: number,
-): Promise<string> {
+interface Captured {
+	text: string;
+	truncated: boolean;
+}
+
+function readCapped(stream: ReadableStream<Uint8Array>, capBytes: number) {
+	const reader = stream.getReader();
 	const kept: Uint8Array[] = [];
 	let size = 0;
 	let truncated = false;
-	for await (const chunk of stream) {
-		if (size >= capBytes) {
-			truncated = true;
-			continue;
+	const done = (async (): Promise<Captured> => {
+		for (;;) {
+			const { done, value } = await reader.read().catch(() => ({
+				done: true as const,
+				value: undefined,
+			}));
+			if (done) break;
+			if (size >= capBytes) {
+				truncated = true;
+				continue;
+			}
+			const room = capBytes - size;
+			const piece = value.length > room ? value.subarray(0, room) : value;
+			if (piece.length < value.length) truncated = true;
+			kept.push(piece);
+			size += piece.length;
 		}
-		const room = capBytes - size;
-		const piece = chunk.length > room ? chunk.subarray(0, room) : chunk;
-		if (piece.length < chunk.length) truncated = true;
-		kept.push(piece);
-		size += piece.length;
-	}
-	const text = Buffer.concat(kept).toString("utf8");
-	return truncated ? `${text}${TRUNCATED_NOTE}` : text;
+		const text = Buffer.concat(kept).toString("utf8");
+		return { text: truncated ? `${text}${TRUNCATED_NOTE}` : text, truncated };
+	})();
+	return { done, cancel: () => reader.cancel().catch(() => {}) };
 }
 
 /** Runs argv and captures bounded output; a timeout kills the child and reports status 124. */
@@ -58,29 +72,39 @@ export async function spawnCapture(
 	opts?: { cwd?: string },
 	deps: Partial<SpawnDeps> = {},
 ): Promise<CommandResult> {
-	const { spawn, timeoutMs, capBytes } = { ...defaultDeps, ...deps };
+	const { spawn, timeoutMs, capBytes, drainMs } = { ...defaultDeps, ...deps };
 	try {
 		const proc = spawn(argv, opts?.cwd);
+		const stdout = readCapped(proc.stdout, capBytes);
+		const stderr = readCapped(proc.stderr, capBytes);
 		let timedOut = false;
+		let drain: ReturnType<typeof setTimeout> | undefined;
 		const timer = setTimeout(() => {
 			timedOut = true;
 			proc.kill("SIGKILL");
+			drain = setTimeout(() => {
+				stdout.cancel();
+				stderr.cancel();
+			}, drainMs);
 		}, timeoutMs);
 		try {
-			const [stdout, stderr, status] = await Promise.all([
-				readCapped(proc.stdout, capBytes),
-				readCapped(proc.stderr, capBytes),
+			const [out, err, status] = await Promise.all([
+				stdout.done,
+				stderr.done,
 				proc.exited,
 			]);
+			const flag = out.truncated ? { truncated: true } : {};
 			return timedOut
 				? {
 						status: TIMED_OUT_STATUS,
-						stdout,
-						stderr: `${stderr}${argv[0]} timed out after ${timeoutMs} ms and was killed\n`,
+						stdout: out.text,
+						stderr: `${err.text}${argv[0]} timed out after ${timeoutMs} ms and was killed\n`,
+						...flag,
 					}
-				: { status, stdout, stderr };
+				: { status, stdout: out.text, stderr: err.text, ...flag };
 		} finally {
 			clearTimeout(timer);
+			clearTimeout(drain);
 		}
 	} catch (error) {
 		return {

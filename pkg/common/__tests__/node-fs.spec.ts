@@ -72,17 +72,20 @@ describe("writeFileAtomic", () => {
 		}
 	};
 
-	it("applies the requested mode despite a restrictive umask", () =>
-		withDir((dir) => {
-			const previous = process.umask(0o077);
-			try {
-				const target = join(dir, "out.txt");
-				writeFileAtomic(target, "x", 0o644);
-				expect(statSync(target).mode & 0o777).toBe(0o644);
-			} finally {
-				process.umask(previous);
-			}
-		}));
+	it.skipIf(process.platform === "win32")(
+		"applies the requested mode despite a restrictive umask",
+		() =>
+			withDir((dir) => {
+				const previous = process.umask(0o077);
+				try {
+					const target = join(dir, "out.txt");
+					writeFileAtomic(target, "x", 0o644);
+					expect(statSync(target).mode & 0o777).toBe(0o644);
+				} finally {
+					process.umask(previous);
+				}
+			}),
+	);
 
 	it("leaves no temp file when the injected rename fails", () =>
 		withDir((dir) => {
@@ -105,13 +108,16 @@ describe("writeFileAtomic", () => {
 			expect(readdirSync(dir)).toEqual(["occupied"]);
 		}));
 
-	it("writes the requested mode to a new file and over an existing one", () =>
-		withDir((dir) => {
-			const target = join(dir, "out.txt");
-			writeFileAtomic(target, "a", 0o600);
-			expect(statSync(target).mode & 0o777).toBe(0o600);
-			writeFileAtomic(target, "b", 0o755);
-			expect(statSync(target).mode & 0o777).toBe(0o755);
-			expect(readFileSync(target, "utf8")).toBe("b");
-		}));
+	it.skipIf(process.platform === "win32")(
+		"writes the requested mode to a new file and over an existing one",
+		() =>
+			withDir((dir) => {
+				const target = join(dir, "out.txt");
+				writeFileAtomic(target, "a", 0o600);
+				expect(statSync(target).mode & 0o777).toBe(0o600);
+				writeFileAtomic(target, "b", 0o755);
+				expect(statSync(target).mode & 0o777).toBe(0o755);
+				expect(readFileSync(target, "utf8")).toBe("b");
+			}),
+	);
 });

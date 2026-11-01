@@ -114,6 +114,7 @@ describe("pruneRoot", () => {
 		const bucket = join(root, "spec", "cccccccc");
 		file(join(bucket, "old.md"), OLD);
 		file(join(bucket, "deep", "new.md"), 1000);
+		touch(join(bucket, "deep"), OLD);
 		touch(bucket, OLD);
 		pruneRoot(root, SCRATCH_TTL_MS, false, opts());
 		expect(existsSync(bucket)).toBe(true);
@@ -404,6 +405,34 @@ describe("pruneWorktrees", () => {
 		expect(o.calls).toEqual([]);
 		expect(existsSync(merged)).toBe(true);
 		expect(o.lines[0]).toContain("would check");
+	});
+
+	test("skips removals and logs stderr when worktree prune fails", async () => {
+		const { main, wtRoot, add } = fixture();
+		add("merged_one");
+		const o = opts(false, (argv) =>
+			argv.at(-1) === "prune"
+				? { status: 1, stderr: "fatal: locked\n" }
+				: { status: 0 },
+		);
+		await pruneWorktrees(wtRoot, o);
+		expect(o.calls.some((c) => c.argv.at(-2) === "remove")).toBe(false);
+		expect(o.lines).toContain(
+			`worktree prune failed in ${main}: fatal: locked`,
+		);
+	});
+
+	test("removes only worktrees under the worktree root", async () => {
+		const { main, wtRoot, add } = fixture();
+		add("merged_one");
+		const outside = join(tmp("prune-elsewhere-"), "side");
+		sh(["worktree", "add", "-q", "-b", "elsewhere", outside], main);
+		const o = opts();
+		await pruneWorktrees(wtRoot, o);
+		const removed = o.calls
+			.filter((c) => c.argv.at(-2) === "remove")
+			.map((c) => c.argv.at(-1));
+		expect(removed).toEqual(["merged_one"]);
 	});
 });
 
@@ -710,6 +739,36 @@ describe("daily-prune hook failure and race", () => {
 				world.run("daily-prune", sessionStart),
 			]);
 			expect(world.spawned).toHaveLength(1);
+		} finally {
+			world.cleanup();
+		}
+	});
+
+	test("starts nothing while another run holds the stamp lock", async () => {
+		const world = hookWorld();
+		try {
+			const lock = join(world.state, "hooks", "daily-prune.stamp.lock");
+			mkdirSync(join(world.state, "hooks"), { recursive: true });
+			writeFileSync(lock, "");
+			await world.run("daily-prune", sessionStart);
+			expect(world.spawned).toEqual([]);
+			expect(existsSync(lock)).toBe(true);
+		} finally {
+			world.cleanup();
+		}
+	});
+
+	test("takes over a stamp lock older than ten minutes", async () => {
+		const world = hookWorld();
+		try {
+			const lock = join(world.state, "hooks", "daily-prune.stamp.lock");
+			mkdirSync(join(world.state, "hooks"), { recursive: true });
+			writeFileSync(lock, "");
+			const old = new Date(Date.now() - 11 * 60_000);
+			utimesSync(lock, old, old);
+			await world.run("daily-prune", sessionStart);
+			expect(world.spawned).toHaveLength(1);
+			expect(existsSync(lock)).toBe(false);
 		} finally {
 			world.cleanup();
 		}

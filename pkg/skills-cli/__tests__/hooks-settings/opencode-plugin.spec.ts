@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { settingsWorld } from "./settings-fixtures";
@@ -23,6 +23,12 @@ beforeEach(() => {
 d="$(dirname "$0")"
 echo "$3" >> "$d/ids.log"
 cat > "$d/stdin.$3.json"
+if [ -f "$d/context" ]; then
+  cat "$d/context"
+fi
+if [ -f "$d/signal" ]; then
+  kill -9 $$
+fi
 if [ -f "$d/exit" ]; then
   echo blocked-by-hook >&2
   exit "$(cat "$d/exit")"
@@ -140,6 +146,58 @@ describe.skipIf(process.platform === "win32")(
 				{ args: { command: "echo hi" } },
 			);
 			expect(ranIds()).toEqual(["pr-prose"]);
+		});
+
+		test("passes the opencode session id as session_id", async () => {
+			await enableFor("spelling");
+			const plugin = await loadPlugin();
+			await plugin["tool.execute.after"](
+				{ tool: "edit", callID: "c7", sessionID: "ses_1" },
+				{ args: { filePath: "/work/tree/a.md" } },
+			);
+			expect(stdinOf("spelling").session_id).toBe("ses_1");
+		});
+
+		test("appends a PostToolUse hook's additional context to the tool output", async () => {
+			await enableFor("format");
+			writeFileSync(
+				join(binDir(), "context"),
+				JSON.stringify({
+					hookSpecificOutput: {
+						hookEventName: "PostToolUse",
+						additionalContext: "format: biome failed (status 1)",
+					},
+				}),
+			);
+			const plugin = await loadPlugin();
+			const output: Record<string, unknown> = {
+				args: { filePath: "/work/tree/a.ts" },
+				output: "edited",
+			};
+			await plugin["tool.execute.after"](
+				{ tool: "edit", callID: "c8" },
+				output,
+			);
+			expect(output.output).toBe("edited\n\nformat: biome failed (status 1)");
+		});
+
+		test("reports a hook killed by a signal without throwing", async () => {
+			await enableFor("pr-prose");
+			writeFileSync(join(binDir(), "signal"), "");
+			const errors = spyOn(console, "error").mockImplementation(() => {});
+			try {
+				const plugin = await loadPlugin();
+				await plugin["tool.execute.before"](
+					{ tool: "bash", callID: "c9" },
+					{ args: { command: "echo hi" } },
+				);
+				expect(errors).toHaveBeenCalledTimes(1);
+				expect(String(errors.mock.calls[0]?.[0])).toContain(
+					"dg hook pr-prose did not finish",
+				);
+			} finally {
+				errors.mockRestore();
+			}
 		});
 	},
 );

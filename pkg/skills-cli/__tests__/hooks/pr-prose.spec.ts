@@ -69,6 +69,18 @@ describe("pr-prose body extraction", () => {
 		expect((await judge(command)).code).toBe(0);
 	});
 
+	test("ignores a body flag on a command before the PR command", async () => {
+		const r = await judge(`other-tool --body TODO; ${create(GOOD_BODY)}`);
+		expect(r.code).toBe(0);
+	});
+
+	test("keeps a backslash that the shell keeps inside double quotes", async () => {
+		const { tokenize } = await import("../../src/hooks/defs/pr-prose");
+		expect(
+			tokenize(String.raw`--body "C:\temp\new \"x\" \$HOME \\ end"`),
+		).toEqual(["--body", String.raw`C:\temp\new "x" $HOME \ end`]);
+	});
+
 	test("reads --body-file", async () => {
 		const file = world.seed(
 			"body.md",
@@ -486,8 +498,10 @@ describe("pr-prose with Vale present", () => {
 				reply: { status: 1, stdout: "body.md:1:1:Google.Will:Avoid 'will'." },
 			},
 		);
-		expect(r.stderr.indexOf("body line 1:")).toBeLessThan(
-			r.stderr.indexOf("body line 2:"),
-		);
+		const vale = r.stderr.indexOf("body line 1:");
+		const heuristic = r.stderr.indexOf("body line 2:");
+		expect(vale).toBeGreaterThanOrEqual(0);
+		expect(heuristic).toBeGreaterThanOrEqual(0);
+		expect(vale).toBeLessThan(heuristic);
 	});
 });

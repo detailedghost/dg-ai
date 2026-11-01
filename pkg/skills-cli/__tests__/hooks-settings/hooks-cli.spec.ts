@@ -106,13 +106,19 @@ describe("hooks disable --all", () => {
 		world.seed(world.paths.codex, {});
 		world.seed(world.paths.opencodeJson, { plugin: ["other-plugin"] });
 		await world.cli(["set", "spelling", "locale", "en-GB"]);
-		await world.cli([
+		const enabled = await world.cli([
 			"enable",
 			"spelling",
 			"format",
 			"pr-prose",
 			"daily-prune",
 		]);
+		expect(enabled.code).toBe(0);
+		expect(ownedObjects(world.readJson(world.paths.claude))).toHaveLength(4);
+		expect(
+			ownedObjects(world.readJson(world.paths.codex)).length,
+		).toBeGreaterThan(0);
+		expect(world.has(world.paths.opencodePlugin)).toBe(true);
 		const configBefore = world.text(world.paths.config);
 
 		const result = await world.cli(["disable", "--all"]);
@@ -298,6 +304,20 @@ describe("hooks cli edge cases", () => {
 		expect(result.stderr).toContain(world.paths.codex);
 		expect(world.text(world.paths.claude)).toBe("{}");
 		expect(world.has(world.paths.config)).toBe(false);
+	});
+
+	test("a malformed config.json stops enable --set before any runtime is written", async () => {
+		world.seed(world.paths.claude, {});
+		world.seed(world.paths.config, "{ broken");
+		const result = await world.cli([
+			"enable",
+			"spelling",
+			"--set",
+			"locale=en-GB",
+		]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain(world.paths.config);
+		expect(world.text(world.paths.claude)).toBe("{}");
 	});
 
 	test("a failure in a later runtime reports what changed and skips --set", async () => {

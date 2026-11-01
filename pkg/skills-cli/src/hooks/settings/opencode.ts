@@ -24,9 +24,29 @@ const TOOLS = { edit: "Edit", write: "Write", multiedit: "MultiEdit", bash: "Bas
 const RENAMED = { filePath: "file_path", oldString: "old_string", newString: "new_string" };
 const claudeShaped = (args) =>
   Object.fromEntries(Object.entries(args ?? {}).map(([k, v]) => [RENAMED[k] ?? k, v]));
+const TIMEOUT_MS = 120000;
 const calls = new Map();
+const contextOf = (stdout) => {
+  try {
+    return JSON.parse(stdout)?.hookSpecificOutput?.additionalContext;
+  } catch {
+    return undefined;
+  }
+};
 export default async ({ directory }) => {
-  const { spawnSync } = await import("node:child_process");
+  const { spawn } = await import("node:child_process");
+  const exec = (argv, payload) =>
+    new Promise((resolve) => {
+      const child = spawn(argv[0], argv.slice(1), { stdio: ["pipe", "pipe", "pipe"], timeout: TIMEOUT_MS });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("error", (error) => resolve({ status: null, signal: null, stdout, stderr, error }));
+      child.on("close", (status, signal) => resolve({ status, signal, stdout, stderr }));
+      child.stdin.on("error", () => {});
+      child.stdin.end(payload);
+    });
   const run = (event) => async (input, output) => {
     const key = input.callID;
     if (event === "PreToolUse" && key) calls.set(key, output?.args);
@@ -35,9 +55,21 @@ export default async ({ directory }) => {
     const tool = TOOLS[String(input.tool).toLowerCase()] ?? input.tool;
     for (const hook of HOOKS) {
       if (hook.event !== event || !new RegExp("^(?:" + hook.matcher + ")$").test(tool)) continue;
-      const payload = JSON.stringify({ tool_name: tool, tool_input: claudeShaped(args), cwd: directory });
-      const result = spawnSync(hook.argv[0], hook.argv.slice(1), { input: payload, encoding: "utf8", timeout: 10000 });
+      const payload = JSON.stringify({
+        tool_name: tool,
+        tool_input: claudeShaped(args),
+        cwd: directory,
+        ...(input.sessionID ? { session_id: input.sessionID } : {}),
+      });
+      const result = await exec(hook.argv, payload);
       if (result.status === 2) throw new Error(result.stderr);
+      if (result.status === null) {
+        console.error("dg hook " + hook.id + " did not finish: " + (result.error?.message ?? result.signal ?? "killed"));
+        continue;
+      }
+      const context = contextOf(result.stdout);
+      if (event === "PostToolUse" && context && typeof output?.output === "string")
+        output.output += "\\n\\n" + context;
     }
   };
   return { "tool.execute.before": run("PreToolUse"), "tool.execute.after": run("PostToolUse") };

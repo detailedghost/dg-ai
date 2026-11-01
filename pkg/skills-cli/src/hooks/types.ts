@@ -20,6 +20,8 @@ export interface CommandResult {
 	status: number;
 	stdout: string;
 	stderr: string;
+	/** True when stdout hit the capture cap and is incomplete. */
+	truncated?: boolean;
 }
 
 export type CommandRunner = (

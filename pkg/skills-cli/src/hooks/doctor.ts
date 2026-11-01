@@ -69,9 +69,11 @@ function resolves(launcher: string, ctx: DoctorContext): boolean {
 }
 
 /** Allow rules for the hooks commands that never enable a hook. */
-export const HOOKS_ALLOW_RULES: readonly string[] = ["status", "list", "disable"].map(
-	(sub) => `Bash(${CLI_PATH} hooks ${sub}:*)`,
-);
+export const HOOKS_ALLOW_RULES: readonly string[] = [
+	"status",
+	"list",
+	"disable",
+].map((sub) => `Bash(${CLI_PATH} hooks ${sub}:*)`);
 
 const BROAD_RULES = [`Bash(${CLI_PATH} hooks:*)`, `Bash(${CLI_PATH}:*)`];
 
@@ -94,7 +96,9 @@ const hooksAllowRuleCheck: DoctorCheck = {
 			(rule) => !allowed.rules.includes(rule),
 		);
 		if (missing.length === 0)
-			return ok(`allow rules present for ${CLI_PATH} hooks status, list and disable`);
+			return ok(
+				`allow rules present for ${CLI_PATH} hooks status, list and disable`,
+			);
 		return warn(
 			`~/.claude/settings.json has no allow rule for ${CLI_PATH} hooks status, list or disable, so Claude asks before each call`,
 			missing.join(" "),
@@ -152,8 +156,12 @@ const staleEntriesCheck: DoctorCheck = {
 			);
 		}
 		if (unreadable.length > 0) {
-			details.push(`could not read dg hook entries for: ${unreadable.join(", ")}`);
-			fixes.push("fix the settings file named by the settings check for that runtime");
+			details.push(
+				`could not read dg hook entries for: ${unreadable.join(", ")}`,
+			);
+			fixes.push(
+				"fix the settings file named by the settings check for that runtime",
+			);
 		}
 		return warn(
 			details.join("; "),

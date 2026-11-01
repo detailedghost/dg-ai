@@ -120,7 +120,8 @@ export function settingsWorld() {
 	};
 }
 
-const OWNED_COMMAND = /dg-skills(\.cmd|\.exe)? hooks run [a-z-]+$/;
+const OWNED_COMMAND =
+	/(?:^|[\\/])dg-skills(?:\.cmd|\.exe)?["']? hooks run [a-z-]+$/;
 
 export function ownedObjects(file: SettingsFile): HookObject[] {
 	return Object.values(file.hooks ?? {})

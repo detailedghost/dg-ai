@@ -215,7 +215,11 @@ async function enable(
 		return 1;
 	}
 	for (const runtime of runtimes) all[runtime].check();
+	const hasPatch = Object.keys(patch).length > 0;
+	if (hasPatch) readDgConfig(io.env);
 	const changed: HookRuntime[] = [];
+	const summary = () =>
+		`changed before the failure: ${changed.length > 0 ? changed.join(", ") : "none"}; config values not written\n`;
 	for (const runtime of runtimes) {
 		try {
 			const supported = defs.filter((d) => d.runtimes.includes(runtime));
@@ -229,13 +233,19 @@ async function enable(
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
 			io.seams.stderr(`${runtime}: ${reason}\n`);
-			io.seams.stderr(
-				`changed before the failure: ${changed.length > 0 ? changed.join(", ") : "none"}; config values not written\n`,
-			);
+			io.seams.stderr(summary());
 			return 1;
 		}
 	}
-	if (Object.keys(patch).length > 0) writeDgConfig({ hooks: patch }, io.env);
+	if (!hasPatch) return 0;
+	try {
+		writeDgConfig({ hooks: patch }, io.env);
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		io.seams.stderr(`config: ${reason}\n`);
+		io.seams.stderr(summary());
+		return 1;
+	}
 	return 0;
 }
 
