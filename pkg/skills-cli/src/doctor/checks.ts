@@ -384,6 +384,24 @@ export const extensionChecks: DoctorCheck[] = [
 	unlessCliOnly(pairingCheck),
 ];
 
+export function extOnly(check: DoctorCheck): DoctorCheck {
+	return {
+		id: check.id,
+		async run(ctx) {
+			const result = await check.run(ctx);
+			if (
+				!isCliOnly(ctx) ||
+				(result.status !== "fail" && result.status !== "warn")
+			) {
+				return result;
+			}
+			return { status: "info", detail: `--ext only: ${result.detail}` };
+		},
+	};
+}
+
+export const extOnlyChecks = extensionChecks.map(extOnly);
+
 export const unslopCheck: DoctorCheck = {
 	id: "unslop",
 	run(ctx) {

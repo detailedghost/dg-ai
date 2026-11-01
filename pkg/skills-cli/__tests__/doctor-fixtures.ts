@@ -11,6 +11,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type { CheckStatus } from "../src/doctor/types";
 import { scratchFixtures } from "./git-repo-fixtures";
 import { CLI_ENTRY, runCli } from "./module-call";
 import { SOURCE_SKILLS } from "./spec-fixtures";
@@ -45,8 +46,6 @@ export const FORBIDDEN_TOOLS = [
 	"curl",
 	"wget",
 ] as const;
-
-export type CheckStatus = "ok" | "warn" | "fail";
 
 export interface DoctorCheck {
 	id: string;

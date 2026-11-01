@@ -13,6 +13,7 @@ import { newBatchId } from "@dg/common";
 import { isWSL, run } from "@dg/common/node";
 import type { Command } from "commander";
 import { type DetectedBrowser, detectBrowsers } from "../utils/detect";
+import { addExtOption } from "../utils/ext-flag";
 import { extensionDest, readMarker } from "../utils/lib";
 import { addGroupMarker } from "../utils/marker";
 import { resolveRefs } from "../utils/refs";
@@ -23,6 +24,7 @@ type Opts = {
 	group: string;
 	list?: boolean;
 	dryRun?: boolean;
+	ext?: boolean;
 };
 
 function table(browsers: DetectedBrowser[]): string {
@@ -56,6 +58,13 @@ function isRunning(exe: string): boolean {
 }
 
 async function launch(refs: string[], opts: Opts): Promise<void> {
+	if (!opts.ext) {
+		console.error(
+			"launch: an extension-only command; add --ext (dg-skills launch --ext ...)",
+		);
+		process.exitCode = 1;
+		return;
+	}
 	const browsers = detectBrowsers();
 	if (!browsers.length) {
 		console.error(
@@ -141,10 +150,9 @@ async function launch(refs: string[], opts: Opts): Promise<void> {
 }
 
 export function registerLaunch(program: Command): void {
-	program
-		.command("launch")
+	addExtOption(program.command("launch"))
 		.description(
-			"cold-start a Chromium browser with the extension side-loaded + open a batch",
+			"cold-start a Chromium browser with the extension side-loaded + open a batch (needs --ext)",
 		)
 		.argument("[refs...]", "URL | owner/repo#num | alias#num | bare num")
 		.option("-b, --browser <key>", "browser key (see --list)")

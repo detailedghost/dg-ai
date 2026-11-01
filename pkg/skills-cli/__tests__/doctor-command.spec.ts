@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
 	allChecks,
 	allowRule,
-	type CheckStatus,
 	CURRENT_TOOL_VERSION,
 	checksOf,
 	doctorWorld,
@@ -20,6 +19,7 @@ import { anyToolCheck } from "../src/doctor/checks";
 import { DOCTOR_REGISTRY } from "../src/doctor/registry";
 import { createContext, doctorExitCode, runDoctor } from "../src/doctor/runner";
 import { sharedChecks } from "../src/doctor/shared";
+import type { CheckStatus } from "../src/doctor/types";
 import {
 	CLI_PATH,
 	hasAllowRule,
@@ -27,7 +27,7 @@ import {
 	parseVersion,
 } from "../src/doctor/probes";
 
-const STATUSES: CheckStatus[] = ["ok", "warn", "fail"];
+const STATUSES: CheckStatus[] = ["ok", "info", "warn", "fail"];
 const REGISTERED_ITEMS = Object.keys(DOCTOR_REGISTRY);
 
 let world: ReturnType<typeof doctorWorld>;
@@ -407,7 +407,9 @@ describe("dg-skills doctor on a bare machine", () => {
 		const { run, report } = await world.report();
 		expect(run.exitCode).toBe(1);
 		expect(report.ok).toBe(false);
-		const flagged = allChecks(report).filter((check) => check.status !== "ok");
+		const flagged = allChecks(report).filter(
+			(check) => check.status === "warn" || check.status === "fail",
+		);
 		expect(flagged.length).toBeGreaterThan(0);
 		for (const check of flagged)
 			expect([check.id, (check.fix ?? "").length > 0]).toEqual([
@@ -866,7 +868,7 @@ describe("dg-skills doctor extension items", () => {
 		for (const fix of fixes) expect(fix).toContain("--cli-only");
 	});
 
-	test("a CLI-only install warns instead of failing on the daemon", async () => {
+	test("a CLI-only install reports the daemon as info instead of failing", async () => {
 		world.healthy(["batch-open"]);
 		mkdirSync(join(world.home, ".dg"), { recursive: true });
 		writeFileSync(join(world.home, ".dg", "cli-only"), "");
@@ -874,8 +876,8 @@ describe("dg-skills doctor extension items", () => {
 		const daemon = checksOf(report, "batch-open").find(
 			(check) => check.id === "daemon",
 		);
-		expect(daemon?.status).toBe("warn");
-		expect(daemon?.fix).toContain("dg-skills install");
+		expect(daemon?.status).toBe("info");
+		expect(daemon?.detail.startsWith("--ext only: ")).toBe(true);
 		expect(
 			checksOf(report, "batch-open").some((check) => check.status === "fail"),
 		).toBe(false);

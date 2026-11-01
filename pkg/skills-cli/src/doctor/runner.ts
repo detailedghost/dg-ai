@@ -13,7 +13,7 @@ import type {
 
 export type DoctorRegistry = Record<string, DoctorCheck[]>;
 
-const STATUS_ICON = { ok: "✅", warn: "⚠️", fail: "❌" } as const;
+const STATUS_ICON = { ok: "✅", info: "ℹ️", warn: "⚠️", fail: "❌" } as const;
 
 export function createContext(
 	overrides: Partial<Omit<DoctorContext, "memo">> = {},
@@ -88,7 +88,7 @@ export async function runDoctor(
 
 export function formatReport(report: DoctorReport): string {
 	const lines: string[] = [];
-	const counts = { ok: 0, warn: 0, fail: 0 };
+	const counts = { ok: 0, info: 0, warn: 0, fail: 0 };
 	for (const entry of report.items) {
 		lines.push(entry.item);
 		for (const check of entry.checks) {
@@ -99,7 +99,7 @@ export function formatReport(report: DoctorReport): string {
 	}
 	lines.push(
 		"",
-		`${counts.ok} passed, ${counts.warn} to review, ${counts.fail} failed`,
+		`${counts.ok} passed, ${counts.info} info, ${counts.warn} to review, ${counts.fail} failed`,
 	);
 	return `${lines.join("\n")}\n`;
 }

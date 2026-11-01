@@ -1,12 +1,12 @@
 import {
 	allowRuleCheck,
-	extensionChecks,
+	extOnlyChecks,
 	skillFilesCheck,
 } from "../doctor/checks";
 import type { DoctorCheck } from "../doctor/types";
 
 export const batchOpenChecks: DoctorCheck[] = [
 	skillFilesCheck(["browser"]),
-	...extensionChecks,
+	...extOnlyChecks,
 	allowRuleCheck("batch-open"),
 ];
