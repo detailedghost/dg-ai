@@ -257,7 +257,7 @@ export function noAllowRuleCheck(sub: string): DoctorCheck {
 			if (hasAllowRule(allowed.rules, sub))
 				return warn(
 					`~/.claude/settings.json allows ${CLI_PATH} ${sub}, so Claude runs arbitrary page code without asking`,
-					`remove ${allowRuleFor(sub)} and Bash(${CLI_PATH}:*) from permissions.allow in ~/.claude/settings.json`,
+					`remove ${allowRuleFor(sub)}, Bash(${CLI_PATH}:*), Bash and Bash(*) from permissions.allow in ~/.claude/settings.json`,
 				);
 			return ok(`no allow rule covers ${CLI_PATH} ${sub}, so Claude asks before each call`);
 		},

@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import handler from "../../../../src/pw/commands/delete-data/run";
 import spec from "../../../../src/pw/commands/delete-data/spec";
-import { argsFor, clientEnv, startFakeDaemon, useTempScratch } from "../../../../src/pw/test-support";
+import {
+	argsFor,
+	clientEnv,
+	startFakeDaemon,
+	useTempScratch,
+} from "../../../../src/pw/test-support";
 
 useTempScratch();
 
@@ -23,7 +35,8 @@ afterEach(() => {
 	rmSync(cache, { recursive: true, force: true });
 });
 
-const profile = (name: string) => path.join(cache, "playwright-cli", "profiles", name);
+const profile = (name: string) =>
+	path.join(cache, "playwright-cli", "profiles", name);
 
 describe("delete-data", () => {
 	test("deletes the default profile of a closed session", async () => {
@@ -64,6 +77,26 @@ describe("delete-data", () => {
 			expect(env.stderr[0]).toStartWith(`Refusing to delete ${outside}`);
 			expect(existsSync(outside)).toBe(true);
 			expect(daemon.child.exitCode).toBeNull();
+		} finally {
+			daemon.dispose();
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	test("refuses a profile reached through a symlink that leaves the profiles directory", async () => {
+		const outside = mkdtempSync(path.join(tmpdir(), "pw-outside-"));
+		writeFileSync(path.join(outside, "keep"), "x");
+		mkdirSync(path.dirname(profile("link")), { recursive: true });
+		symlinkSync(outside, profile("link"));
+		const daemon = await startFakeDaemon("linked", {
+			profileDir: path.join(profile("link"), "customer"),
+		});
+		mkdirSync(path.join(outside, "customer"));
+		const env = clientEnv();
+		try {
+			expect(await handler(argsFor(spec, "-s=linked"), env)).toBe(1);
+			expect(env.stderr[0]).toStartWith("Refusing to delete");
+			expect(existsSync(path.join(outside, "customer"))).toBe(true);
 		} finally {
 			daemon.dispose();
 			rmSync(outside, { recursive: true, force: true });

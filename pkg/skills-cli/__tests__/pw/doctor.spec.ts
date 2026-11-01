@@ -7,7 +7,12 @@ import { DOCTOR_REGISTRY } from "../../src/doctor/registry";
 import type { DoctorCheck, DoctorContext } from "../../src/doctor/types";
 import type { SystemChannel } from "../../src/pw/core/browser";
 import { markerPath } from "../../src/pw/core/downloaded";
-import { createBrowserCheck, pwChecks, pwCodeChecks } from "../../src/pw/doctor";
+import {
+	browserPresent,
+	createBrowserCheck,
+	pwChecks,
+	pwCodeChecks,
+} from "../../src/pw/doctor";
 import { checksOf, doctorWorld } from "../doctor-fixtures";
 
 const INSTALL_FIX = "dg-skills pw install-browser";
@@ -44,24 +49,33 @@ function recordDownload(version: string): void {
 	const executablePath = path.join(browsers, "chromium", "chrome");
 	mkdirSync(path.dirname(executablePath), { recursive: true });
 	writeFileSync(executablePath, "");
-	writeFileSync(markerPath(browsers), JSON.stringify({ version, executablePath }));
+	writeFileSync(
+		markerPath(browsers),
+		JSON.stringify({ version, executablePath }),
+	);
 }
 
 describe("pwChecks browser check", () => {
 	test("reports system chrome in one ok line", async () => {
-		const result = await createBrowserCheck(systemOnly("chrome")).run(context());
+		const result = await createBrowserCheck(systemOnly("chrome")).run(
+			context(),
+		);
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBe("browser: chrome (system)");
 	});
 
 	test("reports system msedge when chrome is absent", async () => {
-		const result = await createBrowserCheck(systemOnly("msedge")).run(context());
+		const result = await createBrowserCheck(systemOnly("msedge")).run(
+			context(),
+		);
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBe("browser: msedge (system)");
 	});
 
 	test("prefers chrome when both system browsers exist", async () => {
-		const result = await createBrowserCheck(systemOnly("chrome", "msedge")).run(context());
+		const result = await createBrowserCheck(systemOnly("chrome", "msedge")).run(
+			context(),
+		);
 		expect(result.detail).toBe("browser: chrome (system)");
 	});
 
@@ -132,14 +146,18 @@ describe("doctor pw-code allow-rule guard", () => {
 	test("is ok when settings.json has no pw-code rule", async () => {
 		world.healthy([]);
 		const { report } = await world.report(["pw-code"]);
-		const guard = checksOf(report, "pw-code").find((check) => check.id === noRuleCheck().id);
+		const guard = checksOf(report, "pw-code").find(
+			(check) => check.id === noRuleCheck().id,
+		);
 		expect(guard?.status).toBe("ok");
 	});
 
 	test("warns when an allow rule covers pw-code", async () => {
 		world.healthy(["pw-code"]);
 		const { run, report } = await world.report(["pw-code"]);
-		const guard = checksOf(report, "pw-code").find((check) => check.id === noRuleCheck().id);
+		const guard = checksOf(report, "pw-code").find(
+			(check) => check.id === noRuleCheck().id,
+		);
 		expect(guard?.status).toBe("warn");
 		expect(guard?.fix).not.toBeNull();
 		expect(guard?.detail).toContain("pw-code");
@@ -150,18 +168,63 @@ describe("doctor pw-code allow-rule guard", () => {
 		world.healthy([]);
 		writeFileSync(
 			path.join(world.home, ".claude", "settings.json"),
-			JSON.stringify({ permissions: { allow: ["Bash(~/.dg/bin/dg-skills:*)"] } }),
+			JSON.stringify({
+				permissions: { allow: ["Bash(~/.dg/bin/dg-skills:*)"] },
+			}),
 		);
 		const { report } = await world.report(["pw-code"]);
-		const guard = checksOf(report, "pw-code").find((check) => check.id === noRuleCheck().id);
+		const guard = checksOf(report, "pw-code").find(
+			(check) => check.id === noRuleCheck().id,
+		);
 		expect(guard?.status).toBe("warn");
 	});
+
+	test.each(["Bash", "Bash(*)"])(
+		"warns when the unrestricted %s rule covers pw-code",
+		async (rule) => {
+			world.healthy([]);
+			writeFileSync(
+				path.join(world.home, ".claude", "settings.json"),
+				JSON.stringify({ permissions: { allow: [rule] } }),
+			);
+			const { report } = await world.report(["pw-code"]);
+			const guard = checksOf(report, "pw-code").find(
+				(check) => check.id === noRuleCheck().id,
+			);
+			expect(guard?.status).toBe("warn");
+			expect(guard?.fix).toContain("Bash(*)");
+		},
+	);
 
 	test("a pw allow rule alone does not trigger the pw-code warning", async () => {
 		world.healthy(["pw"]);
 		const { report } = await world.report(["pw-code"]);
-		const guard = checksOf(report, "pw-code").find((check) => check.id === noRuleCheck().id);
+		const guard = checksOf(report, "pw-code").find(
+			(check) => check.id === noRuleCheck().id,
+		);
 		expect(guard?.status).toBe("ok");
+	});
+});
+
+describe("browserPresent", () => {
+	const deps = (
+		wsl: boolean,
+		linux: SystemChannel[],
+		windows: SystemChannel[],
+	) => ({
+		isWSL: () => wsl,
+		system: (channel: SystemChannel) => linux.includes(channel),
+		windows: (channel: SystemChannel) => windows.includes(channel),
+	});
+
+	test("finds a Windows browser on WSL when Linux has none", () => {
+		expect(browserPresent("chrome", deps(true, [], ["chrome"]))).toBe(true);
+		expect(browserPresent("msedge", deps(true, [], ["chrome"]))).toBe(false);
+	});
+
+	test("ignores Windows browsers outside WSL", () => {
+		expect(browserPresent("chrome", deps(false, [], ["chrome"]))).toBe(false);
+		expect(browserPresent("chrome", deps(false, ["chrome"], []))).toBe(true);
 	});
 });
 
@@ -174,6 +237,8 @@ describe("doctor pw end to end", () => {
 		const browser = checks.find((check) => check.id === "browser");
 		expect(browser?.detail.startsWith("browser: ")).toBe(true);
 		expect(browser?.detail).not.toContain("\n");
-		expect(checks.find((check) => check.id === "allow-rule")?.status).toBe("ok");
+		expect(checks.find((check) => check.id === "allow-rule")?.status).toBe(
+			"ok",
+		);
 	});
 });

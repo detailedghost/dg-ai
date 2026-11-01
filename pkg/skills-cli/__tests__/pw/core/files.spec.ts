@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	linkSync,
+	mkdirSync,
+	readFileSync,
+	statSync,
+	truncateSync,
+	writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import {
 	buildFilePayloads,
@@ -17,8 +25,13 @@ describe("buildFilePayloads", () => {
 	test("reads absolute and relative paths with name, mime type, and bytes", async () => {
 		writeFileSync(path.join(scratch.dir, "a.png"), "A");
 		writeFileSync(path.join(scratch.dir, "b.pdf"), "B");
-		const payloads = await buildFilePayloads([path.join(scratch.dir, "a.png"), "b.pdf"], scratch.dir);
-		expect(payloads.map((p) => [p.name, p.mimeType, p.buffer.toString()])).toEqual([
+		const payloads = await buildFilePayloads(
+			[path.join(scratch.dir, "a.png"), "b.pdf"],
+			scratch.dir,
+		);
+		expect(
+			payloads.map((p) => [p.name, p.mimeType, p.buffer.toString()]),
+		).toEqual([
 			["a.png", "image/png", "A"],
 			["b.pdf", "application/pdf", "B"],
 		]);
@@ -34,7 +47,9 @@ describe("buildFilePayloads", () => {
 		const big = path.join(scratch.dir, "big.bin");
 		writeFileSync(big, "");
 		truncateSync(big, MAX_UPLOAD_BYTES + 1);
-		await expect(buildFilePayloads([big], scratch.dir)).rejects.toThrow(`File ${big} is larger than 50 MB`);
+		await expect(buildFilePayloads([big], scratch.dir)).rejects.toThrow(
+			`File ${big} is larger than 50 MB`,
+		);
 	});
 
 	test("accepts a file of exactly 50 MB", async () => {
@@ -46,9 +61,13 @@ describe("buildFilePayloads", () => {
 
 	test("names a missing path and rejects a directory", async () => {
 		const missing = path.join(scratch.dir, "nope");
-		await expect(buildFilePayloads([missing], scratch.dir)).rejects.toThrow(`File not found: ${missing}`);
+		await expect(buildFilePayloads([missing], scratch.dir)).rejects.toThrow(
+			`File not found: ${missing}`,
+		);
 		mkdirSync(path.join(scratch.dir, "dir"));
-		await expect(buildFilePayloads(["dir"], scratch.dir)).rejects.toThrow("Not a file:");
+		await expect(buildFilePayloads(["dir"], scratch.dir)).rejects.toThrow(
+			"Not a file:",
+		);
 	});
 });
 
@@ -63,11 +82,27 @@ describe("writePrivate", () => {
 	});
 });
 
+describe("writePrivate replacement", () => {
+	test("replaces an existing file instead of writing into it", () => {
+		const file = path.join(scratch.dir, "state.json");
+		const other = path.join(scratch.dir, "state-link.json");
+		writeFileSync(file, "old");
+		chmodSync(file, 0o644);
+		linkSync(file, other);
+		writePrivate(file, "secret");
+		expect(readFileSync(file, "utf8")).toBe("secret");
+		expect(readFileSync(other, "utf8")).toBe("old");
+		expect(statSync(file).mode & 0o777).toBe(0o600);
+	});
+});
+
 describe("readInput", () => {
 	test("reads a relative file from the given directory and names a missing one", async () => {
 		writeFileSync(path.join(scratch.dir, "c.txt"), "hello");
 		expect(await readInput(scratch.dir, "c.txt")).toBe("hello");
-		await expect(readInput(scratch.dir, "d.txt")).rejects.toThrow(`File not found: ${path.join(scratch.dir, "d.txt")}`);
+		await expect(readInput(scratch.dir, "d.txt")).rejects.toThrow(
+			`File not found: ${path.join(scratch.dir, "d.txt")}`,
+		);
 	});
 });
 

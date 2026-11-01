@@ -1,4 +1,10 @@
-import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
+import {
+	accessSync,
+	constants,
+	existsSync,
+	readFileSync,
+	statSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { claudePluginSkillsDirs } from "@dg/common/node";
 import { compareVersions, versionGte } from "../utils/lib";
@@ -25,7 +31,9 @@ export function toolVersion(binary: string): string | null {
 			stderr: "pipe",
 			timeout: 5000,
 		});
-		return parseVersion(`${result.stdout.toString()}\n${result.stderr.toString()}`);
+		return parseVersion(
+			`${result.stdout.toString()}\n${result.stderr.toString()}`,
+		);
 	} catch {
 		return null;
 	}
@@ -80,7 +88,8 @@ export function readAllowRules(home: string): AllowRules {
 	try {
 		text = readFileSync(join(home, ".claude", "settings.json"), "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { rules: [] };
+		if ((error as NodeJS.ErrnoException).code === "ENOENT")
+			return { rules: [] };
 		return { error: (error as Error).message };
 	}
 	try {
@@ -96,7 +105,12 @@ export function readAllowRules(home: string): AllowRules {
 }
 
 export function hasAllowRule(rules: readonly string[], sub: string): boolean {
-	return rules.includes(allowRuleFor(sub)) || rules.includes(`Bash(${CLI_PATH}:*)`);
+	return (
+		rules.includes(allowRuleFor(sub)) ||
+		rules.includes(`Bash(${CLI_PATH}:*)`) ||
+		rules.includes("Bash") ||
+		rules.includes("Bash(*)")
+	);
 }
 
 export interface PluginInstall {
@@ -108,16 +122,23 @@ export function installedPlugins(home: string): PluginInstall[] {
 	return claudePluginSkillsDirs(home)
 		.map((skillsDir) => ({
 			skillsDir,
-			version: dirname(dirname(dirname(skillsDir))).split(/[\\/]/).pop() ?? "",
+			version:
+				dirname(dirname(dirname(skillsDir)))
+					.split(/[\\/]/)
+					.pop() ?? "",
 		}))
 		.sort((a, b) => compareVersions(b.version, a.version));
 }
 
 export function unslopInstalled(home: string): boolean {
 	const cache = join(home, ".claude", "plugins", "cache");
-	if (existsSync(join(home, ".claude", "skills", "unslop", "SKILL.md"))) return true;
+	if (existsSync(join(home, ".claude", "skills", "unslop", "SKILL.md")))
+		return true;
 	try {
-		return [...new Bun.Glob("*/unslop").scanSync({ cwd: cache, onlyFiles: false })].length > 0;
+		return (
+			[...new Bun.Glob("*/unslop").scanSync({ cwd: cache, onlyFiles: false })]
+				.length > 0
+		);
 	} catch {
 		return false;
 	}
