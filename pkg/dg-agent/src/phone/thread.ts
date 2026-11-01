@@ -13,8 +13,10 @@ export const MAX_THREAD_MEMBERS = 16;
 export const HELD_PER_SENDER = 5;
 /** Held rows kept in total, after the per-sender cap. */
 export const HELD_TOTAL = 50;
+/** Rumors dated further ahead than this are not admitted as mail. Holds still use local receive time. */
+export const FUTURE_SKEW_SECONDS = 5 * 60;
 
-export type ThreadDropReason = "older than the message window" | "no matching contact or invite" | "thread is too large";
+export type ThreadDropReason = "older than the message window" | "no matching contact or invite" | "thread is too large" | "ahead of the clock";
 
 export type ThreadContact = { pub: string; keyId?: string };
 
@@ -203,6 +205,7 @@ export function classifyThreadRumor(
 	if (shared === undefined || keyIds.some((keyId) => keyId !== shared) || shared !== openingKeyId) {
 		return { kind: "hold", ...view };
 	}
+	if (rumor.created_at > now + FUTURE_SKEW_SECONDS) return drop("ahead of the clock");
 	return { kind: "message", ...view, keyId: shared };
 }
 

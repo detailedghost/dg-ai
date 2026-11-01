@@ -663,6 +663,7 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 				call: 0,
 				thread_id: thread.id,
 			});
+			await restartStaleListener(deps, { spawn: true });
 		}
 		const payload = {
 			handle,
@@ -681,7 +682,6 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 			if (kept) printJson(deps, payload);
 			throw new DgCliError(behind.length > 0 ? `members behind: ${behind.join(", ")}` : formatBehind(delivered.members));
 		}
-		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, payload);
 	} finally {
 		closeRelayPool(pool, relaysUsed);

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { generateSecretKey, getPublicKey, nip59 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip19, nip59 } from "nostr-tools";
 import { encodeCard, NO_EXPIRY } from "../../src/phone/card";
 import { npubOf } from "../../src/phone/chat";
 import {
@@ -19,7 +20,7 @@ import {
 	phoneVoicemail,
 	type PhoneDeps,
 } from "../../src/phone/commands";
-import { PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener, type ListenerDeps } from "../../src/phone/listener";
@@ -301,7 +302,18 @@ describe("phone threads", () => {
 		});
 		refusedDeps.createPool = () => ({ ...refused, close() {} });
 		await phoneThreadNew("#room", ["+b"], { subject: "room" }, refusedDeps);
-		await expect(phoneSay("#room", "nope", refusedDeps)).rejects.toThrow(/behind: \+b/);
+		const refusedOut: string[] = [];
+		refusedDeps.write = (text) => refusedOut.push(text);
+		let refusedError: unknown;
+		try {
+			await phoneSay("#room", "nope", refusedDeps);
+		} catch (err) {
+			refusedError = err;
+		}
+		expect(refusedError).toBeInstanceOf(DgCliError);
+		expect((refusedError as DgCliError).exitCode).toBe(1);
+		expect((refusedError as DgCliError).message).toBe("members behind: +b");
+		expect(refusedOut).toEqual([]);
 		expect(refusedDeps.db.recentMessages(5).some((row) => row.text === "nope")).toBe(false);
 		await expect(phoneThreadNew("t", ["+b"], {}, alice.deps)).rejects.toThrow('a thread handle must start with #, got "t"');
 		await expect(phoneThreadNew("#t", ["+missing"], {}, alice.deps)).rejects.toThrow("no contact +missing");
@@ -426,28 +438,46 @@ describe("thread hold limits and partial sends", () => {
 		if (!aliceSk || !bobSk) throw new Error("missing key");
 		const bobPub = getPublicKey(bobSk);
 		for (let index = 0; index < 6; index += 1) {
+			clock += 1;
 			const extra = getPublicKey(generateSecretKey());
 			const rumor = nip59.createRumor(
 				{
 					kind: 14,
 					content: `held-body-${index}`,
-					created_at: clock + index,
+					created_at: clock,
 					tags: [["p", bobPub], ["p", extra], ["subject", `s${index}`]],
 				},
 				aliceSk,
 			);
 			pool.events.push(nip59.createWrap(nip59.createSeal(rumor, aliceSk, bobPub), bobPub));
+			const listener = listen(bob.deps, 5502 + index);
+			await listener.ready;
+			listener.stop();
+			await listener.run;
 		}
-		const listener = listen(bob.deps, 5502);
-		await listener.ready;
-		listener.stop();
-		await listener.run;
 		const pending = bob.deps.db.listPending();
 		expect(pending).toHaveLength(5);
 		expect(pending.some((row) => row.text === "held-body-0")).toBe(false);
 		const notice = bob.deps.db.recentMessages(20).find((row) => row.sender === "phone");
 		expect(notice?.text).toBe("5 held threads");
 		expect(notice?.text).not.toContain("held-body");
+		const keptId = pending[0]?.rumor_id ?? "";
+		const raw = new Database(PhoneDb.path(bob.deps.paths));
+		raw.query("UPDATE pending_threads SET received_at = $received").run({ received: clock - MESSAGE_TTL_SECONDS - 10 });
+		raw.close();
+		pool.events.length = 0;
+		const extra = getPublicKey(generateSecretKey());
+		const again = nip59.createRumor(
+			{ kind: 14, content: "after-expiry", created_at: clock, tags: [["p", bobPub], ["p", extra], ["subject", "later"]] },
+			aliceSk,
+		);
+		pool.events.push(nip59.createWrap(nip59.createSeal(again, aliceSk, bobPub), bobPub));
+		const later = listen(bob.deps, 5590);
+		await later.ready;
+		later.stop();
+		await later.run;
+		expect(bob.deps.db.pendingByRumor(keptId)).toBeUndefined();
+		expect(bob.deps.db.listPending().map((row) => row.text)).toEqual(["after-expiry"]);
 	});
 
 	it("refuses a thread with more than 16 members", async () => {
@@ -469,5 +499,188 @@ describe("thread hold limits and partial sends", () => {
 		}
 		await expect(phoneThreadNew("#big", handles, {}, alice.deps)).rejects.toThrow("a thread can have at most 16 members");
 		expect(alice.deps.db.listThreads()).toEqual([]);
+	});
+
+	function heldRumor(sender: Uint8Array, bobPub: string, createdAt: number, subject: string) {
+		const extra = getPublicKey(generateSecretKey());
+		const rumor = nip59.createRumor(
+			{ kind: 14, content: `body-${subject}`, created_at: createdAt, tags: [["p", bobPub], ["p", extra], ["subject", subject]] },
+			sender,
+		);
+		return { rumor, event: nip59.createWrap(nip59.createSeal(rumor, sender, bobPub), bobPub) };
+	}
+
+	it("keeps a real held thread when future-dated holds fill the cap, then expires them by receive time", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const bob = await boot("b");
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!bobSk) throw new Error("missing key");
+		const bobPub = getPublicKey(bobSk);
+		const ahead = clock + 10 * 365 * 24 * 60 * 60;
+		const futureIds: string[] = [];
+		for (let sender = 0; sender < 10; sender += 1) {
+			const sk = generateSecretKey();
+			const pub = getPublicKey(sk);
+			addContact(bob.deps.db, {
+				npub: nip19.npubEncode(pub),
+				handle: `s${sender}`,
+				relays: RELAYS,
+				keyId: numberKeyId(bob.deps.db),
+				addedAt: clock,
+				via: "accept",
+			});
+			for (let copy = 0; copy < 5; copy += 1) {
+				const sent = heldRumor(sk, bobPub, ahead, `f${sender}-${copy}`);
+				futureIds.push(sent.rumor.id);
+				pool.events.push(sent.event);
+			}
+		}
+		let listener = listen(bob.deps, 5602);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.listPending()).toHaveLength(50);
+		expect(bob.deps.db.listPending().every((row) => row.ts === row.received_at && row.ts < ahead)).toBe(true);
+
+		clock += 1;
+		const aliceSk = generateSecretKey();
+		const alicePub = getPublicKey(aliceSk);
+		addContact(bob.deps.db, {
+			npub: nip19.npubEncode(alicePub),
+			handle: "alice",
+			relays: RELAYS,
+			keyId: numberKeyId(bob.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		const real = heldRumor(aliceSk, bobPub, clock, "real");
+		pool.events.push(real.event);
+		listener = listen(bob.deps, 5603);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.pendingByRumor(real.rumor.id)?.text).toBe("body-real");
+		expect(bob.deps.db.listPending().length).toBeLessThanOrEqual(50);
+
+		clock += 8 * 24 * 60 * 60;
+		bob.deps.db.pruneMessages();
+		for (const id of futureIds) expect(bob.deps.db.pendingByRumor(id)).toBeUndefined();
+		expect(bob.deps.db.pendingByRumor(real.rumor.id)).toBeUndefined();
+		expect(bob.deps.db.heldNotice()).toBeUndefined();
+	});
+
+	it("does not rewrite the held notice for a duplicate, and writes none when the new row is evicted", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const bob = await boot("b");
+		const aliceSk = generateSecretKey();
+		const alicePub = getPublicKey(aliceSk);
+		const aliceNpub = nip19.npubEncode(alicePub);
+		addContact(bob.deps.db, {
+			npub: aliceNpub,
+			handle: "alice",
+			relays: RELAYS,
+			keyId: numberKeyId(bob.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!bobSk) throw new Error("missing key");
+		const sent = heldRumor(aliceSk, getPublicKey(bobSk), clock, "once");
+		pool.events.push(sent.event);
+		let listener = listen(bob.deps, 5702);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		const notice = bob.deps.db.heldNotice();
+		expect(notice?.text).toBe("1 held thread");
+		clock += 5;
+		listener = listen(bob.deps, 5703);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.heldNotice()).toEqual(notice);
+		expect(bob.deps.db.listPending()).toHaveLength(1);
+
+		const newerThan = clock + 100;
+		for (let index = 0; index < 5; index += 1) {
+			clock = newerThan + index;
+			bob.deps.db.insertPending({
+				rumor_id: `newer-${index}`,
+				room_id: `newer-${index}`,
+				sender: aliceNpub,
+				members: "[]",
+				subject: null,
+				text: "seed",
+				ts: clock,
+			});
+		}
+		bob.deps.db.deletePending([sent.rumor.id]);
+		clock = newerThan - 200;
+		const evicted = heldRumor(aliceSk, getPublicKey(bobSk), clock, "old");
+		pool.events.push(evicted.event);
+		const before = bob.deps.db.heldNotice()?.text;
+		listener = listen(bob.deps, 5704);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.pendingByRumor(evicted.rumor.id)).toBeUndefined();
+		expect(before).toBe("1 held thread");
+		expect(bob.deps.db.heldNotice()?.text).toBe("5 held threads");
+	});
+
+	it("holds a thread in the listener when a member disappears before the row is stored", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const bob = await boot("b");
+		const aliceSk = generateSecretKey();
+		const caraSk = generateSecretKey();
+		const alicePub = getPublicKey(aliceSk);
+		const caraPub = getPublicKey(caraSk);
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!bobSk) throw new Error("missing key");
+		const bobPub = getPublicKey(bobSk);
+		addContact(bob.deps.db, {
+			npub: nip19.npubEncode(alicePub),
+			handle: "alice",
+			relays: RELAYS,
+			keyId: numberKeyId(bob.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		addContact(bob.deps.db, {
+			npub: nip19.npubEncode(caraPub),
+			handle: "cara",
+			relays: RELAYS,
+			keyId: numberKeyId(bob.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		const rumor = nip59.createRumor(
+			{
+				kind: 14,
+				content: "together",
+				created_at: clock,
+				tags: [["p", bobPub], ["p", caraPub], ["subject", "ops"]],
+			},
+			aliceSk,
+		);
+		pool.events.push(nip59.createWrap(nip59.createSeal(rumor, aliceSk, bobPub), bobPub));
+		const original = bob.deps.db.listContacts.bind(bob.deps.db);
+		let calls = 0;
+		bob.deps.db.listContacts = () => {
+			calls += 1;
+			const rows = original();
+			if (calls <= 2) return rows;
+			return rows.filter((row) => row.npub !== nip19.npubEncode(caraPub));
+		};
+		const listener = listen(bob.deps, 5802);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.listThreads()).toEqual([]);
+		expect(bob.deps.db.pendingByRumor(rumor.id)?.text).toBe("together");
+		expect(bob.deps.db.recentMessages(10).some((row) => row.thread_id !== null)).toBe(false);
 	});
 });

@@ -54,7 +54,6 @@ import {
 import {
 	dedupeHandle,
 	heldLogLine,
-	heldThreadsNotice,
 	liveThreadAdmission,
 	pendingIdsToDrop,
 	threadDirection,
@@ -688,8 +687,9 @@ type AdmitStore = "stored" | "duplicate" | "rejected";
  * by the time it lands cannot admit a second caller. A row that is already stored is a duplicate:
  * the key is not moved again. `rejected` is the only result that blocks later messages from that sender. */
 /** Stores a held thread once, drops rows over the cap, and keeps a single notice with no message body. */
-function holdThread(db: PhoneDb, held: HeldThread): void {
+function holdThread(db: PhoneDb, held: HeldThread, receivedAt: number): void {
 	db.pruneMessages();
+	const hadNotice = db.heldNotice() !== undefined;
 	const inserted = db.insertPending({
 		rumor_id: held.rumorId,
 		room_id: held.roomId,
@@ -697,17 +697,17 @@ function holdThread(db: PhoneDb, held: HeldThread): void {
 		members: JSON.stringify(held.memberNpubs),
 		subject: held.subject,
 		text: held.text,
-		ts: held.ts,
+		ts: Math.min(held.ts, receivedAt),
 	});
 	if (!inserted) return;
 	const drop = pendingIdsToDrop(
-		db.listPending().map((row) => ({ rumorId: row.rumor_id, sender: row.sender, ts: row.ts })),
+		db.listPending().map((row) => ({ rumorId: row.rumor_id, sender: row.sender, ts: row.received_at })),
 	);
-	if (drop.length > 0) db.deletePending(drop);
-	if (!db.pendingByRumor(held.rumorId)) return;
-	const rooms = new Set(db.listPending().map((row) => row.room_id));
-	db.upsertHeldNotice(heldThreadsNotice(rooms.size));
-	process.stderr.write(heldLogLine(held.roomId));
+	db.deletePending(drop);
+	const survived = db.pendingByRumor(held.rumorId) !== undefined;
+	if (!survived && !hadNotice) return;
+	db.syncHeldNotice();
+	if (survived) process.stderr.write(heldLogLine(held.roomId));
 }
 
 function threadContacts(db: PhoneDb): { npub: string; keyId: string }[] {
@@ -730,15 +730,19 @@ function admitMessage(
 			const admission = liveThreadAdmission(message.thread.memberNpubs, message.from, own, threadContacts(db));
 			if (admission.kind === "drop") return "duplicate";
 			if (admission.kind === "hold") {
-				holdThread(db, {
-					rumorId: message.id,
-					roomId: message.thread.roomId,
-					senderNpub: message.from,
-					memberNpubs: message.thread.memberNpubs,
-					subject: message.thread.subject,
-					text: message.text,
-					ts: message.ts,
-				});
+				holdThread(
+					db,
+					{
+						rumorId: message.id,
+						roomId: message.thread.roomId,
+						senderNpub: message.from,
+						memberNpubs: message.thread.memberNpubs,
+						subject: message.thread.subject,
+						text: message.text,
+						ts: message.ts,
+					},
+					now(),
+				);
 				return "duplicate";
 			}
 			if (!db.getThread(message.thread.roomId)) {
@@ -858,7 +862,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	const applyCaught = (caught: Awaited<ReturnType<typeof fetchNew>>) => {
 		const newContactByNpub = new Map(caught.newContacts.map((contact) => [contact.npub, contact]));
 		const refused = new Set<string>();
-		for (const held of caught.held) holdThread(deps.db, held);
+		for (const held of caught.held) holdThread(deps.db, held, deps.now());
 		for (const message of caught.messages) {
 			if (message.thread) {
 				admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys);
@@ -905,7 +909,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		return gateCache;
 	};
 	const hooks: SubscribeHooks = {
-		onHeld: (held) => holdThread(deps.db, held),
+		onHeld: (held) => holdThread(deps.db, held, deps.now()),
 		reread: rereadGate,
 		onDrop: logDrop,
 		onEvent: (id) => addBounded(deliveredIds, id, STRANGER_ID_LIMIT),

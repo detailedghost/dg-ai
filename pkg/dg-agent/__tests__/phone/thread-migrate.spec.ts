@@ -97,7 +97,7 @@ describe("thread schema migration", () => {
 		const index = opened.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_thread'").get();
 		opened.close();
 
-		expect(version).toBe(3);
+		expect(version).toBe(4);
 		expect(tables).toContain("threads");
 		expect(tables).toContain("thread_members");
 		expect(tables).toContain("pending_threads");
@@ -133,32 +133,36 @@ describe("thread schema migration", () => {
 		db.close();
 	});
 
-	it("refuses an expired held row and prunes held rows past the message window", () => {
+	it("expires a future-dated held row by the local receive time", () => {
 		const paths = freshPaths();
 		let now = 2_000_000;
 		const db = PhoneDb.open(paths, () => now);
-		const row = (id: string, ts: number) => ({
-			rumor_id: id,
-			room_id: id,
-			sender: "npub1peer",
-			members: "[]",
-			subject: null,
-			text: "held-body",
-			ts,
-		});
-		expect(db.insertPending(row("stale", now - MESSAGE_TTL_SECONDS - 1))).toBe(false);
-		expect(db.insertPending(row("fresh", now - 10))).toBe(true);
-		now += MESSAGE_TTL_SECONDS;
+		expect(
+			db.insertPending({
+				rumor_id: "future",
+				room_id: "future",
+				sender: "npub1peer",
+				members: "[]",
+				subject: null,
+				text: "held-body",
+				ts: now + 10 * 365 * 24 * 60 * 60,
+			}),
+		).toBe(true);
+		expect(db.pendingByRumor("future")?.received_at).toBe(now);
+		db.upsertHeldNotice("1 held thread");
+		now += MESSAGE_TTL_SECONDS + 1;
 		db.pruneMessages();
-		expect(db.pendingByRumor("fresh")).toBeUndefined();
 		expect(db.listPending()).toEqual([]);
+		expect(db.heldNotice()).toBeUndefined();
 		db.close();
 	});
 
 	it("drops the oldest held rows past the per-sender and total caps", () => {
 		const paths = freshPaths();
-		const db = PhoneDb.open(paths, () => 100);
+		let now = 100;
+		const db = PhoneDb.open(paths, () => now);
 		for (let index = 0; index < 6; index += 1) {
+			now = 100 + index;
 			db.insertPending({
 				rumor_id: `s${index}`,
 				room_id: `room-${index}`,
@@ -166,12 +170,20 @@ describe("thread schema migration", () => {
 				members: "[]",
 				subject: null,
 				text: `body-${index}`,
-				ts: index,
+				ts: now + 10 * 365 * 24 * 60 * 60,
 			});
 		}
-		db.deletePending(pendingIdsToDrop(db.listPending().map((row) => ({ rumorId: row.rumor_id, sender: row.sender, ts: row.ts })), 5, 50));
+		db.deletePending(
+			pendingIdsToDrop(
+				db.listPending().map((row) => ({ rumorId: row.rumor_id, sender: row.sender, ts: row.received_at })),
+				5,
+				50,
+			),
+		);
+		db.syncHeldNotice();
 		expect(db.listPending().map((row) => row.rumor_id)).toEqual(["s1", "s2", "s3", "s4", "s5"]);
 		expect(db.pendingByRumor("s0")).toBeUndefined();
+		expect(db.heldNotice()?.text).toBe("5 held threads");
 		db.close();
 	});
 });

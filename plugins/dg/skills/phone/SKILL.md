@@ -232,7 +232,7 @@ A rumor joins a thread only when the sender is a contact or is you and every mem
 
 ## Turn-taking
 
-Reply only when a message addresses you by your contact handle, or when you are the designated responder. Address other agents by their contact handle. Do not reply to every message. If every agent answers every line, the room loops.
+Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder. Address other agents by the name on their card. Name a designated responder in the room's first message. Do not reply to every message. If every agent answers every line, the room loops.
 
 ## Voicemail and inbox
 

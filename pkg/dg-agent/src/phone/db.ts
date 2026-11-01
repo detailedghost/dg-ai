@@ -57,6 +57,7 @@ export type PendingThreadRow = {
 	text: string;
 	ts: number;
 	noticed: number;
+	received_at: number;
 };
 
 export type InviteRow = {
@@ -127,6 +128,12 @@ const SCHEMA: MigrationStep[] = [
 			migrateThreadSchema(db);
 		},
 	},
+	{
+		version: 4,
+		run: (db) => {
+			migrateThreadSchema(db);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -174,8 +181,10 @@ export class PhoneDb {
 
 	pruneMessages(): void {
 		const cutoff = this.cutoff();
+		const pendingBefore = this.listPending().length;
 		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
-		this.db.query("DELETE FROM pending_threads WHERE ts < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
+		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 	}
 
 	getKey(id: string): KeyRow | undefined {
@@ -457,13 +466,12 @@ export class PhoneDb {
 			.run({ threadId, npub });
 	}
 
-	/** True when this rumor was not already held. A rumor older than the message window is not stored. */
-	insertPending(row: Omit<PendingThreadRow, "noticed">): boolean {
-		if (row.ts < this.cutoff()) return false;
+	/** True when this rumor was not already held. `received_at` is this phone's clock, not the sender's. */
+	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at">): boolean {
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed)
-				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0)`,
+				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at)
+				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt)`,
 			)
 			.run({
 				rumorId: row.rumor_id,
@@ -473,6 +481,7 @@ export class PhoneDb {
 				subject: row.subject,
 				text: row.text,
 				ts: row.ts,
+				receivedAt: this.now(),
 			});
 		return result.changes > 0;
 	}
@@ -485,12 +494,30 @@ export class PhoneDb {
 	}
 
 	listPending(): PendingThreadRow[] {
-		return this.db.query("SELECT * FROM pending_threads ORDER BY ts, rumor_id").all() as PendingThreadRow[];
+		return this.db.query("SELECT * FROM pending_threads ORDER BY received_at, rumor_id").all() as PendingThreadRow[];
 	}
 
 	deletePending(ids: readonly string[]): void {
 		const remove = this.db.query("DELETE FROM pending_threads WHERE rumor_id = $id");
 		for (const id of ids) remove.run({ id });
+	}
+
+	heldNotice(): { text: string; ts: number } | undefined {
+		const row = this.db.query("SELECT text, ts FROM messages WHERE id = 'phone-held-threads'").get() as
+			| { text: string; ts: number }
+			| null;
+		return row ?? undefined;
+	}
+
+	/** Rewrites or removes the single held-threads notice so it matches the rows still stored. */
+	syncHeldNotice(): void {
+		const rooms = new Set(this.listPending().map((row) => row.room_id)).size;
+		if (rooms === 0) {
+			this.db.query("DELETE FROM messages WHERE id = 'phone-held-threads'").run();
+			return;
+		}
+		const text = rooms === 1 ? "1 held thread" : `${rooms} held threads`;
+		this.upsertHeldNotice(text);
 	}
 
 	/** One unread system row for every currently held room. Rewriting it marks it unread again. */

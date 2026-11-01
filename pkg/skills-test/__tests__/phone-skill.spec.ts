@@ -94,11 +94,13 @@ describe("phone skill", () => {
 		expect(skill).toContain("phone thread list");
 		expect(skill).toContain("phone thread show");
 		expect(skill).toContain("--subject");
-		expect(skill).toContain("Reply only when a message addresses you by your contact handle, or when you are the designated responder.");
-		expect(skill).toContain("Address other agents by their contact handle.");
+		expect(skill).toContain("Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder.");
+		expect(skill).toContain("Address other agents by the name on their card.");
+		expect(skill).toContain("Name a designated responder in the room's first message.");
 		expect(skill).toContain("Do not reply to every message.");
-		expect(guide).toContain("Reply only when a message addresses you by your contact handle, or when you are the designated responder.");
-		expect(guide).toContain("Address other agents by their contact handle.");
+		expect(guide).toContain("Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder.");
+		expect(guide).toContain("Address other agents by the name on their card.");
+		expect(guide).toContain("Name a designated responder in the room's first message.");
 		expect(guide).toContain("Do not reply to every message.");
 		expect(guide).toContain("[#ops] +baron:");
 		expect(skill).toContain("unquoted, `#` starts a comment.");
@@ -111,34 +113,46 @@ describe("phone skill", () => {
 		expect(guide).toContain("Running `say` again sends a new message.");
 	});
 
-	test("bash examples quote every thread handle", () => {
-		const unquoted = (text: string): string[] => {
-			const blocks = [...text.matchAll(/```bash\n([\s\S]*?)```/g)].map((match) => match[1] ?? "");
-			const hits: string[] = [];
-			for (const block of blocks) {
-				for (const line of block.split("\n")) {
-					let index = 0;
-					while (index < line.length) {
-						const ch = line[index] ?? "";
-						if (ch === "'" || ch === '"') {
-							const quote = ch;
-							index += 1;
-							while (index < line.length && line[index] !== quote) index += 1;
-							index += 1;
-							continue;
-						}
-						if (ch === "#" && (index === 0 || /\s/.test(line[index - 1] ?? ""))) {
-							if (/^[A-Za-z0-9]/.test(line.slice(index + 1))) hits.push(line);
-							break;
-						}
-						index += 1;
+	test("shell examples quote every thread handle", () => {
+		const unquotedWord = (snippet: string): boolean => {
+			let index = 0;
+			while (index < snippet.length) {
+				const ch = snippet[index] ?? "";
+				if (ch === "\\") {
+					index += 2;
+					continue;
+				}
+				if (ch === "'" || ch === '"') {
+					const quote = ch;
+					index += 1;
+					while (index < snippet.length && snippet[index] !== quote) {
+						if (snippet[index] === "\\") index += 2;
+						else index += 1;
 					}
+					index += 1;
+					continue;
+				}
+				if (ch === "#" && (index === 0 || /\s/.test(snippet[index - 1] ?? ""))) {
+					return /^[A-Za-z0-9]/.test(snippet.slice(index + 1));
+				}
+				index += 1;
+			}
+			return false;
+		};
+		const hits: string[] = [];
+		for (const text of [skill, guide]) {
+			for (const match of text.matchAll(/```(?:bash|sh|shell)?\n([\s\S]*?)```/g)) {
+				for (const line of (match[1] ?? "").split("\n")) {
+					if (unquotedWord(line)) hits.push(line);
 				}
 			}
-			return hits;
-		};
-		expect(unquoted(skill)).toEqual([]);
-		expect(unquoted(guide)).toEqual([]);
+			for (const match of text.matchAll(/`([^`\n]+)`/g)) {
+				const snippet = match[1] ?? "";
+				if (!/^(?:say|thread|inbox|phone)\b/.test(snippet)) continue;
+				if (unquotedWord(snippet)) hits.push(snippet);
+			}
+		}
+		expect(hits).toEqual([]);
 	});
 
 	test("sends replies through a file redirect or a quoted heredoc, not a shell argument", () => {

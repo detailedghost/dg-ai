@@ -42,11 +42,16 @@ export function migrateThreadSchema(db: Database): void {
 			subject TEXT,
 			text TEXT NOT NULL,
 			ts INTEGER NOT NULL,
-			noticed INTEGER NOT NULL DEFAULT 0
+			noticed INTEGER NOT NULL DEFAULT 0,
+			received_at INTEGER NOT NULL DEFAULT 0
 		) STRICT`);
 	}
 	if (!columnExists(db, "messages", "thread_id")) {
 		db.run("ALTER TABLE messages ADD COLUMN thread_id TEXT REFERENCES threads(id)");
+	}
+	if (tableExists(db, "pending_threads") && !columnExists(db, "pending_threads", "received_at")) {
+		db.run("ALTER TABLE pending_threads ADD COLUMN received_at INTEGER NOT NULL DEFAULT 0");
+		db.run("UPDATE pending_threads SET received_at = ts WHERE received_at = 0");
 	}
 	db.run("CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)");
 }

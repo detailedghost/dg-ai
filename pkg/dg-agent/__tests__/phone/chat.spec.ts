@@ -472,7 +472,7 @@ describe("the number secret (reusable, no expiry)", () => {
 
 		expect(admitted?.message).toMatchObject({ text: "hello", from: nip19.npubEncode(alice.pub), call: true });
 		expect(admitted?.newContact).toMatchObject({ npub: nip19.npubEncode(alice.pub), via: "number", suggestedHandle: "grok", keyId: bob.id });
-		expect(admitted?.gate.contacts.get(alice.pub)).toEqual({ npub: nip19.npubEncode(alice.pub), handle: "grok" });
+		expect(admitted?.gate.contacts.get(alice.pub)).toEqual({ npub: nip19.npubEncode(alice.pub), handle: "grok", keyId: bob.id });
 	});
 
 	it("drops a ring with a wrong secret", () => {
@@ -921,6 +921,42 @@ describe("thread rumors", () => {
 		expect(messages).toEqual([]);
 		expect(held).toEqual([]);
 		expect(drops).toEqual(["no matching contact or invite"]);
+	});
+
+	it("admits a thread once when the sender pairs in the same catch-up batch", async () => {
+		const alice = identity();
+		const bob = identity();
+		const pool = createFakePool();
+		const secret = "ab".repeat(32);
+		const callRumor = nip59.createRumor(
+			{
+				kind: 14,
+				content: "hello",
+				created_at: 1_000,
+				tags: [["p", bob.pub], [CALL_TAG, secret], [SELF_NAME_TAG, "alice"]],
+			},
+			alice.sk,
+		);
+		const call = nip59.createWrap(nip59.createSeal(callRumor, alice.sk, bob.pub), bob.pub);
+		const sent = groupWrap(alice, bob, [bob.pub], "room-line", 2_000, "ops");
+		pool.events.push(sent.event, call);
+		const drops: string[] = [];
+
+		const { messages, held } = await fetchNew(
+			pool,
+			RELAYS,
+			[bob],
+			{ contacts: new Map(), secrets: { number: secret, invites: [] } },
+			{ cursor: 0, ids: [] },
+			() => 5_000,
+			(drop) => drops.push(drop.reason),
+		);
+
+		expect(drops).toEqual([]);
+		expect(held).toEqual([]);
+		expect(messages.filter((message) => message.call).map((message) => message.text)).toEqual(["hello"]);
+		expect(messages.filter((message) => message.thread).map((message) => message.text)).toEqual(["room-line"]);
+		expect(messages.filter((message) => message.id === sent.rumor.id)).toHaveLength(1);
 	});
 });
 

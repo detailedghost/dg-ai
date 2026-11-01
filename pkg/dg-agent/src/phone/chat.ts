@@ -150,7 +150,7 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 	if (holdsSecret(rumor, gate.secrets.number)) {
 		const handle = selfNameOf(rumor) ?? UNKNOWN_CALLER_HANDLE;
 		const contacts = new Map(gate.contacts);
-		contacts.set(rumor.pubkey, { npub, handle });
+		contacts.set(rumor.pubkey, { npub, handle, keyId });
 		return {
 			ok: true,
 			admitted: {
@@ -164,7 +164,7 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 	if (invite) {
 		const handle = invite.name ?? selfNameOf(rumor) ?? UNKNOWN_CALLER_HANDLE;
 		const contacts = new Map(gate.contacts);
-		contacts.set(rumor.pubkey, { npub, handle });
+		contacts.set(rumor.pubkey, { npub, handle, keyId });
 		return {
 			ok: true,
 			admitted: {
@@ -395,25 +395,36 @@ export async function fetchNew(
 	const reacceptByMessageId = new Map<string, Reaccept>();
 	const held: HeldThread[] = [];
 	const direct: typeof opened = [];
-	const threadContacts = [...gate.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
-	for (const item of opened) {
+	const deferredThreads: typeof opened = [];
+	const threadContactsOf = (source: Gate) => [...source.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
+	const classifyItem = (item: (typeof opened)[number], source: Gate) => {
 		const openingPub = keys.find((key) => key.id === item.keyId)?.pub ?? "";
-		const view = classifyThreadRumor(item.rumor, ownPubs, threadContacts, startedAt, item.keyId, openingPub);
+		return classifyThreadRumor(item.rumor, ownPubs, threadContactsOf(source), startedAt, item.keyId, openingPub);
+	};
+	const keepThread = (item: (typeof opened)[number], view: NonNullable<ReturnType<typeof classifyThreadRumor>>) => {
+		if (view.kind === "hold") {
+			held.push(heldFrom(view));
+			skipped.push(item.event.id);
+			return;
+		}
+		if (view.kind === "message") {
+			messages.push(threadMessageFields(view, view.keyId ?? item.keyId));
+			skipped.push(item.event.id);
+			return;
+		}
+		onDrop?.({ id: item.event.id, reason: view.reason ?? "older than the message window", pubkeyPrefix: view.pubkeyPrefix });
+	};
+	for (const item of opened) {
+		const view = classifyItem(item, gate);
 		if (view === null) {
 			direct.push(item);
 			continue;
 		}
-		if (view.kind === "drop") {
-			onDrop?.({ id: item.event.id, reason: view.reason ?? "older than the message window", pubkeyPrefix: view.pubkeyPrefix });
+		if (view.kind === "drop" && view.reason === "no matching contact or invite") {
+			deferredThreads.push(item);
 			continue;
 		}
-		if (view.kind === "hold") {
-			held.push(heldFrom(view));
-			skipped.push(item.event.id);
-			continue;
-		}
-		messages.push(threadMessageFields(view, view.keyId ?? item.keyId));
-		skipped.push(item.event.id);
+		keepThread(item, view);
 	}
 	let current = gate;
 	// Stryker restore all
@@ -437,6 +448,11 @@ export async function fetchNew(
 			reaccepts.push(item.reaccept);
 			reacceptByMessageId.set(item.message.id, item.reaccept);
 		}
+	}
+	for (const item of deferredThreads) {
+		const view = classifyItem(item, current);
+		if (view === null) continue;
+		keepThread(item, view);
 	}
 	sortByTime(messages);
 	return {
@@ -462,7 +478,8 @@ export type DropReason =
 	| "not a chat message"
 	| "older than the message window"
 	| "no matching contact or invite"
-	| "thread is too large";
+	| "thread is too large"
+	| "ahead of the clock";
 
 /** Why a wrap was not stored. No secret, invite secret, or message text. */
 export type DroppedRing = { id: string; reason: DropReason; pubkeyPrefix?: string };
