@@ -21,3 +21,13 @@ export const ownedId = (command: string): string | undefined =>
 
 export const isOwned = (command: string): boolean =>
 	ownedId(command) !== undefined;
+
+const LAUNCHER_TAIL = / hooks run [a-z][a-z-]*$/;
+
+export const ownedLauncher = (command: string): string | undefined =>
+	isOwned(command)
+		? command
+				.trim()
+				.replace(LAUNCHER_TAIL, "")
+				.replace(/^(["'])(.*)\1$/, "$2")
+		: undefined;

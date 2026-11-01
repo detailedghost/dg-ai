@@ -65,6 +65,7 @@ flowchart LR
 - [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
+- [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
 
 ## Adding an ADR
 

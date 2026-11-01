@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isOwned, ownedCommand } from "../../src/hooks/settings/marker";
+import {
+	isOwned,
+	ownedCommand,
+	ownedLauncher,
+} from "../../src/hooks/settings/marker";
 
 describe("isOwned", () => {
 	test.each([
@@ -54,5 +58,32 @@ describe("ownedCommand", () => {
 	test("refuses a launcher path with shell metacharacters", () => {
 		expect(() => ownedCommand("/tmp/a;rm/dg-skills", "spelling")).toThrow();
 		expect(() => ownedCommand("/tmp/$HOME/dg-skills", "spelling")).toThrow();
+	});
+});
+
+describe("ownedLauncher", () => {
+	test.each([
+		["dg-skills hooks run spelling", "dg-skills"],
+		["/abs/bin/dg-skills hooks run format", "/abs/bin/dg-skills"],
+		["'/opt/My Apps/dg-skills' hooks run spelling", "/opt/My Apps/dg-skills"],
+		[
+			'"C:\\Users\\Jane Doe\\.dg\\bin\\dg-skills.exe" hooks run format',
+			"C:\\Users\\Jane Doe\\.dg\\bin\\dg-skills.exe",
+		],
+	])("extracts the launcher from %s", (command, launcher) => {
+		expect(ownedLauncher(command)).toBe(launcher);
+	});
+
+	test("returns undefined for a command dg does not own", () => {
+		expect(ownedLauncher("/usr/local/bin/my-own-hook --flag")).toBeUndefined();
+	});
+
+	test("round-trips through ownedCommand", () => {
+		for (const launcher of [
+			"/opt/My Apps/dg-skills",
+			"C:\\Users\\Jane Doe\\.dg\\bin\\dg-skills.exe",
+			"C:\\Users\\u\\.dg\\bin\\dg-skills.cmd",
+		])
+			expect(ownedLauncher(ownedCommand(launcher, "format"))).toBe(launcher);
 	});
 });

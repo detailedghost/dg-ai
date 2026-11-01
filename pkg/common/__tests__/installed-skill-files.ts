@@ -62,6 +62,7 @@ export const INSTALLED_SKILL_FILES = [
 	"grill-me/references/decisions.md",
 	"grill-me/references/protocol.md",
 	"hook-comment-disable/SKILL.md",
+	"hooks/SKILL.md",
 	"hunt/SKILL.md",
 	"hunt/references/hunt.workflow.mjs",
 	"hunt/references/protocol.md",

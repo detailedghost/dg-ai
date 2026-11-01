@@ -58,6 +58,7 @@ npubs
 nsec
 nsecs
 OAuth
+opencode
 PRs
 rollout
 SQLCipher
@@ -65,3 +66,4 @@ unencrypted
 untrusted
 [Ww]orktree
 [Ww]orktrees
+yolo
