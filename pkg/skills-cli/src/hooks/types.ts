@@ -67,3 +67,12 @@ export interface HookDefinition {
 	settings?: Record<string, HookSettingSpec>;
 	load: () => Promise<{ default: HookHandler }>;
 }
+
+export interface SettingsWriter {
+	dir: string;
+	file: string;
+	check(): void;
+	enable(defs: readonly HookDefinition[], launcher: string): Promise<string[]>;
+	disable(ids?: readonly string[]): Promise<string[]>;
+	enabled(): string[];
+}
