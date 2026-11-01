@@ -22,6 +22,7 @@ const deleteData: ClientHandler = async (args, env) => {
 	const name = args.session;
 	const record = resolve(name);
 	if (record && record.profileDir === null) {
+		await stopSession(record);
 		env.out(`No saved data for session '${name}'.`);
 		return 0;
 	}

@@ -25,7 +25,19 @@ describe("tab-close", () => {
 		const result = await handler(ctx, argsFor(spec));
 		expect(second.calls).toEqual(["close []"]);
 		expect(ctx.page()).toBe(first as never);
-		expect(result.code).toBe("await page.close();");
+		expect(result.code).toBe(
+			"await page.close();\npage = page.context().pages()[0];",
+		);
+	});
+
+	test("rebinds page when the current tab is closed by its index", async () => {
+		const { ctx, first, second } = twoTabs();
+		const result = await handler(ctx, argsFor(spec, "1"));
+		expect(second.calls).toEqual(["close []"]);
+		expect(ctx.page()).toBe(first as never);
+		expect(result.code).toBe(
+			"await page.context().pages()[1].close();\npage = page.context().pages()[0];",
+		);
 	});
 
 	test("closes another tab by index and keeps the current one", async () => {

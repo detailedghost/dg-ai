@@ -13,14 +13,16 @@ const tabClose: DaemonHandler = async (ctx, args) => {
 	const closing = pages[index] as Page;
 	await closing.close();
 	const remaining = ctx.context.pages();
-	if (closing === current && remaining.length > 0)
-		ctx.selectTab(Math.max(0, index - 1));
+	const rebind = closing === current && remaining.length > 0;
+	const next = Math.max(0, index - 1);
+	if (rebind) ctx.selectTab(next);
+	const close =
+		requested === undefined
+			? "await page.close();"
+			: `await page.context().pages()[${index}].close();`;
 	return {
 		result: await listTabs(ctx),
-		code:
-			requested === undefined
-				? "await page.close();"
-				: `await page.context().pages()[${index}].close();`,
+		code: rebind ? `${close}\npage = page.context().pages()[${next}];` : close,
 		snapshot: remaining.length > 0 ? true : undefined,
 	};
 };

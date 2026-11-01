@@ -10,8 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import handler from "../../../../src/pw/commands/delete-data/run";
-import { sessionKey } from "../../../../src/pw/core/registry";
 import spec from "../../../../src/pw/commands/delete-data/spec";
+import { sessionKey } from "../../../../src/pw/core/registry";
 import {
 	argsFor,
 	clientEnv,
@@ -84,15 +84,19 @@ describe("delete-data", () => {
 		}
 	});
 
-	test("treats a scratch session as having no saved data and keeps the persistent profile", async () => {
+	test("stops a scratch session, reports no saved data and keeps the persistent profile", async () => {
 		mkdirSync(profile("twin"), { recursive: true });
 		writeFileSync(path.join(profile("twin"), "Cookies"), "x");
-		const daemon = await startFakeDaemon(sessionKey({ name: "twin", scratch: true }), { profileDir: null });
+		const daemon = await startFakeDaemon(
+			sessionKey({ name: "twin", scratch: true }),
+			{ profileDir: null },
+		);
 		const env = clientEnv();
 		try {
 			expect(await handler(argsFor(spec, "-s=twin"), env)).toBe(0);
 			expect(env.stdout).toEqual(["No saved data for session 'twin'."]);
 			expect(existsSync(path.join(profile("twin"), "Cookies"))).toBe(true);
+			expect(daemon.child.killed || daemon.child.exitCode !== null).toBe(true);
 		} finally {
 			daemon.dispose();
 		}
