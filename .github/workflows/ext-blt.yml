@@ -5,6 +5,7 @@ on:
     paths:
       - pkg/extension/**
       - pkg/common/**
+      - pkg/tour-ui/**
       - .github/workflows/ext-blt.yml
   workflow_call:
 

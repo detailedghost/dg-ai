@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { NarrationProgressTracker } from "@/lib/narration-progress";
+import { NarrationProgressTracker } from "../src/narration-progress";
 
 describe("NarrationProgressTracker", () => {
 	it("aggregates model bytes and never moves backwards", () => {

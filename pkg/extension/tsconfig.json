@@ -13,7 +13,8 @@
 			"~~": ["."],
 			"~~/*": ["./*"],
 			"@dg/common": ["../common/src/index.ts"],
-			"@dg/common/*": ["../common/src/*"]
+			"@dg/common/*": ["../common/src/*"],
+			"@dg/tour-ui": ["../tour-ui/src/index.ts"]
 		}
 	}
 }

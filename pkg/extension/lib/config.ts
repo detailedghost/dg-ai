@@ -4,6 +4,14 @@ import {
 	type VideoQuality,
 } from "@/lib/capture-quality";
 import { type ConfigRelayReply, MSG } from "@/lib/chat-messages";
+import {
+	NARRATION_MODES,
+	type NarrationMode,
+	VOICES,
+	voiceLabel,
+} from "@dg/tour-ui";
+
+export { NARRATION_MODES, type NarrationMode, VOICES, voiceLabel };
 
 /** The nine tab-group colors Chrome/Firefox accept. */
 export type GroupColor =
@@ -38,36 +46,6 @@ export function resolveColor(c: ColorSetting): GroupColor {
 	return GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
 }
 
-// A curated subset of Kokoro voices for the settings dropdown (grade A/B first).
-export const VOICES = [
-	"af_heart",
-	"af_bella",
-	"af_nicole",
-	"af_sarah",
-	"af_sky",
-	"am_michael",
-	"am_fenrir",
-	"am_puck",
-	"am_adam",
-	"bf_emma",
-	"bf_isabella",
-	"bm_george",
-	"bm_fable",
-] as const;
-
-/**
- * Demo-recording narration mode:
- * - "both"     — spoken voiceover + the on-screen text box (default)
- * - "voice"    — voiceover only; the body text is spoken, not boxed (cleaner video)
- * - "captions" — silent; on-screen text box only (skips Kokoro entirely)
- */
-export type NarrationMode = "both" | "voice" | "captions";
-export const NARRATION_MODES: { value: NarrationMode; label: string }[] = [
-	{ value: "both", label: "Voiceover + captions" },
-	{ value: "voice", label: "Voiceover only" },
-	{ value: "captions", label: "Captions only (silent)" },
-];
-
 // Group name is per-invocation (from the URL marker); color + demo-narration are configured.
 export const THEMES = [
 	{ value: "dark", label: "Dark" },
@@ -91,24 +69,6 @@ export const DEFAULTS: Config = {
 	videoQuality: DEFAULT_VIDEO_QUALITY,
 	theme: "dark",
 };
-
-// Kokoro ids encode origin and gender as a prefix: <a|b><f|m>_<name>.
-const VOICE_ACCENTS: Record<string, string> = { a: "American", b: "British" };
-const VOICE_GENDERS: Record<string, string> = { f: "female", m: "male" };
-
-/**
- * Turn a Kokoro voice id into something readable: `af_heart` → `Heart — American female`.
- *
- * Derived from the id's prefix rather than a hand-kept map, so a voice added to VOICES
- * gets a proper label for free; an id that doesn't match the convention shows as-is.
- */
-export function voiceLabel(voice: string): string {
-	const parts = /^([ab])([fm])_(.+)$/.exec(voice);
-	if (!parts) return voice;
-	const [, accent, gender, name] = parts;
-	const proper = name.charAt(0).toUpperCase() + name.slice(1);
-	return `${proper} — ${VOICE_ACCENTS[accent]} ${VOICE_GENDERS[gender]}`;
-}
 
 /** Coerce an untrusted string (a stored value or a form input) to a NarrationMode. */
 export function getNarrationMode(val: string): NarrationMode {

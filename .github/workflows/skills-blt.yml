@@ -9,6 +9,7 @@ on:
       - pkg/ssms/**
       - bun.lock
       - pkg/common/**
+      - pkg/tour-ui/**
       - pkg/channel-review/**
       - plugins/dg/skills/**
       - pkg/skills-test/**
@@ -130,6 +131,14 @@ jobs:
 
       - name: Test (channel-review)
         working-directory: pkg/channel-review
+        run: bun test
+
+      - name: Lint (tour-ui)
+        working-directory: pkg/tour-ui
+        run: bun run lint
+
+      - name: Test (tour-ui)
+        working-directory: pkg/tour-ui
         run: bun test
 
       - name: Lint (skills-cli)
