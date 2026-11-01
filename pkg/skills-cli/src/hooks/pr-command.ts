@@ -208,27 +208,25 @@ function shellScript(words: string[]): string | undefined {
 	return undefined;
 }
 
-/** Source of the first GitHub or GitLab PR CLI call with one of the actions at command position, or undefined. */
-export function prInvocation(
+/** Source of every GitHub or GitLab PR CLI call with one of the actions at command position. */
+export function prInvocations(
 	command: string,
 	actions: readonly PrAction[],
 	depth = 0,
-): string | undefined {
-	if (depth > 4) return undefined;
+): string[] {
+	if (depth > 4) return [];
 	const { segments, nested } = commandSegments(command);
+	const found: string[] = [];
 	for (const segment of segments) {
 		const words = shellWords(segment);
-		if (matchesPr(words, actions)) return segment;
+		if (matchesPr(words, actions)) found.push(segment);
 		const inner = shellScript(words);
-		const found =
-			inner === undefined ? undefined : prInvocation(inner, actions, depth + 1);
-		if (found !== undefined) return found;
+		if (inner !== undefined)
+			found.push(...prInvocations(inner, actions, depth + 1));
 	}
-	for (const script of nested) {
-		const found = prInvocation(script, actions, depth + 1);
-		if (found !== undefined) return found;
-	}
-	return undefined;
+	for (const script of nested)
+		found.push(...prInvocations(script, actions, depth + 1));
+	return found;
 }
 
 /** True when a shell command runs the GitHub or GitLab PR CLI with one of the actions at command position. */
@@ -236,5 +234,5 @@ export function invokesPrCommand(
 	command: string,
 	actions: readonly PrAction[],
 ): boolean {
-	return prInvocation(command, actions) !== undefined;
+	return prInvocations(command, actions).length > 0;
 }

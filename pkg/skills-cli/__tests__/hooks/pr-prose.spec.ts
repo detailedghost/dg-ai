@@ -534,3 +534,12 @@ describe("pr-prose with Vale present", () => {
 		expect(vale).toBeLessThan(heuristic);
 	});
 });
+
+describe("pr-prose with several PR calls", () => {
+	test("checks every PR invocation in one command", async () => {
+		expect(
+			(await judge("gh pr edit 42 --add-label bug && gh pr create --body TBD"))
+				.code,
+		).toBe(2);
+	});
+});

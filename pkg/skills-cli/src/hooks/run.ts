@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { scratchRoot, stateRoot } from "@dg/common/node";
+import { privateRootChild, scratchRoot, stateRoot } from "@dg/common/node";
 import { applyPatchInputs } from "./adapters/codex-apply-patch";
 import { hookSetting } from "./config";
 import { additionalContextJson, readStdinJson } from "./io";
@@ -30,7 +30,11 @@ function contextFor(
 	seams: HookSeams,
 	sessionId: string,
 ): HookContext {
-	const scratchDir = join(scratchRoot(env), "hooks");
+	const scratchDir = privateRootChild(
+		scratchRoot(env),
+		"hooks",
+		!!env["AI_SCRATCH_DIR"],
+	);
 	const warned = new Set<string>();
 	const warn = (message: string) => {
 		if (warned.has(message)) return;
@@ -42,7 +46,7 @@ function contextFor(
 		seams,
 		sessionId,
 		scratchDir,
-		stateDir: join(stateRoot(env), "hooks"),
+		stateDir: privateRootChild(stateRoot(env), "hooks", !!env["AI_STATE_DIR"]),
 		setting: (hookId, key) => hookSetting(hookId, key, env, warn),
 		number: (name, fallback) => {
 			const value = Number(env[name]);
@@ -75,8 +79,8 @@ export async function runHook(
 		return 1;
 	}
 	const event = await readStdinJson(stdin);
-	const ctx = contextFor(env, seams, sessionOf(env, event.session_id));
 	try {
+		const ctx = contextFor(env, seams, sessionOf(env, event.session_id));
 		const { default: handler } = await def.load();
 		const results: HookResult[] = [];
 		for (const input of applyPatchInputs(event))

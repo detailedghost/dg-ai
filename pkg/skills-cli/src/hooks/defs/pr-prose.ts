@@ -8,8 +8,8 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { bashCommand } from "../io";
-import { prInvocation, shellWords } from "../pr-command";
-import type { HookContext, HookHandler } from "../types";
+import { prInvocations, shellWords } from "../pr-command";
+import type { HookContext, HookHandler, HookResult } from "../types";
 
 interface Finding {
 	line: number;
@@ -250,19 +250,29 @@ function firstHint(ctx: HookContext): boolean {
 }
 
 const handler: HookHandler = async (input, ctx) => {
-	const command = prInvocation(bashCommand(input), [
+	const commands = prInvocations(bashCommand(input), [
 		"create",
 		"edit",
 		"update",
 	]);
-	if (command === undefined) return { exitCode: 0 };
+	if (commands.length === 0) return { exitCode: 0 };
 	if (ctx.bypassed("pr-prose-disabled")) return { exitCode: 0 };
-	const body = extractBody(command, input.cwd ?? process.cwd()).replace(
-		/\n+$/,
-		"",
-	);
-	if (body.trim() === "") return { exitCode: 0 };
+	const cwd = input.cwd ?? process.cwd();
+	let result: HookResult = { exitCode: 0 };
+	for (const command of commands) {
+		const body = extractBody(command, cwd).replace(/\n+$/, "");
+		if (body.trim() === "") continue;
+		result = await checkBody(body, input.cwd, ctx);
+		if (result.exitCode !== 0) return result;
+	}
+	return result;
+};
 
+async function checkBody(
+	body: string,
+	cwd: string | undefined,
+	ctx: HookContext,
+): Promise<HookResult> {
 	const findings = scanBody(body, ctx.number("HOOK_PR_PROSE_MAX_SENTENCE", 40));
 	let hint = "";
 	if (!ctx.seams.which("vale")) hint = VALE_HINT;
@@ -272,7 +282,7 @@ const handler: HookHandler = async (input, ctx) => {
 		else {
 			const vale = await valeFindings(
 				body,
-				resolve(input.cwd ?? process.cwd(), config),
+				resolve(cwd ?? process.cwd(), config),
 				ctx,
 			);
 			findings.unshift(...vale.findings);
@@ -298,6 +308,6 @@ const handler: HookHandler = async (input, ctx) => {
 		"fix: rewrite the body as plain English - short active sentences that say what changed and why - then retry.",
 	);
 	return { exitCode: 2, stderr: `${hint}${lines.join("\n")}\n` };
-};
+}
 
 export default handler;

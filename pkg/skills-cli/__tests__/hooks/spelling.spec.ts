@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { editInput, hookWorld, SESSION, writeInput } from "./hook-fixtures";
 
@@ -234,4 +234,29 @@ describe("spelling session id precedence", () => {
 		});
 		expect(r.code).toBe(0);
 	});
+});
+
+describe("hook scratch directory safety", () => {
+	test.skipIf(process.platform === "win32")(
+		"refuses a symlinked hooks scratch directory",
+		async () => {
+			const elsewhere = join(world.state, "elsewhere");
+			mkdirSync(elsewhere, { recursive: true });
+			symlinkSync(elsewhere, join(world.scratch, "hooks"));
+			const r = await world.run("spelling", editInput("colour"));
+			expect(r.code).toBe(1);
+			expect(r.stderr).toContain("unsafe scratch/state directory");
+		},
+	);
+
+	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"refuses a group-writable hooks scratch directory",
+		async () => {
+			mkdirSync(join(world.scratch, "hooks"), { recursive: true });
+			chmodSync(join(world.scratch, "hooks"), 0o777);
+			const r = await world.run("spelling", editInput("colour"));
+			expect(r.code).toBe(1);
+			expect(r.stderr).toContain("unsafe scratch/state directory");
+		},
+	);
 });

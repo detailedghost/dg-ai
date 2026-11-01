@@ -192,6 +192,25 @@ export function assertSafeRoot(base: string, allowRootLink: boolean): void {
 		unsafeDirectory(root);
 }
 
+/** A private direct child of a safe managed root, created 0700; throws when it is a link, foreign or writable by others. */
+export function privateRootChild(
+	base: string,
+	name: string,
+	allowRootLink: boolean,
+): string {
+	assertSafeRoot(base, allowRootLink);
+	const dir = path.join(path.resolve(base), name);
+	const entry = directoryEntry(dir);
+	const uid = process.getuid?.();
+	if (
+		entry.isSymbolicLink() ||
+		!entry.isDirectory() ||
+		(uid !== undefined && (entry.uid !== uid || (entry.mode & 0o022) !== 0))
+	)
+		unsafeDirectory(dir);
+	return dir;
+}
+
 function rootedDir(
 	base: string,
 	bucket: string,
