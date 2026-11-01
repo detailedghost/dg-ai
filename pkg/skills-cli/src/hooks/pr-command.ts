@@ -112,24 +112,39 @@ function scan(src: string, i: number, close: string, split: boolean): Scan {
 	return { end: src.length, inner };
 }
 
-/** Splits a shell script into simple-command spans; command substitutions come back as their own scripts. */
-export function commandSegments(script: string): {
-	segments: string[];
+export interface ShellItem {
+	text: string;
 	nested: string[];
-} {
+	subshell: boolean;
+}
+
+/** Splits a shell script into simple commands and ( ) subshells, in order; each command keeps its own substitutions. */
+export function commandSegments(script: string): ShellItem[] {
 	const src = script.replace(/\\\n/g, "");
-	const segments: string[] = [];
-	const nested: string[] = [];
+	const items: ShellItem[] = [];
 	let at = 0;
 	while (at < src.length) {
-		while (at < src.length && /[\s;&|()]/.test(src[at]!)) at++;
+		while (at < src.length && /[\s;&|)]/.test(src[at]!)) at++;
 		if (at >= src.length) break;
+		if (src[at] === "(") {
+			const sub = scan(src, at + 1, ")", false);
+			items.push({
+				text: src.slice(at + 1, sub.end),
+				nested: [],
+				subshell: true,
+			});
+			at = sub.end + 1;
+			continue;
+		}
 		const part = scan(src, at, "", true);
-		segments.push(src.slice(at, part.end));
-		nested.push(...part.inner);
+		items.push({
+			text: src.slice(at, part.end),
+			nested: part.inner,
+			subshell: false,
+		});
 		at = part.end + 1;
 	}
-	return { segments, nested };
+	return items;
 }
 
 /** Shell words of one simple command, with quotes and line continuations removed. */
@@ -250,19 +265,22 @@ export function prInvocations(
 	depth = 0,
 ): PrCall[] {
 	if (depth > 4) return [];
-	const { segments, nested } = commandSegments(command);
 	const found: PrCall[] = [];
 	let dir = cwd;
-	for (const segment of segments) {
-		const words = shellWords(segment);
-		if (matchesPr(words, actions)) found.push({ source: segment, cwd: dir });
+	for (const item of commandSegments(command)) {
+		if (item.subshell) {
+			found.push(...prInvocations(item.text, actions, dir, depth + 1));
+			continue;
+		}
+		const words = shellWords(item.text);
+		if (matchesPr(words, actions)) found.push({ source: item.text, cwd: dir });
 		const inner = shellScript(words);
 		if (inner !== undefined)
 			found.push(...prInvocations(inner, actions, dir, depth + 1));
+		for (const script of item.nested)
+			found.push(...prInvocations(script, actions, dir, depth + 1));
 		dir = changedDir(words, dir);
 	}
-	for (const script of nested)
-		found.push(...prInvocations(script, actions, dir, depth + 1));
 	return found;
 }
 

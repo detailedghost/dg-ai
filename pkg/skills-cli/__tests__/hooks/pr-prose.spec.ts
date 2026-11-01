@@ -568,3 +568,25 @@ describe("pr-prose shell edge cases", () => {
 		).toBe(2);
 	});
 });
+
+describe("pr-prose directory scope", () => {
+	test("keeps a cd inside a subshell out of the next command", async () => {
+		world.seed("body.md", "TBD\n");
+		world.seed("subdir/body.md", "We fixed the parser bug.\n");
+		const r = await world.run("pr-prose", {
+			...bashInput("(cd subdir && :); gh pr create --body-file body.md"),
+			cwd: world.work,
+		});
+		expect(r.code).toBe(2);
+	});
+
+	test("resolves a PR call in a substitution from its command's start directory", async () => {
+		world.seed("body.md", "TBD\n");
+		world.seed("subdir/body.md", "We fixed the parser bug.\n");
+		const r = await world.run("pr-prose", {
+			...bashInput('cd "$(gh pr create --body-file body.md)" && cd subdir'),
+			cwd: world.work,
+		});
+		expect(r.code).toBe(2);
+	});
+});
