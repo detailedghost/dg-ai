@@ -173,7 +173,9 @@ export class PhoneDb {
 	}
 
 	pruneMessages(): void {
-		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff: this.cutoff() });
+		const cutoff = this.cutoff();
+		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM pending_threads WHERE ts < $cutoff").run({ cutoff });
 	}
 
 	getKey(id: string): KeyRow | undefined {
@@ -455,8 +457,9 @@ export class PhoneDb {
 			.run({ threadId, npub });
 	}
 
-	/** True when this rumor was not already held. */
+	/** True when this rumor was not already held. A rumor older than the message window is not stored. */
 	insertPending(row: Omit<PendingThreadRow, "noticed">): boolean {
+		if (row.ts < this.cutoff()) return false;
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed)
@@ -481,15 +484,24 @@ export class PhoneDb {
 		);
 	}
 
-	roomNoticed(roomId: string): boolean {
-		const row = this.db
-			.query("SELECT rumor_id FROM pending_threads WHERE room_id = $roomId AND noticed = 1 LIMIT 1")
-			.get({ roomId });
-		return row !== null;
+	listPending(): PendingThreadRow[] {
+		return this.db.query("SELECT * FROM pending_threads ORDER BY ts, rumor_id").all() as PendingThreadRow[];
 	}
 
-	markRoomNoticed(roomId: string): void {
-		this.db.query("UPDATE pending_threads SET noticed = 1 WHERE room_id = $roomId").run({ roomId });
+	deletePending(ids: readonly string[]): void {
+		const remove = this.db.query("DELETE FROM pending_threads WHERE rumor_id = $id");
+		for (const id of ids) remove.run({ id });
+	}
+
+	/** One unread system row for every currently held room. Rewriting it marks it unread again. */
+	upsertHeldNotice(text: string): void {
+		this.db
+			.query(
+				`INSERT INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id)
+				VALUES ($id, 'in', $ts, $sender, $sender, $text, 0, NULL, 0, NULL)
+				ON CONFLICT(id) DO UPDATE SET text = $text, ts = $ts, read_at = NULL, attempts = 0`,
+			)
+			.run({ id: "phone-held-threads", ts: this.now(), sender: PHONE_SYSTEM_SENDER, text });
 	}
 
 	get<T>(key: string): T | undefined {

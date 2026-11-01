@@ -7,6 +7,17 @@ import { isHandle } from "./store";
 const CHAT_MESSAGE_KIND = 14;
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
+/** Participants, including this phone. Larger rooms are dropped, not stored. */
+export const MAX_THREAD_MEMBERS = 16;
+/** Held rows kept for one sender. Older rows from that sender are deleted. */
+export const HELD_PER_SENDER = 5;
+/** Held rows kept in total, after the per-sender cap. */
+export const HELD_TOTAL = 50;
+
+export type ThreadDropReason = "older than the message window" | "no matching contact or invite" | "thread is too large";
+
+export type ThreadContact = { pub: string; keyId?: string };
+
 export type ThreadMeta = {
 	roomId: string;
 	subject: string | null;
@@ -36,6 +47,9 @@ export type ThreadView = {
 	ts: number;
 	text: string;
 	pubkeyPrefix?: string;
+	reason?: ThreadDropReason;
+	/** The shared contact key this room is filed under, set only when the rumor is admitted. */
+	keyId?: string;
 };
 
 type RumorView = { id: string; pubkey: string; created_at: number; content: string; tags: string[][] };
@@ -141,14 +155,18 @@ function npubsFor(pubs: readonly string[]): string[] {
 }
 
 /**
- * A thread rumor is a message when every participant is a known contact or us.
- * Anything else is held. A rumor past the message ttl is dropped. A non-thread rumor returns null.
+ * A non-thread rumor returns null.
+ * A stranger sender is dropped: nothing is stored and no notice is posted.
+ * A known sender is held when a member is unknown, the room is not on one shared key,
+ * or more than one of our keys is in it. Otherwise it is admitted under that shared key.
  */
 export function classifyThreadRumor(
 	rumor: RumorView,
 	ownPubs: readonly string[],
-	contactPubs: readonly string[],
+	contacts: readonly ThreadContact[],
 	now: number,
+	openingKeyId: string,
+	openingPub: string,
 ): ThreadView | null {
 	if (!isThreadRumor(rumor.tags)) return null;
 	const memberPubs = participantPubs(rumor.pubkey, rumor.tags);
@@ -162,15 +180,78 @@ export function classifyThreadRumor(
 		senderNpub: nip19.npubEncode(rumor.pubkey),
 		ts: rumor.created_at,
 		text: rumor.content,
+		pubkeyPrefix: rumor.pubkey.slice(0, 8),
 	};
-	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) {
-		return { kind: "drop", ...view, pubkeyPrefix: rumor.pubkey.slice(0, 8) };
-	}
+	const drop = (reason: ThreadDropReason): ThreadView => ({ kind: "drop", ...view, reason });
+	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) return drop("older than the message window");
+	if (memberPubs.length > MAX_THREAD_MEMBERS) return drop("thread is too large");
+	const contactByPub = new Map(contacts.map((contact) => [contact.pub, contact]));
+	const senderIsUs = ownPubs.includes(rumor.pubkey);
+	const senderIsContact = contactByPub.has(rumor.pubkey);
+	if (!senderIsUs && !senderIsContact) return drop("no matching contact or invite");
 	if (hasInvalidPTag(rumor.tags)) return { kind: "hold", ...view };
-	const includesUs = memberPubs.some((pub) => ownPubs.includes(pub));
-	const unknown = memberPubs.filter((pub) => !ownPubs.includes(pub) && !contactPubs.includes(pub));
-	if (!includesUs || unknown.length > 0) return { kind: "hold", ...view };
-	return { kind: "message", ...view };
+	const ownInRoom = memberPubs.filter((pub) => ownPubs.includes(pub));
+	if (ownInRoom.length !== 1 || ownInRoom[0] !== openingPub) return { kind: "hold", ...view };
+	const others = memberPubs.filter((pub) => !ownPubs.includes(pub));
+	const keyIds: string[] = [];
+	for (const pub of others) {
+		const contact = contactByPub.get(pub);
+		if (contact?.keyId === undefined) return { kind: "hold", ...view };
+		keyIds.push(contact.keyId);
+	}
+	const shared = keyIds[0];
+	if (shared === undefined || keyIds.some((keyId) => keyId !== shared) || shared !== openingKeyId) {
+		return { kind: "hold", ...view };
+	}
+	return { kind: "message", ...view, keyId: shared };
+}
+
+/** Re-checks a thread the listener is about to store. A stranger sender is dropped, not held. */
+export function liveThreadAdmission(
+	memberNpubs: readonly string[],
+	senderNpub: string,
+	own: readonly { npub: string; keyId: string }[],
+	contacts: readonly { npub: string; keyId: string }[],
+): { kind: "message"; keyId: string } | { kind: "hold" } | { kind: "drop" } {
+	const ownNpubs = new Set(own.map((entry) => entry.npub));
+	const contactByNpub = new Map(contacts.map((contact) => [contact.npub, contact]));
+	if (!ownNpubs.has(senderNpub) && !contactByNpub.has(senderNpub)) return { kind: "drop" };
+	if (memberNpubs.length > MAX_THREAD_MEMBERS) return { kind: "drop" };
+	const ownInRoom = memberNpubs.filter((npub) => ownNpubs.has(npub));
+	if (ownInRoom.length !== 1) return { kind: "hold" };
+	const others = memberNpubs.filter((npub) => !ownNpubs.has(npub));
+	const keyIds: string[] = [];
+	for (const npub of others) {
+		const contact = contactByNpub.get(npub);
+		if (!contact) return { kind: "hold" };
+		keyIds.push(contact.keyId);
+	}
+	const shared = keyIds[0];
+	const ownKey = own.find((entry) => entry.npub === ownInRoom[0]);
+	if (shared === undefined || keyIds.some((keyId) => keyId !== shared) || ownKey?.keyId !== shared) return { kind: "hold" };
+	return { kind: "message", keyId: shared };
+}
+
+export type PendingCapRow = { rumorId: string; sender: string; ts: number };
+
+/** Ids to delete so each sender keeps its newest rows and the table keeps the newest overall. */
+export function pendingIdsToDrop(rows: readonly PendingCapRow[], perSender = HELD_PER_SENDER, total = HELD_TOTAL): string[] {
+	const newestFirst = [...rows].sort((a, b) => b.ts - a.ts || a.rumorId.localeCompare(b.rumorId));
+	const counts = new Map<string, number>();
+	const kept: string[] = [];
+	for (const row of newestFirst) {
+		const count = counts.get(row.sender) ?? 0;
+		if (count >= perSender || kept.length >= total) continue;
+		counts.set(row.sender, count + 1);
+		kept.push(row.rumorId);
+	}
+	const keep = new Set(kept);
+	return rows.filter((row) => !keep.has(row.rumorId)).map((row) => row.rumorId);
+}
+
+/** One voicemail line for every held room. The message body is not included. */
+export function heldThreadsNotice(count: number): string {
+	return count === 1 ? "1 held thread" : `${count} held threads`;
 }
 
 export function heldFrom(view: ThreadView): HeldThread {
@@ -207,9 +288,9 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 	};
 }
 
-/** Notice text for a held thread. The message body is never included. */
-export function pendingNotice(roomId: string): string {
-	return `held thread ${roomId.slice(0, 8)}; a member is not a known contact`;
+/** Stderr line for one held room. A short id only, never the message body. */
+export function heldLogLine(roomId: string): string {
+	return `phone: held thread ${roomId.slice(0, 8)}\n`;
 }
 
 export function threadLine(threadHandle: string, senderLabelText: string, text: string): string {
@@ -243,12 +324,30 @@ export function memberConfirmed(member: MemberReport): boolean {
 	return member.relays_ok.length > 0;
 }
 
-export function behindHandles(members: readonly MemberReport[]): string[] {
-	return members.filter((member) => !memberConfirmed(member)).map((member) => member.handle);
+function peerReports(members: readonly MemberReport[]): MemberReport[] {
+	return members.filter((member) => !member.self);
 }
 
+/** Other members with no confirmed relay. The self-copy is not a member who can be behind. */
+export function behindHandles(members: readonly MemberReport[]): string[] {
+	return peerReports(members).filter((member) => !memberConfirmed(member)).map((member) => member.handle);
+}
+
+/** True when every other member has a confirmed relay. The self-copy does not count. */
 export function threadSendSucceeded(members: readonly MemberReport[]): boolean {
-	return members.length > 0 && members.every((member) => memberConfirmed(member));
+	const peers = peerReports(members);
+	return peers.length > 0 && peers.every((member) => memberConfirmed(member));
+}
+
+/** True when the self-copy has a confirmed relay. */
+export function selfCopyOk(members: readonly MemberReport[]): boolean {
+	const self = members.find((member) => member.self);
+	return self !== undefined && memberConfirmed(self);
+}
+
+/** True when at least one wrap, including the self-copy, was published and not rejected. */
+export function threadSendKept(members: readonly MemberReport[]): boolean {
+	return members.some((member) => member.relays_ok.length > 0 || member.relays_unconfirmed.length > 0);
 }
 
 export function formatBehind(members: readonly MemberReport[]): string {
@@ -279,6 +378,8 @@ export async function fanoutThread(input: {
 	text: string;
 	createdAt: number;
 	subject: string;
+	/** Used only for a one-peer room with no subject, so the tag is never empty. */
+	fallbackSubject: string;
 	recipients: ThreadRecipient[];
 	relaysFor: (recipient: ThreadRecipient) => Promise<string[]>;
 	publishTo: (relays: string[], event: NostrEvent) => Promise<RelayReport>;
@@ -286,7 +387,8 @@ export async function fanoutThread(input: {
 	const others = input.recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub);
 	const pubs = [...new Set(others)].sort();
 	const tags: string[][] = pubs.map((pub) => ["p", pub]);
-	tags.push(["subject", input.subject]);
+	if (input.subject.length > 0) tags.push(["subject", input.subject]);
+	else if (pubs.length === 1 && input.fallbackSubject.length > 0) tags.push(["subject", input.fallbackSubject]);
 	const rumor = nip59.createRumor(
 		{ kind: CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
 		input.sk,

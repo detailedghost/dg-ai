@@ -10,11 +10,14 @@ import {
 	formatBehind,
 	hasInvalidPTag,
 	isThreadRumor,
+	liveThreadAdmission,
 	memberConfirmed,
+	heldLogLine,
+	heldThreadsNotice,
 	parseThreadHandle,
 	participantPubs,
+	pendingIdsToDrop,
 	pTagPubs,
-	pendingNotice,
 	rumorSubject,
 	senderLabel,
 	shortRoomHandle,
@@ -24,6 +27,8 @@ import {
 	threadHandleBody,
 	threadLine,
 	threadRoomId,
+	selfCopyOk,
+	threadSendKept,
 	threadSendSucceeded,
 	validPubkey,
 } from "../../src/phone/thread";
@@ -43,6 +48,9 @@ describe("threadRoomId", () => {
 		expect(threadRoomId([c.npub, a.npub, b.npub, a.npub])).toBe(threadRoomId([a.npub, b.npub, c.npub]));
 		expect(threadRoomId([a.npub, b.npub])).not.toBe(threadRoomId([a.npub]));
 		expect(threadRoomId([a.npub, b.npub])).toMatch(/^[0-9a-f]{64}$/);
+		expect(threadRoomId(["npub1c", "npub1a", "npub1b"])).toBe(
+			"600b7d4b586de6fa183602f22b2b9f2ac4d626767071d2be1d3666a87f90c8ad",
+		);
 	});
 });
 
@@ -111,72 +119,64 @@ describe("classifyThreadRumor", () => {
 	const cara = person();
 
 	function rumor(tags: string[][], createdAt = now) {
-		const built = nip59.createRumor({ kind: 14, content: "body-text", created_at: createdAt, tags }, alice.sk);
-		return built;
+		return nip59.createRumor({ kind: 14, content: "body-text", created_at: createdAt, tags }, alice.sk);
+	}
+
+	function contacts(...pubs: string[]) {
+		return pubs.map((pub) => ({ pub, keyId: "k" }));
+	}
+
+	function classify(tags: string[][], known: { pub: string; keyId?: string }[], createdAt = now) {
+		return classifyThreadRumor(rumor(tags, createdAt), [bob.pub], known, now, "k", bob.pub);
 	}
 
 	it("returns null for a one-to-one rumor", () => {
-		expect(classifyThreadRumor(rumor([["p", bob.pub]]), [bob.pub], [alice.pub], now)).toBeNull();
+		expect(classify([["p", bob.pub]], contacts(alice.pub))).toBeNull();
 	});
 
-	it("admits when every member is us or a known contact", () => {
-		const view = classifyThreadRumor(
-			rumor([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]]),
-			[bob.pub],
-			[alice.pub, cara.pub],
-			now,
-		);
+	it("admits when every member shares the opening key", () => {
+		const view = classify([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]], contacts(alice.pub, cara.pub));
 		expect(view?.kind).toBe("message");
+		expect(view?.keyId).toBe("k");
 		expect(view?.memberNpubs.slice().sort()).toEqual([alice.npub, bob.npub, cara.npub].sort());
 		expect(view?.senderNpub).toBe(alice.npub);
-		expect(view?.rumorId).toBe(rumor([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]]).id);
 	});
 
-	it("holds when a member is a stranger, when we are absent, or when a p tag is not a pubkey", () => {
-		const stranger = classifyThreadRumor(
-			rumor([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]]),
-			[bob.pub],
-			[alice.pub],
-			now,
-		);
-		expect(stranger?.kind).toBe("hold");
+	it("holds a known sender when a member is unknown, we are absent, keys differ, or a p tag is bad", () => {
+		expect(classify([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]], contacts(alice.pub))?.kind).toBe("hold");
+		expect(classify([["p", cara.pub], ["subject", "ops"]], contacts(alice.pub, cara.pub))?.kind).toBe("hold");
+		expect(classify([["p", bob.pub], ["p", "not-a-key"], ["subject", "ops"]], contacts(alice.pub))?.kind).toBe("hold");
+		expect(classify([["p", bob.pub], ["subject", "ops"]], [{ pub: alice.pub, keyId: "other" }])?.kind).toBe("hold");
+		expect(classifyThreadRumor(rumor([["p", bob.pub], ["subject", "ops"]]), [bob.pub], contacts(alice.pub), now, "other", bob.pub)?.kind).toBe("hold");
+		expect(classifyThreadRumor(rumor([["p", cara.pub], ["subject", "ops"]]), [bob.pub, cara.pub], contacts(alice.pub), now, "k", bob.pub)?.kind).toBe("hold");
+	});
 
-		const withoutUs = classifyThreadRumor(
-			rumor([["p", cara.pub], ["subject", "ops"]]),
-			[bob.pub],
-			[alice.pub, cara.pub],
-			now,
-		);
-		expect(withoutUs?.kind).toBe("hold");
-
-		const invalid = classifyThreadRumor(
-			rumor([["p", bob.pub], ["p", "not-a-key"], ["subject", "ops"]]),
-			[bob.pub],
-			[alice.pub],
-			now,
-		);
-		expect(invalid?.kind).toBe("hold");
+	it("drops a stranger sender and stores nothing about them", () => {
+		const view = classify([["p", bob.pub], ["subject", "ops"]], []);
+		expect(view?.kind).toBe("drop");
+		expect(view?.reason).toBe("no matching contact or invite");
+		expect(view?.pubkeyPrefix).toBe(alice.pub.slice(0, 8));
 	});
 
 	it("drops a thread rumor older than the message window", () => {
-		const view = classifyThreadRumor(
-			rumor([["p", bob.pub], ["subject", "ops"]], now - MESSAGE_TTL_SECONDS - 1),
-			[bob.pub],
-			[alice.pub],
-			now,
-		);
+		const view = classify([["p", bob.pub], ["subject", "ops"]], contacts(alice.pub), now - MESSAGE_TTL_SECONDS - 1);
 		expect(view?.kind).toBe("drop");
+		expect(view?.reason).toBe("older than the message window");
 		expect(view?.pubkeyPrefix).toBe(alice.pub.slice(0, 8));
 	});
 
 	it("keeps a rumor that lands exactly on the window boundary", () => {
-		const view = classifyThreadRumor(
-			rumor([["p", bob.pub], ["subject", "ops"]], now - MESSAGE_TTL_SECONDS),
-			[bob.pub],
-			[alice.pub],
-			now,
-		);
+		const view = classify([["p", bob.pub], ["subject", "ops"]], contacts(alice.pub), now - MESSAGE_TTL_SECONDS);
 		expect(view?.kind).toBe("message");
+	});
+
+	it("drops a room larger than the member cap", () => {
+		const pubs = Array.from({ length: 16 }, (_, index) => `${(index + 1).toString(16).padStart(64, "0")}`);
+		const tags = [...pubs.map((pub) => ["p", pub]), ["subject", "ops"]];
+		const known = pubs.map((pub) => ({ pub, keyId: "k" }));
+		const view = classifyThreadRumor(rumor(tags), [bob.pub], [{ pub: alice.pub, keyId: "k" }, ...known], now, "k", bob.pub);
+		expect(view?.kind).toBe("drop");
+		expect(view?.reason).toBe("thread is too large");
 	});
 });
 
@@ -194,10 +194,16 @@ describe("delivery report", () => {
 	it("succeeds only when every member has a confirmed relay", () => {
 		expect(memberConfirmed(ok)).toBe(true);
 		expect(memberConfirmed(behind)).toBe(false);
+		const self = { handle: "+me", npub: "npub1me", self: true, relays_ok: [] as string[], relays_unconfirmed: ["wss://self.example"], relays_failed: [] };
 		expect(threadSendSucceeded([ok])).toBe(true);
 		expect(threadSendSucceeded([ok, behind])).toBe(false);
+		expect(threadSendSucceeded([ok, self])).toBe(true);
 		expect(threadSendSucceeded([])).toBe(false);
-		expect(behindHandles([ok, behind])).toEqual(["+c"]);
+		expect(behindHandles([ok, behind, self])).toEqual(["+c"]);
+		expect(selfCopyOk([ok, self])).toBe(false);
+		expect(selfCopyOk([{ ...self, relays_ok: ["wss://self.example"], relays_unconfirmed: [] }])).toBe(true);
+		expect(threadSendKept([behind])).toBe(true);
+		expect(threadSendKept([{ ...behind, relays_unconfirmed: [], relays_failed: [{ relay: "wss://c.example", reason: "no" }] }])).toBe(false);
 		expect(formatBehind([ok, behind])).toContain("behind: +c");
 		expect(formatBehind([ok, behind])).toContain("wss://a.example ok");
 		expect(formatBehind([ok, behind])).toContain("wss://b.example unconfirmed");
@@ -217,6 +223,7 @@ describe("fanoutThread", () => {
 			text: "hello room",
 			createdAt: 50,
 			subject: "ops",
+			fallbackSubject: "ops",
 			recipients: [
 				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
 				{ handle: "+c", npub: cara.npub, pub: cara.pub, self: false },
@@ -246,6 +253,7 @@ describe("fanoutThread", () => {
 			text: "hello room",
 			createdAt: 50,
 			subject: "ops",
+			fallbackSubject: "ops",
 			recipients: [
 				{ handle: "+c", npub: cara.npub, pub: cara.pub, self: false },
 				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
@@ -267,6 +275,52 @@ describe("fanoutThread", () => {
 		expect(caraRumor.tags.some((tag) => tag[0] === "p" && tag[1] === alice.pub)).toBe(false);
 		expect(caraRumor.tags).toContainEqual(["subject", "ops"]);
 		expect(caraRumor.content).toBe("hello room");
+		expect(caraRumor.tags.some((tag) => tag[0] === "subject" && tag[1] === "")).toBe(false);
+	});
+
+	it("omits an empty subject when several peers are tagged, and uses the fallback for one peer", async () => {
+		const alice = person();
+		const bob = person();
+		const cara = person();
+		const events: import("nostr-tools").NostrEvent[] = [];
+		await fanoutThread({
+			sk: alice.sk,
+			text: "hello room",
+			createdAt: 50,
+			subject: "",
+			fallbackSubject: "room",
+			recipients: [
+				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
+				{ handle: "+c", npub: cara.npub, pub: cara.pub, self: false },
+				{ handle: "+a", npub: alice.npub, pub: alice.pub, self: true },
+			],
+			relaysFor: async () => ["wss://a.example"],
+			publishTo: async (_relays, event) => {
+				events.push(event);
+				return { ok: ["wss://a.example"], unconfirmed: [], failed: [] };
+			},
+		});
+		const many = nip59.unwrapEvent(events[0] as import("nostr-tools").NostrEvent, bob.sk);
+		expect(many.tags.some((tag) => tag[0] === "subject")).toBe(false);
+		events.length = 0;
+		await fanoutThread({
+			sk: alice.sk,
+			text: "hello room",
+			createdAt: 50,
+			subject: "",
+			fallbackSubject: "room",
+			recipients: [
+				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
+				{ handle: "+a", npub: alice.npub, pub: alice.pub, self: true },
+			],
+			relaysFor: async () => ["wss://a.example"],
+			publishTo: async (_relays, event) => {
+				events.push(event);
+				return { ok: ["wss://a.example"], unconfirmed: [], failed: [] };
+			},
+		});
+		const one = nip59.unwrapEvent(events[0] as import("nostr-tools").NostrEvent, bob.sk);
+		expect(one.tags).toContainEqual(["subject", "room"]);
 	});
 
 	it("lists a member with no confirmed relay as behind", async () => {
@@ -277,6 +331,7 @@ describe("fanoutThread", () => {
 			text: "hello room",
 			createdAt: 50,
 			subject: "",
+			fallbackSubject: "room",
 			recipients: [
 				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
 				{ handle: "+a", npub: alice.npub, pub: alice.pub, self: true },
@@ -285,8 +340,62 @@ describe("fanoutThread", () => {
 			publishTo: async (_relays, _event) => ({ ok: [], unconfirmed: ["wss://a.example"], failed: [] }),
 		});
 		expect(threadSendSucceeded(delivered.members)).toBe(false);
-		expect(behindHandles(delivered.members)).toEqual(["+b", "+a"]);
+		expect(behindHandles(delivered.members)).toEqual(["+b"]);
 		expect(formatBehind(delivered.members)).not.toContain("hello room");
+	});
+});
+
+describe("liveThreadAdmission", () => {
+	it("files a room under the shared key, holds mixed keys, and drops a stranger", () => {
+		const own = [{ npub: "npub1me", keyId: "k" }];
+		expect(liveThreadAdmission(["npub1me", "npub1a"], "npub1a", own, [{ npub: "npub1a", keyId: "k" }])).toEqual({
+			kind: "message",
+			keyId: "k",
+		});
+		expect(
+			liveThreadAdmission(["npub1me", "npub1a", "npub1b"], "npub1a", own, [
+				{ npub: "npub1a", keyId: "k" },
+				{ npub: "npub1b", keyId: "other" },
+			]).kind,
+		).toBe("hold");
+		expect(liveThreadAdmission(["npub1me", "npub1a"], "npub1stranger", own, [{ npub: "npub1a", keyId: "k" }]).kind).toBe("drop");
+		expect(liveThreadAdmission(["npub1me", "npub1other"], "npub1a", own, [{ npub: "npub1a", keyId: "k" }]).kind).toBe("hold");
+		expect(
+			liveThreadAdmission(
+				["npub1me", "npub1me2", "npub1a"],
+				"npub1a",
+				[
+					{ npub: "npub1me", keyId: "k" },
+					{ npub: "npub1me2", keyId: "k" },
+				],
+				[{ npub: "npub1a", keyId: "k" }],
+			).kind,
+		).toBe("hold");
+		expect(
+			liveThreadAdmission(
+				["npub1me", "npub1a"],
+				"npub1a",
+				[{ npub: "npub1me", keyId: "k" }, { npub: "npub1me2", keyId: "other" }],
+				[{ npub: "npub1a", keyId: "k" }],
+			).kind,
+		).toBe("message");
+		const many = Array.from({ length: 16 }, (_, index) => `npub1m${index}`);
+		expect(liveThreadAdmission(["npub1me", ...many], "npub1a", own, [{ npub: "npub1a", keyId: "k" }]).kind).toBe("drop");
+	});
+});
+
+describe("pending caps", () => {
+	it("keeps the newest rows per sender and then the newest overall", () => {
+		const rows = [
+			{ rumorId: "a1", sender: "a", ts: 1 },
+			{ rumorId: "a2", sender: "a", ts: 2 },
+			{ rumorId: "a3", sender: "a", ts: 3 },
+			{ rumorId: "b1", sender: "b", ts: 4 },
+		];
+		expect(pendingIdsToDrop(rows, 2, 50).sort()).toEqual(["a1"]);
+		expect(pendingIdsToDrop(rows, 5, 2).sort()).toEqual(["a1", "a2"]);
+		expect(pendingIdsToDrop([{ rumorId: "only", sender: "a", ts: 1 }], 5, 50)).toEqual([]);
+		expect(pendingIdsToDrop([{ rumorId: "b", sender: "a", ts: 1 }, { rumorId: "a", sender: "a", ts: 1 }], 1, 50)).toEqual(["b"]);
 	});
 });
 
@@ -296,8 +405,10 @@ describe("display", () => {
 		expect(senderLabel("npub1abcdefghijklmnop", "baron", undefined)).toBe("+baron");
 		expect(senderLabel("npub1abcdefghijklmnop", undefined, "dg")).toBe("+dg");
 		expect(senderLabel("npub1abcdefghijklmnop", undefined, undefined)).toBe("npub1abcdefghijk");
-		expect(pendingNotice("abcdef1234567890")).toBe("held thread abcdef12; a member is not a known contact");
-		expect(pendingNotice("abcdef1234567890")).not.toContain("hello");
+		expect(heldThreadsNotice(1)).toBe("1 held thread");
+		expect(heldThreadsNotice(3)).toBe("3 held threads");
+		expect(heldLogLine("abcdef1234567890")).toBe("phone: held thread abcdef12\n");
+		expect(heldLogLine("abcdef1234567890")).not.toContain("hello");
 		expect(threadDirection("npub1us", ["npub1us"])).toBe("out");
 		expect(threadDirection("npub1them", ["npub1us"])).toBe("in");
 	});

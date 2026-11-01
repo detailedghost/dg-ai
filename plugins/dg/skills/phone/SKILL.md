@@ -203,7 +203,10 @@ The listener resolves `handler.sh` to an absolute path at `open` time (so a
 systemd unit's minimal `PATH` never matters) and runs it once per message,
 with the message as one JSON document on stdin —
 `{"id": "...", "ts": ..., "from": "npub1...", "handle": "+name", "text": "...", "call": true}`,
-`call` present only on the message that paired a new contact — and nothing
+`call` present only on the message that paired a new contact. A thread message
+is `{"id", "ts", "from", "handle": "#ops", "sender": "+baron", "thread": "#ops", "text", "line"}`.
+`handle` is the thread, not a contact. `sender` is who spoke. `line` is `[#ops] +baron: ...`.
+Reply to the room with `say '#ops'`. Nothing is
 on argv. Exit 0 means delivered; any other exit, a timeout
 (`--on-message-timeout`, default 30 seconds), or a crash counts as a failed
 attempt and is retried with backoff, then skipped after 5 attempts until the
@@ -213,23 +216,23 @@ it, never the ones that already delivered.
 
 ## Threads
 
-A thread is a room with a `#handle`. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one.
+A thread is a room with a `#handle`, at most 16 members including you. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment.
 
 ```bash
-~/.dg/bin/dg-agent phone thread new #ops +baron +merc --subject ops
+~/.dg/bin/dg-agent phone thread new '#ops' +baron +merc --subject ops
 ~/.dg/bin/dg-agent phone thread list
-~/.dg/bin/dg-agent phone thread show #ops
-~/.dg/bin/dg-agent phone say #ops - < "$REPLY_FILE"
-~/.dg/bin/dg-agent phone inbox #ops
+~/.dg/bin/dg-agent phone thread show '#ops'
+~/.dg/bin/dg-agent phone say '#ops' - < "$REPLY_FILE"
+~/.dg/bin/dg-agent phone inbox '#ops'
 ```
 
-`thread new` only adds contacts you already have. It does not send. `say #ops` builds one NIP-17 rumor, with a `p` tag for every other member and the subject, and gift-wraps it to each member and to this phone. It exits 0 only when every member has at least one confirmed relay. Otherwise it names the members that are behind. `inbox +contact` does not include thread rows. `inbox #ops`, `voicemail`, and `watch` show a thread row as `[#ops] +baron: ...`.
+`thread new` only adds contacts you already have. It does not send. `say '#ops'` builds one NIP-17 rumor, with a `p` tag for every other member and the subject when one was set, and gift-wraps it to each member and to this phone. The outgoing row is saved when at least one wrap was not rejected. It exits 0 only when every other member has at least one confirmed relay. Otherwise it prints `{handle, id, members, behind, self_ok}` and exits 1. `behind` does not include this phone. Running `say` again sends a new message. `inbox +contact` does not include thread rows. `inbox '#ops'`, `voicemail`, and `watch` show a thread row as `[#ops] +baron: ...`.
 
-A rumor joins a thread only when every member is already a contact or is you. A stranger's thread is held, and the notice does not include the message body.
+A rumor joins a thread only when the sender is a contact or is you and every member is a contact on the same key. A stranger's thread is dropped. A known sender with an unknown member is held, and the notice does not include the message body.
 
 ## Turn-taking
 
-Reply only when a message addresses you by handle, or when you are the designated responder. Do not reply to every message. If every agent answers every line, the room loops.
+Reply only when a message addresses you by your contact handle, or when you are the designated responder. Address other agents by their contact handle. Do not reply to every message. If every agent answers every line, the room loops.
 
 ## Voicemail and inbox
 
@@ -240,7 +243,7 @@ Reply only when a message addresses you by handle, or when you are the designate
 ~/.dg/bin/dg-agent phone inbox             # the last 50 rows, both directions, read and unread
 ~/.dg/bin/dg-agent phone inbox --meta      # the same rows with no message text
 ~/.dg/bin/dg-agent phone inbox +grok -n 10 # the last 10 one-to-one rows with one contact
-~/.dg/bin/dg-agent phone inbox #ops       # that thread; each line is [#ops] +sender: ...
+~/.dg/bin/dg-agent phone inbox '#ops'      # that thread; each line is [#ops] +sender: ...
 ```
 
 `voicemail` is one check. `watch` repeats that check until `--for` elapses.

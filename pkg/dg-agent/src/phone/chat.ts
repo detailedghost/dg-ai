@@ -18,7 +18,7 @@ export type { HeldThread, ThreadMeta };
 // Stryker disable all
 export type Message = { id: string; ts: number; from: string; text: string; call?: true; thread?: ThreadMeta };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
-export type Contact = { npub: string; handle: string };
+export type Contact = { npub: string; handle: string; keyId?: string };
 /** The admission-time view of a live invite: just enough for the gate to match and name a new caller, with its own relays when it has them. */
 export type Invite = { secret: string; expiresAt: number; name?: string; relays?: string[] };
 export type Seen = { cursor: number; ids: string[] };
@@ -395,15 +395,16 @@ export async function fetchNew(
 	const reacceptByMessageId = new Map<string, Reaccept>();
 	const held: HeldThread[] = [];
 	const direct: typeof opened = [];
-	const contactPubs = [...gate.contacts.keys()];
+	const threadContacts = [...gate.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
 	for (const item of opened) {
-		const view = classifyThreadRumor(item.rumor, ownPubs, contactPubs, startedAt);
+		const openingPub = keys.find((key) => key.id === item.keyId)?.pub ?? "";
+		const view = classifyThreadRumor(item.rumor, ownPubs, threadContacts, startedAt, item.keyId, openingPub);
 		if (view === null) {
 			direct.push(item);
 			continue;
 		}
 		if (view.kind === "drop") {
-			onDrop?.({ id: item.event.id, reason: "older than the message window", pubkeyPrefix: view.pubkeyPrefix });
+			onDrop?.({ id: item.event.id, reason: view.reason ?? "older than the message window", pubkeyPrefix: view.pubkeyPrefix });
 			continue;
 		}
 		if (view.kind === "hold") {
@@ -411,7 +412,7 @@ export async function fetchNew(
 			skipped.push(item.event.id);
 			continue;
 		}
-		messages.push(threadMessageFields(view, item.keyId));
+		messages.push(threadMessageFields(view, view.keyId ?? item.keyId));
 		skipped.push(item.event.id);
 	}
 	let current = gate;
@@ -460,7 +461,8 @@ export type DropReason =
 	| "could not open the wrap"
 	| "not a chat message"
 	| "older than the message window"
-	| "no matching contact or invite";
+	| "no matching contact or invite"
+	| "thread is too large";
 
 /** Why a wrap was not stored. No secret, invite secret, or message text. */
 export type DroppedRing = { id: string; reason: DropReason; pubkeyPrefix?: string };
@@ -501,12 +503,13 @@ export function classifyIncoming(
 	if (opened.kind === "undecryptable") return { drop: { id: event.id, reason: "could not open the wrap" } };
 	if (opened.kind === "not-chat") return { drop: { id: event.id, reason: "not a chat message" } };
 	if (isSelfProbe(opened.rumor, ownPubs)) return { probe: true };
-	const view = classifyThreadRumor(opened.rumor, ownPubs, [...gate.contacts.keys()], now);
+	const threadContacts = [...gate.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
+	const view = classifyThreadRumor(opened.rumor, ownPubs, threadContacts, now, key.id, key.pub);
 	if (view?.kind === "drop") {
-		return { drop: { id: event.id, reason: "older than the message window", pubkeyPrefix: view.pubkeyPrefix } };
+		return { drop: { id: event.id, reason: view.reason ?? "older than the message window", pubkeyPrefix: view.pubkeyPrefix } };
 	}
 	if (view?.kind === "hold") return { held: heldFrom(view) };
-	if (view?.kind === "message") return { admitted: { message: threadMessageFields(view, key.id), gate } };
+	if (view?.kind === "message") return { admitted: { message: threadMessageFields(view, view.keyId ?? key.id), gate } };
 	const decided = admit(event, opened.rumor, key.id, gate, now);
 	if (!decided.ok) return { drop: { id: event.id, reason: decided.reason, pubkeyPrefix: decided.pubkeyPrefix } };
 	return { admitted: decided.admitted };

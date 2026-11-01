@@ -879,7 +879,9 @@ describe("thread rumors", () => {
 		const earlier = groupWrap(alice, bob, [bob.pub], "plain", 1_000);
 		pool.events.push(sent.event, earlier.event);
 		const gate = gateWithContact(alice.pub);
-		gate.contacts.set(cara.pub, { npub: nip19.npubEncode(cara.pub), handle: "cara" });
+		const aliceContact = gate.contacts.get(alice.pub);
+		if (aliceContact) aliceContact.keyId = bob.id;
+		gate.contacts.set(cara.pub, { npub: nip19.npubEncode(cara.pub), handle: "cara", keyId: bob.id });
 
 		const { messages, held } = await fetchNew(pool, RELAYS, [bob], gate, { cursor: 0, ids: [] }, () => 2_005);
 
@@ -902,6 +904,23 @@ describe("thread rumors", () => {
 		expect(messages).toEqual([]);
 		expect(held.map((row) => row.rumorId)).toEqual([sent.rumor.id]);
 		expect(held[0]?.text).toBe("secret-body");
+	});
+
+	it("drops a stranger thread instead of holding it", async () => {
+		const stranger = identity("s");
+		const bob = identity();
+		const pool = createFakePool();
+		const sent = groupWrap(stranger, bob, [bob.pub], "stranger-body", 2_000, "x");
+		pool.events.push(sent.event);
+		const drops: string[] = [];
+
+		const { messages, held } = await fetchNew(pool, RELAYS, [bob], emptyGate(), { cursor: 0, ids: [] }, () => 2_005, (drop) => {
+			drops.push(drop.reason);
+		});
+
+		expect(messages).toEqual([]);
+		expect(held).toEqual([]);
+		expect(drops).toEqual(["no matching contact or invite"]);
 	});
 });
 

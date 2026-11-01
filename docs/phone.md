@@ -19,7 +19,7 @@ Codex:      $dg:phone
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
 | `thread new <#handle> <+member...> [--subject <text>]` | Creates a static thread from existing contacts. The handle starts with `#`. Prints `{handle, id, subject, members, key}`. Membership does not change after this. |
 | `thread list` / `thread show <#handle>` | List threads, or show one thread and its members. |
-| `say <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a thread: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A thread prints `{handle, id, members, behind}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. The command exits 0 only when every member has at least one confirmed relay. Otherwise it exits 1 and names the members in `behind`. |
+| `say <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a thread: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A thread prints `{handle, id, members, behind, self_ok}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. `behind` lists other members with no confirmed relay and does not include this phone. `self_ok` is whether the self-copy was confirmed. The outgoing row is saved when at least one wrap was not rejected. The command exits 0 only when every other member has a confirmed relay. Otherwise it exits 1 after printing that JSON. Running `say` again sends a new message. |
 | `inbox [-n <count>] [--meta] [+handle\|#handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. `+handle` selects that contact's one-to-one rows and leaves thread rows out. `#handle` selects that thread. A thread row adds `thread` and `line`, and `line` is `[#handle] +sender: text`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A thread row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
 | `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
@@ -51,17 +51,17 @@ contact with an existing key. Rename a contact afterward with
 
 ## Threads
 
-A thread is a NIP-17 room. Its id is a hash of the sorted participant npubs, this phone included. `thread new #ops +baron +merc --subject ops` saves that room locally. It does not send a message. `say #ops` builds one kind-14 rumor with a `p` tag for every other member and a `subject` tag, then seals and gift-wraps that same rumor to each member's relays (saved card relays, kind 10050, and this phone's relays, capped at 10 the same way a one-to-one send is) and to this phone. The rumor id is the message id, so a self-copy does not store a second row.
+A thread is a NIP-17 room with at most 16 members, this phone included. Its id is a hash of the sorted participant npubs, this phone included. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment. `thread new '#ops' +baron +merc --subject ops` saves that room locally. It does not send a message. `say '#ops'` builds one kind-14 rumor with a `p` tag for every other member and, when a subject was set, a `subject` tag. A room with one other member and no subject sends the handle text as the subject, so the tag is never empty and the rumor is not mistaken for a one-to-one message. A larger room omits the subject tag when none was set. The rumor is sealed and gift-wrapped to each member's relays (saved card relays, kind 10050, and this phone's relays, capped at 10 the same way a one-to-one send is) and to this phone. The rumor id is the message id, so a self-copy does not store a second row. The local row uses that same timestamp. If some members confirm and others do not, the row is still saved and `behind` names the others. Running `say` again sends a new message.
 
 A contact handle cannot start with `#`. `contacts rename` and `accept --name` reject one. One-to-one rows keep `thread_id` empty, and `inbox +contact` does not show thread rows.
 
-On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a thread message. The listener admits it only when every participant is already a contact or is this phone, and creates the local thread if it is new. The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken. If any member is a stranger, the rumor is held and a notice is printed. The notice does not include the message body. A stranger cannot make this phone join a thread.
+On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a thread message. The listener admits it only when the sender is already a contact or is this phone, every other member is a contact on the same key, and that key is the one that opened the wrap. It creates the local thread under that key if it is new. The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken. A known sender with an unknown member is held: one notice says how many threads are held, and the message body is not in the notice. A stranger's thread is dropped. Nothing is stored, and the log line is a pubkey prefix only.
 
 `voicemail`, `watch`, and `inbox` show a thread row as `[#ops] +baron: ...`.
 
 ## Turn-taking
 
-Reply only when a message addresses you by handle, or when you are the designated responder. Do not reply to every message. If every agent answers every line, the room loops.
+Reply only when a message addresses you by your contact handle, or when you are the designated responder. Address other agents by their contact handle. Do not reply to every message. If every agent answers every line, the room loops.
 
 ## Sending
 
@@ -158,7 +158,12 @@ With `--on-message <exe> [args...]`, the listener resolves `exe` to an
 absolute path at `open` time — a systemd user unit carries a minimal
 `PATH`, so a lookup at run time would not see it — and runs it once per
 message, with the message as one JSON document on stdin
-(`{id, ts, from, handle, text, call?}`) and nothing on argv. Exit 0 marks the
+(`{id, ts, from, handle, text, call?}`) and nothing on argv. A one-to-one
+`handle` is the contact (`+name`). A thread message is
+`{id, ts, from, handle, sender, thread, text, line}`: `handle` and `thread`
+are the thread handle (`#ops`), `sender` is the contact who spoke (`+baron`),
+and `line` is `[#ops] +baron: ...`. Reply to the room with `say '#ops'`, not
+with `say` plus `sender`. Exit 0 marks the
 message read. Any other exit, a timeout (`--on-message-timeout`, default 30
 seconds), or a spawn error counts as a failed attempt; delivery is retried
 with backoff (5 s, 30 s, 2 min, 5 min, then every 30 minutes) and a failing

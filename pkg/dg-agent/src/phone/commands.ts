@@ -51,10 +51,13 @@ import {
 	behindHandles,
 	fanoutThread,
 	formatBehind,
+	MAX_THREAD_MEMBERS,
 	parseThreadHandle,
+	selfCopyOk,
 	senderLabel,
 	threadLine,
 	threadRoomId,
+	threadSendKept,
 	threadSendSucceeded,
 	type ThreadRecipient,
 } from "./thread";
@@ -532,6 +535,9 @@ async function phoneThreadNewAt(
 	const handle = parseThreadHandle(handleArg);
 	if (deps.db.getThreadByHandle(handle)) throw new DgCliError(`"${handle}" is already a thread`);
 	if (memberArgs.length === 0) throw new DgCliError("name at least one contact");
+	if (memberArgs.length + 1 > MAX_THREAD_MEMBERS) {
+		throw new DgCliError(`a thread can have at most ${MAX_THREAD_MEMBERS} members`);
+	}
 	if (opts.subject !== undefined && opts.subject.trim() === "") throw new DgCliError("subject is empty");
 	const subject = opts.subject ?? "";
 	const members = memberArgs.map((arg) => {
@@ -627,12 +633,14 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 	recipients.push({ handle: `+${resolvedSelfName(deps.db)}`, npub: selfNpub, pub: pubkeyHex(selfNpub), self: true });
 	const pool = deps.createPool();
 	const relaysUsed: string[] = [];
+	const createdAt = deps.now();
 	try {
 		const delivered = await fanoutThread({
 			sk: loaded.sk,
 			text: body,
-			createdAt: deps.now(),
+			createdAt,
 			subject: thread.subject,
+			fallbackSubject: handle.slice(1),
 			recipients,
 			relaysFor: async (recipient) => {
 				const card = recipient.self ? readRelays(deps.db) : (findContactByNpub(deps.db, recipient.npub)?.relays ?? []);
@@ -642,19 +650,21 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 			},
 			publishTo: (relays, event) => publish(pool, relays, event, { confirmMs: confirmMsFor(deps) }),
 		});
-		if (!threadSendSucceeded(delivered.members)) throw new DgCliError(formatBehind(delivered.members));
-		deps.db.addMessage({
-			id: delivered.rumorId,
-			direction: "out",
-			ts: deps.now(),
-			sender: selfNpub,
-			contact: selfNpub,
-			text: body,
-			call: 0,
-			thread_id: thread.id,
-		});
-		await restartStaleListener(deps, { spawn: true });
-		printJson(deps, {
+		const behind = behindHandles(delivered.members);
+		const kept = threadSendKept(delivered.members);
+		if (kept) {
+			deps.db.addMessage({
+				id: delivered.rumorId,
+				direction: "out",
+				ts: createdAt,
+				sender: selfNpub,
+				contact: selfNpub,
+				text: body,
+				call: 0,
+				thread_id: thread.id,
+			});
+		}
+		const payload = {
 			handle,
 			id: delivered.rumorId,
 			members: delivered.members.map((member) => ({
@@ -664,8 +674,15 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 				relays_unconfirmed: member.relays_unconfirmed,
 				relays_failed: member.relays_failed,
 			})),
-			behind: behindHandles(delivered.members),
-		});
+			behind,
+			self_ok: selfCopyOk(delivered.members),
+		};
+		if (!threadSendSucceeded(delivered.members)) {
+			if (kept) printJson(deps, payload);
+			throw new DgCliError(behind.length > 0 ? `members behind: ${behind.join(", ")}` : formatBehind(delivered.members));
+		}
+		await restartStaleListener(deps, { spawn: true });
+		printJson(deps, payload);
 	} finally {
 		closeRelayPool(pool, relaysUsed);
 	}

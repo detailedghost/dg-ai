@@ -94,11 +94,51 @@ describe("phone skill", () => {
 		expect(skill).toContain("phone thread list");
 		expect(skill).toContain("phone thread show");
 		expect(skill).toContain("--subject");
-		expect(skill).toContain("Reply only when a message addresses you by handle, or when you are the designated responder.");
+		expect(skill).toContain("Reply only when a message addresses you by your contact handle, or when you are the designated responder.");
+		expect(skill).toContain("Address other agents by their contact handle.");
 		expect(skill).toContain("Do not reply to every message.");
-		expect(guide).toContain("Reply only when a message addresses you by handle, or when you are the designated responder.");
+		expect(guide).toContain("Reply only when a message addresses you by your contact handle, or when you are the designated responder.");
+		expect(guide).toContain("Address other agents by their contact handle.");
 		expect(guide).toContain("Do not reply to every message.");
 		expect(guide).toContain("[#ops] +baron:");
+		expect(skill).toContain("unquoted, `#` starts a comment.");
+		expect(guide).toContain("unquoted, `#` starts a comment.");
+		expect(skill).toContain("'#ops'");
+		expect(guide).toContain("'#ops'");
+		expect(skill).toContain('"handle": "#ops"');
+		expect(skill).toContain('"sender": "+baron"');
+		expect(guide).toContain("`handle` and `thread`");
+		expect(guide).toContain("Running `say` again sends a new message.");
+	});
+
+	test("bash examples quote every thread handle", () => {
+		const unquoted = (text: string): string[] => {
+			const blocks = [...text.matchAll(/```bash\n([\s\S]*?)```/g)].map((match) => match[1] ?? "");
+			const hits: string[] = [];
+			for (const block of blocks) {
+				for (const line of block.split("\n")) {
+					let index = 0;
+					while (index < line.length) {
+						const ch = line[index] ?? "";
+						if (ch === "'" || ch === '"') {
+							const quote = ch;
+							index += 1;
+							while (index < line.length && line[index] !== quote) index += 1;
+							index += 1;
+							continue;
+						}
+						if (ch === "#" && (index === 0 || /\s/.test(line[index - 1] ?? ""))) {
+							if (/^[A-Za-z0-9]/.test(line.slice(index + 1))) hits.push(line);
+							break;
+						}
+						index += 1;
+					}
+				}
+			}
+			return hits;
+		};
+		expect(unquoted(skill)).toEqual([]);
+		expect(unquoted(guide)).toEqual([]);
 	});
 
 	test("sends replies through a file redirect or a quoted heredoc, not a shell argument", () => {

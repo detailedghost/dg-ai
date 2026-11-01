@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { pendingIdsToDrop } from "../../src/phone/thread";
 import { migrateThreadSchema } from "../../src/phone/thread-schema";
 
 const homes: string[] = [];
@@ -129,6 +130,48 @@ describe("thread schema migration", () => {
 		expect(db.recentMessages(10, "npub1peer").map((message) => message.id)).toEqual(["direct"]);
 		expect(db.recentMessages(10, undefined, "room").map((message) => message.id)).toEqual(["group"]);
 		expect(db.recentMessages(10).map((message) => message.id)).toEqual(["direct", "group"]);
+		db.close();
+	});
+
+	it("refuses an expired held row and prunes held rows past the message window", () => {
+		const paths = freshPaths();
+		let now = 2_000_000;
+		const db = PhoneDb.open(paths, () => now);
+		const row = (id: string, ts: number) => ({
+			rumor_id: id,
+			room_id: id,
+			sender: "npub1peer",
+			members: "[]",
+			subject: null,
+			text: "held-body",
+			ts,
+		});
+		expect(db.insertPending(row("stale", now - MESSAGE_TTL_SECONDS - 1))).toBe(false);
+		expect(db.insertPending(row("fresh", now - 10))).toBe(true);
+		now += MESSAGE_TTL_SECONDS;
+		db.pruneMessages();
+		expect(db.pendingByRumor("fresh")).toBeUndefined();
+		expect(db.listPending()).toEqual([]);
+		db.close();
+	});
+
+	it("drops the oldest held rows past the per-sender and total caps", () => {
+		const paths = freshPaths();
+		const db = PhoneDb.open(paths, () => 100);
+		for (let index = 0; index < 6; index += 1) {
+			db.insertPending({
+				rumor_id: `s${index}`,
+				room_id: `room-${index}`,
+				sender: "npub1s",
+				members: "[]",
+				subject: null,
+				text: `body-${index}`,
+				ts: index,
+			});
+		}
+		db.deletePending(pendingIdsToDrop(db.listPending().map((row) => ({ rumorId: row.rumor_id, sender: row.sender, ts: row.ts })), 5, 50));
+		expect(db.listPending().map((row) => row.rumor_id)).toEqual(["s1", "s2", "s3", "s4", "s5"]);
+		expect(db.pendingByRumor("s0")).toBeUndefined();
 		db.close();
 	});
 });

@@ -13,6 +13,9 @@ const config = {
 		"src/phone/chat.ts",
 		"src/phone/thread.ts",
 		"src/phone/thread-schema.ts",
+		"src/phone/listener.ts:691-711",
+		"src/phone/listener.ts:729-768",
+		"src/phone/commands.ts:648-683",
 	],
 	testFiles: [
 		"__tests__/phone/admit-pass.spec.ts",

@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { nip59 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip59 } from "nostr-tools";
 import { encodeCard, NO_EXPIRY } from "../../src/phone/card";
 import { npubOf } from "../../src/phone/chat";
 import {
@@ -22,7 +23,7 @@ import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener, type ListenerDeps } from "../../src/phone/listener";
-import { addContact, numberKeyId } from "../../src/phone/store";
+import { addContact, numberKeyId, writeRelays } from "../../src/phone/store";
 import { createFakePool, makeHomeTracker, parseNdjson, type FakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
@@ -330,5 +331,143 @@ describe("accept refuses a # name", () => {
 			'a contact handle cannot start with "#", got "#ops"',
 		);
 		expect(home.deps.db.listContacts()).toEqual([]);
+	});
+});
+
+describe("thread hold limits and partial sends", () => {
+	it("drops a stranger thread and leaves no row and no notice", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const bob = await boot("b");
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!bobSk) throw new Error("missing key");
+		const bobPub = getPublicKey(bobSk);
+		const strangerSk = generateSecretKey();
+		const strangerPub = getPublicKey(strangerSk);
+		const rumor = nip59.createRumor(
+			{ kind: 14, content: "stranger-body", created_at: clock, tags: [["p", bobPub], ["subject", "x"]] },
+			strangerSk,
+		);
+		pool.events.push(nip59.createWrap(nip59.createSeal(rumor, strangerSk, bobPub), bobPub));
+		const stderr: string[] = [];
+		const spy = spyOn(process.stderr, "write").mockImplementation((chunk) => {
+			stderr.push(String(chunk));
+			return true;
+		});
+		const listener = listen(bob.deps, 5402);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		spy.mockRestore();
+
+		expect(bob.deps.db.listPending()).toEqual([]);
+		expect(bob.deps.db.recentMessages(10).some((row) => row.sender === "phone")).toBe(false);
+		expect(bob.deps.db.listThreads()).toEqual([]);
+		const log = stderr.join("");
+		expect(log).toContain(strangerPub.slice(0, 8));
+		expect(log).not.toContain("stranger-body");
+	});
+
+	it("saves one row when one member confirms and another does not", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool(["wss://ok.example"]);
+		const alice = await boot("a");
+		const bob = await boot("b");
+		const cara = await boot("c");
+		writeRelays(alice.deps.db, ["wss://self.example"]);
+		addContact(alice.deps.db, {
+			npub: bob.npub,
+			handle: "b",
+			relays: ["wss://ok.example"],
+			keyId: numberKeyId(alice.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		addContact(alice.deps.db, {
+			npub: cara.npub,
+			handle: "c",
+			relays: ["wss://no.example"],
+			keyId: numberKeyId(alice.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		await phoneThreadNew("#t", ["+b", "+c"], { subject: "t" }, alice.deps);
+		const printed: string[] = [];
+		alice.deps.write = (text) => printed.push(text);
+		let thrown: unknown;
+		try {
+			await phoneSay("#t", "partial-body", alice.deps);
+		} catch (err) {
+			thrown = err;
+		}
+		expect(thrown).toBeInstanceOf(DgCliError);
+		expect((thrown as DgCliError).exitCode).toBe(1);
+		const sent = parseNdjson(printed).at(-1) as { behind: string[]; self_ok: boolean; id: string };
+		expect(sent.behind).toEqual(["+c"]);
+		expect(sent.self_ok).toBe(false);
+		const stored = alice.deps.db.recentMessages(5).filter((row) => row.thread_id !== null);
+		expect(stored.map((row) => row.text)).toEqual(["partial-body"]);
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		const bobPub = getPublicKey(bobSk as Uint8Array);
+		const wrap = pool.events.find((event) => event.tags.some((tag) => tag[0] === "p" && tag[1] === bobPub));
+		const rumor = nip59.unwrapEvent(wrap as Parameters<typeof nip59.unwrapEvent>[0], bobSk as Uint8Array);
+		expect(rumor.created_at).toBe(stored[0]?.ts);
+		expect(sent.id).toBe(rumor.id);
+	});
+
+	it("keeps only the newest five held rows from one sender", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const alice = await boot("a");
+		const bob = await boot("b");
+		link(alice.deps, "b", bob.npub, bob.deps, "a", alice.npub);
+		const aliceSk = readFileKey(alice.deps.db, numberKeyId(alice.deps.db));
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!aliceSk || !bobSk) throw new Error("missing key");
+		const bobPub = getPublicKey(bobSk);
+		for (let index = 0; index < 6; index += 1) {
+			const extra = getPublicKey(generateSecretKey());
+			const rumor = nip59.createRumor(
+				{
+					kind: 14,
+					content: `held-body-${index}`,
+					created_at: clock + index,
+					tags: [["p", bobPub], ["p", extra], ["subject", `s${index}`]],
+				},
+				aliceSk,
+			);
+			pool.events.push(nip59.createWrap(nip59.createSeal(rumor, aliceSk, bobPub), bobPub));
+		}
+		const listener = listen(bob.deps, 5502);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		const pending = bob.deps.db.listPending();
+		expect(pending).toHaveLength(5);
+		expect(pending.some((row) => row.text === "held-body-0")).toBe(false);
+		const notice = bob.deps.db.recentMessages(20).find((row) => row.sender === "phone");
+		expect(notice?.text).toBe("5 held threads");
+		expect(notice?.text).not.toContain("held-body");
+	});
+
+	it("refuses a thread with more than 16 members", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const alice = await boot("a");
+		const handles: string[] = [];
+		for (let index = 0; index < 16; index += 1) {
+			const handle = `m${index}`;
+			handles.push(`+${handle}`);
+			addContact(alice.deps.db, {
+				npub: `npub1member${index}`,
+				handle,
+				relays: RELAYS,
+				keyId: numberKeyId(alice.deps.db),
+				addedAt: clock,
+				via: "accept",
+			});
+		}
+		await expect(phoneThreadNew("#big", handles, {}, alice.deps)).rejects.toThrow("a thread can have at most 16 members");
+		expect(alice.deps.db.listThreads()).toEqual([]);
 	});
 });
