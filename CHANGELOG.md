@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.33.0 (2026-11-02)
+
+### Features
+
+- feat(stat): order checklist by critical path and offer /dg:walk ([#127](https://github.com/detailedghost/dg-ai/pull/127))
+
 ## v1.32.2 (2026-11-02)
 
 ### Fixes
