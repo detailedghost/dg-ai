@@ -222,6 +222,21 @@ describe("autoCommentChar", () => {
 		expect(autoCommentChar(message)).toBe("@");
 	});
 
+	test("picks ; for a body with # and @ lines when the template is not English", () => {
+		const message = `${subject}\n\n# heading\n@someone\n\n${template(";")}`;
+		expect(autoCommentChar(message)).toBe(";");
+	});
+
+	test("picks the template character after the body gains more candidate prefixes", () => {
+		const message = `${subject}\n\n# one\n; two\n@ three\n! four\n\n${template("$")}`;
+		expect(autoCommentChar(message)).toBe("$");
+	});
+
+	test("applies git's rule to a message without a template", () => {
+		expect(autoCommentChar(`${subject}\n\n# heading\n\nBody.\n`)).toBe(";");
+		expect(autoCommentChar(`${subject}\n\n# one\n; two\n\nBody.\n`)).toBe("@");
+	});
+
 	test("takes the character from a scissors line", () => {
 		const scissors = `@ ${"-".repeat(24)} >8 ${"-".repeat(24)}`;
 		const message = `${subject}\n\n# heading\n; note\n\n${scissors}\n@@ -1 +1 @@\n`;

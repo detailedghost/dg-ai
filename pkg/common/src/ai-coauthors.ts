@@ -75,15 +75,14 @@ export function stripAiCoauthors(message: string, commentChar = "#"): string {
 
 /**
  * Comment character git chose for core.commentChar=auto, read back from the edited message.
- * Git picks the first of "#;@!$%^&|:" that starts no line of the message before it adds the
- * template, so the template's own character shows up here as the last of the leading run of used candidates.
+ * The scissors line or the last non-blank line carries the template's own character. Without
+ * one, the text is a bare message and git's rule applies: the first of "#;@!$%^&|:" that starts no line.
  */
 export function autoCommentChar(message: string): string {
 	const scissors = SCISSORS_LINE.exec(message)?.[1];
 	if (scissors) return scissors;
 	const lines = message.split("\n");
-	const chars = [...COMMENT_CHARS];
-	let run = 0;
-	while (run < chars.length && lines.some((line) => line.startsWith(chars[run] as string))) run++;
-	return chars[Math.max(run - 1, 0)] as string;
+	const last = lines.findLast((line) => !isBlank(line))?.[0];
+	if (last && COMMENT_CHARS.includes(last)) return last;
+	return [...COMMENT_CHARS].find((char) => !lines.some((line) => line.startsWith(char))) ?? "#";
 }
