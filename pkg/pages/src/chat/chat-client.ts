@@ -73,6 +73,11 @@ export type ChatClient = {
 	disconnectSession(sessionId: string): Promise<void>;
 	forgetSession(sessionId: string): void;
 	retryNow(): void;
+	sendCommandInvocation?(
+		sessionId: string,
+		commandLabel: string,
+		params?: Record<string, unknown>,
+	): Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
 const DEFAULT_BACKOFF_BASE_MS = 500;
@@ -502,6 +507,25 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				});
 				send({ type: "session-disconnect", sessionId, token, protocolVersion: CHAT_PROTOCOL_VERSION });
 			});
+		},
+
+		sendCommandInvocation(sessionId, commandLabel, params = {}) {
+			const token = capabilities.get(sessionId);
+			if (!token) {
+				return Promise.resolve({
+					ok: false,
+					error: "no chat session is open — start one to run a command",
+				});
+			}
+			send({
+				type: "command-invocation",
+				sessionId,
+				token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				commandLabel,
+				params,
+			});
+			return Promise.resolve({ ok: true });
 		},
 
 		closeSession(sessionId: string): void {

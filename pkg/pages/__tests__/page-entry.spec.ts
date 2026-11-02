@@ -292,11 +292,17 @@ describe("chat page entry wiring", () => {
 		const net = installGlobals(
 			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
 		);
+		net.respond = () =>
+			Promise.resolve(new Response("refused", { status: 403 }));
 		await loadEntry("../src/chat/page");
 
 		net.socketHandles[0]?.fire("open");
 		net.socketHandles[0]?.fire("close");
+		await settle();
 
+		expect(net.fetches.map(({ url }) => url)).not.toContain(
+			`http://127.0.0.1:${BOOTSTRAP.port}/overwatch`,
+		);
 		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
 	});
 

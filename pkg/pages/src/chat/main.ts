@@ -390,9 +390,8 @@ function dispatchCommandThroughClient(
 	sessionId: string,
 	commandLabel: string,
 ): Promise<SendResult> {
-	const maybeRelay = client as Partial<PageChatClient>;
-	if (maybeRelay.sendCommandInvocation) {
-		return maybeRelay.sendCommandInvocation(sessionId, commandLabel);
+	if (client.sendCommandInvocation) {
+		return client.sendCommandInvocation(sessionId, commandLabel);
 	}
 	return Promise.resolve({
 		ok: false,
