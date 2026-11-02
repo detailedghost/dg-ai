@@ -30,7 +30,7 @@ export async function locateCommitMsgHook(
 	});
 	return {
 		file: resolve(cwd, common.stdout.trim(), "hooks", "commit-msg"),
-		hooksPathSet: hooksPath.status === 0 && hooksPath.stdout.trim() !== "",
+		hooksPathSet: hooksPath.status === 0,
 	};
 }
 

@@ -2,6 +2,7 @@ const AI_NAME = /claude|codex|grok|copilot|openai|gemini|anthropic|gpt/i;
 const AI_BOT = /noreply@x\.ai|cursoragent@cursor\.com|devin-ai-integration\[bot\]/i;
 const COAUTHOR = /^co-authored-by:\s*(.*)$/i;
 const TRAILER = /^[A-Za-z][\w-]*:\s/;
+const CONTINUATION = /^\s+\S/;
 const isBlank = (line: string) => line.trim() === "";
 
 export const isAiCoauthor = (identity: string): boolean =>
@@ -11,6 +12,17 @@ const isAiTrailer = (line: string): boolean => {
 	const identity = COAUTHOR.exec(line)?.[1];
 	return identity !== undefined && isAiCoauthor(identity);
 };
+
+function trailerEntries(block: string[]): string[][] | undefined {
+	const entries: string[][] = [];
+	for (const line of block) {
+		if (TRAILER.test(line)) entries.push([line]);
+		else if (CONTINUATION.test(line) && entries.length > 0)
+			entries.at(-1)?.push(line);
+		else return undefined;
+	}
+	return entries;
+}
 
 /** Removes AI Co-Authored-By trailers from the final trailer block; subject, body and git comment lines stay. */
 export function stripAiCoauthors(message: string): string {
@@ -23,10 +35,11 @@ export function stripAiCoauthors(message: string): string {
 	}
 	const content = lines.slice(0, end);
 	const start = content.findLastIndex(isBlank) + 1;
-	const block = content.slice(start);
-	if (start === 0 || !block.every((line) => TRAILER.test(line))) return message;
-	const kept = block.filter((line) => !isAiTrailer(line));
-	if (kept.length === block.length) return message;
+	const entries = start === 0 ? undefined : trailerEntries(content.slice(start));
+	if (!entries) return message;
+	const keptEntries = entries.filter((entry) => !isAiTrailer(entry.join(" ")));
+	if (keptEntries.length === entries.length) return message;
+	const kept = keptEntries.flat();
 	const before = content.slice(0, start);
 	if (kept.length === 0) while (before.length > 0 && isBlank(before.at(-1) as string)) before.pop();
 	const tail = end < lines.length ? `\n${lines.slice(end).join("\n")}` : "";

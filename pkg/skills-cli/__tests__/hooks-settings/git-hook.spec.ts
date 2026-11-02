@@ -100,6 +100,15 @@ describe("hooks enable strip-ai-coauthors", () => {
 		expect(world.has(world.paths.config)).toBe(false);
 	});
 
+	test("refuses a repo whose core.hooksPath is set to an empty value", async () => {
+		const repo = makeRepo(USER_HOOK);
+		runGit(["config", "core.hooksPath", ""], repo.dir);
+		const result = await cli(["enable", ID], repo.dir);
+		expect(result.code).toBe(1);
+		expect(readFileSync(repo.hook, "utf8")).toBe(USER_HOOK);
+		expect(existsSync(repo.orig)).toBe(false);
+	});
+
 	test("fails outside a git repository", async () => {
 		const result = await cli(["enable", ID], world.tmp("not-a-repo-"));
 		expect(result.code).toBe(1);

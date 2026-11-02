@@ -51,6 +51,21 @@ describe("stripAiCoauthors", () => {
 		);
 	});
 
+	test("drops continuation lines with an AI trailer and keeps those of other trailers", () => {
+		const message = [
+			subject,
+			"",
+			"Co-Authored-By: Codex",
+			" <codex@openai.com>",
+			"Reviewed-by: Sam",
+			" <sam@example.com>",
+			"",
+		].join("\n");
+		expect(stripAiCoauthors(message)).toBe(
+			[subject, "", "Reviewed-by: Sam", " <sam@example.com>", ""].join("\n"),
+		);
+	});
+
 	test("returns a message without trailers unchanged", () => {
 		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
 		expect(stripAiCoauthors(message)).toBe(message);
