@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.29.0 (2026-11-02)
+
+### Features
+
+- feat(prototype): add a More versions decision to the viewer bar ([#118](https://github.com/detailedghost/dg-ai/pull/118))
+
 ## v1.28.1 (2026-11-02)
 
 ### Fixes
