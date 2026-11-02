@@ -15,7 +15,7 @@ import {
 	snapshotTree,
 	startFakeCredentialDaemon,
 } from "./doctor-fixtures";
-import { anyToolCheck } from "../src/doctor/checks";
+import { anyToolCheck, cliOnlyCheck, pairingCheck } from "../src/doctor/checks";
 import { DOCTOR_REGISTRY } from "../src/doctor/registry";
 import { createContext, doctorExitCode, runDoctor } from "../src/doctor/runner";
 import { sharedChecks } from "../src/doctor/shared";
@@ -716,6 +716,7 @@ describe("dg-skills doctor edge cases", () => {
 		extensionVersion: string | null,
 		body: () => Promise<void>,
 		statusOk = true,
+		hits = { status: 0 },
 	) {
 		const instanceId = "paired-instance";
 		const server = Bun.serve({
@@ -724,6 +725,7 @@ describe("dg-skills doctor edge cases", () => {
 			fetch(request) {
 				const { pathname } = new URL(request.url);
 				if (pathname === "/healthz") return Response.json({ instanceId });
+				if (pathname === "/status") hits.status += 1;
 				if (pathname === "/status" && statusOk) {
 					return Response.json({ versions: { extension: extensionVersion } });
 				}
@@ -771,6 +773,38 @@ describe("dg-skills doctor edge cases", () => {
 			expect(pairing?.status).toBe("warn");
 			expect(pairing?.detail).toContain("paired, not responding");
 		});
+	});
+
+	test("one doctor context asks the daemon for its status once across repeated runs", async () => {
+		world.healthy(["launch"]);
+		pinOrigin();
+		const hits = { status: 0 };
+		await withStatusDaemon(
+			"1.30.0",
+			async () => {
+				const ctx = createContext({ home: world.home, env: world.env() });
+				await pairingCheck.run(ctx);
+				await pairingCheck.run(ctx);
+				expect(hits.status).toBe(1);
+			},
+			true,
+			hits,
+		);
+	});
+
+	test("one doctor context scans the extension folders once across repeated runs", async () => {
+		let scans = 0;
+		const ctx = createContext({
+			home: world.home,
+			env: world.env(),
+			extensionDgDirs: () => {
+				scans += 1;
+				return [join(world.home, ".dg")];
+			},
+		});
+		await cliOnlyCheck.run(ctx);
+		await cliOnlyCheck.run(ctx);
+		expect(scans).toBe(1);
 	});
 
 	test("a pinned origin with a connected extension reports paired and live", async () => {

@@ -349,7 +349,12 @@ export const pairingCheck: DoctorCheck = {
 			const handle = readPidFile(ctx.paths);
 			const live =
 				handle && (await ctx.memo("daemon-live", () => isDaemonLive(handle)));
-			const version = handle && live ? await connectedExtensionVersion(handle) : null;
+			const version =
+				handle && live
+					? await ctx.memo("connected-extension-version", () =>
+							connectedExtensionVersion(handle),
+						)
+					: null;
 			return version
 				? ok(`paired with ${origin} and connected (extension v${version})`)
 				: warn(
@@ -382,8 +387,8 @@ function unlessCliOnly(check: DoctorCheck): DoctorCheck {
 export const cliOnlyCheck: DoctorCheck = {
 	id: "extension-installed",
 	run(ctx) {
-		const legacy = legacyExtensionDirs(
-			ctx.extensionDgDirs?.() ?? [join(ctx.home, ".dg")],
+		const legacy = ctx.memo("legacy-extension-dirs", () =>
+			legacyExtensionDirs(ctx.extensionDgDirs?.() ?? [join(ctx.home, ".dg")]),
 		);
 		if (legacy.length > 0)
 			return warn(
