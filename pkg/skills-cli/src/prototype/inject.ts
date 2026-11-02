@@ -189,18 +189,20 @@ export function injectScript(name: string, tools: unknown): string {
   }
 
   function _showDecisionOverlay(state, hasNotes, variant) {
-    var isRework = state === 'reject' || state === 'rework';
+    var isRework = state === 'reject' || state === 'rework' || state === 'more';
     var isApproved = state === 'approved';
     var isNextInSeries = state === 'confirm' && !hasNotes && window.__protoSeries === true;
     var isConfirmNoNotes = state === 'confirm' && !hasNotes && !isNextInSeries;
     _setFavicon(isRework || isNextInSeries || (!isApproved && hasNotes) ? 'processing' : 'done');
     var isBuilding = state === 'confirm' && (hasNotes || isNextInSeries);
     var pillColor = isRework || isBuilding ? '#e8a838' : '#2ebb6e';
-    var pillLabel = isRework ? 'REWORKING' : (isBuilding ? 'BUILDING' : 'APPROVED');
+    var pillLabel = state === 'more' ? 'MORE VERSIONS' : isRework ? 'REWORKING' : (isBuilding ? 'BUILDING' : 'APPROVED');
     var subtitle = isNextInSeries
       ? 'Selection recorded. Keep this tab open: it reloads in place when the next prototype is ready.'
       : isBuilding
       ? 'Notes sent. Keep this tab open: it reloads in place when the next round is ready.'
+      : state === 'more'
+      ? 'Generating more versions — this page reloads automatically when they are ready.'
       : isRework
       ? 'Reworking your prototype — this page reloads automatically when the new version is ready.'
       : (!isApproved && hasNotes
@@ -257,14 +259,15 @@ export function injectScript(name: string, tools: unknown): string {
 
   window.prototypeDecide = function(action, variant, notes) {
     var hasNotes = !!(notes && notes.trim());
-    _setFavicon(action === 'reject' || hasNotes ? 'processing' : 'done');
-    fetch('/prototype-decision', {
+    _setFavicon(action === 'reject' || action === 'more' || hasNotes ? 'processing' : 'done');
+    return fetch('/prototype-decision', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: ${scriptSafeJson(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '' })
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes, variant); }
-    });
+      return !!d.ok;
+    }).catch(function(){ return false; });
   };
 
   window.prototypePlanDecision = function(decision, notes) {

@@ -13,10 +13,11 @@ import {
 import {
 	awaitDecision,
 	confirm,
+	type DecisionSnapshot,
 	formatDecision,
 	formatWait,
+	readDecision,
 	readSource,
-	status,
 	wait,
 } from "./sentinels";
 import { runServe } from "./serve";
@@ -24,7 +25,6 @@ import {
 	loadState,
 	openInBrowser,
 	runUi,
-	statusSession,
 	stopChain,
 	waitSession,
 } from "./ui";
@@ -72,24 +72,37 @@ export function extStatus(name: string, reloadPath: string): string | undefined 
  */
 function reportStatus(
 	paths: SentinelPaths,
-	resolved: string,
+	resolved: DecisionSnapshot,
 	flags: Flags,
 	name: string,
 ): number {
-	if (flags.requirePending && resolved !== "pending") {
+	if (flags.requirePending && resolved.status !== "pending") {
 		process.stderr.write(
-			`prototype: status for "${name}" is "${resolved}", not "pending" — refusing to report the page as newly live\n`,
+			`prototype: status for "${name}" is "${resolved.status}", not "pending" — refusing to report the page as newly live\n`,
 		);
 		return 1;
 	}
 	if (flags.json) {
 		write(
-			`${JSON.stringify({ status: resolved, source: readSource(paths) ?? null })}\n`,
+			`${JSON.stringify({ status: resolved.status, source: readSource(paths) ?? null, decision: resolved.decision })}\n`,
 		);
 	} else {
-		write(`${resolved}\n`);
+		write(`${resolved.status}\n`);
 	}
 	return 0;
+}
+
+export function extSnapshot(resolved: string): DecisionSnapshot {
+	const action = resolved.split(":")[0];
+	return {
+		status: resolved,
+		decision:
+			action === "rejected"
+				? "rejected"
+				: action === "tweak"
+					? "tweak"
+					: "approved",
+	};
 }
 
 export const USAGE = `Usage: prototype <command> [options]
@@ -98,13 +111,13 @@ export const USAGE = `Usage: prototype <command> [options]
                                                  Render, serve, open, and block for one decision
   serve <html-file> <name> [--light] [--port=PORT] [--idle=SEC] [--dir=PATH]
                                                  Serve a self-contained prototype page
-  wait <name> [--timeout=SEC] [--light] [--json]  Block until a variant is selected or rejected
+  wait <name> [--timeout=SEC] [--light] [--json]  Block until a variant is selected, rejected, or more versions are asked for
   confirm <name> <variant> [--light] [--notes=TEXT] [--selftest] [--source=TEXT]
                                                  Write the selection sentinel (and optional notes).
                                                  --selftest writes to <name>-selftest instead.
                                                  --source names who decided (default "cli").
   status <name> [--light] [--json] [--require-pending]
-                                                 Print the selection, "rejected", or "pending"
+                                                 Print the selection, "rejected", "more", or "pending"
   stop <name>                                    Stop a ui session's server and drop its state
   path <name> [--light]                          Print the selection sentinel path
   await-decision <name> [--timeout=SEC] [--light] [--json]
@@ -152,7 +165,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	if (command === "status" && session) {
 		return reportStatus(
 			sentinelPaths(session.sentinelDir),
-			statusSession(session),
+			readDecision(sentinelPaths(session.sentinelDir)),
 			flags,
 			name,
 		);
@@ -175,10 +188,12 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			confirm(paths, variant as string, flags.notes, flags.source);
 			return 0;
 		case "status": {
-			const local = status(paths);
+			const local = readDecision(paths);
+			const fromExt =
+				local.status === "pending" ? extStatus(name, paths.reload) : undefined;
 			return reportStatus(
 				paths,
-				local === "pending" ? (extStatus(name, paths.reload) ?? local) : local,
+				fromExt === undefined ? local : extSnapshot(fromExt),
 				flags,
 				name,
 			);

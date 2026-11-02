@@ -2,6 +2,49 @@ import { describe, expect, test } from "bun:test";
 import { injectScript } from "../src/prototype/inject";
 import { parseManifestSource, render } from "../src/prototype/manifest";
 
+describe("prototype decision bar", () => {
+	const html = render(parseManifestSource("---\nname: x\n---\n::: A\nx\n:::\n"));
+
+	test("renders a More versions button next to Approve and Reject", () => {
+		expect(html).toContain('id="proto-more"');
+		expect(html).toContain('aria-label="More versions"');
+		expect(html.indexOf('id="proto-reject"')).toBeLessThan(
+			html.indexOf('id="proto-more"'),
+		);
+	});
+
+	test("posts the more action through the decision endpoint", () => {
+		expect(html).toContain("window.prototypeDecide('more'");
+	});
+
+	test("keeps the viewed variant in a non-empty More note and leaves an empty note empty", () => {
+		expect(html).toContain(
+			"window.prototypeDecide('more', '', notes ? '[was viewing ' + current + '] ' + notes : '')",
+		);
+	});
+
+	test("shows More success only after the decision request succeeds", () => {
+		const handler = html.slice(html.indexOf("getElementById('proto-more')"));
+		expect(handler.indexOf(".then(function(ok)")).toBeLessThan(
+			handler.indexOf("decided('more')"),
+		);
+		expect(injectScript("x", [])).toContain("return !!d.ok;");
+		expect(injectScript("x", [])).toContain("catch(function(){ return false; })");
+	});
+
+	test("disables the decision buttons while a More request is pending and restores them on failure", () => {
+		const handler = html.slice(html.indexOf("getElementById('proto-more')"));
+		expect(handler.indexOf("setBusy(true)")).toBeLessThan(
+			handler.indexOf("prototypeDecide('more'"),
+		);
+		expect(handler).toContain("setBusy(false); toast('Could not reach");
+	});
+
+	test("treats more as a processing favicon state", () => {
+		expect(injectScript("x", [])).toContain("action === 'more'");
+	});
+});
+
 describe("prototype page escaping", () => {
 	test("embedded names and tools cannot close the inline script", () => {
 		const script = injectScript("</script><img src=x>", [

@@ -50,7 +50,7 @@ wants something that opens with zero tooling, or a file to share.
 
 A prototype with a running server records the user's decision as sentinel files:
 
-1. The switcher bar has **Approve** and **Reject** buttons that POST `{ name, action, variant, variants?, notes? }`. The route depends on the flow:
+1. The switcher bar has **Approve** and **Reject** buttons (plus **More versions** on the `prototype ui` bar only; `prototype serve` accepts the `more` action when the supplied HTML implements the control, and the mounted templates lack it and treat an unknown action as a selection) that POST `{ name, action, variant, variants?, notes? }`. The route depends on the flow:
    - **Mounted in an app dev server** (React, Astro, Next): the switcher POSTs `/prototype-confirm`, handled by a copied endpoint template.
    - **Page served by `prototype serve` or `prototype ui`**: the injected client POSTs `/prototype-decision`.
    Use the template that matches the flow. A mismatched route 404s while `sendBeacon` still reports success, so the selection silently never arrives.
@@ -58,6 +58,7 @@ A prototype with a running server records the user's decision as sentinel files:
 3. `wait` resolves on whichever sentinel appears first:
    - `.selection` written: `{"status":"ok","variant":"...","notes":"..."}`. The user approved a variant.
    - `.reject` written: `{"status":"rejected","notes":"..."}`. The user rejected. Rework and loop.
+   - `.more` written: `{"status":"more","notes":"..."}`. The user wants more versions. Generate N new variants (default the same count as the round), steer them with the notes, and loop.
 4. On timeout it prints `{"status":"timeout"}` and exits 1. Ask the user by hand.
 
 Do not fire and forget a backgrounded `wait`: completion may not surface. Prefer the foreground. If it
@@ -68,9 +69,9 @@ missed notification is always recoverable.
 
 - **Approve, no notes**: the tab closes after 2.2 seconds.
 - **Approve with notes**: the tab stays open and shows "Building the next round from `<key>`". Start the next refine round, bump the reload token, and the same tab reloads to the new variants. With `prototype ui`, reuse the same chain key and this happens by itself.
-- **Reject**: the tab stays open in a "reworking" state and reloads when the reload token changes: `echo "$(date +%s)" > "$(~/.dg/bin/dg-skills prototype reload-path <name>)"`.
+- **Reject** and **More versions**: the tab stays open in a "reworking" state and reloads when the reload token changes: `echo "$(date +%s)" > "$(~/.dg/bin/dg-skills prototype reload-path <name>)"`.
 
-The tab favicon shows the decision state: waiting for the user's decision, processing a rework (reject sent or approved with notes), or done (approved, no notes).
+The tab favicon shows the decision state: waiting for the user's decision, processing a rework (reject or more sent, or approved with notes), or done (approved, no notes).
 
 **Working directory.** `prototype serve` and `prototype wait` resolve the `--light` sentinel directory from their own working directory. A harness that resets the directory between tool calls makes the pick land in one directory while `wait` watches another. Drive the self-contained flow with `prototype ui` instead of wiring `serve` and `wait` by hand. It records the sentinel directory in the session, so `wait`, `status`, and `stop` for that chain key never depend on the ambient directory. Hand-wire `prototype serve` only when one document must own every variant (shared CSS, JS, or state, the usual shape of a motion prototype), and run both commands from the same directory every time.
 

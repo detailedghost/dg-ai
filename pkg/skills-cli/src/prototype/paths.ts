@@ -12,6 +12,7 @@ export interface SentinelPaths {
 	selection: string;
 	notes: string;
 	reject: string;
+	more: string;
 	decision: string;
 	reload: string;
 	changes: string;
@@ -100,6 +101,7 @@ export function sentinelPaths(dir: string): SentinelPaths {
 		selection: join(dir, ".selection"),
 		notes: join(dir, ".notes"),
 		reject: join(dir, ".reject"),
+		more: join(dir, ".more"),
 		decision: join(dir, ".decision"),
 		reload: join(dir, ".reload"),
 		changes: join(dir, ".changes"),

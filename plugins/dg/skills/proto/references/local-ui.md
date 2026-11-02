@@ -87,6 +87,8 @@ The bar carries three decision controls to the right of the arrows:
 - **Approve** (green) POSTs `{ name, variant, variants, notes, action: "confirm" }` to `/prototype-confirm`. It closes the tab only when the notes are empty. A noted approval shows the "Selected variant X" overlay and keeps the tab open.
 - **Reject** (amber) opens a popup that needs a non-empty note, so a rework always has direction. Quick-pick reason chips are shown (`rejectReasons` tailors them). It POSTs `action: "reject"`, never closes the tab, and shows an inline "Reworking options" banner. The agent revises the variants, bumps the reload token, and the open tab refreshes.
 
+- **More versions** (teal) exists only on the bar that `prototype ui` renders. `prototype serve` injects the decision client, not a bar, and accepts `action: "more"` when the supplied HTML implements the control. The copied switcher templates and `prototype-decision-bar.html` do not have it yet. It takes the same optional note as Approve. A non-empty note carries a `[was viewing X]` prefix, as Reject does. Plain `wait` prints `more versions` on the first line for this request, a text no variant key can take. `status --json` adds a `decision` field (`approved`, `rejected`, `more`, `tweak`, or `pending`; `tweak` comes from an extension verdict and keeps the round open) so a variant key named `more` stays distinct from a request for more versions. It POSTs `action: "more"`, never closes the tab, and shows a "Generating more versions" overlay until the reload token changes.
+
 `prototype wait` reports both the action and the notes. The tab favicon shows the state: waiting, processing, or done.
 
 ### 4.5 Expose the selection endpoint
@@ -144,6 +146,7 @@ At the pick step, read the result of `prototype wait <name> --json`:
 - The user types `tweak <key>: <note>`: apply the note to that variant in place in the current round. Build no new variants, start no new round, and do not end the chain. Append the note to the round's `tweaks:` list in `NOTES.md`, bump the reload token, and show the variant again. The viewer has no matching action, so `tweak` is a typed verb only.
 - The user says "done" or "stop": the chain ends with the last picked variant. Run `~/.dg/bin/dg-skills prototype stop <chain>`, then go to step 6.
 - Reject: rework the same round.
+- `more`: generate N new variants (default the same count as this round), steered by the notes. Show them in a new round on the same tab, and offer the previous round as context.
 
 **Same tab across rounds.** With `prototype ui`, one chain is one server, one port, and one tab. Give every round the same chain key (the plan `slug`, or the manifest's chain value). To run round N+1, write its plan and run `prototype ui` again. It reuses the running server, bumps the reload token, and the open tab reloads in place. It opens no new tab and blocks for the next decision. After an approve with notes, the tab shows "Building the next round from `<key>`" and keeps polling. To end the chain, approve with no notes (the tab closes and the server stops) or run `prototype stop <chain>`. Do not start a second server for a later round.
 

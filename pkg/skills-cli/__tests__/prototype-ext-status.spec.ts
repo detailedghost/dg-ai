@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { protoScratchPath } from "../src/utils/proto-paths";
-import { extStatus } from "../src/prototype/index";
+import { extSnapshot, extStatus } from "../src/prototype/index";
 
 const written: string[] = [];
 
@@ -72,5 +72,22 @@ describe("extStatus", () => {
 		const reloadPath = writeReload(name, new Date(1_000_000));
 		writeVerdict(name, new Date(2_000_000));
 		expect(extStatus(name, reloadPath)).toBe("approve:detailed");
+	});
+});
+
+describe("extSnapshot", () => {
+	test("keeps the extension verdict action as the decision kind", () => {
+		expect(extSnapshot("approve:detailed")).toEqual({
+			status: "approve:detailed",
+			decision: "approved",
+		});
+		expect(extSnapshot("rejected")).toEqual({
+			status: "rejected",
+			decision: "rejected",
+		});
+		expect(extSnapshot("tweak:cards")).toEqual({
+			status: "tweak:cards",
+			decision: "tweak",
+		});
 	});
 });

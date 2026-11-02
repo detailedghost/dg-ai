@@ -19,6 +19,7 @@ import {
 	confirm,
 	formatDecision,
 	formatWait,
+	readDecision,
 	readSource,
 	status,
 	wait,
@@ -86,6 +87,31 @@ describe("prototype sentinels", () => {
 		expect(status(p)).toBe("rejected");
 		expect(await wait(p, 1)).toEqual({ status: "rejected", notes: "too busy" });
 		expect(existsSync(p.reject)).toBe(false);
+		expect(existsSync(p.notes)).toBe(false);
+	});
+
+	test("readDecision keeps a variant named more distinct from a more request", () => {
+		const approved = paths();
+		confirm(approved, "more");
+		expect(readDecision(approved)).toEqual({ status: "more", decision: "approved" });
+		rmSync(approved.selection);
+		writeFileSync(approved.more, "bolder\n");
+		expect(readDecision(approved)).toEqual({ status: "more", decision: "more" });
+		rmSync(approved.more);
+		expect(readDecision(approved)).toEqual({ status: "pending", decision: "pending" });
+	});
+
+	test("a more sentinel surfaces its notes and clears the more and notes files", async () => {
+		const p = paths();
+		mkdirSync(p.dir, { recursive: true });
+		writeFileSync(p.more, "three more, bolder\n");
+		writeFileSync(p.notes, "stale");
+		expect(status(p)).toBe("more");
+		expect(await wait(p, 1)).toEqual({
+			status: "more",
+			notes: "three more, bolder",
+		});
+		expect(existsSync(p.more)).toBe(false);
 		expect(existsSync(p.notes)).toBe(false);
 	});
 
@@ -165,6 +191,13 @@ describe("prototype sentinels", () => {
 		);
 		expect(formatWait({ status: "rejected", notes: "" }, false)).toBe(
 			"rejected\n",
+		);
+		expect(formatWait({ status: "more", notes: "bolder" }, false)).toBe(
+			"more versions\nbolder\n",
+		);
+		expect(formatWait({ status: "more", notes: "" }, false)).toBe("more versions\n");
+		expect(formatWait({ status: "more", notes: "bolder" }, true)).toBe(
+			'{"status":"more","notes":"bolder"}\n',
 		);
 		expect(formatWait({ status: "timeout" }, true)).toBe(
 			'{"status":"timeout"}\n',

@@ -291,6 +291,42 @@ describe("prototype ui", () => {
 		await cli(["stop", "pinned"]).done;
 	});
 
+	test("a more verdict keeps the server, reports as its own status, and exits 0", async () => {
+		const first = cli([
+			"ui",
+			manifest("round", undefined),
+			"--no-open",
+			`--port=${port()}`,
+			"--timeout=60",
+		]);
+		const session = await sessionFor("round");
+		await decide(session.port, { action: "more", notes: "bolder" });
+		const result = await first.done;
+		expect(result.exitCode).toBe(0);
+		expect(JSON.parse(result.stdout)).toEqual({
+			status: "more",
+			notes: "bolder",
+		});
+		expect(running(session.pid)).toBe(true);
+		await cli(["stop", "round"]).done;
+	});
+
+	test("without a session, status and wait report a more sentinel", async () => {
+		const path = (await cli(["path", "moreraw"]).done).stdout.trim();
+		const more = path.replace(/\.selection$/, ".more");
+		mkdirSync(join(path, ".."), { recursive: true });
+		writeFileSync(more, "again\n");
+		expect((await cli(["status", "moreraw"]).done).stdout).toBe("more\n");
+		const plain = await cli(["wait", "moreraw"]).done;
+		expect(plain.exitCode).toBe(0);
+		expect(plain.stdout).toBe("more versions\nagain\n");
+		writeFileSync(more, "again\n");
+		const json = await cli(["wait", "moreraw", "--json"]).done;
+		expect(json.exitCode).toBe(0);
+		expect(json.stdout).toBe('{"status":"more","notes":"again"}\n');
+		expect((await cli(["status", "moreraw"]).done).stdout).toBe("pending\n");
+	});
+
 	test("without a session, wait and status fall back to the sentinels under the cwd", async () => {
 		const confirmed = await cli(["confirm", "raw", "C", "--notes=n"]).done;
 		expect(confirmed.exitCode).toBe(0);
@@ -362,12 +398,30 @@ describe("prototype ui", () => {
 		expect(JSON.parse((await cli(["status", name, "--json"]).done).stdout)).toEqual({
 			status: "B",
 			source: "cli",
+			decision: "approved",
 		});
 
 		const stale = await cli(["status", name, "--require-pending"]).done;
 		expect(stale.exitCode).toBe(1);
 		expect(stale.stdout).toBe("");
 		expect(stale.stderr).toMatch(/not "pending"/);
+	});
+
+	test("status --json tells approving a variant named more apart from asking for more versions", async () => {
+		const approved = "approve-more-key-demo";
+		await cli(["confirm", approved, "more"]).done;
+		expect(JSON.parse((await cli(["status", approved, "--json"]).done).stdout)).toMatchObject({
+			status: "more",
+			decision: "approved",
+		});
+		const asked = "ask-more-demo";
+		const selection = (await cli(["path", asked]).done).stdout.trim();
+		mkdirSync(join(selection, ".."), { recursive: true });
+		writeFileSync(selection.replace(/\.selection$/, ".more"), "bolder\n");
+		expect(JSON.parse((await cli(["status", asked, "--json"]).done).stdout)).toMatchObject({
+			status: "more",
+			decision: "more",
+		});
 	});
 
 	test("--require-pending does not consume the pick it refuses to report", async () => {
@@ -385,6 +439,7 @@ describe("prototype ui", () => {
 		expect(JSON.parse((await cli(["status", name, "--json"]).done).stdout)).toEqual({
 			status: "B",
 			source: "automation",
+			decision: "approved",
 		});
 	});
 
