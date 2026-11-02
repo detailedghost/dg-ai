@@ -15,7 +15,8 @@ the overwatch board at `/board`, and `dg-agent overwatch open` opens it.
 
 The URL ends in a fragment, `#_chat=<base64url>`, that carries the session
 token. The browser never sends a fragment to a server, so the token stays out
-of request lines and logs. The page reads it, removes it from the address bar,
+of the page request. The page then sends it as a Bearer header on fetch and
+as the `token` query on the WebSocket upgrade. The page reads it, removes it from the address bar,
 and keeps it in `sessionStorage` for that tab. The page shells are public. The
 data routes accept a request only from a loopback `Origin` or no `Origin`, and
 only with the token of a live session. A dead token gets 403 and a foreign

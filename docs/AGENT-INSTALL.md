@@ -71,7 +71,8 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   `--data-path` fixtures, `proto` and `demo`, whose default local modes need no
   extension. Only `proto --ext` and `demo --ext` need the dg-ai-extension.
 - Extension use: no SKILL.md declares `requires: [extension]`. Every skill runs
-  locally by default, and `--ext` opts in to the extension. `chat` and
+  locally by default, and `--ext` opts in to the extension. Only `browser`
+  `launch` always needs it. `chat` and
   `overwatch` open a page that `dg-daemon` serves on loopback, which needs
   `dg-agent` and `dg-daemon` but no extension. In a CLI-only install those two
   binaries are missing, so the `chat` and `overwatch` bootstrap block runs the

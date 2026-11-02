@@ -156,8 +156,9 @@ Any local process can attach to that port during the run. See
 without an extension dependency also install; their own tools and referenced
 skills still need to be available.
 
-Every skill runs locally by default. A skill run with `--ext` stops with a
-message that names the fix when the extension is missing. `chat` and
+Every skill runs locally by default; only `browser launch` always needs the
+extension. A skill run with `--ext` stops with a message that names the fix
+when the extension is missing. `chat` and
 `overwatch` need `dg-agent`, which `--cli-only` skips. Their bootstrap block
 runs the full installer when `dg-agent` is missing, and that install removes
 the CLI-only marker. To add the extension later, run `dg-skills install` (or

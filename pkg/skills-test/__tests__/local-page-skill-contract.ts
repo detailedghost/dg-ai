@@ -1,15 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT } from "./test-support";
+import {
+	frontmatter,
+	GATE_COMMAND,
+	LOCAL_DEFAULT,
+	REPO_ROOT,
+} from "./test-support";
 
-const GATE_COMMAND = /dg-skills\s+require-extension\s+\S+\s*\|\|/;
 const REQUIRES_LINE = /^requires:/m;
-const LOCAL_DEFAULT = /off \(local is the default\)/;
-
-function frontmatter(text: string): string {
-	return /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-}
 
 function description(text: string): string {
 	const lines = frontmatter(text).split("\n");

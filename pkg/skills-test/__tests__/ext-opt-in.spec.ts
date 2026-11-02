@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { REPO_ROOT } from "./test-support";
+import {
+	frontmatter,
+	GATE_COMMAND,
+	LOCAL_DEFAULT,
+	REPO_ROOT,
+} from "./test-support";
 
 const SKILLS_DIR = join(REPO_ROOT, "plugins", "dg", "skills");
 const FLAG_TABLE_SKILLS = ["browser", "proto", "demo", "chat", "overwatch"];
-const LOCAL_DEFAULT = /off \(local is the default\)/;
 const EXT_FLAG = /(^|[\s`(])--ext($|[\s`:,.;)])/;
-const GATE_COMMAND = /dg-skills\s+require-extension\s+\S+\s*\|\|/;
 const REQUIRES_EXTENSION = /^requires:(?:[^\n]|\n[ \t]+-)*?extension/m;
 const AGENT_INSTALL = join(REPO_ROOT, "docs", "AGENT-INSTALL.md");
 
@@ -20,10 +23,6 @@ function markdownFiles(dir: string): string[] {
 		if (statSync(path).isDirectory()) return markdownFiles(path);
 		return entry.endsWith(".md") ? [path] : [];
 	});
-}
-
-function frontmatter(text: string): string {
-	return /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
 }
 
 const DOCS: Doc[] = markdownFiles(SKILLS_DIR).map((path) => ({

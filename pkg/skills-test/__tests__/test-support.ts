@@ -17,6 +17,13 @@ export function removeTempDirs(): void {
 
 export const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 
+export const LOCAL_DEFAULT = /off \(local is the default\)/;
+export const GATE_COMMAND = /dg-skills\s+require-extension\s+\S+\s*\|\|/;
+
+export function frontmatter(text: string): string {
+	return /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
+}
+
 export function readRepoFile(...parts: string[]): string {
 	return readFileSync(join(REPO_ROOT, ...parts), "utf8");
 }
