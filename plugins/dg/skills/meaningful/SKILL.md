@@ -44,6 +44,9 @@ The plugin ships its personas in `agents/` (Claude Code loads them as
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--dry-run` | none | Stop after presenting the chosen plan. Do not reset, commit, or push. | off |
+| `--onto <new-parent>` | none | Rebuild the commits on `<new-parent>` instead of the old base. Needs the same tree as the old base. | off |
+
+When the parent branch of a stacked branch was reshaped, its old commits are no longer reachable from the new parent, so the merge-base is wrong and the plan fails with a file mismatch. Pass `--onto <new-parent>` to `apply-json`, with `--base` set to the old parent tip when it is not the default base. The helper checks that the new parent has the same tree as the old base, rebuilds the groups on top of it, and checks that the final tree equals the old HEAD tree. A tree mismatch stops with an error and changes nothing. `--onto` never falls back to a merge-base.
 
 ## Preconditions
 - Not on `main`/`master`.

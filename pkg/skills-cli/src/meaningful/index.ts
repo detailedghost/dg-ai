@@ -23,7 +23,7 @@ const cmd = defineCommand({
 		},
 		"apply-json": {
 			description: "Soft-reset to base and recommit groups from a JSON plan file",
-			args: ["[--base <ref>]", "plan-file"],
+			args: ["[--base <ref>]", "[--onto <new-parent>]", "plan-file"],
 			run: cmdApplyJson,
 		},
 		abort: {
@@ -39,14 +39,18 @@ export async function main(argv: string[]): Promise<void> {
 	await cmd.run(argv);
 }
 
-/** Extract --base <ref> from args array; returns [ref|undefined, remaining]. */
-function extractBase(args: string[]): [string | undefined, string[]] {
-	const idx = args.indexOf("--base");
+/** Extract `<flag> <ref>` from args; returns [ref|undefined, remaining]. */
+function extractRefFlag(args: string[], flag: string): [string | undefined, string[]] {
+	const idx = args.indexOf(flag);
 	if (idx === -1) return [undefined, args];
 	const ref = args[idx + 1];
-	if (!ref || ref.startsWith("-")) die("--base requires a ref argument", EXIT.USAGE);
+	if (!ref || ref.startsWith("-")) die(`${flag} requires a ref argument`, EXIT.USAGE);
 	const rest = args.filter((_, i) => i !== idx && i !== idx + 1);
 	return [ref, rest];
+}
+
+function extractBase(args: string[]): [string | undefined, string[]] {
+	return extractRefFlag(args, "--base");
 }
 
 async function cmdInfo(args: string[]): Promise<void> {
@@ -113,9 +117,10 @@ async function cmdInfo(args: string[]): Promise<void> {
 }
 
 async function cmdApplyJson(args: string[]): Promise<void> {
-	const [baseOverride, rest] = extractBase(args);
+	const [baseOverride, afterBase] = extractBase(args);
+	const [ontoRef, rest] = extractRefFlag(afterBase, "--onto");
 	const planFile = rest[0];
-	if (!planFile) die("usage: apply-json [--base <ref>] <plan-file>", EXIT.USAGE);
+	if (!planFile) die("usage: apply-json [--base <ref>] [--onto <new-parent>] <plan-file>", EXIT.USAGE);
 
 	let planText = "";
 	try {
@@ -126,7 +131,7 @@ async function cmdApplyJson(args: string[]): Promise<void> {
 
 	const { base: planBase, groups } = parseJsonPlan(planText);
 
-	const ctx = await preflightAndCapture(baseOverride ?? planBase);
+	const ctx = await preflightAndCapture(baseOverride ?? planBase, ontoRef);
 
 	await assertFilesMatchDiff(ctx.baseSha, groups);
 	await reshapeAndPush(groups, ctx);
@@ -143,12 +148,13 @@ async function cmdAbort(args: string[]): Promise<void> {
 interface ReshapeContext {
 	branch: string;
 	baseSha: string;
+	resetTarget: string;
 	backup: string;
 	origTree: string;
 }
 
 /** Refuse a dirty tree or detached HEAD, resolve the base, and capture the backup and tree. */
-async function preflightAndCapture(baseOverride?: string): Promise<ReshapeContext> {
+async function preflightAndCapture(baseOverride?: string, ontoRef?: string): Promise<ReshapeContext> {
 	if (await isDirty()) die("working tree has uncommitted changes; stash or commit first.", EXIT.ERR);
 
 	const branch = await currentBranch();
@@ -158,17 +164,50 @@ async function preflightAndCapture(baseOverride?: string): Promise<ReshapeContex
 
 	let baseSha = "";
 	try {
-		baseSha = await resolveBaseSha(baseOverride);
+		baseSha = ontoRef ? await resolveOntoBaseSha(baseOverride) : await resolveBaseSha(baseOverride);
 	} catch {
 		die(`cannot resolve base ref.`, EXIT.ERR);
 	}
+
+	const resetTarget = ontoRef ? await resolveOntoTarget(ontoRef, baseSha) : baseSha;
 
 	const backup = (await git`rev-parse HEAD`).text().trim();
 	const origTree = (await git`rev-parse HEAD^{tree}`).text().trim();
 
 	process.stderr.write(`meaningful: backup ref = ${backup}\n`);
 
-	return { branch, baseSha, backup, origTree };
+	return { branch, baseSha, resetTarget, backup, origTree };
+}
+
+/** Resolve the old base for --onto; an explicit base that is not an ancestor of HEAD is refused, never replaced by a merge-base. */
+async function resolveOntoBaseSha(baseOverride?: string): Promise<string> {
+	if (!baseOverride) return resolveBaseSha();
+	const sha = (await git`rev-parse --verify --end-of-options ${baseOverride}^{commit}`).text().trim();
+	try {
+		await git`merge-base --is-ancestor ${sha} HEAD`;
+	} catch {
+		die(`--onto requires --base ${baseOverride} (${sha.slice(0, 8)}) to be an ancestor of HEAD.`, EXIT.ERR);
+	}
+	return sha;
+}
+
+/** Resolve the new parent and require its tree to equal the old base's tree. */
+async function resolveOntoTarget(ontoRef: string, baseSha: string): Promise<string> {
+	let ontoSha = "";
+	try {
+		ontoSha = (await git`rev-parse --verify --end-of-options ${ontoRef}^{commit}`).text().trim();
+	} catch {
+		die(`cannot resolve --onto ref: ${ontoRef}`, EXIT.ERR);
+	}
+	const baseTree = (await git`rev-parse ${baseSha}^{tree}`).text().trim();
+	const ontoTree = (await git`rev-parse ${ontoSha}^{tree}`).text().trim();
+	if (baseTree !== ontoTree) {
+		die(
+			`--onto ${ontoRef} tree ${ontoTree} differs from old base ${baseSha.slice(0, 8)} tree ${baseTree}; nothing changed.`,
+			EXIT.ERR,
+		);
+	}
+	return ontoSha;
 }
 
 /** Require the union of plan-group files to equal the diff from base. */
@@ -203,7 +242,7 @@ async function reshapeAndPush(groups: Group[], ctx: ReshapeContext): Promise<voi
 	const workdir = statePath("meaningful", uniqueName("meaningful"));
 	mkdirSync(workdir, { recursive: true });
 	try {
-		await git`reset --soft ${ctx.baseSha}`;
+		await git`reset --soft ${ctx.resetTarget}`;
 
 		const unstage = async () => {
 			try {

@@ -177,7 +177,7 @@ describe("meaningful usage and import isolation", () => {
 			args: ["apply-json"],
 			status: 2,
 			stream: "stderr",
-			message: "usage: apply-json [--base <ref>] <plan-file>",
+			message: "usage: apply-json [--base <ref>] [--onto <new-parent>] <plan-file>",
 		},
 		{
 			args: ["abort"],
@@ -1044,5 +1044,77 @@ describe("meaningful review hardening", () => {
 		]);
 		expectApplied(repo, result, backup, tree);
 		expect(git(repo, ["ls-remote", "origin", "refs/heads/other"])).toBe(otherRemote);
+	});
+});
+
+describe("meaningful apply-json --onto", () => {
+	function stackedRepo() {
+		const repo = makeRepo();
+		const oldParent = commit(repo, { "p.ts": "p\n" }, "feat(scope): parent");
+		const backup = commit(repo, { "a.ts": "a\n", "b.ts": "b\n" });
+		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+		const parentTree = git(repo, ["rev-parse", `${oldParent}^{tree}`]);
+		return { repo, oldParent, backup, tree, parentTree };
+	}
+
+	const groups: JsonGroup[] = [
+		{ subject: "feat(scope): a", files: ["a.ts"] },
+		{ subject: "feat(scope): b", files: ["b.ts"] },
+	];
+
+	test("rebuilds commits on a reshaped parent with the same tree and keeps HEAD tree", () => {
+		const { repo, oldParent, backup, tree, parentTree } = stackedRepo();
+		const newParent = git(repo, [
+			"commit-tree", parentTree, "-p", repo.base, "-m", "feat(scope): reshaped parent",
+		]);
+		const result = runMeaningful(repo, [
+			"apply-json", "--base", oldParent, "--onto", newParent, jsonPlan(groups),
+		]);
+		expectApplied(repo, result, backup, tree);
+		expect(git(repo, ["rev-parse", "HEAD~2"])).toBe(newParent);
+		expect(git(repo, ["rev-list", "--count", `${newParent}..HEAD`])).toBe("2");
+		expect(git(repo, ["rev-list", "HEAD"]).split("\n")).not.toContain(oldParent);
+	});
+
+	test("refuses a new parent whose tree differs and changes nothing", () => {
+		const { repo, oldParent, parentTree } = stackedRepo();
+		const baseTree = git(repo, ["rev-parse", `${repo.base}^{tree}`]);
+		const newParent = git(repo, ["commit-tree", baseTree, "-p", repo.base, "-m", "other"]);
+		const before = snapshot(repo);
+		const result = runMeaningful(repo, [
+			"apply-json", "--base", oldParent, "--onto", newParent, jsonPlan(groups),
+		]);
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain(parentTree);
+		expect(result.stderr).toContain(baseTree);
+		expect(snapshot(repo)).toEqual(before);
+	});
+
+	test("does not fall back to merge-base when the base is not an ancestor of HEAD", () => {
+		const { repo, parentTree } = stackedRepo();
+		const stray = git(repo, ["commit-tree", parentTree, "-p", repo.base, "-m", "stray"]);
+		const before = snapshot(repo);
+		const result = runMeaningful(repo, [
+			"apply-json", "--base", stray, "--onto", stray, jsonPlan(groups),
+		]);
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toContain("to be an ancestor of HEAD");
+		expect(snapshot(repo)).toEqual(before);
+	});
+
+	test("requires a ref argument", () => {
+		const { repo } = stackedRepo();
+		const result = runMeaningful(repo, ["apply-json", "--onto"]);
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr).toContain("--onto requires a ref argument");
+	});
+
+	test("keeps --base behavior unchanged without --onto", () => {
+		const { repo, oldParent, backup, tree } = stackedRepo();
+		const result = runMeaningful(repo, [
+			"apply-json", "--base", oldParent, jsonPlan(groups),
+		]);
+		expectApplied(repo, result, backup, tree);
+		expect(git(repo, ["rev-parse", "HEAD~2"])).toBe(oldParent);
 	});
 });
