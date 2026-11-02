@@ -95,6 +95,20 @@ describe("stripAiCoauthors", () => {
 		).toBe(`${subject}\r\n\r\nBody.\r\n\r\nReviewed-by: Sam\r\n`);
 	});
 
+	test("finds the scissors line in a CRLF message", () => {
+		const verbose = "# ------------------------ >8 ------------------------\r\ndiff --git a/x b/x\r\n";
+		expect(
+			stripAiCoauthors(
+				`${subject}\r\n\r\nBody.\r\n\r\nCo-Authored-By: Claude <noreply@anthropic.com>\r\n${verbose}`,
+			),
+		).toBe(`${subject}\r\n\r\nBody.\r\n${verbose}`);
+	});
+
+	test("keeps a folded human trailer in a CRLF message", () => {
+		const message = `${subject}\r\n\r\nCo-Authored-By: Claude\r\n Martin <claude.martin@gmail.com>\r\n`;
+		expect(stripAiCoauthors(message)).toBe(message);
+	});
+
 	test("returns a message without trailers unchanged", () => {
 		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
 		expect(stripAiCoauthors(message)).toBe(message);
