@@ -878,3 +878,11 @@ describe("assign resolve --help", () => {
 		expect(result.out).toContain("usage: dg-skills assign resolve");
 	});
 });
+
+describe("engineering deferral gate", () => {
+	test("pauses only on blocking deferrals, never on CONFIRM", () => {
+		const text = readFileSync(join(SKILLS, "sdlc/references/engineering.md"), "utf8");
+		expect(text).toContain("1. **Deferrals first.** Any `SPEC`, `TEST` or `CRITICAL` deferral (or `status: blocked`)");
+		expect(text).not.toContain("Any `deferrals` (or");
+	});
+});
