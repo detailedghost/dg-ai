@@ -3142,7 +3142,7 @@ describe("cooldown registry boundaries", () => {
 			pkg: "pkg",
 			version: "2.0.0",
 			published: "2026-10-15T00:00:00Z",
-			eligible: "2026-10-22T00:00:00.000Z",
+			eligible: "2026-10-19T00:00:00.000Z",
 		});
 		const summary = await runCli(["summary"], { cwd, stateDir });
 		expect(summary.exitCode).toBe(0);

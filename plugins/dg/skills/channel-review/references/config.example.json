@@ -42,7 +42,7 @@
 	},
 	"deps": {
 		"enabled": false,
-		"cooldownDays": 7,
+		"cooldownDays": 4,
 		"schedule": { "every": "week", "day": "mon", "window": "02:00-05:00" },
 		"repos": [{ "repo": "github.com/example-org/example-api" }]
 	}

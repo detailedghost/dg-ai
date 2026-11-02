@@ -788,7 +788,7 @@ export function timestampSlug(date: Date): string {
 }
 
 /** Default minimum package publication age for dependency updates. */
-export const DEFAULT_COOLDOWN_DAYS = 7;
+export const DEFAULT_COOLDOWN_DAYS = 4;
 const DAY_MS = 86_400_000;
 const STABLE_VERSION = /^v?\d+(\.\d+)*$/;
 
@@ -1451,7 +1451,7 @@ export function buildCommand() {
 			},
 			cooldown: {
 				description:
-					"check a target version is old enough (default 7 days); prints JSON verdict",
+					"check a target version is old enough (default 4 days); prints JSON verdict",
 				args: ["pkg", "old", "new"],
 				run: cmdCooldown,
 			},
