@@ -620,6 +620,51 @@ describe("proton-pw session lock", () => {
 		}
 	});
 
+	test("a canceled sign-in holds the lock until the browser has closed", async () => {
+		const data = tempDataDir();
+		try {
+			let cancel: (() => Promise<void>) | undefined;
+			let finishClose: (() => void) | undefined;
+			const lockHeldDuringClose: boolean[] = [];
+			const deps = {
+				openSession: async () => ({
+					page: {
+						url: () => "https://account.proton.me/login",
+						observedHeaders: () => undefined,
+						evaluate: async () => ({}),
+					},
+					close: () =>
+						new Promise<void>((resolve) => {
+							lockHeldDuringClose.push(existsSync(protonLockPath(data.dir)));
+							finishClose = resolve;
+						}),
+				}),
+				sleep: async () => {
+					void cancel?.();
+				},
+				log: () => {},
+				trapSignals: (onCancel: () => Promise<void>) => {
+					cancel = onCancel;
+					return () => {
+						cancel = undefined;
+					};
+				},
+			};
+			const signIn = runProtonSignIn(data.dir, deps as never).catch(
+				(error: unknown) => error,
+			);
+			while (!finishClose) await Bun.sleep(1);
+			await Bun.sleep(5);
+			expect(existsSync(protonLockPath(data.dir))).toBe(true);
+			finishClose();
+			expect(String(await signIn)).toContain("canceled");
+			expect(lockHeldDuringClose).toEqual([true]);
+			expect(existsSync(protonLockPath(data.dir))).toBe(false);
+		} finally {
+			data.cleanup();
+		}
+	});
+
 	test("a canceled sign-in closes the browser, writes no marker and frees the lock", async () => {
 		const data = tempDataDir();
 		try {

@@ -20,7 +20,10 @@ function profileFlag(options: readonly string[]): string | undefined {
 }
 
 function isProtectedProfile(profile: string): boolean {
-	const slashed = profile
+	const windowsStyle = /^[a-z]:|\\/i.test(profile);
+	const slashed = (
+		windowsStyle ? path.win32.normalize(profile) : path.posix.normalize(profile)
+	)
 		.replaceAll("\\", "/")
 		.toLowerCase()
 		.replace(/\/+$/, "");

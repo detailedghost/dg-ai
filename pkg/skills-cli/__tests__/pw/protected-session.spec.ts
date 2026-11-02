@@ -32,6 +32,23 @@ describe("pw protectedSessionRefusal for the Proton profile", () => {
 				"C:\\Users\\me\\AppData\\Local\\playwright-cli\\profiles\\inbox-proton",
 			],
 		],
+		[
+			[
+				"-s=mail-copy",
+				"open",
+				"--windows",
+				"--profile",
+				"C:\\Users\\me\\AppData\\Local\\playwright-cli\\profiles\\inbox-proton\\.",
+			],
+		],
+		[
+			[
+				"-s=mail-copy",
+				"open",
+				"--windows",
+				"--profile=C:\\Users\\me\\AppData\\Local\\playwright-cli\\profiles\\web\\..\\inbox-proton\\",
+			],
+		],
 	])("refuses opening the protected profile under another name: %p", (argv) => {
 		delete process.env[ENV_KEY];
 		process.env["DG_HOME"] = home;

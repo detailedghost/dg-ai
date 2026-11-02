@@ -313,12 +313,14 @@ export async function runProtonSignIn(
 			release();
 			throw error;
 		});
-	const untrap = deps.trapSignals?.(async () => {
+	let cancelling: Promise<void> | undefined;
+	const untrap = deps.trapSignals?.(() => {
 		canceled = true;
-		try {
-			await (await opening).close();
-		} catch {}
-		release();
+		cancelling ??= opening
+			.then((session) => session.close())
+			.catch(() => undefined)
+			.finally(release);
+		return cancelling;
 	});
 	let session: ProtonPwSession;
 	try {
@@ -350,7 +352,8 @@ export async function runProtonSignIn(
 	} finally {
 		untrap?.();
 		try {
-			if (!canceled) await session.close();
+			if (cancelling) await cancelling;
+			else await session.close();
 		} finally {
 			release();
 		}
