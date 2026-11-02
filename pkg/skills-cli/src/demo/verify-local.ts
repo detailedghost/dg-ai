@@ -122,10 +122,16 @@ const harnessError = (error: unknown): VerifyResult => ({
 	],
 });
 
+const flattenSetup = (script: TourScript): TourScript =>
+	script.setup
+		? { ...script, setup: { ...script.setup, includeInTour: true } }
+		: script;
+
 export async function verifyLocal(
-	script: TourScript,
+	given: TourScript,
 	deps: VerifyLocalDeps = { open: openLocalSession },
 ): Promise<VerifyResult> {
+	const script = flattenSetup(given);
 	let session: VerifySession;
 	try {
 		session = await deps.open(script);

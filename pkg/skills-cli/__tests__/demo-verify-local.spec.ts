@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { TourScript } from "@dg/common";
 import * as realVerify from "../src/utils/demo-verify";
-import { tourPageFor } from "../src/demo/verify-local";
+import { tourPageFor, verifyLocal } from "../src/demo/verify-local";
 
 type Overlay = { kind: "none" | "consent" | "step" | "done"; index: number };
 
@@ -193,5 +193,35 @@ describe("local page adapter", () => {
 		const calls: string[] = [];
 		expect(await adapter({ kind: "none" }, calls).clickThroughTour()).toBe(true);
 		expect(calls).toEqual(["window.__dgTour ? window.__dgTour.advance() : false"]);
+	});
+});
+
+describe("verifyLocal with excluded setup", () => {
+	test("walks setup and tutorial as one flat sequence", async () => {
+		const s: TourScript = {
+			...script(),
+			setup: {
+				includeInTour: false,
+				steps: [
+					{ title: "S1", body: "a", selector: "#s1" },
+					{ title: "S2", body: "b", selector: "#s2" },
+				],
+			},
+		};
+		let opened: TourScript | undefined;
+		const flat = { ...s, steps: [...s.setup!.steps, ...s.steps] };
+		const result = await verifyLocal(s, {
+			open: async (given) => {
+				opened = given;
+				return {
+					page: fakePage(flat, ["#two"]) as never,
+					close: async () => {},
+				};
+			},
+		});
+		expect(opened?.setup?.includeInTour).toBe(true);
+		expect(result.findings).toEqual([
+			{ step: 4, kind: "selector-unresolved", selector: "#two" },
+		]);
 	});
 });
