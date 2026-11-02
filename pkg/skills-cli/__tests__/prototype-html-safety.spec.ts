@@ -75,3 +75,34 @@ describe("prototype page escaping", () => {
 		).toThrow(message);
 	});
 });
+
+describe("prototype viewer width", () => {
+	const html = render(parseManifestSource("---\nname: x\n---\n::: A\nx\n:::\n"));
+
+	test("fills the window by default with no 960px cap or side padding", () => {
+		expect(html).not.toMatch(/\nsection\[data-variant\]\{[^}]*max-width/);
+		expect(html).toMatch(/#proto-root\{[^}]*padding:2\.5rem 0 7rem/);
+	});
+
+	test("offers a framed option that restores the 960px frame", () => {
+		expect(html).toContain('data-w="framed"');
+		expect(html).toMatch(
+			/#proto-root\[data-width="framed"\] section\[data-variant\]\{[^}]*max-width:960px/,
+		);
+	});
+
+	test("keeps the mobile and tablet widths", () => {
+		expect(html).toMatch(
+			/#proto-root\[data-width="mobile"\] section\[data-variant\]\{max-width:390px;\}/,
+		);
+		expect(html).toMatch(
+			/#proto-root\[data-width="tablet"\] section\[data-variant\]\{max-width:768px;\}/,
+		);
+	});
+
+	test("keeps side padding on every fixed width", () => {
+		expect(html).toMatch(
+			/#proto-root\[data-width\]:not\(\[data-width="all"\]\)\{padding-inline:2rem;\}/,
+		);
+	});
+});

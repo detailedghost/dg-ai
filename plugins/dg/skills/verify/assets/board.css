@@ -37,7 +37,7 @@ button:disabled{opacity:.45;cursor:default}
 button.primary{background:var(--acc);color:var(--surface);border-color:var(--acc);font-weight:650}
 button.primary:hover{filter:brightness(1.07);background:var(--acc)}
 
-.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;max-width:1720px;margin:0 auto;padding:24px}
+.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;max-width:none;margin:0 auto;padding:24px}
 aside{position:sticky;top:84px;align-self:start;max-height:calc(100vh - 108px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px}
 aside h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:6px 8px 8px}
 #toc{list-style:none;margin:0;padding:0;counter-reset:sec}
