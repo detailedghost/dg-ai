@@ -26,6 +26,8 @@ import {
 	type NarrationChoice,
 	type PlayerArgv,
 	type PlayerJob,
+	SETUP_NEEDS_PERSON,
+	setupNeedsPerson,
 } from "./player-job";
 import { playerPid } from "./result";
 
@@ -220,12 +222,9 @@ export async function playLocal(
 	if (
 		plan.mode === "local" &&
 		plan.headless &&
-		script.setup &&
-		!script.setup.includeInTour
+		setupNeedsPerson(script)
 	) {
-		console.error(
-			"demo: the plan has setup steps that need a person; use --windows or --wsl-headed, or set includeSetup: true",
-		);
+		console.error(SETUP_NEEDS_PERSON);
 		return 2;
 	}
 	if (warning) console.error(warning);

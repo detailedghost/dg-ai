@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { type Launchers, openSession } from "../src/demo/player-process";
-import type { BrowserPlan, PlayerJob } from "../src/demo/player-job";
+import { type BrowserPlan, type PlayerJob, SETUP_NEEDS_PERSON } from "../src/demo/player-job";
 import { createBridge, tourOrigins, trustedSource } from "../src/demo/bridge";
 import { toPlanMarkdown } from "../src/utils/plan-format";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -50,6 +50,43 @@ describe("openSession over the Windows plan", () => {
 		expect(l.used).toEqual(["windows", "local"]);
 		expect(log).toHaveBeenCalledTimes(1);
 		expect(String(log.mock.calls[0]?.[0])).toContain("headless local Chromium");
+		log.mockRestore();
+	});
+
+	test("refuses the headless fallback when excluded setup needs a person", async () => {
+		const log = spyOn(console, "log").mockImplementation(() => undefined);
+		const l = launchers(true);
+		const base = job(true, windows);
+		const withSetup: PlayerJob = {
+			...base,
+			script: {
+				...base.script,
+				setup: { includeInTour: false, steps: [{ title: "Sign in", body: "Log in." }] },
+			},
+		};
+		const error = await openSession(withSetup, l).catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(Error);
+		expect((error as Error).message).toBe(SETUP_NEEDS_PERSON);
+		expect((error as { exitCode?: number }).exitCode).toBe(2);
+		expect(l.used).toEqual(["windows"]);
+		log.mockRestore();
+	});
+
+	test("keeps the headless fallback when setup is included in the tour", async () => {
+		const log = spyOn(console, "log").mockImplementation(() => undefined);
+		const l = launchers(true);
+		const base = job(true, windows);
+		await openSession(
+			{
+				...base,
+				script: {
+					...base.script,
+					setup: { includeInTour: true, steps: [{ title: "Sign in", body: "Log in." }] },
+				},
+			},
+			l,
+		);
+		expect(l.used).toEqual(["windows", "local"]);
 		log.mockRestore();
 	});
 

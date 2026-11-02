@@ -32,6 +32,8 @@ import {
 	DEFAULT_TIMEOUT_MIN,
 	type BrowserPlan,
 	type PlayerJob,
+	SetupRefusedError,
+	setupNeedsPerson,
 } from "./player-job";
 import { type LaunchPick, pickLaunch } from "../pw/core/browser";
 import { type DemoResult, writeResult } from "./result";
@@ -147,6 +149,7 @@ export async function openSession(
 		return await launchers.windows(job, plan);
 	} catch (error) {
 		if (!job.video) throw error;
+		if (setupNeedsPerson(job.script)) throw new SetupRefusedError();
 		const reason = (error instanceof Error ? error.message : String(error))
 			.split("\n")[0];
 		console.log(
@@ -274,6 +277,7 @@ export async function runPlayer(
 	let keepRaw = false;
 	let audio: DemoResult["audio"];
 	let trimmed = false;
+	let refusal: number | undefined;
 	try {
 		session = await (hooks.launch ?? openSession)(job);
 		const { context } = session;
@@ -347,7 +351,10 @@ export async function runPlayer(
 			outcome: "error",
 			error: error instanceof Error ? error.message : String(error),
 		};
-		console.log(`demo ${job.slug}: ${end.error}`);
+		if (error instanceof SetupRefusedError) {
+			refusal = error.exitCode;
+			console.error(error.message);
+		} else console.log(`demo ${job.slug}: ${end.error}`);
 	}
 
 	if (session) {
@@ -399,5 +406,6 @@ export async function runPlayer(
 		...(end.error ? { error: end.error } : {}),
 	};
 	writeResult(result, job.dir);
+	if (refusal !== undefined) return refusal;
 	return end.outcome === "error" ? 1 : 0;
 }

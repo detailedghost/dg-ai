@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PlayerJob } from "../src/demo/player-job";
+import { type PlayerJob, SETUP_NEEDS_PERSON, SetupRefusedError } from "../src/demo/player-job";
 import { type PlayerSession, runPlayer } from "../src/demo/player-process";
 import type { DemoResult } from "../src/demo/result";
 
@@ -131,6 +131,18 @@ describe("runPlayer outcome mapping", () => {
 		const code = await runPlayer(job(), { launch: async () => fake.session });
 		expect(code).toBe(0);
 		expect(readResult().outcome).toBe("stopped");
+	});
+
+	test("a setup refusal from the launcher returns its exit code 2", async () => {
+		const code = await runPlayer(job(), {
+			launch: async () => {
+				throw new SetupRefusedError();
+			},
+		});
+		expect(code).toBe(2);
+		const result = readResult();
+		expect(result.outcome).toBe("error");
+		expect(result.error).toBe(SETUP_NEEDS_PERSON);
 	});
 
 	test("an error message from the page writes outcome error and returns 1", async () => {

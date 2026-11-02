@@ -26,3 +26,16 @@ export type PlayerJob = {
 export type PlayerArgv = Omit<PlayerJob, "script">;
 
 export const DEFAULT_TIMEOUT_MIN = 30;
+
+export const SETUP_NEEDS_PERSON =
+	"demo: the plan has setup steps that need a person; use --windows or --wsl-headed, or set includeSetup: true";
+
+export class SetupRefusedError extends Error {
+	readonly exitCode = 2;
+	constructor() {
+		super(SETUP_NEEDS_PERSON);
+	}
+}
+
+export const setupNeedsPerson = (script: TourScript): boolean =>
+	script.setup !== undefined && !script.setup.includeInTour;
