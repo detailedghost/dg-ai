@@ -1,29 +1,18 @@
 ---
 name: demo
-description: Produce a guided in-browser demo of a feature or PR — optionally preparing authenticated, configured, or seeded setup state first — then use the dg-ai-extension to spotlight each element and inject explanatory text boxes in the user's real browser. Write a plan, open it in the extension, and the user picks review / walkthrough / video there. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
-requires: [extension]
+description: Produce a guided demo that plays in a local browser (the default, no extension) — a tour of a feature or PR that spotlights each element and shows an explanatory text box, optionally after preparing authenticated, configured, or seeded setup state. Write a plan, open it, and the human picks review, walkthrough, or video on the start screen. Pass --ext to play it through the dg-ai-extension instead. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
 ---
 
 # Guided-tour demo
 
-Turn a feature or PR into a guided tour that plays in the user's real browser: the
-companion `dg-ai-extension` spotlights each element and shows an explanatory text box,
-step by step.
-
-**Your job is two steps: write a plan file, then open it.** Everything else — reviewing,
-choosing walkthrough vs video, picking the narration voice — the user does on the
-extension's start screen. Don't ask them in chat; the browser asks.
-
-**Prerequisite:** the extension must be loaded in the user's browser. If a tour doesn't
-play, tell them to run the browser skill's `install` command first.
-
----
+Turn a feature or PR into a guided tour. **Your job is two steps: write a plan file,
+then open it.** The human picks review, walkthrough, video, and narration on the
+start screen. Don't ask them in chat.
 
 ## Step 1 — Write the plan
 
-Read the relevant code (diff, PR, or files) first, then write the tour as a Markdown
-plan file: YAML frontmatter, an optional `## Setup` list, and a required `## Steps`
-list, one line per step. You never hand-write JSON — the CLI compiles this Markdown.
+Read the relevant code first. Write the tour as a Markdown plan: YAML frontmatter, an
+optional `## Setup` list, and a required `## Steps` list. Never hand-write JSON.
 
 ```markdown
 ---
@@ -39,114 +28,80 @@ mode: video
 3. **Open results** `a#more` → https://www.google.com/search — Navigates, then highlights. `3s`
 ```
 
-Each step line is `N. **title** [`selector`] [→ navigate-url] [action] — body [`timing`]`.
-The trailing `` `timing` `` is `4s` / `500ms` / a bare ms count for auto-advance, or
-`click` / `next`. `mode:` is only the default — the user picks the real mode on the start
-screen. Keep each body to a sentence or two, one idea per step. For a video, add a
-`` `Ns` `` timing to any step that should linger longer than the default (~3.5s); it is
-added *after* the narration finishes, so it is dwell time on the frame that matters.
-
-Full grammar, selector guidance, and the `click`-timing-vs-`@click`-action distinction:
-[references/authoring.md](references/authoring.md).
+A step is `N. **title** [`selector`] [→ navigate-url] [action] — body [`timing`]`.
+The timing is `4s`, `500ms`, a bare ms count, `click`, or `next`. `mode:` is only a
+default; the human picks the real mode. Keep each body to a sentence or two. Add a
+`Ns` timing to a video step that needs more than the default dwell (about 3.5 s).
+Full grammar: [references/authoring.md](references/authoring.md).
 
 ### Setup steps, when the tour needs prerequisite state
 
-Use `## Setup` only for state the tutorial can't reach on its own — an authenticated
-session, seeded records, configuration, a feature flag, a specific page state. Same line
-grammar as tutorial steps.
+Use `## Setup` only for state the tutorial can't reach on its own, such as a login,
+seeded records, or a feature flag. Keep `includeSetup: false` (the default) unless the
+human asks to show the preparation. **video narration and capture start only after that handoff**, so a recording
+never contains the preparation. With `includeSetup: true`, setup steps become the
+leading tutorial steps. The human types credentials, MFA codes, and CAPTCHA answers.
+Never put those values in a fill action.
 
-Keep `includeSetup: false` (the default) unless the user asks to show the preparation as
-part of the demo. Excluded setup runs first as a user-paced phase, then hands off to the
-tutorial; **video narration and capture start only after that handoff**, so a recording
-never contains the preparation. With `includeSetup: true`, setup steps simply become the
-leading tutorial steps.
+## Step 2 — Open it in a browser
 
-Ask the user to type credentials, MFA codes, and CAPTCHA answers themselves. Never put
-those values in a fill action.
-
-## Step 2 — Open it in the extension
-
-Write the plan to `/tmp/ai/demo/tour.md`. First run: install or refresh the CLI when it is missing or too old. In a dev checkout,
-rebuild and reinstall `~/.dg/bin/dg-skills` so the demo and the verify pass below use
-the latest code:
+Write the plan to `/tmp/ai/demo/tour.md`. Install the CLI when it is missing:
 
 ```bash
 ~/.dg/bin/dg-skills demo --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
+On Windows PowerShell, pipe the raw `bootstrap.ps1` to `Invoke-Expression`.
 If a step fails, run ~/.dg/bin/dg-skills doctor demo install rerun.
 
-On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to `Invoke-Expression`.
+Walk the plan yourself first, so you hit a bad selector before the human does.
+Run `~/.dg/bin/dg-skills demo --verify /tmp/ai/demo/tour.md`. It prints `{"ok": boolean, "findings": [...]}`. A finding is `selector-unresolved`,
+`unrecorded-navigation`, or `page-mismatch`. Fix the plan and rerun, at most 3 passes.
+If a finding cannot be fixed, surface it to the human.
 
-### Verify, then correct, then repeat — bounded
-
-Before handing the plan to the user, walk it yourself in a real throwaway browser —
-you are the first one to hit a bad selector or an unrecorded navigation, not them:
-
-```bash
-~/.dg/bin/dg-skills demo --verify /tmp/ai/demo/tour.md
-```
-
-This prints `{"ok": boolean, "findings": [...]}` to stdout. Each finding names a step
-and what's wrong: `selector-unresolved` (nothing on the page matches that selector),
-`unrecorded-navigation` (a click moved the page to a URL the plan never recorded), or
-`page-mismatch` (the step landed somewhere other than its authored `navigate` URL).
-
-If `findings` is non-empty, fix the plan — correct the selector, add the missing
-`navigate` line — and run `--verify` again. **Attempt at most 3 correction passes.** If
-a finding still cannot be resolved after 3 passes, stop: surface that finding to the
-user rather than looping forever or handing off a plan you know is broken. A clean run
-(`ok: true`, empty `findings`) is what clears the plan for the next step.
-
-### Open it
-
-Run **one** command — no `--video` flag, because the mode is chosen in the browser:
+Run one command, with no `--video` flag, because the mode is chosen in the browser:
 
 ```bash
-~/.dg/bin/dg-skills demo --ext --edit /tmp/ai/demo/tour.md
+~/.dg/bin/dg-skills demo /tmp/ai/demo/tour.md
 ```
 
-This opens `startUrl` with the tour in a `_demo` marker and shows the **start screen**,
-which is the approval gate. Confirm the browser reached it, then stop — the rest is the
-user's. A raw `.json` script is also accepted.
+It opens `startUrl` in a local browser and shows the **start screen**, which is the approval gate, then returns.
+Confirm the `start screen open` line printed, then stop. `dg-skills demo status <slug>` prints the result later.
 
-## What the user sees on the start screen
+## Flags
 
-- **Narration** and **Voice** selects — the recording mode, saved to their settings:
-  - **Voiceover + captions** (default) — the body is spoken by local **Kokoro** and the
-    text box stays on-screen.
-  - **Voiceover only** — the body is spoken, the text box hidden (the step title stays).
-  - **Captions only** — silent; on-screen text only, skipping Kokoro and its model load.
-- **Include N setup step(s)** — the `includeSetup` toggle, when the plan has setup.
-- **🔍 Review the plan step by step** — the stepper: verify selectors against the live
-  page, edit any field, **✓ Approve** to come back here.
-- **▶ Play walkthrough** — user-paced. Step with **‹ ›**, jump with **« »**; **›** also
-  performs the step's action.
-- **⏺ Record video** — auto-plays and records.
-- **⬇ Download plan (.md)** — save the plan as authored.
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--ext` | none | Play through the dg-ai-extension in the human's own browser. Needs the extension. | off (local is the default) |
+| `--video` | none | Record now with no start screen. Works with a headless browser. | off (start screen) |
+| `--narration <mode>` | none | With `--video`: `both`, `voice`, or `captions`. | saved start-screen choice |
+| `--out <path>` | none | Where the `.webm` goes. | `<state>/demos/<slug>/<slug>-<ts>.webm` |
+| `--browser <name>` | none | `chrome`, `msedge`, or `chromium`. Skips the system-first pick. | first found |
+| `--windows` | none | WSL: drive the Windows browser over CDP. | on when a Windows browser exists |
+| `--wsl-headed` | none | WSL: headed browser inside WSL (experimental). Agents never pass `--wsl-headed` unless the human asks. | off |
+| `--timeout <min>` | none | Minutes to wait for the human before the player stops. | 30 |
+| `--verify <plan>` | none | Walk the plan and print findings JSON. Local unless `--ext`. | off |
+| `--print` | none | `--ext` only: print the marker URL. | off |
+| `--edit` | none | `--ext` only: open the review panel first. | off |
 
-For a video, excluded setup runs first; once it hands off, the user presses
-**`Alt+Shift+D`** (or clicks the DeeGee toolbar icon) to start recording. The tour then
-auto-plays and saves `dg-demo/<tour>/<tour>.webm` and `dg-demo/<tour>/<tour>.demo.md` to
-their Downloads. Chrome/Edge only (tabCapture + an offscreen document). The first
-narrated run downloads the ~86 MB Kokoro model; if synthesis fails the video still
-records silently.
+On WSL, `demo` drives the Windows browser by default and falls back to headless
+Chromium inside WSL, like the [`pw` skill](../pw/SKILL.md). Headless needs `--video`.
+The Windows browser opens a remote-debugging port on 127.0.0.1 while the run is live.
+For a recording with no port, pass `--video --browser chromium`. See
+[ADR 0029](https://github.com/detailedghost/dg-ai/blob/master/docs/adr/0029-local-demo-player-wsl-debug-port.md).
 
-> **Dev checkout:** the browser runs the **extension**, not the CLI. If you changed
-> extension code, rebuild and re-stage it (`bun run --filter='@dg/extension' build`, then
-> `dg-skills install --local`), and reload it in `chrome://extensions` — otherwise you're
-> testing a stale UI. On WSL the loaded copy is the Windows staging dir, not `.output/`.
+## Narration
 
-## Replaying a saved demo
+The voice model downloads on the first voiced run (about 86 MB, pinned revision). The
+CLI checksum-verifies the asset zip. `ffmpeg` is optional. Without it, the CLI keeps a
+sidecar `.wav` beside the video. Offline, the run falls back to captions. A site
+Content Security Policy can block the in-page voice. The run then records without
+voice and says why. With `ffmpeg`, the CLI also trims the start screen and setup time off the video (`startOffsetMs` in the result); without it, the full video stays.
 
-Every run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every recorded video downloads
-alongside a copy as `<slug>.demo.md`. Replay either without recompiling:
+## Replay and extension
 
-```bash
-~/.dg/bin/dg-skills rerun --ext <path-to>.demo.md
-# add --video to record the replay
-```
-
-The plan `.md` is human-readable; its embedded ```json``` block is the runnable script
-`rerun` extracts.
+Every run saves `<state>/demos/<slug>/<slug>.demo.md`. Replay it with
+`~/.dg/bin/dg-skills rerun <path-to>.demo.md`. Add `--video` to record the replay.
+Add `--ext` to `demo` or `rerun` to play through the extension:
+[references/extension.md](references/extension.md).

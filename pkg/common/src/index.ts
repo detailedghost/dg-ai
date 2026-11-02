@@ -12,6 +12,7 @@ export * from "./errors";
 export * from "./flags";
 export * from "./inbox-format";
 export * from "./markers";
+export * from "./narration";
 export * from "./pairing";
 export * from "./plan-format";
 export * from "./protected-branch";

@@ -213,8 +213,8 @@ describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
 describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
-	test("new walkthroughs open in the extension editor", () => {
-		expect(demo).toContain('~/.dg/bin/dg-skills demo --ext --edit /tmp/ai/demo/tour.md');
+	test("new walkthroughs open on the local start screen", () => {
+		expect(demo).toContain("~/.dg/bin/dg-skills demo /tmp/ai/demo/tour.md");
 	});
 
 	test("mode (walkthrough vs video) is chosen in the browser, not a CLI flag", () => {
@@ -225,11 +225,11 @@ describe("demo workflow parity", () => {
 	test("the editor is required rather than host-discretionary", () => {
 		expect(demo).toContain("Your job is two steps");
 		expect(demo).toContain("## Step 2");
-		expect(demo).toContain("Open it in the extension");
-		expect(demo).toContain("Confirm the browser reached it, then stop");
+		expect(demo).toContain("Open it in a browser");
+		expect(demo).toContain("Confirm the `start screen open` line printed, then stop");
 	});
 
-	test("the extension editor is the only approval gate", () => {
+	test("the start screen is the only approval gate", () => {
 		expect(demo).toContain("shows the **start screen**");
 		expect(demo).toContain("which is the approval gate");
 		expect(demo).not.toContain("Chat approval gate");

@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { REPO_ROOT } from "./test-support";
 
 const SKILLS_DIR = join(REPO_ROOT, "plugins", "dg", "skills");
-const PENDING_LOCAL_MODE = ["chat", "demo", "overwatch"];
+const PENDING_LOCAL_MODE = ["chat", "overwatch"];
 const FLAG_TABLE_SKILLS = ["browser", "proto", "demo", "chat", "overwatch"];
 const LOCAL_DEFAULT = /off \(local is the default\)/;
 const EXT_FLAG = /(^|[\s`(])--ext($|[\s`:,.;)])/;
@@ -232,8 +232,8 @@ describe("ext opt-in rule C: Flags tables document --ext with the local default"
 		(skill) => !PENDING_LOCAL_MODE.includes(skill),
 	);
 
-	test("browser and proto are the covered skills while the others are pending", () => {
-		expect(covered).toEqual(["browser", "proto"]);
+	test("browser, proto and demo are the covered skills while the others are pending", () => {
+		expect(covered).toEqual(["browser", "proto", "demo"]);
 	});
 
 	for (const skill of covered) {

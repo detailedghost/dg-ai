@@ -71,7 +71,11 @@ flowchart LR
 
 - [0028 — Run every skill locally and make the extension opt-in with `--ext`](0028-local-default-extension-opt-in.md) — Accepted: skills run locally unless
   the caller passes `--ext`, and a repo test enforces it. The `PENDING_LOCAL_MODE`
-  allowlist (`chat`, `demo`, `overwatch`) stays exempt until bundles 015 and 016.
+  allowlist (`chat`, `overwatch`) stays exempt until bundle 016.
+- [0029 — Accept the WSL remote-debugging port for the local demo player](0029-local-demo-player-wsl-debug-port.md) — Accepted:
+  a default local `demo` on WSL opens an unauthenticated 127.0.0.1 debug port for the run.
+- [0030 — Share the tour UI and play demos in a local player](0030-shared-tour-ui-and-local-player.md) — Accepted:
+  the tour UI lives in `pkg/tour-ui` behind `TourHost`, and a Playwright-injected player hosts it for the local default.
 
 ## Adding an ADR
 

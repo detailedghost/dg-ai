@@ -8,7 +8,7 @@ binaries. The skills-root README itself is not installed.
 | Skill | Description |
 | --- | --- |
 | `browser/` | Open PR or URL tabs in the default browser; `--ext` adds tab groups, launch, and extension installation |
-| `demo/` | Guided browser demos with optional setup and video recording; plays through the extension until the local player lands |
+| `demo/` | Guided browser demos with optional setup and video recording; plays in a local browser by default, through the extension with `--ext` |
 | `proto/` | Compare app-native UI approaches on a live page |
 | `verify/` | Review a finished change round by round and record a verdict per round |
 | `chat/` | Live browser chat through dg-agent and dg-daemon |
@@ -134,8 +134,8 @@ adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.
 
 `dg-skills install --cli-only` skips the extension, pairing, dg-daemon, dg-agent,
-and skills marked `requires: [extension]`: chat, demo, and overwatch. `browser`
-and `proto` run locally by default. It includes stash, proxy, clipboard-img,
+and skills marked `requires: [extension]`: chat and overwatch. `browser`,
+`proto` and `demo` run locally by default. It includes stash, proxy, clipboard-img,
 and other skills without that requirement. Live inbox profiles still need
 dg-daemon; Google SMS cleanup needs
 Messages for Web through the host's browser tools. `jobs` also needs the full

@@ -29,6 +29,7 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
+		"@dg/tour-ui": "workspace:*",
 		"kokoro-js": "^1.2.1"
 	}
 }

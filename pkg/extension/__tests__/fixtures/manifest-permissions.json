@@ -1,0 +1,19 @@
+{
+	"permissions": [
+		"tabs",
+		"tabGroups",
+		"storage",
+		"scripting",
+		"downloads",
+		"sidePanel",
+		"activeTab",
+		"tabCapture",
+		"offscreen"
+	],
+	"host_permissions": [
+		"<all_urls>",
+		"https://huggingface.co/*",
+		"https://*.huggingface.co/*",
+		"https://cdn.jsdelivr.net/*"
+	]
+}

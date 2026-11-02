@@ -1,127 +1,106 @@
-import {
-	afterEach,
-	beforeEach,
-	describe,
-	expect,
-	mock,
-	spyOn,
-	test,
-} from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Command } from "commander";
 import { registerDemo } from "../src/commands/demo";
 import { registerRerun } from "../src/commands/rerun";
-import { setCliOnly } from "../src/utils/cli-only";
+import { guardExtensionCommands, setCliOnly } from "../src/utils/cli-only";
 import type { TourScript } from "../src/utils/plan-format";
-
+import { type DemoWorld, demoWorld } from "./demo-local-fixtures";
 
 type Played = { script: TourScript; ext?: boolean };
 
-let dir: string;
-let plan: string;
-let errors: string[];
-let previousDgHome: string | undefined;
-
-const unavailable = (name: string) =>
-	`${name}: the local demo player is not available yet; pass --ext to play in the extension`;
+let world: DemoWorld;
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "dg-demo-ext-"));
-	previousDgHome = process.env.DG_HOME;
-	process.env.DG_HOME = join(dir, ".dg");
-	plan = join(dir, "tour.json");
-	writeFileSync(
-		plan,
-		JSON.stringify({
-			title: "t",
-			startUrl: "https://example.test/",
-			steps: [{ body: "hello" }],
-		}),
-	);
-	errors = [];
-	spyOn(console, "error").mockImplementation((line: unknown) => {
-		errors.push(String(line));
-	});
+	world = demoWorld();
 });
+afterEach(() => world.cleanup());
 
-afterEach(() => {
-	mock.restore();
-	setCliOnly(false);
-	if (previousDgHome === undefined) delete process.env.DG_HOME;
-	else process.env.DG_HOME = previousDgHome;
-	rmSync(dir, { recursive: true, force: true });
-});
-
-async function drive(
-	register: typeof registerDemo | typeof registerRerun,
-	args: string[],
-): Promise<Played[]> {
-	const played: Played[] = [];
-	const program = new Command().exitOverride();
-	register(program, {
-		play: async (script, opts) => void played.push({ script, ext: opts.ext }),
-	});
-	await program.parseAsync(args, { from: "user" });
-	return played;
+function deps(played: Played[] = [], verified: boolean[] = []) {
+	return {
+		play: async (script: TourScript, opts: { ext?: boolean }) =>
+			void played.push({ script, ext: opts.ext }),
+		local: world.localDeps(),
+		verify: async (_script: TourScript, opts: { ext: boolean }) => {
+			verified.push(opts.ext);
+			return { ok: true, findings: [] };
+		},
+	};
 }
 
 describe.each([
 	["demo", registerDemo],
 	["rerun", registerRerun],
-] as const)("%s", (name, register) => {
-	test.each([
-		["a CLI-only install", true],
-		["a full install", false],
-	])("exits 1 with one line and plays nothing without --ext on %s", async (_, cliOnly) => {
-		setCliOnly(cliOnly);
-		spyOn(process, "exit").mockImplementation(((code?: number) => {
-			throw new Error(`exit ${code}`);
-		}) as typeof process.exit);
+] as const)("%s on a CLI-only install", (name, register) => {
+	beforeEach(() => setCliOnly(true));
+
+	test("plays locally without --ext and prints no extension notice", async () => {
 		const played: Played[] = [];
-		const program = new Command().exitOverride();
-		register(program, {
-			play: async (script, opts) => void played.push({ script, ext: opts.ext }),
-		});
-		await expect(
-			program.parseAsync([name, plan], { from: "user" }),
-		).rejects.toThrow("exit 1");
-		expect(errors).toEqual([unavailable(name)]);
+		const run = await world.drive(register, [name, world.planPath], deps(played));
+		expect(run.code).toBe(0);
+		expect(run.err).toBe("");
 		expect(played).toHaveLength(0);
+		expect(world.spawned).toHaveLength(1);
 	});
 
-	test("passes ext to the player and prints no notice with --ext", async () => {
-		const played = await drive(register, [name, "--ext", plan]);
-		expect(errors).toEqual([]);
+	test("hands the plan to the extension player with --ext", async () => {
+		const played: Played[] = [];
+		await world.drive(register, [name, "--ext", world.planPath], deps(played));
+		expect(played).toHaveLength(1);
 		expect(played[0]?.ext).toBe(true);
+		expect(world.spawned).toHaveLength(0);
+	});
+
+	test("the extension guard still refuses --ext", async () => {
+		const program = new Command().exitOverride();
+		program.enablePositionalOptions();
+		guardExtensionCommands(program);
+		(register as (p: Command, d: unknown) => void)(program, deps());
+		await expect(
+			program.parseAsync([name, "--ext", world.planPath], { from: "user" }),
+		).rejects.toThrow("needs the dg-ai-extension");
 	});
 });
 
-describe("demo without a play path", () => {
-	test("--verify prints no refusal and does not call play", async () => {
-		const logs: string[] = [];
-		spyOn(console, "log").mockImplementation((line: unknown) => {
-			logs.push(String(line));
-		});
-		const played = await drive(registerDemo, [
-			"demo",
-			"--verify",
-			join(dir, "missing.md"),
-		]);
+describe("demo --verify", () => {
+	test("walks the plan locally without --ext and never plays it", async () => {
+		const played: Played[] = [];
+		const verified: boolean[] = [];
+		const run = await world.drive(
+			registerDemo,
+			["demo", "--verify", world.planPath],
+			deps(played, verified),
+		);
+		expect(run.code).toBe(0);
+		expect(verified).toEqual([false]);
 		expect(played).toHaveLength(0);
-		expect(errors).not.toContain(unavailable("demo"));
-		expect(logs.join("")).toContain("plan-unreadable");
 	});
 
-	test("a missing script path exits 1 with the path error and no refusal", async () => {
-		spyOn(process, "exit").mockImplementation(((code?: number) => {
-			throw new Error(`exit ${code}`);
-		}) as typeof process.exit);
-		await expect(drive(registerDemo, ["demo"])).rejects.toThrow("exit 1");
-		expect(
-			errors.some((line) => line.includes("a script path is required")),
-		).toBe(true);
-		expect(errors).not.toContain(unavailable("demo"));
+	test("walks through the extension harness with --ext", async () => {
+		const verified: boolean[] = [];
+		await world.drive(
+			registerDemo,
+			["demo", "--ext", "--verify", world.planPath],
+			deps([], verified),
+		);
+		expect(verified).toEqual([true]);
+	});
+
+	test("an unreadable plan skips the walk", async () => {
+		const verified: boolean[] = [];
+		await world.drive(
+			registerDemo,
+			["demo", "--verify", join(world.home, "missing.md")],
+			deps([], verified),
+		);
+		expect(verified).toHaveLength(0);
+	});
+});
+
+describe("demo without a script path", () => {
+	test("exits 1 with the path error", async () => {
+		const run = await world.drive(registerDemo, ["demo"], deps());
+		expect(run.code).toBe(1);
+		expect(run.err).toContain("a script path is required");
 	});
 });

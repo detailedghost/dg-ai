@@ -65,6 +65,17 @@ describe("pw lazy loading", () => {
 		expect(files.has(path.join(SRC, "pw", "daemon.ts"))).toBe(false);
 	});
 
+	test("the demo and rerun registrations statically reach neither playwright-core nor the player", () => {
+		for (const entry of ["demo.ts", "rerun.ts"]) {
+			const { files, packages } = staticClosure(
+				path.join(SRC, "commands", entry),
+			);
+			expect(packages.has("playwright-core")).toBe(false);
+			expect(files.has(path.join(SRC, "demo", "player-process.ts"))).toBe(false);
+			expect(files.has(path.join(SRC, "demo", "player-asset.ts"))).toBe(false);
+		}
+	});
+
 	test("the pw client entry does not statically reach the browser installer", () => {
 		expect(
 			staticClosure(path.join(SRC, "pw", "cli.ts")).files.has(
@@ -90,7 +101,7 @@ describe("pw lazy loading", () => {
 		expect(files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);
 	});
 
-	test("only the pw and pw-code registrations, the doctor registry and the Proton inbox transport import the pw tree outside it", () => {
+	test("only the pw and pw-code registrations, the doctor registry, the Proton inbox transport and the local demo player import the pw tree outside it", () => {
 		const importers = sourceFiles(SRC)
 			.filter((file) => !file.startsWith(path.join(SRC, "pw") + path.sep))
 			.filter((file) => /["'](?:\.\.?\/)+pw\//.test(readFileSync(file, "utf8")))
@@ -99,8 +110,15 @@ describe("pw lazy loading", () => {
 		expect(importers).toEqual([
 			path.join("commands", "pw-code.ts"),
 			path.join("commands", "pw.ts"),
+			path.join("demo", "doctor.ts"),
+			path.join("demo", "local.ts"),
+			path.join("demo", "player-job.ts"),
+			path.join("demo", "player-process.ts"),
+			path.join("demo", "result.ts"),
+			path.join("demo", "verify-local.ts"),
 			path.join("doctor", "registry.ts"),
 			path.join("inbox", "proton-pw.ts"),
+			path.join("rerun", "doctor.ts"),
 		]);
 	});
 });

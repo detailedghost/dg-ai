@@ -452,8 +452,43 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build-narration:
+    needs: detect
+    if: needs.detect.outputs.mode != 'skip'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mask secrets in later log output
+        uses: ./.github/actions/mask-secrets
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.1
+
+      - name: Stamp the release version
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: bun scripts/release-version.ts stamp --version "$VERSION"
+
+      - name: Install
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Pack the narration assets
+        run: bun scripts/pack-narration-assets.ts --out "$RUNNER_TEMP/narration"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: narration
+          path: ${{ runner.temp }}/narration/dg-demo-narration-${{ needs.detect.outputs.version }}.zip
+          if-no-files-found: error
+          retention-days: 1
+
   release:
-    needs: [detect, build-ext, smoke-skills, smoke-daemon, smoke-agent]
+    needs: [detect, build-ext, build-narration, smoke-skills, smoke-daemon, smoke-agent]
     if: needs.detect.outputs.mode != 'skip'
     permissions:
       contents: write

@@ -7,43 +7,33 @@
  * of tab-grouping.ts; all UI is rendered into a WXT shadow root (no CSS bleed).
  */
 
+import { wait } from "@dg/common";
 import {
-	formatAdvance,
-	parseAdvance,
-	partitionTourSteps,
-	slugify,
-	toPlanMarkdown,
-	tourHasAutomaticActions,
-	wait,
-} from "@dg/common";
+	type CaptureStart,
+	clearSpotlight,
+	initializeMarkerPlayback,
+	isVideo,
+	type ModalHandle,
+	type PendingMarkerCapture,
+	type PlayState,
+	runTour,
+	sameOrigin,
+	showEditPanel,
+	showModal,
+	showRecordPrompt,
+	type TourHost,
+	type UiHandle,
+} from "@dg/tour-ui";
 import { browser } from "wxt/browser";
 import {
-	getNarrationMode,
-	NARRATION_MODES,
 	narrationModeLabel,
 	patchConfig,
 	getConfig as readConfig,
 	readNarrationMode,
-	VOICES,
-	voiceLabel,
 } from "@/lib/config";
 import { MSG } from "@/lib/demo-messages";
-import type {
-	StepAction,
-	TourMode,
-	TourScript,
-	TourStep,
-} from "@/lib/demo-types";
-import { clampPercent } from "@/lib/narration-progress";
-import {
-	injectTheme,
-	type SelectorQueryRoot,
-	safeQuerySelector,
-	startPicking,
-	waitForEl,
-} from "@/lib/picker";
-import { ACCENT, createEl as el, SANS } from "@/lib/ui-helpers";
-import { holdFor } from "@/lib/video-timing";
+import type { TourScript } from "@/lib/demo-types";
+import { wxtHost } from "@/lib/tour-host";
 import {
 	demoMarkerFragment,
 	readDemoScript,
@@ -86,148 +76,6 @@ async function readRecordShortcut(): Promise<string | null> {
 // ContentScriptContext is a WXT auto-import (a class value), so alias its instance type.
 type Ctx = InstanceType<typeof ContentScriptContext>;
 
-/** Internal tour playback state stored in storage.local (script + step index). */
-export type PlayState = {
-	script: TourScript;
-	index: number;
-	/** Excluded setup is a durable, user-paced phase before the tutorial. */
-	phase?: "setup" | "tutorial";
-	/** Explicit approval for automatic actions authored in setup steps. */
-	setupActionsApproved?: boolean;
-	/** Explicit approval covering every automatic action in the full script. */
-	automaticActionsApproved?: boolean;
-	/** Highest index whose action already ran, so a nav-triggered reload won't repeat it. */
-	acted?: number;
-	/** Launched from the review editor — a walkthrough end bounces back into it. */
-	fromEdit?: boolean;
-	/** Recorder-supplied holds persist across click-navigation content-script reloads. */
-	videoDurations?: number[];
-	/** Voice-only recordings keep spoken body copy off-screen after navigation too. */
-	videoHideBody?: boolean;
-};
-
-// --- exported pure helpers (testable without browser/DOM) ---
-
-/**
- * Rewind to the first step so a recording always opens the tour.
- *
- * The start prompt is reached with the cursor wherever setup — or an earlier pass through the
- * steps — left it, and the recorder cues narration clip N for step N. Recording from a non-zero
- * cursor therefore both skips the opening steps and desyncs the voiceover from the visuals.
- * `acted` resets to -1 (its unset sentinel) so replayed steps can run their actions again.
- */
-export function recordingStartState(state: PlayState): PlayState {
-	return { ...state, index: 0, acted: -1 };
-}
-
-/**
- * Back to the very beginning: the first step of the tour's opening phase.
- *
- * Keeps the approval flags and `fromEdit` — the user already granted those, and a
- * restart shouldn't re-ask — but clears `acted` so every action runs again. Callers
- * pair this with a navigation to `startUrl`, since clicks a tour already performed
- * cannot be undone by moving the cursor alone.
- */
-export function restartState(state: PlayState): PlayState {
-	return {
-		...state,
-		index: 0,
-		phase: initialPlayPhase(state.script),
-		acted: undefined,
-	};
-}
-
-// --- end pure helpers ---
-
-const isVideo = (s: TourScript): boolean => s.mode === "video";
-
-/** Durable playback phase: excluded preparation or the recordable tutorial. */
-export type PlayPhase = "setup" | "tutorial";
-
-/** The durable phase a fresh playback must enter. */
-export function initialPlayPhase(script: TourScript): PlayPhase {
-	return partitionTourSteps(script).setup.length ? "setup" : "tutorial";
-}
-
-/** Build initial lifecycle state without granting marker-authored action consent. */
-export function initialPlayState(
-	script: TourScript,
-	source: "marker" | "reviewed-editor",
-): PlayState {
-	return {
-		script,
-		index: 0,
-		phase: initialPlayPhase(script),
-		...(source === "reviewed-editor"
-			? { automaticActionsApproved: true, fromEdit: true }
-			: {}),
-	};
-}
-
-type PlayStateWriter = (state: PlayState) => Promise<void>;
-
-/** Persist the untrusted-marker lifecycle state used by runDemoTour. */
-export async function initializeMarkerPlayback(
-	script: TourScript,
-	writeState: PlayStateWriter,
-): Promise<PlayState> {
-	const state = initialPlayState(script, "marker");
-	await writeState(state);
-	return state;
-}
-
-/** Persist the explicitly reviewed lifecycle state used by editor playback. */
-export async function initializeReviewedEditorPlayback(
-	script: TourScript,
-	writeState: PlayStateWriter,
-): Promise<PlayState> {
-	const state = initialPlayState(script, "reviewed-editor");
-	await writeState(state);
-	return state;
-}
-
-/** Setup actions are inert until the user explicitly approves them on-page. */
-export function setupActionConsentRequired(script: TourScript): boolean {
-	return script.setup?.steps.some((step) => step.action != null) === true;
-}
-
-/** Marker-authored click/fill actions require one explicit playback approval. */
-export function automaticActionConsentRequired(script: TourScript): boolean {
-	return tourHasAutomaticActions(script);
-}
-
-/** Whether persisted approval covers every automatic action in this script. */
-export function automaticActionConsentGranted(state: PlayState): boolean {
-	if (!automaticActionConsentRequired(state.script)) return true;
-	if (state.automaticActionsApproved === true) return true;
-	// Setup-only approval cannot authorize an ordinary tutorial action.
-	return (
-		!state.script.steps.some((step) => step.action != null) &&
-		state.setupActionsApproved === true
-	);
-}
-
-/** Reset setup-only cursor/action state when handing off to the tutorial. */
-export function completeSetupPhase(state: PlayState): PlayState {
-	return {
-		...state,
-		phase: "tutorial",
-		index: 0,
-		acted: undefined,
-	};
-}
-
-/** Excluded setup is always user-paced; only tutorial video steps auto-play. */
-export function automaticPlayback(state: PlayState): boolean {
-	return isVideo(state.script) && !isSetup(state);
-}
-
-const stateSteps = (state: PlayState): TourStep[] =>
-	state.phase === "setup"
-		? partitionTourSteps(state.script).setup
-		: partitionTourSteps(state.script).tutorial;
-const isSetup = (state: PlayState): boolean => state.phase === "setup";
-
 /**
  * Persisted tour state (survives navigations within a tour). Keyed per-tab so an
  * active tour never leaks into other tabs — a global key let any <all_urls> content
@@ -235,10 +83,8 @@ const isSetup = (state: PlayState): boolean => state.phase === "setup";
  * ask the background which tab we're in; it also clears these keys on tab close.
  */
 let myTabId = -1;
-const performingStepEffects = new Set<number>();
 const stateKey = () => `demo_tour:${myTabId}`;
 const recKey = () => `demo_recording:${myTabId}`;
-const editKey = () => `demo_edit:${myTabId}`;
 const pendingMarkerKey = () => `demo_pending:${myTabId}`;
 const MARKER_CAPTURE_KEY = "__dgDemoMarkerCapture";
 type MarkerCaptureScope = typeof globalThis & {
@@ -248,10 +94,8 @@ const markerCaptureScope = () => globalThis as MarkerCaptureScope;
 
 /** Reset content-script module state shared by Bun's single-process test runner. */
 export function resetTabIdForTests(): void {
-	removeUi();
+	abortRun();
 	myTabId = -1;
-	performingStepEffects.clear();
-	narrationWaiters.clear();
 	recorderListening = false;
 }
 
@@ -271,18 +115,6 @@ function signalMarkerCapture(): () => void {
 async function waitForMarkerCapture(): Promise<void> {
 	await markerCaptureScope()[MARKER_CAPTURE_KEY];
 }
-
-/** Read (and clear) the editor's resume cursor — set before a step-driven navigation. */
-async function takeEditCursor(): Promise<number | null> {
-	const got = await browser.storage.local.get(editKey());
-	await browser.storage.local.remove(editKey());
-	const v = got[editKey()];
-	// null, not 0: the editor now opens on the actions screen, so "resume at step 0"
-	// and "nothing stored" are different destinations.
-	return typeof v === "number" ? v : null;
-}
-const setEditCursor = (n: number): Promise<void> =>
-	browser.storage.local.set({ [editKey()]: n });
 
 /**
  * Bounded retry for the whoami round trip, because the worker can still be starting on
@@ -327,52 +159,12 @@ const saveState = (s: PlayState): Promise<void> =>
 const clearState = (): Promise<void> =>
 	browser.storage.local.remove(stateKey());
 
-// Recording flag: set once the user starts capture, so a mid-tour navigation
-// resumes auto-play instead of re-showing the "press to start" prompt.
-async function isRecording(): Promise<boolean> {
-	const got = await browser.storage.local.get(recKey());
-	return got[recKey()] === true;
-}
 const setRecording = (on: boolean): Promise<void> =>
 	on
 		? browser.storage.local.set({ [recKey()]: true })
 		: browser.storage.local.remove(recKey());
 
-/** Whether two URLs share an origin (scheme+host+port). */
-function sameOrigin(
-	a: string,
-	b: string,
-	baseUrl: string = location.href,
-): boolean {
-	try {
-		return new URL(a, baseUrl).origin === new URL(b, baseUrl).origin;
-	} catch {
-		return false;
-	}
-}
-
-/** Same URL ignoring the fragment, so marker-stripping isn't seen as a move. */
-function sameUrl(a: string, b: string): boolean {
-	try {
-		const ua = new URL(a, location.href);
-		const ub = new URL(b, location.href);
-		return (
-			ua.origin + ua.pathname + ua.search ===
-			ub.origin + ub.pathname + ub.search
-		);
-	} catch {
-		return a === b;
-	}
-}
-
 // --- pending marker capture (survives a client-side auth redirect) ---
-
-/** A `_demo` marker captured (and stripped) before its page could redirect out from under it. */
-type PendingMarkerCapture = {
-	script: TourScript;
-	edit: boolean;
-	capturedAt: number;
-};
 
 /**
  * Left in the pending key by the URL branch instead of removing it outright, so a
@@ -533,7 +325,7 @@ export async function runDemoTour(ctx: Ctx): Promise<void> {
 		// claim-write await — see the ordering comment there.
 		await initializeMarkerPlayback(marker.script, saveState);
 		await setRecording(false);
-		if (marker.edit) await showEditPanel(ctx, marker.script);
+		if (marker.edit) await openEditor(ctx, marker.script);
 		else await begin(ctx, marker.script);
 		return;
 	}
@@ -541,40 +333,123 @@ export async function runDemoTour(ctx: Ctx): Promise<void> {
 	if (state) await begin(ctx, state.script);
 }
 
-/** Route to the right start: walkthrough plays immediately; video waits for the gesture. */
+let run: AbortController | null = null;
+let ui: UiHandle | null = null;
+let modalProgress: ModalHandle["update"] | null = null;
+let captureWaiter: ((start: CaptureStart) => void) | null = null;
+let pendingCapture: CaptureStart | null = null;
+
+function removeUi(): void {
+	ui?.remove();
+	ui = null;
+	modalProgress = null;
+}
+
+function abortRun(): void {
+	run?.abort();
+	run = null;
+	captureWaiter = null;
+	pendingCapture = null;
+	removeUi();
+}
+
+/** The extension host: per-tab storage plus consent, end screen, recorder and editor. */
+async function tourHost(ctx: Ctx): Promise<TourHost> {
+	return {
+		...(await wxtHost(ctx, myTabId)),
+		actionConsent: true,
+		endScreen: true,
+		recorder: {
+			capture: (signal) =>
+				new Promise<CaptureStart>((resolve) => {
+					if (pendingCapture) {
+						resolve(pendingCapture);
+						pendingCapture = null;
+						return;
+					}
+					captureWaiter = resolve;
+					signal.addEventListener(
+						"abort",
+						() => {
+							if (captureWaiter === resolve) captureWaiter = null;
+						},
+						{ once: true },
+					);
+					promptToRecord(ctx);
+				}),
+			wrapUp: () =>
+				showUi(ctx, (host) =>
+					showModal(host, {
+						title: "⏺ Wrapping up…",
+						body: "Finishing the recording and saving your video. One moment.",
+					}),
+				),
+		},
+		openEditor: (script) => openEditor(ctx, script),
+	};
+}
+
+async function showUi(
+	ctx: Ctx,
+	mount: (host: TourHost) => Promise<UiHandle>,
+): Promise<void> {
+	removeUi();
+	ui = await mount(await wxtHost(ctx, myTabId));
+}
+
+/** Play the tour through @dg/tour-ui; resolves once it waits on the user or ends. */
+function startRun(ctx: Ctx, script: TourScript): Promise<void> {
+	run?.abort();
+	const controller = new AbortController();
+	run = controller;
+	return new Promise<void>((ready) => {
+		void (async () => {
+			try {
+				const result = await runTour(await tourHost(ctx), script, {
+					mode: script.mode ?? "walkthrough",
+					signal: controller.signal,
+					onIdle: ready,
+				});
+				if (result.outcome === "error")
+					console.error("[dg-ai-extension] demo tour failed", result.error);
+			} finally {
+				if (run === controller) run = null;
+				ready();
+			}
+		})();
+	});
+}
+
 async function begin(ctx: Ctx, script: TourScript): Promise<void> {
-	const state = await loadState();
-	if (
-		state &&
-		automaticActionConsentRequired(script) &&
-		!automaticActionConsentGranted(state)
-	) {
-		await showSetupActionConsent(ctx, state);
-		return;
-	}
-	// Setup is always a live, user-paced preparation phase, even for a video tour.
-	if (isSetup(state ?? { script, index: 0 })) {
-		// Listen during setup too: the record gesture is refused until handoff, and the
-		// explanation has nowhere to land without this.
-		if (isVideo(script)) listenForRecorder(ctx);
-		await playCurrent(ctx);
-		return;
-	}
-	if (!isVideo(script)) {
-		await playCurrent(ctx);
-		return;
-	}
-	listenForRecorder(ctx);
-	// Recording already running (mid-tour navigation) → keep playing; else prompt.
-	if (await isRecording()) await playCurrent(ctx);
-	else promptToRecord(ctx);
+	// Listen during setup too: the record gesture is refused until handoff, and the
+	// explanation has nowhere to land without this.
+	if (isVideo(script)) listenForRecorder(ctx);
+	await startRun(ctx, script);
 }
 
 /** Show the record prompt, reporting rather than swallowing a failure to render it. */
 function promptToRecord(ctx: Ctx): void {
-	void showStartPrompt(ctx).catch((e) => {
+	void (async () => {
+		const [narration, shortcut] = await Promise.all([
+			readNarrationMode(),
+			readRecordShortcut(),
+		]);
+		await showUi(ctx, (host) =>
+			showRecordPrompt(host, {
+				shortcut,
+				narrationLabel: narrationModeLabel(narration),
+				shortcutsUrl: shortcutsPageUrl(),
+			}),
+		);
+	})().catch((e) => {
 		console.error("[dg-ai-extension] could not show the record prompt", e);
 	});
+}
+
+async function resume(ctx: Ctx): Promise<void> {
+	const state = await loadState();
+	if (state) await startRun(ctx, state.script);
+	else removeUi();
 }
 
 // Setup registers this, then the post-handoff begin() would register it again —
@@ -587,1210 +462,136 @@ const BLOCKED_NOTICE_MS = 4000;
 /** Longer than the blocked notice — a failure message needs to be readable. */
 const ERROR_NOTICE_MS = 7000;
 
+type RecorderMessage = {
+	type?: string;
+	filename?: string;
+	error?: string;
+	reason?: string;
+	durations?: number[];
+	hideBody?: boolean;
+	progress?: number;
+	label?: string;
+	narrate?: boolean;
+};
+
+function onCaptureStart(ctx: Ctx, start: CaptureStart): void {
+	removeUi();
+	const waiter = captureWaiter;
+	captureWaiter = null;
+	if (waiter) return waiter(start);
+	pendingCapture = start;
+	void resume(ctx);
+}
+
+async function onRecorderMessage(ctx: Ctx, msg: RecorderMessage): Promise<void> {
+	switch (msg?.type) {
+		case MSG.videoClearUi:
+			// Offscreen is about to capture — clear the "preparing" overlay, then
+			// confirm after a painted frame so it's never in the recording.
+			removeUi();
+			clearSpotlight();
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() =>
+					browser.runtime.sendMessage({
+						type: MSG.captureCleared,
+						target: "background",
+					}),
+				),
+			);
+			return;
+		case MSG.videoRearm:
+			return rearmAfterDiscard(ctx);
+		case MSG.videoPreparing: {
+			const voiced = msg.narrate !== false;
+			await showUi(ctx, async (host) => {
+				const modal = await showModal(host, {
+					title: voiced ? "⏳ Preparing narration…" : "⏳ Preparing recording…",
+					body: voiced
+						? "Loading the local voice model and synthesizing each step. The tour will start automatically."
+						: "Preparing the tab for capture. The tour will start automatically.",
+					progress: 0,
+					progressLabel: voiced
+						? "Loading local voice model"
+						: "Preparing recording",
+				});
+				modalProgress = modal.update;
+				return modal;
+			});
+			return;
+		}
+		case MSG.narrationProgress:
+			if (typeof msg.progress === "number")
+				modalProgress?.(msg.progress, msg.label);
+			return;
+		case MSG.videoStart:
+			return onCaptureStart(ctx, {
+				durations: msg.durations ?? [],
+				hideBody: msg.hideBody === true,
+			});
+		case MSG.videoSaved:
+			abortRun();
+			await clearState();
+			await setRecording(false);
+			await showUi(ctx, (host) =>
+				showModal(host, {
+					title: "✅ Recording saved",
+					body: `Your demo video was saved to your Downloads folder as ${msg.filename ?? "dg-demo/…webm"}. You can close this tab.`,
+				}),
+			);
+			return;
+		case MSG.videoError:
+			// Keep the tour: a failed recording used to clear it, so every retry meant
+			// walking the whole setup phase again to get back to where it broke.
+			abortRun();
+			await setRecording(false);
+			await showUi(ctx, (host) =>
+				showModal(host, {
+					title: "⚠️ Recording failed",
+					body: msg.error
+						? `${msg.error} — the tour is still here, so you can try again.`
+						: "The recording could not be saved. The tour is still here, so you can try again.",
+				}),
+			);
+			setTimeout(() => {
+				void (async () => {
+					if (await loadState()) promptToRecord(ctx);
+					else removeUi();
+				})();
+			}, ERROR_NOTICE_MS);
+			return;
+		case MSG.videoBlocked:
+			abortRun();
+			await showUi(ctx, (host) =>
+				showModal(host, {
+					title: "⏺ Not ready to record yet",
+					body: msg.reason ?? "Recording can't start from here yet.",
+				}),
+			);
+			setTimeout(() => void resume(ctx), BLOCKED_NOTICE_MS);
+			return;
+	}
+}
+
 /** Handle background messages that drive video mode. */
 function listenForRecorder(ctx: Ctx): void {
 	if (recorderListening) return;
 	recorderListening = true;
-	browser.runtime.onMessage.addListener(
-		(msg: {
-			type?: string;
-			filename?: string;
-			error?: string;
-			reason?: string;
-			durations?: number[];
-			index?: number;
-			hideBody?: boolean;
-			progress?: number;
-			label?: string;
-			narrate?: boolean;
-		}) => {
-			if (msg?.type === MSG.videoClearUi) {
-				// Offscreen is about to capture — clear the "preparing" overlay, then
-				// confirm after a painted frame so it's never in the recording.
-				removeUi();
-				clearSpotlight();
-				requestAnimationFrame(() =>
-					requestAnimationFrame(() =>
-						browser.runtime.sendMessage({
-							type: MSG.captureCleared,
-							target: "background",
-						}),
-					),
-				);
-			} else if (msg?.type === MSG.videoRearm) {
-				// Discarded in the review tab — offer another take right where they are.
-				void rearmAfterDiscard(ctx);
-			} else if (msg?.type === MSG.videoPreparing) {
-				removeUi();
-				void renderModal(ctx, {
-					title:
-						msg.narrate === false
-							? "⏳ Preparing recording…"
-							: "⏳ Preparing narration…",
-					body:
-						msg.narrate === false
-							? "Preparing the tab for capture. The tour will start automatically."
-							: "Loading the local voice model and synthesizing each step. The tour will start automatically.",
-					progress: 0,
-					progressLabel:
-						msg.narrate === false
-							? "Preparing recording"
-							: "Loading local voice model",
-				});
-			} else if (
-				msg?.type === MSG.narrationProgress &&
-				typeof msg.progress === "number"
-			) {
-				updateModalProgress?.(msg.progress, msg.label);
-			} else if (
-				msg?.type === MSG.narrationComplete &&
-				typeof msg.index === "number"
-			) {
-				narrationWaiters.get(msg.index)?.();
-			} else if (msg?.type === MSG.videoStart) {
-				void (async () => {
-					await setRecording(true);
-					const state = await loadState();
-					if (state)
-						await saveState(
-							recordingStartState({
-								...state,
-								videoDurations: msg.durations ?? [],
-								videoHideBody: msg.hideBody === true,
-							}),
-						);
-					removeUi();
-					await playCurrent(ctx);
-				})();
-			} else if (msg?.type === MSG.videoSaved) {
-				void (async () => {
-					await clearState();
-					await setRecording(false);
-					removeUi();
-					void renderModal(ctx, {
-						title: "✅ Recording saved",
-						body: `Your demo video was saved to your Downloads folder as ${msg.filename ?? "dg-demo/…webm"}. You can close this tab.`,
-					});
-				})();
-			} else if (msg?.type === MSG.videoError) {
-				void (async () => {
-					// Keep the tour: a failed recording used to clear it, so every retry meant
-					// walking the whole setup phase again to get back to where it broke.
-					await setRecording(false);
-					await renderModal(ctx, {
-						title: "⚠️ Recording failed",
-						body: msg.error
-							? `${msg.error} — the tour is still here, so you can try again.`
-							: "The recording could not be saved. The tour is still here, so you can try again.",
-					});
-					setTimeout(() => {
-						void (async () => {
-							const s = await loadState();
-							if (s) promptToRecord(ctx);
-							else removeUi();
-						})();
-					}, ERROR_NOTICE_MS);
-				})();
-			} else if (msg?.type === MSG.videoBlocked) {
-				void (async () => {
-					await renderModal(ctx, {
-						title: "⏺ Not ready to record yet",
-						body: msg.reason ?? "Recording can't start from here yet.",
-					});
-					// renderModal replaces the tour overlay, so put the user's step back.
-					setTimeout(() => void playCurrent(ctx), BLOCKED_NOTICE_MS);
-				})();
-			}
-		},
-	);
-}
-
-/** The URL a step belongs on: the most recent `navigate` at/before it, else startUrl. */
-function expectedUrl(
-	steps: TourStep[],
-	startUrl: string,
-	index: number,
-): string {
-	for (let i = index; i >= 0; i--) {
-		const nav = steps[i]?.navigate;
-		if (nav) return nav;
-	}
-	return startUrl;
-}
-
-/** Side-effect boundary used while handing excluded setup to the tutorial. */
-export type SetupHandoffDeps = {
-	writeState: (state: PlayState) => Promise<void>;
-	navigate: (url: string) => void;
-	continuePlayback: () => Promise<void>;
-	abortPlayback: () => Promise<void>;
-};
-
-/**
- * Persist setup completion, then put excluded video tours on the first tutorial
- * page before allowing the recording prompt to appear.
- */
-export async function handoffCompletedSetup(
-	state: PlayState,
-	currentUrl: string,
-	deps: SetupHandoffDeps,
-): Promise<"navigate" | "continue" | "abort"> {
-	const completed = completeSetupPhase(state);
-	await deps.writeState(completed);
-	if (!isVideo(state.script)) {
-		await deps.continuePlayback();
-		return "continue";
-	}
-	const want = expectedUrl(
-		stateSteps(completed),
-		state.script.startUrl,
-		completed.index,
-	);
-	if (sameUrl(currentUrl, want)) {
-		await deps.continuePlayback();
-		return "continue";
-	}
-	if (!sameOrigin(want, state.script.startUrl, currentUrl)) {
-		await deps.abortPlayback();
-		return "abort";
-	}
-	deps.navigate(new URL(want, currentUrl).href);
-	return "navigate";
-}
-
-async function playCurrent(ctx: Ctx): Promise<void> {
-	const state = await loadState();
-	if (!state) return removeUi();
-	const steps = stateSteps(state);
-	const step = steps[state.index];
-	if (!step) {
-		if (isSetup(state)) {
-			await handoffCompletedSetup(state, location.href, {
-				writeState: saveState,
-				navigate: (url) => {
-					location.href = url;
-				},
-				continuePlayback: () => begin(ctx, state.script),
-				abortPlayback: () => finish(ctx),
-			});
-			return;
-		}
-		return isVideo(state.script) ? finishVideo(ctx) : completeTour(ctx);
-	}
-	// Ensure we're on the step's page — works forward AND back across page
-	// boundaries (Back to a step on an earlier page navigates there too).
-	const want = expectedUrl(steps, state.script.startUrl, state.index);
-	if (!sameUrl(location.href, want)) {
-		// A `_demo` marker is untrusted, so a tour may only drive within its own
-		// startUrl origin — never redirect the tab to another site.
-		if (!sameOrigin(want, state.script.startUrl)) return finish(ctx);
-		location.href = new URL(want, location.href).href;
-		return;
-	}
-	await renderStep(ctx, state, step);
-}
-
-async function goTo(ctx: Ctx, index: number): Promise<void> {
-	const state = await loadState();
-	if (!state) return;
-	await saveState({ ...state, index });
-	removeUi();
-	await playCurrent(ctx);
-}
-
-async function finish(ctx: Ctx): Promise<void> {
-	removeUi();
-	const state = await loadState();
-	await clearState();
-	// A walkthrough launched from the editor bounces back to it at step 1.
-	if (state?.fromEdit) await showEditPanel(ctx, state.script);
-}
-
-/**
- * Reached the last step, as opposed to abandoning the tour — the ✕, Cancel, and
- * origin-mismatch paths all still go through `finish` and clear immediately.
- */
-async function completeTour(ctx: Ctx): Promise<void> {
-	removeUi();
-	const state = await loadState();
-	if (!state) return;
-	await showTourEnd(ctx, state);
-}
-
-/** Reset to the first step and reload, so the page matches the step again. */
-async function restartTour(ctx: Ctx, state: PlayState): Promise<void> {
-	await saveState(restartState(state));
-	await setRecording(false);
-	removeUi();
-	// Navigate rather than just re-rendering: a walkthrough's clicks changed the page,
-	// and only a fresh load actually puts it back where step 1 expects it.
-	if (sameUrl(location.href, state.script.startUrl)) location.reload();
-	else location.href = state.script.startUrl;
-	void ctx;
-}
-
-/**
- * The end of a walkthrough: offer a restart rather than just vanishing.
- *
- * Ending used to clear the tour and either bounce to the editor or leave a bare page,
- * so watching it a second time meant re-running the whole /dg:demo command.
- */
-async function showTourEnd(ctx: Ctx, state: PlayState): Promise<void> {
-	const total = stateSteps(state).length;
-	const cleanups: Array<() => void> = [];
-	teardown = () => {
-		for (const c of cleanups) c();
-	};
-	const ui = await createShadowRootUi(ctx, {
-		name: "dg-demo-modal",
-		position: "overlay",
-		anchor: "html",
-		zIndex: 2147483647,
-		onMount: (root) => {
-			injectTheme(root);
-			const layer = el("div", {
-				position: "fixed",
-				inset: "0",
-				background: "rgba(0,0,0,0.6)",
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "center",
-				pointerEvents: "auto",
-				zIndex: "2147483647",
-			});
-			const card = el("div", {
-				maxWidth: "23.75rem",
-				margin: "0 1.25rem",
-				background: "var(--panel)",
-				color: "var(--ink)",
-				border: "0.125rem solid var(--line)",
-				borderRadius: "0",
-				padding: "1.25rem 1.375rem",
-				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${SANS}`,
-				textAlign: "center",
-			});
-			const h = el("div", {
-				fontSize: "1rem",
-				fontWeight: "700",
-				textTransform: "uppercase",
-				letterSpacing: "0.04em",
-				marginBottom: "0.5rem",
-			});
-			h.textContent = "✅ Walkthrough complete";
-			const b = el("div", { color: "var(--muted)" });
-			b.textContent = `All ${total} step(s) shown. Start over, or close the tour.`;
-			card.append(h, b);
-
-			const mk = (lbl: string, primary: boolean, onClick: () => void): void => {
-				const btn = pillButton(lbl, primary);
-				btn.style.width = "100%";
-				btn.style.marginTop = "0.5rem";
-				btn.addEventListener("click", onClick);
-				card.appendChild(btn);
-			};
-			mk("↻ Start over", true, () => void restartTour(ctx, state));
-			if (state.fromEdit) {
-				mk("← Back to the plan", false, () => {
-					void (async () => {
-						await clearState();
-						removeUi();
-						await showEditPanel(ctx, state.script);
-					})();
-				});
-			}
-			mk("✕ Close", false, () => {
-				void (async () => {
-					await clearState();
-					removeUi();
-				})();
-			});
-
-			layer.appendChild(card);
-			root.appendChild(layer);
-		},
-	});
-	ui.mount();
-	cleanups.push(() => ui.remove());
-}
-
-/** Video tour reached the end: stop the recorder and wait for the saved confirmation. */
-function finishVideo(ctx: Ctx): void {
-	removeUi();
-	void renderModal(ctx, {
-		title: "⏺ Wrapping up…",
-		body: "Finishing the recording and saving your video. One moment.",
-	});
-	void browser.runtime.sendMessage({ type: MSG.videoStop });
-}
-
-// --- overlay rendering ---
-
-let teardown: (() => void) | null = null;
-let updateModalProgress:
-	| ((progress: number, label: string | undefined) => void)
-	| null = null;
-// Set while a control synthesizes the click an `advance: "click"` step waits for,
-// so the target's own advance listener doesn't treat it as the user's click.
-let synthesizingAdvanceClick = false;
-function removeUi(): void {
-	teardown?.();
-	teardown = null;
-	updateModalProgress = null;
-}
-
-/** Click the target, or type text into it char-by-char (visible in the recording). */
-export function performAction(
-	action: StepAction,
-	target: HTMLElement,
-): Promise<void> {
-	if (action.do === "click") {
-		target.click();
-		return Promise.resolve();
-	}
-	const field = target as HTMLInputElement;
-	field.focus();
-	field.value = "";
-	const text = action.value;
-	return new Promise((resolve) => {
-		let i = 0;
-		const tick = (): void => {
-			if (i >= text.length) {
-				resolve();
-				return;
-			}
-			field.value += text[i++];
-			field.dispatchEvent(new Event("input", { bubbles: true }));
-			setTimeout(tick, 70);
-		};
-		tick();
+	browser.runtime.onMessage.addListener((msg: RecorderMessage) => {
+		void onRecorderMessage(ctx, msg);
 	});
 }
 
-/** Logged (and shown on the card) when a step's action never got a target to act on. */
-export function missingActionTargetWarning(step: TourStep): string {
-	return `dg-demo: step action "${step.action?.do}" was skipped — target "${step.selector ?? ""}" was not found on the page.`;
-}
-
-/**
- * What a step does to the page when nobody is driving it by hand.
- *
- * An authored `@click`/`@type` action, or else the click an `advance: "click"` step is
- * waiting for. The second half is the load-bearing part: `advance: "click"` is a
- * *timing* — "hold here until the user clicks the target" — not an action, so a tour
- * built entirely from timings (the common shape) has no `action` anywhere. Anything
- * replaying such a tour unattended has to supply that click itself, or the page never
- * moves and every later step spotlights an element that isn't there yet.
- */
-export function stepEffect(step: TourStep | undefined): StepAction | undefined {
-	if (step?.action) return step.action;
-	return step?.advance === "click" ? { do: "click" } : undefined;
-}
-
-/** Persist the destination before a click can unload the current document. */
-export async function primeClickNavigation(
-	state: PlayState,
-	step: TourStep,
-	writeState: PlayStateWriter,
-): Promise<void> {
-	if (stepEffect(step)?.do === "click")
-		await writeState({ ...state, index: state.index + 1 });
-}
-
-/** Run `action` once for this step — guarded so a nav-triggered reload can't repeat it. */
-async function performOnce(
-	state: PlayState,
-	action: StepAction,
-	target: HTMLElement,
-): Promise<void> {
-	if (
-		(state.acted ?? -1) >= state.index ||
-		performingStepEffects.has(state.index)
-	)
-		return;
-	performingStepEffects.add(state.index);
-	try {
-		await performAction(action, target);
-		const latest = (await loadState()) ?? state;
-		await saveState({
-			...latest,
-			acted: Math.max(latest.acted ?? -1, state.index),
-		});
-	} finally {
-		performingStepEffects.delete(state.index);
-	}
-}
-
-/** Run a step's authored action once. Ignores click-timings — see maybePerformStepEffect. */
-export async function maybePerformAction(
-	state: PlayState,
-	step: TourStep,
-	target: HTMLElement,
-): Promise<void> {
-	if (!step.action) return;
-	await performOnce(state, step.action, target);
-}
-
-/**
- * Run whatever the step does to the page, including a synthesized click for a
- * click-timed step. Used by unattended playback (video), where waiting for a user
- * click would wait forever.
- */
-export async function maybePerformStepEffect(
-	state: PlayState,
-	step: TourStep,
-	target: HTMLElement,
-): Promise<void> {
-	const action = stepEffect(step);
-	if (action) await performOnce(state, action, target);
-}
-
-/**
- * Whether advancing must synthesize the click an `advance: "click"` step waits for.
- *
- * True only when a callout control drove the advance: the step has no authored
- * action of its own, it is waiting on a click, and its target resolved. When the
- * user clicks the target directly that click already happened, so this is false
- * and nothing is synthesized on top of it.
- */
-export function advanceClickNeeded(
-	step: TourStep,
-	hasTarget: boolean,
-	fromControl: boolean,
-): boolean {
-	return fromControl && !step.action && step.advance === "click" && hasTarget;
-}
-
-/**
- * Advance from `step` to the next index, running its authored action first if it
- * hasn't already run. Walkthrough (and setup) playback is user-paced — see
- * `automaticPlayback` — so the action fires on this deliberate advance rather than
- * on a timer; video mode auto-fires it from `renderStep` instead.
- */
-async function advanceWithAction(
-	ctx: Ctx,
-	state: PlayState,
-	step: TourStep,
-	target: HTMLElement | null,
-	/** True when a callout control drove this, false when the target's own click did. */
-	fromControl = false,
-): Promise<void> {
-	if (target) await primeClickNavigation(state, step, saveState);
-	if (step.action && target) {
-		await maybePerformAction(state, step, target);
-	} else if (target && advanceClickNeeded(step, true, fromControl)) {
-		synthesizingAdvanceClick = true;
-		try {
-			target.click();
-		} finally {
-			synthesizingAdvanceClick = false;
-		}
-	}
-	await goTo(ctx, state.index + 1);
-}
-
-/** Pause between replayed steps so the page can react to each one. */
-const JUMP_STEP_MS = 350;
-
-/**
- * Jump to `target`, performing each step on the way rather than only moving the cursor.
- *
- * Skipping ahead used to leave the page behind: land on the last step of a wizard tour
- * and the page is still on step 1, so every later selector resolves to nothing. Each
- * step's action — or the click an `advance: "click"` step waits for — runs in order, and
- * the cursor is saved as it goes so a step that navigates resumes in the right place
- * instead of losing the jump entirely.
- */
-async function runToStep(
-	ctx: Ctx,
-	state: PlayState,
-	target: number,
-): Promise<void> {
-	const steps = stateSteps(state);
-	for (let i = state.index; i < target; i++) {
-		const step = steps[i];
-		if (!step) break;
-		const at = { ...state, index: i };
-		const el = step.selector
-			? safeQuerySelector<HTMLElement>(document, step.selector)
-			: null;
-		if (el) {
-			if (step.action) await maybePerformAction(at, step, el);
-			else if (advanceClickNeeded(step, true, true)) {
-				synthesizingAdvanceClick = true;
-				try {
-					el.click();
-				} finally {
-					synthesizingAdvanceClick = false;
-				}
-			}
-		}
-		await saveState({ ...state, index: i + 1 });
-		await wait(JUMP_STEP_MS);
-	}
-	await goTo(ctx, target);
-}
-
-type NarrationOutcome = "ended" | "timeout" | "cancelled";
-const narrationWaiters = new Map<number, () => void>();
-
-function waitForNarration(
-	index: number,
-	timeoutMs: number,
-	signal: AbortSignal,
-): Promise<NarrationOutcome> {
-	if (signal.aborted) return Promise.resolve("cancelled");
-	return new Promise((resolve) => {
-		let settled = false;
-		const finish = (outcome: NarrationOutcome): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			signal.removeEventListener("abort", onAbort);
-			if (narrationWaiters.get(index) === onEnded)
-				narrationWaiters.delete(index);
-			resolve(outcome);
-		};
-		const onEnded = (): void => finish("ended");
-		const onAbort = (): void => finish("cancelled");
-		const timer = setTimeout(() => finish("timeout"), timeoutMs);
-		narrationWaiters.set(index, onEnded);
-		signal.addEventListener("abort", onAbort, { once: true });
+/** Open the review/edit stepper, wired to this tab's storage and settings. */
+async function openEditor(ctx: Ctx, script: TourScript): Promise<void> {
+	abortRun();
+	const config = await readConfig();
+	const handle = await showEditPanel(await wxtHost(ctx, myTabId), script, {
+		narration: config.narration,
+		voice: config.voice,
+		onSetting: (patch) => void patchConfig(patch),
+		start: (reviewed) => begin(ctx, reviewed),
 	});
-}
-
-export type VideoStepSequenceDeps = {
-	waitForNarration: () => Promise<NarrationOutcome>;
-	performEffect: () => Promise<void>;
-	pause: (ms: number) => Promise<void>;
-	advance: () => Promise<void>;
-	cancelled: () => boolean;
-};
-
-/** Order one recorded step: narration, effect, authored tail, then advance. */
-export async function runVideoStepSequence(
-	step: TourStep,
-	deps: VideoStepSequenceDeps,
-): Promise<void> {
-	const narration = await deps.waitForNarration();
-	if (narration === "cancelled" || deps.cancelled()) return;
-	await deps.performEffect();
-	if (deps.cancelled()) return;
-	if (narration === "ended") await deps.pause(holdFor(step, 0));
-	if (!deps.cancelled()) await deps.advance();
-}
-
-async function renderStep(
-	ctx: Ctx,
-	state: PlayState,
-	step: TourStep,
-): Promise<void> {
-	const video = automaticPlayback(state);
-	const target = step.selector ? await waitForEl(step.selector) : null;
-	target?.scrollIntoView({ block: "center", inline: "center" });
-
-	// Surface it immediately — an unresolved target otherwise drops the authored
-	// action with no sign anything was supposed to happen.
-	if (step.action && !target) console.warn(missingActionTargetWarning(step));
-
-	// teardown runs every cleanup at call-time, so later pushes are still honored.
-	const cleanups: Array<() => void> = [];
-	teardown = () => {
-		for (const c of cleanups) c();
-	};
-
-	const ui = await createShadowRootUi(ctx, {
-		name: "dg-demo-tour",
-		position: "overlay",
-		anchor: "html",
-		zIndex: 2147483647,
-		onMount: (container) => {
-			injectTheme(container);
-			buildOverlay(container, ctx, state, step, target, cleanups, video);
-		},
-	});
-	ui.mount();
-	cleanups.push(() => ui.remove());
-
-	if (video) {
-		const controller = new AbortController();
-		cleanups.push(() => controller.abort());
-		const effectAlreadyRan = (state.acted ?? -1) >= state.index;
-		const narration = effectAlreadyRan
-			? Promise.resolve<NarrationOutcome>("ended")
-			: waitForNarration(
-					state.index,
-					state.videoDurations?.[state.index] ?? holdFor(step, null),
-					controller.signal,
-				);
-		if (!effectAlreadyRan)
-			void browser.runtime.sendMessage({
-				type: MSG.playStep,
-				index: state.index,
-			});
-		void runVideoStepSequence(step, {
-			waitForNarration: () => narration,
-			performEffect: async () => {
-				if (!effectAlreadyRan && target) {
-					await primeClickNavigation(state, step, saveState);
-					await maybePerformStepEffect(state, step, target);
-				}
-			},
-			pause: wait,
-			advance: () => goTo(ctx, state.index + 1),
-			cancelled: () => controller.signal.aborted,
-		});
-		return;
-	}
-
-	// Walkthrough/setup is user-paced (Next/Back): no auto-advance timing, and an
-	// authored action waits for that advance too — see automaticPlayback.
-	if (step.advance === "click" && target) {
-		const onClick = () => {
-			// Ignore our own synthesized click — the control that fired it already advances.
-			if (synthesizingAdvanceClick) return;
-			void advanceWithAction(ctx, state, step, target);
-		};
-		target.addEventListener("click", onClick, { once: true });
-		cleanups.push(() => target.removeEventListener("click", onClick));
-	}
-}
-
-/** Builds the spotlight + callout card into `root`. Exported for direct DOM tests. */
-export function buildOverlay(
-	root: HTMLElement,
-	ctx: Ctx,
-	state: PlayState,
-	step: TourStep,
-	target: HTMLElement | null,
-	cleanups: Array<() => void>,
-	video: boolean,
-): void {
-	const total = stateSteps(state).length;
-	const last = state.index === total - 1;
-
-	// Full-viewport layer; transparent to clicks so the page stays interactive.
-	const layer = el("div", {
-		position: "fixed",
-		inset: "0",
-		pointerEvents: "none",
-		zIndex: "2147483647",
-	});
-
-	if (video) layer.appendChild(recIndicator());
-
-	// Setup and tutorial share this overlay but must read as different moments —
-	// orange marks "preparation, not the demo yet", blue is the tour proper.
-	const phaseAccent = isSetup(state) ? "var(--accent-setup)" : "var(--accent)";
-
-	const highlight = el("div", { position: "fixed", pointerEvents: "none" });
-	if (target) {
-		const r = target.getBoundingClientRect();
-		Object.assign(highlight.style, {
-			left: `${r.left - 6}px`,
-			top: `${r.top - 6}px`,
-			width: `${r.width + 12}px`,
-			height: `${r.height + 12}px`,
-			border: `0.125rem solid ${phaseAccent}`,
-			borderRadius: "0",
-		});
-	} else {
-		// No target → dim the whole viewport, card is centered.
-		Object.assign(highlight.style, {
-			inset: "0",
-			background: "rgba(0,0,0,0.55)",
-		});
-	}
-	layer.appendChild(highlight);
-
-	const card = el("div", {
-		position: "fixed",
-		maxWidth: "20rem",
-		background: "var(--panel)",
-		color: "var(--ink)",
-		border: "0.125rem solid var(--line)",
-		borderRadius: "0",
-		padding: "0.875rem 1rem",
-		boxShadow: `0.375rem 0.375rem 0 ${phaseAccent}`,
-		font: `0.8125rem/1.5 ${SANS}`,
-		pointerEvents: "auto",
-	});
-
-	const progress = el("div", {
-		fontSize: "0.6875rem",
-		letterSpacing: "0.12em",
-		textTransform: "uppercase",
-		fontWeight: "600",
-		color: "var(--accent)",
-		marginBottom: "0.375rem",
-	});
-	progress.textContent = `${state.script.title ? `${state.script.title} · ` : ""}Step ${state.index + 1} of ${total}`;
-	card.appendChild(progress);
-
-	if (step.title) {
-		const h = el("div", {
-			fontWeight: "700",
-			textTransform: "uppercase",
-			letterSpacing: "0.04em",
-			marginBottom: "0.25rem",
-		});
-		h.textContent = step.title;
-		card.appendChild(h);
-	}
-
-	// Voice-only recording speaks the body, so omit the text box (title stays).
-	if (!(video && state.videoHideBody)) {
-		const body = el("div", { marginBottom: "0.75rem" });
-		body.textContent = step.body;
-		card.appendChild(body);
-	}
-
-	if (step.action && !target) {
-		const warn = el("div", {
-			fontSize: "0.75rem",
-			fontWeight: "600",
-			color: "var(--accent2)",
-			marginBottom: "0.625rem",
-		});
-		warn.textContent = "⚠ Target not found — this step's action did not run";
-		card.appendChild(warn);
-	}
-
-	if (step.advance === "click" && target) {
-		const hint = el("div", {
-			fontSize: "0.75rem",
-			color: "var(--accent)",
-			marginBottom: "0.625rem",
-		});
-		hint.textContent = "↳ Click the highlighted element to continue";
-		card.appendChild(hint);
-	}
-
-	// Video mode plays hands-free, so no manual controls.
-	if (!video) {
-		const controls = el("div", {
-			display: "flex",
-			gap: "0.5rem",
-			justifyContent: "flex-end",
-			alignItems: "center",
-		});
-		const btn = pillButton;
-
-		const close = btn("✕", false);
-		close.title = "End tour";
-		close.style.marginRight = "auto";
-		close.addEventListener("click", () => void finish(ctx));
-		controls.appendChild(close);
-
-		// Only the single-step pair is tinted — ‹ --accent2, › --accent. The jump
-		// controls stay untinted so color marks stepping, not direction alone.
-		controls.appendChild(
-			arrowButton(
-				"«",
-				state.index > 0,
-				() => void restartTour(ctx, state),
-				"Restart at the first step",
-			),
-		);
-		controls.appendChild(
-			arrowButton(
-				"‹",
-				state.index > 0,
-				() => void goTo(ctx, state.index - 1),
-				"Previous step",
-				"var(--accent2)",
-			),
-		);
-		// Forward runs the step's action (or the click it waits for), so arrow-stepping can't skip it.
-		controls.appendChild(
-			arrowButton(
-				"›",
-				!last,
-				() => void advanceWithAction(ctx, state, step, target, true),
-				"Next step",
-				"var(--accent)",
-			),
-		);
-		controls.appendChild(
-			arrowButton(
-				"»",
-				!last,
-				() => void runToStep(ctx, state, total - 1),
-				"Run to the last step",
-			),
-		);
-		// Only affordance that ends the tour, so it stays a labelled button.
-		if (last) {
-			const done = btn("Done", true);
-			done.addEventListener(
-				"click",
-				() => void advanceWithAction(ctx, state, step, target, true),
-			);
-			controls.appendChild(done);
-		}
-		card.appendChild(controls);
-	}
-
-	layer.appendChild(card);
-	root.appendChild(layer);
-
-	positionCard(card, target);
-	// Keep the spotlight + card aligned as the page scrolls/resizes.
-	const reflow = () => {
-		if (target) {
-			const r = target.getBoundingClientRect();
-			highlight.style.left = `${r.left - 6}px`;
-			highlight.style.top = `${r.top - 6}px`;
-		}
-		positionCard(card, target);
-	};
-	window.addEventListener("scroll", reflow, { passive: true });
-	window.addEventListener("resize", reflow, { passive: true });
-	cleanups.push(() => {
-		window.removeEventListener("scroll", reflow);
-		window.removeEventListener("resize", reflow);
-	});
-}
-
-/** Place the card under the target if it fits, else above, else centered. */
-function positionCard(card: HTMLElement, target: HTMLElement | null): void {
-	const vw = window.innerWidth;
-	const vh = window.innerHeight;
-	const cw = card.offsetWidth;
-	const ch = card.offsetHeight;
-	if (!target) {
-		card.style.left = `${(vw - cw) / 2}px`;
-		card.style.top = `${(vh - ch) / 2}px`;
-		return;
-	}
-	const r = target.getBoundingClientRect();
-	const below = r.bottom + 12;
-	const top = below + ch <= vh ? below : Math.max(12, r.top - ch - 12);
-	const left = Math.min(Math.max(12, r.left), vw - cw - 12);
-	card.style.left = `${left}px`;
-	card.style.top = `${top}px`;
-}
-
-// --- video-mode chrome (REC badge + centered modals) ---
-
-function recIndicator(): HTMLElement {
-	const wrap = el("div", {
-		position: "fixed",
-		top: "0.875rem",
-		right: "1rem",
-		display: "flex",
-		alignItems: "center",
-		gap: "0.375rem",
-		padding: "0.3125rem 0.625rem",
-		borderRadius: "62.4375rem",
-		background: "rgba(20,10,12,0.82)",
-		color: "#ffd7d7",
-		font: "600 0.75rem system-ui, sans-serif",
-		pointerEvents: "none",
-	});
-	const dot = el("span", {
-		width: "0.5625rem",
-		height: "0.5625rem",
-		borderRadius: "50%",
-		background: "#ff4d4f",
-		boxShadow: "0 0 0.375rem #ff4d4f",
-	});
-	const label = el("span");
-	label.textContent = "REC";
-	wrap.append(dot, label);
-	return wrap;
-}
-
-/** Centered dialog on a dimmed backdrop — used for the start prompt and status messages. */
-async function renderModal(
-	ctx: Ctx,
-	opts: {
-		title: string;
-		body: string;
-		kbd?: string;
-		progress?: number;
-		progressLabel?: string;
-	},
-): Promise<void> {
-	removeUi();
-	const cleanups: Array<() => void> = [];
-	teardown = () => {
-		for (const c of cleanups) c();
-	};
-	const ui = await createShadowRootUi(ctx, {
-		name: "dg-demo-modal",
-		position: "overlay",
-		anchor: "html",
-		zIndex: 2147483647,
-		onMount: (root) => {
-			injectTheme(root);
-			const layer = el("div", {
-				position: "fixed",
-				inset: "0",
-				background: "rgba(0,0,0,0.6)",
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "center",
-				pointerEvents: "auto",
-				zIndex: "2147483647",
-			});
-			const card = el("div", {
-				maxWidth: "23.75rem",
-				margin: "0 1.25rem",
-				background: "var(--panel)",
-				color: "var(--ink)",
-				border: "0.125rem solid var(--line)",
-				borderRadius: "0",
-				padding: "1.25rem 1.375rem",
-				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${SANS}`,
-				textAlign: "center",
-			});
-			const h = el("div", {
-				fontSize: "1rem",
-				fontWeight: "700",
-				textTransform: "uppercase",
-				letterSpacing: "0.04em",
-				marginBottom: "0.5rem",
-			});
-			h.textContent = opts.title;
-			const b = el("div");
-			b.textContent = opts.body;
-			card.append(h, b);
-			if (opts.progress !== undefined) {
-				const status = el("div", {
-					marginTop: "0.875rem",
-					color: "var(--muted)",
-					fontSize: "0.75rem",
-				});
-				const bar = el("progress", {
-					display: "block",
-					width: "100%",
-					height: "0.875rem",
-					marginTop: "0.375rem",
-					accentColor: "var(--accent)",
-				});
-				bar.max = 100;
-				const update = (progress: number, label: string | undefined): void => {
-					const value = clampPercent(progress);
-					bar.value = value;
-					bar.setAttribute("aria-valuetext", `${value}%`);
-					status.textContent = `${label ?? opts.progressLabel ?? "Preparing"} · ${value}%`;
-				};
-				updateModalProgress = update;
-				update(opts.progress, opts.progressLabel);
-				card.append(status, bar);
-				cleanups.push(() => {
-					if (updateModalProgress === update) updateModalProgress = null;
-				});
-			}
-			if (opts.kbd) {
-				const line = el("div", {
-					marginTop: "0.875rem",
-					fontSize: "0.8125rem",
-					color: "var(--muted)",
-				});
-				const key = el("kbd", {
-					background: "var(--code-bg)",
-					border: "0.125rem solid var(--line)",
-					borderRadius: "0",
-					padding: "0.1875rem 0.5rem",
-					color: "var(--accent)",
-					font: "inherit",
-				});
-				key.textContent = opts.kbd;
-				line.append("Shortcut: ", key);
-				card.appendChild(line);
-			}
-			layer.appendChild(card);
-			root.appendChild(layer);
-		},
-	});
-	ui.mount();
-	cleanups.push(() => ui.remove());
-}
-
-/**
- * Visible approval gate for authored setup click/fill actions. Approval is
- * persisted with PlayState so a same-origin setup navigation cannot bypass it.
- */
-async function showSetupActionConsent(
-	ctx: Ctx,
-	state: PlayState,
-): Promise<void> {
-	removeUi();
-	const actions = [
-		...(state.script.setup?.steps ?? []),
-		...state.script.steps,
-	].filter((step) => step.action != null);
-	const included = state.script.setup?.includeInTour === true;
-	const cleanups: Array<() => void> = [];
-	teardown = () => {
-		for (const cleanup of cleanups) cleanup();
-	};
-	const ui = await createShadowRootUi(ctx, {
-		name: "dg-demo-setup-consent",
-		position: "overlay",
-		anchor: "html",
-		zIndex: 2147483647,
-		onMount: (root) => {
-			injectTheme(root);
-			const layer = el("div", {
-				position: "fixed",
-				inset: "0",
-				background: "rgba(0,0,0,0.65)",
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "center",
-				pointerEvents: "auto",
-				zIndex: "2147483647",
-			});
-			const card = el("div", {
-				maxWidth: "30rem",
-				margin: "0 1.25rem",
-				background: "var(--panel)",
-				color: "var(--ink)",
-				border: "0.125rem solid var(--line)",
-				padding: "1.25rem",
-				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${SANS}`,
-			});
-			const heading = el("div", {
-				fontWeight: "700",
-				textTransform: "uppercase",
-				marginBottom: "0.5rem",
-			});
-			heading.textContent = "Approve automatic tour actions";
-			const summary = el("p");
-			summary.textContent = `${actions.length} authored action(s) will click or fill page controls. Setup is ${included ? "included in the tour/video" : "excluded preparation before the tour/video"}.`;
-			const warning = el("p", {
-				color: "var(--accent)",
-				fontWeight: "600",
-			});
-			warning.textContent =
-				"Stored fill text is visible in the saved plan. Never store credentials, passwords, tokens, or MFA codes; enter those manually.";
-			const controls = el("div", {
-				display: "flex",
-				gap: "0.5rem",
-				justifyContent: "flex-end",
-				marginTop: "1rem",
-			});
-			const cancel = pillButton("Cancel", false);
-			cancel.addEventListener("click", () => void finish(ctx));
-			const approve = pillButton("Approve automatic actions", true);
-			approve.addEventListener("click", () => {
-				void (async () => {
-					await saveState({ ...state, automaticActionsApproved: true });
-					removeUi();
-					await begin(ctx, state.script);
-				})();
-			});
-			controls.append(cancel, approve);
-			card.append(heading, summary, warning, controls);
-			layer.appendChild(card);
-			root.appendChild(layer);
-		},
-	});
-	ui.mount();
-	cleanups.push(() => ui.remove());
-}
-
-/** The "press to start" dialog shown before a video recording begins. */
-async function showStartPrompt(ctx: Ctx): Promise<void> {
-	removeUi();
-	const narration = await readNarrationMode();
-	const shortcut = await readRecordShortcut();
-	const cleanups: Array<() => void> = [];
-	teardown = () => {
-		for (const c of cleanups) c();
-	};
-	const ui = await createShadowRootUi(ctx, {
-		name: "dg-demo-modal",
-		position: "overlay",
-		anchor: "html",
-		zIndex: 2147483647,
-		onMount: (root) => {
-			injectTheme(root);
-			const layer = el("div", {
-				position: "fixed",
-				inset: "0",
-				background: "rgba(0,0,0,0.6)",
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "center",
-				pointerEvents: "auto",
-				zIndex: "2147483647",
-			});
-			const card = el("div", {
-				maxWidth: "23.75rem",
-				margin: "0 1.25rem",
-				background: "var(--panel)",
-				color: "var(--ink)",
-				border: "0.125rem solid var(--line)",
-				borderRadius: "0",
-				padding: "1.25rem 1.375rem",
-				boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-				font: `0.8125rem/1.6 ${SANS}`,
-				textAlign: "center",
-			});
-
-			const h = el("div", {
-				fontSize: "1rem",
-				fontWeight: "700",
-				textTransform: "uppercase",
-				letterSpacing: "0.04em",
-				marginBottom: "0.5rem",
-			});
-			h.textContent = "🎬 Video demo ready";
-
-			const b = el("div");
-			b.textContent = shortcut
-				? "This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon — or press the shortcut below — to start recording, then sit back and watch."
-				: "This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon to start recording, then sit back and watch.";
-
-			// Read-only: the settings page owns this choice, so there is one place to
-			// change it and no dialog-local copy to go stale against it.
-			const narrationRow = el("div", {
-				marginTop: "0.875rem",
-				fontSize: "0.8125rem",
-				color: "var(--muted)",
-			});
-			const modeName = el("b", { color: "var(--ink)" });
-			modeName.textContent = narrationModeLabel(narration);
-			narrationRow.append(
-				"Narration: ",
-				modeName,
-				" — change it in DeeGee Settings.",
-			);
-
-			const line = el("div", {
-				marginTop: "0.875rem",
-				fontSize: "0.8125rem",
-				color: "var(--muted)",
-			});
-			if (shortcut) {
-				const key = el("kbd", {
-					background: "var(--code-bg)",
-					border: "0.125rem solid var(--line)",
-					borderRadius: "0",
-					padding: "0.1875rem 0.5rem",
-					color: "var(--accent)",
-					font: "inherit",
-				});
-				key.textContent = shortcut;
-				line.append("Shortcut: ", key);
-			} else {
-				line.style.color = "var(--accent2)";
-				line.textContent = `No keyboard shortcut is assigned to DeeGee — usually something else already holds it, most often an older unpacked copy of this extension. Use the toolbar icon, or assign one at ${shortcutsPageUrl()}.`;
-			}
-
-			card.append(h, b, narrationRow, line);
-			layer.appendChild(card);
-			root.appendChild(layer);
-		},
-	});
-	ui.mount();
-	cleanups.push(() => ui.remove());
+	ui = handle;
 }
 
 /**
@@ -1804,1019 +605,13 @@ async function showStartPrompt(ctx: Ctx): Promise<void> {
 export async function rearmAfterDiscard(ctx: Ctx): Promise<void> {
 	const s = await loadState();
 	await setRecording(false);
-	removeUi();
+	abortRun();
 	// Launched from the editor → return there; otherwise re-prompt.
 	if (s?.fromEdit) {
 		await clearState();
-		await showEditPanel(ctx, s.script);
+		await openEditor(ctx, s.script);
 		return;
 	}
 	if (s) await saveState({ ...s, index: 0 });
 	promptToRecord(ctx);
-}
-
-// --- review/edit stepper (opened by the `_edit` marker before playing) ---
-
-const EDIT_SPOT_ID = "dg-edit-spotlight";
-
-/** Resolve an editor spotlight selector without letting invalid CSS escape. */
-export function editorSpotlightTarget(
-	root: SelectorQueryRoot,
-	selector: string,
-): HTMLElement | null {
-	return selector ? safeQuerySelector<HTMLElement>(root, selector) : null;
-}
-
-/** One editable step row in the panel (strings; timing parses to `advance`). */
-export type DraftStep = {
-	title: string;
-	selector: string;
-	body: string;
-	timing: string;
-	navigate: string;
-	actKind: "" | "click" | "fill";
-	actText: string;
-};
-
-/** Editable tour fields, including optional setup rows and their inclusion choice. */
-export type Draft = {
-	title: string;
-	mode: TourMode;
-	rows: DraftStep[];
-	setup?: { rows: DraftStep[]; includeInTour: boolean };
-};
-
-/** A setup or tutorial row in the extension's ordered review sequence. */
-export type EditorReviewRow = {
-	kind: "setup" | "tutorial";
-	row: DraftStep;
-	status: string;
-};
-
-/** Every setup row is reviewed before the tutorial rows, with its fate visible. */
-export function editorReviewRows(draft: Draft): EditorReviewRow[] {
-	const setupStatus = draft.setup?.includeInTour
-		? "Setup · included in tour/video"
-		: "Setup · excluded preparation";
-	return [
-		...(draft.setup?.rows ?? []).map((row) => ({
-			kind: "setup" as const,
-			row,
-			status: setupStatus,
-		})),
-		...draft.rows.map((row) => ({
-			kind: "tutorial" as const,
-			row,
-			status: "Tutorial",
-		})),
-	];
-}
-
-/** Effective page inherited before an editor row begins. */
-export function editorInheritedPageUrl(
-	draft: Draft,
-	startUrl: string,
-	index: number,
-): string {
-	const rows = editorReviewRows(draft);
-	const current = rows[index];
-	const firstTutorial = draft.setup?.rows.length ?? 0;
-	const lowerBound =
-		current?.kind === "tutorial" && draft.setup?.includeInTour === false
-			? firstTutorial
-			: 0;
-	for (let i = index - 1; i >= lowerBound; i--) {
-		const navigate = rows[i]?.row.navigate.trim();
-		if (navigate) return navigate;
-	}
-	return startUrl;
-}
-
-/** Effective page on which an editor row will execute. */
-export function editorPageUrl(
-	draft: Draft,
-	startUrl: string,
-	index: number,
-): string {
-	const row = editorReviewRows(draft)[index]?.row;
-	return row?.navigate.trim() || editorInheritedPageUrl(draft, startUrl, index);
-}
-
-/** One draft row's fields mapped onto a runnable step — shared by tutorial and setup rows. */
-function draftRowToStep(r: DraftStep): TourStep {
-	const step: TourStep = { body: r.body.trim() };
-	if (r.title.trim()) step.title = r.title.trim();
-	if (r.selector.trim()) step.selector = r.selector.trim();
-	if (r.navigate.trim()) step.navigate = r.navigate.trim();
-	if (r.actKind === "click") step.action = { do: "click" };
-	else if (r.actKind === "fill") step.action = { do: "fill", value: r.actText };
-	const adv = parseAdvance(r.timing);
-	if (adv !== undefined) step.advance = adv;
-	return step;
-}
-
-/** Serialize the panel's draft back into a clean, runnable TourScript. */
-export function draftToScript(startUrl: string, draft: Draft): TourScript {
-	const out: TourScript = {
-		startUrl,
-		steps: draft.rows.map(draftRowToStep),
-		mode: draft.mode,
-	};
-	if (draft.setup?.rows.length) {
-		out.setup = {
-			includeInTour: draft.setup.includeInTour,
-			steps: draft.setup.rows.map(draftRowToStep),
-		};
-	}
-	if (draft.title.trim()) out.title = draft.title.trim();
-	return out;
-}
-
-/** One runnable step mapped onto the panel's editable draft-row fields (inverse of draftRowToStep). */
-function stepToDraftRow(s: TourStep): DraftStep {
-	return {
-		title: s.title ?? "",
-		selector: s.selector ?? "",
-		body: s.body ?? "",
-		timing: formatAdvance(s.advance),
-		navigate: s.navigate ?? "",
-		actKind: s.action?.do ?? "",
-		actText: s.action?.do === "fill" ? s.action.value : "",
-	};
-}
-
-/** Deserialize a runnable TourScript into the panel's editable draft (inverse of draftToScript). */
-export function scriptToDraft(script: TourScript): Draft {
-	return {
-		title: script.title ?? "",
-		mode: script.mode ?? "walkthrough",
-		rows: (script.steps ?? []).map(stepToDraftRow),
-		...(script.setup
-			? {
-					setup: {
-						includeInTour: script.setup.includeInTour,
-						rows: script.setup.steps.map(stepToDraftRow),
-					},
-				}
-			: {}),
-	};
-}
-
-/** Editor navigation state: a step being reviewed, or the final actions screen. */
-export type EditPhase = { kind: "step"; cursor: number } | { kind: "done" };
-export type EditEvent = "next" | "back" | "approve" | "editAgain";
-
-/**
- * The review stepper as a generator state machine: it yields the current phase and
- * resumes on each `.next(event)`, applying the transition. All navigation lives here
- * so the flow reads top-to-bottom and is unit-testable without any DOM. Prime with a
- * bare `.next()`, then drive it with events.
- *
- * It primes on the actions screen, not step 0: the plan is usually right, and walking
- * every step to reach play/record made the common case the slowest path. `editAgain`
- * opens the stepper at the first step for anyone who does want to read it through.
- */
-export function* editMachine(
-	total: number,
-): Generator<EditPhase, never, EditEvent> {
-	let cursor = 0;
-	let done = true;
-	while (true) {
-		const event = yield done ? { kind: "done" } : { kind: "step", cursor };
-		if (event === "approve") done = true;
-		else if (event === "editAgain") {
-			done = false;
-			cursor = 0;
-		} else if (!done && event === "next" && cursor < total - 1) cursor++;
-		else if (!done && event === "back" && cursor > 0) cursor--;
-	}
-}
-
-/** Outline the current step's target on the live page (or clear it). */
-function updateSpotlight(selector: string): void {
-	document.getElementById(EDIT_SPOT_ID)?.remove();
-	const t = editorSpotlightTarget(document, selector);
-	if (!t) return;
-	t.scrollIntoView({ block: "center", inline: "center" });
-	const r = t.getBoundingClientRect();
-	const box = el("div", {
-		position: "fixed",
-		left: `${r.left - 6}px`,
-		top: `${r.top - 6}px`,
-		width: `${r.width + 12}px`,
-		height: `${r.height + 12}px`,
-		border: `0.125rem solid ${ACCENT}`,
-		borderRadius: "0.5rem",
-		boxShadow: "0 0 0 624.9375rem rgba(0,0,0,0.45)",
-		pointerEvents: "none",
-		zIndex: "2147483640",
-	});
-	box.id = EDIT_SPOT_ID;
-	document.body.appendChild(box);
-}
-
-function clearSpotlight(): void {
-	document.getElementById(EDIT_SPOT_ID)?.remove();
-}
-
-/** A labeled input/textarea; writes back via `onInput` on every keystroke. */
-function labeled(
-	labelText: string,
-	value: string,
-	placeholder: string,
-	onInput: (v: string) => void,
-	multiline = false,
-): HTMLElement {
-	const wrap = el("div", { marginTop: "0.625rem" });
-	const label = el("label", {
-		display: "block",
-		fontSize: "0.6875rem",
-		textTransform: "uppercase",
-		letterSpacing: "0.12em",
-		color: "var(--muted)",
-		marginBottom: "0.25rem",
-	});
-	label.textContent = labelText;
-	const input = multiline
-		? el("textarea", { minHeight: "3rem", resize: "vertical" })
-		: el("input");
-	input.className = "dg-field";
-	Object.assign(input.style, {
-		width: "100%",
-		boxSizing: "border-box",
-		background: "var(--code-bg)",
-		color: "var(--ink)",
-		border: "0.125rem solid var(--line)",
-		borderRadius: "0",
-		padding: "0.375rem 0.5rem",
-		font: `0.8125rem ${SANS}`,
-	});
-	(input as HTMLInputElement).value = value;
-	(input as HTMLInputElement).placeholder = placeholder;
-	input.addEventListener("input", () =>
-		onInput((input as HTMLInputElement).value),
-	);
-	wrap.append(label, input);
-	return wrap;
-}
-
-function pillButton(label: string, primary: boolean): HTMLButtonElement {
-	const b = el("button", {
-		cursor: "pointer",
-		border: "0.125rem solid var(--line)",
-		borderRadius: "0",
-		padding: "0.4375rem 0.75rem",
-		textTransform: "uppercase",
-		letterSpacing: "0.06em",
-		font: `0.75rem ${SANS}`,
-		background: primary ? "var(--accent)" : "transparent",
-		color: primary ? "#000" : "var(--ink)",
-		borderColor: primary ? "var(--accent)" : "var(--line)",
-	});
-	b.className = "dg-btn";
-	b.type = "button";
-	b.textContent = label;
-	return b;
-}
-
-/** A square chevron nav button; muted + inert when `enabled` is false. */
-function arrowButton(
-	glyph: string,
-	enabled: boolean,
-	onClick: () => void,
-	ariaLabel?: string,
-	/** Theme var (e.g. "var(--accent)") tinting the glyph and its border. */
-	accent?: string,
-): HTMLButtonElement {
-	const b = el("button", {
-		cursor: enabled ? "pointer" : "default",
-		border: `0.125rem solid ${accent ?? "var(--line)"}`,
-		borderRadius: "0",
-		padding: "0.25rem 0.625rem",
-		font: `0.9375rem ${SANS}`,
-		background: "transparent",
-		color: accent ?? "var(--ink)",
-		opacity: enabled ? "1" : "0.4",
-	});
-	if (enabled) b.className = "dg-btn";
-	b.type = "button";
-	b.textContent = glyph;
-	if (ariaLabel) b.setAttribute("aria-label", ariaLabel);
-	if (enabled) b.addEventListener("click", onClick);
-	else b.disabled = true;
-	return b;
-}
-
-/** Selector field with an inline 🎯 picker button that fills the input on click. */
-function selectorField(row: DraftStep): HTMLElement {
-	const wrap = el("div", { marginTop: "0.625rem" });
-	const label = el("label", {
-		display: "block",
-		fontSize: "0.6875rem",
-		textTransform: "uppercase",
-		letterSpacing: "0.12em",
-		color: "var(--muted)",
-		marginBottom: "0.25rem",
-	});
-	label.textContent = "Selector";
-	const inputRow = el("div", { position: "relative" });
-	const input = el("input", {
-		width: "100%",
-		boxSizing: "border-box",
-		background: "var(--code-bg)",
-		color: "var(--ink)",
-		border: "0.125rem solid var(--line)",
-		borderRadius: "0",
-		padding: "0.375rem 2rem 0.375rem 0.5rem",
-		font: `0.8125rem ${SANS}`,
-	});
-	input.className = "dg-field";
-	input.value = row.selector;
-	input.placeholder = "CSS selector (blank = centered)";
-	input.addEventListener("input", () => {
-		row.selector = input.value;
-		updateSpotlight(input.value);
-	});
-	const pick = el("button", {
-		position: "absolute",
-		right: "0.25rem",
-		top: "50%",
-		transform: "translateY(-50%)",
-		border: "0",
-		background: "transparent",
-		cursor: "pointer",
-		padding: "0 0.25rem",
-		fontSize: "0.875rem",
-		lineHeight: "1",
-	});
-	pick.type = "button";
-	pick.textContent = "🎯";
-	pick.title = "Target element — click, then click something on the page";
-	pick.addEventListener("click", () =>
-		startPicking((sel) => {
-			input.value = sel;
-			row.selector = sel;
-			updateSpotlight(sel);
-			// Programmatic set fires no input event — dispatch one so edits persist.
-			input.dispatchEvent(new Event("input", { bubbles: true }));
-		}),
-	);
-	inputRow.append(input, pick);
-	wrap.append(label, inputRow);
-	return wrap;
-}
-
-const FIELD_STYLE: Partial<CSSStyleDeclaration> = {
-	width: "100%",
-	boxSizing: "border-box",
-	background: "var(--code-bg)",
-	color: "var(--ink)",
-	border: "0.125rem solid var(--line)",
-	borderRadius: "0",
-	padding: "0.375rem 0.5rem",
-	font: `0.8125rem ${SANS}`,
-};
-
-/** Action field: a kind selector (none/click/type) + a text box shown for "type". */
-function actionField(row: DraftStep): HTMLElement {
-	const wrap = el("div", { marginTop: "0.625rem" });
-	const label = el("label", {
-		display: "block",
-		fontSize: "0.6875rem",
-		textTransform: "uppercase",
-		letterSpacing: "0.12em",
-		color: "var(--muted)",
-		marginBottom: "0.25rem",
-	});
-	label.textContent = "Action (during playback)";
-	const select = el("select", FIELD_STYLE);
-	select.className = "dg-field";
-	for (const [val, txt] of [
-		["", "None"],
-		["click", "Click the target"],
-		["fill", "Type text into the target"],
-	]) {
-		const o = document.createElement("option");
-		o.value = val;
-		o.textContent = txt;
-		if (val === row.actKind) o.selected = true;
-		select.appendChild(o);
-	}
-	const textWrap = el("div", {
-		marginTop: "0.375rem",
-		display: row.actKind === "fill" ? "block" : "none",
-	});
-	const text = el("input", FIELD_STYLE);
-	text.className = "dg-field";
-	text.value = row.actText;
-	text.placeholder = "Text to type";
-	text.addEventListener("input", () => {
-		row.actText = text.value;
-	});
-	textWrap.appendChild(text);
-	select.addEventListener("change", () => {
-		row.actKind = select.value as DraftStep["actKind"];
-		textWrap.style.display = select.value === "fill" ? "block" : "none";
-	});
-	wrap.append(label, select, textWrap);
-	return wrap;
-}
-
-/**
- * The review/edit stepper. Walks the steps one at a time — spotlighting each
- * target on the live page and letting the user improve its fields — then offers
- * Download / Play / Record on a final screen. All local; nothing leaves the tab.
- */
-async function showEditPanel(ctx: Ctx, script: TourScript): Promise<void> {
-	removeUi();
-	const draft: Draft = scriptToDraft(script);
-	let reviewRows = editorReviewRows(draft);
-	let machine = editMachine(reviewRows.length);
-	// Narration is chosen here rather than at the record prompt, so it is set before
-	// anything starts. Local copy keeps the selects showing the user's own picks.
-	const editorConfig = await readConfig();
-	let phase = machine.next().value; // prime → the actions screen
-
-	/**
-	 * Re-derive the row list from the draft and rebuild the stepper machine
-	 * seeking to `want` (clamped to a valid row, or 0 if none remain).
-	 *
-	 * Add/remove changes the row count the machine was created with, and a
-	 * generator can't be resized in place — replacing it and replaying
-	 * editAgain + next(cursor) times is the same seek-to-cursor trick the
-	 * URL-resume path below already relies on.
-	 */
-	const gotoCursor = (want: number): void => {
-		reviewRows = editorReviewRows(draft);
-		const target =
-			reviewRows.length === 0
-				? 0
-				: Math.max(0, Math.min(want, reviewRows.length - 1));
-		machine = editMachine(reviewRows.length);
-		phase = machine.next().value;
-		phase = machine.next("editAgain").value;
-		for (let i = 0; i < target; i++) phase = machine.next("next").value;
-	};
-
-	// Resume at the step we navigated for (a step-driven page change reloads us here),
-	// re-entering the stepper first since the machine now starts on the actions screen.
-	const resume = await takeEditCursor();
-	if (resume !== null) gotoCursor(resume);
-	const dispatch = (event: EditEvent): void => {
-		phase = machine.next(event).value;
-		void render();
-	};
-
-	/** Perform cursor's row action against the live page, if it has one — an
-	 *  authored action, or the click an advance:"click" row is waiting for. */
-	const performReviewRowAction = async (cursor: number): Promise<boolean> => {
-		const current = reviewRows[cursor];
-		const step = current ? draftRowToStep(current.row) : undefined;
-		const action = stepEffect(step);
-		if (!step || !action) return false;
-		const target = editorSpotlightTarget(document, step.selector ?? "");
-		if (!target) {
-			console.warn(missingActionTargetWarning(step));
-			return false;
-		}
-		const before = stripDemoMarker(location.href);
-		const anchor =
-			action.do === "click"
-				? target.closest<HTMLAnchorElement>("a[href]")
-				: undefined;
-		const destinationCursor = cursor + 1;
-		const destination = reviewRows[destinationCursor];
-		if (anchor && destination && !sameUrl(before, anchor.href)) {
-			const normalized = stripDemoMarker(anchor.href);
-			destination.row.navigate = normalized;
-			persist();
-			await setEditCursor(destinationCursor);
-			await browser.storage.local.set({
-				[pendingMarkerKey()]: {
-					script: draftToScript(script.startUrl, draft),
-					edit: true,
-					capturedAt: Date.now(),
-				} satisfies PendingMarkerCapture,
-			});
-			anchor.href = normalized;
-			await performAction(action, target);
-			return true;
-		}
-		await performAction(action, target);
-		if (action.do !== "click") return false;
-		const currentUrl = stripDemoMarker(location.href);
-		if (sameUrl(before, currentUrl) || !destination) return false;
-		const normalized = stripDemoMarker(currentUrl);
-		const inherited = editorInheritedPageUrl(
-			draft,
-			script.startUrl,
-			destinationCursor,
-		);
-		if (!sameUrl(normalized, inherited)) {
-			destination.row.navigate = normalized;
-			persist();
-		}
-		return false;
-	};
-
-	/**
-	 * Advance the review, performing the step's authored action first.
-	 *
-	 * Planning has to move the page the same way playback does. Reviewing used to
-	 * only walk the cursor, so a plan whose later steps live behind a click — a
-	 * wizard, a menu, a tab — left every one of those selectors unresolvable, and
-	 * the editor showed a centered modal instead of the element being authored.
-	 *
-	 * A step timed `click` counts too, not just one with an authored `@click`.
-	 * `advance: "click"` means playback waits for the user to click the target, so
-	 * during planning the forward press *is* that click — without this, stepping a
-	 * plan built from advance-timings (the common shape) still moved nothing.
-	 *
-	 * `‹` stays pure navigation and `«` reloads outright — neither replays an
-	 * action. `»` is the deliberate exception: it runs every intervening row's
-	 * action on the way to the last row, an intentional unattended multi-action
-	 * run, not the single-row intent behind one forward press.
-	 */
-	const advanceReview = async (cursor: number): Promise<void> => {
-		if (await performReviewRowAction(cursor)) return;
-		dispatch("next");
-	};
-
-	/**
-	 * Run forward to the last row, performing each row's action on the way — the
-	 * planning-time equivalent of pressing › until it's disabled. Done in one
-	 * pass with a single render at the end, rather than one render per row.
-	 */
-	const jumpToEnd = async (): Promise<void> => {
-		while (phase.kind === "step") {
-			if (await performReviewRowAction(phase.cursor)) return;
-			if (phase.cursor >= reviewRows.length - 1) break;
-			phase = machine.next("next").value;
-		}
-		void render();
-	};
-
-	/** Reload back to the first step — only a fresh load undoes on-page effects
-	 *  clicks already fired; the draft survives via the URL-fragment mirror. */
-	const restartReview = async (): Promise<void> => {
-		await setEditCursor(0);
-		location.reload();
-	};
-
-	const blankDraftStep = (): DraftStep => ({
-		title: "",
-		selector: "",
-		body: "",
-		timing: "",
-		navigate: "",
-		actKind: "",
-		actText: "",
-	});
-
-	/** Insert a step after `cursor`, into whichever section (setup/tutorial) the
-	 *  cursor is currently in, then land the cursor on the new row. */
-	const addRow = (cursor: number): void => {
-		const current = reviewRows[cursor];
-		const kind = current?.kind ?? "tutorial";
-		const rows = kind === "setup" ? draft.setup?.rows : draft.rows;
-		if (!rows) return;
-		const setupCount = draft.setup?.rows.length ?? 0;
-		const localIndex = kind === "setup" ? cursor : cursor - setupCount;
-		const insertAt = Math.min(Math.max(localIndex + 1, 0), rows.length);
-		rows.splice(insertAt, 0, blankDraftStep());
-		gotoCursor((kind === "setup" ? 0 : setupCount) + insertAt);
-		void render();
-	};
-
-	/** Remove the row under review, then land the cursor on a valid remaining row. */
-	const removeRow = (cursor: number): void => {
-		const current = reviewRows[cursor];
-		if (!current) return;
-		const rows = current.kind === "setup" ? draft.setup?.rows : draft.rows;
-		if (!rows) return;
-		const setupCount = draft.setup?.rows.length ?? 0;
-		const localIndex = current.kind === "setup" ? cursor : cursor - setupCount;
-		rows.splice(localIndex, 1);
-		gotoCursor(cursor);
-		void render();
-	};
-
-	// The page a step runs on: the most recent `navigate` at/before it, else startUrl.
-	const pageUrl = (idx: number): string =>
-		editorPageUrl(draft, script.startUrl, idx);
-
-	// Mirror the live draft into the URL fragment so a reload re-opens the editor
-	// with edits intact (durable-via-URL). Cheap; called on edits + navigation.
-	const persist = (): void => {
-		const base = location.href.split("#")[0];
-		const frag = demoMarkerFragment(
-			draftToScript(script.startUrl, draft),
-			true,
-		);
-		history.replaceState(history.state, "", `${base}#${frag}`);
-	};
-
-	const finish = async (mode: TourMode): Promise<void> => {
-		draft.mode = mode;
-		const s = draftToScript(script.startUrl, draft);
-		// fromEdit so ending a walkthrough (or discarding a recording) returns here.
-		await initializeReviewedEditorPlayback(s, saveState);
-		await setRecording(false);
-		clearSpotlight();
-		// Drop the edit marker so playback isn't re-intercepted as editing on reload.
-		history.replaceState(history.state, "", location.href.split("#")[0]);
-		removeUi();
-		await begin(ctx, s);
-	};
-
-	const download = (): void => {
-		const md = toPlanMarkdown(draftToScript(script.startUrl, draft));
-		const blob = new Blob([md], { type: "text/markdown" });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement("a");
-		a.href = url;
-		a.download = `${slugify(draft.title)}.demo.md`;
-		a.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
-	};
-
-	// Remembered across re-renders so the box keeps its dragged position per step.
-	let panelPos: { left: number; top: number } | null = null;
-
-	/** Drag `card` by its `handle`, persisting the position into `panelPos`. */
-	const makeDraggable = (card: HTMLElement, handle: HTMLElement): void => {
-		handle.addEventListener("mousedown", (e) => {
-			e.preventDefault();
-			const rect = card.getBoundingClientRect();
-			const offX = e.clientX - rect.left;
-			const offY = e.clientY - rect.top;
-			const onMove = (ev: MouseEvent): void => {
-				const left = Math.max(0, ev.clientX - offX);
-				const top = Math.max(0, ev.clientY - offY);
-				panelPos = { left, top };
-				Object.assign(card.style, {
-					left: `${left}px`,
-					top: `${top}px`,
-					right: "auto",
-					transform: "none",
-				});
-			};
-			const onUp = (): void => {
-				document.removeEventListener("mousemove", onMove, true);
-				document.removeEventListener("mouseup", onUp, true);
-			};
-			document.addEventListener("mousemove", onMove, true);
-			document.addEventListener("mouseup", onUp, true);
-		});
-	};
-
-	const panel = (headerText: string): HTMLElement => {
-		const card = el("div", {
-			position: "fixed",
-			top: "50%",
-			right: "1.25rem",
-			transform: "translateY(-50%)",
-			width: "20rem",
-			maxHeight: "90vh",
-			overflowY: "auto",
-			background: "var(--panel)",
-			color: "var(--ink)",
-			border: "0.125rem solid var(--line)",
-			borderRadius: "0",
-			padding: "1rem 1.125rem",
-			boxShadow: "0.375rem 0.375rem 0 var(--accent)",
-			font: `0.8125rem/1.5 ${SANS}`,
-			pointerEvents: "auto",
-			zIndex: "2147483647",
-		});
-		if (panelPos)
-			Object.assign(card.style, {
-				top: `${panelPos.top}px`,
-				left: `${panelPos.left}px`,
-				right: "auto",
-				transform: "none",
-			});
-		const header = el("div", {
-			display: "flex",
-			alignItems: "center",
-			gap: "0.5rem",
-			cursor: "move",
-			userSelect: "none",
-			marginBottom: "0.625rem",
-			paddingBottom: "0.5rem",
-			borderBottom: "0.125rem solid var(--line)",
-		});
-		const grip = el("span", { color: "var(--muted)", letterSpacing: "0.1em" });
-		grip.textContent = "⠿";
-		const label = el("div", {
-			fontSize: "0.6875rem",
-			textTransform: "uppercase",
-			letterSpacing: "0.18em",
-			fontWeight: "600",
-			color: "var(--accent)",
-		});
-		label.textContent = headerText;
-		header.append(grip, label);
-		card.appendChild(header);
-		makeDraggable(card, header);
-		return card;
-	};
-
-	const buildStepCard = (root: HTMLElement, cursor: number): void => {
-		const total = reviewRows.length;
-		const review = reviewRows[cursor];
-		const status = review
-			? review.kind === "setup"
-				? draft.setup?.includeInTour
-					? "Setup · included in tour/video"
-					: "Setup · excluded preparation"
-				: "Tutorial"
-			: "No steps yet";
-		const card = panel(`Review & edit · ${status}`);
-		const last = total === 0 || cursor >= total - 1;
-
-		if (cursor === 0)
-			card.appendChild(
-				labeled("Tour title", draft.title, "Tour title", (v) => {
-					draft.title = v;
-				}),
-			);
-
-		if (review) {
-			const row = review.row;
-			card.appendChild(
-				labeled("Step title", row.title, "Step title", (v) => {
-					row.title = v;
-				}),
-			);
-			card.appendChild(selectorField(row));
-			card.appendChild(
-				labeled(
-					"Body",
-					row.body,
-					"Callout text",
-					(v) => {
-						row.body = v;
-					},
-					true,
-				),
-			);
-			card.appendChild(
-				labeled("Timing", row.timing, "4s / click / next", (v) => {
-					row.timing = v;
-				}),
-			);
-			// Page URL: pre-filled with the step's effective page. Editing it to a new URL
-			// records a `navigate`; matching the inherited page clears it (no redundant nav).
-			const inherited = editorInheritedPageUrl(draft, script.startUrl, cursor);
-			card.appendChild(
-				labeled(
-					"Page URL",
-					row.navigate.trim() || inherited,
-					"https://…",
-					(v) => {
-						row.navigate = v.trim() === inherited ? "" : v.trim();
-					},
-				),
-			);
-			card.appendChild(actionField(row));
-			if (review.kind === "setup") {
-				const warning = el("div", {
-					marginTop: "0.625rem",
-					padding: "0.5rem",
-					border: "0.125rem solid var(--line)",
-					color: "var(--accent)",
-					fontWeight: "600",
-				});
-				warning.textContent =
-					"Setup actions are saved as plain text and require playback approval. Never put credentials, passwords, tokens, or MFA codes in Fill text; enter them manually.";
-				card.appendChild(warning);
-			}
-		} else {
-			const empty = el("div", { color: "var(--muted)", marginTop: "0.625rem" });
-			empty.textContent = "No steps yet — add one to get started.";
-			card.appendChild(empty);
-		}
-
-		// No cancel button here on purpose — an accidental click shouldn't drop the
-		// editor. The URL keeps the draft (durable), so a stray reload restores it.
-		const bar = el("div", {
-			display: "flex",
-			flexWrap: "wrap",
-			gap: "0.375rem",
-			alignItems: "center",
-			justifyContent: "center",
-			marginTop: "0.875rem",
-		});
-		const restart = arrowButton(
-			"«",
-			cursor > 0,
-			() => void restartReview(),
-			"Restart at the first step",
-		);
-		const back = arrowButton(
-			"‹",
-			cursor > 0,
-			() => dispatch("back"),
-			"Previous step",
-			"var(--accent2)",
-		);
-		const trace = el("div", {
-			minWidth: "3rem",
-			textAlign: "center",
-			fontSize: "0.8125rem",
-			letterSpacing: "0.08em",
-			color: "var(--muted)",
-		});
-		trace.textContent = `${total === 0 ? 0 : cursor + 1} / ${total}`;
-		const fwd = arrowButton(
-			"›",
-			!last,
-			() => void advanceReview(cursor),
-			"Next step",
-			"var(--accent)",
-		);
-		const runEnd = arrowButton(
-			"»",
-			!last,
-			() => void jumpToEnd(),
-			"Run to the last step",
-		);
-		const addBtn = arrowButton("+", true, () => addRow(cursor), "Add step");
-		const removeBtn = arrowButton(
-			"−",
-			total > 0,
-			() => removeRow(cursor),
-			"Remove step",
-		);
-		card.addEventListener("input", persist); // persist edits into the URL
-		// Always available — reviewing every step to reach it was busywork when the plan
-		// is already right — but it sits after the arrows so it can't split the pair.
-		const approve = pillButton("✓ Approve", true);
-		approve.style.background = "#00c853";
-		approve.style.borderColor = "#00c853";
-		approve.style.color = "#000";
-		approve.addEventListener("click", () => dispatch("approve"));
-		bar.append(restart, back, trace, fwd, runEnd, addBtn, removeBtn, approve);
-		card.appendChild(bar);
-		root.appendChild(card);
-	};
-
-	/** A labelled select row for the start screen, wired to persist on change. */
-	const settingRow = (
-		labelText: string,
-		options: { value: string; label: string }[],
-		selected: string,
-		onPick: (value: string) => void,
-	): HTMLElement => {
-		const row = el("label", {
-			display: "flex",
-			alignItems: "center",
-			gap: "0.5rem",
-			marginBottom: "0.5rem",
-			color: "var(--muted)",
-		});
-		const text = el("span", { flex: "0 0 5rem", fontSize: "0.8125rem" });
-		text.textContent = labelText;
-		const sel = el("select", {
-			flex: "1",
-			background: "var(--code-bg)",
-			color: "var(--ink)",
-			border: "0.125rem solid var(--line)",
-			borderRadius: "0",
-			padding: "0.1875rem 0.375rem",
-			font: `0.8125rem ${SANS}`,
-		}) as HTMLSelectElement;
-		for (const o of options) {
-			const opt = document.createElement("option");
-			opt.value = o.value;
-			opt.textContent = o.label;
-			if (o.value === selected) opt.selected = true;
-			sel.appendChild(opt);
-		}
-		sel.addEventListener("change", () => onPick(sel.value));
-		row.append(text, sel);
-		return row;
-	};
-
-	/**
-	 * The start screen: pick review / walkthrough / video, and set the narration the
-	 * recording will use. Shown before the stepper, so the plan can be run without
-	 * paging through steps that were already right.
-	 */
-	const buildDoneCard = (root: HTMLElement): void => {
-		const card = panel(draft.title || "Demo plan");
-		const h = el("div", {
-			fontWeight: "700",
-			textTransform: "uppercase",
-			letterSpacing: "0.06em",
-			marginBottom: "0.25rem",
-		});
-		h.textContent = "▶ Plan ready";
-		const sub = el("div", { color: "var(--muted)", marginBottom: "0.75rem" });
-		const setupCount = draft.setup?.rows.length ?? 0;
-		sub.textContent = `${reviewRows.length} step(s)${
-			setupCount ? `, including ${setupCount} setup step(s)` : ""
-		}. Review it, or start straight away.`;
-		card.append(h, sub);
-		if (draft.setup) {
-			const setupLabel = el("label", {
-				display: "block",
-				marginBottom: "0.75rem",
-				color: "var(--muted)",
-			});
-			const include = document.createElement("input");
-			include.type = "checkbox";
-			include.checked = draft.setup.includeInTour;
-			include.addEventListener("change", () => {
-				if (draft.setup) draft.setup.includeInTour = include.checked;
-				persist();
-			});
-			setupLabel.append(
-				include,
-				` Include ${draft.setup.rows.length} setup step(s) in this tour/video`,
-			);
-			card.appendChild(setupLabel);
-		}
-
-		card.appendChild(
-			settingRow(
-				"Narration",
-				NARRATION_MODES,
-				editorConfig.narration,
-				(value) => {
-					editorConfig.narration = getNarrationMode(value);
-					void patchConfig({ narration: editorConfig.narration });
-				},
-			),
-		);
-		card.appendChild(
-			settingRow(
-				"Voice",
-				VOICES.map((v) => ({ value: v, label: voiceLabel(v) })),
-				editorConfig.voice,
-				(value) => {
-					editorConfig.voice = value;
-					void patchConfig({ voice: value });
-				},
-			),
-		);
-
-		const mk = (lbl: string, primary: boolean, onClick: () => void): void => {
-			const b = pillButton(lbl, primary);
-			b.style.width = "100%";
-			b.style.marginTop = "0.5rem";
-			b.addEventListener("click", onClick);
-			card.appendChild(b);
-		};
-		mk("🔍 Review the plan step by step", false, () => dispatch("editAgain"));
-		mk("▶ Play walkthrough", true, () => void finish("walkthrough"));
-		mk("⏺ Record video", false, () => void finish("video"));
-		mk("⬇ Download plan (.md)", false, download);
-		root.appendChild(card);
-	};
-
-	const render = async (): Promise<void> => {
-		// If this step lives on a different page, navigate there and resume the editor
-		// at it on reload. Origin+pathname only, so ?query changes don't loop.
-		if (phase.kind === "step") {
-			const here = new URL(location.href);
-			const there = new URL(pageUrl(phase.cursor), location.href);
-			if (there.origin === here.origin && there.pathname !== here.pathname) {
-				await setEditCursor(phase.cursor);
-				const frag = demoMarkerFragment(
-					draftToScript(script.startUrl, draft),
-					true,
-				);
-				location.href = `${there.origin}${there.pathname}${there.search}#${frag}`;
-				return;
-			}
-		}
-		removeUi();
-		persist(); // keep the URL in sync as the user navigates steps
-		const cleanups: Array<() => void> = [];
-		teardown = () => {
-			clearSpotlight();
-			for (const c of cleanups) c();
-		};
-		if (phase.kind === "step")
-			updateSpotlight(reviewRows[phase.cursor]?.row.selector ?? "");
-		else clearSpotlight();
-
-		const ui = await createShadowRootUi(ctx, {
-			name: "dg-demo-edit",
-			position: "overlay",
-			anchor: "html",
-			zIndex: 2147483647,
-			onMount: (root) => {
-				injectTheme(root);
-				if (phase.kind === "done") buildDoneCard(root);
-				else buildStepCard(root, phase.cursor);
-			},
-		});
-		ui.mount();
-		cleanups.push(() => ui.remove());
-	};
-
-	await render();
 }

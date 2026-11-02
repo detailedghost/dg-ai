@@ -1,0 +1,23 @@
+{
+	"name": "@dg/tour-ui",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./host": "./src/host.ts"
+	},
+	"scripts": {
+		"build": "bun build.ts",
+		"lint": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@dg/common": "workspace:*"
+	},
+	"devDependencies": {
+		"bun-types": "^1.4.3",
+		"happy-dom": "^21.0.3",
+		"typescript": "^7.0.2"
+	}
+}

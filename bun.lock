@@ -67,6 +67,7 @@
       "version": "1.30.1",
       "dependencies": {
         "@dg/common": "workspace:*",
+        "@dg/tour-ui": "workspace:*",
         "kokoro-js": "^1.2.1",
       },
       "devDependencies": {
@@ -144,6 +145,18 @@
       },
       "devDependencies": {
         "bun-types": "1.4.3",
+        "typescript": "^7.0.2",
+      },
+    },
+    "pkg/tour-ui": {
+      "name": "@dg/tour-ui",
+      "version": "1.0.0",
+      "dependencies": {
+        "@dg/common": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "^1.4.3",
+        "happy-dom": "^21.0.3",
         "typescript": "^7.0.2",
       },
     },
@@ -342,6 +355,8 @@
     "@dg/skills-test": ["@dg/skills-test@workspace:pkg/skills-test"],
 
     "@dg/ssms": ["@dg/ssms@workspace:pkg/ssms"],
+
+    "@dg/tour-ui": ["@dg/tour-ui@workspace:pkg/tour-ui"],
 
     "@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 

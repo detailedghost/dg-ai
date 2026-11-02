@@ -5,7 +5,7 @@
  * the voice finishes, not a floor on the whole step.
  */
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_VIDEO_MS, holdFor, TAIL_GAP_MS } from "@/lib/video-timing";
+import { DEFAULT_VIDEO_MS, holdFor, TAIL_GAP_MS } from "../src/video-timing";
 
 describe("holdFor — narrated steps", () => {
 	it("adds the authored timing on top of the narration and its tail", () => {
