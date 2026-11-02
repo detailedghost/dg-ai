@@ -4,6 +4,7 @@ import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	renameSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
@@ -115,6 +116,17 @@ describe("hooks enable strip-ai-coauthors", () => {
 		expect(result.stderr).toContain("git repository");
 	});
 
+	test("runs the chained hook after the repository directory moves", async () => {
+		const repo = makeRepo(USER_HOOK);
+		await cli(["enable", ID], repo.dir);
+		const moved = `${repo.dir}-moved`;
+		renameSync(repo.dir, moved);
+		const movedHook = join(moved, ".git", "hooks", "commit-msg");
+		Bun.spawnSync([movedHook, join(moved, "msg")], { cwd: moved });
+		expect(existsSync(`${movedHook}.dg-orig.log`)).toBe(true);
+		renameSync(moved, repo.dir);
+	});
+
 	test("strips an AI trailer from a real commit and still runs the chained hook", async () => {
 		installLauncher();
 		const repo = makeRepo(USER_HOOK);
@@ -160,6 +172,26 @@ describe("hooks disable strip-ai-coauthors", () => {
 		const result = await cli(["disable", ID], repo.dir);
 		expect(result.code).toBe(0);
 		expect(readFileSync(repo.hook, "utf8")).toBe(USER_HOOK);
+	});
+
+	test("--all scoped to one runtime leaves the git hook alone", async () => {
+		const repo = makeRepo(USER_HOOK);
+		await cli(["enable", ID], repo.dir);
+		await cli(["disable", "--all", "--runtime", "claude"], repo.dir);
+		expect(readFileSync(repo.hook, "utf8")).toContain("hooks run");
+		expect(existsSync(repo.orig)).toBe(true);
+	});
+
+	test("--all reports a failure to remove the git hook", async () => {
+		const repo = makeRepo(USER_HOOK);
+		await cli(["enable", ID], repo.dir);
+		chmodSync(join(repo.dir, ".git", "hooks"), 0o555);
+		try {
+			const result = await cli(["disable", "--all"], repo.dir);
+			expect(result.code).not.toBe(0);
+		} finally {
+			chmodSync(join(repo.dir, ".git", "hooks"), 0o755);
+		}
 	});
 
 	test("--all outside a git repository skips the git hook without failing", async () => {

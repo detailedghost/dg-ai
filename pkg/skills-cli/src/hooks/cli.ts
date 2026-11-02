@@ -315,20 +315,25 @@ async function disable(
 		: parsed.positional.map((id) => definition(id).id);
 	const agentIds = ids?.filter((id) => id !== STRIP_ID);
 	const touchesAgents = agentIds === undefined || agentIds.length > 0;
-	const touchesGit = ids === undefined || ids.includes(STRIP_ID);
+	const touchesGit =
+		(ids === undefined && parsed.runtimes.length === 0) ||
+		ids?.includes(STRIP_ID) === true;
 	const runtimes = touchesAgents ? selectRuntimes(parsed.runtimes, all) : [];
 	for (const runtime of runtimes) all[runtime].check();
 	for (const runtime of runtimes)
 		for (const id of await all[runtime].disable(agentIds))
 			io.seams.stdout(`${runtime}: disabled ${id} ${NOTICE}\n`);
 	if (!touchesGit) return 0;
-	let removed = false;
+	let located: Awaited<ReturnType<typeof commitMsgHook>> | undefined;
 	try {
-		const { file } = await commitMsgHook(io);
-		removed = removeCommitMsgHook(file);
-		if (removed) io.seams.stdout(`git: disabled ${STRIP_ID} (${file})\n`);
+		located = await commitMsgHook(io);
 	} catch (error) {
 		if (ids !== undefined) throw error;
+	}
+	let removed = false;
+	if (located) {
+		removed = removeCommitMsgHook(located.file);
+		if (removed) io.seams.stdout(`git: disabled ${STRIP_ID} (${located.file})\n`);
 	}
 	if (removed || ids !== undefined)
 		writeDgConfig({ hooks: { [STRIP_ID]: { enabled: "off" } } }, io.env);

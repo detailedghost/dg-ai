@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { writeFileAtomic } from "@dg/common/node";
 import type { CommandRunner } from "../types";
 
@@ -39,7 +39,7 @@ function script(file: string, launcher: string, id: string): string {
 		"#!/bin/sh",
 		MARKER,
 		`${shellQuote(launcher)} hooks run ${id} "$1" || true`,
-		`orig=${shellQuote(chained(file))}`,
+		'orig="${0%/*}/' + `${basename(chained(file))}"`,
 		'[ -x "$orig" ] && exec "$orig" "$@"',
 		"exit 0",
 		"",
