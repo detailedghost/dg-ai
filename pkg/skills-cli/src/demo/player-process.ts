@@ -202,7 +202,6 @@ export async function runPlayer(
 	let voiceGranted = false;
 	const bridge = createBridge({
 		job,
-		steps: job.script.steps.length + (job.script.setup?.steps.length ?? 0),
 		onNarrationFailed: (reason) =>
 			console.log(
 				`demo ${job.slug}: narration failed (${reason}); recorded without voice`,
