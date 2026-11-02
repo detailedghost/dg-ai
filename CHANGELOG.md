@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.32.2 (2026-11-02)
+
+### Fixes
+
+- fix(sdlc): stop checkbox and confirmation deferrals from blocking slice waves ([#126](https://github.com/detailedghost/dg-ai/pull/126))
+
 ## v1.32.1 (2026-11-02)
 
 ### Fixes
