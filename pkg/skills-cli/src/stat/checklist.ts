@@ -377,6 +377,10 @@ const GROUP_AGENT = 2;
 const GROUP_PARKED = 3;
 const GROUP_NEEDS_USER = 4;
 
+function isAgentBucket(item: ChecklistItem): boolean {
+	return item.status !== "blocked-user" && item.status !== "needs-user" && item.status !== "parked";
+}
+
 function chainRank(item: ChecklistItem): number {
 	let rank = 0;
 	for (const member of [item, ...item.children]) {
@@ -390,7 +394,10 @@ function chainRank(item: ChecklistItem): number {
 /** Open top-level items in display order: blocked-user, critical chain, other chains by ETA, parked, needs-user. Ties keep stored order. */
 function displayEntries(model: ChecklistModel): { item: ChecklistItem; topIndex: number }[] {
 	const { best } = findCritical(model);
-	const critical = best?.inOpen ? best.topIndex : undefined;
+	const critical =
+		best?.inOpen && isAgentBucket(model.open[best.topIndex] as ChecklistItem)
+			? best.topIndex
+			: undefined;
 	const keyed = model.open.map((item, topIndex) => {
 		let group = GROUP_AGENT;
 		if (item.status === "blocked-user") group = GROUP_BLOCKED;

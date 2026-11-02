@@ -718,6 +718,36 @@ describe("critical-path display order", () => {
 		expect(texts(second.model)[Number(second.label) - 1]).toBe("later");
 	});
 
+	test.each(["needs-user", "parked"] as const)(
+		"a %s parent holding the largest-eta agent child stays out of the critical slot",
+		(status) => {
+			const holder = item("holder", { status });
+			holder.children.push(item("big", { status: "running", eta: ">1 hr" }));
+			const model: ChecklistModel = {
+				open: [
+					holder,
+					item("short", { status: "running", eta: "<5 min" }),
+					item("long", { status: "running", eta: "~1 hr" }),
+				],
+				done: [],
+			};
+			expect(texts(model)).toEqual(["long", "short", "holder", "big"]);
+		},
+	);
+
+	test.each([
+		["needs-user", "3"],
+		["parked", "3"],
+	] as const)("the total still names the child under a %s parent at its displayed number", (status, order) => {
+		const holder = item("holder", { status });
+		holder.children.push(item("big", { status: "running", eta: ">1 hr" }));
+		const model: ChecklistModel = {
+			open: [holder, item("short", { status: "running", eta: "<5 min" }), item("long", { status: "running", eta: "~1 hr" })],
+			done: [],
+		};
+		expect(computeTotal(model)).toEqual({ bucket: ">1 hr", label: { order: `${order}.1`, text: "big" } });
+	});
+
 	test("a critical sub-item under a done parent does not promote an unrelated open item", () => {
 		const doneParent = item("finished", { status: "done" });
 		doneParent.children.push(item("tail", { status: "running", eta: ">1 hr" }));
