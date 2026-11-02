@@ -38,9 +38,10 @@ import {
 let dgHome: string;
 
 afterEach(() => {
-	if (!dgHome) return;
-	killDaemonByPidFile(dgHome);
-	cleanupDgHome(dgHome);
+	if (dgHome) {
+		killDaemonByPidFile(dgHome);
+		cleanupDgHome(dgHome);
+	}
 	removeScratchDirs();
 	dgHome = "";
 });
