@@ -261,14 +261,15 @@ export function protonPwRuntime(
 			return openSession(spec);
 		},
 	});
+	let closing: Promise<void> | undefined;
 	return {
-		async close() {
-			try {
-				await transport.close();
-			} finally {
+		close() {
+			closing ??= transport.close().finally(() => {
 				release?.();
 				release = undefined;
-			}
+				closing = undefined;
+			});
+			return closing;
 		},
 		async pwBrowserRequest(request) {
 			assertProtonSignedIn(dataDir);

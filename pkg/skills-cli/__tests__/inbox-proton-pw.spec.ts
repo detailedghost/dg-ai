@@ -551,6 +551,31 @@ describe("proton-pw session lock", () => {
 		}
 	});
 
+	test("concurrent closes keep the lock until the browser has closed", async () => {
+		const data = tempDataDir();
+		try {
+			writeSignedInMarker(data.dir);
+			let finishClose: (() => void) | undefined;
+			const runtime = protonPwRuntime(data.dir, async () => ({
+				page: fixturePage,
+				close: () =>
+					new Promise<void>((resolve) => {
+						finishClose = resolve;
+					}),
+			}));
+			await runtime.pwBrowserRequest({ operation: "list-folders" });
+			const first = runtime.close();
+			const second = runtime.close();
+			await Bun.sleep(5);
+			expect(existsSync(protonLockPath(data.dir))).toBe(true);
+			finishClose?.();
+			await Promise.all([first, second]);
+			expect(existsSync(protonLockPath(data.dir))).toBe(false);
+		} finally {
+			data.cleanup();
+		}
+	});
+
 	test("a lock left by a dead process is taken over", () => {
 		const data = tempDataDir();
 		try {
