@@ -1,12 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createSignalProvider } from "../src/signal/provider";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { writeIndex } from "../src/signal/journal";
 import { resolveSignalBinary, signalCliInstallHint } from "../src/signal/hint";
 import { startFakeSignalServer } from "./support/rpc";
+import { makeTempDir, removeTempDirs } from "./support/temp-dirs";
+
+afterEach(removeTempDirs);
 
 describe("signal provider", () => {
 	test("link prints the URI through the callback before finishLink and names the device dg-cli", async () => {
@@ -21,7 +23,7 @@ describe("signal provider", () => {
 			throw new Error(method);
 		});
 		const rpc = await connectJsonRpc(server.port);
-		const home = mkdtempSync(join(tmpdir(), "ssms-link-"));
+		const home = makeTempDir("ssms-link-");
 		const provider = createSignalProvider({ home, rpc, ids: () => "d1", now: () => 0 });
 		const seen: string[] = [];
 		const result = await provider.link({
@@ -48,7 +50,7 @@ describe("signal provider", () => {
 			throw new Error(method);
 		});
 		const rpc = await connectJsonRpc(server.port);
-		const home = mkdtempSync(join(tmpdir(), "ssms-send-"));
+		const home = makeTempDir("ssms-send-");
 		const image = join(home, "pic.jpg");
 		writeFileSync(image, "jpeg");
 		writeIndex(home, [
@@ -133,7 +135,7 @@ describe("signal provider", () => {
 			},
 		]);
 		const rpc = await connectJsonRpc(server.port);
-		const home = mkdtempSync(join(tmpdir(), "ssms-recv-"));
+		const home = makeTempDir("ssms-recv-");
 		const provider = createSignalProvider({
 			home,
 			rpc,
@@ -171,7 +173,7 @@ describe("attachment approval", () => {
 			throw new Error(method);
 		});
 		const rpc = await connectJsonRpc(server.port);
-		const home = mkdtempSync(join(tmpdir(), "ssms-hash-"));
+		const home = makeTempDir("ssms-hash-");
 		const image = join(home, "pic.jpg");
 		writeFileSync(image, "jpeg-approved");
 		const provider = createSignalProvider({
@@ -208,7 +210,7 @@ describe("concurrent sends", () => {
 			throw new Error(method);
 		});
 		const rpc = await connectJsonRpc(server.port);
-		const home = mkdtempSync(join(tmpdir(), "ssms-race-"));
+		const home = makeTempDir("ssms-race-");
 		const provider = createSignalProvider({
 			home,
 			rpc,

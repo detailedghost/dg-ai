@@ -1,6 +1,4 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { UnsupportedCapability } from "../src/errors";
 import { createLocalMessagesBrowser } from "../src/google/browser";
@@ -11,6 +9,9 @@ import { connectJsonRpc } from "../src/signal/rpc";
 import type { SmsCapability, SmsProvider } from "../src/types";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
 import { startFakeSignalServer, type RpcCall } from "./support/rpc";
+import { makeTempDir, removeTempDirs } from "./support/temp-dirs";
+
+afterEach(removeTempDirs);
 
 interface Fixture {
 	provider: SmsProvider;
@@ -20,7 +21,7 @@ interface Fixture {
 }
 
 async function googleFixture(): Promise<Fixture> {
-	const home = mkdtempSync(join(tmpdir(), "ssms-google-"));
+	const home = makeTempDir("ssms-google-");
 	const logs: string[] = [];
 	const sent = { n: 0 };
 	const doc = createDocument(
@@ -73,7 +74,7 @@ async function googleFixture(): Promise<Fixture> {
 }
 
 async function signalFixture(): Promise<Fixture> {
-	const home = mkdtempSync(join(tmpdir(), "ssms-signal-"));
+	const home = makeTempDir("ssms-signal-");
 	const logs: string[] = [];
 	appendJournal(home, [
 		{

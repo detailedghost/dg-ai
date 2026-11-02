@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { writeDraft } from "../src/drafts/store";
 import { writeJournal } from "../src/signal/journal";
+import { makeTempDir, removeTempDirs } from "./support/temp-dirs";
+
+afterEach(removeTempDirs);
 
 function mode(path: string): number {
 	return statSync(path).mode & 0o777;
@@ -11,7 +13,7 @@ function mode(path: string): number {
 
 describe("private message files", () => {
 	test("drafts and the signal journal are 0600 inside a 0700 directory", () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-mode-"));
+		const home = makeTempDir("ssms-mode-");
 		const previous = process.umask(0o022);
 		try {
 			writeDraft(home, {
