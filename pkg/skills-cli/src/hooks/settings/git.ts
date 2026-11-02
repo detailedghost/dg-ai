@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { writeFileAtomic } from "@dg/common/node";
 import type { CommandRunner } from "../types";
@@ -53,14 +53,23 @@ export function installCommitMsgHook(
 	id: string,
 ): void {
 	mkdirSync(dirname(file), { recursive: true });
-	if (existsSync(file) && !isOwnedScript(file)) {
-		if (existsSync(chained(file)))
+	const displaces = existsSync(file) && !isOwnedScript(file);
+	if (displaces) {
+		try {
+			linkSync(file, chained(file));
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
 			throw new Error(
 				`${chained(file)} already exists; move it aside and run the command again`,
 			);
-		renameSync(file, chained(file));
+		}
 	}
-	writeFileAtomic(file, script(file, launcher, id), HOOK_MODE);
+	try {
+		writeFileAtomic(file, script(file, launcher, id), HOOK_MODE);
+	} catch (error) {
+		if (displaces) rmSync(chained(file), { force: true });
+		throw error;
+	}
 }
 
 /** Removes the hook dg wrote and restores the chained one; returns false when dg wrote none. */
