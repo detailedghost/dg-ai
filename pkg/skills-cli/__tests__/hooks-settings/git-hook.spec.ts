@@ -211,6 +211,28 @@ describe("hooks status and run", () => {
 		expect(status.stdout).toContain(`${ID}.enabled = on`);
 	});
 
+	test.each([
+		["1", "off", `${ID}.enabled = on (DG_STRIP_AI_COAUTHORS=1 overrides saved off)`],
+		["0", "on", `${ID}.enabled = off (DG_STRIP_AI_COAUTHORS=0 overrides saved on)`],
+	])("status shows DG_STRIP_AI_COAUTHORS=%s against a saved %s setting", async (value, saved, line) => {
+		await world.cli(["set", ID, "enabled", saved]);
+		const env = { DG_STRIP_AI_COAUTHORS: value };
+		expect((await world.cli(["status"], { env })).stdout).toContain(`${line}\n`);
+		const json = JSON.parse((await world.cli(["status", "--json"], { env })).stdout);
+		expect(json.stripAiCoauthors).toEqual({
+			on: value === "1",
+			saved,
+			override: value,
+		});
+	});
+
+	test("status prints the saved setting alone when the override is unset", async () => {
+		await world.cli(["set", ID, "enabled", "on"]);
+		const status = await world.cli(["status"]);
+		expect(status.stdout).toContain(`${ID}.enabled = on\n`);
+		expect(status.stdout).not.toContain("DG_STRIP_AI_COAUTHORS");
+	});
+
 	test("set accepts on and off and rejects other values", async () => {
 		expect((await world.cli(["set", ID, "enabled", "on"])).code).toBe(0);
 		expect((await world.cli(["set", ID, "enabled", "maybe"])).code).toBe(2);

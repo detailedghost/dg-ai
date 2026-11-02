@@ -5,15 +5,29 @@ import type { CommandRunner, HookEnv } from "../types";
 
 export const STRIP_ID = "strip-ai-coauthors";
 
-/** True when DG_STRIP_AI_COAUTHORS is 1, or unset and the `enabled` setting is on. */
-export function stripAiCoauthorsOn(
+export interface StripResolution {
+	on: boolean;
+	saved: string;
+	override?: "1" | "0";
+}
+
+/** DG_STRIP_AI_COAUTHORS=1 forces on, 0 forces off, anything else uses the saved `enabled` setting. */
+export function resolveStripAiCoauthors(
 	env: HookEnv,
 	warn?: (message: string) => void,
-): boolean {
-	const override = env["DG_STRIP_AI_COAUTHORS"];
-	if (override === "1") return true;
-	if (override === "0") return false;
-	return hookSetting(STRIP_ID, "enabled", env, warn) === "on";
+): StripResolution {
+	const saved = hookSetting(STRIP_ID, "enabled", env, warn);
+	const value = env["DG_STRIP_AI_COAUTHORS"];
+	const override = value === "1" || value === "0" ? value : undefined;
+	const on = override ? override === "1" : saved === "on";
+	return override ? { on, saved, override } : { on, saved };
+}
+
+export function describeStripResolution({ on, saved, override }: StripResolution): string {
+	const state = on ? "on" : "off";
+	return override
+		? `${state} (DG_STRIP_AI_COAUTHORS=${override} overrides saved ${saved})`
+		: state;
 }
 
 function commentCharOf(configured: string, message: string): string {
@@ -27,7 +41,7 @@ export async function stripCommitMessageFile(
 	env: HookEnv,
 	run: CommandRunner,
 ): Promise<void> {
-	if (!stripAiCoauthorsOn(env)) return;
+	if (!resolveStripAiCoauthors(env).on) return;
 	const message = readFileSync(file, "utf8");
 	const config = await run(["git", "config", "--get", "core.commentChar"]);
 	const configured = config.status === 0 ? config.stdout.trim() : "";

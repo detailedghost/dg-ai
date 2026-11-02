@@ -8,6 +8,10 @@ import {
 	ok,
 	warn,
 } from "../doctor/types";
+import {
+	describeStripResolution,
+	resolveStripAiCoauthors,
+} from "./defs/strip-ai-coauthors";
 import { claudeWriter } from "./settings/claude";
 import { codexWriter } from "./settings/codex";
 import { type JsonObject, readJsonObject } from "./settings/json-file";
@@ -172,9 +176,19 @@ const staleEntriesCheck: DoctorCheck = {
 	},
 };
 
+const stripSettingCheck: DoctorCheck = {
+	id: "strip-ai-coauthors",
+	run(ctx) {
+		return ok(
+			`strip-ai-coauthors is ${describeStripResolution(resolveStripAiCoauthors(ctx.env))}`,
+		);
+	},
+};
+
 export const hooksChecks: DoctorCheck[] = [
 	skillFilesCheck(["hooks"]),
 	...RUNTIMES.map(settingsCheck),
 	staleEntriesCheck,
 	hooksAllowRuleCheck,
+	stripSettingCheck,
 ];

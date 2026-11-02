@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isAiCoauthor, protectedPushReason, stripAiCoauthors } from "@dg/common";
 import { statePath, uniqueName } from "@dg/common/node";
-import { stripAiCoauthorsOn } from "../hooks/defs/strip-ai-coauthors";
+import { resolveStripAiCoauthors } from "../hooks/defs/strip-ai-coauthors";
 import {
 	baseBranch,
 	currentBranch,
@@ -125,7 +125,7 @@ async function cmdApplyJson(args: string[]): Promise<void> {
 		die(`plan file not found: ${planFile}`, EXIT.ERR);
 	}
 
-	const strip = stripAiCoauthorsOn(process.env, (m) => void process.stderr.write(m));
+	const strip = resolveStripAiCoauthors(process.env, (m) => void process.stderr.write(m)).on;
 	const { base: planBase, groups } = parseJsonPlan(planText, strip);
 
 	const ctx = await preflightAndCapture(baseOverride ?? planBase);

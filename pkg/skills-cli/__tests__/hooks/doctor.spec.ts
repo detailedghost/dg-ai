@@ -13,7 +13,7 @@ function setup(env: NodeJS.ProcessEnv = { PATH: "" }) {
 	const world = settingsWorld();
 	const ctx = {
 		home: world.home,
-		env,
+		env: { DG_HOME: world.dgHome, ...env },
 		paths: {},
 		installedVersion: "0.0.0",
 		memo: <T>(_key: string, make: () => T) => make(),
@@ -59,12 +59,13 @@ const missing = (world: ReturnType<typeof settingsWorld>) =>
 	join(world.dgHome, "gone", "dg-skills");
 
 describe("hooksChecks order", () => {
-	test("lists skill files, the three settings checks, stale entries and the allow rule", () => {
+	test("lists skill files, the three settings checks, stale entries, the allow rule and the strip setting", () => {
 		expect(hooksChecks.map((c) => c.id)).toEqual([
 			"skill-files",
 			...RUNTIME_IDS,
 			"stale-entries",
 			"allow-rule",
+			"strip-ai-coauthors",
 		]);
 	});
 });
@@ -241,5 +242,34 @@ describe("allow-rule", () => {
 		const { run, allowWith } = setup();
 		allowWith([`Bash(${CLI_PATH}:*)`, ...HOOKS_ALLOW_RULES]);
 		expect((await run("allow-rule")).status).toBe("warn");
+	});
+});
+
+describe("strip-ai-coauthors check", () => {
+	const saveSetting = (world: ReturnType<typeof settingsWorld>, enabled: string) =>
+		world.seed(world.paths.config, {
+			hooks: { "strip-ai-coauthors": { enabled } },
+		});
+
+	test("reports the saved setting when the override is unset", async () => {
+		const { world, run } = setup();
+		saveSetting(world, "on");
+		const result = await run("strip-ai-coauthors");
+		expect(result.status).toBe("ok");
+		expect(result.detail).toContain("on");
+		expect(result.detail).not.toContain("DG_STRIP_AI_COAUTHORS");
+	});
+
+	test.each([
+		["1", "off", "on"],
+		["0", "on", "off"],
+	])("shows DG_STRIP_AI_COAUTHORS=%s against a saved %s setting", async (value, saved, resolved) => {
+		const { world, run } = setup({ PATH: "", DG_STRIP_AI_COAUTHORS: value });
+		saveSetting(world, saved);
+		const result = await run("strip-ai-coauthors");
+		expect(result.status).toBe("ok");
+		expect(result.detail).toContain(
+			`${resolved} (DG_STRIP_AI_COAUTHORS=${value} overrides saved ${saved})`,
+		);
 	});
 });

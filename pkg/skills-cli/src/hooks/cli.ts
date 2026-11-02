@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { readDgConfig, resolveDgPaths, writeDgConfig } from "@dg/common/node";
-import { STRIP_ID, stripCommitMessageFile } from "./defs/strip-ai-coauthors";
+import {
+	describeStripResolution,
+	resolveStripAiCoauthors,
+	STRIP_ID,
+	stripCommitMessageFile,
+} from "./defs/strip-ai-coauthors";
 import { HOOKS } from "./manifest";
 import { defaultSeams, runHook } from "./run";
 import { claudeWriter } from "./settings/claude";
@@ -159,6 +164,8 @@ function configValues(io: HooksIo): string[] {
 		| undefined;
 	return HOOKS.flatMap((hook) =>
 		Object.entries(hook.settings ?? {}).map(([key, spec]) => {
+			if (hook.id === STRIP_ID && key === "enabled")
+				return `${hook.id}.${key} = ${describeStripResolution(resolveStripAiCoauthors(io.env))}`;
 			const value = stored?.[hook.id]?.[key];
 			return `${hook.id}.${key} = ${typeof value === "string" ? value : spec.default}`;
 		}),
@@ -189,7 +196,8 @@ async function status(
 	const failed = Object.values(runtimes).some((info) => "error" in info);
 	const git = await gitState(io);
 	if (parsed.json) {
-		io.seams.stdout(`${JSON.stringify({ runtimes, git }, null, 2)}\n`);
+		const stripAiCoauthors = resolveStripAiCoauthors(io.env);
+		io.seams.stdout(`${JSON.stringify({ runtimes, git, stripAiCoauthors }, null, 2)}\n`);
 		return failed ? 1 : 0;
 	}
 	for (const [runtime, info] of Object.entries(runtimes))
