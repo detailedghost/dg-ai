@@ -36,6 +36,19 @@ afterEach(() => {
 });
 
 describe("syncDirInPlace", () => {
+	test("refuses a source symlink instead of copying its target", () => {
+		const root = scratch();
+		const src = join(root, "src");
+		const secret = join(root, "secret.txt");
+		put(secret, "secret");
+		mkdirSync(src, { recursive: true });
+		symlinkSync(secret, join(src, "link.js"));
+		expect(() => syncDirInPlace(src, join(root, "dest"))).toThrow(
+			"not a regular file",
+		);
+		expect(existsSync(join(root, "dest", "link.js"))).toBe(false);
+	});
+
 	test("keeps the destination directory itself and replaces, adds and removes files", () => {
 		const root = scratch();
 		const src = join(root, "src");

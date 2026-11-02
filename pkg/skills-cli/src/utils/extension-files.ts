@@ -48,6 +48,8 @@ export function syncDirInPlace(
 		const to = join(dest, name);
 		const kind = entryKind(from);
 		const existing = entryKind(to);
+		if (lstatSync(from).isSymbolicLink())
+			throw new Error(`extension entry is not a regular file: ${name}`);
 		if (kind === "dir") {
 			if (existing === "file") rmSync(to, { force: true });
 			syncDirInPlace(from, to, deps);
