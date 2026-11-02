@@ -102,8 +102,8 @@ const QA = {
 
 const FILES = {
   type: "object",
-  required: ["files"],
-  properties: { files: { type: "array", items: { type: "string" } } },
+  required: ["ok", "files"],
+  properties: { ok: { type: "boolean" }, files: { type: "array", items: { type: "string" } } },
 };
 
 const sub = (tpl, slice, extra = {}) =>
@@ -142,8 +142,8 @@ const globRe = (glob) =>
       .replace(/\u0002(\d+);/g, (_, code) => `\\u${Number(code).toString(16).padStart(4, "0")}`)}$`,
   );
 const safePath = (f) => {
-  if (typeof f !== "string" || f.startsWith("/")) return null;
-  const parts = f.split("/");
+  if (typeof f !== "string" || f.startsWith("/") || /^[A-Za-z]:/.test(f)) return null;
+  const parts = f.split(/[\\/]/);
   if (parts.includes("..")) return null;
   return parts.filter((p) => p !== "" && p !== ".").join("/") || null;
 };
@@ -173,7 +173,7 @@ const results = await pipeline(
           red: null,
           blocked: false,
           unverified: [],
-          changedFiles: [...redDone[slice.id]],
+          changedFiles: safePaths(redDone[slice.id]),
           deferrals: [],
           notes: { durable: [], scratch: [] },
         }
@@ -189,7 +189,7 @@ const results = await pipeline(
       // `|| []` alone makes a dead agent's "produced nothing" read as "had nothing to add" —
       // which is how a wave of dead agents reported clean.
       unverified: r ? [] : ["red"],
-      changedFiles: [...(r?.testFiles || [])],
+      changedFiles: safePaths(r?.testFiles),
       deferrals: live(r?.deferrals),
       notes: { durable: [...(r?.notes?.durable || [])], scratch: [...(r?.notes?.scratch || [])] },
     })),
@@ -234,14 +234,15 @@ const results = await pipeline(
       const reported = uniq([...st.changedFiles, ...safePaths(g?.testFiles)]);
       const listed = cwd
         ? await agent(
-            `Working directory: ${cwd}. Run these two commands from it and return every path they print, one entry per path, nothing else. Do not edit any file.\n1. git diff --name-only HEAD\n2. git ls-files --others --exclude-standard`,
+            `Working directory: ${cwd}. Run these two commands from it and return every path they print, one entry per path. Set ok to true only when both commands exit 0, otherwise false. Do not edit any file.\n1. git diff --name-only HEAD\n2. git ls-files --others --exclude-standard`,
             { label: `files:${slice.id}`, phase: phaseFor(slice), ...stageOpts(roles.wave), schema: FILES },
           )
         : null;
-      const owned = ownedPaths(slice, listed?.files);
+      const listedOk = listed?.ok === true;
+      const owned = listedOk ? ownedPaths(slice, listed.files) : [];
       return {
         ...st,
-        unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listed ? ["files"] : [])],
+        unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listedOk ? ["files"] : [])],
         changedFiles: uniq([...reported, ...(slice.files?.length ? owned : [])]),
         reviewFiles: uniq([...reported, ...owned]),
         deferrals: [...st.deferrals, ...live(g?.deferrals)],

@@ -320,7 +320,7 @@ describe("slice-wave runner deferral handling", () => {
 				red: red([]),
 				yellow,
 				green: red([]),
-				files: { files: ["a.ts", "missed.ts", "new-untracked.ts"] },
+				files: { ok: true, files: ["a.ts", "missed.ts", "new-untracked.ts"] },
 			},
 			{ cwd: "/work/tree" },
 		);
@@ -363,7 +363,7 @@ describe("slice-wave runner deferral handling", () => {
 				red: red([]),
 				yellow,
 				green: red([]),
-				files: { files: ["src/one/x.ts", "src/two/y.ts", "src/one/deep/z.ts"] },
+				files: { ok: true, files: ["src/one/x.ts", "src/two/y.ts", "src/one/deep/z.ts"] },
 			},
 			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/one/**"] }] },
 		);
@@ -405,7 +405,7 @@ describe("slice-wave runner deferral handling", () => {
 				red: red([]),
 				yellow,
 				green: red([]),
-				files: { files: ["src/one/helper.ts", "src/two/y.ts"] },
+				files: { ok: true, files: ["src/one/helper.ts", "src/two/y.ts"] },
 			},
 			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/one/**"] }] },
 		);
@@ -421,7 +421,7 @@ describe("slice-wave runner deferral handling", () => {
 	])("matches the glob %s against %s", async (glob, path) => {
 		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
 		const { prompts } = await wave(
-			{ red: red([]), yellow, green: red([]), files: { files: [path] } },
+			{ red: red([]), yellow, green: red([]), files: { ok: true, files: [path] } },
 			{ cwd: "/work/tree", slices: [{ ...own, files: [glob] }] },
 		);
 		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
@@ -431,7 +431,7 @@ describe("slice-wave runner deferral handling", () => {
 	test("normalizes dot segments before the ownership check", async () => {
 		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
 		const { prompts } = await wave(
-			{ red: red([]), yellow, green: red([]), files: { files: ["src/./a.ts"] } },
+			{ red: red([]), yellow, green: red([]), files: { ok: true, files: ["src/./a.ts"] } },
 			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/**"] }] },
 		);
 		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
@@ -446,7 +446,7 @@ describe("slice-wave runner deferral handling", () => {
 				red: red([]),
 				yellow: { ...yellow, changedFiles: ["src/ok.ts", ...bad] },
 				green: { ...red([]), testFiles: bad },
-				files: { files: bad },
+				files: { ok: true, files: bad },
 			},
 			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/**"] }] },
 		);
@@ -459,10 +459,65 @@ describe("slice-wave runner deferral handling", () => {
 		expect(slice.changedFiles).not.toContain("secrets.txt");
 	});
 
+	test("refuses backslash and drive-letter paths from every list", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const bad = ["src\\..\\x.ts", "C:\\win.ts", "c:win.ts", "src\\a\\..\\..\\b.ts"];
+		const { prompts, slice } = await wave(
+			{
+				red: red([]),
+				yellow: { ...yellow, changedFiles: ["src/ok.ts", ...bad] },
+				green: { ...red([]), testFiles: bad },
+				files: { ok: true, files: bad },
+			},
+			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/**"] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain("src/ok.ts");
+		for (const path of bad) {
+			expect(review).not.toContain(path);
+			expect(slice.changedFiles).not.toContain(path);
+		}
+	});
+
+	test("refuses unsafe red-stage test files from red-done and from red", async () => {
+		const bad = ["../evil.test.ts", "/etc/passwd", "src\\..\\x.ts", "C:\\w.ts"];
+		const fromDone = await wave(
+			{ yellow, green: red([]) },
+			{ redDone: { 1: ["ok.test.ts", ...bad] } },
+		);
+		expect(fromDone.prompts["yellow:1"]).toBe("yellow:ok.test.ts");
+		const fromRed = await wave({
+			red: { testFiles: ["ok.test.ts", ...bad], deferrals: [] },
+			yellow,
+			green: red([]),
+		});
+		expect(fromRed.prompts["yellow:1"]).toBe("yellow:ok.test.ts");
+	});
+
+	test("marks the slice unverified and ignores files when a git listing failed", async () => {
+		const { slice, prompts } = await wave(
+			{ red: red([]), yellow, green: red([]), files: { ok: false, files: ["missed.ts"] } },
+			{ cwd: "/work/tree" },
+		);
+		expect(slice.status).toBe("unverified");
+		expect(slice.unverifiedStages).toContain("files");
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).not.toContain("missed.ts");
+	});
+
+	test("asks the file-list agent to report whether both git commands exited 0", async () => {
+		const { prompts } = await wave(
+			{ red: red([]), yellow, green: red([]), files: { ok: true, files: [] } },
+			{ cwd: "/work/tree" },
+		);
+		expect(prompts["files:1"]).toContain("ok");
+		expect(prompts["files:1"]).toContain("exit");
+	});
+
 	test("treats [!x] in a glob as a negated class", async () => {
 		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
 		const { prompts } = await wave(
-			{ red: red([]), yellow, green: red([]), files: { files: ["src/a.ts", "src/b.ts"] } },
+			{ red: red([]), yellow, green: red([]), files: { ok: true, files: ["src/a.ts", "src/b.ts"] } },
 			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/[!a].ts"] }] },
 		);
 		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
@@ -472,7 +527,7 @@ describe("slice-wave runner deferral handling", () => {
 
 	test("keeps git-only files out of the slice's commit list", async () => {
 		const { slice } = await wave(
-			{ red: red([]), yellow, green: red([]), files: { files: ["other-slice.ts"] } },
+			{ red: red([]), yellow, green: red([]), files: { ok: true, files: ["other-slice.ts"] } },
 			{ cwd: "/work/tree" },
 		);
 		expect(slice.changedFiles).toEqual(["a.test.ts", "a.ts"]);
