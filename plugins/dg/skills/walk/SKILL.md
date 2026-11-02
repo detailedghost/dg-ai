@@ -25,7 +25,7 @@ Drop a question when:
 
 With the word `stat`, collect only the open user items from `~/.dg/bin/dg-skills stat checklist --json`. Take every item in `open` and `done` (and their `children`) whose `owner` is `user`; a done parent can still hold unfinished user sub-items. Treat each as one question, with `blocked-user` items first. Skip the scan above.
 
-Merge duplicates. With a filter, keep only questions that match the topic word.
+Merge duplicates. With a filter other than `stat`, keep only questions that match the topic word; `stat` is a source, not a topic, so it never filters the collected items.
 
 ## 2. List
 
