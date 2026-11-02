@@ -69,7 +69,7 @@ At 760px and below, both switchers use two rows. The variant arrows and label fi
 - **Note** toggles a note row above the icons, with the reject reason chips in the switchers. A yellow dot shows when it has text. The note rides along with the next decision.
 - **Approve** POSTs `{ name, variant, variants, notes, action: "confirm" }`. It turns yellow when the note has text. It closes the tab only when the note is empty, after a confetti burst. A noted approval shows "Building the next round from &lt;key&gt;…" with a rotating border and keeps the tab open until the reload token changes.
 - **Reject** needs a note. With no note it opens the note row and shows the toast "Add a note first. A rework needs direction." It POSTs `action: "reject"`, never closes the tab, and gives the bar a red, rotating border. The open tab reloads when the agent bumps the reload token.
-- **Width** opens a menu: All widths, Mobile 390, Tablet 768, Desktop 1440. The choice is a CSS `max-width` on `<body>` (`html[data-proto-width]`) and is kept in `?width=`. Media queries inside the page do not react to it. Arrow keys and `Esc` work in the menu, and a click outside closes it.
+- **Width** opens a menu: Responsive (the default), Mobile 390, Tablet 768, Desktop 1440. The choice is a CSS `max-width` on `<body>` (`html[data-proto-width]`) and is kept in `?width=`. Media queries inside the page do not react to it. Arrow keys and `Esc` work in the menu, and a click outside closes it.
 
 **Icons.** The bars draw `window.dgIcons` from `dg-icons.js`. `prototype serve` inlines it. In your own dev server, copy `dg-icons.js` next to the page and load it with `<script src="/dg-icons.js"></script>` before the switcher. Without it, the bars show text glyphs.
 

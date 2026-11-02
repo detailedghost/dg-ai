@@ -56,9 +56,15 @@ describe("prototype page escaping", () => {
 describe("prototype viewer width", () => {
 	const html = render(parseManifestSource("---\nname: x\n---\n::: A\nx\n:::\n"));
 
-	test("fills the window by default with zero top and side padding", () => {
+	test("passes the page straight through by default with no padding", () => {
 		expect(html).not.toMatch(/\nsection\[data-variant\]\{[^}]*max-width/);
-		expect(html).toMatch(/#proto-root\{[^}]*padding:0 0 7rem/);
+		expect(html).toMatch(/\n#proto-root\{min-height:100vh;\}/);
+		expect(html).not.toMatch(/#proto-root[^{]*\{[^}]*padding/);
+	});
+
+	test("labels the default width Responsive", () => {
+		expect(html).toMatch(/data-w="all" aria-checked="true"><span data-icon="all"><\/span>Responsive</);
+		expect(html).not.toContain("All widths");
 	});
 
 	test("offers a framed option that restores the 960px frame", () => {
@@ -77,14 +83,10 @@ describe("prototype viewer width", () => {
 		);
 	});
 
-	test("has no default max-width on the desktop variant", () => {
-		expect(html).not.toMatch(/\nsection\[data-variant\]\{[^}]*max-width/);
-		expect(html).toMatch(/\n#proto-root\{[^}]*padding:0 0 7rem/);
-	});
-
-	test("keeps the old padding on every fixed width including framed", () => {
+	test("fixed widths only narrow the variant", () => {
 		expect(html).toMatch(
-			/#proto-root\[data-width\]:not\(\[data-width="all"\]\)\{padding:2\.5rem 2rem 7rem;\}/,
+			/#proto-root\[data-width="desktop"\] section\[data-variant\]\{max-width:1440px;\}/,
 		);
+		expect(html).toMatch(/\nsection\[data-variant\]\{display:none;margin:0 auto;\}/);
 	});
 });
