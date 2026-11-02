@@ -183,6 +183,7 @@ interface Best {
 	bucket: EtaBucket;
 	item: ChecklistItem;
 	topIndex: number;
+	inOpen: boolean;
 }
 
 function findCritical(model: ChecklistModel): { anyUnfinished: boolean; best: Best | null } {
@@ -196,7 +197,12 @@ function findCritical(model: ChecklistModel): { anyUnfinished: boolean; best: Be
 		if (ownerFor(item.status) !== "agent") continue;
 		if (!item.eta || item.eta === "unknown") continue;
 		if (!best || etaRank(item.eta) > etaRank(best.bucket)) {
-			best = { bucket: item.eta, item, topIndex: entry.topIndex };
+			best = {
+				bucket: item.eta,
+				item,
+				topIndex: entry.topIndex,
+				inOpen: entry.scope === "open-top" || entry.scope === "open-child",
+			};
 		}
 	}
 	return { anyUnfinished, best };
@@ -212,9 +218,7 @@ export function computeTotal(model: ChecklistModel): TotalResult | null {
 }
 
 export function countWaitingOnUser(model: ChecklistModel): number {
-	return storedEntries(model).filter(
-		(entry) => entry.scope !== "done-top" && entry.scope !== "done-child" && ownerFor(entry.item.status) === "user",
-	).length;
+	return storedEntries(model).filter((entry) => ownerFor(entry.item.status) === "user").length;
 }
 
 function waitingLine(model: ChecklistModel, prefix: string): string | null {
@@ -380,7 +384,8 @@ function chainRank(item: ChecklistItem): number {
 
 /** Open top-level items in display order: blocked-user, critical chain, other chains by ETA, parked, needs-user. Ties keep stored order. */
 function displayEntries(model: ChecklistModel): { item: ChecklistItem; topIndex: number }[] {
-	const critical = findCritical(model).best?.topIndex;
+	const { best } = findCritical(model);
+	const critical = best?.inOpen ? best.topIndex : undefined;
 	const keyed = model.open.map((item, topIndex) => {
 		let group = GROUP_AGENT;
 		if (item.status === "blocked-user") group = GROUP_BLOCKED;
@@ -557,8 +562,7 @@ export interface AddOptions {
 	under?: string;
 }
 
-function clampPosition(at: number | undefined, length: number): number {
-	if (at === undefined) return length;
+function clampPosition(at: number, length: number): number {
 	return Math.min(Math.max(at - 1, 0), length);
 }
 
@@ -593,13 +597,19 @@ export function addItem(
 		return withLabel({ open, done: model.done }, item);
 	}
 
-	const shown = displayEntries(model);
-	const position = clampPosition(opts.at, shown.length);
-	const storedPosition = shown[position]?.topIndex ?? model.open.length;
-	const open = [
-		...model.open.slice(0, storedPosition),
-		item,
-		...model.open.slice(storedPosition),
-	];
-	return withLabel({ open, done: model.done }, item);
+	const insertedAt = (storedPosition: number): ChecklistModel => ({
+		open: [...model.open.slice(0, storedPosition), item, ...model.open.slice(storedPosition)],
+		done: model.done,
+	});
+	if (opts.at === undefined) return withLabel(insertedAt(model.open.length), item);
+
+	const wanted = clampPosition(opts.at, model.open.length);
+	let best = { model: insertedAt(model.open.length), distance: Number.POSITIVE_INFINITY };
+	for (let stored = 0; stored <= model.open.length && best.distance > 0; stored++) {
+		const candidate = insertedAt(stored);
+		const shownAt = displayEntries(candidate).findIndex((entry) => entry.item === item);
+		const distance = Math.abs(shownAt - wanted);
+		if (distance < best.distance) best = { model: candidate, distance };
+	}
+	return withLabel(best.model, item);
 }

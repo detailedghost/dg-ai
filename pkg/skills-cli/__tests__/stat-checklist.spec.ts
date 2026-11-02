@@ -718,6 +718,28 @@ describe("critical-path display order", () => {
 		expect(texts(second.model)[Number(second.label) - 1]).toBe("later");
 	});
 
+	test("a critical sub-item under a done parent does not promote an unrelated open item", () => {
+		const doneParent = item("finished", { status: "done" });
+		doneParent.children.push(item("tail", { status: "running", eta: ">1 hr" }));
+		const model: ChecklistModel = {
+			open: [item("short", { status: "running", eta: "<5 min" }), item("long", { status: "running", eta: "~1 hr" })],
+			done: [doneParent],
+		};
+		expect(computeTotal(model)?.label?.text).toBe("tail");
+		expect(texts(model).slice(0, 2)).toEqual(["long", "short"]);
+	});
+
+	test("add --at keeps the requested position when stored order differs from display order", () => {
+		const model: ChecklistModel = {
+			open: [item("short", { status: "running", eta: "<5 min" }), item("long", { status: "running", eta: ">1 hr" })],
+			done: [],
+		};
+		const result = addItem(model, "peer", { at: 2, status: "running", eta: ">1 hr" });
+		if (!result.ok) throw new Error("expected success");
+		expect(result.label).toBe("2");
+		expect(texts(result.model)).toEqual(["long", "peer", "short"]);
+	});
+
 	test("mutations report the displayed label", () => {
 		const done = markDone(mixed(), "mid");
 		if (!done.ok) throw new Error("expected success");
@@ -768,5 +790,12 @@ describe("waiting-on-you trailer", () => {
 		const parent = item("p", { status: "running" });
 		parent.children.push(item("k", { status: "blocked-user" }));
 		expect(renderPlain({ open: [parent], done: [] })).toContain("Waiting on you: 1 item.");
+	});
+
+	test("unfinished user sub-items under a done parent count", () => {
+		const parent = item("p", { status: "done" });
+		parent.children.push(item("k", { status: "blocked-user" }), item("j", { status: "done" }));
+		const model: ChecklistModel = { open: [], done: [parent] };
+		expect(renderPlain(model)).toContain("Waiting on you: 1 item.");
 	});
 });

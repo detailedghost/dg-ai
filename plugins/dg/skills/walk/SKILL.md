@@ -23,7 +23,7 @@ Drop a question when:
 - The user already answered it, even in passing.
 - Later work made it moot.
 
-With the word `stat`, collect only the open user items from `~/.dg/bin/dg-skills stat checklist --json`. Take every item in `open` (and its `children`) whose `owner` is `user`. Treat each as one question, with `blocked-user` items first. Skip the scan above.
+With the word `stat`, collect only the open user items from `~/.dg/bin/dg-skills stat checklist --json`. Take every item in `open` and `done` (and their `children`) whose `owner` is `user`; a done parent can still hold unfinished user sub-items. Treat each as one question, with `blocked-user` items first. Skip the scan above.
 
 Merge duplicates. With a filter, keep only questions that match the topic word.
 
