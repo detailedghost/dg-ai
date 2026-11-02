@@ -52,6 +52,7 @@ interface Args {
 	slices: {
 		id: number;
 		name: string;
+		files?: string[];
 		primary: Stage;
 		qa: Stage[];
 		proxyBackend?: string;
@@ -467,6 +468,15 @@ describe("slice-wave runner deferral handling", () => {
 	test("skips the file-list stage when no cwd is set", async () => {
 		const { labels } = await wave({ red: red([]), yellow, green: red([]) });
 		expect(labels).not.toContain("files:1");
+	});
+});
+
+describe("slice ownership globs", () => {
+	test("include generator outputs triggered by the slice's own files", async () => {
+		const { slices } = await resolved([plan("plan-generated.md"), "--layer", "0"]);
+		const files = (id: number) => slices.find((slice) => slice.id === id)?.files;
+		expect(files(1)).toEqual(["schema/*.json", "gen/out/*.ts"]);
+		expect(files(2)).toEqual(["src/two/**"]);
 	});
 });
 

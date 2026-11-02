@@ -4,7 +4,7 @@ import { bareAgent, isRecord } from "@dg/common";
 import { shellCommand } from "@dg/common/node";
 import { qualifiedAgent } from "../proxy/packaged-personas";
 import { frontmatterOf, parseYaml } from "../spec/frontmatter";
-import { sliceLayers } from "../spec/lint-waves";
+import { sliceFiles, sliceLayers } from "../spec/lint-waves";
 import {
 	sectionLines,
 	type SliceBlock,
@@ -229,6 +229,7 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 		throw new Refusal(`no slices[] in the frontmatter: ${options.plan}`);
 	const data = parsed.value;
 	const layers = sliceLayers(data);
+	const ownership = sliceFiles(data);
 	const lines = records(text);
 	const pin = executionPin(lines);
 	const members = (data.slices as unknown[])
@@ -263,7 +264,7 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			id: slice.id,
 			name: typeof slice.name === "string" ? slice.name : "",
 			...(Array.isArray(slice.files) && slice.files.length > 0
-				? { files: slice.files.map(String) }
+				? { files: ownership.get(number) ?? slice.files.map(String) }
 				: {}),
 			primary: stageFor(primary, options.runtime, { effort, tier: pin.tier }),
 			qa: qa.map((name) => stageFor(name, options.runtime)),
