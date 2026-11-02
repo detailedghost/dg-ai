@@ -787,8 +787,15 @@ export function timestampSlug(date: Date): string {
 	return `${iso.slice(0, 10).replace(/-/g, "")}-${iso.slice(11, 19).replace(/:/g, "")}`;
 }
 
-/** Default minimum package publication age for dependency updates. */
-export const DEFAULT_COOLDOWN_DAYS = 7;
+/** Minimum package publication age when neither --cooldown-days nor DG_DEPS_COOLDOWN_DAYS is set. */
+export const DEFAULT_COOLDOWN_DAYS = 0;
+
+/** Resolve the cooldown default from DG_DEPS_COOLDOWN_DAYS, falling back to DEFAULT_COOLDOWN_DAYS. */
+export function defaultCooldownDays(): number {
+	const configured = process.env.DG_DEPS_COOLDOWN_DAYS;
+	if (!configured) return DEFAULT_COOLDOWN_DAYS;
+	return parseFlag(wholeNumber(0), configured, "DG_DEPS_COOLDOWN_DAYS");
+}
 const DAY_MS = 86_400_000;
 const STABLE_VERSION = /^v?\d+(\.\d+)*$/;
 
@@ -994,8 +1001,8 @@ export function heldEntry(
 }
 
 function parseDays(flag: string | boolean | undefined): number {
-	if (flag === undefined) return DEFAULT_COOLDOWN_DAYS;
 	try {
+		if (flag === undefined) return defaultCooldownDays();
 		return parseFlag(wholeNumber(0), String(flag), "--cooldown-days");
 	} catch (err) {
 		return die((err as Error).message);
@@ -1451,7 +1458,7 @@ export function buildCommand() {
 			},
 			cooldown: {
 				description:
-					"check a target version is old enough (default 7 days); prints JSON verdict",
+					"check a target version is old enough (default $DG_DEPS_COOLDOWN_DAYS, else 0); prints JSON verdict",
 				args: ["pkg", "old", "new"],
 				run: cmdCooldown,
 			},
