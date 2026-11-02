@@ -9,7 +9,7 @@ const FLAG_TABLE_SKILLS = ["browser", "proto", "demo", "chat", "overwatch"];
 const LOCAL_DEFAULT = /off \(local is the default\)/;
 const EXT_FLAG = /(^|[\s`(])--ext($|[\s`:,.;)])/;
 const GATE_COMMAND = /dg-skills\s+require-extension\s+\S+\s*\|\|/;
-const REQUIRES_EXTENSION = /^requires:.*extension/m;
+const REQUIRES_EXTENSION = /^requires:(?:[^\n]|\n[ \t]+-)*?extension/m;
 const AGENT_INSTALL = join(REPO_ROOT, "docs", "AGENT-INSTALL.md");
 
 type Doc = { path: string; text: string };
@@ -32,7 +32,7 @@ function frontmatter(text: string): string {
 }
 
 const DOCS: Doc[] = markdownFiles(SKILLS_DIR).map((path) => ({
-	path: relative(SKILLS_DIR, path),
+	path: relative(SKILLS_DIR, path).replaceAll("\\", "/"),
 	text: readFileSync(path, "utf8"),
 }));
 
@@ -80,7 +80,11 @@ function flagsTable(text: string): string[][] {
 function groupWithoutExtLines(text: string): string[] {
 	const lines = text.split("\n");
 	return lines
-		.map((line, i) => ({ line, window: `${line}\n${lines[i + 1] ?? ""}` }))
+		.map((line, i) => {
+			const next = lines[i + 1] ?? "";
+			const continued = /^\s/.test(next) || line.trimEnd().endsWith("\\");
+			return { line, window: continued ? `${line}\n${next}` : line };
+		})
 		.filter(({ line }) => line.includes("batch-open"))
 		.filter(
 			({ window }) => window.includes("--group") && !EXT_FLAG.test(window),
@@ -98,6 +102,16 @@ function plainBatchOpenLines(text: string): string[] {
 describe("ext opt-in rule A: no SKILL.md requires the extension outside the allowlist", () => {
 	test("every packaged SKILL.md outside PENDING_LOCAL_MODE has no requires extension line", () => {
 		expect(requiresExtensionOffenders(DOCS)).toEqual([]);
+	});
+
+	test("a frontmatter requires block list naming extension is an offender", () => {
+		const block: Doc[] = [
+			{
+				path: "block/SKILL.md",
+				text: "---\nname: block\nrequires:\n  - extension\n---\nbody\n",
+			},
+		];
+		expect(requiresExtensionOffenders(block)).toEqual(["block/SKILL.md"]);
 	});
 
 	test("a requires line in the body, outside the frontmatter, is not an offender", () => {
@@ -281,6 +295,14 @@ describe("ext opt-in doc grep gate: batch-open callers never group without --ext
 		expect(
 			groupWithoutExtLines("dg-skills batch-open --ext\n  --group pr <url>"),
 		).toEqual([]);
+	});
+
+	test("an --ext on the next, separate command does not cover a grouped batch-open", () => {
+		expect(
+			groupWithoutExtLines(
+				"dg-skills batch-open --group pr <url>\ndg-skills launch --ext <url>",
+			),
+		).toHaveLength(1);
 	});
 
 	for (const file of CALLERS) {

@@ -1,6 +1,6 @@
 # Extension mode
 
-Everything here runs only with `--ext` and needs the `dg-ai-extension` loaded in the
+Everything here except `install` runs only with `--ext` and needs the `dg-ai-extension` loaded in the
 browser profile. Plain `batch-open` does not need it. See `install.md` for per-OS
 install detail.
 

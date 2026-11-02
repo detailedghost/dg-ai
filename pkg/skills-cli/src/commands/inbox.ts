@@ -430,7 +430,12 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 	process.once("SIGINT", onSignal);
 	process.once("SIGTERM", onSignal);
 	try {
-		if (!ext && !usesFixture(args) && providerFlag(args) === "protonmail")
+		if (
+			!ext &&
+			args[0] !== "profile" &&
+			!usesFixture(args) &&
+			providerFlag(args) === "protonmail"
+		)
 			assertProtonSignedIn(protonDataDir());
 		if (args[0] === "profile") {
 			if (args.includes("--help") || args.includes("-h") || args.length === 1) {

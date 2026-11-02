@@ -151,6 +151,8 @@ export async function openProtonSession(
 					"--filter",
 					"/api/",
 				]);
+				if (listing.code !== 0)
+					throw new Error("Could not read the Proton request headers.");
 				const uid = headerValue(listing.out, "x-pm-uid");
 				if (!uid) return undefined;
 				const appVersion = headerValue(listing.out, "x-pm-appversion");
@@ -164,7 +166,11 @@ export async function openProtonSession(
 			evaluate: (script, call) =>
 				evaluate(`async () => (${script})(${JSON.stringify(call)})`),
 		},
-		close: async () => void (await run([session, "close"])),
+		close: async () => {
+			const closed = await run([session, "close"]);
+			if (closed.code !== 0)
+				throw new Error("Could not close the Proton pw session.");
+		},
 	};
 }
 
@@ -229,9 +235,9 @@ export async function runProtonSignIn(
 				);
 			await deps.sleep(SIGN_IN_POLL_MS);
 		}
-		writeSignedInMarker(dataDir);
-		deps.log("Proton Mail is signed in. The profile is saved.");
 	} finally {
 		await session.close();
 	}
+	writeSignedInMarker(dataDir);
+	deps.log("Proton Mail is signed in. The profile is saved.");
 }

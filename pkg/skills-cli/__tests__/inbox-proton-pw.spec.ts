@@ -56,6 +56,20 @@ describe("inbox commands on a signed-out Proton pw profile", () => {
 		}
 	});
 
+	test("profile set for a Proton profile is not blocked by the sign-in check", async () => {
+		const h = inboxCliHarness();
+		try {
+			const result = await h.run(
+				["profile", "set", "work", "--provider", "protonmail"],
+				{ XDG_CACHE_HOME: `${h.cwd}/cache` },
+			);
+			expect(result.code).not.toBe(4);
+			expect(result.stderr).not.toContain(SIGN_IN_COMMAND);
+		} finally {
+			h.cleanup();
+		}
+	});
+
 	test("Gmail and Outlook commands never mention the Proton sign-in command", async () => {
 		const h = inboxCliHarness();
 		try {
@@ -206,6 +220,28 @@ describe("proton-pw openProtonSession", () => {
 		await expect(session.page.url()).rejects.toThrow();
 	});
 
+	test("a failed pw close rejects instead of reporting success", async () => {
+		const run: PwRunner = async (argv) =>
+			argv.includes("close")
+				? { code: 1, out: "", err: "close failed" }
+				: { code: 0, out: "", err: "" };
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.close()).rejects.toThrow(
+			"Could not close the Proton pw session.",
+		);
+	});
+
+	test("a failed pw network listing rejects instead of reading as no headers", async () => {
+		const run: PwRunner = async (argv) =>
+			argv.includes("network")
+				? { code: 1, out: "", err: "network failed" }
+				: { code: 0, out: "", err: "" };
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.observedHeaders()).rejects.toThrow(
+			"Could not read the Proton request headers.",
+		);
+	});
+
 	test("close closes the pw session", async () => {
 		const { run, calls } = recordingRunner();
 		const session = await openProtonSession(spec(true), run);
@@ -298,6 +334,34 @@ describe("proton-pw runProtonSignIn", () => {
 			expect(opened).toEqual([expect.objectContaining({ headless: false })]);
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(true);
 			expect(closed()).toBe(1);
+		} finally {
+			data.cleanup();
+		}
+	});
+
+	test("a failed close after sign-in writes no marker and reports no saved profile", async () => {
+		const data = tempDataDir();
+		try {
+			const { deps } = signInSeam(
+				"https://mail.proton.me/u/0/inbox",
+				"fixture-uid",
+			);
+			const lines: string[] = [];
+			const failing = {
+				...deps,
+				log: (line: string) => void lines.push(line),
+				openSession: async (opening: { headless: boolean }) => ({
+					...(await deps.openSession(opening)),
+					close: async () => {
+						throw new Error("Could not close the Proton pw session.");
+					},
+				}),
+			};
+			await expect(runProtonSignIn(data.dir, failing as never)).rejects.toThrow(
+				"Could not close the Proton pw session.",
+			);
+			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(false);
+			expect(lines.join("\n")).not.toContain("profile is saved");
 		} finally {
 			data.cleanup();
 		}

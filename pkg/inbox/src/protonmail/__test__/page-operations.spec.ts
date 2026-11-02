@@ -22,7 +22,6 @@ type Dataset = {
 };
 
 const dataset: Dataset = JSON.parse(readFileSync(fixturePath("proton-dataset.json"), "utf8"));
-const customFolders = dataset.folders.filter((folder) => folder.type === "folder");
 const headers = { uid: "fixture-session-uid", appVersion: "web-mail@5.0.0" };
 
 function json(body: unknown): Response {
@@ -33,6 +32,7 @@ function json(body: unknown): Response {
 }
 
 function protonApi(dataset: Dataset) {
+	const customFolders = dataset.folders.filter((folder) => folder.type === "folder");
 	const calls: { path: string; method: string; body?: unknown }[] = [];
 	const fetch: ProtonPageContext["fetch"] = async (input, init) => {
 		const url = new URL(String(input));
@@ -187,7 +187,7 @@ describe("page-operations executeProtonPage against the recorded Proton dataset"
 		);
 	});
 
-	test("move-messages sends one label call for every requested message and returns an empty result", async () => {
+	test("move-messages sends one label call with every requested message and returns an empty result", async () => {
 		const ids = dataset.messages.slice(0, 2).map((message) => message.id);
 		const { result, calls } = await run({
 			operation: "move-messages",

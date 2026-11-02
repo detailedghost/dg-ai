@@ -34,7 +34,7 @@ current.
 
 ## Commands
 
-**Usage:** `/dg:browser batch-open [--ext] [--group <name>] [--repo owner/repo] [--print] <refs>` · `launch --ext [--browser <key>] [--group <name>] [--list] [--dry-run] <refs>` · `install [chrome|firefox] [--local] [--version <x.y.z>]` · `demo [--ext] [--print] <script.json>` · `rerun [--ext] [--print] <plan.md>`
+**Usage:** `/dg:browser batch-open [--ext] [--group <name>] [--repo owner/repo] [--print] <refs>` · `launch --ext [--browser <key>] [--group <name>] [--list] [--dry-run] <refs>` · `install [chrome|firefox] [--local] [--version <x.y.z>]` · `demo --ext [--print] <script.json>` · `rerun --ext [--print] <plan.md>`
 
 ## Flags
 
@@ -60,7 +60,7 @@ Refs: full URL, `owner/repo#num`, `alias#num` (aliases in
 
 ## --ext mode
 
-Every command here needs the extension. See [references/extension.md](references/extension.md) for markers, group color, and the Load-unpacked steps.
+Every command here except `install` needs the extension. See [references/extension.md](references/extension.md) for markers, group color, and the Load-unpacked steps.
 
 - `batch-open --ext --group <name> <refs…>` groups the tabs into `<name>` when the extension is loaded in that profile.
 - `launch --ext <refs…>` cold-starts a Chromium browser with the extension side-loaded, then opens the batch.

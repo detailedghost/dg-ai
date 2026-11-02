@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
+
 export function buildProtonPageScript(): string {
-	const entry = new URL("./page-entry.ts", import.meta.url).pathname;
+	const entry = fileURLToPath(new URL("./page-entry.ts", import.meta.url));
 	const built = Bun.spawnSync(
 		[process.execPath, "build", entry, "--target=browser", "--format=iife", "--minify"],
 		{ stdout: "pipe", stderr: "pipe" },
