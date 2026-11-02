@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import { commandName, normalize, optionArgs } from "./args";
@@ -33,13 +34,19 @@ function isProtectedProfile(profile: string): boolean {
 		)
 	)
 		return true;
-	const local = path.resolve(process.cwd(), profile);
-	const proton = path.join(
-		resolveDgPaths().stateDir,
-		"inbox",
-		"proton-profile",
+	const local = canonical(path.resolve(process.cwd(), profile));
+	const proton = canonical(
+		path.join(resolveDgPaths().stateDir, "inbox", "proton-profile"),
 	);
 	return path.relative(proton, local) === "";
+}
+
+function canonical(target: string): string {
+	try {
+		return realpathSync(target);
+	} catch {
+		return target;
+	}
 }
 
 /** Refuses public pw and pw-code access to a signed-in mailbox session or its profile, except closing or clearing it. */

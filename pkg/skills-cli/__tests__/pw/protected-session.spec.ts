@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { PROTON_SESSION_NAME } from "@dg/inbox";
 import {
 	PROTECTED_SESSIONS,
@@ -53,6 +57,27 @@ describe("pw protectedSessionRefusal for the Proton profile", () => {
 		delete process.env[ENV_KEY];
 		process.env["DG_HOME"] = home;
 		expect(protectedSessionRefusal(argv)).toContain("inbox-proton");
+	});
+
+	test("refuses a symlink that points at the protected profile", () => {
+		delete process.env[ENV_KEY];
+		const root = mkdtempSync(join(tmpdir(), "dg-protected-link-"));
+		try {
+			process.env["DG_HOME"] = join(root, "dg");
+			const target = join(resolveDgPaths().stateDir, "inbox", "proton-profile");
+			mkdirSync(target, { recursive: true });
+			symlinkSync(target, join(root, "mail-copy"));
+			expect(
+				protectedSessionRefusal([
+					"-s=mail-copy",
+					"open",
+					"--profile",
+					join(root, "mail-copy"),
+				]),
+			).toContain("inbox-proton");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	test("allows another profile", () => {
