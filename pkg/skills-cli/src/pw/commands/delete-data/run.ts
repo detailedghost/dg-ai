@@ -5,6 +5,8 @@ import { defaultProfileDir, profilesRoot } from "../../core/profiles";
 import { isProtectedSession } from "../../core/protected-session";
 import {
 	closeFailure,
+	readAll,
+	reapStale,
 	resolve,
 	type SessionRecord,
 	stopSession,
@@ -19,11 +21,13 @@ import {
 export type ProtectedDataDeps = {
 	wsl: boolean;
 	windowsProfileDir(name: string): Promise<string>;
+	reapStale(): Promise<void>;
 };
 
 const realProtectedDataDeps: ProtectedDataDeps = {
 	wsl: isWSL(),
 	windowsProfileDir,
+	reapStale: () => reapStale(),
 };
 
 /** Clears the signed-in mailbox profile and sign-in marker of a protected session in every placement. */
@@ -35,6 +39,12 @@ export async function deleteProtectedData(
 ): Promise<number> {
 	if (record && !(await stopSession(record))) {
 		env.err(closeFailure(record));
+		return 1;
+	}
+	await deps.reapStale();
+	const retained = readAll().find((entry) => isProtectedSession(entry.name));
+	if (retained) {
+		env.err(closeFailure(retained));
 		return 1;
 	}
 	const inboxDir = path.join(resolveDgPaths().stateDir, "inbox");
