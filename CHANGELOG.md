@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.28.0 (2026-11-02)
+
+### Features
+
+- feat(skills-cli): make the dg-ai-extension opt-in with --ext ([#115](https://github.com/detailedghost/dg-ai/pull/115))
+- feat(hooks): add opt-in dg hooks for Claude, Codex and opencode ([#114](https://github.com/detailedghost/dg-ai/pull/114))
+- feat(pw): port the pw browser skill into dg-skills ([#113](https://github.com/detailedghost/dg-ai/pull/113))
+
+### Fixes
+
+- fix(extension): stop old tab-group markers from re-grouping tabs ([#112](https://github.com/detailedghost/dg-ai/pull/112))
+
 ## v1.27.0 (2026-11-01)
 
 ### Features
