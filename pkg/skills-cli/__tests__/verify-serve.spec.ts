@@ -102,3 +102,17 @@ describe("verify server", () => {
 		expect(readVerdicts(verifyPaths(dir))).toEqual({});
 	});
 });
+
+describe("verify board width", () => {
+	const css = readFileSync(join(ASSETS, "board.css"), "utf8");
+
+	test("base layout fills the window with no max-width cap", () => {
+		expect(css).toMatch(/\n\.layout\{[^}]*max-width:none/);
+		expect(css).not.toContain("max-width:1720px");
+	});
+
+	test("keeps the mobile and tablet screenshot widths", () => {
+		expect(css).toContain(".pair.w-mobile{grid-template-columns:repeat(2,minmax(0,340px))");
+		expect(css).toContain(".pair.w-tablet{grid-template-columns:repeat(2,minmax(0,520px))");
+	});
+});

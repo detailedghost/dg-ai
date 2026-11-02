@@ -87,6 +87,7 @@ The bar carries three decision controls to the right of the arrows:
 - **Approve** (green) POSTs `{ name, variant, variants, notes, action: "confirm" }` to `/prototype-confirm`. It closes the tab only when the notes are empty. A noted approval shows the "Selected variant X" overlay and keeps the tab open.
 - **Reject** (amber) opens a popup that needs a non-empty note, so a rework always has direction. Quick-pick reason chips are shown (`rejectReasons` tailors them). It POSTs `action: "reject"`, never closes the tab, and shows an inline "Reworking options" banner. The agent revises the variants, bumps the reload token, and the open tab refreshes.
 
+- **Width** menu on the `prototype ui` and `prototype serve` bar: All widths (the default) fills the window with no side padding. Mobile 390, Tablet 768, Desktop 1440, and Framed 960 (a centered frame) set a fixed width.
 - **More versions** (teal) exists only on the bar that `prototype ui` and `prototype serve` render. The copied switcher templates and mounted endpoint templates do not have it yet. It takes the same optional note as Approve. It POSTs `action: "more"`, never closes the tab, and shows a "Generating more versions" overlay until the reload token changes.
 
 `prototype wait` reports both the action and the notes. The tab favicon shows the state: waiting, processing, or done.
