@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT, readRepoFile, runInHarness } from "./test-support";
+import { REPO_ROOT, makeTempDir, readRepoFile, removeTempDirs, runInHarness } from "./test-support";
+
+afterEach(removeTempDirs);
 
 const install = readRepoFile(
 	"pkg",
@@ -30,7 +31,7 @@ describe("install retires the pre-rename daemon binary", () => {
 	});
 
 	test("it clears the version stamp too, so a later install does not think it is current", async () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-retired-binaries-test-"));
+		const home = makeTempDir("dg-retired-binaries-test-");
 		const binDir = join(home, ".dg", "bin");
 		mkdirSync(binDir, { recursive: true });
 		const serverBin = join(binDir, "dg-server");

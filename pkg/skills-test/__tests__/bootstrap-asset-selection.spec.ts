@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { REPO_ROOT, readRepoFile } from "./test-support";
+import { REPO_ROOT, makeTempDir, readRepoFile, removeTempDirs } from "./test-support";
+
+afterEach(removeTempDirs);
 
 const BOOTSTRAP = join(REPO_ROOT, "pkg", "skills-cli", "bootstrap.sh");
 
@@ -130,7 +130,7 @@ async function runBootstrap(
 		piped?: boolean;
 	} = {},
 ): Promise<BootstrapRun> {
-	const dir = mkdtempSync(join(tmpdir(), "dg-bootstrap-test-"));
+	const dir = makeTempDir("dg-bootstrap-test-");
 	const binDir = join(dir, "stubbin");
 	mkdirSync(binDir, { recursive: true });
 	pages.forEach((pageReleases, i) => {
@@ -240,7 +240,7 @@ describe("bootstrap.sh picks its binary from the newest vX.Y.Z release", () => {
 	});
 
 	test("installs into $DG_HOME/bin when DG_HOME is set", async () => {
-		const dgHome = mkdtempSync(join(tmpdir(), "dg-home-"));
+		const dgHome = makeTempDir("dg-home-");
 		const run = await runBootstrap(
 			[[release("v1.0.0", [SKILLS_ASSET])]],
 			{ dgHome },
@@ -591,7 +591,7 @@ describe("bootstrap.sh checksums and the fresh-install message", () => {
 
 describe("bootstrap.sh reads the root directory GitHub puts in a source archive", () => {
 	test("--skills-only removes the retired phone-friend skill and keeps unrelated folders", async () => {
-		const dest = mkdtempSync(join(tmpdir(), "dg-bootstrap-dest-"));
+		const dest = makeTempDir("dg-bootstrap-dest-");
 		mkdirSync(join(dest, "phone-friend"), { recursive: true });
 		writeFileSync(join(dest, "phone-friend", "SKILL.md"), "old stub\n");
 		mkdirSync(join(dest, "my-own-skill"), { recursive: true });
@@ -632,7 +632,7 @@ describe("bootstrap.sh reads the root directory GitHub puts in a source archive"
 	});
 
 	test("the Codex install finds the skills in dg-ai-1.22.0 for an unpinned run", async () => {
-		const codexHome = mkdtempSync(join(tmpdir(), "dg-codex-home-"));
+		const codexHome = makeTempDir("dg-codex-home-");
 		try {
 			const run = await runBootstrap([[release("v1.22.0", [SKILLS_ASSET])]], {
 				installBody: '#!/bin/sh\necho "install ran: $*"',
@@ -665,7 +665,7 @@ describe("bootstrap.sh DG_INSTALL_CODEX uses the pinned tag, not the newest", ()
 	];
 
 	test("a pinned install's Codex archive and extraction dir come from the pinned tag", async () => {
-		const codexHome = mkdtempSync(join(tmpdir(), "dg-codex-home-"));
+		const codexHome = makeTempDir("dg-codex-home-");
 		try {
 			const run = await runBootstrap([TWO_RELEASES], {
 				args: ["--version", "2.0.0"],
@@ -688,7 +688,7 @@ describe("bootstrap.sh DG_INSTALL_CODEX uses the pinned tag, not the newest", ()
 
 describe("bootstrap.sh DG_INSTALL_CODEX with a pin at or below 1.21.1", () => {
 	test("the Codex archive comes from the old skills-v tag", async () => {
-		const codexHome = mkdtempSync(join(tmpdir(), "dg-codex-home-"));
+		const codexHome = makeTempDir("dg-codex-home-");
 		try {
 			const run = await runBootstrap(
 				[[release("v1.22.0", [SKILLS_ASSET]), release("skills-v1.21.1", [SKILLS_ASSET])]],

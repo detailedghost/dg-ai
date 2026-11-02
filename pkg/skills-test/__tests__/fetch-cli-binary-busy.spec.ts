@@ -1,19 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	readFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { REPO_ROOT, runInHarness } from "./test-support";
+import { REPO_ROOT, makeTempDir, removeTempDirs, runInHarness } from "./test-support";
+
+afterEach(removeTempDirs);
 
 describe("fetchCliBinary overwrites a binary that is currently running", () => {
 	test("replacing a busy Linux executable does not throw ETXTBSY", async () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-fetch-busy-"));
+		const home = makeTempDir("dg-fetch-busy-");
 		const binDir = join(home, ".dg", "bin");
 		mkdirSync(binDir, { recursive: true });
 		const dest = join(binDir, "dg-busy-test");
