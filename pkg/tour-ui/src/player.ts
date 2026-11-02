@@ -194,6 +194,7 @@ async function chooseState(
 			noVideo: opts.noVideo,
 			onSetting: (patch) => Object.assign(settings, patch),
 			onDismiss: () => resolve(null),
+			onError: reject,
 			start: async (reviewed) => {
 				try {
 					const answer = await announce(reviewed, settings);

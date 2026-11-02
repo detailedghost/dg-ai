@@ -35,6 +35,8 @@ export type EditorOptions = StartOptions & {
 	start?: (script: TourScript) => Promise<void>;
 	/** Shows a close control; called when the viewer closes the editor without playing. */
 	onDismiss?: () => void;
+	/** Called when starting playback fails, such as a refused state write. */
+	onError?: (error: unknown) => void;
 };
 
 export type EditorHandle = { remove(): void };
@@ -594,7 +596,7 @@ export async function showEditPanel(
 			},
 			onPick: (mode) => {
 				if (mode === "review") dispatch("editAgain");
-				else void finish(mode);
+				else finish(mode).catch((error: unknown) => opts.onError?.(error));
 			},
 			onDownload: download,
 		});

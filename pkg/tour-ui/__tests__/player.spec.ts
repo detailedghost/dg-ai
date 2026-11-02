@@ -250,6 +250,30 @@ describe("runTour — review", () => {
 	});
 });
 
+describe("runTour — review state write refused", () => {
+	it("ends with the storage error when the editor cannot write its initial state", async () => {
+		const host = fakeHost();
+		const set = host.storage.set;
+		host.storage.set = async (key, value) => {
+			if (key === "demo_tour:7") throw new Error("message over 1 MiB");
+			return set(key, value);
+		};
+
+		const result = runTour(host, threeStepScript(), {});
+		await until(() => host.liveText().includes("Play walkthrough"), "start");
+		clickButton(host, /review the plan/i);
+		await until(
+			() => host.mounts.some((m) => m.name === "dg-demo-edit"),
+			"the edit panel",
+		);
+		clickButton(host, /play walkthrough/i);
+
+		const outcome = await settle(result, "the failed result", 1000);
+		expect(outcome.outcome).toBe("error");
+		expect(outcome.error).toContain("1 MiB");
+	});
+});
+
 describe("runTour — narration messages", () => {
 	it("advances a step after the narration-complete message plus the tail instead of the silent hold", async () => {
 		const host = fakeHost();
