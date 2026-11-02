@@ -27,11 +27,13 @@ export type BridgeOptions = {
 	/** Called for a video choice that wants a voice; answers whether the page may narrate. */
 	onVoiceChoice?(): Promise<NarrationAnswer>;
 	onNarrationFailed?(reason: string): void;
+	/** Called with the key of a storage-set the bridge refused for size. */
+	onOversized?(key: string): void;
 	steps?: number;
 };
 
 const CAPTIONS_ONLY = "captions-only";
-const MAX_MESSAGE_CHARS = 64 * 1024;
+const MAX_MESSAGE_CHARS = 1024 * 1024;
 const MAX_CLIP_BYTES = 8 * 1024 * 1024;
 const MAX_CLIP_INDEX = 999;
 const MAX_TOTAL_CLIP_BYTES = 192 * 1024 * 1024;
@@ -91,6 +93,7 @@ export function createBridge({
 	onProgress,
 	onVoiceChoice,
 	onNarrationFailed,
+	onOversized,
 	steps = MAX_CLIP_INDEX + 1,
 }: BridgeOptions): Bridge {
 	let voiceGranted = false;
@@ -141,9 +144,13 @@ export function createBridge({
 	}
 
 	async function handle(msg: unknown): Promise<unknown> {
-		if (typeof msg !== "object" || msg === null || oversized(msg))
-			return undefined;
+		if (typeof msg !== "object" || msg === null) return undefined;
 		const m = msg as Record<string, unknown>;
+		if (oversized(msg)) {
+			if (m["kind"] !== "storage-set") return undefined;
+			onOversized?.(String(m["key"]));
+			return { error: "storage value is over the 1 MiB limit" };
+		}
 		switch (m["kind"]) {
 			case "storage-get":
 				return state.get(String(m["key"]));

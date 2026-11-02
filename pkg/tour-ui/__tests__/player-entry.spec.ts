@@ -108,3 +108,19 @@ describe("window.__dgTour.run with a bridge", () => {
 		});
 	});
 });
+
+describe("window.__dgTour.run when the bridge refuses a state write", () => {
+	it("ends with an error carrying the bridge reason", async () => {
+		const tour = await loadEntry(async (raw) => {
+			const msg = raw as { kind: string };
+			return msg.kind === "storage-set"
+				? { error: "message over 1 MiB" }
+				: undefined;
+		});
+
+		const result = await tour.run(quickVideo(), { mode: "video" });
+
+		expect(result).toMatchObject({ outcome: "error" });
+		expect(result.error).toContain("1 MiB");
+	});
+});

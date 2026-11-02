@@ -42,7 +42,9 @@ const host: TourHost = {
 		},
 		async set(key, value) {
 			memory.set(key, value);
-			await bridge({ kind: "storage-set", key, value });
+			const reply = await bridge({ kind: "storage-set", key, value });
+			if (reply && typeof reply === "object" && "error" in reply)
+				throw new Error(String(reply.error));
 		},
 		async remove(key) {
 			memory.delete(key);

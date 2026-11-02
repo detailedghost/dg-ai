@@ -180,10 +180,34 @@ describe("bridge input limits", () => {
 		expect(readdirSync(dir)).not.toContain("s.edited.demo.md");
 	});
 
-	test("ignores a message over the size limit", async () => {
+	test("keeps a storage value well over the old 64 KiB cap", async () => {
 		const bridge = make();
-		await bridge.handle({ kind: "storage-set", key: "k", value: "x".repeat(70_000) });
-		expect(await bridge.handle({ kind: "storage-get", key: "k" })).toBeUndefined();
+		const value = "x".repeat(900 * 1024);
+		expect(await bridge.handle({ kind: "storage-set", key: "k", value })).toBeUndefined();
+		expect(await bridge.handle({ kind: "storage-get", key: "k" })).toBe(value);
+	});
+
+	test("answers an error and logs a warning for a storage-set over 1 MiB", async () => {
+		const warnings: string[] = [];
+		const bridge = createBridge({
+			job: { dir, planPath: join(dir, "s.demo.md"), slug: "s", video: false },
+			onOversized: (key) => warnings.push(key),
+		});
+		const reply = await bridge.handle({
+			kind: "storage-set",
+			key: "big",
+			value: "x".repeat(1024 * 1024 + 1),
+		});
+		expect(reply).toEqual({ error: expect.stringContaining("1 MiB") });
+		expect(warnings).toEqual(["big"]);
+		expect(await bridge.handle({ kind: "storage-get", key: "big" })).toBeUndefined();
+	});
+
+	test("ignores another message kind over the size limit", async () => {
+		const bridge = make();
+		expect(
+			await bridge.handle({ kind: "storage-get", key: "x".repeat(1024 * 1024 + 1) }),
+		).toBeUndefined();
 	});
 
 	test("caps the length of an error message", async () => {

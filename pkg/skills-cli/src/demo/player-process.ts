@@ -206,6 +206,10 @@ export async function runPlayer(
 			console.log(
 				`demo ${job.slug}: narration failed (${reason}); recorded without voice`,
 			),
+		onOversized: (key) =>
+			console.log(
+				`demo ${job.slug}: refused a page storage write over 1 MiB (key ${key})`,
+			),
 		onProgress: (index) => {
 			offsets.set(index, Date.now() - recordingStart);
 			return page ? hooks.onProgress?.(page, index) : undefined;
