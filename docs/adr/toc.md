@@ -72,6 +72,8 @@ flowchart LR
 - [0028 — Run every skill locally and make the extension opt-in with `--ext`](0028-local-default-extension-opt-in.md) — Accepted: skills run locally unless
   the caller passes `--ext`, and a repo test enforces it. The `PENDING_LOCAL_MODE`
   allowlist (`chat`, `demo`, `overwatch`) stays exempt until bundles 015 and 016.
+- [0029 — Accept the WSL remote-debugging port for the local demo player](0029-local-demo-player-wsl-debug-port.md) — Accepted:
+  a default local `demo` on WSL opens an unauthenticated 127.0.0.1 debug port for the run.
 
 ## Adding an ADR
 

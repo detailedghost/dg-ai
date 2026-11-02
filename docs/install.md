@@ -148,6 +148,8 @@ On WSL, the default `demo` uses the Windows browser. The CLI controls it through
 remote-debugging port on 127.0.0.1, and the port stays open while the run is live. To
 not open that port, use `demo --video --browser chromium` for a headless recording inside WSL.
 `--video` alone still uses the Windows browser when one is present.
+Any local process can attach to that port during the run. See
+[ADR 0029](adr/0029-local-demo-player-wsl-debug-port.md).
 
 `vcs-provider` is also available as a CLI command; it needs Git and authenticated
 `gh` (GitHub) or `glab` (GitLab). It has no separate skill. Other workflow skills

@@ -112,7 +112,7 @@ function describeFindings(result: VerifyResult): string {
 	return JSON.stringify(result.findings, null, 1);
 }
 
-describe("demo --verify", () => {
+describe.skipIf(process.env.PW_E2E !== "1")("demo --verify", () => {
 	let server: ReturnType<typeof Bun.serve>;
 	let base: string;
 	let dir: string;
