@@ -11,6 +11,8 @@ export type DemoResult = {
 	steps: number;
 	video?: string;
 	audio?: "muxed" | "sidecar" | "none";
+	startOffsetMs?: number;
+	trimmed?: boolean;
 	plan: string;
 	startedAt: string;
 	endedAt: string;

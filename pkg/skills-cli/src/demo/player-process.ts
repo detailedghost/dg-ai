@@ -19,7 +19,7 @@ import {
 	tourOrigins,
 	trustedSource,
 } from "./bridge";
-import { type MuxDeps, muxNarration } from "./mux";
+import { type MuxDeps, muxVideo, needsTrim } from "./mux";
 import {
 	ensureNarrationAssets,
 	isNetworkFailure,
@@ -230,32 +230,40 @@ export async function runPlayer(
 			}
 		},
 	});
-	const addVoice = async (target: string): Promise<DemoResult["audio"]> => {
+	const startOffsetMs = (): number | undefined =>
+		offsets.size ? Math.min(...offsets.values()) : undefined;
+	const finishVideo = async (
+		target: string,
+	): Promise<{ audio: DemoResult["audio"]; trimmed: boolean }> => {
 		const wav = target.replace(/\.webm$/, ".wav");
 		const kept = (): DemoResult["audio"] => (existsSync(wav) ? "sidecar" : "none");
 		const stage = mkdtempSync(join(dirname(target), ".dg-mux-"));
 		const staged = join(stage, basename(target));
 		try {
-			if (!writeNarrationWav({ clipsDir, offsets, out: wav })) return "none";
-			const { audio: outcome } = await muxNarration(
+			const voiced = writeNarrationWav({ clipsDir, offsets, out: wav });
+			const startMs = startOffsetMs();
+			if (!voiced && !needsTrim(startMs)) return { audio: "none", trimmed: false };
+			const outcome = await muxVideo(
 				{
 					video: target,
-					wav,
+					...(voiced ? { wav } : {}),
+					...(startMs === undefined ? {} : { startMs }),
 					out: staged,
 					timeoutMs: Math.max(60_000, 2 * (Date.now() - recordingStart)),
 				},
 				hooks.mux,
 			);
-			if (outcome !== "muxed") return outcome;
+			if (outcome.audio === "sidecar" || (outcome.audio === "none" && !outcome.trimmed))
+				return outcome;
 			moveFile(staged, target);
 			rmSync(wav, { force: true });
 			if (!job.out) chmodSync(target, 0o600);
-			return "muxed";
+			return outcome;
 		} catch (error) {
 			console.log(
-				`demo ${job.slug}: could not add the voice (${error instanceof Error ? error.message : String(error)}); video saved without it`,
+				`demo ${job.slug}: could not finish the video (${error instanceof Error ? error.message : String(error)}); video saved as recorded`,
 			);
-			return kept();
+			return { audio: kept(), trimmed: false };
 		} finally {
 			rmSync(stage, { recursive: true, force: true });
 		}
@@ -265,6 +273,7 @@ export async function runPlayer(
 	let video: string | undefined;
 	let keepRaw = false;
 	let audio: DemoResult["audio"];
+	let trimmed = false;
 	try {
 		session = await (hooks.launch ?? openSession)(job);
 		const { context } = session;
@@ -354,7 +363,7 @@ export async function runPlayer(
 				moveFile(source, target);
 				if (!job.out) chmodSync(target, 0o600);
 				video = target;
-				audio = await addVoice(target);
+				({ audio, trimmed } = await finishVideo(target));
 			} catch (error) {
 				end = {
 					outcome: "error",
@@ -381,6 +390,9 @@ export async function runPlayer(
 		steps: job.script.steps.length,
 		...(video ? { video } : {}),
 		...(bridge.mode() === "video" ? { audio: audio ?? "none" } : {}),
+		...(video && startOffsetMs() !== undefined
+			? { startOffsetMs: startOffsetMs(), trimmed }
+			: {}),
 		plan: job.planPath,
 		startedAt: bridge.startedAt,
 		endedAt: new Date().toISOString(),

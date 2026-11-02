@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { muxNarration } from "../src/demo/mux";
+import { muxVideo } from "../src/demo/mux";
 
 let dir: string;
 let video: string;
@@ -28,10 +28,10 @@ afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-describe("muxNarration", () => {
+describe("muxVideo", () => {
 	test("runs ffmpeg with copy video, opus audio, apad and -shortest and leaves the sidecar for the caller to remove", async () => {
 		const calls: string[][] = [];
-		const result = await muxNarration(
+		const result = await muxVideo(
 			{ video, wav, out },
 			{
 				which: () => "/usr/bin/ffmpeg",
@@ -68,7 +68,7 @@ describe("muxNarration", () => {
 
 	test("keeps both files and names them when ffmpeg is absent", async () => {
 		let spawned = false;
-		const result = await muxNarration(
+		const result = await muxVideo(
 			{ video, wav, out },
 			{
 				which: () => null,
@@ -88,7 +88,7 @@ describe("muxNarration", () => {
 	});
 
 	test("keeps the sidecar when ffmpeg exits non-zero", async () => {
-		const result = await muxNarration(
+		const result = await muxVideo(
 			{ video, wav, out },
 			{ which: () => "/usr/bin/ffmpeg", spawn: async () => 1 },
 		);
@@ -98,9 +98,9 @@ describe("muxNarration", () => {
 	});
 });
 
-describe("muxNarration failure cleanup", () => {
+describe("muxVideo failure cleanup", () => {
 	test("removes a partial output and keeps video and voice when ffmpeg fails after writing", async () => {
-		const result = await muxNarration(
+		const result = await muxVideo(
 			{ video, wav, out },
 			{
 				which: () => "/usr/bin/ffmpeg",
@@ -122,7 +122,7 @@ describe("muxNarration failure cleanup", () => {
 	test("passes the explicit out path as the final ffmpeg argument even when a stale file exists", async () => {
 		writeFileSync(out, "stale");
 		let last: string | undefined;
-		await muxNarration(
+		await muxVideo(
 			{ video, wav, out },
 			{
 				which: () => "/usr/bin/ffmpeg",
