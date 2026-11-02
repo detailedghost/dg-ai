@@ -29,35 +29,55 @@ export function repoRoot(): string {
 	);
 }
 
-/** Windows %USERPROFILE%, as a native path on win32 or resolved for WSL. */
-export function windowsUserProfile(): string {
-	if (process.platform === "win32") return process.env.USERPROFILE ?? homedir();
+type Env = Readonly<Record<string, string | undefined>>;
+
+function homeDir(env: Env): string {
+	return env.HOME || homedir();
+}
+
+/** Windows home: DG_WINDOWS_HOME when set, else %USERPROFILE% natively on win32 or resolved through cmd.exe on WSL. */
+export function windowsUserProfile(env: Env = process.env): string {
+	if (env.DG_WINDOWS_HOME) return env.DG_WINDOWS_HOME;
+	if (process.platform === "win32") return env.USERPROFILE || homedir();
 	return run("cmd.exe", ["/c", "echo", "%USERPROFILE%"]).replace(/\r/g, "");
 }
 
+/** The Linux and macOS `.dg` directory. */
+export function dgDir(env: Env = process.env): string {
+	return env.DG_HOME || join(homeDir(env), ".dg");
+}
+
 /** Stable per-OS dir for a target's unpacked extension. */
-export function extensionDest(target: Target): {
+export function extensionDest(
+	target: Target,
+	env: Env = process.env,
+): {
 	copyPath: string;
 	printPath: string;
 } {
+	const name = `dg-ai-extension-${target}`;
+	if (env.DG_WINDOWS_HOME) {
+		const p = join(env.DG_WINDOWS_HOME, ".dg", name);
+		return { copyPath: p, printPath: p };
+	}
 	if (isWSL()) {
-		const winDest = `${windowsUserProfile()}\\.dg\\dg-ai-extension-${target}`;
+		const winDest = `${windowsUserProfile(env)}\\.dg\\${name}`;
 		const copyPath = run("wslpath", ["-u", winDest]);
 		return { copyPath, printPath: run("wslpath", ["-w", copyPath]) };
 	}
 	if (process.platform === "win32") {
-		const p = `${windowsUserProfile()}\\.dg\\dg-ai-extension-${target}`;
+		const p = join(windowsUserProfile(env), ".dg", name);
 		return { copyPath: p, printPath: p };
 	}
-	const p = join(homedir(), ".dg", `dg-ai-extension-${target}`);
+	const p = join(dgDir(env), name);
 	return { copyPath: p, printPath: p };
 }
 
 /** The `.dg` directories that may hold extension folders: the Windows one on WSL and win32, plus the Linux home. */
-export function extensionDgDirs(): string[] {
-	const own = join(homedir(), ".dg");
+export function extensionDgDirs(env: Env = process.env): string[] {
+	const own = dgDir(env);
 	if (!isWSL() && process.platform !== "win32") return [own];
-	return [...new Set([dirname(extensionDest("chrome").copyPath), own])];
+	return [...new Set([dirname(extensionDest("chrome", env).copyPath), own])];
 }
 
 /** Extract a .zip into destDir in place. bsdtar on Windows, unzip elsewhere. */
@@ -72,19 +92,18 @@ export function extractZip(zip: string, destDir: string): void {
 	}
 }
 
-const markerDir = join(homedir(), ".config", "dg");
-export const markerPath = join(markerDir, "extension-installed");
-export const legacyMarkerPath = join(markerDir, "browser-batch-installed");
-
 interface MarkerFiles {
 	current: string;
 	legacy: string;
 }
 
-const DEFAULT_MARKER_FILES: MarkerFiles = {
-	current: markerPath,
-	legacy: legacyMarkerPath,
-};
+export function markerFiles(env: Env = process.env): MarkerFiles {
+	const dir = join(homeDir(env), ".config", "dg");
+	return {
+		current: join(dir, "extension-installed"),
+		legacy: join(dir, "browser-batch-installed"),
+	};
+}
 
 // Installed version per target, e.g. { "chrome": "1.0.0", "firefox": "1.0.0" }.
 type Marker = Record<string, string>;
@@ -97,14 +116,14 @@ function readMarkerFile(path: string): Marker {
 	}
 }
 
-export function readMarker(files: MarkerFiles = DEFAULT_MARKER_FILES): Marker {
+export function readMarker(files: MarkerFiles = markerFiles()): Marker {
 	return { ...readMarkerFile(files.legacy), ...readMarkerFile(files.current) };
 }
 
 export function writeMarkerEntry(
 	target: string,
 	version: string,
-	files: MarkerFiles = DEFAULT_MARKER_FILES,
+	files: MarkerFiles = markerFiles(),
 ): void {
 	const m = readMarker(files);
 	m[target] = version;

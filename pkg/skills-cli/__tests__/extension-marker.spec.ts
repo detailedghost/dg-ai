@@ -3,8 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	legacyMarkerPath,
-	markerPath,
+	markerFiles,
 	readMarker,
 	writeMarkerEntry,
 } from "../src/utils/lib";
@@ -24,8 +23,9 @@ afterEach(() => {
 
 describe("extension marker", () => {
 	test("is named extension-installed, with the old name kept as the legacy path", () => {
-		expect(markerPath.endsWith("/.config/dg/extension-installed")).toBe(true);
-		expect(legacyMarkerPath.endsWith("/.config/dg/browser-batch-installed")).toBe(true);
+		const { current, legacy } = markerFiles({ HOME: "/h" });
+		expect(current).toBe(join("/h", ".config", "dg", "extension-installed"));
+		expect(legacy).toBe(join("/h", ".config", "dg", "browser-batch-installed"));
 	});
 
 	test("reads versions from the legacy marker when the new one is absent", () => {

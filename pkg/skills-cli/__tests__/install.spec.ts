@@ -43,11 +43,9 @@ async function runLocalInstall(world: LocalInstallWorld, freshBuild: string) {
 	const { home, repo, output } = world;
 	const script = `
 import { mock } from "bun:test";
-import * as os from "node:os";
 import * as node from "@dg/common/node";
 import { writeFileSync } from "node:fs";
 import { Command } from "commander";
-mock.module("node:os", () => ({ ...os, homedir: () => ${JSON.stringify(home)} }));
 mock.module("@dg/common/node", () => ({ ...node, isWSL: () => false, run: (command, args) => {
   if (command !== "bun" || args.join(" ") !== "run build") throw new Error("unexpected command");
   writeFileSync(${JSON.stringify(join(output, "background.js"))}, ${JSON.stringify(freshBuild)});
@@ -60,6 +58,7 @@ await program.parseAsync(["install", "--local", "--repo", ${JSON.stringify(repo)
 `;
 	const child = Bun.spawn([process.execPath, "-e", script], {
 		cwd: new URL("..", import.meta.url).pathname,
+		env: { ...process.env, HOME: home, USERPROFILE: home, DG_WINDOWS_HOME: home, DG_HOME: join(home, ".dg") },
 		stdout: "pipe", stderr: "pipe",
 	});
 	const [stdout, stderr, exitCode] = await Promise.all([

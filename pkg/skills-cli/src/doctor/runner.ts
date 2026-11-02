@@ -34,7 +34,7 @@ export function createContext(
 				const own = join(home, ".dg");
 				if (overrides.home !== undefined) return [own];
 				try {
-					return [...new Set([...extensionDgDirs(), own])];
+					return [...new Set([...extensionDgDirs(env), own])];
 				} catch {
 					return [own];
 				}
