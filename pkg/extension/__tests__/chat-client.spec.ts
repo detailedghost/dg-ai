@@ -1174,3 +1174,24 @@ test("sendCommandInvocation refuses a session the client never connected", async
 	});
 	expect(socket.send.mock.calls).toEqual([]);
 });
+
+test("sendCommandInvocation reports a failure and sends nothing while the socket is not connected", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+
+	const result = await client.sendCommandInvocation?.(
+		bootstrap.sessionId,
+		"review",
+	);
+	await flushMicrotasks();
+
+	expect(result).toEqual({
+		ok: false,
+		error: "the daemon is not connected — retry once the chat reconnects",
+	});
+	expect(
+		sentFrames(socket).filter((f) => f.type === "command-invocation"),
+	).toEqual([]);
+});

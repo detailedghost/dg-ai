@@ -517,6 +517,12 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 					error: "no chat session is open — start one to run a command",
 				});
 			}
+			if (connectionState !== "connected") {
+				return Promise.resolve({
+					ok: false,
+					error: "the daemon is not connected — retry once the chat reconnects",
+				});
+			}
 			send({
 				type: "command-invocation",
 				sessionId,
