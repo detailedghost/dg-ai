@@ -129,6 +129,7 @@ const globRe = (glob) =>
   new RegExp(
     `^${glob
       .replace(/^\.\//, "")
+      .replace(/\\(.)/g, (_, c) => `\u0002${c.charCodeAt(0)};`)
       .replace(/[.+^$()|\\]/g, "\\$&")
       .replace(/\*\*\//g, "\0")
       .replace(/\*\*/g, "\u0001")
@@ -137,15 +138,20 @@ const globRe = (glob) =>
       .replace(/\[!/g, "[^")
       .replace(/\{([^}]*)\}/g, (_, alts) => `(?:${alts.replaceAll(",", "|")})`)
       .replace(/\0/g, "(?:.*/)?")
-      .replace(/\u0001/g, ".*")}$`,
+      .replace(/\u0001/g, ".*")
+      .replace(/\u0002(\d+);/g, (_, code) => `\\u${Number(code).toString(16).padStart(4, "0")}`)}$`,
   );
+const safePath = (f) => {
+  if (typeof f !== "string" || f.startsWith("/")) return null;
+  const parts = f.split("/");
+  if (parts.includes("..")) return null;
+  return parts.filter((p) => p !== "" && p !== ".").join("/") || null;
+};
+const safePaths = (fs) => uniq((fs || []).map(safePath));
 const ownedBy = (slice, f) =>
-  typeof f === "string" &&
-  f !== "" &&
-  !f.startsWith("/") &&
-  !f.startsWith("..") &&
-  (!slice.files?.length ||
-    slice.files.some((g) => globRe(g).test(f) || f.startsWith(`${g.replace(/^\.\//, "").replace(/\/$/, "")}/`)));
+  !slice.files?.length ||
+  slice.files.some((g) => globRe(g).test(f) || f.startsWith(`${g.replace(/^\.\//, "").replace(/\/$/, "")}/`));
+const ownedPaths = (slice, fs) => safePaths(fs).filter((f) => ownedBy(slice, f));
 
 // Per-slice progress group: one box per slice (stage stays visible via each agent's label).
 const phaseFor = (slice) => (slice.name ? `${slice.name} (S${slice.id})` : `slice ${slice.id}`);
@@ -207,7 +213,7 @@ const results = await pipeline(
       // nothing, finds nothing, and the slice reports clean with no code written.
       unverified: [...st.unverified, ...(y ? [] : ["yellow"])],
       securitySensitive: !!y?.securitySensitive,
-      changedFiles: uniq([...st.changedFiles, ...(y?.changedFiles || []).filter((f) => ownedBy(slice, f))]),
+      changedFiles: uniq([...st.changedFiles, ...ownedPaths(slice, y?.changedFiles)]),
       deferrals: [...st.deferrals, ...live(y?.deferrals)],
       notes: {
         durable: uniq([...st.notes.durable, ...(y?.notes?.durable || [])]),
@@ -225,14 +231,14 @@ const results = await pipeline(
       ...stageOpts(roles["qa-writer"]),
       schema: GREEN,
     }).then(async (g) => {
-      const reported = uniq([...st.changedFiles, ...(g?.testFiles || [])]);
+      const reported = uniq([...st.changedFiles, ...safePaths(g?.testFiles)]);
       const listed = cwd
         ? await agent(
             `Working directory: ${cwd}. Run these two commands from it and return every path they print, one entry per path, nothing else. Do not edit any file.\n1. git diff --name-only HEAD\n2. git ls-files --others --exclude-standard`,
             { label: `files:${slice.id}`, phase: phaseFor(slice), ...stageOpts(roles.wave), schema: FILES },
           )
         : null;
-      const owned = (listed?.files || []).filter((f) => ownedBy(slice, f));
+      const owned = ownedPaths(slice, listed?.files);
       return {
         ...st,
         unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listed ? ["files"] : [])],

@@ -417,6 +417,7 @@ describe("slice-wave runner deferral handling", () => {
 		["./src/**", "src/helper.ts"],
 		["src/*.{ts,tsx}", "src/helper.tsx"],
 		["src/[hx]elper.ts", "src/helper.ts"],
+		["src/app/\\[slug\\]/page.tsx", "src/app/[slug]/page.tsx"],
 	])("matches the glob %s against %s", async (glob, path) => {
 		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
 		const { prompts } = await wave(
@@ -425,6 +426,37 @@ describe("slice-wave runner deferral handling", () => {
 		);
 		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
 		expect(review).toContain(path);
+	});
+
+	test("normalizes dot segments before the ownership check", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { prompts } = await wave(
+			{ red: red([]), yellow, green: red([]), files: { files: ["src/./a.ts"] } },
+			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/**"] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain("src/a.ts");
+	});
+
+	test("refuses parent-traversal and absolute paths from every list", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const bad = ["src/../secrets.txt", "../x.ts", "/etc/passwd", "src/a/../../b.ts"];
+		const { prompts, slice } = await wave(
+			{
+				red: red([]),
+				yellow: { ...yellow, changedFiles: ["src/ok.ts", ...bad] },
+				green: { ...red([]), testFiles: bad },
+				files: { files: bad },
+			},
+			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/**"] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain("src/ok.ts");
+		for (const path of bad) {
+			expect(review).not.toContain(path);
+			expect(slice.changedFiles).not.toContain(path);
+		}
+		expect(slice.changedFiles).not.toContain("secrets.txt");
 	});
 
 	test("treats [!x] in a glob as a negated class", async () => {
