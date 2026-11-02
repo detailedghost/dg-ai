@@ -318,7 +318,7 @@ describe("dg-agent overwatch", () => {
 			},
 			write: async () => undefined,
 			tryOpen: async () => true,
-		writeError: async () => undefined,
+			writeError: async () => undefined,
 			localBootstrap: async () => {
 				throw new Error("unexpected local bootstrap");
 			},
@@ -358,7 +358,7 @@ describe("dg-agent overwatch", () => {
 			},
 			write: async () => undefined,
 			tryOpen: async () => true,
-		writeError: async () => undefined,
+			writeError: async () => undefined,
 			localBootstrap: async () => {
 				throw new Error("unexpected local bootstrap");
 			},
@@ -397,7 +397,7 @@ describe("dg-agent overwatch", () => {
 			},
 			write: async () => undefined,
 			tryOpen: async () => true,
-		writeError: async () => undefined,
+			writeError: async () => undefined,
 			localBootstrap: async () => {
 				throw new Error("unexpected local bootstrap");
 			},
