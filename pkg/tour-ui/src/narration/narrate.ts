@@ -24,7 +24,9 @@ export function createNarrator(
 	assetBase: string,
 	send: (msg: TourMessage) => Promise<unknown>,
 ): TourNarrator {
+	const clips = new Map<number, number>();
 	return {
+		clipMs: (index) => clips.get(index),
 		async prepare(steps: TourStep[], voice, report) {
 			const durations = steps.map((step) => holdFor(step, null));
 			const narrated = steps.filter((step) => (step.body ?? "").trim()).length;
@@ -47,10 +49,9 @@ export function createNarrator(
 					sampleRate: clip.sampling_rate,
 					pcm: toBase64(clip.audio),
 				});
-				durations[index] = holdFor(
-					step,
-					(clip.audio.length / clip.sampling_rate) * 1000,
-				);
+				const ms = (clip.audio.length / clip.sampling_rate) * 1000;
+				clips.set(index, ms);
+				durations[index] = holdFor(step, ms);
 				completed++;
 				report(
 					tracker.synthesis(completed, narrated),

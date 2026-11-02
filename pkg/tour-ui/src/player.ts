@@ -252,11 +252,13 @@ function waitForNarration(
 	index: number,
 	timeoutMs: number,
 	signal: AbortSignal,
+	clipMs?: number,
 ): Promise<NarrationOutcome> {
 	if (signal.aborted) return Promise.resolve("cancelled");
 	return new Promise((resolve) => {
 		const settle = (outcome: NarrationOutcome): void => {
 			clearTimeout(timer);
+			clearTimeout(clipTimer);
 			off();
 			signal.removeEventListener("abort", onAbort);
 			resolve(outcome);
@@ -270,6 +272,10 @@ function waitForNarration(
 				settle("ended");
 		});
 		const timer = setTimeout(() => settle("timeout"), timeoutMs);
+		const clipTimer =
+			clipMs !== undefined && clipMs < timeoutMs
+				? setTimeout(() => settle("ended"), clipMs)
+				: undefined;
 		signal.addEventListener("abort", onAbort, { once: true });
 	});
 }
@@ -398,6 +404,7 @@ async function play(
 					at.index,
 					at.videoDurations?.[at.index] ?? holdFor(step, null),
 					signal,
+					host.narrator?.clipMs?.(at.index),
 				);
 		if (!effectAlreadyRan)
 			void host.messages.send({ kind: "progress", index: at.index });

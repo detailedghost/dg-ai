@@ -52,6 +52,8 @@ export type TourNarrator = {
 		voice: string,
 		report: (percent: number, label: string) => void,
 	): Promise<number[]>;
+	/** Length in ms of the clip synthesized for a step, when there is one. */
+	clipMs?(index: number): number | undefined;
 };
 
 export type CaptureStart = { durations: number[]; hideBody: boolean };

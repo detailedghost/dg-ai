@@ -102,3 +102,56 @@ describe("runTour with a narration option", () => {
 		expect(host.live()).toEqual([]);
 	});
 });
+
+describe("runTour with a narrator that reports clip lengths", () => {
+	const clickScript = () =>
+		threeStepScript({
+			mode: "video",
+			steps: [
+				{
+					title: "Alpha heading",
+					body: "a",
+					selector: "#go",
+					action: { do: "click" },
+					advance: 10,
+				},
+				{ title: "Beta heading", body: "b", advance: 10 },
+			],
+		});
+
+	async function clickDelay(clipMs: number | undefined, holdMs: number) {
+		const button = document.createElement("button");
+		button.id = "go";
+		document.body.appendChild(button);
+		const host = voicedHost("voice", {
+			prepare: async () => [holdMs, 20],
+			clipMs: (index) => (index === 0 ? clipMs : undefined),
+		});
+		let clickedAt = 0;
+		button.addEventListener("click", () => {
+			clickedAt = performance.now();
+		});
+		const startedAt = performance.now();
+		await settle(
+			runTour(host, clickScript(), {
+				mode: "video",
+				narration: { narration: "voice", voice: "af_heart" },
+			}),
+			"the narrated tour",
+			5000,
+		);
+		return clickedAt - startedAt;
+	}
+
+	it("performs the click once the clip ends instead of after the full hold", async () => {
+		const delay = await clickDelay(30, 900);
+		expect(delay).toBeGreaterThan(0);
+		expect(delay).toBeLessThan(600);
+	});
+
+	it("keeps the hold as the upper bound when the clip outlasts it", async () => {
+		const delay = await clickDelay(5000, 300);
+		expect(delay).toBeGreaterThanOrEqual(280);
+		expect(delay).toBeLessThan(1500);
+	});
+});

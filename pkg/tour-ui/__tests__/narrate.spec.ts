@@ -30,4 +30,16 @@ describe("createNarrator", () => {
 		expect(seen[1]).toBeGreaterThan(seen[0] ?? 0);
 		expect(seen[2]).toBeGreaterThan(seen[1] ?? 0);
 	});
+
+	it("reports each clip length from its samples and sample rate", async () => {
+		const narrator = createNarrator("https://assets.test/", async () => undefined);
+		await narrator.prepare(
+			[{ body: "one" }, { title: "silent" }, { body: "three" }] as never,
+			"af_heart",
+			() => undefined,
+		);
+		expect(narrator.clipMs?.(0)).toBe(100);
+		expect(narrator.clipMs?.(1)).toBeUndefined();
+		expect(narrator.clipMs?.(2)).toBe(100);
+	});
 });
