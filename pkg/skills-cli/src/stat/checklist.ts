@@ -179,11 +179,16 @@ function longCriticalPath(label: { order: string; text: string }): string {
 	return label.order.includes(".") ? `${text}, under ${top}` : `${top} ${text}`;
 }
 
-/** The unfinished agent item with the largest known ETA names the critical path. Parked work is excluded. Ties keep priority order. */
-export function computeTotal(model: ChecklistModel): TotalResult | null {
+interface Best {
+	bucket: EtaBucket;
+	item: ChecklistItem;
+	topIndex: number;
+}
+
+function findCritical(model: ChecklistModel): { anyUnfinished: boolean; best: Best | null } {
 	let anyUnfinished = false;
-	let best: { bucket: EtaBucket; order: string; text: string } | null = null;
-	for (const entry of locateAll(model)) {
+	let best: Best | null = null;
+	for (const entry of storedEntries(model)) {
 		const { item } = entry;
 		if (item.status === "done") continue;
 		anyUnfinished = true;
@@ -191,12 +196,32 @@ export function computeTotal(model: ChecklistModel): TotalResult | null {
 		if (ownerFor(item.status) !== "agent") continue;
 		if (!item.eta || item.eta === "unknown") continue;
 		if (!best || etaRank(item.eta) > etaRank(best.bucket)) {
-			best = { bucket: item.eta, order: entry.label, text: item.text };
+			best = { bucket: item.eta, item, topIndex: entry.topIndex };
 		}
 	}
+	return { anyUnfinished, best };
+}
+
+/** The unfinished agent item with the largest known ETA names the critical path. Parked work is excluded. Ties keep stored order. */
+export function computeTotal(model: ChecklistModel): TotalResult | null {
+	const { anyUnfinished, best } = findCritical(model);
 	if (!anyUnfinished) return null;
 	if (!best) return { bucket: "unknown" };
-	return { bucket: best.bucket, label: { order: best.order, text: best.text } };
+	const label = locateAll(model).find((entry) => entry.item === best.item)?.label ?? "";
+	return { bucket: best.bucket, label: { order: label, text: best.item.text } };
+}
+
+export function countWaitingOnUser(model: ChecklistModel): number {
+	return storedEntries(model).filter(
+		(entry) => entry.scope !== "done-top" && entry.scope !== "done-child" && ownerFor(entry.item.status) === "user",
+	).length;
+}
+
+function waitingLine(model: ChecklistModel, prefix: string): string | null {
+	const count = countWaitingOnUser(model);
+	if (count === 0) return null;
+	const noun = count === 1 ? "item" : "items";
+	return `${prefix}Waiting on you: ${count} ${noun}. Run /dg:walk stat to walk them.`;
 }
 
 function totalLine(total: TotalResult | null, prefix: string): string | null {
@@ -232,6 +257,8 @@ export function renderEmoji(model: ChecklistModel): string {
 	if (hiddenDoneCount > 0) lines.push(`...and ${hiddenDoneCount} more done`);
 	const total = totalLine(computeTotal(model), "");
 	if (total) lines.push("", total);
+	const waiting = waitingLine(model, "");
+	if (waiting) lines.push(waiting);
 	return `${lines.join("\n")}\n`;
 }
 
@@ -247,6 +274,8 @@ export function renderPlain(model: ChecklistModel): string {
 	if (hiddenDoneCount > 0) lines.push(`...and ${hiddenDoneCount} more done`);
 	const total = totalLine(computeTotal(model), "# ");
 	if (total) lines.push("", total);
+	const waiting = waitingLine(model, "");
+	if (waiting) lines.push(waiting);
 	return toAscii(`${lines.join("\n")}\n`);
 }
 
@@ -273,6 +302,8 @@ export function renderLong(model: ChecklistModel): string {
 			: "# Total: unknown";
 		lines.push(line);
 	}
+	const waiting = waitingLine(model, "# ");
+	if (waiting) lines.push(waiting);
 	return `${lines.join("\n")}\n`;
 }
 
@@ -303,7 +334,7 @@ function toJsonItem(item: ChecklistItem, order: string): JsonItem {
 }
 
 export function renderJsonModel(model: ChecklistModel): JsonChecklist {
-	const open = model.open.map((item, i) => toJsonItem(item, String(i + 1)));
+	const open = displayOpen(model).map((item, i) => toJsonItem(item, String(i + 1)));
 	let n = model.open.length;
 	const done = model.done.map((item) => {
 		n++;
@@ -331,17 +362,62 @@ interface Located {
 	topIndex: number;
 }
 
-function locateAll(model: ChecklistModel): Located[] {
+const GROUP_BLOCKED = 0;
+const GROUP_CRITICAL = 1;
+const GROUP_AGENT = 2;
+const GROUP_PARKED = 3;
+const GROUP_NEEDS_USER = 4;
+
+function chainRank(item: ChecklistItem): number {
+	let rank = 0;
+	for (const member of [item, ...item.children]) {
+		if (member.status === "done" || member.status === "parked") continue;
+		if (ownerFor(member.status) !== "agent" || !member.eta) continue;
+		rank = Math.max(rank, etaRank(member.eta));
+	}
+	return rank;
+}
+
+/** Open top-level items in display order: blocked-user, critical chain, other chains by ETA, parked, needs-user. Ties keep stored order. */
+function displayEntries(model: ChecklistModel): { item: ChecklistItem; topIndex: number }[] {
+	const critical = findCritical(model).best?.topIndex;
+	const keyed = model.open.map((item, topIndex) => {
+		let group = GROUP_AGENT;
+		if (item.status === "blocked-user") group = GROUP_BLOCKED;
+		else if (topIndex === critical) group = GROUP_CRITICAL;
+		else if (item.status === "needs-user") group = GROUP_NEEDS_USER;
+		else if (item.status === "parked") group = GROUP_PARKED;
+		return { item, topIndex, group, rank: group === GROUP_AGENT ? chainRank(item) : 0 };
+	});
+	const hasEta = (rank: number) => (rank > 0 ? 0 : 1);
+	keyed.sort(
+		(a, b) =>
+			a.group - b.group ||
+			hasEta(a.rank) - hasEta(b.rank) ||
+			b.rank - a.rank ||
+			a.topIndex - b.topIndex,
+	);
+	return keyed;
+}
+
+function displayOpen(model: ChecklistModel): ChecklistItem[] {
+	return displayEntries(model).map((entry) => entry.item);
+}
+
+function collect(
+	open: { item: ChecklistItem; topIndex: number }[],
+	done: ChecklistItem[],
+): Located[] {
 	const out: Located[] = [];
 	let n = 0;
-	model.open.forEach((item, topIndex) => {
+	for (const { item, topIndex } of open) {
 		n++;
 		out.push({ item, label: String(n), scope: "open-top", topIndex });
 		item.children.forEach((child, i) =>
 			out.push({ item: child, label: `${n}.${i + 1}`, scope: "open-child", topIndex }),
 		);
-	});
-	model.done.forEach((item, topIndex) => {
+	}
+	done.forEach((item, topIndex) => {
 		n++;
 		out.push({ item, label: String(n), scope: "done-top", topIndex });
 		item.children.forEach((child, i) =>
@@ -349,6 +425,21 @@ function locateAll(model: ChecklistModel): Located[] {
 		);
 	});
 	return out;
+}
+
+function storedEntries(model: ChecklistModel): Located[] {
+	return collect(
+		model.open.map((item, topIndex) => ({ item, topIndex })),
+		model.done,
+	);
+}
+
+function locateAll(model: ChecklistModel): Located[] {
+	return collect(displayEntries(model), model.done);
+}
+
+export function textAtLabel(model: ChecklistModel, label: string): string {
+	return locateAll(model).find((entry) => entry.label === label)?.item.text ?? "";
 }
 
 function resolveOne(
@@ -471,6 +562,11 @@ function clampPosition(at: number | undefined, length: number): number {
 	return Math.min(Math.max(at - 1, 0), length);
 }
 
+function withLabel(model: ChecklistModel, item: ChecklistItem): MutationResult {
+	const label = locateAll(model).find((entry) => entry.item === item)?.label ?? "";
+	return { ok: true, model, label };
+}
+
 /** Appends a new open item; `under` places it as a sub-item of an open top-level item, `at` places it among top-level items. */
 export function addItem(
 	model: ChecklistModel,
@@ -494,14 +590,16 @@ export function addItem(
 		const parent = model.open[parentIndex] as ChecklistItem;
 		const updatedParent = { ...parent, children: [...parent.children, item] };
 		const open = model.open.map((entry, i) => (i === parentIndex ? updatedParent : entry));
-		return {
-			ok: true,
-			model: { open, done: model.done },
-			label: `${parentIndex + 1}.${updatedParent.children.length}`,
-		};
+		return withLabel({ open, done: model.done }, item);
 	}
 
-	const position = clampPosition(opts.at, model.open.length);
-	const open = [...model.open.slice(0, position), item, ...model.open.slice(position)];
-	return { ok: true, model: { open, done: model.done }, label: String(position + 1) };
+	const shown = displayEntries(model);
+	const position = clampPosition(opts.at, shown.length);
+	const storedPosition = shown[position]?.topIndex ?? model.open.length;
+	const open = [
+		...model.open.slice(0, storedPosition),
+		item,
+		...model.open.slice(storedPosition),
+	];
+	return withLabel({ open, done: model.done }, item);
 }

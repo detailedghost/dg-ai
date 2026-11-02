@@ -12,6 +12,7 @@ import {
 	renderLong,
 	renderPlain,
 	setStatus,
+	textAtLabel,
 	type ChecklistModel,
 	type Status,
 	STATUSES,
@@ -24,16 +25,6 @@ function parseEta(value: string): EtaBucket {
 
 function parseStatusArg(value: string): Status {
 	return parseFlag(oneOf(STATUSES), value, "status");
-}
-
-function storedAddedText(model: ChecklistModel, label: string): string {
-	const dot = label.indexOf(".");
-	const topIndex = Number(dot === -1 ? label : label.slice(0, dot)) - 1;
-	const parent = model.open[topIndex];
-	if (!parent) return "";
-	if (dot === -1) return parent.text;
-	const childIndex = Number(label.slice(dot + 1)) - 1;
-	return parent.children[childIndex]?.text ?? "";
 }
 
 function reportMatchFailure(
@@ -113,7 +104,7 @@ export function registerStat(program: Command): void {
 					JSON.stringify({
 						kind: "checklist-item-added",
 						order: result.label,
-						text: storedAddedText(result.model, result.label),
+						text: textAtLabel(result.model, result.label),
 					}),
 				);
 			},
