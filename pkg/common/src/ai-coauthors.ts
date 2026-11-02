@@ -1,6 +1,6 @@
 const AI_NAME = /claude|codex|grok|copilot|openai|gemini|anthropic|gpt/i;
 const AI_BOT = /noreply@x\.ai|cursoragent@cursor\.com|devin-ai-integration\[bot\]/i;
-const COAUTHOR = /^co-authored-by:\s*(.*)$/i;
+const COAUTHOR = /^co-authored-by:\s*([^\n]*)$/i;
 const TRAILER = /^[A-Za-z][\w-]*:/;
 const SCISSORS = /^# -{24} >8 -{24}$/;
 const CONTINUATION = /^\s+\S/;

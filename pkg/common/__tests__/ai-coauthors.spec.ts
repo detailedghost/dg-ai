@@ -84,6 +84,14 @@ describe("stripAiCoauthors", () => {
 		).toBe(`${subject}\n\nBody.\n${verbose}`);
 	});
 
+	test("strips from a message with CRLF line endings and keeps them", () => {
+		expect(
+			stripAiCoauthors(
+				`${subject}\r\n\r\nBody.\r\n\r\nCo-Authored-By: Claude <noreply@anthropic.com>\r\nReviewed-by: Sam\r\n`,
+			),
+		).toBe(`${subject}\r\n\r\nBody.\r\n\r\nReviewed-by: Sam\r\n`);
+	});
+
 	test("returns a message without trailers unchanged", () => {
 		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
 		expect(stripAiCoauthors(message)).toBe(message);
