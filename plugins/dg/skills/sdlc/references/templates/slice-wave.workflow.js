@@ -161,7 +161,7 @@ const results = await pipeline(
   slices,
   // 6a Red
   (slice) =>
-    redDone[slice.id]
+    Object.hasOwn(redDone, slice.id)
       ? {
           slice,
           red: null,
@@ -207,7 +207,7 @@ const results = await pipeline(
       // nothing, finds nothing, and the slice reports clean with no code written.
       unverified: [...st.unverified, ...(y ? [] : ["yellow"])],
       securitySensitive: !!y?.securitySensitive,
-      changedFiles: uniq([...st.changedFiles, ...(y?.changedFiles || [])]),
+      changedFiles: uniq([...st.changedFiles, ...(y?.changedFiles || []).filter((f) => ownedBy(slice, f))]),
       deferrals: [...st.deferrals, ...live(y?.deferrals)],
       notes: {
         durable: uniq([...st.notes.durable, ...(y?.notes?.durable || [])]),

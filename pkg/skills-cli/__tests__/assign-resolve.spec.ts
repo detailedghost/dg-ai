@@ -372,6 +372,31 @@ describe("slice-wave runner deferral handling", () => {
 		expect(review).not.toContain("src/two/y.ts");
 	});
 
+	test("drops yellow-reported paths that fall outside the slice's file globs", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { prompts, slice } = await wave(
+			{
+				red: red([]),
+				yellow: { ...yellow, changedFiles: ["src/one/x.ts", "src/two/y.ts"] },
+				green: red([]),
+			},
+			{ slices: [{ ...own, files: ["src/one/**"] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain("src/one/x.ts");
+		expect(review).not.toContain("src/two/y.ts");
+		expect(slice.changedFiles).not.toContain("src/two/y.ts");
+	});
+
+	test("runs red for a slice id that only exists on the object prototype", async () => {
+		const own = { id: "constructor", name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { labels } = await wave(
+			{ red: red([]), yellow, green: red([]) },
+			{ slices: [own] },
+		);
+		expect(labels).toContain("red:constructor");
+	});
+
 	test("adds owned recovered files to the commit list when the slice declares globs", async () => {
 		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
 		const { slice } = await wave(
