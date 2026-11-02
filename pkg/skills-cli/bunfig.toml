@@ -1,2 +1,2 @@
 [test]
-preload = ["./__tests__/compression-stream-shim.ts", "../common/src/redact-console.ts", "./__tests__/build-player-shim.ts"]
+preload = ["./__tests__/test-home-fence.ts", "./__tests__/compression-stream-shim.ts", "../common/src/redact-console.ts", "./__tests__/build-player-shim.ts"]

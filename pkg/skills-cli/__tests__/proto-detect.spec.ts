@@ -23,13 +23,13 @@ afterEach(async () => {
 describe("isProtoExtensionInstalled", () => {
 	test("reports installation only when the marker path is a file", async () => {
 		const directory = await temporaryDirectory();
-		const marker = join(directory, "browser-batch-installed");
+		const marker = join(directory, "extension-installed");
 
-		expect(isProtoExtensionInstalled(marker)).toBe(false);
+		expect(isProtoExtensionInstalled([marker])).toBe(false);
 		await writeFile(marker, '{"chrome":"1.0.0"}\n');
-		expect(isProtoExtensionInstalled(marker)).toBe(true);
+		expect(isProtoExtensionInstalled([marker])).toBe(true);
 		await rm(marker);
 		await mkdir(marker);
-		expect(isProtoExtensionInstalled(marker)).toBe(false);
+		expect(isProtoExtensionInstalled([marker])).toBe(false);
 	});
 });

@@ -33,6 +33,13 @@ function contextFor(cliOnly: boolean) {
 	});
 }
 
+describe("createContext", () => {
+	test("scans only the supplied home for extension folders", () => {
+		const ctx = contextFor(false);
+		expect(ctx.extensionDgDirs?.()).toEqual([join(world.home, ".dg")]);
+	});
+});
+
 describe("extOnly", () => {
 	test("turns the CLI-only warning into info with the --ext only prefix", async () => {
 		const result = await extOnly(cliOnlyCheck).run(contextFor(true));

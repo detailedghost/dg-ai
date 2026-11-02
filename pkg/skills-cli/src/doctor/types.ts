@@ -13,6 +13,7 @@ export interface DoctorContext {
 	env: NodeJS.ProcessEnv;
 	paths: DgPaths;
 	installedVersion: string;
+	extensionDgDirs?(): string[];
 	memo<T>(key: string, make: () => T): T;
 }
 

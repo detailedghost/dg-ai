@@ -8,15 +8,7 @@
  * compiled dg-skills and dg-daemon binaries (the release artifacts skills invoke).
  */
 
-import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	statSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { personasDest, run, skillsInstallDest } from "@dg/common/node";
@@ -35,6 +27,7 @@ import {
 	describeMissingCliAsset,
 	downloadReleaseAsset,
 	extensionDest,
+	extensionDgDirs,
 	extractZip,
 	fetchCliBinary,
 	fetchVerifiedBinary,
@@ -49,18 +42,15 @@ import {
 	versionGte,
 	writeMarkerEntry,
 } from "../utils/lib";
+import { removeLegacyExtensions, syncDirInPlace } from "../utils/extension-files";
 import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
 
-function copyDir(src: string, dest: string): void {
-	rmSync(dest, { recursive: true, force: true });
-	mkdirSync(dest, { recursive: true });
-	for (const entry of readdirSync(src)) {
-		const from = join(src, entry);
-		const to = join(dest, entry);
-		if (statSync(from).isDirectory()) copyDir(from, to);
-		else copyFileSync(from, to);
-	}
+function retireLegacyExtensions(): void {
+	if (removeLegacyExtensions(extensionDgDirs()).length === 0) return;
+	console.log(
+		'Removed the retired "dg-ai-browser-batch" extension folders. If "dg-ai-browser-batch" is still listed at chrome://extensions, remove it there.',
+	);
 }
 
 const hasExtensionSource = (root: string): boolean =>
@@ -359,6 +349,7 @@ async function installPinnedAll(target: Target, pin: string): Promise<void> {
 	const release = await downloadReleaseAsset(target, pin);
 	const staged = await fetchResolvedBinaries(resolved);
 
+	retireLegacyExtensions();
 	const markerVersion = readMarker()[target];
 	if (markerVersion === release.version && existsSync(dest.copyPath)) {
 		console.log(`dg-ai-extension (${target}) already set up (v${markerVersion}).`);
@@ -408,9 +399,10 @@ async function install(
 			? buildLocally(root, target)
 			: (localOutputDir(root, target) ?? buildLocally(root, target));
 		version = manifestVersion(out);
-		stage = () => copyDir(out, dest.copyPath);
+		stage = () => syncDirInPlace(out, dest.copyPath);
 	}
 
+	retireLegacyExtensions();
 	const markerVersion = readMarker()[target];
 	if (!forceLocal && markerVersion && versionGte(markerVersion, version) && existsSync(dest.copyPath)) {
 		console.log(
