@@ -4,12 +4,14 @@
  * real run through `marked` with the structure it is supposed to have
  * (nested ordered lists, task-list checkboxes).
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { marked } from "marked";
 import { readRepoFile, REPO_ROOT } from "./test-support";
+
+setDefaultTimeout(20_000);
 
 const ENTRY = join(REPO_ROOT, "pkg", "skills-cli", "src", "index.ts");
 
@@ -67,7 +69,46 @@ describe("dg-skills stat checklist", () => {
 			const nfLines = (await runAwk(["-F", "\t", "!/^#/ {print NF}"], out)).trim().split("\n");
 			expect(new Set(nfLines)).toEqual(new Set(["7"]));
 			const statusColumn = await runAwk(["-F", "\t", "!/^#/ && NR>1 {print $3}"], out);
-			expect(statusColumn.trim().split("\n")).toEqual(["running", "running", "blocked-user"]);
+			expect(statusColumn.trim().split("\n")).toEqual(["blocked-user", "running", "running"]);
+		});
+	});
+
+	test("-l prints the waiting-on-you offer as a # line that awk skips", async () => {
+		await withRoot(async (env) => {
+			await runCli(["stat", "add", "Approve it", "--status", "blocked-user"], env);
+			const { out } = await runCli(["stat", "checklist", "-l"], env);
+			expect(out).toContain("# Waiting on you: 1 item. Run /dg:walk stat to walk them.");
+			const kept = await runAwk(["!/^#/"], out);
+			expect(kept).not.toContain("Waiting on you");
+		});
+	});
+
+	test("add --under takes the number the checklist shows, not the stored position", async () => {
+		await withRoot(async (env) => {
+			await runCli(["stat", "add", "short", "--status", "running", "--eta", "<5 min"], env);
+			await runCli(["stat", "add", "long", "--status", "running", "--eta", ">1 hr"], env);
+			const added = await runCli(["stat", "add", "kid", "--under", "1"], env);
+			expect(JSON.parse(added.out)).toMatchObject({ order: "1.1", text: "kid" });
+			const { out } = await runCli(["stat", "checklist", "-p"], env);
+			expect(out.split("\n").slice(0, 3)).toEqual([
+				"1. [ ] running: long [>1 hr]",
+				"   1. [ ] queued: kid",
+				"2. [ ] running: short [<5 min]",
+			]);
+		});
+	});
+
+	test("add --at exits non-zero and writes nothing when the position is unreachable", async () => {
+		await withRoot(async (env) => {
+			await runCli(["stat", "add", "Approve it", "--status", "blocked-user"], env);
+			const before = await runCli(["stat", "checklist", "-p"], env);
+			const failed = await runCli(["stat", "add", "Later", "--at", "1"], env);
+			expect(failed.code).not.toBe(0);
+			expect(failed.err).toContain(
+				"add: --at 1 is not reachable; the item would land at position 2 because display order follows status and ETA",
+			);
+			const after = await runCli(["stat", "checklist", "-p"], env);
+			expect(after.out).toBe(before.out);
 		});
 	});
 

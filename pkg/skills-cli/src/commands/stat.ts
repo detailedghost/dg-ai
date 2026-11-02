@@ -12,6 +12,7 @@ import {
 	renderLong,
 	renderPlain,
 	setStatus,
+	textAtLabel,
 	type ChecklistModel,
 	type Status,
 	STATUSES,
@@ -24,16 +25,6 @@ function parseEta(value: string): EtaBucket {
 
 function parseStatusArg(value: string): Status {
 	return parseFlag(oneOf(STATUSES), value, "status");
-}
-
-function storedAddedText(model: ChecklistModel, label: string): string {
-	const dot = label.indexOf(".");
-	const topIndex = Number(dot === -1 ? label : label.slice(0, dot)) - 1;
-	const parent = model.open[topIndex];
-	if (!parent) return "";
-	if (dot === -1) return parent.text;
-	const childIndex = Number(label.slice(dot + 1)) - 1;
-	return parent.children[childIndex]?.text ?? "";
 }
 
 function reportMatchFailure(
@@ -85,7 +76,7 @@ export function registerStat(program: Command): void {
 			`one of ${STATUSES.filter((s) => s !== "done").join(", ")} (default queued)`,
 		)
 		.option("--eta <bucket>", `one of ${ETA_BUCKETS.join(", ")}`)
-		.option("--at <n>", "1-based position among open top-level items (default: end)")
+		.option("--at <n>", "1-based position among open top-level items (default: end); fails if status/ETA order forbids that position")
 		.option("--under <nOrMatch>", "add as a sub-item of this open top-level item")
 		.action(
 			async (
@@ -106,6 +97,11 @@ export function registerStat(program: Command): void {
 				const path = checklistPath();
 				const result = await updateChecklist(path, (model) => {
 					const added = addItem(model, text, { status, eta, at, under: options.under });
+					if (!added.ok && "placement" in added) {
+						throw new Error(
+							`add: --at ${added.placement.wanted} is not reachable; the item would land at position ${added.placement.landsAt} because display order follows status and ETA`,
+						);
+					}
 					if (!added.ok) reportMatchFailure("add", options.under ?? "", added.candidates);
 					return added;
 				});
@@ -113,7 +109,7 @@ export function registerStat(program: Command): void {
 					JSON.stringify({
 						kind: "checklist-item-added",
 						order: result.label,
-						text: storedAddedText(result.model, result.label),
+						text: textAtLabel(result.model, result.label),
 					}),
 				);
 			},

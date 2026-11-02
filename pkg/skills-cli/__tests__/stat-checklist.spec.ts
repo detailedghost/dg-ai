@@ -152,20 +152,21 @@ describe("renderers", () => {
 		};
 		const lines = renderEmoji(model).split("\n").filter((line) => /^\d/.test(line));
 		expect(lines).toHaveLength(STATUSES.length);
-		for (const [index, status] of [...nonDone, "done" as const].entries())
-			expect(lines[index]).toContain(STATUS_EMOJI[status]);
+		for (const status of [...nonDone, "done" as const])
+			expect(lines.some((line) => line.includes(`${STATUS_EMOJI[status]} ${status}`))).toBe(true);
 	});
 
 	test("renderEmoji shows emoji, an eta suffix on the agent item, none on the user item, and a blank line before Total", () => {
 		const out = renderEmoji(sample());
 		expect(out).toBe(
 			[
-				"1. 🔄 Phone feature to PR [~1 hr]",
+				"1. 🛑 Approve the Wave 6/7 PR batch",
+				"2. 🔄 Phone feature to PR [~1 hr]",
 				"   1. 🔄 Fix the flaky listener test",
-				"2. 🛑 Approve the Wave 6/7 PR batch",
 				"3. ✅ Sign in to GitHub",
 				"",
-				"Total: ~1 hr (critical path: 1 Phone feature to PR)",
+				"Total: ~1 hr (critical path: 2 Phone feature to PR)",
+				"Waiting on you: 1 item. Run /dg:walk stat to walk them.",
 				"",
 			].join("\n"),
 		);
@@ -175,12 +176,13 @@ describe("renderers", () => {
 		const out = renderPlain(sample());
 		expect(out).toBe(
 			[
-				"1. [ ] running: Phone feature to PR [~1 hr]",
+				"1. [ ] blocked-user: Approve the Wave 6/7 PR batch",
+				"2. [ ] running: Phone feature to PR [~1 hr]",
 				"   1. [ ] running: Fix the flaky listener test",
-				"2. [ ] blocked-user: Approve the Wave 6/7 PR batch",
 				"3. [x] done: Sign in to GitHub",
 				"",
-				"# Total: ~1 hr (critical path: 1 Phone feature to PR)",
+				"# Total: ~1 hr (critical path: 2 Phone feature to PR)",
+				"Waiting on you: 1 item. Run /dg:walk stat to walk them.",
 				"",
 			].join("\n"),
 		);
@@ -196,11 +198,12 @@ describe("renderers", () => {
 		const out = renderLong(sample());
 		const lines = out.split("\n").filter(Boolean);
 		expect(lines[0]).toBe("ORDER\tOWNER\tSTATUS\tWORK\tDETAIL\tPR/MR\tETA");
-		expect(lines[1]).toBe("1\tagent\trunning\tPhone feature to PR\t-\t-\t~1 hr");
-		expect(lines[2]).toBe("-\tagent\trunning\tFix the flaky listener test\t-\t-\t-");
-		expect(lines[3]).toBe("2\tuser\tblocked-user\tApprove the Wave 6/7 PR batch\t-\t-\t-");
+		expect(lines[1]).toBe("1\tuser\tblocked-user\tApprove the Wave 6/7 PR batch\t-\t-\t-");
+		expect(lines[2]).toBe("2\tagent\trunning\tPhone feature to PR\t-\t-\t~1 hr");
+		expect(lines[3]).toBe("-\tagent\trunning\tFix the flaky listener test\t-\t-\t-");
 		expect(lines[4]).toBe("3\t-\tdone\tSign in to GitHub\t-\t-\t-");
-		expect(lines.at(-1)).toBe("# Total: ~1 hr (critical path: 1 Phone feature to PR)");
+		expect(lines.at(-2)).toBe("# Total: ~1 hr (critical path: 2 Phone feature to PR)");
+		expect(lines.at(-1)).toBe("# Waiting on you: 1 item. Run /dg:walk stat to walk them.");
 		for (const line of lines) for (const char of line) expect(char.codePointAt(0) ?? 0).toBeLessThan(0x80);
 	});
 
@@ -225,8 +228,8 @@ describe("renderers", () => {
 		const parent = item("parent", { status: "running", eta: "~15 min" });
 		parent.children.push(item("child", { status: "running", eta: "~1 hr" }));
 		const model: ChecklistModel = { open: [item("other"), parent], done: [] };
-		expect(renderLong(model)).toContain("# Total: ~1 hr (critical path: child, under 2)");
-		expect(computeTotal(model)).toEqual({ bucket: "~1 hr", label: { order: "2.1", text: "child" } });
+		expect(renderLong(model)).toContain("# Total: ~1 hr (critical path: child, under 1)");
+		expect(computeTotal(model)).toEqual({ bucket: "~1 hr", label: { order: "1.1", text: "child" } });
 	});
 
 	test("every view reports an empty checklist with one line naming how to add items", () => {
@@ -239,10 +242,10 @@ describe("renderers", () => {
 
 	test("renderJsonModel carries owner, status, order, text, children and a null owner on done items", () => {
 		const json = renderJsonModel(sample());
-		expect(json.open[0]).toMatchObject({ order: "1", owner: "agent", status: "running", eta: "~1 hr" });
-		expect(json.open[0]?.children[0]).toMatchObject({ order: "1.1", owner: "agent" });
+		expect(json.open[1]).toMatchObject({ order: "2", owner: "agent", status: "running", eta: "~1 hr" });
+		expect(json.open[1]?.children[0]).toMatchObject({ order: "2.1", owner: "agent" });
 		expect(json.done[0]).toMatchObject({ order: "3", owner: null, status: "done", eta: null });
-		expect(json.total).toEqual({ bucket: "~1 hr", order: "1", text: "Phone feature to PR" });
+		expect(json.total).toEqual({ bucket: "~1 hr", order: "2", text: "Phone feature to PR" });
 	});
 });
 
@@ -513,7 +516,7 @@ describe("computeTotal includes unfinished children and excludes parked work", (
 		const parked = item("parked bigger", { status: "parked", eta: ">1 hr" });
 		expect(computeTotal({ open: [item("running small", { status: "running", eta: "<5 min" }), queued, parked], done: [] })).toEqual({
 			bucket: ">1 hr",
-			label: { order: "2", text: "queued big" },
+			label: { order: "1", text: "queued big" },
 		});
 	});
 
@@ -623,5 +626,217 @@ describe("renderLong total line is ASCII", () => {
 		expect(total).toBe("# Total: ~15 min (critical path: 1 caf? bomb)");
 		expect(total?.includes("\t")).toBe(false);
 		expect(renderEmoji(model)).toContain("café");
+	});
+});
+
+describe("critical-path display order", () => {
+	const mixed = (): ChecklistModel => ({
+		open: [
+			item("noeta"),
+			item("short", { status: "running", eta: "<5 min" }),
+			item("sign form", { status: "needs-user" }),
+			item("paused", { status: "parked", eta: "~1 hr" }),
+			item("long", { status: "running", eta: ">1 hr" }),
+			item("approve", { status: "blocked-user" }),
+			item("mid", { eta: "~30 min" }),
+		],
+		done: [item("old", { status: "done" })],
+	});
+
+	const texts = (model: ChecklistModel) => flattenForDisplay(model).rows.map((r) => r.text);
+
+	test("orders blocked-user, critical chain, longer chains, shorter chains, no-eta, parked, needs-user, done", () => {
+		expect(texts(mixed())).toEqual([
+			"approve",
+			"long",
+			"mid",
+			"short",
+			"noeta",
+			"paused",
+			"sign form",
+			"old",
+		]);
+	});
+
+	test("a parent holding the critical sub-item leads its chain, and sub-items keep stored order", () => {
+		const parent = item("parent", { status: "running", eta: "<5 min" });
+		parent.children.push(item("c-small", { eta: "~15 min" }), item("c-big", { eta: ">1 hr" }));
+		const model: ChecklistModel = {
+			open: [item("other", { eta: "~1 hr" }), parent],
+			done: [],
+		};
+		const rows = flattenForDisplay(model).rows;
+		expect(rows.map((r) => `${r.order} ${r.text}`)).toEqual([
+			"1 parent",
+			"1.1 c-small",
+			"1.2 c-big",
+			"2 other",
+		]);
+		expect(computeTotal(model)?.label).toEqual({ order: "1.2", text: "c-big" });
+	});
+
+	test("the total line cites the displayed number of the critical item", () => {
+		const out = renderPlain(mixed());
+		expect(out).toContain("# Total: >1 hr (critical path: 2 long)");
+	});
+
+	test("done items number after the open items, newest first", () => {
+		const rows = flattenForDisplay(mixed()).rows;
+		expect(rows.at(-1)).toMatchObject({ order: "8", text: "old" });
+	});
+
+	test("--long rows and JSON follow the display order", () => {
+		const long = renderLong(mixed()).split("\n");
+		expect(long[1]).toContain("\tapprove\t");
+		expect(long[2]).toContain("\tlong\t");
+		expect(renderJsonModel(mixed()).open.map((o) => `${o.order} ${o.text}`).slice(0, 2)).toEqual([
+			"1 approve",
+			"2 long",
+		]);
+	});
+
+	test("stored order is untouched by display", () => {
+		const model = mixed();
+		renderEmoji(model);
+		expect(model.open[0]?.text).toBe("noeta");
+	});
+
+	test("add --under resolves the displayed number", () => {
+		const result = addItem(mixed(), "kid", { under: "2" });
+		if (!result.ok) throw new Error("expected success");
+		const long = result.model.open.find((i) => i.text === "long");
+		expect(long?.children.map((c) => c.text)).toEqual(["kid"]);
+		expect(result.label).toBe("2.1");
+	});
+
+	test("add --at inserts at the displayed position and reports the displayed label", () => {
+		const result = addItem(mixed(), "new", { at: 1, status: "blocked-user" });
+		if (!result.ok) throw new Error("expected success");
+		expect(result.label).toBe("1");
+		const second = addItem(mixed(), "later", { at: 3, status: "running", eta: "~1 hr" });
+		if (!second.ok) throw new Error("expected success");
+		expect(texts(second.model)[Number(second.label) - 1]).toBe("later");
+	});
+
+	test.each(["needs-user", "parked"] as const)(
+		"a %s parent holding the largest-eta agent child stays out of the critical slot",
+		(status) => {
+			const holder = item("holder", { status });
+			holder.children.push(item("big", { status: "running", eta: ">1 hr" }));
+			const model: ChecklistModel = {
+				open: [
+					holder,
+					item("short", { status: "running", eta: "<5 min" }),
+					item("long", { status: "running", eta: "~1 hr" }),
+				],
+				done: [],
+			};
+			expect(texts(model)).toEqual(["long", "short", "holder", "big"]);
+		},
+	);
+
+	test.each([
+		["needs-user", "3"],
+		["parked", "3"],
+	] as const)("the total still names the child under a %s parent at its displayed number", (status, order) => {
+		const holder = item("holder", { status });
+		holder.children.push(item("big", { status: "running", eta: ">1 hr" }));
+		const model: ChecklistModel = {
+			open: [holder, item("short", { status: "running", eta: "<5 min" }), item("long", { status: "running", eta: "~1 hr" })],
+			done: [],
+		};
+		expect(computeTotal(model)).toEqual({ bucket: ">1 hr", label: { order: `${order}.1`, text: "big" } });
+	});
+
+	test("a critical sub-item under a done parent does not promote an unrelated open item", () => {
+		const doneParent = item("finished", { status: "done" });
+		doneParent.children.push(item("tail", { status: "running", eta: ">1 hr" }));
+		const model: ChecklistModel = {
+			open: [item("short", { status: "running", eta: "<5 min" }), item("long", { status: "running", eta: "~1 hr" })],
+			done: [doneParent],
+		};
+		expect(computeTotal(model)?.label?.text).toBe("tail");
+		expect(texts(model).slice(0, 2)).toEqual(["long", "short"]);
+	});
+
+	test("add --at keeps the requested position when stored order differs from display order", () => {
+		const model: ChecklistModel = {
+			open: [item("short", { status: "running", eta: "<5 min" }), item("long", { status: "running", eta: ">1 hr" })],
+			done: [],
+		};
+		const result = addItem(model, "peer", { at: 2, status: "running", eta: ">1 hr" });
+		if (!result.ok) throw new Error("expected success");
+		expect(result.label).toBe("2");
+		expect(texts(result.model)).toEqual(["long", "peer", "short"]);
+	});
+
+	test("add --at fails when status order cannot place the item at that position", () => {
+		const model: ChecklistModel = {
+			open: [item("approve", { status: "blocked-user" })],
+			done: [],
+		};
+		const result = addItem(model, "later", { at: 1 });
+		expect(result).toEqual({ ok: false, placement: { wanted: 1, landsAt: 2 } });
+		const append = addItem(model, "end", { at: 99 });
+		expect(append.ok).toBe(true);
+	});
+
+	test("mutations report the displayed label", () => {
+		const done = markDone(mixed(), "mid");
+		if (!done.ok) throw new Error("expected success");
+		expect(done.label).toBe("3");
+	});
+});
+
+describe("waiting-on-you trailer", () => {
+	const waiting = (): ChecklistModel => ({
+		open: [
+			item("a", { status: "running", eta: "~15 min" }),
+			item("b", { status: "blocked-user" }),
+			item("c", { status: "needs-user" }),
+		],
+		done: [],
+	});
+	const line = "Waiting on you: 2 items. Run /dg:walk stat to walk them.";
+
+	test("default and plain views print one trailer after the total", () => {
+		for (const out of [renderEmoji(waiting()), renderPlain(waiting())]) {
+			const lines = out.trimEnd().split("\n");
+			expect(lines.at(-1)).toBe(line);
+			expect(lines.at(-2)).toContain("Total:");
+		}
+	});
+
+	test("long view prints the trailer as a hash line", () => {
+		const lines = renderLong(waiting()).trimEnd().split("\n");
+		expect(lines.at(-1)).toBe(`# ${line}`);
+	});
+
+	test("one waiting item uses the singular", () => {
+		const model: ChecklistModel = { open: [item("b", { status: "needs-user" })], done: [] };
+		expect(renderPlain(model)).toContain("Waiting on you: 1 item. Run");
+	});
+
+	test("no trailer without open user items", () => {
+		const model: ChecklistModel = {
+			open: [item("a", { status: "running" }), item("g", { status: "done" })],
+			done: [item("d", { status: "done" })],
+		};
+		for (const out of [renderEmoji(model), renderPlain(model), renderLong(model)]) {
+			expect(out).not.toContain("Waiting on you");
+		}
+	});
+
+	test("sub-items waiting on the user count", () => {
+		const parent = item("p", { status: "running" });
+		parent.children.push(item("k", { status: "blocked-user" }));
+		expect(renderPlain({ open: [parent], done: [] })).toContain("Waiting on you: 1 item.");
+	});
+
+	test("unfinished user sub-items under a done parent count", () => {
+		const parent = item("p", { status: "done" });
+		parent.children.push(item("k", { status: "blocked-user" }), item("j", { status: "done" }));
+		const model: ChecklistModel = { open: [], done: [parent] };
+		expect(renderPlain(model)).toContain("Waiting on you: 1 item.");
 	});
 });
