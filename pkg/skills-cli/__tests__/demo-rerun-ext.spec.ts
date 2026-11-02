@@ -16,8 +16,6 @@ import { registerRerun } from "../src/commands/rerun";
 import { setCliOnly } from "../src/utils/cli-only";
 import type { TourScript } from "../src/utils/plan-format";
 
-const notice = (name: string) =>
-	`${name}: the extension flow now takes --ext; the local player replaces this default in the next release`;
 
 type Played = { script: TourScript; ext?: boolean };
 
@@ -27,7 +25,7 @@ let errors: string[];
 let previousDgHome: string | undefined;
 
 const unavailable = (name: string) =>
-	`${name}: the local demo player is not available yet; install the extension and pass --ext`;
+	`${name}: the local demo player is not available yet; pass --ext to play in the extension`;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "dg-demo-ext-"));
@@ -50,6 +48,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	mock.restore();
+	setCliOnly(false);
 	if (previousDgHome === undefined) delete process.env.DG_HOME;
 	else process.env.DG_HOME = previousDgHome;
 	rmSync(dir, { recursive: true, force: true });
@@ -72,15 +71,11 @@ describe.each([
 	["demo", registerDemo],
 	["rerun", registerRerun],
 ] as const)("%s", (name, register) => {
-	test("prints the interim notice once and keeps the extension flow without --ext", async () => {
-		const played = await drive(register, [name, plan]);
-		expect(errors.filter((line) => line === notice(name))).toHaveLength(1);
-		expect(played).toHaveLength(1);
-		expect(played[0]?.ext).toBeUndefined();
-	});
-
-	test("exits 1 with one line and plays nothing without --ext on a CLI-only install", async () => {
-		setCliOnly(true);
+	test.each([
+		["a CLI-only install", true],
+		["a full install", false],
+	])("exits 1 with one line and plays nothing without --ext on %s", async (_, cliOnly) => {
+		setCliOnly(cliOnly);
 		spyOn(process, "exit").mockImplementation(((code?: number) => {
 			throw new Error(`exit ${code}`);
 		}) as typeof process.exit);
@@ -96,21 +91,15 @@ describe.each([
 		expect(played).toHaveLength(0);
 	});
 
-	test("keeps the notice and extension play without --ext on a full install", async () => {
-		const played = await drive(register, [name, plan]);
-		expect(errors).toEqual([notice(name)]);
-		expect(played).toHaveLength(1);
-	});
-
 	test("passes ext to the player and prints no notice with --ext", async () => {
 		const played = await drive(register, [name, "--ext", plan]);
-		expect(errors).not.toContain(notice(name));
+		expect(errors).toEqual([]);
 		expect(played[0]?.ext).toBe(true);
 	});
 });
 
 describe("demo without a play path", () => {
-	test("--verify prints no notice and does not call play", async () => {
+	test("--verify prints no refusal and does not call play", async () => {
 		const logs: string[] = [];
 		spyOn(console, "log").mockImplementation((line: unknown) => {
 			logs.push(String(line));
@@ -121,11 +110,11 @@ describe("demo without a play path", () => {
 			join(dir, "missing.md"),
 		]);
 		expect(played).toHaveLength(0);
-		expect(errors).not.toContain(notice("demo"));
+		expect(errors).not.toContain(unavailable("demo"));
 		expect(logs.join("")).toContain("plan-unreadable");
 	});
 
-	test("a missing script path exits 1 with the path error and no notice", async () => {
+	test("a missing script path exits 1 with the path error and no refusal", async () => {
 		spyOn(process, "exit").mockImplementation(((code?: number) => {
 			throw new Error(`exit ${code}`);
 		}) as typeof process.exit);
@@ -133,6 +122,6 @@ describe("demo without a play path", () => {
 		expect(
 			errors.some((line) => line.includes("a script path is required")),
 		).toBe(true);
-		expect(errors).not.toContain(notice("demo"));
+		expect(errors).not.toContain(unavailable("demo"));
 	});
 });

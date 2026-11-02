@@ -11,10 +11,18 @@ function isSuccessful(request: Request): boolean {
 	return response !== null && response.status() < 400;
 }
 
+/** Request headers a restricted session may list. */
+export const RESTRICTED_HEADERS: readonly string[] = [
+	"x-pm-uid",
+	"x-pm-appversion",
+	"x-pm-locale",
+];
+
 export function renderRequest(
 	request: Request,
 	withBody: boolean,
 	withHeaders: boolean,
+	allowHeaders?: readonly string[],
 ): string {
 	const response = request.existingResponse();
 	let text = `[${request.method().toUpperCase()}] ${request.url()}`;
@@ -22,9 +30,9 @@ export function renderRequest(
 	else if (request.failure())
 		text += ` => [FAILED] ${request.failure()?.errorText ?? "Unknown error"}`;
 	if (withHeaders) {
-		const headers = Object.entries(request.headers()).map(
-			([name, value]) => `    ${name}: ${value}`,
-		);
+		const headers = Object.entries(request.headers())
+			.filter(([name]) => !allowHeaders || allowHeaders.includes(name))
+			.map(([name, value]) => `    ${name}: ${value}`);
 		if (headers.length > 0)
 			text += `\n  Request headers:\n${headers.join("\n")}`;
 	}
@@ -61,8 +69,9 @@ const network: DaemonHandler = async (ctx, args) => {
 		.map((request) =>
 			renderRequest(
 				request,
-				args.flags["request-body"] === true,
+				!ctx.restricted && args.flags["request-body"] === true,
 				args.flags["request-headers"] === true,
+				ctx.restricted ? RESTRICTED_HEADERS : undefined,
 			),
 		);
 	if (args.flags["clear"] === true) ctx.events.clearRequests(page);

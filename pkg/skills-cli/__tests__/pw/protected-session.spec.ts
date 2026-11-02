@@ -7,10 +7,44 @@ import {
 
 const ENV_KEY = "PLAYWRIGHT_CLI_SESSION";
 const saved = process.env[ENV_KEY];
+const savedHome = process.env["DG_HOME"];
 
 afterEach(() => {
 	if (saved === undefined) delete process.env[ENV_KEY];
 	else process.env[ENV_KEY] = saved;
+	if (savedHome === undefined) delete process.env["DG_HOME"];
+	else process.env["DG_HOME"] = savedHome;
+});
+
+describe("pw protectedSessionRefusal for the Proton profile", () => {
+	const home = "/tmp/dg-protected-home";
+
+	test.each([
+		[["-s=mail-copy", "open", "--profile", `${home}/inbox/proton-profile`]],
+		[["-s=mail-copy", "open", `--profile=${home}/inbox/proton-profile/`]],
+		[["-s=mail-copy", "open", "--profile", `${home}/inbox/../inbox/proton-profile`]],
+		[
+			[
+				"-s=mail-copy",
+				"open",
+				"--windows",
+				"--profile",
+				"C:\\Users\\me\\AppData\\Local\\playwright-cli\\profiles\\inbox-proton",
+			],
+		],
+	])("refuses opening the protected profile under another name: %p", (argv) => {
+		delete process.env[ENV_KEY];
+		process.env["DG_HOME"] = home;
+		expect(protectedSessionRefusal(argv)).toContain("inbox-proton");
+	});
+
+	test("allows another profile", () => {
+		delete process.env[ENV_KEY];
+		process.env["DG_HOME"] = home;
+		expect(
+			protectedSessionRefusal(["-s=web", "open", "--profile", `${home}/web`]),
+		).toBeUndefined();
+	});
 });
 
 describe("pw protectedSessionRefusal", () => {

@@ -78,6 +78,8 @@ async function observeHeaders(
 	page: ProtonPwPage,
 ): Promise<ProtonSessionHeaders> {
 	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
+		if (!isProtonMailOrigin(new URL(await page.url()).origin))
+			throw new ProtonSignedOutError();
 		const headers = await page.observedHeaders();
 		if (headers?.uid) return headers;
 		await new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
@@ -133,7 +135,12 @@ export function createPwBrowserRequest(input: {
 							"Proton account mismatch.",
 					);
 			}
-			headers ??= await observeHeaders(page);
+			try {
+				headers ??= await observeHeaders(page);
+			} catch (error) {
+				if (error instanceof ProtonSignedOutError) await close();
+				throw error;
+			}
 			const result = (await page.evaluate(PAGE_SCRIPT, {
 				request,
 				headers,

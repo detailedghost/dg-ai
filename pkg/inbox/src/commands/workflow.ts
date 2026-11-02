@@ -427,6 +427,7 @@ async function protonSessionStatus(context: CliContext): Promise<{
 		await request({ operation: "session-status" });
 		return { checked: true, ok: true, check: "x-pm-uid-observed" };
 	} catch (error) {
+		if (error instanceof ProtonSignedOutError) throw error;
 		const detail = error instanceof Error ? error.message : String(error);
 		return {
 			checked: true,

@@ -389,12 +389,7 @@ export function extOnly(check: DoctorCheck): DoctorCheck {
 		id: check.id,
 		async run(ctx) {
 			const result = await check.run(ctx);
-			if (
-				!isCliOnly(ctx) ||
-				(result.status !== "fail" && result.status !== "warn")
-			) {
-				return result;
-			}
+			if (result.status !== "fail" && result.status !== "warn") return result;
 			return { status: "info", detail: `--ext only: ${result.detail}` };
 		},
 	};

@@ -4,10 +4,10 @@ import { join } from "node:path";
 import {
 	createPwBrowserRequest,
 	ProtonHeadersTimeoutError,
-	ProtonSignedOutError,
 	type ProtonPwPage,
 	type ProtonPwSession,
 	type ProtonPwSessionSpec,
+	ProtonSignedOutError,
 } from "../pw-client";
 
 const SOURCE = readFileSync(join(import.meta.dir, "../pw-client.ts"), "utf8");
@@ -54,7 +54,9 @@ describe("pw-client createPwBrowserRequest", () => {
 			});
 		expect(evaluated).toHaveLength(requests.length);
 		for (const [index, request] of requests.entries())
-			expect(JSON.stringify(evaluated[index]!.arg)).toContain(request.operation);
+			expect(JSON.stringify(evaluated[index]!.arg)).toContain(
+				request.operation,
+			);
 	});
 
 	test("opens the inbox-proton session once with the persistent profile, headless", async () => {
@@ -105,7 +107,10 @@ describe("pw-client createPwBrowserRequest", () => {
 	test("rejects an invalid request before touching the page", async () => {
 		const { transport, evaluated, opened } = seam();
 		await expect(
-			transport.browserRequest({ operation: "eval", source: "document.cookie" } as never),
+			transport.browserRequest({
+				operation: "eval",
+				source: "document.cookie",
+			} as never),
 		).rejects.toThrow();
 		expect(evaluated).toHaveLength(0);
 		expect(opened).toHaveLength(0);
@@ -133,7 +138,8 @@ describe("pw-client createPwBrowserRequest", () => {
 					page: {
 						url: () => MAIL_URL,
 						observedHeaders: () => undefined,
-						evaluate: async (fn: unknown, arg: unknown) => void evaluated.push({ fn, arg }),
+						evaluate: async (fn: unknown, arg: unknown) =>
+							void evaluated.push({ fn, arg }),
 					} as never,
 					close: async () => {},
 				}),
@@ -147,6 +153,40 @@ describe("pw-client createPwBrowserRequest", () => {
 			expect(error).toBeInstanceOf(ProtonHeadersTimeoutError);
 			expect(error).not.toBeInstanceOf(ProtonSignedOutError);
 			expect(evaluated).toHaveLength(0);
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("a page that leaves the mail origin while waiting for a session uid rejects as signed out and closes", async () => {
+		const timers = spyOn(globalThis, "setTimeout").mockImplementation(((
+			callback: () => void,
+		) => {
+			callback();
+			return 0;
+		}) as never);
+		try {
+			const urls = [MAIL_URL, MAIL_URL, "https://account.proton.me/login"];
+			let closed = 0;
+			const transport = createPwBrowserRequest({
+				dataDir: "/data/dg",
+				openSession: async () => ({
+					page: {
+						url: () => urls.shift() ?? "https://account.proton.me/login",
+						observedHeaders: () => undefined,
+						evaluate: async () => ({ hasMore: false }),
+					},
+					close: async () => void (closed += 1),
+				}),
+			});
+			const error = await transport
+				.browserRequest({ operation: "list-folders" })
+				.then(
+					() => undefined,
+					(caught: unknown) => caught,
+				);
+			expect(error).toBeInstanceOf(ProtonSignedOutError);
+			expect(closed).toBe(1);
 		} finally {
 			timers.mockRestore();
 		}
@@ -167,7 +207,9 @@ describe("pw-client createPwBrowserRequest", () => {
 
 	test("another page error code rejects with its fixed diagnostic and no exit 4", async () => {
 		const { transport } = seam({
-			answer: { error: { code: "http-failure", status: 429, detail: "secret-token" } },
+			answer: {
+				error: { code: "http-failure", status: 429, detail: "secret-token" },
+			},
 		});
 		const error = await transport
 			.browserRequest({ operation: "list-folders" })
@@ -210,16 +252,26 @@ describe("pw-client createPwBrowserRequest", () => {
 	});
 
 	test("an accountHint that does not match the open /u/ path rejects before evaluating", async () => {
-		const { transport, evaluated } = seam({ url: "https://mail.proton.me/u/1/inbox" });
+		const { transport, evaluated } = seam({
+			url: "https://mail.proton.me/u/1/inbox",
+		});
 		await expect(
-			transport.browserRequest({ operation: "list-folders", accountHint: "0" } as never),
+			transport.browserRequest({
+				operation: "list-folders",
+				accountHint: "0",
+			} as never),
 		).rejects.toThrow(/account-mismatch/);
 		expect(evaluated).toHaveLength(0);
 	});
 
 	test("an accountHint opens the matching /u/N mail URL", async () => {
-		const { transport, opened } = seam({ url: "https://mail.proton.me/u/1/inbox" });
-		await transport.browserRequest({ operation: "list-folders", accountHint: "1" } as never);
+		const { transport, opened } = seam({
+			url: "https://mail.proton.me/u/1/inbox",
+		});
+		await transport.browserRequest({
+			operation: "list-folders",
+			accountHint: "1",
+		} as never);
 		expect(opened).toEqual([
 			{
 				name: "inbox-proton",
@@ -231,8 +283,13 @@ describe("pw-client createPwBrowserRequest", () => {
 	});
 
 	test("an accountHint matching the open /u/ path runs the operation", async () => {
-		const { transport, evaluated } = seam({ url: "https://mail.proton.me/u/0/inbox" });
-		await transport.browserRequest({ operation: "list-folders", accountHint: "0" } as never);
+		const { transport, evaluated } = seam({
+			url: "https://mail.proton.me/u/0/inbox",
+		});
+		await transport.browserRequest({
+			operation: "list-folders",
+			accountHint: "0",
+		} as never);
 		expect(evaluated).toHaveLength(1);
 	});
 

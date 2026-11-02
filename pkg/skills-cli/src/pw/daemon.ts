@@ -25,6 +25,7 @@ import {
 import { pageHeader, render } from "./core/response";
 import { type DaemonRequest, type DaemonResponse, serve } from "./core/socket";
 import type { Ctx, DaemonHandler } from "./core/spec";
+import { isProtectedSession } from "./core/protected-session";
 import { STATE_NAME, statesDir } from "./core/states";
 import { parseCdpUrl } from "./core/url";
 import {
@@ -61,6 +62,7 @@ async function serveSession(spec: LaunchSpec): Promise<void> {
 		clientCwd: spec.cwd,
 		events,
 		state: { routes: [], tracing: false },
+		restricted: isProtectedSession(spec.name),
 	};
 
 	let cleanup: Promise<boolean> | undefined;

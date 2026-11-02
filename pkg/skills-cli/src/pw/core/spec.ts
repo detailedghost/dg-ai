@@ -63,6 +63,7 @@ export type Ctx = {
 	clientCwd: string;
 	events: Events;
 	state: DaemonState;
+	restricted?: boolean;
 };
 
 export type SnapshotRequest = {

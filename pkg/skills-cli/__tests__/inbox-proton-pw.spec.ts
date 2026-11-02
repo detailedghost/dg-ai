@@ -10,11 +10,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { isWSL } from "@dg/common/node";
 import {
+	acquireProtonLock,
 	assertProtonSignedIn,
 	isProtonSignedIn,
 	openProtonSession,
 	ProtonSignedOutError,
 	type PwRunner,
+	protonLockPath,
 	protonProfilePaths,
 	protonPwRuntime,
 	readSignedInMarker,
@@ -509,6 +511,114 @@ describe("proton-pw sign-in origins", () => {
 				log: () => {},
 			});
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(true);
+		} finally {
+			data.cleanup();
+		}
+	});
+});
+
+describe("proton-pw session lock", () => {
+	const fixturePage = {
+		url: () => "https://mail.proton.me/u/0/inbox",
+		observedHeaders: () => ({ uid: "fixture-uid" }),
+		evaluate: async () => ({ hasMore: false }),
+	};
+
+	test("a second runtime refuses while the first holds the session, then proceeds after close", async () => {
+		const data = tempDataDir();
+		try {
+			writeSignedInMarker(data.dir);
+			let closed = 0;
+			const open = async () => ({
+				page: fixturePage,
+				close: async () => void (closed += 1),
+			});
+			const first = protonPwRuntime(data.dir, open);
+			const second = protonPwRuntime(data.dir, open);
+			await first.pwBrowserRequest({ operation: "list-folders" });
+			await expect(
+				second.pwBrowserRequest({ operation: "list-folders" }),
+			).rejects.toThrow(/Another inbox command .* is using the Proton pw session/);
+			await second.close();
+			expect(closed).toBe(0);
+			await first.close();
+			expect(closed).toBe(1);
+			expect(existsSync(protonLockPath(data.dir))).toBe(false);
+			await second.pwBrowserRequest({ operation: "list-folders" });
+			await second.close();
+		} finally {
+			data.cleanup();
+		}
+	});
+
+	test("a lock left by a dead process is taken over", () => {
+		const data = tempDataDir();
+		try {
+			const lockPath = protonLockPath(data.dir);
+			mkdirSync(dirname(lockPath), { recursive: true });
+			writeFileSync(lockPath, "2147483646");
+			const release = acquireProtonLock(data.dir);
+			release();
+			expect(existsSync(lockPath)).toBe(false);
+		} finally {
+			data.cleanup();
+		}
+	});
+
+	test("sign-in refuses while another command holds the session and opens nothing", async () => {
+		const data = tempDataDir();
+		const release = acquireProtonLock(data.dir);
+		try {
+			let opened = 0;
+			const deps = {
+				openSession: async () => {
+					opened += 1;
+					return { page: fixturePage, close: async () => {} };
+				},
+				sleep: async () => {},
+				log: () => {},
+			};
+			await expect(runProtonSignIn(data.dir, deps as never)).rejects.toThrow(
+				/is using the Proton pw session/,
+			);
+			expect(opened).toBe(0);
+		} finally {
+			release();
+			data.cleanup();
+		}
+	});
+
+	test("a canceled sign-in closes the browser, writes no marker and frees the lock", async () => {
+		const data = tempDataDir();
+		try {
+			let cancel: (() => Promise<void>) | undefined;
+			let closed = 0;
+			const deps = {
+				openSession: async () => ({
+					page: {
+						url: () => "https://account.proton.me/login",
+						observedHeaders: () => undefined,
+						evaluate: async () => ({}),
+					},
+					close: async () => void (closed += 1),
+				}),
+				sleep: async () => {
+					await cancel?.();
+				},
+				log: () => {},
+				trapSignals: (onCancel: () => Promise<void>) => {
+					cancel = onCancel;
+					return () => {
+						cancel = undefined;
+					};
+				},
+			};
+			await expect(runProtonSignIn(data.dir, deps as never)).rejects.toThrow(
+				/canceled/,
+			);
+			expect(closed).toBe(1);
+			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(false);
+			expect(existsSync(protonLockPath(data.dir))).toBe(false);
 		} finally {
 			data.cleanup();
 		}

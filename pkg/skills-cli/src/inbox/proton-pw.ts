@@ -6,9 +6,9 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { InboxBrowserRequest, InboxBrowserResponse } from "@dg/common";
-import { isWSL, resolveDgPaths } from "@dg/common/node";
+import { isAlive, isWSL, resolveDgPaths } from "@dg/common/node";
 import {
 	createPwBrowserRequest,
 	isProtonMailOrigin,
@@ -35,6 +35,8 @@ export type SignInDeps = {
 	sleep(ms: number): Promise<void>;
 	log(line: string): void;
 	timeoutMs?: number;
+	/** Runs onCancel on SIGINT or SIGTERM and returns the unregister function. */
+	trapSignals?(onCancel: () => Promise<void>): () => void;
 };
 
 export const protonDataDir = (): string => resolveDgPaths().stateDir;
@@ -93,6 +95,38 @@ export function readSignedInMarker(
 
 export function clearSignedInMarker(dataDir: string): void {
 	rmSync(protonProfilePaths(dataDir).markerPath, { force: true });
+}
+
+export const protonLockPath = (dataDir: string): string =>
+	join(dataDir, "inbox", "proton-session.lock");
+
+/** Takes the cross-process Proton session lock and returns its release function. */
+export function acquireProtonLock(dataDir: string): () => void {
+	const lockPath = protonLockPath(dataDir);
+	mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
+	const owner = String(process.pid);
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			writeFileSync(lockPath, owner, { flag: "wx", mode: 0o600 });
+			return () => {
+				try {
+					if (readFileSync(lockPath, "utf8") === owner) rmSync(lockPath);
+				} catch {}
+			};
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		}
+		let holder = Number.NaN;
+		try {
+			holder = Number.parseInt(readFileSync(lockPath, "utf8"), 10);
+		} catch {}
+		if (Number.isInteger(holder) && holder > 0 && isAlive(holder))
+			throw new Error(
+				`Another inbox command (pid ${holder}) is using the Proton pw session. Wait for it to finish, then retry.`,
+			);
+		rmSync(lockPath, { force: true });
+	}
+	throw new Error("Could not take the Proton pw session lock. Retry.");
 }
 
 async function runPw(argv: string[]) {
@@ -183,12 +217,23 @@ export function protonPwRuntime(
 	pwBrowserRequest(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
 	close(): Promise<void>;
 } {
+	let release: (() => void) | undefined;
 	const transport = createPwBrowserRequest({
 		dataDir,
-		openSession,
+		openSession: (spec) => {
+			release ??= acquireProtonLock(dataDir);
+			return openSession(spec);
+		},
 	});
 	return {
-		close: transport.close,
+		async close() {
+			try {
+				await transport.close();
+			} finally {
+				release?.();
+				release = undefined;
+			}
+		},
 		async pwBrowserRequest(request) {
 			assertProtonSignedIn(dataDir);
 			try {
@@ -205,6 +250,18 @@ const realSignInDeps: SignInDeps = {
 	openSession: (spec) => openProtonSession(spec),
 	sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 	log: (line) => console.error(line),
+	trapSignals: (onCancel) => {
+		const onSignal = (signal: NodeJS.Signals) =>
+			void onCancel().finally(() =>
+				process.exit(signal === "SIGINT" ? 130 : 143),
+			);
+		process.once("SIGINT", onSignal);
+		process.once("SIGTERM", onSignal);
+		return () => {
+			process.off("SIGINT", onSignal);
+			process.off("SIGTERM", onSignal);
+		};
+	},
 };
 
 export async function runProtonSignIn(
@@ -212,17 +269,35 @@ export async function runProtonSignIn(
 	deps: SignInDeps = realSignInDeps,
 ): Promise<void> {
 	const { profileDir } = protonProfilePaths(dataDir);
-	const session = await deps.openSession({
-		name: PROTON_SESSION_NAME,
-		profileDir,
-		headless: false,
+	const release = acquireProtonLock(dataDir);
+	let canceled = false;
+	const opening = deps
+		.openSession({ name: PROTON_SESSION_NAME, profileDir, headless: false })
+		.catch((error: unknown) => {
+			release();
+			throw error;
+		});
+	const untrap = deps.trapSignals?.(async () => {
+		canceled = true;
+		try {
+			await (await opening).close();
+		} catch {}
+		release();
 	});
+	let session: ProtonPwSession;
+	try {
+		session = await opening;
+	} catch (error) {
+		untrap?.();
+		throw error;
+	}
 	try {
 		deps.log(
 			"Sign in to Proton Mail in the browser window. This command waits.",
 		);
 		const deadline = Date.now() + (deps.timeoutMs ?? SIGN_IN_TIMEOUT_MS);
 		for (;;) {
+			if (canceled) throw new Error("Proton sign-in was canceled.");
 			const url = await session.page.url();
 			if (
 				isProtonMailOrigin(new URL(url).origin) &&
@@ -235,8 +310,14 @@ export async function runProtonSignIn(
 				);
 			await deps.sleep(SIGN_IN_POLL_MS);
 		}
+		if (canceled) throw new Error("Proton sign-in was canceled.");
 	} finally {
-		await session.close();
+		untrap?.();
+		try {
+			if (!canceled) await session.close();
+		} finally {
+			release();
+		}
 	}
 	writeSignedInMarker(dataDir);
 	deps.log("Proton Mail is signed in. The profile is saved.");

@@ -71,6 +71,31 @@ describe("main inbox runtime", () => {
 		}
 	});
 
+	test("status rethrows a signed-out pw Proton session", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-status-signed-out-"));
+		try {
+			await Bun.write(
+				join(root, "messages", "_status.json"),
+				JSON.stringify({
+					kind: "message-status",
+					total: 0,
+					counts: {},
+					items: [],
+				}),
+			);
+			await expect(
+				run(["status", "--provider", "protonmail", "--dir", root], {
+					ext: false,
+					pwBrowserRequest: async () => {
+						throw new ProtonSignedOutError();
+					},
+				}),
+			).rejects.toBeInstanceOf(ProtonSignedOutError);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	test("refuses an explicitly missing DB profile before contacting a mailbox", async () => {
 		const root = await mkdtemp(join(tmpdir(), "inbox-missing-profile-"));
 		const names: string[] = [];

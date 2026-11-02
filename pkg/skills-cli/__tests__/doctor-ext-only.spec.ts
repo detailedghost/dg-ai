@@ -48,12 +48,20 @@ describe("extOnly", () => {
 		expect(result.fix).toBeUndefined();
 	});
 
-	test("returns the wrapped result unchanged on a full install", async () => {
+	test("turns a warn or fail into info on a full install too", async () => {
 		const ctx = contextFor(false);
-		for (const result of [warn("w", "fix w"), fail("f", "fix f"), ok("fine")]) {
+		for (const result of [warn("w", "fix w"), fail("f", "fix f")]) {
 			const check: DoctorCheck = { id: "c", run: () => result };
-			expect(await extOnly(check).run(ctx)).toEqual(result);
+			expect(await extOnly(check).run(ctx)).toEqual({
+				status: "info",
+				detail: `${PREFIX}${result.detail}`,
+			});
 		}
+	});
+
+	test("keeps an ok result unchanged on a full install", async () => {
+		const check: DoctorCheck = { id: "c", run: () => ok("fine") };
+		expect(await extOnly(check).run(contextFor(false))).toEqual(ok("fine"));
 	});
 
 	test("keeps the wrapped check id", () => {
@@ -114,6 +122,19 @@ describe("dg-skills doctor on a CLI-only home", () => {
 		expect(installed?.status).toBe("warn");
 		const daemon = checks.find((c) => c.id === "daemon");
 		expect(daemon?.status).toBe("warn");
+	});
+});
+
+describe("dg-skills doctor batch-open on a full install", () => {
+	test("exits 0 when the daemon is down and reports the extension checks as info", async () => {
+		const { run, report } = await world.report(["batch-open"], {
+			DG_HOME: join(world.home, ".dg"),
+		});
+		expect(run.exitCode).toBe(0);
+		const checks = checksOf(report, "batch-open");
+		const daemon = checks.find((c) => c.id === "daemon");
+		expect(daemon?.status).toBe("info");
+		expect(daemon?.detail.startsWith(PREFIX)).toBe(true);
 	});
 });
 

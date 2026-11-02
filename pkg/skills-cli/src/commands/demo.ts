@@ -61,15 +61,10 @@ export const defaultPlayDeps: PlayDeps = {
 
 export function noteExtDefault(name: "demo" | "rerun", opts: PlayOpts): void {
 	if (opts.ext) return;
-	if (isCliOnly()) {
-		console.error(
-			`${name}: the local demo player is not available yet; install the extension and pass --ext`,
-		);
-		process.exit(1);
-	}
 	console.error(
-		`${name}: the extension flow now takes --ext; the local player replaces this default in the next release`,
+		`${name}: the local demo player is not available yet; pass --ext to play in the extension`,
 	);
+	process.exit(1);
 }
 type VerifyOpts = { verify?: string };
 

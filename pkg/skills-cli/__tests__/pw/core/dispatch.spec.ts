@@ -51,6 +51,20 @@ describe("dispatch", () => {
 		expect(page.snapshotCalls).toEqual([{ mode: "ai", depth: 6 }]);
 	});
 
+	test("writes no snapshot for a restricted session", async () => {
+		const { ctx, page } = fakeCtx(scratch.dir);
+		const out = await dispatch(
+			returning({ snapshot: true }),
+			goto,
+			argsFor(goto, "a.test"),
+			{ ...ctx, restricted: true },
+			options(),
+		);
+		expect(out.exitCode).toBe(0);
+		expect(out.text).not.toContain("### Snapshot");
+		expect(page.snapshotCalls).toEqual([]);
+	});
+
 	test("prints a string result as is and any other result as JSON", async () => {
 		const { ctx } = fakeCtx(scratch.dir);
 		const text = (result: unknown) =>
