@@ -22,8 +22,6 @@ import {
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
-afterEach(removeScratchDirs);
-
 type CredentialsResult = {
 	type: string;
 	sessionId: string;
@@ -62,6 +60,7 @@ afterEach(() => {
 		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	}
+	removeScratchDirs();
 	dgHome = undefined;
 });
 

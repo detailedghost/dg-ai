@@ -19,13 +19,12 @@ import {
 	waitForValue,
 } from "../utils/daemon-harness";
 
-afterEach(removeScratchDirs);
-
 let dgHome: string;
 
 afterEach(() => {
 	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
+	removeScratchDirs();
 });
 
 const UUID_SHAPED_ORPHAN = "9f2c1b40-6a7d-4e58-9b31-0c5d8e2a71f4";

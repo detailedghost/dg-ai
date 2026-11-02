@@ -35,14 +35,13 @@ import {
 	waitForValue,
 } from "../utils/daemon-harness";
 
-afterEach(removeScratchDirs);
-
 let dgHome: string;
 
 afterEach(() => {
 	if (!dgHome) return;
 	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
+	removeScratchDirs();
 	dgHome = "";
 });
 
