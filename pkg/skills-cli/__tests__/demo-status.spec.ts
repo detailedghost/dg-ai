@@ -17,7 +17,13 @@ afterEach(() => {
 	world.cleanup();
 });
 
-const playerArgv = ["-e", "setInterval(() => {}, 1000)", "--", "__player", "local-player-tour"];
+const playerArgv = [
+	"-e",
+	"setInterval(() => {}, 1000)",
+	"--",
+	"__player",
+	JSON.stringify({ slug: "local-player-tour" }),
+];
 
 const liveChild = (argv: string[]) => {
 	const child = Bun.spawn(argv, { stdout: "ignore", stderr: "ignore", stdin: "ignore" });
@@ -26,7 +32,7 @@ const liveChild = (argv: string[]) => {
 };
 
 const playerChild = (forSlug = slug) =>
-	liveChild([process.execPath, "-e", "setInterval(() => {}, 1000)", "__player", forSlug]);
+	liveChild([process.execPath, "-e", "setInterval(() => {}, 1000)", "__player", JSON.stringify({ slug: forSlug })]);
 
 const slug = "local-player-tour";
 
@@ -56,6 +62,42 @@ describe("generated slugs", () => {
 
 	test("trims edge hyphens from a title that starts with punctuation", () => {
 		expect(slugify("#115: Local Tour")).toBe("115-local-tour");
+	});
+});
+
+describe("player pid matching", () => {
+	const jobFor = (jobSlug: string) =>
+		JSON.stringify({ slug: jobSlug, dir: join(world.demosDir, jobSlug), planPath: "p", video: true });
+
+	const livePlayerFor = (jobSlug: string, extra: string[] = []) => {
+		const child = liveChild([
+			process.execPath,
+			"-e",
+			"setInterval(() => {}, 1000)",
+			"demo",
+			"__player",
+			jobFor(jobSlug),
+			...extra,
+		]);
+		const dir = join(world.demosDir, slug);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "player.pid"), String(child.pid));
+		return child;
+	};
+
+	test("accepts a player whose job slug matches exactly", async () => {
+		const child = livePlayerFor(slug);
+		expect((await status()).out).toBe(`running (pid ${child.pid})`);
+	});
+
+	test("rejects a player for a longer slug that contains this one", async () => {
+		livePlayerFor(`${slug}-extra`);
+		expect((await status()).out).toBe(`no run for ${slug}`);
+	});
+
+	test("rejects a player that only mentions the slug in another argument", async () => {
+		livePlayerFor("other", [slug]);
+		expect((await status()).out).toBe(`no run for ${slug}`);
 	});
 });
 

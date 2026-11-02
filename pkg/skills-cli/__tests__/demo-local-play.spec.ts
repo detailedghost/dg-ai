@@ -333,7 +333,7 @@ describe("demo <plan> browser selection", () => {
 		await world.drive(registerDemo, ["demo", world.planPath], demoDeps());
 		const slug = String(playerJob().slug);
 		const live = Bun.spawn(
-			[process.execPath, "-e", "setInterval(() => {}, 1000)", "--", "__player", slug],
+			[process.execPath, "-e", "setInterval(() => {}, 1000)", "--", "__player", JSON.stringify({ slug })],
 			{ stdout: "ignore", stderr: "ignore", stdin: "ignore" },
 		);
 		try {

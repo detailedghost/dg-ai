@@ -57,8 +57,16 @@ export function writeResult(
 	);
 }
 
-const isPlayerOf = (slug: string, cmdline: string[]): boolean =>
-	cmdline.includes("__player") && cmdline.some((arg) => arg.includes(slug));
+const isPlayerOf = (slug: string, cmdline: string[]): boolean => {
+	const at = cmdline.indexOf("__player");
+	if (at < 0) return false;
+	try {
+		const job = JSON.parse(cmdline[at + 1] ?? "") as { slug?: unknown };
+		return job.slug === slug;
+	} catch {
+		return false;
+	}
+};
 
 /** A recycled pid that now runs some other program does not count as the player. */
 export function playerPid(slug: string): number | undefined {

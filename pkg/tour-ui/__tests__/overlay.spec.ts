@@ -47,6 +47,31 @@ describe("renderStep", () => {
 	});
 });
 
+describe("renderStep in a voice-only recording", () => {
+	const voiced = async (index: number, unvoiced: number[]) => {
+		const host = fakeHost();
+		const script = threeStepScript({ mode: "video" });
+		const step = script.steps[index];
+		if (!step) throw new Error("fixture needs steps");
+		await renderStep(
+			host,
+			{ script, index, mode: "video", videoHideBody: true, videoUnvoiced: unvoiced } as never,
+			step,
+		);
+		return { text: host.liveText(), step };
+	};
+
+	it("hides the body of a voiced step", async () => {
+		const { text, step } = await voiced(0, [1]);
+		expect(text).not.toContain(step.body);
+	});
+
+	it("keeps the caption of a step that has no voice", async () => {
+		const { text, step } = await voiced(1, [1]);
+		expect(text).toContain(step.body);
+	});
+});
+
 describe("recIndicator", () => {
 	it("labels the recording state", () => {
 		expect(recIndicator().textContent).toContain("REC");

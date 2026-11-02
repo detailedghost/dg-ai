@@ -28,6 +28,8 @@ export type PlayState = {
 	videoDurations?: number[];
 	/** Voice-only recordings keep spoken body copy off-screen after navigation too. */
 	videoHideBody?: boolean;
+	/** Step indices that got no voice clip, so voice-only recordings keep their captions. */
+	videoUnvoiced?: number[];
 };
 
 /**

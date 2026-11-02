@@ -155,3 +155,28 @@ describe("runTour with a narrator that reports clip lengths", () => {
 		expect(delay).toBeLessThan(1500);
 	});
 });
+
+describe("runTour with a refused clip in voice mode", () => {
+	it("stores the unvoiced step indices so those steps keep captions", async () => {
+		const host = voicedHost("voice", {
+			prepare: async () => [20, 20],
+			clipMs: (index) => (index === 0 ? 100 : undefined),
+		});
+		const writes: unknown[] = [];
+		const set = host.storage.set;
+		host.storage.set = async (key, value) => {
+			writes.push(value);
+			return set(key, value);
+		};
+		await settle(
+			runTour(host, script(), {
+				mode: "video",
+				narration: { narration: "voice", voice: "af_heart" },
+			}),
+			"the partial tour",
+			5000,
+		);
+		const saved = JSON.stringify(writes);
+		expect(saved).toContain('"videoUnvoiced":[1]');
+	});
+});

@@ -145,7 +145,7 @@ export function buildOverlay(
 	}
 
 	// Voice-only recording speaks the body, so omit the text box (title stays).
-	if (!(video && state.videoHideBody)) {
+	if (!(video && state.videoHideBody && !state.videoUnvoiced?.includes(state.index))) {
 		const body = el("div", { marginBottom: "0.75rem" });
 		body.textContent = step.body;
 		card.appendChild(body);

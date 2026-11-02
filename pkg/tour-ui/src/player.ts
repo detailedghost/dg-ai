@@ -104,7 +104,10 @@ function controlsFor(push: (command: Command) => void): StepControls {
 	};
 }
 
-type Voicing = Pick<PlayState, "videoDurations" | "videoHideBody">;
+type Voicing = Pick<
+	PlayState,
+	"videoDurations" | "videoHideBody" | "videoUnvoiced"
+>;
 
 async function voicing(
 	host: TourHost,
@@ -120,13 +123,21 @@ async function voicing(
 		progressLabel: "Loading local voice model",
 	});
 	try {
+		const tutorial = partitionTourSteps(play).tutorial;
 		const videoDurations = await host.narrator.prepare(
-			partitionTourSteps(play).tutorial,
+			tutorial,
 			settings.voice,
 			modal.update,
 		);
+		const clipMs = host.narrator.clipMs;
+		const videoUnvoiced = clipMs
+			? tutorial.flatMap((step, index) =>
+					(step.body ?? "").trim() && clipMs(index) === undefined ? [index] : [],
+				)
+			: [];
 		return {
 			videoDurations,
+			...(videoUnvoiced.length ? { videoUnvoiced } : {}),
 			...(settings.narration === "voice" ? { videoHideBody: true } : {}),
 		};
 	} catch (error) {
