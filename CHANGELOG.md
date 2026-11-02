@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.30.0 (2026-11-02)
+
+### Features
+
+- feat(prototype): pass the page through by default with a Responsive width ([#121](https://github.com/detailedghost/dg-ai/pull/121))
+
 ## v1.29.0 (2026-11-02)
 
 ### Features
