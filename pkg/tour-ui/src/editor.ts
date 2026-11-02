@@ -425,6 +425,7 @@ export async function showEditPanel(
 
 	const download = (): void => {
 		const md = toPlanMarkdown(draftToScript(script.startUrl, draft));
+		void host.messages.send({ kind: "download-plan", markdown: md });
 		const blob = new Blob([md], { type: "text/markdown" });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement("a");
