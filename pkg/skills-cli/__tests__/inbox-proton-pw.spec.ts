@@ -565,6 +565,38 @@ describe("proton-pw session lock", () => {
 		}
 	});
 
+	test("a live reclaimer blocks a stale takeover and leaves the stale lock", () => {
+		const data = tempDataDir();
+		try {
+			const lockPath = protonLockPath(data.dir);
+			mkdirSync(dirname(lockPath), { recursive: true });
+			writeFileSync(lockPath, "2147483646");
+			writeFileSync(`${lockPath}.reclaim`, String(process.pid));
+			expect(() => acquireProtonLock(data.dir)).toThrow(
+				/is using the Proton pw session/,
+			);
+			expect(existsSync(lockPath)).toBe(true);
+		} finally {
+			data.cleanup();
+		}
+	});
+
+	test("a dead reclaimer and an unreadable lock are both taken over", () => {
+		const data = tempDataDir();
+		try {
+			const lockPath = protonLockPath(data.dir);
+			mkdirSync(dirname(lockPath), { recursive: true });
+			writeFileSync(lockPath, "not a pid");
+			writeFileSync(`${lockPath}.reclaim`, "2147483646");
+			const release = acquireProtonLock(data.dir);
+			expect(existsSync(`${lockPath}.reclaim`)).toBe(false);
+			release();
+			expect(existsSync(lockPath)).toBe(false);
+		} finally {
+			data.cleanup();
+		}
+	});
+
 	test("sign-in refuses while another command holds the session and opens nothing", async () => {
 		const data = tempDataDir();
 		const release = acquireProtonLock(data.dir);

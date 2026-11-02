@@ -1,5 +1,6 @@
 import {
 	existsSync,
+	linkSync,
 	mkdirSync,
 	readFileSync,
 	renameSync,
@@ -100,31 +101,66 @@ export function clearSignedInMarker(dataDir: string): void {
 export const protonLockPath = (dataDir: string): string =>
 	join(dataDir, "inbox", "proton-session.lock");
 
+function readOwner(path: string): string | undefined {
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return undefined;
+	}
+}
+
+function liveOwner(raw: string | undefined): number | undefined {
+	const pid = Number.parseInt(raw ?? "", 10);
+	return Number.isInteger(pid) && pid > 0 && isAlive(pid) ? pid : undefined;
+}
+
+function publishOwner(path: string, owner: string): boolean {
+	const temporary = `${path}.${owner}.tmp`;
+	writeFileSync(temporary, owner, { mode: 0o600 });
+	try {
+		linkSync(temporary, path);
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		return false;
+	} finally {
+		rmSync(temporary, { force: true });
+	}
+}
+
+function releaseOwner(path: string, owner: string): void {
+	if (readOwner(path) === owner) rmSync(path, { force: true });
+}
+
+const busyError = (pid: number) =>
+	new Error(
+		`Another inbox command (pid ${pid}) is using the Proton pw session. Wait for it to finish, then retry.`,
+	);
+
 /** Takes the cross-process Proton session lock and returns its release function. */
 export function acquireProtonLock(dataDir: string): () => void {
 	const lockPath = protonLockPath(dataDir);
+	const reclaimPath = `${lockPath}.reclaim`;
 	mkdirSync(dirname(lockPath), { recursive: true, mode: 0o700 });
 	const owner = String(process.pid);
-	for (let attempt = 0; attempt < 2; attempt++) {
-		try {
-			writeFileSync(lockPath, owner, { flag: "wx", mode: 0o600 });
-			return () => {
-				try {
-					if (readFileSync(lockPath, "utf8") === owner) rmSync(lockPath);
-				} catch {}
-			};
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		if (publishOwner(lockPath, owner))
+			return () => releaseOwner(lockPath, owner);
+		const stale = readOwner(lockPath);
+		const holder = liveOwner(stale);
+		if (holder !== undefined) throw busyError(holder);
+		if (stale === undefined) continue;
+		if (!publishOwner(reclaimPath, owner)) {
+			const reclaimer = liveOwner(readOwner(reclaimPath));
+			if (reclaimer !== undefined) throw busyError(reclaimer);
+			rmSync(reclaimPath, { force: true });
+			continue;
 		}
-		let holder = Number.NaN;
 		try {
-			holder = Number.parseInt(readFileSync(lockPath, "utf8"), 10);
-		} catch {}
-		if (Number.isInteger(holder) && holder > 0 && isAlive(holder))
-			throw new Error(
-				`Another inbox command (pid ${holder}) is using the Proton pw session. Wait for it to finish, then retry.`,
-			);
-		rmSync(lockPath, { force: true });
+			if (readOwner(lockPath) === stale) rmSync(lockPath, { force: true });
+		} finally {
+			releaseOwner(reclaimPath, owner);
+		}
 	}
 	throw new Error("Could not take the Proton pw session lock. Retry.");
 }
