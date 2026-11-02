@@ -167,7 +167,7 @@ describe("loadConfig deps", () => {
 			enabled: false,
 			timeoutMinutes: 90,
 			ciTimeoutMinutes: 60,
-			cooldownDays: 4,
+			cooldownDays: 0,
 			branchPrefix: "chore/deps-update-",
 			schedule: { every: "week", day: "mon", window: "02:00-05:00" },
 			repos: [],
