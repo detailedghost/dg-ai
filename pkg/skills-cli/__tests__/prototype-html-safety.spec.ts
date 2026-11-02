@@ -23,6 +23,15 @@ describe("prototype decision bar", () => {
 		);
 	});
 
+	test("shows More success only after the decision request succeeds", () => {
+		const handler = html.slice(html.indexOf("getElementById('proto-more')"));
+		expect(handler.indexOf(".then(function(ok)")).toBeLessThan(
+			handler.indexOf("decided('more')"),
+		);
+		expect(injectScript("x", [])).toContain("return !!d.ok;");
+		expect(injectScript("x", [])).toContain("catch(function(){ return false; })");
+	});
+
 	test("treats more as a processing favicon state", () => {
 		expect(injectScript("x", [])).toContain("action === 'more'");
 	});

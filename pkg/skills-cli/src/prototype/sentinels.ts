@@ -124,21 +124,31 @@ export function confirm(
 
 /** Report the selected variant, "rejected", "more", or "pending" without consuming anything. */
 export function status(paths: SentinelPaths): string {
-	if (existsSync(paths.selection))
-		return readFileSync(paths.selection, "utf8").replace(/[\r\n\s]/g, "");
-	if (existsSync(paths.reject)) return "rejected";
-	if (existsSync(paths.more)) return "more";
-	return "pending";
+	return readDecision(paths).status;
 }
 
-export type DecisionKind = "approved" | "rejected" | "more" | "pending";
+export type DecisionKind =
+	| "approved"
+	| "rejected"
+	| "more"
+	| "tweak"
+	| "pending";
 
-/** Report which kind of decision is stored, so a variant key named "more" never reads as a request for more versions. */
-export function decisionKind(paths: SentinelPaths): DecisionKind {
-	if (existsSync(paths.selection)) return "approved";
-	if (existsSync(paths.reject)) return "rejected";
-	if (existsSync(paths.more)) return "more";
-	return "pending";
+export interface DecisionSnapshot {
+	status: string;
+	decision: DecisionKind;
+}
+
+/** Read the stored decision once, so its status text and kind always agree. */
+export function readDecision(paths: SentinelPaths): DecisionSnapshot {
+	if (existsSync(paths.selection))
+		return {
+			status: readFileSync(paths.selection, "utf8").replace(/[\r\n\s]/g, ""),
+			decision: "approved",
+		};
+	if (existsSync(paths.reject)) return { status: "rejected", decision: "rejected" };
+	if (existsSync(paths.more)) return { status: "more", decision: "more" };
+	return { status: "pending", decision: "pending" };
 }
 
 /** Block until a selection or rejection exists, consume it, and report it; the sentinels are checked before any wait. */

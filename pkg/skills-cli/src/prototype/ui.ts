@@ -16,7 +16,7 @@ import {
 	protoDir,
 	sentinelPaths,
 } from "./paths";
-import { status, type WaitResult, wait } from "./sentinels";
+import { type WaitResult, wait } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
 const STALE_SENTINELS = [".selection", ".reject", ".more", ".notes", ".decision"];
@@ -245,10 +245,6 @@ async function startSession(
 			"prototype: warning: failed to auto-open the browser (continuing anyway)\n",
 		);
 	return state;
-}
-
-export function statusSession(state: UiState): string {
-	return status(sentinelPaths(state.sentinelDir));
 }
 
 /** Stop a session's server and drop its state; stopping an unknown chain is a no-op. */

@@ -260,13 +260,14 @@ export function injectScript(name: string, tools: unknown): string {
   window.prototypeDecide = function(action, variant, notes) {
     var hasNotes = !!(notes && notes.trim());
     _setFavicon(action === 'reject' || action === 'more' || hasNotes ? 'processing' : 'done');
-    fetch('/prototype-decision', {
+    return fetch('/prototype-decision', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: ${scriptSafeJson(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '' })
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes, variant); }
-    });
+      return !!d.ok;
+    }).catch(function(){ return false; });
   };
 
   window.prototypePlanDecision = function(decision, notes) {

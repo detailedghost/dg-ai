@@ -13,11 +13,11 @@ import {
 import {
 	awaitDecision,
 	confirm,
-	decisionKind,
+	type DecisionSnapshot,
 	formatDecision,
 	formatWait,
+	readDecision,
 	readSource,
-	status,
 	wait,
 } from "./sentinels";
 import { runServe } from "./serve";
@@ -25,7 +25,6 @@ import {
 	loadState,
 	openInBrowser,
 	runUi,
-	statusSession,
 	stopChain,
 	waitSession,
 } from "./ui";
@@ -57,7 +56,7 @@ export function extStatus(name: string, reloadPath: string): string | undefined 
 			return undefined;
 		const verdict = validateVerdict(JSON.parse(readFileSync(path, "utf8")));
 		if (verdict.slug !== name) return undefined;
-		return verdict.action === "reject"
+		return verdict.action === "rejected"
 			? "rejected"
 			: `${verdict.action}:${verdict.selectedKey}`;
 	} catch {
@@ -73,31 +72,37 @@ export function extStatus(name: string, reloadPath: string): string | undefined 
  */
 function reportStatus(
 	paths: SentinelPaths,
-	resolved: string,
+	resolved: DecisionSnapshot,
 	flags: Flags,
 	name: string,
 ): number {
-	if (flags.requirePending && resolved !== "pending") {
+	if (flags.requirePending && resolved.status !== "pending") {
 		process.stderr.write(
-			`prototype: status for "${name}" is "${resolved}", not "pending" — refusing to report the page as newly live\n`,
+			`prototype: status for "${name}" is "${resolved.status}", not "pending" — refusing to report the page as newly live\n`,
 		);
 		return 1;
 	}
 	if (flags.json) {
-		const kind = decisionKind(paths);
-		const decision =
-			kind === "pending" && resolved !== "pending"
-				? resolved === "rejected"
-					? "rejected"
-					: "approved"
-				: kind;
 		write(
-			`${JSON.stringify({ status: resolved, source: readSource(paths) ?? null, decision })}\n`,
+			`${JSON.stringify({ status: resolved.status, source: readSource(paths) ?? null, decision: resolved.decision })}\n`,
 		);
 	} else {
-		write(`${resolved}\n`);
+		write(`${resolved.status}\n`);
 	}
 	return 0;
+}
+
+export function extSnapshot(resolved: string): DecisionSnapshot {
+	const action = resolved.split(":")[0];
+	return {
+		status: resolved,
+		decision:
+			action === "rejected"
+				? "rejected"
+				: action === "tweak"
+					? "tweak"
+					: "approved",
+	};
 }
 
 export const USAGE = `Usage: prototype <command> [options]
@@ -160,7 +165,7 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	if (command === "status" && session) {
 		return reportStatus(
 			sentinelPaths(session.sentinelDir),
-			statusSession(session),
+			readDecision(sentinelPaths(session.sentinelDir)),
 			flags,
 			name,
 		);
@@ -183,10 +188,12 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			confirm(paths, variant as string, flags.notes, flags.source);
 			return 0;
 		case "status": {
-			const local = status(paths);
+			const local = readDecision(paths);
+			const fromExt =
+				local.status === "pending" ? extStatus(name, paths.reload) : undefined;
 			return reportStatus(
 				paths,
-				local === "pending" ? (extStatus(name, paths.reload) ?? local) : local,
+				fromExt === undefined ? local : extSnapshot(fromExt),
 				flags,
 				name,
 			);

@@ -555,9 +555,11 @@ ${sections}
   });
   document.getElementById('proto-more').addEventListener('click', function(){
     var notes = notesArea.value.trim();
-    window.prototypeDecide('more', '', notes ? '[was viewing ' + current + '] ' + notes : '');
-    decided('more');
-    toast('Asked for more versions.');
+    window.prototypeDecide('more', '', notes ? '[was viewing ' + current + '] ' + notes : '').then(function(ok){
+      if (!ok) { toast('Could not reach the prototype server. Try again.'); return; }
+      decided('more');
+      toast('Asked for more versions.');
+    });
   });
 
   show(current);

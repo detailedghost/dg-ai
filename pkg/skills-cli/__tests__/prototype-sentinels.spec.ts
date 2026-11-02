@@ -19,6 +19,7 @@ import {
 	confirm,
 	formatDecision,
 	formatWait,
+	readDecision,
 	readSource,
 	status,
 	wait,
@@ -87,6 +88,17 @@ describe("prototype sentinels", () => {
 		expect(await wait(p, 1)).toEqual({ status: "rejected", notes: "too busy" });
 		expect(existsSync(p.reject)).toBe(false);
 		expect(existsSync(p.notes)).toBe(false);
+	});
+
+	test("readDecision keeps a variant named more distinct from a more request", () => {
+		const approved = paths();
+		confirm(approved, "more");
+		expect(readDecision(approved)).toEqual({ status: "more", decision: "approved" });
+		rmSync(approved.selection);
+		writeFileSync(approved.more, "bolder\n");
+		expect(readDecision(approved)).toEqual({ status: "more", decision: "more" });
+		rmSync(approved.more);
+		expect(readDecision(approved)).toEqual({ status: "pending", decision: "pending" });
 	});
 
 	test("a more sentinel surfaces its notes and clears the more and notes files", async () => {
