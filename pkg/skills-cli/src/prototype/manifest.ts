@@ -554,7 +554,8 @@ ${sections}
     toast('Sent back for rework.');
   });
   document.getElementById('proto-more').addEventListener('click', function(){
-    window.prototypeDecide('more', '', notesArea.value.trim());
+    var notes = notesArea.value.trim();
+    window.prototypeDecide('more', '', notes ? '[was viewing ' + current + '] ' + notes : '');
     decided('more');
     toast('Asked for more versions.');
   });

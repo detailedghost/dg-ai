@@ -13,6 +13,7 @@ import {
 import {
 	awaitDecision,
 	confirm,
+	decisionKind,
 	formatDecision,
 	formatWait,
 	readSource,
@@ -83,8 +84,15 @@ function reportStatus(
 		return 1;
 	}
 	if (flags.json) {
+		const kind = decisionKind(paths);
+		const decision =
+			kind === "pending" && resolved !== "pending"
+				? resolved === "rejected"
+					? "rejected"
+					: "approved"
+				: kind;
 		write(
-			`${JSON.stringify({ status: resolved, source: readSource(paths) ?? null })}\n`,
+			`${JSON.stringify({ status: resolved, source: readSource(paths) ?? null, decision })}\n`,
 		);
 	} else {
 		write(`${resolved}\n`);

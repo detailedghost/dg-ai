@@ -17,6 +17,12 @@ describe("prototype decision bar", () => {
 		expect(html).toContain("window.prototypeDecide('more'");
 	});
 
+	test("keeps the viewed variant in a non-empty More note and leaves an empty note empty", () => {
+		expect(html).toContain(
+			"window.prototypeDecide('more', '', notes ? '[was viewing ' + current + '] ' + notes : '')",
+		);
+	});
+
 	test("treats more as a processing favicon state", () => {
 		expect(injectScript("x", [])).toContain("action === 'more'");
 	});

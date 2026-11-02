@@ -131,6 +131,16 @@ export function status(paths: SentinelPaths): string {
 	return "pending";
 }
 
+export type DecisionKind = "approved" | "rejected" | "more" | "pending";
+
+/** Report which kind of decision is stored, so a variant key named "more" never reads as a request for more versions. */
+export function decisionKind(paths: SentinelPaths): DecisionKind {
+	if (existsSync(paths.selection)) return "approved";
+	if (existsSync(paths.reject)) return "rejected";
+	if (existsSync(paths.more)) return "more";
+	return "pending";
+}
+
 /** Block until a selection or rejection exists, consume it, and report it; the sentinels are checked before any wait. */
 export async function wait(
 	paths: SentinelPaths,

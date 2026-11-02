@@ -398,12 +398,30 @@ describe("prototype ui", () => {
 		expect(JSON.parse((await cli(["status", name, "--json"]).done).stdout)).toEqual({
 			status: "B",
 			source: "cli",
+			decision: "approved",
 		});
 
 		const stale = await cli(["status", name, "--require-pending"]).done;
 		expect(stale.exitCode).toBe(1);
 		expect(stale.stdout).toBe("");
 		expect(stale.stderr).toMatch(/not "pending"/);
+	});
+
+	test("status --json tells approving a variant named more apart from asking for more versions", async () => {
+		const approved = "approve-more-key-demo";
+		await cli(["confirm", approved, "more"]).done;
+		expect(JSON.parse((await cli(["status", approved, "--json"]).done).stdout)).toMatchObject({
+			status: "more",
+			decision: "approved",
+		});
+		const asked = "ask-more-demo";
+		const selection = (await cli(["path", asked]).done).stdout.trim();
+		mkdirSync(join(selection, ".."), { recursive: true });
+		writeFileSync(selection.replace(/\.selection$/, ".more"), "bolder\n");
+		expect(JSON.parse((await cli(["status", asked, "--json"]).done).stdout)).toMatchObject({
+			status: "more",
+			decision: "more",
+		});
 	});
 
 	test("--require-pending does not consume the pick it refuses to report", async () => {
@@ -421,6 +439,7 @@ describe("prototype ui", () => {
 		expect(JSON.parse((await cli(["status", name, "--json"]).done).stdout)).toEqual({
 			status: "B",
 			source: "automation",
+			decision: "approved",
 		});
 	});
 
