@@ -4,7 +4,7 @@ import { bareAgent, isRecord } from "@dg/common";
 import { shellCommand } from "@dg/common/node";
 import { qualifiedAgent } from "../proxy/packaged-personas";
 import { frontmatterOf, parseYaml } from "../spec/frontmatter";
-import { sliceLayers } from "../spec/lint-waves";
+import { sliceFiles, sliceLayers } from "../spec/lint-waves";
 import {
 	sectionLines,
 	type SliceBlock,
@@ -31,7 +31,7 @@ const RUNTIMES: readonly Runtime[] = ["claude", "codex", "grok"];
 const USAGE =
 	"usage: dg-skills assign resolve <plan.md> --layer N [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
 const REMINDER =
-	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity goes in deferrals[], [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion: it cannot pause a workflow, and this rule overrides any template that says to ask or pause. Put every unresolved question in deferrals[] and stop that part of the work.";
+	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity that needs a decision goes in deferrals[] as SPEC or TEST; a change the orchestrator should see but need not decide (for example an assertion you changed) goes in deferrals[] as CONFIRM, which never blocks; do not edit the spec or report unticked checkboxes, the orchestrator ticks them; [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion: it cannot pause a workflow, and this rule overrides any template that says to ask or pause. Put every unresolved question in deferrals[] and stop that part of the work.";
 const TEMPLATE_FILES = {
 	red: "qa-writer-red.md",
 	yellow: "slice-engineering.md",
@@ -151,10 +151,21 @@ function executionPin(lines: string[]): Pin {
 
 const isTesting = (block: SliceBlock) => block.section.startsWith("## Testing");
 
+const CRITERIA_HEADING = "#### Testing Criteria";
+
+function withoutCriteria(lines: string[]): string[] {
+	const at = lines.findIndex((line) => line.startsWith(CRITERIA_HEADING));
+	if (at < 0) return lines;
+	const end = lines.findIndex((line, i) => i > at && /^#{1,4} /.test(line));
+	return [...lines.slice(0, at), ...(end < 0 ? [] : lines.slice(end))];
+}
+
 function briefOf(blocks: SliceBlock[]): string {
 	return blocks
 		.filter((block) => !isTesting(block))
-		.map((block) => [block.section, "", ...block.lines].join("\n"))
+		.map((block) =>
+			[block.section, "", ...withoutCriteria(block.lines)].join("\n"),
+		)
 		.join("\n\n");
 }
 
@@ -218,6 +229,7 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 		throw new Refusal(`no slices[] in the frontmatter: ${options.plan}`);
 	const data = parsed.value;
 	const layers = sliceLayers(data);
+	const ownership = sliceFiles(data);
 	const lines = records(text);
 	const pin = executionPin(lines);
 	const members = (data.slices as unknown[])
@@ -251,6 +263,9 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 		return {
 			id: slice.id,
 			name: typeof slice.name === "string" ? slice.name : "",
+			...(Array.isArray(slice.files) && slice.files.length > 0
+				? { files: ownership.get(number) ?? slice.files.map(String) }
+				: {}),
 			primary: stageFor(primary, options.runtime, { effort, tier: pin.tier }),
 			qa: qa.map((name) => stageFor(name, options.runtime)),
 			...(typeof agents.proxy === "string" ? { proxyBackend: agents.proxy } : {}),
@@ -279,6 +294,7 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 		),
 		specPath: abspath(options.plan),
 		scratchPath: options.scratch,
+		cwd: options.cwd,
 		templates: templatesFor(
 			slices.some((slice) => "proxyBackend" in slice),
 			options.cwd,

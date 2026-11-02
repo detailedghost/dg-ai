@@ -20,6 +20,9 @@
   "slices": [
     {
       "brief": "## Engineering\n\n### Slice 1 — Parser\n- [ ] Parse input\n",
+      "files": [
+        "src/parser/**"
+      ],
       "id": 1,
       "name": "Parser",
       "primary": {
@@ -38,6 +41,9 @@
     },
     {
       "brief": "## Engineering\n\n### Slice 2 — Migration\n- [ ] Add table\n",
+      "files": [
+        "src/db/**"
+      ],
       "id": 2,
       "name": "Migration",
       "primary": {

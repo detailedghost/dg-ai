@@ -14,7 +14,12 @@ export const meta = {
  *            primary and each qa entry are resolved { agentType, model, effort } stages.
  *            proxyBackend ← slices[].agents.proxy; set only when this slice's Yellow/Correction stages delegate via /proxy.
  *   roles    { "qa-writer", wave, security }  resolved stages shared by every slice in the layer.
+ *            optional files: string[] — the slice's globs; recovered git paths outside them are dropped.
+ *            optional notes: string — orchestrator text placed under a heading in THIS slice's prompts only.
  *   specPath, scratchPath  paths agents may read/append (passed into prompts)
+ *   cwd      the worktree; when set, a stage lists its actual changes (git diff + untracked) into the review list.
+ *   resolved string[]  deferral text prefixes the orchestrator already settled; matching SPEC/TEST items do not block.
+ *   redDone  { [sliceId]: string[] }  test files from a finished red stage; that slice skips red and yellow gets these.
  *   templates { red, yellow, green, wave, correction, proxy }  inlined template bodies with tokens:
  *            {SLICE_ID} {SLICE_BRIEF} {TESTING_CRITERIA} {CHANGED_FILES} {FINDINGS}
  *            {SPEC_PATH} {SCRATCH_PATH} {PROXY_BACKEND} {PRIMARY_AGENT} {PROXY_FLAGS}
@@ -24,7 +29,17 @@ export const meta = {
 // harness sometimes delivers args as a JSON string instead of a parsed object
 const given = typeof args === "string" ? (args ? JSON.parse(args) : null) : args;
 const _args = given && Object.keys(given).length ? given : typeof WAVE_ARGS === "undefined" ? {} : WAVE_ARGS;
-const { slices = [], roles = {}, specPath = "", scratchPath = "", templates = {}, maxCorrectionRounds = 2 } = _args;
+const {
+  slices = [],
+  roles = {},
+  specPath = "",
+  scratchPath = "",
+  cwd = "",
+  templates = {},
+  resolved = [],
+  redDone = {},
+  maxCorrectionRounds = 2,
+} = _args;
 
 const NOTES = {
   type: "object",
@@ -39,7 +54,7 @@ const DEFERRALS = {
   items: {
     type: "object",
     required: ["type", "text"],
-    properties: { type: { enum: ["SPEC", "TEST", "CRITICAL"] }, text: { type: "string" } },
+    properties: { type: { enum: ["SPEC", "TEST", "CONFIRM", "CRITICAL"] }, text: { type: "string" } },
   },
 };
 
@@ -85,8 +100,14 @@ const QA = {
   },
 };
 
+const FILES = {
+  type: "object",
+  required: ["ok", "files"],
+  properties: { ok: { type: "boolean" }, files: { type: "array", items: { type: "string" } } },
+};
+
 const sub = (tpl, slice, extra = {}) =>
-  (tpl || "")
+  ((tpl || "")
     .replaceAll("{SLICE_ID}", String(slice.id))
     .replaceAll("{SLICE_BRIEF}", slice.brief || "")
     .replaceAll("{TESTING_CRITERIA}", slice.testingCriteria || "")
@@ -96,10 +117,41 @@ const sub = (tpl, slice, extra = {}) =>
     .replaceAll("{FINDINGS}", extra.findings || "")
     .replaceAll("{PROXY_BACKEND}", slice.proxyBackend || "")
     .replaceAll("{PRIMARY_AGENT}", bareAgent(slice.primary.agentType))
-    .replaceAll("{PROXY_FLAGS}", slice.proxyFlags || "");
+    .replaceAll("{PROXY_FLAGS}", slice.proxyFlags || "")) +
+  (slice.notes ? `\n\nOrchestrator notes for this slice:\n${slice.notes}` : "");
 
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
-const blockingDeferral = (ds) => (ds || []).some((d) => d.type === "SPEC" || d.type === "TEST");
+const settled = (d) => resolved.some((prefix) => String(d.text || "").startsWith(prefix));
+const gated = (d) => d.type === "SPEC" || d.type === "TEST";
+const live = (ds) => (ds || []).filter((d) => !(gated(d) && settled(d)));
+const blockingDeferral = (ds) => live(ds).some(gated);
+const globRe = (glob) =>
+  new RegExp(
+    `^${glob
+      .replace(/^\.\//, "")
+      .replace(/\\(.)/g, (_, c) => `\u0002${c.charCodeAt(0)};`)
+      .replace(/[.+^$()|\\]/g, "\\$&")
+      .replace(/\*\*\//g, "\0")
+      .replace(/\*\*/g, "\u0001")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\?/g, "[^/]")
+      .replace(/\[!/g, "[^")
+      .replace(/\{([^}]*)\}/g, (_, alts) => `(?:${alts.replaceAll(",", "|")})`)
+      .replace(/\0/g, "(?:.*/)?")
+      .replace(/\u0001/g, ".*")
+      .replace(/\u0002(\d+);/g, (_, code) => `\\u${Number(code).toString(16).padStart(4, "0")}`)}$`,
+  );
+const safePath = (f) => {
+  if (typeof f !== "string" || f.startsWith("/") || /^[A-Za-z]:/.test(f)) return null;
+  const parts = f.split(/[\\/]/);
+  if (parts.includes("..")) return null;
+  return parts.filter((p) => p !== "" && p !== ".").join("/") || null;
+};
+const safePaths = (fs) => uniq((fs || []).map(safePath));
+const ownedBy = (slice, f) =>
+  !slice.files?.length ||
+  slice.files.some((g) => globRe(g).test(f) || f.startsWith(`${g.replace(/^\.\//, "").replace(/\/$/, "")}/`));
+const ownedPaths = (slice, fs) => safePaths(fs).filter((f) => ownedBy(slice, f));
 
 // Per-slice progress group: one box per slice (stage stays visible via each agent's label).
 const phaseFor = (slice) => (slice.name ? `${slice.name} (S${slice.id})` : `slice ${slice.id}`);
@@ -115,7 +167,17 @@ const results = await pipeline(
   slices,
   // 6a Red
   (slice) =>
-    agent(sub(templates.red, slice), {
+    Object.hasOwn(redDone, slice.id)
+      ? {
+          slice,
+          red: null,
+          blocked: false,
+          unverified: [],
+          changedFiles: safePaths(redDone[slice.id]),
+          deferrals: [],
+          notes: { durable: [], scratch: [] },
+        }
+      : agent(sub(templates.red, slice), {
       label: `red:${slice.id}`,
       phase: phaseFor(slice),
       ...stageOpts(roles["qa-writer"]),
@@ -127,8 +189,8 @@ const results = await pipeline(
       // `|| []` alone makes a dead agent's "produced nothing" read as "had nothing to add" —
       // which is how a wave of dead agents reported clean.
       unverified: r ? [] : ["red"],
-      changedFiles: [...(r?.testFiles || [])],
-      deferrals: [...(r?.deferrals || [])],
+      changedFiles: safePaths(r?.testFiles),
+      deferrals: live(r?.deferrals),
       notes: { durable: [...(r?.notes?.durable || [])], scratch: [...(r?.notes?.scratch || [])] },
     })),
   // 6b Yellow
@@ -151,8 +213,8 @@ const results = await pipeline(
       // nothing, finds nothing, and the slice reports clean with no code written.
       unverified: [...st.unverified, ...(y ? [] : ["yellow"])],
       securitySensitive: !!y?.securitySensitive,
-      changedFiles: uniq([...st.changedFiles, ...(y?.changedFiles || [])]),
-      deferrals: [...st.deferrals, ...(y?.deferrals || [])],
+      changedFiles: uniq([...st.changedFiles, ...ownedPaths(slice, y?.changedFiles)]),
+      deferrals: [...st.deferrals, ...live(y?.deferrals)],
       notes: {
         durable: uniq([...st.notes.durable, ...(y?.notes?.durable || [])]),
         scratch: uniq([...st.notes.scratch, ...(y?.notes?.scratch || [])]),
@@ -168,16 +230,28 @@ const results = await pipeline(
       phase: phaseFor(slice),
       ...stageOpts(roles["qa-writer"]),
       schema: GREEN,
-    }).then((g) => ({
-      ...st,
-      unverified: [...st.unverified, ...(g ? [] : ["green"])],
-      changedFiles: uniq([...st.changedFiles, ...(g?.testFiles || [])]),
-      deferrals: [...st.deferrals, ...(g?.deferrals || [])],
-      notes: {
-        durable: uniq([...st.notes.durable, ...(g?.notes?.durable || [])]),
-        scratch: uniq([...st.notes.scratch, ...(g?.notes?.scratch || [])]),
-      },
-    }));
+    }).then(async (g) => {
+      const reported = uniq([...st.changedFiles, ...safePaths(g?.testFiles)]);
+      const listed = cwd
+        ? await agent(
+            `Working directory: ${cwd}. Run these two commands from it and return every path they print, one entry per path. Set ok to true only when both commands exit 0, otherwise false. Do not edit any file.\n1. git diff --name-only HEAD\n2. git ls-files --others --exclude-standard`,
+            { label: `files:${slice.id}`, phase: phaseFor(slice), ...stageOpts(roles.wave), schema: FILES },
+          )
+        : null;
+      const listedOk = listed?.ok === true;
+      const owned = listedOk ? ownedPaths(slice, listed.files) : [];
+      return {
+        ...st,
+        unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listedOk ? ["files"] : [])],
+        changedFiles: uniq([...reported, ...(slice.files?.length ? owned : [])]),
+        reviewFiles: uniq([...reported, ...owned]),
+        deferrals: [...st.deferrals, ...live(g?.deferrals)],
+        notes: {
+          durable: uniq([...st.notes.durable, ...(g?.notes?.durable || [])]),
+          scratch: uniq([...st.notes.scratch, ...(g?.notes?.scratch || [])]),
+        },
+      };
+    });
   },
   // 6d MiniQA + 6e Correction (≤ maxCorrectionRounds)
   async (st) => {
@@ -204,7 +278,7 @@ const results = await pipeline(
       const reviews = await parallel(
         reviewers.map(
           (rv) => () =>
-            agent(sub(templates.wave, slice, { changedFiles: st.changedFiles }), {
+            agent(sub(templates.wave, slice, { changedFiles: st.reviewFiles || st.changedFiles }), {
               label: `${bareAgent(rv.agentType)}:${slice.id}#${round}`,
               phase: phaseFor(slice),
               ...stageOpts(rv),
@@ -229,7 +303,7 @@ const results = await pipeline(
               (owner !== "qa-writer" && slice.proxyBackend && templates.proxy) || templates.correction;
             return agent(
               sub(correctionTpl, slice, {
-                changedFiles: st.changedFiles,
+                changedFiles: st.reviewFiles || st.changedFiles,
                 findings: fs.map((f) => `[${f.severity}] ${f.file}: ${f.issue}`).join("\n"),
               }),
               {
@@ -241,7 +315,7 @@ const results = await pipeline(
             );
           }),
       );
-      correctionDeferrals.push(...fixes.filter(Boolean).flatMap((fix) => fix.deferrals || []));
+      correctionDeferrals.push(...fixes.filter(Boolean).flatMap((fix) => live(fix.deferrals)));
       if (blockingDeferral(correctionDeferrals))
         return {
           sliceId: slice.id,

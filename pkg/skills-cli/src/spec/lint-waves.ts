@@ -178,7 +178,7 @@ export function sliceLayers(data: Record<string, unknown>): Map<string, number> 
 	return layersOf(rowsFromData(data));
 }
 
-function lintRows(rows: WaveRows): LintReport {
+function applyGenerators(rows: WaveRows): void {
 	for (const id of rows.ids)
 		for (const generator of rows.generators) {
 			let hit = "";
@@ -199,6 +199,19 @@ function lintRows(rows: WaveRows): LintReport {
 					`generator output, triggered by ${hit}`,
 				);
 		}
+}
+
+/** Each slice's declared globs plus the generator outputs its files trigger. */
+export function sliceFiles(data: Record<string, unknown>): Map<string, string[]> {
+	const rows = rowsFromData(data);
+	applyGenerators(rows);
+	return new Map(
+		[...rows.files].map(([id, entries]) => [id, entries.map((entry) => entry.glob)]),
+	);
+}
+
+function lintRows(rows: WaveRows): LintReport {
+	applyGenerators(rows);
 
 	const layers = layersOf(rows);
 	const maxLayer = Math.max(0, ...layers.values());

@@ -92,6 +92,8 @@ into the session scratchpad. Then Workflow runs the printed path:
 Workflow({ scriptPath: "<printed path>" })
 ```
 
+**Checkboxes and deferrals:** `plan.md` stays in the origin checkout while agents edit only the worktree, so agents never touch the spec. The orchestrator ticks each slice's checkboxes after that slice commits (engineering.md 4.3). `CONFIRM` deferrals never block. To resume after settling `SPEC`/`TEST` deferrals, add `Agent Notes` lines, then set `resolved` and `redDone` in the baked `WAVE_ARGS` (engineering.md 4.3).
+
 **One PR per slice:** when `plan.md` has a `## PR Plan` that opens one PR for each slice (or for
 each layer), build each PR in its own worktree and branch, in plan order. Stop at each operator gate
 the plan names and wait for the user before the next PR. Do not merge the slices into one worktree.

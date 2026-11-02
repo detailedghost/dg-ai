@@ -68,4 +68,4 @@ Follow steps strictly in order. NEVER skip a gate condition.
 - Use TaskCreate/TaskUpdate to track pipeline steps.
 - **Commit per slice, not per feature** (Conventional Commits, scope required).
 - Agents read their `.agents/school/` topic file when it exists — `/dg:sdlc` has no `.agents/` prerequisite; missing files are skipped.
-- Any agent deferral (`SPEC`/`TEST`/`CRITICAL`) pauses the pipeline for user resolution — see engineering.md post-processing.
+- Any agent deferral (`SPEC`/`TEST`/`CRITICAL`; `CONFIRM` is informational and never pauses) pauses the pipeline for user resolution — see engineering.md post-processing.
