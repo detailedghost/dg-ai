@@ -64,7 +64,7 @@ The user must select a concrete proposal before applying it. Explain that applyi
 the chosen plan rewrites this branch and pushes the resulting commits. Honor an
 existing approval for that exact plan and operation; do not ask for it again.
 
-**4. Apply** — load [references/helper-api.md](references/helper-api.md) for the JSON plan file format (§Plan File Format (JSON)) and path formulas. Write the chosen plan to the temp file path (`.json` extension), including `author`/`coauthors` per group from the proposal. If `--dry-run`, print the plan path and stop. Otherwise run `~/.dg/bin/dg-skills meaningful apply-json <plan-file>`. Report the backup SHA to the user. The helper keeps every `Co-Authored-By` trailer as written.
+**4. Apply** — load [references/helper-api.md](references/helper-api.md) for the JSON plan file format (§Plan File Format (JSON)) and path formulas. Write the chosen plan to the temp file path (`.json` extension), including `author`/`coauthors` per group from the proposal. If `--dry-run`, print the plan path and stop. Otherwise run `~/.dg/bin/dg-skills meaningful apply-json <plan-file>`. Report the backup SHA to the user. The helper keeps every `Co-Authored-By` trailer as written, unless the opt-in `strip-ai-coauthors` hook setting is on (`dg-skills hooks status` shows it, or `DG_STRIP_AI_COAUTHORS=1`). Then it drops AI trailers, and the plan must not add an AI co-author.
 
 **5. On failure** — if the helper exits non-zero, report the backup SHA and recovery options. Details in [references/helper-api.md](references/helper-api.md) §Failure Recovery.
 

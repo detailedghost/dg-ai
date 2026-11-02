@@ -34,7 +34,7 @@ Stop with a message if `ahead < 2`.
 ~/.dg/bin/dg-skills meaningful apply-json [--base <ref>] <plan-file>
 ```
 
-Plans are JSON files with distinct `subject`/`body`/`author`/`coauthors` fields, so the commit message is assembled directly (`subject` + `"\n\n"` + body when a body is present). Co-author trailers are kept as written, including AI ones.
+Plans are JSON files with distinct `subject`/`body`/`author`/`coauthors` fields, so the commit message is assembled directly (`subject` + `"\n\n"` + body when a body is present). Co-author trailers are kept as written, including AI ones, unless the `strip-ai-coauthors` hook setting is on or `DG_STRIP_AI_COAUTHORS=1`. Then AI trailers are dropped from `body` and `coauthors`.
 
 The helper:
 
