@@ -245,6 +245,9 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 		return {
 			id: slice.id,
 			name: typeof slice.name === "string" ? slice.name : "",
+			...(Array.isArray(slice.files) && slice.files.length > 0
+				? { files: slice.files.map(String) }
+				: {}),
 			primary: stageFor(primary, options.runtime, { effort, tier: pin.tier }),
 			qa: qa.map((name) => stageFor(name, options.runtime)),
 			...(typeof agents.proxy === "string" ? { proxyBackend: agents.proxy } : {}),

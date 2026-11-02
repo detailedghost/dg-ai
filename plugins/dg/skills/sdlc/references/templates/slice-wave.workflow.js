@@ -14,6 +14,7 @@ export const meta = {
  *            primary and each qa entry are resolved { agentType, model, effort } stages.
  *            proxyBackend ← slices[].agents.proxy; set only when this slice's Yellow/Correction stages delegate via /proxy.
  *   roles    { "qa-writer", wave, security }  resolved stages shared by every slice in the layer.
+ *            optional files: string[] — the slice's globs; recovered git paths outside them are dropped.
  *            optional notes: string — orchestrator text placed under a heading in THIS slice's prompts only.
  *   specPath, scratchPath  paths agents may read/append (passed into prompts)
  *   cwd      the worktree; when set, a stage lists its actual changes (git diff + untracked) into the review list.
@@ -124,7 +125,23 @@ const settled = (d) => resolved.some((prefix) => String(d.text || "").startsWith
 const gated = (d) => d.type === "SPEC" || d.type === "TEST";
 const live = (ds) => (ds || []).filter((d) => !(gated(d) && settled(d)));
 const blockingDeferral = (ds) => live(ds).some(gated);
-const inTree = (f) => typeof f === "string" && f !== "" && !f.startsWith("/") && !f.startsWith("..");
+const globRe = (glob) =>
+  new RegExp(
+    `^${glob
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*\//g, "\0")
+      .replace(/\*\*/g, "\u0001")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\?/g, "[^/]")
+      .replace(/\0/g, "(?:.*/)?")
+      .replace(/\u0001/g, ".*")}$`,
+  );
+const ownedBy = (slice, f) =>
+  typeof f === "string" &&
+  f !== "" &&
+  !f.startsWith("/") &&
+  !f.startsWith("..") &&
+  (!slice.files?.length || slice.files.some((g) => globRe(g).test(f) || f.startsWith(`${g.replace(/\/$/, "")}/`)));
 
 // Per-slice progress group: one box per slice (stage stays visible via each agent's label).
 const phaseFor = (slice) => (slice.name ? `${slice.name} (S${slice.id})` : `slice ${slice.id}`);
@@ -215,7 +232,7 @@ const results = await pipeline(
         ...st,
         unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listed ? ["files"] : [])],
         changedFiles: reported,
-        reviewFiles: uniq([...reported, ...(listed?.files || []).filter(inTree)]),
+        reviewFiles: uniq([...reported, ...(listed?.files || []).filter((f) => ownedBy(slice, f))]),
         deferrals: [...st.deferrals, ...live(g?.deferrals)],
         notes: {
           durable: uniq([...st.notes.durable, ...(g?.notes?.durable || [])]),

@@ -375,6 +375,23 @@ describe("slice-wave runner deferral handling", () => {
 			expect(seen[label]).not.toContain("SETTLED-ONLY-FOR-ONE");
 	});
 
+	test("limits recovered git paths to the slice's own file globs", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { prompts } = await wave(
+			{
+				red: red([]),
+				yellow,
+				green: red([]),
+				files: { files: ["src/one/x.ts", "src/two/y.ts", "src/one/deep/z.ts"] },
+			},
+			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/one/**"] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain("src/one/x.ts");
+		expect(review).toContain("src/one/deep/z.ts");
+		expect(review).not.toContain("src/two/y.ts");
+	});
+
 	test("keeps git-only files out of the slice's commit list", async () => {
 		const { slice } = await wave(
 			{ red: red([]), yellow, green: red([]), files: { files: ["other-slice.ts"] } },
@@ -478,6 +495,14 @@ describe("dg-skills assign resolve", () => {
 			}).toEqual(golden);
 		},
 	);
+
+	test("bakes each slice's file globs into the args", async () => {
+		const { slices } = await resolved([plan("plan-high.md"), "--layer", "0"]);
+		expect(slices.map((slice) => (slice as { files?: string[] }).files)).toEqual([
+			["src/parser/**"],
+			["src/db/**"],
+		]);
+	});
 
 	test("bakes the worktree cwd into the args", async () => {
 		const { cwd } = await resolved([
