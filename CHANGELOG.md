@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.32.1 (2026-11-02)
+
+### Fixes
+
+- fix(install): update the unpacked extension in place and retire the batch extension ([#125](https://github.com/detailedghost/dg-ai/pull/125))
+
 ## v1.32.0 (2026-11-02)
 
 ### Features
