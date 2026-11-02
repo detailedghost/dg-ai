@@ -56,6 +56,7 @@ function baseEnv(): Record<string, string> {
 		"GH_BIN",
 		"GLAB_BIN",
 		"AI_RENOVATE_BOT_LOGIN",
+		"DG_DEPS_COOLDOWN_DAYS",
 	])
 		delete env[key];
 	return env as Record<string, string>;
@@ -3123,7 +3124,7 @@ describe("cooldown registry boundaries", () => {
 		const stateDir = cliFixtures.tmp(createdDirs, "deps-held-state-");
 		const result = await runCli(
 			["cooldown", "pkg", "1.0.0", "2.0.0", "--ecosystem", "npm"],
-			{ cwd, stateDir, preload },
+			{ cwd, stateDir, preload, env: { DG_DEPS_COOLDOWN_DAYS: "7" } },
 		);
 		expect(result.exitCode).toBe(0);
 		expect(JSON.parse(result.stdout)).toMatchObject({
@@ -3142,7 +3143,7 @@ describe("cooldown registry boundaries", () => {
 			pkg: "pkg",
 			version: "2.0.0",
 			published: "2026-10-15T00:00:00Z",
-			eligible: "2026-10-19T00:00:00.000Z",
+			eligible: "2026-10-22T00:00:00.000Z",
 		});
 		const summary = await runCli(["summary"], { cwd, stateDir });
 		expect(summary.exitCode).toBe(0);
@@ -3336,6 +3337,28 @@ describe("thrash review hardening", () => {
 			if (previous === undefined) delete process.env.DG_DEPS_BRANCH_PREFIX;
 			else process.env.DG_DEPS_BRANCH_PREFIX = previous;
 		}
+	});
+
+	test("the cooldown default reads DG_DEPS_COOLDOWN_DAYS and is off without it", () => {
+		const previous = process.env.DG_DEPS_COOLDOWN_DAYS;
+		try {
+			delete process.env.DG_DEPS_COOLDOWN_DAYS;
+			expect(helper.defaultCooldownDays()).toBe(0);
+			process.env.DG_DEPS_COOLDOWN_DAYS = "4";
+			expect(helper.defaultCooldownDays()).toBe(4);
+		} finally {
+			if (previous === undefined) delete process.env.DG_DEPS_COOLDOWN_DAYS;
+			else process.env.DG_DEPS_COOLDOWN_DAYS = previous;
+		}
+	});
+
+	test("the cooldown subcommand rejects a DG_DEPS_COOLDOWN_DAYS that is not a whole number", async () => {
+		const result = await runCli(
+			["cooldown", "pkg", "1.0.0", "2.0.0", "--ecosystem", "npm"],
+			{ env: { DG_DEPS_COOLDOWN_DAYS: "four" } },
+		);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("DG_DEPS_COOLDOWN_DAYS");
 	});
 
 	test("ready-when-green rejects a zero polling interval", async () => {

@@ -39,7 +39,7 @@ For fixable vulnerabilities not covered by a Dependabot PR → add to update lis
 
 Apply **patch/minor** first, then **major**.
 
-- Before each dependency bump, run `~/.dg/bin/dg-skills deps-upgrade cooldown <pkg> <old> <new> --cooldown-days N` using the run's selected cooldown (default 4 days; `0` disables it). `ok` and `fallback` permit upgrading to the returned `version`; skip `held` and `unknown`. Keep skipped packages at the current version and include the summary's "Held by cooldown" list in the final report and PR body. GitHub Action refs use the workflow-specific update path below.
+- Before each dependency bump, run `~/.dg/bin/dg-skills deps-upgrade cooldown <pkg> <old> <new>`. Add `--cooldown-days N` only when the user passed it. Without the flag the CLI uses `$DG_DEPS_COOLDOWN_DAYS`, else `0`, which disables the cooldown. `ok` and `fallback` permit upgrading to the returned `version`; skip `held` and `unknown`. Keep skipped packages at the current version and include the summary's "Held by cooldown" list in the final report and PR body. GitHub Action refs use the workflow-specific update path below.
 - Per dependency: `~/.dg/bin/dg-skills deps-upgrade bump-dep <pkg> <old> <new>`. Handles manifest edit, install, `git add`, and a conventional commit. Pass `--files a,b` to stage extra files.
 - Per GitHub Action: `~/.dg/bin/dg-skills deps-upgrade bump-action <ref> <from> <to> [workflow-files…]`. Defaults to all `.github/workflows/*.yml` files. GitHub Actions-specific by design. With no `.github/workflows` present it exits non-zero with `no workflow files changed — check <from> tag`, so skip this step on a GitLab-only repo instead of calling it and hitting a mid-run abort.
 
