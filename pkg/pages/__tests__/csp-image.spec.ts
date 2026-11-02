@@ -99,3 +99,11 @@ test("the image-source check treats a wildcard or a named host as allowing a for
 	);
 	expect(imgSrcAllows("img-src 'self' data:", foreign)).toBe(false);
 });
+
+test("the served chat CSP allows images only from the page itself, data and blob URLs", () => {
+	expect(directiveSources(servedCsp, "img-src")).toEqual([
+		"'self'",
+		"data:",
+		"blob:",
+	]);
+});

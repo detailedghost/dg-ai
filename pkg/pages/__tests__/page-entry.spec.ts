@@ -58,6 +58,7 @@ type Net = {
 	win: Window;
 	fetches: { url: string; init?: RequestInit }[];
 	sockets: string[];
+	sent: string[];
 	socketHandles: FakeSocketHandle[];
 	intervals: { callback: () => void; ms: number }[];
 	cleared: unknown[];
@@ -84,19 +85,26 @@ function installGlobals(href: string): Net {
 		win,
 		fetches: [],
 		sockets: [],
+		sent: [],
 		socketHandles: [],
 		intervals: [],
 		cleared: [],
 		respond: () => Promise.resolve(new Response(BOARD_JSON)),
 	};
 	class FakeSocket {
-		readyState = 0;
+		static readonly CONNECTING = 0;
+		static readonly OPEN = 1;
+		static readonly CLOSING = 2;
+		static readonly CLOSED = 3;
+		readyState = FakeSocket.CONNECTING;
 		private listeners = new Map<string, SocketListener[]>();
 		constructor(url: string) {
 			net.sockets.push(url);
 			net.socketHandles.push({
 				url,
 				fire: (type) => {
+					if (type === "open") this.readyState = FakeSocket.OPEN;
+					if (type === "close") this.readyState = FakeSocket.CLOSED;
 					for (const listener of this.listeners.get(type) ?? [])
 						listener({ type });
 				},
@@ -106,7 +114,9 @@ function installGlobals(href: string): Net {
 			this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
 		}
 		removeEventListener() {}
-		send() {}
+		send(data: string) {
+			net.sent.push(data);
+		}
 		close() {}
 	}
 	const overrides: Record<string, unknown> = {
@@ -297,6 +307,8 @@ describe("chat page entry wiring", () => {
 		await loadEntry("../src/chat/page");
 
 		net.socketHandles[0]?.fire("open");
+		await settle();
+		expect(net.sent.map((raw) => JSON.parse(raw).type)).toContain("connect");
 		net.socketHandles[0]?.fire("close");
 		await settle();
 
