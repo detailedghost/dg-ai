@@ -408,7 +408,9 @@ async function runCommand(
 			io.seams.stderr(`hooks run ${id}: needs the commit message file\n`);
 			return 2;
 		}
-		stripCommitMessageFile(flags[0], io.env);
+		await stripCommitMessageFile(flags[0], io.env, (argv) =>
+			io.seams.run(argv, { cwd: io.cwd }),
+		);
 		return 0;
 	}
 	if (

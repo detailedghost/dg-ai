@@ -413,7 +413,7 @@ describe("meaningful apply-json", () => {
 	describe("AI co-author stripping", () => {
 		const group: JsonGroup = {
 			subject: "feat(scope): rework page",
-			body: "Body paragraph.\n\nCo-Authored-By: Codex <codex@openai.com>",
+			body: "Body paragraph.\n\nCo-Authored-By: Codex <noreply@openai.com>",
 			coauthors: [
 				"Real Human <human@example.com>",
 				"Claude <noreply@anthropic.com>",

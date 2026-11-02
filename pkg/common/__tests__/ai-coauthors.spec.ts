@@ -6,12 +6,15 @@ const subject = "feat(scope): add thing";
 describe("stripAiCoauthors", () => {
 	test.each([
 		["Claude", "Claude Sonnet 5.5 <noreply@anthropic.com>"],
-		["Codex", "Codex <codex@openai.com>"],
+		["Claude Opus", "Claude Opus 5.5 <noreply@anthropic.com>"],
+		["Dependabot bot address", "Some Tool <49699333+dependabot[bot]@users.noreply.github.com>"],
+		["Name only", "Claude"],
+		["Codex", "Codex <noreply@openai.com>"],
 		["Grok", "Grok <noreply@x.ai>"],
 		["Copilot bot", "Copilot <175728472+Copilot@users.noreply.github.com>"],
 		["Copilot agent bot", "copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>"],
-		["Gemini", "Gemini <gemini@google.com>"],
-		["GPT", "ChatGPT <noreply@example.com>"],
+		["Gemini", "Gemini <noreply@google.com>"],
+		["GPT", "ChatGPT <noreply@openai.com>"],
 		["Cursor agent", "Cursor Agent <cursoragent@cursor.com>"],
 	])("removes the %s trailer and the blank line before it", (_name, who) => {
 		expect(stripAiCoauthors(`${subject}\n\nBody.\n\nCo-Authored-By: ${who}\n`)).toBe(
@@ -33,7 +36,7 @@ describe("stripAiCoauthors", () => {
 			"Signed-off-by: Dev <dev@example.com>",
 			"Co-Authored-By: Claude <noreply@anthropic.com>",
 			"Co-authored-by: Sam Human <sam@example.com>",
-			"Co-Authored-By: Codex <codex@openai.com>",
+			"Co-Authored-By: Codex <noreply@openai.com>",
 			"Fixes: #12",
 			"",
 		].join("\n");
@@ -56,7 +59,7 @@ describe("stripAiCoauthors", () => {
 			subject,
 			"",
 			"Co-Authored-By: Codex",
-			" <codex@openai.com>",
+			" <noreply@openai.com>",
 			"Reviewed-by: Sam",
 			" <sam@example.com>",
 			"",
@@ -69,7 +72,7 @@ describe("stripAiCoauthors", () => {
 	test("matches a trailer written without a space after the colon", () => {
 		expect(
 			stripAiCoauthors(
-				`${subject}\n\nCo-Authored-By:Claude <claude@example.com>\nReviewed-by:Sam\n`,
+				`${subject}\n\nCo-Authored-By:Claude <noreply@anthropic.com>\nReviewed-by:Sam\n`,
 			),
 		).toBe(`${subject}\n\nReviewed-by:Sam\n`);
 	});
@@ -131,6 +134,16 @@ describe("stripAiCoauthors", () => {
 		).toBe(`${subject}\n\nBody.\n\n${comments}`);
 	});
 
+	test("honors a custom comment character", () => {
+		const comments = "; Please enter the commit message.\n; On branch main\n";
+		expect(
+			stripAiCoauthors(
+				`${subject}\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\n${comments}`,
+				";",
+			),
+		).toBe(`${subject}\n\n${comments}`);
+	});
+
 	test("keeps an empty message empty", () => {
 		expect(stripAiCoauthors("")).toBe("");
 	});
@@ -140,6 +153,14 @@ describe("isAiCoauthor", () => {
 	test("flags AI identities and keeps human ones", () => {
 		expect(isAiCoauthor("Claude <noreply@anthropic.com>")).toBe(true);
 		expect(isAiCoauthor("Sam Human <sam@example.com>")).toBe(false);
-		expect(isAiCoauthor("dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>")).toBe(false);
+		expect(isAiCoauthor("Claude Martin <claude.martin@gmail.com>")).toBe(false);
+		expect(isAiCoauthor("Gemini Smith <gemini.smith@example.com>")).toBe(false);
+		expect(isAiCoauthor("Claude Martin <noreply@example.com>")).toBe(true);
+		expect(isAiCoauthor("Copilot <175728472+Copilot@users.noreply.github.com>")).toBe(true);
+	});
+
+	test("keeps a human whose name or email holds an AI word", () => {
+		const message = `${subject}\n\nCo-Authored-By: Claude Martin <claude.martin@gmail.com>\n`;
+		expect(stripAiCoauthors(message)).toBe(message);
 	});
 });

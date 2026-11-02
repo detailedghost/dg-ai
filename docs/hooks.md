@@ -41,7 +41,7 @@ it after the strip, and turns `strip-ai-coauthors.enabled` on in `config.json`.
 It stops when `core.hooksPath` is set. `disable strip-ai-coauthors` restores the
 old hook and turns the setting off. The setting is global, so `hooks set
 strip-ai-coauthors enabled off` pauses every repo. `DG_STRIP_AI_COAUTHORS=1` or
-`0` overrides it. `dg-skills meaningful apply-json` reads the same switch.
+`0` overrides it. A trailer goes only when its email is a known AI or bot address, or its name is an AI name and its email is a noreply address or missing. `Claude Martin <claude.martin@gmail.com>` stays. `dg-skills meaningful apply-json` reads the same switch.
 
 ## Where the entries go
 

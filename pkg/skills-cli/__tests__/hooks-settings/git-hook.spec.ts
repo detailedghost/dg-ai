@@ -204,6 +204,21 @@ describe("hooks status and run", () => {
 		expect(readFileSync(file, "utf8")).toContain("Sam Human");
 	});
 
+	test.each([
+		[";", "; Please enter the commit message.\n"],
+		["auto", "@ Please enter the commit message.\n"],
+	])("run honors core.commentChar=%s from the repo config", async (char, comment) => {
+		const repo = makeRepo();
+		runGit(["config", "core.commentChar", char], repo.dir);
+		const file = join(world.tmp("msg-"), "COMMIT_EDITMSG");
+		writeFileSync(file, `${AI_MESSAGE}\n${comment}`);
+		await world.cli(["set", ID, "enabled", "on"]);
+		expect((await cli(["run", ID, file], repo.dir)).code).toBe(0);
+		const text = readFileSync(file, "utf8");
+		expect(text).not.toContain("Claude");
+		expect(text).toContain(comment);
+	});
+
 	test("DG_STRIP_AI_COAUTHORS=1 turns it on and 0 turns it off", async () => {
 		const forced = messageFile();
 		await world.cli(["run", ID, forced], {

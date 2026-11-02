@@ -1,13 +1,21 @@
-const AI_NAME = /claude|codex|grok|copilot|openai|gemini|anthropic|gpt/i;
-const AI_BOT = /noreply@x\.ai|cursoragent@cursor\.com|devin-ai-integration\[bot\]/i;
+const AI_NAME = /\b(?:claude|codex|grok|copilot|openai|gemini|anthropic|gpt|chatgpt)\b/i;
+const AI_EMAIL =
+	/^(?:noreply@(?:anthropic\.com|openai\.com|x\.ai|google\.com)|cursoragent@cursor\.com)$|\[bot\]@/i;
+const NOREPLY_EMAIL = /no-?reply/i;
+const IDENTITY = /^(.*?)\s*<([^>]*)>\s*$/;
 const COAUTHOR = /^co-authored-by:\s*([^\n]*)$/i;
 const TRAILER = /^[A-Za-z][\w-]*:/;
-const SCISSORS = /^# -{24} >8 -{24}$/;
 const CONTINUATION = /^\s+\S/;
 const isBlank = (line: string) => line.trim() === "";
 
-export const isAiCoauthor = (identity: string): boolean =>
-	AI_NAME.test(identity) || AI_BOT.test(identity);
+/** A known AI or bot address, or an AI name paired with a noreply address or no address. */
+export function isAiCoauthor(identity: string): boolean {
+	const parts = IDENTITY.exec(identity.trim());
+	const name = parts ? (parts[1] as string) : identity;
+	const email = parts ? (parts[2] as string).trim() : "";
+	if (AI_EMAIL.test(email)) return true;
+	return AI_NAME.test(name) && (email === "" || NOREPLY_EMAIL.test(email));
+}
 
 const isAiTrailer = (line: string): boolean => {
 	const identity = COAUTHOR.exec(line)?.[1];
@@ -26,13 +34,14 @@ function trailerEntries(block: string[]): string[][] | undefined {
 }
 
 /** Removes AI Co-Authored-By trailers from the final trailer block; subject, body and git comment lines stay. */
-export function stripAiCoauthors(message: string): string {
+export function stripAiCoauthors(message: string, commentChar = "#"): string {
 	const lines = message.split("\n");
-	const cut = lines.findIndex((line) => SCISSORS.test(line));
+	const scissors = `${commentChar} ${"-".repeat(24)} >8 ${"-".repeat(24)}`;
+	const cut = lines.indexOf(scissors);
 	let end = cut === -1 ? lines.length : cut;
 	while (end > 0) {
 		const line = lines[end - 1] as string;
-		if (!isBlank(line) && !line.startsWith("#")) break;
+		if (!isBlank(line) && !line.startsWith(commentChar)) break;
 		end--;
 	}
 	const content = lines.slice(0, end);

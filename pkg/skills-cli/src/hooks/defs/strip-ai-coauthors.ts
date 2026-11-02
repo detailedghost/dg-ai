@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { stripAiCoauthors } from "@dg/common";
 import { hookSetting } from "../config";
-import type { HookEnv } from "../types";
+import type { CommandRunner, HookEnv } from "../types";
 
 export const STRIP_ID = "strip-ai-coauthors";
 
@@ -16,9 +16,22 @@ export function stripAiCoauthorsOn(
 	return hookSetting(STRIP_ID, "enabled", env, warn) === "on";
 }
 
-export function stripCommitMessageFile(file: string, env: HookEnv): void {
+function commentCharOf(configured: string, message: string): string {
+	if (configured === "") return "#";
+	if (configured !== "auto") return configured.slice(0, 1);
+	const found = /^([#;@!$%^&|:]) Please enter/m.exec(message);
+	return found?.[1] ?? "#";
+}
+
+export async function stripCommitMessageFile(
+	file: string,
+	env: HookEnv,
+	run: CommandRunner,
+): Promise<void> {
 	if (!stripAiCoauthorsOn(env)) return;
 	const message = readFileSync(file, "utf8");
-	const stripped = stripAiCoauthors(message);
+	const config = await run(["git", "config", "--get", "core.commentChar"]);
+	const configured = config.status === 0 ? config.stdout.trim() : "";
+	const stripped = stripAiCoauthors(message, commentCharOf(configured, message));
 	if (stripped !== message) writeFileSync(file, stripped);
 }
