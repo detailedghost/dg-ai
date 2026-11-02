@@ -1,4 +1,5 @@
 import {
+	partitionTourSteps,
 	type TourMode,
 	type TourScript,
 	type TourStep,
@@ -29,7 +30,7 @@ import {
 	maybePerformStepEffect,
 	primeClickNavigation,
 } from "./lifecycle";
-import { showActionConsent, showTourEnd } from "./modals";
+import { showActionConsent, showModal, showTourEnd } from "./modals";
 import { renderStep, type StepControls } from "./overlay";
 import { safeQuerySelector } from "./picker";
 import {
@@ -48,6 +49,8 @@ export type TourResult = {
 
 export type TourOptions = {
 	mode?: TourMode;
+	/** With `mode`, the narration to use in place of the start screen's choice. */
+	narration?: StartSettings;
 	autopilot?: boolean;
 	/** Aborting detaches the run: its UI goes away and stored state is left as is. */
 	signal?: AbortSignal;
@@ -99,6 +102,43 @@ function controlsFor(push: (command: Command) => void): StepControls {
 	};
 }
 
+type Voicing = Pick<PlayState, "videoDurations" | "videoHideBody">;
+
+async function voicing(
+	host: TourHost,
+	play: TourScript,
+	settings: StartSettings,
+	answer: unknown,
+): Promise<Voicing> {
+	if (answer !== "voice" || !host.narrator || play.mode !== "video") return {};
+	const modal = await showModal(host, {
+		title: "Preparing narration",
+		body: "Loading the local voice model. The first run downloads about 86 MB.",
+		progress: 0,
+		progressLabel: "Loading local voice model",
+	});
+	try {
+		const videoDurations = await host.narrator.prepare(
+			partitionTourSteps(play).tutorial,
+			settings.voice,
+			modal.update,
+		);
+		return {
+			videoDurations,
+			...(settings.narration === "voice" ? { videoHideBody: true } : {}),
+		};
+	} catch (error) {
+		console.warn("narration failed; recording without voice", error);
+		void host.messages.send({
+			kind: "narration-failed",
+			reason: error instanceof Error ? error.message : String(error),
+		});
+		return {};
+	} finally {
+		modal.remove();
+	}
+}
+
 async function chooseState(
 	host: TourHost,
 	script: TourScript,
@@ -108,8 +148,11 @@ async function chooseState(
 	const saved = await host.storage.get<PlayState>(keys.state);
 	if (saved) return saved;
 
-	const begin = async (play: TourScript): Promise<PlayState> => {
-		const state = initialPlayState(play, "marker");
+	const begin = async (
+		play: TourScript,
+		voiced: Voicing = {},
+	): Promise<PlayState> => {
+		const state = { ...initialPlayState(play, "marker"), ...voiced };
 		await host.storage.set(keys.state, state);
 		await host.storage.remove(keys.recording);
 		return state;
@@ -125,7 +168,12 @@ async function chooseState(
 			voice: settings.voice,
 			includeSetup: play.setup?.includeInTour ?? false,
 		});
-	if (opts.mode) return begin({ ...script, mode: opts.mode });
+	if (opts.mode) {
+		const play = { ...script, mode: opts.mode };
+		if (!opts.narration) return begin(play);
+		const answer = await announce(play, opts.narration);
+		return begin(play, await voicing(host, play, opts.narration, answer));
+	}
 
 	const choice = await showStartScreen(host, script);
 	const settings: StartSettings = {
@@ -134,8 +182,8 @@ async function chooseState(
 	};
 	if (choice.mode !== "review") {
 		const play = withChoice(script, choice);
-		await announce(play, settings);
-		return begin(play);
+		const answer = await announce(play, settings);
+		return begin(play, await voicing(host, play, settings, answer));
 	}
 
 	return new Promise<PlayState | null>((resolve, reject) => {
@@ -145,9 +193,13 @@ async function chooseState(
 			onDismiss: () => resolve(null),
 			start: async (reviewed) => {
 				try {
-					await announce(reviewed, settings);
+					const answer = await announce(reviewed, settings);
+					const voiced = await voicing(host, reviewed, settings, answer);
 					const written = await host.storage.get<PlayState>(keys.state);
-					resolve(written ?? (await begin(reviewed)));
+					if (!written) return resolve(await begin(reviewed, voiced));
+					const merged = { ...written, ...voiced };
+					await host.storage.set(keys.state, merged);
+					resolve(merged);
 				} catch (error) {
 					reject(error);
 				}

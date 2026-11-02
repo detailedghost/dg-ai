@@ -10,6 +10,7 @@ export type DemoResult = {
 	mode: "walkthrough" | "video";
 	steps: number;
 	video?: string;
+	audio?: "muxed" | "sidecar" | "none";
 	plan: string;
 	startedAt: string;
 	endedAt: string;

@@ -49,6 +49,7 @@ function launchWith(script: (send: Send) => Promise<void>, recorded = true) {
 			binding = cb;
 		},
 		addInitScript: async () => undefined,
+		route: async () => undefined,
 		on: () => undefined,
 		evaluate: async () => undefined,
 		goto: async () => {

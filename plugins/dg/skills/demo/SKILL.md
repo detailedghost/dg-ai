@@ -117,6 +117,7 @@ also accepted.
 |---|---|---|---|
 | `--ext` | none | Play through the dg-ai-extension in the user's real browser. Needs the extension. | off (local is the default) |
 | `--video` | none | Record now with no start screen; works with a headless browser. | off (start screen) |
+| `--narration <mode>` | none | With `--video`: `both`, `voice` or `captions`. The first voiced run downloads the narration assets and the ~86 MB Kokoro model; offline it falls back to captions. `ffmpeg` muxes the voice, otherwise a `.wav` sits beside the video. | the slug's saved choice, else captions |
 | `--out <path>` | none | Where the video file goes. | `<state>/demos/<slug>/<slug>-<ts>.webm` |
 | `--browser <name>` | none | `chrome`, `msedge` or `chromium`; skips the system-first pick. | first found |
 | `--windows` | none | WSL: drive the Windows-side browser over CDP. | on when a Windows browser exists |

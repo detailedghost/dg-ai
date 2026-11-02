@@ -3,19 +3,29 @@ import {
 	copyFileSync,
 	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	renameSync,
 	rmSync,
 	unlinkSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { NARRATION_ASSET_BASE } from "@dg/common";
 import { ensurePrivateDir, wslChromiumArgs } from "@dg/common/node";
-import type { BrowserContext, Page } from "playwright-core";
+import type { BrowserContext, Page, Route } from "playwright-core";
+import pkg from "../../package.json" with { type: "json" };
 import {
 	type BridgeEnd,
 	createBridge,
 	tourOrigins,
 	trustedSource,
 } from "./bridge";
+import { type MuxDeps, muxNarration } from "./mux";
+import {
+	ensureNarrationAssets,
+	isNetworkFailure,
+	serveNarrationAsset,
+} from "./narration-assets";
+import { writeNarrationWav } from "./narration";
 import { profileDir } from "./paths";
 import { playerScript } from "./player-asset";
 import {
@@ -43,7 +53,13 @@ export type Launchers = {
 export type PlayerHooks = {
 	onProgress?(page: Page, index: number): void | Promise<void>;
 	launch?(job: PlayerJob): Promise<PlayerSession>;
+	fetch?: typeof fetch;
+	mux?: MuxDeps;
 };
+
+const OFFLINE_LINE =
+	"narration assets are not downloaded; running captions-only";
+const DEFAULT_VOICE = "af_heart";
 
 const VIEWPORT = { width: 1280, height: 720 };
 
@@ -174,24 +190,114 @@ export async function runPlayer(
 	ensurePrivateDir(job.dir);
 	const origins = tourOrigins(job.script);
 	let page: Page | undefined;
+	const clipsDir = join(job.dir, "clips");
+	rmSync(clipsDir, { recursive: true, force: true });
+	const offsets = new Map<number, number>();
+	let recordingStart = Date.now();
+	let assets: Promise<string> | undefined;
+	const narrationAssets = (): Promise<string> =>
+		(assets ??= ensureNarrationAssets(pkg.version, { fetch: hooks.fetch }));
+	let voiceGranted = false;
 	const bridge = createBridge({
 		job,
-		onProgress: (index) => (page ? hooks.onProgress?.(page, index) : undefined),
+		steps: job.script.steps.length + (job.script.setup?.steps.length ?? 0),
+		onNarrationFailed: (reason) =>
+			console.log(
+				`demo ${job.slug}: narration failed (${reason}); recorded without voice`,
+			),
+		onProgress: (index) => {
+			offsets.set(index, Date.now() - recordingStart);
+			return page ? hooks.onProgress?.(page, index) : undefined;
+		},
+		onVoiceChoice: async () => {
+			try {
+				await narrationAssets();
+				voiceGranted = true;
+				return "voice";
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (isNetworkFailure(error)) console.log(OFFLINE_LINE);
+				else console.log(`demo ${job.slug}: ${message}; running captions-only`);
+				return "captions-only";
+			}
+		},
 	});
+	const addVoice = async (target: string): Promise<DemoResult["audio"]> => {
+		const wav = target.replace(/\.webm$/, ".wav");
+		const kept = (): DemoResult["audio"] => (existsSync(wav) ? "sidecar" : "none");
+		const stage = mkdtempSync(join(dirname(target), ".dg-mux-"));
+		const staged = join(stage, basename(target));
+		try {
+			if (!writeNarrationWav({ clipsDir, offsets, out: wav })) return "none";
+			const { audio: outcome } = await muxNarration(
+				{
+					video: target,
+					wav,
+					out: staged,
+					timeoutMs: Math.max(60_000, 2 * (Date.now() - recordingStart)),
+				},
+				hooks.mux,
+			);
+			if (outcome !== "muxed") return outcome;
+			moveFile(staged, target);
+			rmSync(wav, { force: true });
+			if (!job.out) chmodSync(target, 0o600);
+			return "muxed";
+		} catch (error) {
+			console.log(
+				`demo ${job.slug}: could not add the voice (${error instanceof Error ? error.message : String(error)}); video saved without it`,
+			);
+			return kept();
+		} finally {
+			rmSync(stage, { recursive: true, force: true });
+		}
+	};
 	let session: PlayerSession | undefined;
 	let end: BridgeEnd;
 	let video: string | undefined;
 	let keepRaw = false;
+	let audio: DemoResult["audio"];
 	try {
 		session = await (hooks.launch ?? openSession)(job);
 		const { context } = session;
-		const live = context.pages()[0] ?? (await context.newPage());
+		const launched = context.pages()[0];
+		const live = await context.newPage();
+		recordingStart = Date.now();
+		if (launched && launched !== live)
+			await launched.close().catch(() => undefined);
 		page = live;
+		await live.route(`${NARRATION_ASSET_BASE}**`, async (route: Route) => {
+			try {
+				if (!voiceGranted) throw new Error("narration is not enabled");
+				const dir = await narrationAssets();
+				const { pathname } = new URL(route.request().url());
+				await route.fulfill(serveNarrationAsset(dir, pathname));
+			} catch {
+				await route.fulfill({
+					status: 404,
+					headers: { "access-control-allow-origin": "*" },
+					body: "",
+				});
+			}
+		});
 		await live.exposeBinding("__dgDemoBridge", (source, msg: unknown) =>
 			trustedSource(source, origins) ? bridge.handle(msg) : undefined,
 		);
 		await live.addInitScript(playerScript());
-		const tour = `window.__dgTour.run(${JSON.stringify(job.script)}, ${JSON.stringify(job.video ? { mode: "video" } : {})})`;
+		const tourOptions = job.video
+			? {
+					mode: "video",
+					...(job.narration
+						? {
+								narration: {
+									narration: job.narration,
+									voice: job.voice ?? DEFAULT_VOICE,
+								},
+							}
+						: {}),
+				}
+			: {};
+		const tour = `window.__dgTour.run(${JSON.stringify(job.script)}, ${JSON.stringify(tourOptions)})`;
 		const run = (): void => {
 			if (!trustedSource({ frame: live.mainFrame(), page: live }, origins))
 				return;
@@ -234,6 +340,7 @@ export async function runPlayer(
 				moveFile(source, target);
 				if (!job.out) chmodSync(target, 0o600);
 				video = target;
+				audio = await addVoice(target);
 			} catch (error) {
 				end = {
 					outcome: "error",
@@ -245,12 +352,14 @@ export async function runPlayer(
 		if (!keepRaw) rmSync(join(job.dir, "rec"), { recursive: true, force: true });
 	}
 
+	rmSync(clipsDir, { recursive: true, force: true });
 	const result: DemoResult = {
 		slug: job.slug,
 		outcome: end.outcome,
 		mode: bridge.mode(),
 		steps: job.script.steps.length,
 		...(video ? { video } : {}),
+		...(bridge.mode() === "video" ? { audio: audio ?? "none" } : {}),
 		plan: job.planPath,
 		startedAt: bridge.startedAt,
 		endedAt: new Date().toISOString(),

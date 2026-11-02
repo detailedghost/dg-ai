@@ -128,10 +128,9 @@ describe("bridge terminal and progress messages", () => {
 		expect(await bridge.done).toEqual({ outcome: "error", error: "boom" });
 	});
 
-	test("answers narration messages captions-only until narration lands", async () => {
+	test("answers narration-complete captions-only", async () => {
 		const bridge = make();
 		expect(await bridge.handle({ kind: "narration-complete" })).toBe("captions-only");
-		expect(await bridge.handle({ kind: "clip" })).toBe("captions-only");
 	});
 
 	test("ignores non-object and unknown messages without ending the run", async () => {

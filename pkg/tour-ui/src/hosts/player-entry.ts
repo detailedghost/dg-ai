@@ -1,5 +1,6 @@
-import type { TourScript } from "@dg/common";
+import { NARRATION_ASSET_BASE, type TourScript } from "@dg/common";
 import type { TourHost, TourMessage } from "../host";
+import { createNarrator } from "../narration/narrate";
 import { runTour, type TourOptions, type TourResult } from "../player";
 
 export type TourState =
@@ -63,6 +64,7 @@ const host: TourHost = {
 		return { remove: () => el.remove() };
 	},
 	tabKey: () => "local",
+	narrator: createNarrator(NARRATION_ASSET_BASE, bridge),
 };
 
 const tour: Window["__dgTour"] = {

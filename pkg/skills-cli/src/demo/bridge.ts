@@ -6,6 +6,7 @@ import {
 	toPlanMarkdown,
 	validate,
 } from "../utils/plan-format";
+import { clipFile, NARRATION_SAMPLE_RATE } from "./narration";
 import type { PlayerJob } from "./player-job";
 import type { DemoResult } from "./result";
 
@@ -18,13 +19,24 @@ export type Bridge = {
 	startedAt: string;
 };
 
+export type NarrationAnswer = "voice" | "captions-only";
+
 export type BridgeOptions = {
 	job: Pick<PlayerJob, "dir" | "planPath" | "slug" | "video">;
 	onProgress?(index: number): void | Promise<void>;
+	/** Called for a video choice that wants a voice; answers whether the page may narrate. */
+	onVoiceChoice?(): Promise<NarrationAnswer>;
+	onNarrationFailed?(reason: string): void;
+	steps?: number;
 };
 
 const CAPTIONS_ONLY = "captions-only";
 const MAX_MESSAGE_CHARS = 64 * 1024;
+const MAX_CLIP_BYTES = 8 * 1024 * 1024;
+const MAX_CLIP_INDEX = 999;
+const MAX_TOTAL_CLIP_BYTES = 192 * 1024 * 1024;
+const MAX_REASON_CHARS = 200;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_ERROR_CHARS = 500;
 const NARRATIONS = new Set(["both", "voice", "captions"]);
 const VOICE_ID = /^[a-z]{2}_[a-z]{1,32}$/;
@@ -61,7 +73,12 @@ export function trustedSource(
 	}
 }
 
-const oversized = (msg: unknown): boolean => {
+const CLIP_LIMIT = Math.ceil((MAX_CLIP_BYTES * 4) / 3);
+
+const oversized = (msg: object): boolean => {
+	const m = msg as Record<string, unknown>;
+	if (m["kind"] === "clip")
+		return typeof m["pcm"] === "string" && m["pcm"].length > CLIP_LIMIT;
 	try {
 		return JSON.stringify(msg).length > MAX_MESSAGE_CHARS;
 	} catch {
@@ -69,7 +86,20 @@ const oversized = (msg: unknown): boolean => {
 	}
 };
 
-export function createBridge({ job, onProgress }: BridgeOptions): Bridge {
+export function createBridge({
+	job,
+	onProgress,
+	onVoiceChoice,
+	onNarrationFailed,
+	steps = MAX_CLIP_INDEX + 1,
+}: BridgeOptions): Bridge {
+	let voiceGranted = false;
+	let clipBytes = 0;
+	const validIndex = (index: unknown): index is number =>
+		typeof index === "number" &&
+		Number.isInteger(index) &&
+		index >= 0 &&
+		index < Math.min(steps, MAX_CLIP_INDEX + 1);
 	const state = new Map<string, unknown>();
 	const startedAt = new Date().toISOString();
 	let mode: DemoResult["mode"] = job.video ? "video" : "walkthrough";
@@ -84,6 +114,31 @@ export function createBridge({ job, onProgress }: BridgeOptions): Bridge {
 		writeFileAtomic(file, text, PRIVATE_FILE);
 		return file;
 	};
+
+	function saveClip(m: Record<string, unknown>): void {
+		const index = m["index"];
+		const pcm = m["pcm"];
+		if (
+			!voiceGranted ||
+			!validIndex(index) ||
+			m["sampleRate"] !== NARRATION_SAMPLE_RATE ||
+			typeof pcm !== "string" ||
+			!BASE64.test(pcm)
+		)
+			return;
+		const bytes = Buffer.from(pcm, "base64");
+		if (
+			bytes.length === 0 ||
+			bytes.length > MAX_CLIP_BYTES ||
+			bytes.length % Float32Array.BYTES_PER_ELEMENT !== 0
+		)
+			return;
+		if (clipBytes + bytes.length > MAX_TOTAL_CLIP_BYTES) return;
+		clipBytes += bytes.length;
+		const dir = join(job.dir, "clips");
+		ensurePrivateDir(dir);
+		writeFileAtomic(clipFile(dir, index), bytes, PRIVATE_FILE);
+	}
 
 	async function handle(msg: unknown): Promise<unknown> {
 		if (typeof msg !== "object" || msg === null || oversized(msg))
@@ -113,14 +168,31 @@ export function createBridge({ job, onProgress }: BridgeOptions): Bridge {
 						includeSetup: m["includeSetup"] === true,
 					}),
 				);
-				return CAPTIONS_ONLY;
+				const voiced = narration === "both" || narration === "voice";
+				if (mode !== "video" || !voiced || !onVoiceChoice) return CAPTIONS_ONLY;
+				const answer = await onVoiceChoice();
+				voiceGranted = answer === "voice";
+				return answer;
 			}
 			case "progress":
-				await onProgress?.(Number(m["index"]));
+				{
+					const index = Number(m["index"]);
+					if (validIndex(index)) await onProgress?.(index);
+				}
+				return undefined;
+			case "narration-failed":
+				if (voiceGranted)
+					onNarrationFailed?.(
+						String(m["reason"] ?? "")
+							.replace(/[^\x20-\x7e]/g, " ")
+							.slice(0, MAX_REASON_CHARS),
+					);
 				return undefined;
 			case "narration-complete":
-			case "clip":
 				return CAPTIONS_ONLY;
+			case "clip":
+				saveClip(m);
+				return undefined;
 			case "download-plan": {
 				if (typeof m["markdown"] !== "string") return undefined;
 				try {

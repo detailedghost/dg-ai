@@ -5,6 +5,8 @@ export type BrowserPlan =
 	| { mode: "windows"; browser?: "chrome" | "msedge" }
 	| { mode: "local"; headless: boolean; pick: LaunchPick; label: string };
 
+export type NarrationChoice = "both" | "voice" | "captions";
+
 export type PlayerJob = {
 	slug: string;
 	planPath: string;
@@ -16,6 +18,8 @@ export type PlayerJob = {
 	out?: string;
 	timeoutMin?: number;
 	profile?: string;
+	narration?: NarrationChoice;
+	voice?: string;
 };
 
 /** What travels in the player argv: the plan reloads from planPath, so argv stays small and the script stays out of ps. */

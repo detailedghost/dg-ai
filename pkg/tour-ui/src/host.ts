@@ -1,4 +1,4 @@
-import type { TourMode, TourScript } from "@dg/common";
+import type { TourMode, TourScript, TourStep } from "@dg/common";
 import type { NarrationMode } from "./narration-options";
 
 export type TourMessage =
@@ -13,6 +13,7 @@ export type TourMessage =
 	| { kind: "narration-complete"; index?: number; ms?: number }
 	| { kind: "download-plan"; markdown: string }
 	| { kind: "clip"; index: number; sampleRate: number; pcm: string }
+	| { kind: "narration-failed"; reason: string }
 	| { kind: "done" | "stopped" }
 	| { kind: "error"; message: string };
 
@@ -38,8 +39,19 @@ export type TourHost = {
 	endScreen?: boolean;
 	/** A recorder drives video tours: capture starts on its gesture, not at once. */
 	recorder?: TourRecorder;
+	/** Speaks narration into clips the host saves, for hosts with no tab-audio recorder. */
+	narrator?: TourNarrator;
 	/** Reopen the review editor when a tour launched from it ends. */
 	openEditor?(script: TourScript): Promise<void>;
+};
+
+export type TourNarrator = {
+	/** Synthesizes the clips, sends each to the host, and resolves with every step's hold in ms. */
+	prepare(
+		steps: TourStep[],
+		voice: string,
+		report: (percent: number, label: string) => void,
+	): Promise<number[]>;
 };
 
 export type CaptureStart = { durations: number[]; hideBody: boolean };

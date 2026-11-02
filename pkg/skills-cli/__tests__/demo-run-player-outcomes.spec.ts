@@ -50,6 +50,7 @@ function fakeSession(options: FakeOptions = {}) {
 			handler = fn;
 		},
 		addInitScript: async () => undefined,
+		route: async () => undefined,
 		on: () => undefined,
 		evaluate: async () => undefined,
 		goto: async () => {

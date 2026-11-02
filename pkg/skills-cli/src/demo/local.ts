@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, openSync, rmSync } from "node:fs";
+import { closeSync, openSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { slugify } from "@dg/common";
 import {
@@ -23,6 +23,7 @@ import { loadScript, savePlan } from "./plan-file";
 import {
 	DEFAULT_TIMEOUT_MIN,
 	type BrowserPlan,
+	type NarrationChoice,
 	type PlayerArgv,
 	type PlayerJob,
 } from "./player-job";
@@ -40,6 +41,7 @@ export type LocalOpts = {
 	print?: boolean;
 	edit?: boolean;
 	out?: string;
+	narration?: NarrationChoice;
 	browser?: "chrome" | "msedge" | "chromium";
 	windows?: boolean;
 	wslHeaded?: boolean;
@@ -72,6 +74,41 @@ export const defaultLocalDeps: LocalDeps = {
 	pickLaunch: () => pickLaunch(),
 	spawn: spawnDetached,
 };
+
+const NARRATIONS: readonly string[] = ["both", "voice", "captions"];
+const VOICE_ID = /^[a-z]{2}_[a-z]{1,32}$/;
+
+function savedChoice(dir: string): { narration?: NarrationChoice; voice?: string } {
+	try {
+		const saved = JSON.parse(readFileSync(join(dir, "choice.json"), "utf8")) as {
+			narration?: NarrationChoice;
+			voice?: string;
+		};
+		return {
+			...(saved.narration && NARRATIONS.includes(saved.narration)
+				? { narration: saved.narration }
+				: {}),
+			...(saved.voice && VOICE_ID.test(saved.voice) ? { voice: saved.voice } : {}),
+		};
+	} catch {
+		return {};
+	}
+}
+
+function saveNarrationChoice(dir: string, narration: NarrationChoice): void {
+	let existing: Record<string, unknown> = {};
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(join(dir, "choice.json"), "utf8"));
+		if (parsed && typeof parsed === "object") existing = parsed as Record<string, unknown>;
+	} catch {
+		existing = {};
+	}
+	writeFileAtomic(
+		join(dir, "choice.json"),
+		JSON.stringify({ ...existing, narration }),
+		0o600,
+	);
+}
 
 function pickFor(opts: LocalOpts, deps: LocalDeps): LaunchPick {
 	if (opts.browser === "chromium") {
@@ -163,6 +200,12 @@ export async function playLocal(
 		console.error(error.message);
 		return error.exitCode;
 	}
+	if (opts.narration && !opts.video) {
+		console.error(
+			"demo: --narration needs --video; the start screen offers it otherwise",
+		);
+		return 1;
+	}
 	if (opts.out && !opts.out.endsWith(".webm")) {
 		console.error("demo: --out must name a .webm file");
 		return 1;
@@ -186,6 +229,9 @@ export async function playLocal(
 	ensurePrivateDir(demosDir());
 	ensurePrivateDir(dir);
 	rmSync(join(dir, `${slug}.result.json`), { force: true });
+	const saved = opts.video ? savedChoice(dir) : {};
+	const narration = opts.narration ?? saved.narration;
+	if (opts.video && opts.narration) saveNarrationChoice(dir, opts.narration);
 	const planPath = savePlan(script, dir);
 	const job: PlayerArgv = {
 		slug,
@@ -195,6 +241,8 @@ export async function playLocal(
 		startUrl: script.startUrl,
 		plan,
 		...(opts.out ? { out: opts.out } : {}),
+		...(narration ? { narration } : {}),
+		...(narration && saved.voice ? { voice: saved.voice } : {}),
 		timeoutMin: opts.timeout ?? DEFAULT_TIMEOUT_MIN,
 	};
 	const { pid } = deps.spawn(

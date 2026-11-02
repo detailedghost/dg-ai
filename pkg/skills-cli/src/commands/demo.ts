@@ -68,6 +68,12 @@ export function addLocalOptions(command: Command): Command {
 				["chrome", "msedge", "chromium"],
 			),
 		)
+		.addOption(
+			new Option(
+				"--narration <mode>",
+				"with --video: voiceover and captions (both), voiceover only (voice) or silent (captions); default is the saved start-screen choice",
+			).choices(["both", "voice", "captions"]),
+		)
 		.option("--windows", "WSL: drive the Windows-side browser over CDP")
 		.option(
 			"--wsl-headed",
@@ -82,6 +88,7 @@ export function addLocalOptions(command: Command): Command {
 
 const LOCAL_ONLY_FLAGS = [
 	["out", "--out"],
+	["narration", "--narration"],
 	["browser", "--browser"],
 	["windows", "--windows"],
 	["wslHeaded", "--wsl-headed"],
