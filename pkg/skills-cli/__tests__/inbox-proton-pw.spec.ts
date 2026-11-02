@@ -234,6 +234,7 @@ describe("proton-pw openProtonSession", () => {
 		const session = await openProtonSession(spec(true), run);
 		expect(await session.page.observedHeaders()).toBeUndefined();
 		expect(calls.filter((argv) => argv.includes("--clear"))).toHaveLength(1);
+		expect(calls.at(-1)).toEqual(["-s=inbox-proton", "reload"]);
 	});
 
 	test("observedHeaders does not clear a log with one repeated uid", async () => {
@@ -247,6 +248,7 @@ describe("proton-pw openProtonSession", () => {
 		const session = await openProtonSession(spec(true), run);
 		expect((await session.page.observedHeaders())?.uid).toBe("uid-account-0");
 		expect(calls.some((argv) => argv.includes("--clear"))).toBe(false);
+		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
 	});
 
 	test("observedHeaders is undefined before any Proton api request", async () => {

@@ -231,7 +231,7 @@ export async function openProtonSession(
 					throw new Error("Could not read the Proton request headers.");
 				const uids = new Set(headerValues(listing.out, "x-pm-uid"));
 				if (uids.size > 1) {
-					await run([
+					const cleared = await run([
 						session,
 						"--raw",
 						"network",
@@ -239,6 +239,9 @@ export async function openProtonSession(
 						"/api/",
 						"--clear",
 					]);
+					const reloaded = await run([session, "reload"]);
+					if (cleared.code !== 0 || reloaded.code !== 0)
+						throw new Error("Could not reset the Proton request log.");
 					return undefined;
 				}
 				const uid = headerValue(listing.out, "x-pm-uid");
