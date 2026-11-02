@@ -38,4 +38,6 @@ export class SetupRefusedError extends Error {
 }
 
 export const setupNeedsPerson = (script: TourScript): boolean =>
-	script.setup !== undefined && !script.setup.includeInTour;
+	script.setup !== undefined &&
+	!script.setup.includeInTour &&
+	script.setup.steps.length > 0;

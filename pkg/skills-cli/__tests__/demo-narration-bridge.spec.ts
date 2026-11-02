@@ -205,4 +205,33 @@ describe("bridge bounds", () => {
 		await b.handle({ kind: "narration-failed", reason: "boom" });
 		expect(clipFiles()).toEqual([]);
 	});
+
+	test("acknowledges a saved clip as accepted", async () => {
+		const { b } = await voiced();
+		const reply = await b.handle({ kind: "clip", index: 0, sampleRate: 24000, pcm: base64([0.5]) });
+		expect(reply).toEqual({ accepted: true });
+	});
+
+	test("refuses a clip over the per-clip limit", async () => {
+		const { b } = await voiced();
+		const pcm = Buffer.from(new Float32Array(2_200_000).buffer).toString("base64");
+		const reply = await b.handle({ kind: "clip", index: 0, sampleRate: 24000, pcm });
+		expect(reply).toEqual({ accepted: false });
+		expect(clipFiles()).toEqual([]);
+	});
+
+	test("refuses a clip that would pass the run cap", async () => {
+		const { b } = await voiced({ steps: 999 });
+		const pcm = Buffer.from(new Float32Array(1_500_000).buffer).toString("base64");
+		const replies: unknown[] = [];
+		for (let index = 0; index < 40; index++)
+			replies.push(await b.handle({ kind: "clip", index, sampleRate: 24000, pcm }));
+		expect(replies[32]).toEqual({ accepted: true });
+		expect(replies[33]).toEqual({ accepted: false });
+	});
+
+	test("refuses a clip when no voice was granted", async () => {
+		const reply = await bridge().handle({ kind: "clip", index: 0, sampleRate: 24000, pcm: base64([0.5]) });
+		expect(reply).toEqual({ accepted: false });
+	});
 });

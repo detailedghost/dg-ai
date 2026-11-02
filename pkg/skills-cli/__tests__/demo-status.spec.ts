@@ -1,3 +1,4 @@
+import { slugify } from "@dg/common";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -41,6 +42,22 @@ const fixture = (): DemoResult => ({
 });
 
 const status = () => world.drive(registerDemo, ["demo", "status", slug]);
+
+describe("generated slugs", () => {
+	test.each(["#115: Local Tour", "--x--", "!!!", "Plain Title", "emoji \u{1F680} launch", "_a_", "a.b/c"])(
+		"%s reads back through readResult",
+		(title) => {
+			const generated = slugify(title);
+			expect(generated).not.toMatch(/^-|-$/);
+			writeResult({ ...fixture(), slug: generated });
+			expect(readResult(generated)?.slug).toBe(generated);
+		},
+	);
+
+	test("trims edge hyphens from a title that starts with punctuation", () => {
+		expect(slugify("#115: Local Tour")).toBe("115-local-tour");
+	});
+});
 
 describe("demo status <slug>", () => {
 	test("prints the result as one JSON line after a completed run", async () => {

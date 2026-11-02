@@ -988,7 +988,7 @@ describe("demo-recorder", () => {
 				expect.objectContaining({
 					type: MSG.startRecording,
 					tabId: TAB_ID,
-					slug: "my-demo-tour-",
+					slug: "my-demo-tour",
 					planMarkdown: expect.stringContaining("Show dashboard"),
 				}),
 			);

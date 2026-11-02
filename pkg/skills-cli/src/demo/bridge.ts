@@ -20,6 +20,9 @@ export type Bridge = {
 	startedAt: string;
 };
 
+type ClipAck = { accepted: boolean };
+const REFUSED: ClipAck = { accepted: false };
+
 export type NarrationAnswer = "voice" | "captions-only";
 
 export type BridgeOptions = {
@@ -119,7 +122,7 @@ export function createBridge({
 		return file;
 	};
 
-	function saveClip(m: Record<string, unknown>): void {
+	function saveClip(m: Record<string, unknown>): ClipAck {
 		const index = m["index"];
 		const pcm = m["pcm"];
 		if (
@@ -129,25 +132,28 @@ export function createBridge({
 			typeof pcm !== "string" ||
 			!BASE64.test(pcm)
 		)
-			return;
+			return REFUSED;
 		const bytes = Buffer.from(pcm, "base64");
 		if (
 			bytes.length === 0 ||
 			bytes.length > MAX_CLIP_BYTES ||
 			bytes.length % Float32Array.BYTES_PER_ELEMENT !== 0
 		)
-			return;
-		if (clipBytes + bytes.length > MAX_TOTAL_CLIP_BYTES) return;
+			return REFUSED;
+		if (clipBytes + bytes.length > MAX_TOTAL_CLIP_BYTES)
+			return REFUSED;
 		clipBytes += bytes.length;
 		const dir = join(job.dir, "clips");
 		ensurePrivateDir(dir);
 		writeFileAtomic(clipFile(dir, index), bytes, PRIVATE_FILE);
+		return { accepted: true };
 	}
 
 	async function handle(msg: unknown): Promise<unknown> {
 		if (typeof msg !== "object" || msg === null) return undefined;
 		const m = msg as Record<string, unknown>;
 		if (oversized(msg)) {
+			if (m["kind"] === "clip") return REFUSED;
 			if (m["kind"] !== "storage-set") return undefined;
 			onOversized?.(String(m["key"]));
 			return { error: "storage value is over the 1 MiB limit" };
@@ -201,8 +207,7 @@ export function createBridge({
 			case "narration-complete":
 				return CAPTIONS_ONLY;
 			case "clip":
-				saveClip(m);
-				return undefined;
+				return saveClip(m);
 			case "download-plan": {
 				if (typeof m["markdown"] !== "string") return undefined;
 				try {

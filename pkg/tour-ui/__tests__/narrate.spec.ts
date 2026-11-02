@@ -14,6 +14,7 @@ mock.module("../src/narration/kokoro", () => ({
 	}),
 }));
 
+const { holdFor } = await import("../src/video-timing");
 const { createNarrator } = await import("../src/narration/narrate");
 
 describe("createNarrator", () => {
@@ -54,5 +55,30 @@ describe("createNarrator", () => {
 		).rejects.toThrow("boom");
 		failNext = () => false;
 		expect(narrator.clipMs?.(0)).toBeUndefined();
+	});
+
+	it("counts a refused clip as unvoiced and reports narration as partial", async () => {
+		const labels: string[] = [];
+		const narrator = createNarrator("https://assets.test/", async (msg) =>
+			msg.kind === "clip" && msg.index === 1 ? { accepted: false } : { accepted: true },
+		);
+		const holds = await narrator.prepare(
+			[{ body: "one" }, { body: "two" }, { body: "three" }] as never,
+			"af_heart",
+			(_percent, label) => void labels.push(label),
+		);
+		expect(narrator.clipMs?.(0)).toBe(100);
+		expect(narrator.clipMs?.(1)).toBeUndefined();
+		expect(narrator.clipMs?.(2)).toBe(100);
+		expect(holds[1]).toBe(holdFor({ body: "two" } as never, null));
+		expect(labels).not.toContain("Narration ready");
+		expect(labels.at(-1)).toBe("Narration partial: 2 of 3 steps voiced");
+	});
+
+	it("reports narration ready when every clip is accepted", async () => {
+		const labels: string[] = [];
+		const narrator = createNarrator("https://assets.test/", async () => ({ accepted: true }));
+		await narrator.prepare([{ body: "one" }] as never, "af_heart", (_p, label) => void labels.push(label));
+		expect(labels.at(-1)).toBe("Narration ready");
 	});
 });

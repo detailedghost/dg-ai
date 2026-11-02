@@ -19,6 +19,12 @@ function toBase64(samples: Float32Array): string {
 const nextMacrotask = (): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, 0));
 
+const refused = (ack: unknown): boolean =>
+	typeof ack === "object" &&
+	ack !== null &&
+	"accepted" in ack &&
+	ack.accepted === false;
+
 /** Speaks each step's body through Kokoro and hands the clips to the host, which owns the audio file. */
 export function createNarrator(
 	assetBase: string,
@@ -37,23 +43,28 @@ export function createNarrator(
 				report(tracker.model(info), label),
 			);
 			report(tracker.modelReady(), "Voice model ready");
+			let completed = 0;
+			let unvoiced = 0;
 			try {
-				let completed = 0;
 				for (const [index, step] of steps.entries()) {
 					const text = (step.body ?? "").trim();
 					if (!text) continue;
 					await nextMacrotask();
 					const clip = await tts.generate(text, { voice });
-					await send({
+					const ack = await send({
 						kind: "clip",
 						index,
 						sampleRate: clip.sampling_rate,
 						pcm: toBase64(clip.audio),
 					});
-					const ms = (clip.audio.length / clip.sampling_rate) * 1000;
-					clips.set(index, ms);
-					durations[index] = holdFor(step, ms);
 					completed++;
+					if (refused(ack)) {
+						unvoiced++;
+					} else {
+						const ms = (clip.audio.length / clip.sampling_rate) * 1000;
+						clips.set(index, ms);
+						durations[index] = holdFor(step, ms);
+					}
 					report(
 						tracker.synthesis(completed, narrated),
 						`Synthesizing step ${completed} of ${narrated}`,
@@ -63,7 +74,12 @@ export function createNarrator(
 				clips.clear();
 				throw error;
 			}
-			report(tracker.ready(), "Narration ready");
+			report(
+				tracker.ready(),
+				unvoiced
+					? `Narration partial: ${narrated - unvoiced} of ${narrated} steps voiced`
+					: "Narration ready",
+			);
 			return durations;
 		},
 	};
