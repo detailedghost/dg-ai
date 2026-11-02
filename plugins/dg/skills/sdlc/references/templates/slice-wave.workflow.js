@@ -128,11 +128,13 @@ const blockingDeferral = (ds) => live(ds).some(gated);
 const globRe = (glob) =>
   new RegExp(
     `^${glob
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/^\.\//, "")
+      .replace(/[.+^$()|\\]/g, "\\$&")
       .replace(/\*\*\//g, "\0")
       .replace(/\*\*/g, "\u0001")
       .replace(/\*/g, "[^/]*")
       .replace(/\?/g, "[^/]")
+      .replace(/\{([^}]*)\}/g, (_, alts) => `(?:${alts.replaceAll(",", "|")})`)
       .replace(/\0/g, "(?:.*/)?")
       .replace(/\u0001/g, ".*")}$`,
   );
@@ -141,7 +143,8 @@ const ownedBy = (slice, f) =>
   f !== "" &&
   !f.startsWith("/") &&
   !f.startsWith("..") &&
-  (!slice.files?.length || slice.files.some((g) => globRe(g).test(f) || f.startsWith(`${g.replace(/\/$/, "")}/`)));
+  (!slice.files?.length ||
+    slice.files.some((g) => globRe(g).test(f) || f.startsWith(`${g.replace(/^\.\//, "").replace(/\/$/, "")}/`)));
 
 // Per-slice progress group: one box per slice (stage stays visible via each agent's label).
 const phaseFor = (slice) => (slice.name ? `${slice.name} (S${slice.id})` : `slice ${slice.id}`);
@@ -228,11 +231,12 @@ const results = await pipeline(
             { label: `files:${slice.id}`, phase: phaseFor(slice), ...stageOpts(roles.wave), schema: FILES },
           )
         : null;
+      const owned = (listed?.files || []).filter((f) => ownedBy(slice, f));
       return {
         ...st,
         unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listed ? ["files"] : [])],
-        changedFiles: reported,
-        reviewFiles: uniq([...reported, ...(listed?.files || []).filter((f) => ownedBy(slice, f))]),
+        changedFiles: uniq([...reported, ...(slice.files?.length ? owned : [])]),
+        reviewFiles: uniq([...reported, ...owned]),
         deferrals: [...st.deferrals, ...live(g?.deferrals)],
         notes: {
           durable: uniq([...st.notes.durable, ...(g?.notes?.durable || [])]),

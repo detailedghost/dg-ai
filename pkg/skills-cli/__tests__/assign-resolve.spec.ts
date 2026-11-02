@@ -392,6 +392,35 @@ describe("slice-wave runner deferral handling", () => {
 		expect(review).not.toContain("src/two/y.ts");
 	});
 
+	test("adds owned recovered files to the commit list when the slice declares globs", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { slice } = await wave(
+			{
+				red: red([]),
+				yellow,
+				green: red([]),
+				files: { files: ["src/one/helper.ts", "src/two/y.ts"] },
+			},
+			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/one/**"] }] },
+		);
+		expect(slice.changedFiles).toContain("src/one/helper.ts");
+		expect(slice.changedFiles).not.toContain("src/two/y.ts");
+	});
+
+	test.each([
+		["./src/**", "src/helper.ts"],
+		["src/*.{ts,tsx}", "src/helper.tsx"],
+		["src/[hx]elper.ts", "src/helper.ts"],
+	])("matches the glob %s against %s", async (glob, path) => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { prompts } = await wave(
+			{ red: red([]), yellow, green: red([]), files: { files: [path] } },
+			{ cwd: "/work/tree", slices: [{ ...own, files: [glob] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain(path);
+	});
+
 	test("keeps git-only files out of the slice's commit list", async () => {
 		const { slice } = await wave(
 			{ red: red([]), yellow, green: red([]), files: { files: ["other-slice.ts"] } },
