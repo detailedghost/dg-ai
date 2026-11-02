@@ -1,9 +1,61 @@
 import { existsSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
-import { isPathInside } from "@dg/common/node";
+import { isPathInside, isWSL, resolveDgPaths } from "@dg/common/node";
 import { defaultProfileDir, profilesRoot } from "../../core/profiles";
-import { closeFailure, resolve, stopSession } from "../../core/registry";
-import type { ClientHandler } from "../../core/spec";
+import { isProtectedSession } from "../../core/protected-session";
+import {
+	closeFailure,
+	resolve,
+	type SessionRecord,
+	stopSession,
+} from "../../core/registry";
+import type { ClientEnv, ClientHandler } from "../../core/spec";
+import {
+	isWindowsPath,
+	toWslPath,
+	windowsProfileDir,
+} from "../../core/windows";
+
+export type ProtectedDataDeps = {
+	wsl: boolean;
+	windowsProfileDir(name: string): Promise<string>;
+};
+
+const realProtectedDataDeps: ProtectedDataDeps = {
+	wsl: isWSL(),
+	windowsProfileDir,
+};
+
+/** Clears the signed-in mailbox profile and sign-in marker of a protected session in every placement. */
+export async function deleteProtectedData(
+	name: string,
+	record: SessionRecord | null | undefined,
+	env: ClientEnv,
+	deps: ProtectedDataDeps = realProtectedDataDeps,
+): Promise<number> {
+	if (record && !(await stopSession(record))) {
+		env.err(closeFailure(record));
+		return 1;
+	}
+	const inboxDir = path.join(resolveDgPaths().stateDir, "inbox");
+	const targets = [path.join(inboxDir, "proton-profile")];
+	if (deps.wsl) {
+		const windowsDir =
+			record?.profileDir && isWindowsPath(record.profileDir)
+				? record.profileDir
+				: await deps.windowsProfileDir(name.toLowerCase());
+		targets.push(toWslPath(windowsDir));
+	}
+	const deleted = targets.filter((target) => existsSync(target));
+	for (const target of deleted) rmSync(target, { recursive: true, force: true });
+	rmSync(path.join(inboxDir, "proton-signed-in.json"), { force: true });
+	env.out(
+		deleted.length === 0
+			? `No saved data for session '${name}'. The sign-in marker is cleared.`
+			: `### Deleted data for session \`${name}\` (${deleted.join(", ")}). The sign-in marker is cleared.`,
+	);
+	return 0;
+}
 
 /** True when the profile dir, after resolving symlinks, sits strictly inside the profiles root. */
 function insideRoot(profileDir: string, root: string): boolean {
@@ -21,6 +73,8 @@ function insideRoot(profileDir: string, root: string): boolean {
 const deleteData: ClientHandler = async (args, env) => {
 	const name = args.session;
 	const record = resolve(name);
+	if (isProtectedSession(name))
+		return deleteProtectedData(name, record, env);
 	if (record && record.profileDir === null) {
 		if (!(await stopSession(record))) {
 			env.err(closeFailure(record));

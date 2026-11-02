@@ -25,6 +25,7 @@ import {
 export { PROTON_SIGN_IN_COMMAND, ProtonSignedOutError, protonProfilePaths };
 
 const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
+const OPEN_REFUSED = /is open from|Could not close the browser for session/;
 const SIGN_IN_POLL_MS = 2_000;
 
 export type PwRunner = (
@@ -200,10 +201,12 @@ export async function openProtonSession(
 		...(spec.headless ? ["--headless"] : []),
 		spec.url ?? PROTON_MAIL_URL,
 	]);
-	if (opened.code !== 0)
+	if (opened.code !== 0) {
+		if (!OPEN_REFUSED.test(opened.err)) await run([session, "close"]);
 		throw new Error(
 			`Could not open the Proton pw profile: ${opened.err.split("\n")[0] ?? "unknown error"}`,
 		);
+	}
 	const evaluate = async (source: string): Promise<unknown> => {
 		const result = await run([session, "--raw", "eval", source]);
 		if (result.code !== 0) throw new Error("Proton page evaluation failed.");

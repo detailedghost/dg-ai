@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import type { InboxBrowserRequest } from "@dg/common";
 import { fixturePath } from "../../../test/fixture-paths";
@@ -228,5 +228,38 @@ describe("page-operations executeProtonPage against the recorded Proton dataset"
 			),
 		).rejects.toThrow();
 		expect(api.calls).toHaveLength(0);
+	});
+});
+
+describe("page-entry", () => {
+	test("paces the requests inside list-folders like the extension", async () => {
+		const api = protonApi(dataset);
+		const globals = globalThis as Record<string, unknown>;
+		const saved = { fetch: globals.fetch, location: globals.location };
+		const delays: number[] = [];
+		const timers = spyOn(globalThis, "setTimeout").mockImplementation(((
+			callback: () => void,
+			ms?: number,
+		) => {
+			delays.push(ms ?? 0);
+			callback();
+			return 0;
+		}) as never);
+		try {
+			globals.fetch = api.fetch;
+			globals.location = { origin: "https://mail.proton.me" };
+			await import("../page-entry");
+			const runPage = globals.__dgProtonRun as (call: unknown) => Promise<unknown>;
+			const result = await runPage({ request: { operation: "list-folders" }, headers });
+			expect(result).toHaveProperty("folders");
+			expect(api.calls.length).toBeGreaterThan(1);
+			expect(delays.filter((ms) => ms >= 320).length).toBeGreaterThanOrEqual(
+				api.calls.length - 1,
+			);
+		} finally {
+			timers.mockRestore();
+			globals.fetch = saved.fetch;
+			globals.location = saved.location;
+		}
 	});
 });

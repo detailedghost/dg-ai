@@ -1,10 +1,9 @@
 import { stringFlag, UsageError } from "../../core/args";
 import type { LaunchSpec } from "../../core/browser";
 import { launch, releaseKey } from "../../core/launch";
-import { isProtectedSession } from "../../core/protected-session";
+import { protectedCdpOwner } from "../../core/protected-session";
 import {
 	defaultOutputDir,
-	readAll,
 	sessionKey,
 	socketPathFor,
 } from "../../core/registry";
@@ -18,13 +17,7 @@ function parseEndpoint(value: string | undefined): string {
 
 const attach: ClientHandler = async (args, env) => {
 	const cdpUrl = parseEndpoint(stringFlag(args, "cdp"));
-	const port = new URL(cdpUrl).port;
-	const guarded = readAll().find(
-		(record) =>
-			isProtectedSession(record.name) &&
-			record.cdpUrl !== undefined &&
-			new URL(record.cdpUrl).port === port,
-	);
+	const guarded = protectedCdpOwner(cdpUrl);
 	if (guarded) {
 		env.err(
 			`### Error\npw refuses to attach to the ${guarded.name} browser: it holds a signed-in mailbox. Use dg-skills inbox.`,

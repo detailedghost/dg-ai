@@ -1,5 +1,6 @@
 export {
 	executeProtonPage,
+	protonRequestPace,
 	redactInboxText,
 	sanitizeInboxBrowserResponse,
 	type ProtonPageContext,

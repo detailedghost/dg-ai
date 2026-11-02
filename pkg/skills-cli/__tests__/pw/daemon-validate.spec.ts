@@ -3,8 +3,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { LaunchSpec } from "../../src/pw/core/browser";
 import { browsersDir, markerPath } from "../../src/pw/core/downloaded";
-import { socketPathFor } from "../../src/pw/core/registry";
+import { socketPathFor, write } from "../../src/pw/core/registry";
 import { statePathFor, statesDir } from "../../src/pw/core/states";
+import { resolveDgPaths } from "@dg/common/node";
 import { validateSpec } from "../../src/pw/daemon";
 import { useTempEnv, useTempScratch } from "../../src/pw/test-support";
 
@@ -335,5 +336,66 @@ describe("runDaemon", () => {
 		const { code, out } = await runDaemonProcess("{not json");
 		expect(code).toBe(2);
 		expect(out).toBe("ERROR launch spec is not valid JSON\n");
+	});
+});
+
+describe("validateSpec for the protected Proton browser", () => {
+	const protonProfile = () =>
+		path.join(resolveDgPaths().stateDir, "inbox", "proton-profile");
+
+	test("refuses the Proton profile under another session name", () => {
+		expect(() =>
+			validateSpec({ ...base, name: "mail-copy", key: "mail-copy", profileDir: protonProfile() }),
+		).toThrow(/protected inbox-proton profile/);
+	});
+
+	test("refuses the Windows Proton profile under another session name", () => {
+		expect(() =>
+			validateSpec({
+				...windows,
+				name: "mail-copy",
+				key: "mail-copy",
+				profileDir: "C:\\Users\\me\\AppData\\Local\\playwright-cli\\profiles\\inbox-proton",
+			}),
+		).toThrow(/protected inbox-proton profile/);
+	});
+
+	test("keeps the trusted inbox-proton launch", () => {
+		expect(
+			validateSpec({
+				...base,
+				name: "inbox-proton",
+				key: "inbox-proton",
+				profileDir: protonProfile(),
+			}).name,
+		).toBe("inbox-proton");
+	});
+
+	test("refuses an attach to the CDP port of a protected browser record", () => {
+		write({
+			name: "inbox-proton",
+			key: "inbox-proton",
+			pid: 2147483646,
+			socketPath: socketPathFor("inbox-proton"),
+			cwd: "/tmp",
+			outputDir: "/tmp",
+			mode: "cdp",
+			browser: "chrome",
+			headless: true,
+			scratch: false,
+			codegen: false,
+			profileDir: "C:\\p\\inbox-proton",
+			cdpUrl: "http://127.0.0.1:20444",
+			winPid: 4242,
+			startedAt: "2026-11-02T00:00:00.000Z",
+		});
+		expect(() =>
+			validateSpec({
+				...attached,
+				name: "mail-copy",
+				key: "mail-copy",
+				cdpUrl: "http://127.0.0.1:20444",
+			}),
+		).toThrow(/protected inbox-proton browser/);
 	});
 });

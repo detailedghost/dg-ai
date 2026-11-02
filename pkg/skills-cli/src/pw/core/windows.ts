@@ -47,7 +47,7 @@ export const isWindowsBrowser = (value: string): value is WindowsBrowser =>
 
 export const isWindowsPath = (value: string): boolean => DRIVE_PATH.test(value);
 
-const toWslPath = (windowsPath: string): string =>
+export const toWslPath = (windowsPath: string): string =>
 	windowsPath
 		.replace(
 			/^([A-Za-z]):/,

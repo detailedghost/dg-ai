@@ -169,6 +169,36 @@ describe("proton-pw openProtonSession", () => {
 		expect(calls[0]).not.toContain("https://mail.proton.me");
 	});
 
+	test("a failed navigation closes the browser this open started", async () => {
+		const calls: string[][] = [];
+		const run: PwRunner = async (argv) => {
+			calls.push(argv);
+			return argv.includes("open")
+				? { code: 1, out: "", err: "### Error\nnet::ERR_TIMED_OUT" }
+				: { code: 0, out: "", err: "" };
+		};
+		await expect(openProtonSession(spec(true), run)).rejects.toThrow(
+			/ERR_TIMED_OUT|Error/,
+		);
+		expect(calls.at(-1)).toEqual(["-s=inbox-proton", "close"]);
+	});
+
+	test("a refused open leaves the existing session alone", async () => {
+		const calls: string[][] = [];
+		const run: PwRunner = async (argv) => {
+			calls.push(argv);
+			return {
+				code: 1,
+				out: "",
+				err: "session 'inbox-proton' is open from /a (pid 7). Run 'pw -s=inbox-proton close' there or pick another -s=inbox-proton.",
+			};
+		};
+		await expect(openProtonSession(spec(true), run)).rejects.toThrow(
+			/is open from/,
+		);
+		expect(calls).toHaveLength(1);
+	});
+
 	test("a failed open reports the first stderr line", async () => {
 		const run: PwRunner = async () => ({ code: 1, out: "", err: "boom\nmore" });
 		await expect(openProtonSession(spec(true), run)).rejects.toThrow(/boom/);

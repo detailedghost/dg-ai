@@ -18,6 +18,12 @@ export type ProtonPageContext = {
 	timeoutMs?: number;
 	pace?: () => Promise<void>;
 };
+
+/** Spaces the requests inside one page operation the way a person would. */
+export const protonRequestPace = (): Promise<void> =>
+	new Promise((resolve) =>
+		setTimeout(resolve, 320 + Math.round(Math.random() ** 3 * 1500)),
+	);
 const malformed = () => new ProtonOperationError("unsupported-response");
 function record(value: unknown): RecordValue {
 	if (!value || typeof value !== "object" || Array.isArray(value))

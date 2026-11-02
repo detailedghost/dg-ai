@@ -1,6 +1,6 @@
 import type { InboxBrowserRequest, InboxBrowserResponse } from "@dg/common";
 import { ProtonOperationError } from "./page-errors";
-import { executeProtonPage } from "./page-operations";
+import { executeProtonPage, protonRequestPace } from "./page-operations";
 import type { ProtonSessionHeaders } from "./page-session";
 
 export type ProtonPageCall = {
@@ -18,6 +18,7 @@ async function runProtonPage(call: ProtonPageCall): Promise<ProtonPageResult> {
 			origin: location.origin,
 			headers: call.headers,
 			fetch: (input, init) => fetch(input, init),
+			pace: protonRequestPace,
 		});
 	} catch (error) {
 		return error instanceof ProtonOperationError

@@ -9,7 +9,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import handler from "../../../../src/pw/commands/delete-data/run";
+import { resolveDgPaths } from "@dg/common/node";
+import handler, {
+	deleteProtectedData,
+} from "../../../../src/pw/commands/delete-data/run";
 import spec from "../../../../src/pw/commands/delete-data/spec";
 import { sessionKey } from "../../../../src/pw/core/registry";
 import {
@@ -120,5 +123,66 @@ describe("delete-data", () => {
 			daemon.dispose();
 			rmSync(outside, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("delete-data on the protected Proton session", () => {
+	let dgHome = "";
+	let previousHome: string | undefined;
+
+	beforeEach(() => {
+		previousHome = process.env["DG_HOME"];
+		dgHome = mkdtempSync(path.join(tmpdir(), "pw-proton-home-"));
+		process.env["DG_HOME"] = dgHome;
+	});
+
+	afterEach(() => {
+		if (previousHome === undefined) delete process.env["DG_HOME"];
+		else process.env["DG_HOME"] = previousHome;
+		rmSync(dgHome, { recursive: true, force: true });
+	});
+
+	const inboxDir = () => path.join(resolveDgPaths().stateDir, "inbox");
+
+	test("deletes the local Proton profile and the sign-in marker", async () => {
+		mkdirSync(path.join(inboxDir(), "proton-profile", "Default"), {
+			recursive: true,
+		});
+		writeFileSync(path.join(inboxDir(), "proton-signed-in.json"), "{}");
+		const env = clientEnv();
+		expect(
+			await deleteProtectedData("inbox-proton", null, env, {
+				wsl: false,
+				windowsProfileDir: async () => {
+					throw new Error("not on WSL");
+				},
+			}),
+		).toBe(0);
+		expect(existsSync(path.join(inboxDir(), "proton-profile"))).toBe(false);
+		expect(existsSync(path.join(inboxDir(), "proton-signed-in.json"))).toBe(
+			false,
+		);
+		expect(env.stdout[0]).toContain("proton-profile");
+	});
+
+	test("looks up the Windows profile on WSL and clears the marker when nothing is saved", async () => {
+		mkdirSync(inboxDir(), { recursive: true });
+		writeFileSync(path.join(inboxDir(), "proton-signed-in.json"), "{}");
+		const asked: string[] = [];
+		const env = clientEnv();
+		expect(
+			await deleteProtectedData("INBOX-PROTON", null, env, {
+				wsl: true,
+				windowsProfileDir: async (name) => {
+					asked.push(name);
+					return "Z:\\dg-test-missing\\playwright-cli\\profiles\\inbox-proton";
+				},
+			}),
+		).toBe(0);
+		expect(asked).toEqual(["inbox-proton"]);
+		expect(existsSync(path.join(inboxDir(), "proton-signed-in.json"))).toBe(
+			false,
+		);
+		expect(env.stdout[0]).toStartWith("No saved data");
 	});
 });

@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import { commandName, normalize, optionArgs } from "./args";
+import { readAll, type SessionRecord } from "./registry";
 
 export const PROTECTED_SESSIONS: readonly string[] = ["inbox-proton"];
 
@@ -20,7 +21,18 @@ function profileFlag(options: readonly string[]): string | undefined {
 	return value;
 }
 
-function isProtectedProfile(profile: string): boolean {
+/** Finds the protected session record, live or retained, that owns a CDP endpoint's port. */
+export function protectedCdpOwner(cdpUrl: string): SessionRecord | undefined {
+	const port = new URL(cdpUrl).port;
+	return readAll().find(
+		(record) =>
+			isProtectedSession(record.name) &&
+			record.cdpUrl !== undefined &&
+			new URL(record.cdpUrl).port === port,
+	);
+}
+
+export function isProtectedProfile(profile: string): boolean {
 	const windowsStyle = /^[a-z]:|\\/i.test(profile);
 	const slashed = (
 		windowsStyle ? path.win32.normalize(profile) : path.posix.normalize(profile)
