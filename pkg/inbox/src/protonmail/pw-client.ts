@@ -87,6 +87,10 @@ async function observeHeaders(
 	throw new ProtonHeadersTimeoutError();
 }
 
+function accountOf(url: URL): string | undefined {
+	return /^\/u\/(\d+)(?:\/|$)/.exec(url.pathname)?.[1];
+}
+
 export function createPwBrowserRequest(input: {
 	dataDir: string;
 	openSession(spec: ProtonPwSessionSpec): Promise<ProtonPwSession>;
@@ -105,15 +109,37 @@ export function createPwBrowserRequest(input: {
 				? {}
 				: { url: `${PROTON_MAIL_URL}/u/${accountHint}` }),
 		}));
-	let headers: ProtonSessionHeaders | undefined;
+	let cached: { headers: ProtonSessionHeaders; account: string } | undefined;
+	let pinned: string | undefined;
 	const close = async () => {
 		const pending = opened;
 		opened = undefined;
-		headers = undefined;
+		cached = undefined;
+		pinned = undefined;
 		await pending?.then(
 			(session) => session.close(),
 			() => undefined,
 		);
+	};
+	const mismatch = () => {
+		cached = undefined;
+		return new Error(
+			protonOperationDiagnostic({ code: "account-mismatch" }) ??
+				"Proton account mismatch.",
+		);
+	};
+	const currentAccount = async (
+		page: ProtonPwPage,
+		expected: string | undefined,
+	) => {
+		const url = new URL(await page.url());
+		if (!isProtonMailOrigin(url.origin)) {
+			await close();
+			throw new ProtonSignedOutError();
+		}
+		const account = accountOf(url);
+		if (expected !== undefined && account !== expected) throw mismatch();
+		return account;
 	};
 	return {
 		close,
@@ -121,26 +147,20 @@ export function createPwBrowserRequest(input: {
 			const request = validateInboxBrowserRequest(raw);
 			const { accountHint } = request;
 			const { page } = await open(accountHint);
-			const url = new URL(await page.url());
-			if (!isProtonMailOrigin(url.origin)) {
-				await close();
-				throw new ProtonSignedOutError();
+			let account = await currentAccount(page, accountHint ?? pinned);
+			if (cached && cached.account !== account) throw mismatch();
+			let headers = cached?.headers;
+			if (!headers) {
+				try {
+					headers = await observeHeaders(page);
+				} catch (error) {
+					if (error instanceof ProtonSignedOutError) await close();
+					throw error;
+				}
+				account = await currentAccount(page, accountHint ?? pinned ?? account);
+				if (account !== undefined) cached = { headers, account };
 			}
-			if (accountHint !== undefined) {
-				const path = url.pathname;
-				const prefix = `/u/${accountHint}`;
-				if (path !== prefix && !path.startsWith(`${prefix}/`))
-					throw new Error(
-						protonOperationDiagnostic({ code: "account-mismatch" }) ??
-							"Proton account mismatch.",
-					);
-			}
-			try {
-				headers ??= await observeHeaders(page);
-			} catch (error) {
-				if (error instanceof ProtonSignedOutError) await close();
-				throw error;
-			}
+			pinned ??= account;
 			const result = (await page.evaluate(PAGE_SCRIPT, {
 				request,
 				headers,
