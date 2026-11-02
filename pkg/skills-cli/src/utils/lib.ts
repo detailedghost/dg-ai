@@ -56,7 +56,8 @@ export function extensionDest(
 	printPath: string;
 } {
 	const name = `dg-ai-extension-${target}`;
-	if (env.DG_WINDOWS_HOME) {
+	const windowsHost = isWSL() || process.platform === "win32";
+	if (windowsHost && env.DG_WINDOWS_HOME) {
 		const p = join(env.DG_WINDOWS_HOME, ".dg", name);
 		return { copyPath: p, printPath: p };
 	}
