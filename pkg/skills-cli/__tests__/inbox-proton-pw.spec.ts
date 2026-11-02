@@ -63,7 +63,8 @@ describe("inbox commands on a signed-out Proton pw profile", () => {
 				["profile", "set", "work", "--provider", "protonmail"],
 				{ XDG_CACHE_HOME: `${h.cwd}/cache` },
 			);
-			expect(result.code).not.toBe(4);
+			expect(result.code, result.stderr).toBe(1);
+			expect(result.stderr).toContain("Inbox profile or live mail access");
 			expect(result.stderr).not.toContain(SIGN_IN_COMMAND);
 		} finally {
 			h.cleanup();

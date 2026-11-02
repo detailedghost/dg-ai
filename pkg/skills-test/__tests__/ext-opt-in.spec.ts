@@ -82,7 +82,8 @@ function groupWithoutExtLines(text: string): string[] {
 	return lines
 		.map((line, i) => {
 			const next = lines[i + 1] ?? "";
-			const continued = /^\s/.test(next) || line.trimEnd().endsWith("\\");
+			const continued =
+				next.trimStart().startsWith("--") || line.trimEnd().endsWith("\\");
 			return { line, window: continued ? `${line}\n${next}` : line };
 		})
 		.filter(({ line }) => line.includes("batch-open"))
@@ -301,6 +302,11 @@ describe("ext opt-in doc grep gate: batch-open callers never group without --ext
 		expect(
 			groupWithoutExtLines(
 				"dg-skills batch-open --group pr <url>\ndg-skills launch --ext <url>",
+			),
+		).toHaveLength(1);
+		expect(
+			groupWithoutExtLines(
+				"  dg-skills batch-open --group pr <url>\n  dg-skills launch --ext <url>",
 			),
 		).toHaveLength(1);
 	});
