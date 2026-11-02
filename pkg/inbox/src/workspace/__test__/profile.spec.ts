@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { detectProfileProvider, workspaceDirForProfile } from "../profile";
+import { makeTempDir, removeTempDirs } from "../../../test/temp-dirs";
+
+afterEach(removeTempDirs);
 
 function tmpBase(name: string): string {
-	return `/tmp/email-organizer-tests-${crypto.randomUUID()}/${name}`;
+	return `${makeTempDir("email-organizer-tests-")}/${name}`;
 }
 
 describe("workspaceDirForProfile", () => {

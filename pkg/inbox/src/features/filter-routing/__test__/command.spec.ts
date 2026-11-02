@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { main } from "../../../cli/index";
 import { writeJsonFile } from "../../../utils/json";
+import { makeTempDir, removeTempDirs } from "../../../../test/temp-dirs";
+
+afterEach(removeTempDirs);
 
 async function runCli(args: string[]) {
 	const stdout: string[] = [];
@@ -26,7 +29,7 @@ async function runCli(args: string[]) {
 }
 
 function tmpPath(name: string): string {
-	return `/tmp/email-organizer-route-tests-${crypto.randomUUID()}/${name}`;
+	return `${makeTempDir("email-organizer-route-tests-")}/${name}`;
 }
 
 describe("filter routing feature", () => {
