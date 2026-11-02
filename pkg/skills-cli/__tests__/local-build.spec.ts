@@ -1,8 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { localBuildScripts, resolveLocalRepo } from "../src/commands/install";
+import { scratchFixtures } from "./git-repo-fixtures";
+
+const fixtures = scratchFixtures();
+
+afterEach(() => fixtures.cleanup());
 
 describe("localBuildScripts", () => {
 	test("installs dependencies first when they are missing", () => {
@@ -25,7 +30,7 @@ describe("localBuildScripts", () => {
 
 describe("resolveLocalRepo", () => {
 	const fakeRepo = () => {
-		const root = mkdtempSync(join(tmpdir(), "dg-repo-"));
+		const root = fixtures.tmp("dg-repo-");
 		mkdirSync(join(root, "pkg", "extension"), { recursive: true });
 		writeFileSync(join(root, "pkg", "extension", "package.json"), "{}");
 		return root;
@@ -49,7 +54,7 @@ describe("resolveLocalRepo", () => {
 	});
 
 	test("names the fix when the working directory is outside a dg repo", () => {
-		const outside = mkdtempSync(join(tmpdir(), "dg-outside-"));
+		const outside = fixtures.tmp("dg-outside-");
 		expect(() => resolveLocalRepo(undefined, outside, outside)).toThrow(
 			"no pkg/extension to build from: run this from inside the dg repo or pass --repo <path>",
 		);

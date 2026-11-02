@@ -1,13 +1,14 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSkillsCli } from "../build";
 import * as cliFixtures from "./cli-fixtures";
-import { git as runGit } from "./git-repo-fixtures";
+import { git as runGit, scratchFixtures } from "./git-repo-fixtures";
 
 setDefaultTimeout(60_000);
 
+const fixtures = scratchFixtures();
 const root = mkdtempSync(join(tmpdir(), "dg-test-live-compiled-"));
 const binary = join(root, "moved-install", "dg-skills");
 const entrypoint = join(root, "test-live-entry.ts");
@@ -35,18 +36,20 @@ afterAll(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
+afterEach(() => fixtures.cleanup());
+
 function isolatedEnv(): Record<string, string> {
 	return cliFixtures.isolatedGitEnv({
 		path: gitOnlyBin,
-		home: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-home-")),
-		scratch: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-scratch-")),
-		state: mkdtempSync(join(tmpdir(), "dg-test-live-compiled-state-")),
+		home: fixtures.tmp("dg-test-live-compiled-home-"),
+		scratch: fixtures.tmp("dg-test-live-compiled-scratch-"),
+		state: fixtures.tmp("dg-test-live-compiled-state-"),
 	});
 }
 
 describe("compiled dg-skills test-live from an external cwd, with no legacy scripts on PATH", () => {
 	test("rejects a GitLab origin with no network call and no git mutation", async () => {
-		const cwd = mkdtempSync(join(tmpdir(), "dg-test-live-compiled-gitlab-"));
+		const cwd = fixtures.tmp("dg-test-live-compiled-gitlab-");
 		runGit(["init", "-q", "-b", "feature/external-cwd"], cwd);
 		runGit(["remote", "add", "origin", "git@gitlab.com:acme/widgets.git"], cwd);
 		runGit(["commit", "-q", "--allow-empty", "-m", "chore: init"], cwd);
@@ -63,7 +66,7 @@ describe("compiled dg-skills test-live from an external cwd, with no legacy scri
 	});
 
 	test("cleanup with no prior setup reports a missing state file", async () => {
-		const cwd = mkdtempSync(join(tmpdir(), "dg-test-live-compiled-cleanup-"));
+		const cwd = fixtures.tmp("dg-test-live-compiled-cleanup-");
 		runGit(["init", "-q", "-b", "feature/external-cwd"], cwd);
 		runGit(["commit", "-q", "--allow-empty", "-m", "chore: init"], cwd);
 

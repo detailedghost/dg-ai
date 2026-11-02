@@ -25,7 +25,9 @@ import {
 	wait,
 	writeSentinel,
 } from "../src/prototype/sentinels";
-import { git, makeGitRepo, makeTempDir } from "./git-repo-fixtures";
+import { git, makeTempDir, scratchFixtures } from "./git-repo-fixtures";
+
+const fixtures = scratchFixtures();
 
 let root: string;
 let previousScratch: string | undefined;
@@ -38,6 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	fixtures.cleanup();
 	if (previousScratch === undefined) delete process.env.AI_SCRATCH_DIR;
 	else process.env.AI_SCRATCH_DIR = previousScratch;
 	chmodSync(root, 0o700);
@@ -208,13 +211,14 @@ describe("prototype sentinels", () => {
 
 describe("prototype directory resolution", () => {
 	function addWorktree(main: string, name: string): string {
-		const path = join(makeTempDir("dg-prototype-wt-"), name);
+		const path = join(fixtures.tmp("dg-prototype-wt-"), name);
 		git(["worktree", "add", "-q", "-b", name, path], main);
 		return path;
 	}
 
 	function repo(): string {
-		const main = makeGitRepo();
+		const main = fixtures.tmp("dg-prototype-repo-");
+		git(["init", "-q", "-b", "main"], main);
 		git(["commit", "--allow-empty", "-q", "-m", "init"], main);
 		return main;
 	}

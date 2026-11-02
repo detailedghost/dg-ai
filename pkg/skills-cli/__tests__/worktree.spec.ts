@@ -352,8 +352,9 @@ describe("worktree create options", () => {
 	});
 
 	test("a failed fetch warns and proceeds from the local origin ref", async () => {
-		const repo = fixtures.tmp("worktree-offline-");
-		cliFixtures.initTrackedRepo(repo, join(repo, "missing remote.git"));
+		const root = fixtures.tmp("worktree-offline-");
+		const repo = join(root, "widgets repo");
+		cliFixtures.initTrackedRepo(repo, join(root, "missing remote.git"));
 		const result = await worktree(["create", "offline"], repo);
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toContain("fetch origin/main failed");

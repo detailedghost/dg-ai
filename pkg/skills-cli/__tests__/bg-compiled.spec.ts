@@ -46,7 +46,7 @@ beforeAll(() => {
 afterEach(() => world.cleanup());
 afterAll(() => {
 	installation.cleanup();
-	return world.cleanup();
+	return world.destroy();
 });
 
 function script(name: string, body: string): string {

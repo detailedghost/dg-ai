@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_PATH } from "../../src/doctor/probes";
@@ -7,10 +7,22 @@ import { HOOKS_ALLOW_RULES, hooksChecks } from "../../src/hooks/doctor";
 import { ownedCommand } from "../../src/hooks/settings/marker";
 import { settingsWorld, USER_HOOK } from "../hooks-settings/settings-fixtures";
 
+const worlds: ReturnType<typeof settingsWorld>[] = [];
+
+afterEach(() => {
+	for (const world of worlds.splice(0)) world.cleanup();
+});
+
+function newWorld() {
+	const world = settingsWorld();
+	worlds.push(world);
+	return world;
+}
+
 const RUNTIME_IDS = ["settings-claude", "settings-codex", "settings-opencode"];
 
 function setup(env: NodeJS.ProcessEnv = { PATH: "" }) {
-	const world = settingsWorld();
+	const world = newWorld();
 	const ctx = {
 		home: world.home,
 		env: { DG_HOME: world.dgHome, ...env },
@@ -138,7 +150,7 @@ describe("stale-entries", () => {
 	});
 
 	test("is ok when a bare dg-skills launcher resolves through PATH", async () => {
-		const world = settingsWorld();
+		const world = newWorld();
 		const bin = join(world.dgHome, "bin");
 		chmodSync(world.seed(join(bin, "dg-skills"), "x"), 0o755);
 		const { run, claudeWith } = setup({ PATH: bin });
