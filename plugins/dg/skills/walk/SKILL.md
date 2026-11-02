@@ -1,13 +1,13 @@
 ---
 name: walk
-description: 'Walk the user through every open question in the current conversation, one question at a time, each with a recommendation. Use when the user says "walk me through the open questions", "what is still open", "go through the open items", or invokes /dg:walk. Optional topic filter: /dg:walk <word>.'
+description: 'Walk the user through every open question in the current conversation, one question at a time, each with a recommendation. Use when the user says "walk me through the open questions", "what is still open", "go through the open items", or invokes /dg:walk. Optional topic filter: /dg:walk <word>. /dg:walk stat walks the open user items on the stat checklist.'
 ---
 
 # /dg:walk — Walk the Open Questions
 
 Collect every open question in this conversation. Ask them one at a time. Each one carries a recommendation. Run this in the main loop only, because only the main loop has `AskUserQuestion`.
 
-**Usage:** `/dg:walk` (all open questions) · `/dg:walk <filter>` (only questions that match the topic word, for example `/dg:walk dg`)
+**Usage:** `/dg:walk` (all open questions) · `/dg:walk <filter>` (only questions that match the topic word, for example `/dg:walk dg`) · `/dg:walk stat` (the open user items on the stat checklist)
 
 ## 1. Collect
 
@@ -22,6 +22,8 @@ Drop a question when:
 
 - The user already answered it, even in passing.
 - Later work made it moot.
+
+With the word `stat`, collect only the open user items from `~/.dg/bin/dg-skills stat checklist --json`. Take every item in `open` (and its `children`) whose `owner` is `user`. Treat each as one question, with `blocked-user` items first. Skip the scan above.
 
 Merge duplicates. With a filter, keep only questions that match the topic word.
 

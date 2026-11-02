@@ -67,7 +67,32 @@ describe("dg-skills stat checklist", () => {
 			const nfLines = (await runAwk(["-F", "\t", "!/^#/ {print NF}"], out)).trim().split("\n");
 			expect(new Set(nfLines)).toEqual(new Set(["7"]));
 			const statusColumn = await runAwk(["-F", "\t", "!/^#/ && NR>1 {print $3}"], out);
-			expect(statusColumn.trim().split("\n")).toEqual(["running", "running", "blocked-user"]);
+			expect(statusColumn.trim().split("\n")).toEqual(["blocked-user", "running", "running"]);
+		});
+	});
+
+	test("-l prints the waiting-on-you offer as a # line that awk skips", async () => {
+		await withRoot(async (env) => {
+			await runCli(["stat", "add", "Approve it", "--status", "blocked-user"], env);
+			const { out } = await runCli(["stat", "checklist", "-l"], env);
+			expect(out).toContain("# Waiting on you: 1 item. Run /dg:walk stat to walk them.");
+			const kept = await runAwk(["!/^#/"], out);
+			expect(kept).not.toContain("Waiting on you");
+		});
+	});
+
+	test("add --under takes the number the checklist shows, not the stored position", async () => {
+		await withRoot(async (env) => {
+			await runCli(["stat", "add", "short", "--status", "running", "--eta", "<5 min"], env);
+			await runCli(["stat", "add", "long", "--status", "running", "--eta", ">1 hr"], env);
+			const added = await runCli(["stat", "add", "kid", "--under", "1"], env);
+			expect(JSON.parse(added.out)).toMatchObject({ order: "1.1", text: "kid" });
+			const { out } = await runCli(["stat", "checklist", "-p"], env);
+			expect(out.split("\n").slice(0, 3)).toEqual([
+				"1. [ ] running: long [>1 hr]",
+				"   1. [ ] queued: kid",
+				"2. [ ] running: short [<5 min]",
+			]);
 		});
 	});
 

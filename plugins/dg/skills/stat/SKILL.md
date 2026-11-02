@@ -47,43 +47,46 @@ One status per item drives its emoji (default view), its word (`--plain` and `--
 Example (`/dg:stat`, default view):
 
 ```
-1. 🔄 Phone feature to PR [~1 hr]
+1. 🛑 Approve the Wave 6/7 PR batch
+2. 🔄 Phone feature to PR [~1 hr]
    1. 🔄 Fix the flaky listener test
-2. ⏳ Slice 6 [~15 min]
-3. 🛑 Approve the Wave 6/7 PR batch
+3. ⏳ Slice 6 [~15 min]
 4. 👀 Sign the vendor form
 5. ✅ Sign in to GitHub
 
-Total: ~1 hr (critical path: 1 Phone feature to PR)
+Total: ~1 hr (critical path: 2 Phone feature to PR)
+Waiting on you: 2 items. Run /dg:walk stat to walk them.
 ```
 
 The same checklist, `--plain`:
 
 ```text
-1. [ ] running: Phone feature to PR [~1 hr]
+1. [ ] blocked-user: Approve the Wave 6/7 PR batch
+2. [ ] running: Phone feature to PR [~1 hr]
    1. [ ] running: Fix the flaky listener test
-2. [ ] queued: Slice 6 [~15 min]
-3. [ ] blocked-user: Approve the Wave 6/7 PR batch
+3. [ ] queued: Slice 6 [~15 min]
 4. [ ] needs-user: Sign the vendor form
 5. [x] done: Sign in to GitHub
 
-# Total: ~1 hr (critical path: 1 Phone feature to PR)
+# Total: ~1 hr (critical path: 2 Phone feature to PR)
+Waiting on you: 2 items. Run /dg:walk stat to walk them.
 ```
 
 The same checklist, `--long` (tab-separated):
 
 ```text
 ORDER	OWNER	STATUS	WORK	DETAIL	PR/MR	ETA
-1	agent	running	Phone feature to PR	-	-	~1 hr
+1	user	blocked-user	Approve the Wave 6/7 PR batch	-	-	-
+2	agent	running	Phone feature to PR	-	-	~1 hr
 -	agent	running	Fix the flaky listener test	-	-	-
-2	agent	queued	Slice 6	-	-	~15 min
-3	user	blocked-user	Approve the Wave 6/7 PR batch	-	-	-
+3	agent	queued	Slice 6	-	-	~15 min
 4	user	needs-user	Sign the vendor form	-	-	-
 5	-	done	Sign in to GitHub	-	-	-
-# Total: ~1 hr (critical path: 1 Phone feature to PR)
+# Total: ~1 hr (critical path: 2 Phone feature to PR)
+# Waiting on you: 2 items. Run /dg:walk stat to walk them.
 ```
 
-Open items are numbered in priority order (the order they need doing, not insertion time); done items continue the same numbers, newest first, capped. A sub-item nests one level under its parent and restarts its own number at 1 in the default and `--plain` views. On `--long`, a sub-item row carries `-` in `ORDER` instead and prints directly under its parent, in stored order — rows already print in priority order, so there is nothing to sort. When a sub-item is the critical path, that total reads `(critical path: <text>, under <parent number>)`, using the parent number visible in ORDER. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
+Open items are numbered in display order: `blocked-user` items first, then the critical-path chain, then other agent chains from longest ETA to shortest (no ETA last), then `parked`, then `needs-user`. The data model has no gate relation, so user items sort by status alone. Stored order breaks ties. `--at` and `--under` take the number shown. Done items continue the same numbers, newest first, capped. A sub-item nests one level under its parent and restarts its own number at 1 in the default and `--plain` views. On `--long`, a sub-item row carries `-` in `ORDER` instead and prints directly under its parent, in stored order — rows already print in priority order, so there is nothing to sort. When a sub-item is the critical path, that total reads `(critical path: <text>, under <parent number>)`, using the parent number visible in ORDER. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
 
 ## 1. Gather: one Bash call, filtered in the shell
 
@@ -114,6 +117,7 @@ Print the checklist view the caller asked for, as the CLI renders it. With no fl
 
 The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Two things are still judgment, left to the main loop:
 
+- **Items waiting on the user.** When the CLI prints a `Waiting on you: N items.` line, keep it. Then offer to hand those items to `/dg:walk stat`. Ask once. Do not start the walk without a yes.
 - **Session-only work not yet on the list.** Prefer adding it first (see "Keeping the list current" below), so the checklist already reflects it. If you do not, append a short, plain trailer after the CLI's own output: `Also running, not on the list:` followed by one line per item. Do this for the default and `--plain` views; for `--long`, append the same items as additional rows (see below) instead.
 - **A fuller critical-path total.** The CLI's `Total:`/`# Total:` line is computed from checklist agent ETAs alone. When this session also has foreground or background work not on the checklist, recompute the total as `max(foreground serial chain, longest background chain)` — the critical path, not the sum — folding in the checklist's own total as one candidate chain. Replace the CLI's total line with this fuller one; name the chain that set the number.
 
