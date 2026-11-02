@@ -97,7 +97,7 @@ The voice model downloads on the first voiced run (about 86 MB, pinned revision)
 CLI checksum-verifies the asset zip. `ffmpeg` is optional. Without it, the CLI keeps a
 sidecar `.wav` beside the video. Offline, the run falls back to captions. A site
 Content Security Policy can block the in-page voice. The run then records without
-voice and says why.
+voice and says why. With `ffmpeg`, the CLI also trims the start screen and setup time off the video (`startOffsetMs` in the result); without it, the full video stays.
 
 ## Replay and extension
 

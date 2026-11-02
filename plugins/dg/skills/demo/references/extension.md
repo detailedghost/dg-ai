@@ -11,7 +11,7 @@ The plan format is the same as the local flow. See [authoring.md](authoring.md).
 ## Review panel
 
 `--edit` (with `--ext`) opens the review panel before the tour plays. Locally, the
-start screen always offers Review.
+start screen always offers Review. Known limit: the local review panel keeps its draft only while the page stays on one URL.
 
 ## Recording
 
