@@ -75,3 +75,41 @@ describe("prototype page escaping", () => {
 		).toThrow(message);
 	});
 });
+
+describe("prototype viewer width", () => {
+	const html = render(parseManifestSource("---\nname: x\n---\n::: A\nx\n:::\n"));
+
+	test("passes the page straight through by default with no padding", () => {
+		expect(html).not.toMatch(/\nsection\[data-variant\]\{[^}]*max-width/);
+		expect(html).toMatch(/\n#proto-root\{min-height:100vh;\}/);
+		expect(html).not.toMatch(/#proto-root[^{]*\{[^}]*padding/);
+	});
+
+	test("labels the default width Responsive", () => {
+		expect(html).toMatch(/data-w="all" aria-checked="true"><span data-icon="all"><\/span>Responsive</);
+		expect(html).not.toContain("All widths");
+	});
+
+	test("offers a framed option that restores the 960px frame", () => {
+		expect(html).toContain('data-w="framed"');
+		expect(html).toMatch(
+			/#proto-root\[data-width="framed"\] section\[data-variant\]\{[^}]*max-width:960px/,
+		);
+	});
+
+	test("keeps the mobile and tablet widths", () => {
+		expect(html).toMatch(
+			/#proto-root\[data-width="mobile"\] section\[data-variant\]\{max-width:390px;\}/,
+		);
+		expect(html).toMatch(
+			/#proto-root\[data-width="tablet"\] section\[data-variant\]\{max-width:768px;\}/,
+		);
+	});
+
+	test("fixed widths only narrow the variant", () => {
+		expect(html).toMatch(
+			/#proto-root\[data-width="desktop"\] section\[data-variant\]\{max-width:1440px;\}/,
+		);
+		expect(html).toMatch(/\nsection\[data-variant\]\{display:none;margin:0 auto;\}/);
+	});
+});

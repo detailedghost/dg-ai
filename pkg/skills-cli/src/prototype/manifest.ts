@@ -262,12 +262,13 @@ html[data-theme="light"]{ --bg:#f7f7f8; --fg:#1a1a1e; --muted:#6b7280; --border:
 html[data-theme="dark"]{ --bg:#0f1115; --fg:#e8ecf2; --muted:#8b93a3; --border:#262a33; --surface:#161a21; }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
-#proto-root{min-height:100vh;padding:2.5rem 2rem 7rem;}
-section[data-variant]{display:none;max-width:960px;margin:0 auto;}
+#proto-root{min-height:100vh;}
+section[data-variant]{display:none;margin:0 auto;}
 section[data-variant].is-active{display:block;}
 #proto-root[data-width="mobile"] section[data-variant]{max-width:390px;}
 #proto-root[data-width="tablet"] section[data-variant]{max-width:768px;}
 #proto-root[data-width="desktop"] section[data-variant]{max-width:1440px;}
+#proto-root[data-width="framed"] section[data-variant]{max-width:960px;}
 #protobar{
   --pk-surface:#ffffff;--pk-surface-2:#fafaf8;--pk-fg:#18181b;--pk-mut:#5f5f66;--pk-line:#cfcfc8;--pk-acc:#0f766e;--pk-acc-soft:#e6f4f2;
   --pk-ok:#15803d;--pk-ok-soft:#e8f6ec;--pk-bad:#dc2626;--pk-bad-soft:#fdecec;--pk-note:#a16207;--pk-note-soft:#fef6c7;
@@ -339,10 +340,11 @@ ${sections}
     <div class="pk-menu-wrap">
       <button type="button" id="proto-width" class="ic" data-icon="all" aria-haspopup="menu" aria-expanded="false" aria-controls="proto-width-menu" title="Width: all" aria-label="Width: all"></button>
       <div id="proto-width-menu" class="pk-menu" role="menu" aria-label="Preview width" hidden>
-        <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>All widths</button>
+        <button type="button" role="menuitemradio" data-w="all" aria-checked="true"><span data-icon="all"></span>Responsive</button>
         <button type="button" role="menuitemradio" data-w="mobile" aria-checked="false"><span data-icon="phone"></span>Mobile</button>
         <button type="button" role="menuitemradio" data-w="tablet" aria-checked="false"><span data-icon="tablet"></span>Tablet</button>
         <button type="button" role="menuitemradio" data-w="desktop" aria-checked="false"><span data-icon="monitor"></span>Desktop</button>
+        <button type="button" role="menuitemradio" data-w="framed" aria-checked="false"><span data-icon="monitor"></span>Framed</button>
       </div>
     </div>
     <span class="pk-sep" aria-hidden="true"></span>
@@ -411,8 +413,8 @@ ${sections}
   var modeBtn = document.getElementById('proto-mode');
   var widthBtn = document.getElementById('proto-width');
   var widthMenu = document.getElementById('proto-width-menu');
-  var WIDTH_ICONS = { all: 'all', mobile: 'phone', tablet: 'tablet', desktop: 'monitor' };
-  var WIDTH_NAMES = { all: 'all', mobile: 'mobile 390', tablet: 'tablet 768', desktop: 'desktop 1440' };
+  var WIDTH_ICONS = { all: 'all', mobile: 'phone', tablet: 'tablet', desktop: 'monitor', framed: 'monitor' };
+  var WIDTH_NAMES = { all: 'all', mobile: 'mobile 390', tablet: 'tablet 768', desktop: 'desktop 1440', framed: 'framed 960' };
   var TEXT_ICONS = { sun: '☀', moon: '☾', all: '▦', phone: '▯', tablet: '▭', monitor: '▬', left: '‹', right: '›', note: '✎', check: '✓', rework: '⟳', plus: '+' };
 
   function setIcon(node, name){
