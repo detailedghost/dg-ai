@@ -74,15 +74,28 @@ export function protonProfilePaths(dataDir: string): {
 	};
 }
 
+const pause = () => new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
+
 async function observeHeaders(
 	page: ProtonPwPage,
+	verify: () => Promise<string | undefined>,
 ): Promise<ProtonSessionHeaders> {
 	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
-		if (!isProtonMailOrigin(new URL(await page.url()).origin))
-			throw new ProtonSignedOutError();
+		await verify();
 		const headers = await page.observedHeaders();
 		if (headers?.uid) return headers;
-		await new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
+		await pause();
+	}
+	throw new ProtonHeadersTimeoutError();
+}
+
+async function resolveAccount(
+	verify: () => Promise<string | undefined>,
+): Promise<string> {
+	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
+		const account = await verify();
+		if (account !== undefined) return account;
+		await pause();
 	}
 	throw new ProtonHeadersTimeoutError();
 }
@@ -130,7 +143,7 @@ export function createPwBrowserRequest(input: {
 	};
 	const currentAccount = async (
 		page: ProtonPwPage,
-		expected: string | undefined,
+		...expected: (string | undefined)[]
 	) => {
 		const url = new URL(await page.url());
 		if (!isProtonMailOrigin(url.origin)) {
@@ -138,7 +151,8 @@ export function createPwBrowserRequest(input: {
 			throw new ProtonSignedOutError();
 		}
 		const account = accountOf(url);
-		if (expected !== undefined && account !== expected) throw mismatch();
+		for (const want of expected)
+			if (want !== undefined && account !== want) throw mismatch();
 		return account;
 	};
 	return {
@@ -147,23 +161,25 @@ export function createPwBrowserRequest(input: {
 			const request = validateInboxBrowserRequest(raw);
 			const { accountHint } = request;
 			const { page } = await open(accountHint);
-			let account = await currentAccount(page, accountHint ?? pinned);
+			const verify = () => currentAccount(page, accountHint, pinned);
+			const account = await resolveAccount(verify);
+			pinned ??= account;
 			if (cached && cached.account !== account) throw mismatch();
 			let headers = cached?.headers;
 			if (!headers) {
 				try {
-					headers = await observeHeaders(page);
+					headers = await observeHeaders(page, verify);
 				} catch (error) {
 					if (error instanceof ProtonSignedOutError) await close();
 					throw error;
 				}
-				account = await currentAccount(page, accountHint ?? pinned ?? account);
-				if (account !== undefined) cached = { headers, account };
+				await verify();
+				cached = { headers, account };
 			}
-			pinned ??= account;
 			const result = (await page.evaluate(PAGE_SCRIPT, {
 				request,
 				headers,
+				account,
 			})) as ProtonPageResult;
 			if (result && typeof result === "object" && "error" in result) {
 				const failure = result.error as { code?: unknown; status?: unknown };

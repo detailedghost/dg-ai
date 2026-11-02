@@ -247,10 +247,17 @@ describe("page-entry", () => {
 		}) as never);
 		try {
 			globals.fetch = api.fetch;
-			globals.location = { origin: "https://mail.proton.me" };
+			globals.location = {
+				origin: "https://mail.proton.me",
+				pathname: "/u/0/inbox",
+			};
 			await import("../page-entry");
 			const runPage = globals.__dgProtonRun as (call: unknown) => Promise<unknown>;
-			const result = await runPage({ request: { operation: "list-folders" }, headers });
+			const result = await runPage({
+				request: { operation: "list-folders" },
+				headers,
+				account: "0",
+			});
 			expect(result).toHaveProperty("folders");
 			expect(api.calls.length).toBeGreaterThan(1);
 			expect(delays.filter((ms) => ms >= 320).length).toBeGreaterThanOrEqual(
@@ -258,6 +265,31 @@ describe("page-entry", () => {
 			);
 		} finally {
 			timers.mockRestore();
+			globals.fetch = saved.fetch;
+			globals.location = saved.location;
+		}
+	});
+
+	test("refuses to run when the page path is not the resolved account", async () => {
+		const api = protonApi(dataset);
+		const globals = globalThis as Record<string, unknown>;
+		const saved = { fetch: globals.fetch, location: globals.location };
+		try {
+			globals.fetch = api.fetch;
+			globals.location = {
+				origin: "https://mail.proton.me",
+				pathname: "/u/1/inbox",
+			};
+			await import("../page-entry");
+			const runPage = globals.__dgProtonRun as (call: unknown) => Promise<unknown>;
+			const result = await runPage({
+				request: { operation: "list-folders" },
+				headers,
+				account: "0",
+			});
+			expect(result).toEqual({ error: { code: "account-mismatch" } });
+			expect(api.calls).toHaveLength(0);
+		} finally {
 			globals.fetch = saved.fetch;
 			globals.location = saved.location;
 		}
