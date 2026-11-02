@@ -79,9 +79,9 @@ describe("prototype page escaping", () => {
 describe("prototype viewer width", () => {
 	const html = render(parseManifestSource("---\nname: x\n---\n::: A\nx\n:::\n"));
 
-	test("fills the window by default with no 960px cap or side padding", () => {
+	test("fills the window by default with zero top and side padding", () => {
 		expect(html).not.toMatch(/\nsection\[data-variant\]\{[^}]*max-width/);
-		expect(html).toMatch(/#proto-root\{[^}]*padding:2\.5rem 0 7rem/);
+		expect(html).toMatch(/#proto-root\{[^}]*padding:0 0 7rem/);
 	});
 
 	test("offers a framed option that restores the 960px frame", () => {
@@ -100,9 +100,14 @@ describe("prototype viewer width", () => {
 		);
 	});
 
-	test("keeps side padding on every fixed width", () => {
+	test("has no default max-width on the desktop variant", () => {
+		expect(html).not.toMatch(/\nsection\[data-variant\]\{[^}]*max-width/);
+		expect(html).toMatch(/\n#proto-root\{[^}]*padding:0 0 7rem/);
+	});
+
+	test("keeps the old padding on every fixed width including framed", () => {
 		expect(html).toMatch(
-			/#proto-root\[data-width\]:not\(\[data-width="all"\]\)\{padding-inline:2rem;\}/,
+			/#proto-root\[data-width\]:not\(\[data-width="all"\]\)\{padding:2\.5rem 2rem 7rem;\}/,
 		);
 	});
 });
