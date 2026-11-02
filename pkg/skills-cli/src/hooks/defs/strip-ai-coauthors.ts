@@ -30,6 +30,16 @@ export function describeStripResolution({ on, saved, override }: StripResolution
 		: state;
 }
 
+const UTF8_NAME = /^(?:utf-?8)?$/i;
+
+function decodeUtf8(bytes: Uint8Array): string | undefined {
+	try {
+		return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+	} catch {
+		return undefined;
+	}
+}
+
 function commentCharOf(configured: string, message: string): string {
 	if (configured === "") return "#";
 	if (configured !== "auto") return configured.slice(0, 1);
@@ -42,7 +52,11 @@ export async function stripCommitMessageFile(
 	run: CommandRunner,
 ): Promise<void> {
 	if (!resolveStripAiCoauthors(env).on) return;
-	const message = readFileSync(file, "utf8");
+	const bytes = readFileSync(file);
+	const message = decodeUtf8(bytes);
+	if (message === undefined) return;
+	const encoding = await run(["git", "config", "--get", "i18n.commitEncoding"]);
+	if (encoding.status === 0 && !UTF8_NAME.test(encoding.stdout.trim())) return;
 	const config = await run(["git", "config", "--get", "core.commentChar"]);
 	const configured = config.status === 0 ? config.stdout.trim() : "";
 	const stripped = stripAiCoauthors(message, commentCharOf(configured, message));

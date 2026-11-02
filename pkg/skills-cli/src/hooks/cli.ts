@@ -343,9 +343,12 @@ async function disable(
 		removed = removeCommitMsgHook(located.file);
 		if (removed) io.seams.stdout(`git: disabled ${STRIP_ID} (${located.file})\n`);
 	}
-	if (removed || ids !== undefined)
-		writeDgConfig({ hooks: { [STRIP_ID]: { enabled: "off" } } }, io.env);
+	if (removed || ids !== undefined || parsed.all) turnStripOff(io);
 	return 0;
+}
+
+function turnStripOff(io: HooksIo): void {
+	writeDgConfig({ hooks: { [STRIP_ID]: { enabled: "off" } } }, io.env);
 }
 
 function set(parsed: Parsed, io: HooksIo): number {

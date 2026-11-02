@@ -194,6 +194,30 @@ describe("hooks disable strip-ai-coauthors", () => {
 		}
 	});
 
+	test("--all turns the setting off when this repo has no installed hook", async () => {
+		const repo = makeRepo(USER_HOOK);
+		await world.cli(["set", ID, "enabled", "on"]);
+		expect((await cli(["disable", "--all"], repo.dir)).code).toBe(0);
+		expect((await cli(["status"], repo.dir)).stdout).toContain(`${ID}.enabled = off\n`);
+	});
+
+	test("--all outside a git repository turns the setting off", async () => {
+		const dir = world.tmp("not-a-repo-");
+		await world.cli(["set", ID, "enabled", "on"]);
+		expect((await cli(["disable", "--all"], dir)).code).toBe(0);
+		expect((await cli(["status"], dir)).stdout).toContain(`${ID}.enabled = off\n`);
+	});
+
+	test("status still reports the override after --all", async () => {
+		const dir = world.tmp("not-a-repo-");
+		await world.cli(["set", ID, "enabled", "on"]);
+		await cli(["disable", "--all"], dir);
+		const status = await cli(["status"], dir, { DG_STRIP_AI_COAUTHORS: "1" });
+		expect(status.stdout).toContain(
+			`${ID}.enabled = on (DG_STRIP_AI_COAUTHORS=1 overrides saved off)\n`,
+		);
+	});
+
 	test("--all outside a git repository skips the git hook without failing", async () => {
 		expect((await cli(["disable", "--all"], world.tmp("not-a-repo-"))).code).toBe(
 			0,
@@ -249,6 +273,48 @@ describe("hooks status and run", () => {
 		expect((await world.cli(["run", ID, file])).code).toBe(0);
 		expect(readFileSync(file, "utf8")).toBe(AI_MESSAGE);
 	});
+
+	test("run leaves a Latin-1 message byte-for-byte unchanged", async () => {
+		const file = join(world.tmp("msg-"), "COMMIT_EDITMSG");
+		const bytes = Buffer.concat([
+			Buffer.from("feat(scope): caf", "latin1"),
+			Buffer.from([0xe9]),
+			Buffer.from(
+				"\n\nBody.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+				"latin1",
+			),
+		]);
+		writeFileSync(file, bytes);
+		await world.cli(["set", ID, "enabled", "on"]);
+		expect((await world.cli(["run", ID, file])).code).toBe(0);
+		expect(readFileSync(file).equals(bytes)).toBe(true);
+	});
+
+	test.each(["ISO-8859-1", "latin1"])(
+		"run leaves the message unchanged when i18n.commitEncoding is %s",
+		async (encoding) => {
+			const repo = makeRepo();
+			runGit(["config", "i18n.commitEncoding", encoding], repo.dir);
+			const file = join(repo.dir, "COMMIT_EDITMSG");
+			writeFileSync(file, AI_MESSAGE);
+			await world.cli(["set", ID, "enabled", "on"]);
+			expect((await cli(["run", ID, file], repo.dir)).code).toBe(0);
+			expect(readFileSync(file, "utf8")).toBe(AI_MESSAGE);
+		},
+	);
+
+	test.each(["UTF-8", "utf8"])(
+		"run still strips when i18n.commitEncoding is %s",
+		async (encoding) => {
+			const repo = makeRepo();
+			runGit(["config", "i18n.commitEncoding", encoding], repo.dir);
+			const file = join(repo.dir, "COMMIT_EDITMSG");
+			writeFileSync(file, AI_MESSAGE);
+			await world.cli(["set", ID, "enabled", "on"]);
+			await cli(["run", ID, file], repo.dir);
+			expect(readFileSync(file, "utf8")).not.toContain("Claude");
+		},
+	);
 
 	test("run strips the message once the setting is on", async () => {
 		const file = messageFile();
