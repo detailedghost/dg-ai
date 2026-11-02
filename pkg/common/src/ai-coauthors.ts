@@ -1,7 +1,8 @@
 const AI_NAME = /claude|codex|grok|copilot|openai|gemini|anthropic|gpt/i;
 const AI_BOT = /noreply@x\.ai|cursoragent@cursor\.com|devin-ai-integration\[bot\]/i;
 const COAUTHOR = /^co-authored-by:\s*(.*)$/i;
-const TRAILER = /^[A-Za-z][\w-]*:\s/;
+const TRAILER = /^[A-Za-z][\w-]*:/;
+const SCISSORS = /^# -{24} >8 -{24}$/;
 const CONTINUATION = /^\s+\S/;
 const isBlank = (line: string) => line.trim() === "";
 
@@ -27,7 +28,8 @@ function trailerEntries(block: string[]): string[][] | undefined {
 /** Removes AI Co-Authored-By trailers from the final trailer block; subject, body and git comment lines stay. */
 export function stripAiCoauthors(message: string): string {
 	const lines = message.split("\n");
-	let end = lines.length;
+	const cut = lines.findIndex((line) => SCISSORS.test(line));
+	let end = cut === -1 ? lines.length : cut;
 	while (end > 0) {
 		const line = lines[end - 1] as string;
 		if (!isBlank(line) && !line.startsWith("#")) break;

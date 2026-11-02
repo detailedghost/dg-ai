@@ -66,6 +66,24 @@ describe("stripAiCoauthors", () => {
 		);
 	});
 
+	test("matches a trailer written without a space after the colon", () => {
+		expect(
+			stripAiCoauthors(
+				`${subject}\n\nCo-Authored-By:Claude <claude@example.com>\nReviewed-by:Sam\n`,
+			),
+		).toBe(`${subject}\n\nReviewed-by:Sam\n`);
+	});
+
+	test("finds the trailer block above the verbose diff after the scissors line", () => {
+		const verbose =
+			"# ------------------------ >8 ------------------------\n# Do not modify or remove the line above.\ndiff --git a/a.txt b/a.txt\n+added line\n";
+		expect(
+			stripAiCoauthors(
+				`${subject}\n\nBody.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n${verbose}`,
+			),
+		).toBe(`${subject}\n\nBody.\n${verbose}`);
+	});
+
 	test("returns a message without trailers unchanged", () => {
 		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
 		expect(stripAiCoauthors(message)).toBe(message);
