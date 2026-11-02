@@ -2,10 +2,17 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { readDgConfig, resolveDgPaths, writeDgConfig } from "@dg/common/node";
+import { STRIP_ID, stripCommitMessageFile } from "./defs/strip-ai-coauthors";
 import { HOOKS } from "./manifest";
 import { defaultSeams, runHook } from "./run";
 import { claudeWriter } from "./settings/claude";
 import { codexWriter } from "./settings/codex";
+import {
+	installCommitMsgHook,
+	isOwnedScript,
+	locateCommitMsgHook,
+	removeCommitMsgHook,
+} from "./settings/git";
 import { opencodeWriter } from "./settings/opencode";
 import type {
 	HookDefinition,
@@ -20,6 +27,7 @@ export interface HooksIo {
 	env: HookEnv;
 	seams: HookSeams;
 	home?: string;
+	cwd?: string;
 	launcher?: string;
 }
 
@@ -35,6 +43,7 @@ const USAGE = `usage: hooks <command>
 const RUNTIMES: readonly HookRuntime[] = ["claude", "codex", "opencode"];
 const COMMANDS = ["list", "status", "enable", "disable", "set"];
 const NOTICE = "(takes effect in new sessions)";
+const isGit = (def: HookDefinition) => def.event === "commit-msg";
 
 class UsageError extends Error {}
 
@@ -124,6 +133,10 @@ function checkedSetting(
 	return match;
 }
 
+function commitMsgHook(io: HooksIo) {
+	return locateCommitMsgHook(io.cwd ?? process.cwd(), io.seams.run);
+}
+
 function selectRuntimes(
 	requested: HookRuntime[],
 	all: Record<HookRuntime, SettingsWriter>,
@@ -135,7 +148,7 @@ function selectRuntimes(
 function list(io: HooksIo): number {
 	for (const hook of HOOKS)
 		io.seams.stdout(
-			`${hook.id}\t${hook.summary}\t${hook.runtimes.join(",")}\n`,
+			`${hook.id}\t${hook.summary}\t${isGit(hook) ? "git" : hook.runtimes.join(",")}\n`,
 		);
 	return 0;
 }
@@ -174,8 +187,9 @@ async function status(
 		}),
 	);
 	const failed = Object.values(runtimes).some((info) => "error" in info);
+	const git = await gitState(io);
 	if (parsed.json) {
-		io.seams.stdout(`${JSON.stringify({ runtimes }, null, 2)}\n`);
+		io.seams.stdout(`${JSON.stringify({ runtimes, git }, null, 2)}\n`);
 		return failed ? 1 : 0;
 	}
 	for (const [runtime, info] of Object.entries(runtimes))
@@ -184,8 +198,26 @@ async function status(
 				? `${runtime}: error: ${info.error}\n`
 				: `${runtime}: ${info.enabled.length > 0 ? info.enabled.join(", ") : "none"} (${info.settingsFile})\n`,
 		);
+	if (git)
+		io.seams.stdout(
+			`git: ${git.enabled.length > 0 ? git.enabled.join(", ") : "none"} (${git.hookFile})\n`,
+		);
 	for (const line of configValues(io)) io.seams.stdout(`${line}\n`);
 	return failed ? 1 : 0;
+}
+
+async function gitState(
+	io: HooksIo,
+): Promise<{ enabled: string[]; hookFile: string } | null> {
+	try {
+		const { file } = await locateCommitMsgHook(
+			io.cwd ?? process.cwd(),
+			io.seams.run,
+		);
+		return { enabled: isOwnedScript(file) ? [STRIP_ID] : [], hookFile: file };
+	} catch {
+		return null;
+	}
 }
 
 async function enable(
@@ -196,12 +228,17 @@ async function enable(
 ): Promise<number> {
 	if (parsed.positional.length === 0)
 		throw new UsageError("enable needs a hook id");
-	const defs = parsed.positional.map(definition);
+	const requested = parsed.positional.map(definition);
+	const defs = requested.filter((d) => !isGit(d));
+	const gitDefs = requested.filter(isGit);
 	const patch: Record<string, Record<string, string>> = {};
+	for (const def of gitDefs) patch[def.id] = { enabled: "on" };
 	for (const pair of parsed.sets) {
 		const at = pair.indexOf("=");
 		const key = at < 0 ? "" : pair.slice(0, at);
-		const targets = defs.filter((d) => Object.hasOwn(d.settings ?? {}, key));
+		const targets = requested.filter((d) =>
+			Object.hasOwn(d.settings ?? {}, key),
+		);
 		if (targets.length === 0)
 			throw new UsageError(`--set ${pair}: no enabled hook has that setting`);
 		for (const def of targets)
@@ -210,12 +247,17 @@ async function enable(
 				[key]: checkedSetting(def, key, pair.slice(at + 1)),
 			};
 	}
-	const runtimes = selectRuntimes(parsed.runtimes, all);
-	if (runtimes.length === 0) {
+	const runtimes = defs.length > 0 ? selectRuntimes(parsed.runtimes, all) : [];
+	if (defs.length > 0 && runtimes.length === 0) {
 		io.seams.stderr("no supported runtime found; pass --runtime\n");
 		return 1;
 	}
 	for (const runtime of runtimes) all[runtime].check();
+	const gitHook = gitDefs.length > 0 ? await commitMsgHook(io) : undefined;
+	if (gitHook?.hooksPathSet)
+		throw new Error(
+			`core.hooksPath is set, so git ignores ${gitHook.file}; unset it or install the hook by hand`,
+		);
 	const hasPatch = Object.keys(patch).length > 0;
 	if (hasPatch) readDgConfig(io.env);
 	const changed: HookRuntime[] = [];
@@ -238,6 +280,17 @@ async function enable(
 			return 1;
 		}
 	}
+	if (gitHook)
+		for (const def of gitDefs)
+			try {
+				installCommitMsgHook(gitHook.file, launcher, def.id);
+				io.seams.stdout(`git: enabled ${def.id} (${gitHook.file})\n`);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				io.seams.stderr(`git: ${reason}\n`);
+				io.seams.stderr(summary());
+				return 1;
+			}
 	if (!hasPatch) return 0;
 	try {
 		writeDgConfig({ hooks: patch }, io.env);
@@ -260,11 +313,25 @@ async function disable(
 	const ids = parsed.all
 		? undefined
 		: parsed.positional.map((id) => definition(id).id);
-	const runtimes = selectRuntimes(parsed.runtimes, all);
+	const agentIds = ids?.filter((id) => id !== STRIP_ID);
+	const touchesAgents = agentIds === undefined || agentIds.length > 0;
+	const touchesGit = ids === undefined || ids.includes(STRIP_ID);
+	const runtimes = touchesAgents ? selectRuntimes(parsed.runtimes, all) : [];
 	for (const runtime of runtimes) all[runtime].check();
 	for (const runtime of runtimes)
-		for (const id of await all[runtime].disable(ids))
+		for (const id of await all[runtime].disable(agentIds))
 			io.seams.stdout(`${runtime}: disabled ${id} ${NOTICE}\n`);
+	if (!touchesGit) return 0;
+	let removed = false;
+	try {
+		const { file } = await commitMsgHook(io);
+		removed = removeCommitMsgHook(file);
+		if (removed) io.seams.stdout(`git: disabled ${STRIP_ID} (${file})\n`);
+	} catch (error) {
+		if (ids !== undefined) throw error;
+	}
+	if (removed || ids !== undefined)
+		writeDgConfig({ hooks: { [STRIP_ID]: { enabled: "off" } } }, io.env);
 	return 0;
 }
 
@@ -335,6 +402,14 @@ async function runCommand(
 	if (!id) {
 		io.seams.stderr(USAGE);
 		return 2;
+	}
+	if (HOOKS.find((h) => h.id === id)?.event === "commit-msg") {
+		if (!flags[0]) {
+			io.seams.stderr(`hooks run ${id}: needs the commit message file\n`);
+			return 2;
+		}
+		stripCommitMessageFile(flags[0], io.env);
+		return 0;
 	}
 	if (
 		id === "daily-prune" &&

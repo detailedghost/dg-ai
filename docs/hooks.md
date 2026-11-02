@@ -28,8 +28,20 @@ exists.
 | `spec-plan-lint` | PostToolUse | Edit, Write, MultiEdit | `claude`, `codex`, `opencode` | Validates a spec `plan.md` after it is written. |
 | `daily-prune` | SessionStart | none | `claude`, `codex` | Once a day, removes scratch and state past TTL and merged clean worktrees. |
 
+| `strip-ai-coauthors` | git `commit-msg` | none | git | Removes AI `Co-Authored-By` trailers (Claude, Codex, Grok, Copilot, Gemini, and similar) from commit messages. Setting `enabled`: `on` or `off`, default `off`. |
+
 opencode has no session start event, so `daily-prune` is skipped there. `enable`
 prints `<runtime>: skipped <id> (not supported)` for a hook a runtime cannot run.
+
+## Strip AI co-authors
+
+`dg-skills hooks enable strip-ai-coauthors` runs in a git repo. It writes
+`.git/hooks/commit-msg`, moves an existing hook to `commit-msg.dg-orig` and runs
+it after the strip, and turns `strip-ai-coauthors.enabled` on in `config.json`.
+It stops when `core.hooksPath` is set. `disable strip-ai-coauthors` restores the
+old hook and turns the setting off. The setting is global, so `hooks set
+strip-ai-coauthors enabled off` pauses every repo. `DG_STRIP_AI_COAUTHORS=1` or
+`0` overrides it. `dg-skills meaningful apply-json` reads the same switch.
 
 ## Where the entries go
 

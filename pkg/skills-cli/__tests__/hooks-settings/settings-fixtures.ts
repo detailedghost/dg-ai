@@ -73,6 +73,7 @@ export function settingsWorld() {
 		argv: string[],
 		overrides: {
 			launcher?: string;
+			cwd?: string;
 			env?: Record<string, string | undefined>;
 			seams?: Partial<HookSeams>;
 		} = {},
@@ -87,6 +88,7 @@ export function settingsWorld() {
 				...overrides.env,
 			},
 			home,
+			cwd: overrides.cwd,
 			launcher: overrides.launcher ?? launcher,
 			seams: {
 				...defaultSeams(),

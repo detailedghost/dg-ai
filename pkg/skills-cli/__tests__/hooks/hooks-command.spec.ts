@@ -62,7 +62,7 @@ describe("hooks command", () => {
 		expect(out.stderr).toContain("usage");
 	});
 
-	test("the manifest holds the six hooks with unique ids", () => {
+	test("the manifest holds the seven hooks with unique ids", () => {
 		expect(HOOKS.map((h) => h.id).sort()).toEqual([
 			"daily-prune",
 			"format",
@@ -70,6 +70,7 @@ describe("hooks command", () => {
 			"pr-prose",
 			"spec-plan-lint",
 			"spelling",
+			"strip-ai-coauthors",
 		]);
 	});
 

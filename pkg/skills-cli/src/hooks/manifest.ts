@@ -53,4 +53,12 @@ export const HOOKS: readonly HookDefinition[] = [
 		runtimes: ["claude", "codex"],
 		load: () => import("./defs/daily-prune"),
 	},
+	{
+		id: "strip-ai-coauthors",
+		summary:
+			"Remove AI Co-Authored-By trailers from commit messages, in a repo's git commit-msg hook and in meaningful",
+		event: "commit-msg",
+		runtimes: [],
+		settings: { enabled: { values: ["on", "off"], default: "off" } },
+	},
 ];
