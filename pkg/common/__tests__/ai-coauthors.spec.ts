@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isAiCoauthor, stripAiCoauthors } from "../src/ai-coauthors";
+import { autoCommentChar, isAiCoauthor, stripAiCoauthors } from "../src/ai-coauthors";
 
 const subject = "feat(scope): add thing";
 
@@ -197,5 +197,41 @@ describe("isAiCoauthor", () => {
 	test("keeps a human whose name or email holds an AI word", () => {
 		const message = `${subject}\n\nCo-Authored-By: Claude Martin <claude.martin@gmail.com>\n`;
 		expect(stripAiCoauthors(message)).toBe(message);
+	});
+});
+
+describe("autoCommentChar", () => {
+	const template = (char: string) =>
+		`${char} Bitte geben Sie eine Commit-Beschreibung ein.\n${char}\n${char} Auf Branch main\n`;
+
+	test("picks # when no line starts with a candidate", () => {
+		expect(autoCommentChar(`${subject}\n\nBody.\n`)).toBe("#");
+	});
+
+	test("picks # from a template in any language", () => {
+		expect(autoCommentChar(`${subject}\n\nBody.\n\n${template("#")}`)).toBe("#");
+	});
+
+	test("picks ; when the message has a line starting with # and the template is not English", () => {
+		const message = `${subject}\n\n# heading\n\nBody.\n\n${template(";")}`;
+		expect(autoCommentChar(message)).toBe(";");
+	});
+
+	test("picks @ when the message uses # and ; and the template is not English", () => {
+		const message = `${subject}\n\n# one\n; two\n\n${template("@")}`;
+		expect(autoCommentChar(message)).toBe("@");
+	});
+
+	test("takes the character from a scissors line", () => {
+		const scissors = `@ ${"-".repeat(24)} >8 ${"-".repeat(24)}`;
+		const message = `${subject}\n\n# heading\n; note\n\n${scissors}\n@@ -1 +1 @@\n`;
+		expect(autoCommentChar(message)).toBe("@");
+	});
+
+	test("stripAiCoauthors keeps a # body line when the comment character is ;", () => {
+		const message = `${subject}\n\n# heading\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\n${template(";")}`;
+		expect(stripAiCoauthors(message, autoCommentChar(message))).toBe(
+			`${subject}\n\n# heading\n\n${template(";")}`,
+		);
 	});
 });

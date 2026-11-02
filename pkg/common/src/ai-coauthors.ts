@@ -7,6 +7,8 @@ const COAUTHOR = /^co-authored-by:\s*([^\n]*)$/i;
 const TRAILER = /^(?:[A-Za-z][\w-]*|BREAKING CHANGE):/;
 const CONTINUATION = /^\s+\S/;
 const TRAILING_CR = /\r$/;
+const COMMENT_CHARS = "#;@!$%^&|:";
+const SCISSORS_LINE = /^([#;@!$%^&|:]) -{24} >8 -{24}\r?$/m;
 const isBlank = (line: string) => line.trim() === "";
 
 /** A known AI or bot address, or an AI name paired with a noreply address or no address. */
@@ -69,4 +71,19 @@ export function stripAiCoauthors(message: string, commentChar = "#"): string {
 	if (kept.length === 0) while (before.length > 0 && isBlank(before.at(-1) as string)) before.pop();
 	const tail = end < lines.length ? `\n${lines.slice(end).join("\n")}` : "";
 	return `${[...before, ...kept].join("\n")}${tail}`;
+}
+
+/**
+ * Comment character git chose for core.commentChar=auto, read back from the edited message.
+ * Git picks the first of "#;@!$%^&|:" that starts no line of the message before it adds the
+ * template, so the template's own character shows up here as the last of the leading run of used candidates.
+ */
+export function autoCommentChar(message: string): string {
+	const scissors = SCISSORS_LINE.exec(message)?.[1];
+	if (scissors) return scissors;
+	const lines = message.split("\n");
+	const chars = [...COMMENT_CHARS];
+	let run = 0;
+	while (run < chars.length && lines.some((line) => line.startsWith(chars[run] as string))) run++;
+	return chars[Math.max(run - 1, 0)] as string;
 }

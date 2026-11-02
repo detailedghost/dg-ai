@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { stripAiCoauthors } from "@dg/common";
+import { autoCommentChar, stripAiCoauthors } from "@dg/common";
 import { hookSetting } from "../config";
 import type { CommandRunner, HookEnv } from "../types";
 
@@ -19,8 +19,7 @@ export function stripAiCoauthorsOn(
 function commentCharOf(configured: string, message: string): string {
 	if (configured === "") return "#";
 	if (configured !== "auto") return configured.slice(0, 1);
-	const found = /^([#;@!$%^&|:]) Please enter/m.exec(message);
-	return found?.[1] ?? "#";
+	return autoCommentChar(message);
 }
 
 export async function stripCommitMessageFile(
