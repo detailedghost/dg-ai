@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.28.1 (2026-11-02)
+
+### Fixes
+
+- fix(inbox): block Proton mailbox changes on an account mismatch ([#117](https://github.com/detailedghost/dg-ai/pull/117))
+
 ## v1.28.0 (2026-11-02)
 
 ### Features
