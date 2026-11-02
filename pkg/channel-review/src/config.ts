@@ -621,7 +621,7 @@ function parseDeps(
 		enabled: flag(rec, "enabled", "deps", false),
 		timeoutMinutes: minutes(rec.timeoutMinutes ?? 90, "deps.timeoutMinutes"),
 		ciTimeoutMinutes: minutes(rec.ciTimeoutMinutes ?? 60, "deps.ciTimeoutMinutes"),
-		cooldownDays: wholeDays(rec.cooldownDays ?? 7, "deps.cooldownDays"),
+		cooldownDays: wholeDays(rec.cooldownDays ?? 4, "deps.cooldownDays"),
 		branchPrefix: optionalText(rec, "branchPrefix", "deps") ?? "chore/deps-update-",
 		allowedTools: toolList(rec, "deps", [...cloneTools(automation.cloneRoot), ...deps]),
 		schedule: {
