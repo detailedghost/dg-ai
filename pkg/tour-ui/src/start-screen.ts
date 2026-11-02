@@ -25,6 +25,8 @@ export type StartChoice = {
 export type StartSettings = { narration: NarrationMode; voice: string };
 
 export type StartOptions = Partial<StartSettings> & {
+	/** Hide Record video when the host has no way to capture one. */
+	noVideo?: boolean;
 	onSetting?: (patch: Partial<StartSettings>) => void;
 };
 
@@ -32,6 +34,7 @@ type StartCardOptions = {
 	stepCount: number;
 	setup?: { stepCount: number; includeInTour: boolean };
 	settings: StartSettings;
+	noVideo?: boolean;
 	onSetting?: (patch: Partial<StartSettings>) => void;
 	onIncludeChange?: (include: boolean) => void;
 	onPick: (mode: StartMode) => void;
@@ -103,7 +106,7 @@ export function appendStartCard(
 	};
 	mk("🔍 Review the plan step by step", false, () => o.onPick("review"));
 	mk("▶ Play walkthrough", true, () => o.onPick("walkthrough"));
-	mk("⏺ Record video", false, () => o.onPick("video"));
+	if (!o.noVideo) mk("⏺ Record video", false, () => o.onPick("video"));
 	mk("⬇ Download plan (.md)", false, o.onDownload);
 	return () => include?.checked ?? false;
 }
@@ -136,6 +139,7 @@ export async function showStartScreen(
 				includeInTour: script.setup.includeInTour,
 			},
 			settings,
+			noVideo: opts.noVideo,
 			onSetting: opts.onSetting,
 			onPick: (mode) => {
 				if (settled) return;

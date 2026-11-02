@@ -39,10 +39,16 @@ const job = (over: Partial<PlayerJob> = {}): PlayerJob => ({
 	...over,
 });
 
-function launchWith(script: (send: Send) => Promise<void>, recorded = true) {
+function launchWith(
+	script: (send: Send) => Promise<void>,
+	recorded = true,
+	canRecord?: boolean,
+	evaluated: string[] = [],
+) {
 	const main = { url: () => START };
 	const foreign = { url: () => "https://evil.test/" };
 	let binding: ((source: unknown, msg: unknown) => unknown) | undefined;
+	let loaded: (() => void) | undefined;
 	const page = {
 		mainFrame: () => main,
 		exposeBinding: async (_name: string, cb: typeof binding) => {
@@ -50,9 +56,14 @@ function launchWith(script: (send: Send) => Promise<void>, recorded = true) {
 		},
 		addInitScript: async () => undefined,
 		route: async () => undefined,
-		on: () => undefined,
-		evaluate: async () => undefined,
+		on: (event: string, cb: () => void) => {
+			if (event === "domcontentloaded") loaded = cb;
+		},
+		evaluate: async (expression: string) => {
+			evaluated.push(expression);
+		},
 		goto: async () => {
+			loaded?.();
 			await script((msg, trusted = true) =>
 				Promise.resolve(
 					binding?.({ frame: trusted ? main : foreign, page }, msg),
@@ -79,6 +90,7 @@ function launchWith(script: (send: Send) => Promise<void>, recorded = true) {
 			close: async () => undefined,
 		} as never,
 		close: async () => undefined,
+		...(canRecord === undefined ? {} : { canRecord }),
 	});
 }
 
@@ -152,5 +164,47 @@ describe("runPlayer", () => {
 		const second = await run();
 		expect(second).not.toBe(first);
 		expect(existsSync(first as string)).toBe(true);
+	});
+
+	test("a human choice of video with no recording written ends as an error", async () => {
+		const launch = launchWith(async (send) => {
+			await send({ kind: "choice", mode: "video", narration: "captions", voice: "af_heart" });
+			await send({ kind: "done" });
+		}, false);
+		expect(await runPlayer(job(), { launch })).toBe(1);
+		const saved = result();
+		expect(saved.outcome).toBe("error");
+		expect(saved.error).toContain("no video was written");
+		expect(saved.video).toBeUndefined();
+	});
+
+	test("a --video job with no recording written ends as an error", async () => {
+		const launch = launchWith(async (send) => {
+			await send({ kind: "done" });
+		}, false);
+		expect(await runPlayer(job({ video: true }), { launch })).toBe(1);
+		expect(result().outcome).toBe("error");
+	});
+
+	test("a walkthrough without a recording still ends done", async () => {
+		const launch = launchWith(async (send) => {
+			await send({ kind: "done" });
+		}, false);
+		expect(await runPlayer(job(), { launch })).toBe(0);
+		expect(result().outcome).toBe("done");
+	});
+
+	test("tells the page not to offer video when the session cannot record", async () => {
+		const evaluated: string[] = [];
+		const launch = launchWith(
+			async (send) => {
+				await send({ kind: "done" });
+			},
+			false,
+			false,
+			evaluated,
+		);
+		await runPlayer(job(), { launch });
+		expect(JSON.stringify(evaluated)).toContain("noVideo");
 	});
 });

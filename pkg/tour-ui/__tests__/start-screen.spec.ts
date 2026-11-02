@@ -38,6 +38,16 @@ describe("showStartScreen", () => {
 		}
 	});
 
+	it("leaves out Record video when the host cannot record", async () => {
+		const host = fakeHost();
+		void showStartScreen(host, threeStepScript(), { noVideo: true });
+		await until(() => host.live().length > 0, "the start screen mount");
+
+		const labels = buttons(host).map((b) => b.textContent ?? "");
+		expect(labels.some((l) => /record video/i.test(l))).toBe(false);
+		expect(labels.some((l) => /play walkthrough/i.test(l))).toBe(true);
+	});
+
 	it("resolves with mode walkthrough for Play walkthrough", async () => {
 		const host = fakeHost();
 		const choice = showStartScreen(host, threeStepScript(), {});

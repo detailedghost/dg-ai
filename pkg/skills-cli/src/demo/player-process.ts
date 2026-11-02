@@ -38,6 +38,7 @@ import { type DemoResult, writeResult } from "./result";
 
 export type PlayerSession = {
 	context: BrowserContext;
+	canRecord?: boolean;
 	close(): Promise<void>;
 };
 
@@ -112,11 +113,13 @@ async function launchWindows(
 				viewport: job.video ? VIEWPORT : null,
 				...(record ? recording(job) : {}),
 			});
+		let canRecord = true;
 		const context = await create(true).catch((error: unknown) => {
 			if (job.video) throw error;
+			canRecord = false;
 			return create(false);
 		});
-		return { context, close };
+		return { context, close, canRecord };
 	} catch (error) {
 		await close();
 		throw error;
@@ -301,7 +304,9 @@ export async function runPlayer(
 							}
 						: {}),
 				}
-			: {};
+			: session.canRecord === false
+				? { noVideo: true }
+				: {};
 		const tour = `window.__dgTour.run(${JSON.stringify(job.script)}, ${JSON.stringify(tourOptions)})`;
 		const run = (): void => {
 			if (!trustedSource({ frame: live.mainFrame(), page: live }, origins))
@@ -359,6 +364,13 @@ export async function runPlayer(
 			}
 		}
 		if (!keepRaw) rmSync(join(job.dir, "rec"), { recursive: true, force: true });
+	}
+	if (bridge.mode() === "video" && !video && end.outcome !== "error") {
+		end = {
+			outcome: "error",
+			error: "no video was written: the browser could not record this run",
+		};
+		console.log(`demo ${job.slug}: ${end.error}`);
 	}
 
 	rmSync(clipsDir, { recursive: true, force: true });

@@ -409,3 +409,12 @@ describe("runTour — review", () => {
 		});
 	});
 });
+
+describe("runTour without a recorder-capable browser", () => {
+	it("keeps Record video off the start screen when the run says it cannot record", async () => {
+		const host = fakeHost();
+		void runTour(host, threeStepScript(), { noVideo: true });
+		await until(() => host.liveText().includes("Plan ready"), "the start screen");
+		expect(buttons(host).some((b) => /record video/i.test(b.textContent ?? ""))).toBe(false);
+	});
+});

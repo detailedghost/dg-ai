@@ -52,6 +52,8 @@ export type TourOptions = {
 	/** With `mode`, the narration to use in place of the start screen's choice. */
 	narration?: StartSettings;
 	autopilot?: boolean;
+	/** The host cannot record, so the start screen leaves out Record video. */
+	noVideo?: boolean;
 	/** Aborting detaches the run: its UI goes away and stored state is left as is. */
 	signal?: AbortSignal;
 	/** Called each time the run waits on the viewer, the recorder or a page load. */
@@ -175,7 +177,7 @@ async function chooseState(
 		return begin(play, await voicing(host, play, opts.narration, answer));
 	}
 
-	const choice = await showStartScreen(host, script);
+	const choice = await showStartScreen(host, script, { noVideo: opts.noVideo });
 	const settings: StartSettings = {
 		narration: choice.narration,
 		voice: choice.voice,
@@ -189,6 +191,7 @@ async function chooseState(
 	return new Promise<PlayState | null>((resolve, reject) => {
 		showEditPanel(host, script, {
 			...settings,
+			noVideo: opts.noVideo,
 			onSetting: (patch) => Object.assign(settings, patch),
 			onDismiss: () => resolve(null),
 			start: async (reviewed) => {

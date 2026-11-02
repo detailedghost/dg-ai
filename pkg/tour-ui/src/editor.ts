@@ -586,6 +586,7 @@ export async function showEditPanel(
 				includeInTour: draft.setup.includeInTour,
 			},
 			settings: editorConfig,
+			noVideo: opts.noVideo,
 			onSetting: opts.onSetting,
 			onIncludeChange: (include) => {
 				if (draft.setup) draft.setup.includeInTour = include;
