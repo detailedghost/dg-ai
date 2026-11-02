@@ -50,10 +50,11 @@ export async function deleteProtectedData(
 	const inboxDir = path.join(resolveDgPaths().stateDir, "inbox");
 	const targets = [path.join(inboxDir, "proton-profile")];
 	if (deps.wsl) {
-		const windowsDir =
-			record?.profileDir && isWindowsPath(record.profileDir)
-				? record.profileDir
-				: await deps.windowsProfileDir(name.toLowerCase());
+		const windowsDir = await deps.windowsProfileDir(name.toLowerCase());
+		if (!isWindowsPath(windowsDir)) {
+			env.err(`Refusing to delete ${windowsDir}: it is not a Windows path`);
+			return 1;
+		}
 		targets.push(toWslPath(windowsDir));
 	}
 	const deleted = targets.filter((target) => existsSync(target));

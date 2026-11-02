@@ -225,4 +225,5 @@ describe("delete-data on the protected Proton session", () => {
 		expect(existsSync(profileDir)).toBe(true);
 		expect(env.stderr[0]).toContain("Could not close the browser");
 	});
+
 });
