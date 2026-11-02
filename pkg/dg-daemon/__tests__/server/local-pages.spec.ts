@@ -6,13 +6,16 @@ import {
 	bootServe,
 	cleanupDgHome,
 	closeSession,
+	collectFrames,
 	connectPage,
 	createCleanupSlot,
 	EXTENSION_ORIGIN,
+	frameType,
 	registerSession,
 	sendConnectHandshake,
 	stopServe,
 	waitForOpen,
+	waitForValue,
 	wsUrl,
 } from "../utils/daemon-harness";
 
@@ -104,6 +107,7 @@ describe("GET /chat and GET /board page shells", () => {
 	for (const path of ["/chat", "/board"]) {
 		it(`serves ${path} as html with the CSP and framing headers and no token`, async () => {
 			const { port } = await boot();
+			const session = await registerSession(port);
 
 			const response = await request(port, path);
 
@@ -117,7 +121,10 @@ describe("GET /chat and GET /board page shells", () => {
 			expect(csp).toContain(`connect-src 'self' ws://127.0.0.1:${port}`);
 			expect(csp).toContain("style-src 'self' 'unsafe-inline'");
 			expect(csp).toContain("img-src 'self' data: blob:");
-			expect((await response.text()).toLowerCase()).toContain("<!doctype html");
+			const html = await response.text();
+			expect(html.toLowerCase()).toContain("<!doctype html");
+			expect(html).not.toContain(session.token);
+			expect(html).not.toContain(session.sessionId);
 		});
 	}
 
@@ -352,14 +359,17 @@ describe("/ws upgrade with a loopback Origin", () => {
 		const session = await registerSession(port);
 
 		const ws = loopbackSocket(port, loopbackOrigin(port), session.token);
-		const firstFrame = new Promise<void>((resolve, reject) => {
-			ws.addEventListener("message", () => resolve(), { once: true });
-			setTimeout(() => reject(new Error("no frame after connect")), 3000);
-		});
+		const frames = collectFrames(ws);
 		await waitForOpen(ws);
 		sendConnectHandshake(ws, session, CHAT_PROTOCOL_VERSION);
-		await firstFrame;
+		await waitForValue(
+			() => frames.find((frame) => frameType(frame) === "session-list"),
+			3000,
+			"session-list after connect",
+		);
 		ws.close();
+
+		expect(frames.filter((frame) => frameType(frame) === "error")).toEqual([]);
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		expect(getPinnedOrigin(paths)).toBeUndefined();
