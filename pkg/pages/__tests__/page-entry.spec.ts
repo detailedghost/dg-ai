@@ -258,15 +258,34 @@ describe("chat page entry wiring", () => {
 		expect(net.win.location.href).not.toContain(CHAT_MARKER_KEY);
 	});
 
-	test("drops the stored bootstrap when the socket closes before it opens", async () => {
+	test("drops the stored bootstrap when the socket closes before it opens and the daemon refuses the token", async () => {
 		const net = installGlobals(
 			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
 		);
+		net.respond = () =>
+			Promise.resolve(new Response("refused", { status: 403 }));
 		await loadEntry("../src/chat/page");
 
 		net.socketHandles[0]?.fire("close");
+		await settle();
 
+		expect(net.fetches.at(-1)?.url).toBe(
+			`http://127.0.0.1:${BOOTSTRAP.port}/overwatch`,
+		);
 		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+	});
+
+	test("keeps the stored bootstrap when the socket closes before it opens and the daemon is unreachable", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		net.respond = () => Promise.reject(new TypeError("Failed to fetch"));
+		await loadEntry("../src/chat/page");
+
+		net.socketHandles[0]?.fire("close");
+		await settle();
+
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
 	});
 
 	test("keeps the stored bootstrap when a socket that opened closes later", async () => {

@@ -42,7 +42,9 @@ function imgSrcAllows(csp: string, src: string): boolean {
 	const url = new URL(src);
 	if (sources.includes(url.protocol)) return true;
 	const fetchable = url.protocol === "http:" || url.protocol === "https:";
-	return fetchable && sources.includes("'self'") && url.origin === PAGE_ORIGIN;
+	if (!fetchable) return false;
+	if (sources.includes("*") || sources.includes(url.origin)) return true;
+	return sources.includes("'self'") && url.origin === PAGE_ORIGIN;
 }
 
 test("an image attachment renders with a URL the served chat CSP allows", async () => {
@@ -86,4 +88,14 @@ test("an image attachment renders with a URL the served chat CSP allows", async 
 
 test("the served chat CSP does not allow images from a foreign origin", () => {
 	expect(imgSrcAllows(servedCsp, "https://evil.example/pixel.png")).toBe(false);
+});
+
+test("the image-source check treats a wildcard or a named host as allowing a foreign image", () => {
+	const foreign = "https://evil.example/pixel.png";
+
+	expect(imgSrcAllows("img-src 'self' *", foreign)).toBe(true);
+	expect(imgSrcAllows("img-src 'self' https://evil.example", foreign)).toBe(
+		true,
+	);
+	expect(imgSrcAllows("img-src 'self' data:", foreign)).toBe(false);
 });

@@ -5,6 +5,7 @@ import {
 	localStorageOrMemory,
 	sessionStorageOrMemory,
 } from "../local";
+import { createOverwatchApi, OverwatchHttpError } from "../board/overwatch";
 import { createChatClient } from "./chat-client";
 import { renderChatPage } from "./main";
 
@@ -15,6 +16,15 @@ if (root) {
 	const bootstrapStorage = sessionStorageOrMemory();
 	const bootstrap = loadLocalBootstrap(window, bootstrapStorage);
 	const token = bootstrap?.token ?? "";
+	const forgetIfRefused = (): void => {
+		createOverwatchApi(window.location.origin, token)
+			.getBoard()
+			.catch((error: unknown) => {
+				if (error instanceof OverwatchHttpError && error.status === 403) {
+					forgetLocalBootstrap(bootstrapStorage);
+				}
+			});
+	};
 	renderChatPage({
 		root,
 		runtime: { storage },
@@ -30,7 +40,7 @@ if (root) {
 						opened = true;
 					});
 					socket.addEventListener("close", () => {
-						if (!opened) forgetLocalBootstrap(bootstrapStorage);
+						if (!opened) forgetIfRefused();
 					});
 					return socket;
 				},

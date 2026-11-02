@@ -50,8 +50,11 @@ export function memoryStorage(): PageStorage {
 }
 
 export function browserStorage(storage: Storage): PageStorage {
+	const refused = new Map<string, string>();
 	return {
 		get(key) {
+			const kept = refused.get(key);
+			if (kept !== undefined) return kept;
 			try {
 				return storage.getItem(key);
 			} catch {
@@ -61,7 +64,10 @@ export function browserStorage(storage: Storage): PageStorage {
 		set(key, value) {
 			try {
 				storage.setItem(key, value);
-			} catch {}
+				refused.delete(key);
+			} catch {
+				refused.set(key, value);
+			}
 		},
 	};
 }
@@ -71,7 +77,9 @@ function readRecord(storage: PageStorage): Record<string, unknown> {
 	if (raw === null) return {};
 	try {
 		const parsed: unknown = JSON.parse(raw);
-		return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+		return typeof parsed === "object" &&
+			parsed !== null &&
+			!Array.isArray(parsed)
 			? (parsed as Record<string, unknown>)
 			: {};
 	} catch {

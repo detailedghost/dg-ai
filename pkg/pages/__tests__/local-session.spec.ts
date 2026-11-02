@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { CHAT_MARKER_KEY } from "@dg/common";
 import { readChatBootstrap } from "../src/chat-marker";
 import { forgetLocalBootstrap, loadLocalBootstrap } from "../src/local";
-import { memoryStorage, positionAreaFor } from "../src/runtime";
+import { browserStorage, memoryStorage, positionAreaFor } from "../src/runtime";
 
 const BOOTSTRAP = {
 	port: 47823,
@@ -143,4 +143,18 @@ test("positionAreaFor recovers from corrupt stored data", async () => {
 	storage.set("chat_canvas_positions", "not json");
 
 	expect(await positionAreaFor(storage).get(null)).toEqual({});
+});
+
+test("browserStorage keeps a value in memory when the browser refuses the write", async () => {
+	const refusing = {
+		getItem: () => null,
+		setItem: () => {
+			throw new DOMException("quota", "QuotaExceededError");
+		},
+	} as unknown as Storage;
+	const area = positionAreaFor(browserStorage(refusing));
+
+	await area.set({ a: { x: 1, y: 2 } });
+
+	expect(await area.get(null)).toEqual({ a: { x: 1, y: 2 } });
 });
