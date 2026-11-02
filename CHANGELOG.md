@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.32.0 (2026-11-02)
+
+### Features
+
+- feat(hooks): add an opt-in hook that removes AI co-author trailers ([#124](https://github.com/detailedghost/dg-ai/pull/124))
+
 ## v1.31.0 (2026-11-02)
 
 ### Features
