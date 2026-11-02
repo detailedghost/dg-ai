@@ -70,14 +70,18 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   it drives Messages for Web and can wrap `signal-cli`), `inbox-cleanup` with explicit
   `--data-path` fixtures, `proto` and `demo`, whose default local modes need no
   extension. Only `proto --ext` and `demo --ext` need the dg-ai-extension.
-- Extension skills: `chat` and `overwatch` still declare
-  `requires: [extension]` in their SKILL.md until their local modes land.
-  `browser` runs locally by default: `dg-skills batch-open` opens plain tabs
-  and needs the extension only with `--ext`. `launch` is `--ext`-only. In a
-  CLI-only install, `batch-open --ext`, `launch`, `demo --ext`, `rerun --ext` and
-  `proto --ext`, and the `dg-skills require-extension <skill>` check at the top
-  of `chat` and `overwatch`, stop with: the command needs the dg-ai-extension,
-  and `dg-skills install` adds it.
+- Extension use: no SKILL.md declares `requires: [extension]`. Every skill runs
+  locally by default, and `--ext` opts in to the extension. `chat` and
+  `overwatch` open a page that `dg-daemon` serves on loopback, which needs
+  `dg-agent` and `dg-daemon` but no extension. In a CLI-only install those two
+  binaries are missing, so the `chat` and `overwatch` bootstrap block runs the
+  full installer, which removes the CLI-only marker. `browser` runs locally by
+  default: `dg-skills batch-open` opens plain tabs and needs the extension only
+  with `--ext`. `launch` is `--ext`-only. In a CLI-only install,
+  `batch-open --ext`, `launch`, `demo --ext`, `rerun --ext`, `proto --ext`,
+  `chat --ext` and `overwatch --ext`, and the `dg-skills require-extension
+  <skill>` check behind each `--ext`, stop with: the command needs the
+  dg-ai-extension, and `dg-skills install` adds it.
 - To add the extension later, run `~/.dg/bin/dg-skills install`. It installs the extension,
   `dg-daemon` and `dg-agent`, and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.

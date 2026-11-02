@@ -44,8 +44,8 @@ Claude Code uses `/dg:<skill>`; Codex uses `$dg:<skill>`.
 | `demo` | Play and record a guided tour | [Tours and prototypes](docs/demo-and-proto.md) |
 | `proto` | Prototype locally, or compare designs inside a live page with `--ext` | [Tours and prototypes](docs/demo-and-proto.md) |
 | `verify` | Review a finished change, before and after, and approve or send it back | [Verify](docs/verify.md) |
-| `chat` | Talk to a person or another agent; keep agent memory | [Chat](docs/chat.md) |
-| `overwatch` | Track work across parallel chats | [Skill commands](plugins/dg/skills/overwatch/SKILL.md) |
+| `chat` | Talk to a person or another agent on a local page; keep agent memory | [Chat](docs/chat.md) |
+| `overwatch` | Track work across parallel chats on a local board page | [Skill commands](plugins/dg/skills/overwatch/SKILL.md) |
 | `inbox-cleanup` | Review and organize Proton Mail, Gmail, or Outlook | [Inbox cleanup](docs/inbox-cleanup.md) |
 | `google-sms-cleanup` | Organize Google Messages, or Signal, with `dg-skills ssms` | [SMS providers](docs/ssms.md) |
 | `channel-review` | Review PRs and MRs posted in Teams | [Channel review](docs/channel-review.md) |

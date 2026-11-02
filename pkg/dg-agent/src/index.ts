@@ -40,7 +40,8 @@ program
 	.option("-w, --workset <label>", "workset label to attach to this session")
 	.option("--orchestrator", "register this session with the orchestrator role")
 	.option("-a, --agent-identity <name>", "agent identity to record")
-	.option("--open", "open the bootstrap URL in the default browser")
+	.option("--open", "open the chat page in the default browser")
+	.option("--ext", "hand the session to the dg-ai-extension instead of the local page")
 	.option("--fresh", "register a new session even if the extension is waiting")
 	.option("-s, --session <id>", "claim this waiting session instead of creating one")
 	.option(
@@ -61,6 +62,7 @@ program
 			session?: string;
 			printSessionId?: boolean;
 			json?: boolean;
+			ext?: boolean;
 		}) => {
 			const role: SessionRole = opts.orchestrator ? "orchestrator" : "agent";
 			await cmdStart({
@@ -72,6 +74,7 @@ program
 				sessionId: opts.session,
 				printSessionId: opts.printSessionId,
 				json: opts.json,
+				ext: opts.ext,
 			});
 		},
 	);

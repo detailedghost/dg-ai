@@ -7,6 +7,7 @@ function encodeChatMarker(bootstrap: SessionBootstrap): string {
 export function buildBootstrapUrl(
 	port: number,
 	bootstrap: SessionBootstrap,
+	path: "/start" | "/chat" | "/board" = "/start",
 ): string {
-	return `http://127.0.0.1:${port}/start#${CHAT_MARKER_KEY}=${encodeChatMarker(bootstrap)}`;
+	return `http://127.0.0.1:${port}${path}#${CHAT_MARKER_KEY}=${encodeChatMarker(bootstrap)}`;
 }

@@ -8,6 +8,7 @@ import {
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
 	EXIT_PROTOCOL_MISMATCH,
+	type SessionBootstrap,
 	type SessionRole,
 	validateSessionBootstrap,
 	wait,
@@ -21,6 +22,7 @@ import {
 	readPidFile,
 	requireMatchingProtocol,
 	resolveDgPaths,
+	OPEN_FAILED_HINT,
 	tryOpen,
 } from "@dg/common/node";
 import { claimWaitingSession } from "./attach";
@@ -31,7 +33,10 @@ function siblingDaemonArgv(): string[] {
 	return [join(dirname(process.execPath), name), "__serve"];
 }
 
-export type StartSeams = { daemonArgv?: () => string[] };
+export type StartSeams = {
+	daemonArgv?: () => string[];
+	tryOpen?: (url: string) => Promise<boolean>;
+};
 
 function spawnDaemonProcess(seams: StartSeams): void {
 	const argv = seams.daemonArgv?.() ?? siblingDaemonArgv();
@@ -90,6 +95,7 @@ export type StartOptions = {
 	sessionId?: string;
 	printSessionId?: boolean;
 	json?: boolean;
+	ext?: boolean;
 };
 
 async function fetchStatus(port: number) {
@@ -134,6 +140,23 @@ async function bootstrapFreshDaemon(
 	return handle.port;
 }
 
+function sessionUrl(
+	port: number,
+	bootstrap: SessionBootstrap,
+	options: StartOptions,
+): string {
+	return buildBootstrapUrl(port, bootstrap, options.ext ? "/start" : "/chat");
+}
+
+async function openIfRequested(
+	url: string,
+	options: StartOptions,
+	seams: StartSeams,
+): Promise<void> {
+	if (!options.open) return;
+	if (!(await (seams.tryOpen ?? tryOpen)(url))) console.error(OPEN_FAILED_HINT);
+}
+
 export async function cmdStart(
 	options: StartOptions = {},
 	seams: StartSeams = {},
@@ -156,9 +179,9 @@ export async function cmdStart(
 		);
 		if (claimed) {
 			console.error(cliNextStep("claimed", claimed.sessionId));
-			const url = buildBootstrapUrl(targetPort, claimed);
+			const url = sessionUrl(targetPort, claimed, options);
 			printSession(targetPort, claimed.sessionId, url, options);
-			if (options.open) await tryOpen(url);
+			await openIfRequested(url, options, seams);
 			return;
 		}
 	}
@@ -169,12 +192,10 @@ export async function cmdStart(
 		workset: options.workset,
 		agentIdentity: options.agentIdentity,
 	});
-	const url = buildBootstrapUrl(targetPort, bootstrap);
+	const url = sessionUrl(targetPort, bootstrap, options);
 	console.error(cliNextStep("registered", bootstrap.sessionId));
 	printSession(targetPort, bootstrap.sessionId, url, options);
-	if (options.open) {
-		await tryOpen(url);
-	}
+	await openIfRequested(url, options, seams);
 }
 
 function printSession(

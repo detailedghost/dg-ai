@@ -101,6 +101,11 @@ async function runOverwatchWithClient(args: string[], client: StubClient) {
 		write: async (value) => {
 			output.push(value);
 		},
+		tryOpen: async () => true,
+		writeError: async () => undefined,
+		localBootstrap: async () => {
+			throw new Error("unexpected local bootstrap");
+		},
 	});
 
 	await program.parseAsync(["node", "dg-agent", "overwatch", ...args]);
@@ -230,7 +235,7 @@ describe("dg-agent overwatch", () => {
 	});
 
 	it("sends one open frame", async () => {
-		const { client } = await runOverwatch(["open"]);
+		const { client } = await runOverwatch(["open", "--ext"]);
 
 		expect(client.frames).toEqual([{ type: "cli-overwatch-open" }]);
 	});
@@ -241,7 +246,7 @@ describe("dg-agent overwatch", () => {
 			"dg-daemon did not answer the CLI request",
 		);
 
-		await expect(runOverwatchWithClient(["open"], client)).rejects.toThrow(
+		await expect(runOverwatchWithClient(["open", "--ext"], client)).rejects.toThrow(
 			"dg-daemon did not answer the CLI request",
 		);
 		expect(client.frames).toEqual([{ type: "cli-overwatch-open" }]);
@@ -254,7 +259,7 @@ describe("dg-agent overwatch", () => {
 			message: "extension not connected",
 		};
 
-		const error = await runOverwatchWithClient(["open"], client).catch(
+		const error = await runOverwatchWithClient(["open", "--ext"], client).catch(
 			(caught: unknown) => caught,
 		);
 
@@ -312,6 +317,11 @@ describe("dg-agent overwatch", () => {
 				return client;
 			},
 			write: async () => undefined,
+			tryOpen: async () => true,
+		writeError: async () => undefined,
+			localBootstrap: async () => {
+				throw new Error("unexpected local bootstrap");
+			},
 		});
 
 		const error = await program
@@ -347,6 +357,11 @@ describe("dg-agent overwatch", () => {
 				return client;
 			},
 			write: async () => undefined,
+			tryOpen: async () => true,
+		writeError: async () => undefined,
+			localBootstrap: async () => {
+				throw new Error("unexpected local bootstrap");
+			},
 		});
 
 		const error = await program
@@ -381,6 +396,11 @@ describe("dg-agent overwatch", () => {
 				return client;
 			},
 			write: async () => undefined,
+			tryOpen: async () => true,
+		writeError: async () => undefined,
+			localBootstrap: async () => {
+				throw new Error("unexpected local bootstrap");
+			},
 		});
 
 		const error = await program
