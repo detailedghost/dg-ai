@@ -121,8 +121,9 @@ const sub = (tpl, slice, extra = {}) =>
 
 const uniq = (xs) => [...new Set(xs.filter(Boolean))];
 const settled = (d) => resolved.some((prefix) => String(d.text || "").startsWith(prefix));
-const blockingDeferral = (ds) =>
-  (ds || []).some((d) => (d.type === "SPEC" || d.type === "TEST") && !settled(d));
+const gated = (d) => d.type === "SPEC" || d.type === "TEST";
+const live = (ds) => (ds || []).filter((d) => !(gated(d) && settled(d)));
+const blockingDeferral = (ds) => live(ds).some(gated);
 const inTree = (f) => typeof f === "string" && f !== "" && !f.startsWith("/") && !f.startsWith("..");
 
 // Per-slice progress group: one box per slice (stage stays visible via each agent's label).
@@ -162,7 +163,7 @@ const results = await pipeline(
       // which is how a wave of dead agents reported clean.
       unverified: r ? [] : ["red"],
       changedFiles: [...(r?.testFiles || [])],
-      deferrals: [...(r?.deferrals || [])],
+      deferrals: live(r?.deferrals),
       notes: { durable: [...(r?.notes?.durable || [])], scratch: [...(r?.notes?.scratch || [])] },
     })),
   // 6b Yellow
@@ -186,7 +187,7 @@ const results = await pipeline(
       unverified: [...st.unverified, ...(y ? [] : ["yellow"])],
       securitySensitive: !!y?.securitySensitive,
       changedFiles: uniq([...st.changedFiles, ...(y?.changedFiles || [])]),
-      deferrals: [...st.deferrals, ...(y?.deferrals || [])],
+      deferrals: [...st.deferrals, ...live(y?.deferrals)],
       notes: {
         durable: uniq([...st.notes.durable, ...(y?.notes?.durable || [])]),
         scratch: uniq([...st.notes.scratch, ...(y?.notes?.scratch || [])]),
@@ -213,8 +214,9 @@ const results = await pipeline(
       return {
         ...st,
         unverified: [...st.unverified, ...(g ? [] : ["green"]), ...(cwd && !listed ? ["files"] : [])],
-        changedFiles: uniq([...reported, ...(listed?.files || []).filter(inTree)]),
-        deferrals: [...st.deferrals, ...(g?.deferrals || [])],
+        changedFiles: reported,
+        reviewFiles: uniq([...reported, ...(listed?.files || []).filter(inTree)]),
+        deferrals: [...st.deferrals, ...live(g?.deferrals)],
         notes: {
           durable: uniq([...st.notes.durable, ...(g?.notes?.durable || [])]),
           scratch: uniq([...st.notes.scratch, ...(g?.notes?.scratch || [])]),
@@ -247,7 +249,7 @@ const results = await pipeline(
       const reviews = await parallel(
         reviewers.map(
           (rv) => () =>
-            agent(sub(templates.wave, slice, { changedFiles: st.changedFiles }), {
+            agent(sub(templates.wave, slice, { changedFiles: st.reviewFiles || st.changedFiles }), {
               label: `${bareAgent(rv.agentType)}:${slice.id}#${round}`,
               phase: phaseFor(slice),
               ...stageOpts(rv),
@@ -272,7 +274,7 @@ const results = await pipeline(
               (owner !== "qa-writer" && slice.proxyBackend && templates.proxy) || templates.correction;
             return agent(
               sub(correctionTpl, slice, {
-                changedFiles: st.changedFiles,
+                changedFiles: st.reviewFiles || st.changedFiles,
                 findings: fs.map((f) => `[${f.severity}] ${f.file}: ${f.issue}`).join("\n"),
               }),
               {
@@ -284,7 +286,7 @@ const results = await pipeline(
             );
           }),
       );
-      correctionDeferrals.push(...fixes.filter(Boolean).flatMap((fix) => fix.deferrals || []));
+      correctionDeferrals.push(...fixes.filter(Boolean).flatMap((fix) => live(fix.deferrals)));
       if (blockingDeferral(correctionDeferrals))
         return {
           sliceId: slice.id,

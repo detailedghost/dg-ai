@@ -375,6 +375,24 @@ describe("slice-wave runner deferral handling", () => {
 			expect(seen[label]).not.toContain("SETTLED-ONLY-FOR-ONE");
 	});
 
+	test("keeps git-only files out of the slice's commit list", async () => {
+		const { slice } = await wave(
+			{ red: red([]), yellow, green: red([]), files: { files: ["other-slice.ts"] } },
+			{ cwd: "/work/tree" },
+		);
+		expect(slice.changedFiles).toEqual(["a.test.ts", "a.ts"]);
+	});
+
+	test("drops a settled SPEC deferral from the returned deferrals", async () => {
+		const settledItem = { type: "SPEC", text: "Settled question: again" };
+		const confirm = { type: "CONFIRM", text: "Settled question is only prefix for SPEC" };
+		const { slice } = await wave(
+			{ red: red([settledItem]), yellow: { ...yellow, deferrals: [confirm] }, green: red([]) },
+			{ resolved: ["Settled question"] },
+		);
+		expect(slice.deferrals).toEqual([confirm]);
+	});
+
 	test("marks the slice unverified when the file-list stage returns nothing", async () => {
 		const { slice } = await wave(
 			{ red: red([]), yellow, green: red([]), files: null },
