@@ -134,6 +134,7 @@ const globRe = (glob) =>
       .replace(/\*\*/g, "\u0001")
       .replace(/\*/g, "[^/]*")
       .replace(/\?/g, "[^/]")
+      .replace(/\[!/g, "[^")
       .replace(/\{([^}]*)\}/g, (_, alts) => `(?:${alts.replaceAll(",", "|")})`)
       .replace(/\0/g, "(?:.*/)?")
       .replace(/\u0001/g, ".*")}$`,

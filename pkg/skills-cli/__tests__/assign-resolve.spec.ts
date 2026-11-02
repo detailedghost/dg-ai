@@ -401,6 +401,17 @@ describe("slice-wave runner deferral handling", () => {
 		expect(review).toContain(path);
 	});
 
+	test("treats [!x] in a glob as a negated class", async () => {
+		const own = { id: 1, name: "n", primary: stage, qa: [], brief: "", testingCriteria: "" };
+		const { prompts } = await wave(
+			{ red: red([]), yellow, green: red([]), files: { files: ["src/a.ts", "src/b.ts"] } },
+			{ cwd: "/work/tree", slices: [{ ...own, files: ["src/[!a].ts"] }] },
+		);
+		const review = Object.values(prompts).find((p) => p.startsWith("review:")) as string;
+		expect(review).toContain("src/b.ts");
+		expect(review).not.toContain("src/a.ts");
+	});
+
 	test("keeps git-only files out of the slice's commit list", async () => {
 		const { slice } = await wave(
 			{ red: red([]), yellow, green: red([]), files: { files: ["other-slice.ts"] } },
