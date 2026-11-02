@@ -312,13 +312,17 @@ export async function runPlayer(
 		const closed = new Promise<BridgeEnd>((resolve) =>
 			context.once("close", () => resolve(stopped)),
 		);
+		const pageGone = new Promise<BridgeEnd>((resolve) => {
+			if (live.isClosed()) return resolve(stopped);
+			live.once("close", () => resolve(stopped));
+		});
 		const timedOut = new Promise<BridgeEnd>((resolve) => {
 			timer = setTimeout(
 				() => resolve(stopped),
 				(job.timeoutMin ?? DEFAULT_TIMEOUT_MIN) * 60_000,
 			);
 		});
-		end = await Promise.race([bridge.done, closed, timedOut]);
+		end = await Promise.race([bridge.done, closed, pageGone, timedOut]);
 		clearTimeout(timer);
 	} catch (error) {
 		end = {

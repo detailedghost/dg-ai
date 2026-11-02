@@ -43,6 +43,7 @@ function fakeSession(options: FakeOptions = {}) {
 	};
 	let handler: Handler | undefined;
 	const closed: string[] = [];
+	const pageClosed: Array<() => void> = [];
 	const mainFrame = { url: () => START_URL };
 	const page = {
 		mainFrame: () => mainFrame,
@@ -52,6 +53,10 @@ function fakeSession(options: FakeOptions = {}) {
 		addInitScript: async () => undefined,
 		route: async () => undefined,
 		on: () => undefined,
+		isClosed: () => false,
+		once: (event: string, fn: () => void) => {
+			if (event === "close") pageClosed.push(fn);
+		},
 		evaluate: async () => undefined,
 		goto: async () => {
 			if (options.gotoError) throw options.gotoError;
@@ -77,7 +82,7 @@ function fakeSession(options: FakeOptions = {}) {
 		context: context as never,
 		close: async () => void closed.push("session"),
 	};
-	return { session, page, closed };
+	return { session, page, closed, closePage: () => pageClosed.forEach((fn) => fn()) };
 }
 
 const job = (over: Partial<PlayerJob> = {}): PlayerJob => ({
@@ -101,6 +106,13 @@ const readResult = (): DemoResult =>
 	JSON.parse(readFileSync(join(dir, "run-tour.result.json"), "utf8"));
 
 describe("runPlayer outcome mapping", () => {
+	test("closing the tour page ends the run as stopped", async () => {
+		const fake = fakeSession({ onGoto: () => void setTimeout(() => fake.closePage(), 0) });
+		const code = await runPlayer(job(), { launch: async () => fake.session });
+		expect(code).toBe(0);
+		expect(readResult().outcome).toBe("stopped");
+	});
+
 	test("done writes outcome done, the step count and returns 0", async () => {
 		const fake = fakeSession({ onGoto: (send) => void send({ kind: "done" }) });
 		const code = await runPlayer(job(), { launch: async () => fake.session });
