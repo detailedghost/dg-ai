@@ -218,6 +218,18 @@ export async function openProtonSession(
 	return {
 		page: {
 			url: async () => String(await evaluate("location.href")),
+			clearObservedHeaders: async () => {
+				const cleared = await run([
+					session,
+					"--raw",
+					"network",
+					"--filter",
+					"/api/",
+					"--clear",
+				]);
+				if (cleared.code !== 0)
+					throw new Error("Could not reset the Proton request log.");
+			},
 			observedHeaders: async () => {
 				const listing = await run([
 					session,

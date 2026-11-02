@@ -44,6 +44,7 @@ const SIGNED_OUT_CODES = new Set([
 
 export type ProtonPwPage = {
 	url(): string | Promise<string>;
+	clearObservedHeaders(): Promise<void>;
 	observedHeaders():
 		| ProtonSessionHeaders
 		| undefined
@@ -168,6 +169,7 @@ export function createPwBrowserRequest(input: {
 			let headers = cached?.headers;
 			if (!headers) {
 				try {
+					await page.clearObservedHeaders();
 					headers = await observeHeaders(page, verify);
 				} catch (error) {
 					if (error instanceof ProtonSignedOutError) await close();

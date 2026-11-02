@@ -251,6 +251,32 @@ describe("proton-pw openProtonSession", () => {
 		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
 	});
 
+	test("clearObservedHeaders empties the api request log without a reload", async () => {
+		const { run, calls } = recordingRunner();
+		const session = await openProtonSession(spec(true), run);
+		await session.page.clearObservedHeaders();
+		expect(calls.at(-1)).toEqual([
+			"-s=inbox-proton",
+			"--raw",
+			"network",
+			"--filter",
+			"/api/",
+			"--clear",
+		]);
+		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
+	});
+
+	test("clearObservedHeaders rejects when pw cannot clear the log", async () => {
+		const run: PwRunner = async (argv) =>
+			argv.includes("--clear")
+				? { code: 1, out: "", err: "clear failed" }
+				: { code: 0, out: "", err: "" };
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.clearObservedHeaders()).rejects.toThrow(
+			"Could not reset the Proton request log.",
+		);
+	});
+
 	test("observedHeaders is undefined before any Proton api request", async () => {
 		const { run } = recordingRunner({ network: "" });
 		const session = await openProtonSession(spec(true), run);
@@ -325,6 +351,7 @@ describe("proton-pw marker handling", () => {
 			const runtime = protonPwRuntime(data.dir, async () => ({
 				page: {
 					url: () => "https://mail.proton.me/u/0/inbox",
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => undefined,
 					evaluate: async () => ({}),
 				},
@@ -347,6 +374,7 @@ describe("proton-pw marker handling", () => {
 			const runtime = protonPwRuntime(data.dir, async () => ({
 				page: {
 					url: () => "https://account.proton.me/login",
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => undefined,
 					evaluate: async () => ({}),
 				},
@@ -372,6 +400,7 @@ describe("proton-pw runProtonSignIn", () => {
 				return {
 					page: {
 						url: () => url,
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => (uid ? { uid } : undefined),
 						evaluate: async () => ({}),
 					},
@@ -523,6 +552,7 @@ describe("proton-pw protonPwRuntime", () => {
 				openSession: async () => ({
 					page: {
 						url: () => "https://mail.proton.me/u/0/inbox",
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => ({ uid: "fixture-uid" }),
 						evaluate: async () => ({}),
 					},
@@ -560,6 +590,7 @@ describe("proton-pw sign-in origins", () => {
 				openSession: async () => ({
 					page: {
 						url: () => "https://mail.protonmail.com/u/0/inbox",
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => ({ uid: "fixture-uid" }),
 						evaluate: async () => ({}),
 					},
@@ -578,6 +609,7 @@ describe("proton-pw sign-in origins", () => {
 describe("proton-pw session lock", () => {
 	const fixturePage = {
 		url: () => "https://mail.proton.me/u/0/inbox",
+		clearObservedHeaders: async () => {},
 		observedHeaders: () => ({ uid: "fixture-uid" }),
 		evaluate: async () => ({ hasMore: false }),
 	};
@@ -715,6 +747,7 @@ describe("proton-pw session lock", () => {
 				openSession: async () => ({
 					page: {
 						url: () => "https://account.proton.me/login",
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => undefined,
 						evaluate: async () => ({}),
 					},
@@ -759,6 +792,7 @@ describe("proton-pw session lock", () => {
 				openSession: async () => ({
 					page: {
 						url: () => "https://account.proton.me/login",
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => undefined,
 						evaluate: async () => ({}),
 					},

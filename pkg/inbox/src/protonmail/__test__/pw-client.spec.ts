@@ -20,6 +20,7 @@ function seam(options: { url?: string; answer?: unknown } = {}) {
 	let closed = 0;
 	const page: ProtonPwPage = {
 		url: () => options.url ?? MAIL_URL,
+		clearObservedHeaders: async () => {},
 		observedHeaders: () => ({ uid: "fixture-session-uid" }),
 		evaluate: async (fn, arg) => {
 			evaluated.push({ fn, arg });
@@ -137,6 +138,7 @@ describe("pw-client createPwBrowserRequest", () => {
 				openSession: async () => ({
 					page: {
 						url: () => MAIL_URL,
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => undefined,
 						evaluate: async (fn: unknown, arg: unknown) =>
 							void evaluated.push({ fn, arg }),
@@ -173,6 +175,7 @@ describe("pw-client createPwBrowserRequest", () => {
 				openSession: async () => ({
 					page: {
 						url: () => urls.shift() ?? "https://account.proton.me/login",
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => undefined,
 						evaluate: async () => ({ hasMore: false }),
 					},
@@ -313,6 +316,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => MAIL_URL,
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => {
 						reads += 1;
 						return { uid: "fixture-session-uid" };
@@ -335,6 +339,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => url,
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => ({ uid: "uid-a" }),
 					evaluate: async (fn: unknown, arg: unknown) => {
 						evaluated.push({ fn, arg });
@@ -369,6 +374,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => (last = urls.shift() ?? last),
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => ({ uid: "uid-b" }),
 					evaluate: async (fn: unknown, arg: unknown) => {
 						evaluated.push({ fn, arg });
@@ -395,6 +401,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => url,
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => ({ uid: "uid-a" }),
 					evaluate: async (fn: unknown, arg: unknown) => {
 						evaluated.push({ fn, arg });
@@ -420,6 +427,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => url,
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => ({ uid: "uid-a" }),
 					evaluate: async (fn: unknown, arg: unknown) => {
 						evaluated.push({ fn, arg });
@@ -470,6 +478,7 @@ describe("pw-client createPwBrowserRequest", () => {
 				openSession: async () => ({
 					page: {
 						url: () => (url = urls.shift() ?? url),
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => {
 							seen.push(url);
 							return { uid: "uid-b" };
@@ -499,6 +508,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => url,
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => {
 						const captured = { uid: "uid-a" };
 						url = "https://mail.proton.me/u/1/inbox";
@@ -516,6 +526,36 @@ describe("pw-client createPwBrowserRequest", () => {
 			transport.browserRequest({ operation: "list-folders" }),
 		).rejects.toThrow(/account-mismatch/);
 		expect(evaluated).toHaveLength(0);
+	});
+
+	test("clears the observed request log before each header acquisition and never for a cached one", async () => {
+		let url = "https://mail.proton.me/u/0/inbox";
+		const order: string[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => url,
+					clearObservedHeaders: async () => void order.push("clear"),
+					observedHeaders: () => {
+						order.push("observe");
+						return { uid: "uid-a" };
+					},
+					evaluate: async () => ({ hasMore: false }),
+				},
+				close: async () => {},
+			}),
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		await transport.browserRequest({ operation: "list-filters" });
+		expect(order).toEqual(["clear", "observe"]);
+		url = "https://mail.proton.me/u/1/inbox";
+		await expect(
+			transport.browserRequest({ operation: "list-filters" }),
+		).rejects.toThrow(/account-mismatch/);
+		url = "https://mail.proton.me/u/0/inbox";
+		await transport.browserRequest({ operation: "list-filters" });
+		expect(order).toEqual(["clear", "observe", "clear", "observe"]);
 	});
 
 	test("never imports playwright-core statically", () => {
