@@ -4,7 +4,7 @@ import { launch, releaseKey } from "../../core/launch";
 import { isProtectedSession } from "../../core/protected-session";
 import {
 	defaultOutputDir,
-	list,
+	readAll,
 	sessionKey,
 	socketPathFor,
 } from "../../core/registry";
@@ -19,7 +19,7 @@ function parseEndpoint(value: string | undefined): string {
 const attach: ClientHandler = async (args, env) => {
 	const cdpUrl = parseEndpoint(stringFlag(args, "cdp"));
 	const port = new URL(cdpUrl).port;
-	const guarded = list().find(
+	const guarded = readAll().find(
 		(record) =>
 			isProtectedSession(record.name) &&
 			record.cdpUrl !== undefined &&

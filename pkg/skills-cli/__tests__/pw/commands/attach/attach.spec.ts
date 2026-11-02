@@ -88,4 +88,21 @@ describe("attach", () => {
 		).toBe(1);
 		expect(env.stderr[0]).toContain("refuses to attach to the inbox-proton browser");
 	});
+
+	test("refuses the CDP endpoint of a protected browser whose daemon is gone", async () => {
+		write({
+			...heldByAnotherCwd(),
+			name: "inbox-proton",
+			key: "inbox-proton",
+			pid: 2147483646,
+			socketPath: socketPathFor("inbox-proton"),
+			winPid: 4242,
+			profileDir: "C:\\profiles\\inbox-proton",
+		});
+		const env = clientEnv("/b");
+		expect(
+			await handler(argsFor(spec, "-s=mail-copy", "--cdp=http://127.0.0.1:9222"), env),
+		).toBe(1);
+		expect(env.stderr[0]).toContain("refuses to attach to the inbox-proton browser");
+	});
 });
