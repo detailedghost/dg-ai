@@ -179,7 +179,7 @@ This mirrors the owner's personal stat skill: **`/dg:stat` itself never calls `s
 
 - When you start a task or hand the user a step, `stat add` it with the status that fits (`running`, `queued`, `blocked-user`, `needs-user`); add `--eta <bucket>` when you can estimate.
 - When you finish one, `stat done "<match>"`. It matches parents and sub-items by a case-insensitive substring; 0 or 2+ matches is an error listing every candidate, so make the match specific.
-- `--at <n>` places a new top-level item at position `n` (default: the end); `--under <n|match>` adds it as a sub-item of that open top-level item instead.
+- `--at <n>` places a new top-level item at position `n` (default: the end), and fails with a non-zero exit, writing nothing, when status/ETA order forbids that position (a `--at` past the end appends); `--under <n|match>` adds it as a sub-item of that open top-level item instead.
 - There is no separate `reopen` command: `stat status "<match>" queued` (or any open status) moves a done item back to the end of the open list.
 
 ## `--overwatch`

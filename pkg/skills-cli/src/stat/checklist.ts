@@ -359,6 +359,11 @@ export interface MatchFailure {
 	candidates: { label: string; text: string }[];
 }
 
+export interface PlacementFailure {
+	ok: false;
+	placement: { wanted: number; landsAt: number };
+}
+
 interface Located {
 	item: ChecklistItem;
 	label: string;
@@ -576,7 +581,7 @@ export function addItem(
 	model: ChecklistModel,
 	text: string,
 	opts: AddOptions = {},
-): MutationResult | MatchFailure {
+): MutationResult | MatchFailure | PlacementFailure {
 	const item: ChecklistItem = {
 		text: sanitizeText(text),
 		status: opts.status ?? "queued",
@@ -604,12 +609,15 @@ export function addItem(
 	if (opts.at === undefined) return withLabel(insertedAt(model.open.length), item);
 
 	const wanted = clampPosition(opts.at, model.open.length);
-	let best = { model: insertedAt(model.open.length), distance: Number.POSITIVE_INFINITY };
+	let best = { model: insertedAt(model.open.length), distance: Number.POSITIVE_INFINITY, shownAt: 0 };
 	for (let stored = 0; stored <= model.open.length && best.distance > 0; stored++) {
 		const candidate = insertedAt(stored);
 		const shownAt = displayEntries(candidate).findIndex((entry) => entry.item === item);
 		const distance = Math.abs(shownAt - wanted);
-		if (distance < best.distance) best = { model: candidate, distance };
+		if (distance < best.distance) best = { model: candidate, distance, shownAt };
+	}
+	if (best.distance > 0 && opts.at <= model.open.length) {
+		return { ok: false, placement: { wanted: opts.at, landsAt: best.shownAt + 1 } };
 	}
 	return withLabel(best.model, item);
 }

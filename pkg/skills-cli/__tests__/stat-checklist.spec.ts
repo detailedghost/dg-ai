@@ -740,6 +740,17 @@ describe("critical-path display order", () => {
 		expect(texts(result.model)).toEqual(["long", "peer", "short"]);
 	});
 
+	test("add --at fails when status order cannot place the item at that position", () => {
+		const model: ChecklistModel = {
+			open: [item("approve", { status: "blocked-user" })],
+			done: [],
+		};
+		const result = addItem(model, "later", { at: 1 });
+		expect(result).toEqual({ ok: false, placement: { wanted: 1, landsAt: 2 } });
+		const append = addItem(model, "end", { at: 99 });
+		expect(append.ok).toBe(true);
+	});
+
 	test("mutations report the displayed label", () => {
 		const done = markDone(mixed(), "mid");
 		if (!done.ok) throw new Error("expected success");

@@ -98,6 +98,20 @@ describe("dg-skills stat checklist", () => {
 		});
 	});
 
+	test("add --at exits non-zero and writes nothing when the position is unreachable", async () => {
+		await withRoot(async (env) => {
+			await runCli(["stat", "add", "Approve it", "--status", "blocked-user"], env);
+			const before = await runCli(["stat", "checklist", "-p"], env);
+			const failed = await runCli(["stat", "add", "Later", "--at", "1"], env);
+			expect(failed.code).not.toBe(0);
+			expect(failed.err).toContain(
+				"add: --at 1 is not reachable; the item would land at position 2 because display order follows status and ETA",
+			);
+			const after = await runCli(["stat", "checklist", "-p"], env);
+			expect(after.out).toBe(before.out);
+		});
+	});
+
 	test("--long is a usable alias for -l", async () => {
 		await withRoot(async (env) => {
 			await runCli(["stat", "add", "x"], env);
