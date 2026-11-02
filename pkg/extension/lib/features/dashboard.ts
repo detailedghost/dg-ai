@@ -5,7 +5,7 @@ import {
 	formatSchedule,
 	type JobState,
 } from "@dg/common";
-import { findDaemonPort } from "@/lib/daemon-port";
+import { findDaemonPort } from "@dg/pages/daemon-port";
 
 export const DASHBOARD_POLL_MS = 10_000;
 

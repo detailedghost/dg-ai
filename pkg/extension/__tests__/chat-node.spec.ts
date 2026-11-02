@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import type { ProgressState } from "@dg/common";
-import type { ChatSessionEntry } from "@/lib/features/chat-sessions";
+import type { ChatSessionEntry } from "@dg/pages/chat/chat-sessions";
 import { createTestContainer, keydown } from "./utils/dom-events";
 
 const { createComposer, createChatNode, statusLabel, groupSessionsByWorkset } =
-	await import("@/lib/features/chat-node");
+	await import("@dg/pages/chat/chat-node");
 
 function buildEntry(
 	overrides: Partial<ChatSessionEntry> = {},

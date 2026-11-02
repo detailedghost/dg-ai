@@ -1,5 +1,5 @@
-import { MSG } from "@/lib/chat-messages";
-import { readChatBootstrap, stripChatMarker } from "@/utils/chat-marker";
+import { MSG } from "@dg/pages/chat-messages";
+import { readChatBootstrap, stripChatMarker } from "@dg/pages/chat-marker";
 
 export default defineContentScript({
 	matches: ["http://127.0.0.1/*"],

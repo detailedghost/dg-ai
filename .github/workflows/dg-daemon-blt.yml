@@ -6,6 +6,7 @@ on:
     paths:
       - pkg/dg-daemon/**
       - pkg/common/**
+      - pkg/pages/**
       - .github/workflows/dg-daemon-blt.yml
   workflow_call:
 
@@ -43,6 +44,18 @@ jobs:
 
       - name: Test (common)
         working-directory: pkg/common
+        run: bun test
+
+      - name: Build (pages)
+        working-directory: pkg/pages
+        run: bun build.ts
+
+      - name: Lint (pages)
+        working-directory: pkg/pages
+        run: bun run lint
+
+      - name: Test (pages)
+        working-directory: pkg/pages
         run: bun test
 
       - name: Lint (dg-daemon)

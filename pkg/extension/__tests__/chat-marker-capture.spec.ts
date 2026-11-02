@@ -1,6 +1,6 @@
 import { afterAll, afterEach, expect, mock, test } from "bun:test";
-import { MSG } from "@/lib/chat-messages";
-import { stripChatMarker } from "@/utils/chat-marker";
+import { MSG } from "@dg/pages/chat-messages";
+import { stripChatMarker } from "@dg/pages/chat-marker";
 import { captureGlobal, makeBootstrap } from "./utils/relay-harness";
 
 type CapturedContentConfig = {

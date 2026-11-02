@@ -1,5 +1,5 @@
-import { fetchDaemonHealth, findDaemonPort } from "@/lib/daemon-port";
-import { handshakeOutcome, reconnectDelayMs } from "@/lib/features/chat-connection";
+import { fetchDaemonHealth, findDaemonPort } from "../daemon-port";
+import { handshakeOutcome, reconnectDelayMs } from "./chat-connection";
 import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PROTOCOL_VERSION,
@@ -43,7 +43,7 @@ export type SendUserMessageOptions = {
 	subagentName?: string;
 };
 
-export type { ChatHealth, DaemonName } from "@/lib/daemon-port";
+export type { ChatHealth, DaemonName } from "../daemon-port";
 
 export type ChatClientOptions = {
 	openSocket?: (url: string) => ChatClientSocket;

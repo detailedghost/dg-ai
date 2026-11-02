@@ -5,7 +5,7 @@ import { CHAT_MAX_ASSET_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { createTestContainer, fire } from "./utils/dom-events";
 import { buildAgentMessageFrame } from "./utils/frame-fixtures";
 
-const { createTranscriptView } = await import("@/lib/features/chat-transcript");
+const { createTranscriptView } = await import("@dg/pages/chat/chat-transcript");
 
 function buildCommandResultFrame(overrides: Record<string, unknown> = {}) {
 	return {
@@ -138,7 +138,7 @@ test("hostile content in a command result's output/error renders as visible text
 test("emits class-hooked DOM only — source carries no inline styles and does not import ui-helpers's style-applying createEl", () => {
 	const source = readFileSync(
 		fileURLToPath(
-			new URL("../lib/features/chat-transcript.ts", import.meta.url),
+			new URL("../../pages/src/chat/chat-transcript.ts", import.meta.url),
 		),
 		"utf8",
 	);
@@ -478,7 +478,7 @@ test("regression: two agent messages append in call order even when the first on
 	const container = createTestContainer();
 	const fetchAsset = async (): Promise<
 		Extract<
-			import("@/lib/features/chat-transcript").FetchAssetResult,
+			import("@dg/pages/chat/chat-transcript").FetchAssetResult,
 			{ status: "ok" }
 		>
 	> => {

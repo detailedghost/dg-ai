@@ -1,5 +1,3 @@
-@reference "../options/style.css";
-
 .chat-page {
 	--chat-bg: var(--bg);
 	--chat-panel: var(--panel);

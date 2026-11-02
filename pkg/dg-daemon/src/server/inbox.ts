@@ -77,8 +77,8 @@ function missingExtensionError(
 ): string {
 	const port = readPidFile(deps.paths)?.port;
 	const hint = port
-		? `http://127.0.0.1:${port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`
-		: "http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>";
+		? `http://127.0.0.1:${port}/chat#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`
+		: "http://127.0.0.1:<port>/chat#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>";
 	return (
 		`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId} and open an authenticated Proton Mail tab. ` +
 		`Open ${hint} in the browser where the extension is loaded, then reload the Proton Mail tab. ` +

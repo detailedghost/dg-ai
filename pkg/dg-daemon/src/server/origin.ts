@@ -1,3 +1,4 @@
+import { CHAT_WS_PATH } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { readConfig, writeConfig } from "./config-store";
 
@@ -20,6 +21,59 @@ export function isBrowserOrigin(origin: string | null): boolean {
 	} catch {
 		return false;
 	}
+}
+
+const LOOPBACK_PAGE_HOSTS = new Set(["127.0.0.1", "localhost"]);
+
+export function isLocalPageOrigin(origin: string | null, port: number): boolean {
+	if (!origin) return false;
+	try {
+		const url = new URL(origin);
+		return (
+			url.protocol === "http:" &&
+			LOOPBACK_PAGE_HOSTS.has(url.hostname) &&
+			url.port === String(port)
+		);
+	} catch {
+		return false;
+	}
+}
+
+function presentedToken(req: Request, url: URL): string | null {
+	const authorization = req.headers.get("authorization");
+	if (authorization?.startsWith("Bearer ")) return authorization.slice(7);
+	return url.pathname === CHAT_WS_PATH ? url.searchParams.get("token") : null;
+}
+
+/** Browsers omit Origin on same-origin GET, so a bare token also claims a local page. */
+export function claimsLocalPage(req: Request, url: URL, port: number): boolean {
+	const origin = req.headers.get("origin");
+	return origin === null
+		? presentedToken(req, url) !== null
+		: isLocalPageOrigin(origin, port);
+}
+
+export function requireLocalPageOrigin(
+	req: Request,
+	url: URL,
+	port: number,
+	isLiveToken: (token: string) => boolean,
+): Response | undefined {
+	const origin = req.headers.get("origin");
+	if (origin !== null && !isLocalPageOrigin(origin, port)) {
+		return new Response("refused", {
+			status: 400,
+			headers: { "X-Content-Type-Options": "nosniff" },
+		});
+	}
+	const token = presentedToken(req, url);
+	if (token === null || !isLiveToken(token)) {
+		return new Response("refused", {
+			status: 403,
+			headers: { "X-Content-Type-Options": "nosniff" },
+		});
+	}
+	return undefined;
 }
 
 const PINNED_ORIGIN_KEY = "pinnedOrigin";

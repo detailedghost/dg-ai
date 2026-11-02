@@ -1,7 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
-import { canvasPositionKey } from "@/lib/features/chat-canvas";
+import { canvasPositionKey } from "@dg/pages/chat/chat-canvas";
 import { stubChromeStorage } from "./utils/chrome-storage";
 import { click, fire, pointer } from "./utils/dom-events";
 import { buildSessionListFrame } from "./utils/frame-fixtures";

@@ -3,7 +3,7 @@ import {
 	createVimNav,
 	type VimListSource,
 	type VimNavOptions,
-} from "@/lib/features/vim-nav";
+} from "@dg/pages/vim-nav";
 
 function fakeKey(key: string): KeyboardEvent {
 	return { key, preventDefault: mock(() => {}) } as unknown as KeyboardEvent;

@@ -14,6 +14,8 @@
 			"~~/*": ["./*"],
 			"@dg/common": ["../common/src/index.ts"],
 			"@dg/common/*": ["../common/src/*"],
+			"@dg/pages": ["../pages/src/index.ts"],
+			"@dg/pages/*": ["../pages/src/*"],
 			"@dg/tour-ui": ["../tour-ui/src/index.ts"]
 		}
 	}

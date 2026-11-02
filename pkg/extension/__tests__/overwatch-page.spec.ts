@@ -13,7 +13,7 @@ import {
 	type OverwatchLane,
 } from "@dg/common";
 import { Window } from "happy-dom";
-import type { OverwatchActionResult } from "@/lib/features/overwatch";
+import type { OverwatchActionResult } from "@dg/pages/board/overwatch";
 import { click } from "./utils/dom-events";
 import { captureGlobal } from "./utils/relay-harness";
 import {
@@ -28,13 +28,13 @@ const { mountPairing } = await import("@/lib/features/pairing");
 const { handleOverwatchFrame, handleOverwatchFrameSafely } = await import(
 	"@/lib/background/chat"
 );
-const { MSG } = await import("@/lib/chat-messages");
+const { MSG } = await import("@dg/pages/chat-messages");
 const {
 	connectOverwatchApi,
 	createOverwatchApi,
 	formatCountdown,
 	needYouCount,
-} = await import("@/lib/features/overwatch");
+} = await import("@dg/pages/board/overwatch");
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
 const GEOMETRY_TEST_TIMEOUT_MS = 60_000;
@@ -168,11 +168,11 @@ async function inspectNarrowLayout(markup: string): Promise<{
 		"utf8",
 	);
 	const chatCss = readFileSync(
-		new URL("../entrypoints/chat/style.css", import.meta.url),
+		new URL("../../pages/src/chat/style.css", import.meta.url),
 		"utf8",
 	);
 	const overwatchCss = readFileSync(
-		new URL("../entrypoints/overwatch/style.css", import.meta.url),
+		new URL("../../pages/src/board/style.css", import.meta.url),
 		"utf8",
 	);
 	await writeFile(

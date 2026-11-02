@@ -18,7 +18,7 @@ import {
 } from "./utils/relay-harness";
 import { buildSessionListFrame } from "./utils/frame-fixtures";
 
-const { createChatClient } = await import("@/lib/features/chat-client");
+const { createChatClient } = await import("@dg/pages/chat/chat-client");
 
 const makeBootstrap = makeBootstrapFactory({
 	port: 47823,

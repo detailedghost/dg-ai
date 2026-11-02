@@ -16,7 +16,7 @@ const {
 	loadNodePositions,
 	saveNodePosition,
 	createChatCanvas,
-} = await import("@/lib/features/chat-canvas");
+} = await import("@dg/pages/chat/chat-canvas");
 
 type Point = { x: number; y: number };
 type Viewport = { scale: number; pan: Point; width: number; height: number };
@@ -118,8 +118,8 @@ test("applyDragDelta clamps the resulting pan at PAN_BOUND", () => {
 
 test("saveNodePosition persists a position that loadNodePositions restores on a later load", async () => {
 	stubChromeStorage();
-	await saveNodePosition("session-a", { x: 12, y: 34 });
-	const restored = await loadNodePositions(["session-a"]);
+	await saveNodePosition(chrome.storage.local, "session-a", { x: 12, y: 34 });
+	const restored = await loadNodePositions(chrome.storage.local, ["session-a"]);
 	expect(restored.get("session-a")).toEqual({ x: 12, y: 34 });
 });
 
@@ -128,7 +128,7 @@ test("loadNodePositions prunes an orphaned session's stored position from storag
 		[canvasPositionKey("session-live")]: { x: 1, y: 2 },
 		[canvasPositionKey("session-orphan")]: { x: 9, y: 9 },
 	});
-	const restored = await loadNodePositions(["session-live"]);
+	const restored = await loadNodePositions(chrome.storage.local, ["session-live"]);
 	expect(restored.get("session-live")).toEqual({ x: 1, y: 2 });
 	expect(restored.has("session-orphan")).toBe(false);
 	expect(canvasPositionKey("session-orphan") in data).toBe(false);

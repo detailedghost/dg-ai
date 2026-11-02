@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { CHAT_DEFAULT_PORT, type SessionBootstrap } from "@dg/common";
 import { Window } from "happy-dom";
-import { MSG } from "@/lib/chat-messages";
+import { MSG } from "@dg/pages/chat-messages";
 import { frameEvent, makeFakeSocket, settle } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));

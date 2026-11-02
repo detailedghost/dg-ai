@@ -4,7 +4,7 @@ import {
 	CHAT_MARKER_KEY,
 	readChatBootstrap,
 	stripChatMarker,
-} from "@/utils/chat-marker";
+} from "@dg/pages/chat-marker";
 import { makeBootstrap } from "./utils/relay-harness";
 
 function encodeMarkerPayload(payload: unknown): string {
