@@ -24,7 +24,7 @@ const DEFAULT_REJECT_REASONS = [
 
 type Width = "all" | "mobile" | "tablet" | "desktop";
 const WIDTHS: { key: Width; icon: string; label: string }[] = [
-  { key: "all", icon: "all", label: "All widths" },
+  { key: "all", icon: "all", label: "Responsive" },
   { key: "mobile", icon: "phone", label: "Mobile" },
   { key: "tablet", icon: "tablet", label: "Tablet" },
   { key: "desktop", icon: "monitor", label: "Desktop" },
