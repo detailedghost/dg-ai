@@ -56,7 +56,7 @@ export function extStatus(name: string, reloadPath: string): string | undefined 
 			return undefined;
 		const verdict = validateVerdict(JSON.parse(readFileSync(path, "utf8")));
 		if (verdict.slug !== name) return undefined;
-		return verdict.action === "rejected"
+		return verdict.action === "reject"
 			? "rejected"
 			: `${verdict.action}:${verdict.selectedKey}`;
 	} catch {
