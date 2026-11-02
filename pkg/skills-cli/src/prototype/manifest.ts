@@ -553,10 +553,14 @@ ${sections}
     decided('changes');
     toast('Sent back for rework.');
   });
+  function setBusy(busy){
+    bar.querySelectorAll('button').forEach(function(b){ b.disabled = busy; });
+  }
   document.getElementById('proto-more').addEventListener('click', function(){
     var notes = notesArea.value.trim();
+    setBusy(true);
     window.prototypeDecide('more', '', notes ? '[was viewing ' + current + '] ' + notes : '').then(function(ok){
-      if (!ok) { toast('Could not reach the prototype server. Try again.'); return; }
+      if (!ok) { setBusy(false); toast('Could not reach the prototype server. Try again.'); return; }
       decided('more');
       toast('Asked for more versions.');
     });

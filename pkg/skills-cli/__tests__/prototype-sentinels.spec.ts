@@ -193,9 +193,9 @@ describe("prototype sentinels", () => {
 			"rejected\n",
 		);
 		expect(formatWait({ status: "more", notes: "bolder" }, false)).toBe(
-			"more\nbolder\n",
+			"more versions\nbolder\n",
 		);
-		expect(formatWait({ status: "more", notes: "" }, false)).toBe("more\n");
+		expect(formatWait({ status: "more", notes: "" }, false)).toBe("more versions\n");
 		expect(formatWait({ status: "more", notes: "bolder" }, true)).toBe(
 			'{"status":"more","notes":"bolder"}\n',
 		);

@@ -319,7 +319,7 @@ describe("prototype ui", () => {
 		expect((await cli(["status", "moreraw"]).done).stdout).toBe("more\n");
 		const plain = await cli(["wait", "moreraw"]).done;
 		expect(plain.exitCode).toBe(0);
-		expect(plain.stdout).toBe("more\nagain\n");
+		expect(plain.stdout).toBe("more versions\nagain\n");
 		writeFileSync(more, "again\n");
 		const json = await cli(["wait", "moreraw", "--json"]).done;
 		expect(json.exitCode).toBe(0);

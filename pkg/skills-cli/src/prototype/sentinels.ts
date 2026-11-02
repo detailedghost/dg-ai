@@ -185,7 +185,7 @@ export async function awaitDecision(
 export function formatWait(result: WaitResult, json: boolean): string {
 	if (json) return `${JSON.stringify(result)}\n`;
 	if (result.status === "timeout") return "timeout\n";
-	const head = result.status === "ok" ? result.variant : result.status === "rejected" ? "rejected" : "more";
+	const head = result.status === "ok" ? result.variant : result.status === "rejected" ? "rejected" : "more versions";
 	return result.notes ? `${head}\n${result.notes}\n` : `${head}\n`;
 }
 

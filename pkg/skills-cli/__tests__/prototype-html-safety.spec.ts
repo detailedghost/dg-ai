@@ -32,6 +32,14 @@ describe("prototype decision bar", () => {
 		expect(injectScript("x", [])).toContain("catch(function(){ return false; })");
 	});
 
+	test("disables the decision buttons while a More request is pending and restores them on failure", () => {
+		const handler = html.slice(html.indexOf("getElementById('proto-more')"));
+		expect(handler.indexOf("setBusy(true)")).toBeLessThan(
+			handler.indexOf("prototypeDecide('more'"),
+		);
+		expect(handler).toContain("setBusy(false); toast('Could not reach");
+	});
+
 	test("treats more as a processing favicon state", () => {
 		expect(injectScript("x", [])).toContain("action === 'more'");
 	});
