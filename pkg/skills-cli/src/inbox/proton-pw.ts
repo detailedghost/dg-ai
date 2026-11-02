@@ -178,11 +178,14 @@ async function runPw(argv: string[]) {
 	return { code, out: out.trim(), err: err.trim() };
 }
 
+function headerValues(text: string, name: string): string[] {
+	return [...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim"))].map(
+		(match) => match[1]?.trim() ?? "",
+	);
+}
+
 function headerValue(text: string, name: string): string | undefined {
-	const matches = [
-		...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim")),
-	];
-	return matches.at(-1)?.[1]?.trim();
+	return headerValues(text, name).at(-1);
 }
 
 export async function openProtonSession(
@@ -215,6 +218,20 @@ export async function openProtonSession(
 	return {
 		page: {
 			url: async () => String(await evaluate("location.href")),
+			clearObservedHeaders: async () => {
+				const cleared = await run([
+					session,
+					"--raw",
+					"network",
+					"--filter",
+					"/api/",
+					"--clear",
+				]);
+				const reloaded =
+					cleared.code === 0 ? await run([session, "reload"]) : undefined;
+				if (cleared.code !== 0 || reloaded?.code !== 0)
+					throw new Error("Could not reset the Proton request log.");
+			},
 			observedHeaders: async () => {
 				const listing = await run([
 					session,
@@ -226,6 +243,21 @@ export async function openProtonSession(
 				]);
 				if (listing.code !== 0)
 					throw new Error("Could not read the Proton request headers.");
+				const uids = new Set(headerValues(listing.out, "x-pm-uid"));
+				if (uids.size > 1) {
+					const cleared = await run([
+						session,
+						"--raw",
+						"network",
+						"--filter",
+						"/api/",
+						"--clear",
+					]);
+					const reloaded = await run([session, "reload"]);
+					if (cleared.code !== 0 || reloaded.code !== 0)
+						throw new Error("Could not reset the Proton request log.");
+					return undefined;
+				}
 				const uid = headerValue(listing.out, "x-pm-uid");
 				if (!uid) return undefined;
 				const appVersion = headerValue(listing.out, "x-pm-appversion");

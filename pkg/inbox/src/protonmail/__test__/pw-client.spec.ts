@@ -20,6 +20,7 @@ function seam(options: { url?: string; answer?: unknown } = {}) {
 	let closed = 0;
 	const page: ProtonPwPage = {
 		url: () => options.url ?? MAIL_URL,
+		clearObservedHeaders: async () => {},
 		observedHeaders: () => ({ uid: "fixture-session-uid" }),
 		evaluate: async (fn, arg) => {
 			evaluated.push({ fn, arg });
@@ -137,6 +138,7 @@ describe("pw-client createPwBrowserRequest", () => {
 				openSession: async () => ({
 					page: {
 						url: () => MAIL_URL,
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => undefined,
 						evaluate: async (fn: unknown, arg: unknown) =>
 							void evaluated.push({ fn, arg }),
@@ -173,6 +175,7 @@ describe("pw-client createPwBrowserRequest", () => {
 				openSession: async () => ({
 					page: {
 						url: () => urls.shift() ?? "https://account.proton.me/login",
+						clearObservedHeaders: async () => {},
 						observedHeaders: () => undefined,
 						evaluate: async () => ({ hasMore: false }),
 					},
@@ -313,6 +316,7 @@ describe("pw-client createPwBrowserRequest", () => {
 			openSession: async () => ({
 				page: {
 					url: () => MAIL_URL,
+					clearObservedHeaders: async () => {},
 					observedHeaders: () => {
 						reads += 1;
 						return { uid: "fixture-session-uid" };
@@ -325,6 +329,233 @@ describe("pw-client createPwBrowserRequest", () => {
 		await transport.browserRequest({ operation: "list-folders" });
 		await transport.browserRequest({ operation: "list-filters" });
 		expect(reads).toBe(1);
+	});
+
+	test("a url that moves to another account after headers were cached rejects before evaluating", async () => {
+		let url = "https://mail.proton.me/u/0/inbox";
+		const evaluated: unknown[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => url,
+					clearObservedHeaders: async () => {},
+					observedHeaders: () => ({ uid: "uid-a" }),
+					evaluate: async (fn: unknown, arg: unknown) => {
+						evaluated.push({ fn, arg });
+						return { hasMore: false };
+					},
+				},
+				close: async () => {},
+			}),
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		url = "https://mail.proton.me/u/1/inbox";
+		await expect(
+			transport.browserRequest({
+				operation: "move-messages",
+				messageIds: ["m1"],
+				targetFolderId: "archive",
+				accountHint: "1",
+			}),
+		).rejects.toThrow(/account-mismatch/);
+		expect(evaluated).toHaveLength(1);
+	});
+
+	test("a redirect to another account while polling for headers rejects before evaluating", async () => {
+		const urls = [
+			"https://mail.proton.me/u/1/inbox",
+			"https://mail.proton.me/u/0/inbox",
+		];
+		let last = urls[0]!;
+		const evaluated: unknown[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => (last = urls.shift() ?? last),
+					clearObservedHeaders: async () => {},
+					observedHeaders: () => ({ uid: "uid-b" }),
+					evaluate: async (fn: unknown, arg: unknown) => {
+						evaluated.push({ fn, arg });
+						return { hasMore: false };
+					},
+				},
+				close: async () => {},
+			}),
+		});
+		await expect(
+			transport.browserRequest({
+				operation: "list-folders",
+				accountHint: "1",
+			}),
+		).rejects.toThrow(/account-mismatch/);
+		expect(evaluated).toHaveLength(0);
+	});
+
+	test("without a hint the first resolved account is pinned for the session", async () => {
+		let url = "https://mail.proton.me/u/0/inbox";
+		const evaluated: unknown[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => url,
+					clearObservedHeaders: async () => {},
+					observedHeaders: () => ({ uid: "uid-a" }),
+					evaluate: async (fn: unknown, arg: unknown) => {
+						evaluated.push({ fn, arg });
+						return { hasMore: false };
+					},
+				},
+				close: async () => {},
+			}),
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		url = "https://mail.proton.me/u/1/inbox";
+		await expect(
+			transport.browserRequest({ operation: "list-filters" }),
+		).rejects.toThrow(/account-mismatch/);
+		expect(evaluated).toHaveLength(1);
+	});
+
+	test("a hinted retry on a moved page stays rejected while the session is pinned to another account", async () => {
+		let url = "https://mail.proton.me/u/0/inbox";
+		const evaluated: unknown[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => url,
+					clearObservedHeaders: async () => {},
+					observedHeaders: () => ({ uid: "uid-a" }),
+					evaluate: async (fn: unknown, arg: unknown) => {
+						evaluated.push({ fn, arg });
+						return { hasMore: false };
+					},
+				},
+				close: async () => {},
+			}),
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		url = "https://mail.proton.me/u/1/inbox";
+		const hinted = { operation: "list-folders", accountHint: "1" } as const;
+		await expect(transport.browserRequest(hinted)).rejects.toThrow(
+			/account-mismatch/,
+		);
+		await expect(transport.browserRequest(hinted)).rejects.toThrow(
+			/account-mismatch/,
+		);
+		expect(evaluated).toHaveLength(1);
+	});
+
+	test("passes the resolved account to the page call", async () => {
+		const { transport, evaluated } = seam({
+			url: "https://mail.proton.me/u/2/inbox",
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		expect(evaluated[0]!.arg).toMatchObject({ account: "2" });
+	});
+
+	test("a no-hint session waits for a /u/N path before it reads headers", async () => {
+		const timers = spyOn(globalThis, "setTimeout").mockImplementation(((
+			callback: () => void,
+		) => {
+			callback();
+			return 0;
+		}) as never);
+		try {
+			const urls = [
+				"https://mail.proton.me/",
+				"https://mail.proton.me/",
+				"https://mail.proton.me/u/1/inbox",
+			];
+			let url = urls[0]!;
+			const seen: string[] = [];
+			const evaluated: unknown[] = [];
+			const transport = createPwBrowserRequest({
+				dataDir: "/data/dg",
+				openSession: async () => ({
+					page: {
+						url: () => (url = urls.shift() ?? url),
+						clearObservedHeaders: async () => {},
+						observedHeaders: () => {
+							seen.push(url);
+							return { uid: "uid-b" };
+						},
+						evaluate: async (fn: unknown, arg: unknown) => {
+							evaluated.push({ fn, arg });
+							return { hasMore: false };
+						},
+					},
+					close: async () => {},
+				}),
+			});
+			await transport.browserRequest({ operation: "list-folders" });
+			expect(seen.length).toBeGreaterThan(0);
+			for (const entry of seen) expect(entry).toContain("/u/1");
+			expect(evaluated[0]).toMatchObject({ arg: { account: "1" } });
+		} finally {
+			timers.mockRestore();
+		}
+	});
+
+	test("a no-hint session rejects a switch to another account while polling for headers", async () => {
+		let url = "https://mail.proton.me/u/0/inbox";
+		const evaluated: unknown[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => url,
+					clearObservedHeaders: async () => {},
+					observedHeaders: () => {
+						const captured = { uid: "uid-a" };
+						url = "https://mail.proton.me/u/1/inbox";
+						return captured;
+					},
+					evaluate: async (fn: unknown, arg: unknown) => {
+						evaluated.push({ fn, arg });
+						return { hasMore: false };
+					},
+				},
+				close: async () => {},
+			}),
+		});
+		await expect(
+			transport.browserRequest({ operation: "list-folders" }),
+		).rejects.toThrow(/account-mismatch/);
+		expect(evaluated).toHaveLength(0);
+	});
+
+	test("clears the observed request log before each header acquisition and never for a cached one", async () => {
+		let url = "https://mail.proton.me/u/0/inbox";
+		const order: string[] = [];
+		const transport = createPwBrowserRequest({
+			dataDir: "/data/dg",
+			openSession: async () => ({
+				page: {
+					url: () => url,
+					clearObservedHeaders: async () => void order.push("clear"),
+					observedHeaders: () => {
+						order.push("observe");
+						return { uid: "uid-a" };
+					},
+					evaluate: async () => ({ hasMore: false }),
+				},
+				close: async () => {},
+			}),
+		});
+		await transport.browserRequest({ operation: "list-folders" });
+		await transport.browserRequest({ operation: "list-filters" });
+		expect(order).toEqual(["clear", "observe"]);
+		url = "https://mail.proton.me/u/1/inbox";
+		await expect(
+			transport.browserRequest({ operation: "list-filters" }),
+		).rejects.toThrow(/account-mismatch/);
+		url = "https://mail.proton.me/u/0/inbox";
+		await transport.browserRequest({ operation: "list-filters" });
+		expect(order).toEqual(["clear", "observe", "clear", "observe"]);
 	});
 
 	test("never imports playwright-core statically", () => {

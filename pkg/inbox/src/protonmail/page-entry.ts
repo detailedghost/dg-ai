@@ -6,6 +6,7 @@ import type { ProtonSessionHeaders } from "./page-session";
 export type ProtonPageCall = {
 	request: InboxBrowserRequest;
 	headers: ProtonSessionHeaders;
+	account: string;
 };
 
 export type ProtonPageResult =
@@ -14,6 +15,9 @@ export type ProtonPageResult =
 
 async function runProtonPage(call: ProtonPageCall): Promise<ProtonPageResult> {
 	try {
+		const prefix = `/u/${call.account}`;
+		if (location.pathname !== prefix && !location.pathname.startsWith(`${prefix}/`))
+			throw new ProtonOperationError("account-mismatch");
 		return await executeProtonPage(call.request, {
 			origin: location.origin,
 			headers: call.headers,

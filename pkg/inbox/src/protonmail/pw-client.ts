@@ -44,6 +44,7 @@ const SIGNED_OUT_CODES = new Set([
 
 export type ProtonPwPage = {
 	url(): string | Promise<string>;
+	clearObservedHeaders(): Promise<void>;
 	observedHeaders():
 		| ProtonSessionHeaders
 		| undefined
@@ -74,17 +75,34 @@ export function protonProfilePaths(dataDir: string): {
 	};
 }
 
+const pause = () => new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
+
 async function observeHeaders(
 	page: ProtonPwPage,
+	verify: () => Promise<string | undefined>,
 ): Promise<ProtonSessionHeaders> {
 	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
-		if (!isProtonMailOrigin(new URL(await page.url()).origin))
-			throw new ProtonSignedOutError();
+		await verify();
 		const headers = await page.observedHeaders();
 		if (headers?.uid) return headers;
-		await new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
+		await pause();
 	}
 	throw new ProtonHeadersTimeoutError();
+}
+
+async function resolveAccount(
+	verify: () => Promise<string | undefined>,
+): Promise<string> {
+	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
+		const account = await verify();
+		if (account !== undefined) return account;
+		await pause();
+	}
+	throw new ProtonHeadersTimeoutError();
+}
+
+function accountOf(url: URL): string | undefined {
+	return /^\/u\/(\d+)(?:\/|$)/.exec(url.pathname)?.[1];
 }
 
 export function createPwBrowserRequest(input: {
@@ -105,15 +123,38 @@ export function createPwBrowserRequest(input: {
 				? {}
 				: { url: `${PROTON_MAIL_URL}/u/${accountHint}` }),
 		}));
-	let headers: ProtonSessionHeaders | undefined;
+	let cached: { headers: ProtonSessionHeaders; account: string } | undefined;
+	let pinned: string | undefined;
 	const close = async () => {
 		const pending = opened;
 		opened = undefined;
-		headers = undefined;
+		cached = undefined;
+		pinned = undefined;
 		await pending?.then(
 			(session) => session.close(),
 			() => undefined,
 		);
+	};
+	const mismatch = () => {
+		cached = undefined;
+		return new Error(
+			protonOperationDiagnostic({ code: "account-mismatch" }) ??
+				"Proton account mismatch.",
+		);
+	};
+	const currentAccount = async (
+		page: ProtonPwPage,
+		...expected: (string | undefined)[]
+	) => {
+		const url = new URL(await page.url());
+		if (!isProtonMailOrigin(url.origin)) {
+			await close();
+			throw new ProtonSignedOutError();
+		}
+		const account = accountOf(url);
+		for (const want of expected)
+			if (want !== undefined && account !== want) throw mismatch();
+		return account;
 	};
 	return {
 		close,
@@ -121,29 +162,26 @@ export function createPwBrowserRequest(input: {
 			const request = validateInboxBrowserRequest(raw);
 			const { accountHint } = request;
 			const { page } = await open(accountHint);
-			const url = new URL(await page.url());
-			if (!isProtonMailOrigin(url.origin)) {
-				await close();
-				throw new ProtonSignedOutError();
-			}
-			if (accountHint !== undefined) {
-				const path = url.pathname;
-				const prefix = `/u/${accountHint}`;
-				if (path !== prefix && !path.startsWith(`${prefix}/`))
-					throw new Error(
-						protonOperationDiagnostic({ code: "account-mismatch" }) ??
-							"Proton account mismatch.",
-					);
-			}
-			try {
-				headers ??= await observeHeaders(page);
-			} catch (error) {
-				if (error instanceof ProtonSignedOutError) await close();
-				throw error;
+			const verify = () => currentAccount(page, accountHint, pinned);
+			const account = await resolveAccount(verify);
+			pinned ??= account;
+			if (cached && cached.account !== account) throw mismatch();
+			let headers = cached?.headers;
+			if (!headers) {
+				try {
+					await page.clearObservedHeaders();
+					headers = await observeHeaders(page, verify);
+				} catch (error) {
+					if (error instanceof ProtonSignedOutError) await close();
+					throw error;
+				}
+				await verify();
+				cached = { headers, account };
 			}
 			const result = (await page.evaluate(PAGE_SCRIPT, {
 				request,
 				headers,
+				account,
 			})) as ProtonPageResult;
 			if (result && typeof result === "object" && "error" in result) {
 				const failure = result.error as { code?: unknown; status?: unknown };
