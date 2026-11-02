@@ -121,3 +121,19 @@ describe("kokoroIife", () => {
 		expect(() => kokoroIife("const a = 1;\nexport { a as KokoroTTS };")).toThrow("model path template");
 	});
 });
+
+describe("kokoroDir", () => {
+	test("finds kokoro-js under the extension package when the root has no copy", async () => {
+		const { mkdtempSync, mkdirSync, writeFileSync: write, realpathSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const { join: j } = await import("node:path");
+		const { kokoroDir } = await import("../../../scripts/pack-narration-assets");
+		const root = realpathSync(mkdtempSync(j(tmpdir(), "dg-kokoro-")));
+		const ext = j(root, "pkg", "extension");
+		const pkg = j(ext, "node_modules", "kokoro-js");
+		mkdirSync(pkg, { recursive: true });
+		write(j(ext, "package.json"), JSON.stringify({ name: "ext" }));
+		write(j(pkg, "package.json"), JSON.stringify({ name: "kokoro-js", version: "1.0.0" }));
+		expect(kokoroDir(root)).toBe(pkg);
+	});
+});

@@ -3,11 +3,14 @@ import { join } from "node:path";
 import { buildPlayer, PLAYER_PATH } from "../../tour-ui/build";
 
 const tourUi = join(import.meta.dir, "../../tour-ui");
+const common = join(import.meta.dir, "../../common");
 
 function newestSource(): number {
 	let newest = statSync(join(tourUi, "build.ts")).mtimeMs;
 	for (const file of new Bun.Glob("src/**/*.ts").scanSync({ cwd: tourUi }))
 		newest = Math.max(newest, statSync(join(tourUi, file)).mtimeMs);
+	for (const file of new Bun.Glob("src/**/*.ts").scanSync({ cwd: common }))
+		newest = Math.max(newest, statSync(join(common, file)).mtimeMs);
 	return newest;
 }
 

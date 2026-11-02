@@ -84,9 +84,15 @@ export function zipEntries(entries: Entry[]): Buffer {
 	]);
 }
 
+/** Resolves kokoro-js from the extension package that declares it, so hoisted and isolated installs both work. */
+export function kokoroDir(root: string = ROOT): string {
+	const require = createRequire(join(root, "pkg", "extension", "package.json"));
+	return dirname(require.resolve("kokoro-js/package.json"));
+}
+
 function transformersDist(): string {
-	const require = createRequire(import.meta.url);
-	const kokoro = dirname(require.resolve("kokoro-js/package.json"));
+	const kokoro = kokoroDir();
+	const require = createRequire(join(kokoro, "package.json"));
 	for (const candidate of [
 		join(kokoro, "node_modules", "@huggingface", "transformers", "dist"),
 		join(
@@ -135,12 +141,7 @@ export function kokoroIife(source: string): string {
 }
 
 function kokoroSource(): Uint8Array {
-	const require = createRequire(import.meta.url);
-	const web = join(
-		dirname(require.resolve("kokoro-js/package.json")),
-		"dist",
-		"kokoro.web.js",
-	);
+	const web = join(kokoroDir(), "dist", "kokoro.web.js");
 	return new TextEncoder().encode(kokoroIife(readFileSync(web, "utf8")));
 }
 
