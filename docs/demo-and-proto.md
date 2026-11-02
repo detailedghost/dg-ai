@@ -1,15 +1,17 @@
 # Guided tours and live-page prototypes
 
-Play a **live guided tour** of a feature in your real browser — the extension
-spotlights each element and injects explanatory text boxes, step by step:
+Play a **live guided tour** of a feature. Plain `/dg:demo` plays it in a local
+browser that the CLI starts, with no extension. Add `--ext` to play it in your real
+browser through the extension instead. Either way, the tour spotlights each element
+and shows explanatory text boxes, step by step:
 
 ```text
 Claude Code: /dg:demo 1517
 Codex:      $dg:demo 1517
 ```
 
-You review the compiled tour script before it plays. Optional screenshots/video
-land in your Downloads folder.
+You review the plan on the start screen before it plays. Recorded video lands in
+`<state>/demos/<slug>/` for a local run, and in your Downloads folder with `--ext`.
 
 Tours can include a setup phase for login, configuration, or seeded data. Setup
 is excluded from the tutorial and recording by default, but can be explicitly

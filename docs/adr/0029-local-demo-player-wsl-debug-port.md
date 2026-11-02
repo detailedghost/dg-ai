@@ -66,6 +66,7 @@ flowchart LR
 
 ## References
 
+- [ADR 0030](0030-shared-tour-ui-and-local-player.md)
 - `pkg/skills-cli/src/demo/bridge.ts`
 - `pkg/skills-cli/src/demo/player-process.ts`
 - `plugins/dg/skills/demo/SKILL.md`
