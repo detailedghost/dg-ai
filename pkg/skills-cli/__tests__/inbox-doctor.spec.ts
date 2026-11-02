@@ -134,3 +134,14 @@ describe("inbox doctor protonTransportCheck", () => {
 		);
 	});
 });
+
+describe("inbox doctor extension checks", () => {
+	test("report an unpaired extension as --ext only info and keep the daemon check", async () => {
+		const results = new Map<string, { status: string; detail: string }>();
+		for (const check of inboxChecks)
+			results.set(check.id, await check.run(context()));
+		expect(results.get("extension-paired")?.status).toBe("info");
+		expect(results.get("extension-paired")?.detail).toStartWith("--ext only: ");
+		expect(results.get("daemon")?.status).not.toBe("info");
+	});
+});

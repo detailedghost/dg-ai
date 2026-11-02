@@ -1,6 +1,6 @@
 import {
 	allowRuleCheck,
-	extensionChecks,
+	localDaemonChecks,
 	skillFilesCheck,
 } from "../doctor/checks";
 import { ok, warn, type DoctorCheck } from "../doctor/types";
@@ -36,6 +36,6 @@ export const protonTransportCheck: DoctorCheck = {
 export const inboxChecks: DoctorCheck[] = [
 	skillFilesCheck(["inbox-cleanup"]),
 	protonTransportCheck,
-	...extensionChecks,
+	...localDaemonChecks,
 	allowRuleCheck("inbox"),
 ];

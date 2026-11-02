@@ -9,7 +9,7 @@ const ALLOWED_COMMANDS = new Set(["close", "delete-data", "tab-list"]);
 
 /** Whether a session holds a signed-in mailbox and runs with restricted output. */
 export const isProtectedSession = (name: string): boolean =>
-	PROTECTED_SESSIONS.includes(name);
+	PROTECTED_SESSIONS.includes(name.toLowerCase());
 
 function profileFlag(options: readonly string[]): string | undefined {
 	let value: string | undefined;

@@ -104,7 +104,7 @@ user rather than looping forever or handing off a plan you know is broken. A cle
 Run **one** command — no `--video` flag, because the mode is chosen in the browser:
 
 ```bash
-~/.dg/bin/dg-skills demo --edit /tmp/ai/demo/tour.md
+~/.dg/bin/dg-skills demo --ext --edit /tmp/ai/demo/tour.md
 ```
 
 This opens `startUrl` with the tour in a `_demo` marker and shows the **start screen**,
@@ -144,7 +144,7 @@ Every run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every recorded video do
 alongside a copy as `<slug>.demo.md`. Replay either without recompiling:
 
 ```bash
-~/.dg/bin/dg-skills rerun <path-to>.demo.md
+~/.dg/bin/dg-skills rerun --ext <path-to>.demo.md
 # add --video to record the replay
 ```
 

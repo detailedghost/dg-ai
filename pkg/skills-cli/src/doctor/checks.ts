@@ -397,6 +397,13 @@ export function extOnly(check: DoctorCheck): DoctorCheck {
 
 export const extOnlyChecks = extensionChecks.map(extOnly);
 
+/** Keeps the daemon check for a local-default command whose extension and pairing are needed only with --ext. */
+export const localDaemonChecks: DoctorCheck[] = [
+	extOnly(cliOnlyCheck),
+	unlessCliOnly(daemonCheck),
+	extOnly(unlessCliOnly(pairingCheck)),
+];
+
 export const unslopCheck: DoctorCheck = {
 	id: "unslop",
 	run(ctx) {

@@ -1,8 +1,10 @@
 import { stringFlag, UsageError } from "../../core/args";
 import type { LaunchSpec } from "../../core/browser";
 import { launch, releaseKey } from "../../core/launch";
+import { isProtectedSession } from "../../core/protected-session";
 import {
 	defaultOutputDir,
+	list,
 	sessionKey,
 	socketPathFor,
 } from "../../core/registry";
@@ -16,6 +18,19 @@ function parseEndpoint(value: string | undefined): string {
 
 const attach: ClientHandler = async (args, env) => {
 	const cdpUrl = parseEndpoint(stringFlag(args, "cdp"));
+	const port = new URL(cdpUrl).port;
+	const guarded = list().find(
+		(record) =>
+			isProtectedSession(record.name) &&
+			record.cdpUrl !== undefined &&
+			new URL(record.cdpUrl).port === port,
+	);
+	if (guarded) {
+		env.err(
+			`### Error\npw refuses to attach to the ${guarded.name} browser: it holds a signed-in mailbox. Use dg-skills inbox.`,
+		);
+		return 1;
+	}
 	const key = sessionKey({ name: args.session, scratch: false });
 	const refused = await releaseKey({ key, scratch: false }, env);
 	if (refused !== null) return refused;

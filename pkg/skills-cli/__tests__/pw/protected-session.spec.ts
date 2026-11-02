@@ -59,6 +59,18 @@ describe("pw protectedSessionRefusal for the Proton profile", () => {
 		expect(protectedSessionRefusal(argv)).toContain("inbox-proton");
 	});
 
+	test("refuses the protected session name in another case", () => {
+		delete process.env[ENV_KEY];
+		expect(
+			protectedSessionRefusal([
+				"-s=INBOX-PROTON",
+				"open",
+				"--windows",
+				"https://mail.proton.me",
+			]),
+		).toContain("signed-in mailbox");
+	});
+
 	test("refuses a symlink that points at the protected profile", () => {
 		delete process.env[ENV_KEY];
 		const root = mkdtempSync(join(tmpdir(), "dg-protected-link-"));

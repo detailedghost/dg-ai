@@ -3,7 +3,7 @@
 ## Plan file (the authoring format)
 
 You author a tour as a Markdown **plan**: YAML frontmatter + a `## Steps`
-list. Feed it to `dg-skills demo <plan>.md`; the CLI parses it, generates
+list. Feed it to `dg-skills demo --ext <plan>.md`; the CLI parses it, generates
 the runnable script into a `## Script` fenced block, and hands it to the
 extension. Never hand-write the JSON.
 
