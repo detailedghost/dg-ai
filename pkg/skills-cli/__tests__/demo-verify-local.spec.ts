@@ -224,4 +224,41 @@ describe("verifyLocal with excluded setup", () => {
 			{ step: 4, kind: "selector-unresolved", selector: "#two" },
 		]);
 	});
+
+	const openedScript = async (s: TourScript): Promise<TourScript | undefined> => {
+		let opened: TourScript | undefined;
+		await verifyLocal(s, {
+			open: async (given) => {
+				opened = given;
+				throw new Error("stop");
+			},
+		});
+		return opened;
+	};
+
+	test("keeps the first tutorial step on the start URL after a setup step moved to another page", async () => {
+		const opened = await openedScript({
+			...script(),
+			setup: {
+				includeInTour: false,
+				steps: [{ title: "S1", body: "a", navigate: "https://a.test/login" }],
+			},
+		});
+		expect(opened?.setup?.steps[0]?.navigate).toBe("https://a.test/login");
+		expect(opened?.steps[0]?.navigate).toBe("https://example.test/");
+		expect(opened?.steps[1]?.navigate).toBeUndefined();
+	});
+
+	test("leaves a first tutorial step that names its own URL alone", async () => {
+		const base = script();
+		const opened = await openedScript({
+			...base,
+			steps: [{ ...base.steps[0]!, navigate: "https://b.test/" }, base.steps[1]!],
+			setup: {
+				includeInTour: false,
+				steps: [{ title: "S1", body: "a", navigate: "https://a.test/login" }],
+			},
+		});
+		expect(opened?.steps[0]?.navigate).toBe("https://b.test/");
+	});
 });

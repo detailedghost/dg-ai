@@ -122,10 +122,17 @@ const harnessError = (error: unknown): VerifyResult => ({
 	],
 });
 
-const flattenSetup = (script: TourScript): TourScript =>
-	script.setup
-		? { ...script, setup: { ...script.setup, includeInTour: true } }
-		: script;
+const flattenSetup = (script: TourScript): TourScript => {
+	const { setup } = script;
+	if (!setup) return script;
+	const [first, ...rest] = script.steps;
+	const moves = setup.steps.some((step) => step.navigate);
+	const steps =
+		first && !first.navigate && moves
+			? [{ ...first, navigate: script.startUrl }, ...rest]
+			: script.steps;
+	return { ...script, steps, setup: { ...setup, includeInTour: true } };
+};
 
 export async function verifyLocal(
 	given: TourScript,
