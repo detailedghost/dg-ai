@@ -124,7 +124,7 @@ const harnessError = (error: unknown): VerifyResult => ({
 
 const flattenSetup = (script: TourScript): TourScript => {
 	const { setup } = script;
-	if (!setup) return script;
+	if (!setup || setup.includeInTour) return script;
 	const [first, ...rest] = script.steps;
 	const moves = setup.steps.some((step) => step.navigate);
 	const steps =

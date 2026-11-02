@@ -22,11 +22,8 @@ declare global {
 
 const memory = new Map<string, unknown>();
 
-const captured = window.__dgDemoBridge;
-if (captured) delete window.__dgDemoBridge;
-
 const bridge = (msg: unknown): Promise<unknown> => {
-	const call = captured ?? window.__dgDemoBridge;
+	const call = window.__dgDemoBridge;
 	return call ? call(msg) : Promise.resolve(undefined);
 };
 
@@ -36,7 +33,7 @@ let advance: (() => void) | undefined;
 const host: TourHost = {
 	storage: {
 		async get<T>(key: string) {
-			if (!captured && !window.__dgDemoBridge)
+			if (!window.__dgDemoBridge)
 				return memory.get(key) as T | undefined;
 			return (await bridge({ kind: "storage-get", key })) as T | undefined;
 		},

@@ -261,4 +261,15 @@ describe("verifyLocal with excluded setup", () => {
 		});
 		expect(opened?.steps[0]?.navigate).toBe("https://b.test/");
 	});
+
+	test("adds no start navigation when setup is already part of the tour", async () => {
+		const opened = await openedScript({
+			...script(),
+			setup: {
+				includeInTour: true,
+				steps: [{ title: "S1", body: "a", navigate: "https://a.test/login" }],
+			},
+		});
+		expect(opened?.steps[0]?.navigate).toBeUndefined();
+	});
 });

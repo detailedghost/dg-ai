@@ -195,4 +195,14 @@ describe("bridge bounds", () => {
 		await quiet.handle({ kind: "narration-failed", reason: "x" });
 		expect(seen).toEqual([]);
 	});
+
+	test("discards every saved clip when narration fails", async () => {
+		const { b } = await voiced();
+		const pcm = Buffer.from(new Float32Array(240).buffer).toString("base64");
+		await b.handle({ kind: "clip", index: 0, sampleRate: 24000, pcm });
+		await b.handle({ kind: "clip", index: 1, sampleRate: 24000, pcm });
+		expect(clipFiles().length).toBe(2);
+		await b.handle({ kind: "narration-failed", reason: "boom" });
+		expect(clipFiles()).toEqual([]);
+	});
 });

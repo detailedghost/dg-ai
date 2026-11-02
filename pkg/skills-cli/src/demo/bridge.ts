@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import {
@@ -188,6 +189,8 @@ export function createBridge({
 				}
 				return undefined;
 			case "narration-failed":
+				rmSync(join(job.dir, "clips"), { recursive: true, force: true });
+				clipBytes = 0;
 				if (voiceGranted)
 					onNarrationFailed?.(
 						String(m["reason"] ?? "")

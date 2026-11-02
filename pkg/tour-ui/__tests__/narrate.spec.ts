@@ -2,10 +2,12 @@ import { describe, expect, it, mock } from "bun:test";
 
 const seen: number[] = [];
 let ticks = 0;
+let failNext: () => boolean = () => false;
 
 mock.module("../src/narration/kokoro", () => ({
 	loadKokoro: async () => ({
 		generate: async () => {
+			if (failNext()) throw new Error("boom");
 			seen.push(ticks);
 			return { audio: new Float32Array(2400), sampling_rate: 24_000 };
 		},
@@ -41,5 +43,16 @@ describe("createNarrator", () => {
 		expect(narrator.clipMs?.(0)).toBe(100);
 		expect(narrator.clipMs?.(1)).toBeUndefined();
 		expect(narrator.clipMs?.(2)).toBe(100);
+	});
+
+	it("forgets earlier clip lengths when a later step fails to synthesize", async () => {
+		let calls = 0;
+		failNext = () => ++calls === 2;
+		const narrator = createNarrator("https://assets.test/", async () => undefined);
+		await expect(
+			narrator.prepare([{ body: "one" }, { body: "two" }] as never, "af_heart", () => undefined),
+		).rejects.toThrow("boom");
+		failNext = () => false;
+		expect(narrator.clipMs?.(0)).toBeUndefined();
 	});
 });

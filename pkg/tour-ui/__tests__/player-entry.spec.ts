@@ -44,6 +44,12 @@ describe("window.__dgTour.run without a bridge", () => {
 });
 
 describe("window.__dgTour.run with a bridge", () => {
+	it("leaves the exposed binding on window so Playwright can deliver replies", async () => {
+		const bridge: Bridge = async () => undefined;
+		await loadEntry(bridge);
+		expect((window as unknown as Record<string, unknown>).__dgDemoBridge).toBe(bridge);
+	});
+
 	it("reads and writes state through the bridge and reports completion", async () => {
 		const store = new Map<string, unknown>();
 		const calls: Array<{ kind: string; key?: string }> = [];

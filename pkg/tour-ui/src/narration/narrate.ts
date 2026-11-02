@@ -37,26 +37,31 @@ export function createNarrator(
 				report(tracker.model(info), label),
 			);
 			report(tracker.modelReady(), "Voice model ready");
-			let completed = 0;
-			for (const [index, step] of steps.entries()) {
-				const text = (step.body ?? "").trim();
-				if (!text) continue;
-				await nextMacrotask();
-				const clip = await tts.generate(text, { voice });
-				await send({
-					kind: "clip",
-					index,
-					sampleRate: clip.sampling_rate,
-					pcm: toBase64(clip.audio),
-				});
-				const ms = (clip.audio.length / clip.sampling_rate) * 1000;
-				clips.set(index, ms);
-				durations[index] = holdFor(step, ms);
-				completed++;
-				report(
-					tracker.synthesis(completed, narrated),
-					`Synthesizing step ${completed} of ${narrated}`,
-				);
+			try {
+				let completed = 0;
+				for (const [index, step] of steps.entries()) {
+					const text = (step.body ?? "").trim();
+					if (!text) continue;
+					await nextMacrotask();
+					const clip = await tts.generate(text, { voice });
+					await send({
+						kind: "clip",
+						index,
+						sampleRate: clip.sampling_rate,
+						pcm: toBase64(clip.audio),
+					});
+					const ms = (clip.audio.length / clip.sampling_rate) * 1000;
+					clips.set(index, ms);
+					durations[index] = holdFor(step, ms);
+					completed++;
+					report(
+						tracker.synthesis(completed, narrated),
+						`Synthesizing step ${completed} of ${narrated}`,
+					);
+				}
+			} catch (error) {
+				clips.clear();
+				throw error;
 			}
 			report(tracker.ready(), "Narration ready");
 			return durations;
