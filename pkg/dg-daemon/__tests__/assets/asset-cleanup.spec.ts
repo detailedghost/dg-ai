@@ -12,11 +12,14 @@ import {
 	freshTempDir,
 	killDaemonByPidFile,
 	registerSession,
+	removeScratchDirs,
 	spawnServe,
 	stageAsset,
 	waitForHealth,
 	waitForValue,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 let dgHome: string;
 

@@ -13,6 +13,7 @@ import {
 	frameType,
 	killDaemonByPidFile,
 	readDaemonLog,
+	removeScratchDirs,
 	scanFileForBytes,
 	send,
 	startWithSession,
@@ -20,6 +21,8 @@ import {
 	waitForValue,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 type CredentialsResult = {
 	type: string;

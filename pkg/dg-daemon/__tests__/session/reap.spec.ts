@@ -6,7 +6,10 @@ import {
 	cleanupDgHome,
 	freshDgHome,
 	freshTempDir,
+	removeScratchDirs,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 const CLOSED_RECORD_RETENTION_MS = 10 * 60 * 1000;
 

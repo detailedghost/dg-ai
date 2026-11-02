@@ -9,6 +9,7 @@ import {
 	frameType,
 	freshDgHome,
 	killDaemonByPidFile,
+	removeScratchDirs,
 	send,
 	spawnServe,
 	startWithSession,
@@ -17,6 +18,8 @@ import {
 	waitForValue,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 let dgHome: string;
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
@@ -10,7 +10,12 @@ import {
 	type SocketState,
 } from "../../src/server/connection";
 import { createLogger } from "../../src/server/log";
-import { freshDgHome } from "../utils/daemon-harness";
+import {
+	freshDgHome,
+	removeScratchDirs,
+} from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 function fakeSocket(): ServerWebSocket<SocketState> {
 	const paths = resolveDgPaths({ env: { DG_HOME: freshDgHome() } });

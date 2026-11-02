@@ -1,11 +1,14 @@
-import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "bun:test";
+import { chmodSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeCommand } from "../../src/dispatch/exec";
+import { freshTempDir, removeScratchDirs } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 function writeScript(body: string): string {
-	const dir = mkdtempSync(`${tmpdir()}/dg-exec-`);
+	const dir = freshTempDir("dg-exec");
 	const path = join(dir, "script.sh");
 	writeFileSync(path, `#!/bin/sh\n${body}\n`);
 	chmodSync(path, 0o755);

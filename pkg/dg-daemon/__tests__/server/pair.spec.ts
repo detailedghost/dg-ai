@@ -13,11 +13,14 @@ import {
 	createCleanupSlot,
 	EXTENSION_ORIGIN,
 	freshDgHome,
+	removeScratchDirs,
 	runDaemonCommand,
 	spawnServe,
 	stopServe,
 	waitForHealth,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 const cleanupSlot = createCleanupSlot();
 

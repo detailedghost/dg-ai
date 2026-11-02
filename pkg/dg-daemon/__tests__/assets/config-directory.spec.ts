@@ -23,16 +23,19 @@ import {
 	collectFrames,
 	connectCli,
 	connectPage,
-	freshTempDir as freshDaemonTempDir,
 	freshDgHome,
+	freshTempDir as freshDaemonTempDir,
 	killDaemonByPidFile,
 	registerSession,
+	removeScratchDirs,
 	spawnServe,
 	startWithSession,
 	waitForDaemonExit,
 	waitForHealth,
 	waitForValue,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 let dgHome: string;
 
