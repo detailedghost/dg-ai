@@ -7,6 +7,15 @@ description: 'Walk the user through every open question in the current conversat
 
 Collect every open question in this conversation. Ask them one at a time. Each one carries a recommendation. Run this in the main loop only, because only the main loop has `AskUserQuestion`.
 
+First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+
+```bash
+~/.dg/bin/dg-skills stat --help >/dev/null 2>&1 ||
+  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
+```
+
+If a step fails, run ~/.dg/bin/dg-skills doctor stat.
+
 **Usage:** `/dg:walk` (all open questions) · `/dg:walk <filter>` (only questions that match the topic word, for example `/dg:walk dg`) · `/dg:walk stat` (the open user items on the stat checklist)
 
 ## 1. Collect
