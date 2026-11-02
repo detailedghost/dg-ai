@@ -1,0 +1,104 @@
+import { describe, expect, test } from "bun:test";
+import { isAiCoauthor, stripAiCoauthors } from "../src/ai-coauthors";
+
+const subject = "feat(scope): add thing";
+
+describe("stripAiCoauthors", () => {
+	test.each([
+		["Claude", "Claude Sonnet 5.5 <noreply@anthropic.com>"],
+		["Codex", "Codex <codex@openai.com>"],
+		["Grok", "Grok <noreply@x.ai>"],
+		["Copilot bot", "Copilot <175728472+Copilot@users.noreply.github.com>"],
+		["Copilot agent bot", "copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>"],
+		["Gemini", "Gemini <gemini@google.com>"],
+		["GPT", "ChatGPT <noreply@example.com>"],
+		["Cursor agent", "Cursor Agent <cursoragent@cursor.com>"],
+	])("removes the %s trailer and the blank line before it", (_name, who) => {
+		expect(stripAiCoauthors(`${subject}\n\nBody.\n\nCo-Authored-By: ${who}\n`)).toBe(
+			`${subject}\n\nBody.\n`,
+		);
+	});
+
+	test("keeps a human co-author trailer", () => {
+		const message = `${subject}\n\nCo-Authored-By: Sam Human <sam@example.com>\n`;
+		expect(stripAiCoauthors(message)).toBe(message);
+	});
+
+	test("keeps human and other trailers around an AI trailer", () => {
+		const message = [
+			subject,
+			"",
+			"Body.",
+			"",
+			"Signed-off-by: Dev <dev@example.com>",
+			"Co-Authored-By: Claude <noreply@anthropic.com>",
+			"Co-authored-by: Sam Human <sam@example.com>",
+			"Co-Authored-By: Codex <codex@openai.com>",
+			"Fixes: #12",
+			"",
+		].join("\n");
+		expect(stripAiCoauthors(message)).toBe(
+			[
+				subject,
+				"",
+				"Body.",
+				"",
+				"Signed-off-by: Dev <dev@example.com>",
+				"Co-authored-by: Sam Human <sam@example.com>",
+				"Fixes: #12",
+				"",
+			].join("\n"),
+		);
+	});
+
+	test("returns a message without trailers unchanged", () => {
+		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
+		expect(stripAiCoauthors(message)).toBe(message);
+	});
+
+	test.each(["co-authored-by", "CO-AUTHORED-BY", "Co-Authored-By"])(
+		"matches the %s key case-insensitively",
+		(key) => {
+			expect(
+				stripAiCoauthors(`${subject}\n\n${key}: CLAUDE <noreply@ANTHROPIC.com>\n`),
+			).toBe(`${subject}\n`);
+		},
+	);
+
+	test("does not touch AI words in the subject or body", () => {
+		const message = `${subject} with claude and copilot\n\nCo-Authored-By: Claude and Codex wrote this body line.\nMore text.\n`;
+		expect(stripAiCoauthors(message)).toBe(message);
+	});
+
+	test("does not touch a trailer that sits in the subject paragraph", () => {
+		const message = "Co-Authored-By: Claude <noreply@anthropic.com>\n";
+		expect(stripAiCoauthors(message)).toBe(message);
+	});
+
+	test("keeps a message without a final newline free of one", () => {
+		expect(
+			stripAiCoauthors(`${subject}\n\nCo-Authored-By: Claude <noreply@anthropic.com>`),
+		).toBe(subject);
+	});
+
+	test("keeps git comment lines after the message", () => {
+		const comments = "# Please enter the commit message.\n#\n# On branch main\n";
+		expect(
+			stripAiCoauthors(
+				`${subject}\n\nBody.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\n${comments}`,
+			),
+		).toBe(`${subject}\n\nBody.\n\n${comments}`);
+	});
+
+	test("keeps an empty message empty", () => {
+		expect(stripAiCoauthors("")).toBe("");
+	});
+});
+
+describe("isAiCoauthor", () => {
+	test("flags AI identities and keeps human ones", () => {
+		expect(isAiCoauthor("Claude <noreply@anthropic.com>")).toBe(true);
+		expect(isAiCoauthor("Sam Human <sam@example.com>")).toBe(false);
+		expect(isAiCoauthor("dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>")).toBe(false);
+	});
+});
