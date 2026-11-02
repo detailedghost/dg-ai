@@ -55,7 +55,7 @@ Identify which question is being answered from the prompt, the surrounding code,
 if the user is around.
 
 - **"Does this logic or state model feel right?"** Read [references/local-logic.md](references/local-logic.md). Build a tiny interactive terminal app that pushes the state machine through cases that are hard to reason about on paper.
-- **"What should this look like?"** Read [references/local-ui.md](references/local-ui.md). Build several radically different UI variations on one route, switchable from a floating bar, with Approve, Reject, and More versions buttons wired to a sentinel. On `more`, generate N new variants (default the same count), steered by the note, and re-open the viewer.
+- **"What should this look like?"** Read [references/local-ui.md](references/local-ui.md). Build several radically different UI variations on one route, switchable from a floating bar, with Approve and Reject buttons wired to a sentinel (the `prototype ui` bar adds More versions). On `more`, generate N new variants (default the same count), steered by the note, and re-open the viewer.
 - **"Does this whole plan hang together?" or "show me all the workflows"** Read [references/local-plan.md](references/local-plan.md). The input is a plan or design seed that spans several workflows. Build one clickable walkthrough with a screen switcher across every workflow, not N variants of one page.
 
 The three branches produce very different artifacts. A single state machine or data model is

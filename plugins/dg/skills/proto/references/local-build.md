@@ -50,7 +50,7 @@ wants something that opens with zero tooling, or a file to share.
 
 A prototype with a running server records the user's decision as sentinel files:
 
-1. The switcher bar has **Approve**, **Reject**, and **More versions** buttons that POST `{ name, action, variant, variants?, notes? }`. The route depends on the flow:
+1. The switcher bar has **Approve** and **Reject** buttons (plus **More versions** on `prototype ui` and `prototype serve` pages only; the mounted templates lack it and treat an unknown action as a selection) that POST `{ name, action, variant, variants?, notes? }`. The route depends on the flow:
    - **Mounted in an app dev server** (React, Astro, Next): the switcher POSTs `/prototype-confirm`, handled by a copied endpoint template.
    - **Page served by `prototype serve` or `prototype ui`**: the injected client POSTs `/prototype-decision`.
    Use the template that matches the flow. A mismatched route 404s while `sendBeacon` still reports success, so the selection silently never arrives.
