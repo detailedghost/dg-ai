@@ -89,7 +89,7 @@ Read ONLY `context.md` + `plan.md` — never `initial.md`/`roundtable/*`. Set `S
 reuse `/dg:sdlc`'s worktree setup, SKIP its slice-derivation (this bundle's `slices[]` + `/dg:assign` already
 ran), then drive [sdlc engineering.md](../sdlc/references/engineering.md) 4.1–4.3 and
 [sdlc finish.md](../sdlc/references/finish.md) steps 5–8 (through the
-direct PR/MR launch — draft always, then a best-effort `~/.dg/bin/dg-skills batch-open` (on failure, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas). The run ends at a draft PR/MR and the human reviews it on the provider.
+direct PR/MR launch — draft always, then a best-effort `~/.dg/bin/dg-skills batch-open <url>` (when `batch-open` fails, print the URL and continue), per `finish.md` step 8's `/dg:spec` deltas). The run ends at a draft PR/MR and the human reviews it on the provider.
 [references/execute.md](references/execute.md) §6 owns the bookkeeping on top of that (persisting
 the PR/MR URL into `plan.md`, restoring cwd).
 

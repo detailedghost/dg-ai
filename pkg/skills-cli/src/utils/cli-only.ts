@@ -4,12 +4,7 @@ import { dirname, join } from "node:path";
 import type { Command } from "commander";
 import { cliDest } from "./lib";
 
-export const EXTENSION_COMMANDS = [
-	"batch-open",
-	"launch",
-	"demo",
-	"rerun",
-];
+export const EXT_ONLY_COMMANDS = ["launch"];
 
 export const cliOnlyMarker = (): string =>
 	join(process.env.DG_HOME ?? join(homedir(), ".dg"), "cli-only");
@@ -34,6 +29,13 @@ export function assertExtensionInstalled(subject: string): void {
 	if (isCliOnly()) throw new Error(extensionRequiredMessage(subject));
 }
 
+function extRequested(command: Command | null): boolean {
+	return command
+		? (command.opts() as { ext?: boolean }).ext === true ||
+				extRequested(command.parent)
+		: false;
+}
+
 function topLevelName(command: Command): string {
 	return command.parent?.parent ? topLevelName(command.parent) : command.name();
 }
@@ -41,7 +43,7 @@ function topLevelName(command: Command): string {
 export function guardExtensionCommands(program: Command): void {
 	program.hook("preAction", (_program, action) => {
 		const name = topLevelName(action);
-		if (EXTENSION_COMMANDS.includes(name)) {
+		if (EXT_ONLY_COMMANDS.includes(name) || extRequested(action)) {
 			assertExtensionInstalled(`dg-skills ${name}`);
 		}
 	});

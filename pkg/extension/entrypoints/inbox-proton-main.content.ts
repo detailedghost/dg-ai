@@ -1,4 +1,7 @@
-import { executeProtonPage } from "@/lib/features/inbox-proton";
+import {
+	executeProtonPage,
+	protonRequestPace,
+} from "@/lib/features/inbox-proton";
 import { installProtonSessionObserver } from "@/lib/features/inbox-proton-observer";
 import type { InboxBrowserRequest } from "@dg/common";
 
@@ -16,10 +19,7 @@ export default defineContentScript({
 					origin: location.origin,
 					headers: observer.getHeaders(),
 					fetch: window.fetch.bind(window),
-					pace: () =>
-						new Promise((resolve) =>
-							setTimeout(resolve, 320 + Math.round(Math.random() ** 3 * 1500)),
-						),
+					pace: protonRequestPace,
 				}),
 			writable: false,
 			configurable: false,

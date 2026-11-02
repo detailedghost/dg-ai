@@ -1,13 +1,12 @@
-import { join } from "node:path";
-import { readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { packetForMessage } from "../classifier/packets";
 import { getBooleanFlag, getNumberFlag, getStringFlag } from "../cli/args";
 import type { CliContext } from "../cli/context";
 import { printJson } from "../cli/output";
-
-import { packetForMessage } from "../classifier/packets";
-import { inboxRuntimeFor } from "../runtime";
 import { ensureConfigHome } from "../config/home";
+import { ProtonSignedOutError } from "../protonmail/pw-client";
 import {
 	createMailProviderClient,
 	providerBatchSize,
@@ -20,6 +19,7 @@ import type {
 	MailProvider,
 	MailProviderClient,
 } from "../providers/types";
+import { inboxRuntimeFor } from "../runtime";
 import { readJsonFileIfExists as readJsonIfExists } from "../utils/json";
 import { folderDisplayName, resolveFolder } from "../workspace/folders";
 import {
@@ -27,18 +27,18 @@ import {
 	workspaceDirForProfile,
 } from "../workspace/profile";
 import {
+	applyWorkspaceMutations,
 	cleanupWarning,
 	cleanupWorkspace,
-	applyWorkspaceMutations,
 	dryRunWorkspaceApply,
 	readFolders,
-	writeLabels,
 	readMessageStatus,
 	readMessageWorkItems,
 	workspacePaths,
 	writeClassificationGuide,
 	writeFilters,
 	writeFolders,
+	writeLabels,
 	writeLogin,
 	writeMessageBatch,
 	writeMessageBatchStream,
@@ -411,18 +411,23 @@ async function protonSessionStatus(context: CliContext): Promise<{
 	check?: string;
 	detail?: string;
 }> {
-	const request = inboxRuntimeFor(context.config).runtime.browserRequest;
+	const { runtime } = inboxRuntimeFor(context.config);
+	const request = runtime.ext
+		? runtime.browserRequest
+		: runtime.pwBrowserRequest;
 	if (!request) {
 		return {
 			checked: false,
-			detail:
-				"Pass --session ID to check the extension peer, the mail.proton.me/u/N tab, and x-pm-uid. Local message counts are still reported.",
+			detail: runtime.ext
+				? "Pass --session ID to check the extension peer, the mail.proton.me/u/N tab, and x-pm-uid. Local message counts are still reported."
+				: "The pw profile is not available. Local message counts are still reported.",
 		};
 	}
 	try {
 		await request({ operation: "session-status" });
 		return { checked: true, ok: true, check: "x-pm-uid-observed" };
 	} catch (error) {
+		if (error instanceof ProtonSignedOutError) throw error;
 		const detail = error instanceof Error ? error.message : String(error);
 		return {
 			checked: true,
@@ -539,7 +544,8 @@ export async function probeFolder(context: CliContext): Promise<void> {
 				liveUnread = live.unread;
 				await writeFolders(paths, liveFolders, client.provider);
 			}
-		} catch {
+		} catch (error) {
+			if (error instanceof ProtonSignedOutError) throw error;
 			countsFrom = "snapshot";
 		}
 		const snapshotStale =

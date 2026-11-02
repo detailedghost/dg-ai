@@ -9,19 +9,26 @@ Claude Code: /dg:browser install
 Codex:      $dg:browser install
 ```
 
-Open a batch of PRs/URLs in your **default** browser, grouped into a named group:
+Open a batch of PRs/URLs as plain tabs in your **default** browser. No extension needed:
 
 ```text
-Claude Code: /dg:browser batch-open --group "Reviews" work#1517 work#1518
-Codex:      $dg:browser batch-open --group "Reviews" work#1517 work#1518
+Claude Code: /dg:browser batch-open work#1517 work#1518
+Codex:      $dg:browser batch-open work#1517 work#1518
+```
+
+Add `--ext` to group them into a named group with the extension:
+
+```text
+Claude Code: /dg:browser batch-open --ext --group "Reviews" work#1517 work#1518
+Codex:      $dg:browser batch-open --ext --group "Reviews" work#1517 work#1518
 ```
 
 Or cold-start a **Chromium** browser (Brave/Edge/Vivaldi) with the extension
 pre-loaded — no manual load step (`--list` shows what's installed):
 
 ```text
-Claude Code: /dg:browser launch --browser brave-beta --group "PRs" work#1517 work#1518
-Codex:      $dg:browser launch --browser brave-beta --group "PRs" work#1517 work#1518
+Claude Code: /dg:browser launch --ext --browser brave-beta --group "PRs" work#1517 work#1518
+Codex:      $dg:browser launch --ext --browser brave-beta --group "PRs" work#1517 work#1518
 ```
 
 ## Ref formats
@@ -37,7 +44,7 @@ The companion `dg-ai-extension` does the grouping browser-side, built with
 [WXT](https://wxt.dev) from `pkg/extension/` and targeting Chrome, Edge, Brave,
 Vivaldi, and Firefox 139+ (grouping is feature-detected, skipped where absent).
 
-Grouping is **opt-in per batch**: `batch-open`/`launch` append a
+Grouping is **opt-in per batch** with `--ext`: `batch-open --ext` and `launch` append a
 `#_tab_group=<name>` marker to each URL, the extension groups those tabs into
 `<name>` and strips the marker. Tabs you open by hand are never grouped. Group
 color is set in the extension's Options (default blue); the name comes from

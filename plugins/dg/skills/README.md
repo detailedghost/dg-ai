@@ -7,8 +7,8 @@ binaries. The skills-root README itself is not installed.
 
 | Skill | Description |
 | --- | --- |
-| `browser/` | Tab batch-open, tour launch, and extension installation |
-| `demo/` | Guided browser demos with optional setup and video recording |
+| `browser/` | Open PR or URL tabs in the default browser; `--ext` adds tab groups, launch, and extension installation |
+| `demo/` | Guided browser demos with optional setup and video recording; plays through the extension until the local player lands |
 | `proto/` | Compare app-native UI approaches on a live page |
 | `verify/` | Review a finished change round by round and record a verdict per round |
 | `chat/` | Live browser chat through dg-agent and dg-daemon |
@@ -134,9 +134,10 @@ adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 check the installed binary once and call the literal `~/.dg/bin/dg-skills` path.
 
 `dg-skills install --cli-only` skips the extension, pairing, dg-daemon, dg-agent,
-and skills marked `requires: [extension]`: browser, chat, demo, overwatch, and
-proto. It includes stash, proxy, clipboard-img, and other skills without that
-requirement. Live inbox profiles still need dg-daemon; Google SMS cleanup needs
+and skills marked `requires: [extension]`: chat, demo, and overwatch. `browser`
+and `proto` run locally by default. It includes stash, proxy, clipboard-img,
+and other skills without that requirement. Live inbox profiles still need
+dg-daemon; Google SMS cleanup needs
 Messages for Web through the host's browser tools. `jobs` also needs the full
 install, since it drives `dg-daemon` directly though it has no extension
 dependency. Instructions that refer to later-wave skills still need those

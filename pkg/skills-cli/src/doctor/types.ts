@@ -1,6 +1,6 @@
 import type { DgPaths } from "@dg/common/node";
 
-export type CheckStatus = "ok" | "warn" | "fail";
+export type CheckStatus = "ok" | "info" | "warn" | "fail";
 
 export interface CheckResult {
 	status: CheckStatus;

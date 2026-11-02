@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { main } from "../src/cli/index";
 import { immediateProtonGate } from "../src/features/filter-policy/jitter";
+import { ProtonSignedOutError } from "../src/protonmail/pw-client";
 import { workspaceDirForProfile } from "../src/workspace/profile";
 
 type Runtime = NonNullable<Parameters<typeof main>[1]>;
@@ -36,6 +37,65 @@ async function fixture(root: string) {
 }
 
 describe("main inbox runtime", () => {
+	test("status checks the Proton session through pw without ext and through the extension with ext", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-status-transport-"));
+		try {
+			await Bun.write(
+				join(root, "messages", "_status.json"),
+				JSON.stringify({
+					kind: "message-status",
+					total: 0,
+					counts: {},
+					items: [],
+				}),
+			);
+			for (const ext of [false, true]) {
+				const pw: string[] = [];
+				const extension: string[] = [];
+				await run(["status", "--provider", "protonmail", "--dir", root], {
+					ext,
+					pwBrowserRequest: async (request) => {
+						pw.push(request.operation);
+						return {};
+					},
+					browserRequest: async (request) => {
+						extension.push(request.operation);
+						return {};
+					},
+				});
+				expect(ext ? extension : pw).toEqual(["session-status"]);
+				expect(ext ? pw : extension).toEqual([]);
+			}
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("status rethrows a signed-out pw Proton session", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-status-signed-out-"));
+		try {
+			await Bun.write(
+				join(root, "messages", "_status.json"),
+				JSON.stringify({
+					kind: "message-status",
+					total: 0,
+					counts: {},
+					items: [],
+				}),
+			);
+			await expect(
+				run(["status", "--provider", "protonmail", "--dir", root], {
+					ext: false,
+					pwBrowserRequest: async () => {
+						throw new ProtonSignedOutError();
+					},
+				}),
+			).rejects.toBeInstanceOf(ProtonSignedOutError);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	test("refuses an explicitly missing DB profile before contacting a mailbox", async () => {
 		const root = await mkdtemp(join(tmpdir(), "inbox-missing-profile-"));
 		const names: string[] = [];
@@ -172,6 +232,74 @@ describe("main inbox runtime", () => {
 		}
 	});
 
+	test("probe stops with the signed-out error when the live folder fetch finds the session signed out", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-probe-signed-out-"));
+		const folders = {
+			folders: [
+				{ id: "inbox", name: "Inbox", type: "system", aliases: ["inbox"] },
+			],
+		};
+		let signedOut = false;
+		const runtime: Runtime = {
+			protonGate: immediateProtonGate(),
+			pwBrowserRequest: async (request) => {
+				if (request.operation === "list-folders") {
+					if (signedOut) throw new ProtonSignedOutError();
+					return folders;
+				}
+				return { messages: [], hasMore: false };
+			},
+		};
+		try {
+			const args = ["--provider", "protonmail", "--dir", root];
+			await run(["load", "folders", ...args], runtime);
+			signedOut = true;
+			await expect(
+				run(["probe", "--folder", "inbox", "--limit", "1", ...args], runtime),
+			).rejects.toBeInstanceOf(ProtonSignedOutError);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test("probe falls back to the folder snapshot when the live folder fetch fails for another reason", async () => {
+		const root = await mkdtemp(join(tmpdir(), "inbox-probe-snapshot-"));
+		let liveFails = false;
+		const runtime: Runtime = {
+			protonGate: immediateProtonGate(),
+			pwBrowserRequest: async (request) => {
+				if (request.operation === "list-folders") {
+					if (liveFails) throw new Error("folder list unavailable");
+					return {
+						folders: [
+							{
+								id: "inbox",
+								name: "Inbox",
+								type: "system",
+								aliases: ["inbox"],
+							},
+						],
+					};
+				}
+				return { messages: [], hasMore: false };
+			},
+		};
+		try {
+			const args = ["--provider", "protonmail", "--dir", root];
+			await run(["load", "folders", ...args], runtime);
+			liveFails = true;
+			const output = JSON.parse(
+				await run(
+					["probe", "--folder", "inbox", "--limit", "1", ...args],
+					runtime,
+				),
+			);
+			expect(output.folder.countsFrom).toBe("snapshot");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
+
 	test("feeds Proton extension metadata directly into redacted model-facing probe output", async () => {
 		const root = await mkdtemp(join(tmpdir(), "inbox-browser-"));
 		const operations: string[] = [];
@@ -183,6 +311,7 @@ describe("main inbox runtime", () => {
 				accountHint: "private-account@example.test",
 			}),
 			protonGate: immediateProtonGate(),
+			ext: true,
 			browserRequest: async (request) => {
 				operations.push(request.operation);
 				expect(request.tabId).toBe(7);

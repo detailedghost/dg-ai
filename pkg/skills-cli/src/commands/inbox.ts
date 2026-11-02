@@ -9,6 +9,14 @@ import {
 	type ResolvedSession,
 } from "@dg/common/node";
 import { main, redactPublicValue, type InboxRuntime } from "@dg/inbox";
+import { assertExtensionInstalled } from "../utils/cli-only";
+import {
+	assertProtonSignedIn,
+	protonDataDir,
+	protonPwRuntime,
+	ProtonSignedOutError,
+	runProtonSignIn,
+} from "../inbox/proton-pw";
 import {
 	INBOX_DEFAULT_TIMEOUT_MS,
 	validateInboxProfile,
@@ -321,13 +329,69 @@ async function printBootstrapUrl(sessionId: string | undefined): Promise<void> {
 	);
 }
 
+const VALUE_FLAGS = new Set([
+	"--provider",
+	"--data-path",
+	"--gmail-data-path",
+	"--account-profile",
+]);
+
+export function takeExtFlag(args: string[]): { ext: boolean; args: string[] } {
+	const forwarded: string[] = [];
+	let ext = false;
+	for (const [index, arg] of args.entries()) {
+		if (arg === "--ext" && !VALUE_FLAGS.has(args[index - 1] ?? "")) ext = true;
+		else forwarded.push(arg);
+	}
+	return { ext, args: forwarded };
+}
+
+export function providerFlag(args: string[]): string | undefined {
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === "--provider") return args[i + 1];
+		if (args[i]!.startsWith("--provider=")) return args[i]!.slice(11);
+	}
+	return undefined;
+}
+
+export function usesFixture(args: string[]): boolean {
+	return args.some(
+		(arg) =>
+			arg === "--data-path" ||
+			arg.startsWith("--data-path=") ||
+			arg === "--gmail-data-path" ||
+			arg.startsWith("--gmail-data-path="),
+	);
+}
+
+const protonHelp = `inbox proton sign-in
+Opens the Proton Mail pw profile once so you can sign in, then closes it.
+Other inbox commands run that profile headless. Pass --ext to use the extension.`;
+
 function helpRequested(args: string[]): boolean {
 	return args.includes("--help") || args.includes("-h");
 }
 
 /** Forwards raw workflow arguments, injects private daemon hooks lazily, redacts public errors, and closes the connection. */
 export async function runInbox(rawArgs: string[]): Promise<void> {
-	const { args, session } = stripSession(rawArgs);
+	const stripped = stripSession(rawArgs);
+	const { session } = stripped;
+	const { ext, args } = takeExtFlag(stripped.args);
+	if (args[0] === "proton") {
+		if (ext)
+			throw new Error(
+				"inbox proton sign-in does not take --ext. The extension needs no pw profile.",
+			);
+		if (helpRequested(args) || args.length === 1) {
+			console.log(protonHelp);
+			return;
+		}
+		if (args[1] !== "sign-in" || args.length !== 2)
+			throw new Error("Use dg-skills inbox proton sign-in.");
+		await runProtonSignIn(protonDataDir());
+		return;
+	}
+	if (ext) assertExtensionInstalled("dg-skills inbox --ext");
 	if (args[0] === "bootstrap-url") {
 		if (helpRequested(args)) {
 			console.log(bootstrapUrlHelp);
@@ -356,7 +420,23 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 		return;
 	}
 	const daemon = daemonRuntime(session);
+	const pw = ext ? undefined : protonPwRuntime(protonDataDir());
+	const onSignal = (signal: NodeJS.Signals) => {
+		void (pw?.close() ?? Promise.resolve()).finally(() => {
+			daemon.close();
+			process.exit(signal === "SIGINT" ? 130 : 143);
+		});
+	};
+	process.once("SIGINT", onSignal);
+	process.once("SIGTERM", onSignal);
 	try {
+		if (
+			!ext &&
+			args[0] !== "profile" &&
+			!usesFixture(args) &&
+			providerFlag(args) === "protonmail"
+		)
+			assertProtonSignedIn(protonDataDir());
 		if (args[0] === "profile") {
 			if (args.includes("--help") || args.includes("-h") || args.length === 1) {
 				console.log(profileHelp);
@@ -394,20 +474,32 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 			output({ kind: "inbox-profile-saved", name, profile });
 			return;
 		}
-		const fixture = args.some(
-			(arg) =>
-				arg === "--data-path" ||
-				arg.startsWith("--data-path=") ||
-				arg === "--gmail-data-path" ||
-				arg.startsWith("--gmail-data-path="),
+		await main(
+			args,
+			usesFixture(args)
+				? {}
+				: ext
+					? { ...daemon.runtime, ext }
+					: {
+							...daemon.runtime,
+							browserRequest: undefined,
+							pwBrowserRequest: pw?.pwBrowserRequest,
+						},
 		);
-		await main(args, fixture ? {} : daemon.runtime);
 	} catch (error) {
 		const message =
 			error instanceof Error ? error.message : "Inbox command failed.";
+		if (error instanceof ProtonSignedOutError) {
+			console.error(message);
+			process.exitCode = error.exitCode;
+			return;
+		}
 		throw new Error(String(redactPublicValue(message)));
 	} finally {
+		process.off("SIGINT", onSignal);
+		process.off("SIGTERM", onSignal);
 		daemon.close();
+		await pw?.close();
 	}
 }
 

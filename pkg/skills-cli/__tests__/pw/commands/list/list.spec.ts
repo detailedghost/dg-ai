@@ -69,6 +69,22 @@ describe("list", () => {
 		}
 	});
 
+	test("hides the CDP endpoint of a protected session", async () => {
+		const daemon = await startFakeDaemon("inbox-proton", {
+			mode: "cdp",
+			cdpUrl: "http://127.0.0.1:9334",
+			profileDir: "C:\\profiles\\inbox-proton",
+		});
+		const env = clientEnv();
+		try {
+			await handler(argsFor(spec), env);
+			expect(env.stdout[0]).toEndWith("  - mode: cdp\n  - cdp: <protected>");
+			expect(env.stdout[0]).not.toContain("9334");
+		} finally {
+			daemon.dispose();
+		}
+	});
+
 	test("drops sessions whose daemon is gone", async () => {
 		const daemon = await startFakeDaemon("github");
 		daemon.child.kill();

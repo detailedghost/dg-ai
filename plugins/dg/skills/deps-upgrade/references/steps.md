@@ -148,15 +148,17 @@ The history commit lands before Step 10, so `push-pr` publishes it.
    `feat fix docs style refactor perf test chore ci` only; `build` is rejected. The bump commits
    use `chore(deps)` for the same reason.
 
-1. Open the PR in the default browser, grouped into a `Deps` tab group:
+1. Open the PR in the default browser:
 
    ```bash
-   ~/.dg/bin/dg-skills batch-open --group "Deps" "<pr-url>"
+   ~/.dg/bin/dg-skills batch-open "<pr-url>"
    ```
+
+   With `--ext`, group it: `~/.dg/bin/dg-skills batch-open --ext --group "Deps" "<pr-url>"`. Grouping needs the `dg-ai-extension` loaded in that browser profile.
 
    Browser setup is documented in the installed [browser skill](../../browser/SKILL.md); use configured personal skill roots if absent.
 
-   **Best-effort — never fails the run.** The PR already exists by this point, and grouping needs the `dg-ai-extension` loaded in that browser profile. If the binary is missing, the bootstrap fails, or nothing opens, say so in the Step 12 summary and move on. Do not retry or troubleshoot.
+   **Best-effort — never fails the run.** The PR already exists by this point. If the binary is missing, the bootstrap fails, or nothing opens, say so in the Step 12 summary and move on. Do not retry or troubleshoot.
 
 ## Step 10b: Ready When Green
 

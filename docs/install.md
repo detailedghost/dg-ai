@@ -141,7 +141,8 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `nope` | No CLI needed — it calls no CLI and no other skill |
 | `google-sms-cleanup` | Yes — `dg-skills ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
-| `browser`, `demo`, `proto`, `chat`, `overwatch` | No — each declares `requires: [extension]` |
+| `browser`, `proto` | No — local by default; `--ext` needs the extension |
+| `demo`, `chat`, `overwatch` | No — each still declares `requires: [extension]` until its local mode lands |
 
 `vcs-provider` is also available as a CLI command; it needs Git and authenticated
 `gh` (GitHub) or `glab` (GitLab). It has no separate skill. Other workflow skills

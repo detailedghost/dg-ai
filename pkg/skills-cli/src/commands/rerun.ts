@@ -5,11 +5,19 @@
  */
 
 import type { Command } from "commander";
-import { loadScript, playScript } from "./demo";
+import { addExtOption } from "../utils/ext-flag";
+import {
+	defaultPlayDeps,
+	loadScript,
+	noteExtDefault,
+	type PlayDeps,
+} from "./demo";
 
-export function registerRerun(program: Command): void {
-	program
-		.command("rerun")
+export function registerRerun(
+	program: Command,
+	deps: PlayDeps = defaultPlayDeps,
+): void {
+	addExtOption(program.command("rerun"))
 		.description("replay a saved demo plan (.md) via the dg-ai-extension")
 		.argument("<plan>", "path to a saved <name>.demo.md plan file")
 		.option(
@@ -17,7 +25,13 @@ export function registerRerun(program: Command): void {
 			"record the replay to a video instead of a live walkthrough",
 		)
 		.option("--print", "print the marked URL instead of opening it")
-		.action((planPath: string, opts: { video?: boolean; print?: boolean }) => {
-			return playScript(loadScript(planPath), opts);
-		});
+		.action(
+			(
+				planPath: string,
+				opts: { video?: boolean; print?: boolean; ext?: boolean },
+			) => {
+				noteExtDefault("rerun", opts);
+				return deps.play(loadScript(planPath), opts);
+			},
+		);
 }

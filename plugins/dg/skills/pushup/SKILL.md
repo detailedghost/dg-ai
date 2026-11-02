@@ -1,6 +1,6 @@
 ---
 name: pushup
-description: Push the current branch, open its PR, and drop that PR into a dg:browser tab group in one step. Use when committed work is ready to share — "push this up", "ship it", "open a PR and show me". Re-running on a branch that already has a PR just reopens it in the browser.
+description: Push the current branch, open its PR, and open that PR in the browser in one step (with --ext, in a dg:browser tab group). Use when committed work is ready to share — "push this up", "ship it", "open a PR and show me". Re-running on a branch that already has a PR just reopens it in the browser.
 allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(~/.dg/bin/dg-skills:*)
 ---
 
@@ -13,12 +13,13 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
 
 ## Usage
 
-**Usage:** `/dg:pushup [--draft] [--group <name>]`
+**Usage:** `/dg:pushup [--draft] [--ext] [--group <name>]`
 
 ```
-/dg:pushup                 # push, open a PR, open it in the "pr" tab group
+/dg:pushup                 # push, open a PR, open it in a plain browser tab
 /dg:pushup --draft         # open the PR as a draft
-/dg:pushup --group <name>  # use a different dg:browser tab group
+/dg:pushup --ext           # group the tab in the "pr" tab group through the extension
+/dg:pushup --ext --group <name>  # use a different dg:browser tab group
 ```
 
 ## Flags
@@ -26,7 +27,8 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--draft` | none | Open the PR as a draft. | off |
-| `--group <name>` | none | Use a different dg:browser tab group. | `pr` |
+| `--ext` | none | Open the PR through the dg-ai-extension so it lands in a tab group. | off (local is the default) |
+| `--group <name>` | none | With `--ext`, use a different dg:browser tab group. | `pr` |
 
 ## Steps
 
@@ -40,8 +42,9 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
 5. **Open the PR.** With `--draft`, pass `--draft` to `gh pr create`. Title: one conventional-commit line covering the change as a whole. Body: two
    sentences of context, then one tight bullet per logical change, then a `Risk` line (what could break) and a
    `How to revert` line (the one step that undoes it).
-6. **Open it in the browser.** `~/.dg/bin/dg-skills batch-open --group <name> <url>`, defaulting to group
-   `pr`. Bootstrap the binary first when missing. The bootstrap runs `sh` and `curl`, which this skill
+6. **Open it in the browser.** `~/.dg/bin/dg-skills batch-open <url>` opens a plain tab. With `--ext`,
+   run `~/.dg/bin/dg-skills batch-open --ext --group <name> <url>`, defaulting to group `pr`. Bootstrap
+   the binary first when missing. The bootstrap runs `sh` and `curl`, which this skill
    does not pre-approve, so Claude Code asks before each one:
 
    ```sh
@@ -49,7 +52,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
      curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
    ```
 
-   Report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
+   With `--ext`, report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
 
 ## PR body rules
 

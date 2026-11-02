@@ -1,0 +1,159 @@
+import {
+	validateInboxBrowserRequest,
+	validateInboxBrowserResponse,
+	type InboxBrowserRequest,
+	type InboxBrowserResponse,
+} from "@dg/common";
+import { join } from "node:path";
+import type { ProtonPageCall, ProtonPageResult } from "./page-entry";
+import { protonOperationDiagnostic } from "./page-errors";
+import { sanitizeInboxBrowserResponse } from "./page-operations";
+import { isProtonMailOrigin, type ProtonSessionHeaders } from "./page-session";
+import { buildProtonPageScript } from "./page-script.macro" with { type: "macro" };
+
+export const PROTON_SIGN_IN_COMMAND = "dg-skills inbox proton sign-in";
+export const PROTON_MAIL_URL = "https://mail.proton.me";
+export const PROTON_SESSION_NAME = "inbox-proton";
+
+const PAGE_SCRIPT: string = buildProtonPageScript();
+const HEADER_WAIT_ATTEMPTS = 20;
+const HEADER_WAIT_MS = 500;
+
+export class ProtonSignedOutError extends Error {
+	readonly exitCode = 4;
+	constructor() {
+		super(
+			`Proton Mail is signed out in the pw profile. Run ${PROTON_SIGN_IN_COMMAND}, sign in once, then retry.`,
+		);
+	}
+}
+
+export class ProtonHeadersTimeoutError extends Error {
+	constructor() {
+		super(
+			"Proton Mail did not make an API request in time. The profile may still be signed in. Retry in a moment.",
+		);
+	}
+}
+
+const SIGNED_OUT_CODES = new Set([
+	"auth-expired",
+	"mail-tab-navigated",
+	"session-unobserved",
+]);
+
+export type ProtonPwPage = {
+	url(): string | Promise<string>;
+	observedHeaders():
+		| ProtonSessionHeaders
+		| undefined
+		| Promise<ProtonSessionHeaders | undefined>;
+	evaluate(script: string, call: ProtonPageCall): Promise<unknown>;
+};
+
+export type ProtonPwSession = {
+	page: ProtonPwPage;
+	close(): Promise<void>;
+};
+
+export type ProtonPwSessionSpec = {
+	name: string;
+	profileDir: string;
+	headless: boolean;
+	url?: string;
+};
+
+export function protonProfilePaths(dataDir: string): {
+	profileDir: string;
+	markerPath: string;
+} {
+	const inboxDir = join(dataDir, "inbox");
+	return {
+		profileDir: join(inboxDir, "proton-profile"),
+		markerPath: join(inboxDir, "proton-signed-in.json"),
+	};
+}
+
+async function observeHeaders(
+	page: ProtonPwPage,
+): Promise<ProtonSessionHeaders> {
+	for (let attempt = 0; attempt < HEADER_WAIT_ATTEMPTS; attempt++) {
+		if (!isProtonMailOrigin(new URL(await page.url()).origin))
+			throw new ProtonSignedOutError();
+		const headers = await page.observedHeaders();
+		if (headers?.uid) return headers;
+		await new Promise((resolve) => setTimeout(resolve, HEADER_WAIT_MS));
+	}
+	throw new ProtonHeadersTimeoutError();
+}
+
+export function createPwBrowserRequest(input: {
+	dataDir: string;
+	openSession(spec: ProtonPwSessionSpec): Promise<ProtonPwSession>;
+}): {
+	browserRequest(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
+	close(): Promise<void>;
+} {
+	const { profileDir } = protonProfilePaths(input.dataDir);
+	let opened: Promise<ProtonPwSession> | undefined;
+	const open = (accountHint: string | undefined) =>
+		(opened ??= input.openSession({
+			name: PROTON_SESSION_NAME,
+			profileDir,
+			headless: true,
+			...(accountHint === undefined
+				? {}
+				: { url: `${PROTON_MAIL_URL}/u/${accountHint}` }),
+		}));
+	let headers: ProtonSessionHeaders | undefined;
+	const close = async () => {
+		const pending = opened;
+		opened = undefined;
+		headers = undefined;
+		await pending?.then(
+			(session) => session.close(),
+			() => undefined,
+		);
+	};
+	return {
+		close,
+		async browserRequest(raw) {
+			const request = validateInboxBrowserRequest(raw);
+			const { accountHint } = request;
+			const { page } = await open(accountHint);
+			const url = new URL(await page.url());
+			if (!isProtonMailOrigin(url.origin)) {
+				await close();
+				throw new ProtonSignedOutError();
+			}
+			if (accountHint !== undefined) {
+				const path = url.pathname;
+				const prefix = `/u/${accountHint}`;
+				if (path !== prefix && !path.startsWith(`${prefix}/`))
+					throw new Error(
+						protonOperationDiagnostic({ code: "account-mismatch" }) ??
+							"Proton account mismatch.",
+					);
+			}
+			try {
+				headers ??= await observeHeaders(page);
+			} catch (error) {
+				if (error instanceof ProtonSignedOutError) await close();
+				throw error;
+			}
+			const result = (await page.evaluate(PAGE_SCRIPT, {
+				request,
+				headers,
+			})) as ProtonPageResult;
+			if (result && typeof result === "object" && "error" in result) {
+				const failure = result.error as { code?: unknown; status?: unknown };
+				if (typeof failure.code === "string" && SIGNED_OUT_CODES.has(failure.code))
+					throw new ProtonSignedOutError();
+				throw new Error(
+					protonOperationDiagnostic(failure) ?? "Proton page operation failed.",
+				);
+			}
+			return sanitizeInboxBrowserResponse(validateInboxBrowserResponse(result));
+		},
+	};
+}

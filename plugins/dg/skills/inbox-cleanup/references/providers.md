@@ -27,7 +27,9 @@ then the bootstrap URL, so an agent does not have to decode the fragment.
 `dg-agent start --json` prints one object `{"sessionId","port","url"}` instead
 of those lines. The token stays inside the URL fragment.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
-Proton also needs exactly one extension connected to that session. Install or
+both run locally. Proton runs locally through a pw-managed profile by default.
+With `--ext`, Proton needs exactly one extension connected to that session, and the
+gate line (run only the command after the colon) is `--ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1`. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
 Proton inbox operations require extension version 1.11.0 or newer.
 
@@ -57,7 +59,23 @@ daemon database. Explicit --data-path fixture commands bypass live services.
 
 ## Proton Mail
 
-Sign in to HTTPS mail.proton.me or mail.protonmail.com, then reload the tab after
+By default Proton runs through a pw profile under `DG_HOME/inbox/proton-profile`.
+Ask the human before running `~/.dg/bin/dg-skills inbox proton sign-in`. It opens
+the profile once so the human can sign in, then closes it. On WSL it uses the
+Windows browser through pw, keeps the profile on the Windows side, and never
+opens a headed browser inside WSL. Cookies stay in that profile, and the agent never runs pw commands on the
+`inbox-proton` session or reads the profile directory. Sign-in and headless runs
+pass the same pw placement arguments, so they share one profile. On WSL that
+profile is pw's Windows-side profile for the `inbox-proton` session, while the
+sign-in marker stays under `DG_HOME/inbox`. If the Windows profile is cleared,
+delete the marker or run sign-in again. The pw profile holds one Proton account:
+a profile `accountHint` that does not match the open `/u/N` path stops the run
+with `account-mismatch`. Other inbox commands run the profile headless and exit 4 with the
+sign-in command when it is signed out. `dg-skills doctor inbox` reads a marker file
+to report whether the profile is signed in and never starts a browser. The rest of
+this section describes the `--ext` path.
+
+With `--ext`, sign in to HTTPS mail.proton.me or mail.protonmail.com, then reload the tab after
 installing the extension so its MAIN observer sees real fetch/XHR API headers.
 Keep that `mail.proton.me/u/N` tab open while cleaning mail. Do filter and
 account settings in a separate tab. If the only mail tab navigates to

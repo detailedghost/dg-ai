@@ -85,6 +85,46 @@ describe("renderRequest", () => {
 	});
 });
 
+describe("network on a restricted session", () => {
+	const secret = fake({
+		url: "https://mail.proton.me/api/core/v4/users",
+		type: "fetch",
+		status: 200,
+		body: "{\"Password\":\"x\"}",
+		headers: {
+			cookie: "AUTH-abc=secret",
+			authorization: "Bearer secret",
+			"x-pm-uid": "uid-1",
+			"x-pm-appversion": "web-mail@5",
+			"x-pm-locale": "en_US",
+		},
+	});
+	const restrictedRun = (...argv: string[]) => {
+		const { ctx } = fakeCtx(scratch.dir, undefined, {
+			requests: () => [secret],
+			clearRequests: () => undefined,
+		});
+		return handler(
+			{ ...ctx, restricted: true },
+			argsFor(spec, ...argv),
+		).then((result) => result.result as string);
+	};
+
+	test("lists only the allowed Proton headers and never a body", async () => {
+		const text = await restrictedRun("--request-headers", "--request-body");
+		expect(text).toBe(
+			[
+				"[GET] https://mail.proton.me/api/core/v4/users => [200] OK",
+				"  Request headers:",
+				"    x-pm-uid: uid-1",
+				"    x-pm-appversion: web-mail@5",
+				"    x-pm-locale: en_US",
+			].join("\n"),
+		);
+		expect(text).not.toContain("secret");
+	});
+});
+
 describe("network", () => {
 	test("hides successful static resources by default", async () => {
 		const { result } = await run();

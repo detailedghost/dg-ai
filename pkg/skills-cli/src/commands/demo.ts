@@ -15,6 +15,8 @@ import type { Command } from "commander";
 import { addDemoMarker } from "../utils/demo-marker";
 import type { VerifyResult } from "../utils/demo-verify";
 import { verifyScript } from "../utils/demo-verify";
+import { isCliOnly } from "../utils/cli-only";
+import { addExtOption } from "../utils/ext-flag";
 import {
 	parsePlanMarkdown,
 	type TourScript,
@@ -44,7 +46,26 @@ export function loadScript(path: string): TourScript {
 	return validate(parsed);
 }
 
-type PlayOpts = { video?: boolean; print?: boolean; edit?: boolean };
+type PlayOpts = {
+	video?: boolean;
+	print?: boolean;
+	edit?: boolean;
+	ext?: boolean;
+};
+
+export type PlayDeps = { play: typeof playScript };
+
+export const defaultPlayDeps: PlayDeps = {
+	play: (script, opts) => playScript(script, opts),
+};
+
+export function noteExtDefault(name: "demo" | "rerun", opts: PlayOpts): void {
+	if (opts.ext) return;
+	console.error(
+		`${name}: the local demo player is not available yet; pass --ext to play in the extension`,
+	);
+	process.exit(1);
+}
 type VerifyOpts = { verify?: string };
 
 /**
@@ -115,7 +136,7 @@ export async function playScript(
 		`\n${kind} "${script.title ?? "demo"}" (${script.steps.length} step(s)) handed to dg-ai-extension.`,
 	);
 	console.log(
-		`plan saved: ${planPath}\nre-run with: dg-skills rerun "${planPath}"`,
+		`plan saved: ${planPath}\nre-run with: dg-skills rerun --ext "${planPath}"`,
 	);
 	if (opts.edit)
 		console.log(
@@ -127,9 +148,11 @@ export async function playScript(
 		);
 }
 
-export function registerDemo(program: Command): void {
-	program
-		.command("demo")
+export function registerDemo(
+	program: Command,
+	deps: PlayDeps = defaultPlayDeps,
+): void {
+	addExtOption(program.command("demo"))
 		.description(
 			"play a guided tour from a script.json via the dg-ai-extension",
 		)
@@ -158,6 +181,7 @@ export function registerDemo(program: Command): void {
 				);
 				process.exit(1);
 			}
-			return playScript(loadScript(scriptPath), opts);
+			noteExtDefault("demo", opts);
+			return deps.play(loadScript(scriptPath), opts);
 		});
 }

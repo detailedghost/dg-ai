@@ -148,7 +148,7 @@ export async function dispatch(
 				.catch(() => undefined);
 		}
 		try {
-			if (!outcome.error)
+			if (!outcome.error && !ctx.restricted)
 				await attachSnapshot(ctx, page, outcome, parts, options);
 		} catch (error) {
 			parts.error = describeError(error);

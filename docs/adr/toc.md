@@ -67,6 +67,12 @@ flowchart LR
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
 
+## Skills
+
+- [0028 — Run every skill locally and make the extension opt-in with `--ext`](0028-local-default-extension-opt-in.md) — Accepted: skills run locally unless
+  the caller passes `--ext`, and a repo test enforces it. The `PENDING_LOCAL_MODE`
+  allowlist (`chat`, `demo`, `overwatch`) stays exempt until bundles 015 and 016.
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

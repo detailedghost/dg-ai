@@ -20,6 +20,10 @@ export type InboxRuntime = {
 		provider: InboxProvider,
 		cache: string,
 	): Promise<void>;
+	/** Selects the extension transport for Proton; the pw profile is the default. */
+	ext?: boolean;
+	/** Sends a validated named operation through the pw-managed Proton profile. */
+	pwBrowserRequest?(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
 	/** Sends a validated named operation through the session-bound extension relay. */
 	browserRequest?(request: InboxBrowserRequest): Promise<InboxBrowserResponse>;
 	/** Replaces the live Proton pacer, for tests that must not wait on real gaps. */

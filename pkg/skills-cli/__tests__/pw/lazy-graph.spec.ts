@@ -90,7 +90,7 @@ describe("pw lazy loading", () => {
 		expect(files.has(path.join(SRC, "pw", "browsers.ts"))).toBe(false);
 	});
 
-	test("only the pw and pw-code registrations and the doctor registry import the pw tree outside it", () => {
+	test("only the pw and pw-code registrations, the doctor registry and the Proton inbox transport import the pw tree outside it", () => {
 		const importers = sourceFiles(SRC)
 			.filter((file) => !file.startsWith(path.join(SRC, "pw") + path.sep))
 			.filter((file) => /["'](?:\.\.?\/)+pw\//.test(readFileSync(file, "utf8")))
@@ -100,6 +100,7 @@ describe("pw lazy loading", () => {
 			path.join("commands", "pw-code.ts"),
 			path.join("commands", "pw.ts"),
 			path.join("doctor", "registry.ts"),
+			path.join("inbox", "proton-pw.ts"),
 		]);
 	});
 });

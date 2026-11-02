@@ -70,12 +70,14 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   it drives Messages for Web and can wrap `signal-cli`), `inbox-cleanup` with explicit
   `--data-path` fixtures, and `proto`, whose default local mode needs no
   extension. Only `proto --ext` needs the dg-ai-extension.
-- Extension skills: `browser`, `demo`, `chat` and `overwatch`. Each
-  declares `requires: [extension]` in its SKILL.md. In a CLI-only install,
-  `dg-skills batch-open`, `launch`, `demo`, `rerun` and `proto --ext`, and the
-  `dg-skills require-extension <skill>` check at the top of `chat` and
-  `overwatch`, stop with: the command needs the dg-ai-extension, and
-  `dg-skills install` adds it.
+- Extension skills: `demo`, `chat` and `overwatch` still declare
+  `requires: [extension]` in their SKILL.md until their local modes land.
+  `browser` runs locally by default: `dg-skills batch-open` opens plain tabs
+  and needs the extension only with `--ext`. `launch` is `--ext`-only. In a
+  CLI-only install, `batch-open --ext`, `launch`, `demo`, `rerun` and
+  `proto --ext`, and the `dg-skills require-extension <skill>` check at the top
+  of `chat` and `overwatch`, stop with: the command needs the dg-ai-extension,
+  and `dg-skills install` adds it.
 - To add the extension later, run `~/.dg/bin/dg-skills install`. It installs the extension,
   `dg-daemon` and `dg-agent`, and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
@@ -285,7 +287,7 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-~/.dg/bin/dg-skills launch --browser brave --group "PRs" <refs...>
+~/.dg/bin/dg-skills launch --ext --browser brave --group "PRs" <refs...>
 ```
 
 ## Step 3 — Verify
@@ -325,8 +327,9 @@ ______________________________________________________________________
 | Switch WSL to mirrored networking mode | No — manual host config |
 | Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
 | Load unpacked in the browser | No — manual browser UI |
-| `launch` cold-start with extension | Yes (browser fully closed) |
-| `batch-open` / `demo` / `rerun` | Yes (extension loaded) |
+| `launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
+| `batch-open --ext` / `demo` / `rerun` | Yes (extension loaded) |
+| `batch-open` without `--ext` | No (plain tabs) |
 
 ## Google SMS cleanup
 

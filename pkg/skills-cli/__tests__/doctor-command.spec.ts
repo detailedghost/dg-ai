@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
 	allChecks,
 	allowRule,
-	type CheckStatus,
 	CURRENT_TOOL_VERSION,
 	checksOf,
 	doctorWorld,
@@ -20,6 +19,7 @@ import { anyToolCheck } from "../src/doctor/checks";
 import { DOCTOR_REGISTRY } from "../src/doctor/registry";
 import { createContext, doctorExitCode, runDoctor } from "../src/doctor/runner";
 import { sharedChecks } from "../src/doctor/shared";
+import type { CheckStatus } from "../src/doctor/types";
 import {
 	CLI_PATH,
 	hasAllowRule,
@@ -27,7 +27,7 @@ import {
 	parseVersion,
 } from "../src/doctor/probes";
 
-const STATUSES: CheckStatus[] = ["ok", "warn", "fail"];
+const STATUSES: CheckStatus[] = ["ok", "info", "warn", "fail"];
 const REGISTERED_ITEMS = Object.keys(DOCTOR_REGISTRY);
 
 let world: ReturnType<typeof doctorWorld>;
@@ -227,8 +227,8 @@ describe("dg-skills doctor check outcomes", () => {
 	});
 
 	test("extension items report an unreachable daemon with the start command as the Fix", async () => {
-		world.healthy(["batch-open", "launch", "credentials"]);
-		for (const item of ["batch-open", "launch", "credentials"]) {
+		world.healthy(["launch", "credentials"]);
+		for (const item of ["launch", "credentials"]) {
 			const { report } = await world.report([item]);
 			const probes = checksOf(report, item).filter(
 				(check) =>
@@ -407,7 +407,9 @@ describe("dg-skills doctor on a bare machine", () => {
 		const { run, report } = await world.report();
 		expect(run.exitCode).toBe(1);
 		expect(report.ok).toBe(false);
-		const flagged = allChecks(report).filter((check) => check.status !== "ok");
+		const flagged = allChecks(report).filter(
+			(check) => check.status === "warn" || check.status === "fail",
+		);
 		expect(flagged.length).toBeGreaterThan(0);
 		for (const check of flagged)
 			expect([check.id, (check.fix ?? "").length > 0]).toEqual([
@@ -633,7 +635,7 @@ describe("dg-skills doctor edge cases", () => {
 	});
 
 	test("a stale pid file reports the daemon as unreachable with the start Fix", async () => {
-		world.healthy(["batch-open"]);
+		world.healthy(["launch"]);
 		const daemonDir = join(world.home, ".dg", "daemon");
 		mkdirSync(daemonDir, { recursive: true });
 		writeFileSync(
@@ -645,14 +647,14 @@ describe("dg-skills doctor edge cases", () => {
 				versions: { package: "0.0.0", protocol: 1 },
 			}),
 		);
-		const { report } = await world.report(["batch-open"]);
-		const daemon = checksOf(report, "batch-open").find((check) => check.id === "daemon");
+		const { report } = await world.report(["launch"]);
+		const daemon = checksOf(report, "launch").find((check) => check.id === "daemon");
 		expect(daemon?.status).toBe("fail");
 		expect(daemon?.fix).toContain("dg-agent start");
 	});
 
 	test("a daemon that answers its health probe passes the daemon check", async () => {
-		world.healthy(["batch-open"]);
+		world.healthy(["launch"]);
 		const instanceId = "live-instance";
 		const server = Bun.serve({
 			port: 0,
@@ -671,9 +673,9 @@ describe("dg-skills doctor edge cases", () => {
 					versions: { package: "0.0.0", protocol: 1 },
 				}),
 			);
-			const { report } = await world.report(["batch-open"]);
+			const { report } = await world.report(["launch"]);
 			expect(
-				checksOf(report, "batch-open").find((check) => check.id === "daemon")?.status,
+				checksOf(report, "launch").find((check) => check.id === "daemon")?.status,
 			).toBe("ok");
 			expect(world.forbiddenCalls()).toEqual([]);
 		} finally {
@@ -682,10 +684,10 @@ describe("dg-skills doctor edge cases", () => {
 	});
 
 	test("a pending pairing code alone is not reported as paired", async () => {
-		world.healthy(["batch-open"]);
+		world.healthy(["launch"]);
 		writeFileSync(join(world.home, ".dg", "pairing.json"), "{}");
-		const { report } = await world.report(["batch-open"]);
-		const pairing = checksOf(report, "batch-open").find(
+		const { report } = await world.report(["launch"]);
+		const pairing = checksOf(report, "launch").find(
 			(check) => check.id === "extension-paired",
 		);
 		expect(pairing?.status).toBe("warn");
@@ -694,9 +696,9 @@ describe("dg-skills doctor edge cases", () => {
 	});
 
 	test("an extension that never connected warns with the pair command", async () => {
-		world.healthy(["batch-open"]);
-		const { report } = await world.report(["batch-open"]);
-		const pairing = checksOf(report, "batch-open").find(
+		world.healthy(["launch"]);
+		const { report } = await world.report(["launch"]);
+		const pairing = checksOf(report, "launch").find(
 			(check) => check.id === "extension-paired",
 		);
 		expect(pairing?.status).toBe("warn");
@@ -705,15 +707,15 @@ describe("dg-skills doctor edge cases", () => {
 	});
 
 	test("a pinned extension origin in the daemon config reports paired", async () => {
-		world.healthy(["batch-open"]);
+		world.healthy(["launch"]);
 		const daemonDir = join(world.home, ".dg", "daemon");
 		mkdirSync(daemonDir, { recursive: true });
 		writeFileSync(
 			join(daemonDir, "config.json"),
 			JSON.stringify({ pinnedOrigin: "chrome-extension://abc" }),
 		);
-		const { report } = await world.report(["batch-open"]);
-		const pairing = checksOf(report, "batch-open").find(
+		const { report } = await world.report(["launch"]);
+		const pairing = checksOf(report, "launch").find(
 			(check) => check.id === "extension-paired",
 		);
 		expect(pairing?.status).toBe("ok");
@@ -721,13 +723,13 @@ describe("dg-skills doctor edge cases", () => {
 	});
 
 	test("an unreadable daemon config does not report paired", async () => {
-		world.healthy(["batch-open"]);
+		world.healthy(["launch"]);
 		const daemonDir = join(world.home, ".dg", "daemon");
 		mkdirSync(daemonDir, { recursive: true });
 		writeFileSync(join(daemonDir, "config.json"), "{not json");
-		const { report } = await world.report(["batch-open"]);
+		const { report } = await world.report(["launch"]);
 		expect(
-			checksOf(report, "batch-open").find((check) => check.id === "extension-paired")
+			checksOf(report, "launch").find((check) => check.id === "extension-paired")
 				?.status,
 		).toBe("warn");
 	});
@@ -866,7 +868,7 @@ describe("dg-skills doctor extension items", () => {
 		for (const fix of fixes) expect(fix).toContain("--cli-only");
 	});
 
-	test("a CLI-only install warns instead of failing on the daemon", async () => {
+	test("a CLI-only install reports the daemon as info instead of failing", async () => {
 		world.healthy(["batch-open"]);
 		mkdirSync(join(world.home, ".dg"), { recursive: true });
 		writeFileSync(join(world.home, ".dg", "cli-only"), "");
@@ -874,8 +876,8 @@ describe("dg-skills doctor extension items", () => {
 		const daemon = checksOf(report, "batch-open").find(
 			(check) => check.id === "daemon",
 		);
-		expect(daemon?.status).toBe("warn");
-		expect(daemon?.fix).toContain("dg-skills install");
+		expect(daemon?.status).toBe("info");
+		expect(daemon?.detail.startsWith("--ext only: ")).toBe(true);
 		expect(
 			checksOf(report, "batch-open").some((check) => check.status === "fail"),
 		).toBe(false);

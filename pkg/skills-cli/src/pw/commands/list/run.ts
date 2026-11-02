@@ -1,3 +1,4 @@
+import { isProtectedSession } from "../../core/protected-session";
 import { list } from "../../core/registry";
 import type { ClientHandler } from "../../core/spec";
 
@@ -18,7 +19,10 @@ const listSessions: ClientHandler = async (_args, env) => {
 			`  - pid: ${record.pid}`,
 		);
 		if (record.mode === "cdp")
-			lines.push("  - mode: cdp", `  - cdp: ${record.cdpUrl}`);
+			lines.push(
+				"  - mode: cdp",
+				`  - cdp: ${isProtectedSession(record.name) ? "<protected>" : record.cdpUrl}`,
+			);
 	}
 	env.out(lines.join("\n"));
 	return 0;
