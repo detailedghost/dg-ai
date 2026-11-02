@@ -8,7 +8,7 @@ import {
 	spyOn,
 } from "bun:test";
 import { Window } from "happy-dom";
-import { cssSelectorFor, injectTheme, waitForEl } from "@/lib/picker";
+import { cssSelectorFor, injectTheme, waitForEl } from "../src/picker";
 
 const window = new Window();
 const document = window.document as unknown as Document;

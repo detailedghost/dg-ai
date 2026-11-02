@@ -55,9 +55,13 @@ export function createBrowserCheck(
 	};
 }
 
+export const browserStatusCheck = createBrowserCheck((channel) =>
+	browserPresent(channel),
+);
+
 export const pwChecks: DoctorCheck[] = [
 	skillFilesCheck(["pw"]),
-	createBrowserCheck((channel) => browserPresent(channel)),
+	browserStatusCheck,
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),
 	rootCheck("state-root", "state", ({ env, home }) => stateRoot(env, home)),
 	allowRuleCheck("pw"),

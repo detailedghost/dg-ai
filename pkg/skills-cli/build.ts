@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { buildPlayer } from "../tour-ui/build";
 
 /** Playwright computes these requires at runtime; make them static so Bun embeds the JSON. */
 export const playwrightMetadata: Bun.BunPlugin = {
@@ -58,6 +59,7 @@ function parseTarget(
 export async function hashBundle(
 	entrypoint: string,
 	plugins: Bun.BunPlugin[],
+	extraInputs: string[] = [],
 ): Promise<string> {
 	const result = await Bun.build({
 		entrypoints: [entrypoint],
@@ -72,6 +74,8 @@ export async function hashBundle(
 		a.path.localeCompare(b.path),
 	))
 		hash.update(new Uint8Array(await output.arrayBuffer()));
+	for (const path of extraInputs)
+		hash.update(new Uint8Array(await Bun.file(path).arrayBuffer()));
 	return hash.digest("hex");
 }
 
@@ -81,9 +85,10 @@ export async function buildSkillsCli(options: {
 	entrypoint?: string;
 	plugins?: Bun.BunPlugin[];
 }): Promise<void> {
+	const playerPath = await buildPlayer();
 	const entrypoint = options.entrypoint ?? join(import.meta.dir, "src/index.ts");
 	const plugins = [playwrightMetadata, ...(options.plugins ?? [])];
-	const buildSha = await hashBundle(entrypoint, plugins);
+	const buildSha = await hashBundle(entrypoint, plugins, [playerPath]);
 
 	const result = await Bun.build({
 		entrypoints: [entrypoint],

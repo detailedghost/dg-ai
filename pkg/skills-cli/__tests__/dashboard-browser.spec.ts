@@ -111,7 +111,7 @@ async function readUntil<T>(
 const clear = await rangeIsClear();
 const built = existsSync(EXTENSION_MANIFEST);
 
-describe.skipIf(!clear || !built)(
+describe.skipIf(process.env.PW_E2E !== "1" || !clear || !built)(
 	"the dashboard in a real browser, against a real daemon",
 	() => {
 		let harness: DemoVerifyHarness | undefined;

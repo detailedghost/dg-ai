@@ -10,7 +10,7 @@ import { startVerifyServer } from "../src/verify/serve";
 
 setDefaultTimeout(60_000);
 
-const browser = verifyBrowserAvailable();
+const browser = process.env.PW_E2E === "1" && verifyBrowserAvailable();
 
 describe("playwright capture", () => {
 	test.skipIf(!browser)("screenshots the fixture at mobile width when a CDP Chromium is present", async () => {

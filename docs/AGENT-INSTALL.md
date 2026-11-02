@@ -68,13 +68,13 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
 
 - CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg-skills ssms`;
   it drives Messages for Web and can wrap `signal-cli`), `inbox-cleanup` with explicit
-  `--data-path` fixtures, and `proto`, whose default local mode needs no
-  extension. Only `proto --ext` needs the dg-ai-extension.
-- Extension skills: `demo`, `chat` and `overwatch` still declare
+  `--data-path` fixtures, `proto` and `demo`, whose default local modes need no
+  extension. Only `proto --ext` and `demo --ext` need the dg-ai-extension.
+- Extension skills: `chat` and `overwatch` still declare
   `requires: [extension]` in their SKILL.md until their local modes land.
   `browser` runs locally by default: `dg-skills batch-open` opens plain tabs
   and needs the extension only with `--ext`. `launch` is `--ext`-only. In a
-  CLI-only install, `batch-open --ext`, `launch`, `demo`, `rerun` and
+  CLI-only install, `batch-open --ext`, `launch`, `demo --ext`, `rerun --ext` and
   `proto --ext`, and the `dg-skills require-extension <skill>` check at the top
   of `chat` and `overwatch`, stop with: the command needs the dg-ai-extension,
   and `dg-skills install` adds it.
@@ -328,7 +328,8 @@ ______________________________________________________________________
 | Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
 | Load unpacked in the browser | No — manual browser UI |
 | `launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
-| `batch-open --ext` / `demo` / `rerun` | Yes (extension loaded) |
+| `batch-open --ext` / `demo --ext` / `rerun --ext` | Yes (extension loaded) |
+| `demo` / `rerun` without `--ext` | Yes (local browser; the human picks on the start screen) |
 | `batch-open` without `--ext` | No (plain tabs) |
 
 ## Google SMS cleanup

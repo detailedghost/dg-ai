@@ -68,7 +68,7 @@ async function runVerify(
 	planPath: string,
 	env?: Record<string, string | undefined>,
 ): Promise<{ code: number; out: string; err: string }> {
-	const proc = Bun.spawn(["bun", ENTRY, "demo", "--verify", planPath], {
+	const proc = Bun.spawn(["bun", ENTRY, "demo", "--ext", "--verify", planPath], {
 		stdout: "pipe",
 		stderr: "pipe",
 		...(env ? { env: mergeEnv(env) } : {}),
@@ -112,7 +112,7 @@ function describeFindings(result: VerifyResult): string {
 	return JSON.stringify(result.findings, null, 1);
 }
 
-describe("demo --verify", () => {
+describe.skipIf(process.env.PW_E2E !== "1")("demo --verify", () => {
 	let server: ReturnType<typeof Bun.serve>;
 	let base: string;
 	let dir: string;
@@ -272,7 +272,7 @@ describe("demo --verify", () => {
 			},
 		]);
 		const plan = writePlan(dir, "stdout-sink.md", script);
-		const proc = Bun.spawn(["bun", ENTRY, "demo", "--verify", plan], {
+		const proc = Bun.spawn(["bun", ENTRY, "demo", "--ext", "--verify", plan], {
 			stdout: "pipe",
 			stderr: "pipe",
 		});

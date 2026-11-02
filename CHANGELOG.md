@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.31.0 (2026-11-02)
+
+### Features
+
+- feat(demo): play demos locally without the extension ([#122](https://github.com/detailedghost/dg-ai/pull/122))
+
+## v1.30.1 (2026-11-02)
+
+### Fixes
+
+- fix(meaningful): add --onto to rebuild a stacked branch on a reshaped parent ([#123](https://github.com/detailedghost/dg-ai/pull/123))
+
 ## v1.30.0 (2026-11-02)
 
 ### Features

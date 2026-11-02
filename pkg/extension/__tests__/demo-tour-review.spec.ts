@@ -6,8 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { toPlanMarkdown } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@/lib/demo-messages";
-import type { TourScript, TourStep } from "@/lib/demo-types";
-import { holdFor } from "@/lib/video-timing";
+import type { TourScript } from "@/lib/demo-types";
 import {
 	demoMarkerFragment,
 	readDemoScript,
@@ -19,7 +18,10 @@ mock.module("wxt/browser", () => ({
 	browser: {
 		runtime: {
 			sendMessage: mock(() => Promise.resolve()),
-			onMessage: { addListener: mock(() => {}) },
+			onMessage: {
+				addListener: mock(() => {}),
+				removeListener: mock(() => {}),
+			},
 		},
 		storage: {
 			local: {
@@ -38,42 +40,23 @@ mock.module("wxt/browser", () => ({
 import { browser } from "wxt/browser";
 import { getNarrationMode } from "@/lib/config";
 import {
-	advanceClickNeeded,
-	automaticActionConsentGranted,
-	automaticActionConsentRequired,
 	automaticPlayback,
-	buildOverlay,
-	captureMarkerEarly,
 	completeSetupPhase,
 	draftToScript,
-	type EditEvent,
-	type EditPhase,
-	editMachine,
 	editorInheritedPageUrl,
 	editorPageUrl,
 	editorReviewRows,
 	editorSpotlightTarget,
-	handoffCompletedSetup,
-	initializeMarkerPlayback,
-	initializeReviewedEditorPlayback,
 	initialPlayPhase,
 	initialPlayState,
-	maybePerformAction,
-	maybePerformStepEffect,
-	missingActionTargetWarning,
 	type PlayState,
-	performAction,
-	primeClickNavigation,
+} from "@dg/tour-ui";
+import {
+	captureMarkerEarly,
 	rearmAfterDiscard,
-	recordingStartState,
 	resetTabIdForTests,
 	resolvePendingMarker,
-	restartState,
 	runDemoTour,
-	runVideoStepSequence,
-	scriptToDraft,
-	setupActionConsentRequired,
-	stepEffect,
 } from "@/lib/features/demo-tour";
 
 const GLOBAL_KEYS = [
@@ -258,129 +241,6 @@ describe("getNarrationMode — all valid values", () => {
 	});
 });
 
-// ── editMachine (review stepper) ────────────────────────────────────────────
-
-describe("editMachine", () => {
-	// Prime, then feed events; returns the phase after each event.
-	const run = (total: number, events: EditEvent[]): EditPhase => {
-		const m = editMachine(total);
-		let phase = m.next().value;
-		for (const e of events) phase = m.next(e).value;
-		return phase;
-	};
-
-	// The actions screen is the entry point: running a good plan shouldn't require
-	// paging through every step first.
-	it("primes on the actions screen, not step 0", () => {
-		expect(editMachine(3).next().value).toEqual({ kind: "done" });
-	});
-
-	it("editAgain opens the stepper at the first step", () => {
-		expect(run(3, ["editAgain"])).toEqual({ kind: "step", cursor: 0 });
-	});
-
-	it("advances and clamps at the last step", () => {
-		expect(run(3, ["editAgain", "next", "next"])).toEqual({
-			kind: "step",
-			cursor: 2,
-		});
-		expect(run(3, ["editAgain", "next", "next", "next"])).toEqual({
-			kind: "step",
-			cursor: 2,
-		});
-	});
-
-	it("goes back and clamps at 0", () => {
-		expect(run(3, ["editAgain", "next", "back", "back"])).toEqual({
-			kind: "step",
-			cursor: 0,
-		});
-	});
-
-	it("approve returns to the actions screen from any step", () => {
-		expect(run(3, ["editAgain", "next", "approve"])).toEqual({ kind: "done" });
-	});
-
-	it("ignores next/back on the actions screen", () => {
-		expect(run(3, ["next", "back"])).toEqual({ kind: "done" });
-		expect(run(3, ["editAgain", "approve", "next", "back"])).toEqual({
-			kind: "done",
-		});
-	});
-});
-
-describe("draftToScript", () => {
-	it("preserves setup steps and the inclusion toggle from the editor draft", () => {
-		const draft: Parameters<typeof draftToScript>[1] = {
-			title: "Edited demo",
-			mode: "walkthrough",
-			rows: [
-				{
-					title: "Tour",
-					selector: "",
-					body: "Show it",
-					timing: "",
-					navigate: "",
-					actKind: "",
-					actText: "",
-				},
-			],
-			setup: {
-				rows: [
-					{
-						title: "Setup",
-						selector: "#login",
-						body: "Sign in",
-						timing: "next",
-						navigate: "",
-						actKind: "fill",
-						actText: "non-secret seed value",
-					},
-				],
-				includeInTour: true,
-			},
-		};
-
-		expect(draftToScript("https://app.example", draft)).toMatchObject({
-			setup: {
-				includeInTour: true,
-				steps: [
-					{
-						title: "Setup",
-						selector: "#login",
-						body: "Sign in",
-						advance: "next",
-						action: { do: "fill", value: "non-secret seed value" },
-					},
-				],
-			},
-		});
-	});
-
-	it("omits setup when the editor has no setup rows", () => {
-		const draft: Parameters<typeof draftToScript>[1] = {
-			title: "Edited demo",
-			mode: "walkthrough",
-			rows: [
-				{
-					title: "Tour",
-					selector: "",
-					body: "Show it",
-					timing: "",
-					navigate: "",
-					actKind: "",
-					actText: "",
-				},
-			],
-			setup: { rows: [], includeInTour: false },
-		};
-
-		expect(draftToScript("https://app.example", draft)).not.toHaveProperty(
-			"setup",
-		);
-	});
-});
-
 describe("setup playback initialization", () => {
 	const excludedVideo: TourScript = {
 		startUrl: "https://app.example/start",
@@ -465,59 +325,6 @@ describe("setup playback initialization", () => {
 			fromEdit: true,
 		});
 	});
-
-	it("returns from a navigated excluded setup to startUrl before video continuation", async () => {
-		const navigatedSetupVideo: TourScript = {
-			startUrl: "https://app.example/start",
-			mode: "video",
-			setup: {
-				includeInTour: false,
-				steps: [
-					{
-						body: "Prepare on another page",
-						navigate: "https://app.example/setup",
-					},
-				],
-			},
-			steps: [{ body: "Begin the tutorial" }],
-		};
-		const events: string[] = [];
-		const writeState = mock(
-			async (_state: Parameters<typeof completeSetupPhase>[0]) => {
-				events.push("state:tutorial");
-			},
-		);
-		const navigate = mock((url: string) => {
-			events.push(`navigate:${url}`);
-		});
-		const continuePlayback = mock(async () => {
-			events.push("continue");
-		});
-		const abortPlayback = mock(async () => {
-			events.push("abort");
-		});
-
-		const result = await handoffCompletedSetup(
-			{
-				script: navigatedSetupVideo,
-				phase: "setup",
-				index: 1,
-			},
-			"https://app.example/setup",
-			{ writeState, navigate, continuePlayback, abortPlayback },
-		);
-
-		expect(result).toBe("navigate");
-		expect(events).toEqual([
-			"state:tutorial",
-			"navigate:https://app.example/start",
-		]);
-		expect(writeState).toHaveBeenCalledWith(
-			expect.objectContaining({ phase: "tutorial", index: 0 }),
-		);
-		expect(continuePlayback).not.toHaveBeenCalled();
-		expect(abortPlayback).not.toHaveBeenCalled();
-	});
 });
 
 describe("DemoMarker trust", () => {
@@ -559,140 +366,6 @@ describe("DemoMarker trust", () => {
 
 		expect(() => readDemoScript(url)).not.toThrow();
 		expect(readDemoScript(url)).toEqual(malformedCss);
-	});
-});
-
-describe("setup action review and consent", () => {
-	it("requires consent for click or fill setup actions only", () => {
-		const base: TourScript = {
-			startUrl: "https://app.example",
-			steps: [{ body: "Tour", action: { do: "click" } }],
-		};
-
-		expect(setupActionConsentRequired(base)).toBe(false);
-		expect(
-			setupActionConsentRequired({
-				...base,
-				setup: {
-					includeInTour: false,
-					steps: [{ body: "Prepare", action: { do: "click" } }],
-				},
-			}),
-		).toBe(true);
-		expect(
-			setupActionConsentRequired({
-				...base,
-				setup: {
-					includeInTour: true,
-					steps: [
-						{
-							body: "Seed",
-							action: { do: "fill", value: "non-secret seed value" },
-						},
-					],
-				},
-			}),
-		).toBe(true);
-	});
-
-	it("reviews setup rows and their actions before tutorial rows", () => {
-		const draft: Parameters<typeof editorReviewRows>[0] = {
-			title: "Review setup",
-			mode: "video",
-			setup: {
-				includeInTour: false,
-				rows: [
-					{
-						title: "Seed",
-						selector: "#seed",
-						body: "Seed data",
-						timing: "next",
-						navigate: "",
-						actKind: "fill",
-						actText: "non-secret seed value",
-					},
-				],
-			},
-			rows: [
-				{
-					title: "Tour",
-					selector: "#dashboard",
-					body: "Show dashboard",
-					timing: "next",
-					navigate: "",
-					actKind: "",
-					actText: "",
-				},
-			],
-		};
-
-		const rows = editorReviewRows(draft);
-		expect(rows.map(({ kind }) => kind)).toEqual(["setup", "tutorial"]);
-		expect(rows[0]).toMatchObject({
-			status: "Setup · excluded preparation",
-			row: {
-				actKind: "fill",
-				actText: "non-secret seed value",
-			},
-		});
-	});
-});
-
-describe("playback lifecycle wiring", () => {
-	const tutorialActionVideo: TourScript = {
-		startUrl: "https://app.example/start",
-		mode: "video",
-		steps: [
-			{
-				body: "Open the dashboard",
-				selector: "#dashboard",
-				action: { do: "click" },
-			},
-		],
-	};
-
-	it("keeps tutorial actions unapproved when marker playback is initialized", async () => {
-		const writeState = mock(
-			async (_state: Awaited<ReturnType<typeof initializeMarkerPlayback>>) =>
-				undefined,
-		);
-
-		expect(automaticActionConsentRequired(tutorialActionVideo)).toBe(true);
-		const state = await initializeMarkerPlayback(
-			tutorialActionVideo,
-			writeState,
-		);
-
-		expect(automaticActionConsentGranted(state)).toBe(false);
-		expect(
-			automaticActionConsentGranted({
-				...state,
-				setupActionsApproved: true,
-			}),
-		).toBe(false);
-		expect(writeState).toHaveBeenCalledWith(state);
-	});
-
-	it("persists all-action approval only after editor review", async () => {
-		const writeState = mock(
-			async (
-				_state: Awaited<ReturnType<typeof initializeReviewedEditorPlayback>>,
-			) => undefined,
-		);
-
-		const state = await initializeReviewedEditorPlayback(
-			tutorialActionVideo,
-			writeState,
-		);
-
-		expect(automaticActionConsentGranted(state)).toBe(true);
-		expect(state).toMatchObject({
-			phase: "tutorial",
-			index: 0,
-			automaticActionsApproved: true,
-			fromEdit: true,
-		});
-		expect(writeState).toHaveBeenCalledWith(state);
 	});
 });
 
@@ -744,892 +417,6 @@ describe("editor security sinks", () => {
 	});
 });
 
-// ── Defect 1: a missing action target must warn, not silently no-op ────────
-
-describe("missingActionTargetWarning", () => {
-	it("names the action kind and the selector that never resolved", () => {
-		const message = missingActionTargetWarning({
-			body: "Save",
-			selector: "#save",
-			action: { do: "click" },
-		});
-
-		expect(message).toContain("click");
-		expect(message).toContain("#save");
-	});
-});
-
-describe("performAction", () => {
-	// performAction dispatches a real `input` event, which must come from the same
-	// realm as the target element (happy-dom checks `instanceof Event` internally).
-	function domInput(): HTMLElement {
-		const win = new Window();
-		Object.defineProperty(globalThis, "Event", {
-			configurable: true,
-			value: win.Event,
-		});
-		return win.document.createElement("input") as unknown as HTMLElement;
-	}
-
-	it("clicks the target and resolves once the click has fired", async () => {
-		const target = new Window().document.createElement("button");
-		let clicked = false;
-		target.addEventListener("click", () => {
-			clicked = true;
-		});
-
-		await performAction({ do: "click" }, target as unknown as HTMLElement);
-
-		expect(clicked).toBe(true);
-	});
-
-	it("types the value into the target character by character, then resolves", async () => {
-		const target = domInput();
-
-		await performAction({ do: "fill", value: "hi" }, target);
-
-		expect((target as unknown as HTMLInputElement).value).toBe("hi");
-	});
-});
-
-describe("stepEffect", () => {
-	it("returns an authored action as-is", () => {
-		expect(
-			stepEffect({ body: "x", action: { do: "fill", value: "hi" } }),
-		).toEqual({
-			do: "fill",
-			value: "hi",
-		});
-	});
-
-	// `advance: "click"` is a timing, not an action, so a tour built from timings alone
-	// has no `action` anywhere — unattended playback must supply the click itself.
-	it("synthesizes a click for a click-timed step with no authored action", () => {
-		expect(stepEffect({ body: "x", advance: "click" })).toEqual({
-			do: "click",
-		});
-	});
-
-	it("prefers the authored action over the click timing", () => {
-		expect(
-			stepEffect({
-				body: "x",
-				advance: "click",
-				action: { do: "fill", value: "q" },
-			}),
-		).toEqual({
-			do: "fill",
-			value: "q",
-		});
-	});
-
-	it("returns nothing for a step that does not touch the page", () => {
-		expect(stepEffect({ body: "x" })).toBeUndefined();
-		expect(stepEffect({ body: "x", advance: "next" })).toBeUndefined();
-		expect(stepEffect({ body: "x", advance: 2000 })).toBeUndefined();
-		expect(stepEffect(undefined)).toBeUndefined();
-	});
-});
-
-describe("maybePerformStepEffect", () => {
-	const effectScript: TourScript = {
-		startUrl: "https://app.example",
-		steps: [],
-	};
-
-	beforeEach(() => {
-		(browser.storage.local.set as ReturnType<typeof mock>).mockClear();
-	});
-
-	/**
-	 * The bug this exists for: video playback called maybePerformAction, which bails on
-	 * a step with no authored action. Every tour built from `click` timings therefore
-	 * recorded without ever clicking anything, so the page never moved.
-	 */
-	it("clicks a click-timed step that has no authored action", async () => {
-		const target = new Window().document.createElement("button");
-		let clicks = 0;
-		target.addEventListener("click", () => {
-			clicks++;
-		});
-
-		await maybePerformStepEffect(
-			{ script: effectScript, index: 0 },
-			{ body: "Press it", advance: "click" },
-			target as unknown as HTMLElement,
-		);
-
-		expect(clicks).toBe(1);
-		expect(browser.storage.local.set).toHaveBeenCalledWith({
-			"demo_tour:-1": expect.objectContaining({ acted: 0 }),
-		});
-	});
-
-	it("still honours the acted guard, so a reload cannot re-click", async () => {
-		const target = new Window().document.createElement("button");
-		let clicks = 0;
-		target.addEventListener("click", () => {
-			clicks++;
-		});
-
-		await maybePerformStepEffect(
-			{ script: effectScript, index: 1, acted: 1 },
-			{ body: "Press it", advance: "click" },
-			target as unknown as HTMLElement,
-		);
-
-		expect(clicks).toBe(0);
-		expect(browser.storage.local.set).not.toHaveBeenCalled();
-	});
-
-	it("does nothing for a step that neither acts nor waits on a click", async () => {
-		const target = new Window().document.createElement("button");
-		let clicks = 0;
-		target.addEventListener("click", () => {
-			clicks++;
-		});
-
-		await maybePerformStepEffect(
-			{ script: effectScript, index: 0 },
-			{ body: "Just read this", advance: "next" },
-			target as unknown as HTMLElement,
-		);
-
-		expect(clicks).toBe(0);
-		expect(browser.storage.local.set).not.toHaveBeenCalled();
-	});
-});
-
-describe("maybePerformAction", () => {
-	const tourScript: TourScript = { startUrl: "https://app.example", steps: [] };
-
-	beforeEach(() => {
-		(browser.storage.local.set as ReturnType<typeof mock>).mockClear();
-	});
-
-	it("does nothing when the step has no action", async () => {
-		const target = new Window().document.createElement("button");
-
-		await maybePerformAction(
-			{ script: tourScript, index: 0 },
-			{ body: "No action" },
-			target as unknown as HTMLElement,
-		);
-
-		expect(browser.storage.local.set).not.toHaveBeenCalled();
-	});
-
-	it("marks the step acted and performs the action exactly once", async () => {
-		const target = new Window().document.createElement("button");
-		let clicks = 0;
-		target.addEventListener("click", () => {
-			clicks++;
-		});
-
-		await maybePerformAction(
-			{ script: tourScript, index: 2 },
-			{ body: "Click it", action: { do: "click" } },
-			target as unknown as HTMLElement,
-		);
-
-		expect(clicks).toBe(1);
-		expect(browser.storage.local.set).toHaveBeenCalledWith({
-			"demo_tour:-1": expect.objectContaining({ acted: 2 }),
-		});
-	});
-
-	it("does not repeat an action already marked acted for this index", async () => {
-		const target = new Window().document.createElement("button");
-		let clicks = 0;
-		target.addEventListener("click", () => {
-			clicks++;
-		});
-
-		await maybePerformAction(
-			{ script: tourScript, index: 1, acted: 1 },
-			{ body: "Click it", action: { do: "click" } },
-			target as unknown as HTMLElement,
-		);
-
-		expect(clicks).toBe(0);
-		expect(browser.storage.local.set).not.toHaveBeenCalled();
-	});
-
-	it("runs once per index while another state write races the action", async () => {
-		const state: PlayState = {
-			script: tourScript,
-			index: 0,
-			phase: "tutorial",
-		};
-		const store = new Map<string, PlayState>([["demo_tour:-1", state]]);
-		(browser.storage.local.get as ReturnType<typeof mock>).mockImplementation(
-			(key: string) =>
-				Promise.resolve(store.has(key) ? { [key]: store.get(key) } : {}),
-		);
-		(browser.storage.local.set as ReturnType<typeof mock>).mockImplementation(
-			(value: Record<string, PlayState>) => {
-				for (const [key, next] of Object.entries(value)) store.set(key, next);
-				return Promise.resolve();
-			},
-		);
-		const target = new Window().document.createElement("button");
-		let clicks = 0;
-		target.addEventListener("click", () => {
-			clicks++;
-			store.set("demo_tour:-1", { ...state, index: 1 });
-		});
-
-		await Promise.all([
-			maybePerformAction(
-				state,
-				{ body: "Click it", action: { do: "click" } },
-				target as unknown as HTMLElement,
-			),
-			maybePerformAction(
-				state,
-				{ body: "Click it", action: { do: "click" } },
-				target as unknown as HTMLElement,
-			),
-		]);
-		await maybePerformAction(
-			{ ...state, index: 1 },
-			{ body: "Click it", action: { do: "click" } },
-			target as unknown as HTMLElement,
-		);
-
-		expect(clicks).toBe(2);
-		expect(store.get("demo_tour:-1")).toMatchObject({ index: 1, acted: 1 });
-	});
-});
-
-// ── Defect 2: an authored action must respect walkthrough pacing ───────────
-
-describe("automaticPlayback — mode gating", () => {
-	it("is false in walkthrough mode even for an action-bearing tutorial step", () => {
-		const walkthroughScript: TourScript = {
-			startUrl: "https://app.example",
-			mode: "walkthrough",
-			steps: [{ body: "Click it", action: { do: "click" } }],
-		};
-
-		expect(
-			automaticPlayback({
-				script: walkthroughScript,
-				phase: "tutorial",
-				index: 0,
-			}),
-		).toBe(false);
-	});
-});
-
-describe("buildOverlay — callout controls", () => {
-	function domRoot(): HTMLElement {
-		const win = new Window();
-		Object.defineProperty(globalThis, "window", {
-			configurable: true,
-			value: win,
-		});
-		Object.defineProperty(globalThis, "document", {
-			configurable: true,
-			value: win.document,
-		});
-		return win.document.createElement("div") as unknown as HTMLElement;
-	}
-
-	const script: TourScript = {
-		startUrl: "https://app.example/start",
-		mode: "walkthrough",
-		steps: [{ body: "Step one" }, { body: "Step two" }, { body: "Step three" }],
-	};
-	const fakeCtx = {} as Parameters<typeof buildOverlay>[1];
-
-	const ariaLabels = (root: HTMLElement): string[] =>
-		[...root.querySelectorAll("button[aria-label]")].map(
-			(b) => b.getAttribute("aria-label") ?? "",
-		);
-	const buttonByLabel = (root: HTMLElement, label: string): HTMLButtonElement =>
-		root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
-	// layer = root's single fixed-inset child; its first child is the spotlight
-	// (highlight or dim), its last is the callout card — true for every non-video call.
-	const layerOf = (root: HTMLElement): HTMLElement =>
-		root.firstElementChild as HTMLElement;
-
-	it("shows enabled jump and single-step controls with real aria-labels mid-tour", () => {
-		const root = domRoot();
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 1 },
-			script.steps[1],
-			null,
-			[],
-			false,
-		);
-
-		// Order is the rendered order: « ‹ › »
-		expect(ariaLabels(root)).toEqual([
-			"Restart at the first step",
-			"Previous step",
-			"Next step",
-			"Run to the last step",
-		]);
-		for (const label of [
-			"Restart at the first step",
-			"Previous step",
-			"Next step",
-			"Run to the last step",
-		]) {
-			expect(buttonByLabel(root, label).disabled).toBe(false);
-		}
-	});
-
-	it("disables both backward controls on the first step and both forward on the last", () => {
-		const first = domRoot();
-		buildOverlay(
-			first,
-			fakeCtx,
-			{ script, index: 0 },
-			script.steps[0],
-			null,
-			[],
-			false,
-		);
-		expect(buttonByLabel(first, "Restart at the first step").disabled).toBe(
-			true,
-		);
-		expect(buttonByLabel(first, "Previous step").disabled).toBe(true);
-		expect(buttonByLabel(first, "Next step").disabled).toBe(false);
-
-		const lastIndex = script.steps.length - 1;
-		const atEnd = domRoot();
-		buildOverlay(
-			atEnd,
-			fakeCtx,
-			{ script, index: lastIndex },
-			script.steps[lastIndex],
-			null,
-			[],
-			false,
-		);
-		expect(buttonByLabel(atEnd, "Previous step").disabled).toBe(false);
-		expect(buttonByLabel(atEnd, "Next step").disabled).toBe(true);
-		expect(buttonByLabel(atEnd, "Run to the last step").disabled).toBe(true);
-	});
-
-	it("tints only the single-step pair — ‹ --accent2, › --accent", () => {
-		const root = domRoot();
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 1 },
-			script.steps[1],
-			null,
-			[],
-			false,
-		);
-
-		expect(
-			buttonByLabel(root, "Previous step").getAttribute("style"),
-		).toContain("var(--accent2)");
-
-		const fwd = buttonByLabel(root, "Next step").getAttribute("style") ?? "";
-		expect(fwd).toContain("var(--accent)");
-		expect(fwd).not.toContain("var(--accent2)");
-
-		// Jump controls stay untinted, so color marks stepping rather than direction.
-		for (const label of ["Restart at the first step", "Run to the last step"]) {
-			const style = buttonByLabel(root, label).getAttribute("style") ?? "";
-			expect(style).not.toContain("var(--accent)");
-			expect(style).not.toContain("var(--accent2)");
-		}
-	});
-
-	it("carries navigation on the arrows alone — no Next button", () => {
-		const root = domRoot();
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 1 },
-			script.steps[1],
-			null,
-			[],
-			false,
-		);
-		expect(root.textContent).not.toContain("Next");
-		expect(root.textContent).not.toContain("Back");
-	});
-
-	it("keeps Done on the last step as the only way to finish", () => {
-		const lastIndex = script.steps.length - 1;
-		const atEnd = domRoot();
-		buildOverlay(
-			atEnd,
-			fakeCtx,
-			{ script, index: lastIndex },
-			script.steps[lastIndex],
-			null,
-			[],
-			false,
-		);
-		expect(atEnd.textContent).toContain("Done");
-
-		const mid = domRoot();
-		buildOverlay(
-			mid,
-			fakeCtx,
-			{ script, index: 1 },
-			script.steps[1],
-			null,
-			[],
-			false,
-		);
-		expect(mid.textContent).not.toContain("Done");
-	});
-
-	it("hides every manual control, including the jump buttons, in video mode", () => {
-		const root = domRoot();
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 1 },
-			script.steps[1],
-			null,
-			[],
-			true,
-		);
-
-		expect(root.querySelectorAll("button[aria-label]")).toHaveLength(0);
-	});
-
-	it("shows a visible warning when a step's action target was not found", () => {
-		const root = domRoot();
-		const actionStep: TourStep = { body: "Click it", action: { do: "click" } };
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0 },
-			actionStep,
-			null,
-			[],
-			false,
-		);
-
-		expect(root.textContent).toContain("Target not found");
-	});
-
-	it("omits the warning for a step with no action, even without a target", () => {
-		const root = domRoot();
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0 },
-			script.steps[0],
-			null,
-			[],
-			false,
-		);
-
-		expect(root.textContent).not.toContain("Target not found");
-	});
-
-	// ── slice 3: no viewport dim on the targeted spotlight ──────────────────
-	it("renders a bordered highlight with no viewport-dim shadow when a target is present", () => {
-		const root = domRoot();
-		const target = root.ownerDocument?.createElement("button") as HTMLElement;
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0 },
-			script.steps[0],
-			target,
-			[],
-			false,
-		);
-
-		const highlight = layerOf(root).firstElementChild as HTMLElement;
-		expect(highlight.getAttribute("style") ?? "").not.toContain("624.9375rem");
-		expect(highlight.getAttribute("style") ?? "").toContain("var(--accent)");
-	});
-
-	it("still dims the whole viewport when there is no target (unchanged, deliberately kept)", () => {
-		const root = domRoot();
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0 },
-			script.steps[0],
-			null,
-			[],
-			false,
-		);
-
-		const highlight = layerOf(root).firstElementChild as HTMLElement;
-		// happy-dom reformats rgba() spacing when parsed through the `background`
-		// shorthand (unlike the opaque box-shadow string in the targeted branch).
-		expect(highlight.getAttribute("style") ?? "").toContain(
-			"rgba(0, 0, 0, 0.55)",
-		);
-	});
-
-	// ── slice 3: phase-coloured spotlight border + card accent ──────────────
-	it("renders the setup-phase spotlight border and card accent in orange, not blue", () => {
-		const root = domRoot();
-		const target = root.ownerDocument?.createElement("button") as HTMLElement;
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0, phase: "setup" },
-			script.steps[0],
-			target,
-			[],
-			false,
-		);
-
-		const highlight = layerOf(root).firstElementChild as HTMLElement;
-		const card = layerOf(root).lastElementChild as HTMLElement;
-		expect(highlight.getAttribute("style") ?? "").toContain(
-			"var(--accent-setup)",
-		);
-		expect(card.getAttribute("style") ?? "").toContain("var(--accent-setup)");
-	});
-
-	it("renders the tutorial-phase spotlight border and card accent in blue", () => {
-		const root = domRoot();
-		const target = root.ownerDocument?.createElement("button") as HTMLElement;
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0, phase: "tutorial" },
-			script.steps[0],
-			target,
-			[],
-			false,
-		);
-
-		const highlight = layerOf(root).firstElementChild as HTMLElement;
-		expect(highlight.getAttribute("style") ?? "").toContain("var(--accent)");
-		expect(highlight.getAttribute("style") ?? "").not.toContain(
-			"var(--accent-setup)",
-		);
-	});
-
-	it("follows the phase across the setup→tutorial handoff, not the step index", () => {
-		const lateSetup = domRoot();
-		const lateTarget = lateSetup.ownerDocument?.createElement(
-			"button",
-		) as HTMLElement;
-		buildOverlay(
-			lateSetup,
-			fakeCtx,
-			{ script, index: script.steps.length - 1, phase: "setup" },
-			script.steps[script.steps.length - 1],
-			lateTarget,
-			[],
-			false,
-		);
-		expect(
-			(layerOf(lateSetup).firstElementChild as HTMLElement).getAttribute(
-				"style",
-			) ?? "",
-		).toContain("var(--accent-setup)");
-
-		const earlyTutorial = domRoot();
-		const earlyTarget = earlyTutorial.ownerDocument?.createElement(
-			"button",
-		) as HTMLElement;
-		buildOverlay(
-			earlyTutorial,
-			fakeCtx,
-			{ script, index: 0, phase: "tutorial" },
-			script.steps[0],
-			earlyTarget,
-			[],
-			false,
-		);
-		const earlyStyle =
-			(layerOf(earlyTutorial).firstElementChild as HTMLElement).getAttribute(
-				"style",
-			) ?? "";
-		expect(earlyStyle).toContain("var(--accent)");
-		expect(earlyStyle).not.toContain("var(--accent-setup)");
-	});
-
-	// The tutorial-phase test above only reads `highlight` — the card's own accent,
-	// which shares the same `phaseAccent` variable, was never actually checked.
-	it("renders the tutorial-phase card accent in blue too, not just the highlight", () => {
-		const root = domRoot();
-		const target = root.ownerDocument?.createElement("button") as HTMLElement;
-
-		buildOverlay(
-			root,
-			fakeCtx,
-			{ script, index: 0, phase: "tutorial" },
-			script.steps[0],
-			target,
-			[],
-			false,
-		);
-
-		const card = layerOf(root).lastElementChild as HTMLElement;
-		expect(card.getAttribute("style") ?? "").toContain("var(--accent)");
-		expect(card.getAttribute("style") ?? "").not.toContain(
-			"var(--accent-setup)",
-		);
-	});
-});
-
-describe("restartState", () => {
-	const withSetup: TourScript = {
-		startUrl: "https://app.example/start",
-		mode: "walkthrough",
-		setup: { includeInTour: false, steps: [{ body: "Prepare" }] },
-		steps: [{ body: "One" }, { body: "Two" }],
-	};
-	const noSetup: TourScript = {
-		startUrl: "https://app.example/start",
-		mode: "walkthrough",
-		steps: [{ body: "One" }, { body: "Two" }],
-	};
-
-	it("returns to the first step of the tour's opening phase", () => {
-		expect(
-			restartState({ script: withSetup, index: 1, phase: "tutorial" }),
-		).toMatchObject({
-			index: 0,
-			phase: "setup",
-		});
-		expect(
-			restartState({ script: noSetup, index: 1, phase: "tutorial" }),
-		).toMatchObject({
-			index: 0,
-			phase: "tutorial",
-		});
-	});
-
-	it("clears acted so every action runs again on the second pass", () => {
-		expect(
-			restartState({ script: noSetup, index: 1, acted: 1 }).acted,
-		).toBeUndefined();
-	});
-
-	// Re-asking for consent the user already gave would make restarting worse than
-	// just re-running the whole command.
-	it("keeps the approvals and the editor origin", () => {
-		expect(
-			restartState({
-				script: withSetup,
-				index: 2,
-				phase: "tutorial",
-				automaticActionsApproved: true,
-				setupActionsApproved: true,
-				fromEdit: true,
-			}),
-		).toMatchObject({
-			automaticActionsApproved: true,
-			setupActionsApproved: true,
-			fromEdit: true,
-		});
-	});
-});
-
-describe("recordingStartState", () => {
-	const script: TourScript = {
-		startUrl: "https://app.example/start",
-		mode: "video",
-		steps: [{ body: "One" }, { body: "Two" }, { body: "Three" }],
-	};
-
-	it("rewinds a mid-tour cursor to the first step", () => {
-		expect(recordingStartState({ script, index: 2 }).index).toBe(0);
-	});
-
-	it("clears the acted high-water mark so replayed actions can run again", () => {
-		expect(recordingStartState({ script, index: 2, acted: 2 }).acted).toBe(-1);
-	});
-
-	it("is a no-op on a cursor already at the first step", () => {
-		expect(recordingStartState({ script, index: 0 })).toMatchObject({
-			index: 0,
-			acted: -1,
-		});
-	});
-
-	it("preserves everything else about the state", () => {
-		const state: PlayState = {
-			script,
-			index: 2,
-			phase: "tutorial",
-			setupActionsApproved: true,
-			automaticActionsApproved: true,
-			fromEdit: true,
-		};
-		expect(recordingStartState(state)).toMatchObject({
-			script,
-			phase: "tutorial",
-			setupActionsApproved: true,
-			automaticActionsApproved: true,
-			fromEdit: true,
-		});
-	});
-});
-
-describe("advanceClickNeeded", () => {
-	const clickStep: TourStep = { body: "Press it", advance: "click" };
-
-	it("synthesizes the click when a control advances a click-timed step", () => {
-		expect(advanceClickNeeded(clickStep, true, true)).toBe(true);
-	});
-
-	it("does not synthesize when the user clicked the target themselves", () => {
-		expect(advanceClickNeeded(clickStep, true, false)).toBe(false);
-	});
-
-	it("does not synthesize without a resolved target", () => {
-		expect(advanceClickNeeded(clickStep, false, true)).toBe(false);
-	});
-
-	it("leaves an authored action to maybePerformAction instead", () => {
-		const authored: TourStep = { ...clickStep, action: { do: "click" } };
-		expect(advanceClickNeeded(authored, true, true)).toBe(false);
-	});
-
-	it("ignores steps that are not waiting on a click", () => {
-		expect(advanceClickNeeded({ body: "x", advance: "next" }, true, true)).toBe(
-			false,
-		);
-		expect(advanceClickNeeded({ body: "x", advance: 3000 }, true, true)).toBe(
-			false,
-		);
-		expect(advanceClickNeeded({ body: "x" }, true, true)).toBe(false);
-	});
-});
-
-describe("primeClickNavigation", () => {
-	it("persists the destination before either kind of click effect can navigate", async () => {
-		const state = initialPlayState(
-			{
-				startUrl: "https://app.example/start",
-				steps: [{ body: "Open" }, { body: "Landed" }],
-			},
-			"marker",
-		);
-		for (const step of [
-			{ body: "Timed", advance: "click" },
-			{ body: "Action", action: { do: "click" } },
-		] satisfies TourStep[]) {
-			const writeState = mock(() => Promise.resolve());
-
-			await primeClickNavigation(state, step, writeState);
-
-			expect(writeState).toHaveBeenCalledWith({ ...state, index: 1 });
-		}
-	});
-
-	it("does not move the cursor early for a non-navigation effect", async () => {
-		const state = initialPlayState(
-			{
-				startUrl: "https://app.example/start",
-				steps: [{ body: "Type" }],
-			},
-			"marker",
-		);
-		const writeState = mock(() => Promise.resolve());
-
-		await primeClickNavigation(
-			state,
-			{ body: "Type", action: { do: "fill", value: "hello" } },
-			writeState,
-		);
-
-		expect(writeState).not.toHaveBeenCalled();
-	});
-});
-
-describe("runVideoStepSequence", () => {
-	it("waits for narration, then the effect, then the authored tail before advancing", async () => {
-		let finishNarration: ((outcome: "ended") => void) | undefined;
-		const narration = new Promise<"ended">((resolve) => {
-			finishNarration = resolve;
-		});
-		const order: string[] = [];
-		const step: TourStep = { body: "Save", advance: 1200 };
-		const sequence = runVideoStepSequence(step, {
-			waitForNarration: () => narration,
-			performEffect: async () => {
-				order.push("effect");
-			},
-			pause: async (ms) => {
-				order.push(`pause:${ms}`);
-			},
-			advance: async () => {
-				order.push("advance");
-			},
-			cancelled: () => false,
-		});
-
-		expect(order).toEqual([]);
-		finishNarration?.("ended");
-		await sequence;
-
-		expect(order).toEqual(["effect", `pause:${holdFor(step, 0)}`, "advance"]);
-	});
-
-	it("uses the bounded silent fallback without adding a narrated tail", async () => {
-		const order: string[] = [];
-
-		await runVideoStepSequence(
-			{ body: "Silent" },
-			{
-				waitForNarration: async () => "timeout",
-				performEffect: async () => {
-					order.push("effect");
-				},
-				pause: async () => {
-					order.push("pause");
-				},
-				advance: async () => {
-					order.push("advance");
-				},
-				cancelled: () => false,
-			},
-		);
-
-		expect(order).toEqual(["effect", "advance"]);
-	});
-
-	it("continues when synthesis fails after an earlier narrated step", async () => {
-		const order: string[] = [];
-		for (const [index, outcome] of ["ended", "timeout"].entries()) {
-			await runVideoStepSequence(
-				{ body: `Step ${index}` },
-				{
-					waitForNarration: async () => outcome as "ended" | "timeout",
-					performEffect: async () => {
-						order.push(`effect:${index}`);
-					},
-					pause: async () => {},
-					advance: async () => {
-						order.push(`advance:${index}`);
-					},
-					cancelled: () => false,
-				},
-			);
-		}
-
-		expect(order).toEqual(["effect:0", "advance:0", "effect:1", "advance:1"]);
-	});
-});
-
-// ── Defect 3: a tour behind a client-side auth redirect keeps its marker ───
-
 describe("resolvePendingMarker", () => {
 	const script: TourScript = {
 		startUrl: "https://app.example/start",
@@ -1674,6 +461,20 @@ describe("resolvePendingMarker", () => {
 });
 
 /** Swap in a happy-dom window's location/history, optionally its document too. */
+/** Retry `assert` until it passes, so a test waits on state rather than wall time. */
+async function eventually(assert: () => void, timeoutMs = 3000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		try {
+			assert();
+			return;
+		} catch (error) {
+			if (Date.now() > deadline) throw error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 1));
+	}
+}
+
 function withLocation(
 	url: string,
 	opts: { withDocument?: boolean } = {},
@@ -2190,18 +991,22 @@ describe("video narration completion", () => {
 			store.delete(key);
 			return Promise.resolve();
 		});
-		let listener:
-			| ((msg: {
-					type?: string;
-					index?: number;
-					durations?: number[];
-					hideBody?: boolean;
-			  }) => void)
-			| undefined;
+		type Listener = (msg: {
+			type?: string;
+			index?: number;
+			durations?: number[];
+			hideBody?: boolean;
+		}) => void;
+		const listeners = new Set<Listener>();
 		(
 			browser.runtime.onMessage.addListener as ReturnType<typeof mock>
-		).mockImplementation((next: typeof listener) => {
-			listener = next;
+		).mockImplementation((next: Listener) => {
+			listeners.add(next);
+		});
+		(
+			browser.runtime.onMessage.removeListener as ReturnType<typeof mock>
+		).mockImplementation((next: Listener) => {
+			listeners.delete(next);
 		});
 		Object.defineProperty(globalThis, "createShadowRootUi", {
 			configurable: true,
@@ -2217,7 +1022,9 @@ describe("video narration completion", () => {
 		});
 		return {
 			store,
-			listener: (msg) => listener?.(msg),
+			listener: (msg) => {
+				for (const next of [...listeners]) next(msg);
+			},
 		};
 	}
 
@@ -2227,7 +1034,7 @@ describe("video narration completion", () => {
 			mode: "video",
 			steps: [{ selector: "#target", body: "Open it", advance: "click" }],
 		};
-		const { listener } = videoHarness(70, script, true, [100]);
+		const { listener } = videoHarness(70, script, true, [60_000]);
 		document.body.innerHTML = '<button id="target"></button>';
 		let clicks = 0;
 		document
@@ -2236,12 +1043,11 @@ describe("video narration completion", () => {
 
 		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
 		listener({ type: MSG.narrationComplete, index: 69 });
-		await new Promise((resolve) => setTimeout(resolve, 5));
+		await Promise.resolve();
 		expect(clicks).toBe(0);
 
 		listener({ type: MSG.narrationComplete, index: 0 });
-		await new Promise((resolve) => setTimeout(resolve, 5));
-		expect(clicks).toBe(1);
+		await eventually(() => expect(clicks).toBe(1));
 	});
 
 	it("advances a captions-only timings tour when no completion signal arrives", async () => {
@@ -2262,9 +1068,13 @@ describe("video narration completion", () => {
 			?.addEventListener("click", () => clicks++);
 
 		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await eventually(() => {
+			expect(clicks).toBe(2);
+			expect((store.get("demo_tour:71") as PlayState | undefined)?.index).toBe(
+				2,
+			);
+		});
 
-		expect(clicks).toBe(2);
 		expect(
 			JSON.stringify(
 				(store.get("demo_tour:71") as PlayState | undefined)?.script,
@@ -2287,13 +1097,196 @@ describe("video narration completion", () => {
 			durations: [1200, 2400],
 			hideBody: true,
 		});
-		await new Promise((resolve) => setTimeout(resolve, 5));
 
-		expect(store.get("demo_tour:72")).toMatchObject({
-			index: 0,
-			videoDurations: [1200, 2400],
-			videoHideBody: true,
+		await eventually(() =>
+			expect(store.get("demo_tour:72")).toMatchObject({
+				index: 0,
+				videoDurations: [1200, 2400],
+				videoHideBody: true,
+			}),
+		);
+	});
+});
+
+describe("runDemoTour through runTour", () => {
+	type Listener = (msg: Record<string, unknown>) => void;
+
+	function harness(tabId: number, state?: PlayState, recording = false) {
+		withTabId(tabId);
+		withLocation("https://app.example/start", { withDocument: true });
+		const store = new Map<string, unknown>();
+		if (state) store.set(`demo_tour:${tabId}`, state);
+		if (recording) store.set(`demo_recording:${tabId}`, true);
+		(browser.storage.local.get as ReturnType<typeof mock>).mockImplementation(
+			(key: string) =>
+				Promise.resolve(store.has(key) ? { [key]: store.get(key) } : {}),
+		);
+		(browser.storage.local.set as ReturnType<typeof mock>).mockImplementation(
+			(value: Record<string, unknown>) => {
+				for (const [key, next] of Object.entries(value)) store.set(key, next);
+				return Promise.resolve();
+			},
+		);
+		(
+			browser.storage.local.remove as ReturnType<typeof mock>
+		).mockImplementation((key: string) => {
+			store.delete(key);
+			return Promise.resolve();
 		});
+		const listeners = new Set<Listener>();
+		(
+			browser.runtime.onMessage.addListener as ReturnType<typeof mock>
+		).mockImplementation((next: Listener) => {
+			listeners.add(next);
+		});
+		(
+			browser.runtime.onMessage.removeListener as ReturnType<typeof mock>
+		).mockImplementation((next: Listener) => {
+			listeners.delete(next);
+		});
+		const sent: Array<{ type?: string; index?: number }> = [];
+		(browser.runtime.sendMessage as ReturnType<typeof mock>).mockImplementation(
+			(msg: { type?: string }) => {
+				sent.push(msg);
+				return Promise.resolve(
+					msg.type === MSG.whoami ? { tabId } : undefined,
+				);
+			},
+		);
+		const mounts: Array<{ name: string; root: HTMLElement; live: boolean }> =
+			[];
+		Object.defineProperty(globalThis, "createShadowRootUi", {
+			configurable: true,
+			value: mock(
+				async (
+					_ctx: unknown,
+					opts: { name: string; onMount: (root: HTMLElement) => void },
+				) => {
+					const entry = {
+						name: opts.name,
+						root: document.createElement("div"),
+						live: true,
+					};
+					mounts.push(entry);
+					return {
+						mount: () => opts.onMount(entry.root),
+						remove: () => {
+							entry.live = false;
+						},
+					};
+				},
+			),
+		});
+		const live = () => mounts.filter((m) => m.live);
+		const click = (pattern: RegExp): void => {
+			const found = live()
+				.flatMap((m) => [...m.root.querySelectorAll("button")])
+				.find(
+					(b) =>
+						pattern.test(b.textContent ?? "") ||
+						pattern.test(b.getAttribute("aria-label") ?? ""),
+				);
+			if (!found) throw new Error(`no live button matching ${pattern}`);
+			found.click();
+		};
+		return {
+			store,
+			sent,
+			mounts,
+			live,
+			click,
+			text: () => live().map((m) => m.root.textContent ?? "").join("\n"),
+			emit: (msg: Record<string, unknown>) => {
+				for (const next of [...listeners]) next(msg);
+			},
+		};
+	}
+
+	const ctx = {} as Parameters<typeof runDemoTour>[0];
+
+	it("asks for consent before marker-authored actions", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			steps: [{ body: "Press it", action: { do: "click" } }],
+		};
+		const h = harness(80, initialPlayState(script, "marker"));
+
+		await runDemoTour(ctx);
+
+		expect(h.live().map((m) => m.name)).toEqual(["dg-demo-setup-consent"]);
+	});
+
+	it("plays a walkthrough to the end card without any recorder message", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			steps: [{ body: "Only step" }],
+		};
+		const h = harness(81, initialPlayState(script, "marker"));
+
+		await runDemoTour(ctx);
+		h.click(/^Done$/);
+		await eventually(() => expect(h.text()).toContain("Walkthrough complete"));
+
+		expect(h.store.has("demo_tour:81")).toBe(true);
+		expect(h.sent.map((m) => m.type)).toEqual([MSG.whoami]);
+		h.click(/Close/);
+		await eventually(() => expect(h.store.has("demo_tour:81")).toBe(false));
+	});
+
+	it("prompts to record, then plays on the recorder's start and cues each step", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			steps: [{ body: "First" }],
+		};
+		const h = harness(82, initialPlayState(script, "marker"));
+
+		await runDemoTour(ctx);
+		await eventually(() => expect(h.text()).toContain("Video demo ready"));
+		expect(h.live().map((m) => m.name)).toEqual(["dg-demo-modal"]);
+		h.emit({ type: MSG.videoStart, durations: [5], hideBody: false });
+
+		await eventually(() =>
+			expect(h.sent).toContainEqual({ type: MSG.playStep, index: 0 }),
+		);
+		await eventually(() => {
+			expect(h.text()).toContain("Wrapping up");
+			expect(h.sent).toContainEqual({ type: MSG.videoStop });
+		});
+		expect(h.store.get("demo_recording:82")).toBe(true);
+		expect(h.store.has("demo_tour:82")).toBe(true);
+	});
+
+	it("clears the tour and says so once the recording is saved", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			steps: [{ body: "First" }],
+		};
+		const h = harness(83, initialPlayState(script, "marker"));
+
+		await runDemoTour(ctx);
+		h.emit({ type: MSG.videoSaved, filename: "dg-demo/take.webm" });
+
+		await eventually(() => expect(h.text()).toContain("Recording saved"));
+		expect(h.store.has("demo_tour:83")).toBe(false);
+		expect(h.store.has("demo_recording:83")).toBe(false);
+	});
+
+	it("shows narration progress on the preparing notice", async () => {
+		const script: TourScript = {
+			startUrl: "https://app.example/start",
+			mode: "video",
+			steps: [{ body: "First" }],
+		};
+		const h = harness(84, initialPlayState(script, "marker"));
+
+		await runDemoTour(ctx);
+		h.emit({ type: MSG.videoPreparing, narrate: true });
+		await eventually(() => expect(h.text()).toContain("Preparing narration"));
+		h.emit({ type: MSG.narrationProgress, progress: 42, label: "Voicing" });
+
+		await eventually(() => expect(h.text()).toContain("Voicing · 42%"));
 	});
 });
 
@@ -2354,10 +1347,6 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		return store;
 	}
 
-	// Flushes past createShadowRootUi's own await plus any dispatch()-triggered
-	// re-render — a macrotask boundary clears every pending microtask ahead of it.
-	const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-
 	const buttonByLabel = (root: HTMLElement, label: string): HTMLButtonElement =>
 		root.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
 	// "✓ Approve" is a plain pillButton with no aria-label — find it by text instead.
@@ -2398,11 +1387,11 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const jumpForward = buttonByLabel(root, "Run to the last step");
 		expect(jumpForward).not.toBeNull();
 		jumpForward.click();
-		await flush();
-
-		expect(clicks).toEqual({ s0: 1, s1: 1, s2: 1 });
-		const last = containers[containers.length - 1];
-		expect(last.textContent).toContain("3 / 3");
+		await eventually(() => {
+			expect(clicks).toEqual({ s0: 1, s1: 1, s2: 1 });
+			const last = containers[containers.length - 1];
+			expect(last.textContent).toContain("3 / 3");
+		});
 	});
 
 	it("« returns to the first step and re-enters the editor, not the tour", async () => {
@@ -2413,7 +1402,7 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const jumpBack = buttonByLabel(root, "Restart at the first step");
 		expect(jumpBack).not.toBeNull();
 		jumpBack.click();
-		await flush();
+		await eventually(() => expect(store.get("demo_edit:41")).toBe(0));
 
 		// A reload, not an in-memory jump: simulate the next page load and confirm
 		// it re-enters the editor (never the walkthrough) sitting on step 1.
@@ -2438,13 +1427,13 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const addStep = buttonByLabel(root, "Add step");
 		expect(addStep).not.toBeNull();
 		addStep.click();
-		await flush();
-
-		// draftToScript is the single serialization path (persist() mirrors it into
-		// the URL on every edit) — the added row must show up there.
-		expect(readDemoScript(location.href)?.steps.length).toBe(
-			script.steps.length + 1,
-		);
+		await eventually(() => {
+			// draftToScript is the single serialization path (persist() mirrors it into
+			// the URL on every edit) — the added row must show up there.
+			expect(readDemoScript(location.href)?.steps.length).toBe(
+				script.steps.length + 1,
+			);
+		});
 	});
 
 	it("removing the row the cursor is on leaves a valid cursor and omits it from the draft", async () => {
@@ -2455,13 +1444,13 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const removeStep = buttonByLabel(root, "Remove step");
 		expect(removeStep).not.toBeNull();
 		removeStep.click();
-		await flush();
-
-		expect(readDemoScript(location.href)?.steps.length).toBe(
-			script.steps.length - 1,
-		);
-		const last = containers[containers.length - 1];
-		expect(last.textContent).toContain("2 / 2");
+		await eventually(() => {
+			expect(readDemoScript(location.href)?.steps.length).toBe(
+				script.steps.length - 1,
+			);
+			const last = containers[containers.length - 1];
+			expect(last.textContent).toContain("2 / 2");
+		});
 	});
 
 	it("removing the last remaining row leaves a valid cursor", async () => {
@@ -2483,11 +1472,11 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const removeStep = buttonByLabel(root, "Remove step");
 		expect(removeStep).not.toBeNull();
 		removeStep.click();
-		await flush();
-
-		const last = containers[containers.length - 1];
-		expect(last.textContent).not.toContain("NaN");
-		expect(last.textContent ?? "").toMatch(/\d+ \/ \d+/);
+		await eventually(() => {
+			const last = containers[containers.length - 1];
+			expect(last.textContent).not.toContain("NaN");
+			expect(last.textContent ?? "").toMatch(/\d+ \/ \d+/);
+		});
 	});
 
 	// The sibling test above only proves a *reload* re-enters the editor; its own
@@ -2500,7 +1489,7 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const jumpBack = buttonByLabel(root, "Restart at the first step");
 		expect(jumpBack).not.toBeNull();
 		jumpBack.click();
-		await flush();
+		await eventually(() => expect(store.get("demo_edit:45")).toBe(0));
 
 		const reentered = renderingShadowRootUi();
 		await runDemoTour({} as Parameters<typeof runDemoTour>[0]);
@@ -2519,14 +1508,14 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const removeStep = buttonByLabel(root, "Remove step");
 		expect(removeStep).not.toBeNull();
 		removeStep.click();
-		await flush();
-
-		expect(readDemoScript(location.href)?.steps.length).toBe(
-			script.steps.length - 1,
-		);
-		const last = containers[containers.length - 1];
-		expect(last.textContent).not.toContain("NaN");
-		expect(last.textContent ?? "").toMatch(/\d+ \/ 2/);
+		await eventually(() => {
+			expect(readDemoScript(location.href)?.steps.length).toBe(
+				script.steps.length - 1,
+			);
+			const last = containers[containers.length - 1];
+			expect(last.textContent).not.toContain("NaN");
+			expect(last.textContent ?? "").toMatch(/\d+ \/ 2/);
+		});
 	});
 
 	it("removing a step, then clicking Approve, carries the reduced count onto the done screen", async () => {
@@ -2537,7 +1526,9 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const removeStep = buttonByLabel(root, "Remove step");
 		expect(removeStep).not.toBeNull();
 		removeStep.click();
-		await flush();
+		await eventually(() =>
+			expect(containers[containers.length - 1].textContent).toContain("/ 2"),
+		);
 
 		const approve = buttonByText(
 			containers[containers.length - 1],
@@ -2545,10 +1536,10 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		);
 		expect(approve).toBeTruthy();
 		approve.click();
-		await flush();
-
-		const done = containers[containers.length - 1];
-		expect(done.textContent).toContain(`${script.steps.length - 1} step(s)`);
+		await eventually(() => {
+			const done = containers[containers.length - 1];
+			expect(done.textContent).toContain(`${script.steps.length - 1} step(s)`);
+		});
 	});
 
 	it("adding a step, then clicking Approve, carries the increased count onto the done screen", async () => {
@@ -2559,7 +1550,9 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const addStep = buttonByLabel(root, "Add step");
 		expect(addStep).not.toBeNull();
 		addStep.click();
-		await flush();
+		await eventually(() =>
+			expect(containers[containers.length - 1].textContent).toContain("/ 4"),
+		);
 
 		const approve = buttonByText(
 			containers[containers.length - 1],
@@ -2567,10 +1560,10 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		);
 		expect(approve).toBeTruthy();
 		approve.click();
-		await flush();
-
-		const done = containers[containers.length - 1];
-		expect(done.textContent).toContain(`${script.steps.length + 1} step(s)`);
+		await eventually(() => {
+			const done = containers[containers.length - 1];
+			expect(done.textContent).toContain(`${script.steps.length + 1} step(s)`);
+		});
 	});
 
 	it("disables « on the first row and » on the last row", async () => {
@@ -2606,11 +1599,11 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const root = containers[containers.length - 1];
 
 		buttonByLabel(root, "Run to the last step").click();
-		await flush();
-
-		expect(clicks).toEqual({ s0: 0, s1: 1, s2: 1 });
-		const last = containers[containers.length - 1];
-		expect(last.textContent).toContain("3 / 3");
+		await eventually(() => {
+			expect(clicks).toEqual({ s0: 0, s1: 1, s2: 1 });
+			const last = containers[containers.length - 1];
+			expect(last.textContent).toContain("3 / 3");
+		});
 	});
 
 	it("records a click-navigation in the draft and serialized plan without markers", async () => {
@@ -2625,7 +1618,9 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		});
 
 		buttonByLabel(containers[containers.length - 1], "Next step").click();
-		await flush();
+		await eventually(() =>
+			expect(readDemoScript(location.href)?.steps[1]?.navigate).toBeDefined(),
+		);
 
 		const captured = readDemoScript(location.href);
 		expect(captured?.steps[0]?.navigate).toBeUndefined();
@@ -2670,18 +1665,18 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		button?.replaceWith(anchor);
 
 		buttonByLabel(containers[containers.length - 1], "Next step").click();
-		await flush();
-
-		expect(location.href).toBe("https://app.example/landed");
-		const continuation = store.get("demo_pending:60") as {
-			script: TourScript;
-			edit: boolean;
-		};
-		expect(continuation.script.steps[1]?.navigate).toBe(
-			"https://app.example/landed",
-		);
-		expect(continuation.edit).toBe(true);
-		expect(store.get("demo_edit:60")).toBe(1);
+		await eventually(() => {
+			expect(location.href).toBe("https://app.example/landed");
+			const continuation = store.get("demo_pending:60") as {
+				script: TourScript;
+				edit: boolean;
+			};
+			expect(continuation.script.steps[1]?.navigate).toBe(
+				"https://app.example/landed",
+			);
+			expect(continuation.edit).toBe(true);
+			expect(store.get("demo_edit:60")).toBe(1);
+		});
 	});
 
 	it("leaves navigate empty when the planning click stays on the same page", async () => {
@@ -2689,9 +1684,9 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const containers = await openEditorAtStep(59, 0, store);
 
 		buttonByLabel(containers[containers.length - 1], "Next step").click();
-		await flush();
-
-		expect(readDemoScript(location.href)?.steps[0]?.navigate).toBeUndefined();
+		await eventually(() => {
+			expect(readDemoScript(location.href)?.steps[0]?.navigate).toBeUndefined();
+		});
 	});
 
 	it("adding a step inserts it immediately after the cursor's row, not at the end", async () => {
@@ -2700,10 +1695,10 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const root = containers[containers.length - 1];
 
 		buttonByLabel(root, "Add step").click();
-		await flush();
-
-		const steps = readDemoScript(location.href)?.steps ?? [];
-		expect(steps.map((s) => s.body)).toEqual(["One", "Two", "", "Three"]);
+		await eventually(() => {
+			const steps = readDemoScript(location.href)?.steps ?? [];
+			expect(steps.map((s) => s.body)).toEqual(["One", "Two", "", "Three"]);
+		});
 	});
 
 	it("removing the cursor's row removes exactly that row, not the first or last by default", async () => {
@@ -2712,10 +1707,10 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 		const root = containers[containers.length - 1];
 
 		buttonByLabel(root, "Remove step").click();
-		await flush();
-
-		const steps = readDemoScript(location.href)?.steps ?? [];
-		expect(steps.map((s) => s.body)).toEqual(["One", "Three"]);
+		await eventually(() => {
+			const steps = readDemoScript(location.href)?.steps ?? [];
+			expect(steps.map((s) => s.body)).toEqual(["One", "Three"]);
+		});
 	});
 
 	// Add/remove must resolve the section (setup vs tutorial) from the cursor's
@@ -2755,11 +1750,11 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 			const root = containers[containers.length - 1];
 
 			buttonByLabel(root, "Add step").click();
-			await flush();
-
-			const out = readDemoScript(location.href);
-			expect(out?.setup?.steps.length).toBe(2);
-			expect(out?.steps.length).toBe(2);
+			await eventually(() => {
+				const out = readDemoScript(location.href);
+				expect(out?.setup?.steps.length).toBe(2);
+				expect(out?.steps.length).toBe(2);
+			});
 		});
 
 		it("adding a step while the cursor is on a tutorial row lands in the tutorial section, even with setup present", async () => {
@@ -2767,11 +1762,11 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 			const root = containers[containers.length - 1];
 
 			buttonByLabel(root, "Add step").click();
-			await flush();
-
-			const out = readDemoScript(location.href);
-			expect(out?.setup?.steps.length).toBe(1);
-			expect(out?.steps.length).toBe(3);
+			await eventually(() => {
+				const out = readDemoScript(location.href);
+				expect(out?.setup?.steps.length).toBe(1);
+				expect(out?.steps.length).toBe(3);
+			});
 		});
 
 		it("removing the only setup row omits setup from the serialized script and leaves tutorial rows untouched", async () => {
@@ -2779,67 +1774,11 @@ describe("showEditPanel — planning stepper « » and add/remove (slice 3)", ()
 			const root = containers[containers.length - 1];
 
 			buttonByLabel(root, "Remove step").click();
-			await flush();
-
-			const out = readDemoScript(location.href);
-			expect(out?.setup).toBeUndefined();
-			expect(out?.steps.map((s) => s.body)).toEqual(["Tut one", "Tut two"]);
+			await eventually(() => {
+				const out = readDemoScript(location.href);
+				expect(out?.setup).toBeUndefined();
+				expect(out?.steps.map((s) => s.body)).toEqual(["Tut one", "Tut two"]);
+			});
 		});
-	});
-});
-
-// ── Defect 4: setup rows must be fully editable, same as tutorial rows ─────
-
-describe("scriptToDraft", () => {
-	it("surfaces every field for a setup row exactly like a tutorial row", () => {
-		const script: TourScript = {
-			title: "Full tour",
-			startUrl: "https://app.example",
-			mode: "video",
-			setup: {
-				includeInTour: false,
-				steps: [
-					{
-						title: "Sign in",
-						selector: "#login",
-						body: "Sign in first",
-						navigate: "https://app.example/login",
-						advance: 2000,
-						action: { do: "fill", value: "non-secret seed value" },
-					},
-				],
-			},
-			steps: [
-				{ title: "Dashboard", body: "See the dashboard", selector: "#dash" },
-			],
-		};
-
-		const draft = scriptToDraft(script);
-
-		expect(draft.setup).toMatchObject({
-			includeInTour: false,
-			rows: [
-				{
-					title: "Sign in",
-					selector: "#login",
-					body: "Sign in first",
-					navigate: "https://app.example/login",
-					timing: "2s",
-					actKind: "fill",
-					actText: "non-secret seed value",
-				},
-			],
-		});
-		// Round-trips back to an equivalent script — every setup field survives edit + save.
-		expect(draftToScript(script.startUrl, draft)).toEqual(script);
-	});
-
-	it("omits setup entirely when the script has none", () => {
-		const script: TourScript = {
-			startUrl: "https://app.example",
-			steps: [{ body: "Tour" }],
-		};
-
-		expect(scriptToDraft(script).setup).toBeUndefined();
 	});
 });

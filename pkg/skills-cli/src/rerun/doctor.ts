@@ -1,12 +1,14 @@
 import {
 	allowRuleCheck,
-	extensionChecks,
+	extOnlyChecks,
 	skillFilesCheck,
 } from "../doctor/checks";
 import type { DoctorCheck } from "../doctor/types";
+import { browserStatusCheck } from "../pw/doctor";
 
 export const rerunChecks: DoctorCheck[] = [
 	skillFilesCheck(["demo"]),
-	...extensionChecks,
+	browserStatusCheck,
+	...extOnlyChecks,
 	allowRuleCheck("rerun"),
 ];

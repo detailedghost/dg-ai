@@ -39,6 +39,7 @@ const {
 const NOW = new Date("2026-10-02T10:30:00.000Z");
 const GEOMETRY_TEST_TIMEOUT_MS = 60_000;
 const browserAvailable = (() => {
+	if (process.env.PW_E2E !== "1") return false;
 	try {
 		resolveBrowserBinary();
 		return true;

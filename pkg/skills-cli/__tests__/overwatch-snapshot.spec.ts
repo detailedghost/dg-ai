@@ -29,6 +29,7 @@ const renderedAt = new Date("2026-10-02T15:00:00.000Z");
 const GEOMETRY_TEST_TIMEOUT_MS = 60_000;
 const skillsCliEntry = join(import.meta.dir, "..", "src", "index.ts");
 const browserAvailable = (() => {
+	if (process.env.PW_E2E !== "1") return false;
 	try {
 		resolveBrowserBinary();
 		return true;

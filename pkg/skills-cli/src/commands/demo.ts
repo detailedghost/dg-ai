@@ -1,50 +1,22 @@
 /**
- * `demo` — hand a declarative tour script to the dg-ai-extension. Encodes the
+ * `demo` — play a declarative tour in a local browser by default; with --ext,
+ * hand it to the dg-ai-extension instead. Encodes the
  * script into a `_demo` fragment marker on its startUrl and opens it in the
  * default browser; the extension plays the tour, then strips the marker. Also
  * saves a re-runnable plan.md so the tour can be replayed later via `rerun`.
  * Compile-once, play-many — no live channel.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { slugify } from "@dg/common";
+import { InvalidArgumentError, Option, type Command } from "commander";
 import { tryOpen } from "@dg/common/node";
-import type { Command } from "commander";
+import type { LocalDeps, LocalOpts } from "../demo/local";
+import { loadScript, savePlan } from "../demo/plan-file";
 import { addDemoMarker } from "../utils/demo-marker";
 import type { VerifyResult } from "../utils/demo-verify";
-import { verifyScript } from "../utils/demo-verify";
-import { isCliOnly } from "../utils/cli-only";
 import { addExtOption } from "../utils/ext-flag";
-import {
-	parsePlanMarkdown,
-	type TourScript,
-	toPlanMarkdown,
-	validate,
-} from "../utils/plan-format";
+import type { TourScript } from "../utils/plan-format";
 
-/** Save a re-runnable plan.md under ~/.dg/demos/<slug>/ and return its path. */
-export function savePlan(script: TourScript): string {
-	const slug = slugify(script.title ?? "demo");
-	const dir = join(homedir(), ".dg", "demos", slug);
-	mkdirSync(dir, { recursive: true });
-	const path = join(dir, `${slug}.demo.md`);
-	writeFileSync(path, toPlanMarkdown(script));
-	return path;
-}
-
-/**
- * Load a tour from a plan file. `.md` is the human-authored form (frontmatter +
- * "## Steps" list) parsed into a script; anything else is treated as raw JSON.
- */
-export function loadScript(path: string): TourScript {
-	const raw = readFileSync(path, "utf8");
-	const parsed = path.endsWith(".md")
-		? parsePlanMarkdown(raw)
-		: JSON.parse(raw);
-	return validate(parsed);
-}
+export { loadScript, savePlan };
 
 type PlayOpts = {
 	video?: boolean;
@@ -53,27 +25,108 @@ type PlayOpts = {
 	ext?: boolean;
 };
 
-export type PlayDeps = { play: typeof playScript };
+type VerifyFn = (
+	script: TourScript,
+	opts: { ext: boolean },
+) => Promise<VerifyResult>;
 
-export const defaultPlayDeps: PlayDeps = {
-	play: (script, opts) => playScript(script, opts),
+export type DemoDeps = {
+	play: typeof playScript;
+	local: LocalDeps;
+	verify: VerifyFn;
 };
 
-export function noteExtDefault(name: "demo" | "rerun", opts: PlayOpts): void {
-	if (opts.ext) return;
-	console.error(
-		`${name}: the local demo player is not available yet; pass --ext to play in the extension`,
-	);
-	process.exit(1);
+const defaultVerify: VerifyFn = async (script, { ext }) => {
+	if (ext) return (await import("../utils/demo-verify")).verifyScript(script);
+	return (await import("../demo/verify-local")).verifyLocal(script);
+};
+
+const defaultDemoDeps = async (): Promise<DemoDeps> => ({
+	play: (script, opts) => playScript(script, opts),
+	local: (await import("../demo/local")).defaultLocalDeps,
+	verify: defaultVerify,
+});
+
+async function resolveDeps(deps: Partial<DemoDeps>): Promise<DemoDeps> {
+	return { ...(await defaultDemoDeps()), ...deps };
 }
-type VerifyOpts = { verify?: string };
+
+export type CommandOpts = PlayOpts &
+	Omit<LocalOpts, "video"> & { verify?: string };
+
+function positiveMinutes(value: string): number {
+	const minutes = Number(value);
+	if (!(minutes > 0)) throw new InvalidArgumentError("use a number above 0");
+	return minutes;
+}
+
+export function addLocalOptions(command: Command): Command {
+	return command
+		.option("--out <path>", "where the video file goes")
+		.addOption(
+			new Option("--browser <name>", "skip the system-first browser pick").choices(
+				["chrome", "msedge", "chromium"],
+			),
+		)
+		.addOption(
+			new Option(
+				"--narration <mode>",
+				"with --video: voiceover and captions (both), voiceover only (voice) or silent (captions); default is the saved start-screen choice",
+			).choices(["both", "voice", "captions"]),
+		)
+		.option("--windows", "WSL: drive the Windows-side browser over CDP")
+		.option(
+			"--wsl-headed",
+			"WSL: headed browser inside WSL (experimental; only when the human asks)",
+		)
+		.option(
+			"--timeout <min>",
+			"minutes to wait for the human before the player stops (default 30)",
+			positiveMinutes,
+		);
+}
+
+const LOCAL_ONLY_FLAGS = [
+	["out", "--out"],
+	["narration", "--narration"],
+	["browser", "--browser"],
+	["windows", "--windows"],
+	["wslHeaded", "--wsl-headed"],
+	["timeout", "--timeout"],
+] as const;
+
+export async function dispatchPlay(
+	name: "demo" | "rerun",
+	script: TourScript,
+	opts: CommandOpts,
+	deps: Partial<DemoDeps>,
+): Promise<void> {
+	const { play, local } = await resolveDeps(deps);
+	if (opts.ext) {
+		const local = LOCAL_ONLY_FLAGS.filter(([key]) => opts[key]);
+		if (local.length > 0) {
+			console.error(
+				`${name}: ${local.map(([, flag]) => flag).join(", ")} need local mode; drop --ext`,
+			);
+			process.exit(1);
+		}
+		return play(script, opts);
+	}
+	const { playLocal } = await import("../demo/local");
+	const code = await playLocal(script, opts, local);
+	if (code !== 0) process.exit(code);
+}
 
 /**
  * Walk a plan in a real throwaway browser and print `{ok, findings[]}` as the sole
  * line of stdout — an unreadable plan or a harness failure is reported the same way,
  * never an unhandled throw, so a caller can always `JSON.parse` this line.
  */
-export async function runVerify(planPath: string): Promise<void> {
+export async function runVerify(
+	planPath: string,
+	opts: { ext?: boolean } = {},
+	deps: Partial<DemoDeps> = {},
+): Promise<void> {
 	let script: TourScript;
 	try {
 		script = loadScript(planPath);
@@ -92,9 +145,10 @@ export async function runVerify(planPath: string): Promise<void> {
 		);
 		return;
 	}
+	const { verify } = await resolveDeps(deps);
 	let result: VerifyResult;
 	try {
-		result = await verifyScript(script);
+		result = await verify(script, { ext: opts.ext === true });
 	} catch (err) {
 		result = {
 			ok: false,
@@ -150,38 +204,54 @@ export async function playScript(
 
 export function registerDemo(
 	program: Command,
-	deps: PlayDeps = defaultPlayDeps,
+	deps: Partial<DemoDeps> = {},
 ): void {
-	addExtOption(program.command("demo"))
-		.description(
-			"play a guided tour from a script.json via the dg-ai-extension",
-		)
-		.argument(
-			"[script]",
-			"path to a tour plan (.md) or script JSON file — omit with --verify",
-		)
-		.option(
-			"--video",
-			"record the tour to a video (auto-play) instead of a live walkthrough",
-		)
-		.option("--print", "print the marked URL instead of opening it")
-		.option(
-			"--edit",
-			"open a review/edit panel in the browser before playing or recording",
-		)
-		.option(
-			"--verify <plan>",
-			"walk the plan in a real throwaway browser and print findings as JSON, instead of playing it",
-		)
-		.action((scriptPath: string | undefined, opts: PlayOpts & VerifyOpts) => {
-			if (opts.verify) return runVerify(opts.verify);
-			if (!scriptPath) {
-				console.error(
-					"demo: a script path is required (or use --verify <plan.md>)",
-				);
-				process.exit(1);
-			}
-			noteExtDefault("demo", opts);
-			return deps.play(loadScript(scriptPath), opts);
+	const demo = addLocalOptions(
+		addExtOption(program.command("demo"))
+			.description(
+				"play a guided tour in a local browser, or through the dg-ai-extension with --ext",
+			)
+			.argument(
+				"[script]",
+				"path to a tour plan (.md) or script JSON file — omit with --verify",
+			)
+			.option(
+				"--video",
+				"record the tour to a video now, with no start screen",
+			)
+			.option("--print", "--ext only: print the marked URL instead of opening it")
+			.option(
+				"--edit",
+				"--ext only: open a review/edit panel in the browser before playing",
+			)
+			.option(
+				"--verify <plan>",
+				"walk the plan in a real throwaway browser and print findings as JSON, instead of playing it",
+			),
+	);
+	demo.action((scriptPath: string | undefined, opts: CommandOpts) => {
+		if (opts.verify) return runVerify(opts.verify, opts, deps);
+		if (!scriptPath) {
+			console.error(
+				"demo: a script path is required (or use --verify <plan.md>)",
+			);
+			process.exit(1);
+		}
+		return dispatchPlay("demo", loadScript(scriptPath), opts, deps);
+	});
+	demo
+		.command("status")
+		.description("print the result of the last run of a saved demo")
+		.argument("<slug>", "the demo slug printed when the run started")
+		.action(async (slug: string) => {
+			const { statusLine } = await import("../demo/result");
+			console.log(statusLine(slug));
+		});
+	demo
+		.command("__player", { hidden: true })
+		.argument("<job>", "the player job as JSON")
+		.action(async (job: string) => {
+			const { servePlayer } = await import("../demo/local");
+			process.exit(await servePlayer(job));
 		});
 }

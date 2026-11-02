@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PLAYER_PATH } from "../../tour-ui/build";
 import { buildSkillsCli, hashBundle, playwrightMetadata } from "../build";
 
 describe("buildSkillsCli", () => {
@@ -12,7 +13,11 @@ describe("buildSkillsCli", () => {
 		try {
 			await buildSkillsCli({ outfile });
 			const entrypoint = join(import.meta.dir, "..", "src", "index.ts");
-			const expected = await hashBundle(entrypoint, [playwrightMetadata]);
+			const expected = await hashBundle(
+				entrypoint,
+				[playwrightMetadata],
+				[PLAYER_PATH],
+			);
 			const printed = execFileSync(outfile, ["--version"], {
 				encoding: "utf8",
 			}).trim();

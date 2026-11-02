@@ -1,2 +1,2 @@
 [test]
-preload = ["./pkg/common/src/redact-console.ts"]
+preload = ["./pkg/common/src/redact-console.ts", "./pkg/skills-cli/__tests__/build-player-shim.ts"]
