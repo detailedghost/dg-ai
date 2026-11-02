@@ -73,8 +73,17 @@ export async function verifyScript(script: TourScript): Promise<VerifyResult> {
 	}
 }
 
-async function walkTour(
-	page: CdpPageHandle,
+export type TourPage = Pick<
+	CdpPageHandle,
+	| "readTourOverlay"
+	| "clickThroughTour"
+	| "selectorResolves"
+	| "locationHref"
+	| "drainNavigations"
+>;
+
+export async function walkTour(
+	page: TourPage,
 	script: TourScript,
 ): Promise<VerifyResult> {
 	const steps = partitionTourSteps(script).tutorial;

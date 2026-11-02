@@ -68,7 +68,7 @@ async function runVerify(
 	planPath: string,
 	env?: Record<string, string | undefined>,
 ): Promise<{ code: number; out: string; err: string }> {
-	const proc = Bun.spawn(["bun", ENTRY, "demo", "--verify", planPath], {
+	const proc = Bun.spawn(["bun", ENTRY, "demo", "--ext", "--verify", planPath], {
 		stdout: "pipe",
 		stderr: "pipe",
 		...(env ? { env: mergeEnv(env) } : {}),
@@ -272,7 +272,7 @@ describe("demo --verify", () => {
 			},
 		]);
 		const plan = writePlan(dir, "stdout-sink.md", script);
-		const proc = Bun.spawn(["bun", ENTRY, "demo", "--verify", plan], {
+		const proc = Bun.spawn(["bun", ENTRY, "demo", "--ext", "--verify", plan], {
 			stdout: "pipe",
 			stderr: "pipe",
 		});

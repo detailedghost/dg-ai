@@ -1,37 +1,38 @@
 /**
  * `rerun` — replay a saved demo plan. Reads a `<name>.demo.md` (written by `demo`
- * or bundled in a recording's .zip), extracts its runnable TourScript, and hands
- * it back to the dg-ai-extension exactly like `demo` does.
+ * or bundled in a recording's .zip), extracts its runnable TourScript, and plays
+ * it in a local browser, or through the dg-ai-extension with --ext.
  */
 
 import type { Command } from "commander";
+import { findPlan } from "../demo/plan-file";
 import { addExtOption } from "../utils/ext-flag";
 import {
-	defaultPlayDeps,
+	addLocalOptions,
+	type CommandOpts,
+	type DemoDeps,
+	dispatchPlay,
 	loadScript,
-	noteExtDefault,
-	type PlayDeps,
 } from "./demo";
 
 export function registerRerun(
 	program: Command,
-	deps: PlayDeps = defaultPlayDeps,
+	deps: Partial<DemoDeps> = {},
 ): void {
-	addExtOption(program.command("rerun"))
-		.description("replay a saved demo plan (.md) via the dg-ai-extension")
-		.argument("<plan>", "path to a saved <name>.demo.md plan file")
+	addLocalOptions(addExtOption(program.command("rerun")))
+		.description(
+			"replay a saved demo plan (.md) in a local browser, or via the dg-ai-extension with --ext",
+		)
+		.argument(
+			"<plan>",
+			"path to a saved <name>.demo.md plan file, or its name under the demos dir",
+		)
 		.option(
 			"--video",
-			"record the replay to a video instead of a live walkthrough",
+			"record the replay to a video now, with no start screen",
 		)
-		.option("--print", "print the marked URL instead of opening it")
-		.action(
-			(
-				planPath: string,
-				opts: { video?: boolean; print?: boolean; ext?: boolean },
-			) => {
-				noteExtDefault("rerun", opts);
-				return deps.play(loadScript(planPath), opts);
-			},
+		.option("--print", "--ext only: print the marked URL instead of opening it")
+		.action((plan: string, opts: CommandOpts) =>
+			dispatchPlay("rerun", loadScript(findPlan(plan)), opts, deps),
 		);
 }

@@ -19,6 +19,10 @@ export async function buildPlayer(
 	if (!result.success)
 		throw new AggregateError(result.logs, "Tour player build failed.");
 	const out = join(outdir, "player.js");
+	await Bun.write(
+		join(outdir, "player.d.ts"),
+		"declare const player: string;\nexport default player;\n",
+	);
 	const size = Bun.file(out).size;
 	if (size >= PLAYER_BUDGET_BYTES)
 		throw new Error(

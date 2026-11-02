@@ -53,6 +53,8 @@ export type TourOptions = {
 	signal?: AbortSignal;
 	/** Called each time the run waits on the viewer, the recorder or a page load. */
 	onIdle?: () => void;
+	/** Called each time a step is on screen, with its index and a way to move past it. */
+	onStep?: (index: number, next: () => void) => void;
 };
 
 type Command =
@@ -372,6 +374,9 @@ async function play(
 		});
 		void halt.promise.then(() => push({ kind: "halt" }));
 		const view = await renderStep(host, at, step, controlsFor(push));
+		opts.onStep?.(at.index, () =>
+			push({ kind: "next", target: view.target, fromControl: true }),
+		);
 		const cleanups: Array<() => void> = [view.remove];
 		try {
 			if (halt.signal.aborted) return { kind: "halt" };

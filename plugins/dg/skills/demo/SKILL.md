@@ -1,21 +1,20 @@
 ---
 name: demo
 description: Produce a guided in-browser demo of a feature or PR — optionally preparing authenticated, configured, or seeded setup state first — then use the dg-ai-extension to spotlight each element and inject explanatory text boxes in the user's real browser. Write a plan, open it in the extension, and the user picks review / walkthrough / video there. Use when someone asks to demo, show off, walk through, or record a feature in the browser.
-requires: [extension]
 ---
 
 # Guided-tour demo
 
-Turn a feature or PR into a guided tour that plays in the user's real browser: the
-companion `dg-ai-extension` spotlights each element and shows an explanatory text box,
-step by step.
+Turn a feature or PR into a guided tour that spotlights each element and shows an
+explanatory text box, step by step. It plays in a local browser, or with `--ext` in the
+user's real browser through the companion `dg-ai-extension`.
 
 **Your job is two steps: write a plan file, then open it.** Everything else — reviewing,
 choosing walkthrough vs video, picking the narration voice — the user does on the
-extension's start screen. Don't ask them in chat; the browser asks.
+start screen. Don't ask them in chat; the browser asks.
 
-**Prerequisite:** the extension must be loaded in the user's browser. If a tour doesn't
-play, tell them to run the browser skill's `install` command first.
+By default the tour plays in a local browser the CLI starts, with no extension. Add
+`--ext` to play it through the dg-ai-extension in the user's own browser instead.
 
 ---
 
@@ -64,7 +63,7 @@ leading tutorial steps.
 Ask the user to type credentials, MFA codes, and CAPTCHA answers themselves. Never put
 those values in a fill action.
 
-## Step 2 — Open it in the extension
+## Step 2 — Open it in a browser
 
 Write the plan to `/tmp/ai/demo/tour.md`. First run: install or refresh the CLI when it is missing or too old. In a dev checkout,
 rebuild and reinstall `~/.dg/bin/dg-skills` so the demo and the verify pass below use
@@ -104,12 +103,32 @@ user rather than looping forever or handing off a plan you know is broken. A cle
 Run **one** command — no `--video` flag, because the mode is chosen in the browser:
 
 ```bash
-~/.dg/bin/dg-skills demo --ext --edit /tmp/ai/demo/tour.md
+~/.dg/bin/dg-skills demo /tmp/ai/demo/tour.md
 ```
 
-This opens `startUrl` with the tour in a `_demo` marker and shows the **start screen**,
-which is the approval gate. Confirm the browser reached it, then stop — the rest is the
-user's. A raw `.json` script is also accepted.
+This opens `startUrl` in a browser and shows the **start screen**,
+which is the approval gate, then returns. Confirm the `start screen open` line printed, then stop — the
+rest is the user's. `dg-skills demo status <slug>` prints the result later. A raw `.json` script is
+also accepted.
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--ext` | none | Play through the dg-ai-extension in the user's real browser. Needs the extension. | off (local is the default) |
+| `--video` | none | Record now with no start screen; works with a headless browser. | off (start screen) |
+| `--out <path>` | none | Where the video file goes. | `<state>/demos/<slug>/<slug>-<ts>.webm` |
+| `--browser <name>` | none | `chrome`, `msedge` or `chromium`; skips the system-first pick. | first found |
+| `--windows` | none | WSL: drive the Windows-side browser over CDP. | on when a Windows browser exists |
+| `--wsl-headed` | none | WSL: headed browser inside WSL (experimental). Agents never pass `--wsl-headed` unless the human asks. | off |
+| `--verify <plan>` | none | Walk the plan and print findings JSON. Local unless `--ext`. | off |
+| `--print` | none | `--ext` only: print the marker URL. | off |
+| `--edit` | none | `--ext` only: open the review panel first. | off |
+
+On WSL, the default `demo` uses the Windows browser. The CLI controls it through a
+remote-debugging port on 127.0.0.1, and the port stays open while the run is live. To
+not open that port, use `--video --browser chromium` for a headless recording inside WSL.
+`--video` alone still uses the Windows browser when one is present.
 
 ## What the user sees on the start screen
 
@@ -140,13 +159,16 @@ records silently.
 
 ## Replaying a saved demo
 
-Every run saves `~/.dg/demos/<slug>/<slug>.demo.md`, and every recorded video downloads
-alongside a copy as `<slug>.demo.md`. Replay either without recompiling:
+Every run saves `<state>/demos/<slug>/<slug>.demo.md` (older runs sit in `~/.dg/demos`),
+and every `--ext` recorded video downloads alongside a copy as `<slug>.demo.md`. Replay either without recompiling:
 
 ```bash
+~/.dg/bin/dg-skills rerun <path-to>.demo.md
 ~/.dg/bin/dg-skills rerun --ext <path-to>.demo.md
 # add --video to record the replay
 ```
+
+The first command replays locally. Add `--ext` to replay through the extension.
 
 The plan `.md` is human-readable; its embedded ```json``` block is the runnable script
 `rerun` extracts.
