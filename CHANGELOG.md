@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.31.0 (2026-11-02)
+
+### Features
+
+- feat(demo): play demos locally without the extension ([#122](https://github.com/detailedghost/dg-ai/pull/122))
+
 ## v1.30.1 (2026-11-02)
 
 ### Fixes
