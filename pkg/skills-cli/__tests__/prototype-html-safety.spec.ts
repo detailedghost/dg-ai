@@ -2,6 +2,26 @@ import { describe, expect, test } from "bun:test";
 import { injectScript } from "../src/prototype/inject";
 import { parseManifestSource, render } from "../src/prototype/manifest";
 
+describe("prototype decision bar", () => {
+	const html = render(parseManifestSource("---\nname: x\n---\n::: A\nx\n:::\n"));
+
+	test("renders a More versions button next to Approve and Reject", () => {
+		expect(html).toContain('id="proto-more"');
+		expect(html).toContain('aria-label="More versions"');
+		expect(html.indexOf('id="proto-reject"')).toBeLessThan(
+			html.indexOf('id="proto-more"'),
+		);
+	});
+
+	test("posts the more action through the decision endpoint", () => {
+		expect(html).toContain("window.prototypeDecide('more'");
+	});
+
+	test("treats more as a processing favicon state", () => {
+		expect(injectScript("x", [])).toContain("action === 'more'");
+	});
+});
+
 describe("prototype page escaping", () => {
 	test("embedded names and tools cannot close the inline script", () => {
 		const script = injectScript("</script><img src=x>", [

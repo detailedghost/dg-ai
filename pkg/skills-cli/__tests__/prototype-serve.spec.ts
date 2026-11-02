@@ -122,6 +122,16 @@ describe("prototype serve", () => {
 		expect(readFileSync(paths.reject, "utf8")).toBe("\n");
 	});
 
+	test("a more verdict writes the notes and the source, or a bare newline when there are none", async () => {
+		const { post, paths } = await serve();
+		await post({ action: "more", notes: "wilder" });
+		expect(readFileSync(paths.more, "utf8")).toBe("wilder");
+		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
+		expect(existsSync(paths.reject)).toBe(false);
+		await post({ action: "more" });
+		expect(readFileSync(paths.more, "utf8")).toBe("\n");
+	});
+
 	test("a plan decision is normalized and stored, and also writes the source", async () => {
 		const { post, paths } = await serve();
 		await post({ decision: "rework", notes: "reorder" });
@@ -259,6 +269,9 @@ describe("prototype serve", () => {
 		await post({ action: "reject", notes: "x" });
 		expect(await state()).toBe("rejected");
 		rmSync(paths.reject);
+		await post({ action: "more", notes: "x" });
+		expect(await state()).toBe("more");
+		rmSync(paths.more);
 		await post({ action: "confirm", variant: "A" });
 		expect(await state()).toBe("approved");
 		expect(existsSync(paths.selection)).toBe(true);

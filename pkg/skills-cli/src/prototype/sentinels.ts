@@ -11,6 +11,7 @@ import type { SentinelPaths } from "./paths";
 export type WaitResult =
 	| { status: "ok"; variant: string; notes: string }
 	| { status: "rejected"; notes: string }
+	| { status: "more"; notes: string }
 	| { status: "timeout" };
 
 export type DecisionResult =
@@ -73,6 +74,11 @@ function claimExisting(paths: SentinelPaths): WaitResult | undefined {
 		removeSentinels(paths.reject, paths.notes, paths.source);
 		return { status: "rejected", notes };
 	}
+	if (existsSync(paths.more)) {
+		const notes = readTrimmed(paths.more);
+		removeSentinels(paths.more, paths.notes, paths.source);
+		return { status: "more", notes };
+	}
 	return undefined;
 }
 
@@ -116,11 +122,12 @@ export function confirm(
 	writeSentinel(paths.selection, `${variant}\n`);
 }
 
-/** Report the selected variant, "rejected", or "pending" without consuming anything. */
+/** Report the selected variant, "rejected", "more", or "pending" without consuming anything. */
 export function status(paths: SentinelPaths): string {
 	if (existsSync(paths.selection))
 		return readFileSync(paths.selection, "utf8").replace(/[\r\n\s]/g, "");
 	if (existsSync(paths.reject)) return "rejected";
+	if (existsSync(paths.more)) return "more";
 	return "pending";
 }
 
@@ -158,7 +165,7 @@ export async function awaitDecision(
 export function formatWait(result: WaitResult, json: boolean): string {
 	if (json) return `${JSON.stringify(result)}\n`;
 	if (result.status === "timeout") return "timeout\n";
-	const head = result.status === "ok" ? result.variant : "rejected";
+	const head = result.status === "ok" ? result.variant : result.status === "rejected" ? "rejected" : "more";
 	return result.notes ? `${head}\n${result.notes}\n` : `${head}\n`;
 }
 

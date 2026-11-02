@@ -279,6 +279,7 @@ html[data-theme="dark"] #protobar{
 #protobar[data-verdict="approved"]{border-color:var(--pk-ok);}
 #protobar[data-verdict="approvedNote"]{border-color:var(--pk-note);}
 #protobar[data-verdict="changes"]{border-color:var(--pk-bad);}
+#protobar[data-verdict="more"]{border-color:var(--pk-acc);}
 .pk-bar{display:flex;align-items:center;gap:4px;justify-content:center;}
 #protobar .ic{width:38px;height:38px;padding:0;display:inline-grid;place-items:center;border:1px solid transparent;border-radius:8px;
   background:transparent;color:var(--pk-mut);cursor:pointer;position:relative;font:inherit;}
@@ -287,6 +288,7 @@ html[data-theme="dark"] #protobar{
 #protobar .pk-approve{color:var(--pk-ok);border-color:var(--pk-ok);background:var(--pk-ok-soft);}
 #protobar .pk-approve.with-note{color:var(--pk-note);border-color:var(--pk-note);background:var(--pk-note-soft);}
 #protobar .pk-reject{color:var(--pk-bad);border-color:var(--pk-bad);background:var(--pk-bad-soft);}
+#protobar .pk-more{color:var(--pk-acc);border-color:var(--pk-acc);background:var(--pk-acc-soft);}
 #protobar .pk-note[aria-pressed="true"]{background:var(--pk-acc-soft);color:var(--pk-acc);border-color:var(--pk-acc);}
 #protobar .pk-note.has-note::after{content:"";position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--pk-note);box-shadow:0 0 0 2px var(--pk-surface);}
 #protobar.is-working{border-color:transparent;background:linear-gradient(var(--pk-surface),var(--pk-surface)) padding-box,
@@ -329,7 +331,7 @@ ${sections}
 </div>
 <div id="protobar" role="toolbar" aria-label="Prototype decision">
   <div id="proto-notes-panel" hidden>
-    <textarea id="proto-notes" aria-label="Note" placeholder="Note: optional for Approve, required for Reject. What should change?"></textarea>
+    <textarea id="proto-notes" aria-label="Note" placeholder="Note: optional for Approve and More versions, required for Reject. What should change?"></textarea>
     <div id="proto-reject-chips">${reasonChips}</div>
   </div>
   <div class="pk-bar">
@@ -351,6 +353,7 @@ ${sections}
     <button type="button" id="proto-notes-toggle" class="ic pk-note" data-icon="note" aria-pressed="false" aria-controls="proto-notes-panel" title="Note" aria-label="Note"></button>
     <button type="button" id="proto-approve" class="ic pk-approve" data-icon="check" title="Approve" aria-label="Approve"></button>
     <button type="button" id="proto-reject" class="ic pk-reject" data-icon="rework" title="Reject (note required)" aria-label="Reject"></button>
+    <button type="button" id="proto-more" class="ic pk-more" data-icon="plus" title="More versions (note optional)" aria-label="More versions"></button>
   </div>
 </div>
 <div id="proto-toast" role="status" aria-live="polite"></div>
@@ -410,7 +413,7 @@ ${sections}
   var widthMenu = document.getElementById('proto-width-menu');
   var WIDTH_ICONS = { all: 'all', mobile: 'phone', tablet: 'tablet', desktop: 'monitor' };
   var WIDTH_NAMES = { all: 'all', mobile: 'mobile 390', tablet: 'tablet 768', desktop: 'desktop 1440' };
-  var TEXT_ICONS = { sun: '☀', moon: '☾', all: '▦', phone: '▯', tablet: '▭', monitor: '▬', left: '‹', right: '›', note: '✎', check: '✓', rework: '⟳' };
+  var TEXT_ICONS = { sun: '☀', moon: '☾', all: '▦', phone: '▯', tablet: '▭', monitor: '▬', left: '‹', right: '›', note: '✎', check: '✓', rework: '⟳', plus: '+' };
 
   function setIcon(node, name){
     node.setAttribute('data-icon', name);
@@ -549,6 +552,11 @@ ${sections}
     window.prototypeDecide('reject', '', '[was viewing ' + current + '] ' + notes);
     decided('changes');
     toast('Sent back for rework.');
+  });
+  document.getElementById('proto-more').addEventListener('click', function(){
+    window.prototypeDecide('more', '', notesArea.value.trim());
+    decided('more');
+    toast('Asked for more versions.');
   });
 
   show(current);

@@ -98,13 +98,13 @@ export const USAGE = `Usage: prototype <command> [options]
                                                  Render, serve, open, and block for one decision
   serve <html-file> <name> [--light] [--port=PORT] [--idle=SEC] [--dir=PATH]
                                                  Serve a self-contained prototype page
-  wait <name> [--timeout=SEC] [--light] [--json]  Block until a variant is selected or rejected
+  wait <name> [--timeout=SEC] [--light] [--json]  Block until a variant is selected, rejected, or more versions are asked for
   confirm <name> <variant> [--light] [--notes=TEXT] [--selftest] [--source=TEXT]
                                                  Write the selection sentinel (and optional notes).
                                                  --selftest writes to <name>-selftest instead.
                                                  --source names who decided (default "cli").
   status <name> [--light] [--json] [--require-pending]
-                                                 Print the selection, "rejected", or "pending"
+                                                 Print the selection, "rejected", "more", or "pending"
   stop <name>                                    Stop a ui session's server and drop its state
   path <name> [--light]                          Print the selection sentinel path
   await-decision <name> [--timeout=SEC] [--light] [--json]

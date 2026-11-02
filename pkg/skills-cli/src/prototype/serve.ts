@@ -93,6 +93,7 @@ function readToken(paths: SentinelPaths): string {
 function decisionState(paths: SentinelPaths): string {
 	if (existsSync(paths.selection)) return "approved";
 	if (existsSync(paths.reject)) return "rejected";
+	if (existsSync(paths.more)) return "more";
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(paths.decision, "utf8"));
 		const decision =
@@ -145,15 +146,20 @@ function recordDecision(
 		return Response.json({ ok: true });
 	}
 	const action = (text(body.action) || "confirm").toLowerCase();
-	if (action !== "confirm" && action !== "reject")
+	if (action !== "confirm" && action !== "reject" && action !== "more")
 		return Response.json(
-			{ error: 'action must be "confirm" or "reject"' },
+			{ error: 'action must be "confirm", "reject", or "more"' },
 			{ status: 400 },
 		);
 	const notes = text(body.notes);
 	if (action === "reject") {
 		writeSentinel(target.source, "browser\n");
 		writeSentinel(target.reject, notes || "\n");
+		return Response.json({ ok: true });
+	}
+	if (action === "more") {
+		writeSentinel(target.source, "browser\n");
+		writeSentinel(target.more, notes || "\n");
 		return Response.json({ ok: true });
 	}
 	const variant = text(body.variant);

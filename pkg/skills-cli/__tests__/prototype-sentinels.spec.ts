@@ -89,6 +89,20 @@ describe("prototype sentinels", () => {
 		expect(existsSync(p.notes)).toBe(false);
 	});
 
+	test("a more sentinel surfaces its notes and clears the more and notes files", async () => {
+		const p = paths();
+		mkdirSync(p.dir, { recursive: true });
+		writeFileSync(p.more, "three more, bolder\n");
+		writeFileSync(p.notes, "stale");
+		expect(status(p)).toBe("more");
+		expect(await wait(p, 1)).toEqual({
+			status: "more",
+			notes: "three more, bolder",
+		});
+		expect(existsSync(p.more)).toBe(false);
+		expect(existsSync(p.notes)).toBe(false);
+	});
+
 	test("a bare newline reject carries empty notes", async () => {
 		const p = paths();
 		mkdirSync(p.dir, { recursive: true });
@@ -165,6 +179,13 @@ describe("prototype sentinels", () => {
 		);
 		expect(formatWait({ status: "rejected", notes: "" }, false)).toBe(
 			"rejected\n",
+		);
+		expect(formatWait({ status: "more", notes: "bolder" }, false)).toBe(
+			"more\nbolder\n",
+		);
+		expect(formatWait({ status: "more", notes: "" }, false)).toBe("more\n");
+		expect(formatWait({ status: "more", notes: "bolder" }, true)).toBe(
+			'{"status":"more","notes":"bolder"}\n',
 		);
 		expect(formatWait({ status: "timeout" }, true)).toBe(
 			'{"status":"timeout"}\n',

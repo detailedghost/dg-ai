@@ -6,6 +6,7 @@ localhost, opens it in the browser, blocks until a decision, and prints exactly 
 ```json
 {"status":"ok","variant":"B","notes":"ship it"}
 {"status":"rejected","notes":"too busy, try flatter neutrals"}
+{"status":"more","notes":"bolder, less corporate"}
 {"status":"timeout"}
 ```
 
@@ -85,7 +86,7 @@ or `</body>` in a fragment: it closes the wrapper early.
 
 ## Chains, rounds, and the session
 
-- **Rework loop.** On a reject, edit the plan and run the same command again. The session is found by its chain key. It reuses the running server, re-renders in place, clears stale decisions, bumps the reload token, and the open tab refreshes. No new tab opens.
+- **Rework loop.** On `more`, build the same number of new variants (or the number the note asks for), steered by the note, write a new plan, and run the same command again. On a reject, edit the plan and run the same command again. The session is found by its chain key. It reuses the running server, re-renders in place, clears stale decisions, bumps the reload token, and the open tab refreshes. No new tab opens.
 - **Rounds.** Give every round of a chain the same plan `slug`, or the same chain value in the manifest. Round N+1 re-renders into the running server.
 - **Idle limit.** The server exits after `--timeout` seconds with no decision and no new round. A later round starts a fresh server and bumps the reload token, so a tab left open on that port reloads. Ask for the same `--port` when you restart a chain so the open tab can find it.
 - **Claim from any directory.** The session records its own sentinel directory. `prototype wait <chain>`, `prototype status <chain>`, and `prototype stop <chain>` read that record, never the ambient working directory. A session `wait` prints one JSON line and consumes the decision. `status` does not consume anything.
@@ -94,6 +95,7 @@ or `</body>` in a fragment: it closes the wrapper early.
 ## In the served page
 
 - **Approve (keep and tweak)** records the viewed variant as the pick. Notes ride along. With notes, the page shows "Building the next round" and reloads when the next round is rendered. Without notes, the tab closes.
+- **More versions** posts `action: "more"` with an optional note. It keeps the tab open and reloads on the next round, like Reject.
 - **Reject (start over)** needs a non-empty note before it can be sent. Quick-pick chips prefill the note.
 - `Left` and `Right` arrow keys cycle variants, except while a text field has focus. `?variant=` keeps the URL reload-stable.
 - The bar calls the injected `window.prototypeDecide(action, variant, notes)`. A plan walkthrough calls `window.prototypePlanDecision(decision, notes)`. Never re-implement the POST in a variant.

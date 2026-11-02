@@ -19,7 +19,7 @@ import {
 import { status, type WaitResult, wait } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
-const STALE_SENTINELS = [".selection", ".reject", ".notes", ".decision"];
+const STALE_SENTINELS = [".selection", ".reject", ".more", ".notes", ".decision"];
 const BOUND_LINE = /^prototype-serve: http:\/\/127\.0\.0\.1:(\d+)\//;
 
 export interface UiState {
