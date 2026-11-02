@@ -5,8 +5,18 @@ import { shellCommand } from "@dg/common/node";
 import { qualifiedAgent } from "../proxy/packaged-personas";
 import { frontmatterOf, parseYaml } from "../spec/frontmatter";
 import { sliceLayers } from "../spec/lint-waves";
-import { sectionLines, type SliceBlock, sliceBlocks } from "../spec/sections";
-import { abspath, needFile, readText, records, SpecError } from "../spec/shared";
+import {
+	sectionLines,
+	type SliceBlock,
+	sliceBlocks,
+} from "../spec/sections";
+import {
+	abspath,
+	needFile,
+	readText,
+	records,
+	SpecError,
+} from "../spec/shared";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import {
 	loadTiers,
@@ -36,7 +46,8 @@ const ENVELOPE_TAIL: Record<string, string> = {
 	yellow: "\n\nTest files:\n{CHANGED_FILES}",
 	green: "\n\nImplementation files:\n{CHANGED_FILES}",
 	wave: "\n\nFiles to review:\n{CHANGED_FILES}",
-	correction: "\n\nChanged files:\n{CHANGED_FILES}\n\nFindings to address:\n{FINDINGS}",
+	correction:
+		"\n\nChanged files:\n{CHANGED_FILES}\n\nFindings to address:\n{FINDINGS}",
 };
 const ROLES = ["qa-writer", "wave", "security"] as const;
 
@@ -152,7 +163,9 @@ function withoutCriteria(lines: string[]): string[] {
 function briefOf(blocks: SliceBlock[]): string {
 	return blocks
 		.filter((block) => !isTesting(block))
-		.map((block) => [block.section, "", ...withoutCriteria(block.lines)].join("\n"))
+		.map((block) =>
+			[block.section, "", ...withoutCriteria(block.lines)].join("\n"),
+		)
 		.join("\n\n");
 }
 
@@ -162,7 +175,9 @@ function testingCriteria(blocks: SliceBlock[]): string {
 	const own = blocks.flatMap((block) => block.lines);
 	const at = own.findIndex((line) => line.startsWith("#### Testing Criteria"));
 	if (at < 0) return "";
-	const end = own.findIndex((line, i) => i > at && /^#{1,4} /.test(line));
+	const end = own.findIndex(
+		(line, i) => i > at && /^#{1,4} /.test(line),
+	);
 	return own.slice(at, end < 0 ? undefined : end).join("\n");
 }
 
@@ -178,8 +193,9 @@ function templatesFor(proxied: boolean, cwd: string): Record<string, string> {
 		const path = resolveSkillAsset("sdlc", `references/templates/${file}`);
 		const envelope =
 			key === "proxy" ? "" : `${ENVELOPE_HEAD}${ENVELOPE_TAIL[key] ?? ""}\n\n`;
-		const body = readFileSync(path, "utf8").replaceAll("<repo working directory>", () =>
-			shellCommand([cwd]),
+		const body = readFileSync(path, "utf8").replaceAll(
+			"<repo working directory>",
+			() => shellCommand([cwd]),
 		);
 		out[key] = `${REMINDER}\n\n${directive}\n\n${envelope}${body}`;
 	}
@@ -218,7 +234,8 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 	const members = (data.slices as unknown[])
 		.filter(isRecord)
 		.filter((slice) => layers.get(String(slice.id)) === options.layer);
-	if (members.length === 0) throw new Refusal(`layer ${options.layer} holds no slices`);
+	if (members.length === 0)
+		throw new Refusal(`layer ${options.layer} holds no slices`);
 	const slices = members.map((slice) => {
 		const agents = agentsOf(slice);
 		const primary = agents.primary;
@@ -254,7 +271,9 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			...(proxySkills.length > 0 ? { proxySkills } : {}),
 			...(proxied && proxyFlags !== "" ? { proxyFlags } : {}),
 			brief:
-				proxySkills.length > 0 ? `${brief}\n\n${skillInstructions(proxySkills)}` : brief,
+				proxySkills.length > 0
+					? `${brief}\n\n${skillInstructions(proxySkills)}`
+					: brief,
 			testingCriteria: testingCriteria(blocks),
 		};
 	});
