@@ -13,6 +13,7 @@ import {
 	frameType,
 	killDaemonByPidFile,
 	readDaemonLog,
+	removeScratchDirs,
 	scanFileForBytes,
 	send,
 	startWithSession,
@@ -59,6 +60,7 @@ afterEach(() => {
 		killDaemonByPidFile(dgHome);
 		cleanupDgHome(dgHome);
 	}
+	removeScratchDirs();
 	dgHome = undefined;
 });
 

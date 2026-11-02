@@ -162,6 +162,19 @@ export function bgWorld(
 		});
 	}
 
+	async function cleanup() {
+		for (const { id, cwd } of launched.splice(0)) {
+			const status = await bg(["status", id], cwd).catch(() => null);
+			if (status?.exitCode === 0)
+				await bg(["cancel", id], cwd).catch(() => null);
+		}
+		fixtures.cleanup();
+		for (const root of [home, scratch, state]) {
+			rmSync(root, { recursive: true, force: true });
+			mkdirSync(root, { recursive: true, mode: 0o700 });
+		}
+	}
+
 	return {
 		fixtures,
 		files,
@@ -179,17 +192,11 @@ export function bgWorld(
 			mkdirSync(path, { recursive: true, mode: 0o700 });
 			return path;
 		},
-		async cleanup() {
-			for (const { id, cwd } of launched.splice(0)) {
-				const status = await bg(["status", id], cwd).catch(() => null);
-				if (status?.exitCode === 0)
-					await bg(["cancel", id], cwd).catch(() => null);
-			}
-			fixtures.cleanup();
-			for (const root of [home, scratch, state]) {
+		cleanup,
+		async destroy() {
+			await cleanup();
+			for (const root of [home, scratch, state])
 				rmSync(root, { recursive: true, force: true });
-				mkdirSync(root, { recursive: true, mode: 0o700 });
-			}
 		},
 	};
 }

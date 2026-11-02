@@ -23,10 +23,11 @@ import {
 	collectFrames,
 	connectCli,
 	connectPage,
-	freshTempDir as freshDaemonTempDir,
 	freshDgHome,
+	freshTempDir as freshDaemonTempDir,
 	killDaemonByPidFile,
 	registerSession,
+	removeScratchDirs,
 	spawnServe,
 	startWithSession,
 	waitForDaemonExit,
@@ -37,9 +38,11 @@ import {
 let dgHome: string;
 
 afterEach(() => {
-	if (!dgHome) return;
-	killDaemonByPidFile(dgHome);
-	cleanupDgHome(dgHome);
+	if (dgHome) {
+		killDaemonByPidFile(dgHome);
+		cleanupDgHome(dgHome);
+	}
+	removeScratchDirs();
 	dgHome = "";
 });
 

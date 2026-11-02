@@ -28,7 +28,7 @@ setDefaultTimeout(60_000);
 
 const world = bgWorld();
 afterEach(() => world.cleanup());
-afterAll(() => world.cleanup());
+afterAll(() => world.destroy());
 
 function proxyJob(sessionId: string, sleepSeconds = 0) {
 	const bin = world.dir("bg-proxy-");

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Page } from "playwright-core";
+import { onTestRunEnd } from "../../__tests__/test-run-end";
 import { parse } from "./core/args";
 import type { Events } from "./core/events";
 import {
@@ -285,11 +286,9 @@ let fakeDaemonPath: string | undefined;
 
 function fakeDaemon(): string {
 	if (fakeDaemonPath === undefined) {
-		const dir = path.join(
-			mkdtempSync(path.join(tmpdir(), "pw-fake-daemon-")),
-			"skills-cli",
-			"src",
-		);
+		const root = mkdtempSync(path.join(tmpdir(), "pw-fake-daemon-"));
+		onTestRunEnd(() => rmSync(root, { recursive: true, force: true }));
+		const dir = path.join(root, "skills-cli", "src");
 		mkdirSync(dir, { recursive: true });
 		fakeDaemonPath = path.join(dir, "index.ts");
 		writeFileSync(fakeDaemonPath, "await Bun.sleep(60_000);\n");

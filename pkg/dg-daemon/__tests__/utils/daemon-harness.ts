@@ -67,12 +67,23 @@ export function allocatePort(): number {
 	throw new Error("the test harness found no free port to allocate");
 }
 
+const scratchDirs: string[] = [];
+
 export function scratchDir(prefix: string): string {
-	return mkdtempSync(join(tmpdir(), `${prefix}-test-`));
+	const dir = mkdtempSync(join(tmpdir(), `${prefix}-test-`));
+	scratchDirs.push(dir);
+	return dir;
 }
 
 export function freshTempDir(prefix: string): string {
-	return mkdtempSync(join(tmpdir(), `${prefix}-`));
+	const dir = mkdtempSync(join(tmpdir(), `${prefix}-`));
+	scratchDirs.push(dir);
+	return dir;
+}
+
+export function removeScratchDirs(): void {
+	for (const dir of scratchDirs.splice(0))
+		rmSync(dir, { recursive: true, force: true });
 }
 
 export function freshDgHome(): string {

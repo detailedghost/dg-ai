@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { main } from "../../../cli/index";
@@ -6,6 +6,9 @@ import { buildDeclaredFiltersExample } from "../../../../examples/build-declared
 import { parseDeclaredFilters } from "../schema";
 import { buildSyncPlan, planHash } from "../plan";
 import { safetyIssues } from "../safety";
+import { makeTempDir, removeTempDirs } from "../../../../test/temp-dirs";
+
+afterEach(removeTempDirs);
 
 async function runCli(args: string[]) {
 	const stdout: string[] = [];
@@ -40,7 +43,7 @@ const full = (folder: string, domain: string) =>
 
 describe("declared filter import and sync", () => {
 	test("imports, reviews a dry run, and applies only the hashed plan", async () => {
-		const root = `/tmp/declared-filters-${crypto.randomUUID()}`;
+		const root = makeTempDir("declared-filters-");
 		const dir = join(root, "workspace");
 		const dataPath = join(root, "mailbox.json");
 		await mkdir(dirname(dataPath), { recursive: true });
@@ -282,7 +285,7 @@ describe("declared filter import and sync", () => {
 	});
 
 	test("blocks an apply that would file protected or verification mail to Spam", async () => {
-		const root = `/tmp/declared-filters-safety-${crypto.randomUUID()}`;
+		const root = makeTempDir("declared-filters-safety-");
 		const dir = join(root, "workspace");
 		const dataPath = join(root, "mailbox.json");
 		await mkdir(dirname(dataPath), { recursive: true });
@@ -356,7 +359,7 @@ describe("declared filter import and sync", () => {
 
 describe("sync safety chain", () => {
 	test("blocks removing a protecting filter while a later Spam filter stays live", async () => {
-		const root = `/tmp/declared-filters-${crypto.randomUUID()}`;
+		const root = makeTempDir("declared-filters-");
 		const dir = join(root, "workspace");
 		const dataPath = join(root, "mailbox.json");
 		await mkdir(dirname(dataPath), { recursive: true });
@@ -454,7 +457,7 @@ describe("synthetic declared filters example", () => {
 });
 
 test("import orders filters by Proton sequence and the first sync proposes no reorder", async () => {
-	const root = `/tmp/declared-filters-${crypto.randomUUID()}`;
+	const root = makeTempDir("declared-filters-");
 	const dir = join(root, "workspace");
 	const dataPath = join(root, "mailbox.json");
 	await mkdir(dirname(dataPath), { recursive: true });
@@ -489,7 +492,7 @@ test("import orders filters by Proton sequence and the first sync proposes no re
 });
 
 test("sync keeps one sequence source in the baseline after a reorder and an update", async () => {
-	const root = `/tmp/declared-filters-${crypto.randomUUID()}`;
+	const root = makeTempDir("declared-filters-");
 	const dir = join(root, "workspace");
 	const dataPath = join(root, "mailbox.json");
 	await mkdir(dirname(dataPath), { recursive: true });

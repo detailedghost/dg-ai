@@ -25,7 +25,10 @@ import {
 	FILE_ONLY_SEAMS,
 	freshDgHome,
 	freshTempDir,
+	removeScratchDirs,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;

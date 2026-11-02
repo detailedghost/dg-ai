@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
 import { HISTORY_TAIL_ROW_LIMIT } from "../../src/server/frame-handlers";
 import {
@@ -11,7 +11,10 @@ import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
 	freshDgHome,
+	removeScratchDirs,
 } from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 const SESSION_ID = "session-retention";
 

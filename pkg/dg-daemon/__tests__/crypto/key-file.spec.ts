@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { chmodSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -6,7 +6,12 @@ import {
 	mintFallbackKeyFile,
 	readFallbackKeyFile,
 } from "../../src/crypto/key-file";
-import { scratchDir } from "../utils/daemon-harness";
+import {
+	removeScratchDirs,
+	scratchDir,
+} from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 function tempKeyPath(): string {
 	return join(scratchDir("dg-key-file"), "key");

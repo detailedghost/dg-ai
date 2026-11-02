@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync }
 import { basename, dirname, join } from "node:path";
 import { isAlive } from "@dg/common/node";
 import { makeTempDir } from "./git-repo-fixtures";
+import { onTestRunEnd } from "./test-run-end";
 
 const COMPILED_PREFIX = "dg-skills-compiled-";
 const OWNER_PID_FILE = "owner.pid";
@@ -10,14 +11,15 @@ const STALE_AFTER_MS = 60 * 60 * 1000;
 let compiled: string | undefined;
 let currentRoot: string | undefined;
 
-function cleanup(): void {
+function removeCompiledBinary(): void {
 	if (currentRoot) rmSync(currentRoot, { recursive: true, force: true });
 }
 
-process.once("exit", cleanup);
+process.once("exit", removeCompiledBinary);
+onTestRunEnd(removeCompiledBinary);
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
 	process.once(signal, () => {
-		cleanup();
+		removeCompiledBinary();
 		process.exit(signal === "SIGINT" ? 130 : 143);
 	});
 }
@@ -62,7 +64,7 @@ export function buildCompiledBinary(): string {
 		{ stdout: "pipe", stderr: "pipe" },
 	);
 	if (build.exitCode !== 0) {
-		cleanup();
+		removeCompiledBinary();
 		currentRoot = undefined;
 		throw new Error(build.stderr.toString());
 	}

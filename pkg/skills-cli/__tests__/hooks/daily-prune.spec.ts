@@ -821,7 +821,7 @@ describe("runNow root safety", () => {
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
 		"skips a group-writable scratch root and leaves its files",
 		async () => {
-			const base = makeTempDir("prune-unsafe-");
+			const base = tmp("prune-unsafe-");
 			const scratch = join(base, "scratch");
 			const bucket = join(scratch, "thrash", "aaaaaaaa");
 			fs.mkdirSync(bucket, { recursive: true });

@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
 import { accountHome, allowSendHome, runSsms } from "../src/cli/run";
@@ -8,6 +7,9 @@ import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
 import { startFakeSignalServer } from "./support/rpc";
+import { makeTempDir, removeTempDirs } from "./support/temp-dirs";
+
+afterEach(removeTempDirs);
 
 function googleRuntime(home: string) {
 	const doc = createDocument(
@@ -63,7 +65,7 @@ describe("ssms cli", () => {
 	});
 
 	test("google cleanup archives the promo and does not delete or send", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-cli-"));
+		const home = makeTempDir("ssms-cli-");
 		const result = await runSsms(["google", "cleanup", "--json"], googleRuntime(home));
 		expect(result.code).toBe(0);
 		const body = JSON.parse(result.stdout);
@@ -77,7 +79,7 @@ describe("ssms cli", () => {
 	});
 
 	test("a draft is not sent until --yes, and a hook cannot send", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-draft-"));
+		const home = makeTempDir("ssms-draft-");
 		const runtime = { ...googleRuntime(home), configHome: home };
 		const drafted = await runSsms(
 			["google", "draft", "--conversation", "keep", "--text", "hello there"],
@@ -119,7 +121,7 @@ describe("ssms cli", () => {
 			throw new Error(method);
 		});
 		const rpc = await connectJsonRpc(server.port);
-		const home = mkdtempSync(join(tmpdir(), "ssms-cli-signal-"));
+		const home = makeTempDir("ssms-cli-signal-");
 		const result = await runSsms(["signal", "link", "--name", "dg-cli"], { home, rpc, env: {} });
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain("sgnl://linkdevice?uuid=abc&pub_key=SECRETKEY");
@@ -151,7 +153,7 @@ describe("ssms cli", () => {
 	});
 
 	test("a hook that can only read stdout and the draft file cannot send", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-hook-"));
+		const home = makeTempDir("ssms-hook-");
 		mkdirSync(join(home, "ssms"), { recursive: true });
 		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
 		const overlay = join(home, "hook.json");
@@ -195,7 +197,7 @@ describe("ssms cli", () => {
 	});
 
 	test("allow_send false never sends, even with a terminal yes", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-nosend-"));
+		const home = makeTempDir("ssms-nosend-");
 		const runtime = {
 			...googleRuntime(home),
 			configHome: home,
@@ -216,7 +218,7 @@ describe("ssms cli", () => {
 	});
 
 	test("a declined prompt and a wrong token do not send", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-decline-"));
+		const home = makeTempDir("ssms-decline-");
 		mkdirSync(join(home, "ssms"), { recursive: true });
 		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
 		const runtime = {
@@ -240,7 +242,7 @@ describe("ssms cli", () => {
 	});
 
 	test("dry-run does not send the draft", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-dry-"));
+		const home = makeTempDir("ssms-dry-");
 		mkdirSync(join(home, "ssms"), { recursive: true });
 		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
 		let token = "";
@@ -263,8 +265,8 @@ describe("ssms cli", () => {
 	});
 
 	test("DG_HOME cannot turn allow_send on", async () => {
-		const evil = mkdtempSync(join(tmpdir(), "ssms-evil-"));
-		const real = mkdtempSync(join(tmpdir(), "ssms-real-"));
+		const evil = makeTempDir("ssms-evil-");
+		const real = makeTempDir("ssms-real-");
 		mkdirSync(join(evil, "ssms"), { recursive: true });
 		writeFileSync(join(evil, "ssms", "config.yaml"), "allow_send: true\n");
 		let token = "";
@@ -293,8 +295,8 @@ describe("ssms cli", () => {
 	});
 
 	test("allow_send uses the injected passwd home, not HOME", async () => {
-		const homeViaEnv = mkdtempSync(join(tmpdir(), "ssms-home-env-"));
-		const passwd = mkdtempSync(join(tmpdir(), "ssms-passwd-"));
+		const homeViaEnv = makeTempDir("ssms-home-env-");
+		const passwd = makeTempDir("ssms-passwd-");
 		mkdirSync(join(homeViaEnv, ".dg", "ssms"), { recursive: true });
 		writeFileSync(join(homeViaEnv, ".dg", "ssms", "config.yaml"), "allow_send: true\ngoogle:\n  send_enabled: true\n");
 		mkdirSync(join(passwd, ".dg", "ssms"), { recursive: true });
@@ -340,7 +342,7 @@ describe("ssms cli", () => {
 	});
 
 	test("google send stays disabled until google.send_enabled is set", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-gsend-"));
+		const home = makeTempDir("ssms-gsend-");
 		mkdirSync(join(home, "ssms"), { recursive: true });
 		writeFileSync(join(home, "ssms", "config.yaml"), "allow_send: true\n");
 		let token = "";
@@ -362,7 +364,7 @@ describe("ssms cli", () => {
 	});
 
 	test("draft fails when the terminal cannot show the token", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-notty-"));
+		const home = makeTempDir("ssms-notty-");
 		const result = await runSsms(
 			["google", "draft", "--conversation", "keep", "--text", "hello there"],
 			{
@@ -388,7 +390,7 @@ describe("ssms cli", () => {
 
 describe("config file", () => {
 	test("a yaml config forces dry-run", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-cfg-"));
+		const home = makeTempDir("ssms-cfg-");
 		const config = join(home, "cleanup.yaml");
 		writeFileSync(config, "dry_run: true\nallow_delete: true\n");
 		const result = await runSsms(["google", "cleanup", "--config", config, "--json"], googleRuntime(home));

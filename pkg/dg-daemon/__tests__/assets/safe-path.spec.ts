@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -8,7 +8,12 @@ import {
 	openAssetFile,
 	resolveAssetFilePath,
 } from "../../src/assets/safe-path";
-import { freshTempDir } from "../utils/daemon-harness";
+import {
+	freshTempDir,
+	removeScratchDirs,
+} from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 const SESSION = "session-a";
 

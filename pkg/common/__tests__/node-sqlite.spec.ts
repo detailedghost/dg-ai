@@ -1,16 +1,18 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it } from "bun:test";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
 	ForwardOnlyVersionError,
 	type MigrationStep,
 	runMigrations,
 } from "@dg/common/node";
+import { makeTempDir, removeTempDirs } from "./utils/temp-dirs";
+
+afterEach(removeTempDirs);
 
 function tempDbPath(): string {
-	return join(mkdtempSync(join(tmpdir(), "dg-migrations-test-")), "test.db");
+	return join(makeTempDir("dg-migrations-test-"), "test.db");
 }
 
 function openDb(path: string): Database {
@@ -119,7 +121,7 @@ describe("runMigrations", () => {
 	it("takes a VACUUM INTO snapshot into snapshotDir before running a migration step", () => {
 		const path = tempDbPath();
 		const db = openDb(path);
-		const snapshotDir = mkdtempSync(join(tmpdir(), "dg-migrations-snapshot-"));
+		const snapshotDir = makeTempDir("dg-migrations-snapshot-");
 
 		runMigrations(db, [stepCreateA], { snapshotDir });
 

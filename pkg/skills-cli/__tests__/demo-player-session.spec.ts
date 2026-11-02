@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { type Launchers, openSession } from "../src/demo/player-process";
 import { type BrowserPlan, type PlayerJob, SETUP_NEEDS_PERSON } from "../src/demo/player-job";
 import { createBridge, tourOrigins, trustedSource } from "../src/demo/bridge";
@@ -192,6 +192,7 @@ describe("bridge terminal and progress messages", () => {
 
 describe("bridge input limits", () => {
 	const dir = mkdtempSync(join(tmpdir(), "dg-bridge-limits-"));
+	afterAll(() => rmSync(dir, { recursive: true, force: true }));
 	const make = () =>
 		createBridge({
 			job: { dir, planPath: join(dir, "s.demo.md"), slug: "s", video: false },

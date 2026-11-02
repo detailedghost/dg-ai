@@ -1,5 +1,10 @@
-import { fixturePath, fixtureConfigPath } from "./fixture-paths";
-import { describe, expect, test } from "bun:test";
+import {
+	fixtureConfigPath,
+	fixturePath,
+	removeFixtureConfig,
+	writeFixtureConfig,
+} from "./fixture-paths";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -21,6 +26,13 @@ import {
 	writeMessageWorkItems,
 } from "../src/workspace/store";
 import type { MessageWorkItem } from "../src/workspace/types";
+import { makeTempDir, removeTempDirs } from "./temp-dirs";
+
+beforeAll(writeFixtureConfig);
+afterAll(() => {
+	removeFixtureConfig();
+	removeTempDirs();
+});
 
 const configArgs = ["--config", fixtureConfigPath];
 const dataPathArgs = ["--data-path", fixturePath("proton-dataset.json")];
@@ -54,7 +66,7 @@ async function runCli(
 }
 
 function tmpPath(name: string): string {
-	return `/tmp/email-organizer-tests-${crypto.randomUUID()}/${name}`;
+	return `${makeTempDir("email-organizer-tests-")}/${name}`;
 }
 
 async function copyFixtureDataset(path: string): Promise<void> {

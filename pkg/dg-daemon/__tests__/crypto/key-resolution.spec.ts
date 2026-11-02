@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +15,12 @@ import {
 	unwrapDataKey,
 	wrapDataKey,
 } from "../../src/crypto/key-resolution";
-import { scratchDir } from "../utils/daemon-harness";
+import {
+	removeScratchDirs,
+	scratchDir,
+} from "../utils/daemon-harness";
+
+afterEach(removeScratchDirs);
 
 function tempKeyPath(): string {
 	return join(scratchDir("dg-key-resolution"), "key");

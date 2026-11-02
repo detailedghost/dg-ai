@@ -1,14 +1,16 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { createGoogleProvider } from "../src/google/provider";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
+import { makeTempDir, removeTempDirs } from "./support/temp-dirs";
+
+afterEach(removeTempDirs);
 
 describe("google provider", () => {
 	test("receive waits with irregular gaps until a message appears", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-grecv-"));
+		const home = makeTempDir("ssms-grecv-");
 		let reads = 0;
 		const doc = createDocument(
 			[
@@ -45,7 +47,7 @@ describe("google provider", () => {
 	});
 
 	test("a second quiet poll does not reuse the same gap", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-gquiet-"));
+		const home = makeTempDir("ssms-gquiet-");
 		const doc = createDocument([node("c1", { href: "/web/conversations/c1" })], "");
 		const browser = createLocalMessagesBrowser(doc);
 		const waits: number[] = [];
@@ -69,7 +71,7 @@ describe("google provider", () => {
 	});
 
 	test("a draft stores the contact name, and a miss before typing stays pending", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-gdraft-"));
+		const home = makeTempDir("ssms-gdraft-");
 		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
 		box.paneId = "c1";
 		const send = node("Send", { "aria-label": "Send" });
@@ -104,7 +106,7 @@ describe("google provider", () => {
 	});
 
 	test("two conversations with the same name are not sent", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-moms-"));
+		const home = makeTempDir("ssms-moms-");
 		let sends = 0;
 		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
 		box.paneId = "9";
@@ -146,7 +148,7 @@ describe("google provider", () => {
 	});
 
 	test("a second Mom past the first page makes the draft ambiguous", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-page-mom-"));
+		const home = makeTempDir("ssms-page-mom-");
 		let revealed = false;
 		const mom5 = node("hi", { href: "/web/conversations/5", "aria-label": "Mom" });
 		const mom9 = node("hi", { href: "/web/conversations/9", "aria-label": "Mom" });
@@ -187,7 +189,7 @@ describe("google provider", () => {
 	});
 
 	test("a draft without the duplicate-name flag is refused", async () => {
-		const home = mkdtempSync(join(tmpdir(), "ssms-old-draft-"));
+		const home = makeTempDir("ssms-old-draft-");
 		const box = asTextArea(node("", { "aria-label": "Text message" }, "TEXTAREA"));
 		box.paneId = "c1";
 		const send = node("Send", { "aria-label": "Send" });

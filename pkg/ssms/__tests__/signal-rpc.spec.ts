@@ -1,9 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { daemonArgs, startSignalDaemon, type Spawned } from "../src/signal/daemon";
 import { messageFromEnvelope } from "../src/signal/envelope";
 import { startFakeSignalServer } from "./support/rpc";
+import { makeTempDir, removeTempDirs } from "./support/temp-dirs";
+
+afterEach(removeTempDirs);
 
 describe("signal JSON-RPC client", () => {
 	test("matches responses by id and redacts secrets in errors", async () => {
@@ -169,12 +172,11 @@ describe("daemon command", () => {
 	});
 
 	test("accepts a real socket created under umask 022", async () => {
-		const { chmodSync, lstatSync, mkdtempSync } = await import("node:fs");
-		const { tmpdir } = await import("node:os");
+		const { chmodSync, lstatSync } = await import("node:fs");
 		const net = await import("node:net");
 		const { assertSocketSafe } = await import("../src/signal/daemon");
 		const previous = process.umask(0o022);
-		const dir = mkdtempSync(join(tmpdir(), "ssms-sock-"));
+		const dir = makeTempDir("ssms-sock-");
 		chmodSync(dir, 0o700);
 		const sock = join(dir, "daemon.sock");
 		const server = net.createServer();

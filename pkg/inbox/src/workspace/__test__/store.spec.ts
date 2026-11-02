@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { MailFolder, MailMessageSummary } from "../../providers/types";
 import {
 	readMessageStatus,
@@ -8,6 +8,9 @@ import {
 	writeMessageBatch,
 	writeMessageBatchStream,
 } from "../store";
+import { makeTempDir, removeTempDirs } from "../../../test/temp-dirs";
+
+afterEach(removeTempDirs);
 
 const folders: MailFolder[] = [{ id: "inbox", name: "Inbox", type: "system" }];
 
@@ -24,7 +27,7 @@ function messagesFor(ids: string[]): MailMessageSummary[] {
 }
 
 function tmpDir(name: string): string {
-	return `/tmp/email-organizer-tests-${crypto.randomUUID()}/${name}`;
+	return `${makeTempDir("email-organizer-tests-")}/${name}`;
 }
 
 describe("writeMessageBatch", () => {

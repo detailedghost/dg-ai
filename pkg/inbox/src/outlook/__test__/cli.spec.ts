@@ -1,7 +1,21 @@
 import { workspaceDirForProfile } from "../../workspace/profile";
-import { fixturePath, fixtureConfigPath } from "../../../test/fixture-paths";
-import { describe, expect, test } from "bun:test";
+import {
+	fixtureConfigPath,
+	fixturePath,
+	removeFixtureConfig,
+	writeFixtureConfig,
+} from "../../../test/fixture-paths";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { main } from "../../cli/index";
+import { makeTempDir, removeTempDirs } from "../../../test/temp-dirs";
+
+beforeAll(writeFixtureConfig);
+afterAll(() => {
+	removeFixtureConfig();
+	removeTempDirs();
+});
+
+const defaultBase = makeTempDir("dg-inbox-default-workspaces-");
 
 const configArgs = ["--config", fixtureConfigPath];
 
@@ -26,7 +40,7 @@ async function runCli(args: string[]) {
 						accountProfile: args.includes("--account-profile")
 							? args[args.indexOf("--account-profile") + 1]
 							: undefined,
-						base: "/tmp/dg-inbox-default-workspaces",
+						base: defaultBase,
 					}),
 		]);
 		return { stdout: stdout.join("\n"), stderr: stderr.join("\n"), code: 0 };
@@ -41,7 +55,7 @@ async function runCli(args: string[]) {
 
 describe("Outlook CLI provider", () => {
 	test("runs redacted Outlook inventory from synthetic fixture data", async () => {
-		const dir = `/tmp/email-organizer-outlook-inventory-${crypto.randomUUID()}`;
+		const dir = makeTempDir("email-organizer-outlook-inventory-");
 		const folders = await runCli([
 			"load",
 			"folders",
@@ -89,7 +103,7 @@ describe("Outlook CLI provider", () => {
 			count: 3,
 		});
 
-		const dir = `/tmp/email-organizer-outlook-batch-${crypto.randomUUID()}`;
+		const dir = makeTempDir("email-organizer-outlook-batch-");
 		await runCli(["load", "folders", "--provider", "outlook", "--dir", dir]);
 		const batch = await runCli([
 			"batch",
@@ -110,7 +124,7 @@ describe("Outlook CLI provider", () => {
 	});
 
 	test("initializes Outlook workspace login metadata without tokens", async () => {
-		const dir = `/tmp/email-organizer-outlook-init-${crypto.randomUUID()}`;
+		const dir = makeTempDir("email-organizer-outlook-init-");
 		const proc = await runCli([
 			"init",
 			"--provider",
@@ -154,10 +168,10 @@ describe("Outlook CLI provider", () => {
 		expect(second.code, second.stderr).toBe(0);
 
 		const firstLogin = await Bun.file(
-			`${workspaceDirForProfile({ provider: "outlook", accountProfile: firstProfile, base: "/tmp/dg-inbox-default-workspaces" })}/login.json`,
+			`${workspaceDirForProfile({ provider: "outlook", accountProfile: firstProfile, base: defaultBase })}/login.json`,
 		).json();
 		const secondLogin = await Bun.file(
-			`${workspaceDirForProfile({ provider: "outlook", accountProfile: secondProfile, base: "/tmp/dg-inbox-default-workspaces" })}/login.json`,
+			`${workspaceDirForProfile({ provider: "outlook", accountProfile: secondProfile, base: defaultBase })}/login.json`,
 		).json();
 		expect(firstLogin).toMatchObject({
 			provider: "outlook",
@@ -217,7 +231,7 @@ describe("Outlook CLI provider", () => {
 	});
 
 	test("refuses confirmed apply without a matching dry-run report", async () => {
-		const dir = `/tmp/email-organizer-outlook-plan-${crypto.randomUUID()}`;
+		const dir = makeTempDir("email-organizer-outlook-plan-");
 		expect(
 			(await runCli(["load", "folders", "--provider", "outlook", "--dir", dir]))
 				.code,

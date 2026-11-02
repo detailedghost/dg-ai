@@ -134,6 +134,10 @@ describe("kokoroDir", () => {
 		mkdirSync(pkg, { recursive: true });
 		write(j(ext, "package.json"), JSON.stringify({ name: "ext" }));
 		write(j(pkg, "package.json"), JSON.stringify({ name: "kokoro-js", version: "1.0.0" }));
-		expect(kokoroDir(root)).toBe(pkg);
+		try {
+			expect(kokoroDir(root)).toBe(pkg);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

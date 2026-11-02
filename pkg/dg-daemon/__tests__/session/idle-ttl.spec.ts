@@ -9,6 +9,7 @@ import {
 	frameType,
 	freshDgHome,
 	killDaemonByPidFile,
+	removeScratchDirs,
 	send,
 	spawnServe,
 	startWithSession,
@@ -23,6 +24,7 @@ let dgHome: string;
 afterEach(() => {
 	killDaemonByPidFile(dgHome);
 	cleanupDgHome(dgHome);
+	removeScratchDirs();
 });
 
 const IDLE_TTL_MS = 1000;

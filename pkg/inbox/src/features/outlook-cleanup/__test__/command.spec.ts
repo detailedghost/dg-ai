@@ -1,10 +1,13 @@
 import { faker } from "@faker-js/faker";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { main } from "../../../cli/index";
 import { validateCleanupReviewPayload } from "../command";
 import { readJsonFile, writeJsonFile } from "../../../utils/json";
+import { makeTempDir, removeTempDirs } from "../../../../test/temp-dirs";
+
+afterEach(removeTempDirs);
 
 async function runCli(args: string[]) {
 	const stdout: string[] = [];
@@ -97,7 +100,7 @@ async function postJsonWithRetry(
 }
 
 function tmpPath(name: string): string {
-	return `/tmp/email-organizer-cleanup-tests-${crypto.randomUUID()}/${name}`;
+	return `${makeTempDir("email-organizer-cleanup-tests-")}/${name}`;
 }
 
 function title(value: string): string {
