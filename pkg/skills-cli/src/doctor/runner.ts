@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
+import { extensionDgDirs } from "../utils/lib";
 import pkg from "../../package.json" with { type: "json" };
 import { CLI_PATH } from "./probes";
 import { SHARED_ITEM } from "./shared";
@@ -26,6 +28,16 @@ export function createContext(
 		env,
 		paths: overrides.paths ?? resolveDgPaths({ homeDir: home, env }),
 		installedVersion: overrides.installedVersion ?? pkg.version,
+		extensionDgDirs:
+			overrides.extensionDgDirs ??
+			(() => {
+				const own = join(home, ".dg");
+				try {
+					return [...new Set([...extensionDgDirs(), own])];
+				} catch {
+					return [own];
+				}
+			}),
 		memo<T>(key: string, make: () => T): T {
 			if (!cache.has(key)) cache.set(key, make());
 			return cache.get(key) as T;

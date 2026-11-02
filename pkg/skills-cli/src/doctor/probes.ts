@@ -6,7 +6,11 @@ import {
 	statSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { claudePluginSkillsDirs } from "@dg/common/node";
+import { CHAT_STATUS_PATH, type DaemonHandle } from "@dg/common";
+import {
+	claudePluginSkillsDirs,
+	loopbackHostHeader,
+} from "@dg/common/node";
 import { compareVersions, versionGte } from "../utils/lib";
 
 export const CLI_PATH = "~/.dg/bin/dg-skills";
@@ -141,5 +145,28 @@ export function unslopInstalled(home: string): boolean {
 		);
 	} catch {
 		return false;
+	}
+}
+
+/** The extension version the daemon reports for a currently connected extension, or null when none is connected. */
+export async function connectedExtensionVersion(
+	handle: DaemonHandle,
+	fetchImpl: typeof fetch = fetch,
+	timeoutMs = 1500,
+): Promise<string | null> {
+	try {
+		const resp = await fetchImpl(
+			`http://127.0.0.1:${handle.port}${CHAT_STATUS_PATH}`,
+			{
+				headers: loopbackHostHeader(handle.port),
+				signal: AbortSignal.timeout(timeoutMs),
+			},
+		);
+		if (!resp.ok) return null;
+		const body = (await resp.json()) as { versions?: { extension?: unknown } };
+		const version = body.versions?.extension;
+		return typeof version === "string" && version.length > 0 ? version : null;
+	} catch {
+		return null;
 	}
 }

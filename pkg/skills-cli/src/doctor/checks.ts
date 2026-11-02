@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { legacyExtensionDirs } from "../utils/extension-files";
 import {
 	createCredentialClient,
 	isDaemonLive,
@@ -8,6 +9,7 @@ import {
 } from "@dg/common/node";
 import {
 	allowRuleFor,
+	connectedExtensionVersion,
 	CLI_PATH,
 	hasAllowRule,
 	installedPlugins,
@@ -341,9 +343,20 @@ function pinnedOrigin(ctx: DoctorContext): string | null {
 
 export const pairingCheck: DoctorCheck = {
 	id: "extension-paired",
-	run(ctx) {
+	async run(ctx) {
 		const origin = pinnedOrigin(ctx);
-		if (origin) return ok(`the daemon has pinned the extension origin ${origin}`);
+		if (origin) {
+			const handle = readPidFile(ctx.paths);
+			const live =
+				handle && (await ctx.memo("daemon-live", () => isDaemonLive(handle)));
+			const version = handle && live ? await connectedExtensionVersion(handle) : null;
+			return version
+				? ok(`paired with ${origin} and connected (extension v${version})`)
+				: warn(
+						`paired, not responding: ${origin} is pinned but the extension has not contacted the daemon; load or reload it in the browser`,
+						"open chrome://extensions and reload dg-ai-extension",
+					);
+		}
 		return warn(
 			existsSync(ctx.paths.pairingPath)
 				? "a pairing code is pending and no extension has connected yet; enter the code in the extension"
@@ -369,6 +382,14 @@ function unlessCliOnly(check: DoctorCheck): DoctorCheck {
 export const cliOnlyCheck: DoctorCheck = {
 	id: "extension-installed",
 	run(ctx) {
+		const legacy = legacyExtensionDirs(
+			ctx.extensionDgDirs?.() ?? [join(ctx.home, ".dg")],
+		);
+		if (legacy.length > 0)
+			return warn(
+				`the retired dg-ai-browser-batch extension is still on disk (${legacy.join(", ")}), so two extensions may load`,
+				`${CLI_PATH} install`,
+			);
 		return isCliOnly(ctx)
 			? warn(
 					"this is a CLI-only install, so extension features are off",

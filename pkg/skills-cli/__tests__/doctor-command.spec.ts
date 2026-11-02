@@ -706,20 +706,114 @@ describe("dg-skills doctor edge cases", () => {
 		expect((pairing?.fix ?? "").length).toBeGreaterThan(0);
 	});
 
-	test("a pinned extension origin in the daemon config reports paired", async () => {
-		world.healthy(["launch"]);
+	function pinOrigin(origin = "chrome-extension://abc") {
 		const daemonDir = join(world.home, ".dg", "daemon");
 		mkdirSync(daemonDir, { recursive: true });
-		writeFileSync(
-			join(daemonDir, "config.json"),
-			JSON.stringify({ pinnedOrigin: "chrome-extension://abc" }),
-		);
+		writeFileSync(join(daemonDir, "config.json"), JSON.stringify({ pinnedOrigin: origin }));
+	}
+
+	async function withStatusDaemon(
+		extensionVersion: string | null,
+		body: () => Promise<void>,
+		statusOk = true,
+	) {
+		const instanceId = "paired-instance";
+		const server = Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			fetch(request) {
+				const { pathname } = new URL(request.url);
+				if (pathname === "/healthz") return Response.json({ instanceId });
+				if (pathname === "/status" && statusOk) {
+					return Response.json({ versions: { extension: extensionVersion } });
+				}
+				return new Response("nope", { status: 500 });
+			},
+		});
+		try {
+			const daemonDir = join(world.home, ".dg", "daemon");
+			mkdirSync(daemonDir, { recursive: true });
+			writeFileSync(
+				join(daemonDir, "daemon.pid"),
+				JSON.stringify({
+					pid: process.pid,
+					port: server.port,
+					instanceId,
+					versions: { package: "0.0.0", protocol: 1 },
+				}),
+			);
+			await body();
+		} finally {
+			server.stop(true);
+		}
+	}
+
+	async function pairingOf() {
 		const { report } = await world.report(["launch"]);
-		const pairing = checksOf(report, "launch").find(
-			(check) => check.id === "extension-paired",
-		);
-		expect(pairing?.status).toBe("ok");
+		return checksOf(report, "launch").find((check) => check.id === "extension-paired");
+	}
+
+	test("a pinned origin with no running daemon reports paired, not responding", async () => {
+		world.healthy(["launch"]);
+		pinOrigin();
+		const pairing = await pairingOf();
+		expect(pairing?.status).toBe("warn");
+		expect(pairing?.detail).toContain("paired, not responding");
 		expect(pairing?.detail).toContain("chrome-extension://abc");
+		expect((pairing?.fix ?? "").length).toBeGreaterThan(0);
+	});
+
+	test("a pinned origin with a live daemon but no connected extension reports paired, not responding", async () => {
+		world.healthy(["launch"]);
+		pinOrigin();
+		await withStatusDaemon(null, async () => {
+			const pairing = await pairingOf();
+			expect(pairing?.status).toBe("warn");
+			expect(pairing?.detail).toContain("paired, not responding");
+		});
+	});
+
+	test("a pinned origin with a connected extension reports paired and live", async () => {
+		world.healthy(["launch"]);
+		pinOrigin();
+		await withStatusDaemon("1.30.0", async () => {
+			const pairing = await pairingOf();
+			expect(pairing?.status).toBe("ok");
+			expect(pairing?.detail).toContain("chrome-extension://abc");
+			expect(pairing?.detail).toContain("1.30.0");
+		});
+	});
+
+	test("a daemon whose status call fails leaves the pinned origin not responding", async () => {
+		world.healthy(["launch"]);
+		pinOrigin();
+		await withStatusDaemon("1.30.0", async () => {
+			const pairing = await pairingOf();
+			expect(pairing?.status).toBe("warn");
+		}, false);
+	});
+
+	test("a leftover legacy batch extension folder warns on the extension check", async () => {
+		world.healthy(["launch"]);
+		const legacy = join(world.home, ".dg", "dg-ai-browser-batch-chrome");
+		mkdirSync(legacy, { recursive: true });
+		writeFileSync(join(legacy, "manifest.json"), JSON.stringify({ name: "dg-ai-browser-batch" }));
+		const { report } = await world.report(["launch"]);
+		const installed = checksOf(report, "launch").find((check) => check.id === "extension-installed");
+		expect(installed?.status).toBe("warn");
+		expect(installed?.detail).toContain("dg-ai-browser-batch");
+		expect(installed?.detail).toContain(legacy);
+		expect((installed?.fix ?? "").length).toBeGreaterThan(0);
+	});
+
+	test("a folder with a legacy name but another manifest does not warn", async () => {
+		world.healthy(["launch"]);
+		const other = join(world.home, ".dg", "dg-ai-browser-batch-chrome");
+		mkdirSync(other, { recursive: true });
+		writeFileSync(join(other, "manifest.json"), JSON.stringify({ name: "something else" }));
+		const { report } = await world.report(["launch"]);
+		const installed = checksOf(report, "launch").find((check) => check.id === "extension-installed");
+		expect(installed?.status).toBe("ok");
 	});
 
 	test("an unreadable daemon config does not report paired", async () => {
