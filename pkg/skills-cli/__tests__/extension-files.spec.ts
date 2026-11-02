@@ -36,6 +36,20 @@ afterEach(() => {
 });
 
 describe("syncDirInPlace", () => {
+	test("refuses a symlinked destination and leaves its target untouched", () => {
+		const root = scratch();
+		const src = join(root, "src");
+		const target = join(root, "target");
+		put(join(src, "a.js"), "new");
+		put(join(target, "keep.txt"), "keep");
+		symlinkSync(target, join(root, "dest"));
+		expect(() => syncDirInPlace(src, join(root, "dest"))).toThrow(
+			"symlink",
+		);
+		expect(readFileSync(join(target, "keep.txt"), "utf8")).toBe("keep");
+		expect(existsSync(join(target, "a.js"))).toBe(false);
+	});
+
 	test("refuses a source symlink instead of copying its target", () => {
 		const root = scratch();
 		const src = join(root, "src");

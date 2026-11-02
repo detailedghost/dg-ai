@@ -42,6 +42,8 @@ export function syncDirInPlace(
 	dest: string,
 	deps: SyncDeps = { rename: renameSync },
 ): void {
+	if (entryKind(dest) === "file" && lstatSync(dest).isSymbolicLink())
+		throw new Error(`extension folder is a symlink: ${dest}`);
 	mkdirSync(dest, { recursive: true });
 	for (const name of readdirSync(src)) {
 		const from = join(src, name);
