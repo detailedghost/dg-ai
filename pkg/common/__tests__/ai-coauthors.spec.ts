@@ -109,6 +109,22 @@ describe("stripAiCoauthors", () => {
 		expect(stripAiCoauthors(message)).toBe(message);
 	});
 
+	test("strips an AI trailer next to a BREAKING CHANGE footer and keeps the footer", () => {
+		expect(
+			stripAiCoauthors(
+				`feat!: replace API\n\nBREAKING CHANGE: remove the old API\nCo-Authored-By: Claude <noreply@anthropic.com>\n`,
+			),
+		).toBe(`feat!: replace API\n\nBREAKING CHANGE: remove the old API\n`);
+	});
+
+	test("strips an AI trailer around a comment line and keeps the comment and human trailer", () => {
+		expect(
+			stripAiCoauthors(
+				`${subject}\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n# editor note\nCo-Authored-By: Sam <sam@example.com>\n`,
+			),
+		).toBe(`${subject}\n\n# editor note\nCo-Authored-By: Sam <sam@example.com>\n`);
+	});
+
 	test("returns a message without trailers unchanged", () => {
 		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
 		expect(stripAiCoauthors(message)).toBe(message);

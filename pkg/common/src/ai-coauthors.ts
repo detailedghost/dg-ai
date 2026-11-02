@@ -4,7 +4,7 @@ const AI_EMAIL =
 const NOREPLY_EMAIL = /no-?reply/i;
 const IDENTITY = /^(.*?)\s*<([^>]*)>\s*$/;
 const COAUTHOR = /^co-authored-by:\s*([^\n]*)$/i;
-const TRAILER = /^[A-Za-z][\w-]*:/;
+const TRAILER = /^(?:[A-Za-z][\w-]*|BREAKING CHANGE):/;
 const CONTINUATION = /^\s+\S/;
 const TRAILING_CR = /\r$/;
 const isBlank = (line: string) => line.trim() === "";
@@ -23,10 +23,10 @@ const isAiTrailer = (line: string): boolean => {
 	return identity !== undefined && isAiCoauthor(identity);
 };
 
-function trailerEntries(block: string[]): string[][] | undefined {
+function trailerEntries(block: string[], commentChar: string): string[][] | undefined {
 	const entries: string[][] = [];
 	for (const line of block) {
-		if (TRAILER.test(line)) entries.push([line]);
+		if (TRAILER.test(line) || line.startsWith(commentChar)) entries.push([line]);
 		else if (CONTINUATION.test(line) && entries.length > 0)
 			entries.at(-1)?.push(line);
 		else return undefined;
@@ -47,7 +47,7 @@ export function stripAiCoauthors(message: string, commentChar = "#"): string {
 	}
 	const content = lines.slice(0, end);
 	const start = content.findLastIndex(isBlank) + 1;
-	const entries = start === 0 ? undefined : trailerEntries(content.slice(start));
+	const entries = start === 0 ? undefined : trailerEntries(content.slice(start), commentChar);
 	if (!entries) return message;
 	const keptEntries = entries.filter((entry) => !isAiTrailer(entry.map((line) => line.replace(TRAILING_CR, "")).join(" ")));
 	if (keptEntries.length === entries.length) return message;

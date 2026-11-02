@@ -16,7 +16,7 @@ Resolve the compiled CLI before running any command:
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor meaningful proxy stash.
+If a step fails, run ~/.dg/bin/dg-skills doctor meaningful hooks proxy stash.
 
 Repeat this resolution in every fresh shell, delegated execution and resumed
 command; shell variables do not persist between tool calls. Honor the host's
