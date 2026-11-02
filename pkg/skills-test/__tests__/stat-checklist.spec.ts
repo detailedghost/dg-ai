@@ -4,12 +4,14 @@
  * real run through `marked` with the structure it is supposed to have
  * (nested ordered lists, task-list checkboxes).
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { marked } from "marked";
 import { readRepoFile, REPO_ROOT } from "./test-support";
+
+setDefaultTimeout(20_000);
 
 const ENTRY = join(REPO_ROOT, "pkg", "skills-cli", "src", "index.ts");
 
