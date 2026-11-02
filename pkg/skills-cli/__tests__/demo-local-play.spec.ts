@@ -101,6 +101,26 @@ describe("demo <plan> with a headless browser plan", () => {
 		expect(playerJob().video).toBe(true);
 	});
 
+	test("exits 2 for --video when excluded setup needs a human", async () => {
+		const plan = JSON.parse(readFileSync(world.planPath, "utf8"));
+		const withSetup = join(dirname(world.planPath), "setup.json");
+		writeFileSync(
+			withSetup,
+			JSON.stringify({
+				...plan,
+				setup: { includeInTour: false, steps: [{ title: "Sign in", body: "Log in." }] },
+			}),
+		);
+		const run = await world.drive(
+			registerDemo,
+			["demo", "--video", withSetup],
+			demoDeps(headless()),
+		);
+		expect(run.code).toBe(2);
+		expect(run.err).toContain("setup");
+		expect(world.spawned).toHaveLength(0);
+	});
+
 	test("spawns the player with --wsl-headed", async () => {
 		const run = await world.drive(
 			registerDemo,

@@ -217,6 +217,17 @@ export async function playLocal(
 		);
 		return 2;
 	}
+	if (
+		plan.mode === "local" &&
+		plan.headless &&
+		script.setup &&
+		!script.setup.includeInTour
+	) {
+		console.error(
+			"demo: the plan has setup steps that need a person; use --windows or --wsl-headed, or set includeSetup: true",
+		);
+		return 2;
+	}
 	if (warning) console.error(warning);
 
 	const slug = slugify(script.title ?? "demo");
