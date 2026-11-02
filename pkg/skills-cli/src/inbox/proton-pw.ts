@@ -178,11 +178,14 @@ async function runPw(argv: string[]) {
 	return { code, out: out.trim(), err: err.trim() };
 }
 
+function headerValues(text: string, name: string): string[] {
+	return [...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim"))].map(
+		(match) => match[1]?.trim() ?? "",
+	);
+}
+
 function headerValue(text: string, name: string): string | undefined {
-	const matches = [
-		...text.matchAll(new RegExp(`^\\s+${name}:\\s*(.+)$`, "gim")),
-	];
-	return matches.at(-1)?.[1]?.trim();
+	return headerValues(text, name).at(-1);
 }
 
 export async function openProtonSession(
@@ -226,6 +229,18 @@ export async function openProtonSession(
 				]);
 				if (listing.code !== 0)
 					throw new Error("Could not read the Proton request headers.");
+				const uids = new Set(headerValues(listing.out, "x-pm-uid"));
+				if (uids.size > 1) {
+					await run([
+						session,
+						"--raw",
+						"network",
+						"--filter",
+						"/api/",
+						"--clear",
+					]);
+					return undefined;
+				}
 				const uid = headerValue(listing.out, "x-pm-uid");
 				if (!uid) return undefined;
 				const appVersion = headerValue(listing.out, "x-pm-appversion");

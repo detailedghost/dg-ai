@@ -223,6 +223,32 @@ describe("proton-pw openProtonSession", () => {
 		expect(JSON.stringify(headers).toLowerCase()).not.toContain("hunter2");
 	});
 
+	test("observedHeaders refuses a log with two uids and clears it", async () => {
+		const listing = [
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-0",
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-1",
+		].join("\n");
+		const { run, calls } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect(await session.page.observedHeaders()).toBeUndefined();
+		expect(calls.filter((argv) => argv.includes("--clear"))).toHaveLength(1);
+	});
+
+	test("observedHeaders does not clear a log with one repeated uid", async () => {
+		const listing = [
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-0",
+			"GET https://mail.proton.me/api/mail/v4/messages",
+			"  x-pm-uid: uid-account-0",
+		].join("\n");
+		const { run, calls } = recordingRunner({ network: listing });
+		const session = await openProtonSession(spec(true), run);
+		expect((await session.page.observedHeaders())?.uid).toBe("uid-account-0");
+		expect(calls.some((argv) => argv.includes("--clear"))).toBe(false);
+	});
+
 	test("observedHeaders is undefined before any Proton api request", async () => {
 		const { run } = recordingRunner({ network: "" });
 		const session = await openProtonSession(spec(true), run);
@@ -568,7 +594,9 @@ describe("proton-pw session lock", () => {
 			await first.pwBrowserRequest({ operation: "list-folders" });
 			await expect(
 				second.pwBrowserRequest({ operation: "list-folders" }),
-			).rejects.toThrow(/Another inbox command .* is using the Proton pw session/);
+			).rejects.toThrow(
+				/Another inbox command .* is using the Proton pw session/,
+			);
 			await second.close();
 			expect(closed).toBe(0);
 			await first.close();
