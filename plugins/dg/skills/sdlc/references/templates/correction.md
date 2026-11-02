@@ -4,13 +4,13 @@ All correction agents: report cross-slice findings via `[NOTE-DURABLE] <text>` (
 
 ## Engineering
 
-> [Common directives.] Read slice section. Fix issues below. Update checkboxes if new work. No refactoring beyond fixes.
+> [Common directives.] Read slice section. Fix issues below. No refactoring beyond fixes. Do not edit the spec or report unticked checkboxes; the orchestrator ticks them.
 > Spec diff: [if applicable]
 > Issues: [grouped by source + severity + rationale]
 
 ## qa-writer
 
-> [Common directives.] Read Testing Criteria. Fix test issues below. Update checkboxes if new work. No refactoring beyond fixes.
+> [Common directives.] Read Testing Criteria. Fix test issues below. No refactoring beyond fixes. Do not edit the spec or report unticked checkboxes; the orchestrator ticks them.
 > Issues: [grouped by source + severity + rationale]
 
 ## Reviewer Re-Run
