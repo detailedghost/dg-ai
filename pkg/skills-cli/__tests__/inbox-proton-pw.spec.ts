@@ -251,19 +251,42 @@ describe("proton-pw openProtonSession", () => {
 		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
 	});
 
-	test("clearObservedHeaders empties the api request log without a reload", async () => {
-		const { run, calls } = recordingRunner();
+	test("clearObservedHeaders empties the api request log, then reloads so the page makes fresh requests", async () => {
+		let log = [
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-0",
+		].join("\n");
+		const fresh = [
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-1",
+		].join("\n");
+		const calls: string[][] = [];
+		const run: PwRunner = async (argv) => {
+			calls.push(argv);
+			if (argv.includes("--clear")) log = "";
+			else if (argv.includes("reload")) log = fresh;
+			return {
+				code: 0,
+				out: argv.includes("network") && !argv.includes("--clear") ? log : "",
+				err: "",
+			};
+		};
 		const session = await openProtonSession(spec(true), run);
 		await session.page.clearObservedHeaders();
-		expect(calls.at(-1)).toEqual([
-			"-s=inbox-proton",
-			"--raw",
-			"network",
-			"--filter",
-			"/api/",
-			"--clear",
-		]);
-		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
+		expect(calls.at(-2)).toContain("--clear");
+		expect(calls.at(-1)).toEqual(["-s=inbox-proton", "reload"]);
+		expect((await session.page.observedHeaders())?.uid).toBe("uid-account-1");
+	});
+
+	test("clearObservedHeaders rejects when pw cannot reload the page", async () => {
+		const run: PwRunner = async (argv) =>
+			argv.includes("reload")
+				? { code: 1, out: "", err: "reload failed" }
+				: { code: 0, out: "", err: "" };
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.clearObservedHeaders()).rejects.toThrow(
+			"Could not reset the Proton request log.",
+		);
 	});
 
 	test("clearObservedHeaders rejects when pw cannot clear the log", async () => {

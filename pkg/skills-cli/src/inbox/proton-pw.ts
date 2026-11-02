@@ -227,7 +227,9 @@ export async function openProtonSession(
 					"/api/",
 					"--clear",
 				]);
-				if (cleared.code !== 0)
+				const reloaded =
+					cleared.code === 0 ? await run([session, "reload"]) : undefined;
+				if (cleared.code !== 0 || reloaded?.code !== 0)
 					throw new Error("Could not reset the Proton request log.");
 			},
 			observedHeaders: async () => {
