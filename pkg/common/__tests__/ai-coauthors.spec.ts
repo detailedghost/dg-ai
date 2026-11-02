@@ -125,6 +125,11 @@ describe("stripAiCoauthors", () => {
 		).toBe(`${subject}\n\n# editor note\nCo-Authored-By: Sam <sam@example.com>\n`);
 	});
 
+	test("keeps a folded human trailer split by a comment line", () => {
+		const message = `${subject}\n\nCo-Authored-By: Claude\n# editor note\n Martin <claude.martin@gmail.com>\n`;
+		expect(stripAiCoauthors(message)).toBe(message);
+	});
+
 	test("returns a message without trailers unchanged", () => {
 		const message = `${subject}\n\nBody paragraph one.\n\nBody paragraph two.\n`;
 		expect(stripAiCoauthors(message)).toBe(message);

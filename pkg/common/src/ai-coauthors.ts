@@ -26,7 +26,10 @@ const isAiTrailer = (line: string): boolean => {
 function trailerEntries(block: string[], commentChar: string): string[][] | undefined {
 	const entries: string[][] = [];
 	for (const line of block) {
-		if (TRAILER.test(line) || line.startsWith(commentChar)) entries.push([line]);
+		if (line.startsWith(commentChar)) {
+			if (entries.length > 0) entries.at(-1)?.push(line);
+			else entries.push([line]);
+		} else if (TRAILER.test(line)) entries.push([line]);
 		else if (CONTINUATION.test(line) && entries.length > 0)
 			entries.at(-1)?.push(line);
 		else return undefined;
@@ -49,9 +52,19 @@ export function stripAiCoauthors(message: string, commentChar = "#"): string {
 	const start = content.findLastIndex(isBlank) + 1;
 	const entries = start === 0 ? undefined : trailerEntries(content.slice(start), commentChar);
 	if (!entries) return message;
-	const keptEntries = entries.filter((entry) => !isAiTrailer(entry.map((line) => line.replace(TRAILING_CR, "")).join(" ")));
-	if (keptEntries.length === entries.length) return message;
-	const kept = keptEntries.flat();
+	const isComment = (line: string) => line.startsWith(commentChar);
+	const removed = entries.filter((entry) =>
+		isAiTrailer(
+			entry
+				.filter((line) => !isComment(line))
+				.map((line) => line.replace(TRAILING_CR, ""))
+				.join(" "),
+		),
+	);
+	if (removed.length === 0) return message;
+	const kept = entries.flatMap((entry) =>
+		removed.includes(entry) ? entry.filter(isComment) : entry,
+	);
 	const before = content.slice(0, start);
 	if (kept.length === 0) while (before.length > 0 && isBlank(before.at(-1) as string)) before.pop();
 	const tail = end < lines.length ? `\n${lines.slice(end).join("\n")}` : "";
