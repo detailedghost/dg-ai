@@ -141,6 +141,7 @@ describe("proto skill", () => {
 
 		expect(commands).toContain("~/.dg/bin/dg-skills");
 		expect(commands).toContain("bootstrap.sh");
+		expect(commands).toContain("extension-installed");
 		expect(commands).toContain("browser-batch-installed");
 		expect(commands).toMatch(/browser skill.+install/i);
 		expect(commands).toMatch(/timed out|times out/i);

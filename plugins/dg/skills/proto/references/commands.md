@@ -7,11 +7,13 @@ If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
 ## Extension precondition
 
 Gate this skill before scrape on the installer marker used by
-`isProtoExtensionInstalled` and `markerPath`:
+`isProtoExtensionInstalled` and `markerPath`. The older name
+`browser-batch-installed` still counts:
 
 ```bash
-INSTALL_MARKER="$HOME/.config/dg/browser-batch-installed"
-if [ ! -f "$INSTALL_MARKER" ]; then
+INSTALL_MARKER="$HOME/.config/dg/extension-installed"
+LEGACY_MARKER="$HOME/.config/dg/browser-batch-installed"
+if [ ! -f "$INSTALL_MARKER" ] && [ ! -f "$LEGACY_MARKER" ]; then
   echo "dg-ai-extension is not installed; run the browser skill's install command first."
   exit 1
 fi

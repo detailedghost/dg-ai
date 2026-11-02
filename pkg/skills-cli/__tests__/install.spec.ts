@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { currentBinaryLine } from "../src/commands/install";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,24 +16,32 @@ test("a bootstrap install says verified for dg-skills and already current for th
 	);
 });
 
-test("install --local rebuilds stale output and replaces an installed extension of the same version", async () => {
+interface LocalInstallWorld {
+	directory: string;
+	repo: string;
+	home: string;
+	output: string;
+	destination: string;
+}
+
+function localInstallWorld(): LocalInstallWorld {
 	const directory = mkdtempSync(join(tmpdir(), "dg-local-install-"));
 	const repo = join(directory, "repo");
 	const home = join(directory, "home");
 	const output = join(repo, "pkg/extension/.output/chrome-mv3");
-	const destination = join(home, ".dg/dg-ai-extension-chrome");
-	try {
-		for (const path of [output, destination, join(repo, "node_modules/.bin"), join(home, ".config/dg")]) {
-			mkdirSync(path, { recursive: true });
-		}
-		writeFileSync(join(repo, "pkg/extension/package.json"), "{}");
-		writeFileSync(join(repo, "node_modules/.bin/wxt"), "");
-		writeFileSync(join(output, "manifest.json"), JSON.stringify({ version: "1.11.0" }));
-		writeFileSync(join(output, "background.js"), "stale build");
-		writeFileSync(join(destination, "background.js"), "installed release");
-		writeFileSync(join(home, ".config/dg/browser-batch-installed"), JSON.stringify({ chrome: "1.11.0" }));
-		// Mock process/platform boundaries in a child so other specs keep their real filesystem paths.
-		const script = `
+	for (const path of [output, join(repo, "node_modules/.bin"), join(home, ".config/dg")]) {
+		mkdirSync(path, { recursive: true });
+	}
+	writeFileSync(join(repo, "pkg/extension/package.json"), "{}");
+	writeFileSync(join(repo, "node_modules/.bin/wxt"), "");
+	writeFileSync(join(output, "manifest.json"), JSON.stringify({ version: "1.11.0" }));
+	writeFileSync(join(output, "background.js"), "stale build");
+	return { directory, repo, home, output, destination: join(home, ".dg/dg-ai-extension-chrome") };
+}
+
+async function runLocalInstall(world: LocalInstallWorld, freshBuild: string) {
+	const { home, repo, output } = world;
+	const script = `
 import { mock } from "bun:test";
 import * as os from "node:os";
 import * as node from "@dg/common/node";
@@ -42,7 +50,7 @@ import { Command } from "commander";
 mock.module("node:os", () => ({ ...os, homedir: () => ${JSON.stringify(home)} }));
 mock.module("@dg/common/node", () => ({ ...node, isWSL: () => false, run: (command, args) => {
   if (command !== "bun" || args.join(" ") !== "run build") throw new Error("unexpected command");
-  writeFileSync(${JSON.stringify(join(output, "background.js"))}, "fresh local build");
+  writeFileSync(${JSON.stringify(join(output, "background.js"))}, ${JSON.stringify(freshBuild)});
   return "";
 } }));
 const { registerInstall } = await import(${JSON.stringify(new URL("../src/commands/install.ts", import.meta.url).pathname)});
@@ -50,17 +58,81 @@ const program = new Command();
 registerInstall(program);
 await program.parseAsync(["install", "--local", "--repo", ${JSON.stringify(repo)}], { from: "user" });
 `;
-		const child = Bun.spawn([process.execPath, "-e", script], {
-			cwd: new URL("..", import.meta.url).pathname,
-			stdout: "pipe", stderr: "pipe",
-		});
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
-		]);
+	const child = Bun.spawn([process.execPath, "-e", script], {
+		cwd: new URL("..", import.meta.url).pathname,
+		stdout: "pipe", stderr: "pipe",
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+	]);
+	return { stdout, stderr, exitCode };
+}
+
+test("install --local rebuilds stale output and replaces an installed extension of the same version", async () => {
+	const world = localInstallWorld();
+	try {
+		mkdirSync(world.destination, { recursive: true });
+		writeFileSync(join(world.destination, "background.js"), "installed release");
+		writeFileSync(join(world.home, ".config/dg/browser-batch-installed"), JSON.stringify({ chrome: "1.11.0" }));
+		const { stdout, stderr, exitCode } = await runLocalInstall(world, "fresh local build");
 		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
 		expect(stdout).toContain("staged at");
-		expect(readFileSync(join(destination, "background.js"), "utf8")).toBe("fresh local build");
+		expect(readFileSync(join(world.destination, "background.js"), "utf8")).toBe("fresh local build");
 	} finally {
-		rmSync(directory, { recursive: true, force: true });
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install updates the staged extension folder in place and writes the new marker", async () => {
+	const world = localInstallWorld();
+	try {
+		mkdirSync(world.destination, { recursive: true });
+		writeFileSync(join(world.destination, "background.js"), "installed release");
+		writeFileSync(join(world.destination, "stale.js"), "removed from the new build");
+		const inode = statSync(world.destination).ino;
+		const { exitCode, stderr } = await runLocalInstall(world, "fresh local build");
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		expect(statSync(world.destination).ino).toBe(inode);
+		expect(existsSync(join(world.destination, "stale.js"))).toBe(false);
+		expect(existsSync(join(world.home, ".config/dg/extension-installed"))).toBe(true);
+		expect(readdirSync(join(world.home, ".dg")).sort()).toEqual(["dg-ai-extension-chrome"]);
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install removes legacy batch extension folders by manifest name and says how to clear the browser entry", async () => {
+	const world = localInstallWorld();
+	try {
+		const dgDir = join(world.home, ".dg");
+		const batch = JSON.stringify({ name: "dg-ai-browser-batch", version: "1.0.0" });
+		for (const name of ["browser-batch-extension", "dg-ai-browser-batch-chrome"]) {
+			mkdirSync(join(dgDir, name), { recursive: true });
+			writeFileSync(join(dgDir, name, "manifest.json"), batch);
+		}
+		mkdirSync(join(dgDir, "dg-ai-browser-batch-firefox"), { recursive: true });
+		writeFileSync(join(dgDir, "dg-ai-browser-batch-firefox/manifest.json"), JSON.stringify({ name: "mine" }));
+		const { stdout, stderr, exitCode } = await runLocalInstall(world, "fresh local build");
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		expect(existsSync(join(dgDir, "browser-batch-extension"))).toBe(false);
+		expect(existsSync(join(dgDir, "dg-ai-browser-batch-chrome"))).toBe(false);
+		expect(existsSync(join(dgDir, "dg-ai-browser-batch-firefox"))).toBe(true);
+		const lines = stdout.split("\n").filter((line) => line.includes("dg-ai-browser-batch"));
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toContain("chrome://extensions");
+		expect(lines[0]).toContain("dg-ai-browser-batch");
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install prints no legacy line when nothing legacy was removed", async () => {
+	const world = localInstallWorld();
+	try {
+		const { stdout, exitCode } = await runLocalInstall(world, "fresh local build");
+		expect(exitCode).toBe(0);
+		expect(stdout).not.toContain("dg-ai-browser-batch");
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
 	}
 });

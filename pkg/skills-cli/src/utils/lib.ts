@@ -8,14 +8,16 @@
 import {
 	chmodSync,
 	mkdirSync,
+	mkdtempSync,
 	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isWSL, run } from "@dg/common/node";
+import { syncDirInPlace } from "./extension-files";
 
 export type Target = "chrome" | "firefox";
 export const REPO = "detailedghost/dg-ai";
@@ -51,37 +53,63 @@ export function extensionDest(target: Target): {
 	return { copyPath: p, printPath: p };
 }
 
-/** Extract a .zip into destDir (cleared first). bsdtar on Windows, unzip elsewhere. */
-export function extractZip(zip: string, destDir: string): void {
-	rmSync(destDir, { recursive: true, force: true });
-	mkdirSync(destDir, { recursive: true });
-	if (process.platform === "win32") run("tar", ["-xf", zip, "-C", destDir]);
-	else run("unzip", ["-oq", zip, "-d", destDir]);
+/** The `.dg` directories that may hold extension folders: the Windows one on WSL and win32, plus the Linux home. */
+export function extensionDgDirs(): string[] {
+	const own = join(homedir(), ".dg");
+	if (!isWSL() && process.platform !== "win32") return [own];
+	return [...new Set([dirname(extensionDest("chrome").copyPath), own])];
 }
 
-export const markerPath = join(
-	homedir(),
-	".config",
-	"dg",
-	"browser-batch-installed",
-);
+/** Extract a .zip into destDir in place. bsdtar on Windows, unzip elsewhere. */
+export function extractZip(zip: string, destDir: string): void {
+	const staging = mkdtempSync(join(tmpdir(), "dg-ext-unzip-"));
+	try {
+		if (process.platform === "win32") run("tar", ["-xf", zip, "-C", staging]);
+		else run("unzip", ["-oq", zip, "-d", staging]);
+		syncDirInPlace(staging, destDir);
+	} finally {
+		rmSync(staging, { recursive: true, force: true });
+	}
+}
+
+const markerDir = join(homedir(), ".config", "dg");
+export const markerPath = join(markerDir, "extension-installed");
+export const legacyMarkerPath = join(markerDir, "browser-batch-installed");
+
+interface MarkerFiles {
+	current: string;
+	legacy: string;
+}
+
+const DEFAULT_MARKER_FILES: MarkerFiles = {
+	current: markerPath,
+	legacy: legacyMarkerPath,
+};
 
 // Installed version per target, e.g. { "chrome": "1.0.0", "firefox": "1.0.0" }.
 type Marker = Record<string, string>;
 
-export function readMarker(): Marker {
+function readMarkerFile(path: string): Marker {
 	try {
-		return JSON.parse(readFileSync(markerPath, "utf8")) as Marker;
+		return JSON.parse(readFileSync(path, "utf8")) as Marker;
 	} catch {
 		return {};
 	}
 }
 
-export function writeMarkerEntry(target: string, version: string): void {
-	const m = readMarker();
+export function readMarker(files: MarkerFiles = DEFAULT_MARKER_FILES): Marker {
+	return { ...readMarkerFile(files.legacy), ...readMarkerFile(files.current) };
+}
+
+export function writeMarkerEntry(
+	target: string,
+	version: string,
+	files: MarkerFiles = DEFAULT_MARKER_FILES,
+): void {
+	const m = readMarker(files);
 	m[target] = version;
-	mkdirSync(join(homedir(), ".config", "dg"), { recursive: true });
-	writeFileSync(markerPath, `${JSON.stringify(m)}\n`);
+	mkdirSync(dirname(files.current), { recursive: true });
+	writeFileSync(files.current, `${JSON.stringify(m)}\n`);
 }
 
 /** Order dotted numeric versions; a leading v and non-numeric parts count as zero. */
