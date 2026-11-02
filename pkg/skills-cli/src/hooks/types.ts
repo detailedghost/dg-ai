@@ -1,4 +1,8 @@
-export type HookEvent = "PreToolUse" | "PostToolUse" | "SessionStart";
+export type HookEvent =
+	| "PreToolUse"
+	| "PostToolUse"
+	| "SessionStart"
+	| "commit-msg";
 export type HookRuntime = "claude" | "codex" | "opencode";
 
 export interface HookInput {
@@ -67,7 +71,7 @@ export interface HookDefinition {
 	matcher?: string;
 	runtimes: HookRuntime[];
 	settings?: Record<string, HookSettingSpec>;
-	load: () => Promise<{ default: HookHandler }>;
+	load?: () => Promise<{ default: HookHandler }>;
 }
 
 export interface SettingsWriter {

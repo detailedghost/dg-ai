@@ -99,10 +99,14 @@ function commit(
 	return git(repo, ["rev-parse", "HEAD"]);
 }
 
-function runMeaningful(repo: Pick<Repo, "dir">, args: readonly string[]) {
+function runMeaningful(
+	repo: Pick<Repo, "dir">,
+	args: readonly string[],
+	env: Record<string, string> = {},
+) {
 	const proc = Bun.spawnSync([BUN_BIN, "run", CLI, "meaningful", ...args], {
 		cwd: repo.dir,
-		env: process.env,
+		env: { ...process.env, ...env },
 	});
 	return {
 		exitCode: proc.exitCode,
@@ -404,6 +408,61 @@ describe("meaningful apply-json", () => {
 		expect(git(repo, ["log", "--format=%s", "-1", "HEAD"])).toBe(
 			"feat(scope): add a",
 		);
+	});
+
+	describe("AI co-author stripping", () => {
+		const group: JsonGroup = {
+			subject: "feat(scope): rework page",
+			body: "Body paragraph.\n\nCo-Authored-By: Codex <noreply@openai.com>",
+			coauthors: [
+				"Real Human <human@example.com>",
+				"Claude <noreply@anthropic.com>",
+			],
+			files: ["page.tsx"],
+		};
+		const apply = (env: Record<string, string>) => {
+			const repo = makeRepo();
+			const backup = commit(repo, { "page.tsx": "page\n" });
+			const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
+			const result = runMeaningful(
+				repo,
+				["apply-json", "--base", repo.base, jsonPlan([group])],
+				env,
+			);
+			expectApplied(repo, result, backup, tree);
+			return git(repo, ["log", "--format=%B", "-1", "HEAD"]);
+		};
+		const stripped = `${group.subject}\n\nBody paragraph.\n\nCo-Authored-By: Real Human <human@example.com>`;
+
+		test("keeps every trailer while the setting is off", () => {
+			expect(apply({})).toBe(
+				`${group.subject}\n\n${group.body}\n\nCo-Authored-By: Real Human <human@example.com>\nCo-Authored-By: Claude <noreply@anthropic.com>`,
+			);
+		});
+
+		test("removes AI trailers when DG_STRIP_AI_COAUTHORS=1", () => {
+			expect(apply({ DG_STRIP_AI_COAUTHORS: "1" })).toBe(stripped);
+		});
+
+		test("removes AI trailers when the hooks setting is on", () => {
+			const dgHome = fixtures.tmp("dg-meaningful-home-");
+			writeFileSync(
+				join(dgHome, "config.json"),
+				JSON.stringify({ hooks: { "strip-ai-coauthors": { enabled: "on" } } }),
+			);
+			expect(apply({ DG_HOME: dgHome })).toBe(stripped);
+		});
+
+		test("env 0 overrides the setting being on", () => {
+			const dgHome = fixtures.tmp("dg-meaningful-home-");
+			writeFileSync(
+				join(dgHome, "config.json"),
+				JSON.stringify({ hooks: { "strip-ai-coauthors": { enabled: "on" } } }),
+			);
+			expect(apply({ DG_HOME: dgHome, DG_STRIP_AI_COAUTHORS: "0" })).toContain(
+				"Claude",
+			);
+		});
 	});
 
 	test("stages bracketed pathspec-magic filenames literally", () => {

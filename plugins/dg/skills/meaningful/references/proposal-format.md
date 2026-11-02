@@ -39,7 +39,7 @@ The `info` JSON now includes `commits[].author` and `file_authors` (file → [au
 
 1. **Primary author** — for each group, identify which human author wrote the majority of its files using `file_authors`. Emit an `AUTHOR:` line per group (before `FILES:`). When files in a group are split across multiple authors, pick the dominant contributor as the primary author.
 1. **Co-authors** — if other humans touched files absorbed into this group, add them as `Co-Authored-By: Name <email>` trailers in the MSG body.
-1. **Keep** every `Co-Authored-By:` trailer from the original commits, AI ones included. The helper does not strip trailers.
+1. **Keep** every `Co-Authored-By:` trailer from the original commits, AI ones included, unless `strip-ai-coauthors` is on (`dg-skills hooks status` shows `strip-ai-coauthors.enabled = on`, or `DG_STRIP_AI_COAUTHORS=1`). Then leave AI trailers out and never add one; the helper also drops them.
 
 The `AUTHOR:` line must use `Name <email>` format. `commits[].author` contains
 only the name; obtain the matching email from `git log --format=%aE` for the

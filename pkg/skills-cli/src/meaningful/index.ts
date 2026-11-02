@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { protectedPushReason } from "@dg/common";
+import { isAiCoauthor, protectedPushReason, stripAiCoauthors } from "@dg/common";
 import { statePath, uniqueName } from "@dg/common/node";
+import { resolveStripAiCoauthors } from "../hooks/defs/strip-ai-coauthors";
 import {
 	baseBranch,
 	currentBranch,
@@ -129,7 +130,8 @@ async function cmdApplyJson(args: string[]): Promise<void> {
 		die(`plan file not found: ${planFile}`, EXIT.ERR);
 	}
 
-	const { base: planBase, groups } = parseJsonPlan(planText);
+	const strip = resolveStripAiCoauthors(process.env, (m) => void process.stderr.write(m)).on;
+	const { base: planBase, groups } = parseJsonPlan(planText, strip);
 
 	const ctx = await preflightAndCapture(baseOverride ?? planBase, ontoRef);
 
@@ -342,7 +344,7 @@ interface JsonPlan {
 }
 
 /** Parse a JSON plan into the same Group[] shape as the text parser. */
-function parseJsonPlan(text: string): { base?: string; groups: Group[] } {
+function parseJsonPlan(text: string, strip: boolean): { base?: string; groups: Group[] } {
 	let raw: unknown;
 	try {
 		raw = JSON.parse(text);
@@ -372,7 +374,9 @@ function parseJsonPlan(text: string): { base?: string; groups: Group[] } {
 
 		let msg = g.subject.trim();
 		if (g.body?.trim()) msg += `\n\n${g.body.trim()}`;
-		if (g.coauthors?.length) msg += `\n\n${g.coauthors.map((c) => `Co-Authored-By: ${c}`).join("\n")}`;
+		if (strip) msg = stripAiCoauthors(msg);
+		const coauthors = strip ? (g.coauthors ?? []).filter((c) => !isAiCoauthor(c)) : (g.coauthors ?? []);
+		if (coauthors.length) msg += `\n\n${coauthors.map((c) => `Co-Authored-By: ${c}`).join("\n")}`;
 
 		return { msg, author: g.author, files: g.files };
 	});

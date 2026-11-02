@@ -24,6 +24,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor hooks.
 - `pr-prose`: block a PR or MR body that is not plain English.
 - `pr-confirm`: ask before a PR or MR is created. Claude only, because Codex runs the command when a hook asks.
 - `spec-plan-lint`: validate a spec `plan.md` after it is written.
+- `strip-ai-coauthors`: remove AI `Co-Authored-By` trailers from commit messages. `enable` installs a git `commit-msg` hook in the current repo, chains any existing one, and turns the setting on; `disable` restores the old hook and turns it off. Also read by `meaningful apply-json`. `DG_STRIP_AI_COAUTHORS=1` or `0` overrides the setting.
 - `daily-prune`: once a day, remove scratch and state past TTL and merged clean worktrees. Claude and Codex only.
 
 ## Commands

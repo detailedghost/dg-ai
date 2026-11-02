@@ -119,7 +119,9 @@ describe("hooks disable --all", () => {
 			ownedObjects(world.readJson(world.paths.codex)).length,
 		).toBeGreaterThan(0);
 		expect(world.has(world.paths.opencodePlugin)).toBe(true);
-		const configBefore = world.text(world.paths.config);
+		const configBefore = world.readJson<{ hooks: Record<string, unknown> }>(
+			world.paths.config,
+		);
 
 		const result = await world.cli(["disable", "--all"]);
 		expect(result.code).toBe(0);
@@ -132,7 +134,12 @@ describe("hooks disable --all", () => {
 		expect(
 			world.readJson<{ plugin: string[] }>(world.paths.opencodeJson).plugin,
 		).toEqual(["other-plugin"]);
-		expect(world.text(world.paths.config)).toBe(configBefore);
+		expect(
+			world.readJson<{ hooks: Record<string, unknown> }>(world.paths.config).hooks,
+		).toEqual({
+			...configBefore.hooks,
+			"strip-ai-coauthors": { enabled: "off" },
+		});
 	});
 });
 

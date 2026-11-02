@@ -90,6 +90,10 @@ export async function runHook(
 		seams.stderr(`hooks run: unknown hook '${id}'\n`);
 		return 1;
 	}
+	if (!def.load) {
+		seams.stderr(`hooks run ${id}: runs from git, not from a tool event\n`);
+		return 1;
+	}
 	const event = await readStdinJson(stdin);
 	try {
 		const ctx = contextFor(env, seams, sessionOf(env, event.session_id));
