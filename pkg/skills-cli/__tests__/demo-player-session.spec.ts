@@ -226,3 +226,42 @@ describe("trustedSource", () => {
 		expect(trustedSource({ frame: evil, page: page(evil) }, origins)).toBe(false);
 	});
 });
+
+describe("openSession cleanup when the CDP connection fails", () => {
+	test("closes the Windows browser", async () => {
+		const src = (file: string) => join(import.meta.dir, "..", "src", file);
+		const code = `
+import { mock } from "bun:test";
+const closed = [];
+const real = await import(${JSON.stringify(src("pw/core/windows.ts"))});
+mock.module(${JSON.stringify(src("pw/core/windows.ts"))}, () => ({
+  ...real,
+  windowsProfileDir: async () => "/p",
+  startWindowsBrowser: async () => ({ cdpUrl: "http://127.0.0.1:1" }),
+  closeWindowsBrowser: async (profile) => { closed.push(profile); return { forced: 0, remaining: 0 }; },
+}));
+mock.module("playwright-core", () => ({
+  chromium: { connectOverCDP: async () => { throw new Error("ws refused"); } },
+}));
+const { openSession } = await import(${JSON.stringify(src("demo/player-process.ts"))});
+let error = "";
+try {
+  await openSession({ slug: "s", planPath: "/tmp/none", dir: "/tmp/none", video: false, startUrl: "https://example.test/", script: { title: "t", startUrl: "https://example.test/", steps: [] }, plan: { mode: "windows" } });
+} catch (e) { error = e.message; }
+console.log(JSON.stringify({ error, closed }));
+`;
+		const child = Bun.spawn([process.execPath, "-e", code], {
+			stdout: "pipe",
+			stderr: "pipe",
+			stdin: "ignore",
+		});
+		const [out, err] = await Promise.all([
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+			child.exited,
+		]);
+		const line = out.trim().split("\n").at(-1) ?? "";
+		expect(() => JSON.parse(line), `${out}\n${err}`).not.toThrow();
+		expect(JSON.parse(line)).toEqual({ error: "ws refused", closed: ["/p"] });
+	});
+});

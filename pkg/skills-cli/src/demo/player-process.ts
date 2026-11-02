@@ -11,7 +11,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { NARRATION_ASSET_BASE } from "@dg/common";
 import { ensurePrivateDir, wslChromiumArgs } from "@dg/common/node";
-import type { BrowserContext, Page, Route } from "playwright-core";
+import type { Browser, BrowserContext, Page, Route } from "playwright-core";
 import pkg from "../../package.json" with { type: "json" };
 import {
 	type BridgeEnd,
@@ -99,17 +99,19 @@ async function launchWindows(
 		profileDir: profile,
 		headless: false,
 	});
-	const browser = await chromium.connectOverCDP(windows.cdpUrl);
+	let browser: Browser | undefined;
 	const close = async (): Promise<void> => {
-		await browser.close().catch(() => undefined);
+		await browser?.close().catch(() => undefined);
 		await closeWindowsBrowser(profile).catch(() => undefined);
 	};
-	const create = (record: boolean) =>
-		browser.newContext({
-			viewport: job.video ? VIEWPORT : null,
-			...(record ? recording(job) : {}),
-		});
 	try {
+		browser = await chromium.connectOverCDP(windows.cdpUrl);
+		const connected = browser;
+		const create = (record: boolean) =>
+			connected.newContext({
+				viewport: job.video ? VIEWPORT : null,
+				...(record ? recording(job) : {}),
+			});
 		const context = await create(true).catch((error: unknown) => {
 			if (job.video) throw error;
 			return create(false);
