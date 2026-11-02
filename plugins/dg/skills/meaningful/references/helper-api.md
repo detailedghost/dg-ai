@@ -28,10 +28,10 @@ Stop with a message if `ahead < 2`.
 
 **`--base <ref>`**: Override the base ref. Any ref or SHA accepted by `git rev-parse`. When omitted, base is computed as `git merge-base HEAD origin/<default>` using the remote-tracking branch so a stale local main never widens the range. A stderr warning is emitted if local and remote default branches have diverged.
 
-### `apply-json [--base <ref>] <plan-file>`
+### `apply-json [--base <ref>] [--onto <new-parent>] <plan-file>`
 
 ```
-~/.dg/bin/dg-skills meaningful apply-json [--base <ref>] <plan-file>
+~/.dg/bin/dg-skills meaningful apply-json [--base <ref>] [--onto <new-parent>] <plan-file>
 ```
 
 Plans are JSON files with distinct `subject`/`body`/`author`/`coauthors` fields, so the commit message is assembled directly (`subject` + `"\n\n"` + body when a body is present). Co-author trailers are kept as written, including AI ones.
@@ -47,6 +47,8 @@ The helper:
 - Force-pushes with `--force-with-lease` (or `-u origin <branch>` if no upstream).
 
 **`--base <ref>`**: Same semantics as `info --base`. If omitted, the JSON plan's own top-level `"base"` field is used (see below); if both are omitted, base falls back to the default `info` merge-base computation.
+
+**`--onto <new-parent>`**: Rebuild the groups on `<new-parent>` instead of the old base. The old base is resolved as usual, but an explicit base must be an ancestor of HEAD. The helper refuses, naming both trees and changing nothing, unless `<new-parent>` has the same tree as the old base. The final tree must still equal the pre-reshape HEAD tree.
 
 Exit codes on validation failure: malformed JSON, a missing/empty `groups` array, a group missing `subject`/`files`, or a malformed `author`/`coauthors` entry all exit `2` (USAGE) before touching the working tree. A file-set mismatch against the diff exits `1` (ERR), also before any reset.
 
