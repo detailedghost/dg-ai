@@ -101,7 +101,7 @@ own `~/.claude/settings.json` themselves, with `<env>` replaced by `dev` or
         "hooks": [
           {
             "type": "command",
-            "command": "dg-skills channel-review start --env <env> >/dev/null 2>&1"
+            "command": "\"${DG_HOME:-$HOME/.local}/bin/dg-skills\" channel-review start --env <env> >/dev/null 2>&1"
           }
         ]
       }
