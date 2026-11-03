@@ -1018,6 +1018,21 @@ describe("board reads from the extension page", () => {
 		expect(seen[0]?.get("authorization")).toBe("Bearer tok-a");
 	});
 
+	test("sends the token of a session spawned by New chat once the original session entry is gone", async () => {
+		storedSessions = {
+			"chat_session:session-b": {
+				port: 47823,
+				sessionId: "session-b",
+				token: "tok-b",
+				agentIdentity: "claude",
+			},
+		};
+
+		const seen = await readHeaders();
+
+		expect(seen[0]?.get("authorization")).toBe("Bearer tok-b");
+	});
+
 	test("sends no Authorization header when no session is stored", async () => {
 		const seen = await readHeaders();
 
