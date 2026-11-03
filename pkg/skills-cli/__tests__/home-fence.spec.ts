@@ -51,7 +51,7 @@ describe("path resolvers", () => {
 
 	test("places extension folders under an override without spawning a process", () => {
 		const env = { DG_WINDOWS_HOME: "/w", HOME: "/h" };
-		const { copyPath } = extensionDest("chrome", env);
+		const { copyPath } = extensionDest("chrome", env, true);
 		expect(extensionDgDirs(env)).toContain(dirname(legacyExtensionDest("chrome", env).copyPath));
 		expect(copyPath).toBe(join("/w", "AppData", "Local", "dg", "dg-ai-extension-chrome"));
 	});
