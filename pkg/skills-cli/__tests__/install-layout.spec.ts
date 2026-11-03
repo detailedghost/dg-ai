@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { finishLauncherLayout, migrateBeforeInstall, passwdHomeWhenCurrent, pathHint } from "../src/install/layout";
+import { finishLauncherLayout, installPasswdHome, migrateBeforeInstall, pathHint } from "../src/install/layout";
 
 const posix = describe.skipIf(process.platform === "win32");
 
@@ -84,41 +84,85 @@ posix("finishLauncherLayout", () => {
 
 posix("ssms allow config move", () => {
 	let base: string;
+	let passwd: string;
+	let allowFile: string;
+	let trusted: string;
 	beforeEach(() => {
 		base = mkdtempSync(join(tmpdir(), "dg-ssms-move-"));
+		passwd = join(base, "passwd-home");
+		allowFile = join(passwd, ".dg", "ssms", "config.yaml");
+		trusted = join(passwd, ".config", "dg", "ssms", "config.yaml");
 	});
 	afterEach(() => rmSync(base, { recursive: true, force: true }));
 
-	test("moves the passwd home allow config to its fixed config folder when DG_HOME points elsewhere", () => {
-		const passwd = join(base, "home");
-		const old = join(passwd, ".dg", "ssms", "config.yaml");
-		mkdirSync(dirname(old), { recursive: true });
-		writeFileSync(old, "allow_send: true\n");
-		const paths = resolveDgPaths({ platform: "linux", homeDir: passwd, env: { DG_HOME: join(base, "dg-home") } });
+	const putFile = (path: string, text: string) => {
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, text);
+	};
+	const redirected = () =>
+		resolveDgPaths({
+			platform: "linux",
+			homeDir: join(base, "sandbox"),
+			env: { DG_HOME: join(base, "dg-home"), XDG_CONFIG_HOME: join(base, "xdg") },
+		});
+
+	test("moves the passwd home allow file to the passwd config folder when HOME, DG_HOME and XDG_CONFIG_HOME point elsewhere", () => {
+		putFile(allowFile, "allow_send: true\n");
+
+		migrateBeforeInstall(redirected(), () => {}, passwd);
+
+		expect(readFileSync(trusted, "utf8")).toBe("allow_send: true\n");
+		expect(existsSync(allowFile)).toBe(false);
+		expect(existsSync(join(base, "xdg", "dg", "ssms", "config.yaml"))).toBe(false);
+		expect(existsSync(join(base, "dg-home", "config", "ssms", "config.yaml"))).toBe(false);
+	});
+
+	test("moves the passwd home allow file when HOME is the passwd home and XDG_CONFIG_HOME points elsewhere", () => {
+		putFile(allowFile, "allow_send: true\n");
+		putFile(join(passwd, ".dg", "ssms", "drafts", "d1.json"), "{}");
+		const paths = resolveDgPaths({ platform: "linux", homeDir: passwd, env: { XDG_CONFIG_HOME: join(base, "xdg") } });
+
+		migrateBeforeInstall(paths, () => {}, passwd);
+
+		expect(readFileSync(trusted, "utf8")).toBe("allow_send: true\n");
+		expect(existsSync(join(base, "xdg", "dg", "ssms", "config.yaml"))).toBe(false);
+		expect(readFileSync(join(paths.stateDir, "ssms", "drafts", "d1.json"), "utf8")).toBe("{}");
+	});
+
+	test("never moves a DG_HOME ssms config into the passwd config folder", () => {
+		const paths = redirected();
+		putFile(join(paths.legacyHome, "ssms", "config.yaml"), "allow_send: true\n");
+
+		migrateBeforeInstall(paths, () => {}, passwd);
+
+		expect(existsSync(trusted)).toBe(false);
+		expect(readFileSync(join(paths.configDir, "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
+	});
+
+	test("never writes over an allow file that already exists in the passwd config folder", () => {
+		putFile(allowFile, "allow_send: true\n");
+		putFile(trusted, "allow_send: false\n");
 		const lines: string[] = [];
 
-		migrateBeforeInstall(paths, (line) => lines.push(line), passwd);
+		migrateBeforeInstall(redirected(), (line) => lines.push(line), passwd);
 
-		expect(readFileSync(join(passwd, ".config", "dg", "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
-		expect(existsSync(old)).toBe(false);
+		expect(readFileSync(trusted, "utf8")).toBe("allow_send: false\n");
+		expect(readFileSync(allowFile, "utf8")).toBe("allow_send: true\n");
+		expect(lines).toContain(`dg: kept ${allowFile}; ${trusted} already exists`);
 	});
 
-	test("without a trusted passwd home the old ssms config goes to the plain config folder", () => {
-		const home = join(base, "home");
-		const old = join(home, ".dg", "ssms", "config.yaml");
-		mkdirSync(dirname(old), { recursive: true });
-		writeFileSync(old, "allow_send: true\n");
-		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: { XDG_CONFIG_HOME: join(base, "xdg") } });
+	test("keeps the passwd home allow file while a process that writes the ssms folder runs", () => {
+		putFile(allowFile, "allow_send: true\n");
+		putFile(join(passwd, ".dg", "ssms", "ssms.pid"), String(process.pid));
 
-		migrateBeforeInstall(paths, () => {}, undefined);
+		migrateBeforeInstall(redirected(), () => {}, passwd);
 
-		expect(readFileSync(join(base, "xdg", "dg", "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
-		expect(existsSync(join(home, ".config", "dg", "ssms", "config.yaml"))).toBe(false);
+		expect(existsSync(trusted)).toBe(false);
+		expect(readFileSync(allowFile, "utf8")).toBe("allow_send: true\n");
 	});
 
-	test("never moves the passwd home config when HOME is not the passwd home", () => {
-		expect(passwdHomeWhenCurrent("/home/ada", "/tmp/sandbox")).toBeUndefined();
-		expect(passwdHomeWhenCurrent("/home/ada", "/home/ada/")).toBe("/home/ada");
-		expect(passwdHomeWhenCurrent(undefined, "/home/ada")).toBeUndefined();
+	test("finds no passwd home under the test runner so spawned installs never reach the real account", () => {
+		expect(installPasswdHome({ NODE_ENV: "test" }, () => "/home/ada")).toBeUndefined();
+		expect(installPasswdHome({}, () => "/home/ada")).toBe("/home/ada");
 	});
 });

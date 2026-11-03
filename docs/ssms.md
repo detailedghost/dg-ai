@@ -72,9 +72,12 @@ on `PATH`.
 releases kept everything in `~/.dg/ssms`. The first `dg-skills install` after
 the per-OS layout moves the state there and the fixed `config.yaml` to the
 config folder named below. Each move copies, checks the copy, and only then
-deletes the old file. It never writes over a file that already exists. Install
-moves the fixed config only when `HOME` is the passwd home. Otherwise
-`allow_send` stays off until you move the file by hand.
+deletes the old file. It never writes over a file that already exists, and it
+skips the move while ssms runs. Install finds both the old and the new path of
+the fixed config from the passwd home alone, so it moves that file even when
+`HOME`, `DG_HOME` or `XDG_CONFIG_HOME` point elsewhere, and none of them can
+choose the file. An `ssms/config.yaml` under `DG_HOME` is not the fixed config
+and goes to `$DG_HOME/config`.
 
 ## Drafts
 

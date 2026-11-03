@@ -44,7 +44,7 @@ function pidAlive(file: string): boolean {
 	}
 }
 
-function liveWriterFolders(legacy: string): string[] {
+export function liveWriterFolders(legacy: string): string[] {
 	return WRITER_FOLDERS.map((name) => join(legacy, name)).filter((dir) => {
 		try {
 			return readdirSync(dir).some((name) => name.endsWith(".pid") && pidAlive(join(dir, name)));
