@@ -59,14 +59,18 @@ export function migratingKeychainBackend(
 	warn: (line: string) => void,
 ): KeychainBackend {
 	let warned = false;
-	const warnOnce = (reason: string) => {
+	const warnOnce = (reason: string, outcome = "dg keeps the old entry and reads it from the old account") => {
 		if (warned) return;
 		warned = true;
-		warn(`dg: keychain secret ${ACCOUNT} ${reason}; dg keeps the old entry and reads it from the old account`);
+		warn(`dg: keychain secret ${ACCOUNT} ${reason}; ${outcome}`);
 	};
 	const dropLegacy = async () => {
 		const removed = await legacy.remove?.().catch(() => "unreachable" as const);
-		if (removed !== "removed") warnOnce("moved to the new account, but the old entry could not be deleted");
+		if (removed !== "removed")
+			warnOnce(
+				"moved to the new account, but the old entry could not be deleted",
+				"dg reads the new account, and a copy stays in the old one",
+			);
 	};
 	return {
 		sourceLabel: current.sourceLabel,

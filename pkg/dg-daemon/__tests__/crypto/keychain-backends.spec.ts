@@ -145,8 +145,9 @@ describe("migratingKeychainBackend", () => {
 		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
 		expect(current.value).toBe(SECRET);
 		expect(legacy.value).toBe(SECRET);
-		expect(warnings).toHaveLength(1);
-		expect(warnings[0]).not.toContain(SECRET);
+		expect(warnings).toEqual([
+			"dg: keychain secret chat-store-kek moved to the new account, but the old entry could not be deleted; dg reads the new account, and a copy stays in the old one",
+		]);
 	});
 
 	it("reports unreachable, not absent, when the new account is empty and the old one cannot be read", async () => {
