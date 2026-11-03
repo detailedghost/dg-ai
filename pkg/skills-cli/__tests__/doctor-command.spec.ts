@@ -19,7 +19,7 @@ import {
 import { anyToolCheck, cliOnlyCheck, pairingCheck } from "../src/doctor/checks";
 import { DOCTOR_REGISTRY } from "../src/doctor/registry";
 import { createContext, doctorExitCode, runDoctor } from "../src/doctor/runner";
-import { sharedChecks } from "../src/doctor/shared";
+import { launcherPathFix, sharedChecks } from "../src/doctor/shared";
 import type { CheckStatus } from "../src/doctor/types";
 import {
 	CLI_PATH,
@@ -979,6 +979,13 @@ describe("dg-skills doctor launcher-on-path", () => {
 		const result = await launcherCheck()?.run(ctx);
 		expect(result?.status).toBe("warn");
 		expect(result?.fix).toBe(`export PATH="${world.paths.binDir}:$PATH"`);
+	});
+
+	test("names a PATH fix for each shell, with a PowerShell user PATH change on Windows", () => {
+		expect(launcherPathFix("/h/.local/bin", "linux")).toBe('export PATH="/h/.local/bin:$PATH"');
+		expect(launcherPathFix("C:\\Users\\u\\AppData\\Local\\dg\\bin", "win32")).toBe(
+			"[Environment]::SetEnvironmentVariable('Path', 'C:\\Users\\u\\AppData\\Local\\dg\\bin;' + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')",
+		);
 	});
 
 	test("passes when the bin dir is on PATH", async () => {

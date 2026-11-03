@@ -29,6 +29,13 @@ export function rootCheck(
 
 export const SHARED_ITEM = "shared";
 
+/** The shell line that puts the launcher folder first on PATH: PowerShell on Windows, POSIX sh elsewhere. */
+export function launcherPathFix(binDir: string, platform: NodeJS.Platform = process.platform): string {
+	if (platform !== "win32") return `export PATH="${binDir}:$PATH"`;
+	const quoted = binDir.replaceAll("'", "''");
+	return `[Environment]::SetEnvironmentVariable('Path', '${quoted};' + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')`;
+}
+
 export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "plugin-installed",
@@ -85,7 +92,7 @@ export const sharedChecks: DoctorCheck[] = [
 				return ok(`${ctx.paths.binDir} is on PATH`);
 			return warn(
 				`${ctx.paths.binDir} is not on PATH, so skills fall back to the full launcher path`,
-				`export PATH="${ctx.paths.binDir}:$PATH"`,
+				launcherPathFix(ctx.paths.binDir),
 			);
 		},
 	},
