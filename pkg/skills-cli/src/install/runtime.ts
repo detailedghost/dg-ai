@@ -82,8 +82,13 @@ export async function stageRuntime(root: string, pin: RuntimePin): Promise<strin
 	return realpathSync(bin);
 }
 
-/** Points `runtime/current` at the pinned Bun that `stageRuntime` installed. */
-export function activateRuntime(root: string, pin: RuntimePin): void {
+/** Points `runtime/current` at the pinned Bun that `stageRuntime` installed; the result puts the old link back. */
+export function activateRuntime(root: string, pin: RuntimePin): () => void {
 	const dirName = `bun-v${pin.version}`;
-	if (readCurrent(root, "runtime") !== dirName) linkCurrent(root, "runtime", dirName);
+	const previous = readCurrent(root, "runtime");
+	if (previous !== dirName) linkCurrent(root, "runtime", dirName);
+	return () => {
+		if (previous) linkCurrent(root, "runtime", previous);
+		else rmSync(join(root, "runtime", "current"), { force: true });
+	};
 }

@@ -87,6 +87,32 @@ describe("stageRuntime and activateRuntime", () => {
 	});
 });
 
+describe("activateRuntime undo", () => {
+	const pin = runtimePinFor("unused");
+
+	test("restores the previous runtime/current target", () => {
+		const runtime = join(sandbox.root, "runtime");
+		mkdirSync(join(runtime, "bun-v0.0.1"), { recursive: true });
+		symlinkSync("bun-v0.0.1", join(runtime, "current"));
+
+		const undo = activateRuntime(sandbox.root, pin);
+		expect(basename(readlinkSync(join(runtime, "current")))).toBe(`bun-v${pin.version}`);
+		undo();
+
+		expect(basename(readlinkSync(join(runtime, "current")))).toBe("bun-v0.0.1");
+	});
+
+	test("removes runtime/current when there was none", () => {
+		const runtime = join(sandbox.root, "runtime");
+		mkdirSync(runtime, { recursive: true });
+
+		const undo = activateRuntime(sandbox.root, pin);
+		undo();
+
+		expect(readdirSync(runtime)).toEqual([]);
+	});
+});
+
 describe("stageRuntime with concurrent installers", () => {
 	function zipFor(version: string): Uint8Array {
 		return buildArchive("zip", sandbox.directory, {

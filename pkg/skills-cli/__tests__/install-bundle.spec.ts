@@ -213,4 +213,18 @@ describe("fetchBundle", () => {
 
 		expect(called).toBe(false);
 	});
+
+	test("runs the undo that beforeActivate returned when lib/current cannot be switched", async () => {
+		mkdirSync(join(sandbox.root, "lib", "current", "blocker"), { recursive: true });
+		serve();
+		let undone = false;
+
+		await expect(
+			fetchBundle(sandbox.root, release(), process.execPath, () => () => {
+				undone = true;
+			}),
+		).rejects.toThrow();
+
+		expect(undone).toBe(true);
+	});
 });

@@ -232,6 +232,32 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 		}
 	});
 
+	for (const previousRuntime of [true, false]) {
+		test(`a failed lib/current switch restores runtime/current (${previousRuntime ? "previous runtime" : "no previous runtime"})`, async () => {
+			const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-link-"));
+			const home = join(directory, "home");
+			mkdirSync(join(home, "lib", "current", "blocker"), { recursive: true });
+			if (previousRuntime) {
+				mkdirSync(join(home, "runtime", "bun-old"), { recursive: true });
+				symlinkSync("bun-old", join(home, "runtime", "current"));
+			}
+			try {
+				const log = join(directory, "fetch.log");
+				writeFileSync(log, "");
+				const { preload } = writeReleaseServer(directory, log, VERSION);
+
+				const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
+
+				expect(result.stderr).toContain("skipped");
+				const current = join(home, "runtime", "current");
+				if (previousRuntime) expect(basename(readlinkSync(current))).toBe("bun-old");
+				else expect(existsSync(current)).toBe(false);
+			} finally {
+				rmSync(directory, { recursive: true, force: true });
+			}
+		});
+	}
+
 	test("install --version <previous release> relinks lib/current with no bundle or runtime download while its directory exists", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-"));
 		const home = join(directory, "home");
