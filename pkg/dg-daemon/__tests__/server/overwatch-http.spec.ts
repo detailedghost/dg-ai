@@ -258,6 +258,30 @@ describe("pinned-origin gate with no Origin header", () => {
 		expect(response.status).toBe(200);
 	});
 
+	it("passes the extension board read with no Origin and the token from its own session create", async () => {
+		const { port, dgHome } = await boot();
+		await pinExtensionOrigin(port);
+		await seedLane(dgHome);
+		const created = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			method: "POST",
+			headers: {
+				...headers(port, EXTENSION_ORIGIN),
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ agentIdentity: "claude" }),
+		});
+		const { token } = (await created.json()) as { token: string };
+
+		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: { ...headers(port), Authorization: `Bearer ${token}` },
+		});
+
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({
+			lanes: [{ chat: "print", publisher: "print-agent" }],
+		});
+	});
+
 	it("passes GET /overwatch and POST /overwatch/action with no Origin and a live token", async () => {
 		const { port, dgHome } = await boot();
 		const session = await registerSession(port);
