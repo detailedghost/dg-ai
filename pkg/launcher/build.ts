@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { buildPages } from "../pages/build";
@@ -71,6 +71,7 @@ function revision(): string | undefined {
 export async function buildLauncher(outdir: string): Promise<{ lib: string; tarball: string }> {
 	const plugins = [playwrightMetadata, namedChunks];
 	const [player] = await Promise.all([buildPlayer(), buildPages()]);
+	const { version } = JSON.parse(readFileSync(join(PKG, "skills-cli", "package.json"), "utf8")) as { version: string };
 	const sha = process.env.DG_BUILD_SHA ?? revision() ?? (await hashBundle(ENTRY, plugins, [player]));
 	const lib = join(outdir, "lib");
 	rmSync(outdir, { recursive: true, force: true });
@@ -83,11 +84,14 @@ export async function buildLauncher(outdir: string): Promise<{ lib: string; tarb
 		naming: { chunk: "chunks/[name]-[hash].js" },
 		external: EXTERNAL,
 		plugins,
-		define: { "process.env.DG_BUILD_SHA": JSON.stringify(sha) },
+		define: {
+			"process.env.DG_BUILD_VERSION": JSON.stringify(version),
+			"process.env.DG_BUILD_SHA": JSON.stringify(sha),
+		},
 	});
 	if (!result.success) throw new AggregateError(result.logs, "Launcher bundle build failed.");
 
-	const { version } = JSON.parse(readFileSync(join(PKG, "skills-cli", "package.json"), "utf8")) as { version: string };
+	writeFileSync(join(lib, "build.json"), `${JSON.stringify({ version, sha })}\n`);
 	const files: Record<string, Uint8Array> = {};
 	for (const file of walk(lib)) files[relative(lib, file).split(sep).join("/")] = readFileSync(file);
 	const tarball = join(outdir, `dg-lib-${version}.tar.gz`);

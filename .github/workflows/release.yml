@@ -126,7 +126,7 @@ jobs:
           retention-days: 1
 
   smoke-bundle:
-    needs: build-bundle
+    needs: [detect, build-bundle]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -147,6 +147,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RUNTIME_KEY: ${{ matrix.runtime }}
+      VERSION: ${{ needs.detect.outputs.version }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -215,8 +216,8 @@ jobs:
           daemon="$("$bun" lib/dg.js dg-daemon --version)"
           echo "dg-skills ${skills}, dg-agent ${agent}, dg-daemon ${daemon}"
           for out in "$skills" "$agent" "$daemon"; do
-            if [ "$out" != "$GITHUB_SHA" ]; then
-              echo "::error::--version printed '${out}', expected ${GITHUB_SHA}"
+            if [ "$out" != "$VERSION" ]; then
+              echo "::error::--version printed '${out}', expected ${VERSION}"
               exit 1
             fi
           done

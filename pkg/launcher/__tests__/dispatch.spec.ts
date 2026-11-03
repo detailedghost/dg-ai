@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildBundle, run } from "./bundle-fixtures";
 
 function headRevision(): string {
@@ -8,7 +10,7 @@ function headRevision(): string {
 const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"];
 
 describe("dg.js dispatcher", () => {
-	const { bun, entry } = buildBundle();
+	const { bun, entry, lib } = buildBundle();
 
 	test("dg-skills --version prints one stamped version line and exits 0", () => {
 		const result = run(bun, entry, ["dg-skills", "--version"]);
@@ -45,8 +47,18 @@ describe("dg.js dispatcher", () => {
 		expect(result.stdout).toContain("stash");
 	});
 
-	test("the stamped version equals git HEAD at build time", () => {
-		expect(run(bun, entry, ["dg-skills", "--version"]).stdout.trim()).toBe(process.env.DG_BUILD_SHA ?? headRevision());
+	test("the stamped version equals the skills-cli package version, not the commit", () => {
+		const { version } = JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "skills-cli", "package.json"), "utf8")) as {
+			version: string;
+		};
+		for (const name of PROGRAMS) {
+			expect(run(bun, entry, [name, "--version"]).stdout.trim()).toBe(version);
+		}
+	});
+
+	test("build.json keeps the commit as separate metadata", () => {
+		const meta = JSON.parse(readFileSync(join(lib, "build.json"), "utf8")) as { sha: string };
+		expect(meta.sha).toBe(process.env.DG_BUILD_SHA ?? headRevision());
 	});
 
 	test("a name inherited from Object.prototype is not a program", () => {

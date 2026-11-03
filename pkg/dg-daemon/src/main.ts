@@ -1,6 +1,6 @@
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_SHA ?? "dev"}\n`);
+		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
 		return 0;
 	}
 	const [

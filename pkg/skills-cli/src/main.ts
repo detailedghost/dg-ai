@@ -1,4 +1,4 @@
-export const VERSION = process.env.DG_BUILD_SHA ?? "dev";
+export const VERSION = process.env.DG_BUILD_VERSION ?? "dev";
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
