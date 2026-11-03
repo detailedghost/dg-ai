@@ -11,7 +11,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { personasDest, run, skillsInstallDest } from "@dg/common/node";
+import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
 import { refreshPhoneListener } from "./phone-listener";
 import {
 	assertSkillsOnlyFlags,
@@ -45,6 +45,7 @@ import {
 import { removeLegacyExtensions, syncDirInPlace } from "../utils/extension-files";
 import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
+import { prunePluginCache } from "../install/prune-plugin-cache";
 
 function retireLegacyExtensions(): void {
 	if (removeLegacyExtensions(extensionDgDirs()).length === 0) return;
@@ -251,13 +252,25 @@ function binarySpec(binaryName: string): BinarySpec {
 	return spec;
 }
 
-async function installCli(): Promise<void> {
+function pruneClaudePluginCache(keep: boolean): void {
+	prunePluginCache({ home: homedir(), now: Date.now(), keep, log: console.log });
+}
+
+function noteForeignDgHome(): void {
+	const home = process.env.DG_HOME;
+	if (home && resolve(home) !== resolve(resolveDgPaths({ env: {} }).stateDir)) {
+		console.error(`note: DG_HOME=${home}; installing there`);
+	}
+}
+
+async function installCli(keepCache: boolean): Promise<void> {
 	const releases = await listReleases();
 	for (const spec of BINARIES) {
 		await installBinary(spec, releases);
 	}
 	removeRetiredBinaries();
 	refreshPhoneListener();
+	pruneClaudePluginCache(keepCache);
 }
 
 /** Skills-only installs fetch the dg-skills CLI so the skills can run it; never the daemon, agent or extension. */
@@ -281,7 +294,7 @@ async function installSkillsCli(version?: string, releases?: Release[]): Promise
 	}
 }
 
-async function installCliOnly(version?: string): Promise<void> {
+async function installCliOnly(keepCache: boolean, version?: string): Promise<void> {
 	const releases = await listReleases();
 	if (version) {
 		await installPinnedBinaries([{ ...binarySpec("dg-skills"), version }], releases);
@@ -297,10 +310,11 @@ async function installCliOnly(version?: string): Promise<void> {
 	console.log(
 		'CLI-only install: the extension, dg-daemon and dg-agent were skipped. Run "dg-skills install" to add them.',
 	);
+	pruneClaudePluginCache(keepCache);
 }
 
 /** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
-async function installAgentOnly(version?: string): Promise<void> {
+async function installAgentOnly(keepCache: boolean, version?: string): Promise<void> {
 	const releases = await listReleases();
 	if (version) {
 		await installPinnedBinaries(
@@ -316,6 +330,7 @@ async function installAgentOnly(version?: string): Promise<void> {
 		'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
 	);
 	refreshPhoneListener();
+	pruneClaudePluginCache(keepCache);
 }
 
 /** Runs `stage`, then the staged/upgrade/first-install messaging and marker write shared by every install path. */
@@ -338,7 +353,7 @@ function finishExtensionStage(
 }
 
 /** A pinned default install: resolves and downloads the extension and every binary before committing any of them. */
-async function installPinnedAll(target: Target, pin: string): Promise<void> {
+async function installPinnedAll(target: Target, pin: string, keepCache: boolean): Promise<void> {
 	const dest = extensionDest(target);
 	const releases = await listReleases();
 
@@ -363,16 +378,18 @@ async function installPinnedAll(target: Target, pin: string): Promise<void> {
 	setCliOnly(false);
 	removeRetiredBinaries();
 	refreshPhoneListener();
+	pruneClaudePluginCache(keepCache);
 }
 
 async function install(
 	target: Target,
 	forceLocal: boolean,
-	repo?: string,
-	pin?: string,
+	repo: string | undefined,
+	pin: string | undefined,
+	keepCache: boolean,
 ): Promise<void> {
 	if (!forceLocal && pin) {
-		await installPinnedAll(target, pin);
+		await installPinnedAll(target, pin, keepCache);
 		return;
 	}
 	setCliOnly(false);
@@ -408,14 +425,14 @@ async function install(
 		console.log(
 			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
-		if (!forceLocal) await installCli();
+		if (!forceLocal) await installCli(keepCache);
 		return;
 	}
 
 	finishExtensionStage(target, dest, version, markerVersion, stage);
 
 	// Also keep the compiled CLI current (skip in --local dev, where we run source).
-	if (!forceLocal) await installCli();
+	if (!forceLocal) await installCli(keepCache);
 }
 
 export function registerInstall(program: Command): void {
@@ -447,6 +464,10 @@ export function registerInstall(program: Command): void {
 			"directory for --skills-only (default: $DG_SKILLS_DEST, else $DG_HOME/skills or ~/.dg/skills)",
 		)
 		.option(
+			"--keep-cache",
+			"leave old dg plugin versions in the Claude plugin cache",
+		)
+		.option(
 			"--version <x.y.z>",
 			"pin every part to the vX.Y.Z release instead of the newest; fails before any change if a pinned release does not exist",
 		)
@@ -461,8 +482,10 @@ export function registerInstall(program: Command): void {
 					skillsOnly?: boolean;
 					dest?: string;
 					version?: string;
+					keepCache?: boolean;
 				},
 			) => {
+				noteForeignDgHome();
 				if (opts.skillsOnly) {
 					assertSkillsOnlyFlags({
 						cliOnly: !!opts.cliOnly,
@@ -487,13 +510,14 @@ export function registerInstall(program: Command): void {
 				if (opts.cliOnly && opts.agentOnly) {
 					throw new Error("install accepts only one of --cli-only and --agent-only");
 				}
-				if (opts.cliOnly) return installCliOnly(opts.version);
-				if (opts.agentOnly) return installAgentOnly(opts.version);
+				if (opts.cliOnly) return installCliOnly(!!opts.keepCache || !!opts.local, opts.version);
+				if (opts.agentOnly) return installAgentOnly(!!opts.keepCache || !!opts.local, opts.version);
 				await install(
 					target === "firefox" ? "firefox" : "chrome",
 					!!opts.local,
 					opts.repo,
 					opts.version,
+					!!opts.keepCache,
 				);
 			},
 		);

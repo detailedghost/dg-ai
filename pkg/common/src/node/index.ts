@@ -11,6 +11,7 @@ export * from "./marker";
 export * from "./oauth-loopback";
 export * from "./owner-token";
 export * from "./paths";
+export * from "./plugin-cache";
 export * from "./pidfile";
 export * from "./plugin-skills";
 export * from "./process";

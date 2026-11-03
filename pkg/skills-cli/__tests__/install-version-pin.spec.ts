@@ -113,7 +113,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 					childEnv(home),
 				);
 
-				expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+				expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 
 				const urls = fetchedUrls(fetchLog);
 				expect(urls.some((url) => url.endsWith(`/${layout.tags.skills}/${assetName("dg-skills")}`))).toBe(true);
@@ -146,7 +146,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 				childEnv(home),
 			);
 
-			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe(`fake dg-skills ${MODERN.pin}`);
 			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe(agentScript(MODERN.pin));
 			expect(readFileSync(join(bin, ".dg-skills.version"), "utf8").trim()).toBe(MODERN.pin);

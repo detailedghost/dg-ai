@@ -98,6 +98,33 @@ extension — so a pin never leaves some parts updated and others not.
 Leaving the version unset keeps today's behavior: install the newest of
 each, warning and skipping one that can't be reached.
 
+## Plugin cache
+
+Claude Code keeps every dg plugin version under
+`~/.claude/plugins/cache/<marketplace>/dg/<version>/` and removes orphaned ones
+about 14 days after it marks them. `dg-skills install` reclaims that space now,
+in every mode except `--skills-only` and `--local`, which is a dev build that
+never touches release binaries. It prints one line, for example
+`plugin cache: removed 1.20.0, 1.21.0 (58 MB); kept 1.24.0 (active)`.
+
+Install keeps a version when any of these is true:
+
+- `installed_plugins.json` names it.
+- A session read it in the last 24 hours (the `.in_use` folder changed).
+- An `.in_use` entry names a live process.
+- It has no `.orphaned_at` marker. Install never deletes a version in an unknown
+  state, and prints `kept <version> (unknown state)`.
+
+Install skips the step and prints a reason when `installed_plugins.json` is
+unreadable. It never follows a symlink and never touches other plugins or the
+marketplace clones. Pass `--keep-cache` to leave the cache alone.
+
+`dg-skills doctor install` reports stale versions and how much space they use.
+
+When `DG_HOME` is set to something other than `~/.dg`, install prints
+`note: DG_HOME=<path>; installing there` to stderr before it changes anything,
+and `dg-skills doctor` warns.
+
 ## CLI-only install
 
 Install only the `dg-skills` binary and the skills that run without the browser
