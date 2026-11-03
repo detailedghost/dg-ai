@@ -104,20 +104,22 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 ### Slice 3 — docs-adr-d
 
 #### Engineering
-- [ ] docs/install.md: Recommended plugins section (what, pin, bump, --with-recommended, Codex and OpenCode path, collisions, offline behavior, removal of private copies)
-- [ ] polish/references/pr.md install hint becomes `dg-skills install --with-recommended` while keeping the guard sentence
-- [ ] ADR 0027 and toc entry
-- [ ] plugins/dg/skills/README.md and README.md drop the teach and wait-what rows; docs/install.md says /teach and /wait-what now come from --with-recommended (mattpocock-skills)
+- [x] docs/install.md: Recommended plugins section (what, pin, bump, --with-recommended, Codex and OpenCode path, collisions, offline behavior, removal of private copies)
+- [x] polish/references/pr.md install hint becomes `dg-skills install --with-recommended` while keeping the guard sentence
+- [x] ADR 0027 and toc entry
+- [x] plugins/dg/skills/README.md and README.md drop the teach and wait-what rows; docs/install.md says /teach and /wait-what now come from --with-recommended (mattpocock-skills)
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: imported-plugins-optional.spec.ts still passes after the pr.md edit
-- [ ] markdownlint and vale pass
+- [x] Contract: imported-plugins-optional.spec.ts still passes after the pr.md edit
+- [ ] markdownlint and vale pass (markdownlint clean; vale not installed locally)
 
 #### Acceptance Criteria
-- [ ] Given docs/install.md, when a user searches for unslop, then they find the install flag and the list of private copies to delete
+- [x] Given docs/install.md, when a user searches for unslop, then they find the install flag and the list of private copies to delete
 
 ## Slice Summaries
+
+- Slice 3: docs/install.md Recommended plugins section, ADR 0027 (Proposed) with its toc link, the polish PR hint now says dg-skills install --with-recommended, and recommended-plugins-docs.spec.ts guards them.
 
 - Slice 2: --with-recommended installs unslop and mattpocock-skills for Claude Code (claude plugin CLI, sha checked after install) and for --skills-only dests (fetch at the pinned sha, copy only regular tracked files of declared skill dirs with a SKILL.md, staged then swapped). teach and wait-what are retired; a retired folder is removed only when its SKILL.md hash matches a dg copy, in TS and both bootstraps. The two online acceptance items stay open until a manual run.
 
