@@ -10,7 +10,7 @@ const FALLBACK_DIR = "$HOME/.local/bin";
 const LEGACY_LAUNCHER =
 	/(?:~|<home>|\$HOME)\/\.dg\/bin\/(dg-skills|dg-agent|dg-daemon)/g;
 const SENTENCE =
-	/\n *Call `dg-[a-z]+`(?: and `dg-[a-z]+`)* in every later step\. If only the [^\n]* instead\.\n/;
+	/\n *Call `dg-[a-z]+`(?: and `dg-[a-z]+`)* in every later step\. If [^\n]* instead\.\n/;
 const FENCE = new RegExp(
 	`^( *)\`\`\`(bash|sh)\\n([\\s\\S]*?)^\\1\`\`\`\\n(?:${SENTENCE.source})?`,
 	"gm",
@@ -65,9 +65,9 @@ function sentence(probes: Probe[]): string {
 	const programs = [...new Set(probes.map((probe) => probe.program))];
 	const names = programs.map((program) => `\`${program}\``).join(" and ");
 	if (probes.length === 1) {
-		return `Call ${names} in every later step. If only the second line answered, call \`${FALLBACK_DIR}/${programs[0]}\` instead.`;
+		return `Call ${names} in every later step. If \`${programs[0]}\` alone does not answer, also after the bootstrap, call \`${FALLBACK_DIR}/${programs[0]}\` instead.`;
 	}
-	return `Call ${names} in every later step. If only the \`${FALLBACK_DIR}\` lines answered, call each one by its \`${FALLBACK_DIR}\` path instead.`;
+	return `Call ${names} in every later step. If a bare name does not answer, also after the bootstrap, call it by its \`${FALLBACK_DIR}\` path instead.`;
 }
 
 /** The uniform first-run block: the bare launcher, then the launcher path, then the bootstrap. */

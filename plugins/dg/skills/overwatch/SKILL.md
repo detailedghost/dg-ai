@@ -24,7 +24,7 @@ dg-agent --version >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-agent` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-agent` instead.
+Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-agent` instead.
 
 If a step fails, run dg-skills doctor require-extension overwatch-snapshot.
 

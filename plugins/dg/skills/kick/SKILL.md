@@ -19,7 +19,7 @@ dg-skills spec --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-skills` instead.
 
 If a step fails, run dg-skills doctor spec.
 

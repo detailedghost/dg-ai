@@ -30,6 +30,13 @@ describe("skill-bootstrap-block --check", () => {
 		expect(result.code).toBe(0);
 	});
 
+	test("tells the agent to use the launcher path whenever the bare name does not answer", () => {
+		const text = readFileSync(join(SKILLS_DIR, "worktree", "SKILL.md"), "utf8");
+		expect(text).toContain(
+			"Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-skills` instead.",
+		);
+	});
+
 	test("fails once one SKILL.md first-run block is edited by hand", () => {
 		const copy = makeTempDir("dg-skill-block-");
 		cpSync(SKILLS_DIR, copy, { recursive: true });

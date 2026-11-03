@@ -99,7 +99,7 @@ describe("migrated monolith and spring-break skill trees", () => {
 		},
 	);
 
-	test("every dg-skills call uses the literal path and every monolith verb exists", () => {
+	test("every dg-skills call uses the bare launcher name and every monolith verb exists", () => {
 		const called = new Set<string>();
 		for (const { files } of trees)
 			for (const file of files) {

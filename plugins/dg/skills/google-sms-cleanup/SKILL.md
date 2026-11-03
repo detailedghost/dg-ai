@@ -22,7 +22,7 @@ dg-skills ssms --help >/dev/null 2>&1 ||
 dg-skills ssms --help
 ```
 
-Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-skills` instead.
 
 **Usage:** `dg-skills ssms google <verb> [--config PATH] [--dry-run] [--limit N] [--draft ID] [--approve TOKEN]`
 

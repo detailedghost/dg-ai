@@ -91,14 +91,14 @@ describe.each(SCANNED)("packaged %s skill tree", (name) => {
 		}
 	});
 
-	test("every dg-skills call uses the literal installed path", () => {
+	test("every dg-skills call uses the bare launcher name", () => {
 		for (const { file, text } of treeFiles(name))
 			for (const line of text.split("\n"))
 				if (/dg-skills\s+[a-z]/.test(line))
-					expect([file, line, line.includes("dg-skills")]).toEqual([
+					expect([file, line, line.includes(".dg/bin/")]).toEqual([
 						file,
 						line,
-						true,
+						false,
 					]);
 	});
 

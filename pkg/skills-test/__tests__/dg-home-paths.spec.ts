@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { REPO_ROOT } from "./test-support";
 
@@ -27,11 +27,8 @@ function sources(dir: string): string[] {
 function offenders(): string[] {
 	const pkg = join(REPO_ROOT, "pkg");
 	const files = readdirSync(pkg).flatMap((name) => {
-		try {
-			return sources(join(pkg, name, "src"));
-		} catch {
-			return [];
-		}
+		const src = join(pkg, name, "src");
+		return existsSync(src) ? sources(src) : [];
 	});
 	return files.flatMap((file) => {
 		const rel = relative(REPO_ROOT, file).split("\\").join("/");

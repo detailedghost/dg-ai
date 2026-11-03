@@ -29,7 +29,7 @@ describe("packaged jot skill tree", () => {
 		expectPlainFrontmatter("jot");
 	});
 
-	test("every dg-skills call uses the literal installed path and a real subcommand", () => {
+	test("every dg-skills call uses the bare launcher name and a real subcommand", () => {
 		const calls = walk(JOT)
 			.map((path) => readFileSync(path, "utf8"))
 			.join("\n")
@@ -37,7 +37,7 @@ describe("packaged jot skill tree", () => {
 			.filter((line) => line.includes("dg-skills jot"));
 		expect(calls.length).toBeGreaterThan(0);
 		for (const line of calls) {
-			expect(line).toContain("dg-skills jot");
+			expect(line).not.toContain(".dg/bin/");
 			const verb = /dg-skills jot\s+([\w-]+)/.exec(line)?.[1];
 			if (verb && verb !== "--help") expect(VERBS).toContain(verb);
 		}

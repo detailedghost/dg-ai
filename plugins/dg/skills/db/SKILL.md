@@ -5,7 +5,7 @@ description: Query PostgreSQL and Snowflake databases with read-safe defaults an
 
 # Database Queries with db
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal installed path:
+First run: install or refresh the CLI when it is missing or too old.
 
 ```bash
 dg-skills db --help >/dev/null 2>&1 ||
@@ -13,7 +13,7 @@ dg-skills db --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-skills` instead.
 
 If a step fails, run dg-skills doctor credentials db stash.
 

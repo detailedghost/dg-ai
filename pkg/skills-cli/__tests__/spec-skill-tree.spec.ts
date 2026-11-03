@@ -118,7 +118,7 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 		},
 	);
 
-	test("every dg-skills spec call uses the literal path and names a real subcommand", () => {
+	test("every dg-skills spec call uses the bare launcher name and names a real subcommand", () => {
 		const called = new Set<string>();
 		for (const { files } of trees)
 			for (const file of files) {

@@ -17,7 +17,7 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 dg-skills channel-review --help
 ```
 
-Call `dg-skills` in every later step. If only the `$HOME/.local/bin` lines answered, call each one by its `$HOME/.local/bin` path instead.
+Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `$HOME/.local/bin` path instead.
 
 If a step fails, run dg-skills doctor channel-review credentials address thrash deps-upgrade.
 

@@ -21,7 +21,7 @@ Commands use the compiled binaries `dg-daemon` and
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-daemon` and `dg-skills` in every later step. If only the `$HOME/.local/bin` lines answered, call each one by its `$HOME/.local/bin` path instead.
+Call `dg-daemon` and `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `$HOME/.local/bin` path instead.
 
 If a step fails, run dg-skills doctor channel-review.
 

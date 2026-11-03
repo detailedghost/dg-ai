@@ -63,7 +63,7 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 			expect(documented.has(flag)).toBe(true);
 	});
 
-	test("calls the CLI only by its literal installed path behind the bootstrap gate", () => {
+	test("calls the CLI only by its bare launcher name behind the bootstrap gate", () => {
 		const text = skillText(name);
 		const gate = text.indexOf("bootstrap.sh");
 		expect(gate).toBeGreaterThan(-1);
@@ -80,7 +80,7 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 		for (const line of treeText(name)
 			.split("\n")
 			.filter((value) => /dg-skills\s+[a-z]/.test(value)))
-			expect(line).toContain("dg-skills");
+			expect(line).not.toContain(".dg/bin/");
 	});
 
 	test("leaves no legacy helper, private path, bare helper verb or shell comment behind", () => {

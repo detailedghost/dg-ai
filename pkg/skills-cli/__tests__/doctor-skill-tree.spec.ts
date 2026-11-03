@@ -51,12 +51,12 @@ describe("packaged doctor skill tree", () => {
 		expect(call).toBeGreaterThan(gate);
 	});
 
-	test("runs doctor with --json through the literal installed path", () => {
+	test("runs doctor with --json by the bare launcher name", () => {
 		const text = skillText(NAME);
 		expect(text).toContain("dg-skills doctor --json");
 		for (const { file, text: body } of treeFiles(NAME))
 			for (const line of body.split("\n").filter((l) => l.includes("dg-skills")))
-				expect([file, line.includes("dg-skills") || line.includes("bootstrap.sh")]).toEqual([file, true]);
+				expect([file, line.includes(".dg/bin/")]).toEqual([file, false]);
 	});
 
 	test("asks before running any Fix command and explains failures in plain words", () => {
