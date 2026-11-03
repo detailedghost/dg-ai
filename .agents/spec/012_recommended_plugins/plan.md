@@ -4,7 +4,7 @@ feature_snake_case: recommended_plugins
 date: "2026-10-29"
 version: "1.0"
 status: draft
-current_slice: 0
+current_slice: 2
 pr_strategy: single
 slices:
   - id: 1
@@ -58,21 +58,21 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 ### Slice 1 — marketplace-pins-and-lint
 
 #### Engineering
-- [ ] marketplace.json: add { name: 'mattpocock-skills', description, source: { source: 'github', repo: 'mattpocock/skills', ref: 'main', sha: 'a496f5513d4a4cf889bc48e189e579f4b0bdf6aa' } } with no skills key (the repo ships .claude-plugin/plugin.json listing 27 skills); keep unslop with skills ['./'] at sha 17ed39c9d0b522f44190ff0c6233867eadee192a (current main)
-- [ ] scripts/bump-plugin-pin.ts <name> [--ref r]: resolves the ref head through `git ls-remote https://github.com/<repo>.git <ref>`, rewrites the sha in marketplace.json, prints old -> new; exits 3 when the repo is unreachable and 1 for an unknown name
-- [ ] THIRD_PARTY_NOTICES.md: list the adapted dg files per upstream and state that the imported plugins are installed from upstream at the pinned sha; add grill-me only if the diff against upstream shows adaptation (teach and wait-what are retired in slice 2)
-- [ ] imported-plugins-optional.spec.ts: for each non-dg marketplace plugin P, every file under plugins/dg that mentions `/P:` or `P@detailedghost` must also match /is not installed, skip/i within the same file; `requires:` frontmatter never names P
-- [ ] plugin-pins.spec.ts: every non-dg marketplace entry has a 40-hex sha and a ref; the dg entry has source '.'
+- [x] marketplace.json: add { name: 'mattpocock-skills', description, source: { source: 'github', repo: 'mattpocock/skills', ref: 'main', sha: 'a496f5513d4a4cf889bc48e189e579f4b0bdf6aa' } } with no skills key (the repo ships .claude-plugin/plugin.json listing 27 skills); keep unslop with skills ['./'] at sha 17ed39c9d0b522f44190ff0c6233867eadee192a (current main)
+- [x] scripts/bump-plugin-pin.ts <name> [--ref r]: resolves the ref head through `git ls-remote https://github.com/<repo>.git <ref>`, rewrites the sha in marketplace.json, prints old -> new; exits 3 when the repo is unreachable and 1 for an unknown name
+- [x] THIRD_PARTY_NOTICES.md: list the adapted dg files per upstream and state that the imported plugins are installed from upstream at the pinned sha; add grill-me only if the diff against upstream shows adaptation (teach and wait-what are retired in slice 2)
+- [x] imported-plugins-optional.spec.ts: for each non-dg marketplace plugin P, every file under plugins/dg that mentions `/P:` or `P@detailedghost` must also match /is not installed, skip/i within the same file; `requires:` frontmatter never names P
+- [x] plugin-pins.spec.ts: every non-dg marketplace entry has a 40-hex sha and a ref; the dg entry has source '.'
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: imported-plugins-optional.spec.ts passes on the tree and fails when a fixture skill says `Run /unslop:unslop` without the guard sentence
-- [ ] Contract: plugin-pins.spec.ts fails when a sha is short or missing
-- [ ] bump script test: with a stubbed ls-remote output the file is rewritten and the diff is printed
+- [x] Contract: imported-plugins-optional.spec.ts passes on the tree and fails when a fixture skill says `Run /unslop:unslop` without the guard sentence
+- [x] Contract: plugin-pins.spec.ts fails when a sha is short or missing
+- [x] bump script test: with a stubbed ls-remote output the file is rewritten and the diff is printed
 
 #### Acceptance Criteria
-- [ ] Given `claude plugin marketplace add detailedghost/dg-ai`, when `claude plugin install mattpocock-skills@detailedghost` runs, then the 27 skills appear under /mattpocock-skills:
-- [ ] Given `bun scripts/bump-plugin-pin.ts mattpocock-skills`, when upstream moved, then marketplace.json carries the new sha and the test suite passes
+- [x] Given `claude plugin marketplace add detailedghost/dg-ai`, when `claude plugin install mattpocock-skills@detailedghost` runs, then the 27 skills appear under /mattpocock-skills:
+- [x] Given `bun scripts/bump-plugin-pin.ts mattpocock-skills`, when upstream moved, then marketplace.json carries the new sha and the test suite passes
 
 ### Slice 2 — install-with-recommended
 
@@ -118,6 +118,8 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 - [ ] Given docs/install.md, when a user searches for unslop, then they find the install flag and the list of private copies to delete
 
 ## Slice Summaries
+
+- Slice 1: mattpocock-skills is pinned in marketplace.json, scripts/bump-plugin-pin.ts moves a pin (exit 1 unknown name or bad ref, 2 missing file, 3 unreachable), and plugin-pins, imported-plugins-optional and bump-plugin-pin specs guard the pins and the optional guard sentence. The guard must sit on the same line as the plugin name. The lint scans all text files under plugins/dg.
 
 ## Agent Notes
 
