@@ -296,6 +296,34 @@ describe("prunePluginCache", () => {
 		expect(existsSync(stale)).toBe(true);
 	});
 
+	test("names a version kept because installed_plugins.json became unreadable", () => {
+		const home = tempRoot();
+		version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		installedPlugins(home, "1.24.0");
+		const lines: string[] = [];
+		prunePluginCache({
+			home,
+			now: NOW,
+			keep: false,
+			log: (line) => lines.push(line),
+			beforeRemove: () => writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), "{"),
+		});
+		expect(lines).toEqual(["plugin cache: nothing to remove; kept 1.20.0 (installed_plugins.json unreadable)"]);
+	});
+
+	test("names a version kept because its in-use state is unreadable", () => {
+		const home = tempRoot();
+		const dir = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		mkdirSync(join(dir, ".in_use"));
+		const marker = join(dir, ".in_use", "session");
+		writeFileSync(marker, "{");
+		const old = new Date(NOW - 48 * HOUR);
+		utimesSync(marker, old, old);
+		utimesSync(join(dir, ".in_use"), old, old);
+		installedPlugins(home, "1.24.0");
+		expect(prune(home)).toEqual(["plugin cache: nothing to remove; kept 1.20.0 (in-use state unreadable)"]);
+	});
+
 	test.skipIf(process.getuid?.() === 0)("names the only version it cannot delete instead of reporting a clean cache", () => {
 		const home = tempRoot();
 		const locked = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });

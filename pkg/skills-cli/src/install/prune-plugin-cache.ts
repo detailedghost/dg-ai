@@ -18,10 +18,17 @@ export type PruneOptions = {
 	beforeRemove?: (version: PluginCacheVersion) => void;
 };
 
+const UNCHECKED_REASONS = new Set([
+	"unknown state",
+	"could not remove",
+	"installed_plugins.json unreadable",
+	"in-use state unreadable",
+]);
+
 function summaryLine(plan: PrunePlan): string {
 	if (plan.remove.length === 0) {
 		const kept = plan.keep
-			.filter((k) => k.reason === "unknown state" || k.reason === "could not remove")
+			.filter((k) => UNCHECKED_REASONS.has(k.reason))
 			.map((k) => `${k.version.version} (${k.reason})`)
 			.join(", ");
 		return kept ? `plugin cache: nothing to remove; kept ${kept}` : "plugin cache: nothing to remove";
