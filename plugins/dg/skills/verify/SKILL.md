@@ -152,15 +152,16 @@ A row has one of these kinds:
 - `reordered`: a control is out of order against the others.
 - `moved`: a control changed its top, middle, or bottom band, or its left, center, or right band, by a tenth of the root or more.
 - `visibility`: a control is shown or hidden against the prototype.
-- `occluded`: a fixed or sticky bar covers a control in the build.
+- `occluded`: a control is covered by another element in the build but not in the prototype, or the other way round.
 - `theme`: the build did not apply the theme that the record read.
 - `not-checked`: the layout was not read. The http engine, an `--ext` record, and a record made with `--no-fingerprint` each give one row per role with the reason.
 
 The board shows a Layout pill and a table of the rows.
 Each row has an Accept box, and the header has one for all rows.
 Approve is refused until every row is accepted or the verdict has a note.
-An accepted row stays accepted in later rounds of the same item.
+An accepted row stays accepted in later rounds of the same item. A round added by hand shows the rows of the latest earlier round that has them.
 `status` prints `| layout: N unaccepted` for an item with open rows. `ALL APPROVED` waits until N is 0.
+A control that shows record data, such as a select of names or a button with a user title, needs a `data-testid`. The test id wins identity, so the row does not break when the data changes.
 Pixel differences never fail a review.
 When no prototype page runs, the board shows the reference shots from the prototype sandbox in the prototype column. A missing sandbox, or a prototype name found in two worktrees, leaves the column empty.
 

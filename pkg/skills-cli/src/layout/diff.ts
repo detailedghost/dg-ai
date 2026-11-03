@@ -122,8 +122,9 @@ export function diffReadings(
 		key: string,
 		control: ControlRow | null,
 		sides: { expected: ControlRow | null; found: ControlRow | null },
+		detail = "",
 	): Difference => ({
-		id: idOf(context.viewport, context.theme, context.role, kind, key),
+		id: idOf(context.viewport, context.theme, context.role, kind, key, detail),
 		viewport: context.viewport,
 		theme: context.theme,
 		role: context.role,
@@ -170,9 +171,10 @@ export function diffReadings(
 		const after = centers(now, found.root);
 		const movedVertically = was.band !== now.band && Math.abs(before.fy - after.fy) >= DEAD_ZONE;
 		const movedAcross = was.hband !== now.hband && Math.abs(before.fx - after.fx) >= DEAD_ZONE;
-		if (movedVertically || movedAcross) rows.push(make("moved", key, now, sides));
-		if (was.visible !== now.visible) rows.push(make("visibility", key, now, sides));
-		if (now.occluded) rows.push(make("occluded", key, now, sides));
+		if (movedVertically || movedAcross) rows.push(make("moved", key, now, sides, `${now.band}/${now.hband}`));
+		if (was.visible !== now.visible) rows.push(make("visibility", key, now, sides, String(now.visible)));
+		if (was.occluded !== now.occluded)
+			rows.push(make("occluded", key, now, sides, now.occluded ? (now.occluder ?? "covered") : "clear"));
 	}
 	return rows;
 }

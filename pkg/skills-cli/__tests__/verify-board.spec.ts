@@ -323,6 +323,23 @@ describe("layout gate", () => {
 		expect(statusReport(board([section("a-r1")]), { "a-r1": verdict("approved") }).items[0]?.layout).toBeUndefined();
 	});
 
+	test("keeps the gate on a hand-added round that carries no layout check", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const b = board([withLayout("a-r1", ["d-1"]), section("a-r2", { follows: "a-r1", round: 2 })]);
+		mergeVerdicts(paths, b, { "a-r1": { status: "more", note: "" } }, "t1");
+		expect(() => mergeVerdicts(paths, b, { "a-r2": { status: "approved", note: "" } }, "t2")).toThrow(
+			"accept each layout difference or add a note",
+		);
+		const open = statusReport(b, { "a-r1": verdict("more"), "a-r2": verdict("approved") });
+		expect(open.allApproved).toBe(false);
+		expect(open.items[0]).toMatchObject({ done: false, layout: { differences: 1, unaccepted: 1 } });
+		mergeVerdicts(paths, b, { "a-r2": { status: "approved", note: "", layout: ["d-1"] } }, "t3");
+		expect(readVerdicts(paths)["a-r2"]?.layout).toEqual(["d-1"]);
+		const closed = statusReport(b, { "a-r1": verdict("more"), "a-r2": { ...verdict("approved"), layout: ["d-1"] } });
+		expect(closed.allApproved).toBe(true);
+	});
+
 	test("prints the unaccepted suffix only when rows are open", () => {
 		const b = board([withLayout("a-r1", ["d-1", "d-2"])]);
 		const text = formatStatus(statusReport(b, { "a-r1": { ...verdict("approved"), layout: ["d-1"] } }), false);

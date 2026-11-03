@@ -411,7 +411,11 @@ function shotNote(s, label, head) {
 }
 
 const layoutDrafts = {};
-const layoutRows = (s) => s.checks?.layout?.differences || [];
+function layoutSource(s) {
+  for (let r = s; r; r = sections.find((x) => x.id === r.follows)) if (r.checks?.layout) return r.checks.layout;
+  return null;
+}
+const layoutRows = (s) => layoutSource(s)?.differences || [];
 
 function layoutCarried(s) {
   const out = new Set();
@@ -438,7 +442,7 @@ function layoutIdsFor(s) {
 }
 
 function layoutSummary(s) {
-  const layout = s.checks?.layout;
+  const layout = layoutSource(s);
   if (!layout) return null;
   const open = layoutOpen(s);
   if (layout.status === "pass") return { text: "matches the accepted prototype", state: "passed" };

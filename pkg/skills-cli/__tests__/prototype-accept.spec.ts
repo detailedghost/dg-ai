@@ -380,6 +380,34 @@ describe("recordAcceptance", () => {
 		expect(record.fingerprint).toBeNull();
 	});
 
+	test("stores the pick before the browser opens so a kill mid-capture keeps it", async () => {
+		const notesClaim = { ...claim, notes: "tighten the header" };
+		void recordAcceptance(target(), notesClaim, { open: () => new Promise<Capturer>(() => {}), now });
+		const stored = JSON.parse(readFileSync(join(root, "sandbox", "accepted.json"), "utf8"));
+		expect(stored).toMatchObject({
+			variant: "D",
+			notes: "tighten the header",
+			source: "browser",
+			url: "http://127.0.0.1:4321/",
+			fingerprint: null,
+			skipped: "recording interrupted; run prototype fingerprint demo --url=<url>",
+		});
+		expect(stored.history).toHaveLength(1);
+	});
+
+	test("replaces the stored pick with the final record once the capture ends", async () => {
+		const record = await recordAcceptance(target(), claim, { open: fake(found), now });
+		expect(record.skipped).toBeNull();
+		expect(JSON.parse(readFileSync(join(root, "sandbox", "accepted.json"), "utf8")).skipped).toBeNull();
+	});
+
+	test("records a skip for a malformed url instead of throwing", async () => {
+		const record = await recordAcceptance(target(), { ...claim, url: "not a url" }, { open: fake(found), now });
+		expect(record.fingerprint).toBeNull();
+		expect(record.skipped).toContain("not a valid url");
+		expect(record.variant).toBe("D");
+	});
+
 	test("starts a fresh history after a final record", async () => {
 		await recordAcceptance(target(), claim, { open: fake(found), now });
 		const second = await recordAcceptance(target(), claim, { open: fake(found), now });

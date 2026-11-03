@@ -72,7 +72,12 @@ async function readLayouts(
 ): Promise<Captured> {
 	const none = (skipped: string): Captured => ({ fingerprint: null, skipped, shots: false });
 	if (!url) return none(`no page url recorded; ${repair(name)}`);
-	const page = new URL(url);
+	let page: URL;
+	try {
+		page = new URL(url);
+	} catch {
+		return none(`page url is not a valid url; ${repair(name)}`);
+	}
 	if (!isLoopbackUrl(page))
 		return none(`page url is not on loopback; ${repair(name)}`);
 	let capturer: Capturer;
@@ -143,8 +148,7 @@ export async function recordAcceptance(
 		...(prior && !prior.final ? prior.history : []),
 		{ round: 0, variant: claim.variant, notes: claim.notes, at },
 	].map((entry, index) => ({ ...entry, round: index + 1 }));
-	const captured = await readLayouts(target.dir, target.name, claim.variant, claim.url, seams);
-	const accepted: AcceptedRecord = {
+	const build = (captured: Captured): AcceptedRecord => ({
 		version: 1,
 		name: target.name,
 		chain: target.chain,
@@ -162,7 +166,16 @@ export async function recordAcceptance(
 		skipped: captured.skipped,
 		shots: captured.shots ? `${SHOTS_DIR}/` : null,
 		history,
-	};
+	});
+	store(
+		target.dir,
+		build({
+			fingerprint: null,
+			skipped: `recording interrupted; run prototype fingerprint ${target.name} --url=<url>`,
+			shots: false,
+		}),
+	);
+	const accepted = build(await readLayouts(target.dir, target.name, claim.variant, claim.url, seams));
 	store(target.dir, accepted);
 	return accepted;
 }

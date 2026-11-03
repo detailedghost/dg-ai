@@ -5,10 +5,13 @@ import {
 	cpSync,
 	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Command } from "commander";
 import {
@@ -552,8 +555,9 @@ describe("dg-skills spec prototype-ref with an accepted record", () => {
 		sandbox();
 		const run = await ref("sandbox", "D");
 		expect(run.exitCode).toBe(0);
-		expect(JSON.parse(read("bundle/prototype/slice_2_accepted.json"))).toEqual(record());
+		expect(JSON.parse(read("bundle/prototype/slice_2_accepted.json"))).toEqual(record({ url: null }));
 		const page = read("bundle/prototype/slice_2_ACCEPTED.md");
+		expect(page).toContain("- Sandbox: sandbox\n");
 		expect(page).toContain("D (Trigger below)");
 		expect(page).toContain("| 1 | button | Add note | - | bottom/left | yes |");
 		expect(page).not.toMatch(/\.png|!\[/);
@@ -594,6 +598,30 @@ describe("dg-skills spec prototype-ref with an accepted record", () => {
 		const plan = read("bundle/plan.md");
 		expect(plan).toContain("      path: prototype/slice_2_index.html\n");
 		expect(plan).toContain("      record: prototype/slice_2_accepted.json\n");
+	});
+
+	test("never writes a machine path for a sandbox outside the repo", async () => {
+		const outside = mkdtempSync(join(tmpdir(), "dg-scratch-sandbox-"));
+		try {
+			put("accepted.json", `${JSON.stringify(record(), null, 2)}\n`, outside);
+			put("bundle/plan.md", SPEC);
+			const run = await ref(outside, "D");
+			expect(run.exitCode).toBe(0);
+			const page = read("bundle/prototype/slice_2_ACCEPTED.md");
+			expect(page).toContain("- Sandbox: .agents/prototype/notes-popup (scratch sandbox, --light)\n");
+			expect(page).not.toContain(outside);
+			expect(read("bundle/prototype/slice_2_accepted.json")).not.toContain("127.0.0.1");
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	test.each(["svg", "avif", "bmp", "ico", "tif", "tiff"])("refuses a .%s image asset", async (extension) => {
+		sandbox();
+		put(`sandbox/accepted/shot.${extension}`, "x");
+		const run = await ref(`sandbox/accepted/shot.${extension}`, "D");
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain("refusing image asset");
 	});
 
 	test("refuses an image asset so screenshots stay out of the bundle", async () => {

@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { isRecord } from "@dg/common";
 import { scratchRoot, stateRoot } from "@dg/common/node";
 import { type Document, isSeq, parseDocument } from "yaml";
@@ -268,7 +268,7 @@ export async function setCommand(args: string[]): Promise<number> {
 	return 0;
 }
 
-const IMAGE_ASSET = /\.(png|jpe?g|gif|webp)$/i;
+const IMAGE_ASSET = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico|tiff?)$/i;
 
 interface AcceptedSource {
 	record: AcceptedRecord;
@@ -340,8 +340,15 @@ export async function prototypeRefCommand(args: string[]): Promise<number> {
 	const copy = (name: string) => `prototype/slice_${slice}_${name}`;
 	const destRel = source && !source.asset ? copy("ACCEPTED.md") : copy(basename(path));
 	if (source) {
-		const sandbox = relative(process.cwd(), dirname(source.recordFile)) || ".";
-		copyFileSync(source.recordFile, `${bundle}/${copy("accepted.json")}`);
+		const inside = relative(process.cwd(), dirname(source.recordFile)) || ".";
+		const sandbox =
+			inside.startsWith("..") || isAbsolute(inside)
+				? `.agents/prototype/${source.record.name} (scratch sandbox, --light)`
+				: inside;
+		writeFileSync(
+			`${bundle}/${copy("accepted.json")}`,
+			`${JSON.stringify({ ...source.record, url: null }, null, 2)}\n`,
+		);
 		writeFileSync(
 			`${bundle}/${copy("ACCEPTED.md")}`,
 			renderAccepted(source.record, { sandbox, waived }),

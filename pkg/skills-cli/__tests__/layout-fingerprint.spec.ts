@@ -110,6 +110,20 @@ describe("collectLayout", () => {
 		]);
 	});
 
+	test("never names a select from its option text", () => {
+		const { controls } = found(
+			root(
+				[
+					'<select name="owner"><option>Alice</option><option>Bob</option></select>',
+					'<select id="status"><option>Open</option></select>',
+					'<label>Assignee <select name="x"><option>Carol</option></select></label>',
+					'<select aria-label="Pick"><option>Dan</option></select>',
+				].join(""),
+			),
+		);
+		expect(controls.map((control) => control.name)).toEqual(["owner", "status", "Assignee", "Pick"]);
+	});
+
 	test("collapses whitespace and cuts names to 80 characters", () => {
 		const { controls } = found(
 			root(`<button>  one\n   two  </button><button>${"x".repeat(200)}</button>`),

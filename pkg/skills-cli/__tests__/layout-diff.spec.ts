@@ -103,14 +103,42 @@ describe("diffReadings", () => {
 		expect(kinds(diffReadings(expected, found, context))).toEqual(["visibility"]);
 	});
 
-	test("reports an occluded control from the build side alone, with the occluder", () => {
+	test("reports a control that became occluded, with the occluder", () => {
 		const expected = reading([control("Add note", 0)]);
 		const found = reading([control("Add note", 0, { occluded: true, occluder: "nav#bottom-bar" })]);
 		const rows = diffReadings(expected, found, context);
 		expect(kinds(rows)).toEqual(["occluded"]);
 		expect(rows[0]?.found?.occluder).toBe("nav#bottom-bar");
+	});
+
+	test("reports a control that was occluded in the prototype and is clear in the build", () => {
+		const expected = reading([control("Menu", 0, { occluded: true, occluder: "main.content" })]);
+		const found = reading([control("Menu", 0)]);
+		const rows = diffReadings(expected, found, context);
+		expect(kinds(rows)).toEqual(["occluded"]);
+		expect(rows[0]?.expected?.occluder).toBe("main.content");
+		expect(rows[0]?.found?.occluder).toBeNull();
+	});
+
+	test("ignores a control occluded in both readings", () => {
 		const both = reading([control("Add note", 0, { occluded: true, occluder: "nav#bottom-bar" })]);
-		expect(kinds(diffReadings(both, found, context))).toEqual(["occluded"]);
+		expect(diffReadings(both, structuredClone(both), context)).toEqual([]);
+	});
+
+	test("gives a moved control a new id when it lands in a different band and the same id when it repeats", () => {
+		const expected = reading([control("Save", 0, { band: "top", box: { x: 0, y: 0, w: 100, h: 40 } })]);
+		const low = reading([control("Save", 0, { band: "bottom", box: { x: 0, y: 900, w: 100, h: 40 } })]);
+		const middle = reading([control("Save", 0, { band: "middle", box: { x: 0, y: 450, w: 100, h: 40 } })]);
+		const first = diffReadings(expected, low, context);
+		expect(diffReadings(expected, structuredClone(low), context)[0]?.id).toBe(first[0]?.id);
+		expect(diffReadings(expected, middle, context)[0]?.id).not.toBe(first[0]?.id);
+	});
+
+	test("gives an occluded control a new id when the occluder changes", () => {
+		const expected = reading([control("Save", 0)]);
+		const bar = reading([control("Save", 0, { occluded: true, occluder: "nav.bar" })]);
+		const modal = reading([control("Save", 0, { occluded: true, occluder: "div.modal" })]);
+		expect(diffReadings(expected, bar, context)[0]?.id).not.toBe(diffReadings(expected, modal, context)[0]?.id);
 	});
 
 	test("reports one root-missing row with the reason when the build has no root", () => {

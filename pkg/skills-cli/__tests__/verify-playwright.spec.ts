@@ -1,6 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { type CaptureRequest, type CaptureShot, pngSize } from "../src/verify/capture-model";
-import type { Difference } from "../src/layout/diff";
+import { type Difference, diffReadings } from "../src/layout/diff";
 import type { ControlRow } from "../src/layout/fingerprint";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -102,11 +102,14 @@ main{min-height:100vh;display:flex;flex-direction:column;padding:16px;box-sizing
 <div id="protobar" role="toolbar" aria-label="Prototype decision"><button type="button">Approve</button></div>
 </body></html>`;
 
-	async function withPage<T>(run: (request: (extra?: Partial<CaptureRequest>) => CaptureRequest, capturer: Awaited<ReturnType<typeof openPlaywrightCapturer>>) => Promise<T>): Promise<T> {
+	const bare = (body: string) =>
+		`<!doctype html><html lang="en"><head><title>Demo</title><style>body{margin:0;font:16px sans-serif}</style></head><body><main data-verify-root="demo">${body}</main></body></html>`;
+
+	async function withPage<T>(run: (request: (extra?: Partial<CaptureRequest>) => CaptureRequest, capturer: Awaited<ReturnType<typeof openPlaywrightCapturer>>) => Promise<T>, page = PAGE): Promise<T> {
 		const server = Bun.serve({
 			hostname: "127.0.0.1",
 			port: 0,
-			fetch: () => new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8" } }),
+			fetch: () => new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } }),
 		});
 		const capturer = await openPlaywrightCapturer({ noSandbox: true });
 		try {
@@ -163,6 +166,40 @@ main{min-height:100vh;display:flex;flex-direction:column;padding:16px;box-sizing
 			expect(note?.occluded).toBe(true);
 			expect(note?.box.y).toBeGreaterThan(2000);
 		});
+	});
+
+	test.skipIf(!browser)("does not call a rounded button occluded by its own container", async () => {
+		const page = bare('<div style="padding:20px"><button id="pill" type="button" style="border-radius:999px;width:120px;height:40px">Pill</button></div>');
+		await withPage(async (request, capturer) => {
+			const pill = controls(await capturer.shot(request())).find((row) => row.name === "Pill");
+			expect(pill?.visible).toBe(true);
+			expect(pill?.occluded).toBe(false);
+		}, page);
+	});
+
+	test.skipIf(!browser)("reports a header button clipped in the prototype but shown in the build", async () => {
+		const clipped = bare('<header style="max-height:0;overflow:hidden"><button type="button">Menu</button></header><section style="height:300px">Content</section>');
+		const shown = bare('<header><button type="button">Menu</button></header><section style="height:300px">Content</section>');
+		const read = (page: string) =>
+			withPage(async (request, capturer) => {
+				const shot = await capturer.shot(request());
+				if (!shot.fingerprint || "error" in shot.fingerprint) throw new Error("no fingerprint");
+				return {
+					viewport: "desktop",
+					width: 1440,
+					height: 900,
+					theme: "light",
+					themeApplied: shot.fingerprint.themeApplied,
+					root: shot.fingerprint.root,
+					controls: shot.fingerprint.controls,
+				} as const;
+			}, page);
+		const expected = await read(clipped);
+		const found = await read(shown);
+		expect(expected.controls[0]?.occluded).toBe(true);
+		expect(found.controls[0]?.occluded).toBe(false);
+		const rows = diffReadings(expected, found, { viewport: "desktop", theme: "light", role: "admin" });
+		expect(rows.map((row) => row.kind)).toEqual(["occluded"]);
 	});
 
 	test.skipIf(!browser)("reports the applied theme from the color scheme", async () => {

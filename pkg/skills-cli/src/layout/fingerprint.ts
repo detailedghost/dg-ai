@@ -148,14 +148,22 @@ export function collectLayout(selectors: {
 		const wrapper = el.id
 			? document.querySelector(`label[for="${el.id}"]`)
 			: null;
-		const associated = squash((wrapper ?? el.closest("label"))?.textContent);
-		if (associated) return associated;
+		const labelEl = wrapper ?? el.closest("label");
+		if (labelEl) {
+			const copy = labelEl.cloneNode(true) as Element;
+			for (const nested of Array.from(copy.querySelectorAll("select")))
+				nested.remove();
+			const associated = squash(copy.textContent);
+			if (associated) return associated;
+		}
 		const placeholder = squash(el.getAttribute("placeholder"));
 		if (placeholder) return placeholder;
-		const text = squash(el.textContent);
+		const isSelect = el.tagName.toLowerCase() === "select";
+		const text = isSelect ? "" : squash(el.textContent);
 		if (text) return text;
 		const title = squash(el.getAttribute("title"));
 		if (title) return title;
+		if (isSelect) return squash(el.getAttribute("name") || el.id);
 		const alt = squash(el.querySelector("img[alt]")?.getAttribute("alt"));
 		if (alt) return alt;
 		return squash(el.getAttribute("value"));
@@ -221,20 +229,18 @@ export function collectLayout(selectors: {
 		};
 	});
 
-	elements.forEach((el, index) => {
-		const row = controls[index] as ControlRow;
-		if (!row.visible) return;
-		let rect = el.getBoundingClientRect();
-		if (rect.width * rect.height === 0) return;
-		const outside =
-			rect.top < 0 ||
-			rect.left < 0 ||
-			rect.bottom > window.innerHeight ||
-			rect.right > window.innerWidth;
-		if (outside) {
-			el.scrollIntoView({ block: "nearest", inline: "nearest" });
-			rect = el.getBoundingClientRect();
-		}
+	const scrollSnapshot = (el: Element): (() => void) => {
+		const saved: [Element, number, number][] = [];
+		for (let node = el.parentElement; node; node = node.parentElement)
+			if (node.scrollHeight > node.clientHeight || node.scrollWidth > node.clientWidth)
+				saved.push([node, node.scrollTop, node.scrollLeft]);
+		return () => {
+			for (const [node, top, left] of saved)
+				node.scrollTo({ top, left, behavior: "instant" });
+		};
+	};
+
+	const occluderOf = (el: Element, rect: DOMRect): Element | null => {
 		const inset = Math.min(2, rect.width / 2, rect.height / 2);
 		const points: [number, number][] = [
 			[rect.left + rect.width / 2, rect.top + rect.height / 2],
@@ -245,14 +251,39 @@ export function collectLayout(selectors: {
 		];
 		for (const [x, y] of points) {
 			const hit = document.elementFromPoint(x, y);
-			if (hit && hit !== el && !el.contains(hit)) {
-				row.occluded = true;
-				row.occluder = brief(hit, 60);
-				return;
-			}
+			if (hit && hit !== el && !el.contains(hit) && !hit.contains(el))
+				return hit;
+		}
+		return null;
+	};
+
+	elements.forEach((el, index) => {
+		const row = controls[index] as ControlRow;
+		if (!row.visible) return;
+		let rect = el.getBoundingClientRect();
+		if (rect.width * rect.height === 0) return;
+		const outside =
+			rect.top < 0 ||
+			rect.left < 0 ||
+			rect.bottom > window.innerHeight ||
+			rect.right > window.innerWidth;
+		const restore = outside ? scrollSnapshot(el) : null;
+		if (outside) {
+			el.scrollIntoView({
+				block: "nearest",
+				inline: "nearest",
+				behavior: "instant",
+			});
+			rect = el.getBoundingClientRect();
+		}
+		const hit = occluderOf(el, rect);
+		restore?.();
+		if (hit) {
+			row.occluded = true;
+			row.occluder = brief(hit, 60);
 		}
 	});
-	window.scrollTo(scrollX, scrollY);
+	window.scrollTo({ left: scrollX, top: scrollY, behavior: "instant" });
 
 	const html = document.documentElement;
 	const attribute = html.getAttribute("data-theme");

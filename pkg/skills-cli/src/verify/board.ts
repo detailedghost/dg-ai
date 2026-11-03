@@ -199,17 +199,21 @@ function postedShotNotes(section: Section, raw: unknown): Record<string, string>
 	return Object.keys(notes).length ? notes : undefined;
 }
 
-function postedLayout(section: Section, raw: unknown): string[] | undefined {
+function postedLayout(rounds: Section[], raw: unknown): string[] | undefined {
 	if (raw === undefined) return undefined;
 	if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== "string"))
 		throw new VerifyRequestError("layout must be a list of difference ids", 400);
-	const known = new Set(section.checks?.layout?.differences.map((row) => row.id));
+	const known = new Set(layoutRows(rounds).map((row) => row.id));
 	for (const id of raw) if (!known.has(id)) throw new VerifyRequestError(`unknown layout difference ${JSON.stringify(id)}`, 400);
 	return raw.length ? [...new Set<string>(raw)] : undefined;
 }
 
+function layoutRows(rounds: Section[]) {
+	return [...rounds].reverse().find((round) => round.checks?.layout)?.checks?.layout?.differences ?? [];
+}
+
 function layoutCounts(rounds: Section[], verdicts: Record<string, Verdict>): StatusRow["layout"] {
-	const rows = rounds[rounds.length - 1]?.checks?.layout?.differences ?? [];
+	const rows = layoutRows(rounds);
 	if (rows.length === 0) return undefined;
 	const accepted = new Set(rounds.flatMap((round) => verdicts[round.id]?.layout ?? []));
 	return { differences: rows.length, unaccepted: rows.filter((row) => !accepted.has(row.id)).length };
@@ -237,7 +241,7 @@ export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, a
 		const variant = record?.variant;
 		if (variant !== undefined && (status !== "approved" || !section.variants?.some((entry) => entry.key === variant)))
 			throw new VerifyRequestError("variant must name a version of this section and come with approved", 400);
-		const layout = postedLayout(section, record?.layout);
+		const layout = postedLayout(roundsThrough(board, section), record?.layout);
 		verdicts[id] = { status: status as VerdictStatus, note, at };
 		if (layout) verdicts[id].layout = layout;
 		if (status === "approved" && !note && (layoutCounts(roundsThrough(board, section), verdicts)?.unaccepted ?? 0) > 0)
