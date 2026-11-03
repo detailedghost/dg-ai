@@ -20,6 +20,13 @@ export function sessionStorageOrMemory(): PageStorage {
 	}
 }
 
+export function storeLocalBootstrap(
+	storage: PageStorage,
+	bootstrap: SessionBootstrap,
+): void {
+	storage.set(STORED_BOOTSTRAP_KEY, JSON.stringify(bootstrap));
+}
+
 export function forgetLocalBootstrap(storage: PageStorage): void {
 	storage.set(STORED_BOOTSTRAP_KEY, "");
 }
@@ -44,7 +51,7 @@ export function loadLocalBootstrap(
 		fromHref ??
 		(navigation === undefined ? undefined : readChatBootstrap(navigation));
 	if (fresh) {
-		storage.set(STORED_BOOTSTRAP_KEY, JSON.stringify(fresh));
+		storeLocalBootstrap(storage, fresh);
 		return fresh;
 	}
 	const stored = storage.get(STORED_BOOTSTRAP_KEY);

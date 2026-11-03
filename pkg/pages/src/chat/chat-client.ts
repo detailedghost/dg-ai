@@ -46,7 +46,11 @@ export type SendUserMessageOptions = {
 export type { ChatHealth, DaemonName } from "../daemon-port";
 
 export type ChatClientOptions = {
-	openSocket?: (url: string) => ChatClientSocket;
+	openSocket?: (
+		url: string,
+		held: ReadonlyMap<string, string>,
+	) => ChatClientSocket;
+	heldSessionsOnly?: boolean;
 	backoffBaseMs?: number;
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
@@ -129,6 +133,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let socketGeneration = 0;
 	let everConnected = false;
 	let knownInstanceId: string | undefined;
+	let lastSessionList: Extract<ChatFrame, { type: "session-list" }> | undefined;
 	const capabilities = new Map<string, string>();
 	const disconnectWaiters = new Map<string, { resolve(): void; reject(error: Error): void }>();
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
@@ -302,6 +307,19 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		);
 	}
 
+	function emitSessionList(): void {
+		if (!lastSessionList) return;
+		const frame = options.heldSessionsOnly
+			? {
+					...lastSessionList,
+					sessions: lastSessionList.sessions.filter((session) =>
+						capabilities.has(session.sessionId),
+					),
+				}
+			: lastSessionList;
+		for (const listener of frameListeners) listener(frame);
+	}
+
 	function handleMessage(event: unknown): void {
 		const raw = (event as { data?: unknown } | undefined)?.data;
 		let parsed: unknown;
@@ -331,7 +349,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			logDrop("handshake", frame.message ?? frame.code ?? "handshake rejected");
 		}
 		if (frame.type === "session-list") {
-			for (const listener of frameListeners) listener(frame);
+			lastSessionList = frame;
+			emitSessionList();
 			return;
 		}
 
@@ -383,13 +402,15 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		}
 
 		for (const listener of frameListeners) listener(frame);
+		if (frame.type === "session-pending" && options.heldSessionsOnly)
+			emitSessionList();
 	}
 
 	function openAndBind(): void {
 		socketGeneration += 1;
 		let opened: ChatClientSocket;
 		try {
-			opened = openSocket(socketUrl());
+			opened = openSocket(socketUrl(), capabilities);
 		} catch {
 			setConnectionState("daemon-not-running");
 			socket = null;

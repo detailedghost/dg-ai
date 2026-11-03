@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { CHAT_MARKER_KEY } from "@dg/common";
+import { CHAT_MARKER_KEY, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { Window } from "happy-dom";
 
 const BOOTSTRAP = {
@@ -52,6 +52,7 @@ type SocketListener = (event: unknown) => void;
 type FakeSocketHandle = {
 	url: string;
 	fire(type: string): void;
+	receive(frame: Record<string, unknown>): void;
 };
 
 type Net = {
@@ -62,6 +63,7 @@ type Net = {
 	socketHandles: FakeSocketHandle[];
 	intervals: { callback: () => void; ms: number }[];
 	cleared: unknown[];
+	timeouts: (() => void)[];
 	respond: (url: string) => Promise<Response>;
 };
 
@@ -89,6 +91,7 @@ function installGlobals(href: string): Net {
 		socketHandles: [],
 		intervals: [],
 		cleared: [],
+		timeouts: [],
 		respond: () => Promise.resolve(new Response(BOARD_JSON)),
 	};
 	class FakeSocket {
@@ -107,6 +110,14 @@ function installGlobals(href: string): Net {
 					if (type === "close") this.readyState = FakeSocket.CLOSED;
 					for (const listener of this.listeners.get(type) ?? [])
 						listener({ type });
+				},
+				receive: (frame) => {
+					const data = JSON.stringify({
+						protocolVersion: CHAT_PROTOCOL_VERSION,
+						...frame,
+					});
+					for (const listener of this.listeners.get("message") ?? [])
+						listener({ type: "message", data });
 				},
 			});
 		}
@@ -141,7 +152,10 @@ function installGlobals(href: string): Net {
 		clearInterval: (handle: unknown) => {
 			net.cleared.push(handle);
 		},
-		setTimeout: () => 0,
+		setTimeout: (callback: () => void) => {
+			net.timeouts.push(callback);
+			return net.timeouts.length;
+		},
 	};
 	const target = globalThis as Record<string, unknown>;
 	for (const key of GLOBAL_KEYS) {
@@ -154,6 +168,21 @@ function installGlobals(href: string): Net {
 async function settle(): Promise<void> {
 	for (let i = 0; i < 10; i++)
 		await new Promise((r) => realSetTimeout(r, 10));
+}
+
+async function runTimeouts(net: Net): Promise<void> {
+	for (const callback of net.timeouts.splice(0)) callback();
+	await settle();
+}
+
+function railSessionIds(net: Net): string[] {
+	return [...net.win.document.querySelectorAll(".chat-rail__row")].map(
+		(row) => row.getAttribute("data-session-id") ?? "",
+	);
+}
+
+function summary(sessionId: string, agentIdentity: string) {
+	return { sessionId, agentIdentity, role: "agent" };
 }
 
 async function loadEntry(path: string): Promise<void> {
@@ -316,6 +345,89 @@ describe("chat page entry wiring", () => {
 			`http://127.0.0.1:${BOOTSTRAP.port}/overwatch`,
 		);
 		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+	});
+
+	test("reconnects with a session it still holds after New chat and the original session closes", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		net.respond = () =>
+			Promise.resolve(new Response("refused", { status: 403 }));
+		await loadEntry("../src/chat/page");
+		const first = net.socketHandles[0];
+		first?.fire("open");
+		await settle();
+
+		first?.receive({
+			type: "session-pending",
+			sessionId: BOOTSTRAP.sessionId,
+			newSession: { sessionId: "session-b", token: "tok-b" },
+		});
+		first?.receive({ type: "session-closed", sessionId: BOOTSTRAP.sessionId });
+		first?.fire("close");
+		await settle();
+		await runTimeouts(net);
+
+		const second = net.socketHandles[1];
+		expect(second?.url).toEndWith(`?token=${encodeURIComponent("tok-b")}`);
+		expect(
+			JSON.parse(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY) ?? "{}"),
+		).toMatchObject({
+			port: BOOTSTRAP.port,
+			sessionId: "session-b",
+			token: "tok-b",
+		});
+
+		second?.fire("close");
+		await settle();
+
+		const probe = net.fetches.at(-1);
+		expect(probe?.url).toBe(`http://127.0.0.1:${BOOTSTRAP.port}/overwatch`);
+		expect(probe?.init?.headers).toMatchObject({
+			Authorization: "Bearer tok-b",
+		});
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+	});
+
+	test("lists only the sessions this page holds, including one it creates", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		await loadEntry("../src/chat/page");
+		const socket = net.socketHandles[0];
+		socket?.fire("open");
+		await settle();
+
+		socket?.receive({
+			type: "session-list",
+			sessionId: BOOTSTRAP.sessionId,
+			sessions: [
+				summary(BOOTSTRAP.sessionId, BOOTSTRAP.agentIdentity),
+				summary("session-other", "another-agent"),
+			],
+		});
+		await settle();
+		expect(railSessionIds(net)).toEqual([BOOTSTRAP.sessionId]);
+
+		socket?.receive({
+			type: "session-list",
+			sessionId: "session-b",
+			sessions: [
+				summary(BOOTSTRAP.sessionId, BOOTSTRAP.agentIdentity),
+				summary("session-other", "another-agent"),
+				summary("session-b", BOOTSTRAP.agentIdentity),
+			],
+		});
+		socket?.receive({
+			type: "session-pending",
+			sessionId: BOOTSTRAP.sessionId,
+			newSession: { sessionId: "session-b", token: "tok-b" },
+		});
+		await settle();
+
+		expect(railSessionIds(net).sort()).toEqual(
+			[BOOTSTRAP.sessionId, "session-b"].sort(),
+		);
 	});
 
 	test("opens no socket and makes no fetch when the page has no session fragment", async () => {
