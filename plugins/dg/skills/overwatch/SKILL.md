@@ -1,7 +1,6 @@
 ---
 name: overwatch
-description: Keep the DeeGee Overwatch board current across parallel chats, route board actions, open the live board, and publish its read-only phone snapshot.
-requires: [extension]
+description: Open the live DeeGee Overwatch board as a local page that dg-daemon serves on loopback, keep it current across parallel chats, route board actions, and publish its read-only phone snapshot. Pass --ext to open the board in the dg-ai-extension instead.
 ---
 
 # Overwatch
@@ -20,7 +19,6 @@ Bootstrap once if needed; the installer pulls `dg-agent` from `agent-v*` and
 `dg-daemon` from `daemon-v*`:
 
 ```bash
-if [ -x ~/.dg/bin/dg-skills ]; then ~/.dg/bin/dg-skills require-extension overwatch || exit 1; fi
 [ -x ~/.dg/bin/dg-agent ] ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
@@ -38,6 +36,22 @@ Use `overwatch-board` as the stable identity for the authoritative publisher.
 Overwatch uses the same session lifecycle as chat: `spawn` work when needed,
 check `status`, `recv` updates, `send` replies, `stage` assets, and `close` the
 session when finished.
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--ext` | none | `overwatch open` only: focus the board in the dg-ai-extension instead of opening the local page. Needs the extension. | off (local is the default) |
+
+To use the extension, run the gate command, then the line below it:
+
+```text
+--ext only: dg-skills require-extension overwatch || exit 1
+dg-agent overwatch open --ext
+```
+
+Side panel details and WSL networking for a Windows-side browser:
+[references/extension.md](references/extension.md).
 
 ## Keep the board current
 
@@ -68,11 +82,15 @@ newest board state for phone publication. A direct mutation from another chat
 arrives with `overwatch.event` set to `board-changed` and marks the state the
 same way.
 
-Open or focus the live board with:
+Open the live board in the default browser with the local page:
 
 ```bash
 ~/.dg/bin/dg-agent overwatch open
 ```
+
+It uses this chat's live session, so run `dg-agent start` first. On WSL it
+prints the board URL and opens the Windows browser only when
+`DG_OPEN_WINDOWS=1` is set.
 
 ## Handle board actions
 

@@ -6,6 +6,7 @@ on:
       - pkg/extension/**
       - pkg/common/**
       - pkg/tour-ui/**
+      - pkg/pages/**
       - .github/workflows/ext-blt.yml
   workflow_call:
 

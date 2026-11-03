@@ -14,7 +14,7 @@ export function realSubdirectories(path: string): string[] {
 	}
 }
 
-function compareSemver(a: string, b: string): number {
+export function compareSemver(a: string, b: string): number {
 	const left = SEMVER.exec(a)?.slice(1).map(Number) ?? [];
 	const right = SEMVER.exec(b)?.slice(1).map(Number) ?? [];
 	return left.reduce((diff, part, i) => diff || part - right[i], 0);

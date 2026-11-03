@@ -3,7 +3,7 @@ import {
 	DEFAULT_VIDEO_QUALITY,
 	type VideoQuality,
 } from "@/lib/capture-quality";
-import { type ConfigRelayReply, MSG } from "@/lib/chat-messages";
+import { type ConfigRelayReply, MSG } from "@dg/pages/chat-messages";
 import {
 	NARRATION_MODES,
 	type NarrationMode,

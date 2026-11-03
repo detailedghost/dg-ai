@@ -8,9 +8,11 @@ import {
 	describeError,
 	isRecord,
 	type OverwatchBoard,
+	type SessionBootstrap,
 	validateOverwatchLaneUpdate,
 	validateIsoTimestamp,
 } from "@dg/common";
+import { buildBootstrapUrl, openFailedHint } from "@dg/common/node";
 import type { Command } from "commander";
 
 const COMMAND_TIMEOUT_MS = 5_000;
@@ -29,6 +31,10 @@ export type OverwatchClient = {
 export type OverwatchCommandDependencies = {
 	connect(command: Command): Promise<OverwatchClient>;
 	write(value: string): Promise<void>;
+	writeError(value: string): Promise<void>;
+	tryOpen(url: string): Promise<boolean>;
+	openFailedHint?: () => string;
+	localBootstrap(command: Command): Promise<SessionBootstrap>;
 };
 
 type SetOptions = {
@@ -170,10 +176,25 @@ async function request<T>(
 	}
 }
 
-async function openBoard(
+async function openLocalBoard(
 	dependencies: OverwatchCommandDependencies,
 	command: Command,
 ): Promise<void> {
+	const bootstrap = await dependencies.localBootstrap(command);
+	const url = buildBootstrapUrl(bootstrap.port, bootstrap, "/board");
+	await dependencies.write(`${url}\n`);
+	if (!(await dependencies.tryOpen(url))) {
+		const hint = (dependencies.openFailedHint ?? openFailedHint)();
+		await dependencies.writeError(`${hint}\n`);
+	}
+}
+
+async function openBoard(
+	dependencies: OverwatchCommandDependencies,
+	command: Command,
+	ext: boolean,
+): Promise<void> {
+	if (!ext) return openLocalBoard(dependencies, command);
 	await request(
 		dependencies,
 		command,
@@ -310,9 +331,10 @@ export function registerOverwatchCommands(
 
 	overwatch
 		.command("open")
-		.description("open or focus the overwatch board")
-		.action(async (_options: unknown, command: Command) => {
-			await openBoard(dependencies, command);
+		.description("open the overwatch board in the default browser")
+		.option("--ext", "focus the board in the dg-ai-extension instead")
+		.action(async (options: { ext?: boolean }, command: Command) => {
+			await openBoard(dependencies, command, options.ext === true);
 		});
 
 	overwatch

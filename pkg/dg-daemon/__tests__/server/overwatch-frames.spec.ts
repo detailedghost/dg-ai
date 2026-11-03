@@ -163,9 +163,7 @@ describe("overwatch CLI frames", () => {
 		send(cli, { type: "cli-overwatch-open" });
 		const open = await waitForValue(
 			() =>
-				extensionFrames.find(
-					(frame) => frameType(frame) === "overwatch-open",
-				),
+				extensionFrames.find((frame) => frameType(frame) === "overwatch-open"),
 			3000,
 			"overwatch-open",
 		);
@@ -277,9 +275,7 @@ describe("overwatch CLI frames", () => {
 		send(publisherCli, { type: "cli-recv", block: false });
 		const received = await waitForValue(
 			() =>
-				publisherFrames.find(
-					(frame) => frameType(frame) === "cli-recv-result",
-				),
+				publisherFrames.find((frame) => frameType(frame) === "cli-recv-result"),
 			3000,
 			"publisher notification",
 		);
@@ -289,9 +285,7 @@ describe("overwatch CLI frames", () => {
 			message: { from: "dg-daemon", to: "overwatch-board" },
 		});
 		expect(
-			JSON.parse(
-				(received as { message: { body: string } }).message.body,
-			),
+			JSON.parse((received as { message: { body: string } }).message.body),
 		).toMatchObject({ overwatch: { event: "board-changed" } });
 	});
 
@@ -382,6 +376,7 @@ describe("overwatch CLI frames", () => {
 		const response = await fetch(`http://127.0.0.1:${port}/overwatch`, {
 			headers: {
 				Host: `127.0.0.1:${port}`,
+				Authorization: `Bearer ${credentials.token}`,
 			},
 		});
 		expect(await response.json()).toEqual({ lanes: [], merges: [] });

@@ -7,10 +7,12 @@ import {
 	CLI_SESSION_TOKEN_HEADER,
 	type CliRecvResult,
 	DgCliError,
+	describeError,
 	EXIT_RECV_SESSION_CLOSED,
 	EXIT_RECV_TIMEOUT,
 	isRecord,
 	parseNonNegativeInteger,
+	type SessionBootstrap,
 } from "@dg/common";
 import {
 	CliClient,
@@ -21,10 +23,12 @@ import {
 	readAssetSourceFile,
 	resolveCliSession,
 	resolveManifestForPublish,
+	writeStderr,
 	writeStdout,
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { registerOverwatchCommands } from "./overwatch";
+import { tryOpenAgentUrl } from "./start";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 
@@ -75,6 +79,16 @@ function isAssetUploadResult(value: unknown): value is { assetId: string } {
 
 async function connectFor(command: Command): Promise<CliClient> {
 	return CliClient.connect(await resolveCliSession(selectedSession(command)));
+}
+
+export async function localBootstrap(command: Command): Promise<SessionBootstrap> {
+	try {
+		return await resolveCliSession(selectedSession(command));
+	} catch (error) {
+		throw new DgCliError(
+			`${describeError(error).replace(/\.+$/, "")}. Run dg-agent start first.`,
+		);
+	}
 }
 
 export type RecvCommandClient = Pick<
@@ -153,6 +167,9 @@ export function registerAgentCommands(program: Command): void {
 	registerOverwatchCommands(program.command("overwatch"), {
 		connect: connectFor,
 		write: writeStdout,
+		writeError: writeStderr,
+		tryOpen: tryOpenAgentUrl,
+		localBootstrap,
 	});
 
 	registerRecvCommand(program, { connect: connectFor, write: writeStdout });

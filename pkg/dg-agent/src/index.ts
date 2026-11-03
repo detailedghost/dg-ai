@@ -13,13 +13,12 @@ import { registerMemoryCommands } from "./memory/commands";
 import { registerPhoneCommands } from "./phone/commands";
 import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
-import { cmdStart } from "./start";
+import { cmdStart, openUrlOrHint } from "./start";
 import {
 	buildBootstrapUrl,
 	isDaemonLive,
 	readPidFile,
 	resolveDgPaths,
-	tryOpen,
 } from "@dg/common/node";
 
 const program = new Command();
@@ -40,7 +39,8 @@ program
 	.option("-w, --workset <label>", "workset label to attach to this session")
 	.option("--orchestrator", "register this session with the orchestrator role")
 	.option("-a, --agent-identity <name>", "agent identity to record")
-	.option("--open", "open the bootstrap URL in the default browser")
+	.option("--open", "open the chat page in the default browser")
+	.option("--ext", "hand the session to the dg-ai-extension instead of the local page")
 	.option("--fresh", "register a new session even if the extension is waiting")
 	.option("-s, --session <id>", "claim this waiting session instead of creating one")
 	.option(
@@ -61,6 +61,7 @@ program
 			session?: string;
 			printSessionId?: boolean;
 			json?: boolean;
+			ext?: boolean;
 		}) => {
 			const role: SessionRole = opts.orchestrator ? "orchestrator" : "agent";
 			await cmdStart({
@@ -72,6 +73,7 @@ program
 				sessionId: opts.session,
 				printSessionId: opts.printSessionId,
 				json: opts.json,
+				ext: opts.ext,
 			});
 		},
 	);
@@ -107,7 +109,7 @@ program
 		const url = buildBootstrapUrl(handle.port, claimed);
 		console.error(cliNextStep("attached", claimed.sessionId));
 		console.log(url);
-		if (opts.open) await tryOpen(url);
+		if (opts.open) await openUrlOrHint(url);
 	});
 
 program.parseAsync(process.argv).catch((err: unknown) => {

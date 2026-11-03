@@ -39,7 +39,7 @@ const {
 	createLiveAssetDirectoryTransport,
 	patchConfig,
 } = await import("../lib/config");
-const { MSG } = await import("../lib/chat-messages");
+const { MSG } = await import("@dg/pages/chat-messages");
 
 const RELAY_TEST_TIMEOUT_MS = 12_000;
 

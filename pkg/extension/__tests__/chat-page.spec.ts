@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
-import { MSG } from "@/lib/chat-messages";
+import { MSG } from "@dg/pages/chat-messages";
 import { stubChromeStorage } from "./utils/chrome-storage";
 import { click, keydown, typeValue } from "./utils/dom-events";
 import { buildSessionListFrame as sessionListFrame } from "./utils/frame-fixtures";
@@ -643,14 +643,8 @@ test("the primary rail-and-thread surface is the default view, reachable in docu
 	expect(root.textContent).toContain("claude-js");
 });
 
-const CHAT_ENTRY_DIR = join(import.meta.dir, "..", "entrypoints", "chat");
-const CHAT_NODE_FILE = join(
-	import.meta.dir,
-	"..",
-	"lib",
-	"features",
-	"chat-node.ts",
-);
+const CHAT_ENTRY_DIR = join(import.meta.dir, "..", "..", "pages", "src", "chat");
+const CHAT_NODE_FILE = join(CHAT_ENTRY_DIR, "chat-node.ts");
 
 function collectChatPageSourceFiles(): string[] {
 	const files: string[] = [CHAT_NODE_FILE];

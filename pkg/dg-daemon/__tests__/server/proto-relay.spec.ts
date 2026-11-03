@@ -56,7 +56,10 @@ async function boot() {
 	return { ...started, cli, results: collectFrames(cli) };
 }
 
-async function extension(port: number, credentials: { sessionId: string; token: string }) {
+async function extension(
+	port: number,
+	credentials: { sessionId: string; token: string },
+) {
 	const socket = wsExtensionSocket(port);
 	sockets.push(socket);
 	const frames = collectFrames(socket);
@@ -103,7 +106,9 @@ function result(frames: unknown[], requestId: string, timeoutMs = 1800) {
 		() =>
 			frames.find((raw) => {
 				const frame = raw as ProtoResult;
-				return frame.type === "cli-proto-result" && frame.requestId === requestId;
+				return (
+					frame.type === "cli-proto-result" && frame.requestId === requestId
+				);
 			}) as ProtoResult | undefined,
 		timeoutMs,
 		`proto result ${requestId}`,
@@ -115,7 +120,10 @@ function relay(frames: unknown[], requestId: string) {
 		() =>
 			frames.find((raw) => {
 				const frame = raw as RelayFrame;
-				return frame.type === "proto-browser-request" && frame.requestId === requestId;
+				return (
+					frame.type === "proto-browser-request" &&
+					frame.requestId === requestId
+				);
 			}) as RelayFrame | undefined,
 		700,
 		`extension request ${requestId}`,
@@ -147,7 +155,9 @@ describe("daemon prototype browser relay", () => {
 		const forwarded = await relay(page.frames, requestId);
 		expect(forwarded.sessionId).toBe(bootstrap.sessionId);
 		expect(forwarded.phase).toBe("scrape");
-		expect(forwarded.markedUrl).toBe("https://example.test/account#_proto=fixture");
+		expect(forwarded.markedUrl).toBe(
+			"https://example.test/account#_proto=fixture",
+		);
 		expect(forwarded.timeoutMs).toBe(1000);
 		const data = reply(page.socket, bootstrap, requestId);
 		expect(await result(results, requestId)).toMatchObject({
@@ -186,20 +196,27 @@ describe("daemon prototype browser relay", () => {
 		for (const count of [0, 2]) {
 			const { cli, results, port, bootstrap } = await boot();
 			const pages = [];
-			for (let i = 0; i < count; i++) pages.push(await extension(port, bootstrap));
+			for (let i = 0; i < count; i++)
+				pages.push(await extension(port, bootstrap));
 			const requestId = request(cli);
 			const answer = await result(results, requestId);
 			expect(answer.ok).toBe(false);
-			expect(answer.error).toMatch(count ? /ambiguous|multiple/i : /extension|connect/i);
+			expect(answer.error).toMatch(
+				count ? /ambiguous|multiple/i : /extension|connect/i,
+			);
 			if (count === 0) {
-				expect(answer.error).toContain(`No extension peer on session ${bootstrap.sessionId}`);
+				expect(answer.error).toContain(
+					`No extension peer on session ${bootstrap.sessionId}`,
+				);
 				expect(answer.error).toContain("/start#_chat=");
 				expect(answer.error).toContain("dg-skills inbox bootstrap-url");
 			}
 			for (const page of pages) {
-				expect(page.frames.some((frame) => frameType(frame) === "proto-browser-request")).toBe(
-					false,
-				);
+				expect(
+					page.frames.some(
+						(frame) => frameType(frame) === "proto-browser-request",
+					),
+				).toBe(false);
 			}
 			killDaemonByPidFile(dgHome!);
 			cleanupDgHome(dgHome!);
@@ -292,7 +309,9 @@ describe("daemon prototype browser relay", () => {
 			data: { kind: "verdict", verdict, previewDataUrl },
 		});
 		expect(Buffer.byteLength(payload)).toBeGreaterThan(CHAT_MAX_PAYLOAD_BYTES);
-		expect(Buffer.byteLength(payload)).toBeLessThan(CHAT_MAX_PAYLOAD_BYTES + 4096);
+		expect(Buffer.byteLength(payload)).toBeLessThan(
+			CHAT_MAX_PAYLOAD_BYTES + 4096,
+		);
 		page.socket.send(payload);
 		const answer = await result(results, requestId);
 		expect(answer.ok).toBe(true);
@@ -305,7 +324,9 @@ describe("daemon prototype browser relay", () => {
 		const selected = await extension(port, bootstrap);
 		const requestId = request(cli);
 		await relay(selected.frames, requestId);
-		const unrelated = await registerSession(port, { agentIdentity: "unrelated" });
+		const unrelated = await registerSession(port, {
+			agentIdentity: "unrelated",
+		});
 		const outsider = await extension(port, unrelated);
 		const unselected = await extension(port, bootstrap);
 		const forged = { kind: "style-guide", styleGuide };
@@ -320,7 +341,9 @@ describe("daemon prototype browser relay", () => {
 		);
 		const data = reply(selected.socket, bootstrap, requestId);
 		expect((await result(results, requestId)).data).toEqual(data);
-		expect(results.filter((raw) => (raw as ProtoResult).requestId === requestId)).toHaveLength(1);
+		expect(
+			results.filter((raw) => (raw as ProtoResult).requestId === requestId),
+		).toHaveLength(1);
 	});
 
 	it("expires a bounded request and ignores its late reply while accepting subsequent work", async () => {
@@ -336,7 +359,9 @@ describe("daemon prototype browser relay", () => {
 		await relay(selected.frames, nextId);
 		reply(selected.socket, bootstrap, nextId);
 		expect((await result(results, nextId)).ok).toBe(true);
-		expect(results.filter((raw) => (raw as ProtoResult).requestId === expiredId)).toHaveLength(1);
+		expect(
+			results.filter((raw) => (raw as ProtoResult).requestId === expiredId),
+		).toHaveLength(1);
 	});
 
 	it("returns an actionable failure when the selected extension disconnects", async () => {
@@ -366,8 +391,12 @@ describe("daemon prototype browser relay", () => {
 		await relay(selected.frames, nextId);
 		reply(selected.socket, bootstrap, nextId);
 		expect((await result(nextResults, nextId)).ok).toBe(true);
-		expect(nextResults.some((raw) => (raw as ProtoResult).requestId === abandonedId)).toBe(false);
-		expect(results.some((raw) => (raw as ProtoResult).requestId === abandonedId)).toBe(false);
+		expect(
+			nextResults.some((raw) => (raw as ProtoResult).requestId === abandonedId),
+		).toBe(false);
+		expect(
+			results.some((raw) => (raw as ProtoResult).requestId === abandonedId),
+		).toBe(false);
 	});
 
 	it("returns one correlated extension result directly to its requesting CLI without adding a user message", async () => {
@@ -380,8 +409,17 @@ describe("daemon prototype browser relay", () => {
 		await relay(page.frames, requestId);
 		const data = reply(page.socket, bootstrap, requestId);
 		const answer = await result(results, requestId);
-		expect(answer).toMatchObject({ sessionId: bootstrap.sessionId, requestId, ok: true, data });
-		expect(otherResults.some((frame) => frameType(frame) === "cli-proto-result")).toBe(false);
-		expect((await recvMessage(dgHome!, port, bootstrap.sessionId)).outcome).toBe("empty");
+		expect(answer).toMatchObject({
+			sessionId: bootstrap.sessionId,
+			requestId,
+			ok: true,
+			data,
+		});
+		expect(
+			otherResults.some((frame) => frameType(frame) === "cli-proto-result"),
+		).toBe(false);
+		expect(
+			(await recvMessage(dgHome!, port, bootstrap.sessionId)).outcome,
+		).toBe("empty");
 	});
 });

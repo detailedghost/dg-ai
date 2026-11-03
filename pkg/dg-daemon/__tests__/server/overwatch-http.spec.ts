@@ -78,7 +78,7 @@ describe("overwatch HTTP routes", () => {
 		await seedLane(dgHome);
 
 		const boardResponse = await fetch(`http://127.0.0.1:${port}/overwatch`, {
-			headers: headers(port),
+			headers: headers(port, EXTENSION_ORIGIN),
 		});
 		expect(boardResponse.status).toBe(200);
 		expect(boardResponse.headers.get("Cache-Control")).toBe("no-store");
@@ -91,16 +91,13 @@ describe("overwatch HTTP routes", () => {
 			action: "reject",
 			note: "Revise the launch copy\nthen request review",
 		};
-		const actionResponse = await postAction(port, action);
+		const actionResponse = await postAction(port, action, EXTENSION_ORIGIN);
 		expect(actionResponse.status).toBe(200);
 		expect(actionResponse.headers.get("Cache-Control")).toBe("no-store");
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
-		const message = store.claimNextAgentMessage(
-			"print-agent",
-			"print-session",
-		);
+		const message = store.claimNextAgentMessage("print-agent", "print-session");
 		expect(message?.from).toBe("overwatch-board");
 		expect(JSON.parse(message?.body ?? "")).toEqual({ overwatch: action });
 		store.close();
@@ -116,10 +113,11 @@ describe("overwatch HTTP routes", () => {
 	it("returns 404 for an action on an unknown lane", async () => {
 		const { port } = await boot();
 		await pinExtensionOrigin(port);
-		const response = await postAction(port, {
-			chat: "missing",
-			action: "approve",
-		});
+		const response = await postAction(
+			port,
+			{ chat: "missing", action: "approve" },
+			EXTENSION_ORIGIN,
+		);
 		expect(response.status).toBe(404);
 	});
 
@@ -178,5 +176,129 @@ describe("overwatch HTTP routes", () => {
 		});
 
 		expect(response.status).toBe(400);
+	});
+});
+
+describe("pinned-origin gate with no Origin header", () => {
+	it("refuses GET /overwatch with no token after a pin", async () => {
+		const { port, dgHome } = await boot();
+		await pinExtensionOrigin(port);
+		await seedLane(dgHome);
+
+		const response = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: headers(port),
+		});
+
+		expect(response.status).toBe(403);
+		expect(response.headers.get("Cache-Control")).toBe("no-store");
+		expect(await response.text()).not.toContain("print-agent");
+	});
+
+	it("refuses POST /overwatch/action with no token after a pin and queues nothing", async () => {
+		const { port, dgHome } = await boot();
+		await pinExtensionOrigin(port);
+		await seedLane(dgHome);
+
+		const response = await postAction(port, { chat: "print", action: "approve" });
+
+		expect(response.status).toBe(403);
+		const store = await ChatStore.open(
+			resolveDgPaths({ env: { DG_HOME: dgHome } }),
+			FILE_ONLY_SEAMS,
+		);
+		expect(store.claimNextAgentMessage("print-agent", "print-session")).toBeUndefined();
+		store.close();
+	});
+
+	it("refuses POST /sessions with no Origin after a pin", async () => {
+		const { port } = await boot();
+		await pinExtensionOrigin(port);
+
+		const response = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			method: "POST",
+			headers: { ...headers(port), "Content-Type": "application/json" },
+			body: JSON.stringify({ agentIdentity: "intruder" }),
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.text()).not.toContain("token");
+	});
+
+	it("refuses POST /sessions with no Origin even with a live Bearer token", async () => {
+		const { port } = await boot();
+		const session = await registerSession(port);
+		await pinExtensionOrigin(port);
+
+		const response = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			method: "POST",
+			headers: {
+				...headers(port),
+				Authorization: `Bearer ${session.token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ agentIdentity: "intruder" }),
+		});
+
+		expect(response.status).toBe(403);
+	});
+
+	it("still creates a session for the pinned extension Origin", async () => {
+		const { port } = await boot();
+		await pinExtensionOrigin(port);
+
+		const response = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			method: "POST",
+			headers: {
+				...headers(port, EXTENSION_ORIGIN),
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ agentIdentity: "claude" }),
+		});
+
+		expect(response.status).toBe(200);
+	});
+
+	it("passes the extension board read with no Origin and the token from its own session create", async () => {
+		const { port, dgHome } = await boot();
+		await pinExtensionOrigin(port);
+		await seedLane(dgHome);
+		const created = await fetch(`http://127.0.0.1:${port}/sessions`, {
+			method: "POST",
+			headers: {
+				...headers(port, EXTENSION_ORIGIN),
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ agentIdentity: "claude" }),
+		});
+		const { token } = (await created.json()) as { token: string };
+
+		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: { ...headers(port), Authorization: `Bearer ${token}` },
+		});
+
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({
+			lanes: [{ chat: "print", publisher: "print-agent" }],
+		});
+	});
+
+	it("passes GET /overwatch and POST /overwatch/action with no Origin and a live token", async () => {
+		const { port, dgHome } = await boot();
+		const session = await registerSession(port);
+		await pinExtensionOrigin(port);
+		await seedLane(dgHome);
+		const auth = { Authorization: `Bearer ${session.token}` };
+
+		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
+			headers: { ...headers(port), ...auth },
+		});
+		const action = await fetch(`http://127.0.0.1:${port}/overwatch/action`, {
+			method: "POST",
+			headers: { ...headers(port), ...auth, "Content-Type": "application/json" },
+			body: JSON.stringify({ chat: "print", action: "approve" }),
+		});
+
+		expect(read.status).toBe(200);
+		expect(action.status).toBe(200);
 	});
 });

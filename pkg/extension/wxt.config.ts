@@ -21,6 +21,7 @@ export default defineConfig({
 			conditions: ["onnxruntime-web-use-extern-wasm"],
 			alias: {
 				"@dg/common": resolve(__dirname, "../common/src/index.ts"),
+				"@dg/pages": resolve(__dirname, "../pages/src"),
 				"@dg/tour-ui": resolve(__dirname, "../tour-ui/src/index.ts"),
 			},
 		},

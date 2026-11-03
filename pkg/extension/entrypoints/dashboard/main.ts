@@ -1,5 +1,5 @@
-import { isTextEntryFocused } from "@/lib/dom-focus";
-import { patchKeyedList } from "@/lib/dom-keyed-list";
+import { isTextEntryFocused } from "@dg/pages/dom-focus";
+import { patchKeyedList } from "@dg/pages/dom-keyed-list";
 import {
 	applyRefresh,
 	connectDashboardApi,
@@ -16,7 +16,8 @@ import {
 	toJobView,
 	visibleItems,
 } from "@/lib/features/dashboard";
-import { createVimNav } from "@/lib/features/vim-nav";
+import { createVimNav } from "@dg/pages/vim-nav";
+import { loadStoredBootstraps } from "@/lib/stored-bootstraps";
 import "../options/style.css";
 import "./style.css";
 
@@ -57,7 +58,8 @@ export function renderDashboard(
 ): DashboardHandle {
 	const {
 		root,
-		connect = connectDashboardApi,
+		connect = async (knownPort) =>
+			connectDashboardApi(knownPort, await loadStoredBootstraps()),
 		now = () => new Date(),
 	} = options;
 	const doc = root.ownerDocument;

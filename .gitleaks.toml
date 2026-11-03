@@ -13,6 +13,7 @@ condition = "AND"
 regexTarget = "secret"
 paths = [
   '''(?:^|/)pkg/dg-daemon/__tests__/server/http-polish\.spec\.ts$''',
+  '''(?:^|/)pkg/dg-daemon/__tests__/server/local-pages\.spec\.ts$''',
   '''(?:^|/)pkg/dg-daemon/__tests__/server/upgrade-origin-and-host\.spec\.ts$''',
   '''(?:^|/)pkg/dg-server/__tests__/server/upgrade-origin-and-host\.spec\.ts$''',
 ]

@@ -13,7 +13,7 @@ import {
 	type OverwatchLane,
 } from "@dg/common";
 import { Window } from "happy-dom";
-import type { OverwatchActionResult } from "@/lib/features/overwatch";
+import type { OverwatchActionResult } from "@dg/pages/board/overwatch";
 import { click } from "./utils/dom-events";
 import { captureGlobal } from "./utils/relay-harness";
 import {
@@ -21,20 +21,26 @@ import {
 	resolveBrowserBinary,
 } from "../../skills-cli/src/utils/cdp-harness";
 
-mock.module("wxt/browser", () => ({ browser: {} }));
+let storedSessions: Record<string, unknown> = {};
+
+mock.module("wxt/browser", () => ({
+	browser: {
+		storage: { session: { get: () => Promise.resolve(storedSessions) } },
+	},
+}));
 
 const { renderOverwatchPage } = await import("../entrypoints/overwatch/main");
 const { mountPairing } = await import("@/lib/features/pairing");
 const { handleOverwatchFrame, handleOverwatchFrameSafely } = await import(
 	"@/lib/background/chat"
 );
-const { MSG } = await import("@/lib/chat-messages");
+const { MSG } = await import("@dg/pages/chat-messages");
 const {
 	connectOverwatchApi,
 	createOverwatchApi,
 	formatCountdown,
 	needYouCount,
-} = await import("@/lib/features/overwatch");
+} = await import("@dg/pages/board/overwatch");
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
 const GEOMETRY_TEST_TIMEOUT_MS = 60_000;
@@ -168,11 +174,11 @@ async function inspectNarrowLayout(markup: string): Promise<{
 		"utf8",
 	);
 	const chatCss = readFileSync(
-		new URL("../entrypoints/chat/style.css", import.meta.url),
+		new URL("../../pages/src/chat/style.css", import.meta.url),
 		"utf8",
 	);
 	const overwatchCss = readFileSync(
-		new URL("../entrypoints/overwatch/style.css", import.meta.url),
+		new URL("../../pages/src/board/style.css", import.meta.url),
 		"utf8",
 	);
 	await writeFile(
@@ -962,3 +968,365 @@ test("the countdown and need-you count derive from board data", () => {
 	expect(formatCountdown(board.goLive, NOW)).toBe("2d 02h 15m");
 	expect(needYouCount(board.lanes)).toBe(2);
 });
+
+describe("board reads from the extension page", () => {
+	const BOARD_JSON = JSON.stringify({ lanes: [], merges: [] });
+
+	async function readHeaders(): Promise<Headers[]> {
+		const restoreFetch = captureGlobal("fetch");
+		const seen: Headers[] = [];
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			value: (_url: string, init?: RequestInit) => {
+				seen.push(new Headers(init?.headers));
+				return Promise.resolve(new Response(BOARD_JSON));
+			},
+		});
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+			});
+			await handle.ready;
+			handle.stop();
+		} finally {
+			restoreFetch();
+		}
+		return seen;
+	}
+
+	afterEach(() => {
+		storedSessions = {};
+	});
+
+	test("sends the stored session token as a Bearer header", async () => {
+		storedSessions = {
+			"chat_session:session-a": {
+				port: 47823,
+				sessionId: "session-a",
+				token: "tok-a",
+				agentIdentity: "claude",
+			},
+			unrelated: { token: "not-a-session" },
+		};
+
+		const seen = await readHeaders();
+
+		expect(seen.length).toBeGreaterThan(0);
+		expect(seen[0]?.get("authorization")).toBe("Bearer tok-a");
+	});
+
+	test("sends the token of a session spawned by New chat once the original session entry is gone", async () => {
+		storedSessions = {
+			"chat_session:session-b": {
+				port: 47823,
+				sessionId: "session-b",
+				token: "tok-b",
+				agentIdentity: "claude",
+			},
+		};
+
+		const seen = await readHeaders();
+
+		expect(seen[0]?.get("authorization")).toBe("Bearer tok-b");
+	});
+
+	test("sends no Authorization header when no session is stored", async () => {
+		const seen = await readHeaders();
+
+		expect(seen.length).toBeGreaterThan(0);
+		expect(seen[0]?.get("authorization")).toBeNull();
+	});
+});
+
+describe("board token stays with its own daemon port", () => {
+	type Call = { url: string; authorization: string | null };
+
+	function stubFetch(respond: (url: string) => Promise<Response>): {
+		calls: Call[];
+		restore: () => void;
+	} {
+		const restore = captureGlobal("fetch");
+		const calls: Call[] = [];
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			value: (url: string, init?: RequestInit) => {
+				calls.push({
+					url,
+					authorization: new Headers(init?.headers).get("authorization"),
+				});
+				return respond(url);
+			},
+		});
+		return { calls, restore };
+	}
+
+	afterEach(() => {
+		storedSessions = {};
+	});
+
+	test("sends no token to a port that port discovery found", async () => {
+		const { calls, restore } = stubFetch((url) => {
+			if (url === "http://127.0.0.1:47824/healthz") {
+				return Promise.resolve(
+					Response.json({ daemon: "dg-daemon", instanceId: "other" }),
+				);
+			}
+			if (url === "http://127.0.0.1:47824/overwatch") {
+				return Promise.resolve(Response.json({ lanes: [], merges: [] }));
+			}
+			return Promise.reject(new TypeError("Failed to fetch"));
+		});
+		try {
+			const api = await connectOverwatchApi(47823, "tok-a");
+			await api?.getBoard();
+		} finally {
+			restore();
+		}
+
+		expect(
+			calls.find((call) => call.url === "http://127.0.0.1:47823/overwatch")
+				?.authorization,
+		).toBe("Bearer tok-a");
+		const discovered = calls.filter(
+			(call) => call.url === "http://127.0.0.1:47824/overwatch",
+		);
+		expect(discovered.length).toBeGreaterThan(0);
+		for (const call of discovered) expect(call.authorization).toBeNull();
+	});
+
+	test("reads from the stored session's port and moves to a newly stored session on another port", async () => {
+		storedSessions = {
+			"chat_session:session-a": {
+				port: 47900,
+				sessionId: "session-a",
+				token: "tok-a",
+				agentIdentity: "claude",
+			},
+		};
+		let up = true;
+		const { calls, restore } = stubFetch((url) =>
+			up && url.endsWith("/overwatch")
+				? Promise.resolve(Response.json({ lanes: [], merges: [] }))
+				: Promise.reject(new TypeError("Failed to fetch")),
+		);
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+				defer: () => 1,
+				cancelDeferred: () => undefined,
+			});
+			await handle.ready;
+			expect(calls[0]).toEqual({
+				url: "http://127.0.0.1:47900/overwatch",
+				authorization: "Bearer tok-a",
+			});
+
+			storedSessions = {
+				"chat_session:session-b": {
+					port: 47901,
+					sessionId: "session-b",
+					token: "tok-b",
+					agentIdentity: "claude",
+				},
+			};
+			up = false;
+			await handle.refresh();
+			up = true;
+			calls.length = 0;
+			await handle.refresh();
+			handle.stop();
+		} finally {
+			restore();
+		}
+
+		expect(calls.length).toBeGreaterThan(0);
+		for (const call of calls) {
+			expect(call).toEqual({
+				url: "http://127.0.0.1:47901/overwatch",
+				authorization: "Bearer tok-b",
+			});
+		}
+	});
+
+	test("tries the next stored token for the port when the daemon refuses the first", async () => {
+		const bootstrap = (sessionId: string, token: string) => ({
+			port: 47900,
+			sessionId,
+			token,
+			agentIdentity: "claude",
+		});
+		storedSessions = {
+			"chat_session:session-old": bootstrap("session-old", "tok-old"),
+			"chat_session:session-live": bootstrap("session-live", "tok-live"),
+		};
+		const { calls, restore } = stubFetch((url) => {
+			const last = calls.at(-1);
+			if (url.endsWith("/overwatch") && last?.authorization === "Bearer tok-live") {
+				return Promise.resolve(Response.json({ lanes: [], merges: [] }));
+			}
+			return Promise.resolve(new Response("refused", { status: 403 }));
+		});
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+				defer: () => 1,
+				cancelDeferred: () => undefined,
+			});
+			await handle.ready;
+			handle.stop();
+		} finally {
+			restore();
+		}
+
+		expect(calls.map((call) => call.authorization)).toEqual([
+			"Bearer tok-old",
+			"Bearer tok-live",
+			"Bearer tok-live",
+		]);
+	});
+
+	test("tries the next stored session when the first one's daemon is offline", async () => {
+		storedSessions = {
+			"chat_session:session-gone": {
+				port: 47900,
+				sessionId: "session-gone",
+				token: "tok-gone",
+				agentIdentity: "claude",
+			},
+			"chat_session:session-live": {
+				port: 47901,
+				sessionId: "session-live",
+				token: "tok-live",
+				agentIdentity: "claude",
+			},
+		};
+		const { calls, restore } = stubFetch((url) =>
+			url === "http://127.0.0.1:47901/overwatch"
+				? Promise.resolve(Response.json({ lanes: [], merges: [] }))
+				: Promise.reject(new TypeError("Failed to fetch")),
+		);
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+				defer: () => 1,
+				cancelDeferred: () => undefined,
+			});
+			await handle.ready;
+			handle.stop();
+		} finally {
+			restore();
+		}
+
+		expect(calls.filter((call) => call.url.endsWith("/healthz"))).toEqual([]);
+		expect(calls.at(-1)).toEqual({
+			url: "http://127.0.0.1:47901/overwatch",
+			authorization: "Bearer tok-live",
+		});
+	});
+
+	describe("when the previous port stops serving the board", () => {
+		const bootstrap = (port: number, name: string) => ({
+			port,
+			sessionId: `session-${name}`,
+			token: `tok-${name}`,
+			agentIdentity: "claude",
+		});
+
+		async function reconnectAfter(
+			failPreviousPort: () => Promise<Response>,
+		): Promise<Call[]> {
+			storedSessions = {
+				"chat_session:session-a": bootstrap(47900, "a"),
+				"chat_session:session-b": bootstrap(47901, "b"),
+			};
+			let previousPortDown = false;
+			const { calls, restore } = stubFetch((url) =>
+				url === "http://127.0.0.1:47900/overwatch" && previousPortDown
+					? failPreviousPort()
+					: url.endsWith("/overwatch")
+						? Promise.resolve(Response.json({ lanes: [], merges: [] }))
+						: Promise.reject(new TypeError("Failed to fetch")),
+			);
+			try {
+				const handle = renderOverwatchPage({
+					root: newRoot(),
+					runtime: runtimeHarness().runtime,
+					schedule: () => 1,
+					cancel: () => undefined,
+					defer: () => 1,
+					cancelDeferred: () => undefined,
+				});
+				await handle.ready;
+				expect(calls[0]).toEqual({
+					url: "http://127.0.0.1:47900/overwatch",
+					authorization: "Bearer tok-a",
+				});
+				previousPortDown = true;
+				await handle.refresh();
+				calls.length = 0;
+				await handle.refresh();
+				handle.stop();
+			} finally {
+				restore();
+			}
+			return calls;
+		}
+
+		function expectTokensStayOnTheirPorts(calls: Call[]) {
+			const tokenByPort: Record<string, string> = {
+				"47900": "Bearer tok-a",
+				"47901": "Bearer tok-b",
+			};
+			for (const call of calls) {
+				if (call.authorization === null) continue;
+				const port = new URL(call.url).port;
+				expect(call.authorization).toBe(tokenByPort[port]);
+			}
+		}
+
+		test("falls through to a live session on another port when the previous port is offline", async () => {
+			const calls = await reconnectAfter(() =>
+				Promise.reject(new TypeError("Failed to fetch")),
+			);
+
+			expect(calls[0]).toEqual({
+				url: "http://127.0.0.1:47900/overwatch",
+				authorization: "Bearer tok-a",
+			});
+			expect(calls.at(-1)).toEqual({
+				url: "http://127.0.0.1:47901/overwatch",
+				authorization: "Bearer tok-b",
+			});
+			expectTokensStayOnTheirPorts(calls);
+		});
+
+		test("falls through to a live session on another port when the previous port refuses", async () => {
+			const calls = await reconnectAfter(() =>
+				Promise.resolve(new Response("refused", { status: 403 })),
+			);
+
+			expect(calls[0]).toEqual({
+				url: "http://127.0.0.1:47900/overwatch",
+				authorization: "Bearer tok-a",
+			});
+			expect(calls.at(-1)).toEqual({
+				url: "http://127.0.0.1:47901/overwatch",
+				authorization: "Bearer tok-b",
+			});
+			expectTokensStayOnTheirPorts(calls);
+		});
+	});
+});
+

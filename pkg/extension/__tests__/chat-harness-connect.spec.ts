@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { CHAT_DEFAULT_PORT, type SessionBootstrap } from "@dg/common";
-import { MSG } from "@/lib/chat-messages";
+import { MSG } from "@dg/pages/chat-messages";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 

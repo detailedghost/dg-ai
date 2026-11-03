@@ -239,7 +239,10 @@ describe("daemon credential grants", () => {
 			request(cli, { operation: "grant", prefix: "channel-review" }),
 		);
 		const tokenPath = join(paths.grantsDir, "channel-review.token");
-		expect(granted.value).toEqual({ prefix: "channel-review", path: tokenPath });
+		expect(granted.value).toEqual({
+			prefix: "channel-review",
+			path: tokenPath,
+		});
 		expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
 		expect(statSync(paths.grantsDir).mode & 0o777).toBe(0o700);
 		const token = readFileSync(tokenPath, "utf8");
@@ -296,7 +299,9 @@ describe("daemon credential grants", () => {
 		expect(grants.value).toEqual([
 			expect.objectContaining({ prefix: "channel-review" }),
 		]);
-		expect((grants.value as { lastUsedAt: string | null }[])[0].lastUsedAt).not.toBeNull();
+		expect(
+			(grants.value as { lastUsedAt: string | null }[])[0].lastUsedAt,
+		).not.toBeNull();
 		expect(JSON.stringify(grants)).not.toContain(token);
 
 		await result(
@@ -306,10 +311,7 @@ describe("daemon credential grants", () => {
 		const rotated = readFileSync(tokenPath, "utf8");
 		expect(rotated).not.toBe(token);
 		expect(
-			await result(
-				frames,
-				request(service, { operation: "list", grant }),
-			),
+			await result(frames, request(service, { operation: "list", grant })),
 		).toMatchObject({ ok: false, error: NOT_ALLOWED });
 
 		const revoked = await result(

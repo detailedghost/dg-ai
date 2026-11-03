@@ -5,7 +5,7 @@ import {
 	type SessionBootstrap,
 } from "@dg/common";
 import { registerChat } from "@/lib/background/chat";
-import { MSG } from "@/lib/chat-messages";
+import { MSG } from "@dg/pages/chat-messages";
 
 export type Listener = (
 	msg: unknown,

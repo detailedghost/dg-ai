@@ -98,6 +98,33 @@ extension — so a pin never leaves some parts updated and others not.
 Leaving the version unset keeps today's behavior: install the newest of
 each, warning and skipping one that can't be reached.
 
+## Plugin cache
+
+Claude Code keeps every dg plugin version under
+`~/.claude/plugins/cache/<marketplace>/dg/<version>/` and removes orphaned ones
+about 14 days after it marks them. `dg-skills install` reclaims that space now,
+in every mode except `--skills-only` and `--local`, which is a dev build that
+never touches release binaries. It prints one line, for example
+`plugin cache: removed 1.20.0, 1.21.0 (58 MB); kept 1.24.0 (active)`.
+
+Install keeps a version when any of these is true:
+
+- `installed_plugins.json` names it.
+- A session read it in the last 24 hours (the `.in_use` folder changed).
+- An `.in_use` entry names a live process.
+- It has no `.orphaned_at` marker. Install never deletes a version in an unknown
+  state, and prints `kept <version> (unknown state)`.
+
+Install skips the step and prints a reason when `installed_plugins.json` is
+unreadable. It never follows a symlink and never touches other plugins or the
+marketplace clones. Pass `--keep-cache` to leave the cache alone.
+
+`dg-skills doctor install` reports stale versions and how much space they use.
+
+When `DG_HOME` is set to something other than `~/.dg`, install prints
+`note: DG_HOME=<path>; installing there` to stderr before it changes anything,
+and `dg-skills doctor` warns.
+
 ## CLI-only install
 
 Install only the `dg-skills` binary and the skills that run without the browser
@@ -142,7 +169,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `google-sms-cleanup` | Yes — `dg-skills ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `proto`, `demo` | No — local by default; `--ext` needs the extension |
-| `chat`, `overwatch` | No — each still declares `requires: [extension]` until its local mode lands |
+| `chat`, `overwatch` | No — needs `dg-agent` and `dg-daemon`, which serve the local page on loopback; `--ext` also needs the extension |
 
 On WSL, the default `demo` uses the Windows browser. The CLI controls it through a
 remote-debugging port on 127.0.0.1, and the port stays open while the run is live. To
@@ -156,10 +183,14 @@ Any local process can attach to that port during the run. See
 without an extension dependency also install; their own tools and referenced
 skills still need to be available.
 
-A skill that needs the extension stops with a message that names the fix. To add
-the extension later, run `dg-skills install` (or the full bootstrap command
-above). That also fetches `dg-daemon` and `dg-agent` and removes the CLI-only
-marker at `~/.dg/cli-only`.
+Every skill runs locally by default; only `browser launch` always needs the
+extension. A skill run with `--ext` stops with a message that names the fix
+when the extension is missing. `chat` and
+`overwatch` need `dg-agent`, which `--cli-only` skips. Their bootstrap block
+runs the full installer when `dg-agent` is missing, and that install removes
+the CLI-only marker. To add the extension later, run `dg-skills install` (or
+the full bootstrap command above). That also fetches `dg-daemon` and `dg-agent`
+and removes the CLI-only marker at `~/.dg/cli-only`.
 
 ## Skills-only install
 

@@ -1,5 +1,5 @@
-import { fetchDaemonHealth, findDaemonPort } from "@/lib/daemon-port";
-import { handshakeOutcome, reconnectDelayMs } from "@/lib/features/chat-connection";
+import { fetchDaemonHealth, findDaemonPort } from "../daemon-port";
+import { handshakeOutcome, reconnectDelayMs } from "./chat-connection";
 import {
 	CHAT_MAX_MESSAGE_BODY_BYTES,
 	CHAT_PROTOCOL_VERSION,
@@ -43,10 +43,14 @@ export type SendUserMessageOptions = {
 	subagentName?: string;
 };
 
-export type { ChatHealth, DaemonName } from "@/lib/daemon-port";
+export type { ChatHealth, DaemonName } from "../daemon-port";
 
 export type ChatClientOptions = {
-	openSocket?: (url: string) => ChatClientSocket;
+	openSocket?: (
+		url: string,
+		held: ReadonlyMap<string, string>,
+	) => ChatClientSocket;
+	heldSessionsOnly?: boolean;
 	backoffBaseMs?: number;
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
@@ -73,6 +77,11 @@ export type ChatClient = {
 	disconnectSession(sessionId: string): Promise<void>;
 	forgetSession(sessionId: string): void;
 	retryNow(): void;
+	sendCommandInvocation?(
+		sessionId: string,
+		commandLabel: string,
+		params?: Record<string, unknown>,
+	): Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
 const DEFAULT_BACKOFF_BASE_MS = 500;
@@ -124,6 +133,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let socketGeneration = 0;
 	let everConnected = false;
 	let knownInstanceId: string | undefined;
+	let lastSessionList: Extract<ChatFrame, { type: "session-list" }> | undefined;
 	const capabilities = new Map<string, string>();
 	const disconnectWaiters = new Map<string, { resolve(): void; reject(error: Error): void }>();
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
@@ -297,6 +307,19 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		);
 	}
 
+	function emitSessionList(): void {
+		if (!lastSessionList) return;
+		const frame = options.heldSessionsOnly
+			? {
+					...lastSessionList,
+					sessions: lastSessionList.sessions.filter((session) =>
+						capabilities.has(session.sessionId),
+					),
+				}
+			: lastSessionList;
+		for (const listener of frameListeners) listener(frame);
+	}
+
 	function handleMessage(event: unknown): void {
 		const raw = (event as { data?: unknown } | undefined)?.data;
 		let parsed: unknown;
@@ -326,7 +349,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			logDrop("handshake", frame.message ?? frame.code ?? "handshake rejected");
 		}
 		if (frame.type === "session-list") {
-			for (const listener of frameListeners) listener(frame);
+			lastSessionList = frame;
+			emitSessionList();
 			return;
 		}
 
@@ -378,13 +402,15 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		}
 
 		for (const listener of frameListeners) listener(frame);
+		if (frame.type === "session-pending" && options.heldSessionsOnly)
+			emitSessionList();
 	}
 
 	function openAndBind(): void {
 		socketGeneration += 1;
 		let opened: ChatClientSocket;
 		try {
-			opened = openSocket(socketUrl());
+			opened = openSocket(socketUrl(), capabilities);
 		} catch {
 			setConnectionState("daemon-not-running");
 			socket = null;
@@ -502,6 +528,31 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				});
 				send({ type: "session-disconnect", sessionId, token, protocolVersion: CHAT_PROTOCOL_VERSION });
 			});
+		},
+
+		sendCommandInvocation(sessionId, commandLabel, params = {}) {
+			const token = capabilities.get(sessionId);
+			if (!token) {
+				return Promise.resolve({
+					ok: false,
+					error: "no chat session is open — start one to run a command",
+				});
+			}
+			if (connectionState !== "connected") {
+				return Promise.resolve({
+					ok: false,
+					error: "the daemon is not connected — retry once the chat reconnects",
+				});
+			}
+			send({
+				type: "command-invocation",
+				sessionId,
+				token,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				commandLabel,
+				params,
+			});
+			return Promise.resolve({ ok: true });
 		},
 
 		closeSession(sessionId: string): void {

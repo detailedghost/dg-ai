@@ -1,10 +1,10 @@
 import type { ProgressState } from "@dg/common";
-import type { ChatSessionEntry } from "@/lib/features/chat-sessions";
+import type { ChatSessionEntry } from "./chat-sessions";
 import type {
 	FetchAsset,
 	TranscriptView,
-} from "@/lib/features/chat-transcript";
-import { createTranscriptView } from "@/lib/features/chat-transcript";
+} from "./chat-transcript";
+import { createTranscriptView } from "./chat-transcript";
 
 export type Composer = {
 	inputElement: HTMLInputElement;
@@ -13,6 +13,7 @@ export type Composer = {
 export type ChatNodeOptions = {
 	document?: Document;
 	port?: number;
+	assetOrigin?: string;
 	fetchAsset?: FetchAsset;
 	onSubmit?: (body: string) => void;
 	onClose?: (sessionId: string) => void;
@@ -134,6 +135,7 @@ export function createChatNode(
 	);
 	const transcript = createTranscriptView(transcriptElement, {
 		port: options.port,
+		assetOrigin: options.assetOrigin,
 		fetchAsset: options.fetchAsset,
 	});
 

@@ -66,7 +66,9 @@ once the daemon is running.
 
 The extension's **dashboard page** shows what has come in — jobs and their next
 run on the left, the feed on the right — and hands any item to an agent. Jobs
-are added by CLI for now; a page for that is the next step.
+are added by CLI for now; a page for that is the next step. The dashboard reads
+with a session token that the extension holds, so pair the extension or attach
+it to a session first.
 
 See the [developer guide](DEVELOPER.md) for the daemon’s configuration and
 [the architecture records](adr/toc.md) for process and storage decisions.

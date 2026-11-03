@@ -12,11 +12,11 @@ import {
 	validateAttachRequest,
 	validateSessionBootstrap,
 } from "@dg/common";
-import { fetchDaemonHealth, findDaemonPort } from "@/lib/daemon-port";
+import { fetchDaemonHealth, findDaemonPort } from "@dg/pages/daemon-port";
 import {
 	handshakeOutcome,
 	redactSecrets,
-} from "@/lib/features/chat-connection";
+} from "@dg/pages/chat/chat-connection";
 import { browser } from "wxt/browser";
 import {
 	createInboxHandler,
@@ -35,18 +35,18 @@ import {
 	type ConfigRelayReply,
 	type PairingSession,
 	MSG,
-} from "@/lib/chat-messages";
+} from "@dg/pages/chat-messages";
 import {
 	type ChatClient,
 	type ChatClientSocket,
 	createChatClient,
 	defaultOpenSocket,
-} from "@/lib/features/chat-client";
+} from "@dg/pages/chat/chat-client";
 
 export const CHAT_PAGE_PATH = "chat.html";
 export const OVERWATCH_PAGE_PATH = "overwatch.html";
 
-export { CHAT_SESSION_KEY_PREFIX } from "@/lib/chat-messages";
+export { CHAT_SESSION_KEY_PREFIX } from "@dg/pages/chat-messages";
 
 function chatSessionKey(sessionId: string): string {
 	return `${CHAT_SESSION_KEY_PREFIX}${sessionId}`;
@@ -681,11 +681,15 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (frame.type === "session-pending") {
 			const requester = bootstrapsBySession.get(frame.sessionId);
 			if (requester) {
-				holdBootstrap({
+				const spawned = {
 					...requester,
 					sessionId: frame.newSession.sessionId,
 					token: frame.newSession.token,
-				});
+				};
+				holdBootstrap(spawned);
+				void api.storage.session
+					.set({ [chatSessionKey(spawned.sessionId)]: spawned })
+					.catch(() => {});
 			}
 			return;
 		}

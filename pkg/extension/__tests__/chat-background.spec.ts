@@ -27,7 +27,7 @@ import {
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { registerChat, registerRecording } = await import("@/lib/background");
-const { MSG } = await import("@/lib/chat-messages");
+const { MSG } = await import("@dg/pages/chat-messages");
 const { browser: mockedBrowser } = await import("wxt/browser");
 
 const makeBootstrap = makeBootstrapFactory({
@@ -924,6 +924,83 @@ test("regression: a session created via session-pending is registered for keepal
 		.filter((f) => f.type === "keepalive")
 		.map((f) => f.token);
 	expect(tokens).toContain("tok-spawned");
+});
+
+test("a session created via session-pending is stored in storage.session and survives the requester closing", async () => {
+	const { api, sessionSet, sessionRemove, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	const requester = makeBootstrap();
+	await captureMarker(getOnMessage, requester);
+	socket.dispatch("open");
+	await settle();
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-pending",
+			sessionId: requester.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			newSession: { sessionId: "sess-spawned", token: "tok-spawned" },
+		}),
+	);
+	await settle();
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-closed",
+			sessionId: requester.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		}),
+	);
+	await settle();
+
+	const stored = Object.assign({}, ...sessionSet.mock.calls.map(([item]) => item));
+	expect(stored[`${CHAT_SESSION_KEY_PREFIX}sess-spawned`]).toEqual({
+		...requester,
+		sessionId: "sess-spawned",
+		token: "tok-spawned",
+	});
+	expect(sessionRemove).toHaveBeenCalledWith(
+		`${CHAT_SESSION_KEY_PREFIX}${requester.sessionId}`,
+	);
+	expect(sessionRemove).not.toHaveBeenCalledWith(
+		`${CHAT_SESSION_KEY_PREFIX}sess-spawned`,
+	);
+});
+
+test("a session created via session-pending is removed from storage.session when it closes", async () => {
+	const { api, sessionRemove, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerChat({ browserApi: api, openSocket: () => socket });
+	const requester = makeBootstrap();
+	await captureMarker(getOnMessage, requester);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-pending",
+			sessionId: requester.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			newSession: { sessionId: "sess-spawned", token: "tok-spawned" },
+		}),
+	);
+	await settle();
+
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-closed",
+			sessionId: "sess-spawned",
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		}),
+	);
+	await settle();
+
+	expect(sessionRemove).toHaveBeenCalledWith(
+		`${CHAT_SESSION_KEY_PREFIX}sess-spawned`,
+	);
 });
 
 test("MSG.clientConnect from an extension page connects the client and responds with the connection state", async () => {

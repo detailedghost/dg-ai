@@ -28,6 +28,7 @@ export type FetchAsset = (
 export type TranscriptViewOptions = {
 	fetchAsset?: FetchAsset;
 	port?: number;
+	assetOrigin?: string;
 };
 
 export type TranscriptView = {
@@ -47,20 +48,23 @@ export type TranscriptView = {
 	): Promise<void>;
 };
 
-function buildDefaultFetchAsset(port: number | undefined): FetchAsset {
+function buildDefaultFetchAsset(
+	port: number | undefined,
+	assetOrigin: string | undefined,
+): FetchAsset {
 	return async function defaultFetchAsset(
 		assetId: string,
 		sessionId: string,
 		token: string,
 	): Promise<FetchAssetResult> {
-		if (port === undefined) {
+		if (port === undefined && assetOrigin === undefined) {
 			throw new Error(
 				"createTranscriptView: options.port is required for the default fetchAsset",
 			);
 		}
 		try {
 			const res = await fetch(
-				`http://127.0.0.1:${port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
+				`${assetOrigin ?? `http://127.0.0.1:${port}`}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
 				{
 					headers: {
 						"X-Dg-Session-Id": sessionId,
@@ -98,7 +102,8 @@ export function createTranscriptView(
 	container: HTMLElement,
 	options: TranscriptViewOptions = {},
 ): TranscriptView {
-	const fetchAsset = options.fetchAsset ?? buildDefaultFetchAsset(options.port);
+	const fetchAsset = options.fetchAsset ??
+		buildDefaultFetchAsset(options.port, options.assetOrigin);
 	const doc = container.ownerDocument;
 	let progressEl: HTMLElement | undefined;
 

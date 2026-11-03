@@ -78,10 +78,14 @@ import { handleSocketMessage } from "./frame-handlers";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
+	claimsLocalPage,
 	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
+	isLocalPageOrigin,
+	requireLocalPageOrigin,
 } from "./origin";
+import { localPageResponse } from "./pages";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -114,14 +118,18 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 	});
 }
 
-/** An absent Origin is deliberately allowed — extension pages send none. */
+/** An absent Origin passes only with a credential the route already trusts. */
 function refuseForeignOrigin(
 	req: Request,
 	paths: DgPaths,
+	hasCredential: () => boolean,
 ): Response | undefined {
-	const origin = req.headers.get("origin");
-	if (origin === null) return undefined;
-	return requireExtensionOrigin(req, paths);
+	if (req.headers.get("origin") !== null) {
+		return requireExtensionOrigin(req, paths);
+	}
+	return hasCredential()
+		? undefined
+		: new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
 }
 
 /** The WebSocket upgrade keeps the stricter gate: a browser always sends an Origin. */
@@ -160,7 +168,9 @@ function requirePinnedExtensionOrigin(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (origin === null) return undefined;
+	if (origin === null) {
+		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
+	}
 	if (!isExtensionOrigin(origin) || origin !== pinnedOrigin) {
 		return new Response("refused: Origin does not match a pinned extension origin", {
 			status: 400,
@@ -168,6 +178,19 @@ function requirePinnedExtensionOrigin(
 		});
 	}
 	return undefined;
+}
+
+function requireLocalOrPinnedOrigin(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Response | undefined {
+	if (claimsLocalPage(req, url, deps.port)) {
+		return requireLocalPageOrigin(req, url, deps.port, (token) =>
+			deps.registry.tokenIsLive(token),
+		);
+	}
+	return requirePinnedExtensionOrigin(req, deps.paths);
 }
 
 function requirePairOrigin(req: Request, paths: DgPaths): Response | undefined {
@@ -320,6 +343,11 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				);
 			}
 
+			if (req.method === "GET") {
+				const page = localPageResponse(url.pathname, port);
+				if (page) return page;
+			}
+
 			if (url.pathname === CHAT_START_PATH && req.method === "GET") {
 				return new Response(bootstrapPageHtml(), {
 					headers: {
@@ -357,7 +385,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === CHAT_WS_PATH) {
-				return handleWsUpgrade(req, server, deps);
+				return handleWsUpgrade(req, url, server, deps);
 			}
 
 			if (url.pathname === CHAT_CLI_PATH) {
@@ -413,7 +441,7 @@ async function handleOverwatchRoute(
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
-		requirePinnedExtensionOrigin(req, deps.paths);
+		requireLocalOrPinnedOrigin(req, url, deps);
 	if (refusal) {
 		refusal.headers.set("Cache-Control", "no-store");
 		return refusal;
@@ -801,20 +829,30 @@ async function handleExtensionSessionCreate(
 	});
 }
 
+function hasOwnerCredential(req: Request, paths: DgPaths): boolean {
+	const presented = req.headers.get(OWNER_TOKEN_HEADER) ?? "";
+	const expected = readOwnerToken(paths) ?? "";
+	return (
+		presented.length > 0 &&
+		expected.length > 0 &&
+		tokensEqual(presented, expected)
+	);
+}
+
 function requireOwnerCredential(
 	req: Request,
 	paths: DgPaths,
 ): Response | undefined {
-	const presented = req.headers.get(OWNER_TOKEN_HEADER) ?? "";
-	const expected = readOwnerToken(paths) ?? "";
-	if (
-		presented.length === 0 ||
-		expected.length === 0 ||
-		!tokensEqual(presented, expected)
-	) {
-		return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
-	}
-	return undefined;
+	if (hasOwnerCredential(req, paths)) return undefined;
+	return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
+}
+
+function hasLiveSessionBearer(req: Request, deps: HttpServerDeps): boolean {
+	const authorization = req.headers.get("authorization");
+	return (
+		authorization?.startsWith("Bearer ") === true &&
+		deps.registry.tokenIsLive(authorization.slice(7))
+	);
 }
 
 function handleLocalSessions(
@@ -915,7 +953,9 @@ async function handleServiceRoute(
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
-		refuseForeignOrigin(req, deps.paths);
+		refuseForeignOrigin(req, deps.paths, () =>
+			hasOwnerCredential(req, deps.paths),
+		);
 	if (refusal) return refusal;
 	const { supervisor } = deps;
 	const segments = url.pathname
@@ -958,7 +998,9 @@ async function handleSchedulerRoute(
 	deps: HttpServerDeps,
 	scheduler: DispatchScheduler,
 ): Promise<Response> {
-	const originError = refuseForeignOrigin(req, deps.paths);
+	const originError = refuseForeignOrigin(req, deps.paths, () =>
+		hasLiveSessionBearer(req, deps),
+	);
 	if (originError) return originError;
 	const { store, logger } = deps;
 	const runnerDeps = { store, scheduler, logger };
@@ -1082,13 +1124,21 @@ async function handleSchedulerRoute(
 
 function handleWsUpgrade(
 	req: Request,
+	url: URL,
 	server: Server<SocketState>,
 	deps: HttpServerDeps,
 ): Response {
 	const origin = req.headers.get("origin");
-	const originError = requireExtensionOrigin(req, deps.paths);
+	const localPage = isLocalPageOrigin(origin, deps.port);
+	const originError = localPage
+		? requireLocalPageOrigin(req, url, deps.port, (token) =>
+				deps.registry.tokenIsLive(token),
+			)
+		: requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
-	const data = createSocketState("ws", deps.logger, origin as string);
+	const data = localPage
+		? { ...createSocketState("ws", deps.logger), localPage: true }
+		: createSocketState("ws", deps.logger, origin as string);
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

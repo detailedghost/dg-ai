@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import {
-	CHAT_PAIR_PATH,
-	validatePairResponse,
-} from "@dg/common";
+import { CHAT_PAIR_PATH, validatePairResponse } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { writeConfig } from "../../src/server/config-store";
 import {

@@ -7,7 +7,7 @@ import {
 	type OverwatchStage,
 	validateChatFrame,
 } from "@dg/common";
-import { findDaemonPort } from "@/lib/daemon-port";
+import { findDaemonPort } from "../daemon-port";
 
 const OVERWATCH_PATH = "/overwatch";
 const OVERWATCH_ACTION_PATH = "/overwatch/action";
@@ -17,7 +17,7 @@ const MINUTE_MS = 60_000;
 
 export type OverwatchActionResult =
 	| { ok: true }
-	| { ok: false; error: string };
+	| { ok: false; error: string; status?: number };
 
 export type OverwatchApi = {
 	baseUrl: string;
@@ -33,7 +33,7 @@ export type StageCell = {
 
 const STAGES: StageCell["stage"][] = ["review", "ci", "e2e", "merge"];
 
-class OverwatchHttpError extends Error {
+export class OverwatchHttpError extends Error {
 	constructor(
 		readonly status: number,
 		message: string,
@@ -54,11 +54,18 @@ function parseBoard(value: unknown): OverwatchBoard {
 	return frame.board;
 }
 
-export function createOverwatchApi(baseUrl: string): OverwatchApi {
+export function createOverwatchApi(
+	baseUrl: string,
+	token?: string,
+): OverwatchApi {
+	const authorization: Record<string, string> =
+		token === undefined ? {} : { Authorization: `Bearer ${token}` };
 	return {
 		baseUrl,
 		async getBoard(): Promise<OverwatchBoard> {
-			const response = await fetch(`${baseUrl}${OVERWATCH_PATH}`);
+			const response = await fetch(`${baseUrl}${OVERWATCH_PATH}`, {
+				headers: authorization,
+			});
 			if (!response.ok) {
 				const detail = (await response.text()).trim();
 				throw new OverwatchHttpError(
@@ -74,7 +81,7 @@ export function createOverwatchApi(baseUrl: string): OverwatchApi {
 			try {
 				const response = await fetch(`${baseUrl}${OVERWATCH_ACTION_PATH}`, {
 					method: "POST",
-					headers: { "Content-Type": "application/json" },
+					headers: { "Content-Type": "application/json", ...authorization },
 					body: JSON.stringify(action),
 				});
 				if (response.ok) return { ok: true };
@@ -82,6 +89,7 @@ export function createOverwatchApi(baseUrl: string): OverwatchApi {
 				return {
 					ok: false,
 					error: detail || `the daemon returned ${response.status}`,
+					status: response.status,
 				};
 			} catch {
 				return { ok: false, error: "Daemon unreachable" };
@@ -92,9 +100,10 @@ export function createOverwatchApi(baseUrl: string): OverwatchApi {
 
 export async function connectOverwatchApi(
 	knownPort?: number,
+	token?: string,
 ): Promise<OverwatchApi | undefined> {
 	if (knownPort !== undefined) {
-		const direct = createOverwatchApi(`http://127.0.0.1:${knownPort}`);
+		const direct = createOverwatchApi(`http://127.0.0.1:${knownPort}`, token);
 		try {
 			await direct.getBoard();
 			return direct;

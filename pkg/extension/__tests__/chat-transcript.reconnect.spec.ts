@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createTestContainer } from "./utils/dom-events";
 import { buildAgentMessageFrame } from "./utils/frame-fixtures";
 
-const { createTranscriptView } = await import("@/lib/features/chat-transcript");
+const { createTranscriptView } = await import("@dg/pages/chat/chat-transcript");
 
 test("a message already rendered live is not duplicated when a later history-response backfill includes the same stored record", async () => {
 	const container = createTestContainer();
