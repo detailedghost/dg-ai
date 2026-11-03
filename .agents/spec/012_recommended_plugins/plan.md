@@ -4,7 +4,7 @@ feature_snake_case: recommended_plugins
 date: "2026-10-29"
 version: "1.0"
 status: draft
-current_slice: 2
+current_slice: 3
 pr_strategy: single
 slices:
   - id: 1
@@ -77,29 +77,29 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 ### Slice 2 — install-with-recommended
 
 #### Engineering
-- [ ] recommended-plugins.ts: recommendedPlugins() reads the embedded ../../../../.claude-plugin/marketplace.json (import with type json) and returns every entry whose name is not dg
-- [ ] installRecommendedForClaude(plugins, run): for each plugin compare installed_plugins.json gitCommitSha with the pinned sha; when absent run `claude plugin install <name>@detailedghost --json`; when different run uninstall then install; print one line per plugin; a missing claude binary or a failed command warns and continues
-- [ ] recommended-skills-only.ts: for each plugin: git init temp, `git fetch --depth 1 <url> <sha>`, `git checkout FETCH_HEAD`, assert `git rev-parse HEAD` equals the sha, read .claude-plugin/plugin.json skills or the entry's skills key, refuse symlinks (`git ls-files -s` mode 120000), copy each skill dir into <dest>/<skill-name> with installSkillTree semantics; a skill name that collides with a plugins/dg skill is skipped with `skipped <name> (dg ships its own)`; no network -> warn and continue
-- [ ] commands/install.ts: option `--with-recommended` ('also install the recommended third-party plugins from the marketplace: unslop, mattpocock-skills'); valid with the default, --cli-only and --skills-only modes
-- [ ] polish/doctor.ts unslopCheck fix text becomes `dg-skills install --with-recommended`
-- [ ] Retire dg's teach and wait-what: delete plugins/dg/skills/teach and plugins/dg/skills/wait-what; add both to RETIRED_SKILLS in pkg/common/src/node/install-skills.ts and to the retired loops in bootstrap.sh and bootstrap.ps1 (next to phone-friend); drop their entries from pkg/common/__tests__/installed-skill-files.ts and any test that counts skills
+- [x] recommended-plugins.ts: recommendedPlugins() reads the embedded ../../../../.claude-plugin/marketplace.json (import with type json) and returns every entry whose name is not dg
+- [x] installRecommendedForClaude(plugins, run): for each plugin compare installed_plugins.json gitCommitSha with the pinned sha; when absent run `claude plugin install <name>@detailedghost --json`; when different run uninstall then install; print one line per plugin; a missing claude binary or a failed command warns and continues
+- [x] recommended-skills-only.ts: for each plugin: git init temp, `git fetch --depth 1 <url> <sha>`, `git checkout FETCH_HEAD`, assert `git rev-parse HEAD` equals the sha, read .claude-plugin/plugin.json skills or the entry's skills key, refuse symlinks (`git ls-files -s` mode 120000), copy each skill dir into <dest>/<skill-name> with installSkillTree semantics; a skill name that collides with a plugins/dg skill is skipped with `skipped <name> (dg ships its own)`; no network -> warn and continue
+- [x] commands/install.ts: option `--with-recommended` ('also install the recommended third-party plugins from the marketplace: unslop, mattpocock-skills'); valid with the default, --cli-only and --skills-only modes
+- [x] polish/doctor.ts unslopCheck fix text becomes `dg-skills install --with-recommended`
+- [x] Retire dg's teach and wait-what: delete plugins/dg/skills/teach and plugins/dg/skills/wait-what; add both to RETIRED_SKILLS in pkg/common/src/node/install-skills.ts and to the retired loops in bootstrap.sh and bootstrap.ps1 (next to phone-friend); drop their entries from pkg/common/__tests__/installed-skill-files.ts and any test that counts skills
 
 #### Testing Criteria
 ##### Contracts
-- [ ] Contract: installRecommendedForClaude with a fake runner installs a missing plugin and reinstalls one whose gitCommitSha differs; equal sha runs nothing
-- [ ] Contract: a fake runner that throws ENOENT (no claude) produces one warning and exit 0
-- [ ] Contract: skills-only path on a local bare repo fixture at a known sha copies the declared skills and skips `grill-me` and `wayfinder`, printing one skipped line each
-- [ ] Contract: a fixture whose HEAD does not equal the pinned sha aborts that plugin and copies nothing
-- [ ] Contract: a symlink inside a declared skill dir aborts that plugin
-- [ ] Contract: --with-recommended with --agent-only is rejected
-- [ ] install-recommended.spec.ts: one output line per plugin (no summary line)
-- [ ] retired-skills.spec.ts: a skills-only install into a dest that holds teach/ and wait-what/ removes both; plugins/dg/skills has neither directory; bootstrap.sh and bootstrap.ps1 name both in their retired loops
+- [x] Contract: installRecommendedForClaude with a fake runner installs a missing plugin and reinstalls one whose gitCommitSha differs; equal sha runs nothing
+- [x] Contract: a fake runner that throws ENOENT (no claude) produces one warning and exit 0
+- [x] Contract: skills-only path on a local bare repo fixture at a known sha copies the declared skills and skips `grill-me` and `wayfinder`, printing one skipped line each
+- [x] Contract: a fixture whose HEAD does not equal the pinned sha aborts that plugin and copies nothing
+- [x] Contract: a symlink inside a declared skill dir aborts that plugin
+- [x] Contract: --with-recommended with --agent-only is rejected
+- [x] install-recommended.spec.ts: one output line per plugin (no summary line)
+- [x] retired-skills.spec.ts: a skills-only install into a dest that holds teach/ and wait-what/ removes both; plugins/dg/skills has neither directory; bootstrap.sh and bootstrap.ps1 name both in their retired loops
 
 #### Acceptance Criteria
 - [ ] Given a machine with the claude CLI, when `dg-skills install --cli-only --with-recommended` runs, then both plugins are installed at the pinned shas
 - [ ] Given `dg-skills install --skills-only --dest ~/.codex/skills --with-recommended`, when it runs online, then ~/.codex/skills/unslop and the 25 non-colliding mattpocock skills exist and the 2 collisions (grill-me, wayfinder) are each printed
-- [ ] Given no network, when the same command runs, then dg skills install and each recommended plugin prints one warning
-- [ ] Given a user who had /dg:teach, when they update, then /dg:teach is gone and docs/install.md says /teach and /wait-what come from --with-recommended
+- [x] Given no network, when the same command runs, then dg skills install and each recommended plugin prints one warning
+- [x] Given a user who had /dg:teach, when they update, then /dg:teach is gone and docs/install.md says /teach and /wait-what come from --with-recommended
 
 ### Slice 3 — docs-adr-d
 
@@ -119,9 +119,13 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 
 ## Slice Summaries
 
+- Slice 2: --with-recommended installs unslop and mattpocock-skills for Claude Code (claude plugin CLI, sha checked after install) and for --skills-only dests (fetch at the pinned sha, copy only regular tracked files of declared skill dirs with a SKILL.md, staged then swapped). teach and wait-what are retired; a retired folder is removed only when its SKILL.md hash matches a dg copy, in TS and both bootstraps. The two online acceptance items stay open until a manual run.
+
 - Slice 1: mattpocock-skills is pinned in marketplace.json, scripts/bump-plugin-pin.ts moves a pin (exit 1 unknown name or bad ref, 2 missing file, 3 unreachable), and plugin-pins, imported-plugins-optional and bump-plugin-pin specs guard the pins and the optional guard sentence. The guard must sit on the same line as the plugin name. The lint scans all text files under plugins/dg.
 
 ## Agent Notes
+
+- (orchestrator, slice 2) Dante chose: a skills install removes a retired teach or wait-what only when its SKILL.md sha256 is in RETIRED_SKILL_HASHES (pkg/common/src/node/install-skills.ts). bootstrap.sh and bootstrap.ps1 carry the same hashes. Fixtures of dg's last copies live in pkg/skills-test/__tests__/fixtures/retired-skills.
 
 - (orchestrator, slice 2) Signatures follow the code sample: installRecommendedForClaude(plugins, home, run, log), run(argv) returns {status, stdout, stderr} with argv starting with "claude"; installRecommendedSkillsOnly(plugin, dest, dgSkillNames, log) returns the written paths. installed_plugins.json shape: plugins["<name>@detailedghost"] = [{ gitCommitSha }].
 - (orchestrator, slice 2) installRecommendedSkillsOnly never throws. Offline, an unknown sha, a HEAD mismatch or a symlink each log exactly one line `⚠ <plugin> skipped: <reason>`, copy nothing for that plugin, and the install continues.
