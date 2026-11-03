@@ -134,7 +134,7 @@ Ask a person. Do not turn off a check to get past it.
   flag in Usage must appear in the table. `skill-flags.spec.ts` checks this.
 
 - **Doctor coverage.** Every command that `dg-skills` registers needs doctor checks and an allow-rule check. Every skill that calls `dg-skills` needs this line,
-  with the items it uses: `If a step fails, run ~/.dg/bin/dg-skills doctor <items>.` `doctor-coverage.spec.ts` checks this.
+  with the items it uses: `If a step fails, run dg-skills doctor <items>.` `doctor-coverage.spec.ts` checks this.
 
 - **Secrets.** Do not commit a secret. The `gitleaks` check scans every PR. To scan locally, run `mise run security:scan`.
 
@@ -214,7 +214,8 @@ Ask a person. Do not turn off a check to get past it.
 ### plugins/dg/skills
 
 - Give each skill a folder with a `SKILL.md`. Use the cross-host frontmatter that `skill-manifests.spec.ts` checks.
-- Call the CLI by its literal path, `~/.dg/bin/dg-skills` or `~/.dg/bin/dg-agent`. Do not resolve it through a shell variable. Do not branch on
+- Call the CLI by its bare name, `dg-skills` or `dg-agent`, after the generated first-run block
+  (`bun scripts/skill-bootstrap-block.ts --write`). Do not resolve it through a shell variable. Do not branch on
   `CLAUDE_PLUGIN_ROOT`. Do not run the TypeScript entry point.
 - Name other skills with the `dg:` prefix, such as `/dg:polish`. Name shipped agents as `dg:<agent>`.
 - Add the `## Flags` table and the doctor line described above.

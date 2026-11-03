@@ -82,7 +82,7 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   `chat --ext` and `overwatch --ext`, and the `dg-skills require-extension
   <skill>` check behind each `--ext`, stop with: the command needs the
   dg-ai-extension, and `dg-skills install` adds it.
-- To add the extension later, run `~/.dg/bin/dg-skills install`. It installs the extension
+- To add the extension later, run `dg-skills install`. It installs the extension
   and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
 
@@ -107,7 +107,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 `DG_AGENT_ONLY=1` also works for the shell form, and `dg-skills install --agent-only`
 does the same from an installed `dg-skills`. It accepts neither `--cli-only` nor
-`--skills-only` at the same time. After this, `~/.dg/bin/dg-agent phone
+`--skills-only` at the same time. After this, `dg-agent phone
 accept <card>` works; see [docs/phone.md](phone.md).
 
 ## Skills-only install
@@ -228,12 +228,12 @@ the `/dg:*` skills are available.
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
 The skills run `dg-skills`, `dg-agent` and `dg-daemon` from one bundle on a
-pinned Bun runtime. Bootstrap once — this installs the runtime, the bundle and the three launchers under
-`~/.dg` (`$DG_HOME` when `DG_HOME` is set), **then runs `dg-skills install`**,
+pinned Bun runtime. Bootstrap once — this installs the runtime, the bundle and the three launchers in
+the per-OS folders ([install layout](install.md#where-dg-keeps-its-files)), **then runs `dg-skills install`**,
 which stages the extension and prints the exact **Load unpacked** path:
 
 ```bash
-if [ ! -x ~/.dg/bin/dg-skills ]; then
+if ! command -v dg-skills >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/dg-skills" ]; then
   PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
   LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
@@ -252,11 +252,11 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
 
 - No Bun of your own is needed — the installer brings a pinned Bun and never uses
   one on PATH. Bun is only required for the `--local` source build.
-- Re-run `~/.dg/bin/dg-skills install` anytime to update the extension, the runtime
+- Re-run `dg-skills install` anytime to update the extension, the runtime
   and the bundle together; each part is skipped when already current. For Firefox:
-  `~/.dg/bin/dg-skills install firefox`. Default target is **chrome** (also serves
+  `dg-skills install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
-- The chat skill runs `~/.dg/bin/dg-agent`, and `dg-agent start` starts
+- The chat skill runs `dg-agent`, and `dg-agent start` starts
   `dg-daemon` from the same bundle and runtime. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
   machine that already used `browser`, `demo` or `proto` has `dg-skills`
   already, so gating on that would skip the download the gate exists for.
@@ -287,13 +287,13 @@ manual `chrome://extensions` step entirely — the browser must be fully closed
 first:
 
 ```bash
-~/.dg/bin/dg-skills launch --ext --browser brave --group "PRs" <refs...>
+dg-skills launch --ext --browser brave --group "PRs" <refs...>
 ```
 
 ## Step 3 — Verify
 
 ```bash
-~/.dg/bin/dg-skills --help
+dg-skills --help
 ```
 
 Should list `install`, `batch-open`, `launch`, `demo`, `rerun`, and `channel-review`. Then confirm

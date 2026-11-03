@@ -98,7 +98,7 @@ is two minor releases after the release that moved the data: a move by 1.34.x
 names 1.36.0. Install deletes these launchers when it installs that release or
 a later one.
 
-Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
+Claude Code allow rules in the old form, `Bash(dg-skills <sub>:*)`,
 stop matching. `dg-skills doctor` warns and names the new rule,
 `Bash(dg-skills <sub>:*)`.
 
