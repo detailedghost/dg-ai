@@ -12,7 +12,7 @@ import {
 	resolveBaseSha,
 } from "../utils/git";
 import { emitJson } from "../utils/json";
-import { defineCommand, die, EXIT } from "../utils/legacy-command";
+import { defineCommand, die, DieError, EXIT } from "../utils/legacy-command";
 
 const cmd = defineCommand({
 	name: "meaningful",
@@ -167,7 +167,8 @@ async function preflightAndCapture(baseOverride?: string, ontoRef?: string): Pro
 	let baseSha = "";
 	try {
 		baseSha = ontoRef ? await resolveOntoBaseSha(baseOverride) : await resolveBaseSha(baseOverride);
-	} catch {
+	} catch (err) {
+		if (err instanceof DieError) throw err;
 		die(`cannot resolve base ref.`, EXIT.ERR);
 	}
 
