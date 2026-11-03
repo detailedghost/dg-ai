@@ -64,7 +64,7 @@ describe("install retires the compiled dg-skills, dg-agent and dg-daemon version
 	const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"];
 
 	test("each stamp goes and each shim stays", async () => {
-		const home = mkdtempSync(join(tmpdir(), "dg-retired-stamps-test-"));
+		const home = makeTempDir("dg-retired-stamps-test-");
 		const binDir = join(home, ".dg", "bin");
 		mkdirSync(binDir, { recursive: true });
 		for (const name of PROGRAMS) {

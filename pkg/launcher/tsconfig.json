@@ -14,5 +14,5 @@
 			"@dg/common/*": ["../common/src/*"]
 		}
 	},
-	"include": ["build.ts", "src/**/*", "__tests__/**/*", "../skills-cli/src/markdown.d.ts", "../skills-cli/src/pw/playwright-registry.d.ts"]
+	"include": ["build.ts", "src/**/*", "__tests__/**/*", "../skills-cli/src/markdown.d.ts", "../skills-cli/src/pw/playwright-registry.d.ts", "../skills-cli/src/shim-templates.d.ts"]
 }
