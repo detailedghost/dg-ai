@@ -1082,7 +1082,7 @@ describe("board token stays with its own daemon port", () => {
 		for (const call of discovered) expect(call.authorization).toBeNull();
 	});
 
-	test("reads from the stored session's port and sends that token only there", async () => {
+	test("reads from the stored session's port and moves to a newly stored session on another port", async () => {
 		storedSessions = {
 			"chat_session:session-a": {
 				port: 47900,
@@ -1130,10 +1130,13 @@ describe("board token stays with its own daemon port", () => {
 			restore();
 		}
 
-		const retried = calls.find(
-			(call) => call.url === "http://127.0.0.1:47900/overwatch",
-		);
-		expect(retried?.authorization).toBeNull();
+		expect(calls.length).toBeGreaterThan(0);
+		for (const call of calls) {
+			expect(call).toEqual({
+				url: "http://127.0.0.1:47901/overwatch",
+				authorization: "Bearer tok-b",
+			});
+		}
 	});
 
 	test("tries the next stored token for the port when the daemon refuses the first", async () => {
@@ -1215,6 +1218,99 @@ describe("board token stays with its own daemon port", () => {
 		expect(calls.at(-1)).toEqual({
 			url: "http://127.0.0.1:47901/overwatch",
 			authorization: "Bearer tok-live",
+		});
+	});
+
+	describe("when the previous port stops serving the board", () => {
+		const bootstrap = (port: number, name: string) => ({
+			port,
+			sessionId: `session-${name}`,
+			token: `tok-${name}`,
+			agentIdentity: "claude",
+		});
+
+		async function reconnectAfter(
+			failPreviousPort: () => Promise<Response>,
+		): Promise<Call[]> {
+			storedSessions = {
+				"chat_session:session-a": bootstrap(47900, "a"),
+				"chat_session:session-b": bootstrap(47901, "b"),
+			};
+			let previousPortDown = false;
+			const { calls, restore } = stubFetch((url) =>
+				url === "http://127.0.0.1:47900/overwatch" && previousPortDown
+					? failPreviousPort()
+					: url.endsWith("/overwatch")
+						? Promise.resolve(Response.json({ lanes: [], merges: [] }))
+						: Promise.reject(new TypeError("Failed to fetch")),
+			);
+			try {
+				const handle = renderOverwatchPage({
+					root: newRoot(),
+					runtime: runtimeHarness().runtime,
+					schedule: () => 1,
+					cancel: () => undefined,
+					defer: () => 1,
+					cancelDeferred: () => undefined,
+				});
+				await handle.ready;
+				expect(calls[0]).toEqual({
+					url: "http://127.0.0.1:47900/overwatch",
+					authorization: "Bearer tok-a",
+				});
+				previousPortDown = true;
+				await handle.refresh();
+				calls.length = 0;
+				await handle.refresh();
+				handle.stop();
+			} finally {
+				restore();
+			}
+			return calls;
+		}
+
+		function expectTokensStayOnTheirPorts(calls: Call[]) {
+			const tokenByPort: Record<string, string> = {
+				"47900": "Bearer tok-a",
+				"47901": "Bearer tok-b",
+			};
+			for (const call of calls) {
+				if (call.authorization === null) continue;
+				const port = new URL(call.url).port;
+				expect(call.authorization).toBe(tokenByPort[port]);
+			}
+		}
+
+		test("falls through to a live session on another port when the previous port is offline", async () => {
+			const calls = await reconnectAfter(() =>
+				Promise.reject(new TypeError("Failed to fetch")),
+			);
+
+			expect(calls[0]).toEqual({
+				url: "http://127.0.0.1:47900/overwatch",
+				authorization: "Bearer tok-a",
+			});
+			expect(calls.at(-1)).toEqual({
+				url: "http://127.0.0.1:47901/overwatch",
+				authorization: "Bearer tok-b",
+			});
+			expectTokensStayOnTheirPorts(calls);
+		});
+
+		test("falls through to a live session on another port when the previous port refuses", async () => {
+			const calls = await reconnectAfter(() =>
+				Promise.resolve(new Response("refused", { status: 403 })),
+			);
+
+			expect(calls[0]).toEqual({
+				url: "http://127.0.0.1:47900/overwatch",
+				authorization: "Bearer tok-a",
+			});
+			expect(calls.at(-1)).toEqual({
+				url: "http://127.0.0.1:47901/overwatch",
+				authorization: "Bearer tok-b",
+			});
+			expectTokensStayOnTheirPorts(calls);
 		});
 	});
 });

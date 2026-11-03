@@ -19,7 +19,10 @@ async function connectWithStoredToken(knownPort?: number) {
 	const candidates =
 		knownPort === undefined
 			? bootstraps
-			: bootstraps.filter((candidate) => candidate.port === knownPort);
+			: [
+					...bootstraps.filter((candidate) => candidate.port === knownPort),
+					...bootstraps.filter((candidate) => candidate.port !== knownPort),
+				];
 	let refusal: OverwatchHttpError | undefined;
 	for (const bootstrap of candidates) {
 		const api = createOverwatchApi(
