@@ -118,7 +118,6 @@ posix("writeShims on a POSIX host", () => {
 		expect(run.stdout.toString().split("\n")[0]).toBe(join(home, "data", "lib", "current", "dg.js"));
 	});
 
-
 	test("is idempotent", () => {
 		writeShims(join(sandbox.root, "bin"), sandbox.root);
 		writeShims(join(sandbox.root, "bin"), sandbox.root);

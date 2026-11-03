@@ -40,8 +40,8 @@ describe("dg-skills install --agent-only", () => {
 			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
 
 			expect(existsSync(join(home, "config", "cli-only"))).toBe(true);
-			expect(existsSync(join(home, "agents"))).toBe(false);
-			expect(existsSync(join(home, "skills"))).toBe(false);
+			for (const dir of [join(home, "agents"), join(home, "skills"), join(home, "data", "agents"), join(home, "data", "skills")])
+				expect([dir, existsSync(dir)]).toEqual([dir, false]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
