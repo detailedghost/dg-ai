@@ -45,7 +45,9 @@ describe("the release ships one platform-independent bundle, not compiled binari
 	});
 
 	test("exactly one job builds the bundle", () => {
-		const builders = Object.keys(release.jobs).filter((id) => id.startsWith("build-") && id !== "build-ext");
+		const builders = Object.keys(release.jobs).filter(
+			(id) => id.startsWith("build-") && id !== "build-ext" && id !== "build-narration",
+		);
 
 		expect(builders).toEqual(["build-bundle"]);
 	});

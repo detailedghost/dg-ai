@@ -812,6 +812,7 @@ const DOCUMENTED_ASSETS = [
 	"SHA256SUMS",
 	"bootstrap.ps1",
 	"bootstrap.sh",
+	"dg-demo-narration-<v>.zip",
 	"dg-lib-<v>.tar.gz",
 	"runtime.json",
 ];
@@ -835,7 +836,7 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 	test("exactly one job builds the bundle and no per-binary build job remains", () => {
 		const builders = Object.keys(workflow.jobs).filter((id) => id.startsWith("build-"));
 
-		expect(builders.sort()).toEqual(["build-bundle", "build-ext"]);
+		expect(builders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
 		expect(workflow.jobs["build-bundle"].strategy).toBeUndefined();
 		expect(text).not.toContain("--compile");
 	});
@@ -860,13 +861,13 @@ describe("the release builds one bundle and smokes it on all six platforms", () 
 		const id = smokeJobIds()[0] as string;
 
 		expect(jobNeeds(workflow.jobs[id] as WorkflowJob)).toContain("build-bundle");
-		expect(jobNeeds(releaseJob)).toEqual(expect.arrayContaining(["build-bundle", "build-ext", id]));
+		expect(jobNeeds(releaseJob)).toEqual(expect.arrayContaining(["build-bundle", "build-ext", "build-narration", id]));
 	});
 });
 
 describe("the release publishes exactly the documented asset names", () => {
 	test("the build jobs, the bootstrap scripts and SHA256SUMS add up to the documented list and nothing else", () => {
-		const fromBuilds = ["build-bundle", "build-ext"].flatMap(uploadedNames);
+		const fromBuilds = ["build-bundle", "build-ext", "build-narration"].flatMap(uploadedNames);
 		const extras = ["bootstrap.sh", "bootstrap.ps1", "SHA256SUMS"].filter((name) =>
 			(step(STEP.assets).run ?? "").includes(name),
 		);
@@ -881,6 +882,6 @@ describe("the release publishes exactly the documented asset names", () => {
 			.filter(([, job]) => (job.steps ?? []).some((s) => s.uses?.startsWith("actions/upload-artifact@")))
 			.map(([id]) => id);
 
-		expect(uploaders.sort()).toEqual(["build-bundle", "build-ext"]);
+		expect(uploaders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
 	});
 });
