@@ -169,7 +169,6 @@ export const UA = { "User-Agent": "dg-ai-extension" };
 
 export const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
 const LAST_PREFIXED_VERSION = "1.21.1";
-export const FIRST_BUNDLE_VERSION = "1.27.0";
 
 /**
  * The exact `v<version>` release when `version` pins one, else the newest `vX.Y.Z` release by semver.
@@ -232,9 +231,7 @@ export function pickBundle(releases: Release[], version?: string): PickedBundle 
 	const [bundleUrl, sumsUrl, runtimeUrl] = [assetName, "SHA256SUMS", "runtime.json"].map(url);
 	if (!bundleUrl) {
 		throw new Error(
-			versionGte(found, FIRST_BUNDLE_VERSION)
-				? `v${found} has no ${assetName} asset`
-				: `releases before ${FIRST_BUNDLE_VERSION} ship compiled binaries; run that release's bootstrap.sh: curl -fsSL https://github.com/${REPO}/releases/download/v${found}/bootstrap.sh | sh`,
+			`v${found} has no ${assetName}: releases before the dg-lib bundle ship compiled binaries; run that release's bootstrap.sh: curl -fsSL https://github.com/${REPO}/releases/download/v${found}/bootstrap.sh | sh`,
 		);
 	}
 	if (!sumsUrl || !runtimeUrl) throw new Error(`v${found} has no SHA256SUMS or runtime.json asset`);

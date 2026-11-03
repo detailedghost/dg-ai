@@ -8,7 +8,6 @@ import {
 	cliBinDir,
 	cliDest,
 	expectedSha256,
-	FIRST_BUNDLE_VERSION,
 	pickBundle,
 	readCurrentVersion,
 	verifyReleaseAsset,
@@ -98,9 +97,17 @@ describe("pickBundle", () => {
 		expect(() => pickBundle(releases, "1.26.9")).toThrow("no release named v1.26.9 found");
 	});
 
-	test("a release without dg-lib names the first bundle release and that release's bootstrap", () => {
-		expect(() => pickBundle([rel("v1.2.3", ["dg-skills-linux-x64"])], "1.2.3")).toThrow(
-			`releases before ${FIRST_BUNDLE_VERSION} ship compiled binaries; run that release's bootstrap.sh`,
+	test("a release without a dg-lib asset is pre-bundle at any version and names that release's bootstrap", () => {
+		for (const version of ["1.2.3", "1.34.2"]) {
+			expect(() => pickBundle([rel(`v${version}`, ["dg-skills-linux-x64", "SHA256SUMS"])], version)).toThrow(
+				`releases before the dg-lib bundle ship compiled binaries; run that release's bootstrap.sh: curl -fsSL https://github.com/detailedghost/dg-ai/releases/download/v${version}/bootstrap.sh | sh`,
+			);
+		}
+	});
+
+	test("the newest release without a dg-lib asset is also reported as pre-bundle", () => {
+		expect(() => pickBundle([rel("v1.40.0", ["dg-skills-linux-x64"])])).toThrow(
+			"releases before the dg-lib bundle ship compiled binaries",
 		);
 	});
 

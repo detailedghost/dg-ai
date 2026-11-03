@@ -114,7 +114,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 describe("dg-skills install --version <x.y.z> (default install, extension included)", () => {
 	const cases: [string, ReleaseKind | undefined, string][] = [
 		["the extension zip", "extension", `extension asset found for ${PIN}`],
-		["the bundle", "bundle", `v${PIN} has no dg-lib-${PIN}.tar.gz asset`],
+		["the bundle", "bundle", `v${PIN} has no dg-lib-${PIN}.tar.gz: releases before the dg-lib bundle ship compiled binaries`],
 		["runtime.json", "runtime", "runtime.json"],
 		["SHA256SUMS", "sums", "SHA256SUMS"],
 		["the whole release", undefined, `no release named v${PIN} found`],
@@ -212,7 +212,7 @@ describe("dg-skills install --version <pre-E release>", () => {
 
 				expect(result.code).not.toBe(0);
 				expect(result.stderr).toMatch(
-					/releases before \d+\.\d+\.\d+ ship compiled binaries; run that release's bootstrap\.sh/,
+					/releases before the dg-lib bundle ship compiled binaries; run that release's bootstrap\.sh: curl -fsSL https:\/\/github\.com\/[^ ]+\/releases\/download\/v1\.2\.3\/bootstrap\.sh \| sh/,
 				);
 				expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("compiled dg-skills 1.2.3");
 				expect(readFileSync(join(bin, ".dg-skills.version"), "utf8")).toBe("1.2.3\n");
