@@ -301,9 +301,9 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** `$DG_HOME`, else `~/.dg`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
+/** `$DG_HOME` made absolute, else `~/.dg`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
 export function installRoot(env: NodeJS.ProcessEnv = process.env): string {
-	return env.DG_HOME || join(homedir(), ".dg");
+	return env.DG_HOME ? resolve(env.DG_HOME) : join(homedir(), ".dg");
 }
 
 export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {

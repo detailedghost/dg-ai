@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { installRoot } from "../src/utils/lib";
 import { writeShims } from "../src/install/shims";
 import { scratch, type Scratch } from "./runtime-bundle-fixtures";
 
@@ -91,6 +92,23 @@ posix("writeShims on a POSIX host", () => {
 			"dg-skills",
 			"x",
 		]);
+	});
+
+	test("a relative DG_HOME resolves to an absolute root so the shims run from another directory", () => {
+		const real = join(sandbox.root, "home");
+		const runtime = join(real, "runtime", "bun-test");
+		mkdirSync(runtime, { recursive: true });
+		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
+		symlinkSync("bun-test", join(real, "runtime", "current"));
+		const root = installRoot({ DG_HOME: relative(process.cwd(), real) });
+		writeShims(root);
+
+		const elsewhere = join(sandbox.root, "elsewhere");
+		mkdirSync(elsewhere);
+		const run = Bun.spawnSync([join(real, "bin", "dg-skills"), "x"], { cwd: elsewhere, stdout: "pipe", stderr: "pipe" });
+		expect(root).toBe(real);
+		expect(run.exitCode, run.stderr.toString()).toBe(0);
+		expect(run.stdout.toString().split("\n")[0]).toBe(join(real, "lib", "current", "dg.js"));
 	});
 
 	test("is idempotent", () => {
