@@ -103,7 +103,8 @@ each, warning and skipping one that can't be reached.
 Claude Code keeps every dg plugin version under
 `~/.claude/plugins/cache/<marketplace>/dg/<version>/` and removes orphaned ones
 about 14 days after it marks them. `dg-skills install` reclaims that space now,
-in every mode except `--skills-only`. It prints one line, for example
+in every mode except `--skills-only` and `--local`, which is a dev build that
+never touches release binaries. It prints one line, for example
 `plugin cache: removed 1.20.0, 1.21.0 (58 MB); kept 1.24.0 (active)`.
 
 Install keeps a version when any of these is true:

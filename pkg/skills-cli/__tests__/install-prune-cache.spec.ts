@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	chmodSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	rmSync,
@@ -171,7 +173,72 @@ describe("prunePluginCache", () => {
 				symlinkSync(outside, stale);
 			},
 		});
+		expect(lstatSync(stale).isSymbolicLink()).toBe(true);
 		expect(existsSync(join(outside, "precious.txt"))).toBe(true);
+		expect(lines[0]).not.toContain("removed");
+	});
+
+	test("keeps a version that gains a live session marker after the plan was made", () => {
+		const home = tempRoot();
+		const stale = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		installedPlugins(home, "1.24.0");
+		const lines: string[] = [];
+		prunePluginCache({
+			home,
+			now: NOW,
+			keep: false,
+			log: (line) => lines.push(line),
+			beforeRemove: () => {
+				mkdirSync(join(stale, ".in_use"));
+				writeFileSync(join(stale, ".in_use", "late"), JSON.stringify({ pid: process.pid }));
+			},
+		});
+		expect(existsSync(stale)).toBe(true);
+		expect(lines).toEqual([`plugin cache: nothing to remove`]);
+	});
+
+	test("keeps a version that becomes active after the plan was made", () => {
+		const home = tempRoot();
+		const stale = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		installedPlugins(home, "1.24.0");
+		prunePluginCache({
+			home,
+			now: NOW,
+			keep: false,
+			log: () => undefined,
+			beforeRemove: () => installedPlugins(home, "1.20.0"),
+		});
+		expect(existsSync(stale)).toBe(true);
+	});
+
+	test("keeps a version when installed_plugins.json becomes unreadable after the plan was made", () => {
+		const home = tempRoot();
+		const stale = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		installedPlugins(home, "1.24.0");
+		prunePluginCache({
+			home,
+			now: NOW,
+			keep: false,
+			log: () => undefined,
+			beforeRemove: () => writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), "{"),
+		});
+		expect(existsSync(stale)).toBe(true);
+	});
+
+	test.skipIf(process.getuid?.() === 0)("reports a version it cannot delete and continues with the rest", () => {
+		const home = tempRoot();
+		const locked = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		const removable = version(home, "1.21.0", { orphanedAt: NOW - 48 * HOUR });
+		installedPlugins(home, "1.24.0");
+		chmodSync(locked, 0o555);
+		try {
+			const lines = prune(home);
+			expect(existsSync(removable)).toBe(false);
+			expect(existsSync(locked)).toBe(true);
+			expect(lines).toEqual(["plugin cache: removed 1.21.0 (0 MB); kept 1.20.0 (could not remove)"]);
+		} finally {
+			chmodSync(locked, 0o755);
+		}
 	});
 });
 

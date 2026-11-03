@@ -88,11 +88,11 @@ describe("doctor shared dg-home check", () => {
 	});
 
 	test("passes when DG_HOME is unset", async () => {
-		expect((await homeCheck().run(context())).status).toBe("ok");
+		expect(await homeCheck().run(context())).toEqual({ status: "ok", detail: "DG_HOME is unset" });
 	});
 
 	test("passes when DG_HOME names the default home", async () => {
 		const result = await homeCheck().run(context({ DG_HOME: join(world.home, ".dg") }));
-		expect(result.status).toBe("ok");
+		expect(result).toEqual({ status: "ok", detail: "DG_HOME uses the default state directory" });
 	});
 });

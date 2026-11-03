@@ -59,9 +59,10 @@ export const sharedChecks: DoctorCheck[] = [
 		id: "dg-home",
 		run({ env, home }) {
 			const defaultHome = resolveDgPaths({ homeDir: home, env: {} }).stateDir;
-			return env.DG_HOME && resolve(env.DG_HOME) !== resolve(defaultHome)
+			if (!env.DG_HOME) return ok("DG_HOME is unset");
+			return resolve(env.DG_HOME) !== resolve(defaultHome)
 				? warn(`DG_HOME=${env.DG_HOME} moves the dg state directory away from ~/.dg`, "unset DG_HOME")
-				: ok("DG_HOME is unset");
+				: ok("DG_HOME uses the default state directory");
 		},
 	},
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),

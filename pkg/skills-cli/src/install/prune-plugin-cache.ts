@@ -20,14 +20,21 @@ export type PruneOptions = {
 function summaryLine(plan: PrunePlan): string {
 	const unknown = plan.keep.filter((k) => k.reason === "unknown state");
 	if (plan.remove.length === 0) {
-		return unknown.length
-			? `plugin cache: nothing to remove; kept ${unknown.map((k) => `${k.version.version} (unknown state)`).join(", ")}`
-			: "plugin cache: nothing to remove";
+		const kept = unknown.map((k) => `${k.version.version} (unknown state)`).join(", ");
+		return kept ? `plugin cache: nothing to remove; kept ${kept}` : "plugin cache: nothing to remove";
 	}
 	const bytes = plan.remove.reduce((sum, v) => sum + v.bytes, 0);
 	const removed = plan.remove.map((v) => v.version).join(", ");
 	const kept = plan.keep.map((k) => `${k.version.version} (${k.reason})`).join(", ");
 	return `plugin cache: removed ${removed} (${formatMegabytes(bytes)})${kept ? `; kept ${kept}` : ""}`;
+}
+
+function freshRemoveVerdict(home: string, version: PluginCacheVersion, now: number): string | undefined {
+	const active = activeVersions(home);
+	if (!active) return "installed_plugins.json unreadable";
+	const current = listDgPluginVersions(home).find((entry) => entry.path === version.path);
+	if (!current) return "gone";
+	return planPluginCachePrune([current], active, now).keep[0]?.reason;
 }
 
 function isOwnedVersionDir(home: string, version: PluginCacheVersion): boolean {
@@ -49,13 +56,24 @@ export function prunePluginCache(opts: PruneOptions): PrunePlan | undefined {
 		return undefined;
 	}
 	const plan = planPluginCachePrune(listDgPluginVersions(opts.home), active, opts.now);
+	const keep = [...plan.keep];
 	const removed: PluginCacheVersion[] = [];
 	for (const version of plan.remove) {
 		opts.beforeRemove?.(version);
+		const reason = freshRemoveVerdict(opts.home, version, opts.now);
+		if (reason !== undefined) {
+			if (reason !== "gone") keep.push({ version, reason });
+			continue;
+		}
 		if (!isOwnedVersionDir(opts.home, version)) continue;
-		rmSync(version.path, { recursive: true, force: true });
-		removed.push(version);
+		try {
+			rmSync(version.path, { recursive: true, force: true });
+			removed.push(version);
+		} catch {
+			keep.push({ version, reason: "could not remove" });
+		}
 	}
-	opts.log(summaryLine({ keep: plan.keep, remove: removed }));
-	return { keep: plan.keep, remove: removed };
+	const result = { keep, remove: removed };
+	opts.log(summaryLine(result));
+	return result;
 }
