@@ -97,10 +97,7 @@ describe("overwatch HTTP routes", () => {
 
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 		const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
-		const message = store.claimNextAgentMessage(
-			"print-agent",
-			"print-session",
-		);
+		const message = store.claimNextAgentMessage("print-agent", "print-session");
 		expect(message?.from).toBe("overwatch-board");
 		expect(JSON.parse(message?.body ?? "")).toEqual({ overwatch: action });
 		store.close();

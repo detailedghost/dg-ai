@@ -149,6 +149,15 @@ export class SessionRegistry extends EventEmitter {
 		);
 	}
 
+	tokenIsLive(token: string): boolean {
+		let live = false;
+		for (const record of this.sessions.values()) {
+			if (record.state === "active" && tokensEqual(record.token, token))
+				live = true;
+		}
+		return live;
+	}
+
 	close(sessionId: string, reason: CloseReason): boolean {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state === "closed") return false;

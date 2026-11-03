@@ -98,20 +98,14 @@ describe("checkWslNetworking", () => {
 });
 
 describe("checkExecutable denylist", () => {
-	it.each([
-		"php",
-		"lua",
-		"deno",
-		"awk",
-		"xargs",
-		"socat",
-		"nohup",
-		"expect",
-	])("refuses %s, which can evaluate a caller-supplied program", (name) => {
-		expect(checkExecutable(name)).toMatch(
-			/forbidden shell or script host|does not resolve on PATH/,
-		);
-	});
+	it.each(["php", "lua", "deno", "awk", "xargs", "socat", "nohup", "expect"])(
+		"refuses %s, which can evaluate a caller-supplied program",
+		(name) => {
+			expect(checkExecutable(name)).toMatch(
+				/forbidden shell or script host|does not resolve on PATH/,
+			);
+		},
+	);
 
 	it("still admits an ordinary non-interpreter binary", () => {
 		expect(checkExecutable("echo")).toBeUndefined();

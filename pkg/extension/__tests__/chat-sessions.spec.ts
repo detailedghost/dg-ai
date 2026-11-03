@@ -5,7 +5,7 @@ import {
 	buildSessionListFrame,
 } from "./utils/frame-fixtures";
 
-const { createChatSessions } = await import("@/lib/features/chat-sessions");
+const { createChatSessions } = await import("@dg/pages/chat/chat-sessions");
 
 function buildProgressFrame(overrides: Record<string, unknown> = {}) {
 	return {

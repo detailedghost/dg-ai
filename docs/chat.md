@@ -9,10 +9,27 @@ Claude Code: /dg:chat
 Codex:      $dg:chat
 ```
 
+`dg-agent start --open` opens the chat page that `dg-daemon` serves at
+`http://127.0.0.1:<port>/chat`. No extension is needed. The same daemon serves
+the overwatch board at `/board`, and `dg-agent overwatch open` opens it.
+
+The URL ends in a fragment, `#_chat=<base64url>`, that carries the session
+token. The browser never sends a fragment to a server, so the token stays out
+of the page request. The page then sends it as a Bearer header on fetch and
+as the `token` query on the WebSocket upgrade. The page reads it, removes it from the address bar,
+and keeps it in `sessionStorage` for that tab. The page shells are public. The
+data routes accept a request only from a loopback `Origin` or no `Origin`, and
+only with the token of a live session. A dead token gets 403 and a foreign
+origin gets 400.
+
 The `dg-daemon` daemon hosts every session on loopback only, each gated by a
 capability token, with messages and staged assets encrypted at rest. On WSL it
 needs **mirrored** networking mode, since NAT cannot reach the loopback port
 from the Windows-side browser.
+
+Pass `--ext` to `dg-agent start` or `dg-agent overwatch open` to use the
+dg-ai-extension side panel instead. See
+[ADR 0031](adr/0031-loopback-pages.md).
 
 An agent can also address another agent directly — `dg-agent send --to <identity>`
 queues a message for that identity instead of the human, and the recipient's

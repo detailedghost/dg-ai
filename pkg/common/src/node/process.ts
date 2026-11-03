@@ -42,6 +42,8 @@ function openers(): Array<[string, (url: string) => string[]]> {
 	return [["xdg-open", (u) => [u]]];
 }
 
+export const OPEN_FAILED_HINT = "could not open a browser; open the URL above";
+
 /** Try platform URL launchers in order; true means a launcher spawned, not that the page loaded. */
 export function tryOpen(url: string): Promise<boolean> {
 	const candidates = openers();
@@ -205,6 +207,16 @@ export function runCaptureBytes(
 export function writeStdout(value: string | Uint8Array): Promise<void> {
 	return new Promise((resolve, reject) => {
 		process.stdout.write(value, (error) => {
+			if (error) reject(error);
+			else resolve();
+		});
+	});
+}
+
+/** Wait for stderr to accept the text, propagating write errors. */
+export function writeStderr(value: string): Promise<void> {
+	return new Promise((resolve, reject) => {
+		process.stderr.write(value, (error) => {
 			if (error) reject(error);
 			else resolve();
 		});

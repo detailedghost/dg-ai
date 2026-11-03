@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, OWNER_TOKEN_HEADER } from "@dg/common";
-import { readOwnerToken, resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
+import {
+	readOwnerToken,
+	resolveDgPaths,
+	writePidFileAtomic,
+} from "@dg/common/node";
 import { statSync } from "node:fs";
 import { writeConfig } from "../../src/server/config-store";
 import {
@@ -133,14 +137,22 @@ describe("extension to CLI and CLI to extension", () => {
 			agentIdentity: "claude",
 		});
 		expect(created.status).toBe(200);
-		const bootstrap = (await created.json()) as { sessionId: string; token: string };
+		const bootstrap = (await created.json()) as {
+			sessionId: string;
+			token: string;
+		};
 		expect(bootstrap.token.length).toBeGreaterThan(8);
 
 		const catalog = await fetch(`http://127.0.0.1:${port}/sessions?waiting=1`, {
 			headers: { Host: `127.0.0.1:${port}` },
 		});
 		const listed = (await catalog.json()) as {
-			sessions: { sessionId: string; awaitingAgent: boolean; token?: string; cwd: string }[];
+			sessions: {
+				sessionId: string;
+				awaitingAgent: boolean;
+				token?: string;
+				cwd: string;
+			}[];
 		};
 		expect(listed.sessions.map((session) => session.sessionId)).toEqual([
 			bootstrap.sessionId,
@@ -174,7 +186,9 @@ describe("manual cleanup", () => {
 		const { port, paths } = await boot();
 		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
 		const idle = await registerSession(port, { agentIdentity: "old" });
-		const waiting = await extensionPost(port, "/sessions", { agentIdentity: "next" });
+		const waiting = await extensionPost(port, "/sessions", {
+			agentIdentity: "next",
+		});
 		const waitingBody = (await waiting.json()) as { sessionId: string };
 
 		const cleared = await fetch(`http://127.0.0.1:${port}/sessions/clear`, {
@@ -188,7 +202,9 @@ describe("manual cleanup", () => {
 		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
 			headers: { Host: `127.0.0.1:${port}`, Origin: EXTENSION_ORIGIN },
 		});
-		const body = (await catalog.json()) as { sessions: { sessionId: string }[] };
+		const body = (await catalog.json()) as {
+			sessions: { sessionId: string }[];
+		};
 		expect(body.sessions.map((session) => session.sessionId)).toEqual([
 			waitingBody.sessionId,
 		]);
@@ -229,7 +245,9 @@ describe("manual cleanup", () => {
 		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
 			headers: { Host: `127.0.0.1:${port}` },
 		});
-		const body = (await catalog.json()) as { sessions: { sessionId: string }[] };
+		const body = (await catalog.json()) as {
+			sessions: { sessionId: string }[];
+		};
 		expect(body.sessions.map((session) => session.sessionId)).toContain(
 			bootstrap.sessionId,
 		);

@@ -142,7 +142,7 @@ to copy only the CLI skills into `$CODEX_HOME/skills`.
 | `google-sms-cleanup` | Yes — `dg-skills ssms`; live Google needs a CDP browser, live Signal needs `signal-cli` |
 | `inbox-cleanup` | Yes for explicit `--data-path` fixtures; live profiles need `dg-daemon` |
 | `browser`, `proto`, `demo` | No — local by default; `--ext` needs the extension |
-| `chat`, `overwatch` | No — each still declares `requires: [extension]` until its local mode lands |
+| `chat`, `overwatch` | No — needs `dg-agent` and `dg-daemon`, which serve the local page on loopback; `--ext` also needs the extension |
 
 On WSL, the default `demo` uses the Windows browser. The CLI controls it through a
 remote-debugging port on 127.0.0.1, and the port stays open while the run is live. To
@@ -156,10 +156,14 @@ Any local process can attach to that port during the run. See
 without an extension dependency also install; their own tools and referenced
 skills still need to be available.
 
-A skill that needs the extension stops with a message that names the fix. To add
-the extension later, run `dg-skills install` (or the full bootstrap command
-above). That also fetches `dg-daemon` and `dg-agent` and removes the CLI-only
-marker at `~/.dg/cli-only`.
+Every skill runs locally by default; only `browser launch` always needs the
+extension. A skill run with `--ext` stops with a message that names the fix
+when the extension is missing. `chat` and
+`overwatch` need `dg-agent`, which `--cli-only` skips. Their bootstrap block
+runs the full installer when `dg-agent` is missing, and that install removes
+the CLI-only marker. To add the extension later, run `dg-skills install` (or
+the full bootstrap command above). That also fetches `dg-daemon` and `dg-agent`
+and removes the CLI-only marker at `~/.dg/cli-only`.
 
 ## Skills-only install
 

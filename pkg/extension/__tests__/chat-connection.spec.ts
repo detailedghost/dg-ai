@@ -6,7 +6,7 @@ import {
 	redactSecrets,
 	sessionControls,
 	staleSessionIds,
-} from "@/lib/features/chat-connection";
+} from "@dg/pages/chat/chat-connection";
 
 const TOKEN = "bootstrap-token-should-stay-out-of-ui";
 

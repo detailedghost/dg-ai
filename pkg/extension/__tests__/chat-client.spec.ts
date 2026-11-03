@@ -18,7 +18,7 @@ import {
 } from "./utils/relay-harness";
 import { buildSessionListFrame } from "./utils/frame-fixtures";
 
-const { createChatClient } = await import("@/lib/features/chat-client");
+const { createChatClient } = await import("@dg/pages/chat/chat-client");
 
 const makeBootstrap = makeBootstrapFactory({
 	port: 47823,
@@ -1132,4 +1132,66 @@ test("an unsupported or refused disconnect preserves the session and rejects the
 	await expect(pending).rejects.toThrow("did not confirm disconnect");
 	expect(client.getConnectionState()).toBe("connected");
 	expect(() => client.sendUserMessage(session.sessionId, "still available")).not.toThrow();
+});
+
+test("sendCommandInvocation sends a command-invocation frame with the session's own token", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	socket.dispatch("open");
+
+	const result = await client.sendCommandInvocation?.(
+		bootstrap.sessionId,
+		"review",
+	);
+	await flushMicrotasks();
+
+	expect(result).toEqual({ ok: true });
+	expect(
+		sentFrames(socket).filter((f) => f.type === "command-invocation"),
+	).toEqual([
+		{
+			type: "command-invocation",
+			sessionId: bootstrap.sessionId,
+			token: bootstrap.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			commandLabel: "review",
+			params: {},
+		},
+	]);
+});
+
+test("sendCommandInvocation refuses a session the client never connected", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+
+	const result = await client.sendCommandInvocation?.("session-x", "review");
+
+	expect(result).toEqual({
+		ok: false,
+		error: "no chat session is open — start one to run a command",
+	});
+	expect(socket.send.mock.calls).toEqual([]);
+});
+
+test("sendCommandInvocation reports a failure and sends nothing while the socket is not connected", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+
+	const result = await client.sendCommandInvocation?.(
+		bootstrap.sessionId,
+		"review",
+	);
+	await flushMicrotasks();
+
+	expect(result).toEqual({
+		ok: false,
+		error: "the daemon is not connected — retry once the chat reconnects",
+	});
+	expect(
+		sentFrames(socket).filter((f) => f.type === "command-invocation"),
+	).toEqual([]);
 });

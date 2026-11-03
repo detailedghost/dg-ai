@@ -234,6 +234,10 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Build the local pages
+        working-directory: pkg/pages
+        run: bun build.ts
+
       - name: Build ${{ matrix.asset }}
         working-directory: pkg/dg-daemon
         run: >-

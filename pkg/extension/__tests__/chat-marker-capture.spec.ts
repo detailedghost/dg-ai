@@ -1,6 +1,6 @@
 import { afterAll, afterEach, expect, mock, test } from "bun:test";
-import { MSG } from "@/lib/chat-messages";
-import { stripChatMarker } from "@/utils/chat-marker";
+import { MSG } from "@dg/pages/chat-messages";
+import { stripChatMarker } from "@dg/pages/chat-marker";
 import { captureGlobal, makeBootstrap } from "./utils/relay-harness";
 
 type CapturedContentConfig = {
@@ -120,4 +120,33 @@ test("strips a malformed _chat marker without relaying it to the background", as
 
 	expect(sendMessage).not.toHaveBeenCalled();
 	expect(replacedUrl()).toBe(stripChatMarker(url));
+});
+
+for (const path of ["/chat", "/board"]) {
+	test(`leaves the ${path} marker to the local page and opens no extension chat`, async () => {
+		const sendMessage = mock(() => undefined);
+		Object.assign(globalThis, { chrome: { runtime: { sendMessage } } });
+		const url = `http://127.0.0.1:4317${path}#_chat=${encodeMarkerPayload(makeBootstrap())}`;
+		const { replacedUrl } = withLocation(url);
+
+		await capturedContentConfig?.main(undefined as never);
+
+		expect(sendMessage).not.toHaveBeenCalled();
+		expect(replacedUrl()).toBeUndefined();
+	});
+}
+
+test("still captures the /start handoff for the extension", async () => {
+	const bootstrap = makeBootstrap();
+	const sendMessage = mock(() => undefined);
+	Object.assign(globalThis, { chrome: { runtime: { sendMessage } } });
+	const url = `http://127.0.0.1:4317/start#_chat=${encodeMarkerPayload(bootstrap)}`;
+	withLocation(url);
+
+	await capturedContentConfig?.main(undefined as never);
+
+	expect(sendMessage).toHaveBeenCalledWith({
+		type: MSG.markerCaptured,
+		bootstrap,
+	});
 });

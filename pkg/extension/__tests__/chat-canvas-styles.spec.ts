@@ -14,8 +14,8 @@ function read(relative: string): string {
 /** Class-name literals the canvas sources assign, so a newly added element cannot slip past this test. */
 function canvasClassNames(): string[] {
 	const sources = [
-		read("../lib/features/chat-canvas.ts"),
-		read("../entrypoints/chat/main.ts"),
+		read("../../pages/src/chat/chat-canvas.ts"),
+		read("../../pages/src/chat/main.ts"),
 	].join("\n");
 	const found = new Set<string>();
 	for (const match of sources.matchAll(
@@ -28,7 +28,7 @@ function canvasClassNames(): string[] {
 
 test("the canvas view's own class names each have a styling rule", () => {
 	const names = canvasClassNames();
-	const css = read("../entrypoints/chat/style.css");
+	const css = read("../../pages/src/chat/style.css");
 
 	expect(names).toContain("chat-canvas");
 	expect(names).toContain("chat-canvas__board");
@@ -39,7 +39,7 @@ test("the canvas view's own class names each have a styling rule", () => {
 });
 
 test("the canvas rules use theme variables rather than hard-coded colors", () => {
-	const css = read("../entrypoints/chat/style.css");
+	const css = read("../../pages/src/chat/style.css");
 	const canvasRules = css.slice(css.indexOf(".chat-canvas {"));
 
 	expect(canvasRules.length).toBeGreaterThan(0);

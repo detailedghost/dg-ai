@@ -1,3 +1,4 @@
+import "../build-pages-shim";
 import { randomUUID } from "node:crypto";
 import {
 	existsSync,

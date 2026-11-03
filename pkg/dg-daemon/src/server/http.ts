@@ -78,10 +78,14 @@ import { handleSocketMessage } from "./frame-handlers";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
+	claimsLocalPage,
 	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
+	isLocalPageOrigin,
+	requireLocalPageOrigin,
 } from "./origin";
+import { localPageResponse } from "./pages";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -168,6 +172,19 @@ function requirePinnedExtensionOrigin(
 		});
 	}
 	return undefined;
+}
+
+function requireLocalOrPinnedOrigin(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Response | undefined {
+	if (claimsLocalPage(req, url, deps.port)) {
+		return requireLocalPageOrigin(req, url, deps.port, (token) =>
+			deps.registry.tokenIsLive(token),
+		);
+	}
+	return requirePinnedExtensionOrigin(req, deps.paths);
 }
 
 function requirePairOrigin(req: Request, paths: DgPaths): Response | undefined {
@@ -320,6 +337,11 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				);
 			}
 
+			if (req.method === "GET") {
+				const page = localPageResponse(url.pathname, port);
+				if (page) return page;
+			}
+
 			if (url.pathname === CHAT_START_PATH && req.method === "GET") {
 				return new Response(bootstrapPageHtml(), {
 					headers: {
@@ -357,7 +379,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === CHAT_WS_PATH) {
-				return handleWsUpgrade(req, server, deps);
+				return handleWsUpgrade(req, url, server, deps);
 			}
 
 			if (url.pathname === CHAT_CLI_PATH) {
@@ -413,7 +435,7 @@ async function handleOverwatchRoute(
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
-		requirePinnedExtensionOrigin(req, deps.paths);
+		requireLocalOrPinnedOrigin(req, url, deps);
 	if (refusal) {
 		refusal.headers.set("Cache-Control", "no-store");
 		return refusal;
@@ -1082,13 +1104,21 @@ async function handleSchedulerRoute(
 
 function handleWsUpgrade(
 	req: Request,
+	url: URL,
 	server: Server<SocketState>,
 	deps: HttpServerDeps,
 ): Response {
 	const origin = req.headers.get("origin");
-	const originError = requireExtensionOrigin(req, deps.paths);
+	const localPage = isLocalPageOrigin(origin, deps.port);
+	const originError = localPage
+		? requireLocalPageOrigin(req, url, deps.port, (token) =>
+				deps.registry.tokenIsLive(token),
+			)
+		: requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
-	const data = createSocketState("ws", deps.logger, origin as string);
+	const data = localPage
+		? { ...createSocketState("ws", deps.logger), localPage: true }
+		: createSocketState("ws", deps.logger, origin as string);
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

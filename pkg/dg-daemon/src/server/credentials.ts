@@ -4,7 +4,7 @@ import {
 	writeCredentialGrantToken,
 } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
-import { type SocketState, sendViaQueue } from "./connection";
+import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
 import type { FrameHandlerDeps } from "./frame-handlers";
 
 type Socket = ServerWebSocket<SocketState>;
@@ -50,7 +50,8 @@ function resolveAccess(
 			: undefined;
 	const sessionId = socketSessionId(requester);
 	if (!sessionId) return undefined;
-	if (requester.data.kind === "ws")
+	if (requester.data.localPage) return undefined;
+	if (isExtensionPeer(requester))
 		return { scope: "prefix", prefix: EXTENSION_CREDENTIAL_PREFIX };
 	return deps.registry.get(sessionId)?.state === "active"
 		? { scope: "session" }

@@ -67,6 +67,7 @@
       "version": "1.33.0",
       "dependencies": {
         "@dg/common": "workspace:*",
+        "@dg/pages": "workspace:*",
         "@dg/tour-ui": "workspace:*",
         "kokoro-js": "^1.2.1",
       },
@@ -97,6 +98,19 @@
         "@faker-js/faker": "^10.2.0",
         "@types/lodash-es": "4.17.12",
         "bun-types": "1.4.3",
+        "typescript": "^7.0.2",
+      },
+    },
+    "pkg/pages": {
+      "name": "@dg/pages",
+      "version": "1.0.0",
+      "dependencies": {
+        "@dg/common": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "^1.4.3",
+        "happy-dom": "^21.0.3",
+        "tailwindcss": "^4.3.3",
         "typescript": "^7.0.2",
       },
     },
@@ -349,6 +363,8 @@
     "@dg/extension": ["@dg/extension@workspace:pkg/extension"],
 
     "@dg/inbox": ["@dg/inbox@workspace:pkg/inbox"],
+
+    "@dg/pages": ["@dg/pages@workspace:pkg/pages"],
 
     "@dg/skills-cli": ["@dg/skills-cli@workspace:pkg/skills-cli"],
 

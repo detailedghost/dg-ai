@@ -4,14 +4,14 @@ import {
 	validatePairResponse,
 } from "@dg/common";
 import { browser } from "wxt/browser";
-import { MSG, type PairingSession } from "@/lib/chat-messages";
-import { findDaemonPort } from "@/lib/daemon-port";
+import { MSG, type PairingSession } from "@dg/pages/chat-messages";
+import { findDaemonPort } from "@dg/pages/daemon-port";
 import {
 	type PublicSession,
 	connectionGuidance,
 	sessionControls,
 	staleSessionIds,
-} from "@/lib/features/chat-connection";
+} from "@dg/pages/chat/chat-connection";
 
 type PairRuntimeListener = (message: unknown) => void;
 

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import type { CommandEntry } from "@dg/common";
-import { createComposer } from "@/lib/features/chat-node";
+import { createComposer } from "@dg/pages/chat/chat-node";
 import { createTestContainer, keydown, typeValue } from "./utils/dom-events";
 
 const { attachCommandAutocomplete } = await import(
-	"@/lib/features/chat-autocomplete"
+	"@dg/pages/chat/chat-autocomplete"
 );
 
 const COMMANDS: CommandEntry[] = [

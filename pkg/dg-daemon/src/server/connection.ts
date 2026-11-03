@@ -13,6 +13,7 @@ export type SocketState = {
 	closeWaiters: Set<() => void>;
 	originHeader?: string;
 	extensionVersion?: string;
+	localPage: boolean;
 };
 
 export function createSocketState(
@@ -30,7 +31,13 @@ export function createSocketState(
 		drainWaiters: [],
 		closeWaiters: new Set(),
 		originHeader,
+		localPage: false,
 	};
+}
+
+/** A chat socket from the extension, the only peer that can serve browser relays and overwatch opens. */
+export function isExtensionPeer(ws: ServerWebSocket<SocketState>): boolean {
+	return ws.data.kind === "ws" && !ws.data.localPage;
 }
 
 /** Registers work to abandon when the socket goes away; returns the de-registration for the settled path. */
@@ -92,7 +99,7 @@ export class ConnectionManager {
 	extensionVersion(): string | null {
 		let latest: string | null = null;
 		for (const ws of this.sockets) {
-			if (ws.data.kind === "ws" && ws.data.extensionVersion) {
+			if (isExtensionPeer(ws) && ws.data.extensionVersion) {
 				latest = ws.data.extensionVersion;
 			}
 		}
@@ -111,7 +118,7 @@ export class ConnectionManager {
 	forEachExtension(fn: (ws: ServerWebSocket<SocketState>) => void): number {
 		let count = 0;
 		for (const ws of this.sockets) {
-			if (ws.data.kind !== "ws") continue;
+			if (!isExtensionPeer(ws)) continue;
 			if (ws.data.capabilities.size === 0) continue;
 			count++;
 			fn(ws);

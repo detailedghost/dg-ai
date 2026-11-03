@@ -27,7 +27,7 @@ import {
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { registerChat, registerRecording } = await import("@/lib/background");
-const { MSG } = await import("@/lib/chat-messages");
+const { MSG } = await import("@dg/pages/chat-messages");
 const { browser: mockedBrowser } = await import("wxt/browser");
 
 const makeBootstrap = makeBootstrapFactory({

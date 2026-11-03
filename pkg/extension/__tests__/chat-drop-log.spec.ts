@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { CHAT_DEFAULT_PORT, type SessionBootstrap } from "@dg/common";
-import { createChatClient } from "@/lib/features/chat-client";
+import { createChatClient } from "@dg/pages/chat/chat-client";
 
 const TOKEN = "extension-drop-token-must-stay-out";
 

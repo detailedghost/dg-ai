@@ -404,7 +404,9 @@ describe("the job routes are gated like the rest of the browser surface", () => 
 			pinnedOrigin: EXTENSION_ORIGIN,
 		});
 
-		expect((await get(port, CHAT_JOBS_PATH, EXTENSION_ORIGIN)).status).toBe(200);
+		expect((await get(port, CHAT_JOBS_PATH, EXTENSION_ORIGIN)).status).toBe(
+			200,
+		);
 
 		const other = "chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
 		const refused = await get(port, CHAT_JOBS_PATH, other);

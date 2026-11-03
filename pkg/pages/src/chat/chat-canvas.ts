@@ -1,3 +1,5 @@
+import type { PositionArea } from "../runtime";
+
 export type Point = { x: number; y: number };
 
 export type Viewport = {
@@ -83,10 +85,11 @@ export function canvasPositionKey(sessionId: string): string {
 }
 
 export async function saveNodePosition(
+	area: PositionArea,
 	sessionId: string,
 	position: Point,
 ): Promise<void> {
-	await chrome.storage.local.set({ [canvasPositionKey(sessionId)]: position });
+	await area.set({ [canvasPositionKey(sessionId)]: position });
 }
 
 function isPoint(value: unknown): value is Point {
@@ -103,9 +106,11 @@ function isPoint(value: unknown): value is Point {
 }
 
 export async function loadNodePositions(
+	area: PositionArea,
 	liveSessionIds: string[],
+	{ prune = true }: { prune?: boolean } = {},
 ): Promise<Map<string, Point>> {
-	const stored: Record<string, unknown> = await chrome.storage.local.get(null);
+	const stored = await area.get(null);
 	const liveSessions = new Set(liveSessionIds);
 	const positions = new Map<string, Point>();
 	const orphanedKeys: string[] = [];
@@ -120,7 +125,7 @@ export async function loadNodePositions(
 		if (isPoint(value)) positions.set(sessionId, value);
 	}
 
-	if (orphanedKeys.length > 0) await chrome.storage.local.remove(orphanedKeys);
+	if (prune && orphanedKeys.length > 0) await area.remove(orphanedKeys);
 
 	return positions;
 }

@@ -5,7 +5,7 @@ import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "@dg/common";
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { bootRelay } = await import("./utils/relay-harness");
-const { MSG } = await import("@/lib/chat-messages");
+const { MSG } = await import("@dg/pages/chat-messages");
 
 const SESSION_ID = "sess-abc123";
 const TOKEN = "tok-super-secret-xyz789";

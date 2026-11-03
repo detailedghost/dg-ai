@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-11-01
 
+Superseded in part by [ADR 0031](0031-loopback-pages.md): the PENDING_LOCAL_MODE allowlist is gone.
+
 ## Context
 
 - Four skills declared `requires: [extension]`: `browser`, `chat`, `demo`, and

@@ -1,5 +1,5 @@
-import { isTextEntryFocused } from "@/lib/dom-focus";
-import { patchKeyedList } from "@/lib/dom-keyed-list";
+import { isTextEntryFocused } from "@dg/pages/dom-focus";
+import { patchKeyedList } from "@dg/pages/dom-keyed-list";
 import {
 	applyRefresh,
 	connectDashboardApi,
@@ -16,7 +16,7 @@ import {
 	toJobView,
 	visibleItems,
 } from "@/lib/features/dashboard";
-import { createVimNav } from "@/lib/features/vim-nav";
+import { createVimNav } from "@dg/pages/vim-nav";
 import "../options/style.css";
 import "./style.css";
 

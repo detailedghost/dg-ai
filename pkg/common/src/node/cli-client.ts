@@ -92,7 +92,7 @@ async function fetchLocalSessions(
 export async function resolveCliSession(
 	explicitSessionId?: string,
 	paths: DgPaths = resolveDgPaths(),
-): Promise<ResolvedSession> {
+): Promise<ResolvedSession & { agentIdentity: string }> {
 	const handle = readPidFile(paths);
 	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
 	requireMatchingProtocol(
@@ -132,6 +132,7 @@ export async function resolveCliSession(
 		port: handle.port,
 		sessionId: chosen.sessionId,
 		token,
+		agentIdentity: chosen.agentIdentity,
 	};
 }
 
