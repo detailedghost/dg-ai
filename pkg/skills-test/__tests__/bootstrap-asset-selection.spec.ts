@@ -34,16 +34,16 @@ describe("bootstrap.sh installs the pinned runtime and the release bundle", () =
 
 		expect(result.code, result.stderr).toBe(0);
 		expect(
-			present(join(result.root, "runtime", `bun-v${RUNTIME.version}`, "bun")),
+			present(join(result.root, "data", "runtime", `bun-v${RUNTIME.version}`, "bun")),
 		).toBe(true);
-		expect(realpathSync(join(result.root, "runtime", "current"))).toBe(
-			realpathSync(join(result.root, "runtime", `bun-v${RUNTIME.version}`)),
+		expect(realpathSync(join(result.root, "data", "runtime", "current"))).toBe(
+			realpathSync(join(result.root, "data", "runtime", `bun-v${RUNTIME.version}`)),
 		);
-		expect(present(join(result.root, "lib", result.version, "dg.js"))).toBe(
+		expect(present(join(result.root, "data", "lib", result.version, "dg.js"))).toBe(
 			true,
 		);
-		expect(realpathSync(join(result.root, "lib", "current"))).toBe(
-			realpathSync(join(result.root, "lib", result.version)),
+		expect(realpathSync(join(result.root, "data", "lib", "current"))).toBe(
+			realpathSync(join(result.root, "data", "lib", result.version)),
 		);
 		for (const program of PROGRAMS) {
 			expect(
@@ -77,11 +77,11 @@ describe("bootstrap.sh installs the pinned runtime and the release bundle", () =
 		const second = await runBootstrap({ dgHome: first.root });
 
 		expect(second.code, second.stderr).toBe(0);
-		expect(realpathSync(join(first.root, "lib", "current"))).toBe(
-			realpathSync(join(first.root, "lib", first.version)),
+		expect(realpathSync(join(first.root, "data", "lib", "current"))).toBe(
+			realpathSync(join(first.root, "data", "lib", first.version)),
 		);
-		expect(realpathSync(join(first.root, "runtime", "current"))).toBe(
-			realpathSync(join(first.root, "runtime", `bun-v${RUNTIME.version}`)),
+		expect(realpathSync(join(first.root, "data", "runtime", "current"))).toBe(
+			realpathSync(join(first.root, "data", "runtime", `bun-v${RUNTIME.version}`)),
 		);
 	});
 
@@ -107,6 +107,43 @@ describe("bootstrap.sh installs the pinned runtime and the release bundle", () =
 
 		expect(result.code, result.stderr).toBe(0);
 		expect(shimInvocation(result.stdout)).toBe("dg-skills install");
+	});
+});
+
+describe("bootstrap.sh uses the per-OS layout", () => {
+	test("a Linux run without DG_HOME writes the launchers to ~/.local/bin and the bundle to ~/.local/share/dg", async () => {
+		const result = await runBootstrap({ withoutDgHome: true });
+
+		expect(result.code, result.stderr).toBe(0);
+		const data = join(result.home, ".local", "share", "dg");
+		for (const program of PROGRAMS) {
+			const shim = readFileSync(join(result.home, ".local", "bin", program), "utf8");
+			expect(shim).toContain(join(data, "lib", "current", "dg.js"));
+		}
+		expect(realpathSync(join(data, "lib", "current"))).toBe(realpathSync(join(data, "lib", result.version)));
+		expect(present(join(result.home, ".dg"))).toBe(false);
+		expect(result.stdout).toContain(`export PATH="${join(result.home, ".local", "bin")}:$PATH"`);
+	});
+
+	test("a macOS run without DG_HOME writes the launchers to ~/.local/bin and the bundle to Application Support", async () => {
+		const result = await runBootstrap({ withoutDgHome: true, os: "Darwin", arch: "arm64" });
+
+		expect(result.code, result.stderr).toBe(0);
+		const data = join(result.home, "Library", "Application Support", "dg");
+		expect(readFileSync(join(result.home, ".local", "bin", "dg-skills"), "utf8")).toContain(
+			`"${join(data, "lib", "current", "dg.js")}"`,
+		);
+		expect(present(join(data, "runtime", "current"))).toBe(true);
+	});
+
+	test("a DG_HOME run writes the launchers to <DG_HOME>/bin and the bundle to <DG_HOME>/data", async () => {
+		const result = await runBootstrap();
+
+		expect(result.code, result.stderr).toBe(0);
+		expect(readFileSync(join(result.root, "bin", "dg-skills"), "utf8")).toContain(
+			join(result.root, "data", "lib", "current", "dg.js"),
+		);
+		expect(present(join(result.home, ".local"))).toBe(false);
 	});
 });
 
@@ -160,7 +197,7 @@ describe("bootstrap.sh verifies every download before it installs", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("checksum mismatch");
-		expect(present(join(result.root, "runtime", "current"))).toBe(false);
+		expect(present(join(result.root, "data", "runtime", "current"))).toBe(false);
 		expect(result.stdout).not.toContain("FAKE_BUN");
 	});
 
@@ -168,7 +205,7 @@ describe("bootstrap.sh verifies every download before it installs", () => {
 		const result = await runBootstrap({ sums: "without-lib" });
 
 		expect(result.code).toBe(1);
-		expect(present(join(result.root, "lib", "current"))).toBe(false);
+		expect(present(join(result.root, "data", "lib", "current"))).toBe(false);
 		expect(result.stdout).not.toContain("FAKE_BUN");
 	});
 
@@ -178,7 +215,7 @@ describe("bootstrap.sh verifies every download before it installs", () => {
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("checksum mismatch");
 		expect(result.bunZipRequests).toEqual([]);
-		expect(present(join(result.root, "runtime", "current"))).toBe(false);
+		expect(present(join(result.root, "data", "runtime", "current"))).toBe(false);
 	});
 
 	test("a wrong tarball hash exits 1 with 'checksum mismatch' and leaves no lib/current", async () => {
@@ -186,7 +223,7 @@ describe("bootstrap.sh verifies every download before it installs", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("checksum mismatch");
-		expect(present(join(result.root, "lib", "current"))).toBe(false);
+		expect(present(join(result.root, "data", "lib", "current"))).toBe(false);
 		expect(result.stdout).not.toContain("FAKE_BUN");
 	});
 });
@@ -235,8 +272,8 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 
 		expect(result.code, result.stderr).toBe(0);
 		expect(readFileSync(join(dest, "demo", "SKILL.md"), "utf8")).toContain("name: demo");
-		expect(realpathSync(join(result.root, "lib", "current"))).toBe(
-			realpathSync(join(result.root, "lib", result.version)),
+		expect(realpathSync(join(result.root, "data", "lib", "current"))).toBe(
+			realpathSync(join(result.root, "data", "lib", result.version)),
 		);
 		for (const program of PROGRAMS) expect(present(join(result.root, "bin", program))).toBe(true);
 		expect(result.installCall).toBeUndefined();
@@ -253,9 +290,9 @@ describe("bootstrap.sh ends by invoking the shim with the install flags of its m
 		});
 
 		expect(result.code, result.stderr).toBe(0);
-		expect(present(join(result.root, "lib", "1.26.0", "dg.js"))).toBe(true);
-		expect(realpathSync(join(result.root, "lib", "current"))).toBe(
-			realpathSync(join(result.root, "lib", "1.26.0")),
+		expect(present(join(result.root, "data", "lib", "1.26.0", "dg.js"))).toBe(true);
+		expect(realpathSync(join(result.root, "data", "lib", "current"))).toBe(
+			realpathSync(join(result.root, "data", "lib", "1.26.0")),
 		);
 		expect(shimInvocation(result.stdout)).toBe(
 			"dg-skills install --version 1.26.0",

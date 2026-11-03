@@ -81,17 +81,17 @@ describe("dg-skills install --version <x.y.z>", () => {
 			const { preload, pin } = writeReleaseServer(directory, fetchLog, PIN, {
 				sums: (defaults) => defaults.replace(/^\S+(\s+dg-lib-)/m, `${"0".repeat(64)}$1`),
 			});
-			const old = join(home, "runtime", "bun-v0.0.1");
+			const old = join(home, "data", "runtime", "bun-v0.0.1");
 			mkdirSync(old, { recursive: true });
 			writeFileSync(join(old, "bun"), "#!/bin/sh\n", { mode: 0o755 });
-			symlinkSync("bun-v0.0.1", join(home, "runtime", "current"));
+			symlinkSync("bun-v0.0.1", join(home, "data", "runtime", "current"));
 
 			const result = await runCli(installArgv(preload, "--cli-only", "--version", PIN), installEnv(home));
 
 			expect(result.code).not.toBe(0);
-			expect(existsSync(join(home, "runtime", `bun-v${pin}`))).toBe(true);
-			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe("bun-v0.0.1");
-			expect(existsSync(join(home, "lib", "current"))).toBe(false);
+			expect(existsSync(join(home, "data", "runtime", `bun-v${pin}`))).toBe(true);
+			expect(basename(readlinkSync(join(home, "data", "runtime", "current")))).toBe("bun-v0.0.1");
+			expect(existsSync(join(home, "data", "lib", "current"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

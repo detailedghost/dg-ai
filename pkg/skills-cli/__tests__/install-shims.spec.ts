@@ -66,7 +66,7 @@ posix("writeShims on a POSIX host", () => {
 		mkdirSync(runtime, { recursive: true });
 		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
 		symlinkSync("bun-test", join(root, "runtime", "current"));
-		writeShims(root);
+		writeShims(join(root, "bin"), root);
 
 		for (const name of NAMES) {
 			const run = Bun.spawnSync([join(root, "bin", name), "two words", "*"], { stdout: "pipe", stderr: "pipe" });

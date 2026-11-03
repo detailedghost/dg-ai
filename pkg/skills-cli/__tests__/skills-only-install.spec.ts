@@ -443,7 +443,7 @@ describe("bootstrap.sh --skills-only", () => {
 			expect(lines.slice(summaryAt + 1)).toEqual([
 				`Downloading bun ${RUNTIME.version} (linux-x64)...`,
 				`Downloading dg-lib-${result.version}.tar.gz...`,
-				`dg runtime ${RUNTIME.version} and bundle ${result.version} installed at ${result.root}`,
+				`dg runtime ${RUNTIME.version} and bundle ${result.version} installed at ${join(result.root, "data")}`,
 				`Add to PATH:  export PATH="${join(result.root, "bin")}:$PATH"`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);

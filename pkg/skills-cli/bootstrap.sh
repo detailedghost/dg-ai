@@ -267,7 +267,7 @@ skills_tree_source() {
 if [ -n "${DG_HOME:-}" ]; then
   BIN="${DG_HOME}/bin"
   ROOT="${DG_HOME}/data"
-elif [ "$(uname -s)" = "Darwin" ]; then
+elif [ "$("$UNAME" -s)" = "Darwin" ]; then
   BIN="${HOME}/.local/bin"
   ROOT="${HOME}/Library/Application Support/dg"
 else
