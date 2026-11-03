@@ -51,19 +51,18 @@ export async function bumpRuntime(root: string, version: string): Promise<void> 
 	if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`invalid bun version: ${version}`);
 	const runtimePath = join(root, RUNTIME_PATH);
 	const runtime = JSON.parse(readFileSync(runtimePath, "utf8")) as RuntimeJson;
-	const next = rewriteRuntime(runtime, version, parseShasums(await fetchShasums(version)));
-	writeFileSync(runtimePath, `${JSON.stringify(next, null, "\t")}\n`);
-
 	const misePath = join(root, MISE_PATH);
-	writeFileSync(misePath, rewriteMise(readFileSync(misePath, "utf8"), version));
-
+	const writes = new Map<string, string>([[misePath, rewriteMise(readFileSync(misePath, "utf8"), version)]]);
 	const workflows = join(root, WORKFLOWS_PATH);
 	for (const name of readdirSync(workflows).filter((entry) => entry.endsWith(".yml"))) {
 		const path = join(workflows, name);
 		const text = readFileSync(path, "utf8");
 		const updated = rewriteWorkflow(text, version);
-		if (updated !== text) writeFileSync(path, updated);
+		if (updated !== text) writes.set(path, updated);
 	}
+	const next = rewriteRuntime(runtime, version, parseShasums(await fetchShasums(version)));
+	writes.set(runtimePath, `${JSON.stringify(next, null, "\t")}\n`);
+	for (const [path, text] of writes) writeFileSync(path, text);
 }
 
 if (import.meta.main) {

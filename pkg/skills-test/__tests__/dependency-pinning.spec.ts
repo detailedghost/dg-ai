@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
 	cpSync,
 	existsSync,
@@ -6,6 +6,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
@@ -127,9 +128,15 @@ function setupBunVersions(name: string): string[] {
 
 describe("bump-runtime keeps runtime.json, .mise and the workflows in agreement", () => {
 	const NEXT = "9.8.7";
+	const staged: string[] = [];
+
+	afterEach(() => {
+		for (const root of staged.splice(0)) rmSync(root, { recursive: true, force: true });
+	});
 
 	function stagedRepo(): string {
 		const root = mkdtempSync(join(tmpdir(), "dg-bump-runtime-"));
+		staged.push(root);
 		mkdirSync(join(root, "pkg", "launcher"), { recursive: true });
 		mkdirSync(join(root, ".mise"), { recursive: true });
 		cpSync(join(REPO_ROOT, "pkg", "launcher", "runtime.json"), join(root, "pkg", "launcher", "runtime.json"));
@@ -167,7 +174,10 @@ describe("bump-runtime keeps runtime.json, .mise and the workflows in agreement"
 		};
 		expect(runtime.version).toBe(NEXT);
 		expect(Object.values(runtime.assets).map((asset) => asset.file)).toEqual(files);
-		expect(Object.values(runtime.assets).every((asset) => /^([1-8])\1{63}$/.test(asset.sha256))).toBe(true);
+		for (const [index, file] of files.entries()) {
+			const asset = Object.values(runtime.assets).find((entry) => entry.file === file);
+			expect(asset?.sha256).toBe(String(index + 1).repeat(64));
+		}
 		expect(mise.tools.bun).toBe(NEXT);
 		const pins = readdirSync(join(root, ".github", "workflows"))
 			.filter((name) => name.endsWith(".yml"))
@@ -195,6 +205,25 @@ describe("bump-runtime keeps runtime.json, .mise and the workflows in agreement"
 		}
 
 		expect(readFileSync(join(root, "pkg", "launcher", "runtime.json"), "utf8")).toBe(original);
+	});
+
+	test("a .mise config without a bun pin fails before any file changes", async () => {
+		const root = stagedRepo();
+		const runtimePath = join(root, "pkg", "launcher", "runtime.json");
+		const original = readFileSync(runtimePath, "utf8");
+		const misePath = join(root, ".mise", "config.toml");
+		writeFileSync(misePath, readFileSync(misePath, "utf8").replace(/^bun\s*=.*$/m, ""));
+		const files = Object.values((JSON.parse(original) as { assets: Record<string, { file: string }> }).assets).map(
+			(asset) => asset.file,
+		);
+		process.env.DG_BUN_SHASUMS_URL = shasumsFile(root, files);
+		try {
+			await expect(bumpRuntime(root, NEXT)).rejects.toThrow("no bun pin");
+		} finally {
+			delete process.env.DG_BUN_SHASUMS_URL;
+		}
+
+		expect(readFileSync(runtimePath, "utf8")).toBe(original);
 	});
 
 	test("a version that is not x.y.z is refused", async () => {
