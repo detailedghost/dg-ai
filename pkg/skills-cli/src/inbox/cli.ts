@@ -29,6 +29,7 @@ import {
 	type InboxProfile,
 	type InboxProviderSettings,
 } from "@dg/common";
+import { exitAfterDrain } from "@dg/common/exit";
 
 const profileHelp = `Profile configuration:
   inbox profile list [--session ID]
@@ -423,7 +424,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 	const onSignal = (signal: NodeJS.Signals) => {
 		void (pw?.close() ?? Promise.resolve()).finally(() => {
 			daemon.close();
-			process.exit(signal === "SIGINT" ? 130 : 143);
+			void exitAfterDrain(signal === "SIGINT" ? 130 : 143);
 		});
 	};
 	process.once("SIGINT", onSignal);

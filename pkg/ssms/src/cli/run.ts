@@ -534,5 +534,5 @@ function contentType(path: string): string {
 
 if (import.meta.main) {
 	const result = await runSsms(process.argv.slice(2), { stdio: "inherit" });
-	process.exit(result.code);
+	process.exitCode = result.code;
 }

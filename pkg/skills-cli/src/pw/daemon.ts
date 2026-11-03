@@ -37,6 +37,7 @@ import {
 	isWindowsPath,
 	WINDOWS_BROWSERS,
 } from "./core/windows";
+import { exitAfterDrain } from "@dg/common/exit";
 
 async function serveSession(spec: LaunchSpec): Promise<void> {
 	const handle = await start(spec);
@@ -83,7 +84,7 @@ async function serveSession(spec: LaunchSpec): Promise<void> {
 			return closed;
 		})();
 		const closed = await cleanup;
-		return process.exit(closed ? code : code || 1);
+		return exitAfterDrain(closed ? code : code || 1);
 	};
 
 	let queue: Promise<unknown> = Promise.resolve();
@@ -358,12 +359,12 @@ export function runDaemon(specJson: string | undefined): Promise<void> {
 		trusted = validateSpec(readSpec(specJson));
 	} catch (error) {
 		process.stdout.write(`ERROR ${describeError(error)}\n`);
-		process.exit(INVALID_SPEC_EXIT);
+		return exitAfterDrain(INVALID_SPEC_EXIT);
 	}
 	return serveSession(trusted).catch((error) => {
 		const message = describeError(error);
 		console.error(message);
 		process.stdout.write(`ERROR ${message.split("\n")[0]}\n`);
-		process.exit(1);
+		return exitAfterDrain(1);
 	});
 }
