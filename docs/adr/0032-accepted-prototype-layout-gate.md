@@ -1,4 +1,4 @@
-# 0031 — Gate verify on the layout of the accepted prototype
+# 0032 — Gate verify on the layout of the accepted prototype
 
 Status: Proposed
 Date: 2026-11-03
