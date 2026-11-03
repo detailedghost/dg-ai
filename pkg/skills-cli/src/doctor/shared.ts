@@ -1,4 +1,5 @@
-import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
+import { resolve } from "node:path";
+import { resolveDgPaths, scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
 import { installedPlugins, isOlder, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
@@ -52,6 +53,15 @@ export const sharedChecks: DoctorCheck[] = [
 					PLUGIN_UPDATE,
 				);
 			return ok(`dg-skills and the dg plugin are both ${ctx.installedVersion}`);
+		},
+	},
+	{
+		id: "dg-home",
+		run({ env, home }) {
+			const defaultHome = resolveDgPaths({ homeDir: home, env: {} }).stateDir;
+			return env.DG_HOME && resolve(env.DG_HOME) !== resolve(defaultHome)
+				? warn(`DG_HOME=${env.DG_HOME} moves the dg state directory away from ~/.dg`, "unset DG_HOME")
+				: ok("DG_HOME is unset");
 		},
 	},
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),

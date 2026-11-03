@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { shellCommand } from "@dg/common/node";
+import {
+	activeVersions,
+	formatMegabytes,
+	listDgPluginVersions,
+	planPluginCachePrune,
+	shellCommand,
+} from "@dg/common/node";
 import {
 	allowRuleCheck,
 	bootstrapCommand,
@@ -39,6 +45,25 @@ export const installChecks: DoctorCheck[] = [
 						`install directory ${dir} cannot be used: ${result.reason}`,
 						`chmod u+rwx ${shellCommand([result.at])}`,
 					);
+		},
+	},
+	{
+		id: "plugin-cache",
+		run(ctx) {
+			const active = activeVersions(ctx.home);
+			if (!active)
+				return ok("plugin cache not checked: installed_plugins.json unreadable");
+			const { remove } = planPluginCachePrune(
+				listDgPluginVersions(ctx.home),
+				active,
+				Date.now(),
+			);
+			if (remove.length === 0) return ok("no stale dg plugin versions in the Claude plugin cache");
+			const bytes = remove.reduce((sum, version) => sum + version.bytes, 0);
+			return warn(
+				`${remove.length} stale version(s), ${formatMegabytes(bytes)} reclaimable`,
+				"dg-skills install",
+			);
 		},
 	},
 	allowRuleCheck("install"),
