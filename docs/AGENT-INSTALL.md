@@ -85,6 +85,13 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
 - To add the extension later, run `dg-skills install`. It installs the extension
   and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
+- The extension folder is in the dg data root, for example
+  `~/.local/share/dg/dg-ai-extension-chrome` on Linux and
+  `%LOCALAPPDATA%\dg\dg-ai-extension-chrome` on Windows and WSL. Releases
+  before the per-OS layout used `~/.dg`. The first install after the move
+  prints one line. The human must then do one manual step: open
+  `chrome://extensions`, remove the old `dg-ai-extension` entry, and load
+  unpacked from the new folder. An agent cannot do this step.
 
 ## Agent-only install
 

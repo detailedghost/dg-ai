@@ -5,6 +5,7 @@ import {
 	dgDir,
 	extensionDest,
 	extensionDgDirs,
+	legacyExtensionDest,
 	markerFiles,
 	windowsUserProfile,
 } from "../src/utils/lib";
@@ -51,7 +52,12 @@ describe("path resolvers", () => {
 	test("places extension folders under an override without spawning a process", () => {
 		const env = { DG_WINDOWS_HOME: "/w", HOME: "/h" };
 		const { copyPath } = extensionDest("chrome", env);
-		expect(extensionDgDirs(env)).toContain(dirname(copyPath));
-		expect(copyPath.endsWith(join(".dg", "dg-ai-extension-chrome"))).toBe(true);
+		expect(extensionDgDirs(env)).toContain(dirname(legacyExtensionDest("chrome", env).copyPath));
+		expect(copyPath).toBe(join("/w", "AppData", "Local", "dg", "dg-ai-extension-chrome"));
+	});
+
+	test("stages the extension in the data root on Linux and macOS", () => {
+		expect(extensionDest("chrome", { HOME: "/h" }, false).copyPath).toBe(join("/h", ".local", "share", "dg", "dg-ai-extension-chrome"));
+		expect(extensionDest("firefox", { DG_HOME: "/d", HOME: "/h" }, false).copyPath).toBe(join("/d", "data", "dg-ai-extension-firefox"));
 	});
 });

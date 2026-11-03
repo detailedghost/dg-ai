@@ -17,6 +17,7 @@ import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
+import { moveVerified } from "./migrate-home";
 import { PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
@@ -29,6 +30,7 @@ import {
 	downloadReleaseAsset,
 	extensionDest,
 	extensionDgDirs,
+	legacyExtensionDest,
 	extractZip,
 	installRoot,
 	listReleases,
@@ -46,6 +48,21 @@ import { removeLegacyExtensions, syncDirInPlace } from "../utils/extension-files
 import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
 import { prunePluginCache } from "../install/prune-plugin-cache";
+
+function reloadFromNewFolder(target: Target, path: string): string {
+	return target === "firefox"
+		? `dg: the dg-ai-extension (firefox) folder moved to ${path}. Open about:debugging#/runtime/this-firefox and load ${join(path, "manifest.json")} once.`
+		: `dg: the dg-ai-extension (${target}) folder moved to ${path}. Open chrome://extensions once, remove the old dg-ai-extension entry, then click Load unpacked and select ${path}.`;
+}
+
+/** Moves the extension staged by an older release into the data root; true when the browser must load it again. */
+function moveStagedExtension(target: Target, dest: { copyPath: string; printPath: string }): boolean {
+	const old = legacyExtensionDest(target);
+	if (old.copyPath === dest.copyPath || !existsSync(old.copyPath)) return false;
+	if (!existsSync(dest.copyPath) && moveVerified(old.copyPath, dest.copyPath, { log: console.log }) === "failed") return false;
+	console.log(reloadFromNewFolder(target, dest.printPath));
+	return true;
+}
 
 function retireLegacyExtensions(): void {
 	if (removeLegacyExtensions(extensionDgDirs()).length === 0) return;
@@ -261,14 +278,16 @@ function finishExtensionStage(
 	version: string,
 	markerVersion: string | undefined,
 	stage: () => void,
+	moved = false,
 ): void {
 	stage();
 	console.log(`dg-ai-extension (${target}) staged at ${dest.printPath}`);
-	if (markerVersion) {
+	if (markerVersion && !moved) {
 		console.log("extension updated — click the reload icon on the extensions page.");
-	} else {
+	} else if (!moved) {
 		printSteps(target, dest.printPath);
 	}
+
 	writeMarkerEntry(target, version);
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 }
@@ -283,12 +302,18 @@ async function installPinnedAll(target: Target, pin: string, keepCache: boolean)
 	await installBundle(bundle);
 
 	retireLegacyExtensions();
+	const moved = moveStagedExtension(target, dest);
 	const markerVersion = readMarker()[target];
 	if (markerVersion === release.version && existsSync(dest.copyPath)) {
 		console.log(`dg-ai-extension (${target}) already set up (v${markerVersion}).`);
 	} else {
-		finishExtensionStage(target, dest, release.version, markerVersion, () =>
-			extractZip(release.zip, dest.copyPath),
+		finishExtensionStage(
+			target,
+			dest,
+			release.version,
+			markerVersion,
+			() => extractZip(release.zip, dest.copyPath),
+			moved,
 		);
 	}
 
@@ -336,6 +361,7 @@ async function install(
 	}
 
 	retireLegacyExtensions();
+	const moved = moveStagedExtension(target, dest);
 	const markerVersion = readMarker()[target];
 	if (!forceLocal && markerVersion && versionGte(markerVersion, version) && existsSync(dest.copyPath)) {
 		console.log(
@@ -345,7 +371,7 @@ async function install(
 		return;
 	}
 
-	finishExtensionStage(target, dest, version, markerVersion, stage);
+	finishExtensionStage(target, dest, version, markerVersion, stage, moved);
 
 	// Also keep the bundle current (skip in --local dev, where we run source).
 	if (!forceLocal) await installCli(keepCache);

@@ -139,32 +139,38 @@ function removeSource(from: string, seams: MigrateSeams): boolean {
 	return true;
 }
 
-function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult): void {
+/** Copies `from` to `to`, checks the copy, then removes `from`; never writes over an existing `to`. */
+export function moveVerified(
+	from: string,
+	to: string,
+	seams: MigrateSeams = {},
+): "moved" | "failed" | "kept" | "scheduled" {
 	const log = seams.log ?? (() => {});
-	if (present(move.to)) {
-		result.kept.push(move.from);
-		log(`dg: kept ${move.from}; ${move.to} already exists`);
-		return;
+	if (present(to)) {
+		log(`dg: kept ${from}; ${to} already exists`);
+		return "kept";
 	}
 	try {
-		mkdirSync(dirname(move.to), { recursive: true, mode: 0o700 });
-		copyTree(move.from, move.to);
-		seams.afterCopy?.(move.from, move.to);
-		if (!treeMatches(move.from, move.to)) throw new Error("the copy does not match the source");
+		mkdirSync(dirname(to), { recursive: true, mode: 0o700 });
+		copyTree(from, to);
+		seams.afterCopy?.(from, to);
+		if (!treeMatches(from, to)) throw new Error("the copy does not match the source");
 	} catch (err) {
-		rmSync(move.to, { recursive: true, force: true });
-		result.failed.push(move.from);
-		log(
-			`dg: kept ${move.from}; moving it to ${move.to} failed: ${err instanceof Error ? err.message : err}`,
-		);
-		return;
+		rmSync(to, { recursive: true, force: true });
+		log(`dg: kept ${from}; moving it to ${to} failed: ${err instanceof Error ? err.message : err}`);
+		return "failed";
 	}
-	if (removeSource(move.from, seams)) {
-		result.moved.push(move.from);
-		return;
-	}
-	result.scheduled.push(move.from);
-	log(`dg: copied ${move.from} to ${move.to}; it is in use, so the next dg-skills install removes it`);
+	if (removeSource(from, seams)) return "moved";
+	log(`dg: copied ${from} to ${to}; it is in use, so the next dg-skills install removes it`);
+	return "scheduled";
+}
+
+function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult): void {
+	const outcome = moveVerified(move.from, move.to, seams);
+	if (outcome === "moved") result.moved.push(move.from);
+	else if (outcome === "failed") result.failed.push(move.from);
+	else if (outcome === "kept") result.kept.push(move.from);
+	else result.scheduled.push(move.from);
 }
 
 /** Moves the old flat `~/.dg` (or flat `DG_HOME`) into the per-OS roots: copy, verify, then remove. */

@@ -38,7 +38,7 @@ function localInstallWorld(): LocalInstallWorld {
 	writeFileSync(join(repo, "node_modules/.bin/wxt"), "");
 	writeFileSync(join(output, "manifest.json"), JSON.stringify({ version: "1.11.0" }));
 	writeFileSync(join(output, "background.js"), "stale build");
-	return { directory, repo, home, output, destination: join(home, ".dg/dg-ai-extension-chrome") };
+	return { directory, repo, home, output, destination: join(home, ".dg/data/dg-ai-extension-chrome") };
 }
 
 async function runLocalInstall(world: LocalInstallWorld, freshBuild: string) {
@@ -96,7 +96,36 @@ test("install updates the staged extension folder in place and writes the new ma
 		expect(statSync(world.destination).ino).toBe(inode);
 		expect(existsSync(join(world.destination, "stale.js"))).toBe(false);
 		expect(existsSync(join(world.home, ".config/dg/extension-installed"))).toBe(true);
-		expect(readdirSync(join(world.home, ".dg")).sort()).toEqual(["dg-ai-extension-chrome"]);
+		expect(readdirSync(join(world.home, ".dg", "data")).sort()).toEqual(["dg-ai-extension-chrome"]);
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install moves the staged extension to the data root once and says to load it from there", async () => {
+	const world = localInstallWorld();
+	try {
+		const old = join(world.home, ".dg", "dg-ai-extension-chrome");
+		mkdirSync(old, { recursive: true });
+		writeFileSync(join(old, "background.js"), "installed release");
+
+		const first = await runLocalInstall(world, "fresh local build");
+
+		expect({ exitCode: first.exitCode, stderr: first.stderr }).toEqual({ exitCode: 0, stderr: "" });
+		expect(existsSync(old)).toBe(false);
+		expect(readFileSync(join(world.destination, "background.js"), "utf8")).toBe("fresh local build");
+		const moved = first.stdout.split("\n").filter((line) => line.includes("chrome://extensions"));
+		expect(moved).toHaveLength(1);
+		expect(moved[0]).toContain(world.destination);
+		expect(moved[0]).toContain("Load unpacked");
+
+		const inode = statSync(world.destination).ino;
+		const second = await runLocalInstall(world, "next local build");
+
+		expect(second.exitCode).toBe(0);
+		expect(statSync(world.destination).ino).toBe(inode);
+		expect(readFileSync(join(world.destination, "background.js"), "utf8")).toBe("next local build");
+		expect(second.stdout).not.toContain("chrome://extensions");
 	} finally {
 		rmSync(world.directory, { recursive: true, force: true });
 	}
