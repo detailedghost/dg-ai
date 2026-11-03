@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
 import { linkCurrent, readCurrent } from "./current";
+import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { ensureRuntime, fetchRuntimePin } from "./runtime";
 import { PROGRAMS, writeShims } from "./shims";
@@ -159,6 +160,10 @@ export function removeRetiredBinaries(): void {
 /** Installs the pinned runtime and the bundle, then points the three shims at them. */
 async function installBundle(release: PickedBundle): Promise<void> {
 	const root = installRoot();
+	await withInstallLock(root, () => installBundleLocked(root, release));
+}
+
+async function installBundleLocked(root: string, release: PickedBundle): Promise<void> {
 	const installed = readCurrentVersion(root);
 	const bundleDir = join(root, "lib", release.version);
 	const present = existsSync(join(bundleDir, "dg.js"));
