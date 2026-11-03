@@ -5,8 +5,12 @@ import shTemplate from "../../../launcher/shims/dg.sh" with { type: "text" };
 
 export const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
 
-function render(template: string, root: string, name: string): string {
-	return template.replaceAll("{{ROOT}}", root).replaceAll("{{NAME}}", name);
+const quotePosix = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+const escapeCmd = (value: string): string => value.replaceAll("%", "%%");
+
+function render(template: string, root: string, name: string, windows: boolean): string {
+	const rootText = windows ? escapeCmd(root) : quotePosix(root);
+	return template.replaceAll("{{ROOT}}", () => rootText).replaceAll("{{NAME}}", () => name);
 }
 
 /**
@@ -21,7 +25,7 @@ export function writeShims(root: string, platform: NodeJS.Platform = process.pla
 		const dest = join(bin, windows ? `${name}.cmd` : name);
 		const staged = join(bin, `.${name}.${process.pid}.tmp`);
 		try {
-			writeFileSync(staged, render(windows ? cmdTemplate : shTemplate, root, name));
+			writeFileSync(staged, render(windows ? cmdTemplate : shTemplate, root, name, windows));
 			chmodSync(staged, 0o755);
 			renameSync(staged, dest);
 		} catch (err) {

@@ -1,2 +1,3 @@
 #!/bin/sh
-exec "{{ROOT}}/runtime/current/bun" "{{ROOT}}/lib/current/dg.js" {{NAME}} "$@"
+root={{ROOT}}
+exec "$root/runtime/current/bun" "$root/lib/current/dg.js" {{NAME}} "$@"
