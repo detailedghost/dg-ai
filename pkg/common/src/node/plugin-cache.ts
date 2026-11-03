@@ -111,7 +111,8 @@ export function pidAlive(
 	try {
 		const stat = readStat(pid);
 		const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-		return fields[STAT_START_TIME_INDEX] === procStart;
+		const startTime = fields[STAT_START_TIME_INDEX];
+		return startTime === undefined || startTime === procStart;
 	} catch {
 		return true;
 	}
@@ -146,6 +147,12 @@ type UsageState = Pick<PluginCacheVersion, "orphanedAt" | "lastReadAt" | "livePi
 
 const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
 
+const validProcStart = (procStart: unknown): boolean =>
+	procStart === undefined || (typeof procStart === "string" && /^\d+$/.test(procStart));
+
+const validMarker = (body: { pid?: unknown; procStart?: unknown } | undefined): boolean =>
+	validPid(body?.pid) && validProcStart(body?.procStart);
+
 function readUsage(path: string, fs: CacheFs): UsageState {
 	const inUseDir = join(path, ".in_use");
 	const markers = fs.files(inUseDir);
@@ -155,15 +162,16 @@ function readUsage(path: string, fs: CacheFs): UsageState {
 		(time): time is number => time !== undefined,
 	);
 	const livePids = bodies.flatMap((body) => {
-		if (!validPid(body?.pid)) return [];
+		if (!validPid(body?.pid) || !validProcStart(body.procStart)) return [];
 		const procStart = typeof body.procStart === "string" ? body.procStart : undefined;
 		return fs.alive(body.pid, procStart) ? [body.pid] : [];
 	});
+	const orphanedAt = fs.readNumber(join(path, ".orphaned_at"));
 	return {
-		orphanedAt: fs.readNumber(join(path, ".orphaned_at")),
+		orphanedAt: orphanedAt !== undefined && orphanedAt > 0 ? orphanedAt : undefined,
 		lastReadAt: readTimes.length ? Math.max(...readTimes) : undefined,
 		livePids,
-		inUseUnreadable: markers === undefined || bodies.some((body) => !validPid(body?.pid)),
+		inUseUnreadable: markers === undefined || bodies.some((body) => !validMarker(body)),
 	};
 }
 
@@ -197,10 +205,12 @@ export function activeVersions(home: string, fs: CacheFs = realFs): Map<string, 
 	const active = new Map<string, string[]>();
 	for (const [key, installs] of Object.entries(plugins)) {
 		const [plugin, marketplace] = key.split("@");
-		if (plugin !== "dg" || !marketplace) continue;
+		if (plugin !== "dg") continue;
+		if (!marketplace) return undefined;
 		if (!Array.isArray(installs)) return undefined;
 		const versions = installs.map((install: { version?: unknown } | null) => install?.version);
-		if (!versions.every((version): version is string => typeof version === "string")) return undefined;
+		if (!versions.every((version): version is string => typeof version === "string" && version.trim() !== ""))
+			return undefined;
 		active.set(marketplace, versions);
 	}
 	return active;

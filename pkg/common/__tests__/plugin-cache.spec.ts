@@ -168,6 +168,10 @@ describe("planPluginCachePrune", () => {
 		["a non-array dg install entry", { "dg@dg-ai": { version: "1.24.0" } }],
 		["a dg install without a version", { "dg@dg-ai": [{ gitCommitSha: "abc" }] }],
 		["a dg install with a numeric version", { "dg@dg-ai": [{ version: 1 }] }],
+		["a dg install with an empty version", { "dg@dg-ai": [{ version: "" }] }],
+		["a dg install with a blank version", { "dg@dg-ai": [{ version: "  \t" }] }],
+		["a dg entry without a marketplace", { dg: [{ version: "1.24.0" }] }],
+		["a dg entry with an empty marketplace", { "dg@": [{ version: "1.24.0" }] }],
 	])("reports installed_plugins.json as unreadable for %s", (_name, plugins) => {
 		const home = fixtureHome();
 		installed(home, plugins);
@@ -192,6 +196,29 @@ describe("planPluginCachePrune", () => {
 		const result = plan(home);
 		expect(result.remove).toEqual([]);
 		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+	});
+
+	test.each([
+		["an empty", ""],
+		["a nonnumeric", "abc"],
+		["a numeric-typed", 4242],
+	])("keeps an orphaned version whose live marker has %s procStart", (_name, procStart) => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		orphan(dir, NOW - 96 * HOUR);
+		marker(dir, "s1", { pid: process.pid, procStart }, 72 * HOUR);
+		const result = plan(home);
+		expect(result.remove).toEqual([]);
+		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+	});
+
+	test.each([["zero", "0"], ["negative", "-5"]])("keeps an orphaned version whose .orphaned_at is %s", (_name, text) => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		writeFileSync(join(dir, ".orphaned_at"), text);
+		const result = plan(home);
+		expect(result.remove).toEqual([]);
+		expect(result.keep[0]?.reason).toBe("unknown state");
 	});
 
 	test.skipIf(process.getuid?.() === 0)("keeps an orphaned version whose .in_use directory cannot be read", () => {
@@ -374,6 +401,10 @@ describe("pidAlive", () => {
 		const read = () => "1 (bun) S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4242 0";
 		expect(pidAlive(process.pid, "4242", read)).toBe(true);
 		expect(pidAlive(process.pid, "9999", read)).toBe(false);
+	});
+
+	test("trusts the pid when the stat line has no start time field", () => {
+		expect(pidAlive(process.pid, "4242", () => "1 (bun) S 0 0")).toBe(true);
 	});
 
 	test("trusts the pid when the start time cannot be read", () => {
