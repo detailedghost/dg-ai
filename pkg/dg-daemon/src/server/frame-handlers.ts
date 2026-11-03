@@ -888,7 +888,7 @@ async function handleConfigFrame(
 	frame: Extract<ChatFrame, { type: "config-get" | "config-set" }>,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
-	if (frame.type === "config-set" && ws.data.kind !== "ws") {
+	if (frame.type === "config-set" && !isExtensionPeer(ws)) {
 		await sendFrame(ws, frame.sessionId, {
 			type: "config-result",
 			key: frame.key,

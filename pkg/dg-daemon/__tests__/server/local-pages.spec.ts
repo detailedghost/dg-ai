@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { inboxBrowserRequest } from "../../../common/__tests__/utils/inbox-fixtures";
 import { resolveDgPaths } from "@dg/common/node";
+import { ASSET_DIRECTORY_CONFIG_KEY } from "../../src/assets/config";
+import { readConfig } from "../../src/server/config-store";
 import { getPinnedOrigin } from "../../src/server/origin";
 import {
 	bootServe,
@@ -15,6 +17,7 @@ import {
 	createCleanupSlot,
 	EXTENSION_ORIGIN,
 	frameType,
+	freshTempDir,
 	registerSession,
 	send,
 	sendConnectHandshake,
@@ -653,6 +656,75 @@ describe("a local page socket beside the extension on one session", () => {
 		);
 
 		expect(answer.ok).toBe(false);
+	});
+
+	it("refuses config-set from the local page and persists nothing", async () => {
+		const { port, dgHome } = await boot();
+		const session = await registerSession(port);
+		const local = loopbackSocket(port, loopbackOrigin(port), session.token);
+		sockets.push(local);
+		const localFrames = collectFrames(local);
+		await waitForOpen(local);
+		sendConnectHandshake(local, session, CHAT_PROTOCOL_VERSION);
+		await waitForValue(
+			() => localFrames.find((frame) => frameType(frame) === "session-list"),
+			3000,
+			"local page handshake",
+		);
+		const directory = freshTempDir("local-page-config");
+
+		send(local, {
+			type: "config-set",
+			sessionId: session.sessionId,
+			token: session.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			key: ASSET_DIRECTORY_CONFIG_KEY,
+			value: directory,
+		});
+		const answer = (await waitForValue(
+			() => localFrames.find((frame) => frameType(frame) === "config-result"),
+			2500,
+			"config-set refusal",
+		)) as { error?: string; value?: string };
+
+		expect(answer.error).toMatch(/extension socket/i);
+		expect(answer.value).toBeUndefined();
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		expect(readConfig(paths)[ASSET_DIRECTORY_CONFIG_KEY]).toBeUndefined();
+	});
+
+	it("still accepts config-set from the extension peer", async () => {
+		const { port, dgHome } = await boot();
+		const session = await registerSession(port);
+		const extension = await connectPage(
+			port,
+			session,
+			CHAT_PROTOCOL_VERSION,
+			"1.19.1",
+		);
+		sockets.push(extension);
+		const extensionFrames = collectFrames(extension);
+		const directory = freshTempDir("extension-config");
+
+		send(extension, {
+			type: "config-set",
+			sessionId: session.sessionId,
+			token: session.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			key: ASSET_DIRECTORY_CONFIG_KEY,
+			value: directory,
+		});
+		const answer = (await waitForValue(
+			() =>
+				extensionFrames.find((frame) => frameType(frame) === "config-result"),
+			2500,
+			"config-set result",
+		)) as { error?: string; value?: string };
+
+		expect(answer.error).toBeUndefined();
+		expect(answer.value).toBe(directory);
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		expect(readConfig(paths)[ASSET_DIRECTORY_CONFIG_KEY]).toBe(directory);
 	});
 
 	it("still delivers an agent message to both the local page and the extension", async () => {
