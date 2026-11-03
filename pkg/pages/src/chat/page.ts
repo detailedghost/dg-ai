@@ -3,6 +3,7 @@ import {
 	forgetLocalBootstrap,
 	loadLocalBootstrap,
 	localStorageOrMemory,
+	SESSION_ENDED_TEXT,
 	sessionStorageOrMemory,
 	storeLocalBootstrap,
 } from "../local";
@@ -19,6 +20,16 @@ if (root) {
 	let live = bootstrap;
 	let client: ChatClient | undefined;
 	let heldSessions: ReadonlyMap<string, string> = new Map();
+	let rendered = false;
+	let ended: HTMLElement | undefined;
+	const showEnded = (): void => {
+		if (!rendered || ended || live) return;
+		ended = document.createElement("p");
+		ended.className = "chat-session-ended";
+		ended.setAttribute("role", "alert");
+		ended.textContent = SESSION_ENDED_TEXT;
+		root.prepend(ended);
+	};
 	const adoptHeld = (
 		held: ReadonlyMap<string, string>,
 	): SessionBootstrap | undefined => {
@@ -44,6 +55,7 @@ if (root) {
 		forgetLocalBootstrap(bootstrapStorage, dropped.token);
 		client?.forgetSession(dropped.sessionId);
 		adoptHeld(heldSessions);
+		showEnded();
 	};
 	const forgetIfRefused = (token: string): void => {
 		createOverwatchApi(window.location.origin, token)
@@ -89,10 +101,15 @@ if (root) {
 			return client;
 		},
 		loadBootstraps: () => Promise.resolve(bootstrap ? [bootstrap] : []),
-	}).catch((error: unknown) => {
-		emitRedacted(
-			(line) => console.error(line),
-			`[dg-chat] could not render the chat page: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	});
+	})
+		.then(() => {
+			rendered = true;
+			showEnded();
+		})
+		.catch((error: unknown) => {
+			emitRedacted(
+				(line) => console.error(line),
+				`[dg-chat] could not render the chat page: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		});
 }
