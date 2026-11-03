@@ -94,6 +94,11 @@ export function fakeBunScript(output: string, exitCode = 0): string {
 	return `#!/bin/sh\necho "${output}"\nexit ${exitCode}\n`;
 }
 
+/** A fake bun that prints the version line of the dg.js it runs, else `fallback`. */
+export function fakeBundleBunScript(fallback: string): string {
+	return `#!/bin/sh\nif [ -f "$1" ]; then sed -n 's#^// version ##p' "$1"; else echo "${fallback}"; fi\n`;
+}
+
 export const RELEASE_BASE = "https://github.com/detailedghost/dg-ai/releases/download";
 
 export type ReleaseKind = "bundle" | "extension" | "runtime" | "sums";
@@ -112,7 +117,7 @@ export function writeReleaseServer(
 	opts: ReleaseServerOptions = {},
 ): { preload: string; pin: string } {
 	const bunZip = buildArchive("zip", dir, {
-		"bun-fake/bun": { content: fakeBunScript(version), mode: 0o755 },
+		"bun-fake/bun": { content: fakeBundleBunScript(version), mode: 0o755 },
 	});
 	const runtimeJson = JSON.stringify(runtimePinFor(bunZip));
 	const routes: Record<string, string> = {};
@@ -127,7 +132,7 @@ export function writeReleaseServer(
 		const tag = `v${current}`;
 		const bundleName = `dg-lib-${current}.tar.gz`;
 		const extensionName = `dg-ai-extension-${current}-chrome.zip`;
-		const bundle = buildArchive("tar.gz", dir, { "dg.js": { content: "console.log('unused');\n" } });
+		const bundle = buildArchive("tar.gz", dir, { "dg.js": { content: `// version ${current}\nconsole.log('unused');\n` } });
 		const extension = buildArchive("zip", dir, {
 			"manifest.json": { content: JSON.stringify({ version: current }) },
 			"background.js": { content: "release build" },

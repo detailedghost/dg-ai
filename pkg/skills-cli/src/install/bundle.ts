@@ -8,12 +8,16 @@ import { linkCurrent, readCurrent } from "./current";
 
 const VERSION_DIR = /^\d+\.\d+\.\d+/;
 
-function selfCheck(runtimeBin: string, entry: string): void {
+function selfCheck(runtimeBin: string, entry: string, version: string): void {
 	const result = spawnSync(runtimeBin, [entry, "dg-skills", "--version"], { encoding: "utf8", timeout: 30_000 });
 	if (result.error) throw new Error(`bundle self-check could not start: ${result.error.message}`);
 	if (result.status !== 0) {
 		const detail = result.stderr.trim().split("\n").at(-1) || `exit ${result.status}`;
 		throw new Error(`bundle self-check failed: ${detail}`);
+	}
+	const printed = result.stdout.trim();
+	if (!printed.startsWith(version)) {
+		throw new Error(`bundle self-check failed: expected ${version}, printed ${printed || "nothing"}`);
 	}
 }
 
@@ -46,7 +50,7 @@ export async function fetchBundle(root: string, release: PickedBundle, runtimeBi
 			const archive = join(scratch, release.assetName);
 			writeFileSync(archive, tarball);
 			run("tar", ["-xzf", archive, "-C", staging]);
-			selfCheck(runtimeBin, join(staging, "dg.js"));
+			selfCheck(runtimeBin, join(staging, "dg.js"), release.version);
 			rmSync(final, { recursive: true, force: true });
 			renameSync(staging, final);
 		} finally {

@@ -77,6 +77,21 @@ describe("fetchBundle", () => {
 		expect(existsSync(join(lib, VERSION))).toBe(false);
 	});
 
+	test("leaves lib/current on the old version when the self-check exits 0 but prints another version", async () => {
+		seedVersion(PREVIOUS);
+		seedCurrent(PREVIOUS);
+		serve();
+		const runtime = join(sandbox.directory, "runtime-wrong-version");
+		writeFileSync(runtime, fakeBunScript(PREVIOUS), { mode: 0o755 });
+
+		await expect(fetchBundle(sandbox.root, release(), runtime)).rejects.toThrow(`printed ${PREVIOUS}`);
+
+		const lib = join(sandbox.root, "lib");
+		expect(basename(readlinkSync(join(lib, "current")))).toBe(PREVIOUS);
+		expect(existsSync(join(lib, `${VERSION}.staging`))).toBe(false);
+		expect(existsSync(join(lib, VERSION))).toBe(false);
+	});
+
 	test("rejects a tarball whose sha256 is not the one SHA256SUMS lists and changes nothing", async () => {
 		seedVersion(PREVIOUS);
 		seedCurrent(PREVIOUS);
