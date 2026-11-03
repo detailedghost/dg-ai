@@ -8,10 +8,13 @@ Source: <https://github.com/mattpocock/skills>
 
 Adapted files:
 
+- `plugins/dg/skills/grill-me/SKILL.md`
 - `plugins/dg/skills/refactor/references/deepening.md`
 - `plugins/dg/skills/refactor/references/interface-design.md`
 - `plugins/dg/skills/refactor/references/language.md`
 - `plugins/dg/skills/wayfinder/SKILL.md`
+
+The imported plugins `mattpocock-skills` and `unslop` are not copied into this repository. The marketplace installs each from upstream at the pinned commit in `.claude-plugin/marketplace.json`.
 
 ```text
 MIT License
