@@ -94,7 +94,7 @@ describe("migrated monolith and spring-break skill trees", () => {
 		"$skill gates its first-run bootstrap on the installed CLI",
 		({ skill }) => {
 			expect(skillMd(skill)).toMatch(
-				/^dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+"\$HOME\/\.local\/bin\/dg-skills" \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+curl/m,
+				/^dg-skills \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-skills" \w[\w-]* --help >\/dev\/null 2>&1 \|\|\n\s+curl/m,
 			);
 		},
 	);

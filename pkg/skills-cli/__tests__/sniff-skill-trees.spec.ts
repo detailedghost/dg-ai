@@ -442,7 +442,7 @@ describe("packaged find-work skill", () => {
 		for (const reference of homeReferences(text))
 			expect([
 				reference,
-				/^(?:dg-skills|\$HOME\/\.local\/bin(?:\/dg-skills)?$|\$HOME\/code|~\/code)/.test(reference),
+				/^(?:dg-skills|\$HOME\/\.local\}?\/bin(?:\/dg-skills)?$|\$HOME\/code|~\/code)/.test(reference),
 			]).toEqual([reference, true]);
 	});
 
