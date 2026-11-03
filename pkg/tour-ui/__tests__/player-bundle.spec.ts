@@ -41,9 +41,9 @@ describe("dist/player.js", () => {
 });
 
 describe("build wiring", () => {
-	it("runs the tour-ui build from the skills-cli build", () => {
+	it("runs the tour-ui build from the launcher bundle build", () => {
 		const text = readFileSync(
-			join(PKG, "..", "skills-cli", "build.ts"),
+			join(PKG, "..", "launcher", "build.ts"),
 			"utf8",
 		);
 		expect(text).toContain("tour-ui");
