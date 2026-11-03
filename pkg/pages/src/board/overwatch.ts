@@ -114,7 +114,7 @@ export async function connectOverwatchApi(
 	const port = await findDaemonPort();
 	return port === undefined
 		? undefined
-		: createOverwatchApi(`http://127.0.0.1:${port}`, token);
+		: createOverwatchApi(`http://127.0.0.1:${port}`);
 }
 
 export function overwatchPort(api: OverwatchApi): number | undefined {

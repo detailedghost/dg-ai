@@ -7,15 +7,17 @@ import { connectOverwatchApi } from "@dg/pages/board/overwatch";
 import { browser } from "wxt/browser";
 import { mountPairing } from "@/lib/features/pairing";
 import { loadStoredBootstraps } from "@/lib/stored-bootstraps";
+import "../options/style.css";
+import "@dg/pages/board/style.css";
 
 async function connectWithStoredToken(knownPort?: number) {
 	const bootstraps = await loadStoredBootstraps();
 	const bootstrap =
-		bootstraps.find((candidate) => candidate.port === knownPort) ?? bootstraps[0];
-	return connectOverwatchApi(knownPort ?? bootstrap?.port, bootstrap?.token);
+		knownPort === undefined
+			? bootstraps[0]
+			: bootstraps.find((candidate) => candidate.port === knownPort);
+	return connectOverwatchApi(bootstrap?.port ?? knownPort, bootstrap?.token);
 }
-import "../options/style.css";
-import "@dg/pages/board/style.css";
 
 export function renderOverwatchPage(
 	options: RenderOverwatchOptions,
