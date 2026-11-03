@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { main } from "../../src/hooks/cli";
 import { HOOKS } from "../../src/hooks/manifest";
@@ -345,7 +345,7 @@ describe("hooks cli edge cases", () => {
 		expect(ownedObjects(world.readJson(world.paths.claude))).toHaveLength(1);
 	});
 
-	test("a relative DG_HOME is refused with exit 2 and nothing is written", async () => {
+	test("a relative DG_HOME resolves against the working folder, so hooks name an absolute launcher", async () => {
 		world.seed(world.paths.claude, {});
 		const result = await main(["enable", "spelling"], {
 			stdin: Readable.from([]),
@@ -359,7 +359,7 @@ describe("hooks cli edge cases", () => {
 				stderr: () => {},
 			},
 		});
-		expect(result).toBe(2);
-		expect(world.text(world.paths.claude)).toBe("{}");
+		expect(result).toBe(0);
+		expect(world.text(world.paths.claude)).toContain(join(resolve("relative/dg"), "bin", "dg-skills"));
 	});
 });
