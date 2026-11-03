@@ -82,7 +82,9 @@ The first `dg-skills install` of a new release moves it:
    the copy has the same files and sizes, and only then removes the old copy.
    When the check fails, the old copy stays and install names it.
 2. Install never writes over a destination that exists. It keeps the old copy
-   and says so.
+   and says so. When an old folder is still in use after the copy, for example
+   the runtime that runs install on Windows, install leaves it and the next
+   `dg-skills install` removes it.
 3. Install keeps a folder when a process that writes it is still running,
    such as `dg-daemon`. Stop the process and run install again.
 4. The phone state moves on the next `dg-agent phone __refresh`, which install

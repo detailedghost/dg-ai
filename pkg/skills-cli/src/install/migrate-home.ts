@@ -1,17 +1,21 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { copyTree, type DgPaths, treeMatches } from "@dg/common/node";
 
 export type MigrateResult = {
 	moved: string[];
 	failed: string[];
 	kept: string[];
+	scheduled: string[];
 };
 
 export type MigrateSeams = {
 	log?: (line: string) => void;
 	afterCopy?: (from: string, to: string) => void;
+	rename?: (from: string, to: string) => void;
 };
+
+const PENDING_FILE = ".pending-removal.json";
 
 type Move = { from: string; to: string };
 
@@ -103,6 +107,38 @@ function present(path: string): boolean {
 	}
 }
 
+function readPending(legacy: string): string[] {
+	try {
+		const value: unknown = JSON.parse(readFileSync(join(legacy, PENDING_FILE), "utf8"));
+		return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
+function writePending(legacy: string, pending: string[]): void {
+	const file = join(legacy, PENDING_FILE);
+	if (pending.length === 0) {
+		rmSync(file, { force: true });
+		return;
+	}
+	const staged = `${file}.${process.pid}.tmp`;
+	writeFileSync(staged, JSON.stringify(pending), { mode: 0o600 });
+	renameSync(staged, file);
+}
+
+/** Detaches the source with one rename first, so a folder a running program holds open is never half deleted. */
+function removeSource(from: string, seams: MigrateSeams): boolean {
+	const detached = join(dirname(from), `.removing-${basename(from)}-${process.pid}`);
+	try {
+		(seams.rename ?? renameSync)(from, detached);
+	} catch {
+		return false;
+	}
+	rmSync(detached, { recursive: true, force: true });
+	return true;
+}
+
 function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult): void {
 	const log = seams.log ?? (() => {});
 	if (present(move.to)) {
@@ -123,15 +159,12 @@ function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult): void {
 		);
 		return;
 	}
-	try {
-		rmSync(move.from, { recursive: true, force: true });
+	if (removeSource(move.from, seams)) {
 		result.moved.push(move.from);
-	} catch (err) {
-		result.kept.push(move.from);
-		log(
-			`dg: copied ${move.from} to ${move.to} but could not remove it: ${err instanceof Error ? err.message : err}`,
-		);
+		return;
 	}
+	result.scheduled.push(move.from);
+	log(`dg: copied ${move.from} to ${move.to}; it is in use, so the next dg-skills install removes it`);
 }
 
 /** Moves the old flat `~/.dg` (or flat `DG_HOME`) into the per-OS roots: copy, verify, then remove. */
@@ -139,8 +172,13 @@ export function migrateLegacyHome(
 	paths: DgPaths,
 	seams: MigrateSeams = {},
 ): MigrateResult {
-	const result: MigrateResult = { moved: [], failed: [], kept: [] };
+	const result: MigrateResult = { moved: [], failed: [], kept: [], scheduled: [] };
 	if (!existsSync(paths.legacyHome)) return result;
+	for (const path of readPending(paths.legacyHome)) {
+		if (!present(path)) continue;
+		if (removeSource(path, seams)) result.moved.push(path);
+		else result.scheduled.push(path);
+	}
 	const flatDgHome = paths.binDir === join(paths.legacyHome, "bin");
 	const live = liveWriterFolders(paths.legacyHome);
 	for (const dir of live) {
@@ -151,6 +189,7 @@ export function migrateLegacyHome(
 		const top = relative(paths.legacyHome, move.from).split(sep)[0] ?? "";
 		if (flatDgHome && ROLE_FOLDERS.has(top)) continue;
 		if (live.some((dir) => within(move.from, dir))) continue;
+		if (result.scheduled.some((dir) => within(move.from, dir))) continue;
 		if (!present(move.from)) continue;
 		const blocked = [...result.failed, ...result.kept].some((path) => path !== move.from && within(path, move.from));
 		if (blocked) {
@@ -160,12 +199,13 @@ export function migrateLegacyHome(
 		}
 		moveOne(move, seams, result);
 	}
+	writePending(paths.legacyHome, result.scheduled);
 	const quiet = result.moved.length === 0 && result.failed.length === 0;
 	for (const name of readdirSync(paths.legacyHome)) {
-		if (LEFT_FOR_OTHER_STEPS.has(name) || name.startsWith("dg-ai-")) continue;
+		if (LEFT_FOR_OTHER_STEPS.has(name) || name.startsWith("dg-ai-") || name.startsWith(".")) continue;
 		if (flatDgHome && ROLE_FOLDERS.has(name)) continue;
 		const path = join(paths.legacyHome, name);
-		if (result.kept.includes(path) || result.failed.includes(path)) continue;
+		if (result.kept.includes(path) || result.failed.includes(path) || result.scheduled.includes(path)) continue;
 		result.kept.push(path);
 		if (!quiet)
 			seams.log?.(`dg: left ${path} in place; dg does not know where it belongs`);

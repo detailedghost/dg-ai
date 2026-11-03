@@ -6,6 +6,7 @@ import {
 	readdirSync,
 	readFileSync,
 	readlinkSync,
+	renameSync,
 	rmSync,
 	statSync,
 	symlinkSync,
@@ -179,6 +180,45 @@ describe("migrateLegacyHome", () => {
 		expect(lines.join("\n")).toContain("is running");
 	});
 
+	test("schedules a copied folder that is in use and removes it on the next run", () => {
+		const legacy = seedLegacy();
+		const busy = (from: string, to: string) => {
+			if (from === join(legacy, "runtime")) throw Object.assign(new Error("in use"), { code: "EBUSY" });
+			renameSync(from, to);
+		};
+
+		const first = migrateLegacyHome(paths, { log, rename: busy });
+
+		expect(first.scheduled).toEqual([join(legacy, "runtime")]);
+		expect(existsSync(join(legacy, "runtime", "bun-v1.4.1", "bun"))).toBe(true);
+		expect(existsSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"))).toBe(true);
+		expect(lines.join("\n")).toContain("the next dg-skills install removes it");
+
+		const second = migrateLegacyHome(paths, { log });
+
+		expect(second.scheduled).toEqual([]);
+		expect(second.moved).toEqual([join(legacy, "runtime")]);
+		expect(readdirSync(legacy)).toEqual(["bin"]);
+		expect(existsSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"))).toBe(true);
+	});
+
+	test("keeps a scheduled folder while it is still in use", () => {
+		const legacy = seedLegacy();
+		const busy = (from: string, to: string) => {
+			if (from === join(legacy, "runtime")) throw Object.assign(new Error("in use"), { code: "EBUSY" });
+			renameSync(from, to);
+		};
+		migrateLegacyHome(paths, { log, rename: busy });
+		lines.length = 0;
+
+		const again = migrateLegacyHome(paths, { log, rename: busy });
+
+		expect(again.scheduled).toEqual([join(legacy, "runtime")]);
+		expect(existsSync(join(legacy, "runtime", "bun-v1.4.1", "bun"))).toBe(true);
+		expect(again.kept).not.toContain(join(legacy, "runtime"));
+		expect(lines).toEqual([]);
+	});
+
 	test("never overwrites a destination that already exists", () => {
 		const legacy = seedLegacy();
 		put(join(paths.skillsDir, "new", "SKILL.md"), "newer");
@@ -195,7 +235,7 @@ describe("migrateLegacyHome", () => {
 	test("does nothing when there is no legacy home", () => {
 		const result = migrateLegacyHome(paths, { log });
 
-		expect(result).toEqual({ moved: [], failed: [], kept: [] });
+		expect(result).toEqual({ moved: [], failed: [], kept: [], scheduled: [] });
 		expect(existsSync(home)).toBe(false);
 	});
 
@@ -236,6 +276,7 @@ describe("migrateLegacyHome", () => {
 			moved: [],
 			failed: [],
 			kept: [],
+			scheduled: [],
 		});
 	});
 
