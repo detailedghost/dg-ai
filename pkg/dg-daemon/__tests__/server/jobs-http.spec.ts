@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { CHAT_FEED_PATH, CHAT_JOBS_PATH } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import { CHAT_FEED_PATH, CHAT_JOBS_PATH, OWNER_TOKEN_HEADER } from "@dg/common";
+import { readOwnerToken, resolveDgPaths } from "@dg/common/node";
 import type { ScheduledJob } from "../../src/store";
 import {
 	bootServe as bootDaemonServe,
@@ -8,6 +8,7 @@ import {
 	cleanupDgHome,
 	createCleanupSlot,
 	FILE_ONLY_SEAMS,
+	registerSession,
 	stopServe,
 } from "../utils/daemon-harness";
 
@@ -75,6 +76,24 @@ async function post(
 		headers: {
 			...headers(port, origin),
 			...(body === undefined ? {} : { "Content-Type": "application/json" }),
+		},
+		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+}
+
+function bareRequest(
+	port: number,
+	path: string,
+	method: "GET" | "POST",
+	extraHeaders: Record<string, string> = {},
+	body?: unknown,
+): Promise<Response> {
+	return fetch(`http://127.0.0.1:${port}${path}`, {
+		method,
+		headers: {
+			Host: `127.0.0.1:${port}`,
+			...(body === undefined ? {} : { "Content-Type": "application/json" }),
+			...extraHeaders,
 		},
 		...(body === undefined ? {} : { body: JSON.stringify(body) }),
 	});
@@ -365,10 +384,26 @@ describe("feed and job mutations", () => {
 });
 
 describe("the job routes are gated like the rest of the browser surface", () => {
-	it("serves a request with no Origin, which is what the dashboard page sends", async () => {
+	it("serves a request with no Origin and a live session token, which is what the dashboard page sends", async () => {
 		const { port } = await bootServe();
-		expect((await get(port, CHAT_JOBS_PATH, null)).status).toBe(200);
-		expect((await get(port, CHAT_FEED_PATH, null)).status).toBe(200);
+		const session = await registerSession(port);
+		const bearer = { Authorization: `Bearer ${session.token}` };
+		expect(
+			(await bareRequest(port, CHAT_JOBS_PATH, "GET", bearer)).status,
+		).toBe(200);
+		expect(
+			(await bareRequest(port, CHAT_FEED_PATH, "GET", bearer)).status,
+		).toBe(200);
+	});
+
+	it("still refuses a loopback page Origin even with a live session token", async () => {
+		const { port } = await bootServe();
+		const session = await registerSession(port);
+		const resp = await bareRequest(port, CHAT_JOBS_PATH, "GET", {
+			Origin: `http://127.0.0.1:${port}`,
+			Authorization: `Bearer ${session.token}`,
+		});
+		expect(resp.status).toBe(400);
 	});
 
 	it("still refuses a page origin once an extension origin is pinned", async () => {
@@ -425,5 +460,114 @@ describe("the job routes are gated like the rest of the browser surface", () => 
 	it("refuses the wrong method on a job route", async () => {
 		const { port } = await bootServe();
 		expect((await post(port, CHAT_JOBS_PATH)).status).toBe(404);
+	});
+});
+
+describe("a job or feed request with no Origin and no live session token", () => {
+	async function bootWithItem() {
+		const booted = await bootServe();
+		let jobId = "";
+		let itemId = "";
+		await seed(booted.dgHome, (store) => {
+			const job = seedJob(store);
+			jobId = job.id;
+			store.insertFeedItems(job.id, [
+				{ fingerprint: "a", title: "Quote export times out" },
+			]);
+			itemId = store.listFeedItems({ jobId: job.id })[0].id;
+		});
+		return { ...booted, jobId, itemId };
+	}
+
+	async function expectUntouched(dgHome: string, jobId: string) {
+		await seed(dgHome, (store) => {
+			const job = store.getJob(jobId);
+			expect(job?.lastRunAt).toBeUndefined();
+			expect(job?.nextRunAt).toBe("2099-01-01T00:00:00.000Z");
+			const items = store.listFeedItems({ jobId });
+			expect(items).toHaveLength(1);
+			expect(items[0].readAt).toBeUndefined();
+			expect(
+				store.claimNextAgentMessage("reviewer", "other-session"),
+			).toBeUndefined();
+		});
+	}
+
+	it("refuses to list jobs or feed items", async () => {
+		const { port } = await bootWithItem();
+		const jobs = await bareRequest(port, CHAT_JOBS_PATH, "GET");
+		expect(jobs.status).toBe(403);
+		expect(await jobs.text()).not.toContain("jira-sprint");
+		const feed = await bareRequest(port, CHAT_FEED_PATH, "GET");
+		expect(feed.status).toBe(403);
+		expect(await feed.text()).not.toContain("Quote export");
+	});
+
+	it("refuses every write and changes nothing", async () => {
+		const { port, dgHome, jobId, itemId } = await bootWithItem();
+		const writes = [
+			bareRequest(port, `${CHAT_JOBS_PATH}/${jobId}/run`, "POST"),
+			bareRequest(port, `${CHAT_FEED_PATH}/${itemId}/read`, "POST"),
+			bareRequest(port, `${CHAT_FEED_PATH}/read-all`, "POST"),
+			bareRequest(
+				port,
+				`${CHAT_FEED_PATH}/${itemId}/queue`,
+				"POST",
+				{},
+				{
+					identity: "reviewer",
+				},
+			),
+		];
+		for (const resp of await Promise.all(writes)) {
+			expect(resp.status).toBe(403);
+		}
+		await expectUntouched(dgHome, jobId);
+	});
+
+	it("refuses a token that is not a live session token", async () => {
+		const { port, dgHome, jobId } = await bootWithItem();
+		const resp = await bareRequest(
+			port,
+			`${CHAT_JOBS_PATH}/${jobId}/run`,
+			"POST",
+			{
+				Authorization: "Bearer not-a-live-token",
+			},
+		);
+		expect(resp.status).toBe(403);
+		await expectUntouched(dgHome, jobId);
+	});
+
+	it("refuses the owner token, which these routes do not take", async () => {
+		const { port, dgHome, jobId } = await bootWithItem();
+		const owner = readOwnerToken(resolveDgPaths({ env: { DG_HOME: dgHome } }));
+		const resp = await bareRequest(
+			port,
+			`${CHAT_JOBS_PATH}/${jobId}/run`,
+			"POST",
+			{
+				[OWNER_TOKEN_HEADER]: owner ?? "",
+			},
+		);
+		expect(resp.status).toBe(403);
+		await expectUntouched(dgHome, jobId);
+	});
+
+	it("serves a live session token on a write", async () => {
+		const { port, dgHome, itemId } = await bootWithItem();
+		const session = await registerSession(port);
+		const resp = await bareRequest(
+			port,
+			`${CHAT_FEED_PATH}/${itemId}/read`,
+			"POST",
+			{
+				Authorization: `Bearer ${session.token}`,
+			},
+		);
+		expect(resp.status).toBe(200);
+		await seed(dgHome, (store) => {
+			expect(store.listFeedItems({ unreadOnly: true })).toHaveLength(0);
+		});
 	});
 });
