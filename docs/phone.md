@@ -264,7 +264,8 @@ session moves it into the store.
 
 ## Data model
 
-All state is in one SQLite database, `~/.dg/phone/phone.db` (mode 0600):
+All state is in one SQLite database, `phone.db` (mode 0600), in the phone
+folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 
 - `keys` — every key this phone holds, by id.
 - `contacts` — one row per contact, with the key (`key_id`) it still
@@ -280,6 +281,36 @@ Messages older than **7 days** are deleted, including unread voicemail, so
 an agent away for more than a week loses what it missed; relay queries
 never reach further back than that window either. The only other files are
 `listener.pid` and `listener.log`.
+
+## Where the phone state lives
+
+The phone folder is `phone/` in the dg state root:
+
+- Linux: `~/.local/state/dg/phone` (`$XDG_STATE_HOME/dg/phone`)
+- macOS: `~/Library/Application Support/dg/state/phone`
+- Windows: `%LOCALAPPDATA%\dg\state\phone`
+- With `DG_HOME` set: `$DG_HOME/state/phone`
+
+Older releases kept it in `~/.dg/phone`. The first `phone __refresh` after an
+upgrade moves it, and `dg-skills install` runs that command:
+
+1. It stops the listener that runs from the old folder.
+2. It copies the folder to the new root.
+3. It checks the copy. It opens the copied `phone.db`, runs
+   `PRAGMA integrity_check`, and decodes every key stored in the database.
+4. Only when every check passes, it removes the old folder. Then it installs
+   the login autostart unit again, with the absolute launcher path from the
+   new layout, and starts the listener.
+
+When a check fails, the copy is removed, the old folder stays, and the
+command prints `rollback: dg-agent phone __rollback-home`. The listener
+stays stopped, so it cannot start a new, empty phone at the new root. The move
+never writes over a phone folder that already exists at the new root.
+
+To go back to an older release, run `dg-agent phone __rollback-home` first. It
+copies the phone folder back to `~/.dg/phone` and checks that copy the same
+way. It keeps the new folder and refuses to write over an old folder that
+still exists.
 
 ## Migration and the `phone-friend` alias
 

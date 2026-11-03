@@ -8,10 +8,10 @@ node = "22"
 _.file = { path = ".env", redact = false }
 
 [tasks."remote:install"]
-description = "Build the dg bundle and make it DG_HOME/lib/current for local channel-review runs"
+description = "Build the dg bundle and make it lib/current in the dg data folder for local channel-review runs"
 run = """
 set -e
-ROOT="${DG_HOME:-$HOME/.dg}"
+ROOT="$(bun -e 'import { resolveDgPaths } from "./pkg/common/src/node/dg-paths.ts"; console.log(resolveDgPaths().dataDir)')"
 if [ ! -x "$ROOT/runtime/current/bun" ]; then
   echo "remote:install: no runtime at $ROOT/runtime/current; run bootstrap.sh once first" >&2
   exit 1
@@ -26,18 +26,18 @@ bun scripts/remote-install.ts "$ROOT" "$OUT/lib" "$BASE" "$VERSION"
 
 [tasks."remote:status"]
 description = "Print the channel-review daemon state and preflight check"
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review status'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review status'
 
 [tasks."remote:start"]
 description = "Start the channel-review daemon in the background"
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review start'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review start'
 
 [tasks."remote:bedrock"]
 description = "Refresh the Bedrock AWS SSO login, then restart the channel-review daemon with Claude on Bedrock"
 run = """
 set -e
-DG="${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}"
-CONFIG="${DG_HOME:-$HOME/.dg}/channel-review/config.json"
+DG="${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}"
+CONFIG=$(bun -e 'import { join } from "node:path"; import { resolveDgPaths } from "./pkg/common/src/node/dg-paths.ts"; console.log(join(resolveDgPaths().configDir, "channel-review", "config.json"))')
 PROFILE=$(bun -e 'const b = (await Bun.file(process.argv[1]).json()).runner?.claude?.bedrock; if (!b) { console.error("Add runner.claude.bedrock (model, region, profile) to " + process.argv[1]); process.exit(1); } console.log(b.profile ?? process.env.AWS_PROFILE ?? "")' "$CONFIG")
 aws sts get-caller-identity ${PROFILE:+--profile "$PROFILE"} >/dev/null 2>&1 || aws sso login ${PROFILE:+--profile "$PROFILE"}
 "$DG" channel-review stop || true
@@ -46,24 +46,24 @@ aws sts get-caller-identity ${PROFILE:+--profile "$PROFILE"} >/dev/null 2>&1 || 
 
 [tasks."remote:stop"]
 description = "Stop the channel-review daemon"
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review stop'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review stop'
 
 [tasks."remote:run"]
 description = "Run the channel-review daemon in the foreground"
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review run'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review run'
 
 [tasks."remote:logs"]
 description = "Show the last 40 lines of the channel-review daemon log"
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}"'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review logs --env "${CR_ENV:-dev}"'
 
 [tasks."remote:follow"]
 description = "Follow the channel-review daemon log live"
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review logs --env "${CR_ENV:-dev}" -f'
 
 [tasks."remote:up"]
 description = "Start the channel-review daemon and follow its log"
 depends = ["remote:start"]
-run = '"${DG_SKILLS:-${DG_HOME:-$HOME/.dg}/bin/dg-skills}" channel-review logs --env "${CR_ENV:-dev}" -f'
+run = '"${DG_SKILLS:-$({ [ -n "$DG_HOME" ] && echo "$DG_HOME/bin/dg-skills"; } || command -v dg-skills || echo "$HOME/.local/bin/dg-skills")}" channel-review logs --env "${CR_ENV:-dev}" -f'
 
 [tasks.ext]
 description = "Build the extension and open it in the internal test Chrome"
@@ -88,7 +88,7 @@ run = "bun scripts/test-chrome.ts --with-daemon"
 [tasks."install:skills"]
 description = "Copy plugins/dg/skills instruction files into DG_SKILLS_DEST (no release binaries)"
 run = """
-bun pkg/skills-cli/src/index.ts install --skills-only --repo "${DG_SKILLS_REPO:-$PWD}" --dest "${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
+bun pkg/skills-cli/src/index.ts install --skills-only --repo "${DG_SKILLS_REPO:-$PWD}" ${DG_SKILLS_DEST:+--dest "$DG_SKILLS_DEST"}
 """
 
 [tasks."test:extension"]
