@@ -373,7 +373,7 @@ describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS
 
 			expect(result.code, result.stderr).toBe(0);
 			const data = join(home, ".local", "share", "dg");
-			expect(readFileSync(join(home, ".local", "bin", "dg-skills"), "utf8")).toContain(join(data, "lib", "current", "dg.js"));
+			expect(readFileSync(join(home, ".local", "bin", "dg-skills"), "utf8")).toContain(`root='${data}'`);
 			expect(basename(readlinkSync(join(data, "lib", "current")))).toBe(VERSION);
 			expect(existsSync(join(home, ".config", "dg", "cli-only"))).toBe(true);
 			expect(existsSync(join(home, ".dg"))).toBe(false);

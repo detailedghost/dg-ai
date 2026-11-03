@@ -28,7 +28,7 @@ function golden(root: string, name: string): string {
 describe("writeShims on a Windows host", () => {
 	test("doubles percent signs in the root so cmd does not expand them", () => {
 		const root = join(sandbox.root, "100%PATH%");
-		writeShims(root, "win32");
+		writeShims(join(root, "bin"), root, "win32");
 
 		const text = readFileSync(join(root, "bin", "dg-skills.cmd"), "utf8");
 		expect(text).toContain("100%%PATH%%");
@@ -86,7 +86,7 @@ posix("writeShims on a POSIX host", () => {
 		mkdirSync(runtime, { recursive: true });
 		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
 		symlinkSync("bun-test", join(root, "runtime", "current"));
-		writeShims(root);
+		writeShims(join(root, "bin"), root);
 
 		const run = Bun.spawnSync([join(root, "bin", "dg-skills"), "x"], { stdout: "pipe", stderr: "pipe" });
 		expect(run.exitCode, run.stderr.toString()).toBe(0);

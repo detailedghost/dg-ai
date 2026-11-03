@@ -61,9 +61,7 @@ posix("finishLauncherLayout", () => {
 			log: (line) => lines.push(line),
 		});
 
-		expect(readFileSync(join(paths.binDir, "dg-skills"), "utf8")).toContain(
-			join(paths.dataDir, "lib", "current", "dg.js"),
-		);
+		expect(readFileSync(join(paths.binDir, "dg-skills"), "utf8")).toContain(`root='${paths.dataDir}'`);
 		expect(
 			readFileSync(join(paths.legacyHome, "bin", "dg-skills"), "utf8"),
 		).toContain("removed in 1.36.0");
