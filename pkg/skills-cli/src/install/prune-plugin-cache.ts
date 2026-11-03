@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import {
 	activeVersions,
 	formatMegabytes,
@@ -39,12 +39,26 @@ function freshRemoveVerdict(home: string, version: PluginCacheVersion, now: numb
 	return planPluginCachePrune([reinspectPluginVersion(version)], active, now).keep[0]?.reason;
 }
 
-function isOwnedVersionDir(home: string, version: PluginCacheVersion): boolean {
+type PinnedCache = { root: string; wasLink: boolean };
+
+function pinCacheRoot(home: string): PinnedCache | undefined {
 	const cache = join(home, ".claude", "plugins", "cache");
 	try {
+		return { root: realpathSync(cache), wasLink: lstatSync(cache).isSymbolicLink() };
+	} catch {
+		return undefined;
+	}
+}
+
+function isOwnedVersionDir(home: string, version: PluginCacheVersion, pinned: PinnedCache): boolean {
+	const cache = join(home, ".claude", "plugins", "cache");
+	try {
+		if (lstatSync(cache).isSymbolicLink() !== pinned.wasLink) return false;
+		if (realpathSync(cache) !== pinned.root) return false;
 		if (!lstatSync(version.path).isDirectory()) return false;
-		const expected = join(realpathSync(cache), relative(cache, version.path));
-		return realpathSync(version.path) === expected;
+		const parts = relative(cache, version.path).split(sep);
+		if (parts.length !== 3 || parts[1] !== "dg" || parts.includes("..")) return false;
+		return realpathSync(version.path) === join(pinned.root, ...parts);
 	} catch {
 		return false;
 	}
@@ -58,6 +72,7 @@ export function prunePluginCache(opts: PruneOptions): PrunePlan | undefined {
 		return undefined;
 	}
 	const plan = planPluginCachePrune(listDgPluginVersions(opts.home), active, opts.now);
+	const pinned = pinCacheRoot(opts.home);
 	const keep = [...plan.keep];
 	const removed: PluginCacheVersion[] = [];
 	for (const version of plan.remove) {
@@ -67,7 +82,10 @@ export function prunePluginCache(opts: PruneOptions): PrunePlan | undefined {
 			if (reason !== "gone") keep.push({ version, reason });
 			continue;
 		}
-		if (!isOwnedVersionDir(opts.home, version)) continue;
+		if (!pinned || !isOwnedVersionDir(opts.home, version, pinned)) {
+			keep.push({ version, reason: "could not remove" });
+			continue;
+		}
 		try {
 			rmSync(version.path, { recursive: true, force: true });
 			removed.push(version);
