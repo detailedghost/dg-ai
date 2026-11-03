@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.35.0 (2026-11-03)
+
+### Features
+
+- feat(install): prune stale dg plugin cache versions on install ([#132](https://github.com/detailedghost/dg-ai/pull/132))
+
 ## v1.34.2 (2026-11-03)
 
 ### Fixes
