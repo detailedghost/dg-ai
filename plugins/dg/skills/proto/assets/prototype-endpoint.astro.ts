@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { APIRoute } from "astro";
 
 interface ConfirmBody {
@@ -46,11 +46,12 @@ function validName(name: unknown): name is string {
 	return typeof name === "string" && NAME.test(name);
 }
 
-const CLI =
+const CLI = resolve(
 	process.env.DG_SKILLS_BIN ??
-	(process.env.DG_HOME
-		? join(process.env.DG_HOME, "bin", "dg-skills")
-		: join(process.env.HOME ?? "", ".local", "bin", "dg-skills"));
+		(process.env.DG_HOME
+			? join(process.env.DG_HOME, "bin", "dg-skills")
+			: join(process.env.HOME ?? "", ".local", "bin", "dg-skills")),
+);
 
 /** Pins sentinel resolution to the repo root, matching the agent's own cwd. */
 function gitRoot(): string {

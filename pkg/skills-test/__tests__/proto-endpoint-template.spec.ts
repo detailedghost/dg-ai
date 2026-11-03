@@ -307,3 +307,13 @@ describe("framework endpoint templates", () => {
 		},
 	);
 });
+
+describe("prototype endpoint launcher path", () => {
+	test.each(["prototype-endpoint.ts", "prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"])(
+		"%s resolves the launcher to an absolute path before it runs it from the git root",
+		(file) => {
+			const text = readFileSync(join(ASSETS, file), "utf8");
+			expect(text).toMatch(/const CLI = resolve\(\n?\s*process\.env\.DG_SKILLS_BIN \?\?/);
+		},
+	);
+});
