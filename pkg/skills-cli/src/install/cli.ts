@@ -391,7 +391,7 @@ export async function runInstall(
 	target: string | undefined,
 	opts: InstallOptions,
 ): Promise<void> {
-	migrateBeforeInstall();
+	await migrateBeforeInstall();
 	noteForeignDgHome();
 	if (opts.skillsOnly) {
 		assertSkillsOnlyFlags({

@@ -3,6 +3,7 @@ import { delimiter, join, resolve } from "node:path";
 import { accountHome, allowSendHome } from "@dg/ssms";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node/dg-paths";
 import { syncCompatLaunchers } from "./compat-launchers";
+import { withInstallLock } from "./lock";
 import { liveWriterFolders, migrateLegacyHome, moveVerified } from "./migrate-home";
 import { writeShims } from "./shims";
 
@@ -40,11 +41,15 @@ function moveSsmsAllowFile(passwdLegacy: string, trustedConfig: string, log: (li
 }
 
 /** Moves an old flat `~/.dg` into the per-OS roots, and the fixed ssms allow file by the passwd home alone. */
-export function migrateBeforeInstall(
+export async function migrateBeforeInstall(
 	paths: DgPaths = resolveDgPaths(),
 	log: (line: string) => void = console.log,
 	passwdHome: string | undefined = installPasswdHome(),
-): void {
+): Promise<void> {
+	await withInstallLock(paths.dataDir, async () => migrateLocked(paths, log, passwdHome));
+}
+
+function migrateLocked(paths: DgPaths, log: (line: string) => void, passwdHome: string | undefined): void {
 	const passwdLegacy = passwdHome && resolveDgPaths({ homeDir: passwdHome, env: {} }).legacyHome;
 	const trustedConfig = passwdHome && allowSendHome(passwdHome);
 	const sameHome = !!passwdLegacy && resolve(passwdLegacy) === resolve(paths.legacyHome);

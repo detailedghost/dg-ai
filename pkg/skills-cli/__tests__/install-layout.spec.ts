@@ -106,10 +106,10 @@ posix("ssms allow config move", () => {
 			env: { DG_HOME: join(base, "dg-home"), XDG_CONFIG_HOME: join(base, "xdg") },
 		});
 
-	test("moves the passwd home allow file to the passwd config folder when HOME, DG_HOME and XDG_CONFIG_HOME point elsewhere", () => {
+	test("moves the passwd home allow file to the passwd config folder when HOME, DG_HOME and XDG_CONFIG_HOME point elsewhere", async () => {
 		putFile(allowFile, "allow_send: true\n");
 
-		migrateBeforeInstall(redirected(), () => {}, passwd);
+		await migrateBeforeInstall(redirected(), () => {}, passwd);
 
 		expect(readFileSync(trusted, "utf8")).toBe("allow_send: true\n");
 		expect(existsSync(allowFile)).toBe(false);
@@ -117,48 +117,61 @@ posix("ssms allow config move", () => {
 		expect(existsSync(join(base, "dg-home", "config", "ssms", "config.yaml"))).toBe(false);
 	});
 
-	test("moves the passwd home allow file when HOME is the passwd home and XDG_CONFIG_HOME points elsewhere", () => {
+	test("moves the passwd home allow file when HOME is the passwd home and XDG_CONFIG_HOME points elsewhere", async () => {
 		putFile(allowFile, "allow_send: true\n");
 		putFile(join(passwd, ".dg", "ssms", "drafts", "d1.json"), "{}");
 		const paths = resolveDgPaths({ platform: "linux", homeDir: passwd, env: { XDG_CONFIG_HOME: join(base, "xdg") } });
 
-		migrateBeforeInstall(paths, () => {}, passwd);
+		await migrateBeforeInstall(paths, () => {}, passwd);
 
 		expect(readFileSync(trusted, "utf8")).toBe("allow_send: true\n");
 		expect(existsSync(join(base, "xdg", "dg", "ssms", "config.yaml"))).toBe(false);
 		expect(readFileSync(join(paths.stateDir, "ssms", "drafts", "d1.json"), "utf8")).toBe("{}");
 	});
 
-	test("never moves a DG_HOME ssms config into the passwd config folder", () => {
+	test("never moves a DG_HOME ssms config into the passwd config folder", async () => {
 		const paths = redirected();
 		putFile(join(paths.legacyHome, "ssms", "config.yaml"), "allow_send: true\n");
 
-		migrateBeforeInstall(paths, () => {}, passwd);
+		await migrateBeforeInstall(paths, () => {}, passwd);
 
 		expect(existsSync(trusted)).toBe(false);
 		expect(readFileSync(join(paths.configDir, "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
 	});
 
-	test("never writes over an allow file that already exists in the passwd config folder", () => {
+	test("never writes over an allow file that already exists in the passwd config folder", async () => {
 		putFile(allowFile, "allow_send: true\n");
 		putFile(trusted, "allow_send: false\n");
 		const lines: string[] = [];
 
-		migrateBeforeInstall(redirected(), (line) => lines.push(line), passwd);
+		await migrateBeforeInstall(redirected(), (line) => lines.push(line), passwd);
 
 		expect(readFileSync(trusted, "utf8")).toBe("allow_send: false\n");
 		expect(readFileSync(allowFile, "utf8")).toBe("allow_send: true\n");
 		expect(lines).toContain(`dg: kept ${allowFile}; ${trusted} already exists`);
 	});
 
-	test("keeps the passwd home allow file while a process that writes the ssms folder runs", () => {
+	test("keeps the passwd home allow file while a process that writes the ssms folder runs", async () => {
 		putFile(allowFile, "allow_send: true\n");
 		putFile(join(passwd, ".dg", "ssms", "ssms.pid"), String(process.pid));
 
-		migrateBeforeInstall(redirected(), () => {}, passwd);
+		await migrateBeforeInstall(redirected(), () => {}, passwd);
 
 		expect(existsSync(trusted)).toBe(false);
 		expect(readFileSync(allowFile, "utf8")).toBe("allow_send: true\n");
+	});
+
+	test("moves the old home while it holds the install lock in the data root", async () => {
+		putFile(allowFile, "allow_send: true\n");
+		const paths = redirected();
+		putFile(join(paths.legacyHome, "proto", "p.html"), "<p>");
+		const held: boolean[] = [];
+
+		await migrateBeforeInstall(paths, () => held.push(existsSync(join(paths.dataDir, ".install.lock"))), passwd);
+
+		expect(held.length).toBeGreaterThan(0);
+		expect(held.every(Boolean)).toBe(true);
+		expect(existsSync(join(paths.dataDir, ".install.lock"))).toBe(false);
 	});
 
 	test("finds no passwd home under the test runner so spawned installs never reach the real account", () => {
