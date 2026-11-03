@@ -114,8 +114,10 @@ accept <card>` works; see [docs/phone.md](phone.md).
 
 Use this when the user wants the skill instruction files without the extension. The installer copies each directory under `plugins/dg/skills` that
 contains a `SKILL.md` — the instruction file and its references, including
-`google-sms-cleanup` — and does not execute that text. It does not download
-`dg-skills`, `dg-daemon`, `dg-agent`, or the extension.
+`google-sms-cleanup` — and does not execute that text. The checkout
+commands below do not download the runtime, the bundle or the extension. The
+`DG_SKILLS_ONLY=1` bootstrap also installs the runtime and the bundle, so the
+skills can run `dg-skills`; set `DG_SKILLS_NO_CLI=1` with it to copy the files only.
 
 From a checkout of this repository:
 
@@ -164,25 +166,24 @@ with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
 the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version X.Y.Z
 ```
-
-Needs 1.21.1 or newer.
 
 On Windows PowerShell:
 
 ```powershell
-$env:DG_VERSION = "1.19.0"
+$env:DG_VERSION = "X.Y.Z"
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-`dg-skills install --version 1.19.0` is the flag on an already installed
+`dg-skills install --version X.Y.Z` is the flag on an already installed
 `dg-skills`. Leaving it unset installs the newest release.
 
-If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
-exist, the whole install fails and names the missing release, before
-touching any binary or the extension. Check that the owner actually
-published that release for all four components before asking for a pin.
+Replace `X.Y.Z` with a `vX.Y.Z` release that lists `dg-lib-X.Y.Z.tar.gz` and
+`runtime.json`. If that release does not exist or lacks one of its parts, the
+whole install fails and names it, before it touches the runtime, the bundle or
+the extension. A release from before the bundle fails the same way and prints
+that release's own bootstrap command.
 Leaving the version unset keeps today's behavior: install the newest of
 each, warning and skipping one that can't be reached.
 

@@ -137,11 +137,11 @@ Install a specific release instead of the newest, by adding `--version <x.y.z>`
 <!-- markdownlint-disable MD013 -->
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version X.Y.Z
 ```
 
 ```powershell
-$env:DG_VERSION = "1.19.0"
+$env:DG_VERSION = "X.Y.Z"
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
@@ -149,7 +149,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 This pins the bundle, the runtime pin and the extension to that `vX.Y.Z`
 release, and combines with `--cli-only`/`--agent-only`. An installed
-`dg-skills` accepts the same flag: `dg-skills install --version 1.19.0`.
+`dg-skills` accepts the same flag: `dg-skills install --version X.Y.Z`.
 Leaving it unset installs the newest release.
 
 If the pinned release does not exist, the whole install fails and names it. It
