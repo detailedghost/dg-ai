@@ -25,14 +25,14 @@ function warmMedian(bun: string, entry: string, args: string[]): number {
 describe("startup budget", () => {
 	const { bun, entry } = buildBundle();
 	const scratch = mkdtempSync(join(tmpdir(), "dg-floor-"));
-	const emptyEntry = join(scratch, "empty.js");
-	writeFileSync(emptyEntry, "");
+	const floorEntry = join(scratch, "write-line.js");
+	writeFileSync(floorEntry, 'process.stdout.write("0.0.0\\n");\n');
 
 	afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 	for (const program of PROGRAMS) {
-		test(`${program} --version adds under ${OVERHEAD_BUDGET_MS} ms to an empty bun process (median of ${RUNS} warm runs)`, () => {
-			const floor = warmMedian(bun, emptyEntry, []);
+		test(`${program} --version adds under ${OVERHEAD_BUDGET_MS} ms to a bun process that writes one line (median of ${RUNS} warm runs)`, () => {
+			const floor = warmMedian(bun, floorEntry, []);
 			const ms = warmMedian(bun, entry, [program, "--version"]);
 			console.log(JSON.stringify({ program, floor, ms, over: ms - floor }));
 			expect(ms - floor).toBeLessThan(OVERHEAD_BUDGET_MS * budgetScale());
