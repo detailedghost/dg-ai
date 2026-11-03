@@ -48,8 +48,9 @@ if (root) {
 				sendAction: async (action) => {
 					if (expired) return { ok: false, error: SESSION_ENDED_TEXT };
 					const result = await api.sendAction(action);
-					if (!result.ok && result.status === 403) expire();
-					return result;
+					if (result.ok || result.status !== 403) return result;
+					expire();
+					return { ...result, error: SESSION_ENDED_TEXT };
 				},
 			});
 		},

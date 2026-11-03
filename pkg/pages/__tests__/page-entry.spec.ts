@@ -700,10 +700,9 @@ describe("session ended text", () => {
 
 		clickApprove(net);
 		await settle();
-		clickApprove(net);
-		await settle();
 
 		expect(net.win.document.body.textContent).toContain(SESSION_ENDED_TEXT);
+		expect(net.win.document.body.textContent).not.toContain("refused");
 	});
 
 	test("chat shows the sentence once when the daemon refuses the token", async () => {
