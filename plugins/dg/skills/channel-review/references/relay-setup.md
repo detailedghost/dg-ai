@@ -59,8 +59,8 @@ that the relay registered for this client, and the secret.
 
 ## 4. Local setup
 
-1. Install `dg-skills`: run `mise run remote:install` in the dg repository, or
-   use the bootstrap in SKILL.md.
+1. Install `dg-skills` with the bootstrap in SKILL.md. To run your local
+   changes, then run `mise run remote:install` in the dg repository.
 1. Copy `.env.example` to `.env` in the dg repository and set `DG_HOME`,
    `DG_SKILLS`, and `CR_ENV` for this machine.
 1. Copy [config.example.json](config.example.json) to

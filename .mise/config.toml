@@ -8,12 +8,24 @@ node = "22"
 _.file = { path = ".env", redact = false }
 
 [tasks."remote:install"]
-description = "Build dg-skills and install it into DG_HOME/bin for local channel-review runs"
+description = "Build the dg bundle and make it DG_HOME/lib/current for local channel-review runs"
 run = """
-bun run --cwd pkg/skills-cli build
-mkdir -p "${DG_HOME:-$HOME/.dg}/bin"
-cp pkg/skills-cli/dist/dg-skills "${DG_HOME:-$HOME/.dg}/bin/dg-skills.new"
-mv -f "${DG_HOME:-$HOME/.dg}/bin/dg-skills.new" "${DG_HOME:-$HOME/.dg}/bin/dg-skills"
+set -e
+ROOT="${DG_HOME:-$HOME/.dg}"
+if [ ! -x "$ROOT/runtime/current/bun" ]; then
+  echo "remote:install: no runtime at $ROOT/runtime/current; run bootstrap.sh once first" >&2
+  exit 1
+fi
+bun run --cwd pkg/launcher build
+VERSION="$(bun -e 'console.log(require("./pkg/skills-cli/package.json").version)')-local"
+rm -rf "$ROOT/lib/$VERSION.staging"
+mkdir -p "$ROOT/lib/$VERSION.staging"
+cp -R pkg/launcher/dist/lib/. "$ROOT/lib/$VERSION.staging/"
+rm -rf "$ROOT/lib/$VERSION"
+mv "$ROOT/lib/$VERSION.staging" "$ROOT/lib/$VERSION"
+ln -s "$VERSION" "$ROOT/lib/current.$$.tmp"
+mv -T "$ROOT/lib/current.$$.tmp" "$ROOT/lib/current" 2>/dev/null || mv -h -f "$ROOT/lib/current.$$.tmp" "$ROOT/lib/current"
+echo "lib/current -> $VERSION"
 """
 
 [tasks."remote:status"]
