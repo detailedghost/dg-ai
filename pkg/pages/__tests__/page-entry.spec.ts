@@ -441,6 +441,49 @@ describe("chat page entry wiring", () => {
 		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
 	});
 
+	test("keeps the surviving New chat session stored when the original session closes", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		await loadEntry("../src/chat/page");
+		const socket = net.socketHandles[0];
+		socket?.fire("open");
+		await settle();
+
+		socket?.receive({
+			type: "session-pending",
+			sessionId: BOOTSTRAP.sessionId,
+			newSession: { sessionId: "session-b", token: "tok-b" },
+		});
+		socket?.receive({ type: "session-closed", sessionId: BOOTSTRAP.sessionId });
+		await settle();
+
+		expect(
+			JSON.parse(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY) ?? "{}"),
+		).toMatchObject({ sessionId: "session-b", token: "tok-b" });
+	});
+
+	test("clears the stored bootstrap when the last held session closes", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		await loadEntry("../src/chat/page");
+		const socket = net.socketHandles[0];
+		socket?.fire("open");
+		await settle();
+
+		socket?.receive({
+			type: "session-pending",
+			sessionId: BOOTSTRAP.sessionId,
+			newSession: { sessionId: "session-b", token: "tok-b" },
+		});
+		socket?.receive({ type: "session-closed", sessionId: BOOTSTRAP.sessionId });
+		socket?.receive({ type: "session-closed", sessionId: "session-b" });
+		await settle();
+
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+	});
+
 	test("presents no refused token again on a reconnect", async () => {
 		const net = installGlobals(
 			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,

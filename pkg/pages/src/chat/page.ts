@@ -18,16 +18,22 @@ if (root) {
 	const bootstrap = loadLocalBootstrap(window, bootstrapStorage);
 	let live = bootstrap;
 	let client: ChatClient | undefined;
-	const heldBootstrap = (
+	let heldSessions: ReadonlyMap<string, string> = new Map();
+	const adoptHeld = (
 		held: ReadonlyMap<string, string>,
 	): SessionBootstrap | undefined => {
-		if (live && held.get(live.sessionId) === live.token) return live;
 		const first = held.entries().next();
 		if (first.done || !bootstrap) return undefined;
 		const [sessionId, token] = first.value;
 		live = { ...bootstrap, sessionId, token };
 		storeLocalBootstrap(bootstrapStorage, live);
 		return live;
+	};
+	const heldBootstrap = (
+		held: ReadonlyMap<string, string>,
+	): SessionBootstrap | undefined => {
+		if (live && held.get(live.sessionId) === live.token) return live;
+		return adoptHeld(held);
 	};
 	const dropLive = (sessionId?: string): void => {
 		if (!live || (sessionId !== undefined && live.sessionId !== sessionId)) {
@@ -37,6 +43,7 @@ if (root) {
 		live = undefined;
 		forgetLocalBootstrap(bootstrapStorage, dropped.token);
 		client?.forgetSession(dropped.sessionId);
+		adoptHeld(heldSessions);
 	};
 	const forgetIfRefused = (token: string): void => {
 		createOverwatchApi(window.location.origin, token)
@@ -50,11 +57,13 @@ if (root) {
 	renderChatPage({
 		root,
 		runtime: { storage },
+		pruneStalePositions: false,
 		assetOrigin: window.location.origin,
 		createClient: () => {
 			client = createChatClient({
 				heldSessionsOnly: true,
 				openSocket: (url, held) => {
+					heldSessions = held;
 					const token = heldBootstrap(held)?.token ?? "";
 					const socket = new WebSocket(
 						`${url}?token=${encodeURIComponent(token)}`,
