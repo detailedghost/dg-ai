@@ -180,6 +180,20 @@ describe("migrateLegacyHome", () => {
 		expect(lines.join("\n")).toContain("is running");
 	});
 
+	test("keeps the agent state while the old daemon runs", () => {
+		const legacy = seedLegacy();
+		put(join(legacy, "daemon", "daemon.pid"), JSON.stringify({ pid: process.pid }));
+		put(join(legacy, "agents", "memory.db"), "memory");
+		put(join(legacy, "agents", "assets", "a.png"), "png");
+
+		const result = migrateLegacyHome(paths, { log });
+
+		expect(result.kept).toContain(join(legacy, "agents"));
+		expect(readFileSync(join(legacy, "agents", "memory.db"), "utf8")).toBe("memory");
+		expect(existsSync(paths.memoryDbPath)).toBe(false);
+		expect(existsSync(paths.assetsDir)).toBe(false);
+	});
+
 	test("schedules a copied folder that is in use and removes it on the next run", () => {
 		const legacy = seedLegacy();
 		const busy = (from: string, to: string) => {

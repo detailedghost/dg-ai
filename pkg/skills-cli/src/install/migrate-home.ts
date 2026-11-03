@@ -45,13 +45,15 @@ function pidAlive(file: string): boolean {
 }
 
 export function liveWriterFolders(legacy: string): string[] {
-	return WRITER_FOLDERS.map((name) => join(legacy, name)).filter((dir) => {
+	const live = WRITER_FOLDERS.map((name) => join(legacy, name)).filter((dir) => {
 		try {
 			return readdirSync(dir).some((name) => name.endsWith(".pid") && pidAlive(join(dir, name)));
 		} catch {
 			return false;
 		}
 	});
+	const agents = join(legacy, "agents");
+	return live.includes(join(legacy, "daemon")) && present(agents) ? [...live, agents] : live;
 }
 
 const within = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}${sep}`);
