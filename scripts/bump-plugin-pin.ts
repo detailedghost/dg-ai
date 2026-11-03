@@ -33,7 +33,7 @@ function parseLsRemote(output: string, ref: string): string | undefined {
 function resolveSha(repo: string, ref: string): string {
 	let result: ReturnType<typeof Bun.spawnSync>;
 	try {
-		result = Bun.spawnSync(["git", "ls-remote", `https://github.com/${repo}.git`, ref], { stdout: "pipe", stderr: "pipe" });
+		result = Bun.spawnSync(["git", "ls-remote", `https://github.com/${repo}.git`, ref, `${ref}^{}`], { stdout: "pipe", stderr: "pipe" });
 	} catch (error) {
 		throw new BumpError(`cannot run git: ${error instanceof Error ? error.message : error}`, EXIT_UNREACHABLE);
 	}

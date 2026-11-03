@@ -18,7 +18,7 @@ const MARKETPLACE = JSON.parse(
 
 type Result = { status: number | null; stdout: string; stderr: string };
 
-function recordingRunner(results: Record<string, Result> = {}) {
+function recordingRunner(results: Record<string, Result> = {}, after?: { home: string; shas: Record<string, string> }) {
 	const calls: string[][] = [];
 	const marketplaceCalls: string[][] = [];
 	const run = (argv: string[]): Result => {
@@ -27,9 +27,17 @@ function recordingRunner(results: Record<string, Result> = {}) {
 			return { status: 0, stdout: "", stderr: "" };
 		}
 		calls.push(argv);
-		return results[argv.slice(1).join(" ")] ?? { status: 0, stdout: "{}", stderr: "" };
+		const result = results[argv.slice(1).join(" ")] ?? { status: 0, stdout: "{}", stderr: "" };
+		if (after && argv[2] === "install" && result.status === 0) writeInstalledPlugins(after.home, after.shas);
+		return result;
 	};
 	return { calls, marketplaceCalls, run };
+}
+
+function writeInstalledPluginsRaw(home: string, plugins: Record<string, { scope?: string; gitCommitSha: string }[]>) {
+	const file = join(home, ".claude", "plugins", "installed_plugins.json");
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(file, JSON.stringify({ version: 2, plugins }));
 }
 
 function plugin(name: string, sha: string) {
@@ -77,9 +85,11 @@ describe("installRecommendedForClaude", () => {
 
 	test("installs a plugin that installed_plugins.json does not list", () => {
 		const home = tempDir("recommended-home");
-		const { calls, run } = recordingRunner();
-		installRecommendedForClaude([plugin("unslop", SHA_A)], home, run, () => {});
+		const { calls, run } = recordingRunner({}, { home, shas: { "unslop@detailedghost": SHA_A } });
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", SHA_A)], home, run, (line) => lines.push(line));
 		expect(calls).toEqual([["claude", "plugin", "install", "unslop@detailedghost", "--json"]]);
+		expect(lines).toEqual([`unslop installed at ${SHA_A.slice(0, 7)}.`]);
 	});
 
 	test("installs when installed_plugins.json is missing or the file has no entry for the plugin", () => {
@@ -93,12 +103,14 @@ describe("installRecommendedForClaude", () => {
 	test("uninstalls then installs when the installed sha differs from the pin", () => {
 		const home = tempDir("recommended-home");
 		writeInstalledPlugins(home, { "unslop@detailedghost": SHA_A });
-		const { calls, run } = recordingRunner();
-		installRecommendedForClaude([plugin("unslop", SHA_B)], home, run, () => {});
+		const { calls, run } = recordingRunner({}, { home, shas: { "unslop@detailedghost": SHA_B } });
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", SHA_B)], home, run, (line) => lines.push(line));
 		expect(calls).toEqual([
 			["claude", "plugin", "uninstall", "unslop@detailedghost"],
 			["claude", "plugin", "install", "unslop@detailedghost", "--json"],
 		]);
+		expect(lines).toEqual([`unslop updated to ${SHA_B.slice(0, 7)}.`]);
 	});
 
 	test("runs nothing when the installed sha equals the pin", () => {
@@ -114,7 +126,10 @@ describe("installRecommendedForClaude", () => {
 	test("handles each plugin on its own", () => {
 		const home = tempDir("recommended-home");
 		writeInstalledPlugins(home, { "one@detailedghost": SHA_A, "two@detailedghost": SHA_A });
-		const { calls, run } = recordingRunner();
+		const { calls, run } = recordingRunner(
+			{},
+			{ home, shas: { "one@detailedghost": SHA_A, "two@detailedghost": SHA_B, "three@detailedghost": SHA_B } },
+		);
 		installRecommendedForClaude(
 			[plugin("one", SHA_A), plugin("two", SHA_B), plugin("three", SHA_B)],
 			home,
@@ -174,9 +189,10 @@ describe("installRecommendedForClaude", () => {
 
 	test("a failed command warns for that plugin and the next plugin still installs", () => {
 		const home = tempDir("recommended-home");
-		const { calls, run } = recordingRunner({
-			"plugin install one@detailedghost --json": { status: 1, stdout: "", stderr: "boom" },
-		});
+		const { calls, run } = recordingRunner(
+			{ "plugin install one@detailedghost --json": { status: 1, stdout: "", stderr: "boom" } },
+			{ home, shas: { "two@detailedghost": SHA_A } },
+		);
 		const lines: string[] = [];
 		installRecommendedForClaude([plugin("one", SHA_A), plugin("two", SHA_A)], home, run, (line) =>
 			lines.push(line),
@@ -201,7 +217,7 @@ describe("installRecommendedForClaude", () => {
 
 	test("refreshes the marketplace once before installing and not when every plugin is current", () => {
 		const home = tempDir("recommended-home");
-		const stale = recordingRunner();
+		const stale = recordingRunner({}, { home, shas: { "one@detailedghost": SHA_A, "two@detailedghost": SHA_A } });
 		installRecommendedForClaude([plugin("one", SHA_A), plugin("two", SHA_A)], home, stale.run, () => {});
 		expect(stale.marketplaceCalls).toEqual([["claude", "plugin", "marketplace", "update", "detailedghost"]]);
 		writeInstalledPlugins(home, { "one@detailedghost": SHA_A });
@@ -210,32 +226,75 @@ describe("installRecommendedForClaude", () => {
 		expect(current.marketplaceCalls).toEqual([]);
 	});
 
-	test("warns when the installed sha still differs from the pin after install", () => {
+	test("uninstalls and says so when the installed sha still differs from the pin after install", () => {
 		const home = tempDir("recommended-home");
-		const calls: string[][] = [];
-		const run = (argv: string[]): Result => {
-			calls.push(argv);
-			if (argv[2] === "install") writeInstalledPlugins(home, { "unslop@detailedghost": SHA_A });
-			return { status: 0, stdout: "", stderr: "" };
-		};
+		const { calls, run } = recordingRunner({}, { home, shas: { "unslop@detailedghost": SHA_A } });
 		const lines: string[] = [];
 		installRecommendedForClaude([plugin("unslop", SHA_B)], home, run, (line) => lines.push(line));
-		expect(lines).toEqual([`⚠ unslop skipped: installed ${SHA_A.slice(0, 7)}, expected ${SHA_B.slice(0, 7)}`]);
+		expect(calls.map((argv) => argv.slice(2).join(" "))).toEqual([
+			"install unslop@detailedghost --json",
+			"uninstall unslop@detailedghost",
+		]);
+		expect(lines).toEqual([`⚠ unslop removed: installed ${SHA_A.slice(0, 7)}, expected ${SHA_B.slice(0, 7)}`]);
 	});
 
-	test("treats a plugin as current when any installed scope holds the pin", () => {
+	test("reports a failed uninstall after a sha mismatch", () => {
 		const home = tempDir("recommended-home");
-		const file = join(home, ".claude", "plugins", "installed_plugins.json");
-		mkdirSync(dirname(file), { recursive: true });
-		writeFileSync(
-			file,
-			JSON.stringify({
-				plugins: { "unslop@detailedghost": [{ gitCommitSha: SHA_B }, { gitCommitSha: SHA_A }] },
-			}),
+		const { run } = recordingRunner(
+			{ "plugin uninstall unslop@detailedghost": { status: 1, stdout: "", stderr: "locked\nmore" } },
+			{ home, shas: { "unslop@detailedghost": SHA_A } },
 		);
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", SHA_B)], home, run, (line) => lines.push(line));
+		expect(lines).toEqual([
+			`⚠ unslop skipped: installed ${SHA_A.slice(0, 7)}, expected ${SHA_B.slice(0, 7)}; uninstall failed: locked`,
+		]);
+	});
+
+	test("installs when only a project-scope entry holds the pin", () => {
+		const home = tempDir("recommended-home");
+		writeInstalledPluginsRaw(home, {
+			"unslop@detailedghost": [{ scope: "project", gitCommitSha: SHA_A }],
+		});
+		const { calls, run } = recordingRunner({}, { home, shas: { "unslop@detailedghost": SHA_A } });
+		installRecommendedForClaude([plugin("unslop", SHA_A)], home, run, () => {});
+		expect(calls.map((argv) => argv[2])).toEqual(["install"]);
+	});
+
+	test("runs nothing when the user entry holds the pin and a project entry holds another sha", () => {
+		const home = tempDir("recommended-home");
+		writeInstalledPluginsRaw(home, {
+			"unslop@detailedghost": [
+				{ scope: "project", gitCommitSha: SHA_B },
+				{ scope: "user", gitCommitSha: SHA_A },
+			],
+		});
 		const { calls, run } = recordingRunner();
 		installRecommendedForClaude([plugin("unslop", SHA_A)], home, run, () => {});
 		expect(calls).toEqual([]);
+	});
+
+	test("reports an unverifiable install without claiming the pin or uninstalling", () => {
+		const home = tempDir("recommended-home");
+		const { calls, run } = recordingRunner();
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", SHA_A)], home, run, (line) => lines.push(line));
+		expect(calls.map((argv) => argv[2])).toEqual(["install"]);
+		expect(lines).toEqual(["⚠ unslop installed, but its commit could not be verified"]);
+	});
+
+	test("reports an unverifiable install when installed_plugins.json is malformed or lacks a sha", () => {
+		for (const content of ["not json", JSON.stringify({ plugins: { "unslop@detailedghost": [{ scope: "user" }] } })]) {
+			const home = tempDir("recommended-home");
+			const file = join(home, ".claude", "plugins", "installed_plugins.json");
+			mkdirSync(dirname(file), { recursive: true });
+			writeFileSync(file, content);
+			const { calls, run } = recordingRunner();
+			const lines: string[] = [];
+			installRecommendedForClaude([plugin("unslop", SHA_A)], home, run, (line) => lines.push(line));
+			expect(calls.map((argv) => argv[2])).toEqual(["install"]);
+			expect(lines).toEqual(["⚠ unslop installed, but its commit could not be verified"]);
+		}
 	});
 
 	test("reads installed_plugins.json from CLAUDE_CONFIG_DIR when set", () => {
@@ -287,7 +346,18 @@ function fakeClaudeBin(root: string): { bin: string; log: string } {
 	mkdirSync(bin, { recursive: true });
 	writeFileSync(log, "");
 	const script = join(bin, "claude");
-	writeFileSync(script, `#!/bin/sh\necho "$@" >> "${log}"\necho '{}'\nexit 0\n`, { mode: 0o755 });
+	const plugins = JSON.stringify({
+		version: 2,
+		plugins: Object.fromEntries(
+			recommendedPlugins().map((entry) => [`${entry.name}@detailedghost`, [{ scope: "user", gitCommitSha: entry.sha }]]),
+		),
+	});
+	const installed = join(root, "home", ".claude", "plugins", "installed_plugins.json");
+	writeFileSync(
+		script,
+		`#!/bin/sh\necho "$@" >> "${log}"\nif [ "$2" = install ]; then mkdir -p "${dirname(installed)}"; printf '%s' '${plugins}' > "${installed}"; fi\necho '{}'\nexit 0\n`,
+		{ mode: 0o755 },
+	);
 	return { bin, log };
 }
 

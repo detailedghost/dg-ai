@@ -58,12 +58,14 @@ function installedShas(home: string): Map<string, string[]> {
 	if (!existsSync(file)) return new Map();
 	try {
 		const doc = JSON.parse(readFileSync(file, "utf8")) as {
-			plugins?: Record<string, { gitCommitSha?: string }[]>;
+			plugins?: Record<string, { scope?: string; gitCommitSha?: string }[]>;
 		};
 		return new Map(
 			Object.entries(doc.plugins ?? {}).map(([ref, entries]) => [
 				ref,
-				(entries ?? []).flatMap((entry) => (entry.gitCommitSha ? [entry.gitCommitSha] : [])),
+				(entries ?? []).flatMap((entry) =>
+					entry.gitCommitSha && (entry.scope === undefined || entry.scope === "user") ? [entry.gitCommitSha] : [],
+				),
 			]),
 		);
 	} catch {
@@ -105,8 +107,13 @@ function installOne(plugin: RecommendedPlugin, home: string, before: string | un
 			: `⚠ ${plugin.name} skipped: ${reason}`;
 	}
 	const after = currentSha(installedShas(home).get(ref), plugin.sha);
-	if (after !== undefined && after !== plugin.sha) {
-		return `⚠ ${plugin.name} skipped: installed ${after.slice(0, 7)}, expected ${short}`;
+	if (after === undefined) return `⚠ ${plugin.name} installed, but its commit could not be verified`;
+	if (after !== plugin.sha) {
+		const mismatch = `installed ${after.slice(0, 7)}, expected ${short}`;
+		const removed = run(["claude", "plugin", "uninstall", ref]);
+		return removed.status === 0
+			? `⚠ ${plugin.name} removed: ${mismatch}`
+			: `⚠ ${plugin.name} skipped: ${mismatch}; uninstall failed: ${firstLine(removed.stderr) || `exit ${removed.status}`}`;
 	}
 	return `${plugin.name} ${before ? "updated to" : "installed at"} ${short}.`;
 }

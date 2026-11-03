@@ -34,6 +34,7 @@ describe("bump-plugin-pin.ts", () => {
 			`printf '${NEW_SHA}\\trefs/heads/next\\n'`,
 		);
 		expect(result.gitArgs.join("\n")).toMatch(/ls-remote .* next/);
+		expect(result.gitArgs.join("\n")).toContain("next^{}");
 		expect(sourceOf(result.marketplace, "mattpocock-skills").sha).toBe(NEW_SHA);
 		expect(sourceOf(result.marketplace, "mattpocock-skills").ref).toBe("next");
 	});
@@ -131,8 +132,9 @@ describe("bump-plugin-pin.ts", () => {
 		const tagObject = "e".repeat(40);
 		const result = run(
 			["mattpocock-skills", "--ref", "v1"],
-			`printf '${tagObject}\\trefs/tags/v1\\n${NEW_SHA}\\trefs/tags/v1^{}\\n'`,
+			`printf '${tagObject}\\trefs/tags/v1\\n'\ncase "$*" in *'v1^{}'*) printf '${NEW_SHA}\\trefs/tags/v1^{}\\n';; esac`,
 		);
+		expect(result.gitArgs.join("\n")).toContain("v1^{}");
 		expect(sourceOf(result.marketplace, "mattpocock-skills").sha).toBe(NEW_SHA);
 		expect(sourceOf(result.marketplace, "mattpocock-skills").ref).toBe("v1");
 	});

@@ -9,7 +9,9 @@ describe("installRecommendedForClaude post-install verification", () => {
 		const home = tempDir("recommended-home");
 		const pin = "b".repeat(40);
 		writeInstalledPlugins(home, {});
+		const calls: string[] = [];
 		const run = (argv: string[]) => {
+			calls.push(argv[2] ?? "");
 			if (argv[2] === "install") {
 				writeInstalledPlugins(home, { "unslop@detailedghost": "c".repeat(40) });
 			}
@@ -19,7 +21,7 @@ describe("installRecommendedForClaude post-install verification", () => {
 		installRecommendedForClaude([{ name: "unslop", repo: "owner/unslop", sha: pin }], home, run, (line) =>
 			lines.push(line),
 		);
-		expect(lines).toHaveLength(1);
-		expect(lines[0]).toMatch(/^⚠ unslop/);
+		expect(calls.filter((call) => call !== "marketplace")).toEqual(["install", "uninstall"]);
+		expect(lines).toEqual([`⚠ unslop removed: installed ${"c".repeat(7)}, expected ${"b".repeat(7)}`]);
 	});
 });

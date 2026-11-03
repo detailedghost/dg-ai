@@ -210,7 +210,8 @@ anything.
 
 With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
 install each plugin at its pinned sha. It then checks the installed sha. When
-the installed sha differs from the pin, it uninstalls and installs again.
+an installed sha differs from the pin, it uninstalls and installs again. Only
+user-scope installs count.
 
 `mattpocock-skills` adds many skill descriptions to every Claude Code session.
 That raises the system prompt, so the flag stays opt-in.
@@ -240,6 +241,13 @@ plugin prints one warning, `⚠ <plugin> skipped: <reason>`. It installs nothing
 for that plugin. If a failure happens while the skills move into place, the
 warning reads `⚠ <plugin> failed: <reason>` instead. The dg skills still
 install and the command continues.
+
+With the `claude` CLI, `dg-skills` checks the user-scope sha after each install.
+If it differs from the pin, `dg-skills` uninstalls the plugin and prints
+`⚠ <plugin> removed: installed <sha>, expected <pin>`. If that uninstall fails,
+the line reads `⚠ <plugin> skipped: installed <sha>, expected <pin>; uninstall
+failed: <reason>`. If the sha cannot be read, the line reads `⚠ <plugin>
+installed, but its commit could not be verified`, and the plugin stays.
 
 ### Bump a pin
 
