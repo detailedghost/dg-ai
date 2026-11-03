@@ -726,6 +726,9 @@ describe("review board in a browser", () => {
 			await page.check(".layout-table tbody tr:last-child input");
 			await page.setViewportSize({ width: 390, height: 844 });
 			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+			expect(await page.evaluate(() => { const box = document.querySelector(".layout-diff") as HTMLElement; return box.scrollWidth <= box.clientWidth; })).toBe(true);
+			expect(await page.isVisible('input[aria-label="Accept all layout differences"]')).toBe(true);
+			expect(await page.locator(".layout-table tbody tr:first-child td").evaluateAll((cells) => cells.map((cell) => (cell as HTMLElement).dataset.label))).toEqual(["Viewport", "Theme", "Role", "Kind", "Control", "Expected", "Found", "Accept"]);
 			await page.click("#approve");
 			await page.waitForFunction(() => location.hash === "#overview");
 			expect(readVerdicts(paths)["notes-r1"]).toMatchObject({ status: "approved", note: "", layout: ["d-1", "d-2"] });

@@ -554,3 +554,18 @@ aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--a
 .layout-diff input[type="checkbox"]{width:18px;height:18px;margin:0;accent-color:var(--acc);cursor:pointer;vertical-align:middle}
 .layout-diff input[type="checkbox"]:disabled{cursor:default;opacity:.6}
 .layout-diff th input[type="checkbox"]{margin-right:6px}
+@media (max-width:760px){
+  .layout-diff{overflow-x:visible}
+  .layout-diff table{min-width:0}
+  .layout-diff caption{display:block;width:100%}
+  .layout-diff table,.layout-diff thead,.layout-diff tbody,.layout-diff td{display:block;width:100%}
+  .layout-diff thead tr{display:flex;justify-content:flex-end;padding:0 10px 6px}
+  .layout-diff thead th:not(:last-child){display:none}
+  .layout-diff thead th{border:0;padding:0}
+  .layout-diff tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;padding:10px;border-top:1px solid var(--line)}
+  .layout-diff td{padding:0;border:0;white-space:normal!important;overflow-wrap:anywhere}
+  .layout-diff td:nth-child(n+5){grid-column:1/-1}
+  .layout-diff td::before{content:attr(data-label);display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin-bottom:2px}
+  .layout-diff td:last-child{display:flex;align-items:center;gap:8px}
+  .layout-diff td:last-child::before{margin:0;order:1}
+}

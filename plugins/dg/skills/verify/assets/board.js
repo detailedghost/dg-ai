@@ -477,7 +477,8 @@ function renderLayout(s) {
   const table = el("table", "layout-table");
   table.append(el("caption", "", "Layout differences from the accepted prototype"));
   const head = el("tr");
-  for (const name of ["Viewport", "Theme", "Role", "Kind", "Control", "Expected", "Found"]) head.append(el("th", "", name));
+  const heads = ["Viewport", "Theme", "Role", "Kind", "Control", "Expected", "Found"];
+  for (const name of heads) head.append(el("th", "", name));
   const allCell = el("th");
   const all = el("input");
   all.type = "checkbox";
@@ -498,8 +499,13 @@ function renderLayout(s) {
     const tr = el("tr");
     const control = row.control ? row.control.testid || `${row.control.role} "${row.control.name}"` : "-";
     const found = row.found ? sideText(row.found) : row.reason || "none";
-    for (const text of [row.viewport, row.theme, row.role, row.kind, control, row.expected ? sideText(row.expected) : "-", found]) tr.append(el("td", "", text));
+    for (const [i, text] of [row.viewport, row.theme, row.role, row.kind, control, row.expected ? sideText(row.expected) : "-", found].entries()) {
+      const td = el("td", "", text);
+      td.dataset.label = heads[i];
+      tr.append(td);
+    }
     const cell = el("td");
+    cell.dataset.label = "Accept";
     const pick = el("input");
     pick.type = "checkbox";
     pick.setAttribute("aria-label", `Accept ${row.kind} ${control} at ${row.viewport} ${row.theme}`);
