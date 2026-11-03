@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { copyTree, type DgPaths, treeMatches } from "@dg/common/node";
+import { copyTree, type DgPaths, treeContained, treeMatches } from "@dg/common/node";
 
 export type MigrateResult = {
 	moved: string[];
@@ -13,6 +13,7 @@ export type MigrateSeams = {
 	log?: (line: string) => void;
 	afterCopy?: (from: string, to: string) => void;
 	rename?: (from: string, to: string) => void;
+	removeTree?: (path: string) => void;
 	ssmsConfigDir?: string;
 };
 
@@ -110,16 +111,22 @@ function present(path: string): boolean {
 	}
 }
 
-function readPending(legacy: string): string[] {
+type Pending = { from: string; to: string };
+
+function readPending(legacy: string): Pending[] {
 	try {
 		const value: unknown = JSON.parse(readFileSync(join(legacy, PENDING_FILE), "utf8"));
-		return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+		if (!Array.isArray(value)) return [];
+		return value.filter(
+			(entry): entry is Pending =>
+				typeof entry?.from === "string" && typeof entry?.to === "string",
+		);
 	} catch {
 		return [];
 	}
 }
 
-function writePending(legacy: string, pending: string[]): void {
+function writePending(legacy: string, pending: Pending[]): void {
 	const file = join(legacy, PENDING_FILE);
 	if (pending.length === 0) {
 		rmSync(file, { force: true });
@@ -130,15 +137,23 @@ function writePending(legacy: string, pending: string[]): void {
 	renameSync(staged, file);
 }
 
+const DETACHED = ".removing-";
+
+function removeTree(path: string, seams: MigrateSeams): void {
+	try {
+		(seams.removeTree ?? ((p: string) => rmSync(p, { recursive: true, force: true })))(path);
+	} catch {}
+}
+
 /** Detaches the source with one rename first, so a folder a running program holds open is never half deleted. */
-function removeSource(from: string, seams: MigrateSeams): boolean {
-	const detached = join(dirname(from), `.removing-${basename(from)}-${process.pid}`);
+export function removeSource(from: string, seams: MigrateSeams = {}): boolean {
+	const detached = join(dirname(from), `${DETACHED}${basename(from)}-${process.pid}`);
 	try {
 		(seams.rename ?? renameSync)(from, detached);
 	} catch {
 		return false;
 	}
-	rmSync(detached, { recursive: true, force: true });
+	removeTree(detached, seams);
 	return true;
 }
 
@@ -168,12 +183,30 @@ export function moveVerified(
 	return "scheduled";
 }
 
-function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult): void {
+function retryPending(entry: Pending, seams: MigrateSeams, result: MigrateResult, scheduled: Pending[]): void {
+	if (!present(entry.from)) return;
+	if (!present(entry.to) || !treeContained(entry.from, entry.to)) {
+		result.kept.push(entry.from);
+		seams.log?.(`dg: kept ${entry.from}; its copy at ${entry.to} no longer holds every file`);
+		return;
+	}
+	if (removeSource(entry.from, seams)) {
+		result.moved.push(entry.from);
+		return;
+	}
+	result.scheduled.push(entry.from);
+	scheduled.push(entry);
+}
+
+function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult, scheduled: Pending[]): void {
 	const outcome = moveVerified(move.from, move.to, seams);
 	if (outcome === "moved") result.moved.push(move.from);
 	else if (outcome === "failed") result.failed.push(move.from);
 	else if (outcome === "kept") result.kept.push(move.from);
-	else result.scheduled.push(move.from);
+	else {
+		result.scheduled.push(move.from);
+		scheduled.push(move);
+	}
 }
 
 /** Moves the old flat `~/.dg` (or flat `DG_HOME`) into the per-OS roots: copy, verify, then remove. */
@@ -183,22 +216,25 @@ export function migrateLegacyHome(
 ): MigrateResult {
 	const result: MigrateResult = { moved: [], failed: [], kept: [], scheduled: [] };
 	if (!existsSync(paths.legacyHome)) return result;
-	for (const path of readPending(paths.legacyHome)) {
-		if (!present(path)) continue;
-		if (removeSource(path, seams)) result.moved.push(path);
-		else result.scheduled.push(path);
-	}
+	for (const name of readdirSync(paths.legacyHome))
+		if (name.startsWith(DETACHED)) removeTree(join(paths.legacyHome, name), seams);
 	const flatDgHome = paths.binDir === join(paths.legacyHome, "bin");
 	const live = liveWriterFolders(paths.legacyHome);
 	for (const dir of live) {
 		result.kept.push(dir);
 		seams.log?.(`dg: kept ${dir}; a process that writes it is running. Stop it, then run dg-skills install again`);
 	}
+	const scheduled: Pending[] = [];
+	for (const entry of readPending(paths.legacyHome)) {
+		if (live.some((dir) => within(entry.from, dir))) scheduled.push(entry);
+		else retryPending(entry, seams, result, scheduled);
+	}
 	for (const move of legacyMoves(paths, seams.ssmsConfigDir ?? paths.configDir)) {
 		const top = relative(paths.legacyHome, move.from).split(sep)[0] ?? "";
 		if (flatDgHome && ROLE_FOLDERS.has(top)) continue;
 		if (live.some((dir) => within(move.from, dir))) continue;
-		if (result.scheduled.some((dir) => within(move.from, dir))) continue;
+		if ([...result.scheduled, ...scheduled.map((entry) => entry.from)].some((dir) => within(move.from, dir))) continue;
+		if (result.kept.includes(move.from)) continue;
 		if (!present(move.from)) continue;
 		const blocked = [...result.failed, ...result.kept].some((path) => path !== move.from && within(path, move.from));
 		if (blocked) {
@@ -206,9 +242,9 @@ export function migrateLegacyHome(
 			seams.log?.(`dg: kept ${move.from}; part of it did not move`);
 			continue;
 		}
-		moveOne(move, seams, result);
+		moveOne(move, seams, result, scheduled);
 	}
-	writePending(paths.legacyHome, result.scheduled);
+	writePending(paths.legacyHome, scheduled);
 	const quiet = result.moved.length === 0 && result.failed.length === 0;
 	for (const name of readdirSync(paths.legacyHome)) {
 		if (LEFT_FOR_OTHER_STEPS.has(name) || name.startsWith("dg-ai-") || name.startsWith(".")) continue;

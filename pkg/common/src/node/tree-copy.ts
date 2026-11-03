@@ -61,3 +61,14 @@ export function treeMatches(from: string, to: string): boolean {
 	for (const [key, value] of source) if (copy.get(key) !== value) return false;
 	return true;
 }
+
+/** True when every folder and file in `from` is in `to` with the same size; links and extra entries in `to` are ignored. */
+export function treeContained(from: string, to: string): boolean {
+	const source = shape(from, (target) => target);
+	const copy = shape(to, (target) => target);
+	for (const [key, value] of source) {
+		if (value.startsWith("link:")) continue;
+		if (copy.get(key) !== value) return false;
+	}
+	return true;
+}

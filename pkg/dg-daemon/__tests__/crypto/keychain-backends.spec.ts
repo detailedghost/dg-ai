@@ -149,6 +149,19 @@ describe("migratingKeychainBackend", () => {
 		expect(warnings[0]).not.toContain(SECRET);
 	});
 
+	it("reports unreachable, not absent, when the new account is empty and the old one cannot be read", async () => {
+		const current = fakeKeychain(undefined);
+		const legacy: KeychainBackend = {
+			lookup: async () => ({ status: "unreachable" }),
+			store: async () => "unreachable",
+		};
+		const warnings: string[] = [];
+		const backend = migratingKeychainBackend(current.backend, legacy, (line) => warnings.push(line));
+
+		expect(await backend.lookup()).toEqual({ status: "unreachable" });
+		expect(current.value).toBeUndefined();
+	});
+
 	it("reads only the new account when there is no old entry and stores new keys there", async () => {
 		const current = fakeKeychain(undefined);
 		const legacy = fakeKeychain(undefined);

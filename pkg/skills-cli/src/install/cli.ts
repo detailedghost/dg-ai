@@ -17,7 +17,7 @@ import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
-import { moveVerified } from "./migrate-home";
+import { moveVerified, removeSource } from "./migrate-home";
 import { PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
@@ -59,7 +59,8 @@ function reloadFromNewFolder(target: Target, path: string): string {
 function moveStagedExtension(target: Target, dest: { copyPath: string; printPath: string }): boolean {
 	const old = legacyExtensionDest(target);
 	if (old.copyPath === dest.copyPath || !existsSync(old.copyPath)) return false;
-	if (!existsSync(dest.copyPath) && moveVerified(old.copyPath, dest.copyPath, { log: console.log }) === "failed") return false;
+	if (existsSync(dest.copyPath)) removeSource(old.copyPath);
+	else if (moveVerified(old.copyPath, dest.copyPath, { log: console.log }) === "failed") return false;
 	console.log(reloadFromNewFolder(target, dest.printPath));
 	return true;
 }

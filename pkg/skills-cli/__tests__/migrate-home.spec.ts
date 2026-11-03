@@ -246,6 +246,52 @@ describe("migrateLegacyHome", () => {
 		expect(readFileSync(join(legacy, "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
 	});
 
+	test("keeps a scheduled folder whose copy lost a file before the retry", () => {
+		const legacy = seedLegacy();
+		const busy = (from: string, to: string) => {
+			if (from === join(legacy, "runtime")) throw Object.assign(new Error("in use"), { code: "EBUSY" });
+			renameSync(from, to);
+		};
+		migrateLegacyHome(paths, { log, rename: busy });
+		rmSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"));
+
+		const again = migrateLegacyHome(paths, { log });
+
+		expect(existsSync(join(legacy, "runtime", "bun-v1.4.1", "bun"))).toBe(true);
+		expect(again.kept).toContain(join(legacy, "runtime"));
+		expect(again.scheduled).toEqual([]);
+	});
+
+	test("does not retry a scheduled folder that a live process writes", () => {
+		const legacy = seedLegacy();
+		const busy = (from: string, to: string) => {
+			if (from === join(legacy, "daemon")) throw Object.assign(new Error("in use"), { code: "EBUSY" });
+			renameSync(from, to);
+		};
+		migrateLegacyHome(paths, { log, rename: busy });
+		put(join(legacy, "daemon", "daemon.pid"), JSON.stringify({ pid: process.pid }));
+
+		migrateLegacyHome(paths, { log });
+
+		expect(readFileSync(join(legacy, "daemon", "daemon.db"), "utf8")).toBe("db bytes");
+	});
+
+	test("finishes a removal whose delete failed after the rename", () => {
+		const legacy = seedLegacy();
+		let fail = true;
+		const removeTree = (path: string) => {
+			if (fail && path.includes("runtime")) throw new Error("EPERM");
+			rmSync(path, { recursive: true, force: true });
+		};
+
+		expect(() => migrateLegacyHome(paths, { log, removeTree })).not.toThrow();
+		expect(existsSync(join(legacy, "runtime"))).toBe(false);
+		fail = false;
+		migrateLegacyHome(paths, { log, removeTree });
+
+		expect(readdirSync(legacy)).toEqual(["bin"]);
+	});
+
 	test("never overwrites a destination that already exists", () => {
 		const legacy = seedLegacy();
 		put(join(paths.skillsDir, "new", "SKILL.md"), "newer");

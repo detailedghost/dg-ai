@@ -56,7 +56,7 @@ describe("path resolvers", () => {
 		expect(copyPath).toBe(join("/w", "AppData", "Local", "dg", "dg-ai-extension-chrome"));
 	});
 
-	test("stages the extension in the data root on Linux and macOS", () => {
+	test.skipIf(process.platform !== "linux")("stages the extension in the Linux data root", () => {
 		expect(extensionDest("chrome", { HOME: "/h" }, false).copyPath).toBe(join("/h", ".local", "share", "dg", "dg-ai-extension-chrome"));
 		expect(extensionDest("firefox", { DG_HOME: "/d", HOME: "/h" }, false).copyPath).toBe(join("/d", "data", "dg-ai-extension-firefox"));
 	});

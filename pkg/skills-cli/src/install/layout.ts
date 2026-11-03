@@ -34,7 +34,7 @@ export function migrateBeforeInstall(
 	log: (line: string) => void = console.log,
 	passwdHome: string | undefined = passwdHomeWhenCurrent(),
 ): void {
-	const ssmsConfigDir = allowSendHome(passwdHome) ?? paths.configDir;
+	const ssmsConfigDir = (passwdHome && allowSendHome(passwdHome)) || paths.configDir;
 	const result = migrateLegacyHome(paths, { log, ssmsConfigDir });
 	if (result.moved.length > 0) log(`dg: moved ${result.moved.length} items from ${paths.legacyHome} to the per-OS folders`);
 	if (!passwdHome) return;

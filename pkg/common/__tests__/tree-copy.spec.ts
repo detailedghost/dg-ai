@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyTree, treeMatches } from "@dg/common/node";
+import { copyTree, treeContained, treeMatches } from "@dg/common/node";
 
 let dir: string;
 let from: string;
@@ -53,5 +53,24 @@ describe.skipIf(process.platform === "win32")("copyTree", () => {
 		symlinkSync(join(to, "sub"), join(to, "relative"));
 
 		expect(treeMatches(from, to)).toBe(true);
+	});
+
+	it("counts a copy that gained files and moved a link as still holding every source file", () => {
+		copyTree(from, to);
+		writeFileSync(join(to, "sub", "new"), "added later");
+		rmSync(join(to, "relative"));
+		symlinkSync("elsewhere", join(to, "relative"));
+
+		expect(treeMatches(from, to)).toBe(false);
+		expect(treeContained(from, to)).toBe(true);
+	});
+
+	it("does not count a copy that lost a source file or changed its size", () => {
+		copyTree(from, to);
+		writeFileSync(join(to, "sub", "run"), "#!/bin/sh\necho changed\n");
+
+		expect(treeContained(from, to)).toBe(false);
+		rmSync(join(to, "sub", "run"));
+		expect(treeContained(from, to)).toBe(false);
 	});
 });

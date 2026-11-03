@@ -73,6 +73,7 @@ export function migratingKeychainBackend(
 		async lookup(): Promise<KeychainLookupResult> {
 			const found = await current.lookup();
 			const old = await legacy.lookup().catch((): KeychainLookupResult => ({ status: "unreachable" }));
+			if (old.status === "unreachable" && found.status === "absent") return old;
 			if (old.status !== "found") return found;
 			if (found.status === "found") {
 				if (found.keyBase64 === old.keyBase64) {

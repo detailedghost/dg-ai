@@ -131,6 +131,28 @@ test("install moves the staged extension to the data root once and says to load 
 	}
 });
 
+test("install removes an old extension folder left next to the new one and prints the reload line once", async () => {
+	const world = localInstallWorld();
+	try {
+		const old = join(world.home, ".dg", "dg-ai-extension-chrome");
+		mkdirSync(old, { recursive: true });
+		writeFileSync(join(old, "background.js"), "old release");
+		mkdirSync(world.destination, { recursive: true });
+		writeFileSync(join(world.destination, "background.js"), "new release");
+		writeFileSync(join(world.home, ".config/dg/extension-installed"), JSON.stringify({ chrome: "1.10.0" }));
+
+		const result = await runLocalInstall(world, "fresh local build");
+
+		expect(result.exitCode).toBe(0);
+		expect(existsSync(old)).toBe(false);
+		expect(result.stdout.split("\n").filter((line) => line.includes("folder moved"))).toHaveLength(1);
+		const again = await runLocalInstall(world, "next local build");
+		expect(again.stdout).not.toContain("folder moved");
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
 test("install removes legacy batch extension folders by manifest name and says how to clear the browser entry", async () => {
 	const world = localInstallWorld();
 	try {

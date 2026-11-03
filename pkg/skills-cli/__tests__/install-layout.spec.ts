@@ -105,6 +105,19 @@ posix("ssms allow config move", () => {
 		expect(existsSync(old)).toBe(false);
 	});
 
+	test("without a trusted passwd home the old ssms config goes to the plain config folder", () => {
+		const home = join(base, "home");
+		const old = join(home, ".dg", "ssms", "config.yaml");
+		mkdirSync(dirname(old), { recursive: true });
+		writeFileSync(old, "allow_send: true\n");
+		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: { XDG_CONFIG_HOME: join(base, "xdg") } });
+
+		migrateBeforeInstall(paths, () => {}, undefined);
+
+		expect(readFileSync(join(base, "xdg", "dg", "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
+		expect(existsSync(join(home, ".config", "dg", "ssms", "config.yaml"))).toBe(false);
+	});
+
 	test("never moves the passwd home config when HOME is not the passwd home", () => {
 		expect(passwdHomeWhenCurrent("/home/ada", "/tmp/sandbox")).toBeUndefined();
 		expect(passwdHomeWhenCurrent("/home/ada", "/home/ada/")).toBe("/home/ada");
