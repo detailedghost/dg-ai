@@ -22,6 +22,7 @@ import {
 	type Section,
 	type Verdict,
 } from "../src/verify/board";
+import type { Difference } from "../src/layout/diff";
 
 let dir = "";
 
@@ -36,6 +37,26 @@ function section(id: string, extra: Partial<Section> = {}): Section {
 
 function verdict(status: Verdict["status"], note = ""): Verdict {
 	return { status, note, at: "2026-10-28T00:00:00.000Z" };
+}
+
+function difference(id: string): Difference {
+	return {
+		id,
+		viewport: "desktop",
+		theme: "light",
+		role: "admin",
+		kind: "moved",
+		control: { role: "button", name: "Add note", testid: null },
+		expected: { path: "button.add", box: { x: 0, y: 900, w: 100, h: 40 }, band: "bottom", hband: "left", visible: true },
+		found: { path: "button.add", box: { x: 0, y: 20, w: 100, h: 40 }, band: "top", hband: "left", visible: true },
+	};
+}
+
+function withLayout(id: string, ids: string[], extra: Partial<Section> = {}): Section {
+	return section(id, {
+		checks: { layout: { status: "fail", differences: ids.map(difference) } },
+		...extra,
+	});
 }
 
 const board = (sections: Section[], pending: Board["pending"] = []): Board => ({ name: "review", sections, pending });
@@ -235,5 +256,98 @@ describe("files", () => {
 		expect(resolveSessionDir("review", "/repo")).toBe("/repo/.agents/verify/review");
 		expect(resolveSessionDir("review", "/repo", "/tmp/s")).toBe("/tmp/s");
 		expect(() => resolveSessionDir("../x", "/repo")).toThrow("invalid verify name");
+	});
+});
+
+describe("layout gate", () => {
+	test("stores accepted ids with the verdict and reads them back", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const b = board([withLayout("a-r1", ["d-1", "d-2"])]);
+		mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "", layout: ["d-1", "d-2"] } }, "t1");
+		expect(readVerdicts(paths)["a-r1"]).toEqual({ status: "approved", note: "", at: "t1", layout: ["d-1", "d-2"] });
+		mergeVerdicts(paths, b, { "a-r1": { status: "changes", note: "redo", layout: [] } }, "t2");
+		expect(readVerdicts(paths)["a-r1"]).toEqual({ status: "changes", note: "redo", at: "t2" });
+	});
+
+	test("rejects an id the section does not list and a layout that is not a list", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const b = board([withLayout("a-r1", ["d-1"]), section("b-r1")]);
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "changes", note: "n", layout: ["d-9"] } })).toThrow(
+			'unknown layout difference "d-9"',
+		);
+		expect(() => mergeVerdicts(paths, b, { "b-r1": { status: "changes", note: "n", layout: ["d-1"] } })).toThrow(
+			'unknown layout difference "d-1"',
+		);
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "changes", note: "n", layout: "d-1" } })).toThrow(
+			"layout must be a list",
+		);
+	});
+
+	test("refuses a plain approve while a row is unaccepted and allows it with a note or once all are listed", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const b = board([withLayout("a-r1", ["d-1", "d-2"])]);
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "" } })).toThrow(
+			"accept each layout difference or add a note",
+		);
+		expect(() => mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "", layout: ["d-1"] } })).toThrow(
+			"accept each layout difference or add a note",
+		);
+		mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "fix the rest", layout: ["d-1"] } }, "t1");
+		mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "", layout: ["d-1", "d-2"] } }, "t2");
+		expect(readVerdicts(paths)["a-r1"]?.layout).toEqual(["d-1", "d-2"]);
+		mergeVerdicts(paths, b, { "a-r1": { status: "skip", note: "" } }, "t3");
+	});
+
+	test("counts a row accepted in an earlier round of the chain", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const b = board([withLayout("a-r1", ["d-1"]), withLayout("a-r2", ["d-1"], { follows: "a-r1", round: 2 })]);
+		mergeVerdicts(paths, b, { "a-r1": { status: "approved", note: "again", layout: ["d-1"] } }, "t1");
+		mergeVerdicts(paths, b, { "a-r2": { status: "approved", note: "" } }, "t2");
+	});
+
+	test("is not done while a row is unaccepted, and is done once an earlier round accepted it", () => {
+		const b = board([withLayout("a-r1", ["d-1"]), withLayout("a-r2", ["d-1", "d-2"], { follows: "a-r1", round: 2 })]);
+		const open = statusReport(b, { "a-r1": { ...verdict("approved", "n"), layout: ["d-1"] }, "a-r2": verdict("approved") });
+		expect(open.allApproved).toBe(false);
+		expect(open.items[0]).toMatchObject({ done: false, layout: { differences: 2, unaccepted: 1 } });
+		const closed = statusReport(b, {
+			"a-r1": { ...verdict("approved", "n"), layout: ["d-1"] },
+			"a-r2": { ...verdict("approved"), layout: ["d-2"] },
+		});
+		expect(closed.allApproved).toBe(true);
+		expect(closed.items[0]).toMatchObject({ done: true, layout: { differences: 2, unaccepted: 0 } });
+		expect(statusReport(board([section("a-r1")]), { "a-r1": verdict("approved") }).items[0]?.layout).toBeUndefined();
+	});
+
+	test("keeps the gate on a hand-added round that carries no layout check", () => {
+		dir = mkdtempSync(join(tmpdir(), "dg-verify-board-"));
+		const paths = verifyPaths(dir);
+		const b = board([withLayout("a-r1", ["d-1"]), section("a-r2", { follows: "a-r1", round: 2 })]);
+		mergeVerdicts(paths, b, { "a-r1": { status: "more", note: "" } }, "t1");
+		expect(() => mergeVerdicts(paths, b, { "a-r2": { status: "approved", note: "" } }, "t2")).toThrow(
+			"accept each layout difference or add a note",
+		);
+		const open = statusReport(b, { "a-r1": verdict("more"), "a-r2": verdict("approved") });
+		expect(open.allApproved).toBe(false);
+		expect(open.items[0]).toMatchObject({ done: false, layout: { differences: 1, unaccepted: 1 } });
+		mergeVerdicts(paths, b, { "a-r2": { status: "approved", note: "", layout: ["d-1"] } }, "t3");
+		expect(readVerdicts(paths)["a-r2"]?.layout).toEqual(["d-1"]);
+		const closed = statusReport(b, { "a-r1": verdict("more"), "a-r2": { ...verdict("approved"), layout: ["d-1"] } });
+		expect(closed.allApproved).toBe(true);
+	});
+
+	test("prints the unaccepted suffix only when rows are open", () => {
+		const b = board([withLayout("a-r1", ["d-1", "d-2"])]);
+		const text = formatStatus(statusReport(b, { "a-r1": { ...verdict("approved"), layout: ["d-1"] } }), false);
+		expect(text).toBe("· a | r1 approved | layout: 1 unaccepted\n1 open\n");
+		expect(text).not.toContain("ALL APPROVED");
+		const clean = formatStatus(statusReport(b, { "a-r1": { ...verdict("approved"), layout: ["d-1", "d-2"] } }), false);
+		expect(clean).toBe("✓ a | r1 approved\nALL APPROVED\n");
+		const json = JSON.parse(formatStatus(statusReport(b, {}), true));
+		expect(json.items[0].layout).toEqual({ differences: 2, unaccepted: 2 });
 	});
 });

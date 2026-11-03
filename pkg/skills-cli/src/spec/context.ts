@@ -130,6 +130,8 @@ function projectSlice(value: unknown): Record<string, unknown> {
 		projected.prototype = {
 			path: prototype.path ?? null,
 			variant: prototype.variant ?? null,
+			...(truthy(prototype.accepted) ? { accepted: prototype.accepted } : {}),
+			...(truthy(prototype.record) ? { record: prototype.record } : {}),
 		};
 	}
 	return projected;

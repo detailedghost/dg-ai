@@ -174,6 +174,8 @@ acceptance, register it onto the slice:
 ~/.dg/bin/dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> --variant <k>
 ```
 
+For a local prototype, `--path` is the sandbox directory (or its `accepted.json`). The command copies the text-only `slice_<N>_ACCEPTED.md` and a sibling `slice_<N>_accepted.json` into the bundle's `prototype` folder, and it sets `slices[N].prototype.path`, `.variant`, `.accepted`, and `.record`. It refuses an image path, a `--variant` that differs from the record, and a local record with no layout fingerprint. Pass `--no-fingerprint` only as a conscious choice; the reason goes into `ACCEPTED.md`. Link `ACCEPTED.md` from the plan.
+
 > **GATE:** user chose Approve at the plan approval gate. Every accepted prototype registered onto its slice.
 
 ## Step 9 — Context pack

@@ -232,6 +232,8 @@ function renderSection(stay = false) {
   $("sec-title").textContent = s.title;
   $("sec-what").textContent = s.what_changed || "";
   const checks = [];
+  const layoutPill = layoutSummary(s);
+  if (layoutPill) checks.push(["Layout", layoutPill.text, layoutPill.state]);
   if (s.checks?.tests) checks.push(["Tests", s.checks.tests.summary, s.checks.tests.status]);
   if (s.checks?.axe) {
     const found = s.checks.axe.violations;
@@ -240,9 +242,11 @@ function renderSection(stay = false) {
   $("sec-checks").replaceChildren(...checks.map(([name, text, state]) => {
     const pill = el("span", "pill", `${name}: ${text}`);
     pill.dataset.state = state;
+    pill.dataset.check = name;
     return pill;
   }));
   $("sec-checks").hidden = !checks.length;
+  renderLayout(s);
   const vs = s.variants || [];
   const picked = verdicts[s.id]?.variant;
   if (variantFor !== s.id) {
@@ -404,6 +408,132 @@ function shotNote(s, label, head) {
   head.append(btn);
   sync();
   return wrap;
+}
+
+const layoutDrafts = {};
+function layoutSource(s) {
+  for (let r = s; r; r = sections.find((x) => x.id === r.follows)) if (r.checks?.layout) return r.checks.layout;
+  return null;
+}
+const layoutRows = (s) => layoutSource(s)?.differences || [];
+
+function layoutCarried(s) {
+  const out = new Set();
+  for (let prev = sections.find((x) => x.id === s.follows); prev; prev = sections.find((x) => x.id === prev.follows)) {
+    for (const id of verdicts[prev.id]?.layout || []) out.add(id);
+  }
+  return out;
+}
+
+function layoutAccepted(s) {
+  if (!layoutDrafts[s.id]) layoutDrafts[s.id] = new Set(verdicts[s.id]?.layout || []);
+  return layoutDrafts[s.id];
+}
+
+function layoutOpen(s) {
+  const carried = layoutCarried(s);
+  const mine = layoutAccepted(s);
+  return layoutRows(s).filter((row) => !carried.has(row.id) && !mine.has(row.id)).length;
+}
+
+function layoutIdsFor(s) {
+  const mine = layoutAccepted(s);
+  return layoutRows(s).map((row) => row.id).filter((id) => mine.has(id));
+}
+
+function layoutSummary(s) {
+  const layout = layoutSource(s);
+  if (!layout) return null;
+  const open = layoutOpen(s);
+  if (layout.status === "pass") return { text: "matches the accepted prototype", state: "passed" };
+  if (layout.status === "not-checked") return { text: open ? `not checked, ${open} unaccepted` : "not checked", state: "" };
+  return { text: `${layoutRows(s).length} differences, ${open} unaccepted`, state: open ? "failed" : "passed" };
+}
+
+function sideText(side) {
+  if (!side) return "none";
+  const parts = [`${side.band} ${side.hband}`, side.visible ? "visible" : "hidden"];
+  if (side.occluder) parts.push(`covered by ${side.occluder}`);
+  return parts.join(", ");
+}
+
+function layoutPillSync(s) {
+  const pill = document.querySelector('#sec-checks [data-check="Layout"]');
+  const next = layoutSummary(s);
+  if (!pill || !next) return;
+  pill.textContent = `Layout: ${next.text}`;
+  pill.dataset.state = next.state;
+}
+
+function renderLayout(s) {
+  const box = $("sec-layout");
+  const rows = layoutRows(s);
+  box.hidden = !rows.length;
+  box.replaceChildren();
+  if (!rows.length) return;
+  const locked = Boolean(verdicts[s.id]?.status) && editing !== s.id;
+  const carried = layoutCarried(s);
+  const mine = layoutAccepted(s);
+  const table = el("table", "layout-table");
+  table.append(el("caption", "", "Layout differences from the accepted prototype"));
+  const head = el("tr");
+  const heads = ["Viewport", "Theme", "Role", "Kind", "Control", "Expected", "Found"];
+  for (const name of heads) head.append(el("th", "", name));
+  const allCell = el("th");
+  const all = el("input");
+  all.type = "checkbox";
+  all.setAttribute("aria-label", "Accept all layout differences");
+  allCell.append(all, el("span", "", " Accept"));
+  head.append(allCell);
+  const thead = el("thead");
+  thead.append(head);
+  table.append(thead);
+  const body = el("tbody");
+  const boxes = [];
+  const syncAll = () => {
+    const count = boxes.filter((b) => b.checked).length;
+    all.checked = count === boxes.length && boxes.length > 0;
+    all.indeterminate = count > 0 && count < boxes.length;
+  };
+  for (const row of rows) {
+    const tr = el("tr");
+    const control = row.control ? row.control.testid || `${row.control.role} "${row.control.name}"` : "-";
+    const found = row.found ? sideText(row.found) : row.reason || "none";
+    for (const [i, text] of [row.viewport, row.theme, row.role, row.kind, control, row.expected ? sideText(row.expected) : "-", found].entries()) {
+      const td = el("td", "", text);
+      td.dataset.label = heads[i];
+      tr.append(td);
+    }
+    const cell = el("td");
+    cell.dataset.label = "Accept";
+    const pick = el("input");
+    pick.type = "checkbox";
+    pick.setAttribute("aria-label", `Accept ${row.kind} ${control} at ${row.viewport} ${row.theme}`);
+    const kept = carried.has(row.id);
+    pick.checked = kept || mine.has(row.id);
+    pick.disabled = locked || kept;
+    pick.addEventListener("change", () => {
+      if (pick.checked) mine.add(row.id);
+      else mine.delete(row.id);
+      syncAll();
+      layoutPillSync(s);
+    });
+    if (!kept) boxes.push(pick);
+    cell.append(pick);
+    tr.append(cell);
+    body.append(tr);
+  }
+  all.disabled = locked || !boxes.length;
+  all.addEventListener("change", () => {
+    const on = all.checked;
+    for (const b of boxes) {
+      b.checked = on;
+      b.dispatchEvent(new Event("change"));
+    }
+  });
+  syncAll();
+  table.append(body);
+  box.append(table);
 }
 
 function setLocked(locked, v = {}) {
@@ -707,6 +837,8 @@ async function save(status) {
   const lines = Object.entries(notes).map(([label, text]) => `[${label}] ${text}`);
   const entry = { status, note: [mainNote, ...lines].filter(Boolean).join("\n"), at: new Date().toISOString() };
   if (lines.length) Object.assign(entry, { mainNote, shotNotes: notes });
+  const accepted = layoutIdsFor(s);
+  if (accepted.length) entry.layout = accepted;
   const cur = s.variants?.[variant];
   if (cur && status === "approved") entry.variant = cur.key;
   try {
@@ -715,7 +847,11 @@ async function save(status) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ [s.id]: entry }),
     });
-    if (!res.ok) throw new Error();
+    if (!res.ok) {
+      const refusal = await res.json().catch(() => ({}));
+      toast(refusal.error || "Save failed. Is the board server running?");
+      return false;
+    }
     verdicts[s.id] = entry;
     return true;
   } catch {

@@ -170,6 +170,7 @@ export function injectScript(name: string, tools: unknown): string {
         var body = {};
         fd.forEach(function(v, k) { body[k] = v; });
         body.name = body.name || ${scriptSafeJson(name)};
+        body.url = window.location.href;
         fetch('/prototype-decision', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
@@ -263,7 +264,7 @@ export function injectScript(name: string, tools: unknown): string {
     return fetch('/prototype-decision', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name: ${scriptSafeJson(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '' })
+      body: JSON.stringify({ name: ${scriptSafeJson(name)}, action: action || 'confirm', variant: variant || '', notes: notes || '', url: window.location.href })
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d.ok) { _showDecisionOverlay(action || 'confirm', hasNotes, variant); }
       return !!d.ok;

@@ -87,6 +87,39 @@ describe("verify server", () => {
 		expect(await (await fetch(`${url}/api/verdicts`)).json()).toEqual(JSON.parse(JSON.stringify(stored)));
 	});
 
+	test("stores accepted layout ids and answers 400 for an unknown id", async () => {
+		const url = await boot();
+		const paths = verifyPaths(dir);
+		writeBoard(paths, {
+			name: "review",
+			sections: [
+				{
+					id: "home-r1",
+					title: "Home",
+					images: [],
+					checks: {
+						layout: {
+							status: "fail",
+							differences: [
+								{ id: "d-1", viewport: "desktop", theme: "light", role: "admin", kind: "missing", control: null, expected: null, found: null },
+							],
+						},
+					},
+				},
+			],
+			pending: [],
+		});
+		const refused = await post(url, { "home-r1": { status: "approved", note: "" } });
+		expect(refused.status).toBe(400);
+		expect(await refused.json()).toEqual({ error: "accept each layout difference or add a note" });
+		const unknown = await post(url, { "home-r1": { status: "changes", note: "n", layout: ["d-9"] } });
+		expect(unknown.status).toBe(400);
+		expect(await unknown.json()).toEqual({ error: 'unknown layout difference "d-9"' });
+		expect(readVerdicts(paths)).toEqual({});
+		expect((await post(url, { "home-r1": { status: "approved", note: "", layout: ["d-1"] } })).status).toBe(200);
+		expect(readVerdicts(paths)["home-r1"]?.layout).toEqual(["d-1"]);
+	});
+
 	test("refuses a cross-site post, a form body, a foreign host, and other methods", async () => {
 		const url = await boot();
 		expect((await post(url, {}, { Origin: "https://example.com", "Sec-Fetch-Site": "cross-site" })).status).toBe(403);

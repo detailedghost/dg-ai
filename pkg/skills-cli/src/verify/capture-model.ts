@@ -1,3 +1,4 @@
+import type { LayoutResult } from "../layout/fingerprint";
 import type { AxeReport } from "./axe";
 
 export const VIEWPORTS = [
@@ -24,6 +25,7 @@ export interface CaptureRequest {
 	theme: ThemeName;
 	state: ShotState;
 	menuSelector: string;
+	fingerprintRoot?: string;
 }
 
 export interface CaptureShot {
@@ -33,6 +35,7 @@ export interface CaptureShot {
 	menuFound: boolean;
 	scrolled: boolean;
 	engine: "http" | "playwright";
+	fingerprint?: LayoutResult;
 }
 
 export interface Capturer {

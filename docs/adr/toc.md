@@ -66,6 +66,7 @@ flowchart LR
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
+- [0033 — Gate verify on the layout of the accepted prototype](0033-accepted-prototype-layout-gate.md)
 
 ## Skills
 
