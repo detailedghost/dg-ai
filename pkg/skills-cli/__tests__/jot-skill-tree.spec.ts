@@ -37,7 +37,7 @@ describe("packaged jot skill tree", () => {
 			.filter((line) => line.includes("dg-skills jot"));
 		expect(calls.length).toBeGreaterThan(0);
 		for (const line of calls) {
-			expect(line).toContain("~/.dg/bin/dg-skills jot");
+			expect(line).toContain("dg-skills jot");
 			const verb = /dg-skills jot\s+([\w-]+)/.exec(line)?.[1];
 			if (verb && verb !== "--help") expect(VERBS).toContain(verb);
 		}
@@ -52,8 +52,8 @@ describe("packaged jot skill tree", () => {
 		const gate = text.indexOf("bootstrap.sh");
 		expect(gate).toBeGreaterThan(-1);
 		expect(text).toContain("--cli-only");
-		expect(text).toContain("~/.dg/bin/dg-skills jot --help");
-		expect(gate).toBeLessThan(text.indexOf("~/.dg/bin/dg-skills jot add"));
+		expect(text).toContain("dg-skills jot --help");
+		expect(gate).toBeLessThan(text.indexOf("dg-skills jot add"));
 	});
 
 	test("documents the legacy flags in a four-column Flags table and the Usage line", () => {

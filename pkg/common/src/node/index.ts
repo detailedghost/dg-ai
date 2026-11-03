@@ -18,5 +18,6 @@ export * from "./process";
 export * from "./scratch-paths";
 export * from "./self-command";
 export * from "./session-tokens";
+export * from "./tree-copy";
 export * from "./sqlite";
 export * from "./wsl-guard";

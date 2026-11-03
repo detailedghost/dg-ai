@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { resolveDgPaths, scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
 import { readCurrent } from "../install/current";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
@@ -41,7 +41,7 @@ export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "version-match",
 		run(ctx) {
-			const installed = readCurrent(ctx.paths.stateDir, "lib") ?? ctx.installedVersion;
+			const installed = readCurrent(ctx.paths.dataDir, "lib") ?? ctx.installedVersion;
 			const plugin = installedPlugins(ctx.home)[0];
 			if (!plugin) return ok(`dg-skills ${installed}; no plugin to compare`);
 			if (isOlder(installed, plugin.version))
@@ -60,8 +60,8 @@ export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "runtime-present",
 		run(ctx) {
-			if (!readCurrent(ctx.paths.stateDir, "lib")) return ok("no bundle installed; running from source");
-			const bun = join(ctx.paths.stateDir, "runtime", "current", process.platform === "win32" ? "bun.exe" : "bun");
+			if (!readCurrent(ctx.paths.dataDir, "lib")) return ok("no bundle installed; running from source");
+			const bun = join(ctx.paths.runtimeDir, "current", process.platform === "win32" ? "bun.exe" : "bun");
 			if (!existsSync(bun)) return fail(`the Bun runtime ${bun} is missing`, bootstrapCommand(ctx));
 			const version = toolVersion(bun);
 			return version
@@ -77,6 +77,19 @@ export const sharedChecks: DoctorCheck[] = [
 			return resolve(env.DG_HOME) !== resolve(defaultHome)
 				? warn(`DG_HOME=${env.DG_HOME} moves the dg state directory away from ~/.dg`, "unset DG_HOME")
 				: ok("DG_HOME uses the default state directory");
+		},
+	},
+	{
+		id: "launcher-on-path",
+		run(ctx) {
+			const launcher = join(ctx.paths.binDir, process.platform === "win32" ? "dg-skills.cmd" : "dg-skills");
+			if (!existsSync(launcher)) return ok(`no dg-skills launcher in ${ctx.paths.binDir}`);
+			if ((ctx.env.PATH ?? "").split(delimiter).includes(ctx.paths.binDir))
+				return ok(`${ctx.paths.binDir} is on PATH`);
+			return warn(
+				`${ctx.paths.binDir} is not on PATH, so skills fall back to the full launcher path`,
+				`export PATH="${ctx.paths.binDir}:$PATH"`,
+			);
 		},
 	},
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),

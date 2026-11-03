@@ -155,7 +155,7 @@ const staleEntriesCheck: DoctorCheck = {
 			fixes.push(
 				...[...stale].map(
 					([runtime, ids]) =>
-						`~/.dg/bin/dg-skills hooks disable ${ids.join(" ")} --runtime ${runtime}`,
+						`dg-skills hooks disable ${ids.join(" ")} --runtime ${runtime}`,
 				),
 			);
 		}

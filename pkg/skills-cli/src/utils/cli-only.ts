@@ -1,13 +1,12 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import type { Command } from "commander";
 import { cliDest } from "./lib";
 
 export const EXT_ONLY_COMMANDS = ["launch"];
 
-export const cliOnlyMarker = (): string =>
-	join(process.env.DG_HOME ?? join(homedir(), ".dg"), "cli-only");
+export const cliOnlyMarker = (): string => resolveDgPaths().cliOnlyMarker;
 
 export const isCliOnly = (): boolean => existsSync(cliOnlyMarker());
 

@@ -12,10 +12,11 @@ beforeEach(() => {
 	world.installPlugin();
 	world.writeSettings(["demo"]);
 	const dgHome = join(world.home, ".dg");
-	mkdirSync(join(dgHome, "browsers"), { recursive: true });
-	writeFileSync(join(dgHome, "cli-only"), "");
+	mkdirSync(join(dgHome, "data", "browsers"), { recursive: true });
+	mkdirSync(join(dgHome, "config"), { recursive: true });
+	writeFileSync(join(dgHome, "config", "cli-only"), "");
 	writeFileSync(
-		join(dgHome, "browsers", "chromium.json"),
+		join(dgHome, "data", "browsers", "chromium.json"),
 		JSON.stringify({ version: "1.0.0", executablePath: process.execPath }),
 	);
 });

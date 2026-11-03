@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 const cacheDir = (): string =>
-	join(resolveDgPaths().stateDir, "demo-narration", VERSION);
+	join(resolveDgPaths().dataDir, "demo-narration", VERSION);
 
 function releaseFetch(options: { zip: Uint8Array<ArrayBuffer>; listed?: Uint8Array<ArrayBuffer> }) {
 	const name = narrationZipName(VERSION);

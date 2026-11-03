@@ -5,6 +5,7 @@ import {
 	allChecks,
 	allowRule,
 	CURRENT_TOOL_VERSION,
+	legacyAllowRule,
 	checksOf,
 	doctorWorld,
 	type FakeCredentialDaemon,
@@ -419,12 +420,14 @@ describe("dg-skills doctor on a bare machine", () => {
 	});
 });
 
+const dgRoots = () => [world.paths.binDir, world.paths.configDir, world.paths.dataDir, world.paths.stateDir, world.paths.cacheDir];
+
 describe("dg-skills doctor reads and reports only", () => {
 	test("starts no daemon, browser or network tool on a full run", async () => {
 		world.healthy(["jot"]);
 		const before = {
 			claude: snapshotTree(join(world.home, ".claude")),
-			dg: snapshotTree(join(world.home, ".dg")),
+			dg: dgRoots().map(snapshotTree),
 		};
 		const settings = readFileSync(
 			join(world.home, ".claude", "settings.json"),
@@ -434,11 +437,11 @@ describe("dg-skills doctor reads and reports only", () => {
 		expect([0, 1]).toContain(run.exitCode);
 		expect(world.forbiddenCalls()).toEqual([]);
 		expect(snapshotTree(join(world.home, ".claude"))).toEqual(before.claude);
-		expect(snapshotTree(join(world.home, ".dg"))).toEqual(before.dg);
+		expect(dgRoots().map(snapshotTree)).toEqual(before.dg);
 		expect(
 			readFileSync(join(world.home, ".claude", "settings.json"), "utf8"),
 		).toBe(settings);
-		expect(snapshotTree(join(world.home, ".dg", "daemon"))).toEqual({});
+		expect(snapshotTree(world.paths.daemonDir)).toEqual({});
 	});
 
 	test("never writes the allow rule it asks for", async () => {
@@ -477,6 +480,37 @@ describe("dg-skills doctor probe helpers", () => {
 		expect(hasAllowRule([`Bash(${CLI_PATH}:*)`], "bg")).toBe(true);
 		expect(hasAllowRule([allowRule("jot")], "bg")).toBe(false);
 		expect(hasAllowRule([], "jot")).toBe(false);
+	});
+
+	test("the CLI is called by its bare name and the allow rule uses that form", () => {
+		expect(CLI_PATH).toBe("dg-skills");
+		expect(allowRule("jot")).toBe("Bash(dg-skills jot:*)");
+		expect(hasAllowRule(["Bash(dg-skills:*)"], "jot")).toBe(true);
+	});
+
+	test("an allow rule in only the old ~/.dg/bin form warns and names the replacement rule", async () => {
+		world.healthy([]);
+		writeFileSync(
+			join(world.home, ".claude", "settings.json"),
+			JSON.stringify({ permissions: { allow: [legacyAllowRule("jot")] } }),
+		);
+		const { report } = await world.report(["jot"]);
+		const check = checksOf(report, "jot").find((entry) => entry.id === "allow-rule");
+		expect(check?.status).toBe("warn");
+		expect(check?.detail).toContain("~/.dg/bin/dg-skills");
+		expect(check?.fix).toBe(allowRule("jot"));
+	});
+
+	test("a blanket allow rule in the old form also warns with the replacement", async () => {
+		world.healthy([]);
+		writeFileSync(
+			join(world.home, ".claude", "settings.json"),
+			JSON.stringify({ permissions: { allow: ["Bash(~/.dg/bin/dg-skills:*)"] } }),
+		);
+		const { report } = await world.report(["jot"]);
+		const check = checksOf(report, "jot").find((entry) => entry.id === "allow-rule");
+		expect(check?.status).toBe("warn");
+		expect(check?.detail).toContain("old");
 	});
 });
 
@@ -636,7 +670,7 @@ describe("dg-skills doctor edge cases", () => {
 
 	test("a stale pid file reports the daemon as unreachable with the start Fix", async () => {
 		world.healthy(["launch"]);
-		const daemonDir = join(world.home, ".dg", "daemon");
+		const daemonDir = world.paths.daemonDir;
 		mkdirSync(daemonDir, { recursive: true });
 		writeFileSync(
 			join(daemonDir, "daemon.pid"),
@@ -662,7 +696,7 @@ describe("dg-skills doctor edge cases", () => {
 			fetch: () => Response.json({ instanceId }),
 		});
 		try {
-			const daemonDir = join(world.home, ".dg", "daemon");
+			const daemonDir = world.paths.daemonDir;
 			mkdirSync(daemonDir, { recursive: true });
 			writeFileSync(
 				join(daemonDir, "daemon.pid"),
@@ -685,7 +719,8 @@ describe("dg-skills doctor edge cases", () => {
 
 	test("a pending pairing code alone is not reported as paired", async () => {
 		world.healthy(["launch"]);
-		writeFileSync(join(world.home, ".dg", "pairing.json"), "{}");
+		mkdirSync(world.paths.stateDir, { recursive: true });
+		writeFileSync(world.paths.pairingPath, "{}");
 		const { report } = await world.report(["launch"]);
 		const pairing = checksOf(report, "launch").find(
 			(check) => check.id === "extension-paired",
@@ -707,7 +742,7 @@ describe("dg-skills doctor edge cases", () => {
 	});
 
 	function pinOrigin(origin = "chrome-extension://abc") {
-		const daemonDir = join(world.home, ".dg", "daemon");
+		const daemonDir = world.paths.daemonDir;
 		mkdirSync(daemonDir, { recursive: true });
 		writeFileSync(join(daemonDir, "config.json"), JSON.stringify({ pinnedOrigin: origin }));
 	}
@@ -733,7 +768,7 @@ describe("dg-skills doctor edge cases", () => {
 			},
 		});
 		try {
-			const daemonDir = join(world.home, ".dg", "daemon");
+			const daemonDir = world.paths.daemonDir;
 			mkdirSync(daemonDir, { recursive: true });
 			writeFileSync(
 				join(daemonDir, "daemon.pid"),
@@ -852,7 +887,7 @@ describe("dg-skills doctor edge cases", () => {
 
 	test("an unreadable daemon config does not report paired", async () => {
 		world.healthy(["launch"]);
-		const daemonDir = join(world.home, ".dg", "daemon");
+		const daemonDir = world.paths.daemonDir;
 		mkdirSync(daemonDir, { recursive: true });
 		writeFileSync(join(daemonDir, "config.json"), "{not json");
 		const { report } = await world.report(["launch"]);
@@ -929,6 +964,34 @@ describe("dg-skills doctor runner", () => {
 	});
 });
 
+describe("dg-skills doctor launcher-on-path", () => {
+	const launcherCheck = () => sharedChecks.find((entry) => entry.id === "launcher-on-path");
+
+	test("passes when no launcher is installed in the bin dir", async () => {
+		const ctx = createContext({ home: world.home, env: { HOME: world.home, PATH: "/usr/bin" } });
+		expect((await launcherCheck()?.run(ctx))?.status).toBe("ok");
+	});
+
+	test("warns with the PATH line when the bin dir holds dg-skills but is not on PATH", async () => {
+		mkdirSync(world.paths.binDir, { recursive: true });
+		writeFileSync(join(world.paths.binDir, "dg-skills"), "");
+		const ctx = createContext({ home: world.home, env: { HOME: world.home, PATH: "/usr/bin" } });
+		const result = await launcherCheck()?.run(ctx);
+		expect(result?.status).toBe("warn");
+		expect(result?.fix).toBe(`export PATH="${world.paths.binDir}:$PATH"`);
+	});
+
+	test("passes when the bin dir is on PATH", async () => {
+		mkdirSync(world.paths.binDir, { recursive: true });
+		writeFileSync(join(world.paths.binDir, "dg-skills"), "");
+		const ctx = createContext({
+			home: world.home,
+			env: { HOME: world.home, PATH: `/usr/bin:${world.paths.binDir}` },
+		});
+		expect((await launcherCheck()?.run(ctx))?.status).toBe("ok");
+	});
+});
+
 describe("dg-skills doctor context isolation", () => {
 	test("the state root check reads the context env, not the process env", async () => {
 		const blocker = join(world.home, "blocker");
@@ -951,7 +1014,7 @@ describe("dg-skills doctor context isolation", () => {
 			(check) => check.id === "cli-binary",
 		);
 		expect(binary?.status).toBe("warn");
-		const dgBin = join(world.home, ".dg", "bin");
+		const dgBin = world.paths.binDir;
 		mkdirSync(dgBin, { recursive: true });
 		writeFileSync(join(dgBin, "dg-skills"), "");
 		const again = await world.report(["install"]);
@@ -986,8 +1049,8 @@ describe("dg-skills doctor extension items", () => {
 	test("a CLI-only install keeps --cli-only in the bootstrap Fix", async () => {
 		world.healthy(["install"]);
 		world.installPlugin(NEWER_PLUGIN_VERSION);
-		mkdirSync(join(world.home, ".dg"), { recursive: true });
-		writeFileSync(join(world.home, ".dg", "cli-only"), "");
+		mkdirSync(world.paths.configDir, { recursive: true });
+		writeFileSync(world.paths.cliOnlyMarker, "");
 		const { report } = await world.report(["install"]);
 		const fixes = allChecks(report)
 			.map((check) => check.fix ?? "")
@@ -998,8 +1061,8 @@ describe("dg-skills doctor extension items", () => {
 
 	test("a CLI-only install reports the daemon as info instead of failing", async () => {
 		world.healthy(["batch-open"]);
-		mkdirSync(join(world.home, ".dg"), { recursive: true });
-		writeFileSync(join(world.home, ".dg", "cli-only"), "");
+		mkdirSync(world.paths.configDir, { recursive: true });
+		writeFileSync(world.paths.cliOnlyMarker, "");
 		const { run, report } = await world.report(["batch-open"]);
 		const daemon = checksOf(report, "batch-open").find(
 			(check) => check.id === "daemon",

@@ -11,6 +11,8 @@ import {
 	allowRuleFor,
 	connectedExtensionVersion,
 	CLI_PATH,
+	hasLegacyAllowRule,
+	LEGACY_CLI_PATH,
 	hasAllowRule,
 	installedPlugins,
 	isOlder,
@@ -96,8 +98,7 @@ export function upgradeCommand(
 		.replace("winget install ", "winget upgrade ");
 }
 
-export const isCliOnly = (ctx: DoctorContext): boolean =>
-	existsSync(join(ctx.paths.stateDir, "cli-only"));
+export const isCliOnly = (ctx: DoctorContext): boolean => existsSync(ctx.paths.cliOnlyMarker);
 
 export function bootstrapCommand(
 	ctx: DoctorContext,
@@ -238,6 +239,11 @@ export function allowRuleCheck(sub: string): DoctorCheck {
 				);
 			if (hasAllowRule(allowed.rules, sub))
 				return ok(`allow rule present for ${CLI_PATH} ${sub}`);
+			if (hasLegacyAllowRule(allowed.rules, sub))
+				return warn(
+					`~/.claude/settings.json has only the old ${LEGACY_CLI_PATH} allow rule for ${sub}; skills now call ${CLI_PATH}`,
+					rule,
+				);
 			return warn(
 				`~/.claude/settings.json has no allow rule for ${CLI_PATH} ${sub}, so Claude asks before each call`,
 				rule,
@@ -388,7 +394,7 @@ export const cliOnlyCheck: DoctorCheck = {
 	id: "extension-installed",
 	run(ctx) {
 		const legacy = ctx.memo("legacy-extension-dirs", () =>
-			legacyExtensionDirs(ctx.extensionDgDirs?.() ?? [join(ctx.home, ".dg")]),
+			legacyExtensionDirs(ctx.extensionDgDirs?.() ?? [ctx.paths.legacyHome]),
 		);
 		if (legacy.length > 0)
 			return warn(

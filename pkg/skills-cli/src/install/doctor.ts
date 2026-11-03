@@ -15,15 +15,13 @@ import {
 import { CLI_PATH, writableDirectory } from "../doctor/probes";
 import { type DoctorCheck, fail, ok, warn } from "../doctor/types";
 
-const binDir = (stateDir: string): string => join(stateDir, "bin");
-
 export const installChecks: DoctorCheck[] = [
 	skillFilesCheck(["browser"]),
 	{
 		id: "cli-binary",
 		run(ctx) {
 			const dest = join(
-				binDir(ctx.paths.stateDir),
+				ctx.paths.binDir,
 				process.platform === "win32" ? "dg-skills.cmd" : "dg-skills",
 			);
 			return existsSync(dest)
@@ -37,7 +35,7 @@ export const installChecks: DoctorCheck[] = [
 	{
 		id: "bin-dir",
 		run(ctx) {
-			const dir = binDir(ctx.paths.stateDir);
+			const dir = ctx.paths.binDir;
 			const result = writableDirectory(dir);
 			return result.writable
 				? ok(`install directory ${dir} is writable`)

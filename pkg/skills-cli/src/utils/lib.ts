@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { isWSL, run } from "@dg/common/node";
+import { isWSL, resolveDgPaths, run } from "@dg/common/node";
 import { readCurrent } from "../install/current";
 import { syncDirInPlace } from "./extension-files";
 
@@ -41,9 +41,9 @@ export function windowsUserProfile(env: Env = process.env): string {
 	return run("cmd.exe", ["/c", "echo", "%USERPROFILE%"]).replace(/\r/g, "");
 }
 
-/** The Linux and macOS `.dg` directory. */
+/** The Linux and macOS folder that holds the staged extension: the old flat home, or `DG_HOME`. */
 export function dgDir(env: Env = process.env): string {
-	return env.DG_HOME || join(homeDir(env), ".dg");
+	return resolveDgPaths({ env, homeDir: homeDir(env) }).legacyHome;
 }
 
 /** Stable per-OS dir for a target's unpacked extension. */
@@ -301,13 +301,13 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** `$DG_HOME` made absolute, else `~/.dg`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
+/** The data dir that holds `runtime/` and `lib/`. Matches bootstrap.sh and bootstrap.ps1. */
 export function installRoot(env: NodeJS.ProcessEnv = process.env): string {
-	return env.DG_HOME ? resolve(env.DG_HOME) : join(homedir(), ".dg");
+	return resolveDgPaths({ env }).dataDir;
 }
 
 export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
-	return join(installRoot(env), "bin");
+	return resolveDgPaths({ env }).binDir;
 }
 
 /** The launcher shim for a program: `<root>/bin/<name>`, `.cmd` on Windows. */

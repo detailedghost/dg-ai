@@ -11,6 +11,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import type { CheckStatus } from "../src/doctor/types";
 import { scratchFixtures } from "./git-repo-fixtures";
 import { CLI_ENTRY, runCli } from "./module-call";
@@ -71,6 +72,10 @@ export interface DoctorRun {
 }
 
 export function allowRule(sub: string): string {
+	return `Bash(dg-skills ${sub}:*)`;
+}
+
+export function legacyAllowRule(sub: string): string {
 	return `Bash(~/.dg/bin/dg-skills ${sub}:*)`;
 }
 
@@ -106,6 +111,7 @@ export function snapshotTree(dir: string): Record<string, string> {
 export function doctorWorld() {
 	const fixtures = scratchFixtures();
 	const home = fixtures.tmp("doctor-home-");
+	const paths = resolveDgPaths({ homeDir: home, env: {} });
 	const scratch = fixtures.tmp("doctor-scratch-");
 	const state = fixtures.tmp("doctor-state-");
 	const bin = fixtures.tmp("doctor-bin-");
@@ -129,7 +135,7 @@ export function doctorWorld() {
 	}
 
 	function installForbiddenFakes() {
-		const dgBin = join(home, ".dg", "bin");
+		const dgBin = paths.binDir;
 		for (const name of FORBIDDEN_TOOLS) {
 			for (const dir of [bin, dgBin]) {
 				mkdirSync(dir, { recursive: true });
@@ -210,6 +216,7 @@ export function doctorWorld() {
 
 	return {
 		home,
+		paths,
 		scratch,
 		state,
 		bin,
@@ -240,7 +247,7 @@ export interface FakeCredentialDaemon {
 }
 
 export function startFakeCredentialDaemon(
-	world: { home: string },
+	world: { home: string; paths: { daemonDir: string; sessionsDir: string } },
 	names: string[],
 ): FakeCredentialDaemon {
 	const instanceId = "doctor-fake-instance";
@@ -273,8 +280,8 @@ export function startFakeCredentialDaemon(
 			},
 		},
 	});
-	const daemonDir = join(world.home, ".dg", "daemon");
-	const sessionsDir = join(world.home, ".dg", "agents", "sessions");
+	const daemonDir = world.paths.daemonDir;
+	const sessionsDir = world.paths.sessionsDir;
 	mkdirSync(daemonDir, { recursive: true });
 	mkdirSync(sessionsDir, { recursive: true });
 	writeFileSync(

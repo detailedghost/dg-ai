@@ -50,7 +50,7 @@ describe("cli-only marker", () => {
 		expect(isCliOnly()).toBe(false);
 		setCliOnly(true);
 		expect(isCliOnly()).toBe(true);
-		expect(cliOnlyMarker()).toBe(join(home, ".dg", "cli-only"));
+		expect(cliOnlyMarker()).toBe(join(home, ".dg", "config", "cli-only"));
 	});
 
 	test("is removed by a full install", () => {

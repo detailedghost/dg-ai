@@ -37,12 +37,15 @@ describe("writeShims on a Windows host", () => {
 });
 
 posix("writeShims on a POSIX host", () => {
-	test("writes each launcher equal to the golden shim text with the root substituted, mode 0755", () => {
-		writeShims(sandbox.root);
+	test("writes each launcher in the bin dir equal to the golden shim text with the data dir substituted, mode 0755", () => {
+		const bin = join(sandbox.root, "local-bin");
+		const data = join(sandbox.root, "data dir");
+
+		writeShims(bin, data);
 
 		for (const name of NAMES) {
-			const path = join(sandbox.root, "bin", name);
-			expect(readFileSync(path, "utf8")).toBe(golden(sandbox.root, name));
+			const path = join(bin, name);
+			expect(readFileSync(path, "utf8")).toBe(golden(data, name));
 			expect(statSync(path).mode & 0o777).toBe(0o755);
 		}
 	});
@@ -52,7 +55,7 @@ posix("writeShims on a POSIX host", () => {
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(join(bin, "dg-daemon"), "compiled ELF bytes", { mode: 0o755 });
 
-		writeShims(sandbox.root);
+		writeShims(bin, sandbox.root);
 
 		expect(readFileSync(join(bin, "dg-daemon"), "utf8")).toBe(golden(sandbox.root, "dg-daemon"));
 	});
@@ -112,8 +115,8 @@ posix("writeShims on a POSIX host", () => {
 	});
 
 	test("is idempotent", () => {
-		writeShims(sandbox.root);
-		writeShims(sandbox.root);
+		writeShims(join(sandbox.root, "bin"), sandbox.root);
+		writeShims(join(sandbox.root, "bin"), sandbox.root);
 
 		expect(readFileSync(join(sandbox.root, "bin", "dg-skills"), "utf8")).toBe(
 			golden(sandbox.root, "dg-skills"),

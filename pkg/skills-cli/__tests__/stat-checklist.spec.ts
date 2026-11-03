@@ -233,10 +233,10 @@ describe("renderers", () => {
 	});
 
 	test("every view reports an empty checklist with one line naming how to add items", () => {
-		expect(renderEmoji(emptyModel())).toBe('No checklist yet. Add one with: ~/.dg/bin/dg-skills stat add "<text>"\n');
-		expect(renderPlain(emptyModel())).toBe('No checklist yet. Add one with: ~/.dg/bin/dg-skills stat add "<text>"\n');
+		expect(renderEmoji(emptyModel())).toBe('No checklist yet. Add one with: dg-skills stat add "<text>"\n');
+		expect(renderPlain(emptyModel())).toBe('No checklist yet. Add one with: dg-skills stat add "<text>"\n');
 		expect(renderLong(emptyModel())).toBe(
-			'ORDER\tOWNER\tSTATUS\tWORK\tDETAIL\tPR/MR\tETA\n# No checklist yet. Add one with: ~/.dg/bin/dg-skills stat add "<text>"\n',
+			'ORDER\tOWNER\tSTATUS\tWORK\tDETAIL\tPR/MR\tETA\n# No checklist yet. Add one with: dg-skills stat add "<text>"\n',
 		);
 	});
 

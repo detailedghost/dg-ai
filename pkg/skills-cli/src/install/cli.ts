@@ -16,7 +16,8 @@ import { fetchBundle } from "./bundle";
 import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
-import { PROGRAMS, writeShims } from "./shims";
+import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
+import { PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
@@ -24,6 +25,7 @@ import {
 } from "./skills-only";
 import {
 	cliBinDir,
+	dgDir,
 	downloadReleaseAsset,
 	extensionDest,
 	extensionDgDirs,
@@ -143,16 +145,17 @@ export function currentBinaryLine(
 const RETIRED_BINARIES = ["dg-server"];
 
 export function removeRetiredBinaries(): void {
-	const bin = cliBinDir();
-	for (const name of RETIRED_BINARIES) {
-		for (const dest of [join(bin, name), join(bin, `${name}.exe`)]) {
-			if (!existsSync(dest)) continue;
-			rmSync(dest, { force: true });
-			console.log(`removed the retired ${name} binary at ${dest}.`);
+	for (const bin of new Set([cliBinDir(), join(dgDir(), "bin")])) {
+		for (const name of RETIRED_BINARIES) {
+			for (const dest of [join(bin, name), join(bin, `${name}.exe`)]) {
+				if (!existsSync(dest)) continue;
+				rmSync(dest, { force: true });
+				console.log(`removed the retired ${name} binary at ${dest}.`);
+			}
 		}
-	}
-	for (const name of [...RETIRED_BINARIES, ...PROGRAMS]) {
-		rmSync(join(bin, `.${name}.version`), { force: true });
+		for (const name of [...RETIRED_BINARIES, ...PROGRAMS]) {
+			rmSync(join(bin, `.${name}.version`), { force: true });
+		}
 	}
 }
 
@@ -170,7 +173,7 @@ async function installBundleLocked(root: string, release: PickedBundle): Promise
 	const pin = present && existsSync(currentBun) ? undefined : await fetchRuntimePin(release);
 	const runtimeBin = pin ? await stageRuntime(root, pin) : currentBun;
 	await fetchBundle(root, release, runtimeBin, pin && (() => activateRuntime(root, pin)));
-	writeShims(root);
+	finishLauncherLayout(release.version);
 	removeRetiredBinaries();
 	console.log(
 		present && installed === release.version
@@ -363,6 +366,7 @@ export async function runInstall(
 	target: string | undefined,
 	opts: InstallOptions,
 ): Promise<void> {
+	migrateBeforeInstall();
 	noteForeignDgHome();
 	if (opts.skillsOnly) {
 		assertSkillsOnlyFlags({

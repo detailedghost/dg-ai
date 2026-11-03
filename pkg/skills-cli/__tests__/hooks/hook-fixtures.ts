@@ -88,7 +88,8 @@ export function hookWorld() {
 	}
 
 	function setConfig(config: Record<string, unknown>) {
-		writeFileSync(join(dgHome, "config.json"), JSON.stringify(config));
+		mkdirSync(join(dgHome, "config"), { recursive: true });
+		writeFileSync(join(dgHome, "config", "config.json"), JSON.stringify(config));
 	}
 
 	function setSpellingLocale(locale: string) {

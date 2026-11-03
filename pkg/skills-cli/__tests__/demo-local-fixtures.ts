@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
 import type { LaunchPick } from "../src/pw/core/browser";
 
@@ -60,7 +61,7 @@ export function demoWorld(): DemoWorld {
 	return {
 		home,
 		stateDir,
-		demosDir: join(stateDir, "demos"),
+		demosDir: join(resolveDgPaths().cacheDir, "demos"),
 		planPath,
 		spawned,
 		localDeps(over = {}) {

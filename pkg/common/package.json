@@ -10,6 +10,7 @@
 		"./exit": "./src/exit.ts",
 		"./node": "./src/node/index.ts",
 		"./node/program": "./src/node/program.ts",
+		"./node/dg-paths": "./src/node/dg-paths.ts",
 		"./msal": "./src/msal/index.ts",
 		"./daemon-db": "./src/node/daemon-db.ts"
 	},

@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { relocatedBundleCommand } from "./bundle-build";
 import { mergeEnv } from "./module-call";
 
@@ -66,8 +67,7 @@ beforeAll(async () => {
 			},
 		},
 	});
-	const daemonDir = join(dgHome, "daemon");
-	const sessionsDir = join(dgHome, "agents", "sessions");
+	const { daemonDir, sessionsDir } = resolveDgPaths({ env: { DG_HOME: dgHome } });
 	mkdirSync(daemonDir, { recursive: true });
 	mkdirSync(sessionsDir, { recursive: true });
 	writeFileSync(

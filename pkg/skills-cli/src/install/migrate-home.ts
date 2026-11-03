@@ -1,0 +1,136 @@
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
+import { copyTree, type DgPaths, treeMatches } from "@dg/common/node";
+
+export type MigrateResult = {
+	moved: string[];
+	failed: string[];
+	kept: string[];
+};
+
+export type MigrateSeams = {
+	log?: (line: string) => void;
+	afterCopy?: (from: string, to: string) => void;
+};
+
+type Move = { from: string; to: string };
+
+const ROLE_FOLDERS = new Set([
+	"bin",
+	"config",
+	"data",
+	"state",
+	"cache",
+	"log",
+]);
+const LEFT_FOR_OTHER_STEPS = new Set(["bin", "phone", "ssms"]);
+
+function legacyMoves(paths: DgPaths): Move[] {
+	const legacy = paths.legacyHome;
+	const at = (...parts: string[]) => join(legacy, ...parts);
+	const agentState = [
+		"sessions",
+		"assets",
+		"memory.db",
+		"memory.db-wal",
+		"memory.db-shm",
+	].map((name) => ({
+		from: at("agents", name),
+		to: join(paths.agentsDir, name),
+	}));
+	return [
+		{ from: at("runtime"), to: paths.runtimeDir },
+		{ from: at("lib"), to: paths.libDir },
+		{ from: at("skills"), to: paths.skillsDir },
+		{ from: at("browsers"), to: paths.browsersDir },
+		{ from: at("demo-narration"), to: join(paths.dataDir, "demo-narration") },
+		...agentState,
+		{ from: at("agents"), to: paths.personasDir },
+		{ from: at("daemon", "logs"), to: paths.logDir },
+		{ from: at("daemon"), to: paths.daemonDir },
+		{ from: at("grants"), to: paths.grantsDir },
+		{ from: at("pairing.json"), to: paths.pairingPath },
+		{ from: at("phone-friend"), to: paths.phoneFriendRoot },
+		{ from: at("inbox"), to: join(paths.stateDir, "inbox") },
+		{
+			from: at("browser-profiles"),
+			to: join(paths.stateDir, "browser-profiles"),
+		},
+		{ from: at("demo-profile"), to: join(paths.stateDir, "demo-profile") },
+		{
+			from: at("channel-review", "config.json"),
+			to: join(paths.configDir, "channel-review", "config.json"),
+		},
+		{ from: at("channel-review"), to: join(paths.stateDir, "channel-review") },
+		{ from: at("proto"), to: join(paths.cacheDir, "proto") },
+		{ from: at("demos"), to: join(paths.cacheDir, "demos") },
+		{ from: at("config.json"), to: paths.configPath },
+		{ from: at("cli-only"), to: paths.cliOnlyMarker },
+	];
+}
+
+function present(path: string): boolean {
+	try {
+		lstatSync(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function moveOne(move: Move, seams: MigrateSeams, result: MigrateResult): void {
+	const log = seams.log ?? (() => {});
+	if (present(move.to)) {
+		result.kept.push(move.from);
+		log(`dg: kept ${move.from}; ${move.to} already exists`);
+		return;
+	}
+	try {
+		mkdirSync(dirname(move.to), { recursive: true, mode: 0o700 });
+		copyTree(move.from, move.to);
+		seams.afterCopy?.(move.from, move.to);
+		if (!treeMatches(move.from, move.to)) throw new Error("the copy does not match the source");
+	} catch (err) {
+		rmSync(move.to, { recursive: true, force: true });
+		result.failed.push(move.from);
+		log(
+			`dg: kept ${move.from}; moving it to ${move.to} failed: ${err instanceof Error ? err.message : err}`,
+		);
+		return;
+	}
+	try {
+		rmSync(move.from, { recursive: true, force: true });
+		result.moved.push(move.from);
+	} catch (err) {
+		result.kept.push(move.from);
+		log(
+			`dg: copied ${move.from} to ${move.to} but could not remove it: ${err instanceof Error ? err.message : err}`,
+		);
+	}
+}
+
+/** Moves the old flat `~/.dg` (or flat `DG_HOME`) into the per-OS roots: copy, verify, then remove. */
+export function migrateLegacyHome(
+	paths: DgPaths,
+	seams: MigrateSeams = {},
+): MigrateResult {
+	const result: MigrateResult = { moved: [], failed: [], kept: [] };
+	if (!existsSync(paths.legacyHome)) return result;
+	const flatDgHome = paths.binDir === join(paths.legacyHome, "bin");
+	for (const move of legacyMoves(paths)) {
+		const top = relative(paths.legacyHome, move.from).split(sep)[0] ?? "";
+		if (flatDgHome && ROLE_FOLDERS.has(top)) continue;
+		if (present(move.from)) moveOne(move, seams, result);
+	}
+	const quiet = result.moved.length === 0 && result.failed.length === 0;
+	for (const name of readdirSync(paths.legacyHome)) {
+		if (LEFT_FOR_OTHER_STEPS.has(name) || name.startsWith("dg-ai-")) continue;
+		if (flatDgHome && ROLE_FOLDERS.has(name)) continue;
+		const path = join(paths.legacyHome, name);
+		if (result.kept.includes(path) || result.failed.includes(path)) continue;
+		result.kept.push(path);
+		if (!quiet)
+			seams.log?.(`dg: left ${path} in place; dg does not know where it belongs`);
+	}
+	return result;
+}

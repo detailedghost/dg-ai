@@ -1,4 +1,3 @@
-import path from "node:path";
 import { scratchRoot, stateRoot } from "@dg/common/node";
 import {
 	allowRuleCheck,
@@ -43,7 +42,7 @@ export function createBrowserCheck(
 			const channel = SYSTEM_CHANNELS.find((candidate) => system(candidate));
 			if (channel) return ok(`browser: ${channel} (system)`);
 			const downloaded = downloadedChromium(
-				path.join(ctx.paths.stateDir, "browsers"),
+				ctx.paths.browsersDir,
 			);
 			if (downloaded)
 				return ok(`browser: chromium ${downloaded.version} (downloaded)`);

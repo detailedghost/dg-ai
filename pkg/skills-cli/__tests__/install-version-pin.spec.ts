@@ -47,7 +47,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 
 			expect(result.code).toBe(0);
 			expect(result.stderr).not.toContain("skipped");
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(PIN);
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(PIN);
 			expect(fetchedUrls(fetchLog).some((url) => url.includes(NEWER))).toBe(false);
 			expect(readFileSync(join(home, "bin", "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
 		} finally {
@@ -61,14 +61,14 @@ describe("dg-skills install --version <x.y.z>", () => {
 			const { preload } = writeReleaseServer(directory, fetchLog, PIN, { also: [NEWER] });
 			const newest = await runCli(installArgv(preload, "--agent-only"), installEnv(home));
 			expect(newest.code).toBe(0);
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(NEWER);
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(NEWER);
 			writeFileSync(join(home, "bin", ".dg-skills.version"), `${NEWER}\n`);
 
 			const pinned = await runCli(installArgv(preload, "--agent-only", "--version", PIN), installEnv(home));
 
 			expect(pinned.code).toBe(0);
 			expect(pinned.stderr).not.toContain("skipped");
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(PIN);
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(PIN);
 			expect(existsSync(join(home, "bin", ".dg-skills.version"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
@@ -107,7 +107,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("no release named v1.2.3 found");
 			expectNothingInstalled(home);
-			expect(existsSync(join(home, "agents"))).toBe(false);
+			expect(existsSync(join(home, "data", "agents"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -115,8 +115,8 @@ describe("dg-skills install --version <x.y.z>", () => {
 
 	test("--skills-only hard-fails naming v1.2.3 when the pinned release does not exist and leaves existing skill files untouched", async () => {
 		const { directory, home, fetchLog } = sandbox("skills-only-missing");
-		const staleSkillFile = join(home, "skills", "probe", "SKILL.md");
-		mkdirSync(join(home, "skills", "probe"), { recursive: true });
+		const staleSkillFile = join(home, "data", "skills", "probe", "SKILL.md");
+		mkdirSync(join(home, "data", "skills", "probe"), { recursive: true });
 		writeFileSync(staleSkillFile, "stale content\n");
 		try {
 			const { preload } = writeReleaseServer(directory, fetchLog, PIN, { absent: true });
@@ -125,7 +125,7 @@ describe("dg-skills install --version <x.y.z>", () => {
 
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("no release named v1.2.3 found");
-			expect(existsSync(join(home, "lib"))).toBe(false);
+			expect(existsSync(join(home, "data", "lib"))).toBe(false);
 			expect(readFileSync(staleSkillFile, "utf8")).toBe("stale content\n");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
@@ -166,7 +166,8 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 
 	test("a pin naming a missing release leaves an existing cli-only marker untouched", async () => {
 		const { directory, home, fetchLog } = sandbox("keeps-cli-only");
-		writeFileSync(join(home, "cli-only"), "");
+		mkdirSync(join(home, "config"), { recursive: true });
+		writeFileSync(join(home, "config", "cli-only"), "");
 		try {
 			const { preload } = writeReleaseServer(directory, fetchLog, PIN, { absent: true });
 
@@ -174,8 +175,8 @@ describe("dg-skills install --version <x.y.z> (default install, extension includ
 
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain(`no release named v${PIN} found`);
-			expect(existsSync(join(home, "cli-only"))).toBe(true);
-			expect(existsSync(join(home, "lib"))).toBe(false);
+			expect(existsSync(join(home, "config", "cli-only"))).toBe(true);
+			expect(existsSync(join(home, "data", "lib"))).toBe(false);
 			expect(existsSync(join(home, ".dg", "dg-ai-extension-chrome"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

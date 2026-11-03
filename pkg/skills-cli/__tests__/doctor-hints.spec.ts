@@ -68,8 +68,8 @@ describe("doctor bootstrap command", () => {
 
 	test("a CLI-only install keeps the CLI-only form on both platforms", () => {
 		const ctx = context();
-		mkdirSync(ctx.paths.stateDir, { recursive: true });
-		writeFileSync(join(ctx.paths.stateDir, "cli-only"), "");
+		mkdirSync(ctx.paths.configDir, { recursive: true });
+		writeFileSync(ctx.paths.cliOnlyMarker, "");
 		expect(bootstrapCommand(ctx, "linux")).toEndWith("-s -- --cli-only");
 		expect(bootstrapCommand(ctx, "win32")).toStartWith(
 			'$env:DG_CLI_ONLY = "1"; irm ',
