@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir, REPO_ROOT, removeTempDirs } from "./test-support";
 
@@ -104,6 +104,26 @@ describe("first-run blocks after the bootstrap", () => {
 	test("probe the DG_HOME launcher folder before the default one", () => {
 		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
 		expect(text).toContain('  "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup --help >/dev/null 2>&1 ||\n');
-		expect(text).toContain('\n"${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup\n');
+		expect(text).toContain(
+			'\nif command -v dg-skills >/dev/null 2>&1; then dg-skills catchup; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup; fi\n',
+		);
+	});
+
+	test("run the follow-up command through PATH when only PATH has the launcher", () => {
+		const dir = makeTempDir("dg-skill-trailer-");
+		const bin = join(dir, "bin");
+		mkdirSync(bin);
+		writeFileSync(join(bin, "dg-skills"), '#!/bin/sh\necho "path $*"\n', { mode: 0o755 });
+		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
+		const block = /```bash\n([\s\S]*?)```/.exec(text)?.[1] ?? "";
+
+		const run = Bun.spawnSync(["sh", "-c", block], {
+			env: { PATH: `${bin}:/usr/bin:/bin`, HOME: join(dir, "home") },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		expect(run.exitCode, run.stderr.toString()).toBe(0);
+		expect(run.stdout.toString()).toBe("path catchup\n");
 	});
 });

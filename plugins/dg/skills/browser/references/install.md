@@ -12,7 +12,7 @@ Run:
 dg-skills install --help >/dev/null 2>&1 ||
   "${DG_HOME:-$HOME/.local}/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-"${DG_HOME:-$HOME/.local}/bin/dg-skills" install
+if command -v dg-skills >/dev/null 2>&1; then dg-skills install; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" install; fi
 ```
 
 The installer copies the extension to a Windows-native directory:
@@ -62,7 +62,7 @@ Run:
 dg-skills install --help >/dev/null 2>&1 ||
   "${DG_HOME:-$HOME/.local}/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-"${DG_HOME:-$HOME/.local}/bin/dg-skills" install
+if command -v dg-skills >/dev/null 2>&1; then dg-skills install; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" install; fi
 ```
 
 The installer copies the extension to:
@@ -82,7 +82,7 @@ Run:
 dg-skills install --help >/dev/null 2>&1 ||
   "${DG_HOME:-$HOME/.local}/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-"${DG_HOME:-$HOME/.local}/bin/dg-skills" install
+if command -v dg-skills >/dev/null 2>&1; then dg-skills install; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" install; fi
 ```
 
 The installer copies the extension to:

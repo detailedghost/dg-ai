@@ -71,9 +71,23 @@ function sentence(probes: Probe[]): string {
 	return `Call ${names} in every later step. If a bare name does not answer, also after the bootstrap, call it by its \`${FALLBACK_DIR}\` path instead.`;
 }
 
-const byPath = (line: string): string => {
+const TRAILER_IF = /^if command -v (?:dg-[a-z]+) >\/dev\/null 2>&1; then (.*); else .*; fi$/;
+
+function bareTrailer(line: string): string {
+	const branch = TRAILER_IF.exec(line)?.[1];
+	if (branch) return branch;
+	for (const dir of [FALLBACK_DIR, OLD_FALLBACK_DIR]) {
+		const prefix = `"${dir}/`;
+		if (line.startsWith(prefix)) return line.slice(prefix.length).replace(/^(dg-[a-z]+)"/, "$1");
+	}
+	return line;
+}
+
+const byPath = (raw: string): string => {
+	const line = bareTrailer(raw);
 	const program = PROGRAM.exec(line)?.[1];
-	return program ? fallback({ program, expression: line }) : line;
+	if (!program) return raw;
+	return `if command -v ${program} >/dev/null 2>&1; then ${line}; else ${fallback({ program, expression: line })}; fi`;
 };
 
 type Block = { probes: Probe[]; curl: string; trailer: string[]; fence: string; indent: string };
