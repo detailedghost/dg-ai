@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	applyRefresh,
+	connectDashboardApi,
 	createDashboardApi,
 	createDashboardState,
 	createPoller,
@@ -31,7 +32,9 @@ describe("job state", () => {
 
 	it("is paused whenever the job is disabled, however its last run went", () => {
 		expect(jobState(buildJob({ enabled: false }))).toBe("paused");
-		expect(jobState(buildJob({ enabled: false, lastExitCode: 1 }))).toBe("paused");
+		expect(jobState(buildJob({ enabled: false, lastExitCode: 1 }))).toBe(
+			"paused",
+		);
 	});
 });
 
@@ -71,9 +74,9 @@ describe("time and interval wording", () => {
 		expect(toJobView(buildJob({ intervalMs: 30_000 }), NOW).schedule).toBe(
 			"every 30s",
 		);
-		expect(toJobView(buildJob({ intervalMs: 2 * 60 * 60_000 }), NOW).schedule).toBe(
-			"every 2h",
-		);
+		expect(
+			toJobView(buildJob({ intervalMs: 2 * 60 * 60_000 }), NOW).schedule,
+		).toBe("every 2h");
 	});
 
 	it("writes a cron job's expression rather than an interval it has none of", () => {
@@ -92,9 +95,9 @@ describe("time and interval wording", () => {
 				nextRunAt,
 			});
 			expect(runProgress(cron, NOW)).toBe(0);
-			expect(runProgress({ ...cron, intervalMs: undefined as never }, NOW)).toBe(
-				0,
-			);
+			expect(
+				runProgress({ ...cron, intervalMs: undefined as never }, NOW),
+			).toBe(0);
 		}
 	});
 
@@ -227,7 +230,9 @@ describe("the feed row", () => {
 
 	it("keeps http and https, which is what a job feed actually links to", () => {
 		expect(safeItemUrl("http://example.test/a")).toBe("http://example.test/a");
-		expect(safeItemUrl("https://example.test/b")).toBe("https://example.test/b");
+		expect(safeItemUrl("https://example.test/b")).toBe(
+			"https://example.test/b",
+		);
 		expect(safeItemUrl(null)).toBeNull();
 	});
 });
@@ -261,7 +266,11 @@ describe("refreshing", () => {
 
 	it("comes back online on the next good poll", () => {
 		const offline = applyRefresh(createDashboardState(), { ok: false });
-		const back = applyRefresh(offline, { ok: true, jobs: [buildJob()], items: [] });
+		const back = applyRefresh(offline, {
+			ok: true,
+			jobs: [buildJob()],
+			items: [],
+		});
 		expect(back.offline).toBe(false);
 	});
 
@@ -455,5 +464,142 @@ describe("the api client", () => {
 		} finally {
 			stub.restore();
 		}
+	});
+});
+
+describe("the api client's session token", () => {
+	type Call = { url: string; authorization: string | null; init?: RequestInit };
+
+	function stubFetch(respond: (url: string) => Response | Promise<Response>) {
+		const calls: Call[] = [];
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+			const url = String(input);
+			calls.push({
+				url,
+				authorization: new Headers(init?.headers).get("authorization"),
+				init,
+			});
+			return respond(url);
+		}) as typeof fetch;
+		return {
+			calls,
+			restore: () => {
+				globalThis.fetch = original;
+			},
+		};
+	}
+
+	const okBody = (url: string) =>
+		url.includes("/jobs")
+			? Response.json({ jobs: [buildJob()] })
+			: Response.json({ items: [buildFeedItem()] });
+
+	const session = (port: number, token: string) => ({
+		port,
+		sessionId: `session-${token}`,
+		token,
+		agentIdentity: "claude",
+	});
+
+	it("sends its token as a Bearer header on every read and write", async () => {
+		const stub = stubFetch(okBody);
+		try {
+			const api = createDashboardApi("http://127.0.0.1:1", "tok-a");
+			expect((await api.refresh()).ok).toBe(true);
+			await api.runJob("job-1");
+			await api.markRead("item-1");
+			await api.markAllRead();
+			await api.queueToAgent("item-1", "reviewer");
+		} finally {
+			stub.restore();
+		}
+		expect(stub.calls).toHaveLength(6);
+		for (const call of stub.calls) {
+			expect(call.authorization).toBe("Bearer tok-a");
+		}
+		const queued = stub.calls.at(-1);
+		expect(new Headers(queued?.init?.headers).get("content-type")).toBe(
+			"application/json",
+		);
+	});
+
+	it("sends no Authorization header without a token", async () => {
+		const stub = stubFetch(okBody);
+		try {
+			await createDashboardApi("http://127.0.0.1:1").refresh();
+		} finally {
+			stub.restore();
+		}
+		for (const call of stub.calls) expect(call.authorization).toBeNull();
+	});
+
+	it("connects with the stored session for the known port first", async () => {
+		const stub = stubFetch(okBody);
+		let api: Awaited<ReturnType<typeof connectDashboardApi>>;
+		try {
+			api = await connectDashboardApi(47824, [
+				session(47823, "tok-a"),
+				session(47824, "tok-b"),
+			]);
+		} finally {
+			stub.restore();
+		}
+		expect(api?.baseUrl).toBe("http://127.0.0.1:47824");
+		expect(stub.calls[0]?.url).toStartWith("http://127.0.0.1:47824/");
+		expect(stub.calls[0]?.authorization).toBe("Bearer tok-b");
+	});
+
+	it("moves to the next stored session on a 403 or a network error", async () => {
+		const stub = stubFetch((url) => {
+			if (url.startsWith("http://127.0.0.1:47823/")) {
+				return new Response("refused", { status: 403 });
+			}
+			if (url.startsWith("http://127.0.0.1:47824/")) {
+				throw new TypeError("Failed to fetch");
+			}
+			return okBody(url);
+		});
+		let api: Awaited<ReturnType<typeof connectDashboardApi>>;
+		try {
+			api = await connectDashboardApi(undefined, [
+				session(47823, "tok-a"),
+				session(47824, "tok-b"),
+				session(47825, "tok-c"),
+			]);
+		} finally {
+			stub.restore();
+		}
+		expect(api?.baseUrl).toBe("http://127.0.0.1:47825");
+		for (const call of stub.calls) {
+			const port = Number(new URL(call.url).port);
+			const own = { 47823: "tok-a", 47824: "tok-b", 47825: "tok-c" }[port];
+			expect(call.authorization).toBe(`Bearer ${own}`);
+		}
+	});
+
+	it("sends no token to a port that port discovery found", async () => {
+		const stub = stubFetch((url) => {
+			if (url === "http://127.0.0.1:47826/healthz") {
+				return Response.json({ daemon: "dg-daemon", instanceId: "other" });
+			}
+			if (url.startsWith("http://127.0.0.1:47823/")) {
+				return new Response("refused", { status: 403 });
+			}
+			throw new TypeError("Failed to fetch");
+		});
+		let api: Awaited<ReturnType<typeof connectDashboardApi>>;
+		try {
+			api = await connectDashboardApi(47823, [session(47823, "tok-a")]);
+		} finally {
+			stub.restore();
+		}
+		expect(api?.baseUrl).toBe("http://127.0.0.1:47826");
+		const leaked = stub.calls.filter(
+			(call) =>
+				!call.url.startsWith("http://127.0.0.1:47823/") &&
+				call.authorization !== null,
+		);
+		expect(leaked).toEqual([]);
 	});
 });
