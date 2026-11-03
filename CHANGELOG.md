@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.36.0 (2026-11-03)
+
+### Features
+
+- feat(runtime): ship one pinned Bun runtime and one minified bundle ([#135](https://github.com/detailedghost/dg-ai/pull/135))
+
 ## v1.35.0 (2026-11-03)
 
 ### Features
