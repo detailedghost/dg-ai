@@ -8,18 +8,18 @@ install detail.
 
 `install [chrome|firefox] [--local] [--version <x.y.z>]` stages the extension for a
 one-time load **and** refreshes the compiled `dg-skills` binary. It downloads the
-CI-built extension zip from the latest `ext-v*` release (or builds locally with
+CI-built extension zip from the latest `vX.Y.Z` release (or builds locally with
 `--local` or in a source checkout) and the platform `dg-skills` binary from the
-latest `skills-v*` release. It then prints the browser-specific Load-unpacked
+same release. It then prints the browser-specific Load-unpacked
 steps. Relay them. The default target is `chrome`, which also serves
 Brave, Edge, and Vivaldi.
 
 The `--local` dev path builds the extension from source and needs Bun from
 https://bun.sh.
 
-`--version <x.y.z>` pins the skills-v, daemon-v, agent-v, and ext-v release
-instead of each one's newest. A missing pinned release, for any of the four,
-fails the whole install before anything changes and names the release.
+`--version <x.y.z>` pins the `vX.Y.Z` release instead of the newest. A missing
+pinned release fails the whole install before anything changes and names the
+release.
 
 ## batch-open --ext
 

@@ -15,8 +15,8 @@ notifies the authoritative publisher whenever any chat changes the board.
 
 Commands use the compiled binary at `dg-agent`. It autostarts the
 `dg-daemon` binary next to it, so both binaries must be installed together.
-Bootstrap once if needed; the installer pulls `dg-agent` from `agent-v*` and
-`dg-daemon` from `daemon-v*`:
+Bootstrap once if needed; the installer pulls `dg-agent` and `dg-daemon` from
+the latest `vX.Y.Z` release:
 
 ```bash
 dg-agent --version >/dev/null 2>&1 ||
