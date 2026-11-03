@@ -11,7 +11,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
+import { personasDest, run, skillsInstallDest } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
 import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
@@ -215,9 +215,7 @@ function pruneClaudePluginCache(keep: boolean): void {
 
 function noteForeignDgHome(): void {
 	const home = process.env.DG_HOME;
-	if (home && resolve(home) !== resolve(resolveDgPaths({ env: {} }).stateDir)) {
-		console.error(`note: DG_HOME=${home}; installing there`);
-	}
+	if (home) console.error(`note: DG_HOME=${home}; installing there`);
 }
 
 async function installCli(keepCache: boolean): Promise<void> {

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { delimiter, join, resolve } from "node:path";
-import { resolveDgPaths, scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
+import { delimiter, join } from "node:path";
+import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
 import { readCurrent } from "../install/current";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
 import { installedPlugins, isOlder, toolVersion, writableDirectory } from "./probes";
@@ -71,12 +71,9 @@ export const sharedChecks: DoctorCheck[] = [
 	},
 	{
 		id: "dg-home",
-		run({ env, home }) {
-			const defaultHome = resolveDgPaths({ homeDir: home, env: {} }).stateDir;
+		run({ env }) {
 			if (!env.DG_HOME) return ok("DG_HOME is unset");
-			return resolve(env.DG_HOME) !== resolve(defaultHome)
-				? warn(`DG_HOME=${env.DG_HOME} moves the dg state directory away from ~/.dg`, "unset DG_HOME")
-				: ok("DG_HOME uses the default state directory");
+			return warn(`DG_HOME=${env.DG_HOME} keeps every dg folder there instead of in the per-OS folders`, "unset DG_HOME");
 		},
 	},
 	{

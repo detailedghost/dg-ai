@@ -63,9 +63,10 @@ await program.parseAsync(["install", "--local", "--repo", ${JSON.stringify(repo)
 		env: { ...process.env, HOME: home, USERPROFILE: home, DG_WINDOWS_HOME: home, DG_HOME: join(home, ".dg") },
 		stdout: "pipe", stderr: "pipe",
 	});
-	const [stdout, stderr, exitCode] = await Promise.all([
+	const [stdout, rawStderr, exitCode] = await Promise.all([
 		new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
 	]);
+	const stderr = rawStderr.replace(`note: DG_HOME=${join(home, ".dg")}; installing there\n`, "");
 	return { stdout, stderr, exitCode };
 }
 
@@ -200,7 +201,7 @@ async function runInstallWithHome(env: Record<string, string | undefined>, home:
 	return { stderr, exitCode };
 }
 
-test("install prints the DG_HOME note to stderr once when DG_HOME is not the default home", async () => {
+test("install prints the DG_HOME note to stderr once when DG_HOME is set", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "dg-home-note-"));
 	try {
 		const custom = join(directory, "x");
@@ -212,13 +213,13 @@ test("install prints the DG_HOME note to stderr once when DG_HOME is not the def
 	}
 });
 
-test("install prints no DG_HOME note when DG_HOME is unset or names the default home", async () => {
+test("install prints no DG_HOME note when DG_HOME is unset, and notes even the old ~/.dg path", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "dg-home-note-"));
 	try {
 		const unset = await runInstallWithHome({}, directory);
 		const explicit = await runInstallWithHome({ DG_HOME: join(directory, ".dg") }, directory);
 		expect(unset.stderr).not.toContain("note: DG_HOME=");
-		expect(explicit.stderr).not.toContain("note: DG_HOME=");
+		expect(explicit.stderr).toContain(`note: DG_HOME=${join(directory, ".dg")}; installing there`);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
