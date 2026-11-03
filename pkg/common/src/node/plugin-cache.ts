@@ -16,6 +16,7 @@ export type PluginCacheVersion = {
 	orphanedAt?: number;
 	lastReadAt?: number;
 	livePids: number[];
+	inUseUnreadable: boolean;
 };
 
 export type PrunePlan = {
@@ -25,7 +26,7 @@ export type PrunePlan = {
 
 export type CacheFs = {
 	dirs(path: string): string[];
-	files(path: string): string[];
+	files(path: string): string[] | undefined;
 	dirMtime(path: string): number | undefined;
 	mtime(path: string): number;
 	treeBytes(path: string): number;
@@ -44,14 +45,14 @@ function lstatOrUndefined(path: string) {
 
 const isRealDir = (path: string): boolean => lstatOrUndefined(path)?.isDirectory() === true;
 
-function entries(path: string, want: "dir" | "file"): string[] {
+function entries(path: string, want: "dir" | "file"): string[] | undefined {
 	if (!isRealDir(path)) return [];
 	try {
 		return readdirSync(path, { withFileTypes: true })
 			.filter((entry) => (want === "dir" ? entry.isDirectory() : entry.isFile()))
 			.map((entry) => entry.name);
 	} catch {
-		return [];
+		return undefined;
 	}
 }
 
@@ -106,7 +107,7 @@ export function pidAlive(
 }
 
 export const realFs: CacheFs = {
-	dirs: (path) => entries(path, "dir"),
+	dirs: (path) => entries(path, "dir") ?? [],
 	files: (path) => entries(path, "file"),
 	dirMtime: (path) => (isRealDir(path) ? lstatOrUndefined(path)?.mtimeMs : undefined),
 	mtime: (path) => lstatOrUndefined(path)?.mtimeMs ?? 0,
@@ -130,6 +131,29 @@ export const realFs: CacheFs = {
 
 const cacheRoot = (home: string): string => join(home, ".claude", "plugins", "cache");
 
+type UsageState = Pick<PluginCacheVersion, "orphanedAt" | "lastReadAt" | "livePids" | "inUseUnreadable">;
+
+function readUsage(path: string, fs: CacheFs): UsageState {
+	const inUseDir = join(path, ".in_use");
+	const markers = fs.files(inUseDir);
+	const names = markers ?? [];
+	const bodies = names.map((name) => fs.readJson<{ pid?: unknown; procStart?: unknown }>(join(inUseDir, name)));
+	const readTimes = [fs.dirMtime(inUseDir), ...names.map((name) => fs.mtime(join(inUseDir, name)))].filter(
+		(time): time is number => time !== undefined,
+	);
+	const livePids = bodies.flatMap((body) => {
+		if (typeof body?.pid !== "number") return [];
+		const procStart = typeof body.procStart === "string" ? body.procStart : undefined;
+		return fs.alive(body.pid, procStart) ? [body.pid] : [];
+	});
+	return {
+		orphanedAt: fs.readNumber(join(path, ".orphaned_at")),
+		lastReadAt: readTimes.length ? Math.max(...readTimes) : undefined,
+		livePids,
+		inUseUnreadable: markers === undefined || bodies.some((body) => typeof body?.pid !== "number"),
+	};
+}
+
 /** Real version directories at <home>/.claude/plugins/cache/<marketplace>/dg/<semver>; symlinks are never followed. */
 export function listDgPluginVersions(home: string, fs: CacheFs = realFs): PluginCacheVersion[] {
 	const cache = cacheRoot(home);
@@ -140,29 +164,14 @@ export function listDgPluginVersions(home: string, fs: CacheFs = realFs): Plugin
 			.sort(compareSemver)
 			.map((version) => {
 				const path = join(cache, marketplace, "dg", version);
-				const inUseDir = join(path, ".in_use");
-				const markers = fs.files(inUseDir);
-				const readTimes = [
-					fs.dirMtime(inUseDir),
-					...markers.map((name) => fs.mtime(join(inUseDir, name))),
-				].filter((time): time is number => time !== undefined);
-				const livePids = markers.flatMap((name) => {
-					const body = fs.readJson<{ pid?: unknown; procStart?: unknown }>(join(inUseDir, name));
-					if (typeof body?.pid !== "number") return [];
-					const procStart = typeof body.procStart === "string" ? body.procStart : undefined;
-					return fs.alive(body.pid, procStart) ? [body.pid] : [];
-				});
-				return {
-					marketplace,
-					version,
-					path,
-					bytes: fs.treeBytes(path),
-					orphanedAt: fs.readNumber(join(path, ".orphaned_at")),
-					lastReadAt: readTimes.length ? Math.max(...readTimes) : undefined,
-					livePids,
-				};
+				return { marketplace, version, path, bytes: fs.treeBytes(path), ...readUsage(path, fs) };
 			}),
 	);
+}
+
+/** Re-reads one version's usage state without re-measuring its size. */
+export function reinspectPluginVersion(version: PluginCacheVersion, fs: CacheFs = realFs): PluginCacheVersion {
+	return { ...version, ...readUsage(version.path, fs) };
 }
 
 /** installed_plugins.json: "dg@<marketplace>" -> every installed version. A missing, malformed or uninterpretable file -> undefined, and the caller removes nothing. */
@@ -201,6 +210,8 @@ export function planPluginCachePrune(
 			plan.keep.push({ version: v, reason: `in use by pid ${v.livePids[0]}` });
 		} else if (v.lastReadAt !== undefined && now - v.lastReadAt < readWindowMs) {
 			plan.keep.push({ version: v, reason: `read ${hoursAgo(now, v.lastReadAt)}h ago` });
+		} else if (v.inUseUnreadable) {
+			plan.keep.push({ version: v, reason: "in-use state unreadable" });
 		} else if (v.orphanedAt === undefined) {
 			plan.keep.push({ version: v, reason: "unknown state" });
 		} else {

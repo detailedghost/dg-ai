@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	chmodSync,
 	mkdirSync,
 	mkdtempSync,
 	rmSync,
@@ -13,6 +14,7 @@ import {
 	activeVersions,
 	listDgPluginVersions,
 	pidAlive,
+	reinspectPluginVersion,
 	planPluginCachePrune,
 	READ_WINDOW_MS,
 } from "../src/node/plugin-cache";
@@ -178,6 +180,37 @@ describe("planPluginCachePrune", () => {
 		expect(activeVersions(home)?.get("dg-ai")).toEqual(["1.24.0"]);
 	});
 
+	test("keeps an orphaned version whose session marker cannot be parsed", () => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		orphan(dir, NOW - 96 * HOUR);
+		marker(dir, "s1", { pid: process.pid }, 72 * HOUR);
+		writeFileSync(join(dir, ".in_use", "s1"), "{torn");
+		const old = new Date(NOW - 72 * HOUR);
+		utimesSync(join(dir, ".in_use", "s1"), old, old);
+		utimesSync(join(dir, ".in_use"), old, old);
+		const result = plan(home);
+		expect(result.remove).toEqual([]);
+		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+	});
+
+	test.skipIf(process.getuid?.() === 0)("keeps an orphaned version whose .in_use directory cannot be read", () => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		orphan(dir, NOW - 96 * HOUR);
+		mkdirSync(join(dir, ".in_use"));
+		const old = new Date(NOW - 72 * HOUR);
+		utimesSync(join(dir, ".in_use"), old, old);
+		chmodSync(join(dir, ".in_use"), 0o000);
+		try {
+			const result = plan(home);
+			expect(result.remove).toEqual([]);
+			expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+		} finally {
+			chmodSync(join(dir, ".in_use"), 0o755);
+		}
+	});
+
 	test("honors a custom read window", () => {
 		const home = fixtureHome();
 		const dir = versionDir(home, "1.23.0");
@@ -276,6 +309,21 @@ describe("listDgPluginVersions", () => {
 		const dir = versionDir(home, "1.20.0");
 		symlinkSync(outside, join(dir, "link"));
 		expect(listDgPluginVersions(home)[0]?.bytes).toBeLessThan(1000);
+	});
+});
+
+describe("reinspectPluginVersion", () => {
+	test("re-reads usage markers and keeps the measured size", () => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.20.0");
+		orphan(dir, 1);
+		const [before] = listDgPluginVersions(home);
+		if (!before) throw new Error("fixture version missing");
+		expect(before.livePids).toEqual([]);
+		marker(dir, "late", { pid: process.pid }, 0);
+		const after = reinspectPluginVersion(before);
+		expect(after.livePids).toEqual([process.pid]);
+		expect(after.bytes).toBe(before.bytes);
 	});
 });
 
