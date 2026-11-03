@@ -158,7 +158,10 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 	test("bootstrap.ps1 installs under LOCALAPPDATA and names the PATH change", () => {
 		expect(ps1).toContain('Join-Path $localAppData "dg"');
 		expect(ps1).toContain('$binDir = Join-Path $dgHome "bin"');
-		expect(ps1).toContain('Join-Path $env:DG_HOME "data"');
+		expect(ps1).toContain("$dgRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:DG_HOME)");
+		expect(ps1).toContain('Join-Path $dgRoot "data"');
+		expect(ps1).toContain('Join-Path $dgRoot "bin"');
+		expect(ps1).not.toContain('Join-Path $env:DG_HOME');
 		expect(ps1).toContain("added $binDir to the user PATH; open a new shell");
 		expect(ps1).not.toContain('Join-Path $env:USERPROFILE ".dg"');
 	});

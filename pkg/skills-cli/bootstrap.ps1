@@ -137,8 +137,9 @@ if ($env:DG_CLI_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
 }
 
 if ($env:DG_HOME) {
-	$dgHome = Join-Path $env:DG_HOME "data"
-	$binDir = Join-Path $env:DG_HOME "bin"
+	$dgRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:DG_HOME)
+	$dgHome = Join-Path $dgRoot "data"
+	$binDir = Join-Path $dgRoot "bin"
 } else {
 	$localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $env:USERPROFILE "AppData\Local" }
 	$dgHome = Join-Path $localAppData "dg"
