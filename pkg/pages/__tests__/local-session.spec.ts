@@ -111,11 +111,41 @@ test("forgetLocalBootstrap drops the stored session so a reload cannot reuse a r
 		storage,
 	);
 
-	forgetLocalBootstrap(storage);
+	forgetLocalBootstrap(storage, BOOTSTRAP.token);
 
 	expect(
 		loadLocalBootstrap(fakeWindow("http://127.0.0.1:47823/chat"), storage),
 	).toBeUndefined();
+});
+
+test("loadLocalBootstrap ignores a refused token that the fragment or the navigation entry presents again", () => {
+	const storage = memoryStorage();
+	const url = `http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`;
+	loadLocalBootstrap(fakeWindow(url), storage);
+
+	forgetLocalBootstrap(storage, BOOTSTRAP.token);
+
+	expect(loadLocalBootstrap(fakeWindow(url), storage)).toBeUndefined();
+	expect(
+		loadLocalBootstrap(fakeWindow("http://127.0.0.1:47823/chat", url), storage),
+	).toBeUndefined();
+});
+
+test("loadLocalBootstrap still accepts a different token after another was refused", () => {
+	const storage = memoryStorage();
+	loadLocalBootstrap(
+		fakeWindow(`http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`),
+		storage,
+	);
+	forgetLocalBootstrap(storage, BOOTSTRAP.token);
+	const fresh = { ...BOOTSTRAP, sessionId: "session-b", token: "tok-b" };
+
+	expect(
+		loadLocalBootstrap(
+			fakeWindow(`http://127.0.0.1:47823/chat#${marker(fresh)}`),
+			storage,
+		),
+	).toEqual(fresh);
 });
 
 test("loadLocalBootstrap returns undefined when nothing was ever stored", () => {

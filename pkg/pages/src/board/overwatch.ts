@@ -17,7 +17,7 @@ const MINUTE_MS = 60_000;
 
 export type OverwatchActionResult =
 	| { ok: true }
-	| { ok: false; error: string };
+	| { ok: false; error: string; status?: number };
 
 export type OverwatchApi = {
 	baseUrl: string;
@@ -89,6 +89,7 @@ export function createOverwatchApi(
 				return {
 					ok: false,
 					error: detail || `the daemon returned ${response.status}`,
+					status: response.status,
 				};
 			} catch {
 				return { ok: false, error: "Daemon unreachable" };

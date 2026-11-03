@@ -76,6 +76,31 @@ const BOARD_JSON = JSON.stringify({
 
 const STORED_BOOTSTRAP_KEY = "dg_local_bootstrap";
 
+const LANE_BOARD_JSON = JSON.stringify({
+	lanes: [
+		{
+			chat: "print",
+			task: "Follow ups",
+			stage: "e2e",
+			kind: "chat",
+			publisher: "print-agent",
+			updatedAt: "2026-10-02T10:28:00.000Z",
+		},
+	],
+	merges: [],
+});
+
+function actionPosts(net: Net): number {
+	return net.fetches.filter((call) => call.init?.method === "POST").length;
+}
+
+function clickApprove(net: Net): void {
+	const button = [...net.win.document.querySelectorAll("button")].find(
+		(candidate) => candidate.textContent?.trim() === "Approve",
+	);
+	button?.dispatchEvent(new net.win.Event("click"));
+}
+
 function installGlobals(href: string): Net {
 	const win = new Window({ url: href });
 	openWindow = win;
@@ -267,6 +292,33 @@ describe("board page entry wiring", () => {
 	});
 });
 
+describe("board page entry wiring after a refused action", () => {
+	const href = `http://127.0.0.1:${BOOTSTRAP.port}/board#${fragment(BOOTSTRAP)}`;
+
+	test("drops the stored bootstrap on a 403 from an action and sends the token no more", async () => {
+		const net = installGlobals(href);
+		net.respond = (url) =>
+			Promise.resolve(
+				url.endsWith("/overwatch/action")
+					? new Response("refused", { status: 403 })
+					: new Response(LANE_BOARD_JSON),
+			);
+		await loadEntry("../src/board/page");
+
+		clickApprove(net);
+		await settle();
+
+		expect(actionPosts(net)).toBe(1);
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+
+		const requests = net.fetches.length;
+		clickApprove(net);
+		await settle();
+
+		expect(net.fetches.length).toBe(requests);
+	});
+});
+
 describe("chat page entry wiring", () => {
 	test("appends the encoded session token to the websocket URL", async () => {
 		const net = installGlobals(
@@ -387,6 +439,65 @@ describe("chat page entry wiring", () => {
 			Authorization: "Bearer tok-b",
 		});
 		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+	});
+
+	test("presents no refused token again on a reconnect", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		net.respond = () =>
+			Promise.resolve(new Response("refused", { status: 403 }));
+		await loadEntry("../src/chat/page");
+
+		net.socketHandles[0]?.fire("close");
+		await settle();
+		await runTimeouts(net);
+		await runTimeouts(net);
+
+		expect(net.sockets.slice(1).join(" ")).not.toContain(
+			encodeURIComponent(BOOTSTRAP.token),
+		);
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+	});
+
+	test("drops the stored bootstrap when the daemon closes the session", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		await loadEntry("../src/chat/page");
+		const socket = net.socketHandles[0];
+		socket?.fire("open");
+		await settle();
+
+		socket?.receive({ type: "session-closed", sessionId: BOOTSTRAP.sessionId });
+		await settle();
+
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+	});
+
+	test("drops the stored bootstrap and stops presenting the token after an invalid-session error", async () => {
+		const net = installGlobals(
+			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
+		);
+		await loadEntry("../src/chat/page");
+		const socket = net.socketHandles[0];
+		socket?.fire("open");
+		await settle();
+
+		socket?.receive({
+			type: "error",
+			sessionId: BOOTSTRAP.sessionId,
+			message: "invalid or closed session capability",
+			code: "invalid-session",
+		});
+		socket?.fire("close");
+		await settle();
+		await runTimeouts(net);
+
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(net.sockets.slice(1).join(" ")).not.toContain(
+			encodeURIComponent(BOOTSTRAP.token),
+		);
 	});
 
 	test("lists only the sessions this page holds, including one it creates", async () => {

@@ -7,7 +7,7 @@ import {
 	storeLocalBootstrap,
 } from "../local";
 import { createOverwatchApi, OverwatchHttpError } from "../board/overwatch";
-import { createChatClient } from "./chat-client";
+import { type ChatClient, createChatClient } from "./chat-client";
 import { renderChatPage } from "./main";
 
 const root = document.getElementById("app");
@@ -17,23 +17,33 @@ if (root) {
 	const bootstrapStorage = sessionStorageOrMemory();
 	const bootstrap = loadLocalBootstrap(window, bootstrapStorage);
 	let live = bootstrap;
+	let client: ChatClient | undefined;
 	const heldBootstrap = (
 		held: ReadonlyMap<string, string>,
 	): SessionBootstrap | undefined => {
-		if (!live || held.get(live.sessionId) === live.token) return live;
+		if (live && held.get(live.sessionId) === live.token) return live;
 		const first = held.entries().next();
-		if (first.done) return live;
+		if (first.done || !bootstrap) return undefined;
 		const [sessionId, token] = first.value;
-		live = { ...live, sessionId, token };
+		live = { ...bootstrap, sessionId, token };
 		storeLocalBootstrap(bootstrapStorage, live);
 		return live;
+	};
+	const dropLive = (sessionId?: string): void => {
+		if (!live || (sessionId !== undefined && live.sessionId !== sessionId)) {
+			return;
+		}
+		const dropped = live;
+		live = undefined;
+		forgetLocalBootstrap(bootstrapStorage, dropped.token);
+		client?.forgetSession(dropped.sessionId);
 	};
 	const forgetIfRefused = (token: string): void => {
 		createOverwatchApi(window.location.origin, token)
 			.getBoard()
 			.catch((error: unknown) => {
 				if (error instanceof OverwatchHttpError && error.status === 403) {
-					forgetLocalBootstrap(bootstrapStorage);
+					if (live?.token === token) dropLive();
 				}
 			});
 	};
@@ -41,8 +51,8 @@ if (root) {
 		root,
 		runtime: { storage },
 		assetOrigin: window.location.origin,
-		createClient: () =>
-			createChatClient({
+		createClient: () => {
+			client = createChatClient({
 				heldSessionsOnly: true,
 				openSocket: (url, held) => {
 					const token = heldBootstrap(held)?.token ?? "";
@@ -58,7 +68,17 @@ if (root) {
 					});
 					return socket;
 				},
-			}),
+			});
+			client.onFrame((frame) => {
+				if (
+					frame.type === "session-closed" ||
+					(frame.type === "error" && frame.code === "invalid-session")
+				) {
+					dropLive(frame.sessionId);
+				}
+			});
+			return client;
+		},
 		loadBootstraps: () => Promise.resolve(bootstrap ? [bootstrap] : []),
 	}).catch((error: unknown) => {
 		emitRedacted(

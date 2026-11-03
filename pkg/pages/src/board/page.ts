@@ -23,7 +23,7 @@ if (root) {
 	const expire = (): void => {
 		expired = true;
 		clearInterval(poll);
-		forgetLocalBootstrap(bootstrapStorage);
+		if (bootstrap) forgetLocalBootstrap(bootstrapStorage, bootstrap.token);
 	};
 
 	const handle = renderOverwatchPage({
@@ -35,13 +35,23 @@ if (root) {
 			const api = createOverwatchApi(window.location.origin, bootstrap.token);
 			return Promise.resolve({
 				...api,
-				getBoard: () =>
-					api.getBoard().catch((error: unknown) => {
+				getBoard: () => {
+					if (expired) {
+						return Promise.reject(new OverwatchHttpError(403, EXPIRED_LABEL));
+					}
+					return api.getBoard().catch((error: unknown) => {
 						if (error instanceof OverwatchHttpError && error.status === 403) {
 							expire();
 						}
 						throw error;
-					}),
+					});
+				},
+				sendAction: async (action) => {
+					if (expired) return { ok: false, error: EXPIRED_LABEL };
+					const result = await api.sendAction(action);
+					if (!result.ok && result.status === 403) expire();
+					return result;
+				},
 			});
 		},
 	});

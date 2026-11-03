@@ -3,6 +3,18 @@ import { readChatBootstrap, stripChatMarker } from "./chat-marker";
 import { browserStorage, memoryStorage, type PageStorage } from "./runtime";
 
 const STORED_BOOTSTRAP_KEY = "dg_local_bootstrap";
+const REFUSED_TOKENS_KEY = "dg_local_refused";
+
+function refusedTokens(storage: PageStorage): string[] {
+	try {
+		const parsed: unknown = JSON.parse(storage.get(REFUSED_TOKENS_KEY) ?? "[]");
+		return Array.isArray(parsed)
+			? parsed.filter((token): token is string => typeof token === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}
 
 export function localStorageOrMemory(): PageStorage {
 	try {
@@ -27,8 +39,15 @@ export function storeLocalBootstrap(
 	storage.set(STORED_BOOTSTRAP_KEY, JSON.stringify(bootstrap));
 }
 
-export function forgetLocalBootstrap(storage: PageStorage): void {
+export function forgetLocalBootstrap(
+	storage: PageStorage,
+	token: string,
+): void {
 	storage.set(STORED_BOOTSTRAP_KEY, "");
+	const refused = refusedTokens(storage);
+	if (!refused.includes(token)) {
+		storage.set(REFUSED_TOKENS_KEY, JSON.stringify([...refused, token]));
+	}
 }
 
 /** Strips the fragment after reading it; an installed extension may strip it first, so the navigation entry keeps the original URL. */
@@ -47,9 +66,12 @@ export function loadLocalBootstrap(
 			stripChatMarker(win.location.href),
 		);
 	}
-	const fresh =
+	const refused = refusedTokens(storage);
+	const presented =
 		fromHref ??
 		(navigation === undefined ? undefined : readChatBootstrap(navigation));
+	const fresh =
+		presented && !refused.includes(presented.token) ? presented : undefined;
 	if (fresh) {
 		storeLocalBootstrap(storage, fresh);
 		return fresh;
@@ -57,7 +79,8 @@ export function loadLocalBootstrap(
 	const stored = storage.get(STORED_BOOTSTRAP_KEY);
 	if (!stored) return undefined;
 	try {
-		return validateSessionBootstrap(JSON.parse(stored));
+		const bootstrap = validateSessionBootstrap(JSON.parse(stored));
+		return refused.includes(bootstrap.token) ? undefined : bootstrap;
 	} catch {
 		return undefined;
 	}
