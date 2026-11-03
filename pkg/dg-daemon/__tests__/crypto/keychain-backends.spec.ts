@@ -4,11 +4,13 @@ import {
 	createKeychainBackendForPlatform,
 	dpapiBackend,
 	keychainAccountFor,
-	keychainAccountForPaths,
+	keychainAccountsForPaths,
 	macKeychainBackend,
+	migratingKeychainBackend,
 	RealKeychainInTestError,
 	secretToolBackend,
 } from "../../src/crypto/keychain-backends";
+import type { KeychainBackend, KeychainLookupResult } from "../../src/crypto/key-resolution";
 import { ChatStore } from "../../src/store";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
@@ -31,18 +33,131 @@ describe("keychainAccountFor", () => {
 	});
 });
 
-describe("keychainAccountForPaths", () => {
-	it("keeps the account of the old flat home after the per-OS layout moves the state dir", () => {
+describe("keychainAccountsForPaths", () => {
+	it("names the new account after the state root and the old one after the old flat home", () => {
 		const paths = resolveDgPaths({ platform: "linux", homeDir: HOME, env: {} });
 
-		expect(paths.stateDir).not.toBe(`${HOME}/.dg`);
-		expect(keychainAccountForPaths(paths, HOME)).toBe("chat-store-kek");
+		expect(keychainAccountsForPaths(paths, HOME)).toEqual({
+			current: keychainAccountFor(paths.stateDir, HOME),
+			legacy: "chat-store-kek",
+		});
 	});
 
-	it("keeps the DG_HOME account, scoped by DG_HOME itself rather than its state folder", () => {
+	it("scopes a DG_HOME install by its state folder now and by DG_HOME before", () => {
 		const paths = resolveDgPaths({ platform: "linux", homeDir: HOME, env: { DG_HOME: "/tmp/dg-a" } });
 
-		expect(keychainAccountForPaths(paths, HOME)).toBe(keychainAccountFor("/tmp/dg-a", HOME));
+		expect(keychainAccountsForPaths(paths, HOME)).toEqual({
+			current: keychainAccountFor("/tmp/dg-a/state", HOME),
+			legacy: keychainAccountFor("/tmp/dg-a", HOME),
+		});
+	});
+});
+
+const SECRET = Buffer.from("secret-key-encryption-key-32bytes").toString("base64");
+
+type Fake = { value?: string; removed: number; backend: KeychainBackend };
+
+function fakeKeychain(
+	value: string | undefined,
+	opts: { storeFails?: boolean; storeAs?: string; removeFails?: boolean } = {},
+): Fake {
+	const fake: Fake = {
+		value,
+		removed: 0,
+		backend: {
+			async lookup(): Promise<KeychainLookupResult> {
+				return fake.value === undefined ? { status: "absent" } : { status: "found", keyBase64: fake.value };
+			},
+			async store(keyBase64) {
+				if (opts.storeFails) return "unreachable";
+				fake.value = opts.storeAs ?? keyBase64;
+				return "stored";
+			},
+			async remove() {
+				if (opts.removeFails) return "unreachable";
+				fake.value = undefined;
+				fake.removed += 1;
+				return "removed";
+			},
+		},
+	};
+	return fake;
+}
+
+describe("migratingKeychainBackend", () => {
+	function open(current: Fake, legacy: Fake) {
+		const warnings: string[] = [];
+		const backend = migratingKeychainBackend(current.backend, legacy.backend, (line) => warnings.push(line));
+		return { backend, warnings };
+	}
+
+	it("copies the old entry to the new account, checks it, then deletes the old entry", async () => {
+		const current = fakeKeychain(undefined);
+		const legacy = fakeKeychain(SECRET);
+		const { backend, warnings } = open(current, legacy);
+
+		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(current.value).toBe(SECRET);
+		expect(legacy.value).toBeUndefined();
+		expect(warnings).toEqual([]);
+	});
+
+	it("keeps the old entry and reads from it when the new account cannot be written", async () => {
+		const current = fakeKeychain(undefined, { storeFails: true });
+		const legacy = fakeKeychain(SECRET);
+		const { backend, warnings } = open(current, legacy);
+
+		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(legacy.value).toBe(SECRET);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain("chat-store-kek");
+		expect(warnings[0]).not.toContain(SECRET);
+	});
+
+	it("keeps the old entry when the new entry reads back different", async () => {
+		const current = fakeKeychain(undefined, { storeAs: "bWFuZ2xlZA==" });
+		const legacy = fakeKeychain(SECRET);
+		const { backend, warnings } = open(current, legacy);
+
+		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(legacy.value).toBe(SECRET);
+		expect(legacy.removed).toBe(0);
+		expect(warnings).toHaveLength(1);
+		expect(warnings.join("")).not.toContain(SECRET);
+	});
+
+	it("finishes a move whose old entry could not be deleted the last time", async () => {
+		const current = fakeKeychain(SECRET);
+		const legacy = fakeKeychain(SECRET);
+		const { backend, warnings } = open(current, legacy);
+
+		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(legacy.value).toBeUndefined();
+		expect(warnings).toEqual([]);
+	});
+
+	it("warns once and keeps the old entry when it cannot be deleted", async () => {
+		const current = fakeKeychain(undefined);
+		const legacy = fakeKeychain(SECRET, { removeFails: true });
+		const { backend, warnings } = open(current, legacy);
+
+		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(current.value).toBe(SECRET);
+		expect(legacy.value).toBe(SECRET);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).not.toContain(SECRET);
+	});
+
+	it("reads only the new account when there is no old entry and stores new keys there", async () => {
+		const current = fakeKeychain(undefined);
+		const legacy = fakeKeychain(undefined);
+		const { backend } = open(current, legacy);
+
+		expect(await backend.lookup()).toEqual({ status: "absent" });
+		expect(await backend.store(SECRET)).toBe("stored");
+		expect(current.value).toBe(SECRET);
+		expect(legacy.value).toBeUndefined();
 	});
 });
 

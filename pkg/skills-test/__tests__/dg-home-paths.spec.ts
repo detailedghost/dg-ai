@@ -8,7 +8,7 @@ const COMMENT = /^\s*(\/\/|\/\*|\*)/;
 
 const ALLOWED: Record<string, string> = {
 	"pkg/common/src/node/dg-paths.ts": "legacyHome names the old flat home for the migration",
-	"pkg/dg-daemon/src/crypto/keychain-backends.ts": "the keychain account stays named after the old home so the stored key is found",
+	"pkg/dg-daemon/src/crypto/keychain-backends.ts": "the old keychain account is named after the old home so the migration can find and move it",
 	"pkg/skills-cli/src/install/compat-launchers.ts": "the notice launchers name the old path they replace",
 	"pkg/skills-cli/src/doctor/probes.ts": "doctor recognizes the old allow rule form to print its replacement",
 	"pkg/skills-cli/src/utils/lib.ts": "the staged extension folder stays in the old home on Windows, where Chrome loaded it",

@@ -27,8 +27,10 @@ new roots: copy, check, then remove. `phone __refresh` moves the phone state
 and checks the copied database and keys before it removes the old folder.
 Skills call `dg-skills` by name, with one generated first-run block that falls
 back to `$HOME/.local/bin/dg-skills`. `~/.dg/bin/*` keep notice-printing
-launchers for two minor releases. The daemon keychain account stays scoped
-by the old home path, so stored keys still load.
+launchers for two minor releases. The daemon keychain account moves to one scoped by the state root. On first
+use the daemon copies the old entry to the new account, reads it back, compares
+it, and only then deletes the old entry; a failed step keeps the old entry and
+reads from it.
 
 ## Consequences
 

@@ -89,7 +89,12 @@ The first `dg-skills install` of a new release moves it:
    such as `dg-daemon`. Stop the process and run install again.
 4. The phone state moves on the next `dg-agent phone __refresh`, which install
    runs. See [phone](phone.md#where-the-phone-state-lives).
-5. Install leaves files it does not know in `~/.dg` and names them once.
+5. On Linux and macOS, the daemon moves its key in the OS keychain to an
+   account named after the new state root the first time it opens. It copies
+   the key, reads it back, compares it, and only then deletes the old entry.
+   If a step fails, it keeps the old entry, reads from it, and prints one
+   warning that names the key, never its value.
+6. Install leaves files it does not know in `~/.dg` and names them once.
    The staged extension folders stay in `~/.dg`, because the browser loads
    them from there.
 
