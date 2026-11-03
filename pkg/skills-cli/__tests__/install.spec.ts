@@ -3,6 +3,7 @@ import { currentBinaryLine } from "../src/commands/install";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 test("a bootstrap install says verified for dg-skills and already current for the others", () => {
 	expect(currentBinaryLine("dg-skills", "1.12.0", true)).toBe(
@@ -137,7 +138,7 @@ test("install prints no legacy line when nothing legacy was removed", async () =
 });
 
 async function runInstallWithHome(env: Record<string, string | undefined>, home: string) {
-	const entry = new URL("../src/index.ts", import.meta.url).pathname;
+	const entry = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 	const child = Bun.spawn(["bun", entry, "install", "--agent-only", "--cli-only"], {
 		env: { ...process.env, HOME: home, USERPROFILE: home, DG_HOME: undefined, ...env },
 		stdout: "pipe",
