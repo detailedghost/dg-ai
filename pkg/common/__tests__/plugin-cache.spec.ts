@@ -161,6 +161,23 @@ describe("planPluginCachePrune", () => {
 		expect(activeVersions(home)).toBeUndefined();
 	});
 
+	test.each([
+		["a plugins array", []],
+		["a non-array dg install entry", { "dg@dg-ai": { version: "1.24.0" } }],
+		["a dg install without a version", { "dg@dg-ai": [{ gitCommitSha: "abc" }] }],
+		["a dg install with a numeric version", { "dg@dg-ai": [{ version: 1 }] }],
+	])("reports installed_plugins.json as unreadable for %s", (_name, plugins) => {
+		const home = fixtureHome();
+		installed(home, plugins);
+		expect(activeVersions(home)).toBeUndefined();
+	});
+
+	test("ignores malformed entries of other plugins", () => {
+		const home = fixtureHome();
+		installed(home, { "other@dg-ai": "broken", "dg@dg-ai": [{ version: "1.24.0" }] });
+		expect(activeVersions(home)?.get("dg-ai")).toEqual(["1.24.0"]);
+	});
+
 	test("honors a custom read window", () => {
 		const home = fixtureHome();
 		const dir = versionDir(home, "1.23.0");

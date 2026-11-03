@@ -165,19 +165,20 @@ export function listDgPluginVersions(home: string, fs: CacheFs = realFs): Plugin
 	);
 }
 
-/** installed_plugins.json: "dg@<marketplace>" -> every installed version. Unreadable file -> undefined, and the caller removes nothing. */
+/** installed_plugins.json: "dg@<marketplace>" -> every installed version. A missing, malformed or uninterpretable file -> undefined, and the caller removes nothing. */
 export function activeVersions(home: string, fs: CacheFs = realFs): Map<string, string[]> | undefined {
-	const parsed = fs.readJson<{ plugins?: Record<string, { version?: unknown }[]> }>(
+	const parsed = fs.readJson<{ plugins?: unknown }>(
 		join(home, ".claude", "plugins", "installed_plugins.json"),
 	);
-	if (!parsed?.plugins || typeof parsed.plugins !== "object") return undefined;
+	const plugins = parsed?.plugins;
+	if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) return undefined;
 	const active = new Map<string, string[]>();
-	for (const [key, installs] of Object.entries(parsed.plugins)) {
+	for (const [key, installs] of Object.entries(plugins)) {
 		const [plugin, marketplace] = key.split("@");
-		if (plugin !== "dg" || !marketplace || !Array.isArray(installs)) continue;
-		const versions = installs.flatMap((install) =>
-			typeof install?.version === "string" ? [install.version] : [],
-		);
+		if (plugin !== "dg" || !marketplace) continue;
+		if (!Array.isArray(installs)) return undefined;
+		const versions = installs.map((install: { version?: unknown } | null) => install?.version);
+		if (!versions.every((version): version is string => typeof version === "string")) return undefined;
 		active.set(marketplace, versions);
 	}
 	return active;
