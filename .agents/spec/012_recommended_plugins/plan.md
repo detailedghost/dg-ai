@@ -121,6 +121,8 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 
 ## Agent Notes
 
+- (orchestrator) Run tests with TMPDIR=/home/detailedghost/.cache/dg-test-tmp. Tests never touch the real ~/.dg, ~/.claude, ~/.config, ~/.local or the keychain; use temp homes and fake runners. Never run the whole dg-daemon suite. Never run git stash in any form. Do not commit; the orchestrator commits. No inline code comments. American spelling. No network in tests: use local bare-repo fixtures and stubbed ls-remote output.
+
 - (orchestrator) PR #135 (spec 007) merged first. It moved the install steps from commands/install.ts into pkg/skills-cli/src/install/cli.ts and the skills-only code into pkg/skills-cli/src/install/skills-only.ts. commands/install.ts is now a registrar that declares the options and loads install/cli.ts lazily. Slice 2 declares --with-recommended in commands/install.ts and wires the steps in install/cli.ts and install/skills-only.ts. Keep the commands/install.ts edit to the option line.
 - (orchestrator) Spec 008 (per-OS layout) will also edit install-skills.ts, bootstrap.sh, bootstrap.ps1 and the skills-only specs. Keep those edits to the RETIRED_SKILLS list and the retired-skill loops so a rebase stays small.
 
