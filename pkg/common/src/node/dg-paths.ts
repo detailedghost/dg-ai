@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { posix, win32 } from "node:path";
+import { delimiter, posix, win32 } from "node:path";
 
 export type SystemSeams = {
 	platform?: NodeJS.Platform;
@@ -138,4 +138,10 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		phoneFriendRoot: path.join(r.stateDir, "phone-friend"),
 		legacyHome: legacyHome(platform, home, env),
 	};
+}
+
+/** `PATH` with the dg launcher folder first, so children call the launchers by name. */
+export function withBinOnPath(path: string | undefined, binDir: string = resolveDgPaths().binDir): string {
+	const parts = (path ?? "").split(delimiter).filter(Boolean);
+	return [binDir, ...parts.filter((part) => part !== binDir)].join(delimiter);
 }

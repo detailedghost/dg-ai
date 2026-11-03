@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { delimiter, dirname } from "node:path";
-import { killProcessTree, resolveDgPaths } from "@dg/common/node";
+import { dirname } from "node:path";
+import { killProcessTree, withBinOnPath } from "@dg/common/node";
 import type { CrCode } from "../errors";
 
 const OUTPUT_CAP_BYTES = 5 * 1024 * 1024;
@@ -34,12 +34,6 @@ export type ProcessResult = {
 	outputTail?: string;
 	code?: Extract<CrCode, "CR-201">;
 };
-
-function withBinOnPath(path: string | undefined): string {
-	const bin = resolveDgPaths().binDir;
-	const parts = (path ?? "").split(delimiter).filter(Boolean);
-	return [bin, ...parts.filter((part) => part !== bin)].join(delimiter);
-}
 
 function childEnv(keepOauthToken: boolean): Record<string, string | undefined> {
 	const env = Object.fromEntries(

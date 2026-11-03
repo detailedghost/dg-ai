@@ -24,6 +24,7 @@ import {
 	shellCommand,
 	statePath,
 	stateRoot,
+	withBinOnPath,
 	writeFileAtomic,
 } from "@dg/common/node";
 import { BACKENDS } from "../proxy/backends";
@@ -465,7 +466,11 @@ async function launchJob(
 		["-c", `read -r gate || exit 1; ${buildInner(command, paths, kind, id)}`],
 		{
 			cwd,
-			env: noShell ? { ...process.env, DG_PROXY_NO_SHELL: "1" } : process.env,
+			env: {
+				...process.env,
+				PATH: withBinOnPath(process.env.PATH),
+				...(noShell ? { DG_PROXY_NO_SHELL: "1" } : {}),
+			},
 			detached: true,
 			stdio: ["pipe", "ignore", "ignore"],
 		},

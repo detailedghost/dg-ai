@@ -291,7 +291,7 @@ process.exit(0);
 		}
 	});
 
-	test("puts the dg bin dir first on the child PATH so skills find the bare dg-skills", async () => {
+	test.skipIf(process.platform === "win32")("puts the dg bin dir first on the child PATH so skills find the bare dg-skills", async () => {
 		const savedHome = process.env.DG_HOME;
 		const savedPath = process.env.PATH;
 		process.env.DG_HOME = "/tmp/dg-runner-home";
