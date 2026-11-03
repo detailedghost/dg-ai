@@ -4,7 +4,8 @@
 #   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only    (or DG_CLI_ONLY=1): skip the extension.
 #   ... | sh -s -- --agent-only  (or DG_AGENT_ONLY=1): install for a non-Claude agent that only needs phone.
-#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): install the skill files and the CLI, no extension.
+#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy the skill files, then install the runtime and
+#       bundle only. It runs no `dg-skills install`, fetches no extension and executes no skill content.
 #       DG_SKILLS_NO_CLI=1 keeps it an offline copy of the skill files (nothing is downloaded from a release).
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>): install that release.
 #
@@ -77,6 +78,19 @@ die() {
   exit 1
 }
 
+CURL="${DG_CURL:-curl}"
+UNAME="${DG_UNAME:-uname}"
+
+link_current() {
+  staged="$1.$$.tmp"
+  rm -f "$staged"
+  ln -s "$2" "$staged"
+  mv -T "$staged" "$1" 2>/dev/null || mv -h -f "$staged" "$1" 2>/dev/null || {
+    rm -f "$staged"
+    die "could not link $1"
+  }
+}
+
 # Copy skill directories as data. A skill is an immediate child that contains
 # SKILL.md. The same rule lives in @dg/common filesToInstall. Symlinks are
 # refused. Files are written mode 0644 and never executed.
@@ -134,7 +148,7 @@ copy_skill_tree() {
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
   copy_personas "$src" "$dest"
-  echo "Skills-only install: no skill content was executed."
+  echo "Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension)."
   rm -f "$manifest"
 }
 
@@ -183,7 +197,7 @@ resolve_release() {
   fi
   page=1
   while [ "${page}" -le "${PAGE_CAP}" ]; do
-    batch=$(curl -fsSL -H "User-Agent: dg-ai" \
+    batch=$("$CURL" -fsSL -H "User-Agent: dg-ai" \
       "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
     releases="${releases}${batch}"
     found=$(printf '%s' "${batch}" | tr -d '\n' |
@@ -243,7 +257,7 @@ skills_tree_source() {
   track_tmp "$tmp"
   archive="${tmp}/dg-ai.tar.gz"
   resolve_release
-  curl -fsSL -H "User-Agent: dg-ai" \
+  "$CURL" -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "$archive"
   source_root=$(extract_source_archive "$archive" "${tmp}/source")
   SKILLS_SRC="${source_root}/plugins/dg/skills"
@@ -251,15 +265,17 @@ skills_tree_source() {
 
 ROOT="${DG_HOME:-${HOME}/.dg}"
 
-if [ "$SKILLS_ONLY" = "1" ] && [ "${DG_SKILLS_NO_CLI:-0}" = "1" ]; then
+if [ "$SKILLS_ONLY" = "1" ]; then
   skills_tree_source
   copy_skill_tree "${SKILLS_SRC}" "${DG_SKILLS_DEST:-${ROOT}/skills}"
-  echo "Skipped the runtime (DG_SKILLS_NO_CLI=1): offline copy only."
-  exit 0
+  if [ "${DG_SKILLS_NO_CLI:-0}" = "1" ]; then
+    echo "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
+    exit 0
+  fi
 fi
 
-os=$(uname -s)
-arch=$(uname -m)
+os=$("$UNAME" -s)
+arch=$("$UNAME" -m)
 case "$os" in
 Linux) family="linux" ;;
 Darwin) family="darwin" ;;
@@ -278,7 +294,7 @@ if [ "$platform" = "linux-x64" ]; then
   fi
 fi
 
-for tool in curl tar unzip; do
+for tool in "$CURL" tar unzip; do
   command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
 done
 if command -v sha256sum >/dev/null 2>&1; then
@@ -308,7 +324,7 @@ asset_url() {
 download_asset() {
   url=$(asset_url "$1")
   [ -n "${url}" ] || die "no $1 asset in ${tag}"
-  curl -fsSL -H "User-Agent: dg-ai" -o "$2" "$url"
+  "$CURL" -fsSL -H "User-Agent: dg-ai" -o "$2" "$url"
 }
 
 sums_entry() {
@@ -349,7 +365,7 @@ LIB_DIR="${ROOT}/lib/${VERSION}"
 
 if [ ! -x "${BUN_DIR}/bun" ]; then
   echo "Downloading bun ${BUN_VERSION} (${platform})..."
-  curl -fsSL -H "User-Agent: dg-ai" -o "${WORK}/${BUN_FILE}" \
+  "$CURL" -fsSL -H "User-Agent: dg-ai" -o "${WORK}/${BUN_FILE}" \
     "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${BUN_FILE}"
   verify_sha256 "${WORK}/${BUN_FILE}" "${BUN_FILE}" "${BUN_SHA}"
   NEED_BUN=1
@@ -392,8 +408,8 @@ if [ "${NEED_LIB}" = "1" ]; then
   chmod 755 "${LIB_DIR}"
 fi
 
-ln -sfn "bun-v${BUN_VERSION}" "${ROOT}/runtime/current"
-ln -sfn "${VERSION}" "${ROOT}/lib/current"
+link_current "${ROOT}/runtime/current" "bun-v${BUN_VERSION}"
+link_current "${ROOT}/lib/current" "${VERSION}"
 
 for program in dg-skills dg-agent dg-daemon; do
   shim=$(mktemp "${ROOT}/bin/.${program}.XXXXXX")
@@ -412,13 +428,14 @@ case ":${PATH}:" in
 *) echo "Add to PATH:  export PATH=\"${ROOT}/bin:\$PATH\"" ;;
 esac
 
+[ "${SKILLS_ONLY}" = "1" ] && exit 0
+
 install_args=""
 [ "${CLI_ONLY}" = "1" ] && install_args=" --cli-only"
 [ "${AGENT_ONLY}" = "1" ] && install_args=" --agent-only"
-[ "${SKILLS_ONLY}" = "1" ] && install_args=" --skills-only"
 [ -n "${PINNED_VERSION}" ] && install_args="${install_args} --version ${PINNED_VERSION}"
 
-if [ "${CLI_ONLY}" != "1" ] && [ "${AGENT_ONLY}" != "1" ] && [ "${SKILLS_ONLY}" != "1" ]; then
+if [ "${CLI_ONLY}" != "1" ] && [ "${AGENT_ONLY}" != "1" ]; then
   echo "Setting up the dg-ai-extension..."
 fi
 DG_SKILLS_BOOTSTRAP=1 "${ROOT}/bin/dg-skills" install${install_args} </dev/null
@@ -428,7 +445,7 @@ if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   tmpdir=$(mktemp -d)
   track_tmp "${tmpdir}"
   archive="${tmpdir}/dg-ai.tar.gz"
-  curl -fsSL -H "User-Agent: dg-ai" \
+  "$CURL" -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
   source_root=$(extract_source_archive "${archive}" "${tmpdir}/source")

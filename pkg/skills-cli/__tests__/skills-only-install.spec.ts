@@ -3,8 +3,7 @@
  * directory, does not execute skill content, and fetches only the dg-skills CLI
  * (checksum-verified), never dg-daemon, dg-agent or the extension.
  */
-import { createHash } from "node:crypto";
-import { describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
 	existsSync,
@@ -20,6 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { INSTALLED_SKILL_FILES } from "../../common/__tests__/installed-skill-files";
+import { PROGRAMS, RUNTIME, present, removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
 import { fetchedUrls, writeReleaseServer } from "./runtime-bundle-fixtures";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
@@ -193,52 +193,6 @@ function writeProbe(skills: string, sentinelDir: string): string[] {
 		"probe-exec/SKILL.md",
 		"probe-exec/explode.sh",
 	].sort();
-}
-
-/**
- * A curl that serves one vX.Y.Z release for bootstrap.sh, verifies nothing itself, and logs
- * every call. The source archive fails (exit 99) so a fetch outside a checkout is visible.
- * The served binary writes RAN_MARKER if anything executes it.
- */
-function writeCurlStub(bin: string, log: string): string {
-	mkdirSync(bin, { recursive: true });
-	const os = process.platform === "darwin" ? "macos" : "linux";
-	const cpu = process.arch === "arm64" ? "arm64" : "x64";
-	const asset = `dg-skills-${os}-${cpu}`;
-	const binary = `#!/bin/sh\ntouch "$RAN_MARKER"\n`;
-	const url = `https://github.com/detailedghost/dg-ai/releases/download/v9.9.9/${asset}`;
-	const releases = JSON.stringify([
-		{ tag_name: "v9.9.9", draft: false, assets: [
-			{ name: asset, browser_download_url: url },
-			{ name: "SHA256SUMS", browser_download_url: url.replace(asset, "SHA256SUMS") },
-		] },
-	]);
-	const store = join(bin, "store");
-	mkdirSync(store, { recursive: true });
-	writeFileSync(join(store, "releases.json"), releases);
-	writeFileSync(join(store, "binary"), binary);
-	writeFileSync(join(store, "SHA256SUMS"), `${createHash("sha256").update(binary).digest("hex")}  ${asset}\n`);
-	const curl = join(bin, "curl");
-	writeFileSync(
-		curl,
-		`#!/bin/sh
-printf '%s\\n' "$*" >> ${JSON.stringify(log)}
-out=""; prev=""; url=""
-for a in "$@"; do
-  if [ "$prev" = "-o" ]; then out="$a"; fi
-  url="$a"; prev="$a"
-done
-store=${JSON.stringify(store)}
-case "$url" in
-  *"/releases?"*) cat "$store/releases.json" ;;
-  *SHA256SUMS) cat "$store/SHA256SUMS" > "\${out:-/dev/stdout}" ;;
-  *"/v9.9.9/"*) cat "$store/binary" > "\${out:-/dev/stdout}" ;;
-  *) exit 99 ;;
-esac
-`,
-	);
-	chmodSync(curl, 0o755);
-	return binary;
 }
 
 describe("dg-skills install --skills-only", () => {
@@ -473,38 +427,30 @@ describe("skills-only docs", () => {
 });
 
 describe("bootstrap.sh --skills-only", () => {
-	test("copies the repository skills, then installs only the verified dg-skills CLI", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-"));
-		const dest = join(directory, "skills");
-		const curlLog = join(directory, "curl.log");
-		const bin = join(directory, "stub");
-		const binary = writeCurlStub(bin, curlLog);
-		const home = join(directory, "home");
-		const marker = join(directory, "ran");
+	afterEach(removeBootstrapDirs);
+	afterAll(removeBootstrapFixtures);
+
+	test("copies the repository skills, then installs only the runtime, bundle and shims", async () => {
+		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-")), "skills");
 		try {
-			const result = await run(
-				["sh", BOOTSTRAP, "--skills-only"],
-				childEnv(home, {
-					DG_SKILLS_DEST: dest,
-					PATH: `${bin}:${process.env.PATH}`,
-					RAN_MARKER: marker,
-				}),
-			);
+			const result = await runBootstrap({ args: ["--skills-only"], env: { DG_SKILLS_DEST: dest } });
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
-			const installedAt = join(home, "bin", "dg-skills");
-			const trailer = [`dg-skills installed at ${installedAt}`, `Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`];
-			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), trailer);
+			const lines = result.stdout.trim().split("\n");
+			const summaryAt = lines.indexOf(SUMMARY);
+			expectReport(lines.slice(0, summaryAt + 1).join("\n"), dest, INSTALLED_SKILL_FILES, personasPath(dest));
+			expect(lines.slice(summaryAt + 1)).toEqual([
+				`Downloading bun ${RUNTIME.version} (linux-x64)...`,
+				`Downloading dg-lib-${result.version}.tar.gz...`,
+				`dg runtime ${RUNTIME.version} and bundle ${result.version} installed at ${result.root}`,
+				`Add to PATH:  export PATH="${join(result.root, "bin")}:$PATH"`,
+			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expectPersonasInstalled(dest);
-			expect(readFileSync(installedAt, "utf8")).toBe(binary);
-			expect(readFileSync(join(home, "bin", ".dg-skills.version"), "utf8").trim()).toBe("9.9.9");
-			expect(existsSync(marker)).toBe(false);
-			const calls = readFileSync(curlLog, "utf8");
-			expect(calls).toContain("/releases?");
-			expect(calls).toContain("SHA256SUMS");
-			expect(calls).not.toMatch(/daemon|agent|extension|archive/);
+			for (const program of PROGRAMS) expect(present(join(result.root, "bin", program))).toBe(true);
+			expect(result.installCall).toBeUndefined();
+			expect(result.requests.filter((url) => /daemon|agent|extension|archive/.test(url))).toEqual([]);
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(join(dest, ".."), { recursive: true, force: true });
 		}
 	});
 
@@ -513,106 +459,70 @@ describe("bootstrap.sh --skills-only", () => {
 		const skills = join(directory, "skills-src");
 		const dest = join(directory, "out");
 		const files = writeProbe(skills, directory);
-		const bin = join(directory, "stub");
-		const curlLog = join(directory, "curl.log");
-		writeCurlStub(bin, curlLog);
-		const marker = join(directory, "ran");
 		try {
-			const result = await run(
-				["sh", BOOTSTRAP],
-				childEnv(join(directory, "home"), {
-					DG_SKILLS_ONLY: "1",
-					DG_SKILLS_SOURCE: skills,
-					DG_SKILLS_DEST: dest,
-					PATH: `${bin}:${process.env.PATH}`,
-					RAN_MARKER: marker,
-				}),
-			);
-			expect(result.code).toBe(0);
+			const result = await runBootstrap({
+				env: { DG_SKILLS_ONLY: "1", DG_SKILLS_SOURCE: skills, DG_SKILLS_DEST: dest },
+			});
+			expect(result.code, result.stderr).toBe(0);
 			expectExactCopy(skills, dest, files);
 			expect(existsSync(join(directory, "sentinel.txt"))).toBe(false);
 			expect(existsSync(join(dest, "probe-exec", "executed-by-skill.txt"))).toBe(false);
-			expect(existsSync(marker)).toBe(false);
-			expect(existsSync(join(directory, "home", "bin", "dg-skills"))).toBe(true);
-			expect(readFileSync(curlLog, "utf8")).not.toContain("archive");
+			expect(result.installCall).toBeUndefined();
+			expect(present(join(result.root, "bin", "dg-skills"))).toBe(true);
+			expect(result.requests.some((url) => url.includes("archive"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
-	test("DG_SKILLS_NO_CLI=1 keeps it an offline copy with no curl call", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-nocli-"));
-		const dest = join(directory, "skills");
-		const curlLog = join(directory, "curl.log");
-		const bin = join(directory, "stub");
-		writeCurlStub(bin, curlLog);
+	test("DG_SKILLS_NO_CLI=1 keeps it an offline copy with no download", async () => {
+		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-nocli-")), "skills");
 		try {
-			const result = await run(
-				["sh", BOOTSTRAP, "--skills-only"],
-				childEnv(join(directory, "home"), {
-					DG_SKILLS_DEST: dest,
-					DG_SKILLS_NO_CLI: "1",
-					PATH: `${bin}:${process.env.PATH}`,
-				}),
-			);
+			const result = await runBootstrap({
+				args: ["--skills-only"],
+				env: { DG_SKILLS_DEST: dest, DG_SKILLS_NO_CLI: "1" },
+			});
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
 				"Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only.",
 			]);
-			expect(existsSync(curlLog)).toBe(false);
-			expect(existsSync(join(directory, "home", "bin"))).toBe(false);
+			expect(result.requests).toEqual([]);
+			expect(existsSync(join(result.root, "bin"))).toBe(false);
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(join(dest, ".."), { recursive: true, force: true });
 		}
 	});
 
 	test("outside a checkout the only fetches are the release lookup and the tag archive", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-remote-"));
-		const script = join(directory, "bootstrap.sh");
-		const curlLog = join(directory, "curl.log");
-		const bin = join(directory, "stub");
+		const outside = mkdtempSync(join(tmpdir(), "dg-skills-boot-remote-"));
+		const script = join(outside, "bootstrap.sh");
 		writeFileSync(script, readFileSync(BOOTSTRAP));
-		writeCurlStub(bin, curlLog);
 		try {
-			const result = await run(
-				["sh", script, "--skills-only"],
-				childEnv(join(directory, "home"), {
-					DG_SKILLS_DEST: join(directory, "out"),
-					PATH: `${bin}:${process.env.PATH}`,
-				}),
-				directory,
-			);
+			const result = await runBootstrap({
+				args: ["--skills-only"],
+				script,
+				cwd: outside,
+				env: { DG_SKILLS_DEST: join(outside, "out") },
+			});
 			expect(result.code).not.toBe(0);
-			const fetched = readFileSync(curlLog, "utf8");
-			expect(fetched).toContain("archive/refs/tags/v9.9.9.tar.gz");
-			expect(fetched).not.toContain("refs/heads/master");
-			expect(fetched).not.toContain("dg-skills-");
-			expect(fetched.match(/\/releases\?/g)).toHaveLength(1);
-			expect(existsSync(join(directory, "out"))).toBe(false);
+			expect(result.requests.filter((url) => url.includes("/releases?"))).toHaveLength(1);
+			expect(result.requests.filter((url) => !url.includes("/releases?"))).toEqual([
+				`https://github.com/detailedghost/dg-ai/archive/refs/tags/v${result.version}.tar.gz`,
+			]);
+			expect(existsSync(join(outside, "out"))).toBe(false);
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(outside, { recursive: true, force: true });
 		}
 	});
 
 	test("refuses to combine with --cli-only before any download", async () => {
-		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-both-"));
-		const curlLog = join(directory, "curl.log");
-		const bin = join(directory, "bin");
-		writeCurlStub(bin, curlLog);
-		try {
-			const result = await run(
-				["sh", BOOTSTRAP, "--skills-only", "--cli-only"],
-				childEnv(join(directory, "home"), { PATH: `${bin}:${process.env.PATH}` }),
-			);
-			expect(result.code).not.toBe(0);
-			expect(result.stderr).toContain("only one of --skills-only and --cli-only");
-			expect(existsSync(curlLog)).toBe(false);
-		} finally {
-			rmSync(directory, { recursive: true, force: true });
-		}
+		const result = await runBootstrap({ args: ["--skills-only", "--cli-only"] });
+		expect(result.code).not.toBe(0);
+		expect(result.stderr).toContain("only one of --skills-only and --cli-only");
+		expect(result.requests).toEqual([]);
 	});
 
-	test("refuses a symlink and does not run its target", async () => {
+	test("refuses a symlink before any download and does not run its target", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-boot-link-"));
 		const skills = join(directory, "skills-src");
 		writeProbe(skills, directory);
@@ -623,17 +533,17 @@ describe("bootstrap.sh --skills-only", () => {
 		const scratch = join(directory, "tmp");
 		mkdirSync(scratch);
 		try {
-			const result = await run(
-				["sh", BOOTSTRAP],
-				childEnv(join(directory, "home"), {
+			const result = await runBootstrap({
+				env: {
 					DG_SKILLS_ONLY: "1",
 					DG_SKILLS_SOURCE: skills,
 					DG_SKILLS_DEST: join(directory, "out"),
 					TMPDIR: scratch,
-				}),
-			);
+				},
+			});
 			expect(result.code).not.toBe(0);
 			expect(result.stderr).toContain("refusing to copy a symlink");
+			expect(result.requests).toEqual([]);
 			expect(readdirSync(scratch)).toEqual([]);
 			expect(existsSync(join(directory, "sentinel.txt"))).toBe(false);
 			expect(filesUnder(join(directory, "out"))).toEqual([]);
