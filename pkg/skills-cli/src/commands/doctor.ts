@@ -1,11 +1,4 @@
 import type { Command } from "commander";
-import { DOCTOR_REGISTRY } from "../doctor/registry";
-import {
-	doctorExitCode,
-	formatReport,
-	runDoctor,
-	unknownItems,
-} from "../doctor/runner";
 
 export function registerDoctor(program: Command): void {
 	program
@@ -16,6 +9,8 @@ export function registerDoctor(program: Command): void {
 		.argument("[item...]", "items to check; all items when omitted")
 		.option("--json", "print the report as JSON")
 		.action(async (items: string[], opts: { json?: boolean }) => {
+			const [{ DOCTOR_REGISTRY }, { doctorExitCode, formatReport, runDoctor, unknownItems }] =
+				await Promise.all([import("../doctor/registry"), import("../doctor/runner")]);
 			const unknown = unknownItems(items, DOCTOR_REGISTRY);
 			if (unknown.length > 0) {
 				process.stderr.write(

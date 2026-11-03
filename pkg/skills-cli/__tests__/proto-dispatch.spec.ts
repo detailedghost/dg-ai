@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { dispatchProto } from "../src/commands/proto";
+import { dispatchProto } from "../src/proto/cli";
 import { makeTempDir } from "./git-repo-fixtures";
 import { collectRun } from "./spec-fixtures";
 

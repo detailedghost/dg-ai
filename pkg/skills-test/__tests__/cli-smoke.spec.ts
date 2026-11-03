@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { jobNeeds, parseWorkflow } from "./workflow-support";
 
 const ENTRY = join(
 	import.meta.dir,
@@ -505,4 +506,27 @@ describe("dg-skills CLI", () => {
 			rmSync(home, { recursive: true, force: true });
 		}
 	});
+});
+
+describe("the release smoke step", () => {
+	const release = parseWorkflow("release.yml");
+	const smokeId = Object.keys(release.jobs).find((id) => id.startsWith("smoke"));
+	const commands = (release.jobs[smokeId ?? ""]?.steps ?? []).map((step) => step.run ?? "").join("\n");
+
+	test("exists as one job that waits for the bundle", () => {
+		expect(smokeId).toBeDefined();
+		expect(Object.keys(release.jobs).filter((id) => id.startsWith("smoke")).length).toBe(1);
+		expect(jobNeeds(release.jobs[smokeId ?? ""] ?? {})).toContain("build-bundle");
+	});
+
+	test("extracts the bundle tarball before it runs anything", () => {
+		expect(commands).toMatch(/tar\b[^\n]*dg-lib-/);
+		expect(commands.search(/tar\b[^\n]*dg-lib-/)).toBeLessThan(commands.search(/--version/));
+	});
+
+	for (const program of ["dg-skills", "dg-agent", "dg-daemon"]) {
+		test(`runs dg.js ${program} --version`, () => {
+			expect(commands).toMatch(new RegExp(`dg\\.js\\s+${program}\\s+--version`));
+		});
+	}
 });

@@ -3,18 +3,16 @@ import { Command } from "commander";
 import { Database } from "bun:sqlite";
 import { spawn } from "node:child_process";
 import {
-	chmodSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { type DgPaths, isAlive, resolveDgPaths } from "@dg/common/node";
+import { setProgramName } from "@dg/common/node/program";
 import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
 import {
 	phoneClose,
@@ -39,10 +37,8 @@ import {
 	type MigrateDeps,
 	migrateIfNeeded,
 	migrationLockPath,
-	resolveDaemonExecutable,
 	runArgv,
 	runDaemonJobCli,
-	siblingDaemonPath,
 } from "../../src/phone/migrate";
 import { DEFAULT_RELAYS, findContactByHandle, numberKeyId, readCursor, readNumber } from "../../src/phone/store";
 import { blockingSleep, createFakePool, freshNpub, makePhoneDeps, makeTempHome } from "./fake-pool";
@@ -226,30 +222,6 @@ describe("legacyRootPresent", () => {
 	});
 });
 
-describe("resolveDaemonExecutable", () => {
-	it("prefers the daemon beside this executable", () => {
-		expect(siblingDaemonPath("/opt/dg/dg-agent", "linux")).toBe("/opt/dg/dg-daemon");
-		expect(siblingDaemonPath("/opt/dg/dg-agent.exe", "win32")).toBe("/opt/dg/dg-daemon.exe");
-		expect(
-			resolveDaemonExecutable("/opt/dg/dg-agent", "linux", (path) => path.endsWith("dg-daemon"), () => "/usr/bin/dg-daemon"),
-		).toBe("/opt/dg/dg-daemon");
-	});
-
-	it("uses PATH when the sibling is absent", () => {
-		expect(
-			resolveDaemonExecutable("/opt/dg/dg-agent", "linux", () => false, (name) =>
-				name === "dg-daemon" ? "/usr/bin/dg-daemon" : undefined,
-			),
-		).toBe("/usr/bin/dg-daemon");
-	});
-
-	it("says how to install dg-daemon when neither place has it", () => {
-		expect(() => resolveDaemonExecutable("/opt/dg/dg-agent", "linux", () => false, () => undefined)).toThrow(
-			"dg-skills install",
-		);
-	});
-});
-
 describe("runArgv", () => {
 	it("captures stdout and the env it was given", async () => {
 		const ran = await runArgv([process.execPath, "-e", "console.log(process.env.MARKER ?? '')"], {
@@ -278,19 +250,18 @@ describe("runArgv", () => {
 });
 
 describe("runDaemonJobCli", () => {
-	it("runs the dg-daemon found on PATH and forwards the job arguments", async () => {
-		const bin = mkdtempSync(join(tmpdir(), "dg-daemon-bin-"));
-		writeFileSync(join(bin, "dg-daemon"), "#!/bin/sh\nprintf '%s\n' \"$@\"\n");
-		chmodSync(join(bin, "dg-daemon"), 0o755);
-		const previous = process.env.PATH;
-		process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+	it("runs dg-daemon through the recorded bundle entry and forwards the job arguments", async () => {
+		setProgramName("dg-agent");
 		try {
-			const ran = await runDaemonJobCli(["job", "list"]);
-			expect(ran.code).toBe(0);
-			expect(ran.stdout).toBe("job\nlist\n");
+			const seen: string[][] = [];
+			const ran = await runDaemonJobCli(["job", "list"], async (argv) => {
+				seen.push(argv);
+				return { code: 0, stdout: "listed", stderr: "" };
+			});
+			expect(ran).toEqual({ code: 0, stdout: "listed", stderr: "" });
+			expect(seen).toEqual([[process.execPath, Bun.main, "dg-daemon", "job", "list"]]);
 		} finally {
-			process.env.PATH = previous;
-			rmSync(bin, { recursive: true, force: true });
+			setProgramName(undefined);
 		}
 	});
 });

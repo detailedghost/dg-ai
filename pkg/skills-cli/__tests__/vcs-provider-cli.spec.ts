@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { installBundleShim } from "./bundle-build";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import {
@@ -1513,18 +1514,7 @@ describe("vcs-provider import isolation", () => {
 
 describe("compiled vcs-provider", () => {
 	test("runs both adapters after relocation with isolated tools, preserving stdin, queries and quiet degradation", () => {
-		const buildDir = tmp("vcs-provider-build-");
-		const originalBinary = join(buildDir, "dg-skills");
-		const build = Bun.spawnSync([
-			process.execPath,
-			`${import.meta.dir}/../build.ts`,
-			"--outfile",
-			originalBinary,
-		]);
-		expect(build.exitCode, build.stderr.toString()).toBe(0);
-		const binary = join(tmp("vcs-provider-relocated-"), "dg-skills");
-		renameSync(originalBinary, binary);
-		rmSync(buildDir, { recursive: true, force: true });
+		const binary = installBundleShim(join(tmp("vcs-provider-relocated-"), "dg-skills"));
 		const external = tmp("vcs-provider-external-");
 		const run = (
 			args: string[],

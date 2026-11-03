@@ -9,8 +9,8 @@ const install = readRepoFile(
 	"pkg",
 	"skills-cli",
 	"src",
-	"commands",
-	"install.ts",
+	"install",
+	"cli.ts",
 );
 
 describe("install retires the pre-rename daemon binary", () => {
@@ -22,10 +22,11 @@ describe("install retires the pre-rename daemon binary", () => {
 		expect(listed).not.toContain('"dg-skills"');
 	});
 
-	test("the removal runs after the refresh, so a fetch failure cannot strand the machine binaryless", () => {
-		const body = install.slice(install.indexOf("async function installCli"));
+	test("the removal runs after the shims are written, so a failed bundle install cannot strand the machine binaryless", () => {
+		const body = install.slice(install.indexOf("async function installBundle"));
 
-		expect(body.indexOf("installBinary(spec, releases)")).toBeLessThan(
+		expect(body.indexOf("writeShims(root)")).toBeGreaterThan(-1);
+		expect(body.indexOf("writeShims(root)")).toBeLessThan(
 			body.indexOf("removeRetiredBinaries()"),
 		);
 	});
@@ -44,8 +45,8 @@ describe("install retires the pre-rename daemon binary", () => {
 			"pkg",
 			"skills-cli",
 			"src",
-			"commands",
-			"install.ts",
+			"install",
+			"cli.ts",
 		);
 		const { code, stderr } = await runInHarness(
 			`const mod = await import(${JSON.stringify(installPath)});\nmod.removeRetiredBinaries();\n`,
@@ -56,5 +57,38 @@ describe("install retires the pre-rename daemon binary", () => {
 		expect(code).toBe(0);
 		expect(existsSync(serverBin)).toBe(false);
 		expect(existsSync(serverVersion)).toBe(false);
+	});
+});
+
+describe("install retires the compiled dg-skills, dg-agent and dg-daemon version stamps", () => {
+	const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"];
+
+	test("each stamp goes and each shim stays", async () => {
+		const home = makeTempDir("dg-retired-stamps-test-");
+		const binDir = join(home, ".dg", "bin");
+		mkdirSync(binDir, { recursive: true });
+		for (const name of PROGRAMS) {
+			writeFileSync(join(binDir, name), "#!/bin/sh\n");
+			writeFileSync(join(binDir, `.${name}.version`), "1.26.0\n");
+		}
+
+		const installPath = join(REPO_ROOT, "pkg", "skills-cli", "src", "install", "cli.ts");
+		const { code, stderr } = await runInHarness(
+			`const mod = await import(${JSON.stringify(installPath)});\nmod.removeRetiredBinaries();\n`,
+			{ HOME: home },
+		);
+
+		expect(stderr).toBe("");
+		expect(code).toBe(0);
+		for (const name of PROGRAMS) {
+			expect(existsSync(join(binDir, `.${name}.version`))).toBe(false);
+			expect(existsSync(join(binDir, name))).toBe(true);
+		}
+	});
+
+	test("the list of retired names holds neither shim name", () => {
+		const listed = /const RETIRED_BINARIES = \[([^\]]*)\]/.exec(install)?.[1];
+
+		for (const name of PROGRAMS) expect(listed).not.toContain(`"${name}"`);
 	});
 });

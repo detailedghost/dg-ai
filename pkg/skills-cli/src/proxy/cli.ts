@@ -110,7 +110,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			console.error(
 				`failed to read --prompt-file ${promptFile}: ${err instanceof Error ? err.message : String(err)}`,
 			);
-			process.exit(1);
+			return 1;
 		}
 	}
 
@@ -118,16 +118,16 @@ export async function main(argv: string[]): Promise<number | void> {
 		console.error(
 			"usage: dg-skills proxy <backend> (--prompt <text> | --prompt-file <path>) [--plan|-p] [flags]",
 		);
-		process.exit(1);
+		return 1;
 	}
 	if (!prompt) {
 		console.error("--prompt or --prompt-file is required");
-		process.exit(1);
+		return 1;
 	}
 
 	if (effort === "") {
 		console.error("--effort requires a non-empty value");
-		process.exit(1);
+		return 1;
 	}
 
 	const backend = findBackend(backendName);
@@ -135,17 +135,17 @@ export async function main(argv: string[]): Promise<number | void> {
 		console.error(
 			`unknown backend "${backendName}", known: ${Object.keys(BACKENDS).join(", ")}`,
 		);
-		process.exit(1);
+		return 1;
 	}
 
 	const noShell = /^(1|true|yes)$/i.test(process.env.DG_PROXY_NO_SHELL?.trim() ?? "");
 	if (noShell && !backend.supportsNoShell) {
 		console.error(`DG_PROXY_NO_SHELL is set, but the ${backendName} backend cannot deny shell tools`);
-		process.exit(1);
+		return 1;
 	}
 
 	if (plan) {
-		await runPlan(backendName, backend, {
+		return runPlan(backendName, backend, {
 			prompt,
 			subagent,
 			spec,
@@ -155,13 +155,12 @@ export async function main(argv: string[]): Promise<number | void> {
 			tier,
 			cwd,
 		}, noShell);
-		return;
 	}
 
 	const preflight = checkPreflight(backendName, backend);
 	if (!preflight.available) {
 		console.log(JSON.stringify(preflight.missing));
-		process.exit(1);
+		return 1;
 	}
 
 	let result: Awaited<ReturnType<typeof runBackend>>;
@@ -186,7 +185,7 @@ export async function main(argv: string[]): Promise<number | void> {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(message);
 		console.log(JSON.stringify({ exitCode: 1, error: message }));
-		process.exit(1);
+		return 1;
 	}
 
 	if (result.exitCode === 0) {
@@ -198,7 +197,7 @@ export async function main(argv: string[]): Promise<number | void> {
 				exitCode: 0,
 			}),
 		);
-		return;
+		return 0;
 	}
 
 	const likelyCause = classifyFailure(
@@ -212,7 +211,7 @@ export async function main(argv: string[]): Promise<number | void> {
 			logFile: result.logFile,
 		}),
 	);
-	process.exit(result.exitCode);
+	return result.exitCode;
 }
 
 /** Write the persona-briefed prompt to a plan file and print the background launch command without running the backend. */
@@ -221,7 +220,7 @@ async function runPlan(
 	backend: Backend,
 	opts: ProxyOptions,
 	noShell: boolean,
-): Promise<void> {
+): Promise<number> {
 	const preflight = checkPreflight(backendName, backend);
 	if (preflight.missing) {
 		console.error(
@@ -244,7 +243,7 @@ async function runPlan(
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(message);
 		console.log(JSON.stringify({ exitCode: 1, error: message }));
-		process.exit(1);
+		return 1;
 	}
 
 	const planFile = `${proxyDir()}/${Date.now()}-${randomUUID()}-${backendName}.plan.md`;
@@ -267,4 +266,5 @@ async function runPlan(
 			2,
 		),
 	);
+	return 0;
 }

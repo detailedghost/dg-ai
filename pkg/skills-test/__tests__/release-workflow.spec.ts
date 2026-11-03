@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isReleaseCommit } from "../../../scripts/release-version";
+import { SUPPORTED_PLATFORMS } from "./supported-platforms";
 import {
 	createStepSandbox,
 	findStep,
+	jobNeeds,
 	parseWorkflow,
 	type StepSandbox,
+	type WorkflowJob,
 	stepText,
 	workflowFiles,
 	workflowText,
@@ -24,10 +27,9 @@ const STEP = {
 	assets: "Add the bootstrap scripts and checksums",
 	publish: "Publish the release",
 	latest: "Move the latest tag to the release commit",
-	bridge: "Publish the bridge release for CLIs that look for skills-v tags",
 } as const;
 
-const BUILD_JOBS = ["build-skills", "build-daemon", "build-agent", "build-ext"];
+const BUILD_JOBS = ["build-bundle", "build-ext"];
 const BOT = "dg-release";
 const BOT_EMAIL = "dante+release@detailedghost.com";
 
@@ -197,7 +199,7 @@ describe("every part is stamped with the release version before it is built", ()
 });
 
 describe("the release is cut in one fixed order and recovers only forward", () => {
-	test("detect, stale check, stamp, changelog, commit, push, notes, assets, publish, latest, bridge", () => {
+	test("detect, stale check, stamp, changelog, commit, push, notes, assets, publish, latest", () => {
 		const names = (releaseJob.steps ?? []).map((s) => s.name);
 		const order = [
 			STEP.tag,
@@ -210,7 +212,6 @@ describe("the release is cut in one fixed order and recovers only forward", () =
 			STEP.assets,
 			STEP.publish,
 			STEP.latest,
-			STEP.bridge,
 		].map((name) => names.indexOf(name));
 
 		expect(order.every((at) => at > -1)).toBe(true);
@@ -796,203 +797,91 @@ describe("publishing is a draft first, then one call that publishes and marks la
 	});
 });
 
-describe("the bridge release reaches CLIs that still look for skills-v tags, once", () => {
-	const gate = step(STEP.bridge);
-	const env = { VERSION: "1.22.0", TAG: "v1.22.0" };
-
-	test("it publishes only the dg-skills binaries and their own checksums, never as latest", () => {
-		const script = gate.run ?? "";
-
-		expect(script).toContain('bridge="skills-v${VERSION}"');
-		expect(script).toContain("dist/dg-skills-*");
-		expect(script).toContain("SHA256SUMS");
-		expect(script).toContain("--latest=false");
-		expect(script).not.toMatch(/--latest(?!=false)/);
-	});
-
-	test("the gate reads the tags and the existing bridge release, not any input", () => {
-		const script = gate.run ?? "";
-
-		expect(script).toContain('gh release view "$bridge"');
-		expect(script).toContain("git tag --list 'v[0-9]*'");
-		expect(script).toContain("v1.21.1");
-		expect(JSON.stringify(workflow.on)).not.toContain("bridge");
-	});
-
-	function prepare(sandbox: StepSandbox, tags: string[]): void {
-		for (const tag of tags) sandbox.git(["tag", tag]);
-		mkdirSync(join(sandbox.work, "dist"));
-		for (const name of [
-			"dg-skills-linux-x64",
-			"dg-skills-macos-arm64",
-			"dg-daemon-linux-x64",
-			"bootstrap.sh",
-		]) {
-			writeFileSync(join(sandbox.work, "dist", name), `${name}\n`);
-		}
-	}
-
-	const OLD_SCHEME = [
-		"v1.0.0",
-		"v1.1.0",
-		"v1.2.0",
-		"skills-v1.21.1",
-		"daemon-v1.21.1",
-		"ext-v1.21.1",
-	];
-
-	test("the first release of the new scheme publishes skills-v<version> with the skills binaries only", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
-
-			const result = sandbox.run(gate, env);
-			const create = ghCalls(sandbox).find((call) =>
-				call.startsWith("release create skills-v1.22.0"),
-			);
-
-			expect(result.code, result.stderr).toBe(0);
-			expect(create).toBeDefined();
-			expect(create).toContain("--latest=false");
-			expect(create).toContain("bridge/dg-skills-linux-x64");
-			expect(create).toContain("bridge/dg-skills-macos-arm64");
-			expect(create).toContain("bridge/SHA256SUMS");
-			expect(create).not.toContain("dg-daemon");
-			expect(create).not.toContain("bootstrap.sh");
-			const sums = readFileSync(
-				join(sandbox.root, "tmp", "bridge", "SHA256SUMS"),
-				"utf8",
-			);
-			expect(sums).toContain("dg-skills-linux-x64");
-			expect(sums).not.toContain("dg-daemon");
-		});
-	});
-
-	test("a rerun of that first release still publishes it, so a failed bridge can be retried", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
-
-			expect(sandbox.run(gate, { ...env, MODE: "republish" }).code).toBe(0);
-			expect(
-				ghCalls(sandbox).some((call) =>
-					call.startsWith("release create skills-v1.22.0"),
-				),
-			).toBe(true);
-		});
-	});
-
-	test("once the bridge release exists, nothing is published again", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
-
-			const result = sandbox.run(gate, {
-				...env,
-				STUB_PUBLISHED: "skills-v1.22.0",
-			});
-
-			expect(result.code, result.stderr).toBe(0);
-			expect(
-				ghCalls(sandbox).some((call) => call.startsWith("release create")),
-			).toBe(false);
-		});
-	});
-
-	test("retrying the first release after a later one exists still publishes its missing bridge", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0", "v1.23.0"]);
-
-			const result = sandbox.run(gate, { ...env, MODE: "republish" });
-
-			expect(result.code, result.stderr).toBe(0);
-			expect(
-				ghCalls(sandbox).some((call) =>
-					call.startsWith("release create skills-v1.22.0"),
-				),
-			).toBe(true);
-		});
-	});
-
-	test("the first version above 1.21.1 gets the bridge even when it is a patch, and no other does", () => {
-		for (const [version, bridged] of [
-			["1.21.2", true],
-			["1.22.0", false],
-		] as const) {
-			withSandbox((sandbox) => {
-				prepare(sandbox, [...OLD_SCHEME, "v1.21.2", "v1.22.0"]);
-
-				const result = sandbox.run(gate, {
-					VERSION: version,
-					TAG: `v${version}`,
-				});
-
-				expect(result.code, result.stderr).toBe(0);
-				expect(
-					ghCalls(sandbox).some((call) =>
-						call.startsWith(`release create skills-v${version}`),
-					),
-				).toBe(bridged);
-			});
-		}
-	});
-
-	test("an interrupted bridge leaves a draft that is deleted before the bridge counts as done", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
-
-			const result = sandbox.run(gate, {
-				...env,
-				STUB_DRAFTS: "21",
-				STUB_DRAFT_TAG: "skills-v1.22.0",
-			});
-			const calls = ghCalls(sandbox);
-			const remove = calls.findIndex((call) => call.includes("DELETE"));
-			const create = calls.findIndex((call) =>
-				call.startsWith("release create skills-v1.22.0"),
-			);
-
-			expect(result.code, result.stderr).toBe(0);
-			expect(calls.filter((call) => call.includes("DELETE"))).toEqual([
-				"api --method DELETE repos/owner/repo/releases/21",
-			]);
-			expect(remove).toBeGreaterThan(-1);
-			expect(create).toBeGreaterThan(remove);
-		});
-	});
-
-	test("a draft that belongs to another tag is left alone", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0"]);
-
-			const result = sandbox.run(gate, {
-				...env,
-				STUB_DRAFTS: "31",
-				STUB_DRAFT_TAG: "v1.22.0",
-			});
-
-			expect(result.code, result.stderr).toBe(0);
-			expect(ghCalls(sandbox).some((call) => call.includes("DELETE"))).toBe(
-				false,
-			);
-		});
-	});
-
-	test("every later release skips the bridge, because an earlier vX.Y.Z tag exists", () => {
-		withSandbox((sandbox) => {
-			prepare(sandbox, [...OLD_SCHEME, "v1.22.0", "v1.23.0"]);
-
-			const result = sandbox.run(gate, { VERSION: "1.23.0", TAG: "v1.23.0" });
-
-			expect(result.code, result.stderr).toBe(0);
-			expect(
-				ghCalls(sandbox).some((call) => call.startsWith("release create")),
-			).toBe(false);
-		});
-	});
-});
-
 describe("the step text names its release parts the same way the install code reads them", () => {
 	test("the release page title and the tag are both vX.Y.Z", () => {
 		expect(step(STEP.publish).run).toContain('--title "$TAG"');
 		expect(releaseJob.env?.TAG).toBe("v${{ needs.detect.outputs.version }}");
 		expect(stepText(step(STEP.publish))).not.toContain("skills-v");
+	});
+});
+
+const VERSION_EXPR = "${{ needs.detect.outputs.version }}";
+const DOCUMENTED_ASSETS = [
+	"dg-ai-extension-<v>-chrome.zip",
+	"dg-ai-extension-<v>-firefox.zip",
+	"SHA256SUMS",
+	"bootstrap.ps1",
+	"bootstrap.sh",
+	"dg-demo-narration-<v>.zip",
+	"dg-lib-<v>.tar.gz",
+	"runtime.json",
+];
+
+function uploadedNames(jobId: string): string[] {
+	const upload = (workflow.jobs[jobId]?.steps ?? []).find((s) =>
+		s.uses?.startsWith("actions/upload-artifact@"),
+	);
+	return String(upload?.with?.path ?? "")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.map((path) => (path.split("/").pop() ?? "").replaceAll(VERSION_EXPR, "<v>"));
+}
+
+function smokeJobIds(): string[] {
+	return Object.keys(workflow.jobs).filter((id) => id.startsWith("smoke"));
+}
+
+describe("the release builds one bundle and smokes it on all six platforms", () => {
+	test("exactly one job builds the bundle and no per-binary build job remains", () => {
+		const builders = Object.keys(workflow.jobs).filter((id) => id.startsWith("build-"));
+
+		expect(builders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
+		expect(workflow.jobs["build-bundle"].strategy).toBeUndefined();
+		expect(text).not.toContain("--compile");
+	});
+
+	test("build-bundle uploads the tarball and runtime.json under the stamped version", () => {
+		expect(uploadedNames("build-bundle").sort()).toEqual([`dg-lib-<v>.tar.gz`, "runtime.json"]);
+		expect(text).toContain(`dg-lib-${VERSION_EXPR}.tar.gz`);
+	});
+
+	test("one smoke job runs a six-runner matrix, one native runner per supported platform", () => {
+		const ids = smokeJobIds();
+		expect(ids.length).toBe(1);
+		const matrix = workflow.jobs[ids[0] as string]?.strategy?.matrix?.include ?? [];
+
+		expect(matrix.length).toBe(SUPPORTED_PLATFORMS.length);
+		for (const { runners } of SUPPORTED_PLATFORMS) {
+			expect(matrix.filter((entry) => runners.includes(entry.os)).length).toBe(1);
+		}
+	});
+
+	test("the smoke job waits for the bundle and the release waits for the smoke job", () => {
+		const id = smokeJobIds()[0] as string;
+
+		expect(jobNeeds(workflow.jobs[id] as WorkflowJob)).toContain("build-bundle");
+		expect(jobNeeds(releaseJob)).toEqual(expect.arrayContaining(["build-bundle", "build-ext", "build-narration", id]));
+	});
+});
+
+describe("the release publishes exactly the documented asset names", () => {
+	test("the build jobs, the bootstrap scripts and SHA256SUMS add up to the documented list and nothing else", () => {
+		const fromBuilds = ["build-bundle", "build-ext", "build-narration"].flatMap(uploadedNames);
+		const extras = ["bootstrap.sh", "bootstrap.ps1", "SHA256SUMS"].filter((name) =>
+			(step(STEP.assets).run ?? "").includes(name),
+		);
+		const published = [...fromBuilds, ...extras]
+			.sort();
+
+		expect(published).toEqual([...DOCUMENTED_ASSETS].sort());
+	});
+
+	test("no other job uploads an artifact that reaches the release", () => {
+		const uploaders = Object.entries(workflow.jobs)
+			.filter(([, job]) => (job.steps ?? []).some((s) => s.uses?.startsWith("actions/upload-artifact@")))
+			.map(([id]) => id);
+
+		expect(uploaders.sort()).toEqual(["build-bundle", "build-ext", "build-narration"]);
 	});
 });

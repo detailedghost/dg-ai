@@ -18,7 +18,7 @@ import { registerRecvCommand } from "../../dg-agent/src/commands";
 import {
 	renderOverwatchSnapshot,
 	writeOverwatchSnapshot,
-} from "../src/commands/overwatch-snapshot";
+} from "../src/overwatch-snapshot/cli";
 import {
 	DemoVerifyHarness,
 	resolveBrowserBinary,

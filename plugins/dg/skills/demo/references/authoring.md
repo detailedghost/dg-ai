@@ -93,7 +93,7 @@ The plan generates this shape (also accepted directly as a `.json` file):
 ```
 
 Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
-`pkg/skills-cli/src/commands/demo.ts`.
+`pkg/skills-cli/src/demo/cli.ts`.
 
 ## Advance modes
 

@@ -9,8 +9,8 @@ import {
 	runConnect,
 	type UiLocator,
 	type UiPage,
-} from "../src/commands/channel-review-connect";
-import { promptHidden } from "../src/commands/credentials";
+} from "../src/channel-review/connect";
+import { promptHidden } from "../src/credentials/cli";
 
 const DATADOG_TOKEN = "ddpat_fixtureDatadogToken0123456789abcdef";
 const SENTRY_TOKEN = "sntryu_fixtureSentryToken0123456789abcdef";

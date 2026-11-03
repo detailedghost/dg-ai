@@ -12,6 +12,7 @@ import {
 	send,
 	stopServe,
 } from "@dg/dg-daemon/test-harness";
+import { relocatedBundleCommand } from "./bundle-build";
 import { redactPublicValue } from "@dg/inbox";
 import {
 	inboxCliHarness,
@@ -547,27 +548,12 @@ describe("dg-skills inbox daemon response boundary", () => {
 describe("compiled dg-skills inbox", () => {
 	test("runs real help and all three fixture workflows from an unrelated cwd with no Bun on PATH", async () => {
 		const build = inboxCliHarness();
-		const executable = join(build.cwd, "dg-skills");
+		const command = relocatedBundleCommand(build.cwd, "dg-skills");
 		try {
-			const compile = Bun.spawn(
-				[
-					process.execPath,
-					join(import.meta.dir, "../build.ts"),
-					"--outfile",
-					executable,
-				],
-				{ cwd: build.cwd, stdout: "pipe", stderr: "pipe" },
-			);
-			const [stdout, stderr, code] = await Promise.all([
-				new Response(compile.stdout).text(),
-				new Response(compile.stderr).text(),
-				compile.exited,
-			]);
-			expect(code, stdout + stderr).toBe(0);
 			const help = await build.run(
 				["--help"],
 				{ PATH: "" },
-				{ executable, timeoutMs: 4000 },
+				{ command, timeoutMs: 4000 },
 			);
 			expect(help.code, help.stderr).toBe(0);
 			for (const provider of providers) expect(help.stdout).toContain(provider);
@@ -593,7 +579,7 @@ describe("compiled dg-skills inbox", () => {
 					const loaded = await h.run(
 						["load", "folders", ...args],
 						{ PATH: "" },
-						{ executable, timeoutMs: 4000 },
+						{ command, timeoutMs: 4000 },
 					);
 					expect(loaded.code, loaded.stderr).toBe(0);
 					expect(JSON.parse(loaded.stdout)).toMatchObject({
@@ -603,7 +589,7 @@ describe("compiled dg-skills inbox", () => {
 					const batch = await h.run(
 						["batch", "--folder", "Inbox", "--limit", "3", ...args],
 						{ PATH: "" },
-						{ executable, timeoutMs: 4000 },
+						{ command, timeoutMs: 4000 },
 					);
 					expect(batch.code, batch.stderr).toBe(0);
 					expect(JSON.parse(batch.stdout)).toMatchObject({

@@ -17,7 +17,7 @@ import type { CredentialMeta } from "@dg/common";
 import {
 	type MigrateFlags,
 	runMigrateEnv,
-} from "../src/commands/channel-review-migrate";
+} from "../src/channel-review/migrate";
 
 const RELAY = "fixture-relay-dev-91c0";
 const DATADOG = "ddpat_fixtureMigrateDatadog0123456789";

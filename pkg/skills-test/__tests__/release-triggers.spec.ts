@@ -65,36 +65,23 @@ describe("a release publishes only after every build workflow passes", () => {
 		for (const { job } of BLT_GATES) {
 			expect(jobNeeds(release.jobs[job])).toContain("detect");
 		}
-		for (const job of [
-			"build-skills",
-			"build-daemon",
-			"build-agent",
-			"build-ext",
-		]) {
+		for (const job of ["build-bundle", "build-ext"]) {
 			expect(jobNeeds(release.jobs[job])).toContain("detect");
 		}
 	});
 
-	test("each part is built only after its own gate, and each binary smoked only after its build", () => {
-		expect(jobNeeds(release.jobs["build-skills"])).toContain("blt-skills");
-		expect(jobNeeds(release.jobs["build-daemon"])).toContain("blt-daemon");
-		expect(jobNeeds(release.jobs["build-agent"])).toContain("blt-agent");
+	test("the bundle is built only after the gates of all three programs, and smoked only after its build", () => {
+		for (const gate of ["blt-skills", "blt-daemon", "blt-agent"]) {
+			expect(jobNeeds(release.jobs["build-bundle"])).toContain(gate);
+		}
 		expect(jobNeeds(release.jobs["build-ext"])).toContain("blt-ext");
-		expect(jobNeeds(release.jobs["smoke-skills"])).toEqual(["build-skills"]);
-		expect(jobNeeds(release.jobs["smoke-daemon"])).toEqual(["build-daemon"]);
-		expect(jobNeeds(release.jobs["smoke-agent"])).toEqual(["build-agent"]);
+		expect(jobNeeds(release.jobs["smoke-bundle"])).toEqual(["build-bundle"]);
 	});
 
 	test("the release job waits on every smoke run and the extension build", () => {
 		const needs = jobNeeds(release.jobs.release);
 
-		for (const job of [
-			"detect",
-			"smoke-skills",
-			"smoke-daemon",
-			"smoke-agent",
-			"build-ext",
-		]) {
+		for (const job of ["detect", "build-bundle", "smoke-bundle", "build-ext"]) {
 			expect(needs).toContain(job);
 		}
 	});
@@ -112,11 +99,9 @@ describe("a skipped detection skips everything after it", () => {
 		}
 	});
 
-	test("the smoke jobs name no condition, and a skipped build skips them", () => {
-		for (const job of ["smoke-skills", "smoke-daemon", "smoke-agent"]) {
-			expect(release.jobs[job].if).toBeUndefined();
-			expect(reaches(release, job, "detect")).toBe(true);
-		}
+	test("the smoke job names no condition, and a skipped build skips them", () => {
+		expect(release.jobs["smoke-bundle"].if).toBeUndefined();
+		expect(reaches(release, "smoke-bundle", "detect")).toBe(true);
 	});
 
 	test("detect refuses to run from any ref but master", () => {

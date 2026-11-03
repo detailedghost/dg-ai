@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
 	CHAT_START_PATH,
@@ -26,23 +25,24 @@ import {
 	openFailedHint,
 	tryOpen,
 } from "@dg/common/node";
+import { programCommand } from "@dg/common/node/program";
 import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
-	const name = process.platform === "win32" ? "dg-daemon.exe" : "dg-daemon";
-	return [join(dirname(process.execPath), name), "__serve"];
+	return programCommand("dg-daemon", ["__serve"]);
 }
 
 export type StartSeams = {
 	daemonArgv?: () => string[];
+	spawn?: typeof spawn;
 	tryOpen?: (url: string) => Promise<boolean>;
 	openFailedHint?: () => string;
 };
 
 function spawnDaemonProcess(seams: StartSeams): void {
 	const argv = seams.daemonArgv?.() ?? siblingDaemonArgv();
-	const child = spawn(argv[0], argv.slice(1), {
+	const child = (seams.spawn ?? spawn)(argv[0], argv.slice(1), {
 		detached: true,
 		stdio: "ignore",
 		windowsHide: process.platform === "win32",

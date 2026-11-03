@@ -6,12 +6,13 @@
 pkg/
   common/      @dg/common — shared types + pure functions
   extension/   WXT MV3 browser extension (was extension-src/)
-  dg-daemon/   loopback HTTP+WS chat daemon — bun build --compile distributable
-  dg-agent/    agent-facing CLI for the daemon — bun build --compile distributable
+  dg-daemon/   loopback HTTP+WS chat daemon — runs from the shared launcher bundle
+  dg-agent/    agent-facing CLI for the daemon — runs from the shared launcher bundle
   inbox/       reusable inbox providers/workflows, lazy generators, runtime seams
   ssms/        SMS providers (google Messages for Web, signal-cli) and the ssms CLI
   channel-review/ Teams review daemon, runners, reactions, and verdict readers
-  skills-cli/  CLI framework — bun build --compile distributable
+  skills-cli/  CLI framework — runs from the shared launcher bundle
+  launcher/    @dg/launcher — dispatcher, bundle build, pinned Bun runtime
   skills-test/ smoke tests — skills reference the right packages, install logic
 plugins/dg/
   skills/      AI instruction layer — SKILL.md + references for each skill
@@ -53,7 +54,7 @@ cd pkg/skills-cli
 bun src/index.ts --help          # run locally
 bun run lint                     # tsc --noEmit
 bun test                         # unit tests
-bun run build                    # compile binary to dist/
+bun run build                    # build the shared bundle (runs pkg/launcher build)
 ```
 
 Skills-only install copies `plugins/dg/skills` and does not fetch release
@@ -62,10 +63,70 @@ binaries. From the repo root, `mise run install:skills` runs
 `filesToInstall` in `@dg/common`; the copy is `installSkillTree` in
 `@dg/common/node`. See [ADR 0001](adr/0001-skills-only-install.md).
 
+### pkg/launcher (runtime bundle)
+
+`dg-skills`, `dg-agent` and `dg-daemon` ship as one minified, code-split bundle
+that runs on a pinned Bun. See [ADR 0032](adr/0032-shared-runtime-bundle.md).
+
+```bash
+cd pkg/launcher
+bun run build                    # dist/lib/dg.js, dist/lib/chunks/, dist/dg-lib-<v>.tar.gz
+bun build.ts --outdir <dir>      # build somewhere else; tests use their own temp dir
+bun dist/lib/dg.js dg-skills --version
+bun test                         # dispatch, build, size and startup budgets
+```
+
+The build runs the tour player build (`pkg/tour-ui`) and the local pages build
+(`pkg/pages`) first, because `dg-skills` and `dg-daemon` embed their output.
+`playwright-core`, `@dg/inbox` and the phone code (`nostr-tools`) are named
+chunks, so a command that does not need them never loads them.
+
+Two budget tests guard startup:
+
+- `startup-budget.spec.ts`: the median of 7 warm `<program> --version` runs may
+  add at most 20 ms to a Bun process that writes one line. CI multiplies the
+  budget by `DG_BUDGET_SCALE`.
+- `size-budget.spec.ts`: `dg.js` is at most 16 KB with no static import,
+  `dist/lib` is at most 12 MB, the tarball is at most 4 MB, and `--help` does
+  not load the `pw`, `inbox` or `nostr` chunks.
+
+`pkg/launcher/runtime.json` pins the Bun version and the sha256 of each platform
+zip. Change it only with `bun scripts/bump-runtime.ts <version>`; see
+[Bump the Bun runtime](install.md#bump-the-bun-runtime).
+
+#### Add a command
+
+A file in `pkg/skills-cli/src/commands/` registers its command name, help and
+options, and imports the feature only inside the action. Its only static imports
+are `commander` types, `../utils/lazy-command`, `../utils/legacy-command`,
+`../utils/cli-only`, `../utils/ext-flag` or a sibling command file.
+`lazy-commands.spec.ts` enforces this and checks the `--help` command list.
+
+```ts
+import type { Command } from "commander";
+import { registerLazyLegacy } from "../utils/lazy-command";
+
+export function registerJot(program: Command): void {
+  registerLazyLegacy(program, {
+    name: "jot",
+    description: "Save a short note or a session handoff",
+    load: async () => (await import("../jot")).jotSpec,
+  });
+}
+```
+
+Add the register call to `src/register-all.ts` and the name to the golden list
+in `lazy-commands.spec.ts`. A command returns its exit code or sets
+`process.exitCode`; it never calls `process.exit`, so the entry point can drain
+output. A long-lived command keeps `main` pending with `forever()` from
+`@dg/common`. To start a sibling program, use `programCommand()` from
+`@dg/common/node/program`. A service unit or detached process uses
+`launcherCommand()`, which names the stable `current` links.
+
 ### Wave 2a CLI commands
 
-These commands run from the installed `dg-skills` binary without Bun, the
-extension, or dg-daemon. CLI-only installation includes the stash, proxy, and
+These commands run from the installed `dg-skills` on its pinned runtime, without
+a Bun of your own, the extension, or dg-daemon. CLI-only installation includes the stash, proxy, and
 clipboard skills. `vcs-provider` has no separate skill. Skills-only installation
 copies instructions and references; it does not install these runtime tools.
 
@@ -186,7 +247,7 @@ cd pkg/dg-daemon
 bun src/index.ts --help   # run locally
 bun run lint              # tsc --noEmit
 bun test                  # daemon, store, dispatch and asset tests
-bun run build             # compile binary to dist/dg-daemon
+bun run build             # bundle to dist/lib and dist/dg-lib-<version>.tar.gz
 ```
 
 The daemon is loopback-only and capability-gated. Its private record fields
@@ -236,7 +297,7 @@ cd pkg/dg-agent
 bun src/index.ts --help   # run locally
 bun run lint              # tsc --noEmit
 bun test                  # CLI, memory store and agent-to-agent tests
-bun run build             # compile binary to dist/dg-agent
+bun run build             # bundle to dist/lib and dist/dg-lib-<version>.tar.gz
 ```
 
 `dg-agent` depends on `dg-daemon` only in its devDependencies. The chat
@@ -282,7 +343,7 @@ bun test       # install logic + skill manifests + CLI smoke
 | `skills-blt` | PR: skills-cli, inbox, ssms, channel-review, dg-agent, dg-daemon, extension, common, skills, skills-test, bun.lock | required |
 | `dg-daemon-blt` | PR: dg-daemon, common | required |
 | `dg-agent-blt` | PR: dg-agent, dg-daemon, common | required |
-| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: 18 binaries, 2 extension zips, both bootstraps, `SHA256SUMS` |
+| `release` | push master, no path filter; manual dispatch | one `vX.Y.Z` release: `dg-lib-<v>.tar.gz`, `runtime.json`, the demo narration zip, 2 extension zips, both bootstraps, `SHA256SUMS` |
 
 The skills-cli tests inside `skills-blt` (the workflow that also lints and tests channel-review) run as four shards, `skills-cli (1)` through `skills-cli (4)`.
 Each shard and the job that follows it has a 30 minute backstop.
@@ -300,16 +361,16 @@ PRs to `master` require `ext-blt`, `skills-blt` (including channel-review), `dg-
 
 ## Matched release versions
 
-The extension zip, `dg-skills`, `dg-daemon` and `dg-agent` ship as one matched set.
+The extension zip and the bundle that holds `dg-skills`, `dg-daemon` and `dg-agent` ship as one matched set.
 The `release` workflow stamps one version into every file below and tags the release commit `vX.Y.Z`.
 Do not bump a version by hand.
 
 | Artifact | Files the release stamps |
 | --------------------- | ----------------------------------------------------------------------------------- |
 | `dg-ai-extension` zip | `pkg/extension/package.json` |
-| `dg-skills` binary | `pkg/skills-cli/package.json`, the source of the current version |
-| `dg-daemon` binary | `pkg/dg-daemon/package.json`, `DG_DAEMON_PACKAGE_VERSION` in `src/server/status.ts` |
-| `dg-agent` binary | `pkg/dg-agent/package.json`, `DG_AGENT_PACKAGE_VERSION` in `src/version.ts` |
+| `dg-skills` program | `pkg/skills-cli/package.json`, the source of the current version and the bundle name |
+| `dg-daemon` program | `pkg/dg-daemon/package.json`, `DG_DAEMON_PACKAGE_VERSION` in `src/server/status.ts` |
+| `dg-agent` program | `pkg/dg-agent/package.json`, `DG_AGENT_PACKAGE_VERSION` in `src/version.ts` |
 | plugin manifests | `.claude-plugin/plugin.json`, `plugins/dg/.codex-plugin/plugin.json` |
 | lockfile | the workspace versions in `bun.lock` |
 | skill tree | the repository itself, tracked in `master` |
@@ -335,14 +396,14 @@ Only `release` has `contents: write`. It does the steps below in this order:
 3. Push the commit and the tag in one `git push --atomic`.
 4. Create the release as a draft with every file, then publish it. It is marked Latest only when its version is the highest `vX.Y.Z`.
 5. Move the `latest` tag to the release commit, again only for the highest `vX.Y.Z`. This is the only forced push.
-6. For the first version above 1.21.1 only, publish a `skills-vX.Y.Z` bridge release with the `dg-skills` binaries. It is never marked Latest.
-   A retry of that version publishes the bridge even after later releases exist. A leftover bridge draft is deleted first.
 
 To recover from a failed run, run **Release** again from `master`. If the tag exists, the job publishes from the tag.
 If a draft exists, the job deletes the draft and uploads again. No step deletes a tag.
 
-`dg-skills install` refreshes the extension zip, `dg-skills`, `dg-daemon` and `dg-agent` from one release in one pass, skipping any that is already
-current. A platform with no published binary warns and continues rather than failing the whole install.
+The builds are `build-bundle` (one job: the bundle and `runtime.json`), `build-ext` and `build-narration`.
+`smoke-bundle` installs the pinned runtime on six native runners, one per supported platform, and runs `--version` for all three programs from the bundle.
+
+`dg-skills install` refreshes the runtime, the bundle and the extension zip from one release in one pass, skipping any part that is already current.
 
 ## Manual post-merge cutover
 
@@ -364,19 +425,19 @@ and `polish`. Set `DG_PROSE_CHECK_CMD` to run a prose check on PR bodies from
 and `monolith` from outside the checkout with the installed plugin tree.
 
 Wave 4 adds `jot`, `bg`, `cls`, `stat`, `sniff`, `nope`, `find-work`, and
-`doctor`. The compiled commands are `dg-skills jot`, `dg-skills bg`,
+`doctor`. The CLI commands are `dg-skills jot`, `dg-skills bg`,
 `dg-skills sniff`, and `dg-skills doctor`; `cls`, `stat`, `nope`, and
 `find-work` are instruction-only. After the merge, smoke `jot`, `bg`, `sniff`,
 and `doctor` from outside the checkout with the installed plugin tree.
 Run `dg-skills doctor` after an install or upgrade to check every command.
 
-Wave 5 adds `db`, `erd`, `eli5`, `ticket`, and `test-live`. The compiled
+Wave 5 adds `db`, `erd`, `eli5`, `ticket`, and `test-live`. The CLI
 commands are `dg-skills db`, `dg-skills erd`, and `dg-skills test-live`;
 `eli5` and `ticket` are instruction-only. `test-live` is GitHub only and
 has no GitLab port. After the merge, smoke `db`, `erd`, and `test-live`
 from outside the checkout with the installed plugin tree.
 
-Wave 6 adds `pw`. The compiled commands are `dg-skills pw` and `dg-skills pw-code`.
+Wave 6 adds `pw`. The CLI commands are `dg-skills pw` and `dg-skills pw-code`.
 `doctor pw` reports the browser in one line and `doctor pw-code` warns when an
 allow rule covers `pw-code`. Smoke only with `PW_E2E=1`, never on a shared desktop.
 
@@ -414,13 +475,13 @@ by subsequent read-state updates. See [Microsoft's immutable ID guidance](https:
 Workspaces/config live under DG_HOME/inbox, with explicit overrides. Async page
 generators stop requesting pages when consumers return. The --workers option
 controls bounded asynchronous file writes, not thread workers; source-relative
-worker module URLs are unnecessary in compiled releases. Failed writes drain
+worker module URLs are unnecessary in bundled releases. Failed writes drain
 and prevent a successful incomplete status index.
 
 Profile/cache schema10 records use the daemon's existing encryption envelope/key.
 The raw conversation archive is ignored local context and must remain unpublished.
 Run bun test and bun run lint in pkg/inbox, then the inbox-cli and inbox-skill
-integration suites. Smoke the compiled dg-skills binary from an unrelated cwd
+integration suites. Smoke the installed dg-skills from an unrelated cwd
 with fixture datasets. See [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md).
 
 ## Credential store
@@ -546,12 +607,13 @@ through the `channel-review` grant. It builds an env-like map for the relay
 connect and the sinks: unexpired store records first, then the process
 environment. `status` reports each source and flags expired records.
 `dg-skills channel-review connect` drives Chrome through `playwright-core`. It
-imports the package lazily, so other commands never load it, and the compiled
-build (`pkg/skills-cli/build.ts`) marks `chromium-bidi` external because the
-CDP flow does not use it. The build also rewrites Playwright's two computed
-metadata imports to static imports, embedding `package.json` and `browsers.json`.
-Playwright is pinned; when upgrading it, run the compiled connect regression,
-which removes the dependency's source before starting the binary.
+imports the package lazily, so other commands never load it, and the bundle
+build (`pkg/launcher/build.ts`) marks `chromium-bidi` external because the
+CDP flow does not use it. The `playwrightMetadata` plugin in
+`pkg/skills-cli/build.ts` rewrites Playwright's two computed metadata imports to
+static imports, embedding `package.json` and `browsers.json`. Playwright is
+pinned; when upgrading it, run `channel-review-connect-compiled.spec.ts`, which
+runs the connect flow from the built bundle.
 Every review machine needs a signed-in runner and thrash installed in that
 runner's skill roots. `status` reports each runner probe, including CR-206 for
 missing thrash after executable and login checks pass.
@@ -582,7 +644,7 @@ and binary distribution contracts. Run `bun run test:all` at the root. Refresh
 `bun.lock` with `bun install`, then verify `bun install --frozen-lockfile`.
 
 The live `/dg:channel-review` bootstrap check in Claude Code is human-only and
-remains pending. Check that the installed skill runs the compiled binary and
+remains pending. Check that the installed skill runs the installed dg-skills and
 prints status JSON. Exit 0 requires reachable secret, chat, and reactions while
 stopped; named errors with remedies also pass the bootstrap check. Record the
 exact Claude scratch write rule and WSL restart result during live validation.

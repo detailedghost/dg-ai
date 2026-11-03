@@ -95,6 +95,19 @@ function readProcStat(pid: number): string {
 	return readFileSync(`/proc/${pid}/stat`, "utf8");
 }
 
+/** Field 22 of /proc/<pid>/stat, or undefined where it cannot be read. */
+export function readProcStart(
+	pid: number,
+	readStat: (pid: number) => string = readProcStat,
+): string | undefined {
+	try {
+		const stat = readStat(pid);
+		return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[STAT_START_TIME_INDEX];
+	} catch {
+		return undefined;
+	}
+}
+
 /** True when `pid` exists; with `procStart` it must also match field 22 of /proc/<pid>/stat when that is readable. */
 export function pidAlive(
 	pid: number,
@@ -108,14 +121,8 @@ export function pidAlive(
 		if ((error as NodeJS.ErrnoException).code !== "EPERM") return false;
 	}
 	if (procStart === undefined) return true;
-	try {
-		const stat = readStat(pid);
-		const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-		const startTime = fields[STAT_START_TIME_INDEX];
-		return startTime === undefined || startTime === procStart;
-	} catch {
-		return true;
-	}
+	const startTime = readProcStart(pid, readStat);
+	return startTime === undefined || startTime === procStart;
 }
 
 export const realFs: CacheFs = {

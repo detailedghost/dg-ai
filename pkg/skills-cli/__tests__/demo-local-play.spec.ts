@@ -7,7 +7,7 @@ import { BrowserMissingError } from "../src/pw/core/browser";
 import { registerDemo } from "../src/commands/demo";
 import { playLocal } from "../src/demo/local";
 import { DEFAULT_TIMEOUT_MIN } from "../src/demo/player-job";
-import { loadScript } from "../src/commands/demo";
+import { loadScript } from "../src/demo/plan-file";
 import { type DemoWorld, demoWorld } from "./demo-local-fixtures";
 
 let world: DemoWorld;

@@ -87,10 +87,8 @@ describe("hooks command", () => {
 		expect(hooks[0]?.description()).toBe("Run and manage the opt-in hooks");
 	});
 
-	test("the registered action exits the process with the main result", async () => {
-		const exit = spyOn(process, "exit").mockImplementation(
-			(() => undefined) as never,
-		);
+	test("the registered action sets the exit code to the main result", async () => {
+		process.exitCode = 0;
 		const stderr = spyOn(process.stderr, "write").mockImplementation(
 			() => true,
 		);
@@ -100,18 +98,16 @@ describe("hooks command", () => {
 			await program.parseAsync(["hooks", "run", "no-such-hook"], {
 				from: "user",
 			});
-			expect(exit).toHaveBeenCalledWith(1);
+			expect(process.exitCode).toBe(1);
 			expect(String(stderr.mock.calls[0]?.[0])).toContain("unknown hook");
 		} finally {
-			exit.mockRestore();
+			process.exitCode = 0;
 			stderr.mockRestore();
 		}
 	});
 
-	test("the registered action exits 2 with usage when no subcommand follows", async () => {
-		const exit = spyOn(process, "exit").mockImplementation(
-			(() => undefined) as never,
-		);
+	test("the registered action sets exit code 2 with usage when no subcommand follows", async () => {
+		process.exitCode = 0;
 		const stderr = spyOn(process.stderr, "write").mockImplementation(
 			() => true,
 		);
@@ -119,10 +115,10 @@ describe("hooks command", () => {
 			const program = new Command().enablePositionalOptions();
 			registerHooks(program);
 			await program.parseAsync(["hooks"], { from: "user" });
-			expect(exit).toHaveBeenCalledWith(2);
+			expect(process.exitCode).toBe(2);
 			expect(String(stderr.mock.calls[0]?.[0])).toContain("usage");
 		} finally {
-			exit.mockRestore();
+			process.exitCode = 0;
 			stderr.mockRestore();
 		}
 	});

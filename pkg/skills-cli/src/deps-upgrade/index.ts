@@ -1330,7 +1330,7 @@ async function cmdCooldown(args: string[]) {
 	process.stdout.write(`${JSON.stringify({ pkg, ...verdict })}\n`);
 }
 
-async function cmdReadyWhenGreen(args: string[]) {
+async function cmdReadyWhenGreen(args: string[]): Promise<number> {
 	const { positional, flags } = parseArgs(args, [
 		"repo=",
 		"timeout-minutes=",
@@ -1367,8 +1367,7 @@ async function cmdReadyWhenGreen(args: string[]) {
 				}
 			: { ...verdict, url };
 	process.stdout.write(`${JSON.stringify(result)}\n`);
-	if (verdict.status !== "green")
-		process.exit({ failed: 1, timeout: 2 }[verdict.status]);
+	return verdict.status === "green" ? 0 : { failed: 1, timeout: 2 }[verdict.status];
 }
 
 async function cmdSummary() {

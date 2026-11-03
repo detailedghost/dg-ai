@@ -63,7 +63,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 ```
 
 `DG_CLI_ONLY=1` also works for the shell form, and `dg-skills install --cli-only`
-does the same from an installed binary. Combined with `DG_INSTALL_CODEX=1`, only
+does the same from an installed `dg-skills`. Combined with `DG_INSTALL_CODEX=1`, only
 the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills`.
 
 - CLI-only skills: `channel-review`, `google-sms-cleanup` (`dg-skills ssms`;
@@ -74,17 +74,16 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
   locally by default, and `--ext` opts in to the extension. Only `browser`
   `launch` always needs it. `chat` and
   `overwatch` open a page that `dg-daemon` serves on loopback, which needs
-  `dg-agent` and `dg-daemon` but no extension. In a CLI-only install those two
-  binaries are missing, so the `chat` and `overwatch` bootstrap block runs the
-  full installer, which removes the CLI-only marker. `browser` runs locally by
+  `dg-agent` and `dg-daemon` but no extension. A CLI-only install has both,
+  because one bundle holds all three programs. `browser` runs locally by
   default: `dg-skills batch-open` opens plain tabs and needs the extension only
   with `--ext`. `launch` is `--ext`-only. In a CLI-only install,
   `batch-open --ext`, `launch`, `demo --ext`, `rerun --ext`, `proto --ext`,
   `chat --ext` and `overwatch --ext`, and the `dg-skills require-extension
   <skill>` check behind each `--ext`, stop with: the command needs the
   dg-ai-extension, and `dg-skills install` adds it.
-- To add the extension later, run `~/.dg/bin/dg-skills install`. It installs the extension,
-  `dg-daemon` and `dg-agent`, and removes the marker. Then follow Step 2 below
+- To add the extension later, run `~/.dg/bin/dg-skills install`. It installs the extension
+  and removes the marker. Then follow Step 2 below
   for the manual **Load unpacked** step.
 
 ## Agent-only install
@@ -107,17 +106,18 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 ```
 
 `DG_AGENT_ONLY=1` also works for the shell form, and `dg-skills install --agent-only`
-does the same from an installed binary. It accepts neither `--cli-only` nor
+does the same from an installed `dg-skills`. It accepts neither `--cli-only` nor
 `--skills-only` at the same time. After this, `~/.dg/bin/dg-agent phone
 accept <card>` works; see [docs/phone.md](phone.md).
 
 ## Skills-only install
 
-Use this when the user wants the skill instruction files and none of the
-binaries. The installer copies each directory under `plugins/dg/skills` that
+Use this when the user wants the skill instruction files without the extension. The installer copies each directory under `plugins/dg/skills` that
 contains a `SKILL.md` — the instruction file and its references, including
-`google-sms-cleanup` — and does not execute that text. It does not download
-`dg-skills`, `dg-daemon`, `dg-agent`, or the extension.
+`google-sms-cleanup` — and does not execute that text. The checkout
+commands below do not download the runtime, the bundle or the extension. The
+`DG_SKILLS_ONLY=1` bootstrap also installs the runtime and the bundle, so the
+skills can run `dg-skills`; set `DG_SKILLS_NO_CLI=1` with it to copy the files only.
 
 From a checkout of this repository:
 
@@ -131,7 +131,7 @@ The same copy from source:
 bun pkg/skills-cli/src/index.ts install --skills-only --dest "${DG_SKILLS_DEST:-$HOME/.dg/skills}"
 ```
 
-`dg-skills install --skills-only` is the flag on an already installed binary.
+`dg-skills install --skills-only` is the flag on an already installed `dg-skills`.
 Pass `--repo <checkout>` so it can read `plugins/dg/skills`. `--dest` overrides
 the default directory, which is `$DG_SKILLS_DEST`, otherwise `$DG_HOME/skills`,
 otherwise `~/.dg/skills`.
@@ -166,27 +166,24 @@ with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
 the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version X.Y.Z
 ```
-
-Needs 1.21.1 or newer.
 
 On Windows PowerShell:
 
 ```powershell
-$env:DG_VERSION = "1.19.0"
+$env:DG_VERSION = "X.Y.Z"
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-Needs 1.21.1 or newer.
+`dg-skills install --version X.Y.Z` is the flag on an already installed
+`dg-skills`. Leaving it unset installs the newest release.
 
-`dg-skills install --version 1.19.0` is the flag on an already installed
-binary. Leaving it unset installs each binary's newest release, as before.
-
-If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
-exist, the whole install fails and names the missing release, before
-touching any binary or the extension. Check that the owner actually
-published that release for all four components before asking for a pin.
+Replace `X.Y.Z` with a `vX.Y.Z` release that lists `dg-lib-X.Y.Z.tar.gz` and
+`runtime.json`. If that release does not exist or lacks one of its parts, the
+whole install fails and names it, before it touches the runtime, the bundle or
+the extension. A release from before the bundle fails the same way and prints
+that release's own bootstrap command.
 Leaving the version unset keeps today's behavior: install the newest of
 each, warning and skipping one that can't be reached.
 
@@ -230,10 +227,10 @@ the `/dg:*` skills are available.
 
 ## Step 2 — Install the CLI + extension (agent-runnable + one manual step)
 
-The skills run compiled binaries. Bootstrap once — this downloads `dg-skills`
-for the current platform into `~/.dg/bin` (`$DG_HOME/bin` when `DG_HOME` is set), **then runs `dg-skills install`**,
-which fetches `dg-daemon` and `dg-agent` too, stages the extension, and prints the exact **Load
-unpacked** path:
+The skills run `dg-skills`, `dg-agent` and `dg-daemon` from one bundle on a
+pinned Bun runtime. Bootstrap once — this installs the runtime, the bundle and the three launchers under
+`~/.dg` (`$DG_HOME` when `DG_HOME` is set), **then runs `dg-skills install`**,
+which stages the extension and prints the exact **Load unpacked** path:
 
 ```bash
 if [ ! -x ~/.dg/bin/dg-skills ]; then
@@ -253,16 +250,14 @@ Claude Code sets `CLAUDE_PLUGIN_ROOT`. Other agent runtimes can set
 `DG_PLUGIN_ROOT` to the same checkout. When neither variable points at the
 bundled script, the snippet downloads `bootstrap.sh` from the repository.
 
-- No Bun needed at runtime — the binary is self-contained. Bun is only required
-  for the `--local` source build.
-- Re-run `~/.dg/bin/dg-skills install` anytime to update the extension, `dg-skills` and
-  `dg-daemon` and `dg-agent` together; each is skipped when already current. For Firefox:
+- No Bun of your own is needed — the installer brings a pinned Bun and never uses
+  one on PATH. Bun is only required for the `--local` source build.
+- Re-run `~/.dg/bin/dg-skills install` anytime to update the extension, the runtime
+  and the bundle together; each part is skipped when already current. For Firefox:
   `~/.dg/bin/dg-skills install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
-- The chat skill runs `~/.dg/bin/dg-agent`, released separately under
-  `agent-v*`, and `dg-agent start` launches `~/.dg/bin/dg-daemon` (released under
-  `daemon-v*`) by resolving it as a sibling, so both must live in the same
-  directory. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
+- The chat skill runs `~/.dg/bin/dg-agent`, and `dg-agent start` starts
+  `dg-daemon` from the same bundle and runtime. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
   machine that already used `browser`, `demo` or `proto` has `dg-skills`
   already, so gating on that would skip the download the gate exists for.
 - On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
@@ -325,7 +320,7 @@ ______________________________________________________________________
 | ------------------------------------------------------------------ | ---------------------------- |
 | `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
-| `dg-skills install` (stage extension + refresh all three binaries) | Yes |
+| `dg-skills install` (stage extension + refresh the runtime and the bundle) | Yes |
 | `dg-agent start` (register a chat session) | Yes |
 | `dg-agent start --open` (open the chat page) | Yes (default browser; on WSL only with `DG_OPEN_WINDOWS=1`) |
 | Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
@@ -350,7 +345,7 @@ those. See [SMS providers](ssms.md).
 
 ## Inbox cleanup
 
-The shared inbox-cleanup skill runs the compiled dg-skills inbox command. Update
+The shared inbox-cleanup skill runs the dg-skills inbox command. Update
 dg-skills, dg-agent, dg-daemon, and the extension together with dg-skills install.
 Start a dg session before configuring encrypted inbox profiles; Proton also
 requires one connected extension and a signed-in Proton mail tab. A headless
@@ -367,7 +362,7 @@ Explicit --data-path fixtures work without those services. Read
 
 ## Channel review
 
-The shared channel-review skill runs the compiled `dg-skills channel-review`
+The shared channel-review skill runs the `dg-skills channel-review`
 command. It needs no browser extension. Install thrash separately for each
 runner on every machine; dg does not ship it. Claude is the supported default.
 Read [setup](../plugins/dg/skills/channel-review/references/setup.md) and
@@ -383,7 +378,7 @@ changing config.
 | Approve the fun-pool GIF list | Human: review the list before each release. |
 | `status`, `env`, `start`, `stop`, `run` | Agent: run the requested operation and report its output. |
 | `emojis show`, `emojis set` | Agent: inspect slots or save the supplied custom ID. |
-| Invoke `/dg:channel-review` in Claude Code for the live bootstrap check | Human: verify the installed skill runs status through the compiled binary. |
+| Invoke `/dg:channel-review` in Claude Code for the live bootstrap check | Human: verify the installed skill runs status through the installed `dg-skills`. |
 
 Start with `status --env dev` in a test chat. If the service mailbox is
 absent from the chat, set `chat.id` from the Teams **Copy link** URL. Status

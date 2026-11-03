@@ -10,7 +10,7 @@ import {
 } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { buildCompiledBinary } from "./compiled-binary";
+import { bundleCommand } from "./bundle-build";
 import { checkpointBody, ID_A, jotWorld, section } from "./jot-fixtures";
 
 setDefaultTimeout(60_000);
@@ -21,7 +21,7 @@ let cwd: string;
 let only: Record<string, string>;
 
 beforeAll(() => {
-	command.push(buildCompiledBinary());
+	command.push(...bundleCommand("dg-skills"));
 }, 240_000);
 
 beforeEach(() => {

@@ -21,6 +21,7 @@ import {
 	ProtonSignedOutError,
 	protonProfilePaths,
 } from "@dg/inbox";
+import { exitAfterDrain } from "@dg/common/exit";
 
 export { PROTON_SIGN_IN_COMMAND, ProtonSignedOutError, protonProfilePaths };
 
@@ -325,7 +326,7 @@ const realSignInDeps: SignInDeps = {
 	trapSignals: (onCancel) => {
 		const onSignal = (signal: NodeJS.Signals) =>
 			void onCancel().finally(() =>
-				process.exit(signal === "SIGINT" ? 130 : 143),
+				exitAfterDrain(signal === "SIGINT" ? 130 : 143),
 			);
 		process.once("SIGINT", onSignal);
 		process.once("SIGTERM", onSignal);

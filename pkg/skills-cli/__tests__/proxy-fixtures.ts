@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { BuildArgsInput } from "../src/proxy/backends/types";
+import { relocatedBundleCommand } from "./bundle-build";
 import { scratchFixtures } from "./git-repo-fixtures";
 import { mergeEnv } from "./module-call";
 
@@ -128,23 +129,11 @@ export function proxyFixtures() {
 	};
 }
 
-/** Compile once per suite into an owned, relocated root outside the checkout. */
-export function compileProxyCli(
+/** Copy the built bundle into an owned, relocated root outside the checkout and return its argv prefix. */
+export function relocatedProxyCli(
 	fixture: ReturnType<typeof proxyFixtures>,
-): string {
-	const binary = join(fixture.root, "moved plugin ' installation", "dg-skills");
-	mkdirSync(join(binary, ".."), { recursive: true });
-	const result = Bun.spawnSync(
-		[
-			process.execPath,
-			join(import.meta.dir, "../build.ts"),
-			"--outfile",
-			binary,
-		],
-		{ env: fixture.env(), stdout: "pipe", stderr: "pipe" },
-	);
-	if (result.exitCode !== 0) throw new Error(result.stderr.toString());
-	return binary;
+): string[] {
+	return relocatedBundleCommand(fixture.root, "dg-skills");
 }
 
 export async function runProxyProcess(

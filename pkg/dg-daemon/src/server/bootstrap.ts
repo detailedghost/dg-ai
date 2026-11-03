@@ -4,6 +4,7 @@ import {
 	EXIT_NO_PORT_AVAILABLE,
 	wait,
 } from "@dg/common";
+import { exitAfterDrain } from "@dg/common/async";
 import {
 	checkWslNetworking,
 	type DgPaths,
@@ -86,7 +87,7 @@ export async function cmdStatus(): Promise<void> {
 	console.log(JSON.stringify(await resp.json(), null, 2));
 }
 
-export async function cmdServe(): Promise<void> {
+export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const paths = resolveDgPaths();
 	const wslNetworkingMode = await checkWslNetworking();
 
@@ -146,7 +147,7 @@ export async function cmdServe(): Promise<void> {
 				);
 				store.close();
 				credentials.close();
-				process.exit(0);
+				return "deferred";
 			}
 		}
 	}
@@ -337,7 +338,7 @@ export async function cmdServe(): Promise<void> {
 		store.close();
 		credentials.close();
 		await logger.flush();
-		process.exit(0);
+		await exitAfterDrain(0);
 	}
 	process.on("SIGTERM", () => void shutdown("daemon-shutdown"));
 	process.on("SIGINT", () => void shutdown("daemon-shutdown"));
@@ -345,4 +346,5 @@ export async function cmdServe(): Promise<void> {
 	logger.info(
 		`dg-daemon listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,
 	);
+	return "serving";
 }

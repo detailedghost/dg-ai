@@ -1,37 +1,18 @@
 #!/bin/sh
-# Install the compiled dg-skills CLI for the current platform into ${DG_HOME:-~/.dg}/bin.
+# Install the dg runtime and bundle into ${DG_HOME:-~/.dg}, then run `dg-skills install`.
 #
 #   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-#   ... | sh -s -- --cli-only   (or DG_CLI_ONLY=1): skip the extension, dg-daemon and dg-agent
-#   ... | sh -s -- --agent-only (or DG_AGENT_ONLY=1): install dg-agent too, for a non-Claude
-#       agent that only needs phone; still skips the extension and dg-daemon.
-#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy skill instruction files, then
-#       install only the dg-skills CLI (checksum-verified like the default path).
-#       No dg-daemon, dg-agent or extension is fetched and no skill content is executed.
-#       DG_SKILLS_NO_CLI=1 keeps it an offline copy (no CLI download).
-#   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>):
-#       pin skills-v/daemon-v/agent-v/ext-v to that release; a leading v or skills-v
-#       prefix is accepted. With --skills-only this script installs that exact
-#       skills-v<x.y.z> binary directly. Every other mode downloads the newest
-#       skills-v* binary to a temp path instead and runs its `install --version
-#       <x.y.z>` (deleted afterward either way), because that is the binary that
-#       knows how to resolve, download and verify a pinned release — the newest
-#       release may predate --version support. That install checks every release
-#       the mode needs, then downloads and verifies every artifact (with checksums)
-#       into staging, and only then replaces anything, including dg-skills itself
-#       and its version stamp. Unset: install the newest of each, warning and
-#       skipping one that is missing.
+#   ... | sh -s -- --cli-only    (or DG_CLI_ONLY=1): skip the extension.
+#   ... | sh -s -- --agent-only  (or DG_AGENT_ONLY=1): install for a non-Claude agent that only needs phone.
+#   ... | sh -s -- --skills-only (or DG_SKILLS_ONLY=1): copy the skill files, then install the runtime and
+#       bundle only. It runs no `dg-skills install`, fetches no extension and executes no skill content.
+#       DG_SKILLS_NO_CLI=1 keeps it an offline copy of the skill files (nothing is downloaded from a release).
+#   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>): install that release.
 #
-# Idempotent: re-running overwrites the binary with the newest skills-v* release
-# (or the pinned one, with --version).
-# --skills-only instead copies plugins/dg/skills into $DG_SKILLS_DEST
-# (default: $DG_HOME/skills or ~/.dg/skills).
+# Layout: runtime/bun-v<bun>, lib/<release>, runtime/current and lib/current links, and
+# bin/dg-skills, bin/dg-agent, bin/dg-daemon shims. Every download is verified against
+# SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
 # Windows: use bootstrap.ps1 instead.
-#
-# Checksums: when the skills-v* release publishes a SHA256SUMS asset (GNU
-# sha256sum lines, "<hash>  <filename>"), the download is verified before it
-# is installed. Releases that do not include SHA256SUMS still install. The
-# skills release workflow writes that file next to the platform binaries.
 set -eu
 
 CLI_ONLY="${DG_CLI_ONLY:-0}"
@@ -68,21 +49,9 @@ fi
 normalize_version() {
   v=$1
   case "$v" in
-    skills-v*) v=${v#skills-v} ;;
     v*) v=${v#v} ;;
   esac
   printf '%s' "$v"
-}
-
-is_prefixed_version() {
-  awk -v v="$1" 'BEGIN {
-    split(v, a, "."); split("1.21.1", b, ".")
-    for (i = 1; i <= 3; i++) {
-      if (a[i] + 0 < b[i] + 0) exit 0
-      if (a[i] + 0 > b[i] + 0) exit 1
-    }
-    exit 0
-  }'
 }
 
 PINNED_VERSION=""
@@ -103,6 +72,24 @@ cleanup_tmp() {
   done
 }
 trap cleanup_tmp EXIT
+
+die() {
+  echo "dg-skills: $1" >&2
+  exit 1
+}
+
+CURL="${DG_CURL:-curl}"
+UNAME="${DG_UNAME:-uname}"
+
+link_current() {
+  staged="$1.$$.tmp"
+  rm -f "$staged"
+  ln -s "$2" "$staged"
+  mv -T "$staged" "$1" 2>/dev/null || mv -h -f "$staged" "$1" 2>/dev/null || {
+    rm -f "$staged"
+    die "could not link $1"
+  }
+}
 
 # Copy skill directories as data. A skill is an immediate child that contains
 # SKILL.md. The same rule lives in @dg/common filesToInstall. Symlinks are
@@ -200,51 +187,42 @@ PER_PAGE=100
 PAGE_CAP=10
 releases=""
 tag=""
+candidates=""
 
 resolve_release() {
   [ -n "${tag}" ] && return
-  if [ "${SKILLS_ONLY}" = "1" ] && [ -n "${PINNED_VERSION}" ]; then
+  want=""
+  if [ -n "${PINNED_VERSION}" ]; then
     want="v${PINNED_VERSION}"
-    is_prefixed_version "${PINNED_VERSION}" && want="skills-v${PINNED_VERSION}"
-    want_pattern=$(printf '%s' "${want}" | sed -e 's/[.[\^$*]/\\&/g')
   fi
   page=1
-  while [ -z "${tag}" ] && [ "${page}" -le "${PAGE_CAP}" ]; do
-    batch=$(curl -fsSL -H "User-Agent: dg-ai" \
+  while [ "${page}" -le "${PAGE_CAP}" ]; do
+    batch=$("$CURL" -fsSL -H "User-Agent: dg-ai" \
       "https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}")
     releases="${releases}${batch}"
-    if [ -n "${want:-}" ]; then
-      if printf '%s' "${batch}" |
-        grep -qE "\"tag_name\"[[:space:]]*:[[:space:]]*\"${want_pattern}\""; then
-        tag="${want}"
-      fi
-    else
-      found=$(printf '%s' "${batch}" | tr -d '\n' |
-        grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"([^{}]*"draft"[[:space:]]*:[[:space:]]*true)?' |
-        grep -v 'true$' |
-        sed -E 's/.*"(v[^"]*)".*/\1/')
-      candidates="${candidates:-}${found}
+    found=$(printf '%s' "${batch}" | tr -d '\n' |
+      grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[0-9]+\.[0-9]+\.[0-9]+"([^{}]*"draft"[[:space:]]*:[[:space:]]*true)?' |
+      grep -v 'true$' |
+      sed -E 's/.*"(v[^"]*)".*/\1/' || true)
+    candidates="${candidates}${found}
 "
-    fi
     batch_count=$(printf '%s' "${batch}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
     [ "${batch_count}" -lt "${PER_PAGE}" ] && break
     page=$((page + 1))
   done
 
-  if [ -z "${want:-}" ]; then
-    tag=$(printf '%s' "${candidates:-}" | grep -v '^$' |
-      sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
-  fi
-
-  if [ -z "${tag}" ]; then
-    scanned=$(printf '%s' "${releases}" | grep -o '"tag_name"[[:space:]]*:' | wc -l)
-    if [ -n "${want:-}" ]; then
-      echo "dg-skills: no release named ${want} found in the ${scanned} releases scanned" >&2
+  if [ -n "${want}" ]; then
+    if printf '%s\n' "${candidates}" | grep -qxF "${want}"; then
+      tag="${want}"
     else
-      echo "dg-skills: no vX.Y.Z release found in the ${scanned} releases scanned" >&2
+      die "no release named ${want} found"
     fi
-    exit 1
+  else
+    tag=$(printf '%s' "${candidates}" | grep -v '^$' |
+      sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+    [ -n "${tag}" ] || die "no vX.Y.Z release found"
   fi
+  VERSION=$(normalize_version "${tag}")
 }
 
 extract_source_archive() {
@@ -279,194 +257,196 @@ skills_tree_source() {
   track_tmp "$tmp"
   archive="${tmp}/dg-ai.tar.gz"
   resolve_release
-  curl -fsSL -H "User-Agent: dg-ai" \
+  "$CURL" -fsSL -H "User-Agent: dg-ai" \
     "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "$archive"
   source_root=$(extract_source_archive "$archive" "${tmp}/source")
   SKILLS_SRC="${source_root}/plugins/dg/skills"
 }
 
+ROOT="${DG_HOME:-${HOME}/.dg}"
+
 if [ "$SKILLS_ONLY" = "1" ]; then
-  dest="${DG_SKILLS_DEST:-${DG_HOME:-$HOME/.dg}/skills}"
   skills_tree_source
-  copy_skill_tree "${SKILLS_SRC}" "$dest"
+  copy_skill_tree "${SKILLS_SRC}" "${DG_SKILLS_DEST:-${ROOT}/skills}"
   if [ "${DG_SKILLS_NO_CLI:-0}" = "1" ]; then
     echo "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
     exit 0
   fi
 fi
 
-BIN_DIR="${DG_HOME:-${HOME}/.dg}/bin"
-DEST="${BIN_DIR}/dg-skills"
-
-os=$(uname -s)
-arch=$(uname -m)
+os=$("$UNAME" -s)
+arch=$("$UNAME" -m)
 case "$os" in
-Linux) osname="linux" ;;
-Darwin) osname="macos" ;;
-*)
-  echo "dg-skills: unsupported OS '$os' — use bootstrap.ps1 on Windows" >&2
-  exit 1
-  ;;
+Linux) family="linux" ;;
+Darwin) family="darwin" ;;
+*) die "unsupported OS '$os' - use bootstrap.ps1 on Windows" ;;
 esac
 case "$arch" in
 x86_64 | amd64) cpu="x64" ;;
 aarch64 | arm64) cpu="arm64" ;;
-*)
-  echo "dg-skills: unsupported arch '$arch'" >&2
-  exit 1
-  ;;
+*) die "unsupported arch '$arch'" ;;
 esac
-asset="dg-skills-${osname}-${cpu}"
+platform="${family}-${cpu}"
+if [ "$platform" = "linux-x64" ]; then
+  cpuinfo="${DG_CPUINFO_FILE:-/proc/cpuinfo}"
+  if [ -r "$cpuinfo" ] && ! grep -qw avx2 "$cpuinfo"; then
+    platform="linux-x64-baseline"
+  fi
+fi
+
+for tool in "$CURL" tar unzip; do
+  command -v "$tool" >/dev/null 2>&1 || die "${tool} is required"
+done
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA_CMD="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+  SHA_CMD="shasum -a 256"
+else
+  die "sha256sum or shasum is required"
+fi
+
+sha256_of() {
+  $SHA_CMD "$1" | awk '{print $1}' | tr 'A-F' 'a-f'
+}
+
+verify_sha256() {
+  [ "$(sha256_of "$1")" = "$3" ] || die "checksum mismatch for $2"
+}
+
+asset_url() {
+  name=$(printf '%s' "$1" | sed -e 's/[.[\^$*]/\\&/g')
+  tag_pattern=$(printf '%s' "${tag}" | sed -e 's/[.[\^$*]/\\&/g')
+  printf '%s' "${releases}" |
+    grep -oE "https://[^\"]+/download/${tag_pattern}/${name}\"" |
+    head -1 | tr -d '"'
+}
+
+download_asset() {
+  url=$(asset_url "$1")
+  [ -n "${url}" ] || die "no $1 asset in ${tag}"
+  "$CURL" -fsSL -H "User-Agent: dg-ai" -o "$2" "$url"
+}
+
+sums_entry() {
+  awk -v name="$1" '
+    $1 ~ /^[0-9A-Fa-f]{64}$/ {
+      n = $2
+      sub(/^\*/, "", n)
+      if (n == name) { print $1; exit }
+    }
+  ' "${WORK}/SHA256SUMS" | tr 'A-F' 'a-f'
+}
+
+json_field() {
+  printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"
+}
 
 resolve_release
 
-url=$(printf '%s' "${releases}" |
-  grep -oE "https://[^\"]+/download/${tag}/${asset}" |
-  head -1)
+WORK=$(mktemp -d)
+track_tmp "${WORK}"
 
-if [ -z "${url}" ]; then
-  echo "dg-skills: no ${asset} asset in ${tag}" >&2
-  exit 1
+download_asset SHA256SUMS "${WORK}/SHA256SUMS"
+download_asset runtime.json "${WORK}/runtime.json"
+expected=$(sums_entry runtime.json)
+[ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for runtime.json"
+verify_sha256 "${WORK}/runtime.json" runtime.json "${expected}"
+
+flat=$(tr -d ' \n\t\r' <"${WORK}/runtime.json")
+BUN_VERSION=$(json_field "${flat}" version)
+entry=$(printf '%s' "${flat}" | sed -n "s/.*\"${platform}\":{\([^}]*\)}.*/\1/p")
+BUN_FILE=$(json_field "${entry}" file)
+BUN_SHA=$(json_field "${entry}" sha256)
+[ -n "${BUN_VERSION}" ] && [ -n "${BUN_FILE}" ] && [ -n "${BUN_SHA}" ] ||
+  die "runtime.json in ${tag} has no bun asset for ${platform}"
+
+BUN_DIR="${ROOT}/runtime/bun-v${BUN_VERSION}"
+LIB_DIR="${ROOT}/lib/${VERSION}"
+
+if [ ! -x "${BUN_DIR}/bun" ]; then
+  echo "Downloading bun ${BUN_VERSION} (${platform})..."
+  "$CURL" -fsSL -H "User-Agent: dg-ai" -o "${WORK}/${BUN_FILE}" \
+    "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/${BUN_FILE}"
+  verify_sha256 "${WORK}/${BUN_FILE}" "${BUN_FILE}" "${BUN_SHA}"
+  NEED_BUN=1
+else
+  NEED_BUN=0
 fi
 
-# Verify a downloaded file against SHA256SUMS when that asset is on this same release.
-# A missing checksum file is not an error: older skills-v* releases predate it.
-verify_sha256() {
-  target=$1
-  sums_url=$(printf '%s' "${releases}" |
-    grep -oE "https://[^\"]+/download/${tag}/SHA256SUMS" |
-    head -1)
-  if [ -z "${sums_url}" ]; then
-    return 0
-  fi
-  sums_file=$(mktemp)
-  track_tmp "${sums_file}"
-  if ! curl -fsSL -H "User-Agent: dg-ai" -o "${sums_file}" "${sums_url}"; then
-    rm -f "${target}" "${sums_file}"
-    echo "dg-skills: failed to download SHA256SUMS for ${tag}" >&2
-    exit 1
-  fi
-  expected=$(awk -v asset="${asset}" '
-    $1 ~ /^[0-9A-Fa-f]{64}$/ {
-      name = $2
-      sub(/^\*/, "", name)
-      if (name == asset) { print $1; exit }
-    }
-  ' "${sums_file}" | tr 'A-F' 'a-f')
-  if [ -z "${expected}" ]; then
-    rm -f "${target}" "${sums_file}"
-    echo "dg-skills: SHA256SUMS in ${tag} has no entry for ${asset}" >&2
-    exit 1
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual=$(sha256sum "${target}" | awk '{print $1}')
-  elif command -v shasum >/dev/null 2>&1; then
-    actual=$(shasum -a 256 "${target}" | awk '{print $1}')
-  else
-    rm -f "${target}" "${sums_file}"
-    echo "dg-skills: SHA256SUMS was published for ${tag} but sha256sum and shasum are missing" >&2
-    exit 1
-  fi
-  actual=$(printf '%s' "${actual}" | tr 'A-F' 'a-f')
-  rm -f "${sums_file}"
-  if [ "${actual}" != "${expected}" ]; then
-    rm -f "${target}"
-    echo "dg-skills: checksum mismatch for ${asset} in ${tag}" >&2
-    exit 1
-  fi
-}
-
-# The binary this script just installed is current, so `dg-skills install`
-# would otherwise say "already current" right after "installed".
-run_install() {
-  log=$(mktemp)
-  track_tmp "${log}"
-  set +e
-  "$@" >"${log}" 2>&1 </dev/null
-  status=$?
-  set -e
-  while IFS= read -r line || [ -n "${line}" ]; do
-    case "${line}" in
-      "dg-skills already current (v"*)
-        ver=${line#"dg-skills already current (v"}
-        ver=${ver%")."}
-        echo "dg-skills verified (v${ver})."
-        ;;
-      *)
-        printf '%s\n' "${line}"
-        ;;
-    esac
-  done <"${log}"
-  rm -f "${log}"
-  return "${status}"
-}
-
-mkdir -p "${BIN_DIR}"
-
-DELEGATE=0
-if [ "${SKILLS_ONLY}" != "1" ] && [ -n "${PINNED_VERSION}" ]; then
-  DELEGATE=1
+LIB_ASSET="dg-lib-${VERSION}.tar.gz"
+if [ ! -f "${LIB_DIR}/dg.js" ]; then
+  echo "Downloading ${LIB_ASSET}..."
+  expected=$(sums_entry "${LIB_ASSET}")
+  [ -n "${expected}" ] || die "SHA256SUMS in ${tag} has no entry for ${LIB_ASSET}"
+  download_asset "${LIB_ASSET}" "${WORK}/${LIB_ASSET}"
+  verify_sha256 "${WORK}/${LIB_ASSET}" "${LIB_ASSET}" "${expected}"
+  NEED_LIB=1
+else
+  NEED_LIB=0
 fi
-INSTALLER=$(mktemp "${BIN_DIR}/.dg-skills-installer.XXXXXX")
-track_tmp "${INSTALLER}"
 
-curl -fsSL -H "User-Agent: dg-ai" -o "${INSTALLER}" "${url}"
-verify_sha256 "${INSTALLER}"
-chmod 755 "${INSTALLER}"
+mkdir -p "${ROOT}/runtime" "${ROOT}/lib" "${ROOT}/bin"
 
-if [ "${DELEGATE}" = "0" ]; then
-  mv -f "${INSTALLER}" "${DEST}"
-  INSTALLER="${DEST}"
-  # Stamp the installed version so `dg-skills install` won't re-download the binary.
-  version=$(normalize_version "${tag}")
-  [ -n "${version}" ] && printf '%s\n' "${version}" >"${BIN_DIR}/.dg-skills.version"
-  echo "dg-skills installed at ${DEST}"
+if [ "${NEED_BUN}" = "1" ]; then
+  stage=$(mktemp -d "${ROOT}/runtime/.stage.XXXXXX")
+  track_tmp "${stage}"
+  unzip -q "${WORK}/${BUN_FILE}" -d "${stage}"
+  inner=${BUN_FILE%.zip}
+  [ -f "${stage}/${inner}/bun" ] || die "${BUN_FILE} has no ${inner}/bun"
+  chmod 755 "${stage}/${inner}/bun"
+  rm -rf "${BUN_DIR}"
+  mv "${stage}/${inner}" "${BUN_DIR}"
 fi
+
+if [ "${NEED_LIB}" = "1" ]; then
+  stage=$(mktemp -d "${ROOT}/lib/.stage.XXXXXX")
+  track_tmp "${stage}"
+  tar -xzf "${WORK}/${LIB_ASSET}" -C "${stage}"
+  [ -f "${stage}/dg.js" ] || die "${LIB_ASSET} has no dg.js"
+  rm -rf "${LIB_DIR}"
+  mv "${stage}" "${LIB_DIR}"
+  chmod 755 "${LIB_DIR}"
+fi
+
+link_current "${ROOT}/runtime/current" "bun-v${BUN_VERSION}"
+link_current "${ROOT}/lib/current" "${VERSION}"
+
+for program in dg-skills dg-agent dg-daemon; do
+  shim=$(mktemp "${ROOT}/bin/.${program}.XXXXXX")
+  track_tmp "${shim}"
+  printf '#!/bin/sh\nexec "%s/runtime/current/bun" "%s/lib/current/dg.js" %s "$@"\n' \
+    "${ROOT}" "${ROOT}" "${program}" >"${shim}"
+  chmod 755 "${shim}"
+  mv -f "${shim}" "${ROOT}/bin/${program}"
+  rm -f "${ROOT}/bin/.${program}.version"
+done
+
+echo "dg runtime ${BUN_VERSION} and bundle ${VERSION} installed at ${ROOT}"
 
 case ":${PATH}:" in
-*":${BIN_DIR}:"*) ;;
-*) echo "Add to PATH:  export PATH=\"${BIN_DIR}:\$PATH\"" ;;
+*":${ROOT}/bin:"*) ;;
+*) echo "Add to PATH:  export PATH=\"${ROOT}/bin:\$PATH\"" ;;
 esac
 
-if [ "${SKILLS_ONLY}" = "1" ]; then
-  # Skills-only stops at the CLI: no `dg-skills install`, so no daemon, agent or extension.
-  exit 0
-elif [ "${CLI_ONLY}" = "1" ]; then
-  if [ -n "${PINNED_VERSION}" ]; then
-    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --cli-only --version "${PINNED_VERSION}"
-  else
-    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --cli-only
-  fi
-elif [ "${AGENT_ONLY}" = "1" ]; then
-  if [ -n "${PINNED_VERSION}" ]; then
-    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --agent-only --version "${PINNED_VERSION}"
-  else
-    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --agent-only
-  fi
-else
-  # Set up the browser extension too, so one command installs everything.
-  echo "Setting up the dg-ai-extension…"
-  if [ -n "${PINNED_VERSION}" ]; then
-    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install --version "${PINNED_VERSION}"
-  else
-    DG_SKILLS_BOOTSTRAP=1 run_install "${INSTALLER}" install
-  fi
-fi
+[ "${SKILLS_ONLY}" = "1" ] && exit 0
 
-# Optional Codex skill installation. Set DG_INSTALL_CODEX=1 to copy the
-# repository's skills into CODEX_HOME (default: ~/.codex/skills).
+install_args=""
+[ "${CLI_ONLY}" = "1" ] && install_args=" --cli-only"
+[ "${AGENT_ONLY}" = "1" ] && install_args=" --agent-only"
+[ -n "${PINNED_VERSION}" ] && install_args="${install_args} --version ${PINNED_VERSION}"
+
+if [ "${CLI_ONLY}" != "1" ] && [ "${AGENT_ONLY}" != "1" ]; then
+  echo "Setting up the dg-ai-extension..."
+fi
+DG_SKILLS_BOOTSTRAP=1 "${ROOT}/bin/dg-skills" install${install_args} </dev/null
+
 if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"
-  CODEX_TAG="${tag}"
-  if [ -n "${PINNED_VERSION}" ]; then
-    CODEX_TAG="v${PINNED_VERSION}"
-    is_prefixed_version "${PINNED_VERSION}" && CODEX_TAG="skills-v${PINNED_VERSION}"
-  fi
   tmpdir=$(mktemp -d)
   track_tmp "${tmpdir}"
   archive="${tmpdir}/dg-ai.tar.gz"
-  curl -fsSL -H "User-Agent: dg-ai" \
-    "https://github.com/${REPO}/archive/refs/tags/${CODEX_TAG}.tar.gz" -o "${archive}"
+  "$CURL" -fsSL -H "User-Agent: dg-ai" \
+    "https://github.com/${REPO}/archive/refs/tags/${tag}.tar.gz" -o "${archive}"
   mkdir -p "${CODEX_ROOT}/skills"
   source_root=$(extract_source_archive "${archive}" "${tmpdir}/source")
   for skill in "${source_root}/plugins/dg/skills"/*/; do

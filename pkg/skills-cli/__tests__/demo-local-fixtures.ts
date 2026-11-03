@@ -87,7 +87,7 @@ export function demoWorld(): DemoWorld {
 			process.exit = ((code?: number) => {
 				throw new ExitSignal(code ?? 0);
 			}) as typeof process.exit;
-			process.exitCode = undefined;
+			process.exitCode = 0;
 			let code = 0;
 			try {
 				const program = new Command().exitOverride();
@@ -101,7 +101,7 @@ export function demoWorld(): DemoWorld {
 				console.log = realLog;
 				console.error = realError;
 				process.exit = realExit;
-				process.exitCode = realExitCode;
+				process.exitCode = realExitCode ?? 0;
 			}
 			return { code, out: out.join("\n"), err: err.join("\n") };
 		},

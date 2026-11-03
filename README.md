@@ -19,14 +19,14 @@ Windows (x64 or arm64), in PowerShell:
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-These install the compiled CLI binaries and stage the extension; no Bun is needed.
-The extension, all three binaries, and both plugin manifests share one release
-version.
+These install a pinned Bun runtime, one bundle with `dg-skills`, `dg-agent` and
+`dg-daemon`, and the extension; you need no Bun of your own. The extension, the
+bundle, and both plugin manifests share one release version.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, **[CLI-only installation](docs/install.md#cli-only-install)**,
 and **[pinning a version](docs/install.md#pin-a-version)**.
-From a checkout, `mise run install:skills` copies instruction files without binaries;
+From a checkout, `mise run install:skills` copies instruction files without the CLI;
 see [skills-only installation](docs/install.md#skills-only-install) for `--skills-only`.
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
 browser actions that need a person.

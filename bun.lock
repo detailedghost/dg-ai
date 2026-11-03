@@ -101,6 +101,18 @@
         "typescript": "^7.0.2",
       },
     },
+    "pkg/launcher": {
+      "name": "@dg/launcher",
+      "version": "1.26.0",
+      "devDependencies": {
+        "@dg/common": "workspace:*",
+        "@dg/dg-agent": "workspace:*",
+        "@dg/dg-daemon": "workspace:*",
+        "@dg/skills-cli": "workspace:*",
+        "bun-types": "^1.4.3",
+        "typescript": "^7.0.2",
+      },
+    },
     "pkg/pages": {
       "name": "@dg/pages",
       "version": "1.0.0",
@@ -363,6 +375,8 @@
     "@dg/extension": ["@dg/extension@workspace:pkg/extension"],
 
     "@dg/inbox": ["@dg/inbox@workspace:pkg/inbox"],
+
+    "@dg/launcher": ["@dg/launcher@workspace:pkg/launcher"],
 
     "@dg/pages": ["@dg/pages@workspace:pkg/pages"],
 

@@ -18,7 +18,7 @@ import {
 	type ConnectClient,
 	defaultConnectDeps,
 	ensureGrant,
-} from "./channel-review-connect";
+} from "./connect";
 
 const MISE_CONFIGS = [".mise/config.toml", ".mise.toml", "mise.toml"];
 const ENV_LINE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;

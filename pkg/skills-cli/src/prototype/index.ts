@@ -213,8 +213,8 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 	}
 }
 
-/** Entry point for the local prototype commands; resolves to an exit status, or nothing while a server runs. */
-export async function main(argv: string[]): Promise<number | undefined> {
+/** Entry point for the local prototype commands; resolves to an exit status, and stays pending while a server runs. */
+export async function main(argv: string[]): Promise<number> {
 	const [command, ...rest] = argv;
 	if (!command) {
 		process.stderr.write(USAGE);

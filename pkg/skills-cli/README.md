@@ -122,19 +122,19 @@ or the extension, and it does not execute skill content. From the repo root,
 `mise run install:skills` is the same command. `bootstrap.sh --skills-only`
 and `DG_SKILLS_ONLY=1` do that copy on a machine without Bun.
 
-## Build standalone binary
+## Build the bundle
 
 ```bash
 cd pkg/skills-cli
-bun run build       # produces dist/dg-skills (current platform)
+bun run build       # runs pkg/launcher's build: ../launcher/dist/lib/dg.js and dist/dg-lib-<version>.tar.gz
 ```
 
-Pre-built binaries for Linux, macOS, and Windows (x64 and arm64) appear in
-[GitHub Releases](https://github.com/detailedghost/dg-ai/releases) as
-`skills-vX.X.X`. The release workflow also publishes `SHA256SUMS` (GNU
-`sha256sum` lines, `<hash>  <filename>`) beside those binaries. `bootstrap.sh`
-and `bootstrap.ps1` verify the download when that asset exists and still
-install older releases that do not include it.
+Each `vX.Y.Z` release in
+[GitHub Releases](https://github.com/detailedghost/dg-ai/releases) ships one
+platform-independent `dg-lib-X.Y.Z.tar.gz` and a `runtime.json` that pins the
+Bun runtime for each platform. `SHA256SUMS` (GNU `sha256sum` lines,
+`<hash>  <filename>`) lists both. `bootstrap.sh`, `bootstrap.ps1` and
+`dg-skills install` verify them before they change anything.
 
 ## Development commands
 

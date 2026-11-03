@@ -423,7 +423,7 @@ during the deploy window cannot reach the daemon; post them again afterward.
 ## Local tasks
 
 The repository's mise config has `remote:*` tasks for local runs:
-`remote:install` builds and installs `dg-skills`, `remote:start`,
+`remote:install` builds the dg bundle and makes it `lib/current`, `remote:start`,
 `remote:stop`, `remote:run`, and `remote:status` wrap those commands,
 `remote:logs` prints the log, `remote:follow` follows it, and `remote:up`
 starts the daemon and follows the log. Set `CR_ENV=prod` to read the prod log.

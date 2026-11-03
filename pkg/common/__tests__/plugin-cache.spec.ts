@@ -14,6 +14,7 @@ import {
 	activeVersions,
 	listDgPluginVersions,
 	pidAlive,
+	readProcStart,
 	reinspectPluginVersion,
 	planPluginCachePrune,
 	READ_WINDOW_MS,
@@ -388,6 +389,21 @@ describe("reinspectPluginVersion", () => {
 		const after = reinspectPluginVersion(before);
 		expect(after.livePids).toEqual([process.pid]);
 		expect(after.bytes).toBe(before.bytes);
+	});
+});
+
+describe("readProcStart", () => {
+	test("returns field 22 of the stat line, past a command name with spaces and parentheses", () => {
+		const stat = "4242 (a b) c) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 9876 23";
+		expect(readProcStart(4242, () => stat)).toBe("9876");
+	});
+
+	test("returns undefined when the stat file cannot be read", () => {
+		expect(
+			readProcStart(4242, () => {
+				throw new Error("ENOENT");
+			}),
+		).toBeUndefined();
 	});
 });
 

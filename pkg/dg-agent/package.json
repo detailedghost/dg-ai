@@ -4,8 +4,11 @@
 	"private": true,
 	"type": "module",
 	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
+	"exports": {
+		"./main": "./src/main.ts"
+	},
 	"scripts": {
-		"build": "bun build src/index.ts --compile --outfile dist/dg-agent",
+		"build": "bun run --cwd ../launcher build",
 		"lint": "tsc --noEmit",
 		"test": "bun test"
 	},

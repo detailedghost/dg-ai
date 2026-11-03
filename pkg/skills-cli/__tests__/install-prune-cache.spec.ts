@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prunePluginCache } from "../src/install/prune-plugin-cache";
+import { installEnv, writeReleaseServer } from "./runtime-bundle-fixtures";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
 const HOUR = 60 * 60 * 1000;
@@ -354,47 +355,17 @@ describe("prunePluginCache", () => {
 });
 
 describe("dg-skills install plugin cache prune", () => {
-	function childEnv(home: string): Record<string, string> {
-		const env: Record<string, string> = {};
-		for (const [key, value] of Object.entries(process.env)) {
-			if (value !== undefined) env[key] = value;
-		}
-		delete env.DG_CLI_ONLY;
-		delete env.DG_SKILLS_ONLY;
-		env.HOME = home;
-		env.USERPROFILE = home;
-		env.DG_HOME = join(home, ".dg");
-		env.LC_ALL = "C";
-		return env;
-	}
-
 	function preload(dir: string): string {
-		const base = "https://github.com/detailedghost/dg-ai/releases/download";
-		const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-		const cpu = process.arch === "arm64" ? "arm64" : "x64";
-		const asset = `dg-skills-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
-		const releases = [
-			{ tag_name: "v9.9.9", draft: false, assets: [{ name: asset, browser_download_url: `${base}/v9.9.9/${asset}` }] },
-		];
-		const path = join(dir, "preload.ts");
-		writeFileSync(
-			path,
-			`globalThis.fetch = (async (input: unknown) => {
-  const url = String(input);
-  if (url.includes("/releases?")) return new Response(JSON.stringify(${JSON.stringify(releases)}));
-  if (url.endsWith("/v9.9.9/${asset}")) return new Response("fake dg-skills");
-  throw new Error("unexpected fetch " + url);
-}) as typeof fetch;
-`,
-		);
-		return path;
+		const log = join(dir, "fetch.log");
+		writeFileSync(log, "");
+		return writeReleaseServer(dir, log, "9.9.9").preload;
 	}
 
 	async function runInstall(home: string, dir: string, extra: string[], mode = "--cli-only") {
 		const proc = Bun.spawn(["bun", "--preload", preload(dir), ENTRY, "install", mode, ...extra], {
 			stdout: "pipe",
 			stderr: "pipe",
-			env: childEnv(home),
+			env: { ...installEnv(home), DG_HOME: join(home, ".dg") },
 		});
 		const [stdout, stderr, code] = await Promise.all([
 			new Response(proc.stdout).text(),

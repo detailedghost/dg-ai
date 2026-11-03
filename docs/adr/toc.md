@@ -27,6 +27,8 @@ flowchart LR
 ## Installation
 
 - [0001 — Skills-only installation](0001-skills-only-install.md)
+- [0032 — Ship one pinned Bun runtime and one minified bundle](0032-shared-runtime-bundle.md) — Accepted:
+  three shims run one runtime and one code-split bundle in place of three compiled binaries.
 
 ## Platform
 

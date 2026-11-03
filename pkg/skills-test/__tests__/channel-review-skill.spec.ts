@@ -76,8 +76,8 @@ const cliSource = readRepoFile(
 	"pkg",
 	"skills-cli",
 	"src",
-	"commands",
-	"channel-review.ts",
+	"channel-review",
+	"cli.ts",
 );
 const emojisSource = readRepoFile("pkg", "channel-review", "src", "emojis.ts");
 const configSource = readRepoFile("pkg", "channel-review", "src", "config.ts");

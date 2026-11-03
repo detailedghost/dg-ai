@@ -1,12 +1,11 @@
 import type { Command } from "commander";
-import { main } from "../catchup";
-import { registerRawCommand } from "../utils/legacy-command";
+import { registerLazyRaw } from "../utils/lazy-command";
 
 /** Register the raw catchup parser without accessing Git or project files. */
 export function registerCatchup(program: Command): void {
-	registerRawCommand(program, {
+	registerLazyRaw(program, {
 		name: "catchup",
 		description: "Rebase onto origin's default branch, verify, and push",
-		run: main,
+		load: () => import("../catchup"),
 	});
 }

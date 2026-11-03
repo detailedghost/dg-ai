@@ -62,11 +62,11 @@ export function inboxCliHarness() {
 		async run(
 			args: string[],
 			overrides: Record<string, string | undefined> = {},
-			options: { executable?: string; timeoutMs?: number } = {},
+			options: { command?: string[]; timeoutMs?: number } = {},
 		): Promise<CliResult> {
 			const proc = Bun.spawn(
-				options.executable
-					? [options.executable, "inbox", ...args]
+				options.command
+					? [...options.command, "inbox", ...args]
 					: [process.execPath, skillsEntry, "inbox", ...args],
 				{
 					cwd,

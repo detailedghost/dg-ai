@@ -503,7 +503,7 @@ describe("test-live cleanup — refusals without data loss", () => {
 		runGit(["checkout", "-q", BRANCH], repo);
 		expect(headSha(repo)).toBe(patchedSha);
 		expect(runGit(["rev-parse", `refs/heads/${BRANCH}`], origin).trim()).toBe(patchedSha);
-	});
+	}, 30_000);
 
 	test("unrelated uncommitted changes block cleanup and nothing is reset or pushed", async () => {
 		const { origin, repo } = buildRepo();

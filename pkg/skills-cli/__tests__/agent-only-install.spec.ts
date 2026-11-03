@@ -1,118 +1,43 @@
 /**
- * `install --agent-only` fetches dg-skills (the installer vehicle) and dg-agent, so a
- * non-Claude agent that only needs phone has `dg-agent`. It never fetches dg-daemon
- * or the extension, and never installs personas, which only the Claude-side CLI uses.
+ * `install --agent-only` installs the runtime, the bundle and the three shims, so a
+ * non-Claude agent that only needs phone has `dg-agent`. It never fetches the extension,
+ * and never installs personas, which only the Claude-side CLI uses.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
 
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
-
-type RunResult = { code: number; stdout: string; stderr: string };
-
-function childEnv(home: string): Record<string, string> {
-	const env: Record<string, string> = {};
-	for (const [key, value] of Object.entries(process.env)) {
-		if (value !== undefined) env[key] = value;
-	}
-	delete env.DG_CLI_ONLY;
-	delete env.DG_SKILLS_ONLY;
-	env.HOME = home;
-	env.DG_HOME = home;
-	env.LC_ALL = "C";
-	return env;
-}
-
-async function run(argv: string[], env: Record<string, string>): Promise<RunResult> {
-	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", env });
-	const [stdout, stderr, code] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-		proc.exited,
-	]);
-	return { code, stdout, stderr };
-}
-
-function assetName(binary: string): string {
-	const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-	const cpu = process.arch === "arm64" ? "arm64" : "x64";
-	return `${binary}-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
-}
-
-/** Serves one vX.Y.Z release holding every part and logs every fetched URL. */
-function writePreload(dir: string, log: string): string {
-	const base = "https://github.com/detailedghost/dg-ai/releases/download";
-	const skillsAsset = assetName("dg-skills");
-	const agentAsset = assetName("dg-agent");
-	const daemonAsset = assetName("dg-daemon");
-	const releases = [
-		{
-			tag_name: "v9.9.9",
-			draft: false,
-			assets: [
-				{ name: skillsAsset, browser_download_url: `${base}/v9.9.9/${skillsAsset}` },
-				{ name: agentAsset, browser_download_url: `${base}/v9.9.9/${agentAsset}` },
-				{ name: daemonAsset, browser_download_url: `${base}/v9.9.9/${daemonAsset}` },
-				{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/v9.9.9/dg-ai-extension-chrome.zip` },
-			],
-		},
-	];
-	const path = join(dir, "preload.ts");
-	writeFileSync(
-		path,
-		`import { appendFileSync } from "node:fs";
-const releases = ${JSON.stringify(releases)};
-globalThis.fetch = (async (input: unknown) => {
-  const url = String(input);
-  appendFileSync(${JSON.stringify(log)}, url + "\\n");
-  if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
-  if (url.endsWith("/v9.9.9/${skillsAsset}")) return new Response("fake dg-skills");
-  if (url.endsWith("/v9.9.9/${agentAsset}")) return new Response(${JSON.stringify("#!/bin/sh\nexit 0\n# fake dg-agent\n")});
-  throw new Error("agent-only install must not fetch " + url);
-}) as typeof fetch;
-`,
-	);
-	return path;
-}
-
-function fetchedUrls(log: string): string[] {
-	return readFileSync(log, "utf8").split("\n").filter(Boolean);
-}
+const VERSION = "9.9.9";
 
 describe("dg-skills install --agent-only", () => {
-	test("fetches only dg-skills and dg-agent, skips the daemon and extension, and marks cli-only", async () => {
+	test("installs the bundle and shims, skips the extension, and marks cli-only", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-agent-only-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
 		const fetchLog = join(directory, "fetch.log");
 		writeFileSync(fetchLog, "");
 		try {
-			const preload = writePreload(directory, fetchLog);
-			const result = await run(
-				["bun", "--preload", preload, ENTRY, "install", "--agent-only"],
-				childEnv(home),
-			);
+			const { preload } = writeReleaseServer(directory, fetchLog, VERSION);
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--agent-only"], installEnv(home));
 
-			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
+			expect(result.code).toBe(0);
+			expect(result.stderr).not.toContain("skipped");
 			expect(result.stdout).toContain(
-				'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
+				'Agent-only install: the extension was skipped. Run "dg-skills install" to add it.',
 			);
 
 			const urls = fetchedUrls(fetchLog);
 			expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
-			expect(urls.some((url) => url.endsWith(`/v9.9.9/${assetName("dg-skills")}`))).toBe(true);
-			expect(urls.some((url) => url.endsWith(`/v9.9.9/${assetName("dg-agent")}`))).toBe(true);
-			expect(urls.filter((url) => /dg-daemon|extension/.test(url))).toEqual([]);
+			expect(urls.some((url) => url.endsWith(`/v${VERSION}/dg-lib-${VERSION}.tar.gz`))).toBe(true);
+			expect(urls.filter((url) => /extension/.test(url))).toEqual([]);
 
 			const bin = join(home, "bin");
-			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toBe("fake dg-skills");
-			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toBe("#!/bin/sh\nexit 0\n# fake dg-agent\n");
-			expect(existsSync(join(bin, "dg-daemon"))).toBe(false);
-			expect(readFileSync(join(bin, ".dg-skills.version"), "utf8").trim()).toBe("9.9.9");
-			expect(readFileSync(join(bin, ".dg-agent.version"), "utf8").trim()).toBe("9.9.9");
-			expect(readdirSync(bin).sort()).toEqual([".dg-agent.version", ".dg-skills.version", "dg-agent", "dg-skills"]);
+			expect(readdirSync(bin).sort()).toEqual(["dg-agent", "dg-daemon", "dg-skills"]);
+			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(VERSION);
+			expect(readFileSync(join(bin, "dg-agent"), "utf8")).toContain(`dg-agent "$@"`);
 
 			expect(existsSync(join(home, "cli-only"))).toBe(true);
 			expect(existsSync(join(home, "agents"))).toBe(false);
@@ -127,9 +52,9 @@ describe("dg-skills install --agent-only", () => {
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
 		try {
-			const result = await run(
+			const result = await runCli(
 				["bun", ENTRY, "install", "--agent-only", "--cli-only"],
-				childEnv(home),
+				installEnv(home),
 			);
 
 			expect(result.code).not.toBe(0);
@@ -144,9 +69,9 @@ describe("dg-skills install --agent-only", () => {
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
 		try {
-			const result = await run(
+			const result = await runCli(
 				["bun", ENTRY, "install", "--skills-only", "--agent-only"],
-				childEnv(home),
+				installEnv(home),
 			);
 
 			expect(result.code).not.toBe(0);
