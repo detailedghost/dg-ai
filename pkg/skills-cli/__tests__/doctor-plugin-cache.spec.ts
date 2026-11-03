@@ -56,7 +56,7 @@ describe("doctor install plugin-cache check", () => {
 		expect(result).toEqual({
 			status: "warn",
 			detail: "2 stale version(s), 0 MB reclaimable",
-			fix: "dg-skills install",
+			fix: "~/.dg/bin/dg-skills install",
 		});
 	});
 

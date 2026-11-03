@@ -62,7 +62,7 @@ export const installChecks: DoctorCheck[] = [
 			const bytes = remove.reduce((sum, version) => sum + version.bytes, 0);
 			return warn(
 				`${remove.length} stale version(s), ${formatMegabytes(bytes)} reclaimable`,
-				"dg-skills install",
+				`${CLI_PATH} install`,
 			);
 		},
 	},
