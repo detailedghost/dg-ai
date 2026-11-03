@@ -5,7 +5,7 @@ export function registerInstall(program: Command): void {
 	program
 		.command("install")
 		.description(
-			"stage the dg-ai-extension for loading + refresh the compiled dg-skills, dg-daemon and dg-agent binaries, or copy skill instruction files with --skills-only",
+			"stage the dg-ai-extension for loading + install the pinned Bun runtime, the dg bundle and the dg-skills, dg-agent and dg-daemon launchers, or copy skill instruction files with --skills-only",
 		)
 		.argument(
 			"[target]",
@@ -15,11 +15,11 @@ export function registerInstall(program: Command): void {
 		.option("--repo <path>", "dg repo to build from (default: search up from cwd)")
 		.option(
 			"--cli-only",
-			"install only the dg-skills binary; skip the extension, dg-daemon and dg-agent",
+			"install the runtime, bundle and launchers; skip the extension",
 		)
 		.option(
 			"--agent-only",
-			"install dg-agent (and dg-skills, which fetches it); skip the extension and dg-daemon, for a non-Claude agent that only needs phone",
+			"install the runtime, bundle and launchers; skip the extension, for a non-Claude agent that only needs phone",
 		)
 		.option(
 			"--skills-only",

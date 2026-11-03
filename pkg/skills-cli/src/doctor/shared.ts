@@ -1,7 +1,9 @@
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { resolveDgPaths, scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
+import { readCurrent } from "../install/current";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
-import { installedPlugins, isOlder, writableDirectory } from "./probes";
+import { installedPlugins, isOlder, toolVersion, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
 
 export function rootCheck(
@@ -39,20 +41,32 @@ export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "version-match",
 		run(ctx) {
+			const installed = readCurrent(ctx.paths.stateDir, "lib") ?? ctx.installedVersion;
 			const plugin = installedPlugins(ctx.home)[0];
-			if (!plugin)
-				return ok(`dg-skills ${ctx.installedVersion}; no plugin to compare`);
-			if (isOlder(ctx.installedVersion, plugin.version))
+			if (!plugin) return ok(`dg-skills ${installed}; no plugin to compare`);
+			if (isOlder(installed, plugin.version))
 				return fail(
-					`dg-skills ${ctx.installedVersion} is older than the dg plugin ${plugin.version}`,
+					`dg-skills ${installed} is older than the dg plugin ${plugin.version}`,
 					bootstrapCommand(ctx),
 				);
-			if (isOlder(plugin.version, ctx.installedVersion))
+			if (isOlder(plugin.version, installed))
 				return warn(
-					`the dg plugin ${plugin.version} is older than dg-skills ${ctx.installedVersion}`,
+					`the dg plugin ${plugin.version} is older than dg-skills ${installed}`,
 					PLUGIN_UPDATE,
 				);
-			return ok(`dg-skills and the dg plugin are both ${ctx.installedVersion}`);
+			return ok(`dg-skills and the dg plugin are both ${installed}`);
+		},
+	},
+	{
+		id: "runtime-present",
+		run(ctx) {
+			if (!readCurrent(ctx.paths.stateDir, "lib")) return ok("no bundle installed; running from source");
+			const bun = join(ctx.paths.stateDir, "runtime", "current", process.platform === "win32" ? "bun.exe" : "bun");
+			if (!existsSync(bun)) return fail(`the Bun runtime ${bun} is missing`, bootstrapCommand(ctx));
+			const version = toolVersion(bun);
+			return version
+				? ok(`the Bun runtime ${bun} runs (bun ${version})`)
+				: fail(`the Bun runtime ${bun} did not run --version`, bootstrapCommand(ctx));
 		},
 	},
 	{

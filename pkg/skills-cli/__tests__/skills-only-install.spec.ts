@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { INSTALLED_SKILL_FILES } from "../../common/__tests__/installed-skill-files";
+import { fetchedUrls, writeReleaseServer } from "./runtime-bundle-fixtures";
 
 const REPO = join(import.meta.dir, "..", "..", "..");
 const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
@@ -98,61 +99,31 @@ async function run(
 	return { code, stdout, stderr };
 }
 
-const SKILLS_BINARY = "#!/bin/sh\necho fake dg-skills\n";
+const BUNDLE = "dg-lib-9.9.9.tar.gz";
 
-function skillsAssetName(): string {
-	const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-	const cpu = process.arch === "arm64" ? "arm64" : "x64";
-	return `dg-skills-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
-}
-
-function sha256(text: string): string {
-	return createHash("sha256").update(text).digest("hex");
-}
-
-/** A fetch that serves one vX.Y.Z release holding every part and logs every URL. */
-function writePreload(dir: string, log: string, opts: { sums?: string; offline?: boolean } = {}): string {
-	const asset = skillsAssetName();
-	const base = "https://github.com/detailedghost/dg-ai/releases/download";
-	const releases = [
-		{ tag_name: "v9.9.9", draft: false, assets: [
-			{ name: asset, browser_download_url: `${base}/v9.9.9/${asset}` },
-			{ name: "SHA256SUMS", browser_download_url: `${base}/v9.9.9/SHA256SUMS` },
-			{ name: asset.replace("dg-skills", "dg-daemon"), browser_download_url: `${base}/v9.9.9/dg-daemon` },
-			{ name: asset.replace("dg-skills", "dg-agent"), browser_download_url: `${base}/v9.9.9/dg-agent` },
-			{ name: "dg-ai-extension-chrome.zip", browser_download_url: `${base}/v9.9.9/dg-ai-extension-chrome.zip` },
-		] },
-	];
-	const sums = opts.sums ?? `${sha256(SKILLS_BINARY)}  ${asset}\n`;
-	const path = join(dir, "preload.ts");
+/** A fetch that serves one vX.Y.Z release with the bundle and runtime, and logs every URL. */
+function writePreload(dir: string, log: string, opts: { sums?: (defaults: string) => string; offline?: boolean } = {}): string {
+	if (!opts.offline) return writeReleaseServer(dir, log, "9.9.9", { sums: opts.sums }).preload;
+	const path = join(dir, "offline-preload.ts");
 	writeFileSync(
 		path,
 		`import { appendFileSync } from "node:fs";
-const releases = ${JSON.stringify(releases)};
 globalThis.fetch = (async (input: unknown) => {
-  const url = String(input);
-  appendFileSync(${JSON.stringify(log)}, url + "\\n");
-  if (${opts.offline ? "true" : "false"}) throw new TypeError("fetch failed: offline");
-  if (url.includes("/releases?")) return new Response(JSON.stringify(releases));
-  if (url.endsWith("/v9.9.9/${asset}")) return new Response(${JSON.stringify(SKILLS_BINARY)});
-  if (url.endsWith("/v9.9.9/SHA256SUMS")) return new Response(${JSON.stringify(sums)});
-  throw new Error("skills-only install must not fetch " + url);
+  appendFileSync(${JSON.stringify(log)}, String(input) + "\\n");
+  throw new TypeError("fetch failed: offline");
 }) as typeof fetch;
 `,
 	);
 	return path;
 }
 
-function fetchedUrls(log: string): string[] {
-	return readFileSync(log, "utf8").split("\n").filter(Boolean);
-}
-
-function expectOnlySkillsCliFetched(log: string): void {
+function expectOnlyBundleFetched(log: string): void {
 	const urls = fetchedUrls(log);
 	expect(urls.some((url) => url.includes("/releases?"))).toBe(true);
-	expect(urls.some((url) => url.endsWith(`/v9.9.9/${skillsAssetName()}`))).toBe(true);
+	expect(urls.some((url) => url.endsWith(`/v9.9.9/${BUNDLE}`))).toBe(true);
 	expect(urls.some((url) => url.endsWith("/v9.9.9/SHA256SUMS"))).toBe(true);
-	expect(urls.filter((url) => /dg-daemon|dg-agent|extension/.test(url))).toEqual([]);
+	expect(urls.some((url) => url.endsWith("/v9.9.9/runtime.json"))).toBe(true);
+	expect(urls.filter((url) => /extension/.test(url))).toEqual([]);
 }
 
 function personasPath(skillsDest: string): string {
@@ -322,7 +293,7 @@ describe("dg-skills install --skills-only", () => {
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
-				`dg-skills installed v9.9.9 at ${join(home, "bin", "dg-skills")}`,
+				`dg-skills installed v9.9.9 at ${join(home, "lib", "9.9.9")}`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expectPersonasInstalled(dest);
@@ -330,10 +301,9 @@ describe("dg-skills install --skills-only", () => {
 				"google-sms-cleanup",
 			);
 			expect(existsSync(join(dest, "README.md"))).toBe(false);
-			expectOnlySkillsCliFetched(fetchLog);
-			expect(readFileSync(join(home, "bin", "dg-skills"), "utf8")).toBe(SKILLS_BINARY);
-			expect(readFileSync(join(home, "bin", ".dg-skills.version"), "utf8").trim()).toBe("9.9.9");
-			expect(readdirSync(join(home, "bin")).sort()).toEqual([".dg-skills.version", "dg-skills"]);
+			expectOnlyBundleFetched(fetchLog);
+			expect(readFileSync(join(home, "bin", "dg-skills"), "utf8")).toContain(`dg-skills "$@"`);
+			expect(readdirSync(join(home, "bin")).sort()).toEqual(["dg-agent", "dg-daemon", "dg-skills"]);
 			expect(readFileSync(join(home, "cli-only"), "utf8")).toBe("keep");
 			expect(filesUnder(dest).some((file) => /dg-skills|dg-daemon|dg-agent|\.zip$/.test(file))).toBe(
 				false,
@@ -389,40 +359,48 @@ describe("dg-skills install --skills-only", () => {
 		}
 	});
 
-	test("refuses a dg-skills CLI whose checksum does not match SHA256SUMS", async () => {
+	test("refuses a bundle whose checksum does not match SHA256SUMS", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-sums-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
 		const fetchLog = join(directory, "fetch.log");
 		writeFileSync(fetchLog, "");
 		try {
-			const preload = writePreload(directory, fetchLog, { sums: `${"0".repeat(64)}  ${skillsAssetName()}\n` });
+			const preload = writePreload(directory, fetchLog, {
+				sums: (defaults) => defaults.replace(/^[0-9a-f]{64}(  dg-lib-)/m, `${"0".repeat(64)}$1`),
+			});
 			const result = await run(
 				["bun", "--preload", preload, ENTRY, "install", "--skills-only", "--dest", join(directory, "dest")],
 				childEnv(home),
 			);
 			expect(result.code).toBe(0);
-			expect(result.stderr).toContain(`checksum mismatch for ${skillsAssetName()} in v9.9.9`);
+			expect(result.stderr).toContain(`checksum mismatch for ${BUNDLE} in v9.9.9`);
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
-			expect(existsSync(join(home, "bin", ".dg-skills.version"))).toBe(false);
+			expect(existsSync(join(home, "lib"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
 
-	test("refuses a SHA256SUMS that omits the dg-skills asset", async () => {
+	test("refuses a SHA256SUMS that omits the runtime.json asset", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-skills-only-nosum-"));
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
 		const fetchLog = join(directory, "fetch.log");
 		writeFileSync(fetchLog, "");
 		try {
-			const preload = writePreload(directory, fetchLog, { sums: `${"a".repeat(64)}  other-asset\n` });
+			const preload = writePreload(directory, fetchLog, {
+				sums: (defaults) =>
+					defaults
+						.split("\n")
+						.filter((line) => !line.endsWith("runtime.json"))
+						.join("\n"),
+			});
 			const result = await run(
 				["bun", "--preload", preload, ENTRY, "install", "--skills-only", "--dest", join(directory, "dest")],
 				childEnv(home),
 			);
-			expect(result.stderr).toContain(`SHA256SUMS in v9.9.9 has no entry for ${skillsAssetName()}`);
+			expect(result.stderr).toContain("SHA256SUMS in v9.9.9 has no entry for runtime.json");
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });

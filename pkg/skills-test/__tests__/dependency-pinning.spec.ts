@@ -1,7 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { bumpRuntime } from "../../../scripts/bump-runtime";
 import { REPO_ROOT, readRepoFile } from "./test-support";
+import { parseWorkflow, workflowFiles } from "./workflow-support";
 
 const PKG_DIR = join(REPO_ROOT, "pkg");
 
@@ -70,5 +83,121 @@ describe("no workspace package pins a dependency to a moving tag", () => {
 			),
 		);
 		expect(withWorkspace.length).toBeGreaterThan(0);
+	});
+});
+
+describe("the bun version is pinned to one value everywhere", () => {
+	const runtime = JSON.parse(readRepoFile("pkg", "launcher", "runtime.json")) as {
+		version: string;
+	};
+	const mise = Bun.TOML.parse(readRepoFile(".mise", "config.toml")) as {
+		tools: { bun: string };
+	};
+
+	test("runtime.json holds a full x.y.z version", () => {
+		expect(runtime.version).toMatch(/^\d+\.\d+\.\d+$/);
+	});
+
+	test(".mise bun pin equals the runtime.json version", () => {
+		expect(mise.tools.bun).toBe(runtime.version);
+	});
+
+	test("there is at least one setup-bun step to check", () => {
+		const pins = workflowFiles().flatMap((name) => setupBunVersions(name));
+
+		expect(pins.length).toBeGreaterThan(0);
+	});
+
+	for (const name of workflowFiles()) {
+		test(`every setup-bun in ${name} uses the runtime.json version`, () => {
+			for (const version of setupBunVersions(name)) {
+				expect(version).toBe(runtime.version);
+			}
+		});
+	}
+});
+
+function setupBunVersions(name: string): string[] {
+	return Object.values(parseWorkflow(name).jobs).flatMap((job) =>
+		(job.steps ?? [])
+			.filter((step) => step.uses?.startsWith("oven-sh/setup-bun@"))
+			.map((step) => String(step.with?.["bun-version"])),
+	);
+}
+
+describe("bump-runtime keeps runtime.json, .mise and the workflows in agreement", () => {
+	const NEXT = "9.8.7";
+
+	function stagedRepo(): string {
+		const root = mkdtempSync(join(tmpdir(), "dg-bump-runtime-"));
+		mkdirSync(join(root, "pkg", "launcher"), { recursive: true });
+		mkdirSync(join(root, ".mise"), { recursive: true });
+		cpSync(join(REPO_ROOT, "pkg", "launcher", "runtime.json"), join(root, "pkg", "launcher", "runtime.json"));
+		cpSync(join(REPO_ROOT, ".mise", "config.toml"), join(root, ".mise", "config.toml"));
+		cpSync(join(REPO_ROOT, ".github", "workflows"), join(root, ".github", "workflows"), { recursive: true });
+		return root;
+	}
+
+	function shasumsFile(root: string, files: string[]): string {
+		const path = join(root, "SHASUMS256.txt");
+		const lines = files.map((file, index) => `${String(index + 1).repeat(64)}  ${file}`);
+		writeFileSync(path, `${lines.join("\n")}\n`);
+		return pathToFileURL(path).href;
+	}
+
+	test("a bump rewrites the pin, the hashes, .mise and every setup-bun to the new version", async () => {
+		const root = stagedRepo();
+		const before = JSON.parse(readFileSync(join(root, "pkg", "launcher", "runtime.json"), "utf8")) as {
+			assets: Record<string, { file: string }>;
+		};
+		const files = Object.values(before.assets).map((asset) => asset.file);
+		process.env.DG_BUN_SHASUMS_URL = shasumsFile(root, files);
+		try {
+			await bumpRuntime(root, NEXT);
+		} finally {
+			delete process.env.DG_BUN_SHASUMS_URL;
+		}
+
+		const runtime = JSON.parse(readFileSync(join(root, "pkg", "launcher", "runtime.json"), "utf8")) as {
+			version: string;
+			assets: Record<string, { file: string; sha256: string }>;
+		};
+		const mise = Bun.TOML.parse(readFileSync(join(root, ".mise", "config.toml"), "utf8")) as {
+			tools: { bun: string };
+		};
+		expect(runtime.version).toBe(NEXT);
+		expect(Object.values(runtime.assets).map((asset) => asset.file)).toEqual(files);
+		expect(Object.values(runtime.assets).every((asset) => /^([1-8])\1{63}$/.test(asset.sha256))).toBe(true);
+		expect(mise.tools.bun).toBe(NEXT);
+		const pins = readdirSync(join(root, ".github", "workflows"))
+			.filter((name) => name.endsWith(".yml"))
+			.flatMap((name) =>
+				Object.values(
+					(Bun.YAML.parse(readFileSync(join(root, ".github", "workflows", name), "utf8")) as ReturnType<typeof parseWorkflow>).jobs,
+				).flatMap((job) =>
+					(job.steps ?? [])
+						.filter((step) => step.uses?.startsWith("oven-sh/setup-bun@"))
+						.map((step) => String(step.with?.["bun-version"])),
+				),
+			);
+		expect(pins.length).toBeGreaterThan(0);
+		expect(pins.every((pin) => pin === NEXT)).toBe(true);
+	});
+
+	test("a SHASUMS file that misses an asset fails and changes nothing", async () => {
+		const root = stagedRepo();
+		const original = readFileSync(join(root, "pkg", "launcher", "runtime.json"), "utf8");
+		process.env.DG_BUN_SHASUMS_URL = shasumsFile(root, ["bun-linux-x64.zip"]);
+		try {
+			await expect(bumpRuntime(root, NEXT)).rejects.toThrow("has no entry for");
+		} finally {
+			delete process.env.DG_BUN_SHASUMS_URL;
+		}
+
+		expect(readFileSync(join(root, "pkg", "launcher", "runtime.json"), "utf8")).toBe(original);
+	});
+
+	test("a version that is not x.y.z is refused", async () => {
+		await expect(bumpRuntime(stagedRepo(), "1.4")).rejects.toThrow("invalid bun version");
 	});
 });

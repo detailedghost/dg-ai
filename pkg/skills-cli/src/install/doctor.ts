@@ -24,7 +24,7 @@ export const installChecks: DoctorCheck[] = [
 		run(ctx) {
 			const dest = join(
 				binDir(ctx.paths.stateDir),
-				process.platform === "win32" ? "dg-skills.exe" : "dg-skills",
+				process.platform === "win32" ? "dg-skills.cmd" : "dg-skills",
 			);
 			return existsSync(dest)
 				? ok(`${CLI_PATH} is installed`)

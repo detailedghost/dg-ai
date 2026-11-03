@@ -6,17 +6,16 @@
  */
 
 import {
-	chmodSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isWSL, run } from "@dg/common/node";
+import { readCurrent } from "../install/current";
 import { syncDirInPlace } from "./extension-files";
 
 export type Target = "chrome" | "firefox";
@@ -157,28 +156,20 @@ export type Release = {
 	assets: { name: string; browser_download_url: string }[];
 };
 
-export type PickedAsset = { name: string; url: string; version: string; sumsUrl?: string };
+export type PickedAsset = { name: string; url: string; version: string };
 
-const UA = { "User-Agent": "dg-ai-extension" };
+export type PickedBundle = {
+	version: string;
+	assetName: string;
+	url: string;
+	sumsUrl: string;
+};
 
-/**
- * A release asset name for a platform+arch, or undefined if that combination
- * isn't built. Kept in lockstep with each release workflow's matrix and
- * bootstrap.sh/bootstrap.ps1's os/arch mapping.
- */
-export function cliAssetName(
-	binaryName: string,
-	platform: string,
-	arch: string,
-): string | undefined {
-	const os = { linux: "linux", darwin: "macos", win32: "windows" }[platform];
-	const cpu = { x64: "x64", arm64: "arm64" }[arch];
-	if (!os || !cpu) return undefined;
-	return `${binaryName}-${os}-${cpu}${os === "windows" ? ".exe" : ""}`;
-}
+export const UA = { "User-Agent": "dg-ai-extension" };
 
 export const RELEASE_TAG = /^v\d+\.\d+\.\d+$/;
 const LAST_PREFIXED_VERSION = "1.21.1";
+export const FIRST_BUNDLE_VERSION = "1.27.0";
 
 /**
  * The exact `v<version>` release when `version` pins one, else the newest `vX.Y.Z` release by semver.
@@ -225,27 +216,29 @@ export function pickExtAsset(
 	};
 }
 
-/** `version` pins resolution to that release instead of the newest one. */
-export type BinarySpec = { binaryName: string; version?: string };
-
-export function pickCliAsset(
-	releases: Release[],
-	spec: BinarySpec,
-	platform: string,
-	arch: string,
-): PickedAsset | undefined {
-	const name = cliAssetName(spec.binaryName, platform, arch);
-	if (!name) return undefined;
-	const rel = pickRelease(releases, spec.version, legacyPrefixOf(spec.binaryName));
-	const asset = rel?.assets.find((a) => a.name === name);
-	if (!rel || !asset) return undefined;
-	const sums = rel.assets.find((a) => a.name === "SHA256SUMS");
-	return {
-		name: asset.name,
-		url: asset.browser_download_url,
-		version: releaseVersion(rel.tag_name),
-		...(sums ? { sumsUrl: sums.browser_download_url } : {}),
-	};
+/** The dg-lib bundle and its SHA256SUMS from the pinned or newest vX.Y.Z release, which must also ship runtime.json. */
+export function pickBundle(releases: Release[], version?: string): PickedBundle {
+	const rel = pickRelease(releases, version);
+	if (!rel) {
+		throw new Error(
+			version
+				? `no release named v${version} found`
+				: `no vX.Y.Z release was found in the ${releases.length} releases scanned`,
+		);
+	}
+	const found = releaseVersion(rel.tag_name);
+	const assetName = `dg-lib-${found}.tar.gz`;
+	const url = (name: string) => rel.assets.find((a) => a.name === name)?.browser_download_url;
+	const [bundleUrl, sumsUrl, runtimeUrl] = [assetName, "SHA256SUMS", "runtime.json"].map(url);
+	if (!bundleUrl) {
+		throw new Error(
+			versionGte(found, FIRST_BUNDLE_VERSION)
+				? `v${found} has no ${assetName} asset`
+				: `releases before ${FIRST_BUNDLE_VERSION} ship compiled binaries; run that release's bootstrap.sh: curl -fsSL https://github.com/${REPO}/releases/download/v${found}/bootstrap.sh | sh`,
+		);
+	}
+	if (!sumsUrl || !runtimeUrl) throw new Error(`v${found} has no SHA256SUMS or runtime.json asset`);
+	return { version: found, assetName, url: bundleUrl, sumsUrl };
 }
 
 /** The hash SHA256SUMS lists for `assetName` (GNU `<hash>  <name>` or `<hash> *<name>`), lowercased. */
@@ -257,18 +250,22 @@ export function expectedSha256(sums: string, assetName: string): string | undefi
 	return undefined;
 }
 
-/**
- * Check a downloaded binary against the release's SHA256SUMS, the same rule bootstrap.sh and
- * bootstrap.ps1 apply. A release without SHA256SUMS passes; one that omits the asset or mismatches throws.
- */
-export async function verifyCliChecksum(asset: PickedAsset, buf: Uint8Array, tag: string): Promise<void> {
-	if (!asset.sumsUrl) return;
-	const res = await fetch(asset.sumsUrl, { headers: UA });
+export function sha256Hex(buf: Uint8Array): string {
+	return new Bun.CryptoHasher("sha256").update(buf).digest("hex");
+}
+
+/** Checks `buf` against the hash SHA256SUMS lists for `assetName`; a missing entry or a mismatch throws. */
+export async function verifyReleaseAsset(
+	sumsUrl: string,
+	assetName: string,
+	buf: Uint8Array,
+	tag: string,
+): Promise<void> {
+	const res = await fetch(sumsUrl, { headers: UA });
 	if (!res.ok) throw new Error(`failed to download SHA256SUMS for ${tag}: HTTP ${res.status}`);
-	const expected = expectedSha256(await res.text(), asset.name);
-	if (!expected) throw new Error(`SHA256SUMS in ${tag} has no entry for ${asset.name}`);
-	const actual = new Bun.CryptoHasher("sha256").update(buf).digest("hex");
-	if (actual !== expected) throw new Error(`checksum mismatch for ${asset.name} in ${tag}`);
+	const expected = expectedSha256(await res.text(), assetName);
+	if (!expected) throw new Error(`SHA256SUMS in ${tag} has no entry for ${assetName}`);
+	if (sha256Hex(buf) !== expected) throw new Error(`checksum mismatch for ${assetName} in ${tag}`);
 }
 
 export const RELEASES_PER_PAGE = 100;
@@ -289,20 +286,6 @@ export async function listReleases(): Promise<Release[]> {
 	return releases;
 }
 
-export type MissingCliAssetReason =
-	| { kind: "no-platform-asset" }
-	| { kind: "no-matching-release"; releasesScanned: number };
-
-export function describeMissingCliAsset(
-	spec: BinarySpec,
-	releases: Release[],
-): MissingCliAssetReason {
-	const release = pickRelease(releases, spec.version, legacyPrefixOf(spec.binaryName));
-	return release
-		? { kind: "no-platform-asset" }
-		: { kind: "no-matching-release", releasesScanned: releases.length };
-}
-
 /** Download the newest extension release's zip for `target`, or the exact `version` pin, to a temp file. */
 export async function downloadReleaseAsset(
 	target: Target,
@@ -321,66 +304,22 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** `$DG_HOME/bin`, else `~/.dg/bin`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
-export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
-	return join(env.DG_HOME || join(homedir(), ".dg"), "bin");
+/** `$DG_HOME`, else `~/.dg`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
+export function installRoot(env: NodeJS.ProcessEnv = process.env): string {
+	return env.DG_HOME || join(homedir(), ".dg");
 }
 
+export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
+	return join(installRoot(env), "bin");
+}
+
+/** The launcher shim for a program: `<root>/bin/<name>`, `.cmd` on Windows. */
 export function cliDest(binaryName: string): string {
-	const name = process.platform === "win32" ? `${binaryName}.exe` : binaryName;
+	const name = process.platform === "win32" ? `${binaryName}.cmd` : binaryName;
 	return join(cliBinDir(), name);
 }
 
-export function cliVersionFile(binaryName: string): string {
-	return join(cliBinDir(), `.${binaryName}.version`);
-}
-
-export function resolveCliAsset(
-	spec: BinarySpec,
-	releases: Release[],
-): PickedAsset | undefined {
-	return pickCliAsset(releases, spec, process.platform, process.arch);
-}
-
-/** Download and checksum-verify a binary without writing anything to disk yet. */
-export async function fetchVerifiedBinary(
-	binaryName: string,
-	asset: PickedAsset,
-): Promise<Uint8Array> {
-	const dl = await fetch(asset.url, { headers: UA });
-	if (!dl.ok)
-		throw new Error(`${binaryName} download failed: HTTP ${dl.status}`);
-	const buf = Buffer.from(await dl.arrayBuffer());
-	await verifyCliChecksum(asset, buf, `v${asset.version}`);
-	return buf;
-}
-
-/** Stage `buf` next to its final destination, then rename into place and stamp its version. */
-export function commitCliBinary(
-	binaryName: string,
-	asset: PickedAsset,
-	buf: Uint8Array,
-): string {
-	const binDir = cliBinDir();
-	mkdirSync(binDir, { recursive: true });
-	const dest = cliDest(binaryName);
-	const staging = join(binDir, `.${binaryName}.${process.pid}.tmp`);
-	try {
-		writeFileSync(staging, buf);
-		chmodSync(staging, 0o755);
-		renameSync(staging, dest);
-	} catch (err) {
-		rmSync(staging, { force: true });
-		throw err;
-	}
-	writeFileSync(cliVersionFile(binaryName), `${asset.version}\n`);
-	return dest;
-}
-
-export async function fetchCliBinary(
-	binaryName: string,
-	asset: PickedAsset,
-): Promise<string> {
-	const buf = await fetchVerifiedBinary(binaryName, asset);
-	return commitCliBinary(binaryName, asset, buf);
+/** The bundle version `lib/current` points at, or undefined before the first bundle install. */
+export function readCurrentVersion(root: string = installRoot()): string | undefined {
+	return readCurrent(root, "lib");
 }

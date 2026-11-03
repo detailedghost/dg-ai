@@ -4,39 +4,37 @@
  * Chrome/Edge/Brave forbid programmatically installing an unpacked extension, so
  * this stages the built extension to a stable per-OS path and prints guided
  * Load-unpacked steps. Assets come from the CI-built GitHub Release; in a source
- * checkout (dev) it falls back to a local `wxt build`. It also refreshes the
- * compiled dg-skills and dg-daemon binaries (the release artifacts skills invoke).
+ * checkout (dev) it falls back to a local `wxt build`. It also installs the pinned Bun
+ * runtime and the dg-lib bundle, and writes the dg-skills, dg-agent and dg-daemon shims.
  */
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
+import { fetchBundle } from "./bundle";
 import { refreshPhoneListener } from "./phone-listener";
+import { ensureRuntime, fetchRuntimePin } from "./runtime";
+import { PROGRAMS, writeShims } from "./shims";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
 	skillsOnlyReport,
 } from "./skills-only";
 import {
-	type BinarySpec,
-	cliDest,
-	cliVersionFile,
-	commitCliBinary,
-	describeMissingCliAsset,
+	cliBinDir,
 	downloadReleaseAsset,
 	extensionDest,
 	extensionDgDirs,
 	extractZip,
-	fetchCliBinary,
-	fetchVerifiedBinary,
+	installRoot,
 	listReleases,
-	pickCliAsset,
-	type PickedAsset,
+	pickBundle,
+	type PickedBundle,
 	type Release,
+	readCurrentVersion,
 	readMarker,
 	repoRoot,
-	resolveCliAsset,
 	type Target,
 	versionGte,
 	writeMarkerEntry,
@@ -141,114 +139,50 @@ export function currentBinaryLine(
 	return `${binaryName} already current (v${version}).`;
 }
 
-async function installBinary(
-	spec: BinarySpec,
-	releases: Release[],
-): Promise<void> {
-	const { binaryName } = spec;
-	try {
-		const asset = resolveCliAsset(spec, releases);
-		if (!asset) {
-			const reason = describeMissingCliAsset(spec, releases);
-			const platform = `${process.platform}-${process.arch}`;
-			console.warn(
-				reason.kind === "no-platform-asset"
-					? `⚠ ${binaryName}: this platform (${platform}) has no published asset; skipping its refresh.`
-					: `⚠ ${binaryName}: no vX.Y.Z release was found in the ${reason.releasesScanned} releases scanned; skipping its refresh.`,
-			);
-			return;
-		}
-		const vf = cliVersionFile(binaryName);
-		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
-		// The binary is large; skip the download when we're already current.
-		const current = Boolean(installed) && versionGte(installed, asset.version);
-		if (current && existsSync(cliDest(binaryName))) {
-			console.log(currentBinaryLine(binaryName, installed));
-			return;
-		}
-		const path = await fetchCliBinary(binaryName, asset);
-		console.log(
-			`${binaryName} ${installed ? "updated to" : "installed"} v${asset.version} at ${path}`,
-		);
-	} catch (err) {
-		console.warn(
-			`⚠ ${binaryName} install skipped: ${err instanceof Error ? err.message : err}`,
-		);
-	}
-}
-
-type ResolvedBinary = { binaryName: string; asset: PickedAsset; installed: string };
-
-/** Resolves every spec's asset up front; throws naming the first tag that can't be resolved. */
-function resolvePinnedBinaries(specs: BinarySpec[], releases: Release[]): ResolvedBinary[] {
-	return specs.map((spec) => {
-		const asset = pickCliAsset(releases, spec, process.platform, process.arch);
-		if (!asset) {
-			const reason = describeMissingCliAsset(spec, releases);
-			const platform = `${process.platform}-${process.arch}`;
-			throw new Error(
-				reason.kind === "no-platform-asset"
-					? `${spec.binaryName}: this platform (${platform}) has no published asset for v${spec.version}`
-					: `no release named v${spec.version} found`,
-			);
-		}
-		const vf = cliVersionFile(spec.binaryName);
-		const installed = existsSync(vf) ? readFileSync(vf, "utf8").trim() : "";
-		return { binaryName: spec.binaryName, asset, installed };
-	});
-}
-
-type StagedBinary = { binaryName: string; asset: PickedAsset; buf: Uint8Array; installed: string };
-
-/** Downloads and verifies every resolved binary that isn't already current; writes nothing to disk. */
-async function fetchResolvedBinaries(resolved: ResolvedBinary[]): Promise<StagedBinary[]> {
-	const staged: StagedBinary[] = [];
-	for (const { binaryName, asset, installed } of resolved) {
-		if (installed === asset.version && existsSync(cliDest(binaryName))) {
-			console.log(currentBinaryLine(binaryName, installed));
-			continue;
-		}
-		staged.push({ binaryName, asset, installed, buf: await fetchVerifiedBinary(binaryName, asset) });
-	}
-	return staged;
-}
-
-function commitStagedBinaries(staged: StagedBinary[]): void {
-	for (const { binaryName, asset, buf, installed } of staged) {
-		const path = commitCliBinary(binaryName, asset, buf);
-		console.log(`${binaryName} ${installed ? "updated to" : "installed"} v${asset.version} at ${path}`);
-	}
-}
-
-/** Resolves, downloads and verifies every binary in `specs` before any of them is committed. */
-async function installPinnedBinaries(specs: BinarySpec[], releases: Release[]): Promise<void> {
-	const resolved = resolvePinnedBinaries(specs, releases);
-	const staged = await fetchResolvedBinaries(resolved);
-	commitStagedBinaries(staged);
-}
-
 const RETIRED_BINARIES = ["dg-server"];
 
 export function removeRetiredBinaries(): void {
+	const bin = cliBinDir();
 	for (const name of RETIRED_BINARIES) {
-		const dest = cliDest(name);
-		if (!existsSync(dest)) continue;
-		rmSync(dest, { force: true });
-		rmSync(cliVersionFile(name), { force: true });
-		console.log(`removed the retired ${name} binary at ${dest}.`);
+		for (const dest of [join(bin, name), join(bin, `${name}.exe`)]) {
+			if (!existsSync(dest)) continue;
+			rmSync(dest, { force: true });
+			console.log(`removed the retired ${name} binary at ${dest}.`);
+		}
+	}
+	for (const name of [...RETIRED_BINARIES, ...PROGRAMS]) {
+		rmSync(join(bin, `.${name}.version`), { force: true });
 	}
 }
 
-const BINARIES: BinarySpec[] = [
-	{ binaryName: "dg-skills" },
-	{ binaryName: "dg-daemon" },
-	{ binaryName: "dg-agent" },
-];
+/** Installs the pinned runtime and the bundle, then points the three shims at them. */
+async function installBundle(release: PickedBundle): Promise<void> {
+	const root = installRoot();
+	const installed = readCurrentVersion(root);
+	const bundleDir = join(root, "lib", release.version);
+	const present = existsSync(join(bundleDir, "dg.js"));
+	const currentBun = join(root, "runtime", "current", process.platform === "win32" ? "bun.exe" : "bun");
+	const runtimeBin =
+		present && existsSync(currentBun)
+			? currentBun
+			: await ensureRuntime(root, await fetchRuntimePin(release));
+	await fetchBundle(root, release, runtimeBin);
+	writeShims(root);
+	removeRetiredBinaries();
+	console.log(
+		present && installed === release.version
+			? currentBinaryLine("dg-skills", release.version)
+			: `dg-skills ${installed ? "updated to" : "installed"} v${release.version} at ${bundleDir}`,
+	);
+}
 
-function binarySpec(binaryName: string): BinarySpec {
-	const spec = BINARIES.find((candidate) => candidate.binaryName === binaryName);
-	if (!spec) throw new Error(`no binary spec named "${binaryName}"`);
-	return spec;
+/** An unpinned install keeps the old warn-and-continue behavior when the bundle cannot be installed. */
+async function installNewestBundle(releases: Release[]): Promise<void> {
+	try {
+		await installBundle(pickBundle(releases));
+	} catch (err) {
+		console.warn(`⚠ dg bundle install skipped: ${err instanceof Error ? err.message : err}`);
+	}
 }
 
 function pruneClaudePluginCache(keep: boolean): void {
@@ -263,16 +197,12 @@ function noteForeignDgHome(): void {
 }
 
 async function installCli(keepCache: boolean): Promise<void> {
-	const releases = await listReleases();
-	for (const spec of BINARIES) {
-		await installBinary(spec, releases);
-	}
-	removeRetiredBinaries();
+	await installNewestBundle(await listReleases());
 	refreshPhoneListener();
 	pruneClaudePluginCache(keepCache);
 }
 
-/** Skills-only installs fetch the dg-skills CLI so the skills can run it; never the daemon, agent or extension. */
+/** Skills-only installs fetch the bundle so the skills can run dg-skills; never the extension. */
 async function installSkillsCli(version?: string, releases?: Release[]): Promise<void> {
 	let resolved: Release[];
 	if (releases) {
@@ -281,25 +211,18 @@ async function installSkillsCli(version?: string, releases?: Release[]): Promise
 		try {
 			resolved = await listReleases();
 		} catch (err) {
-			// Same warn-and-continue as installBinary: the skills are already copied.
 			console.warn(`⚠ dg-skills install skipped: ${err instanceof Error ? err.message : err}`);
 			return;
 		}
 	}
-	if (version) {
-		await installPinnedBinaries([{ ...binarySpec("dg-skills"), version }], resolved);
-	} else {
-		await installBinary(binarySpec("dg-skills"), resolved);
-	}
+	if (version) await installBundle(pickBundle(resolved, version));
+	else await installNewestBundle(resolved);
 }
 
 async function installCliOnly(keepCache: boolean, version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) {
-		await installPinnedBinaries([{ ...binarySpec("dg-skills"), version }], releases);
-	} else {
-		await installBinary(binarySpec("dg-skills"), releases);
-	}
+	if (version) await installBundle(pickBundle(releases, version));
+	else await installNewestBundle(releases);
 	const skillsDest = skillsInstallDest(process.env, homedir());
 	const personas = installPackagedPersonas(skillsDest);
 	setCliOnly(true);
@@ -307,26 +230,19 @@ async function installCliOnly(keepCache: boolean, version?: string): Promise<voi
 		`Installed ${personas.length} personas at ${personasDest(skillsDest)}.`,
 	);
 	console.log(
-		'CLI-only install: the extension, dg-daemon and dg-agent were skipped. Run "dg-skills install" to add them.',
+		'CLI-only install: the extension was skipped. Run "dg-skills install" to add it.',
 	);
 	pruneClaudePluginCache(keepCache);
 }
 
-/** For a non-Claude agent that only needs phone: dg-agent, plus dg-skills (which fetches it); no extension or dg-daemon. */
+/** For a non-Claude agent that only needs phone: the bundle and shims, no extension. */
 async function installAgentOnly(keepCache: boolean, version?: string): Promise<void> {
 	const releases = await listReleases();
-	if (version) {
-		await installPinnedBinaries(
-			[{ ...binarySpec("dg-skills"), version }, { ...binarySpec("dg-agent"), version }],
-			releases,
-		);
-	} else {
-		await installBinary(binarySpec("dg-skills"), releases);
-		await installBinary(binarySpec("dg-agent"), releases);
-	}
+	if (version) await installBundle(pickBundle(releases, version));
+	else await installNewestBundle(releases);
 	setCliOnly(true);
 	console.log(
-		'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
+		'Agent-only install: the extension was skipped. Run "dg-skills install" to add it.',
 	);
 	refreshPhoneListener();
 	pruneClaudePluginCache(keepCache);
@@ -351,17 +267,14 @@ function finishExtensionStage(
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 }
 
-/** A pinned default install: resolves and downloads the extension and every binary before committing any of them. */
+/** A pinned default install: resolves the bundle and the extension before changing anything. */
 async function installPinnedAll(target: Target, pin: string, keepCache: boolean): Promise<void> {
 	const dest = extensionDest(target);
 	const releases = await listReleases();
 
-	const resolved = resolvePinnedBinaries(
-		BINARIES.map((spec) => ({ ...spec, version: pin })),
-		releases,
-	);
+	const bundle = pickBundle(releases, pin);
 	const release = await downloadReleaseAsset(target, pin);
-	const staged = await fetchResolvedBinaries(resolved);
+	await installBundle(bundle);
 
 	retireLegacyExtensions();
 	const markerVersion = readMarker()[target];
@@ -373,9 +286,7 @@ async function installPinnedAll(target: Target, pin: string, keepCache: boolean)
 		);
 	}
 
-	commitStagedBinaries(staged);
 	setCliOnly(false);
-	removeRetiredBinaries();
 	refreshPhoneListener();
 	pruneClaudePluginCache(keepCache);
 }
@@ -430,7 +341,7 @@ async function install(
 
 	finishExtensionStage(target, dest, version, markerVersion, stage);
 
-	// Also keep the compiled CLI current (skip in --local dev, where we run source).
+	// Also keep the bundle current (skip in --local dev, where we run source).
 	if (!forceLocal) await installCli();
 }
 
@@ -460,7 +371,7 @@ export async function runInstall(
 		let releases: Release[] | undefined;
 		if (opts.version) {
 			releases = await listReleases();
-			resolvePinnedBinaries([{ ...binarySpec("dg-skills"), version: opts.version }], releases);
+			pickBundle(releases, opts.version);
 		}
 		const result = runSkillsOnlyInstall({
 			repo: opts.repo,

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { cliAssetName } from "@dg/skills-cli/lib";
 import { SUPPORTED_PLATFORMS } from "./supported-platforms";
 import { readRepoFile } from "./test-support";
 import { parseWorkflow, workflowText } from "./workflow-support";
@@ -8,10 +7,6 @@ const release = parseWorkflow("release.yml");
 
 function workflow(name: string): string {
 	return workflowText(name);
-}
-
-function matrixOf(job: string): Array<Record<string, string>> {
-	return release.jobs[job]?.strategy?.matrix?.include ?? [];
 }
 
 describe("the dg-daemon build workflow is path-filtered to its own packages", () => {
@@ -30,220 +25,112 @@ describe("the dg-daemon build workflow is path-filtered to its own packages", ()
 	});
 });
 
-type ReleasedBinary = {
-	binaryName: string;
-	job: string;
+type RuntimeJson = {
+	version: string;
+	assets: Record<string, { file: string; sha256: string }>;
 };
 
-const RELEASED_BINARIES: ReleasedBinary[] = [
-	{ binaryName: "dg-skills", job: "skills" },
-	{ binaryName: "dg-daemon", job: "daemon" },
-	{ binaryName: "dg-agent", job: "agent" },
-];
+const runtime = JSON.parse(readRepoFile("pkg", "launcher", "runtime.json")) as RuntimeJson;
+const releaseText = workflow("release.yml");
 
-/**
- * Runner labels that execute each target natively. Apple Silicon labels carry no
- * "arm" in their name, so the mapping is spelled out rather than pattern-matched.
- */
-const NATIVE_RUNNERS: Record<string, string[]> = {
-	"linux-x64": ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04"],
-	"linux-arm64": ["ubuntu-24.04-arm", "ubuntu-22.04-arm", "ubuntu-latest-arm"],
-	"darwin-x64": ["macos-15-intel"],
-	"darwin-arm64": ["macos-14", "macos-15", "macos-latest"],
-	"win32-x64": ["windows-latest", "windows-2022", "windows-2025"],
-	"win32-arm64": ["windows-11-arm"],
-};
-
-for (const { binaryName, job } of RELEASED_BINARIES) {
-	describe(`${binaryName}: the release matrix and the install resolver agree, asset for asset`, () => {
-		const built = matrixOf(`build-${job}`).map((entry) => entry.asset);
-		const smoked = matrixOf(`smoke-${job}`);
-
-		test("every asset the resolver can ask for is published by the matrix", () => {
-			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
-				const name = cliAssetName(binaryName, platform, arch);
-				expect(name).toBeDefined();
-				expect(built).toContain(name as string);
-			}
-		});
-
-		test("the matrix publishes nothing the resolver cannot name", () => {
-			const resolvable = new Set(
-				SUPPORTED_PLATFORMS.map(({ platform, arch }) =>
-					cliAssetName(binaryName, platform, arch),
-				),
-			);
-
-			expect(new Set(built).size).toBe(SUPPORTED_PLATFORMS.length);
-			for (const asset of built) expect(resolvable.has(asset)).toBe(true);
-		});
-
-		test("every published binary is executed on a runner of its own platform", () => {
-			expect(smoked.length).toBe(SUPPORTED_PLATFORMS.length);
-
-			for (const { platform, arch } of SUPPORTED_PLATFORMS) {
-				const asset = cliAssetName(binaryName, platform, arch);
-				const runner = smoked.find((entry) => entry.asset === asset)?.os ?? "";
-				expect(NATIVE_RUNNERS[`${platform}-${arch}`]).toContain(runner);
-			}
-		});
-
-		test("the smoke matrix runs exactly the assets the build matrix produces", () => {
-			expect(smoked.map((entry) => entry.asset).sort()).toEqual([...built].sort());
-		});
-	});
+function smokeMatrix(): Array<Record<string, string>> {
+	const id = Object.keys(release.jobs).find((job) => job.startsWith("smoke"));
+	return release.jobs[id ?? ""]?.strategy?.matrix?.include ?? [];
 }
 
-describe("the retired dg-server name reaches no new release", () => {
-	test("the release publishes no alias and no renamed copies", () => {
-		const rel = workflow("release.yml");
+describe("the release ships one platform-independent bundle, not compiled binaries", () => {
+	test("release.yml compiles nothing and names no per-platform dg binary", () => {
+		expect(releaseText).not.toContain("--compile");
+		expect(releaseText).not.toMatch(/dg-(skills|daemon|agent)-(linux|macos|windows)/);
+	});
 
-		expect(rel).not.toContain("server-v");
-		expect(rel).not.toContain("dg-server");
-		expect(rel).not.toContain("legacy");
+	test("exactly one job builds the bundle", () => {
+		const builders = Object.keys(release.jobs).filter((id) => id.startsWith("build-") && id !== "build-ext");
+
+		expect(builders).toEqual(["build-bundle"]);
+	});
+
+	test("no build workflow compiles a binary either", () => {
+		for (const name of ["skills-blt.yml", "dg-agent-blt.yml", "dg-daemon-blt.yml"]) {
+			expect(workflow(name)).not.toContain("--compile");
+		}
 	});
 });
 
-describe("the skills CLI presents itself under its shipped name", () => {
-	const entry = readRepoFile("pkg", "skills-cli", "src", "main.ts");
-	const shipped = matrixOf("build-skills")[0]?.asset.replace(
-		/-(linux|macos|windows)-.*$/,
-		"",
-	);
+describe("the runtime pin and the smoke matrix cover the same platforms", () => {
+	const keys = Object.keys(runtime.assets).filter((key) => !key.endsWith("-baseline"));
 
-	test("the program name and the release asset name are the same word", () => {
-		expect(shipped).toBeDefined();
-		expect(/\.name\("([^"]+)"\)/.exec(entry)?.[1]).toBe(shipped);
-	});
-
-	test("a top-level failure is prefixed with that same name", () => {
-		expect(entry).toContain(`console.error(\`${shipped}: `);
-	});
-});
-
-describe("install refreshes every prebuilt binary through one fetcher", () => {
-	const install = readRepoFile(
-		"pkg",
-		"skills-cli",
-		"src",
-		"install",
-		"cli.ts",
-	);
-	const installCommand = readRepoFile(
-		"pkg",
-		"skills-cli",
-		"src",
-		"commands",
-		"install.ts",
-	);
-
-	const declared =
-		/const BINARIES: BinarySpec\[\] = \[([\s\S]*?)\];/.exec(install)?.[1] ??
-		"";
-	const declaredNames = [...declared.matchAll(/"(dg-[a-z]+)"/g)].map((m) => m[1]);
-
-	test("every released binary is declared once, and no others are", () => {
-		expect(declaredNames.sort()).toEqual(
-			RELEASED_BINARIES.map((b) => b.binaryName).sort(),
-		);
-	});
-
-	test("the command description names every binary it refreshes", () => {
-		const description = /\.description\(\s*"([^"]*refresh[^"]*)"/.exec(
-			installCommand,
-		)?.[1];
-
-		expect(declaredNames.length).toBe(RELEASED_BINARIES.length);
-		expect(description).toBeDefined();
-		for (const name of declaredNames) {
-			expect(description).toContain(name);
+	test("every supported platform has a pinned bun asset with a sha256", () => {
+		expect(keys.sort()).toEqual(SUPPORTED_PLATFORMS.map((p) => p.runtimeKey).sort());
+		for (const asset of Object.values(runtime.assets)) {
+			expect(asset.sha256).toMatch(/^[0-9a-f]{64}$/);
+			expect(asset.file).toMatch(/^bun-[a-z0-9-]+\.zip$/);
 		}
 	});
 
-	test("the daemon and the agent are installed into the same directory, so sibling resolution finds one from the other", () => {
-		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
-		const dest = /export function cliDest[\s\S]*?\n}/.exec(lib)?.[0];
+	test("every pinned platform is smoked on a runner of its own platform", () => {
+		const matrix = smokeMatrix();
 
-		expect(dest).toContain("join(cliBinDir(), name)");
-		expect(dest).not.toContain("binaryName ===");
-	});
-
-	test("the fetch is written once, not duplicated per binary", () => {
-		expect([...install.matchAll(/fetchCliBinary\(/g)].length).toBe(1);
-		expect([...install.matchAll(/resolveCliAsset\(/g)].length).toBe(1);
-	});
-
-	test("the already-current skip and the warn-and-continue path both survive", () => {
-		expect(install).toMatch(/already\s+current/);
-		expect(install).toMatch(/skipping\s+its\s+refresh/);
-		expect(install).toContain("console.warn");
-	});
-
-	test("the not-found warning distinguishes an unbuilt platform from an unpublished release", () => {
-		expect(install).toContain("describeMissingCliAsset(spec, releases)");
-		expect(install).toMatch(/has no published asset/);
-		expect(install).toMatch(/no\s+(vX\.Y\.Z\s+)?release/);
+		for (const { runtimeKey, runners } of SUPPORTED_PLATFORMS) {
+			expect(runtime.assets[runtimeKey]).toBeDefined();
+			expect(matrix.filter((entry) => runners.includes(entry.os)).length).toBe(1);
+		}
+		expect(matrix.length).toBe(SUPPORTED_PLATFORMS.length);
 	});
 });
 
-describe("the bootstrap scripts reach dg-daemon through install, not a second curl loop", () => {
-	test("bootstrap.sh ends by calling install rather than fetching dg-daemon itself", () => {
-		const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
-		expect(sh).toMatch(/"\$\{INSTALLER\}"\s+install/);
-		expect(sh).not.toContain("dg-daemon-linux");
-		expect(sh).not.toContain("dg-daemon-windows");
+describe("the retired dg-server name reaches no new release", () => {
+	test("the release publishes no alias and no renamed copies", () => {
+		expect(releaseText).not.toContain("server-v");
+		expect(releaseText).not.toContain("dg-server");
+		expect(releaseText).not.toContain("legacy");
+	});
+});
+
+describe("the bootstrap scripts install the runtime pin and the bundle, then delegate to install", () => {
+	const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
+	const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+
+	for (const [name, source] of [["bootstrap.sh", sh], ["bootstrap.ps1", ps1]] as const) {
+		test(`${name} reads runtime.json, fetches the bundle tarball and never a compiled binary`, () => {
+			expect(source).toContain("runtime.json");
+			expect(source).toContain("dg-lib-");
+			expect(source).toContain("SHA256SUMS");
+			expect(source).not.toContain("dg-daemon-linux");
+			expect(source).not.toContain("dg-daemon-windows");
+			expect(source).not.toContain("dg-skills-linux");
+			expect(source).not.toContain("dg-skills-windows");
+		});
+
+		test(`${name} downloads bun from oven-sh and links runtime and lib current`, () => {
+			expect(source).toContain("oven-sh/bun");
+			expect(source).toMatch(/runtime/);
+			expect(source).toMatch(/current/);
+		});
+	}
+
+	test("bootstrap.sh links runtime/current and lib/current by name", () => {
+		expect(sh).toContain("runtime/current");
+		expect(sh).toContain("lib/current");
 	});
 
-	test("bootstrap.ps1 likewise delegates rather than duplicating the fetch", () => {
-		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
-		expect(ps1).toMatch(/&\s+\$installer\s+install/);
-		expect(ps1).not.toContain("dg-daemon-linux");
-		expect(ps1).not.toContain("dg-daemon-windows");
+	test("bootstrap.sh ends by calling the dg-skills shim with install", () => {
+		expect(sh).toMatch(/bin\/dg-skills"?\s+install/);
 	});
 
-	test("the fetcher marks what it downloads executable, so both binaries are runnable", () => {
-		const lib = readRepoFile("pkg", "skills-cli", "src", "utils", "lib.ts");
-		const fn = /export function commitCliBinary[\s\S]*?\n}/.exec(lib)?.[0];
-
-		expect(fn).toMatch(/chmodSync\(staging, 0o755\)/);
-		expect(fn?.indexOf("chmodSync(staging")).toBeLessThan(
-			fn?.indexOf("renameSync(staging, dest)") ?? -1,
-		);
+	test("bootstrap.ps1 uses Expand-Archive, Get-FileHash and directory junctions", () => {
+		expect(ps1).toContain("Expand-Archive");
+		expect(ps1).toContain("Get-FileHash");
+		expect(ps1).toMatch(/New-Item\s+-ItemType\s+Junction/);
 	});
 
-	test("bootstrap.sh never downloads straight over a binary that may be running", () => {
-		const sh = readRepoFile("pkg", "skills-cli", "bootstrap.sh");
-		expect(sh).not.toMatch(/-o\s+"\$\{DEST\}"/);
-		expect(sh).toMatch(/mv -f "\$\{INSTALLER\}" "\$\{DEST\}"/);
-	});
-
-	test("bootstrap.ps1 renames a running dg-skills.exe aside instead of writing over it", () => {
-		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
-		expect(ps1).not.toMatch(/-OutFile \$dest\b/);
-		expect(ps1).toMatch(/\$old = "\$dest\.old-" \+ \[guid\]::NewGuid\(\)/);
-		expect(ps1).toMatch(/Move-Item -LiteralPath \$dest -Destination \$old/);
-		expect(ps1).toMatch(/Move-Item -LiteralPath \$installer -Destination \$dest/);
-		expect(ps1).toMatch(/Move-Item -LiteralPath \$old -Destination \$dest/);
-		expect(ps1).not.toMatch(/Remove-Item -Path/);
-		expect(ps1).toMatch(/Get-ChildItem -LiteralPath \$binDir -File/);
-		const swap = ps1.indexOf("Move-Item -LiteralPath $installer -Destination $dest");
-		const cleanup = ps1.indexOf("Get-ChildItem -LiteralPath $binDir -File");
-		expect(cleanup).toBeGreaterThan(swap);
-		const lock = ps1.indexOf("[System.IO.File]::Open($lockPath");
-		const stamp = ps1.indexOf('".dg-skills.version"');
-		const release = ps1.indexOf("$swapLock.Dispose()");
-		expect(ps1).not.toContain("Mutex");
-		expect(ps1).toMatch(/\$lockPath = Join-Path \(Resolve-Path -LiteralPath \$binDir\)\.ProviderPath "\.dg-skills-swap\.lock"/);
-		expect(lock).toBeGreaterThan(-1);
-		expect(lock).toBeLessThan(swap);
-		expect(stamp).toBeGreaterThan(cleanup);
-		expect(release).toBeGreaterThan(stamp);
-	});
-
-	test("bootstrap.ps1 never hands a pinned install off to the binary it just downloaded", () => {
-		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
-		expect(ps1).toMatch(/installer-.*NewGuid.*\.exe/);
-		expect(ps1).not.toMatch(/&\s+\$dest\s+install/);
+	test("bootstrap.ps1 writes .cmd shims for the three programs and appends the bin dir to the user PATH once", () => {
+		expect(ps1).toContain(".cmd");
+		for (const program of ["dg-skills", "dg-agent", "dg-daemon"]) {
+			expect(ps1).toContain(program);
+		}
+		expect(ps1).toMatch(/SetEnvironmentVariable\([^)]*"?User"?\)/);
+		expect(ps1).toMatch(/-notcontains|-notlike|-contains|\.Contains\(/);
 	});
 });
 

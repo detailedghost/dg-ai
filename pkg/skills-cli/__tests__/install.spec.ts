@@ -1,9 +1,10 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { currentBinaryLine } from "../src/install/cli";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { basename, join } from "node:path";
+import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
 
 test("a bootstrap install says verified for dg-skills and already current for the others", () => {
 	expect(currentBinaryLine("dg-skills", "1.12.0", true)).toBe(
@@ -170,4 +171,68 @@ test("install prints no DG_HOME note when DG_HOME is unset or names the default 
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
+});
+
+const ENTRY = join(import.meta.dir, "..", "src", "index.ts");
+const VERSION = "1.27.0";
+
+describe.skipIf(process.platform === "win32")("dg-skills install against a fake release server", () => {
+	test("a full install ends with shims, lib/current and runtime/current links, and no compiled dg-skills", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-bundle-"));
+		const home = join(directory, "home");
+		const bin = join(home, "bin");
+		mkdirSync(bin, { recursive: true });
+		writeFileSync(join(bin, "dg-skills"), "compiled ELF bytes", { mode: 0o755 });
+		writeFileSync(join(bin, ".dg-skills.version"), "1.26.0\n");
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload, pin } = writeReleaseServer(directory, log, VERSION);
+
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
+
+			expect(result.code).toBe(0);
+			expect(readFileSync(join(bin, "dg-skills"), "utf8")).not.toContain("compiled ELF bytes");
+			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toContain(join(home, "lib", "current", "dg.js"));
+			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(VERSION);
+			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe(`bun-v${pin}`);
+			expect(existsSync(join(home, "runtime", "current", "bun"))).toBe(true);
+			expect(existsSync(join(bin, ".dg-skills.version"))).toBe(false);
+			for (const name of ["dg-agent", "dg-daemon"]) {
+				expect(readFileSync(join(bin, name), "utf8")).toContain(`${name} "$@"`);
+			}
+			const version = await runCli([join(bin, "dg-skills"), "--version"], installEnv(home));
+			expect(version.stdout.trim()).toBe(VERSION);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("install --version <previous release> relinks lib/current with no bundle or runtime download while its directory exists", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION, { also: ["1.28.0"] });
+			const env = installEnv(home);
+			const argv = (...args: string[]) => ["bun", "--preload", preload, ENTRY, "install", ...args];
+
+			expect((await runCli(argv("--version", VERSION), env)).code).toBe(0);
+			expect((await runCli(argv(), env)).code).toBe(0);
+			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe("1.28.0");
+			const before = fetchedUrls(log).length;
+
+			const rollback = await runCli(argv("--version", VERSION), env);
+
+			expect(rollback.code).toBe(0);
+			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(VERSION);
+			expect(existsSync(join(home, "lib", "1.28.0", "dg.js"))).toBe(true);
+			const fetched = fetchedUrls(log).slice(before);
+			expect(fetched.filter((url) => /dg-lib-.*\.tar\.gz$|bun-.*\.zip$/.test(url))).toEqual([]);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
 });
