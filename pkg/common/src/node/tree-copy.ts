@@ -7,13 +7,21 @@ function rebaseLink(target: string, from: string, to: string): string {
 	return target.startsWith(`${from}${sep}`) ? join(to, relative(from, target)) : target;
 }
 
+function linksToDirectory(link: string): boolean {
+	try {
+		return statSync(link).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
 /** Copies a file, folder or link to a new path with its modes; an absolute link into `from` is rebased into `to`. */
 export function copyTree(from: string, to: string): void {
 	const walk = (source: string, dest: string): void => {
 		const stat = lstatSync(source);
 		if (stat.isSymbolicLink()) {
 			const target = rebaseLink(readlinkSync(source), from, to);
-			if (process.platform === "win32" && statSync(source, { throwIfNoEntry: false })?.isDirectory())
+			if (process.platform === "win32" && linksToDirectory(source))
 				symlinkSync(resolve(dirname(dest), target), dest, "junction");
 			else symlinkSync(target, dest);
 			return;

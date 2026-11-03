@@ -37,4 +37,21 @@ describe.skipIf(process.platform === "win32")("copyTree", () => {
 
 		expect(treeMatches(from, to)).toBe(false);
 	});
+
+	it("copies a self-referencing link as a link", () => {
+		symlinkSync("loop", join(from, "loop"));
+
+		copyTree(from, to);
+
+		expect(readlinkSync(join(to, "loop"))).toBe("loop");
+		expect(treeMatches(from, to)).toBe(true);
+	});
+
+	it("matches a copied link written as an absolute path to the same target", () => {
+		copyTree(from, to);
+		rmSync(join(to, "relative"));
+		symlinkSync(join(to, "sub"), join(to, "relative"));
+
+		expect(treeMatches(from, to)).toBe(true);
+	});
 });
