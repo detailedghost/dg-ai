@@ -11,14 +11,30 @@ slices:
     name: "marketplace-pins-and-lint"
     depends_on: []
     files: [".claude-plugin/marketplace.json","THIRD_PARTY_NOTICES.md","scripts/bump-plugin-pin.ts","pkg/skills-test/__tests__/skill-manifests.spec.ts","pkg/skills-test/__tests__/imported-plugins-optional.spec.ts","pkg/skills-test/__tests__/plugin-pins.spec.ts"]
+    agents:
+      primary: js
+      qa: [qa-code]
   - id: 2
     name: "install-with-recommended"
     depends_on: [1]
-    files: ["pkg/skills-cli/src/install/recommended-plugins.ts","pkg/skills-cli/src/install/recommended-skills-only.ts","pkg/skills-cli/src/commands/install.ts","pkg/skills-cli/src/commands/skills-only.ts","pkg/skills-cli/src/doctor/checks.ts","pkg/skills-cli/src/polish/doctor.ts","pkg/skills-cli/__tests__/install-recommended.spec.ts","pkg/skills-cli/__tests__/skills-only-recommended.spec.ts","plugins/dg/skills/teach/**","plugins/dg/skills/wait-what/**","pkg/common/src/node/install-skills.ts","pkg/common/__tests__/install-skills.spec.ts","pkg/common/__tests__/installed-skill-files.ts","pkg/skills-cli/bootstrap.sh","pkg/skills-cli/bootstrap.ps1","pkg/skills-cli/__tests__/skills-only-install.spec.ts","pkg/skills-test/__tests__/skill-index-docs.spec.ts","pkg/skills-test/__tests__/retired-skills.spec.ts"]
+    files: ["pkg/skills-cli/src/install/recommended-plugins.ts","pkg/skills-cli/src/install/recommended-skills-only.ts","pkg/skills-cli/src/commands/install.ts","pkg/skills-cli/src/install/skills-only.ts","pkg/skills-cli/src/install/cli.ts","pkg/skills-cli/src/doctor/checks.ts","pkg/skills-cli/src/polish/doctor.ts","pkg/skills-cli/__tests__/install-recommended.spec.ts","pkg/skills-cli/__tests__/skills-only-recommended.spec.ts","plugins/dg/skills/teach/**","plugins/dg/skills/wait-what/**","pkg/common/src/node/install-skills.ts","pkg/common/__tests__/install-skills.spec.ts","pkg/common/__tests__/installed-skill-files.ts","pkg/skills-cli/bootstrap.sh","pkg/skills-cli/bootstrap.ps1","pkg/skills-cli/__tests__/skills-only-install.spec.ts","pkg/skills-test/__tests__/skill-index-docs.spec.ts","pkg/skills-test/__tests__/retired-skills.spec.ts"]
+    agents:
+      primary: js
+      qa: [security, qa-code]
   - id: 3
     name: "docs-adr-d"
     depends_on: [2]
     files: ["docs/install.md","docs/AGENT-INSTALL.md","docs/adr/0027-optional-third-party-plugins.md","docs/adr/toc.md","README.md","plugins/dg/skills/polish/references/pr.md","plugins/dg/skills/README.md"]
+    agents:
+      primary: lore
+      qa: [qa-code]
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # Recommended third-party plugins
@@ -104,6 +120,9 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 ## Slice Summaries
 
 ## Agent Notes
+
+- (orchestrator) PR #135 (spec 007) merged first. It moved the install steps from commands/install.ts into pkg/skills-cli/src/install/cli.ts and the skills-only code into pkg/skills-cli/src/install/skills-only.ts. commands/install.ts is now a registrar that declares the options and loads install/cli.ts lazily. Slice 2 declares --with-recommended in commands/install.ts and wires the steps in install/cli.ts and install/skills-only.ts. Keep the commands/install.ts edit to the option line.
+- (orchestrator) Spec 008 (per-OS layout) will also edit install-skills.ts, bootstrap.sh, bootstrap.ps1 and the skills-only specs. Keep those edits to the RETIRED_SKILLS list and the retired-skill loops so a rebase stays small.
 
 ## Issues Remediation
 
