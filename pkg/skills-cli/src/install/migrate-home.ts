@@ -13,6 +13,7 @@ export type MigrateSeams = {
 	log?: (line: string) => void;
 	afterCopy?: (from: string, to: string) => void;
 	rename?: (from: string, to: string) => void;
+	ssmsConfigDir?: string;
 };
 
 const PENDING_FILE = ".pending-removal.json";
@@ -27,8 +28,8 @@ const ROLE_FOLDERS = new Set([
 	"cache",
 	"log",
 ]);
-const LEFT_FOR_OTHER_STEPS = new Set(["bin", "phone", "ssms"]);
-const WRITER_FOLDERS = ["daemon", "channel-review", "phone-friend"];
+const LEFT_FOR_OTHER_STEPS = new Set(["bin", "phone"]);
+const WRITER_FOLDERS = ["daemon", "channel-review", "phone-friend", "ssms"];
 
 function pidAlive(file: string): boolean {
 	try {
@@ -54,7 +55,7 @@ function liveWriterFolders(legacy: string): string[] {
 
 const within = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}${sep}`);
 
-function legacyMoves(paths: DgPaths): Move[] {
+function legacyMoves(paths: DgPaths, ssmsConfigDir: string): Move[] {
 	const legacy = paths.legacyHome;
 	const at = (...parts: string[]) => join(legacy, ...parts);
 	const agentState = [
@@ -91,6 +92,8 @@ function legacyMoves(paths: DgPaths): Move[] {
 			to: join(paths.configDir, "channel-review", "config.json"),
 		},
 		{ from: at("channel-review"), to: join(paths.stateDir, "channel-review") },
+		{ from: at("ssms", "config.yaml"), to: join(ssmsConfigDir, "ssms", "config.yaml") },
+		{ from: at("ssms"), to: join(paths.stateDir, "ssms") },
 		{ from: at("proto"), to: join(paths.cacheDir, "proto") },
 		{ from: at("demos"), to: join(paths.cacheDir, "demos") },
 		{ from: at("config.json"), to: paths.configPath },
@@ -191,7 +194,7 @@ export function migrateLegacyHome(
 		result.kept.push(dir);
 		seams.log?.(`dg: kept ${dir}; a process that writes it is running. Stop it, then run dg-skills install again`);
 	}
-	for (const move of legacyMoves(paths)) {
+	for (const move of legacyMoves(paths, seams.ssmsConfigDir ?? paths.configDir)) {
 		const top = relative(paths.legacyHome, move.from).split(sep)[0] ?? "";
 		if (flatDgHome && ROLE_FOLDERS.has(top)) continue;
 		if (live.some((dir) => within(move.from, dir))) continue;

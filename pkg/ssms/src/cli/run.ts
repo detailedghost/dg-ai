@@ -4,6 +4,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, write
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { applyCleanup, conversationToClassifiable, planCleanup } from "../cleanup/apply";
 import { parseCleanupConfig } from "../config/parse";
 import { defaultCleanupConfig, type SmsCleanupConfig } from "../config/types";
@@ -122,10 +123,11 @@ export function accountHome(
 	return undefined;
 }
 
-export function allowSendHome(homeDir?: string): string | undefined {
+/** The fixed dg config folder under the passwd home; `HOME`, `DG_HOME` and `XDG_CONFIG_HOME` never choose it. */
+export function allowSendHome(homeDir?: string, platform: NodeJS.Platform = process.platform): string | undefined {
 	const dir = homeDir === undefined ? accountHome() : homeDir;
 	if (!dir) return undefined;
-	return join(dir, ".dg");
+	return resolveDgPaths({ platform, homeDir: dir, env: {} }).configDir;
 }
 
 export function fixedConfigPath(home: string): string {
@@ -166,7 +168,7 @@ function loadConfig(path: string | undefined, home: string | undefined): SmsClea
 
 function allowDirectory(runtime: SsmsRuntime): string | undefined {
 	if (runtime.passwdHome === null) return undefined;
-	if (typeof runtime.passwdHome === "string") return join(runtime.passwdHome, ".dg");
+	if (typeof runtime.passwdHome === "string") return allowSendHome(runtime.passwdHome);
 	if (runtime.configHome) return runtime.configHome;
 	return allowSendHome();
 }
@@ -226,7 +228,7 @@ export async function runSsms(
 			throw new UsageError(`unknown verb ${args.verb}`);
 		}
 		const home =
-			runtime.home ?? runtime.env?.DG_HOME ?? process.env.DG_HOME ?? join(homedir(), ".dg");
+			runtime.home ?? resolveDgPaths({ env: runtime.env ?? process.env, homeDir: homedir() }).stateDir;
 		const allowHome = allowDirectory(runtime);
 		const env = runtime.env ?? process.env;
 		const config = loadConfig(args.config, allowHome);

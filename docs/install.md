@@ -94,9 +94,13 @@ The first `dg-skills install` of a new release moves it:
    the key, reads it back, compares it, and only then deletes the old entry.
    If a step fails, it keeps the old entry, reads from it, and prints one
    warning that names the key, never its value.
-6. Install leaves files it does not know in `~/.dg` and names them once.
-   The staged extension folders stay in `~/.dg`, because the browser loads
-   them from there.
+6. The staged extension folder moves to the data root. The browser remembers
+   the old folder, so install prints one line: open `chrome://extensions`
+   once, remove the old `dg-ai-extension` entry, and load unpacked from the
+   new folder. Later installs update that folder in place.
+7. `ssms` state moves to the state root, and its fixed `config.yaml` moves to
+   the config folder under the passwd home. See [ssms](ssms.md).
+8. Install leaves files it does not know in `~/.dg` and names them once.
 
 `~/.dg/bin` keeps small launchers for `dg-skills`, `dg-agent` and
 `dg-daemon`. Each prints one line on stderr that names the new launcher and

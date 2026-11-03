@@ -45,14 +45,14 @@ dg-skills ssms signal send --draft ID
 A provider reports a capability as false when it cannot do that verb. The CLI
 prints the provider name and the capability, and it does not invent a fallback.
 
-`google` keeps a browser profile under `$DG_HOME/ssms/google-profile` so a
+`google` keeps a browser profile under `<state>/ssms/google-profile` so a
 paired Messages for Web session can be reused. Sign-in stays with the user.
 `DG_SSMS_HEADLESS=1` starts that browser headless.
 
 `signal` does not read Signal Desktop, its GUI, or its database key. `link`
 calls `startLink`, prints the `sgnl://` URI and a QR, then `finishLink` with
 the device name `dg-cli` unless `--name` says otherwise. Later calls use
-`--data-dir $DG_HOME/ssms/signal-data` and
+`--data-dir <state>/ssms/signal-data` and
 `daemon --receive-mode=manual --socket=<data-dir>/daemon.sock`. The socket
 directory is mode 0700 and owned by the current user. The socket's owner is
 checked; its mode bits are not, because `signal-cli` creates the socket as
@@ -65,17 +65,30 @@ does not install the package. On Arch Linux the package is `signal-cli`
 (`sudo pacman -S signal-cli`). `DG_SIGNAL_CLI` points at a binary that is not
 on `PATH`.
 
+## Where ssms keeps its files
+
+`<state>` is the dg state root: `~/.local/state/dg` on Linux,
+`~/Library/Application Support/dg/state` on macOS, or `$DG_HOME/state`. Older
+releases kept everything in `~/.dg/ssms`. The first `dg-skills install` after
+the per-OS layout moves the state there and the fixed `config.yaml` to the
+config folder named below. Each move copies, checks the copy, and only then
+deletes the old file. It never writes over a file that already exists. Install
+moves the fixed config only when `HOME` is the passwd home. Otherwise
+`allow_send` stays off until you move the file by hand.
+
 ## Drafts
 
-`draft` writes a pending draft under `$DG_HOME/ssms/drafts`. The approval
+`draft` writes a pending draft under `<state>/ssms/drafts`. The approval
 token is shown only on the terminal device (`/dev/tty`), never on stdout and
 never in `--json`. The draft file stores a hash of that token, not the token.
 `send --draft ID` sends that one draft only after an interactive yes on a real
 terminal, or after `--approve` with the token from the terminal. `--yes` does
 not send. The gate blocks accidental and non-interactive sends. Same-user code
 that evades it, for example by allocating its own pty, is out of scope.
-`allow_send` is read only from `~/.dg/ssms/config.yaml` in the account's passwd
-home. Linux uses `getent` or `/etc/passwd`. macOS uses `id -P` or `dscl`. If
+`allow_send` is read only from `ssms/config.yaml` in the dg config folder under
+the account's passwd home: `~/.config/dg/ssms/config.yaml` on Linux and
+`~/Library/Application Support/dg/ssms/config.yaml` on macOS.
+`XDG_CONFIG_HOME` does not move it. Linux uses `getent` or `/etc/passwd`. macOS uses `id -P` or `dscl`. If
 that home cannot be resolved, send stays off. `$HOME` and `$DG_HOME` do not
 choose it. `--config` cannot set it. `google.send_enabled` in that same file
 defaults to false. Google send is unverified against a signed-in Messages for

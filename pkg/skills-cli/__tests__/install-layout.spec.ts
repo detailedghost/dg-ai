@@ -8,9 +8,9 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { finishLauncherLayout, pathHint } from "../src/install/layout";
+import { finishLauncherLayout, migrateBeforeInstall, passwdHomeWhenCurrent, pathHint } from "../src/install/layout";
 
 const posix = describe.skipIf(process.platform === "win32");
 
@@ -81,5 +81,33 @@ posix("finishLauncherLayout", () => {
 
 		expect(existsSync(paths.legacyHome)).toBe(false);
 		expect(lines).toEqual([]);
+	});
+});
+
+posix("ssms allow config move", () => {
+	let base: string;
+	beforeEach(() => {
+		base = mkdtempSync(join(tmpdir(), "dg-ssms-move-"));
+	});
+	afterEach(() => rmSync(base, { recursive: true, force: true }));
+
+	test("moves the passwd home allow config to its fixed config folder when DG_HOME points elsewhere", () => {
+		const passwd = join(base, "home");
+		const old = join(passwd, ".dg", "ssms", "config.yaml");
+		mkdirSync(dirname(old), { recursive: true });
+		writeFileSync(old, "allow_send: true\n");
+		const paths = resolveDgPaths({ platform: "linux", homeDir: passwd, env: { DG_HOME: join(base, "dg-home") } });
+		const lines: string[] = [];
+
+		migrateBeforeInstall(paths, (line) => lines.push(line), passwd);
+
+		expect(readFileSync(join(passwd, ".config", "dg", "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
+		expect(existsSync(old)).toBe(false);
+	});
+
+	test("never moves the passwd home config when HOME is not the passwd home", () => {
+		expect(passwdHomeWhenCurrent("/home/ada", "/tmp/sandbox")).toBeUndefined();
+		expect(passwdHomeWhenCurrent("/home/ada", "/home/ada/")).toBe("/home/ada");
+		expect(passwdHomeWhenCurrent(undefined, "/home/ada")).toBeUndefined();
 	});
 });

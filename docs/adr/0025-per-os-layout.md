@@ -41,7 +41,8 @@ reads from it.
   (`dg-agent phone __rollback-home`). Users must update old
   `Bash(~/.dg/bin/dg-skills …)` allow rules; doctor names the new rule.
 - **Neutral:** the AI scratch and state roots in `scratch-paths.ts` do not
-  change. The staged extension folders and `ssms` stay in `~/.dg`.
+  change. The staged extension folder and `ssms` move too; the browser must
+  load the extension once from its new folder.
 
 ## Alternatives considered
 

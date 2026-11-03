@@ -219,6 +219,33 @@ describe("migrateLegacyHome", () => {
 		expect(lines).toEqual([]);
 	});
 
+	test("moves the ssms state to the state root and its fixed config to the given config folder", () => {
+		const legacy = join(home, ".dg");
+		put(join(legacy, "ssms", "drafts", "d1.json"), "{}");
+		put(join(legacy, "ssms", "config.yaml"), "allow_send: true\n");
+		const fixed = join(home, "fixed-config");
+
+		const result = migrateLegacyHome(paths, { log, ssmsConfigDir: fixed });
+
+		expect(result.failed).toEqual([]);
+		expect(readFileSync(join(fixed, "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
+		expect(readFileSync(join(paths.stateDir, "ssms", "drafts", "d1.json"), "utf8")).toBe("{}");
+		expect(existsSync(join(paths.stateDir, "ssms", "config.yaml"))).toBe(false);
+		expect(existsSync(join(legacy, "ssms"))).toBe(false);
+	});
+
+	test("never overwrites an ssms config that already exists in the new folder", () => {
+		const legacy = join(home, ".dg");
+		put(join(legacy, "ssms", "config.yaml"), "allow_send: true\n");
+		put(join(paths.configDir, "ssms", "config.yaml"), "allow_send: false\n");
+
+		const result = migrateLegacyHome(paths, { log });
+
+		expect(result.kept).toContain(join(legacy, "ssms", "config.yaml"));
+		expect(readFileSync(join(paths.configDir, "ssms", "config.yaml"), "utf8")).toBe("allow_send: false\n");
+		expect(readFileSync(join(legacy, "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
+	});
+
 	test("never overwrites a destination that already exists", () => {
 		const legacy = seedLegacy();
 		put(join(paths.skillsDir, "new", "SKILL.md"), "newer");

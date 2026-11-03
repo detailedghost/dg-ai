@@ -11,8 +11,6 @@ const ALLOWED: Record<string, string> = {
 	"pkg/dg-daemon/src/crypto/keychain-backends.ts": "the old keychain account is named after the old home so the migration can find and move it",
 	"pkg/skills-cli/src/install/compat-launchers.ts": "the notice launchers name the old path they replace",
 	"pkg/skills-cli/src/doctor/probes.ts": "doctor recognizes the old allow rule form to print its replacement",
-	"pkg/skills-cli/src/ssms/cli.ts": "ssms keeps its home until its allow_send location moves",
-	"pkg/ssms/src/cli/run.ts": "allow_send is read from the passwd home .dg folder by design",
 };
 
 function sources(dir: string): string[] {
