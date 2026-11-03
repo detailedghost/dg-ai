@@ -5,7 +5,9 @@ import {
 	lstatSync,
 	mkdirSync,
 	readdirSync,
-	readFileSync,
+	openSync,
+	readSync,
+	closeSync,
 	readlinkSync,
 	statSync,
 	symlinkSync,
@@ -49,6 +51,18 @@ export function copyTree(from: string, to: string): void {
 	walk(from, to);
 }
 
+function fileHash(path: string): string {
+	const hash = createHash("sha256");
+	const buffer = Buffer.alloc(1 << 20);
+	const fd = openSync(path, "r");
+	try {
+		for (let read = readSync(fd, buffer); read > 0; read = readSync(fd, buffer)) hash.update(buffer.subarray(0, read));
+	} finally {
+		closeSync(fd);
+	}
+	return hash.digest("hex");
+}
+
 function shape(root: string, rebase: (target: string) => string): Map<string, string> {
 	const out = new Map<string, string>();
 	const walk = (current: string): void => {
@@ -58,7 +72,7 @@ function shape(root: string, rebase: (target: string) => string): Map<string, st
 		else if (stat.isDirectory()) {
 			out.set(key, "dir");
 			for (const name of readdirSync(current)) walk(join(current, name));
-		} else out.set(key, `file:${createHash("sha256").update(readFileSync(current)).digest("hex")}`);
+		} else out.set(key, `file:${fileHash(current)}`);
 	};
 	walk(root);
 	return out;
