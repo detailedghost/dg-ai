@@ -67,10 +67,9 @@ function writers(
 
 function defaultLauncher(env: HookEnv): string {
 	const bin = process.platform === "win32" ? "dg-skills.exe" : "dg-skills";
-	const binDir = resolveDgPaths({ env }).binDir;
-	if (!isAbsolute(binDir))
-		throw new UsageError(`DG_HOME ${binDir} must be an absolute path`);
-	return join(binDir, bin);
+	if (env.DG_HOME && !isAbsolute(env.DG_HOME))
+		throw new UsageError(`DG_HOME ${env.DG_HOME} must be an absolute path`);
+	return join(resolveDgPaths({ env }).binDir, bin);
 }
 
 interface Parsed {

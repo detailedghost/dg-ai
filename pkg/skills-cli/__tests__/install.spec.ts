@@ -264,10 +264,10 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 	test("a bundle that fails verification leaves runtime/current and lib/current unchanged", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-atomic-"));
 		const home = join(directory, "home");
-		mkdirSync(join(home, "runtime", "bun-old"), { recursive: true });
-		mkdirSync(join(home, "lib", "1.0.0"), { recursive: true });
-		symlinkSync("bun-old", join(home, "runtime", "current"));
-		symlinkSync("1.0.0", join(home, "lib", "current"));
+		mkdirSync(join(home, "data", "runtime", "bun-old"), { recursive: true });
+		mkdirSync(join(home, "data", "lib", "1.0.0"), { recursive: true });
+		symlinkSync("bun-old", join(home, "data", "runtime", "current"));
+		symlinkSync("1.0.0", join(home, "data", "lib", "current"));
 		try {
 			const log = join(directory, "fetch.log");
 			writeFileSync(log, "");
@@ -278,8 +278,8 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
 
 			expect(result.stderr).toContain("skipped");
-			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe("bun-old");
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe("1.0.0");
+			expect(basename(readlinkSync(join(home, "data", "runtime", "current")))).toBe("bun-old");
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe("1.0.0");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -289,10 +289,10 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 		test(`a failed lib/current switch restores runtime/current (${previousRuntime ? "previous runtime" : "no previous runtime"})`, async () => {
 			const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-link-"));
 			const home = join(directory, "home");
-			mkdirSync(join(home, "lib", "current", "blocker"), { recursive: true });
+			mkdirSync(join(home, "data", "lib", "current", "blocker"), { recursive: true });
 			if (previousRuntime) {
-				mkdirSync(join(home, "runtime", "bun-old"), { recursive: true });
-				symlinkSync("bun-old", join(home, "runtime", "current"));
+				mkdirSync(join(home, "data", "runtime", "bun-old"), { recursive: true });
+				symlinkSync("bun-old", join(home, "data", "runtime", "current"));
 			}
 			try {
 				const log = join(directory, "fetch.log");
@@ -302,7 +302,7 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 				const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
 
 				expect(result.stderr).toContain("skipped");
-				const current = join(home, "runtime", "current");
+				const current = join(home, "data", "runtime", "current");
 				if (previousRuntime) expect(basename(readlinkSync(current))).toBe("bun-old");
 				else expect(existsSync(current)).toBe(false);
 			} finally {
