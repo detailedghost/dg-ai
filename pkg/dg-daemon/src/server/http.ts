@@ -1116,11 +1116,9 @@ function handleWsUpgrade(
 			)
 		: requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
-	const data = createSocketState(
-		"ws",
-		deps.logger,
-		localPage ? undefined : (origin as string),
-	);
+	const data = localPage
+		? { ...createSocketState("ws", deps.logger), localPage: true }
+		: createSocketState("ws", deps.logger, origin as string);
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

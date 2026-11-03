@@ -1,17 +1,22 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { inboxBrowserRequest } from "../../../common/__tests__/utils/inbox-fixtures";
 import { resolveDgPaths } from "@dg/common/node";
 import { getPinnedOrigin } from "../../src/server/origin";
 import {
 	bootServe,
 	cleanupDgHome,
 	closeSession,
+	closeSockets,
 	collectFrames,
+	connectCli,
 	connectPage,
 	createCleanupSlot,
 	EXTENSION_ORIGIN,
 	frameType,
 	registerSession,
+	send,
 	sendConnectHandshake,
 	stopServe,
 	waitForOpen,
@@ -20,8 +25,12 @@ import {
 } from "../utils/daemon-harness";
 
 const cleanupSlot = createCleanupSlot();
+const sockets: WebSocket[] = [];
 
-afterEach(() => cleanupSlot.run());
+afterEach(() => {
+	closeSockets(sockets);
+	return cleanupSlot.run();
+});
 
 async function boot() {
 	const running = await bootServe();
@@ -491,5 +500,173 @@ describe("pinned extension origin keeps working for --ext", () => {
 
 		expect(page.readyState).toBe(WebSocket.OPEN);
 		page.close();
+	});
+});
+
+describe("a local page socket beside the extension on one session", () => {
+	async function bootPeers(withExtension: boolean) {
+		const { port } = await boot();
+		const session = await registerSession(port);
+		const local = loopbackSocket(port, loopbackOrigin(port), session.token);
+		sockets.push(local);
+		const localFrames = collectFrames(local);
+		await waitForOpen(local);
+		sendConnectHandshake(local, session, CHAT_PROTOCOL_VERSION);
+		await waitForValue(
+			() => localFrames.find((frame) => frameType(frame) === "session-list"),
+			3000,
+			"local page handshake",
+		);
+		let extensionFrames: unknown[] = [];
+		if (withExtension) {
+			const extension = await connectPage(
+				port,
+				session,
+				CHAT_PROTOCOL_VERSION,
+				"1.19.1",
+			);
+			sockets.push(extension);
+			extensionFrames = collectFrames(extension);
+		}
+		const cli = await connectCli(port, session);
+		sockets.push(cli);
+		return { cli, cliFrames: collectFrames(cli), localFrames, extensionFrames };
+	}
+
+	function resultFor(frames: unknown[], type: string, requestId: string) {
+		return waitForValue(
+			() =>
+				frames.find(
+					(frame) =>
+						frameType(frame) === type &&
+						(frame as { requestId?: string }).requestId === requestId,
+				) as { ok: boolean; error?: string } | undefined,
+			2500,
+			`${type} ${requestId}`,
+		);
+	}
+
+	function protoRequest(cli: WebSocket): string {
+		const requestId = randomUUID();
+		send(cli, {
+			type: "cli-proto-request",
+			requestId,
+			phase: "scrape",
+			slug: "account-summary-1a2b3c4d",
+			markedUrl: "https://example.test/account#_proto=fixture",
+			timeoutMs: 1000,
+		});
+		return requestId;
+	}
+
+	it("routes a prototype request to the extension alone and never to the local page", async () => {
+		const { cli, cliFrames, localFrames, extensionFrames } =
+			await bootPeers(true);
+
+		protoRequest(cli);
+
+		await waitForValue(
+			() =>
+				extensionFrames.find(
+					(frame) => frameType(frame) === "proto-browser-request",
+				),
+			2000,
+			"proto request at the extension",
+		);
+		expect(
+			cliFrames.some(
+				(frame) =>
+					frameType(frame) === "cli-proto-result" &&
+					/multiple extension peers/i.test(
+						String((frame as { error?: string }).error),
+					),
+			),
+		).toBe(false);
+		expect(
+			localFrames.some((frame) => frameType(frame) === "proto-browser-request"),
+		).toBe(false);
+	});
+
+	it("answers a prototype request with the missing-extension error when only a local page is connected", async () => {
+		const { cli, cliFrames, localFrames } = await bootPeers(false);
+
+		const requestId = protoRequest(cli);
+		const answer = await resultFor(cliFrames, "cli-proto-result", requestId);
+
+		expect(answer.ok).toBe(false);
+		expect(answer.error).toContain("No extension peer");
+		expect(
+			localFrames.some((frame) => frameType(frame) === "proto-browser-request"),
+		).toBe(false);
+	});
+
+	it("answers an inbox request with the missing-extension error when only a local page is connected", async () => {
+		const { cli, cliFrames, localFrames } = await bootPeers(false);
+		const requestId = randomUUID();
+
+		send(cli, {
+			type: "cli-inbox-request",
+			requestId,
+			operation: "browser",
+			request: inboxBrowserRequest(),
+			timeoutMs: 1000,
+		});
+		const answer = await resultFor(cliFrames, "cli-inbox-result", requestId);
+
+		expect(answer.ok).toBe(false);
+		expect(answer.error).toContain("No extension peer");
+		expect(
+			localFrames.some((frame) => frameType(frame) === "inbox-browser-request"),
+		).toBe(false);
+	});
+
+	it("refuses an overwatch open at once when only a local page is connected", async () => {
+		const { cli, cliFrames, localFrames } = await bootPeers(false);
+
+		send(cli, { type: "cli-overwatch-open" });
+		const error = await waitForValue(
+			() => cliFrames.find((frame) => frameType(frame) === "error"),
+			1500,
+			"extension-not-connected error",
+		);
+
+		expect(error).toMatchObject({ message: "extension not connected" });
+		expect(
+			localFrames.some((frame) => frameType(frame) === "overwatch-open"),
+		).toBe(false);
+	});
+
+	it("refuses a credentials read from the local page that an extension may make", async () => {
+		const { localFrames } = await bootPeers(false);
+		const local = sockets[0] as WebSocket;
+		const requestId = randomUUID();
+
+		send(local, {
+			type: "cli-credentials-request",
+			requestId,
+			operation: "list",
+		});
+		const answer = await resultFor(
+			localFrames,
+			"cli-credentials-result",
+			requestId,
+		);
+
+		expect(answer.ok).toBe(false);
+	});
+
+	it("still delivers an agent message to both the local page and the extension", async () => {
+		const { cli, localFrames, extensionFrames } = await bootPeers(true);
+
+		send(cli, { type: "cli-send", body: "hello both" });
+
+		for (const frames of [localFrames, extensionFrames]) {
+			const message = await waitForValue(
+				() => frames.find((frame) => frameType(frame) === "agent-message"),
+				2000,
+				"agent message",
+			);
+			expect(message).toMatchObject({ body: "hello both" });
+		}
 	});
 });

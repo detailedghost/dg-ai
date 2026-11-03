@@ -208,7 +208,7 @@ describe("daemon prototype browser relay", () => {
 				expect(answer.error).toContain(
 					`No extension peer on session ${bootstrap.sessionId}`,
 				);
-				expect(answer.error).toContain("/chat#_chat=");
+				expect(answer.error).toContain("/start#_chat=");
 				expect(answer.error).toContain("dg-skills inbox bootstrap-url");
 			}
 			for (const page of pages) {

@@ -12,6 +12,7 @@ import type { ServerWebSocket } from "bun";
 import type { FrameHandlerDeps } from "./frame-handlers";
 import { readPidFile } from "@dg/common/node";
 import {
+	isExtensionPeer,
 	onSocketClose,
 	sendViaQueue,
 	type ConnectionManager,
@@ -108,7 +109,7 @@ export function settleRejectedProtoBrowserResult(
 	deps: FrameHandlerDeps,
 ): boolean {
 	if (!isRecord(raw) || raw.type !== "proto-browser-result") return false;
-	if (socket.data.kind !== "ws") return false;
+	if (!isExtensionPeer(socket)) return false;
 	const sessionId = typeof raw.sessionId === "string" ? raw.sessionId : "";
 	const requestId = typeof raw.requestId === "string" ? raw.requestId : "";
 	if (!sessionId || !requestId) return false;
@@ -156,8 +157,8 @@ function missingExtensionError(
 ): string {
 	const port = readPidFile(deps.paths)?.port;
 	const hint = port
-		? `http://127.0.0.1:${port}/chat#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`
-		: "http://127.0.0.1:<port>/chat#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>";
+		? `http://127.0.0.1:${port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`
+		: "http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>";
 	return (
 		`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId}. ` +
 		`Open ${hint} in the browser where the extension is loaded, then retry. ` +
@@ -213,7 +214,7 @@ export async function handleProtoCli(
 	}
 	const peers: Socket[] = [];
 	deps.connections.forEachCapableOf(sessionId, (socket) => {
-		if (socket.data.kind === "ws") peers.push(socket);
+		if (isExtensionPeer(socket)) peers.push(socket);
 	});
 	if (peers.length !== 1) {
 		await result(requester, sessionId, frame.requestId, {
@@ -301,7 +302,7 @@ export function handleProtoBrowserResult(
 	const pending = state(deps).pending.get(
 		key(frame.sessionId, frame.requestId),
 	);
-	if (!pending || pending.extension !== socket || socket.data.kind !== "ws") {
+	if (!pending || pending.extension !== socket || !isExtensionPeer(socket)) {
 		return;
 	}
 	if (!frame.ok) {
@@ -324,7 +325,7 @@ export function handleProtoBrowserProgress(
 	const pending = state(deps).pending.get(
 		key(frame.sessionId, frame.requestId),
 	);
-	if (!pending || pending.extension !== socket || socket.data.kind !== "ws") {
+	if (!pending || pending.extension !== socket || !isExtensionPeer(socket)) {
 		return;
 	}
 	pending.lastStatus = frame.status;

@@ -67,6 +67,7 @@ import {
 import type { CredentialStore } from "../store/credentials-store";
 import type { ConnectionManager } from "./connection";
 import {
+	isExtensionPeer,
 	onSocketClose,
 	registerInvalidFrame,
 	type SocketState,
@@ -1026,7 +1027,7 @@ async function dispatchFrame(
 		case "command-invocation":
 			return handleCommandInvocation(ws, frame, deps);
 		case "overwatch-open-result": {
-			if (ws.data.kind !== "ws") {
+			if (!isExtensionPeer(ws)) {
 				await sendError(
 					ws,
 					frame.sessionId,
@@ -1077,7 +1078,7 @@ export async function handleSocketMessage(
 		const protoResult =
 			isRecord(parsedOversize) &&
 			parsedOversize.type === "proto-browser-result";
-		if ((unreadable || protoResult) && ws.data.kind === "ws") {
+		if ((unreadable || protoResult) && isExtensionPeer(ws)) {
 			failPendingProtoForExtension(
 				ws,
 				deps,

@@ -284,7 +284,7 @@ describe("daemon inbox browser relay", () => {
 					`No extension peer on session ${bootstrap.sessionId}`,
 				);
 				expect(answer.error).toContain(bootstrap.sessionId);
-				expect(answer.error).toContain("/chat#_chat=");
+				expect(answer.error).toContain("/start#_chat=");
 				expect(answer.error).toMatch(/reload/i);
 				expect(answer.error).toContain("1.11.0");
 			}
