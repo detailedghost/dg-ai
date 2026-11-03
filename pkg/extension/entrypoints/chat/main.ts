@@ -1,16 +1,12 @@
+import { emitRedacted } from "@dg/common";
 import {
-	emitRedacted,
-	type SessionBootstrap,
-	validateSessionBootstrap,
-} from "@dg/common";
-import {
-	CHAT_SESSION_KEY_PREFIX,
 	type ChatPageOptions,
 	type PositionArea,
 	renderChatPage as renderSharedChatPage,
 } from "@dg/pages";
 import { browser } from "wxt/browser";
 import { mountPairing, type PairingOptions } from "@/lib/features/pairing";
+import { loadStoredBootstraps } from "@/lib/stored-bootstraps";
 import "../options/style.css";
 import "@dg/pages/chat/style.css";
 
@@ -31,22 +27,6 @@ const chromeLocalArea: PositionArea = {
 	set: (items) => chrome.storage.local.set(items),
 	remove: (keys) => chrome.storage.local.remove(keys),
 };
-
-async function loadStoredBootstraps(): Promise<SessionBootstrap[]> {
-	const stored = await (
-		browser.storage.session as unknown as {
-			get(): Promise<Record<string, unknown>>;
-		}
-	).get();
-	const bootstraps: SessionBootstrap[] = [];
-	for (const [key, value] of Object.entries(stored)) {
-		if (!key.startsWith(CHAT_SESSION_KEY_PREFIX)) continue;
-		try {
-			bootstraps.push(validateSessionBootstrap(value));
-		} catch {}
-	}
-	return bootstraps;
-}
 
 export function renderChatPage(
 	options: ExtensionChatPageOptions = {},

@@ -21,7 +21,13 @@ import {
 	resolveBrowserBinary,
 } from "../../skills-cli/src/utils/cdp-harness";
 
-mock.module("wxt/browser", () => ({ browser: {} }));
+let storedSessions: Record<string, unknown> = {};
+
+mock.module("wxt/browser", () => ({
+	browser: {
+		storage: { session: { get: () => Promise.resolve(storedSessions) } },
+	},
+}));
 
 const { renderOverwatchPage } = await import("../entrypoints/overwatch/main");
 const { mountPairing } = await import("@/lib/features/pairing");
@@ -961,4 +967,61 @@ test("the countdown and need-you count derive from board data", () => {
 
 	expect(formatCountdown(board.goLive, NOW)).toBe("2d 02h 15m");
 	expect(needYouCount(board.lanes)).toBe(2);
+});
+
+describe("board reads from the extension page", () => {
+	const BOARD_JSON = JSON.stringify({ lanes: [], merges: [] });
+
+	async function readHeaders(): Promise<Headers[]> {
+		const restoreFetch = captureGlobal("fetch");
+		const seen: Headers[] = [];
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			value: (_url: string, init?: RequestInit) => {
+				seen.push(new Headers(init?.headers));
+				return Promise.resolve(new Response(BOARD_JSON));
+			},
+		});
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+			});
+			await handle.ready;
+			handle.stop();
+		} finally {
+			restoreFetch();
+		}
+		return seen;
+	}
+
+	afterEach(() => {
+		storedSessions = {};
+	});
+
+	test("sends the stored session token as a Bearer header", async () => {
+		storedSessions = {
+			"chat_session:session-a": {
+				port: 47823,
+				sessionId: "session-a",
+				token: "tok-a",
+				agentIdentity: "claude",
+			},
+			unrelated: { token: "not-a-session" },
+		};
+
+		const seen = await readHeaders();
+
+		expect(seen.length).toBeGreaterThan(0);
+		expect(seen[0]?.get("authorization")).toBe("Bearer tok-a");
+	});
+
+	test("sends no Authorization header when no session is stored", async () => {
+		const seen = await readHeaders();
+
+		expect(seen.length).toBeGreaterThan(0);
+		expect(seen[0]?.get("authorization")).toBeNull();
+	});
 });
