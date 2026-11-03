@@ -17,14 +17,18 @@ if [ ! -x "$ROOT/runtime/current/bun" ]; then
   exit 1
 fi
 bun run --cwd pkg/launcher build
-VERSION="$(bun -e 'console.log(require("./pkg/skills-cli/package.json").version)')-local"
-rm -rf "$ROOT/lib/$VERSION.staging"
+BASE="$(bun -e 'console.log(require("./pkg/skills-cli/package.json").version)')-local"
+VERSION="$BASE.$(date +%s).$$"
+PREVIOUS="$(basename "$(readlink "$ROOT/lib/current" 2>/dev/null || echo none)")"
 mkdir -p "$ROOT/lib/$VERSION.staging"
 cp -R pkg/launcher/dist/lib/. "$ROOT/lib/$VERSION.staging/"
-rm -rf "$ROOT/lib/$VERSION"
 mv "$ROOT/lib/$VERSION.staging" "$ROOT/lib/$VERSION"
 ln -s "$VERSION" "$ROOT/lib/current.$$.tmp"
 mv -T "$ROOT/lib/current.$$.tmp" "$ROOT/lib/current" 2>/dev/null || mv -h -f "$ROOT/lib/current.$$.tmp" "$ROOT/lib/current"
+for dir in "$ROOT/lib/$BASE".*; do
+  name="$(basename "$dir")"
+  [ "$name" = "$VERSION" ] || [ "$name" = "$PREVIOUS" ] || rm -rf "$dir"
+done
 echo "lib/current -> $VERSION"
 """
 
