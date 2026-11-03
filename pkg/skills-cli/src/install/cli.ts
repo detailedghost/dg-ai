@@ -13,10 +13,9 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
-import { linkCurrent, readCurrent } from "./current";
 import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
-import { ensureRuntime, fetchRuntimePin } from "./runtime";
+import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { PROGRAMS, writeShims } from "./shims";
 import {
 	assertSkillsOnlyFlags,
@@ -168,19 +167,9 @@ async function installBundleLocked(root: string, release: PickedBundle): Promise
 	const bundleDir = join(root, "lib", release.version);
 	const present = existsSync(join(bundleDir, "dg.js"));
 	const currentBun = join(root, "runtime", "current", process.platform === "win32" ? "bun.exe" : "bun");
-	const previousRuntime = readCurrent(root, "runtime");
-	const runtimeBin =
-		present && existsSync(currentBun)
-			? currentBun
-			: await ensureRuntime(root, await fetchRuntimePin(release));
-	try {
-		await fetchBundle(root, release, runtimeBin);
-	} catch (err) {
-		if (previousRuntime && readCurrent(root, "runtime") !== previousRuntime) {
-			linkCurrent(root, "runtime", previousRuntime);
-		}
-		throw err;
-	}
+	const pin = present && existsSync(currentBun) ? undefined : await fetchRuntimePin(release);
+	const runtimeBin = pin ? await stageRuntime(root, pin) : currentBun;
+	await fetchBundle(root, release, runtimeBin, pin && (() => activateRuntime(root, pin)));
 	writeShims(root);
 	removeRetiredBinaries();
 	console.log(

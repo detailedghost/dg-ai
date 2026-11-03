@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { ensureRuntime, runtimeAssetKey } from "../src/install/runtime";
+import { activateRuntime, runtimeAssetKey, stageRuntime } from "../src/install/runtime";
 import {
 	buildArchive,
 	bunZipUrl,
@@ -29,7 +29,7 @@ afterEach(() => {
 	sandbox.cleanup();
 });
 
-describe("ensureRuntime", () => {
+describe("stageRuntime and activateRuntime", () => {
 	test("downloads nothing and returns the existing path when the pinned version is installed", async () => {
 		const pin = runtimePinFor("unused");
 		const versionDir = join(sandbox.root, "runtime", `bun-v${pin.version}`);
@@ -38,7 +38,7 @@ describe("ensureRuntime", () => {
 		symlinkSync(versionDir, join(sandbox.root, "runtime", "current"));
 		fetchStub = stubFetch({});
 
-		const path = await ensureRuntime(sandbox.root, pin);
+		const path = await stageRuntime(sandbox.root, pin);
 
 		expect(fetchStub.calls).toEqual([]);
 		expect(realpathSync(path)).toBe(realpathSync(join(versionDir, BUN)));
@@ -57,30 +57,37 @@ describe("ensureRuntime", () => {
 		symlinkSync(oldDir, current);
 		fetchStub = stubFetch({ [bunZipUrl(pin.version)]: zip });
 
-		await expect(ensureRuntime(sandbox.root, pin)).rejects.toThrow();
+		await expect(stageRuntime(sandbox.root, pin)).rejects.toThrow();
 
 		expect(fetchStub.calls).toEqual([bunZipUrl(pin.version)]);
 		expect(basename(readlinkSync(current))).toBe("bun-v0.0.1");
 		expect(existsSync(join(sandbox.root, "runtime", `bun-v${pin.version}`, BUN))).toBe(false);
 	});
 
-	test("installs the verified zip under runtime/bun-v<version> and links runtime/current to it", async () => {
+	test("stages the verified zip under runtime/bun-v<version> and links runtime/current only on activate", async () => {
 		const zip = buildArchive("zip", sandbox.directory, {
 			"bun-fake/bun": { content: fakeBunScript("1.4.1"), mode: 0o755 },
 		});
 		const pin = runtimePinFor(zip);
 		fetchStub = stubFetch({ [bunZipUrl(pin.version)]: zip });
 
-		const path = await ensureRuntime(sandbox.root, pin);
-
+		const oldDir = join(sandbox.root, "runtime", "bun-v0.0.1");
+		mkdirSync(oldDir, { recursive: true });
 		const current = join(sandbox.root, "runtime", "current");
+		symlinkSync("bun-v0.0.1", current);
+
+		const path = await stageRuntime(sandbox.root, pin);
+
+		expect(basename(readlinkSync(current))).toBe("bun-v0.0.1");
+		expect(existsSync(path)).toBe(true);
+		activateRuntime(sandbox.root, pin);
 		expect(basename(readlinkSync(current))).toBe(`bun-v${pin.version}`);
 		expect(existsSync(join(current, BUN))).toBe(true);
 		expect(realpathSync(path)).toBe(realpathSync(join(current, BUN)));
 	});
 });
 
-describe("ensureRuntime with concurrent installers", () => {
+describe("stageRuntime with concurrent installers", () => {
 	function zipFor(version: string): Uint8Array {
 		return buildArchive("zip", sandbox.directory, {
 			"bun-fake/bun": { content: fakeBunScript(version), mode: 0o755 },
@@ -101,7 +108,8 @@ describe("ensureRuntime with concurrent installers", () => {
 			return res;
 		}) as typeof fetch;
 
-		await ensureRuntime(sandbox.root, pin);
+		await stageRuntime(sandbox.root, pin);
+		activateRuntime(sandbox.root, pin);
 
 		expect(readFileSync(join(finalDir, "marker"), "utf8")).toBe("published by the other installer");
 		expect(basename(readlinkSync(join(sandbox.root, "runtime", "current")))).toBe(`bun-v${pin.version}`);
@@ -114,13 +122,13 @@ describe("ensureRuntime with concurrent installers", () => {
 		fetchStub = stubFetch({ [bunZipUrl(pin.version)]: zip });
 
 		const [first, second] = await Promise.all([
-			ensureRuntime(sandbox.root, pin),
-			ensureRuntime(sandbox.root, pin),
+			stageRuntime(sandbox.root, pin),
+			stageRuntime(sandbox.root, pin),
 		]);
 
 		expect(first).toBe(second);
 		expect(existsSync(first)).toBe(true);
-		expect(readdirSync(join(sandbox.root, "runtime")).sort()).toEqual([`bun-v${pin.version}`, "current"]);
+		expect(readdirSync(join(sandbox.root, "runtime"))).toEqual([`bun-v${pin.version}`]);
 	});
 });
 
@@ -150,7 +158,7 @@ describe("runtimeAssetKey", () => {
 	});
 });
 
-describe.skipIf(process.platform !== "linux" || process.arch !== "x64")("ensureRuntime on linux-x64", () => {
+describe.skipIf(process.platform !== "linux" || process.arch !== "x64")("stageRuntime on linux-x64", () => {
 	test("downloads the baseline zip when DG_CPUINFO_FILE lacks avx2", async () => {
 		const zip = buildArchive("zip", sandbox.directory, {
 			"bun-linux-x64-baseline/bun": { content: fakeBunScript("1.4.1"), mode: 0o755 },
@@ -169,7 +177,8 @@ describe.skipIf(process.platform !== "linux" || process.arch !== "x64")("ensureR
 		const saved = process.env.DG_CPUINFO_FILE;
 		process.env.DG_CPUINFO_FILE = cpuinfo;
 		try {
-			await ensureRuntime(sandbox.root, pin);
+			await stageRuntime(sandbox.root, pin);
+			activateRuntime(sandbox.root, pin);
 		} finally {
 			if (saved === undefined) delete process.env.DG_CPUINFO_FILE;
 			else process.env.DG_CPUINFO_FILE = saved;

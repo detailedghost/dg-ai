@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { currentBinaryLine } from "../src/install/cli";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
@@ -203,6 +203,30 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 			}
 			const version = await runCli([join(bin, "dg-skills"), "--version"], installEnv(home));
 			expect(version.stdout.trim()).toBe(VERSION);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("a bundle that fails verification leaves runtime/current and lib/current unchanged", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-atomic-"));
+		const home = join(directory, "home");
+		mkdirSync(join(home, "runtime", "bun-old"), { recursive: true });
+		mkdirSync(join(home, "lib", "1.0.0"), { recursive: true });
+		symlinkSync("bun-old", join(home, "runtime", "current"));
+		symlinkSync("1.0.0", join(home, "lib", "current"));
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION, {
+				sums: (sums) => sums.replace(/^[0-9a-f]{64}/, "0".repeat(64)),
+			});
+
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
+
+			expect(result.stderr).toContain("skipped");
+			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe("bun-old");
+			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe("1.0.0");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

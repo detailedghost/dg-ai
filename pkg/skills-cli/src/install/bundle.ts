@@ -35,8 +35,14 @@ function pruneLib(lib: string, keep: ReadonlySet<string>): void {
  * Installs the verified dg-lib bundle under `<root>/lib/<version>` and links `lib/current` to it.
  * It keeps the version it replaces for rollback and removes older ones. An installed version
  * is only relinked, with no download. A failed check leaves `lib/current` and the lib dir as they were.
+ * `beforeActivate` runs once the bundle passed its check, just before `lib/current` switches.
  */
-export async function fetchBundle(root: string, release: PickedBundle, runtimeBin: string): Promise<string> {
+export async function fetchBundle(
+	root: string,
+	release: PickedBundle,
+	runtimeBin: string,
+	beforeActivate?: () => void,
+): Promise<string> {
 	const lib = join(root, "lib");
 	const final = join(lib, release.version);
 	if (!existsSync(join(final, "dg.js"))) {
@@ -61,6 +67,7 @@ export async function fetchBundle(root: string, release: PickedBundle, runtimeBi
 			rmSync(scratch, { recursive: true, force: true });
 		}
 	}
+	beforeActivate?.();
 	const replaced = readCurrent(root, "lib");
 	linkCurrent(root, "lib", release.version);
 	pruneLib(lib, new Set([release.version, ...(replaced ? [replaced] : [])]));

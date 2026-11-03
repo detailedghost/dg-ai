@@ -186,4 +186,31 @@ describe("fetchBundle", () => {
 			chmodSync(stuck, 0o700);
 		}
 	});
+
+	test("runs beforeActivate after the self-check passes and before lib/current switches", async () => {
+		seedVersion(PREVIOUS);
+		seedCurrent(PREVIOUS);
+		serve();
+		const seen: string[] = [];
+
+		await fetchBundle(sandbox.root, release(), process.execPath, () => {
+			seen.push(basename(readlinkSync(join(sandbox.root, "lib", "current"))));
+		});
+
+		expect(seen).toEqual([PREVIOUS]);
+		expect(basename(readlinkSync(join(sandbox.root, "lib", "current")))).toBe(VERSION);
+	});
+
+	test("never runs beforeActivate when the self-check fails", async () => {
+		serve();
+		let called = false;
+
+		await expect(
+			fetchBundle(sandbox.root, release(), runtimeBinThatExits(3), () => {
+				called = true;
+			}),
+		).rejects.toThrow();
+
+		expect(called).toBe(false);
+	});
 });

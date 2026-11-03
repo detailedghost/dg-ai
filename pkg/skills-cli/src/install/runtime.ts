@@ -43,10 +43,10 @@ export async function fetchRuntimePin(release: PickedBundle): Promise<RuntimePin
 }
 
 /**
- * Installs the pinned Bun under `<root>/runtime/bun-v<version>/` and links `runtime/current` to it.
+ * Installs the pinned Bun under `<root>/runtime/bun-v<version>/` without switching `runtime/current`.
  * Returns the realpath of the bun binary. Nothing changes when the zip fails its sha256 check.
  */
-export async function ensureRuntime(root: string, pin: RuntimePin): Promise<string> {
+export async function stageRuntime(root: string, pin: RuntimePin): Promise<string> {
 	const runtimeDir = join(root, "runtime");
 	const dirName = `bun-v${pin.version}`;
 	const finalDir = join(runtimeDir, dirName);
@@ -79,6 +79,11 @@ export async function ensureRuntime(root: string, pin: RuntimePin): Promise<stri
 			rmSync(staging, { recursive: true, force: true });
 		}
 	}
-	if (readCurrent(root, "runtime") !== dirName) linkCurrent(root, "runtime", dirName);
 	return realpathSync(bin);
+}
+
+/** Points `runtime/current` at the pinned Bun that `stageRuntime` installed. */
+export function activateRuntime(root: string, pin: RuntimePin): void {
+	const dirName = `bun-v${pin.version}`;
+	if (readCurrent(root, "runtime") !== dirName) linkCurrent(root, "runtime", dirName);
 }
