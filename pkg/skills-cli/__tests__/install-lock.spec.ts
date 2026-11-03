@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withInstallLock } from "../src/install/lock";
 import { scratch, type Scratch } from "./runtime-bundle-fixtures";
@@ -73,5 +73,34 @@ describe("withInstallLock", () => {
 
 		await expect(withInstallLock(sandbox.root, () => "ran", FAST)).rejects.toThrow(lockPath());
 		expect(readFileSync(lockPath(), "utf8")).toBe(`${process.pid}:live`);
+	});
+
+	test("never removes a live lock that replaced the stale one it observed", async () => {
+		writeFileSync(lockPath(), `${deadPid()}:old`);
+		const replacement = `${process.pid}:replacement`;
+		let replaced = false;
+
+		await expect(
+			withInstallLock(sandbox.root, () => "ran", {
+				...FAST,
+				onStaleObserved: () => {
+					if (replaced) return;
+					replaced = true;
+					rmSync(lockPath());
+					writeFileSync(lockPath(), replacement);
+				},
+			}),
+		).rejects.toThrow(lockPath());
+
+		expect(readFileSync(lockPath(), "utf8")).toBe(replacement);
+	});
+
+	test("takes over a crashed reclaim guard", async () => {
+		writeFileSync(lockPath(), `${deadPid()}:old`);
+		writeFileSync(`${lockPath()}.reclaim`, "");
+		const old = new Date(Date.now() - 60_000);
+		utimesSync(`${lockPath()}.reclaim`, old, old);
+
+		expect(await withInstallLock(sandbox.root, () => "ran", FAST)).toBe("ran");
 	});
 });

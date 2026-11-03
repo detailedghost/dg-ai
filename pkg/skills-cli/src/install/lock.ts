@@ -1,13 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { isAlive } from "@dg/common/node";
 
 const LOCK_TRIES = 600;
 const LOCK_WAIT_MS = 100;
 const STALE_MS = 15 * 60_000;
+const GUARD_STALE_MS = 5000;
 
-export type InstallLockOptions = { tries?: number; waitMs?: number; staleMs?: number };
+export type InstallLockOptions = {
+	tries?: number;
+	waitMs?: number;
+	staleMs?: number;
+	onStaleObserved?: () => void;
+};
 
 const errno = (error: unknown): string | undefined => (error as NodeJS.ErrnoException).code;
 
@@ -36,24 +42,28 @@ function tryCreate(lock: string, token: string): boolean {
 	}
 }
 
-function reclaimIfStale(lock: string, staleMs: number): void {
-	const aside = `${lock}.${process.pid}.${randomUUID()}.stale`;
+function tryGuard(guard: string, token: string): boolean {
+	if (tryCreate(guard, token)) return true;
 	try {
-		renameSync(lock, aside);
+		if (Date.now() - statSync(guard).mtimeMs > GUARD_STALE_MS) rmSync(guard, { force: true });
 	} catch (error) {
-		if (errno(error) === "ENOENT") return;
-		throw error;
+		if (errno(error) !== "ENOENT") throw error;
 	}
+	return tryCreate(guard, token);
+}
+
+function reclaimIfStale(lock: string, staleMs: number, token: string, onStaleObserved?: () => void): boolean {
+	const guard = `${lock}.reclaim`;
+	if (!tryGuard(guard, token)) return false;
 	try {
-		if (isStale(readFileSync(aside, "utf8"), statSync(aside).mtimeMs, staleMs)) return;
-		try {
-			linkSync(aside, lock);
-		} catch (error) {
-			if (errno(error) !== "EEXIST") throw error;
-		}
+		onStaleObserved?.();
+		if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs, staleMs)) rmSync(lock, { force: true });
+	} catch (error) {
+		if (errno(error) !== "ENOENT") throw error;
 	} finally {
-		rmSync(aside, { force: true });
+		release(guard, token);
 	}
+	return true;
 }
 
 function release(lock: string, token: string): void {
@@ -66,12 +76,13 @@ function release(lock: string, token: string): void {
 
 /**
  * Runs `fn` while holding `<root>/.install.lock`. An owner that is dead, or a lock older than
- * the stale age, is taken over so a crashed install never blocks the next one.
+ * the stale age, is taken over so a crashed install never blocks the next one. A stale lock is
+ * removed only under a reclaim guard and only after it is re-read, so a live replacement survives.
  */
 export async function withInstallLock<T>(
 	root: string,
 	fn: () => T | Promise<T>,
-	{ tries = LOCK_TRIES, waitMs = LOCK_WAIT_MS, staleMs = STALE_MS }: InstallLockOptions = {},
+	{ tries = LOCK_TRIES, waitMs = LOCK_WAIT_MS, staleMs = STALE_MS, onStaleObserved }: InstallLockOptions = {},
 ): Promise<T> {
 	mkdirSync(root, { recursive: true });
 	const lock = join(root, ".install.lock");
@@ -86,8 +97,7 @@ export async function withInstallLock<T>(
 		}
 		try {
 			if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs, staleMs)) {
-				reclaimIfStale(lock, staleMs);
-				continue;
+				if (reclaimIfStale(lock, staleMs, token, onStaleObserved)) continue;
 			}
 		} catch (error) {
 			if (errno(error) === "ENOENT") continue;
