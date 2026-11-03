@@ -16,7 +16,7 @@ a message. That file is the only copy of the safety rules.
 ## Bootstrap
 
 Commands run the **compiled `dg-agent` binary**. The installer pulls it from
-the latest `agent-v*` release:
+the latest `vX.Y.Z` release:
 
 ```bash
 ~/.dg/bin/dg-agent phone --help >/dev/null 2>&1 ||

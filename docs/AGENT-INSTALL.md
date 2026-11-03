@@ -151,7 +151,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 `DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
 from `--cli-only`, which writes `~/.dg/cli-only`. Every skills-only path also
-installs the `dg-skills` CLI from the latest `skills-v*` release into
+installs the `dg-skills` CLI from the latest `vX.Y.Z` release into
 `${DG_HOME:-~/.dg}/bin`, checked against the release's `SHA256SUMS`, because the
 skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
 `cli-only` marker untouched, and never executes skill content. Set
@@ -163,7 +163,7 @@ Use this when the user wants a specific release instead of the newest, for
 example to match a pinned CI job or roll back after a bad upgrade. Add
 `--version <x.y.z>` (shell) or set `DG_VERSION` first (PowerShell); it combines
 with `--cli-only`/`--agent-only` and carries through to `dg-skills install`, so
-the matching `daemon-v*`, `agent-v*` and `ext-v*` release installs too.
+`dg-daemon`, `dg-agent` and the extension install from that same release too.
 
 ```bash
 curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
@@ -212,7 +212,7 @@ claude plugin update dg@detailedghost
 
 ### Update a marketplace pinned to a release tag
 
-A marketplace pinned to a tag, such as `skills-vX.Y.Z`, does not move when a
+A marketplace pinned to a tag, such as `vX.Y.Z` or the older `skills-vX.Y.Z`, does not move when a
 new release ships. `claude plugin update dg@detailedghost` then reports the old
 version as the latest. The pin lives in two files, and they must match:
 
@@ -259,9 +259,8 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
   `dg-daemon` and `dg-agent` together; each is skipped when already current. For Firefox:
   `~/.dg/bin/dg-skills install firefox`. Default target is **chrome** (also serves
   Brave/Edge/Vivaldi).
-- The chat skill runs `~/.dg/bin/dg-agent`, released separately under
-  `agent-v*`, and `dg-agent start` launches `~/.dg/bin/dg-daemon` (released under
-  `daemon-v*`) by resolving it as a sibling, so both must live in the same
+- The chat skill runs `~/.dg/bin/dg-agent`, and `dg-agent start` launches
+  `~/.dg/bin/dg-daemon` by resolving it as a sibling, so both must live in the same
   directory. Its own bootstrap gate tests for `dg-agent`, not `dg-skills` — a
   machine that already used `browser`, `demo` or `proto` has `dg-skills`
   already, so gating on that would skip the download the gate exists for.
@@ -275,7 +274,7 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
   instead of the human. Neither needs the daemon running: `memory` opens
   `agents/memory.db` directly.
 - Add `--local` to **build the extension from source** (requires a repository checkout
-  with `pkg/extension/`); otherwise it downloads the CI-built `ext-v*` asset.
+  with `pkg/extension/`); otherwise it downloads the CI-built extension zip from the release.
 - Chromium browsers cannot be silently loaded, so the final step is manual —
   relay the printed steps to the user:
   1. Open `chrome://extensions` (or `edge://extensions`).
