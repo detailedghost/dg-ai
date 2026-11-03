@@ -104,6 +104,7 @@ type Invocation = {
 
 const TOUCHED = [
 	"PATH",
+	"DG_HOME",
 	"DG_CLI_MODE",
 	"DG_CLI_RECORD",
 	"DG_CLI_EXIT",
