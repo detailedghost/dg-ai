@@ -94,6 +94,24 @@ link_current() {
 # Copy skill directories as data. A skill is an immediate child that contains
 # SKILL.md. The same rule lives in @dg/common filesToInstall. Symlinks are
 # refused. Files are written mode 0644 and never executed.
+retired_is_dg_copy() {
+  case $2 in
+    teach) known="b32cdde3ab7f7239d157dd2225c984e48c02aa981cb962b42cdda5cdd1c4dc68 bb06ec5c6763216f76a7af5fbbea839476008747740ded023d285a5afddbd3c9" ;;
+    wait-what) known="3ff07fa007759e417d95c4885ed333a84119cc0d621f7e3d805ca46b6ffb3dd6 6f40fe8148898ee8cb306b8fec3f8f674ee346f5ef54bf9f2d2790e43e1e1f4a" ;;
+    *) return 0 ;;
+  esac
+  [ -f "$1/$2/SKILL.md" ] || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    hash=$(sha256sum "$1/$2/SKILL.md" | cut -d' ' -f1)
+  else
+    hash=$(shasum -a 256 "$1/$2/SKILL.md" | cut -d' ' -f1)
+  fi
+  case " $known " in
+    *" $hash "*) return 0 ;;
+  esac
+  return 1
+}
+
 copy_skill_tree() {
   src=$1
   dest=$2
@@ -109,8 +127,10 @@ copy_skill_tree() {
   fi
   refuse_persona_links "$src"
   mkdir -p "$dest"
-  for retired in phone-friend; do
-    rm -rf "${dest:?}/${retired}"
+  for retired in phone-friend teach wait-what; do
+    if retired_is_dg_copy "$dest" "$retired"; then
+      rm -rf "${dest:?}/${retired}"
+    fi
   done
   found=0
   for skill in "$src"/*/; do

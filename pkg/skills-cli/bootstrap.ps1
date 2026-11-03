@@ -33,9 +33,20 @@ function Copy-DgSkillTree {
 	}
 	if ($links) { throw "dg-skills: refusing to copy a symlink from $Source" }
 	New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-	foreach ($retired in @("phone-friend")) {
+	$retiredHashes = @{
+		"teach" = @("b32cdde3ab7f7239d157dd2225c984e48c02aa981cb962b42cdda5cdd1c4dc68", "bb06ec5c6763216f76a7af5fbbea839476008747740ded023d285a5afddbd3c9")
+		"wait-what" = @("3ff07fa007759e417d95c4885ed333a84119cc0d621f7e3d805ca46b6ffb3dd6", "6f40fe8148898ee8cb306b8fec3f8f674ee346f5ef54bf9f2d2790e43e1e1f4a")
+	}
+	foreach ($retired in @("phone-friend", "teach", "wait-what")) {
 		$retiredPath = Join-Path $Destination $retired
-		if (Test-Path -LiteralPath $retiredPath) { Remove-Item -LiteralPath $retiredPath -Recurse -Force }
+		if (-not (Test-Path -LiteralPath $retiredPath)) { continue }
+		if ($retiredHashes.ContainsKey($retired)) {
+			$retiredSkill = Join-Path $retiredPath "SKILL.md"
+			if (-not (Test-Path -LiteralPath $retiredSkill)) { continue }
+			$retiredHash = (Get-FileHash -LiteralPath $retiredSkill -Algorithm SHA256).Hash.ToLowerInvariant()
+			if ($retiredHashes[$retired] -notcontains $retiredHash) { continue }
+		}
+		Remove-Item -LiteralPath $retiredPath -Recurse -Force
 	}
 	$manifest = @()
 	$found = $false

@@ -184,6 +184,24 @@ When `DG_HOME` is set to something other than `~/.dg`, install prints
 `note: DG_HOME=<path>; installing there` to stderr before it changes anything,
 and `dg-skills doctor` warns.
 
+## Recommended plugins
+
+`dg-skills install --with-recommended` also installs the third-party plugins
+that the marketplace pins: `unslop` and `mattpocock-skills`. It works with the
+default install, `--cli-only` and `--skills-only`. It does not work with
+`--agent-only`, and the command fails before it changes anything.
+
+With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
+install each plugin at its pinned commit. With `--skills-only`, it fetches each
+pinned commit with git and copies the skills into the destination. A skill that
+dg also ships is skipped, and a line names it. With no network or no `claude`
+binary, each plugin prints one warning and the install continues.
+
+dg no longer ships `/dg:teach` and `/dg:wait-what`. `/teach` and `/wait-what`
+now come from `mattpocock-skills`, so run `dg-skills install --with-recommended`
+to get them. A skills install removes the old `teach` and `wait-what`
+directories from the destination first.
+
 ## CLI-only install
 
 Install the runtime, the bundle and the skills that run without the browser

@@ -6,6 +6,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {
 	chmodSync,
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -488,6 +489,25 @@ describe("bootstrap.sh --skills-only", () => {
 			]);
 			expect(result.requests).toEqual([]);
 			expect(existsSync(join(result.root, "bin"))).toBe(false);
+		} finally {
+			rmSync(join(dest, ".."), { recursive: true, force: true });
+		}
+	});
+
+	test("bootstrap removes dg's old teach and keeps a wait-what it did not ship", async () => {
+		const dest = join(mkdtempSync(join(tmpdir(), "dg-skills-boot-retired-")), "skills");
+		try {
+			mkdirSync(join(dest, "teach"), { recursive: true });
+			copyFileSync(join(REPO, "pkg", "skills-test", "__tests__", "fixtures", "retired-skills", "teach", "SKILL.md"), join(dest, "teach", "SKILL.md"));
+			mkdirSync(join(dest, "wait-what"), { recursive: true });
+			writeFileSync(join(dest, "wait-what", "SKILL.md"), "---\nname: wait-what\ndescription: upstream copy\n---\n");
+			const result = await runBootstrap({
+				args: ["--skills-only"],
+				env: { DG_SKILLS_DEST: dest, DG_SKILLS_NO_CLI: "1" },
+			});
+			expect(result.code, result.stderr).toBe(0);
+			expect(existsSync(join(dest, "teach"))).toBe(false);
+			expect(readFileSync(join(dest, "wait-what", "SKILL.md"), "utf8")).toContain("upstream copy");
 		} finally {
 			rmSync(join(dest, ".."), { recursive: true, force: true });
 		}
