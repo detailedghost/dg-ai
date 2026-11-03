@@ -5,6 +5,19 @@ import { resolveDgPaths } from "@dg/common/node";
 const home = "/h";
 
 describe("resolveDgPaths on linux", () => {
+	it("ignores a relative XDG root and uses the home default", () => {
+		const paths = resolveDgPaths({
+			platform: "linux",
+			homeDir: home,
+			env: { XDG_STATE_HOME: "state", XDG_CONFIG_HOME: "./cfg", XDG_DATA_HOME: "share", XDG_CACHE_HOME: "cache" },
+		});
+
+		expect(paths.stateDir).toBe("/h/.local/state/dg");
+		expect(paths.configDir).toBe("/h/.config/dg");
+		expect(paths.dataDir).toBe("/h/.local/share/dg");
+		expect(paths.cacheDir).toBe("/h/.cache/dg");
+	});
+
 	it("uses the XDG defaults under the home folder", () => {
 		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
 

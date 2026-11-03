@@ -272,7 +272,10 @@ elif [ "$("$UNAME" -s)" = "Darwin" ]; then
   ROOT="${HOME}/Library/Application Support/dg"
 else
   BIN="${HOME}/.local/bin"
-  ROOT="${XDG_DATA_HOME:-${HOME}/.local/share}/dg"
+  case "${XDG_DATA_HOME:-}" in
+    /*) ROOT="${XDG_DATA_HOME}/dg" ;;
+    *) ROOT="${HOME}/.local/share/dg" ;;
+  esac
 fi
 
 if [ "$SKILLS_ONLY" = "1" ]; then

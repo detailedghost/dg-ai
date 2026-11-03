@@ -83,7 +83,10 @@ function roots(platform: NodeJS.Platform, home: string, env: Env): DgRoots {
 			logDir: path.join(home, "Library", "Logs", "dg"),
 		};
 	}
-	const xdg = (name: string, ...fallback: string[]) => path.join(env[name] || path.join(home, ...fallback), "dg");
+	const xdg = (name: string, ...fallback: string[]) => {
+		const root = env[name];
+		return path.join(root && path.isAbsolute(root) ? root : path.join(home, ...fallback), "dg");
+	};
 	const stateDir = xdg("XDG_STATE_HOME", ".local", "state");
 	return {
 		binDir: path.join(home, ".local", "bin"),

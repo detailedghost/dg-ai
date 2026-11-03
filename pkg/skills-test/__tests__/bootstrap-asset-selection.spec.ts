@@ -125,6 +125,15 @@ describe("bootstrap.sh uses the per-OS layout", () => {
 		expect(result.stdout).toContain(`export PATH="${join(result.home, ".local", "bin")}:$PATH"`);
 	});
 
+	test("a Linux run ignores a relative XDG_DATA_HOME and writes the bundle to ~/.local/share/dg", async () => {
+		const result = await runBootstrap({ withoutDgHome: true, env: { XDG_DATA_HOME: "rel-data" } });
+
+		expect(result.code, result.stderr).toBe(0);
+		const data = join(result.home, ".local", "share", "dg");
+		expect(readFileSync(join(result.home, ".local", "bin", "dg-skills"), "utf8")).toContain(join(data, "lib", "current", "dg.js"));
+		expect(realpathSync(join(data, "lib", "current"))).toBe(realpathSync(join(data, "lib", result.version)));
+	});
+
 	test("a macOS run without DG_HOME writes the launchers to ~/.local/bin and the bundle to Application Support", async () => {
 		const result = await runBootstrap({ withoutDgHome: true, os: "Darwin", arch: "arm64" });
 
