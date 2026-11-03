@@ -10,7 +10,7 @@ slices:
   - id: 1
     name: "marketplace-pins-and-lint"
     depends_on: []
-    files: [".claude-plugin/marketplace.json","THIRD_PARTY_NOTICES.md","scripts/bump-plugin-pin.ts","pkg/skills-test/__tests__/skill-manifests.spec.ts","pkg/skills-test/__tests__/imported-plugins-optional.spec.ts","pkg/skills-test/__tests__/plugin-pins.spec.ts"]
+    files: [".claude-plugin/marketplace.json","THIRD_PARTY_NOTICES.md","scripts/bump-plugin-pin.ts","pkg/skills-test/__tests__/skill-manifests.spec.ts","pkg/skills-test/__tests__/imported-plugins-optional.spec.ts","pkg/skills-test/__tests__/plugin-pins.spec.ts","pkg/skills-test/__tests__/bump-plugin-pin.spec.ts","pkg/skills-test/__tests__/marketplace-support.ts"]
     agents:
       primary: js
       qa: [qa-code]
@@ -59,7 +59,7 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 
 #### Engineering
 - [ ] marketplace.json: add { name: 'mattpocock-skills', description, source: { source: 'github', repo: 'mattpocock/skills', ref: 'main', sha: 'a496f5513d4a4cf889bc48e189e579f4b0bdf6aa' } } with no skills key (the repo ships .claude-plugin/plugin.json listing 27 skills); keep unslop with skills ['./'] at sha 17ed39c9d0b522f44190ff0c6233867eadee192a (current main)
-- [ ] scripts/bump-plugin-pin.ts <name> [--ref r]: resolves the ref head through `git ls-remote https://github.com/<repo>.git <ref>`, rewrites the sha in marketplace.json, prints old -> new and the upstream plugin.json version; exits 3 when the repo is unreachable
+- [ ] scripts/bump-plugin-pin.ts <name> [--ref r]: resolves the ref head through `git ls-remote https://github.com/<repo>.git <ref>`, rewrites the sha in marketplace.json, prints old -> new; exits 3 when the repo is unreachable and 1 for an unknown name
 - [ ] THIRD_PARTY_NOTICES.md: list the adapted dg files per upstream and state that the imported plugins are installed from upstream at the pinned sha; add grill-me only if the diff against upstream shows adaptation (teach and wait-what are retired in slice 2)
 - [ ] imported-plugins-optional.spec.ts: for each non-dg marketplace plugin P, every file under plugins/dg that mentions `/P:` or `P@detailedghost` must also match /is not installed, skip/i within the same file; `requires:` frontmatter never names P
 - [ ] plugin-pins.spec.ts: every non-dg marketplace entry has a 40-hex sha and a ref; the dg entry has source '.'
@@ -120,6 +120,12 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 ## Slice Summaries
 
 ## Agent Notes
+
+- (orchestrator, slice 1) Keep pkg/skills-test/__tests__/marketplace-support.ts as the shared lint helper (pinViolations, optionalPluginViolations). The spec tests import it.
+- (orchestrator, slice 1) bump-plugin-pin.spec.ts runs the script as a subprocess with cwd set to a temp dir that holds .claude-plugin/marketplace.json and a fake git first on PATH. Keep the script reading the relative path.
+- (orchestrator, slice 1) The bump script does not print the upstream plugin.json version. It prints `<name>: <old> -> <new>` only.
+- (orchestrator, slice 1) An unknown plugin name or a non-github entry prints an error to stderr and exits 1. Exit 3 means the repo is unreachable.
+- (orchestrator, slice 1) The lint scans .md files under plugins/dg. The requires: check reads the frontmatter of any scanned .md file.
 
 - (orchestrator) Run tests with TMPDIR=/home/detailedghost/.cache/dg-test-tmp. Tests never touch the real ~/.dg, ~/.claude, ~/.config, ~/.local or the keychain; use temp homes and fake runners. Never run the whole dg-daemon suite. Never run git stash in any form. Do not commit; the orchestrator commits. No inline code comments. American spelling. No network in tests: use local bare-repo fixtures and stubbed ls-remote output.
 
