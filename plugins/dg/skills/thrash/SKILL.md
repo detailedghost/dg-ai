@@ -70,12 +70,12 @@ First run: install or refresh the compiled CLI when it is missing or too old.
 ```bash
 { dg-skills thrash --help 2>/dev/null | grep -q -- --dry-run &&
   dg-skills bg --help >/dev/null 2>&1; } ||
-  { "$HOME/.local/bin/dg-skills" thrash --help 2>/dev/null | grep -q -- --dry-run &&
-  "$HOME/.local/bin/dg-skills" bg --help >/dev/null 2>&1; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" thrash --help 2>/dev/null | grep -q -- --dry-run &&
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" bg --help >/dev/null 2>&1; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `$HOME/.local/bin` path instead.
+Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
 
 If a step fails, run dg-skills doctor bg proxy thrash.
 

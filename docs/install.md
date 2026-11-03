@@ -64,7 +64,8 @@ For example, the phone state is in `~/.local/state/dg/phone` on Linux and in
 When the launcher folder is not on `PATH`, `bootstrap.sh` and
 `dg-skills install` print the line to add. `bootstrap.ps1` adds
 `%LOCALAPPDATA%\dg\bin` to the user `PATH` once and says so. Skills call
-`dg-skills` by name and fall back to `$HOME/.local/bin/dg-skills`.
+`dg-skills` by name and fall back to `${DG_HOME:-$HOME/.local}/bin/dg-skills`,
+the launcher path, also in the step right after the bootstrap.
 
 ### DG_HOME
 

@@ -16,12 +16,12 @@ Commands use the compiled binaries `dg-daemon` and
 ```sh
 { dg-daemon --version >/dev/null 2>&1 &&
   dg-skills --version >/dev/null 2>&1; } ||
-  { "$HOME/.local/bin/dg-daemon" --version >/dev/null 2>&1 &&
-  "$HOME/.local/bin/dg-skills" --version >/dev/null 2>&1; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg-daemon" --version >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" --version >/dev/null 2>&1; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-daemon` and `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `$HOME/.local/bin` path instead.
+Call `dg-daemon` and `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
 
 If a step fails, run dg-skills doctor channel-review.
 

@@ -33,7 +33,7 @@ describe("skill-bootstrap-block --check", () => {
 	test("tells the agent to use the launcher path whenever the bare name does not answer", () => {
 		const text = readFileSync(join(SKILLS_DIR, "worktree", "SKILL.md"), "utf8");
 		expect(text).toContain(
-			"Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-skills` instead.",
+			"Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.",
 		);
 	});
 
@@ -42,7 +42,7 @@ describe("skill-bootstrap-block --check", () => {
 		cpSync(SKILLS_DIR, copy, { recursive: true });
 		const skill = join(copy, "worktree", "SKILL.md");
 		const text = readFileSync(skill, "utf8");
-		writeFileSync(skill, text.replace(/^ {2}"\$HOME\/\.local\/bin\/dg-skills".*\n/m, ""));
+		writeFileSync(skill, text.replace(/^ {2}"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-skills".*\n/m, ""));
 
 		const result = check(copy);
 
@@ -79,8 +79,31 @@ describe("packaged skills call the bare launcher", () => {
 		expect(skills.length).toBeGreaterThan(40);
 		for (const path of skills) {
 			const text = readFileSync(path, "utf8");
-			expect([path, /^ *(?:\{ )?"\$HOME\/\.local\/bin\/dg-[a-z]+"/m.test(text)]).toEqual([path, true]);
+			expect([path, /^ *(?:\{ )?"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-[a-z]+"/m.test(text)]).toEqual([path, true]);
 			expect([path, /Call `dg-[a-z]+`(?: and `dg-[a-z]+`)* in every later step\./.test(text)]).toEqual([path, true]);
 		}
+	});
+});
+
+describe("first-run blocks after the bootstrap", () => {
+	test("call the launcher by its path, so a launcher folder missing from PATH still works", () => {
+		const hits: string[] = [];
+		for (const path of filesUnder(SKILLS_DIR).filter((file) => file.endsWith(".md"))) {
+			const text = readFileSync(path, "utf8");
+			for (const fence of text.matchAll(/^( *)```(?:bash|sh)\n([\s\S]*?)^\1```/gm)) {
+				const lines = (fence[2] ?? "").split("\n");
+				const at = lines.findIndex((line) => /bootstrap\.sh \| sh/.test(line));
+				if (at < 0) continue;
+				for (const line of lines.slice(at + 1))
+					if (/^\s*dg-(skills|agent|daemon)\b/.test(line)) hits.push(`${path}: ${line.trim()}`);
+			}
+		}
+		expect(hits).toEqual([]);
+	});
+
+	test("probe the DG_HOME launcher folder before the default one", () => {
+		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
+		expect(text).toContain('  "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup --help >/dev/null 2>&1 ||\n');
+		expect(text).toContain('\n"${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup\n');
 	});
 });

@@ -352,9 +352,6 @@ describe("stat and cls shell blocks degrade safely", () => {
 		return log;
 	}
 
-	const viaLauncherPath = (block: string): string =>
-		block.replace(/(^|[\s;(|&])dg-skills /gm, '$1"$HOME/.local/bin/dg-skills" ');
-
 	function sh(
 		block: string,
 		cwd: string,
@@ -362,13 +359,14 @@ describe("stat and cls shell blocks degrade safely", () => {
 		pathDirs?: string[],
 		extra: Record<string, string> = {},
 	) {
-		const proc = Bun.spawnSync(["sh", "-c", viaLauncherPath(block)], {
+		const proc = Bun.spawnSync(["sh", "-c", block], {
 			cwd,
 			env: mergeEnv({
 				HOME: home,
+				DG_HOME: undefined,
 				GIT_CONFIG_GLOBAL: "/dev/null",
 				GIT_CONFIG_NOSYSTEM: "1",
-				...(pathDirs ? { PATH: pathDirs.join(":") } : {}),
+				PATH: [join(home, ".local", "bin"), ...(pathDirs ?? (process.env.PATH ?? "").split(":"))].join(":"),
 				...extra,
 			}),
 		});

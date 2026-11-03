@@ -138,10 +138,10 @@ describe("channel-review skill distribution", () => {
 			"```sh",
 			"{ dg-skills deps-upgrade --help >/dev/null 2>&1 &&",
 			"  dg-skills channel-review --help >/dev/null 2>&1; } ||",
-			'  { "$HOME/.local/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&',
-			'  "$HOME/.local/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||',
+			'  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&',
+			'  "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||',
 			expect.stringMatching(/^ {2}curl .*bootstrap\.sh \| sh -s -- --cli-only$/),
-			"dg-skills channel-review --help",
+			'"${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help',
 			"```",
 		]);
 	});

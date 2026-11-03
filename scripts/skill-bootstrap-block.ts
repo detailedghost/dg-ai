@@ -5,7 +5,8 @@ import { join, relative, resolve } from "node:path";
 const USAGE =
 	"usage: bun scripts/skill-bootstrap-block.ts --check|--write [--root <skills dir>]";
 const DEFAULT_ROOT = resolve(import.meta.dir, "..", "plugins", "dg", "skills");
-const FALLBACK_DIR = "$HOME/.local/bin";
+const FALLBACK_DIR = "${DG_HOME:-$HOME/.local}/bin";
+const OLD_FALLBACK_DIR = "$HOME/.local/bin";
 
 const LEGACY_LAUNCHER =
 	/(?:~|<home>|\$HOME)\/\.dg\/bin\/(dg-skills|dg-agent|dg-daemon)/g;
@@ -33,7 +34,7 @@ function readProbes(lines: string[]): Probe[] | undefined {
 				.trim()
 				.replace(/^\{ /, "")
 				.replace(/;( \})?$/, "");
-			if (expression.startsWith(`"${FALLBACK_DIR}/`)) continue;
+			if ([FALLBACK_DIR, OLD_FALLBACK_DIR].some((dir) => expression.startsWith(`"${dir}/`))) continue;
 			const executable = EXECUTABLE_TEST.exec(expression);
 			const program = executable?.[1] ?? PROGRAM.exec(expression)?.[1];
 			if (!program) return undefined;
@@ -70,14 +71,15 @@ function sentence(probes: Probe[]): string {
 	return `Call ${names} in every later step. If a bare name does not answer, also after the bootstrap, call it by its \`${FALLBACK_DIR}\` path instead.`;
 }
 
-/** The uniform first-run block: the bare launcher, then the launcher path, then the bootstrap. */
-export function renderBlock(
-	probes: Probe[],
-	curl: string,
-	trailer: string[],
-	fence: string,
-	indent: string,
-): string {
+const byPath = (line: string): string => {
+	const program = PROGRAM.exec(line)?.[1];
+	return program ? fallback({ program, expression: line }) : line;
+};
+
+type Block = { probes: Probe[]; curl: string; trailer: string[]; fence: string; indent: string };
+
+/** The uniform first-run block: the bare launcher, then the launcher path, then the bootstrap, then the launcher path. */
+export function renderBlock({ probes, curl, trailer, fence, indent }: Block): string {
 	const body = [
 		...group(probes.map((probe) => probe.expression)),
 		...group(probes.map(fallback)),
@@ -86,7 +88,7 @@ export function renderBlock(
 	return [
 		`\`\`\`${fence}`,
 		...body,
-		...trailer,
+		...trailer.map(byPath),
 		"```",
 		"",
 		sentence(probes),
@@ -110,13 +112,7 @@ function rewriteBlock(
 	if (at < 1) return match;
 	const probes = readProbes(lines.slice(0, at));
 	if (!probes) return match;
-	return renderBlock(
-		probes,
-		(lines[at] ?? "").trim(),
-		lines.slice(at + 1),
-		fence,
-		indent,
-	);
+	return renderBlock({ probes, curl: (lines[at] ?? "").trim(), trailer: lines.slice(at + 1), fence, indent });
 }
 
 /** The file text with bare launcher names and, in a SKILL.md, the uniform first-run block. */

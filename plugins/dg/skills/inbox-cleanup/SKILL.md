@@ -10,12 +10,12 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
 dg-skills inbox --help >/dev/null 2>&1 ||
-  "$HOME/.local/bin/dg-skills" inbox --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" inbox --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-dg-skills inbox --help
+"${DG_HOME:-$HOME/.local}/bin/dg-skills" inbox --help
 ```
 
-Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-skills` instead.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
 If a step fails, run dg-skills doctor inbox install require-extension.
 

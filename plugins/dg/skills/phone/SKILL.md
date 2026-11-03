@@ -20,11 +20,11 @@ the latest `agent-v*` release:
 
 ```bash
 dg-agent phone --help >/dev/null 2>&1 ||
-  "$HOME/.local/bin/dg-agent" phone --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-agent" phone --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-agent` instead.
+Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-agent` instead.
 
 If a step fails, run dg-skills doctor install credentials.
 

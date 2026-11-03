@@ -20,11 +20,11 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 
 ```bash
 dg-agent --version >/dev/null 2>&1 ||
-  "$HOME/.local/bin/dg-agent" --version >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-agent" --version >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `$HOME/.local/bin/dg-agent` instead.
+Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-agent` instead.
 
 If the bootstrap fails, run `dg-skills doctor install` and retry.
 

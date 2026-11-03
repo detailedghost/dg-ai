@@ -240,7 +240,7 @@ the per-OS folders ([install layout](install.md#where-dg-keeps-its-files)), **th
 which stages the extension and prints the exact **Load unpacked** path:
 
 ```bash
-if ! command -v dg-skills >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/dg-skills" ]; then
+if ! command -v dg-skills >/dev/null 2>&1 && [ ! -x "${DG_HOME:-$HOME/.local}/bin/dg-skills" ]; then
   PLUGIN_ROOT="${DG_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
   LOCAL_BOOTSTRAP="${PLUGIN_ROOT}/pkg/skills-cli/bootstrap.sh"
   if [ -n "$PLUGIN_ROOT" ] && [ -f "$LOCAL_BOOTSTRAP" ]; then
