@@ -150,6 +150,35 @@ describe("migrateLegacyHome", () => {
 		expect(existsSync(join(legacy, "skills"))).toBe(false);
 	});
 
+	test("keeps the parent folder when one of its children did not move", () => {
+		const legacy = seedLegacy();
+
+		const result = migrateLegacyHome(paths, {
+			log,
+			afterCopy: (_from, to) => {
+				if (to === join(paths.agentsDir, "memory.db")) truncateSync(to, 1);
+			},
+		});
+
+		expect(result.failed).toEqual([join(legacy, "agents", "memory.db")]);
+		expect(result.kept).toContain(join(legacy, "agents"));
+		expect(readFileSync(join(legacy, "agents", "memory.db"), "utf8")).toBe("memory");
+		expect(readFileSync(join(legacy, "agents", "js.md"), "utf8")).toBe("persona");
+		expect(existsSync(paths.personasDir)).toBe(false);
+	});
+
+	test("skips a folder whose pid file names a live process", () => {
+		const legacy = seedLegacy();
+		put(join(legacy, "daemon", "daemon.pid"), JSON.stringify({ pid: process.pid }));
+
+		const result = migrateLegacyHome(paths, { log });
+
+		expect(result.kept).toContain(join(legacy, "daemon"));
+		expect(readFileSync(join(legacy, "daemon", "daemon.db"), "utf8")).toBe("db bytes");
+		expect(existsSync(paths.daemonDir)).toBe(false);
+		expect(lines.join("\n")).toContain("is running");
+	});
+
 	test("never overwrites a destination that already exists", () => {
 		const legacy = seedLegacy();
 		put(join(paths.skillsDir, "new", "SKILL.md"), "newer");

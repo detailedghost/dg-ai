@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { copyTree, type DgPaths, treeMatches } from "@dg/common/node";
 
@@ -24,6 +24,31 @@ const ROLE_FOLDERS = new Set([
 	"log",
 ]);
 const LEFT_FOR_OTHER_STEPS = new Set(["bin", "phone", "ssms"]);
+const WRITER_FOLDERS = ["daemon", "channel-review", "phone-friend"];
+
+function pidAlive(file: string): boolean {
+	try {
+		const text = readFileSync(file, "utf8").trim();
+		const pid = Number(text.startsWith("{") ? (JSON.parse(text) as { pid?: unknown }).pid : text);
+		if (!Number.isInteger(pid) || pid <= 0) return false;
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		return (err as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+function liveWriterFolders(legacy: string): string[] {
+	return WRITER_FOLDERS.map((name) => join(legacy, name)).filter((dir) => {
+		try {
+			return readdirSync(dir).some((name) => name.endsWith(".pid") && pidAlive(join(dir, name)));
+		} catch {
+			return false;
+		}
+	});
+}
+
+const within = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}${sep}`);
 
 function legacyMoves(paths: DgPaths): Move[] {
 	const legacy = paths.legacyHome;
@@ -117,10 +142,23 @@ export function migrateLegacyHome(
 	const result: MigrateResult = { moved: [], failed: [], kept: [] };
 	if (!existsSync(paths.legacyHome)) return result;
 	const flatDgHome = paths.binDir === join(paths.legacyHome, "bin");
+	const live = liveWriterFolders(paths.legacyHome);
+	for (const dir of live) {
+		result.kept.push(dir);
+		seams.log?.(`dg: kept ${dir}; a process that writes it is running. Stop it, then run dg-skills install again`);
+	}
 	for (const move of legacyMoves(paths)) {
 		const top = relative(paths.legacyHome, move.from).split(sep)[0] ?? "";
 		if (flatDgHome && ROLE_FOLDERS.has(top)) continue;
-		if (present(move.from)) moveOne(move, seams, result);
+		if (live.some((dir) => within(move.from, dir))) continue;
+		if (!present(move.from)) continue;
+		const blocked = [...result.failed, ...result.kept].some((path) => path !== move.from && within(path, move.from));
+		if (blocked) {
+			result.kept.push(move.from);
+			seams.log?.(`dg: kept ${move.from}; part of it did not move`);
+			continue;
+		}
+		moveOne(move, seams, result);
 	}
 	const quiet = result.moved.length === 0 && result.failed.length === 0;
 	for (const name of readdirSync(paths.legacyHome)) {

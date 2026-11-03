@@ -83,9 +83,11 @@ The first `dg-skills install` of a new release moves it:
    When the check fails, the old copy stays and install names it.
 2. Install never writes over a destination that exists. It keeps the old copy
    and says so.
-3. The phone state moves on the next `dg-agent phone __refresh`, which install
+3. Install keeps a folder when a process that writes it is still running,
+   such as `dg-daemon`. Stop the process and run install again.
+4. The phone state moves on the next `dg-agent phone __refresh`, which install
    runs. See [phone](phone.md#where-the-phone-state-lives).
-4. Install leaves files it does not know in `~/.dg` and names them once.
+5. Install leaves files it does not know in `~/.dg` and names them once.
    The staged extension folders stay in `~/.dg`, because the browser loads
    them from there.
 
@@ -100,10 +102,10 @@ Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
 stop matching. `dg-skills doctor` warns and names the new rule,
 `Bash(dg-skills <sub>:*)`.
 
-To go back to an older release, run `dg-skills install --version <old>`. The
-older release writes its launchers to `~/.dg/bin` again. Data under the new
-roots stays where it is. To copy the phone state back, run
-`dg-agent phone __rollback-home`.
+To go back to an older release, first run `dg-agent phone __rollback-home`
+to copy the phone state back to `~/.dg/phone`. Then run
+`dg-skills install --version <old>`. The older release writes its launchers to
+`~/.dg/bin` again. Data under the new roots stays where it is.
 
 ## Install layout
 

@@ -89,6 +89,15 @@ describe("compatLauncherText", () => {
 			].join("\r\n"),
 		);
 	});
+
+	test("escapes cmd metacharacters and percent signs in a Windows path", () => {
+		const text = compatLauncherText("dg-skills", "C:\\A&B %X%\\dg-skills.cmd", "1.30.0", "win32");
+
+		expect(text.split("\r\n").slice(1, 3)).toEqual([
+			"echo dg: ~/.dg/bin/dg-skills is now C:\\A^&B %%X%%\\dg-skills.cmd; this path is removed in 1.30.0 1>&2",
+			'"C:\\A&B %%X%%\\dg-skills.cmd" %*',
+		]);
+	});
 });
 
 posix("syncCompatLaunchers", () => {

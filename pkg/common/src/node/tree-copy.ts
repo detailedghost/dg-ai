@@ -1,5 +1,5 @@
-import { chmodSync, copyFileSync, lstatSync, mkdirSync, readdirSync, readlinkSync, symlinkSync } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, readdirSync, readlinkSync, statSync, symlinkSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 function rebaseLink(target: string, from: string, to: string): string {
 	if (!isAbsolute(target)) return target;
@@ -12,7 +12,10 @@ export function copyTree(from: string, to: string): void {
 	const walk = (source: string, dest: string): void => {
 		const stat = lstatSync(source);
 		if (stat.isSymbolicLink()) {
-			symlinkSync(rebaseLink(readlinkSync(source), from, to), dest);
+			const target = rebaseLink(readlinkSync(source), from, to);
+			if (process.platform === "win32" && statSync(source, { throwIfNoEntry: false })?.isDirectory())
+				symlinkSync(resolve(dirname(dest), target), dest, "junction");
+			else symlinkSync(target, dest);
 			return;
 		}
 		if (stat.isDirectory()) {
@@ -32,7 +35,7 @@ function shape(root: string, rebase: (target: string) => string): Map<string, st
 	const walk = (current: string): void => {
 		const stat = lstatSync(current);
 		const key = relative(root, current);
-		if (stat.isSymbolicLink()) out.set(key, `link:${rebase(readlinkSync(current))}`);
+		if (stat.isSymbolicLink()) out.set(key, `link:${rebase(resolve(dirname(current), readlinkSync(current)))}`);
 		else if (stat.isDirectory()) {
 			out.set(key, "dir");
 			for (const name of readdirSync(current)) walk(join(current, name));

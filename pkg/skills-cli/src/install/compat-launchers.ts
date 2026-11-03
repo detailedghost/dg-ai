@@ -30,10 +30,11 @@ export function compatLauncherText(
 	platform: NodeJS.Platform,
 ): string {
 	const notice = `dg: ~/.dg/bin/${name} is now ${target}; this path is removed in ${release}`;
-	if (platform === "win32")
-		return ["@echo off", `echo ${notice} 1>&2`, `"${target}" %*`, ""].join(
-			"\r\n",
-		);
+	if (platform === "win32") {
+		const percent = (text: string) => text.replaceAll("%", "%%");
+		const echoed = percent(notice).replace(/[\^&|<>()]/g, "^$&");
+		return ["@echo off", `echo ${echoed} 1>&2`, `"${percent(target)}" %*`, ""].join("\r\n");
+	}
 	return [
 		"#!/bin/sh",
 		`printf '%s\\n' ${shQuote(notice)} >&2`,
