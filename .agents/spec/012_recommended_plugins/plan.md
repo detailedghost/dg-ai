@@ -24,7 +24,7 @@ slices:
   - id: 3
     name: "docs-adr-d"
     depends_on: [2]
-    files: ["docs/install.md","docs/AGENT-INSTALL.md","docs/adr/0027-optional-third-party-plugins.md","docs/adr/toc.md","README.md","plugins/dg/skills/polish/references/pr.md"]
+    files: ["docs/install.md","docs/AGENT-INSTALL.md","docs/adr/0027-optional-third-party-plugins.md","docs/adr/toc.md","README.md","plugins/dg/skills/polish/references/pr.md","pkg/skills-test/__tests__/recommended-plugins-docs.spec.ts"]
     agents:
       primary: lore
       qa: [qa-code]
@@ -124,6 +124,9 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 - Slice 1: mattpocock-skills is pinned in marketplace.json, scripts/bump-plugin-pin.ts moves a pin (exit 1 unknown name or bad ref, 2 missing file, 3 unreachable), and plugin-pins, imported-plugins-optional and bump-plugin-pin specs guard the pins and the optional guard sentence. The guard must sit on the same line as the plugin name. The lint scans all text files under plugins/dg.
 
 ## Agent Notes
+
+- (orchestrator, slice 3) The Recommended plugins section in docs/install.md lists the old private copies to delete as generic paths: ~/.claude/skills/unslop, ~/.agents/skills/unslop and ~/.config/opencode/skills/unslop. No sizes and no machine-specific inventory. It names bump-plugin-pin, the grill-me and wayfinder skips, Codex and OpenCode via --skills-only --dest, and the offline behavior (one warning per plugin, dg skills still install).
+- (orchestrator, slice 3) The orchestrator runs markdownlint and vale after the slice; no spec file for them.
 
 - (orchestrator, slice 2) Dante chose: a skills install removes a retired teach or wait-what only when its SKILL.md sha256 is in RETIRED_SKILL_HASHES (pkg/common/src/node/install-skills.ts). bootstrap.sh and bootstrap.ps1 carry the same hashes. Fixtures of dg's last copies live in pkg/skills-test/__tests__/fixtures/retired-skills.
 
