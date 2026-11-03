@@ -64,6 +64,7 @@ type Net = {
 	intervals: { callback: () => void; ms: number }[];
 	cleared: unknown[];
 	timeouts: (() => void)[];
+	delays: number[];
 	respond: (url: string) => Promise<Response>;
 };
 
@@ -117,6 +118,7 @@ function installGlobals(href: string): Net {
 		intervals: [],
 		cleared: [],
 		timeouts: [],
+		delays: [],
 		respond: () => Promise.resolve(new Response(BOARD_JSON)),
 	};
 	class FakeSocket {
@@ -177,8 +179,9 @@ function installGlobals(href: string): Net {
 		clearInterval: (handle: unknown) => {
 			net.cleared.push(handle);
 		},
-		setTimeout: (callback: () => void) => {
+		setTimeout: (callback: () => void, ms = 0) => {
 			net.timeouts.push(callback);
+			net.delays.push(ms);
 			return net.timeouts.length;
 		},
 	};
@@ -591,5 +594,78 @@ describe("chat page entry wiring", () => {
 
 		expect(net.sockets).toEqual([]);
 		expect(net.fetches).toEqual([]);
+	});
+});
+
+describe("page recovery after a daemon restart", () => {
+	const boardHref = `http://127.0.0.1:${BOOTSTRAP.port}/board#${fragment(BOOTSTRAP)}`;
+	const chatHref = `http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`;
+
+	test("board keeps the bootstrap and polling while the daemon is down, then reads with the same token", async () => {
+		const net = installGlobals(boardHref);
+		await loadEntry("../src/board/page");
+		const poll = net.intervals.find((interval) => interval.ms === 5000);
+		net.respond = () => Promise.reject(new TypeError("Failed to fetch"));
+
+		poll?.callback();
+		await settle();
+		await runTimeouts(net);
+		net.respond = () =>
+			Promise.resolve(new Response("starting", { status: 503 }));
+		await runTimeouts(net);
+
+		expect(net.win.document.body.textContent).toContain("Daemon unreachable");
+		expect(net.cleared).toEqual([]);
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		expect(net.delays.length).toBeGreaterThan(0);
+
+		net.respond = () => Promise.resolve(new Response(LANE_BOARD_JSON));
+		await runTimeouts(net);
+		poll?.callback();
+		await settle();
+
+		const read = net.fetches.at(-1);
+		expect(read?.init?.headers).toMatchObject({
+			Authorization: `Bearer ${BOOTSTRAP.token}`,
+		});
+		expect(net.win.document.body.textContent).not.toContain(
+			"Daemon unreachable",
+		);
+	});
+
+	test("chat retries with growing delays and the same token while the daemon restarts", async () => {
+		const net = installGlobals(chatHref);
+		net.respond = () => Promise.reject(new TypeError("Failed to fetch"));
+		await loadEntry("../src/chat/page");
+		net.socketHandles[0]?.fire("open");
+		await settle();
+		net.socketHandles[0]?.fire("close");
+		await settle();
+
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			await runTimeouts(net);
+			net.socketHandles[attempt]?.fire("close");
+			await settle();
+		}
+		await runTimeouts(net);
+		const reopened = net.socketHandles.at(-1);
+		reopened?.fire("open");
+		await settle();
+
+		expect(net.socketHandles.length).toBeGreaterThanOrEqual(5);
+		for (const url of net.sockets) {
+			expect(url).toEndWith(`?token=${encodeURIComponent(BOOTSTRAP.token)}`);
+		}
+		const retryDelays = net.delays.filter((ms) => ms > 0);
+		expect(retryDelays.length).toBeGreaterThanOrEqual(3);
+		expect(retryDelays.at(-1)).toBeGreaterThan(retryDelays[0] ?? 0);
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		const connects = net.sent
+			.map((raw) => JSON.parse(raw))
+			.filter((frame) => frame.type === "connect");
+		expect(connects.at(-1)).toMatchObject({
+			sessionId: BOOTSTRAP.sessionId,
+			token: BOOTSTRAP.token,
+		});
 	});
 });
