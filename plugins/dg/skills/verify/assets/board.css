@@ -542,3 +542,15 @@ aside .brand-mode.on{color:var(--acc);border-color:var(--acc);background:var(--a
 .pair.w-mobile.has-target{grid-template-columns:repeat(3,minmax(0,340px))}
 .pair.w-tablet.has-target{grid-template-columns:repeat(3,minmax(0,520px))}
 @media (max-width:1000px){.pair.has-target,.pair.w-mobile.has-target,.pair.w-tablet.has-target{grid-template-columns:1fr}}
+/* verify: layout differences */
+.layout-diff{margin:0 0 16px;overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2)}
+.layout-diff table{font-size:13px;min-width:860px}
+.layout-diff caption{caption-side:top;text-align:left;padding:10px 10px 4px;font-size:12px;font-weight:700;color:var(--mut)}
+.layout-diff th{white-space:nowrap}
+.layout-diff td{overflow-wrap:break-word}
+.layout-diff td:nth-child(-n+4){white-space:nowrap}
+.layout-diff td:nth-child(4){font-weight:650;color:var(--bad)}
+.layout-diff tr:last-child td{border-bottom:0}
+.layout-diff input[type="checkbox"]{width:18px;height:18px;margin:0;accent-color:var(--acc);cursor:pointer;vertical-align:middle}
+.layout-diff input[type="checkbox"]:disabled{cursor:default;opacity:.6}
+.layout-diff th input[type="checkbox"]{margin-right:6px}

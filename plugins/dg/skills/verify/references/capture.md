@@ -31,6 +31,21 @@ In a container, set `DG_VERIFY_NO_SANDBOX=1`.
 Use it when no browser is installed.
 Do not hand Dante an HTTP capture and call it a screenshot.
 
+## Layout fingerprint
+
+An item with `record` gets a layout reading on every after shot in the default state.
+That is six readings per role: three viewports and two themes.
+The page hides the prototype decision bar and switcher before it measures, so they never count as covering bars.
+The reading lists each control under the feature root in DOM order: links, buttons, inputs, selects, textareas, summaries, ARIA widgets, editable text, and tabbable elements.
+Each control has its role, name, test id, box, and bands.
+A box is relative to the root. A band is the third of the root that holds the center of the control.
+The check scrolls a control into view when it lies outside the window. Then it samples the center and four inset corners with `elementFromPoint`.
+A hit on any element other than the control or its child marks the control as covered, and the row names the covering element.
+Controls match by test id, else by role and lowercase name.
+A `moved` row needs a band change and a shift of 0.1 of the root or more, so a small shift near a band edge is not a difference.
+The `http` engine reads no layout. It gives one `not-checked` row per role.
+A record with no fingerprint gives one `not-checked` row per role with the reason that the record carries.
+
 ## Accessibility
 
 Each after shot's HTML is checked locally.

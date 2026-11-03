@@ -140,6 +140,26 @@ describe("parse manifest", () => {
 	});
 });
 
+describe("layout record keys", () => {
+	const withItem = (extra: Record<string, unknown>) =>
+		raw({ items: [{ ...(raw().items as Record<string, unknown>[])[0], ...extra }] });
+
+	test("accepts a record path without touching the disk and defaults the root selector", () => {
+		const item = parseManifest(withItem({ record: ".agents/spec/007_notes/prototype/slice_2_accepted.json" })).items[0];
+		expect(item?.record).toBe(".agents/spec/007_notes/prototype/slice_2_accepted.json");
+		expect(item?.rootSelector).toBe("[data-verify-root]");
+		expect(parseManifest(raw()).items[0]?.record).toBeUndefined();
+	});
+
+	test("keeps an explicit root selector and rejects an empty or multi-line record", () => {
+		const item = parseManifest(withItem({ record: "r.json", rootSelector: '[data-verify-root="notes"]' })).items[0];
+		expect(item?.rootSelector).toBe('[data-verify-root="notes"]');
+		expect(() => parseManifest(withItem({ record: " " }))).toThrow(/record is empty/);
+		expect(() => parseManifest(withItem({ record: "a\nb" }))).toThrow(/single line/);
+		expect(() => parseManifest(withItem({ bogus: 1 }))).toThrow(/unknown field "bogus"/);
+	});
+});
+
 describe("secret shapes", () => {
 	test("matches bearer and access-key shapes and ignores a seed role", () => {
 		expect(looksSecret("Bearer supersecret")).toBe(true);

@@ -1,3 +1,4 @@
+import { DEFAULT_ROOT_SELECTOR } from "../layout/fingerprint";
 import { assertVerifyName } from "./names";
 import { assertLoopbackUrl, assertSeedCookie, assertSeedHeader } from "./urls";
 
@@ -31,6 +32,8 @@ export interface VerifyItem {
 	beforeRef?: string;
 	afterRef?: string;
 	menuSelector: string;
+	record?: string;
+	rootSelector: string;
 	roles: VerifyRole[];
 	tests?: VerifyTests;
 }
@@ -57,6 +60,8 @@ const ITEM_KEYS = new Set([
 	"beforeRef",
 	"afterRef",
 	"menuSelector",
+	"record",
+	"rootSelector",
 	"roles",
 	"tests",
 ]);
@@ -162,10 +167,15 @@ function parseItem(value: unknown, index: number): VerifyItem {
 		menuSelector: value.menuSelector === undefined
 			? DEFAULT_MENU
 			: text(value.menuSelector, `items[${index}].menuSelector`, 200),
+		rootSelector: value.rootSelector === undefined
+			? DEFAULT_ROOT_SELECTOR
+			: text(value.rootSelector, `items[${index}].rootSelector`, 200),
 		roles: [],
 	};
 	const target = optionalText(value.targetUrl, `items[${index}].targetUrl`, 2000);
 	if (target) item.targetUrl = assertLoopbackUrl(target, `${id} targetUrl`);
+	const record = optionalText(value.record, `items[${index}].record`, 2000);
+	if (record) item.record = record;
 	const what = optionalText(value.what, `items[${index}].what`, 600);
 	if (what) item.what = what;
 	const route = optionalText(value.route, `items[${index}].route`, 200);

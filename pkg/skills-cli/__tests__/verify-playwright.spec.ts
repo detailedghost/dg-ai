@@ -1,5 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { type CaptureRequest, type CaptureShot, pngSize } from "../src/verify/capture-model";
+import type { Difference } from "../src/layout/diff";
 import type { ControlRow } from "../src/layout/fingerprint";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -627,6 +628,70 @@ describe("review board in a browser", () => {
 			await page.click("#approve");
 			await page.waitForFunction(() => location.hash === "#overview");
 			expect(readVerdicts(paths)["nav-r1"]).toMatchObject({ status: "approved", note: "", variant: "B" });
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test.skipIf(!browser)("the layout pill and table gate approve until each difference is accepted", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-layout-"));
+		const paths = verifyPaths(dir);
+		const side = (band: string) => ({ path: `button.add-${band}`, box: { x: 0, y: 0, w: 100, h: 40 }, band, hband: "left", visible: true });
+		const row = (id: string, kind: Difference["kind"], theme: Difference["theme"]): Difference => ({
+			id,
+			viewport: "desktop",
+			theme,
+			role: "admin",
+			kind,
+			control: { role: "button", name: "Add note", testid: null },
+			expected: side("bottom"),
+			found: side("top"),
+		});
+		writeBoard(paths, {
+			name: "layout",
+			sections: [
+				{
+					id: "notes-r1",
+					title: "Notes",
+					round: 1,
+					images: [{ label: "desktop · light · default", before: "missing", after: "missing" }],
+					checks: { layout: { status: "fail", differences: [row("d-1", "moved", "light"), row("d-2", "visibility", "dark")] } },
+				},
+			],
+			pending: [],
+		});
+		const server = await startVerifyServer({ name: "layout", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			await page.addInitScript(() => localStorage.setItem("verify-mode", "light"));
+			await page.goto(`http://127.0.0.1:${server.port}/#notes-r1`);
+			await page.waitForSelector(".layout-table");
+			expect(await page.textContent('#sec-checks [data-check="Layout"]')).toBe("Layout: 2 differences, 2 unaccepted");
+			expect(await page.locator(".layout-table tbody tr").count()).toBe(2);
+			expect(await page.textContent(".layout-table tbody tr:first-child")).toContain("bottom left, visible");
+			expect(await page.textContent(".layout-table tbody tr:first-child")).toContain("top left, visible");
+
+			await page.click("#approve");
+			await page.waitForFunction(() => document.getElementById("toast")?.textContent === "accept each layout difference or add a note");
+			expect(readVerdicts(paths)).toEqual({});
+			expect(await page.evaluate(() => location.hash)).toBe("#notes-r1");
+
+			await page.check('input[aria-label="Accept all layout differences"]');
+			expect(await page.textContent('#sec-checks [data-check="Layout"]')).toBe("Layout: 2 differences, 0 unaccepted");
+			await page.uncheck(".layout-table tbody tr:last-child input");
+			expect(await page.textContent('#sec-checks [data-check="Layout"]')).toBe("Layout: 2 differences, 1 unaccepted");
+			await page.check(".layout-table tbody tr:last-child input");
+			await page.setViewportSize({ width: 390, height: 844 });
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+			await page.click("#approve");
+			await page.waitForFunction(() => location.hash === "#overview");
+			expect(readVerdicts(paths)["notes-r1"]).toMatchObject({ status: "approved", note: "", layout: ["d-1", "d-2"] });
 			expect(errors).toEqual([]);
 		} finally {
 			await pw.close();

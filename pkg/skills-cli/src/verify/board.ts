@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { LayoutCheck } from "../layout/diff";
 import { writeSentinel } from "../prototype/sentinels";
 import { assertVerifyName } from "./names";
 
@@ -12,6 +13,7 @@ export interface Verdict {
 	variant?: string;
 	mainNote?: string;
 	shotNotes?: Record<string, string>;
+	layout?: string[];
 }
 
 export interface BoardImage {
@@ -32,6 +34,7 @@ export interface Variant {
 export interface SectionChecks {
 	tests?: { status: string; summary: string };
 	axe?: { violations: string[]; passes: number };
+	layout?: LayoutCheck;
 }
 
 export interface Section {
@@ -78,6 +81,7 @@ export interface StatusRow {
 	rounds: string[];
 	done: boolean;
 	note: string;
+	layout?: { differences: number; unaccepted: number };
 }
 
 export interface StatusReport {
@@ -166,6 +170,8 @@ export function readVerdicts(paths: VerifyPaths): Record<string, Verdict> {
 		if (typeof record.variant === "string") verdicts[id].variant = record.variant;
 		if (typeof record.mainNote === "string" && record.shotNotes && typeof record.shotNotes === "object")
 			Object.assign(verdicts[id], { mainNote: record.mainNote, shotNotes: record.shotNotes });
+		if (Array.isArray(record.layout) && record.layout.every((entry) => typeof entry === "string") && record.layout.length)
+			verdicts[id].layout = record.layout;
 	}
 	return verdicts;
 }
@@ -193,6 +199,27 @@ function postedShotNotes(section: Section, raw: unknown): Record<string, string>
 	return Object.keys(notes).length ? notes : undefined;
 }
 
+function postedLayout(section: Section, raw: unknown): string[] | undefined {
+	if (raw === undefined) return undefined;
+	if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== "string"))
+		throw new VerifyRequestError("layout must be a list of difference ids", 400);
+	const known = new Set(section.checks?.layout?.differences.map((row) => row.id));
+	for (const id of raw) if (!known.has(id)) throw new VerifyRequestError(`unknown layout difference ${JSON.stringify(id)}`, 400);
+	return raw.length ? [...new Set<string>(raw)] : undefined;
+}
+
+function layoutCounts(rounds: Section[], verdicts: Record<string, Verdict>): StatusRow["layout"] {
+	const rows = rounds[rounds.length - 1]?.checks?.layout?.differences ?? [];
+	if (rows.length === 0) return undefined;
+	const accepted = new Set(rounds.flatMap((round) => verdicts[round.id]?.layout ?? []));
+	return { differences: rows.length, unaccepted: rows.filter((row) => !accepted.has(row.id)).length };
+}
+
+function roundsThrough(board: Board, section: Section): Section[] {
+	const chain = chains(board).find((entry) => entry.rounds.some((round) => round.id === section.id));
+	return chain ? chain.rounds.slice(0, chain.rounds.findIndex((round) => round.id === section.id) + 1) : [section];
+}
+
 /** Validate a posted verdict batch against the board and merge it into verdicts.json. */
 export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, at = new Date().toISOString()): void {
 	if (!body || typeof body !== "object" || Array.isArray(body)) throw new VerifyRequestError("Invalid JSON", 400);
@@ -210,7 +237,11 @@ export function mergeVerdicts(paths: VerifyPaths, board: Board, body: unknown, a
 		const variant = record?.variant;
 		if (variant !== undefined && (status !== "approved" || !section.variants?.some((entry) => entry.key === variant)))
 			throw new VerifyRequestError("variant must name a version of this section and come with approved", 400);
+		const layout = postedLayout(section, record?.layout);
 		verdicts[id] = { status: status as VerdictStatus, note, at };
+		if (layout) verdicts[id].layout = layout;
+		if (status === "approved" && !note && (layoutCounts(roundsThrough(board, section), verdicts)?.unaccepted ?? 0) > 0)
+			throw new VerifyRequestError("accept each layout difference or add a note", 400);
 		if (typeof variant === "string") verdicts[id].variant = variant;
 		const shotNotes = postedShotNotes(section, record?.shotNotes);
 		if (shotNotes) {
@@ -253,8 +284,10 @@ export function statusReport(board: Board, verdicts: Record<string, Verdict>): S
 		if (chain.waiting) steps.push(`r${roundOf(chain, chain.rounds.length - 1) + 1} working`);
 		const note = [...chain.rounds].reverse().map((round) => verdicts[round.id]?.note).find(Boolean) ?? "";
 		const latest = verdicts[chain.last.id];
-		const done = !chain.waiting && latest?.status === "approved" && !latest.note;
+		const layout = layoutCounts(chain.rounds, verdicts);
+		const done = !chain.waiting && latest?.status === "approved" && !latest.note && !layout?.unaccepted;
 		const row: StatusRow = { item: chain.last.title, last: chain.last.id, rounds: steps, done, note };
+		if (layout) row.layout = layout;
 		const source = [...chain.rounds].reverse().find((round) => round.item);
 		if (source?.item) row.itemId = source.item;
 		if (source?.owner) row.owner = source.owner;
@@ -280,7 +313,7 @@ export function formatStatus(report: StatusReport, json: boolean, noteMax = 160)
 	if (json) return `${JSON.stringify(report)}\n`;
 	const lines = report.items.map(
 		(row) =>
-			`${row.done ? "✓" : "·"} ${row.item} | ${row.rounds.join(" → ")}${row.note && !row.done ? ` | ${clip(row.note, noteMax)}` : ""}`,
+			`${row.done ? "✓" : "·"} ${row.item} | ${row.rounds.join(" → ")}${row.note && !row.done ? ` | ${clip(row.note, noteMax)}` : ""}${row.layout?.unaccepted ? ` | layout: ${row.layout.unaccepted} unaccepted` : ""}`,
 	);
 	lines.push(report.allApproved ? "ALL APPROVED" : `${report.items.filter((row) => !row.done).length} open`);
 	return `${lines.join("\n")}\n`;
