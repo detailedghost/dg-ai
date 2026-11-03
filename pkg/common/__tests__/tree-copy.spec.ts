@@ -109,4 +109,24 @@ describe.skipIf(process.platform === "win32")("copyTree", () => {
 			} catch {}
 		}
 	});
+
+	it("compares empty files and files that end on and past a 1 MiB chunk", () => {
+		const mib = 1 << 20;
+		writeFileSync(join(from, "empty"), "");
+		writeFileSync(join(from, "exact"), Buffer.alloc(mib, 1));
+		writeFileSync(join(from, "partial"), Buffer.alloc(mib + 7, 2));
+		copyTree(from, to);
+		expect(treeMatches(from, to)).toBe(true);
+
+		for (const name of ["exact", "partial"]) {
+			const bytes = Buffer.alloc(name === "exact" ? mib : mib + 7, name === "exact" ? 1 : 2);
+			bytes[bytes.length - 1] = 9;
+			writeFileSync(join(to, name), bytes);
+			expect([name, treeMatches(from, to)]).toEqual([name, false]);
+			copyTree(join(from, name), join(dir, `fresh-${name}`));
+			rmSync(join(to, name));
+			copyTree(join(dir, `fresh-${name}`), join(to, name));
+		}
+		expect(treeMatches(from, to)).toBe(true);
+	});
 });
