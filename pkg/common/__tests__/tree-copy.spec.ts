@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readlinkSync,
+	rmSync,
+	statSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyTree, treeContained, treeMatches } from "@dg/common/node";
@@ -72,5 +82,31 @@ describe.skipIf(process.platform === "win32")("copyTree", () => {
 		expect(treeContained(from, to)).toBe(false);
 		rmSync(join(to, "sub", "run"));
 		expect(treeContained(from, to)).toBe(false);
+	});
+
+	it("reports a mismatch when a source file changes to other bytes of the same size", () => {
+		copyTree(from, to);
+		writeFileSync(join(from, "sub", "run"), "#!/bin/zz\n");
+
+		expect(treeMatches(from, to)).toBe(false);
+		expect(treeContained(from, to)).toBe(false);
+	});
+
+	it("copies the files inside a read-only folder and keeps its mode", () => {
+		mkdirSync(join(from, "locked"));
+		writeFileSync(join(from, "locked", "note"), "kept");
+		chmodSync(join(from, "locked"), 0o555);
+		try {
+			copyTree(from, to);
+
+			expect(readFileSync(join(to, "locked", "note"), "utf8")).toBe("kept");
+			expect(statSync(join(to, "locked")).mode & 0o777).toBe(0o555);
+			expect(treeMatches(from, to)).toBe(true);
+		} finally {
+			chmodSync(join(from, "locked"), 0o755);
+			try {
+				chmodSync(join(to, "locked"), 0o755);
+			} catch {}
+		}
 	});
 });

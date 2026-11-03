@@ -1,4 +1,15 @@
-import { chmodSync, copyFileSync, lstatSync, mkdirSync, readdirSync, readlinkSync, statSync, symlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+	chmodSync,
+	copyFileSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	readlinkSync,
+	statSync,
+	symlinkSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 function rebaseLink(target: string, from: string, to: string): string {
@@ -27,7 +38,7 @@ export function copyTree(from: string, to: string): void {
 			return;
 		}
 		if (stat.isDirectory()) {
-			mkdirSync(dest, { mode: stat.mode & 0o777 });
+			mkdirSync(dest, { mode: (stat.mode & 0o777) | 0o700 });
 			for (const name of readdirSync(source)) walk(join(source, name), join(dest, name));
 			chmodSync(dest, stat.mode & 0o777);
 			return;
@@ -47,13 +58,13 @@ function shape(root: string, rebase: (target: string) => string): Map<string, st
 		else if (stat.isDirectory()) {
 			out.set(key, "dir");
 			for (const name of readdirSync(current)) walk(join(current, name));
-		} else out.set(key, `file:${stat.size}`);
+		} else out.set(key, `file:${createHash("sha256").update(readFileSync(current)).digest("hex")}`);
 	};
 	walk(root);
 	return out;
 }
 
-/** True when `to` holds the same entries, file sizes and link targets as `from`, after `copyTree` rebasing. */
+/** True when `to` holds the same entries, file bytes and link targets as `from`, after `copyTree` rebasing. */
 export function treeMatches(from: string, to: string): boolean {
 	const source = shape(from, (target) => rebaseLink(target, from, to));
 	const copy = shape(to, (target) => target);
@@ -62,7 +73,7 @@ export function treeMatches(from: string, to: string): boolean {
 	return true;
 }
 
-/** True when every folder and file in `from` is in `to` with the same size; links and extra entries in `to` are ignored. */
+/** True when every folder and file in `from` is in `to` with the same bytes; links and extra entries in `to` are ignored. */
 export function treeContained(from: string, to: string): boolean {
 	const source = shape(from, (target) => target);
 	const copy = shape(to, (target) => target);

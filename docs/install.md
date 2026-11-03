@@ -79,7 +79,7 @@ Releases before this layout kept everything in `~/.dg` (or flat in `DG_HOME`).
 The first `dg-skills install` of a new release moves it:
 
 1. Each folder and file moves to its new root. Install copies it, checks that
-   the copy has the same files and sizes, and only then removes the old copy.
+   the copy has the same files and bytes, and only then removes the old copy.
    When the check fails, the old copy stays and install names it.
 2. Install never writes over a destination that exists. It keeps the old copy
    and says so. When an old folder is still in use after the copy, for example
