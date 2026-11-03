@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
 	activeVersions,
@@ -7,6 +7,7 @@ import {
 	type PluginCacheVersion,
 	type PrunePlan,
 	planPluginCachePrune,
+	reinspectPluginVersion,
 } from "@dg/common/node";
 
 export type PruneOptions = {
@@ -18,9 +19,11 @@ export type PruneOptions = {
 };
 
 function summaryLine(plan: PrunePlan): string {
-	const unknown = plan.keep.filter((k) => k.reason === "unknown state");
 	if (plan.remove.length === 0) {
-		const kept = unknown.map((k) => `${k.version.version} (unknown state)`).join(", ");
+		const kept = plan.keep
+			.filter((k) => k.reason === "unknown state" || k.reason === "could not remove")
+			.map((k) => `${k.version.version} (${k.reason})`)
+			.join(", ");
 		return kept ? `plugin cache: nothing to remove; kept ${kept}` : "plugin cache: nothing to remove";
 	}
 	const bytes = plan.remove.reduce((sum, v) => sum + v.bytes, 0);
@@ -32,9 +35,8 @@ function summaryLine(plan: PrunePlan): string {
 function freshRemoveVerdict(home: string, version: PluginCacheVersion, now: number): string | undefined {
 	const active = activeVersions(home);
 	if (!active) return "installed_plugins.json unreadable";
-	const current = listDgPluginVersions(home).find((entry) => entry.path === version.path);
-	if (!current) return "gone";
-	return planPluginCachePrune([current], active, now).keep[0]?.reason;
+	if (!existsSync(version.path)) return "gone";
+	return planPluginCachePrune([reinspectPluginVersion(version)], active, now).keep[0]?.reason;
 }
 
 function isOwnedVersionDir(home: string, version: PluginCacheVersion): boolean {

@@ -225,6 +225,18 @@ describe("prunePluginCache", () => {
 		expect(existsSync(stale)).toBe(true);
 	});
 
+	test.skipIf(process.getuid?.() === 0)("names the only version it cannot delete instead of reporting a clean cache", () => {
+		const home = tempRoot();
+		const locked = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		installedPlugins(home, "1.24.0");
+		chmodSync(locked, 0o555);
+		try {
+			expect(prune(home)).toEqual(["plugin cache: nothing to remove; kept 1.20.0 (could not remove)"]);
+		} finally {
+			chmodSync(locked, 0o755);
+		}
+	});
+
 	test.skipIf(process.getuid?.() === 0)("reports a version it cannot delete and continues with the rest", () => {
 		const home = tempRoot();
 		const locked = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
