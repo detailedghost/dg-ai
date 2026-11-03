@@ -13,13 +13,12 @@ import { registerMemoryCommands } from "./memory/commands";
 import { registerPhoneCommands } from "./phone/commands";
 import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
-import { cmdStart } from "./start";
+import { cmdStart, openUrlOrHint } from "./start";
 import {
 	buildBootstrapUrl,
 	isDaemonLive,
 	readPidFile,
 	resolveDgPaths,
-	tryOpen,
 } from "@dg/common/node";
 
 const program = new Command();
@@ -110,7 +109,7 @@ program
 		const url = buildBootstrapUrl(handle.port, claimed);
 		console.error(cliNextStep("attached", claimed.sessionId));
 		console.log(url);
-		if (opts.open) await tryOpen(url);
+		if (opts.open) await openUrlOrHint(url);
 	});
 
 program.parseAsync(process.argv).catch((err: unknown) => {

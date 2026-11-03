@@ -23,35 +23,67 @@ export function wslChromiumArgs(
 	return wsl && env.PW_WSL_GPU !== "1" ? ["--disable-gpu"] : [];
 }
 
-function openers(): Array<[string, (url: string) => string[]]> {
-	if (process.platform === "darwin") return [["open", (u) => [u]]];
-	if (isWSL()) {
-		return [
-			["wslview", (u) => [u]],
-			[
-				"powershell.exe",
-				(u) => [
-					"-NoProfile",
-					"-Command",
-					`Start-Process '${u.replace(/'/g, "''")}'`,
-				],
-			],
-			["cmd.exe", (u) => ["/c", "start", "", u]],
-		];
+type Opener = [string, (url: string) => string[]];
+
+const WSL_OPENERS: Opener[] = [
+	["wslview", (u) => [u]],
+	[
+		"powershell.exe",
+		(u) => [
+			"-NoProfile",
+			"-Command",
+			`Start-Process '${u.replace(/'/g, "''")}'`,
+		],
+	],
+	["cmd.exe", (u) => ["/c", "start", "", u]],
+];
+
+/** Injectable platform, WSL check, environment and spawn for tryOpen. */
+export type OpenSeams = {
+	/** On WSL, launch the Windows browser only when DG_OPEN_WINDOWS=1. */
+	requireWindowsOptIn?: boolean;
+	platform?: NodeJS.Platform;
+	wsl?: boolean;
+	env?: Record<string, string | undefined>;
+	spawn?: (
+		command: string,
+		args: string[],
+		options: { stdio: "ignore"; detached: true },
+	) => {
+		on(event: "error" | "spawn", listener: () => void): unknown;
+		unref(): void;
+	};
+};
+
+function openers(seams: OpenSeams): Opener[] {
+	if ((seams.platform ?? process.platform) === "darwin") {
+		return [["open", (u) => [u]]];
+	}
+	if (seams.wsl ?? isWSL()) {
+		const optedIn = (seams.env ?? process.env).DG_OPEN_WINDOWS === "1";
+		return !seams.requireWindowsOptIn || optedIn ? WSL_OPENERS : [];
 	}
 	return [["xdg-open", (u) => [u]]];
 }
 
-export const OPEN_FAILED_HINT = "could not open a browser; open the URL above";
+const OPEN_FAILED_HINT = "could not open a browser; open the URL above";
+
+/** The stderr line for a failed open; on WSL it names the DG_OPEN_WINDOWS opt-in. */
+export function openFailedHint(wsl: boolean = isWSL()): string {
+	return wsl
+		? `${OPEN_FAILED_HINT} (set DG_OPEN_WINDOWS=1 to open the Windows browser)`
+		: OPEN_FAILED_HINT;
+}
 
 /** Try platform URL launchers in order; true means a launcher spawned, not that the page loaded. */
-export function tryOpen(url: string): Promise<boolean> {
-	const candidates = openers();
+export function tryOpen(url: string, seams: OpenSeams = {}): Promise<boolean> {
+	const candidates = openers(seams);
+	const launch = seams.spawn ?? spawn;
 	return new Promise((resolve) => {
 		const attempt = (i: number) => {
 			if (i >= candidates.length) return resolve(false);
 			const [cmd, build] = candidates[i];
-			const child = spawn(cmd, build(url), { stdio: "ignore", detached: true });
+			const child = launch(cmd, build(url), { stdio: "ignore", detached: true });
 			child.on("error", () => attempt(i + 1));
 			child.on("spawn", () => {
 				child.unref();

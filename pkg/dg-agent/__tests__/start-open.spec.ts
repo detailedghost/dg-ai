@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { validateSessionBootstrap } from "@dg/common";
-import { resolveDgPaths, writeSessionToken } from "@dg/common/node";
+import {
+	openFailedHint,
+	resolveDgPaths,
+	writeSessionToken,
+} from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -37,7 +41,11 @@ async function withDgEnv<T>(fn: () => Promise<T>): Promise<T> {
 	}
 }
 
-async function runStart(options: StartOptions, tryOpenResult = true) {
+async function runStart(
+	options: StartOptions,
+	tryOpenResult = true,
+	wsl = false,
+) {
 	const opened: string[] = [];
 	const seams: StartSeams = {
 		daemonArgv: () => [process.execPath, DAEMON_ENTRY, "__serve"],
@@ -45,6 +53,7 @@ async function runStart(options: StartOptions, tryOpenResult = true) {
 			opened.push(url);
 			return tryOpenResult;
 		},
+		openFailedHint: () => openFailedHint(wsl),
 	};
 	const logs: string[] = [];
 	const originalLog = console.log;
@@ -199,6 +208,14 @@ describe("dg-agent start bootstrap URL", () => {
 		const { errors } = await runStart({ open: true }, false);
 
 		expect(errors).toContain("could not open a browser; open the URL above");
+	});
+
+	it("names the DG_OPEN_WINDOWS opt-in on WSL when no browser opened", async () => {
+		const { errors } = await runStart({ open: true }, false, true);
+
+		expect(errors).toContain(
+			"could not open a browser; open the URL above (set DG_OPEN_WINDOWS=1 to open the Windows browser)",
+		);
 	});
 
 	it("writes no could-not-open line when the browser opens", async () => {

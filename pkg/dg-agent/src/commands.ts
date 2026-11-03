@@ -23,12 +23,12 @@ import {
 	readAssetSourceFile,
 	resolveCliSession,
 	resolveManifestForPublish,
-	tryOpen,
 	writeStderr,
 	writeStdout,
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { registerOverwatchCommands } from "./overwatch";
+import { tryOpenAgentUrl } from "./start";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 
@@ -168,7 +168,7 @@ export function registerAgentCommands(program: Command): void {
 		connect: connectFor,
 		write: writeStdout,
 		writeError: writeStderr,
-		tryOpen,
+		tryOpen: tryOpenAgentUrl,
 		localBootstrap,
 	});
 
