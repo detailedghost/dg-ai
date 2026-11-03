@@ -45,8 +45,19 @@ function lstatOrUndefined(path: string) {
 
 const isRealDir = (path: string): boolean => lstatOrUndefined(path)?.isDirectory() === true;
 
+function missing(path: string): boolean {
+	try {
+		lstatSync(path);
+		return false;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ENOENT";
+	}
+}
+
+/** [] when the path is absent; undefined when it exists but is not a readable real directory. */
 function entries(path: string, want: "dir" | "file"): string[] | undefined {
-	if (!isRealDir(path)) return [];
+	if (missing(path)) return [];
+	if (!isRealDir(path)) return undefined;
 	try {
 		return readdirSync(path, { withFileTypes: true })
 			.filter((entry) => (want === "dir" ? entry.isDirectory() : entry.isFile()))
@@ -133,6 +144,8 @@ const cacheRoot = (home: string): string => join(home, ".claude", "plugins", "ca
 
 type UsageState = Pick<PluginCacheVersion, "orphanedAt" | "lastReadAt" | "livePids" | "inUseUnreadable">;
 
+const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
+
 function readUsage(path: string, fs: CacheFs): UsageState {
 	const inUseDir = join(path, ".in_use");
 	const markers = fs.files(inUseDir);
@@ -142,7 +155,7 @@ function readUsage(path: string, fs: CacheFs): UsageState {
 		(time): time is number => time !== undefined,
 	);
 	const livePids = bodies.flatMap((body) => {
-		if (typeof body?.pid !== "number") return [];
+		if (!validPid(body?.pid)) return [];
 		const procStart = typeof body.procStart === "string" ? body.procStart : undefined;
 		return fs.alive(body.pid, procStart) ? [body.pid] : [];
 	});
@@ -150,7 +163,7 @@ function readUsage(path: string, fs: CacheFs): UsageState {
 		orphanedAt: fs.readNumber(join(path, ".orphaned_at")),
 		lastReadAt: readTimes.length ? Math.max(...readTimes) : undefined,
 		livePids,
-		inUseUnreadable: markers === undefined || bodies.some((body) => typeof body?.pid !== "number"),
+		inUseUnreadable: markers === undefined || bodies.some((body) => !validPid(body?.pid)),
 	};
 }
 

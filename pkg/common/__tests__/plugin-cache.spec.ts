@@ -211,6 +211,26 @@ describe("planPluginCachePrune", () => {
 		}
 	});
 
+	test("keeps an orphaned version whose .in_use is a regular file", () => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		orphan(dir, NOW - 96 * HOUR);
+		writeFileSync(join(dir, ".in_use"), "not a directory");
+		const result = plan(home);
+		expect(result.remove).toEqual([]);
+		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+	});
+
+	test.each([[0], [1.5], [-3], ["12"]])("keeps an orphaned version whose marker names the invalid pid %p", (pid) => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		orphan(dir, NOW - 96 * HOUR);
+		marker(dir, "s1", { pid }, 72 * HOUR);
+		const result = plan(home);
+		expect(result.remove).toEqual([]);
+		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+	});
+
 	test("honors a custom read window", () => {
 		const home = fixtureHome();
 		const dir = versionDir(home, "1.23.0");
@@ -295,7 +315,11 @@ describe("listDgPluginVersions", () => {
 		const dir = versionDir(home, "1.20.0");
 		orphan(dir, 1);
 		symlinkSync(outside, join(dir, ".in_use"));
-		expect(listDgPluginVersions(home)[0]).toMatchObject({ livePids: [], lastReadAt: undefined });
+		expect(listDgPluginVersions(home)[0]).toMatchObject({
+			livePids: [],
+			lastReadAt: undefined,
+			inUseUnreadable: true,
+		});
 		rmSync(join(dir, ".in_use"));
 		mkdirSync(join(dir, ".in_use"));
 		symlinkSync(join(outside, "s1"), join(dir, ".in_use", "s1"));
