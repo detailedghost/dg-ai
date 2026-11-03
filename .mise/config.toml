@@ -178,6 +178,7 @@ bun test \
   __tests__/verify-capture.spec.ts \
   __tests__/verify-serve.spec.ts \
   __tests__/verify-review.spec.ts \
+  __tests__/layout-fingerprint.spec.ts \
   __tests__/verify-playwright.spec.ts
 """
 

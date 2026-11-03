@@ -496,6 +496,157 @@ describe("dg-skills spec prototype-ref", () => {
 	});
 });
 
+describe("dg-skills spec prototype-ref with an accepted record", () => {
+	const reading = {
+		viewport: "desktop",
+		width: 1440,
+		height: 900,
+		theme: "light",
+		themeApplied: "light",
+		root: { x: 0, y: 0, w: 800, h: 600 },
+		controls: [
+			{
+				i: 0,
+				role: "button",
+				name: "Add note",
+				testid: null,
+				path: "button#add",
+				box: { x: 1, y: 2, w: 3, h: 4 },
+				band: "bottom",
+				hband: "left",
+				visible: true,
+				occluded: false,
+				occluder: null,
+			},
+		],
+	};
+	const record = (overrides: Record<string, unknown> = {}) => ({
+		version: 1,
+		name: "notes-popup",
+		chain: "notes-popup",
+		mode: "local",
+		variant: "D",
+		label: "Trigger below",
+		round: 3,
+		notes: "",
+		final: true,
+		source: "browser",
+		at: "2026-11-03T18:22:10.000Z",
+		url: "http://127.0.0.1:4321/",
+		root: '[data-verify-root="notes-popup"]',
+		fingerprint: { version: 1, root: '[data-verify-root="notes-popup"]', readings: [reading] },
+		skipped: null,
+		shots: "accepted/",
+		history: [{ round: 3, variant: "D", notes: "", at: "2026-11-03T18:22:10.000Z" }],
+		...overrides,
+	});
+	const ref = (path: string, variant: string, ...extra: string[]) =>
+		spec(["prototype-ref", "bundle", "--slice", "2", "--path", path, "--variant", variant, ...extra]);
+	const sandbox = (overrides?: Record<string, unknown>) => {
+		put("sandbox/accepted.json", `${JSON.stringify(record(overrides), null, 2)}\n`);
+		put("sandbox/accepted/desktop-light.png", "png");
+		put("bundle/plan.md", SPEC);
+	};
+
+	test("copies the record and a text-only ACCEPTED.md and sets four frontmatter fields", async () => {
+		sandbox();
+		const run = await ref("sandbox", "D");
+		expect(run.exitCode).toBe(0);
+		expect(JSON.parse(read("bundle/prototype/slice_2_accepted.json"))).toEqual(record());
+		const page = read("bundle/prototype/slice_2_ACCEPTED.md");
+		expect(page).toContain("D (Trigger below)");
+		expect(page).toContain("| 1 | button | Add note | - | bottom/left | yes |");
+		expect(page).not.toMatch(/\.png|!\[/);
+		expect(existsSync(join(context.root, "bundle/prototype/slice_2_accepted"))).toBe(false);
+		const plan = read("bundle/plan.md");
+		expect(plan).toContain("      path: prototype/slice_2_ACCEPTED.md\n");
+		expect(plan).toContain("      variant: D\n");
+		expect(plan).toContain("      accepted: prototype/slice_2_ACCEPTED.md\n");
+		expect(plan).toContain("      record: prototype/slice_2_accepted.json\n");
+	});
+
+	test("spec context hands the accepted page and record to the execution agent", async () => {
+		sandbox();
+		expect((await ref("sandbox", "D")).exitCode).toBe(0);
+		const run = await spec(["context", "bundle", "--json"]);
+		expect(run.exitCode).toBe(0);
+		const slices = JSON.parse(run.stdout).slices as Array<{ prototype?: Record<string, string> }>;
+		expect(slices[1]?.prototype).toEqual({
+			path: "prototype/slice_2_ACCEPTED.md",
+			variant: "D",
+			accepted: "prototype/slice_2_ACCEPTED.md",
+			record: "prototype/slice_2_accepted.json",
+		});
+	});
+
+	test("accepts the record file itself as the path", async () => {
+		sandbox();
+		expect((await ref("sandbox/accepted.json", "D")).exitCode).toBe(0);
+		expect(existsSync(join(context.root, "bundle/prototype/slice_2_accepted.json"))).toBe(true);
+	});
+
+	test("copies a non-image answer file and the record beside it", async () => {
+		sandbox({ mode: "ext", fingerprint: null, skipped: "ext: the variation lives in the user's browser session" });
+		put("sandbox/index.html", "<p>answer</p>\n");
+		const run = await ref("sandbox/index.html", "D");
+		expect(run.exitCode).toBe(0);
+		expect(read("bundle/prototype/slice_2_index.html")).toBe("<p>answer</p>\n");
+		const plan = read("bundle/plan.md");
+		expect(plan).toContain("      path: prototype/slice_2_index.html\n");
+		expect(plan).toContain("      record: prototype/slice_2_accepted.json\n");
+	});
+
+	test("refuses an image asset so screenshots stay out of the bundle", async () => {
+		sandbox();
+		const run = await ref("sandbox/accepted/desktop-light.png", "D");
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain("refusing image asset sandbox/accepted/desktop-light.png: screenshots stay gitignored");
+		expect(existsSync(join(context.root, "bundle/prototype"))).toBe(false);
+		expect(read("bundle/plan.md")).toBe(SPEC);
+	});
+
+	test("refuses a variant that differs from the record", async () => {
+		sandbox();
+		const run = await ref("sandbox", "B");
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain("accepted.json says variant D, --variant says B");
+		expect(existsSync(join(context.root, "bundle/prototype"))).toBe(false);
+	});
+
+	test("refuses a local record without a fingerprint unless --no-fingerprint is passed", async () => {
+		sandbox({ fingerprint: null, skipped: "no page url recorded" });
+		const refused = await ref("sandbox", "D");
+		expect(refused.exitCode).toBe(1);
+		expect(refused.stderr).toContain(
+			"no layout fingerprint in sandbox/accepted.json; run prototype fingerprint notes-popup --url=<url> or pass --no-fingerprint",
+		);
+		expect(existsSync(join(context.root, "bundle/prototype"))).toBe(false);
+
+		const waived = await ref("sandbox", "D", "--no-fingerprint");
+		expect(waived.exitCode).toBe(0);
+		const page = read("bundle/prototype/slice_2_ACCEPTED.md");
+		expect(page).toContain("no page url recorded");
+		expect(page).toContain("--no-fingerprint");
+	});
+
+	test("takes an ext record without a fingerprint as it is", async () => {
+		sandbox({ mode: "ext", fingerprint: null, skipped: "ext: the variation lives in the user's browser session" });
+		expect((await ref("sandbox", "D")).exitCode).toBe(0);
+	});
+
+	test("refuses a sandbox with no record and a malformed record", async () => {
+		put("bundle/plan.md", SPEC);
+		put("empty/readme.txt", "x");
+		const none = await ref("empty", "D");
+		expect(none.exitCode).toBe(1);
+		expect(none.stderr).toContain("no accepted.json in empty");
+		put("bad/accepted.json", "{not json");
+		const bad = await ref("bad", "D");
+		expect(bad.exitCode).toBe(1);
+		expect(bad.stderr).toContain("unreadable accepted record");
+	});
+});
+
 describe("dg-skills spec permissions", () => {
 	test("perms --deny rewrites a permissions block that is not last in the frontmatter in place", async () => {
 		put("spec.md", MID_PERMISSIONS);

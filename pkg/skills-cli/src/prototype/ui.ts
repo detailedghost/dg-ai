@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { scratchDir, selfCommand, tryOpen } from "@dg/common/node";
+import { acceptanceHook, markFinal } from "./accepted";
 import { type Flags, parseFlags } from "./args";
 import { parseManifestSource, render } from "./manifest";
 import {
@@ -19,7 +20,7 @@ import {
 import { type WaitResult, wait } from "./sentinels";
 
 const SERVER_START_MS = 10_000;
-const STALE_SENTINELS = [".selection", ".reject", ".more", ".notes", ".decision"];
+const STALE_SENTINELS = [".selection", ".reject", ".more", ".notes", ".decision", ".url"];
 const BOUND_LINE = /^prototype-serve: http:\/\/127\.0\.0\.1:(\d+)\//;
 
 export interface UiState {
@@ -31,7 +32,12 @@ export interface UiState {
 	port: number;
 	light: boolean;
 	series?: boolean;
+	prototype?: string;
+	labels?: Record<string, string>;
+	recordDir?: string;
 }
+
+type Described = Pick<UiState, "prototype" | "labels" | "recordDir">;
 
 function stateDirectory(): string {
 	return scratchDir("prototype-ui", { cwdScope: false });
@@ -164,8 +170,21 @@ export async function waitSession(
 	state: UiState,
 	timeoutSec: number,
 ): Promise<number> {
+	const target =
+		state.prototype && state.recordDir
+			? {
+					dir: state.recordDir,
+					name: state.prototype,
+					chain: state.name,
+					labels: state.labels,
+				}
+			: undefined;
 	return finish(
-		await wait(sentinelPaths(state.sentinelDir), timeoutSec),
+		await wait(
+			sentinelPaths(state.sentinelDir),
+			timeoutSec,
+			target && acceptanceHook(target),
+		),
 		state,
 	);
 }
@@ -196,16 +215,24 @@ export async function runUi(argv: string[]): Promise<number> {
 		assertProtoName(flags.chain ?? manifest.chain),
 	);
 
+	const described: Described = {
+		prototype: manifest.name,
+		labels: manifest.labels,
+		recordDir: protoDir(manifest.name, {
+			cwd: process.cwd(),
+			light: flags.light,
+		}),
+	};
 	const existing = loadState(key);
 	let state: UiState;
 	if (existing && isPidAlive(existing.pid)) {
 		clearSentinels(existing.sentinelDir);
 		writeFileSync(existing.htmlPath, html);
 		bumpReloadToken(existing.sentinelDir);
-		state = { ...existing, series: flags.series };
+		state = { ...existing, ...described, series: flags.series };
 		saveState(state);
 	} else {
-		state = await startSession(key, html, flags);
+		state = await startSession(key, html, flags, described);
 	}
 	return waitSession(state, flags.timeoutSec);
 }
@@ -214,6 +241,7 @@ async function startSession(
 	key: string,
 	html: string,
 	flags: Flags,
+	described: Described,
 ): Promise<UiState> {
 	const cwd = pinCwd();
 	mkdirSync(cwd, { recursive: true });
@@ -238,6 +266,7 @@ async function startSession(
 		port,
 		light: flags.light,
 		series: flags.series,
+		...described,
 	};
 	saveState(state);
 	if (!flags.noOpen && !(await tryOpen(`http://127.0.0.1:${port}/`)))
@@ -250,7 +279,10 @@ async function startSession(
 /** Stop a session's server and drop its state; stopping an unknown chain is a no-op. */
 export function stopChain(name: string): string {
 	const state = loadState(name);
-	if (state) stopSession(state);
+	if (state) {
+		if (state.recordDir) markFinal(state.recordDir);
+		stopSession(state);
+	}
 	return `${JSON.stringify({ status: "stopped", chain: name, found: state !== undefined })}\n`;
 }
 

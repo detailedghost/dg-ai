@@ -141,6 +141,7 @@ prototype's outcome, the prototype stops being throwaway for the life of that pl
 source of truth for the design it settled.
 
 1. **Keep the asset available.** The prototype must live in the durable `.agents/prototype/<name>/` location, never only in the `--light` scratch sandbox, which is wiped on reboot while the plan is still open. If it was built with `--light`, copy it into `.agents/prototype/<name>/` before referencing it. Record its path, and the winning variant key for a UI prototype, in the planning document.
+   Link the planning document to the text-only `ACCEPTED.md` and `accepted.json` that the `/dg:spec` plan step copies into the bundle from the sandbox record with `prototype-ref`. Every variant's feature root carries `data-verify-root="<prototype name>"`, so `/dg:verify` can compare the built layout with the accepted one. Never commit screenshots.
 2. **Follow it completely.** Agents that implement a prototyped decision reproduce the prototype's design and feature set faithfully. Do not silently drop features or re-decide the look or flow it already resolved.
 3. **Ask when it does not fit the code.** Where the prototype conflicts with the current code design (data shape, existing components, framework limits it could not see), surface the mismatch instead of diverging or force-fitting. Ask directly when interactive, or escalate to the orchestrator inside a workflow that forbids prompts.
 

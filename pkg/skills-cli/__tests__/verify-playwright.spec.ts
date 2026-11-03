@@ -1,5 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { pngSize } from "../src/verify/capture-model";
+import { type CaptureRequest, type CaptureShot, pngSize } from "../src/verify/capture-model";
+import type { ControlRow } from "../src/layout/fingerprint";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -77,6 +78,116 @@ describe("playwright capture", () => {
 			await capturer.close();
 			server.stop(true);
 		}
+	});
+});
+
+describe("layout fingerprint in a browser", () => {
+	const ROOT = '[data-verify-root="demo"]';
+	const PAGE = `<!doctype html><html lang="en"><head><title>Demo</title><style>
+body{margin:0;font:16px sans-serif}
+main{min-height:100vh;display:flex;flex-direction:column;padding:16px;box-sizing:border-box}
+#header-action{display:none}
+#add-note{margin-top:auto;height:40px}
+#bottom-bar{position:fixed;left:0;right:0;bottom:0;height:80px;background:#222;z-index:10}
+.spacer{height:2400px}
+</style></head><body>
+<main data-verify-root="demo">
+<button id="header-action" type="button">Share</button>
+<button id="top-link" type="button">Top action</button>
+<div class="spacer"></div>
+<button id="add-note" type="button" data-testid="add-note">Add a note...</button>
+</main>
+<div id="bottom-bar"></div>
+<div id="protobar" role="toolbar" aria-label="Prototype decision"><button type="button">Approve</button></div>
+</body></html>`;
+
+	async function withPage<T>(run: (request: (extra?: Partial<CaptureRequest>) => CaptureRequest, capturer: Awaited<ReturnType<typeof openPlaywrightCapturer>>) => Promise<T>): Promise<T> {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch: () => new Response(PAGE, { headers: { "Content-Type": "text/html; charset=utf-8" } }),
+		});
+		const capturer = await openPlaywrightCapturer({ noSandbox: true });
+		try {
+			return await run(
+				(extra = {}) => ({
+					url: `http://127.0.0.1:${server.port}/`,
+					headers: {},
+					cookies: [],
+					width: 1440,
+					height: 900,
+					theme: "light",
+					state: "default",
+					menuSelector: "[data-verify-menu]",
+					fingerprintRoot: ROOT,
+					...extra,
+				}),
+				capturer,
+			);
+		} finally {
+			await capturer.close();
+			server.stop(true);
+		}
+	}
+
+	function controls(shot: CaptureShot): ControlRow[] {
+		if (!shot.fingerprint || "error" in shot.fingerprint) throw new Error("no fingerprint");
+		return shot.fingerprint.controls;
+	}
+
+	test.skipIf(!browser)("reports a control under a fixed bar as occluded and a display:none control as hidden", async () => {
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request());
+			const rows = controls(shot);
+			const share = rows.find((row) => row.name === "Share");
+			const note = rows.find((row) => row.testid === "add-note");
+			expect(share?.visible).toBe(false);
+			expect(note?.visible).toBe(true);
+			expect(note?.occluded).toBe(true);
+			expect(note?.occluder).toBe("div#bottom-bar");
+			expect(rows.map((row) => row.name)).not.toContain("Approve");
+			expect(note?.band).toBe("bottom");
+			const top = rows.find((row) => row.name === "Top action");
+			expect(top?.band).toBe("top");
+			expect(top?.occluded).toBe(false);
+			expect(note?.box.x).toBeGreaterThanOrEqual(0);
+			expect(note?.box.y).toBeGreaterThan(top?.box.y ?? 0);
+		});
+	});
+
+	test.skipIf(!browser)("scrolls a control below the fold into view before testing occlusion", async () => {
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request({ height: 700 }));
+			const note = controls(shot).find((row) => row.testid === "add-note");
+			expect(note?.occluded).toBe(true);
+			expect(note?.box.y).toBeGreaterThan(2000);
+		});
+	});
+
+	test.skipIf(!browser)("reports the applied theme from the color scheme", async () => {
+		await withPage(async (request, capturer) => {
+			const dark = await capturer.shot(request({ theme: "dark" }));
+			const light = await capturer.shot(request({ theme: "light" }));
+			expect(dark.fingerprint && "themeApplied" in dark.fingerprint && dark.fingerprint.themeApplied).toBe("dark");
+			expect(light.fingerprint && "themeApplied" in light.fingerprint && light.fingerprint.themeApplied).toBe("light");
+		});
+	});
+
+	test.skipIf(!browser)("reports a missing root as an error object", async () => {
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request({ fingerprintRoot: '[data-verify-root="other"]' }));
+			expect(shot.fingerprint).toEqual({ error: 'root: found 0 visible [data-verify-root="other"]' });
+		});
+	});
+
+	test.skipIf(!browser)("hides the prototype chrome only when a fingerprint root is requested", async () => {
+		await withPage(async (request, capturer) => {
+			const plain = await capturer.shot(request({ fingerprintRoot: undefined }));
+			const read = await capturer.shot(request());
+			expect(plain.fingerprint).toBeUndefined();
+			expect(plain.html).not.toMatch(/id="protobar"[^>]*display: none/);
+			expect(read.html).toMatch(/id="protobar"[^>]*display: none/);
+		});
 	});
 });
 

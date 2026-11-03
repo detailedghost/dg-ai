@@ -1,3 +1,4 @@
+import { collectLayout, PROTOTYPE_CHROME_SELECTOR } from "../layout/fingerprint";
 import { resolveBrowserBinary, sandboxDisabled } from "../utils/cdp-harness";
 import {
 	menuIsOpen,
@@ -106,6 +107,12 @@ export async function openPlaywrightCapturer(options?: {
 						menuFound = true;
 					}
 				}
+				const fingerprint = request.fingerprintRoot
+					? await page.evaluate(collectLayout, {
+							root: request.fingerprintRoot,
+							chrome: PROTOTYPE_CHROME_SELECTOR,
+						})
+					: undefined;
 				const png = new Uint8Array(await page.screenshot({ type: "png", fullPage: false }));
 				const html = await page.content();
 				const scrollY = await page.evaluate(() => window.scrollY);
@@ -116,6 +123,7 @@ export async function openPlaywrightCapturer(options?: {
 					menuFound: request.state === "menu" && (menuFound || menuIsOpen(html)),
 					scrolled: request.state === "scrolled" && (scrollY > 0 || pageMarkedScrolled(html)),
 					engine: "playwright",
+					...(fingerprint ? { fingerprint } : {}),
 				};
 			} finally {
 				await context.close();

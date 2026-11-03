@@ -30,6 +30,10 @@ An execution agent reads a slice's `prototype` asset **only if that slice's fron
 `prototype` key** (`slices[N].prototype.path` + `.variant`, set by `~/.dg/bin/dg-skills spec prototype-ref`). Do
 not inject a prototype reference into a slice's brief when it has none.
 
+When the key also holds `.accepted` and `.record`, the agent reads the `ACCEPTED.md` page and reproduces the
+recorded layout: the same controls in the same order and position band, with the same ones hidden. The
+verify manifest item for that slice carries `record: <slices[N].prototype.record>`.
+
 ## 2. Worktree — reuse `/dg:sdlc` setup.md Step 1 verbatim
 
 `/dg:spec -s` always runs in worktree mode. `-T`/`--no-worktree` exists on `/dg:spec`, but is valid only

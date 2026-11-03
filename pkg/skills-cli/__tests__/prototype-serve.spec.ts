@@ -98,6 +98,32 @@ describe("prototype serve", () => {
 		expect(readFileSync(paths.source, "utf8")).toBe("browser\n");
 	});
 
+	test("a confirm stores a loopback page url for the acceptance record", async () => {
+		const { post, paths } = await serve();
+		await post({
+			action: "confirm",
+			variant: "B",
+			url: "http://127.0.0.1:4321/?variant=B",
+		});
+		expect(readFileSync(paths.url, "utf8")).toBe("http://127.0.0.1:4321/?variant=B\n");
+	});
+
+	test("a confirm ignores a page url that is off loopback or carries credentials but still records the pick", async () => {
+		const { post, paths } = await serve();
+		for (const url of ["https://example.com/", "http://user:pw@127.0.0.1:4321/", "not a url", 7]) {
+			const response = await post({ action: "confirm", variant: "B", url });
+			expect(await response.json()).toEqual({ ok: true });
+			expect(existsSync(paths.url)).toBe(false);
+			expect(readFileSync(paths.selection, "utf8")).toBe("B\n");
+		}
+	});
+
+	test("the injected client posts the page url", async () => {
+		const { url } = await serve();
+		const html = await (await fetch(url)).text();
+		expect(html).toContain("url: window.location.href");
+	});
+
 	test("selftest:true writes to a sibling -selftest sentinel dir, never the real one", async () => {
 		const { post, paths } = await serve();
 		const response = await post({
