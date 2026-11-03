@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	renameSync,
 	rmSync,
 	symlinkSync,
 	utimesSync,
@@ -178,6 +179,76 @@ describe("prunePluginCache", () => {
 		expect(lines[0]).not.toContain("removed");
 	});
 
+	test("refuses to delete when the cache root is swapped for a symlink after the plan was made", () => {
+		const home = tempRoot();
+		const outside = tempRoot();
+		version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		const victim = join(outside, "dg-ai", "dg", "1.20.0");
+		mkdirSync(victim, { recursive: true });
+		writeFileSync(join(victim, "precious.txt"), "keep");
+		writeFileSync(join(victim, ".orphaned_at"), "1");
+		installedPlugins(home, "1.24.0");
+		const cache = join(home, ".claude", "plugins", "cache");
+		const lines: string[] = [];
+		prunePluginCache({
+			home,
+			now: NOW,
+			keep: false,
+			log: (line) => lines.push(line),
+			beforeRemove: () => {
+				renameSync(cache, `${cache}.real`);
+				symlinkSync(outside, cache);
+			},
+		});
+		expect(existsSync(join(victim, "precious.txt"))).toBe(true);
+		expect(existsSync(join(`${cache}.real`, "dg-ai", "dg", "1.20.0"))).toBe(true);
+		expect(lines).toEqual(["plugin cache: nothing to remove; kept 1.20.0 (could not remove)"]);
+	});
+
+	test("refuses to delete when an ancestor of the cache root is swapped for a symlink after the plan was made", () => {
+		const home = tempRoot();
+		const outside = tempRoot();
+		version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		const victim = join(outside, "plugins", "cache", "dg-ai", "dg", "1.20.0");
+		mkdirSync(victim, { recursive: true });
+		writeFileSync(join(victim, "precious.txt"), "keep");
+		writeFileSync(join(victim, ".orphaned_at"), "1");
+		installedPlugins(home, "1.24.0");
+		writeFileSync(
+			join(outside, "plugins", "installed_plugins.json"),
+			JSON.stringify({ version: 2, plugins: { "dg@dg-ai": [{ version: "1.24.0" }] } }),
+		);
+		const claude = join(home, ".claude");
+		prunePluginCache({
+			home,
+			now: NOW,
+			keep: false,
+			log: () => undefined,
+			beforeRemove: () => {
+				renameSync(claude, `${claude}.real`);
+				symlinkSync(outside, claude);
+			},
+		});
+		expect(existsSync(join(victim, "precious.txt"))).toBe(true);
+		expect(existsSync(join(`${claude}.real`, "plugins", "cache", "dg-ai", "dg", "1.20.0"))).toBe(true);
+	});
+
+	test("still prunes inside the real target when ~/.claude was a symlink before the plan", () => {
+		const home = tempRoot();
+		const target = tempRoot();
+		const real = join(target, "claude-real");
+		mkdirSync(real);
+		symlinkSync(real, join(home, ".claude"));
+		const stale = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
+		const active = version(home, "1.24.0");
+		installedPlugins(home, "1.24.0");
+		const lines = prune(home);
+		expect(existsSync(stale)).toBe(false);
+		expect(existsSync(active)).toBe(true);
+		expect(existsSync(join(real, "plugins", "cache", "dg-ai", "dg", "1.20.0"))).toBe(false);
+		expect(lines).toEqual(["plugin cache: removed 1.20.0 (0 MB); kept 1.24.0 (active)"]);
+	});
+
 	test("keeps a version that gains a live session marker after the plan was made", () => {
 		const home = tempRoot();
 		const stale = version(home, "1.20.0", { orphanedAt: NOW - 48 * HOUR });
@@ -254,7 +325,7 @@ describe("prunePluginCache", () => {
 	});
 });
 
-describe("dg-skills install --cli-only plugin cache prune", () => {
+describe("dg-skills install plugin cache prune", () => {
 	function childEnv(home: string): Record<string, string> {
 		const env: Record<string, string> = {};
 		for (const [key, value] of Object.entries(process.env)) {
@@ -291,8 +362,8 @@ describe("dg-skills install --cli-only plugin cache prune", () => {
 		return path;
 	}
 
-	async function runInstall(home: string, dir: string, extra: string[]) {
-		const proc = Bun.spawn(["bun", "--preload", preload(dir), ENTRY, "install", "--cli-only", ...extra], {
+	async function runInstall(home: string, dir: string, extra: string[], mode = "--cli-only") {
+		const proc = Bun.spawn(["bun", "--preload", preload(dir), ENTRY, "install", mode, ...extra], {
 			stdout: "pipe",
 			stderr: "pipe",
 			env: childEnv(home),
@@ -320,6 +391,14 @@ describe("dg-skills install --cli-only plugin cache prune", () => {
 		const world = fixtureHome();
 		const result = await runInstall(world.home, world.dir, ["--keep-cache"]);
 		expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+		expect(world.stale.map(existsSync)).toEqual([true, true]);
+		expect(result.stdout).not.toContain("plugin cache:");
+	});
+
+	test.each(["--cli-only", "--agent-only"])("with --local and %s removes nothing and prints no prune line", async (mode) => {
+		const world = fixtureHome();
+		const result = await runInstall(world.home, world.dir, ["--local"], mode);
+		expect(result.code).toBe(0);
 		expect(world.stale.map(existsSync)).toEqual([true, true]);
 		expect(result.stdout).not.toContain("plugin cache:");
 	});

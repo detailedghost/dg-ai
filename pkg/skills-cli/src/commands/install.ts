@@ -510,8 +510,8 @@ export function registerInstall(program: Command): void {
 				if (opts.cliOnly && opts.agentOnly) {
 					throw new Error("install accepts only one of --cli-only and --agent-only");
 				}
-				if (opts.cliOnly) return installCliOnly(!!opts.keepCache, opts.version);
-				if (opts.agentOnly) return installAgentOnly(!!opts.keepCache, opts.version);
+				if (opts.cliOnly) return installCliOnly(!!opts.keepCache || !!opts.local, opts.version);
+				if (opts.agentOnly) return installAgentOnly(!!opts.keepCache || !!opts.local, opts.version);
 				await install(
 					target === "firefox" ? "firefox" : "chrome",
 					!!opts.local,
