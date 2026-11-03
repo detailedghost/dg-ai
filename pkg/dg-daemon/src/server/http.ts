@@ -164,7 +164,9 @@ function requirePinnedExtensionOrigin(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (origin === null) return undefined;
+	if (origin === null) {
+		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
+	}
 	if (!isExtensionOrigin(origin) || origin !== pinnedOrigin) {
 		return new Response("refused: Origin does not match a pinned extension origin", {
 			status: 400,
