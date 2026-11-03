@@ -376,6 +376,7 @@ describe("overwatch CLI frames", () => {
 		const response = await fetch(`http://127.0.0.1:${port}/overwatch`, {
 			headers: {
 				Host: `127.0.0.1:${port}`,
+				Authorization: `Bearer ${credentials.token}`,
 			},
 		});
 		expect(await response.json()).toEqual({ lanes: [], merges: [] });
