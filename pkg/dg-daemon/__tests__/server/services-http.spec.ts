@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_SERVICES_PATH } from "@dg/common";
-import { resolveDgPaths } from "@dg/common/node";
+import { CHAT_SERVICES_PATH, OWNER_TOKEN_HEADER } from "@dg/common";
+import { readOwnerToken, resolveDgPaths } from "@dg/common/node";
 import {
 	bootServe,
 	cleanupDgHome,
 	createCleanupSlot,
 	ENTRY,
+	registerSession,
 	stopServe,
 	subprocessEnv,
 } from "../utils/daemon-harness";
@@ -21,7 +22,7 @@ afterEach(() => cleanupSlot.run());
 async function boot(declare: (dgHome: string) => unknown = () => ({})) {
 	const { dgHome, port, proc } = await bootServe();
 	cleanupSlot.set(async () => {
-		await fetchService(port, "bot/stop", "POST");
+		await fetchService(port, "bot/stop", "POST", EXTENSION_ORIGIN);
 		await stopServe(proc);
 		cleanupDgHome(dgHome);
 	});
@@ -36,14 +37,27 @@ function fetchService(
 	path: string,
 	method: "GET" | "POST",
 	origin?: string,
+	extraHeaders: Record<string, string> = {},
 ): Promise<Response> {
 	return fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}/${path}`, {
 		method,
 		headers: {
 			Host: `127.0.0.1:${port}`,
 			...(origin ? { Origin: origin } : {}),
+			...extraHeaders,
 		},
 	});
+}
+
+function ownerHeaders(dgHome: string): Record<string, string> {
+	const owner = readOwnerToken(resolveDgPaths({ env: { DG_HOME: dgHome } }));
+	if (owner === undefined) throw new Error("the daemon wrote no owner token");
+	return { [OWNER_TOKEN_HEADER]: owner };
+}
+
+async function serviceState(port: number): Promise<string> {
+	const resp = await fetchService(port, "", "GET", EXTENSION_ORIGIN);
+	return (await resp.json()).services[0].state;
 }
 
 const botDecl = (cwd: string) => ({
@@ -91,7 +105,12 @@ describe("GET/POST /services", () => {
 
 	it("answers 404 for a label the config does not declare", async () => {
 		const { port } = await boot();
-		const resp = await fetchService(port, "made-up/start", "POST");
+		const resp = await fetchService(
+			port,
+			"made-up/start",
+			"POST",
+			EXTENSION_ORIGIN,
+		);
 		expect(resp.status).toBe(404);
 	});
 
@@ -104,13 +123,17 @@ describe("GET/POST /services", () => {
 			"https://evil.example",
 		);
 		expect(resp.status).toBe(400);
-		const status = await fetchService(port, "", "GET");
-		expect((await status.json()).services[0].state).toBe("stopped");
+		expect(await serviceState(port)).toBe("stopped");
 	});
 
 	it("answers 400 for a malformed percent-encoded label", async () => {
 		const { port } = await boot(botDecl);
-		const resp = await fetchService(port, "%E0%A4%A/start", "POST");
+		const resp = await fetchService(
+			port,
+			"%E0%A4%A/start",
+			"POST",
+			EXTENSION_ORIGIN,
+		);
 		expect(resp.status).toBe(400);
 	});
 
@@ -141,5 +164,64 @@ describe("GET/POST /services", () => {
 		expect((await run("status")).stdout).toContain("bot  running");
 		expect((await run("stop", "bot")).stdout).toContain("bot  stopped");
 		expect((await run("start", "nope")).exitCode).not.toBe(0);
+	});
+});
+
+describe("a /services request with no Origin", () => {
+	it("refuses a list with no credential", async () => {
+		const { port } = await boot(botDecl);
+		const resp = await fetchService(port, "", "GET");
+		expect(resp.status).toBe(403);
+		expect(await resp.text()).not.toContain("bot");
+	});
+
+	it("refuses a start with no credential and starts nothing", async () => {
+		const { port } = await boot(botDecl);
+		const resp = await fetchService(port, "bot/start", "POST");
+		expect(resp.status).toBe(403);
+		expect(await serviceState(port)).toBe("stopped");
+	});
+
+	it("refuses a stop with no credential and leaves the service running", async () => {
+		const { port } = await boot(botDecl);
+		await fetchService(port, "bot/start", "POST", EXTENSION_ORIGIN);
+		const resp = await fetchService(port, "bot/stop", "POST");
+		expect(resp.status).toBe(403);
+		expect(await serviceState(port)).toBe("running");
+	});
+
+	it("refuses a wrong owner token", async () => {
+		const { port } = await boot(botDecl);
+		const resp = await fetchService(port, "bot/start", "POST", undefined, {
+			[OWNER_TOKEN_HEADER]: "not-the-owner-token",
+		});
+		expect(resp.status).toBe(403);
+		expect(await serviceState(port)).toBe("stopped");
+	});
+
+	it("refuses a live session token, which is not the owner credential", async () => {
+		const { port } = await boot(botDecl);
+		const session = await registerSession(port);
+		const resp = await fetchService(port, "bot/start", "POST", undefined, {
+			Authorization: `Bearer ${session.token}`,
+		});
+		expect(resp.status).toBe(403);
+		expect(await serviceState(port)).toBe("stopped");
+	});
+
+	it("serves the owner token, which is what the service CLI sends", async () => {
+		const { dgHome, port } = await boot(botDecl);
+		const owner = ownerHeaders(dgHome);
+		const listed = await fetchService(port, "", "GET", undefined, owner);
+		expect(listed.status).toBe(200);
+		const started = await fetchService(
+			port,
+			"bot/start",
+			"POST",
+			undefined,
+			owner,
+		);
+		expect(started.status).toBe(200);
+		expect(await serviceState(port)).toBe("running");
 	});
 });

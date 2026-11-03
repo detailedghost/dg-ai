@@ -17,6 +17,7 @@ import {
 	visibleItems,
 } from "@/lib/features/dashboard";
 import { createVimNav } from "@dg/pages/vim-nav";
+import { loadStoredBootstraps } from "@/lib/stored-bootstraps";
 import "../options/style.css";
 import "./style.css";
 
@@ -57,7 +58,8 @@ export function renderDashboard(
 ): DashboardHandle {
 	const {
 		root,
-		connect = connectDashboardApi,
+		connect = async (knownPort) =>
+			connectDashboardApi(knownPort, await loadStoredBootstraps()),
 		now = () => new Date(),
 	} = options;
 	const doc = root.ownerDocument;

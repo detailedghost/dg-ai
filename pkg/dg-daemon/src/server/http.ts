@@ -118,14 +118,18 @@ function json(body: unknown, init: ResponseInit = {}): Response {
 	});
 }
 
-/** An absent Origin is deliberately allowed — extension pages send none. */
+/** An absent Origin passes only with a credential the route already trusts. */
 function refuseForeignOrigin(
 	req: Request,
 	paths: DgPaths,
+	hasCredential: () => boolean,
 ): Response | undefined {
-	const origin = req.headers.get("origin");
-	if (origin === null) return undefined;
-	return requireExtensionOrigin(req, paths);
+	if (req.headers.get("origin") !== null) {
+		return requireExtensionOrigin(req, paths);
+	}
+	return hasCredential()
+		? undefined
+		: new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
 }
 
 /** The WebSocket upgrade keeps the stricter gate: a browser always sends an Origin. */
@@ -825,20 +829,30 @@ async function handleExtensionSessionCreate(
 	});
 }
 
+function hasOwnerCredential(req: Request, paths: DgPaths): boolean {
+	const presented = req.headers.get(OWNER_TOKEN_HEADER) ?? "";
+	const expected = readOwnerToken(paths) ?? "";
+	return (
+		presented.length > 0 &&
+		expected.length > 0 &&
+		tokensEqual(presented, expected)
+	);
+}
+
 function requireOwnerCredential(
 	req: Request,
 	paths: DgPaths,
 ): Response | undefined {
-	const presented = req.headers.get(OWNER_TOKEN_HEADER) ?? "";
-	const expected = readOwnerToken(paths) ?? "";
-	if (
-		presented.length === 0 ||
-		expected.length === 0 ||
-		!tokensEqual(presented, expected)
-	) {
-		return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
-	}
-	return undefined;
+	if (hasOwnerCredential(req, paths)) return undefined;
+	return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
+}
+
+function hasLiveSessionBearer(req: Request, deps: HttpServerDeps): boolean {
+	const authorization = req.headers.get("authorization");
+	return (
+		authorization?.startsWith("Bearer ") === true &&
+		deps.registry.tokenIsLive(authorization.slice(7))
+	);
 }
 
 function handleLocalSessions(
@@ -939,7 +953,9 @@ async function handleServiceRoute(
 ): Promise<Response> {
 	const refusal =
 		requireLoopbackHost(req, deps.port) ??
-		refuseForeignOrigin(req, deps.paths);
+		refuseForeignOrigin(req, deps.paths, () =>
+			hasOwnerCredential(req, deps.paths),
+		);
 	if (refusal) return refusal;
 	const { supervisor } = deps;
 	const segments = url.pathname
@@ -982,7 +998,9 @@ async function handleSchedulerRoute(
 	deps: HttpServerDeps,
 	scheduler: DispatchScheduler,
 ): Promise<Response> {
-	const originError = refuseForeignOrigin(req, deps.paths);
+	const originError = refuseForeignOrigin(req, deps.paths, () =>
+		hasLiveSessionBearer(req, deps),
+	);
 	if (originError) return originError;
 	const { store, logger } = deps;
 	const runnerDeps = { store, scheduler, logger };

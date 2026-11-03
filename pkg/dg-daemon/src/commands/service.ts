@@ -2,10 +2,12 @@ import {
 	CHAT_SERVICES_PATH,
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
+	OWNER_TOKEN_HEADER,
 } from "@dg/common";
 import {
 	isDaemonLive,
 	loopbackHostHeader,
+	readOwnerToken,
 	readPidFile,
 	resolveDgPaths,
 } from "@dg/common/node";
@@ -16,16 +18,21 @@ async function callDaemon(
 	path: string,
 	method: "GET" | "POST",
 ): Promise<unknown> {
-	const handle = readPidFile(resolveDgPaths());
+	const paths = resolveDgPaths();
+	const handle = readPidFile(paths);
 	if (!handle || !(await isDaemonLive(handle))) {
 		throw new DgCliError(
 			"no live dg-daemon — services run inside it, so start it first",
 			EXIT_GENERAL_FAILURE,
 		);
 	}
+	const owner = readOwnerToken(paths);
 	const resp = await fetch(`http://127.0.0.1:${handle.port}${path}`, {
 		method,
-		headers: loopbackHostHeader(handle.port),
+		headers: {
+			...loopbackHostHeader(handle.port),
+			...(owner === undefined ? {} : { [OWNER_TOKEN_HEADER]: owner }),
+		},
 	});
 	if (!resp.ok)
 		throw new DgCliError((await resp.text()).trim(), EXIT_GENERAL_FAILURE);

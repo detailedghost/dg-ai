@@ -4,6 +4,7 @@ import {
 	deriveJobState,
 	formatSchedule,
 	type JobState,
+	type SessionBootstrap,
 } from "@dg/common";
 import { findDaemonPort } from "@dg/pages/daemon-port";
 
@@ -278,17 +279,22 @@ export type DashboardApi = {
 	queueToAgent(itemId: string, identity: string): Promise<boolean>;
 };
 
-export function createDashboardApi(baseUrl: string): DashboardApi {
+export function createDashboardApi(
+	baseUrl: string,
+	token?: string,
+): DashboardApi {
+	const auth: Record<string, string> =
+		token === undefined ? {} : { Authorization: `Bearer ${token}` };
+
 	async function post(path: string, body?: unknown): Promise<boolean> {
 		try {
 			const res = await fetch(`${baseUrl}${path}`, {
 				method: "POST",
-				...(body === undefined
-					? {}
-					: {
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify(body),
-						}),
+				headers: {
+					...auth,
+					...(body === undefined ? {} : { "Content-Type": "application/json" }),
+				},
+				...(body === undefined ? {} : { body: JSON.stringify(body) }),
 			});
 			return res.ok;
 		} catch {
@@ -301,8 +307,8 @@ export function createDashboardApi(baseUrl: string): DashboardApi {
 		async refresh(): Promise<RefreshResult> {
 			try {
 				const [jobsRes, feedRes] = await Promise.all([
-					fetch(`${baseUrl}${CHAT_JOBS_PATH}`),
-					fetch(`${baseUrl}${CHAT_FEED_PATH}`),
+					fetch(`${baseUrl}${CHAT_JOBS_PATH}`, { headers: auth }),
+					fetch(`${baseUrl}${CHAT_FEED_PATH}`, { headers: auth }),
 				]);
 				if (!jobsRes.ok || !feedRes.ok) return { ok: false };
 				const jobs = (await jobsRes.json()) as { jobs: JobPayload[] };
@@ -320,13 +326,21 @@ export function createDashboardApi(baseUrl: string): DashboardApi {
 	};
 }
 
-/** A known port is retried directly before the candidate ports are probed again. */
+/** Each stored session's token goes only to that session's own port, known port first. */
 export async function connectDashboardApi(
 	knownPort?: number,
+	sessions: SessionBootstrap[] = [],
 ): Promise<DashboardApi | undefined> {
-	if (knownPort !== undefined) {
-		const direct = createDashboardApi(`http://127.0.0.1:${knownPort}`);
-		if ((await direct.refresh()).ok) return direct;
+	const ordered = [
+		...sessions.filter((session) => session.port === knownPort),
+		...sessions.filter((session) => session.port !== knownPort),
+	];
+	for (const session of ordered) {
+		const api = createDashboardApi(
+			`http://127.0.0.1:${session.port}`,
+			session.token,
+		);
+		if ((await api.refresh()).ok) return api;
 	}
 	const port = await findDaemonPort();
 	if (port === undefined) return undefined;
