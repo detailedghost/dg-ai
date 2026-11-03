@@ -182,8 +182,11 @@ function Save-DgAsset {
 
 function Set-DgJunction {
 	param([string]$Link, [string]$Target)
+	$staged = "$Link.$PID.tmp"
+	if (Test-Path -LiteralPath $staged) { [System.IO.Directory]::Delete($staged) }
+	New-Item -ItemType Junction -Path $staged -Target $Target | Out-Null
 	if (Test-Path -LiteralPath $Link) { [System.IO.Directory]::Delete($Link) }
-	New-Item -ItemType Junction -Path $Link -Target $Target | Out-Null
+	Rename-Item -LiteralPath $staged -NewName (Split-Path -Leaf $Link)
 }
 
 function Test-DgAvx2 {

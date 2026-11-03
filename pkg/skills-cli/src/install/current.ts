@@ -17,13 +17,13 @@ export function readCurrent(root: string, kind: CurrentKind): string | undefined
 /** Points `<root>/<kind>/current` at the sibling directory `target`; a junction on Windows. */
 export function linkCurrent(root: string, kind: CurrentKind, target: string): void {
 	const link = currentLink(root, kind);
-	if (process.platform === "win32") {
-		rmSync(link, { force: true });
-		symlinkSync(join(root, kind, target), link, "junction");
-		return;
-	}
 	const staged = `${link}.${process.pid}.tmp`;
 	rmSync(staged, { force: true });
-	symlinkSync(target, staged);
+	if (process.platform === "win32") {
+		symlinkSync(join(root, kind, target), staged, "junction");
+		rmSync(link, { force: true });
+	} else {
+		symlinkSync(target, staged);
+	}
 	renameSync(staged, link);
 }

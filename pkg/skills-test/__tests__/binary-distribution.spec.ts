@@ -136,6 +136,16 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		expect(ps1).toMatch(/New-Item\s+-ItemType\s+Junction/);
 	});
 
+	test("bootstrap.ps1 creates the new junction before it removes the current one", () => {
+		const body = ps1.slice(ps1.indexOf("function Set-DgJunction"), ps1.indexOf("function Test-DgAvx2"));
+		const create = body.search(/New-Item\s+-ItemType\s+Junction\s+-Path\s+\$staged/);
+		const remove = body.indexOf("[System.IO.Directory]::Delete($Link)");
+		const rename = body.search(/Rename-Item\s+-LiteralPath\s+\$staged/);
+		expect(create).toBeGreaterThan(-1);
+		expect(remove).toBeGreaterThan(create);
+		expect(rename).toBeGreaterThan(remove);
+	});
+
 	test("bootstrap.ps1 writes .cmd shims for the three programs and appends the bin dir to the user PATH once", () => {
 		expect(ps1).toContain(".cmd");
 		for (const program of ["dg-skills", "dg-agent", "dg-daemon"]) {
