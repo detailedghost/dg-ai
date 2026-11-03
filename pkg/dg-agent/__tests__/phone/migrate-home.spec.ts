@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { launchdPlistText, systemdUnitText, windowsTaskXml } from "../../src/phone/autostart";
-import { type OpenCloseDeps, phoneRefresh } from "../../src/phone/commands";
+import { type OpenCloseDeps, phoneRefresh, phoneRollbackHome } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import { listenerArgvFor, listenerPidPath } from "../../src/phone/listener";
 import { createFileKey, readFileKey } from "../../src/phone/keys";
@@ -88,16 +88,13 @@ describe("movePhoneState", () => {
 		expect(lines).toContain("rollback: dg-agent phone __rollback-home");
 	});
 
-	it("fails verify when a file key in the copy does not decode", () => {
+	it("fails verify when a file key in the copied state does not decode", () => {
 		seedPhone(oldRoot);
+		const source = PhoneDb.openAt(join(oldRoot, "phone.db"), oldRoot);
+		source.putKey({ id: "number", nsec: "nsec1broken", in_store: 0 });
+		source.close();
 
-		const result = movePhoneState(oldRoot, newRoot, log, {
-			afterCopy: (copy) => {
-				const db = PhoneDb.openAt(join(copy, "phone.db"), copy);
-				db.putKey({ id: "number", nsec: "nsec1broken", in_store: 0 });
-				db.close();
-			},
-		});
+		const result = movePhoneState(oldRoot, newRoot, log);
 
 		expect(result.moved).toBe(false);
 		expect(result.failures.join(" ")).toContain("number");
@@ -203,6 +200,39 @@ describe("phone __refresh after the layout change", () => {
 		expect(keyAt(paths.phoneRoot)).toEqual(key);
 		const unit = calls.written.find((entry) => entry.includes("[Service]")) ?? "";
 		expect(unit).toContain(join(root, "data", "runtime", "current", "bun"));
+	});
+
+	it("refuses to copy the phone state back while the listener runs", () => {
+		const root = join(dir, "dg-home");
+		const paths = resolveDgPaths({ platform: "linux", homeDir: "/home/u", env: { DG_HOME: root } });
+		seedPhone(paths.phoneRoot);
+		writeFileSync(listenerPidPath(paths), JSON.stringify({ pid: process.ppid, since: 1, hook: null, version: "1.0.0" }));
+		const calls = { killed: [] as number[], written: [] as string[], spawned: [] as string[][] };
+
+		expect(() => phoneRollbackHome(refreshDeps(paths, calls))).toThrow(
+			"the phone listener is running; stop it with dg-agent phone close, then run dg-agent phone __rollback-home again",
+		);
+		expect(existsSync(join(root, "phone"))).toBe(false);
+		expect(calls.killed).toEqual([]);
+	});
+
+	it("names the stopped listener and starts nothing from the new layout when the move fails", async () => {
+		const root = join(dir, "dg-home");
+		const paths = resolveDgPaths({ platform: "linux", homeDir: "/home/u", env: { DG_HOME: root } });
+		seedPhone(join(root, "phone"));
+		writeFileSync(join(root, "phone", "phone.db"), "not a database");
+		writeFileSync(join(root, "phone", "listener.pid"), JSON.stringify({ pid: process.ppid, since: 1, hook: null, version: "1.0.0" }));
+		const calls = { killed: [] as number[], written: [] as string[], spawned: [] as string[][] };
+
+		await phoneRefresh(refreshDeps(paths, calls));
+
+		expect(calls.killed).toEqual([process.ppid]);
+		expect(calls.spawned).toEqual([]);
+		expect(existsSync(join(root, "phone", "phone.db"))).toBe(true);
+		expect(existsSync(paths.phoneRoot)).toBe(false);
+		expect(lines).toContain(
+			`dg: stopped the phone listener at ${join(root, "phone")}, and its state did not move. Fix the cause above, then run dg-skills install again`,
+		);
 	});
 });
 

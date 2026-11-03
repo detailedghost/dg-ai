@@ -307,7 +307,8 @@ command prints `rollback: dg-agent phone __rollback-home`. The listener
 stays stopped, so it cannot start a new, empty phone at the new root. The move
 never writes over a phone folder that already exists at the new root.
 
-To go back to an older release, run `dg-agent phone __rollback-home` first. It
+To go back to an older release, stop the listener with `dg-agent phone close`,
+then run `dg-agent phone __rollback-home`. It refuses while the listener runs. It
 copies the phone folder back to `~/.dg/phone` and checks that copy the same
 way. It keeps the new folder and refuses to write over an old folder that
 still exists.

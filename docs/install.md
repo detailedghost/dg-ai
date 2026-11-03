@@ -109,12 +109,13 @@ is two minor releases after the release that moved the data: a move by 1.34.x
 names 1.36.0. Install deletes these launchers when it installs that release or
 a later one.
 
-Claude Code allow rules in the old form, `Bash(dg-skills <sub>:*)`,
+Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
 stop matching. `dg-skills doctor` warns and names the new rule,
 `Bash(dg-skills <sub>:*)`.
 
-To go back to an older release, first run `dg-agent phone __rollback-home`
-to copy the phone state back to `~/.dg/phone`. Then run
+To go back to an older release, first stop the phone listener with
+`dg-agent phone close`, then run `dg-agent phone __rollback-home` to copy the
+phone state back to `~/.dg/phone`. Then run
 `dg-skills install --version <old>`. The older release writes its launchers to
 `~/.dg/bin` again. Data under the new roots stays where it is.
 

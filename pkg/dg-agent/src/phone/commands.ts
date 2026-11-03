@@ -1076,11 +1076,19 @@ export async function moveLegacyPhoneHome(deps: OpenCloseDeps): Promise<boolean>
 	const live = !!running && running.pid !== process.pid && deps.isOurListener(running.pid);
 	if (running && live) await stopRunningListener(deps, running.pid, oldPaths);
 	const log = (line: string) => (deps.writeErr ?? ((text: string) => process.stderr.write(text)))(`${line}\n`);
-	return movePhoneState(oldRoot, deps.paths.phoneRoot, log).moved && live;
+	const moved = movePhoneState(oldRoot, deps.paths.phoneRoot, log).moved;
+	if (live && !moved)
+		log(`dg: stopped the phone listener at ${oldRoot}, and its state did not move. Fix the cause above, then run dg-skills install again`);
+	return moved && live;
 }
 
 /** Copies phone state back to the old flat home so an older release can read it. */
 export function phoneRollbackHome(deps: PhoneDeps): void {
+	const running = readListenerPid(deps.paths);
+	if (running && running.pid !== process.pid && (deps.isOurListener ?? isOurListener)(running.pid))
+		throw new DgCliError(
+			"the phone listener is running; stop it with dg-agent phone close, then run dg-agent phone __rollback-home again",
+		);
 	const log = (line: string) => (deps.writeErr ?? ((text: string) => process.stderr.write(text)))(`${line}\n`);
 	const result = rollbackPhoneState(deps.paths.phoneRoot, join(deps.paths.legacyHome, "phone"), log);
 	if (!result.moved) throw new DgCliError(`phone state was not copied back: ${result.failures.join("; ")}`);
