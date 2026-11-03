@@ -1175,5 +1175,47 @@ describe("board token stays with its own daemon port", () => {
 			"Bearer tok-live",
 		]);
 	});
+
+	test("tries the next stored session when the first one's daemon is offline", async () => {
+		storedSessions = {
+			"chat_session:session-gone": {
+				port: 47900,
+				sessionId: "session-gone",
+				token: "tok-gone",
+				agentIdentity: "claude",
+			},
+			"chat_session:session-live": {
+				port: 47901,
+				sessionId: "session-live",
+				token: "tok-live",
+				agentIdentity: "claude",
+			},
+		};
+		const { calls, restore } = stubFetch((url) =>
+			url === "http://127.0.0.1:47901/overwatch"
+				? Promise.resolve(Response.json({ lanes: [], merges: [] }))
+				: Promise.reject(new TypeError("Failed to fetch")),
+		);
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+				defer: () => 1,
+				cancelDeferred: () => undefined,
+			});
+			await handle.ready;
+			handle.stop();
+		} finally {
+			restore();
+		}
+
+		expect(calls.filter((call) => call.url.endsWith("/healthz"))).toEqual([]);
+		expect(calls.at(-1)).toEqual({
+			url: "http://127.0.0.1:47901/overwatch",
+			authorization: "Bearer tok-live",
+		});
+	});
 });
 

@@ -5,6 +5,7 @@ import {
 } from "@dg/pages";
 import {
 	connectOverwatchApi,
+	createOverwatchApi,
 	OverwatchHttpError,
 } from "@dg/pages/board/overwatch";
 import { browser } from "wxt/browser";
@@ -19,15 +20,24 @@ async function connectWithStoredToken(knownPort?: number) {
 		knownPort === undefined
 			? bootstraps
 			: bootstraps.filter((candidate) => candidate.port === knownPort);
-	for (const [index, bootstrap] of candidates.entries()) {
+	let refusal: OverwatchHttpError | undefined;
+	for (const bootstrap of candidates) {
+		const api = createOverwatchApi(
+			`http://127.0.0.1:${bootstrap.port}`,
+			bootstrap.token,
+		);
 		try {
-			return await connectOverwatchApi(bootstrap.port, bootstrap.token);
+			await api.getBoard();
+			return api;
 		} catch (error) {
-			const refused =
-				error instanceof OverwatchHttpError && error.status === 403;
-			if (!refused || index === candidates.length - 1) throw error;
+			if (error instanceof OverwatchHttpError && error.status === 403) {
+				refusal = error;
+			} else if (!(error instanceof TypeError)) {
+				throw error;
+			}
 		}
 	}
+	if (refusal) throw refusal;
 	return connectOverwatchApi(knownPort);
 }
 
