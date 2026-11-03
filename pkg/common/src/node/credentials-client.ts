@@ -14,7 +14,7 @@ import {
 import { DgCliError } from "../errors";
 import { CliClient, resolveCliSession } from "./cli-client";
 import { readCredentialGrantToken } from "./credential-grants";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 import { isDaemonLive, readPidFile } from "./pidfile";
 
 export const DG_DAEMON_START_COMMAND = "dg-agent start";

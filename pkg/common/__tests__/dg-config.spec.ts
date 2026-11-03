@@ -16,10 +16,13 @@ import { join } from "node:path";
 import { readDgConfig, writeDgConfig } from "../src/node/dg-config";
 
 let home: string;
+let dir: string;
 let env: Record<string, string>;
 
 beforeEach(() => {
 	home = mkdtempSync(join(tmpdir(), "dg-config-"));
+	dir = join(home, "config");
+	mkdirSync(dir);
 	env = { DG_HOME: home };
 });
 afterEach(() => rmSync(home, { recursive: true, force: true }));
@@ -29,9 +32,9 @@ describe("readDgConfig", () => {
 		expect(readDgConfig(env)).toEqual({});
 	});
 
-	test("reads config.json from the state dir", () => {
+	test("reads config.json from the config dir", () => {
 		writeFileSync(
-			join(home, "config.json"),
+			join(dir, "config.json"),
 			JSON.stringify({ hooks: { spelling: { locale: "en-GB" } } }),
 		);
 		expect(readDgConfig(env)).toEqual({
@@ -40,7 +43,7 @@ describe("readDgConfig", () => {
 	});
 
 	test("throws on invalid JSON", () => {
-		writeFileSync(join(home, "config.json"), "{nope");
+		writeFileSync(join(dir, "config.json"), "{nope");
 		expect(() => readDgConfig(env)).toThrow();
 	});
 });
@@ -52,7 +55,7 @@ describe("readDgConfig top-level shape", () => {
 		["a number", "7"],
 		["null", "null"],
 	])("throws when the top level is %s", (_name, text) => {
-		writeFileSync(join(home, "config.json"), text);
+		writeFileSync(join(dir, "config.json"), text);
 		expect(() => readDgConfig(env)).toThrow("not a JSON object");
 	});
 });
@@ -62,9 +65,9 @@ describe("writeDgConfig top-level shape and keys", () => {
 		["an array", "[1, 2]"],
 		["a string", '"en-GB"'],
 	])("does not overwrite a config whose top level is %s", (_name, text) => {
-		writeFileSync(join(home, "config.json"), text);
+		writeFileSync(join(dir, "config.json"), text);
 		expect(() => writeDgConfig({ a: 1 }, env)).toThrow();
-		expect(readFileSync(join(home, "config.json"), "utf8")).toBe(text);
+		expect(readFileSync(join(dir, "config.json"), "utf8")).toBe(text);
 	});
 
 	test("does not store a __proto__ key or pollute Object.prototype", () => {
@@ -79,7 +82,7 @@ describe("writeDgConfig top-level shape and keys", () => {
 });
 
 describe("writeDgConfig", () => {
-	test("creates the file and the state dir when absent", () => {
+	test("creates the file and the config dir when absent", () => {
 		const nested = { DG_HOME: join(home, "fresh") };
 		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, nested);
 		expect(readDgConfig(nested)).toEqual({
@@ -89,7 +92,7 @@ describe("writeDgConfig", () => {
 
 	test("keeps unknown keys and merges nested objects", () => {
 		writeFileSync(
-			join(home, "config.json"),
+			join(dir, "config.json"),
 			JSON.stringify({ other: 1, hooks: { format: { x: true } } }),
 		);
 		writeDgConfig({ hooks: { spelling: { locale: "en-GB" } } }, env);
@@ -102,16 +105,16 @@ describe("writeDgConfig", () => {
 	test("rewrites the file and leaves no temp file", () => {
 		writeDgConfig({ a: 1 }, env);
 		writeDgConfig({ a: 2 }, env);
-		expect(readdirSync(home)).toEqual(["config.json"]);
-		expect(JSON.parse(readFileSync(join(home, "config.json"), "utf8"))).toEqual(
+		expect(readdirSync(dir)).toEqual(["config.json"]);
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8"))).toEqual(
 			{ a: 2 },
 		);
 	});
 
 	test("does not overwrite a config that is not valid JSON", () => {
-		writeFileSync(join(home, "config.json"), "{nope");
+		writeFileSync(join(dir, "config.json"), "{nope");
 		expect(() => writeDgConfig({ a: 1 }, env)).toThrow();
-		expect(readFileSync(join(home, "config.json"), "utf8")).toBe("{nope");
+		expect(readFileSync(join(dir, "config.json"), "utf8")).toBe("{nope");
 	});
 
 	test("does not store a nested __proto__ key", () => {
@@ -128,7 +131,7 @@ describe("writeDgConfig file handling", () => {
 		"creates a new config.json with mode 0600",
 		() => {
 			writeDgConfig({ a: 1 }, env);
-			expect(statSync(join(home, "config.json")).mode & 0o777).toBe(0o600);
+			expect(statSync(join(dir, "config.json")).mode & 0o777).toBe(0o600);
 		},
 	);
 
@@ -139,9 +142,9 @@ describe("writeDgConfig file handling", () => {
 			mkdirSync(join(home, "dotfiles"));
 			writeFileSync(target, JSON.stringify({ keep: true }));
 			chmodSync(target, 0o640);
-			symlinkSync(target, join(home, "config.json"));
+			symlinkSync(target, join(dir, "config.json"));
 			writeDgConfig({ a: 1 }, env);
-			expect(lstatSync(join(home, "config.json")).isSymbolicLink()).toBe(true);
+			expect(lstatSync(join(dir, "config.json")).isSymbolicLink()).toBe(true);
 			expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({
 				keep: true,
 				a: 1,
@@ -153,11 +156,11 @@ describe("writeDgConfig file handling", () => {
 	test.skipIf(process.platform === "win32")(
 		"refuses a dangling symlink and keeps the link",
 		() => {
-			symlinkSync(join(home, "missing.json"), join(home, "config.json"));
+			symlinkSync(join(home, "missing.json"), join(dir, "config.json"));
 			expect(() => writeDgConfig({ a: 1 }, env)).toThrow(
 				"symlink to a missing file",
 			);
-			expect(lstatSync(join(home, "config.json")).isSymbolicLink()).toBe(true);
+			expect(lstatSync(join(dir, "config.json")).isSymbolicLink()).toBe(true);
 		},
 	);
 });

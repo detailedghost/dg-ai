@@ -333,7 +333,7 @@ export const daemonCheck: DoctorCheck = {
 
 function pinnedOrigin(ctx: DoctorContext): string | null {
 	try {
-		const config: unknown = JSON.parse(readFileSync(ctx.paths.configPath, "utf8"));
+		const config: unknown = JSON.parse(readFileSync(ctx.paths.daemonConfigPath, "utf8"));
 		const pinned = (config as { pinnedOrigin?: unknown } | null)?.pinnedOrigin;
 		return typeof pinned === "string" && pinned.length > 0 ? pinned : null;
 	} catch {

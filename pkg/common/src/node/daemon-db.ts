@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, statSync } from "node:fs";
 import { ensurePrivateDir } from "./fs";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 import { applyConnectionPragmas, readSchemaVersion, runMigrations } from "./sqlite";
 import { SCHEMA_STEPS } from "./daemon-schema";
 

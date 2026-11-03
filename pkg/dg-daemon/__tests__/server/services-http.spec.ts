@@ -26,7 +26,7 @@ async function boot(declare: (dgHome: string) => unknown = () => ({})) {
 		await stopServe(proc);
 		cleanupDgHome(dgHome);
 	});
-	const { configPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	const { daemonConfigPath: configPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
 	mkdirSync(join(configPath, ".."), { recursive: true });
 	writeFileSync(configPath, JSON.stringify({ services: declare(dgHome) }));
 	return { dgHome, port };

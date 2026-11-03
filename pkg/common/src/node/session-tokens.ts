@@ -11,7 +11,7 @@ import {
 import { DgCliError } from "../errors";
 import { noteSecret } from "../redact";
 import { ensurePrivateDir } from "./fs";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 
 export function mintToken(): string {
 	const token = randomBytes(32).toString("base64url");

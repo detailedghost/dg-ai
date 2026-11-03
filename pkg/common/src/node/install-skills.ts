@@ -15,14 +15,14 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { filesToInstall } from "../skill-files";
+import { resolveDgPaths } from "./dg-paths";
 
 export function skillsInstallDest(
 	env: Record<string, string | undefined>,
 	home: string = homedir(),
 ): string {
 	if (env.DG_SKILLS_DEST) return env.DG_SKILLS_DEST;
-	const root = env.DG_HOME || join(home, ".dg");
-	return join(root, "skills");
+	return resolveDgPaths({ env, homeDir: home }).skillsDir;
 }
 
 /** Relative path with `/` separators. `pathSep` is injectable so tests can cover Windows. */

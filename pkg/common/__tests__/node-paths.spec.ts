@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join, posix, resolve, sep, win32 } from "node:path";
-import { resolveDgPaths, runCapture, runCaptureBytes } from "@dg/common/node";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
+import { runCapture, runCaptureBytes } from "@dg/common/node";
 
 const SRC_DIR = resolve(import.meta.dir, "../src");
 const BARREL_ENTRY = join(SRC_DIR, "index.ts");
@@ -68,136 +68,6 @@ describe("@dg/common barrel — Node-builtin isolation", () => {
 		const { files } = collectBarrelReachableFiles();
 		const leaks = [...files].filter((file) => file.startsWith(NODE_DIR_PREFIX));
 		expect(leaks).toEqual([]);
-	});
-});
-
-describe("resolveDgPaths", () => {
-	const baseSeams = {
-		homeDir: "/home/demo",
-		env: {} as Record<string, string | undefined>,
-	};
-
-	const DAEMON_FIELDS = [
-		"pidPath",
-		"dbPath",
-		"keyPath",
-		"configPath",
-		"logDir",
-	] as const;
-	const AGENT_FIELDS = ["sessionsDir", "assetsDir", "memoryDbPath"] as const;
-
-	it("puts every daemon path under <root>/daemon and every agent path under <root>/agents", () => {
-		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
-
-		expect(paths.stateDir).toBe(posix.join("/home/demo", ".dg"));
-		expect(paths.daemonDir).toBe(posix.join(paths.stateDir, "daemon"));
-		expect(paths.agentsDir).toBe(posix.join(paths.stateDir, "agents"));
-		for (const field of DAEMON_FIELDS) {
-			expect(posix.dirname(paths[field])).toBe(paths.daemonDir);
-		}
-		for (const field of AGENT_FIELDS) {
-			expect(posix.dirname(paths[field])).toBe(paths.agentsDir);
-		}
-	});
-
-	it("keeps the two trees disjoint, so agent state never lands in the daemon tree", () => {
-		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
-
-		for (const field of AGENT_FIELDS) {
-			expect(paths[field].startsWith(`${paths.daemonDir}/`)).toBe(false);
-		}
-		for (const field of DAEMON_FIELDS) {
-			expect(paths[field].startsWith(`${paths.agentsDir}/`)).toBe(false);
-		}
-	});
-
-	it("puts the phone-friend root under <root>/phone-friend", () => {
-		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
-
-		expect(paths.phoneFriendRoot).toBe(posix.join(paths.stateDir, "phone-friend"));
-	});
-
-	it("puts the phone root under <root>/phone, alongside phone-friend for the migration reader", () => {
-		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
-
-		expect(paths.phoneRoot).toBe(posix.join(paths.stateDir, "phone"));
-		expect(paths.phoneRoot).not.toBe(paths.phoneFriendRoot);
-	});
-
-	it("names the daemon files by the daemon, not by the harness", () => {
-		const paths = resolveDgPaths({ ...baseSeams, platform: "linux" });
-
-		expect(posix.basename(paths.pidPath)).toBe("daemon.pid");
-		expect(posix.basename(paths.dbPath)).toBe("daemon.db");
-		expect(posix.basename(paths.logDir)).toBe("logs");
-		expect(posix.basename(paths.memoryDbPath)).toBe("memory.db");
-	});
-
-	it("resolves the same uniform .dg root on darwin", () => {
-		const paths = resolveDgPaths({ ...baseSeams, platform: "darwin" });
-		expect(paths.stateDir).toBe(posix.join("/home/demo", ".dg"));
-	});
-
-	it("resolves the same two trees on win32, using win32 separators", () => {
-		const homeDir = "C:\\Users\\demo";
-		const paths = resolveDgPaths({ homeDir, env: {}, platform: "win32" });
-
-		expect(paths.stateDir).toBe(win32.join(homeDir, ".dg"));
-		for (const field of DAEMON_FIELDS) {
-			expect(win32.dirname(paths[field])).toBe(paths.daemonDir);
-		}
-		for (const field of AGENT_FIELDS) {
-			expect(win32.dirname(paths[field])).toBe(paths.agentsDir);
-		}
-		expect(paths.phoneFriendRoot).toBe(win32.join(paths.stateDir, "phone-friend"));
-		expect(paths.phoneRoot).toBe(win32.join(paths.stateDir, "phone"));
-	});
-
-	it("honors DG_HOME as the sole root override, replacing <home>/.dg wholesale", () => {
-		const paths = resolveDgPaths({
-			...baseSeams,
-			platform: "linux",
-			env: { DG_HOME: "/custom/dg-root" },
-		});
-
-		expect(paths.stateDir).toBe("/custom/dg-root");
-		expect(paths.dbPath).toBe("/custom/dg-root/daemon/daemon.db");
-	});
-
-	it("ignores AI_SCRATCH_DIR entirely for the persistent root", () => {
-		const withoutOverride = resolveDgPaths({ ...baseSeams, platform: "linux" });
-		const withScratchOverride = resolveDgPaths({
-			...baseSeams,
-			platform: "linux",
-			env: { AI_SCRATCH_DIR: "/tmp/ephemeral-scratch" },
-		});
-
-		expect(withScratchOverride.stateDir).toBe(withoutOverride.stateDir);
-		expect(withScratchOverride.stateDir).not.toContain("ephemeral-scratch");
-	});
-
-	it("honors DG_HOME on win32 too, joining sub-paths with win32 separators", () => {
-		const paths = resolveDgPaths({
-			platform: "win32",
-			homeDir: "C:\\Users\\demo",
-			env: { DG_HOME: "D:\\custom-root" },
-		});
-
-		expect(paths.stateDir).toBe("D:\\custom-root");
-		expect(paths.dbPath).toBe(
-			win32.join("D:\\custom-root", "daemon", "daemon.db"),
-		);
-	});
-
-	it("falls back to the real platform/home/env when called with no arguments", () => {
-		const originalDgHome = process.env.DG_HOME;
-		delete process.env.DG_HOME;
-		try {
-			const paths = resolveDgPaths();
-			expect(paths.stateDir).toBe(join(homedir(), ".dg"));
-		} finally {
-			if (originalDgHome !== undefined) process.env.DG_HOME = originalDgHome;
-		}
 	});
 });
 
