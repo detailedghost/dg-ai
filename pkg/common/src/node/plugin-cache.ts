@@ -54,14 +54,14 @@ function missing(path: string): boolean {
 	}
 }
 
-/** [] when the path is absent; undefined when it exists but is not a readable real directory. */
+/** [] when absent; undefined when not a readable real directory, or when a file listing holds a non-file entry. */
 function entries(path: string, want: "dir" | "file"): string[] | undefined {
 	if (missing(path)) return [];
 	if (!isRealDir(path)) return undefined;
 	try {
-		return readdirSync(path, { withFileTypes: true })
-			.filter((entry) => (want === "dir" ? entry.isDirectory() : entry.isFile()))
-			.map((entry) => entry.name);
+		const all = readdirSync(path, { withFileTypes: true });
+		if (want === "file" && !all.every((entry) => entry.isFile())) return undefined;
+		return all.filter((entry) => (want === "dir" ? entry.isDirectory() : entry.isFile())).map((entry) => entry.name);
 	} catch {
 		return undefined;
 	}

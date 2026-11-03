@@ -231,6 +231,19 @@ describe("planPluginCachePrune", () => {
 		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
 	});
 
+	test("keeps an orphaned version whose .in_use holds a symlink or subdirectory", () => {
+		const home = fixtureHome();
+		const dir = versionDir(home, "1.23.0");
+		orphan(dir, NOW - 96 * HOUR);
+		mkdirSync(join(dir, ".in_use", "nested"), { recursive: true });
+		const old = new Date(NOW - 72 * HOUR);
+		utimesSync(join(dir, ".in_use", "nested"), old, old);
+		utimesSync(join(dir, ".in_use"), old, old);
+		const result = plan(home);
+		expect(result.remove).toEqual([]);
+		expect(result.keep[0]?.reason).toBe("in-use state unreadable");
+	});
+
 	test("honors a custom read window", () => {
 		const home = fixtureHome();
 		const dir = versionDir(home, "1.23.0");
@@ -323,7 +336,7 @@ describe("listDgPluginVersions", () => {
 		rmSync(join(dir, ".in_use"));
 		mkdirSync(join(dir, ".in_use"));
 		symlinkSync(join(outside, "s1"), join(dir, ".in_use", "s1"));
-		expect(listDgPluginVersions(home)[0]?.livePids).toEqual([]);
+		expect(listDgPluginVersions(home)[0]).toMatchObject({ livePids: [], inUseUnreadable: true });
 	});
 
 	test("does not count bytes through a symlink inside the version", () => {
