@@ -171,7 +171,7 @@ describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
 		});
 
 		test(`${name}: gates its bootstrap on the dg-agent binary, not on dg-skills`, () => {
-			expect(md).toMatch(/^dg-agent --version >\/dev\/null 2>&1 \|\|\n\s+"\$HOME\/\.local\/bin\/dg-agent" --version >\/dev\/null 2>&1 \|\|\n\s+curl/m);
+			expect(md).toMatch(/^dg-agent --version >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-agent" --version >\/dev\/null 2>&1 \|\|\n\s+curl/m);
 			expect(md).not.toMatch(/dg-skills \S+ --help [^\n]*\|\|\n\s+curl/);
 		});
 

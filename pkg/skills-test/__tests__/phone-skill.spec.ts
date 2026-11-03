@@ -18,7 +18,7 @@ describe("phone skill", () => {
 	});
 
 	test("gates its bootstrap on the dg-agent phone command", () => {
-		expect(skill).toMatch(/^dg-agent phone --help >\/dev\/null 2>&1 \|\|\n\s+"\$HOME\/\.local\/bin\/dg-agent" phone --help >\/dev\/null 2>&1 \|\|\n\s+curl/m);
+		expect(skill).toMatch(/^dg-agent phone --help >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-agent" phone --help >\/dev\/null 2>&1 \|\|\n\s+curl/m);
 		expect(skill).not.toContain("$DG_AGENT");
 	});
 
