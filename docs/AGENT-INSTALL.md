@@ -327,7 +327,7 @@ ______________________________________________________________________
 | `bootstrap.sh` (install CLI + extension) | Yes |
 | `dg-skills install` (stage extension + refresh all three binaries) | Yes |
 | `dg-agent start` (register a chat session) | Yes |
-| `dg-agent start --open` (open the chat page) | Yes (default browser) |
+| `dg-agent start --open` (open the chat page) | Yes (default browser; on WSL only with `DG_OPEN_WINDOWS=1`) |
 | Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
 | Switch WSL to mirrored networking mode | No — manual host config |
 | Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |

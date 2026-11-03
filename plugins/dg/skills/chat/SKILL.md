@@ -76,7 +76,8 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   page URL `http://127.0.0.1:<port>/chat#_chat=<base64url>`. The fragment is
   base64url JSON `{ port, sessionId, token, agentIdentity }`, and the page
   keeps it out of the page request. `--open` opens that URL in the default
-  browser. When the agent is headless or remote, open the URL in a browser on
+  browser. On WSL it only prints the URL unless `DG_OPEN_WINDOWS=1` is set.
+  When the agent is headless or remote, open the URL in a browser on
   the machine that runs the daemon. `--ext` prints the extension URL
   `/start#_chat=<base64url>` instead, and `--open` then opens that.
   `--print-session-id` prints the session id before the URL. `--json` prints
