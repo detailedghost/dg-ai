@@ -349,14 +349,14 @@ async function install(
 		console.log(
 			`dg-ai-extension (${target}) already set up (v${markerVersion}).`,
 		);
-		if (!forceLocal) await installCli();
+		if (!forceLocal) await installCli(keepCache);
 		return;
 	}
 
 	finishExtensionStage(target, dest, version, markerVersion, stage);
 
 	// Also keep the bundle current (skip in --local dev, where we run source).
-	if (!forceLocal) await installCli();
+	if (!forceLocal) await installCli(keepCache);
 }
 
 export type InstallOptions = {
