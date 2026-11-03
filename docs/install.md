@@ -30,9 +30,9 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 <!-- markdownlint-enable MD013 -->
 
-Both install `~/.dg/bin/dg-skills` (`$DG_HOME/bin` when `DG_HOME` is set) (released as `skills-v*`), then run
-`dg-skills install`, which also fetches `~/.dg/bin/dg-daemon` (`daemon-v*`) and
-`~/.dg/bin/dg-agent` (`agent-v*`), stages the extension and prints the **Load
+Both install `~/.dg/bin/dg-skills` (`$DG_HOME/bin` when `DG_HOME` is set) from the latest `vX.Y.Z` release, then run
+`dg-skills install`, which also fetches `~/.dg/bin/dg-daemon` and
+`~/.dg/bin/dg-agent` from the same release, stages the extension and prints the **Load
 unpacked** steps. Re-run `dg-skills install` anytime to update all three; each
 is skipped when already current, and a platform with no published binary warns
 and continues instead of failing the install. (Building the extension from
@@ -85,11 +85,11 @@ Needs 1.21.1 or newer.
 
 <!-- markdownlint-enable MD013 -->
 
-This also pins the `daemon-v*`, `agent-v*` and `ext-v*` releases that
+This also pins the `dg-daemon`, `dg-agent` and extension that
 `dg-skills install` fetches afterward to the same version, and combines with
 `--cli-only`/`--agent-only`. An installed binary accepts the same flag:
-`dg-skills install --version 1.19.0`. Leaving it unset installs each binary's
-newest release, as before.
+`dg-skills install --version 1.19.0`. Leaving it unset installs the newest
+release, as before.
 
 If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
 exist, the whole install fails and names the missing release. It checks
@@ -170,7 +170,7 @@ and removes the CLI-only marker at `~/.dg/cli-only`.
 Copy the skill instruction files plus the `dg-skills` CLI they call. This path writes
 `plugins/dg/skills` (each `SKILL.md` plus the reference files next to it,
 including `google-sms-cleanup`) into a directory you choose, then installs
-`dg-skills` from the latest `skills-v*` release into `${DG_HOME:-~/.dg}/bin`,
+`dg-skills` from the latest `vX.Y.Z` release into `${DG_HOME:-~/.dg}/bin`,
 verified against that release's `SHA256SUMS`. It does not download `dg-daemon`,
 `dg-agent`, or the extension, and it does not run the text inside a skill.
 

@@ -8,9 +8,9 @@ install detail.
 
 `install [chrome|firefox] [--local] [--version <x.y.z>]` stages the extension for a
 one-time load **and** refreshes the compiled `dg-skills` binary. It downloads the
-CI-built extension zip from the latest `ext-v*` release (or builds locally with
+CI-built extension zip from the latest `vX.Y.Z` release (or builds locally with
 `--local` or in a source checkout) and the platform `dg-skills` binary from the
-latest `skills-v*` release. It then prints the browser-specific Load-unpacked
+same release. It then prints the browser-specific Load-unpacked
 steps. Relay them. The default target is `chrome`, which also serves
 Brave, Edge, and Vivaldi.
 

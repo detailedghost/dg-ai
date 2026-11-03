@@ -11,7 +11,7 @@ the companion `dg-ai-extension`.
 
 Commands run the **compiled `dg-skills` CLI** at `~/.dg/bin/dg-skills` — a
 self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
-(downloads the binary for your platform from the latest `skills-v*` release):
+(downloads the binary for your platform from the latest `vX.Y.Z` release):
 
 ```bash
 ~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
