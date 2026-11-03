@@ -15,6 +15,7 @@ afterEach(() => {
 });
 
 const lockPath = () => join(sandbox.root, ".install.lock");
+const body = (pid: number): string => `${pid}::token`;
 const FAST = { tries: 5, waitMs: 5 };
 
 function deadPid(): number {
@@ -51,33 +52,47 @@ describe("withInstallLock", () => {
 	});
 
 	test("takes over a lock whose owner process is dead", async () => {
-		writeFileSync(lockPath(), `${deadPid()}:old`);
+		writeFileSync(lockPath(), body(deadPid()));
 
 		const result = await withInstallLock(sandbox.root, () => "ran", FAST);
 
 		expect(result).toBe("ran");
 	});
 
-	test("takes over a lock older than the stale age even when its pid is alive", async () => {
-		writeFileSync(lockPath(), `${process.pid}:old`);
-		const old = new Date(Date.now() - 60_000);
+	test("keeps a lock whose live owner is older than any age limit", async () => {
+		writeFileSync(lockPath(), body(process.pid));
+		const old = new Date(Date.now() - 24 * 3_600_000);
 		utimesSync(lockPath(), old, old);
 
-		const result = await withInstallLock(sandbox.root, () => "ran", { ...FAST, staleMs: 1000 });
-
-		expect(result).toBe("ran");
+		await expect(withInstallLock(sandbox.root, () => "ran", FAST)).rejects.toThrow(`pid ${process.pid}`);
+		expect(readFileSync(lockPath(), "utf8")).toBe(body(process.pid));
 	});
 
-	test("fails with a message naming the lock when a live owner keeps it", async () => {
-		writeFileSync(lockPath(), `${process.pid}:live`);
+	test.skipIf(process.platform !== "linux")("takes over a lock whose pid was reused by a process with another start time", async () => {
+		writeFileSync(lockPath(), `${process.pid}:1:reused`);
+
+		expect(await withInstallLock(sandbox.root, () => "ran", FAST)).toBe("ran");
+	});
+
+	test("takes over an empty lock only after the grace period", async () => {
+		writeFileSync(lockPath(), "");
+		await expect(withInstallLock(sandbox.root, () => "ran", FAST)).rejects.toThrow(lockPath());
+
+		const old = new Date(Date.now() - 60_000);
+		utimesSync(lockPath(), old, old);
+		expect(await withInstallLock(sandbox.root, () => "ran", FAST)).toBe("ran");
+	});
+
+	test("fails with a message naming the lock and the owner pid when a live owner keeps it", async () => {
+		writeFileSync(lockPath(), body(process.pid));
 
 		await expect(withInstallLock(sandbox.root, () => "ran", FAST)).rejects.toThrow(lockPath());
-		expect(readFileSync(lockPath(), "utf8")).toBe(`${process.pid}:live`);
+		expect(readFileSync(lockPath(), "utf8")).toBe(body(process.pid));
 	});
 
 	test("never removes a live lock that replaced the stale one it observed", async () => {
-		writeFileSync(lockPath(), `${deadPid()}:old`);
-		const replacement = `${process.pid}:replacement`;
+		writeFileSync(lockPath(), body(deadPid()));
+		const replacement = body(process.pid);
 		let replaced = false;
 
 		await expect(
@@ -96,7 +111,7 @@ describe("withInstallLock", () => {
 	});
 
 	test("takes over a crashed reclaim guard", async () => {
-		writeFileSync(lockPath(), `${deadPid()}:old`);
+		writeFileSync(lockPath(), body(deadPid()));
 		writeFileSync(`${lockPath()}.reclaim`, "");
 		const old = new Date(Date.now() - 60_000);
 		utimesSync(`${lockPath()}.reclaim`, old, old);

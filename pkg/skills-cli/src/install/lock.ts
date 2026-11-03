@@ -1,30 +1,33 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { isAlive } from "@dg/common/node";
+import { pidAlive, readProcStart } from "@dg/common/node";
 
 const LOCK_TRIES = 600;
 const LOCK_WAIT_MS = 100;
-const STALE_MS = 15 * 60_000;
+const EMPTY_GRACE_MS = 2000;
 const GUARD_STALE_MS = 5000;
 
 export type InstallLockOptions = {
 	tries?: number;
 	waitMs?: number;
-	staleMs?: number;
 	onStaleObserved?: () => void;
 };
 
 const errno = (error: unknown): string | undefined => (error as NodeJS.ErrnoException).code;
 
-function ownerPid(body: string): number | undefined {
-	const pid = Number(body.split(":")[0]);
-	return Number.isSafeInteger(pid) && pid > 1 ? pid : undefined;
+type Owner = { pid: number; procStart?: string };
+
+function parseOwner(body: string): Owner | undefined {
+	const [pidText, procStart] = body.split(":");
+	const pid = Number(pidText);
+	return Number.isSafeInteger(pid) && pid > 1 ? { pid, procStart: procStart || undefined } : undefined;
 }
 
-function isStale(body: string, mtimeMs: number, staleMs: number): boolean {
-	const pid = ownerPid(body);
-	return Date.now() - mtimeMs > staleMs || (pid !== undefined && !isAlive(pid));
+function isStale(body: string, mtimeMs: number): boolean {
+	const owner = parseOwner(body);
+	if (!owner) return Date.now() - mtimeMs > EMPTY_GRACE_MS;
+	return !pidAlive(owner.pid, owner.procStart);
 }
 
 function tryCreate(lock: string, token: string): boolean {
@@ -52,18 +55,26 @@ function tryGuard(guard: string, token: string): boolean {
 	return tryCreate(guard, token);
 }
 
-function reclaimIfStale(lock: string, staleMs: number, token: string, onStaleObserved?: () => void): boolean {
+function reclaimIfStale(lock: string, token: string, onStaleObserved?: () => void): boolean {
 	const guard = `${lock}.reclaim`;
 	if (!tryGuard(guard, token)) return false;
 	try {
 		onStaleObserved?.();
-		if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs, staleMs)) rmSync(lock, { force: true });
+		if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs)) rmSync(lock, { force: true });
 	} catch (error) {
 		if (errno(error) !== "ENOENT") throw error;
 	} finally {
 		release(guard, token);
 	}
 	return true;
+}
+
+function readOwnerBody(lock: string): string {
+	try {
+		return readFileSync(lock, "utf8");
+	} catch {
+		return "";
+	}
 }
 
 function release(lock: string, token: string): void {
@@ -75,18 +86,19 @@ function release(lock: string, token: string): void {
 }
 
 /**
- * Runs `fn` while holding `<root>/.install.lock`. An owner that is dead, or a lock older than
- * the stale age, is taken over so a crashed install never blocks the next one. A stale lock is
- * removed only under a reclaim guard and only after it is re-read, so a live replacement survives.
+ * Runs `fn` while holding `<root>/.install.lock`. A lock whose owner is alive is held however old
+ * it is. Only a dead owner, or a pid reused by a process with another start time, makes it stale.
+ * A stale lock is removed only under a reclaim guard and only after it is re-read, so a live
+ * replacement survives.
  */
 export async function withInstallLock<T>(
 	root: string,
 	fn: () => T | Promise<T>,
-	{ tries = LOCK_TRIES, waitMs = LOCK_WAIT_MS, staleMs = STALE_MS, onStaleObserved }: InstallLockOptions = {},
+	{ tries = LOCK_TRIES, waitMs = LOCK_WAIT_MS, onStaleObserved }: InstallLockOptions = {},
 ): Promise<T> {
 	mkdirSync(root, { recursive: true });
 	const lock = join(root, ".install.lock");
-	const token = `${process.pid}:${randomUUID()}`;
+	const token = `${process.pid}:${readProcStart(process.pid) ?? ""}:${randomUUID()}`;
 	for (let attempt = 0; attempt < tries; attempt++) {
 		if (tryCreate(lock, token)) {
 			try {
@@ -96,8 +108,8 @@ export async function withInstallLock<T>(
 			}
 		}
 		try {
-			if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs, staleMs)) {
-				if (reclaimIfStale(lock, staleMs, token, onStaleObserved)) continue;
+			if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs)) {
+				if (reclaimIfStale(lock, token, onStaleObserved)) continue;
 			}
 		} catch (error) {
 			if (errno(error) === "ENOENT") continue;
@@ -105,5 +117,8 @@ export async function withInstallLock<T>(
 		}
 		await Bun.sleep(waitMs);
 	}
-	throw new Error(`${lock} is held by another dg install; remove it if none is running`);
+	const owner = parseOwner(readOwnerBody(lock));
+	throw new Error(
+		`${lock} is held${owner ? ` by pid ${owner.pid}` : ""}; wait for that install to finish or remove the file if it is not running`,
+	);
 }
