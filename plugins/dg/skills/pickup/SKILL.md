@@ -10,7 +10,7 @@ scanning `.agents/spec/`) and, for unnumbered `todo/` bundles, renumbering — t
 `/dg:spec -s <NNN>_<slug>`, which resolves the bundle, sets up its own worktree, and drives `/dg:sdlc`'s
 slice-wave.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills spec --help >/dev/null 2>&1 ||

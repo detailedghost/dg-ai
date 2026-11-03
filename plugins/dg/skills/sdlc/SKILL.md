@@ -9,7 +9,7 @@ Run a feature brief through the full build pipeline with no spec prerequisite. `
 
 **This skill owns the execution lifecycle.** The slice-wave workflow, execution templates, and stage references live here; `/dg:spec` and `/dg:pickup` reference them instead of carrying copies. For planning-heavy work (discovery interview, roundtable, durable spec in `.agents/spec/`), route to `/dg:spec`.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills assign resolve --help >/dev/null 2>&1 ||

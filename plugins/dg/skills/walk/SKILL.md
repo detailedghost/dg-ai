@@ -7,7 +7,7 @@ description: 'Walk the user through every open question in the current conversat
 
 Collect every open question in this conversation. Ask them one at a time. Each one carries a recommendation. Run this in the main loop only, because only the main loop has `AskUserQuestion`.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills stat --help >/dev/null 2>&1 ||

@@ -8,7 +8,7 @@ description: Turn the opt-in dg hooks on or off for Claude, Codex, and opencode,
 Manage the dg hooks. No hook is on by default. `enable` writes the user's
 tool settings, so it needs the user's yes first.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path:
+First run: install or refresh the CLI when it is missing or too old.
 
 ```bash
 dg-skills hooks list >/dev/null 2>&1 ||

@@ -7,7 +7,7 @@ description: Report this session's in-flight work as a priority-ordered checklis
 
 A four-keystroke glance at this session's work, rendered as one numbered checklist. **Read-only, with one exception:** it cleans up background jobs that have FINISHED (see section 4). Never edit, commit, push, or resume anything, and **never stop a job that is still running**. If reading cannot answer something, report the gap instead of acting.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills stat --help >/dev/null 2>&1 ||

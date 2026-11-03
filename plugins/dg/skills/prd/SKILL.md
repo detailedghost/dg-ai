@@ -20,7 +20,7 @@ A thin composition of two existing skills. `/dg:prd` is the **handoff** point on
 
 `/dg:prd` does not duplicate any pipeline logic — it runs `/dg:kick`, then relocates + grants permissions.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills spec --help >/dev/null 2>&1 ||

@@ -9,7 +9,7 @@ One verb for "do this work in the background and let me keep going." The work ru
 
 The mechanism differs by runtime. `/dg:bg` picks it for you: detect the runtime, classify the task, launch on the matching primitive, tell the user how to check back.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills bg --help >/dev/null 2>&1 ||

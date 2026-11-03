@@ -10,7 +10,7 @@ Pick the best-fit primary engineering agent, plus any QA agents, for a piece of 
 Annotating the slices of a `/dg:spec` spec is one *application* of that pick — the one that persists its answer — not the
 premise. Most work has no spec bundle anywhere near it, and "who should do this?" is a valid question on its own.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills spec --help >/dev/null 2>&1 ||

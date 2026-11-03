@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Extract a project's native vocabulary and write it to `.agents/monolith.md` so every agent (and human) speaks the same language. Lean by design: ~6 KB per file, table format, append-only. Once the vocabulary outgrows 6 KB it splits into `.agents/monolith/<domain>.md`, one file per domain, and `monolith.md` becomes the index — so an agent loads the domain it is working in, not the whole glossary.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills monolith --help >/dev/null 2>&1 ||

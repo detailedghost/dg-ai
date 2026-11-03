@@ -65,7 +65,7 @@ Nits never fail a review. Pre-existing findings and improvements never count eit
 
 ## Runtime and skill paths
 
-First run: install or refresh the compiled CLI when it is missing or too old. Every later call uses the literal path:
+First run: install or refresh the compiled CLI when it is missing or too old.
 
 ```bash
 { dg-skills thrash --help 2>/dev/null | grep -q -- --dry-run &&

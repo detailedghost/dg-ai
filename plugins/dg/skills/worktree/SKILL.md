@@ -7,7 +7,7 @@ description: "Manage git worktrees for AI agent workflows — create, list, remo
 
 Front door for git worktree management. Reused by planning and execution workflows for worktree creation; permissions, frontmatter, PR and cwd restore stay in those workflows.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills worktree --help >/dev/null 2>&1 ||

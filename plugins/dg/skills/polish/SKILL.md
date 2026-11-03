@@ -9,7 +9,7 @@ Quality-only cleanup pass over the current diff, meant to run as a verify step (
 
 ## CLI
 
-The PR flow calls the `dg-skills chain` helper. First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+The PR flow calls the `dg-skills chain` helper. First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills chain --help >/dev/null 2>&1 ||

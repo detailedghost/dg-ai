@@ -7,7 +7,7 @@ description: Discover actionable work items, present for selection, execute each
 
 Scan multiple sources for small/medium actionable work, let the user pick what to tackle, then execute each in an isolated git worktree. Lightweight — no interview, no spec, no roundtable.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 { dg-skills vcs-provider --help >/dev/null 2>&1 &&

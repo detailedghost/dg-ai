@@ -3,7 +3,7 @@ name: verify
 description: Review finished work before it lands. Capture before-and-after screenshots of each change at desktop, tablet, and mobile, light and dark, per role, including scrolled pages and open menus, then show them round by round on a local board with test results and an accessibility summary. Dante approves, approves with a note, sends back, or skips each item. Use when an agent has finished a branch, worktree, or page and a person needs to see it, or when the user says "verify this", "show me before and after", or "let me approve the change".
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills verify --help >/dev/null 2>&1 ||

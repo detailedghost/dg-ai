@@ -9,7 +9,7 @@ Janitor skill for `.agents/school/` and the agent context files. Migrates scatte
 
 **When to suggest running:** If a spec implementation or long-running job is burning through tokens or the context window is getting heavy, ask the user if they want to run spring-break first, clear context, and start fresh.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills spec --help >/dev/null 2>&1 ||

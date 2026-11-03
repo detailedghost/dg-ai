@@ -3,7 +3,7 @@ name: hook-comment-disable
 description: Disable the dg spelling hook for the current session. ALWAYS requires explicit user approval before writing the marker — even in auto/yolo mode.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills stash --help >/dev/null 2>&1 ||

@@ -3,7 +3,7 @@ name: proto
 description: Build a throwaway prototype before committing to a design. The local mode, which is the default, routes to a runnable terminal app for state and logic questions, five UI variations toggled from one route (set the count with -n or name them with -o), or a clickable walkthrough across a plan's workflows, with a refine chain and -c resume. Add --ext to prototype app-native variations inside a live page with the dg-ai-extension instead. Use when the user wants to prototype, sanity-check a data model or state machine, mock up a UI, explore design options, review or rework alternatives on a real page, or says "prototype this", "show me all the workflows", "let me play with it". Flags: --ext, -n, -o, -c, --light, --publish, --self-contained, --series.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills prototype --help >/dev/null 2>&1 ||

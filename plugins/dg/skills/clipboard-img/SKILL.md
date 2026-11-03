@@ -3,7 +3,7 @@ name: clipboard-img
 description: Extract an image from the system clipboard and save it as PNG. Supports WSL, Wayland, and X11. Use when the user wants to paste, grab, or save a screenshot from the clipboard.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills clipboard-image --help >/dev/null 2>&1 ||

@@ -13,7 +13,7 @@ the whole planning history.
 Bundle commits leave out `roundtable/`: every `git add -f` of a bundle also passes
 `':(exclude)<bundle>/roundtable/'`. A `.gitignore` cannot do this, because `-f` adds ignored files.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills assign resolve --help >/dev/null 2>&1 ||

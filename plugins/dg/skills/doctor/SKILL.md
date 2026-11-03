@@ -7,7 +7,7 @@ description: Check that the dg skills have what they need and walk through the f
 
 One report, one item at a time. The CLI checks tools, versions, credentials by name, the daemon and the allow rules. It only reads and reports: it never edits settings, never fixes anything, never decrypts a credential and never starts the daemon or a browser.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
 dg-skills doctor --help >/dev/null 2>&1 ||
