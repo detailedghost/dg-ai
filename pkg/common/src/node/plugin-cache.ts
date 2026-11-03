@@ -1,5 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { compareSemver } from "./plugin-skills";
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const MEGABYTE = 1024 * 1024;
@@ -136,6 +137,7 @@ export function listDgPluginVersions(home: string, fs: CacheFs = realFs): Plugin
 		fs
 			.dirs(join(cache, marketplace, "dg"))
 			.filter((version) => SEMVER.test(version))
+			.sort(compareSemver)
 			.map((version) => {
 				const path = join(cache, marketplace, "dg", version);
 				const inUseDir = join(path, ".in_use");

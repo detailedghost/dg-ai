@@ -95,7 +95,7 @@ describe("dg-skills install --agent-only", () => {
 				childEnv(home),
 			);
 
-			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expect(result.stdout).toContain(
 				'Agent-only install: the extension and dg-daemon were skipped. Run "dg-skills install" to add them.',
 			);

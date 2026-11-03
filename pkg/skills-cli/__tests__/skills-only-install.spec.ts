@@ -287,7 +287,7 @@ describe("dg-skills install --skills-only", () => {
 				["bun", "--preload", writePreload(directory, fetchLog), ENTRY, "install", "--skills-only", "--repo", REPO, "--dest", dest],
 				childEnv(home),
 			);
-			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expect(existsSync(join(dest, "phone-friend"))).toBe(false);
 			expect(readFileSync(join(dest, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine\n");
 		} finally {
@@ -320,7 +320,7 @@ describe("dg-skills install --skills-only", () => {
 				],
 				childEnv(home),
 			);
-			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: "" });
+			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
 				`dg-skills installed v9.9.9 at ${join(home, "bin", "dg-skills")}`,
 			]);

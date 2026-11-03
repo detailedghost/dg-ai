@@ -135,3 +135,38 @@ test("install prints no legacy line when nothing legacy was removed", async () =
 		rmSync(world.directory, { recursive: true, force: true });
 	}
 });
+
+async function runInstallWithHome(env: Record<string, string | undefined>, home: string) {
+	const entry = new URL("../src/index.ts", import.meta.url).pathname;
+	const child = Bun.spawn(["bun", entry, "install", "--agent-only", "--cli-only"], {
+		env: { ...process.env, HOME: home, USERPROFILE: home, DG_HOME: undefined, ...env },
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+	return { stderr, exitCode };
+}
+
+test("install prints the DG_HOME note to stderr once when DG_HOME is not the default home", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "dg-home-note-"));
+	try {
+		const custom = join(directory, "x");
+		const { stderr } = await runInstallWithHome({ DG_HOME: custom }, directory);
+		const notes = stderr.split("\n").filter((line) => line.startsWith("note: DG_HOME="));
+		expect(notes).toEqual([`note: DG_HOME=${custom}; installing there`]);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("install prints no DG_HOME note when DG_HOME is unset or names the default home", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "dg-home-note-"));
+	try {
+		const unset = await runInstallWithHome({}, directory);
+		const explicit = await runInstallWithHome({ DG_HOME: join(directory, ".dg") }, directory);
+		expect(unset.stderr).not.toContain("note: DG_HOME=");
+		expect(explicit.stderr).not.toContain("note: DG_HOME=");
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});

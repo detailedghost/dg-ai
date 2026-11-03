@@ -189,6 +189,12 @@ describe("listDgPluginVersions", () => {
 		expect(found.sort()).toEqual(["dg-ai/1.20.0", "market-two/1.21.0"]);
 	});
 
+	test("lists versions oldest first", () => {
+		const home = fixtureHome();
+		for (const name of ["1.21.0", "1.9.0", "1.20.1", "1.20.0"]) versionDir(home, name);
+		expect(listDgPluginVersions(home).map((v) => v.version)).toEqual(["1.9.0", "1.20.0", "1.20.1", "1.21.0"]);
+	});
+
 	test("skips directory names that are not semver", () => {
 		const home = fixtureHome();
 		versionDir(home, "1.20.0");
