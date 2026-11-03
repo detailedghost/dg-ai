@@ -61,6 +61,7 @@ export type ChatPageOptions = {
 	runtime?: Partial<PageRuntime>;
 	assetOrigin?: string;
 	positionArea?: PositionArea;
+	pruneStalePositions?: boolean;
 	mountPairing?: PairingMount;
 };
 
@@ -754,7 +755,9 @@ export async function renderChatPage(
 	async function loadCanvasPositions(): Promise<void> {
 		const liveIds = sessions.list().map((entry) => entry.sessionId);
 		const liveIdSet = new Set(liveIds);
-		const stored = await loadNodePositions(positionArea, liveIds);
+		const stored = await loadNodePositions(positionArea, liveIds, {
+			prune: options.pruneStalePositions,
+		});
 		liveIds.forEach((sessionId, index) => {
 			const saved = stored.get(sessionId);
 			canvasPositions.set(sessionId, saved ?? defaultCanvasSlot(index));

@@ -108,6 +108,7 @@ function isPoint(value: unknown): value is Point {
 export async function loadNodePositions(
 	area: PositionArea,
 	liveSessionIds: string[],
+	{ prune = true }: { prune?: boolean } = {},
 ): Promise<Map<string, Point>> {
 	const stored = await area.get(null);
 	const liveSessions = new Set(liveSessionIds);
@@ -124,7 +125,7 @@ export async function loadNodePositions(
 		if (isPoint(value)) positions.set(sessionId, value);
 	}
 
-	if (orphanedKeys.length > 0) await area.remove(orphanedKeys);
+	if (prune && orphanedKeys.length > 0) await area.remove(orphanedKeys);
 
 	return positions;
 }

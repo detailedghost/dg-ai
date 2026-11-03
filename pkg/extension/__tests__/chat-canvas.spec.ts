@@ -134,6 +134,20 @@ test("loadNodePositions prunes an orphaned session's stored position from storag
 	expect(canvasPositionKey("session-orphan") in data).toBe(false);
 });
 
+test("loadNodePositions leaves unlisted sessions' positions in storage when pruning is off", async () => {
+	const data = stubChromeStorage({
+		[canvasPositionKey("session-live")]: { x: 1, y: 2 },
+		[canvasPositionKey("session-other-tab")]: { x: 9, y: 9 },
+	});
+	const restored = await loadNodePositions(
+		chrome.storage.local,
+		["session-live"],
+		{ prune: false },
+	);
+	expect(restored.has("session-other-tab")).toBe(false);
+	expect(canvasPositionKey("session-other-tab") in data).toBe(true);
+});
+
 test("a plain wheel over a transcript descendant does not change the board's scale", () => {
 	const { container, document } = newCanvasHost();
 	const canvas = createChatCanvas(container, { viewport: baseViewport() });
