@@ -43,10 +43,15 @@ export type DgPaths = DgRoots & {
 
 type Env = Record<string, string | undefined>;
 
+function dgHome(platform: NodeJS.Platform, value: string): string {
+	const path = platform === "win32" ? win32 : posix;
+	return path.isAbsolute(value) ? value : path.resolve(value);
+}
+
 function roots(platform: NodeJS.Platform, home: string, env: Env): DgRoots {
 	const path = platform === "win32" ? win32 : posix;
 	if (env.DG_HOME) {
-		const root = env.DG_HOME;
+		const root = dgHome(platform, env.DG_HOME);
 		return {
 			binDir: path.join(root, "bin"),
 			configDir: path.join(root, "config"),
@@ -91,7 +96,7 @@ function roots(platform: NodeJS.Platform, home: string, env: Env): DgRoots {
 }
 
 function legacyHome(platform: NodeJS.Platform, home: string, env: Env): string {
-	if (env.DG_HOME) return env.DG_HOME;
+	if (env.DG_HOME) return dgHome(platform, env.DG_HOME);
 	if (platform === "win32") return win32.join(env.USERPROFILE || home, ".dg");
 	return posix.join(home, ".dg");
 }

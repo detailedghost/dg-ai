@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { installRoot } from "../src/utils/lib";
 import { writeShims } from "../src/install/shims";
 import { scratch, type Scratch } from "./runtime-bundle-fixtures";
@@ -97,22 +98,26 @@ posix("writeShims on a POSIX host", () => {
 		]);
 	});
 
-	test("a relative DG_HOME resolves to an absolute root so the shims run from another directory", () => {
-		const real = join(sandbox.root, "home");
-		const runtime = join(real, "runtime", "bun-test");
+	test("a relative DG_HOME resolves to absolute roots so the shims run from another directory", () => {
+		const home = join(sandbox.root, "home");
+		const env = { DG_HOME: relative(process.cwd(), home) };
+		const paths = resolveDgPaths({ env });
+		const root = installRoot(env);
+		const runtime = join(root, "runtime", "bun-test");
 		mkdirSync(runtime, { recursive: true });
 		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
-		symlinkSync("bun-test", join(real, "runtime", "current"));
-		const root = installRoot({ DG_HOME: relative(process.cwd(), real) });
-		writeShims(root);
+		symlinkSync("bun-test", join(root, "runtime", "current"));
+		writeShims(paths.binDir, paths.dataDir);
 
 		const elsewhere = join(sandbox.root, "elsewhere");
 		mkdirSync(elsewhere);
-		const run = Bun.spawnSync([join(real, "bin", "dg-skills"), "x"], { cwd: elsewhere, stdout: "pipe", stderr: "pipe" });
-		expect(root).toBe(real);
+		const run = Bun.spawnSync([join(home, "bin", "dg-skills"), "x"], { cwd: elsewhere, stdout: "pipe", stderr: "pipe" });
+		expect(root).toBe(join(home, "data"));
+		expect(paths.binDir).toBe(join(home, "bin"));
 		expect(run.exitCode, run.stderr.toString()).toBe(0);
-		expect(run.stdout.toString().split("\n")[0]).toBe(join(real, "lib", "current", "dg.js"));
+		expect(run.stdout.toString().split("\n")[0]).toBe(join(home, "data", "lib", "current", "dg.js"));
 	});
+
 
 	test("is idempotent", () => {
 		writeShims(join(sandbox.root, "bin"), sandbox.root);

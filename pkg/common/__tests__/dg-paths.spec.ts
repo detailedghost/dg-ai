@@ -139,6 +139,14 @@ describe("resolveDgPaths with DG_HOME", () => {
 		expect(paths.stateDir).toBe("/h/.local/state/dg");
 		expect(posix.isAbsolute(paths.binDir)).toBe(true);
 	});
+
+	it.skipIf(process.platform === "win32")("resolves a relative DG_HOME against the working folder", () => {
+		const paths = resolveDgPaths({ platform: process.platform, homeDir: home, env: { DG_HOME: "rel-dg" } });
+
+		expect(paths.dataDir).toBe(posix.join(process.cwd(), "rel-dg", "data"));
+		expect(paths.binDir).toBe(posix.join(process.cwd(), "rel-dg", "bin"));
+		expect(paths.legacyHome).toBe(posix.join(process.cwd(), "rel-dg"));
+	});
 });
 
 describe("resolveDgPaths files", () => {
