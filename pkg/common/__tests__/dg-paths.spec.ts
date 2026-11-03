@@ -208,7 +208,7 @@ describe("resolveDgPaths files", () => {
 });
 
 describe("resolveDgPaths legacyHome", () => {
-	it("is <home>/.dg on posix, whatever DG_HOME says", () => {
+	it("is <home>/.dg on posix when DG_HOME is unset", () => {
 		expect(
 			resolveDgPaths({ platform: "linux", homeDir: home, env: {} }).legacyHome,
 		).toBe("/h/.dg");

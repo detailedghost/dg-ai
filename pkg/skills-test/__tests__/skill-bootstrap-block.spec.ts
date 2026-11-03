@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeTempDir, REPO_ROOT, removeTempDirs } from "./test-support";
 
@@ -69,13 +69,7 @@ describe("packaged skills call the bare launcher", () => {
 	test("every first-run block falls back to the launcher path and says which command to call", () => {
 		const skills = readdirSync(SKILLS_DIR)
 			.map((name) => join(SKILLS_DIR, name, "SKILL.md"))
-			.filter((path) => {
-				try {
-					return /bootstrap\.sh \| sh/.test(readFileSync(path, "utf8"));
-				} catch {
-					return false;
-				}
-			});
+			.filter((path) => existsSync(path) && /bootstrap\.sh \| sh/.test(readFileSync(path, "utf8")));
 		expect(skills.length).toBeGreaterThan(40);
 		for (const path of skills) {
 			const text = readFileSync(path, "utf8");

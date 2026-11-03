@@ -69,8 +69,10 @@ describe("movePhoneState", () => {
 			"listening\n",
 		);
 		expect(keyAt(newRoot)).toEqual(key);
-		expect(statSync(newRoot).mode & 0o777).toBe(0o700);
-		expect(statSync(join(newRoot, "phone.db")).mode & 0o777).toBe(0o600);
+		if (process.platform !== "win32") {
+			expect(statSync(newRoot).mode & 0o777).toBe(0o700);
+			expect(statSync(join(newRoot, "phone.db")).mode & 0o777).toBe(0o600);
+		}
 	});
 
 	it("keeps the old root and writes nothing else when the copy is corrupted", () => {
