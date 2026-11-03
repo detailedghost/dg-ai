@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.34.2 (2026-11-03)
+
+### Fixes
+
+- fix(dg-daemon): require a credential for no-Origin service and job requests ([#131](https://github.com/detailedghost/dg-ai/pull/131))
+
 ## v1.34.1 (2026-11-03)
 
 ### Fixes
