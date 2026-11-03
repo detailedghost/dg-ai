@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.34.0 (2026-11-03)
+
+### Features
+
+- feat(dg-daemon): serve the chat and board pages on loopback ([#129](https://github.com/detailedghost/dg-ai/pull/129))
+
 ## v1.33.0 (2026-11-02)
 
 ### Features
