@@ -597,6 +597,11 @@ export function defaultListenerArgv(root: string, extraArgs: string[]): string[]
 	return launcherCommand(root, "dg-agent", ["phone", "__run", ...extraArgs]);
 }
 
+/** The listener argv for this install: the launcher links in the data dir. */
+export function listenerArgvFor(paths: Pick<DgPaths, "dataDir">, extraArgs: string[]): string[] {
+	return defaultListenerArgv(paths.dataDir, extraArgs);
+}
+
 /** Detached listener process. `detached` calls setsid, so the child is its own session. It writes `listener.pid` once `phone __run` is up. */
 export function spawnDetachedListener(argv: string[], logPath: string): number {
 	ensurePrivateDir(dirname(logPath));

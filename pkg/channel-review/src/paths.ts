@@ -24,7 +24,7 @@ export function channelReviewPaths(
 	return {
 		env,
 		dbPath: dg.dbPath,
-		configPath: path.join(dir, "config.json"),
+		configPath: path.join(dg.configDir, "channel-review", "config.json"),
 		statePath: path.join(dir, `state.${env}.json`),
 		pidPath: path.join(dir, `daemon.${env}.pid`),
 		logPath: path.join(dir, `daemon.${env}.log`),

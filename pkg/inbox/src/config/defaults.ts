@@ -1,12 +1,12 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import type { AppConfig } from "./types";
 
 export const defaultConfig: AppConfig = {
 	configHome:
 		process.env.EMAIL_ORGANIZER_HOME ??
 		process.env.EMAIL_ORGANIZER_CONFIG_HOME ??
-		join(process.env.DG_HOME ?? join(homedir(), ".dg"), "inbox", "config"),
+		join(resolveDgPaths().stateDir, "inbox", "config"),
 	provider: providerFromEnv(process.env.EMAIL_ORGANIZER_PROVIDER),
 	protonmail: {
 		sessionProfile: "dg-extension",

@@ -15,7 +15,6 @@
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import {
 	type ConnectionDropInput,
@@ -23,6 +22,7 @@ import {
 	logConnectionDrop,
 	logHarnessLine,
 } from "@dg/common";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 
 const ROOT = resolve(import.meta.dir, "..");
 const EXTENSION_DIR = resolve(ROOT, "pkg/extension/.output/chrome-mv3");
@@ -42,7 +42,7 @@ function parseFlags(argv: string[]): Flags {
 		withDaemon: false,
 		profile:
 			process.env.DG_TEST_CHROME_PROFILE ??
-			resolve(homedir(), ".dg", "test-chrome"),
+			resolve(resolveDgPaths().cacheDir, "test-chrome"),
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
@@ -59,10 +59,10 @@ function parseFlags(argv: string[]): Flags {
 		} else if (arg === "--help" || arg === "-h") {
 			console.log(`Usage: bun scripts/test-chrome.ts [--skip-build] [--with-daemon] [--screenshot <png>] [--profile <dir>]
 
-  --with-daemon   start dg-daemon in the background (DG_HOME, default ~/.dg)
+  --with-daemon   start dg-daemon in the background (state in the per-OS state dir, or DG_HOME)
   --screenshot    open the chat side panel page at 420×900 and write a PNG
   --skip-build    reuse pkg/extension/.output/chrome-mv3
-  --profile       Chromium user-data-dir (default ~/.dg/test-chrome)
+  --profile       Chromium user-data-dir (default test-chrome in the dg cache dir)
 `);
 			process.exit(0);
 		} else {
@@ -89,15 +89,13 @@ async function ensureExtension(skipBuild: boolean): Promise<void> {
 }
 
 function startDaemon(): ChildProcess {
-	const home = process.env.DG_HOME ?? resolve(homedir(), ".dg");
-	mkdirSync(home, { recursive: true });
 	const child = spawn(
 		"bun",
 		["pkg/dg-daemon/src/index.ts", "__serve"],
 		{
 			cwd: ROOT,
 			stdio: "inherit",
-			env: { ...process.env, DG_HOME: home },
+			env: process.env,
 			detached: true,
 		},
 	);
@@ -345,7 +343,7 @@ async function captureChat(pngPath: string): Promise<void> {
 function chromeBinary(): string {
 	const candidates = [
 		process.env.DG_TEST_CHROME_BIN,
-		resolve(homedir(), ".dg", "chrome-for-testing", "chrome"),
+		resolve(resolveDgPaths().cacheDir, "chrome-for-testing", "chrome"),
 		"/tmp/cft/chrome-linux64/chrome",
 		"google-chrome",
 	].filter((value): value is string => Boolean(value));
@@ -391,7 +389,7 @@ async function main(): Promise<void> {
 	await ensureExtension(flags.skipBuild);
 	if (flags.withDaemon) {
 		startDaemon();
-		console.log("dg-daemon starting (DG_HOME=" + (process.env.DG_HOME ?? resolve(homedir(), ".dg")) + ")");
+		console.log(`dg-daemon starting (state in ${resolveDgPaths().stateDir})`);
 	}
 	const chrome = launchChrome(flags.profile);
 	const stop = () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Command } from "commander";
 import { channelReviewPaths } from "../src/paths";
 import { loadConfig } from "../src/config";
@@ -18,7 +18,7 @@ let configPath: string;
 beforeEach(() => {
 	home = createTempHome();
 	configPath = channelReviewPaths("dev", { env: home.env }).configPath;
-	mkdirSync(join(home.dir, "channel-review"), { recursive: true });
+	mkdirSync(dirname(configPath), { recursive: true });
 });
 
 afterEach(() => {

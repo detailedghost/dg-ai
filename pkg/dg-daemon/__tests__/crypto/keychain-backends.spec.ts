@@ -4,6 +4,7 @@ import {
 	createKeychainBackendForPlatform,
 	dpapiBackend,
 	keychainAccountFor,
+	keychainAccountForPaths,
 	macKeychainBackend,
 	RealKeychainInTestError,
 	secretToolBackend,
@@ -27,6 +28,21 @@ describe("keychainAccountFor", () => {
 		expect(b).toMatch(/^chat-store-kek:[0-9a-f]{12}$/);
 		expect(a).not.toBe(b);
 		expect(a).toBe(keychainAccountFor("/tmp/dg-a/", HOME));
+	});
+});
+
+describe("keychainAccountForPaths", () => {
+	it("keeps the account of the old flat home after the per-OS layout moves the state dir", () => {
+		const paths = resolveDgPaths({ platform: "linux", homeDir: HOME, env: {} });
+
+		expect(paths.stateDir).not.toBe(`${HOME}/.dg`);
+		expect(keychainAccountForPaths(paths, HOME)).toBe("chat-store-kek");
+	});
+
+	it("keeps the DG_HOME account, scoped by DG_HOME itself rather than its state folder", () => {
+		const paths = resolveDgPaths({ platform: "linux", homeDir: HOME, env: { DG_HOME: "/tmp/dg-a" } });
+
+		expect(keychainAccountForPaths(paths, HOME)).toBe(keychainAccountFor("/tmp/dg-a", HOME));
 	});
 });
 

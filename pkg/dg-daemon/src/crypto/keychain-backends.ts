@@ -37,6 +37,11 @@ export function keychainAccountFor(
 	return `${ACCOUNT}:${scope}`;
 }
 
+/** The keychain account for an install: scoped by the old flat home, so the per-OS move keeps the stored key. */
+export function keychainAccountForPaths(paths: Pick<DgPaths, "legacyHome">, homeDir: string = homedir()): string {
+	return keychainAccountFor(paths.legacyHome, homeDir);
+}
+
 export function secretToolBackend(account: string): KeychainBackend {
 	assertNotUnderTest("secret-tool");
 	return {
@@ -164,13 +169,13 @@ export function dpapiBackend(dpapiPath: string): KeychainBackend {
 }
 
 export function createKeychainBackendForPlatform(
-	paths: Pick<DgPaths, "stateDir" | "daemonDir">,
+	paths: Pick<DgPaths, "legacyHome" | "daemonDir">,
 ): KeychainBackend | undefined {
 	if (process.platform === "linux") {
-		return secretToolBackend(keychainAccountFor(paths.stateDir));
+		return secretToolBackend(keychainAccountForPaths(paths));
 	}
 	if (process.platform === "darwin") {
-		return macKeychainBackend(keychainAccountFor(paths.stateDir));
+		return macKeychainBackend(keychainAccountForPaths(paths));
 	}
 	if (process.platform === "win32") {
 		return dpapiBackend(join(paths.daemonDir, "key.dpapi"));

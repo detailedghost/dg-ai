@@ -196,6 +196,7 @@ export function createDaemonHarness(options: DaemonHarnessOptions = {}) {
 	const pathsFor = (name: "dev" | "prod") => channelReviewPaths(name, system);
 	const paths: ChannelReviewPaths = pathsFor(envName);
 	mkdirSync(dirname(paths.configPath), { recursive: true });
+	mkdirSync(dirname(paths.statePath), { recursive: true });
 	if (options.writeConfig !== false) {
 		writeFileSync(
 			paths.configPath,

@@ -26,6 +26,7 @@ const FIXTURE = `
 import { appendFileSync } from "node:fs";
 const keys = [
 	"PATH",
+	"DG_HOME",
 	"CLAUDECODE",
 	"CLAUDE_CODE_OAUTH_TOKEN",
 	"CLAUDE_CODE_ENTRYPOINT",
@@ -132,6 +133,7 @@ beforeEach(() => {
 	symlinkSync(script, join(binDir, "grok"));
 	saved = new Map(TOUCHED.map((key) => [key, process.env[key]]));
 	process.env.PATH = binDir;
+	process.env.DG_HOME = root;
 	delete process.env.DG_CLI_MODE;
 	delete process.env.DG_CLI_EXIT;
 	delete process.env.DG_CLI_RECORD;
