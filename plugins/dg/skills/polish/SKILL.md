@@ -16,7 +16,7 @@ The PR flow calls the `dg-skills chain` helper. First run: install or refresh th
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor polish chain.
+If a step fails, run ~/.dg/bin/dg-skills doctor install polish chain.
 
 ## Scope
 

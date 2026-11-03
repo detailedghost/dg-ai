@@ -9,7 +9,8 @@
 ```
 
 The `unslop` plugin is optional. It installs the upstream `theclaymethod/unslop` skill, which `/dg:polish` calls
-when present.
+when present. To install every recommended plugin at its pinned commit, see
+[Recommended plugins](#recommended-plugins).
 
 **Standalone — one command installs `dg-skills`, `dg-daemon` and `dg-agent`
 _and_ the browser extension** (no Bun needed; the installer brings its own pinned
@@ -186,21 +187,91 @@ and `dg-skills doctor` warns.
 
 ## Recommended plugins
 
-`dg-skills install --with-recommended` also installs the third-party plugins
-that the marketplace pins: `unslop` and `mattpocock-skills`. It works with the
-default install, `--cli-only` and `--skills-only`. It does not work with
-`--agent-only`, and the command fails before it changes anything.
+Recommended plugins are third-party skills that dg pins but does not
+maintain. No dg skill requires them. Every entry in
+`.claude-plugin/marketplace.json` except `dg` is one:
+
+- `unslop` removes AI writing patterns from prose. `/dg:polish` calls it when
+  present.
+- `mattpocock-skills` ships many skills, including `/teach` and `/wait-what`.
+
+Each entry is pinned to a full commit sha. Installs fetch that commit, not the
+branch head.
+
+### Install
+
+```bash
+dg-skills install --with-recommended
+```
+
+The flag is off by default. It works with the default install, `--cli-only` and
+`--skills-only`. With `--agent-only`, the command exits 1 before it changes
+anything.
 
 With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
-install each plugin at its pinned commit. With `--skills-only`, it fetches each
-pinned commit with git and copies the skills into the destination. A skill that
-dg also ships is skipped, and a line names it. With no network or no `claude`
-binary, each plugin prints one warning and the install continues.
+install each plugin at its pinned sha. It then checks the installed sha. When
+the installed sha differs from the pin, it uninstalls and installs again.
+
+`mattpocock-skills` adds many skill descriptions to every Claude Code session.
+That raises the system prompt, so the flag stays opt-in.
+
+### Codex and OpenCode
+
+Use `--skills-only` with `--dest`:
+
+```bash
+dg-skills install --skills-only --dest ~/.config/opencode/skills --with-recommended
+```
+
+`dg-skills` fetches each pinned commit with git. It copies only the regular
+tracked files of the declared skill folders that hold a `SKILL.md`. `unslop`
+installs as `<dest>/unslop/`. A symlink in the source stops the plugin.
+
+A flat destination skips any skill whose name matches a dg skill. Today those
+are `grill-me` and `wayfinder`. Each skip prints a line. The dg copies win
+because `/dg:spec` and `/dg:grill-me` link to `/dg:wayfinder`, and wayfinder
+runs `dg:grill-me`. In Claude Code, namespaces keep them apart:
+`/dg:grill-me` and `/mattpocock-skills:grill-me`.
+
+### Offline behavior
+
+With no network, no `claude` binary, an unknown sha or a sha mismatch, the
+plugin prints one warning, `⚠ <plugin> skipped: <reason>`. It installs nothing
+for that plugin. If a failure happens while the skills move into place, the
+warning reads `⚠ <plugin> failed: <reason>` instead. The dg skills still
+install and the command continues.
+
+### Bump a pin
+
+Maintainers move a pin from a checkout:
+
+```bash
+bun scripts/bump-plugin-pin.ts unslop
+bun scripts/bump-plugin-pin.ts mattpocock-skills --ref main
+```
+
+The script reads the ref with `git ls-remote`, rewrites the sha in
+`.claude-plugin/marketplace.json` and prints `<name>: <old> -> <new>`. It exits
+1 for an unknown name or bad ref, 2 for a missing file and 3 when the repo is
+unreachable. Claude Code does not act on a sha change alone, so the next
+`dg-skills install --with-recommended` uninstalls and installs the plugin
+again.
+
+### Retired and private copies
 
 dg no longer ships `/dg:teach` and `/dg:wait-what`. `/teach` and `/wait-what`
-now come from `mattpocock-skills`, so run `dg-skills install --with-recommended`
-to get them. A skills install removes the old `teach` and `wait-what`
-directories from the destination first.
+now come from `--with-recommended` as `mattpocock-skills`. A skills install
+removes an old `teach` or `wait-what` folder from the destination only when its
+`SKILL.md` matches the last dg copy.
+
+If you copied `unslop` by hand, delete the private copies. They shadow the
+pinned plugin and never update:
+
+- `~/.claude/skills/unslop`
+- `~/.agents/skills/unslop`
+- `~/.config/opencode/skills/unslop`
+
+Then run `dg-skills install --with-recommended`.
 
 ## CLI-only install
 

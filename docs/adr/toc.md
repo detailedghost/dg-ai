@@ -68,6 +68,7 @@ flowchart LR
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
+- [0027 — Offer pinned third-party plugins as an opt-in install](0027-optional-third-party-plugins.md)
 
 ## Skills
 

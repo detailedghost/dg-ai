@@ -31,8 +31,8 @@ see [skills-only installation](docs/install.md#skills-only-install) for `--skill
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
 browser actions that need a person.
 
-Claude Code users can also install the optional `unslop` skill that `/dg:polish` calls when present:
-`/plugin install unslop@detailedghost`.
+To add the optional `unslop` skill that `/dg:polish` calls when present, and other pinned third-party
+plugins, see [Recommended plugins](docs/install.md#recommended-plugins).
 
 ## Skills
 
