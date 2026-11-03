@@ -1135,4 +1135,45 @@ describe("board token stays with its own daemon port", () => {
 		);
 		expect(retried?.authorization).toBeNull();
 	});
+
+	test("tries the next stored token for the port when the daemon refuses the first", async () => {
+		const bootstrap = (sessionId: string, token: string) => ({
+			port: 47900,
+			sessionId,
+			token,
+			agentIdentity: "claude",
+		});
+		storedSessions = {
+			"chat_session:session-old": bootstrap("session-old", "tok-old"),
+			"chat_session:session-live": bootstrap("session-live", "tok-live"),
+		};
+		const { calls, restore } = stubFetch((url) => {
+			const last = calls.at(-1);
+			if (url.endsWith("/overwatch") && last?.authorization === "Bearer tok-live") {
+				return Promise.resolve(Response.json({ lanes: [], merges: [] }));
+			}
+			return Promise.resolve(new Response("refused", { status: 403 }));
+		});
+		try {
+			const handle = renderOverwatchPage({
+				root: newRoot(),
+				runtime: runtimeHarness().runtime,
+				schedule: () => 1,
+				cancel: () => undefined,
+				defer: () => 1,
+				cancelDeferred: () => undefined,
+			});
+			await handle.ready;
+			handle.stop();
+		} finally {
+			restore();
+		}
+
+		expect(calls.map((call) => call.authorization)).toEqual([
+			"Bearer tok-old",
+			"Bearer tok-live",
+			"Bearer tok-live",
+		]);
+	});
 });
+

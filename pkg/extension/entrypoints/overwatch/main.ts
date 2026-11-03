@@ -3,7 +3,10 @@ import {
 	type RenderOverwatchOptions,
 	renderOverwatchPage as renderSharedOverwatchPage,
 } from "@dg/pages";
-import { connectOverwatchApi } from "@dg/pages/board/overwatch";
+import {
+	connectOverwatchApi,
+	OverwatchHttpError,
+} from "@dg/pages/board/overwatch";
 import { browser } from "wxt/browser";
 import { mountPairing } from "@/lib/features/pairing";
 import { loadStoredBootstraps } from "@/lib/stored-bootstraps";
@@ -12,11 +15,20 @@ import "@dg/pages/board/style.css";
 
 async function connectWithStoredToken(knownPort?: number) {
 	const bootstraps = await loadStoredBootstraps();
-	const bootstrap =
+	const candidates =
 		knownPort === undefined
-			? bootstraps[0]
-			: bootstraps.find((candidate) => candidate.port === knownPort);
-	return connectOverwatchApi(bootstrap?.port ?? knownPort, bootstrap?.token);
+			? bootstraps
+			: bootstraps.filter((candidate) => candidate.port === knownPort);
+	for (const [index, bootstrap] of candidates.entries()) {
+		try {
+			return await connectOverwatchApi(bootstrap.port, bootstrap.token);
+		} catch (error) {
+			const refused =
+				error instanceof OverwatchHttpError && error.status === 403;
+			if (!refused || index === candidates.length - 1) throw error;
+		}
+	}
+	return connectOverwatchApi(knownPort);
 }
 
 export function renderOverwatchPage(
