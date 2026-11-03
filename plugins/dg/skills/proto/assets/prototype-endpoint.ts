@@ -45,12 +45,16 @@ function validName(name: unknown): name is string {
 	return typeof name === "string" && NAME.test(name);
 }
 
-const CLI = resolve(
-	process.env.DG_SKILLS_BIN ??
-		(process.env.DG_HOME
-			? join(process.env.DG_HOME, "bin", "dg-skills")
-			: join(process.env.HOME ?? "", ".local", "bin", "dg-skills")),
-);
+const BIN = process.env.DG_SKILLS_BIN;
+const CLI =
+	BIN && !/[\\/]/.test(BIN)
+		? BIN
+		: resolve(
+				BIN ||
+					(process.env.DG_HOME
+						? join(process.env.DG_HOME, "bin", "dg-skills")
+						: join(process.env.HOME ?? "", ".local", "bin", "dg-skills")),
+			);
 
 /** Pins sentinel resolution to the repo root, matching the agent's own cwd. */
 function gitRoot(): string {
