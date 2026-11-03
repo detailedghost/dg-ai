@@ -372,7 +372,7 @@ describe("dg-skills install plugin cache prune", () => {
 			new Response(proc.stderr).text(),
 			proc.exited,
 		]);
-		return { stdout, stderr, code };
+		return { stdout, stderr: stderr.replace(`note: DG_HOME=${join(home, ".dg")}; installing there\n`, ""), code };
 	}
 
 	function fixtureHome(): { dir: string; home: string; stale: string[]; active: string } {

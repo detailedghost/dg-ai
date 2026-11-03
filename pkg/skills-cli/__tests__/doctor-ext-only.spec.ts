@@ -117,7 +117,9 @@ describe("dg-skills doctor on a CLI-only home", () => {
 			false,
 		);
 		const infoCount = checks.filter((c) => c.status === "info").length;
-		expect(formatReport(report)).toContain(`${infoCount} info, 0 to review`);
+		const sharedWarnings = checksOf(report, "shared").filter((c) => c.status === "warn").length;
+		expect(formatReport(report)).toContain(`${infoCount} info, ${sharedWarnings} to review`);
+		expect(checksOf(report, "shared").filter((c) => c.status === "warn").map((c) => c.id)).toEqual(["dg-home"]);
 	});
 
 	test("launch keeps the extension checks and does not downgrade them to info", async () => {
