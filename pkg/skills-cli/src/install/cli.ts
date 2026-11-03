@@ -45,7 +45,9 @@ import { removeLegacyExtensions, syncDirInPlace } from "../utils/extension-files
 import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
 import { prunePluginCache } from "../install/prune-plugin-cache";
+import { VERSION } from "../main";
 import {
+	bundleChangedTo,
 	installRecommendedForClaude,
 	recommendedPlugins,
 	runSync,
@@ -355,6 +357,14 @@ async function install(
 	if (!forceLocal) await installCli(keepCache);
 }
 
+function withCurrentPins(step: () => void): void {
+	const moved = bundleChangedTo(VERSION, readCurrentVersion());
+	if (!moved) return step();
+	console.log(
+		`⚠ recommended plugins skipped: dg-skills is now v${moved}. Run the same dg-skills install command again to install them at its pins.`,
+	);
+}
+
 export type InstallOptions = {
 	local?: boolean;
 	repo?: string;
@@ -396,9 +406,11 @@ export async function runInstall(
 		await installSkillsCli(opts.version, releases);
 		if (opts.withRecommended) {
 			const dgNames = new Set(skillDirectoryNames(result.files));
-			for (const plugin of recommendedPlugins()) {
-				installRecommendedSkillsOnly(plugin, result.dest, dgNames, console.log);
-			}
+			withCurrentPins(() => {
+				for (const plugin of recommendedPlugins()) {
+					installRecommendedSkillsOnly(plugin, result.dest, dgNames, console.log);
+				}
+			});
 		}
 		return;
 	}
@@ -421,6 +433,6 @@ export async function runInstall(
 		);
 	}
 	if (opts.withRecommended) {
-		installRecommendedForClaude(recommendedPlugins(), homedir(), runSync, console.log);
+		withCurrentPins(() => installRecommendedForClaude(recommendedPlugins(), homedir(), runSync, console.log));
 	}
 }

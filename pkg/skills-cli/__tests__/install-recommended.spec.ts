@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
-import { installRecommendedForClaude, recommendedPlugins } from "../src/install/recommended-plugins";
+import { bundleChangedTo, installRecommendedForClaude, recommendedPlugins } from "../src/install/recommended-plugins";
 import {
 	removeRecommendedFixtures,
 	tempDir,
@@ -54,6 +54,18 @@ afterEach(() => {
 	removeRecommendedFixtures();
 	if (savedConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
 	else process.env.CLAUDE_CONFIG_DIR = savedConfigDir;
+});
+
+describe("bundleChangedTo", () => {
+	test("names the installed version when the install moved to another bundle", () => {
+		expect(bundleChangedTo("1.36.0", "1.37.0")).toBe("1.37.0");
+	});
+
+	test("is undefined when the bundle did not move, is absent, or the binary runs from source", () => {
+		expect(bundleChangedTo("1.36.0", "1.36.0")).toBeUndefined();
+		expect(bundleChangedTo("1.36.0", undefined)).toBeUndefined();
+		expect(bundleChangedTo("dev", "1.37.0")).toBeUndefined();
+	});
 });
 
 describe("recommendedPlugins", () => {

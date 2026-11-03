@@ -225,20 +225,27 @@ describe("installRecommendedSkillsOnly", () => {
 		expect(filesUnder(dest)).toEqual(["zzz/SKILL.md"]);
 	});
 
-	test("the repository root skill copies only SKILL.md and references", () => {
+	test("the repository root skill copies its tracked files except dot paths", () => {
 		const { dest } = install(
 			{
 				files: {
 					"SKILL.md": skillMarkdown("fixture"),
 					"references/guide.md": "guide\n",
+					"scripts/extract.py": "print(1)\n",
 					"README.md": "readme\n",
-					"tests/a.test.ts": "x\n",
+					".github/workflows/ci.yml": "on: push\n",
+					".claude-plugin/plugin.json": "{}\n",
 				},
 			},
 			undefined,
 			["./"],
 		);
-		expect(filesUnder(dest)).toEqual(["fixture/SKILL.md", "fixture/references/guide.md"]);
+		expect(filesUnder(dest)).toEqual([
+			"fixture/README.md",
+			"fixture/SKILL.md",
+			"fixture/references/guide.md",
+			"fixture/scripts/extract.py",
+		]);
 	});
 
 	test("an unreachable repository warns once and copies nothing", () => {

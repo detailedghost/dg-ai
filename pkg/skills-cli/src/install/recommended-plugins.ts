@@ -42,7 +42,13 @@ export function recommendedPlugins(): RecommendedPlugin[] {
 	});
 }
 
-export const runSync: Runner = ([program, ...args]) => {
+/** The installed bundle version when it differs from the running one, whose embedded pins are then stale. */
+export function bundleChangedTo(running: string, installed: string | undefined): string | undefined {
+	if (running === "dev" || !installed || installed === running) return undefined;
+	return installed;
+}
+
+export const runSync: Runner =([program, ...args]) => {
 	const result = spawnSync(program, args, { encoding: "utf8" });
 	if (result.error) throw result.error;
 	return {

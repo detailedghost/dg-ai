@@ -249,6 +249,11 @@ the line reads `⚠ <plugin> skipped: installed <sha>, expected <pin>; uninstall
 failed: <reason>`. If the sha cannot be read, the line reads `⚠ <plugin>
 installed, but its commit could not be verified`, and the plugin stays.
 
+When the same command also moves `dg-skills` to another version, the running
+binary still holds the old pins. It then installs no recommended plugin and
+prints `⚠ recommended plugins skipped: dg-skills is now v<version>. Run the
+same dg-skills install command again to install them at its pins.`
+
 ### Bump a pin
 
 Maintainers move a pin from a checkout:

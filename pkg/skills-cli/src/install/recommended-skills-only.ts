@@ -67,8 +67,7 @@ function planSkill(
 	const selected = tracked.filter((entry) => {
 		if (!entry.path.startsWith(prefix)) return false;
 		if (inside !== "") return true;
-		const rel = entry.path.slice(prefix.length);
-		return rel === "SKILL.md" || rel.startsWith("references/");
+		return !entry.path.startsWith(".");
 	});
 	for (const entry of selected) {
 		if (!REGULAR_MODES.has(entry.mode)) throw new Error(`refuses ${modeName(entry.mode)} ${entry.path}`);
