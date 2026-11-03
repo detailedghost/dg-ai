@@ -22,8 +22,12 @@ function selfCheck(runtimeBin: string, entry: string, version: string): void {
 }
 
 function pruneLib(lib: string, keep: ReadonlySet<string>): void {
-	for (const name of readdirSync(lib)) {
-		if (VERSION_DIR.test(name) && !keep.has(name)) rmSync(join(lib, name), { recursive: true, force: true });
+	try {
+		for (const name of readdirSync(lib)) {
+			if (VERSION_DIR.test(name) && !keep.has(name)) rmSync(join(lib, name), { recursive: true, force: true });
+		}
+	} catch (err) {
+		console.warn(`⚠ could not remove old dg bundles: ${err instanceof Error ? err.message : err}`);
 	}
 }
 
@@ -35,30 +39,30 @@ function pruneLib(lib: string, keep: ReadonlySet<string>): void {
 export async function fetchBundle(root: string, release: PickedBundle, runtimeBin: string): Promise<string> {
 	const lib = join(root, "lib");
 	const final = join(lib, release.version);
-	const previous = readCurrent(root, "lib");
 	if (!existsSync(join(final, "dg.js"))) {
 		const res = await fetch(release.url, { headers: UA });
 		if (!res.ok) throw new Error(`${release.assetName} download failed: HTTP ${res.status}`);
 		const tarball = new Uint8Array(await res.arrayBuffer());
 		await verifyReleaseAsset(release.sumsUrl, release.assetName, tarball, `v${release.version}`);
 		mkdirSync(lib, { recursive: true });
-		const staging = `${final}.staging`;
+		const staging = mkdtempSync(join(lib, `.${release.version}.staging-`));
 		const scratch = mkdtempSync(join(tmpdir(), "dg-bundle-"));
-		rmSync(staging, { recursive: true, force: true });
-		mkdirSync(staging, { recursive: true });
 		try {
 			const archive = join(scratch, release.assetName);
 			writeFileSync(archive, tarball);
 			run("tar", ["-xzf", archive, "-C", staging]);
 			selfCheck(runtimeBin, join(staging, "dg.js"), release.version);
-			rmSync(final, { recursive: true, force: true });
-			renameSync(staging, final);
+			if (!existsSync(join(final, "dg.js"))) {
+				rmSync(final, { recursive: true, force: true });
+				renameSync(staging, final);
+			}
 		} finally {
 			rmSync(staging, { recursive: true, force: true });
 			rmSync(scratch, { recursive: true, force: true });
 		}
 	}
+	const replaced = readCurrent(root, "lib");
 	linkCurrent(root, "lib", release.version);
-	pruneLib(lib, new Set([release.version, ...(previous ? [previous] : [])]));
+	pruneLib(lib, new Set([release.version, ...(replaced ? [replaced] : [])]));
 	return final;
 }

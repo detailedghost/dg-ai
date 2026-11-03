@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fetchBundle } from "../src/install/bundle";
 import {
@@ -142,5 +142,48 @@ describe("fetchBundle", () => {
 		expect(existsSync(join(lib, PREVIOUS, "dg.js"))).toBe(true);
 		expect(existsSync(join(lib, OLDER))).toBe(false);
 		expect(existsSync(join(lib, `${VERSION}.staging`))).toBe(false);
+	});
+
+	test("uses the version current names at commit time, not the one read before the download", async () => {
+		const ACTIVATED = "1.26.5";
+		seedVersion(PREVIOUS);
+		seedCurrent(PREVIOUS);
+		serve();
+		const stubbed = globalThis.fetch;
+		globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+			const res = await stubbed(input as string, init);
+			seedVersion(ACTIVATED);
+			rmSync(join(sandbox.root, "lib", "current"));
+			seedCurrent(ACTIVATED);
+			return res;
+		}) as typeof fetch;
+
+		await fetchBundle(sandbox.root, release(), process.execPath);
+
+		const lib = join(sandbox.root, "lib");
+		expect(basename(readlinkSync(join(lib, "current")))).toBe(VERSION);
+		expect(existsSync(join(lib, ACTIVATED, "dg.js"))).toBe(true);
+		expect(existsSync(join(lib, PREVIOUS))).toBe(false);
+	});
+
+	test.skipIf(process.getuid?.() === 0)("keeps the new bundle active and warns when pruning fails", async () => {
+		seedVersion(PREVIOUS);
+		seedCurrent(PREVIOUS);
+		const stuck = join(sandbox.root, "lib", OLDER, "locked");
+		mkdirSync(stuck, { recursive: true });
+		writeFileSync(join(stuck, "dg.js"), "");
+		chmodSync(stuck, 0o500);
+		serve();
+		const warn = spyOn(console, "warn").mockImplementation(() => {});
+
+		try {
+			await fetchBundle(sandbox.root, release(), process.execPath);
+
+			expect(basename(readlinkSync(join(sandbox.root, "lib", "current")))).toBe(VERSION);
+			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			warn.mockRestore();
+			chmodSync(stuck, 0o700);
+		}
 	});
 });
