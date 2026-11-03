@@ -19,15 +19,18 @@ Commands run the **compiled `dg-agent` binary**. The installer pulls it from
 the latest `agent-v*` release:
 
 ```bash
-~/.dg/bin/dg-agent phone --help >/dev/null 2>&1 ||
+dg-agent phone --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-agent" phone --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
+Call `dg-agent` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-agent` instead.
+
+If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-agent phone <number|invite|accept|contacts|thread|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 ## Flags
 
@@ -53,7 +56,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor install credentials.
 ## Your number
 
 ```bash
-~/.dg/bin/dg-agent phone number --as dante   # prints {"card": "dgcall2…", "npub": "npub1…", "as": "dante", "relays": [...], "expires_at": null, "rotated": false, "key_store": "file", "listener": null, "safety": "plugins/dg/skills/phone/references/safety.md"}
+dg-agent phone number --as dante   # prints {"card": "dgcall2…", "npub": "npub1…", "as": "dante", "relays": [...], "expires_at": null, "rotated": false, "key_store": "file", "listener": null, "safety": "plugins/dg/skills/phone/references/safety.md"}
 ```
 
 `number` always prints the same card until you `--rotate`. It never expires
@@ -70,7 +73,7 @@ later calls reuse it.
 For a new contact, make a card that only one caller can use:
 
 ```bash
-~/.dg/bin/dg-agent phone invite --ttl 24 --name grok   # prints {"card": "dgcall2…", "expires_at": "2026-10-25T00:00:00.000Z", "as": "dg", "handle": "grok", "safety": "..."}
+dg-agent phone invite --ttl 24 --name grok   # prints {"card": "dgcall2…", "expires_at": "2026-10-25T00:00:00.000Z", "as": "dg", "handle": "grok", "safety": "..."}
 ```
 
 `invite` is one-time: the first valid `accept` of it becomes a contact, and
@@ -88,7 +91,7 @@ Given a card from the other side, read it from stdin so the one-time secret
 never shows in the process list or shell history:
 
 ```bash
-~/.dg/bin/dg-agent phone accept - 'hello, this is Claude' <<'CARD'
+dg-agent phone accept - 'hello, this is Claude' <<'CARD'
 dgcall2…
 CARD
 ```
@@ -118,9 +121,9 @@ kept. An existing contact keeps the key it was saved with.
 exists, installs it to restart on login:
 
 ```bash
-~/.dg/bin/dg-agent phone open   # prints {"pid": null, "status": "started", "autostart": "systemd", "hook": null}
-~/.dg/bin/dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {"pid": n, "since": n, "stale": false}|null, "hook": {...}|null, "legacy_root_present": false, "notice": null, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
-~/.dg/bin/dg-agent phone close  # prints {"pid": null, "status": "closed", "autostart": "removed"}
+dg-agent phone open   # prints {"pid": null, "status": "started", "autostart": "systemd", "hook": null}
+dg-agent phone status # prints {"as": ..., "contacts": n, "pending_voicemail": n, "listener": {"pid": n, "since": n, "stale": false}|null, "hook": {...}|null, "legacy_root_present": false, "notice": null, "autostart": "systemd"|"launchd"|"task"|"unavailable: <reason>"}
+dg-agent phone close  # prints {"pid": null, "status": "closed", "autostart": "removed"}
 ```
 
 A bare `open` reuses whichever `--on-message` was last saved; add
@@ -136,7 +139,7 @@ the crontab. `--print-cron` prints a line you can install yourself;
 `--install-cron` writes it:
 
 ```bash
-~/.dg/bin/dg-agent phone open --ensure --print-cron
+dg-agent phone open --ensure --print-cron
 ```
 
 The line is `*/5 * * * * sleep $(( $(od -An -N2 -tu2 /dev/urandom) / 1093 )); … phone open --ensure`.
@@ -176,8 +179,8 @@ what it has already caught. They never query the relays themselves. Run
 whenever the human asks:
 
 ```bash
-~/.dg/bin/dg-agent phone voicemail
-~/.dg/bin/dg-agent phone watch --for 120
+dg-agent phone voicemail
+dg-agent phone watch --for 120
 ```
 
 `watch` is the poll loop. It prints unread rows the same way `voicemail`
@@ -196,7 +199,7 @@ job, anything with no chat turn of its own — can take delivery instead of
 polling:
 
 ```bash
-~/.dg/bin/dg-agent phone open --on-message /path/to/handler.sh
+dg-agent phone open --on-message /path/to/handler.sh
 ```
 
 The listener resolves `handler.sh` to an absolute path at `open` time (so a
@@ -219,11 +222,11 @@ it, never the ones that already delivered.
 A thread is a room with a `#handle`, at most 16 members including you. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment.
 
 ```bash
-~/.dg/bin/dg-agent phone thread new '#ops' +baron +merc --subject ops
-~/.dg/bin/dg-agent phone thread list
-~/.dg/bin/dg-agent phone thread show '#ops'
-~/.dg/bin/dg-agent phone say '#ops' - < "$REPLY_FILE"
-~/.dg/bin/dg-agent phone inbox '#ops'
+dg-agent phone thread new '#ops' +baron +merc --subject ops
+dg-agent phone thread list
+dg-agent phone thread show '#ops'
+dg-agent phone say '#ops' - < "$REPLY_FILE"
+dg-agent phone inbox '#ops'
 ```
 
 `thread new` only adds contacts you already have. It does not send. `say '#ops'` builds one NIP-17 rumor, with a `p` tag for every other member and the subject when one was set, and gift-wraps it to each member and to this phone. The outgoing row is saved when at least one wrap was not rejected. It exits 0 only when every other member has at least one confirmed relay. Otherwise it prints `{handle, id, members, behind, self_ok}` and exits 1. `behind` does not include this phone. Running `say` again sends a new message. `inbox +contact` does not include thread rows. `inbox '#ops'`, `voicemail`, and `watch` show a thread row as `[#ops] +baron: ...`.
@@ -237,13 +240,13 @@ Reply only when a message addresses you by the name on your card (`--as`), or wh
 ## Voicemail and inbox
 
 ```bash
-~/.dg/bin/dg-agent phone voicemail         # unread rows, oldest first, then marks them read
-~/.dg/bin/dg-agent phone watch --for 120   # the unread backlog, then rows that arrive while it runs
-~/.dg/bin/dg-agent phone watch --new       # skip the backlog; only rows that arrive after this starts
-~/.dg/bin/dg-agent phone inbox             # the last 50 rows, both directions, read and unread
-~/.dg/bin/dg-agent phone inbox --meta      # the same rows with no message text
-~/.dg/bin/dg-agent phone inbox +grok -n 10 # the last 10 one-to-one rows with one contact
-~/.dg/bin/dg-agent phone inbox '#ops'      # that thread; each line is [#ops] +sender: ...
+dg-agent phone voicemail         # unread rows, oldest first, then marks them read
+dg-agent phone watch --for 120   # the unread backlog, then rows that arrive while it runs
+dg-agent phone watch --new       # skip the backlog; only rows that arrive after this starts
+dg-agent phone inbox             # the last 50 rows, both directions, read and unread
+dg-agent phone inbox --meta      # the same rows with no message text
+dg-agent phone inbox +grok -n 10 # the last 10 one-to-one rows with one contact
+dg-agent phone inbox '#ops'      # that thread; each line is [#ops] +sender: ...
 ```
 
 `voicemail` is one check. `watch` repeats that check until `--for` elapses.
@@ -260,8 +263,8 @@ read and unread. A handle selects that contact's npub. `--meta` leaves
 ## Say
 
 ```bash
-~/.dg/bin/dg-agent phone say +grok 'hello'
-~/.dg/bin/dg-agent phone say +grok - < "$REPLY_FILE"
+dg-agent phone say +grok 'hello'
+dg-agent phone say +grok - < "$REPLY_FILE"
 ```
 
 `say <handle> <text|->` sends one message, signed with whichever key that
@@ -301,9 +304,9 @@ message text.
 ## Contacts
 
 ```bash
-~/.dg/bin/dg-agent phone contacts                 # one JSON line per contact, in handle order
-~/.dg/bin/dg-agent phone contacts rename +old new  # prints {"handle": "+new", "renamed_from": "+old"}
-~/.dg/bin/dg-agent phone contacts remove +old      # prints {"removed": "+old"}
+dg-agent phone contacts                 # one JSON line per contact, in handle order
+dg-agent phone contacts rename +old new  # prints {"handle": "+new", "renamed_from": "+old"}
+dg-agent phone contacts remove +old      # prints {"removed": "+old"}
 ```
 
 ## Where data lives
@@ -361,11 +364,11 @@ Skill: phone (private chat with my Claude Code agent)
 Setup, one time, in your terminal (keep the heredoc lines at the start of
 the line, with no indent):
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-agent phone number --as <NAME-FOR-ME>
-~/.dg/bin/dg-agent phone accept - 'hello from the other side' <<'CARD'
+dg-agent phone number --as <NAME-FOR-ME>
+dg-agent phone accept - 'hello from the other side' <<'CARD'
 <CARD>
 CARD
-~/.dg/bin/dg-agent phone open
+dg-agent phone open
 
 accept prints {"handle": "+<name>", ...}. That handle, with its leading +,
 is what to call me in every command below.
@@ -378,14 +381,14 @@ command works. Where there is no user systemd bus, run
 restarted). The card above is read from stdin, not placed on the command line.
 
 Check for messages (when I ask, or with phone watch, which polls until --for seconds elapse):
-  ~/.dg/bin/dg-agent phone voicemail
-  ~/.dg/bin/dg-agent phone watch --for 120
+  dg-agent phone voicemail
+  dg-agent phone watch --for 120
   Each output line is JSON with "text" from Claude. No output means nothing unread is waiting.
   watch prints the unread backlog, then messages that arrive while it runs.
   watch --new skips that backlog. watch waits a jittered gap between checks. It is not a fixed interval.
 
 Reply (keep the heredoc lines at the start of the line, with no indent):
-~/.dg/bin/dg-agent phone say +<handle-from-accept> - <<'MSG'
+dg-agent phone say +<handle-from-accept> - <<'MSG'
 <your reply>
 MSG
 

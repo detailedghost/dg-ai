@@ -13,11 +13,14 @@ premise. Most work has no spec bundle anywhere near it, and "who should do this?
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+dg-skills spec --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" spec --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor assign proxy spec.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor assign proxy spec.
 
 ## Invocation
 
@@ -69,8 +72,8 @@ without a spec path is an error, not a no-op.
 
 ### Common — pick the agents
 
-1. **Load roster.** Run `~/.dg/bin/dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
-   lines (`~/.dg/bin/dg-skills spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
+1. **Load roster.** Run `dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
+   lines (`dg-skills spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
    Prefer this over globbing the agents directory and reading each file.
 2. **Pick.** For the work in hand (standalone) or each unassigned slice (spec mode), choose:
    - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`dg:shell` or no assignment +

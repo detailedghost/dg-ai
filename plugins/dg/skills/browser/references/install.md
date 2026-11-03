@@ -9,9 +9,9 @@ then prints the exact path to select with **Load unpacked**.
 Run:
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills install
+dg-skills install
 ```
 
 The installer copies the extension to a Windows-native directory:
@@ -58,9 +58,9 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills install
+dg-skills install
 ```
 
 The installer copies the extension to:
@@ -77,9 +77,9 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills install
+dg-skills install
 ```
 
 The installer copies the extension to:

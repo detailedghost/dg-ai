@@ -1,7 +1,7 @@
 ---
 name: erd
 description: Generate architecture maps and arbitrary Mermaid diagrams as Markdown or standalone HTML.
-allowed-tools: Bash(~/.dg/bin/dg-skills:*), Read, AskUserQuestion
+allowed-tools: Bash(dg-skills:*), Read, AskUserQuestion
 ---
 
 # /dg:erd
@@ -11,15 +11,18 @@ Map a codebase and its reachable database schema, or render a described graph fr
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal installed path:
 
 ```bash
-~/.dg/bin/dg-skills erd --help >/dev/null 2>&1 ||
+dg-skills erd --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" erd --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor erd.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor erd.
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-skills erd resolve <concept-or-path>` · `~/.dg/bin/dg-skills erd generate [scope] [--depth N] [--out <path>] [--type er|flow] [--html]` · `~/.dg/bin/dg-skills erd render --type <er|flow|sequence|state|class> --data <file|-> [--out <path>] [--html]`
+**Usage:** `dg-skills erd resolve <concept-or-path>` · `dg-skills erd generate [scope] [--depth N] [--out <path>] [--type er|flow] [--html]` · `dg-skills erd render --type <er|flow|sequence|state|class> --data <file|-> [--out <path>] [--html]`
 
 ## Flags
 
@@ -37,8 +40,8 @@ If a step fails, run ~/.dg/bin/dg-skills doctor erd.
 Before a large scan, print `Scanning <scope>...` so the user sees progress.
 
 ```bash
-~/.dg/bin/dg-skills erd resolve "<concept-or-path>"
-~/.dg/bin/dg-skills erd generate <scope> [--depth N] [--out <path>] [--type er|flow] [--html]
+dg-skills erd resolve "<concept-or-path>"
+dg-skills erd generate <scope> [--depth N] [--out <path>] [--type er|flow] [--html]
 ```
 
 `resolve` returns `{ candidates: ErdCandidate[] }`. For fuzzy input, present those candidates with `AskUserQuestion`, then generate the chosen candidate ID. A hard collection failure exits 1 and writes the error to stderr.
@@ -50,8 +53,8 @@ Without `--type`, `generate` writes the full architecture document: directory tr
 Use `render` when the requested sequence, state, class, flow, or schema graph comes from reading and describing the system rather than directory analysis:
 
 ```bash
-~/.dg/bin/dg-skills erd render --type sequence --data flow.json
-printf '%s' "$JSON" | ~/.dg/bin/dg-skills erd render --type state --data - --html
+dg-skills erd render --type sequence --data flow.json
+printf '%s' "$JSON" | dg-skills erd render --type state --data - --html
 ```
 
 Create the smallest truthful JSON document. Never invent a participant, transition, relation, import, table, or column. See [render data shapes](references/render-data-shapes.md) for exact schemas.

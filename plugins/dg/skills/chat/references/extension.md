@@ -22,4 +22,4 @@ dg-agent start --ext --open
   says it is waiting for an agent. A single waiting session is claimed even if
   the daemon recorded a different directory.
 
-If a step fails, run ~/.dg/bin/dg-skills doctor require-extension install.
+If a step fails, run dg-skills doctor require-extension install.

@@ -8,13 +8,16 @@ description: Close out the current git worktree. Remove the worktree and local b
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills bg --help >/dev/null 2>&1 ||
+dg-skills bg --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" bg --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor bg pw stash vcs-provider worktree.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
 
-Thin orchestration over `~/.dg/bin/dg-skills worktree remove` (linked worktrees, plus a defensive `ExitWorktree({action:"keep"})` first in case `/dg:sdlc` or `/dg:spec` entered one with `EnterWorktree(path=...)`) and `ExitWorktree` (harness sessions). Guards never force-remove unmerged or dirty work without asking.
+If a step fails, run dg-skills doctor bg pw stash vcs-provider worktree.
+
+Thin orchestration over `dg-skills worktree remove` (linked worktrees, plus a defensive `ExitWorktree({action:"keep"})` first in case `/dg:sdlc` or `/dg:spec` entered one with `EnterWorktree(path=...)`) and `ExitWorktree` (harness sessions). Guards never force-remove unmerged or dirty work without asking.
 
 > **Statusline note.** Only `ExitWorktree` or a focus-file rewrite moves the statusline. A `cd` does not. A bare `cd "$MAIN"` keeps Bash calls off a deleted path but does not repoint the user's terminal.
 

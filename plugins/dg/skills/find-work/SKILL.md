@@ -10,13 +10,18 @@ Scan multiple sources for small/medium actionable work, let the user pick what t
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills vcs-provider --help >/dev/null 2>&1 &&
-  ~/.dg/bin/dg-skills worktree --help >/dev/null 2>&1 &&
-  ~/.dg/bin/dg-skills chain --help >/dev/null 2>&1 ||
+{ dg-skills vcs-provider --help >/dev/null 2>&1 &&
+  dg-skills worktree --help >/dev/null 2>&1 &&
+  dg-skills chain --help >/dev/null 2>&1; } ||
+  { "$HOME/.local/bin/dg-skills" vcs-provider --help >/dev/null 2>&1 &&
+  "$HOME/.local/bin/dg-skills" worktree --help >/dev/null 2>&1 &&
+  "$HOME/.local/bin/dg-skills" chain --help >/dev/null 2>&1; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor chain stash vcs-provider worktree.
+Call `dg-skills` in every later step. If only the `$HOME/.local/bin` lines answered, call each one by its `$HOME/.local/bin` path instead.
+
+If a step fails, run dg-skills doctor chain stash vcs-provider worktree.
 
 ## Usage
 

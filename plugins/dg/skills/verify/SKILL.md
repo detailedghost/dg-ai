@@ -6,11 +6,14 @@ description: Review finished work before it lands. Capture before-and-after scre
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills verify --help >/dev/null 2>&1 ||
+dg-skills verify --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" verify --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor verify.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor verify.
 
 # Verify
 
@@ -103,9 +106,9 @@ Capture details, viewports, and the accessibility check: [references/capture.md]
 ## Run the review
 
 ```bash
-~/.dg/bin/dg-skills verify capture settings-nav --manifest=review.json
-~/.dg/bin/dg-skills verify serve settings-nav
-~/.dg/bin/dg-skills verify wait settings-nav
+dg-skills verify capture settings-nav --manifest=review.json
+dg-skills verify serve settings-nav
+dg-skills verify wait settings-nav
 ```
 
 Each item becomes a section with the id `<item>-r<round>`.
@@ -141,8 +144,8 @@ A round can hold more than one version, like `/dg:proto` variants.
 Run `add` once per version with the same round id:
 
 ```bash
-~/.dg/bin/dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=A --variant-label="Tabs" --shots=./shots/a
-~/.dg/bin/dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=B --variant-label="Rail" --shots=./shots/b --pending=nav-r2
+dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=A --variant-label="Tabs" --shots=./shots/a
+dg-skills verify add settings-nav nav-r2 --title="Nav" --follows=nav-r1 --round=2 --variant=B --variant-label="Rail" --shots=./shots/b --pending=nav-r2
 ```
 
 A version key is 1 to 16 letters or digits.
@@ -159,13 +162,13 @@ This command does not message anyone itself.
 While the owner works, show it on the board:
 
 ```bash
-~/.dg/bin/dg-skills verify pending add settings-nav settings-r2 --title="Settings" --detail="Fixing the menu" --follows=settings-r1
+dg-skills verify pending add settings-nav settings-r2 --title="Settings" --detail="Fixing the menu" --follows=settings-r1
 ```
 
 After the owner updates the after stack:
 
 ```bash
-~/.dg/bin/dg-skills verify rerun settings-nav --summary="Menu no longer clips"
+dg-skills verify rerun settings-nav --summary="Menu no longer clips"
 ```
 
 `rerun` captures only those items and adds each one as the next round, with `follows` set to the round before.

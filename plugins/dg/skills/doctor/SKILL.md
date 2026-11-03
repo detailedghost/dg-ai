@@ -10,9 +10,12 @@ One report, one item at a time. The CLI checks tools, versions, credentials by n
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills doctor --help >/dev/null 2>&1 ||
+dg-skills doctor --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" doctor --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
+
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
 
 ## Usage
 
@@ -33,13 +36,13 @@ An item is a command name of the CLI, such as `jot`, `bg`, `sniff`, `worktree`, 
 No items given:
 
 ```bash
-~/.dg/bin/dg-skills doctor --json
+dg-skills doctor --json
 ```
 
 Items given, for example `jot` and `bg`:
 
 ```bash
-~/.dg/bin/dg-skills doctor jot bg --json
+dg-skills doctor jot bg --json
 ```
 
 Exit 0 means no check failed (warnings allowed). Exit 1 means at least one check failed. Exit 2 means an unknown item.

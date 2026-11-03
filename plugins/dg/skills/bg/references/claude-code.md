@@ -1,6 +1,6 @@
 # If you are Claude Code
 
-Use the native primitive. It gives completion notifications and context isolation that a detached shell job cannot. Do **not** call `~/.dg/bin/dg-skills bg` here.
+Use the native primitive. It gives completion notifications and context isolation that a detached shell job cannot. Do **not** call `dg-skills bg` here.
 
 - **A, shell command:** Bash tool with `run_in_background: true`. Tell the user the shell id. Check progress later with BashOutput.
 - **B, agentic task:** Agent tool with `run_in_background: true` and the best-fit `subagent_type`. It runs detached and notifies you on completion. Relay the result to the user when it lands.

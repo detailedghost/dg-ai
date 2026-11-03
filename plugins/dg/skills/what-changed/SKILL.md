@@ -6,11 +6,14 @@ description: Draft release notes or a changelog from a repository's tags, merged
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+dg-skills stash --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" stash --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor stash.
 
 # What Changed
 
@@ -54,7 +57,7 @@ If the range holds no commits, say that nothing has merged since the last releas
 6. With `--demo`, after the notes:
    1. List the user-visible changes from the range as demo candidates, one per PR, each with its PR number and one line on what to show. Skip CI, chores, refactors, dependency bumps and changes with no visible effect.
    2. Ask the user which candidates to demo. Invoke the `demo` skill once per chosen PR with the PR number as its argument, one at a time, and let it run its own confirmation and format prompts. Pass `--attach-pr` only when the user asks for it.
-   3. Save the notes as `what-changed-notes.md` in `$(~/.dg/bin/dg-skills stash -G demo)/`, next to the videos, with a table of the video files and what each one shows.
+   3. Save the notes as `what-changed-notes.md` in `$(dg-skills stash -G demo)/`, next to the videos, with a table of the video files and what each one shows.
    4. On WSL, also copy the notes and the videos to `/mnt/c/Users/<user>/Downloads`.
    5. Print the full notes in chat, with the path of every saved file.
    - The final combined video always starts with an introduction title card.

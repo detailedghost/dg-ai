@@ -22,12 +22,12 @@ You must leave the directory before you remove it, or later shell calls fail wit
 4. Remove it:
 
    ```sh
-   ~/.dg/bin/dg-skills worktree remove <slug>
+   dg-skills worktree remove <slug>
    ```
 
    Add `--keep-branch` or `--force` only as requested.
    - The three default guards (dirty or untracked files, unpushed commits, branch not merged into `origin/<base>`) **block** unless `--force`. If the CLI stops on a guard, relay its exact message and **ask** before you re-run with `--force`. Never auto-force.
-   - Use `--merged-ok` only if the user confirms the PR or MR was merged on the provider (GitHub or GitLab) but `git cherry` cannot see it (a squash merge with no local trace). The CLI's own guard checks this through `~/.dg/bin/dg-skills vcs-provider merged-pr-for-branch`. **Caveat:** `--merged-ok` skips only the merged-into-base guard. When a PR or MR is squash-merged with "delete branch on merge" on, the remote branch is gone. The local branch then reads as no upstream and ahead, and it trips the **unpushed-commits** guard, which `--merged-ok` does not cover. In that case, first check that `~/.dg/bin/dg-skills vcs-provider merged-pr-for-branch <branch>` returns a non-null match. Then `--force` is the correct escalation. The squashed commit is already in `$DEFAULT`, so nothing is lost.
+   - Use `--merged-ok` only if the user confirms the PR or MR was merged on the provider (GitHub or GitLab) but `git cherry` cannot see it (a squash merge with no local trace). The CLI's own guard checks this through `dg-skills vcs-provider merged-pr-for-branch`. **Caveat:** `--merged-ok` skips only the merged-into-base guard. When a PR or MR is squash-merged with "delete branch on merge" on, the remote branch is gone. The local branch then reads as no upstream and ahead, and it trips the **unpushed-commits** guard, which `--merged-ok` does not cover. In that case, first check that `dg-skills vcs-provider merged-pr-for-branch <branch>` returns a non-null match. Then `--force` is the correct escalation. The squashed commit is already in `$DEFAULT`, so nothing is lost.
 5. Sweep the scratch dirs for `BUCKET` and prune this tree's `/dg:bg` job records (Step 3). Any `--out` directory inside the worktree was deleted with it.
 6. **Land on the default branch** (Step 2D). After removal, run the shared final stage. The CLI already deleted the worktree's own branch (`CAME_FROM`), so do NOT try to delete main-repo branches on this path.
 7. **Prune stale branches** (Step 2E). It runs after 2D, while the repo is on `$DEFAULT`.
@@ -133,11 +133,11 @@ Then ask the user whether to `git branch -D` them one by one. Force-delete only 
 
 Skip this whole step if `--keep-assets` was passed.
 
-**Browser (optional).** The browser close needs `~/.dg/bin/dg-skills pw`. Use the close verb only when the `pw --help` probe passes. When the probe fails, skip the close and add a note to the report. Do not guess a close verb: when the probe passes, read `~/.dg/bin/dg-skills pw --help` and use the close command it lists. A scratch session is bound to the directory it opened in, so run the close from the worktree before it is removed.
+**Browser (optional).** The browser close needs `dg-skills pw`. Use the close verb only when the `pw --help` probe passes. When the probe fails, skip the close and add a note to the report. Do not guess a close verb: when the probe passes, read `dg-skills pw --help` and use the close command it lists. A scratch session is bound to the directory it opened in, so run the close from the worktree before it is removed.
 
 ```sh
-if ~/.dg/bin/dg-skills pw --help >/dev/null 2>&1; then
-  echo "pw is installed: close the session with the verb listed by ~/.dg/bin/dg-skills pw --help"
+if dg-skills pw --help >/dev/null 2>&1; then
+  echo "pw is installed: close the session with the verb listed by dg-skills pw --help"
 else
   echo "pw is not installed: browser close skipped"
 fi
@@ -147,23 +147,23 @@ fi
 
 ```sh
 : "${TOP:?TOP is empty: set it to the worktree path from detect.md}"
-BUCKET=$(basename "$(~/.dg/bin/dg-skills stash -C "$TOP" pw)")
+BUCKET=$(basename "$(dg-skills stash -C "$TOP" pw)")
 : "${BUCKET:?BUCKET is empty}"
-SCRATCH=$(~/.dg/bin/dg-skills stash -r)
+SCRATCH=$(dg-skills stash -r)
 if [ -n "$SCRATCH" ] && [ -n "$BUCKET" ] && [ "$BUCKET" != "." ] && [ "$BUCKET" != "/" ]; then
   rm -rf "$SCRATCH/pw/$BUCKET"
 fi
 ```
 
-**State root, per-tree records only.** Do NOT sweep the state root (`~/.dg/bin/dg-skills stash -r -s`) by `$BUCKET`. It is keyed by the *main worktree*, so one bucket covers every worktree of the repo. Deleting by bucket would destroy the main repo's and every sibling worktree's `spec`, `sdlc`, `monolith` and `jot` state. `/dg:address` reaps those at merge, and the daily prune catches the rest at 30 days.
+**State root, per-tree records only.** Do NOT sweep the state root (`dg-skills stash -r -s`) by `$BUCKET`. It is keyed by the *main worktree*, so one bucket covers every worktree of the repo. Deleting by bucket would destroy the main repo's and every sibling worktree's `spec`, `sdlc`, `monolith` and `jot` state. `/dg:address` reaps those at merge, and the daily prune catches the rest at 30 days.
 
 The one exception is `/dg:bg`. Its job records are global-scope and carry their own `cwd` field, so they are per-tree, and once this worktree is gone nothing will read them:
 
 ```sh
-~/.dg/bin/dg-skills bg prune --cwd "$TOP"
+dg-skills bg prune --cwd "$TOP"
 ```
 
-`$TOP` is the worktree path from detect.md. It is already deleted by this point, which is fine: prune matches the `cwd` string each job recorded and never touches the filesystem there. It does need a *valid* cwd to run in, so it must come after Step 2A's or 2B's `cd "$MAIN"`. Invoked from inside the deleted worktree, it exits silently with no output. It removes the records of every job that is not running from both roots and reports any job still **running** in that tree without touching it. Their records are the only handle left to cancel them. If `running` is not empty, name those jobs to the user and let them decide: `~/.dg/bin/dg-skills bg cancel <id>` and then `~/.dg/bin/dg-skills bg prune --cwd "$TOP"` again, or leave them. Do not kill a live job on the user's behalf here. Prune never matches a sibling path: pruning `/repo` leaves jobs in `/repo-other` alone.
+`$TOP` is the worktree path from detect.md. It is already deleted by this point, which is fine: prune matches the `cwd` string each job recorded and never touches the filesystem there. It does need a *valid* cwd to run in, so it must come after Step 2A's or 2B's `cd "$MAIN"`. Invoked from inside the deleted worktree, it exits silently with no output. It removes the records of every job that is not running from both roots and reports any job still **running** in that tree without touching it. Their records are the only handle left to cancel them. If `running` is not empty, name those jobs to the user and let them decide: `dg-skills bg cancel <id>` and then `dg-skills bg prune --cwd "$TOP"` again, or leave them. Do not kill a live job on the user's behalf here. Prune never matches a sibling path: pruning `/repo` leaves jobs in `/repo-other` alone.
 
 Caveat: the bucket is keyed to the *cwd where the tool ran*. This catches assets created from the worktree root (the common case). If `pw open --out=<dir>` pointed into the worktree, those files went with the worktree. Do not hunt beyond this. Stale scratch dirs are wiped at reboot and pruned after 14 days. Report what you swept and move on.
 
@@ -198,7 +198,7 @@ If a guard blocked removal and the user declined `--force`, say so plainly: noth
 ## Notes
 
 - **Three different cwds.** (1) The *session* cwd drives the statusline. Only `ExitWorktree` or a focus-file rewrite (Step 3b) changes it. (2) The *Bash-tool* cwd: `cd "$MAIN"` moves only this, just enough to keep later calls off a deleted path. (3) The *user's terminal* cwd: the skill cannot touch it. If they were inside the removed worktree, tell them to `cd "$MAIN"`.
-- `/dg:cls` removes worktrees and branches, their scratch, and their own finished `/dg:bg` job records. It does **not** touch scratch dirs for other worktrees, the shared project-keyed state root, the main repo's `.agents/`, or any committed files. For stale worktree records (paths already gone) use `~/.dg/bin/dg-skills worktree prune`.
+- `/dg:cls` removes worktrees and branches, their scratch, and their own finished `/dg:bg` job records. It does **not** touch scratch dirs for other worktrees, the shared project-keyed state root, the main repo's `.agents/`, or any committed files. For stale worktree records (paths already gone) use `dg-skills worktree prune`.
 - **`git branch -d` versus `-D`.** `/dg:cls` always tries `-d` first. It is the safe default that refuses unmerged work. The `-D` escalation needs explicit user confirmation or `--force`. This mirrors the worktree CLI's own guard philosophy.
 - **Stale-branch classes (Step 2E).** *Upstream-gone*: the tracking remote branch no longer exists (found through `%(upstream:track)` equal to `[gone]`). This is typical for branches whose PR was merged or closed on the remote. *Merged-into-default*: the branch's commits are reachable from `$DEFAULT` (found with `git branch --merged`). Both are safe to `-d`. The one exception is a branch with local-only commits that were not pushed. `-d` refuses those, and they are the RISKY set.
 - **Reflog recovery.** A branch deleted with `-D` is not gone for good. The tip commit stays in the reflog: run `git reflog | grep <sha>`, then `git branch <name> <sha>` to recreate it. The window before GC is at least 30 days by default.

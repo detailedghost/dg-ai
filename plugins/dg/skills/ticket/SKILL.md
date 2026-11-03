@@ -1,7 +1,7 @@
 ---
 name: ticket
 description: Create a Jira ticket via the Atlassian MCP, using the registered site, project, assignee, sprint field and issue types for this machine. Use when the user says "make a ticket", "file a Jira issue", "create a task/story/bug for X", or /dg:ticket.
-allowed-tools: Bash(~/.dg/bin/dg-skills:*), searchJiraIssuesUsingJql, lookupJiraAccountId, createJiraIssue
+allowed-tools: Bash(dg-skills:*), searchJiraIssuesUsingJql, lookupJiraAccountId, createJiraIssue
 ---
 
 # Skill: ticket
@@ -15,11 +15,14 @@ First run: install or refresh the CLI when it is missing or too old. Every later
 the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills credentials --help >/dev/null 2>&1 ||
+dg-skills credentials --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" credentials --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor credentials.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor credentials.
 
 ## Usage
 
@@ -41,7 +44,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor credentials.
 Before first use, register the `ticket/jira` credential once:
 
 ```bash
-~/.dg/bin/dg-skills credentials set ticket/jira --meta site=<org>.atlassian.net \
+dg-skills credentials set ticket/jira --meta site=<org>.atlassian.net \
   --meta cloudId=<cloud-id> --meta project=<DEFAULT_PROJECT_KEY> \
   --meta assignee=<default-assignee-email> --meta sprintField=customfield_<NNNNN> \
   --meta issueTypes='{"Story":"<id>","Task":"<id>","Bug":"<id>"}'
@@ -59,7 +62,7 @@ them here so this skill never rediscovers them. Re-verify only if a call fails w
 Read the registered metadata (never the value) with:
 
 ```bash
-~/.dg/bin/dg-skills credentials list --meta
+dg-skills credentials list --meta
 ```
 
 If `ticket/jira` is missing, stop and tell the user to run the registration command above
@@ -91,7 +94,7 @@ name) to resolve it to an id before setting the field.
 
 ## Steps
 
-1. **Load registration** — run `~/.dg/bin/dg-skills credentials list --meta` and find the
+1. **Load registration** — run `dg-skills credentials list --meta` and find the
    `ticket/jira` entry. Stop per "Registration" above if it is missing. Parse `issueTypes`
    as JSON; if it fails to decode, or has no entries, stop and tell the user to re-register
    it. The map's first key is the default issue type unless `--type` overrides it; validate

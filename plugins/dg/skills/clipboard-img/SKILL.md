@@ -6,11 +6,14 @@ description: Extract an image from the system clipboard and save it as PNG. Supp
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills clipboard-image --help >/dev/null 2>&1 ||
+dg-skills clipboard-image --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" clipboard-image --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor clipboard-image stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor clipboard-image stash.
 
 # /dg:clipboard-img — Grab Clipboard Image
 
@@ -18,8 +21,8 @@ Save the current clipboard image as a PNG file.
 
 **Usage:** `/dg:clipboard-img [--scratch | -s | <dest.png> | -]`
 
-- `/dg:clipboard-img` — save to `$(~/.dg/bin/dg-skills stash -a -u clipboard .png)` (default)
-- `/dg:clipboard-img --scratch` / `-s` — save to an ephemeral temp file, `$(~/.dg/bin/dg-skills stash -u clipboard .png)` (path printed to stdout)
+- `/dg:clipboard-img` — save to `$(dg-skills stash -a -u clipboard .png)` (default)
+- `/dg:clipboard-img --scratch` / `-s` — save to an ephemeral temp file, `$(dg-skills stash -u clipboard .png)` (path printed to stdout)
 - `/dg:clipboard-img photo.png` — save to a specific filename
 - `/dg:clipboard-img -` — write raw PNG to stdout (for piping)
 
@@ -36,11 +39,11 @@ Save the current clipboard image as a PNG file.
 For the default destination, resolve a unique repo artifact path and pass it as one argument:
 
 ```bash
-OUTPUT="$(~/.dg/bin/dg-skills stash -a -u clipboard .png)"
-~/.dg/bin/dg-skills clipboard-image "$OUTPUT"
+OUTPUT="$(dg-skills stash -a -u clipboard .png)"
+dg-skills clipboard-image "$OUTPUT"
 ```
 
-For the skill's `--scratch` / `-s` option, resolve `OUTPUT` with `~/.dg/bin/dg-skills stash -u clipboard .png` instead. For an explicit filename, pass that literal filename as one argument. Pass `-` to write PNG bytes to stdout. The compiled command uses the system clipboard tools and requires no legacy helper on PATH.
+For the skill's `--scratch` / `-s` option, resolve `OUTPUT` with `dg-skills stash -u clipboard .png` instead. For an explicit filename, pass that literal filename as one argument. Pass `-` to write PNG bytes to stdout. The compiled command uses the system clipboard tools and requires no legacy helper on PATH.
 
 ## After Success
 

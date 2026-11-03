@@ -10,11 +10,14 @@ Collect every open question in this conversation. Ask them one at a time. Each o
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills stat --help >/dev/null 2>&1 ||
+dg-skills stat --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" stat --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor stat.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor stat.
 
 **Usage:** `/dg:walk` (all open questions) · `/dg:walk <filter>` (only questions that match the topic word, for example `/dg:walk dg`) · `/dg:walk stat` (the open user items on the stat checklist)
 
@@ -32,7 +35,7 @@ Drop a question when:
 - The user already answered it, even in passing.
 - Later work made it moot.
 
-With the word `stat`, collect only the open user items from `~/.dg/bin/dg-skills stat checklist --json`. Take every item in `open` and `done` (and their `children`) whose `owner` is `user`; a done parent can still hold unfinished user sub-items. Treat each as one question, with `blocked-user` items first. Skip the scan above.
+With the word `stat`, collect only the open user items from `dg-skills stat checklist --json`. Take every item in `open` and `done` (and their `children`) whose `owner` is `user`; a done parent can still hold unfinished user sub-items. Treat each as one question, with `blocked-user` items first. Skip the scan above.
 
 Merge duplicates. With a filter other than `stat`, keep only questions that match the topic word; `stat` is a source, not a topic, so it never filters the collected items.
 

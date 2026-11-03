@@ -5,16 +5,19 @@ description: Write a short note down and read it back later, or save a session h
 
 # Skill: jot
 
-Two kinds, one CLI: `~/.dg/bin/dg-skills jot`. Never hardcode storage paths; the CLI owns them.
+Two kinds, one CLI: `dg-skills jot`. Never hardcode storage paths; the CLI owns them.
 
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills jot --help >/dev/null 2>&1 ||
+dg-skills jot --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" jot --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor jot.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor jot.
 
 | Kind | Flag | Where | Lives |
 |---|---|---|---|
@@ -44,23 +47,23 @@ A save written from a linked worktree always goes to state, so it never changes 
 
 | Command | Effect |
 | --- | --- |
-| `~/.dg/bin/dg-skills jot add [-s] <<'EOF'` | Read the body from stdin and print the new path. |
-| `~/.dg/bin/dg-skills jot ls [-s or -n] [--all]` | List kind, age, name and title, newest first, 10 rows. |
-| `~/.dg/bin/dg-skills jot read <name>` | Print the body. A split jot prints its index. |
-| `~/.dg/bin/dg-skills jot read <name>/<NN>` | Print one part of a split jot. |
-| `~/.dg/bin/dg-skills jot kind <path or name>` | Print `note` or `save`. |
-| `~/.dg/bin/dg-skills jot done <name>` | Remove the jot. |
-| `~/.dg/bin/dg-skills jot kick [--replace] [--file <p>]` | Read a section from stdin and print its id. |
-| `~/.dg/bin/dg-skills jot kick-list [--file <p>]` | Print id and summary rows. |
-| `~/.dg/bin/dg-skills jot kick-take <id or text> [--file <p>]` | Print the section, then remove it. Several matches remove nothing. |
+| `dg-skills jot add [-s] <<'EOF'` | Read the body from stdin and print the new path. |
+| `dg-skills jot ls [-s or -n] [--all]` | List kind, age, name and title, newest first, 10 rows. |
+| `dg-skills jot read <name>` | Print the body. A split jot prints its index. |
+| `dg-skills jot read <name>/<NN>` | Print one part of a split jot. |
+| `dg-skills jot kind <path or name>` | Print `note` or `save`. |
+| `dg-skills jot done <name>` | Remove the jot. |
+| `dg-skills jot kick [--replace] [--file <p>]` | Read a section from stdin and print its id. |
+| `dg-skills jot kick-list [--file <p>]` | Print id and summary rows. |
+| `dg-skills jot kick-take <id or text> [--file <p>]` | Print the section, then remove it. Several matches remove nothing. |
 
 **Cap:** 2048 B per jot file; checkpoint sections have no cap. Over the cap, `add` splits at each `## ` into `<name>/NN-<slug>.md` plus `00-index.md`. One section over the cap fails; shorten it and retry.
 
 ## Write
 
-- `/dg:jot <text>`: pipe a terse note to `~/.dg/bin/dg-skills jot add`. H1 = title. Bullets over prose. Print the path.
-- `/dg:jot -s [intent]`: pipe the save shape below to `~/.dg/bin/dg-skills jot add -s`. Print the path. Do not commit.
-- `/dg:jot -k [title]`: pipe one section in the shape in [references/checkpoint.md](references/checkpoint.md) to `~/.dg/bin/dg-skills jot kick`. Print the id. To update a section you wrote earlier, reuse its id and add `--replace`.
+- `/dg:jot <text>`: pipe a terse note to `dg-skills jot add`. H1 = title. Bullets over prose. Print the path.
+- `/dg:jot -s [intent]`: pipe the save shape below to `dg-skills jot add -s`. Print the path. Do not commit.
+- `/dg:jot -k [title]`: pipe one section in the shape in [references/checkpoint.md](references/checkpoint.md) to `dg-skills jot kick`. Print the id. To update a section you wrote earlier, reuse its id and add `--replace`.
 
 ## Save shape
 
@@ -86,16 +89,16 @@ created: <ISO> · cwd: <path> · repo: <name>@<branch>
 
 ## Read (`-p` / `--previous`)
 
-1. Run `~/.dg/bin/dg-skills jot ls -s` for handoffs (`~/.dg/bin/dg-skills jot ls` for all). Empty: print `No jots found for this project.` and stop.
+1. Run `dg-skills jot ls -s` for handoffs (`dg-skills jot ls` for all). Empty: print `No jots found for this project.` and stop.
 2. One row: use it. 2+ rows: `AskUserQuestion`, label = name, description = title.
-3. Run `~/.dg/bin/dg-skills jot read <name>`. For a split jot, read the index, then only the parts you need.
-4. For a save: after you have the context, run `~/.dg/bin/dg-skills jot done <name>`. For a note: keep it unless told otherwise.
+3. Run `dg-skills jot read <name>`. For a split jot, read the index, then only the parts you need.
+4. For a save: after you have the context, run `dg-skills jot done <name>`. For a note: keep it unless told otherwise.
 
 ## Pickup (`-k -p` / `-kp` / `--kick --previous`)
 
 `-p` alone is the handoff read above. With `-k`, it takes a kicked section.
 
-1. No argument: run `~/.dg/bin/dg-skills jot kick-list` and always `AskUserQuestion`, even for one row. Label = id, description = summary. Never take on a bare call. Empty list: print `No checkpoints found.` and stop.
-2. An argument: run `~/.dg/bin/dg-skills jot kick-take <arg>`. On several matches (exit 1, rows printed), ask the same way, then `~/.dg/bin/dg-skills jot kick-take <full id>`.
+1. No argument: run `dg-skills jot kick-list` and always `AskUserQuestion`, even for one row. Label = id, description = summary. Never take on a bare call. Empty list: print `No checkpoints found.` and stop.
+2. An argument: run `dg-skills jot kick-take <arg>`. On several matches (exit 1, rows printed), ask the same way, then `dg-skills jot kick-take <full id>`.
 3. `kick-take` prints the section, then removes it from the file. When no section is left and the file holds only the CLI header, it deletes the file. Keep the printed text; it is the only copy.
 4. Start work: check the repo, branch and PR state against it. Ask the user about "Open questions" first, then work through "Next steps".

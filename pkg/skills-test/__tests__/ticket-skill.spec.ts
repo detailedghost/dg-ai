@@ -62,6 +62,6 @@ describe("the ticket skill carries no real Jira identifiers", () => {
 	test("the skill calls the CLI by its literal installed path, never $DG", () => {
 		const skillMd = readFileSync(join(ticketDir, "SKILL.md"), "utf8");
 		expect(skillMd).not.toContain("$DG");
-		expect(skillMd).toContain("~/.dg/bin/dg-skills");
+		expect(skillMd).toContain("dg-skills");
 	});
 });

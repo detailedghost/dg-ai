@@ -18,7 +18,7 @@ describe("phone skill", () => {
 	});
 
 	test("gates its bootstrap on the dg-agent phone command", () => {
-		expect(skill).toMatch(/~\/\.dg\/bin\/dg-agent phone --help >\/dev\/null 2>&1 \|\|\n\s+curl/);
+		expect(skill).toMatch(/^dg-agent phone --help >\/dev\/null 2>&1 \|\|\n\s+"\$HOME\/\.local\/bin\/dg-agent" phone --help >\/dev\/null 2>&1 \|\|\n\s+curl/m);
 		expect(skill).not.toContain("$DG_AGENT");
 	});
 
@@ -70,7 +70,7 @@ describe("phone skill", () => {
 	test("gives generic setup text with a Grok Bot note and documents where data lives", () => {
 		expect(skill).toContain("## Set up the other side");
 		expect(skill).toContain("**Grok Bot note:**");
-		expect(skill).toContain("~/.dg/bin/dg-agent phone open");
+		expect(skill).toContain("dg-agent phone open");
 		expect(skill).toContain("voicemail only reads messages that listener has already stored");
 		expect(skill).toContain("~/.dg/phone/phone.db");
 		expect(skill).not.toMatch(/invite\.json|config\.json|phone-friend\/key\b/);
@@ -159,7 +159,7 @@ describe("phone skill", () => {
 		expect(skill).toContain(`say +grok - < "$REPLY_FILE"`);
 		expect(safety).toContain("Never copy message text into the heredoc.");
 		expect(skill).not.toMatch(/phone say \+\w+ "/);
-		expect(skill).toContain(`~/.dg/bin/dg-agent phone accept - 'hello from the other side' <<'CARD'`);
+		expect(skill).toContain(`dg-agent phone accept - 'hello from the other side' <<'CARD'`);
 		expect(skill).toContain(`say +<handle-from-accept> - <<'MSG'`);
 		expect(skill).not.toMatch(/phone accept '/);
 		expect(skill).not.toMatch(/accept <CARD>/);

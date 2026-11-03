@@ -22,18 +22,21 @@ Before starting, read these reference files:
 
 - [references/steps.md](references/steps.md) — Full step details and gate conditions
 - [references/ecosystems.md](references/ecosystems.md) — Ecosystem detection table and audit commands
-- Run `~/.dg/bin/dg-skills deps-upgrade --help` for the complete command inventory.
+- Run `dg-skills deps-upgrade --help` for the complete command inventory.
 
 ## Runtime and skill paths
 
 Resolve the compiled CLI before running any command:
 
 ```bash
-~/.dg/bin/dg-skills deps-upgrade --help >/dev/null 2>&1 ||
+dg-skills deps-upgrade --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor deps-upgrade batch-open proxy stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor deps-upgrade batch-open proxy stash.
 
 Repeat this resolution in every fresh shell, resumed step and delegated command;
 shell variables do not persist between tool calls. Use the host's existing narrow
@@ -58,7 +61,7 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 
 ## Step Overview
 
-| # | Step | `~/.dg/bin/dg-skills deps-upgrade` subcommand | Gate |
+| # | Step | `dg-skills deps-upgrade` subcommand | Gate |
 |---|------|------|------|
 | 1 | **Prepare** — Fetch default branch, create worktree + `<prefix>deps_update_<ts>` branch (prefix: `$DG_DEPS_BRANCH_PREFIX`, default `chore/`), then `cd` into it | `prepare` | In the worktree on the deps-update branch, clean tree |
 | 2 | **Discover** — List open Dependabot PRs (GitHub) or Renovate MRs (GitLab), categorize by severity | `list-prs` | Update list exists (may be empty) |
@@ -69,7 +72,7 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 | 7 | **Validate** — Optional qa-devops + security re-audit | `audit` again | Clean or skipped |
 | 8 | **Commit** — One commit per dependency, conventional format | covered by `bump-dep` / `bump-action`; `commit <type> <scope> "<msg>"` for one-offs | All committed, clean tree |
 | 9 | **Record History** — Update `.agents/school/DEPS.md` | `commit docs deps "…"` | History updated |
-| 10 | **Push & PR** — Push branch, **always** open combined PR **as a draft**, then open it in the browser. Put the `summary` "Held by cooldown" list in the body | `push-pr "<title>"` (body on stdin), then best-effort `~/.dg/bin/dg-skills batch-open` | PR URL returned |
+| 10 | **Push & PR** — Push branch, **always** open combined PR **as a draft**, then open it in the browser. Put the `summary` "Held by cooldown" list in the body | `push-pr "<title>"` (body on stdin), then best-effort `dg-skills batch-open` | PR URL returned |
 | 10b | **Ready When Green** — Wait for CI, then mark the PR ready. A repo with no CI is marked ready after a 5 min grace period | `ready-when-green <pr>` | JSON `ready` (exit 0), `failed` (1) or `timeout` (2); report it |
 | 11 | **Close PRs** — After the PR URL exists, close Dependabot PRs with comment | `close-prs <n>…` | Applicable PRs closed |
 | 12 | **Summary** — Emit end-of-run report | `summary` | Markdown report printed |
@@ -77,7 +80,7 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 ## General Rules
 
 - **Work from the worktree.** `prepare` creates a dedicated worktree through its internal worktree creator and prints its path. `cd` into that path and run every remaining step — bumps, build/lint/test, commits, push, PR — from there. Steps run outside the worktree land on the wrong branch.
-- **Use `~/.dg/bin/dg-skills deps-upgrade` for covered operations.** Run repository-specific build, lint, and test commands natively under normal host permissions. If another operation is needed, use its installed skill or native tooling with the host's existing approval rules; do not modify installed caches to extend this command.
+- **Use `dg-skills deps-upgrade` for covered operations.** Run repository-specific build, lint, and test commands natively under normal host permissions. If another operation is needed, use its installed skill or native tooling with the host's existing approval rules; do not modify installed caches to extend this command.
 - **Speed over thoroughness.** Mechanical task. Read only what you need.
 - **Minimal diffs.** Change only what the dependency update requires.
 - **One thing at a time.** Patch -> minor -> major. Fix breakage before moving on.
@@ -85,4 +88,4 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 - NEVER skip a gate condition.
 - **Opening the PR is a mandatory final step, not optional.** This skill's job is to land the batch as a combined PR (see the skill description). Once verify (Step 6) is green, record history (Step 9), then run Step 10 to push and open the PR before finishing. Surfacing it in the browser is best-effort and never fails the run.
 - **Never upgrade blind.** A package held by the cooldown or with an unknown publish age stays on its current version and is listed under "Held by cooldown" in the summary and PR body.
-- **Always end the run with `~/.dg/bin/dg-skills deps-upgrade summary`** so the user sees a consistent report.
+- **Always end the run with `dg-skills deps-upgrade summary`** so the user sees a consistent report.

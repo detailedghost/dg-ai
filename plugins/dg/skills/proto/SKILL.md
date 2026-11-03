@@ -6,11 +6,14 @@ description: Build a throwaway prototype before committing to a design. The loca
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills prototype --help >/dev/null 2>&1 ||
+dg-skills prototype --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" prototype --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor proto prototype stash.
 
 `dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
 
@@ -106,8 +109,8 @@ this look right?" about a page you have not confirmed renders.
 round, builds no new variants, and shows C again for a pick. `approve C: <note>` makes C the base
 of a new round: `-n` new variants that change only what the note asks. Every round shows in the
 same browser tab: reuse one chain key. The chain ends on an approval with no note, or on "done"
-or "stop" (`~/.dg/bin/dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
-`~/.dg/bin/dg-skills prototype status <name>` is the one command for checking a pick, in every
+or "stop" (`dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
+`dg-skills prototype status <name>` is the one command for checking a pick, in every
 shape: local, a chain, a series, in-app, and an unclaimed `--ext` verdict.
 
 **Series exception.** When prototypes run one after another (a planned set, such as one screen per

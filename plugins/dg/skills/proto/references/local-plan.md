@@ -29,7 +29,7 @@ Plan walkthroughs **always** live in `.agents/prototype/<name>/`, even when thro
 - **The host app is not a JS framework** (.NET, Python, Go, a library, a docs repo): write a **single self-contained HTML file** in `.agents/prototype/<name>/` (inline CSS and JS, no build step), served by `prototype serve`.
 - **`--self-contained`**: force the single file whatever the host stack.
 
-Open the walkthrough the moment it is ready. `~/.dg/bin/dg-skills prototype serve` prints the URL, and `~/.dg/bin/dg-skills prototype open <url-or-file>` opens it in the default browser. Do not make the user open it by hand.
+Open the walkthrough the moment it is ready. `dg-skills prototype serve` prints the URL, and `dg-skills prototype open <url-or-file>` opens it in the default browser. Do not make the user open it by hand.
 
 ### 1. Inventory the workflows from the plan
 
@@ -55,7 +55,7 @@ Include a short **"how it maps to code"** reference screen: each workflow and th
 
 ### 4. The switcher, per-screen notes, and the decision gate
 
-Reuse the shared switcher where the project has one (see `~/.dg/bin/dg-skills prototype components`). For self-contained HTML, a small fixed nav is fine. A plan walkthrough replaces the variant picker with a **review-and-decide** control:
+Reuse the shared switcher where the project has one (see `dg-skills prototype components`). For self-contained HTML, a small fixed nav is fine. A plan walkthrough replaces the variant picker with a **review-and-decide** control:
 
 - **Per-screen notes.** Every workflow screen carries a notes textarea, keyed by screen id. The user jots reactions in context: "this step is wrong", "needs a test-run button", "reorder these". Show a count ("2 screens noted") and mark noted screens in the nav.
 - **A fixed decision bar** with two buttons: **Approve design** and **Decline and rework**. There are no N variants to choose between. The decision is about the whole plan.
@@ -65,9 +65,9 @@ Reuse the shared switcher where the project has one (see `~/.dg/bin/dg-skills pr
 **The decision reaches the agent automatically through the local server.** Serve the walkthrough so Approve and Decline POST straight back:
 
 ```sh
-~/.dg/bin/dg-skills prototype serve .agents/prototype/<name>/walkthrough.html <name> &
-~/.dg/bin/dg-skills prototype open http://127.0.0.1:<port>/
-~/.dg/bin/dg-skills prototype await-decision <name> --json
+dg-skills prototype serve .agents/prototype/<name>/walkthrough.html <name> &
+dg-skills prototype open http://127.0.0.1:<port>/
+dg-skills prototype await-decision <name> --json
 ```
 
 The server prints its URL, and it moves to the next free port when 4321 is taken. `await-decision` blocks and prints `{"decision":"APPROVED|REWORK","notes":"..."}`. Run `serve` and `await-decision` from the same directory.
@@ -79,10 +79,10 @@ Wire Approve and Decline to the injected `window.prototypePlanDecision(decision,
 
   ```sh
   TOKEN=$(date +%s)
-  cat > "$(~/.dg/bin/dg-skills prototype changes-path <name>)" <<JSON
+  cat > "$(dg-skills prototype changes-path <name>)" <<JSON
   {"rev":"$TOKEN","summary":"Reworked per your notes","screens":[{"id":"list","note":"added draft row and status tabs"}]}
   JSON
-  echo "$TOKEN" > "$(~/.dg/bin/dg-skills prototype reload-path <name>)"
+  echo "$TOKEN" > "$(dg-skills prototype reload-path <name>)"
   ```
 
   Write `.changes` first so `rev` is ready when the client re-fetches. The served page polls `/prototype-reload` every 2 seconds and reloads when the token changes.
@@ -93,7 +93,7 @@ Wire Approve and Decline to the injected `window.prototypePlanDecision(decision,
 - `screens[].id` must match a real `data-go` and `#s-<id>` pair. The client badges those nav items with a dot and lets the user click straight to the changed screen from the summary pill.
 - `summary` is optional free text for the panel heading.
 - It is additive and optional. Without a manifest there is no pill and no dots.
-- `~/.dg/bin/dg-skills prototype changes-path <name> [--light]` prints the sidecar path, like `reload-path`.
+- `dg-skills prototype changes-path <name> [--light]` prints the sidecar path, like `reload-path`.
 
 The tab favicon shows the state: waiting for the decision, reworking after Decline, or approved.
 

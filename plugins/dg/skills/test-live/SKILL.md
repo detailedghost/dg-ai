@@ -8,20 +8,23 @@ description: Temporarily deploy the current feature branch to dev, stage, or pro
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal installed path:
 
 ```bash
-~/.dg/bin/dg-skills test-live --help >/dev/null 2>&1 ||
+dg-skills test-live --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" test-live --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor test-live.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
 
-**Usage:** `~/.dg/bin/dg-skills test-live setup [dev|stage|prod]` (env defaults to `dev`) and `~/.dg/bin/dg-skills test-live cleanup`
+If a step fails, run dg-skills doctor test-live.
+
+**Usage:** `dg-skills test-live setup [dev|stage|prod]` (env defaults to `dev`) and `dg-skills test-live cleanup`
 
 GitHub only; there is no GitLab port. Hard stops: on `main`/`master`, or no `.github/workflows/` in the current directory.
 
 ## Phase 1 — Deploy
 
 ```bash
-~/.dg/bin/dg-skills test-live setup [dev|stage|prod]
+dg-skills test-live setup [dev|stage|prod]
 ```
 
 Patches the target deploy workflow with `workflow_dispatch` (skipped when already present), dispatches it on the current branch, waits for the run to go live, then exits 0 and prints the GitHub Actions run URL.
@@ -37,7 +40,7 @@ A second `setup` call on a branch that already has a pending patch refuses and n
 After the user confirms done:
 
 ```bash
-~/.dg/bin/dg-skills test-live cleanup
+dg-skills test-live cleanup
 ```
 
 Removes exactly the one commit `setup` made, preserving any later commits on the branch, then force-pushes with `--force-with-lease`. State is scoped to this repository and branch, so `cleanup` must run from the same branch `setup` patched.

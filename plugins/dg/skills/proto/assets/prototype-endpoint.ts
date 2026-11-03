@@ -47,7 +47,7 @@ function validName(name: unknown): name is string {
 
 const CLI =
 	process.env.DG_SKILLS_BIN ??
-	join(process.env.HOME ?? "", ".dg", "bin", "dg-skills");
+	join(process.env.HOME ?? "", ".local", "bin", "dg-skills");
 
 /** Pins sentinel resolution to the repo root, matching the agent's own cwd. */
 function gitRoot(): string {

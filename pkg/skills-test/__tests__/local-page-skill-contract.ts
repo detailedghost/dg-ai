@@ -91,7 +91,7 @@ export function describeLocalPageSkill(skill: string, followUp: string): void {
 		});
 
 		test("the bootstrap block keeps the dg-agent gate", () => {
-			expect(text).toMatch(/\[ -x ~\/\.dg\/bin\/dg-agent \]/);
+			expect(text).toMatch(/^dg-agent --version >\/dev\/null 2>&1 \|\|\n {2}"\$HOME\/\.local\/bin\/dg-agent" --version/m);
 		});
 
 		test("the extension-specific notes live in references/extension.md", () => {

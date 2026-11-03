@@ -9,16 +9,19 @@ Open PR and URL tabs in the default browser. Plain tabs open without the
 extension. `--ext` is the opt-in for tab groups, `launch`, and demo tours through
 the companion `dg-ai-extension`.
 
-Commands run the **compiled `dg-skills` CLI** at `~/.dg/bin/dg-skills` — a
+Commands run the **compiled `dg-skills` CLI** from your PATH — a
 self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
 (downloads the binary for your platform from the latest `skills-v*` release):
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor install batch-open launch demo.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor install batch-open launch demo.
 
 On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
 `Invoke-Expression`.
@@ -26,7 +29,7 @@ On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
 Then run every command through it:
 
 ```bash
-~/.dg/bin/dg-skills <command> <args>
+dg-skills <command> <args>
 ```
 
 `install` refreshes the `dg-skills` binary, so re-running it keeps the CLI

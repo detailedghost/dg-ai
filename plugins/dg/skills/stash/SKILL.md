@@ -6,13 +6,16 @@ description: "Print an absolute path for a scratch, state, or worktree-local fil
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+dg-skills stash --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" stash --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
 
-`~/.dg/bin/dg-skills stash <tool> [name]` prints one absolute path and creates its parent. No name prints the dir.
+If a step fails, run dg-skills doctor stash.
+
+`dg-skills stash <tool> [name]` prints one absolute path and creates its parent. No name prints the dir.
 
 | Flag | Root | Lives |
 |---|---|---|

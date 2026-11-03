@@ -10,7 +10,7 @@ Hold a real conversation with a human in a browser tab while you work. The
 itself, and this skill is the agent side of the loop. The page needs no
 extension. Pass `--ext` to hand the session to the `dg-ai-extension` instead.
 
-Commands run the **compiled `dg-agent` binary** at `~/.dg/bin/dg-agent` — a
+Commands run the **compiled `dg-agent` binary** from your PATH — a
 self-contained binary, no Bun needed at runtime. `dg-agent start` launches the
 daemon itself when none is running, by resolving `dg-daemon` next to it in the
 same directory, so both binaries must be installed together. On first use,
@@ -19,11 +19,14 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 `skills-v*`):
 
 ```bash
-[ -x ~/.dg/bin/dg-agent ] ||
+dg-agent --version >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-agent" --version >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-If the bootstrap fails, run `~/.dg/bin/dg-skills doctor install` and retry.
+Call `dg-agent` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-agent` instead.
+
+If the bootstrap fails, run `dg-skills doctor install` and retry.
 
 The gate tests `dg-agent`, **not** `dg-skills`. A machine that has already used
 `browser`, `demo` or `proto` already has `dg-skills`, so gating on that binary
@@ -35,7 +38,7 @@ On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
 Then run every command through it:
 
 ```bash
-~/.dg/bin/dg-agent <command> <args>
+dg-agent <command> <args>
 ```
 
 ## Flags
@@ -57,12 +60,12 @@ Side panel details and WSL networking for a Windows-side browser:
 ## The loop
 
 ```bash
-~/.dg/bin/dg-agent start --open              # register a session, open the chat page
-~/.dg/bin/dg-agent progress --state running  # tell the human you are working
-~/.dg/bin/dg-agent send "Looking at it now." # say something
-~/.dg/bin/dg-agent progress --state awaiting-input
-~/.dg/bin/dg-agent recv --block              # wait for their reply
-~/.dg/bin/dg-agent close                     # finish the session
+dg-agent start --open              # register a session, open the chat page
+dg-agent progress --state running  # tell the human you are working
+dg-agent send "Looking at it now." # say something
+dg-agent progress --state awaiting-input
+dg-agent recv --block              # wait for their reply
+dg-agent close                     # finish the session
 ```
 
 `recv` prints one JSON object per call and acknowledges the message only after

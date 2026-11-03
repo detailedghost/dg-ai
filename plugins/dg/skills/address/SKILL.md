@@ -16,11 +16,14 @@ Fix PR review comments, CI/CD failures, and local code-review findings. Test-fir
 Resolve the compiled CLI before running any command:
 
 ```bash
-~/.dg/bin/dg-skills address --help >/dev/null 2>&1 ||
+dg-skills address --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" address --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor address proxy stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor address proxy stash.
 
 Repeat this resolution in every fresh shell, including delegated execution and
 resumed commands; shell variables do not persist between tool calls. Use the
@@ -79,7 +82,7 @@ leave the thread open.
 | `--verdicts <path>` | none | Pre-filtered verdict JSON that skips triage. Pauses on `strange` items. | triage runs |
 | `--no-ci` | none | Skip CI gathering. | off (CI is gathered) |
 
-Bare args treated as agent list. All replies prefixed `🤖 ` by `~/.dg/bin/dg-skills address` — never construct it yourself.
+Bare args treated as agent list. All replies prefixed `🤖 ` by `dg-skills address` — never construct it yourself.
 Set `ADDRESS_BOT_PREFIX="[bot] "` on a host that mangles emoji. Both markers, plus the legacy `[bot] ` on
 replies already posted, count as bot replies on read.
 
@@ -87,4 +90,4 @@ replies already posted, count as bot replies on read.
 
 - [references/workflow.md](references/workflow.md) — phases, I/O, gates
 - [references/agents.md](references/agents.md) — roster + file-extension routing
-- [references/github-api.md](references/github-api.md) — human reference; runtime uses `~/.dg/bin/dg-skills address`
+- [references/github-api.md](references/github-api.md) — human reference; runtime uses `dg-skills address`

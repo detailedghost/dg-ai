@@ -1,6 +1,6 @@
 # Plan and variant formats, and `prototype ui`
 
-`~/.dg/bin/dg-skills prototype ui` renders variants into one self-contained page, serves it on
+`dg-skills prototype ui` renders variants into one self-contained page, serves it on
 localhost, opens it in the browser, blocks until a decision, and prints exactly one JSON line:
 
 ```json
@@ -14,7 +14,7 @@ It is the default way to show variants that have no host app. Nothing else is ne
 prose, tables, code blocks, or compare cards: they are plain HTML inside a variant.
 
 ```sh
-~/.dg/bin/dg-skills prototype ui <plan.json|manifest.md|-> [--chain=NAME] [--series] [--light] [--port=N] [--timeout=SEC] [--no-open]
+dg-skills prototype ui <plan.json|manifest.md|-> [--chain=NAME] [--series] [--light] [--port=N] [--timeout=SEC] [--no-open]
 ```
 
 | Option | Effect |
@@ -90,7 +90,7 @@ or `</body>` in a fragment: it closes the wrapper early.
 - **Rounds.** Give every round of a chain the same plan `slug`, or the same chain value in the manifest. Round N+1 re-renders into the running server.
 - **Idle limit.** The server exits after `--timeout` seconds with no decision and no new round. A later round starts a fresh server and bumps the reload token, so a tab left open on that port reloads. Ask for the same `--port` when you restart a chain so the open tab can find it.
 - **Claim from any directory.** The session records its own sentinel directory. `prototype wait <chain>`, `prototype status <chain>`, and `prototype stop <chain>` read that record, never the ambient working directory. A session `wait` prints one JSON line and consumes the decision. `status` does not consume anything.
-- **Stop.** `~/.dg/bin/dg-skills prototype stop <chain>` stops the server and drops the session. It is safe to run twice. An approve with no notes stops the server too, unless the run used `--series`.
+- **Stop.** `dg-skills prototype stop <chain>` stops the server and drops the session. It is safe to run twice. An approve with no notes stops the server too, unless the run used `--series`.
 
 ## In the served page
 
@@ -137,7 +137,7 @@ data:
 Piping from stdin:
 
 ```sh
-cat <<'EOF' | ~/.dg/bin/dg-skills prototype ui - --light
+cat <<'EOF' | dg-skills prototype ui - --light
 ---
 name: pasted-idea
 ---

@@ -31,7 +31,7 @@ describe("inbox-cleanup skill distribution", () => {
 			skill,
 			...links.map((path) => readFileSync(join(skillRoot, path), "utf8")),
 		].join("\n");
-		expect(content).toContain(".dg/bin/dg-skills");
+		expect(content).toContain("dg-skills inbox");
 		for (const word of [
 			"gmail",
 			"outlook",

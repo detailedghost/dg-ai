@@ -10,11 +10,14 @@ Answer one question about a repo you own: **what must be granted, provisioned, o
 First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills sniff --help >/dev/null 2>&1 ||
+dg-skills sniff --help >/dev/null 2>&1 ||
+  "$HOME/.local/bin/dg-skills" sniff --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor sniff stash.
+Call `dg-skills` in every later step. If only the second line answered, call `$HOME/.local/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor sniff stash.
 
 ## Usage
 
@@ -25,7 +28,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor sniff stash.
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--gaps` | none | Print only the `⚠` rows, each with its full gap detail. | off (full table) |
-| `-o` | none | Also write the table to `$(~/.dg/bin/dg-skills stash -a sniff <repo>.md)`. | off (terminal only) |
+| `-o` | none | Also write the table to `$(dg-skills stash -a sniff <repo>.md)`. | off (terminal only) |
 
 The CLI takes only the path. The skill applies `--gaps` and `-o` when it renders the table.
 
@@ -47,7 +50,7 @@ The CLI takes only the path. The skill applies `--gaps` and `-o` when it renders
 
 ## How it runs
 
-1. **Extract.** Run `~/.dg/bin/dg-skills sniff <path>` (default `.`). It emits JSON: `{repo, total, gaps, counts, requirements[]}`. This is deterministic and needs no reasoning — do not re-derive it by grepping. A missing path or a file exits 1 with a message on stderr.
+1. **Extract.** Run `dg-skills sniff <path>` (default `.`). It emits JSON: `{repo, total, gaps, counts, requirements[]}`. This is deterministic and needs no reasoning — do not re-derive it by grepping. A missing path or a file exits 1 with a message on stderr.
 2. **Infer.** Scan source for env reads the CLI cannot see, and add them as rows with `proven: false`. Patterns per language: [references/detection.md](references/detection.md).
 3. **Judge `unused`.** A declared key nothing reads is a dead requirement. If the code scan was truncated, stay silent rather than guess.
 4. **Render.** Dense table, gaps first, then by type, then by name.
