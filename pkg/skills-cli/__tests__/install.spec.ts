@@ -193,7 +193,7 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 
 			expect(result.code).toBe(0);
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).not.toContain("compiled ELF bytes");
-			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toContain(join(home, "lib", "current", "dg.js"));
+			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toContain(`root='${home}'`);
 			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(VERSION);
 			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe(`bun-v${pin}`);
 			expect(existsSync(join(home, "runtime", "current", "bun"))).toBe(true);
