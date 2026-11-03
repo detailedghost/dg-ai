@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractZip, sha256Hex, UA, type PickedBundle, verifyReleaseAsset } from "../utils/lib";
 import { linkCurrent, readCurrent } from "./current";
@@ -59,20 +59,22 @@ export async function ensureRuntime(root: string, pin: RuntimePin): Promise<stri
 		if (!res.ok) throw new Error(`${asset.file} download failed: HTTP ${res.status}`);
 		const zip = new Uint8Array(await res.arrayBuffer());
 		if (sha256Hex(zip) !== asset.sha256.toLowerCase()) throw new Error(`checksum mismatch for ${asset.file}`);
-		const staging = `${finalDir}.staging`;
-		rmSync(staging, { recursive: true, force: true });
-		mkdirSync(staging, { recursive: true });
+		mkdirSync(runtimeDir, { recursive: true });
+		const staging = mkdtempSync(join(runtimeDir, `.${dirName}.staging-`));
 		try {
 			const zipPath = join(staging, "bun.zip");
 			writeFileSync(zipPath, zip);
 			extractZip(zipPath, join(staging, "x"));
-			rmSync(finalDir, { recursive: true, force: true });
-			mkdirSync(finalDir, { recursive: true });
-			renameSync(join(staging, "x", asset.file.replace(/\.zip$/, ""), BUN), bin);
-			chmodSync(bin, 0o755);
-		} catch (err) {
-			rmSync(finalDir, { recursive: true, force: true });
-			throw err;
+			const stagedDir = join(staging, "bun");
+			mkdirSync(stagedDir);
+			const stagedBin = join(stagedDir, BUN);
+			renameSync(join(staging, "x", asset.file.replace(/\.zip$/, ""), BUN), stagedBin);
+			chmodSync(stagedBin, 0o755);
+			try {
+				renameSync(stagedDir, finalDir);
+			} catch (err) {
+				if (!existsSync(bin)) throw err;
+			}
 		} finally {
 			rmSync(staging, { recursive: true, force: true });
 		}

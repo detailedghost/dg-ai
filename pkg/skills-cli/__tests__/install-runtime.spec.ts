@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { ensureRuntime, runtimeAssetKey } from "../src/install/runtime";
 import {
@@ -77,6 +77,50 @@ describe("ensureRuntime", () => {
 		expect(basename(readlinkSync(current))).toBe(`bun-v${pin.version}`);
 		expect(existsSync(join(current, BUN))).toBe(true);
 		expect(realpathSync(path)).toBe(realpathSync(join(current, BUN)));
+	});
+});
+
+describe("ensureRuntime with concurrent installers", () => {
+	function zipFor(version: string): Uint8Array {
+		return buildArchive("zip", sandbox.directory, {
+			"bun-fake/bun": { content: fakeBunScript(version), mode: 0o755 },
+		});
+	}
+
+	test("keeps a finalDir that another installer published while this one was downloading", async () => {
+		const zip = zipFor("1.4.1");
+		const pin = runtimePinFor(zip);
+		fetchStub = stubFetch({ [bunZipUrl(pin.version)]: zip });
+		const finalDir = join(sandbox.root, "runtime", `bun-v${pin.version}`);
+		const stubbed = globalThis.fetch;
+		globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+			const res = await stubbed(input as string, init);
+			mkdirSync(finalDir, { recursive: true });
+			writeFileSync(join(finalDir, BUN), fakeBunScript("other"), { mode: 0o755 });
+			writeFileSync(join(finalDir, "marker"), "published by the other installer");
+			return res;
+		}) as typeof fetch;
+
+		await ensureRuntime(sandbox.root, pin);
+
+		expect(readFileSync(join(finalDir, "marker"), "utf8")).toBe("published by the other installer");
+		expect(basename(readlinkSync(join(sandbox.root, "runtime", "current")))).toBe(`bun-v${pin.version}`);
+		expect(readdirSync(join(sandbox.root, "runtime")).sort()).toEqual([`bun-v${pin.version}`, "current"]);
+	});
+
+	test("two simultaneous installs of one pin both succeed and leave no staging directories", async () => {
+		const zip = zipFor("1.4.1");
+		const pin = runtimePinFor(zip);
+		fetchStub = stubFetch({ [bunZipUrl(pin.version)]: zip });
+
+		const [first, second] = await Promise.all([
+			ensureRuntime(sandbox.root, pin),
+			ensureRuntime(sandbox.root, pin),
+		]);
+
+		expect(first).toBe(second);
+		expect(existsSync(first)).toBe(true);
+		expect(readdirSync(join(sandbox.root, "runtime")).sort()).toEqual([`bun-v${pin.version}`, "current"]);
 	});
 });
 
