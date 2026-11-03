@@ -4,7 +4,7 @@
  * before the runtime, the bundle, the shims or the extension are touched, so a pin never leaves a mixed set.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -70,6 +70,28 @@ describe("dg-skills install --version <x.y.z>", () => {
 			expect(pinned.stderr).not.toContain("skipped");
 			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(PIN);
 			expect(existsSync(join(home, "bin", ".dg-skills.version"))).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("a bundle that fails its checksum leaves runtime/current on the runtime it had", async () => {
+		const { directory, home, fetchLog } = sandbox("runtime-restore");
+		try {
+			const { preload, pin } = writeReleaseServer(directory, fetchLog, PIN, {
+				sums: (defaults) => defaults.replace(/^\S+(\s+dg-lib-)/m, `${"0".repeat(64)}$1`),
+			});
+			const old = join(home, "runtime", "bun-v0.0.1");
+			mkdirSync(old, { recursive: true });
+			writeFileSync(join(old, "bun"), "#!/bin/sh\n", { mode: 0o755 });
+			symlinkSync("bun-v0.0.1", join(home, "runtime", "current"));
+
+			const result = await runCli(installArgv(preload, "--cli-only", "--version", PIN), installEnv(home));
+
+			expect(result.code).not.toBe(0);
+			expect(existsSync(join(home, "runtime", `bun-v${pin}`))).toBe(true);
+			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe("bun-v0.0.1");
+			expect(existsSync(join(home, "lib", "current"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

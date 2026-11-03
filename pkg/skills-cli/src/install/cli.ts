@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
+import { linkCurrent, readCurrent } from "./current";
 import { refreshPhoneListener } from "./phone-listener";
 import { ensureRuntime, fetchRuntimePin } from "./runtime";
 import { PROGRAMS, writeShims } from "./shims";
@@ -162,11 +163,19 @@ async function installBundle(release: PickedBundle): Promise<void> {
 	const bundleDir = join(root, "lib", release.version);
 	const present = existsSync(join(bundleDir, "dg.js"));
 	const currentBun = join(root, "runtime", "current", process.platform === "win32" ? "bun.exe" : "bun");
+	const previousRuntime = readCurrent(root, "runtime");
 	const runtimeBin =
 		present && existsSync(currentBun)
 			? currentBun
 			: await ensureRuntime(root, await fetchRuntimePin(release));
-	await fetchBundle(root, release, runtimeBin);
+	try {
+		await fetchBundle(root, release, runtimeBin);
+	} catch (err) {
+		if (previousRuntime && readCurrent(root, "runtime") !== previousRuntime) {
+			linkCurrent(root, "runtime", previousRuntime);
+		}
+		throw err;
+	}
 	writeShims(root);
 	removeRetiredBinaries();
 	console.log(
