@@ -4,7 +4,8 @@
 #
 # CLI-only (skip the extension): set $env:DG_CLI_ONLY = "1" first.
 # Agent-only (for a non-Claude agent that only needs phone): set $env:DG_AGENT_ONLY = "1" first.
-# Skills-only (skill files and the CLI, no extension): set $env:DG_SKILLS_ONLY = "1" first.
+# Skills-only (copy the skill files, then the runtime and bundle; no extension and no
+# `dg-skills install`): set $env:DG_SKILLS_ONLY = "1" first.
 # DG_SKILLS_NO_CLI = "1" with it keeps an offline copy of the skill files and downloads no release.
 #
 # Pin a version instead of the newest release: set $env:DG_VERSION = "<x.y.z>" first
@@ -137,15 +138,17 @@ if ($env:DG_CLI_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
 
 $dgHome = if ($env:DG_HOME) { $env:DG_HOME } else { Join-Path $env:USERPROFILE ".dg" }
 
-if ($env:DG_SKILLS_ONLY -eq "1" -and $env:DG_SKILLS_NO_CLI -eq "1") {
+if ($env:DG_SKILLS_ONLY -eq "1") {
 	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST } else { Join-Path $dgHome "skills" }
 	try {
 		Copy-DgSkillTree -Source (Get-DgSkillsSource) -Destination $skillsDest
 	} finally {
 		if ($script:skillsTmp) { Remove-Item -Recurse -Force $script:skillsTmp -ErrorAction SilentlyContinue }
 	}
-	Write-Host "Skipped the runtime (DG_SKILLS_NO_CLI=1): offline copy only."
-	exit 0
+	if ($env:DG_SKILLS_NO_CLI -eq "1") {
+		Write-Host "Skipped the dg-skills CLI (DG_SKILLS_NO_CLI=1): offline copy only."
+		exit 0
+	}
 }
 
 function Get-DgSha256([string]$Path) {
@@ -277,9 +280,10 @@ try {
 		Write-Host "Added $binDir to your user PATH. Open a new terminal to use dg-skills."
 	}
 
+	if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }
+
 	$installArgs = @("install")
-	if ($env:DG_SKILLS_ONLY -eq "1") { $installArgs += "--skills-only" }
-	elseif ($env:DG_CLI_ONLY -eq "1") { $installArgs += "--cli-only" }
+	if ($env:DG_CLI_ONLY -eq "1") { $installArgs += "--cli-only" }
 	elseif ($env:DG_AGENT_ONLY -eq "1") { $installArgs += "--agent-only" }
 	else { Write-Host "Setting up the dg-ai-extension..." }
 	if ($script:pinnedVersion) { $installArgs += @("--version", $script:pinnedVersion) }

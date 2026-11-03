@@ -120,6 +120,16 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		expect(sh).toMatch(/bin\/dg-skills"?\s+install/);
 	});
 
+	test("bootstrap.ps1 skills-only copies the skill files before any release download and runs no dg-skills install", () => {
+		const copy = ps1.indexOf("Copy-DgSkillTree -Source (Get-DgSkillsSource)");
+		const firstDownload = ps1.indexOf('Save-DgAsset $rel "SHA256SUMS"');
+
+		expect(copy).toBeGreaterThan(-1);
+		expect(firstDownload).toBeGreaterThan(copy);
+		expect(ps1).not.toContain('$installArgs += "--skills-only"');
+		expect(ps1).toMatch(/if \(\$env:DG_SKILLS_ONLY -eq "1"\) \{ exit 0 \}/);
+	});
+
 	test("bootstrap.ps1 uses Expand-Archive, Get-FileHash and directory junctions", () => {
 		expect(ps1).toContain("Expand-Archive");
 		expect(ps1).toContain("Get-FileHash");
