@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+	fakeBunArgs,
 	platformKey,
 	type RuntimeAsset,
 	PROGRAMS,
@@ -65,9 +66,9 @@ describe("bootstrap.sh installs the pinned runtime and the release bundle", () =
 				},
 			);
 			expect(shim.exitCode).toBe(0);
-			expect(shim.stdout.toString().trim()).toEndWith(
-				`${join("lib", "current", "dg.js")} ${program} probe two words`,
-			);
+			const [entry, ...rest] = fakeBunArgs(shim.stdout.toString());
+			expect(entry).toEndWith(join("lib", "current", "dg.js"));
+			expect(rest).toEqual([program, "probe", "two words"]);
 		}
 	});
 

@@ -337,7 +337,7 @@ function webmcpTools(): unknown {
 	return (JSON.parse(readFileSync(file, "utf8")) as { tools: unknown }).tools;
 }
 
-/** Run the long-lived serve process; resolves once it is listening and the event loop keeps it alive. */
+/** Run the long-lived serve process; the returned promise stays pending while the server runs. */
 export async function runServe(argv: string[]): Promise<number> {
 	if (argv.includes("--help")) {
 		process.stdout.write(SERVE_USAGE);

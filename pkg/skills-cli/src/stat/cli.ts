@@ -13,7 +13,6 @@ import {
 	renderPlain,
 	setStatus,
 	textAtLabel,
-	type ChecklistModel,
 	type Status,
 	STATUSES,
 	updateChecklist,

@@ -1,7 +1,7 @@
 /**
  * Skills-only install: the real command copies plugins/dg/skills into a temp
- * directory, does not execute skill content, and fetches only the dg-skills CLI
- * (checksum-verified), never dg-daemon, dg-agent or the extension.
+ * directory, does not execute skill content, and installs the verified runtime,
+ * bundle and shims, never the extension.
  */
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import {

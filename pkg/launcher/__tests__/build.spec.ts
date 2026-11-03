@@ -1,6 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { buildBundle, chunkFiles, walkFiles } from "./bundle-fixtures";
 
 setDefaultTimeout(120_000);
@@ -43,7 +43,7 @@ describe("launcher build", () => {
 	});
 
 	test("pw, inbox and nostr entry points produce chunks carrying those names", () => {
-		const names = chunkFiles(lib).map((file) => file.slice(file.lastIndexOf("/") + 1).replace(/-[0-9a-z]{8}\.js$/, ""));
+		const names = chunkFiles(lib).map((file) => basename(file).replace(/-[0-9a-z]{8}\.js$/, ""));
 		for (const name of ["pw", "inbox", "nostr"]) expect(names).toContain(name);
 	});
 

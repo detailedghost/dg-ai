@@ -24,7 +24,6 @@ import {
 	validateProtoPlan,
 	validateProtoRenderLimits,
 	validateStyleGuide,
-	validateVerdict,
 } from "@dg/common";
 import { CliClient, resolveCliSession } from "@dg/common/node";
 import { Command } from "commander";
@@ -869,8 +868,7 @@ function runLocal(argv: string[]): Promise<number | undefined> | number {
 	return runPrototype(argv);
 }
 
-/** Register `proto`: local prototype commands by default, the extension scrape/plant/cleanup flow behind `--ext`. */
-
+/** Dispatch `proto` argv: local prototype commands by default, the extension scrape/plant/cleanup flow behind `--ext`. */
 export function main(argv: string[]): number | void | Promise<number | void> {
 	return dispatchProto(argv, { local: runLocal, extension: runExtension });
 }

@@ -89,7 +89,6 @@ describe("relocated compiled catchup", () => {
 		skills = join(home, "plugins/dg/skills");
 		installedSkill = join(skills, "catchup/SKILL.md");
 		mkdirSync(stage, { recursive: true });
-		mkdirSync(stage, { recursive: true });
 		installBundleShim(binary);
 		const sourceSkill = join(
 			import.meta.dir,

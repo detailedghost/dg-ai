@@ -67,7 +67,16 @@ esac
 
 export const FAKE_BUN = `#!/bin/sh
 printf 'FAKE_BUN %s\\n' "$*"
+for arg in "$@"; do printf 'FAKE_ARG %s\\n' "$arg"; done
 `;
+
+/** Each argument the fake Bun received, one entry per argument. */
+export function fakeBunArgs(stdout: string): string[] {
+	return stdout
+		.split("\n")
+		.filter((line) => line.startsWith("FAKE_ARG "))
+		.map((line) => line.slice("FAKE_ARG ".length));
+}
 
 const ENV_OWNED_BY_BOOTSTRAP = [
 	"DG_HOME",
