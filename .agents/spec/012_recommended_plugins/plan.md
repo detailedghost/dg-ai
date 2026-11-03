@@ -17,14 +17,14 @@ slices:
   - id: 2
     name: "install-with-recommended"
     depends_on: [1]
-    files: ["pkg/skills-cli/src/install/recommended-plugins.ts","pkg/skills-cli/src/install/recommended-skills-only.ts","pkg/skills-cli/src/commands/install.ts","pkg/skills-cli/src/install/skills-only.ts","pkg/skills-cli/src/install/cli.ts","pkg/skills-cli/src/doctor/checks.ts","pkg/skills-cli/src/polish/doctor.ts","pkg/skills-cli/__tests__/install-recommended.spec.ts","pkg/skills-cli/__tests__/skills-only-recommended.spec.ts","plugins/dg/skills/teach/**","plugins/dg/skills/wait-what/**","pkg/common/src/node/install-skills.ts","pkg/common/__tests__/install-skills.spec.ts","pkg/common/__tests__/installed-skill-files.ts","pkg/skills-cli/bootstrap.sh","pkg/skills-cli/bootstrap.ps1","pkg/skills-cli/__tests__/skills-only-install.spec.ts","pkg/skills-test/__tests__/skill-index-docs.spec.ts","pkg/skills-test/__tests__/retired-skills.spec.ts"]
+    files: ["pkg/skills-cli/src/install/recommended-plugins.ts","pkg/skills-cli/src/install/recommended-skills-only.ts","pkg/skills-cli/src/commands/install.ts","pkg/skills-cli/src/install/skills-only.ts","pkg/skills-cli/src/install/cli.ts","pkg/skills-cli/src/doctor/checks.ts","pkg/skills-cli/src/polish/doctor.ts","pkg/skills-cli/__tests__/install-recommended.spec.ts","pkg/skills-cli/__tests__/skills-only-recommended.spec.ts","plugins/dg/skills/teach/**","plugins/dg/skills/wait-what/**","pkg/common/src/node/install-skills.ts","pkg/common/__tests__/install-skills.spec.ts","pkg/common/__tests__/installed-skill-files.ts","pkg/skills-cli/bootstrap.sh","pkg/skills-cli/bootstrap.ps1","pkg/skills-cli/__tests__/skills-only-install.spec.ts","pkg/skills-test/__tests__/skill-index-docs.spec.ts","pkg/skills-test/__tests__/retired-skills.spec.ts","plugins/dg/skills/README.md","README.md"]
     agents:
       primary: js
       qa: [security, qa-code]
   - id: 3
     name: "docs-adr-d"
     depends_on: [2]
-    files: ["docs/install.md","docs/AGENT-INSTALL.md","docs/adr/0027-optional-third-party-plugins.md","docs/adr/toc.md","README.md","plugins/dg/skills/polish/references/pr.md","plugins/dg/skills/README.md"]
+    files: ["docs/install.md","docs/AGENT-INSTALL.md","docs/adr/0027-optional-third-party-plugins.md","docs/adr/toc.md","README.md","plugins/dg/skills/polish/references/pr.md"]
     agents:
       primary: lore
       qa: [qa-code]
@@ -92,7 +92,7 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 - [ ] Contract: a fixture whose HEAD does not equal the pinned sha aborts that plugin and copies nothing
 - [ ] Contract: a symlink inside a declared skill dir aborts that plugin
 - [ ] Contract: --with-recommended with --agent-only is rejected
-- [ ] install-recommended.spec.ts: output lines per plugin and the final summary
+- [ ] install-recommended.spec.ts: one output line per plugin (no summary line)
 - [ ] retired-skills.spec.ts: a skills-only install into a dest that holds teach/ and wait-what/ removes both; plugins/dg/skills has neither directory; bootstrap.sh and bootstrap.ps1 name both in their retired loops
 
 #### Acceptance Criteria
@@ -122,6 +122,14 @@ Treat imported third-party skills as optional extras that dg pins but does not m
 - Slice 1: mattpocock-skills is pinned in marketplace.json, scripts/bump-plugin-pin.ts moves a pin (exit 1 unknown name or bad ref, 2 missing file, 3 unreachable), and plugin-pins, imported-plugins-optional and bump-plugin-pin specs guard the pins and the optional guard sentence. The guard must sit on the same line as the plugin name. The lint scans all text files under plugins/dg.
 
 ## Agent Notes
+
+- (orchestrator, slice 2) Signatures follow the code sample: installRecommendedForClaude(plugins, home, run, log), run(argv) returns {status, stdout, stderr} with argv starting with "claude"; installRecommendedSkillsOnly(plugin, dest, dgSkillNames, log) returns the written paths. installed_plugins.json shape: plugins["<name>@detailedghost"] = [{ gitCommitSha }].
+- (orchestrator, slice 2) installRecommendedSkillsOnly never throws. Offline, an unknown sha, a HEAD mismatch or a symlink each log exactly one line `⚠ <plugin> skipped: <reason>`, copy nothing for that plugin, and the install continues.
+- (orchestrator, slice 2) No final summary line. One line per plugin only.
+- (orchestrator, slice 2) --with-recommended with --agent-only exits 1 with an error that names both flags, and fetches or installs nothing.
+- (orchestrator, slice 2) A skills entry of "./" (unslop) installs the repo root as <dest>/<plugin name>/ with no .git entries.
+- (orchestrator, slice 2) Slice 2 removes the teach and wait-what rows from plugins/dg/skills/README.md and README.md when it deletes those skills, so skill-index-docs.spec.ts stays green. Slice 3 does the rest of the docs.
+- (orchestrator, slice 2) Production git calls inherit the default environment (keep GIT_CONFIG_* so tests can redirect https://github.com/<repo>.git to a local bare repo).
 
 - (orchestrator, slice 1) Keep pkg/skills-test/__tests__/marketplace-support.ts as the shared lint helper (pinViolations, optionalPluginViolations). The spec tests import it.
 - (orchestrator, slice 1) bump-plugin-pin.spec.ts runs the script as a subprocess with cwd set to a temp dir that holds .claude-plugin/marketplace.json and a fake git first on PATH. Keep the script reading the relative path.
