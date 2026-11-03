@@ -15,6 +15,10 @@ import { compareVersions, versionGte } from "../utils/lib";
 
 export const CLI_PATH = "dg-skills";
 export const LEGACY_CLI_PATH = "~/.dg/bin/dg-skills";
+
+export function cliLauncher(binDir: string, platform: NodeJS.Platform = process.platform): string {
+	return join(binDir, platform === "win32" ? "dg-skills.cmd" : "dg-skills");
+}
 const VERSION = /\d+\.\d+(?:\.\d+)?/;
 
 export function whichBinary(

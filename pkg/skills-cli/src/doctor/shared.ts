@@ -3,7 +3,7 @@ import { delimiter, join } from "node:path";
 import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
 import { readCurrent } from "../install/current";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
-import { installedPlugins, isOlder, toolVersion, writableDirectory } from "./probes";
+import { cliLauncher, installedPlugins, isOlder, toolVersion, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
 
 export function rootCheck(
@@ -79,7 +79,7 @@ export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "launcher-on-path",
 		run(ctx) {
-			const launcher = join(ctx.paths.binDir, process.platform === "win32" ? "dg-skills.cmd" : "dg-skills");
+			const launcher = cliLauncher(ctx.paths.binDir);
 			if (!existsSync(launcher)) return ok(`no dg-skills launcher in ${ctx.paths.binDir}`);
 			if ((ctx.env.PATH ?? "").split(delimiter).includes(ctx.paths.binDir))
 				return ok(`${ctx.paths.binDir} is on PATH`);

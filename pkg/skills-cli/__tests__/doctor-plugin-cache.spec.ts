@@ -46,17 +46,18 @@ const homeCheck = () => {
 };
 
 describe("doctor install plugin-cache check", () => {
-	test("warns with the stale count, reclaimable size and the install fix", async () => {
+	test.skipIf(process.platform === "win32")("warns with the stale count, reclaimable size and the install fix through the per-OS launcher path", async () => {
 		const longAgo = Date.now() - 48 * 60 * 60 * 1000;
 		writeVersion("1.20.0", longAgo);
 		writeVersion("1.21.0", longAgo);
 		writeVersion("1.24.0");
 		writeInstalled("1.24.0");
-		const result = await cacheCheck().run(context());
+		const ctx = context();
+		const result = await cacheCheck().run(ctx);
 		expect(result).toEqual({
 			status: "warn",
 			detail: "2 stale version(s), 0 MB reclaimable",
-			fix: "dg-skills install",
+			fix: `'${join(ctx.paths.binDir, "dg-skills")}' install`,
 		});
 	});
 

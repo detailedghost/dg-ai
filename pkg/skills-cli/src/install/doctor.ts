@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
 	activeVersions,
 	formatMegabytes,
@@ -12,7 +11,7 @@ import {
 	bootstrapCommand,
 	skillFilesCheck,
 } from "../doctor/checks";
-import { CLI_PATH, writableDirectory } from "../doctor/probes";
+import { CLI_PATH, cliLauncher, writableDirectory } from "../doctor/probes";
 import { type DoctorCheck, fail, ok, warn } from "../doctor/types";
 
 export const installChecks: DoctorCheck[] = [
@@ -20,10 +19,7 @@ export const installChecks: DoctorCheck[] = [
 	{
 		id: "cli-binary",
 		run(ctx) {
-			const dest = join(
-				ctx.paths.binDir,
-				process.platform === "win32" ? "dg-skills.cmd" : "dg-skills",
-			);
+			const dest = cliLauncher(ctx.paths.binDir);
 			return existsSync(dest)
 				? ok(`${CLI_PATH} is installed`)
 				: warn(
@@ -60,7 +56,7 @@ export const installChecks: DoctorCheck[] = [
 			const bytes = remove.reduce((sum, version) => sum + version.bytes, 0);
 			return warn(
 				`${remove.length} stale version(s), ${formatMegabytes(bytes)} reclaimable`,
-				`${CLI_PATH} install`,
+				`${shellCommand([cliLauncher(ctx.paths.binDir)])} install`,
 			);
 		},
 	},
