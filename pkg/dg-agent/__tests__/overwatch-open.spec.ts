@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import type { CliRequest, SessionBootstrap } from "@dg/common";
 import { validateSessionBootstrap } from "@dg/common";
-import { buildBootstrapUrl } from "@dg/common/node";
+import { buildBootstrapUrl, openFailedHint } from "@dg/common/node";
 import {
 	bootServe,
 	decodeChatMarker,
@@ -54,6 +54,7 @@ async function runOpen(
 	localBootstrap: () => Promise<SessionBootstrap> = async () => BOOTSTRAP,
 	opened: string[] = [],
 	launched = true,
+	wsl = false,
 ) {
 	const client = new RecordingClient();
 	const written: string[] = [];
@@ -72,6 +73,7 @@ async function runOpen(
 			opened.push(url);
 			return launched;
 		},
+		openFailedHint: () => openFailedHint(wsl),
 		localBootstrap,
 	});
 	await program.parseAsync(["node", "dg-agent", "overwatch", "open", ...args]);
@@ -125,6 +127,14 @@ describe("dg-agent overwatch open", () => {
 		const { errors } = await runOpen([], undefined, [], false);
 
 		expect(errors).toEqual(["could not open a browser; open the URL above\n"]);
+	});
+
+	it("names the DG_OPEN_WINDOWS opt-in on WSL when the browser does not launch", async () => {
+		const { errors } = await runOpen([], undefined, [], false, true);
+
+		expect(errors).toEqual([
+			"could not open a browser; open the URL above (set DG_OPEN_WINDOWS=1 to open the Windows browser)\n",
+		]);
 	});
 
 	it("writes nothing to stderr when the browser launches", async () => {

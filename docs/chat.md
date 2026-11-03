@@ -12,6 +12,8 @@ Codex:      $dg:chat
 `dg-agent start --open` opens the chat page that `dg-daemon` serves at
 `http://127.0.0.1:<port>/chat`. No extension is needed. The same daemon serves
 the overwatch board at `/board`, and `dg-agent overwatch open` opens it.
+On WSL these commands print the URL and do not start a Windows browser. Set
+`DG_OPEN_WINDOWS=1` to open the Windows default browser.
 
 The URL ends in a fragment, `#_chat=<base64url>`, that carries the session
 token. The browser never sends a fragment to a server, so the token stays out

@@ -681,11 +681,15 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (frame.type === "session-pending") {
 			const requester = bootstrapsBySession.get(frame.sessionId);
 			if (requester) {
-				holdBootstrap({
+				const spawned = {
 					...requester,
 					sessionId: frame.newSession.sessionId,
 					token: frame.newSession.token,
-				});
+				};
+				holdBootstrap(spawned);
+				void api.storage.session
+					.set({ [chatSessionKey(spawned.sessionId)]: spawned })
+					.catch(() => {});
 			}
 			return;
 		}

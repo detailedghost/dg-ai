@@ -2,14 +2,13 @@ import {
 	forgetLocalBootstrap,
 	loadLocalBootstrap,
 	localStorageOrMemory,
+	SESSION_ENDED_TEXT,
 	sessionStorageOrMemory,
 } from "../local";
 import { renderOverwatchPage } from "./main";
 import { createOverwatchApi, OverwatchHttpError } from "./overwatch";
 
 const BOARD_POLL_MS = 5_000;
-const EXPIRED_LABEL =
-	"Session token missing or expired. Reopen this page from the chat link.";
 const root = document.getElementById("app");
 
 if (root) {
@@ -29,7 +28,7 @@ if (root) {
 	const handle = renderOverwatchPage({
 		root,
 		runtime: { storage },
-		offlineLabel: () => (expired ? EXPIRED_LABEL : "Daemon unreachable"),
+		offlineLabel: () => (expired ? SESSION_ENDED_TEXT : "Daemon unreachable"),
 		connect: () => {
 			if (!bootstrap || expired) return Promise.resolve(undefined);
 			const api = createOverwatchApi(window.location.origin, bootstrap.token);
@@ -37,7 +36,7 @@ if (root) {
 				...api,
 				getBoard: () => {
 					if (expired) {
-						return Promise.reject(new OverwatchHttpError(403, EXPIRED_LABEL));
+						return Promise.reject(new OverwatchHttpError(403, SESSION_ENDED_TEXT));
 					}
 					return api.getBoard().catch((error: unknown) => {
 						if (error instanceof OverwatchHttpError && error.status === 403) {
@@ -47,10 +46,11 @@ if (root) {
 					});
 				},
 				sendAction: async (action) => {
-					if (expired) return { ok: false, error: EXPIRED_LABEL };
+					if (expired) return { ok: false, error: SESSION_ENDED_TEXT };
 					const result = await api.sendAction(action);
-					if (!result.ok && result.status === 403) expire();
-					return result;
+					if (result.ok || result.status !== 403) return result;
+					expire();
+					return { ...result, error: SESSION_ENDED_TEXT };
 				},
 			});
 		},

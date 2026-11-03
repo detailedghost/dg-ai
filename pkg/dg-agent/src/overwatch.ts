@@ -12,7 +12,7 @@ import {
 	validateOverwatchLaneUpdate,
 	validateIsoTimestamp,
 } from "@dg/common";
-import { buildBootstrapUrl, OPEN_FAILED_HINT } from "@dg/common/node";
+import { buildBootstrapUrl, openFailedHint } from "@dg/common/node";
 import type { Command } from "commander";
 
 const COMMAND_TIMEOUT_MS = 5_000;
@@ -33,6 +33,7 @@ export type OverwatchCommandDependencies = {
 	write(value: string): Promise<void>;
 	writeError(value: string): Promise<void>;
 	tryOpen(url: string): Promise<boolean>;
+	openFailedHint?: () => string;
 	localBootstrap(command: Command): Promise<SessionBootstrap>;
 };
 
@@ -183,7 +184,8 @@ async function openLocalBoard(
 	const url = buildBootstrapUrl(bootstrap.port, bootstrap, "/board");
 	await dependencies.write(`${url}\n`);
 	if (!(await dependencies.tryOpen(url))) {
-		await dependencies.writeError(`${OPEN_FAILED_HINT}\n`);
+		const hint = (dependencies.openFailedHint ?? openFailedHint)();
+		await dependencies.writeError(`${hint}\n`);
 	}
 }
 

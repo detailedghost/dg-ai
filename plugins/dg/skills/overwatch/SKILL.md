@@ -88,7 +88,9 @@ Open the live board in the default browser with the local page:
 ~/.dg/bin/dg-agent overwatch open
 ```
 
-It uses this chat's live session, so run `dg-agent start` first.
+It uses this chat's live session, so run `dg-agent start` first. On WSL it
+prints the board URL and opens the Windows browser only when
+`DG_OPEN_WINDOWS=1` is set.
 
 ## Handle board actions
 

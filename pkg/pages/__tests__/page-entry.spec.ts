@@ -64,6 +64,7 @@ type Net = {
 	intervals: { callback: () => void; ms: number }[];
 	cleared: unknown[];
 	timeouts: (() => void)[];
+	delays: number[];
 	respond: (url: string) => Promise<Response>;
 };
 
@@ -75,6 +76,8 @@ const BOARD_JSON = JSON.stringify({
 });
 
 const STORED_BOOTSTRAP_KEY = "dg_local_bootstrap";
+const SESSION_ENDED_TEXT =
+	"Your session has ended, so run dg-agent start --open again to get a new link.";
 
 const LANE_BOARD_JSON = JSON.stringify({
 	lanes: [
@@ -117,6 +120,7 @@ function installGlobals(href: string): Net {
 		intervals: [],
 		cleared: [],
 		timeouts: [],
+		delays: [],
 		respond: () => Promise.resolve(new Response(BOARD_JSON)),
 	};
 	class FakeSocket {
@@ -177,8 +181,9 @@ function installGlobals(href: string): Net {
 		clearInterval: (handle: unknown) => {
 			net.cleared.push(handle);
 		},
-		setTimeout: (callback: () => void) => {
+		setTimeout: (callback: () => void, ms = 0) => {
 			net.timeouts.push(callback);
+			net.delays.push(ms);
 			return net.timeouts.length;
 		},
 	};
@@ -283,9 +288,7 @@ describe("board page entry wiring", () => {
 		expect(pollHandle).toBeGreaterThan(0);
 		expect(net.cleared).toContain(pollHandle);
 		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
-		expect(net.win.document.body.textContent).toContain(
-			"Reopen this page from the chat link",
-		);
+		expect(net.win.document.body.textContent).toContain(SESSION_ENDED_TEXT);
 		expect(net.win.document.body.textContent).not.toContain(
 			"Daemon unreachable",
 		);
@@ -591,5 +594,166 @@ describe("chat page entry wiring", () => {
 
 		expect(net.sockets).toEqual([]);
 		expect(net.fetches).toEqual([]);
+	});
+});
+
+describe("page recovery after a daemon restart", () => {
+	const boardHref = `http://127.0.0.1:${BOOTSTRAP.port}/board#${fragment(BOOTSTRAP)}`;
+	const chatHref = `http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`;
+
+	test("board keeps the bootstrap and polling while the daemon is down, then reads with the same token", async () => {
+		const net = installGlobals(boardHref);
+		await loadEntry("../src/board/page");
+		const poll = net.intervals.find((interval) => interval.ms === 5000);
+		net.respond = () => Promise.reject(new TypeError("Failed to fetch"));
+
+		poll?.callback();
+		await settle();
+		await runTimeouts(net);
+		net.respond = () =>
+			Promise.resolve(new Response("starting", { status: 503 }));
+		await runTimeouts(net);
+
+		expect(net.win.document.body.textContent).toContain("Daemon unreachable");
+		expect(net.cleared).toEqual([]);
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		expect(net.delays.length).toBeGreaterThan(0);
+
+		net.respond = () => Promise.resolve(new Response(LANE_BOARD_JSON));
+		await runTimeouts(net);
+		poll?.callback();
+		await settle();
+
+		const read = net.fetches.at(-1);
+		expect(read?.init?.headers).toMatchObject({
+			Authorization: `Bearer ${BOOTSTRAP.token}`,
+		});
+		expect(net.win.document.body.textContent).not.toContain(
+			"Daemon unreachable",
+		);
+	});
+
+	test("chat retries with growing delays and the same token while the daemon restarts", async () => {
+		const net = installGlobals(chatHref);
+		net.respond = () => Promise.reject(new TypeError("Failed to fetch"));
+		await loadEntry("../src/chat/page");
+		net.socketHandles[0]?.fire("open");
+		await settle();
+		net.socketHandles[0]?.fire("close");
+		await settle();
+
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			await runTimeouts(net);
+			net.socketHandles[attempt]?.fire("close");
+			await settle();
+		}
+		await runTimeouts(net);
+		const reopened = net.socketHandles.at(-1);
+		reopened?.fire("open");
+		await settle();
+
+		expect(net.socketHandles.length).toBeGreaterThanOrEqual(5);
+		for (const url of net.sockets) {
+			expect(url).toEndWith(`?token=${encodeURIComponent(BOOTSTRAP.token)}`);
+		}
+		const retryDelays = net.delays.filter((ms) => ms > 0);
+		expect(retryDelays.length).toBeGreaterThanOrEqual(3);
+		expect(retryDelays.at(-1)).toBeGreaterThan(retryDelays[0] ?? 0);
+		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		const connects = net.sent
+			.map((raw) => JSON.parse(raw))
+			.filter((frame) => frame.type === "connect");
+		expect(connects.at(-1)).toMatchObject({
+			sessionId: BOOTSTRAP.sessionId,
+			token: BOOTSTRAP.token,
+		});
+	});
+});
+
+describe("session ended text", () => {
+	const boardHref = `http://127.0.0.1:${BOOTSTRAP.port}/board#${fragment(BOOTSTRAP)}`;
+	const chatHref = `http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`;
+
+	function noticeText(net: Net): string[] {
+		return [...net.win.document.querySelectorAll('[role="alert"]')]
+			.map((node) => node.textContent ?? "")
+			.filter((text) => text.length > 0);
+	}
+
+	test("board shows the sentence when it opens with no session link", async () => {
+		const net = installGlobals(`http://127.0.0.1:${BOOTSTRAP.port}/board`);
+
+		await loadEntry("../src/board/page");
+
+		expect(net.win.document.body.textContent).toContain(SESSION_ENDED_TEXT);
+	});
+
+	test("board shows the sentence as the action error after a refused action", async () => {
+		const net = installGlobals(boardHref);
+		net.respond = (url) =>
+			Promise.resolve(
+				url.endsWith("/overwatch/action")
+					? new Response("refused", { status: 403 })
+					: new Response(LANE_BOARD_JSON),
+			);
+		await loadEntry("../src/board/page");
+
+		clickApprove(net);
+		await settle();
+
+		expect(net.win.document.body.textContent).toContain(SESSION_ENDED_TEXT);
+		expect(net.win.document.body.textContent).not.toContain("refused");
+	});
+
+	test("chat shows the sentence once when the daemon refuses the token", async () => {
+		const net = installGlobals(chatHref);
+		net.respond = () =>
+			Promise.resolve(new Response("refused", { status: 403 }));
+		await loadEntry("../src/chat/page");
+
+		net.socketHandles[0]?.fire("close");
+		await settle();
+		await runTimeouts(net);
+
+		expect(noticeText(net)).toEqual([SESSION_ENDED_TEXT]);
+	});
+
+	test("chat shows the sentence after an invalid-session error", async () => {
+		const net = installGlobals(chatHref);
+		await loadEntry("../src/chat/page");
+		const socket = net.socketHandles[0];
+		socket?.fire("open");
+		await settle();
+
+		socket?.receive({
+			type: "error",
+			sessionId: BOOTSTRAP.sessionId,
+			message: "invalid or closed session capability",
+			code: "invalid-session",
+		});
+		await settle();
+		await runTimeouts(net);
+
+		expect(noticeText(net)).toContain(SESSION_ENDED_TEXT);
+	});
+
+	test("chat shows the sentence when it opens with no session link", async () => {
+		const net = installGlobals(`http://127.0.0.1:${BOOTSTRAP.port}/chat`);
+
+		await loadEntry("../src/chat/page");
+
+		expect(noticeText(net)).toEqual([SESSION_ENDED_TEXT]);
+	});
+
+	test("chat does not show the sentence while the daemon is only unreachable", async () => {
+		const net = installGlobals(chatHref);
+		net.respond = () => Promise.reject(new TypeError("Failed to fetch"));
+		await loadEntry("../src/chat/page");
+
+		net.socketHandles[0]?.fire("close");
+		await settle();
+		await runTimeouts(net);
+
+		expect(noticeText(net)).toEqual([]);
 	});
 });

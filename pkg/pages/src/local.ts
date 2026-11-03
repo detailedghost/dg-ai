@@ -3,6 +3,9 @@ import { readChatBootstrap, stripChatMarker } from "./chat-marker";
 import { browserStorage, memoryStorage, type PageStorage } from "./runtime";
 
 const STORED_BOOTSTRAP_KEY = "dg_local_bootstrap";
+
+export const SESSION_ENDED_TEXT =
+	"Your session has ended, so run dg-agent start --open again to get a new link.";
 const REFUSED_TOKENS_KEY = "dg_local_refused";
 
 function refusedTokens(storage: PageStorage): string[] {

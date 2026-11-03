@@ -100,9 +100,10 @@ export function createOverwatchApi(
 
 export async function connectOverwatchApi(
 	knownPort?: number,
+	token?: string,
 ): Promise<OverwatchApi | undefined> {
 	if (knownPort !== undefined) {
-		const direct = createOverwatchApi(`http://127.0.0.1:${knownPort}`);
+		const direct = createOverwatchApi(`http://127.0.0.1:${knownPort}`, token);
 		try {
 			await direct.getBoard();
 			return direct;

@@ -22,7 +22,8 @@ import {
 	readPidFile,
 	requireMatchingProtocol,
 	resolveDgPaths,
-	OPEN_FAILED_HINT,
+	type OpenSeams,
+	openFailedHint,
 	tryOpen,
 } from "@dg/common/node";
 import { claimWaitingSession } from "./attach";
@@ -36,6 +37,7 @@ function siblingDaemonArgv(): string[] {
 export type StartSeams = {
 	daemonArgv?: () => string[];
 	tryOpen?: (url: string) => Promise<boolean>;
+	openFailedHint?: () => string;
 };
 
 function spawnDaemonProcess(seams: StartSeams): void {
@@ -153,8 +155,24 @@ async function openIfRequested(
 	options: StartOptions,
 	seams: StartSeams,
 ): Promise<void> {
-	if (!options.open) return;
-	if (!(await (seams.tryOpen ?? tryOpen)(url))) console.error(OPEN_FAILED_HINT);
+	if (options.open) await openUrlOrHint(url, seams);
+}
+
+/** Open a dg-agent URL; on WSL the Windows browser needs DG_OPEN_WINDOWS=1. */
+export function tryOpenAgentUrl(
+	url: string,
+	seams: OpenSeams = {},
+): Promise<boolean> {
+	return tryOpen(url, { ...seams, requireWindowsOptIn: true });
+}
+
+/** Open a URL in a browser, or write the stderr hint when no launcher ran. */
+export async function openUrlOrHint(
+	url: string,
+	seams: Pick<StartSeams, "tryOpen" | "openFailedHint"> = {},
+): Promise<void> {
+	if (await (seams.tryOpen ?? tryOpenAgentUrl)(url)) return;
+	console.error((seams.openFailedHint ?? openFailedHint)());
 }
 
 export async function cmdStart(
