@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.34.1 (2026-11-03)
+
+### Fixes
+
+- fix(dg-daemon): refuse no-Origin requests without a token ([#130](https://github.com/detailedghost/dg-ai/pull/130))
+
 ## v1.34.0 (2026-11-03)
 
 ### Features
