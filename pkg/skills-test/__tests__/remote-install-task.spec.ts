@@ -53,6 +53,12 @@ describe("mise remote:install", () => {
 		expect(version.exitCode).toBe(0);
 	}, 360_000);
 
+	test("builds each run into its own temporary directory and removes it afterwards", () => {
+		expect(script).toContain("mktemp -d");
+		expect(script).toContain("trap");
+		expect(script).not.toContain("pkg/launcher/dist");
+	});
+
 	test("refuses to run before bootstrap installed the pinned runtime", () => {
 		const root = makeTempDir("dg-remote-install-bare-");
 		const result = runTask(root);

@@ -16,10 +16,12 @@ if [ ! -x "$ROOT/runtime/current/bun" ]; then
   echo "remote:install: no runtime at $ROOT/runtime/current; run bootstrap.sh once first" >&2
   exit 1
 fi
-bun run --cwd pkg/launcher build
+OUT="$(mktemp -d)"
+trap 'rm -rf "$OUT"' EXIT
+bun run --cwd pkg/launcher build --outdir "$OUT"
 BASE="$(bun -e 'console.log(require("./pkg/skills-cli/package.json").version)')-local"
 VERSION="$BASE.$(date +%s).$$"
-bun scripts/remote-install.ts "$ROOT" pkg/launcher/dist/lib "$BASE" "$VERSION"
+bun scripts/remote-install.ts "$ROOT" "$OUT/lib" "$BASE" "$VERSION"
 """
 
 [tasks."remote:status"]
