@@ -71,7 +71,7 @@ function sentence(probes: Probe[]): string {
 	return `Call ${names} in every later step. If a bare name does not answer, also after the bootstrap, call it by its \`${FALLBACK_DIR}\` path instead.`;
 }
 
-const TRAILER_IF = /^if command -v (?:dg-[a-z]+) >\/dev\/null 2>&1; then (.*); else .*; fi$/;
+const TRAILER_IF = /^if .*; then (.*); else .*; fi$/;
 
 function bareTrailer(line: string): string {
 	const branch = TRAILER_IF.exec(line)?.[1];
@@ -83,12 +83,13 @@ function bareTrailer(line: string): string {
 	return line;
 }
 
-const byPath = (raw: string): string => {
+function byPath(raw: string, probes: Probe[]): string {
 	const line = bareTrailer(raw);
 	const program = PROGRAM.exec(line)?.[1];
-	if (!program) return raw;
-	return `if command -v ${program} >/dev/null 2>&1; then ${line}; else ${fallback({ program, expression: line })}; fi`;
-};
+	const checks = probes.filter((probe) => probe.program === program).map((probe) => probe.expression);
+	if (!program || checks.length === 0) return raw;
+	return `if ${checks.join(" && ")}; then ${line}; else ${fallback({ program, expression: line })}; fi`;
+}
 
 type Block = { probes: Probe[]; curl: string; trailer: string[]; fence: string; indent: string };
 
@@ -102,7 +103,7 @@ export function renderBlock({ probes, curl, trailer, fence, indent }: Block): st
 	return [
 		`\`\`\`${fence}`,
 		...body,
-		...trailer.map(byPath),
+		...trailer.map((line) => byPath(line, probes)),
 		"```",
 		"",
 		sentence(probes),

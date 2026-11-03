@@ -14,7 +14,7 @@ On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
   { "${DG_HOME:-$HOME/.local}/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&
   "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
-if command -v dg-skills >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi
+if dg-skills deps-upgrade --help >/dev/null 2>&1 && dg-skills channel-review --help >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi
 ```
 
 Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.

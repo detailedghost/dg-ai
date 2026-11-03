@@ -105,8 +105,29 @@ describe("first-run blocks after the bootstrap", () => {
 		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
 		expect(text).toContain('  "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup --help >/dev/null 2>&1 ||\n');
 		expect(text).toContain(
-			'\nif command -v dg-skills >/dev/null 2>&1; then dg-skills catchup; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup; fi\n',
+			'\nif dg-skills catchup --help >/dev/null 2>&1; then dg-skills catchup; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" catchup; fi\n',
 		);
+	});
+
+	test("run the follow-up command through the launcher path when the PATH launcher fails the probe", () => {
+		const dir = makeTempDir("dg-skill-trailer-");
+		const bin = join(dir, "bin");
+		const home = join(dir, "home");
+		mkdirSync(bin);
+		mkdirSync(join(home, ".local", "bin"), { recursive: true });
+		writeFileSync(join(bin, "dg-skills"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+		writeFileSync(join(home, ".local", "bin", "dg-skills"), '#!/bin/sh\necho "fallback $*"\n', { mode: 0o755 });
+		const text = readFileSync(join(SKILLS_DIR, "catchup", "SKILL.md"), "utf8");
+		const block = /```bash\n([\s\S]*?)```/.exec(text)?.[1] ?? "";
+
+		const run = Bun.spawnSync(["sh", "-c", block], {
+			env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		expect(run.exitCode, run.stderr.toString()).toBe(0);
+		expect(run.stdout.toString()).toBe("fallback catchup\n");
 	});
 
 	test("run the follow-up command through PATH when only PATH has the launcher", () => {

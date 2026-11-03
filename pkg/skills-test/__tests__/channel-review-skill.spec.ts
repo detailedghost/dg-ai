@@ -141,7 +141,7 @@ describe("channel-review skill distribution", () => {
 			'  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&',
 			'  "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||',
 			expect.stringMatching(/^ {2}curl .*bootstrap\.sh \| sh -s -- --cli-only$/),
-			'if command -v dg-skills >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi',
+			'if dg-skills deps-upgrade --help >/dev/null 2>&1 && dg-skills channel-review --help >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi',
 			"```",
 		]);
 	});
