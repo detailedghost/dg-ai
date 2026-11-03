@@ -16,7 +16,7 @@ function selfCheck(runtimeBin: string, entry: string, version: string): void {
 		throw new Error(`bundle self-check failed: ${detail}`);
 	}
 	const printed = result.stdout.trim();
-	if (!printed.startsWith(version)) {
+	if (printed.split(/\s+/)[0] !== version) {
 		throw new Error(`bundle self-check failed: expected ${version}, printed ${printed || "nothing"}`);
 	}
 }

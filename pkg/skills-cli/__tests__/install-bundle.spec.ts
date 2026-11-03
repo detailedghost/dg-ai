@@ -92,6 +92,28 @@ describe("fetchBundle", () => {
 		expect(existsSync(join(lib, VERSION))).toBe(false);
 	});
 
+	test("rejects a self-check that prints a longer version with the same prefix", async () => {
+		seedVersion(PREVIOUS);
+		seedCurrent(PREVIOUS);
+		serve();
+		const runtime = join(sandbox.directory, "runtime-prefix-version");
+		writeFileSync(runtime, fakeBunScript(`${VERSION}1`), { mode: 0o755 });
+
+		await expect(fetchBundle(sandbox.root, release(), runtime)).rejects.toThrow(`printed ${VERSION}1`);
+
+		expect(basename(readlinkSync(join(sandbox.root, "lib", "current")))).toBe(PREVIOUS);
+	});
+
+	test("accepts a self-check that prints the version followed by build details", async () => {
+		serve();
+		const runtime = join(sandbox.directory, "runtime-version-details");
+		writeFileSync(runtime, fakeBunScript(`${VERSION} (abc1234)`), { mode: 0o755 });
+
+		await fetchBundle(sandbox.root, release(), runtime);
+
+		expect(basename(readlinkSync(join(sandbox.root, "lib", "current")))).toBe(VERSION);
+	});
+
 	test("rejects a tarball whose sha256 is not the one SHA256SUMS lists and changes nothing", async () => {
 		seedVersion(PREVIOUS);
 		seedCurrent(PREVIOUS);
