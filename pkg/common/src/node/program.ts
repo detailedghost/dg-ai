@@ -12,11 +12,17 @@ export function programName(): ProgramName | undefined {
 	return recorded;
 }
 
-/** argv for a program on this runtime and bundle: [bun, dg.js, name, ...args]. */
+const SOURCE_PACKAGES: Record<ProgramName, string> = {
+	"dg-skills": "skills-cli",
+	"dg-agent": "dg-agent",
+	"dg-daemon": "dg-daemon",
+};
+
+/** argv for a program on this runtime and bundle: [bun, dg.js, name, ...args], or its source entry in a checkout. */
 export function programCommand(name: ProgramName, args: readonly string[]): string[] {
-	return recorded
-		? [process.execPath, Bun.main, name, ...args]
-		: [process.execPath, Bun.main, ...args];
+	if (recorded) return [process.execPath, Bun.main, name, ...args];
+	const entry = join(import.meta.dir, "..", "..", "..", SOURCE_PACKAGES[name], "src", "index.ts");
+	return [process.execPath, entry, ...args];
 }
 
 /** argv for service units: the stable current links, never a version directory. */

@@ -85,6 +85,18 @@ describe("programCommand", () => {
 		]);
 	});
 
+	it("runs the sibling package's source entry when no bundle program is recorded", () => {
+		resetProgramName();
+		const pkgRoot = join(import.meta.dir, "..", "..");
+		expect(programCommand("dg-daemon", ["__serve"])).toEqual([
+			process.execPath,
+			join(pkgRoot, "dg-daemon", "src", "index.ts"),
+			"__serve",
+		]);
+		expect(programCommand("dg-skills", ["bg"])[1]).toBe(join(pkgRoot, "skills-cli", "src", "index.ts"));
+		expect(programCommand("dg-agent", [])[1]).toBe(join(pkgRoot, "dg-agent", "src", "index.ts"));
+	});
+
 	it("never injects a versioned lib directory", () => {
 		setProgramName("dg-agent");
 		const argv = programCommand("dg-daemon", ["__serve"]);
