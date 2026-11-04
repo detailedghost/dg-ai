@@ -47,6 +47,11 @@ function dgHome(platform: NodeJS.Platform, value: string): string {
 	return path.isAbsolute(value) ? value : path.resolve(value);
 }
 
+/** Rewrites a relative `DG_HOME` in `env` to an absolute path so children started in another folder find the same install. */
+export function normalizeDgHome(env: Env = process.env, platform: NodeJS.Platform = process.platform): void {
+	if (env.DG_HOME) env.DG_HOME = dgHome(platform, env.DG_HOME);
+}
+
 function roots(platform: NodeJS.Platform, home: string, env: Env): DgRoots {
 	const path = platform === "win32" ? win32 : posix;
 	if (env.DG_HOME) {
