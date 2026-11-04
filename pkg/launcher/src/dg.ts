@@ -22,6 +22,8 @@ export async function dispatch(argv: readonly string[]): Promise<number> {
 		);
 		return EX_USAGE;
 	}
+	const { normalizeDgHome } = await import("@dg/common/node/dg-paths");
+	normalizeDgHome();
 	if (rest.length === 1 && rest[0] === "--version") {
 		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
 		return 0;

@@ -169,7 +169,7 @@ copy_skill_tree() {
   count=$(wc -l <"$manifest" | tr -d " ")
   echo "Installed ${count} skill files at ${dest}."
   copy_personas "$src" "$dest"
-  echo "Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension)."
+  echo "Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension)."
   rm -f "$manifest"
 }
 
