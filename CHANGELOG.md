@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.39.0 (2026-11-04)
+
+### Features
+
+- feat(spec): cost profiles, greedy slice build, --proxy and --bg ([#139](https://github.com/detailedghost/dg-ai/pull/139))
+
 ## v1.38.0 (2026-11-04)
 
 ### Features
