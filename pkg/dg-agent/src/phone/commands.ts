@@ -58,6 +58,7 @@ import {
 	fanoutThread,
 	formatBehind,
 	MAX_THREAD_MEMBERS,
+	type MemberReport,
 	parseThreadHandle,
 	selfCopyOk,
 	senderLabel,
@@ -669,6 +670,12 @@ function stageOutbox(deps: PhoneDeps, image: PreparedImage, keyId: string, recip
 	};
 }
 
+function dropMissedRecipients(deps: PhoneDeps, x: string, members: readonly MemberReport[]): void {
+	for (const member of members) {
+		if (!member.self && member.relays_ok.length === 0 && member.relays_unconfirmed.length === 0) deps.db.removeOutboxRecipient(x, pubkeyHex(member.npub));
+	}
+}
+
 function rumorTags(image: PreparedImage | undefined, phi: boolean): string[][] {
 	return [...(image?.tags ?? []), ...(phi ? [[PHI_TAG, "1"]] : [])];
 }
@@ -751,6 +758,7 @@ async function phoneSayThread(
 		const behind = behindHandles(delivered.members);
 		const kept = threadSendKept(delivered.members);
 		if (kept) {
+			if (image) dropMissedRecipients(deps, image.x, delivered.members);
 			saveOutgoing(
 				deps,
 				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id },

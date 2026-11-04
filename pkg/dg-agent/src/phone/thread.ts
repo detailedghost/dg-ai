@@ -394,6 +394,16 @@ export type ThreadRecipient = { handle: string; npub: string; pub: string; self:
 
 export type RelayReport = { ok: string[]; unconfirmed: string[]; failed: RelayFailure[] };
 
+async function sendWrap(
+	input: Pick<Parameters<typeof fanoutThread>[0], "sk" | "relaysFor" | "publishTo">,
+	rumor: ReturnType<typeof nip59.createRumor>,
+	recipient: ThreadRecipient,
+): Promise<RelayReport> {
+	const relays = await input.relaysFor(recipient);
+	const seal = nip59.createSeal(rumor, input.sk, recipient.pub);
+	return input.publishTo(relays, nip59.createWrap(seal, recipient.pub));
+}
+
 /**
  * One kind-14 rumor, a `p` tag per other member, and the subject tag.
  * Each recipient, including us, gets their own seal and gift wrap.
@@ -425,10 +435,9 @@ export async function fanoutThread(input: {
 	);
 	const members: MemberReport[] = [];
 	for (const recipient of input.recipients) {
-		const relays = await input.relaysFor(recipient);
-		const seal = nip59.createSeal(rumor, input.sk, recipient.pub);
-		const event = nip59.createWrap(seal, recipient.pub);
-		const report = await input.publishTo(relays, event);
+		const report = await sendWrap(input, rumor, recipient).catch(
+			(err: unknown): RelayReport => ({ ok: [], unconfirmed: [], failed: [{ relay: "", reason: err instanceof Error ? err.message : String(err) }] }),
+		);
 		members.push({
 			handle: recipient.handle,
 			npub: recipient.npub,

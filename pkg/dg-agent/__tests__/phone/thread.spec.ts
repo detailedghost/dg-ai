@@ -405,6 +405,37 @@ describe("fanoutThread", () => {
 		expect(behindHandles(delivered.members)).toEqual(["+b"]);
 		expect(formatBehind(delivered.members)).not.toContain("hello room");
 	});
+	it("keeps going past a recipient whose send throws and reports that member as failed", async () => {
+		const alice = person();
+		const bob = person();
+		const cara = person();
+		const published: string[] = [];
+		const delivered = await fanoutThread({
+			sk: alice.sk,
+			text: "hello room",
+			createdAt: 50,
+			subject: "ops",
+			fallbackSubject: "ops",
+			recipients: [
+				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
+				{ handle: "+c", npub: cara.npub, pub: cara.pub, self: false },
+				{ handle: "+a", npub: alice.npub, pub: alice.pub, self: true },
+			],
+			relaysFor: async (recipient) => {
+				if (recipient.handle === "+c") throw new Error("relay lookup broke");
+				return ["wss://a.example"];
+			},
+			publishTo: async (relays, event) => {
+				published.push(event.id);
+				return { ok: relays, unconfirmed: [], failed: [] };
+			},
+		});
+
+		expect(published).toHaveLength(2);
+		expect(delivered.members.map((member) => member.handle)).toEqual(["+b", "+c", "+a"]);
+		expect(delivered.members[1]).toMatchObject({ relays_ok: [], relays_unconfirmed: [], relays_failed: [{ relay: "", reason: "relay lookup broke" }] });
+		expect(behindHandles(delivered.members)).toEqual(["+c"]);
+	});
 });
 
 describe("liveThreadAdmission", () => {

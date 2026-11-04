@@ -995,6 +995,38 @@ describe("say --image", () => {
 		expect(d.db.recentMessages(20, undefined, thread?.id)).toMatchObject([{ id: first.id, text: "[image]" }]);
 	});
 
+	it("keeps the outbox and the row and reports the member behind when a later thread send throws", async () => {
+		const { d, home, contactSk } = await ready();
+		const otherSk = generateSecretKey();
+		addTestContact(d.db, { npub: nip19.npubEncode(getPublicKey(otherSk)), handle: "grok" });
+		await phoneThreadNew("#room", ["+velora", "+grok"], { subject: "room" }, d);
+		out = [];
+		const image = writeImage(home);
+		const publish = pool.publish;
+		pool.publish = (relays, event) => {
+			if (event.tags.some(([name, value]) => name === "p" && value === getPublicKey(otherSk))) throw new Error("socket closed");
+			return publish(relays, event);
+		};
+		let thrown: unknown;
+		try {
+			await phoneSay("#room", undefined, d, { image });
+		} catch (err) {
+			thrown = err;
+		} finally {
+			pool.publish = publish;
+		}
+
+		expect(thrown).toBeInstanceOf(DgCliError);
+		expect((thrown as DgCliError).message).toBe("members behind: +grok");
+		const wrap = pool.events.findLast((event) => event.tags.some(([name, value]) => name === "p" && value === getPublicKey(contactSk)));
+		const x = nip59.unwrapEvent(wrap as NostrEvent, contactSk).tags.find(([name]) => name === "x")?.[1] as string;
+		expect(outboxFiles(d)).toEqual([x]);
+		expect(d.db.outboxRecipients(x)).toEqual([getPublicKey(contactSk)]);
+		const thread = d.db.getThreadByHandle("#room");
+		expect(d.db.recentMessages(20, undefined, thread?.id)).toMatchObject([{ text: "[image]" }]);
+		expect(lines().at(-1)).toMatchObject({ handle: "#room", behind: ["+grok"] });
+	});
+
 	it("wires --phi on text and image says, and on and off on files", async () => {
 		const { d, home } = await ready();
 		const image = writeImage(home);

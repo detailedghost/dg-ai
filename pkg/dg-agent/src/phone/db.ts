@@ -560,6 +560,10 @@ export class PhoneDb {
 		});
 	}
 
+	removeOutboxRecipient(sha256: string, pubkey: string): void {
+		this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha256 AND pubkey = $pubkey").run({ sha256, pubkey });
+	}
+
 	removeOutbox(sha256: string): void {
 		this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha256").run({ sha256 });
 		this.db.query("DELETE FROM outbox WHERE sha256 = $sha256").run({ sha256 });
