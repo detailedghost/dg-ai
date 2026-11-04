@@ -1,0 +1,196 @@
+import { describe, expect, it } from "bun:test";
+import { createDecipheriv, createHash } from "node:crypto";
+import { DgCliError } from "@dg/common";
+import { prepareImage, sniffImage, stripMetadata, WORMHOLE_SCHEME } from "../../src/phone/image";
+
+function sha256(bytes: Uint8Array): string {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+	const length = Buffer.alloc(4);
+	length.writeUInt32BE(data.length);
+	return Buffer.concat([length, Buffer.from(type, "latin1"), data, Buffer.alloc(4)]);
+}
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function pngWithMetadata(): Buffer {
+	return Buffer.concat([
+		PNG_SIGNATURE,
+		pngChunk("IHDR", Buffer.alloc(13, 1)),
+		pngChunk("tEXt", Buffer.from("Author\0Dr GPS", "latin1")),
+		pngChunk("eXIf", Buffer.from("MM GPS 51.5N", "latin1")),
+		pngChunk("PLTE", Buffer.alloc(3, 2)),
+		pngChunk("IDAT", Buffer.from("pixels", "latin1")),
+		pngChunk("IEND", Buffer.alloc(0)),
+		Buffer.from("trailing GPS", "latin1"),
+	]);
+}
+
+function pngChunkTypes(bytes: Buffer): string[] {
+	const types: string[] = [];
+	for (let at = 8; at < bytes.length; ) {
+		const length = bytes.readUInt32BE(at);
+		types.push(bytes.subarray(at + 4, at + 8).toString("latin1"));
+		at += 12 + length;
+	}
+	return types;
+}
+
+function jpegSegment(marker: number, data: Buffer): Buffer {
+	const head = Buffer.from([0xff, marker, 0, 0]);
+	head.writeUInt16BE(data.length + 2, 2);
+	return Buffer.concat([head, data]);
+}
+
+const GPS_EXIF = Buffer.concat([Buffer.from("Exif\0\0MM", "latin1"), Buffer.from("GPSLatitude 51.5074 N", "latin1")]);
+
+function jpegWithGpsExif(): Buffer {
+	return Buffer.concat([
+		Buffer.from([0xff, 0xd8]),
+		jpegSegment(0xe0, Buffer.from("JFIF\0\x01\x01", "latin1")),
+		jpegSegment(0xe1, GPS_EXIF),
+		jpegSegment(0xed, Buffer.from("Photoshop 3.0 GPS", "latin1")),
+		jpegSegment(0xfe, Buffer.from("comment GPS", "latin1")),
+		jpegSegment(0xdb, Buffer.alloc(65, 3)),
+		jpegSegment(0xda, Buffer.from([1, 1, 0, 0, 0x3f, 0])),
+		Buffer.from([0x12, 0xff, 0x00, 0x34, 0xff, 0xd0, 0x56]),
+		Buffer.from([0xff, 0xd9]),
+		Buffer.from("trailing GPS", "latin1"),
+	]);
+}
+
+function webpChunk(fourcc: string, data: Buffer): Buffer {
+	const head = Buffer.alloc(8);
+	head.write(fourcc, 0, "latin1");
+	head.writeUInt32LE(data.length, 4);
+	return Buffer.concat([head, data, data.length % 2 === 1 ? Buffer.alloc(1) : Buffer.alloc(0)]);
+}
+
+function webp(chunks: Buffer[]): Buffer {
+	const body = Buffer.concat([Buffer.from("WEBP", "latin1"), ...chunks]);
+	const head = Buffer.alloc(8);
+	head.write("RIFF", 0, "latin1");
+	head.writeUInt32LE(body.length, 4);
+	return Buffer.concat([head, body]);
+}
+
+function webpWithMetadata(): Buffer {
+	const vp8x = Buffer.alloc(10);
+	vp8x[0] = 0x08 | 0x04 | 0x10;
+	return webp([
+		webpChunk("VP8X", vp8x),
+		webpChunk("VP8 ", Buffer.from("frame", "latin1")),
+		webpChunk("EXIF", Buffer.from("MM GPS 51.5N", "latin1")),
+		webpChunk("XMP ", Buffer.from("<x:xmpmeta GPS/>", "latin1")),
+	]);
+}
+
+describe("sniffImage", () => {
+	it("reads the type from magic bytes", () => {
+		expect(sniffImage(pngWithMetadata())).toBe("image/png");
+		expect(sniffImage(jpegWithGpsExif())).toBe("image/jpeg");
+		expect(sniffImage(webpWithMetadata())).toBe("image/webp");
+	});
+
+	it("treats SVG, text, and empty input as not an image", () => {
+		expect(sniffImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeUndefined();
+		expect(sniffImage(Buffer.from("hello"))).toBeUndefined();
+		expect(sniffImage(Buffer.alloc(0))).toBeUndefined();
+	});
+});
+
+describe("stripMetadata", () => {
+	it("removes GPS EXIF, other APP segments, comments, and trailing bytes from a JPEG", () => {
+		const stripped = stripMetadata(jpegWithGpsExif(), "image/jpeg");
+
+		expect(stripped.includes(Buffer.from("GPS", "latin1"))).toBe(false);
+		expect(stripped.includes(Buffer.from("Exif", "latin1"))).toBe(false);
+		expect(stripped.includes(Buffer.from([0xff, 0xe1]))).toBe(false);
+		expect(stripped.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+		expect(stripped.subarray(-2)).toEqual(Buffer.from([0xff, 0xd9]));
+		expect(stripped.includes(Buffer.from("JFIF", "latin1"))).toBe(true);
+		expect(stripped.includes(Buffer.from([0x12, 0xff, 0x00, 0x34, 0xff, 0xd0, 0x56]))).toBe(true);
+	});
+
+	it("keeps only IHDR, PLTE, tRNS, IDAT, and IEND in a PNG", () => {
+		const stripped = stripMetadata(pngWithMetadata(), "image/png");
+
+		expect(pngChunkTypes(stripped)).toEqual(["IHDR", "PLTE", "IDAT", "IEND"]);
+		expect(stripped.includes(Buffer.from("GPS", "latin1"))).toBe(false);
+		expect(stripped.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+	});
+
+	it("drops EXIF and XMP chunks from a WebP and fixes the RIFF size and VP8X flags", () => {
+		const stripped = stripMetadata(webpWithMetadata(), "image/webp");
+
+		expect(stripped.includes(Buffer.from("GPS", "latin1"))).toBe(false);
+		expect(stripped.readUInt32LE(4)).toBe(stripped.length - 8);
+		expect(stripped.subarray(20, 21)[0]).toBe(0x10);
+		expect(stripped.includes(Buffer.from("frame", "latin1"))).toBe(true);
+	});
+
+	it("refuses a truncated image as not an image", () => {
+		const truncated = pngWithMetadata().subarray(0, 20);
+
+		expect(() => stripMetadata(truncated, "image/png")).toThrow("not an image");
+	});
+});
+
+describe("prepareImage", () => {
+	it("encrypts the stripped image with AES-256-GCM and tags it the NIP-17 way", () => {
+		const source = jpegWithGpsExif();
+		const plain = stripMetadata(source, "image/jpeg");
+
+		const prepared = prepareImage(source);
+
+		const tags = Object.fromEntries(prepared.tags.map(([name, value]) => [name, value]));
+		expect(prepared.tags.map(([name]) => name)).toEqual([
+			"file-type",
+			"encryption-algorithm",
+			"decryption-key",
+			"decryption-nonce",
+			"x",
+			"ox",
+			"size",
+		]);
+		expect(tags["file-type"]).toBe("image/jpeg");
+		expect(tags["encryption-algorithm"]).toBe("aes-gcm");
+		expect(tags["decryption-key"]).toMatch(/^[0-9a-f]{64}$/);
+		expect(tags["decryption-nonce"]).toMatch(/^[0-9a-f]{24}$/);
+		expect(tags.x).toBe(sha256(prepared.cipher));
+		expect(tags.ox).toBe(sha256(plain));
+		expect(tags.ox).not.toBe(sha256(source));
+		expect(tags.size).toBe(String(prepared.cipher.length));
+		expect(prepared.content).toBe(`${WORMHOLE_SCHEME}${tags.x}`);
+		expect(prepared.file).toEqual({ sha256: sha256(plain), type: "image/jpeg", size: plain.length });
+
+		const key = Buffer.from(tags["decryption-key"] as string, "hex");
+		const nonce = Buffer.from(tags["decryption-nonce"] as string, "hex");
+		const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+		decipher.setAuthTag(new Uint8Array(prepared.cipher.subarray(-16)));
+		const opened = Buffer.concat([decipher.update(new Uint8Array(prepared.cipher.subarray(0, -16))), decipher.final()]);
+		expect(sha256(opened)).toBe(sha256(plain));
+		expect(prepared.cipher.includes(new Uint8Array(plain.subarray(0, 32)))).toBe(false);
+	});
+
+	it("uses a fresh key and nonce for every file", () => {
+		const source = pngWithMetadata();
+
+		const first = prepareImage(source);
+		const second = prepareImage(source);
+
+		const value = (tags: string[][], name: string) => tags.find(([tag]) => tag === name)?.[1];
+		expect(value(first.tags, "decryption-key")).not.toBe(value(second.tags, "decryption-key"));
+		expect(value(first.tags, "decryption-nonce")).not.toBe(value(second.tags, "decryption-nonce"));
+		expect(value(first.tags, "x")).not.toBe(value(second.tags, "x"));
+		expect(value(first.tags, "ox")).toBe(value(second.tags, "ox"));
+	});
+
+	it("rejects an SVG as not an image", () => {
+		const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>');
+
+		expect(() => prepareImage(svg)).toThrow(new DgCliError("not an image"));
+	});
+});
