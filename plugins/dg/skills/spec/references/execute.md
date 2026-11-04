@@ -23,6 +23,14 @@ already point each slice's engineer at it, so no extra wiring is needed here.
 Read `execution.profile` from `plan.md` (absent means balance). Read
 [profiles.md](profiles.md) first only when `-s --profile` is given.
 
+On any `-s` run, list open rows with `dg-skills spec issues list "$SPEC_PATH" --open` and keep
+the rows whose `from` column is `deferral`. Without `--bg`, ask each one first, run
+`issues resolve --id <n>` on it, and append the answer under `## Agent Notes`. With `--bg` and
+open rows present, stop and print them. With `--bg`, read [bg.md](bg.md). Resume follows the
+re-run rule in engineering.md 4.3, which is the default selection of `assign resolve` when
+`permissions.slice_commits` is granted, so the blocked slice and its dependents both run; §5
+adds the `resolved` prefix.
+
 **NEVER read `initial.md` or any `roundtable/slice-<N>.md`** — those are plan-mode sprawl, already
 folded into `plan.md` by synthesis (plan.md step 6–7). Reading them here would defeat the entire
 point of the read-boundary this bundle exists to create. If a bundle is missing `context.md` (plan
@@ -38,9 +46,11 @@ not inject a prototype reference into a slice's brief when it has none.
 `/dg:spec -s` always runs in worktree mode. `-T`/`--no-worktree` exists on `/dg:spec`, but is valid only
 alongside `--fast` (see [fast.md](fast.md) F6) — there is no opt-out to honor here. Follow
 [`sdlc/references/setup.md`](../../sdlc/references/setup.md) **Step 1** exactly: derive a slug, then
-create the worktree and work in it exactly as that step describes. The session itself stays at the
-launch directory — it does not relocate — so every command that touches the worktree from here on
-carries its own `cd "$WORKTREE_PATH" && …` prefix.
+create the worktree and work in it exactly as that step describes. Derive the slug from `<NNN>_<slug>` by
+dropping the `<NNN>_` prefix, on the first run and on every resume. `dg-skills worktree create` re-normalizes the slug (setup.md Step 1), so a resume derives
+the same slug, takes its permissive-resume path, and finds the paused slice's uncommitted files
+still there. The session itself stays at the launch directory — it does not relocate — so every
+command that touches the worktree from here on carries its own `cd "$WORKTREE_PATH" && …` prefix.
 
 **Bundle-visibility gotcha:** `dg-skills worktree create` branches off a freshly fetched `origin/<base>` — it
 does not carry uncommitted `.agents/` changes into the new worktree (it prints exactly this
@@ -86,7 +96,14 @@ Run [`sdlc/references/engineering.md`](../../sdlc/references/engineering.md) **4
 as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above and `--cwd "$WORKTREE_PATH"`. To see
 which slices are done, run `dg-skills spec ready "$SPEC_PATH" <N> --cwd "$WORKTREE_PATH"`.
 
-**Checkboxes and deferrals:** `plan.md` stays in the origin checkout while agents edit only the worktree, so agents never touch the spec. The orchestrator ticks each slice's checkboxes after that slice commits (engineering.md 4.3). `CONFIRM` deferrals never block. To resume after settling `SPEC`/`TEST` deferrals, add `Agent Notes` lines, then set `resolved` and `redDone` in the baked `WAVE_ARGS` (engineering.md 4.3).
+**Checkboxes and deferrals:** `plan.md` stays in the origin checkout while agents edit only the worktree, so
+agents never touch the spec. The orchestrator ticks each slice's checkboxes after that slice commits
+(engineering.md 4.3). `CONFIRM` deferrals never block. To resume after settling `SPEC`/`TEST` deferrals, add
+`Agent Notes` lines, then set `resolved` and `redDone` in the baked `WAVE_ARGS` (engineering.md 4.3).
+
+After the `assign resolve` call, add the `resolved` prefix (the text after `<TYPE>: ` in the row's description)
+for a `deferral` row; this is best effort and covers `SPEC` and `TEST` only. A resumed slice re-runs red,
+because `redDone` cannot be rebuilt from a row.
 
 **One PR per slice:** when `plan.md` has a `## PR Plan` that opens one PR for each slice, build each
 PR in its own worktree and branch, in plan order, and run `assign resolve --slices <its ids>` for that

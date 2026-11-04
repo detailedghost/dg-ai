@@ -25,7 +25,7 @@ Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also
 
 If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
 
-**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] "<request>"`.
+**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] [--bg] "<request>"`.
 
 ## Flags
 
@@ -40,6 +40,7 @@ If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash v
 | `--cheap` | none | Alias of `--profile cheap`. | off |
 | `--expensive` | none | Alias of `--profile expensive`. | off |
 | `--proxy <backend>` | `-x` | Delegate slices to the named `/dg:proxy` backend: asks per slice in plan mode, and with `-s` for slices without `agents.proxy`. | off |
+| `--bg` | `-b` | Execute mode only (`-s`): run unattended and stay in this session; use `/dg:bg` to detach. Questions become rows in `## Issues Remediation`. Invalid with bare plan mode (stop and say so). | off |
 
 Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass its map to `/dg:spec`.
 
@@ -113,6 +114,7 @@ the PR/MR URL into `plan.md`, restoring cwd).
 | [references/templates/slice-review.md](references/templates/slice-review.md) | `/dg:spec`'s own per-slice review fan-out prompt. Read at plan.md step 5. |
 | [references/profiles.md](references/profiles.md) | Cost-profile mechanics: plan-mode effort under `--cheap` and `--expensive`, the `-s --profile` sequence. Read only with a profile flag. |
 | [references/proxy.md](references/proxy.md) | The per-slice delegation question, `agents.proxy` and `proxy_skills`. Read only with `--proxy`. |
+| [references/bg.md](references/bg.md) | The unattended `--bg` contract: pre-launch order, permission keys, deferral rows, the pause line. Read only with `--bg`. |
 | [references/templates/synthesis.md](references/templates/synthesis.md) | `/dg:spec`'s own synthesis fan-out prompt (foreman folds slice findings). Read at plan.md step 6. |
 
 ## General rules

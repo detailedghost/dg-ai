@@ -161,6 +161,7 @@ export const INSTALLED_SKILL_FILES = [
 	"sniff/SKILL.md",
 	"sniff/references/detection.md",
 	"spec/SKILL.md",
+	"spec/references/bg.md",
 	"spec/references/decision-blob.md",
 	"spec/references/execute.md",
 	"spec/references/fast.md",

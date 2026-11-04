@@ -3,13 +3,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
 	count,
+	flagRow,
 	lineWith,
 	REPO_ROOT,
 	readRepoFile,
 	section,
 } from "./test-support";
 
-export const MAX_SPEC_SKILL_LINES = 129;
+export const MAX_SPEC_SKILL_LINES = 131;
 const MIN_SENTENCE_LENGTH = 30;
 const STEP_5_LINES_ON_ORIGIN_MASTER = 10;
 const STEP_7C_LINES_ON_ORIGIN_MASTER = 8;
@@ -29,25 +30,6 @@ function refText(name: string): string {
 	return existsSync(join(SPEC_DIR, "references", name))
 		? readRepoFile(...REFS, name)
 		: "";
-}
-
-function cells(row: string): string[] {
-	return row
-		.trim()
-		.replace(/^\|/, "")
-		.replace(/\|$/, "")
-		.split(/(?<!\\)\|/)
-		.map((cell) => cell.trim());
-}
-
-function flagRow(flag: string): string[] {
-	const flags = section(skill, "## Flags", "\n## ");
-	const row = flags
-		.split("\n")
-		.filter((line) => line.startsWith("|"))
-		.map(cells)
-		.find((c) => c[0]?.includes(`\`${flag}`));
-	return row ?? [];
 }
 
 function sentences(text: string): string[] {
@@ -92,17 +74,17 @@ describe("spec skill flags", () => {
 	});
 
 	test("Flags table gives --profile -p and --proxy -x", () => {
-		expect(flagRow("--profile")[1]).toContain("-p");
-		expect(flagRow("--proxy")[1]).toContain("-x");
+		expect(flagRow(skill, "--profile")[1]).toContain("-p");
+		expect(flagRow(skill, "--proxy")[1]).toContain("-x");
 	});
 
 	test("Flags table gives --cheap and --expensive no short flag", () => {
-		expect(flagRow("--cheap")[1]).toBe("none");
-		expect(flagRow("--expensive")[1]).toBe("none");
+		expect(flagRow(skill, "--cheap")[1]).toBe("none");
+		expect(flagRow(skill, "--expensive")[1]).toBe("none");
 	});
 
 	test("--profile Effect cell holds the two-profile-flag error", () => {
-		const effect = flagRow("--profile")[2] ?? "";
+		const effect = flagRow(skill, "--profile")[2] ?? "";
 		expect(effect).toMatch(/two profile flags/i);
 		expect(effect).toMatch(/error/i);
 		expect(effect).toMatch(/both/i);
