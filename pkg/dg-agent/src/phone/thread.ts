@@ -387,17 +387,19 @@ export async function fanoutThread(input: {
 	recipients: ThreadRecipient[];
 	relaysFor: (recipient: ThreadRecipient) => Promise<string[]>;
 	publishTo: (relays: string[], event: NostrEvent) => Promise<RelayReport>;
-	/** Sends a kind 15 file message: `text` is its content and these tags follow `p` and `subject`. */
-	fileTags?: string[][];
+	/** Rumor kind; 14 when absent. */
+	kind?: number;
+	/** Tags that follow `p` and `subject`, such as file or PHI tags. */
+	extraTags?: string[][];
 }): Promise<{ rumorId: string; members: MemberReport[] }> {
 	const others = input.recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub);
 	const pubs = [...new Set(others)].sort();
 	const tags: string[][] = pubs.map((pub) => ["p", pub]);
 	if (input.subject.length > 0) tags.push(["subject", input.subject]);
 	else if (pubs.length === 1 && input.fallbackSubject.length > 0) tags.push(["subject", input.fallbackSubject]);
-	if (input.fileTags) tags.push(...input.fileTags);
+	if (input.extraTags) tags.push(...input.extraTags);
 	const rumor = nip59.createRumor(
-		{ kind: input.fileTags ? FILE_MESSAGE_KIND : CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
+		{ kind: input.kind ?? CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
 		input.sk,
 	);
 	const members: MemberReport[] = [];

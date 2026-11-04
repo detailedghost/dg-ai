@@ -116,7 +116,7 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.argument("<handle>", "the contact's +handle, or a #thread")
 		.argument("[text]", "message text, or - to read it from stdin; omit with --image")
 		.option("--image <path>", "send one PNG, JPEG, or WebP image instead of text")
-		.option("--phi", "mark the image as PHI: tags it and keeps the outbox copy 24 hours, not 7 days")
+		.option("--phi", "mark the message as PHI: tags it and keeps the sent row and any outbox copy 24 hours, not 7 days")
 		.action(async (handle: string, text: string | undefined, opts: Commands.SayOpts) => {
 			const phone = await load();
 			await phone.phoneSay(handle, text, phone.deps(getSession()), opts);

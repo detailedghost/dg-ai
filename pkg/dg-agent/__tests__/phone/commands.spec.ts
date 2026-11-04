@@ -808,13 +808,37 @@ describe("say --image", () => {
 		expect(d.db.recentMessages(20)).toEqual([]);
 	}
 
-	it("exits 1 and sends nothing for --phi without --image", async () => {
-		const { d } = await ready();
+	it("tags a --phi text with dg-phi and stores phi 1, and a plain text with phi 0 and no tag", async () => {
+		const { d, contactSk } = await ready();
 
-		await expectNoSend(d, () => phoneSay("+velora", "hi", d, { phi: true }), "--phi works only with --image", 1);
+		await phoneSay("+velora", "chart note", d, { phi: true });
+		await phoneSay("+velora", "plain note", d);
+
+		const phiRumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
+		const plainRumor = nip59.unwrapEvent(pool.events.at(-1) as NostrEvent, contactSk);
+		expect(phiRumor?.kind).toBe(14);
+		expect(phiRumor?.content).toBe("chart note");
+		expect(phiRumor?.tags).toEqual([["p", getPublicKey(contactSk)], ["dg-phi", "1"]]);
+		expect(plainRumor?.tags.some(([name]) => name === "dg-phi")).toBe(false);
+		const phiByText = Object.fromEntries(d.db.recentMessages(20).map((row) => [row.text, row.phi]));
+		expect(phiByText).toEqual({ "chart note": 1, "plain note": 0 });
 	});
 
-	it("marks a --phi image with the dg-phi rumor tag and phi true on the row", async () => {
+	it("tags a --phi thread text with dg-phi for every member and stores phi 1", async () => {
+		const { d, contactSk } = await ready();
+		await phoneThreadNew("#room", ["+velora"], { subject: "room" }, d);
+		out = [];
+
+		await phoneSay("#room", "chart note", d, { phi: true });
+
+		const wrap = pool.events.findLast((event) => event.tags.some(([name, value]) => name === "p" && value === getPublicKey(contactSk)));
+		const rumor = nip59.unwrapEvent(wrap as NostrEvent, contactSk);
+		expect(rumor.kind).toBe(14);
+		expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
+		expect(d.db.recentMessages(20).map((row) => row.phi)).toEqual([1]);
+	});
+
+	it("marks a --phi image with the dg-phi rumor tag and phi 1 on the row and its outbox copy", async () => {
 		const { d, home, contactSk } = await ready();
 		const image = writeImage(home);
 
@@ -823,7 +847,8 @@ describe("say --image", () => {
 		const rumor = nip59.unwrapEvent(pool.events[0], contactSk);
 		expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
 		const [row] = d.db.recentMessages(20);
-		expect(JSON.parse(row?.file as string)).toMatchObject({ phi: true });
+		expect(row?.phi).toBe(1);
+		expect(JSON.parse(row?.file as string)).not.toHaveProperty("phi");
 		const x = rumor.tags.find(([name]) => name === "x")?.[1];
 		const raw = new Database(PhoneDb.path(d.paths), { readonly: true });
 		const outboxRow = raw.query("SELECT phi FROM outbox WHERE sha256 = ?").get(x as string) as { phi: number } | null;
@@ -943,20 +968,19 @@ describe("say --image", () => {
 		expect(d.db.recentMessages(20, undefined, thread?.id)).toMatchObject([{ id: first.id, text: "[image]" }]);
 	});
 
-	it("wires --image and --phi on say, and on and off on files", async () => {
+	it("wires --phi on text and image says, and on and off on files", async () => {
 		const { d, home } = await ready();
 		const image = writeImage(home);
 		const program = new Command();
 		program.exitOverride();
 		registerPhoneCommands(program, () => d);
 
-		await expect(program.parseAsync(["phone", "say", "+velora", "hi", "--phi"], { from: "user" })).rejects.toThrow(
-			"--phi works only with --image",
-		);
+		await program.parseAsync(["phone", "say", "+velora", "hi", "--phi"], { from: "user" });
 		await program.parseAsync(["phone", "say", "+velora", "--image", image, "--phi"], { from: "user" });
 		await program.parseAsync(["phone", "files", "off"], { from: "user" });
 
-		expect(d.db.recentMessages(20)).toMatchObject([{ text: "[image]", file: expect.stringContaining('"phi":true') }]);
+		const phiByText = Object.fromEntries(d.db.recentMessages(20).map((row) => [row.text, row.phi]));
+		expect(phiByText).toEqual({ hi: 1, "[image]": 1 });
 		expect(lines().at(-1)).toEqual({ files: "off" });
 	});
 });

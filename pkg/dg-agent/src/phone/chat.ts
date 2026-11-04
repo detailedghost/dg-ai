@@ -6,7 +6,6 @@ import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
 import {
 	classifyThreadRumor,
-	FILE_MESSAGE_KIND,
 	heldFrom,
 	type HeldThread,
 	sortByTime,
@@ -71,10 +70,17 @@ export function wrap(text: string, sk: Uint8Array, contactPub: string): NostrEve
 	return nip17.wrapEvent(sk, { publicKey: contactPub }, text);
 }
 
-/** A NIP-17 kind 15 file message to one contact; `tags` are the file tags after `p`. */
-export function wrapFile(file: { content: string; tags: string[][] }, sk: Uint8Array, contactPub: string): NostrEvent {
+/** Rumor tag on a message the sender marked as PHI. */
+export const PHI_TAG = "dg-phi";
+
+/** A NIP-17 message to one contact whose rumor carries `tags` after `p`; kind 14 unless `kind` says otherwise. */
+export function wrapTagged(
+	rumor: { kind?: number; content: string; tags: string[][] },
+	sk: Uint8Array,
+	contactPub: string,
+): NostrEvent {
 	return nip59.wrapEvent(
-		{ kind: FILE_MESSAGE_KIND, content: file.content, tags: [["p", contactPub], ...file.tags] },
+		{ kind: rumor.kind ?? CHAT_MESSAGE_KIND, content: rumor.content, tags: [["p", contactPub], ...rumor.tags] },
 		sk,
 		contactPub,
 	);

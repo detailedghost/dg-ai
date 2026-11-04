@@ -166,16 +166,6 @@ describe("prepareImage", () => {
 		expect(value(first.tags, "ox")).toBe(value(second.tags, "ox"));
 	});
 
-	it("adds the dg-phi tag and phi on the file only for a PHI image", () => {
-		const plain = prepareImage(pngWithMetadata());
-		const phi = prepareImage(pngWithMetadata(), { phi: true });
-
-		expect(plain.tags.some(([name]) => name === "dg-phi")).toBe(false);
-		expect(plain.file).not.toHaveProperty("phi");
-		expect(phi.tags.at(-1)).toEqual(["dg-phi", "1"]);
-		expect(phi.file.phi).toBe(true);
-	});
-
 	it("rejects an SVG as not an image", () => {
 		const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>');
 
