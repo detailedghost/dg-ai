@@ -31,12 +31,14 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|inbox|voicemail|watch|status|open|close> [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|inbox|voicemail|watch|status|files|open|close> [--image <path>] [--phi] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
+| `--image <path>` | none | On `say`, send one PNG, JPEG, or WebP (5 MiB at most) instead of text. Needs `phone files on`. | off |
+| `--phi` | none | On `say`, mark the text or image as PHI. Only when the human asks for that send. | off |
 | `--as <name>` | none | Self name a `number` or `invite` card carries, saved for next time. | `dg` |
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
 | `--relay <url>...` | none | Relays a `number` or `invite` card should use instead of the saved ones. | the saved relay list |
@@ -301,6 +303,27 @@ subscription has gone quiet, the process subscribes again and fetches what
 it missed. The log line is `phone: listener heartbeat`,
 `phone: listener resubscribe`, or `phone: listener probe-failed`, with no
 message text.
+
+## Images
+
+```bash
+dg-agent phone files on                          # prints {"files": "on"}; files off turns it off
+dg-agent phone say +grok --image ./shot.png      # one image, no text; send text with a second say
+dg-agent phone say '#ops' --image ./shot.png --phi
+```
+
+`files` is off by default. It gates both sending and receiving. The sender
+strips metadata, encrypts the image, and keeps the ciphertext until the
+receiver's listener fetches it through Magic Wormhole. An image row shows
+`[image pending]` while the fetch runs, then `[image]` or
+`[image unavailable: <reason>]`. A stored image adds
+`file: {path, type, size, sha256, untrusted: true}` to `inbox`, `voicemail`,
+and the `--on-message` JSON. A finished image comes back as unread, so
+`voicemail` can show the same row twice: once pending, once final.
+`--phi` rows and their files are deleted 24 hours after they arrive.
+
+`untrusted: true` means the rules for received files in
+[references/safety.md](references/safety.md) apply.
 
 ## Contacts
 

@@ -185,11 +185,48 @@ a runtime that can run a command on its own, such as a bot or a cron job.
 
 ## Images
 
-Image messages are planned. They stay behind a `files` setting that is off by
-default. PHI, as text or image, goes only when the human asks for that send,
-marked with `--phi`. See
-[references/safety.md](../plugins/dg/skills/phone/references/safety.md) and
-[ADR 0034](adr/0034-phone-image-messages.md).
+An image is a NIP-17 kind 15 message. It is behind the `files` setting,
+which is off by default:
+
+```bash
+dg-agent phone files               # prints {"files": "on"} or {"files": "off"}
+dg-agent phone files on
+dg-agent phone say +grok --image ./shot.png
+dg-agent phone say '#ops' --image ./shot.png --phi
+dg-agent phone say +grok --phi 'text the human asked you to send'
+```
+
+`say --image` takes one PNG, JPEG, or WebP of 5 MiB at most, and no text.
+It strips EXIF, XMP, comments, and text chunks, encrypts the pixels with a
+fresh AES-256-GCM key, and stages the ciphertext in `outbox/` with the
+list of recipients that may fetch it. The rumor content is
+`dg-wormhole:<x>`, never a URL. `--phi` adds the `dg-phi` tag, on text
+or an image. PHI goes only when the human asks for that send; see
+[references/safety.md](../plugins/dg/skills/phone/references/safety.md).
+
+The receiving listener stores `[image pending]` at once. One fetch runs at
+a time, through a file request rumor and Magic Wormhole with a fresh code
+each attempt. A failed attempt waits 1 minute, then twice as long each
+time, up to 1 hour. It stops at 24 hours for a `dg-phi` image and at
+7 days otherwise. The receiver checks the ciphertext hash and size,
+decrypts, checks the plaintext hash, reads the type from the magic bytes,
+and refuses more than 40 megapixels. The file goes to
+`files/<sha256>.<png|jpg|webp>` (folder 0700, file 0600). The `file-type`
+tag is never used. The row then reads `[image]`, or
+`[image unavailable: <reason>]` with one of these reasons:
+`files are off`, `bad offer`, `too many pending` (more than 32 waiting),
+`storage full` (`files/` over 200 MiB), `daily limit` (20 images per
+contact per day), `sender offline`, `fetch failed`, `too large`,
+`hash mismatch`, `decrypt failed`, or `not an image`. The decryption key
+stays in `phone.db` only until the fetch ends. Only a contact's image is
+fetched; a stranger's kind 15 is dropped, and a kind 15 never creates a
+contact.
+
+`inbox`, `voicemail`, and the `--on-message` JSON add
+`file: {path, type, size, sha256, untrusted: true}` to a stored image row.
+The path is built from the phone folder each time, so a moved folder still
+works. The hook gets an image row once, when the fetch ends, never while it
+is pending. See [ADR 0034](adr/0034-phone-image-messages.md).
 
 ## Autostart
 
@@ -279,16 +316,25 @@ folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 - `contacts` — one row per contact, with the key (`key_id`) it still
   expects you to sign with.
 - `invites` — pending one-time cards.
-- `messages` — both directions, the read mark, and the delivery attempt
-  count for `--on-message`.
+- `messages` — both directions, the read mark, the delivery attempt
+  count for `--on-message`, the image file JSON, the PHI mark, and the
+  local time the row arrived.
+- `image_fetches` — one row per image still being fetched, with its key
+  and nonce. The row is deleted when the fetch ends.
+- `outbox` — staged ciphertext of sent images, and who may fetch each one.
 - `settings` — the number, the listener's saved `--on-message`, the
   last autostart outcome, the optional `publish_confirm_ms` OK wait, and a
   short-lived cache of kind 10050 relay lists.
 
 Messages older than **7 days** are deleted, including unread voicemail, so
 an agent away for more than a week loses what it missed; relay queries
-never reach further back than that window either. The only other files are
-`listener.pid` and `listener.log`.
+never reach further back than that window either. A PHI row, sent or
+received, is deleted 24 hours after it arrived on this phone, by the local
+clock. The listener also prunes every 30 minutes, so the 24-hour limit holds
+on a quiet phone. A rumor dated more than 5 minutes ahead of this clock is
+dropped. The other files are `listener.pid`, `listener.log`, `outbox/`
+(sent ciphertext), `files/` (received images, removed with their rows),
+and `tools/` (the pinned wormhole binary).
 
 ## Where the phone state lives
 
