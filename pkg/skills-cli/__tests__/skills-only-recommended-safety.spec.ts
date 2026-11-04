@@ -52,6 +52,14 @@ function installIntoSeeded(spec: FixtureSpec, skills?: string[]) {
 }
 
 describe("installRecommendedSkillsOnly destination safety", () => {
+	test("a tracked file whose name holds a tab is copied under its full name", () => {
+		const spec: FixtureSpec = mattpocockLikeFiles(["tdd"]);
+		spec.files["skills/tdd/references/a\tb.md"] = "tab\n";
+		const { dest, outcome } = installIntoSeeded(spec, ["./skills/tdd"]);
+		expect(outcome.thrown).toBeUndefined();
+		expect(readFileSync(join(dest, "tdd", "references", "a\tb.md"), "utf8")).toBe("tab\n");
+	});
+
 	test("an inherited GIT_DIR and GIT_WORK_TREE never reach the caller's repository", () => {
 		const root = tempDir("recommended-skills-gitdir");
 		const fixture = bareRepo(root, mattpocockLikeFiles(["tdd"]));

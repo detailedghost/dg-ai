@@ -158,7 +158,7 @@ export function installRecommendedSkillsOnly(
 		const tracked = git(binary, checkout, ["ls-files", "-s", "-z"])
 			.split("\0")
 			.filter(Boolean)
-			.map((line) => ({ mode: line.slice(0, 6), path: line.split("\t")[1] ?? "" }));
+			.map((line) => ({ mode: line.slice(0, 6), path: line.slice(line.indexOf("\t") + 1) }));
 		const plans = declaredSkillDirs(plugin, checkout, tracked).map((dir) =>
 			planSkill(plugin, checkout, dir, tracked),
 		);
