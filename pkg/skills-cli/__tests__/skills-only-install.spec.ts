@@ -48,7 +48,7 @@ const PERSONAS = [
 	"wave",
 ].map((name) => `${name}.md`);
 const SUMMARY =
-	"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).";
+	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension).";
 
 const REPO_SKILLS = join(REPO, "plugins", "dg", "skills");
 
@@ -249,7 +249,7 @@ describe("dg-skills install --skills-only", () => {
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
 				`Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`,
-				`dg-skills installed v9.9.9 at ${join(home, "data", "lib", "9.9.9")}`,
+				`dg bundle installed v9.9.9 at ${join(home, "data", "lib", "9.9.9")}`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expectPersonasInstalled(dest);
