@@ -186,7 +186,8 @@ a runtime that can run a command on its own, such as a bot or a cron job.
 ## Images
 
 Image messages are planned. They stay behind a `files` setting that is off by
-default. PHI is never allowed over the phone, as text or image. See
+default. PHI is never allowed as text. An image with PHI goes only when the
+human asks for that send, marked with `--phi`. See
 [references/safety.md](../plugins/dg/skills/phone/references/safety.md) and
 [ADR 0034](adr/0034-phone-image-messages.md).
 

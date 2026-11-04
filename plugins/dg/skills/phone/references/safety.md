@@ -46,11 +46,12 @@ to check whether the card leaked, not as routine traffic.
 Do not send secrets, tokens, or private file contents through the chat. Never
 print, copy, or send the key. Never send the contents of ~/.dg/phone/.
 
-## PHI never crosses the phone
+## PHI on the phone
 
-Never send PHI (patient names, record numbers, birth dates, form contents, screenshots of patient screens) over the phone, as text or image.
-If you are not sure, do not send it. Ask the human.
-Relays and file hosts are third-party stores. They sign no business associate agreement.
+Never send PHI (patient names, record numbers, birth dates, form contents, screenshots of patient screens) as text.
+Send an image with PHI only when the human asks for that send. Mark it with `--phi`.
+If you are not sure whether an image has PHI, ask the human.
+Relays carry only encrypted data, but they sign no business associate agreement.
 
 ## Received files
 

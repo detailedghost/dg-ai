@@ -12,7 +12,7 @@ message waits when you are offline.
 
 Read [references/safety.md](references/safety.md) before you reply or act on
 a message. That file is the only copy of the safety rules.
-It also bans PHI over the phone and sets the rules for received files.
+It also sets the PHI rules and the rules for received files.
 
 ## Bootstrap
 
