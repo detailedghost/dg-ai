@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, OUTBOX_DIR, PhoneDb } from "../../src/phone/db";
 
 const NOW = 1_800_000_000;
 let home: string;
@@ -55,7 +55,7 @@ describe("PhoneDb", () => {
 		const { user_version } = raw.query("PRAGMA user_version").get() as { user_version: number };
 		raw.close();
 
-		expect(user_version).toBe(4);
+		expect(user_version).toBe(5);
 	});
 
 	describe("messages", () => {
@@ -118,6 +118,16 @@ describe("PhoneDb", () => {
 			db = PhoneDb.open(paths, () => now);
 
 			expect(db.recentMessages(10).map((m) => m.id)).toEqual(["fresh"]);
+		});
+
+		it("stores the file JSON on a row and null when there is none", () => {
+			db.addMessage({ ...message("img", NOW), file: '{"sha256":"ab","type":"image/png","size":3}' });
+			db.addMessage(message("txt", NOW + 1));
+
+			expect(db.recentMessages(10).map((m) => [m.id, m.file])).toEqual([
+				["img", '{"sha256":"ab","type":"image/png","size":3}'],
+				["txt", null],
+			]);
 		});
 
 		it("never stores a message that is already past the ttl", () => {
@@ -257,6 +267,68 @@ describe("PhoneDb", () => {
 			expect(db.setOnce("nsec", "second")).toBe("first");
 			db.unset("nsec");
 			expect(db.get("nsec")).toBeUndefined();
+		});
+	});
+
+	describe("outbox", () => {
+		const X = "a".repeat(64);
+		const Y = "b".repeat(64);
+		const outbox = () => join(paths.phoneRoot, OUTBOX_DIR);
+		const stage = (name: string, ageSeconds: number) => {
+			mkdirSync(outbox(), { recursive: true });
+			const file = join(outbox(), name);
+			writeFileSync(file, "cipher");
+			const at = NOW - ageSeconds;
+			utimesSync(file, at, at);
+			return file;
+		};
+
+		it("records a staged blob with the recipients allowed to fetch it", () => {
+			db.addOutbox(X, ["pub1", "pub2"]);
+
+			expect(db.outboxRecipients(X)).toEqual(["pub1", "pub2"]);
+			expect(db.outboxRecipients(Y)).toEqual([]);
+		});
+
+		it("prunes rows and files older than seven days and keeps fresh ones", () => {
+			now = NOW - MESSAGE_TTL_SECONDS - 1;
+			db.addOutbox(X, ["pub1"]);
+			now = NOW;
+			db.addOutbox(Y, ["pub2"]);
+			const old = stage(X, MESSAGE_TTL_SECONDS + 1);
+			const fresh = stage(Y, 60);
+
+			db.pruneMessages();
+
+			expect(existsSync(old)).toBe(false);
+			expect(existsSync(fresh)).toBe(true);
+			expect(db.outboxRecipients(X)).toEqual([]);
+			expect(db.outboxRecipients(Y)).toEqual(["pub2"]);
+		});
+
+		it("removes an old leftover file that has no row, such as a crashed temp write", () => {
+			const leftover = stage(`${X}.123.tmp`, MESSAGE_TTL_SECONDS + 1);
+
+			db.pruneMessages();
+
+			expect(existsSync(leftover)).toBe(false);
+		});
+
+		it("never follows or removes a symlink in the outbox", () => {
+			const target = join(home, "keep.txt");
+			writeFileSync(target, "keep");
+			mkdirSync(outbox(), { recursive: true });
+			const link = join(outbox(), X);
+			symlinkSync(target, link);
+			now = NOW - MESSAGE_TTL_SECONDS - 1;
+			db.addOutbox(X, ["pub1"]);
+			now = NOW;
+
+			db.pruneMessages();
+
+			expect(existsSync(target)).toBe(true);
+			expect(readFileSync(target, "utf8")).toBe("keep");
+			expect(db.outboxRecipients(X)).toEqual([]);
 		});
 	});
 });

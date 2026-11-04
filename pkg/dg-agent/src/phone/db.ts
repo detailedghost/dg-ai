@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import {
 	applyConnectionPragmas,
 	type DgPaths,
@@ -26,6 +26,8 @@ export type MessageRow = {
 	read_at: number | null;
 	attempts: number;
 	thread_id: string | null;
+	/** JSON `{sha256, type, size}` for an image row, else null. */
+	file: string | null;
 };
 
 export type KeyRow = { id: string; nsec: string | null; in_store: number; created_at: number };
@@ -72,6 +74,9 @@ export type InviteRow = {
 
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
 export const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
+export const OUTBOX_DIR = "outbox";
 
 const SCHEMA: MigrationStep[] = [
 	{
@@ -134,6 +139,21 @@ const SCHEMA: MigrationStep[] = [
 			migrateThreadSchema(db);
 		},
 	},
+	{
+		version: 5,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN file TEXT");
+			db.run(`CREATE TABLE outbox (
+				sha256 TEXT PRIMARY KEY,
+				created_at INTEGER NOT NULL
+			) STRICT`);
+			db.run(`CREATE TABLE outbox_recipients (
+				sha256 TEXT NOT NULL REFERENCES outbox(sha256) ON DELETE CASCADE,
+				pubkey TEXT NOT NULL,
+				PRIMARY KEY (sha256, pubkey)
+			) STRICT`);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -141,6 +161,7 @@ export class PhoneDb {
 	private constructor(
 		private readonly db: Database,
 		private readonly now: () => number,
+		private readonly dir: string,
 	) {}
 
 	static path(paths: DgPaths): string {
@@ -170,7 +191,7 @@ export class PhoneDb {
 			db.close(true);
 			throw err;
 		}
-		const opened = new PhoneDb(db, now);
+		const opened = new PhoneDb(db, now, dir);
 		opened.pruneMessages();
 		return opened;
 	}
@@ -185,6 +206,39 @@ export class PhoneDb {
 		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
 		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
+		this.pruneOutbox(cutoff);
+	}
+
+	/** Drops expired outbox rows, then unlinks expired or unreferenced old files; never follows a symlink. */
+	private pruneOutbox(cutoff: number): void {
+		const expired = new Set(
+			(this.db.query("SELECT sha256 FROM outbox WHERE created_at < $cutoff").all({ cutoff }) as { sha256: string }[]).map(
+				(row) => row.sha256,
+			),
+		);
+		this.transaction(() => {
+			const dropRecipients = this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha");
+			const drop = this.db.query("DELETE FROM outbox WHERE sha256 = $sha");
+			for (const sha of expired) {
+				dropRecipients.run({ sha });
+				drop.run({ sha });
+			}
+		});
+		const folder = join(this.dir, OUTBOX_DIR);
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const known = this.db.query("SELECT 1 FROM outbox WHERE sha256 = $sha");
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const stale = expired.has(name) || (known.get({ sha: name }) === null && stat.mtimeMs / 1000 < cutoff);
+			if (stale) rmSync(path, { force: true });
+		}
 	}
 
 	getKey(id: string): KeyRow | undefined {
@@ -308,13 +362,15 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
-	addMessage(message: Omit<MessageRow, "read_at" | "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
+	addMessage(
+		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file"> & { thread_id?: string | null; file?: string | null },
+	): boolean {
 		this.pruneMessages();
 		if (message.ts < this.cutoff()) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id)
-				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId)`,
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file)`,
 			)
 			.run({
 				id: message.id,
@@ -326,13 +382,31 @@ export class PhoneDb {
 				call: message.call,
 				readAt: message.direction === "out" ? this.now() : null,
 				threadId: message.thread_id ?? null,
+				file: message.file ?? null,
 			});
 		return result.changes > 0;
 	}
 
+	/** Records a staged outbox blob and the pubkeys allowed to fetch it. */
+	addOutbox(sha256: string, recipients: readonly string[]): void {
+		this.transaction(() => {
+			this.db.query("INSERT OR IGNORE INTO outbox (sha256, created_at) VALUES ($sha256, $createdAt)").run({ sha256, createdAt: this.now() });
+			const add = this.db.query("INSERT OR IGNORE INTO outbox_recipients (sha256, pubkey) VALUES ($sha256, $pubkey)");
+			for (const pubkey of recipients) add.run({ sha256, pubkey });
+		});
+	}
+
+	outboxRecipients(sha256: string): string[] {
+		return (
+			this.db.query("SELECT pubkey FROM outbox_recipients WHERE sha256 = $sha256 ORDER BY pubkey").all({ sha256 }) as {
+				pubkey: string;
+			}[]
+		).map((row) => row.pubkey);
+	}
+
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
+	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file"> & { thread_id?: string | null }): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
