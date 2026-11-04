@@ -10,6 +10,8 @@ The bundle is the source of truth once it exists (step 3 onward) — write findi
 compact aggressively. Before step 3, working state is the in-context grill-me decision log (see
 [grill.md](grill.md)); there is no file to compact against yet.
 
+Read [profiles.md](profiles.md) before step 1 only when `--profile`, `--cheap` or `--expensive` is given.
+
 ## Step 1 — `dg:arch` grill-me `[fable, xhigh]`
 
 Run grill-me pass 1 (protocol inlined per [grill.md](grill.md)) against the user's request — scoped
@@ -59,9 +61,9 @@ Slice `files` globs must respect the module homes pass 1.5 settled — where the
 pass-1.5 decision to reopen *here*, before scaffold freezes `files`, not a glob that quietly
 contradicts it.
 
-**Rule:** same-layer slices touch disjoint files; any slice that runs a code generator or edits a
-shared fixture/test harness serializes against every other slice that does the same. Add a
-`depends_on` edge between them. List generator outputs in the blob's optional `serializing` key
+**Rule:** slices with no dependency path between them touch disjoint files; any slice that runs a
+code generator or edits a shared fixture/test harness serializes against every other slice that
+does the same. Add a `depends_on` edge between them. List generator outputs in the blob's optional `serializing` key
 (see [decision-blob.md](decision-blob.md)).
 
 > **GATE:** pass 2's design-tree branches (slice ordering) resolved, zero `[OPEN]`, all `[ASSUMED]`
@@ -84,7 +86,8 @@ shared fixture/test harness serializes against every other slice that does the s
   untouched).
 
 - c. Run `/dg:assign <bundle>/plan.md` — fills `slices[].agents.primary` (+ optional `qa`) per slice
-  against the live roster. Idempotent; does not touch `agents.proxy`/`proxy_skills` (step 7's job).
+  against the live roster, and writes `agents.complexity` per slice.
+  Idempotent; does not touch `agents.proxy`/`proxy_skills` (step 7's job).
 
 - d. **Write pass 1.5's structure decisions into `plan.md`.** Skip entirely if step 1.5 collapsed
   (no contested surfaces) or was folded into step 1 (single-slice bundle). Otherwise render each
@@ -112,11 +115,9 @@ findings-shell file per slice (`slice-1.md`, `slice-2.md`, …), each pointing b
 
 ## Step 5 — Per-slice review fan-out
 
-Ask, per-slice, whether to escalate that slice's review, then launch the fan-out. Full contract —
-model/effort default + escalation ceiling, launch prompt, output shape — in
-[templates/slice-review.md](templates/slice-review.md). Each launch is that slice's assigned
-`agents.primary` reviewing its own slice, writing findings directly into its
-`roundtable/slice-<N>.md`.
+Launch the fan-out. Each launch is that slice's assigned `agents.primary` reviewing its own slice,
+writing findings directly into its `roundtable/slice-<N>.md`. Model, effort, launch prompt and output
+shape: [templates/slice-review.md](templates/slice-review.md).
 
 > **GATE:** every slice's `roundtable/slice-<N>.md` populated (findings or `"no recommendations"`).
 
@@ -131,38 +132,37 @@ model/effort default + escalation ceiling, launch prompt, output shape — in
 > **GATE:** synthesis edit list produced; every `[OPEN — escalate]` item resolved to `[DECIDED]`
 > via pass 3 (or explicitly deferred by the user as an `[OPEN — roundtable]` annotation).
 
-## Step 7 — Write `plan.md`; assign `/dg:proxy`; warn token cost
+## Step 7 — Write `plan.md`; delegate with `--proxy`; warn token cost
 
 - a. Apply step 6's edit list + pass-3 decisions directly to `<bundle>/plan.md` (frontmatter
   `slices[]` adjustments + body section edits) via `Edit`. Annotate any deferred item inline as
   `[OPEN — roundtable] <text>`.
 - b. **Docs fire ONCE at the end of the whole run** — that is already `/dg:sdlc`'s default
   (see [execute.md](execute.md)). Do NOT embed a review/docs lifecycle per slice here.
-- c. Ask (batched `AskUserQuestion`, up to 4 slices per call) which slices — if any — to delegate
-  externally via `/dg:proxy`. For each selected slice:
-  - Validate the backend name against `dg-skills proxy --list-backends`
-    (same validation `/dg:assign` uses for `agents.proxy`). Mismatch → refuse, list valid names.
-  - Set `slices[N].agents.proxy: <backend>` via `dg-skills spec set`.
-  - Ask which skill-behaviors (e.g. `db`, `polish`) that slice's engineering will need, and set
-    `slices[N].agents.proxy_skills: [...]` — see [decision-blob.md](decision-blob.md) for why `-s`
-    must inline these (the `/dg:proxy`-injection limitation).
-- d. **WARN (don't document)** the execution run's token/context cost: estimate per-slice agent-call
-  count (Red + Yellow + Green + wave + any `qa[]`, roughly 5–8 calls per slice, mostly sonnet-tier)
-  times the number of slices/layers, flag anything token-heavy per the global token-cost gate, and
-  offer to optimize (split an oversized slice, drop an unnecessary `qa` agent, downgrade an
-  `effort` override). This is a printed warning to the user, not a `plan.md` field — do not persist
-  a cost estimate into the bundle.
+- c. Read [proxy.md](proxy.md) only when `--proxy <backend>` is given, and ask its per-slice question.
+  Without the flag, skip this step and set no `agents.proxy`.
+- d. **WARN (don't document)** the execution run's token/context cost: run
+  `dg-skills spec estimate <bundle>/plan.md` (default runtime; without `--profile` it prints one line
+  per profile; add `--profile <p>` when a profile flag was given), print its lines, flag anything
+  token-heavy per the global token-cost gate, and offer to optimize (split an oversized slice, drop an
+  unnecessary `qa` agent, downgrade an `effort` override). This is a printed warning to the user,
+  not a `plan.md` field — do not persist a cost estimate into the bundle.
 
-> **GATE:** `plan.md` reflects synthesis + pass-3 decisions; every delegated slice has
+> **GATE:** `plan.md` reflects synthesis + pass-3 decisions; with `--proxy`, every delegated slice has
 > `agents.proxy` + `agents.proxy_skills` set; user has seen the token-cost warning.
 
 ## Step 8 — Plan approval gate
 
 Print a readable view of the full plan in the terminal, laid out as in
 [templates/plan-view.md](templates/plan-view.md): a `👀 Check these` list first, then short bulleted sections,
-with 👀 on every line the user should double-check. Include each `[OPEN — roundtable]` annotation and the
-token-cost warning from step 7. Then ask with `AskUserQuestion`: **Approve** (continue to step 9) or **Rework**
-(the user says what to change; revise `<bundle>/plan.md`, print the view again, ask again, and loop until Approve).
+with 👀 on every line the user should double-check. Include each `[OPEN — roundtable]` annotation and, in
+the Cost section, the estimate lines from step 7d, one per profile. Then ask with `AskUserQuestion`:
+**Approve (balance)**, **Approve as cheap**, **Approve as expensive** or **Rework**.
+When a profile flag was given, the options are **Approve** and **Rework**.
+Rework means the user says what to change: revise `<bundle>/plan.md`, re-run
+`dg-skills spec estimate <bundle>/plan.md`, print the view again, ask again, and loop until Approve.
+On any Approve, run `dg-skills spec set <bundle>/plan.md execution.profile <chosen>`
+(the flag's value when one was given) before step 9.
 Nothing after this step runs before Approve. `/dg:kick`, `/dg:prd` and `/dg:pickup` reach this gate through plan
 mode and reuse the same view.
 
@@ -179,9 +179,9 @@ dg-skills spec prototype-ref <bundle> --slice <N> --path <accepted-asset-path> -
 ## Step 9 — Context pack
 
 Run `dg-skills spec context <bundle>`. Writes `<bundle>/context.md` — a frontmatter-first tidy pack
-projecting `plan.md`'s frontmatter (see the schema's bundle-only `bundle`/`plan_path` fields) plus
-`paths.md` + inferred `school/*.md` in the body. This is the file execute mode reads instead of the
-full planning history.
+projecting `plan.md`'s frontmatter (see the schema's bundle-only `bundle`/`plan_path` fields, and
+`execution.profile`) plus `paths.md` + inferred `school/*.md` in the body.
+This is the file execute mode reads instead of the full planning history.
 
 > **GATE:** `<bundle>/context.md` exists.
 

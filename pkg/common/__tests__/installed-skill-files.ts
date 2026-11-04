@@ -166,6 +166,8 @@ export const INSTALLED_SKILL_FILES = [
 	"spec/references/fast.md",
 	"spec/references/grill.md",
 	"spec/references/plan.md",
+	"spec/references/profiles.md",
+	"spec/references/proxy.md",
 	"spec/references/templates/plan-view.md",
 	"spec/references/templates/slice-review.md",
 	"spec/references/templates/structure-grill.md",

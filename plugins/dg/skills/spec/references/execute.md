@@ -20,6 +20,9 @@ module homes, error conventions. It is absent whenever step 1.5 collapsed or was
 normal; when present, `/dg:sdlc`'s `slice-engineering.md` and `slice-engineering-proxy.md` templates
 already point each slice's engineer at it, so no extra wiring is needed here.
 
+Read `execution.profile` from `plan.md` (absent means balance). Read
+[profiles.md](profiles.md) first only when `-s --profile` is given.
+
 **NEVER read `initial.md` or any `roundtable/slice-<N>.md`** — those are plan-mode sprawl, already
 folded into `plan.md` by synthesis (plan.md step 6–7). Reading them here would defeat the entire
 point of the read-boundary this bundle exists to create. If a bundle is missing `context.md` (plan
@@ -79,24 +82,20 @@ granular answers) — the same command `/dg:prd` documents for pre-granting perm
 
 ## 5. Drive the slice-wave
 
-Run [`sdlc/references/engineering.md`](../../sdlc/references/engineering.md) **4.1–4.3** exactly
-as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above. For each layer, one call writes
-the runner with its resolved args baked in. Workflow cannot read the plugin cache, so the helper writes
-into the session scratchpad. Then Workflow runs the printed path:
-
-```sh
-dg-skills assign resolve "$SPEC_PATH" --layer <N> --scratch "$SCRATCH_PATH" --wave <scratchpad> --cwd "$WORKTREE_PATH"
-```
-
-```
-Workflow({ scriptPath: "<printed path>" })
-```
+Run [`sdlc/references/engineering.md`](../../sdlc/references/engineering.md) **4.2–4.3** exactly
+as written, with `SPEC_PATH`/`SCRATCH_PATH` from steps 2–3 above and `--cwd "$WORKTREE_PATH"`. To see
+which slices are done, run `dg-skills spec ready "$SPEC_PATH" <N> --cwd "$WORKTREE_PATH"`.
 
 **Checkboxes and deferrals:** `plan.md` stays in the origin checkout while agents edit only the worktree, so agents never touch the spec. The orchestrator ticks each slice's checkboxes after that slice commits (engineering.md 4.3). `CONFIRM` deferrals never block. To resume after settling `SPEC`/`TEST` deferrals, add `Agent Notes` lines, then set `resolved` and `redDone` in the baked `WAVE_ARGS` (engineering.md 4.3).
 
-**One PR per slice:** when `plan.md` has a `## PR Plan` that opens one PR for each slice (or for
-each layer), build each PR in its own worktree and branch, in plan order. Stop at each operator gate
-the plan names and wait for the user before the next PR. Do not merge the slices into one worktree.
+**One PR per slice:** when `plan.md` has a `## PR Plan` that opens one PR for each slice, build each
+PR in its own worktree and branch, in plan order, and run `assign resolve --slices <its ids>` for that
+PR. Bundles whose commits predate the slice marker re-select every slice, so pass `--slices` by hand
+there. Stop at each operator gate the plan names and wait for the user before the next PR. Do not
+merge the slices into one worktree.
+
+Read [proxy.md](proxy.md) only when `-s --proxy <backend>` is given, and ask its per-slice question
+for slices without `agents.proxy`; without the flag, honor `agents.proxy` in the bundle as written.
 
 **Proxied slices:** for any slice with `agents.proxy` set, its `agents.proxy_skills` (e.g. `["db", "polish"]`) must be inlined into that slice's `/dg:proxy` prompt as explicit instructions — `/dg:proxy`
 only injects the persona file and cannot invoke `/dg:db` or `/dg:polish` as slash-commands, so the

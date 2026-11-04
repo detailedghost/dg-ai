@@ -5,8 +5,8 @@ fan-out, uses **built-in Claude plan mode** as its one approval gate, and then b
 **sequentially in the main loop** — compacting between them instead of spending a subagent wave per
 slice. The bundle is still durable, so a fast run is resumable with `/dg:spec -s` if it is interrupted.
 
-`FAST_MODE = HAS(--fast | -f)`. Mutually exclusive with `-s` — if both are present, stop and ask
-which the user meant. `NO_WORKTREE = HAS(-T | --no-worktree)`, valid **only** alongside `--fast`.
+`FAST_MODE = HAS(--fast | -f)`. Mutually exclusive with `-s` and with `--proxy` — if a pair is present, stop with an
+error that names both flags. `NO_WORKTREE = HAS(-T | --no-worktree)`, valid **only** alongside `--fast`.
 
 ## F1 — Enter built-in plan mode
 
@@ -46,6 +46,7 @@ the bundle will, so that approving it is approving the real artifact:
   opening with `### Contracts` (inputs, outputs, error shapes), and Acceptance items.
 - Any surviving code-structure decisions from F2 topic 2.
 - The token/context cost estimate, per the global token-cost gate.
+- The cost profile: `balance`, or the value given by `--fast --cheap`, `--fast --expensive` or `--fast --profile <p>`.
 - **The permission set, spelled out in plain words** — `run_commands`, `git_push`, `gh_pr_create`,
   `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Fast mode folds `/dg:sdlc` setup.md
   Step 3's separate permission prompt into this one gate, so approval **is** the grant. If the plan
@@ -54,6 +55,8 @@ the bundle will, so that approving it is approving the real artifact:
 ## F4 — `ExitPlanMode` — the only gate before code
 
 `ExitPlanMode` is fast mode's approval gate. It **replaces** plan.md step 8 entirely.
+
+Approving the plan file is the profile approval.
 
 Rejection or requested changes → stay in plan mode, revise the plan file, exit again. Never
 scaffold against an unapproved plan.
@@ -65,12 +68,15 @@ scaffold against an unapproved plan.
 - a. Author the decision blob yourself — shape LOCKED, per [decision-blob.md](decision-blob.md) —
   and write it to `$(dg-skills stash -s spec <slug>-blob.json)`. Full mode routes
   this through foreman; fast mode does not, since F2's log is already yours.
-- a2. `dg-skills spec lint-waves <blob-path>` — same rule as plan.md step 2: same-layer slices touch
-  disjoint files; slices that run a code generator or edit a shared fixture/test harness serialize
-  against each other. Fix every overlap with a `depends_on` edge first. `scaffold` refuses on
-  overlap.
+- a2. `dg-skills spec lint-waves <blob-path>` — same rule as plan.md step 2: slices with no dependency
+  path between them touch disjoint files; slices that run a code generator or edit a shared
+  fixture/test harness serialize against each other.
+  Fix every overlap with a `depends_on` edge first. `scaffold` refuses on overlap.
 - b. `dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>` → prints
   `<bundle>` (`.agents/spec/<NNN>_<slug>/`).
+- b2. `dg-skills spec set <bundle>/plan.md execution.profile <profile>` — the profile the approved plan
+  file names. It persists for a later `-s`, and under `cheap` finish.md step 5 at F8 runs with the
+  lower cap.
 - c. `/dg:assign <bundle>/plan.md` — fills `slices[].agents`. Not optional: F7 reads `agents.primary`
   for its escape hatch, and a resumed `/dg:spec -s` needs it.
 - d. Code-structure decisions, if F2 produced any that span more than one slice:
@@ -131,7 +137,7 @@ Per slice:
    context — that is the design, and F5f is why it is safe.
 2. **Red.** Write the failing tests from the slice's `### Contracts` first, per `/dg:standard-test`.
 3. **Green.** Implement until they pass; run the project's test and lint commands.
-4. **Commit the slice** — Conventional Commits, scope required (e.g. `feat(<scope>): <slice name>`).
+4. **Commit the slice** — Conventional Commits, scope required (`<type>(<scope>): slice-<N>: <slice name>`).
    Silent when `permissions.slice_commits`.
 5. **Record.** Append the slice summary to `## Slice Summaries`, durable notes to `## Agent Notes`
    as `- (slice N) <text>`, ephemeral notes to `SCRATCH_PATH`; set `current_slice`.

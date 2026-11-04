@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { readRepoFile } from "./test-support";
+import { readRepoFile, section } from "./test-support";
 
 const SKILLS = ["plugins", "dg", "skills"];
-const step8 = readRepoFile(...SKILLS, "spec", "references", "plan.md")
-	.split("## Step 8")[1]
-	?.split("## Step 9")[0];
+const step8 = section(
+	readRepoFile(...SKILLS, "spec", "references", "plan.md"),
+	"## Step 8",
+	"## Step 9",
+);
 const view = readRepoFile(
 	...SKILLS,
 	"spec",
@@ -20,6 +22,10 @@ describe("plan approval gate", () => {
 		expect(step8).toContain("Approve");
 		expect(step8).toContain("Rework");
 		expect(step8).toContain("loop until Approve");
+	});
+
+	test("step 8 persists the profile choice", () => {
+		expect(step8).toContain("execution.profile");
 	});
 
 	test("step 8 no longer uses the built-in plan mode or the viz board", () => {
