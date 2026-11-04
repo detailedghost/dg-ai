@@ -228,7 +228,7 @@ describe("installRecommendedForClaude", () => {
 		expect(lines).toEqual(["⚠ unslop removed: reinstall failed: first"]);
 	});
 
-	test("refreshes the marketplace once before installing and not when every plugin is current", () => {
+	test("refreshes the marketplace exactly once per run, also when every plugin is current", () => {
 		const home = tempDir("recommended-home");
 		const stale = recordingRunner({}, { home, shas: { "one@detailedghost": SHA_A, "two@detailedghost": SHA_A } });
 		installRecommendedForClaude([plugin("one", SHA_A), plugin("two", SHA_A)], home, stale.run, () => {});
@@ -236,7 +236,7 @@ describe("installRecommendedForClaude", () => {
 		writeInstalledPlugins(home, { "one@detailedghost": SHA_A });
 		const current = recordingRunner();
 		installRecommendedForClaude([plugin("one", SHA_A)], home, current.run, () => {});
-		expect(current.marketplaceCalls).toEqual([]);
+		expect(current.marketplaceCalls).toEqual([["claude", "plugin", "marketplace", "update", "detailedghost"]]);
 	});
 
 	test("uninstalls and says so when the installed sha still differs from the pin after install", () => {
@@ -392,6 +392,22 @@ describe("installRecommendedForClaude marketplace pin", () => {
 		if (pin) writeMarketplaceClone(join(home, ".claude"), { unslop: pin });
 		return home;
 	}
+
+	test("a stale cached pin that matches the install still updates once the refresh moves the pin", () => {
+		const home = setup(EMBEDDED);
+		writeInstalledPlugins(home, { [REF]: EMBEDDED });
+		const calls: string[][] = [];
+		const run = (argv: string[]) => {
+			calls.push(argv);
+			if (argv[2] === "marketplace") writeMarketplaceClone(join(home, ".claude"), { unslop: PINNED });
+			if (argv[2] === "install") writeInstalledPlugins(home, { [REF]: PINNED });
+			return { status: 0, stdout: "{}", stderr: "" };
+		};
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, (line) => lines.push(line));
+		expect(calls.map((argv) => argv[2])).toEqual(["marketplace", "uninstall", "install"]);
+		expect(lines.at(-1)).toBe(`unslop updated to ${PINNED.slice(0, 7)}.`);
+	});
 
 	test("accepts the marketplace pin Claude installed and prints a note", () => {
 		const home = setup(PINNED);

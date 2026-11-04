@@ -291,8 +291,9 @@ The flag is off by default. It works with the default install, `--cli-only` and
 anything.
 
 With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
-install each plugin. Claude Code installs the commit that its own `detailedghost`
-marketplace clone pins, and that clone follows `master`. `dg-skills` checks the
+install each plugin. It first refreshes the `detailedghost` marketplace once.
+Claude Code installs the commit that its own `detailedghost` marketplace clone
+pins, and that clone follows `master`. `dg-skills` checks the
 installed sha against that marketplace pin. When the marketplace pin differs
 from the pin in this `dg-skills`, it prints a `note:` line that names both.
 When the clone cannot be read, it checks against its own pin. When an installed
@@ -381,14 +382,14 @@ dg-skills install --with-recommended
 Codex:
 
 ```bash
-~/.dg/bin/dg-skills install --skills-only --dest ~/.codex/skills --with-recommended
-~/.dg/bin/dg-skills install --skills-only --dest ~/.agents/skills --with-recommended
+dg-skills install --skills-only --dest ~/.codex/skills --with-recommended
+dg-skills install --skills-only --dest ~/.agents/skills --with-recommended
 ```
 
 OpenCode:
 
 ```bash
-~/.dg/bin/dg-skills install --skills-only --dest ~/.config/opencode/skills --with-recommended
+dg-skills install --skills-only --dest ~/.config/opencode/skills --with-recommended
 ```
 
 dg marks each recommended skill folder with a `.dg-recommended` file. It

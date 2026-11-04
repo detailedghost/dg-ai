@@ -155,13 +155,8 @@ export function installRecommendedForClaude(
 	log: (line: string) => void,
 ): void {
 	const installed = installedShas(home);
-	const knownPins = marketplacePins(home);
-	const stale = plugins.some((plugin) => {
-		const shas = installed.get(`${plugin.name}@${MARKETPLACE}`) ?? [];
-		return !shas.some((sha) => sha === plugin.sha || sha === knownPins.get(plugin.name));
-	});
-	if (stale) refreshMarketplace(run);
-	const pins = stale ? marketplacePins(home) : knownPins;
+	refreshMarketplace(run);
+	const pins = marketplacePins(home);
 	for (const plugin of plugins) {
 		try {
 			const expected = pins.get(plugin.name) ?? plugin.sha;
