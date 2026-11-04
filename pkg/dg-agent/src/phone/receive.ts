@@ -54,9 +54,7 @@ export type ImageReceiver = {
 };
 
 function terminalReason(reason: FetchFailure): ImageFailure {
-	if (reason === "too large") return "too large";
-	if (reason === "bad file") return "hash mismatch";
-	return "fetch failed";
+	return reason === "too large" ? "too large" : "fetch failed";
 }
 
 /** The listener's fetch queue for `[image pending]` rows: concurrency 1, backoff retries, and a fixed reason when it ends. */
@@ -76,6 +74,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 	const fail = (row: ImageFetchRow, reason: ImageFailure) => finish(row, imageUnavailableText(reason));
 
 	const storedCopy = (ox: string): ImageFile | undefined => {
+		if (!deps.db.hasPlainImage(ox)) return undefined;
 		for (const type of TYPES) {
 			const name = imageFileName({ sha256: ox, type });
 			const stat = name ? lstatSync(join(dir, name), { throwIfNoEntry: false }) : undefined;

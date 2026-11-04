@@ -501,6 +501,15 @@ export class PhoneDb {
 		return this.db.query("SELECT * FROM image_fetches ORDER BY next_at, message_id").all() as ImageFetchRow[];
 	}
 
+	/** True when a received row that is not PHI already holds the image with plaintext hash `ox`. */
+	hasPlainImage(ox: string): boolean {
+		return (
+			this.db
+				.query("SELECT 1 FROM messages WHERE direction = 'in' AND phi = 0 AND file IS NOT NULL AND json_extract(file, '$.sha256') = $ox LIMIT 1")
+				.get({ ox }) !== null
+		);
+	}
+
 	pendingImageCount(): number {
 		return (this.db.query("SELECT COUNT(*) AS n FROM image_fetches").get() as { n: number }).n;
 	}

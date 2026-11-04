@@ -321,6 +321,16 @@ describe("image receive contracts", () => {
 		});
 	}
 
+	it("stores fetch failed when the received transfer is not exactly one file named x", async () => {
+		const sealed = seal(pngOfSize());
+		stageAt(alice, sealed.cipher, bob);
+
+		const stored = await receiveOne(offerEvent(alice, bob, sealed), wormholeFor({ receive: "two-files" }));
+
+		expect(stored?.text).toBe("[image unavailable: fetch failed]");
+		expect(filesIn(bob)).toEqual([]);
+	});
+
 	it("stores too large and sends no request for a size tag over the cap", async () => {
 		const sealed = seal(pngOfSize());
 
@@ -559,12 +569,19 @@ describe("createImageReceiver", () => {
 		expect(pool.events).toEqual([]);
 	});
 
-	it("reuses a stored file with the same hash and fetches nothing", async () => {
-		const plain = pngOfSize();
+	function storedImage(id: string, plain: Buffer, phi: boolean): string {
 		const ox = sha256(plain);
 		const dir = join(bob.deps.paths.phoneRoot, FILES_DIR);
 		mkdirSync(dir, { recursive: true, mode: 0o700 });
 		writeFileSync(join(dir, `${ox}.png`), plain, { mode: 0o600 });
+		const file = JSON.stringify({ sha256: ox, type: "image/png", size: plain.length });
+		bob.deps.db.addMessage({ id, direction: "in", ts: clock, sender: alice.npub, contact: alice.npub, text: "[image]", call: 0, file, phi });
+		return ox;
+	}
+
+	it("reuses a stored file with the same hash and fetches nothing", async () => {
+		const plain = pngOfSize();
+		const ox = storedImage("earlier", plain, false);
 		pendingRow("img", { ox });
 		const wormhole = wormholeFor();
 		const images = receiver({ wormhole });
@@ -575,6 +592,32 @@ describe("createImageReceiver", () => {
 		expect(row(bob, "img")).toMatchObject({ text: "[image]", file: JSON.stringify({ sha256: ox, type: "image/png", size: plain.length }) });
 		expect(pool.events).toEqual([]);
 		expect(wormhole.runs()).toEqual([]);
+	});
+
+	it("never reuses a file that only PHI rows hold, so a plain row cannot keep it past 24 hours", async () => {
+		const ox = storedImage("phi-earlier", pngOfSize(), true);
+		pendingRow("img", { ox, deadline: clock + 30 });
+		const images = receiver({ pool: createFakePool([]) });
+
+		images.wake();
+		await images.settle();
+
+		expect(row(bob, "img")?.text).toBe("[image unavailable: sender offline]");
+		expect(row(bob, "img")?.file).toBeNull();
+	});
+
+	it("stores fetch failed when the wormhole tool stays unavailable to the deadline", async () => {
+		pendingRow("img", { deadline: clock + 30 });
+		const wormhole = wormholeFor();
+		wormhole.deps.pins = {};
+		const images = receiver({ wormhole });
+
+		images.wake();
+		await images.settle();
+
+		expect(row(bob, "img")).toMatchObject({ text: "[image unavailable: fetch failed]", file: null });
+		expect(filesIn(bob)).toEqual([]);
+		expect(bob.deps.db.imageFetches()).toEqual([]);
 	});
 
 	it("stores storage full and fetches nothing when files/ is over the byte cap", async () => {
