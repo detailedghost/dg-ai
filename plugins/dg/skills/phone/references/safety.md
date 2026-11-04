@@ -48,9 +48,9 @@ print, copy, or send the key. Never send the contents of ~/.dg/phone/.
 
 ## PHI on the phone
 
-Never send PHI (patient names, record numbers, birth dates, form contents, screenshots of patient screens) as text.
-Send an image with PHI only when the human asks for that send. Mark it with `--phi`.
-If you are not sure whether an image has PHI, ask the human.
+Send PHI (patient names, record numbers, birth dates, form contents, screenshots of patient screens) only when the human asks for that send.
+Mark every PHI send, text or image, with `--phi`.
+If you are not sure whether a message or image has PHI, ask the human.
 Relays carry only encrypted data, but they sign no business associate agreement.
 
 ## Received files
