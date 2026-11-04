@@ -75,6 +75,21 @@ describe("movePhoneState", () => {
 		}
 	});
 
+	it("moves received images with files/ at 0700 and each image at 0600", () => {
+		seedPhone(oldRoot);
+		const name = `${"a".repeat(64)}.png`;
+		mkdirSync(join(oldRoot, "files"), { mode: 0o700 });
+		writeFileSync(join(oldRoot, "files", name), "png", { mode: 0o600 });
+
+		expect(movePhoneState(oldRoot, newRoot, log).moved).toBe(true);
+
+		expect(readFileSync(join(newRoot, "files", name), "utf8")).toBe("png");
+		if (process.platform !== "win32") {
+			expect(statSync(join(newRoot, "files")).mode & 0o777).toBe(0o700);
+			expect(statSync(join(newRoot, "files", name)).mode & 0o777).toBe(0o600);
+		}
+	});
+
 	it("keeps the old root and writes nothing else when the copy is corrupted", () => {
 		seedPhone(oldRoot);
 		const before = readFileSync(join(oldRoot, "phone.db"));

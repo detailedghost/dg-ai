@@ -1,5 +1,6 @@
 import { runCaptureBytes } from "@dg/common/node";
 import type { MessageRow, PhoneDb } from "./db";
+import { storedFile } from "./image";
 import { ON_MESSAGE_MAX_ATTEMPTS, type CommandPushTarget, nextOnMessageRetryDelayMs, onMessagePayload } from "./push";
 import { findContactByNpub } from "./store";
 import { senderLabel, threadLine } from "./thread";
@@ -20,7 +21,8 @@ export type HookRunner = {
 	settle: () => Promise<void>;
 };
 
-function payloadFor(db: PhoneDb, row: MessageRow): string {
+function payloadFor(db: PhoneDb, row: MessageRow, phoneRoot: string): string {
+	const file = storedFile(row, phoneRoot);
 	if (row.thread_id) {
 		const thread = db.getThread(row.thread_id);
 		const threadHandle = thread?.handle ?? `#${row.thread_id.slice(0, 8)}`;
@@ -35,20 +37,21 @@ function payloadFor(db: PhoneDb, row: MessageRow): string {
 			thread: threadHandle,
 			text: row.text,
 			line: threadLine(threadHandle, label, row.text),
+			...(file ? { file } : {}),
 		});
 	}
 	const contact = findContactByNpub(db, row.contact);
 	return onMessagePayload(
-		{ id: row.id, ts: row.ts, from: row.sender, text: row.text, ...(row.call ? { call: true as const } : {}) },
+		{ id: row.id, ts: row.ts, from: row.sender, text: row.text, ...(row.call ? { call: true as const } : {}), ...(file ? { file } : {}) },
 		contact?.handle ?? "",
 	);
 }
 
 /** Runs the `--on-message` command once; any non-zero exit, signal, or spawn error counts as a failure. */
-async function deliverOnce(target: CommandPushTarget, db: PhoneDb, row: MessageRow): Promise<boolean> {
+async function deliverOnce(target: CommandPushTarget, db: PhoneDb, row: MessageRow, phoneRoot: string): Promise<boolean> {
 	try {
 		const result = await runCaptureBytes(target.argv[0], target.argv.slice(1), {
-			stdin: payloadFor(db, row),
+			stdin: payloadFor(db, row, phoneRoot),
 			timeoutMs: target.timeoutMs,
 		});
 		return result.status === 0;
@@ -63,7 +66,7 @@ async function deliverOnce(target: CommandPushTarget, db: PhoneDb, row: MessageR
  * message blocks only the rows behind it, never the ones ahead of it that already delivered. A row
  * that reaches the cap is skipped for the rest of this run and left for `retryStuck`.
  */
-export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedule: Schedule): HookRunner {
+export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedule: Schedule, phoneRoot: string): HookRunner {
 	let inFlight = false;
 	let passAgain = false;
 	let stuckAgain = false;
@@ -120,7 +123,7 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 			for (;;) {
 				const row = db.nextDeliverable(ON_MESSAGE_MAX_ATTEMPTS);
 				if (!row) return;
-				if (await deliverOnce(target, db, row)) {
+				if (await deliverOnce(target, db, row, phoneRoot)) {
 					db.markRead([row.id]);
 					continue;
 				}
@@ -138,7 +141,7 @@ export function createHookRunner(db: PhoneDb, target: CommandPushTarget, schedul
 	async function stuckPass(): Promise<void> {
 		try {
 			for (const row of db.stuckMessages(ON_MESSAGE_MAX_ATTEMPTS)) {
-				if (await deliverOnce(target, db, row)) db.markRead([row.id]);
+				if (await deliverOnce(target, db, row, phoneRoot)) db.markRead([row.id]);
 				else db.bumpAttempts(row.id);
 			}
 		} finally {

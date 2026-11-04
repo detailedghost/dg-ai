@@ -933,7 +933,7 @@ describe("say --image", () => {
 		expect(lines()[0]).toMatchObject({ handle: "+velora", id: row?.id });
 	});
 
-	it("removes the staged file and saves no row when every relay refuses", async () => {
+	it("removes the staged file, its outbox row, and saves no row when every relay refuses", async () => {
 		const refusing = createFakePool([]);
 		const { d, home } = await ready(refusing);
 		const image = writeImage(home);
@@ -942,6 +942,30 @@ describe("say --image", () => {
 
 		expect(outboxFiles(d)).toEqual([]);
 		expect(d.db.recentMessages(20)).toEqual([]);
+		const raw = new Database(PhoneDb.path(d.paths), { readonly: true });
+		const outboxRows = raw.query("SELECT COUNT(*) AS n FROM outbox").get() as { n: number };
+		raw.close();
+		expect(outboxRows.n).toBe(0);
+	});
+
+	it("records who may fetch the blob before the wrap is published, so a fast receiver is not refused", async () => {
+		const { d, home, contactSk } = await ready();
+		const image = writeImage(home);
+		const seen: string[][] = [];
+		const publish = pool.publish;
+		pool.publish = (relays, event) => {
+			const rumor = nip59.unwrapEvent(event, contactSk);
+			const x = rumor.tags.find(([name]) => name === "x")?.[1] as string;
+			seen.push(d.db.outboxRecipients(x));
+			return publish(relays, event);
+		};
+		try {
+			await phoneSay("+velora", undefined, d, { image });
+		} finally {
+			pool.publish = publish;
+		}
+
+		expect(seen).toEqual([[getPublicKey(contactSk)]]);
 	});
 
 	it("sends one kind 15 rumor with the same key to every thread member and keeps one outbox copy", async () => {

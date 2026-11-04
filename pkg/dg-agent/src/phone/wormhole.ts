@@ -262,7 +262,8 @@ export async function wormholeSend(paths: DgPaths, req: { code: string; file: st
 	}
 }
 
-function dirBytes(dir: string): number {
+/** Sum of the sizes of the entries directly in `dir`; a link counts as its own size. */
+export function dirBytes(dir: string): number {
 	let total = 0;
 	for (const name of readdirSync(dir)) total += lstatSync(join(dir, name), { throwIfNoEntry: false })?.size ?? 0;
 	return total;

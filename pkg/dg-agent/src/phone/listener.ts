@@ -31,8 +31,10 @@ import {
 import { resolvePublishConfirmMs, PUBLISH_CONFIRM_ENV } from "./delivery";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
-import type { PhoneDb } from "./db";
+import { type ImageFetchRow, MESSAGE_TTL_SECONDS, PHI_TTL_SECONDS, type PhoneDb } from "./db";
+import { IMAGE_PENDING_TEXT, imageUnavailableText } from "./image";
 import type { CommandPushTarget } from "./push";
+import { createImageReceiver, MAX_PENDING_IMAGES } from "./receive";
 import { createFileRequestHandler } from "./transport";
 import type { WormholeDeps } from "./wormhole";
 import {
@@ -50,6 +52,8 @@ import {
 	readPublishConfirmSetting,
 	readRelays,
 	notePhoneDrift,
+	pubkeyHex,
+	readFilesOn,
 	setContactKeyId,
 	subscriptionRelays,
 	writeCursor,
@@ -724,6 +728,38 @@ function holdThread(db: PhoneDb, held: HeldThread, receivedAt: number): void {
 	if (survived) process.stderr.write(heldLogLine(held.roomId));
 }
 
+/** The stored text of an admitted message, and the fetch to queue when it is an image this phone should get. */
+function imageAdmission(db: PhoneDb, message: Message, direction: "in" | "out", now: number): { text: string; fetch?: Omit<ImageFetchRow, "attempts"> } {
+	if (!message.image || direction === "out") return { text: message.text };
+	if (!readFilesOn(db)) return { text: imageUnavailableText("files are off") };
+	if (db.pendingImageCount() >= MAX_PENDING_IMAGES) return { text: imageUnavailableText("too many pending") };
+	const { offer, keyId } = message.image;
+	return {
+		text: IMAGE_PENDING_TEXT,
+		fetch: {
+			message_id: message.id,
+			sender: pubkeyHex(message.from),
+			key_id: keyId,
+			...offer,
+			next_at: now,
+			deadline: now + (message.phi ? PHI_TTL_SECONDS : MESSAGE_TTL_SECONDS),
+		},
+	};
+}
+
+/** Stores the message row, then its image fetch row when there is one. */
+function storeMessage(
+	db: PhoneDb,
+	message: Message,
+	row: { direction: "in" | "out"; contact: string; call: number; thread_id?: string },
+	now: number,
+): boolean {
+	const image = imageAdmission(db, message, row.direction, now);
+	const inserted = db.addMessage({ id: message.id, ts: message.ts, sender: message.from, text: image.text, phi: message.phi === true, ...row });
+	if (inserted && image.fetch) db.addImageFetch(image.fetch);
+	return inserted;
+}
+
 function threadContacts(db: PhoneDb): { npub: string; keyId: string }[] {
 	return db.listContacts().map((row) => ({ npub: row.npub, keyId: row.key_id }));
 }
@@ -773,16 +809,12 @@ function admitMessage(
 				});
 				for (const npub of message.thread.memberNpubs) db.insertThreadMember(message.thread.roomId, npub);
 			}
-			const inserted = db.addMessage({
-				id: message.id,
-				direction: threadDirection(message.from, ownNpubs),
-				ts: message.ts,
-				sender: message.from,
-				contact: message.from,
-				text: message.text,
-				call: 0,
-				thread_id: message.thread.roomId,
-			});
+			const inserted = storeMessage(
+				db,
+				message,
+				{ direction: threadDirection(message.from, ownNpubs), contact: message.from, call: 0, thread_id: message.thread.roomId },
+				now(),
+			);
 			return inserted ? "stored" : "duplicate";
 		}
 		if (newContact && !findContactByNpub(db, newContact.npub)) {
@@ -795,15 +827,7 @@ function admitMessage(
 			addPhoneNotice(db, `new contact +${handle}`, now());
 		}
 		if (!findContactByNpub(db, message.from)) return "rejected";
-		const inserted = db.addMessage({
-			id: message.id,
-			direction: "in",
-			ts: message.ts,
-			sender: message.from,
-			contact: message.from,
-			text: message.text,
-			call: message.call ? 1 : 0,
-		});
+		const inserted = storeMessage(db, message, { direction: "in", contact: message.from, call: message.call ? 1 : 0 }, now());
 		if (!inserted) return "duplicate";
 		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
 		return "stored";
@@ -860,8 +884,18 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
-	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
+	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule, deps.paths.phoneRoot) : noopHookRunner();
 	const fileRequests = createFileRequestHandler({ db: deps.db, paths: deps.paths, now: deps.now, wormhole: deps.wormhole });
+	const images = createImageReceiver({
+		db: deps.db,
+		paths: deps.paths,
+		pool,
+		now: deps.now,
+		keys: () => keys,
+		schedule: deps.schedule,
+		wormhole: deps.wormhole,
+		onFinish: () => void hookRunner.notify(),
+	});
 
 	const logDrop = (drop: DroppedRing) => {
 		if (loggedDrops.has(drop.id)) return;
@@ -895,6 +929,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 			);
 			if (stored === "rejected") refused.add(message.from);
 		}
+		images.wake();
 		return caught.seen;
 	};
 
@@ -905,11 +940,15 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	await hookRunner.notify();
 	await hookRunner.retryStuck();
-	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
+	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => {
+		deps.db.pruneMessages();
+		void hookRunner.retryStuck();
+	});
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
 		admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept);
+		images.wake();
 		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
 		void hookRunner.notify();
@@ -1056,7 +1095,8 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 			cancelLiveness();
 			hookRunner.stop();
 			fileRequests.stop();
-			void Promise.all([hookRunner.settle(), fileRequests.settle()]).finally(() => {
+			images.stop();
+			void Promise.all([hookRunner.settle(), fileRequests.settle(), images.settle()]).finally(() => {
 				removeListenerPid(deps.paths);
 				releaseListenerClaim(deps.paths, deps.pid);
 				resolve();

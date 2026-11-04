@@ -18,7 +18,7 @@ import {
 	PUBLISH_CONFIRM_ENV,
 } from "./delivery";
 import { OUTBOX_DIR, PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
-import { MAX_IMAGE_BYTES, prepareImage, type PreparedImage } from "./image";
+import { IMAGE_TEXT, MAX_IMAGE_BYTES, prepareImage, type PreparedImage, storedFile } from "./image";
 import type { WormholeDeps } from "./wormhole";
 import {
 	defaultCrontab,
@@ -146,7 +146,6 @@ export type OpenCloseDeps = PhoneDeps &
 	};
 
 const MAX_SEND_BYTES = 64 * 1024;
-const IMAGE_TEXT = "[image]";
 
 export type SayOpts = { image?: string; phi?: boolean };
 const STOP_WAIT_MS = 5000;
@@ -493,10 +492,22 @@ function selfNames(deps: PhoneDeps): Map<string, string> {
 
 function emitStored(
 	deps: PhoneDeps,
-	row: { id: string; ts: number; direction: "in" | "out"; sender: string; contact: string; text: string; call: number; read_at: number | null; thread_id: string | null },
+	row: {
+		id: string;
+		ts: number;
+		direction: "in" | "out";
+		sender: string;
+		contact: string;
+		text: string;
+		call: number;
+		read_at: number | null;
+		thread_id: string | null;
+		file: string | null;
+	},
 	self: Map<string, string>,
 	fields: { direction: boolean; read: boolean; meta: boolean },
 ): void {
+	const file = fields.meta ? undefined : storedFile(row, deps.paths.phoneRoot);
 	if (row.thread_id) {
 		const thread = deps.db.getThread(row.thread_id);
 		const threadHandle = thread?.handle ?? `#${row.thread_id.slice(0, 8)}`;
@@ -510,6 +521,7 @@ function emitStored(
 			handle: label,
 			from: row.sender,
 			...(fields.meta ? {} : { text: row.text, line: threadLine(threadHandle, label, row.text) }),
+			...(file ? { file } : {}),
 			...(fields.read ? { read: row.read_at !== null } : {}),
 			...(row.call ? { call: true } : {}),
 			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
@@ -524,6 +536,7 @@ function emitStored(
 		handle: contact ? `+${contact.handle}` : null,
 		from: row.sender,
 		...(fields.meta ? {} : { text: row.text }),
+		...(file ? { file } : {}),
 		...(fields.read ? { read: row.read_at !== null } : {}),
 		...(row.call ? { call: true } : {}),
 		...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
@@ -643,12 +656,17 @@ function prepareImageSend(textArg: string | undefined, opts: SayOpts, deps: Phon
 	return prepareImage(bytes);
 }
 
-function stageOutbox(deps: PhoneDeps, image: PreparedImage): string {
+/** Writes the ciphertext and who may fetch it before any wrap goes out, so a fast receiver is not refused; returns the undo. */
+function stageOutbox(deps: PhoneDeps, image: PreparedImage, keyId: string, recipients: readonly string[], phi: boolean): () => void {
 	const dir = join(deps.paths.phoneRoot, OUTBOX_DIR);
 	ensurePrivateDir(dir);
 	const path = join(dir, image.x);
 	writeFileAtomic(path, image.cipher, 0o600);
-	return path;
+	deps.db.addOutbox(image.x, keyId, recipients, { phi });
+	return () => {
+		rmSync(path, { force: true });
+		deps.db.removeOutbox(image.x);
+	};
 }
 
 function rumorTags(image: PreparedImage | undefined, phi: boolean): string[][] {
@@ -666,19 +684,14 @@ function saveOutgoing(
 	row: { id: string; ts: number; sender: string; contact: string; text: string; thread_id?: string },
 	image: PreparedImage | undefined,
 	phi: boolean,
-	keyId: string,
-	recipients: string[],
 ): void {
-	deps.db.transaction(() => {
-		if (image) deps.db.addOutbox(image.x, keyId, recipients, { phi });
-		deps.db.addMessage({
-			...row,
-			direction: "out",
-			call: 0,
-			text: image ? IMAGE_TEXT : row.text,
-			file: image ? JSON.stringify(image.file) : null,
-			phi,
-		});
+	deps.db.addMessage({
+		...row,
+		direction: "out",
+		call: 0,
+		text: image ? IMAGE_TEXT : row.text,
+		file: image ? JSON.stringify(image.file) : null,
+		phi,
 	});
 }
 
@@ -709,7 +722,8 @@ async function phoneSayThread(
 		recipients.push({ handle: `+${contact.handle}`, npub, pub: pubkeyHex(npub), self: false });
 	}
 	recipients.push({ handle: `+${resolvedSelfName(deps.db)}`, npub: selfNpub, pub: pubkeyHex(selfNpub), self: true });
-	const staged = image ? stageOutbox(deps, image) : undefined;
+	const peerPubs = recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub);
+	const unstage = image ? stageOutbox(deps, image, thread.key_id, peerPubs, phi) : undefined;
 	const pool = deps.createPool();
 	const relaysUsed: string[] = [];
 	const createdAt = deps.now();
@@ -731,7 +745,7 @@ async function phoneSayThread(
 			},
 			publishTo: (relays, event) => publish(pool, relays, event, { confirmMs: confirmMsFor(deps) }),
 		}).catch((err: unknown) => {
-			if (staged) rmSync(staged, { force: true });
+			unstage?.();
 			throw err;
 		});
 		const behind = behindHandles(delivered.members);
@@ -742,12 +756,10 @@ async function phoneSayThread(
 				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id },
 				image,
 				phi,
-				thread.key_id,
-				recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub),
 			);
 			await restartStaleListener(deps, { spawn: true });
-		} else if (staged) {
-			rmSync(staged, { force: true });
+		} else {
+			unstage?.();
 		}
 		const payload = {
 			handle,
@@ -787,7 +799,7 @@ export async function phoneSay(handleArg: string, textArg: string | undefined, d
 		image || phi
 			? wrapTagged({ kind: image ? FILE_MESSAGE_KIND : undefined, content: body, tags: rumorTags(image, phi) }, sk, contactPub)
 			: wrap(body, sk, contactPub);
-	const staged = image ? stageOutbox(deps, image) : undefined;
+	const unstage = image ? stageOutbox(deps, image, contact.keyId, [contactPub], phi) : undefined;
 	const pool = deps.createPool();
 	let relays = contact.relays;
 	let queried: string[] = [];
@@ -800,10 +812,10 @@ export async function phoneSay(handleArg: string, textArg: string | undefined, d
 			report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
 			if (!shouldSaveOutgoing(report)) throw new DgCliError(rejectedSend("message", report));
 		} catch (err) {
-			if (staged) rmSync(staged, { force: true });
+			unstage?.();
 			throw err;
 		}
-		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi, contact.keyId, [contactPub]);
+		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi);
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report) });
 	} finally {
