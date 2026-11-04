@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createDecipheriv, createHash } from "node:crypto";
 import { DgCliError } from "@dg/common";
 import { prepareImage, sniffImage, stripMetadata, WORMHOLE_SCHEME } from "../../src/phone/image";
+import { jpegWithGpsExif } from "./fake-image";
 
 function sha256(bytes: Uint8Array): string {
 	return createHash("sha256").update(bytes).digest("hex");
@@ -36,29 +37,6 @@ function pngChunkTypes(bytes: Buffer): string[] {
 		at += 12 + length;
 	}
 	return types;
-}
-
-function jpegSegment(marker: number, data: Buffer): Buffer {
-	const head = Buffer.from([0xff, marker, 0, 0]);
-	head.writeUInt16BE(data.length + 2, 2);
-	return Buffer.concat([head, data]);
-}
-
-const GPS_EXIF = Buffer.concat([Buffer.from("Exif\0\0MM", "latin1"), Buffer.from("GPSLatitude 51.5074 N", "latin1")]);
-
-function jpegWithGpsExif(): Buffer {
-	return Buffer.concat([
-		Buffer.from([0xff, 0xd8]),
-		jpegSegment(0xe0, Buffer.from("JFIF\0\x01\x01", "latin1")),
-		jpegSegment(0xe1, GPS_EXIF),
-		jpegSegment(0xed, Buffer.from("Photoshop 3.0 GPS", "latin1")),
-		jpegSegment(0xfe, Buffer.from("comment GPS", "latin1")),
-		jpegSegment(0xdb, Buffer.alloc(65, 3)),
-		jpegSegment(0xda, Buffer.from([1, 1, 0, 0, 0x3f, 0])),
-		Buffer.from([0x12, 0xff, 0x00, 0x34, 0xff, 0xd0, 0x56]),
-		Buffer.from([0xff, 0xd9]),
-		Buffer.from("trailing GPS", "latin1"),
-	]);
 }
 
 function webpChunk(fourcc: string, data: Buffer): Buffer {
@@ -186,6 +164,16 @@ describe("prepareImage", () => {
 		expect(value(first.tags, "decryption-nonce")).not.toBe(value(second.tags, "decryption-nonce"));
 		expect(value(first.tags, "x")).not.toBe(value(second.tags, "x"));
 		expect(value(first.tags, "ox")).toBe(value(second.tags, "ox"));
+	});
+
+	it("adds the dg-phi tag and phi on the file only for a PHI image", () => {
+		const plain = prepareImage(pngWithMetadata());
+		const phi = prepareImage(pngWithMetadata(), { phi: true });
+
+		expect(plain.tags.some(([name]) => name === "dg-phi")).toBe(false);
+		expect(plain.file).not.toHaveProperty("phi");
+		expect(phi.tags.at(-1)).toEqual(["dg-phi", "1"]);
+		expect(phi.file.phi).toBe(true);
 	});
 
 	it("rejects an SVG as not an image", () => {

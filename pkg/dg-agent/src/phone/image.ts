@@ -9,8 +9,11 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 /** Kind 15 `content` prefix; the ciphertext sits in the sender's outbox, not at a URL. */
 export const WORMHOLE_SCHEME = "dg-wormhole:";
 
-/** The `{sha256, type, size}` stored on an image row: plaintext hash and size after the strip. */
-export type ImageFile = { sha256: string; type: ImageType; size: number };
+/** Rumor tag that marks an image the sender flagged as PHI. */
+export const PHI_TAG = "dg-phi";
+
+/** The file JSON stored on an image row: plaintext hash and size after the strip. */
+export type ImageFile = { sha256: string; type: ImageType; size: number; phi?: true };
 
 export type PreparedImage = { cipher: Buffer; x: string; tags: string[][]; content: string; file: ImageFile };
 
@@ -138,7 +141,7 @@ function sha256Hex(bytes: Buffer): string {
 }
 
 /** Strips, then seals under a fresh AES-256-GCM key and nonce; `cipher` is ciphertext followed by the 16-byte tag. */
-export function prepareImage(source: Buffer): PreparedImage {
+export function prepareImage(source: Buffer, opts: { phi?: boolean } = {}): PreparedImage {
 	const type = sniffImage(source);
 	if (!type) throw notAnImage();
 	const plain = stripMetadata(source, type);
@@ -148,19 +151,21 @@ export function prepareImage(source: Buffer): PreparedImage {
 	const cipher = Buffer.concat([cipherer.update(plain), cipherer.final(), cipherer.getAuthTag()]);
 	const x = sha256Hex(cipher);
 	const ox = sha256Hex(plain);
+	const tags = [
+		["file-type", type],
+		["encryption-algorithm", "aes-gcm"],
+		["decryption-key", key.toString("hex")],
+		["decryption-nonce", nonce.toString("hex")],
+		["x", x],
+		["ox", ox],
+		["size", String(cipher.length)],
+	];
+	if (opts.phi) tags.push([PHI_TAG, "1"]);
 	return {
 		cipher,
 		x,
+		tags,
 		content: `${WORMHOLE_SCHEME}${x}`,
-		file: { sha256: ox, type, size: plain.length },
-		tags: [
-			["file-type", type],
-			["encryption-algorithm", "aes-gcm"],
-			["decryption-key", key.toString("hex")],
-			["decryption-nonce", nonce.toString("hex")],
-			["x", x],
-			["ox", ox],
-			["size", String(cipher.length)],
-		],
+		file: { sha256: ox, type, size: plain.length, ...(opts.phi ? { phi: true as const } : {}) },
 	};
 }

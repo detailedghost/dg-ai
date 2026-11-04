@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { MESSAGE_TTL_SECONDS, OUTBOX_DIR, PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_OUTBOX_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 
 const NOW = 1_800_000_000;
 let home: string;
@@ -303,6 +303,23 @@ describe("PhoneDb", () => {
 			expect(existsSync(old)).toBe(false);
 			expect(existsSync(fresh)).toBe(true);
 			expect(db.outboxRecipients(X)).toEqual([]);
+			expect(db.outboxRecipients(Y)).toEqual(["pub2"]);
+		});
+
+		it("prunes a PHI blob after 24 hours while a plain blob of the same age stays", () => {
+			now = NOW - PHI_OUTBOX_TTL_SECONDS - 1;
+			db.addOutbox(X, ["pub1"], { phi: true });
+			db.addOutbox(Y, ["pub2"]);
+			now = NOW;
+			const phi = stage(X, PHI_OUTBOX_TTL_SECONDS + 1);
+			const plain = stage(Y, PHI_OUTBOX_TTL_SECONDS + 1);
+
+			db.pruneMessages();
+
+			expect(PHI_OUTBOX_TTL_SECONDS).toBe(24 * 60 * 60);
+			expect(existsSync(phi)).toBe(false);
+			expect(db.outboxRecipients(X)).toEqual([]);
+			expect(existsSync(plain)).toBe(true);
 			expect(db.outboxRecipients(Y)).toEqual(["pub2"]);
 		});
 

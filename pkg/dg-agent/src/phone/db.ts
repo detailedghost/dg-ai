@@ -75,6 +75,9 @@ export type InviteRow = {
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
 export const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/** Outbox copies of a PHI image, and outbox files with no row, live this long instead of the message TTL. */
+export const PHI_OUTBOX_TTL_SECONDS = 24 * 60 * 60;
+
 /** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
 export const OUTBOX_DIR = "outbox";
 
@@ -145,7 +148,8 @@ const SCHEMA: MigrationStep[] = [
 			db.run("ALTER TABLE messages ADD COLUMN file TEXT");
 			db.run(`CREATE TABLE outbox (
 				sha256 TEXT PRIMARY KEY,
-				created_at INTEGER NOT NULL
+				created_at INTEGER NOT NULL,
+				phi INTEGER NOT NULL DEFAULT 0
 			) STRICT`);
 			db.run(`CREATE TABLE outbox_recipients (
 				sha256 TEXT NOT NULL REFERENCES outbox(sha256) ON DELETE CASCADE,
@@ -206,15 +210,17 @@ export class PhoneDb {
 		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
 		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
-		this.pruneOutbox(cutoff);
+		this.pruneOutbox(cutoff, this.now() - PHI_OUTBOX_TTL_SECONDS);
 	}
 
 	/** Drops expired outbox rows, then unlinks expired or unreferenced old files; never follows a symlink. */
-	private pruneOutbox(cutoff: number): void {
+	private pruneOutbox(cutoff: number, phiCutoff: number): void {
 		const expired = new Set(
-			(this.db.query("SELECT sha256 FROM outbox WHERE created_at < $cutoff").all({ cutoff }) as { sha256: string }[]).map(
-				(row) => row.sha256,
-			),
+			(
+				this.db
+					.query("SELECT sha256 FROM outbox WHERE created_at < $cutoff OR (phi = 1 AND created_at < $phiCutoff)")
+					.all({ cutoff, phiCutoff }) as { sha256: string }[]
+			).map((row) => row.sha256),
 		);
 		this.transaction(() => {
 			const dropRecipients = this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha");
@@ -236,7 +242,7 @@ export class PhoneDb {
 			const path = join(folder, name);
 			const stat = lstatSync(path, { throwIfNoEntry: false });
 			if (!stat?.isFile()) continue;
-			const stale = expired.has(name) || (known.get({ sha: name }) === null && stat.mtimeMs / 1000 < cutoff);
+			const stale = expired.has(name) || (known.get({ sha: name }) === null && stat.mtimeMs / 1000 < phiCutoff);
 			if (stale) rmSync(path, { force: true });
 		}
 	}
@@ -388,9 +394,11 @@ export class PhoneDb {
 	}
 
 	/** Records a staged outbox blob and the pubkeys allowed to fetch it. */
-	addOutbox(sha256: string, recipients: readonly string[]): void {
+	addOutbox(sha256: string, recipients: readonly string[], opts: { phi?: boolean } = {}): void {
 		this.transaction(() => {
-			this.db.query("INSERT OR IGNORE INTO outbox (sha256, created_at) VALUES ($sha256, $createdAt)").run({ sha256, createdAt: this.now() });
+			this.db
+				.query("INSERT OR IGNORE INTO outbox (sha256, created_at, phi) VALUES ($sha256, $createdAt, $phi)")
+				.run({ sha256, createdAt: this.now(), phi: opts.phi ? 1 : 0 });
 			const add = this.db.query("INSERT OR IGNORE INTO outbox_recipients (sha256, pubkey) VALUES ($sha256, $pubkey)");
 			for (const pubkey of recipients) add.run({ sha256, pubkey });
 		});
