@@ -91,7 +91,9 @@ This skill never edits `~/.claude/settings.json` or any other file outside
 this repository. To autostart a channel-review env at the beginning of a
 Claude Code session, print the block below for the human to paste into their
 own `~/.claude/settings.json` themselves, with `<env>` replaced by `dev` or
-`prod`:
+`prod`. When `DG_HOME` is set to a relative path, replace
+`${DG_HOME:-$HOME/.local}/bin/dg-skills` with the absolute launcher path
+before you print the block, because each session starts in its own folder:
 
 ```json
 {
