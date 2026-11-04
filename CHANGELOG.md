@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.38.0 (2026-11-04)
+
+### Features
+
+- feat(install): add --with-recommended for pinned third-party plugins ([#137](https://github.com/detailedghost/dg-ai/pull/137))
+
 ## v1.37.0 (2026-11-04)
 
 ### Features
