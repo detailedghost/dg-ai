@@ -34,6 +34,7 @@ import {
 	addContact,
 	type ContactRecord,
 	DEFAULT_RELAYS,
+	findContactByHandle,
 	gateFor,
 	listContacts,
 	liveInvites,
@@ -922,6 +923,7 @@ describe("say --image", () => {
 		expect(cipher.includes(Buffer.from("GPS", "latin1"))).toBe(false);
 		expect(String(cipher.length)).toBe(tag("size") as string);
 		expect(d.db.outboxRecipients(x)).toEqual([getPublicKey(contactSk)]);
+		expect(d.db.outboxKeyId(x)).toBe(findContactByHandle(d.db, "velora")?.keyId);
 
 		const [row] = d.db.recentMessages(20);
 		expect(row).toMatchObject({ direction: "out", text: "[image]", contact: nip19.npubEncode(getPublicKey(contactSk)) });
@@ -965,6 +967,7 @@ describe("say --image", () => {
 		expect(outboxFiles(d)).toEqual([x]);
 		expect(d.db.outboxRecipients(x)).toEqual([getPublicKey(contactSk), getPublicKey(otherSk)].sort());
 		const thread = d.db.getThreadByHandle("#room");
+		expect(d.db.outboxKeyId(x)).toBe(thread?.key_id);
 		expect(d.db.recentMessages(20, undefined, thread?.id)).toMatchObject([{ id: first.id, text: "[image]" }]);
 	});
 

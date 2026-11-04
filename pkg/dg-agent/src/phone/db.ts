@@ -151,6 +151,7 @@ const SCHEMA: MigrationStep[] = [
 			db.run("ALTER TABLE messages ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
 			db.run(`CREATE TABLE outbox (
 				sha256 TEXT PRIMARY KEY,
+				key_id TEXT NOT NULL,
 				created_at INTEGER NOT NULL,
 				phi INTEGER NOT NULL DEFAULT 0
 			) STRICT`);
@@ -402,15 +403,19 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
-	/** Records a staged outbox blob and the pubkeys allowed to fetch it. */
-	addOutbox(sha256: string, recipients: readonly string[], opts: { phi?: boolean } = {}): void {
+	/** Records a staged outbox blob, the key that sent it, and the pubkeys allowed to fetch it. */
+	addOutbox(sha256: string, keyId: string, recipients: readonly string[], opts: { phi?: boolean } = {}): void {
 		this.transaction(() => {
 			this.db
-				.query("INSERT OR IGNORE INTO outbox (sha256, created_at, phi) VALUES ($sha256, $createdAt, $phi)")
-				.run({ sha256, createdAt: this.now(), phi: opts.phi ? 1 : 0 });
+				.query("INSERT OR IGNORE INTO outbox (sha256, key_id, created_at, phi) VALUES ($sha256, $keyId, $createdAt, $phi)")
+				.run({ sha256, keyId, createdAt: this.now(), phi: opts.phi ? 1 : 0 });
 			const add = this.db.query("INSERT OR IGNORE INTO outbox_recipients (sha256, pubkey) VALUES ($sha256, $pubkey)");
 			for (const pubkey of recipients) add.run({ sha256, pubkey });
 		});
+	}
+
+	outboxKeyId(sha256: string): string | undefined {
+		return (this.db.query("SELECT key_id FROM outbox WHERE sha256 = $sha256").get({ sha256 }) as { key_id: string } | null)?.key_id;
 	}
 
 	outboxRecipients(sha256: string): string[] {

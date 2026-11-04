@@ -664,10 +664,11 @@ function saveOutgoing(
 	row: { id: string; ts: number; sender: string; contact: string; text: string; thread_id?: string },
 	image: PreparedImage | undefined,
 	phi: boolean,
+	keyId: string,
 	recipients: string[],
 ): void {
 	deps.db.transaction(() => {
-		if (image) deps.db.addOutbox(image.x, recipients, { phi });
+		if (image) deps.db.addOutbox(image.x, keyId, recipients, { phi });
 		deps.db.addMessage({
 			...row,
 			direction: "out",
@@ -739,6 +740,7 @@ async function phoneSayThread(
 				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id },
 				image,
 				phi,
+				thread.key_id,
 				recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub),
 			);
 			await restartStaleListener(deps, { spawn: true });
@@ -799,7 +801,7 @@ export async function phoneSay(handleArg: string, textArg: string | undefined, d
 			if (staged) rmSync(staged, { force: true });
 			throw err;
 		}
-		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi, [contactPub]);
+		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi, contact.keyId, [contactPub]);
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report) });
 	} finally {

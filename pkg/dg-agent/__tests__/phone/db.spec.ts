@@ -297,18 +297,20 @@ describe("PhoneDb", () => {
 			return file;
 		};
 
-		it("records a staged blob with the recipients allowed to fetch it", () => {
-			db.addOutbox(X, ["pub1", "pub2"]);
+		it("records a staged blob with the key that sent it and the recipients allowed to fetch it", () => {
+			db.addOutbox(X, "k1", ["pub1", "pub2"]);
 
 			expect(db.outboxRecipients(X)).toEqual(["pub1", "pub2"]);
+			expect(db.outboxKeyId(X)).toBe("k1");
 			expect(db.outboxRecipients(Y)).toEqual([]);
+			expect(db.outboxKeyId(Y)).toBeUndefined();
 		});
 
 		it("prunes rows and files older than seven days and keeps fresh ones", () => {
 			now = NOW - MESSAGE_TTL_SECONDS - 1;
-			db.addOutbox(X, ["pub1"]);
+			db.addOutbox(X, "k1", ["pub1"]);
 			now = NOW;
-			db.addOutbox(Y, ["pub2"]);
+			db.addOutbox(Y, "k1", ["pub2"]);
 			const old = stage(X, MESSAGE_TTL_SECONDS + 1);
 			const fresh = stage(Y, 60);
 
@@ -322,8 +324,8 @@ describe("PhoneDb", () => {
 
 		it("prunes a PHI blob after 24 hours while a plain blob of the same age stays", () => {
 			now = NOW - PHI_TTL_SECONDS - 1;
-			db.addOutbox(X, ["pub1"], { phi: true });
-			db.addOutbox(Y, ["pub2"]);
+			db.addOutbox(X, "k1", ["pub1"], { phi: true });
+			db.addOutbox(Y, "k1", ["pub2"]);
 			now = NOW;
 			const phi = stage(X, PHI_TTL_SECONDS + 1);
 			const plain = stage(Y, PHI_TTL_SECONDS + 1);
@@ -352,7 +354,7 @@ describe("PhoneDb", () => {
 			const link = join(outbox(), X);
 			symlinkSync(target, link);
 			now = NOW - MESSAGE_TTL_SECONDS - 1;
-			db.addOutbox(X, ["pub1"]);
+			db.addOutbox(X, "k1", ["pub1"]);
 			now = NOW;
 
 			db.pruneMessages();
