@@ -45,11 +45,14 @@ type Env = Record<string, string | undefined>;
 
 function dgHome(platform: NodeJS.Platform, value: string): string {
 	const path = platform === "win32" ? win32 : posix;
-	return path.isAbsolute(value) ? value : path.resolve(value);
+	return path.resolve(value);
 }
 
 /** Rewrites a relative `DG_HOME` in `env` to an absolute path so children started in another folder find the same install. */
-export function normalizeDgHome(env: Env = process.env, platform: NodeJS.Platform = process.platform): void {
+export function normalizeDgHome(
+	env: Env = process.env,
+	platform: NodeJS.Platform = process.platform,
+): void {
 	if (env.DG_HOME) env.DG_HOME = dgHome(platform, env.DG_HOME);
 }
 
@@ -67,10 +70,16 @@ function roots(platform: NodeJS.Platform, home: string, env: Env): DgRoots {
 		};
 	}
 	if (platform === "win32") {
-		const local = path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "dg");
+		const local = path.join(
+			env.LOCALAPPDATA || path.join(home, "AppData", "Local"),
+			"dg",
+		);
 		return {
 			binDir: path.join(local, "bin"),
-			configDir: path.join(env.APPDATA || path.join(home, "AppData", "Roaming"), "dg"),
+			configDir: path.join(
+				env.APPDATA || path.join(home, "AppData", "Roaming"),
+				"dg",
+			),
 			dataDir: local,
 			stateDir: path.join(local, "state"),
 			cacheDir: path.join(local, "cache"),
@@ -90,7 +99,10 @@ function roots(platform: NodeJS.Platform, home: string, env: Env): DgRoots {
 	}
 	const xdg = (name: string, ...fallback: string[]) => {
 		const root = env[name];
-		return path.join(root && path.isAbsolute(root) ? root : path.join(home, ...fallback), "dg");
+		return path.join(
+			root && path.isAbsolute(root) ? root : path.join(home, ...fallback),
+			"dg",
+		);
 	};
 	const stateDir = xdg("XDG_STATE_HOME", ".local", "state");
 	return {
@@ -146,7 +158,10 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 }
 
 /** `PATH` with the dg launcher folder first, so children call the launchers by name. */
-export function withBinOnPath(path: string | undefined, binDir: string = resolveDgPaths().binDir): string {
+export function withBinOnPath(
+	path: string | undefined,
+	binDir: string = resolveDgPaths().binDir,
+): string {
 	const parts = (path ?? "").split(delimiter).filter(Boolean);
 	return [binDir, ...parts.filter((part) => part !== binDir)].join(delimiter);
 }

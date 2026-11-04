@@ -257,6 +257,26 @@ describe("normalizeDgHome", () => {
 		expect(env.DG_HOME).toBe("/abs/home");
 	});
 
+	it.skipIf(process.platform !== "win32")(
+		"adds the current drive to a rooted DG_HOME on win32",
+		() => {
+			const env: Record<string, string | undefined> = { DG_HOME: "\\dg" };
+
+			normalizeDgHome(env, "win32");
+
+			expect(env.DG_HOME).toBe(win32.resolve("\\dg"));
+			expect(env.DG_HOME).toMatch(/^[A-Za-z]:\\dg$/);
+		},
+	);
+
+	it("normalizes an absolute posix DG_HOME", () => {
+		const env: Record<string, string | undefined> = { DG_HOME: "/abs/./home/" };
+
+		normalizeDgHome(env, "linux");
+
+		expect(env.DG_HOME).toBe("/abs/home");
+	});
+
 	it("leaves an unset or empty DG_HOME alone", () => {
 		const unset: Record<string, string | undefined> = {};
 		const empty: Record<string, string | undefined> = { DG_HOME: "" };
