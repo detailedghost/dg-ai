@@ -6,6 +6,7 @@ import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
 import {
 	classifyThreadRumor,
+	FILE_MESSAGE_KIND,
 	heldFrom,
 	type HeldThread,
 	sortByTime,
@@ -68,6 +69,15 @@ export const STRANGER_ID_LIMIT = 10000;
 
 export function wrap(text: string, sk: Uint8Array, contactPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: contactPub }, text);
+}
+
+/** A NIP-17 kind 15 file message to one contact; `tags` are the file tags after `p`. */
+export function wrapFile(file: { content: string; tags: string[][] }, sk: Uint8Array, contactPub: string): NostrEvent {
+	return nip59.wrapEvent(
+		{ kind: FILE_MESSAGE_KIND, content: file.content, tags: [["p", contactPub], ...file.tags] },
+		sk,
+		contactPub,
+	);
 }
 
 /** A gift wrap whose rumor is tagged as a liveness probe. The tag is inside the seal. */

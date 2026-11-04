@@ -15,6 +15,7 @@ export type PhoneApi = Pick<
 	| "phoneContacts"
 	| "phoneContactsRename"
 	| "phoneContactsRemove"
+	| "phoneFiles"
 	| "phoneSay"
 	| "phoneInbox"
 	| "phoneVoicemail"
@@ -113,10 +114,21 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.command("say")
 		.description("send one message to a contact, or to a #thread")
 		.argument("<handle>", "the contact's +handle, or a #thread")
-		.argument("<text>", "message text, or - to read it from stdin")
-		.action(async (handle: string, text: string) => {
+		.argument("[text]", "message text, or - to read it from stdin; omit with --image")
+		.option("--image <path>", "send one PNG, JPEG, or WebP image instead of text")
+		.option("--phi", "mark the image as PHI: tags it and keeps the outbox copy 24 hours, not 7 days")
+		.action(async (handle: string, text: string | undefined, opts: Commands.SayOpts) => {
 			const phone = await load();
-			await phone.phoneSay(handle, text, phone.deps(getSession()));
+			await phone.phoneSay(handle, text, phone.deps(getSession()), opts);
+		});
+
+	group
+		.command("files")
+		.description("print whether say --image may send, or turn it on or off")
+		.argument("[state]", "on or off")
+		.action(async (state: string | undefined) => {
+			const phone = await load();
+			phone.phoneFiles(state, phone.deps(getSession()));
 		});
 
 	const threads = group.command("thread").description("a static multi-party room with a #handle");

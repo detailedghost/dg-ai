@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
-import { generateSecretKey, getPublicKey, nip17, nip19, nip59 } from "nostr-tools";
+import { generateSecretKey, getPublicKey, nip17, nip19, nip59, type NostrEvent } from "nostr-tools";
 import { decodeCard, encodeCard, NO_EXPIRY } from "../../src/phone/card";
 import { type KeyEntry, ring, unwrapIncoming } from "../../src/phone/chat";
 import {
@@ -12,17 +13,20 @@ import {
 	phoneContacts,
 	phoneContactsRemove,
 	phoneContactsRename,
+	phoneFiles,
 	phoneInbox,
 	phoneInvite,
 	phoneNumber,
 	phoneSay,
 	phoneStatus,
+	phoneThreadNew,
 	phoneVoicemail,
 	phoneWatch,
 	type PhoneDeps,
 	registerPhoneCommands,
 } from "../../src/phone/commands";
-import { PhoneDb } from "../../src/phone/db";
+import { OUTBOX_DIR, PhoneDb } from "../../src/phone/db";
+import { MAX_IMAGE_BYTES } from "../../src/phone/image";
 import { createFileKey, ensureNumberKey, readFileKey } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
 import {
@@ -39,6 +43,7 @@ import {
 	writeListener,
 	writeNumberKeyId,
 } from "../../src/phone/store";
+import { jpegWithGpsExif } from "./fake-image";
 import { createFakePool, freshNpub as realNpub, makeHomeTracker, makePhoneDeps, parseNdjson, type FakePool } from "./fake-pool";
 
 let tracker: ReturnType<typeof makeHomeTracker>;
@@ -736,6 +741,220 @@ describe("say", () => {
 	});
 });
 
+describe("files", () => {
+	it("is off by default, and on and off change it and print the result", async () => {
+		const d = deps(freshHome());
+
+		phoneFiles(undefined, d);
+		phoneFiles("on", d);
+		phoneFiles(undefined, d);
+		phoneFiles("off", d);
+
+		expect(lines()).toEqual([{ files: "off" }, { files: "on" }, { files: "on" }, { files: "off" }]);
+	});
+
+	it("shows files in status once turned on", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		phoneFiles("on", d);
+		out = [];
+
+		await phoneStatus(d);
+
+		expect(lines()[0]).toMatchObject({ files: "on" });
+	});
+});
+
+describe("say --image", () => {
+	function sha256(bytes: Uint8Array): string {
+		return createHash("sha256").update(bytes).digest("hex");
+	}
+
+	function outboxFiles(d: PhoneDeps): string[] {
+		const dir = join(d.paths.phoneRoot, OUTBOX_DIR);
+		return existsSync(dir) ? readdirSync(dir) : [];
+	}
+
+	function writeImage(home: string, bytes: Buffer = jpegWithGpsExif(), name = "shot.jpg"): string {
+		const path = join(home, name);
+		writeFileSync(path, bytes);
+		return path;
+	}
+
+	async function ready(poolOverride: FakePool = pool): Promise<{ d: PhoneDeps; home: string; contactSk: Uint8Array }> {
+		const home = freshHome();
+		const d = deps(home, poolOverride);
+		await phoneNumber({}, d);
+		phoneFiles("on", d);
+		const contactSk = generateSecretKey();
+		addTestContact(d.db, { npub: nip19.npubEncode(getPublicKey(contactSk)), handle: "velora" });
+		out = [];
+		return { d, home, contactSk };
+	}
+
+	async function expectNoSend(d: PhoneDeps, run: () => Promise<void>, message: string, exitCode: number): Promise<void> {
+		let thrown: unknown;
+		try {
+			await run();
+		} catch (err) {
+			thrown = err;
+		}
+		expect(thrown).toBeInstanceOf(DgCliError);
+		expect((thrown as DgCliError).message).toBe(message);
+		expect((thrown as DgCliError).exitCode).toBe(exitCode);
+		expect(pool.events).toEqual([]);
+		expect(outboxFiles(d)).toEqual([]);
+		expect(d.db.recentMessages(20)).toEqual([]);
+	}
+
+	it("exits 1 and sends nothing for --phi without --image", async () => {
+		const { d } = await ready();
+
+		await expectNoSend(d, () => phoneSay("+velora", "hi", d, { phi: true }), "--phi works only with --image", 1);
+	});
+
+	it("marks a --phi image with the dg-phi rumor tag and phi true on the row", async () => {
+		const { d, home, contactSk } = await ready();
+		const image = writeImage(home);
+
+		await phoneSay("+velora", undefined, d, { image, phi: true });
+
+		const rumor = nip59.unwrapEvent(pool.events[0], contactSk);
+		expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
+		const [row] = d.db.recentMessages(20);
+		expect(JSON.parse(row?.file as string)).toMatchObject({ phi: true });
+	});
+
+	it("exits 1 and sends nothing when files are off", async () => {
+		const { d, home } = await ready();
+		phoneFiles("off", d);
+		out = [];
+		const image = writeImage(home);
+
+		await expectNoSend(d, () => phoneSay("+velora", undefined, d, { image }), "files are off; the human runs phone files on", 1);
+	});
+
+	it("exits 1 and sends nothing for an image over 5 MiB", async () => {
+		const { d, home } = await ready();
+		const big = Buffer.alloc(MAX_IMAGE_BYTES + 1);
+		jpegWithGpsExif().copy(big);
+		const image = writeImage(home, big);
+
+		await expectNoSend(d, () => phoneSay("+velora", undefined, d, { image }), "image is larger than 5 MiB", 1);
+	});
+
+	it("exits 1 and sends nothing for an SVG", async () => {
+		const { d, home } = await ready();
+		const image = writeImage(home, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), "shot.svg");
+
+		await expectNoSend(d, () => phoneSay("+velora", undefined, d, { image }), "not an image", 1);
+	});
+
+	it("refuses text together with --image", async () => {
+		const { d, home } = await ready();
+		const image = writeImage(home);
+
+		await expectNoSend(d, () => phoneSay("+velora", "caption", d, { image }), "--image takes no text; send text with a second say", 1);
+	});
+
+	it("stages the ciphertext, publishes a kind 15 with the NIP-17 tags, and saves an [image] row with no path", async () => {
+		const { d, home, contactSk } = await ready();
+		const source = jpegWithGpsExif();
+		const image = writeImage(home, source);
+
+		await phoneSay("+velora", undefined, d, { image });
+
+		const rumor = nip59.unwrapEvent(pool.events[0], contactSk);
+		const tag = (name: string) => rumor.tags.find(([tagName]) => tagName === name)?.[1];
+		const x = tag("x") as string;
+		expect(rumor.kind).toBe(15);
+		expect(rumor.content).toBe(`dg-wormhole:${x}`);
+		expect(rumor.tags.some(([name]) => name === "dg-phi")).toBe(false);
+		expect(rumor.tags.map(([name]) => name)).toEqual([
+			"p",
+			"file-type",
+			"encryption-algorithm",
+			"decryption-key",
+			"decryption-nonce",
+			"x",
+			"ox",
+			"size",
+		]);
+		expect(tag("p")).toBe(getPublicKey(contactSk));
+
+		const staged = join(d.paths.phoneRoot, OUTBOX_DIR, x);
+		const cipher = readFileSync(staged);
+		expect(outboxFiles(d)).toEqual([x]);
+		expect(sha256(cipher)).toBe(x);
+		expect(statSync(staged).mode & 0o777).toBe(0o600);
+		expect(statSync(join(d.paths.phoneRoot, OUTBOX_DIR)).mode & 0o777).toBe(0o700);
+		expect(cipher.includes(Buffer.from("GPS", "latin1"))).toBe(false);
+		expect(String(cipher.length)).toBe(tag("size") as string);
+		expect(d.db.outboxRecipients(x)).toEqual([getPublicKey(contactSk)]);
+
+		const [row] = d.db.recentMessages(20);
+		expect(row).toMatchObject({ direction: "out", text: "[image]", contact: nip19.npubEncode(getPublicKey(contactSk)) });
+		const file = JSON.parse(row?.file as string) as Record<string, unknown>;
+		expect(file).toEqual({ sha256: tag("ox"), type: "image/jpeg", size: expect.any(Number) });
+		expect(row?.file).not.toContain(home);
+		expect(lines()[0]).toMatchObject({ handle: "+velora", id: row?.id });
+	});
+
+	it("removes the staged file and saves no row when every relay refuses", async () => {
+		const refusing = createFakePool([]);
+		const { d, home } = await ready(refusing);
+		const image = writeImage(home);
+
+		await expect(phoneSay("+velora", undefined, d, { image })).rejects.toThrow("no relay accepted the message");
+
+		expect(outboxFiles(d)).toEqual([]);
+		expect(d.db.recentMessages(20)).toEqual([]);
+	});
+
+	it("sends one kind 15 rumor with the same key to every thread member and keeps one outbox copy", async () => {
+		const { d, home, contactSk } = await ready();
+		const otherSk = generateSecretKey();
+		addTestContact(d.db, { npub: nip19.npubEncode(getPublicKey(otherSk)), handle: "grok" });
+		await phoneThreadNew("#room", ["+velora", "+grok"], { subject: "room" }, d);
+		out = [];
+		const image = writeImage(home);
+
+		await phoneSay("#room", undefined, d, { image });
+
+		const wrapFor = (sk: Uint8Array) =>
+			pool.events.findLast((event) => event.tags.some(([name, value]) => name === "p" && value === getPublicKey(sk))) as NostrEvent;
+		const first = nip59.unwrapEvent(wrapFor(contactSk), contactSk);
+		const second = nip59.unwrapEvent(wrapFor(otherSk), otherSk);
+		const key = (rumor: typeof first) => rumor.tags.find(([name]) => name === "decryption-key")?.[1];
+		expect(first.kind).toBe(15);
+		expect(second.id).toBe(first.id);
+		expect(key(second)).toBe(key(first));
+		expect(first.tags.filter(([name]) => name === "subject")).toEqual([["subject", "room"]]);
+		const x = first.tags.find(([name]) => name === "x")?.[1] as string;
+		expect(outboxFiles(d)).toEqual([x]);
+		expect(d.db.outboxRecipients(x)).toEqual([getPublicKey(contactSk), getPublicKey(otherSk)].sort());
+		const thread = d.db.getThreadByHandle("#room");
+		expect(d.db.recentMessages(20, undefined, thread?.id)).toMatchObject([{ id: first.id, text: "[image]" }]);
+	});
+
+	it("wires --image and --phi on say, and on and off on files", async () => {
+		const { d, home } = await ready();
+		const image = writeImage(home);
+		const program = new Command();
+		program.exitOverride();
+		registerPhoneCommands(program, () => d);
+
+		await expect(program.parseAsync(["phone", "say", "+velora", "hi", "--phi"], { from: "user" })).rejects.toThrow(
+			"--phi works only with --image",
+		);
+		await program.parseAsync(["phone", "say", "+velora", "--image", image, "--phi"], { from: "user" });
+		await program.parseAsync(["phone", "files", "off"], { from: "user" });
+
+		expect(d.db.recentMessages(20)).toMatchObject([{ text: "[image]", file: expect.stringContaining('"phi":true') }]);
+		expect(lines().at(-1)).toEqual({ files: "off" });
+	});
+});
+
 describe("inbox", () => {
 	it("prints oldest first, defaults to 50, and never marks anything read", async () => {
 		const d = deps(freshHome());
@@ -1052,6 +1271,7 @@ describe("status", () => {
 			migration_pending: false,
 			notice: null,
 			autostart: null,
+			files: "off",
 		});
 	});
 

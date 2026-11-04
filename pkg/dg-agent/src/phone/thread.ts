@@ -5,6 +5,7 @@ import { MESSAGE_TTL_SECONDS } from "./db";
 import { isHandle } from "./store";
 
 const CHAT_MESSAGE_KIND = 14;
+export const FILE_MESSAGE_KIND = 15;
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
 /** Participants, including this phone. Larger rooms are dropped, not stored. */
@@ -386,14 +387,17 @@ export async function fanoutThread(input: {
 	recipients: ThreadRecipient[];
 	relaysFor: (recipient: ThreadRecipient) => Promise<string[]>;
 	publishTo: (relays: string[], event: NostrEvent) => Promise<RelayReport>;
+	/** Sends a kind 15 file message: `text` is its content and these tags follow `p` and `subject`. */
+	fileTags?: string[][];
 }): Promise<{ rumorId: string; members: MemberReport[] }> {
 	const others = input.recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub);
 	const pubs = [...new Set(others)].sort();
 	const tags: string[][] = pubs.map((pub) => ["p", pub]);
 	if (input.subject.length > 0) tags.push(["subject", input.subject]);
 	else if (pubs.length === 1 && input.fallbackSubject.length > 0) tags.push(["subject", input.fallbackSubject]);
+	if (input.fileTags) tags.push(...input.fileTags);
 	const rumor = nip59.createRumor(
-		{ kind: CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
+		{ kind: input.fileTags ? FILE_MESSAGE_KIND : CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
 		input.sk,
 	);
 	const members: MemberReport[] = [];

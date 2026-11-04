@@ -30,6 +30,8 @@ const ADMISSION_EPOCH = "admission_epoch";
 const CURSOR_SETTING = "cursor";
 /** Milliseconds `say` and `accept` wait for a relay OK. The env var overrides this. */
 export const PUBLISH_CONFIRM_SETTING = "publish_confirm_ms";
+/** Whether `say --image` may send; off until someone runs `phone files on`. */
+const FILES_SETTING = "files";
 /** Short-lived kind 10050 lookup results, keyed by recipient pubkey hex. */
 const INBOX_RELAYS_SETTING = "inbox_relays";
 
@@ -121,6 +123,14 @@ export function writeCursor(db: PhoneDb, cursor: number): void {
 export function readPublishConfirmSetting(db: PhoneDb): number | undefined {
 	const value = db.get<unknown>(PUBLISH_CONFIRM_SETTING);
 	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function readFilesOn(db: PhoneDb): boolean {
+	return db.get<boolean>(FILES_SETTING) === true;
+}
+
+export function writeFilesOn(db: PhoneDb, on: boolean): void {
+	db.set(FILES_SETTING, on);
 }
 
 /** Cached kind 10050 relays for `pubkey`, or undefined when missing or older than `ttlSeconds`. */
