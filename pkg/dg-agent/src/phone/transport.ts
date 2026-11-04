@@ -34,10 +34,7 @@ export type FileTarget = { x: string; size: number; senderPub: string; key: KeyE
 
 export type RequestDeps = { pool: PhonePool; paths: DgPaths; wormhole?: WormholeDeps; signal?: AbortSignal };
 
-/**
- * One fetch attempt: asks the sender to send `x` on a fresh code, then receives it. The caller owns retry,
- * backoff, and the give-up time; every call makes a new code.
- */
+/** One fetch attempt on a fresh code; the caller owns retry, backoff, and the give-up time. */
 export async function requestFile(target: FileTarget, deps: RequestDeps): Promise<FileFetch> {
 	if (!X_PATTERN.test(target.x) || !Number.isSafeInteger(target.size) || target.size <= 0) return { ok: false, reason: "bad offer" };
 	if (target.size > MAX_CIPHER_BYTES) return { ok: false, reason: "too large" };

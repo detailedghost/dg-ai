@@ -279,10 +279,7 @@ function readReceived(dir: string, x: string, size: number): ReceiveResult {
 	return { ok: true, cipher };
 }
 
-/**
- * One receive attempt in a fresh 0700 temp dir: the code goes on stdin, and the answer is `y` only for a
- * file offer named `x` at the expected size. The temp dir is always removed.
- */
+/** One receive attempt in a fresh 0700 temp dir, with the code on stdin. */
 export async function wormholeReceive(
 	paths: DgPaths,
 	req: { code: string; x: string; size: number },
