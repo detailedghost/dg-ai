@@ -22,6 +22,8 @@ const MAX_CIPHER_BYTES = MAX_IMAGE_BYTES + GCM_TAG_BYTES;
 /** A request whose `created_at` is further than this from the sender's clock is ignored. */
 export const REQUEST_SKEW_SECONDS = 5 * 60;
 const SEEN_SECONDS = 60 * 60;
+/** Request ids and codes the replay cache holds; the oldest is dropped past this. */
+export const SEEN_LIMIT = 256;
 const SEND_QUEUE_DEPTH = 4;
 /** Sends one contact may start in a rolling day. */
 export const DAILY_REQUEST_CAP = 20;
@@ -91,6 +93,11 @@ export function createFileRequestHandler(deps: { db: PhoneDb; paths: DgPaths; no
 		}
 	};
 
+	const remember = (key: string, until: number) => {
+		seen.set(key, until);
+		if (seen.size > SEEN_LIMIT) seen.delete(seen.keys().next().value as string);
+	};
+
 	const accept = (request: FileRequestRumor): SendJob | undefined => {
 		const now = deps.now();
 		const x = tagValue(request.tags, "x");
@@ -102,8 +109,6 @@ export function createFileRequestHandler(deps: { db: PhoneDb; paths: DgPaths; no
 		const idKey = `id:${request.id}`;
 		const codeKey = `code:${code}`;
 		if (seen.has(idKey) || seen.has(codeKey)) return undefined;
-		seen.set(idKey, now + SEEN_SECONDS);
-		seen.set(codeKey, now + SEEN_SECONDS);
 		if (deps.db.outboxKeyId(x) !== request.keyId || !deps.db.outboxRecipients(x).includes(request.from)) return undefined;
 		const file = join(deps.paths.phoneRoot, OUTBOX_DIR, x);
 		if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return undefined;
@@ -112,6 +117,8 @@ export function createFileRequestHandler(deps: { db: PhoneDb; paths: DgPaths; no
 		const recent = (started.get(request.from) ?? []).filter((at) => at > now - DAY_SECONDS);
 		if (recent.length >= DAILY_REQUEST_CAP) return undefined;
 		started.set(request.from, [...recent, now]);
+		remember(idKey, now + SEEN_SECONDS);
+		remember(codeKey, now + SEEN_SECONDS);
 		open.add(slot);
 		return { slot, code, file };
 	};

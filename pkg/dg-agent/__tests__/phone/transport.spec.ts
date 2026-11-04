@@ -11,7 +11,7 @@ import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, type KeyClient } from "../../src/phone/keys";
 import { type ListenerDeps, runListener } from "../../src/phone/listener";
 import { addContact, numberKeyId } from "../../src/phone/store";
-import { createFileRequestHandler, requestFile } from "../../src/phone/transport";
+import { createFileRequestHandler, DAILY_REQUEST_CAP, requestFile, SEEN_LIMIT } from "../../src/phone/transport";
 import { wormholeCode } from "../../src/phone/wormhole";
 import { createFakePool, type FakePool } from "./fake-pool";
 import { fakeWormhole, type FakeWormhole } from "./fake-wormhole";
@@ -235,6 +235,54 @@ describe("createFileRequestHandler", () => {
 		files.handle(request({ code }));
 		await files.settle();
 		expect(sends(fake)).toHaveLength(1);
+	});
+
+	it("does not spend a code on a request refused before authorization", async () => {
+		const fake = fakeWormhole(root);
+		const files = handler(fake);
+		const code = wormholeCode();
+		files.handle(request({ code, x: "f".repeat(64) }));
+		await files.settle();
+		files.handle(request({ code }));
+		await files.settle();
+		expect(sends(fake)).toHaveLength(1);
+	});
+
+	it("does not spend a rumor id on a request refused by the rate checks", async () => {
+		const fake = fakeWormhole(root, { send: "hang", limits: { sendMs: 300 } });
+		const files = handler(fake);
+		files.handle(request());
+		const refused = request();
+		files.handle(refused);
+		await files.settle();
+		expect(sends(fake)).toHaveLength(1);
+		files.handle(refused);
+		await files.settle();
+		expect(sends(fake)).toHaveLength(2);
+	});
+
+	it("evicts the oldest remembered request once the replay cache is full", async () => {
+		const fake = fakeWormhole(root);
+		const requesters = Array.from({ length: Math.ceil(SEEN_LIMIT / 2 / DAILY_REQUEST_CAP) + 1 }, (_, index) => {
+			const pub = getPublicKey(generateSecretKey());
+			addContact(senderDb, { npub: nip19.npubEncode(pub), handle: `r${index}`, relays: RELAYS, keyId: numberKeyId(senderDb), addedAt: NOW, via: "number" });
+			return pub;
+		});
+		stageOutbox(x, cipher, [receiverPub, ...requesters]);
+		const files = handler(fake);
+		const first = request();
+		files.handle(first);
+		await files.settle();
+		files.handle(first);
+		await files.settle();
+		expect(sends(fake)).toHaveLength(1);
+		for (let index = 0; index < SEEN_LIMIT / 2; index += 1) {
+			files.handle(request({ from: requesters[Math.floor(index / DAILY_REQUEST_CAP)] }));
+			await files.settle();
+		}
+		files.handle(first);
+		await files.settle();
+		expect(sends(fake)).toHaveLength(SEEN_LIMIT / 2 + 2);
 	});
 
 	it("keeps one open request per requester and x", async () => {
