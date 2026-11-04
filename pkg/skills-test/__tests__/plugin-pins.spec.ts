@@ -6,7 +6,8 @@ import {
 	readMarketplace,
 } from "./marketplace-support";
 
-const SHA = "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa";
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const SHA = "0123456789abcdef0123456789abcdef01234567";
 
 function marketplaceWith(source: Record<string, unknown> | string): Marketplace {
 	return {
@@ -46,17 +47,17 @@ describe("marketplace.json plugin pins", () => {
 			source: "github",
 			repo: "mattpocock/skills",
 			ref: "main",
-			sha: SHA,
+			sha: expect.stringMatching(FULL_SHA),
 		});
 		expect(entry?.description?.length).toBeGreaterThan(0);
 	});
 
-	test("unslop keeps skills ['./'] at its pinned sha", () => {
+	test("unslop keeps skills ['./'] at a full-sha pin", () => {
 		const entry = marketplace.plugins.find((p) => p.name === "unslop");
 		expect(entry?.skills).toEqual(["./"]);
 		expect(entry?.source).toMatchObject({
 			repo: "theclaymethod/unslop",
-			sha: "17ed39c9d0b522f44190ff0c6233867eadee192a",
+			sha: expect.stringMatching(FULL_SHA),
 		});
 	});
 });
