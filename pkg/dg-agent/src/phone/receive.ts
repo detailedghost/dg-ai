@@ -117,7 +117,10 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 			{ pool: deps.pool, paths: deps.paths, wormhole: deps.wormhole, signal: controller.signal },
 		);
 		if (controller.signal.aborted) return;
-		if (!result.ok) return RETRY_REASONS.has(result.reason) ? defer(row, deps.now(), result.reason) : fail(row, terminalReason(result.reason));
+		const live = deps.db.imageFetches().find((candidate) => candidate.message_id === row.message_id);
+		if (!live) return;
+		if (deps.now() >= live.deadline) return fail(live, "sender offline");
+		if (!result.ok) return RETRY_REASONS.has(result.reason) ? defer(live, deps.now(), result.reason) : fail(live, terminalReason(result.reason));
 		const opened = openImage(result.cipher, row);
 		if (!opened.ok) return fail(row, opened.reason);
 		const file: ImageFile = { sha256: row.ox, type: opened.type, size: opened.plain.length };

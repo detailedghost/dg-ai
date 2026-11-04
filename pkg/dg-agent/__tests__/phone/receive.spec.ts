@@ -558,6 +558,58 @@ describe("createImageReceiver", () => {
 		expect(finished).toEqual(["done"]);
 	});
 
+	async function transferWhile(sealed: ReturnType<typeof seal>, during: () => void, wormhole: FakeWormhole) {
+		const images = receiver({ wormhole });
+		images.wake();
+		await waitUntil(() => requestsTo(alice).length === 1);
+		const request = requestsTo(alice)[0] as NostrEvent;
+		const code = nip59.unwrapEvent(request, alice.sk).tags.find((tag) => tag[0] === "code")?.[1] as string;
+		during();
+		writeFileSync(join(wormhole.rendezvous, `${code}.name`), sealed.x);
+		writeFileSync(join(wormhole.rendezvous, code), sealed.cipher);
+		await images.settle();
+	}
+
+	function sealedFields(sealed: ReturnType<typeof seal>): Partial<ImageFetchRow> {
+		return { x: sealed.x, ox: sealed.ox, size: sealed.cipher.length, key: sealed.key, nonce: sealed.nonce };
+	}
+
+	it("writes no file when the message is pruned while the transfer runs", async () => {
+		const sealed = seal(pngOfSize());
+		bob.deps.db.addMessage({ id: "img", direction: "in", ts: clock, sender: alice.npub, contact: alice.npub, text: "[image pending]", call: 0, phi: true });
+		bob.deps.db.addImageFetch({ ...fetchFields(alice, "img"), key_id: numberKeyId(bob.deps.db), ...sealedFields(sealed), deadline: clock + PHI_TTL_SECONDS });
+
+		await transferWhile(
+			sealed,
+			() => {
+				clock += PHI_TTL_SECONDS + 1;
+				bob.deps.db.pruneMessages();
+			},
+			wormholeFor(),
+		);
+
+		expect(filesIn(bob)).toEqual([]);
+		expect(row(bob, "img")).toBeUndefined();
+		expect(bob.deps.db.imageFetches()).toEqual([]);
+	});
+
+	it("writes no file and stores sender offline when the deadline passes while the transfer runs", async () => {
+		const sealed = seal(pngOfSize());
+		pendingRow("img", { ...sealedFields(sealed), deadline: clock + 60 });
+
+		await transferWhile(
+			sealed,
+			() => {
+				clock += 60;
+			},
+			wormholeFor(),
+		);
+
+		expect(filesIn(bob)).toEqual([]);
+		expect(row(bob, "img")).toMatchObject({ text: "[image unavailable: sender offline]", file: null });
+		expect(bob.deps.db.imageFetches()).toEqual([]);
+	});
+
 	it("stores sender offline without a request when the deadline already passed", async () => {
 		pendingRow("img", { deadline: clock - 1 });
 		const images = receiver();
