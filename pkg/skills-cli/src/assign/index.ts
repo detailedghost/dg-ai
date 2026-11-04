@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { isRecord } from "@dg/common";
 import { shellCommand } from "@dg/common/node";
 import { frontmatterOf, parseYaml } from "../spec/frontmatter";
@@ -13,12 +13,11 @@ import {
 	records,
 	SpecError,
 } from "../spec/shared";
-import type { Runtime } from "../tiers";
+import { RUNTIMES, type Runtime } from "../tiers";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import { type ResolvedStage, resolveStages } from "./stages";
 
 const PROGRAM = "dg-skills assign";
-const RUNTIMES: readonly Runtime[] = ["claude", "codex", "grok"];
 const USAGE =
 	"usage: dg-skills assign resolve <plan.md> [--layer N | --slices <id,id>] [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
 const REMINDER =
@@ -204,13 +203,17 @@ async function choose(
 			if (!slices.some((slice) => String(slice.id) === id))
 				throw new Refusal(`slice ${id} is not in ${options.plan}`);
 		const members = slices.filter((slice) => ids.includes(String(slice.id)));
-		return { members, name: `s${members.map((slice) => slice.id).join("-")}` };
+		return { members, name: `s${members.map((slice) => safeId(slice.id)).join("-")}` };
 	}
 	const subjects = await branchSubjects(options.cwd);
 	const members = slices.filter(
 		(slice) => !sliceCommitted(subjects, String(slice.id)),
 	);
 	return members.length === 0 ? null : { members, name: "pending" };
+}
+
+function safeId(id: unknown): string {
+	return String(id).replace(/[^A-Za-z0-9_-]/g, "_");
 }
 
 async function waveArgs(
@@ -316,8 +319,12 @@ export async function main(argv: string[]): Promise<number> {
 			resolveSkillAsset("sdlc", "references/templates/slice-wave.workflow.js"),
 			"utf8",
 		);
-		mkdirSync(options.wave, { recursive: true });
 		const file = join(options.wave, `slice-wave.${name}.workflow.js`);
+		if (!resolve(file).startsWith(resolve(options.wave) + sep)) {
+			process.stderr.write(`${PROGRAM}: runner path escapes ${options.wave}\n`);
+			return 1;
+		}
+		mkdirSync(options.wave, { recursive: true });
 		writeFileSync(file, bake(runner, args));
 		process.stdout.write(`${file}\n`);
 		return 0;

@@ -1204,7 +1204,7 @@
 		"expect": {
 			"status": 2,
 			"stdout": "",
-			"stderr": "spec-cli: usage: spec-cli ready <spec> <slice>\n",
+			"stderr": "spec-cli: usage: spec-cli ready <spec> <slice> [--cwd <dir>]\n",
 			"tree": {}
 		}
 	},

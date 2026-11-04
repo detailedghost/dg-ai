@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { resolveArgs, runAssign } from "./assign-plan-builder";
 import { makeTempDir } from "./git-repo-fixtures";
 import { runFixtureGit } from "./spec-fixtures";
@@ -222,5 +222,43 @@ describe("assign resolve runner file name", () => {
 	test("names the default selection pending", async () => {
 		const repo = featureBranch([], ["feat(cli): slice-2: migration"]);
 		expect(await runnerName([], repo)).toBe("slice-wave.pending.workflow.js");
+	});
+});
+
+describe("assign resolve runner path containment", () => {
+	test("writes the runner inside --wave when a slice id carries path segments", async () => {
+		const root = scratch();
+		const plan = join(root, "plan.md");
+		writeFileSync(
+			plan,
+			`---
+feature: "Traversal fixture"
+status: draft
+slices:
+  - id: "../../x"
+    name: "Evil"
+    depends_on: []
+    files: ["src/x/**"]
+    agents:
+      primary: js
+---
+
+# Traversal fixture
+
+## Engineering
+
+### Slice ../../x — Evil
+- [ ] Build
+`,
+		);
+		const wave = join(root, "out", "wave");
+		const result = await runAssign(["resolve", plan, "--slices", "../../x", "--wave", wave]);
+		if (result.status === 0) {
+			const file = resolve(result.out.trim());
+			expect(file.startsWith(resolve(wave) + sep)).toBe(true);
+			expect(existsSync(file)).toBe(true);
+		} else expect(result.status).toBe(1);
+		expect(readdirSync(root).sort()).toEqual(["out", "plan.md"]);
+		expect(readdirSync(join(root, "out")).sort()).toEqual(existsSync(wave) ? ["wave"] : []);
 	});
 });

@@ -1,6 +1,13 @@
 import { isRecord } from "@dg/common";
 import { resolveStages } from "../assign/stages";
-import { PROFILE_NAMES, type ProfileName, type Runtime, type Tier } from "../tiers";
+import {
+	PROFILE_NAMES,
+	type ProfileName,
+	RUNTIMES,
+	type Runtime,
+	TIER_ORDER,
+	type Tier,
+} from "../tiers";
 import { frontmatterOf, parseYaml } from "./frontmatter";
 import {
 	die,
@@ -12,9 +19,7 @@ import {
 	usageError,
 } from "./shared";
 
-const RUNTIMES: readonly Runtime[] = ["claude", "codex", "grok"];
 const USAGE = `usage: ${PROGRAM} estimate <plan.md> [--profile ${PROFILE_NAMES.join("|")}] [--runtime ${RUNTIMES.join("|")}]\n`;
-const TIERS: readonly Tier[] = ["haiku", "sonnet", "opus", "fable"];
 
 function estimateLine(
 	data: Record<string, unknown>,
@@ -38,7 +43,7 @@ function estimateLine(
 			count(tier);
 	}
 	const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
-	const byTier = TIERS.map((tier) => `${counts.get(tier) ?? 0} ${tier}`).join(", ");
+	const byTier = TIER_ORDER.map((tier) => `${counts.get(tier) ?? 0} ${tier}`).join(", ");
 	return `${profile}: ${slices.length} slices · ${total} agent calls (${byTier}) · up to ${stages.maxCorrectionRounds} correction rounds`;
 }
 

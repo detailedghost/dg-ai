@@ -353,7 +353,7 @@ export async function readyCommand(args: string[]): Promise<number> {
 			i += 1;
 		}
 	}
-	if (positionals.length < 2) usageError("ready <spec> <slice>");
+	if (positionals.length < 2) usageError("ready <spec> <slice> [--cwd <dir>]");
 	const [spec = "", target = ""] = positionals;
 	needFile(spec);
 	const entry = sliceEntries(frontmatterOf(await readText(spec))).find(

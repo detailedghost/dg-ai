@@ -1,9 +1,9 @@
 import { bareAgent } from "@dg/common";
-import { resolveAgent, type Runtime, type Tier } from "../tiers";
+import { resolveAgent, type Runtime, TIER_ORDER, type Tier } from "../tiers";
 import { resolveSlicePrimary } from "./spec-persona";
 
 const TIER_RUNTIMES: Record<string, Runtime> = { codex: "codex", grok: "grok" };
-const TIER_NAMES: readonly string[] = ["haiku", "sonnet", "opus", "fable"];
+const TIER_NAMES: readonly string[] = TIER_ORDER;
 
 const PROXY_EFFORTS: readonly string[] = ["low", "medium", "high", "xhigh"];
 

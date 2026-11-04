@@ -46,7 +46,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 
 ## Mode dispatch
 
-`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`, `PROFILE` unset unless a profile flag is given. Parse args before any phase. `--fast` is mutually exclusive with `-s` and with `--proxy`. `--fast` with `-s` or with `--proxy` stops with an error that names both flags.
+`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`, `PROFILE` unset unless a profile flag is given. Parse args before any phase. `--fast` is mutually exclusive with `-s` and with `--proxy`; either pair stops with an error that names both flags.
 
 - **`--fast "<request>"` → FAST MODE.** Follow [references/fast.md](references/fast.md).
 - **Bare `"<request>"` (no `-s`, no `--fast`) → PLAN MODE.** The positional prose is the feature
@@ -55,7 +55,7 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
   dir name under `.agents/spec/`. Resolve the bundle, follow [references/execute.md](references/execute.md).
   No positional request is required in this mode.
 - If neither a request nor `-s` is present, ask for the request (one question) before proceeding.
-- `PROFILE`: plan and fast mode read unset as balance; execute mode reads the persisted `execution.profile`. A missing or invalid value after `--profile`/`-p` stops with `--profile must be one of balance, cheap, expensive`. Two profile flags with the same value are allowed; with different values, stop with an error that names both.
+- `PROFILE`: plan and fast mode read unset as balance; execute mode reads the persisted `execution.profile`. A missing or invalid value after `--profile`/`-p` stops with `--profile must be one of balance, cheap, expensive`. Two profile flags with the same value are allowed.
 - `--proxy <backend>` (plan mode and `-s`): validate it against `dg-skills proxy --list-backends` before any phase, in one Bash call and only when the flag is present. An unknown name stops and lists the valid backends.
 
 ## Plan-mode pipeline

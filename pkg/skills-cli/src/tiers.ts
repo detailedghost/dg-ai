@@ -2,7 +2,8 @@ import table from "../../../plugins/dg/skills/assign/references/model-tiers.json
 	type: "json",
 };
 
-export type Runtime = "claude" | "codex" | "grok";
+export const RUNTIMES = ["claude", "codex", "grok"] as const;
+export type Runtime = (typeof RUNTIMES)[number];
 export type Tier = "haiku" | "sonnet" | "opus" | "fable";
 
 export interface TierRow {
@@ -73,7 +74,7 @@ export function resolveAgent(
 
 export const PROFILE_NAMES = ["balance", "cheap", "expensive"] as const;
 
-const TIER_ORDER: readonly Tier[] = ["haiku", "sonnet", "opus", "fable"];
+export const TIER_ORDER: readonly Tier[] = ["haiku", "sonnet", "opus", "fable"];
 const SHIFTED_ROLES: readonly StageRole[] = ["primary", "qa-writer", "qa"];
 
 export interface ProfileStage {
