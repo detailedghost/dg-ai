@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.37.0 (2026-11-04)
+
+### Features
+
+- feat(install): keep dg files in per-OS folders ([#136](https://github.com/detailedghost/dg-ai/pull/136))
+
 ## v1.36.0 (2026-11-03)
 
 ### Features
