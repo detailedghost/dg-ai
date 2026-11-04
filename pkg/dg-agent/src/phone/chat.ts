@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
-import { MESSAGE_TTL_SECONDS } from "./db";
+import { LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
 import type { ImageOffer } from "./image";
@@ -19,7 +19,7 @@ import {
 } from "./thread";
 
 export type { HeldThread, ThreadMeta };
-export { PHI_TAG };
+export { LOOKBACK_SECONDS, PHI_TAG };
 
 // Stryker disable all
 /** An admitted message; `image` carries a kind 15 offer and the key its wrap was addressed to. */
@@ -70,8 +70,6 @@ export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subs
 };
 
 export const GIFT_WRAP_KIND = 1059;
-/** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
-export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
 const CHAT_MESSAGE_KIND = 14;
 /** Rumor kind of a dg file fetch request, receiver to sender, always inside a gift wrap. Unregistered in the NIP kind list as of 2026-11-04. */
 export const FILE_REQUEST_KIND = 25015;

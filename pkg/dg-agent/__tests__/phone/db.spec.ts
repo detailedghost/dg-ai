@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { type ImageFetchRow, MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { type ImageFetchRow, LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 import { FILES_DIR } from "../../src/phone/image";
 
 const NOW = 1_800_000_000;
@@ -152,6 +152,20 @@ describe("PhoneDb", () => {
 			db.pruneMessages();
 
 			expect(db.recentMessages(10).map((m) => m.id)).toEqual(["backdated"]);
+		});
+
+		it("refuses an expired PHI id until the replay window ends", () => {
+			db.addMessage({ ...message("phi", NOW), phi: true });
+			now = NOW + PHI_TTL_SECONDS + 1;
+			db.pruneMessages();
+
+			expect(db.addMessage({ ...message("phi", NOW), phi: true })).toBe(false);
+			now += MESSAGE_TTL_SECONDS + LOOKBACK_SECONDS - 1;
+			expect(db.addMessage({ ...message("phi", now), phi: true })).toBe(false);
+			expect(db.recentMessages(10)).toEqual([]);
+
+			now += 2;
+			expect(db.addMessage({ ...message("phi", now), phi: true })).toBe(true);
 		});
 
 		it("never stores a message that is already past the ttl", () => {
@@ -394,6 +408,15 @@ describe("PhoneDb", () => {
 			db.pruneMessages();
 
 			expect(db.listPending().map((row) => row.rumor_id)).toEqual(["plain"]);
+		});
+
+		it("refuses to hold an expired PHI rumor again", () => {
+			db.insertPending(held("phi", true));
+			now = NOW + PHI_TTL_SECONDS + 1;
+			db.pruneMessages();
+
+			expect(db.insertPending(held("phi", true))).toBe(false);
+			expect(db.listPending()).toEqual([]);
 		});
 	});
 

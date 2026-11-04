@@ -97,6 +97,9 @@ export type InviteRow = {
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
 export const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
+export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
+
 /** PHI rows, their outbox copies, and outbox files with no row live this long instead of the message TTL. */
 export const PHI_TTL_SECONDS = 24 * 60 * 60;
 
@@ -204,6 +207,10 @@ const SCHEMA: MigrationStep[] = [
 				deadline INTEGER NOT NULL
 			) STRICT`);
 			db.run("ALTER TABLE pending_threads ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
+			db.run(`CREATE TABLE expired_ids (
+				id TEXT PRIMARY KEY,
+				expires_at INTEGER NOT NULL
+			) STRICT`);
 		},
 	},
 ];
@@ -258,12 +265,25 @@ export class PhoneDb {
 		const pendingBefore = this.listPending().length;
 		const expired = "ts < $cutoff OR (phi = 1 AND received_at < $phiCutoff)";
 		const doomed = this.fileNames(`SELECT file FROM messages WHERE file IS NOT NULL AND direction = 'in' AND (${expired})`, { cutoff, phiCutoff });
+		const now = this.now();
+		const tombstoneUntil = now + MESSAGE_TTL_SECONDS + LOOKBACK_SECONDS;
+		this.db.query("DELETE FROM expired_ids WHERE expires_at <= $now").run({ now });
+		this.db
+			.query("INSERT OR IGNORE INTO expired_ids (id, expires_at) SELECT id, $until FROM messages WHERE phi = 1 AND received_at < $phiCutoff")
+			.run({ until: tombstoneUntil, phiCutoff });
+		this.db
+			.query("INSERT OR IGNORE INTO expired_ids (id, expires_at) SELECT rumor_id, $until FROM pending_threads WHERE phi = 1 AND received_at < $phiCutoff")
+			.run({ until: tombstoneUntil, phiCutoff });
 		this.db.query(`DELETE FROM messages WHERE ${expired}`).run({ cutoff, phiCutoff });
 		this.db.query("DELETE FROM image_fetches WHERE message_id NOT IN (SELECT id FROM messages)").run();
 		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff OR (phi = 1 AND received_at < $phiCutoff)").run({ cutoff, phiCutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 		this.pruneOutbox(cutoff, phiCutoff);
 		this.pruneFiles(doomed, phiCutoff);
+	}
+
+	private expiredId(id: string): boolean {
+		return this.db.query("SELECT 1 FROM expired_ids WHERE id = $id AND expires_at > $now").get({ id, now: this.now() }) !== null;
 	}
 
 	private fileNames(sql: string, params: Record<string, number> = {}): Set<string> {
@@ -457,7 +477,7 @@ export class PhoneDb {
 		},
 	): boolean {
 		this.pruneMessages();
-		if (message.ts < this.cutoff()) return false;
+		if (message.ts < this.cutoff() || this.expiredId(message.id)) return false;
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file, phi, received_at)
@@ -693,8 +713,9 @@ export class PhoneDb {
 			.run({ threadId, npub });
 	}
 
-	/** True when this rumor was not already held. `received_at` is this phone's clock, not the sender's. */
+	/** True when this rumor was neither held already nor expired as PHI. `received_at` is this phone's clock, not the sender's. */
 	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at" | "phi"> & { phi?: boolean }): boolean {
+		if (this.expiredId(row.rumor_id)) return false;
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at, phi)

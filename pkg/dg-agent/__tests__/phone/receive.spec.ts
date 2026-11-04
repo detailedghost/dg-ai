@@ -477,6 +477,23 @@ describe("image receive contracts", () => {
 			await bobListener.stop();
 		}
 	});
+
+	it("never stores an expired PHI message again when a relay replays its wrap", async () => {
+		const event = wrapTagged({ content: "sensitive", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub);
+		await deliver(event);
+		const first = listen(bob, wormholeFor());
+		await first.started;
+		await first.stop();
+		expect(row(bob, event.id)).toMatchObject({ text: "sensitive", phi: 1 });
+
+		clock += PHI_TTL_SECONDS + 1;
+		bob.deps.db.pruneMessages();
+		const second = listen(bob, wormholeFor());
+		await second.started;
+		await second.stop();
+
+		expect(row(bob, event.id)).toBeUndefined();
+	});
 });
 
 function fetchFields(sender: Phone, id: string): Omit<ImageFetchRow, "attempts"> {
