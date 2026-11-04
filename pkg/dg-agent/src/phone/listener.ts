@@ -33,6 +33,8 @@ import { createHookRunner, type Cancel, type HookRunner, type Schedule } from ".
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
 import type { PhoneDb } from "./db";
 import type { CommandPushTarget } from "./push";
+import { createFileRequestHandler } from "./transport";
+import type { WormholeDeps } from "./wormhole";
 import {
 	addContact,
 	addPhoneNotice,
@@ -70,6 +72,7 @@ export type ListenerDeps = KeyDeps & {
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
 	/** Overrides the jittered probe. Tests pass a short confirm and wait so the check stays fast. */
 	liveness?: LivenessConfig;
+	wormhole?: WormholeDeps;
 };
 
 /** Rumor content of the self-addressed liveness probe. Logged nowhere. Not a user message. */
@@ -858,6 +861,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
 	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
+	const fileRequests = createFileRequestHandler({ db: deps.db, paths: deps.paths, now: deps.now, wormhole: deps.wormhole });
 
 	const logDrop = (drop: DroppedRing) => {
 		if (loggedDrops.has(drop.id)) return;
@@ -921,6 +925,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	};
 	const hooks: SubscribeHooks = {
 		onHeld: (held) => holdThread(deps.db, held, deps.now()),
+		onRequest: (request) => fileRequests.handle(request),
 		reread: rereadGate,
 		onDrop: logDrop,
 		onEvent: (id) => addBounded(deliveredIds, id, STRANGER_ID_LIMIT),
@@ -1050,7 +1055,8 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 			cancelWatch();
 			cancelLiveness();
 			hookRunner.stop();
-			void hookRunner.settle().finally(() => {
+			fileRequests.stop();
+			void Promise.all([hookRunner.settle(), fileRequests.settle()]).finally(() => {
 				removeListenerPid(deps.paths);
 				releaseListenerClaim(deps.paths, deps.pid);
 				resolve();

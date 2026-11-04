@@ -19,6 +19,7 @@ import {
 } from "./delivery";
 import { OUTBOX_DIR, PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
 import { MAX_IMAGE_BYTES, prepareImage, type PreparedImage } from "./image";
+import type { WormholeDeps } from "./wormhole";
 import {
 	defaultCrontab,
 	type CrontabIO,
@@ -120,6 +121,7 @@ export type PhoneDeps = KeyDeps & {
 	uid?: number;
 	sleep?: (ms: number) => Promise<void>;
 	listenerArgv?: (extraArgs: string[]) => string[];
+	wormhole?: WormholeDeps;
 };
 
 export type RunDeps = PhoneDeps & {
