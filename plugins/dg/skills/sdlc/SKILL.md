@@ -41,7 +41,7 @@ Steps 5–6 gate the code, step 8 opens a **draft** PR/MR, and the human reviews
 | 1 | Worktree off latest `origin/(main\|master)` | references/setup.md |
 | 2 | Derive slices → ephemeral spec in scratch | references/setup.md |
 | 3 | `/dg:assign` agents per slice + launch gate (permissions + token estimate) | references/setup.md |
-| 4 | Slice waves — per dependency layer: Red → Yellow → Green → MiniQA; commit per slice | references/engineering.md |
+| 4 | Slice waves — all pending slices in one call, each gated on its dependencies; commit per slice | references/engineering.md |
 | 5 | Final review + bounded correction; commit fixes | references/finish.md |
 | 6 | Test-name gate, then docs (lore); commit docs | references/finish.md |
 | 7 | Human review moves to the PR/MR — no blocking gate | references/finish.md |

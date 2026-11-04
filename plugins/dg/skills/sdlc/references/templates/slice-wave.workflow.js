@@ -1,6 +1,6 @@
 export const meta = {
   name: "sdlc-slice-wave",
-  description: "Build one dependency layer of slices in parallel: Red→Yellow→Green→MiniQA→Correction. No commits.",
+  description: "Build every pending slice greedily, each starting the moment its dependencies finish: Red→Yellow→Green→MiniQA→Correction. No commits.",
   // Progress groups are per-slice (one box per slice, labelled `<name> (S<id>)`),
   // created at runtime from slice names — so this static list is informational only.
   phases: [{ title: "slices", detail: "each slice runs Red→Yellow→Green→MiniQA in parallel" }],
@@ -9,11 +9,16 @@ export const meta = {
 /**
  * args (resolved by `dg-skills assign resolve`, which also bakes them in as WAVE_ARGS below the meta literal;
  * an explicit `args` wins when given — see ../engineering.md 4.2):
- *   slices   [{ id, name, primary, qa:[], proxyBackend, proxyFlags, brief, testingCriteria }]
- *            — ONE dependency layer; slices MUST touch disjoint files (name → progress label).
+ *   slices   [{ id, name, primary, qa:[], dependsOn:[], proxyBackend, proxyFlags, brief, testingCriteria }]
+ *            — every pending slice in one run; a slice waits for each dependsOn id (compared as String(id)),
+ *            and any two slices with no dependency path between them MUST touch disjoint files (name → progress label).
+ *            A dependsOn id outside the run counts as done. A dependency cycle marks its slices blocked-upstream; slices sharing an id
+ *            all return blocked, with no stage run.
+ *            Result status: clean | needs-attention | unverified | blocked | blocked-upstream (a dependency
+ *            ended blocked, unverified, dropped, or needs-attention with a live CRITICAL deferral; no stage ran).
  *            primary and each qa entry are resolved { agentType, model, effort } stages.
  *            proxyBackend ← slices[].agents.proxy; set only when this slice's Yellow/Correction stages delegate via /proxy.
- *   roles    { "qa-writer", wave, security }  resolved stages shared by every slice in the layer.
+ *   roles    { "qa-writer", wave, security }  resolved stages shared by every slice in the run.
  *            optional files: string[] — the slice's globs; recovered git paths outside them are dropped.
  *            optional notes: string — orchestrator text placed under a heading in THIS slice's prompts only.
  *   specPath, scratchPath  paths agents may read/append (passed into prompts)
@@ -23,7 +28,8 @@ export const meta = {
  *   templates { red, yellow, green, wave, correction, proxy }  inlined template bodies with tokens:
  *            {SLICE_ID} {SLICE_BRIEF} {TESTING_CRITERIA} {CHANGED_FILES} {FINDINGS}
  *            {SPEC_PATH} {SCRATCH_PATH} {PROXY_BACKEND} {PRIMARY_AGENT} {PROXY_FLAGS}
- *            `proxy` is undefined/omitted when no slice in this layer sets proxyBackend.
+ *            `proxy` is undefined/omitted when no slice in the run sets proxyBackend.
+ *   profile  cost profile baked from execution.profile; informational, logged once at start. Default balance.
  *   maxCorrectionRounds  default 2
  */
 // harness sometimes delivers args as a JSON string instead of a parsed object
@@ -38,8 +44,11 @@ const {
   templates = {},
   resolved = [],
   redDone = {},
+  profile = "balance",
   maxCorrectionRounds = 2,
 } = _args;
+
+log(`profile ${profile} \u00b7 correction rounds ${maxCorrectionRounds} \u00b7 slices ${slices.map((s) => s.id).join(", ")}`);
 
 const NOTES = {
   type: "object",
@@ -163,11 +172,77 @@ const stageOpts = (stage) => ({
   ...(stage.model ? { model: stage.model } : {}),
 });
 
+const gates = new Map(
+  slices.map((slice) => {
+    let settle;
+    const promise = new Promise((resolve) => (settle = resolve));
+    return [String(slice.id), { id: slice.id, promise, settle }];
+  }),
+);
+const settleGate = (slice, result) => gates.get(String(slice.id))?.settle(result);
+const gatePasses = (r) =>
+  !!r && (r.status === "clean" || (r.status === "needs-attention" && !(r.deferrals || []).some((d) => d.type === "CRITICAL")));
+const depsOf = (id) => uniq(((slices.find((s) => String(s.id) === id) || {}).dependsOn || []).map((d) => String(d)));
+const reachesSelf = (id) => {
+  const seen = new Set();
+  const stack = depsOf(id);
+  while (stack.length) {
+    const next = stack.pop();
+    if (next === id) return true;
+    if (!seen.has(next)) {
+      seen.add(next);
+      stack.push(...depsOf(next));
+    }
+  }
+  return false;
+};
+const idCounts = new Map();
+for (const slice of slices) idCounts.set(String(slice.id), (idCounts.get(String(slice.id)) || 0) + 1);
+const isDuplicate = (slice) => idCounts.get(String(slice.id)) > 1;
+const upstreamBlockers = async (slice) => {
+  if (reachesSelf(String(slice.id))) return [slice.id];
+  const deps = uniq((slice.dependsOn || []).map((d) => String(d))).map((d) => gates.get(d));
+  const finals = await Promise.all(deps.map((gate) => gate?.promise));
+  return deps.flatMap((gate, i) => (gate && !gatePasses(finals[i]) ? [gate.id] : []));
+};
+const guard = (stage, last) => async (input) => {
+  const slice = input.slice || input;
+  try {
+    const out = await stage(input);
+    if (last) settleGate(slice, out);
+    return out;
+  } catch (error) {
+    settleGate(slice, null);
+    throw error;
+  }
+};
+
 const results = await pipeline(
   slices,
   // 6a Red
-  (slice) =>
-    Object.hasOwn(redDone, slice.id)
+  guard(async (slice) => {
+    if (isDuplicate(slice))
+      return {
+        slice,
+        blocked: true,
+        duplicate: true,
+        unverified: [],
+        changedFiles: [],
+        deferrals: [],
+        notes: { durable: [], scratch: [] },
+      };
+    const blockedBy = await upstreamBlockers(slice);
+    if (blockedBy.length)
+      return {
+        slice,
+        upstream: blockedBy,
+        blocked: false,
+        unverified: [],
+        changedFiles: [],
+        deferrals: [],
+        notes: { durable: [], scratch: [] },
+      };
+    return Object.hasOwn(redDone, slice.id)
       ? {
           slice,
           red: null,
@@ -192,10 +267,11 @@ const results = await pipeline(
       changedFiles: safePaths(r?.testFiles),
       deferrals: live(r?.deferrals),
       notes: { durable: [...(r?.notes?.durable || [])], scratch: [...(r?.notes?.scratch || [])] },
-    })),
+    }));
+  }),
   // 6b Yellow
-  (st) => {
-    if (st.blocked) return st;
+  guard((st) => {
+    if (st.blocked || st.upstream) return st;
     const slice = st.slice;
     // Proxy delegation swaps the template (persona/tier below are unchanged); falls back to templates.yellow
     // if the orchestrator forgot to inline templates.proxy, instead of silently sending an empty prompt.
@@ -220,10 +296,10 @@ const results = await pipeline(
         scratch: uniq([...st.notes.scratch, ...(y?.notes?.scratch || [])]),
       },
     }));
-  },
+  }),
   // 6c Green
-  (st) => {
-    if (st.blocked) return st;
+  guard((st) => {
+    if (st.blocked || st.upstream) return st;
     const slice = st.slice;
     return agent(sub(templates.green, slice, { changedFiles: st.changedFiles }), {
       label: `green:${slice.id}`,
@@ -252,9 +328,20 @@ const results = await pipeline(
         },
       };
     });
-  },
+  }),
   // 6d MiniQA + 6e Correction (≤ maxCorrectionRounds)
-  async (st) => {
+  guard(async (st) => {
+    if (st.upstream)
+      return {
+        sliceId: st.slice.id,
+        status: "blocked-upstream",
+        blockedBy: st.upstream,
+        changedFiles: [],
+        deferrals: [],
+        unverifiedStages: [],
+        notes: { durable: [], scratch: [] },
+        summary: `blocked upstream by slice ${st.upstream.join(", ")}`,
+      };
     if (st.blocked)
       return {
         sliceId: st.slice.id,
@@ -263,7 +350,7 @@ const results = await pipeline(
         deferrals: st.deferrals,
         unverifiedStages: st.unverified,
         notes: st.notes,
-        summary: "blocked on deferral — orchestrator must resolve",
+        summary: st.duplicate ? `duplicate slice id ${st.slice.id}` : "blocked on deferral — orchestrator must resolve",
       };
     const slice = st.slice;
     const reviewers = [roles.wave, ...(slice.qa || []), st.securitySensitive ? roles.security : null]
@@ -349,7 +436,7 @@ const results = await pipeline(
           ? `${residual.length} residual finding(s) after ${round} round(s)`
           : "mini QA clean",
     };
-  },
+  }, true),
 );
 
 // A slice whose pipeline threw drops to null. Naming it beats reporting a short list of
