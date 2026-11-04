@@ -22,7 +22,8 @@ Hard limits. Reviewers skim, and a wall of prose gets skipped entirely:
 - Follow the sample as prescription *unless* there is a pre-defined pull_request_template.md file already defined
 
 ## Sample
-```
+
+```markdown
 ## Summary
 🎫 ticket
 
@@ -40,7 +41,6 @@ Hard limits. Reviewers skim, and a wall of prose gets skipped entirely:
 < additional links that could be helpful >
 ```
 
-
 ## Writing the body
 
 Heredoc it straight to `gh`; don't stage it as a `.md` file first:
@@ -56,7 +56,7 @@ table rows and line length, and the file is litter afterward. Stdin sidesteps bo
 
 ### De-slop the draft before it goes out
 
-When the `/unslop:unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check. Install it with `/plugin install unslop@detailedghost`.
+When the `/unslop:unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check. Install it with `dg-skills install --with-recommended`.
 
 Otherwise run `/unslop:unslop` over the draft body as `cleanup`, then apply the suggestions you
 agree with. The 4-sentence cap makes a body short, not human: "This PR introduces a
@@ -89,7 +89,7 @@ order)` block, keeps refs bare/unfenced so GitHub autolinks them, and retargets 
 downstream PR's base branch (`gh pr edit --base`) so its diff is delta-only and merge
 is blocked until the upstream lands:
 
-```
+```text
 ## Stack (merge order)
 
 owner/repo#114 → #2382 → #2383 → main

@@ -34,6 +34,10 @@ export function registerInstall(program: Command): void {
 			"leave old dg plugin versions in the Claude plugin cache",
 		)
 		.option(
+			"--with-recommended",
+			"also install the recommended third-party plugins from the marketplace: unslop, mattpocock-skills",
+		)
+		.option(
 			"--version <x.y.z>",
 			"pin every part to the vX.Y.Z release instead of the newest; fails before any change if a pinned release does not exist",
 		)

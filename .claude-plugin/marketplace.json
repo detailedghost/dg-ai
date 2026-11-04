@@ -9,6 +9,16 @@
 			"description": "DeeGee — detailedghost's personal Claude Code utilities."
 		},
 		{
+			"name": "mattpocock-skills",
+			"description": "Matt Pocock's agent skills for real engineering: grilling, spec and ticket flows, TDD, code review, domain modeling.",
+			"source": {
+				"source": "github",
+				"repo": "mattpocock/skills",
+				"ref": "main",
+				"sha": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa"
+			}
+		},
+		{
 			"name": "unslop",
 			"description": "Remove AI writing patterns from prose.",
 			"source": {

@@ -32,8 +32,6 @@ binaries. The skills-root README itself is not installed.
 | `rename-session/` | Suggest or apply a session name |
 | `standard-test/` | Apply portable rules for meaningful tests |
 | `stash/` | Resolve scratch, state, current-worktree, or main-worktree artifact paths |
-| `teach/` | Teach a workspace concept across sessions |
-| `wait-what/` | Explain the last message again in project vocabulary |
 | `walk/` | Resolve open questions one at a time |
 | `wayfinder/` | Map large work into decision tickets |
 | `what-changed/` | Draft release notes from tags, requests, and commits |
@@ -90,8 +88,6 @@ skills/
   rename-session/
   standard-test/
   stash/
-  teach/
-  wait-what/
   walk/
   wayfinder/
   what-changed/

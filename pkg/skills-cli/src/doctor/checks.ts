@@ -443,7 +443,7 @@ export const unslopCheck: DoctorCheck = {
 			? ok("unslop is installed")
 			: warn(
 					"unslop is not installed, so polish skips its prose pass",
-					"claude plugin install unslop@detailedghost",
+					"dg-skills install --with-recommended",
 				);
 	},
 };

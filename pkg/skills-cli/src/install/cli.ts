@@ -11,6 +11,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { skillDirectoryNames } from "@dg/common";
 import { personasDest, run, skillsInstallDest } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
 import { withInstallLock } from "./lock";
@@ -48,6 +49,14 @@ import { removeLegacyExtensions, syncDirInPlace } from "../utils/extension-files
 import { installPackagedPersonas } from "../proxy/packaged-personas";
 import { setCliOnly } from "../utils/cli-only";
 import { prunePluginCache } from "../install/prune-plugin-cache";
+import { VERSION } from "../main";
+import {
+	bundleChangedTo,
+	installRecommendedForClaude,
+	recommendedPlugins,
+	runSync,
+} from "./recommended-plugins";
+import { installRecommendedSkillsOnly } from "./recommended-skills-only";
 
 function reloadFromNewFolder(target: Target, path: string): string {
 	return target === "firefox"
@@ -376,6 +385,14 @@ async function install(
 	if (!forceLocal) await installCli(keepCache);
 }
 
+function withCurrentPins(step: () => void): void {
+	const moved = bundleChangedTo(VERSION, readCurrentVersion());
+	if (!moved) return step();
+	console.log(
+		`⚠ recommended plugins skipped: dg-skills is now v${moved}. Run the same dg-skills install command again to install them at its pins.`,
+	);
+}
+
 export type InstallOptions = {
 	local?: boolean;
 	repo?: string;
@@ -385,12 +402,16 @@ export type InstallOptions = {
 	dest?: string;
 	version?: string;
 	keepCache?: boolean;
+	withRecommended?: boolean;
 };
 
 export async function runInstall(
 	target: string | undefined,
 	opts: InstallOptions,
 ): Promise<void> {
+	if (opts.withRecommended && opts.agentOnly) {
+		throw new Error("--with-recommended cannot be combined with --agent-only");
+	}
 	await migrateBeforeInstall();
 	noteForeignDgHome();
 	if (opts.skillsOnly) {
@@ -412,18 +433,35 @@ export async function runInstall(
 		});
 		console.log(skillsOnlyReport(result));
 		await installSkillsCli(opts.version, releases);
+		if (opts.withRecommended) {
+			const dgNames = new Set(skillDirectoryNames(result.files));
+			withCurrentPins(() => {
+				for (const plugin of recommendedPlugins()) {
+					installRecommendedSkillsOnly(plugin, result.dest, dgNames, console.log);
+				}
+			});
+		}
 		return;
 	}
 	if (opts.cliOnly && opts.agentOnly) {
 		throw new Error("install accepts only one of --cli-only and --agent-only");
 	}
-	if (opts.cliOnly) return installCliOnly(!!opts.keepCache || !!opts.local, opts.version);
-	if (opts.agentOnly) return installAgentOnly(!!opts.keepCache || !!opts.local, opts.version);
-	await install(
-		target === "firefox" ? "firefox" : "chrome",
-		!!opts.local,
-		opts.repo,
-		opts.version,
-		!!opts.keepCache,
-	);
+	if (opts.agentOnly) {
+		await installAgentOnly(!!opts.keepCache || !!opts.local, opts.version);
+		return;
+	}
+	if (opts.cliOnly) {
+		await installCliOnly(!!opts.keepCache || !!opts.local, opts.version);
+	} else {
+		await install(
+			target === "firefox" ? "firefox" : "chrome",
+			!!opts.local,
+			opts.repo,
+			opts.version,
+			!!opts.keepCache,
+		);
+	}
+	if (opts.withRecommended) {
+		withCurrentPins(() => installRecommendedForClaude(recommendedPlugins(), homedir(), runSync, console.log));
+	}
 }

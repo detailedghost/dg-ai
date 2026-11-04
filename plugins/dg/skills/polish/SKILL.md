@@ -19,7 +19,7 @@ dg-skills chain --help >/dev/null 2>&1 ||
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-If a step fails, run dg-skills doctor polish chain.
+If a step fails, run dg-skills doctor install polish chain.
 
 ## Scope
 

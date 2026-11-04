@@ -31,8 +31,8 @@ see [skills-only installation](docs/install.md#skills-only-install) for `--skill
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
 browser actions that need a person.
 
-Claude Code users can also install the optional `unslop` skill that `/dg:polish` calls when present:
-`/plugin install unslop@detailedghost`.
+To add the optional `unslop` skill that `/dg:polish` calls when present, and other pinned third-party
+plugins, see [Recommended plugins](docs/install.md#recommended-plugins).
 
 ## Skills
 
@@ -90,10 +90,8 @@ Claude Code also accepts the bare `/<name>`.
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
 | `stash` | Resolve scratch, state, or repository artifact paths |
 | `stat` | Show this session's in-flight work, status, and ETA in one table |
-| `teach` | Teach a concept across sessions |
 | `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg-skills test-live` |
 | `ticket` | File a Jira ticket using the registered project, assignee, sprint, and issue types |
-| `wait-what` | Explain the last answer again, more simply |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |
