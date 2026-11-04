@@ -4,19 +4,35 @@ import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
+import type { ImageOffer } from "./image";
 import {
 	classifyThreadRumor,
+	FILE_MESSAGE_KIND,
+	FUTURE_SKEW_SECONDS,
 	heldFrom,
 	type HeldThread,
+	PHI_TAG,
+	rumorBody,
 	sortByTime,
 	threadMessageFields,
 	type ThreadMeta,
 } from "./thread";
 
 export type { HeldThread, ThreadMeta };
+export { PHI_TAG };
 
 // Stryker disable all
-export type Message = { id: string; ts: number; from: string; text: string; call?: true; thread?: ThreadMeta };
+/** An admitted message; `image` carries a kind 15 offer and the key its wrap was addressed to. */
+export type Message = {
+	id: string;
+	ts: number;
+	from: string;
+	text: string;
+	call?: true;
+	thread?: ThreadMeta;
+	image?: { offer: ImageOffer; keyId: string };
+	phi?: true;
+};
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string; keyId?: string };
 /** The admission-time view of a live invite: just enough for the gate to match and name a new caller, with its own relays when it has them. */
@@ -73,9 +89,6 @@ export const STRANGER_ID_LIMIT = 10000;
 export function wrap(text: string, sk: Uint8Array, contactPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: contactPub }, text);
 }
-
-/** Rumor tag on a message the sender marked as PHI. */
-export const PHI_TAG = "dg-phi";
 
 /** A NIP-17 message to one contact whose rumor carries `tags` after `p`; kind 14 unless `kind` says otherwise. */
 export function wrapTagged(
@@ -153,20 +166,31 @@ function selfNameOf(rumor: Rumor): string | undefined {
  */
 type AdmitDecision =
 	| { ok: true; admitted: Admitted }
-	| { ok: false; reason: "older than the message window" | "no matching contact or invite"; pubkeyPrefix: string };
+	| { ok: false; reason: "older than the message window" | "no matching contact or invite" | "ahead of the clock"; pubkeyPrefix: string };
 
 function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: number): AdmitDecision {
 	const pubkeyPrefix = shortPubkey(rumor.pubkey);
 	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) return { ok: false, reason: "older than the message window", pubkeyPrefix };
+	if (rumor.created_at > now + FUTURE_SKEW_SECONDS) return { ok: false, reason: "ahead of the clock", pubkeyPrefix };
 	const npub = nip19.npubEncode(rumor.pubkey);
-	const message: Message = { id: event.id, ts: rumor.created_at, from: npub, text: rumor.content };
+	const body = rumorBody(rumor);
+	const message: Message = {
+		id: event.id,
+		ts: rumor.created_at,
+		from: npub,
+		text: body.text,
+		...(body.offer ? { image: { offer: body.offer, keyId } } : {}),
+		...(body.phi ? { phi: body.phi } : {}),
+	};
 	const existing = gate.contacts.get(rumor.pubkey);
+	const isChat = rumor.kind === CHAT_MESSAGE_KIND;
 	if (existing) {
-		if (holdsSecret(rumor, gate.secrets.number)) {
+		if (isChat && holdsSecret(rumor, gate.secrets.number)) {
 			return { ok: true, admitted: { message, gate, reaccept: { npub: existing.npub, keyId } } };
 		}
 		return { ok: true, admitted: { message, gate } };
 	}
+	if (!isChat) return { ok: false, reason: "no matching contact or invite", pubkeyPrefix };
 	if (holdsSecret(rumor, gate.secrets.number)) {
 		const handle = selfNameOf(rumor) ?? UNKNOWN_CALLER_HANDLE;
 		const contacts = new Map(gate.contacts);
@@ -514,7 +538,7 @@ function openDetailed(event: NostrEvent, sk: Uint8Array): Opened {
 	try {
 		const rumor = nip17.unwrapEvent(event, sk);
 		if (rumor.kind === FILE_REQUEST_KIND) return { kind: "request", rumor };
-		return rumor.kind === CHAT_MESSAGE_KIND ? { kind: "ok", rumor } : { kind: "not-chat" };
+		return rumor.kind === CHAT_MESSAGE_KIND || rumor.kind === FILE_MESSAGE_KIND ? { kind: "ok", rumor } : { kind: "not-chat" };
 	} catch {
 		return { kind: "undecryptable" };
 	}

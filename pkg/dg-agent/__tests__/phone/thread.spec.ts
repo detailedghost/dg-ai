@@ -31,6 +31,8 @@ import {
 	threadSendKept,
 	threadSendSucceeded,
 	validPubkey,
+	heldFrom,
+	threadMessageFields,
 } from "../../src/phone/thread";
 
 function person() {
@@ -177,6 +179,59 @@ describe("classifyThreadRumor", () => {
 		const view = classifyThreadRumor(rumor(tags), [bob.pub], [{ pub: alice.pub, keyId: "k" }, ...known], now, "k", bob.pub);
 		expect(view?.kind).toBe("drop");
 		expect(view?.reason).toBe("thread is too large");
+	});
+
+	describe("kind 15", () => {
+		const x = "b".repeat(64);
+		const offerTags = [
+			["file-type", "image/png"],
+			["encryption-algorithm", "aes-gcm"],
+			["decryption-key", "c".repeat(64)],
+			["decryption-nonce", "d".repeat(24)],
+			["x", x],
+			["ox", "e".repeat(64)],
+			["size", "100"],
+		];
+
+		function image(tags: string[][], content = `dg-wormhole:${x}`) {
+			return nip59.createRumor({ kind: 15, content, created_at: now, tags: [...tags, ...offerTags] }, alice.sk);
+		}
+
+		function classifyImage(tags: string[][], known: { pub: string; keyId?: string }[], content?: string) {
+			return classifyThreadRumor(image(tags, content), [bob.pub], known, now, "k", bob.pub);
+		}
+
+		it("admits an image as [image] with the offer, never the content", () => {
+			const view = classifyImage([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]], contacts(alice.pub, cara.pub));
+			expect(view?.kind).toBe("message");
+			expect(view?.text).toBe("[image]");
+			expect(view?.offer?.x).toBe(x);
+		});
+
+		it("holds an image as the placeholder only", () => {
+			const view = classifyImage([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]], contacts(alice.pub));
+			if (!view) throw new Error("expected a thread view");
+			expect(view.kind).toBe("hold");
+			expect(heldFrom(view).text).toBe("[image]");
+			expect(JSON.stringify(heldFrom(view))).not.toContain("dg-wormhole");
+		});
+
+		it("stores a bad offer as unavailable and never the content", () => {
+			const view = classifyImage([["p", bob.pub], ["subject", "ops"]], contacts(alice.pub), "https://evil.example/x");
+			expect(view?.text).toBe("[image unavailable: bad offer]");
+			expect(view?.offer).toBeUndefined();
+		});
+
+		it("leaves a kind 15 with one p tag and no subject to the one-to-one path", () => {
+			expect(classifyImage([["p", bob.pub]], contacts(alice.pub))).toBeNull();
+		});
+
+		it("marks a dg-phi rumor as phi", () => {
+			const view = classifyImage([["p", bob.pub], ["subject", "ops"], ["dg-phi", "1"]], contacts(alice.pub));
+			if (!view) throw new Error("expected a thread view");
+			expect(view.phi).toBe(true);
+			expect(threadMessageFields(view, "k").phi).toBe(true);
+		});
 	});
 });
 

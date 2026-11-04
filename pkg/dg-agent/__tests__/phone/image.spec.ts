@@ -1,8 +1,21 @@
 import { describe, expect, it } from "bun:test";
-import { createDecipheriv, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { prepareImage, sniffImage, stripMetadata, WORMHOLE_SCHEME } from "../../src/phone/image";
-import { jpegWithGpsExif } from "./fake-image";
+import {
+	FILES_DIR,
+	type ImageOffer,
+	imagePixels,
+	MAX_IMAGE_PIXELS,
+	openImage,
+	parseImageOffer,
+	prepareImage,
+	sniffImage,
+	storedFile,
+	stripMetadata,
+	WORMHOLE_SCHEME,
+} from "../../src/phone/image";
+import { jpegWithGpsExif, pngOfSize } from "./fake-image";
 
 function sha256(bytes: Uint8Array): string {
 	return createHash("sha256").update(bytes).digest("hex");
@@ -170,5 +183,177 @@ describe("prepareImage", () => {
 		const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>');
 
 		expect(() => prepareImage(svg)).toThrow(new DgCliError("not an image"));
+	});
+});
+
+function seal(plain: Buffer, nonceBytes = 12): { cipher: Buffer; offer: ImageOffer } {
+	const key = randomBytes(32);
+	const nonce = randomBytes(nonceBytes);
+	const cipherer = createCipheriv("aes-256-gcm", key, nonce);
+	const cipher = Buffer.concat([cipherer.update(plain), cipherer.final(), cipherer.getAuthTag()]);
+	return {
+		cipher,
+		offer: { x: sha256(cipher), ox: sha256(plain), size: cipher.length, key: key.toString("hex"), nonce: nonce.toString("hex") },
+	};
+}
+
+function offerTags(offer: ImageOffer, overrides: Record<string, string> = {}): string[][] {
+	const values: Record<string, string> = {
+		"file-type": "image/png",
+		"encryption-algorithm": "aes-gcm",
+		"decryption-key": offer.key,
+		"decryption-nonce": offer.nonce,
+		x: offer.x,
+		ox: offer.ox,
+		size: String(offer.size),
+		...overrides,
+	};
+	return [["p", "a".repeat(64)], ...Object.entries(values).map(([name, value]) => [name, value])];
+}
+
+describe("parseImageOffer", () => {
+	const { offer } = seal(pngOfSize());
+
+	it("reads the hashes, size, key, and nonce from a dg-wormhole kind 15", () => {
+		expect(parseImageOffer(`${WORMHOLE_SCHEME}${offer.x}`, offerTags(offer))).toEqual(offer);
+	});
+
+	it("accepts a 16-byte nonce as well as a 12-byte one", () => {
+		const wide = seal(pngOfSize(), 16).offer;
+
+		expect(parseImageOffer(`${WORMHOLE_SCHEME}${wide.x}`, offerTags(wide))).toEqual(wide);
+	});
+
+	it("refuses an offer whose content is not dg-wormhole:<x> for the same x", () => {
+		expect(parseImageOffer("https://host.example/blob", offerTags(offer))).toBeUndefined();
+		expect(parseImageOffer(`${WORMHOLE_SCHEME}${"0".repeat(64)}`, offerTags(offer))).toBeUndefined();
+		expect(parseImageOffer(`${WORMHOLE_SCHEME}${offer.x}/../x`, offerTags(offer))).toBeUndefined();
+	});
+
+	it("refuses bad hashes, keys, nonces, sizes, and algorithms", () => {
+		const content = `${WORMHOLE_SCHEME}${offer.x}`;
+		const bad: Record<string, string>[] = [
+			{ x: offer.x.toUpperCase() },
+			{ ox: "../../x" },
+			{ ox: offer.ox.slice(1) },
+			{ "decryption-key": offer.key.slice(2) },
+			{ "decryption-key": `${offer.key}00` },
+			{ "decryption-nonce": "00".repeat(8) },
+			{ "decryption-nonce": "zz".repeat(12) },
+			{ "encryption-algorithm": "aes-cbc" },
+			{ size: "0" },
+			{ size: "-5" },
+			{ size: "12.5" },
+			{ size: "9".repeat(20) },
+		];
+		for (const override of bad) {
+			const x = override.x ?? offer.x;
+			expect(parseImageOffer(override.x ? `${WORMHOLE_SCHEME}${x}` : content, offerTags(offer, override))).toBeUndefined();
+		}
+	});
+
+	it("ignores a hostile file-type tag", () => {
+		expect(parseImageOffer(`${WORMHOLE_SCHEME}${offer.x}`, offerTags(offer, { "file-type": "../../x" }))).toEqual(offer);
+	});
+});
+
+describe("openImage", () => {
+	it("decrypts and checks a sealed PNG, typed by its magic bytes", () => {
+		const plain = pngOfSize();
+		const { cipher, offer } = seal(plain);
+
+		expect(openImage(cipher, offer)).toEqual({ ok: true, plain, type: "image/png" });
+	});
+
+	it("opens a 16-byte nonce image", () => {
+		const plain = pngOfSize();
+		const { cipher, offer } = seal(plain, 16);
+
+		expect(openImage(cipher, offer)).toMatchObject({ ok: true, type: "image/png" });
+	});
+
+	it("reports hash mismatch when the cipher does not hash to x or its length is not size", () => {
+		const { cipher, offer } = seal(pngOfSize());
+
+		expect(openImage(cipher, { ...offer, x: "0".repeat(64) })).toEqual({ ok: false, reason: "hash mismatch" });
+		expect(openImage(cipher, { ...offer, size: offer.size + 1 })).toEqual({ ok: false, reason: "hash mismatch" });
+	});
+
+	it("reports decrypt failed for a wrong key", () => {
+		const { cipher, offer } = seal(pngOfSize());
+
+		expect(openImage(cipher, { ...offer, key: randomBytes(32).toString("hex") })).toEqual({ ok: false, reason: "decrypt failed" });
+	});
+
+	it("reports hash mismatch when the plaintext does not hash to ox", () => {
+		const { cipher, offer } = seal(pngOfSize());
+
+		expect(openImage(cipher, { ...offer, ox: "0".repeat(64) })).toEqual({ ok: false, reason: "hash mismatch" });
+	});
+
+	it("reports not an image for SVG bytes even when every hash matches", () => {
+		const { cipher, offer } = seal(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'));
+
+		expect(openImage(cipher, offer)).toEqual({ ok: false, reason: "not an image" });
+	});
+
+	it("reports too large for a header over the pixel cap", () => {
+		const { cipher, offer } = seal(pngOfSize(8000, 6000));
+
+		expect(openImage(cipher, offer)).toEqual({ ok: false, reason: "too large" });
+	});
+});
+
+describe("imagePixels", () => {
+	it("reads PNG, JPEG, and WebP header dimensions", () => {
+		expect(imagePixels(pngOfSize(30, 20), "image/png")).toBe(600);
+		const sof = Buffer.from([0xff, 0xc0, 0, 11, 8, 0, 40, 0, 50, 1, 1, 0x11, 0]);
+		const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from([0xff, 0xe0, 0, 4, 0, 0]), sof, Buffer.from([0xff, 0xd9])]);
+		expect(imagePixels(jpeg, "image/jpeg")).toBe(2000);
+		const vp8x = Buffer.alloc(10);
+		vp8x.writeUIntLE(99, 4, 3);
+		vp8x.writeUIntLE(9, 7, 3);
+		expect(imagePixels(webp([webpChunk("VP8X", vp8x)]), "image/webp")).toBe(1000);
+		const lossless = Buffer.alloc(5);
+		lossless[0] = 0x2f;
+		lossless.writeUInt32LE(9 | (19 << 14), 1);
+		expect(imagePixels(webp([webpChunk("VP8L", lossless)]), "image/webp")).toBe(200);
+		const lossy = Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 25, 0, 4, 0]);
+		expect(imagePixels(webp([webpChunk("VP8 ", lossy)]), "image/webp")).toBe(100);
+	});
+
+	it("returns undefined for a header it cannot read", () => {
+		expect(imagePixels(pngOfSize().subarray(0, 20), "image/png")).toBeUndefined();
+		expect(imagePixels(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), "image/jpeg")).toBeUndefined();
+		expect(imagePixels(webp([webpChunk("VP8 ", Buffer.alloc(4))]), "image/webp")).toBeUndefined();
+	});
+
+	it("caps at about 40 megapixels", () => {
+		expect(MAX_IMAGE_PIXELS).toBe(40_000_000);
+	});
+});
+
+describe("storedFile", () => {
+	const sha = "a".repeat(64);
+
+	it("builds the path from phoneRoot and marks the file untrusted", () => {
+		const file = JSON.stringify({ sha256: sha, type: "image/jpeg", size: 9 });
+
+		expect(storedFile({ direction: "in", file }, "/home/x/phone")).toEqual({
+			path: join("/home/x/phone", FILES_DIR, `${sha}.jpg`),
+			type: "image/jpeg",
+			size: 9,
+			sha256: sha,
+			untrusted: true,
+		});
+	});
+
+	it("shows nothing for an outgoing row, a row with no file, or a name that fails the pattern", () => {
+		const good = JSON.stringify({ sha256: sha, type: "image/png", size: 9 });
+		expect(storedFile({ direction: "out", file: good }, "/p")).toBeUndefined();
+		expect(storedFile({ direction: "in", file: null }, "/p")).toBeUndefined();
+		expect(storedFile({ direction: "in", file: JSON.stringify({ sha256: "../../etc/passwd", type: "image/png", size: 9 }) }, "/p")).toBeUndefined();
+		expect(storedFile({ direction: "in", file: JSON.stringify({ sha256: sha, type: "image/svg+xml", size: 9 }) }, "/p")).toBeUndefined();
+		expect(storedFile({ direction: "in", file: "not json" }, "/p")).toBeUndefined();
 	});
 });

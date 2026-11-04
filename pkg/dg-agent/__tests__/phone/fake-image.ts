@@ -19,3 +19,25 @@ export function jpegWithGpsExif(): Buffer {
 		Buffer.from("trailing GPS", "latin1"),
 	]);
 }
+
+function pngChunk(type: string, data: Buffer): Buffer {
+	const length = Buffer.alloc(4);
+	length.writeUInt32BE(data.length);
+	return Buffer.concat([length, Buffer.from(type, "latin1"), data, Buffer.alloc(4)]);
+}
+
+/** A PNG with a real IHDR of `width` by `height`, a text chunk that carries `GPS`, and a stub IDAT. */
+export function pngOfSize(width = 2, height = 2): Buffer {
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(width, 0);
+	ihdr.writeUInt32BE(height, 4);
+	ihdr[8] = 8;
+	ihdr[9] = 6;
+	return Buffer.concat([
+		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		pngChunk("IHDR", ihdr),
+		pngChunk("tEXt", Buffer.from("Location\0GPS 51.5N", "latin1")),
+		pngChunk("IDAT", Buffer.from("pixels", "latin1")),
+		pngChunk("IEND", Buffer.alloc(0)),
+	]);
+}

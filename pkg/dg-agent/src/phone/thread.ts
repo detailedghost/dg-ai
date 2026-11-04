@@ -2,10 +2,13 @@ import { createHash } from "node:crypto";
 import { DgCliError } from "@dg/common";
 import { nip19, nip59, type NostrEvent } from "nostr-tools";
 import { MESSAGE_TTL_SECONDS } from "./db";
+import { IMAGE_TEXT, type ImageOffer, imageUnavailableText, parseImageOffer } from "./image";
 import { isHandle } from "./store";
 
 const CHAT_MESSAGE_KIND = 14;
 export const FILE_MESSAGE_KIND = 15;
+/** Rumor tag on a message the sender marked as PHI. */
+export const PHI_TAG = "dg-phi";
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
 /** Participants, including this phone. Larger rooms are dropped, not stored. */
@@ -53,9 +56,21 @@ export type ThreadView = {
 	reason?: ThreadDropReason;
 	/** The shared contact key this room is filed under, set only when the rumor is admitted. */
 	keyId?: string;
+	offer?: ImageOffer;
+	phi?: true;
 };
 
-type RumorView = { id: string; pubkey: string; created_at: number; content: string; tags: string[][] };
+type RumorView = { id: string; kind: number; pubkey: string; created_at: number; content: string; tags: string[][] };
+
+export type RumorBody = { text: string; offer?: ImageOffer; phi?: true };
+
+/** The stored text of a rumor: a kind 15 is a placeholder plus its offer, never its content. */
+export function rumorBody(rumor: { kind: number; content: string; tags: readonly string[][] }): RumorBody {
+	const phi = rumor.tags.some((tag) => tag[0] === PHI_TAG && tag[1] === "1") ? { phi: true as const } : {};
+	if (rumor.kind !== FILE_MESSAGE_KIND) return { text: rumor.content, ...phi };
+	const offer = parseImageOffer(rumor.content, rumor.tags);
+	return offer ? { text: IMAGE_TEXT, offer, ...phi } : { text: imageUnavailableText("bad offer"), ...phi };
+}
 
 /** Stable room id: sha256 of the sorted participant npubs, our own included. */
 export function threadRoomId(npubs: readonly string[]): string {
@@ -182,8 +197,8 @@ export function classifyThreadRumor(
 		rumorId: rumor.id,
 		senderNpub: nip19.npubEncode(rumor.pubkey),
 		ts: rumor.created_at,
-		text: rumor.content,
 		pubkeyPrefix: rumor.pubkey.slice(0, 8),
+		...rumorBody(rumor),
 	};
 	const drop = (reason: ThreadDropReason): ThreadView => ({ kind: "drop", ...view, reason });
 	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) return drop("older than the message window");
@@ -276,12 +291,16 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 	from: string;
 	text: string;
 	thread: ThreadMeta;
+	image?: { offer: ImageOffer; keyId: string };
+	phi?: true;
 } {
 	return {
 		id: view.rumorId,
 		ts: view.ts,
 		from: view.senderNpub,
 		text: view.text,
+		...(view.offer ? { image: { offer: view.offer, keyId } } : {}),
+		...(view.phi ? { phi: view.phi } : {}),
 		thread: {
 			roomId: view.roomId,
 			subject: view.subject,
