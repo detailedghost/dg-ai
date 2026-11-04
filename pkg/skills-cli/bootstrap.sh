@@ -96,8 +96,8 @@ link_current() {
 # refused. Files are written mode 0644 and never executed.
 retired_is_dg_copy() {
   case $2 in
-    teach) known="b32cdde3ab7f7239d157dd2225c984e48c02aa981cb962b42cdda5cdd1c4dc68 bb06ec5c6763216f76a7af5fbbea839476008747740ded023d285a5afddbd3c9" ;;
-    wait-what) known="3ff07fa007759e417d95c4885ed333a84119cc0d621f7e3d805ca46b6ffb3dd6 6f40fe8148898ee8cb306b8fec3f8f674ee346f5ef54bf9f2d2790e43e1e1f4a" ;;
+    teach) known="b32cdde3ab7f7239d157dd2225c984e48c02aa981cb962b42cdda5cdd1c4dc68 bb06ec5c6763216f76a7af5fbbea839476008747740ded023d285a5afddbd3c9 f5c44555744159f345cfdd1ab1eede4977f06cf31b911edffc48e35747b313a9 d173128190d9450759d3ca5a261987448e176665fabb9cd7a0ffba4d4f006020" ;;
+    wait-what) known="3ff07fa007759e417d95c4885ed333a84119cc0d621f7e3d805ca46b6ffb3dd6 6f40fe8148898ee8cb306b8fec3f8f674ee346f5ef54bf9f2d2790e43e1e1f4a 9b0cee4706ad7eb61490d3cb997b1dad7cfebd2dc974e4735b5a2fb65a1bcb3e f923f0a108954acb787d4b9d331bc44525ab70721df0e00e719284007a773bd0" ;;
     *) return 0 ;;
   esac
   [ -f "$1/$2/SKILL.md" ] || return 1

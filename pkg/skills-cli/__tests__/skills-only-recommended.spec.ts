@@ -50,8 +50,10 @@ describe("installRecommendedSkillsOnly", () => {
 		const { dest, lines, thrown } = install(mattpocockLikeFiles(["tdd", "teach"]));
 		expect(thrown).toBeUndefined();
 		expect(filesUnder(dest)).toEqual([
+			"tdd/.dg-recommended",
 			"tdd/SKILL.md",
 			"tdd/references/notes.md",
+			"teach/.dg-recommended",
 			"teach/SKILL.md",
 			"teach/references/notes.md",
 		]);
@@ -81,6 +83,7 @@ describe("installRecommendedSkillsOnly", () => {
 		mkdirSync(join(dest, "tdd"), { recursive: true });
 		mkdirSync(join(dest, "keep"), { recursive: true });
 		writeFileSync(join(dest, "tdd", "stale.md"), "old");
+		writeFileSync(join(dest, "tdd", ".dg-recommended"), "fixture\n");
 		writeFileSync(join(dest, "keep", "SKILL.md"), "keep");
 		runRecommendedSkillsOnly(
 			{ name: "fixture", repo: "owner/fixture", sha: fixture.sha },
@@ -241,6 +244,7 @@ describe("installRecommendedSkillsOnly", () => {
 			["./"],
 		);
 		expect(filesUnder(dest)).toEqual([
+			"fixture/.dg-recommended",
 			"fixture/README.md",
 			"fixture/SKILL.md",
 			"fixture/references/guide.md",

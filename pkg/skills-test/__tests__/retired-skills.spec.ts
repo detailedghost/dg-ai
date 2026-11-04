@@ -64,6 +64,14 @@ describe("retired dg skills teach and wait-what", () => {
 		}
 	});
 
+	test("a CRLF copy of each retired fixture matches a known hash", () => {
+		for (const name of RETIRED) {
+			const lf = readFileSync(join(DG_COPIES, name, "SKILL.md"), "utf8");
+			const crlf = createHash("sha256").update(lf.replace(/\n/g, "\r\n")).digest("hex");
+			expect(RETIRED_SKILL_HASHES[name]).toContain(crlf);
+		}
+	});
+
 	test("a retired directory with no SKILL.md is kept", () => {
 		const root = makeTempDir("retired-skills-");
 		const repo = join(root, "repo");

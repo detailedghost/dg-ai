@@ -2,11 +2,13 @@ import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	copyFileSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	renameSync,
 	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -15,6 +17,8 @@ import { firstLine, type RecommendedPlugin } from "./recommended-plugins";
 type SkillPlan = { name: string; files: { from: string; rel: string }[] };
 
 const REGULAR_MODES = new Set(["100644", "100755"]);
+const MARKER = ".dg-recommended";
+const MANIFEST = ".claude-plugin/plugin.json";
 const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
 
 function gitBinary(): string {
@@ -36,11 +40,14 @@ function git(binary: string, checkout: string, args: string[]): string {
 	return result.stdout;
 }
 
-function declaredSkillDirs(plugin: RecommendedPlugin, checkout: string): string[] {
+type TrackedEntry = { mode: string; path: string };
+
+function declaredSkillDirs(plugin: RecommendedPlugin, checkout: string, tracked: TrackedEntry[]): string[] {
 	if (plugin.skills) return plugin.skills;
-	const manifest = JSON.parse(
-		readFileSync(join(checkout, ".claude-plugin", "plugin.json"), "utf8"),
-	) as { skills?: unknown };
+	const entry = tracked.find((candidate) => candidate.path === MANIFEST);
+	if (!entry) throw new Error(`${MANIFEST} is not tracked`);
+	if (!REGULAR_MODES.has(entry.mode)) throw new Error(`refuses ${modeName(entry.mode)} ${MANIFEST}`);
+	const manifest = JSON.parse(readFileSync(join(checkout, MANIFEST), "utf8")) as { skills?: unknown };
 	if (!Array.isArray(manifest.skills)) {
 		throw new Error("no skills declared");
 	}
@@ -51,7 +58,7 @@ function planSkill(
 	plugin: RecommendedPlugin,
 	checkout: string,
 	dir: string,
-	tracked: { mode: string; path: string }[],
+	tracked: TrackedEntry[],
 ): SkillPlan {
 	const source = resolve(checkout, dir);
 	const inside = relative(checkout, source);
@@ -86,8 +93,19 @@ function modeName(mode: string): string {
 	return `mode ${mode} entry`;
 }
 
-function stageSkills(plans: SkillPlan[], staging: string): void {
+function exists(path: string): boolean {
+	try {
+		lstatSync(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function stageSkills(plugin: RecommendedPlugin, plans: SkillPlan[], staging: string): void {
 	for (const plan of plans) {
+		mkdirSync(join(staging, plan.name), { recursive: true });
+		writeFileSync(join(staging, plan.name, MARKER), `${plugin.name}\n`);
 		for (const { from, rel } of plan.files) {
 			const to = join(staging, plan.name, rel);
 			mkdirSync(dirname(to), { recursive: true });
@@ -124,23 +142,37 @@ export function installRecommendedSkillsOnly(
 			.split("\0")
 			.filter(Boolean)
 			.map((line) => ({ mode: line.slice(0, 6), path: line.split("\t")[1] ?? "" }));
-		const plans = declaredSkillDirs(plugin, checkout).map((dir) =>
+		const plans = declaredSkillDirs(plugin, checkout, tracked).map((dir) =>
 			planSkill(plugin, checkout, dir, tracked),
 		);
-		const installable = plans.filter((plan) => {
+		const unshadowed = plans.filter((plan) => {
 			if (!dgSkillNames.has(plan.name)) return true;
 			log(`skipped ${plan.name} (dg ships its own)`);
 			return false;
 		});
+		const seen = new Set<string>();
+		for (const plan of unshadowed) {
+			if (seen.has(plan.name)) throw new Error(`duplicate skill name ${plan.name}`);
+			seen.add(plan.name);
+		}
+		const installable = unshadowed.filter((plan) => {
+			const target = join(dest, plan.name);
+			if (!exists(target) || exists(join(target, MARKER))) return true;
+			log(`skipped ${plan.name} (a copy dg did not install is already there)`);
+			return false;
+		});
 		mkdirSync(dest, { recursive: true });
 		staging = mkdtempSync(join(dest, ".dg-recommended-"));
-		stageSkills(installable, staging);
+		stageSkills(plugin, installable, staging);
 		swapped = true;
 		for (const plan of installable) {
 			rmSync(join(dest, plan.name), { recursive: true, force: true });
 			renameSync(join(staging, plan.name), join(dest, plan.name));
 		}
-		return installable.flatMap((plan) => plan.files.map((file) => `${plan.name}/${file.rel}`));
+		return installable.flatMap((plan) => [
+			`${plan.name}/${MARKER}`,
+			...plan.files.map((file) => `${plan.name}/${file.rel}`),
+		]);
 	} catch (error) {
 		const reason = firstLine(error instanceof Error ? error.message : String(error));
 		log(`⚠ ${plugin.name} ${swapped ? "failed" : "skipped"}: ${reason}`);

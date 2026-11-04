@@ -284,7 +284,32 @@ pinned plugin and never update:
 - `~/.agents/skills/unslop`
 - `~/.config/opencode/skills/unslop`
 
-Then run `dg-skills install --with-recommended`.
+Then reinstall the pinned plugin for your agent.
+
+Claude Code:
+
+```bash
+dg-skills install --with-recommended
+```
+
+Codex:
+
+```bash
+~/.dg/bin/dg-skills install --skills-only --dest ~/.codex/skills --with-recommended
+~/.dg/bin/dg-skills install --skills-only --dest ~/.agents/skills --with-recommended
+```
+
+OpenCode:
+
+```bash
+~/.dg/bin/dg-skills install --skills-only --dest ~/.config/opencode/skills --with-recommended
+```
+
+dg marks each recommended skill folder with a `.dg-recommended` file. It
+replaces only folders that have this file. If a folder with the same name is
+already there without the file, dg leaves it alone and prints
+`skipped <name> (a copy dg did not install is already there)`. Delete that
+folder, then run the command again.
 
 ## CLI-only install
 
