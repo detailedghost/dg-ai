@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_OUTBOX_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 
 const NOW = 1_800_000_000;
 let home: string;
@@ -127,6 +127,20 @@ describe("PhoneDb", () => {
 			expect(db.recentMessages(10).map((m) => [m.id, m.file])).toEqual([
 				["img", '{"sha256":"ab","type":"image/png","size":3}'],
 				["txt", null],
+			]);
+		});
+
+		it("stores phi as 1 or 0 and prunes PHI rows after 24 hours while plain rows of the same age stay", () => {
+			const age = PHI_TTL_SECONDS + 1;
+			db.addMessage({ ...message("phi-old", NOW - age), direction: "out", phi: true });
+			db.addMessage({ ...message("plain-old", NOW - age), direction: "out" });
+			db.addMessage({ ...message("phi-fresh", NOW - 60), direction: "out", phi: true });
+
+			db.pruneMessages();
+
+			expect(db.recentMessages(10).map((m) => [m.id, m.phi])).toEqual([
+				["plain-old", 0],
+				["phi-fresh", 1],
 			]);
 		});
 
@@ -307,16 +321,16 @@ describe("PhoneDb", () => {
 		});
 
 		it("prunes a PHI blob after 24 hours while a plain blob of the same age stays", () => {
-			now = NOW - PHI_OUTBOX_TTL_SECONDS - 1;
+			now = NOW - PHI_TTL_SECONDS - 1;
 			db.addOutbox(X, ["pub1"], { phi: true });
 			db.addOutbox(Y, ["pub2"]);
 			now = NOW;
-			const phi = stage(X, PHI_OUTBOX_TTL_SECONDS + 1);
-			const plain = stage(Y, PHI_OUTBOX_TTL_SECONDS + 1);
+			const phi = stage(X, PHI_TTL_SECONDS + 1);
+			const plain = stage(Y, PHI_TTL_SECONDS + 1);
 
 			db.pruneMessages();
 
-			expect(PHI_OUTBOX_TTL_SECONDS).toBe(24 * 60 * 60);
+			expect(PHI_TTL_SECONDS).toBe(24 * 60 * 60);
 			expect(existsSync(phi)).toBe(false);
 			expect(db.outboxRecipients(X)).toEqual([]);
 			expect(existsSync(plain)).toBe(true);

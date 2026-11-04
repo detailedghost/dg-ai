@@ -28,6 +28,8 @@ export type MessageRow = {
 	thread_id: string | null;
 	/** JSON `{sha256, type, size}` for an image row, else null. */
 	file: string | null;
+	/** 1 when the sender marked the message as PHI. */
+	phi: number;
 };
 
 export type KeyRow = { id: string; nsec: string | null; in_store: number; created_at: number };
@@ -75,8 +77,8 @@ export type InviteRow = {
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
 export const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-/** Outbox copies of a PHI image, and outbox files with no row, live this long instead of the message TTL. */
-export const PHI_OUTBOX_TTL_SECONDS = 24 * 60 * 60;
+/** PHI rows, their outbox copies, and outbox files with no row live this long instead of the message TTL. */
+export const PHI_TTL_SECONDS = 24 * 60 * 60;
 
 /** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
 export const OUTBOX_DIR = "outbox";
@@ -146,6 +148,7 @@ const SCHEMA: MigrationStep[] = [
 		version: 5,
 		run: (db) => {
 			db.run("ALTER TABLE messages ADD COLUMN file TEXT");
+			db.run("ALTER TABLE messages ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
 			db.run(`CREATE TABLE outbox (
 				sha256 TEXT PRIMARY KEY,
 				created_at INTEGER NOT NULL,
@@ -206,11 +209,12 @@ export class PhoneDb {
 
 	pruneMessages(): void {
 		const cutoff = this.cutoff();
+		const phiCutoff = this.now() - PHI_TTL_SECONDS;
 		const pendingBefore = this.listPending().length;
-		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM messages WHERE ts < $cutoff OR (phi = 1 AND ts < $phiCutoff)").run({ cutoff, phiCutoff });
 		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
-		this.pruneOutbox(cutoff, this.now() - PHI_OUTBOX_TTL_SECONDS);
+		this.pruneOutbox(cutoff, phiCutoff);
 	}
 
 	/** Drops expired outbox rows, then unlinks expired or unreferenced old files; never follows a symlink. */
@@ -369,14 +373,18 @@ export class PhoneDb {
 	}
 
 	addMessage(
-		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file"> & { thread_id?: string | null; file?: string | null },
+		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi"> & {
+			thread_id?: string | null;
+			file?: string | null;
+			phi?: boolean;
+		},
 	): boolean {
 		this.pruneMessages();
 		if (message.ts < this.cutoff()) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file)
-				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file)`,
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file, phi)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file, $phi)`,
 			)
 			.run({
 				id: message.id,
@@ -389,6 +397,7 @@ export class PhoneDb {
 				readAt: message.direction === "out" ? this.now() : null,
 				threadId: message.thread_id ?? null,
 				file: message.file ?? null,
+				phi: message.phi ? 1 : 0,
 			});
 		return result.changes > 0;
 	}
@@ -414,7 +423,7 @@ export class PhoneDb {
 
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file"> & { thread_id?: string | null }): boolean {
+	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi"> & { thread_id?: string | null }): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
