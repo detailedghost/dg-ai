@@ -72,6 +72,27 @@ describe("retired dg skills teach and wait-what", () => {
 		}
 	});
 
+	test("a retired directory whose SKILL.md is a folder is kept and the install still runs", () => {
+		const root = makeTempDir("retired-skills-");
+		const repo = join(root, "repo");
+		const source = join(repo, "plugins", "dg", "skills");
+		const dest = join(root, "dest");
+		mkdirSync(join(source, "address"), { recursive: true });
+		writeFileSync(join(source, "address", "SKILL.md"), "---\nname: address\n---\n");
+		mkdirSync(join(dest, "teach", "SKILL.md"), { recursive: true });
+
+		runSkillsOnlyInstall({ repo, dest, repoRoot: repo });
+
+		expect(existsSync(join(dest, "teach", "SKILL.md"))).toBe(true);
+		expect(existsSync(join(dest, "address", "SKILL.md"))).toBe(true);
+	});
+
+	test("bootstrap.ps1 treats an unreadable retired SKILL.md as not dg's copy", () => {
+		const ps1 = readRepoFile("pkg", "skills-cli", "bootstrap.ps1");
+		expect(ps1).toContain('Test-Path -LiteralPath $retiredSkill -PathType Leaf');
+		expect(ps1).toMatch(/try \{\s*\$retiredHash = \(Get-FileHash -LiteralPath \$retiredSkill/);
+	});
+
 	test("a retired directory with no SKILL.md is kept", () => {
 		const root = makeTempDir("retired-skills-");
 		const repo = join(root, "repo");

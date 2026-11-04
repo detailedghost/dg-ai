@@ -77,8 +77,11 @@ function isRemovableRetired(dest: string, name: string): boolean {
 	const known = RETIRED_SKILL_HASHES[name];
 	if (!known) return true;
 	const skill = join(dest, name, "SKILL.md");
-	if (!existsSync(skill)) return false;
-	return known.includes(createHash("sha256").update(readFileSync(skill)).digest("hex"));
+	try {
+		return known.includes(createHash("sha256").update(readFileSync(skill)).digest("hex"));
+	} catch {
+		return false;
+	}
 }
 
 /**

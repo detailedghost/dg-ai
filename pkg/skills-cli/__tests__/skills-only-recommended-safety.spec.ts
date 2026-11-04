@@ -52,6 +52,22 @@ function installIntoSeeded(spec: FixtureSpec, skills?: string[]) {
 }
 
 describe("installRecommendedSkillsOnly destination safety", () => {
+	test("a temp folder that cannot be created warns once and copies nothing", () => {
+		const root = tempDir("recommended-skills-notmp");
+		const fixture = bareRepo(root, mattpocockLikeFiles(["tdd"]));
+		const dest = join(root, "dest");
+		const outcome = runRecommendedSkillsOnly(
+			{ name: "fixture", repo: "owner/fixture", sha: fixture.sha, skills: ["./skills/tdd"] },
+			dest,
+			[...DG_NAMES],
+			{ repo: "owner/fixture", url: fixture.url },
+			{ TMPDIR: join(root, "missing", "tmp") },
+		);
+		expect(outcome.thrown).toBeUndefined();
+		expect(outcome.lines.filter((line) => line.startsWith("⚠ fixture skipped"))).toHaveLength(1);
+		expect(existsSync(dest)).toBe(false);
+	});
+
 	test("a tracked file whose name holds a tab is copied under its full name", () => {
 		const spec: FixtureSpec = mattpocockLikeFiles(["tdd"]);
 		spec.files["skills/tdd/references/a\tb.md"] = "tab\n";

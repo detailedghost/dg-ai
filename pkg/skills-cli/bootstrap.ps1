@@ -42,8 +42,12 @@ function Copy-DgSkillTree {
 		if (-not (Test-Path -LiteralPath $retiredPath)) { continue }
 		if ($retiredHashes.ContainsKey($retired)) {
 			$retiredSkill = Join-Path $retiredPath "SKILL.md"
-			if (-not (Test-Path -LiteralPath $retiredSkill)) { continue }
-			$retiredHash = (Get-FileHash -LiteralPath $retiredSkill -Algorithm SHA256).Hash.ToLowerInvariant()
+			if (-not (Test-Path -LiteralPath $retiredSkill -PathType Leaf)) { continue }
+			try {
+				$retiredHash = (Get-FileHash -LiteralPath $retiredSkill -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+			} catch {
+				continue
+			}
 			if ($retiredHashes[$retired] -notcontains $retiredHash) { continue }
 		}
 		Remove-Item -LiteralPath $retiredPath -Recurse -Force

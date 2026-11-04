@@ -305,10 +305,12 @@ That raises the system prompt, so the flag stays opt-in.
 
 ### Codex and OpenCode
 
-Use `--skills-only` with `--dest`:
+Use `--skills-only` with `--dest`. A skills-only install copies the dg skills
+from a dg-ai checkout, so pass `--repo` with its path, or run the command
+inside the checkout:
 
 ```bash
-dg-skills install --skills-only --dest ~/.config/opencode/skills --with-recommended
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
 ```
 
 `dg-skills` fetches each pinned commit with git. It copies only the regular
@@ -379,17 +381,20 @@ Claude Code:
 dg-skills install --with-recommended
 ```
 
+Codex and OpenCode need a dg-ai checkout, as above. Replace `~/code/dg-ai`
+with its path.
+
 Codex:
 
 ```bash
-dg-skills install --skills-only --dest ~/.codex/skills --with-recommended
-dg-skills install --skills-only --dest ~/.agents/skills --with-recommended
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.codex/skills --with-recommended
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.agents/skills --with-recommended
 ```
 
 OpenCode:
 
 ```bash
-dg-skills install --skills-only --dest ~/.config/opencode/skills --with-recommended
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
 ```
 
 dg marks each recommended skill folder with a `.dg-recommended` file. It

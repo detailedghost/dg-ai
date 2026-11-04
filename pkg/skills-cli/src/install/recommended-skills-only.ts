@@ -138,7 +138,13 @@ export function installRecommendedSkillsOnly(
 	dgSkillNames: Set<string>,
 	log: (line: string) => void,
 ): string[] {
-	const checkout = mkdtempSync(join(tmpdir(), `dg-plugin-${plugin.name}-`));
+	let checkout: string;
+	try {
+		checkout = mkdtempSync(join(tmpdir(), `dg-plugin-${plugin.name}-`));
+	} catch (error) {
+		log(`⚠ ${plugin.name} skipped: ${firstLine(error instanceof Error ? error.message : String(error))}`);
+		return [];
+	}
 	let staging: string | undefined;
 	let swapped = false;
 	try {
