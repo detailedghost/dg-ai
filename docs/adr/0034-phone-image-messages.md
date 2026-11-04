@@ -1,4 +1,4 @@
-# 0034 — Send images over the phone as encrypted Blossom files
+# 0034 — Send images over the phone as encrypted files
 
 Status: Proposed
 Date: 2026-11-04
@@ -65,6 +65,41 @@ The Step 0 security review also requires these changes before the build:
 NIP-17 does not name the encoding of `decryption-key` and `decryption-nonce`. Slice 2 reads it from the
 source of one real client and records it in this record with a source link before it codes the tags.
 
+## Transport update (2026-11-04): Magic Wormhole
+
+This section replaces the Blossom host, the upload token, the URL fetch, and the "transport still open"
+bullet above. Tailscale Personal is limited to non-commercial use, so it does not fit. No Blossom server is built.
+
+- **Staging:** the sender keeps the ciphertext in `<phoneRoot>/outbox/<x>` with the key that sent it and the
+  pubkeys allowed to fetch it. The kind 15 `content` is `dg-wormhole:<x>`, never a URL.
+- **Request kind 25015:** the receiver asks for a file with a rumor of kind 25015, sealed and gift wrapped
+  like kind 14, to the key that sent the kind 15. Its tags are `p`, `x`, and `code`; its content is empty.
+  Kind 25015 is not in the NIP kind list (checked 2026-11-04). It never leaves a gift wrap.
+- **Code:** the receiver makes `<8 random digits>-<base32 of 16 random bytes>` for each attempt and never
+  reuses one. The sender accepts only `^[0-9]{1,16}-[a-z2-7]{20,40}$`. The code is never stored or logged.
+- **Sender checks:** x is 64 lowercase hex; `created_at` is within 5 minutes; the rumor id and the code are new
+  within the hour; the seal signer is a contact and an allowed recipient of x; the wrap reached the key that
+  sent x; the outbox entry is a regular file (lstat). Every refusal is silent. One `send` runs at a time behind
+  a queue of 4, with one open request per requester and x, 20 sends per contact per day, and a 90 second limit.
+- **Code in argv (decision C):** the sender runs `wormhole-william send --code <code> --hide-progress <file>`.
+  Another local user can read the code from the process list for up to 90 seconds. This is accepted: the
+  file is AES-GCM ciphertext, and the receiver checks its sha256. Output is discarded.
+- **Receiver checks:** `receive --hide-progress` runs in a fresh 0700 temp dir, with the code on stdin. It
+  answers `y` only when the prompt names x at the expected size, and `n` to any other offer. wormhole-william
+  prints the size rounded to one decimal (`3.0 kB`), so this check compares that text; the exact length and
+  sha256 are checked after exit, on exactly one regular file. A dir size above the size tag, or 120 seconds,
+  kills the process tree. The temp dir is always removed.
+- **Binary (decisions A and B):** wormhole-william v1.0.8 (MIT) downloads on first use into
+  `<phoneRoot>/tools/wormhole-william-1.0.8-<os>-<arch>[.exe]`, never on PATH, run by absolute path. The
+  download follows only https redirects, stops at 20 MiB, is written to an O_EXCL 0600 `.part` file, checked
+  against the pinned sha256, set to 0700, and renamed. The binary is rehashed before every run. `arm` and
+  unknown platforms are refused. Children get an empty environment (`SystemRoot`, `TEMP`, and `TMP` on Windows).
+- **Pin method (decision B):** the 12 release asset hashes were computed by downloading each asset on a dev
+  machine. `scripts/pin-wormhole.ts --check` downloads them again in the `Phone - Wormhole pin check` workflow and
+  fails when any differs from the pin table. A pin lands only when both match.
+- **Relays (decision E):** the default public mailbox and transit relays are used, and direct transit is allowed.
+  The relays see IP addresses, the nameplate, timing, and sizes, but only ciphertext.
+
 ## Consequences
 
 - **Good:** the PHI and received-file rules apply to text today, with no code change beyond docs
@@ -89,8 +124,8 @@ source of one real client and records it in this record with a source link befor
   fallback, and the work stops after slice 1 if the human chooses it.
 - **Tailscale sender-serves.** The sender serves the ciphertext on the tailnet. It needs no third-party
   store, but it needs the sender online and both sides on one tailnet. Still open as the transport.
-- **Magic Wormhole.** A direct, one-time transfer with no stored copy. It needs a second tool and a code
-  exchange for each file, and it does not fit the NIP-17 message flow.
+- **Magic Wormhole (chosen 2026-11-04).** A direct, one-time transfer with no stored copy. It needs a second
+  tool, and a code exchange for each file, which the kind 25015 request carries. See the transport update.
 
 ## Diagrams
 
@@ -119,3 +154,7 @@ sequenceDiagram
 - [NIP-17](https://github.com/nostr-protocol/nips/blob/master/17.md)
 - [Blossom BUD-02](https://github.com/hzrd149/blossom/blob/master/buds/02.md)
 - [Blossom BUD-11](https://github.com/hzrd149/blossom/blob/master/buds/11.md)
+- [wormhole-william v1.0.8](https://github.com/psanford/wormhole-william/releases/tag/v1.0.8)
+- [wormhole.ts](../../pkg/dg-agent/src/phone/wormhole.ts)
+- [transport.ts](../../pkg/dg-agent/src/phone/transport.ts)
+- [pin-wormhole.ts](../../scripts/pin-wormhole.ts)

@@ -71,7 +71,7 @@ flowchart LR
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
 - [0027 — Offer pinned third-party plugins as an opt-in install](0027-optional-third-party-plugins.md)
 - [0034 — Send images over the phone](0034-phone-image-messages.md) — Proposed:
-  Blossom kind 15 behind a default-off `files` setting; PHI never crosses the phone; transport still open.
+  kind 15 behind a default-off `files` setting; the receiver pulls the ciphertext over Magic Wormhole with a kind 25015 request.
 
 ## Skills
 
