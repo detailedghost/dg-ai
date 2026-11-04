@@ -9,7 +9,12 @@ describe("resolveDgPaths on linux", () => {
 		const paths = resolveDgPaths({
 			platform: "linux",
 			homeDir: home,
-			env: { XDG_STATE_HOME: "state", XDG_CONFIG_HOME: "./cfg", XDG_DATA_HOME: "share", XDG_CACHE_HOME: "cache" },
+			env: {
+				XDG_STATE_HOME: "state",
+				XDG_CONFIG_HOME: "./cfg",
+				XDG_DATA_HOME: "share",
+				XDG_CACHE_HOME: "cache",
+			},
 		});
 
 		expect(paths.stateDir).toBe("/h/.local/state/dg");
@@ -153,13 +158,20 @@ describe("resolveDgPaths with DG_HOME", () => {
 		expect(posix.isAbsolute(paths.binDir)).toBe(true);
 	});
 
-	it.skipIf(process.platform === "win32")("resolves a relative DG_HOME against the working folder", () => {
-		const paths = resolveDgPaths({ platform: process.platform, homeDir: home, env: { DG_HOME: "rel-dg" } });
+	it.skipIf(process.platform === "win32")(
+		"resolves a relative DG_HOME against the working folder",
+		() => {
+			const paths = resolveDgPaths({
+				platform: process.platform,
+				homeDir: home,
+				env: { DG_HOME: "rel-dg" },
+			});
 
-		expect(paths.dataDir).toBe(posix.join(process.cwd(), "rel-dg", "data"));
-		expect(paths.binDir).toBe(posix.join(process.cwd(), "rel-dg", "bin"));
-		expect(paths.legacyHome).toBe(posix.join(process.cwd(), "rel-dg"));
-	});
+			expect(paths.dataDir).toBe(posix.join(process.cwd(), "rel-dg", "data"));
+			expect(paths.binDir).toBe(posix.join(process.cwd(), "rel-dg", "bin"));
+			expect(paths.legacyHome).toBe(posix.join(process.cwd(), "rel-dg"));
+		},
+	);
 });
 
 describe("resolveDgPaths files", () => {
@@ -232,7 +244,7 @@ describe("normalizeDgHome", () => {
 	it("rewrites a relative DG_HOME to the absolute path from the current directory", () => {
 		const env: Record<string, string | undefined> = { DG_HOME: "rel/home" };
 
-		normalizeDgHome(env, "linux");
+		normalizeDgHome(env);
 
 		expect(env.DG_HOME).toBe(resolve("rel/home"));
 	});
