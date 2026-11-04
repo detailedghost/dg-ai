@@ -91,7 +91,7 @@ async function lintBlob(blob: string, allowOverlap: boolean): Promise<void> {
 	if (status !== 1) die("lint-waves failed on the decision blob");
 	if (!allowOverlap)
 		die(
-			"refusing to scaffold: same-layer slices overlap (fix depends_on, or pass --allow-overlap)",
+			"refusing to scaffold: independent slices overlap (fix depends_on, or pass --allow-overlap)",
 		);
 	warn("--allow-overlap set; scaffolding despite overlap");
 }

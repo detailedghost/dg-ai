@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { main } from "../src/assign";
 import { parseYaml, frontmatterOf } from "../src/spec/frontmatter";
 import { lintFile } from "../src/spec/lint-waves";
+import { writePlan } from "./assign-plan-builder";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "assign");
 const RUNNER = join(
@@ -678,8 +679,8 @@ describe("dg-skills assign resolve", () => {
 		expect(result.err).toContain("layer 9");
 	});
 
-	test("exits 2 when --layer is missing", async () => {
-		expect((await run(["resolve", plan("plan-high.md")])).status).toBe(2);
+	test("exits 2 when the plan argument is missing", async () => {
+		expect((await run(["resolve", "--layer", "0"])).status).toBe(2);
 	});
 
 	test("exits 1 and names /dg:assign when a slice has no primary", async () => {
@@ -711,22 +712,30 @@ describe("dg-skills assign resolve", () => {
 		});
 	});
 
-	test("exits 1 when ## Execution pins fable on a slice whose primary is not a fable agent", async () => {
-		const result = await run([
-			"resolve",
-			plan("plan-fable-pinned-js.md"),
-			"--layer",
-			"0",
-		]);
+	test("exits 1 with the fable message when agents.model is fable on a dg:js primary", async () => {
+		const file = writePlan(scratch(), {
+			slices: [{ id: 1, primary: "dg:js", model: "fable" }],
+		});
+		const result = await run(["resolve", file, "--layer", "0"]);
 		expect(result.status).toBe(1);
-		expect(result.err).toContain("fable");
+		expect(result.err).toContain("cannot use the fable tier");
 	});
 
-	test("applies the ## Execution pin to the build stages and leaves the wave audit alone", async () => {
-		const { slices, roles } = await resolved([plan("plan-pin-opus-js.md"), "--layer", "0"]);
+	test("agents.model opus on a sonnet primary resolves to opus at its default effort", async () => {
+		const file = writePlan(scratch(), {
+			slices: [{ id: 1, primary: "dg:js", model: "opus" }],
+		});
+		const { slices, roles } = await resolved([file, "--layer", "0"]);
 		expect(slices[0]?.primary).toMatchObject({ model: "opus", effort: "xhigh" });
-		expect(roles["qa-writer"]).toMatchObject({ model: "opus", effort: "xhigh" });
 		expect(roles.wave).toMatchObject({ model: "haiku", effort: "low" });
+	});
+
+	test("agents.effort low on the same slice keeps opus and lowers the effort", async () => {
+		const file = writePlan(scratch(), {
+			slices: [{ id: 1, primary: "dg:js", model: "opus", effort: "low" }],
+		});
+		const { slices } = await resolved([file, "--layer", "0"]);
+		expect(slices[0]?.primary).toMatchObject({ model: "opus", effort: "low" });
 	});
 
 	test("inlines the five templates with the return-contract reminder", async () => {
@@ -845,45 +854,34 @@ describe("dg-skills assign resolve", () => {
 		expect(templates.proxy).toContain("{PROXY_FLAGS}");
 	});
 
-	test("adds the ## Execution tier pin to the proxy flags", async () => {
+	test("adds the agents.model tier to the proxy flags and omits an effort equal to the tier default", async () => {
 		const dir = scratch();
 		const file = join(dir, "plan.md");
 		writeFileSync(
 			file,
-			`${readFileSync(plan("plan-proxy-pin.md"), "utf8")}\n## Execution\nmodel: opus\n`,
+			readFileSync(plan("plan-proxy-pin.md"), "utf8").replaceAll(
+				"      proxy: codex\n",
+				"      proxy: codex\n      model: opus\n",
+			),
 		);
 		const { slices } = await resolved([file, "--layer", "0"]);
-		expect(slices[0]?.proxyFlags).toBe("--effort xhigh --tier opus");
+		expect(slices[0]?.proxyFlags).toBe("--tier opus");
 		expect(slices[1]?.proxyFlags).toBe("--tier opus");
 	});
 
-	test.each([
-		"model: opus-4.5",
-		"effort: xhigh2",
-		"- Model: opus",
-		"- **model:** opus",
-		"- model : opus",
-		"- effort = xhigh",
-	])("exits 1 on the malformed ## Execution line %p", async (line) => {
+	test("ignores ## Execution text in the plan body", async () => {
 		const dir = scratch();
 		const file = join(dir, "plan.md");
-		writeFileSync(
-			file,
-			`${readFileSync(plan("plan-high.md"), "utf8")}\n## Execution\n${line}\n`,
-		);
-		const result = await run(["resolve", file, "--layer", "0"]);
-		expect(result.status).toBe(1);
-		expect(result.err).toContain("## Execution");
-	});
-
-	test("accepts the strict ## Execution forms", async () => {
-		const dir = scratch();
-		const file = join(dir, "plan.md");
-		writeFileSync(
-			file,
-			`${readFileSync(plan("plan-high.md"), "utf8")}\n## Execution\n- model: \`opus\`\n* effort: "xhigh"\nprose about the run\n`,
-		);
-		expect((await run(["resolve", file, "--layer", "0"])).status).toBe(0);
+		const base = readFileSync(plan("plan-high.md"), "utf8");
+		writeFileSync(file, `${base}\n## Execution\nmodel: opus\neffort: low\n`);
+		const withSection = await run(["resolve", file, "--layer", "0"]);
+		const without = await run(["resolve", plan("plan-high.md"), "--layer", "0"]);
+		expect(withSection.status).toBe(0);
+		const strip = (text: string) => {
+			const { specPath, ...rest } = JSON.parse(text) as Record<string, unknown>;
+			return rest;
+		};
+		expect(strip(withSection.out)).toEqual(strip(without.out));
 	});
 
 	test("keeps proxy_skills on a proxied slice and inlines each skill into its brief", async () => {

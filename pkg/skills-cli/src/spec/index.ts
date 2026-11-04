@@ -10,6 +10,7 @@ import {
 	setCommand,
 	validateCommand,
 } from "./fields";
+import { estimateCommand } from "./estimate";
 import { lintWavesCommand } from "./lint-waves";
 import { nextNnnCommand, resolvePathCommand, slugifyCommand } from "./paths";
 import { permsBatchCommand, permsCommand } from "./perms";
@@ -51,7 +52,8 @@ Subcommands:
   append-section append a line under a body section
   roster         list Codex/Claude agents as name<TAB>description (--full adds prose)
   scaffold       expand a decision blob into a plan bundle
-  lint-waves     fail when same-layer slices share files (plan.md or blob.json)
+  lint-waves     fail when independent slices share files (plan.md or blob.json)
+  estimate       print agent-call counts per execution profile for a plan
   prototype-ref  record an accepted prototype asset on a slice
 `;
 
@@ -78,6 +80,7 @@ const HANDLERS = new Map<string, Handler>([
 	["roster", rosterCommand],
 	["scaffold", scaffoldCommand],
 	["lint-waves", lintWavesCommand],
+	["estimate", estimateCommand],
 	["prototype-ref", prototypeRefCommand],
 ]);
 

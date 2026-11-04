@@ -30,6 +30,7 @@ const SCHEMA_FIELDS = [
 	"current_slice",
 	"slices",
 	"permissions",
+	"execution",
 	"tools",
 	"pr_strategy",
 	"repos",

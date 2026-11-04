@@ -8,6 +8,8 @@ slices:
     files: ["docs/**"]
     agents:
       primary: arch
+      model: fable
+      effort: xhigh
       confidence: high
 ---
 
@@ -17,7 +19,3 @@ slices:
 
 ### Slice 1 — Shape
 - [ ] Draw the shape
-
-## Execution
-model: fable
-effort: xhigh

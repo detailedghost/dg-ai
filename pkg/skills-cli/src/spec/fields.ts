@@ -329,6 +329,24 @@ function inMode(field: FieldSpec, modes: Record<string, boolean>): boolean {
 		: (modes[field.mode_conditional] ?? true);
 }
 
+function reportEnum(
+	report: (field: string, kind: string, detail: string) => void,
+	path: string,
+	field: FieldSpec,
+	value: unknown,
+): void {
+	if (
+		truthy(field.enum) &&
+		typeof value === "string" &&
+		!(field.enum as unknown[]).includes(value)
+	)
+		report(
+			path,
+			"enum_violation",
+			`value "${value}" not in ${jqText(field.enum)}`,
+		);
+}
+
 export async function validateCommand(args: string[]): Promise<number> {
 	const { positionals, helped } = readPositionals(
 		"validate",
@@ -392,16 +410,20 @@ export async function validateCommand(args: string[]): Promise<number> {
 				"mode_violation",
 				`field is ${field.mode_conditional} but spec is not in that mode`,
 			);
-		if (
-			truthy(field.enum) &&
-			typeof value === "string" &&
-			!(field.enum as unknown[]).includes(value)
-		)
-			report(
-				key,
-				"enum_violation",
-				`value "${value}" not in ${jqText(field.enum)}`,
-			);
+		reportEnum(report, key, field, value);
+		if (isRecord(value))
+			for (const [name, child] of Object.entries(field.fields ?? {})) {
+				const nested = value[name];
+				if (nested === undefined || nested === null) continue;
+				const nestedType = jsonType(nested);
+				if (!typeOptions(child.type).includes(nestedType))
+					report(
+						`${key}.${name}`,
+						"wrong_type",
+						`expected ${jqText(child.type)}, got ${nestedType}`,
+					);
+				reportEnum(report, `${key}.${name}`, child, nested);
+			}
 	}
 	if (diagnostics.length === 0) {
 		say(`${specAbs}: ok\n`);
