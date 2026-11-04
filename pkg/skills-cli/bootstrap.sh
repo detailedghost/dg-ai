@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the dg runtime and bundle into ${DG_HOME:-~/.dg}, then run `dg-skills install`.
+# Install the dg runtime and bundle into the per-OS data dir, then run `dg-skills install`.
 #
 #   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 #   ... | sh -s -- --cli-only    (or DG_CLI_ONLY=1): skip the extension.
@@ -9,8 +9,9 @@
 #       DG_SKILLS_NO_CLI=1 keeps it an offline copy of the skill files (nothing is downloaded from a release).
 #   ... | sh -s -- --version <x.y.z> (also --version=<x.y.z>, or DG_VERSION=<x.y.z>): install that release.
 #
-# Layout: runtime/bun-v<bun>, lib/<release>, runtime/current and lib/current links, and
-# bin/dg-skills, bin/dg-agent, bin/dg-daemon shims. Every download is verified against
+# Layout: runtime/bun-v<bun>, lib/<release>, runtime/current and lib/current links in the data dir
+# (~/.local/share/dg on Linux, ~/Library/Application Support/dg on macOS, $DG_HOME/data), and the
+# dg-skills, dg-agent, dg-daemon shims in ~/.local/bin (or $DG_HOME/bin). Every download is verified against
 # SHA256SUMS or runtime.json before anything is installed. Re-running upgrades in place.
 # Windows: use bootstrap.ps1 instead.
 set -eu
@@ -263,7 +264,19 @@ skills_tree_source() {
   SKILLS_SRC="${source_root}/plugins/dg/skills"
 }
 
-ROOT="${DG_HOME:-${HOME}/.dg}"
+if [ -n "${DG_HOME:-}" ]; then
+  BIN="${DG_HOME}/bin"
+  ROOT="${DG_HOME}/data"
+elif [ "$("$UNAME" -s)" = "Darwin" ]; then
+  BIN="${HOME}/.local/bin"
+  ROOT="${HOME}/Library/Application Support/dg"
+else
+  BIN="${HOME}/.local/bin"
+  case "${XDG_DATA_HOME:-}" in
+    /*) ROOT="${XDG_DATA_HOME}/dg" ;;
+    *) ROOT="${HOME}/.local/share/dg" ;;
+  esac
+fi
 
 if [ "$SKILLS_ONLY" = "1" ]; then
   skills_tree_source
@@ -385,7 +398,7 @@ else
   NEED_LIB=0
 fi
 
-mkdir -p "${ROOT}/runtime" "${ROOT}/lib" "${ROOT}/bin"
+mkdir -p "${ROOT}/runtime" "${ROOT}/lib" "${BIN}"
 
 if [ "${NEED_BUN}" = "1" ]; then
   stage=$(mktemp -d "${ROOT}/runtime/.stage.XXXXXX")
@@ -412,20 +425,20 @@ link_current "${ROOT}/runtime/current" "bun-v${BUN_VERSION}"
 link_current "${ROOT}/lib/current" "${VERSION}"
 
 for program in dg-skills dg-agent dg-daemon; do
-  shim=$(mktemp "${ROOT}/bin/.${program}.XXXXXX")
+  shim=$(mktemp "${BIN}/.${program}.XXXXXX")
   track_tmp "${shim}"
   printf '#!/bin/sh\nexec "%s/runtime/current/bun" "%s/lib/current/dg.js" %s "$@"\n' \
     "${ROOT}" "${ROOT}" "${program}" >"${shim}"
   chmod 755 "${shim}"
-  mv -f "${shim}" "${ROOT}/bin/${program}"
-  rm -f "${ROOT}/bin/.${program}.version"
+  mv -f "${shim}" "${BIN}/${program}"
+  rm -f "${BIN}/.${program}.version"
 done
 
 echo "dg runtime ${BUN_VERSION} and bundle ${VERSION} installed at ${ROOT}"
 
 case ":${PATH}:" in
-*":${ROOT}/bin:"*) ;;
-*) echo "Add to PATH:  export PATH=\"${ROOT}/bin:\$PATH\"" ;;
+*":${BIN}:"*) ;;
+*) echo "Add to PATH:  export PATH=\"${BIN}:\$PATH\"" ;;
 esac
 
 [ "${SKILLS_ONLY}" = "1" ] && exit 0
@@ -438,7 +451,7 @@ install_args=""
 if [ "${CLI_ONLY}" != "1" ] && [ "${AGENT_ONLY}" != "1" ]; then
   echo "Setting up the dg-ai-extension..."
 fi
-DG_SKILLS_BOOTSTRAP=1 "${ROOT}/bin/dg-skills" install${install_args} </dev/null
+DG_SKILLS_BOOTSTRAP=1 "${BIN}/dg-skills" install${install_args} </dev/null
 
 if [ "${DG_INSTALL_CODEX:-0}" = "1" ]; then
   CODEX_ROOT="${CODEX_HOME:-${HOME}/.codex}"

@@ -423,7 +423,7 @@ describe("workspaceDirForProfile installed default", () => {
 			});
 			expect(first).toBe(second);
 			expect(resolve(first)).toBe(first);
-			expect(first.startsWith(`${process.env.DG_HOME}/inbox/`)).toBe(true);
+			expect(first.startsWith(`${process.env.DG_HOME}/state/inbox/`)).toBe(true);
 		} finally {
 			process.chdir(originalCwd);
 			if (originalHome === undefined) delete process.env.DG_HOME;

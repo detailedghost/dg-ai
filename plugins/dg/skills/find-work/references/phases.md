@@ -3,7 +3,7 @@
 ## Phase 0 — Preflight
 
 1. Verify inside a git repository: `git rev-parse --is-inside-work-tree`. Capture `ORIGIN_REPO=$(git rev-parse --show-toplevel)`.
-1. Detect GitHub or GitLab and verify its CLI is authenticated: `~/.dg/bin/dg-skills vcs-provider detect`, then `~/.dg/bin/dg-skills vcs-provider auth`.
+1. Detect GitHub or GitLab and verify its CLI is authenticated: `dg-skills vcs-provider detect`, then `dg-skills vcs-provider auth`.
 1. Detect default branch: `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@.*/@@'`. Fallback: try `main`, then `master`.
 1. Fetch latest: `git fetch origin`.
 1. Verify clean working tree: `git status --porcelain`. Warn if dirty — worktrees branch from HEAD.
@@ -16,7 +16,7 @@ Discovery runs as a background **Workflow** (`references/discover.workflow.mjs`)
 
 | key | Source | Max items | agentType |
 |-----|--------|-----------|-----------|
-| vcs-issues | `~/.dg/bin/dg-skills vcs-provider list-issues` — small/medium scope | 3 | Explore |
+| vcs-issues | `dg-skills vcs-provider list-issues` — small/medium scope | 3 | Explore |
 | code-quality | TODO/FIXME, lint, skipped tests, oversized functions | 3 | dg:reviewer |
 | pr-backlog | Open PRs with unresolved review comments | 3 | Explore |
 | codebase-scan | reviewer pass on recently-changed files | 3 | dg:reviewer |
@@ -77,7 +77,7 @@ For each selected item, **before launching the agent**:
 2. Create the worktree and branch from the origin default branch. The `find-work-` prefix marks origin so cleanup tooling can identify the branches. Shell variables do not persist between Bash calls, so replace `<origin-repo>`, `<default-branch>` and `<slug>` with the literal values from Phase 0 and step 1:
 
 ```sh
-cd "<origin-repo>" && eval "$(~/.dg/bin/dg-skills worktree create "<slug>" --prefix feature/find-work- --base "<default-branch>" --no-resume)"
+cd "<origin-repo>" && eval "$(dg-skills worktree create "<slug>" --prefix feature/find-work- --base "<default-branch>" --no-resume)"
 ```
 
 3. If the command exits non-zero because the branch or path already exists, append a short numeric suffix (`_2`, `_3`, …) to the slug and run it again until it succeeds. No prompts — /dg:find-work is fire-and-forget.
@@ -158,22 +158,22 @@ For each approved item, write the title and body to files with the Write tool, s
 1. Get two file paths. Replace `<slug>` with the branch name after its last `/`:
 
 ```sh
-~/.dg/bin/dg-skills stash find-work "pr-title-<slug>.txt"
-~/.dg/bin/dg-skills stash find-work "pr-body-<slug>.md"
+dg-skills stash find-work "pr-title-<slug>.txt"
+dg-skills stash find-work "pr-body-<slug>.md"
 ```
 
 2. Call the Write tool once for each path. Write the item title to the first path and `<pr_body_draft>` to the second.
 3. Open the draft PR. Replace `<branch>`, `<default-branch>`, `<title-path>` and `<body-path>` with literal values:
 
 ```sh
-~/.dg/bin/dg-skills vcs-provider create-pr --draft --head "<branch>" --base "<default-branch>" --title "$(cat "<title-path>")" --body "$(cat "<body-path>")"
+dg-skills vcs-provider create-pr --draft --head "<branch>" --base "<default-branch>" --title "$(cat "<title-path>")" --body "$(cat "<body-path>")"
 rm -f "<title-path>" "<body-path>"
 ```
 
 If the human flags that two or more approved items actually depend on each other
 (rare — items normally branch independently off default), run the `/dg:chain` skill on
-that subset instead of opening them as unrelated PRs: `~/.dg/bin/dg-skills chain plan <branches...>`
-folded into the drafts shown above, then `~/.dg/bin/dg-skills chain apply <branches...>` after this same
+that subset instead of opening them as unrelated PRs: `dg-skills chain plan <branches...>`
+folded into the drafts shown above, then `dg-skills chain apply <branches...>` after this same
 approval.
 
 > **GATE:** User reviewed the full result set. PRs opened only for explicitly approved items.
@@ -189,8 +189,8 @@ Build a **compact** summary — no verbose agent output, just the table:
 | Resolve PR #12 review | failed (insufficient context) | — |
 | Add logging hook | held (not approved) | — |
 
-List PR/MR URLs for easy clicking. Note failed items with one-line error reason. Note held items as "held — open manually with `~/.dg/bin/dg-skills vcs-provider create-pr --draft --head <branch> ...`".
+List PR/MR URLs for easy clicking. Note failed items with one-line error reason. Note held items as "held — open manually with `dg-skills vcs-provider create-pr --draft --head <branch> ...`".
 
-Also list each item's worktree path so the user can find them. Worktrees are **retained** — review-comment rounds (`/dg:address`) and post-merge cleanup happen there. Cleanup: `~/.dg/bin/dg-skills worktree remove <slug>`; pass `--merged-ok` once the provider confirms the merge.
+Also list each item's worktree path so the user can find them. Worktrees are **retained** — review-comment rounds (`/dg:address`) and post-merge cleanup happen there. Cleanup: `dg-skills worktree remove <slug>`; pass `--merged-ok` once the provider confirms the merge.
 
 > **GATE:** Summary delivered to user.

@@ -14,12 +14,12 @@ function render(template: string, root: string, name: string, windows: boolean):
 }
 
 /**
- * Writes the three launchers under `<root>/bin`. Each is staged beside its destination and renamed
- * over it, so a compiled binary of the same name is replaced only once the shim exists.
+ * Writes the three launchers in `bin`, each running the runtime and bundle under `root`. Each is staged
+ * beside its destination and renamed over it, so a compiled binary of the same name is replaced only once
+ * the shim exists.
  */
-export function writeShims(root: string, platform: NodeJS.Platform = process.platform): void {
+export function writeShims(bin: string, root: string, platform: NodeJS.Platform = process.platform): void {
 	const windows = platform === "win32";
-	const bin = join(root, "bin");
 	mkdirSync(bin, { recursive: true });
 	for (const name of PROGRAMS) {
 		const dest = join(bin, windows ? `${name}.cmd` : name);

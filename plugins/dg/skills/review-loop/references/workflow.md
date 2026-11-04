@@ -5,7 +5,7 @@
 Each phase lists `IN:` (required state) and `OUT:` (produced state).
 Gates are hard stops. The skill has no persistent state — round count
 derives from the PR on each invocation, and Copilot's responses are
-read through `~/.dg/bin/dg-skills address`.
+read through `dg-skills address`.
 
 ## Phase 0 — Argument Parsing
 
@@ -34,7 +34,7 @@ When `skip` equals `true`: print `review-loop: skipped` and exit 0.
 IN: none.
 OUT: `prNumber`, `prUrl`.
 
-1. Run `~/.dg/bin/dg-skills vcs-provider capabilities`. It needs no provider binary — the
+1. Run `dg-skills vcs-provider capabilities`. It needs no provider binary — the
    capability set is frozen per provider kind at construction time. It
    fails loud when no provider resolves at all: non-zero exit, the
    reason on stderr (`vcs-provider capabilities: <reason>`),
@@ -72,12 +72,12 @@ OUT: `prNumber`, `prUrl`.
    [proxy-workflow.md](proxy-workflow.md); nothing below in this file
    applies for the rest of this invocation.
 
-1. Run `~/.dg/bin/dg-skills address view-pr` and read `.number`, `.url`, `.headRefName`. No open PR on
+1. Run `dg-skills address view-pr` and read `.number`, `.url`, `.headRefName`. No open PR on
    this branch → print
    `review-loop: no open PR for this branch; open one first.`
    and exit 0.
 
-1. Run `~/.dg/bin/dg-skills address check-copilot`. `available == false` →
+1. Run `dg-skills address check-copilot`. `available == false` →
    print `review-loop: Copilot reviewer unavailable here; skipping.`
    and exit 0. (`assumed-available` counts as available — real errors
    surface at Phase 3 trigger time.)
@@ -109,10 +109,10 @@ Pass `--round <roundsUsed + 1>` to `/dg:address` so it writes the marker. Stop w
 to continue.`. Under `--single` / `--no-retrigger`, run one round and
 exit.
 
-1. `~/.dg/bin/dg-skills address view-pr` resolves the current branch's merge
+1. `dg-skills address view-pr` resolves the current branch's merge
    request. No merge request → print `review-loop: no open MR for this
    branch; open one first.` and exit 0.
-1. `~/.dg/bin/dg-skills address check-bot-review` reports
+1. `dg-skills address check-bot-review` reports
    `{available, bots, present, threads, unresolved, latestAt}` for that
    merge request. It reads the same GitLab discussions `/dg:address`
    consumes, so `present` means findings really are on the MR.
@@ -163,7 +163,7 @@ re-trigger fired successfully.
 IN: Phase 1 state.
 OUT: `roundsDone` (int), `maxRounds` (possibly clamped).
 
-1. `~/.dg/bin/dg-skills address count-copilot-reviews` → `roundsDone`.
+1. `dg-skills address count-copilot-reviews` → `roundsDone`.
 1. When `noRetrigger == true`: `maxRounds = min(maxRounds, roundsDone + 1)`.
    This folds no-retrigger into the existing round-cap logic — no
    separate branch is needed downstream.
@@ -178,17 +178,17 @@ IN: `roundsDone`, `prUrl`.
 OUT: next action: `close-no-findings` | `trigger` | `act` | `wait`.
 
 1. **No-findings close-out check** — Run
-   `~/.dg/bin/dg-skills address check-no-findings <prUrl> <lastCommitTs>` where
+   `dg-skills address check-no-findings <prUrl> <lastCommitTs>` where
    `lastCommitTs` is the ISO time from `git log -1 --format=%cI HEAD`. The helper owns the
    graphql scan, the pattern match, and the `REVIEW_LOOP_NO_FINDINGS_PATTERN`
    override (jq Oniguruma syntax). A `noFindings:true` result → action
-   `close-no-findings`, unless `~/.dg/bin/dg-skills address gather-overview`
+   `close-no-findings`, unless `dg-skills address gather-overview`
    returns a non-empty array. A non-empty overview means the round is not
    clean: treat it as findings and continue to the steps below.
 
 1. When `roundsDone == 0` → action `trigger`.
 
-1. Otherwise run `~/.dg/bin/dg-skills address fetch-copilot-review`.
+1. Otherwise run `dg-skills address fetch-copilot-review`.
 
    - `submittedAt == null` → `wait`.
    - Let `latestReviewEpoch` be `submittedAt` in epoch seconds
@@ -223,7 +223,7 @@ actionable — close the loop cleanly.
 
 1. Capture `sinceIso = now()` (ISO-8601 UTC).
 
-1. `~/.dg/bin/dg-skills address request-copilot`. Default method posts an
+1. `dg-skills address request-copilot`. Default method posts an
    `@copilot review` comment on the PR. The comment-based trigger works
    even on repositories where the Copilot GitHub App isn't wired up to
    accept review requests, and Copilot posts a review authored by
@@ -262,12 +262,12 @@ GATE: one of trigger / wait / act fired.
 ## Phase 4 — Antagonist Filter (Act phase only)
 
 IN: Phase 3 `fetch-copilot-review` JSON.
-OUT: verdict file path `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.verdicts.json)`.
+OUT: verdict file path `$(dg-skills stash review-loop <prNumber>.verdicts.json)`.
 
-1. Run `~/.dg/bin/dg-skills address gather-overview`. Map each item to
+1. Run `dg-skills address gather-overview`. Map each item to
    `{commentId: reviewId, threadId: null, body: summary, path: null, line: null, source: "copilot-overview"}`.
    Write the `.comments` array plus these items to
-   `$(~/.dg/bin/dg-skills stash review-loop <prNumber>.comments.json)`.
+   `$(dg-skills stash review-loop <prNumber>.comments.json)`.
    An overview-only review has an empty `.comments` array; its overview items still go through this phase.
 
 1. Locate the spec file (best effort):
@@ -298,14 +298,14 @@ OUT: filtered verdict array (`accept` + `strange` only).
 For each verdict:
 
 - `reject-illogical` →
-  `~/.dg/bin/dg-skills address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
+  `dg-skills address resolve-with-reply <commentId> <threadId> "Thanks — respectfully declining. <reason>"`
   (the helper adds the `🤖` prefix automatically; the text matches `/dg:address` Phase 1.6).
-- `reject-other` → `~/.dg/bin/dg-skills address resolve-silent <threadId>`.
+- `reject-other` → `dg-skills address resolve-silent <threadId>`.
 - A `source:"copilot-overview"` reject has no thread: drop it with no reply or resolve.
 - `accept` / `strange` → keep in filtered array.
 
 Write filtered array to
-`$(~/.dg/bin/dg-skills stash review-loop <prNumber>.verdicts.json)`.
+`$(dg-skills stash review-loop <prNumber>.verdicts.json)`.
 
 When the filtered array has no entries (Copilot posted comments but
 every one got rejected): skip to Phase 7 with no `/dg:address` call.
@@ -321,7 +321,7 @@ Load [../../address/SKILL.md](../../address/SKILL.md), resolving it through
 the configured personal skill root only if the sibling is unavailable. Invoke
 that skill through the host's skill facility, or follow its instructions directly,
 with arguments `--round <roundNumber> --verdicts <absoluteVerdictsPath>`.
-Compute `absoluteVerdictsPath` with `~/.dg/bin/dg-skills stash review-loop <prNumber>.verdicts.json`
+Compute `absoluteVerdictsPath` with `dg-skills stash review-loop <prNumber>.verdicts.json`
 in a shell first; pass the resulting path as one argument, not an unevaluated shell
 substitution inside a tool's argument string.
 
@@ -343,7 +343,7 @@ OUT: terminal (exits) OR `sinceIso` returned to Auto Driver.
 
    - Capture `sinceIso = now()` (ISO-8601 UTC).
 
-   - `~/.dg/bin/dg-skills address request-copilot`.
+   - `dg-skills address request-copilot`.
 
    - **Verify engagement** with the retry ladder
      (see [Trigger retry ladder](#trigger-retry-ladder)). On final
@@ -385,16 +385,16 @@ OUT: terminal.
 ```
 loop:
   sinceIso = Round Step()        # runs Phases 2–7; exits internally on terminal states
-  ~/.dg/bin/dg-skills address await-copilot-review prUrl sinceIso --timeout=waitTimeout
+  dg-skills address await-copilot-review prUrl sinceIso --timeout=waitTimeout
     landed      → continue loop
-    noFindings  → ~/.dg/bin/dg-skills address gather-overview
+    noFindings  → dg-skills address gather-overview
                     non-empty → continue loop (Round Step acts on the overview)
                     []        → print close-out message (Phase 3z format), exit 0
     timeout 124 → print review-timeout message, exit 0
     error 1     → surface trigger-error line, exit 1
 ```
 
-`~/.dg/bin/dg-skills address await-copilot-review` owns the polling loop and calls
+`dg-skills address await-copilot-review` owns the polling loop and calls
 the provider internally each tick — idle time between rounds costs
 zero LLM tokens.
 
@@ -404,9 +404,9 @@ Let `ENGAGE_TIMEOUT_SEC = 300`. Used by Phase 3a and Phase 7 immediately after `
 goal is to fail loud when Copilot didn't accept the trigger, instead
 of waiting silently for a review that's never coming.
 
-1. **Tier 1 — comment**: `~/.dg/bin/dg-skills address request-copilot` (default, posts
+1. **Tier 1 — comment**: `dg-skills address request-copilot` (default, posts
    `@copilot review`). Then
-   `~/.dg/bin/dg-skills address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`.
+   `dg-skills address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`.
 
    - exit 0 → engaged. Done.
    - exit 124 → no swe-agent ack within `ENGAGE_TIMEOUT_SEC`. Continue to Tier 2.
@@ -415,14 +415,14 @@ of waiting silently for a review that's never coming.
 
 1. **Tier 2 — perturbed comment**: GitHub may have deduped Tier 1's
    identical body on the same head SHA.
-   `~/.dg/bin/dg-skills address request-copilot --method=retry-comment` (posts `@copilot please review the latest changes`). Then `~/.dg/bin/dg-skills address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`. Same exit handling as Tier 1.
+   `dg-skills address request-copilot --method=retry-comment` (posts `@copilot please review the latest changes`). Then `dg-skills address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`. Same exit handling as Tier 1.
 
 1. **Tier 3 — reviewer API**: comment-based triggers might be
    silently dropped if the Copilot App isn't installed for review
-   requests on this repo. `~/.dg/bin/dg-skills address request-copilot --method=reviewer`. If `gh`
+   requests on this repo. `dg-skills address request-copilot --method=reviewer`. If `gh`
    returns non-zero, surface the body verbatim — that's almost
    certainly an HTTP 422 telling the user Copilot isn't a valid
-   reviewer here. Otherwise `~/.dg/bin/dg-skills address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`.
+   reviewer here. Otherwise `dg-skills address verify-copilot-engaged <prUrl> <sinceIso> --timeout=$ENGAGE_TIMEOUT_SEC`.
 
 1. **Final failure**: if all three tiers run without engagement, print:
 

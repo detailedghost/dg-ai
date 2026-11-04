@@ -91,14 +91,14 @@ describe.each(SCANNED)("packaged %s skill tree", (name) => {
 		}
 	});
 
-	test("every dg-skills call uses the literal installed path", () => {
+	test("every dg-skills call uses the bare launcher name", () => {
 		for (const { file, text } of treeFiles(name))
 			for (const line of text.split("\n"))
 				if (/dg-skills\s+[a-z]/.test(line))
-					expect([file, line, line.includes("~/.dg/bin/dg-skills")]).toEqual([
+					expect([file, line, line.includes(".dg/bin/")]).toEqual([
 						file,
 						line,
-						true,
+						false,
 					]);
 	});
 
@@ -150,7 +150,7 @@ describe("packaged sniff skill", () => {
 	test("probes sniff --help in the bootstrap gate before the first real call", () => {
 		const text = skillText("sniff");
 		expect(text).toContain("--cli-only");
-		expect(text).toContain("~/.dg/bin/dg-skills sniff --help");
+		expect(text).toContain("dg-skills sniff --help");
 		const { gate, call } = firstCallIndex(text);
 		expect(gate).toBeGreaterThan(-1);
 		expect(call).toBeGreaterThan(gate);
@@ -158,7 +158,7 @@ describe("packaged sniff skill", () => {
 
 	test("runs the inventory through the installed CLI with a path argument", () => {
 		const text = treeText("sniff");
-		expect(text).toMatch(/~\/\.dg\/bin\/dg-skills sniff (?!--help)\S/);
+		expect(text).toMatch(/dg-skills sniff (?!--help)\S/);
 		for (const span of codeSpans(text))
 			expect([span, /^sniff(\s|$)/.test(span)]).toEqual([span, false]);
 	});
@@ -174,7 +174,7 @@ describe("packaged sniff skill", () => {
 
 	test("writes its output file through the packaged stash, not a bare helper", () => {
 		const text = treeText("sniff");
-		expect(text).toContain("~/.dg/bin/dg-skills stash");
+		expect(text).toContain("dg-skills stash");
 	});
 
 	test("never routes a render through the viz skill, which no longer ships", () => {
@@ -214,7 +214,7 @@ describe("packaged sniff skill", () => {
 			"proven: false",
 		])
 			expect(reference).toContain(needle);
-		expect(reference).toContain("~/.dg/bin/dg-skills sniff");
+		expect(reference).toContain("dg-skills sniff");
 	});
 });
 
@@ -299,8 +299,8 @@ describe("packaged find-work skill", () => {
 	test("probes the provider and worktree commands in the bootstrap gate", () => {
 		const text = skillText("find-work");
 		expect(text).toContain("--cli-only");
-		expect(text).toContain("~/.dg/bin/dg-skills vcs-provider --help");
-		expect(text).toContain("~/.dg/bin/dg-skills worktree --help");
+		expect(text).toContain("dg-skills vcs-provider --help");
+		expect(text).toContain("dg-skills worktree --help");
 		const { gate, call } = firstCallIndex(text);
 		expect(gate).toBeGreaterThan(-1);
 		expect(call).toBeGreaterThan(gate);
@@ -424,7 +424,7 @@ describe("packaged find-work skill", () => {
 	test("probes every subcommand it calls in the bootstrap gate", () => {
 		const text = skillText("find-work");
 		for (const sub of ["vcs-provider", "worktree", "chain"])
-			expect(text).toContain(`~/.dg/bin/dg-skills ${sub} --help`);
+			expect(text).toContain(`dg-skills ${sub} --help`);
 	});
 
 	test("documents the same workflow return and scanner fields the scripts use", () => {
@@ -442,7 +442,7 @@ describe("packaged find-work skill", () => {
 		for (const reference of homeReferences(text))
 			expect([
 				reference,
-				/^(?:~\/\.dg\/bin\/dg-skills|\$HOME\/code|~\/code)/.test(reference),
+				/^(?:dg-skills|\$HOME\/\.local\}?\/bin(?:\/dg-skills)?$|\$HOME\/code|~\/code)/.test(reference),
 			]).toEqual([reference, true]);
 	});
 

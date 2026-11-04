@@ -133,14 +133,14 @@ describe("no stale paths in the shared skill tree", () => {
 });
 
 describe("CLI-invoking SKILL.md uses the compiled binary", () => {
-	const cliSkills = skillsMentioning("/bin/dg-skills");
+	const cliSkills = skillsMentioning("dg-skills ");
 
 	test("at least one skill invokes the dg-skills binary", () => {
 		expect(cliSkills.length).toBeGreaterThan(0);
 	});
 
 	for (const { name, md } of cliSkills) {
-		test(`${name}: calls the literal ~/.dg/bin path, not a shell variable`, () => {
+		test(`${name}: calls the bare launcher, not a shell variable`, () => {
 			expect(md).not.toMatch(/="\$HOME\/\.dg\/bin\//);
 			expect(md).not.toMatch(/\bDG="/);
 		});
@@ -165,13 +165,13 @@ describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
 	});
 
 	for (const { name, md } of harnessSkills) {
-		test(`${name}: invokes ~/.dg/bin/dg-agent, not the daemon directly`, () => {
-			expect(md).toContain(".dg/bin/dg-agent");
+		test(`${name}: invokes dg-agent, not the daemon directly`, () => {
+			expect(md).toContain("dg-agent start");
 			expect(md).not.toContain('"$DG_DAEMON" start');
 		});
 
 		test(`${name}: gates its bootstrap on the dg-agent binary, not on dg-skills`, () => {
-			expect(md).toMatch(/\[ -x ~\/\.dg\/bin\/dg-agent \] \|\|\n\s+curl/);
+			expect(md).toMatch(/^dg-agent --version >\/dev\/null 2>&1 \|\|\n\s+"\$\{DG_HOME:-\$HOME\/\.local\}\/bin\/dg-agent" --version >\/dev\/null 2>&1 \|\|\n\s+curl/m);
 			expect(md).not.toMatch(/dg-skills \S+ --help [^\n]*\|\|\n\s+curl/);
 		});
 
@@ -214,7 +214,7 @@ describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
 	test("new walkthroughs open on the local start screen", () => {
-		expect(demo).toContain("~/.dg/bin/dg-skills demo /tmp/ai/demo/tour.md");
+		expect(demo).toContain("dg-skills demo /tmp/ai/demo/tour.md");
 	});
 
 	test("mode (walkthrough vs video) is chosen in the browser, not a CLI flag", () => {

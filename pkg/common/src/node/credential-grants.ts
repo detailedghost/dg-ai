@@ -2,7 +2,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { validateCredentialGrantPrefix } from "../credentials-format";
 import { ensurePrivateDir, writeFileAtomic } from "./fs";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 
 export function credentialGrantTokenPath(
 	paths: DgPaths,

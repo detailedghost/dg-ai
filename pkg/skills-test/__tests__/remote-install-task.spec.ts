@@ -24,7 +24,8 @@ describe("mise remote:install", () => {
 
 	test("installs each build as a new lib version, keeps the one it replaces, and never reuses a live directory", () => {
 		expect(script).not.toContain("dist/dg-skills");
-		const root = makeTempDir("dg-remote-install-");
+		const dgHome = makeTempDir("dg-remote-install-");
+		const root = join(dgHome, "data");
 		mkdirSync(join(root, "runtime", "bun-test"), { recursive: true });
 		symlinkSync(process.execPath, join(root, "runtime", "bun-test", "bun"));
 		symlinkSync("bun-test", join(root, "runtime", "current"));
@@ -33,12 +34,12 @@ describe("mise remote:install", () => {
 		symlinkSync("0.0.1", join(root, "lib", "current"));
 		const localDir = new RegExp(`^${VERSION.replaceAll(".", "\\.")}-local\\.\\d+\\.\\d+$`);
 
-		const first = runTask(root);
+		const first = runTask(dgHome);
 		expect(first.exitCode, first.stderr.toString()).toBe(0);
 		const firstTarget = readlinkSync(join(root, "lib", "current"));
 		expect(firstTarget).toMatch(localDir);
 
-		const second = runTask(root);
+		const second = runTask(dgHome);
 		expect(second.exitCode, second.stderr.toString()).toBe(0);
 		const secondTarget = readlinkSync(join(root, "lib", "current"));
 		expect(secondTarget).toMatch(localDir);

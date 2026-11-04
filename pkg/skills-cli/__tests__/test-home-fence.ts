@@ -10,6 +10,7 @@ process.env.DG_WINDOWS_HOME = fence;
 process.env.HOME = fence;
 process.env.DG_HOME = join(fence, ".dg");
 process.env.USERPROFILE = fence;
+for (const key of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) delete process.env[key];
 
 afterAll(() => {
 	runTestRunEndTasks();

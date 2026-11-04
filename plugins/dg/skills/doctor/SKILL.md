@@ -7,12 +7,15 @@ description: Check that the dg skills have what they need and walk through the f
 
 One report, one item at a time. The CLI checks tools, versions, credentials by name, the daemon and the allow rules. It only reads and reports: it never edits settings, never fixes anything, never decrypts a credential and never starts the daemon or a browser.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills doctor --help >/dev/null 2>&1 ||
+dg-skills doctor --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" doctor --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
+
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
 ## Usage
 
@@ -33,13 +36,13 @@ An item is a command name of the CLI, such as `jot`, `bg`, `sniff`, `worktree`, 
 No items given:
 
 ```bash
-~/.dg/bin/dg-skills doctor --json
+dg-skills doctor --json
 ```
 
 Items given, for example `jot` and `bg`:
 
 ```bash
-~/.dg/bin/dg-skills doctor jot bg --json
+dg-skills doctor jot bg --json
 ```
 
 Exit 0 means no check failed (warnings allowed). Exit 1 means at least one check failed. Exit 2 means an unknown item.

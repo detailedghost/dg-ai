@@ -2,10 +2,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 
-export const demosDir = (): string => join(resolveDgPaths().stateDir, "demos");
+export const demosDir = (): string => join(resolveDgPaths().cacheDir, "demos");
 
 export const legacyDemosDir = (): string =>
-	join(process.env.HOME || homedir(), ".dg", "demos");
+	join(resolveDgPaths({ homeDir: process.env.HOME || homedir(), env: {} }).legacyHome, "demos");
 
 export const profileDir = (): string =>
 	join(resolveDgPaths().stateDir, "demo-profile");

@@ -45,7 +45,7 @@ Nine files, three boxes. Each box is a job, not a folder path.
 1. Get the graph. Fuzzy input goes through `/dg:erd` proper, so the candidate picker still runs:
 
    ```bash
-   ~/.dg/bin/dg-skills erd generate <scope>
+   dg-skills erd generate <scope>
    ```
 
 2. Read three things from the generated `.md`: the **Scope** summary line, the **Modules** table,

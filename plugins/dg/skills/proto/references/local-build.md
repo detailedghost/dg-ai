@@ -9,7 +9,7 @@ Default: **`.agents/prototype/<name>/`** in the project root.
 ## `--light`
 
 With `--light`, the prototype lives in scratch instead. Print its directory with
-`~/.dg/bin/dg-skills prototype path <name> --light` (the sentinel path; its parent is the directory).
+`dg-skills prototype path <name> --light` (the sentinel path; its parent is the directory).
 Use `--light` when:
 
 - The prototype is throwaway-throwaway: answered in one session, never revisited.
@@ -34,8 +34,8 @@ wants something that opens with zero tooling, or a file to share.
 - It does not change the location rules above.
 
 **Open the prototype in the browser the moment it is ready**, for every branch. Do not make the user paste a URL.
-`~/.dg/bin/dg-skills prototype ui` opens its page itself. For anything else run
-`~/.dg/bin/dg-skills prototype open <url-or-file>`; it is WSL-aware and falls back across platform openers.
+`dg-skills prototype ui` opens its page itself. For anything else run
+`dg-skills prototype open <url-or-file>`; it is WSL-aware and falls back across platform openers.
 
 ## Rules that apply to every branch
 
@@ -54,7 +54,7 @@ A prototype with a running server records the user's decision as sentinel files:
    - **Mounted in an app dev server** (React, Astro, Next): the switcher POSTs `/prototype-confirm`, handled by a copied endpoint template.
    - **Page served by `prototype serve` or `prototype ui`**: the injected client POSTs `/prototype-decision`.
    Use the template that matches the flow. A mismatched route 404s while `sendBeacon` still reports success, so the selection silently never arrives.
-2. Block on the decision: `~/.dg/bin/dg-skills prototype wait <name> --json` (default timeout 900 seconds, set with `--timeout=<sec>`).
+2. Block on the decision: `dg-skills prototype wait <name> --json` (default timeout 900 seconds, set with `--timeout=<sec>`).
 3. `wait` resolves on whichever sentinel appears first:
    - `.selection` written: `{"status":"ok","variant":"...","notes":"..."}`. The user approved a variant.
    - `.reject` written: `{"status":"rejected","notes":"..."}`. The user rejected. Rework and loop.
@@ -69,7 +69,7 @@ missed notification is always recoverable.
 
 - **Approve, no notes**: the tab closes after 2.2 seconds.
 - **Approve with notes**: the tab stays open and shows "Building the next round from `<key>`". Start the next refine round, bump the reload token, and the same tab reloads to the new variants. With `prototype ui`, reuse the same chain key and this happens by itself.
-- **Reject** and **More versions**: the tab stays open in a "reworking" state and reloads when the reload token changes: `echo "$(date +%s)" > "$(~/.dg/bin/dg-skills prototype reload-path <name>)"`.
+- **Reject** and **More versions**: the tab stays open in a "reworking" state and reloads when the reload token changes: `echo "$(date +%s)" > "$(dg-skills prototype reload-path <name>)"`.
 
 The tab favicon shows the decision state: waiting for the user's decision, processing a rework (reject or more sent, or approved with notes), or done (approved, no notes).
 
@@ -86,7 +86,7 @@ The tab favicon shows the decision state: waiting for the user's decision, proce
 **Self-testing a decision bar before handing it over.** Verifying that Approve/Reject actually post correctly (see "Rendering — local-first, ALWAYS") is a real click against a real endpoint, and it writes a real sentinel — never run it against the prototype's own `<name>`, or the self-test pick and the user's real one become indistinguishable. For a CLI check, run `prototype confirm <name> <variant> --selftest` (it writes to `<name>-selftest`, a throwaway sentinel directory `wait` and `status` for `<name>` never look at). For a real click against a mounted endpoint or a self-contained `prototype serve`/`prototype ui` page, POST with `selftest: true` in the body instead; every shipped endpoint template, and the self-contained server's `/prototype-decision`, redirect that request to the same `<name>-selftest` directory and never touch `<name>`'s own sentinels. Then confirm the real name is still clean before calling the page live and again right before any `prototype wait <name>`:
 
 ```sh
-~/.dg/bin/dg-skills prototype status <name> --require-pending
+dg-skills prototype status <name> --require-pending
 ```
 
 `--require-pending` exits non-zero with an error instead of printing a stale status when `<name>` is not `pending` — run it right before reporting the prototype as ready, and again right before blocking on `wait`, treating a non-zero exit as a bug to find, not a status to report. Once a pick does land in `<name>`'s own sentinel, claim and act on it directly; a verdict a human did not approve never reaches that sentinel in the first place, so there is nothing left to confirm.
@@ -95,7 +95,7 @@ The tab favicon shows the decision state: waiting for the user's decision, proce
 
 ## Shipped templates
 
-`~/.dg/bin/dg-skills prototype components` prints the installed directory that holds the copyable templates. Copy a file into the project instead of writing one from scratch.
+`dg-skills prototype components` prints the installed directory that holds the copyable templates. Copy a file into the project instead of writing one from scratch.
 
 | File | Use |
 |---|---|
@@ -105,7 +105,7 @@ The tab favicon shows the decision state: waiting for the user's decision, proce
 | `prototype-endpoint.ts` | Express, Vite, or Bun endpoint for `POST /prototype-confirm` |
 | `prototype-endpoint.next.ts` | Next App Router route for `POST /prototype-confirm` |
 | `prototype-endpoint.astro.ts` | Astro route, copied to `src/pages/api/prototype-confirm.ts` |
-| `webmcp-tools.json` | Read-only WebMCP tool definitions; `~/.dg/bin/dg-skills prototype webmcp` prints them |
+| `webmcp-tools.json` | Read-only WebMCP tool definitions; `dg-skills prototype webmcp` prints them |
 
 See [../assets/README.md](../assets/README.md) for the switcher props and behavior.
 
@@ -115,7 +115,7 @@ With `--publish`, publish the winning variant as a shareable Artifact after the 
 
 1. **Fetch the winning variant's HTML.** Prefer an already-installed Playwright (through the `pw` skill or an MCP tool): navigate to `http://localhost:<port>?variant=<key>` and read `document.documentElement.outerHTML`. Never install Playwright or download a browser for this step. Fall back to `curl -s "http://localhost:<port>?variant=<key>"`.
 2. **Strip the switcher bar.** Remove the switcher element (`id="prototype-switcher"` or the fixed bar at the bottom). It is tooling, not the design being shared.
-3. **Write to scratch.** Save the cleaned HTML to a file under the scratch directory printed by `~/.dg/bin/dg-skills stash prototype <name>-variant-<key>.html`.
+3. **Write to scratch.** Save the cleaned HTML to a file under the scratch directory printed by `dg-skills stash prototype <name>-variant-<key>.html`.
 4. **Publish with the Artifact tool.** Title `<name>, variant <key>`. Label `variant-<key>-selected`. File: the scratch path.
 5. **Print the Artifact URL.**
 

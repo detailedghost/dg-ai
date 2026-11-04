@@ -63,7 +63,7 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 			expect(documented.has(flag)).toBe(true);
 	});
 
-	test("calls the CLI only by its literal installed path behind the bootstrap gate", () => {
+	test("calls the CLI only by its bare launcher name behind the bootstrap gate", () => {
 		const text = skillText(name);
 		const gate = text.indexOf("bootstrap.sh");
 		expect(gate).toBeGreaterThan(-1);
@@ -80,7 +80,7 @@ describe.each(["bg", "cls", "stat"])("packaged %s skill tree", (name) => {
 		for (const line of treeText(name)
 			.split("\n")
 			.filter((value) => /dg-skills\s+[a-z]/.test(value)))
-			expect(line).toContain("~/.dg/bin/dg-skills");
+			expect(line).not.toContain(".dg/bin/");
 	});
 
 	test("leaves no legacy helper, private path, bare helper verb or shell comment behind", () => {
@@ -153,8 +153,8 @@ describe("packaged bg skill", () => {
 			join(skillDir("bg"), "references", "other-agent.md"),
 			"utf8",
 		);
-		expect(reference).toContain("~/.dg/bin/dg-skills bg run");
-		expect(reference).toContain("~/.dg/bin/dg-skills proxy");
+		expect(reference).toContain("dg-skills bg run");
+		expect(reference).toContain("dg-skills proxy");
 		expect(reference).toContain("one quoted argument");
 		for (const backend of ["codex", "copilot", "pi", "opencode", "grok"])
 			expect(reference).toContain(backend);
@@ -200,8 +200,8 @@ describe("packaged cls skill", () => {
 
 	test("tears down through dg-skills worktree and bg prune and merges fast-forward only", () => {
 		const text = treeText("cls");
-		expect(text).toContain("~/.dg/bin/dg-skills worktree remove");
-		expect(text).toContain('~/.dg/bin/dg-skills bg prune --cwd "$TOP"');
+		expect(text).toContain("dg-skills worktree remove");
+		expect(text).toContain('dg-skills bg prune --cwd "$TOP"');
 		expect(text).toContain("ExitWorktree");
 		expect(text).toMatch(/--ff-only/);
 	});
@@ -223,7 +223,7 @@ describe("packaged cls skill", () => {
 			body.includes("dg-skills pw --help"),
 		);
 		expect(block?.body).toContain(
-			"~/.dg/bin/dg-skills pw --help >/dev/null 2>&1",
+			"dg-skills pw --help >/dev/null 2>&1",
 		);
 		expect(steps).not.toMatch(/command -v pw|pw close-all/);
 	});
@@ -271,11 +271,11 @@ describe("packaged stat skill", () => {
 	test("gathers and cleans up through dg-skills subcommands", () => {
 		const text = skillText("stat");
 		for (const call of [
-			"~/.dg/bin/dg-skills vcs-provider list-prs",
-			"~/.dg/bin/dg-skills bg list",
-			"~/.dg/bin/dg-skills bg prune --cwd",
-			"~/.dg/bin/dg-skills worktree list",
-			"~/.dg/bin/dg-skills stat checklist",
+			"dg-skills vcs-provider list-prs",
+			"dg-skills bg list",
+			"dg-skills bg prune --cwd",
+			"dg-skills worktree list",
+			"dg-skills stat checklist",
 		])
 			expect(text).toContain(call);
 	});
@@ -312,7 +312,7 @@ describe("packaged proxy skill background calls", () => {
 				span,
 				false,
 			]);
-		expect(text).toContain("~/.dg/bin/dg-skills bg status");
+		expect(text).toContain("dg-skills bg status");
 		expect(text).not.toContain("proxy background");
 		expect(text).toContain("one quoted argument");
 		expect(requiredFlagsTable(text).header).toEqual([
@@ -330,7 +330,7 @@ describe("stat and cls shell blocks degrade safely", () => {
 
 	function installStub(home: string, exitCode: number): string {
 		const log = join(home, "calls.log");
-		const bin = join(home, ".dg", "bin");
+		const bin = join(home, ".local", "bin");
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(
 			join(bin, "dg-skills"),
@@ -363,9 +363,10 @@ describe("stat and cls shell blocks degrade safely", () => {
 			cwd,
 			env: mergeEnv({
 				HOME: home,
+				DG_HOME: undefined,
 				GIT_CONFIG_GLOBAL: "/dev/null",
 				GIT_CONFIG_NOSYSTEM: "1",
-				...(pathDirs ? { PATH: pathDirs.join(":") } : {}),
+				PATH: [join(home, ".local", "bin"), ...(pathDirs ?? (process.env.PATH ?? "").split(":"))].join(":"),
 				...extra,
 			}),
 		});

@@ -1,0 +1,71 @@
+import { existsSync } from "node:fs";
+import { delimiter, join, resolve } from "node:path";
+import { accountHome, allowSendHome } from "@dg/ssms";
+import { type DgPaths, resolveDgPaths } from "@dg/common/node/dg-paths";
+import { syncCompatLaunchers } from "./compat-launchers";
+import { withInstallLock } from "./lock";
+import { liveWriterFolders, migrateLegacyHome, moveVerified } from "./migrate-home";
+import { writeShims } from "./shims";
+
+type LayoutOptions = {
+	paths?: DgPaths;
+	envPath?: string;
+	log?: (line: string) => void;
+	platform?: NodeJS.Platform;
+};
+
+/** The shell line that puts the bin dir on PATH, or undefined when PATH has it or on Windows. */
+export function pathHint(binDir: string, envPath: string, platform: NodeJS.Platform = process.platform): string | undefined {
+	if (platform === "win32") return undefined;
+	if (envPath.split(delimiter).includes(binDir)) return undefined;
+	return `Add to PATH:  export PATH="${binDir}:$PATH"`;
+}
+
+/** The passwd home for install; none under the test runner, so a spawned install never reaches the real account. */
+export function installPasswdHome(
+	env: NodeJS.ProcessEnv = process.env,
+	lookup: () => string | undefined = accountHome,
+): string | undefined {
+	return env.NODE_ENV === "test" ? undefined : lookup();
+}
+
+function moveSsmsAllowFile(passwdLegacy: string, trustedConfig: string, log: (line: string) => void): void {
+	const ssmsDir = join(passwdLegacy, "ssms");
+	const allowFile = join(ssmsDir, "config.yaml");
+	if (!existsSync(allowFile)) return;
+	if (liveWriterFolders(passwdLegacy).includes(ssmsDir)) {
+		log(`dg: kept ${allowFile}; a process that writes it is running. Stop it, then run dg-skills install again`);
+		return;
+	}
+	moveVerified(allowFile, join(trustedConfig, "ssms", "config.yaml"), { log });
+}
+
+/** Moves an old flat `~/.dg` into the per-OS roots, and the fixed ssms allow file by the passwd home alone. */
+export async function migrateBeforeInstall(
+	paths: DgPaths = resolveDgPaths(),
+	log: (line: string) => void = console.log,
+	passwdHome: string | undefined = installPasswdHome(),
+): Promise<void> {
+	await withInstallLock(paths.dataDir, async () => migrateLocked(paths, log, passwdHome));
+}
+
+function migrateLocked(paths: DgPaths, log: (line: string) => void, passwdHome: string | undefined): void {
+	const passwdLegacy = passwdHome && resolveDgPaths({ homeDir: passwdHome, env: {} }).legacyHome;
+	const trustedConfig = passwdHome && allowSendHome(passwdHome);
+	const sameHome = !!passwdLegacy && resolve(passwdLegacy) === resolve(paths.legacyHome);
+	const ssmsConfigDir = sameHome && trustedConfig ? trustedConfig : paths.configDir;
+	const result = migrateLegacyHome(paths, { log, ssmsConfigDir });
+	if (result.moved.length > 0) log(`dg: moved ${result.moved.length} items from ${paths.legacyHome} to the per-OS folders`);
+	if (passwdLegacy && trustedConfig && !sameHome) moveSsmsAllowFile(passwdLegacy, trustedConfig, log);
+}
+
+/** Launchers in the bin dir that run the data dir bundle, the old-path notice launchers, and the PATH hint. */
+export function finishLauncherLayout(version: string, opts: LayoutOptions = {}): void {
+	const paths = opts.paths ?? resolveDgPaths();
+	const platform = opts.platform ?? process.platform;
+	const log = opts.log ?? console.log;
+	writeShims(paths.binDir, paths.dataDir, platform);
+	syncCompatLaunchers(paths, version, platform);
+	const hint = pathHint(paths.binDir, opts.envPath ?? process.env.PATH ?? "", platform);
+	if (hint) log(hint);
+}

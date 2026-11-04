@@ -60,7 +60,7 @@ describe("hooks skill", () => {
 
 	test("carries the doctor line for hooks", () => {
 		expect(skillText()).toMatch(
-			/^If a step fails, run ~\/\.dg\/bin\/dg-skills doctor hooks\.$/m,
+			/^If a step fails, run dg-skills doctor hooks\.$/m,
 		);
 	});
 

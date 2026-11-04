@@ -4,8 +4,8 @@ Pass `--ext` to play a tour through the dg-ai-extension in the user's own browse
 The plan format is the same as the local flow. See [authoring.md](authoring.md).
 
 ```bash
-~/.dg/bin/dg-skills demo --ext /tmp/ai/demo/tour.md
-~/.dg/bin/dg-skills rerun --ext <path-to>.demo.md
+dg-skills demo --ext /tmp/ai/demo/tour.md
+dg-skills rerun --ext <path-to>.demo.md
 ```
 
 ## Review panel

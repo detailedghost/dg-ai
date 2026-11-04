@@ -123,8 +123,7 @@ describe("loadConfig defaults", () => {
 		const scratch = process.env.AI_SCRATCH_DIR ?? "/tmp/ai";
 		const tools = load().runner.claude.allowedTools;
 		expect(tools).toEqual([
-			`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
-			"Bash(~/.dg/bin/dg-skills thrash:*)",
+			"Bash(dg-skills thrash:*)",
 			"Agent",
 			`Read(/${scratch}/thrash/**)`,
 			"Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**)",
@@ -171,14 +170,10 @@ describe("loadConfig defaults", () => {
 		const claude = load().runner.claude;
 		const grants = (tools: string[]) =>
 			tools.filter((tool) =>
-				tool.startsWith(`Bash(${homedir()}/.dg/bin/dg-skills`),
+				tool.startsWith("Bash(dg-skills"),
 			);
-		expect(grants(claude.allowedTools)).toEqual([
-			`Bash(${homedir()}/.dg/bin/dg-skills thrash:*)`,
-		]);
-		expect(grants(claude.addressAllowedTools)).toEqual([
-			`Bash(${homedir()}/.dg/bin/dg-skills address:*)`,
-		]);
+		expect(grants(claude.allowedTools)).toEqual(["Bash(dg-skills thrash:*)"]);
+		expect(grants(claude.addressAllowedTools)).toEqual(["Bash(dg-skills address:*)"]);
 	});
 
 	test("keeps an explicit allowedTools override untouched", () => {
@@ -502,7 +497,7 @@ describe("loadConfig address", () => {
 			"Bash(git:*)",
 			"Bash(gh:*)",
 			"Bash(glab:*)",
-			`Bash(${homedir()}/.dg/bin/dg-skills address:*)`,
+			"Bash(dg-skills address:*)",
 			"Bash(bun:*)",
 			"Bash(npm:*)",
 			"Bash(npx:*)",
@@ -753,7 +748,7 @@ describe("saveDefaultEnv", () => {
 	});
 
 	test("creates the file with only env.default in a 0700 directory when it is absent", () => {
-		const dir = join(home.dir, "channel-review");
+		const dir = join(home.dir, "state", "channel-review");
 		const path = join(dir, "config.json");
 		saveDefaultEnv(path, "prod");
 		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({

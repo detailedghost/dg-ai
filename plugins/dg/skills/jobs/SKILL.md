@@ -9,16 +9,21 @@ This skill is a thin front end over two existing daemons. It adds no new
 commands to either one; it only calls what `dg-daemon` and
 `dg-skills channel-review` already expose.
 
-Commands use the compiled binaries at `~/.dg/bin/dg-daemon` and
-`~/.dg/bin/dg-skills`. Bootstrap once if needed; the default installer (no
+Commands use the compiled binaries `dg-daemon` and
+`dg-skills`. Bootstrap once if needed; the default installer (no
 `--cli-only`) pulls both, alongside `dg-agent`:
 
 ```sh
-[ -x ~/.dg/bin/dg-daemon ] && [ -x ~/.dg/bin/dg-skills ] ||
+{ dg-daemon --version >/dev/null 2>&1 &&
+  dg-skills --version >/dev/null 2>&1; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg-daemon" --version >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" --version >/dev/null 2>&1; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor channel-review.
+Call `dg-daemon` and `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
+
+If a step fails, run dg-skills doctor channel-review.
 
 ## Status (default, read-only)
 
@@ -27,10 +32,10 @@ each command's own JSON; do not reshape it or add fields it does not already
 print:
 
 ```sh
-~/.dg/bin/dg-daemon job list
-~/.dg/bin/dg-daemon service status
-~/.dg/bin/dg-skills channel-review status --env dev
-~/.dg/bin/dg-skills channel-review status --env prod
+dg-daemon job list
+dg-daemon service status
+dg-skills channel-review status --env dev
+dg-skills channel-review status --env prod
 ```
 
 `job list` reads the daemon's store directly and works with no daemon running.
@@ -86,7 +91,9 @@ This skill never edits `~/.claude/settings.json` or any other file outside
 this repository. To autostart a channel-review env at the beginning of a
 Claude Code session, print the block below for the human to paste into their
 own `~/.claude/settings.json` themselves, with `<env>` replaced by `dev` or
-`prod`:
+`prod`. When `DG_HOME` is set to a relative path, replace
+`${DG_HOME:-$HOME/.local}/bin/dg-skills` with the absolute launcher path
+before you print the block, because each session starts in its own folder:
 
 ```json
 {
@@ -96,7 +103,7 @@ own `~/.claude/settings.json` themselves, with `<env>` replaced by `dev` or
         "hooks": [
           {
             "type": "command",
-            "command": "~/.dg/bin/dg-skills channel-review start --env <env> >/dev/null 2>&1"
+            "command": "\"${DG_HOME:-$HOME/.local}/bin/dg-skills\" channel-review start --env <env> >/dev/null 2>&1"
           }
         ]
       }

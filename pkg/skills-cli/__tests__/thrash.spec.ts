@@ -1520,7 +1520,7 @@ describe("compiled thrash workflow", () => {
 			if (!executable) throw new Error(`Test requires ${name}`);
 			symlinkSync(executable, join(fixture.bin, name));
 		}
-		const bin = join(fixture.home, ".dg", "bin");
+		const bin = join(fixture.home, ".local", "bin");
 		mkdirSync(bin, { recursive: true });
 		const shim = join(bin, "dg-skills");
 		writeFileSync(shim, `#!/bin/sh\nexec ${shellCommand(binary)} "$@"\n`);
@@ -1547,11 +1547,11 @@ describe("compiled thrash workflow", () => {
 		const repo = fixtureRepo();
 		const skill = readFileSync(join(skills, "thrash", "SKILL.md"), "utf8");
 		const bootstrap = skill.match(
-			/```bash\n(~\/\.dg\/bin\/dg-skills thrash --help[\s\S]*?)\n```/,
+			/```bash\n(\{ dg-skills thrash --help[\s\S]*?)\n```/,
 		)?.[1];
 		expect(bootstrap).toBeDefined();
 		const proc = Bun.spawnSync(
-			["sh", "-c", `${bootstrap}\n~/.dg/bin/dg-skills thrash diff "$TARGET"`],
+			["sh", "-c", `${bootstrap}\n"$HOME/.local/bin/dg-skills" thrash diff "$TARGET"`],
 			{
 				cwd: fixture.root,
 				env: fixture.env({ TARGET: repo, DG_SKILLS_DIR: skills }),

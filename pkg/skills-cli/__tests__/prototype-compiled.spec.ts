@@ -487,8 +487,8 @@ describe("compiled dg-skills proto --ext, plan handoff through a fake daemon", (
 	});
 
 	test("--ext needs the extension on a CLI-only install while local mode still works", async () => {
-		mkdirSync(join(context.base, "dg-home"), { recursive: true });
-		writeFileSync(join(context.base, "dg-home", "cli-only"), "");
+		mkdirSync(join(context.base, "dg-home", "config"), { recursive: true });
+		writeFileSync(join(context.base, "dg-home", "config", "cli-only"), "");
 		const ext = await compiled(["proto", "--ext", "cleanup", "some-slug"]);
 		expect(ext.exitCode).toBe(1);
 		expect(ext.stderr).toContain("needs the dg-ai-extension");

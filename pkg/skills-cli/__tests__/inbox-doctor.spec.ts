@@ -27,7 +27,7 @@ function context() {
 }
 
 function markSignedIn(): void {
-	const { markerPath } = protonProfilePaths(dgHome);
+	const { markerPath } = protonProfilePaths(join(dgHome, "state"));
 	mkdirSync(join(markerPath, ".."), { recursive: true });
 	writeFileSync(
 		markerPath,
@@ -59,7 +59,7 @@ describe("inbox doctor protonTransportCheck", () => {
 	});
 
 	test("reports a damaged marker as signed out and names the sign-in command", async () => {
-		const { markerPath } = protonProfilePaths(dgHome);
+		const { markerPath } = protonProfilePaths(join(dgHome, "state"));
 		mkdirSync(join(markerPath, ".."), { recursive: true });
 		writeFileSync(markerPath, "{ broken");
 		const result = await protonTransportCheck.run(context());
@@ -69,7 +69,7 @@ describe("inbox doctor protonTransportCheck", () => {
 	});
 
 	test("names the Windows profile and the last verified date from the marker", async () => {
-		const { markerPath } = protonProfilePaths(dgHome);
+		const { markerPath } = protonProfilePaths(join(dgHome, "state"));
 		mkdirSync(join(markerPath, ".."), { recursive: true });
 		writeFileSync(
 			markerPath,
@@ -86,7 +86,7 @@ describe("inbox doctor protonTransportCheck", () => {
 	});
 
 	test("names the local profile from the marker", async () => {
-		const { markerPath } = protonProfilePaths(dgHome);
+		const { markerPath } = protonProfilePaths(join(dgHome, "state"));
 		mkdirSync(join(markerPath, ".."), { recursive: true });
 		writeFileSync(
 			markerPath,

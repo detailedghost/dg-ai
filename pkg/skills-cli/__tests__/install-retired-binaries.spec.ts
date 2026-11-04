@@ -37,7 +37,7 @@ posix("retired compiled binaries", () => {
 			writeFileSync(join(bin, `.${name}.version`), "1.26.0\n");
 		}
 
-		writeShims(sandbox.root);
+		writeShims(bin, join(sandbox.root, "data"));
 		removeRetiredBinaries();
 
 		for (const name of NAMES) {

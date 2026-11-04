@@ -23,6 +23,7 @@ export type KeychainLookupResult =
 export type KeychainBackend = {
 	lookup(): Promise<KeychainLookupResult>;
 	store(keyBase64: string): Promise<"stored" | "unreachable">;
+	remove?(): Promise<"removed" | "unreachable">;
 	sourceLabel?: string;
 };
 

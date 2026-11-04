@@ -227,7 +227,8 @@ describe("dg-skills install --skills-only", () => {
 		writeFileSync(fetchLog, "");
 		const home = join(directory, "home");
 		mkdirSync(home, { recursive: true });
-		writeFileSync(join(home, "cli-only"), "keep");
+		mkdirSync(join(home, "config"), { recursive: true });
+		writeFileSync(join(home, "config", "cli-only"), "keep");
 		try {
 			const preload = writePreload(directory, fetchLog);
 			const result = await run(
@@ -247,7 +248,8 @@ describe("dg-skills install --skills-only", () => {
 			);
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
-				`dg-skills installed v9.9.9 at ${join(home, "lib", "9.9.9")}`,
+				`Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`,
+				`dg-skills installed v9.9.9 at ${join(home, "data", "lib", "9.9.9")}`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);
 			expectPersonasInstalled(dest);
@@ -258,7 +260,7 @@ describe("dg-skills install --skills-only", () => {
 			expectOnlyBundleFetched(fetchLog);
 			expect(readFileSync(join(home, "bin", "dg-skills"), "utf8")).toContain(`dg-skills "$@"`);
 			expect(readdirSync(join(home, "bin")).sort()).toEqual(["dg-agent", "dg-daemon", "dg-skills"]);
-			expect(readFileSync(join(home, "cli-only"), "utf8")).toBe("keep");
+			expect(readFileSync(join(home, "config", "cli-only"), "utf8")).toBe("keep");
 			expect(filesUnder(dest).some((file) => /dg-skills|dg-daemon|dg-agent|\.zip$/.test(file))).toBe(
 				false,
 			);
@@ -279,8 +281,8 @@ describe("dg-skills install --skills-only", () => {
 				childEnv(home),
 			);
 			expect(result.code).toBe(0);
-			expect(filesUnder(join(home, "skills"))).toEqual(INSTALLED_SKILL_FILES);
-			expectPersonasInstalled(join(home, "skills"));
+			expect(filesUnder(join(home, "data", "skills"))).toEqual(INSTALLED_SKILL_FILES);
+			expectPersonasInstalled(join(home, "data", "skills"));
 			expect(existsSync(join(home, ".dg", "skills"))).toBe(false);
 			expect(existsSync(join(home, ".dg", "bin"))).toBe(false);
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(true);
@@ -330,7 +332,7 @@ describe("dg-skills install --skills-only", () => {
 			expect(result.code).toBe(0);
 			expect(result.stderr).toContain(`checksum mismatch for ${BUNDLE} in v9.9.9`);
 			expect(existsSync(join(home, "bin", "dg-skills"))).toBe(false);
-			expect(existsSync(join(home, "lib"))).toBe(false);
+			expect(existsSync(join(home, "data", "lib"))).toBe(false);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -441,7 +443,7 @@ describe("bootstrap.sh --skills-only", () => {
 			expect(lines.slice(summaryAt + 1)).toEqual([
 				`Downloading bun ${RUNTIME.version} (linux-x64)...`,
 				`Downloading dg-lib-${result.version}.tar.gz...`,
-				`dg runtime ${RUNTIME.version} and bundle ${result.version} installed at ${result.root}`,
+				`dg runtime ${RUNTIME.version} and bundle ${result.version} installed at ${join(result.root, "data")}`,
 				`Add to PATH:  export PATH="${join(result.root, "bin")}:$PATH"`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);

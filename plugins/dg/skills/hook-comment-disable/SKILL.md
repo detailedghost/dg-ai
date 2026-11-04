@@ -3,14 +3,17 @@ name: hook-comment-disable
 description: Disable the dg spelling hook for the current session. ALWAYS requires explicit user approval before writing the marker — even in auto/yolo mode.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills stash --help >/dev/null 2>&1 ||
+dg-skills stash --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" stash --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor stash hooks.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor stash hooks.
 
 # /dg:hook-comment-disable
 
@@ -23,10 +26,10 @@ It blocks Edit/Write/MultiEdit when newly-written text uses a spelling from the 
 Writes a session-scoped marker file:
 
 ```
-$(~/.dg/bin/dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})
+$(dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})
 ```
 
-The hook checks for this marker on entry and exits 0 immediately if present. Marker lives in `$(~/.dg/bin/dg-skills stash -G hooks)/` (intentionally **not** cwd-scoped — the hook fires on Edit/Write regardless of cwd, so the bypass must too) and is cleaned on reboot. The cleanup walker skips `hooks/` entirely. No manual cleanup required.
+The hook checks for this marker on entry and exits 0 immediately if present. Marker lives in `$(dg-skills stash -G hooks)/` (intentionally **not** cwd-scoped — the hook fires on Edit/Write regardless of cwd, so the bypass must too) and is cleaned on reboot. The cleanup walker skips `hooks/` entirely. No manual cleanup required.
 
 ## Mandatory user-permission gate
 
@@ -43,17 +46,17 @@ The user has chosen to gate this skill behind explicit consent precisely so that
    - **Keep enforcement on** — abort, no changes.
 4. Only on explicit "Disable" answer:
    ```sh
-   touch "$(~/.dg/bin/dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
+   touch "$(dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
    ```
 5. Confirm to the user that the marker was written, including the path so they can `rm` it manually if they change their mind mid-session.
 
 ## Re-enabling
 
 ```sh
-rm -f "$(~/.dg/bin/dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
+rm -f "$(dg-skills stash -G hooks comment-disabled.${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-NOSESSION}})"
 ```
 
-Or wait for reboot (`$(~/.dg/bin/dg-skills stash -r)` cleared).
+Or wait for reboot (`$(dg-skills stash -r)` cleared).
 
 ## When to suggest this skill
 

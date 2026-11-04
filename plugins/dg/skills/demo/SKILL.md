@@ -48,22 +48,25 @@ Never put those values in a fill action.
 Write the plan to `/tmp/ai/demo/tour.md`. Install the CLI when it is missing:
 
 ```bash
-~/.dg/bin/dg-skills demo --help >/dev/null 2>&1 ||
+dg-skills demo --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" demo --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
 On Windows PowerShell, pipe the raw `bootstrap.ps1` to `Invoke-Expression`.
-If a step fails, run ~/.dg/bin/dg-skills doctor demo install rerun.
+If a step fails, run dg-skills doctor demo install rerun.
 
 Walk the plan yourself first, so you hit a bad selector before the human does.
-Run `~/.dg/bin/dg-skills demo --verify /tmp/ai/demo/tour.md`. It prints `{"ok": boolean, "findings": [...]}`. A finding is `selector-unresolved`,
+Run `dg-skills demo --verify /tmp/ai/demo/tour.md`. It prints `{"ok": boolean, "findings": [...]}`. A finding is `selector-unresolved`,
 `unrecorded-navigation`, or `page-mismatch`. Fix the plan and rerun, at most 3 passes.
 If a finding cannot be fixed, surface it to the human.
 
 Run one command, with no `--video` flag, because the mode is chosen in the browser:
 
 ```bash
-~/.dg/bin/dg-skills demo /tmp/ai/demo/tour.md
+dg-skills demo /tmp/ai/demo/tour.md
 ```
 
 It opens `startUrl` in a local browser and shows the **start screen**, which is the approval gate, then returns.
@@ -102,6 +105,6 @@ voice and says why. With `ffmpeg`, the CLI also trims the start screen and setup
 ## Replay and extension
 
 Every run saves `<state>/demos/<slug>/<slug>.demo.md`. Replay it with
-`~/.dg/bin/dg-skills rerun <path-to>.demo.md`. Add `--video` to record the replay.
+`dg-skills rerun <path-to>.demo.md`. Add `--video` to record the replay.
 Add `--ext` to `demo` or `rerun` to play through the extension:
 [references/extension.md](references/extension.md).

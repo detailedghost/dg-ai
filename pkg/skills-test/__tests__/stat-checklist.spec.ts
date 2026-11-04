@@ -173,7 +173,7 @@ describe("dg-skills stat checklist", () => {
 	test("an empty checklist reports one line on every view, and --json carries no file into existence", async () => {
 		await withRoot(async (env) => {
 			const emoji = await runCli(["stat", "checklist"], env);
-			expect(emoji.out).toBe('No checklist yet. Add one with: ~/.dg/bin/dg-skills stat add "<text>"\n');
+			expect(emoji.out).toBe('No checklist yet. Add one with: dg-skills stat add "<text>"\n');
 			const json = await runCli(["stat", "checklist", "--json"], env);
 			expect(JSON.parse(json.out)).toEqual({ open: [], done: [], total: null });
 			const after = await runCli(["stat", "checklist"], env);

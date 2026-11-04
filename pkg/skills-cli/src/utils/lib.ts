@@ -13,8 +13,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { isWSL, run } from "@dg/common/node";
+import { dirname, join, resolve, win32 } from "node:path";
+import { isWSL, resolveDgPaths, run } from "@dg/common/node";
 import { readCurrent } from "../install/current";
 import { syncDirInPlace } from "./extension-files";
 
@@ -41,32 +41,55 @@ export function windowsUserProfile(env: Env = process.env): string {
 	return run("cmd.exe", ["/c", "echo", "%USERPROFILE%"]).replace(/\r/g, "");
 }
 
-/** The Linux and macOS `.dg` directory. */
+/** The old flat home: `DG_HOME`, else `~/.dg`. */
 export function dgDir(env: Env = process.env): string {
-	return env.DG_HOME || join(homeDir(env), ".dg");
+	return resolveDgPaths({ env, homeDir: homeDir(env) }).legacyHome;
 }
 
-/** Stable per-OS dir for a target's unpacked extension. */
-export function extensionDest(
-	target: Target,
-	env: Env = process.env,
-): {
-	copyPath: string;
-	printPath: string;
-} {
+type StagedPath = { copyPath: string; printPath: string };
+
+const isWindowsHost = (): boolean => isWSL() || process.platform === "win32";
+
+function wslPath(windowsPath: string): StagedPath {
+	const copyPath = run("wslpath", ["-u", windowsPath]);
+	return { copyPath, printPath: run("wslpath", ["-w", copyPath]) };
+}
+
+function windowsRoots(env: Env, profile: string) {
+	return resolveDgPaths({
+		platform: "win32",
+		homeDir: profile,
+		env: process.platform === "win32" ? env : { USERPROFILE: profile },
+	});
+}
+
+/** Stable per-OS folder in the dg data root for a target's unpacked extension. */
+export function extensionDest(target: Target, env: Env = process.env, windowsHost: boolean = isWindowsHost()): StagedPath {
 	const name = `dg-ai-extension-${target}`;
-	const windowsHost = isWSL() || process.platform === "win32";
 	if (windowsHost && env.DG_WINDOWS_HOME) {
-		const p = join(env.DG_WINDOWS_HOME, ".dg", name);
+		const p = join(env.DG_WINDOWS_HOME, "AppData", "Local", "dg", name);
 		return { copyPath: p, printPath: p };
 	}
-	if (isWSL()) {
-		const winDest = `${windowsUserProfile(env)}\\.dg\\${name}`;
-		const copyPath = run("wslpath", ["-u", winDest]);
-		return { copyPath, printPath: run("wslpath", ["-w", copyPath]) };
+	if (windowsHost && isWSL()) return wslPath(win32.join(windowsRoots({}, windowsUserProfile(env)).dataDir, name));
+	if (windowsHost) {
+		const p = join(windowsRoots(env, windowsUserProfile(env)).dataDir, name);
+		return { copyPath: p, printPath: p };
 	}
-	if (process.platform === "win32") {
-		const p = join(windowsUserProfile(env), ".dg", name);
+	const p = join(resolveDgPaths({ env, homeDir: homeDir(env) }).dataDir, name);
+	return { copyPath: p, printPath: p };
+}
+
+/** Where releases before the per-OS layout staged the extension, in the old flat home. */
+export function legacyExtensionDest(target: Target, env: Env = process.env, windowsHost: boolean = isWindowsHost()): StagedPath {
+	const name = `dg-ai-extension-${target}`;
+	if (windowsHost && env.DG_WINDOWS_HOME) {
+		const p = join(resolveDgPaths({ platform: "linux", homeDir: env.DG_WINDOWS_HOME, env: {} }).legacyHome, name);
+		return { copyPath: p, printPath: p };
+	}
+	if (windowsHost && isWSL()) return wslPath(win32.join(windowsRoots({}, windowsUserProfile(env)).legacyHome, name));
+	if (windowsHost) {
+		const profile = windowsUserProfile(env);
+		const p = join(windowsRoots({ USERPROFILE: profile }, profile).legacyHome, name);
 		return { copyPath: p, printPath: p };
 	}
 	const p = join(dgDir(env), name);
@@ -77,7 +100,7 @@ export function extensionDest(
 export function extensionDgDirs(env: Env = process.env): string[] {
 	const own = dgDir(env);
 	if (!isWSL() && process.platform !== "win32") return [own];
-	return [...new Set([dirname(extensionDest("chrome", env).copyPath), own])];
+	return [...new Set([dirname(legacyExtensionDest("chrome", env).copyPath), own])];
 }
 
 /** Extract a .zip into destDir in place. bsdtar on Windows, unzip elsewhere. */
@@ -301,13 +324,13 @@ export async function downloadReleaseAsset(
 	return { zip, version: asset.version };
 }
 
-/** `$DG_HOME` made absolute, else `~/.dg`. Matches bootstrap.sh, bootstrap.ps1 and the skills. */
+/** The data dir that holds `runtime/` and `lib/`. Matches bootstrap.sh and bootstrap.ps1. */
 export function installRoot(env: NodeJS.ProcessEnv = process.env): string {
-	return env.DG_HOME ? resolve(env.DG_HOME) : join(homedir(), ".dg");
+	return resolveDgPaths({ env }).dataDir;
 }
 
 export function cliBinDir(env: NodeJS.ProcessEnv = process.env): string {
-	return join(installRoot(env), "bin");
+	return resolveDgPaths({ env }).binDir;
 }
 
 /** The launcher shim for a program: `<root>/bin/<name>`, `.cmd` on Windows. */

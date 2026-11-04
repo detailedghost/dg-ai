@@ -91,6 +91,7 @@ const ENV_OWNED_BY_BOOTSTRAP = [
 	"CODEX_HOME",
 	"DG_CURL",
 	"DG_UNAME",
+	"XDG_DATA_HOME",
 ];
 
 export function sha256(bytes: Uint8Array | string): string {
@@ -193,6 +194,7 @@ export type BootstrapOptions = {
 	cwd?: string;
 	serve?: Record<string, string>;
 	seed?: (root: string, dir: string) => void;
+	withoutDgHome?: boolean;
 };
 
 export type BootstrapRun = {
@@ -200,6 +202,7 @@ export type BootstrapRun = {
 	stdout: string;
 	stderr: string;
 	dir: string;
+	home: string;
 	root: string;
 	version: string;
 	requests: string[];
@@ -324,7 +327,7 @@ export async function runBootstrap(
 		env: {
 			...env,
 			HOME: join(dir, "home"),
-			DG_HOME: root,
+			...(options.withoutDgHome ? {} : { DG_HOME: root }),
 			DG_CURL: curl,
 			DG_UNAME: uname,
 			STUBDIR: dir,
@@ -354,6 +357,7 @@ export async function runBootstrap(
 		stdout,
 		stderr,
 		dir,
+		home: join(dir, "home"),
 		root,
 		version,
 		requests,

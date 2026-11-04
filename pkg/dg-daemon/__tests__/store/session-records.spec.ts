@@ -119,7 +119,7 @@ describe("chat sessions in the daemon database", () => {
 				store.close();
 			}
 
-			const dgHome = paths.stateDir;
+			const dgHome = paths.legacyHome;
 			const worker = new URL("./prune-worker.ts", import.meta.url).pathname;
 			const run = () =>
 				Bun.spawn([process.execPath, worker], {

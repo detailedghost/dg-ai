@@ -23,15 +23,16 @@ export function createContext(
 	const cache = new Map<string, unknown>();
 	const env = overrides.env ?? process.env;
 	const home = overrides.home ?? env.HOME ?? homedir();
+	const paths = overrides.paths ?? resolveDgPaths({ homeDir: home, env });
 	return {
 		home,
 		env,
-		paths: overrides.paths ?? resolveDgPaths({ homeDir: home, env }),
+		paths,
 		installedVersion: overrides.installedVersion ?? pkg.version,
 		extensionDgDirs:
 			overrides.extensionDgDirs ??
 			(() => {
-				const own = join(home, ".dg");
+				const own = paths.legacyHome;
 				if (overrides.home !== undefined) return [own];
 				try {
 					return [...new Set([...extensionDgDirs(env), own])];

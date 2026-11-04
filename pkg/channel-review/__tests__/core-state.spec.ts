@@ -13,7 +13,7 @@ beforeEach(() => {
 	home = createTempHome();
 	paths = channelReviewPaths("dev", { env: home.env });
 	path = paths.statePath;
-	mkdirSync(join(home.dir, "channel-review"), { recursive: true });
+	mkdirSync(join(home.dir, "state", "channel-review"), { recursive: true });
 });
 afterEach(() => {
 	home.cleanup();
@@ -170,7 +170,7 @@ describe("createStateStore", () => {
 
 	test("creates the shared daemon directory with mode 0700", () => {
 		createStateStore(paths).close();
-		expect(statSync(join(home.dir, "daemon")).mode & 0o777).toBe(0o700);
+		expect(statSync(join(home.dir, "state", "daemon")).mode & 0o777).toBe(0o700);
 	});
 
 	test("prunes handled entries older than 24 hours and keeps newer ones", () => {

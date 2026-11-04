@@ -34,7 +34,7 @@ ______________________________________________________________________
 
 > Discover small/medium GitHub or GitLab issues suitable for a quick implementation PR/MR.
 >
-> Run: `~/.dg/bin/dg-skills vcs-provider list-issues --limit 20`
+> Run: `dg-skills vcs-provider list-issues --limit 20`
 >
 > **Include** issues that:
 >
@@ -86,9 +86,9 @@ ______________________________________________________________________
 
 > Find open PRs with unaddressed review comments that need concrete code changes.
 >
-> Run: `~/.dg/bin/dg-skills vcs-provider list-prs --limit 15`
+> Run: `dg-skills vcs-provider list-prs --limit 15`
 >
-> Check review threads with `~/.dg/bin/dg-skills vcs-provider list-threads <number>`.
+> Check review threads with `dg-skills vcs-provider list-threads <number>`.
 >
 > **Include** PRs where:
 >

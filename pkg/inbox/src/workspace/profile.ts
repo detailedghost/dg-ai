@@ -1,5 +1,5 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import type { MailProvider } from "../providers/types";
 
 const knownProviders: MailProvider[] = ["protonmail", "outlook", "gmail"];
@@ -15,7 +15,7 @@ export function workspaceDirForProfile(input: {
 	}
 	const base =
 		input.base ??
-		join(process.env.DG_HOME ?? join(homedir(), ".dg"), "inbox", "workspaces");
+		join(resolveDgPaths().stateDir, "inbox", "workspaces");
 	const profile = accountProfileSlug(input.accountProfile);
 	if (profile) {
 		return `${base}/${input.provider}/${profile}`;
@@ -39,7 +39,7 @@ export async function detectProfileProvider(input: {
 	}
 	const base =
 		input.base ??
-		join(process.env.DG_HOME ?? join(homedir(), ".dg"), "inbox", "workspaces");
+		join(resolveDgPaths().stateDir, "inbox", "workspaces");
 	for (const provider of knownProviders) {
 		if (await Bun.file(`${base}/${provider}/${profile}/login.json`).exists()) {
 			return provider;

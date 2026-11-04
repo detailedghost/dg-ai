@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { validateStyleGuide } from "@dg/common";
 import {
 	normalizeColor,
@@ -60,7 +61,7 @@ describe("prototype paths", () => {
 				env: {},
 				homeDir: "/home/ada",
 			}),
-		).toBe(join("/home/ada", ".dg", "proto", firstSlug, "style-guide.json"));
+		).toBe(join(resolveDgPaths({ homeDir: "/home/ada", env: {} }).cacheDir, "proto", firstSlug, "style-guide.json"));
 	});
 });
 

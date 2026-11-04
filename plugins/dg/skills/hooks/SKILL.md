@@ -8,14 +8,17 @@ description: Turn the opt-in dg hooks on or off for Claude, Codex, and opencode,
 Manage the dg hooks. No hook is on by default. `enable` writes the user's
 tool settings, so it needs the user's yes first.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path:
+First run: install or refresh the CLI when it is missing or too old.
 
 ```bash
-~/.dg/bin/dg-skills hooks list >/dev/null 2>&1 ||
+dg-skills hooks list >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" hooks list >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor hooks.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor hooks.
 
 ## Hooks
 
@@ -29,9 +32,9 @@ If a step fails, run ~/.dg/bin/dg-skills doctor hooks.
 
 ## Commands
 
-- `~/.dg/bin/dg-skills hooks status`: run this when asked what is on. Report per runtime.
-- `~/.dg/bin/dg-skills hooks enable <id>... [--runtime <runtime>] [--set locale=en-GB]`
-- `~/.dg/bin/dg-skills hooks disable <id>|--all [--runtime <runtime>]`
+- `dg-skills hooks status`: run this when asked what is on. Report per runtime.
+- `dg-skills hooks enable <id>... [--runtime <runtime>] [--set locale=en-GB]`
+- `dg-skills hooks disable <id>|--all [--runtime <runtime>]`
 
 ## Ask first
 

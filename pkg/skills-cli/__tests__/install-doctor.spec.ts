@@ -32,15 +32,15 @@ function check(id: string) {
 }
 
 function installBundle(version: string): void {
-	mkdirSync(join(sandbox.root, "lib", version), { recursive: true });
-	symlinkSync(version, join(sandbox.root, "lib", "current"));
+	mkdirSync(join(sandbox.root, "data", "lib", version), { recursive: true });
+	symlinkSync(version, join(sandbox.root, "data", "lib", "current"));
 }
 
 function installRuntime(script: string): void {
-	const dir = join(sandbox.root, "runtime", "bun-v1.4.1");
+	const dir = join(sandbox.root, "data", "runtime", "bun-v1.4.1");
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "bun"), script, { mode: 0o755 });
-	symlinkSync("bun-v1.4.1", join(sandbox.root, "runtime", "current"));
+	symlinkSync("bun-v1.4.1", join(sandbox.root, "data", "runtime", "current"));
 }
 
 describe("shared doctor version-match", () => {

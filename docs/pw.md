@@ -24,7 +24,7 @@ never pass it unless the human asks.
 
 `pw-code` is a separate command so the `pw` allow rule does not cover it. Claude
 asks for approval on every call. `dg-skills doctor pw-code` warns when
-`Bash(~/.dg/bin/dg-skills pw-code:*)` or the `Bash(~/.dg/bin/dg-skills:*)`
+`Bash(dg-skills pw-code:*)` or the `Bash(dg-skills:*)`
 wildcard sits in `~/.claude/settings.json`.
 
 ## Check the setup
@@ -44,7 +44,7 @@ After one `dg-skills install`, remove the pre-port copy:
 4. Delete `~/.codex/skills/pw` and `~/.config/opencode/skills/pw`.
    `dg-skills install --skills-only --dest <dir>` installs the plugin copy.
 5. Replace `Bash(pw:*)` in `~/.claude/settings.json` with
-   `Bash(~/.dg/bin/dg-skills pw:*)`. Keep `Bash(playwright-cli *)` only if the
+   `Bash(dg-skills pw:*)`. Keep `Bash(playwright-cli *)` only if the
    legacy tool stays.
 6. Optional: `~/.cache/playwright-cli/profiles` holds saved logins and stays
    valid. Delete it only to start clean.

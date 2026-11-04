@@ -7,7 +7,7 @@ import {
 } from "@dg/common/node";
 
 export function readConfig(paths: DgPaths): Record<string, unknown> {
-	const file = paths.configPath;
+	const file = paths.daemonConfigPath;
 	if (!existsSync(file)) return {};
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8"));
@@ -25,7 +25,7 @@ export function writeConfig(
 	paths: DgPaths,
 	patch: Record<string, unknown>,
 ): void {
-	const file = paths.configPath;
+	const file = paths.daemonConfigPath;
 	ensurePrivateDir(dirname(file));
 	const next = { ...readConfig(paths), ...patch };
 	writeFileAtomic(file, JSON.stringify(next, null, 2));

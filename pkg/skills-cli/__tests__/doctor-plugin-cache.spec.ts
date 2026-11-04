@@ -46,17 +46,18 @@ const homeCheck = () => {
 };
 
 describe("doctor install plugin-cache check", () => {
-	test("warns with the stale count, reclaimable size and the install fix", async () => {
+	test.skipIf(process.platform === "win32")("warns with the stale count, reclaimable size and the install fix through the per-OS launcher path", async () => {
 		const longAgo = Date.now() - 48 * 60 * 60 * 1000;
 		writeVersion("1.20.0", longAgo);
 		writeVersion("1.21.0", longAgo);
 		writeVersion("1.24.0");
 		writeInstalled("1.24.0");
-		const result = await cacheCheck().run(context());
+		const ctx = context();
+		const result = await cacheCheck().run(ctx);
 		expect(result).toEqual({
 			status: "warn",
 			detail: "2 stale version(s), 0 MB reclaimable",
-			fix: "~/.dg/bin/dg-skills install",
+			fix: `'${join(ctx.paths.binDir, "dg-skills")}' install`,
 		});
 	});
 
@@ -91,8 +92,9 @@ describe("doctor shared dg-home check", () => {
 		expect(await homeCheck().run(context())).toEqual({ status: "ok", detail: "DG_HOME is unset" });
 	});
 
-	test("passes when DG_HOME names the default home", async () => {
+	test("warns even when DG_HOME names the old ~/.dg, which now holds role folders instead of the per-OS ones", async () => {
 		const result = await homeCheck().run(context({ DG_HOME: join(world.home, ".dg") }));
-		expect(result).toEqual({ status: "ok", detail: "DG_HOME uses the default state directory" });
+		expect(result.status).toBe("warn");
+		expect(result.detail).toContain("per-OS folders");
 	});
 });

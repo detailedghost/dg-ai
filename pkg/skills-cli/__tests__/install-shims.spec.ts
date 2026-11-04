@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { installRoot } from "../src/utils/lib";
 import { writeShims } from "../src/install/shims";
 import { scratch, type Scratch } from "./runtime-bundle-fixtures";
@@ -28,7 +29,7 @@ function golden(root: string, name: string): string {
 describe("writeShims on a Windows host", () => {
 	test("doubles percent signs in the root so cmd does not expand them", () => {
 		const root = join(sandbox.root, "100%PATH%");
-		writeShims(root, "win32");
+		writeShims(join(root, "bin"), root, "win32");
 
 		const text = readFileSync(join(root, "bin", "dg-skills.cmd"), "utf8");
 		expect(text).toContain("100%%PATH%%");
@@ -37,12 +38,15 @@ describe("writeShims on a Windows host", () => {
 });
 
 posix("writeShims on a POSIX host", () => {
-	test("writes each launcher equal to the golden shim text with the root substituted, mode 0755", () => {
-		writeShims(sandbox.root);
+	test("writes each launcher in the bin dir equal to the golden shim text with the data dir substituted, mode 0755", () => {
+		const bin = join(sandbox.root, "local-bin");
+		const data = join(sandbox.root, "data dir");
+
+		writeShims(bin, data);
 
 		for (const name of NAMES) {
-			const path = join(sandbox.root, "bin", name);
-			expect(readFileSync(path, "utf8")).toBe(golden(sandbox.root, name));
+			const path = join(bin, name);
+			expect(readFileSync(path, "utf8")).toBe(golden(data, name));
 			expect(statSync(path).mode & 0o777).toBe(0o755);
 		}
 	});
@@ -52,7 +56,7 @@ posix("writeShims on a POSIX host", () => {
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(join(bin, "dg-daemon"), "compiled ELF bytes", { mode: 0o755 });
 
-		writeShims(sandbox.root);
+		writeShims(bin, sandbox.root);
 
 		expect(readFileSync(join(bin, "dg-daemon"), "utf8")).toBe(golden(sandbox.root, "dg-daemon"));
 	});
@@ -63,7 +67,7 @@ posix("writeShims on a POSIX host", () => {
 		mkdirSync(runtime, { recursive: true });
 		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
 		symlinkSync("bun-test", join(root, "runtime", "current"));
-		writeShims(root);
+		writeShims(join(root, "bin"), root);
 
 		for (const name of NAMES) {
 			const run = Bun.spawnSync([join(root, "bin", name), "two words", "*"], { stdout: "pipe", stderr: "pipe" });
@@ -83,7 +87,7 @@ posix("writeShims on a POSIX host", () => {
 		mkdirSync(runtime, { recursive: true });
 		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
 		symlinkSync("bun-test", join(root, "runtime", "current"));
-		writeShims(root);
+		writeShims(join(root, "bin"), root);
 
 		const run = Bun.spawnSync([join(root, "bin", "dg-skills"), "x"], { stdout: "pipe", stderr: "pipe" });
 		expect(run.exitCode, run.stderr.toString()).toBe(0);
@@ -94,26 +98,29 @@ posix("writeShims on a POSIX host", () => {
 		]);
 	});
 
-	test("a relative DG_HOME resolves to an absolute root so the shims run from another directory", () => {
-		const real = join(sandbox.root, "home");
-		const runtime = join(real, "runtime", "bun-test");
+	test("a relative DG_HOME resolves to absolute roots so the shims run from another directory", () => {
+		const home = join(sandbox.root, "home");
+		const env = { DG_HOME: relative(process.cwd(), home) };
+		const paths = resolveDgPaths({ env });
+		const root = installRoot(env);
+		const runtime = join(root, "runtime", "bun-test");
 		mkdirSync(runtime, { recursive: true });
 		writeFileSync(join(runtime, "bun"), '#!/bin/sh\nfor arg in "$@"; do printf "%s\\n" "$arg"; done\n', { mode: 0o755 });
-		symlinkSync("bun-test", join(real, "runtime", "current"));
-		const root = installRoot({ DG_HOME: relative(process.cwd(), real) });
-		writeShims(root);
+		symlinkSync("bun-test", join(root, "runtime", "current"));
+		writeShims(paths.binDir, paths.dataDir);
 
 		const elsewhere = join(sandbox.root, "elsewhere");
 		mkdirSync(elsewhere);
-		const run = Bun.spawnSync([join(real, "bin", "dg-skills"), "x"], { cwd: elsewhere, stdout: "pipe", stderr: "pipe" });
-		expect(root).toBe(real);
+		const run = Bun.spawnSync([join(home, "bin", "dg-skills"), "x"], { cwd: elsewhere, stdout: "pipe", stderr: "pipe" });
+		expect(root).toBe(join(home, "data"));
+		expect(paths.binDir).toBe(join(home, "bin"));
 		expect(run.exitCode, run.stderr.toString()).toBe(0);
-		expect(run.stdout.toString().split("\n")[0]).toBe(join(real, "lib", "current", "dg.js"));
+		expect(run.stdout.toString().split("\n")[0]).toBe(join(home, "data", "lib", "current", "dg.js"));
 	});
 
 	test("is idempotent", () => {
-		writeShims(sandbox.root);
-		writeShims(sandbox.root);
+		writeShims(join(sandbox.root, "bin"), sandbox.root);
+		writeShims(join(sandbox.root, "bin"), sandbox.root);
 
 		expect(readFileSync(join(sandbox.root, "bin", "dg-skills"), "utf8")).toBe(
 			golden(sandbox.root, "dg-skills"),

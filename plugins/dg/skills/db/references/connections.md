@@ -7,7 +7,7 @@ The credential store requires a non-empty value. Snowflake `external_browser` ha
 ## PostgreSQL password
 
 ```bash
-~/.dg/bin/dg-skills credentials set db/my-pg \
+dg-skills credentials set db/my-pg \
   --meta engine=postgresql \
   --meta host=localhost \
   --meta port=5432 \
@@ -18,7 +18,7 @@ The credential store requires a non-empty value. Snowflake `external_browser` ha
 ## Snowflake external browser (SSO)
 
 ```bash
-printf '%s\n' external_browser | ~/.dg/bin/dg-skills credentials set db/my-sf \
+printf '%s\n' external_browser | dg-skills credentials set db/my-sf \
   --meta engine=snowflake \
   --meta account=ACCT-ID \
   --meta user=user@example.test \
@@ -37,7 +37,7 @@ Auto-launch is best-effort. With no `wslview` on PATH it falls to `explorer.exe`
 
 Each connect retry mints a **new** `SAMLRequest`; only the last printed URL is valid.
 
-`clientStoreTemporaryCredential=true` caches the ID token so later non-interactive callers can skip the browser. Prime it once with `~/.dg/bin/dg-skills db test my-sf`.
+`clientStoreTemporaryCredential=true` caches the ID token so later non-interactive callers can skip the browser. Prime it once with `dg-skills db test my-sf`.
 
 `browserActionTimeout` is measured in milliseconds and defaults to 120000 in the Snowflake SDK. Lower it for automated callers or raise it for slower SSO and MFA.
 
@@ -46,7 +46,7 @@ Each connect retry mints a **new** `SAMLRequest`; only the last printed URL is v
 The credential value is the private-key passphrase. Only the key's path is stored as metadata; the key contents never enter the credential store.
 
 ```bash
-~/.dg/bin/dg-skills credentials set db/my-sf-key \
+dg-skills credentials set db/my-sf-key \
   --meta engine=snowflake \
   --meta account=ACCT-ID \
   --meta user=svc_account \
@@ -63,7 +63,7 @@ The key file must have mode 600 or 400. `~` at the beginning of `privateKeyPath`
 ## Snowflake password
 
 ```bash
-~/.dg/bin/dg-skills credentials set db/my-sf-password \
+dg-skills credentials set db/my-sf-password \
   --meta engine=snowflake \
   --meta account=ACCT-ID \
   --meta user=analyst \

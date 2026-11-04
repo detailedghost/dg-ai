@@ -31,28 +31,110 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 <!-- markdownlint-enable MD013 -->
 
-Both install the pinned Bun runtime and the release bundle under `~/.dg`
-(`$DG_HOME` when `DG_HOME` is set), write the `dg-skills`, `dg-agent` and
-`dg-daemon` launchers into `~/.dg/bin`, then run `dg-skills install`. That
+Both install the pinned Bun runtime and the release bundle into the dg data
+folder, write the `dg-skills`, `dg-agent` and `dg-daemon` launchers into the
+launcher folder (see [Where dg keeps its files](#where-dg-keeps-its-files)),
+then run `dg-skills install`. That
 stages the extension and prints the **Load unpacked** steps. Re-run
 `dg-skills install` anytime to update. A part that is already current is
 skipped. (Building the extension from source with `--local` needs
 [Bun](https://bun.sh).)
 
+## Where dg keeps its files
+
+dg follows the conventions of each OS. Install puts the launchers in a
+user-writable folder and the rest under four roots, one for each role.
+
+<!-- markdownlint-disable MD013 -->
+
+| Role | Linux | macOS | Windows | `DG_HOME` set |
+| --- | --- | --- | --- | --- |
+| Launchers | `~/.local/bin` | `~/.local/bin` | `%LOCALAPPDATA%\dg\bin` | `$DG_HOME/bin` |
+| Config: `config.json`, the CLI-only marker, channel-review config | `$XDG_CONFIG_HOME/dg` (`~/.config/dg`) | `~/Library/Application Support/dg` | `%APPDATA%\dg` | `$DG_HOME/config` |
+| Data: runtime, bundle, skills, personas, browsers | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
+| State: daemon, phone, grants, agent sessions and memory | `$XDG_STATE_HOME/dg` (`~/.local/state/dg`) | `~/Library/Application Support/dg/state` | `%LOCALAPPDATA%\dg\state` | `$DG_HOME/state` |
+| Cache: prototypes, demos | `$XDG_CACHE_HOME/dg` (`~/.cache/dg`) | `~/Library/Caches/dg` | `%LOCALAPPDATA%\dg\cache` | `$DG_HOME/cache` |
+| Logs | `<state>/log` | `~/Library/Logs/dg` | `%LOCALAPPDATA%\dg\log` | `$DG_HOME/log` |
+
+<!-- markdownlint-enable MD013 -->
+
+For example, the phone state is in `~/.local/state/dg/phone` on Linux and in
+`~/Library/Application Support/dg/state/phone` on macOS.
+
+When the launcher folder is not on `PATH`, `bootstrap.sh` and
+`dg-skills install` print the line to add. `bootstrap.ps1` adds
+`%LOCALAPPDATA%\dg\bin` to the user `PATH` once and says so. Skills call
+`dg-skills` by name and fall back to `${DG_HOME:-$HOME/.local}/bin/dg-skills`,
+the launcher path, also in the step right after the bootstrap.
+
+### DG_HOME
+
+Set `DG_HOME` to keep everything under one folder, for example for a test or a
+second install. Each role then gets its own subfolder: `$DG_HOME/bin`,
+`$DG_HOME/config`, `$DG_HOME/data`, `$DG_HOME/state`, `$DG_HOME/cache` and
+`$DG_HOME/log`. An empty `DG_HOME` counts as unset.
+
+### Move from ~/.dg
+
+Releases before this layout kept everything in `~/.dg` (or flat in `DG_HOME`).
+The first `dg-skills install` of a new release moves it:
+
+1. Each folder and file moves to its new root. Install copies it, checks that
+   the copy has the same files and bytes, and only then removes the old copy.
+   When the check fails, the old copy stays and install names it.
+2. Install never writes over a destination that exists. It keeps the old copy
+   and says so. When an old folder is still in use after the copy, for example
+   the runtime that runs install on Windows, install leaves it and the next
+   `dg-skills install` removes it.
+3. Install keeps a folder when a process that writes it is still running,
+   such as `dg-daemon`. Stop the process and run install again.
+4. The phone state moves on the next `dg-agent phone __refresh`, which install
+   runs. See [phone](phone.md#where-the-phone-state-lives).
+5. On Linux and macOS, the daemon moves its key in the OS keychain to an
+   account named after the new state root the first time it opens. It copies
+   the key, reads it back, compares it, and only then deletes the old entry.
+   If a step fails, it keeps the old entry, reads from it, and prints one
+   warning that names the key, never its value.
+6. The staged extension folder moves to the data root. The browser remembers
+   the old folder, so install prints one line: open `chrome://extensions`
+   once, remove the old `dg-ai-extension` entry, and load unpacked from the
+   new folder. Later installs update that folder in place.
+7. `ssms` state moves to the state root, and its fixed `config.yaml` moves to
+   the config folder under the passwd home. See [ssms](ssms.md).
+8. Install leaves files it does not know in `~/.dg` and names them once.
+
+`~/.dg/bin` keeps small launchers for `dg-skills`, `dg-agent` and
+`dg-daemon`. Each prints one line on stderr that names the new launcher and
+the release that removes it, then runs the new launcher. The removal release
+is two minor releases after the release that moved the data: a move by 1.34.x
+names 1.36.0. Install deletes these launchers when it installs that release or
+a later one.
+
+Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
+stop matching. `dg-skills doctor` warns and names the new rule,
+`Bash(dg-skills <sub>:*)`.
+
+To go back to an older release, first stop the phone listener with
+`dg-agent phone close`, then run `dg-agent phone __rollback-home` to copy the
+phone state back to `~/.dg/phone`. Then run
+`dg-skills install --version <old>`. The older release writes its launchers to
+`~/.dg/bin` again. Data under the new roots stays where it is.
+
 ## Install layout
 
-One release is one bundle. The three programs share it and one runtime:
+One release is one bundle. The three programs share it and one runtime. On
+Linux the data folder is `~/.local/share/dg`:
 
 ```text
-~/.dg/
+<data>/
   runtime/bun-v1.4.1/bun              the pinned Bun runtime (bun.exe on Windows)
   runtime/current -> bun-v1.4.1       symlink, or a directory junction on Windows
   lib/<version>/dg.js                 the dispatcher; chunks/ holds each program's code
   lib/current -> <version>            the version the launchers run
-  bin/dg-skills, dg-agent, dg-daemon  shell launchers (.cmd files on Windows)
 ```
 
-Each launcher runs `runtime/current/bun lib/current/dg.js <program>`. The
+Each launcher in the launcher folder (`.cmd` files on Windows) runs
+`<data>/runtime/current/bun <data>/lib/current/dg.js <program>`. The
 installer never uses a `bun` on your PATH. It replaces `current` by renaming a
 new link over the old one, so a running program keeps working during an
 update. The previous version directory stays in `lib/` until the next
@@ -90,10 +172,10 @@ usual.
 
 `dg-skills install --version <previous version>` points `lib/current` at that
 version. While its directory is still in `lib/`, nothing is downloaded. To roll
-back by hand:
+back by hand (Linux path shown):
 
 ```bash
-ln -sfn <previous version> ~/.dg/lib/current
+ln -sfn <previous version> ~/.local/share/dg/lib/current
 ```
 
 A version from before the bundle needs that release's own bootstrap script, as
@@ -245,7 +327,7 @@ Every skill runs locally by default; only `browser launch` always needs the
 extension. A skill run with `--ext` stops with a message that names the fix
 when the extension is missing. To add the extension later, run
 `dg-skills install` (or the full bootstrap command above). That removes the
-CLI-only marker at `~/.dg/cli-only`.
+CLI-only marker in the dg config folder.
 
 ## Skills-only install
 
@@ -266,7 +348,7 @@ mise run install:skills
 Or, with Bun:
 
 ```bash
-bun pkg/skills-cli/src/index.ts install --skills-only --dest "$HOME/.dg/skills"
+bun pkg/skills-cli/src/index.ts install --skills-only
 ```
 
 An installed `dg-skills` accepts the same flag. Pass `--repo <checkout>`
@@ -290,8 +372,8 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 <!-- markdownlint-enable MD013 -->
 
 `DG_SKILLS_ONLY=1` works in place of `--skills-only` for the shell form.
-`DG_SKILLS_DEST` chooses the directory (default: `$DG_HOME/skills` or
-`~/.dg/skills`). Point it at `$CODEX_HOME/skills` when the files should land
+`DG_SKILLS_DEST` chooses the directory (default: `skills/` in the dg data
+folder). Point it at `$CODEX_HOME/skills` when the files should land
 where Codex reads skills. The skills root `README.md` is not installed.
 
 ## Codex plugin
@@ -337,7 +419,7 @@ extension’s URL markers and browser-specific behavior.
 `dg-skills pw` uses a system Chrome or Edge first. With neither, it exits 3 and
 names `dg-skills pw install-browser`. Run that command only when you agree to a
 download of about 150 MB. It stores Chromium under `browsers/` in the dg data
-directory (`~/.dg/browsers` by default) and records it in `chromium.json`.
+folder and records it in `chromium.json`.
 
 `dg-skills doctor pw` reports the result on one line, such as
 `browser: chrome (system)`. To remove the download, run

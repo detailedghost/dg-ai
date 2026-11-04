@@ -94,3 +94,14 @@ describe("packaged skills name each other with the dg: prefix", () => {
 		).toEqual([]);
 	});
 });
+
+describe("the jobs autostart hook", () => {
+	test("runs the launcher by its path, since a hook shell may not have the launcher folder on PATH", () => {
+		const text = readFileSync(join(SKILLS_DIR, "jobs", "SKILL.md"), "utf8");
+		const hook = /"hooks": \{[\s\S]*?```/.exec(text)?.[0] ?? "";
+		const command = (JSON.parse(`{${hook.replace(/```$/, "").trim()}`) as {
+			hooks: { SessionStart: { hooks: { command: string }[] }[] };
+		}).hooks.SessionStart[0]?.hooks[0]?.command;
+		expect(command).toBe('"${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review start --env <env> >/dev/null 2>&1');
+	});
+});

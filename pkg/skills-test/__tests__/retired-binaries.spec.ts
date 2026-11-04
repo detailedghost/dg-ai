@@ -25,8 +25,8 @@ describe("install retires the pre-rename daemon binary", () => {
 	test("the removal runs after the shims are written, so a failed bundle install cannot strand the machine binaryless", () => {
 		const body = install.slice(install.indexOf("async function installBundle"));
 
-		expect(body.indexOf("writeShims(root)")).toBeGreaterThan(-1);
-		expect(body.indexOf("writeShims(root)")).toBeLessThan(
+		expect(body.indexOf("finishLauncherLayout(")).toBeGreaterThan(-1);
+		expect(body.indexOf("finishLauncherLayout(")).toBeLessThan(
 			body.indexOf("removeRetiredBinaries()"),
 		);
 	});
@@ -57,6 +57,24 @@ describe("install retires the pre-rename daemon binary", () => {
 		expect(code).toBe(0);
 		expect(existsSync(serverBin)).toBe(false);
 		expect(existsSync(serverVersion)).toBe(false);
+	});
+
+	test("it clears a retired binary from the per-OS launcher folder too", async () => {
+		const home = makeTempDir("dg-retired-binaries-test-");
+		const binDir = join(home, ".local", "bin");
+		mkdirSync(binDir, { recursive: true });
+		const serverBin = join(binDir, "dg-server");
+		writeFileSync(serverBin, "old-dg-server-binary");
+
+		const installPath = join(REPO_ROOT, "pkg", "skills-cli", "src", "install", "cli.ts");
+		const { code, stderr } = await runInHarness(
+			`const mod = await import(${JSON.stringify(installPath)});\nmod.removeRetiredBinaries();\n`,
+			{ HOME: home },
+		);
+
+		expect(stderr).toBe("");
+		expect(code).toBe(0);
+		expect(existsSync(serverBin)).toBe(false);
 	});
 });
 
