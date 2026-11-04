@@ -94,11 +94,12 @@ function matchesPin(path: string, pin: string): boolean {
 	return stat?.isFile() === true && sha256Hex(readFileSync(path)) === pin;
 }
 
-async function download(url: string, fetcher: NonNullable<WormholeDeps["fetch"]>): Promise<ReadableStream<Uint8Array>> {
+async function download(url: string, fetcher: NonNullable<WormholeDeps["fetch"]>, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
 	let next = url;
 	for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
 		if (!next.startsWith("https://")) throw downloadFailed();
-		const response = await fetcher(next, { redirect: "manual", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+		const timeout = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
+		const response = await fetcher(next, { redirect: "manual", signal: signal ? AbortSignal.any([timeout, signal]) : timeout });
 		if (response.status >= 300 && response.status < 400) {
 			const location = response.headers.get("location");
 			if (!location) throw downloadFailed();
@@ -111,8 +112,15 @@ async function download(url: string, fetcher: NonNullable<WormholeDeps["fetch"]>
 	throw downloadFailed();
 }
 
-async function install(path: string, url: string, pin: string, fetcher: NonNullable<WormholeDeps["fetch"]>, windows: boolean): Promise<void> {
-	const body = await download(url, fetcher);
+async function install(
+	path: string,
+	url: string,
+	pin: string,
+	fetcher: NonNullable<WormholeDeps["fetch"]>,
+	windows: boolean,
+	signal?: AbortSignal,
+): Promise<void> {
+	const body = await download(url, fetcher, signal);
 	const part = `${path}.${randomBytes(8).toString("hex")}.part`;
 	const fd = openSync(part, "wx", 0o600);
 	try {
@@ -144,7 +152,7 @@ async function install(path: string, url: string, pin: string, fetcher: NonNulla
 }
 
 /** Returns the absolute path of the pinned binary, downloading it on first use; rehashes it on every call. */
-export async function ensureWormhole(paths: DgPaths, deps: WormholeDeps = {}): Promise<string> {
+export async function ensureWormhole(paths: DgPaths, deps: WormholeDeps = {}, signal?: AbortSignal): Promise<string> {
 	const platform = deps.platform ?? process.platform;
 	const arch = deps.arch ?? process.arch;
 	const asset = wormholeAsset(platform, arch);
@@ -155,7 +163,7 @@ export async function ensureWormhole(paths: DgPaths, deps: WormholeDeps = {}): P
 	const path = join(dir, asset.replace("wormhole-william-", `wormhole-william-${WORMHOLE_VERSION}-`));
 	if (matchesPin(path, pin)) return path;
 	rmSync(path, { force: true });
-	await install(path, `${WORMHOLE_RELEASE_URL}${asset}`, pin, deps.fetch ?? fetch, platform === "win32");
+	await install(path, `${WORMHOLE_RELEASE_URL}${asset}`, pin, deps.fetch ?? fetch, platform === "win32", signal);
 	return path;
 }
 
@@ -239,7 +247,7 @@ function limitsOf(deps: WormholeDeps): WormholeLimits {
 export async function wormholeSend(paths: DgPaths, req: { code: string; file: string }, deps: WormholeDeps = {}, signal?: AbortSignal): Promise<SendOutcome> {
 	let path: string;
 	try {
-		path = await ensureWormhole(paths, deps);
+		path = await ensureWormhole(paths, deps, signal);
 	} catch {
 		return "failed";
 	}
@@ -289,10 +297,11 @@ export async function wormholeReceive(
 ): Promise<ReceiveResult> {
 	let path: string;
 	try {
-		path = await ensureWormhole(paths, deps);
+		path = await ensureWormhole(paths, deps, signal);
 	} catch {
-		return { ok: false, reason: "tool unavailable" };
+		return { ok: false, reason: signal?.aborted ? "timeout" : "tool unavailable" };
 	}
+	if (signal?.aborted) return { ok: false, reason: "timeout" };
 	const limits = limitsOf(deps);
 	const dir = mkdtempSync(join(tmpdir(), "dg-wormhole-"));
 	try {

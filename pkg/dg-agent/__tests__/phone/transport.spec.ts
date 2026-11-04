@@ -12,7 +12,7 @@ import { createFileKey, type KeyClient } from "../../src/phone/keys";
 import { type ListenerDeps, runListener } from "../../src/phone/listener";
 import { addContact, numberKeyId } from "../../src/phone/store";
 import { createFileRequestHandler, DAILY_REQUEST_CAP, requestFile, SEEN_LIMIT } from "../../src/phone/transport";
-import { wormholeCode } from "../../src/phone/wormhole";
+import { type WormholeDeps, wormholeCode } from "../../src/phone/wormhole";
 import { createFakePool, type FakePool } from "./fake-pool";
 import { fakeWormhole, type FakeWormhole } from "./fake-wormhole";
 
@@ -72,6 +72,20 @@ function request(overrides: Partial<FileRequestRumor> & { x?: string; code?: str
 
 function sends(fake: FakeWormhole): string[][] {
 	return fake.runs().filter((run) => run.args[0] === "send").map((run) => run.args);
+}
+
+function stalledDownload(fake: FakeWormhole): { deps: WormholeDeps; started: () => boolean } {
+	let started = false;
+	const fetch = (_url: string, init: RequestInit) =>
+		new Promise<Response>((_resolve, reject) => {
+			started = true;
+			init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+		});
+	return { deps: { ...fake.deps, fetch }, started: () => started };
+}
+
+async function settlesWithin<T>(work: Promise<T>, ms: number): Promise<T | "still running"> {
+	return Promise.race([work, Bun.sleep(ms).then(() => "still running" as const)]);
 }
 
 beforeEach(() => {
@@ -342,6 +356,17 @@ describe("createFileRequestHandler", () => {
 		expect(alive(fake.runs()[0]?.pid ?? 0)).toBe(false);
 	});
 
+	it("settles a stop that lands during the first-use download, and never spawns send", async () => {
+		const fake = fakeWormhole(root);
+		const stalled = stalledDownload(fake);
+		const files = createFileRequestHandler({ db: senderDb, paths: senderPaths, now: () => NOW, wormhole: stalled.deps });
+		files.handle(request());
+		await waitUntil(stalled.started);
+		files.stop();
+		expect(await settlesWithin(files.settle(), 2000)).toBeUndefined();
+		expect(fake.runs()).toEqual([]);
+	});
+
 	it("spawns send with a minimal env", async () => {
 		process.env.DG_GRANT_TOKEN_TEST = "leak";
 		try {
@@ -391,6 +416,34 @@ describe("requestFile", () => {
 			{ pool: refusing, paths: receiverPaths(), wormhole: fake.deps },
 		);
 		expect(result).toEqual({ ok: false, reason: "request not sent" });
+		expect(fake.runs()).toEqual([]);
+	});
+
+	it("returns on abort during the first-use download, and publishes no request and spawns nothing", async () => {
+		const fake = fakeWormhole(root);
+		const stalled = stalledDownload(fake);
+		const controller = new AbortController();
+		const fetching = requestFile(
+			{ x, size: cipher.length, senderPub, key: receiverKey(), relays: RELAYS },
+			{ pool, paths: receiverPaths(), wormhole: stalled.deps, signal: controller.signal },
+		);
+		await waitUntil(stalled.started);
+		controller.abort();
+		expect(await settlesWithin(fetching, 2000)).toEqual({ ok: false, reason: "timeout" });
+		expect(pool.events).toEqual([]);
+		expect(fake.runs()).toEqual([]);
+	});
+
+	it("publishes no request when the signal is already aborted", async () => {
+		const fake = fakeWormhole(root);
+		const controller = new AbortController();
+		controller.abort();
+		const result = await requestFile(
+			{ x, size: cipher.length, senderPub, key: receiverKey(), relays: RELAYS },
+			{ pool, paths: receiverPaths(), wormhole: fake.deps, signal: controller.signal },
+		);
+		expect(result).toEqual({ ok: false, reason: "timeout" });
+		expect(pool.events).toEqual([]);
 		expect(fake.runs()).toEqual([]);
 	});
 

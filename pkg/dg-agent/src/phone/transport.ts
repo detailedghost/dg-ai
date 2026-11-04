@@ -41,10 +41,11 @@ export async function requestFile(target: FileTarget, deps: RequestDeps): Promis
 	if (!X_PATTERN.test(target.x) || !Number.isSafeInteger(target.size) || target.size <= 0) return { ok: false, reason: "bad offer" };
 	if (target.size > MAX_CIPHER_BYTES) return { ok: false, reason: "too large" };
 	try {
-		await ensureWormhole(deps.paths, deps.wormhole);
+		await ensureWormhole(deps.paths, deps.wormhole, deps.signal);
 	} catch {
-		return { ok: false, reason: "tool unavailable" };
+		return { ok: false, reason: deps.signal?.aborted ? "timeout" : "tool unavailable" };
 	}
+	if (deps.signal?.aborted) return { ok: false, reason: "timeout" };
 	const code = wormholeCode();
 	const event = wrapTagged(
 		{
