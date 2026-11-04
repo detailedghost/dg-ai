@@ -123,3 +123,20 @@ export function writeInstalledPlugins(home: string, shas: Record<string, string>
 	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(file, JSON.stringify({ version: 2, plugins }));
 }
+
+export function writeMarketplaceClone(configDir: string, pins: Record<string, string>): void {
+	const clone = join(configDir, "plugins", "marketplaces", "detailedghost");
+	mkdirSync(join(clone, ".claude-plugin"), { recursive: true });
+	writeFileSync(
+		join(clone, ".claude-plugin", "marketplace.json"),
+		JSON.stringify({
+			plugins: Object.entries(pins).map(([name, sha]) => ({ name, source: { source: "github", repo: `owner/${name}`, sha } })),
+		}),
+	);
+	writeFileSync(
+		join(configDir, "plugins", "known_marketplaces.json"),
+		JSON.stringify({
+			detailedghost: { source: { source: "github", repo: "detailedghost/dg-ai" }, installLocation: clone, lastUpdated: "2026-01-01T00:00:00Z" },
+		}),
+	);
+}

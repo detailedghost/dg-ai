@@ -6,6 +6,7 @@ import {
 	removeRecommendedFixtures,
 	tempDir,
 	writeInstalledPlugins,
+	writeMarketplaceClone,
 } from "./recommended-fixtures";
 import { unslopCheck } from "../src/doctor/checks";
 import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
@@ -380,6 +381,87 @@ function pathWithout(program: string): string {
 		.concat(dirname(process.execPath))
 		.join(delimiter);
 }
+
+describe("installRecommendedForClaude marketplace pin", () => {
+	const EMBEDDED = "a".repeat(40);
+	const PINNED = "b".repeat(40);
+	const REF = "unslop@detailedghost";
+
+	function setup(pin?: string) {
+		const home = tempDir("recommended-home");
+		if (pin) writeMarketplaceClone(join(home, ".claude"), { unslop: pin });
+		return home;
+	}
+
+	test("accepts the marketplace pin Claude installed and prints a note", () => {
+		const home = setup(PINNED);
+		const { calls, run } = recordingRunner({}, { home, shas: { [REF]: PINNED } });
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, (line) => lines.push(line));
+		expect(calls.map((argv) => argv[2])).toEqual(["install"]);
+		expect(lines).toEqual([
+			`note: unslop follows the marketplace pin ${PINNED.slice(0, 7)} (this dg-skills has ${EMBEDDED.slice(0, 7)})`,
+			`unslop installed at ${PINNED.slice(0, 7)}.`,
+		]);
+	});
+
+	test("does nothing when already at the marketplace pin", () => {
+		const home = setup(PINNED);
+		writeInstalledPlugins(home, { [REF]: PINNED });
+		const { calls, run } = recordingRunner();
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, (line) => lines.push(line));
+		expect(calls).toEqual([]);
+		expect(lines[1]).toBe(`unslop already at ${PINNED.slice(0, 7)}.`);
+	});
+
+	test("never uninstalls a plugin installed at the marketplace pin, run after run", () => {
+		const home = setup(PINNED);
+		writeInstalledPlugins(home, { [REF]: PINNED });
+		const { calls, run } = recordingRunner({}, { home, shas: { [REF]: PINNED } });
+		for (let i = 0; i < 2; i++) installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, () => {});
+		expect(calls.filter((argv) => argv[2] === "uninstall")).toEqual([]);
+	});
+
+	test("falls back to the embedded pin when the clone is missing", () => {
+		const home = setup();
+		const { calls, run } = recordingRunner({}, { home, shas: { [REF]: PINNED } });
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, (line) => lines.push(line));
+		expect(calls.map((argv) => argv[2])).toEqual(["install", "uninstall"]);
+		expect(lines).toEqual([`⚠ unslop removed: installed ${PINNED.slice(0, 7)}, expected ${EMBEDDED.slice(0, 7)}`]);
+	});
+
+	test("falls back to the embedded pin when the clone has a bad sha or bad JSON", () => {
+		const home = setup("not-a-sha");
+		const { run } = recordingRunner({}, { home, shas: { [REF]: EMBEDDED } });
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, (line) => lines.push(line));
+		expect(lines).toEqual([`unslop installed at ${EMBEDDED.slice(0, 7)}.`]);
+		writeFileSync(join(home, ".claude", "plugins", "known_marketplaces.json"), "{");
+		const again = recordingRunner();
+		const more: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, again.run, (line) => more.push(line));
+		expect(more).toEqual([`unslop already at ${EMBEDDED.slice(0, 7)}.`]);
+	});
+
+	test("reads known_marketplaces.json from CLAUDE_CONFIG_DIR", () => {
+		const home = tempDir("recommended-home");
+		const configDir = tempDir("recommended-config");
+		process.env.CLAUDE_CONFIG_DIR = configDir;
+		writeMarketplaceClone(configDir, { unslop: PINNED });
+		mkdirSync(join(configDir, "plugins"), { recursive: true });
+		writeFileSync(
+			join(configDir, "plugins", "installed_plugins.json"),
+			JSON.stringify({ version: 2, plugins: { [REF]: [{ scope: "user", gitCommitSha: PINNED }] } }),
+		);
+		const { calls, run } = recordingRunner();
+		const lines: string[] = [];
+		installRecommendedForClaude([plugin("unslop", EMBEDDED)], home, run, (line) => lines.push(line));
+		expect(calls).toEqual([]);
+		expect(lines[1]).toBe(`unslop already at ${PINNED.slice(0, 7)}.`);
+	});
+});
 
 describe("dg-skills install --with-recommended", () => {
 	test("rejects --agent-only before fetching anything", async () => {

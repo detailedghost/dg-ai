@@ -19,6 +19,7 @@ type MarketplaceEntry = {
 	skills?: string[];
 };
 
+const MARKETPLACE = "detailedghost";
 const PIN = /^[0-9a-f]{40}$/;
 
 export function firstLine(text: string): string {
@@ -59,8 +60,7 @@ export const runSync: Runner =([program, ...args]) => {
 };
 
 function installedShas(home: string): Map<string, string[]> {
-	const configDir = process.env.CLAUDE_CONFIG_DIR || join(home, ".claude");
-	const file = join(configDir, "plugins", "installed_plugins.json");
+	const file = join(claudeConfigDir(home), "plugins", "installed_plugins.json");
 	if (!existsSync(file)) return new Map();
 	try {
 		const doc = JSON.parse(readFileSync(file, "utf8")) as {
@@ -79,12 +79,36 @@ function installedShas(home: string): Map<string, string[]> {
 	}
 }
 
+function claudeConfigDir(home: string): string {
+	return process.env.CLAUDE_CONFIG_DIR || join(home, ".claude");
+}
+
+function marketplacePins(home: string): Map<string, string> {
+	try {
+		const known = JSON.parse(
+			readFileSync(join(claudeConfigDir(home), "plugins", "known_marketplaces.json"), "utf8"),
+		) as Record<string, { installLocation?: unknown }>;
+		const location = known[MARKETPLACE]?.installLocation;
+		if (typeof location !== "string") return new Map();
+		const doc = JSON.parse(readFileSync(join(location, ".claude-plugin", "marketplace.json"), "utf8")) as {
+			plugins?: MarketplaceEntry[];
+		};
+		return new Map(
+			(doc.plugins ?? []).flatMap((entry) =>
+				typeof entry.source === "object" && typeof entry.source?.sha === "string" && PIN.test(entry.source.sha)
+					? [[entry.name, entry.source.sha] as [string, string]]
+					: [],
+			),
+		);
+	} catch {
+		return new Map();
+	}
+}
+
 function currentSha(shas: string[] | undefined, pin: string): string | undefined {
 	if (!shas?.length) return undefined;
 	return shas.includes(pin) ? pin : shas[0];
 }
-
-const MARKETPLACE = "detailedghost";
 
 function refreshMarketplace(run: Runner): void {
 	try {
@@ -95,10 +119,10 @@ function refreshMarketplace(run: Runner): void {
 	}
 }
 
-function installOne(plugin: RecommendedPlugin, home: string, before: string | undefined, run: Runner): string {
+function installOne(plugin: RecommendedPlugin, expected: string, home: string, before: string | undefined, run: Runner): string {
 	const ref = `${plugin.name}@${MARKETPLACE}`;
-	const short = plugin.sha.slice(0, 7);
-	if (before === plugin.sha) return `${plugin.name} already at ${short}.`;
+	const short = expected.slice(0, 7);
+	if (before === expected) return `${plugin.name} already at ${short}.`;
 	if (before) {
 		const removed = run(["claude", "plugin", "uninstall", ref]);
 		if (removed.status !== 0) {
@@ -112,9 +136,9 @@ function installOne(plugin: RecommendedPlugin, home: string, before: string | un
 			? `⚠ ${plugin.name} removed: reinstall failed: ${reason}`
 			: `⚠ ${plugin.name} skipped: ${reason}`;
 	}
-	const after = currentSha(installedShas(home).get(ref), plugin.sha);
+	const after = currentSha(installedShas(home).get(ref), expected);
 	if (after === undefined) return `⚠ ${plugin.name} installed, but its commit could not be verified`;
-	if (after !== plugin.sha) {
+	if (after !== expected) {
 		const mismatch = `installed ${after.slice(0, 7)}, expected ${short}`;
 		const removed = run(["claude", "plugin", "uninstall", ref]);
 		return removed.status === 0
@@ -131,14 +155,23 @@ export function installRecommendedForClaude(
 	log: (line: string) => void,
 ): void {
 	const installed = installedShas(home);
-	const stale = plugins.some(
-		(plugin) => currentSha(installed.get(`${plugin.name}@${MARKETPLACE}`), plugin.sha) !== plugin.sha,
-	);
+	const knownPins = marketplacePins(home);
+	const stale = plugins.some((plugin) => {
+		const shas = installed.get(`${plugin.name}@${MARKETPLACE}`) ?? [];
+		return !shas.some((sha) => sha === plugin.sha || sha === knownPins.get(plugin.name));
+	});
 	if (stale) refreshMarketplace(run);
+	const pins = stale ? marketplacePins(home) : knownPins;
 	for (const plugin of plugins) {
 		try {
-			const before = currentSha(installed.get(`${plugin.name}@${MARKETPLACE}`), plugin.sha);
-			log(installOne(plugin, home, before, run));
+			const expected = pins.get(plugin.name) ?? plugin.sha;
+			if (expected !== plugin.sha) {
+				log(
+					`note: ${plugin.name} follows the marketplace pin ${expected.slice(0, 7)} (this dg-skills has ${plugin.sha.slice(0, 7)})`,
+				);
+			}
+			const before = currentSha(installed.get(`${plugin.name}@${MARKETPLACE}`), expected);
+			log(installOne(plugin, expected, home, before, run));
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
 			log(`⚠ ${plugin.name} skipped: ${firstLine(reason)}`);

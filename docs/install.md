@@ -209,8 +209,12 @@ The flag is off by default. It works with the default install, `--cli-only` and
 anything.
 
 With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
-install each plugin at its pinned sha. It then checks the installed sha. When
-an installed sha differs from the pin, it uninstalls and installs again. Only
+install each plugin. Claude Code installs the commit that its own `detailedghost`
+marketplace clone pins, and that clone follows `master`. `dg-skills` checks the
+installed sha against that marketplace pin. When the marketplace pin differs
+from the pin in this `dg-skills`, it prints a `note:` line that names both.
+When the clone cannot be read, it checks against its own pin. When an installed
+sha differs from the expected pin, it uninstalls and installs again. Only
 user-scope installs count.
 
 `mattpocock-skills` adds many skill descriptions to every Claude Code session.
