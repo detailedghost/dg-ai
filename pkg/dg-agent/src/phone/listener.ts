@@ -716,6 +716,7 @@ function holdThread(db: PhoneDb, held: HeldThread, receivedAt: number): void {
 		subject: held.subject,
 		text: held.text,
 		ts: Math.min(held.ts, receivedAt),
+		phi: held.phi === true,
 	});
 	if (!inserted) return;
 	const drop = pendingIdsToDrop(
@@ -790,6 +791,7 @@ function admitMessage(
 						subject: message.thread.subject,
 						text: message.text,
 						ts: message.ts,
+						...(message.phi ? { phi: message.phi } : {}),
 					},
 					now(),
 				);

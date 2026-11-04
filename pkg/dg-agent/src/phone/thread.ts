@@ -40,6 +40,7 @@ export type HeldThread = {
 	subject: string | null;
 	text: string;
 	ts: number;
+	phi?: true;
 };
 
 export type ThreadView = {
@@ -282,6 +283,7 @@ export function heldFrom(view: ThreadView): HeldThread {
 		subject: view.subject,
 		text: view.text,
 		ts: view.ts,
+		...(view.phi ? { phi: view.phi } : {}),
 	};
 }
 

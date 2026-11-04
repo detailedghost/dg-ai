@@ -375,6 +375,28 @@ describe("PhoneDb", () => {
 		});
 	});
 
+	describe("held threads", () => {
+		function held(rumorId: string, phi?: boolean) {
+			return { rumor_id: rumorId, room_id: "room", sender: "npub1them", members: "[]", subject: null, text: "body", ts: NOW - 3 * 24 * 60 * 60, ...(phi ? { phi } : {}) };
+		}
+
+		it("expires a held PHI row 24 hours after it arrives while a plain held row stays", () => {
+			db.insertPending(held("phi", true));
+			db.insertPending(held("plain"));
+			now = NOW + PHI_TTL_SECONDS - 1;
+			db.pruneMessages();
+			expect(db.listPending().map((row) => [row.rumor_id, row.phi])).toEqual([
+				["phi", 1],
+				["plain", 0],
+			]);
+
+			now = NOW + PHI_TTL_SECONDS + 1;
+			db.pruneMessages();
+
+			expect(db.listPending().map((row) => row.rumor_id)).toEqual(["plain"]);
+		});
+	});
+
 	describe("image fetches", () => {
 		const SHA = "a".repeat(64);
 		const OTHER = "b".repeat(64);

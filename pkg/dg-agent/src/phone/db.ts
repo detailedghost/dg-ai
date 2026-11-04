@@ -80,6 +80,8 @@ export type PendingThreadRow = {
 	ts: number;
 	noticed: number;
 	received_at: number;
+	/** 1 when the sender marked the message as PHI. */
+	phi: number;
 };
 
 export type InviteRow = {
@@ -201,6 +203,7 @@ const SCHEMA: MigrationStep[] = [
 				next_at INTEGER NOT NULL,
 				deadline INTEGER NOT NULL
 			) STRICT`);
+			db.run("ALTER TABLE pending_threads ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
 		},
 	},
 ];
@@ -257,7 +260,7 @@ export class PhoneDb {
 		const doomed = this.fileNames(`SELECT file FROM messages WHERE file IS NOT NULL AND direction = 'in' AND (${expired})`, { cutoff, phiCutoff });
 		this.db.query(`DELETE FROM messages WHERE ${expired}`).run({ cutoff, phiCutoff });
 		this.db.query("DELETE FROM image_fetches WHERE message_id NOT IN (SELECT id FROM messages)").run();
-		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff OR (phi = 1 AND received_at < $phiCutoff)").run({ cutoff, phiCutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 		this.pruneOutbox(cutoff, phiCutoff);
 		this.pruneFiles(doomed, phiCutoff);
@@ -691,11 +694,11 @@ export class PhoneDb {
 	}
 
 	/** True when this rumor was not already held. `received_at` is this phone's clock, not the sender's. */
-	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at">): boolean {
+	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at" | "phi"> & { phi?: boolean }): boolean {
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at)
-				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt)`,
+				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at, phi)
+				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt, $phi)`,
 			)
 			.run({
 				rumorId: row.rumor_id,
@@ -706,6 +709,7 @@ export class PhoneDb {
 				text: row.text,
 				ts: row.ts,
 				receivedAt: this.now(),
+				phi: row.phi ? 1 : 0,
 			});
 		return result.changes > 0;
 	}

@@ -232,6 +232,13 @@ describe("classifyThreadRumor", () => {
 			expect(view.phi).toBe(true);
 			expect(threadMessageFields(view, "k").phi).toBe(true);
 		});
+
+		it("keeps the phi mark on a held thread", () => {
+			const view = classifyImage([["p", bob.pub], ["p", cara.pub], ["subject", "ops"], ["dg-phi", "1"]], contacts(alice.pub));
+			if (!view) throw new Error("expected a thread view");
+			expect(view.kind).toBe("hold");
+			expect(heldFrom(view).phi).toBe(true);
+		});
 	});
 });
 

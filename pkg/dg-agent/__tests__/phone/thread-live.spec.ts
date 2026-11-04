@@ -20,7 +20,7 @@ import {
 	phoneVoicemail,
 	type PhoneDeps,
 } from "../../src/phone/commands";
-import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener, type ListenerDeps } from "../../src/phone/listener";
@@ -568,6 +568,40 @@ describe("thread hold limits and partial sends", () => {
 		bob.deps.db.pruneMessages();
 		for (const id of futureIds) expect(bob.deps.db.pendingByRumor(id)).toBeUndefined();
 		expect(bob.deps.db.pendingByRumor(real.rumor.id)).toBeUndefined();
+		expect(bob.deps.db.heldNotice()).toBeUndefined();
+	});
+
+	it("holds a PHI thread as phi and expires it 24 hours after it arrives", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const bob = await boot("b");
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!bobSk) throw new Error("missing key");
+		const bobPub = getPublicKey(bobSk);
+		const aliceSk = generateSecretKey();
+		addContact(bob.deps.db, {
+			npub: nip19.npubEncode(getPublicKey(aliceSk)),
+			handle: "alice",
+			relays: RELAYS,
+			keyId: numberKeyId(bob.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		const rumor = nip59.createRumor(
+			{ kind: 14, content: "sensitive", created_at: clock, tags: [["p", bobPub], ["p", getPublicKey(generateSecretKey())], ["subject", "ops"], ["dg-phi", "1"]] },
+			aliceSk,
+		);
+		pool.events.push(nip59.createWrap(nip59.createSeal(rumor, aliceSk, bobPub), bobPub));
+		const listener = listen(bob.deps, 5650);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.pendingByRumor(rumor.id)?.phi).toBe(1);
+
+		clock += PHI_TTL_SECONDS + 1;
+		bob.deps.db.pruneMessages();
+
+		expect(bob.deps.db.pendingByRumor(rumor.id)).toBeUndefined();
 		expect(bob.deps.db.heldNotice()).toBeUndefined();
 	});
 
