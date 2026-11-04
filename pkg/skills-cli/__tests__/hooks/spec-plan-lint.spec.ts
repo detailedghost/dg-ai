@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { lintFile } from "../../src/spec/lint-waves";
 import { hookWorld, SESSION } from "./hook-fixtures";
 
 let world: ReturnType<typeof hookWorld>;
@@ -72,6 +73,39 @@ describe("spec-plan-lint hook", () => {
 		});
 		expect(r.code).toBe(2);
 		expect(r.stderr + r.stdout).toContain("wave 2 depends on wave 3");
+	});
+
+	test("exits 2 with the real lint-waves report when independent slices overlap", async () => {
+		const plan = [
+			"---",
+			"slices:",
+			"  - id: 1",
+			"    files:",
+			"      - a/**",
+			"  - id: 2",
+			"    files:",
+			"      - b/**",
+			"    depends_on: [1]",
+			"  - id: 3",
+			"    files:",
+			"      - a/**",
+			"---",
+			"",
+		].join("\n");
+		const file = world.seed(".agents/spec/005_v/plan.md", plan);
+		const report = await lintFile(file);
+		expect(report.status).toBe(1);
+		const r = await world.run("spec-plan-lint", inputFor(file), {
+			replyFor: (argv) =>
+				argv.at(-2) === "lint-waves"
+					? { status: report.status, stderr: report.text }
+					: { status: 0 },
+		});
+		expect(r.code).toBe(2);
+		expect(r.stderr).toContain("slice 1 <-> slice 3 (independent)");
+		expect(r.stderr).toContain(
+			"FAIL: independent slices share files; serialize them with depends_on",
+		);
 	});
 
 	test("lints the file named by tool_response.filePath over tool_input.file_path", async () => {

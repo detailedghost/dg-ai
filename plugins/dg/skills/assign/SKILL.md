@@ -86,6 +86,8 @@ without a spec path is an error, not a no-op.
      time), so emitting the default value would only restate derivable state. Set `effort` to `low`, `medium` or `xhigh`
      (never `high`; the table skips it) only to deviate. A complex slice (cross-cutting architecture, security-sensitive
      design, ambiguous trade-offs, even on a `sonnet` primary) may get `xhigh` with no question.
+   - `complexity` — `low|medium|high`, spec mode only, always written; rubric in `references/spec-mode.md`. `/dg:assign`
+     never writes `agents.model`, which is a human override.
    - `confidence` — `high` or `low`, always written. `high` means the roster, heuristics and the slice text agree on one
      primary. `low` means two or more agents fit about equally, or the slice text is too thin to choose.
 3. **Validate.** Every name must exist in that roster. Mismatch → fail loud, write nothing.

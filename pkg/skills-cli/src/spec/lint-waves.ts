@@ -210,6 +210,22 @@ export function sliceFiles(data: Record<string, unknown>): Map<string, string[]>
 	);
 }
 
+function dependsOnPath(rows: WaveRows, from: string, target: string): boolean {
+	const seen = new Set<string>();
+	const stack = [from];
+	while (stack.length > 0) {
+		const id = stack.pop() as string;
+		for (const dep of awkSplit(rows.deps.get(id) ?? "", ",")) {
+			if (dep === target) return true;
+			if (dep !== "" && !seen.has(dep)) {
+				seen.add(dep);
+				stack.push(dep);
+			}
+		}
+	}
+	return false;
+}
+
 function lintRows(rows: WaveRows): LintReport {
 	applyGenerators(rows);
 
@@ -226,14 +242,14 @@ function lintRows(rows: WaveRows): LintReport {
 		for (let y = x + 1; y < rows.ids.length; y += 1) {
 			const p = rows.ids[x] as string;
 			const q = rows.ids[y] as string;
-			if (layers.get(p) !== layers.get(q)) continue;
+			if (dependsOnPath(rows, p, q) || dependsOnPath(rows, q, p)) continue;
 			let hits = 0;
 			for (const left of rows.files.get(p) ?? [])
 				for (const right of rows.files.get(q) ?? []) {
 					if (!overlaps(left.glob, right.glob)) continue;
 					if (hits === 0)
 						out.push(
-							`OVERLAP layer ${layers.get(p)}: slice ${p} <-> slice ${q}\n`,
+							`OVERLAP: slice ${p} <-> slice ${q} (independent)\n`,
 						);
 					hits += 1;
 					const leftNote = left.note === "" ? "" : ` (${left.note})`;
@@ -252,11 +268,11 @@ function lintRows(rows: WaveRows): LintReport {
 		}
 	if (bad) {
 		out.push(
-			"FAIL: same-layer slices share files; serialize them with depends_on\n",
+			"FAIL: independent slices share files; serialize them with depends_on\n",
 		);
 		return { status: 1, text: out.join("") };
 	}
-	out.push("ok: no same-layer overlap\n");
+	out.push("ok: no overlap between independent slices\n");
 	return { status: 0, text: out.join("") };
 }
 

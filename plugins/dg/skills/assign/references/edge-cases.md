@@ -11,6 +11,9 @@ a security-sensitive line) — a `sonnet` primary can burn both correction round
 reviewer keeps rejecting, surfacing only as a deferral at the end. If the hard part is something only a higher-tier
 agent could *write*, not just *catch*, give it that agent as `primary` instead of routing it through `qa`.
 
+A `high` rating raises nothing by itself. The `expensive` profile moves it to the opus tier at build time; `balance` and
+`cheap` ignore it. `agents.effort` still wins.
+
 ## Optional: delegating a slice externally
 
 Spec mode only — there is no frontmatter to record it in otherwise.

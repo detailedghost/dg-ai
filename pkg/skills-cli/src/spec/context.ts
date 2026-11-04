@@ -8,11 +8,12 @@ import {
 	parseYaml,
 	scalarField,
 } from "./frontmatter";
-import { git, repoToplevel } from "./git";
+import { branchSubjects, git, repoToplevel, sliceCommitted } from "./git";
 import { openIssueCount } from "./sections";
 import {
 	abspath,
 	awkEquals,
+	deny,
 	die,
 	flagValue,
 	isDirectory,
@@ -118,6 +119,8 @@ function projectSlice(value: unknown): Record<string, unknown> {
 		agents: {
 			primary: agents.primary ?? null,
 			...(truthy(agents.effort) ? { effort: agents.effort } : {}),
+			...(truthy(agents.complexity) ? { complexity: agents.complexity } : {}),
+			...(truthy(agents.model) ? { model: agents.model } : {}),
 			...(truthy(agents.proxy) ? { proxy: agents.proxy } : {}),
 			...(jqLength(agents.proxy_skills ?? []) > 0
 				? { proxy_skills: agents.proxy_skills }
@@ -160,6 +163,7 @@ async function bundleContext(args: string[]): Promise<number> {
 		status: data.status ?? null,
 		current_slice: data.current_slice ?? null,
 		pr_strategy: data.pr_strategy ?? null,
+		...(truthy(data.execution) ? { execution: data.execution } : {}),
 		bundle: bundleAbs,
 		plan_path: planAbs,
 		slices: slices.map(projectSlice),
@@ -337,8 +341,20 @@ export async function diffBundleCommand(args: string[]): Promise<number> {
 }
 
 export async function readyCommand(args: string[]): Promise<number> {
-	if (args.length < 2) usageError("ready <spec> <slice>");
-	const [spec = "", target = ""] = args;
+	const positionals: string[] = [];
+	let cwd = "";
+	for (let i = 0; i < args.length; ) {
+		const arg = args[i] as string;
+		if (arg === "--cwd") {
+			cwd = flagValue(args, i, arg);
+			i += 2;
+		} else {
+			positionals.push(arg);
+			i += 1;
+		}
+	}
+	if (positionals.length < 2) usageError("ready <spec> <slice> [--cwd <dir>]");
+	const [spec = "", target = ""] = positionals;
 	needFile(spec);
 	const entry = sliceEntries(frontmatterOf(await readText(spec))).find(
 		(slice) => slice.id !== undefined && awkEquals(String(slice.id), target),
@@ -353,11 +369,20 @@ export async function readyCommand(args: string[]): Promise<number> {
 		say(`slice ${target} has no dependencies — ready\n`);
 		return 0;
 	}
-	const root = await repoToplevel(dirname(abspath(spec)));
-	if (root === null) die("not inside a git repo");
-	const log = await git(root, ["log", "--pretty=%s"]);
-	const subjects = log?.status === 0 ? log.stdout : "";
-	const blocked = deps.filter((dep) => !subjects.includes(`slice-${dep}:`));
+	let subjects: string;
+	if (cwd === "") {
+		const root = await repoToplevel(dirname(abspath(spec)));
+		if (root === null) die("not inside a git repo");
+		const log = await git(root, ["log", "--pretty=%s"]);
+		subjects = log?.status === 0 ? log.stdout : "";
+	} else {
+		try {
+			subjects = await branchSubjects(cwd);
+		} catch (error) {
+			deny(error instanceof Error ? error.message : String(error));
+		}
+	}
+	const blocked = deps.filter((dep) => !sliceCommitted(subjects, dep));
 	if (blocked.length > 0) {
 		say(
 			`slice ${target} BLOCKED by uncommitted deps:${blocked.map((dep) => ` ${dep}`).join("")}\n`,

@@ -62,8 +62,8 @@ dg-skills spec lint-waves <blob-path>
 dg-skills spec scaffold --home .agents/spec --slug <slug> --from-json <blob-path>
 ```
 
-`lint-waves` exits non-zero when two slices in one `/dg:sdlc` layer can touch the same path; scaffold
-runs it too and refuses (`--allow-overlap` overrides).
+`lint-waves` exits non-zero when two slices with no dependency path between them can touch the same
+path; scaffold runs it too and refuses (`--allow-overlap` overrides).
 
 On success it prints the created bundle's absolute path (`.agents/spec/<NNN>_<slug>/`). Do NOT
 hand-write `plan.md`/`initial.md`/`roundtable/*.md` directly at this step — that's the whole point

@@ -48,7 +48,7 @@ If `SPEC_PATH` already exists with `status: in-progress` (a resumed run), skip d
 
 - **Default to ONE slice.** Split only when the work has clearly separable vertical slices; when unsure, don't split.
 - Per slice: `id` (1-based), `name` (kebab), a 2–4 sentence brief, `files` (globs the slice owns), `depends_on` (slice ids), an Engineering checklist, and Testing Criteria opening with `### Contracts` (inputs, outputs, error shapes).
-- Slices in the same dependency layer MUST touch disjoint files — they build in parallel in one working tree. If two dependency-ready slices may overlap, chain them via `depends_on`.
+- Any two slices with no dependency path between them MUST touch disjoint files — they build in parallel in one working tree. If two dependency-ready slices may overlap, chain them via `depends_on`.
 
 **Write the ephemeral spec** (the orchestrator writes it, from the returned plan):
 
@@ -107,8 +107,8 @@ Invoke the **`/dg:assign` skill** on `$SPEC_PATH` — it reads the live roster a
 
 Then present ONE `AskUserQuestion` — the only human gate before step 7's review:
 
-- Show the slice plan: names, dependency layers, assigned agents.
-- Show a rough token estimate: each slice runs Red + Yellow + Green + wave (+ per-slice `qa[]`) ≈ 5–8 agent calls, mostly sonnet-tier; correction rounds add more. Flag anything token-heavy per the global token-cost gate.
+- Show the slice plan: names, dependency order, assigned agents.
+- Show a rough token estimate: print the output of `dg-skills spec estimate "$SPEC_PATH" --profile balance` (bare `/dg:sdlc` has no profile choice). Flag anything token-heavy per the global token-cost gate.
 - Ask to grant the run-unattended permission set (same keys as `/dg:spec`, all-or-choose): `run_commands`, `git_push`, `gh_pr_create`, `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Write the granted booleans into the spec's `permissions:` block.
 
 The waves run unattended — a permission not granted here means a mid-run prompt.

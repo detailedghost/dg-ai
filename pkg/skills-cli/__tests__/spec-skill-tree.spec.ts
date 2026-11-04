@@ -30,6 +30,7 @@ const SCHEMA_FIELDS = [
 	"current_slice",
 	"slices",
 	"permissions",
+	"execution",
 	"tools",
 	"pr_strategy",
 	"repos",
@@ -143,6 +144,7 @@ describe("migrated spec, sdlc, assign, grill-me, prd, kick and pickup skill tree
 			"issues",
 			"resolve-path",
 			"validate",
+			"estimate",
 		]);
 		expect([...called].filter((verb) => !known.has(verb))).toEqual([]);
 	});

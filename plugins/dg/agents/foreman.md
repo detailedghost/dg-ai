@@ -23,7 +23,7 @@ A full feature spec, structured for checkbox-driven execution. Use the template 
 Cut the work into vertical slices. Per slice: `id` (1-based), `name` (kebab), a 2–4 sentence brief, `files` (globs the slice owns), `depends_on` (slice ids), an Engineering checklist, and Testing Criteria that open with `### Contracts` (inputs, outputs, error shapes).
 
 - **Default to one slice.** Split only when the work has clearly separable vertical slices.
-- Slices in the same dependency layer touch **disjoint files**. They build in parallel in one working tree. If two ready slices may overlap, chain them with `depends_on`.
+- Slices with no dependency path between them touch disjoint files. They build in parallel in one working tree. If two ready slices may overlap, chain them with `depends_on`.
 - Each slice ships something testable on its own. Never slice by layer (all models, then all routes).
 - Order by risk: the slice that proves or disproves the plan goes first.
 

@@ -9,6 +9,7 @@ export interface FieldSpec {
 	mutability?: string;
 	mode_conditional?: string;
 	enum?: unknown[];
+	fields?: Record<string, FieldSpec>;
 }
 
 export type SchemaFields = Record<string, FieldSpec>;

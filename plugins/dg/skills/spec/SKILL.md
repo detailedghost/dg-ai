@@ -25,7 +25,7 @@ Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also
 
 If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
 
-**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] "<request>"`.
+**Usage:** `/dg:spec [--fast [-T]] [-s <NNN>_<slug>] [--profile <profile> | --cheap | --expensive] [--proxy <backend>] [--bg] "<request>"`.
 
 ## Flags
 
@@ -36,14 +36,17 @@ If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash v
 | `--fast` | `-f` | Fast mode: plan and build in one chat. One grill pass, no fan-out, built-in Claude plan mode is the single approval gate. Slices build sequentially in the main loop with a compaction between each. All end gates kept. | off |
 | none | `-s <NNN>_<slug>` | Execute mode: build an existing bundle. Always creates a worktree. | off |
 | `--no-worktree` | `-T` | Fast mode only: build in the current checkout instead of a worktree. Creates `feature/<slug>` first if on the default branch. Invalid with `-s` and with bare plan mode. | off (worktree) |
-
-`--fast` and `-s` are mutually exclusive — both present → ask which was meant.
+| `--profile <profile>` | `-p` | Cost profile: `balance`, `cheap` or `expensive`. Persists as `execution.profile`. Two profile flags with different values are an error that names both. | balance |
+| `--cheap` | none | Alias of `--profile cheap`. | off |
+| `--expensive` | none | Alias of `--profile expensive`. | off |
+| `--proxy <backend>` | `-x` | Delegate slices to the named `/dg:proxy` backend: asks per slice in plan mode, and with `-s` for slices without `agents.proxy`. | off |
+| `--bg` | `-b` | Execute mode only (`-s`): run unattended and stay in this session; use `/dg:bg` to detach. Questions become rows in `## Issues Remediation`. Invalid with bare plan mode (stop and say so). | off |
 
 Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass its map to `/dg:spec`.
 
 ## Mode dispatch
 
-`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`. Parse args before any phase.
+`FAST_MODE = HAS(--fast|-f)`, `EXECUTE_MODE = HAS(-s)`, `PROFILE` unset unless a profile flag is given. Parse args before any phase. `--fast` is mutually exclusive with `-s` and with `--proxy`; either pair stops with an error that names both flags.
 
 - **`--fast "<request>"` → FAST MODE.** Follow [references/fast.md](references/fast.md).
 - **Bare `"<request>"` (no `-s`, no `--fast`) → PLAN MODE.** The positional prose is the feature
@@ -52,6 +55,8 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
   dir name under `.agents/spec/`. Resolve the bundle, follow [references/execute.md](references/execute.md).
   No positional request is required in this mode.
 - If neither a request nor `-s` is present, ask for the request (one question) before proceeding.
+- `PROFILE`: plan and fast mode read unset as balance; execute mode reads the persisted `execution.profile`. A missing or invalid value after `--profile`/`-p` stops with `--profile must be one of balance, cheap, expensive`. Two profile flags with the same value are allowed.
+- `--proxy <backend>` (plan mode and `-s`): validate it against `dg-skills proxy --list-backends` before any phase, in one Bash call and only when the flag is present. An unknown name stops and lists the valid backends.
 
 ## Plan-mode pipeline
 
@@ -62,10 +67,10 @@ Request too big or foggy for one bundle? Run `/dg:wayfinder` first, then pass it
 | 2 | `dg:foreman` `/dg:grill-me` on ordering/gaps `[fable, xhigh]` | references/plan.md, references/grill.md |
 | 3 | `dg:foreman` emits decision blob → `dg-skills spec scaffold` → `/dg:assign` → write `## Code Structure` | references/plan.md, references/decision-blob.md |
 | 4 | Checkpoint — bundle now has one `roundtable/slice-<N>.md` per slice | references/plan.md |
-| 5 | Per-slice review fan-out (`sonnet` default, per-slice opt-in escalate) | references/plan.md, references/templates/slice-review.md |
+| 5 | Per-slice review fan-out (`sonnet` default) | references/plan.md, references/templates/slice-review.md |
 | 6 | `dg:foreman` synthesis `[fable, xhigh]` + `/dg:grill-me` gaps pass | references/plan.md, references/templates/synthesis.md |
-| 7 | Write `plan.md`; assign `/dg:proxy` slices; WARN token/context cost | references/plan.md |
-| 8 | Plan approval gate (readable plan view in the terminal, then `AskUserQuestion` Approve or Rework, blocks on Approve); register accepted prototype assets (built with `/dg:proto`) | references/plan.md |
+| 7 | Write `plan.md`; --proxy slices; WARN token/context cost | references/plan.md |
+| 8 | Plan approval gate (plan view; Approve as a profile, or Rework); register accepted prototype assets (built with `/dg:proto`) | references/plan.md |
 | 9 | `dg-skills spec context <bundle>` assembles `context.md` | references/plan.md |
 | 10 | Commit bundle; print resume command `/dg:spec -s <NNN>_<slug>` | references/plan.md |
 
@@ -106,7 +111,10 @@ the PR/MR URL into `plan.md`, restoring cwd).
 | [references/execute.md](references/execute.md) | The `-s` contract — read ONLY `context.md` + `plan.md`; set `SPEC_PATH`/`SCRATCH_PATH`; reuse `/dg:sdlc` worktree setup, SKIP its slice-derivation/ephemeral-spec, drive engineering.md 4.1–4.3 → finish.md 5–8, where §6 adds the `/dg:spec` bookkeeping. Read at execute-mode entry. |
 | [references/grill.md](references/grill.md) | Thin pointer: grill-me protocol is INLINED from the [grill-me protocol](../grill-me/references/protocol.md), followed in-context; each of the four passes scoped to its narrow topic; decision log carries as context (no JSON hand-back). Read at plan.md steps 1/1.5/2/6. |
 | [references/templates/structure-grill.md](references/templates/structure-grill.md) | The code-building pass — admission test (`ratify contracts, never implementations`), research persona, self-collapse/skip rules, `## Code Structure` output shape. Read at plan.md step 1.5. |
-| [references/templates/slice-review.md](references/templates/slice-review.md) | `/dg:spec`'s own per-slice review fan-out prompt. Carries the sonnet-default / opus-medium-escalation note. Read at plan.md step 5. |
+| [references/templates/slice-review.md](references/templates/slice-review.md) | `/dg:spec`'s own per-slice review fan-out prompt. Read at plan.md step 5. |
+| [references/profiles.md](references/profiles.md) | Cost-profile mechanics: plan-mode effort under `--cheap` and `--expensive`, the `-s --profile` sequence. Read only with a profile flag. |
+| [references/proxy.md](references/proxy.md) | The per-slice delegation question, `agents.proxy` and `proxy_skills`. Read only with `--proxy`. |
+| [references/bg.md](references/bg.md) | The unattended `--bg` contract: pre-launch order, permission keys, deferral rows, the pause line. Read only with `--bg`. |
 | [references/templates/synthesis.md](references/templates/synthesis.md) | `/dg:spec`'s own synthesis fan-out prompt (foreman folds slice findings). Read at plan.md step 6. |
 
 ## General rules

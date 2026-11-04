@@ -4,17 +4,17 @@ Sections 5–8 are the canon for `/dg:spec`'s execute mode too ([spec execute.md
 
 ## Step 5 — Final review + correction
 
-Derive the changed-file list: `git diff --name-only $(git merge-base HEAD origin/<base-branch>)`. Launch **dg:reviewer**, **dg:qa-perf**, **dg:qa-devops**, **dg:security** in parallel (template: `templates/final-review.md`). Each reads `## Issues Remediation`. **Include in the briefing:** `SPEC_PATH` + `SCRATCH_PATH` — reviewers may read the scratchpad for ephemeral context in addition to the spec's `## Agent Notes`.
+Derive the changed-file list: `git diff --name-only $(git merge-base HEAD origin/<base-branch>)`. Read the profile once with `dg-skills spec get "$SPEC_PATH" execution.profile` (any non-zero exit or absent value means balance). Launch **dg:reviewer**, **dg:qa-perf**, **dg:qa-devops**, **dg:security** in parallel (template: `templates/final-review.md`). Under cheap, the correction cap is 1 round, and dg:reviewer, dg:qa-perf and dg:qa-devops run at `low` and dg:security at `medium`; balance and expensive leave this step unchanged. Each reads `## Issues Remediation`. **Include in the briefing:** `SPEC_PATH` + `SCRATCH_PATH` — reviewers may read the scratchpad for ephemeral context in addition to the spec's `## Agent Notes`.
 
 > **GATE:** all reviewers reported.
 
-### Correction (max 2 rounds total — net-new findings do NOT reset the counter)
+### Correction (max rounds per profile: 2, cheap 1 — net-new findings do NOT reset the counter)
 
 No findings → step 6. Before routing, read Issues Remediation. Exact duplicates of already-triaged findings (same `file:line` + issue text) → skip; same root cause at a new location → treat as new. Then:
 
 - a. Group **new** findings by slice → route to the responsible agent (template: `templates/correction.md`).
-- b. Re-run only the flagging reviewers to verify. Net-new findings from re-review go to the next round, still within the 2-round cap.
-- c. After round 2: CRITICAL/HIGH-security → escalate to the user. Others → `## Issues Remediation` + user ack.
+- b. Re-run only the flagging reviewers to verify. Net-new findings from re-review go to the next round, still within the profile's round cap.
+- c. After the last round: CRITICAL/HIGH-security → escalate to the user. Others → `## Issues Remediation` + user ack.
 - d. Commit the fixes once the round is clean (`fix(<scope>): …`).
 
 > **GATE:** reviews clean OR max rounds + user acknowledged.
@@ -56,6 +56,6 @@ Because nothing has reviewed the code when the PR/MR opens, step 8 forces `--dra
 
 - f. **Open it:** run `dg-skills batch-open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [browser skill](../../browser/SKILL.md) documents the command) so it lands in the browser without a separate ask. Applies to every PR/MR this step opens, `/dg:spec` included. This is also how the human gets to the review. It is best-effort: the PR already exists, so when `batch-open` fails, print the PR URL and continue.
 
-- g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/dg:spec`'s multi-slice runs can produce, since unlike `/dg:sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `dg-skills chain plan`/`dg-skills chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on`/dependency-layer data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
+- g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/dg:spec`'s multi-slice runs can produce, since unlike `/dg:sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `dg-skills chain plan`/`dg-skills chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on` data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
 
 > **GATE:** URL captured; in `WORKTREE_MODE`: cwd back at `origin_repo`, worktree intact. This is also where the run ends — the human review happens on the PR/MR afterward.

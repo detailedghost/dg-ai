@@ -84,5 +84,27 @@
 				"effort": "high"
 			}
 		}
+	},
+	"profiles": {
+		"balance": {
+			"effortStep": 0,
+			"correctionRounds": 2
+		},
+		"cheap": {
+			"effortStep": -1,
+			"correctionRounds": 1
+		},
+		"expensive": {
+			"effortStep": 0,
+			"correctionRounds": 2,
+			"complexity": {
+				"medium": {
+					"effortStep": 1
+				},
+				"high": {
+					"tier": "opus"
+				}
+			}
+		}
 	}
 }

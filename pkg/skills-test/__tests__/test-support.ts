@@ -52,3 +52,34 @@ export async function runInHarness(
 		rmSync(dir, { recursive: true, force: true });
 	}
 }
+
+export function section(text: string, from: string, to: string): string {
+	return text.split(from)[1]?.split(to)[0] ?? "";
+}
+
+export function count(text: string, needle: string): number {
+	return text.split(needle).length - 1;
+}
+
+export function lineWith(text: string, needle: string): string {
+	return text.split("\n").find((line) => line.includes(needle)) ?? "";
+}
+
+export function cells(row: string): string[] {
+	return row
+		.trim()
+		.replace(/^\|/, "")
+		.replace(/\|$/, "")
+		.split(/(?<!\\)\|/)
+		.map((cell) => cell.trim());
+}
+
+export function flagRow(skillText: string, flag: string): string[] {
+	return (
+		section(skillText, "## Flags", "\n## ")
+			.split("\n")
+			.filter((line) => line.startsWith("|"))
+			.map(cells)
+			.find((c) => c[0]?.includes(`\`${flag}`)) ?? []
+	);
+}

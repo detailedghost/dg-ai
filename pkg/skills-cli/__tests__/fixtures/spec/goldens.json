@@ -1134,7 +1134,7 @@
 			["init", "-q", "-b", "main"],
 			["add", "-A"],
 			["commit", "-q", "-m", "chore: initial"],
-			["commit", "-q", "--allow-empty", "-m", "slice-1: model"]
+			["commit", "-q", "--allow-empty", "-m", "feat(cli): slice-1: model"]
 		],
 		"expect": {
 			"status": 1,
@@ -1153,7 +1153,7 @@
 			["init", "-q", "-b", "main"],
 			["add", "-A"],
 			["commit", "-q", "-m", "chore: initial"],
-			["commit", "-q", "--allow-empty", "-m", "slice-1: model"],
+			["commit", "-q", "--allow-empty", "-m", "feat(cli): slice-1: model"],
 			["commit", "-q", "--allow-empty", "-m", "feat: slice-2: api"]
 		],
 		"expect": {
@@ -1173,7 +1173,7 @@
 			["init", "-q", "-b", "main"],
 			["add", "-A"],
 			["commit", "-q", "-m", "chore: initial"],
-			["commit", "-q", "--allow-empty", "-m", "slice-1: model"]
+			["commit", "-q", "--allow-empty", "-m", "feat(cli): slice-1: model"]
 		],
 		"expect": {
 			"status": 0,
@@ -1204,7 +1204,7 @@
 		"expect": {
 			"status": 2,
 			"stdout": "",
-			"stderr": "spec-cli: usage: spec-cli ready <spec> <slice>\n",
+			"stderr": "spec-cli: usage: spec-cli ready <spec> <slice> [--cwd <dir>]\n",
 			"tree": {}
 		}
 	},
@@ -2407,7 +2407,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "layer 0: 1\nlayer 1: 2\nlayer 2: 3\nok: no same-layer overlap\n",
+			"stdout": "layer 0: 1\nlayer 1: 2\nlayer 2: 3\nok: no overlap between independent slices\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -2420,7 +2420,7 @@
 		},
 		"expect": {
 			"status": 1,
-			"stdout": "layer 0: 1\nlayer 1: 2 3\nOVERLAP layer 1: slice 2 <-> slice 3\n  src/api/** <-> src/api/v1/*.ts  [under src/api/]\n  fix: add 2 to slice 3 depends_on\nFAIL: same-layer slices share files; serialize them with depends_on\n",
+			"stdout": "layer 0: 1\nlayer 1: 2 3\nOVERLAP: slice 2 <-> slice 3 (independent)\n  src/api/** <-> src/api/v1/*.ts  [under src/api/]\n  fix: add 2 to slice 3 depends_on\nFAIL: independent slices share files; serialize them with depends_on\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -2433,7 +2433,7 @@
 		},
 		"expect": {
 			"status": 1,
-			"stdout": "layer 0: 1 2\nlayer 1: 3\nOVERLAP layer 0: slice 1 <-> slice 2\n  src/** <-> src/api/*.ts  [under src/]\n  fix: add 1 to slice 2 depends_on\nFAIL: same-layer slices share files; serialize them with depends_on\n",
+			"stdout": "layer 0: 1 2\nlayer 1: 3\nOVERLAP: slice 1 <-> slice 2 (independent)\n  src/** <-> src/api/*.ts  [under src/]\n  fix: add 1 to slice 2 depends_on\nFAIL: independent slices share files; serialize them with depends_on\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -2446,7 +2446,7 @@
 		},
 		"expect": {
 			"status": 0,
-			"stdout": "layer 0: 1\nlayer 1: 2 3\nok: no same-layer overlap\n",
+			"stdout": "layer 0: 1\nlayer 1: 2 3\nok: no overlap between independent slices\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -2459,7 +2459,7 @@
 		},
 		"expect": {
 			"status": 1,
-			"stdout": "layer 0: 1 2 3 4\nOVERLAP layer 0: slice 1 <-> slice 2\n  gen/out/*.ts (generator output, triggered by schema/*.json) <-> gen/out/api.ts  [under gen/out/]\n  fix: add 1 to slice 2 depends_on\nFAIL: same-layer slices share files; serialize them with depends_on\n",
+			"stdout": "layer 0: 1 2 3 4\nOVERLAP: slice 1 <-> slice 2 (independent)\n  gen/out/*.ts (generator output, triggered by schema/*.json) <-> gen/out/api.ts  [under gen/out/]\n  fix: add 1 to slice 2 depends_on\nFAIL: independent slices share files; serialize them with depends_on\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -2571,7 +2571,7 @@
 		},
 		"expect": {
 			"status": 1,
-			"stdout": "layer 0: a b c d e f g h i j\nlayer 1: k\nOVERLAP layer 0: slice a <-> slice b\n  src/*.ts <-> src/foo.ts  [under src/]\n  fix: add b to slice a depends_on\nOVERLAP layer 0: slice c <-> slice d\n  lib/**/x.js <-> lib/deep/nested/x.js  [under lib/]\n  fix: add d to slice c depends_on\nOVERLAP layer 0: slice e <-> slice f\n  ./pkg/a.ts <-> pkg/a.ts  [(repository root)]\n  fix: add f to slice e depends_on\nOVERLAP layer 0: slice g <-> slice h\n  docs/{a,b}.md <-> docs/c.md  [under docs/]\n  fix: add h to slice g depends_on\nOVERLAP layer 0: slice i <-> slice j\n  *.json <-> package.json  [(repository root)]\n  fix: add j to slice i depends_on\nFAIL: same-layer slices share files; serialize them with depends_on\n",
+			"stdout": "layer 0: a b c d e f g h i j\nlayer 1: k\nOVERLAP: slice a <-> slice b (independent)\n  src/*.ts <-> src/foo.ts  [under src/]\n  fix: add b to slice a depends_on\nOVERLAP: slice b <-> slice k (independent)\n  src/foo.ts <-> src/*.ts  [under src/]\n  fix: add k to slice b depends_on\nOVERLAP: slice c <-> slice d (independent)\n  lib/**/x.js <-> lib/deep/nested/x.js  [under lib/]\n  fix: add d to slice c depends_on\nOVERLAP: slice e <-> slice f (independent)\n  ./pkg/a.ts <-> pkg/a.ts  [(repository root)]\n  fix: add f to slice e depends_on\nOVERLAP: slice g <-> slice h (independent)\n  docs/{a,b}.md <-> docs/c.md  [under docs/]\n  fix: add h to slice g depends_on\nOVERLAP: slice i <-> slice j (independent)\n  *.json <-> package.json  [(repository root)]\n  fix: add j to slice i depends_on\nFAIL: independent slices share files; serialize them with depends_on\n",
 			"stderr": "",
 			"tree": {}
 		}
@@ -2674,7 +2674,7 @@
 		"expect": {
 			"status": 2,
 			"stdout": "",
-			"stderr": "layer 0: 1 2\nlayer 1: 3\nOVERLAP layer 0: slice 1 <-> slice 2\n  src/** <-> src/api/*.ts  [under src/]\n  fix: add 1 to slice 2 depends_on\nFAIL: same-layer slices share files; serialize them with depends_on\nspec-cli: refusing to scaffold: same-layer slices overlap (fix depends_on, or pass --allow-overlap)\n",
+			"stderr": "layer 0: 1 2\nlayer 1: 3\nOVERLAP: slice 1 <-> slice 2 (independent)\n  src/** <-> src/api/*.ts  [under src/]\n  fix: add 1 to slice 2 depends_on\nFAIL: independent slices share files; serialize them with depends_on\nspec-cli: refusing to scaffold: independent slices overlap (fix depends_on, or pass --allow-overlap)\n",
 			"tree": {}
 		}
 	},
@@ -2696,7 +2696,7 @@
 		"expect": {
 			"status": 0,
 			"stdout": "{root}/.agents/spec/001_x\n",
-			"stderr": "layer 0: 1 2\nlayer 1: 3\nOVERLAP layer 0: slice 1 <-> slice 2\n  src/** <-> src/api/*.ts  [under src/]\n  fix: add 1 to slice 2 depends_on\nFAIL: same-layer slices share files; serialize them with depends_on\nspec-cli: --allow-overlap set; scaffolding despite overlap\n",
+			"stderr": "layer 0: 1 2\nlayer 1: 3\nOVERLAP: slice 1 <-> slice 2 (independent)\n  src/** <-> src/api/*.ts  [under src/]\n  fix: add 1 to slice 2 depends_on\nFAIL: independent slices share files; serialize them with depends_on\nspec-cli: --allow-overlap set; scaffolding despite overlap\n",
 			"tree": {
 				".agents/spec/001_x/initial.md": "# Overlap — Initial Notes\n\n## Purpose\np\n\n## Scope\n### Included\n### Excluded\n",
 				".agents/spec/001_x/plan.md": "---\nfeature: \"Overlap\"\nfeature_snake_case: overlap\ndate: \"2026-01-15\"\nversion: \"1.0\"\nstatus: draft\ncurrent_slice: 0\npr_strategy: single\nslices:\n  - id: 1\n    name: \"a\"\n    depends_on: []\n    files: [\"src/**\"]\n  - id: 2\n    name: \"b\"\n    depends_on: []\n    files: [\"src/api/*.ts\"]\n  - id: 3\n    name: \"c\"\n    depends_on: [1]\n    files: [\"docs/*.md\"]\n---\n\n# Overlap\n\n## Purpose\np\n\n## Scope\n### Included\n### Excluded\n\n### Slice 1 — a\n\n#### Engineering\n\n#### Testing Criteria\n##### Contracts\n\n#### Acceptance Criteria\n\n### Slice 2 — b\n\n#### Engineering\n\n#### Testing Criteria\n##### Contracts\n\n#### Acceptance Criteria\n\n### Slice 3 — c\n\n#### Engineering\n\n#### Testing Criteria\n##### Contracts\n\n#### Acceptance Criteria\n\n## Slice Summaries\n\n## Agent Notes\n\n## Issues Remediation\n",
