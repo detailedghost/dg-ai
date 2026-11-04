@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { posix, win32 } from "node:path";
-import { resolveDgPaths } from "@dg/common/node";
+import { posix, resolve, win32 } from "node:path";
+import { normalizeDgHome, resolveDgPaths } from "@dg/common/node";
 
 const home = "/h";
 
@@ -225,5 +225,42 @@ describe("resolveDgPaths legacyHome", () => {
 		});
 
 		expect(paths.legacyHome).toBe("C:\\Users\\u\\.dg");
+	});
+});
+
+describe("normalizeDgHome", () => {
+	it("rewrites a relative DG_HOME to the absolute path from the current directory", () => {
+		const env: Record<string, string | undefined> = { DG_HOME: "rel/home" };
+
+		normalizeDgHome(env, "linux");
+
+		expect(env.DG_HOME).toBe(resolve("rel/home"));
+	});
+
+	it("keeps an absolute DG_HOME unchanged", () => {
+		const env: Record<string, string | undefined> = { DG_HOME: "/abs/home" };
+
+		normalizeDgHome(env, "linux");
+
+		expect(env.DG_HOME).toBe("/abs/home");
+	});
+
+	it("leaves an unset or empty DG_HOME alone", () => {
+		const unset: Record<string, string | undefined> = {};
+		const empty: Record<string, string | undefined> = { DG_HOME: "" };
+
+		normalizeDgHome(unset, "linux");
+		normalizeDgHome(empty, "linux");
+
+		expect(unset).toEqual({});
+		expect(empty.DG_HOME).toBe("");
+	});
+
+	it("keeps a drive-absolute win32 DG_HOME unchanged", () => {
+		const env: Record<string, string | undefined> = { DG_HOME: "C:\\dg" };
+
+		normalizeDgHome(env, "win32");
+
+		expect(env.DG_HOME).toBe("C:\\dg");
 	});
 });
