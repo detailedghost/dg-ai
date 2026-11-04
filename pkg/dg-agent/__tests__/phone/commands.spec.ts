@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -823,6 +824,11 @@ describe("say --image", () => {
 		expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
 		const [row] = d.db.recentMessages(20);
 		expect(JSON.parse(row?.file as string)).toMatchObject({ phi: true });
+		const x = rumor.tags.find(([name]) => name === "x")?.[1];
+		const raw = new Database(PhoneDb.path(d.paths), { readonly: true });
+		const outboxRow = raw.query("SELECT phi FROM outbox WHERE sha256 = ?").get(x as string) as { phi: number } | null;
+		raw.close();
+		expect(outboxRow).toEqual({ phi: 1 });
 	});
 
 	it("exits 1 and sends nothing when files are off", async () => {
