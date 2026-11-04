@@ -27,11 +27,28 @@ function gitBinary(): string {
 	return found;
 }
 
+const REPO_LOCATION_VARS = [
+	"GIT_DIR",
+	"GIT_WORK_TREE",
+	"GIT_INDEX_FILE",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_COMMON_DIR",
+	"GIT_NAMESPACE",
+	"GIT_PREFIX",
+];
+
+function gitEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" };
+	for (const name of REPO_LOCATION_VARS) delete env[name];
+	return env;
+}
+
 function git(binary: string, checkout: string, args: string[]): string {
 	const result = spawnSync(binary, ["-C", checkout, ...args], {
 		cwd: tmpdir(),
 		encoding: "utf8",
-		env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" },
+		env: gitEnv(),
 	});
 	if (result.error) throw result.error;
 	if (result.status !== 0) {

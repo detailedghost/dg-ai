@@ -52,6 +52,31 @@ function installIntoSeeded(spec: FixtureSpec, skills?: string[]) {
 }
 
 describe("installRecommendedSkillsOnly destination safety", () => {
+	test("an inherited GIT_DIR and GIT_WORK_TREE never reach the caller's repository", () => {
+		const root = tempDir("recommended-skills-gitdir");
+		const fixture = bareRepo(root, mattpocockLikeFiles(["tdd"]));
+		const caller = join(root, "caller");
+		mkdirSync(caller, { recursive: true });
+		const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: caller, env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } }).stdout.toString().trim();
+		git(["init", "-q", "-b", "main"]);
+		writeFileSync(join(caller, "keep.txt"), "keep\n");
+		git(["add", "-A"]);
+		git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "caller"]);
+		const head = git(["rev-parse", "HEAD"]);
+		const dest = join(root, "dest");
+		const outcome = runRecommendedSkillsOnly(
+			{ name: "fixture", repo: "owner/fixture", sha: fixture.sha, skills: ["./skills/tdd"] },
+			dest,
+			[...DG_NAMES],
+			{ repo: "owner/fixture", url: fixture.url },
+			{ GIT_DIR: join(caller, ".git"), GIT_WORK_TREE: caller, GIT_INDEX_FILE: join(caller, ".git", "index") },
+		);
+		expect(outcome.thrown).toBeUndefined();
+		expect(existsSync(join(dest, "tdd", "SKILL.md"))).toBe(true);
+		expect(git(["rev-parse", "HEAD"])).toBe(head);
+		expect(git(["status", "--porcelain"])).toBe("");
+	});
+
 	test("a declared path with no tracked files leaves existing dest entries alone", () => {
 		const { dest, before, outcome } = installIntoSeeded(mattpocockLikeFiles(["tdd"]), [
 			"./skills/tdd",
