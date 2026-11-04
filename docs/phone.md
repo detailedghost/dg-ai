@@ -183,6 +183,13 @@ unproven engineering, not a missing feature flag, if revisiting it later.
 Claude Code sessions poll `voicemail`/`inbox` instead; `--on-message` is for
 a runtime that can run a command on its own, such as a bot or a cron job.
 
+## Images
+
+Image messages are planned. They stay behind a `files` setting that is off by
+default. PHI is never allowed over the phone, as text or image. See
+[references/safety.md](../plugins/dg/skills/phone/references/safety.md) and
+[ADR 0034](adr/0034-phone-image-messages.md).
+
 ## Autostart
 
 `open` writes the service manager's own file, then runs its install
