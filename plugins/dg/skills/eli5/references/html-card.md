@@ -7,13 +7,13 @@ a longer one — if the page says more than the chat did, you wrote too much.
 
 | Flag | Destination |
 |------|-------------|
-| `-v`, `--viz` | `$(~/.dg/bin/dg-skills stash eli5 <slug>.html)`, then open it locally |
+| `-v`, `--viz` | `$(dg-skills stash eli5 <slug>.html)`, then open it locally |
 | `-p`, `--publish` | The `Artifact` tool, same file as the source |
 
 `<slug>` is the topic in kebab-case. Open on WSL with:
 
 ```bash
-/mnt/c/Windows/explorer.exe "$(wslpath -w $(~/.dg/bin/dg-skills stash eli5 <slug>.html))"
+/mnt/c/Windows/explorer.exe "$(wslpath -w $(dg-skills stash eli5 <slug>.html))"
 ```
 
 Always print the path (or the artifact link) as the last line of the chat answer.

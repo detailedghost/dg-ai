@@ -1,7 +1,8 @@
 /** In-process tests for the dg-skills binary helpers, so mutation testing sees them. */
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
+import { resolveDgPaths } from "@dg/common/node";
 import { join } from "node:path";
 import { isPostDryRun } from "../src/thrash/index";
 import {
@@ -132,10 +133,10 @@ describe("readCurrentVersion", () => {
 });
 
 describe("cliBinDir", () => {
-	test("uses DG_HOME, else ~/.dg", () => {
+	test("uses DG_HOME, else the per-OS bin dir", () => {
 		expect(cliBinDir({ DG_HOME: "/opt/dg" })).toBe("/opt/dg/bin");
-		expect(cliBinDir({})).toBe(join(homedir(), ".dg", "bin"));
-		expect(cliBinDir({ DG_HOME: "" })).toBe(join(homedir(), ".dg", "bin"));
+		expect(cliBinDir({})).toBe(resolveDgPaths({ env: {} }).binDir);
+		expect(cliBinDir({ DG_HOME: "" })).toBe(resolveDgPaths({ env: {} }).binDir);
 	});
 
 	test("cliDest follows DG_HOME and names the shim", () => {

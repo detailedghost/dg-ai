@@ -62,15 +62,17 @@ describe("dg-daemon pair", () => {
 		}
 	});
 
-	it("repairs a permissive DG_HOME before writing the pairing record", async () => {
+	it("repairs a permissive state folder before writing the pairing record", async () => {
 		const dgHome = freshDgHome();
 		try {
-			chmodSync(dgHome, 0o777);
+			const { stateDir } = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			mkdirSync(stateDir, { recursive: true });
+			chmodSync(stateDir, 0o777);
 
 			const result = await runDaemonCommand(dgHome, "pair");
 
 			expect(result.exitCode).toBe(0);
-			expect(statSync(dgHome).mode & 0o777).toBe(0o700);
+			expect(statSync(stateDir).mode & 0o777).toBe(0o700);
 		} finally {
 			cleanupDgHome(dgHome);
 		}
@@ -81,6 +83,7 @@ describe("dg-daemon pair", () => {
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
 			const lockPath = `${paths.pairingPath}.lock`;
+			mkdirSync(paths.stateDir, { recursive: true, mode: 0o700 });
 			mkdirSync(lockPath, { mode: 0o700 });
 			writeFileSync(join(lockPath, "owner"), String(process.pid), {
 				mode: 0o600,

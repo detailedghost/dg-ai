@@ -45,7 +45,7 @@ function systemOnly(...present: SystemChannel[]) {
 }
 
 function recordDownload(version: string): void {
-	const browsers = path.join(dir, "browsers");
+	const browsers = path.join(dir, "data", "browsers");
 	const executablePath = path.join(browsers, "chromium", "chrome");
 	mkdirSync(path.dirname(executablePath), { recursive: true });
 	writeFileSync(executablePath, "");
@@ -98,7 +98,7 @@ describe("pwChecks browser check", () => {
 
 	test("a marker whose executable is gone counts as no browser", async () => {
 		recordDownload("131.0.1");
-		rmSync(path.join(dir, "browsers", "chromium"), { recursive: true });
+		rmSync(path.join(dir, "data", "browsers", "chromium"), { recursive: true });
 		const result = await createBrowserCheck(systemOnly()).run(context());
 		expect(result.status).toBe("warn");
 	});
@@ -169,7 +169,7 @@ describe("doctor pw-code allow-rule guard", () => {
 		writeFileSync(
 			path.join(world.home, ".claude", "settings.json"),
 			JSON.stringify({
-				permissions: { allow: ["Bash(~/.dg/bin/dg-skills:*)"] },
+				permissions: { allow: ["Bash(dg-skills:*)"] },
 			}),
 		);
 		const { report } = await world.report(["pw-code"]);

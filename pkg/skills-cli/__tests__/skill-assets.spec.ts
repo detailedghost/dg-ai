@@ -9,6 +9,7 @@ import {
 } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import { resolveSkillAsset } from "../src/utils/skill-assets";
 import { proxyFixtures, relocatedProxyCli, runProxyProcess } from "./proxy-fixtures";
 
@@ -197,8 +198,8 @@ describe("resolveSkillAsset", () => {
 
 	test("loads DG_HOME resources before plugin roots and defaults to the isolated HOME", async () => {
 		const dgHome = join(fixture.root, "dg ' home");
-		const configuredPath = protoAssets(join(dgHome, "skills"));
-		const homePath = protoAssets(join(fixture.home, ".dg", "skills"));
+		const configuredPath = protoAssets(join(dgHome, "data", "skills"));
+		const homePath = protoAssets(resolveDgPaths({ homeDir: fixture.home, env: {} }).skillsDir);
 		const configured = await runProxyProcess(probe, fixture, {
 			DG_HOME: dgHome,
 		});

@@ -1,4 +1,4 @@
-# Install the dg runtime and bundle for Windows into %USERPROFILE%\.dg, then run `dg-skills install`.
+# Install the dg runtime and bundle for Windows into %LOCALAPPDATA%\dg, then run `dg-skills install`.
 #
 #   irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 #
@@ -147,7 +147,15 @@ if ($env:DG_CLI_ONLY -eq "1" -and $env:DG_AGENT_ONLY -eq "1") {
 	throw "dg-skills: set only one of DG_CLI_ONLY and DG_AGENT_ONLY"
 }
 
-$dgHome = if ($env:DG_HOME) { $env:DG_HOME } else { Join-Path $env:USERPROFILE ".dg" }
+if ($env:DG_HOME) {
+	$dgRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:DG_HOME)
+	$dgHome = Join-Path $dgRoot "data"
+	$binDir = Join-Path $dgRoot "bin"
+} else {
+	$localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $env:USERPROFILE "AppData\Local" }
+	$dgHome = Join-Path $localAppData "dg"
+	$binDir = Join-Path $dgHome "bin"
+}
 
 if ($env:DG_SKILLS_ONLY -eq "1") {
 	$skillsDest = if ($env:DG_SKILLS_DEST) { $env:DG_SKILLS_DEST } else { Join-Path $dgHome "skills" }
@@ -250,7 +258,7 @@ try {
 		Assert-DgSha256 $libTar $libAsset $expectedLib
 	}
 
-	New-Item -ItemType Directory -Force -Path (Join-Path $dgHome "runtime"), (Join-Path $dgHome "lib"), (Join-Path $dgHome "bin") | Out-Null
+	New-Item -ItemType Directory -Force -Path (Join-Path $dgHome "runtime"), (Join-Path $dgHome "lib"), $binDir | Out-Null
 
 	if ($needBun) {
 		$stage = Join-Path $work "bun-stage"
@@ -274,7 +282,6 @@ try {
 	Set-DgJunction (Join-Path $dgHome "runtime\current") $bunDir
 	Set-DgJunction (Join-Path $dgHome "lib\current") $libDir
 
-	$binDir = Join-Path $dgHome "bin"
 	foreach ($program in @("dg-skills", "dg-agent", "dg-daemon")) {
 		$old = Join-Path $binDir "$program.exe"
 		if (Test-Path -LiteralPath $old) {
@@ -291,7 +298,7 @@ try {
 	if ($pathParts -notcontains $binDir) {
 		$newPath = (@($pathParts) + $binDir) -join ";"
 		[Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-		Write-Host "Added $binDir to your user PATH. Open a new terminal to use dg-skills."
+		Write-Host "added $binDir to the user PATH; open a new shell"
 	}
 
 	if ($env:DG_SKILLS_ONLY -eq "1") { exit 0 }

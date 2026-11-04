@@ -30,7 +30,7 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 const narrationRoot = (): string =>
-	join(resolveDgPaths().stateDir, "demo-narration");
+	join(resolveDgPaths().dataDir, "demo-narration");
 
 const complete = (dir: string): boolean =>
 	REQUIRED.every((file) => existsSync(join(dir, file)));

@@ -2,7 +2,7 @@
 
 These commands run the `--ext` flow. Every one carries `--ext`; without it `dg-skills proto` runs the local mode.
 
-If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
+If a step fails, run dg-skills doctor proto prototype stash.
 
 ## Extension precondition
 
@@ -45,11 +45,11 @@ same login wall or redirect will not help.
 
 ## CLI bootstrap
 
-Use the installed binary at `~/.dg/bin/dg-skills`; install or refresh it when it
+Use the installed binary at `dg-skills`; install or refresh it when it
 is missing or too old. In a development checkout, rebuild and reinstall it first:
 
 ```bash
-~/.dg/bin/dg-skills proto --ext --help >/dev/null 2>&1 ||
+dg-skills proto --ext --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
@@ -66,7 +66,7 @@ Warn about authenticated/private page inspection and obtain explicit
 confirmation first when applicable. Then run:
 
 ```bash
-STYLE_GUIDE="$(~/.dg/bin/dg-skills proto --ext scrape "$URL")"
+STYLE_GUIDE="$(dg-skills proto --ext scrape "$URL")"
 SLUG="$(basename "$(dirname "$STYLE_GUIDE")")"
 PLAN="/tmp/ai/proto/$SLUG/plan.json"
 mkdir -p "$(dirname "$PLAN")"
@@ -83,7 +83,7 @@ Write the approved ProtoPlan to `$PLAN`, then invoke plant from the target
 project root:
 
 ```bash
-( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext plant "$PLAN" )
+( cd "$TARGET_ROOT" && dg-skills proto --ext plant "$PLAN" )
 ```
 
 The command opens the marked page in the paired browser through the daemon relay and blocks for a
@@ -108,7 +108,7 @@ Do not wait on a Downloads folder or fabricate a Verdict; the CLI only waits on 
 After an approve with no notes and only from the target project root, run:
 
 ```bash
-( cd "$TARGET_ROOT" && ~/.dg/bin/dg-skills proto --ext cleanup "$SLUG" )
+( cd "$TARGET_ROOT" && dg-skills proto --ext cleanup "$SLUG" )
 ```
 
 Cleanup requires `.agents/prototype/<slug>/NOTES.md`. It removes only the

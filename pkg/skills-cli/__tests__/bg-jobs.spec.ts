@@ -96,6 +96,14 @@ describe("dg-skills bg run and status", () => {
 		expect(log).toContain("to-stderr");
 	});
 
+	test("puts the dg launcher folder first on PATH, so a job can call dg-skills by name", async () => {
+		const cwd = world.dir();
+		const dgHome = world.dir("bg-dg-home-");
+		const job = await world.launch('printf "%s\\n" "$PATH"', cwd, [], { DG_HOME: dgHome, PATH: "/usr/bin:/bin" });
+		await world.settled(job.id, cwd);
+		expect(readFileSync(job.logFile, "utf8").trim()).toBe(`${join(dgHome, "bin")}:/usr/bin:/bin`);
+	});
+
 	test("runs the command in the directory given by --cwd", async () => {
 		const caller = world.dir();
 		const workdir = world.dir("bg-work-");

@@ -1,9 +1,11 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { MESSAGES_URL, askSendApproval, createScriptedMessagesBrowser, runSsms } from "@dg/ssms";
 import { launchCdpBrowser } from "../utils/cdp-harness";
 
 function ssmsHome(env: NodeJS.ProcessEnv): string {
-	return env.DG_HOME ?? join(env.HOME ?? "", ".dg");
+	return resolveDgPaths({ env, homeDir: env.HOME || homedir() }).stateDir;
 }
 
 export function ssmsCommandRuntime(stdin: {

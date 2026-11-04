@@ -1,10 +1,10 @@
 # Provider setup
 
-Run commands through the compiled `~/.dg/bin/dg-skills` binary. Start a
+Run commands through the compiled `dg-skills` binary. Start a
 daemon session with the installed companion binary:
 
 ```sh
-~/.dg/bin/dg-agent start --open
+dg-agent start --open
 ```
 
 `dg-agent start` prints one bootstrap URL:
@@ -29,7 +29,7 @@ of those lines. The token stays inside the URL fragment.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 both run locally. Proton runs locally through a pw-managed profile by default.
 With `--ext`, Proton needs exactly one extension connected to that session, and the
-gate line (run only the command after the colon) is `--ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1`. Install or
+gate line (run only the command after the colon) is `--ext only: dg-skills require-extension inbox-cleanup || exit 1`. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
 Proton inbox operations require extension version 1.11.0 or newer.
 
@@ -39,10 +39,10 @@ Profile names select accounts with --account-profile NAME in workflow commands.
 The separate --profile NAME workflow flag chooses a saved routing policy.
 
 ```sh
-~/.dg/bin/dg-skills inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
+dg-skills inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
   --auth-mode browser --session SESSION_ID
-~/.dg/bin/dg-skills inbox profile get personal --session SESSION_ID
-~/.dg/bin/dg-skills inbox profile list --session SESSION_ID
+dg-skills inbox profile get personal --session SESSION_ID
+dg-skills inbox profile list --session SESSION_ID
 ```
 
 Use --json JSON or --file PATH for a complete validated profile. Useful settings
@@ -60,7 +60,7 @@ daemon database. Explicit --data-path fixture commands bypass live services.
 ## Proton Mail
 
 By default Proton runs through a pw profile under `DG_HOME/inbox/proton-profile`.
-Ask the human before running `~/.dg/bin/dg-skills inbox proton sign-in`. It opens
+Ask the human before running `dg-skills inbox proton sign-in`. It opens
 the profile once so the human can sign in, then closes it. On WSL it uses the
 Windows browser through pw, keeps the profile on the Windows side, and never
 opens a headed browser inside WSL. Cookies stay in that profile, and the agent never runs pw commands on the
@@ -93,7 +93,7 @@ plugin's broader Firefox features may require a newer Firefox. Bootstrap
 `dg-skills install firefox` for the Firefox build.
 
 ```sh
-~/.dg/bin/dg-skills inbox profile set proton --provider protonmail --account-hint 0 \
+dg-skills inbox profile set proton --provider protonmail --account-hint 0 \
   --session SESSION_ID
 ```
 
@@ -154,7 +154,7 @@ browser or device-code login; a confidential client uses a registered loopback
 redirect and a secret referenced through --client-secret-env.
 
 ```sh
-~/.dg/bin/dg-skills inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
+dg-skills inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
   --tenant-id organizations --auth-mode device-code --session SESSION_ID
 ```
 

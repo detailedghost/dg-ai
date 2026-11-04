@@ -26,7 +26,7 @@ const BASE_CONFIG = {
 	},
 };
 
-const configPath = () => join(dgHome, "channel-review", "config.json");
+const configPath = () => join(dgHome, "config", "channel-review", "config.json");
 
 beforeEach(() => {
 	cwd = mkdtempSync(join(tmpdir(), "dg-channel-review-cli-"));
@@ -59,7 +59,8 @@ async function run(args: string[], overrides: Record<string, string | undefined>
 }
 
 function writeConfig(body: Record<string, unknown> = {}): void {
-	mkdirSync(join(dgHome, "channel-review"), { recursive: true });
+	mkdirSync(join(dgHome, "config", "channel-review"), { recursive: true });
+	mkdirSync(join(dgHome, "state", "channel-review"), { recursive: true });
 	writeFileSync(
 		configPath(),
 		`${JSON.stringify({ ...BASE_CONFIG, ...body }, null, "\t")}\n`,
@@ -188,7 +189,7 @@ describe("channel-review status", () => {
 			running: false,
 			runners: { claude: "CR-201", codex: "CR-201", copilot: "CR-201", grok: "CR-201" },
 		});
-		expect(body.logPath).toBe(join(dgHome, "channel-review", "daemon.dev.log"));
+		expect(body.logPath).toBe(join(dgHome, "state", "channel-review", "daemon.dev.log"));
 		expect(body.preflight.secret.error).toContain("aws");
 	});
 
@@ -196,7 +197,7 @@ describe("channel-review status", () => {
 		writeConfig();
 		const body = JSON.parse((await run(["status", "--env", "prod"])).stdout);
 		expect(body.env).toBe("prod");
-		expect(body.logPath).toBe(join(dgHome, "channel-review", "daemon.prod.log"));
+		expect(body.logPath).toBe(join(dgHome, "state", "channel-review", "daemon.prod.log"));
 	});
 
 	test("a status without --env reports prod after env prod", async () => {
@@ -208,9 +209,9 @@ describe("channel-review status", () => {
 });
 
 describe("channel-review logs", () => {
-	const logPath = (env = "dev") => join(dgHome, "channel-review", `daemon.${env}.log`);
+	const logPath = (env = "dev") => join(dgHome, "state", "channel-review", `daemon.${env}.log`);
 	const writeLog = (text: string, env = "dev") => {
-		mkdirSync(join(dgHome, "channel-review"), { recursive: true });
+		mkdirSync(join(dgHome, "state", "channel-review"), { recursive: true });
 		writeFileSync(logPath(env), text);
 	};
 

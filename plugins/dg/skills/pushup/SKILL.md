@@ -1,7 +1,7 @@
 ---
 name: pushup
 description: Push the current branch, open its PR, and open that PR in the browser in one step (with --ext, in a dg:browser tab group). Use when committed work is ready to share — "push this up", "ship it", "open a PR and show me". Re-running on a branch that already has a PR just reopens it in the browser.
-allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(~/.dg/bin/dg-skills:*)
+allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr:*) Bash(dg-skills:*)
 ---
 
 # /dg:pushup — push, PR, open it
@@ -9,7 +9,7 @@ allowed-tools: Bash(git branch:*) Bash(git status:*) Bash(git push:*) Bash(gh pr
 Carries committed work from a feature branch to a PR sitting open in the browser. Assumes the
 commits already have the shape you want them reviewed in.
 
-If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
+If a step fails, run dg-skills doctor batch-open.
 
 ## Usage
 
@@ -42,15 +42,18 @@ If a step fails, run ~/.dg/bin/dg-skills doctor batch-open.
 5. **Open the PR.** With `--draft`, pass `--draft` to `gh pr create`. Title: one conventional-commit line covering the change as a whole. Body: two
    sentences of context, then one tight bullet per logical change, then a `Risk` line (what could break) and a
    `How to revert` line (the one step that undoes it).
-6. **Open it in the browser.** `~/.dg/bin/dg-skills batch-open <url>` opens a plain tab. With `--ext`,
-   run `~/.dg/bin/dg-skills batch-open --ext --group <name> <url>`, defaulting to group `pr`. Bootstrap
+6. **Open it in the browser.** `dg-skills batch-open <url>` opens a plain tab. With `--ext`,
+   run `dg-skills batch-open --ext --group <name> <url>`, defaulting to group `pr`. Bootstrap
    the binary first when missing. The bootstrap runs `sh` and `curl`, which this skill
    does not pre-approve, so Claude Code asks before each one:
 
    ```sh
-   ~/.dg/bin/dg-skills batch-open --help >/dev/null 2>&1 ||
+   dg-skills batch-open --help >/dev/null 2>&1 ||
+     "${DG_HOME:-$HOME/.local}/bin/dg-skills" batch-open --help >/dev/null 2>&1 ||
      curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
    ```
+
+   Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
    With `--ext`, report which group you used. If `batch-open` fails, print the PR URL and continue: the PR already exists.
 

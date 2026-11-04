@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { writeFilePreserving } from "./fs";
-import { resolveDgPaths } from "./paths";
+import { resolveDgPaths } from "./dg-paths";
 
 export type DgConfig = Record<string, unknown>;
 type ConfigEnv = Record<string, string | undefined>;
 
 function configFile(env: ConfigEnv): string {
-	return join(resolveDgPaths({ env }).stateDir, "config.json");
+	return resolveDgPaths({ env }).configPath;
 }
 
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);

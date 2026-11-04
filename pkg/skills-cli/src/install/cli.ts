@@ -12,12 +12,14 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { skillDirectoryNames } from "@dg/common";
-import { personasDest, resolveDgPaths, run, skillsInstallDest } from "@dg/common/node";
+import { personasDest, run, skillsInstallDest } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
 import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
-import { PROGRAMS, writeShims } from "./shims";
+import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
+import { moveVerified, removeSource } from "./migrate-home";
+import { PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
@@ -25,9 +27,11 @@ import {
 } from "./skills-only";
 import {
 	cliBinDir,
+	dgDir,
 	downloadReleaseAsset,
 	extensionDest,
 	extensionDgDirs,
+	legacyExtensionDest,
 	extractZip,
 	installRoot,
 	listReleases,
@@ -53,6 +57,22 @@ import {
 	runSync,
 } from "./recommended-plugins";
 import { installRecommendedSkillsOnly } from "./recommended-skills-only";
+
+function reloadFromNewFolder(target: Target, path: string): string {
+	return target === "firefox"
+		? `dg: the dg-ai-extension (firefox) folder moved to ${path}. Open about:debugging#/runtime/this-firefox and load ${join(path, "manifest.json")} once.`
+		: `dg: the dg-ai-extension (${target}) folder moved to ${path}. Open chrome://extensions once, remove the old dg-ai-extension entry, then click Load unpacked and select ${path}.`;
+}
+
+/** Moves the extension staged by an older release into the data root; true when the browser must load it again. */
+function moveStagedExtension(target: Target, dest: { copyPath: string; printPath: string }): boolean {
+	const old = legacyExtensionDest(target);
+	if (old.copyPath === dest.copyPath || !existsSync(old.copyPath)) return false;
+	if (existsSync(dest.copyPath)) removeSource(old.copyPath);
+	else if (moveVerified(old.copyPath, dest.copyPath, { log: console.log }) === "failed") return false;
+	console.log(reloadFromNewFolder(target, dest.printPath));
+	return true;
+}
 
 function retireLegacyExtensions(): void {
 	if (removeLegacyExtensions(extensionDgDirs()).length === 0) return;
@@ -152,16 +172,17 @@ export function currentBinaryLine(
 const RETIRED_BINARIES = ["dg-server"];
 
 export function removeRetiredBinaries(): void {
-	const bin = cliBinDir();
-	for (const name of RETIRED_BINARIES) {
-		for (const dest of [join(bin, name), join(bin, `${name}.exe`)]) {
-			if (!existsSync(dest)) continue;
-			rmSync(dest, { force: true });
-			console.log(`removed the retired ${name} binary at ${dest}.`);
+	for (const bin of new Set([cliBinDir(), join(dgDir(), "bin")])) {
+		for (const name of RETIRED_BINARIES) {
+			for (const dest of [join(bin, name), join(bin, `${name}.exe`)]) {
+				if (!existsSync(dest)) continue;
+				rmSync(dest, { force: true });
+				console.log(`removed the retired ${name} binary at ${dest}.`);
+			}
 		}
-	}
-	for (const name of [...RETIRED_BINARIES, ...PROGRAMS]) {
-		rmSync(join(bin, `.${name}.version`), { force: true });
+		for (const name of [...RETIRED_BINARIES, ...PROGRAMS]) {
+			rmSync(join(bin, `.${name}.version`), { force: true });
+		}
 	}
 }
 
@@ -179,7 +200,7 @@ async function installBundleLocked(root: string, release: PickedBundle): Promise
 	const pin = present && existsSync(currentBun) ? undefined : await fetchRuntimePin(release);
 	const runtimeBin = pin ? await stageRuntime(root, pin) : currentBun;
 	await fetchBundle(root, release, runtimeBin, pin && (() => activateRuntime(root, pin)));
-	writeShims(root);
+	finishLauncherLayout(release.version);
 	removeRetiredBinaries();
 	console.log(
 		present && installed === release.version
@@ -203,9 +224,7 @@ function pruneClaudePluginCache(keep: boolean): void {
 
 function noteForeignDgHome(): void {
 	const home = process.env.DG_HOME;
-	if (home && resolve(home) !== resolve(resolveDgPaths({ env: {} }).stateDir)) {
-		console.error(`note: DG_HOME=${home}; installing there`);
-	}
+	if (home) console.error(`note: DG_HOME=${home}; installing there`);
 }
 
 async function installCli(keepCache: boolean): Promise<void> {
@@ -267,14 +286,16 @@ function finishExtensionStage(
 	version: string,
 	markerVersion: string | undefined,
 	stage: () => void,
+	moved = false,
 ): void {
 	stage();
 	console.log(`dg-ai-extension (${target}) staged at ${dest.printPath}`);
-	if (markerVersion) {
+	if (markerVersion && !moved) {
 		console.log("extension updated — click the reload icon on the extensions page.");
-	} else {
+	} else if (!moved) {
 		printSteps(target, dest.printPath);
 	}
+
 	writeMarkerEntry(target, version);
 	console.log(`dg-ai-extension (${target}) set up (v${version}).`);
 }
@@ -289,12 +310,18 @@ async function installPinnedAll(target: Target, pin: string, keepCache: boolean)
 	await installBundle(bundle);
 
 	retireLegacyExtensions();
+	const moved = moveStagedExtension(target, dest);
 	const markerVersion = readMarker()[target];
 	if (markerVersion === release.version && existsSync(dest.copyPath)) {
 		console.log(`dg-ai-extension (${target}) already set up (v${markerVersion}).`);
 	} else {
-		finishExtensionStage(target, dest, release.version, markerVersion, () =>
-			extractZip(release.zip, dest.copyPath),
+		finishExtensionStage(
+			target,
+			dest,
+			release.version,
+			markerVersion,
+			() => extractZip(release.zip, dest.copyPath),
+			moved,
 		);
 	}
 
@@ -342,6 +369,7 @@ async function install(
 	}
 
 	retireLegacyExtensions();
+	const moved = moveStagedExtension(target, dest);
 	const markerVersion = readMarker()[target];
 	if (!forceLocal && markerVersion && versionGte(markerVersion, version) && existsSync(dest.copyPath)) {
 		console.log(
@@ -351,7 +379,7 @@ async function install(
 		return;
 	}
 
-	finishExtensionStage(target, dest, version, markerVersion, stage);
+	finishExtensionStage(target, dest, version, markerVersion, stage, moved);
 
 	// Also keep the bundle current (skip in --local dev, where we run source).
 	if (!forceLocal) await installCli(keepCache);
@@ -384,6 +412,7 @@ export async function runInstall(
 	if (opts.withRecommended && opts.agentOnly) {
 		throw new Error("--with-recommended cannot be combined with --agent-only");
 	}
+	await migrateBeforeInstall();
 	noteForeignDgHome();
 	if (opts.skillsOnly) {
 		assertSkillsOnlyFlags({

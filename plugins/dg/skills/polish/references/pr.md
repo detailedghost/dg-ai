@@ -99,8 +99,8 @@ owner/repo#114 → #2382 → #2383 → main
 - **#2383 — this PR** — depends on #2382
 ```
 
-Run `~/.dg/bin/dg-skills chain plan <layers...>` first (dry run, no `gh` calls — this is the PR-body draft to
-show at the Batch PRs approval gate), then `~/.dg/bin/dg-skills chain apply <layers...>` after approval to
+Run `dg-skills chain plan <layers...>` first (dry run, no `gh` calls — this is the PR-body draft to
+show at the Batch PRs approval gate), then `dg-skills chain apply <layers...>` after approval to
 retarget bases and upsert this block into every PR in the chain. Add a
 **"superseded by #N"** banner by hand to any PR the stack replaces — `/dg:chain` doesn't
 manage that.
@@ -108,4 +108,4 @@ manage that.
 Default is still one PR per change — only stack when changes genuinely depend on each
 other or span repos. PRs in the same batch with no real dependency between them are
 not a stack; leave them out of `/dg:chain` entirely (or pass them via `--independent` if
-they're being linked in the same board/summary — see `~/.dg/bin/dg-skills chain --help`).
+they're being linked in the same board/summary — see `dg-skills chain --help`).

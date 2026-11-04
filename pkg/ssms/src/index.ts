@@ -1,5 +1,5 @@
 export { COMMANDS, renderHelp } from "./cli/catalog";
-export { runSsms, type RunResult, type SsmsRuntime } from "./cli/run";
+export { accountHome, allowSendHome, runSsms, type RunResult, type SsmsRuntime } from "./cli/run";
 export { classifyConversation } from "./classifier/classify";
 export { applyCleanup, planCleanup } from "./cleanup/apply";
 export { parseCleanupConfig, parseCleanupYaml } from "./config/parse";

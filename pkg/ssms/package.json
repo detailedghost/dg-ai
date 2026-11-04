@@ -12,6 +12,7 @@
 		"mutate": "stryker run"
 	},
 	"dependencies": {
+		"@dg/common": "workspace:*",
 		"qrcode": "1.5.4",
 		"yaml": "2.9.0"
 	},

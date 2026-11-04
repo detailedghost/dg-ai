@@ -54,7 +54,7 @@ describe("dg-skills proto entry point", () => {
 		root = makeTempDir("dg-proto-dispatch-");
 		cwd = join(root, "project");
 		mkdirSync(cwd, { recursive: true });
-		mkdirSync(join(root, "dg-home"), { recursive: true });
+		mkdirSync(join(root, "dg-home", "config"), { recursive: true });
 		env = {
 			...(process.env as Record<string, string>),
 			AI_SCRATCH_DIR: join(root, "scratch"),
@@ -77,7 +77,7 @@ describe("dg-skills proto entry point", () => {
 		);
 
 	test("plain proto runs the local mode, also on a CLI-only install", async () => {
-		writeFileSync(join(root, "dg-home", "cli-only"), "");
+		writeFileSync(join(root, "dg-home", "config", "cli-only"), "");
 		expect((await run(["confirm", "demo", "B", "--notes=ok"])).exitCode).toBe(
 			0,
 		);
@@ -92,7 +92,7 @@ describe("dg-skills proto entry point", () => {
 	});
 
 	test("--ext runs the extension flow, which needs the extension on a CLI-only install", async () => {
-		writeFileSync(join(root, "dg-home", "cli-only"), "");
+		writeFileSync(join(root, "dg-home", "config", "cli-only"), "");
 		const result = await run(["--ext", "cleanup", "some-slug"]);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain(

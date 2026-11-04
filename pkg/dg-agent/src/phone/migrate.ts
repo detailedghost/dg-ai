@@ -9,8 +9,8 @@ import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
 import {
 	adoptListenerPid,
-	defaultListenerArgv,
 	isZombie,
+	listenerArgvFor,
 	listenerCommandArgs,
 	listenerGeneration,
 	listenerLogPath,
@@ -343,7 +343,7 @@ function defaultMigrateDeps(): MigrateDeps {
 		isAlive,
 		kill: (pid) => process.kill(pid, "SIGTERM"),
 		sleepSync,
-		startListener: (paths) => spawnDetachedListener(defaultListenerArgv(paths.stateDir, []), listenerLogPath(paths)),
+		startListener: (paths) => spawnDetachedListener(listenerArgvFor(paths, []), listenerLogPath(paths)),
 		commandArgs: listenerCommandArgs,
 		restoreListener: (paths, argv) => spawnDetachedListener(argv, listenerLogPath(paths)),
 		jobCli: runDaemonJobCli,
@@ -421,7 +421,7 @@ function argvThisBinaryAccepts(paths: DgPaths, saved: SavedListener[]): string[]
 		if (argv.includes("--line") || argv.includes("phone-friend")) continue;
 		if (argv.includes("phone") && argv.includes("__run")) return argv;
 	}
-	return defaultListenerArgv(paths.stateDir, []);
+	return listenerArgvFor(paths, []);
 }
 
 /**

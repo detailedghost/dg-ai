@@ -2,7 +2,7 @@ import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { noteSecret } from "../redact";
 import { ensurePrivateDir, writeFileAtomic } from "./fs";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 import { mintToken } from "./session-tokens";
 
 export function ownerTokenPath(paths: DgPaths): string {

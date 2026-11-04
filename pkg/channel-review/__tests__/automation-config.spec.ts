@@ -29,7 +29,7 @@ const failure = (extra: Record<string, unknown>): string => {
 describe("loadConfig automation", () => {
 	test("defaults the clone root under DG_HOME and the notify target to the owner", () => {
 		expect(load().automation).toEqual({
-			cloneRoot: join(home.dir, "channel-review", "clones"),
+			cloneRoot: join(home.dir, "state", "channel-review", "clones"),
 			notify: { target: "owner" },
 		});
 	});
@@ -184,13 +184,13 @@ describe("loadConfig deps", () => {
 
 	test("adds the deps-upgrade tools to the fix allowlist base", () => {
 		const tools = load().deps.allowedTools;
-		expect(tools).toContain(`Bash(${homedir()}/.dg/bin/dg-skills deps-upgrade:*)`);
+		expect(tools).toContain("Bash(dg-skills deps-upgrade:*)");
 		expect(tools).toContain("Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)");
-		expect(tools).not.toContain(`Bash(${homedir()}/.dg/bin/dg-skills:*)`);
+		expect(tools).not.toContain("Bash(dg-skills:*)");
 		expect(tools).toContain("Bash(git:*)");
 		expect(tools).toContain("Bash(gh:*)");
 		expect(tools).toContain("Bash(git status:*)");
-		expect(tools).toContain(`Edit(/${home.dir}/channel-review/clones/**)`);
+		expect(tools).toContain(`Edit(/${home.dir}/state/channel-review/clones/**)`);
 	});
 
 	test("reads repos with their own schedule overrides", () => {

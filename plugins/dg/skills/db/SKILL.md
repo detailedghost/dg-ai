@@ -5,26 +5,29 @@ description: Query PostgreSQL and Snowflake databases with read-safe defaults an
 
 # Database Queries with db
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal installed path:
+First run: install or refresh the CLI when it is missing or too old.
 
 ```bash
-~/.dg/bin/dg-skills db --help >/dev/null 2>&1 ||
+dg-skills db --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" db --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor credentials db stash.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor credentials db stash.
 
 ## Quick start
 
 ```bash
-~/.dg/bin/dg-skills db connections
-~/.dg/bin/dg-skills db test my-pg
-~/.dg/bin/dg-skills db query my-pg "SELECT * FROM users LIMIT 10"
+dg-skills db connections
+dg-skills db test my-pg
+dg-skills db query my-pg "SELECT * FROM users LIMIT 10"
 ```
 
 ## Usage
 
-**Usage:** `~/.dg/bin/dg-skills db <query|tables|describe|explain|schema|connections|test> [arguments] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]`
+**Usage:** `dg-skills db <query|tables|describe|explain|schema|connections|test> [arguments] [--write] [--limit N] [--format F] [--max-cell N] [--schema S] [--file file.sql]`
 
 ## Flags
 
@@ -42,18 +45,18 @@ An unrecognized flag is rejected with an error. A SQL or table argument that its
 ## Commands
 
 ```bash
-~/.dg/bin/dg-skills db query <conn> "SQL"
-~/.dg/bin/dg-skills db query <conn> -f file.sql
-~/.dg/bin/dg-skills db query <conn> "SQL" --write
-~/.dg/bin/dg-skills db tables <conn>
-~/.dg/bin/dg-skills db describe <conn> <table>
-~/.dg/bin/dg-skills db explain <conn> "SQL"
-~/.dg/bin/dg-skills db schema <conn>
-~/.dg/bin/dg-skills db connections
-~/.dg/bin/dg-skills db test <conn>
+dg-skills db query <conn> "SQL"
+dg-skills db query <conn> -f file.sql
+dg-skills db query <conn> "SQL" --write
+dg-skills db tables <conn>
+dg-skills db describe <conn> <table>
+dg-skills db explain <conn> "SQL"
+dg-skills db schema <conn>
+dg-skills db connections
+dg-skills db test <conn>
 ```
 
-Connections are encrypted credentials named `db/<conn>`. Register them with `~/.dg/bin/dg-skills credentials set`; see [connections.md](references/connections.md) for each authentication mode.
+Connections are encrypted credentials named `db/<conn>`. Register them with `dg-skills credentials set`; see [connections.md](references/connections.md) for each authentication mode.
 
 ## Output
 
@@ -68,10 +71,10 @@ Queries are read-safe by default. `SELECT`, `SHOW`, `DESCRIBE`, non-analyzing `E
 The login URL goes to stderr, and the connection blocks until login completes. Run it in the background, poll the log, and relay the **last** `https://` line because each retry creates a new SAML request:
 
 ```bash
-~/.dg/bin/dg-skills db test my-sf > "$(~/.dg/bin/dg-skills stash db sso.log)" 2>&1
+dg-skills db test my-sf > "$(dg-skills stash db sso.log)" 2>&1
 ```
 
-Never pipe through `head` or `grep`, and do not run it in the foreground when an agent must relay the URL; buffering can make the prompt look hung. A user can instead run `~/.dg/bin/dg-skills db test my-sf` once, themselves, to prime the temporary credential cache.
+Never pipe through `head` or `grep`, and do not run it in the foreground when an agent must relay the URL; buffering can make the prompt look hung. A user can instead run `dg-skills db test my-sf` once, themselves, to prime the temporary credential cache.
 
 ## References
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { slugify } from "@dg/common";
-import type { SystemSeams } from "@dg/common/node";
+import { resolveDgPaths, type SystemSeams } from "@dg/common/node";
 
 /** Stable collision-resistant slug derived from a URL's host/path and full URL. */
 export function protoSlug(url: string): string {
@@ -35,6 +35,6 @@ export function protoScratchPath(
 	const homeDir = seams.homeDir ?? homedir();
 	const root = env.AI_SCRATCH_DIR
 		? join(env.AI_SCRATCH_DIR, "proto")
-		: join(homeDir, ".dg", "proto");
+		: join(resolveDgPaths({ env, homeDir }).cacheDir, "proto");
 	return join(root, slug, file);
 }

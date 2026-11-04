@@ -9,14 +9,17 @@ One verb for "do this work in the background and let me keep going." The work ru
 
 The mechanism differs by runtime. `/dg:bg` picks it for you: detect the runtime, classify the task, launch on the matching primitive, tell the user how to check back.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills bg --help >/dev/null 2>&1 ||
+dg-skills bg --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" bg --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor bg proxy.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor bg proxy.
 
 ## Usage
 
@@ -32,9 +35,9 @@ Everything up to a flag is the task. It is either a natural-language task ("inve
 
 Managing a launched job (see [references/job-management.md](references/job-management.md)):
 
-- `~/.dg/bin/dg-skills bg cancel <id>` (alias `~/.dg/bin/dg-skills bg kill <id>`) stops a running background job.
-- `~/.dg/bin/dg-skills bg update <id> '<context>'` feeds more context into an in-flight or finished agentic job.
-- `~/.dg/bin/dg-skills bg prune --cwd <dir>` drops the records of finished jobs for a directory tree. `/dg:cls` calls it when it removes a worktree. Live jobs are reported, never killed.
+- `dg-skills bg cancel <id>` (alias `dg-skills bg kill <id>`) stops a running background job.
+- `dg-skills bg update <id> '<context>'` feeds more context into an in-flight or finished agentic job.
+- `dg-skills bg prune --cwd <dir>` drops the records of finished jobs for a directory tree. `/dg:cls` calls it when it removes a worktree. Live jobs are reported, never killed.
 
 ## The decision (runtime-independent)
 
@@ -56,7 +59,7 @@ Managing a launched job (see [references/job-management.md](references/job-manag
 | Task | Read |
 |---|---|
 | Pick the launch primitive as Claude Code (Agent and Workflow tools available) | [references/claude-code.md](references/claude-code.md) |
-| Launch as any other CLI agent (codex, copilot, pi, opencode, grok) through `~/.dg/bin/dg-skills bg` | [references/other-agent.md](references/other-agent.md) |
+| Launch as any other CLI agent (codex, copilot, pi, opencode, grok) through `dg-skills bg` | [references/other-agent.md](references/other-agent.md) |
 | Check status, read logs, or cancel and update a running job | [references/job-management.md](references/job-management.md) |
 
 ## Guardrails

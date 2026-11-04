@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
-import { killProcessTree } from "@dg/common/node";
+import { killProcessTree, withBinOnPath } from "@dg/common/node";
 import type { CrCode } from "../errors";
 
 const OUTPUT_CAP_BYTES = 5 * 1024 * 1024;
@@ -36,11 +36,12 @@ export type ProcessResult = {
 };
 
 function childEnv(keepOauthToken: boolean): Record<string, string | undefined> {
-	return Object.fromEntries(
+	const env = Object.fromEntries(
 		Object.entries(process.env).filter(
 			([key]) => (keepOauthToken && key === OAUTH_TOKEN) || !STRIPPED_ENV.test(key),
 		),
 	);
+	return { ...env, PATH: withBinOnPath(env.PATH) };
 }
 
 function isMissingBinary(error: unknown): boolean {

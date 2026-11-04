@@ -2,7 +2,7 @@
 
 ## What the CLI already covers
 
-`~/.dg/bin/dg-skills sniff` parses these shapes. Do not re-scan them.
+`dg-skills sniff` parses these shapes. Do not re-scan them.
 
 | Type | Sources |
 |------|---------|
@@ -53,7 +53,7 @@ Columns, left-aligned, one space between: `⚠` marker (2), `TYPE` (10), `NAME` 
 ## Flag behavior
 
 - `--gaps` — filter to `gaps.length > 0` and print each gap's `detail` under its row. If zero, say so in one line and stop.
-- `-o` — after printing, write the same table to `$(~/.dg/bin/dg-skills stash -a sniff <repo>.md)` under a `# <repo> requirements` heading with the date. The stash call creates the directory.
+- `-o` — after printing, write the same table to `$(dg-skills stash -a sniff <repo>.md)` under a `# <repo> requirements` heading with the date. The stash call creates the directory.
 
 ## Empty results
 

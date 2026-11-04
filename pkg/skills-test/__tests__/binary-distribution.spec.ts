@@ -117,7 +117,7 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 	});
 
 	test("bootstrap.sh ends by calling the dg-skills shim with install", () => {
-		expect(sh).toMatch(/bin\/dg-skills"?\s+install/);
+		expect(sh).toMatch(/\$\{BIN\}\/dg-skills"?\s+install/);
 	});
 
 	test("bootstrap.ps1 skills-only copies the skill files before any release download and runs no dg-skills install", () => {
@@ -153,6 +153,17 @@ describe("the bootstrap scripts install the runtime pin and the bundle, then del
 		}
 		expect(ps1).toMatch(/SetEnvironmentVariable\([^)]*"?User"?\)/);
 		expect(ps1).toMatch(/-notcontains|-notlike|-contains|\.Contains\(/);
+	});
+
+	test("bootstrap.ps1 installs under LOCALAPPDATA and names the PATH change", () => {
+		expect(ps1).toContain('Join-Path $localAppData "dg"');
+		expect(ps1).toContain('$binDir = Join-Path $dgHome "bin"');
+		expect(ps1).toContain("$dgRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($env:DG_HOME)");
+		expect(ps1).toContain('Join-Path $dgRoot "data"');
+		expect(ps1).toContain('Join-Path $dgRoot "bin"');
+		expect(ps1).not.toContain('Join-Path $env:DG_HOME');
+		expect(ps1).toContain("added $binDir to the user PATH; open a new shell");
+		expect(ps1).not.toContain('Join-Path $env:USERPROFILE ".dg"');
 	});
 });
 

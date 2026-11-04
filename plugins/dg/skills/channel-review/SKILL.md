@@ -5,17 +5,21 @@ description: Run local thrash reviews for GitHub pull requests and GitLab merge 
 
 # Channel review
 
-The executable is `~/.dg/bin/dg-skills`.
+The executable is `dg-skills`.
 On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
-~/.dg/bin/dg-skills deps-upgrade --help >/dev/null 2>&1 &&
-  ~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||
+{ dg-skills deps-upgrade --help >/dev/null 2>&1 &&
+  dg-skills channel-review --help >/dev/null 2>&1; } ||
+  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
-~/.dg/bin/dg-skills channel-review --help
+if dg-skills deps-upgrade --help >/dev/null 2>&1 && dg-skills channel-review --help >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor channel-review credentials address thrash deps-upgrade.
+Call `dg-skills` in every later step. If a bare name does not answer, also after the bootstrap, call it by its `${DG_HOME:-$HOME/.local}/bin` path instead.
+
+If a step fails, run dg-skills doctor channel-review credentials address thrash deps-upgrade.
 
 For PowerShell, use [the raw bootstrap.ps1](https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1).
 Read [setup](references/setup.md) and [commands](references/commands.md) before
@@ -37,20 +41,20 @@ fixes, and puts the approved reaction on your message. Only senders in
 `owner.senderIds` can run it. `$emoji <slot>` sets a custom reaction from the chat.
 Send `$help $review`, `$help $address`, or `$help $emoji` for details.
 
-When invoked without an operation, run `~/.dg/bin/dg-skills channel-review status` and report
+When invoked without an operation, run `dg-skills channel-review status` and report
 the JSON checks and remedies. Do not read repository sources to run this skill.
 
 | Operation | Command |
 | --- | --- |
-| Background daemon | `~/.dg/bin/dg-skills channel-review start --env dev` |
-| Stop daemon | `~/.dg/bin/dg-skills channel-review stop --env dev` |
-| State, runner probes, preflight | `~/.dg/bin/dg-skills channel-review status --env dev` |
-| Foreground daemon | `~/.dg/bin/dg-skills channel-review run --env dev` |
-| Print the daemon log | `~/.dg/bin/dg-skills channel-review logs --env dev -n 40` (add `-f` to follow) |
-| Show or save default env | `~/.dg/bin/dg-skills channel-review env` or `~/.dg/bin/dg-skills channel-review env dev` |
-| Capture a human's custom reaction | `~/.dg/bin/dg-skills channel-review emojis capture --slot progress --env dev` |
-| Save a known custom ID | `~/.dg/bin/dg-skills channel-review emojis set approved '<id>'` |
-| Show reaction slots | `~/.dg/bin/dg-skills channel-review emojis show` |
+| Background daemon | `dg-skills channel-review start --env dev` |
+| Stop daemon | `dg-skills channel-review stop --env dev` |
+| State, runner probes, preflight | `dg-skills channel-review status --env dev` |
+| Foreground daemon | `dg-skills channel-review run --env dev` |
+| Print the daemon log | `dg-skills channel-review logs --env dev -n 40` (add `-f` to follow) |
+| Show or save default env | `dg-skills channel-review env` or `dg-skills channel-review env dev` |
+| Capture a human's custom reaction | `dg-skills channel-review emojis capture --slot progress --env dev` |
+| Save a known custom ID | `dg-skills channel-review emojis set approved '<id>'` |
+| Show reaction slots | `dg-skills channel-review emojis show` |
 
 Start and run also accept `--runner` and `--chat-id`; see the command reference.
 Capture requires a human to react on its own prompt. Apply saved IDs after
@@ -67,8 +71,8 @@ scheduled deps-upgrade runs. Keys and variables: [setup](references/setup.md); s
 
 1. Add the prod bot (`envs.prod.botName`) to each review chat.
 2. Run `aws sso login --profile <envs.prod.awsProfile>` and confirm the secret is readable.
-3. Run `~/.dg/bin/dg-skills channel-review status --env prod` while stopped. Require every
+3. Run `dg-skills channel-review status --env prod` while stopped. Require every
    preflight check to succeed: secret and reactions `ok`, a resolved ID for each chat,
    and the selected runner probe `ok`.
-4. Run `~/.dg/bin/dg-skills channel-review start --env prod`.
-5. Run `~/.dg/bin/dg-skills channel-review env prod` to save the default.
+4. Run `dg-skills channel-review start --env prod`.
+5. Run `dg-skills channel-review env prod` to save the default.

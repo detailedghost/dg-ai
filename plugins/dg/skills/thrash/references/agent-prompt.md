@@ -64,7 +64,7 @@ for result handling.
 Use the host's native background task facility when it exists:
 
 ```bash
-~/.dg/bin/dg-skills proxy <backend> --subagent thrash \
+dg-skills proxy <backend> --subagent thrash \
   --cwd "<repo root>" --prompt-file "<chunk task file>"
 ```
 
@@ -82,13 +82,13 @@ with it set.
 If the host has no native background facility, prepare one plan per chunk:
 
 ```bash
-~/.dg/bin/dg-skills proxy <backend> --plan --subagent thrash \
+dg-skills proxy <backend> --plan --subagent thrash \
   --cwd "<repo root>" --prompt-file "<chunk task file>"
 ```
 
 Execute the exact quoted `command` from the plan JSON without reconstructing it.
 It returns a job record with `id`, `logFile`, and `statusFile`. Wait for every job
-using `~/.dg/bin/dg-skills bg status "<id>"`, then read its completed log for the
+using `dg-skills bg status "<id>"`, then read its completed log for the
 proxy result. Planning writes the persona into the plan file; the emitted command
 runs the already briefed task.
 
@@ -104,14 +104,14 @@ For a malformed or missing findings artifact, retry once in the same session and
 same target working directory:
 
 ```bash
-~/.dg/bin/dg-skills proxy <backend> --resume "<sessionId>" --cwd "<repo root>" \
+dg-skills proxy <backend> --resume "<sessionId>" --cwd "<repo root>" \
   --prompt-file "<retry task file>"
 ```
 
 The retry task file holds: "Write the fenced json block to FINDINGS_PATH now<, fixing: error text>. Reply with only the WROTE line." Run that actual resume execution through the same background facility. In the
-portable fallback, use `~/.dg/bin/dg-skills bg update "<id>" "<retry prompt>"` on
+portable fallback, use `dg-skills bg update "<id>" "<retry prompt>"` on
 the completed job to resume its backend session with the retained target cwd, then
-wait with `~/.dg/bin/dg-skills bg status "<newJobId>"` and read `newJobLog`
+wait with `dg-skills bg status "<newJobId>"` and read `newJobLog`
 from the update response. Do not pass `--resume` to `--plan`: planning always
 creates a fresh persona-resolved execution. A second artifact failure stops that
 PR and reports both errors. Compilation, verdict, and posting remain unchanged.

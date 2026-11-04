@@ -1,6 +1,6 @@
 # Steps 5–8 — Review, Docs, Human Gate, PR/MR
 
-Sections 5–8 are the canon for `/dg:spec`'s execute mode too ([spec execute.md](../../spec/references/execute.md) delegates here for all of it, including step 8 — there is no separate PR-launch skill). `/dg:spec` runs step 8 with two deltas, both called out inline: the PR/MR always opens as a draft, and the URL is handed to `~/.dg/bin/dg-skills batch-open` afterward.
+Sections 5–8 are the canon for `/dg:spec`'s execute mode too ([spec execute.md](../../spec/references/execute.md) delegates here for all of it, including step 8 — there is no separate PR-launch skill). `/dg:spec` runs step 8 with two deltas, both called out inline: the PR/MR always opens as a draft, and the URL is handed to `dg-skills batch-open` afterward.
 
 ## Step 5 — Final review + correction
 
@@ -44,7 +44,7 @@ Because nothing has reviewed the code when the PR/MR opens, step 8 forces `--dra
 - c. **Create:** run
 
   ```sh
-  ~/.dg/bin/dg-skills vcs-provider create-pr \
+  dg-skills vcs-provider create-pr \
     --title "<title>" --base "<base>" --head "<branch>" --body "<body>" [--draft]
   ```
 
@@ -52,10 +52,10 @@ Because nothing has reviewed the code when the PR/MR opens, step 8 forces `--dra
 
 - d. **Worktree bookkeeping (`WORKTREE_MODE`):** persist the URL to `worktree.pr_url` in the ephemeral spec. There is no `ExitWorktree` call to make here: step 1 never relocates the session into the worktree (see `setup.md` Step 1), so cwd has been at `worktree.origin_repo` for the whole run — reaching the worktree's files only through the `cd`-prefixed commands step 1 describes. Do **not** remove the worktree (`/dg:address` cleans it up on detected merge). **`/dg:spec` delta:** persist to `worktree.pr_url` in the bundle's `plan.md` instead (if it carries a worktree block) — `plan.md` is the durable spec, not the ephemeral ones this step normally writes. Print: `"PR/MR opened (draft): <url>. Review it there — /dg:address picks up the comments. Worktree retained at <path>."`
 
-- e. The ephemeral spec + scratchpad stay in `$(~/.dg/bin/dg-skills stash -s sdlc)/` — `/dg:address` removes them when the PR/MR merges (Phase 0.25 step 3g), and `/cleanup`'s 30-day walker catches any that never merge. No manual cleanup, and do **not** delete them at open: step 5's reviewers and the later `/dg:address` session still read them.
+- e. The ephemeral spec + scratchpad stay in `$(dg-skills stash -s sdlc)/` — `/dg:address` removes them when the PR/MR merges (Phase 0.25 step 3g), and `/cleanup`'s 30-day walker catches any that never merge. No manual cleanup, and do **not** delete them at open: step 5's reviewers and the later `/dg:address` session still read them.
 
-- f. **Open it:** run `~/.dg/bin/dg-skills batch-open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [browser skill](../../browser/SKILL.md) documents the command) so it lands in the browser without a separate ask. Applies to every PR/MR this step opens, `/dg:spec` included. This is also how the human gets to the review. It is best-effort: the PR already exists, so when `batch-open` fails, print the PR URL and continue.
+- f. **Open it:** run `dg-skills batch-open <url>` (resolve the CLI with the bootstrap block in [SKILL.md](../SKILL.md) first; the [browser skill](../../browser/SKILL.md) documents the command) so it lands in the browser without a separate ask. Applies to every PR/MR this step opens, `/dg:spec` included. This is also how the human gets to the review. It is best-effort: the PR already exists, so when `batch-open` fails, print the PR URL and continue.
 
-- g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/dg:spec`'s multi-slice runs can produce, since unlike `/dg:sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `~/.dg/bin/dg-skills chain plan`/`~/.dg/bin/dg-skills chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on`/dependency-layer data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
+- g. **Dependent PRs/MRs:** if this one depends on another that is still open (cross-slice, cross-spec, or cross-repo — the case `/dg:spec`'s multi-slice runs can produce, since unlike `/dg:sdlc`'s one-per-feature default they may open more than one across a bundle's lifetime), run `dg-skills chain plan`/`dg-skills chain apply` ([chain skill](../../chain/SKILL.md)) on the pair/chain instead of leaving them as unrelated links. The chain command resolves the provider the same way this step does. The `depends_on`/dependency-layer data already computed in `engineering.md` §4.1 plugs straight into the chain command's layer-list input with no translation needed.
 
 > **GATE:** URL captured; in `WORKTREE_MODE`: cwd back at `origin_repo`, worktree intact. This is also where the run ends — the human review happens on the PR/MR afterward.

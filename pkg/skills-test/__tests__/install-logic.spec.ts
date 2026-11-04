@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 /**
  * Unit smoke tests for the install script's release resolution: the exact
  * logic that broke install (per-part release tags).
@@ -9,11 +7,13 @@ import {
 	cliBinDir,
 	expectedSha256,
 	cliDest,
+	installRoot,
 	pickExtAsset,
 	pickRelease,
 	RELEASE_TAG,
 	type Release,
 } from "@dg/skills-cli/lib";
+import { resolveDgPaths } from "@dg/common/node";
 
 const asset = (name: string, url = `u/${name}`) => ({ name, browser_download_url: url });
 
@@ -111,10 +111,14 @@ describe("pickExtAsset (extension zip from the vX.Y.Z release)", () => {
 });
 
 describe("install paths and checksum parsing", () => {
-	test("cliBinDir honors DG_HOME and falls back to ~/.dg/bin", () => {
+	test("cliBinDir honors DG_HOME and falls back to the per-OS bin dir", () => {
 		expect(cliBinDir({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/bin");
-		expect(cliBinDir({})).toBe(join(homedir(), ".dg", "bin"));
-		expect(cliBinDir({ DG_HOME: "" })).toBe(join(homedir(), ".dg", "bin"));
+		expect(cliBinDir({})).toBe(resolveDgPaths({ env: {} }).binDir);
+		expect(cliBinDir({ DG_HOME: "" })).toBe(resolveDgPaths({ env: {} }).binDir);
+	});
+
+	test("installRoot is the data dir that holds runtime and lib", () => {
+		expect(installRoot({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/data");
 	});
 
 	test("cliDest lands in the DG_HOME bin directory, one shim per program", () => {

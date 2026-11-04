@@ -24,9 +24,9 @@ describe("pw protectedSessionRefusal for the Proton profile", () => {
 	const home = "/tmp/dg-protected-home";
 
 	test.each([
-		[["-s=mail-copy", "open", "--profile", `${home}/inbox/proton-profile`]],
-		[["-s=mail-copy", "open", `--profile=${home}/inbox/proton-profile/`]],
-		[["-s=mail-copy", "open", "--profile", `${home}/inbox/../inbox/proton-profile`]],
+		[["-s=mail-copy", "open", "--profile", `${home}/state/inbox/proton-profile`]],
+		[["-s=mail-copy", "open", `--profile=${home}/state/inbox/proton-profile/`]],
+		[["-s=mail-copy", "open", "--profile", `${home}/state/inbox/../inbox/proton-profile`]],
 		[
 			[
 				"-s=mail-copy",

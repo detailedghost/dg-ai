@@ -27,7 +27,7 @@ export function registerInstall(program: Command): void {
 		)
 		.option(
 			"--dest <path>",
-			"directory for --skills-only (default: $DG_SKILLS_DEST, else $DG_HOME/skills or ~/.dg/skills)",
+			"directory for --skills-only (default: $DG_SKILLS_DEST, else the skills folder in the dg data dir)",
 		)
 		.option(
 			"--keep-cache",

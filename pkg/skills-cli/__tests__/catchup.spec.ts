@@ -85,7 +85,7 @@ describe("relocated compiled catchup", () => {
 		bundle = makeTempDir("dg compiled catchup ");
 		stage = join(bundle, "temporary build stage");
 		home = join(bundle, "relocated installed home");
-		binary = join(home, ".dg/bin/dg-skills");
+		binary = join(home, ".local/bin/dg-skills");
 		skills = join(home, "plugins/dg/skills");
 		installedSkill = join(skills, "catchup/SKILL.md");
 		mkdirSync(stage, { recursive: true });
@@ -112,7 +112,7 @@ describe("relocated compiled catchup", () => {
 			trace,
 			env: {
 				...process.env,
-				PATH: bin,
+				PATH: `${bin}:${dirname(binary)}`,
 				HOME: home,
 				XDG_CONFIG_HOME: home,
 				DG_HOME: undefined,

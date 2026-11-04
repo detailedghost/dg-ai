@@ -23,6 +23,7 @@ export type PhoneApi = Pick<
 	| "phoneOpen"
 	| "phoneClose"
 	| "phoneRefresh"
+	| "phoneRollbackHome"
 	| "phoneRun"
 	| "phoneThreadNew"
 	| "phoneThreadList"
@@ -223,6 +224,14 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.action(async () => {
 			const phone = await load();
 			await phone.phoneRefresh(phone.openCloseDeps(getSession()));
+		});
+
+	group
+		.command("__rollback-home", { hidden: true })
+		.description("internal: copy phone state back to the old phone folder for an older release")
+		.action(async () => {
+			const phone = await load();
+			phone.phoneRollbackHome(phone.deps(getSession()));
 		});
 
 	group

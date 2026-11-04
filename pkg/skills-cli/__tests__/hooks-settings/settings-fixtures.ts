@@ -45,7 +45,7 @@ export function settingsWorld() {
 		opencodeDir: join(home, ".config", "opencode"),
 		opencodeJson: join(home, ".config", "opencode", "opencode.json"),
 		opencodePlugin: join(home, ".config", "opencode", "plugins", "dg-hooks.js"),
-		config: join(dgHome, "config.json"),
+		config: join(dgHome, "config", "config.json"),
 	};
 
 	function seed(file: string, content: string | object) {

@@ -24,11 +24,11 @@ describe("channelReviewPaths", () => {
 		expect(dev.configPath).toBe(prod.configPath);
 	});
 
-	test("derives every path from the channel-review dir under the dg state dir", () => {
+	test("derives every path from the channel-review dir under the dg state dir, and the config from the config dir", () => {
 		const seams = seamsFor("linux");
 		const dir = posix.join(resolveDgPaths(seams).stateDir, "channel-review");
 		expect(channelReviewPaths("dev", seams)).toMatchObject({
-			configPath: posix.join(dir, "config.json"),
+			configPath: posix.join(resolveDgPaths(seams).configDir, "channel-review", "config.json"),
 			statePath: posix.join(dir, "state.dev.json"),
 			pidPath: posix.join(dir, "daemon.dev.pid"),
 			logPath: posix.join(dir, "daemon.dev.log"),
@@ -51,12 +51,13 @@ describe("channelReviewPaths", () => {
 			env: { DG_HOME: "/data/dg" },
 		});
 		expect(paths.env).toBe("dev");
-		expect(paths.dbPath).toBe("/data/dg/daemon/daemon.db");
+		expect(paths.dbPath).toBe("/data/dg/state/daemon/daemon.db");
+		expect(paths.configPath).toBe("/data/dg/config/channel-review/config.json");
 		const localPaths = Object.entries(paths).filter(
-			([key]) => key !== "env" && key !== "dbPath",
+			([key]) => key !== "env" && key !== "dbPath" && key !== "configPath",
 		);
 		for (const [, value] of localPaths) {
-			expect(String(value).startsWith("/data/dg/channel-review")).toBe(true);
+			expect(String(value).startsWith("/data/dg/state/channel-review")).toBe(true);
 		}
 	});
 

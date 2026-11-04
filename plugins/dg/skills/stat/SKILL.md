@@ -7,14 +7,17 @@ description: Report this session's in-flight work as a priority-ordered checklis
 
 A four-keystroke glance at this session's work, rendered as one numbered checklist. **Read-only, with one exception:** it cleans up background jobs that have FINISHED (see section 4). Never edit, commit, push, or resume anything, and **never stop a job that is still running**. If reading cannot answer something, report the gap instead of acting.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills stat --help >/dev/null 2>&1 ||
+dg-skills stat --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" stat --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor bg stat vcs-provider worktree.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor bg stat vcs-provider worktree.
 
 ## Usage
 
@@ -97,23 +100,23 @@ b=$(git branch --show-current 2>/dev/null)
 echo "BRANCH=${b:-none}"
 prs=
 if [ -n "$b" ]; then
-  prs=$(~/.dg/bin/dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
+  prs=$(dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
 fi
 echo "PRS=${prs:-[]}"
-jobs=$(~/.dg/bin/dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or ((.cwd // "")|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
+jobs=$(dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or ((.cwd // "")|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
 echo "JOBS=${jobs:-[]}"
-echo "WORKTREES=$(~/.dg/bin/dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
-checklist=$(~/.dg/bin/dg-skills stat checklist --json 2>/dev/null)
+echo "WORKTREES=$(dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
+checklist=$(dg-skills stat checklist --json 2>/dev/null)
 echo "CHECKLIST=${checklist:-null}"
 ```
 
-`~/.dg/bin/dg-skills bg list` is machine-wide with no `--cwd` filter. The jq `select` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `~/.dg/bin/dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `~/.dg/bin/dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
+`dg-skills bg list` is machine-wide with no `--cwd` filter. The jq `select` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
 
 Then add what only you know: your current foreground task, how far into it you are, and any subagent or background work this session launched that is not yet on the checklist.
 
 ## 2. Report
 
-Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `~/.dg/bin/dg-skills stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
+Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `dg-skills stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
 
 The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Two things are still judgment, left to the main loop:
 
@@ -150,13 +153,13 @@ After the report, stop finished background work and drop its records. A job is f
 
 | Substrate | How |
 |---|---|
-| `~/.dg/bin/dg-skills bg` job (`state` is `done` or `canceled`) | One call: `~/.dg/bin/dg-skills bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
+| `dg-skills bg` job (`state` is `done` or `canceled`) | One call: `dg-skills bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
 | Claude Code background Agent or Bash shell that reports completed, failed, or timed out | The main loop calls `TaskStop` once for each finished task it listed in the report. `TaskStop` on a task that already ended is harmless |
 | Workflow | Not killable as one process. Report it finished; stop nothing |
 
 Rules:
 
-- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `~/.dg/bin/dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `~/.dg/bin/dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
+- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
 - Subagents cannot call `TaskStop`. Only the main loop does. A subagent reports the finished tasks and stops there.
 - The total ignores cleaned jobs.
 - Report what was cleaned in one line under the checklist. Default and `--plain` print
@@ -170,11 +173,11 @@ Rules:
 This mirrors the owner's personal stat skill: **`/dg:stat` itself never calls `stat add`, `stat done`, or `stat status`** — those are for the main loop's normal work, run as it lands, so the checklist stays current without anyone hand-editing the file.
 
 ```sh
-~/.dg/bin/dg-skills stat add "Phone feature to PR" --status running --eta "~1 hr"
-~/.dg/bin/dg-skills stat add "Fix the flaky listener test" --status running --under 1
-~/.dg/bin/dg-skills stat add "Approve the Wave 6/7 PR batch" --status blocked-user
-~/.dg/bin/dg-skills stat done "Phone feature"
-~/.dg/bin/dg-skills stat status "Phone feature" queued --eta "~30 min"
+dg-skills stat add "Phone feature to PR" --status running --eta "~1 hr"
+dg-skills stat add "Fix the flaky listener test" --status running --under 1
+dg-skills stat add "Approve the Wave 6/7 PR batch" --status blocked-user
+dg-skills stat done "Phone feature"
+dg-skills stat status "Phone feature" queued --eta "~30 min"
 ```
 
 - When you start a task or hand the user a step, `stat add` it with the status that fits (`running`, `queued`, `blocked-user`, `needs-user`); add `--eta <bucket>` when you can estimate.
@@ -203,11 +206,11 @@ Rows already print in priority order — a sub-item's row follows its parent's d
 The WORK column:
 
 ```sh
-~/.dg/bin/dg-skills stat checklist -l | awk -F '\t' '!/^#/ && NR>1 {print $4}'
+dg-skills stat checklist -l | awk -F '\t' '!/^#/ && NR>1 {print $4}'
 ```
 
 The STATUS column, header included:
 
 ```sh
-~/.dg/bin/dg-skills stat checklist -l | cut -f3
+dg-skills stat checklist -l | cut -f3
 ```

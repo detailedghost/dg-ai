@@ -9,7 +9,7 @@ import { CHAT_SESSIONS_LOCAL_PATH } from "../session-connect";
 import { DgCliError, describeError } from "../errors";
 import { noteSecret } from "../redact";
 import { readOwnerToken } from "./owner-token";
-import { type DgPaths, resolveDgPaths } from "./paths";
+import { type DgPaths, resolveDgPaths } from "./dg-paths";
 import { loopbackHostHeader, readPidFile, requireMatchingProtocol } from "./pidfile";
 import {
 	readSessionFiles,

@@ -81,7 +81,7 @@ describe("demo skill", () => {
 	});
 
 	test("stops at the start-screen line and runs the local command first", () => {
-		expect(skill).toContain("~/.dg/bin/dg-skills demo /tmp/ai/demo/tour.md");
+		expect(skill).toContain("dg-skills demo /tmp/ai/demo/tour.md");
 		expect(skill).toMatch(
 			/Confirm the `start screen open` line printed, then stop/,
 		);
@@ -121,8 +121,8 @@ describe("demo skill", () => {
 		);
 	});
 
-	test("stays under 110 lines", () => {
-		expect(skill.trimEnd().split("\n").length).toBeLessThan(110);
+	test("stays under 113 lines", () => {
+		expect(skill.trimEnd().split("\n").length).toBeLessThan(113);
 	});
 });
 

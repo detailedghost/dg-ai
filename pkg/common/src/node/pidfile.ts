@@ -8,7 +8,7 @@ import {
 } from "../chat-format";
 import { DgCliError, EXIT_PROTOCOL_MISMATCH } from "../errors";
 import { ensurePrivateDir, writeFileAtomic } from "./fs";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 
 export function readPidFile(paths: DgPaths): DaemonHandle | undefined {
 	if (!existsSync(paths.pidPath)) return undefined;

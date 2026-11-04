@@ -3,7 +3,7 @@ import { currentBinaryLine } from "../src/install/cli";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fetchedUrls, installEnv, runCli, writeReleaseServer } from "./runtime-bundle-fixtures";
 
 test("a bootstrap install says verified for dg-skills and already current for the others", () => {
@@ -38,7 +38,7 @@ function localInstallWorld(): LocalInstallWorld {
 	writeFileSync(join(repo, "node_modules/.bin/wxt"), "");
 	writeFileSync(join(output, "manifest.json"), JSON.stringify({ version: "1.11.0" }));
 	writeFileSync(join(output, "background.js"), "stale build");
-	return { directory, repo, home, output, destination: join(home, ".dg/dg-ai-extension-chrome") };
+	return { directory, repo, home, output, destination: join(home, ".dg/data/dg-ai-extension-chrome") };
 }
 
 async function runLocalInstall(world: LocalInstallWorld, freshBuild: string) {
@@ -63,9 +63,10 @@ await program.parseAsync(["install", "--local", "--repo", ${JSON.stringify(repo)
 		env: { ...process.env, HOME: home, USERPROFILE: home, DG_WINDOWS_HOME: home, DG_HOME: join(home, ".dg") },
 		stdout: "pipe", stderr: "pipe",
 	});
-	const [stdout, stderr, exitCode] = await Promise.all([
+	const [stdout, rawStderr, exitCode] = await Promise.all([
 		new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
 	]);
+	const stderr = rawStderr.replace(`note: DG_HOME=${join(home, ".dg")}; installing there\n`, "");
 	return { stdout, stderr, exitCode };
 }
 
@@ -96,7 +97,58 @@ test("install updates the staged extension folder in place and writes the new ma
 		expect(statSync(world.destination).ino).toBe(inode);
 		expect(existsSync(join(world.destination, "stale.js"))).toBe(false);
 		expect(existsSync(join(world.home, ".config/dg/extension-installed"))).toBe(true);
-		expect(readdirSync(join(world.home, ".dg")).sort()).toEqual(["dg-ai-extension-chrome"]);
+		expect(readdirSync(join(world.home, ".dg", "data")).sort()).toEqual(["dg-ai-extension-chrome"]);
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install moves the staged extension to the data root once and says to load it from there", async () => {
+	const world = localInstallWorld();
+	try {
+		const old = join(world.home, ".dg", "dg-ai-extension-chrome");
+		mkdirSync(old, { recursive: true });
+		writeFileSync(join(old, "background.js"), "installed release");
+
+		const first = await runLocalInstall(world, "fresh local build");
+
+		expect({ exitCode: first.exitCode, stderr: first.stderr }).toEqual({ exitCode: 0, stderr: "" });
+		expect(existsSync(old)).toBe(false);
+		expect(readFileSync(join(world.destination, "background.js"), "utf8")).toBe("fresh local build");
+		const moved = first.stdout.split("\n").filter((line) => line.includes("chrome://extensions"));
+		expect(moved).toHaveLength(1);
+		expect(moved[0]).toContain(world.destination);
+		expect(moved[0]).toContain("Load unpacked");
+
+		const inode = statSync(world.destination).ino;
+		const second = await runLocalInstall(world, "next local build");
+
+		expect(second.exitCode).toBe(0);
+		expect(statSync(world.destination).ino).toBe(inode);
+		expect(readFileSync(join(world.destination, "background.js"), "utf8")).toBe("next local build");
+		expect(second.stdout).not.toContain("chrome://extensions");
+	} finally {
+		rmSync(world.directory, { recursive: true, force: true });
+	}
+});
+
+test("install removes an old extension folder left next to the new one and prints the reload line once", async () => {
+	const world = localInstallWorld();
+	try {
+		const old = join(world.home, ".dg", "dg-ai-extension-chrome");
+		mkdirSync(old, { recursive: true });
+		writeFileSync(join(old, "background.js"), "old release");
+		mkdirSync(world.destination, { recursive: true });
+		writeFileSync(join(world.destination, "background.js"), "new release");
+		writeFileSync(join(world.home, ".config/dg/extension-installed"), JSON.stringify({ chrome: "1.10.0" }));
+
+		const result = await runLocalInstall(world, "fresh local build");
+
+		expect(result.exitCode).toBe(0);
+		expect(existsSync(old)).toBe(false);
+		expect(result.stdout.split("\n").filter((line) => line.includes("folder moved"))).toHaveLength(1);
+		const again = await runLocalInstall(world, "next local build");
+		expect(again.stdout).not.toContain("folder moved");
 	} finally {
 		rmSync(world.directory, { recursive: true, force: true });
 	}
@@ -149,7 +201,7 @@ async function runInstallWithHome(env: Record<string, string | undefined>, home:
 	return { stderr, exitCode };
 }
 
-test("install prints the DG_HOME note to stderr once when DG_HOME is not the default home", async () => {
+test("install prints the DG_HOME note to stderr once when DG_HOME is set", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "dg-home-note-"));
 	try {
 		const custom = join(directory, "x");
@@ -161,13 +213,13 @@ test("install prints the DG_HOME note to stderr once when DG_HOME is not the def
 	}
 });
 
-test("install prints no DG_HOME note when DG_HOME is unset or names the default home", async () => {
+test("install prints no DG_HOME note when DG_HOME is unset, and notes even the old ~/.dg path", async () => {
 	const directory = mkdtempSync(join(tmpdir(), "dg-home-note-"));
 	try {
 		const unset = await runInstallWithHome({}, directory);
 		const explicit = await runInstallWithHome({ DG_HOME: join(directory, ".dg") }, directory);
 		expect(unset.stderr).not.toContain("note: DG_HOME=");
-		expect(explicit.stderr).not.toContain("note: DG_HOME=");
+		expect(explicit.stderr).toContain(`note: DG_HOME=${join(directory, ".dg")}; installing there`);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
@@ -181,6 +233,7 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-bundle-"));
 		const home = join(directory, "home");
 		const bin = join(home, "bin");
+		const data = join(home, "data");
 		mkdirSync(bin, { recursive: true });
 		writeFileSync(join(bin, "dg-skills"), "compiled ELF bytes", { mode: 0o755 });
 		writeFileSync(join(bin, ".dg-skills.version"), "1.26.0\n");
@@ -193,10 +246,10 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 
 			expect(result.code).toBe(0);
 			expect(readFileSync(join(bin, "dg-skills"), "utf8")).not.toContain("compiled ELF bytes");
-			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toContain(`root='${home}'`);
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(VERSION);
-			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe(`bun-v${pin}`);
-			expect(existsSync(join(home, "runtime", "current", "bun"))).toBe(true);
+			expect(readFileSync(join(bin, "dg-skills"), "utf8")).toContain(`root='${data}'`);
+			expect(basename(readlinkSync(join(data, "lib", "current")))).toBe(VERSION);
+			expect(basename(readlinkSync(join(data, "runtime", "current")))).toBe(`bun-v${pin}`);
+			expect(existsSync(join(data, "runtime", "current", "bun"))).toBe(true);
 			expect(existsSync(join(bin, ".dg-skills.version"))).toBe(false);
 			for (const name of ["dg-agent", "dg-daemon"]) {
 				expect(readFileSync(join(bin, name), "utf8")).toContain(`${name} "$@"`);
@@ -211,10 +264,10 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 	test("a bundle that fails verification leaves runtime/current and lib/current unchanged", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "dg-install-atomic-"));
 		const home = join(directory, "home");
-		mkdirSync(join(home, "runtime", "bun-old"), { recursive: true });
-		mkdirSync(join(home, "lib", "1.0.0"), { recursive: true });
-		symlinkSync("bun-old", join(home, "runtime", "current"));
-		symlinkSync("1.0.0", join(home, "lib", "current"));
+		mkdirSync(join(home, "data", "runtime", "bun-old"), { recursive: true });
+		mkdirSync(join(home, "data", "lib", "1.0.0"), { recursive: true });
+		symlinkSync("bun-old", join(home, "data", "runtime", "current"));
+		symlinkSync("1.0.0", join(home, "data", "lib", "current"));
 		try {
 			const log = join(directory, "fetch.log");
 			writeFileSync(log, "");
@@ -225,8 +278,8 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 			const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
 
 			expect(result.stderr).toContain("skipped");
-			expect(basename(readlinkSync(join(home, "runtime", "current")))).toBe("bun-old");
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe("1.0.0");
+			expect(basename(readlinkSync(join(home, "data", "runtime", "current")))).toBe("bun-old");
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe("1.0.0");
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
@@ -236,10 +289,10 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 		test(`a failed lib/current switch restores runtime/current (${previousRuntime ? "previous runtime" : "no previous runtime"})`, async () => {
 			const directory = mkdtempSync(join(tmpdir(), "dg-install-rollback-link-"));
 			const home = join(directory, "home");
-			mkdirSync(join(home, "lib", "current", "blocker"), { recursive: true });
+			mkdirSync(join(home, "data", "lib", "current", "blocker"), { recursive: true });
 			if (previousRuntime) {
-				mkdirSync(join(home, "runtime", "bun-old"), { recursive: true });
-				symlinkSync("bun-old", join(home, "runtime", "current"));
+				mkdirSync(join(home, "data", "runtime", "bun-old"), { recursive: true });
+				symlinkSync("bun-old", join(home, "data", "runtime", "current"));
 			}
 			try {
 				const log = join(directory, "fetch.log");
@@ -249,7 +302,7 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 				const result = await runCli(["bun", "--preload", preload, ENTRY, "install"], installEnv(home));
 
 				expect(result.stderr).toContain("skipped");
-				const current = join(home, "runtime", "current");
+				const current = join(home, "data", "runtime", "current");
 				if (previousRuntime) expect(basename(readlinkSync(current))).toBe("bun-old");
 				else expect(existsSync(current)).toBe(false);
 			} finally {
@@ -271,16 +324,112 @@ describe.skipIf(process.platform === "win32")("dg-skills install against a fake 
 
 			expect((await runCli(argv("--version", VERSION), env)).code).toBe(0);
 			expect((await runCli(argv(), env)).code).toBe(0);
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe("1.28.0");
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe("1.28.0");
 			const before = fetchedUrls(log).length;
 
 			const rollback = await runCli(argv("--version", VERSION), env);
 
 			expect(rollback.code).toBe(0);
-			expect(basename(readlinkSync(join(home, "lib", "current")))).toBe(VERSION);
-			expect(existsSync(join(home, "lib", "1.28.0", "dg.js"))).toBe(true);
+			expect(basename(readlinkSync(join(home, "data", "lib", "current")))).toBe(VERSION);
+			expect(existsSync(join(home, "data", "lib", "1.28.0", "dg.js"))).toBe(true);
 			const fetched = fetchedUrls(log).slice(before);
 			expect(fetched.filter((url) => /dg-lib-.*\.tar\.gz$|bun-.*\.zip$/.test(url))).toEqual([]);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+});
+
+function perOsEnv(home: string): Record<string, string> {
+	const env = installEnv(home);
+	for (const key of ["DG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"]) delete env[key];
+	env.PATH = dirname(process.execPath) + ":/usr/bin:/bin";
+	return env;
+}
+
+function treeOf(root: string): string[] {
+	const out: string[] = [];
+	const walk = (dir: string): void => {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			const path = join(dir, entry.name);
+			out.push(path);
+			if (entry.isDirectory()) walk(path);
+		}
+	};
+	walk(root);
+	return out;
+}
+
+describe.skipIf(process.platform !== "linux")("dg-skills install uses the per-OS layout", () => {
+	test("a fresh install on Linux writes ~/.local/bin/dg-skills and ~/.local/share/dg/lib/current", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-xdg-"));
+		const home = join(directory, "home");
+		mkdirSync(home, { recursive: true });
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION);
+
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--cli-only"], perOsEnv(home));
+
+			expect(result.code, result.stderr).toBe(0);
+			const data = join(home, ".local", "share", "dg");
+			expect(readFileSync(join(home, ".local", "bin", "dg-skills"), "utf8")).toContain(`root='${data}'`);
+			expect(basename(readlinkSync(join(data, "lib", "current")))).toBe(VERSION);
+			expect(existsSync(join(home, ".config", "dg", "cli-only"))).toBe(true);
+			expect(existsSync(join(home, ".dg"))).toBe(false);
+			expect(result.stdout).toContain(`export PATH="${join(home, ".local", "bin")}:$PATH"`);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("an install over a populated ~/.dg moves it and keeps ~/.dg/bin/dg-skills working with one notice line", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-migrate-"));
+		const home = join(directory, "home");
+		const legacy = join(home, ".dg");
+		mkdirSync(join(legacy, "bin"), { recursive: true });
+		mkdirSync(join(legacy, "daemon"), { recursive: true });
+		writeFileSync(join(legacy, "bin", "dg-skills"), "#!/bin/sh\necho old\n", { mode: 0o755 });
+		writeFileSync(join(legacy, "daemon", "daemon.db"), "db");
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION);
+			const env = perOsEnv(home);
+
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--cli-only"], env);
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(existsSync(join(home, ".local", "bin", "dg-skills"))).toBe(true);
+			expect(readFileSync(join(home, ".local", "state", "dg", "daemon", "daemon.db"), "utf8")).toBe("db");
+			const old = await runCli([join(legacy, "bin", "dg-skills"), "--version"], env);
+			expect(old.code).toBe(0);
+			expect(old.stdout.trim()).toBe(VERSION);
+			expect(old.stderr.trim().split("\n")).toEqual([
+				`dg: ~/.dg/bin/dg-skills is now ${join(home, ".local", "bin", "dg-skills")}; this path is removed in 1.29.0`,
+			]);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test("an install with DG_HOME writes nothing outside DG_HOME", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "dg-install-fence-"));
+		const home = join(directory, "home");
+		const root = join(directory, "dg-home");
+		mkdirSync(home, { recursive: true });
+		try {
+			const log = join(directory, "fetch.log");
+			writeFileSync(log, "");
+			const { preload } = writeReleaseServer(directory, log, VERSION);
+			const env = { ...perOsEnv(home), DG_HOME: root };
+
+			const result = await runCli(["bun", "--preload", preload, ENTRY, "install", "--cli-only"], env);
+
+			expect(result.code, result.stderr).toBe(0);
+			expect(existsSync(join(root, "bin", "dg-skills"))).toBe(true);
+			expect(treeOf(home).filter((path) => !path.startsWith(join(home, ".bun")))).toEqual([]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
