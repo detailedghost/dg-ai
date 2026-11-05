@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19, nip59, type NostrEvent } from "nostr-tools";
-import { ACK_TAG, npubOf, PRESENCE_KIND, RECEIPT_KIND } from "../../src/phone/chat";
+import { ACK_TAG, BUSY_TAG, npubOf, PRESENCE_KIND, RECEIPT_KIND } from "../../src/phone/chat";
 import { phoneContacts, phoneInbox, phoneNumber, phonePing, phonePresence, phoneSay, phoneStatus, phoneThreadNew, type PhoneDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener } from "../../src/phone/listener";
-import { PRESENCE_FANOUT } from "../../src/phone/presence";
+import { PING_ANSWER_CAP, PRESENCE_FANOUT } from "../../src/phone/presence";
 import { addContact, numberKeyId } from "../../src/phone/store";
 import { createFakePool, type FakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
 import { fakeWormhole } from "./fake-wormhole";
@@ -490,6 +491,69 @@ describe("phone presence off", () => {
 			expect(opened(alice, PRESENCE_KIND)).toEqual([]);
 			expect(opened(alice, RECEIPT_KIND)).toEqual([]);
 			expect(bob.deps.db.getContactByNpub(alice.npub)?.last_seen).not.toBeNull();
+		} finally {
+			await bobListener.stop();
+		}
+	});
+});
+
+describe("ping answer cap", () => {
+	let alice: Phone;
+	let bob: Phone;
+
+	beforeEach(async () => {
+		alice = await boot("a");
+		bob = await boot("b");
+		link(alice, "b", bob, "a");
+	});
+
+	function answered(): { plain: string[]; busy: string[] } {
+		const plain: string[] = [];
+		const busy: string[] = [];
+		for (const { rumor } of opened(alice, RECEIPT_KIND)) {
+			const ids = rumor.tags.filter((tag) => tag[0] === "e").map((tag) => tag[1] as string);
+			(rumor.tags.some((tag) => tag[0] === BUSY_TAG && tag[1] === "1") ? busy : plain).push(...ids);
+		}
+		return { plain, busy };
+	}
+
+	async function check(): Promise<string> {
+		const event = wrapRumor(control(alice.sk, bob.pub, PRESENCE_KIND, [[ACK_TAG, "1"], ["n", randomUUID()]]), alice.sk, bob.pub);
+		await deliver(event);
+		return event.id;
+	}
+
+	it("answers busy past the cap per minute, stops after a second cap, and keeps message receipts uncapped", async () => {
+		const bobListener = listen(bob);
+		await bobListener.started;
+		try {
+			const ids: string[] = [];
+			for (let index = 0; index < PING_ANSWER_CAP * 2 + 5; index += 1) ids.push(await check());
+			await waitUntil(() => answered().plain.length + answered().busy.length === PING_ANSWER_CAP * 2);
+			await phoneSay("+b", "still here?", alice.deps);
+			const said = printed(alice)[0] as { id: string };
+			await waitUntil(() => answered().plain.includes(said.id));
+			await Bun.sleep(30);
+
+			const { plain, busy } = answered();
+			expect(plain).toEqual([...ids.slice(0, PING_ANSWER_CAP), said.id]);
+			expect(busy).toEqual(ids.slice(PING_ANSWER_CAP, PING_ANSWER_CAP * 2));
+		} finally {
+			await bobListener.stop();
+		}
+	});
+
+	it("makes phone ping print busy and exit 1 when the answer is a busy receipt", async () => {
+		const bobListener = listen(bob);
+		await bobListener.started;
+		try {
+			for (let index = 0; index < PING_ANSWER_CAP; index += 1) await check();
+			await waitUntil(() => answered().plain.length === PING_ANSWER_CAP);
+
+			await phonePing("+b", { timeout: "5" }, alice.deps);
+
+			expect(printed(alice)).toEqual([{ handle: "+b", delivered: false, busy: true, after_s: 0, line: "busy, try later" }]);
+			expect(process.exitCode).toBe(1);
 		} finally {
 			await bobListener.stop();
 		}

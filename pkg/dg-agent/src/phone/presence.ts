@@ -1,6 +1,7 @@
 import { nip19 } from "nostr-tools";
 import {
 	ACK_TAG,
+	BUSY_TAG,
 	type ControlRumor,
 	createReplayGuard,
 	type KeyEntry,
@@ -27,6 +28,11 @@ export const ONLINE_GAP_SECONDS = (2 * PRESENCE_MAX_MS) / 1000;
 export const RECEIPT_IDS_PER_RUMOR = 32;
 /** Unsent receipt ids held per contact; more are dropped. */
 export const RECEIPT_BACKLOG = 256;
+/** Ping checks one contact gets a normal answer to in `PING_WINDOW_SECONDS`. */
+export const PING_ANSWER_CAP = 10;
+/** Busy answers one contact gets in the same window; later checks get no answer. */
+export const BUSY_ANSWER_CAP = 10;
+const PING_WINDOW_SECONDS = 60;
 const SEEN_SECONDS = 60 * 60;
 const ID_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -70,7 +76,11 @@ export function applyReceipt(db: PhoneDb, control: ControlRumor, keys: readonly 
 	const signer = nip19.npubEncode(control.from);
 	const to = nip19.npubEncode(key.pub);
 	const ids = control.tags.filter((tag) => tag[0] === "e" && typeof tag[1] === "string" && ID_PATTERN.test(tag[1])).slice(0, RECEIPT_IDS_PER_RUMOR);
-	for (const [, id] of ids) db.markDelivered(id as string, signer, to, now);
+	const busy = control.tags.some((tag) => tag[0] === BUSY_TAG && tag[1] === "1");
+	for (const [, id] of ids) {
+		if (busy) db.markBusy(id as string, signer, to, now);
+		else db.markDelivered(id as string, signer, to, now);
+	}
 }
 
 export function replayGuard(): ReturnType<typeof createReplayGuard> {
@@ -80,7 +90,8 @@ export function replayGuard(): ReturnType<typeof createReplayGuard> {
 /** Receipts and presence beats for the listener. Every rumor is gift-wrapped and goes out one at a time. */
 export function createPresence(deps: PresenceDeps): Presence {
 	const seen = replayGuard();
-	const pending = new Map<string, string[]>();
+	const pending = new Map<string, { npub: string; busy: boolean; ids: string[] }>();
+	const answers = new Map<string, number[]>();
 	let stopped = false;
 	let flushing: Promise<void> | undefined;
 	let beating: Promise<void> | undefined;
@@ -105,14 +116,11 @@ export function createPresence(deps: PresenceDeps): Presence {
 		while (!stopped) {
 			const next = pending.entries().next();
 			if (next.done) return;
-			const [npub, ids] = next.value;
-			pending.delete(npub);
+			const [slot, { npub, busy, ids }] = next.value;
+			pending.delete(slot);
 			for (let start = 0; start < ids.length && !stopped; start += RECEIPT_IDS_PER_RUMOR) {
-				await send(
-					npub,
-					RECEIPT_KIND,
-					ids.slice(start, start + RECEIPT_IDS_PER_RUMOR).map((id) => ["e", id]),
-				);
+				const named = ids.slice(start, start + RECEIPT_IDS_PER_RUMOR).map((id) => ["e", id]);
+				await send(npub, RECEIPT_KIND, busy ? [...named, [BUSY_TAG, "1"]] : named);
 			}
 		}
 	};
@@ -127,13 +135,21 @@ export function createPresence(deps: PresenceDeps): Presence {
 			});
 	};
 
-	const queueReceipt = (npub: string, id: string) => {
+	const queueReceipt = (npub: string, id: string, busy = false) => {
 		if (!readPresenceOn(deps.db)) return;
-		const ids = pending.get(npub) ?? [];
-		if (ids.length >= RECEIPT_BACKLOG || ids.includes(id)) return;
-		ids.push(id);
-		pending.set(npub, ids);
+		const slot = `${busy ? "busy" : "ok"}:${npub}`;
+		const entry = pending.get(slot) ?? { npub, busy, ids: [] };
+		if (entry.ids.length >= RECEIPT_BACKLOG || entry.ids.includes(id)) return;
+		entry.ids.push(id);
+		pending.set(slot, entry);
 		pump();
+	};
+
+	const answerPing = (npub: string, id: string, now: number) => {
+		const recent = (answers.get(npub) ?? []).filter((at) => at > now - PING_WINDOW_SECONDS);
+		if (recent.length >= PING_ANSWER_CAP + BUSY_ANSWER_CAP) return;
+		answers.set(npub, [...recent, now]);
+		queueReceipt(npub, id, recent.length >= PING_ANSWER_CAP);
 	};
 
 	return {
@@ -144,7 +160,7 @@ export function createPresence(deps: PresenceDeps): Presence {
 			if (!npub) return;
 			seenAt(npub, control.createdAt);
 			if (control.kind === RECEIPT_KIND) applyReceipt(deps.db, control, deps.keys(), now);
-			else if (control.kind === PRESENCE_KIND && control.tags.some((tag) => tag[0] === ACK_TAG && tag[1] === "1")) queueReceipt(npub, control.wrapId);
+			else if (control.kind === PRESENCE_KIND && control.tags.some((tag) => tag[0] === ACK_TAG && tag[1] === "1")) answerPing(npub, control.wrapId, now);
 		},
 		stored(message) {
 			if (stopped || !findContactByNpub(deps.db, message.from)) return;

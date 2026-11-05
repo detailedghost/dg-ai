@@ -79,6 +79,8 @@ export const RECEIPT_KIND = 25016;
 export const PRESENCE_KIND = 25017;
 /** On a presence rumor, asks the listener to answer with a receipt naming the wrap id. */
 export const ACK_TAG = "dg-ack";
+/** On a receipt, says the ping was rate limited and the sender should try later. */
+export const BUSY_TAG = "dg-busy";
 const CONTROL_KINDS: ReadonlySet<number> = new Set([FILE_REQUEST_KIND, RECEIPT_KIND, PRESENCE_KIND]);
 export const CALL_TAG = "dg-call";
 /** Carries the caller's self-reported name, so a fresh admit can name the new contact after it. */

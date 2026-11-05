@@ -66,7 +66,7 @@ export type ContactRow = {
 };
 
 /** One `phone ping` check: `sender` is our npub that signed it, `contact` the npub it went to. */
-export type PingRow = { id: string; contact: string; sender: string; sent_at: number; delivered_at: number | null };
+export type PingRow = { id: string; contact: string; sender: string; sent_at: number; delivered_at: number | null; busy_at: number | null };
 
 export type ThreadRow = {
 	id: string;
@@ -235,7 +235,8 @@ const SCHEMA: MigrationStep[] = [
 				contact TEXT NOT NULL,
 				sender TEXT NOT NULL,
 				sent_at INTEGER NOT NULL,
-				delivered_at INTEGER
+				delivered_at INTEGER,
+				busy_at INTEGER
 			) STRICT`);
 			db.run(`CREATE TABLE early_receipts (
 				id TEXT NOT NULL,
@@ -765,16 +766,22 @@ export class PhoneDb {
 		return ping.changes > 0;
 	}
 
-	addPing(row: Omit<PingRow, "delivered_at">): void {
+	addPing(row: Omit<PingRow, "delivered_at" | "busy_at">): void {
 		this.db
 			.query("INSERT OR IGNORE INTO pings (id, contact, sender, sent_at) VALUES ($id, $contact, $sender, $sentAt)")
 			.run({ id: row.id, contact: row.contact, sender: row.sender, sentAt: row.sent_at });
 	}
 
-	/** Null while the ping waits, undefined when there is no such ping. */
-	pingDeliveredAt(id: string): number | null | undefined {
-		const row = this.db.query("SELECT delivered_at FROM pings WHERE id = $id").get({ id }) as { delivered_at: number | null } | null;
-		return row ? row.delivered_at : undefined;
+	pingRow(id: string): PingRow | undefined {
+		return (this.db.query("SELECT * FROM pings WHERE id = $id").get({ id }) as PingRow | null) ?? undefined;
+	}
+
+	/** Records a rate-limited answer to our ping `id`, under the same recipient check as `markDelivered`. */
+	markBusy(id: string, signer: string, to: string, at: number): boolean {
+		const result = this.db
+			.query("UPDATE pings SET busy_at = $at WHERE id = $id AND delivered_at IS NULL AND busy_at IS NULL AND contact = $signer AND sender = $to")
+			.run({ id, signer, to, at });
+		return result.changes > 0;
 	}
 
 	getThread(id: string): ThreadRow | undefined {

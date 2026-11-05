@@ -920,21 +920,24 @@ export async function phonePing(handleArg: string, opts: { timeout?: string }, d
 			await publish(pool, outgoing.relays, event, { confirmMs: confirmMsFor(deps) }).catch(() => undefined);
 		}
 		const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
-		const firstDelivered = () => {
-			const times = ids.map((id) => deps.db.pingDeliveredAt(id)).filter((at): at is number => typeof at === "number");
-			return times.length ? Math.min(...times) : undefined;
-		};
 		const deadline = sentAt + seconds;
+		const busy = () => {
+			printJson(deps, { handle, delivered: false, busy: true, after_s: Math.max(0, deps.now() - sentAt), line: "busy, try later" });
+			process.exitCode = 1;
+		};
 		for (let waited = 0; ; waited += PING_POLL_MS) {
-			const at = firstDelivered();
-			if (at !== undefined) {
-				const after = Math.max(0, at - sentAt);
+			const rows = ids.map((id) => deps.db.pingRow(id));
+			const delivered = rows.map((row) => row?.delivered_at).filter((at): at is number => typeof at === "number");
+			if (delivered.length > 0) {
+				const after = Math.max(0, Math.min(...delivered) - sentAt);
 				printJson(deps, { handle, delivered: true, after_s: after, line: `delivered after ${after} s` });
 				return;
 			}
+			if (rows.length > 0 && rows.every((row) => typeof row?.busy_at === "number")) return busy();
 			if (waited >= seconds * 1000 || deps.now() > deadline) break;
 			await sleep(PING_POLL_MS);
 		}
+		if (ids.some((id) => typeof deps.db.pingRow(id)?.busy_at === "number")) return busy();
 		printJson(deps, { handle, delivered: false, after_s: seconds, line: `no answer after ${seconds} s` });
 		process.exitCode = 1;
 	} finally {

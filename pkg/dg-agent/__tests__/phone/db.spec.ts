@@ -478,13 +478,24 @@ describe("PhoneDb", () => {
 			db.addPing({ id: "p1", contact: BOB, sender: ME, sent_at: NOW });
 
 			expect(db.markDelivered("p1", CAROL, ME, NOW + 1)).toBe(false);
-			expect(db.pingDeliveredAt("p1")).toBeNull();
+			expect(db.pingRow("p1")).toMatchObject({ delivered_at: null, busy_at: null });
 			expect(db.markDelivered("p1", BOB, ME, NOW + 3)).toBe(true);
-			expect(db.pingDeliveredAt("p1")).toBe(NOW + 3);
+			expect(db.pingRow("p1")).toMatchObject({ delivered_at: NOW + 3 });
 
 			now = NOW + MESSAGE_TTL_SECONDS + 1;
 			db.pruneMessages();
-			expect(db.pingDeliveredAt("p1")).toBeUndefined();
+			expect(db.pingRow("p1")).toBeUndefined();
+		});
+
+		it("marks a ping busy only for its recipient, and never a message row", () => {
+			db.addPing({ id: "p2", contact: BOB, sender: ME, sent_at: NOW });
+			sent("m2");
+
+			expect(db.markBusy("p2", CAROL, ME, NOW + 1)).toBe(false);
+			expect(db.markBusy("m2", BOB, ME, NOW + 1)).toBe(false);
+			expect(db.markBusy("p2", BOB, ME, NOW + 2)).toBe(true);
+			expect(db.pingRow("p2")).toMatchObject({ delivered_at: null, busy_at: NOW + 2 });
+			expect(deliveredAt("m2")).toBeNull();
 		});
 	});
 
