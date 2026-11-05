@@ -57,7 +57,9 @@ import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import {
 	behindHandles,
+	EXT_TAG,
 	FILE_MESSAGE_KIND,
+	FROM_EXT_TAG,
 	fanoutThread,
 	formatBehind,
 	MAX_THREAD_MEMBERS,
@@ -103,6 +105,8 @@ import {
 	clearListener,
 	requireFreeHandle,
 	resolvedSelfName,
+	selfExtension,
+	splitTarget,
 	writeFilesOn,
 	writeInboxRelayCache,
 	writeListener,
@@ -134,6 +138,8 @@ export type PhoneDeps = KeyDeps & {
 	vaultClient?: () => VaultClient;
 	readStdinBytes?: (capBytes: number) => Promise<Buffer | undefined>;
 	terminal?: Terminal;
+	/** Where `DG_PHONE_AS` is read; absent reads nothing. */
+	env?: Record<string, string | undefined>;
 };
 
 export type RunDeps = PhoneDeps & {
@@ -159,7 +165,7 @@ export type OpenCloseDeps = PhoneDeps &
 
 const MAX_SEND_BYTES = 64 * 1024;
 
-export type SayOpts = { image?: string; phi?: boolean; vault?: string };
+export type SayOpts = { image?: string; phi?: boolean; vault?: string; as?: string };
 const STOP_WAIT_MS = 5000;
 
 function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
@@ -226,6 +232,7 @@ function defaultDeps(session?: string): PhoneDeps {
 		readStdinBytes: readCappedStdinBytes,
 		vaultClient: defaultVaultClient(paths),
 		terminal: defaultTerminal(),
+		env: process.env,
 		now: () => Math.floor(Date.now() / 1000),
 		kill: (pid, signal) => process.kill(pid, signal),
 		spawnListener: defaultSpawnListener,
@@ -694,8 +701,19 @@ function dropMissedRecipients(deps: PhoneDeps, x: string, members: readonly Memb
 	}
 }
 
-function rumorTags(image: PreparedImage | undefined, phi: boolean): string[][] {
-	return [...(image?.tags ?? []), ...(phi ? [[PHI_TAG, "1"]] : [])];
+/** Where a send is addressed on the far machine and which agent here sent it. */
+type Route = { ext?: string; fromExt?: string };
+
+function routeTags(route: Route): string[][] {
+	return [...(route.ext ? [[EXT_TAG, route.ext]] : []), ...(route.fromExt ? [[FROM_EXT_TAG, route.fromExt]] : [])];
+}
+
+function rumorTags(image: PreparedImage | undefined, phi: boolean, route: Route): string[][] {
+	return [...(image?.tags ?? []), ...(phi ? [[PHI_TAG, "1"]] : []), ...routeTags(route)];
+}
+
+function extHandle(handle: string, ext: string | null | undefined): string {
+	return ext ? `${handle}/${ext}` : handle;
 }
 
 async function readSayBody(textArg: string | undefined, deps: PhoneDeps): Promise<string> {
@@ -722,7 +740,7 @@ async function prepareOutgoing(textArg: string | undefined, opts: SayOpts, deps:
 
 function saveOutgoing(
 	deps: PhoneDeps,
-	row: { id: string; ts: number; sender: string; contact: string; text: string; thread_id?: string },
+	row: { id: string; ts: number; sender: string; contact: string; text: string; thread_id?: string; ext?: string; peer_ext?: string },
 	sent: Outgoing,
 ): void {
 	const stored = sent.vault !== undefined
@@ -750,6 +768,7 @@ async function phoneSayThread(
 	textArg: string | undefined,
 	deps: PhoneDeps,
 	sent: Outgoing & { text?: string },
+	fromExt: string | undefined,
 ): Promise<void> {
 	const { image, phi } = sent;
 	const handle = parseThreadHandle(handleArg);
@@ -776,7 +795,7 @@ async function phoneSayThread(
 			sk: loaded.sk,
 			text: body,
 			kind: image ? FILE_MESSAGE_KIND : undefined,
-			extraTags: rumorTags(image, phi),
+			extraTags: rumorTags(image, phi, { fromExt }),
 			createdAt,
 			subject: thread.subject,
 			fallbackSubject: handle.slice(1),
@@ -831,19 +850,20 @@ async function phoneSayThread(
 
 export async function phoneSay(handleArg: string, textArg: string | undefined, deps: PhoneDeps, opts: SayOpts = {}): Promise<void> {
 	migrateIfNeeded(deps.paths);
+	const { target, ext } = splitTarget(handleArg);
+	const fromExt = selfExtension(opts.as, deps.env ?? {});
 	const sent = await prepareOutgoing(textArg, opts, deps);
 	const { image, phi } = sent;
-	if (handleArg.startsWith("#")) return phoneSayThread(handleArg, textArg, deps, sent);
-	const handle = normalizeHandle(handleArg);
+	if (target.startsWith("#")) return phoneSayThread(target, textArg, deps, sent, fromExt);
+	const handle = normalizeHandle(target);
 	const contact = findContactByHandle(deps.db, handle);
 	if (!contact) throw new DgCliError(`no contact +${handle}`);
 	const body = image ? image.content : (sent.text ?? (await readSayBody(textArg, deps)));
 	const sk = (await ensureKey(deps, contact.keyId)).sk;
 	const contactPub = pubkeyHex(contact.npub);
+	const tags = rumorTags(image, phi, { ext, fromExt });
 	const event =
-		image || phi
-			? wrapTagged({ kind: image ? FILE_MESSAGE_KIND : undefined, content: body, tags: rumorTags(image, phi) }, sk, contactPub)
-			: wrap(body, sk, contactPub);
+		tags.length > 0 ? wrapTagged({ kind: image ? FILE_MESSAGE_KIND : undefined, content: body, tags }, sk, contactPub) : wrap(body, sk, contactPub);
 	const unstage = image ? stageOutbox(deps, image, contact.keyId, [contactPub], phi) : undefined;
 	const pool = deps.createPool();
 	let relays = contact.relays;
@@ -860,9 +880,9 @@ export async function phoneSay(handleArg: string, textArg: string | undefined, d
 			unstage?.();
 			throw err;
 		}
-		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, sent);
+		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body, ext: fromExt, peer_ext: ext }, sent);
 		await restartStaleListener(deps, { spawn: true });
-		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report), delivered: false });
+		printJson(deps, { handle: extHandle(`+${handle}`, ext), id: event.id, ...relayFields(report), delivered: false });
 	} finally {
 		closeRelayPool(pool, [...queried, ...relays]);
 	}
@@ -874,9 +894,10 @@ const PING_POLL_MS = 250;
 
 type PingTarget = { npub: string; relays: string[] };
 
-function pingTargets(handleArg: string, deps: PhoneDeps): { handle: string; keyId: string; targets: PingTarget[] } {
-	if (handleArg.startsWith("#")) {
-		const handle = parseThreadHandle(handleArg);
+function pingTargets(handleArg: string, deps: PhoneDeps): { handle: string; keyId: string; targets: PingTarget[]; ext?: string } {
+	const { target, ext } = splitTarget(handleArg);
+	if (target.startsWith("#")) {
+		const handle = parseThreadHandle(target);
 		const thread = deps.db.getThreadByHandle(handle);
 		if (!thread) throw new DgCliError(`no group ${handle}`);
 		const targets = deps.db
@@ -886,10 +907,10 @@ function pingTargets(handleArg: string, deps: PhoneDeps): { handle: string; keyI
 			.map((contact) => ({ npub: contact.npub, relays: contact.relays }));
 		return { handle, keyId: thread.key_id, targets };
 	}
-	const handle = normalizeHandle(handleArg);
+	const handle = normalizeHandle(target);
 	const contact = findContactByHandle(deps.db, handle);
 	if (!contact) throw new DgCliError(`no contact +${handle}`);
-	return { handle: `+${handle}`, keyId: contact.keyId, targets: [{ npub: contact.npub, relays: contact.relays }] };
+	return { handle: extHandle(`+${handle}`, ext), keyId: contact.keyId, targets: [{ npub: contact.npub, relays: contact.relays }], ext };
 }
 
 function listenerServes(deps: PhoneDeps): boolean {
@@ -903,7 +924,7 @@ export async function phonePing(handleArg: string, opts: { timeout?: string }, d
 	if (!Number.isFinite(seconds) || seconds < 1 || seconds > PING_MAX_TIMEOUT_S) {
 		throw new DgCliError(`--timeout must be a number of seconds from 1 to ${PING_MAX_TIMEOUT_S}, got "${opts.timeout}"`);
 	}
-	const { handle, keyId, targets } = pingTargets(handleArg, deps);
+	const { handle, keyId, targets, ext } = pingTargets(handleArg, deps);
 	const loaded = await ensureKey(deps, keyId);
 	const key = { id: keyId, pub: pubkeyHex(npubOf(loaded.sk)), sk: loaded.sk };
 	const selfNpub = npubOf(loaded.sk);
@@ -934,7 +955,7 @@ export async function phonePing(handleArg: string, opts: { timeout?: string }, d
 		const ids: string[] = [];
 		for (const target of targets) {
 			const event = wrapTagged(
-				{ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"], ["n", randomBytes(16).toString("hex")]] },
+				{ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"], ["n", randomBytes(16).toString("hex")], ...routeTags({ ext })] },
 				loaded.sk,
 				pubkeyHex(target.npub),
 			);

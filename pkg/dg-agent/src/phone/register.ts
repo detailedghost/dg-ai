@@ -129,8 +129,9 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 
 	const sendText = (command: Command): Command =>
 		command
-			.argument("<handle>", "the contact's +handle, or a #group")
+			.argument("<handle>", "the contact's +handle, +handle/ext for one agent on their machine, or a #group")
 			.argument("[text]", "message text, or - to read it from stdin; omit with --image")
+			.option("--as <ext>", "your own extension, sent so replies route back (default DG_PHONE_AS)")
 			.option("--image <path>", "send one PNG, JPEG, or WebP image instead of text")
 			.option("--phi", "mark the message as PHI: tags it, stores only a placeholder row, and keeps any outbox copy 24 hours, not 7 days")
 			.option("--vault <name>", "send a vault item, text or image, without printing it; implies --phi")
@@ -144,7 +145,7 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 	group
 		.command("ping")
 		.description("check that a contact's or #group's listener answers; exit 1 when no receipt comes in time")
-		.argument("<handle>", "the contact's +handle, or a #group")
+		.argument("<handle>", "the contact's +handle, +handle/ext, or a #group")
 		.option("--timeout <seconds>", "seconds to wait for the receipt", "30")
 		.action(async (handle: string, opts: { timeout?: string }) => {
 			const phone = await load();

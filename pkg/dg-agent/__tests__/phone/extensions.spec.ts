@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
+import { generateSecretKey, getPublicKey, nip19, nip59, type NostrEvent } from "nostr-tools";
+import { phoneNumber, phonePing, phoneSay, phoneThreadNew, type PhoneDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
-import { selfExtension, splitTarget } from "../../src/phone/store";
+import { addContact, numberKeyId, selfExtension, splitTarget } from "../../src/phone/store";
 import { FROM_EXT_TAG, EXT_TAG, rumorBody } from "../../src/phone/thread";
+import { createFakePool, type FakePool, makeHomeTracker, makePhoneDeps, parseNdjson } from "./fake-pool";
 
 const NOW = 1_800_000_000;
 let home: string;
@@ -212,5 +215,103 @@ describe("PhoneDb extensions", () => {
 		expect(db.listVaultItems().map((row) => row.name)).toEqual(["for-kit", "for-merc", "shared"]);
 		expect(db.listVaultItems("merc").map((row) => row.name)).toEqual(["for-merc", "shared"]);
 		expect(db.vaultItem("for-merc")?.ext).toBe("merc");
+	});
+});
+
+describe("sending to an extension", () => {
+	let tracker: ReturnType<typeof makeHomeTracker>;
+	let pool: FakePool;
+	let out: string[];
+
+	beforeEach(() => {
+		tracker = makeHomeTracker("dg-phone-ext-send-");
+		pool = createFakePool();
+		out = [];
+	});
+
+	afterEach(() => {
+		tracker.cleanup();
+	});
+
+	async function sender(env: Record<string, string | undefined> = {}): Promise<{ d: PhoneDeps; marySk: Uint8Array }> {
+		const d: PhoneDeps = { ...makePhoneDeps({ home: tracker.freshHome(), pool, write: (text) => out.push(text), now: NOW }), env, sleep: async () => {} };
+		tracker.trackDb(d.db);
+		await phoneNumber({}, d);
+		const marySk = generateSecretKey();
+		addContact(d.db, { npub: nip19.npubEncode(getPublicKey(marySk)), handle: "mary", relays: ["wss://a.example"], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+		out = [];
+		return { d, marySk };
+	}
+
+	function rumorTo(sk: Uint8Array): { kind: number; tags: string[][] } {
+		const wrap = pool.events.findLast((event) => event.tags.some(([name, value]) => name === "p" && value === getPublicKey(sk)));
+		return nip59.unwrapEvent(wrap as NostrEvent, sk);
+	}
+
+	it("tags text to +handle/ext with dg-ext inside the rumor, keeps the wrap free of it, and stores the target", async () => {
+		const { d, marySk } = await sender();
+
+		await phoneSay("+mary/merc", "hi merc", d);
+
+		const wrap = pool.events.at(-1) as NostrEvent;
+		expect(JSON.stringify(wrap.tags)).not.toContain("merc");
+		expect(rumorTo(marySk).tags).toEqual([["p", getPublicKey(marySk)], [EXT_TAG, "merc"]]);
+		expect(parseNdjson(out)[0]).toMatchObject({ handle: "+mary/merc" });
+		expect(d.db.recentMessages(5)[0]).toMatchObject({ direction: "out", ext: null, peer_ext: "merc", text: "hi merc" });
+	});
+
+	it("sends a plain NIP-17 message with no dg tags to +handle", async () => {
+		const { d, marySk } = await sender();
+
+		await phoneSay("+mary", "hi all", d);
+
+		expect(rumorTo(marySk).tags).toEqual([["p", getPublicKey(marySk)]]);
+		expect(parseNdjson(out)[0]).toMatchObject({ handle: "+mary" });
+	});
+
+	it("carries the sender's own extension as dg-from-ext from --as, then from DG_PHONE_AS", async () => {
+		const { d, marySk } = await sender({ DG_PHONE_AS: "kit" });
+
+		await phoneSay("+mary/merc", "from kit", d);
+		expect(rumorTo(marySk).tags).toEqual([["p", getPublicKey(marySk)], [EXT_TAG, "merc"], [FROM_EXT_TAG, "kit"]]);
+		expect(d.db.recentMessages(5).at(-1)).toMatchObject({ ext: "kit", peer_ext: "merc" });
+
+		await phoneSay("+mary", "from ace", d, { as: "ace", phi: true });
+		expect(rumorTo(marySk).tags).toEqual([["p", getPublicKey(marySk)], ["dg-phi", "1"], [FROM_EXT_TAG, "ace"]]);
+	});
+
+	it("refuses a bad extension before anything is sent", async () => {
+		const { d } = await sender();
+
+		await expect(phoneSay("+mary/Merc", "x", d)).rejects.toThrow('an extension must be 1-32 lowercase letters, digits, or dashes, got "Merc"');
+		await expect(phoneSay("+mary", "x", d, { as: "a/b" })).rejects.toThrow("--as must be");
+		expect(pool.events).toEqual([]);
+	});
+
+	it("refuses an extension on a #group send, and keeps a group row machine-wide when the sender has one", async () => {
+		const { d, marySk } = await sender();
+		await phoneThreadNew("#ops", ["+mary"], {}, d);
+
+		await expect(phoneSay("#ops/merc", "x", d)).rejects.toThrow("a #group goes to the whole machine; drop /merc");
+		expect(pool.events).toEqual([]);
+
+		await phoneSay("#ops", "to the room", d, { as: "kit" });
+		const rumor = rumorTo(marySk);
+		expect(rumor.tags.filter(([name]) => name === EXT_TAG)).toEqual([]);
+		expect(rumor.tags.filter(([name]) => name === FROM_EXT_TAG)).toEqual([[FROM_EXT_TAG, "kit"]]);
+		expect(d.db.recentMessages(5).at(-1)).toMatchObject({ ext: null, peer_ext: null });
+	});
+
+	it("pings +handle/ext with dg-ext on the check, and refuses #group/ext", async () => {
+		const { d, marySk } = await sender();
+
+		await phonePing("+mary/merc", { timeout: "1" }, d);
+		const rumor = rumorTo(marySk);
+		expect(rumor.kind).toBe(25017);
+		expect(rumor.tags.filter(([name]) => name === EXT_TAG)).toEqual([[EXT_TAG, "merc"]]);
+		expect(parseNdjson(out).at(-1)).toMatchObject({ handle: "+mary/merc", delivered: false });
+		process.exitCode = 0;
+
+		await expect(phonePing("#ops/merc", {}, d)).rejects.toThrow("a #group goes to the whole machine; drop /merc");
 	});
 });
