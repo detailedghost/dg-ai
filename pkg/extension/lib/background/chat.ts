@@ -6,6 +6,7 @@ import {
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_PATH,
 	type ChatFrame,
+	type PwExtRequest,
 	type SessionBootstrap,
 	emitRedacted,
 	noteSecret,
@@ -29,6 +30,15 @@ import {
 	type ProtoBrowserRequest,
 	type ProtoResultFrame,
 } from "./proto";
+import {
+	createPwExtHandler,
+	type PwExtBrowserApi,
+	type PwExtResult,
+} from "./pw-ext";
+import {
+	createPwExtApprover,
+	type PwExtApprovalApi,
+} from "./pw-ext-approval";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import {
 	CHAT_SESSION_KEY_PREFIX,
@@ -171,6 +181,10 @@ export type RegisterChatOptions = {
 		request: ProtoBrowserRequest,
 		onProgress: (status: string) => void,
 	) => Promise<ProtoResultFrame>;
+	pwExtHandler?: (
+		request: PwExtRequest,
+		timeoutMs: number,
+	) => Promise<PwExtResult>;
 };
 
 function isMarkerCapturedMessage(
@@ -237,8 +251,19 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const protoHandler =
 		options.protoHandler ??
 		createProtoHandler({ browserApi: api as unknown as ProtoBrowserApi });
+	let defaultPwExt: ReturnType<typeof createPwExtHandler> | undefined;
+	const pwExtHandler =
+		options.pwExtHandler ??
+		((request: PwExtRequest, timeoutMs: number) => {
+			defaultPwExt ??= createPwExtHandler({
+				browserApi: api as unknown as PwExtBrowserApi,
+				approve: createPwExtApprover(api as unknown as PwExtApprovalApi),
+			});
+			return defaultPwExt(request, timeoutMs);
+		});
 	const pendingInbox = new Set<string>();
 	const pendingProto = new Set<string>();
+	const pendingPwExt = new Set<string>();
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	function holdBootstrap(bootstrap: SessionBootstrap): void {
 		noteSecret(bootstrap.token);
@@ -641,6 +666,53 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					});
 				})
 				.finally(() => pendingProto.delete(requestKey));
+			return;
+		}
+		if (frame.type === "pw-ext-browser-request") {
+			const bootstrap = bootstrapsBySession.get(frame.sessionId);
+			const socket = currentSocket;
+			const requestKey = JSON.stringify([frame.sessionId, frame.requestId]);
+			if (
+				!bootstrap ||
+				!socket ||
+				!keepaliveEligible.has(frame.sessionId) ||
+				pendingPwExt.has(requestKey)
+			) {
+				return;
+			}
+			pendingPwExt.add(requestKey);
+			const sendPwExt = (result: PwExtResult): void => {
+				if (
+					currentSocket !== socket ||
+					bootstrapsBySession.get(frame.sessionId) !== bootstrap ||
+					!keepaliveEligible.has(frame.sessionId)
+				) {
+					return;
+				}
+				try {
+					socket.send(
+						JSON.stringify({
+							type: "pw-ext-browser-result",
+							...result,
+							sessionId: frame.sessionId,
+							requestId: frame.requestId,
+							token: bootstrap.token,
+							protocolVersion: CHAT_PROTOCOL_VERSION,
+						}),
+					);
+				} catch {
+					return;
+				}
+			};
+			void pwExtHandler(frame.request, frame.timeoutMs)
+				.then(sendPwExt)
+				.catch(() =>
+					sendPwExt({
+						ok: false,
+						error: "pw --ext failed in the extension before it reported a result.",
+					}),
+				)
+				.finally(() => pendingPwExt.delete(requestKey));
 			return;
 		}
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {

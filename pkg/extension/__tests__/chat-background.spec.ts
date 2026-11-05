@@ -1397,3 +1397,75 @@ test.each(["session-closed", "close", "error"])("registerChat discards a pending
 	await settle();
 	expect(relay.results()).toEqual([]);
 });
+
+test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browser-result", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	const pwExtHandler = mock(async () => ({
+		ok: true as const,
+		data: { text: "### Page" },
+	}));
+	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+
+	const request = {
+		type: "pw-ext-browser-request",
+		sessionId: bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "pw-request",
+		request: { verb: "current" },
+		timeoutMs: 60_000,
+	};
+	socket.dispatch("message", message(request));
+	socket.dispatch("message", message(request));
+	await settle();
+	await flushMicrotasks();
+
+	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000]] as never);
+	const results = socket.send.mock.calls
+		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
+		.filter((frame) => frame.type === "pw-ext-browser-result");
+	expect(results).toEqual([
+		{
+			type: "pw-ext-browser-result",
+			ok: true,
+			data: { text: "### Page" },
+			sessionId: bootstrap.sessionId,
+			requestId: "pw-request",
+			token: bootstrap.token,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		},
+	]);
+	expect(() => validateChatFrame(results[0])).not.toThrow();
+});
+
+test("registerChat ignores a pw-ext request for an unpaired session", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	const pwExtHandler = mock(async () => ({ ok: false as const, error: "x" }));
+	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+	socket.dispatch(
+		"message",
+		message({
+			type: "pw-ext-browser-request",
+			sessionId: "other-session",
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "pw-request",
+			request: { verb: "current" },
+			timeoutMs: 60_000,
+		}),
+	);
+	await settle();
+	expect(pwExtHandler).not.toHaveBeenCalled();
+});

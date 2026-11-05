@@ -1,0 +1,362 @@
+export type PwExtPageAction =
+	| { kind: "snapshot" }
+	| { kind: "click"; target: string }
+	| { kind: "fill"; target: string; value: string }
+	| { kind: "selection" }
+	| { kind: "console" };
+
+export type PwExtPageResult =
+	| { title: string; tree: string; text: string }
+	| { detail: string }
+	| { text: string }
+	| { started: boolean; entries: string[] }
+	| { error: string };
+
+/**
+ * Runs one fixed action in the tab's isolated world. It is passed to
+ * scripting.executeScript as a function, so it must stay self-contained.
+ */
+export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
+	const TREE_MAX = 60_000;
+	const TEXT_MAX = 30_000;
+	const SELECTION_MAX = 20_000;
+	const NODE_MAX = 2_000;
+	const DEPTH_MAX = 16;
+	const CONSOLE_MAX = 50;
+	const REDACTED = "[redacted]";
+	const doc = document;
+	const win = doc.defaultView as unknown as Window & Record<symbol, unknown>;
+	const REFS = Symbol.for("dg.pwExt.refs");
+	const CONSOLE = Symbol.for("dg.pwExt.console");
+	const SECRET_NAME = /pass|secret|token|otp|cvv|cvc|ssn|pin\b|api[-_]?key/i;
+	const TEXT_INPUTS = new Set([
+		"",
+		"text",
+		"search",
+		"email",
+		"url",
+		"tel",
+		"number",
+	]);
+	const INTERACTIVE = new Set([
+		"link",
+		"button",
+		"textbox",
+		"searchbox",
+		"checkbox",
+		"radio",
+		"combobox",
+		"listbox",
+		"option",
+		"menuitem",
+		"tab",
+		"switch",
+		"slider",
+		"spinbutton",
+	]);
+	const LEAF = new Set([...INTERACTIVE, "heading", "img"]);
+
+	const squash = (value: string, max = 80): string => {
+		const text = value.replace(/\s+/g, " ").trim();
+		return text.length > max ? `${text.slice(0, max)}…` : text;
+	};
+	const cap = (value: string, max: number): string =>
+		value.length > max
+			? `${value.slice(0, max)}\n[truncated: ${value.length - max} more characters]`
+			: value;
+
+	const isSecret = (el: Element): boolean => {
+		const input = el as HTMLInputElement;
+		if (el.tagName === "INPUT" && input.type === "password") return true;
+		const autocomplete = (el.getAttribute("autocomplete") ?? "").toLowerCase();
+		if (/password|one-time-code|cc-|csc/.test(autocomplete)) return true;
+		return SECRET_NAME.test(
+			`${el.getAttribute("name") ?? ""} ${el.id ?? ""}`,
+		);
+	};
+
+	const hidden = (el: Element): boolean => {
+		if (el.closest("[hidden],[aria-hidden='true'],[inert]")) return true;
+		if (el.tagName === "INPUT" && (el as HTMLInputElement).type === "hidden")
+			return true;
+		const check = (
+			el as Element & {
+				checkVisibility?: (options: { visibilityProperty: boolean }) => boolean;
+			}
+		).checkVisibility;
+		if (typeof check === "function")
+			return !check.call(el, { visibilityProperty: true });
+		const style = win.getComputedStyle?.(el);
+		return style?.display === "none" || style?.visibility === "hidden";
+	};
+
+	const role = (el: Element): string | undefined => {
+		const explicit = el.getAttribute("role")?.split(/\s+/)[0];
+		if (explicit) return explicit;
+		const tag = el.tagName.toLowerCase();
+		if (/^h[1-6]$/.test(tag)) return "heading";
+		if (tag === "input") {
+			const type = (el as HTMLInputElement).type.toLowerCase();
+			if (type === "checkbox") return "checkbox";
+			if (type === "radio") return "radio";
+			if (["button", "submit", "reset", "image"].includes(type))
+				return "button";
+			if (type === "search") return "searchbox";
+			if (type === "range") return "slider";
+			return "textbox";
+		}
+		const map: Record<string, string> = {
+			button: "button",
+			textarea: "textbox",
+			select: "combobox",
+			option: "option",
+			img: "img",
+			nav: "navigation",
+			main: "main",
+			header: "banner",
+			footer: "contentinfo",
+			aside: "complementary",
+			form: "form",
+			dialog: "dialog",
+			ul: "list",
+			ol: "list",
+			li: "listitem",
+			table: "table",
+			tr: "row",
+			td: "cell",
+			th: "columnheader",
+		};
+		if (tag === "a") return el.hasAttribute("href") ? "link" : undefined;
+		if (el.getAttribute("contenteditable") === "true") return "textbox";
+		return map[tag];
+	};
+
+	const labelText = (el: Element): string => {
+		const ids = el.getAttribute("aria-labelledby");
+		if (ids)
+			return ids
+				.split(/\s+/)
+				.map((id) => doc.getElementById(id)?.textContent ?? "")
+				.join(" ");
+		const aria = el.getAttribute("aria-label");
+		if (aria) return aria;
+		if (el.id) {
+			const label = doc.querySelector(
+				`label[for="${el.id.replace(/["\\]/g, "\\$&")}"]`,
+			);
+			if (label) return label.textContent ?? "";
+		}
+		const wrapping = el.closest("label");
+		if (wrapping) {
+			const copy = wrapping.cloneNode(true) as Element;
+			for (const field of copy.querySelectorAll("input,select,textarea"))
+				field.remove();
+			if (copy.textContent?.trim()) return copy.textContent;
+		}
+		return (
+			el.getAttribute("alt") ??
+			el.getAttribute("title") ??
+			el.getAttribute("placeholder") ??
+			""
+		);
+	};
+
+	const name = (el: Element, r: string): string => {
+		const label = labelText(el);
+		if (label.trim()) return squash(label);
+		if (["textbox", "searchbox", "combobox", "checkbox", "radio"].includes(r))
+			return "";
+		return squash(el.textContent ?? "");
+	};
+
+	const describe = (el: Element): string => {
+		const r = role(el) ?? el.tagName.toLowerCase();
+		const n = name(el, r);
+		return n ? `${r} "${n}"` : r;
+	};
+
+	const snapshot = (): PwExtPageResult => {
+		const refs = new Map<string, Element>();
+		win[REFS] = refs;
+		const lines: string[] = [];
+		let nodes = 0;
+		const walk = (parent: Element, depth: number): void => {
+			for (const child of Array.from(parent.children)) {
+				if (nodes >= NODE_MAX) return;
+				if (["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"].includes(child.tagName))
+					continue;
+				if (hidden(child)) continue;
+				const r = role(child);
+				if (!r || depth >= DEPTH_MAX) {
+					walk(child, depth);
+					continue;
+				}
+				nodes++;
+				const n = name(child, r);
+				let line = `${"  ".repeat(depth)}- ${r}${n ? ` "${n.replaceAll('"', '\\"')}"` : ""}`;
+				if (r === "heading") line += ` [level=${child.tagName.slice(1) || "2"}]`;
+				if (
+					(r === "checkbox" || r === "radio") &&
+					(child as HTMLInputElement).checked
+				)
+					line += " [checked]";
+				if (INTERACTIVE.has(r)) {
+					const ref = `e${refs.size + 1}`;
+					refs.set(ref, child);
+					line += ` [ref=${ref}]`;
+				}
+				if (r === "textbox" || r === "searchbox" || r === "combobox") {
+					const value =
+						child.tagName === "SELECT"
+							? ((child as HTMLSelectElement).selectedOptions?.[0]?.textContent ?? "")
+							: "value" in child
+								? String((child as HTMLInputElement).value ?? "")
+								: (child.textContent ?? "");
+					if (value)
+						line += `: ${isSecret(child) ? REDACTED : squash(value, 200)}`;
+					else if (isSecret(child) && child.tagName === "INPUT")
+						line += `: ${REDACTED}`;
+				}
+				const before = lines.length;
+				lines.push(line);
+				if (!LEAF.has(r)) {
+					walk(child, depth + 1);
+					if (lines.length === before + 1) {
+						const text = squash(child.textContent ?? "", 120);
+						if (text) lines[before] += `: ${text}`;
+					}
+				}
+			}
+		};
+		walk(doc.body, 0);
+		if (nodes >= NODE_MAX) lines.push(`[truncated: more than ${NODE_MAX} nodes]`);
+		const body = doc.body as HTMLElement;
+		const text = (body.innerText ?? body.textContent ?? "")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim();
+		return {
+			title: doc.title,
+			tree: cap(lines.join("\n"), TREE_MAX),
+			text: cap(text, TEXT_MAX),
+		};
+	};
+
+	const resolve = (target: string): Element | string => {
+		if (/^e\d+$/.test(target)) {
+			const found = (win[REFS] as Map<string, Element> | undefined)?.get(target);
+			if (!found || !found.isConnected)
+				return `Ref ${target} not found. Run dg-skills pw --ext snapshot again.`;
+			return found;
+		}
+		let matches: Element[];
+		try {
+			matches = Array.from(doc.querySelectorAll(target));
+		} catch {
+			return `${target} is not a valid CSS selector or ref.`;
+		}
+		if (matches.length === 0) return `No element matches ${target}.`;
+		if (matches.length > 1)
+			return `${target} matches ${matches.length} elements; use a ref from snapshot or a narrower selector.`;
+		return matches[0] as Element;
+	};
+
+	const click = (target: string): PwExtPageResult => {
+		const el = resolve(target);
+		if (typeof el === "string") return { error: el };
+		if ((el as HTMLButtonElement).disabled)
+			return { error: `${describe(el)} is disabled.` };
+		(el as HTMLElement).scrollIntoView?.({ block: "center" });
+		if (typeof (el as HTMLElement).click === "function")
+			(el as HTMLElement).click();
+		else
+			el.dispatchEvent(
+				new (win as unknown as typeof globalThis).MouseEvent("click", {
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+		return { detail: `clicked ${describe(el)}` };
+	};
+
+	const fill = (target: string, value: string): PwExtPageResult => {
+		const el = resolve(target);
+		if (typeof el === "string") return { error: el };
+		if (isSecret(el))
+			return { error: "pw --ext does not fill password or secret fields." };
+		const input = el as HTMLInputElement;
+		const editable = el.getAttribute("contenteditable") === "true";
+		const field =
+			(el.tagName === "INPUT" && TEXT_INPUTS.has(input.type.toLowerCase())) ||
+			el.tagName === "TEXTAREA";
+		if ((!field && !editable) || input.disabled || input.readOnly)
+			return { error: `${describe(el)} cannot be filled.` };
+		input.focus?.();
+		if (editable) el.textContent = value;
+		else {
+			const setter = Object.getOwnPropertyDescriptor(
+				Object.getPrototypeOf(el),
+				"value",
+			)?.set;
+			if (setter) setter.call(el, value);
+			else input.value = value;
+		}
+		const EventCtor = (win as unknown as typeof globalThis).Event;
+		el.dispatchEvent(new EventCtor("input", { bubbles: true }));
+		el.dispatchEvent(new EventCtor("change", { bubbles: true }));
+		return { detail: `filled ${describe(el)}` };
+	};
+
+	const selection = (): PwExtPageResult => {
+		const active = doc.activeElement as HTMLInputElement | null;
+		if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+			if (isSecret(active)) return { text: "" };
+			const start = active.selectionStart ?? 0;
+			const end = active.selectionEnd ?? 0;
+			if (end > start)
+				return { text: cap(active.value.slice(start, end), SELECTION_MAX) };
+		}
+		return { text: cap(win.getSelection()?.toString() ?? "", SELECTION_MAX) };
+	};
+
+	const consoleCapture = (): PwExtPageResult => {
+		const existing = win[CONSOLE] as string[] | undefined;
+		if (existing) return { started: false, entries: [...existing] };
+		const entries: string[] = [];
+		win[CONSOLE] = entries;
+		const push = (line: string) => {
+			entries.push(squash(line, 500));
+			if (entries.length > CONSOLE_MAX) entries.shift();
+		};
+		win.addEventListener(
+			"error",
+			(event) => {
+				const e = event as ErrorEvent;
+				if (!e.message) return;
+				push(
+					`[error] ${e.message}${e.filename ? ` (${e.filename}:${e.lineno ?? 0})` : ""}`,
+				);
+			},
+			true,
+		);
+		win.addEventListener("unhandledrejection", (event) => {
+			const reason = (event as PromiseRejectionEvent).reason;
+			push(
+				`[error] Unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
+			);
+		});
+		return { started: true, entries: [] };
+	};
+
+	switch (action.kind) {
+		case "snapshot":
+			return snapshot();
+		case "click":
+			return click(action.target);
+		case "fill":
+			return fill(action.target, action.value);
+		case "selection":
+			return selection();
+		case "console":
+			return consoleCapture();
+	}
+}

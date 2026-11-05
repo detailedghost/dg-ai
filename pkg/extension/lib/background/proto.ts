@@ -202,7 +202,7 @@ async function downscalePreview(dataUrl: string): Promise<string | undefined> {
 	}
 }
 
-async function fitPreviewDataUrl(
+export async function fitPreviewDataUrl(
 	dataUrl: string,
 ): Promise<{ dataUrl?: string; reason?: string }> {
 	if (!PREVIEW_DATA_URL.test(dataUrl)) {
