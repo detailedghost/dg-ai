@@ -122,6 +122,7 @@ export const INSTALLED_SKILL_FILES = [
 	"pushup/SKILL.md",
 	"pw/SKILL.md",
 	"pw/references/commands.md",
+	"pw/references/real-browser.md",
 	"pw/references/request-mocking.md",
 	"pw/references/running-code.md",
 	"pw/references/session-management.md",
