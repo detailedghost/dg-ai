@@ -51,6 +51,7 @@ import {
 	type VaultKeyCache,
 	vaultStorageFullText,
 	vaultUnavailableText,
+	withVaultWriteLock,
 } from "./vault";
 import {
 	addContact,
@@ -778,13 +779,16 @@ function storePhiText(db: PhoneDb, message: Message, row: StoredRow, now: number
 	if (row.direction === "out") return add(PHI_NOT_STORED_TEXT);
 	const handle = findContactByNpub(db, message.from)?.handle ?? UNKNOWN_SENDER_HANDLE;
 	const plain = Buffer.from(message.text, "utf8");
-	if (plain.length > MAX_VAULT_BYTES || receiveStorageFull(vault.root, plain.length + SEALED_OVERHEAD_BYTES)) return add(vaultStorageFullText(handle));
+	if (plain.length > MAX_VAULT_BYTES) return add(vaultStorageFullText(handle));
 	const key = vault.keys.peek();
-	if (!key) return add(vaultUnavailableText(handle));
-	const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain, ext: row.ext }, now);
-	const inserted = add(sealed.text);
-	if (!inserted) deleteVaultItem(db, vault.root, sealed.row);
-	return inserted;
+	return withVaultWriteLock(vault.root, () => {
+		if (receiveStorageFull(vault.root, plain.length + SEALED_OVERHEAD_BYTES)) return add(vaultStorageFullText(handle));
+		if (!key) return add(vaultUnavailableText(handle));
+		const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain, ext: row.ext }, now);
+		const inserted = add(sealed.text);
+		if (!inserted) deleteVaultItem(db, vault.root, sealed.row);
+		return inserted;
+	});
 }
 
 /** Stores the message row, then its image fetch row when there is one. */

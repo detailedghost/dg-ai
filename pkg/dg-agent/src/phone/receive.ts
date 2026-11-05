@@ -17,7 +17,7 @@ import {
 	openImage,
 } from "./image";
 import { contactRelays, findContactByNpub } from "./store";
-import { SEALED_OVERHEAD_BYTES, sealReceived, UNKNOWN_SENDER_HANDLE, type VaultKeyCache, VAULT_DIR } from "./vault";
+import { SEALED_OVERHEAD_BYTES, sealReceived, UNKNOWN_SENDER_HANDLE, type PeriodKey, type VaultKeyCache, VAULT_DIR, withVaultWriteLock } from "./vault";
 import { DAILY_REQUEST_CAP, type FileFetch, requestFile } from "./transport";
 import { dirBytes, type WormholeDeps } from "./wormhole";
 
@@ -117,9 +117,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		deps.db.deferImageFetch(row.message_id, attempts, now + delay);
 	};
 
-	const sealPhi = async (row: ImageFetchRow, message: MessageRow, plain: Buffer) => {
-		const key = await deps.vault?.current();
-		if (!key) return defer(row, deps.now(), "vault unavailable");
+	const sealPhi = (row: ImageFetchRow, message: MessageRow, plain: Buffer, key: PeriodKey) => {
 		const handle = findContactByNpub(deps.db, message.sender)?.handle ?? UNKNOWN_SENDER_HANDLE;
 		finish(row, sealReceived(deps.db, deps.paths.phoneRoot, { key, sender: message.sender, handle, plain, ext: message.ext }, deps.now()).text);
 	};
@@ -147,13 +145,18 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		if (!result.ok) return RETRY_REASONS.has(result.reason) ? defer(live, deps.now(), result.reason) : fail(live, terminalReason(result.reason));
 		const opened = openImage(result.cipher, row);
 		if (!opened.ok) return fail(row, opened.reason);
-		if (receiveStorageFull(deps.paths.phoneRoot, storedSize(opened.plain.length, phi))) return fail(row, "storage full");
-		if (phi && message) return sealPhi(row, message, opened.plain);
 		const file: ImageFile = { sha256: row.ox, type: opened.type, size: opened.plain.length };
 		const name = imageFileName(file);
 		if (!name) return fail(row, "fetch failed");
-		writeFileAtomic(join(dir, name), opened.plain, 0o600);
-		finish(row, IMAGE_TEXT, file);
+		const sealKey = phi && message ? await deps.vault?.current() : undefined;
+		if (phi && message && !sealKey) return defer(row, deps.now(), "vault unavailable");
+		const root = deps.paths.phoneRoot;
+		withVaultWriteLock(root, () => {
+			if (receiveStorageFull(root, storedSize(opened.plain.length, phi))) return fail(row, "storage full");
+			if (message && sealKey) return sealPhi(row, message, opened.plain, sealKey);
+			writeFileAtomic(join(dir, name), opened.plain, 0o600);
+			finish(row, IMAGE_TEXT, file);
+		});
 	};
 
 	const arm = (rows: readonly ImageFetchRow[], now: number) => {

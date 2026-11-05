@@ -1,9 +1,10 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type CredentialClient, createCredentialClient, type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { PHI_TTL_SECONDS, type PhoneDb, VAULT_DIR, type VaultItemRow } from "./db";
+import { withFileLock, withFileLockSync } from "./file-lock";
 import { sniffImage } from "./image";
 import { cleanUpOrphan, type KeyClient } from "./keys";
 
@@ -27,8 +28,7 @@ const TAG_BYTES = 16;
 export const SEALED_OVERHEAD_BYTES = NONCE_BYTES + TAG_BYTES;
 const RECEIVED_NAME_TRIES = 16;
 const KEY_LOCK_FILE = "vault-key.lock";
-const KEY_LOCK_STALE_MS = 30_000;
-const KEY_LOCK_WAIT_MS = 50;
+const WRITE_LOCK_FILE = "vault-write.lock";
 
 export type VaultClient = Pick<CredentialClient, "get" | "list" | "close">;
 export type VaultDeps = {
@@ -157,62 +157,16 @@ async function readPeriodKey(deps: VaultDeps, period: string): Promise<Buffer | 
 	return value === undefined ? undefined : decodeKey(period, value);
 }
 
-function lockStale(path: string): boolean {
-	try {
-		return Date.now() - statSync(path).mtimeMs >= KEY_LOCK_STALE_MS;
-	} catch {
-		return false;
-	}
-}
-
-let keyLockBreaks = 0;
-
-function breakStaleLock(path: string): void {
-	const aside = `${path}.${process.pid}.${(keyLockBreaks += 1)}`;
-	try {
-		renameSync(path, aside);
-	} catch {
-		return;
-	}
-	if (!lockStale(aside)) {
-		try {
-			writeFileSync(path, readFileSync(aside), { flag: "wx", mode: 0o600 });
-		} catch {}
-	}
-	rmSync(aside, { force: true });
-}
-
-/** Runs `work` while this process holds the phone root's key lock, so only one process makes a period key. */
-async function withKeyLock<T>(paths: VaultKeyDeps["paths"], work: () => Promise<T>): Promise<T> {
-	ensurePrivateDir(paths.phoneRoot);
-	const path = join(paths.phoneRoot, KEY_LOCK_FILE);
-	const token = `${process.pid} ${randomBytes(8).toString("hex")}`;
-	const giveUpAt = Date.now() + 2 * KEY_LOCK_STALE_MS;
-	for (;;) {
-		try {
-			writeFileSync(path, token, { flag: "wx", mode: 0o600 });
-			break;
-		} catch (err) {
-			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-		}
-		if (lockStale(path)) breakStaleLock(path);
-		else if (Date.now() >= giveUpAt) throw new DgCliError("another dg process is making the vault key; try again");
-		else await Bun.sleep(KEY_LOCK_WAIT_MS);
-	}
-	try {
-		return await work();
-	} finally {
-		try {
-			if (readFileSync(path, "utf8") === token) rmSync(path, { force: true });
-		} catch {}
-	}
+/** Runs a cap check and the write after it under one cross-process lock, so two writers cannot both pass the check. */
+export function withVaultWriteLock<T>(root: string, work: () => T): T {
+	return withFileLockSync(root, WRITE_LOCK_FILE, "another dg process is writing receive storage; try again", work);
 }
 
 /** The period's key, made in the store on first use under the key lock; returns the stored key, never one outside the store. */
 export async function ensurePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer> {
 	const existing = await readPeriodKey(deps, period);
 	if (existing) return existing;
-	return withKeyLock(deps.paths, () => makePeriodKey(deps, period));
+	return withFileLock(deps.paths.phoneRoot, KEY_LOCK_FILE, "another dg process is making the vault key; try again", () => makePeriodKey(deps, period));
 }
 
 async function makePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer> {

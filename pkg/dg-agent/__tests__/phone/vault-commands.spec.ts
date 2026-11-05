@@ -112,6 +112,19 @@ describe("phone vault add", () => {
 		expect(deps.db.listVaultItems()).toEqual([]);
 	});
 
+	it("lets exactly one of two concurrent adds near the cap succeed", async () => {
+		fillReceiveStorage(FILES_BYTE_CAP - 2 * SECRET.length - 2 * SEALED_OVERHEAD_BYTES + 1);
+		const other = makeDeps();
+		const results = await Promise.allSettled([
+			phoneVaultAdd("lab-a", file("a.txt", SECRET), deps),
+			phoneVaultAdd("lab-b", file("b.txt", SECRET), other),
+		]);
+
+		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(deps.db.listVaultItems()).toHaveLength(1);
+		expect(existsSync(join(deps.paths.phoneRoot, "vault-write.lock"))).toBe(false);
+	});
+
 	it("reads raw bytes from stdin when no file is given", async () => {
 		stdin = PNG;
 
