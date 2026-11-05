@@ -394,7 +394,7 @@ text is dropped and the row reads `[PHI: vault unavailable from +handle]`; an
 image retries until its deadline.
 
 `phone vault exec` passes the item on stdin, or in one env var with
-`--env`, and stores the command's stdout (5 MiB at most) as a new item. It
+`--env`, with no `DG_*` or cloud credential variables in its env, and stores the command's stdout (5 MiB at most) as a new item. It
 prints only `{"name", "exit", "out", "size", "stderr_lines"}`. A nonzero
 exit stores nothing and exits with the command's code.
 

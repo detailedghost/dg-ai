@@ -308,6 +308,37 @@ describe("phone vault exec", () => {
 		expect(deps.db.listVaultItems().map((row) => row.name)).toEqual(["big", "bin", "lab", "nul"]);
 	});
 
+	it("drops DG and cloud credential variables from the child env and keeps PATH", async () => {
+		await seed("lab", SECRET);
+		const planted = {
+			DG_SESSION_TOKEN: "s",
+			DG_HOME: "/h",
+			AWS_SECRET_ACCESS_KEY: "a",
+			AWS_PROFILE: "p",
+			AZURE_CLIENT_SECRET: "z",
+			ARM_CLIENT_SECRET: "r",
+			GOOGLE_APPLICATION_CREDENTIALS: "g",
+			CLOUDSDK_AUTH_ACCESS_TOKEN: "c",
+			GH_TOKEN: "t",
+			GITHUB_TOKEN: "t",
+		};
+		const saved = Object.fromEntries(Object.keys(planted).map((name) => [name, process.env[name]]));
+		Object.assign(process.env, planted);
+		try {
+			await phoneVaultExec("lab", [BUN, "-e", "process.stdout.write(JSON.stringify(Object.keys(process.env)))"], { env: "LAB_TEXT" }, deps);
+		} finally {
+			for (const [name, value] of Object.entries(saved)) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+		}
+
+		const names = JSON.parse((await content("lab-out")).toString()) as string[];
+		for (const name of Object.keys(planted)) expect(names).not.toContain(name);
+		expect(names).toContain("PATH");
+		expect(names).toContain("LAB_TEXT");
+	});
+
 	it("refuses --env together with --stdin", async () => {
 		await seed("lab", SECRET);
 

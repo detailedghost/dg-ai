@@ -156,6 +156,19 @@ export async function phoneVaultOpen(name: string, deps: PhoneDeps): Promise<voi
 	}
 }
 
+const DROPPED_ENV_PREFIXES = ["DG_", "AWS_", "AZURE_", "ARM_", "CLOUDSDK_", "GOOGLE_"];
+const DROPPED_ENV_NAMES: ReadonlySet<string> = new Set(["GH_TOKEN", "GITHUB_TOKEN"]);
+
+/** The parent env without dg session, grant, and home variables or known cloud credentials. */
+function childEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+	const kept: Record<string, string> = {};
+	for (const [name, value] of Object.entries(env)) {
+		if (value === undefined || DROPPED_ENV_NAMES.has(name) || DROPPED_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
+		kept[name] = value;
+	}
+	return kept;
+}
+
 type ChildResult = { code: number | null; stdout?: Buffer; size: number; stderrLines: number; failedToStart: boolean };
 
 function runChild(argv: string[], input: { stdin?: Buffer; env?: Record<string, string> }): Promise<ChildResult> {
@@ -164,7 +177,7 @@ function runChild(argv: string[], input: { stdin?: Buffer; env?: Record<string, 
 			shell: false,
 			windowsHide: true,
 			detached: process.platform !== "win32",
-			env: { ...process.env, ...input.env },
+			env: { ...childEnv(process.env), ...input.env },
 			stdio: [input.stdin ? "pipe" : "ignore", "pipe", "pipe"],
 		});
 		const chunks: Buffer[] = [];
