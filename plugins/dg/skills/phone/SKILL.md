@@ -415,9 +415,9 @@ dg-agent phone vault rm lab-1
 ```
 
 The vault holds PHI that you can use but never read. Each item is
-AES-256-GCM encrypted under a daily key in the dg credential store
-(`phone-vault/<day>`), and each day's key is deleted 48 hours after its day
-starts. Every item expires 24 hours after it was stored. Vault commands
+AES-256-GCM encrypted under a weekly key in the dg credential store
+(`phone-vault/<yyyy>-W<ww>`, one per ISO week by local time), and each key is
+deleted 48 hours after its week ends. Every item expires 24 hours after it was stored. Vault commands
 refuse when the credential store is not reachable.
 
 A received `dg-phi` text or image goes straight into the vault. `unread`,

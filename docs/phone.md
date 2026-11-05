@@ -311,14 +311,23 @@ PHI. Files in `vault/` (folder 0700, files 0600) are named by a random id;
 with a random 12-byte nonce, and the item id, sender, and `expires_at` are
 bound as additional data, so a changed row does not open.
 
-Keys live only in the dg credential store, one per local day, as
-`phone-vault/<yyyy-mm-dd>`. They are read through their own `phone-vault`
-grant, apart from the `phone-friend` grant of the phone key. A missing day
-key is made only through a dg session. Each day's key is deleted 48 hours
-after its day starts, which needs a session too; without one, the delete
-waits for the next command that has one. The listener loads today's and
-tomorrow's keys at start and every 30 minutes. A vault command refuses when
-the store is not reachable, and no key is ever kept in `phone.db`.
+Keys live only in the dg credential store, one per ISO 8601 week by local
+time (Monday 00:00 to the next Monday 00:00), as `phone-vault/<yyyy>-W<ww>`,
+for example `phone-vault/2026-W45`. The year is the ISO week year, so
+2027-01-03 is `2026-W53` and 2027-01-04 is `2027-W01`. They are read through
+their own `phone-vault` grant, apart from the `phone-friend` grant of the
+phone key. A missing period key is made only through a dg session. Each
+period's key is deleted 48 hours after its period ends, which needs a session
+too; without one, the delete waits for the next command that has one. Items
+expire 24 hours after storage, so the key outlives every item sealed with it.
+The listener loads this period's and the next period's keys at start and
+every 30 minutes. A vault command refuses when the store is not reachable,
+and no key is ever kept in `phone.db`.
+
+Trade-off: one key per period means a deleted item in an old backup of
+`vault/` can be decrypted for up to about 9 days after its period starts (7
+days of period plus 48 hours), not 2. Deleting an item removes its file and
+row, but the key stays until the period ends.
 
 Every item expires 24 hours after this phone stored it, by the local clock.
 Expired items are deleted on every vault command, when `phone.db` opens,
