@@ -13,9 +13,10 @@ import {
 } from "./skill-tree-helpers";
 
 const NAME = "pw";
-const MAX_LINES = 93;
+const MAX_LINES = 106;
 const REFERENCES = [
 	"commands.md",
+	"real-browser.md",
 	"request-mocking.md",
 	"running-code.md",
 	"session-management.md",

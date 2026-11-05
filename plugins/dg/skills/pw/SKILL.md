@@ -85,14 +85,7 @@ Snapshots, screenshots, downloads, traces, and videos land in `dg-skills stash p
 ## Real browser (`--ext`)
 
 Use `--ext` only when the human asks you to look at or act on the page they have open. Plain `pw` stays the default for tests, recording, mocking and isolated runs.
-
-- Read verbs: `pw --ext current`, `pw --ext snapshot`, `pw --ext screenshot`, `pw --ext selection`, `pw --ext console`.
-- Write verbs: `pw --ext open <url>`, `pw --ext click <ref or selector>`, `pw --ext fill <ref or selector> <text>`.
-- Every call opens an approval window in the browser. Tell the human to look there. If they deny, stop. Do not retry the same call.
-- `snapshot` prints the tree on stdout. Refs such as `e4` come from the last `--ext snapshot`.
-- Browser settings pages, extension pages and the signed-in Proton Mail tab are refused. Ask the human to switch to a web page tab.
-- `fill` never takes passwords or secrets. Ask the human to type them.
-- `--ext` takes no other flags and runs no code. On a failure, run `dg-skills doctor pw`.
+Every `--ext` call opens an approval window in the browser. If the human denies, stop and do not retry. Verbs, refs and blocked pages: `references/real-browser.md`.
 
 ## Security
 
@@ -110,3 +103,4 @@ A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings 
 | `pw-code` recipes and approval | `references/running-code.md` |
 | Cookies, storage, state files | `references/storage-state.md` |
 | Tracing and video | `references/tracing.md`, `references/video-recording.md` |
+| Real browser with `--ext` | `references/real-browser.md` |
