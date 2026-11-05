@@ -927,3 +927,111 @@ describe("PHI vault receive", () => {
 		expect(hooked.file).toBeUndefined();
 	});
 });
+
+describe("extensions", () => {
+	let alice: Phone;
+	let bob: Phone;
+	let creds: FakeCredentials;
+
+	beforeEach(async () => {
+		alice = await boot("a");
+		bob = await boot("b");
+		link(alice, "b", bob, "a");
+		phoneFiles("on", alice.deps);
+		phoneFiles("on", bob.deps);
+		creds = createFakeCredentials({ session: false, granted: true });
+		creds.store.set(vaultKeyName(localDay(clock)), "22".repeat(32));
+	});
+
+	function hookTo(out: string) {
+		return {
+			kind: "command" as const,
+			argv: [process.execPath, "-e", "require('node:fs').appendFileSync(process.argv[1], (await Bun.stdin.text()) + '\\n')", out],
+			timeoutMs: 5000,
+		};
+	}
+
+	async function receive(opts: { hook?: string } = {}): Promise<void> {
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient, ...(opts.hook ? { hook: hookTo(opts.hook) } : {}) });
+		await bobListener.started;
+		try {
+			if (opts.hook) {
+				const out = opts.hook;
+				await waitUntil(() => existsSync(out) && readFileSync(out, "utf8").trim().length > 0);
+			}
+		} finally {
+			await bobListener.stop();
+		}
+	}
+
+	it("stores the agent a message is for and the agent it came from, notes the sender's extension, and passes both to the hook", async () => {
+		const out = join(shared, "hook.ndjson");
+		await phoneSay("+b/merc", "hi merc", alice.deps, { as: "kit" });
+		await receive({ hook: out });
+
+		const [stored] = bob.deps.db.recentMessages(10);
+		expect(stored).toMatchObject({ direction: "in", text: "hi merc", ext: "merc", peer_ext: "kit" });
+		expect(bob.deps.db.contactExts(alice.npub)).toEqual([{ ext: "kit", last_seen: stored?.ts as number }]);
+		const hooked = JSON.parse(readFileSync(out, "utf8").trim()) as Record<string, unknown>;
+		expect(hooked).toMatchObject({ handle: "+a", text: "hi merc", ext: "merc", from_ext: "kit" });
+	});
+
+	it("leaves the hook payload without ext fields for a shared message", async () => {
+		const out = join(shared, "hook.ndjson");
+		await phoneSay("+b", "hi all", alice.deps);
+		await receive({ hook: out });
+
+		const hooked = JSON.parse(readFileSync(out, "utf8").trim()) as Record<string, unknown>;
+		expect(hooked.ext).toBeUndefined();
+		expect(hooked.from_ext).toBeUndefined();
+		expect(bob.deps.db.recentMessages(10)[0]).toMatchObject({ ext: null, peer_ext: null });
+	});
+
+	it("treats a message whose tags break the name rule as shared and notes no extension", async () => {
+		await deliver(wrapTagged({ content: "sneaky", tags: [["dg-ext", "../../etc"], ["dg-from-ext", "$(id)"]] }, alice.sk, bob.pub));
+		await receive();
+
+		expect(bob.deps.db.recentMessages(10)[0]).toMatchObject({ text: "sneaky", ext: null, peer_ext: null });
+		expect(bob.deps.db.contactExts(alice.npub)).toEqual([]);
+	});
+
+	it("files a #group message machine-wide even when it names an extension, keeping the sender's", async () => {
+		await phoneThreadNew("#room", ["+b"], {}, alice.deps);
+		await phoneSay("#room", "to the room", alice.deps, { as: "kit" });
+		await receive();
+
+		const stored = bob.deps.db.recentMessages(10).find((candidate) => candidate.text === "to the room");
+		expect(stored?.thread_id).not.toBeNull();
+		expect(stored).toMatchObject({ ext: null, peer_ext: "kit" });
+	});
+
+	it("records the extension on a vault item made from received PHI text", async () => {
+		await phoneSay("+b/merc", "patient Jane Roe", alice.deps, { phi: true });
+		await receive();
+
+		const [item] = bob.deps.db.listVaultItems();
+		expect(item?.ext).toBe("merc");
+		expect(bob.deps.db.recentMessages(10)[0]?.ext).toBe("merc");
+	});
+
+	it("records the extension on a vault item made from a received PHI image", async () => {
+		const plain = pngOfSize();
+		const sealed = seal(plain);
+		stageAt(alice, sealed.cipher, bob);
+		const aliceListener = listen(alice, wormholeFor());
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient });
+		await Promise.all([aliceListener.started, bobListener.started]);
+		try {
+			const event = offerEvent(alice, bob, sealed, {}, [["dg-phi", "1"], ["dg-ext", "merc"]]);
+			await deliver(event);
+			await settled(bob, event.id);
+		} finally {
+			await bobListener.stop();
+			await aliceListener.stop();
+		}
+
+		const [item] = bob.deps.db.listVaultItems();
+		expect(item?.type).toBe("image/png");
+		expect(item?.ext).toBe("merc");
+	});
+});

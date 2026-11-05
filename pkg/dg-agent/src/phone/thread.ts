@@ -312,6 +312,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 	thread: ThreadMeta;
 	image?: { offer: ImageOffer; keyId: string };
 	phi?: true;
+	fromExt?: string;
 } {
 	return {
 		id: view.rumorId,
@@ -320,6 +321,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 		text: view.text,
 		...(view.offer ? { image: { offer: view.offer, keyId } } : {}),
 		...(view.phi ? { phi: view.phi } : {}),
+		...(view.fromExt ? { fromExt: view.fromExt } : {}),
 		thread: {
 			roomId: view.roomId,
 			subject: view.subject,

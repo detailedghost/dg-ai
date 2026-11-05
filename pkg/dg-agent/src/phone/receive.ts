@@ -106,7 +106,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		const key = await deps.vault?.current();
 		if (!key) return defer(row, deps.now(), "vault unavailable");
 		const handle = findContactByNpub(deps.db, message.sender)?.handle ?? UNKNOWN_SENDER_HANDLE;
-		finish(row, sealReceived(deps.db, deps.paths.phoneRoot, { key, sender: message.sender, handle, plain }, deps.now()).text);
+		finish(row, sealReceived(deps.db, deps.paths.phoneRoot, { key, sender: message.sender, handle, plain, ext: message.ext }, deps.now()).text);
 	};
 
 	const attempt = async (row: ImageFetchRow) => {

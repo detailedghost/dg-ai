@@ -767,7 +767,7 @@ function imageAdmission(db: PhoneDb, message: Message, direction: "in" | "out", 
 	};
 }
 
-type StoredRow = { direction: "in" | "out"; contact: string; call: number; thread_id?: string };
+type StoredRow = { direction: "in" | "out"; contact: string; call: number; thread_id?: string; ext: string | null; peer_ext: string | null };
 
 /** PHI text goes into the vault and its row keeps only a placeholder; our own echo keeps nothing. */
 function storePhiText(db: PhoneDb, message: Message, row: StoredRow, now: number, vault: VaultSink): boolean {
@@ -776,7 +776,7 @@ function storePhiText(db: PhoneDb, message: Message, row: StoredRow, now: number
 	const handle = findContactByNpub(db, message.from)?.handle ?? UNKNOWN_SENDER_HANDLE;
 	const key = vault.keys.today();
 	if (!key) return add(vaultUnavailableText(handle));
-	const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain: Buffer.from(message.text, "utf8") }, now);
+	const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain: Buffer.from(message.text, "utf8"), ext: row.ext }, now);
 	const inserted = add(sealed.text);
 	if (!inserted) deleteVaultItem(db, vault.root, sealed.row);
 	return inserted;
@@ -788,6 +788,13 @@ function storeMessage(db: PhoneDb, message: Message, row: StoredRow, now: number
 	const image = imageAdmission(db, message, row.direction, now);
 	const inserted = db.addMessage({ id: message.id, ts: message.ts, sender: message.from, text: image.text, phi: message.phi === true, ...row });
 	if (inserted && image.fetch) db.addImageFetch(image.fetch);
+	return inserted;
+}
+
+/** Stores the row, then notes the sender's claimed extension on their contact. */
+function storeAndNote(db: PhoneDb, message: Message, row: StoredRow, now: number, vault: VaultSink): boolean {
+	const inserted = storeMessage(db, message, row, now, vault);
+	if (inserted && row.direction === "in" && message.fromExt) db.touchContactExt(message.from, message.fromExt, message.ts);
 	return inserted;
 }
 
@@ -842,10 +849,17 @@ function admitMessage(
 				});
 				for (const npub of message.thread.memberNpubs) db.insertThreadMember(message.thread.roomId, npub);
 			}
-			const inserted = storeMessage(
+			const inserted = storeAndNote(
 				db,
 				message,
-				{ direction: threadDirection(message.from, ownNpubs), contact: message.from, call: 0, thread_id: message.thread.roomId },
+				{
+					direction: threadDirection(message.from, ownNpubs),
+					contact: message.from,
+					call: 0,
+					thread_id: message.thread.roomId,
+					ext: null,
+					peer_ext: message.fromExt ?? null,
+				},
 				now(),
 				vault,
 			);
@@ -861,7 +875,13 @@ function admitMessage(
 			addPhoneNotice(db, `new contact +${handle}`, now());
 		}
 		if (!findContactByNpub(db, message.from)) return "rejected";
-		const inserted = storeMessage(db, message, { direction: "in", contact: message.from, call: message.call ? 1 : 0 }, now(), vault);
+		const inserted = storeAndNote(
+			db,
+			message,
+			{ direction: "in", contact: message.from, call: message.call ? 1 : 0, ext: message.ext ?? null, peer_ext: message.fromExt ?? null },
+			now(),
+			vault,
+		);
 		if (!inserted) return "duplicate";
 		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
 		return "stored";

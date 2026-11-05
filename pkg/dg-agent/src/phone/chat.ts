@@ -32,6 +32,10 @@ export type Message = {
 	thread?: ThreadMeta;
 	image?: { offer: ImageOffer; keyId: string };
 	phi?: true;
+	/** The agent on this machine a direct message is for; never set on a group message. */
+	ext?: string;
+	/** The sending agent's claimed extension. */
+	fromExt?: string;
 };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string; keyId?: string };
@@ -209,6 +213,8 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 		text: body.text,
 		...(body.offer ? { image: { offer: body.offer, keyId } } : {}),
 		...(body.phi ? { phi: body.phi } : {}),
+		...(body.ext ? { ext: body.ext } : {}),
+		...(body.fromExt ? { fromExt: body.fromExt } : {}),
 	};
 	const existing = gate.contacts.get(rumor.pubkey);
 	const isChat = rumor.kind === CHAT_MESSAGE_KIND;
