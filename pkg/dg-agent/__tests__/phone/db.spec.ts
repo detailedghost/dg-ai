@@ -56,7 +56,7 @@ describe("PhoneDb", () => {
 		const { user_version } = raw.query("PRAGMA user_version").get() as { user_version: number };
 		raw.close();
 
-		expect(user_version).toBe(8);
+		expect(user_version).toBe(9);
 	});
 
 	describe("messages", () => {

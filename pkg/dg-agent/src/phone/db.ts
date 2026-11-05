@@ -35,7 +35,20 @@ export type MessageRow = {
 	received_at: number;
 	/** When a recipient's receipt for an outgoing row arrived, else null. */
 	delivered_at: number | null;
+	/** The agent on this machine the row belongs to; null is the shared inbox. */
+	ext: string | null;
+	/** The agent on the other machine: the sender's `dg-from-ext`, or the extension we sent to. */
+	peer_ext: string | null;
 };
+
+/** Which rows a reader sees: null is the shared inbox only, a name is that agent plus the shared inbox. */
+export type ExtView = { ext: string | null };
+
+/** One extension a contact's messages named as their sender. */
+export type ContactExtRow = { ext: string; last_seen: number };
+
+/** Extensions kept per contact; a peer that claims more loses its oldest. */
+const CONTACT_EXT_LIMIT = 16;
 
 /** One image still being fetched; the row, with its key and nonce, is deleted when the fetch ends. */
 export type ImageFetchRow = {
@@ -130,6 +143,8 @@ export type VaultItemRow = {
 	key_day: string;
 	created_at: number;
 	expires_at: number;
+	/** The agent on this machine the item came in for; null is shared. */
+	ext: string | null;
 };
 
 /** A receipt that beat its row to the database is held this long. */
@@ -281,6 +296,26 @@ const SCHEMA: MigrationStep[] = [
 			) STRICT`);
 		},
 	},
+	{
+		version: 9,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN ext TEXT");
+			db.run("ALTER TABLE messages ADD COLUMN peer_ext TEXT");
+			db.run("ALTER TABLE vault_items ADD COLUMN ext TEXT");
+			db.run(`CREATE TABLE ext_reads (
+				message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+				ext TEXT NOT NULL,
+				read_at INTEGER NOT NULL,
+				PRIMARY KEY (message_id, ext)
+			) STRICT`);
+			db.run(`CREATE TABLE contact_exts (
+				npub TEXT NOT NULL REFERENCES contacts(npub) ON DELETE CASCADE,
+				ext TEXT NOT NULL,
+				last_seen INTEGER NOT NULL,
+				PRIMARY KEY (npub, ext)
+			) STRICT`);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -384,8 +419,8 @@ export class PhoneDb {
 	addVaultItem(row: VaultItemRow): boolean {
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO vault_items (id, name, sender, type, size, key_day, created_at, expires_at)
-				VALUES ($id, $name, $sender, $type, $size, $keyDay, $createdAt, $expiresAt)`,
+				`INSERT OR IGNORE INTO vault_items (id, name, sender, type, size, key_day, created_at, expires_at, ext)
+				VALUES ($id, $name, $sender, $type, $size, $keyDay, $createdAt, $expiresAt, $ext)`,
 			)
 			.run({
 				id: row.id,
@@ -396,6 +431,7 @@ export class PhoneDb {
 				keyDay: row.key_day,
 				createdAt: row.created_at,
 				expiresAt: row.expires_at,
+				ext: row.ext,
 			});
 		return result.changes > 0;
 	}
@@ -408,8 +444,12 @@ export class PhoneDb {
 		);
 	}
 
-	listVaultItems(): VaultItemRow[] {
-		return this.db.query("SELECT * FROM vault_items WHERE expires_at > $now ORDER BY created_at, name").all({ now: this.now() }) as VaultItemRow[];
+	/** Every live item, or with `ext` only that agent's items and the shared ones. */
+	listVaultItems(ext?: string): VaultItemRow[] {
+		const scope = ext === undefined ? "" : "AND (ext IS NULL OR ext = $ext)";
+		return this.db
+			.query(`SELECT * FROM vault_items WHERE expires_at > $now ${scope} ORDER BY created_at, name`)
+			.all({ now: this.now(), ...(ext === undefined ? {} : { ext }) }) as VaultItemRow[];
 	}
 
 	/** True while any row, live or not yet pruned, holds the name. */
@@ -589,6 +629,27 @@ export class PhoneDb {
 		this.db.query("DELETE FROM contacts WHERE npub = $npub").run({ npub });
 	}
 
+	/** Notes that a contact's message named `ext` as its sender; a pubkey that is not a contact is ignored. */
+	touchContactExt(npub: string, ext: string, at: number): void {
+		this.transaction(() => {
+			this.db
+				.query(
+					`INSERT INTO contact_exts (npub, ext, last_seen) SELECT $npub, $ext, $at WHERE EXISTS (SELECT 1 FROM contacts WHERE npub = $npub)
+					ON CONFLICT(npub, ext) DO UPDATE SET last_seen = max(last_seen, $at)`,
+				)
+				.run({ npub, ext, at });
+			this.db
+				.query(
+					"DELETE FROM contact_exts WHERE npub = $npub AND ext NOT IN (SELECT ext FROM contact_exts WHERE npub = $npub ORDER BY last_seen DESC, ext LIMIT $limit)",
+				)
+				.run({ npub, limit: CONTACT_EXT_LIMIT });
+		});
+	}
+
+	contactExts(npub: string): ContactExtRow[] {
+		return this.db.query("SELECT ext, last_seen FROM contact_exts WHERE npub = $npub ORDER BY last_seen DESC, ext").all({ npub }) as ContactExtRow[];
+	}
+
 	listLiveInvites(): InviteRow[] {
 		return this.db
 			.query("SELECT * FROM invites WHERE expires_at > $now ORDER BY expires_at")
@@ -618,18 +679,20 @@ export class PhoneDb {
 	}
 
 	addMessage(
-		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at"> & {
+		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at" | "ext" | "peer_ext"> & {
 			thread_id?: string | null;
 			file?: string | null;
 			phi?: boolean;
+			ext?: string | null;
+			peer_ext?: string | null;
 		},
 	): boolean {
 		this.pruneMessages();
 		if (message.ts < this.cutoff() || this.expiredId(message.id)) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file, phi, received_at)
-				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file, $phi, $receivedAt)`,
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file, phi, received_at, ext, peer_ext)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file, $phi, $receivedAt, $ext, $peerExt)`,
 			)
 			.run({
 				id: message.id,
@@ -644,6 +707,8 @@ export class PhoneDb {
 				file: message.file ?? null,
 				phi: message.phi ? 1 : 0,
 				receivedAt: this.now(),
+				ext: message.ext ?? null,
+				peerExt: message.peer_ext ?? null,
 			});
 		if (result.changes > 0 && message.direction === "out") this.applyEarlyReceipts(message.id);
 		return result.changes > 0;
@@ -710,6 +775,7 @@ export class PhoneDb {
 		this.transaction(() => {
 			this.db.query("DELETE FROM image_fetches WHERE message_id = $id").run({ id });
 			this.db.query("UPDATE messages SET text = $text, file = $file, read_at = NULL, attempts = 0 WHERE id = $id").run({ id, text, file });
+			this.db.query("DELETE FROM ext_reads WHERE message_id = $id").run({ id });
 		});
 	}
 
@@ -747,7 +813,9 @@ export class PhoneDb {
 
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at"> & { thread_id?: string | null }): boolean {
+	insertMigratedMessage(
+		message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at" | "ext" | "peer_ext"> & { thread_id?: string | null },
+	): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
@@ -791,6 +859,43 @@ export class PhoneDb {
 		});
 	}
 
+	/** Unread incoming rows in one view: the shared view reads `read_at`, an agent only its own marks. */
+	unreadFor(ext: string | null): MessageRow[] {
+		if (ext === null) {
+			return this.db.query("SELECT * FROM messages WHERE direction = 'in' AND ext IS NULL AND read_at IS NULL ORDER BY ts, id").all() as MessageRow[];
+		}
+		return this.db
+			.query(
+				`SELECT * FROM messages WHERE direction = 'in' AND (ext IS NULL OR ext = $ext)
+				AND NOT EXISTS (SELECT 1 FROM ext_reads WHERE message_id = messages.id AND ext = $ext) ORDER BY ts, id`,
+			)
+			.all({ ext }) as MessageRow[];
+	}
+
+	takeUnreadFor(ext: string | null, skip?: ReadonlySet<string>): MessageRow[] {
+		return this.transaction(() => {
+			const rows = this.unreadFor(ext).filter((row) => !skip?.has(row.id));
+			if (ext === null) {
+				this.markRead(rows.map((row) => row.id));
+				return rows;
+			}
+			const mark = this.db.query("INSERT OR IGNORE INTO ext_reads (message_id, ext, read_at) VALUES ($id, $ext, $now)");
+			for (const row of rows) mark.run({ id: row.id, ext, now: this.now() });
+			return rows;
+		});
+	}
+
+	/** Unread incoming rows held for each agent, which the shared view does not show. */
+	waitingByExtension(): Record<string, number> {
+		const rows = this.db
+			.query(
+				`SELECT ext, COUNT(*) AS n FROM messages WHERE direction = 'in' AND ext IS NOT NULL
+				AND NOT EXISTS (SELECT 1 FROM ext_reads WHERE message_id = messages.id AND ext = messages.ext) GROUP BY ext ORDER BY ext`,
+			)
+			.all() as { ext: string; n: number }[];
+		return Object.fromEntries(rows.map((row) => [row.ext, row.n]));
+	}
+
 	/** The oldest unread message still under the hook's attempt cap, or undefined once the queue is empty. */
 	nextDeliverable(cap: number): MessageRow | undefined {
 		return (
@@ -824,21 +929,25 @@ export class PhoneDb {
 	 * A contact filter is one-to-one only (`thread_id` null). A thread filter is that room.
 	 * With neither, every row is returned, thread rows included.
 	 */
-	recentMessages(limit: number, contactNpub?: string, threadId?: string): MessageRow[] {
-		const rows = (
-			threadId !== undefined
-				? this.db
-						.query("SELECT * FROM messages WHERE thread_id = $thread ORDER BY ts DESC, id DESC LIMIT $limit")
-						.all({ thread: threadId, limit })
-				: contactNpub !== undefined
-					? this.db
-							.query(
-								"SELECT * FROM messages WHERE contact = $contact AND thread_id IS NULL ORDER BY ts DESC, id DESC LIMIT $limit",
-							)
-							.all({ contact: contactNpub, limit })
-					: this.db.query("SELECT * FROM messages ORDER BY ts DESC, id DESC LIMIT $limit").all({ limit })
-		) as MessageRow[];
-		return rows.reverse();
+	recentMessages(limit: number, contactNpub?: string, threadId?: string, view?: ExtView): MessageRow[] {
+		const where = [
+			...(threadId !== undefined ? ["thread_id = $thread"] : contactNpub !== undefined ? ["contact = $contact", "thread_id IS NULL"] : []),
+			...(view === undefined ? [] : view.ext === null ? ["ext IS NULL"] : ["(ext IS NULL OR ext = $ext)"]),
+		];
+		const params = {
+			limit,
+			...(threadId !== undefined ? { thread: threadId } : contactNpub !== undefined ? { contact: contactNpub } : {}),
+			...(view?.ext ? { ext: view.ext } : {}),
+		};
+		const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+		const rows = this.db.query(`SELECT * FROM messages ${clause} ORDER BY ts DESC, id DESC LIMIT $limit`).all(params) as MessageRow[];
+		rows.reverse();
+		const ext = view?.ext;
+		if (!ext) return rows;
+		const readAt = this.db.query("SELECT read_at FROM ext_reads WHERE message_id = $id AND ext = $ext");
+		return rows.map((row) =>
+			row.direction === "out" ? row : { ...row, read_at: (readAt.get({ id: row.id, ext }) as { read_at: number } | null)?.read_at ?? null },
+		);
 	}
 
 	/**
@@ -1000,6 +1109,7 @@ export class PhoneDb {
 				ON CONFLICT(id) DO UPDATE SET text = $text, ts = $ts, read_at = NULL, attempts = 0`,
 			)
 			.run({ id: "phone-held-threads", ts: this.now(), sender: PHONE_SYSTEM_SENDER, text });
+		this.db.query("DELETE FROM ext_reads WHERE message_id = 'phone-held-threads'").run();
 	}
 
 	get<T>(key: string): T | undefined {

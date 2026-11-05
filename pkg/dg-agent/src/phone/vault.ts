@@ -247,7 +247,7 @@ function itemPath(root: string, id: string): string {
 export function storeVaultItem(
 	db: PhoneDb,
 	root: string,
-	item: { name: string; sender: string; plain: Buffer; key: DayKey },
+	item: { name: string; sender: string; plain: Buffer; key: DayKey; ext?: string | null },
 	now: number,
 ): VaultItemRow {
 	assertVaultName(item.name);
@@ -261,6 +261,7 @@ export function storeVaultItem(
 		key_day: item.key.day,
 		created_at: now,
 		expires_at: now + VAULT_TTL_SECONDS,
+		ext: item.ext ?? null,
 	};
 	const nonce = randomBytes(NONCE_BYTES);
 	const cipher = createCipheriv("aes-256-gcm", item.key.key, nonce);
@@ -298,11 +299,11 @@ export async function openVaultItem(deps: VaultDeps, root: string, row: VaultIte
 export function sealReceived(
 	db: PhoneDb,
 	root: string,
-	item: { key: DayKey; sender: string; handle: string; plain: Buffer },
+	item: { key: DayKey; sender: string; handle: string; plain: Buffer; ext?: string | null },
 	now: number,
 ): { row: VaultItemRow; text: string } {
 	const name = receivedName(item.handle, now, (candidate) => db.vaultNameTaken(candidate));
-	const row = storeVaultItem(db, root, { name, sender: item.sender, plain: item.plain, key: item.key }, now);
+	const row = storeVaultItem(db, root, { name, sender: item.sender, plain: item.plain, key: item.key, ext: item.ext }, now);
 	return { row, text: vaultPlaceholder(name, item.handle) };
 }
 

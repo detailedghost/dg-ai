@@ -49,6 +49,28 @@ export function assertContactHandle(handle: string): void {
 	}
 }
 
+function assertExtension(value: string, source: string): string {
+	if (!isHandle(value)) throw new DgCliError(`${source} must be 1-32 lowercase letters, digits, or dashes, got "${value}"`);
+	return value;
+}
+
+/** Splits `+handle/ext` into the send target and the agent extension on that machine. */
+export function splitTarget(value: string): { target: string; ext?: string } {
+	const slash = value.indexOf("/");
+	if (slash < 0) return { target: value };
+	const target = value.slice(0, slash);
+	const ext = assertExtension(value.slice(slash + 1), "an extension");
+	if (target.startsWith("#")) throw new DgCliError(`a #group goes to the whole machine; drop /${ext}`);
+	return { target, ext };
+}
+
+/** This agent's own extension: `--as`, else `DG_PHONE_AS`, else none. */
+export function selfExtension(flag: string | undefined, env: Record<string, string | undefined>): string | undefined {
+	if (flag !== undefined) return assertExtension(flag, "--as");
+	const fromEnv = env.DG_PHONE_AS;
+	return fromEnv ? assertExtension(fromEnv, "DG_PHONE_AS") : undefined;
+}
+
 /** Strips a leading `+`, the only prefix the new commands accept on a handle argument. */
 export function normalizeHandle(value: string): string {
 	return value.startsWith("+") ? value.slice(1) : value;

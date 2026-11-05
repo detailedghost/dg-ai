@@ -9,6 +9,10 @@ const CHAT_MESSAGE_KIND = 14;
 export const FILE_MESSAGE_KIND = 15;
 /** Rumor tag on a message the sender marked as PHI. */
 export const PHI_TAG = "dg-phi";
+/** Rumor tag naming the one agent on the receiving machine a message is for. */
+export const EXT_TAG = "dg-ext";
+/** Rumor tag naming the sending agent, so a reply can route back; a claim, never an identity. */
+export const FROM_EXT_TAG = "dg-from-ext";
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
 /** Participants, including this phone. Larger rooms are dropped, not stored. */
@@ -59,18 +63,31 @@ export type ThreadView = {
 	keyId?: string;
 	offer?: ImageOffer;
 	phi?: true;
+	fromExt?: string;
 };
 
 type RumorView = { id: string; kind: number; pubkey: string; created_at: number; content: string; tags: string[][] };
 
-export type RumorBody = { text: string; offer?: ImageOffer; phi?: true };
+export type RumorBody = { text: string; offer?: ImageOffer; phi?: true; ext?: string; fromExt?: string };
+
+/** A peer's extension tag value, or undefined when it is missing or fails the name rule. */
+function extensionTag(tags: readonly string[][], name: string): string | undefined {
+	const value = tags.find((tag) => tag[0] === name)?.[1];
+	return typeof value === "string" && isHandle(value) ? value : undefined;
+}
 
 /** The stored text of a rumor: a kind 15 is a placeholder plus its offer, never its content. */
 export function rumorBody(rumor: { kind: number; content: string; tags: readonly string[][] }): RumorBody {
-	const phi = rumor.tags.some((tag) => tag[0] === PHI_TAG && tag[1] === "1") ? { phi: true as const } : {};
-	if (rumor.kind !== FILE_MESSAGE_KIND) return { text: rumor.content, ...phi };
+	const ext = extensionTag(rumor.tags, EXT_TAG);
+	const fromExt = extensionTag(rumor.tags, FROM_EXT_TAG);
+	const marks = {
+		...(rumor.tags.some((tag) => tag[0] === PHI_TAG && tag[1] === "1") ? { phi: true as const } : {}),
+		...(ext ? { ext } : {}),
+		...(fromExt ? { fromExt } : {}),
+	};
+	if (rumor.kind !== FILE_MESSAGE_KIND) return { text: rumor.content, ...marks };
 	const offer = parseImageOffer(rumor.content, rumor.tags);
-	return offer ? { text: IMAGE_TEXT, offer, ...phi } : { text: imageUnavailableText("bad offer"), ...phi };
+	return offer ? { text: IMAGE_TEXT, offer, ...marks } : { text: imageUnavailableText("bad offer"), ...marks };
 }
 
 /** Stable room id: sha256 of the sorted participant npubs, our own included. */
