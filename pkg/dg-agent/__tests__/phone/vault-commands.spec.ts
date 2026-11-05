@@ -68,7 +68,7 @@ function file(name: string, data: string | Buffer): string {
 
 async function seed(name: string, data: string | Buffer, sender = SELF_SENDER): Promise<void> {
 	const day = keyPeriod(deps.now());
-	const key = await ensurePeriodKey(creds.deps(), day);
+	const key = await ensurePeriodKey(creds.keyDeps(deps.paths), day);
 	storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender, plain: Buffer.from(data), key: { period: day, key } }, deps.now());
 }
 
@@ -140,7 +140,7 @@ describe("phone vault add", () => {
 describe("phone vault list", () => {
 	it("lists every item with its extension, and with --as only that agent's items and shared ones", async () => {
 		const day = keyPeriod(deps.now());
-		const key = { period: day, key: await ensurePeriodKey(creds.deps(), day) };
+		const key = { period: day, key: await ensurePeriodKey(creds.keyDeps(deps.paths), day) };
 		for (const [name, ext] of [["shared-item", null], ["merc-item", "merc"], ["kit-item", "kit"]] as const) {
 			storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain: Buffer.from("x"), key, ext }, deps.now());
 		}

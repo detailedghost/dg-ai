@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type CredentialClient, createCredentialClient, type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
@@ -24,6 +24,9 @@ const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const RECEIVED_NAME_TRIES = 16;
+const KEY_LOCK_FILE = "vault-key.lock";
+const KEY_LOCK_STALE_MS = 30_000;
+const KEY_LOCK_WAIT_MS = 50;
 
 export type VaultClient = Pick<CredentialClient, "get" | "list" | "close">;
 export type VaultDeps = {
@@ -31,6 +34,8 @@ export type VaultDeps = {
 	vaultClient?: () => VaultClient;
 	sessionClient: () => Promise<KeyClient | undefined>;
 };
+/** Adds the phone root, where the key lock lives, for code that may make a period key. */
+export type VaultKeyDeps = VaultDeps & { paths: Pick<DgPaths, "phoneRoot"> };
 export type PeriodKey = { period: string; key: Buffer };
 
 export function isVaultName(name: string): boolean {
@@ -145,10 +150,67 @@ async function readPeriodKey(deps: VaultDeps, period: string): Promise<Buffer | 
 	return value === undefined ? undefined : decodeKey(period, value);
 }
 
-/** The period's key, made in the store on first use; never falls back to a key outside the store. */
-export async function ensurePeriodKey(deps: VaultDeps, period: string): Promise<Buffer> {
+function lockStale(path: string): boolean {
+	try {
+		return Date.now() - statSync(path).mtimeMs >= KEY_LOCK_STALE_MS;
+	} catch {
+		return false;
+	}
+}
+
+let keyLockBreaks = 0;
+
+function breakStaleLock(path: string): void {
+	const aside = `${path}.${process.pid}.${(keyLockBreaks += 1)}`;
+	try {
+		renameSync(path, aside);
+	} catch {
+		return;
+	}
+	if (!lockStale(aside)) {
+		try {
+			writeFileSync(path, readFileSync(aside), { flag: "wx", mode: 0o600 });
+		} catch {}
+	}
+	rmSync(aside, { force: true });
+}
+
+/** Runs `work` while this process holds the phone root's key lock, so only one process makes a period key. */
+async function withKeyLock<T>(paths: VaultKeyDeps["paths"], work: () => Promise<T>): Promise<T> {
+	ensurePrivateDir(paths.phoneRoot);
+	const path = join(paths.phoneRoot, KEY_LOCK_FILE);
+	const token = `${process.pid} ${randomBytes(8).toString("hex")}`;
+	const giveUpAt = Date.now() + 2 * KEY_LOCK_STALE_MS;
+	for (;;) {
+		try {
+			writeFileSync(path, token, { flag: "wx", mode: 0o600 });
+			break;
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+		}
+		if (lockStale(path)) breakStaleLock(path);
+		else if (Date.now() >= giveUpAt) throw new DgCliError("another dg process is making the vault key; try again");
+		else await Bun.sleep(KEY_LOCK_WAIT_MS);
+	}
+	try {
+		return await work();
+	} finally {
+		try {
+			if (readFileSync(path, "utf8") === token) rmSync(path, { force: true });
+		} catch {}
+	}
+}
+
+/** The period's key, made in the store on first use under the key lock; returns the stored key, never one outside the store. */
+export async function ensurePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer> {
 	const existing = await readPeriodKey(deps, period);
 	if (existing) return existing;
+	return withKeyLock(deps.paths, () => makePeriodKey(deps, period));
+}
+
+async function makePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer> {
+	const stored = await readPeriodKey(deps, period);
+	if (stored) return stored;
 	const name = vaultKeyName(period);
 	const value = randomBytes(KEY_BYTES).toString("hex");
 	const made = await withSession(deps, async (client) => {
@@ -215,7 +277,7 @@ export type VaultKeyCache = {
 	refresh(): Promise<void>;
 };
 
-export function createVaultKeyCache(deps: VaultDeps, now: () => number): VaultKeyCache {
+export function createVaultKeyCache(deps: VaultKeyDeps, now: () => number): VaultKeyCache {
 	const keys = new Map<string, Buffer>();
 	let running: Promise<void> | undefined;
 	const refresh = () =>

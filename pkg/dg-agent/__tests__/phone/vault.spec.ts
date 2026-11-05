@@ -47,7 +47,7 @@ function vaultDir(): string {
 
 async function todayKey() {
 	const day = keyPeriod(now);
-	return { period: day, key: await ensurePeriodKey(creds.deps(), day) };
+	return { period: day, key: await ensurePeriodKey(creds.keyDeps(paths), day) };
 }
 
 describe("vault names", () => {
@@ -111,7 +111,7 @@ describe("keyPeriod", () => {
 describe("vault period keys", () => {
 	it("makes the period key in the store under its own name and grants only the vault prefix", async () => {
 		const day = keyPeriod(now);
-		const key = await ensurePeriodKey(creds.deps(), day);
+		const key = await ensurePeriodKey(creds.keyDeps(paths), day);
 
 		expect(key.length).toBe(32);
 		expect(creds.store.get(vaultKeyName(day))).toBe(key.toString("hex"));
@@ -121,10 +121,10 @@ describe("vault period keys", () => {
 
 	it("reads an existing period key without writing a new one", async () => {
 		const day = keyPeriod(now);
-		const first = await ensurePeriodKey(creds.deps(), day);
+		const first = await ensurePeriodKey(creds.keyDeps(paths), day);
 		creds.calls.length = 0;
 
-		const second = await ensurePeriodKey(creds.deps(), day);
+		const second = await ensurePeriodKey(creds.keyDeps(paths), day);
 
 		expect(second.equals(first)).toBe(true);
 		expect(creds.calls.some((call) => call.startsWith("set "))).toBe(false);
@@ -134,25 +134,62 @@ describe("vault period keys", () => {
 		creds.session = false;
 		creds.granted = true;
 
-		await expect(ensurePeriodKey(creds.deps(), keyPeriod(now))).rejects.toThrow(DgCliError);
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(DgCliError);
 		expect(creds.store.size).toBe(0);
 	});
 
 	it("refuses when the credential store is not reachable", async () => {
 		creds.up = false;
 
-		await expect(ensurePeriodKey(creds.deps(), keyPeriod(now))).rejects.toThrow(/not reachable/);
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
 	});
 
 	it("refuses a stored value that is not a vault key", async () => {
 		creds.granted = true;
 		creds.store.set(vaultKeyName(keyPeriod(now)), "nope");
 
-		await expect(ensurePeriodKey(creds.deps(), keyPeriod(now))).rejects.toThrow(/does not hold a vault key/);
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/does not hold a vault key/);
+	});
+
+	it("makes one key when two processes find it missing at the same time", async () => {
+		const day = keyPeriod(now);
+		let open: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			open = resolve;
+		});
+		let sets = 0;
+		creds.beforeSet = async () => {
+			sets += 1;
+			if (sets === 2) await gate;
+		};
+
+		const first = ensurePeriodKey(creds.keyDeps(paths), day);
+		const second = ensurePeriodKey(creds.keyDeps(paths), day);
+		const firstKey = await first;
+		open();
+		const secondKey = await second;
+
+		expect(secondKey.equals(firstKey)).toBe(true);
+		expect(creds.store.get(vaultKeyName(day))).toBe(firstKey.toString("hex"));
+		expect(sets).toBe(1);
+		expect(existsSync(join(paths.phoneRoot, "vault-key.lock"))).toBe(false);
+	});
+
+	it("takes over a key lock left behind by a process that died", async () => {
+		mkdirSync(paths.phoneRoot, { recursive: true });
+		const lock = join(paths.phoneRoot, "vault-key.lock");
+		writeFileSync(lock, "999999");
+		const old = new Date(Date.now() - 10 * 60 * 1000);
+		utimesSync(lock, old, old);
+
+		const key = await ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now));
+
+		expect(creds.store.get(vaultKeyName(keyPeriod(now)))).toBe(key.toString("hex"));
+		expect(existsSync(lock)).toBe(false);
 	});
 
 	it("never writes the key to the phone database", async () => {
-		const key = await ensurePeriodKey(creds.deps(), keyPeriod(now));
+		const key = await ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now));
 		db.close();
 
 		expect(readFileSync(PhoneDb.path(paths)).includes(key.toString("hex"))).toBe(false);
@@ -161,7 +198,7 @@ describe("vault period keys", () => {
 
 	it("keeps a period key until 48 hours after its period ends, then deletes it", async () => {
 		const week = at(2026, 11, 4, 12);
-		await ensurePeriodKey(creds.deps(), keyPeriod(week));
+		await ensurePeriodKey(creds.keyDeps(paths), keyPeriod(week));
 		const name = vaultKeyName(keyPeriod(week));
 		const periodEnd = at(2026, 11, 9);
 
@@ -177,7 +214,7 @@ describe("vault period keys", () => {
 
 	it("deletes only periods past the grace and keeps the last, current, and next", async () => {
 		const monday = at(2026, 11, 2, 12);
-		for (const offset of [-2, -1, 0, 1]) await ensurePeriodKey(creds.deps(), keyPeriod(monday, offset));
+		for (const offset of [-2, -1, 0, 1]) await ensurePeriodKey(creds.keyDeps(paths), keyPeriod(monday, offset));
 
 		await dropOldKeys(creds.deps(), monday);
 
@@ -194,7 +231,7 @@ describe("vault period keys", () => {
 	});
 
 	it("leaves old keys alone when no session can delete them", async () => {
-		await ensurePeriodKey(creds.deps(), keyPeriod(now, -3));
+		await ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now, -3));
 		creds.session = false;
 
 		await dropOldKeys(creds.deps(), now);
@@ -205,7 +242,7 @@ describe("vault period keys", () => {
 
 describe("vault key cache", () => {
 	it("has no key before a refresh, then holds this period's and the next period's", async () => {
-		const cache = createVaultKeyCache(creds.deps(), () => now);
+		const cache = createVaultKeyCache(creds.keyDeps(paths), () => now);
 		expect(cache.peek()).toBeUndefined();
 
 		await cache.refresh();
@@ -216,7 +253,7 @@ describe("vault key cache", () => {
 
 	it("makes the next key ahead of time at a period edge, so the new period needs no store call", async () => {
 		now = at(2026, 11, 8, 23, 59, 59);
-		const cache = createVaultKeyCache(creds.deps(), () => now);
+		const cache = createVaultKeyCache(creds.keyDeps(paths), () => now);
 		await cache.refresh();
 		expect(creds.store.has("phone-vault/2026-W46")).toBe(true);
 		const next = creds.store.get("phone-vault/2026-W46");
@@ -231,7 +268,7 @@ describe("vault key cache", () => {
 
 	it("makes the following keys when the period turns over", async () => {
 		now = at(2026, 11, 8, 23, 59, 59);
-		const cache = createVaultKeyCache(creds.deps(), () => now);
+		const cache = createVaultKeyCache(creds.keyDeps(paths), () => now);
 		await cache.refresh();
 
 		now = at(2026, 11, 9);
@@ -241,7 +278,7 @@ describe("vault key cache", () => {
 	});
 
 	it("loads the key on demand through current()", async () => {
-		const cache = createVaultKeyCache(creds.deps(), () => now);
+		const cache = createVaultKeyCache(creds.keyDeps(paths), () => now);
 
 		const key = await cache.current();
 
@@ -250,7 +287,7 @@ describe("vault key cache", () => {
 
 	it("gives no key when the store cannot make one", async () => {
 		creds.session = false;
-		const cache = createVaultKeyCache(creds.deps(), () => now);
+		const cache = createVaultKeyCache(creds.keyDeps(paths), () => now);
 
 		expect(await cache.current()).toBeUndefined();
 	});

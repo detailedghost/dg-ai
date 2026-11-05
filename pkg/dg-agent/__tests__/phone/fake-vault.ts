@@ -1,6 +1,6 @@
 import { DaemonNotRunningError } from "@dg/common/node";
 import type { KeyClient } from "../../src/phone/keys";
-import type { VaultClient, VaultDeps } from "../../src/phone/vault";
+import type { VaultClient, VaultDeps, VaultKeyDeps } from "../../src/phone/vault";
 
 /** An in-memory credential store standing in for dg-daemon; tests never reach the real one. */
 export type FakeCredentials = {
@@ -9,7 +9,10 @@ export type FakeCredentials = {
 	session: boolean;
 	granted: boolean;
 	calls: string[];
+	/** Awaited inside each session set, so a spec can hold one write open. */
+	beforeSet?: () => Promise<void>;
 	deps: () => VaultDeps;
+	keyDeps: (paths: VaultKeyDeps["paths"]) => VaultKeyDeps;
 };
 
 export function createFakeCredentials(opts: { session?: boolean; granted?: boolean } = {}): FakeCredentials {
@@ -20,6 +23,7 @@ export function createFakeCredentials(opts: { session?: boolean; granted?: boole
 		granted: opts.granted ?? false,
 		calls: [],
 		deps: () => ({ vaultClient, sessionClient }),
+		keyDeps: (paths) => ({ vaultClient, sessionClient, paths }),
 	};
 	const down = () => {
 		if (!fake.up) throw new DaemonNotRunningError();
@@ -50,6 +54,7 @@ export function createFakeCredentials(opts: { session?: boolean; granted?: boole
 			},
 			async set(name, value) {
 				down();
+				await fake.beforeSet?.();
 				fake.calls.push(`set ${name}`);
 				fake.store.set(name, value);
 			},
