@@ -851,14 +851,6 @@ export class PhoneDb {
 		});
 	}
 
-	takeUnread(skip?: ReadonlySet<string>): MessageRow[] {
-		return this.transaction(() => {
-			const rows = this.unreadMessages().filter((row) => !skip?.has(row.id));
-			this.markRead(rows.map((row) => row.id));
-			return rows;
-		});
-	}
-
 	/** Unread incoming rows in one view: the shared view reads `read_at`, an agent only its own marks. */
 	unreadFor(ext: string | null): MessageRow[] {
 		if (ext === null) {

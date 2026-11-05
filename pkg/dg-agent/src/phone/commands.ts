@@ -1043,7 +1043,7 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean; 
 	}
 	let contactNpub: string | undefined;
 	if (opts.handle !== undefined) {
-		const handle = normalizeHandle(opts.handle);
+		const handle = normalizeHandle(splitTarget(opts.handle).target);
 		const contact = findContactByHandle(deps.db, handle);
 		if (!contact) throw new DgCliError(`no contact +${handle}`);
 		contactNpub = contact.npub;
@@ -1146,7 +1146,9 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 	printJson(deps, {
 		as: number?.as ?? FALLBACK_SELF_NAME,
 		contacts: listContacts(deps.db).length,
-		pending_voicemail: deps.db.unreadMessages().filter((row) => row.sender !== PHONE_SYSTEM_SENDER).length,
+		pending_voicemail:
+			deps.db.unreadFor(null).filter((row) => row.sender !== PHONE_SYSTEM_SENDER).length +
+			Object.values(deps.db.waitingByExtension()).reduce((sum, count) => sum + count, 0),
 		listener,
 		hook: record?.hook ? { kind: "command" as const, argv: record.hook.argv, timeout_s: record.hook.timeoutS } : null,
 		legacy_root_present: legacyRootPresent(deps.paths),

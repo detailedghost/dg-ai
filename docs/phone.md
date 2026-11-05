@@ -143,8 +143,10 @@ outgoing row keeps the sender's own extension in `ext` and the target in
 Each printed row adds `ext` and, on an incoming row, `from_ext`. When the
 sender's extension is known, `handle` reads `+mary/kit`, the target to
 reply to. `from` stays the sender's npub. The `--on-message` payload adds
-`ext` and `from_ext`. Its `handle` stays `+mary`. The hook and `status` are
-machine-wide and use `read_at`.
+`ext` and `from_ext`. Its `handle` stays `+mary`. The hook is machine-wide
+and uses `read_at`. `status` counts unread rows in every view: the shared
+unread rows plus the rows that wait for each agent. `messages +mary/kit`
+filters by the contact only, so a printed handle works there too.
 
 A group is machine-wide. `text` and `ping` refuse `#group/ext`. A group
 row keeps `ext` null even when the rumor names an extension. It keeps the

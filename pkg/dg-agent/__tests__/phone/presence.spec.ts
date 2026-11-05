@@ -416,6 +416,19 @@ describe("phone ping", () => {
 		}
 	});
 
+	it("gets the machine listener's receipt for a ping to +handle/ext", async () => {
+		const aliceListener = listen(alice, { pid: process.pid });
+		const bobListener = listen(bob);
+		await Promise.all([aliceListener.started, bobListener.started]);
+		try {
+			await phonePing("+b/merc", {}, alice.deps);
+			expect(printed(alice)).toEqual([{ handle: "+b/merc", delivered: true, after_s: 0, line: "delivered after 0 s" }]);
+		} finally {
+			await bobListener.stop();
+			await aliceListener.stop();
+		}
+	});
+
 	it("opens a short subscription when no local listener runs", async () => {
 		const bobListener = listen(bob);
 		await bobListener.started;

@@ -12,6 +12,7 @@ import {
 	phoneNumber,
 	phonePing,
 	phoneSay,
+	phoneStatus,
 	phoneThreadNew,
 	phoneVoicemail,
 	phoneWatch,
@@ -406,6 +407,22 @@ describe("reading by extension", () => {
 			["shared", false],
 			["for-kit", false],
 		]);
+	});
+
+	it("counts unread rows across every view in status, and stops counting a row its agent read", async () => {
+		const pending = async () => {
+			await phoneStatus(d);
+			return printed()[0]?.pending_voicemail;
+		};
+		expect(await pending()).toBe(3);
+		await phoneVoicemail(d, { as: "merc" });
+		out = [];
+		expect(await pending()).toBe(2);
+	});
+
+	it("filters messages by contact when given +handle/ext, the handle form rows print", async () => {
+		phoneInbox({ handle: "+mary/ace", as: "merc" }, d);
+		expect(printed().map((row) => row.text)).toEqual(["shared", "for-merc"]);
 	});
 
 	it("passes --as from the command line to unread and messages", async () => {

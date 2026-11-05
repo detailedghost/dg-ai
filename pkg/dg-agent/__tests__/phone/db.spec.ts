@@ -64,15 +64,15 @@ describe("PhoneDb", () => {
 			db.addMessage(message("b", NOW - 10));
 			db.addMessage(message("a", NOW - 20));
 
-			expect(db.takeUnread().map((m) => m.id)).toEqual(["a", "b"]);
-			expect(db.takeUnread()).toEqual([]);
+			expect(db.takeUnreadFor(null).map((m) => m.id)).toEqual(["a", "b"]);
+			expect(db.takeUnreadFor(null)).toEqual([]);
 		});
 
 		it("keeps the call flag on the message that paired the contact", () => {
 			db.addMessage({ ...message("c", NOW), call: 1 });
 			db.addMessage(message("d", NOW + 1));
 
-			const rows = db.takeUnread();
+			const rows = db.takeUnreadFor(null);
 			expect(rows.map((r) => [r.id, r.call])).toEqual([
 				["c", 1],
 				["d", 0],
@@ -82,7 +82,7 @@ describe("PhoneDb", () => {
 		it("stores sent messages marked read right away, never as unread", () => {
 			db.addMessage({ ...message("out1", NOW), direction: "out" });
 
-			expect(db.takeUnread()).toEqual([]);
+			expect(db.takeUnreadFor(null)).toEqual([]);
 			expect(db.recentMessages(10).map((m) => [m.id, m.direction, m.read_at !== null])).toEqual([["out1", "out", true]]);
 		});
 
@@ -90,7 +90,7 @@ describe("PhoneDb", () => {
 			expect(db.addMessage(message("x", NOW))).toBe(true);
 			expect(db.addMessage(message("x", NOW))).toBe(false);
 
-			expect(db.takeUnread()).toHaveLength(1);
+			expect(db.takeUnreadFor(null)).toHaveLength(1);
 		});
 
 		it("returns the most recent N messages, oldest first", () => {
@@ -543,7 +543,7 @@ describe("PhoneDb", () => {
 			db.addImageFetch(fetchRow("img"));
 			expect(db.nextDeliverable(5)).toBeUndefined();
 			expect(db.pendingImageCount()).toBe(1);
-			db.takeUnread();
+			db.takeUnreadFor(null);
 
 			db.finishImage("img", "[image]", storedJson(SHA));
 
