@@ -267,6 +267,29 @@ describe("pw --ext round 3", () => {
 		expect(d.sent).toEqual([]);
 	});
 
+	test("refuses hidden files and folders such as .ssh or .env", async () => {
+		const cwd = workdir();
+		mkdirSync(join(cwd, ".ssh"));
+		writeFileSync(join(cwd, ".ssh", "id_ed25519"), "key");
+		writeFileSync(join(cwd, ".env"), "TOKEN=x");
+		for (const file of [".ssh/id_ed25519", ".env"]) {
+			const d = deps(() => ({ ok: true, data: { text: "x" } }));
+			expect(await runExt(["--ext", "upload", "#f", file], clientEnv(cwd), d.value)).toBe(2);
+			expect(d.posted).toEqual([]);
+		}
+	});
+
+	test("does not treat the home directory as an upload root", async () => {
+		const fencedHome = process.env.HOME as string;
+		expect(fencedHome).not.toBe(homedir());
+		writeFileSync(join(fencedHome, "notes.txt"), "x");
+		const d = deps(() => ({ ok: true, data: { text: "x" } }));
+		expect(
+			await runExt(["--ext", "upload", "#f", "notes.txt"], clientEnv(fencedHome), d.value),
+		).toBe(2);
+		expect(d.posted).toEqual([]);
+	});
+
 	test("maps tools and call", async () => {
 		const d = deps(() => ({ ok: true, data: { text: "ok" } }));
 		expect(await runExt(["--ext", "tools"], clientEnv(), d.value)).toBe(0);

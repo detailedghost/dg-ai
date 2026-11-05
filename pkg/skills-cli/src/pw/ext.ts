@@ -99,14 +99,29 @@ function stageFile(file: string, cwd: string): StagedFile {
 			`pw --ext upload takes files up to ${PW_EXT_MAX_UPLOAD_BYTES} bytes.`,
 		);
 	const real = realpathSync(path);
+	const homes = new Set(
+		[homedir(), process.env["HOME"] ?? "", "/"].flatMap((dir) => {
+			try {
+				return dir ? [realpathSync(dir)] : [];
+			} catch {
+				return [];
+			}
+		}),
+	);
 	const roots = [cwd, scratchRoot(), demosDir()].flatMap((root) => {
 		try {
-			return [realpathSync(root)];
+			const resolved = realpathSync(root);
+			return homes.has(resolved) ? [] : [resolved];
 		} catch {
 			return [];
 		}
 	});
-	if (!roots.some((root) => within(root, real)))
+	const root = roots.find((candidate) => within(candidate, real));
+	if (root && relative(root, real).split(sep).some((part) => part.startsWith(".")))
+		throw new ExtUsageError(
+			"pw --ext upload refuses hidden files and files in hidden folders.",
+		);
+	if (!root)
 		throw new ExtUsageError(
 			"pw --ext upload takes files only from the working directory, the dg scratch directory or the dg demos directory.",
 		);
