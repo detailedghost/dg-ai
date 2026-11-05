@@ -20,8 +20,25 @@ import {
 	validateProtoNotReadyError,
 } from "./proto-format";
 import type { ProtoBrowserData, ProtoNotReadyError } from "./types";
+import {
+	type PwExtRequest,
+	type PwExtResponse,
+	validatePwExtRequest,
+	validatePwExtRequestId,
+	validatePwExtResponse,
+	validatePwExtTimeout,
+} from "./pw-ext-format";
 
 const UTF8_ENCODER = new TextEncoder();
+
+function requireOnlyKeys(
+	value: Record<string, unknown>,
+	path: string,
+	allowed: readonly string[],
+): void {
+	for (const key of Object.keys(value))
+		if (!allowed.includes(key)) fail(`${path} has unknown field "${key}"`);
+}
 
 /** Byte length of `value` once JSON-serialized and UTF-8 encoded. */
 export function jsonByteLength(value: unknown): number {
@@ -259,6 +276,20 @@ export type ChatFrame =
 			status: string;
 	  })
 	| (Envelope & {
+			type: "pw-ext-browser-request";
+			requestId: string;
+			request: PwExtRequest;
+			timeoutMs: number;
+	  })
+	| (Envelope & {
+			type: "pw-ext-browser-result";
+			token: string;
+			requestId: string;
+			ok: boolean;
+			data?: PwExtResponse;
+			error?: string;
+	  })
+	| (Envelope & {
 			type: "user-message";
 			token: string;
 			messageId: string;
@@ -340,6 +371,8 @@ const CHAT_FRAME_TYPES = new Set([
 	"proto-browser-request",
 	"proto-browser-result",
 	"proto-browser-progress",
+	"pw-ext-browser-request",
+	"pw-ext-browser-result",
 	"user-message",
 	"ack",
 	"agent-message",
@@ -370,6 +403,7 @@ const INBOUND_FRAME_TYPES = new Set([
 	"inbox-browser-result",
 	"proto-browser-result",
 	"proto-browser-progress",
+	"pw-ext-browser-result",
 	"user-message",
 	"command-invocation",
 	"session-create",
@@ -854,6 +888,45 @@ function validateFrameBody(
 				)
 					fail("unknown proto result field");
 			}
+			return;
+		case "pw-ext-browser-request":
+			validatePwExtRequestId(value.requestId, `${path}.requestId`);
+			validatePwExtRequest(value.request);
+			validatePwExtTimeout(value.timeoutMs, `${path}.timeoutMs`);
+			requireOnlyKeys(value, path, [
+				"type",
+				"protocolVersion",
+				"sessionId",
+				"requestId",
+				"request",
+				"timeoutMs",
+			]);
+			return;
+		case "pw-ext-browser-result":
+			validatePwExtRequestId(value.requestId, `${path}.requestId`);
+			if (typeof value.ok !== "boolean")
+				fail(`${path}.ok must be a boolean`);
+			if (value.ok) {
+				if (value.error !== undefined)
+					fail(`successful ${path} must not contain an error`);
+				validatePwExtResponse(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail(`failed ${path} must not contain data`);
+				requireString(value.error, `${path}.error`, { nonEmpty: true });
+				if ((value.error as string).length > 2048)
+					fail(`${path}.error exceeds 2048 characters`);
+			}
+			requireOnlyKeys(value, path, [
+				"type",
+				"protocolVersion",
+				"sessionId",
+				"token",
+				"requestId",
+				"ok",
+				"data",
+				"error",
+			]);
 			return;
 		case "proto-browser-progress":
 			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
