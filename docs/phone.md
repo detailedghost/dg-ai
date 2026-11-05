@@ -20,6 +20,8 @@ Codex:      $dg:phone
 | `thread new <#handle> <+member...> [--subject <text>]` | Creates a static thread from existing contacts. The handle starts with `#`. Prints `{handle, id, subject, members, key}`. Membership does not change after this. |
 | `thread list` / `thread show <#handle>` | List threads, or show one thread and its members. |
 | `say <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a thread: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A thread prints `{handle, id, members, behind, self_ok}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. `behind` lists other members with no confirmed relay and does not include this phone. `self_ok` is whether the self-copy was confirmed. The outgoing row is saved when at least one wrap was not rejected. The command exits 0 only when every other member has a confirmed relay. Otherwise it exits 1 after printing that JSON. Running `say` again sends a new message. |
+| `ping <+handle\|#handle> [--timeout <seconds>]` | Sends one check and waits for its receipt (default 30 s). Prints `{handle, delivered, after_s, line}`. Exits 1 on `no answer after N s` or `busy, try later`. See [Receipts, presence, and ping](#receipts-presence-and-ping). |
+| `presence [on\|off]` | Prints `{presence}`, or turns beats, receipts, and ping answers on or off. Default on. |
 | `inbox [-n <count>] [--meta] [+handle\|#handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. `+handle` selects that contact's one-to-one rows and leaves thread rows out. `#handle` selects that thread. A thread row adds `thread` and `line`, and `line` is `[#handle] +sender: text`. |
 | `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A thread row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
 | `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
@@ -308,15 +310,35 @@ sees a kind 1059 wrap to the recipient and nothing else:
 - kind 25016, a delivery receipt. Each `e` tag names one stored message
   id: the wrap id for a one-to-one message, the rumor id for a thread
   message. One receipt names at most 32 ids.
-- kind 25017, a presence rumor. With the tag `["dg-ack", "1"]` it is a
-  `phone ping` check, and the listener answers it with a receipt that
-  names the wrap id.
+- kind 25017, a presence rumor. A beat goes out in a kind 21059 wrap. With
+  the tag `["dg-ack", "1"]`, in a kind 1059 wrap, it is a `phone ping`
+  check, and the listener answers it with a receipt that names the wrap
+  id. A receipt with the tag `["dg-busy", "1"]` is a busy answer.
+
+Kind 21059 is the ephemeral variant of the NIP-59 gift wrap: the same seal
+and NIP-44 encryption, in an event kind that relays forward to live
+subscribers and do not store. Its `created_at` is the current time. Only a
+beat may use it. A chat message or a ping check in a 21059 wrap is dropped.
+The live subscription asks for kinds 1059 and 21059. Catch-up asks only
+for 1059, so it never reads beats. A live check on 2026-11-04 with
+throwaway keys found:
+
+| Relay | Kind 21059 |
+| --- | --- |
+| `relay.damus.io` | Forwards it live. Returns it by id for a few seconds, gone after 33 s. |
+| `relay.primal.net` | Forwards it live, and still returns it by id after 33 s, so it stores it. |
+| `nos.lol` | Rejects it: `rate-limited: slow down matey`. It accepts kind 1059 from the same kind of key. |
+
+So a beat reaches a listener through damus and primal, but not nos.lol.
 
 When the listener stores a kind 14 or 15 message from a contact, direct or
 thread, it queues a receipt to the sender. Ids are batched per contact, at
 most 256 wait per contact, and the listener sends one wrap at a time. A
 receipt, a presence rumor, and a file request are never stored as mail, so
-nothing answers them. A stranger gets nothing.
+nothing answers them. A stranger gets nothing. A contact gets at most 10
+normal answers to ping checks in a rolling minute, then 10 busy answers,
+then none until the minute moves on. The window is in memory. Receipts for
+stored messages have no cap.
 
 A control rumor is ignored unless the signer is a contact, its `created_at`
 is within 5 minutes of this clock, and its rumor id is not in the replay
@@ -338,14 +360,19 @@ wakes.
 Relay load: one wrap per beat per contact (about 300 a day per contact at
 the 5-minute mean), and one receipt per stored message or batch. Each
 publish goes to that contact's saved relays only, one at a time, and the
-listener does not wait for a by-id check. Relays keep kind 1059 wraps, so
-a catch-up after a restart opens two days of beats too.
+listener does not wait for a by-id check.
+
+`phone presence off` stops beats, receipts, and ping answers. `phone
+presence on` turns them back on, which is the default. The setting is
+`presence` in `settings`, and `status` prints it. Last seen is still
+recorded for contacts while presence is off.
 
 `phone ping <+handle|#thread>` stores a row in `pings`, sends a check, and
 waits up to `--timeout` seconds (default 30, at most 600). When a listener
 of this version is running, it polls the database. Otherwise it opens its
 own subscription on the listener relays until the timeout. It prints
-`{handle, delivered, after_s, line}` and exits 1 on no answer.
+`{handle, delivered, after_s, line}` and exits 1 on no answer. A busy
+answer prints `busy: true` and `busy, try later`, also with exit 1.
 
 ## The key
 
@@ -368,7 +395,8 @@ folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 - `messages` — both directions, the read mark, the delivery attempt
   count for `--on-message`, the image file JSON, the PHI mark, the
   local time the row arrived, and `delivered_at` for an outgoing row.
-- `pings` — `phone ping` checks and their receipt time, kept 7 days.
+- `pings` — `phone ping` checks, their receipt time, and a busy answer
+  time, kept 7 days.
 - `early_receipts` — receipts that arrived before their row, kept 10
   minutes.
 - `image_fetches` — one row per image still being fetched, with its key

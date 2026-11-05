@@ -31,7 +31,7 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|ping|inbox|voicemail|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|ping|presence|inbox|voicemail|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 ## Flags
 
@@ -309,8 +309,9 @@ message text.
 
 A running listener answers each message it stores with a small encrypted
 receipt, and every 4 to 6 minutes sends each contact an encrypted presence
-beat. Both are gift wraps like messages. Receipts go only to contacts, and
-nothing answers a receipt or a beat.
+beat. Both are gift wraps like messages. A beat is an ephemeral wrap, so
+relays do not keep it. Receipts go only to contacts, and nothing answers a
+receipt or a beat.
 
 - `say` prints `"delivered": false`. `inbox` adds `"delivered": true` to an
   outgoing row once a recipient's listener stored it. A thread row counts
@@ -325,10 +326,21 @@ dg-agent phone ping '#ops' --timeout 10
 ```
 
 `ping` sends one check and waits for its receipt. It exits 0 on
-`delivered after N s` and 1 on `no answer after N s`. A `#thread` counts
+`delivered after N s` and 1 on `no answer after N s`. A contact answers at
+most 10 checks a minute from you. The next 10 get a busy answer, and `ping`
+prints `busy, try later` and exits 1. Receipts for messages have no cap. A `#thread` counts
 the first member that answers. With the listener running, `ping` reads the
 receipt from the database. Without it, `ping` listens on the relays itself
 until the timeout.
+
+```bash
+dg-agent phone presence       # prints {"presence": "on"}
+dg-agent phone presence off   # no beats, no receipts, no ping answers
+```
+
+`presence` is on by default, and `status` shows it. Off stops the beats,
+the receipts, and the answers to checks. The listener still records when
+it last heard from each contact.
 
 ## Images
 

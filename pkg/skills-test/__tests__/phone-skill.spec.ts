@@ -23,7 +23,7 @@ describe("phone skill", () => {
 	});
 
 	test("documents every phone verb it drives", () => {
-		for (const verb of ["number", "invite", "accept", "contacts", "thread", "say", "inbox", "voicemail", "watch", "status", "open", "close", "ping"]) {
+		for (const verb of ["number", "invite", "accept", "contacts", "thread", "say", "inbox", "voicemail", "watch", "status", "open", "close", "ping", "presence"]) {
 			expect(skill).toContain(`phone ${verb}`);
 		}
 		expect(skill).toContain("--meta");
@@ -38,6 +38,9 @@ describe("phone skill", () => {
 		expect(skill).toContain('"delivered"');
 		for (const kind of ["25016", "25017"]) expect(guide).toContain(`kind ${kind}`);
 		expect(guide).toContain("phone ping");
+		expect(guide).toContain("kind 21059");
+		expect(guide).toContain("phone presence off");
+		expect(skill).toContain("busy, try later");
 	});
 
 	test("uses none of the removed verb names as if they still worked", () => {
