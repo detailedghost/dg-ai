@@ -430,6 +430,19 @@ describe("phone ping", () => {
 		}
 	});
 
+	it("answers two pings sent in the same second, since each check carries its own nonce", async () => {
+		const bobListener = listen(bob);
+		await bobListener.started;
+		try {
+			await phonePing("+b", { timeout: "5" }, alice.deps);
+			await phonePing("+b", { timeout: "5" }, alice.deps);
+
+			expect(printed(alice).map((row) => row.line)).toEqual(["delivered after 0 s", "delivered after 0 s"]);
+		} finally {
+			await bobListener.stop();
+		}
+	});
+
 	it("pings a thread and counts the first member's receipt", async () => {
 		await phoneThreadNew("#ops", ["+b"], {}, alice.deps);
 		printed(alice);
@@ -448,7 +461,7 @@ describe("phone ping", () => {
 
 		expect(printed(alice)).toEqual([{ handle: "+b", delivered: false, after_s: 1, line: "no answer after 1 s" }]);
 		expect(process.exitCode).toBe(1);
-		expect(opened(bob, PRESENCE_KIND).map((entry) => entry.rumor.tags)).toEqual([[["p", bob.pub], [ACK_TAG, "1"]]]);
+		expect(opened(bob, PRESENCE_KIND).map((entry) => entry.rumor.tags)).toEqual([[["p", bob.pub], [ACK_TAG, "1"], ["n", expect.stringMatching(/^[0-9a-f]{32}$/)]]]);
 		expect(opened(bob, PRESENCE_KIND).map((entry) => entry.event.kind)).toEqual([1059]);
 	});
 

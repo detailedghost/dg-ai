@@ -912,7 +912,11 @@ export async function phonePing(handleArg: string, opts: { timeout?: string }, d
 	try {
 		const ids: string[] = [];
 		for (const target of targets) {
-			const event = wrapTagged({ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"]] }, loaded.sk, pubkeyHex(target.npub));
+			const event = wrapTagged(
+				{ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"], ["n", randomBytes(16).toString("hex")]] },
+				loaded.sk,
+				pubkeyHex(target.npub),
+			);
 			deps.db.addPing({ id: event.id, contact: target.npub, sender: selfNpub, sent_at: sentAt });
 			ids.push(event.id);
 			const outgoing = await outgoingRelays(deps, pool, target.relays, target.npub);
