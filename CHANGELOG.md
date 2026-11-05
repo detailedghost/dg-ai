@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.40.0 (2026-11-05)
+
+### Features
+
+- feat(phone): send encrypted images over Wormhole and mark PHI ([#140](https://github.com/detailedghost/dg-ai/pull/140))
+
 ## v1.39.0 (2026-11-04)
 
 ### Features
