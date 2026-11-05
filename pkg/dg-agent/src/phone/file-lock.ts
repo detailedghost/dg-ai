@@ -1,16 +1,37 @@
 import { randomBytes } from "node:crypto";
-import { readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { ensurePrivateDir } from "@dg/common/node";
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 50;
+const LOCK_HEARTBEAT_MS = LOCK_STALE_MS / 3;
 
 let lockBreaks = 0;
 
+function holderAlive(content: string): boolean | undefined {
+	try {
+		const holder: unknown = JSON.parse(content);
+		if (typeof holder !== "object" || holder === null) return undefined;
+		const { pid, host } = holder as { pid?: unknown; host?: unknown };
+		if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0 || host !== hostname()) return undefined;
+		try {
+			process.kill(pid, 0);
+			return true;
+		} catch (err) {
+			return (err as NodeJS.ErrnoException).code !== "ESRCH";
+		}
+	} catch {
+		return undefined;
+	}
+}
+
 function lockStale(path: string): boolean {
 	try {
+		const alive = holderAlive(readFileSync(path, "utf8"));
+		if (alive !== undefined) return !alive;
 		return Date.now() - statSync(path).mtimeMs >= LOCK_STALE_MS;
 	} catch {
 		return false;
@@ -33,10 +54,10 @@ function breakStaleLock(path: string): void {
 }
 
 /** Takes the lock file once; returns its release, or undefined while another process holds it. */
-function tryLock(root: string, name: string): (() => void) | undefined {
+export function tryFileLock(root: string, name: string): (() => void) | undefined {
 	ensurePrivateDir(root);
 	const path = join(root, name);
-	const token = `${process.pid} ${randomBytes(8).toString("hex")}`;
+	const token = JSON.stringify({ pid: process.pid, host: hostname(), id: randomBytes(8).toString("hex") });
 	try {
 		writeFileSync(path, token, { flag: "wx", mode: 0o600 });
 	} catch (err) {
@@ -55,11 +76,19 @@ function tryLock(root: string, name: string): (() => void) | undefined {
 export async function withFileLock<T>(root: string, name: string, busyMessage: string, work: () => Promise<T>): Promise<T> {
 	const giveUpAt = Date.now() + 2 * LOCK_STALE_MS;
 	for (;;) {
-		const release = tryLock(root, name);
+		const release = tryFileLock(root, name);
 		if (release) {
+			const beat = setInterval(() => {
+				try {
+					const now = new Date();
+					utimesSync(join(root, name), now, now);
+				} catch {}
+			}, LOCK_HEARTBEAT_MS);
+			beat.unref();
 			try {
 				return await work();
 			} finally {
+				clearInterval(beat);
 				release();
 			}
 		}
@@ -73,7 +102,7 @@ export function withFileLockSync<T>(root: string, name: string, busyMessage: str
 	const giveUpAt = Date.now() + 2 * LOCK_STALE_MS;
 	const pause = new Int32Array(new SharedArrayBuffer(4));
 	for (;;) {
-		const release = tryLock(root, name);
+		const release = tryFileLock(root, name);
 		if (release) {
 			try {
 				return work();
