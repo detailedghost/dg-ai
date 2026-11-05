@@ -33,7 +33,7 @@ export const PW_EXT_MAX_UPLOAD_BYTES = 26_214_400;
 export const PW_EXT_MAX_CALL_ARGS_BYTES = 16_384;
 export const PW_EXT_MAX_TOOL_NAME_CHARS = 128;
 /** First extension release that answers pw-ext frames. */
-export const PW_EXT_MIN_EXTENSION_VERSION = [1, 41, 0] as const;
+export const PW_EXT_MIN_EXTENSION_VERSION = [1, 42, 0] as const;
 
 /** One fixed browser action; the wire carries no code and no approval. */
 export type PwExtRequest = {
