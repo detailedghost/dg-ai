@@ -140,7 +140,7 @@ jobs:
             runtime: linux-arm64
           - os: macos-15-intel
             runtime: darwin-x64
-          - os: macos-14
+          - os: macos-15
             runtime: darwin-arm64
           - os: windows-latest
             runtime: windows-x64
