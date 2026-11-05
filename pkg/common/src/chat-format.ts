@@ -282,6 +282,10 @@ export type ChatFrame =
 			timeoutMs: number;
 	  })
 	| (Envelope & {
+			type: "pw-ext-browser-cancel";
+			requestId: string;
+	  })
+	| (Envelope & {
 			type: "pw-ext-browser-result";
 			token: string;
 			requestId: string;
@@ -372,6 +376,7 @@ const CHAT_FRAME_TYPES = new Set([
 	"proto-browser-result",
 	"proto-browser-progress",
 	"pw-ext-browser-request",
+	"pw-ext-browser-cancel",
 	"pw-ext-browser-result",
 	"user-message",
 	"ack",
@@ -900,6 +905,15 @@ function validateFrameBody(
 				"requestId",
 				"request",
 				"timeoutMs",
+			]);
+			return;
+		case "pw-ext-browser-cancel":
+			validatePwExtRequestId(value.requestId, `${path}.requestId`);
+			requireOnlyKeys(value, path, [
+				"type",
+				"protocolVersion",
+				"sessionId",
+				"requestId",
 			]);
 			return;
 		case "pw-ext-browser-result":

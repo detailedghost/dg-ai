@@ -327,6 +327,15 @@ function buildPwExtBrowserRequestFrame() {
 	};
 }
 
+function buildPwExtBrowserCancelFrame() {
+	return {
+		type: "pw-ext-browser-cancel",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+	};
+}
+
 function buildPwExtBrowserResultFrame() {
 	return {
 		type: "pw-ext-browser-result",
@@ -401,6 +410,7 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["proto-browser-result", buildProtoBrowserResultFrame],
 	["proto-browser-progress", buildProtoBrowserProgressFrame],
 	["pw-ext-browser-request", buildPwExtBrowserRequestFrame],
+	["pw-ext-browser-cancel", buildPwExtBrowserCancelFrame],
 	["pw-ext-browser-result", buildPwExtBrowserResultFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],

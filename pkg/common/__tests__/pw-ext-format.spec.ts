@@ -8,6 +8,7 @@ import {
 	validatePwExtCliRequest,
 	validatePwExtRequest,
 	validatePwExtResponse,
+	validatePwExtCliCancel,
 } from "../src/pw-ext-format";
 
 describe("validatePwExtRequest", () => {
@@ -142,5 +143,84 @@ describe("pw-ext chat frames", () => {
 			validateChatFrame({ ...ok, data: { text: "x".repeat(PW_EXT_MAX_TEXT_CHARS + 1) } }),
 		).toThrow();
 		expect(() => validateChatFrame({ ...ok, extra: 1 })).toThrow();
+	});
+});
+
+describe("pw --ext round 3 verbs", () => {
+	const upload = {
+		verb: "upload",
+		target: "e3",
+		assetId: "123e4567-e89b-42d3-a456-426614174000",
+		fileName: "demo.webm",
+		fileSize: 1024,
+		fileType: "video/webm",
+		filePath: "~/work/demo.webm",
+	};
+
+	it.each([
+		upload,
+		{ verb: "tools" },
+		{ verb: "call", tool: "search_issues", args: { query: "bug", limit: 5 } },
+		{ verb: "call", tool: "noop", args: {} },
+	])("accepts %p", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request as never);
+	});
+
+	it.each([
+		{ ...upload, assetId: "../x" },
+		{ ...upload, fileName: "../secret" },
+		{ ...upload, fileName: "a/b.txt" },
+		{ ...upload, fileName: "" },
+		{ ...upload, fileSize: -1 },
+		{ ...upload, fileSize: 26_214_401 },
+		{ ...upload, fileSize: 1.5 },
+		{ ...upload, fileType: "not a mime" },
+		{ ...upload, filePath: "x".repeat(5000) },
+		{ ...upload, bytes: "AAAA" },
+		{ verb: "tools", tool: "x" },
+		{ verb: "call", tool: "", args: {} },
+		{ verb: "call", tool: "x" },
+		{ verb: "call", tool: "x", args: [] },
+		{ verb: "call", tool: "x", args: "{}" },
+		{ verb: "call", tool: "x", args: { big: "y".repeat(20_000) } },
+	])("rejects %p", (request) => {
+		expect(() => validatePwExtRequest(request)).toThrow();
+	});
+
+	it("counts upload and call as write verbs and tools as a read verb", () => {
+		expect(isPwExtWriteVerb("upload")).toBe(true);
+		expect(isPwExtWriteVerb("call")).toBe(true);
+		expect(isPwExtWriteVerb("tools")).toBe(false);
+	});
+});
+
+describe("pw --ext cancel frames", () => {
+	it("validates the CLI cancel and the extension cancel", () => {
+		expect(
+			validatePwExtCliCancel({ type: "cli-pw-ext-cancel", requestId: "r1" }),
+		).toEqual({ type: "cli-pw-ext-cancel", requestId: "r1" });
+		expect(() =>
+			validatePwExtCliCancel({ type: "cli-pw-ext-cancel", requestId: "" }),
+		).toThrow();
+		expect(() =>
+			validatePwExtCliCancel({ type: "cli-pw-ext-cancel", requestId: "r", x: 1 }),
+		).toThrow();
+		const frame = {
+			type: "pw-ext-browser-cancel",
+			sessionId: "s1",
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "r1",
+		};
+		expect(validateChatFrame(frame)).toEqual(frame as never);
+		expect(() => validateChatFrame({ ...frame, token: "t" })).toThrow();
+		expect(() => validateChatFrame({ ...frame, extra: 1 })).toThrow();
+	});
+});
+
+describe("pw --ext upload cap", () => {
+	it("matches the daemon asset store cap", async () => {
+		const { CHAT_MAX_ASSET_BYTES } = await import("../src/chat-format");
+		const { PW_EXT_MAX_UPLOAD_BYTES } = await import("../src/pw-ext-format");
+		expect(PW_EXT_MAX_UPLOAD_BYTES).toBe(CHAT_MAX_ASSET_BYTES);
 	});
 });

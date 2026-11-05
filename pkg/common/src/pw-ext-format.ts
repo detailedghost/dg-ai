@@ -7,8 +7,15 @@ export const PW_EXT_READ_VERBS = [
 	"screenshot",
 	"selection",
 	"console",
+	"tools",
 ] as const;
-export const PW_EXT_WRITE_VERBS = ["open", "click", "fill"] as const;
+export const PW_EXT_WRITE_VERBS = [
+	"open",
+	"click",
+	"fill",
+	"upload",
+	"call",
+] as const;
 export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
 	| (typeof PW_EXT_WRITE_VERBS)[number];
@@ -21,6 +28,10 @@ export const PW_EXT_MAX_IMAGE_CHARS = PROTO_PREVIEW_MAX_CHARS;
 export const PW_EXT_MAX_URL_CHARS = 2048;
 export const PW_EXT_MAX_TARGET_BYTES = 512;
 export const PW_EXT_MAX_VALUE_BYTES = 4096;
+/** Same cap as the daemon asset store, CHAT_MAX_ASSET_BYTES. */
+export const PW_EXT_MAX_UPLOAD_BYTES = 26_214_400;
+export const PW_EXT_MAX_CALL_ARGS_BYTES = 16_384;
+export const PW_EXT_MAX_TOOL_NAME_CHARS = 128;
 /** First extension release that answers pw-ext frames. */
 export const PW_EXT_MIN_EXTENSION_VERSION = [1, 41, 0] as const;
 
@@ -30,6 +41,13 @@ export type PwExtRequest = {
 	url?: string;
 	target?: string;
 	value?: string;
+	assetId?: string;
+	fileName?: string;
+	fileSize?: number;
+	fileType?: string;
+	filePath?: string;
+	tool?: string;
+	args?: Record<string, unknown>;
 };
 
 /** Redacted, size-capped output; image is a screenshot data URL. */
@@ -41,6 +59,8 @@ export type PwExtCliRequest = {
 	request: PwExtRequest;
 	timeoutMs?: number;
 };
+
+export type PwExtCliCancel = { type: "cli-pw-ext-cancel"; requestId: string };
 
 export type PwExtCliResult = {
 	type: "cli-pw-ext-result";
@@ -60,7 +80,13 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	open: ["url"],
 	click: ["target"],
 	fill: ["target", "value"],
+	upload: ["target", "assetId", "fileName", "fileSize", "fileType", "filePath"],
+	tools: [],
+	call: ["tool", "args"],
 };
+
+const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const MIME = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}\/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}$/i;
 
 const IMAGE_DATA_URL = /^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/]+=*$/;
 
@@ -105,7 +131,37 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 		if (!isPwExtWebUrl(value.url))
 			fail(`${path}.url must be an http or https URL`);
 	}
-	if (verb === "click" || verb === "fill") {
+	if (verb === "upload") {
+		requireString(value.assetId, `${path}.assetId`);
+		if (!ASSET_ID.test(value.assetId)) fail(`${path}.assetId must be a UUID`);
+		requireString(value.fileName, `${path}.fileName`, { nonEmpty: true });
+		if (
+			bytes(value.fileName) > 255 ||
+			/[/\\\u0000]/.test(value.fileName) ||
+			value.fileName === "." ||
+			value.fileName === ".."
+		)
+			fail(`${path}.fileName must be a plain file name`);
+		if (
+			!Number.isSafeInteger(value.fileSize) ||
+			(value.fileSize as number) < 0 ||
+			(value.fileSize as number) > PW_EXT_MAX_UPLOAD_BYTES
+		)
+			fail(`${path}.fileSize must be 0 to ${PW_EXT_MAX_UPLOAD_BYTES} bytes`);
+		requireString(value.fileType, `${path}.fileType`);
+		if (!MIME.test(value.fileType)) fail(`${path}.fileType must be a MIME type`);
+		requireString(value.filePath, `${path}.filePath`, { nonEmpty: true });
+		if (bytes(value.filePath) > 4096) fail(`${path}.filePath is too long`);
+	}
+	if (verb === "call") {
+		requireString(value.tool, `${path}.tool`, { nonEmpty: true });
+		if (value.tool.length > PW_EXT_MAX_TOOL_NAME_CHARS)
+			fail(`${path}.tool exceeds ${PW_EXT_MAX_TOOL_NAME_CHARS} characters`);
+		requireRecord(value.args, `${path}.args`);
+		if (bytes(JSON.stringify(value.args)) > PW_EXT_MAX_CALL_ARGS_BYTES)
+			fail(`${path}.args exceeds ${PW_EXT_MAX_CALL_ARGS_BYTES} bytes`);
+	}
+	if (verb === "click" || verb === "fill" || verb === "upload") {
 		requireString(value.target, `${path}.target`, { nonEmpty: true });
 		if (bytes(value.target) > PW_EXT_MAX_TARGET_BYTES)
 			fail(`${path}.target exceeds ${PW_EXT_MAX_TARGET_BYTES} bytes`);
@@ -148,6 +204,16 @@ export function validatePwExtTimeout(value: unknown, path: string): void {
 		(value as number) > PW_EXT_MAX_TIMEOUT_MS
 	)
 		fail(`${path} must be an integer between 1 and ${PW_EXT_MAX_TIMEOUT_MS}`);
+}
+
+export function validatePwExtCliCancel(value: unknown): PwExtCliCancel {
+	const path = "pw-ext CLI cancel";
+	requireRecord(value, path);
+	if (value.type !== "cli-pw-ext-cancel")
+		fail(`${path}.type must be "cli-pw-ext-cancel"`);
+	onlyKeys(value, ["type", "requestId", "protocolVersion"], path);
+	validatePwExtRequestId(value.requestId, `${path}.requestId`);
+	return value as PwExtCliCancel;
 }
 
 export function validatePwExtCliRequest(value: unknown): PwExtCliRequest {
