@@ -9,6 +9,12 @@ import {
 	validatePwExtRequest,
 } from "@dg/common";
 import {
+	type PwExtWebMcpResult,
+	pwExtConsoleHook,
+	pwExtWebMcp,
+} from "@/lib/features/pw-ext-main";
+import {
+	type PwExtElement,
 	type PwExtPageAction,
 	type PwExtPageResult,
 	pwExtPageAction,
@@ -56,8 +62,9 @@ export type PwExtBrowserApi = {
 	scripting: {
 		executeScript(details: {
 			target: { tabId: number };
-			func: (action: PwExtPageAction, expectUrl?: string) => PwExtPageResult;
-			args: [PwExtPageAction, string];
+			world?: "MAIN" | "ISOLATED";
+			func: (...args: never[]) => unknown;
+			args: unknown[];
 		}): Promise<Array<{ result?: unknown }>>;
 	};
 };
@@ -95,8 +102,14 @@ const PAGE_RESULT_KEYS = [
 	["detail"],
 	["text"],
 	["started", "entries"],
+	["element"],
 	["error"],
 ];
+const ELEMENT_KEYS = ["name", "role", "tag", "text"];
+const TOOL_TIMEOUT_MS = 30_000;
+
+/** Per-request seams that need the session capability. */
+export type PwExtContext = { fetchAsset(assetId: string): Promise<Blob> };
 
 function pageResult(raw: unknown): PwExtPageResult {
 	const fail = () => {
@@ -107,6 +120,16 @@ function pageResult(raw: unknown): PwExtPageResult {
 	if (!PAGE_RESULT_KEYS.some((shape) => [...shape].sort().join(",") === keys))
 		fail();
 	for (const [key, value] of Object.entries(raw as object)) {
+		if (key === "element") {
+			if (
+				typeof value !== "object" ||
+				value === null ||
+				Object.keys(value).sort().join(",") !== ELEMENT_KEYS.join(",") ||
+				Object.values(value).some((field) => typeof field !== "string")
+			)
+				fail();
+			continue;
+		}
 		if (key === "started" ? typeof value !== "boolean" : key === "entries"
 			? !Array.isArray(value) || value.some((entry) => typeof entry !== "string")
 			: typeof value !== "string")
@@ -137,8 +160,11 @@ function cap(text: string): string {
 		: text;
 }
 
+const SECRET_PAIR =
+	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
+
 function clean(text: string): string {
-	return cap(redactText(text));
+	return cap(redactText(text).replace(SECRET_PAIR, "$1$2[redacted]"));
 }
 
 function shownUrl(tab: Tab): string {
@@ -160,19 +186,51 @@ function pageLines(tab: Tab): string[] {
 	];
 }
 
-function detailFor(request: PwExtRequest): string | undefined {
-	switch (request.verb) {
-		case "current":
-			return "Read the URL and title of every open tab";
-		case "open":
-			return `Open ${request.url} in a new tab`;
-		case "click":
-			return `Click ${request.target}`;
-		case "fill":
-			return `Fill ${request.target} with:\n${request.value ?? ""}`;
-		default:
-			return undefined;
+function sizeText(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function elementLines(element: PwExtElement): string[] {
+	const name = element.name ? ` "${element.name}"` : "";
+	return [
+		`Element: ${element.role}${name} <${element.tag}>`,
+		...(element.text && element.text !== element.name ? [`Text: ${element.text}`] : []),
+	].map((line) => redactText(line));
+}
+
+function base64Of(bytes: Uint8Array): string {
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += 0x8000)
+		binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+	return btoa(binary);
+}
+
+function webMcpResult(raw: unknown): PwExtWebMcpResult {
+	const value = raw as Record<string, unknown> | null;
+	if (typeof value !== "object" || value === null)
+		throw new Error("The page returned an unexpected WebMCP result.");
+	if (typeof value.error === "string") return { error: value.error };
+	if (!["modelContext", "modelContextTesting", "none"].includes(value.api as string))
+		throw new Error("The page returned an unexpected WebMCP result.");
+	if (JSON.stringify(value).length > MAX_PAGE_RESULT_CHARS)
+		throw new Error("The page returned too much WebMCP data.");
+	if (Array.isArray(value.tools)) {
+		for (const tool of value.tools as unknown[]) {
+			const entry = tool as Record<string, unknown> | null;
+			if (
+				typeof entry !== "object" ||
+				entry === null ||
+				Object.values(entry).some((field) => typeof field !== "string") ||
+				typeof entry.name !== "string"
+			)
+				throw new Error("The page returned an unexpected WebMCP tool.");
+		}
+		return value as PwExtWebMcpResult;
 	}
+	if (typeof value.output === "string") return value as PwExtWebMcpResult;
+	throw new Error("The page returned an unexpected WebMCP result.");
 }
 
 function defaultIsChromium(): boolean {
@@ -237,6 +295,88 @@ export function createPwExtHandler({
 		return pageResult(frame?.result);
 	}
 
+	async function inMain(
+		tab: Tab & { id: number },
+		func: (...args: never[]) => unknown,
+		args: unknown[],
+	): Promise<unknown> {
+		const [frame] = await api.scripting.executeScript({
+			target: { tabId: tab.id },
+			world: "MAIN",
+			func,
+			args,
+		});
+		return frame?.result;
+	}
+
+	async function prepare(
+		request: PwExtRequest,
+		tab: Tab & { id: number },
+	): Promise<{ detail?: string } | { error: string }> {
+		switch (request.verb) {
+			case "current":
+				return { detail: "Read the URL and title of every open tab" };
+			case "open":
+				return { detail: `Open ${request.url} in a new tab` };
+			case "click":
+			case "fill":
+			case "upload": {
+				if (request.verb === "upload" && new URL(tab.url as string).protocol !== "https:")
+					return { error: "pw --ext uploads files only to https pages." };
+				const described = await inPage(tab, {
+					kind: "describe",
+					target: request.target as string,
+				});
+				if ("error" in described) return { error: clean(described.error) };
+				if (!("element" in described))
+					return { error: "The page returned an unexpected result." };
+				const element = elementLines(described.element);
+				if (request.verb === "click")
+					return { detail: [`Click ${request.target}`, ...element].join("\n") };
+				if (request.verb === "fill")
+					return {
+						detail: [
+							`Fill ${request.target}`,
+							...element,
+							`With:\n${request.value ?? ""}`,
+						].join("\n"),
+					};
+				return {
+					detail: [
+						`Upload ${request.filePath}`,
+						`File: ${request.fileName}, ${sizeText(request.fileSize ?? 0)}, ${request.fileType}`,
+						`To: ${new URL(tab.url as string).origin}`,
+						...element,
+					].join("\n"),
+				};
+			}
+			case "call": {
+				const listed = webMcpResult(
+					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]),
+				);
+				if ("error" in listed) return { error: clean(listed.error) };
+				const tool =
+					"tools" in listed
+						? listed.tools.find((candidate) => candidate.name === request.tool)
+						: undefined;
+				if (!tool)
+					return {
+						error: `No WebMCP tool named ${request.tool} on this page. Run pw --ext tools.`,
+					};
+				return {
+					detail: [
+						`Call WebMCP tool ${tool.name}`,
+						`Description: ${clean(tool.description)}`,
+						...(tool.annotations ? [`Hints: ${tool.annotations}`] : []),
+						`Args:\n${JSON.stringify(request.args, null, 2)}`,
+					].join("\n"),
+				};
+			}
+			default:
+				return {};
+		}
+	}
+
 	async function listTabs(active: Tab): Promise<string> {
 		const tabs = (await api.tabs.query({}))
 			.filter((tab) => !tab.incognito)
@@ -253,6 +393,7 @@ export function createPwExtHandler({
 		request: PwExtRequest,
 		tab: Tab & { id: number },
 		watch?: { changed(): boolean },
+		context?: PwExtContext,
 	): Promise<PwExtResult> {
 		const ok = (text: string, image?: string): PwExtResult => ({
 			ok: true,
@@ -268,6 +409,63 @@ export function createPwExtHandler({
 					active: true,
 				});
 				return ok(`### Result\nOpened ${request.url} in tab ${opened.id}`);
+			}
+			case "upload": {
+				if (!context) return { ok: false, error: "Upload needs a paired session." };
+				const blob = await context.fetchAsset(request.assetId as string);
+				if (blob.size !== request.fileSize)
+					return {
+						ok: false,
+						error: "The staged file size does not match the approved size; nothing was uploaded.",
+					};
+				const result = await inPage(tab, {
+					kind: "upload",
+					target: request.target as string,
+					base64: base64Of(new Uint8Array(await blob.arrayBuffer())),
+					fileName: request.fileName as string,
+					fileType: request.fileType as string,
+				});
+				if ("error" in result) return { ok: false, error: clean(result.error) };
+				if (!("detail" in result))
+					return { ok: false, error: "The page returned an unexpected result." };
+				return ok([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
+			}
+			case "tools": {
+				const listed = webMcpResult(
+					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]),
+				);
+				if ("error" in listed) return { ok: false, error: clean(listed.error) };
+				if (!("tools" in listed) || listed.tools.length === 0)
+					return ok(
+						[...pageLines(tab), "### WebMCP tools", "This page exposes no WebMCP tools."].join("\n"),
+					);
+				const rows = listed.tools.flatMap((tool) => [
+					`- ${tool.name}: ${tool.description}`,
+					...(tool.inputSchema ? [`  input: ${tool.inputSchema}`] : []),
+					...(tool.annotations ? [`  hints: ${tool.annotations}`] : []),
+				]);
+				return ok(
+					[...pageLines(tab), `### WebMCP tools (${listed.api})`, ...rows].join("\n"),
+				);
+			}
+			case "call": {
+				const called = webMcpResult(
+					await inMain(tab, pwExtWebMcp as never, [
+						{
+							kind: "call",
+							tool: request.tool,
+							args: request.args,
+							timeoutMs: TOOL_TIMEOUT_MS,
+						},
+						tab.url,
+					]),
+				);
+				if ("error" in called) return { ok: false, error: clean(called.error) };
+				if (!("output" in called))
+					return { ok: false, error: "The page returned an unexpected WebMCP result." };
+				return ok(
+					[`### Result`, `WebMCP tool ${request.tool} returned:`, called.output, ...pageLines(tab)].join("\n"),
+				);
 			}
 			case "screenshot": {
 				const captured = await api.tabs.captureVisibleTab(tab.windowId as number, {
@@ -319,18 +517,30 @@ export function createPwExtHandler({
 					);
 				if ("detail" in result)
 					return ok([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
-				if ("entries" in result)
+				if ("entries" in result) {
+					const hooked = (await inMain(tab, pwExtConsoleHook as never, [])) as
+						| { entries?: unknown }
+						| undefined;
+					const warnings = Array.isArray(hooked?.entries)
+						? (hooked.entries as unknown[])
+								.filter((entry): entry is string => typeof entry === "string")
+								.slice(0, 50)
+						: [];
+					const entries = [...result.entries, ...warnings];
 					return ok(
 						[
 							...pageLines(tab),
 							"### Console",
 							result.started
-								? "Capture started on this tab. Errors from now on show on the next console call."
-								: result.entries.length
-									? result.entries.join("\n")
-									: "No errors since capture started.",
+								? "Capture started on this tab. Errors and console warnings from now on show on the next console call."
+								: entries.length
+									? entries.join("\n")
+									: "No errors or warnings since capture started.",
 						].join("\n"),
 					);
+				}
+				if (!("text" in result))
+					return { ok: false, error: "The page returned an unexpected result." };
 				return ok([...pageLines(tab), "### Selection", result.text].join("\n"));
 			}
 		}
@@ -340,6 +550,7 @@ export function createPwExtHandler({
 		raw: PwExtRequest,
 		timeoutMs: number,
 		signal?: AbortSignal,
+		context?: PwExtContext,
 	): Promise<PwExtResult> => {
 		let request: PwExtRequest;
 		try {
@@ -364,13 +575,16 @@ export function createPwExtHandler({
 				return { ok: false, error: PW_EXT_BLOCKED_ERROR };
 			if (scoped && mailbox(tab.url))
 				return { ok: false, error: PW_EXT_MAILBOX_ERROR };
+			const prepared = await prepare(request, { ...tab, id: tab.id });
+			if ("error" in prepared) return { ok: false, error: prepared.error };
+			if (signal?.aborted) return CANCELED;
 			const approved = await approve(
 				{
 					verb: request.verb,
 					write: isPwExtWriteVerb(request.verb),
 					tabTitle: shownTitle(tab),
 					tabUrl: shownUrl(tab),
-					...(detailFor(request) ? { detail: detailFor(request) } : {}),
+					...(prepared.detail ? { detail: prepared.detail } : {}),
 				},
 				timeoutMs,
 				signal,
@@ -390,7 +604,7 @@ export function createPwExtHandler({
 						};
 				}
 				if (signal?.aborted) return CANCELED;
-				return await run(request, target, watch);
+				return await run(request, target, watch, context);
 			} finally {
 				watch?.stop();
 			}

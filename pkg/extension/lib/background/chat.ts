@@ -1,5 +1,7 @@
 import {
+	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
+	CHAT_MAX_ASSET_BYTES,
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
@@ -33,6 +35,7 @@ import {
 import {
 	createPwExtHandler,
 	type PwExtBrowserApi,
+	type PwExtContext,
 	type PwExtResult,
 } from "./pw-ext";
 import {
@@ -186,6 +189,7 @@ export type RegisterChatOptions = {
 		request: PwExtRequest,
 		timeoutMs: number,
 		signal?: AbortSignal,
+		context?: PwExtContext,
 	) => Promise<PwExtResult>;
 };
 
@@ -256,12 +260,17 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	let defaultPwExt: ReturnType<typeof createPwExtHandler> | undefined;
 	const pwExtHandler =
 		options.pwExtHandler ??
-		((request: PwExtRequest, timeoutMs: number, signal?: AbortSignal) => {
+		((
+			request: PwExtRequest,
+			timeoutMs: number,
+			signal?: AbortSignal,
+			context?: PwExtContext,
+		) => {
 			defaultPwExt ??= createPwExtHandler({
 				browserApi: api as unknown as PwExtBrowserApi,
 				approve: createPwExtApprover(api as unknown as PwExtApprovalApi),
 			});
-			return defaultPwExt(request, timeoutMs, signal);
+			return defaultPwExt(request, timeoutMs, signal, context);
 		});
 	const pendingInbox = new Set<string>();
 	const pendingProto = new Set<string>();
@@ -677,6 +686,13 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				.finally(() => pendingProto.delete(requestKey));
 			return;
 		}
+		if (frame.type === "pw-ext-browser-cancel") {
+			if (bootstrapsBySession.has(frame.sessionId))
+				pwExtCancels
+					.get(JSON.stringify([frame.sessionId, frame.requestId]))
+					?.cancel.abort();
+			return;
+		}
 		if (frame.type === "pw-ext-browser-request") {
 			const bootstrap = bootstrapsBySession.get(frame.sessionId);
 			const socket = currentSocket;
@@ -716,7 +732,25 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					return;
 				}
 			};
-			void pwExtHandler(frame.request, frame.timeoutMs, cancel.signal)
+			const context: PwExtContext = {
+				async fetchAsset(assetId) {
+					const response = await fetch(
+						`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
+						{
+							headers: {
+								"X-Dg-Session-Id": bootstrap.sessionId,
+								"X-Dg-Session-Token": bootstrap.token,
+							},
+						},
+					);
+					if (!response.ok) throw new Error("the staged file is not available");
+					const blob = await response.blob();
+					if (blob.size > CHAT_MAX_ASSET_BYTES)
+						throw new Error("the staged file is too large");
+					return blob;
+				},
+			};
+			void pwExtHandler(frame.request, frame.timeoutMs, cancel.signal, context)
 				.then(sendPwExt)
 				.catch(() =>
 					sendPwExt({

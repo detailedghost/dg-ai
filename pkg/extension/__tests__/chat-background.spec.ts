@@ -1426,7 +1426,7 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 	await settle();
 	await flushMicrotasks();
 
-	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000, expect.any(AbortSignal)]] as never);
+	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000, expect.any(AbortSignal), expect.objectContaining({ fetchAsset: expect.any(Function) })]] as never);
 	const results = socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
 		.filter((frame) => frame.type === "pw-ext-browser-result");
@@ -1511,6 +1511,55 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 			protocolVersion: CHAT_PROTOCOL_VERSION,
 		}),
 	);
+	await settle();
+	expect(seen?.aborted).toBe(true);
+});
+
+test("registerChat aborts a pending pw-ext request on a daemon cancel frame", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	let seen: AbortSignal | undefined;
+	let context: { fetchAsset(id: string): Promise<Blob> } | undefined;
+	const pwExtHandler = mock(
+		(
+			_request: unknown,
+			_timeout: number,
+			signal?: AbortSignal,
+			ctx?: { fetchAsset(id: string): Promise<Blob> },
+		) =>
+			new Promise<{ ok: false; error: string }>((resolve) => {
+				seen = signal;
+				context = ctx;
+				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));
+			}),
+	);
+	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+	const base = {
+		sessionId: bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "pw-request",
+	};
+	socket.dispatch(
+		"message",
+		message({
+			...base,
+			type: "pw-ext-browser-request",
+			request: { verb: "click", target: "e1" },
+			timeoutMs: 60_000,
+		}),
+	);
+	await settle();
+	expect(typeof context?.fetchAsset).toBe("function");
+	socket.dispatch("message", message({ ...base, requestId: "other", type: "pw-ext-browser-cancel" }));
+	await settle();
+	expect(seen?.aborted).toBe(false);
+	socket.dispatch("message", message({ ...base, type: "pw-ext-browser-cancel" }));
 	await settle();
 	expect(seen?.aborted).toBe(true);
 });

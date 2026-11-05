@@ -28,6 +28,9 @@ function harness(
 		tabs?: Tab[];
 		approve?: boolean;
 		pageResult?: unknown;
+		describeResult?: unknown;
+		mainResult?: (action: unknown) => unknown;
+		asset?: Blob;
 		afterApproval?: Partial<Tab>;
 		chromium?: boolean;
 		capture?: string;
@@ -41,6 +44,8 @@ function harness(
 	let tabs = options.tabs ?? [WEB_TAB];
 	const prompts: PwExtApprovalPrompt[] = [];
 	const executed: unknown[] = [];
+	const described: unknown[] = [];
+	const fetched: string[] = [];
 	const created: unknown[] = [];
 	const activated: Array<(info: { tabId: number; windowId: number }) => void> = [];
 	const updated: Array<(tabId: number) => void> = [];
@@ -94,10 +99,26 @@ function harness(
 			}),
 		},
 		scripting: {
-			executeScript: mock(async (details: { args: unknown[] }) => {
-				executed.push(details);
-				return [{ frameId: 0, result: options.pageResult }];
-			}),
+			executeScript: mock(
+				async (details: { args: unknown[]; world?: string }) => {
+					const first = details.args[0] as { kind?: string } | undefined;
+					if (details.world !== "MAIN" && first?.kind === "describe") {
+						described.push(first);
+						return [
+							{
+								frameId: 0,
+								result: options.describeResult ?? {
+									element: { tag: "button", role: "button", name: "Go", text: "Go" },
+								},
+							},
+						];
+					}
+					executed.push(details);
+					if (details.world === "MAIN")
+						return [{ frameId: 0, result: options.mainResult?.(first) }];
+					return [{ frameId: 0, result: options.pageResult }];
+				},
+			),
 		},
 	} as unknown as PwExtBrowserApi;
 	const approve = mock(async (prompt: PwExtApprovalPrompt) => {
@@ -122,10 +143,19 @@ function harness(
 				options.abortOnApprove?.signal ??
 					options.abortOnFinalGet?.signal ??
 					options.signal,
+				{
+					fetchAsset: async (assetId: string) => {
+						fetched.push(assetId);
+						if (!options.asset) throw new Error("no asset");
+						return options.asset;
+					},
+				},
 			),
 		api,
 		prompts,
 		executed,
+		described,
+		fetched,
 		created,
 	};
 }
@@ -170,7 +200,9 @@ describe("pw --ext background handler", () => {
 		const value = `${"a".repeat(250)}\nsecond line`;
 		const h = harness({ pageResult: { detail: "filled" } });
 		await h.run({ verb: "fill", target: "e2", value });
-		expect(h.prompts[0]?.detail).toBe(`Fill e2 with:\n${value}`);
+		expect(h.prompts[0]?.detail).toBe(
+			`Fill e2\nElement: button "Go" <button>\nWith:\n${value}`,
+		);
 	});
 
 	it("does nothing when the request is canceled during approval", async () => {
@@ -226,7 +258,7 @@ describe("pw --ext background handler", () => {
 		expect(h.prompts[0]).toMatchObject({
 			verb: "fill",
 			write: true,
-			detail: "Fill e2 with:\ncats",
+			detail: 'Fill e2\nElement: button "Go" <button>\nWith:\ncats',
 		});
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).not.toContain("cats");
@@ -372,5 +404,156 @@ describe("pw --ext background handler", () => {
 			await h.run({ verb: "eval" } as unknown as PwExtRequest),
 		).toMatchObject({ ok: false });
 		expect(h.prompts).toEqual([]);
+	});
+});
+
+describe("pw --ext round 3", () => {
+	const UPLOAD: PwExtRequest = {
+		verb: "upload",
+		target: "#file",
+		assetId: "123e4567-e89b-42d3-a456-426614174000",
+		fileName: "demo.webm",
+		fileSize: 5,
+		fileType: "video/webm",
+		filePath: "~/work/demo.webm",
+	};
+
+	it("describes the click target in the approval", async () => {
+		const h = harness({
+			describeResult: {
+				element: { tag: "button", role: "button", name: "Save", text: "Save now" },
+			},
+			pageResult: { detail: 'clicked button "Save"' },
+		});
+		await h.run({ verb: "click", target: "e1" });
+		expect(h.described).toEqual([{ kind: "describe", target: "e1" }]);
+		expect(h.prompts[0]?.detail).toBe(
+			'Click e1\nElement: button "Save" <button>\nText: Save now',
+		);
+	});
+
+	it("refuses before any prompt when the target does not resolve", async () => {
+		const h = harness({ describeResult: { error: "No element matches #x." } });
+		expect(await h.run({ verb: "fill", target: "#x", value: "a" })).toEqual({
+			ok: false,
+			error: "No element matches #x.",
+		});
+		expect(h.prompts).toEqual([]);
+		expect(h.executed).toEqual([]);
+	});
+
+	it("uploads a staged asset after an approval that names the file and the element", async () => {
+		const h = harness({
+			describeResult: {
+				element: { tag: "input", role: "button", name: "Attach", text: "" },
+			},
+			pageResult: { detail: 'uploaded demo.webm to button "Attach"' },
+			asset: new Blob(["hello"], { type: "video/webm" }),
+		});
+		const answer = await h.run(UPLOAD);
+		expect(h.prompts[0]).toMatchObject({ verb: "upload", write: true });
+		expect(h.prompts[0]?.detail).toBe(
+			'Upload ~/work/demo.webm\nFile: demo.webm, 5 B, video/webm\nTo: https://app.example.test\nElement: button "Attach" <input>',
+		);
+		expect(h.fetched).toEqual([UPLOAD.assetId as string]);
+		expect((h.executed[0] as { args: unknown[] }).args).toEqual([
+			{
+				kind: "upload",
+				target: "#file",
+				base64: Buffer.from("hello").toString("base64"),
+				fileName: "demo.webm",
+				fileType: "video/webm",
+			},
+			WEB_TAB.url,
+		]);
+		expect(answer).toMatchObject({ ok: true });
+	});
+
+	it("refuses an upload whose staged bytes do not match the approved size", async () => {
+		const h = harness({ asset: new Blob(["longer than five"]) });
+		expect(await h.run(UPLOAD)).toEqual({
+			ok: false,
+			error: expect.stringContaining("size"),
+		});
+		expect(h.executed).toEqual([]);
+	});
+
+	it("refuses an upload to a plain http page before any prompt", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, url: "http://app.example.test/" }] });
+		expect(await h.run(UPLOAD)).toEqual({
+			ok: false,
+			error: expect.stringContaining("https"),
+		});
+		expect(h.prompts).toEqual([]);
+	});
+
+	it("lists WebMCP tools, or says there are none", async () => {
+		const none = harness({ mainResult: () => ({ api: "none", tools: [] }) });
+		const empty = await none.run({ verb: "tools" });
+		expect(empty.ok && empty.data.text).toContain("This page exposes no WebMCP tools.");
+		const some = harness({
+			mainResult: () => ({
+				api: "modelContext",
+				tools: [
+					{
+						name: "search",
+						description: "Search issues with token=abcdef123456",
+						inputSchema: '{"type":"object"}',
+					},
+				],
+			}),
+		});
+		const listed = await some.run({ verb: "tools" });
+		expect(some.prompts[0]).toMatchObject({ verb: "tools", write: false });
+		expect(listed.ok && listed.data.text).toContain("- search: Search issues");
+		expect(listed.ok && listed.data.text).toContain('input: {"type":"object"}');
+		expect(listed.ok && listed.data.text).not.toContain("abcdef123456");
+	});
+
+	it("calls a WebMCP tool after an approval with its description and exact args", async () => {
+		const actions: unknown[] = [];
+		const h = harness({
+			mainResult: (action) => {
+				actions.push(action);
+				return (action as { kind: string }).kind === "tools"
+					? {
+							api: "modelContext",
+							tools: [
+								{
+									name: "search",
+									description: "Search issues",
+									annotations: '{"readOnlyHint":true}',
+								},
+							],
+						}
+					: { api: "modelContext", output: "3 results" };
+			},
+		});
+		const answer = await h.run({ verb: "call", tool: "search", args: { q: "bug" } });
+		expect(h.prompts[0]).toMatchObject({ verb: "call", write: true });
+		expect(h.prompts[0]?.detail).toBe(
+			'Call WebMCP tool search\nDescription: Search issues\nHints: {"readOnlyHint":true}\nArgs:\n{\n  "q": "bug"\n}',
+		);
+		expect(actions[1]).toMatchObject({ kind: "call", tool: "search", args: { q: "bug" } });
+		expect(answer.ok && answer.data.text).toContain("3 results");
+	});
+
+	it("refuses to call a tool the page does not expose, before any prompt", async () => {
+		const h = harness({ mainResult: () => ({ api: "none", tools: [] }) });
+		expect(await h.run({ verb: "call", tool: "search", args: {} })).toEqual({
+			ok: false,
+			error: expect.stringContaining("No WebMCP tool"),
+		});
+		expect(h.prompts).toEqual([]);
+	});
+
+	it("merges isolated errors with MAIN-world console warnings", async () => {
+		const h = harness({
+			pageResult: { started: false, entries: ["[error] Boom"] },
+			mainResult: () => ({ entries: ["[warning] careful"] }),
+		});
+		const answer = await h.run({ verb: "console" });
+		expect(answer.ok && answer.data.text).toContain("[error] Boom");
+		expect(answer.ok && answer.data.text).toContain("[warning] careful");
 	});
 });
