@@ -2,7 +2,7 @@ import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import type { DgPaths } from "@dg/common/node";
 import { nip19 } from "nostr-tools";
-import { FILE_REQUEST_KIND, type FileRequestRumor, type KeyEntry, type PhonePool, publish, shouldSaveOutgoing, wrapTagged } from "./chat";
+import { type ControlRumor, createReplayGuard, FILE_REQUEST_KIND, type KeyEntry, type PhonePool, publish, shouldSaveOutgoing, wrapTagged } from "./chat";
 import { OUTBOX_DIR, type PhoneDb } from "./db";
 import { MAX_IMAGE_BYTES } from "./image";
 import { findContactByNpub } from "./store";
@@ -65,7 +65,7 @@ export async function requestFile(target: FileTarget, deps: RequestDeps): Promis
 }
 
 export type FileRequestHandler = {
-	handle(request: FileRequestRumor): void;
+	handle(request: ControlRumor): void;
 	/** Drops queued requests and kills the running send. */
 	stop(): void;
 	settle(): Promise<void>;
@@ -80,36 +80,23 @@ function tagValue(tags: string[][], name: string): string | undefined {
 
 /** The sender side: checks each request, then runs one `send` at a time. Every refusal is silent. */
 export function createFileRequestHandler(deps: { db: PhoneDb; paths: DgPaths; now: () => number; wormhole?: WormholeDeps }): FileRequestHandler {
-	const seen = new Map<string, number>();
+	const seen = createReplayGuard(SEEN_SECONDS, SEEN_LIMIT);
 	const open = new Set<string>();
 	const started = new Map<string, number[]>();
 	const queue: SendJob[] = [];
 	const controller = new AbortController();
 	let running: Promise<void> | undefined;
 
-	const forget = (now: number) => {
-		for (const [key, until] of seen) {
-			if (until > now) break;
-			seen.delete(key);
-		}
-	};
-
-	const remember = (key: string, until: number) => {
-		seen.set(key, until);
-		if (seen.size > SEEN_LIMIT) seen.delete(seen.keys().next().value as string);
-	};
-
-	const accept = (request: FileRequestRumor): SendJob | undefined => {
+	const accept = (request: ControlRumor): SendJob | undefined => {
 		const now = deps.now();
 		const x = tagValue(request.tags, "x");
 		const code = tagValue(request.tags, "code");
 		if (!x || !X_PATTERN.test(x) || !code || !WORMHOLE_CODE_PATTERN.test(code)) return undefined;
 		if (Math.abs(now - request.createdAt) > REQUEST_SKEW_SECONDS) return undefined;
 		if (!findContactByNpub(deps.db, nip19.npubEncode(request.from))) return undefined;
-		forget(now);
 		const idKey = `id:${request.id}`;
 		const codeKey = `code:${code}`;
-		if (seen.has(idKey) || seen.has(codeKey)) return undefined;
+		if (seen.has(idKey, now) || seen.has(codeKey, now)) return undefined;
 		if (deps.db.outboxKeyId(x) !== request.keyId || !deps.db.outboxRecipients(x).includes(request.from)) return undefined;
 		const file = join(deps.paths.phoneRoot, OUTBOX_DIR, x);
 		if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return undefined;
@@ -118,8 +105,8 @@ export function createFileRequestHandler(deps: { db: PhoneDb; paths: DgPaths; no
 		const recent = (started.get(request.from) ?? []).filter((at) => at > now - DAY_SECONDS);
 		if (recent.length >= DAILY_REQUEST_CAP) return undefined;
 		started.set(request.from, [...recent, now]);
-		remember(idKey, now + SEEN_SECONDS);
-		remember(codeKey, now + SEEN_SECONDS);
+		seen.add(idKey, now);
+		seen.add(codeKey, now);
 		open.add(slot);
 		return { slot, code, file };
 	};

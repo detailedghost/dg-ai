@@ -15,7 +15,7 @@ import {
 	imageUnavailableText,
 	openImage,
 } from "./image";
-import { findContactByNpub, readRelays } from "./store";
+import { contactRelays } from "./store";
 import { DAILY_REQUEST_CAP, type FileFetch, requestFile } from "./transport";
 import { dirBytes, type WormholeDeps } from "./wormhole";
 
@@ -97,11 +97,6 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		deps.db.deferImageFetch(row.message_id, attempts, now + delay);
 	};
 
-	const relaysFor = (sender: string) => {
-		const contact = findContactByNpub(deps.db, nip19.npubEncode(sender));
-		return contact?.relays.length ? contact.relays : readRelays(deps.db);
-	};
-
 	const attempt = async (row: ImageFetchRow) => {
 		const now = deps.now();
 		if (now >= row.deadline) return fail(row, "sender offline");
@@ -113,7 +108,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		const key = deps.keys().find((entry) => entry.id === row.key_id);
 		if (!key) return defer(row, now, "request not sent");
 		const result = await requestFile(
-			{ x: row.x, size: row.size, senderPub: row.sender, key, relays: relaysFor(row.sender) },
+			{ x: row.x, size: row.size, senderPub: row.sender, key, relays: contactRelays(deps.db, nip19.npubEncode(row.sender)) },
 			{ pool: deps.pool, paths: deps.paths, wormhole: deps.wormhole, signal: controller.signal },
 		);
 		if (controller.signal.aborted) return;

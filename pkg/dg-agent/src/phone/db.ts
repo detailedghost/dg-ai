@@ -113,6 +113,11 @@ export const PHI_TTL_SECONDS = 24 * 60 * 60;
 /** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
 export const OUTBOX_DIR = "outbox";
 
+/** A receipt that beat its row to the database is held this long. */
+const EARLY_RECEIPT_SECONDS = 10 * 60;
+/** Held early receipts; the oldest are dropped past this. */
+const EARLY_RECEIPT_LIMIT = 256;
+
 /** A crashed atomic write older than this is removed by prune. */
 const TMP_GRACE_SECONDS = 60;
 
@@ -232,6 +237,13 @@ const SCHEMA: MigrationStep[] = [
 				sent_at INTEGER NOT NULL,
 				delivered_at INTEGER
 			) STRICT`);
+			db.run(`CREATE TABLE early_receipts (
+				id TEXT NOT NULL,
+				signer TEXT NOT NULL,
+				recipient TEXT NOT NULL,
+				at INTEGER NOT NULL,
+				PRIMARY KEY (id, signer)
+			) STRICT`);
 		},
 	},
 ];
@@ -298,6 +310,7 @@ export class PhoneDb {
 		this.db.query(`DELETE FROM messages WHERE ${expired}`).run({ cutoff, phiCutoff });
 		this.db.query("DELETE FROM image_fetches WHERE message_id NOT IN (SELECT id FROM messages)").run();
 		this.db.query("DELETE FROM pings WHERE sent_at < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM early_receipts WHERE at < $early").run({ early: now - EARLY_RECEIPT_SECONDS });
 		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff OR (phi = 1 AND received_at < $phiCutoff)").run({ cutoff, phiCutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 		this.pruneOutbox(cutoff, phiCutoff);
@@ -528,7 +541,18 @@ export class PhoneDb {
 				phi: message.phi ? 1 : 0,
 				receivedAt: this.now(),
 			});
+		if (result.changes > 0 && message.direction === "out") this.applyEarlyReceipts(message.id);
 		return result.changes > 0;
+	}
+
+	private applyEarlyReceipts(id: string): void {
+		const held = this.db.query("SELECT signer, recipient, at FROM early_receipts WHERE id = $id ORDER BY at").all({ id }) as {
+			signer: string;
+			recipient: string;
+			at: number;
+		}[];
+		for (const receipt of held) this.applyDelivered(id, receipt.signer, receipt.recipient, receipt.at);
+		this.db.query("DELETE FROM early_receipts WHERE id = $id").run({ id });
 	}
 
 	addImageFetch(row: Omit<ImageFetchRow, "attempts">): void {
@@ -711,9 +735,21 @@ export class PhoneDb {
 
 	/**
 	 * Sets `delivered_at` once on our outgoing row or ping `id`, only when `signer` was a recipient
-	 * and `to` is the npub that sent it. A thread row accepts any member.
+	 * and `to` is the npub that sent it. A thread row accepts any member. A receipt for an id not
+	 * stored yet is held, since `say` saves its row after the relays answer.
 	 */
 	markDelivered(id: string, signer: string, to: string, at: number): boolean {
+		if (this.applyDelivered(id, signer, to, at)) return true;
+		const known = this.db.query("SELECT 1 FROM messages WHERE id = $id UNION ALL SELECT 1 FROM pings WHERE id = $id").get({ id });
+		if (known !== null) return false;
+		this.db.query("INSERT OR IGNORE INTO early_receipts (id, signer, recipient, at) VALUES ($id, $signer, $to, $at)").run({ id, signer, to, at });
+		this.db
+			.query("DELETE FROM early_receipts WHERE rowid NOT IN (SELECT rowid FROM early_receipts ORDER BY at DESC, rowid DESC LIMIT $limit)")
+			.run({ limit: EARLY_RECEIPT_LIMIT });
+		return false;
+	}
+
+	private applyDelivered(id: string, signer: string, to: string, at: number): boolean {
 		const message = this.db
 			.query(
 				`UPDATE messages SET delivered_at = $at

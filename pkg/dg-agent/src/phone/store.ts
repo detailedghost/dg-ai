@@ -6,7 +6,7 @@ import type { Gate } from "./chat";
 import { PHONE_SYSTEM_SENDER, type ContactRow, type InviteRow, type PhoneDb } from "./db";
 
 export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
-export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string };
+export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string; lastSeen?: number };
 export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string; relays: string[] };
 export type OnMessageConfig = { argv: string[]; timeoutMs: number };
 /** The `--on-message` hook `open` installed and the autostart manager it last reported, so a bare
@@ -156,6 +156,7 @@ function toContactRecord(row: ContactRow): ContactRecord {
 		keyId: row.key_id,
 		addedAt: row.added_at,
 		via: row.via,
+		...(row.last_seen === null ? {} : { lastSeen: row.last_seen }),
 	};
 }
 
@@ -171,6 +172,12 @@ export function findContactByHandle(db: PhoneDb, handle: string): ContactRecord 
 export function findContactByNpub(db: PhoneDb, npub: string): ContactRecord | undefined {
 	const row = db.getContactByNpub(npub);
 	return row ? toContactRecord(row) : undefined;
+}
+
+/** The contact's saved relays, or our own when it has none or is not a contact. */
+export function contactRelays(db: PhoneDb, npub: string): string[] {
+	const contact = findContactByNpub(db, npub);
+	return contact?.relays.length ? contact.relays : readRelays(db);
 }
 
 export function requireFreeHandle(db: PhoneDb, handle: string): void {

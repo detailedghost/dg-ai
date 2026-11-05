@@ -17,6 +17,7 @@ export type PhoneApi = Pick<
 	| "phoneContactsRemove"
 	| "phoneFiles"
 	| "phoneSay"
+	| "phonePing"
 	| "phoneInbox"
 	| "phoneVoicemail"
 	| "phoneWatch"
@@ -120,6 +121,16 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.action(async (handle: string, text: string | undefined, opts: Commands.SayOpts) => {
 			const phone = await load();
 			await phone.phoneSay(handle, text, phone.deps(getSession()), opts);
+		});
+
+	group
+		.command("ping")
+		.description("check that a contact's or #thread's listener answers; exit 1 when no receipt comes in time")
+		.argument("<handle>", "the contact's +handle, or a #thread")
+		.option("--timeout <seconds>", "seconds to wait for the receipt", "30")
+		.action(async (handle: string, opts: { timeout?: string }) => {
+			const phone = await load();
+			await phone.phonePing(handle, opts, phone.deps(getSession()));
 		});
 
 	group

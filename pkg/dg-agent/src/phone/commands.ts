@@ -8,7 +8,7 @@ import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
-import { npubOf, PHI_TAG, type PhonePool, type PublishReport, publish, ring, shouldSaveOutgoing, wrap, wrapTagged } from "./chat";
+import { ACK_TAG, type ControlRumor, npubOf, PHI_TAG, type PhonePool, PRESENCE_KIND, type PublishReport, publish, RECEIPT_KIND, ring, shouldSaveOutgoing, subscribe, wrap, wrapTagged } from "./chat";
 import {
 	INBOX_RELAY_CACHE_SECONDS,
 	createPhonePool,
@@ -48,6 +48,7 @@ import {
 	spawnDetachedListener,
 	type ListenerPid,
 } from "./listener";
+import { acceptControl, applyReceipt, replayGuard } from "./presence";
 import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
 import { movePhoneState, rollbackPhoneState } from "./migrate-home";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
@@ -90,6 +91,8 @@ import {
 	readRelays,
 	readInboxRelayCache,
 	readFilesOn,
+	gateFor,
+	subscriptionRelays,
 	readPublishConfirmSetting,
 	removeContact,
 	renameContact,
@@ -462,6 +465,7 @@ export function phoneContacts(deps: PhoneDeps): void {
 			key: contact.keyId,
 			added_at: contact.addedAt,
 			via: contact.via,
+			last_seen: contact.lastSeen === undefined ? null : isoOf(contact.lastSeen),
 			...(marker ? { marker } : {}),
 		});
 	}
@@ -504,6 +508,7 @@ function emitStored(
 		read_at: number | null;
 		thread_id: string | null;
 		file: string | null;
+		delivered_at: number | null;
 	},
 	self: Map<string, string>,
 	fields: { direction: boolean; read: boolean; meta: boolean },
@@ -524,6 +529,7 @@ function emitStored(
 			...(fields.meta ? {} : { text: row.text, line: threadLine(threadHandle, label, row.text) }),
 			...(file ? { file } : {}),
 			...(fields.read ? { read: row.read_at !== null } : {}),
+			...(row.direction === "out" ? { delivered: row.delivered_at !== null } : {}),
 			...(row.call ? { call: true } : {}),
 			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
 		});
@@ -539,6 +545,7 @@ function emitStored(
 		...(fields.meta ? {} : { text: row.text }),
 		...(file ? { file } : {}),
 		...(fields.read ? { read: row.read_at !== null } : {}),
+		...(row.direction === "out" ? { delivered: row.delivered_at !== null } : {}),
 		...(row.call ? { call: true } : {}),
 		...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
 	});
@@ -825,9 +832,105 @@ export async function phoneSay(handleArg: string, textArg: string | undefined, d
 		}
 		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi);
 		await restartStaleListener(deps, { spawn: true });
-		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report) });
+		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report), delivered: false });
 	} finally {
 		closeRelayPool(pool, [...queried, ...relays]);
+	}
+}
+
+const PING_DEFAULT_TIMEOUT_S = 30;
+const PING_MAX_TIMEOUT_S = 600;
+const PING_POLL_MS = 250;
+
+type PingTarget = { npub: string; relays: string[] };
+
+function pingTargets(handleArg: string, deps: PhoneDeps): { handle: string; keyId: string; targets: PingTarget[] } {
+	if (handleArg.startsWith("#")) {
+		const handle = parseThreadHandle(handleArg);
+		const thread = deps.db.getThreadByHandle(handle);
+		if (!thread) throw new DgCliError(`no thread ${handle}`);
+		const targets = deps.db
+			.listThreadMemberNpubs(thread.id)
+			.map((npub) => findContactByNpub(deps.db, npub))
+			.filter((contact) => contact !== undefined)
+			.map((contact) => ({ npub: contact.npub, relays: contact.relays }));
+		return { handle, keyId: thread.key_id, targets };
+	}
+	const handle = normalizeHandle(handleArg);
+	const contact = findContactByHandle(deps.db, handle);
+	if (!contact) throw new DgCliError(`no contact +${handle}`);
+	return { handle: `+${handle}`, keyId: contact.keyId, targets: [{ npub: contact.npub, relays: contact.relays }] };
+}
+
+function listenerServes(deps: PhoneDeps): boolean {
+	return readListenerPid(deps.paths)?.version === DG_AGENT_PACKAGE_VERSION;
+}
+
+/** Sends a check to a contact or each thread member and waits for the first receipt; exit 1 when none comes in time. */
+export async function phonePing(handleArg: string, opts: { timeout?: string }, deps: PhoneDeps): Promise<void> {
+	migrateIfNeeded(deps.paths);
+	const seconds = opts.timeout === undefined ? PING_DEFAULT_TIMEOUT_S : Number(opts.timeout);
+	if (!Number.isFinite(seconds) || seconds < 1 || seconds > PING_MAX_TIMEOUT_S) {
+		throw new DgCliError(`--timeout must be a number of seconds from 1 to ${PING_MAX_TIMEOUT_S}, got "${opts.timeout}"`);
+	}
+	const { handle, keyId, targets } = pingTargets(handleArg, deps);
+	const loaded = await ensureKey(deps, keyId);
+	const key = { id: keyId, pub: pubkeyHex(npubOf(loaded.sk)), sk: loaded.sk };
+	const selfNpub = npubOf(loaded.sk);
+	const pool = deps.createPool();
+	const relaysUsed: string[] = [];
+	const sentAt = deps.now();
+	const seen = replayGuard();
+	const listenRelays = subscriptionRelays(deps.db);
+	const gate = gateFor(deps.db);
+	const own = listenerServes(deps)
+		? undefined
+		: subscribe(
+				pool,
+				listenRelays,
+				[key],
+				() => gate,
+				{ cursor: sentAt, ids: [] },
+				() => {},
+				deps.now,
+				{
+					onControl: (control: ControlRumor) => {
+						if (control.kind === RECEIPT_KIND && acceptControl(deps.db, seen, control, deps.now())) applyReceipt(deps.db, control, [key], deps.now());
+					},
+				},
+			);
+	if (own) relaysUsed.push(...listenRelays);
+	try {
+		const ids: string[] = [];
+		for (const target of targets) {
+			const event = wrapTagged({ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"]] }, loaded.sk, pubkeyHex(target.npub));
+			deps.db.addPing({ id: event.id, contact: target.npub, sender: selfNpub, sent_at: sentAt });
+			ids.push(event.id);
+			const outgoing = await outgoingRelays(deps, pool, target.relays, target.npub);
+			relaysUsed.push(...outgoing.queried, ...outgoing.relays);
+			await publish(pool, outgoing.relays, event, { confirmMs: confirmMsFor(deps) }).catch(() => undefined);
+		}
+		const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+		const firstDelivered = () => {
+			const times = ids.map((id) => deps.db.pingDeliveredAt(id)).filter((at): at is number => typeof at === "number");
+			return times.length ? Math.min(...times) : undefined;
+		};
+		const deadline = sentAt + seconds;
+		for (let waited = 0; ; waited += PING_POLL_MS) {
+			const at = firstDelivered();
+			if (at !== undefined) {
+				const after = Math.max(0, at - sentAt);
+				printJson(deps, { handle, delivered: true, after_s: after, line: `delivered after ${after} s` });
+				return;
+			}
+			if (waited >= seconds * 1000 || deps.now() > deadline) break;
+			await sleep(PING_POLL_MS);
+		}
+		printJson(deps, { handle, delivered: false, after_s: seconds, line: `no answer after ${seconds} s` });
+		process.exitCode = 1;
+	} finally {
+		own?.close();
+		closeRelayPool(pool, relaysUsed);
 	}
 }
 
@@ -1231,6 +1334,7 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneContactsRemove,
 	phoneFiles,
 	phoneSay,
+	phonePing,
 	phoneInbox,
 	phoneVoicemail,
 	phoneWatch,

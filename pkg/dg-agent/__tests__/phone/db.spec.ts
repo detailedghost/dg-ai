@@ -439,6 +439,25 @@ describe("PhoneDb", () => {
 			expect(deliveredAt("m1")).toBe(NOW + 2);
 		});
 
+		it("holds a receipt that arrives before its row is saved and applies it when the row lands", () => {
+			expect(db.markDelivered("early", CAROL, ME, NOW + 1)).toBe(false);
+			expect(db.markDelivered("early", BOB, ME, NOW + 2)).toBe(false);
+
+			sent("early");
+
+			expect(deliveredAt("early")).toBe(NOW + 2);
+		});
+
+		it("forgets a held receipt after ten minutes", () => {
+			db.markDelivered("late", BOB, ME, NOW);
+			now = NOW + 601;
+			db.pruneMessages();
+
+			sent("late");
+
+			expect(deliveredAt("late")).toBeNull();
+		});
+
 		it("never marks an incoming row", () => {
 			db.addMessage(message("in1", NOW));
 

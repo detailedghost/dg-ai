@@ -20,6 +20,7 @@ import {
 	type Reaccept,
 	type Seen,
 	capIds,
+	FILE_REQUEST_KIND,
 	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
 	type SubscribeHooks,
@@ -34,6 +35,7 @@ import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
 import { type ImageFetchRow, MESSAGE_TTL_SECONDS, PHI_TTL_SECONDS, type PhoneDb } from "./db";
 import { IMAGE_PENDING_TEXT, imageUnavailableText } from "./image";
 import type { CommandPushTarget } from "./push";
+import { createPresence, PRESENCE_MAX_MS, PRESENCE_MIN_MS, type PresenceConfig } from "./presence";
 import { createImageReceiver, MAX_PENDING_IMAGES } from "./receive";
 import { createFileRequestHandler } from "./transport";
 import type { WormholeDeps } from "./wormhole";
@@ -76,6 +78,8 @@ export type ListenerDeps = KeyDeps & {
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
 	/** Overrides the jittered probe. Tests pass a short confirm and wait so the check stays fast. */
 	liveness?: LivenessConfig;
+	/** Overrides the jittered presence beat gap. */
+	presence?: PresenceConfig;
 	wormhole?: WormholeDeps;
 };
 
@@ -898,6 +902,18 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		wormhole: deps.wormhole,
 		onFinish: () => void hookRunner.notify(),
 	});
+	const presenceConfig: PresenceConfig = deps.presence ?? { minMs: PRESENCE_MIN_MS, maxMs: PRESENCE_MAX_MS, random: Math.random };
+	const presence = createPresence({
+		db: deps.db,
+		pool,
+		now: deps.now,
+		keys: () => keys,
+		confirmMs: liveness.confirmMs,
+		onOnline: (pub) => {
+			deps.db.retryImageFetchesFrom(pub, deps.now());
+			images.wake();
+		},
+	});
 
 	const logDrop = (drop: DroppedRing) => {
 		if (loggedDrops.has(drop.id)) return;
@@ -916,7 +932,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		for (const held of caught.held) holdThread(deps.db, held, deps.now());
 		for (const message of caught.messages) {
 			if (message.thread) {
-				admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys);
+				if (admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys) === "stored") presence.stored(message);
 				continue;
 			}
 			if (refused.has(message.from)) continue;
@@ -930,6 +946,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				caught.reacceptByMessageId.get(message.id),
 			);
 			if (stored === "rejected") refused.add(message.from);
+			if (stored === "stored") presence.stored(message);
 		}
 		images.wake();
 		return caught.seen;
@@ -949,7 +966,7 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
-		admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept);
+		if (admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept) === "stored") presence.stored(message);
 		images.wake();
 		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
@@ -966,7 +983,10 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	};
 	const hooks: SubscribeHooks = {
 		onHeld: (held) => holdThread(deps.db, held, deps.now()),
-		onRequest: (request) => fileRequests.handle(request),
+		onControl: (control) => {
+			presence.handle(control);
+			if (control.kind === FILE_REQUEST_KIND) fileRequests.handle(control);
+		},
 		reread: rereadGate,
 		onDrop: logDrop,
 		onEvent: (id) => addBounded(deliveredIds, id, STRANGER_ID_LIMIT),
@@ -1086,6 +1106,12 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		}
 	};
 	const cancelLiveness = repeatJitter(deps.schedule, () => livenessDelayMs(liveness.random(), liveness.minMs, liveness.maxMs), checkLiveness);
+	void presence.beat();
+	const cancelPresence = repeatJitter(
+		deps.schedule,
+		() => livenessDelayMs(presenceConfig.random(), presenceConfig.minMs, presenceConfig.maxMs),
+		() => presence.beat(),
+	);
 
 	return new Promise<void>((resolve) => {
 		const shutdown = () => {
@@ -1095,10 +1121,12 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 			cancelStuckRetry();
 			cancelWatch();
 			cancelLiveness();
+			cancelPresence();
+			presence.stop();
 			hookRunner.stop();
 			fileRequests.stop();
 			images.stop();
-			void Promise.all([hookRunner.settle(), fileRequests.settle(), images.settle()]).finally(() => {
+			void Promise.all([hookRunner.settle(), fileRequests.settle(), images.settle(), presence.settle()]).finally(() => {
 				removeListenerPid(deps.paths);
 				releaseListenerClaim(deps.paths, deps.pid);
 				resolve();
