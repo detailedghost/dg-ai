@@ -21,6 +21,7 @@ Codex:      $dg:phone
 | `group list` / `group show <#handle>` | List groups, or show one group and its members. |
 | `text <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a group: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A group prints `{handle, id, members, behind, self_ok}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. `behind` lists other members with no confirmed relay and does not include this phone. `self_ok` is whether the self-copy was confirmed. The outgoing row is saved when at least one wrap was not rejected. The command exits 0 only when every other member has a confirmed relay. Otherwise it exits 1 after printing that JSON. Running `text` again sends a new message. |
 | `ping <+handle\|#handle> [--timeout <seconds>]` | Sends one check and waits for its receipt (default 30 s). Prints `{handle, delivered, after_s, line}`. Exits 1 on `no answer after N s` or `busy, try later`. See [Receipts, presence, and ping](#receipts-presence-and-ping). |
+| `vault <add\|list\|rm\|open\|exec>` | A store for PHI that agents can use but never read. See [The PHI vault](#the-phi-vault). |
 | `presence [on\|off]` | Prints `{presence}`, or turns beats, receipts, and ping answers on or off. Default on. |
 | `messages [-n <count>] [--meta] [+handle\|#handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. `+handle` selects that contact's one-to-one rows and leaves group rows out. `#handle` selects that group. A group row adds `thread` and `line`, and `line` is `[#handle] +sender: text`. |
 | `unread` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A group row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
@@ -230,6 +231,66 @@ The path is built from the phone folder each time, so a moved folder still
 works. The hook gets an image row once, when the fetch ends, never while it
 is pending. See [ADR 0034](adr/0034-phone-image-messages.md).
 
+## The PHI vault
+
+```bash
+dg-agent phone vault add lab-1 ./result.txt       # or stdin when no file is given
+dg-agent phone vault list
+dg-agent phone text +grok --vault lab-1
+dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize
+dg-agent phone vault exec lab-1 --env LAB_TEXT -- ./check
+dg-agent phone vault rm lab-1
+dg-agent phone vault open lab-1                   # a human at a terminal only
+```
+
+| Command | What it does |
+| --- | --- |
+| `phone vault add <name> [file]` | Seals a file, or the raw bytes on stdin, of 5 MiB at most. Prints `{name, size, created_at, expires_at}` only. A taken name is refused. |
+| `phone vault list` | One JSON line per live item: `{name, size, type, sender, created_at, expires_at}`. `sender` is `self`, a `+handle`, or an npub. Never content. |
+| `phone vault rm <name>` | Deletes the item and its file. |
+| `phone vault open <name>` | Shows a text item on `/dev/tty`, never stdout. An image goes to the system viewer as a 0600 copy in `vault/`, which is deleted when the viewer exits and the human presses Enter. Refuses when `CLAUDECODE`, `CLAUDE_CODE_*`, or `CODEX_*` is set, and when stdin or stdout is not a TTY. |
+| `phone vault exec <name> [--env VAR \| --stdin] [--out <name>] -- <cmd...>` | Runs the command with an argv array and no shell. The item goes on stdin (the default), or in `VAR` for a text item under 64 KiB with no NUL byte. Stdout, 5 MiB at most, becomes the new item `--out` (default `<name>-out`), which never overwrites and keeps the source item's sender. Stderr is counted, not kept. Prints `{name, exit, out, size, stderr_lines}`. A nonzero exit or an overflow stores nothing and exits with the command's code, or 1. |
+
+Names match `^[a-z0-9][a-z0-9._-]{0,63}$` and hold no `..`. Names hold no
+PHI. Files in `vault/` (folder 0700, files 0600) are named by a random id;
+`phone.db` maps each name to its id. Each item is AES-256-GCM encrypted
+with a random 12-byte nonce, and the item id, sender, and `expires_at` are
+bound as additional data, so a changed row does not open.
+
+Keys live only in the dg credential store, one per local day, as
+`phone-vault/<yyyy-mm-dd>`. They are read through their own `phone-vault`
+grant, apart from the `phone-friend` grant of the phone key. A missing day
+key is made only through a dg session. Each day's key is deleted 48 hours
+after its day starts, which needs a session too; without one, the delete
+waits for the next command that has one. The listener loads today's and
+tomorrow's keys at start and every 30 minutes. A vault command refuses when
+the store is not reachable, and no key is ever kept in `phone.db`.
+
+Every item expires 24 hours after this phone stored it, by the local clock.
+Expired items are deleted on every vault command, when `phone.db` opens,
+and on the listener's 30-minute timer. `exec`, `open`, and `text --vault`
+refuse an expired item.
+
+A received `dg-phi` text or image goes straight into the vault, under a name
+this phone makes: `<handle>-<yyyymmddhhmm>-<4 hex>`. `messages`, `unread`,
+and the `--on-message` JSON show only `[PHI: vault item <name> from +handle]`.
+A PHI image is decrypted in memory into the vault; it never reaches
+`files/`, the hook payload, or the log. When no vault key can be reached,
+the content is dropped: the row reads `[PHI: vault unavailable from +handle]`,
+or `[image unavailable: vault unavailable]` for an image.
+
+`text --vault <name>` implies `--phi` and decrypts the item in memory. A
+text item is sent as the message (64 KiB at most). An image item goes
+through the same strip and encrypt as `--image`, with no plaintext temp
+file, and needs `phone files on`. The sent row keeps only
+`[PHI: vault item <name>]`. An outgoing `--phi` text keeps only
+`[PHI: not stored]`, and so does a held PHI group message.
+
+Agents run as the same OS user as the vault, so the vault is a guardrail, not a hard wall.
+An agent can read the grant token and the vault files with the same rights the
+phone has, and the agent picks the `exec` command. See the vault rules in
+[references/safety.md](../plugins/dg/skills/phone/references/safety.md).
+
 ## Autostart
 
 `open` writes the service manager's own file, then runs its install
@@ -405,6 +466,8 @@ folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 - `image_fetches` — one row per image still being fetched, with its key
   and nonce. The row is deleted when the fetch ends.
 - `outbox` — staged ciphertext of sent images, and who may fetch each one.
+- `vault_items` — the vault's name-to-id map, with sender, type, size, key
+  day, and expiry. Never content.
 - `settings` — the number, the listener's saved `--on-message`, the
   last autostart outcome, the optional `publish_confirm_ms` OK wait, and a
   short-lived cache of kind 10050 relay lists.
@@ -417,7 +480,7 @@ clock. The listener also prunes every 30 minutes, so the 24-hour limit holds
 on a quiet phone. A rumor dated more than 5 minutes ahead of this clock is
 dropped. The other files are `listener.pid`, `listener.log`, `outbox/`
 (sent ciphertext), `files/` (received images, removed with their rows),
-and `tools/` (the pinned wormhole binary).
+`vault/` (sealed vault items), and `tools/` (the pinned wormhole binary).
 
 ## Where the phone state lives
 

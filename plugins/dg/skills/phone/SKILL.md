@@ -31,7 +31,7 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 `say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.43.0, with one notice on stderr. Use the new names.
 
@@ -40,7 +40,11 @@ If a step fails, run dg-skills doctor install credentials.
 | Flag | Short | Effect | Default |
 |---|---|---|---|
 | `--image <path>` | none | On `text`, send one PNG, JPEG, or WebP (5 MiB at most) instead of text. Needs `phone files on`. | off |
-| `--phi` | none | On `text`, mark the text or image as PHI. Only when the human asks for that send. | off |
+| `--phi` | none | On `text`, mark the text or image as PHI. Only when the human asks for that send. The sent row keeps only `[PHI: not stored]`. | off |
+| `--vault <name>` | none | On `text`, send a vault item, text or image, without printing it. Implies `--phi`. The sent row keeps only `[PHI: vault item <name>]`. | off |
+| `--env <var>` | none | On `vault exec`, pass a text item under 64 KiB with no NUL byte in this env var instead of stdin. | off |
+| `--stdin` | none | On `vault exec`, pass the item on stdin. | on |
+| `--out <name>` | none | On `vault exec`, the new item that gets the command's stdout. Never overwrites. | `<name>-out` |
 | `--timeout <seconds>` | none | On `ping`, seconds to wait for the receipt, 1 to 600. | `30` |
 | `--as <name>` | none | Self name a `number` or `invite` card carries, saved for next time. | `dg` |
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
@@ -360,10 +364,44 @@ receiver's listener fetches it through Magic Wormhole. An image row shows
 `file: {path, type, size, sha256, untrusted: true}` to `messages`, `unread`,
 and the `--on-message` JSON. A finished image comes back as unread, so
 `unread` can show the same row twice: once pending, once final.
-`--phi` rows and their files are deleted 24 hours after they arrive.
+`--phi` rows and their files are deleted 24 hours after they arrive. A
+received PHI image goes into the vault instead; see [The PHI vault](#the-phi-vault).
 
 `untrusted: true` means the rules for received files in
 [references/safety.md](references/safety.md) apply.
+
+## The PHI vault
+
+```bash
+dg-agent phone vault add lab-1 ./result.txt       # or stdin; prints name, size, and dates only
+dg-agent phone vault list                         # names, sizes, types, senders, dates; never content
+dg-agent phone text +grok --vault lab-1           # sends the item; implies --phi
+dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize   # item on stdin, stdout to a new item
+dg-agent phone vault rm lab-1
+```
+
+The vault holds PHI that you can use but never read. Each item is
+AES-256-GCM encrypted under a daily key in the dg credential store
+(`phone-vault/<day>`), and each day's key is deleted 48 hours after its day
+starts. Every item expires 24 hours after it was stored. Vault commands
+refuse when the credential store is not reachable.
+
+A received `dg-phi` text or image goes straight into the vault. `unread`,
+`messages`, and the `--on-message` JSON show only
+`[PHI: vault item <name> from +handle]`, with a name this phone made:
+`<handle>-<yyyymmddhhmm>-<4 hex>`. When no vault key can be reached, the
+content is dropped and the row reads `[PHI: vault unavailable from +handle]`.
+
+`phone vault exec` passes the item on stdin, or in one env var with
+`--env`, and stores the command's stdout (5 MiB at most) as a new item. It
+prints only `{"name", "exit", "out", "size", "stderr_lines"}`. A nonzero
+exit stores nothing and exits with the command's code.
+
+`phone vault open <name>` is for a human at a terminal. It refuses inside
+Claude Code or Codex, and without a TTY on stdin and stdout. Do not run it.
+
+Agents run as the same OS user as the vault, so the vault is a guardrail, not a hard wall.
+Follow the vault rules in [references/safety.md](references/safety.md).
 
 ## Contacts
 
