@@ -27,6 +27,7 @@ export type PhoneApi = Pick<
 	| "phoneOpen"
 	| "phoneClose"
 	| "phoneRefresh"
+	| "moveLegacyPhoneHome"
 	| "phoneRollbackHome"
 	| "phoneRun"
 	| "phoneThreadNew"
@@ -45,6 +46,8 @@ export type PhoneApi = Pick<
 };
 
 const EXIT_REMOVED_VERB = 2;
+
+const OWNS_HOME_MOVE = new Set(["__refresh", "__rollback-home"]);
 
 /** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
 const REMOVED_VERBS: Record<string, string> = {
@@ -398,11 +401,14 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 		.command("phone")
 		.description("one phone number, many contacts: private NIP-17 chat over public Nostr relays")
 		.option("--line <name>", "removed; one phone holds every contact now")
-		.hook("preAction", (hooked, action) => {
+		.hook("preAction", async (hooked, action) => {
 			({ session } = action.optsWithGlobals<{ session?: string }>());
 			if (hooked.getOptionValueSource("line") === "cli") {
 				throw new DgCliError("--line is gone: one phone holds every contact; use +handle on text and messages", EXIT_REMOVED_VERB);
 			}
+			if (OWNS_HOME_MOVE.has(action.name())) return;
+			const phone = await load();
+			await phone.moveLegacyPhoneHome(phone.openCloseDeps(session));
 		});
 	attachPhoneVerbs(group, load, () => session);
 }

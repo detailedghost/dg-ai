@@ -53,7 +53,7 @@ import {
 } from "./listener";
 import { acceptControl, applyReceipt, replayGuard } from "./presence";
 import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
-import { movePhoneState, rollbackPhoneState } from "./migrate-home";
+import { movePhoneState, phoneRootUnused, rollbackPhoneState, setAsideUnusedRoot } from "./migrate-home";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import {
@@ -251,8 +251,7 @@ function defaultSpawnListener(argv: string[], logPath: string): number {
 }
 
 function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
-	return {
-		...defaultDeps(session),
+	const overrides: Omit<OpenCloseDeps, keyof PhoneDeps> & Partial<PhoneDeps> = {
 		platform: process.platform,
 		homeDir: homedir(),
 		env: process.env,
@@ -271,6 +270,7 @@ function defaultOpenCloseDeps(session?: string): OpenCloseDeps {
 		isOurListener,
 		sleep: (ms) => Bun.sleep(ms),
 	};
+	return Object.defineProperties(defaultDeps(session), Object.getOwnPropertyDescriptors(overrides)) as OpenCloseDeps;
 }
 
 function printJson(deps: PhoneDeps, value: unknown): void {
@@ -1375,7 +1375,8 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
  */
 export async function moveLegacyPhoneHome(deps: OpenCloseDeps): Promise<boolean> {
 	const oldRoot = join(deps.paths.legacyHome, "phone");
-	if (oldRoot === deps.paths.phoneRoot || !existsSync(oldRoot) || existsSync(deps.paths.phoneRoot)) return false;
+	if (oldRoot === deps.paths.phoneRoot || !existsSync(oldRoot)) return false;
+	if (existsSync(deps.paths.phoneRoot) && !(phoneRootUnused(deps.paths.phoneRoot) && setAsideUnusedRoot(deps.paths.phoneRoot))) return false;
 	const oldPaths = { ...deps.paths, phoneRoot: oldRoot };
 	const running = readListenerPid(oldPaths);
 	const live = !!running && running.pid !== process.pid && deps.isOurListener(running.pid);
@@ -1441,6 +1442,7 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneOpen,
 	phoneClose,
 	phoneRefresh,
+	moveLegacyPhoneHome,
 	phoneRollbackHome,
 	phoneRun,
 	phoneThreadNew,
