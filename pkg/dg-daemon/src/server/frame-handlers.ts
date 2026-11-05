@@ -10,6 +10,12 @@ import {
 	handleProtoBrowserResult,
 	settleRejectedProtoBrowserResult,
 } from "./proto";
+import {
+	handlePwExtBrowserResult,
+	handlePwExtCli,
+	sendPwExtResult,
+	settleRejectedPwExtResult,
+} from "./pw-ext";
 import { randomUUID } from "node:crypto";
 import {
 	authorizeFrame,
@@ -37,6 +43,7 @@ import {
 	validateOverwatchMerge,
 	validateIsoTimestamp,
 	validateProtoCliRequest,
+	validatePwExtCliRequest,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -323,6 +330,8 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			try { return validateInboxCliRequest(value); } catch { return undefined; }
 		case "cli-proto-request":
 			try { return validateProtoCliRequest(value); } catch { return undefined; }
+		case "cli-pw-ext-request":
+			try { return validatePwExtCliRequest(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -530,6 +539,8 @@ async function handleCliFrame(
 			return handleInboxCli(ws, sessionId, frame, deps);
 		case "cli-proto-request":
 			return handleProtoCli(ws, sessionId, frame, deps);
+		case "cli-pw-ext-request":
+			return handlePwExtCli(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {
@@ -1005,6 +1016,8 @@ async function dispatchFrame(
 			return handleProtoBrowserResult(ws, frame, deps);
 		case "proto-browser-progress":
 			return handleProtoBrowserProgress(ws, frame, deps);
+		case "pw-ext-browser-result":
+			return handlePwExtBrowserResult(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":
@@ -1074,6 +1087,12 @@ export async function handleSocketMessage(
 			parsedOversize = undefined;
 		}
 		if (settleRejectedProtoBrowserResult(ws, parsedOversize, deps)) return;
+		settleRejectedPwExtResult(
+			ws,
+			parsedOversize,
+			deps,
+			"it exceeded the relay size limit",
+		);
 		const unreadable = parsedOversize === undefined;
 		const protoResult =
 			isRecord(parsedOversize) &&
@@ -1129,6 +1148,17 @@ export async function handleSocketMessage(
 		}
 	}
 
+	if (isRecord(parsed) && parsed.type === "cli-pw-ext-request" && ws.data.kind === "cli") {
+		try { validatePwExtCliRequest(parsed); }
+		catch (err) {
+			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
+			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
+			await sendPwExtResult(ws, sessionId, requestId, { ok: false, error: describeError(err).slice(0, 2048) });
+			noteInvalid(ws);
+			return;
+		}
+	}
+
 	if (isRecord(parsed) && parsed.type === "cli-credentials-request") {
 		let request: CredentialsCliRequest;
 		try { request = validateCredentialsCliRequest(parsed); }
@@ -1170,6 +1200,7 @@ export async function handleSocketMessage(
 		frame = validateChatFrame(parsed);
 	} catch (err) {
 		if (settleRejectedProtoBrowserResult(ws, parsed, deps)) return;
+		if (settleRejectedPwExtResult(ws, parsed, deps)) return;
 		await sendError(ws, rawSessionId, describeError(err));
 		noteInvalid(ws);
 		return;
