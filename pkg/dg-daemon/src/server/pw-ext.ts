@@ -12,6 +12,7 @@ import {
 	validateChatFrame,
 } from "@dg/common";
 import type { ServerWebSocket } from "bun";
+import { deleteStagedAsset } from "../assets/delete";
 import type { FrameHandlerDeps } from "./frame-handlers";
 import {
 	isExtensionPeer,
@@ -103,8 +104,25 @@ export async function handlePwExtCli(
 	frame: PwExtCliRequest,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
-	const fail = (error: string) =>
-		sendPwExtResult(requester, sessionId, frame.requestId, { ok: false, error });
+	const dropStaged = () => {
+		if (frame.request.verb !== "upload" || !frame.request.assetId) return;
+		try {
+			deleteStagedAsset(
+				{ paths: deps.paths, store: deps.store },
+				sessionId,
+				frame.request.assetId,
+			);
+		} catch {
+			return;
+		}
+	};
+	const fail = (error: string) => {
+		dropStaged();
+		return sendPwExtResult(requester, sessionId, frame.requestId, {
+			ok: false,
+			error,
+		});
+	};
 	if (deps.registry.get(sessionId)?.state !== "active")
 		return fail("pw --ext requires an active dg session.");
 	const { pending, used } = relayState(deps);
@@ -150,6 +168,7 @@ export async function handlePwExtCli(
 		finish: (answer, deliver = true) => {
 			if (settled) return;
 			settled = true;
+			dropStaged();
 			clearTimeout(timeout);
 			offRequester();
 			offExtension();

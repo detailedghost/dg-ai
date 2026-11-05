@@ -109,7 +109,10 @@ const ELEMENT_KEYS = ["name", "role", "tag", "text"];
 const TOOL_TIMEOUT_MS = 30_000;
 
 /** Per-request seams that need the session capability. */
-export type PwExtContext = { fetchAsset(assetId: string): Promise<Blob> };
+export type PwExtContext = {
+	fetchAsset(assetId: string): Promise<Blob>;
+	deleteAsset(assetId: string): Promise<void>;
+};
 
 function pageResult(raw: unknown): PwExtPageResult {
 	const fail = () => {
@@ -416,7 +419,12 @@ export function createPwExtHandler({
 			}
 			case "upload": {
 				if (!context) return { ok: false, error: "Upload needs a paired session." };
-				const blob = await context.fetchAsset(request.assetId as string);
+				let blob: Blob;
+				try {
+					blob = await context.fetchAsset(request.assetId as string);
+				} finally {
+					await context.deleteAsset(request.assetId as string).catch(() => {});
+				}
 				if (signal?.aborted) return CANCELED;
 				if (blob.size !== request.fileSize)
 					return {

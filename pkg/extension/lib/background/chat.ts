@@ -750,6 +750,18 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						throw new Error("the staged file is too large");
 					return blob;
 				},
+				async deleteAsset(assetId) {
+					await fetch(
+						`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
+						{
+							method: "DELETE",
+							headers: {
+								"X-Dg-Session-Id": bootstrap.sessionId,
+								"X-Dg-Session-Token": bootstrap.token,
+							},
+						},
+					);
+				},
 			};
 			void pwExtHandler(frame.request, frame.timeoutMs, cancel.signal, context)
 				.then(sendPwExt)

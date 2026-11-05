@@ -46,6 +46,7 @@ function harness(
 	const executed: unknown[] = [];
 	const described: unknown[] = [];
 	const fetched: string[] = [];
+	const deleted: string[] = [];
 	const created: unknown[] = [];
 	const activated: Array<(info: { tabId: number; windowId: number }) => void> = [];
 	const updated: Array<(tabId: number) => void> = [];
@@ -138,8 +139,15 @@ function harness(
 	const signalFor = () =>
 		options.abortOnApprove?.signal ?? options.abortOnFinalGet?.signal ?? options.signal;
 	return {
-		runWith: (context: { fetchAsset(id: string): Promise<Blob> }) => (request: PwExtRequest) =>
-			handler(request, 60_000, signalFor(), context),
+		runWith:
+			(context: { fetchAsset(id: string): Promise<Blob> }) =>
+			(request: PwExtRequest) =>
+				handler(request, 60_000, signalFor(), {
+					deleteAsset: async (assetId: string) => {
+						deleted.push(assetId);
+					},
+					...context,
+				}),
 		run: (request: PwExtRequest) =>
 			handler(
 				request,
@@ -153,6 +161,9 @@ function harness(
 						if (!options.asset) throw new Error("no asset");
 						return options.asset;
 					},
+					deleteAsset: async (assetId: string) => {
+						deleted.push(assetId);
+					},
 				},
 			),
 		api,
@@ -160,6 +171,7 @@ function harness(
 		executed,
 		described,
 		fetched,
+		deleted,
 		created,
 	};
 }
@@ -462,6 +474,7 @@ describe("pw --ext round 3", () => {
 			'Upload ~/work/demo.webm\nFile: demo.webm, 5 B, video/webm\nTo: https://app.example.test\nElement: button "Attach" <input>',
 		);
 		expect(h.fetched).toEqual([UPLOAD.assetId as string]);
+		expect(h.deleted).toEqual([UPLOAD.assetId as string]);
 		expect((h.executed[0] as { args: unknown[] }).args).toEqual([
 			{
 				kind: "upload",

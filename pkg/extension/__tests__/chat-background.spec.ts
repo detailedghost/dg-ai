@@ -1426,7 +1426,7 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 	await settle();
 	await flushMicrotasks();
 
-	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000, expect.any(AbortSignal), expect.objectContaining({ fetchAsset: expect.any(Function) })]] as never);
+	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000, expect.any(AbortSignal), expect.objectContaining({ fetchAsset: expect.any(Function), deleteAsset: expect.any(Function) })]] as never);
 	const results = socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
 		.filter((frame) => frame.type === "pw-ext-browser-result");

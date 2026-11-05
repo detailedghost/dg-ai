@@ -78,7 +78,9 @@ Rules:
   link, folders, and a file that changes while it is checked. The CLI stages the bytes in the local dg-daemon asset store
   before the approval; the extension fetches them only after approval, and only
   to an `https:` page. The approval shows the path, name, size, type,
-  destination origin and the target element.
+  destination origin and the target element. The staged copy is deleted as
+  soon as the extension fetches it, and also when the request is denied,
+  canceled, times out or fails.
 - `tools` uses the WebMCP `document.modelContext` API, or the older
   `navigator.modelContextTesting` preview. With neither, it prints "This page
   exposes no WebMCP tools." Tool discovery and a tool call each have a timeout;

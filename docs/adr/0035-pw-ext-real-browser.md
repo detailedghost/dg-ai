@@ -127,7 +127,9 @@ staged file.
 - **Bad:** `call` runs the site's own code. The prompt shows what the site says
   the tool does; it cannot prove it.
 - **Bad:** upload bytes reach the local daemon before the human approves. They
-  stay on loopback in the session's asset store and are pruned with the session.
+  stay on loopback in the session's asset store. The extension deletes them
+  through `DELETE /assets/<id>` right after it fetches them, and the daemon
+  deletes them when the request ends in any other way.
 - **Bad:** a pre-approval read touches the page before consent, but only for the
   one target element or the tool list.
 

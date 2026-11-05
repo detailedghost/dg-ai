@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
@@ -19,6 +21,7 @@ import {
 	killDaemonByPidFile,
 	registerSession,
 	send,
+	stageAsset,
 	startWithSession,
 	waitForOpen,
 	waitForValue,
@@ -369,6 +372,44 @@ describe("daemon pw --ext relay", () => {
 			1500,
 			"extension cancel after disconnect",
 		);
+	});
+
+	it("deletes a staged upload when the request ends without an upload", async () => {
+		const { cli, results, port, bootstrap, dgHome: home } = await boot();
+		const page = await extension(port, bootstrap);
+		const source = join(home, "upload.txt");
+		writeFileSync(source, "hello");
+		const assetId = await stageAsset(home, port, bootstrap.sessionId, source);
+		const requestId = request(cli, {
+			timeoutMs: 5000,
+			request: {
+				verb: "upload",
+				target: "#f",
+				assetId,
+				fileName: "upload.txt",
+				fileSize: 5,
+				fileType: "text/plain",
+				filePath: "upload.txt",
+			},
+		});
+		await relay(page.frames, requestId);
+		send(page.socket, {
+			type: "pw-ext-browser-result",
+			sessionId: bootstrap.sessionId,
+			token: bootstrap.token,
+			requestId,
+			ok: false,
+			error: "The request was denied in the browser.",
+		});
+		await result(results, requestId);
+		const after = await fetch(`http://127.0.0.1:${port}/assets/${assetId}`, {
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				"X-Dg-Session-Id": bootstrap.sessionId,
+				"X-Dg-Session-Token": bootstrap.token,
+			},
+		});
+		expect(after.status).toBe(404);
 	});
 
 	it("fails the request when the extension disconnects", async () => {
