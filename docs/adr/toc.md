@@ -84,6 +84,8 @@ flowchart LR
   the tour UI lives in `pkg/tour-ui` behind `TourHost`, and a Playwright-injected player hosts it for the local default.
 - [0031 — Serve the chat and board pages from the daemon on loopback](0031-loopback-pages.md) — Accepted:
   `dg-daemon` serves `/chat` and `/board` behind a token and loopback-origin gate; the extension is the `--ext` path.
+- [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md) — Proposed:
+  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve.
 
 ## Adding an ADR
 

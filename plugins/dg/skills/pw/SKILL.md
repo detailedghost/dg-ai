@@ -19,6 +19,14 @@ If a step fails, run dg-skills doctor pw pw-code stash.
 
 `/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg-skills pw <command>`.
 
+**Usage:** `dg-skills pw [--ext] <command> [args]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--ext` | | Act on the human's real browser through the paired dg-ai-extension. See "Real browser". | off (local is the default) |
+
 ## Calling rules
 
 - Run every step as `dg-skills pw <command>`. Open with `pw open`.
@@ -73,6 +81,18 @@ Opening a persistent session that another directory holds is refused. Close it t
 
 Snapshots, screenshots, downloads, traces, and videos land in `dg-skills stash pw`. Nothing goes to the project unless you pass `--out=<dir>`.
 `pw state save <name>` stores a login in a private directory. Prefer it over `pw state-save <file>`, which leaves a full cookie jar in a plain file.
+
+## Real browser (`--ext`)
+
+Use `--ext` only when the human asks you to look at or act on the page they have open. Plain `pw` stays the default for tests, recording, mocking and isolated runs.
+
+- Read verbs: `pw --ext current`, `pw --ext snapshot`, `pw --ext screenshot`, `pw --ext selection`, `pw --ext console`.
+- Write verbs: `pw --ext open <url>`, `pw --ext click <ref or selector>`, `pw --ext fill <ref or selector> <text>`.
+- Every call opens an approval window in the browser. Tell the human to look there. If they deny, stop. Do not retry the same call.
+- `snapshot` prints the tree on stdout. Refs such as `e4` come from the last `--ext snapshot`.
+- Browser settings pages, extension pages and the signed-in Proton Mail tab are refused. Ask the human to switch to a web page tab.
+- `fill` never takes passwords or secrets. Ask the human to type them.
+- `--ext` takes no other flags and runs no code. On a failure, run `dg-skills doctor pw`.
 
 ## Security
 
