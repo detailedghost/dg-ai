@@ -245,3 +245,20 @@ describe("logging paths", () => {
 		}
 	});
 });
+
+describe("redactText without a process global", () => {
+	it("still redacts in an extension service worker", () => {
+		const descriptor = Object.getOwnPropertyDescriptor(globalThis, "process");
+		Object.defineProperty(globalThis, "process", {
+			configurable: true,
+			value: undefined,
+		});
+		let output: string;
+		try {
+			output = redactText("token ghp_abcdefghijklmnop");
+		} finally {
+			if (descriptor) Object.defineProperty(globalThis, "process", descriptor);
+		}
+		expect(output).toBe("token [redacted]");
+	});
+});
