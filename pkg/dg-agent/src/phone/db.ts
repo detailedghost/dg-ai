@@ -140,7 +140,7 @@ export type VaultItemRow = {
 	sender: string;
 	type: string;
 	size: number;
-	key_day: string;
+	key_period: string;
 	created_at: number;
 	expires_at: number;
 	/** The agent on this machine the item came in for; null is shared. */
@@ -290,7 +290,7 @@ const SCHEMA: MigrationStep[] = [
 				sender TEXT NOT NULL,
 				type TEXT NOT NULL,
 				size INTEGER NOT NULL,
-				key_day TEXT NOT NULL,
+				key_period TEXT NOT NULL,
 				created_at INTEGER NOT NULL,
 				expires_at INTEGER NOT NULL
 			) STRICT`);
@@ -419,8 +419,8 @@ export class PhoneDb {
 	addVaultItem(row: VaultItemRow): boolean {
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO vault_items (id, name, sender, type, size, key_day, created_at, expires_at, ext)
-				VALUES ($id, $name, $sender, $type, $size, $keyDay, $createdAt, $expiresAt, $ext)`,
+				`INSERT OR IGNORE INTO vault_items (id, name, sender, type, size, key_period, created_at, expires_at, ext)
+				VALUES ($id, $name, $sender, $type, $size, $keyPeriod, $createdAt, $expiresAt, $ext)`,
 			)
 			.run({
 				id: row.id,
@@ -428,7 +428,7 @@ export class PhoneDb {
 				sender: row.sender,
 				type: row.type,
 				size: row.size,
-				keyDay: row.key_day,
+				keyPeriod: row.key_period,
 				createdAt: row.created_at,
 				expiresAt: row.expires_at,
 				ext: row.ext,

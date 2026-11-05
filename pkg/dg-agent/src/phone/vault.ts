@@ -209,7 +209,7 @@ export async function requireVaultStore(deps: VaultDeps): Promise<void> {
 
 export type VaultKeyCache = {
 	/** This period's key when it is loaded; a miss starts a refresh. */
-	today(): PeriodKey | undefined;
+	peek(): PeriodKey | undefined;
 	current(): Promise<PeriodKey | undefined>;
 	/** Loads or makes this period's and the next period's keys, then drops old keys. */
 	refresh(): Promise<void>;
@@ -238,7 +238,7 @@ export function createVaultKeyCache(deps: VaultDeps, now: () => number): VaultKe
 		return key && { period, key };
 	};
 	return {
-		today() {
+		peek() {
 			const hit = cached();
 			if (!hit) void refresh();
 			return hit;
@@ -287,7 +287,7 @@ export function storeVaultItem(
 		sender: item.sender,
 		type: itemType(item.plain),
 		size: item.plain.length,
-		key_day: item.key.period,
+		key_period: item.key.period,
 		created_at: now,
 		expires_at: now + VAULT_TTL_SECONDS,
 		ext: item.ext ?? null,
@@ -309,7 +309,7 @@ export function storeVaultItem(
 /** Decrypts an item in memory; throws when its key, file, or bound fields no longer match. */
 export async function openVaultItem(deps: VaultDeps, root: string, row: VaultItemRow): Promise<Buffer> {
 	const failed = () => new DgCliError(`vault item ${row.name} cannot be opened`);
-	const key = await readPeriodKey(deps, row.key_day).catch((err: unknown) => {
+	const key = await readPeriodKey(deps, row.key_period).catch((err: unknown) => {
 		throw err instanceof DgCliError && err.message.includes("not reachable") ? err : failed();
 	});
 	if (!key) throw failed();

@@ -774,7 +774,7 @@ function storePhiText(db: PhoneDb, message: Message, row: StoredRow, now: number
 	const add = (text: string) => db.addMessage({ id: message.id, ts: message.ts, sender: message.from, text, phi: true, ...row });
 	if (row.direction === "out") return add(PHI_NOT_STORED_TEXT);
 	const handle = findContactByNpub(db, message.from)?.handle ?? UNKNOWN_SENDER_HANDLE;
-	const key = vault.keys.today();
+	const key = vault.keys.peek();
 	if (!key) return add(vaultUnavailableText(handle));
 	const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain: Buffer.from(message.text, "utf8"), ext: row.ext }, now);
 	const inserted = add(sealed.text);

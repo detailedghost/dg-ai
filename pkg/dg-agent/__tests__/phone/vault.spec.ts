@@ -206,11 +206,11 @@ describe("vault period keys", () => {
 describe("vault key cache", () => {
 	it("has no key before a refresh, then holds this period's and the next period's", async () => {
 		const cache = createVaultKeyCache(creds.deps(), () => now);
-		expect(cache.today()).toBeUndefined();
+		expect(cache.peek()).toBeUndefined();
 
 		await cache.refresh();
 
-		expect(cache.today()?.period).toBe(keyPeriod(now));
+		expect(cache.peek()?.period).toBe(keyPeriod(now));
 		expect(creds.store.has(vaultKeyName(keyPeriod(now, 1)))).toBe(true);
 	});
 
@@ -223,7 +223,7 @@ describe("vault key cache", () => {
 		creds.up = false;
 
 		now = at(2026, 11, 9);
-		const hit = cache.today();
+		const hit = cache.peek();
 
 		expect(hit?.period).toBe("2026-W46");
 		expect(hit?.key.toString("hex")).toBe(next);
@@ -322,7 +322,7 @@ describe("vault key lifetime", () => {
 	it("opens an item sealed in the last second of its period until the item expires", async () => {
 		now = at(2026, 11, 8, 23, 59, 59);
 		const row = storeVaultItem(db, paths.phoneRoot, { name: "late", sender: "self", plain: Buffer.from("late"), key: await todayKey() }, now);
-		expect(row.key_day).toBe("2026-W45");
+		expect(row.key_period).toBe("2026-W45");
 
 		for (const t of [now + 1, now + VAULT_TTL_SECONDS - 1]) {
 			await dropOldKeys(creds.deps(), t);

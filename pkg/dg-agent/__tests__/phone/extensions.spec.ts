@@ -216,7 +216,7 @@ describe("PhoneDb extensions", () => {
 			sender: "self",
 			type: "text",
 			size: 1,
-			key_day: "2027-01-15",
+			key_period: "2027-01-15",
 			created_at: NOW,
 			expires_at: NOW + 60,
 			ext,
