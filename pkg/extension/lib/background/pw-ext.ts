@@ -13,6 +13,7 @@ import {
 	type PwExtPageResult,
 	pwExtPageAction,
 } from "@/lib/features/pw-ext-page";
+import { isProtonMailOrigin } from "@/lib/features/inbox-proton-observer";
 import { fitPreviewDataUrl } from "./proto";
 
 type Tab = {
@@ -72,12 +73,22 @@ const STORE_HOSTS = new Set([
 	"chrome.google.com",
 	"microsoftedge.microsoft.com",
 ]);
+export const PW_EXT_MAILBOX_ERROR =
+	"pw --ext does not read or change the signed-in Proton Mail tab. Use dg-skills inbox.";
 const MAX_TABS = 200;
 const JPEG_QUALITY = 70;
 
 function allowedPage(url: string | undefined): url is string {
 	if (!url || !isPwExtWebUrl(url)) return false;
 	return !STORE_HOSTS.has(new URL(url).hostname);
+}
+
+function mailbox(url: string | undefined): boolean {
+	try {
+		return isProtonMailOrigin(new URL(url ?? "").origin);
+	} catch {
+		return false;
+	}
 }
 
 function cap(text: string): string {
@@ -91,11 +102,22 @@ function clean(text: string): string {
 	return cap(redactText(text));
 }
 
+function shownUrl(tab: Tab): string {
+	if (!allowedPage(tab.url)) return "(browser page)";
+	return mailbox(tab.url) ? "(protected mailbox)" : redactText(tab.url);
+}
+
+function shownTitle(tab: Tab): string {
+	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
+	return redactText(tab.title ?? "");
+}
+
 function pageLines(tab: Tab): string[] {
+	const title = shownTitle(tab);
 	return [
 		"### Page",
-		`- Page URL: ${redactText(tab.url ?? "")}`,
-		...(tab.title ? [`- Page Title: ${redactText(tab.title)}`] : []),
+		`- Page URL: ${shownUrl(tab)}`,
+		...(title ? [`- Page Title: ${title}`] : []),
 	];
 }
 
@@ -151,8 +173,8 @@ export function createPwExtHandler({
 		const tabs = (await api.tabs.query({})).slice(0, MAX_TABS);
 		const rows = tabs.map((tab) => {
 			const mark = tab.id === active.id ? "[active] " : "";
-			if (!allowedPage(tab.url)) return `- ${mark}${tab.id}: (browser page)`;
-			return `- ${mark}${tab.id}: ${tab.title ?? ""} — ${tab.url}`;
+			const title = shownTitle(tab);
+			return `- ${mark}${tab.id}: ${title ? `${title} — ` : ""}${shownUrl(tab)}`;
 		});
 		return [...pageLines(active), "### Tabs", ...rows].join("\n");
 	}
@@ -247,12 +269,14 @@ export function createPwExtHandler({
 			const scoped = request.verb !== "current" && request.verb !== "open";
 			if (scoped && !allowedPage(tab.url))
 				return { ok: false, error: PW_EXT_BLOCKED_ERROR };
+			if (scoped && mailbox(tab.url))
+				return { ok: false, error: PW_EXT_MAILBOX_ERROR };
 			const approved = await approve(
 				{
 					verb: request.verb,
 					write: isPwExtWriteVerb(request.verb),
-					tabTitle: redactText(tab.title ?? ""),
-					tabUrl: allowedPage(tab.url) ? redactText(tab.url) : "(browser page)",
+					tabTitle: shownTitle(tab),
+					tabUrl: shownUrl(tab),
 					...(detailFor(request) ? { detail: detailFor(request) } : {}),
 				},
 				timeoutMs,

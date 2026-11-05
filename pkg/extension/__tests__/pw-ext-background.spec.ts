@@ -169,6 +169,23 @@ describe("pw --ext background handler", () => {
 		expect(h.executed).toEqual([]);
 	});
 
+	it("blocks the signed-in Proton Mail tab without asking", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox", title: "Secret subject" }],
+		});
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("Proton Mail"),
+		});
+		expect(h.prompts).toEqual([]);
+		const listing = await h.run({ verb: "current" });
+		expect(listing.ok).toBe(true);
+		if (listing.ok) {
+			expect(listing.data.text).toContain("(protected mailbox)");
+			expect(listing.data.text).not.toContain("Secret subject");
+		}
+	});
+
 	it("refuses a non-Chromium browser", async () => {
 		const h = harness({ chromium: false });
 		expect(await h.run({ verb: "current" })).toEqual({
@@ -191,7 +208,7 @@ describe("pw --ext background handler", () => {
 		if (!answer.ok) return;
 		expect(answer.data.text).toContain("- Page URL: https://app.example.test/home?token=[redacted]");
 		expect(answer.data.text).toContain("[active] 7: Home");
-		expect(answer.data.text).toContain("8: (browser page)");
+		expect(answer.data.text).toContain("- 8: (browser page)");
 		expect(answer.data.text).not.toContain("chrome://settings");
 	});
 
