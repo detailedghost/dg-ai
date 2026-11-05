@@ -221,7 +221,11 @@ describe("pw --ext background handler", () => {
 			],
 		});
 		const answer = await h.run({ verb: "current" });
-		expect(h.prompts[0]).toMatchObject({ verb: "current", write: false });
+		expect(h.prompts[0]).toMatchObject({
+			verb: "current",
+			write: false,
+			detail: "Read the URL and title of every open tab",
+		});
 		expect(answer.ok).toBe(true);
 		if (!answer.ok) return;
 		expect(answer.data.text).toContain("- Page URL: https://app.example.test/home?token=[redacted]");

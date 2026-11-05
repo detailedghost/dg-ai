@@ -124,6 +124,8 @@ function pageLines(tab: Tab): string[] {
 
 function detailFor(request: PwExtRequest): string | undefined {
 	switch (request.verb) {
+		case "current":
+			return "Read the URL and title of every open tab";
 		case "open":
 			return `Open ${request.url} in a new tab`;
 		case "click":
