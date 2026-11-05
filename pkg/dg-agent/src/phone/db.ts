@@ -33,6 +33,8 @@ export type MessageRow = {
 	phi: number;
 	/** This phone's clock when the row was stored; PHI expiry uses it, never the sender's `ts`. */
 	received_at: number;
+	/** When a recipient's receipt for an outgoing row arrived, else null. */
+	delivered_at: number | null;
 };
 
 /** One image still being fetched; the row, with its key and nonce, is deleted when the fetch ends. */
@@ -59,7 +61,12 @@ export type ContactRow = {
 	key_id: string;
 	added_at: number;
 	via: string;
+	/** Latest rumor time seen from this contact, else null. */
+	last_seen: number | null;
 };
+
+/** One `phone ping` check: `sender` is our npub that signed it, `contact` the npub it went to. */
+export type PingRow = { id: string; contact: string; sender: string; sent_at: number; delivered_at: number | null };
 
 export type ThreadRow = {
 	id: string;
@@ -213,6 +220,20 @@ const SCHEMA: MigrationStep[] = [
 			) STRICT`);
 		},
 	},
+	{
+		version: 7,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN delivered_at INTEGER");
+			db.run("ALTER TABLE contacts ADD COLUMN last_seen INTEGER");
+			db.run(`CREATE TABLE pings (
+				id TEXT PRIMARY KEY,
+				contact TEXT NOT NULL,
+				sender TEXT NOT NULL,
+				sent_at INTEGER NOT NULL,
+				delivered_at INTEGER
+			) STRICT`);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -276,6 +297,7 @@ export class PhoneDb {
 			.run({ until: tombstoneUntil, phiCutoff });
 		this.db.query(`DELETE FROM messages WHERE ${expired}`).run({ cutoff, phiCutoff });
 		this.db.query("DELETE FROM image_fetches WHERE message_id NOT IN (SELECT id FROM messages)").run();
+		this.db.query("DELETE FROM pings WHERE sent_at < $cutoff").run({ cutoff });
 		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff OR (phi = 1 AND received_at < $phiCutoff)").run({ cutoff, phiCutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 		this.pruneOutbox(cutoff, phiCutoff);
@@ -398,7 +420,7 @@ export class PhoneDb {
 	}
 
 	/** Inserts only when neither the npub nor the handle exists; false means another writer got there first. */
-	insertContact(row: ContactRow): boolean {
+	insertContact(row: Omit<ContactRow, "last_seen">): boolean {
 		const { changes } = this.db
 			.query(
 				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
@@ -416,7 +438,7 @@ export class PhoneDb {
 		return changes > 0;
 	}
 
-	putContact(row: ContactRow): void {
+	putContact(row: Omit<ContactRow, "last_seen">): void {
 		this.db
 			.query(
 				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
@@ -435,6 +457,15 @@ export class PhoneDb {
 
 	setContactKeyId(npub: string, keyId: string): void {
 		this.db.query("UPDATE contacts SET key_id = $keyId WHERE npub = $npub").run({ keyId, npub });
+	}
+
+	/** Keeps the later of the stored and given time; returns the stored time from before this call. */
+	touchLastSeen(npub: string, at: number): number | null {
+		return this.transaction(() => {
+			const before = (this.db.query("SELECT last_seen FROM contacts WHERE npub = $npub").get({ npub }) as { last_seen: number | null } | null)?.last_seen ?? null;
+			this.db.query("UPDATE contacts SET last_seen = max(coalesce(last_seen, 0), $at) WHERE npub = $npub").run({ npub, at });
+			return before;
+		});
 	}
 
 	removeContact(npub: string): void {
@@ -470,7 +501,7 @@ export class PhoneDb {
 	}
 
 	addMessage(
-		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi" | "received_at"> & {
+		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at"> & {
 			thread_id?: string | null;
 			file?: string | null;
 			phi?: boolean;
@@ -537,6 +568,11 @@ export class PhoneDb {
 		return (this.db.query("SELECT COUNT(*) AS n FROM image_fetches").get() as { n: number }).n;
 	}
 
+	/** Moves every deferred fetch from `sender` (hex pubkey) up to `now`. */
+	retryImageFetchesFrom(sender: string, now: number): void {
+		this.db.query("UPDATE image_fetches SET next_at = $now WHERE sender = $sender AND next_at > $now").run({ sender, now });
+	}
+
 	deferImageFetch(id: string, attempts: number, nextAt: number): void {
 		this.db.query("UPDATE image_fetches SET attempts = $attempts, next_at = $nextAt WHERE message_id = $id").run({ id, attempts, nextAt });
 	}
@@ -583,7 +619,7 @@ export class PhoneDb {
 
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi" | "received_at"> & { thread_id?: string | null }): boolean {
+	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at"> & { thread_id?: string | null }): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
@@ -671,6 +707,38 @@ export class PhoneDb {
 					: this.db.query("SELECT * FROM messages ORDER BY ts DESC, id DESC LIMIT $limit").all({ limit })
 		) as MessageRow[];
 		return rows.reverse();
+	}
+
+	/**
+	 * Sets `delivered_at` once on our outgoing row or ping `id`, only when `signer` was a recipient
+	 * and `to` is the npub that sent it. A thread row accepts any member.
+	 */
+	markDelivered(id: string, signer: string, to: string, at: number): boolean {
+		const message = this.db
+			.query(
+				`UPDATE messages SET delivered_at = $at
+				WHERE id = $id AND direction = 'out' AND delivered_at IS NULL AND sender = $to
+				AND ((thread_id IS NULL AND contact = $signer)
+					OR (thread_id IS NOT NULL AND EXISTS (SELECT 1 FROM thread_members WHERE thread_id = messages.thread_id AND npub = $signer)))`,
+			)
+			.run({ id, signer, to, at });
+		if (message.changes > 0) return true;
+		const ping = this.db
+			.query("UPDATE pings SET delivered_at = $at WHERE id = $id AND delivered_at IS NULL AND contact = $signer AND sender = $to")
+			.run({ id, signer, to, at });
+		return ping.changes > 0;
+	}
+
+	addPing(row: Omit<PingRow, "delivered_at">): void {
+		this.db
+			.query("INSERT OR IGNORE INTO pings (id, contact, sender, sent_at) VALUES ($id, $contact, $sender, $sentAt)")
+			.run({ id: row.id, contact: row.contact, sender: row.sender, sentAt: row.sent_at });
+	}
+
+	/** Null while the ping waits, undefined when there is no such ping. */
+	pingDeliveredAt(id: string): number | null | undefined {
+		const row = this.db.query("SELECT delivered_at FROM pings WHERE id = $id").get({ id }) as { delivered_at: number | null } | null;
+		return row ? row.delivered_at : undefined;
 	}
 
 	getThread(id: string): ThreadRow | undefined {

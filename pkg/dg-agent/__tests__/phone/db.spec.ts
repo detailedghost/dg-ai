@@ -56,7 +56,7 @@ describe("PhoneDb", () => {
 		const { user_version } = raw.query("PRAGMA user_version").get() as { user_version: number };
 		raw.close();
 
-		expect(user_version).toBe(6);
+		expect(user_version).toBe(7);
 	});
 
 	describe("messages", () => {
@@ -420,6 +420,68 @@ describe("PhoneDb", () => {
 		});
 	});
 
+	describe("delivery receipts", () => {
+		const ME = "npub1me";
+		const BOB = "npub1bob";
+		const CAROL = "npub1carol";
+		const sent = (id: string, extra: { contact?: string; thread_id?: string } = {}) =>
+			db.addMessage({ id, ts: NOW, sender: ME, contact: extra.contact ?? BOB, text: id, direction: "out", call: 0, thread_id: extra.thread_id });
+		const deliveredAt = (id: string) => db.recentMessages(50).find((row) => row.id === id)?.delivered_at;
+
+		it("marks a direct outgoing row delivered only for its recipient and the key that sent it", () => {
+			sent("m1");
+
+			expect(db.markDelivered("m1", CAROL, ME, NOW + 1)).toBe(false);
+			expect(db.markDelivered("m1", BOB, "npub1other", NOW + 1)).toBe(false);
+			expect(deliveredAt("m1")).toBeNull();
+			expect(db.markDelivered("m1", BOB, ME, NOW + 2)).toBe(true);
+			expect(db.markDelivered("m1", BOB, ME, NOW + 9)).toBe(false);
+			expect(deliveredAt("m1")).toBe(NOW + 2);
+		});
+
+		it("never marks an incoming row", () => {
+			db.addMessage(message("in1", NOW));
+
+			expect(db.markDelivered("in1", "npub1them", "npub1them", NOW)).toBe(false);
+		});
+
+		it("marks a thread row for any member and ignores a non-member", () => {
+			db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
+			db.insertThread({ id: "room", handle: "#ops", subject: "", key_id: "default", created_at: NOW, via: "local" });
+			for (const npub of [ME, BOB]) db.insertThreadMember("room", npub);
+			sent("t1", { contact: ME, thread_id: "room" });
+
+			expect(db.markDelivered("t1", CAROL, ME, NOW + 1)).toBe(false);
+			expect(db.markDelivered("t1", BOB, ME, NOW + 1)).toBe(true);
+		});
+
+		it("marks a ping for its recipient and prunes it after the message window", () => {
+			db.addPing({ id: "p1", contact: BOB, sender: ME, sent_at: NOW });
+
+			expect(db.markDelivered("p1", CAROL, ME, NOW + 1)).toBe(false);
+			expect(db.pingDeliveredAt("p1")).toBeNull();
+			expect(db.markDelivered("p1", BOB, ME, NOW + 3)).toBe(true);
+			expect(db.pingDeliveredAt("p1")).toBe(NOW + 3);
+
+			now = NOW + MESSAGE_TTL_SECONDS + 1;
+			db.pruneMessages();
+			expect(db.pingDeliveredAt("p1")).toBeUndefined();
+		});
+	});
+
+	describe("last seen", () => {
+		it("keeps the latest time and returns the one before it", () => {
+			db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
+			db.putContact({ npub: "npub1x", handle: "velora", relays: "[]", key_id: "default", added_at: NOW, via: "accept" });
+
+			expect(db.touchLastSeen("npub1x", NOW)).toBeNull();
+			expect(db.touchLastSeen("npub1x", NOW - 50)).toBe(NOW);
+			expect(db.getContactByNpub("npub1x")?.last_seen).toBe(NOW);
+			expect(db.touchLastSeen("npub1x", NOW + 10)).toBe(NOW);
+			expect(db.getContactByNpub("npub1x")?.last_seen).toBe(NOW + 10);
+		});
+	});
+
 	describe("image fetches", () => {
 		const SHA = "a".repeat(64);
 		const OTHER = "b".repeat(64);
@@ -457,6 +519,20 @@ describe("PhoneDb", () => {
 
 			expect(db.imageFetches()).toEqual([]);
 			expect(db.nextDeliverable(5)).toMatchObject({ id: "img", text: "[image]", file: storedJson(SHA), read_at: null, attempts: 0 });
+		});
+
+		it("pulls a deferred fetch from one sender forward to now and leaves other senders alone", () => {
+			db.addMessage(message("a", NOW, "[image pending]"));
+			db.addMessage(message("b", NOW, "[image pending]"));
+			db.addImageFetch({ ...fetchRow("a"), next_at: NOW + 600 });
+			db.addImageFetch({ ...fetchRow("b"), sender: "9".repeat(64), next_at: NOW + 600 });
+
+			db.retryImageFetchesFrom("c".repeat(64), NOW);
+
+			expect(db.imageFetches().map((row) => [row.message_id, row.next_at])).toEqual([
+				["a", NOW],
+				["b", NOW + 600],
+			]);
 		});
 
 		it("drops the key and nonce from the database once the fetch ends", () => {
