@@ -312,7 +312,7 @@ describe("sending to an extension", () => {
 		const rumor = rumorTo(marySk);
 		expect(rumor.tags.filter(([name]) => name === EXT_TAG)).toEqual([]);
 		expect(rumor.tags.filter(([name]) => name === FROM_EXT_TAG)).toEqual([[FROM_EXT_TAG, "kit"]]);
-		expect(d.db.recentMessages(5).at(-1)).toMatchObject({ ext: null, peer_ext: null });
+		expect(d.db.recentMessages(5).at(-1)).toMatchObject({ ext: null, peer_ext: "kit" });
 	});
 
 	it("pings +handle/ext with dg-ext on the check, and refuses #group/ext", async () => {

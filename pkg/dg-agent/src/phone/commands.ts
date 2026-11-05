@@ -824,7 +824,7 @@ async function phoneSayThread(
 			if (image) dropMissedRecipients(deps, image.x, delivered.members);
 			saveOutgoing(
 				deps,
-				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id },
+				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id, ...(fromExt ? { peer_ext: fromExt } : {}) },
 				sent,
 			);
 			await restartStaleListener(deps, { spawn: true });
