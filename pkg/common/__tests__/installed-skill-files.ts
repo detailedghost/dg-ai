@@ -39,6 +39,7 @@ export const INSTALLED_SKILL_FILES = [
 	"db/references/connections.md",
 	"db/references/output-format.md",
 	"demo/SKILL.md",
+	"demo/references/attach-pr.md",
 	"demo/references/authoring.md",
 	"demo/references/extension.md",
 	"deps-upgrade/SKILL.md",

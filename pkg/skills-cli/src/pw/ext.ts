@@ -23,6 +23,7 @@ import {
 	resolveCliSession,
 	scratchRoot,
 } from "@dg/common/node";
+import { demosDir } from "../demo/paths";
 import { extensionRequiredMessage, isCliOnly } from "../utils/cli-only";
 import { publishPrivate } from "./core/files";
 import { defaultOutputDir } from "./core/registry";
@@ -98,7 +99,7 @@ function stageFile(file: string, cwd: string): StagedFile {
 			`pw --ext upload takes files up to ${PW_EXT_MAX_UPLOAD_BYTES} bytes.`,
 		);
 	const real = realpathSync(path);
-	const roots = [cwd, scratchRoot()].flatMap((root) => {
+	const roots = [cwd, scratchRoot(), demosDir()].flatMap((root) => {
 		try {
 			return [realpathSync(root)];
 		} catch {
@@ -107,7 +108,7 @@ function stageFile(file: string, cwd: string): StagedFile {
 	});
 	if (!roots.some((root) => within(root, real)))
 		throw new ExtUsageError(
-			"pw --ext upload takes files only from the working directory or the dg scratch directory.",
+			"pw --ext upload takes files only from the working directory, the dg scratch directory or the dg demos directory.",
 		);
 	let bytes: Buffer;
 	try {

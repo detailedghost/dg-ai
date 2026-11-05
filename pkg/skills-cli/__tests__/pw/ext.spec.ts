@@ -228,6 +228,21 @@ describe("pw --ext round 3", () => {
 		expect(d.sent[0]?.request).toMatchObject({ fileName: "shot.png", fileType: "image/png" });
 	});
 
+	test("stages a recorded demo from the dg demos directory", async () => {
+		const { demosDir } = await import("../../src/demo/paths");
+		mkdirSync(join(demosDir(), "tour"), { recursive: true });
+		writeFileSync(join(demosDir(), "tour", "tour.webm"), "webm");
+		const d = deps(() => ({ ok: true, data: { text: "uploaded" } }));
+		expect(
+			await runExt(
+				["--ext", "upload", "#f", join(demosDir(), "tour", "tour.webm")],
+				clientEnv(workdir()),
+				d.value,
+			),
+		).toBe(0);
+		expect(d.sent[0]?.request).toMatchObject({ fileName: "tour.webm", fileSize: 4 });
+	});
+
 	test.each([
 		["outside", (cwd: string, outside: string) => join(outside, "x.txt")],
 		["a directory", (cwd: string) => cwd],
