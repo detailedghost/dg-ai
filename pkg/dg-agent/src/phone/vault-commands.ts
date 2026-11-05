@@ -7,7 +7,7 @@ import { killProcessTree, writeFileAtomic } from "@dg/common/node";
 import type { PhoneDeps } from "./commands";
 import type { VaultItemRow } from "./db";
 import { imageFileName, type ImageType } from "./image";
-import { findContactByNpub } from "./store";
+import { findContactByNpub, selfExtension } from "./store";
 import {
 	assertVaultName,
 	deleteVaultItem,
@@ -95,9 +95,10 @@ export async function phoneVaultAdd(name: string, file: string | undefined, deps
 	printJson(deps, { name: row.name, size: row.size, created_at: row.created_at, expires_at: row.expires_at });
 }
 
-export async function phoneVaultList(deps: PhoneDeps): Promise<void> {
+export async function phoneVaultList(deps: PhoneDeps, opts: { as?: string } = {}): Promise<void> {
+	const ext = selfExtension(opts.as, deps.env ?? {});
 	await prepareVault(deps);
-	for (const row of deps.db.listVaultItems()) {
+	for (const row of deps.db.listVaultItems(ext)) {
 		printJson(deps, {
 			name: row.name,
 			size: row.size,
@@ -105,6 +106,7 @@ export async function phoneVaultList(deps: PhoneDeps): Promise<void> {
 			sender: senderLabel(deps, row.sender),
 			created_at: row.created_at,
 			expires_at: row.expires_at,
+			...(row.ext ? { ext: row.ext } : {}),
 		});
 	}
 }
@@ -264,7 +266,7 @@ export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpt
 	if (result.timedOut) throw new DgCliError(`the command ran past ${seconds} s and was stopped, so no item was stored`, EXIT_TIMED_OUT);
 	if (!result.stdout) throw new DgCliError("the command wrote more than 5 MiB to stdout, so no item was stored");
 	const kept = result.code === 0;
-	if (kept) storeVaultItem(deps.db, deps.paths.phoneRoot, { name: outName, sender: row.sender, plain: result.stdout, key }, deps.now());
+	if (kept) storeVaultItem(deps.db, deps.paths.phoneRoot, { name: outName, sender: row.sender, plain: result.stdout, key, ext: row.ext }, deps.now());
 	printJson(deps, { name, exit: result.code, out: kept ? outName : null, size: result.size, stderr_lines: result.stderrLines });
 	if (!kept) throw new DgCliError(`the command exited ${result.code ?? "on a signal"}, so no item was stored`, result.code || 1);
 }

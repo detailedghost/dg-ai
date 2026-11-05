@@ -138,6 +138,27 @@ describe("phone vault add", () => {
 });
 
 describe("phone vault list", () => {
+	it("lists every item with its extension, and with --as only that agent's items and shared ones", async () => {
+		const day = localDay(deps.now());
+		const key = { day, key: await ensureDayKey(creds.deps(), day) };
+		for (const [name, ext] of [["shared-item", null], ["merc-item", "merc"], ["kit-item", "kit"]] as const) {
+			storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain: Buffer.from("x"), key, ext }, deps.now());
+		}
+
+		await phoneVaultList(deps);
+		expect(lines().map((line) => [line.name, line.ext])).toEqual([
+			["kit-item", "kit"],
+			["merc-item", "merc"],
+			["shared-item", undefined],
+		]);
+		out = "";
+		await phoneVaultList(deps, { as: "merc" });
+		expect(lines().map((line) => line.name)).toEqual(["merc-item", "shared-item"]);
+		out = "";
+		await phoneVaultList({ ...deps, env: { DG_PHONE_AS: "kit" } });
+		expect(lines().map((line) => line.name)).toEqual(["kit-item", "shared-item"]);
+	});
+
 	it("prints names, sizes, types, senders, and dates, never content", async () => {
 		const npub = freshNpub();
 		deps.db.putKey({ id: "default", nsec: null, in_store: 1 });

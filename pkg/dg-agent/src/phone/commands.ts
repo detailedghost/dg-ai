@@ -17,7 +17,7 @@ import {
 	resolvePublishConfirmMs,
 	PUBLISH_CONFIRM_ENV,
 } from "./delivery";
-import { OUTBOX_DIR, PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
+import { type ContactExtRow, type MessageRow, OUTBOX_DIR, PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
 import { IMAGE_TEXT, MAX_IMAGE_BYTES, prepareImage, type PreparedImage, storedFile } from "./image";
 import type { WormholeDeps } from "./wormhole";
 import { defaultVaultClient, PHI_NOT_STORED_TEXT, type VaultClient, vaultPlaceholder } from "./vault";
@@ -485,8 +485,13 @@ export function phoneContacts(deps: PhoneDeps): void {
 			via: contact.via,
 			last_seen: contact.lastSeen === undefined ? null : isoOf(contact.lastSeen),
 			...(marker ? { marker } : {}),
+			...extensionsField(deps.db.contactExts(contact.npub)),
 		});
 	}
+}
+
+function extensionsField(rows: ContactExtRow[]): { extensions?: { ext: string; last_seen: string }[] } {
+	return rows.length > 0 ? { extensions: rows.map((row) => ({ ext: row.ext, last_seen: isoOf(row.last_seen) })) } : {};
 }
 
 export function phoneContactsRename(oldHandleArg: string, newHandleArg: string, deps: PhoneDeps): void {
@@ -513,21 +518,13 @@ function selfNames(deps: PhoneDeps): Map<string, string> {
 	return names;
 }
 
+function extFields(row: Pick<MessageRow, "direction" | "ext" | "peer_ext">): { ext?: string; from_ext?: string } {
+	return { ...(row.ext ? { ext: row.ext } : {}), ...(row.direction === "in" && row.peer_ext ? { from_ext: row.peer_ext } : {}) };
+}
+
 function emitStored(
 	deps: PhoneDeps,
-	row: {
-		id: string;
-		ts: number;
-		direction: "in" | "out";
-		sender: string;
-		contact: string;
-		text: string;
-		call: number;
-		read_at: number | null;
-		thread_id: string | null;
-		file: string | null;
-		delivered_at: number | null;
-	},
+	row: MessageRow,
 	self: Map<string, string>,
 	fields: { direction: boolean; read: boolean; meta: boolean },
 ): void {
@@ -536,7 +533,7 @@ function emitStored(
 		const thread = deps.db.getThread(row.thread_id);
 		const threadHandle = thread?.handle ?? `#${row.thread_id.slice(0, 8)}`;
 		const contact = findContactByNpub(deps.db, row.sender);
-		const label = senderLabel(row.sender, contact?.handle, self.get(row.sender));
+		const label = extHandle(senderLabel(row.sender, contact?.handle, self.get(row.sender)), row.peer_ext);
 		printJson(deps, {
 			id: row.id,
 			ts: row.ts,
@@ -544,6 +541,7 @@ function emitStored(
 			thread: threadHandle,
 			handle: label,
 			from: row.sender,
+			...extFields(row),
 			...(fields.meta ? {} : { text: row.text, line: threadLine(threadHandle, label, row.text) }),
 			...(file ? { file } : {}),
 			...(fields.read ? { read: row.read_at !== null } : {}),
@@ -558,8 +556,9 @@ function emitStored(
 		id: row.id,
 		ts: row.ts,
 		...(fields.direction ? { direction: row.direction } : {}),
-		handle: contact ? `+${contact.handle}` : null,
+		handle: contact ? extHandle(`+${contact.handle}`, row.peer_ext) : null,
 		from: row.sender,
+		...extFields(row),
 		...(fields.meta ? {} : { text: row.text }),
 		...(file ? { file } : {}),
 		...(fields.read ? { read: row.read_at !== null } : {}),
@@ -992,7 +991,19 @@ export async function phonePing(handleArg: string, opts: { timeout?: string }, d
 	}
 }
 
-export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }, deps: PhoneDeps): void {
+/** One line naming how many unread rows wait for each agent, so the shared view never hides them silently. */
+function printWaiting(deps: PhoneDeps): void {
+	const waiting = deps.db.waitingByExtension();
+	const names = Object.keys(waiting);
+	if (names.length === 0) return;
+	const total = names.reduce((sum, name) => sum + (waiting[name] ?? 0), 0);
+	const counts = names.map((name) => `${name} ${waiting[name]}`).join(", ");
+	printJson(deps, { waiting, line: `${total} unread for other agents: ${counts}; read them with --as <ext>` });
+}
+
+export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean; as?: string }, deps: PhoneDeps): void {
+	const ext = selfExtension(opts.as, deps.env ?? {});
+	const view = { ext: ext ?? null };
 	const limit = opts.n === undefined ? 50 : Number(opts.n);
 	if (!Number.isInteger(limit) || limit <= 0) throw new DgCliError(`-n must be a positive integer, got "${opts.n}"`);
 	if (!existsSync(PhoneDb.path(deps.paths))) {
@@ -1025,7 +1036,7 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		const handle = parseThreadHandle(opts.handle);
 		const thread = deps.db.getThreadByHandle(handle);
 		if (!thread) throw new DgCliError(`no group ${handle}`);
-		for (const row of deps.db.recentMessages(limit, undefined, thread.id)) {
+		for (const row of deps.db.recentMessages(limit, undefined, thread.id, view)) {
 			emitStored(deps, row, self, { direction: true, read: true, meta: opts.meta === true });
 		}
 		return;
@@ -1037,22 +1048,25 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		if (!contact) throw new DgCliError(`no contact +${handle}`);
 		contactNpub = contact.npub;
 	}
-	for (const row of deps.db.recentMessages(limit, contactNpub)) {
+	for (const row of deps.db.recentMessages(limit, contactNpub, undefined, view)) {
 		emitStored(deps, row, self, { direction: true, read: true, meta: opts.meta === true });
 	}
+	if (!ext) printWaiting(deps);
 }
 
-function emitUnread(deps: PhoneDeps, skip?: ReadonlySet<string>): void {
+function emitUnread(deps: PhoneDeps, ext: string | undefined, skip?: ReadonlySet<string>): void {
 	const self = selfNames(deps);
-	for (const row of deps.db.takeUnread(skip)) {
+	for (const row of deps.db.takeUnreadFor(ext ?? null, skip)) {
 		emitStored(deps, row, self, { direction: false, read: false, meta: false });
 	}
 }
 
-export async function phoneVoicemail(deps: PhoneDeps): Promise<void> {
+export async function phoneVoicemail(deps: PhoneDeps, opts: { as?: string } = {}): Promise<void> {
+	const ext = selfExtension(opts.as, deps.env ?? {});
 	migrateIfNeeded(deps.paths);
 	await restartStaleListener(deps, { spawn: true });
-	emitUnread(deps);
+	emitUnread(deps, ext);
+	if (!ext) printWaiting(deps);
 }
 
 /** Lower and upper bounds of the gap between `watch` checks. The gap is chosen inside this range, never a fixed interval. */
@@ -1067,10 +1081,11 @@ export function watchDelayMs(random: () => number): number {
 /** Prints unread voicemail until `for` seconds have passed, sleeping a jittered gap between checks.
  * The backlog is printed unless `--new` is set, so a message that arrived between two polls is not skipped. */
 export async function phoneWatch(
-	opts: { for?: string; new?: boolean },
+	opts: { for?: string; new?: boolean; as?: string },
 	deps: PhoneDeps,
 	random: () => number = Math.random,
 ): Promise<void> {
+	const ext = selfExtension(opts.as, deps.env ?? {});
 	migrateIfNeeded(deps.paths);
 	const seconds = opts.for === undefined ? WATCH_DEFAULT_FOR_S : Number(opts.for);
 	if (!Number.isFinite(seconds) || seconds <= 0) {
@@ -1078,13 +1093,13 @@ export async function phoneWatch(
 	}
 	await restartStaleListener(deps, { spawn: true });
 	const skip = watchSkipIds(
-		deps.db.unreadMessages().map((row) => row.id),
+		deps.db.unreadFor(ext ?? null).map((row) => row.id),
 		opts.new === true,
 	);
 	const deadline = deps.now() + seconds;
 	const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
 	for (;;) {
-		emitUnread(deps, skip);
+		emitUnread(deps, ext, skip);
 		const remainingMs = (deadline - deps.now()) * 1000;
 		if (remainingMs <= 0) return;
 		await sleep(Math.min(watchDelayMs(random), remainingMs));

@@ -5,7 +5,19 @@ import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19, nip59, type NostrEvent } from "nostr-tools";
-import { phoneNumber, phonePing, phoneSay, phoneThreadNew, type PhoneDeps } from "../../src/phone/commands";
+import { Command } from "commander";
+import {
+	phoneContacts,
+	phoneInbox,
+	phoneNumber,
+	phonePing,
+	phoneSay,
+	phoneThreadNew,
+	phoneVoicemail,
+	phoneWatch,
+	type PhoneDeps,
+	registerPhoneCommands,
+} from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import { addContact, numberKeyId, selfExtension, splitTarget } from "../../src/phone/store";
 import { FROM_EXT_TAG, EXT_TAG, rumorBody } from "../../src/phone/thread";
@@ -313,5 +325,123 @@ describe("sending to an extension", () => {
 		process.exitCode = 0;
 
 		await expect(phonePing("#ops/merc", {}, d)).rejects.toThrow("a #group goes to the whole machine; drop /merc");
+	});
+});
+
+describe("reading by extension", () => {
+	let tracker: ReturnType<typeof makeHomeTracker>;
+	let out: string[];
+	let d: PhoneDeps;
+	let mary: string;
+
+	beforeEach(async () => {
+		tracker = makeHomeTracker("dg-phone-ext-read-");
+		out = [];
+		d = { ...makePhoneDeps({ home: tracker.freshHome(), pool: createFakePool(), write: (text) => out.push(text), now: NOW }), sleep: async () => {} };
+		tracker.trackDb(d.db);
+		await phoneNumber({}, d);
+		mary = nip19.npubEncode(getPublicKey(generateSecretKey()));
+		addContact(d.db, { npub: mary, handle: "mary", relays: ["wss://a.example"], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+		const add = (id: string, ts: number, ext: string | null = null, peer_ext: string | null = null) =>
+			d.db.addMessage({ id, ts, sender: mary, contact: mary, text: id, direction: "in", call: 0, ext, peer_ext });
+		add("shared", NOW - 3);
+		add("for-merc", NOW - 2, "merc", "ace");
+		add("for-kit", NOW - 1, "kit");
+		out = [];
+	});
+
+	afterEach(() => {
+		tracker.cleanup();
+	});
+
+	function printed(): Record<string, unknown>[] {
+		const rows = parseNdjson(out) as Record<string, unknown>[];
+		out = [];
+		return rows;
+	}
+
+	it("shows the shared view only shared rows, then one line counting rows that wait for each agent", async () => {
+		await phoneVoicemail(d);
+
+		const rows = printed();
+		expect(rows.map((row) => row.text ?? row.waiting)).toEqual(["shared", { kit: 1, merc: 1 }]);
+		expect(rows[1]?.line).toBe("2 unread for other agents: kit 1, merc 1; read them with --as <ext>");
+		await phoneVoicemail(d);
+		expect(printed()).toEqual([{ waiting: { kit: 1, merc: 1 }, line: "2 unread for other agents: kit 1, merc 1; read them with --as <ext>" }]);
+	});
+
+	it("shows an agent its own rows and the shared ones once, with ext, from_ext, and a reply handle", async () => {
+		await phoneVoicemail(d, { as: "merc" });
+
+		const rows = printed();
+		expect(rows.map((row) => row.text)).toEqual(["shared", "for-merc"]);
+		expect(rows[0]).toMatchObject({ handle: "+mary" });
+		expect(rows[0]?.ext).toBeUndefined();
+		expect(rows[1]).toMatchObject({ handle: "+mary/ace", ext: "merc", from_ext: "ace", from: mary });
+
+		await phoneVoicemail(d, { as: "merc" });
+		expect(printed()).toEqual([]);
+		await phoneVoicemail({ ...d, env: { DG_PHONE_AS: "kit" } });
+		expect(printed().map((row) => row.text)).toEqual(["shared", "for-kit"]);
+		await phoneVoicemail(d);
+		expect(printed().map((row) => row.text ?? row.waiting)).toEqual(["shared"]);
+	});
+
+	it("prints stored messages per view, with each agent's own read state, and never marks anything read", async () => {
+		await phoneVoicemail(d, { as: "merc" });
+		out = [];
+
+		phoneInbox({}, d);
+		const shared = printed();
+		expect(shared.map((row) => row.text ?? row.waiting)).toEqual(["shared", { kit: 1 }]);
+		expect(shared[0]?.read).toBe(false);
+
+		phoneInbox({ as: "merc" }, d);
+		expect(printed().map((row) => [row.text, row.read])).toEqual([
+			["shared", true],
+			["for-merc", true],
+		]);
+		phoneInbox({ handle: "+mary", as: "kit" }, d);
+		expect(printed().map((row) => [row.text, row.read])).toEqual([
+			["shared", false],
+			["for-kit", false],
+		]);
+	});
+
+	it("passes --as from the command line to unread and messages", async () => {
+		const program = new Command().exitOverride();
+		registerPhoneCommands(program, () => d);
+
+		await program.parseAsync(["phone", "unread", "--as", "merc"], { from: "user" });
+		expect(printed().map((row) => row.text)).toEqual(["shared", "for-merc"]);
+		await program.parseAsync(["phone", "messages", "--as", "kit"], { from: "user" });
+		expect(printed().map((row) => row.text)).toEqual(["shared", "for-kit"]);
+	});
+
+	it("watches one agent's view and its --new skip set", async () => {
+		let clock = NOW;
+		const ticking: PhoneDeps = { ...d, now: () => clock, sleep: async (ms) => void (clock += Math.ceil(ms / 1000)) };
+		await phoneWatch({ for: "1", as: "merc" }, ticking);
+		expect(printed().map((row) => row.text)).toEqual(["shared", "for-merc"]);
+
+		await phoneWatch({ for: "1", new: true, as: "kit" }, ticking);
+		expect(printed()).toEqual([]);
+		expect(d.db.unreadFor("kit").map((row) => row.id)).toEqual(["shared", "for-kit"]);
+	});
+
+	it("lists the extensions each contact used, newest first, only when there are some", async () => {
+		d.db.touchContactExt(mary, "ace", NOW - 60);
+		d.db.touchContactExt(mary, "bo", NOW);
+
+		phoneContacts(d);
+
+		expect(printed()[0]?.extensions).toEqual([
+			{ ext: "bo", last_seen: new Date(NOW * 1000).toISOString() },
+			{ ext: "ace", last_seen: new Date((NOW - 60) * 1000).toISOString() },
+		]);
+		d.db.removeContact(mary);
+		addContact(d.db, { npub: mary, handle: "mary", relays: [], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+		phoneContacts(d);
+		expect(printed()[0]?.extensions).toBeUndefined();
 	});
 });

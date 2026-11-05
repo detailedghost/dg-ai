@@ -214,9 +214,10 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 	vault
 		.command("list")
 		.description("list item names, sizes, types, senders, and dates; never content")
-		.action(async () => {
+		.option("--as <ext>", "list only this extension's items plus the shared ones (default DG_PHONE_AS)")
+		.action(async (opts: { as?: string }) => {
 			const phone = await load();
-			await phone.phoneVaultList(phone.deps(getSession()));
+			await phone.phoneVaultList(phone.deps(getSession()), opts);
 		});
 
 	vault
@@ -258,18 +259,19 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		command
 			.option("-n, --count <count>", "how many messages to print", "50")
 			.option("--meta", "print metadata only, omitting message text")
+			.option("--as <ext>", "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)")
 			.argument("[handle]", "limit to one contact's messages")
-			.action(async (handle: string | undefined, opts: { count?: string; meta?: boolean }) => {
+			.action(async (handle: string | undefined, opts: { count?: string; meta?: boolean; as?: string }) => {
 				const phone = await load();
-				phone.phoneInbox({ n: opts.count, handle, meta: opts.meta }, phone.deps(getSession()));
+				phone.phoneInbox({ n: opts.count, handle, meta: opts.meta, as: opts.as }, phone.deps(getSession()));
 			});
 	printMessages(group.command("messages").description("print stored messages, oldest first; never marks anything read"));
 	printMessages(renamedAlias(group, "inbox", "messages"));
 
 	const printUnread = (command: Command): Command =>
-		command.action(async () => {
+		command.option("--as <ext>", "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)").action(async (opts: { as?: string }) => {
 			const phone = await load();
-			await phone.phoneVoicemail(phone.deps(getSession()));
+			await phone.phoneVoicemail(phone.deps(getSession()), opts);
 		});
 	printUnread(group.command("unread").description("print unread messages, oldest first, and mark them read"));
 	printUnread(renamedAlias(group, "voicemail", "unread"));
@@ -279,7 +281,8 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.description("print unread messages until --for seconds elapse, waiting a jittered gap between checks")
 		.option("--for <seconds>", "seconds to keep checking", String(WATCH_DEFAULT_FOR_S))
 		.option("--new", "print only messages that arrive after watch starts; the default also prints the unread backlog")
-		.action(async (opts: { for?: string; new?: boolean }) => {
+		.option("--as <ext>", "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)")
+		.action(async (opts: { for?: string; new?: boolean; as?: string }) => {
 			const phone = await load();
 			await phone.phoneWatch(opts, phone.deps(getSession()));
 		});
