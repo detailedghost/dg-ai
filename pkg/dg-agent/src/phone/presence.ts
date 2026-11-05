@@ -135,13 +135,20 @@ export function createPresence(deps: PresenceDeps): Presence {
 		if (when >= now - ONLINE_GAP_SECONDS && (before === null || before < now - ONLINE_GAP_SECONDS)) deps.onOnline(pubkeyHex(npub));
 	};
 
+	const live = () => {
+		if (stopped) return false;
+		if (readPresenceOn(deps.db)) return true;
+		pending.clear();
+		return false;
+	};
+
 	const flush = async () => {
-		while (!stopped) {
+		while (live()) {
 			const next = pending.entries().next();
 			if (next.done) return;
 			const [slot, { npub, busy, ids }] = next.value;
 			pending.delete(slot);
-			for (let start = 0; start < ids.length && !stopped; start += RECEIPT_IDS_PER_RUMOR) {
+			for (let start = 0; start < ids.length && live(); start += RECEIPT_IDS_PER_RUMOR) {
 				const named = ids.slice(start, start + RECEIPT_IDS_PER_RUMOR).map((id) => ["e", id]);
 				await send(npub, RECEIPT_KIND, busy ? [...named, [BUSY_TAG, "1"]] : named);
 			}
@@ -196,7 +203,7 @@ export function createPresence(deps: PresenceDeps): Presence {
 			beating = (async () => {
 				const contacts = listContacts(deps.db);
 				const count = Math.min(PRESENCE_FANOUT, contacts.length);
-				for (let index = 0; index < count && !stopped; index += 1) {
+				for (let index = 0; index < count && live(); index += 1) {
 					const contact = contacts[(cursor + index) % contacts.length];
 					if (contact) await send(contact.npub, PRESENCE_KIND, []);
 				}

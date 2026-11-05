@@ -8,7 +8,7 @@ import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener } from "../../src/phone/listener";
-import { beatRelays, PING_ANSWER_CAP, PRESENCE_FANOUT } from "../../src/phone/presence";
+import { beatRelays, createPresence, PING_ANSWER_CAP, type Presence, PRESENCE_FANOUT } from "../../src/phone/presence";
 import { addContact, numberKeyId } from "../../src/phone/store";
 import { createFakePool, type FakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
 import { fakeWormhole } from "./fake-wormhole";
@@ -522,6 +522,59 @@ describe("phone presence off", () => {
 		} finally {
 			await bobListener.stop();
 		}
+	});
+
+	async function heldPresence(): Promise<{ bob: Phone; peers: Phone[]; presence: Presence; sent: string[]; release: () => void }> {
+		const bob = await boot("b");
+		const peers = [await boot("a"), await boot("c"), await boot("d")];
+		peers.forEach((peer, index) => link(bob, `p${index}`, peer, "b"));
+		const sent: string[] = [];
+		let release: () => void = () => {};
+		const held = new Promise<string>((resolve) => {
+			release = () => resolve("");
+		});
+		const presence = createPresence({
+			db: bob.deps.db,
+			pool: {
+				...pool,
+				publish: (relays, event) => {
+					sent.push(event.tags.find((tag) => tag[0] === "p")?.[1] ?? "");
+					return relays.map(() => (sent.length === 1 ? held : Promise.resolve("")));
+				},
+			},
+			now: () => clock,
+			keys: () => {
+				const sk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+				return sk ? [{ id: numberKeyId(bob.deps.db), pub: getPublicKey(sk), sk }] : [];
+			},
+			confirmMs: 1000,
+			onOnline: () => {},
+		});
+		return { bob, peers, presence, sent, release };
+	}
+
+	it("stops a running beat when presence turns off during a slow publish", async () => {
+		const { bob, presence, sent, release } = await heldPresence();
+		const beat = presence.beat();
+		await waitUntil(() => sent.length === 1);
+
+		phonePresence("off", bob.deps);
+		release();
+		await beat;
+
+		expect(sent).toHaveLength(1);
+	});
+
+	it("drops queued receipts when presence turns off during a slow publish", async () => {
+		const { bob, peers, presence, sent, release } = await heldPresence();
+		for (const peer of peers) presence.stored({ id: randomUUID().replaceAll("-", "").padEnd(64, "0"), ts: clock, from: peer.npub, text: "hi" });
+		await waitUntil(() => sent.length === 1);
+
+		phonePresence("off", bob.deps);
+		release();
+		await presence.settle();
+
+		expect(sent).toHaveLength(1);
 	});
 });
 
