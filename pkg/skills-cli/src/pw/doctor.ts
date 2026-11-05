@@ -1,6 +1,7 @@
 import { scratchRoot, stateRoot } from "@dg/common/node";
 import {
 	allowRuleCheck,
+	extOnlyChecks,
 	noAllowRuleCheck,
 	skillFilesCheck,
 } from "../doctor/checks";
@@ -64,6 +65,7 @@ export const pwChecks: DoctorCheck[] = [
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),
 	rootCheck("state-root", "state", ({ env, home }) => stateRoot(env, home)),
 	allowRuleCheck("pw"),
+	...extOnlyChecks,
 ];
 
 export const pwCodeChecks: DoctorCheck[] = [
