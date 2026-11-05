@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
+import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip44, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
@@ -70,6 +70,8 @@ export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subs
 };
 
 export const GIFT_WRAP_KIND = 1059;
+/** Ephemeral gift wrap: the same seal and encryption as kind 1059, but relays forward it without storing it. Carries presence beats only. */
+export const EPHEMERAL_GIFT_WRAP_KIND = 21059;
 const CHAT_MESSAGE_KIND = 14;
 /** Rumor kind of a dg file fetch request, receiver to sender, always inside a gift wrap. Unregistered in the NIP kind list as of 2026-11-04. */
 export const FILE_REQUEST_KIND = 25015;
@@ -107,6 +109,25 @@ export function wrapTagged(
 		{ kind: rumor.kind ?? CHAT_MESSAGE_KIND, content: rumor.content, tags: [["p", contactPub], ...rumor.tags] },
 		sk,
 		contactPub,
+	);
+}
+
+/** A NIP-59 wrap of kind 21059 around a normal seal; `created_at` is now, since nothing is stored to hide it in. */
+export function wrapEphemeral(rumor: { kind: number; content: string; tags: string[][] }, sk: Uint8Array, toPub: string): NostrEvent {
+	const seal = nip59.createSeal(
+		nip59.createRumor({ kind: rumor.kind, content: rumor.content, tags: [["p", toPub], ...rumor.tags] }, sk),
+		sk,
+		toPub,
+	);
+	const wrapKey = generateSecretKey();
+	return finalizeEvent(
+		{
+			kind: EPHEMERAL_GIFT_WRAP_KIND,
+			content: nip44.encrypt(JSON.stringify(seal), nip44.getConversationKey(wrapKey, toPub)),
+			created_at: Math.floor(Date.now() / 1000),
+			tags: [["p", toPub]],
+		},
+		wrapKey,
 	);
 }
 
@@ -559,8 +580,16 @@ export function shortPubkey(pub: string): string {
 
 type Opened = { kind: "ok"; rumor: Rumor } | { kind: "control"; rumor: Rumor } | { kind: "undecryptable" } | { kind: "not-chat" };
 
+function isBeat(rumor: Rumor): boolean {
+	return rumor.kind === PRESENCE_KIND && !rumor.tags.some((tag) => tag[0] === ACK_TAG);
+}
+
 function openDetailed(event: NostrEvent, sk: Uint8Array): Opened {
 	try {
+		if (event.kind === EPHEMERAL_GIFT_WRAP_KIND) {
+			const rumor = nip17.unwrapEvent({ ...event, kind: GIFT_WRAP_KIND }, sk);
+			return isBeat(rumor) ? { kind: "control", rumor } : { kind: "not-chat" };
+		}
 		const rumor = nip17.unwrapEvent(event, sk);
 		if (CONTROL_KINDS.has(rumor.kind)) return { kind: "control", rumor };
 		return rumor.kind === CHAT_MESSAGE_KIND || rumor.kind === FILE_MESSAGE_KIND ? { kind: "ok", rumor } : { kind: "not-chat" };
@@ -638,7 +667,7 @@ export function subscribe(
 	const known = new Set(seen.ids);
 	const strangers = new Set<string>();
 	const ownPubs = keys.map((held) => held.pub);
-	return pool.subscribe(relays, inboxFilter(ownPubs, seen.cursor, now()), {
+	return pool.subscribe(relays, { ...inboxFilter(ownPubs, seen.cursor, now()), kinds: [GIFT_WRAP_KIND, EPHEMERAL_GIFT_WRAP_KIND] }, {
 		onevent(event) {
 			hooks.onEvent?.(event.id);
 			if (known.has(event.id) || strangers.has(event.id)) return;

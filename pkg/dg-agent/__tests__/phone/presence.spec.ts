@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19, nip59, type NostrEvent } from "nostr-tools";
-import { ACK_TAG, BUSY_TAG, npubOf, PRESENCE_KIND, RECEIPT_KIND } from "../../src/phone/chat";
+import { ACK_TAG, BUSY_TAG, EPHEMERAL_GIFT_WRAP_KIND, npubOf, PRESENCE_KIND, RECEIPT_KIND } from "../../src/phone/chat";
 import { phoneContacts, phoneInbox, phoneNumber, phonePing, phonePresence, phoneSay, phoneStatus, phoneThreadNew, type PhoneDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
@@ -111,7 +111,7 @@ function opened(to: Phone, kind: number): { event: NostrEvent; rumor: ReturnType
 	for (const event of pool.events) {
 		if (!event.tags.some((tag) => tag[0] === "p" && tag[1] === to.pub)) continue;
 		try {
-			const rumor = nip59.unwrapEvent(event, to.sk);
+			const rumor = nip59.unwrapEvent(event.kind === EPHEMERAL_GIFT_WRAP_KIND ? { ...event, kind: 1059 } : event, to.sk);
 			if (rumor.kind === kind) found.push({ event, rumor });
 		} catch {}
 	}
@@ -283,6 +283,7 @@ describe("presence", () => {
 		try {
 			await waitUntil(() => opened(bob, PRESENCE_KIND).length === 1);
 			await waitUntil(() => bob.deps.db.getContactByNpub(alice.npub)?.last_seen !== null);
+			expect(opened(bob, PRESENCE_KIND).map((entry) => entry.event.kind)).toEqual([EPHEMERAL_GIFT_WRAP_KIND]);
 			expect(opened(alice, RECEIPT_KIND)).toEqual([]);
 
 			const beat = timers.find((timer) => timer.delayMs === PRESENCE_DELAY_MS);
@@ -448,6 +449,7 @@ describe("phone ping", () => {
 		expect(printed(alice)).toEqual([{ handle: "+b", delivered: false, after_s: 1, line: "no answer after 1 s" }]);
 		expect(process.exitCode).toBe(1);
 		expect(opened(bob, PRESENCE_KIND).map((entry) => entry.rumor.tags)).toEqual([[["p", bob.pub], [ACK_TAG, "1"]]]);
+		expect(opened(bob, PRESENCE_KIND).map((entry) => entry.event.kind)).toEqual([1059]);
 	});
 
 	it("rejects a bad timeout and an unknown handle", async () => {
@@ -554,6 +556,63 @@ describe("ping answer cap", () => {
 
 			expect(printed(alice)).toEqual([{ handle: "+b", delivered: false, busy: true, after_s: 0, line: "busy, try later" }]);
 			expect(process.exitCode).toBe(1);
+		} finally {
+			await bobListener.stop();
+		}
+	});
+});
+
+describe("ephemeral beats", () => {
+	it("subscribes live to kind 21059 but never asks catch-up for it, and sends receipts as kind 1059", async () => {
+		const alice = await boot("a");
+		const bob = await boot("b");
+		link(alice, "b", bob, "a");
+		const queried: number[][] = [];
+		const subscribed: number[][] = [];
+		const query = pool.querySync;
+		const sub = pool.subscribe;
+		pool.querySync = (relays, filter, params) => {
+			if (filter["#p"]) queried.push(filter.kinds ?? []);
+			return query(relays, filter, params);
+		};
+		pool.subscribe = (relays, filter, params) => {
+			subscribed.push(filter.kinds ?? []);
+			return sub(relays, filter, params);
+		};
+		const bobListener = listen(bob);
+		await bobListener.started;
+		try {
+			await phoneSay("+b", "hi", alice.deps);
+			await waitUntil(() => opened(alice, RECEIPT_KIND).length === 1);
+
+			expect(queried.length).toBeGreaterThan(0);
+			expect(queried.every((kinds) => kinds.length === 1 && kinds[0] === 1059)).toBe(true);
+			expect(subscribed).toEqual([[1059, EPHEMERAL_GIFT_WRAP_KIND]]);
+			expect(opened(alice, RECEIPT_KIND).map((entry) => entry.event.kind)).toEqual([1059]);
+		} finally {
+			await bobListener.stop();
+		}
+	});
+
+	it("drops a chat message or a ping check that arrives in an ephemeral wrap", async () => {
+		const alice = await boot("a");
+		const bob = await boot("b");
+		link(alice, "b", bob, "a");
+		const bobListener = listen(bob);
+		await bobListener.started;
+		try {
+			const cases: [number, string[][]][] = [
+				[14, []],
+				[PRESENCE_KIND, [[ACK_TAG, "1"]]],
+			];
+			for (const [kind, tags] of cases) {
+				const wrap = wrapRumor(nip59.createRumor({ kind, content: "sneaky", tags: [["p", bob.pub], ...tags] }, alice.sk), alice.sk, bob.pub);
+				await deliver({ ...wrap, kind: EPHEMERAL_GIFT_WRAP_KIND });
+			}
+			await Bun.sleep(30);
+
+			expect(bob.deps.db.recentMessages(10).some((row) => row.text === "sneaky")).toBe(false);
+			expect(opened(alice, RECEIPT_KIND)).toEqual([]);
 		} finally {
 			await bobListener.stop();
 		}

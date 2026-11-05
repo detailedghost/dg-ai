@@ -10,6 +10,7 @@ import {
 	PRESENCE_KIND,
 	publish,
 	RECEIPT_KIND,
+	wrapEphemeral,
 	wrapTagged,
 } from "./chat";
 import type { PhoneDb } from "./db";
@@ -101,7 +102,8 @@ export function createPresence(deps: PresenceDeps): Presence {
 		const contact = findContactByNpub(deps.db, npub);
 		const key = contact && deps.keys().find((entry) => entry.id === contact.keyId);
 		if (!key) return;
-		const event = wrapTagged({ kind, content: "", tags }, key.sk, pubkeyHex(npub));
+		const rumor = { kind, content: "", tags };
+		const event = kind === PRESENCE_KIND ? wrapEphemeral(rumor, key.sk, pubkeyHex(npub)) : wrapTagged(rumor, key.sk, pubkeyHex(npub));
 		await publish(deps.pool, contactRelays(deps.db, npub), event, { confirmMs: deps.confirmMs, confirmById: false }).catch(() => undefined);
 	};
 
