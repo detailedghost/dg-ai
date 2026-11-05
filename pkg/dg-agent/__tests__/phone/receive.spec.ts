@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import { getPublicKey, nip59, type NostrEvent } from "nostr-tools";
 import { FILE_REQUEST_KIND, npubOf, wrapTagged } from "../../src/phone/chat";
-import { phoneFiles, phoneNumber, phoneSay, phoneThreadNew, phoneVoicemail, type PhoneDeps } from "../../src/phone/commands";
+import { phoneFiles, phoneInbox, phoneNumber, phoneSay, phoneThreadNew, phoneVoicemail, type PhoneDeps } from "../../src/phone/commands";
 import { type ImageFetchRow, MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { FILES_DIR, prepareImage, WORMHOLE_SCHEME } from "../../src/phone/image";
@@ -15,6 +15,8 @@ import { createImageReceiver, FILES_BYTE_CAP, IMAGE_RETRY_BASE_SECONDS, MAX_PEND
 import { addContact, numberKeyId, writeFilesOn } from "../../src/phone/store";
 import { DAILY_REQUEST_CAP } from "../../src/phone/transport";
 import { createFakePool, type FakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
+import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
+import { localDay, openVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { pngOfSize } from "./fake-image";
 import { fakeWormhole, type FakeWormhole } from "./fake-wormhole";
 
@@ -85,7 +87,11 @@ function capturingSchedule(): { schedule: Schedule; timers: Timer[] } {
 	return { schedule, timers };
 }
 
-function listen(phone: Phone, wormhole: FakeWormhole, opts: { schedule?: Schedule; hook?: ListenerDeps["hook"] } = {}) {
+function listen(
+	phone: Phone,
+	wormhole: FakeWormhole,
+	opts: { schedule?: Schedule; hook?: ListenerDeps["hook"]; vaultClient?: ListenerDeps["vaultClient"] } = {},
+) {
 	let stop: () => void = () => {};
 	let ready: () => void = () => {};
 	const started = new Promise<void>((resolve) => {
@@ -107,6 +113,7 @@ function listen(phone: Phone, wormhole: FakeWormhole, opts: { schedule?: Schedul
 		},
 		wormhole: wormhole.deps,
 		...(opts.hook ? { hook: opts.hook } : {}),
+		...(opts.vaultClient ? { vaultClient: opts.vaultClient } : {}),
 	});
 	return {
 		started,
@@ -484,7 +491,7 @@ describe("image receive contracts", () => {
 		const first = listen(bob, wormholeFor());
 		await first.started;
 		await first.stop();
-		expect(row(bob, event.id)).toMatchObject({ text: "sensitive", phi: 1 });
+		expect(row(bob, event.id)).toMatchObject({ text: "[PHI: vault unavailable from +a]", phi: 1 });
 
 		clock += PHI_TTL_SECONDS + 1;
 		bob.deps.db.pruneMessages();
@@ -772,5 +779,143 @@ describe("received row text", () => {
 		const texts = [...bob.deps.db.recentMessages(10).map((candidate) => candidate.text), ...bob.deps.db.listPending().map((pending) => pending.text)];
 		expect(texts).not.toContain(content);
 		expect(bob.deps.db.listPending()[0]?.text).toBe("[image]");
+	});
+});
+
+describe("PHI vault receive", () => {
+	const PLACEHOLDER = /^\[PHI: vault item (a-\d{12}-[0-9a-f]{4}) from \+a\]$/;
+	let alice: Phone;
+	let bob: Phone;
+	let creds: FakeCredentials;
+
+	beforeEach(async () => {
+		alice = await boot("a");
+		bob = await boot("b");
+		link(alice, "b", bob, "a");
+		phoneFiles("on", alice.deps);
+		phoneFiles("on", bob.deps);
+		creds = createFakeCredentials({ session: false, granted: true });
+		creds.store.set(vaultKeyName(localDay(clock)), "22".repeat(32));
+	});
+
+	function vaultName(text: string | undefined): string {
+		const match = PLACEHOLDER.exec(text ?? "");
+		if (!match) throw new Error(`not a vault placeholder: ${text}`);
+		return match[1] as string;
+	}
+
+	async function vaultContent(name: string): Promise<Buffer> {
+		const item = bob.deps.db.vaultItem(name);
+		if (!item) throw new Error(`no vault item ${name}`);
+		return openVaultItem(creds.deps(), bob.deps.paths.phoneRoot, item);
+	}
+
+	function hookTo(out: string) {
+		return {
+			kind: "command" as const,
+			argv: [process.execPath, "-e", "require('node:fs').appendFileSync(process.argv[1], (await Bun.stdin.text()) + '\\n')", out],
+			timeoutMs: 5000,
+		};
+	}
+
+	it("seals a received PHI text into the vault, and the row, messages, and the hook show only the placeholder", async () => {
+		const out = join(shared, "hook.ndjson");
+		await deliver(wrapTagged({ content: "patient Jane Roe", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient, hook: hookTo(out) });
+		await bobListener.started;
+		try {
+			await waitUntil(() => existsSync(out) && readFileSync(out, "utf8").trim().length > 0);
+		} finally {
+			await bobListener.stop();
+		}
+
+		const [stored] = bob.deps.db.recentMessages(10);
+		const name = vaultName(stored?.text);
+		expect(stored?.phi).toBe(1);
+		expect((await vaultContent(name)).toString()).toBe("patient Jane Roe");
+		expect(bob.deps.db.vaultItem(name)?.sender).toBe(alice.npub);
+		const hooked = JSON.parse(readFileSync(out, "utf8").trim()) as { text: string };
+		expect(hooked.text).toBe(stored?.text);
+		const printed: string[] = [];
+		bob.deps.write = (text) => printed.push(text);
+		phoneInbox({}, bob.deps);
+		expect(printed.join("").includes("Jane")).toBe(false);
+		expect(printed.join("")).toContain(stored?.text as string);
+		expect(readFileSync(out, "utf8").includes("Jane")).toBe(false);
+	});
+
+	it("stores no content when no vault key can be reached", async () => {
+		await deliver(wrapTagged({ content: "patient Jane Roe", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
+		const bobListener = listen(bob, wormholeFor());
+		await bobListener.started;
+		await bobListener.stop();
+
+		expect(bob.deps.db.recentMessages(10).map((candidate) => candidate.text)).toEqual(["[PHI: vault unavailable from +a]"]);
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("expires a received item on the 30-minute timer", async () => {
+		await deliver(wrapTagged({ content: "patient Jane Roe", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
+		const { schedule, timers } = capturingSchedule();
+		const bobListener = listen(bob, wormholeFor(), { schedule, vaultClient: creds.deps().vaultClient });
+		await bobListener.started;
+		try {
+			await waitUntil(() => bob.deps.db.listVaultItems().length === 1);
+			clock += VAULT_TTL_SECONDS;
+			for (const timer of timers.filter((candidate) => candidate.delayMs === STUCK_RETRY_INTERVAL_MS)) timer.run();
+			expect(bob.deps.db.listVaultItems()).toEqual([]);
+			expect(readdirSync(join(bob.deps.paths.phoneRoot, VAULT_DIR))).toEqual([]);
+		} finally {
+			await bobListener.stop();
+		}
+	});
+
+	it("decrypts a received PHI image straight into the vault, never into files/ or the hook", async () => {
+		const plain = pngOfSize();
+		const sealed = seal(plain);
+		stageAt(alice, sealed.cipher, bob);
+		const out = join(shared, "hook.ndjson");
+		const aliceListener = listen(alice, wormholeFor());
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient, hook: hookTo(out) });
+		await Promise.all([aliceListener.started, bobListener.started]);
+		let stored: ReturnType<typeof row>;
+		try {
+			const event = offerEvent(alice, bob, sealed, {}, [["dg-phi", "1"]]);
+			await deliver(event);
+			stored = await settled(bob, event.id);
+			await waitUntil(() => existsSync(out) && readFileSync(out, "utf8").trim().length > 0);
+		} finally {
+			await bobListener.stop();
+			await aliceListener.stop();
+		}
+
+		const name = vaultName(stored?.text);
+		expect(stored?.file).toBeNull();
+		expect(filesIn(bob)).toEqual([]);
+		expect((await vaultContent(name)).equals(plain)).toBe(true);
+		expect(bob.deps.db.vaultItem(name)?.type).toBe("image/png");
+		const hooked = JSON.parse(readFileSync(out, "utf8").trim()) as { text: string; file?: unknown };
+		expect(hooked.text).toBe(stored?.text as string);
+		expect(hooked.file).toBeUndefined();
+	});
+
+	it("stores vault unavailable for a PHI image when no vault key can be reached, and writes no file", async () => {
+		const sealed = seal(pngOfSize());
+		stageAt(alice, sealed.cipher, bob);
+		const aliceListener = listen(alice, wormholeFor());
+		const bobListener = listen(bob, wormholeFor());
+		await Promise.all([aliceListener.started, bobListener.started]);
+		let stored: ReturnType<typeof row>;
+		try {
+			const event = offerEvent(alice, bob, sealed, {}, [["dg-phi", "1"]]);
+			await deliver(event);
+			stored = await settled(bob, event.id);
+		} finally {
+			await bobListener.stop();
+			await aliceListener.stop();
+		}
+
+		expect(stored).toMatchObject({ text: "[image unavailable: vault unavailable]", file: null });
+		expect(filesIn(bob)).toEqual([]);
 	});
 });

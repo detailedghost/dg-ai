@@ -31,7 +31,8 @@ export type ImageFailure =
 	| "too large"
 	| "hash mismatch"
 	| "decrypt failed"
-	| "not an image";
+	| "not an image"
+	| "vault unavailable";
 
 export function imageUnavailableText(reason: ImageFailure): string {
 	return `[image unavailable: ${reason}]`;

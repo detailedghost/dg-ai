@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { nip19 } from "nostr-tools";
 import type { KeyEntry, PhonePool } from "./chat";
-import type { ImageFetchRow, PhoneDb } from "./db";
+import type { ImageFetchRow, MessageRow, PhoneDb } from "./db";
 import type { Cancel, Schedule } from "./hook";
 import {
 	FILES_DIR,
@@ -15,7 +15,8 @@ import {
 	imageUnavailableText,
 	openImage,
 } from "./image";
-import { contactRelays } from "./store";
+import { contactRelays, findContactByNpub } from "./store";
+import { sealReceived, UNKNOWN_SENDER_HANDLE, type VaultKeyCache } from "./vault";
 import { DAILY_REQUEST_CAP, type FileFetch, requestFile } from "./transport";
 import { dirBytes, type WormholeDeps } from "./wormhole";
 
@@ -41,6 +42,8 @@ export type ImageReceiverDeps = {
 	keys: () => readonly KeyEntry[];
 	schedule: Schedule;
 	wormhole?: WormholeDeps;
+	/** Day keys for PHI images; absent means a PHI image is stored as vault unavailable. */
+	vault?: VaultKeyCache;
 	/** A row got its final text; the listener hands it to the hook. */
 	onFinish: () => void;
 };
@@ -97,10 +100,19 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		deps.db.deferImageFetch(row.message_id, attempts, now + delay);
 	};
 
+	const sealPhi = async (row: ImageFetchRow, message: MessageRow, plain: Buffer) => {
+		const key = await deps.vault?.current();
+		if (!key) return fail(row, "vault unavailable");
+		const handle = findContactByNpub(deps.db, message.sender)?.handle ?? UNKNOWN_SENDER_HANDLE;
+		finish(row, sealReceived(deps.db, deps.paths.phoneRoot, { key, sender: message.sender, handle, plain }, deps.now()).text);
+	};
+
 	const attempt = async (row: ImageFetchRow) => {
 		const now = deps.now();
 		if (now >= row.deadline) return fail(row, "sender offline");
-		const copy = storedCopy(row.ox);
+		const message = deps.db.getMessage(row.message_id);
+		const phi = message?.phi === 1;
+		const copy = phi ? undefined : storedCopy(row.ox);
 		if (copy) return finish(row, IMAGE_TEXT, copy);
 		if (row.attempts === 0 && !withinDailyCap(row.sender, now)) return fail(row, "daily limit");
 		ensurePrivateDir(dir);
@@ -118,6 +130,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		if (!result.ok) return RETRY_REASONS.has(result.reason) ? defer(live, deps.now(), result.reason) : fail(live, terminalReason(result.reason));
 		const opened = openImage(result.cipher, row);
 		if (!opened.ok) return fail(row, opened.reason);
+		if (phi && message) return sealPhi(row, message, opened.plain);
 		const file: ImageFile = { sha256: row.ox, type: opened.type, size: opened.plain.length };
 		const name = imageFileName(file);
 		if (!name) return fail(row, "fetch failed");

@@ -596,7 +596,7 @@ describe("thread hold limits and partial sends", () => {
 		await listener.ready;
 		listener.stop();
 		await listener.run;
-		expect(bob.deps.db.pendingByRumor(rumor.id)?.phi).toBe(1);
+		expect(bob.deps.db.pendingByRumor(rumor.id)).toMatchObject({ phi: 1, text: "[PHI: not stored]" });
 
 		clock += PHI_TTL_SECONDS + 1;
 		bob.deps.db.pruneMessages();

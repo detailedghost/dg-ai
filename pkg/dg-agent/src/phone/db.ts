@@ -766,6 +766,10 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
+	getMessage(id: string): MessageRow | undefined {
+		return (this.db.query("SELECT * FROM messages WHERE id = $id").get({ id }) as MessageRow | null) ?? undefined;
+	}
+
 	unreadMessages(): MessageRow[] {
 		return this.db
 			.query("SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL ORDER BY ts, id")

@@ -14,6 +14,8 @@ export const VAULT_TTL_SECONDS = PHI_TTL_SECONDS;
 export const MAX_VAULT_BYTES = 5 * 1024 * 1024;
 /** Sender of an item this phone made itself, not one a contact sent. */
 export const SELF_SENDER = "self";
+/** Names the sender of PHI from a group member who is not a contact. */
+export const UNKNOWN_SENDER_HANDLE = "unknown";
 /** Stored instead of PHI text that never reaches the vault. */
 export const PHI_NOT_STORED_TEXT = "[PHI: not stored]";
 
@@ -63,7 +65,7 @@ function localMinute(at: number): string {
 /** The receiver-made name `<handle>-<yyyymmddhhmm>-<4 hex>`, so no sender text ever names an item. */
 export function receivedName(handle: string | undefined, at: number, taken: (name: string) => boolean): string {
 	for (let i = 0; i < RECEIVED_NAME_TRIES; i++) {
-		const name = `${handle ?? "unknown"}-${localMinute(at)}-${randomBytes(2).toString("hex")}`;
+		const name = `${handle ?? UNKNOWN_SENDER_HANDLE}-${localMinute(at)}-${randomBytes(2).toString("hex")}`;
 		if (!taken(name)) return name;
 	}
 	throw new DgCliError("could not pick a free vault name");
@@ -71,6 +73,11 @@ export function receivedName(handle: string | undefined, at: number, taken: (nam
 
 export function vaultPlaceholder(name: string, handle?: string): string {
 	return handle === undefined ? `[PHI: vault item ${name}]` : `[PHI: vault item ${name} from +${handle}]`;
+}
+
+/** Stored for received PHI when no vault key is reachable; the content is dropped, never kept elsewhere. */
+export function vaultUnavailableText(handle: string): string {
+	return `[PHI: vault unavailable from +${handle}]`;
 }
 
 function unreachable(): DgCliError {
@@ -285,6 +292,18 @@ export async function openVaultItem(deps: VaultDeps, root: string, row: VaultIte
 	} catch {
 		throw failed();
 	}
+}
+
+/** Seals PHI a contact sent under a receiver-made name; returns the row text that stands in for it. */
+export function sealReceived(
+	db: PhoneDb,
+	root: string,
+	item: { key: DayKey; sender: string; handle: string; plain: Buffer },
+	now: number,
+): { row: VaultItemRow; text: string } {
+	const name = receivedName(item.handle, now, (candidate) => db.vaultNameTaken(candidate));
+	const row = storeVaultItem(db, root, { name, sender: item.sender, plain: item.plain, key: item.key }, now);
+	return { row, text: vaultPlaceholder(name, item.handle) };
 }
 
 export function deleteVaultItem(db: PhoneDb, root: string, row: Pick<VaultItemRow, "id">): void {
