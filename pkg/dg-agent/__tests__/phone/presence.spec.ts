@@ -478,6 +478,66 @@ describe("phone ping", () => {
 		expect(opened(bob, PRESENCE_KIND).map((entry) => entry.event.kind)).toEqual([1059]);
 	});
 
+	function holdPublishes(phone: Phone, held: (event: NostrEvent) => boolean): void {
+		phone.deps.createPool = () => ({
+			...pool,
+			publish: (relays, event) => (held(event) ? relays.map(() => new Promise<string>(() => {})) : pool.publish(relays, event)),
+			close() {},
+		});
+	}
+
+	it("gives up at the ping deadline when a relay never confirms the publish", async () => {
+		holdPublishes(alice, () => true);
+		const started = Date.now();
+
+		await phonePing("+b", { timeout: "1" }, alice.deps);
+
+		expect(Date.now() - started).toBeLessThan(2500);
+		expect(printed(alice)).toEqual([{ handle: "+b", delivered: false, after_s: 1, line: "no answer after 1 s" }]);
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("stops a group ping at the first answer while another member's publish still waits", async () => {
+		const carol = await boot("c");
+		link(alice, "c", carol, "a");
+		await phoneThreadNew("#ops", ["+b", "+c"], {}, alice.deps);
+		printed(alice);
+		const [first, second] = [bob, carol].sort((x, y) => (x.npub < y.npub ? -1 : 1)) as [Phone, Phone];
+		holdPublishes(alice, (event) => event.tags.some((tag) => tag[0] === "p" && tag[1] === second.pub));
+		const firstListener = listen(first);
+		await firstListener.started;
+		try {
+			const started = Date.now();
+			await phonePing("#ops", {}, alice.deps);
+
+			expect(Date.now() - started).toBeLessThan(2500);
+			expect(printed(alice)).toEqual([{ handle: "#ops", delivered: true, after_s: 0, line: "delivered after 0 s" }]);
+		} finally {
+			await firstListener.stop();
+		}
+	});
+
+	it("never accepts an answer that arrives after the deadline", async () => {
+		alice.deps.createPool = () => ({
+			...pool,
+			publish: (relays, event) => {
+				clock += 10;
+				return pool.publish(relays, event);
+			},
+			close() {},
+		});
+		const bobListener = listen(bob);
+		await bobListener.started;
+		try {
+			await phonePing("+b", { timeout: "5" }, alice.deps);
+
+			expect(printed(alice)).toEqual([{ handle: "+b", delivered: false, after_s: 5, line: "no answer after 5 s" }]);
+			expect(process.exitCode).toBe(1);
+		} finally {
+			await bobListener.stop();
+		}
+	});
+
 	it("rejects a bad timeout and an unknown handle", async () => {
 		await expect(phonePing("+b", { timeout: "0" }, alice.deps)).rejects.toThrow("--timeout must be");
 		await expect(phonePing("+b", { timeout: "abc" }, alice.deps)).rejects.toThrow("--timeout must be");

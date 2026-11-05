@@ -13,6 +13,7 @@ import {
 	INBOX_RELAY_CACHE_SECONDS,
 	createPhonePool,
 	lookupInboxRelays,
+	INBOX_RELAY_LOOKUP_MS,
 	publishRelaySet,
 	resolvePublishConfirmMs,
 	PUBLISH_CONFIRM_ENV,
@@ -296,14 +297,21 @@ async function outgoingRelays(
 	pool: PhonePool,
 	cardRelays: string[],
 	npub: string,
+	timeoutMs?: number,
 ): Promise<{ relays: string[]; queried: string[] }> {
 	const own = readRelays(deps.db);
 	const pubkey = pubkeyHex(npub);
 	const queried = publishRelaySet({ inbox: [], card: cardRelays, own });
-	const inbox = await lookupInboxRelays(pool, queried, pubkey, {
-		read: () => readInboxRelayCache(deps.db, pubkey, deps.now(), INBOX_RELAY_CACHE_SECONDS),
-		write: (relays) => writeInboxRelayCache(deps.db, pubkey, relays, deps.now()),
-	});
+	const inbox = await lookupInboxRelays(
+		pool,
+		queried,
+		pubkey,
+		{
+			read: () => readInboxRelayCache(deps.db, pubkey, deps.now(), INBOX_RELAY_CACHE_SECONDS),
+			write: (relays) => writeInboxRelayCache(deps.db, pubkey, relays, deps.now()),
+		},
+		timeoutMs,
+	);
 	return { relays: publishRelaySet({ inbox, card: cardRelays, own }), queried };
 }
 
@@ -950,42 +958,56 @@ export async function phonePing(handleArg: string, opts: { timeout?: string }, d
 				},
 			);
 	if (own) relaysUsed.push(...listenRelays);
+	const deadline = sentAt + seconds;
+	const endMs = Date.now() + seconds * 1000;
+	const remainingMs = () => Math.max(0, endMs - Date.now());
+	const ids: string[] = [];
+	let finished = false;
+	let sent = false;
 	try {
-		const ids: string[] = [];
-		for (const target of targets) {
-			const event = wrapTagged(
-				{ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"], ["n", randomBytes(16).toString("hex")], ...routeTags({ ext })] },
-				loaded.sk,
-				pubkeyHex(target.npub),
-			);
-			deps.db.addPing({ id: event.id, contact: target.npub, sender: selfNpub, sent_at: sentAt });
-			ids.push(event.id);
-			const outgoing = await outgoingRelays(deps, pool, target.relays, target.npub);
-			relaysUsed.push(...outgoing.queried, ...outgoing.relays);
-			await publish(pool, outgoing.relays, event, { confirmMs: confirmMsFor(deps) }).catch(() => undefined);
-		}
+		void (async () => {
+			for (const target of targets) {
+				if (finished || remainingMs() === 0) return;
+				const event = wrapTagged(
+					{ kind: PRESENCE_KIND, content: "", tags: [[ACK_TAG, "1"], ["n", randomBytes(16).toString("hex")], ...routeTags({ ext })] },
+					loaded.sk,
+					pubkeyHex(target.npub),
+				);
+				deps.db.addPing({ id: event.id, contact: target.npub, sender: selfNpub, sent_at: sentAt });
+				ids.push(event.id);
+				const outgoing = await outgoingRelays(deps, pool, target.relays, target.npub, Math.min(INBOX_RELAY_LOOKUP_MS, remainingMs()));
+				if (finished) return closeRelayPool(pool, outgoing.queried);
+				relaysUsed.push(...outgoing.queried, ...outgoing.relays);
+				await publish(pool, outgoing.relays, event, { confirmMs: Math.min(confirmMsFor(deps), remainingMs()), confirmById: false });
+			}
+		})()
+			.catch(() => undefined)
+			.finally(() => {
+				sent = true;
+			});
 		const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
-		const deadline = sentAt + seconds;
+		const inTime = (at: number | null | undefined): at is number => typeof at === "number" && at <= deadline;
 		const busy = () => {
 			printJson(deps, { handle, delivered: false, busy: true, after_s: Math.max(0, deps.now() - sentAt), line: "busy, try later" });
 			process.exitCode = 1;
 		};
-		for (let waited = 0; ; waited += PING_POLL_MS) {
+		for (let waited = 0; ; waited += sent ? PING_POLL_MS : 0) {
 			const rows = ids.map((id) => deps.db.pingRow(id));
-			const delivered = rows.map((row) => row?.delivered_at).filter((at): at is number => typeof at === "number");
+			const delivered = rows.map((row) => row?.delivered_at).filter(inTime);
 			if (delivered.length > 0) {
 				const after = Math.max(0, Math.min(...delivered) - sentAt);
 				printJson(deps, { handle, delivered: true, after_s: after, line: `delivered after ${after} s` });
 				return;
 			}
-			if (rows.length > 0 && rows.every((row) => typeof row?.busy_at === "number")) return busy();
-			if (waited >= seconds * 1000 || deps.now() > deadline) break;
+			if (rows.length === targets.length && rows.length > 0 && rows.every((row) => inTime(row?.busy_at))) return busy();
+			if (waited >= seconds * 1000 || deps.now() > deadline || remainingMs() === 0) break;
 			await sleep(PING_POLL_MS);
 		}
-		if (ids.some((id) => typeof deps.db.pingRow(id)?.busy_at === "number")) return busy();
+		if (ids.some((id) => inTime(deps.db.pingRow(id)?.busy_at))) return busy();
 		printJson(deps, { handle, delivered: false, after_s: seconds, line: `no answer after ${seconds} s` });
 		process.exitCode = 1;
 	} finally {
+		finished = true;
 		own?.close();
 		closeRelayPool(pool, relaysUsed);
 	}
