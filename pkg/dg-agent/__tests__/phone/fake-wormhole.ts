@@ -12,6 +12,7 @@ export type FakeReceiveMode =
 	| "text"
 	| "symlink"
 	| "two-files"
+	| "two-files-over"
 	| "oversize"
 	| "corrupt"
 	| "hang";
@@ -103,7 +104,7 @@ async function receive() {
 	if (answer !== "y") { process.stderr.write("transfer rejected\\n"); process.exit(1); }
 	const out = path.join(process.cwd(), name);
 	if (C.receive === "symlink") { const real = C.rv + "/" + "p".repeat(Math.max(1, data.length - C.rv.length - 1)); fs.writeFileSync(real, data); fs.symlinkSync(real, out); process.exit(0); }
-	if (C.receive === "two-files") { fs.writeFileSync(out, data); fs.writeFileSync(out + ".extra", "x"); process.exit(0); }
+	if (C.receive === "two-files" || C.receive === "two-files-over") { fs.writeFileSync(out, data); fs.writeFileSync(out + ".extra", C.receive === "two-files" ? "" : "x"); process.exit(0); }
 	if (C.receive === "corrupt") { const bad = Buffer.from(data); bad[0] ^= 0xff; fs.writeFileSync(out, bad); process.exit(0); }
 	if (C.receive === "oversize") {
 		const fd = fs.openSync(out + ".tmp123", "w");

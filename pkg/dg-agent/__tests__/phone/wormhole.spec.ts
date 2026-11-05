@@ -334,6 +334,13 @@ describe("wormholeReceive", () => {
 		expect(await wormholeReceive(paths, { code, x, size: cipher.length }, fake.deps)).toEqual({ ok: false, reason: "bad file" });
 	});
 
+	it("reports too large for files past the size even when the process exits before a size poll", async () => {
+		const fake = fakeWormhole(home, { receive: "two-files-over", limits: { pollMs: 60_000 } });
+		const code = wormholeCode();
+		stage(fake.rendezvous, code, cipher, x);
+		expect(await wormholeReceive(paths, { code, x, size: cipher.length }, fake.deps)).toEqual({ ok: false, reason: "too large" });
+	});
+
 	it("rejects a file whose sha256 is not x", async () => {
 		const fake = fakeWormhole(home, { receive: "corrupt" });
 		const code = wormholeCode();
