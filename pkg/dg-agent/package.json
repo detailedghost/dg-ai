@@ -15,11 +15,11 @@
 	"dependencies": {
 		"@dg/common": "workspace:*",
 		"commander": "^15.0.0",
-		"nostr-tools": "^2.25.2"
+		"nostr-tools": "^2.25.4"
 	},
 	"devDependencies": {
 		"@dg/dg-daemon": "workspace:*",
-		"bun-types": "^1.4.3",
+		"bun-types": "^1.4.4",
 		"typescript": "^7.0.2"
 	}
 }
