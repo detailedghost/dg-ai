@@ -248,7 +248,7 @@ dg-agent phone vault open lab-1                   # a human at a terminal only
 | `phone vault add <name> [file]` | Seals a file, or the raw bytes on stdin, of 5 MiB at most. Prints `{name, size, created_at, expires_at}` only. A taken name is refused. |
 | `phone vault list` | One JSON line per live item: `{name, size, type, sender, created_at, expires_at}`. `sender` is `self`, a `+handle`, or an npub. Never content. |
 | `phone vault rm <name>` | Deletes the item and its file. |
-| `phone vault open <name>` | Shows a text item on `/dev/tty`, never stdout. An image goes to the system viewer as a 0600 copy in `vault/`, which is deleted when the viewer exits and the human presses Enter. Refuses when `CLAUDECODE`, `CLAUDE_CODE_*`, or `CODEX_*` is set, and when stdin or stdout is not a TTY. |
+| `phone vault open <name>` | Shows a text item on `/dev/tty`, never stdout. An image goes to the system viewer as a 0600 copy in `vault/`, which is deleted when the viewer exits and the human presses Enter. Refuses when `CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_*`, `OPENCODE`, `GEMINI_CLI`, or `GROK_HOOK_EVENT` is set, and when stdin or stdout is not a TTY. |
 | `phone vault exec <name> [--env VAR \| --stdin] [--out <name>] -- <cmd...>` | Runs the command with an argv array and no shell. The item goes on stdin (the default), or in `VAR` for a text item under 64 KiB with no NUL byte. Stdout, 5 MiB at most, becomes the new item `--out` (default `<name>-out`), which never overwrites and keeps the source item's sender. Stderr is counted, not kept. Prints `{name, exit, out, size, stderr_lines}`. A nonzero exit or an overflow stores nothing and exits with the command's code, or 1. |
 
 Names match `^[a-z0-9][a-z0-9._-]{0,63}$` and hold no `..`. Names hold no

@@ -399,7 +399,7 @@ prints only `{"name", "exit", "out", "size", "stderr_lines"}`. A nonzero
 exit stores nothing and exits with the command's code.
 
 `phone vault open <name>` is for a human at a terminal. It refuses inside
-Claude Code or Codex, and without a TTY on stdin and stdout. Do not run it.
+Claude Code, Codex, opencode, Gemini CLI, or a Grok CLI hook, and without a TTY on stdin and stdout. Do not run it.
 
 Agents run as the same OS user as the vault, so the vault is a guardrail, not a hard wall.
 Follow the vault rules in [references/safety.md](references/safety.md).

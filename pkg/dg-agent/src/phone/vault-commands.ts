@@ -121,10 +121,13 @@ export async function readVaultForSend(name: string, deps: PhoneDeps): Promise<{
 	throw new DgCliError(`vault item ${name} is not text or an image`);
 }
 
-/** Env vars that Claude Code and Codex set in the shells they run. */
+/** Markers that agent tools set in the shells and hooks they run, each confirmed from that tool's source or docs. */
+const AGENT_ENV_NAMES: ReadonlySet<string> = new Set(["CLAUDECODE", "OPENCODE", "GEMINI_CLI", "GROK_HOOK_EVENT"]);
+const AGENT_ENV_PREFIXES = ["CLAUDE_CODE_", "CODEX_"];
+
 function agentSession(env: Record<string, string | undefined>): boolean {
 	return Object.entries(env).some(
-		([name, value]) => value !== undefined && value !== "" && (name === "CLAUDECODE" || name.startsWith("CLAUDE_CODE_") || name.startsWith("CODEX_")),
+		([name, value]) => value !== undefined && value !== "" && (AGENT_ENV_NAMES.has(name) || AGENT_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))),
 	);
 }
 

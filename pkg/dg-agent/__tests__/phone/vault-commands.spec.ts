@@ -207,6 +207,24 @@ describe("phone vault open", () => {
 		expect(out).toBe("");
 	});
 
+	it("refuses inside opencode, Gemini CLI, and a Grok CLI hook", async () => {
+		await seed("lab", SECRET);
+		for (const env of [{ OPENCODE: "1" }, { GEMINI_CLI: "1" }, { GROK_HOOK_EVENT: "PreToolUse" }]) {
+			terminal.env = env;
+			await expect(phoneVaultOpen("lab", deps)).rejects.toThrow(/human/);
+		}
+		expect(tty).toBe("");
+	});
+
+	it("still opens for a human whose shell only sets tool config such as OPENCODE_CONFIG_DIR or GROK_API_KEY", async () => {
+		await seed("lab", SECRET);
+		terminal.env = { OPENCODE_CONFIG_DIR: "/x", GROK_API_KEY: "k", GEMINI_API_KEY: "k" };
+
+		await phoneVaultOpen("lab", deps);
+
+		expect(tty).toBe(`${SECRET}\n`);
+	});
+
 	it("refuses without an interactive terminal on stdin and stdout", async () => {
 		await seed("lab", SECRET);
 		terminal.interactive = false;
