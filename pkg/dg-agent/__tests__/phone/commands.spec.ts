@@ -28,6 +28,8 @@ import {
 } from "../../src/phone/commands";
 import { OUTBOX_DIR, PhoneDb } from "../../src/phone/db";
 import { MAX_IMAGE_BYTES } from "../../src/phone/image";
+import { keyPeriod, storeVaultItem, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
+import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
 import { createFileKey, ensureNumberKey, readFileKey } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
 import {
@@ -679,7 +681,7 @@ describe("accept", () => {
 	});
 });
 
-describe("say", () => {
+describe("text", () => {
 	it("signs with the contact's key_id and publishes to the contact's relays", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -767,7 +769,7 @@ describe("files", () => {
 	});
 });
 
-describe("say --image", () => {
+describe("text --image", () => {
 	function sha256(bytes: Uint8Array): string {
 		return createHash("sha256").update(bytes).digest("hex");
 	}
@@ -822,7 +824,7 @@ describe("say --image", () => {
 		expect(phiRumor?.tags).toEqual([["p", getPublicKey(contactSk)], ["dg-phi", "1"]]);
 		expect(plainRumor?.tags.some(([name]) => name === "dg-phi")).toBe(false);
 		const phiByText = Object.fromEntries(d.db.recentMessages(20).map((row) => [row.text, row.phi]));
-		expect(phiByText).toEqual({ "chart note": 1, "plain note": 0 });
+		expect(phiByText).toEqual({ "[PHI: not stored]": 1, "plain note": 0 });
 	});
 
 	it("tags a --phi thread text with dg-phi for every member and stores phi 1", async () => {
@@ -836,7 +838,86 @@ describe("say --image", () => {
 		const rumor = nip59.unwrapEvent(wrap as NostrEvent, contactSk);
 		expect(rumor.kind).toBe(14);
 		expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
-		expect(d.db.recentMessages(20).map((row) => row.phi)).toEqual([1]);
+		expect(d.db.recentMessages(20).map((row) => [row.text, row.phi])).toEqual([["[PHI: not stored]", 1]]);
+	});
+
+	describe("--vault", () => {
+		const SECRET = "patient Jane Roe, MRN 12345";
+
+		async function vaultReady(): Promise<{ d: PhoneDeps; home: string; contactSk: Uint8Array; creds: FakeCredentials }> {
+			const ready_ = await ready();
+			const creds = createFakeCredentials({ session: false, granted: true });
+			const day = keyPeriod(NOW);
+			creds.store.set(vaultKeyName(day), "11".repeat(32));
+			return { ...ready_, d: { ...ready_.d, vaultClient: creds.deps().vaultClient }, creds };
+		}
+
+		function seed(d: PhoneDeps, name: string, plain: Buffer): void {
+			const day = keyPeriod(NOW);
+			storeVaultItem(d.db, d.paths.phoneRoot, { name, sender: "self", plain, key: { period: day, key: Buffer.from("11".repeat(32), "hex") } }, NOW);
+		}
+
+		it("sends a text item as a dg-phi message and stores only a placeholder row", async () => {
+			const { d, contactSk } = await vaultReady();
+			seed(d, "lab", Buffer.from(SECRET));
+
+			await phoneSay("+velora", undefined, d, { vault: "lab" });
+
+			const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
+			expect(rumor.kind).toBe(14);
+			expect(rumor.content).toBe(SECRET);
+			expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
+			expect(d.db.recentMessages(20).map((row) => [row.text, row.phi, row.file])).toEqual([["[PHI: vault item lab]", 1, null]]);
+			expect(out.join("").includes("Jane")).toBe(false);
+		});
+
+		it("sends an image item as a kind 15 file from memory, with only a placeholder row", async () => {
+			const { d, contactSk } = await vaultReady();
+			seed(d, "shot", jpegWithGpsExif());
+
+			await phoneSay("+velora", undefined, d, { vault: "shot" });
+
+			const rumor = nip59.unwrapEvent(pool.events[0] as NostrEvent, contactSk);
+			expect(rumor.kind).toBe(15);
+			expect(rumor.tags.filter(([name]) => name === "dg-phi")).toEqual([["dg-phi", "1"]]);
+			expect(outboxFiles(d).length).toBe(1);
+			expect(d.db.recentMessages(20).map((row) => [row.text, row.file])).toEqual([["[PHI: vault item shot]", null]]);
+		});
+
+		it("sends a text item to a group with a placeholder row", async () => {
+			const { d } = await vaultReady();
+			await phoneThreadNew("#room", ["+velora"], { subject: "room" }, d);
+			seed(d, "lab", Buffer.from(SECRET));
+
+			await phoneSay("#room", undefined, d, { vault: "lab" });
+
+			expect(d.db.recentMessages(20).map((row) => row.text)).toEqual(["[PHI: vault item lab]"]);
+		});
+
+		it("refuses text, --image, an unknown or expired item, and an image while files are off, sending nothing", async () => {
+			const { d, home } = await vaultReady();
+			seed(d, "lab", Buffer.from(SECRET));
+			seed(d, "shot", jpegWithGpsExif());
+			const image = writeImage(home);
+
+			await expectNoSend(d, () => phoneSay("+velora", "hi", d, { vault: "lab" }), "--vault takes no text", 1);
+			await expectNoSend(d, () => phoneSay("+velora", undefined, d, { vault: "lab", image }), "--vault and --image cannot be used together", 1);
+			await expectNoSend(d, () => phoneSay("+velora", undefined, d, { vault: "nope" }), "no vault item nope", 1);
+			phoneFiles("off", d);
+			await expectNoSend(d, () => phoneSay("+velora", undefined, d, { vault: "shot" }), "files are off; the human runs phone files on", 1);
+			const later = { ...makePhoneDeps({ home, pool, write: () => {}, now: NOW + VAULT_TTL_SECONDS }), vaultClient: d.vaultClient };
+			tracker.trackDb(later.db);
+			await expectNoSend(later, () => phoneSay("+velora", undefined, later, { vault: "lab" }), "no vault item lab", 1);
+		});
+
+		it("refuses when the credential store is not reachable", async () => {
+			const { d, creds } = await vaultReady();
+			seed(d, "lab", Buffer.from(SECRET));
+			creds.up = false;
+
+			await expect(phoneSay("+velora", undefined, d, { vault: "lab" })).rejects.toThrow(/not reachable/);
+			expect(pool.events).toEqual([]);
+		});
 	});
 
 	it("marks a --phi image with the dg-phi rumor tag and phi 1 on the row and its outbox copy", async () => {
@@ -886,7 +967,7 @@ describe("say --image", () => {
 		const { d, home } = await ready();
 		const image = writeImage(home);
 
-		await expectNoSend(d, () => phoneSay("+velora", "caption", d, { image }), "--image takes no text; send text with a second say", 1);
+		await expectNoSend(d, () => phoneSay("+velora", "caption", d, { image }), "--image takes no text; send text with a second text command", 1);
 	});
 
 	it("stages the ciphertext, publishes a kind 15 with the NIP-17 tags, and saves an [image] row with no path", async () => {
@@ -1034,17 +1115,17 @@ describe("say --image", () => {
 		program.exitOverride();
 		registerPhoneCommands(program, () => d);
 
-		await program.parseAsync(["phone", "say", "+velora", "hi", "--phi"], { from: "user" });
-		await program.parseAsync(["phone", "say", "+velora", "--image", image, "--phi"], { from: "user" });
+		await program.parseAsync(["phone", "text", "+velora", "hi", "--phi"], { from: "user" });
+		await program.parseAsync(["phone", "text", "+velora", "--image", image, "--phi"], { from: "user" });
 		await program.parseAsync(["phone", "files", "off"], { from: "user" });
 
 		const phiByText = Object.fromEntries(d.db.recentMessages(20).map((row) => [row.text, row.phi]));
-		expect(phiByText).toEqual({ hi: 1, "[image]": 1 });
+		expect(phiByText).toEqual({ "[PHI: not stored]": 1, "[image]": 1 });
 		expect(lines().at(-1)).toEqual({ files: "off" });
 	});
 });
 
-describe("inbox", () => {
+describe("messages", () => {
 	it("prints oldest first, defaults to 50, and never marks anything read", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -1199,10 +1280,10 @@ describe("inbox", () => {
 		registerPhoneCommands(program, () => d);
 		out = [];
 
-		await program.parseAsync(["phone", "inbox"], { from: "user" });
+		await program.parseAsync(["phone", "messages"], { from: "user" });
 		const all = lines() as { id: string }[];
 		out = [];
-		await program.parseAsync(["phone", "inbox", "+mary"], { from: "user" });
+		await program.parseAsync(["phone", "messages", "+mary"], { from: "user" });
 		const filtered = lines() as { id: string }[];
 
 		expect(all.map((row) => row.id)).toEqual(["in", "out"]);
@@ -1210,7 +1291,7 @@ describe("inbox", () => {
 	});
 });
 
-describe("voicemail", () => {
+describe("unread", () => {
 	it("prints unread incoming rows oldest first and marks them read", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -1361,6 +1442,7 @@ describe("status", () => {
 			notice: null,
 			autostart: null,
 			files: "off",
+			presence: "on",
 		});
 	});
 
@@ -1421,7 +1503,7 @@ describe("--line is gone", () => {
 		program.exitOverride();
 
 		await expect(program.parseAsync(["phone", "--line", "x", "number"], { from: "user" })).rejects.toThrow(
-			"--line is gone: one phone holds every contact; use +handle on say and inbox",
+			"--line is gone: one phone holds every contact; use +handle on text and messages",
 		);
 	});
 });

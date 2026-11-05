@@ -1348,7 +1348,7 @@ describe("read-only phone commands", () => {
 			program.exitOverride();
 			registerPhoneCommands(program);
 			await program.parseAsync(["phone", "status"], { from: "user" });
-			await program.parseAsync(["phone", "inbox"], { from: "user" });
+			await program.parseAsync(["phone", "messages"], { from: "user" });
 			await program.parseAsync(["phone", "contacts"], { from: "user" });
 			await program.parseAsync(["phone", "status"], { from: "user" });
 			stdout.mockRestore();

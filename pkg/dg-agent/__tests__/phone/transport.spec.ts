@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19, nip59 } from "nostr-tools";
-import { FILE_REQUEST_KIND, type FileRequestRumor } from "../../src/phone/chat";
+import { type ControlRumor, FILE_REQUEST_KIND } from "../../src/phone/chat";
 import { OUTBOX_DIR, PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { createFileKey, type KeyClient } from "../../src/phone/keys";
@@ -54,10 +54,12 @@ function stageOutbox(hash: string, bytes: Buffer, recipients: string[] = [receiv
 	senderDb.addOutbox(hash, keyId, recipients);
 }
 
-function request(overrides: Partial<FileRequestRumor> & { x?: string; code?: string } = {}): FileRequestRumor {
+function request(overrides: Partial<ControlRumor> & { x?: string; code?: string } = {}): ControlRumor {
 	const { x: hash = x, code = wormholeCode(), ...rest } = overrides;
 	return {
 		id: randomBytes(32).toString("hex"),
+		wrapId: randomBytes(32).toString("hex"),
+		kind: FILE_REQUEST_KIND,
 		from: receiverPub,
 		keyId: numberKeyId(senderDb),
 		createdAt: NOW,
@@ -528,7 +530,8 @@ describe("listener file requests", () => {
 			await pool.publish(RELAYS, event)[0];
 			await Bun.sleep(200);
 			expect(senderFake.runs()).toEqual([]);
-			expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toContain("dropped");
+			const lines = stderr.mock.calls.map((call) => String(call[0])).filter((line) => !line.includes("not addressed to a loaded key"));
+			expect(lines.join("")).not.toContain("dropped");
 		} finally {
 			listener.stop();
 			await listener.done;

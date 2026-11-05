@@ -9,6 +9,10 @@ const CHAT_MESSAGE_KIND = 14;
 export const FILE_MESSAGE_KIND = 15;
 /** Rumor tag on a message the sender marked as PHI. */
 export const PHI_TAG = "dg-phi";
+/** Rumor tag naming the one agent on the receiving machine a message is for. */
+export const EXT_TAG = "dg-ext";
+/** Rumor tag naming the sending agent, so a reply can route back; a claim, never an identity. */
+export const FROM_EXT_TAG = "dg-from-ext";
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
 /** Participants, including this phone. Larger rooms are dropped, not stored. */
@@ -59,18 +63,31 @@ export type ThreadView = {
 	keyId?: string;
 	offer?: ImageOffer;
 	phi?: true;
+	fromExt?: string;
 };
 
 type RumorView = { id: string; kind: number; pubkey: string; created_at: number; content: string; tags: string[][] };
 
-export type RumorBody = { text: string; offer?: ImageOffer; phi?: true };
+export type RumorBody = { text: string; offer?: ImageOffer; phi?: true; ext?: string; fromExt?: string };
+
+/** A peer's extension tag value, or undefined when it is missing or fails the name rule. */
+function extensionTag(tags: readonly string[][], name: string): string | undefined {
+	const value = tags.find((tag) => tag[0] === name)?.[1];
+	return typeof value === "string" && isHandle(value) ? value : undefined;
+}
 
 /** The stored text of a rumor: a kind 15 is a placeholder plus its offer, never its content. */
 export function rumorBody(rumor: { kind: number; content: string; tags: readonly string[][] }): RumorBody {
-	const phi = rumor.tags.some((tag) => tag[0] === PHI_TAG && tag[1] === "1") ? { phi: true as const } : {};
-	if (rumor.kind !== FILE_MESSAGE_KIND) return { text: rumor.content, ...phi };
+	const ext = extensionTag(rumor.tags, EXT_TAG);
+	const fromExt = extensionTag(rumor.tags, FROM_EXT_TAG);
+	const marks = {
+		...(rumor.tags.some((tag) => tag[0] === PHI_TAG && tag[1] === "1") ? { phi: true as const } : {}),
+		...(ext ? { ext } : {}),
+		...(fromExt ? { fromExt } : {}),
+	};
+	if (rumor.kind !== FILE_MESSAGE_KIND) return { text: rumor.content, ...marks };
 	const offer = parseImageOffer(rumor.content, rumor.tags);
-	return offer ? { text: IMAGE_TEXT, offer, ...phi } : { text: imageUnavailableText("bad offer"), ...phi };
+	return offer ? { text: IMAGE_TEXT, offer, ...marks } : { text: imageUnavailableText("bad offer"), ...marks };
 }
 
 /** Stable room id: sha256 of the sorted participant npubs, our own included. */
@@ -160,11 +177,11 @@ export function dedupeHandle(body: string, taken: (handle: string) => boolean): 
 
 export function parseThreadHandle(value: string): string {
 	if (!value.startsWith("#")) {
-		throw new DgCliError(`a thread handle must start with #, got "${value}"`);
+		throw new DgCliError(`a group handle must start with #, got "${value}"`);
 	}
 	const body = value.slice(1);
 	if (!isHandle(body)) {
-		throw new DgCliError(`a thread handle must be # then 1-32 lowercase letters, digits, or dashes, got "${value}"`);
+		throw new DgCliError(`a group handle must be # then 1-32 lowercase letters, digits, or dashes, got "${value}"`);
 	}
 	return `#${body}`;
 }
@@ -271,7 +288,7 @@ export function pendingIdsToDrop(rows: readonly PendingCapRow[], perSender = HEL
 
 /** One voicemail line for every held room. The message body is not included. */
 export function heldThreadsNotice(count: number): string {
-	return count === 1 ? "1 held thread" : `${count} held threads`;
+	return count === 1 ? "1 held group" : `${count} held groups`;
 }
 
 export function heldFrom(view: ThreadView): HeldThread {
@@ -295,6 +312,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 	thread: ThreadMeta;
 	image?: { offer: ImageOffer; keyId: string };
 	phi?: true;
+	fromExt?: string;
 } {
 	return {
 		id: view.rumorId,
@@ -303,6 +321,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 		text: view.text,
 		...(view.offer ? { image: { offer: view.offer, keyId } } : {}),
 		...(view.phi ? { phi: view.phi } : {}),
+		...(view.fromExt ? { fromExt: view.fromExt } : {}),
 		thread: {
 			roomId: view.roomId,
 			subject: view.subject,
@@ -315,7 +334,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 
 /** Stderr line for one held room. A short id only, never the message body. */
 export function heldLogLine(roomId: string): string {
-	return `phone: held thread ${roomId.slice(0, 8)}\n`;
+	return `phone: held group ${roomId.slice(0, 8)}\n`;
 }
 
 export function threadLine(threadHandle: string, senderLabelText: string, text: string): string {

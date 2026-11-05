@@ -345,6 +345,7 @@ export async function wormholeReceive(
 		}
 		if (failure) return { ok: false, reason: failure };
 		if (!offered) return { ok: false, reason: "no transfer" };
+		if (dirBytes(dir) > req.size) return { ok: false, reason: "too large" };
 		return readReceived(dir, req.x, req.size);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
