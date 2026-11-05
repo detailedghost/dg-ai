@@ -389,7 +389,7 @@ describe("PhoneDb", () => {
 		});
 	});
 
-	describe("held threads", () => {
+	describe("held groups", () => {
 		function held(rumorId: string, phi?: boolean) {
 			return { rumor_id: rumorId, room_id: "room", sender: "npub1them", members: "[]", subject: null, text: "body", ts: NOW - 3 * 24 * 60 * 60, ...(phi ? { phi } : {}) };
 		}

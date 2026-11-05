@@ -28,7 +28,7 @@ const DRIFT_SETTING = "listener_drift";
 const ADMISSION_EPOCH = "admission_epoch";
 /** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
 const CURSOR_SETTING = "cursor";
-/** Milliseconds `say` and `accept` wait for a relay OK. The env var overrides this. */
+/** Milliseconds `text` and `accept` wait for a relay OK. The env var overrides this. */
 export const PUBLISH_CONFIRM_SETTING = "publish_confirm_ms";
 /** Whether `say --image` may send; off until someone runs `phone files on`. */
 const FILES_SETTING = "files";

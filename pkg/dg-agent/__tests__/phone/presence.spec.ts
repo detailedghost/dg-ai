@@ -469,7 +469,7 @@ describe("phone ping", () => {
 		await expect(phonePing("+b", { timeout: "0" }, alice.deps)).rejects.toThrow("--timeout must be");
 		await expect(phonePing("+b", { timeout: "abc" }, alice.deps)).rejects.toThrow("--timeout must be");
 		await expect(phonePing("+nobody", {}, alice.deps)).rejects.toThrow("no contact +nobody");
-		await expect(phonePing("#none", {}, alice.deps)).rejects.toThrow("no thread #none");
+		await expect(phonePing("#none", {}, alice.deps)).rejects.toThrow("no group #none");
 	});
 });
 

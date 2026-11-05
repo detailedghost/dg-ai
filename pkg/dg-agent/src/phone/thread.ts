@@ -160,11 +160,11 @@ export function dedupeHandle(body: string, taken: (handle: string) => boolean): 
 
 export function parseThreadHandle(value: string): string {
 	if (!value.startsWith("#")) {
-		throw new DgCliError(`a thread handle must start with #, got "${value}"`);
+		throw new DgCliError(`a group handle must start with #, got "${value}"`);
 	}
 	const body = value.slice(1);
 	if (!isHandle(body)) {
-		throw new DgCliError(`a thread handle must be # then 1-32 lowercase letters, digits, or dashes, got "${value}"`);
+		throw new DgCliError(`a group handle must be # then 1-32 lowercase letters, digits, or dashes, got "${value}"`);
 	}
 	return `#${body}`;
 }
@@ -271,7 +271,7 @@ export function pendingIdsToDrop(rows: readonly PendingCapRow[], perSender = HEL
 
 /** One voicemail line for every held room. The message body is not included. */
 export function heldThreadsNotice(count: number): string {
-	return count === 1 ? "1 held thread" : `${count} held threads`;
+	return count === 1 ? "1 held group" : `${count} held groups`;
 }
 
 export function heldFrom(view: ThreadView): HeldThread {
@@ -315,7 +315,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 
 /** Stderr line for one held room. A short id only, never the message body. */
 export function heldLogLine(roomId: string): string {
-	return `phone: held thread ${roomId.slice(0, 8)}\n`;
+	return `phone: held group ${roomId.slice(0, 8)}\n`;
 }
 
 export function threadLine(threadHandle: string, senderLabelText: string, text: string): string {

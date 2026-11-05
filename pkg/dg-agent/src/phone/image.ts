@@ -43,7 +43,7 @@ export type ImageFile = { sha256: string; type: ImageType; size: number };
 /** The kind 15 fields a receive needs; `x` hashes the ciphertext, `ox` the plaintext. */
 export type ImageOffer = { x: string; ox: string; size: number; key: string; nonce: string };
 
-/** How a stored image appears in `inbox`, `voicemail`, and the hook payload. */
+/** How a stored image appears in `messages`, `unread`, and the hook payload. */
 export type StoredFileView = { path: string; type: ImageType; size: number; sha256: string; untrusted: true };
 
 export type PreparedImage = { cipher: Buffer; x: string; tags: string[][]; content: string; file: ImageFile };

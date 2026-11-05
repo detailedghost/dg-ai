@@ -737,7 +737,7 @@ export class PhoneDb {
 	/**
 	 * Sets `delivered_at` once on our outgoing row or ping `id`, only when `signer` was a recipient
 	 * and `to` is the npub that sent it. A thread row accepts any member. A receipt for an id not
-	 * stored yet is held, since `say` saves its row after the relays answer.
+	 * stored yet is held, since `text` saves its row after the relays answer.
 	 */
 	markDelivered(id: string, signer: string, to: string, at: number): boolean {
 		if (this.applyDelivered(id, signer, to, at)) return true;
@@ -880,7 +880,7 @@ export class PhoneDb {
 			this.db.query("DELETE FROM messages WHERE id = 'phone-held-threads'").run();
 			return;
 		}
-		const text = rooms === 1 ? "1 held thread" : `${rooms} held threads`;
+		const text = rooms === 1 ? "1 held group" : `${rooms} held groups`;
 		this.upsertHeldNotice(text);
 	}
 

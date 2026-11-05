@@ -679,7 +679,7 @@ describe("accept", () => {
 	});
 });
 
-describe("say", () => {
+describe("text", () => {
 	it("signs with the contact's key_id and publishes to the contact's relays", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -767,7 +767,7 @@ describe("files", () => {
 	});
 });
 
-describe("say --image", () => {
+describe("text --image", () => {
 	function sha256(bytes: Uint8Array): string {
 		return createHash("sha256").update(bytes).digest("hex");
 	}
@@ -886,7 +886,7 @@ describe("say --image", () => {
 		const { d, home } = await ready();
 		const image = writeImage(home);
 
-		await expectNoSend(d, () => phoneSay("+velora", "caption", d, { image }), "--image takes no text; send text with a second say", 1);
+		await expectNoSend(d, () => phoneSay("+velora", "caption", d, { image }), "--image takes no text; send text with a second text command", 1);
 	});
 
 	it("stages the ciphertext, publishes a kind 15 with the NIP-17 tags, and saves an [image] row with no path", async () => {
@@ -1034,8 +1034,8 @@ describe("say --image", () => {
 		program.exitOverride();
 		registerPhoneCommands(program, () => d);
 
-		await program.parseAsync(["phone", "say", "+velora", "hi", "--phi"], { from: "user" });
-		await program.parseAsync(["phone", "say", "+velora", "--image", image, "--phi"], { from: "user" });
+		await program.parseAsync(["phone", "text", "+velora", "hi", "--phi"], { from: "user" });
+		await program.parseAsync(["phone", "text", "+velora", "--image", image, "--phi"], { from: "user" });
 		await program.parseAsync(["phone", "files", "off"], { from: "user" });
 
 		const phiByText = Object.fromEntries(d.db.recentMessages(20).map((row) => [row.text, row.phi]));
@@ -1044,7 +1044,7 @@ describe("say --image", () => {
 	});
 });
 
-describe("inbox", () => {
+describe("messages", () => {
 	it("prints oldest first, defaults to 50, and never marks anything read", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -1199,10 +1199,10 @@ describe("inbox", () => {
 		registerPhoneCommands(program, () => d);
 		out = [];
 
-		await program.parseAsync(["phone", "inbox"], { from: "user" });
+		await program.parseAsync(["phone", "messages"], { from: "user" });
 		const all = lines() as { id: string }[];
 		out = [];
-		await program.parseAsync(["phone", "inbox", "+mary"], { from: "user" });
+		await program.parseAsync(["phone", "messages", "+mary"], { from: "user" });
 		const filtered = lines() as { id: string }[];
 
 		expect(all.map((row) => row.id)).toEqual(["in", "out"]);
@@ -1210,7 +1210,7 @@ describe("inbox", () => {
 	});
 });
 
-describe("voicemail", () => {
+describe("unread", () => {
 	it("prints unread incoming rows oldest first and marks them read", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -1422,7 +1422,7 @@ describe("--line is gone", () => {
 		program.exitOverride();
 
 		await expect(program.parseAsync(["phone", "--line", "x", "number"], { from: "user" })).rejects.toThrow(
-			"--line is gone: one phone holds every contact; use +handle on say and inbox",
+			"--line is gone: one phone holds every contact; use +handle on text and messages",
 		);
 	});
 });

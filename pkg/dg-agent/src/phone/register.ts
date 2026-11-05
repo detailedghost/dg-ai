@@ -6,6 +6,7 @@ import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS } from "./push";
 
 export const DEFAULT_INVITE_HOURS = 24;
 export const WATCH_DEFAULT_FOR_S = 120;
+export const ALIAS_REMOVAL_VERSION = "1.42.0";
 
 export type PhoneApi = Pick<
 	typeof Commands,
@@ -42,15 +43,24 @@ const EXIT_REMOVED_VERB = 2;
 
 /** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
 const REMOVED_VERBS: Record<string, string> = {
-	answer: "answer is gone; run phone open to start the listener, then phone voicemail to read what came in",
+	answer: "answer is gone; run phone open to start the listener, then phone unread to read what came in",
 	deliver: "deliver is gone; use phone open --on-message to run a program for each message",
 	whoami: "whoami is gone; use phone number --as <name>",
 	name: "name is gone; use phone contacts rename +old <new>",
 };
 
+/** A hidden command that stands in for a renamed one and prints one stderr notice before it runs. */
+function renamedAlias(group: Command, oldName: string, newName: string): Command {
+	return group
+		.command(oldName, { hidden: true })
+		.hook("preAction", () => {
+			process.stderr.write(`phone ${oldName} is now phone ${newName}; this alias goes away in ${ALIAS_REMOVAL_VERSION}\n`);
+		});
+}
+
 type PhoneLoader = () => Promise<PhoneApi>;
 
-/** Attaches every phone verb to `group`, plus the hidden one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
+/** Attaches every phone verb to `group`, plus the hidden renamed-verb aliases, the one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
 function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => string | undefined): void {
 	group
 		.command("number")
@@ -112,22 +122,23 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 			phone.phoneContactsRemove(handle, phone.deps(getSession()));
 		});
 
-	group
-		.command("say")
-		.description("send one message to a contact, or to a #thread")
-		.argument("<handle>", "the contact's +handle, or a #thread")
-		.argument("[text]", "message text, or - to read it from stdin; omit with --image")
-		.option("--image <path>", "send one PNG, JPEG, or WebP image instead of text")
-		.option("--phi", "mark the message as PHI: tags it and keeps the sent row and any outbox copy 24 hours, not 7 days")
-		.action(async (handle: string, text: string | undefined, opts: Commands.SayOpts) => {
-			const phone = await load();
-			await phone.phoneSay(handle, text, phone.deps(getSession()), opts);
-		});
+	const sendText = (command: Command): Command =>
+		command
+			.argument("<handle>", "the contact's +handle, or a #group")
+			.argument("[text]", "message text, or - to read it from stdin; omit with --image")
+			.option("--image <path>", "send one PNG, JPEG, or WebP image instead of text")
+			.option("--phi", "mark the message as PHI: tags it and keeps the sent row and any outbox copy 24 hours, not 7 days")
+			.action(async (handle: string, text: string | undefined, opts: Commands.SayOpts) => {
+				const phone = await load();
+				await phone.phoneSay(handle, text, phone.deps(getSession()), opts);
+			});
+	sendText(group.command("text").description("send one message to a contact, or to a #group"));
+	sendText(renamedAlias(group, "say", "text"));
 
 	group
 		.command("ping")
-		.description("check that a contact's or #thread's listener answers; exit 1 when no receipt comes in time")
-		.argument("<handle>", "the contact's +handle, or a #thread")
+		.description("check that a contact's or #group's listener answers; exit 1 when no receipt comes in time")
+		.argument("<handle>", "the contact's +handle, or a #group")
 		.option("--timeout <seconds>", "seconds to wait for the receipt", "30")
 		.action(async (handle: string, opts: { timeout?: string }) => {
 			const phone = await load();
@@ -136,7 +147,7 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 
 	group
 		.command("files")
-		.description("print whether say --image may send, or turn it on or off")
+		.description("print whether text --image may send, or turn it on or off")
 		.argument("[state]", "on or off")
 		.action(async (state: string | undefined) => {
 			const phone = await load();
@@ -152,58 +163,61 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 			phone.phonePresence(state, phone.deps(getSession()));
 		});
 
-	const threads = group.command("thread").description("a static multi-party room with a #handle");
+	const attachGroupVerbs = (parent: Command): void => {
+		parent
+			.command("new")
+			.description("create a group from existing contacts")
+			.argument("<handle>", "group handle, starting with #")
+			.argument("<members...>", "contacts to include, each a +handle")
+			.option("--subject <text>", "subject stored on the group and sent with each message")
+			.action(async (handle: string, members: string[], opts: { subject?: string }) => {
+				const phone = await load();
+				await phone.phoneThreadNew(handle, members, opts, phone.deps(getSession()));
+			});
 
-	threads
-		.command("new")
-		.description("create a thread from existing contacts")
-		.argument("<handle>", "thread handle, starting with #")
-		.argument("<members...>", "contacts to include, each a +handle")
-		.option("--subject <text>", "subject stored on the thread and sent with each message")
-		.action(async (handle: string, members: string[], opts: { subject?: string }) => {
-			const phone = await load();
-			await phone.phoneThreadNew(handle, members, opts, phone.deps(getSession()));
-		});
+		parent
+			.command("list")
+			.description("list groups, in handle order")
+			.action(async () => {
+				const phone = await load();
+				phone.phoneThreadList(phone.deps(getSession()));
+			});
 
-	threads
-		.command("list")
-		.description("list threads, in handle order")
-		.action(async () => {
-			const phone = await load();
-			phone.phoneThreadList(phone.deps(getSession()));
-		});
+		parent
+			.command("show")
+			.description("show one group and its members")
+			.argument("<handle>", "the group handle")
+			.action(async (handle: string) => {
+				const phone = await load();
+				phone.phoneThreadShow(handle, phone.deps(getSession()));
+			});
+	};
+	attachGroupVerbs(group.command("group").description("a static multi-party room with a #handle"));
+	attachGroupVerbs(renamedAlias(group, "thread", "group"));
 
-	threads
-		.command("show")
-		.description("show one thread and its members")
-		.argument("<handle>", "the thread handle")
-		.action(async (handle: string) => {
-			const phone = await load();
-			phone.phoneThreadShow(handle, phone.deps(getSession()));
-		});
+	const printMessages = (command: Command): Command =>
+		command
+			.option("-n, --count <count>", "how many messages to print", "50")
+			.option("--meta", "print metadata only, omitting message text")
+			.argument("[handle]", "limit to one contact's messages")
+			.action(async (handle: string | undefined, opts: { count?: string; meta?: boolean }) => {
+				const phone = await load();
+				phone.phoneInbox({ n: opts.count, handle, meta: opts.meta }, phone.deps(getSession()));
+			});
+	printMessages(group.command("messages").description("print stored messages, oldest first; never marks anything read"));
+	printMessages(renamedAlias(group, "inbox", "messages"));
 
-	group
-		.command("inbox")
-		.description("print stored messages, oldest first; never marks anything read")
-		.option("-n, --count <count>", "how many messages to print", "50")
-		.option("--meta", "print metadata only, omitting message text")
-		.argument("[handle]", "limit to one contact's messages")
-		.action(async (handle: string | undefined, opts: { count?: string; meta?: boolean }) => {
-			const phone = await load();
-			phone.phoneInbox({ n: opts.count, handle, meta: opts.meta }, phone.deps(getSession()));
-		});
-
-	group
-		.command("voicemail")
-		.description("print unread messages, oldest first, and mark them read")
-		.action(async () => {
+	const printUnread = (command: Command): Command =>
+		command.action(async () => {
 			const phone = await load();
 			await phone.phoneVoicemail(phone.deps(getSession()));
 		});
+	printUnread(group.command("unread").description("print unread messages, oldest first, and mark them read"));
+	printUnread(renamedAlias(group, "voicemail", "unread"));
 
 	group
 		.command("watch")
-		.description("print unread voicemail until --for seconds elapse, waiting a jittered gap between checks")
+		.description("print unread messages until --for seconds elapse, waiting a jittered gap between checks")
 		.option("--for <seconds>", "seconds to keep checking", String(WATCH_DEFAULT_FOR_S))
 		.option("--new", "print only messages that arrive after watch starts; the default also prints the unread backlog")
 		.action(async (opts: { for?: string; new?: boolean }) => {
@@ -213,7 +227,7 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 
 	group
 		.command("status")
-		.description("print your self name, contact count, and pending voicemail count")
+		.description("print your self name, contact count, and unread message count")
 		.action(async () => {
 			const phone = await load();
 			await phone.phoneStatus(phone.deps(getSession()));
@@ -325,7 +339,7 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 		.hook("preAction", (hooked, action) => {
 			({ session } = action.optsWithGlobals<{ session?: string }>());
 			if (hooked.getOptionValueSource("line") === "cli") {
-				throw new DgCliError("--line is gone: one phone holds every contact; use +handle on say and inbox", EXIT_REMOVED_VERB);
+				throw new DgCliError("--line is gone: one phone holds every contact; use +handle on text and messages", EXIT_REMOVED_VERB);
 			}
 		});
 	attachPhoneVerbs(group, load, () => session);

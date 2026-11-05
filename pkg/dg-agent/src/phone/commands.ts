@@ -570,15 +570,15 @@ async function phoneThreadNewAt(
 ): Promise<void> {
 	migrateIfNeeded(deps.paths);
 	const handle = parseThreadHandle(handleArg);
-	if (deps.db.getThreadByHandle(handle)) throw new DgCliError(`"${handle}" is already a thread`);
+	if (deps.db.getThreadByHandle(handle)) throw new DgCliError(`"${handle}" is already a group`);
 	if (memberArgs.length === 0) throw new DgCliError("name at least one contact");
 	if (memberArgs.length + 1 > MAX_THREAD_MEMBERS) {
-		throw new DgCliError(`a thread can have at most ${MAX_THREAD_MEMBERS} members`);
+		throw new DgCliError(`a group can have at most ${MAX_THREAD_MEMBERS} members`);
 	}
 	if (opts.subject !== undefined && opts.subject.trim() === "") throw new DgCliError("subject is empty");
 	const subject = opts.subject ?? "";
 	const members = memberArgs.map((arg) => {
-		if (arg.startsWith("#")) throw new DgCliError(`a thread member must be a contact, got "${arg}"`);
+		if (arg.startsWith("#")) throw new DgCliError(`a group member must be a contact, got "${arg}"`);
 		const memberHandle = normalizeHandle(arg);
 		const contact = findContactByHandle(deps.db, memberHandle);
 		if (!contact) throw new DgCliError(`no contact +${memberHandle}`);
@@ -591,13 +591,13 @@ async function phoneThreadNewAt(
 	}
 	const keyId = members[0]?.keyId;
 	if (keyId === undefined || members.some((member) => member.keyId !== keyId)) {
-		throw new DgCliError("thread members must share one key");
+		throw new DgCliError("group members must share one key");
 	}
 	const loaded = await ensureKey(deps, keyId);
 	const selfNpub = npubOf(loaded.sk);
-	if (members.some((member) => member.npub === selfNpub)) throw new DgCliError("a thread already includes you");
+	if (members.some((member) => member.npub === selfNpub)) throw new DgCliError("a group already includes you");
 	const id = threadRoomId([selfNpub, ...members.map((member) => member.npub)]);
-	if (deps.db.getThread(id)) throw new DgCliError(`a thread with these members already exists: ${deps.db.getThread(id)?.handle}`);
+	if (deps.db.getThread(id)) throw new DgCliError(`a group with these members already exists: ${deps.db.getThread(id)?.handle}`);
 	const createdAt = deps.now();
 	deps.db.transaction(() => {
 		deps.db.insertThread({ id, handle, subject, key_id: keyId, created_at: createdAt, via: "local" });
@@ -632,7 +632,7 @@ export function phoneThreadList(deps: PhoneDeps): void {
 export function phoneThreadShow(handleArg: string, deps: PhoneDeps): void {
 	const handle = parseThreadHandle(handleArg);
 	const thread = deps.db.getThreadByHandle(handle);
-	if (!thread) throw new DgCliError(`no thread ${handle}`);
+	if (!thread) throw new DgCliError(`no group ${handle}`);
 	const self = selfNames(deps);
 	printJson(deps, {
 		handle: thread.handle,
@@ -656,7 +656,7 @@ export function phoneThreadShow(handleArg: string, deps: PhoneDeps): void {
 function prepareImageSend(textArg: string | undefined, opts: SayOpts, deps: PhoneDeps): PreparedImage | undefined {
 	if (opts.image === undefined) return undefined;
 	if (!readFilesOn(deps.db)) throw new DgCliError("files are off; the human runs phone files on");
-	if (textArg) throw new DgCliError("--image takes no text; send text with a second say");
+	if (textArg) throw new DgCliError("--image takes no text; send text with a second text command");
 	const stat = statSync(opts.image, { throwIfNoEntry: false });
 	if (!stat) throw new DgCliError(`no file at ${opts.image}`);
 	if (!stat.isFile()) throw new DgCliError("not an image");
@@ -732,7 +732,7 @@ async function phoneSayThread(
 ): Promise<void> {
 	const handle = parseThreadHandle(handleArg);
 	const thread = deps.db.getThreadByHandle(handle);
-	if (!thread) throw new DgCliError(`no thread ${handle}`);
+	if (!thread) throw new DgCliError(`no group ${handle}`);
 	const body = image ? image.content : await readSayBody(textArg, deps);
 	const loaded = await ensureKey(deps, thread.key_id);
 	const selfNpub = npubOf(loaded.sk);
@@ -740,7 +740,7 @@ async function phoneSayThread(
 	const recipients: ThreadRecipient[] = [];
 	for (const npub of others) {
 		const contact = findContactByNpub(deps.db, npub);
-		if (!contact) throw new DgCliError(`thread member ${npub.slice(0, 16)} is not a contact`);
+		if (!contact) throw new DgCliError(`group member ${npub.slice(0, 16)} is not a contact`);
 		recipients.push({ handle: `+${contact.handle}`, npub, pub: pubkeyHex(npub), self: false });
 	}
 	recipients.push({ handle: `+${resolvedSelfName(deps.db)}`, npub: selfNpub, pub: pubkeyHex(selfNpub), self: true });
@@ -857,7 +857,7 @@ function pingTargets(handleArg: string, deps: PhoneDeps): { handle: string; keyI
 	if (handleArg.startsWith("#")) {
 		const handle = parseThreadHandle(handleArg);
 		const thread = deps.db.getThreadByHandle(handle);
-		if (!thread) throw new DgCliError(`no thread ${handle}`);
+		if (!thread) throw new DgCliError(`no group ${handle}`);
 		const targets = deps.db
 			.listThreadMemberNpubs(thread.id)
 			.map((npub) => findContactByNpub(deps.db, npub))
@@ -959,7 +959,7 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 		warnMigrationPending(deps);
 		let rows = view.messages;
 		if (opts.handle !== undefined) {
-			if (opts.handle.startsWith("#")) throw new DgCliError(`no thread ${opts.handle}`);
+			if (opts.handle.startsWith("#")) throw new DgCliError(`no group ${opts.handle}`);
 			const handle = normalizeHandle(opts.handle);
 			if (!view.contactRows.some((contact) => contact.handle === handle)) throw new DgCliError(`no contact +${handle}`);
 			rows = rows.filter((row) => row.handle === `+${handle}`);
@@ -982,7 +982,7 @@ export function phoneInbox(opts: { n?: string; handle?: string; meta?: boolean }
 	if (opts.handle?.startsWith("#")) {
 		const handle = parseThreadHandle(opts.handle);
 		const thread = deps.db.getThreadByHandle(handle);
-		if (!thread) throw new DgCliError(`no thread ${handle}`);
+		if (!thread) throw new DgCliError(`no group ${handle}`);
 		for (const row of deps.db.recentMessages(limit, undefined, thread.id)) {
 			emitStored(deps, row, self, { direction: true, read: true, meta: opts.meta === true });
 		}
