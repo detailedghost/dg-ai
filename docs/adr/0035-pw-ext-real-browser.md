@@ -24,9 +24,10 @@ Date: 2026-11-05
 `dg-skills pw --ext <verb>` sends one `cli-pw-ext-request` to dg-daemon on the
 same `/cli` socket that `inbox` and `proto --ext` use. The daemon forwards it as
 `pw-ext-browser-request` to the one paired extension on the session, and only
-when that extension is 1.41.0 or newer. The verbs are fixed: `current`,
-`snapshot`, `screenshot`, `selection` and `console` read; `open`, `click` and
-`fill` write. The validators in `pkg/common/src/pw-ext-format.ts` accept an exact
+when that extension is at least `PW_EXT_MIN_EXTENSION_VERSION`, the one
+constant that names the release that ships this feature. The verbs are fixed:
+`current`, `snapshot`, `screenshot`, `selection`, `console` and `tools` read;
+`open`, `click`, `fill`, `upload` and `call` write. The validators in `pkg/common/src/pw-ext-format.ts` accept an exact
 set of fields per verb, so the wire carries no code and no approval.
 
 The extension (`pkg/extension/lib/background/pw-ext.ts`) acts on the active tab
@@ -48,6 +49,47 @@ another tab after capture. The output passes `redactText` in the extension and
 again in the CLI, and stays under 100,000 characters of text or the proto
 preview limit for an image.
 
+Before the prompt, `click`, `fill` and `upload` read only their target element
+(tag, role, accessible name, short text) and refuse a target that does not
+resolve. `call` reads the page's WebMCP tool list first, refuses an unknown
+tool, and the prompt shows the tool name, description, hints and exact args.
+
+`upload` stages the file in the existing dg-daemon asset store
+(`postAsset` in `pkg/common/src/node/assets.ts`, the same store `dg-agent stage`
+uses), because one relay frame is capped at 1 MiB. The request carries only the
+asset id, file name, size, MIME type and a display path. After approval the
+extension fetches the asset with the session capability, refuses a size that
+differs from the approved one, and sets the file on an enabled file input with a
+`DataTransfer` in the isolated world. Uploads go only to `https:` pages. The CLI
+takes regular files from the working directory, the dg scratch directory or the
+dg demos directory, refuses symbolic links, and caps the size at the asset store
+limit of 25 MiB.
+
+A CLI that stops sends `cli-pw-ext-cancel`, and a closed CLI socket has the
+same effect. The daemon then sends `pw-ext-browser-cancel` to the extension,
+which closes the approval window and runs nothing.
+
+`console` keeps the isolated-world capture of uncaught errors and unhandled
+rejections, and on its first call also runs `pwExtConsoleHook`
+(`pkg/extension/lib/features/pw-ext-main.ts`) in the page's MAIN world. The hook
+wraps `console.warn` and `console.error` once per document and keeps the last
+50 entries.
+
+`tools` and `call` run `pwExtWebMcp` in the MAIN world. It uses the WebMCP API
+from the W3C Web Machine Learning Community Group draft of 2 November 2026
+([spec](https://webmachinelearning.github.io/webmcp/),
+[repository](https://github.com/webmachinelearning/webmcp)):
+`document.modelContext` (secure contexts only) with
+`getTools(options)` resolving to `RegisteredTool` records (`name`, `title`,
+`description`, `inputSchema`, `outputSchema`, `window`, `origin`,
+`annotations`), and `executeTool(registeredTool, inputObject, { signal })`
+resolving to a string. Chrome's early preview shipped a testing surface,
+`navigator.modelContextTesting` with `listTools()` or `getTools()` and
+`executeTool(name, jsonString)`, behind a flag; sources disagree on its current
+state, so it is a best-effort fallback only. With neither API, `tools` returns an
+empty list. `pwExtWebMcp` drops `window`, caps each description, schema and
+output, and stops a call after 30 seconds.
+
 ## Consequences
 
 - **Good:** the manifest permissions do not change. The approval window uses
@@ -60,17 +102,25 @@ preview limit for an image.
   times out after 120 seconds.
 - **Bad:** `click` and `fill` dispatch synthetic events. A page that checks
   `isTrusted` ignores them.
-- **Bad:** `console` sees only uncaught errors and unhandled rejections, and only
-  after the first `console` call on that tab starts capture. It does not see
-  `console.warn` or `console.error` calls.
+- **Bad:** `console` sees only messages after the first `console` call on that
+  tab.
 - **Bad:** a reload at the same URL during approval is not detected; refs from
   the old document fail, but a CSS selector can match in the new one.
 - **Bad:** a screenshot shows what is on screen. Redaction cannot remove a token
   that the page shows as text in the image.
 - **Neutral:** the extension refuses on Firefox. Only Chromium-family browsers
   are supported.
-- **Neutral:** an extension older than 1.41.0 gets no request; the daemon tells
-  the CLI to update it.
+- **Neutral:** an extension older than `PW_EXT_MIN_EXTENSION_VERSION` gets no
+  request; the daemon tells the CLI to update it.
+- **Bad:** the `console` hook and WebMCP calls run in the page's MAIN world. The
+  page can see or replace the console wrapper and can shape what its own tools
+  report. Output is still redacted and capped in the worker.
+- **Bad:** `call` runs the site's own code. The prompt shows what the site says
+  the tool does; it cannot prove it.
+- **Bad:** upload bytes reach the local daemon before the human approves. They
+  stay on loopback in the session's asset store and are pruned with the session.
+- **Bad:** a pre-approval read touches the page before consent, but only for the
+  one target element or the tool list.
 
 ## Alternatives considered
 

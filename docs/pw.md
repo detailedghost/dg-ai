@@ -24,7 +24,9 @@ never pass it unless the human asks.
 
 `dg-skills pw --ext <verb>` acts on the active tab of your real Chromium
 browser through the paired dg-ai-extension. It needs a running dg-daemon
-session with the extension paired, and dg-ai-extension 1.41.0 or newer.
+session with the extension paired. The extension must be at least the version
+in `PW_EXT_MIN_EXTENSION_VERSION` (`pkg/common/src/pw-ext-format.ts`), which is
+the release that ships `pw --ext`.
 
 | Verb | Kind | Effect |
 |---|---|---|
@@ -32,16 +34,23 @@ session with the extension paired, and dg-ai-extension 1.41.0 or newer.
 | `snapshot` | read | Accessibility tree with refs, and the visible text, on stdout |
 | `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw` |
 | `selection` | read | Selected text |
-| `console` | read | Uncaught errors and unhandled rejections |
+| `console` | read | Errors, and console warnings and errors after the first call |
+| `tools` | read | WebMCP tools the page exposes: name, description, input schema |
 | `open <url>` | write | Opens an http or https URL in a new tab |
 | `click <ref or selector>` | write | Clicks one element |
 | `fill <ref or selector> <text>` | write | Sets the value of one text field |
+| `upload <ref or selector> <file>` | write | Sets one file on a file input |
+| `call <tool> <json-args>` | write | Runs one WebMCP tool of the page |
 
 Rules:
 
 - The browser opens a small approval window for every call. It names the verb
   and the tab. Write verbs say that they change the page. Close the window or
   click Deny to refuse. The CLI cannot approve.
+- Before the window opens, `click`, `fill` and `upload` read only their target
+  element (tag, role, accessible name, short text) and show it. A target that
+  does not resolve is refused with no prompt. `call` reads the page's tool list
+  first and shows the tool name, description, hints and the exact args.
 - After approval, the extension checks that the tab did not change, and the
   page function checks the document URL again before it acts. If either
   changed, nothing runs. A reload at the same URL is not detected.
@@ -53,13 +62,24 @@ Rules:
 - Text output is redacted (tokens, keys, emails, secret query values) and
   capped. Password and secret field contents are left out, and `fill` refuses
   those fields. Screenshots are not redacted: they show what is on the screen.
-- If the dg session closes while the approval window is open, the request is
-  canceled and the window closes.
-  If only the CLI stops (for example Ctrl-C), the window stays open until you
-  answer it or it times out; deny it if you no longer want the action.
-- There is no code execution: no `eval`, no `run-code`, and no other pw flags.
-- `console` starts capture on the first call for a tab. It shows errors after
-  that point, not `console.warn` output and not earlier errors.
+- If the dg session closes, or the CLI stops (Ctrl-C, SIGTERM or a closed
+  socket), the request is canceled and the approval window closes.
+- There is no code execution of agent code: no `eval`, no `run-code`, and no
+  other pw flags. `call` runs the site's own WebMCP tool code, so it is a write
+  verb.
+- `console` adds a small wrapper to the page's own `console.warn` and
+  `console.error` on the first call. It runs in the page's own context, stays
+  for the life of the document, and sees only messages after that first call.
+  Uncaught errors and unhandled rejections are captured from the same point.
+- `upload` takes a regular file of at most 25 MiB from the working directory,
+  the dg scratch directory or the dg demos directory. It refuses symbolic links
+  and folders. The CLI stages the bytes in the local dg-daemon asset store
+  before the approval; the extension fetches them only after approval, and only
+  to an `https:` page. The approval shows the path, name, size, type,
+  destination origin and the target element.
+- `tools` uses the WebMCP `document.modelContext` API, or the older
+  `navigator.modelContextTesting` preview. With neither, it prints "This page
+  exposes no WebMCP tools." A tool call stops after 30 seconds.
 - `click` and `fill` send synthetic events. A page that checks for trusted
   input ignores them.
 - Firefox is not supported.
