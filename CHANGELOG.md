@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.42.0 (2026-11-05)
+
+### Features
+
+- feat(pw): drive the real browser with pw --ext ([#143](https://github.com/detailedghost/dg-ai/pull/143))
+
 ## v1.41.0 (2026-11-05)
 
 ### Features
