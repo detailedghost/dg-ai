@@ -394,3 +394,19 @@ describe("copilot round 2", () => {
 		});
 	});
 });
+
+describe("copilot round 3", () => {
+	it("pins the full destination even past the shown length", () => {
+		const long = `/p?${"a".repeat(3000)}`;
+		page(`<a id="l" href="${long}x">Open</a>`);
+		const described = pwExtPageAction({ kind: "describe", target: "#l", handle: "h" }) as {
+			element: { href: string };
+		};
+		expect(described.element.href.length).toBeLessThan(2100);
+		expect(described.element.href.endsWith("…")).toBe(true);
+		el<HTMLAnchorElement>("#l").setAttribute("href", `${long}y`);
+		expect(pwExtPageAction({ kind: "click", target: "#l", handle: "h" })).toEqual({
+			error: expect.stringContaining("changed"),
+		});
+	});
+});

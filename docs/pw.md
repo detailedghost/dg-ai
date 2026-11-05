@@ -74,7 +74,7 @@ Rules:
   Uncaught errors and unhandled rejections are captured from the same point.
 - `upload` takes a regular file of at most 25 MiB from the working directory,
   the dg scratch directory or the dg demos directory, never from the home
-  folder itself. It refuses hidden files and folders, a file that is a symbolic
+  folder itself or a working directory inside a hidden folder of the home. It refuses hidden files and folders, a file that is a symbolic
   link, folders, and a file that changes while it is checked. The CLI stages the bytes in the local dg-daemon asset store
   before the approval; the extension fetches them only after approval, and only
   to an `https:` page. The approval shows the path, name, size, type,

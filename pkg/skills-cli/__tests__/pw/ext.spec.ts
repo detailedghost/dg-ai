@@ -290,6 +290,18 @@ describe("pw --ext round 3", () => {
 		expect(d.posted).toEqual([]);
 	});
 
+	test("refuses a working directory inside a hidden folder of the home", async () => {
+		const fencedHome = process.env.HOME as string;
+		const hidden = join(fencedHome, ".ssh");
+		mkdirSync(hidden, { recursive: true });
+		writeFileSync(join(hidden, "id_ed25519"), "key");
+		const d = deps(() => ({ ok: true, data: { text: "x" } }));
+		expect(
+			await runExt(["--ext", "upload", "#f", "id_ed25519"], clientEnv(hidden), d.value),
+		).toBe(2);
+		expect(d.posted).toEqual([]);
+	});
+
 	test("maps tools and call", async () => {
 		const d = deps(() => ({ ok: true, data: { text: "ok" } }));
 		expect(await runExt(["--ext", "tools"], clientEnv(), d.value)).toBe(0);

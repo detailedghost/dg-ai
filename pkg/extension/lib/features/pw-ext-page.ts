@@ -418,13 +418,13 @@ export function pwExtPageAction(
 
 	const destination = (el: Element): string => {
 		const link = el.closest("a[href]") as HTMLAnchorElement | null;
-		if (link) return String(link.href ?? "").slice(0, 2048);
+		if (link) return String(link.href ?? "");
 		const control = el as HTMLButtonElement;
 		const submits =
 			(el.tagName === "BUTTON" && (control.type ?? "submit") === "submit") ||
 			(el.tagName === "INPUT" && ["submit", "image"].includes(control.type));
 		if (submits && control.form)
-			return String(control.formAction || control.form.action || "").slice(0, 2048);
+			return String(control.formAction || control.form.action || "");
 		return "";
 	};
 
@@ -470,7 +470,10 @@ export function pwExtPageAction(
 				role: r,
 				name: name(el, r),
 				text: squash(safeText(el), 120),
-				href: destination(el),
+				href: (() => {
+					const full = destination(el);
+					return full.length > 2048 ? `${full.slice(0, 2048)}…` : full;
+				})(),
 			},
 		};
 	};
