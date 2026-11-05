@@ -31,7 +31,7 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|inbox|voicemail|watch|status|files|open|close> [--image <path>] [--phi] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|ping|inbox|voicemail|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 ## Flags
 
@@ -39,6 +39,7 @@ If a step fails, run dg-skills doctor install credentials.
 |---|---|---|---|
 | `--image <path>` | none | On `say`, send one PNG, JPEG, or WebP (5 MiB at most) instead of text. Needs `phone files on`. | off |
 | `--phi` | none | On `say`, mark the text or image as PHI. Only when the human asks for that send. | off |
+| `--timeout <seconds>` | none | On `ping`, seconds to wait for the receipt, 1 to 600. | `30` |
 | `--as <name>` | none | Self name a `number` or `invite` card carries, saved for next time. | `dg` |
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
 | `--relay <url>...` | none | Relays a `number` or `invite` card should use instead of the saved ones. | the saved relay list |
@@ -303,6 +304,31 @@ subscription has gone quiet, the process subscribes again and fetches what
 it missed. The log line is `phone: listener heartbeat`,
 `phone: listener resubscribe`, or `phone: listener probe-failed`, with no
 message text.
+
+## Delivery and presence
+
+A running listener answers each message it stores with a small encrypted
+receipt, and every 4 to 6 minutes sends each contact an encrypted presence
+beat. Both are gift wraps like messages. Receipts go only to contacts, and
+nothing answers a receipt or a beat.
+
+- `say` prints `"delivered": false`. `inbox` adds `"delivered": true` to an
+  outgoing row once a recipient's listener stored it. A thread row counts
+  the first member. `voicemail` prints incoming rows only, so it has no
+  `delivered` field.
+- `contacts` adds `last_seen`: the ISO time of the newest rumor from that
+  contact, or `null`.
+
+```bash
+dg-agent phone ping +grok              # prints {"handle": "+grok", "delivered": true, "after_s": 2, "line": "delivered after 2 s"}
+dg-agent phone ping '#ops' --timeout 10
+```
+
+`ping` sends one check and waits for its receipt. It exits 0 on
+`delivered after N s` and 1 on `no answer after N s`. A `#thread` counts
+the first member that answers. With the listener running, `ping` reads the
+receipt from the database. Without it, `ping` listens on the relays itself
+until the timeout.
 
 ## Images
 

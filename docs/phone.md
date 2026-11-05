@@ -298,6 +298,55 @@ stdout and stderr, when it runs through the detached-spawn fallback or
 launchd, go to `<phoneRoot>/listener.log`. On Linux read the log through
 `journalctl --user -u dg-phone` instead, since systemd owns it there.
 
+## Receipts, presence, and ping
+
+Three rumor kinds carry no mail. None has a NIP number (checked
+2026-11-04). Each is sealed and gift-wrapped like a message, so a relay
+sees a kind 1059 wrap to the recipient and nothing else:
+
+- kind 25015, the image fetch request (see [Images](#images)).
+- kind 25016, a delivery receipt. Each `e` tag names one stored message
+  id: the wrap id for a one-to-one message, the rumor id for a thread
+  message. One receipt names at most 32 ids.
+- kind 25017, a presence rumor. With the tag `["dg-ack", "1"]` it is a
+  `phone ping` check, and the listener answers it with a receipt that
+  names the wrap id.
+
+When the listener stores a kind 14 or 15 message from a contact, direct or
+thread, it queues a receipt to the sender. Ids are batched per contact, at
+most 256 wait per contact, and the listener sends one wrap at a time. A
+receipt, a presence rumor, and a file request are never stored as mail, so
+nothing answers them. A stranger gets nothing.
+
+A control rumor is ignored unless the signer is a contact, its `created_at`
+is within 5 minutes of this clock, and its rumor id is not in the replay
+cache (1 hour, 256 ids). The sender sets `messages.delivered_at` only when
+the signer was a recipient of that row (the contact, or a thread member)
+and the wrap reached the key that sent it. `say` saves its row after the
+relays answer, so a receipt that arrives first is held for 10 minutes and
+applied when the row is saved. A receipt that reaches a stopped listener is
+lost: catch-up skips control rumors, and a late one fails the 5-minute
+check anyway.
+
+The listener sends a presence rumor to its contacts when it starts, then
+on a uniform 4 to 6 minute gap. One beat reaches at most 16 contacts, and
+the next beat continues the rotation. Any fresh rumor from a contact sets
+`contacts.last_seen`. A contact heard from after 12 minutes of silence is
+back online: its deferred image fetches move to now and the fetch queue
+wakes.
+
+Relay load: one wrap per beat per contact (about 300 a day per contact at
+the 5-minute mean), and one receipt per stored message or batch. Each
+publish goes to that contact's saved relays only, one at a time, and the
+listener does not wait for a by-id check. Relays keep kind 1059 wraps, so
+a catch-up after a restart opens two days of beats too.
+
+`phone ping <+handle|#thread>` stores a row in `pings`, sends a check, and
+waits up to `--timeout` seconds (default 30, at most 600). When a listener
+of this version is running, it polls the database. Otherwise it opens its
+own subscription on the listener relays until the timeout. It prints
+`{handle, delivered, after_s, line}` and exits 1 on no answer.
+
 ## The key
 
 The key is stored in one of two places. With a dg session, it is encrypted
@@ -314,11 +363,14 @@ folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 
 - `keys` — every key this phone holds, by id.
 - `contacts` — one row per contact, with the key (`key_id`) it still
-  expects you to sign with.
+  expects you to sign with, and `last_seen`.
 - `invites` — pending one-time cards.
 - `messages` — both directions, the read mark, the delivery attempt
-  count for `--on-message`, the image file JSON, the PHI mark, and the
-  local time the row arrived.
+  count for `--on-message`, the image file JSON, the PHI mark, the
+  local time the row arrived, and `delivered_at` for an outgoing row.
+- `pings` — `phone ping` checks and their receipt time, kept 7 days.
+- `early_receipts` — receipts that arrived before their row, kept 10
+  minutes.
 - `image_fetches` — one row per image still being fetched, with its key
   and nonce. The row is deleted when the fetch ends.
 - `outbox` — staged ciphertext of sent images, and who may fetch each one.
