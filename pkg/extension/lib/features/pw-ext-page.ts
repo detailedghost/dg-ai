@@ -415,13 +415,30 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(el)}` };
 	};
 
+	const fingerprint = (el: Element): string => {
+		const input = el as HTMLInputElement;
+		const r = role(el) ?? el.tagName.toLowerCase();
+		return JSON.stringify([
+			el.tagName,
+			r,
+			name(el, r),
+			squash(safeText(el), 120),
+			input.type ?? "",
+			Boolean(input.disabled),
+			Boolean(input.readOnly),
+			el.getAttribute("contenteditable") ?? "",
+		]);
+	};
+
 	const bound = (target: string, handle?: string): Element | string => {
 		const el = resolve(target);
 		if (typeof el === "string" || handle === undefined) return el;
-		const handles = win[HANDLES] as Map<string, Element> | undefined;
+		const handles = win[HANDLES] as
+			| Map<string, { el: Element; print: string }>
+			| undefined;
 		const approved = handles?.get(handle);
 		handles?.delete(handle);
-		if (approved !== el || !el.isConnected)
+		if (approved?.el !== el || !el.isConnected || fingerprint(el) !== approved.print)
 			return "The element changed after approval; nothing was done. Retry.";
 		return el;
 	};
@@ -429,7 +446,8 @@ export function pwExtPageAction(
 	const describeTarget = (target: string, handle?: string): PwExtPageResult => {
 		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
-		if (handle !== undefined) win[HANDLES] = new Map([[handle, el]]);
+		if (handle !== undefined)
+			win[HANDLES] = new Map([[handle, { el, print: fingerprint(el) }]]);
 		const tag = el.tagName.toLowerCase().slice(0, 40);
 		const r = role(el) ?? tag;
 		return {

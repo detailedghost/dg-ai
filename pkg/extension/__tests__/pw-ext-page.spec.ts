@@ -345,3 +345,33 @@ describe("review round 3 hardening", () => {
 		expect(text).not.toContain("me@example.test");
 	});
 });
+
+describe("copilot round 1", () => {
+	it("refuses a write when the described element changed its name or text", () => {
+		page(`<button id="act">Preview</button>`);
+		let clicks = 0;
+		el<HTMLElement>("#act").addEventListener("click", () => clicks++);
+		pwExtPageAction({ kind: "describe", target: "#act", handle: "h" });
+		el<HTMLElement>("#act").textContent = "Delete all";
+		expect(pwExtPageAction({ kind: "click", target: "#act", handle: "h" })).toEqual({
+			error: expect.stringContaining("changed"),
+		});
+		expect(clicks).toBe(0);
+	});
+
+	it("refuses an upload when the described input changed type", () => {
+		page(`<input id="f" type="file" aria-label="Attach">`);
+		pwExtPageAction({ kind: "describe", target: "#f", handle: "h" });
+		el<HTMLInputElement>("#f").setAttribute("aria-label", "Profile photo, public");
+		expect(
+			pwExtPageAction({
+				kind: "upload",
+				target: "#f",
+				base64: "aGk=",
+				fileName: "a.txt",
+				fileType: "text/plain",
+				handle: "h",
+			}),
+		).toEqual({ error: expect.stringContaining("changed") });
+	});
+});
