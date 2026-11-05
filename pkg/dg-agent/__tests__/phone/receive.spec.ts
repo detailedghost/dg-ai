@@ -740,6 +740,24 @@ describe("createImageReceiver", () => {
 		expect(pool.events).toEqual([]);
 	});
 
+	it("stores storage full for a PHI image when vault/ plus files/ is over the byte cap", async () => {
+		const dir = join(bob.deps.paths.phoneRoot, VAULT_DIR);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const big = join(dir, "f".repeat(32));
+		writeFileSync(big, "");
+		truncateSync(big, FILES_BYTE_CAP);
+		const sealed = seal(pngOfSize());
+		phiPendingRow("img", sealed, clock + PHI_TTL_SECONDS);
+		const images = receiver();
+
+		images.wake();
+		await images.settle();
+
+		expect(row(bob, "img")).toMatchObject({ text: "[image unavailable: storage full]", file: null });
+		expect(pool.events).toEqual([]);
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
 	it("stores daily limit past the per-contact daily count", async () => {
 		for (let at = 0; at <= DAILY_REQUEST_CAP; at += 1) pendingRow(`img${String(at).padStart(2, "0")}`);
 		const images = receiver({ pool: createFakePool([]) });

@@ -1,4 +1,4 @@
-import { lstatSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { type DgPaths, ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { nip19 } from "nostr-tools";
@@ -16,14 +16,23 @@ import {
 	openImage,
 } from "./image";
 import { contactRelays, findContactByNpub } from "./store";
-import { sealReceived, UNKNOWN_SENDER_HANDLE, type VaultKeyCache } from "./vault";
+import { sealReceived, UNKNOWN_SENDER_HANDLE, type VaultKeyCache, VAULT_DIR } from "./vault";
 import { DAILY_REQUEST_CAP, type FileFetch, requestFile } from "./transport";
 import { dirBytes, type WormholeDeps } from "./wormhole";
 
 /** Fetches waiting at once; a new image past this is stored as unavailable. */
 export const MAX_PENDING_IMAGES = 32;
-/** Bytes `files/` may hold before a new image is refused. */
+/** Bytes `files/` plus `vault/` may hold before a new image or vault item is refused. */
 export const FILES_BYTE_CAP = 200 * 1024 * 1024;
+
+export function receiveStorageFull(phoneRoot: string): boolean {
+	let total = 0;
+	for (const name of [FILES_DIR, VAULT_DIR]) {
+		const dir = join(phoneRoot, name);
+		if (existsSync(dir)) total += dirBytes(dir);
+	}
+	return total >= FILES_BYTE_CAP;
+}
 /** Wait before the first retry; each later retry doubles it up to an hour. */
 export const IMAGE_RETRY_BASE_SECONDS = 60;
 const IMAGE_RETRY_MAX_SECONDS = 60 * 60;
@@ -118,7 +127,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		if (copy) return finish(row, IMAGE_TEXT, copy);
 		if (row.attempts === 0 && !withinDailyCap(row.sender, now)) return fail(row, "daily limit");
 		ensurePrivateDir(dir);
-		if (dirBytes(dir) >= FILES_BYTE_CAP) return fail(row, "storage full");
+		if (receiveStorageFull(deps.paths.phoneRoot)) return fail(row, "storage full");
 		const key = deps.keys().find((entry) => entry.id === row.key_id);
 		if (!key) return defer(row, now, "request not sent");
 		const result = await requestFile(

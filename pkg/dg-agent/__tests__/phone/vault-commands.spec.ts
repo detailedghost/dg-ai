@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Command } from "commander";
 import { type PhoneDeps, registerPhoneCommands } from "../../src/phone/commands";
+import { FILES_BYTE_CAP } from "../../src/phone/receive";
 import { addContact } from "../../src/phone/store";
 import { EXEC_DEFAULT_TIMEOUT_S, phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm, type Terminal } from "../../src/phone/vault-commands";
 import { ensurePeriodKey, keyPeriod, openVaultItem, SELF_SENDER, storeVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
@@ -72,6 +73,14 @@ async function seed(name: string, data: string | Buffer, sender = SELF_SENDER): 
 	storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender, plain: Buffer.from(data), key: { period: day, key } }, deps.now());
 }
 
+function fillReceiveStorage(): void {
+	const dir = join(deps.paths.phoneRoot, VAULT_DIR);
+	mkdirSync(dir, { recursive: true, mode: 0o700 });
+	const big = join(dir, "f".repeat(32));
+	writeFileSync(big, "");
+	truncateSync(big, FILES_BYTE_CAP);
+}
+
 describe("phone vault add", () => {
 	it("stores a file and prints only the name, size, and dates", async () => {
 		await phoneVaultAdd("lab", file("in.txt", SECRET), deps);
@@ -79,6 +88,13 @@ describe("phone vault add", () => {
 		expect(lines()).toEqual([{ name: "lab", size: SECRET.length, created_at: deps.now(), expires_at: deps.now() + VAULT_TTL_SECONDS }]);
 		expect(out.includes("Jane")).toBe(false);
 		expect((await content("lab")).toString()).toBe(SECRET);
+	});
+
+	it("refuses to add past the receive storage cap and stores nothing", async () => {
+		fillReceiveStorage();
+
+		await expect(phoneVaultAdd("lab", file("in.txt", SECRET), deps)).rejects.toThrow(/storage is full/);
+		expect(deps.db.listVaultItems()).toEqual([]);
 	});
 
 	it("reads raw bytes from stdin when no file is given", async () => {
@@ -297,6 +313,14 @@ describe("phone vault exec", () => {
 		expect(lines()).toEqual([{ name: "lab", exit: 0, out: "lab-out", size: SECRET.length, stderr_lines: 0 }]);
 		expect((await content("lab-out")).toString()).toBe(SECRET.toUpperCase());
 		expect(out.includes("JANE")).toBe(false);
+	});
+
+	it("refuses to run past the receive storage cap and stores no output", async () => {
+		await seed("lab", SECRET);
+		fillReceiveStorage();
+
+		await expect(phoneVaultExec("lab", [BUN, ...upper], {}, deps)).rejects.toThrow(/storage is full/);
+		expect(deps.db.vaultItem("lab-out")).toBeUndefined();
 	});
 
 	it("counts stderr lines and never prints them", async () => {

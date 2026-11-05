@@ -7,6 +7,7 @@ import { killProcessTree, writeFileAtomic } from "@dg/common/node";
 import type { PhoneDeps } from "./commands";
 import type { VaultItemRow } from "./db";
 import { imageFileName, type ImageType } from "./image";
+import { receiveStorageFull } from "./receive";
 import { findContactByNpub, selfExtension } from "./store";
 import {
 	assertVaultName,
@@ -86,10 +87,17 @@ async function currentKey(deps: PhoneDeps) {
 	return { period, key: await ensurePeriodKey(deps, period) };
 }
 
+function assertStorageRoom(deps: PhoneDeps): void {
+	if (receiveStorageFull(deps.paths.phoneRoot)) {
+		throw new DgCliError("receive storage is full (200 MiB across files/ and vault/); remove vault items with dg-agent phone vault rm and try again");
+	}
+}
+
 export async function phoneVaultAdd(name: string, file: string | undefined, deps: PhoneDeps): Promise<void> {
 	assertVaultName(name);
 	await prepareVault(deps);
 	if (deps.db.vaultNameTaken(name)) throw new DgCliError(`vault item ${name} exists`);
+	assertStorageRoom(deps);
 	const plain = await readInput(file, deps);
 	const row = storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain, key: await currentKey(deps) }, deps.now());
 	printJson(deps, { name: row.name, size: row.size, created_at: row.created_at, expires_at: row.expires_at });
@@ -258,6 +266,7 @@ export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpt
 	await prepareVault(deps);
 	const row = liveItem(deps, name);
 	if (deps.db.vaultNameTaken(outName)) throw new DgCliError(`vault item ${outName} exists; --out never overwrites`);
+	assertStorageRoom(deps);
 	const plain = await openVaultItem(deps, deps.paths.phoneRoot, row);
 	const input = opts.env === undefined ? { stdin: plain } : { env: envInput(opts.env, row, plain) };
 	const key = await currentKey(deps);
