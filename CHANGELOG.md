@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.41.0 (2026-11-05)
+
+### Features
+
+- feat(phone): add receipts, presence, ping, texting names, a PHI vault and agent extensions ([#142](https://github.com/detailedghost/dg-ai/pull/142))
+
 ## v1.40.0 (2026-11-05)
 
 ### Features
