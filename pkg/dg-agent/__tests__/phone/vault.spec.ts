@@ -9,9 +9,9 @@ import {
 	createVaultKeyCache,
 	deleteVaultItem,
 	dropOldKeys,
-	ensureDayKey,
+	ensurePeriodKey,
 	isVaultName,
-	localDay,
+	keyPeriod,
 	openVaultItem,
 	receivedName,
 	storeVaultItem,
@@ -46,8 +46,8 @@ function vaultDir(): string {
 }
 
 async function todayKey() {
-	const day = localDay(now);
-	return { day, key: await ensureDayKey(creds.deps(), day) };
+	const day = keyPeriod(now);
+	return { period: day, key: await ensurePeriodKey(creds.deps(), day) };
 }
 
 describe("vault names", () => {
@@ -76,19 +76,42 @@ describe("vault names", () => {
 	});
 });
 
-describe("localDay", () => {
-	it("formats the local calendar date and steps whole days", () => {
-		const at = new Date(2026, 0, 31, 23, 30).getTime() / 1000;
-		expect(localDay(at)).toBe("2026-01-31");
-		expect(localDay(at, 1)).toBe("2026-02-01");
-		expect(localDay(at, -2)).toBe("2026-01-29");
+function at(y: number, m: number, d: number, h = 0, min = 0, sec = 0): number {
+	return new Date(y, m - 1, d, h, min, sec).getTime() / 1000;
+}
+
+describe("keyPeriod", () => {
+	it("names the ISO week of the local date", () => {
+		expect(keyPeriod(at(2026, 11, 4, 12))).toBe("2026-W45");
+		expect(keyPeriod(at(2026, 11, 2, 0, 0, 0))).toBe("2026-W45");
+		expect(keyPeriod(at(2026, 11, 1, 23, 59, 59))).toBe("2026-W44");
+		expect(keyPeriod(at(2026, 11, 8, 23, 59, 59))).toBe("2026-W45");
+	});
+
+	it("stays unambiguous across year ends", () => {
+		expect(keyPeriod(at(2026, 12, 31))).toBe("2026-W53");
+		expect(keyPeriod(at(2027, 1, 3, 23, 59))).toBe("2026-W53");
+		expect(keyPeriod(at(2027, 1, 4))).toBe("2027-W01");
+		expect(keyPeriod(at(2024, 12, 30))).toBe("2025-W01");
+		expect(keyPeriod(at(2021, 1, 1))).toBe("2020-W53");
+	});
+
+	it("steps whole periods", () => {
+		expect(keyPeriod(at(2026, 12, 30), 1)).toBe("2027-W01");
+		expect(keyPeriod(at(2026, 12, 30), -1)).toBe("2026-W52");
+		expect(keyPeriod(at(2027, 1, 5), -1)).toBe("2026-W53");
+	});
+
+	it("pads the week number so names sort in time order", () => {
+		expect(keyPeriod(at(2026, 1, 12))).toBe("2026-W03");
+		expect(vaultKeyName(keyPeriod(at(2026, 1, 12)))).toBe("phone-vault/2026-W03");
 	});
 });
 
-describe("vault day keys", () => {
-	it("makes the day key in the store under its own name and grants only the vault prefix", async () => {
-		const day = localDay(now);
-		const key = await ensureDayKey(creds.deps(), day);
+describe("vault period keys", () => {
+	it("makes the period key in the store under its own name and grants only the vault prefix", async () => {
+		const day = keyPeriod(now);
+		const key = await ensurePeriodKey(creds.deps(), day);
 
 		expect(key.length).toBe(32);
 		expect(creds.store.get(vaultKeyName(day))).toBe(key.toString("hex"));
@@ -96,73 +119,125 @@ describe("vault day keys", () => {
 		expect(creds.calls).toContain("grant phone-vault");
 	});
 
-	it("reads an existing day key without writing a new one", async () => {
-		const day = localDay(now);
-		const first = await ensureDayKey(creds.deps(), day);
+	it("reads an existing period key without writing a new one", async () => {
+		const day = keyPeriod(now);
+		const first = await ensurePeriodKey(creds.deps(), day);
 		creds.calls.length = 0;
 
-		const second = await ensureDayKey(creds.deps(), day);
+		const second = await ensurePeriodKey(creds.deps(), day);
 
 		expect(second.equals(first)).toBe(true);
 		expect(creds.calls.some((call) => call.startsWith("set "))).toBe(false);
 	});
 
-	it("refuses when the day key is missing and no session can make it", async () => {
+	it("refuses when the period key is missing and no session can make it", async () => {
 		creds.session = false;
 		creds.granted = true;
 
-		await expect(ensureDayKey(creds.deps(), localDay(now))).rejects.toThrow(DgCliError);
+		await expect(ensurePeriodKey(creds.deps(), keyPeriod(now))).rejects.toThrow(DgCliError);
 		expect(creds.store.size).toBe(0);
 	});
 
 	it("refuses when the credential store is not reachable", async () => {
 		creds.up = false;
 
-		await expect(ensureDayKey(creds.deps(), localDay(now))).rejects.toThrow(/not reachable/);
+		await expect(ensurePeriodKey(creds.deps(), keyPeriod(now))).rejects.toThrow(/not reachable/);
 	});
 
 	it("refuses a stored value that is not a vault key", async () => {
 		creds.granted = true;
-		creds.store.set(vaultKeyName(localDay(now)), "nope");
+		creds.store.set(vaultKeyName(keyPeriod(now)), "nope");
 
-		await expect(ensureDayKey(creds.deps(), localDay(now))).rejects.toThrow(/does not hold a vault key/);
+		await expect(ensurePeriodKey(creds.deps(), keyPeriod(now))).rejects.toThrow(/does not hold a vault key/);
 	});
 
 	it("never writes the key to the phone database", async () => {
-		const key = await ensureDayKey(creds.deps(), localDay(now));
+		const key = await ensurePeriodKey(creds.deps(), keyPeriod(now));
 		db.close();
 
 		expect(readFileSync(PhoneDb.path(paths)).includes(key.toString("hex"))).toBe(false);
 		db = PhoneDb.open(paths, () => now);
 	});
 
-	it("deletes each day key two days after its day and keeps the rest", async () => {
-		for (const offset of [-3, -2, -1, 0, 1]) await ensureDayKey(creds.deps(), localDay(now, offset));
+	it("keeps a period key until 48 hours after its period ends, then deletes it", async () => {
+		const week = at(2026, 11, 4, 12);
+		await ensurePeriodKey(creds.deps(), keyPeriod(week));
+		const name = vaultKeyName(keyPeriod(week));
+		const periodEnd = at(2026, 11, 9);
+
+		await dropOldKeys(creds.deps(), periodEnd - 1);
+		expect(creds.store.has(name)).toBe(true);
+		await dropOldKeys(creds.deps(), periodEnd);
+		expect(creds.store.has(name)).toBe(true);
+		await dropOldKeys(creds.deps(), periodEnd + 48 * 3600 - 1);
+		expect(creds.store.has(name)).toBe(true);
+		await dropOldKeys(creds.deps(), periodEnd + 48 * 3600);
+		expect(creds.store.has(name)).toBe(false);
+	});
+
+	it("deletes only periods past the grace and keeps the last, current, and next", async () => {
+		const monday = at(2026, 11, 2, 12);
+		for (const offset of [-2, -1, 0, 1]) await ensurePeriodKey(creds.deps(), keyPeriod(monday, offset));
+
+		await dropOldKeys(creds.deps(), monday);
+
+		expect([...creds.store.keys()].sort()).toEqual([-1, 0, 1].map((offset) => vaultKeyName(keyPeriod(monday, offset))).sort());
+	});
+
+	it("ignores credential names that are not period keys", async () => {
+		creds.store.set("phone-vault/junk", "a".repeat(64));
+		creds.store.set("phone-vault/2026-11-04", "a".repeat(64));
 
 		await dropOldKeys(creds.deps(), now);
 
-		expect([...creds.store.keys()].sort()).toEqual([-1, 0, 1].map((offset) => vaultKeyName(localDay(now, offset))));
+		expect(creds.store.size).toBe(2);
 	});
 
 	it("leaves old keys alone when no session can delete them", async () => {
-		await ensureDayKey(creds.deps(), localDay(now, -3));
+		await ensurePeriodKey(creds.deps(), keyPeriod(now, -3));
 		creds.session = false;
 
 		await dropOldKeys(creds.deps(), now);
 
-		expect(creds.store.has(vaultKeyName(localDay(now, -3)))).toBe(true);
+		expect(creds.store.has(vaultKeyName(keyPeriod(now, -3)))).toBe(true);
 	});
 });
 
 describe("vault key cache", () => {
-	it("has no key before a refresh, then holds today's and tomorrow's", async () => {
+	it("has no key before a refresh, then holds this period's and the next period's", async () => {
 		const cache = createVaultKeyCache(creds.deps(), () => now);
 		expect(cache.today()).toBeUndefined();
 
 		await cache.refresh();
 
-		expect(cache.today()?.day).toBe(localDay(now));
-		expect(creds.store.has(vaultKeyName(localDay(now, 1)))).toBe(true);
+		expect(cache.today()?.period).toBe(keyPeriod(now));
+		expect(creds.store.has(vaultKeyName(keyPeriod(now, 1)))).toBe(true);
+	});
+
+	it("makes the next key ahead of time at a period edge, so the new period needs no store call", async () => {
+		now = at(2026, 11, 8, 23, 59, 59);
+		const cache = createVaultKeyCache(creds.deps(), () => now);
+		await cache.refresh();
+		expect(creds.store.has("phone-vault/2026-W46")).toBe(true);
+		const next = creds.store.get("phone-vault/2026-W46");
+		creds.up = false;
+
+		now = at(2026, 11, 9);
+		const hit = cache.today();
+
+		expect(hit?.period).toBe("2026-W46");
+		expect(hit?.key.toString("hex")).toBe(next);
+	});
+
+	it("makes the following keys when the period turns over", async () => {
+		now = at(2026, 11, 8, 23, 59, 59);
+		const cache = createVaultKeyCache(creds.deps(), () => now);
+		await cache.refresh();
+
+		now = at(2026, 11, 9);
+		await cache.refresh();
+
+		expect(creds.store.has("phone-vault/2026-W47")).toBe(true);
 	});
 
 	it("loads the key on demand through current()", async () => {
@@ -170,7 +245,7 @@ describe("vault key cache", () => {
 
 		const key = await cache.current();
 
-		expect(key?.day).toBe(localDay(now));
+		expect(key?.period).toBe(keyPeriod(now));
 	});
 
 	it("gives no key when the store cannot make one", async () => {
@@ -209,7 +284,7 @@ describe("vault items", () => {
 		await expect(openVaultItem(creds.deps(), paths.phoneRoot, { ...row, expires_at: row.expires_at + 1 })).rejects.toThrow(/cannot be opened/);
 	});
 
-	it("cannot open an item once its day key is gone", async () => {
+	it("cannot open an item once its period key is gone", async () => {
 		const row = storeVaultItem(db, paths.phoneRoot, { name: "a", sender: "self", plain: Buffer.from("x"), key: await todayKey() }, now);
 		creds.store.clear();
 
@@ -240,6 +315,21 @@ describe("vault items", () => {
 
 		expect(db.vaultItem("a")).toBeUndefined();
 		expect(existsSync(join(vaultDir(), row.id))).toBe(false);
+	});
+});
+
+describe("vault key lifetime", () => {
+	it("opens an item sealed in the last second of its period until the item expires", async () => {
+		now = at(2026, 11, 8, 23, 59, 59);
+		const row = storeVaultItem(db, paths.phoneRoot, { name: "late", sender: "self", plain: Buffer.from("late"), key: await todayKey() }, now);
+		expect(row.key_day).toBe("2026-W45");
+
+		for (const t of [now + 1, now + VAULT_TTL_SECONDS - 1]) {
+			await dropOldKeys(creds.deps(), t);
+			expect((await openVaultItem(creds.deps(), paths.phoneRoot, row)).toString()).toBe("late");
+		}
+		expect(row.expires_at).toBe(now + VAULT_TTL_SECONDS);
+		expect(row.expires_at).toBeLessThan(at(2026, 11, 9) + 48 * 3600);
 	});
 });
 

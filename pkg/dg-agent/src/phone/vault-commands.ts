@@ -12,8 +12,8 @@ import {
 	assertVaultName,
 	deleteVaultItem,
 	dropOldKeys,
-	ensureDayKey,
-	localDay,
+	ensurePeriodKey,
+	keyPeriod,
 	MAX_VAULT_BYTES,
 	openVaultItem,
 	requireVaultStore,
@@ -46,7 +46,7 @@ function printJson(deps: PhoneDeps, value: unknown): void {
 	deps.write(`${JSON.stringify(value)}\n`);
 }
 
-/** Refuses without the store, then expires old items and drops old day keys before any vault command. */
+/** Refuses without the store, then expires old items and drops old period keys before any vault command. */
 async function prepareVault(deps: PhoneDeps): Promise<void> {
 	await requireVaultStore(deps);
 	deps.db.pruneMessages();
@@ -81,9 +81,9 @@ async function readInput(file: string | undefined, deps: PhoneDeps): Promise<Buf
 	return bytes;
 }
 
-async function todayKey(deps: PhoneDeps) {
-	const day = localDay(deps.now());
-	return { day, key: await ensureDayKey(deps, day) };
+async function currentKey(deps: PhoneDeps) {
+	const period = keyPeriod(deps.now());
+	return { period, key: await ensurePeriodKey(deps, period) };
 }
 
 export async function phoneVaultAdd(name: string, file: string | undefined, deps: PhoneDeps): Promise<void> {
@@ -91,7 +91,7 @@ export async function phoneVaultAdd(name: string, file: string | undefined, deps
 	await prepareVault(deps);
 	if (deps.db.vaultNameTaken(name)) throw new DgCliError(`vault item ${name} exists`);
 	const plain = await readInput(file, deps);
-	const row = storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain, key: await todayKey(deps) }, deps.now());
+	const row = storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain, key: await currentKey(deps) }, deps.now());
 	printJson(deps, { name: row.name, size: row.size, created_at: row.created_at, expires_at: row.expires_at });
 }
 
@@ -260,7 +260,7 @@ export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpt
 	if (deps.db.vaultNameTaken(outName)) throw new DgCliError(`vault item ${outName} exists; --out never overwrites`);
 	const plain = await openVaultItem(deps, deps.paths.phoneRoot, row);
 	const input = opts.env === undefined ? { stdin: plain } : { env: envInput(opts.env, row, plain) };
-	const key = await todayKey(deps);
+	const key = await currentKey(deps);
 	const result = await runChild(argv, input, seconds * 1000);
 	if (result.failedToStart) throw new DgCliError(`could not start ${argv[0]}`);
 	if (result.timedOut) throw new DgCliError(`the command ran past ${seconds} s and was stopped, so no item was stored`, EXIT_TIMED_OUT);

@@ -31,7 +31,7 @@ export type VaultDeps = {
 	vaultClient?: () => VaultClient;
 	sessionClient: () => Promise<KeyClient | undefined>;
 };
-export type DayKey = { day: string; key: Buffer };
+export type PeriodKey = { period: string; key: Buffer };
 
 export function isVaultName(name: string): boolean {
 	return NAME_PATTERN.test(name) && !name.includes("..");
@@ -42,19 +42,45 @@ export function assertVaultName(name: string): string {
 	return name;
 }
 
-export function vaultKeyName(day: string): string {
-	return `${VAULT_GRANT_PREFIX}/${day}`;
+export function vaultKeyName(period: string): string {
+	return `${VAULT_GRANT_PREFIX}/${period}`;
 }
 
 function pad(value: number): string {
 	return String(value).padStart(2, "0");
 }
 
-/** The local calendar date `offsetDays` after `at` (epoch seconds), as yyyy-mm-dd. */
-export function localDay(at: number, offsetDays = 0): string {
+const PERIOD_DAYS = 7;
+const KEY_GRACE_SECONDS = 48 * 60 * 60;
+const PERIOD_PATTERN = /^(\d{4})-W(\d{2})$/;
+
+function isoWeekMonday(at: Date): Date {
+	const monday = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+	monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+	return monday;
+}
+
+/** The ISO 8601 week, by local time, that holds `at` (epoch seconds) moved by `offset` whole weeks, as yyyy-Www. */
+export function keyPeriod(at: number, offset = 0): string {
 	const date = new Date(at * 1000);
-	date.setDate(date.getDate() + offsetDays);
-	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+	date.setDate(date.getDate() + offset * PERIOD_DAYS);
+	const thursday = isoWeekMonday(date);
+	thursday.setDate(thursday.getDate() + 3);
+	const year = thursday.getFullYear();
+	const dayOfYear = Math.round((thursday.getTime() - new Date(year, 0, 1).getTime()) / 86_400_000);
+	const week = Math.floor(dayOfYear / PERIOD_DAYS) + 1;
+	return `${year}-W${pad(week)}`;
+}
+
+/** Epoch seconds when the period ends, the next Monday 00:00 local; undefined when `period` is not a period name. */
+function periodEnd(period: string): number | undefined {
+	const match = PERIOD_PATTERN.exec(period);
+	if (!match) return undefined;
+	const year = Number(match[1]);
+	const week = Number(match[2]);
+	const monday = isoWeekMonday(new Date(year, 0, 4));
+	monday.setDate(monday.getDate() + week * PERIOD_DAYS);
+	return monday.getTime() / 1000;
 }
 
 function localMinute(at: number): string {
@@ -84,8 +110,8 @@ function unreachable(): DgCliError {
 	return new DgCliError("the vault needs the dg credential store, which is not reachable; start it with dg-agent start");
 }
 
-function decodeKey(day: string, value: string): Buffer {
-	if (!/^[0-9a-f]{64}$/.test(value)) throw new DgCliError(`the credential ${vaultKeyName(day)} does not hold a vault key`);
+function decodeKey(period: string, value: string): Buffer {
+	if (!/^[0-9a-f]{64}$/.test(value)) throw new DgCliError(`the credential ${vaultKeyName(period)} does not hold a vault key`);
 	return Buffer.from(value, "hex");
 }
 
@@ -99,9 +125,9 @@ async function withSession<T>(deps: VaultDeps, work: (client: KeyClient) => Prom
 	}
 }
 
-/** Reads a day key through the grant, else a session; throws when neither reaches the store. */
-async function readDayKey(deps: VaultDeps, day: string): Promise<Buffer | undefined> {
-	const name = vaultKeyName(day);
+/** Reads a period key through the grant, else a session; throws when neither reaches the store. */
+async function readPeriodKey(deps: VaultDeps, period: string): Promise<Buffer | undefined> {
+	const name = vaultKeyName(period);
 	let value: string | undefined;
 	try {
 		const client = deps.vaultClient?.();
@@ -116,30 +142,30 @@ async function readDayKey(deps: VaultDeps, day: string): Promise<Buffer | undefi
 		if (!viaSession) throw unreachable();
 		value = viaSession.value;
 	}
-	return value === undefined ? undefined : decodeKey(day, value);
+	return value === undefined ? undefined : decodeKey(period, value);
 }
 
-/** The day's key, made in the store on first use; never falls back to a key outside the store. */
-export async function ensureDayKey(deps: VaultDeps, day: string): Promise<Buffer> {
-	const existing = await readDayKey(deps, day);
+/** The period's key, made in the store on first use; never falls back to a key outside the store. */
+export async function ensurePeriodKey(deps: VaultDeps, period: string): Promise<Buffer> {
+	const existing = await readPeriodKey(deps, period);
 	if (existing) return existing;
-	const name = vaultKeyName(day);
+	const name = vaultKeyName(period);
 	const value = randomBytes(KEY_BYTES).toString("hex");
 	const made = await withSession(deps, async (client) => {
 		try {
 			await client.set(name, value, { createdBy: "dg-agent phone vault" });
 			await client.grant(VAULT_GRANT_PREFIX);
-			return await readDayKey(deps, day);
+			return await readPeriodKey(deps, period);
 		} catch {
 			await cleanUpOrphan(client, name, value);
 			throw unreachable();
 		}
 	});
-	if (!made) throw new DgCliError(`the vault key for ${day} is not in the dg credential store, and no dg session can make it`);
+	if (!made) throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
 	return made;
 }
 
-/** Deletes every day key whose day is two or more days back; needs a session, so it waits for one. */
+/** Deletes every period key whose period ended 48 hours ago or more; needs a session, so it waits for one. */
 export async function dropOldKeys(deps: VaultDeps, now: number): Promise<void> {
 	const client = deps.vaultClient?.();
 	if (!client) return;
@@ -151,8 +177,11 @@ export async function dropOldKeys(deps: VaultDeps, now: number): Promise<void> {
 	} finally {
 		client.close();
 	}
-	const cutoff = localDay(now, -2);
-	const doomed = names.filter((name) => name.startsWith(`${VAULT_GRANT_PREFIX}/`) && name.slice(VAULT_GRANT_PREFIX.length + 1) <= cutoff);
+	const doomed = names.filter((name) => {
+		if (!name.startsWith(`${VAULT_GRANT_PREFIX}/`)) return false;
+		const end = periodEnd(name.slice(VAULT_GRANT_PREFIX.length + 1));
+		return end !== undefined && end + KEY_GRACE_SECONDS <= now;
+	});
 	if (doomed.length === 0) return;
 	await withSession(deps, async (session) => {
 		for (const name of doomed) await session.delete(name);
@@ -179,10 +208,10 @@ export async function requireVaultStore(deps: VaultDeps): Promise<void> {
 }
 
 export type VaultKeyCache = {
-	/** Today's key when it is loaded; a miss starts a refresh. */
-	today(): DayKey | undefined;
-	current(): Promise<DayKey | undefined>;
-	/** Loads or makes today's and tomorrow's keys, then drops old keys. */
+	/** This period's key when it is loaded; a miss starts a refresh. */
+	today(): PeriodKey | undefined;
+	current(): Promise<PeriodKey | undefined>;
+	/** Loads or makes this period's and the next period's keys, then drops old keys. */
 	refresh(): Promise<void>;
 };
 
@@ -192,21 +221,21 @@ export function createVaultKeyCache(deps: VaultDeps, now: () => number): VaultKe
 	const refresh = () =>
 		(running ??= (async () => {
 			for (const offset of [0, 1]) {
-				const day = localDay(now(), offset);
+				const period = keyPeriod(now(), offset);
 				try {
-					keys.set(day, await ensureDayKey(deps, day));
+					keys.set(period, await ensurePeriodKey(deps, period));
 				} catch {}
 			}
 			await dropOldKeys(deps, now());
-			const today = localDay(now());
-			for (const day of keys.keys()) if (day < today) keys.delete(day);
+			const current = keyPeriod(now());
+			for (const period of keys.keys()) if (period < current) keys.delete(period);
 		})().finally(() => {
 			running = undefined;
 		}));
 	const cached = () => {
-		const day = localDay(now());
-		const key = keys.get(day);
-		return key && { day, key };
+		const period = keyPeriod(now());
+		const key = keys.get(period);
+		return key && { period, key };
 	};
 	return {
 		today() {
@@ -243,11 +272,11 @@ function itemPath(root: string, id: string): string {
 	return join(root, VAULT_DIR, id);
 }
 
-/** Seals `plain` with AES-256-GCM under the day key into `vault/<random id>`, then records the name. */
+/** Seals `plain` with AES-256-GCM under the period key into `vault/<random id>`, then records the name. */
 export function storeVaultItem(
 	db: PhoneDb,
 	root: string,
-	item: { name: string; sender: string; plain: Buffer; key: DayKey; ext?: string | null },
+	item: { name: string; sender: string; plain: Buffer; key: PeriodKey; ext?: string | null },
 	now: number,
 ): VaultItemRow {
 	assertVaultName(item.name);
@@ -258,7 +287,7 @@ export function storeVaultItem(
 		sender: item.sender,
 		type: itemType(item.plain),
 		size: item.plain.length,
-		key_day: item.key.day,
+		key_day: item.key.period,
 		created_at: now,
 		expires_at: now + VAULT_TTL_SECONDS,
 		ext: item.ext ?? null,
@@ -280,7 +309,7 @@ export function storeVaultItem(
 /** Decrypts an item in memory; throws when its key, file, or bound fields no longer match. */
 export async function openVaultItem(deps: VaultDeps, root: string, row: VaultItemRow): Promise<Buffer> {
 	const failed = () => new DgCliError(`vault item ${row.name} cannot be opened`);
-	const key = await readDayKey(deps, row.key_day).catch((err: unknown) => {
+	const key = await readPeriodKey(deps, row.key_day).catch((err: unknown) => {
 		throw err instanceof DgCliError && err.message.includes("not reachable") ? err : failed();
 	});
 	if (!key) throw failed();
@@ -299,7 +328,7 @@ export async function openVaultItem(deps: VaultDeps, root: string, row: VaultIte
 export function sealReceived(
 	db: PhoneDb,
 	root: string,
-	item: { key: DayKey; sender: string; handle: string; plain: Buffer; ext?: string | null },
+	item: { key: PeriodKey; sender: string; handle: string; plain: Buffer; ext?: string | null },
 	now: number,
 ): { row: VaultItemRow; text: string } {
 	const name = receivedName(item.handle, now, (candidate) => db.vaultNameTaken(candidate));

@@ -28,7 +28,7 @@ import {
 } from "../../src/phone/commands";
 import { OUTBOX_DIR, PhoneDb } from "../../src/phone/db";
 import { MAX_IMAGE_BYTES } from "../../src/phone/image";
-import { localDay, storeVaultItem, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
+import { keyPeriod, storeVaultItem, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
 import { createFileKey, ensureNumberKey, readFileKey } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
@@ -847,14 +847,14 @@ describe("text --image", () => {
 		async function vaultReady(): Promise<{ d: PhoneDeps; home: string; contactSk: Uint8Array; creds: FakeCredentials }> {
 			const ready_ = await ready();
 			const creds = createFakeCredentials({ session: false, granted: true });
-			const day = localDay(NOW);
+			const day = keyPeriod(NOW);
 			creds.store.set(vaultKeyName(day), "11".repeat(32));
 			return { ...ready_, d: { ...ready_.d, vaultClient: creds.deps().vaultClient }, creds };
 		}
 
 		function seed(d: PhoneDeps, name: string, plain: Buffer): void {
-			const day = localDay(NOW);
-			storeVaultItem(d.db, d.paths.phoneRoot, { name, sender: "self", plain, key: { day, key: Buffer.from("11".repeat(32), "hex") } }, NOW);
+			const day = keyPeriod(NOW);
+			storeVaultItem(d.db, d.paths.phoneRoot, { name, sender: "self", plain, key: { period: day, key: Buffer.from("11".repeat(32), "hex") } }, NOW);
 		}
 
 		it("sends a text item as a dg-phi message and stores only a placeholder row", async () => {

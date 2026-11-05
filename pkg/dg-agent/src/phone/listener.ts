@@ -95,7 +95,7 @@ export type ListenerDeps = KeyDeps & {
 	vaultClient?: () => VaultClient;
 };
 
-/** Where received PHI goes: the day key cache and the phone root that holds `vault/`. */
+/** Where received PHI goes: the period key cache and the phone root that holds `vault/`. */
 type VaultSink = { keys: VaultKeyCache; root: string };
 
 /** Rumor content of the self-addressed liveness probe. Logged nowhere. Not a user message. */

@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { type PhoneDeps, registerPhoneCommands } from "../../src/phone/commands";
 import { addContact } from "../../src/phone/store";
 import { EXEC_DEFAULT_TIMEOUT_S, phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm, type Terminal } from "../../src/phone/vault-commands";
-import { ensureDayKey, localDay, openVaultItem, SELF_SENDER, storeVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
+import { ensurePeriodKey, keyPeriod, openVaultItem, SELF_SENDER, storeVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
 import { createFakePool, freshNpub, makeHomeTracker, makePhoneDeps, parseNdjson } from "./fake-pool";
 
@@ -67,9 +67,9 @@ function file(name: string, data: string | Buffer): string {
 }
 
 async function seed(name: string, data: string | Buffer, sender = SELF_SENDER): Promise<void> {
-	const day = localDay(deps.now());
-	const key = await ensureDayKey(creds.deps(), day);
-	storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender, plain: Buffer.from(data), key: { day, key } }, deps.now());
+	const day = keyPeriod(deps.now());
+	const key = await ensurePeriodKey(creds.deps(), day);
+	storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender, plain: Buffer.from(data), key: { period: day, key } }, deps.now());
 }
 
 describe("phone vault add", () => {
@@ -126,21 +126,21 @@ describe("phone vault add", () => {
 		expect(deps.db.listVaultItems()).toEqual([]);
 	});
 
-	it("deletes day keys two or more days old", async () => {
-		creds.store.set(vaultKeyName(localDay(deps.now(), -2)), "a".repeat(64));
+	it("deletes period keys 48 hours after their period ends", async () => {
+		creds.store.set(vaultKeyName(keyPeriod(deps.now(), -2)), "a".repeat(64));
 		creds.granted = true;
 
 		await phoneVaultAdd("lab", file("in.txt", SECRET), deps);
 
-		expect(creds.store.has(vaultKeyName(localDay(deps.now(), -2)))).toBe(false);
-		expect(creds.store.has(vaultKeyName(localDay(deps.now())))).toBe(true);
+		expect(creds.store.has(vaultKeyName(keyPeriod(deps.now(), -2)))).toBe(false);
+		expect(creds.store.has(vaultKeyName(keyPeriod(deps.now())))).toBe(true);
 	});
 });
 
 describe("phone vault list", () => {
 	it("lists every item with its extension, and with --as only that agent's items and shared ones", async () => {
-		const day = localDay(deps.now());
-		const key = { day, key: await ensureDayKey(creds.deps(), day) };
+		const day = keyPeriod(deps.now());
+		const key = { period: day, key: await ensurePeriodKey(creds.deps(), day) };
 		for (const [name, ext] of [["shared-item", null], ["merc-item", "merc"], ["kit-item", "kit"]] as const) {
 			storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain: Buffer.from("x"), key, ext }, deps.now());
 		}

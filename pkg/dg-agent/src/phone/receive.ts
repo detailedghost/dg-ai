@@ -42,7 +42,7 @@ export type ImageReceiverDeps = {
 	keys: () => readonly KeyEntry[];
 	schedule: Schedule;
 	wormhole?: WormholeDeps;
-	/** Day keys for PHI images; absent means a PHI image is stored as vault unavailable. */
+	/** Period keys for PHI images; absent means a PHI image is stored as vault unavailable. */
 	vault?: VaultKeyCache;
 	/** A row got its final text; the listener hands it to the hook. */
 	onFinish: () => void;

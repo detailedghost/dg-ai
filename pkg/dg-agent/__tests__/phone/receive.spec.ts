@@ -16,7 +16,7 @@ import { addContact, numberKeyId, writeFilesOn } from "../../src/phone/store";
 import { DAILY_REQUEST_CAP } from "../../src/phone/transport";
 import { createFakePool, type FakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
-import { localDay, openVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
+import { keyPeriod, openVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { pngOfSize } from "./fake-image";
 import { fakeWormhole, type FakeWormhole } from "./fake-wormhole";
 
@@ -823,7 +823,7 @@ describe("PHI vault receive", () => {
 		phoneFiles("on", alice.deps);
 		phoneFiles("on", bob.deps);
 		creds = createFakeCredentials({ session: false, granted: true });
-		creds.store.set(vaultKeyName(localDay(clock)), "22".repeat(32));
+		creds.store.set(vaultKeyName(keyPeriod(clock)), "22".repeat(32));
 	});
 
 	function vaultName(text: string | undefined): string {
@@ -940,7 +940,7 @@ describe("extensions", () => {
 		phoneFiles("on", alice.deps);
 		phoneFiles("on", bob.deps);
 		creds = createFakeCredentials({ session: false, granted: true });
-		creds.store.set(vaultKeyName(localDay(clock)), "22".repeat(32));
+		creds.store.set(vaultKeyName(keyPeriod(clock)), "22".repeat(32));
 	});
 
 	function hookTo(out: string) {
