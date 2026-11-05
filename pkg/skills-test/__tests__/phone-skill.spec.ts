@@ -207,7 +207,7 @@ describe("phone skill", () => {
 
 	test("tells the agent to use the texting names and names the removal release for the old ones", () => {
 		expect(skill).toContain("`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`");
-		expect(skill).toContain("until 1.42.0");
+		expect(skill).toContain("until 1.43.0");
 		expect(skill).not.toMatch(/dg-agent phone (say|voicemail|inbox|thread)\b/);
 	});
 });

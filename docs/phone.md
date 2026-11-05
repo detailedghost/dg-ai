@@ -500,7 +500,7 @@ The `dg-agent phone-friend` alias was removed in 1.23.x; only `phone`
 works. `dial`, `on`, `off`, and `card` are hidden synonyms for `accept`,
 `open`, `close`, and `number`. They are not listed by `phone --help`.
 `say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`,
-`messages`, and `group`. The old names still work, hidden, until 1.42.0.
+`messages`, and `group`. The old names still work, hidden, until 1.43.0.
 Each prints one notice on stderr naming the new command and the release, and
 writes the same stdout as the new name.
 `answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright; each

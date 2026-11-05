@@ -6,7 +6,7 @@ import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS } from "./push";
 
 export const DEFAULT_INVITE_HOURS = 24;
 export const WATCH_DEFAULT_FOR_S = 120;
-export const ALIAS_REMOVAL_VERSION = "1.42.0";
+export const ALIAS_REMOVAL_VERSION = "1.43.0";
 
 export type PhoneApi = Pick<
 	typeof Commands,

@@ -33,7 +33,7 @@ If a step fails, run dg-skills doctor install credentials.
 
 **Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
-`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.42.0, with one notice on stderr. Use the new names.
+`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.43.0, with one notice on stderr. Use the new names.
 
 ## Flags
 
