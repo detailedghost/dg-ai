@@ -22,6 +22,7 @@ type Tab = {
 	url?: string;
 	title?: string;
 	active?: boolean;
+	incognito?: boolean;
 };
 
 /** Promise-based Chromium MV3 surface the handler needs. */
@@ -170,7 +171,9 @@ export function createPwExtHandler({
 	}
 
 	async function listTabs(active: Tab): Promise<string> {
-		const tabs = (await api.tabs.query({})).slice(0, MAX_TABS);
+		const tabs = (await api.tabs.query({}))
+			.filter((tab) => !tab.incognito)
+			.slice(0, MAX_TABS);
 		const rows = tabs.map((tab) => {
 			const mark = tab.id === active.id ? "[active] " : "";
 			const title = shownTitle(tab);
@@ -264,8 +267,11 @@ export function createPwExtHandler({
 			};
 		try {
 			const tab = await activeTab();
-			if (!tab || tab.id === undefined)
-				return { ok: false, error: "No active tab in a normal browser window." };
+			if (!tab || tab.id === undefined || tab.incognito)
+				return {
+					ok: false,
+					error: "No active tab in a normal, non-private browser window.",
+				};
 			const scoped = request.verb !== "current" && request.verb !== "open";
 			if (scoped && !allowedPage(tab.url))
 				return { ok: false, error: PW_EXT_BLOCKED_ERROR };

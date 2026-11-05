@@ -7,6 +7,7 @@ import {
 } from "@/lib/background/pw-ext";
 
 type Tab = {
+	incognito?: boolean;
 	id: number;
 	windowId: number;
 	url: string;
@@ -184,6 +185,23 @@ describe("pw --ext background handler", () => {
 			expect(listing.data.text).toContain("(protected mailbox)");
 			expect(listing.data.text).not.toContain("Secret subject");
 		}
+	});
+
+	it("never acts on or lists private windows", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, incognito: true }] });
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("non-private"),
+		});
+		expect(h.prompts).toEqual([]);
+		const mixed = harness({
+			tabs: [
+				WEB_TAB,
+				{ ...WEB_TAB, id: 9, windowId: 5, active: false, incognito: true, title: "Private" },
+			],
+		});
+		const listing = await mixed.run({ verb: "current" });
+		expect(listing.ok && listing.data.text).not.toContain("Private");
 	});
 
 	it("refuses a non-Chromium browser", async () => {
