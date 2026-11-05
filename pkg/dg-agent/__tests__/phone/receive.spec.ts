@@ -761,6 +761,40 @@ describe("createImageReceiver", () => {
 		expect(filesIn(bob)).toEqual([basename(used)]);
 	});
 
+	it("stores an image that exactly fits the byte cap", async () => {
+		const plain = Buffer.concat([pngOfSize(), Buffer.alloc(1024)]);
+		const dir = join(bob.deps.paths.phoneRoot, FILES_DIR);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const used = join(dir, `${"f".repeat(64)}.png`);
+		writeFileSync(used, "");
+		truncateSync(used, FILES_BYTE_CAP - plain.length);
+		const sealed = seal(plain);
+		pendingRow("img", sealedFields(sealed));
+
+		await transferWhile(sealed, () => {}, wormholeFor());
+
+		expect(row(bob, "img")?.text).not.toBe("[image unavailable: storage full]");
+		expect(filesIn(bob)).toHaveLength(2);
+	});
+
+	it("stores storage full for a PHI image that fits only without the seal overhead", async () => {
+		const plain = Buffer.concat([pngOfSize(), Buffer.alloc(1024)]);
+		const dir = join(bob.deps.paths.phoneRoot, VAULT_DIR);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const used = join(dir, "f".repeat(32));
+		writeFileSync(used, "");
+		truncateSync(used, FILES_BYTE_CAP - plain.length);
+		const sealed = seal(plain);
+		phiPendingRow("img", sealed, clock + PHI_TTL_SECONDS);
+		const images = receiver();
+
+		images.wake();
+		await images.settle();
+
+		expect(row(bob, "img")).toMatchObject({ text: "[image unavailable: storage full]", file: null });
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
 	it("stores storage full for a PHI image when vault/ plus files/ is over the byte cap", async () => {
 		const dir = join(bob.deps.paths.phoneRoot, VAULT_DIR);
 		mkdirSync(dir, { recursive: true, mode: 0o700 });

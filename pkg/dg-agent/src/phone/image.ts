@@ -204,7 +204,8 @@ export function prepareImage(source: Buffer): PreparedImage {
 const HEX64 = /^[0-9a-f]{64}$/;
 const NONCE_HEX = /^(?:[0-9a-f]{24}|[0-9a-f]{32})$/;
 const SIZE_TEXT = /^[1-9][0-9]{0,15}$/;
-const GCM_TAG_BYTES = 16;
+/** Bytes the AES-GCM tag adds to an image sealed for transfer. */
+export const GCM_TAG_BYTES = 16;
 const EXTENSIONS: Readonly<Record<ImageType, string>> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 /** A received image's file name; checked again on every read. */
 export const FILE_NAME_PATTERN = /^[0-9a-f]{64}\.(?:png|jpg|webp)$/;

@@ -6,7 +6,7 @@ import { type PhoneDeps, registerPhoneCommands } from "../../src/phone/commands"
 import { FILES_BYTE_CAP } from "../../src/phone/receive";
 import { addContact } from "../../src/phone/store";
 import { EXEC_DEFAULT_TIMEOUT_S, phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm, type Terminal } from "../../src/phone/vault-commands";
-import { ensurePeriodKey, keyPeriod, openVaultItem, SELF_SENDER, storeVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
+import { ensurePeriodKey, keyPeriod, openVaultItem, SELF_SENDER, SEALED_OVERHEAD_BYTES, storeVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
 import { createFakePool, freshNpub, makeHomeTracker, makePhoneDeps, parseNdjson } from "./fake-pool";
 
@@ -102,6 +102,13 @@ describe("phone vault add", () => {
 		fillReceiveStorage(FILES_BYTE_CAP - MIB);
 
 		await expect(phoneVaultAdd("lab", file("in.bin", Buffer.alloc(2 * MIB, "a")), deps)).rejects.toThrow(/storage is full/);
+		expect(deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("refuses an item that fits the cap only without the seal overhead", async () => {
+		fillReceiveStorage(FILES_BYTE_CAP - SECRET.length);
+
+		await expect(phoneVaultAdd("lab", file("in.txt", SECRET), deps)).rejects.toThrow(/storage is full/);
 		expect(deps.db.listVaultItems()).toEqual([]);
 	});
 
