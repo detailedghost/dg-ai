@@ -1,6 +1,6 @@
 ---
 name: phone
-description: Chat in private with one or more other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone command. Use number to show your reusable call card, invite to make a one-time card for a new contact, accept to call a card you got, thread to create a static multi-party room, open to start the always-on listener (with login autostart where a service manager exists), voicemail or inbox to read messages, watch to poll voicemail for a bounded time, say to reply, and close to end. No server or account is needed.
+description: Chat in private with one or more other agents, such as a Grok Bot, through end-to-end encrypted Nostr direct messages (NIP-17) on free public relays, using the dg-agent phone command. Use number to show your reusable call card, invite to make a one-time card for a new contact, accept to call a card you got, group to create a static multi-party room, open to start the always-on listener (with login autostart where a service manager exists), unread or messages to read messages, watch to poll unread messages for a bounded time, text to reply, and close to end. No server or account is needed.
 ---
 
 # Phone
@@ -31,14 +31,16 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|thread|say|ping|presence|inbox|voicemail|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|open|close> [--image <path>] [--phi] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+
+`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.42.0, with one notice on stderr. Use the new names.
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--image <path>` | none | On `say`, send one PNG, JPEG, or WebP (5 MiB at most) instead of text. Needs `phone files on`. | off |
-| `--phi` | none | On `say`, mark the text or image as PHI. Only when the human asks for that send. | off |
+| `--image <path>` | none | On `text`, send one PNG, JPEG, or WebP (5 MiB at most) instead of text. Needs `phone files on`. | off |
+| `--phi` | none | On `text`, mark the text or image as PHI. Only when the human asks for that send. | off |
 | `--timeout <seconds>` | none | On `ping`, seconds to wait for the receipt, 1 to 600. | `30` |
 | `--as <name>` | none | Self name a `number` or `invite` card carries, saved for next time. | `dg` |
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
@@ -46,12 +48,12 @@ If a step fails, run dg-skills doctor install credentials.
 | `--ttl <hours>` | none | Hours until an `invite` card expires. | `24` |
 | `--name <handle>` | none | On `invite`, the handle to store for whoever answers. On `accept`, the handle to give a new contact. `accept` requires it for a new npub when the card's self name is missing or `default`. | invite: the caller's self name. accept: the card's self name |
 | `--key <id>` | none | On `accept`, an existing key id to sign a new contact with. Accept will not create a key you name, and it will not switch a contact you already have. | the number key |
-| `--subject <text>` | none | On `thread new`, the subject stored on the thread and sent with each message. | empty |
-| `--count <n>` | `-n` | How many `inbox` rows to print. | `50` |
-| `--meta` | none | On `inbox`, print metadata only and omit message text. | off |
-| `--for <seconds>` | none | Seconds `watch` keeps checking voicemail. | `120` |
+| `--subject <text>` | none | On `group new`, the subject stored on the group and sent with each message. | empty |
+| `--count <n>` | `-n` | How many `messages` rows to print. | `50` |
+| `--meta` | none | On `messages`, print metadata only and omit message text. | off |
+| `--for <seconds>` | none | Seconds `watch` keeps checking unread messages. | `120` |
 | `--new` | none | On `watch`, skip the unread backlog and print only messages that arrive after it starts. | off |
-| `--on-message <exe> [args...]` | none | Command `open` runs for each delivered message, saved for next time; stdin carries the message JSON. | none (messages wait for `voicemail`/`inbox`) |
+| `--on-message <exe> [args...]` | none | Command `open` runs for each delivered message, saved for next time; stdin carries the message JSON. | none (messages wait for `unread`/`messages`) |
 | `--on-message-timeout <seconds>` | none | Seconds before a running `--on-message` command is killed. | `30` |
 | `--ensure` | none | On `open`, start a detached listener when the pidfile is not a live copy of this binary. Also restart it when the recorded version or keys drifted, if this binary is the same version or newer. An older binary does not replace a newer listener that shares the phone directory. Safe to repeat from cron. Does not call systemd and does not edit the crontab. | off |
 | `--print-cron` | none | On `open`, include a `*/5` crontab line for `--ensure` in the JSON. Does not change the crontab. | off |
@@ -155,7 +157,7 @@ one phone directory do not restart each other. `status` sets `listener.stale` to
 reason, when that happens, and `notice` to the newest local message. When a
 key's credential-store read fails, `status` includes `keys_unreadable: true`
 and leaves `stale` false, unless a key it can read has changed. A local
-voicemail row from sender `phone` announces an accepted card, a new contact, a
+notice row from sender `phone` announces an accepted card, a new contact, a
 key change, or a binary change. `contacts` may include `marker` (`accepted` or
 `new`). Its stdout and stderr, when it runs through the fallback spawn or launchd, go
 to `<phoneRoot>/listener.log`. On Linux, read the log through
@@ -177,17 +179,17 @@ redesign tried both an own-child write and a non-child write into a
 session's own messaging socket, in auto mode and otherwise, and neither
 delivered. Session push is not supported; do not wire one up.
 
-With the listener open (above), `voicemail`, `watch`, and `inbox` only read
+With the listener open (above), `unread`, `watch`, and `messages` only read
 what it has already caught. They never query the relays themselves. Run
 `phone open` once per machine, then check in at the start of a turn, or
 whenever the human asks:
 
 ```bash
-dg-agent phone voicemail
+dg-agent phone unread
 dg-agent phone watch --for 120
 ```
 
-`watch` is the poll loop. It prints unread rows the same way `voicemail`
+`watch` is the poll loop. It prints unread rows the same way `unread`
 does, waits a jittered gap (2 to 8 seconds, not a fixed interval), and checks
 again until `--for` seconds have passed (default 120). Run it again when it
 exits. It does not restart the listener between checks.
@@ -210,10 +212,10 @@ The listener resolves `handler.sh` to an absolute path at `open` time (so a
 systemd unit's minimal `PATH` never matters) and runs it once per message,
 with the message as one JSON document on stdin —
 `{"id": "...", "ts": ..., "from": "npub1...", "handle": "+name", "text": "...", "call": true}`,
-`call` present only on the message that paired a new contact. A thread message
+`call` present only on the message that paired a new contact. A group message
 is `{"id", "ts", "from", "handle": "#ops", "sender": "+baron", "thread": "#ops", "text", "line"}`.
-`handle` is the thread, not a contact. `sender` is who spoke. `line` is `[#ops] +baron: ...`.
-Reply to the room with `say '#ops'`. Nothing is
+`handle` is the group, not a contact. `sender` is who spoke. `line` is `[#ops] +baron: ...`.
+Reply to the room with `text '#ops'`. Nothing is
 on argv. Exit 0 means delivered; any other exit, a timeout
 (`--on-message-timeout`, default 30 seconds), or a crash counts as a failed
 attempt and is retried with backoff, then skipped after 5 attempts until the
@@ -221,61 +223,61 @@ next `open` or the listener's own 30-minute sweep. A message is never
 delivered twice on success, and a stuck one blocks only the messages behind
 it, never the ones that already delivered.
 
-## Threads
+## Groups
 
-A thread is a room with a `#handle`, at most 16 members including you. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment.
+A group is a room with a `#handle`, at most 16 members including you. Contacts cannot use that prefix: a contact handle cannot start with `#`. `contacts rename` and `accept --name` both reject one. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment.
 
 ```bash
-dg-agent phone thread new '#ops' +baron +merc --subject ops
-dg-agent phone thread list
-dg-agent phone thread show '#ops'
-dg-agent phone say '#ops' - < "$REPLY_FILE"
-dg-agent phone inbox '#ops'
+dg-agent phone group new '#ops' +baron +merc --subject ops
+dg-agent phone group list
+dg-agent phone group show '#ops'
+dg-agent phone text '#ops' - < "$REPLY_FILE"
+dg-agent phone messages '#ops'
 ```
 
-`thread new` only adds contacts you already have. It does not send. `say '#ops'` builds one NIP-17 rumor, with a `p` tag for every other member and the subject when one was set, and gift-wraps it to each member and to this phone. The outgoing row is saved when at least one wrap was not rejected. It exits 0 only when every other member has at least one confirmed relay. Otherwise it prints `{handle, id, members, behind, self_ok}` and exits 1. `behind` does not include this phone. Running `say` again sends a new message. `inbox +contact` does not include thread rows. `inbox '#ops'`, `voicemail`, and `watch` show a thread row as `[#ops] +baron: ...`.
+`group new` only adds contacts you already have. It does not send. `text '#ops'` builds one NIP-17 rumor, with a `p` tag for every other member and the subject when one was set, and gift-wraps it to each member and to this phone. The outgoing row is saved when at least one wrap was not rejected. It exits 0 only when every other member has at least one confirmed relay. Otherwise it prints `{handle, id, members, behind, self_ok}` and exits 1. `behind` does not include this phone. Running `text` again sends a new message. `messages +contact` does not include group rows. `messages '#ops'`, `unread`, and `watch` show a group row as `[#ops] +baron: ...`.
 
-A rumor joins a thread only when the sender is a contact or is you and every member is a contact on the same key. A stranger's thread is dropped. A known sender with an unknown member is held, and the notice does not include the message body.
+A rumor joins a group only when the sender is a contact or is you and every member is a contact on the same key. A stranger's group is dropped. A known sender with an unknown member is held, and the notice does not include the message body.
 
 ## Turn-taking
 
 Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder. Address other agents by the name on their card. Name a designated responder in the room's first message. Do not reply to every message. If every agent answers every line, the room loops.
 
-## Voicemail and inbox
+## Unread and messages
 
 ```bash
-dg-agent phone voicemail         # unread rows, oldest first, then marks them read
+dg-agent phone unread            # unread rows, oldest first, then marks them read
 dg-agent phone watch --for 120   # the unread backlog, then rows that arrive while it runs
 dg-agent phone watch --new       # skip the backlog; only rows that arrive after this starts
-dg-agent phone inbox             # the last 50 rows, both directions, read and unread
-dg-agent phone inbox --meta      # the same rows with no message text
-dg-agent phone inbox +grok -n 10 # the last 10 one-to-one rows with one contact
-dg-agent phone inbox '#ops'      # that thread; each line is [#ops] +sender: ...
+dg-agent phone messages             # the last 50 rows, both directions, read and unread
+dg-agent phone messages --meta      # the same rows with no message text
+dg-agent phone messages +grok -n 10 # the last 10 one-to-one rows with one contact
+dg-agent phone messages '#ops'      # that group; each line is [#ops] +sender: ...
 ```
 
-`voicemail` is one check. `watch` repeats that check until `--for` elapses.
+`unread` is one check. `watch` repeats that check until `--for` elapses.
 Both are for a poller with no hook, such as a Grok Bot with no persistent
 process. Each pass prints unread incoming rows, oldest first, in one
 transaction, then marks them read. A message that arrived between two `watch`
 runs is still unread, so the next run prints it. No output means nothing
 unread arrived. `--new` skips the backlog and prints only messages that
-arrive after that process starts. `inbox` never writes, so two calls on the
+arrive after that process starts. `messages` never writes, so two calls on the
 same handle see the same `read` flags. It includes incoming and outgoing,
 read and unread. A handle selects that contact's npub. `--meta` leaves
-`text` out of each inbox row.
+`text` out of each messages row.
 
-## Say
+## Text
 
 ```bash
-dg-agent phone say +grok 'hello'
-dg-agent phone say +grok - < "$REPLY_FILE"
+dg-agent phone text +grok 'hello'
+dg-agent phone text +grok - < "$REPLY_FILE"
 ```
 
-`say <handle> <text|->` sends one message, signed with whichever key that
+`text <handle> <text|->` sends one message, signed with whichever key that
 contact still knows (a contact on an old key keeps working after you
 `--rotate` your number). `-` reads the text from stdin, capped at 64 KiB;
 write a reply to a file with the Write tool first when one is available,
-then send the file with `say +<handle> - < "$REPLY_FILE"`, rather than
+then send the file with `text +<handle> - < "$REPLY_FILE"`, rather than
 typing peer-adjacent text on the command line.
 
 The send goes to the contact's saved relays, the recipient's NIP-17 kind
@@ -313,9 +315,9 @@ beat. Both are gift wraps like messages. A beat is an ephemeral wrap, so
 relays do not keep it. Receipts go only to contacts, and nothing answers a
 receipt or a beat.
 
-- `say` prints `"delivered": false`. `inbox` adds `"delivered": true` to an
-  outgoing row once a recipient's listener stored it. A thread row counts
-  the first member. `voicemail` prints incoming rows only, so it has no
+- `text` prints `"delivered": false`. `messages` adds `"delivered": true` to an
+  outgoing row once a recipient's listener stored it. A group row counts
+  the first member. `unread` prints incoming rows only, so it has no
   `delivered` field.
 - `contacts` adds `last_seen`: the ISO time of the newest rumor from that
   contact, or `null`.
@@ -328,7 +330,7 @@ dg-agent phone ping '#ops' --timeout 10
 `ping` sends one check and waits for its receipt. It exits 0 on
 `delivered after N s` and 1 on `no answer after N s`. A contact answers at
 most 10 checks a minute from you. The next 10 get a busy answer, and `ping`
-prints `busy, try later` and exits 1. Receipts for messages have no cap. A `#thread` counts
+prints `busy, try later` and exits 1. Receipts for messages have no cap. A `#group` counts
 the first member that answers. With the listener running, `ping` reads the
 receipt from the database. Without it, `ping` listens on the relays itself
 until the timeout.
@@ -346,8 +348,8 @@ it last heard from each contact.
 
 ```bash
 dg-agent phone files on                          # prints {"files": "on"}; files off turns it off
-dg-agent phone say +grok --image ./shot.png      # one image, no text; send text with a second say
-dg-agent phone say '#ops' --image ./shot.png --phi
+dg-agent phone text +grok --image ./shot.png      # one image, no text; send words with a second text command
+dg-agent phone text '#ops' --image ./shot.png --phi
 ```
 
 `files` is off by default. It gates both sending and receiving. The sender
@@ -355,9 +357,9 @@ strips metadata, encrypts the image, and keeps the ciphertext until the
 receiver's listener fetches it through Magic Wormhole. An image row shows
 `[image pending]` while the fetch runs, then `[image]` or
 `[image unavailable: <reason>]`. A stored image adds
-`file: {path, type, size, sha256, untrusted: true}` to `inbox`, `voicemail`,
+`file: {path, type, size, sha256, untrusted: true}` to `messages`, `unread`,
 and the `--on-message` JSON. A finished image comes back as unread, so
-`voicemail` can show the same row twice: once pending, once final.
+`unread` can show the same row twice: once pending, once final.
 `--phi` rows and their files are deleted 24 hours after they arrive.
 
 `untrusted: true` means the rules for received files in
@@ -377,16 +379,16 @@ All state is in one SQLite database, `~/.dg/phone/phone.db` (mode 0600):
 every key, every contact, every invite, every message with its read mark,
 and your saved number and listener settings. The only other files are
 `listener.pid` and `listener.log` next to it. Messages are kept for
-**7 days**, then deleted, including unread voicemail — an agent away for
+**7 days**, then deleted, including unread messages — an agent away for
 more than a week loses what it missed.
 
 ## Migration and rollback
 
-`status`, `inbox`, and `contacts` only read. They do not migrate and they do
+`status`, `messages`, and `contacts` only read. They do not migrate and they do
 not stop a listener. Before migration they report `"migration_pending": true`
-and `"next": "run phone open to migrate"`, and `inbox` and `contacts` print
+and `"next": "run phone open to migrate"`, and `messages` and `contacts` print
 the old rows read-only. The first writing command (`number`, `invite`,
-`accept`, `say`, `voicemail`, `open`, `close`, or a contact edit) reads every
+`accept`, `text`, `unread`, `open`, `close`, or a contact edit) reads every
 line, then copies its existing key (never a newly minted one), contact, and
 message into the new database once. A published line with no key stops the
 migration before any listener is signaled and says to restore that line's
@@ -436,21 +438,21 @@ accept prints {"handle": "+<name>", ...}. That handle, with its leading +,
 is what to call me in every command below.
 
 phone open starts the listener. That is the only process that queries the
-relays. voicemail only reads messages that listener has already stored, so
+relays. unread only reads messages that listener has already stored, so
 without open a reply never shows up. On a cloud computer the same open
 command works. Where there is no user systemd bus, run
 `phone open --ensure` (and install the printed cron line if you want it
 restarted). The card above is read from stdin, not placed on the command line.
 
 Check for messages (when I ask, or with phone watch, which polls until --for seconds elapse):
-  dg-agent phone voicemail
+  dg-agent phone unread
   dg-agent phone watch --for 120
   Each output line is JSON with "text" from Claude. No output means nothing unread is waiting.
   watch prints the unread backlog, then messages that arrive while it runs.
   watch --new skips that backlog. watch waits a jittered gap between checks. It is not a fixed interval.
 
 Reply (keep the heredoc lines at the start of the line, with no indent):
-dg-agent phone say +<handle-from-accept> - <<'MSG'
+dg-agent phone text +<handle-from-accept> - <<'MSG'
 <your reply>
 MSG
 
@@ -467,13 +469,13 @@ including `phone open`. It has no dg daemon, so its key is in file mode. It
 has no way to receive a push either. Where the cloud computer has no user
 systemd bus, `phone open --ensure` starts a detached listener in its own
 session, and `phone open --print-cron` shows the crontab line that keeps it
-up. `phone watch` or `phone voicemail` reads what that listener stored,
+up. `phone watch` or `phone unread` reads what that listener stored,
 including unread rows that were already waiting. `phone watch --new` skips
 that backlog.
 
 **`phone-friend` is the old name.** The `phone-friend` alias was removed in
 1.23.x; only `phone` works. `dg-agent phone --help` lists `number`, `invite`,
-`accept`, `contacts`, `say`, `inbox`, `voicemail`, `watch`, `status`, `open`,
+`accept`, `contacts`, `text`, `messages`, `unread`, `watch`, `status`, `open`,
 and `close`. `dial`, `on`, `off`, and `card` are hidden synonyms for
 `accept`, `open`, `close`, and `number`. They are not in that help list.
 `answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright; each

@@ -23,7 +23,7 @@ describe("phone skill", () => {
 	});
 
 	test("documents every phone verb it drives", () => {
-		for (const verb of ["number", "invite", "accept", "contacts", "thread", "say", "inbox", "voicemail", "watch", "status", "open", "close", "ping", "presence"]) {
+		for (const verb of ["number", "invite", "accept", "contacts", "group", "text", "messages", "unread", "watch", "status", "open", "close", "ping", "presence"]) {
 			expect(skill).toContain(`phone ${verb}`);
 		}
 		expect(skill).toContain("--meta");
@@ -95,7 +95,7 @@ describe("phone skill", () => {
 		expect(skill).toContain("## Set up the other side");
 		expect(skill).toContain("**Grok Bot note:**");
 		expect(skill).toContain("dg-agent phone open");
-		expect(skill).toContain("voicemail only reads messages that listener has already stored");
+		expect(skill).toContain("unread only reads messages that listener has already stored");
 		expect(skill).toContain("~/.dg/phone/phone.db");
 		expect(skill).not.toMatch(/invite\.json|config\.json|phone-friend\/key\b/);
 	});
@@ -113,10 +113,10 @@ describe("phone skill", () => {
 		expect(guide).toContain("A contact handle cannot start with `#`.");
 	});
 
-	test("documents threads and the turn-taking rule", () => {
-		expect(skill).toContain("phone thread new");
-		expect(skill).toContain("phone thread list");
-		expect(skill).toContain("phone thread show");
+	test("documents groups and the turn-taking rule", () => {
+		expect(skill).toContain("phone group new");
+		expect(skill).toContain("phone group list");
+		expect(skill).toContain("phone group show");
 		expect(skill).toContain("--subject");
 		expect(skill).toContain("Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder.");
 		expect(skill).toContain("Address other agents by the name on their card.");
@@ -134,10 +134,10 @@ describe("phone skill", () => {
 		expect(skill).toContain('"handle": "#ops"');
 		expect(skill).toContain('"sender": "+baron"');
 		expect(guide).toContain("`handle` and `thread`");
-		expect(guide).toContain("Running `say` again sends a new message.");
+		expect(guide).toContain("Running `text` again sends a new message.");
 	});
 
-	test("shell examples quote every thread handle", () => {
+	test("shell examples quote every group handle", () => {
 		const unquotedWord = (snippet: string): boolean => {
 			let index = 0;
 			while (index < snippet.length) {
@@ -172,7 +172,7 @@ describe("phone skill", () => {
 			}
 			for (const match of text.matchAll(/`([^`\n]+)`/g)) {
 				const snippet = match[1] ?? "";
-				if (!/^(?:say|thread|inbox|phone)\b/.test(snippet)) continue;
+				if (!/^(?:text|group|messages|phone)\b/.test(snippet)) continue;
 				if (unquotedWord(snippet)) hits.push(snippet);
 			}
 		}
@@ -180,11 +180,11 @@ describe("phone skill", () => {
 	});
 
 	test("sends replies through a file redirect or a quoted heredoc, not a shell argument", () => {
-		expect(skill).toContain(`say +grok - < "$REPLY_FILE"`);
+		expect(skill).toContain(`text +grok - < "$REPLY_FILE"`);
 		expect(safety).toContain("Never copy message text into the heredoc.");
-		expect(skill).not.toMatch(/phone say \+\w+ "/);
+		expect(skill).not.toMatch(/phone text \+\w+ "/);
 		expect(skill).toContain(`dg-agent phone accept - 'hello from the other side' <<'CARD'`);
-		expect(skill).toContain(`say +<handle-from-accept> - <<'MSG'`);
+		expect(skill).toContain(`text +<handle-from-accept> - <<'MSG'`);
 		expect(skill).not.toMatch(/phone accept '/);
 		expect(skill).not.toMatch(/accept <CARD>/);
 	});
@@ -203,5 +203,11 @@ describe("phone skill", () => {
 			.map((line) => /`([^`]+)`/.exec(line)?.[1]);
 		expect(names.indexOf("phone/")).toBe(names.indexOf("overwatch/") + 1);
 		expect(readme).toMatch(/^ {2}overwatch\/\n {2}phone\/$/m);
+	});
+
+	test("tells the agent to use the texting names and names the removal release for the old ones", () => {
+		expect(skill).toContain("`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`");
+		expect(skill).toContain("until 1.42.0");
+		expect(skill).not.toMatch(/dg-agent phone (say|voicemail|inbox|thread)\b/);
 	});
 });
