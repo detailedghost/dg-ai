@@ -16,7 +16,7 @@ import { addContact, numberKeyId, writeFilesOn } from "../../src/phone/store";
 import { DAILY_REQUEST_CAP } from "../../src/phone/transport";
 import { createFakePool, type FakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
-import { keyPeriod, openVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
+import { keyPeriod, MAX_VAULT_BYTES, openVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { pngOfSize } from "./fake-image";
 import { fakeWormhole, type FakeWormhole } from "./fake-wormhole";
 
@@ -897,6 +897,31 @@ describe("PHI vault receive", () => {
 		await bobListener.stop();
 
 		expect(bob.deps.db.recentMessages(10).map((candidate) => candidate.text)).toEqual(["[PHI: vault unavailable from +a]"]);
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("stores storage full and no content when vault/ plus files/ is over the byte cap", async () => {
+		const dir = join(bob.deps.paths.phoneRoot, VAULT_DIR);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const big = join(dir, "f".repeat(32));
+		writeFileSync(big, "");
+		truncateSync(big, FILES_BYTE_CAP);
+		await deliver(wrapTagged({ content: "patient Jane Roe", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient });
+		await bobListener.started;
+		await bobListener.stop();
+
+		expect(bob.deps.db.recentMessages(10).map((candidate) => candidate.text)).toEqual(["[PHI: storage full from +a]"]);
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("stores storage full and no content when a PHI text is over the per-item cap", async () => {
+		await deliver(wrapTagged({ content: "x".repeat(MAX_VAULT_BYTES + 1), tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient });
+		await bobListener.started;
+		await bobListener.stop();
+
+		expect(bob.deps.db.recentMessages(10).map((candidate) => candidate.text)).toEqual(["[PHI: storage full from +a]"]);
 		expect(bob.deps.db.listVaultItems()).toEqual([]);
 	});
 

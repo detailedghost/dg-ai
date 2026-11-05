@@ -111,6 +111,11 @@ export function vaultUnavailableText(handle: string): string {
 	return `[PHI: vault unavailable from +${handle}]`;
 }
 
+/** Stored for received PHI over the per-item cap or when receive storage is full; the content is dropped. */
+export function vaultStorageFullText(handle: string): string {
+	return `[PHI: storage full from +${handle}]`;
+}
+
 function unreachable(): DgCliError {
 	return new DgCliError("the vault needs the dg credential store, which is not reachable; start it with dg-agent start");
 }

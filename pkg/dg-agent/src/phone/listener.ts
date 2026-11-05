@@ -36,17 +36,19 @@ import { type ImageFetchRow, MESSAGE_TTL_SECONDS, PHI_TTL_SECONDS, type PhoneDb 
 import { IMAGE_PENDING_TEXT, imageUnavailableText } from "./image";
 import type { CommandPushTarget } from "./push";
 import { createPresence, PRESENCE_MAX_MS, PRESENCE_MIN_MS, type PresenceConfig } from "./presence";
-import { createImageReceiver, MAX_PENDING_IMAGES } from "./receive";
+import { createImageReceiver, MAX_PENDING_IMAGES, receiveStorageFull } from "./receive";
 import { createFileRequestHandler } from "./transport";
 import type { WormholeDeps } from "./wormhole";
 import {
 	createVaultKeyCache,
 	deleteVaultItem,
+	MAX_VAULT_BYTES,
 	PHI_NOT_STORED_TEXT,
 	sealReceived,
 	type VaultClient,
 	UNKNOWN_SENDER_HANDLE,
 	type VaultKeyCache,
+	vaultStorageFullText,
 	vaultUnavailableText,
 } from "./vault";
 import {
@@ -774,9 +776,11 @@ function storePhiText(db: PhoneDb, message: Message, row: StoredRow, now: number
 	const add = (text: string) => db.addMessage({ id: message.id, ts: message.ts, sender: message.from, text, phi: true, ...row });
 	if (row.direction === "out") return add(PHI_NOT_STORED_TEXT);
 	const handle = findContactByNpub(db, message.from)?.handle ?? UNKNOWN_SENDER_HANDLE;
+	const plain = Buffer.from(message.text, "utf8");
+	if (plain.length > MAX_VAULT_BYTES || receiveStorageFull(vault.root)) return add(vaultStorageFullText(handle));
 	const key = vault.keys.peek();
 	if (!key) return add(vaultUnavailableText(handle));
-	const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain: Buffer.from(message.text, "utf8"), ext: row.ext }, now);
+	const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain, ext: row.ext }, now);
 	const inserted = add(sealed.text);
 	if (!inserted) deleteVaultItem(db, vault.root, sealed.row);
 	return inserted;
