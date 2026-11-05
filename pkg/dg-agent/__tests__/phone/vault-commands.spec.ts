@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Command } from "commander";
 import { type PhoneDeps, registerPhoneCommands } from "../../src/phone/commands";
 import { addContact } from "../../src/phone/store";
-import { phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm, type Terminal } from "../../src/phone/vault-commands";
+import { EXEC_DEFAULT_TIMEOUT_S, phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm, type Terminal } from "../../src/phone/vault-commands";
 import { ensureDayKey, localDay, openVaultItem, SELF_SENDER, storeVaultItem, VAULT_DIR, VAULT_TTL_SECONDS, vaultKeyName } from "../../src/phone/vault";
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
 import { createFakePool, freshNpub, makeHomeTracker, makePhoneDeps, parseNdjson } from "./fake-pool";
@@ -372,6 +372,31 @@ describe("phone vault exec", () => {
 		expect(deps.db.vaultItem("lab-out")).toBeUndefined();
 	});
 
+	it("kills a command past --timeout, stores nothing, and exits 124", async () => {
+		await seed("lab", SECRET);
+		const started = Date.now();
+
+		const run = phoneVaultExec("lab", [BUN, "-e", "process.stdout.write('x'); await Bun.sleep(30000)"], { timeout: "1" }, deps);
+
+		await expect(run).rejects.toMatchObject({ exitCode: 124 });
+		expect(Date.now() - started).toBeLessThan(10_000);
+		expect(deps.db.vaultItem("lab-out")).toBeUndefined();
+		expect(out).toBe("");
+	});
+
+	it("refuses a --timeout that is not 1 to 3600 seconds and runs nothing", async () => {
+		await seed("lab", SECRET);
+		const marker = join(home, "ran");
+		const touch = [BUN, "-e", `require('fs').writeFileSync(${JSON.stringify(marker)}, '')`];
+
+		for (const timeout of ["0", "-1", "abc", "3601"]) await expect(phoneVaultExec("lab", touch, { timeout }, deps)).rejects.toThrow(/--timeout/);
+		expect(existsSync(marker)).toBe(false);
+	});
+
+	it("defaults the timeout to 120 seconds", () => {
+		expect(EXEC_DEFAULT_TIMEOUT_S).toBe(120);
+	});
+
 	it("keeps the sender of the item it read on the item it makes", async () => {
 		const npub = freshNpub();
 		await seed("lab", SECRET, npub);
@@ -406,7 +431,7 @@ describe("phone vault wiring", () => {
 		const run = (args: string[]) => program.parseAsync(["phone", "vault", ...args], { from: "user" });
 
 		await run(["add", "lab", file("in.txt", SECRET)]);
-		await run(["exec", "lab", "--out", "res", "--", BUN, "-e", "process.stdout.write((await Bun.stdin.text()).toUpperCase())"]);
+		await run(["exec", "lab", "--out", "res", "--timeout", "30", "--", BUN, "-e", "process.stdout.write((await Bun.stdin.text()).toUpperCase())"]);
 		await run(["list"]);
 		await run(["rm", "lab"]);
 

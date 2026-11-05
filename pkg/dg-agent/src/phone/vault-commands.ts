@@ -32,7 +32,11 @@ export type Terminal = {
 	view(path: string): Promise<void>;
 };
 
-export type ExecOpts = { env?: string; stdin?: boolean; out?: string };
+export type ExecOpts = { env?: string; stdin?: boolean; out?: string; timeout?: string };
+
+export const EXEC_DEFAULT_TIMEOUT_S = 120;
+const EXEC_MAX_TIMEOUT_S = 3600;
+const EXIT_TIMED_OUT = 124;
 
 const MAX_ENV_BYTES = 64 * 1024;
 const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
@@ -169,9 +173,9 @@ function childEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 	return kept;
 }
 
-type ChildResult = { code: number | null; stdout?: Buffer; size: number; stderrLines: number; failedToStart: boolean };
+type ChildResult = { code: number | null; stdout?: Buffer; size: number; stderrLines: number; failedToStart: boolean; timedOut: boolean };
 
-function runChild(argv: string[], input: { stdin?: Buffer; env?: Record<string, string> }): Promise<ChildResult> {
+function runChild(argv: string[], input: { stdin?: Buffer; env?: Record<string, string> }, timeoutMs: number): Promise<ChildResult> {
 	return new Promise((resolve) => {
 		const child = spawn(argv[0]!, argv.slice(1), {
 			shell: false,
@@ -205,14 +209,23 @@ function runChild(argv: string[], input: { stdin?: Buffer; env?: Record<string, 
 			child.stdin.end(input.stdin);
 		}
 		let started = false;
+		let timedOut = false;
+		const timer = setTimeout(() => {
+			timedOut = true;
+			if (child.pid !== undefined) killProcessTree(child.pid);
+		}, timeoutMs);
 		child.once("spawn", () => {
 			started = true;
 		});
 		child.once("error", () => {
-			if (!started) resolve({ code: null, size: 0, stderrLines: 0, failedToStart: true });
+			if (started) return;
+			clearTimeout(timer);
+			resolve({ code: null, size: 0, stderrLines: 0, failedToStart: true, timedOut: false });
 		});
 		child.once("close", (code: number | null) => {
+			clearTimeout(timer);
 			resolve({
+				timedOut,
 				code,
 				stdout: over ? undefined : Buffer.concat(chunks),
 				size,
@@ -236,14 +249,19 @@ export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpt
 	if (opts.env !== undefined && opts.stdin) throw new DgCliError("--env and --stdin cannot be used together");
 	if (argv.length === 0) throw new DgCliError("vault exec needs a command after --");
 	const outName = assertVaultName(opts.out ?? `${name}-out`);
+	const seconds = opts.timeout === undefined ? EXEC_DEFAULT_TIMEOUT_S : Number(opts.timeout);
+	if (!Number.isFinite(seconds) || seconds < 1 || seconds > EXEC_MAX_TIMEOUT_S) {
+		throw new DgCliError(`--timeout must be a number of seconds from 1 to ${EXEC_MAX_TIMEOUT_S}, got "${opts.timeout}"`);
+	}
 	await prepareVault(deps);
 	const row = liveItem(deps, name);
 	if (deps.db.vaultNameTaken(outName)) throw new DgCliError(`vault item ${outName} exists; --out never overwrites`);
 	const plain = await openVaultItem(deps, deps.paths.phoneRoot, row);
 	const input = opts.env === undefined ? { stdin: plain } : { env: envInput(opts.env, row, plain) };
 	const key = await todayKey(deps);
-	const result = await runChild(argv, input);
+	const result = await runChild(argv, input, seconds * 1000);
 	if (result.failedToStart) throw new DgCliError(`could not start ${argv[0]}`);
+	if (result.timedOut) throw new DgCliError(`the command ran past ${seconds} s and was stopped, so no item was stored`, EXIT_TIMED_OUT);
 	if (!result.stdout) throw new DgCliError("the command wrote more than 5 MiB to stdout, so no item was stored");
 	const kept = result.code === 0;
 	if (kept) storeVaultItem(deps.db, deps.paths.phoneRoot, { name: outName, sender: row.sender, plain: result.stdout, key }, deps.now());

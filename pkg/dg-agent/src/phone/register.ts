@@ -244,6 +244,7 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.option("--env <var>", "pass a text item under 64 KiB in this env var instead of stdin")
 		.option("--stdin", "pass the item on stdin (the default)")
 		.option("--out <name>", "name of the new item; never overwrites (default <name>-out)")
+		.option("--timeout <seconds>", "seconds before the command is killed; nothing is stored and the exit code is 124", "120")
 		.action(async (name: string, argv: string[], opts: Commands.ExecOpts) => {
 			const phone = await load();
 			await phone.phoneVaultExec(name, argv, opts, phone.deps(getSession()));

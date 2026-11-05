@@ -45,7 +45,7 @@ If a step fails, run dg-skills doctor install credentials.
 | `--env <var>` | none | On `vault exec`, pass a text item under 64 KiB with no NUL byte in this env var instead of stdin. | off |
 | `--stdin` | none | On `vault exec`, pass the item on stdin. | on |
 | `--out <name>` | none | On `vault exec`, the new item that gets the command's stdout. Never overwrites. | `<name>-out` |
-| `--timeout <seconds>` | none | On `ping`, seconds to wait for the receipt, 1 to 600. | `30` |
+| `--timeout <seconds>` | none | On `ping`, seconds to wait for the receipt, 1 to 600. On `vault exec`, seconds before the command is killed, 1 to 3600; it then stores nothing and exits 124. | ping: `30`. vault exec: `120` |
 | `--as <name>` | none | Self name a `number` or `invite` card carries, saved for next time. | `dg` |
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
 | `--relay <url>...` | none | Relays a `number` or `invite` card should use instead of the saved ones. | the saved relay list |
@@ -396,7 +396,8 @@ image retries until its deadline.
 `phone vault exec` passes the item on stdin, or in one env var with
 `--env`, with no `DG_*` or cloud credential variables in its env, and stores the command's stdout (5 MiB at most) as a new item. It
 prints only `{"name", "exit", "out", "size", "stderr_lines"}`. A nonzero
-exit stores nothing and exits with the command's code.
+exit stores nothing and exits with the command's code. A command still
+running after `--timeout` (default 120 s) is killed and exits 124.
 
 `phone vault open <name>` is for a human at a terminal. It refuses inside
 Claude Code, Codex, opencode, Gemini CLI, or a Grok CLI hook, and without a TTY on stdin and stdout. Do not run it.
