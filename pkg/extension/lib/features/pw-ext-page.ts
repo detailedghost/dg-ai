@@ -12,10 +12,7 @@ export type PwExtPageResult =
 	| { started: boolean; entries: string[] }
 	| { error: string };
 
-/**
- * Runs one fixed action in the tab's isolated world. It is passed to
- * scripting.executeScript as a function, so it must stay self-contained.
- */
+/** Self-contained action that scripting.executeScript runs in the tab's isolated world. */
 export function pwExtPageAction(
 	action: PwExtPageAction,
 	expectUrl?: string,

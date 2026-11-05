@@ -198,10 +198,7 @@ export function handlePwExtBrowserResult(
 	);
 }
 
-/**
- * Fails the pending request named by an unreadable or oversized result from
- * its own authorized extension socket. Returns false when the frame is not one.
- */
+/** Fails the request an unreadable or oversized result names; false when it names none. */
 export function settleRejectedPwExtResult(
 	socket: Socket,
 	raw: unknown,

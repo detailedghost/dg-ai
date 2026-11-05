@@ -53,10 +53,7 @@ function isAnswer(
 	);
 }
 
-/**
- * Asks the human in an extension popup window. Only that window's own page,
- * holding the per-request nonce, can answer; anything else counts as deny.
- */
+/** Asks the human in a popup that only the nonce-bound approval page can answer. */
 export function createPwExtApprover(
 	api: PwExtApprovalApi,
 	{ newNonce = () => crypto.randomUUID() }: { newNonce?: () => string } = {},
