@@ -105,7 +105,7 @@ const PAGE_RESULT_KEYS = [
 	["element"],
 	["error"],
 ];
-const ELEMENT_KEYS = ["name", "role", "tag", "text"];
+const ELEMENT_KEYS = ["href", "name", "role", "tag", "text"];
 const TOOL_TIMEOUT_MS = 30_000;
 
 /** Per-request seams that need the session capability. */
@@ -200,6 +200,7 @@ function elementLines(element: PwExtElement): string[] {
 	return [
 		`Element: ${element.role}${name} <${element.tag}>`,
 		...(element.text && element.text !== element.name ? [`Text: ${element.text}`] : []),
+		...(element.href ? [`Goes to: ${element.href}`] : []),
 	].map((line) => redactText(line));
 }
 

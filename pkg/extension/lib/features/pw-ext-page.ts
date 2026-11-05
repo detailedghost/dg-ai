@@ -20,6 +20,7 @@ export type PwExtElement = {
 	role: string;
 	name: string;
 	text: string;
+	href: string;
 };
 
 export type PwExtPageResult =
@@ -415,6 +416,18 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(el)}` };
 	};
 
+	const destination = (el: Element): string => {
+		const link = el.closest("a[href]") as HTMLAnchorElement | null;
+		if (link) return String(link.href ?? "").slice(0, 2048);
+		const control = el as HTMLButtonElement;
+		const submits =
+			(el.tagName === "BUTTON" && (control.type ?? "submit") === "submit") ||
+			(el.tagName === "INPUT" && ["submit", "image"].includes(control.type));
+		if (submits && control.form)
+			return String(control.formAction || control.form.action || "").slice(0, 2048);
+		return "";
+	};
+
 	const fingerprint = (el: Element): string => {
 		const input = el as HTMLInputElement;
 		const r = role(el) ?? el.tagName.toLowerCase();
@@ -427,6 +440,7 @@ export function pwExtPageAction(
 			Boolean(input.disabled),
 			Boolean(input.readOnly),
 			el.getAttribute("contenteditable") ?? "",
+			destination(el),
 		]);
 	};
 
@@ -456,6 +470,7 @@ export function pwExtPageAction(
 				role: r,
 				name: name(el, r),
 				text: squash(safeText(el), 120),
+				href: destination(el),
 			},
 		};
 	};

@@ -109,7 +109,7 @@ function harness(
 							{
 								frameId: 0,
 								result: options.describeResult ?? {
-									element: { tag: "button", role: "button", name: "Go", text: "Go" },
+									element: { tag: "button", role: "button", name: "Go", text: "Go", href: "" },
 								},
 							},
 						];
@@ -437,7 +437,7 @@ describe("pw --ext round 3", () => {
 	it("describes the click target in the approval", async () => {
 		const h = harness({
 			describeResult: {
-				element: { tag: "button", role: "button", name: "Save", text: "Save now" },
+				element: { tag: "button", role: "button", name: "Save", text: "Save now", href: "" },
 			},
 			pageResult: { detail: 'clicked button "Save"' },
 		});
@@ -463,7 +463,7 @@ describe("pw --ext round 3", () => {
 	it("uploads a staged asset after an approval that names the file and the element", async () => {
 		const h = harness({
 			describeResult: {
-				element: { tag: "input", role: "button", name: "Attach", text: "" },
+				element: { tag: "input", role: "button", name: "Attach", text: "", href: "" },
 			},
 			pageResult: { detail: 'uploaded demo.webm to button "Attach"' },
 			asset: new Blob(["hello"], { type: "video/webm" }),
@@ -579,6 +579,25 @@ describe("pw --ext round 3", () => {
 });
 
 describe("pw --ext round 3 review fixes", () => {
+	it("shows a link destination in the click approval", async () => {
+		const h = harness({
+			describeResult: {
+				element: {
+					tag: "a",
+					role: "link",
+					name: "Open",
+					text: "Open",
+					href: "https://app.example.test/safe?token=zzzzzzzzzzzz",
+				},
+			},
+			pageResult: { detail: "clicked" },
+		});
+		await h.run({ verb: "click", target: "#l" });
+		expect(h.prompts[0]?.detail).toBe(
+			'Click #l\nElement: link "Open" <a>\nGoes to: https://app.example.test/safe?token=[redacted]',
+		);
+	});
+
 	it("binds the write to the described element with one handle", async () => {
 		const h = harness({ pageResult: { detail: 'clicked button "Go"' } });
 		await h.run({ verb: "click", target: "#go" });
@@ -594,7 +613,7 @@ describe("pw --ext round 3 review fixes", () => {
 	it("does not upload when the request is canceled while the file is fetched", async () => {
 		const cancel = new AbortController();
 		const h = harness({
-			describeResult: { element: { tag: "input", role: "button", name: "", text: "" } },
+			describeResult: { element: { tag: "input", role: "button", name: "", text: "", href: "" } },
 			pageResult: { detail: "uploaded" },
 			asset: new Blob(["hello"]),
 			signal: cancel.signal,

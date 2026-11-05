@@ -258,10 +258,10 @@ describe("describe target before approval", () => {
 	it("returns tag, role, name and short text without values", () => {
 		page(`<label for="q">Search</label><input id="q" value="private draft"><button id="b">Save <b>now</b></button>`);
 		expect(pwExtPageAction({ kind: "describe", target: "#q" })).toEqual({
-			element: { tag: "input", role: "textbox", name: "Search", text: "" },
+			element: { tag: "input", role: "textbox", name: "Search", text: "", href: "" },
 		});
 		expect(pwExtPageAction({ kind: "describe", target: "#b" })).toEqual({
-			element: { tag: "button", role: "button", name: "Save now", text: "Save now" },
+			element: { tag: "button", role: "button", name: "Save now", text: "Save now", href: "" },
 		});
 		expect(pwExtPageAction({ kind: "describe", target: "#none" })).toEqual({
 			error: expect.stringContaining("No element"),
@@ -373,5 +373,24 @@ describe("copilot round 1", () => {
 				handle: "h",
 			}),
 		).toEqual({ error: expect.stringContaining("changed") });
+	});
+});
+
+describe("copilot round 2", () => {
+	it("describes a link destination and refuses a click after it changes", () => {
+		page(`<a id="l" href="/safe">Open</a>`);
+		expect(pwExtPageAction({ kind: "describe", target: "#l", handle: "h" })).toEqual({
+			element: {
+				tag: "a",
+				role: "link",
+				name: "Open",
+				text: "Open",
+				href: "https://app.example.test/safe",
+			},
+		});
+		el<HTMLAnchorElement>("#l").setAttribute("href", "https://evil.example.test/");
+		expect(pwExtPageAction({ kind: "click", target: "#l", handle: "h" })).toEqual({
+			error: expect.stringContaining("changed"),
+		});
 	});
 });
