@@ -31,7 +31,7 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name|ext>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
 
 `say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.43.0, with one notice on stderr. Use the new names.
 
@@ -46,7 +46,7 @@ If a step fails, run dg-skills doctor install credentials.
 | `--stdin` | none | On `vault exec`, pass the item on stdin. | on |
 | `--out <name>` | none | On `vault exec`, the new item that gets the command's stdout. Never overwrites. | `<name>-out` |
 | `--timeout <seconds>` | none | On `ping`, seconds to wait for the receipt, 1 to 600. On `vault exec`, seconds before the command is killed, 1 to 3600; it then stores nothing and exits 124. | ping: `30`. vault exec: `120` |
-| `--as <name>` | none | Self name a `number` or `invite` card carries, saved for next time. | `dg` |
+| `--as <name\|ext>` | none | On `number` or `invite`, the self name the card carries, saved for next time. On `text`, `unread`, `messages`, `watch`, and `vault list`, your own extension (see [Extensions](#extensions)). | number and invite: `dg`. Others: `DG_PHONE_AS`, else none |
 | `--rotate` | none | On `number`, roll a new secret so every card printed before this stops admitting. | off |
 | `--relay <url>...` | none | Relays a `number` or `invite` card should use instead of the saved ones. | the saved relay list |
 | `--ttl <hours>` | none | Hours until an `invite` card expires. | `24` |
@@ -310,6 +310,40 @@ subscription has gone quiet, the process subscribes again and fetches what
 it missed. The log line is `phone: listener heartbeat`,
 `phone: listener resubscribe`, or `phone: listener probe-failed`, with no
 message text.
+
+## Extensions
+
+One machine has one number. Each agent on it can have an extension: a
+name of 1 to 32 lowercase letters, digits, or dashes. Set yours with
+`--as <ext>`, or once with `DG_PHONE_AS=<ext>`. `DG_PHONE_AS` never
+changes the self name on `number` or `invite`.
+
+```bash
+dg-agent phone text +mary/merc 'for merc only'   # one agent on mary's machine
+dg-agent phone text +mary 'for anyone there'     # the shared inbox, as before
+DG_PHONE_AS=kit dg-agent phone unread            # kit's messages plus the shared inbox
+dg-agent phone messages --as kit
+dg-agent phone ping +mary/merc
+```
+
+The extension travels inside the encrypted message, so relays never see
+it. When you have an extension, each send also carries it, so the other
+side can reply to `+you/<ext>`.
+
+With an extension, `unread`, `messages`, and `watch` show that agent's
+messages plus the shared ones. Read state is per agent: a shared message
+you read stays unread for the other agents. With no extension, they show
+only the shared inbox. `unread` and `messages` then print one more line,
+such as `{"waiting":{"merc":2},"line":"..."}`, for messages that wait for
+other agents. Each row adds `ext` (the agent here) and `from_ext` (the
+sender's agent). The `handle` field then reads `+mary/kit`, which is the
+target to reply to. `from` is still the npub.
+
+A group goes to the whole machine: `text` and `ping` refuse `#group/ext`.
+`contacts` lists the extensions each contact used, with `last_seen`.
+`vault list --as <ext>` lists that agent's items and the shared ones. The
+vault is still one store per machine. The `--on-message` payload adds
+`ext` and `from_ext`.
 
 ## Delivery and presence
 

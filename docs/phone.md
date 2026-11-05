@@ -105,6 +105,58 @@ sealed to the old key. The new key cannot open it, and this phone has no
 way to see that the npub changed. `relays_ok` means relays stored the gift
 wrap. The person who holds the current key may still not have it.
 
+## Extensions
+
+One number serves one machine. Each agent on that machine can have an
+extension, a name that matches `^[a-z0-9][a-z0-9-]{0,31}$`, the same rule
+as a handle. An agent names itself with `--as <ext>` on `text`, `unread`,
+`messages`, `watch`, and `vault list`, or once with `DG_PHONE_AS`. The flag
+wins. `--as` on `number` and `invite` is a different flag: it sets the card
+self name, and `DG_PHONE_AS` never changes it.
+
+`text +mary/merc` adds the rumor tag `["dg-ext","merc"]`. A sender with an
+extension also adds `["dg-from-ext","<ext>"]` to every send, so the other
+side can reply to that agent. Both tags sit inside the seal, so relays see
+only the gift wrap. `--image`, `--phi`, and `--vault` sends carry them too.
+`ping +mary/merc` puts `dg-ext` on the check, and the receipt still comes
+from the machine listener. A send with no extension on either side is a
+plain NIP-17 message, as before.
+
+A tag value from a peer is untrusted. The listener keeps it only when it
+matches the name rule. Otherwise it drops the tag, and the message goes to
+the shared inbox. The value is never used in a path, a vault name, or a
+shell.
+
+The listener stores the value of `dg-ext` in `messages.ext` (null is the
+shared inbox) and the value of `dg-from-ext` in `messages.peer_ext`. An
+outgoing row keeps the sender's own extension in `ext` and the target in
+`peer_ext`. Read state is per view:
+
+- No extension: shared rows only, read with `read_at`, as before.
+  `unread` and `messages` then print one line,
+  `{"waiting":{"<ext>":<n>},"line":"..."}`, when unread rows wait for other
+  agents. `watch` does not print it.
+- `--as merc`: merc's rows plus the shared rows. Read marks go in
+  `ext_reads` for merc only, so a shared row merc read stays unread for the
+  other agents and for the shared view.
+
+Each printed row adds `ext` and, on an incoming row, `from_ext`. When the
+sender's extension is known, `handle` reads `+mary/kit`, the target to
+reply to. `from` stays the sender's npub. The `--on-message` payload adds
+`ext` and `from_ext`. Its `handle` stays `+mary`. The hook and `status` are
+machine-wide and use `read_at`.
+
+A group is machine-wide. `text` and `ping` refuse `#group/ext`. A group
+row keeps `ext` null even when the rumor names an extension. It keeps the
+sender's `dg-from-ext` in `peer_ext`.
+
+`contacts` lists the extensions each contact used, newest first, with
+`last_seen`, from `contact_exts`. That table keeps the 16 newest per
+contact, because the value is a peer claim. A vault item made from a
+received PHI message records the extension. `vault list` prints `ext` on
+each item, and `vault list --as merc` lists merc's items plus the shared
+ones. The vault is still one store per machine.
+
 ## The listener and delivery
 
 `open` runs one always-on listener (`phone __run` under the hood) that holds
@@ -459,7 +511,8 @@ folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 - `invites` — pending one-time cards.
 - `messages` — both directions, the read mark, the delivery attempt
   count for `--on-message`, the image file JSON, the PHI mark, the
-  local time the row arrived, and `delivered_at` for an outgoing row.
+  local time the row arrived, `delivered_at` for an outgoing row, and the
+  extensions `ext` and `peer_ext`.
 - `pings` — `phone ping` checks, their receipt time, and a busy answer
   time, kept 7 days.
 - `early_receipts` — receipts that arrived before their row, kept 10
@@ -468,7 +521,10 @@ folder (see [Where the phone state lives](#where-the-phone-state-lives)):
   and nonce. The row is deleted when the fetch ends.
 - `outbox` — staged ciphertext of sent images, and who may fetch each one.
 - `vault_items` — the vault's name-to-id map, with sender, type, size, key
-  day, and expiry. Never content.
+  day, expiry, and extension. Never content.
+- `ext_reads` — per-extension read marks, removed with their row.
+- `contact_exts` — the extensions each contact used, with last seen, at
+  most 16 per contact.
 - `settings` — the number, the listener's saved `--on-message`, the
   last autostart outcome, the optional `publish_confirm_ms` OK wait, and a
   short-lived cache of kind 10050 relay lists.

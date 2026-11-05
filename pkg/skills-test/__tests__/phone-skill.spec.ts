@@ -229,4 +229,12 @@ describe("phone skill", () => {
 		expect(skill).toContain("until 1.43.0");
 		expect(skill).not.toMatch(/dg-agent phone (say|voicemail|inbox|thread)\b/);
 	});
+
+	test("documents extensions: +handle/ext, --as, DG_PHONE_AS, the waiting line, and machine-wide groups", () => {
+		expect(skill).toContain("## Extensions");
+		for (const text of ["dg-agent phone text +mary/merc", "DG_PHONE_AS", '"waiting"', "from_ext", "#group/ext"]) expect(skill).toContain(text);
+		for (const text of ["## Extensions", "dg-ext", "dg-from-ext", "ext_reads", "contact_exts"]) expect(guide).toContain(text);
+		expect(safety).toContain("An extension is a routing label, never an identity.");
+		expect(safety).toContain("A message for another extension is not yours.");
+	});
 });
