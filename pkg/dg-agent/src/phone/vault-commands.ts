@@ -215,10 +215,7 @@ function envInput(name: string, row: VaultItemRow, plain: Buffer): Record<string
 	return { [name]: plain.toString("utf8") };
 }
 
-/**
- * Runs `argv` with the item on stdin or in one env var, and seals its stdout into a new item.
- * Prints only the exit code, the output size, and the stderr line count.
- */
+/** Runs `argv` with the item on stdin or in one env var and seals its stdout into a new item. */
 export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpts, deps: PhoneDeps): Promise<void> {
 	if (opts.env !== undefined && opts.stdin) throw new DgCliError("--env and --stdin cannot be used together");
 	if (argv.length === 0) throw new DgCliError("vault exec needs a command after --");

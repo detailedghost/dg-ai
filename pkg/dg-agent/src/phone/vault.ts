@@ -182,7 +182,7 @@ export type VaultKeyCache = {
 	/** Today's key when it is loaded; a miss starts a refresh. */
 	today(): DayKey | undefined;
 	current(): Promise<DayKey | undefined>;
-	/** Loads or makes today's and tomorrow's keys, so midnight never finds the cache empty, then drops old keys. */
+	/** Loads or makes today's and tomorrow's keys, then drops old keys. */
 	refresh(): Promise<void>;
 };
 
