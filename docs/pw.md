@@ -42,14 +42,19 @@ Rules:
 - The browser opens a small approval window for every call. It names the verb
   and the tab. Write verbs say that they change the page. Close the window or
   click Deny to refuse. The CLI cannot approve.
-- After approval, the extension checks that the tab did not change. If it did,
-  nothing runs.
+- After approval, the extension checks that the tab did not change, and the
+  page function checks the document URL again before it acts. If either
+  changed, nothing runs. A reload at the same URL is not detected.
 - Browser settings pages (`chrome://`, `edge://`, `brave://`, `about:`),
-  extension pages, `file:` pages, the web stores, and the signed-in Proton Mail
-  tab are refused before any prompt.
-- Output is redacted (tokens, keys, emails, secret query values) and capped.
-  Password and secret field values are never read, and `fill` refuses those
-  fields.
+  extension pages, `file:` pages, the web stores, private windows, and the
+  signed-in Proton Mail tab are refused before any prompt. `current` still runs
+  and shows those tabs without their URL or title. `open` still runs and opens a
+  new tab.
+- Text output is redacted (tokens, keys, emails, secret query values) and
+  capped. Password and secret field contents are left out, and `fill` refuses
+  those fields. Screenshots are not redacted: they show what is on the screen.
+- If the dg session closes while the approval window is open, the request is
+  canceled and the window closes.
 - There is no code execution: no `eval`, no `run-code`, and no other pw flags.
 - `console` starts capture on the first call for a tab. It shows errors after
   that point, not `console.warn` output and not earlier errors.

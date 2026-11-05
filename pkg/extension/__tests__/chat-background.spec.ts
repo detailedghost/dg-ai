@@ -1426,7 +1426,7 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 	await settle();
 	await flushMicrotasks();
 
-	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000]] as never);
+	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000, expect.any(AbortSignal)]] as never);
 	const results = socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
 		.filter((frame) => frame.type === "pw-ext-browser-result");
@@ -1468,4 +1468,49 @@ test("registerChat ignores a pw-ext request for an unpaired session", async () =
 	);
 	await settle();
 	expect(pwExtHandler).not.toHaveBeenCalled();
+});
+
+test("registerChat cancels a pending pw-ext request when its session closes", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	let seen: AbortSignal | undefined;
+	const pwExtHandler = mock(
+		(_request: unknown, _timeout: number, signal?: AbortSignal) =>
+			new Promise<{ ok: false; error: string }>((resolve) => {
+				seen = signal;
+				signal?.addEventListener("abort", () =>
+					resolve({ ok: false, error: "canceled" }),
+				);
+			}),
+	);
+	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+	socket.dispatch(
+		"message",
+		message({
+			type: "pw-ext-browser-request",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "pw-request",
+			request: { verb: "click", target: "e1" },
+			timeoutMs: 60_000,
+		}),
+	);
+	await settle();
+	expect(seen?.aborted).toBe(false);
+	socket.dispatch(
+		"message",
+		message({
+			type: "session-closed",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		}),
+	);
+	await new Promise((resolve) => setTimeout(resolve, 700));
+	expect(seen?.aborted).toBe(true);
 });

@@ -132,6 +132,16 @@ describe("pw --ext approval", () => {
 		expect(h.removed).toEqual([41]);
 	});
 
+	it("denies and closes the window when the request is canceled", async () => {
+		const h = harness();
+		const controller = new AbortController();
+		const answer = h.approve(PROMPT, 60_000, controller.signal);
+		await tick();
+		controller.abort();
+		expect(await answer).toBe(false);
+		expect(h.removed).toEqual([41]);
+	});
+
 	it("refuses a second prompt while one is open", async () => {
 		const h = harness();
 		const first = h.approve(PROMPT, 10_000);

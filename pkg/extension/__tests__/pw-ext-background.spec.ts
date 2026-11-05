@@ -31,6 +31,9 @@ function harness(
 		afterApproval?: Partial<Tab>;
 		chromium?: boolean;
 		capture?: string;
+		duringCapture?: Partial<Tab>;
+		signal?: AbortSignal;
+		abortOnApprove?: AbortController;
 	} = {},
 ) {
 	let tabs = options.tabs ?? [WEB_TAB];
@@ -58,9 +61,13 @@ function harness(
 				created.push(props);
 				return { id: 99, windowId: 3, url: (props as { url: string }).url };
 			}),
-			captureVisibleTab: mock(
-				async () => options.capture ?? "data:image/jpeg;base64,AAAA",
-			),
+			captureVisibleTab: mock(async () => {
+				if (options.duringCapture)
+					tabs = tabs.map((tab) =>
+						tab.id === WEB_TAB.id ? { ...tab, ...options.duringCapture } : tab,
+					);
+				return options.capture ?? "data:image/jpeg;base64,AAAA";
+			}),
 		},
 		scripting: {
 			executeScript: mock(async (details: { args: unknown[] }) => {
@@ -71,6 +78,7 @@ function harness(
 	} as unknown as PwExtBrowserApi;
 	const approve = mock(async (prompt: PwExtApprovalPrompt) => {
 		prompts.push(prompt);
+		options.abortOnApprove?.abort();
 		if (options.afterApproval)
 			tabs = tabs.map((tab) =>
 				tab.id === WEB_TAB.id ? { ...tab, ...options.afterApproval } : tab,
@@ -83,7 +91,8 @@ function harness(
 		isChromium: () => options.chromium ?? true,
 	});
 	return {
-		run: (request: PwExtRequest) => handler(request, 60_000),
+		run: (request: PwExtRequest) =>
+			handler(request, 60_000, options.abortOnApprove?.signal ?? options.signal),
 		api,
 		prompts,
 		executed,
@@ -92,10 +101,48 @@ function harness(
 }
 
 describe("pw --ext background handler", () => {
+	it("binds the page action to the approved URL", async () => {
+		const h = harness({ pageResult: { detail: "clicked" } });
+		await h.run({ verb: "click", target: "e1" });
+		expect((h.executed[0] as { args: unknown[] }).args).toEqual([
+			{ kind: "click", target: "e1" },
+			WEB_TAB.url,
+		]);
+	});
+
+	it("discards a screenshot when the window switched tabs during capture", async () => {
+		const h = harness({ duringCapture: { active: false } });
+		const answer = await h.run({ verb: "screenshot" });
+		expect(answer).toEqual({
+			ok: false,
+			error: expect.stringContaining("changed"),
+		});
+	});
+
+	it("does nothing when the request is canceled during approval", async () => {
+		const h = harness({ abortOnApprove: new AbortController() });
+		const answer = await h.run({ verb: "click", target: "e1" });
+		expect(answer).toEqual({
+			ok: false,
+			error: expect.stringContaining("canceled"),
+		});
+		expect(h.executed).toEqual([]);
+	});
+
+	it("rejects a malformed or oversized page result", async () => {
+		for (const pageResult of [
+			{ tree: "x".repeat(200_000), text: "" },
+			{ detail: 5 },
+			{ surprise: true },
+		]) {
+			const h = harness({ pageResult });
+			expect(await h.run({ verb: "snapshot" })).toMatchObject({ ok: false });
+		}
+	});
+
 	it("asks once per read, naming the tab, then returns a redacted snapshot", async () => {
 		const h = harness({
 			pageResult: {
-				title: "Home",
 				tree: '- button "Go" [ref=e1]\n- text: ghp_abcdefghijklmnopqrstuvwxyz',
 				text: "Contact me@example.test",
 			},

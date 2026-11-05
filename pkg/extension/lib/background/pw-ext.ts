@@ -48,8 +48,8 @@ export type PwExtBrowserApi = {
 	scripting: {
 		executeScript(details: {
 			target: { tabId: number };
-			func: (action: PwExtPageAction) => PwExtPageResult;
-			args: [PwExtPageAction];
+			func: (action: PwExtPageAction, expectUrl?: string) => PwExtPageResult;
+			args: [PwExtPageAction, string];
 		}): Promise<Array<{ result?: unknown }>>;
 	};
 };
@@ -77,6 +77,32 @@ const STORE_HOSTS = new Set([
 export const PW_EXT_MAILBOX_ERROR =
 	"pw --ext does not read or change the signed-in Proton Mail tab. Use dg-skills inbox.";
 const MAX_TABS = 200;
+const MAX_PAGE_RESULT_CHARS = 150_000;
+const PAGE_RESULT_KEYS = [
+	["tree", "text"],
+	["detail"],
+	["text"],
+	["started", "entries"],
+	["error"],
+];
+
+function pageResult(raw: unknown): PwExtPageResult {
+	const fail = () => {
+		throw new Error("The page returned an unexpected result.");
+	};
+	if (typeof raw !== "object" || raw === null) fail();
+	const keys = Object.keys(raw as object).sort().join(",");
+	if (!PAGE_RESULT_KEYS.some((shape) => [...shape].sort().join(",") === keys))
+		fail();
+	for (const [key, value] of Object.entries(raw as object)) {
+		if (key === "started" ? typeof value !== "boolean" : key === "entries"
+			? !Array.isArray(value) || value.some((entry) => typeof entry !== "string")
+			: typeof value !== "string")
+			fail();
+	}
+	if (JSON.stringify(raw).length > MAX_PAGE_RESULT_CHARS) fail();
+	return raw as PwExtPageResult;
+}
 const JPEG_QUALITY = 70;
 
 function allowedPage(url: string | undefined): url is string {
@@ -151,7 +177,11 @@ export function createPwExtHandler({
 	isChromium = defaultIsChromium,
 }: {
 	browserApi: PwExtBrowserApi;
-	approve: (prompt: PwExtApprovalPrompt, timeoutMs: number) => Promise<boolean>;
+	approve: (
+		prompt: PwExtApprovalPrompt,
+		timeoutMs: number,
+		signal?: AbortSignal,
+	) => Promise<boolean>;
 	isChromium?: () => boolean;
 }) {
 	async function activeTab(): Promise<Tab | undefined> {
@@ -161,15 +191,13 @@ export function createPwExtHandler({
 		return tab;
 	}
 
-	async function inPage(tabId: number, action: PwExtPageAction) {
+	async function inPage(tab: Tab & { id: number }, action: PwExtPageAction) {
 		const [frame] = await api.scripting.executeScript({
-			target: { tabId },
+			target: { tabId: tab.id },
 			func: pwExtPageAction,
-			args: [action],
+			args: [action, tab.url as string],
 		});
-		const result = frame?.result as PwExtPageResult | undefined;
-		if (!result) throw new Error("The page returned no result.");
-		return result;
+		return pageResult(frame?.result);
 	}
 
 	async function listTabs(active: Tab): Promise<string> {
@@ -208,6 +236,16 @@ export function createPwExtHandler({
 					format: "jpeg",
 					quality: JPEG_QUALITY,
 				});
+				const after = await api.tabs.get(tab.id);
+				const [shown] = await api.tabs.query({
+					active: true,
+					windowId: tab.windowId,
+				});
+				if (after.url !== tab.url || after.active === false || shown?.id !== tab.id)
+					return {
+						ok: false,
+						error: "The tab changed during the screenshot; it was discarded.",
+					};
 				const fitted = await fitPreviewDataUrl(captured);
 				if (!fitted.dataUrl)
 					return { ok: false, error: `Screenshot failed: ${fitted.reason}.` };
@@ -224,7 +262,7 @@ export function createPwExtHandler({
 									value: request.value as string,
 								}
 							: { kind: request.verb };
-				const result = await inPage(tab.id, action);
+				const result = await inPage(tab, action);
 				if ("error" in result) return { ok: false, error: clean(result.error) };
 				if ("tree" in result)
 					return ok(
@@ -255,7 +293,11 @@ export function createPwExtHandler({
 		}
 	}
 
-	return async (raw: PwExtRequest, timeoutMs: number): Promise<PwExtResult> => {
+	return async (
+		raw: PwExtRequest,
+		timeoutMs: number,
+		signal?: AbortSignal,
+	): Promise<PwExtResult> => {
 		let request: PwExtRequest;
 		try {
 			request = validatePwExtRequest(raw);
@@ -288,7 +330,10 @@ export function createPwExtHandler({
 					...(detailFor(request) ? { detail: detailFor(request) } : {}),
 				},
 				timeoutMs,
+				signal,
 			);
+			if (signal?.aborted)
+				return { ok: false, error: "The request was canceled before it ran." };
 			if (!approved)
 				return { ok: false, error: "The request was denied in the browser." };
 			if (scoped) {

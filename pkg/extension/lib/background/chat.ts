@@ -63,6 +63,7 @@ function chatSessionKey(sessionId: string): string {
 }
 
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
+const PW_EXT_LIVENESS_MS = 250;
 
 type ChatActionApi = {
 	onClicked: {
@@ -184,6 +185,7 @@ export type RegisterChatOptions = {
 	pwExtHandler?: (
 		request: PwExtRequest,
 		timeoutMs: number,
+		signal?: AbortSignal,
 	) => Promise<PwExtResult>;
 };
 
@@ -254,12 +256,12 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	let defaultPwExt: ReturnType<typeof createPwExtHandler> | undefined;
 	const pwExtHandler =
 		options.pwExtHandler ??
-		((request: PwExtRequest, timeoutMs: number) => {
+		((request: PwExtRequest, timeoutMs: number, signal?: AbortSignal) => {
 			defaultPwExt ??= createPwExtHandler({
 				browserApi: api as unknown as PwExtBrowserApi,
 				approve: createPwExtApprover(api as unknown as PwExtApprovalApi),
 			});
-			return defaultPwExt(request, timeoutMs);
+			return defaultPwExt(request, timeoutMs, signal);
 		});
 	const pendingInbox = new Set<string>();
 	const pendingProto = new Set<string>();
@@ -681,14 +683,16 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				return;
 			}
 			pendingPwExt.add(requestKey);
+			const live = () =>
+				currentSocket === socket &&
+				bootstrapsBySession.get(frame.sessionId) === bootstrap &&
+				keepaliveEligible.has(frame.sessionId);
+			const cancel = new AbortController();
+			const watch = setInterval(() => {
+				if (!live()) cancel.abort();
+			}, PW_EXT_LIVENESS_MS);
 			const sendPwExt = (result: PwExtResult): void => {
-				if (
-					currentSocket !== socket ||
-					bootstrapsBySession.get(frame.sessionId) !== bootstrap ||
-					!keepaliveEligible.has(frame.sessionId)
-				) {
-					return;
-				}
+				if (!live()) return;
 				try {
 					socket.send(
 						JSON.stringify({
@@ -704,7 +708,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					return;
 				}
 			};
-			void pwExtHandler(frame.request, frame.timeoutMs)
+			void pwExtHandler(frame.request, frame.timeoutMs, cancel.signal)
 				.then(sendPwExt)
 				.catch(() =>
 					sendPwExt({
@@ -712,7 +716,10 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						error: "pw --ext failed in the extension before it reported a result.",
 					}),
 				)
-				.finally(() => pendingPwExt.delete(requestKey));
+				.finally(() => {
+					clearInterval(watch);
+					pendingPwExt.delete(requestKey);
+				});
 			return;
 		}
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {

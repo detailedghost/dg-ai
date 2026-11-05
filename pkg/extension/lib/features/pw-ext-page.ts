@@ -6,7 +6,7 @@ export type PwExtPageAction =
 	| { kind: "console" };
 
 export type PwExtPageResult =
-	| { title: string; tree: string; text: string }
+	| { tree: string; text: string }
 	| { detail: string }
 	| { text: string }
 	| { started: boolean; entries: string[] }
@@ -16,7 +16,10 @@ export type PwExtPageResult =
  * Runs one fixed action in the tab's isolated world. It is passed to
  * scripting.executeScript as a function, so it must stay self-contained.
  */
-export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
+export function pwExtPageAction(
+	action: PwExtPageAction,
+	expectUrl?: string,
+): PwExtPageResult {
 	const TREE_MAX = 60_000;
 	const TEXT_MAX = 30_000;
 	const SELECTION_MAX = 20_000;
@@ -91,7 +94,7 @@ export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
 	};
 
 	const role = (el: Element): string | undefined => {
-		const explicit = el.getAttribute("role")?.split(/\s+/)[0];
+		const explicit = el.getAttribute("role")?.split(/\s+/)[0]?.slice(0, 40);
 		if (explicit) return explicit;
 		const tag = el.tagName.toLowerCase();
 		if (/^h[1-6]$/.test(tag)) return "heading";
@@ -175,6 +178,27 @@ export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
 		return n ? `${r} "${n}"` : r;
 	};
 
+	const secretFields = (): Element[] =>
+		Array.from(
+			doc.querySelectorAll("textarea,[contenteditable],[role='textbox']"),
+		).filter(isSecret);
+
+	const scrub = (value: string): string => {
+		let out = value;
+		for (const field of secretFields()) {
+			const secret = (field.textContent ?? "").trim();
+			if (secret) out = out.split(secret).join(REDACTED);
+		}
+		return out;
+	};
+
+	const insideSecret = (node: Node | null | undefined): boolean => {
+		const el = node?.nodeType === 1 ? (node as Element) : node?.parentElement;
+		for (let at: Element | null | undefined = el; at; at = at.parentElement)
+			if (isSecret(at)) return true;
+		return false;
+	};
+
 	const snapshot = (): PwExtPageResult => {
 		const refs = new Map<string, Element>();
 		win[REFS] = refs;
@@ -205,17 +229,19 @@ export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
 					refs.set(ref, child);
 					line += ` [ref=${ref}]`;
 				}
-				if (r === "textbox" || r === "searchbox" || r === "combobox") {
+				if (
+					(r === "textbox" || r === "searchbox" || r === "combobox") &&
+					isSecret(child)
+				)
+					line += `: ${REDACTED}`;
+				else if (r === "textbox" || r === "searchbox" || r === "combobox") {
 					const value =
 						child.tagName === "SELECT"
 							? ((child as HTMLSelectElement).selectedOptions?.[0]?.textContent ?? "")
 							: "value" in child
 								? String((child as HTMLInputElement).value ?? "")
 								: (child.textContent ?? "");
-					if (value)
-						line += `: ${isSecret(child) ? REDACTED : squash(value, 200)}`;
-					else if (isSecret(child) && child.tagName === "INPUT")
-						line += `: ${REDACTED}`;
+					if (value) line += `: ${squash(value, 200)}`;
 				}
 				const before = lines.length;
 				lines.push(line);
@@ -235,9 +261,8 @@ export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
 			.replace(/\n{3,}/g, "\n\n")
 			.trim();
 		return {
-			title: doc.title,
-			tree: cap(lines.join("\n"), TREE_MAX),
-			text: cap(text, TEXT_MAX),
+			tree: cap(scrub(lines.join("\n")), TREE_MAX),
+			text: cap(scrub(text), TEXT_MAX),
 		};
 	};
 
@@ -315,7 +340,14 @@ export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
 			if (end > start)
 				return { text: cap(active.value.slice(start, end), SELECTION_MAX) };
 		}
-		return { text: cap(win.getSelection()?.toString() ?? "", SELECTION_MAX) };
+		const selected = win.getSelection();
+		if (
+			insideSecret(selected?.anchorNode) ||
+			insideSecret(selected?.focusNode) ||
+			(active && insideSecret(active))
+		)
+			return { text: "" };
+		return { text: cap(scrub(selected?.toString() ?? ""), SELECTION_MAX) };
 	};
 
 	const consoleCapture = (): PwExtPageResult => {
@@ -347,6 +379,10 @@ export function pwExtPageAction(action: PwExtPageAction): PwExtPageResult {
 		return { started: true, entries: [] };
 	};
 
+	if (expectUrl !== undefined && doc.URL !== expectUrl)
+		return {
+			error: "The page changed after approval; nothing was done. Retry.",
+		};
 	switch (action.kind) {
 		case "snapshot":
 			return snapshot();

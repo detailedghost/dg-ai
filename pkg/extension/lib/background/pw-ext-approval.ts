@@ -87,6 +87,7 @@ export function createPwExtApprover(
 	return async (
 		prompt: PwExtApprovalPrompt,
 		timeoutMs: number,
+		signal?: AbortSignal,
 	): Promise<boolean> => {
 		if (pending)
 			throw new Error(
@@ -99,6 +100,9 @@ export function createPwExtApprover(
 		});
 		const entry: Pending = { nonce, prompt, settle: (approved) => settle(approved) };
 		pending = entry;
+		const cancel = () => entry.settle(false);
+		signal?.addEventListener("abort", cancel, { once: true });
+		if (signal?.aborted) cancel();
 		const timer = setTimeout(
 			() => entry.settle(false),
 			Math.max(timeoutMs - DEADLINE_MARGIN_MS, Math.min(timeoutMs, 1_000)),
@@ -117,6 +121,7 @@ export function createPwExtApprover(
 			return false;
 		} finally {
 			clearTimeout(timer);
+			signal?.removeEventListener("abort", cancel);
 			if (pending === entry) pending = undefined;
 			if (entry.windowId !== undefined)
 				await api.windows.remove(entry.windowId).catch(() => {});

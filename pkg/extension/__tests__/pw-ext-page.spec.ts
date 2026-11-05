@@ -43,7 +43,6 @@ describe("snapshot", () => {
 		`);
 		const result = pwExtPageAction({ kind: "snapshot" });
 		if (!("tree" in result)) throw new Error(JSON.stringify(result));
-		expect(result.title).toBe("Home");
 		expect(result.tree).toContain('- heading "Welcome" [level=1]');
 		expect(result.tree).toContain("- navigation");
 		expect(result.tree).toContain('  - link "Docs" [ref=e1]');
@@ -176,5 +175,50 @@ describe("console", () => {
 			started: false,
 			entries: ["[error] Boom (https://app.example.test/a.js:4)"],
 		});
+	});
+});
+
+describe("review round 1 hardening", () => {
+	it("refuses to act when the document URL differs from the approved URL", () => {
+		page(`<button id="go">Go</button>`);
+		let clicks = 0;
+		el<HTMLElement>("#go").addEventListener("click", () => clicks++);
+		expect(
+			pwExtPageAction({ kind: "click", target: "#go" }, "https://other.example.test/"),
+		).toEqual({ error: expect.stringContaining("changed") });
+		expect(clicks).toBe(0);
+		expect(
+			pwExtPageAction({ kind: "click", target: "#go" }, "https://app.example.test/home"),
+		).toEqual({ detail: 'clicked button "Go"' });
+	});
+
+	it("keeps secret textarea and contenteditable text out of the visible text", () => {
+		page(`
+			<textarea name="client_secret">unpatterned-credential-123</textarea>
+			<div contenteditable="true" id="api_token" role="textbox">second-credential-456</div>
+			<p>public words</p>
+		`);
+		const result = pwExtPageAction({ kind: "snapshot" });
+		const text = JSON.stringify(result);
+		expect(text).not.toContain("unpatterned-credential-123");
+		expect(text).not.toContain("second-credential-456");
+		expect(text).toContain("public words");
+	});
+
+	it("returns nothing for a selection inside a secret field", () => {
+		page(`<div contenteditable="true" id="api_token"><span id="s">second-credential-456</span></div>`);
+		const range = window.document.createRange();
+		range.selectNodeContents(el<Node>("#s") as never);
+		window.getSelection()?.addRange(range);
+		expect(pwExtPageAction({ kind: "selection" })).toEqual({ text: "" });
+	});
+
+	it("bounds page-controlled strings in its result", () => {
+		page(`<button id="b" role="${"x".repeat(5000)}">Go</button>`);
+		window.document.title = "t".repeat(1_000_000);
+		const snap = pwExtPageAction({ kind: "snapshot" });
+		expect(JSON.stringify(snap).length).toBeLessThan(100_000);
+		const click = pwExtPageAction({ kind: "click", target: "#b" });
+		expect(JSON.stringify(click).length).toBeLessThan(500);
 	});
 });

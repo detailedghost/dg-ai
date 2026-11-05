@@ -40,7 +40,9 @@ loaded with a random per-request nonce, can answer
 second request while one is open counts as deny. After approval the extension
 checks that the tab did not navigate, then runs a fixed function from
 `pkg/extension/lib/features/pw-ext-page.ts` in the isolated world through
-`scripting.executeScript`. The output passes `redactText` in the extension and
+`scripting.executeScript`. That function checks the document URL against the
+approved URL before it acts, and a screenshot is discarded if the window shows
+another tab after capture. The output passes `redactText` in the extension and
 again in the CLI, and stays under 100,000 characters of text or the proto
 preview limit for an image.
 
@@ -59,6 +61,8 @@ preview limit for an image.
 - **Bad:** `console` sees only uncaught errors and unhandled rejections, and only
   after the first `console` call on that tab starts capture. It does not see
   `console.warn` or `console.error` calls.
+- **Bad:** a reload at the same URL during approval is not detected; refs from
+  the old document fail, but a CSS selector can match in the new one.
 - **Bad:** a screenshot shows what is on screen. Redaction cannot remove a token
   that the page shows as text in the image.
 - **Neutral:** the extension refuses on Firefox. Only Chromium-family browsers
