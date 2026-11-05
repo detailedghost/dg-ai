@@ -6,6 +6,7 @@ import { DgCliError } from "@dg/common";
 import { ensurePrivateDir } from "@dg/common/node";
 
 const LOCK_STALE_MS = 30_000;
+const LIVE_PID_CEILING_MS = 10 * 60_000;
 const LOCK_WAIT_MS = 50;
 const LOCK_HEARTBEAT_MS = LOCK_STALE_MS / 3;
 
@@ -31,8 +32,9 @@ function holderAlive(content: string): boolean | undefined {
 function lockStale(path: string): boolean {
 	try {
 		const alive = holderAlive(readFileSync(path, "utf8"));
-		if (alive !== undefined) return !alive;
-		return Date.now() - statSync(path).mtimeMs >= LOCK_STALE_MS;
+		const age = Date.now() - statSync(path).mtimeMs;
+		if (alive === undefined) return age >= LOCK_STALE_MS;
+		return !alive || age >= LIVE_PID_CEILING_MS;
 	} catch {
 		return false;
 	}

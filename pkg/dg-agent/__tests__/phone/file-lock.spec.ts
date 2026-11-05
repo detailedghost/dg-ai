@@ -38,6 +38,21 @@ describe("file lock takeover", () => {
 		expect(existsSync(path)).toBe(true);
 	});
 
+	it("takes over a live-pid lock older than the hard ceiling", () => {
+		plantLock(JSON.stringify({ pid: process.pid, host: hostname(), id: "x" }), 11 * 60);
+		tryFileLock(root, NAME);
+		const release = tryFileLock(root, NAME);
+		expect(release).toBeFunction();
+		release?.();
+	});
+
+	it("keeps a live-pid lock whose heartbeat is inside the hard ceiling", () => {
+		const path = plantLock(JSON.stringify({ pid: process.pid, host: hostname(), id: "x" }), 9 * 60);
+		expect(tryFileLock(root, NAME)).toBeUndefined();
+		expect(tryFileLock(root, NAME)).toBeUndefined();
+		expect(existsSync(path)).toBe(true);
+	});
+
 	it("takes over a lock whose holder pid is dead", () => {
 		plantLock(JSON.stringify({ pid: deadPid(), host: hostname(), id: "x" }), 0);
 		tryFileLock(root, NAME);
