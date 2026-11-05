@@ -788,6 +788,7 @@ async function phoneSayThread(
 			})),
 			behind,
 			self_ok: selfCopyOk(delivered.members),
+			delivered: false,
 		};
 		if (!threadSendSucceeded(delivered.members)) {
 			if (kept) printJson(deps, payload);

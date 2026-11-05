@@ -192,7 +192,8 @@ describe("delivery receipts", () => {
 		try {
 			await phoneThreadNew("#ops", ["+b"], { subject: "ops" }, alice.deps);
 			await phoneSay("#ops", "standup", alice.deps);
-			const said = printed(alice).at(-1) as { id: string };
+			const said = printed(alice).at(-1) as { id: string; delivered: boolean };
+			expect(said.delivered).toBe(false);
 
 			await waitUntil(() => typeof deliveredAt(alice, said.id) === "number");
 			expect(opened(alice, RECEIPT_KIND)[0]?.rumor.tags).toContainEqual(["e", said.id]);
