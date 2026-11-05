@@ -1,27 +1,45 @@
 import { timingSafeEqual } from "node:crypto";
-import { getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
+import { getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
-import { MESSAGE_TTL_SECONDS } from "./db";
+import { LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
 import { relaySince } from "./since";
+import type { ImageOffer } from "./image";
 import {
 	classifyThreadRumor,
+	FILE_MESSAGE_KIND,
+	FUTURE_SKEW_SECONDS,
 	heldFrom,
 	type HeldThread,
+	PHI_TAG,
+	rumorBody,
 	sortByTime,
 	threadMessageFields,
 	type ThreadMeta,
 } from "./thread";
 
 export type { HeldThread, ThreadMeta };
+export { LOOKBACK_SECONDS, PHI_TAG };
 
 // Stryker disable all
-export type Message = { id: string; ts: number; from: string; text: string; call?: true; thread?: ThreadMeta };
+/** An admitted message; `image` carries a kind 15 offer and the key its wrap was addressed to. */
+export type Message = {
+	id: string;
+	ts: number;
+	from: string;
+	text: string;
+	call?: true;
+	thread?: ThreadMeta;
+	image?: { offer: ImageOffer; keyId: string };
+	phi?: true;
+};
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string; keyId?: string };
 /** The admission-time view of a live invite: just enough for the gate to match and name a new caller, with its own relays when it has them. */
 export type Invite = { secret: string; expiresAt: number; name?: string; relays?: string[] };
 export type Seen = { cursor: number; ids: string[] };
+/** An opened file fetch request: `from` is the seal signer, `keyId` the key the wrap was addressed to. */
+export type FileRequestRumor = { id: string; from: string; keyId: string; createdAt: number; tags: string[][] };
 /** One of our own keys, as fetchNew/subscribe need it: which pubkey a wrap may address, and the sk to open it. */
 export type KeyEntry = { id: string; pub: string; sk: Uint8Array };
 
@@ -52,9 +70,9 @@ export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subs
 };
 
 export const GIFT_WRAP_KIND = 1059;
-/** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
-export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
 const CHAT_MESSAGE_KIND = 14;
+/** Rumor kind of a dg file fetch request, receiver to sender, always inside a gift wrap. Unregistered in the NIP kind list as of 2026-11-04. */
+export const FILE_REQUEST_KIND = 25015;
 export const CALL_TAG = "dg-call";
 /** Carries the caller's self-reported name, so a fresh admit can name the new contact after it. */
 export const SELF_NAME_TAG = "dg-as";
@@ -68,6 +86,19 @@ export const STRANGER_ID_LIMIT = 10000;
 
 export function wrap(text: string, sk: Uint8Array, contactPub: string): NostrEvent {
 	return nip17.wrapEvent(sk, { publicKey: contactPub }, text);
+}
+
+/** A NIP-17 message to one contact whose rumor carries `tags` after `p`; kind 14 unless `kind` says otherwise. */
+export function wrapTagged(
+	rumor: { kind?: number; content: string; tags: string[][] },
+	sk: Uint8Array,
+	contactPub: string,
+): NostrEvent {
+	return nip59.wrapEvent(
+		{ kind: rumor.kind ?? CHAT_MESSAGE_KIND, content: rumor.content, tags: [["p", contactPub], ...rumor.tags] },
+		sk,
+		contactPub,
+	);
 }
 
 /** A gift wrap whose rumor is tagged as a liveness probe. The tag is inside the seal. */
@@ -133,20 +164,31 @@ function selfNameOf(rumor: Rumor): string | undefined {
  */
 type AdmitDecision =
 	| { ok: true; admitted: Admitted }
-	| { ok: false; reason: "older than the message window" | "no matching contact or invite"; pubkeyPrefix: string };
+	| { ok: false; reason: "older than the message window" | "no matching contact or invite" | "ahead of the clock"; pubkeyPrefix: string };
 
 function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: number): AdmitDecision {
 	const pubkeyPrefix = shortPubkey(rumor.pubkey);
 	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) return { ok: false, reason: "older than the message window", pubkeyPrefix };
+	if (rumor.created_at > now + FUTURE_SKEW_SECONDS) return { ok: false, reason: "ahead of the clock", pubkeyPrefix };
 	const npub = nip19.npubEncode(rumor.pubkey);
-	const message: Message = { id: event.id, ts: rumor.created_at, from: npub, text: rumor.content };
+	const body = rumorBody(rumor);
+	const message: Message = {
+		id: event.id,
+		ts: rumor.created_at,
+		from: npub,
+		text: body.text,
+		...(body.offer ? { image: { offer: body.offer, keyId } } : {}),
+		...(body.phi ? { phi: body.phi } : {}),
+	};
 	const existing = gate.contacts.get(rumor.pubkey);
+	const isChat = rumor.kind === CHAT_MESSAGE_KIND;
 	if (existing) {
-		if (holdsSecret(rumor, gate.secrets.number)) {
+		if (isChat && holdsSecret(rumor, gate.secrets.number)) {
 			return { ok: true, admitted: { message, gate, reaccept: { npub: existing.npub, keyId } } };
 		}
 		return { ok: true, admitted: { message, gate } };
 	}
+	if (!isChat) return { ok: false, reason: "no matching contact or invite", pubkeyPrefix };
 	if (holdsSecret(rumor, gate.secrets.number)) {
 		const handle = selfNameOf(rumor) ?? UNKNOWN_CALLER_HANDLE;
 		const contacts = new Map(gate.contacts);
@@ -488,12 +530,13 @@ export function shortPubkey(pub: string): string {
 	return pub.slice(0, PUBKEY_PREFIX_LEN);
 }
 
-type Opened = { kind: "ok"; rumor: Rumor } | { kind: "undecryptable" } | { kind: "not-chat" };
+type Opened = { kind: "ok"; rumor: Rumor } | { kind: "request"; rumor: Rumor } | { kind: "undecryptable" } | { kind: "not-chat" };
 
 function openDetailed(event: NostrEvent, sk: Uint8Array): Opened {
 	try {
 		const rumor = nip17.unwrapEvent(event, sk);
-		return rumor.kind === CHAT_MESSAGE_KIND ? { kind: "ok", rumor } : { kind: "not-chat" };
+		if (rumor.kind === FILE_REQUEST_KIND) return { kind: "request", rumor };
+		return rumor.kind === CHAT_MESSAGE_KIND || rumor.kind === FILE_MESSAGE_KIND ? { kind: "ok", rumor } : { kind: "not-chat" };
 	} catch {
 		return { kind: "undecryptable" };
 	}
@@ -513,12 +556,16 @@ export function classifyIncoming(
 	gate: Gate,
 	now: number,
 	ownPubs: readonly string[] = keys.map((held) => held.pub),
-): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } | { held: HeldThread } {
+): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } | { held: HeldThread } | { request: FileRequestRumor } {
 	const key = pickKey(event, keys);
 	if (!key) return { drop: { id: event.id, reason: "not addressed to a loaded key" } };
 	const opened = openDetailed(event, key.sk);
 	if (opened.kind === "undecryptable") return { drop: { id: event.id, reason: "could not open the wrap" } };
 	if (opened.kind === "not-chat") return { drop: { id: event.id, reason: "not a chat message" } };
+	if (opened.kind === "request") {
+		const { rumor } = opened;
+		return { request: { id: getEventHash(rumor), from: rumor.pubkey, keyId: key.id, createdAt: rumor.created_at, tags: rumor.tags } };
+	}
 	if (isSelfProbe(opened.rumor, ownPubs)) return { probe: true };
 	const threadContacts = [...gate.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
 	const view = classifyThreadRumor(opened.rumor, ownPubs, threadContacts, now, key.id, key.pub);
@@ -540,6 +587,8 @@ export type SubscribeHooks = {
 	onEvent?: (id: string) => void;
 	/** A thread rumor that was not admitted. The body stays out of the log line the listener prints. */
 	onHeld?: (held: HeldThread) => void;
+	/** A file fetch request; the handler decides, and a refused one leaves no log line. */
+	onRequest?: (request: FileRequestRumor) => void;
 };
 
 /**
@@ -565,8 +614,13 @@ export function subscribe(
 			hooks.onEvent?.(event.id);
 			if (known.has(event.id) || strangers.has(event.id)) return;
 			let result = classifyIncoming(event, keys, gate(), now(), ownPubs);
-			if (!("admitted" in result) && !("probe" in result) && hooks.reread) {
+			if (!("admitted" in result) && !("probe" in result) && !("request" in result) && hooks.reread) {
 				result = classifyIncoming(event, keys, hooks.reread(), now(), ownPubs);
+			}
+			if ("request" in result) {
+				addBounded(known, event.id, STRANGER_ID_LIMIT);
+				hooks.onRequest?.(result.request);
+				return;
 			}
 			if ("probe" in result) {
 				addBounded(known, event.id, STRANGER_ID_LIMIT);

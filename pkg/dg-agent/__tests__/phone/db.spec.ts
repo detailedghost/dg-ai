@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { type ImageFetchRow, LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS, OUTBOX_DIR, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { FILES_DIR } from "../../src/phone/image";
 
 const NOW = 1_800_000_000;
 let home: string;
@@ -55,7 +56,7 @@ describe("PhoneDb", () => {
 		const { user_version } = raw.query("PRAGMA user_version").get() as { user_version: number };
 		raw.close();
 
-		expect(user_version).toBe(4);
+		expect(user_version).toBe(6);
 	});
 
 	describe("messages", () => {
@@ -118,6 +119,53 @@ describe("PhoneDb", () => {
 			db = PhoneDb.open(paths, () => now);
 
 			expect(db.recentMessages(10).map((m) => m.id)).toEqual(["fresh"]);
+		});
+
+		it("stores the file JSON on a row and null when there is none", () => {
+			db.addMessage({ ...message("img", NOW), file: '{"sha256":"ab","type":"image/png","size":3}' });
+			db.addMessage(message("txt", NOW + 1));
+
+			expect(db.recentMessages(10).map((m) => [m.id, m.file])).toEqual([
+				["img", '{"sha256":"ab","type":"image/png","size":3}'],
+				["txt", null],
+			]);
+		});
+
+		it("stores phi as 1 or 0 and prunes PHI rows 24 hours after they arrive while plain rows stay", () => {
+			db.addMessage({ ...message("phi-old", NOW - 60), direction: "out", phi: true });
+			db.addMessage({ ...message("plain-old", NOW - 60), direction: "out" });
+			now = NOW + PHI_TTL_SECONDS - 30;
+			db.addMessage({ ...message("phi-fresh", NOW), direction: "out", phi: true });
+			now = NOW + PHI_TTL_SECONDS + 1;
+
+			db.pruneMessages();
+
+			expect(db.recentMessages(10).map((m) => [m.id, m.phi])).toEqual([
+				["plain-old", 0],
+				["phi-fresh", 1],
+			]);
+		});
+
+		it("expires a PHI row by its local arrival, not the sender clock", () => {
+			db.addMessage({ ...message("backdated", NOW - PHI_TTL_SECONDS - 60), phi: true });
+
+			db.pruneMessages();
+
+			expect(db.recentMessages(10).map((m) => m.id)).toEqual(["backdated"]);
+		});
+
+		it("refuses an expired PHI id until the replay window ends", () => {
+			db.addMessage({ ...message("phi", NOW), phi: true });
+			now = NOW + PHI_TTL_SECONDS + 1;
+			db.pruneMessages();
+
+			expect(db.addMessage({ ...message("phi", NOW), phi: true })).toBe(false);
+			now += MESSAGE_TTL_SECONDS + LOOKBACK_SECONDS - 1;
+			expect(db.addMessage({ ...message("phi", now), phi: true })).toBe(false);
+			expect(db.recentMessages(10)).toEqual([]);
+
+			now += 2;
+			expect(db.addMessage({ ...message("phi", now), phi: true })).toBe(true);
 		});
 
 		it("never stores a message that is already past the ttl", () => {
@@ -257,6 +305,228 @@ describe("PhoneDb", () => {
 			expect(db.setOnce("nsec", "second")).toBe("first");
 			db.unset("nsec");
 			expect(db.get("nsec")).toBeUndefined();
+		});
+	});
+
+	describe("outbox", () => {
+		const X = "a".repeat(64);
+		const Y = "b".repeat(64);
+		const outbox = () => join(paths.phoneRoot, OUTBOX_DIR);
+		const stage = (name: string, ageSeconds: number) => {
+			mkdirSync(outbox(), { recursive: true });
+			const file = join(outbox(), name);
+			writeFileSync(file, "cipher");
+			const at = NOW - ageSeconds;
+			utimesSync(file, at, at);
+			return file;
+		};
+
+		it("records a staged blob with the key that sent it and the recipients allowed to fetch it", () => {
+			db.addOutbox(X, "k1", ["pub1", "pub2"]);
+
+			expect(db.outboxRecipients(X)).toEqual(["pub1", "pub2"]);
+			expect(db.outboxKeyId(X)).toBe("k1");
+			expect(db.outboxRecipients(Y)).toEqual([]);
+			expect(db.outboxKeyId(Y)).toBeUndefined();
+		});
+
+		it("prunes rows and files older than seven days and keeps fresh ones", () => {
+			now = NOW - MESSAGE_TTL_SECONDS - 1;
+			db.addOutbox(X, "k1", ["pub1"]);
+			now = NOW;
+			db.addOutbox(Y, "k1", ["pub2"]);
+			const old = stage(X, MESSAGE_TTL_SECONDS + 1);
+			const fresh = stage(Y, 60);
+
+			db.pruneMessages();
+
+			expect(existsSync(old)).toBe(false);
+			expect(existsSync(fresh)).toBe(true);
+			expect(db.outboxRecipients(X)).toEqual([]);
+			expect(db.outboxRecipients(Y)).toEqual(["pub2"]);
+		});
+
+		it("prunes a PHI blob after 24 hours while a plain blob of the same age stays", () => {
+			now = NOW - PHI_TTL_SECONDS - 1;
+			db.addOutbox(X, "k1", ["pub1"], { phi: true });
+			db.addOutbox(Y, "k1", ["pub2"]);
+			now = NOW;
+			const phi = stage(X, PHI_TTL_SECONDS + 1);
+			const plain = stage(Y, PHI_TTL_SECONDS + 1);
+
+			db.pruneMessages();
+
+			expect(PHI_TTL_SECONDS).toBe(24 * 60 * 60);
+			expect(existsSync(phi)).toBe(false);
+			expect(db.outboxRecipients(X)).toEqual([]);
+			expect(existsSync(plain)).toBe(true);
+			expect(db.outboxRecipients(Y)).toEqual(["pub2"]);
+		});
+
+		it("removes an old leftover file that has no row, such as a crashed temp write", () => {
+			const leftover = stage(`${X}.123.tmp`, MESSAGE_TTL_SECONDS + 1);
+
+			db.pruneMessages();
+
+			expect(existsSync(leftover)).toBe(false);
+		});
+
+		it("never follows or removes a symlink in the outbox", () => {
+			const target = join(home, "keep.txt");
+			writeFileSync(target, "keep");
+			mkdirSync(outbox(), { recursive: true });
+			const link = join(outbox(), X);
+			symlinkSync(target, link);
+			now = NOW - MESSAGE_TTL_SECONDS - 1;
+			db.addOutbox(X, "k1", ["pub1"]);
+			now = NOW;
+
+			db.pruneMessages();
+
+			expect(existsSync(target)).toBe(true);
+			expect(readFileSync(target, "utf8")).toBe("keep");
+			expect(db.outboxRecipients(X)).toEqual([]);
+		});
+	});
+
+	describe("held threads", () => {
+		function held(rumorId: string, phi?: boolean) {
+			return { rumor_id: rumorId, room_id: "room", sender: "npub1them", members: "[]", subject: null, text: "body", ts: NOW - 3 * 24 * 60 * 60, ...(phi ? { phi } : {}) };
+		}
+
+		it("expires a held PHI row 24 hours after it arrives while a plain held row stays", () => {
+			db.insertPending(held("phi", true));
+			db.insertPending(held("plain"));
+			now = NOW + PHI_TTL_SECONDS - 1;
+			db.pruneMessages();
+			expect(db.listPending().map((row) => [row.rumor_id, row.phi])).toEqual([
+				["phi", 1],
+				["plain", 0],
+			]);
+
+			now = NOW + PHI_TTL_SECONDS + 1;
+			db.pruneMessages();
+
+			expect(db.listPending().map((row) => row.rumor_id)).toEqual(["plain"]);
+		});
+
+		it("refuses to hold an expired PHI rumor again", () => {
+			db.insertPending(held("phi", true));
+			now = NOW + PHI_TTL_SECONDS + 1;
+			db.pruneMessages();
+
+			expect(db.insertPending(held("phi", true))).toBe(false);
+			expect(db.listPending()).toEqual([]);
+		});
+	});
+
+	describe("image fetches", () => {
+		const SHA = "a".repeat(64);
+		const OTHER = "b".repeat(64);
+		const fetchRow = (id: string): Omit<ImageFetchRow, "attempts"> => ({
+			message_id: id,
+			sender: "c".repeat(64),
+			key_id: "k1",
+			x: "d".repeat(64),
+			ox: SHA,
+			size: 100,
+			key: "e".repeat(64),
+			nonce: "f".repeat(24),
+			next_at: NOW,
+			deadline: NOW + MESSAGE_TTL_SECONDS,
+		});
+		const files = () => join(paths.phoneRoot, FILES_DIR);
+		const place = (name: string, ageSeconds = 0) => {
+			mkdirSync(files(), { recursive: true });
+			const file = join(files(), name);
+			writeFileSync(file, "png");
+			const at = now - ageSeconds;
+			utimesSync(file, at, at);
+			return file;
+		};
+		const storedJson = (sha: string) => JSON.stringify({ sha256: sha, type: "image/png", size: 3 });
+
+		it("keeps a pending row away from the hook until the fetch ends, then shows it unread again", () => {
+			db.addMessage(message("img", NOW, "[image pending]"));
+			db.addImageFetch(fetchRow("img"));
+			expect(db.nextDeliverable(5)).toBeUndefined();
+			expect(db.pendingImageCount()).toBe(1);
+			db.takeUnread();
+
+			db.finishImage("img", "[image]", storedJson(SHA));
+
+			expect(db.imageFetches()).toEqual([]);
+			expect(db.nextDeliverable(5)).toMatchObject({ id: "img", text: "[image]", file: storedJson(SHA), read_at: null, attempts: 0 });
+		});
+
+		it("drops the key and nonce from the database once the fetch ends", () => {
+			db.addMessage(message("img", NOW, "[image pending]"));
+			db.addImageFetch(fetchRow("img"));
+
+			db.finishImage("img", "[image unavailable: sender offline]", null);
+			db.close();
+
+			const raw = readFileSync(PhoneDb.path(paths));
+			expect(raw.includes(Buffer.from("e".repeat(64)))).toBe(false);
+			db = PhoneDb.open(paths, () => now);
+		});
+
+		it("records a retry with its attempt count and next time", () => {
+			db.addMessage(message("img", NOW, "[image pending]"));
+			db.addImageFetch(fetchRow("img"));
+
+			db.deferImageFetch("img", 3, NOW + 240);
+
+			expect(db.imageFetches()).toEqual([{ ...fetchRow("img"), attempts: 3, next_at: NOW + 240 }]);
+		});
+
+		it("drops a fetch row when its message is pruned", () => {
+			db.addMessage({ ...message("img", NOW, "[image pending]"), phi: true });
+			db.addImageFetch(fetchRow("img"));
+			now = NOW + PHI_TTL_SECONDS + 1;
+
+			db.pruneMessages();
+
+			expect(db.imageFetches()).toEqual([]);
+		});
+
+		it("unlinks the file of a pruned row unless another row still uses it", () => {
+			db.addMessage({ ...message("phi", NOW), phi: true, file: storedJson(SHA) });
+			db.addMessage({ ...message("plain", NOW), file: storedJson(OTHER) });
+			db.addMessage({ ...message("phi-twin", NOW), phi: true, file: storedJson(OTHER) });
+			const gone = place(`${SHA}.png`);
+			const kept = place(`${OTHER}.png`);
+			now = NOW + PHI_TTL_SECONDS + 1;
+
+			db.pruneMessages();
+
+			expect(existsSync(gone)).toBe(false);
+			expect(existsSync(kept)).toBe(true);
+		});
+
+		it("removes leftover temp writes and old files no row uses, and keeps a fresh unreferenced file", () => {
+			const tmp = place(`${SHA}.png.1.abc.tmp`, 120);
+			const orphan = place(`${OTHER}.png`, PHI_TTL_SECONDS + 1);
+			const fresh = place(`${"9".repeat(64)}.png`, 5);
+
+			db.pruneMessages();
+
+			expect(existsSync(tmp)).toBe(false);
+			expect(existsSync(orphan)).toBe(false);
+			expect(existsSync(fresh)).toBe(true);
+		});
+
+		it("never follows or removes a symlink in files", () => {
+			const target = join(home, "keep.png");
+			writeFileSync(target, "keep");
+			mkdirSync(files(), { recursive: true });
+			symlinkSync(target, join(files(), `${SHA}.png`));
+			db.addMessage({ ...message("phi", NOW), phi: true, file: storedJson(SHA) });
+			now = NOW + PHI_TTL_SECONDS + 1;
+
+			db.pruneMessages();
+
+			expect(readFileSync(target, "utf8")).toBe("keep");
 		});
 	});
 });

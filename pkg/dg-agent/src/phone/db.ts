@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import {
 	applyConnectionPragmas,
 	type DgPaths,
@@ -8,6 +8,7 @@ import {
 	runMigrations,
 } from "@dg/common/node";
 import { join } from "node:path";
+import { FILE_NAME_PATTERN, FILES_DIR, imageFileName, parseImageFile } from "./image";
 import { migrateThreadSchema } from "./thread-schema";
 
 export type Direction = "in" | "out";
@@ -26,6 +27,27 @@ export type MessageRow = {
 	read_at: number | null;
 	attempts: number;
 	thread_id: string | null;
+	/** JSON `{sha256, type, size}` for an image row, else null. */
+	file: string | null;
+	/** 1 when the sender marked the message as PHI. */
+	phi: number;
+	/** This phone's clock when the row was stored; PHI expiry uses it, never the sender's `ts`. */
+	received_at: number;
+};
+
+/** One image still being fetched; the row, with its key and nonce, is deleted when the fetch ends. */
+export type ImageFetchRow = {
+	message_id: string;
+	sender: string;
+	key_id: string;
+	x: string;
+	ox: string;
+	size: number;
+	key: string;
+	nonce: string;
+	attempts: number;
+	next_at: number;
+	deadline: number;
 };
 
 export type KeyRow = { id: string; nsec: string | null; in_store: number; created_at: number };
@@ -58,6 +80,8 @@ export type PendingThreadRow = {
 	ts: number;
 	noticed: number;
 	received_at: number;
+	/** 1 when the sender marked the message as PHI. */
+	phi: number;
 };
 
 export type InviteRow = {
@@ -72,6 +96,18 @@ export type InviteRow = {
 
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
 export const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
+export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
+
+/** PHI rows, their outbox copies, and outbox files with no row live this long instead of the message TTL. */
+export const PHI_TTL_SECONDS = 24 * 60 * 60;
+
+/** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
+export const OUTBOX_DIR = "outbox";
+
+/** A crashed atomic write older than this is removed by prune. */
+const TMP_GRACE_SECONDS = 60;
 
 const SCHEMA: MigrationStep[] = [
 	{
@@ -134,6 +170,49 @@ const SCHEMA: MigrationStep[] = [
 			migrateThreadSchema(db);
 		},
 	},
+	{
+		version: 5,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN file TEXT");
+			db.run("ALTER TABLE messages ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
+			db.run(`CREATE TABLE outbox (
+				sha256 TEXT PRIMARY KEY,
+				key_id TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				phi INTEGER NOT NULL DEFAULT 0
+			) STRICT`);
+			db.run(`CREATE TABLE outbox_recipients (
+				sha256 TEXT NOT NULL REFERENCES outbox(sha256) ON DELETE CASCADE,
+				pubkey TEXT NOT NULL,
+				PRIMARY KEY (sha256, pubkey)
+			) STRICT`);
+		},
+	},
+	{
+		version: 6,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN received_at INTEGER NOT NULL DEFAULT 0");
+			db.run("UPDATE messages SET received_at = ts");
+			db.run(`CREATE TABLE image_fetches (
+				message_id TEXT PRIMARY KEY,
+				sender TEXT NOT NULL,
+				key_id TEXT NOT NULL,
+				x TEXT NOT NULL,
+				ox TEXT NOT NULL,
+				size INTEGER NOT NULL,
+				key TEXT NOT NULL,
+				nonce TEXT NOT NULL,
+				attempts INTEGER NOT NULL DEFAULT 0,
+				next_at INTEGER NOT NULL,
+				deadline INTEGER NOT NULL
+			) STRICT`);
+			db.run("ALTER TABLE pending_threads ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
+			db.run(`CREATE TABLE expired_ids (
+				id TEXT PRIMARY KEY,
+				expires_at INTEGER NOT NULL
+			) STRICT`);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -141,6 +220,7 @@ export class PhoneDb {
 	private constructor(
 		private readonly db: Database,
 		private readonly now: () => number,
+		private readonly dir: string,
 	) {}
 
 	static path(paths: DgPaths): string {
@@ -170,7 +250,7 @@ export class PhoneDb {
 			db.close(true);
 			throw err;
 		}
-		const opened = new PhoneDb(db, now);
+		const opened = new PhoneDb(db, now, dir);
 		opened.pruneMessages();
 		return opened;
 	}
@@ -181,10 +261,91 @@ export class PhoneDb {
 
 	pruneMessages(): void {
 		const cutoff = this.cutoff();
+		const phiCutoff = this.now() - PHI_TTL_SECONDS;
 		const pendingBefore = this.listPending().length;
-		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
-		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
+		const expired = "ts < $cutoff OR (phi = 1 AND received_at < $phiCutoff)";
+		const doomed = this.fileNames(`SELECT file FROM messages WHERE file IS NOT NULL AND direction = 'in' AND (${expired})`, { cutoff, phiCutoff });
+		const now = this.now();
+		const tombstoneUntil = now + MESSAGE_TTL_SECONDS + LOOKBACK_SECONDS;
+		this.db.query("DELETE FROM expired_ids WHERE expires_at <= $now").run({ now });
+		this.db
+			.query("INSERT OR IGNORE INTO expired_ids (id, expires_at) SELECT id, $until FROM messages WHERE phi = 1 AND received_at < $phiCutoff")
+			.run({ until: tombstoneUntil, phiCutoff });
+		this.db
+			.query("INSERT OR IGNORE INTO expired_ids (id, expires_at) SELECT rumor_id, $until FROM pending_threads WHERE phi = 1 AND received_at < $phiCutoff")
+			.run({ until: tombstoneUntil, phiCutoff });
+		this.db.query(`DELETE FROM messages WHERE ${expired}`).run({ cutoff, phiCutoff });
+		this.db.query("DELETE FROM image_fetches WHERE message_id NOT IN (SELECT id FROM messages)").run();
+		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff OR (phi = 1 AND received_at < $phiCutoff)").run({ cutoff, phiCutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
+		this.pruneOutbox(cutoff, phiCutoff);
+		this.pruneFiles(doomed, phiCutoff);
+	}
+
+	private expiredId(id: string): boolean {
+		return this.db.query("SELECT 1 FROM expired_ids WHERE id = $id AND expires_at > $now").get({ id, now: this.now() }) !== null;
+	}
+
+	private fileNames(sql: string, params: Record<string, number> = {}): Set<string> {
+		const names = new Set<string>();
+		for (const row of this.db.query(sql).all(params) as { file: string | null }[]) {
+			const file = parseImageFile(row.file);
+			const name = file && imageFileName(file);
+			if (name) names.add(name);
+		}
+		return names;
+	}
+
+	/** Unlinks files of pruned rows, unreferenced files past the PHI window, and old temp writes; never follows a symlink. */
+	private pruneFiles(doomed: ReadonlySet<string>, phiCutoff: number): void {
+		const folder = join(this.dir, FILES_DIR);
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const referenced = this.fileNames("SELECT file FROM messages WHERE file IS NOT NULL AND direction = 'in'");
+		const tmpCutoff = this.now() - TMP_GRACE_SECONDS;
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const age = stat.mtimeMs / 1000;
+			const stale = name.endsWith(".tmp")
+				? age < tmpCutoff
+				: !referenced.has(name) && (doomed.has(name) || !FILE_NAME_PATTERN.test(name) || age < phiCutoff);
+			if (stale) rmSync(path, { force: true });
+		}
+	}
+
+	/** Drops expired outbox rows, then unlinks expired or unreferenced old files; never follows a symlink. */
+	private pruneOutbox(cutoff: number, phiCutoff: number): void {
+		const expired = new Set(
+			(
+				this.db
+					.query("SELECT sha256 FROM outbox WHERE created_at < $cutoff OR (phi = 1 AND created_at < $phiCutoff)")
+					.all({ cutoff, phiCutoff }) as { sha256: string }[]
+			).map((row) => row.sha256),
+		);
+		this.transaction(() => {
+			for (const sha of expired) this.removeOutbox(sha);
+		});
+		const folder = join(this.dir, OUTBOX_DIR);
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const known = this.db.query("SELECT 1 FROM outbox WHERE sha256 = $sha");
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const stale = expired.has(name) || (known.get({ sha: name }) === null && stat.mtimeMs / 1000 < phiCutoff);
+			if (stale) rmSync(path, { force: true });
+		}
 	}
 
 	getKey(id: string): KeyRow | undefined {
@@ -308,13 +469,19 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
-	addMessage(message: Omit<MessageRow, "read_at" | "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
+	addMessage(
+		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi" | "received_at"> & {
+			thread_id?: string | null;
+			file?: string | null;
+			phi?: boolean;
+		},
+	): boolean {
 		this.pruneMessages();
-		if (message.ts < this.cutoff()) return false;
+		if (message.ts < this.cutoff() || this.expiredId(message.id)) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id)
-				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId)`,
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file, phi, received_at)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file, $phi, $receivedAt)`,
 			)
 			.run({
 				id: message.id,
@@ -326,13 +493,97 @@ export class PhoneDb {
 				call: message.call,
 				readAt: message.direction === "out" ? this.now() : null,
 				threadId: message.thread_id ?? null,
+				file: message.file ?? null,
+				phi: message.phi ? 1 : 0,
+				receivedAt: this.now(),
 			});
 		return result.changes > 0;
 	}
 
+	addImageFetch(row: Omit<ImageFetchRow, "attempts">): void {
+		this.db
+			.query(
+				`INSERT OR IGNORE INTO image_fetches (message_id, sender, key_id, x, ox, size, key, nonce, attempts, next_at, deadline)
+				VALUES ($messageId, $sender, $keyId, $x, $ox, $size, $key, $nonce, 0, $nextAt, $deadline)`,
+			)
+			.run({
+				messageId: row.message_id,
+				sender: row.sender,
+				keyId: row.key_id,
+				x: row.x,
+				ox: row.ox,
+				size: row.size,
+				key: row.key,
+				nonce: row.nonce,
+				nextAt: row.next_at,
+				deadline: row.deadline,
+			});
+	}
+
+	imageFetches(): ImageFetchRow[] {
+		return this.db.query("SELECT * FROM image_fetches ORDER BY next_at, message_id").all() as ImageFetchRow[];
+	}
+
+	/** True when a received row that is not PHI already holds the image with plaintext hash `ox`. */
+	hasPlainImage(ox: string): boolean {
+		return (
+			this.db
+				.query("SELECT 1 FROM messages WHERE direction = 'in' AND phi = 0 AND file IS NOT NULL AND json_extract(file, '$.sha256') = $ox LIMIT 1")
+				.get({ ox }) !== null
+		);
+	}
+
+	pendingImageCount(): number {
+		return (this.db.query("SELECT COUNT(*) AS n FROM image_fetches").get() as { n: number }).n;
+	}
+
+	deferImageFetch(id: string, attempts: number, nextAt: number): void {
+		this.db.query("UPDATE image_fetches SET attempts = $attempts, next_at = $nextAt WHERE message_id = $id").run({ id, attempts, nextAt });
+	}
+
+	/** Ends a fetch: drops its key and nonce, writes the final text, and makes the row unread again for the hook. */
+	finishImage(id: string, text: string, file: string | null): void {
+		this.transaction(() => {
+			this.db.query("DELETE FROM image_fetches WHERE message_id = $id").run({ id });
+			this.db.query("UPDATE messages SET text = $text, file = $file, read_at = NULL, attempts = 0 WHERE id = $id").run({ id, text, file });
+		});
+	}
+
+	/** Records a staged outbox blob, the key that sent it, and the pubkeys allowed to fetch it. */
+	addOutbox(sha256: string, keyId: string, recipients: readonly string[], opts: { phi?: boolean } = {}): void {
+		this.transaction(() => {
+			this.db
+				.query("INSERT OR IGNORE INTO outbox (sha256, key_id, created_at, phi) VALUES ($sha256, $keyId, $createdAt, $phi)")
+				.run({ sha256, keyId, createdAt: this.now(), phi: opts.phi ? 1 : 0 });
+			const add = this.db.query("INSERT OR IGNORE INTO outbox_recipients (sha256, pubkey) VALUES ($sha256, $pubkey)");
+			for (const pubkey of recipients) add.run({ sha256, pubkey });
+		});
+	}
+
+	removeOutboxRecipient(sha256: string, pubkey: string): void {
+		this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha256 AND pubkey = $pubkey").run({ sha256, pubkey });
+	}
+
+	removeOutbox(sha256: string): void {
+		this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha256").run({ sha256 });
+		this.db.query("DELETE FROM outbox WHERE sha256 = $sha256").run({ sha256 });
+	}
+
+	outboxKeyId(sha256: string): string | undefined {
+		return (this.db.query("SELECT key_id FROM outbox WHERE sha256 = $sha256").get({ sha256 }) as { key_id: string } | null)?.key_id;
+	}
+
+	outboxRecipients(sha256: string): string[] {
+		return (
+			this.db.query("SELECT pubkey FROM outbox_recipients WHERE sha256 = $sha256 ORDER BY pubkey").all({ sha256 }) as {
+				pubkey: string;
+			}[]
+		).map((row) => row.pubkey);
+	}
+
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
+	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi" | "received_at"> & { thread_id?: string | null }): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
@@ -377,7 +628,7 @@ export class PhoneDb {
 		return (
 			(this.db
 				.query(
-					"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap AND sender != $sender ORDER BY ts, id LIMIT 1",
+					"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap AND sender != $sender AND NOT EXISTS (SELECT 1 FROM image_fetches WHERE message_id = messages.id) ORDER BY ts, id LIMIT 1",
 				)
 				.get({ cap, sender: PHONE_SYSTEM_SENDER }) as MessageRow | null) ?? undefined
 		);
@@ -387,7 +638,7 @@ export class PhoneDb {
 	stuckMessages(cap: number): MessageRow[] {
 		return this.db
 			.query(
-				"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap AND sender != $sender ORDER BY ts, id",
+				"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap AND sender != $sender AND NOT EXISTS (SELECT 1 FROM image_fetches WHERE message_id = messages.id) ORDER BY ts, id",
 			)
 			.all({ cap, sender: PHONE_SYSTEM_SENDER }) as MessageRow[];
 	}
@@ -466,12 +717,13 @@ export class PhoneDb {
 			.run({ threadId, npub });
 	}
 
-	/** True when this rumor was not already held. `received_at` is this phone's clock, not the sender's. */
-	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at">): boolean {
+	/** True when this rumor was neither held already nor expired as PHI. `received_at` is this phone's clock, not the sender's. */
+	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at" | "phi"> & { phi?: boolean }): boolean {
+		if (this.expiredId(row.rumor_id)) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at)
-				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt)`,
+				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at, phi)
+				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt, $phi)`,
 			)
 			.run({
 				rumorId: row.rumor_id,
@@ -482,6 +734,7 @@ export class PhoneDb {
 				text: row.text,
 				ts: row.ts,
 				receivedAt: this.now(),
+				phi: row.phi ? 1 : 0,
 			});
 		return result.changes > 0;
 	}

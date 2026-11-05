@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -8,7 +8,7 @@ import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
 import { decodeCard, encodeCard, isCardRelays, MAX_CARD_RELAYS, NO_EXPIRY, SECRET_BYTES } from "./card";
-import { npubOf, type PhonePool, type PublishReport, publish, ring, shouldSaveOutgoing, wrap } from "./chat";
+import { npubOf, PHI_TAG, type PhonePool, type PublishReport, publish, ring, shouldSaveOutgoing, wrap, wrapTagged } from "./chat";
 import {
 	INBOX_RELAY_CACHE_SECONDS,
 	createPhonePool,
@@ -17,7 +17,9 @@ import {
 	resolvePublishConfirmMs,
 	PUBLISH_CONFIRM_ENV,
 } from "./delivery";
-import { PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
+import { OUTBOX_DIR, PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
+import { IMAGE_TEXT, MAX_IMAGE_BYTES, prepareImage, type PreparedImage, storedFile } from "./image";
+import type { WormholeDeps } from "./wormhole";
 import {
 	defaultCrontab,
 	type CrontabIO,
@@ -52,9 +54,11 @@ import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import {
 	behindHandles,
+	FILE_MESSAGE_KIND,
 	fanoutThread,
 	formatBehind,
 	MAX_THREAD_MEMBERS,
+	type MemberReport,
 	parseThreadHandle,
 	selfCopyOk,
 	senderLabel,
@@ -85,12 +89,14 @@ import {
 	readNumber,
 	readRelays,
 	readInboxRelayCache,
+	readFilesOn,
 	readPublishConfirmSetting,
 	removeContact,
 	renameContact,
 	clearListener,
 	requireFreeHandle,
 	resolvedSelfName,
+	writeFilesOn,
 	writeInboxRelayCache,
 	writeListener,
 	writeNumber,
@@ -116,6 +122,7 @@ export type PhoneDeps = KeyDeps & {
 	uid?: number;
 	sleep?: (ms: number) => Promise<void>;
 	listenerArgv?: (extraArgs: string[]) => string[];
+	wormhole?: WormholeDeps;
 };
 
 export type RunDeps = PhoneDeps & {
@@ -140,6 +147,8 @@ export type OpenCloseDeps = PhoneDeps &
 	};
 
 const MAX_SEND_BYTES = 64 * 1024;
+
+export type SayOpts = { image?: string; phi?: boolean };
 const STOP_WAIT_MS = 5000;
 
 function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
@@ -484,10 +493,22 @@ function selfNames(deps: PhoneDeps): Map<string, string> {
 
 function emitStored(
 	deps: PhoneDeps,
-	row: { id: string; ts: number; direction: "in" | "out"; sender: string; contact: string; text: string; call: number; read_at: number | null; thread_id: string | null },
+	row: {
+		id: string;
+		ts: number;
+		direction: "in" | "out";
+		sender: string;
+		contact: string;
+		text: string;
+		call: number;
+		read_at: number | null;
+		thread_id: string | null;
+		file: string | null;
+	},
 	self: Map<string, string>,
 	fields: { direction: boolean; read: boolean; meta: boolean },
 ): void {
+	const file = fields.meta ? undefined : storedFile(row, deps.paths.phoneRoot);
 	if (row.thread_id) {
 		const thread = deps.db.getThread(row.thread_id);
 		const threadHandle = thread?.handle ?? `#${row.thread_id.slice(0, 8)}`;
@@ -501,6 +522,7 @@ function emitStored(
 			handle: label,
 			from: row.sender,
 			...(fields.meta ? {} : { text: row.text, line: threadLine(threadHandle, label, row.text) }),
+			...(file ? { file } : {}),
 			...(fields.read ? { read: row.read_at !== null } : {}),
 			...(row.call ? { call: true } : {}),
 			...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
@@ -515,6 +537,7 @@ function emitStored(
 		handle: contact ? `+${contact.handle}` : null,
 		from: row.sender,
 		...(fields.meta ? {} : { text: row.text }),
+		...(file ? { file } : {}),
 		...(fields.read ? { read: row.read_at !== null } : {}),
 		...(row.call ? { call: true } : {}),
 		...(row.sender === PHONE_SYSTEM_SENDER ? { system: true } : {}),
@@ -620,12 +643,82 @@ export function phoneThreadShow(handleArg: string, deps: PhoneDeps): void {
 	});
 }
 
-async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDeps): Promise<void> {
+/** Checks every `--image` gate in contract order, then strips and seals the file; undefined for a text say. */
+function prepareImageSend(textArg: string | undefined, opts: SayOpts, deps: PhoneDeps): PreparedImage | undefined {
+	if (opts.image === undefined) return undefined;
+	if (!readFilesOn(deps.db)) throw new DgCliError("files are off; the human runs phone files on");
+	if (textArg) throw new DgCliError("--image takes no text; send text with a second say");
+	const stat = statSync(opts.image, { throwIfNoEntry: false });
+	if (!stat) throw new DgCliError(`no file at ${opts.image}`);
+	if (!stat.isFile()) throw new DgCliError("not an image");
+	if (stat.size > MAX_IMAGE_BYTES) throw new DgCliError("image is larger than 5 MiB");
+	const bytes = readFileSync(opts.image);
+	if (bytes.length > MAX_IMAGE_BYTES) throw new DgCliError("image is larger than 5 MiB");
+	return prepareImage(bytes);
+}
+
+/** Writes the ciphertext and who may fetch it before any wrap goes out, so a fast receiver is not refused; returns the undo. */
+function stageOutbox(deps: PhoneDeps, image: PreparedImage, keyId: string, recipients: readonly string[], phi: boolean): () => void {
+	const dir = join(deps.paths.phoneRoot, OUTBOX_DIR);
+	ensurePrivateDir(dir);
+	const path = join(dir, image.x);
+	writeFileAtomic(path, image.cipher, 0o600);
+	deps.db.addOutbox(image.x, keyId, recipients, { phi });
+	return () => {
+		rmSync(path, { force: true });
+		deps.db.removeOutbox(image.x);
+	};
+}
+
+function dropMissedRecipients(deps: PhoneDeps, x: string, members: readonly MemberReport[]): void {
+	for (const member of members) {
+		if (!member.self && member.relays_ok.length === 0 && member.relays_unconfirmed.length === 0) deps.db.removeOutboxRecipient(x, pubkeyHex(member.npub));
+	}
+}
+
+function rumorTags(image: PreparedImage | undefined, phi: boolean): string[][] {
+	return [...(image?.tags ?? []), ...(phi ? [[PHI_TAG, "1"]] : [])];
+}
+
+async function readSayBody(textArg: string | undefined, deps: PhoneDeps): Promise<string> {
+	const body = textArg === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : textArg;
+	if (!body) throw new DgCliError("message text is empty");
+	return body;
+}
+
+function saveOutgoing(
+	deps: PhoneDeps,
+	row: { id: string; ts: number; sender: string; contact: string; text: string; thread_id?: string },
+	image: PreparedImage | undefined,
+	phi: boolean,
+): void {
+	deps.db.addMessage({
+		...row,
+		direction: "out",
+		call: 0,
+		text: image ? IMAGE_TEXT : row.text,
+		file: image ? JSON.stringify(image.file) : null,
+		phi,
+	});
+}
+
+export function phoneFiles(state: string | undefined, deps: PhoneDeps): void {
+	if (state !== undefined && state !== "on" && state !== "off") throw new DgCliError(`files takes on or off, got "${state}"`);
+	if (state !== undefined) writeFilesOn(deps.db, state === "on");
+	printJson(deps, { files: readFilesOn(deps.db) ? "on" : "off" });
+}
+
+async function phoneSayThread(
+	handleArg: string,
+	textArg: string | undefined,
+	deps: PhoneDeps,
+	image: PreparedImage | undefined,
+	phi: boolean,
+): Promise<void> {
 	const handle = parseThreadHandle(handleArg);
 	const thread = deps.db.getThreadByHandle(handle);
 	if (!thread) throw new DgCliError(`no thread ${handle}`);
-	const body = textArg === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : textArg;
-	if (!body) throw new DgCliError("message text is empty");
+	const body = image ? image.content : await readSayBody(textArg, deps);
 	const loaded = await ensureKey(deps, thread.key_id);
 	const selfNpub = npubOf(loaded.sk);
 	const others = deps.db.listThreadMemberNpubs(thread.id).filter((npub) => npub !== selfNpub);
@@ -636,6 +729,8 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 		recipients.push({ handle: `+${contact.handle}`, npub, pub: pubkeyHex(npub), self: false });
 	}
 	recipients.push({ handle: `+${resolvedSelfName(deps.db)}`, npub: selfNpub, pub: pubkeyHex(selfNpub), self: true });
+	const peerPubs = recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub);
+	const unstage = image ? stageOutbox(deps, image, thread.key_id, peerPubs, phi) : undefined;
 	const pool = deps.createPool();
 	const relaysUsed: string[] = [];
 	const createdAt = deps.now();
@@ -643,6 +738,8 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 		const delivered = await fanoutThread({
 			sk: loaded.sk,
 			text: body,
+			kind: image ? FILE_MESSAGE_KIND : undefined,
+			extraTags: rumorTags(image, phi),
 			createdAt,
 			subject: thread.subject,
 			fallbackSubject: handle.slice(1),
@@ -654,21 +751,23 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 				return outgoing.relays;
 			},
 			publishTo: (relays, event) => publish(pool, relays, event, { confirmMs: confirmMsFor(deps) }),
+		}).catch((err: unknown) => {
+			unstage?.();
+			throw err;
 		});
 		const behind = behindHandles(delivered.members);
 		const kept = threadSendKept(delivered.members);
 		if (kept) {
-			deps.db.addMessage({
-				id: delivered.rumorId,
-				direction: "out",
-				ts: createdAt,
-				sender: selfNpub,
-				contact: selfNpub,
-				text: body,
-				call: 0,
-				thread_id: thread.id,
-			});
+			if (image) dropMissedRecipients(deps, image.x, delivered.members);
+			saveOutgoing(
+				deps,
+				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id },
+				image,
+				phi,
+			);
 			await restartStaleListener(deps, { spawn: true });
+		} else {
+			unstage?.();
 		}
 		const payload = {
 			handle,
@@ -693,34 +792,38 @@ async function phoneSayThread(handleArg: string, textArg: string, deps: PhoneDep
 	}
 }
 
-export async function phoneSay(handleArg: string, textArg: string, deps: PhoneDeps): Promise<void> {
+export async function phoneSay(handleArg: string, textArg: string | undefined, deps: PhoneDeps, opts: SayOpts = {}): Promise<void> {
 	migrateIfNeeded(deps.paths);
-	if (handleArg.startsWith("#")) return phoneSayThread(handleArg, textArg, deps);
+	const image = prepareImageSend(textArg, opts, deps);
+	const phi = opts.phi === true;
+	if (handleArg.startsWith("#")) return phoneSayThread(handleArg, textArg, deps, image, phi);
 	const handle = normalizeHandle(handleArg);
 	const contact = findContactByHandle(deps.db, handle);
 	if (!contact) throw new DgCliError(`no contact +${handle}`);
-	const body = textArg === "-" ? (await deps.readStdin())?.replace(/\n$/, "") : textArg;
-	if (!body) throw new DgCliError("message text is empty");
+	const body = image ? image.content : await readSayBody(textArg, deps);
 	const sk = (await ensureKey(deps, contact.keyId)).sk;
-	const event = wrap(body, sk, pubkeyHex(contact.npub));
+	const contactPub = pubkeyHex(contact.npub);
+	const event =
+		image || phi
+			? wrapTagged({ kind: image ? FILE_MESSAGE_KIND : undefined, content: body, tags: rumorTags(image, phi) }, sk, contactPub)
+			: wrap(body, sk, contactPub);
+	const unstage = image ? stageOutbox(deps, image, contact.keyId, [contactPub], phi) : undefined;
 	const pool = deps.createPool();
 	let relays = contact.relays;
 	let queried: string[] = [];
 	try {
-		const outgoing = await outgoingRelays(deps, pool, contact.relays, contact.npub);
-		relays = outgoing.relays;
-		queried = outgoing.queried;
-		const report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
-		if (!shouldSaveOutgoing(report)) throw new DgCliError(rejectedSend("message", report));
-		deps.db.addMessage({
-			id: event.id,
-			direction: "out",
-			ts: deps.now(),
-			sender: npubOf(sk),
-			contact: contact.npub,
-			text: body,
-			call: 0,
-		});
+		let report: PublishReport;
+		try {
+			const outgoing = await outgoingRelays(deps, pool, contact.relays, contact.npub);
+			relays = outgoing.relays;
+			queried = outgoing.queried;
+			report = await publish(pool, relays, event, { confirmMs: confirmMsFor(deps) });
+			if (!shouldSaveOutgoing(report)) throw new DgCliError(rejectedSend("message", report));
+		} catch (err) {
+			unstage?.();
+			throw err;
+		}
+		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi);
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report) });
 	} finally {
@@ -875,6 +978,7 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 		notice,
 		...(keysUnreadable ? { keys_unreadable: true } : {}),
 		autostart: formatAutostartState(readListener(deps.db)?.autostart),
+		files: readFilesOn(deps.db) ? "on" : "off",
 	});
 }
 
@@ -1125,6 +1229,7 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneContacts,
 	phoneContactsRename,
 	phoneContactsRemove,
+	phoneFiles,
 	phoneSay,
 	phoneInbox,
 	phoneVoicemail,
