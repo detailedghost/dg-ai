@@ -61,3 +61,28 @@ describe("readAssetSourceFile noFollow", () => {
 		expect(() => readAssetSourceFile(join(dir, "link.txt"), { noFollow: true })).toThrow();
 	});
 });
+
+describe("readAssetSourceFile hardening", () => {
+	it("refuses a file whose identity is not the validated one", () => {
+		const dir = mkdtempSync(join(tmpdir(), "asset-"));
+		dirs.push(dir);
+		writeFileSync(join(dir, "a.txt"), "a");
+		writeFileSync(join(dir, "b.txt"), "b");
+		const { statSync } = require("node:fs") as typeof import("node:fs");
+		const other = statSync(join(dir, "b.txt"));
+		expect(() =>
+			readAssetSourceFile(join(dir, "a.txt"), {
+				noFollow: true,
+				expect: { dev: other.dev, ino: other.ino },
+			}),
+		).toThrow(/changed/);
+	});
+
+	it("reads at most the cap and refuses more", () => {
+		const dir = mkdtempSync(join(tmpdir(), "asset-"));
+		dirs.push(dir);
+		writeFileSync(join(dir, "big.bin"), "0123456789");
+		expect(() => readAssetSourceFile(join(dir, "big.bin"), { maxBytes: 4 })).toThrow();
+		expect(readAssetSourceFile(join(dir, "big.bin"), { maxBytes: 10 }).length).toBe(10);
+	});
+});

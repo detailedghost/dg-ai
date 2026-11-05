@@ -62,8 +62,9 @@ extension fetches the asset with the session capability, refuses a size that
 differs from the approved one, and sets the file on an enabled file input with a
 `DataTransfer` in the isolated world. Uploads go only to `https:` pages. The CLI
 takes regular files from the working directory, the dg scratch directory or the
-dg demos directory, refuses symbolic links, and caps the size at the asset store
-limit of 25 MiB.
+dg demos directory (never the home folder or `/` as a root), refuses hidden
+paths and a file that is a symbolic link, pins the checked file's identity when
+it opens it, and reads at most the asset store limit of 25 MiB.
 
 A CLI that stops sends `cli-pw-ext-cancel`, and a closed CLI socket has the
 same effect. The daemon then sends `pw-ext-browser-cancel` to the extension,
@@ -88,7 +89,15 @@ resolving to a string. Chrome's early preview shipped a testing surface,
 `executeTool(name, jsonString)`, behind a flag; sources disagree on its current
 state, so it is a best-effort fallback only. With neither API, `tools` returns an
 empty list. `pwExtWebMcp` drops `window`, caps each description, schema and
-output, and stops a call after 30 seconds.
+output, redacts tokens before its result leaves the page, rechecks the
+approved URL after each await, and bounds discovery and the call with
+timeouts.
+
+A write keeps the element it described under a random per-request handle in
+the isolated world and acts only if the target still resolves to that element.
+The relay deadline, a closed session, or a stopped CLI cancels the request in
+the extension; upload checks for cancellation again after it fetches the
+staged file.
 
 ## Consequences
 

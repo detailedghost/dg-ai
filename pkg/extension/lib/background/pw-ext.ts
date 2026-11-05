@@ -312,6 +312,7 @@ export function createPwExtHandler({
 	async function prepare(
 		request: PwExtRequest,
 		tab: Tab & { id: number },
+		handle: string,
 	): Promise<{ detail?: string } | { error: string }> {
 		switch (request.verb) {
 			case "current":
@@ -326,6 +327,7 @@ export function createPwExtHandler({
 				const described = await inPage(tab, {
 					kind: "describe",
 					target: request.target as string,
+					handle,
 				});
 				if ("error" in described) return { error: clean(described.error) };
 				if (!("element" in described))
@@ -394,6 +396,8 @@ export function createPwExtHandler({
 		tab: Tab & { id: number },
 		watch?: { changed(): boolean },
 		context?: PwExtContext,
+		handle?: string,
+		signal?: AbortSignal,
 	): Promise<PwExtResult> {
 		const ok = (text: string, image?: string): PwExtResult => ({
 			ok: true,
@@ -413,17 +417,21 @@ export function createPwExtHandler({
 			case "upload": {
 				if (!context) return { ok: false, error: "Upload needs a paired session." };
 				const blob = await context.fetchAsset(request.assetId as string);
+				if (signal?.aborted) return CANCELED;
 				if (blob.size !== request.fileSize)
 					return {
 						ok: false,
 						error: "The staged file size does not match the approved size; nothing was uploaded.",
 					};
+				const base64 = base64Of(new Uint8Array(await blob.arrayBuffer()));
+				if (signal?.aborted) return CANCELED;
 				const result = await inPage(tab, {
 					kind: "upload",
 					target: request.target as string,
-					base64: base64Of(new Uint8Array(await blob.arrayBuffer())),
+					base64,
 					fileName: request.fileName as string,
 					fileType: request.fileType as string,
+					handle,
 				});
 				if ("error" in result) return { ok: false, error: clean(result.error) };
 				if (!("detail" in result))
@@ -495,12 +503,13 @@ export function createPwExtHandler({
 			default: {
 				const action: PwExtPageAction =
 					request.verb === "click"
-						? { kind: "click", target: request.target as string }
+						? { kind: "click", target: request.target as string, handle }
 						: request.verb === "fill"
 							? {
 									kind: "fill",
 									target: request.target as string,
 									value: request.value as string,
+									handle,
 								}
 							: { kind: request.verb };
 				const result = await inPage(tab, action);
@@ -518,13 +527,14 @@ export function createPwExtHandler({
 				if ("detail" in result)
 					return ok([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
 				if ("entries" in result) {
-					const hooked = (await inMain(tab, pwExtConsoleHook as never, [])) as
+					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url])) as
 						| { entries?: unknown }
 						| undefined;
 					const warnings = Array.isArray(hooked?.entries)
 						? (hooked.entries as unknown[])
 								.filter((entry): entry is string => typeof entry === "string")
-								.slice(0, 50)
+								.slice(-50)
+								.map((entry) => (entry.length > 500 ? `${entry.slice(0, 500)}…` : entry))
 						: [];
 					const entries = [...result.entries, ...warnings];
 					return ok(
@@ -575,7 +585,8 @@ export function createPwExtHandler({
 				return { ok: false, error: PW_EXT_BLOCKED_ERROR };
 			if (scoped && mailbox(tab.url))
 				return { ok: false, error: PW_EXT_MAILBOX_ERROR };
-			const prepared = await prepare(request, { ...tab, id: tab.id });
+			const handle = crypto.randomUUID();
+			const prepared = await prepare(request, { ...tab, id: tab.id }, handle);
 			if ("error" in prepared) return { ok: false, error: prepared.error };
 			if (signal?.aborted) return CANCELED;
 			const approved = await approve(
@@ -604,7 +615,7 @@ export function createPwExtHandler({
 						};
 				}
 				if (signal?.aborted) return CANCELED;
-				return await run(request, target, watch, context);
+				return await run(request, target, watch, context, handle, signal);
 			} finally {
 				watch?.stop();
 			}

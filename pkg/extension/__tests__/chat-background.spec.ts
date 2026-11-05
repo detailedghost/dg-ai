@@ -1563,3 +1563,38 @@ test("registerChat aborts a pending pw-ext request on a daemon cancel frame", as
 	await settle();
 	expect(seen?.aborted).toBe(true);
 });
+
+test("registerChat aborts a pw-ext request at its relay deadline", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	let seen: AbortSignal | undefined;
+	const pwExtHandler = mock(
+		(_request: unknown, _timeout: number, signal?: AbortSignal) =>
+			new Promise<{ ok: false; error: string }>((resolve) => {
+				seen = signal;
+				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));
+			}),
+	);
+	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+	socket.dispatch(
+		"message",
+		message({
+			type: "pw-ext-browser-request",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "pw-deadline",
+			request: { verb: "current" },
+			timeoutMs: 60,
+		}),
+	);
+	await settle();
+	expect(seen?.aborted).toBe(false);
+	await new Promise((resolve) => setTimeout(resolve, 150));
+	expect(seen?.aborted).toBe(true);
+});

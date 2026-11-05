@@ -3,7 +3,7 @@ import {
 	constants,
 	fstatSync,
 	openSync,
-	readFileSync,
+	readSync,
 } from "node:fs";
 import { CHAT_ASSETS_PATH, CHAT_MAX_ASSET_BYTES } from "../chat-format";
 import {
@@ -14,10 +14,16 @@ import {
 import { AssetTooLargeError, DgCliError } from "../errors";
 import { loopbackHostHeader } from "./pidfile";
 
+/** Reads at most maxBytes from a regular file; expect pins the file identity checked earlier. */
 export function readAssetSourceFile(
 	path: string,
-	options: { noFollow?: boolean } = {},
+	options: {
+		noFollow?: boolean;
+		maxBytes?: number;
+		expect?: { dev: number; ino: number };
+	} = {},
 ): Buffer {
+	const max = options.maxBytes ?? CHAT_MAX_ASSET_BYTES;
 	const fd = openSync(
 		path,
 		constants.O_RDONLY | (options.noFollow ? (constants.O_NOFOLLOW ?? 0) : 0),
@@ -27,10 +33,24 @@ export function readAssetSourceFile(
 		if (!stats.isFile()) {
 			throw new Error(`${path} is not a regular file`);
 		}
-		if (stats.size > CHAT_MAX_ASSET_BYTES) {
+		if (
+			options.expect &&
+			(stats.dev !== options.expect.dev || stats.ino !== options.expect.ino)
+		)
+			throw new Error(`${path} changed while it was being checked`);
+		if (stats.size > max) {
 			throw new AssetTooLargeError(stats.size);
 		}
-		return readFileSync(fd);
+		const limit = Math.min(stats.size, max);
+		const buffer = Buffer.alloc(limit + 1);
+		let total = 0;
+		while (total <= limit) {
+			const read = readSync(fd, buffer, total, limit + 1 - total, null);
+			if (read === 0) break;
+			total += read;
+		}
+		if (total > limit) throw new Error(`${path} grew while it was being read`);
+		return buffer.subarray(0, total);
 	} finally {
 		closeSync(fd);
 	}

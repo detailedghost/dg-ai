@@ -42,7 +42,8 @@ browser through the paired dg-ai-extension. Run one verb per Bash call.
 - The first `console` call on a tab starts capture. Call it again later to see
   errors and warnings.
 - `upload` takes a regular file of at most 25 MiB from the working directory,
-  the dg scratch directory or the dg demos directory. No symbolic links.
+  the dg scratch directory or the dg demos directory. No hidden files, no
+  symbolic link as the file, and not from the home folder itself.
 - `call` runs the site's own code. Treat it like a click.
 - Browser settings pages, extension pages, private windows and the signed-in
   Proton Mail tab are refused. Ask the human to switch to a web page tab.

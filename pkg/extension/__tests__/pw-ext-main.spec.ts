@@ -182,3 +182,68 @@ describe("WebMCP", () => {
 		expect(executed).toEqual([["legacy", '{"a":1}']]);
 	});
 });
+
+describe("review round 3 hardening", () => {
+	it("refuses the console hook on a document other than the approved one", () => {
+		pageConsole();
+		expect(pwExtConsoleHook("https://other.example.test/")).toEqual({
+			error: expect.stringContaining("changed"),
+		});
+		expect(pwExtConsoleHook("https://app.example.test/")).toEqual({ entries: [] });
+	});
+
+	it("bounds and redacts a hostile console buffer", () => {
+		pageConsole();
+		const key = Symbol.for("dg.pwExt.consoleHook");
+		(window as unknown as Record<symbol, unknown>)[key] = Object.assign(
+			Array.from({ length: 100 }, () => `Bearer secret-${"x".repeat(20_000)}`),
+			{ slice: () => ["forged"] },
+		);
+		const result = pwExtConsoleHook() as { entries: string[] };
+		expect(result.entries).toHaveLength(50);
+		expect(result.entries.every((entry) => entry.length <= 520)).toBe(true);
+		expect(result.entries.join("")).not.toContain("secret-");
+	});
+
+	it("redacts tokens in tool descriptions and outputs", async () => {
+		installModelContext([{ name: "t", description: "Bearer sensitive-access-token" }], "Bearer sensitive-output-token");
+		expect(JSON.stringify(await pwExtWebMcp({ kind: "tools" }))).not.toContain("sensitive");
+		expect(
+			JSON.stringify(await pwExtWebMcp({ kind: "call", tool: "t", args: {}, timeoutMs: 100 })),
+		).not.toContain("sensitive");
+	});
+
+	it("does not run a tool when the URL changed during discovery", async () => {
+		const executed: unknown[] = [];
+		Object.defineProperty(window.document, "modelContext", {
+			configurable: true,
+			value: {
+				getTools: async () => {
+					window.history.pushState({}, "", "/other");
+					return [{ name: "t", description: "d" }];
+				},
+				executeTool: async () => {
+					executed.push(1);
+					return "ran";
+				},
+			},
+		});
+		expect(
+			await pwExtWebMcp(
+				{ kind: "call", tool: "t", args: {}, timeoutMs: 100 },
+				"https://app.example.test/",
+			),
+		).toEqual({ error: expect.stringContaining("changed") });
+		expect(executed).toEqual([]);
+	});
+
+	it("times out discovery that never answers", async () => {
+		Object.defineProperty(window.document, "modelContext", {
+			configurable: true,
+			value: { getTools: () => new Promise(() => {}), executeTool: async () => "x" },
+		});
+		expect(await pwExtWebMcp({ kind: "tools", timeoutMs: 50 })).toEqual({
+			error: expect.stringContaining("timed out"),
+		});
+	});
+});

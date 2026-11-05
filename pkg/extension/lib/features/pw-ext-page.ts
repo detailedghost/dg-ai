@@ -1,10 +1,11 @@
 export type PwExtPageAction =
 	| { kind: "snapshot" }
-	| { kind: "click"; target: string }
-	| { kind: "fill"; target: string; value: string }
-	| { kind: "describe"; target: string }
+	| { kind: "click"; target: string; handle?: string }
+	| { kind: "fill"; target: string; value: string; handle?: string }
+	| { kind: "describe"; target: string; handle?: string }
 	| {
 			kind: "upload";
+			handle?: string;
 			target: string;
 			base64: string;
 			fileName: string;
@@ -44,6 +45,7 @@ export function pwExtPageAction(
 	const doc = document;
 	const win = doc.defaultView as unknown as Window & Record<symbol, unknown>;
 	const REFS = Symbol.for("dg.pwExt.refs");
+	const HANDLES = Symbol.for("dg.pwExt.handles");
 	const CONSOLE = Symbol.for("dg.pwExt.console");
 	const SECRET_NAME = /pass|secret|token|otp|cvv|cvc|ssn|pin\b|api[-_]?key/i;
 	const TEXT_INPUTS = new Set([
@@ -74,7 +76,7 @@ export function pwExtPageAction(
 	const LEAF = new Set([...INTERACTIVE, "heading", "img"]);
 
 	const squash = (value: string, max = 80): string => {
-		const text = value.replace(/\s+/g, " ").trim();
+		const text = redactTokens(value).replace(/\s+/g, " ").trim();
 		return text.length > max ? `${text.slice(0, max)}…` : text;
 	};
 	const cap = (value: string, max: number): string =>
@@ -251,6 +253,7 @@ export function pwExtPageAction(
 		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
 		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, REDACTED],
 		[/((?:password|passwd|secret|token|api[-_]?key)\s*[:=]\s*)\S+/gi, `$1${REDACTED}`],
+		[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
 	];
 	const redactTokens = (value: string): string =>
 		TOKEN_PATTERNS.reduce(
@@ -342,8 +345,8 @@ export function pwExtPageAction(
 		if (nodes >= NODE_MAX) lines.push(`[truncated: more than ${NODE_MAX} nodes]`);
 		const text = visibleText();
 		return {
-			tree: cap(lines.join("\n"), TREE_MAX),
-			text: cap(text, TEXT_MAX),
+			tree: cap(redactTokens(lines.join("\n")), TREE_MAX),
+			text: cap(redactTokens(text), TEXT_MAX),
 		};
 	};
 
@@ -366,8 +369,8 @@ export function pwExtPageAction(
 		return matches[0] as Element;
 	};
 
-	const click = (target: string): PwExtPageResult => {
-		const el = resolve(target);
+	const click = (target: string, handle?: string): PwExtPageResult => {
+		const el = bound(target, handle);
 		if (typeof el === "string") return { error: el };
 		if ((el as HTMLButtonElement).disabled)
 			return { error: `${describe(el)} is disabled.` };
@@ -384,8 +387,8 @@ export function pwExtPageAction(
 		return { detail: `clicked ${describe(el)}` };
 	};
 
-	const fill = (target: string, value: string): PwExtPageResult => {
-		const el = resolve(target);
+	const fill = (target: string, value: string, handle?: string): PwExtPageResult => {
+		const el = bound(target, handle);
 		if (typeof el === "string") return { error: el };
 		if (isSecret(el))
 			return { error: "pw --ext does not fill password or secret fields." };
@@ -412,9 +415,21 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(el)}` };
 	};
 
-	const describeTarget = (target: string): PwExtPageResult => {
+	const bound = (target: string, handle?: string): Element | string => {
+		const el = resolve(target);
+		if (typeof el === "string" || handle === undefined) return el;
+		const handles = win[HANDLES] as Map<string, Element> | undefined;
+		const approved = handles?.get(handle);
+		handles?.delete(handle);
+		if (approved !== el || !el.isConnected)
+			return "The element changed after approval; nothing was done. Retry.";
+		return el;
+	};
+
+	const describeTarget = (target: string, handle?: string): PwExtPageResult => {
 		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
+		if (handle !== undefined) win[HANDLES] = new Map([[handle, el]]);
 		const tag = el.tagName.toLowerCase().slice(0, 40);
 		const r = role(el) ?? tag;
 		return {
@@ -432,8 +447,9 @@ export function pwExtPageAction(
 		base64: string,
 		fileName: string,
 		fileType: string,
+		handle?: string,
 	): PwExtPageResult => {
-		const el = resolve(target);
+		const el = bound(target, handle);
 		if (typeof el === "string") return { error: el };
 		const input = el as HTMLInputElement;
 		if (el.tagName !== "INPUT" || input.type.toLowerCase() !== "file" || input.disabled)
@@ -457,7 +473,9 @@ export function pwExtPageAction(
 			const start = active.selectionStart ?? 0;
 			const end = active.selectionEnd ?? 0;
 			if (end > start)
-				return { text: cap(active.value.slice(start, end), SELECTION_MAX) };
+				return {
+					text: cap(redactTokens(active.value.slice(start, end)), SELECTION_MAX),
+				};
 		}
 		const selected = win.getSelection();
 		if (
@@ -467,7 +485,7 @@ export function pwExtPageAction(
 			secretFields().some((field) => selected?.containsNode(field, true))
 		)
 			return { text: "" };
-		return { text: cap(selected?.toString() ?? "", SELECTION_MAX) };
+		return { text: cap(redactTokens(selected?.toString() ?? ""), SELECTION_MAX) };
 	};
 
 	const consoleCapture = (): PwExtPageResult => {
@@ -508,19 +526,20 @@ export function pwExtPageAction(
 			case "snapshot":
 				return snapshot();
 			case "click":
-				return click(action.target);
+				return click(action.target, action.handle);
 			case "fill":
-				return fill(action.target, action.value);
+				return fill(action.target, action.value, action.handle);
 			case "selection":
 				return selection();
 			case "describe":
-				return describeTarget(action.target);
+				return describeTarget(action.target, action.handle);
 			case "upload":
 				return upload(
 					action.target,
 					action.base64,
 					action.fileName,
 					action.fileType,
+					action.handle,
 				);
 			case "console":
 				return consoleCapture();

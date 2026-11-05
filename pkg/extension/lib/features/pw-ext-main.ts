@@ -7,7 +7,7 @@ export type PwExtTool = {
 };
 
 export type PwExtWebMcpAction =
-	| { kind: "tools" }
+	| { kind: "tools"; timeoutMs?: number }
 	| {
 			kind: "call";
 			tool: string;
@@ -21,15 +21,41 @@ export type PwExtWebMcpResult =
 	| { error: string };
 
 /** Self-contained MAIN-world hook that records console.warn and console.error from its first call on. */
-export function pwExtConsoleHook(): { entries: string[] } | { error: string } {
+export function pwExtConsoleHook(
+	expectUrl?: string,
+): { entries: string[] } | { error: string } {
 	try {
+		if (expectUrl !== undefined && document.URL !== expectUrl)
+			return { error: "The page changed after approval; nothing was done. Retry." };
 		const MAX_ENTRIES = 50;
 		const MAX_CHARS = 500;
+		const REDACTED = "[redacted]";
+		const PATTERNS: [RegExp, string][] = [
+			[/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, `Bearer ${REDACTED}`],
+			[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
+			[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, REDACTED],
+			[/((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi, `$1${REDACTED}`],
+			[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
+		];
+		const bounded = (value: string): string => {
+			let out = value.length > 20_000 ? value.slice(0, 20_000) : value;
+			for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
+			out = out.replace(/\s+/g, " ");
+			return out.length > MAX_CHARS ? `${out.slice(0, MAX_CHARS)}…` : out;
+		};
 		const KEY = Symbol.for("dg.pwExt.consoleHook");
 		const win = document.defaultView as unknown as Window &
-			Record<symbol, string[] | undefined>;
-		const existing = win[KEY];
-		if (Array.isArray(existing)) return { entries: existing.slice() };
+			Record<symbol, unknown>;
+		const existing = win[KEY] as { length?: unknown; [index: number]: unknown } | undefined;
+		if (existing !== undefined && existing !== null) {
+			const length = Math.min(Number(existing.length) || 0, 100_000);
+			const entries: string[] = [];
+			for (let i = Math.max(0, length - MAX_ENTRIES); i < length; i++) {
+				const entry = existing[i];
+				if (typeof entry === "string") entries.push(bounded(entry));
+			}
+			return { entries };
+		}
 		const entries: string[] = [];
 		Object.defineProperty(win, KEY, { value: entries, configurable: false });
 		const text = (value: unknown): string => {
@@ -53,8 +79,7 @@ export function pwExtConsoleHook(): { entries: string[] } | { error: string } {
 			const original = target[method];
 			target[method] = function (this: unknown, ...args: unknown[]) {
 				try {
-					const line = `[${label}] ${args.map(text).join(" ")}`.replace(/\s+/g, " ");
-					entries.push(line.length > MAX_CHARS ? `${line.slice(0, MAX_CHARS)}…` : line);
+					entries.push(bounded(`[${label}] ${args.map(text).join(" ")}`));
 					if (entries.length > MAX_ENTRIES) entries.shift();
 				} catch {
 					return original.apply(this, args);
@@ -73,14 +98,38 @@ export async function pwExtWebMcp(
 	action: PwExtWebMcpAction,
 	expectUrl?: string,
 ): Promise<PwExtWebMcpResult> {
-	if (expectUrl !== undefined && document.URL !== expectUrl)
-		return { error: "The page changed after approval; nothing was done. Retry." };
 	const MAX_TOOLS = 100;
 	const DESCRIPTION_MAX = 1000;
 	const SCHEMA_MAX = 4000;
 	const OUTPUT_MAX = 50_000;
-	const clip = (value: string, max: number) =>
-		value.length > max ? `${value.slice(0, max)}…` : value;
+	const REDACTED = "[redacted]";
+	const PATTERNS: [RegExp, string][] = [
+		[/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, `Bearer ${REDACTED}`],
+		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
+		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, REDACTED],
+		[/((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi, `$1${REDACTED}`],
+		[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
+	];
+	const clip = (value: string, max: number) => {
+		let out = value.length > max * 4 ? value.slice(0, max * 4) : value;
+		for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
+		return out.length > max ? `${out.slice(0, max)}…` : out;
+	};
+	const changed = () => expectUrl !== undefined && document.URL !== expectUrl;
+	const CHANGED = { error: "The page changed after approval; nothing was done. Retry." };
+	const withTimeout = async <T,>(work: Promise<T>, ms: number, what: string): Promise<T> => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				work,
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms.`)), ms);
+				}),
+			]);
+		} finally {
+			clearTimeout(timer);
+		}
+	};
 	const json = (value: unknown, max: number): string | undefined => {
 		if (value === undefined || value === null) return undefined;
 		try {
@@ -117,9 +166,18 @@ export async function pwExtWebMcp(
 	const api = modern ? "modelContext" : legacy ? "modelContextTesting" : "none";
 	try {
 		if (api === "none") return { api, tools: [] };
-		const raw: Raw[] = modern
-			? await modern.getTools()
-			: await (legacy?.listTools ?? legacy?.getTools)?.call(legacy) ?? [];
+		if (changed()) return CHANGED;
+		const discoveryMs = action.kind === "call" ? action.timeoutMs : (action.timeoutMs ?? 10_000);
+		const raw: Raw[] = await withTimeout(
+			Promise.resolve(
+				modern
+					? modern.getTools()
+					: ((legacy?.listTools ?? legacy?.getTools)?.call(legacy) ?? []),
+			),
+			discoveryMs,
+			"WebMCP tool discovery",
+		);
+		if (changed()) return CHANGED;
 		const list = Array.isArray(raw) ? raw.slice(0, MAX_TOOLS) : [];
 		if (action.kind === "tools") {
 			const tools: PwExtTool[] = list.map((tool) => {
@@ -137,6 +195,7 @@ export async function pwExtWebMcp(
 			return { api, tools };
 		}
 		const tool = list.find((candidate) => candidate.name === action.tool);
+		if (changed()) return CHANGED;
 		if (!tool) return { error: `No WebMCP tool named ${clip(action.tool, 128)} on this page.` };
 		const controller = new AbortController();
 		let timer: ReturnType<typeof setTimeout> | undefined;

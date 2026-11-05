@@ -46,7 +46,7 @@ describe("snapshot", () => {
 		expect(result.tree).toContain('- heading "Welcome" [level=1]');
 		expect(result.tree).toContain("- navigation");
 		expect(result.tree).toContain('  - link "Docs" [ref=e1]');
-		expect(result.tree).toContain('- textbox "Email" [ref=e2]: me@example.test');
+		expect(result.tree).toContain('- textbox "Email" [ref=e2]: [redacted]');
 		expect(result.tree).toContain('- textbox "Password" [ref=e3]: [redacted]');
 		expect(result.tree).toContain("[redacted]");
 		expect(result.tree).not.toContain("hunter2");
@@ -305,5 +305,43 @@ describe("upload", () => {
 				fileType: "text/plain",
 			}),
 		).toEqual({ error: expect.stringContaining("file input") });
+	});
+});
+
+describe("review round 3 hardening", () => {
+	it("acts only on the element that was described for the approval", () => {
+		page(`<button id="action">Preview</button>`);
+		let previews = 0;
+		el<HTMLElement>("#action").addEventListener("click", () => previews++);
+		expect(
+			pwExtPageAction({ kind: "describe", target: "#action", handle: "h1" }),
+		).toMatchObject({ element: { name: "Preview" } });
+		window.document.body.innerHTML = `<button id="action">Delete all</button>`;
+		let deletes = 0;
+		el<HTMLElement>("#action").addEventListener("click", () => deletes++);
+		expect(
+			pwExtPageAction({ kind: "click", target: "#action", handle: "h1" }),
+		).toEqual({ error: expect.stringContaining("changed") });
+		expect(deletes).toBe(0);
+		expect(previews).toBe(0);
+	});
+
+	it("acts when the described element is still the target, once", () => {
+		page(`<button id="go">Go</button>`);
+		pwExtPageAction({ kind: "describe", target: "#go", handle: "h2" });
+		expect(pwExtPageAction({ kind: "click", target: "#go", handle: "h2" })).toEqual({
+			detail: 'clicked button "Go"',
+		});
+		expect(pwExtPageAction({ kind: "click", target: "#go", handle: "h2" })).toEqual({
+			error: expect.stringContaining("changed"),
+		});
+	});
+
+	it("redacts a long token before shortening a field value", () => {
+		const jwt = `eyJ${"A".repeat(40)}.${"B".repeat(300)}.${"C".repeat(40)}`;
+		page(`<input aria-label="Data" value="${jwt}"><p>mail me@example.test</p>`);
+		const text = JSON.stringify(pwExtPageAction({ kind: "snapshot" }));
+		expect(text).not.toContain("eyJAAAA");
+		expect(text).not.toContain("me@example.test");
 	});
 });

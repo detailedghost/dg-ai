@@ -160,14 +160,13 @@ export async function handlePwExtCli(
 				);
 		},
 	};
-	const timeout = setTimeout(
-		() =>
-			entry.finish({
+	const timeout = setTimeout(() => {
+		cancelInExtension(entry);
+		entry.finish({
 				ok: false,
-				error: `pw --ext timed out after ${timeoutMs}ms. The approval may still be open in the browser; deny it there, then retry.`,
-			}),
-		timeoutMs,
-	);
+			error: `pw --ext timed out after ${timeoutMs}ms; the extension was told to cancel it.`,
+		});
+	}, timeoutMs);
 	pending.set(requestKey, entry);
 	offRequester = onSocketClose(requester, () => {
 		if (settled) return;

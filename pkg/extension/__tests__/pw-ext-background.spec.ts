@@ -135,7 +135,11 @@ function harness(
 		approve,
 		isChromium: () => options.chromium ?? true,
 	});
+	const signalFor = () =>
+		options.abortOnApprove?.signal ?? options.abortOnFinalGet?.signal ?? options.signal;
 	return {
+		runWith: (context: { fetchAsset(id: string): Promise<Blob> }) => (request: PwExtRequest) =>
+			handler(request, 60_000, signalFor(), context),
 		run: (request: PwExtRequest) =>
 			handler(
 				request,
@@ -165,7 +169,7 @@ describe("pw --ext background handler", () => {
 		const h = harness({ pageResult: { detail: "clicked" } });
 		await h.run({ verb: "click", target: "e1" });
 		expect((h.executed[0] as { args: unknown[] }).args).toEqual([
-			{ kind: "click", target: "e1" },
+			{ kind: "click", target: "e1", handle: expect.any(String) },
 			WEB_TAB.url,
 		]);
 	});
@@ -426,7 +430,9 @@ describe("pw --ext round 3", () => {
 			pageResult: { detail: 'clicked button "Save"' },
 		});
 		await h.run({ verb: "click", target: "e1" });
-		expect(h.described).toEqual([{ kind: "describe", target: "e1" }]);
+		expect(h.described).toEqual([
+			{ kind: "describe", target: "e1", handle: expect.any(String) },
+		]);
 		expect(h.prompts[0]?.detail).toBe(
 			'Click e1\nElement: button "Save" <button>\nText: Save now',
 		);
@@ -463,6 +469,7 @@ describe("pw --ext round 3", () => {
 				base64: Buffer.from("hello").toString("base64"),
 				fileName: "demo.webm",
 				fileType: "video/webm",
+				handle: expect.any(String),
 			},
 			WEB_TAB.url,
 		]);
@@ -555,5 +562,69 @@ describe("pw --ext round 3", () => {
 		const answer = await h.run({ verb: "console" });
 		expect(answer.ok && answer.data.text).toContain("[error] Boom");
 		expect(answer.ok && answer.data.text).toContain("[warning] careful");
+	});
+});
+
+describe("pw --ext round 3 review fixes", () => {
+	it("binds the write to the described element with one handle", async () => {
+		const h = harness({ pageResult: { detail: 'clicked button "Go"' } });
+		await h.run({ verb: "click", target: "#go" });
+		const handle = (h.described[0] as { handle?: string }).handle;
+		expect(handle).toMatch(/^[0-9a-f-]{36}$/);
+		expect((h.executed[0] as { args: unknown[] }).args[0]).toEqual({
+			kind: "click",
+			target: "#go",
+			handle,
+		});
+	});
+
+	it("does not upload when the request is canceled while the file is fetched", async () => {
+		const cancel = new AbortController();
+		const h = harness({
+			describeResult: { element: { tag: "input", role: "button", name: "", text: "" } },
+			pageResult: { detail: "uploaded" },
+			asset: new Blob(["hello"]),
+			signal: cancel.signal,
+		});
+		const original = h.api.tabs.get;
+		void original;
+		const run = h.runWith({
+			fetchAsset: async () => {
+				cancel.abort();
+				return new Blob(["hello"]);
+			},
+		});
+		expect(
+			await run({
+				verb: "upload",
+				target: "#file",
+				assetId: "123e4567-e89b-42d3-a456-426614174000",
+				fileName: "a.txt",
+				fileSize: 5,
+				fileType: "text/plain",
+				filePath: "a.txt",
+			}),
+		).toEqual({ ok: false, error: expect.stringContaining("canceled") });
+		expect(h.executed).toEqual([]);
+	});
+
+	it("passes the approved URL to the console hook and caps its entries", async () => {
+		const h = harness({
+			pageResult: { started: false, entries: [] },
+			mainResult: () => ({
+				entries: Array.from({ length: 80 }, () => `[warning] ${"w".repeat(2000)}`),
+			}),
+		});
+		const answer = await h.run({ verb: "console" });
+		const main = h.executed.find(
+			(call) => (call as { world?: string }).world === "MAIN",
+		) as { args: unknown[] };
+		expect(main.args).toEqual([WEB_TAB.url]);
+		expect(answer.ok).toBe(true);
+		if (answer.ok) {
+			const lines = answer.data.text.split("\n").filter((line) => line.startsWith("[warning]"));
+			expect(lines).toHaveLength(50);
+			expect(lines.every((line) => line.length <= 520)).toBe(true);
+		}
 	});
 });

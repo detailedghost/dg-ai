@@ -205,7 +205,7 @@ describe("daemon pw --ext relay", () => {
 		}
 	});
 
-	it("times out with a hint that the approval may still be open", async () => {
+	it("times out and says the extension was told to cancel", async () => {
 		const { cli, results, port, bootstrap } = await boot();
 		const page = await extension(port, bootstrap);
 		const requestId = request(cli, { timeoutMs: 150 });
@@ -213,7 +213,25 @@ describe("daemon pw --ext relay", () => {
 		const answer = await result(results, requestId, 2000);
 		expect(answer.ok).toBe(false);
 		expect(answer.error).toMatch(/timed out/i);
-		expect(answer.error).toMatch(/approval/i);
+		expect(answer.error).toMatch(/cancel/i);
+	});
+
+	it("tells the extension to cancel when the relay deadline passes", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { timeoutMs: 150 });
+		await relay(page.frames, requestId);
+		await result(results, requestId, 2000);
+		await waitForValue(
+			() =>
+				page.frames.find(
+					(raw) =>
+						frameType(raw) === "pw-ext-browser-cancel" &&
+						(raw as RelayFrame).requestId === requestId,
+				),
+			700,
+			"extension cancel after deadline",
+		);
 	});
 
 	it("ignores replies from other sessions, other sockets, and forged tokens", async () => {

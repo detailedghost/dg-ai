@@ -127,7 +127,14 @@ function stageFile(file: string, cwd: string): StagedFile {
 		);
 	let bytes: Buffer;
 	try {
-		bytes = readAssetSourceFile(real, { noFollow: true });
+		const checked = lstatSync(real);
+		bytes = readAssetSourceFile(real, {
+			noFollow: true,
+			maxBytes: PW_EXT_MAX_UPLOAD_BYTES,
+			expect: { dev: Number(info.dev), ino: Number(info.ino) },
+		});
+		if (Number(checked.ino) !== Number(info.ino))
+			throw new Error("the file changed while it was being checked");
 	} catch (error) {
 		throw new ExtUsageError(
 			`Cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`,

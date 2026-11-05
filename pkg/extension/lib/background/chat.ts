@@ -715,6 +715,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			const watch = setInterval(() => {
 				if (!live()) cancel.abort();
 			}, PW_EXT_LIVENESS_MS);
+			const deadline = setTimeout(() => cancel.abort(), frame.timeoutMs);
 			const sendPwExt = (result: PwExtResult): void => {
 				if (!live()) return;
 				try {
@@ -760,6 +761,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				)
 				.finally(() => {
 					clearInterval(watch);
+					clearTimeout(deadline);
 					pwExtCancels.delete(requestKey);
 					pendingPwExt.delete(requestKey);
 				});

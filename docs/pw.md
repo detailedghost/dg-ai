@@ -52,8 +52,9 @@ Rules:
   does not resolve is refused with no prompt. `call` reads the page's tool list
   first and shows the tool name, description, hints and the exact args.
 - After approval, the extension checks that the tab did not change, and the
-  page function checks the document URL again before it acts. If either
-  changed, nothing runs. A reload at the same URL is not detected.
+  page function checks the document URL again before it acts. A write also
+  checks that it acts on the same element the approval showed. If any of
+  these changed, nothing runs. A reload at the same URL is not detected.
 - Browser settings pages (`chrome://`, `edge://`, `brave://`, `about:`),
   extension pages, `file:` pages, the web stores, private windows, and the
   signed-in Proton Mail tab are refused before any prompt. `current` still runs
@@ -72,14 +73,16 @@ Rules:
   for the life of the document, and sees only messages after that first call.
   Uncaught errors and unhandled rejections are captured from the same point.
 - `upload` takes a regular file of at most 25 MiB from the working directory,
-  the dg scratch directory or the dg demos directory. It refuses symbolic links
-  and folders. The CLI stages the bytes in the local dg-daemon asset store
+  the dg scratch directory or the dg demos directory, never from the home
+  folder itself. It refuses hidden files and folders, a file that is a symbolic
+  link, folders, and a file that changes while it is checked. The CLI stages the bytes in the local dg-daemon asset store
   before the approval; the extension fetches them only after approval, and only
   to an `https:` page. The approval shows the path, name, size, type,
   destination origin and the target element.
 - `tools` uses the WebMCP `document.modelContext` API, or the older
   `navigator.modelContextTesting` preview. With neither, it prints "This page
-  exposes no WebMCP tools." A tool call stops after 30 seconds.
+  exposes no WebMCP tools." Tool discovery and a tool call each have a timeout;
+  the site's own tool code can keep running after it.
 - `click` and `fill` send synthetic events. A page that checks for trusted
   input ignores them.
 - Firefox is not supported.
