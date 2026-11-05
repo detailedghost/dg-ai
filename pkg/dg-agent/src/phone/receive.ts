@@ -16,7 +16,7 @@ import {
 	openImage,
 } from "./image";
 import { contactRelays, findContactByNpub } from "./store";
-import { sealReceived, UNKNOWN_SENDER_HANDLE, type VaultKeyCache, VAULT_DIR } from "./vault";
+import { SEALED_OVERHEAD_BYTES, sealReceived, UNKNOWN_SENDER_HANDLE, type VaultKeyCache, VAULT_DIR } from "./vault";
 import { DAILY_REQUEST_CAP, type FileFetch, requestFile } from "./transport";
 import { dirBytes, type WormholeDeps } from "./wormhole";
 
@@ -25,13 +25,14 @@ export const MAX_PENDING_IMAGES = 32;
 /** Bytes `files/` plus `vault/` may hold before a new image or vault item is refused. */
 export const FILES_BYTE_CAP = 200 * 1024 * 1024;
 
-export function receiveStorageFull(phoneRoot: string): boolean {
+/** True when the current files/ and vault/ bytes plus `incomingBytes` and its sealed-file overhead pass the cap. */
+export function receiveStorageFull(phoneRoot: string, incomingBytes: number): boolean {
 	let total = 0;
 	for (const name of [FILES_DIR, VAULT_DIR]) {
 		const dir = join(phoneRoot, name);
 		if (existsSync(dir)) total += dirBytes(dir);
 	}
-	return total >= FILES_BYTE_CAP;
+	return total + incomingBytes + SEALED_OVERHEAD_BYTES > FILES_BYTE_CAP;
 }
 /** Wait before the first retry; each later retry doubles it up to an hour. */
 export const IMAGE_RETRY_BASE_SECONDS = 60;
@@ -127,7 +128,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		if (copy) return finish(row, IMAGE_TEXT, copy);
 		if (row.attempts === 0 && !withinDailyCap(row.sender, now)) return fail(row, "daily limit");
 		ensurePrivateDir(dir);
-		if (receiveStorageFull(deps.paths.phoneRoot)) return fail(row, "storage full");
+		if (receiveStorageFull(deps.paths.phoneRoot, row.size)) return fail(row, "storage full");
 		const key = deps.keys().find((entry) => entry.id === row.key_id);
 		if (!key) return defer(row, now, "request not sent");
 		const result = await requestFile(
@@ -141,6 +142,7 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		if (!result.ok) return RETRY_REASONS.has(result.reason) ? defer(live, deps.now(), result.reason) : fail(live, terminalReason(result.reason));
 		const opened = openImage(result.cipher, row);
 		if (!opened.ok) return fail(row, opened.reason);
+		if (receiveStorageFull(deps.paths.phoneRoot, opened.plain.length)) return fail(row, "storage full");
 		if (phi && message) return sealPhi(row, message, opened.plain);
 		const file: ImageFile = { sha256: row.ox, type: opened.type, size: opened.plain.length };
 		const name = imageFileName(file);

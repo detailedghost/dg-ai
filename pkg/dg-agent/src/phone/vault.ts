@@ -23,6 +23,8 @@ const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
+/** Bytes a sealed vault file adds to its plaintext: the nonce and the GCM tag. */
+export const SEALED_OVERHEAD_BYTES = NONCE_BYTES + TAG_BYTES;
 const RECEIVED_NAME_TRIES = 16;
 const KEY_LOCK_FILE = "vault-key.lock";
 const KEY_LOCK_STALE_MS = 30_000;

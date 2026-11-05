@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, truncateSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import { getPublicKey, nip59, type NostrEvent } from "nostr-tools";
 import { FILE_REQUEST_KIND, npubOf, wrapTagged } from "../../src/phone/chat";
@@ -21,6 +21,7 @@ import { pngOfSize } from "./fake-image";
 import { fakeWormhole, type FakeWormhole } from "./fake-wormhole";
 
 const RELAYS = ["wss://a.example"];
+const MIB = 1024 * 1024;
 const tracker = makeHomeTracker("dg-phone-receive-");
 let clock: number;
 let pool: FakePool;
@@ -740,6 +741,26 @@ describe("createImageReceiver", () => {
 		expect(pool.events).toEqual([]);
 	});
 
+	it("stores storage full for an image that would push files/ past the byte cap", async () => {
+		const dir = join(bob.deps.paths.phoneRoot, FILES_DIR);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const used = join(dir, `${"f".repeat(64)}.png`);
+		writeFileSync(used, "");
+		truncateSync(used, FILES_BYTE_CAP - MIB);
+		const sealed = seal(Buffer.concat([pngOfSize(), Buffer.alloc(2 * MIB)]));
+		bob.deps.db.addMessage({ id: "img", direction: "in", ts: clock, sender: alice.npub, contact: alice.npub, text: "[image pending]", call: 0 });
+		bob.deps.db.addImageFetch({ ...fetchFields(alice, "img"), key_id: numberKeyId(bob.deps.db), ...sealedFields(sealed) });
+
+		const images = receiver();
+
+		images.wake();
+		await images.settle();
+
+		expect(row(bob, "img")?.text).toBe("[image unavailable: storage full]");
+		expect(pool.events).toEqual([]);
+		expect(filesIn(bob)).toEqual([basename(used)]);
+	});
+
 	it("stores storage full for a PHI image when vault/ plus files/ is over the byte cap", async () => {
 		const dir = join(bob.deps.paths.phoneRoot, VAULT_DIR);
 		mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -907,6 +928,21 @@ describe("PHI vault receive", () => {
 		writeFileSync(big, "");
 		truncateSync(big, FILES_BYTE_CAP);
 		await deliver(wrapTagged({ content: "patient Jane Roe", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
+		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient });
+		await bobListener.started;
+		await bobListener.stop();
+
+		expect(bob.deps.db.recentMessages(10).map((candidate) => candidate.text)).toEqual(["[PHI: storage full from +a]"]);
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("stores storage full and no content when a PHI text would push vault/ past the byte cap", async () => {
+		const dir = join(bob.deps.paths.phoneRoot, VAULT_DIR);
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const used = join(dir, "f".repeat(32));
+		writeFileSync(used, "");
+		truncateSync(used, FILES_BYTE_CAP - MIB);
+		await deliver(wrapTagged({ content: "x".repeat(2 * MIB), tags: [["dg-phi", "1"]] }, alice.sk, bob.pub));
 		const bobListener = listen(bob, wormholeFor(), { vaultClient: creds.deps().vaultClient });
 		await bobListener.started;
 		await bobListener.stop();

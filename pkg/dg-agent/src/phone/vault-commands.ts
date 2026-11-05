@@ -87,8 +87,8 @@ async function currentKey(deps: PhoneDeps) {
 	return { period, key: await ensurePeriodKey(deps, period) };
 }
 
-function assertStorageRoom(deps: PhoneDeps): void {
-	if (receiveStorageFull(deps.paths.phoneRoot)) {
+function assertStorageRoom(deps: PhoneDeps, incomingBytes: number): void {
+	if (receiveStorageFull(deps.paths.phoneRoot, incomingBytes)) {
 		throw new DgCliError("receive storage is full (200 MiB across files/ and vault/); remove vault items with dg-agent phone vault rm and try again");
 	}
 }
@@ -97,8 +97,8 @@ export async function phoneVaultAdd(name: string, file: string | undefined, deps
 	assertVaultName(name);
 	await prepareVault(deps);
 	if (deps.db.vaultNameTaken(name)) throw new DgCliError(`vault item ${name} exists`);
-	assertStorageRoom(deps);
 	const plain = await readInput(file, deps);
+	assertStorageRoom(deps, plain.length);
 	const row = storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain, key: await currentKey(deps) }, deps.now());
 	printJson(deps, { name: row.name, size: row.size, created_at: row.created_at, expires_at: row.expires_at });
 }
@@ -266,7 +266,7 @@ export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpt
 	await prepareVault(deps);
 	const row = liveItem(deps, name);
 	if (deps.db.vaultNameTaken(outName)) throw new DgCliError(`vault item ${outName} exists; --out never overwrites`);
-	assertStorageRoom(deps);
+	assertStorageRoom(deps, 0);
 	const plain = await openVaultItem(deps, deps.paths.phoneRoot, row);
 	const input = opts.env === undefined ? { stdin: plain } : { env: envInput(opts.env, row, plain) };
 	const key = await currentKey(deps);
@@ -275,6 +275,7 @@ export async function phoneVaultExec(name: string, argv: string[], opts: ExecOpt
 	if (result.timedOut) throw new DgCliError(`the command ran past ${seconds} s and was stopped, so no item was stored`, EXIT_TIMED_OUT);
 	if (!result.stdout) throw new DgCliError("the command wrote more than 5 MiB to stdout, so no item was stored");
 	const kept = result.code === 0;
+	if (kept) assertStorageRoom(deps, result.stdout.length);
 	if (kept) storeVaultItem(deps.db, deps.paths.phoneRoot, { name: outName, sender: row.sender, plain: result.stdout, key, ext: row.ext }, deps.now());
 	printJson(deps, { name, exit: result.code, out: kept ? outName : null, size: result.size, stderr_lines: result.stderrLines });
 	if (!kept) throw new DgCliError(`the command exited ${result.code ?? "on a signal"}, so no item was stored`, result.code || 1);

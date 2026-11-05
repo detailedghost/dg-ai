@@ -10,6 +10,7 @@ import { ensurePeriodKey, keyPeriod, openVaultItem, SELF_SENDER, storeVaultItem,
 import { createFakeCredentials, type FakeCredentials } from "./fake-vault";
 import { createFakePool, freshNpub, makeHomeTracker, makePhoneDeps, parseNdjson } from "./fake-pool";
 
+const MIB = 1024 * 1024;
 const SECRET = "patient Jane Roe, MRN 12345";
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const BUN = process.execPath;
@@ -73,12 +74,12 @@ async function seed(name: string, data: string | Buffer, sender = SELF_SENDER): 
 	storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender, plain: Buffer.from(data), key: { period: day, key } }, deps.now());
 }
 
-function fillReceiveStorage(): void {
+function fillReceiveStorage(bytes = FILES_BYTE_CAP): void {
 	const dir = join(deps.paths.phoneRoot, VAULT_DIR);
 	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	const big = join(dir, "f".repeat(32));
 	writeFileSync(big, "");
-	truncateSync(big, FILES_BYTE_CAP);
+	truncateSync(big, bytes);
 }
 
 describe("phone vault add", () => {
@@ -94,6 +95,13 @@ describe("phone vault add", () => {
 		fillReceiveStorage();
 
 		await expect(phoneVaultAdd("lab", file("in.txt", SECRET), deps)).rejects.toThrow(/storage is full/);
+		expect(deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("refuses to add an item that would push receive storage past the cap and stores nothing", async () => {
+		fillReceiveStorage(FILES_BYTE_CAP - MIB);
+
+		await expect(phoneVaultAdd("lab", file("in.bin", Buffer.alloc(2 * MIB, "a")), deps)).rejects.toThrow(/storage is full/);
 		expect(deps.db.listVaultItems()).toEqual([]);
 	});
 
@@ -320,6 +328,14 @@ describe("phone vault exec", () => {
 		fillReceiveStorage();
 
 		await expect(phoneVaultExec("lab", [BUN, ...upper], {}, deps)).rejects.toThrow(/storage is full/);
+		expect(deps.db.vaultItem("lab-out")).toBeUndefined();
+	});
+
+	it("stores no output when the captured output would push receive storage past the cap", async () => {
+		await seed("lab", SECRET);
+		fillReceiveStorage(FILES_BYTE_CAP - MIB);
+
+		await expect(phoneVaultExec("lab", [BUN, "-e", "process.stdout.write('a'.repeat(2 * 1024 * 1024))"], {}, deps)).rejects.toThrow(/storage is full/);
 		expect(deps.db.vaultItem("lab-out")).toBeUndefined();
 	});
 
