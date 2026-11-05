@@ -113,6 +113,25 @@ export const PHI_TTL_SECONDS = 24 * 60 * 60;
 /** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
 export const OUTBOX_DIR = "outbox";
 
+/** Folder under `phoneRoot` that holds sealed vault items, one file per random item id. */
+export const VAULT_DIR = "vault";
+const VAULT_ID_PATTERN = /^[0-9a-f]{32}$/;
+const VAULT_VIEW_PATTERN = /^[0-9a-f]{32}\.view\.(?:png|jpg|webp)$/;
+/** A human's viewer copy of a vault image is removed by prune after this, if `vault open` did not remove it. */
+const VAULT_VIEW_GRACE_SECONDS = 60 * 60;
+
+/** One sealed PHI item; `sender` and `expires_at` are bound into the AES-GCM tag with `id`. */
+export type VaultItemRow = {
+	id: string;
+	name: string;
+	sender: string;
+	type: string;
+	size: number;
+	key_day: string;
+	created_at: number;
+	expires_at: number;
+};
+
 /** A receipt that beat its row to the database is held this long. */
 const EARLY_RECEIPT_SECONDS = 10 * 60;
 /** Held early receipts; the oldest are dropped past this. */
@@ -247,6 +266,21 @@ const SCHEMA: MigrationStep[] = [
 			) STRICT`);
 		},
 	},
+	{
+		version: 8,
+		run: (db) => {
+			db.run(`CREATE TABLE vault_items (
+				id TEXT PRIMARY KEY,
+				name TEXT NOT NULL UNIQUE,
+				sender TEXT NOT NULL,
+				type TEXT NOT NULL,
+				size INTEGER NOT NULL,
+				key_day TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				expires_at INTEGER NOT NULL
+			) STRICT`);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -316,6 +350,75 @@ export class PhoneDb {
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
 		this.pruneOutbox(cutoff, phiCutoff);
 		this.pruneFiles(doomed, phiCutoff);
+		this.pruneVault(now);
+	}
+
+	/** Drops expired items and their files, then stray files and old viewer copies; never follows a symlink. */
+	private pruneVault(now: number): void {
+		const folder = join(this.dir, VAULT_DIR);
+		const expired = this.db.query("SELECT id FROM vault_items WHERE expires_at <= $now").all({ now }) as { id: string }[];
+		for (const { id } of expired) {
+			this.removeVaultItem(id);
+			rmSync(join(folder, id), { force: true });
+		}
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const known = this.db.query("SELECT 1 FROM vault_items WHERE id = $id");
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const age = now - stat.mtimeMs / 1000;
+			const stale = VAULT_VIEW_PATTERN.test(name)
+				? age > VAULT_VIEW_GRACE_SECONDS
+				: age > TMP_GRACE_SECONDS && !(VAULT_ID_PATTERN.test(name) && known.get({ id: name }) !== null);
+			if (stale) rmSync(path, { force: true });
+		}
+	}
+
+	/** False when the name is taken. */
+	addVaultItem(row: VaultItemRow): boolean {
+		const result = this.db
+			.query(
+				`INSERT OR IGNORE INTO vault_items (id, name, sender, type, size, key_day, created_at, expires_at)
+				VALUES ($id, $name, $sender, $type, $size, $keyDay, $createdAt, $expiresAt)`,
+			)
+			.run({
+				id: row.id,
+				name: row.name,
+				sender: row.sender,
+				type: row.type,
+				size: row.size,
+				keyDay: row.key_day,
+				createdAt: row.created_at,
+				expiresAt: row.expires_at,
+			});
+		return result.changes > 0;
+	}
+
+	/** The live item with this name; an expired one is never returned. */
+	vaultItem(name: string): VaultItemRow | undefined {
+		return (
+			(this.db.query("SELECT * FROM vault_items WHERE name = $name AND expires_at > $now").get({ name, now: this.now() }) as VaultItemRow | null) ??
+			undefined
+		);
+	}
+
+	listVaultItems(): VaultItemRow[] {
+		return this.db.query("SELECT * FROM vault_items WHERE expires_at > $now ORDER BY created_at, name").all({ now: this.now() }) as VaultItemRow[];
+	}
+
+	/** True while any row, live or not yet pruned, holds the name. */
+	vaultNameTaken(name: string): boolean {
+		return this.db.query("SELECT 1 FROM vault_items WHERE name = $name").get({ name }) !== null;
+	}
+
+	removeVaultItem(id: string): void {
+		this.db.query("DELETE FROM vault_items WHERE id = $id").run({ id });
 	}
 
 	private expiredId(id: string): boolean {
