@@ -32,6 +32,7 @@ const CURSOR_SETTING = "cursor";
 export const PUBLISH_CONFIRM_SETTING = "publish_confirm_ms";
 /** Whether `say --image` may send; off until someone runs `phone files on`. */
 const FILES_SETTING = "files";
+const PRESENCE_SETTING = "presence";
 /** Short-lived kind 10050 lookup results, keyed by recipient pubkey hex. */
 const INBOX_RELAYS_SETTING = "inbox_relays";
 
@@ -131,6 +132,15 @@ export function readFilesOn(db: PhoneDb): boolean {
 
 export function writeFilesOn(db: PhoneDb, on: boolean): void {
 	db.set(FILES_SETTING, on);
+}
+
+/** Beats, receipts, and ping answers go out unless the human turned presence off. */
+export function readPresenceOn(db: PhoneDb): boolean {
+	return db.get<boolean>(PRESENCE_SETTING) !== false;
+}
+
+export function writePresenceOn(db: PhoneDb, on: boolean): void {
+	db.set(PRESENCE_SETTING, on);
 }
 
 /** Cached kind 10050 relays for `pubkey`, or undefined when missing or older than `ttlSeconds`. */

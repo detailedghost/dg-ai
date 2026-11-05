@@ -16,6 +16,7 @@ export type PhoneApi = Pick<
 	| "phoneContactsRename"
 	| "phoneContactsRemove"
 	| "phoneFiles"
+	| "phonePresence"
 	| "phoneSay"
 	| "phonePing"
 	| "phoneInbox"
@@ -140,6 +141,15 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.action(async (state: string | undefined) => {
 			const phone = await load();
 			phone.phoneFiles(state, phone.deps(getSession()));
+		});
+
+	group
+		.command("presence")
+		.description("print whether beats, receipts, and ping answers go out, or turn them on or off")
+		.argument("[state]", "on or off")
+		.action(async (state: string | undefined) => {
+			const phone = await load();
+			phone.phonePresence(state, phone.deps(getSession()));
 		});
 
 	const threads = group.command("thread").description("a static multi-party room with a #handle");

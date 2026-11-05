@@ -12,7 +12,7 @@ import {
 	wrapTagged,
 } from "./chat";
 import type { PhoneDb } from "./db";
-import { contactRelays, findContactByNpub, listContacts, pubkeyHex } from "./store";
+import { contactRelays, findContactByNpub, listContacts, pubkeyHex, readPresenceOn } from "./store";
 import { REQUEST_SKEW_SECONDS, SEEN_LIMIT } from "./transport";
 
 /** Lower bound of the jittered gap between presence beats. */
@@ -128,6 +128,7 @@ export function createPresence(deps: PresenceDeps): Presence {
 	};
 
 	const queueReceipt = (npub: string, id: string) => {
+		if (!readPresenceOn(deps.db)) return;
 		const ids = pending.get(npub) ?? [];
 		if (ids.length >= RECEIPT_BACKLOG || ids.includes(id)) return;
 		ids.push(id);
@@ -152,6 +153,7 @@ export function createPresence(deps: PresenceDeps): Presence {
 		},
 		beat() {
 			if (stopped || beating) return beating ?? Promise.resolve();
+			if (!readPresenceOn(deps.db)) return Promise.resolve();
 			beating = (async () => {
 				const contacts = listContacts(deps.db);
 				const count = Math.min(PRESENCE_FANOUT, contacts.length);

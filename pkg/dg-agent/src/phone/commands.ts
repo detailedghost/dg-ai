@@ -91,6 +91,8 @@ import {
 	readRelays,
 	readInboxRelayCache,
 	readFilesOn,
+	readPresenceOn,
+	writePresenceOn,
 	gateFor,
 	subscriptionRelays,
 	readPublishConfirmSetting,
@@ -709,6 +711,12 @@ function saveOutgoing(
 	});
 }
 
+export function phonePresence(state: string | undefined, deps: PhoneDeps): void {
+	if (state !== undefined && state !== "on" && state !== "off") throw new DgCliError(`presence takes on or off, got "${state}"`);
+	if (state !== undefined) writePresenceOn(deps.db, state === "on");
+	printJson(deps, { presence: readPresenceOn(deps.db) ? "on" : "off" });
+}
+
 export function phoneFiles(state: string | undefined, deps: PhoneDeps): void {
 	if (state !== undefined && state !== "on" && state !== "off") throw new DgCliError(`files takes on or off, got "${state}"`);
 	if (state !== undefined) writeFilesOn(deps.db, state === "on");
@@ -1083,6 +1091,7 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 		...(keysUnreadable ? { keys_unreadable: true } : {}),
 		autostart: formatAutostartState(readListener(deps.db)?.autostart),
 		files: readFilesOn(deps.db) ? "on" : "off",
+		presence: readPresenceOn(deps.db) ? "on" : "off",
 	});
 }
 
@@ -1334,6 +1343,7 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneContactsRename,
 	phoneContactsRemove,
 	phoneFiles,
+	phonePresence,
 	phoneSay,
 	phonePing,
 	phoneInbox,

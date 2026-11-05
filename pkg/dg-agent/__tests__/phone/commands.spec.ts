@@ -1361,6 +1361,7 @@ describe("status", () => {
 			notice: null,
 			autostart: null,
 			files: "off",
+			presence: "on",
 		});
 	});
 

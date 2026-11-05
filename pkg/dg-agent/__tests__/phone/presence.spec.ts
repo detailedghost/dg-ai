@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { resolveDgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19, nip59, type NostrEvent } from "nostr-tools";
 import { ACK_TAG, npubOf, PRESENCE_KIND, RECEIPT_KIND } from "../../src/phone/chat";
-import { phoneContacts, phoneInbox, phoneNumber, phonePing, phoneSay, phoneThreadNew, type PhoneDeps } from "../../src/phone/commands";
+import { phoneContacts, phoneInbox, phoneNumber, phonePing, phonePresence, phoneSay, phoneStatus, phoneThreadNew, type PhoneDeps } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
@@ -454,5 +454,44 @@ describe("phone ping", () => {
 		await expect(phonePing("+b", { timeout: "abc" }, alice.deps)).rejects.toThrow("--timeout must be");
 		await expect(phonePing("+nobody", {}, alice.deps)).rejects.toThrow("no contact +nobody");
 		await expect(phonePing("#none", {}, alice.deps)).rejects.toThrow("no thread #none");
+	});
+});
+
+describe("phone presence off", () => {
+	it("defaults to on, saves off, and shows it in status", async () => {
+		const alice = await boot("a");
+		phonePresence(undefined, alice.deps);
+		phonePresence("off", alice.deps);
+		await phoneStatus(alice.deps);
+		const [shown, saved, status] = printed(alice);
+
+		expect(shown).toEqual({ presence: "on" });
+		expect(saved).toEqual({ presence: "off" });
+		expect(status).toMatchObject({ presence: "off" });
+		expect(() => phonePresence("maybe", alice.deps)).toThrow('presence takes on or off, got "maybe"');
+	});
+
+	it("sends no beat, no receipt, and no ping answer, but still records last seen", async () => {
+		const alice = await boot("a");
+		const bob = await boot("b");
+		link(alice, "b", bob, "a");
+		phonePresence("off", bob.deps);
+		const { schedule, timers } = capturingSchedule();
+		const bobListener = listen(bob, { schedule });
+		await bobListener.started;
+		try {
+			await phoneSay("+a", "hi", bob.deps);
+			await phoneSay("+b", "hello", alice.deps);
+			await deliver(wrapRumor(control(alice.sk, bob.pub, PRESENCE_KIND, [[ACK_TAG, "1"]]), alice.sk, bob.pub));
+			timers.find((timer) => timer.delayMs === PRESENCE_DELAY_MS)?.run();
+			await waitUntil(() => bob.deps.db.recentMessages(10).some((row) => row.text === "hello"));
+			await Bun.sleep(50);
+
+			expect(opened(alice, PRESENCE_KIND)).toEqual([]);
+			expect(opened(alice, RECEIPT_KIND)).toEqual([]);
+			expect(bob.deps.db.getContactByNpub(alice.npub)?.last_seen).not.toBeNull();
+		} finally {
+			await bobListener.stop();
+		}
 	});
 });
