@@ -2,12 +2,29 @@ export type PwExtPageAction =
 	| { kind: "snapshot" }
 	| { kind: "click"; target: string }
 	| { kind: "fill"; target: string; value: string }
+	| { kind: "describe"; target: string }
+	| {
+			kind: "upload";
+			target: string;
+			base64: string;
+			fileName: string;
+			fileType: string;
+	  }
 	| { kind: "selection" }
 	| { kind: "console" };
+
+/** What the approval shows about a click, fill or upload target. */
+export type PwExtElement = {
+	tag: string;
+	role: string;
+	name: string;
+	text: string;
+};
 
 export type PwExtPageResult =
 	| { tree: string; text: string }
 	| { detail: string }
+	| { element: PwExtElement }
 	| { text: string }
 	| { started: boolean; entries: string[] }
 	| { error: string };
@@ -99,7 +116,7 @@ export function pwExtPageAction(
 			const type = (el as HTMLInputElement).type.toLowerCase();
 			if (type === "checkbox") return "checkbox";
 			if (type === "radio") return "radio";
-			if (["button", "submit", "reset", "image"].includes(type))
+			if (["button", "submit", "reset", "image", "file"].includes(type))
 				return "button";
 			if (type === "search") return "searchbox";
 			if (type === "range") return "slider";
@@ -248,7 +265,14 @@ export function pwExtPageAction(
 					? redactTokens(value)
 					: Array.isArray(value)
 						? value.map((entry) => redactTokens(String(entry)))
-						: value;
+						: value && typeof value === "object"
+							? Object.fromEntries(
+									Object.entries(value).map(([k, v]) => [
+										k,
+										redactTokens(String(v)),
+									]),
+								)
+							: value;
 		return out as PwExtPageResult;
 	};
 
@@ -388,6 +412,44 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(el)}` };
 	};
 
+	const describeTarget = (target: string): PwExtPageResult => {
+		const el = resolve(target);
+		if (typeof el === "string") return { error: el };
+		const tag = el.tagName.toLowerCase().slice(0, 40);
+		const r = role(el) ?? tag;
+		return {
+			element: {
+				tag,
+				role: r,
+				name: name(el, r),
+				text: squash(safeText(el), 120),
+			},
+		};
+	};
+
+	const upload = (
+		target: string,
+		base64: string,
+		fileName: string,
+		fileType: string,
+	): PwExtPageResult => {
+		const el = resolve(target);
+		if (typeof el === "string") return { error: el };
+		const input = el as HTMLInputElement;
+		if (el.tagName !== "INPUT" || input.type.toLowerCase() !== "file" || input.disabled)
+			return { error: `${describe(el)} is not an enabled file input.` };
+		const binary = atob(base64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+		const scope = win as unknown as typeof globalThis;
+		const transfer = new scope.DataTransfer();
+		transfer.items.add(new scope.File([bytes], fileName, { type: fileType }));
+		input.files = transfer.files;
+		input.dispatchEvent(new scope.Event("input", { bubbles: true }));
+		input.dispatchEvent(new scope.Event("change", { bubbles: true }));
+		return { detail: `uploaded ${fileName} to ${describe(el)}` };
+	};
+
 	const selection = (): PwExtPageResult => {
 		const active = doc.activeElement as HTMLInputElement | null;
 		if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
@@ -451,6 +513,15 @@ export function pwExtPageAction(
 				return fill(action.target, action.value);
 			case "selection":
 				return selection();
+			case "describe":
+				return describeTarget(action.target);
+			case "upload":
+				return upload(
+					action.target,
+					action.base64,
+					action.fileName,
+					action.fileType,
+				);
 			case "console":
 				return consoleCapture();
 		}

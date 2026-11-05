@@ -253,3 +253,57 @@ staple</div></div>
 		expect(text).not.toContain("ghp_abcdefghijklmnopqrstu");
 	});
 });
+
+describe("describe target before approval", () => {
+	it("returns tag, role, name and short text without values", () => {
+		page(`<label for="q">Search</label><input id="q" value="private draft"><button id="b">Save <b>now</b></button>`);
+		expect(pwExtPageAction({ kind: "describe", target: "#q" })).toEqual({
+			element: { tag: "input", role: "textbox", name: "Search", text: "" },
+		});
+		expect(pwExtPageAction({ kind: "describe", target: "#b" })).toEqual({
+			element: { tag: "button", role: "button", name: "Save now", text: "Save now" },
+		});
+		expect(pwExtPageAction({ kind: "describe", target: "#none" })).toEqual({
+			error: expect.stringContaining("No element"),
+		});
+	});
+});
+
+describe("upload", () => {
+	it("sets one file on a file input and fires input and change", () => {
+		page(`<input id="f" type="file" aria-label="Attach">`);
+		const events: string[] = [];
+		const input = el<HTMLInputElement>("#f");
+		input.addEventListener("input", () => events.push("input"));
+		input.addEventListener("change", () => events.push("change"));
+		const result = pwExtPageAction({
+			kind: "upload",
+			target: "#f",
+			base64: Buffer.from("hello").toString("base64"),
+			fileName: "a.txt",
+			fileType: "text/plain",
+		});
+		expect(result).toEqual({ detail: 'uploaded a.txt to button "Attach"' });
+		expect(input.files?.length).toBe(1);
+		expect(input.files?.[0]?.name).toBe("a.txt");
+		expect(input.files?.[0]?.size).toBe(5);
+		expect(events).toEqual(["input", "change"]);
+	});
+
+	it.each([
+		`<input id="f" type="text">`,
+		`<button id="f">x</button>`,
+		`<input id="f" type="file" disabled>`,
+	])("refuses a target that is not an enabled file input: %s", (html) => {
+		page(html);
+		expect(
+			pwExtPageAction({
+				kind: "upload",
+				target: "#f",
+				base64: "aGk=",
+				fileName: "a.txt",
+				fileType: "text/plain",
+			}),
+		).toEqual({ error: expect.stringContaining("file input") });
+	});
+});
