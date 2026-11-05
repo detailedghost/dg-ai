@@ -108,7 +108,7 @@ describe("handles", () => {
 
 	it("rejects a thread handle that does not start with # or is not a handle body", () => {
 		expect(parseThreadHandle("#ops")).toBe("#ops");
-		expect(() => parseThreadHandle("ops")).toThrow('a thread handle must start with #, got "ops"');
+		expect(() => parseThreadHandle("ops")).toThrow('a group handle must start with #, got "ops"');
 		expect(() => parseThreadHandle("#Ops")).toThrow(DgCliError);
 		expect(() => parseThreadHandle("#")).toThrow(DgCliError);
 	});
@@ -498,9 +498,9 @@ describe("display", () => {
 		expect(senderLabel("npub1abcdefghijklmnop", "baron", undefined)).toBe("+baron");
 		expect(senderLabel("npub1abcdefghijklmnop", undefined, "dg")).toBe("+dg");
 		expect(senderLabel("npub1abcdefghijklmnop", undefined, undefined)).toBe("npub1abcdefghijk");
-		expect(heldThreadsNotice(1)).toBe("1 held thread");
-		expect(heldThreadsNotice(3)).toBe("3 held threads");
-		expect(heldLogLine("abcdef1234567890")).toBe("phone: held thread abcdef12\n");
+		expect(heldThreadsNotice(1)).toBe("1 held group");
+		expect(heldThreadsNotice(3)).toBe("3 held groups");
+		expect(heldLogLine("abcdef1234567890")).toBe("phone: held group abcdef12\n");
 		expect(heldLogLine("abcdef1234567890")).not.toContain("hello");
 		expect(threadDirection("npub1us", ["npub1us"])).toBe("out");
 		expect(threadDirection("npub1them", ["npub1us"])).toBe("in");

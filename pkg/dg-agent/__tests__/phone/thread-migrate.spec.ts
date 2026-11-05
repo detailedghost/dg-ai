@@ -97,7 +97,7 @@ describe("thread schema migration", () => {
 		const index = opened.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_thread'").get();
 		opened.close();
 
-		expect(version).toBe(6);
+		expect(version).toBe(9);
 		expect(tables).toContain("threads");
 		expect(tables).toContain("thread_members");
 		expect(tables).toContain("pending_threads");
@@ -149,7 +149,7 @@ describe("thread schema migration", () => {
 			}),
 		).toBe(true);
 		expect(db.pendingByRumor("future")?.received_at).toBe(now);
-		db.upsertHeldNotice("1 held thread");
+		db.upsertHeldNotice("1 held group");
 		now += MESSAGE_TTL_SECONDS + 1;
 		db.pruneMessages();
 		expect(db.listPending()).toEqual([]);
@@ -183,7 +183,7 @@ describe("thread schema migration", () => {
 		db.syncHeldNotice();
 		expect(db.listPending().map((row) => row.rumor_id)).toEqual(["s1", "s2", "s3", "s4", "s5"]);
 		expect(db.pendingByRumor("s0")).toBeUndefined();
-		expect(db.heldNotice()?.text).toBe("5 held threads");
+		expect(db.heldNotice()?.text).toBe("5 held groups");
 		db.close();
 	});
 });

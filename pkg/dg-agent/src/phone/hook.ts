@@ -38,11 +38,21 @@ function payloadFor(db: PhoneDb, row: MessageRow, phoneRoot: string): string {
 			text: row.text,
 			line: threadLine(threadHandle, label, row.text),
 			...(file ? { file } : {}),
+			...(row.peer_ext ? { from_ext: row.peer_ext } : {}),
 		});
 	}
 	const contact = findContactByNpub(db, row.contact);
 	return onMessagePayload(
-		{ id: row.id, ts: row.ts, from: row.sender, text: row.text, ...(row.call ? { call: true as const } : {}), ...(file ? { file } : {}) },
+		{
+			id: row.id,
+			ts: row.ts,
+			from: row.sender,
+			text: row.text,
+			...(row.call ? { call: true as const } : {}),
+			...(file ? { file } : {}),
+			...(row.ext ? { ext: row.ext } : {}),
+			...(row.peer_ext ? { fromExt: row.peer_ext } : {}),
+		},
 		contact?.handle ?? "",
 	);
 }

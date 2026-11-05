@@ -31,7 +31,8 @@ export type ImageFailure =
 	| "too large"
 	| "hash mismatch"
 	| "decrypt failed"
-	| "not an image";
+	| "not an image"
+	| "vault unavailable";
 
 export function imageUnavailableText(reason: ImageFailure): string {
 	return `[image unavailable: ${reason}]`;
@@ -43,7 +44,7 @@ export type ImageFile = { sha256: string; type: ImageType; size: number };
 /** The kind 15 fields a receive needs; `x` hashes the ciphertext, `ox` the plaintext. */
 export type ImageOffer = { x: string; ox: string; size: number; key: string; nonce: string };
 
-/** How a stored image appears in `inbox`, `voicemail`, and the hook payload. */
+/** How a stored image appears in `messages`, `unread`, and the hook payload. */
 export type StoredFileView = { path: string; type: ImageType; size: number; sha256: string; untrusted: true };
 
 export type PreparedImage = { cipher: Buffer; x: string; tags: string[][]; content: string; file: ImageFile };
@@ -203,7 +204,8 @@ export function prepareImage(source: Buffer): PreparedImage {
 const HEX64 = /^[0-9a-f]{64}$/;
 const NONCE_HEX = /^(?:[0-9a-f]{24}|[0-9a-f]{32})$/;
 const SIZE_TEXT = /^[1-9][0-9]{0,15}$/;
-const GCM_TAG_BYTES = 16;
+/** Bytes the AES-GCM tag adds to an image sealed for transfer. */
+export const GCM_TAG_BYTES = 16;
 const EXTENSIONS: Readonly<Record<ImageType, string>> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 /** A received image's file name; checked again on every read. */
 export const FILE_NAME_PATTERN = /^[0-9a-f]{64}\.(?:png|jpg|webp)$/;

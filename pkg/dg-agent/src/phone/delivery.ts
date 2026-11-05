@@ -17,7 +17,7 @@ export const INBOX_RELAY_KIND = 10050;
 export const INBOX_RELAY_CACHE_SECONDS = 10 * 60;
 /** Bound for one kind 10050 query. A miss still sends on the card relays and our relays. */
 export const INBOX_RELAY_LOOKUP_MS = 2_000;
-/** `say` and `accept` never publish to more relays than this. Inbox relays are kept first. */
+/** `text` and `accept` never publish to more relays than this. Inbox relays are kept first. */
 export const MAX_PUBLISH_RELAYS = 10;
 
 /** What `SimplePool` needs so a half-open socket is noticed and dialed again. */

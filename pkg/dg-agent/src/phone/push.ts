@@ -43,7 +43,7 @@ export function pushFrame(handle: string, text: string, call?: true): string {
 	].join("\n");
 }
 
-export type PushMessage = { id: string; ts: number; from: string; text: string; call?: true; file?: StoredFileView };
+export type PushMessage = { id: string; ts: number; from: string; text: string; call?: true; file?: StoredFileView; ext?: string; fromExt?: string };
 
 /** The hook payload's handle, with the leading `+` every other phone command prints. */
 function wireHandle(handle: string): string {
@@ -53,6 +53,16 @@ function wireHandle(handle: string): string {
 
 /** The JSON a `--on-message` command receives on stdin; never passed on argv. */
 export function onMessagePayload(message: PushMessage, handle: string): string {
-	const { id, ts, from, text, call, file } = message;
-	return JSON.stringify({ id, ts, from, handle: wireHandle(handle), text, ...(call ? { call: true as const } : {}), ...(file ? { file } : {}) });
+	const { id, ts, from, text, call, file, ext, fromExt } = message;
+	return JSON.stringify({
+		id,
+		ts,
+		from,
+		handle: wireHandle(handle),
+		text,
+		...(call ? { call: true as const } : {}),
+		...(file ? { file } : {}),
+		...(ext ? { ext } : {}),
+		...(fromExt ? { from_ext: fromExt } : {}),
+	});
 }

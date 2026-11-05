@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip59 } from "nostr-tools";
+import { finalizeEvent, generateSecretKey, getEventHash, getPublicKey, type NostrEvent, nip17, nip19, nip44, nip59 } from "nostr-tools";
 import type { AbstractSimplePool, SubCloser } from "nostr-tools/pool";
 import { LOOKBACK_SECONDS, MESSAGE_TTL_SECONDS } from "./db";
 import { admitInPasses } from "./admit-pass";
@@ -32,14 +32,18 @@ export type Message = {
 	thread?: ThreadMeta;
 	image?: { offer: ImageOffer; keyId: string };
 	phi?: true;
+	/** The agent on this machine a direct message is for; never set on a group message. */
+	ext?: string;
+	/** The sending agent's claimed extension. */
+	fromExt?: string;
 };
 /** The admission-time view of a contact: just enough for the gate to recognize a sender again. */
 export type Contact = { npub: string; handle: string; keyId?: string };
 /** The admission-time view of a live invite: just enough for the gate to match and name a new caller, with its own relays when it has them. */
 export type Invite = { secret: string; expiresAt: number; name?: string; relays?: string[] };
 export type Seen = { cursor: number; ids: string[] };
-/** An opened file fetch request: `from` is the seal signer, `keyId` the key the wrap was addressed to. */
-export type FileRequestRumor = { id: string; from: string; keyId: string; createdAt: number; tags: string[][] };
+/** An opened control rumor (file request, receipt, or presence): `from` is the seal signer, `keyId` the key the wrap was addressed to. */
+export type ControlRumor = { id: string; wrapId: string; kind: number; from: string; keyId: string; createdAt: number; tags: string[][] };
 /** One of our own keys, as fetchNew/subscribe need it: which pubkey a wrap may address, and the sk to open it. */
 export type KeyEntry = { id: string; pub: string; sk: Uint8Array };
 
@@ -70,9 +74,20 @@ export type PhonePool = Pick<AbstractSimplePool, "publish" | "querySync" | "subs
 };
 
 export const GIFT_WRAP_KIND = 1059;
+/** Ephemeral gift wrap: the same seal and encryption as kind 1059, but relays forward it without storing it. Carries presence beats only. */
+export const EPHEMERAL_GIFT_WRAP_KIND = 21059;
 const CHAT_MESSAGE_KIND = 14;
 /** Rumor kind of a dg file fetch request, receiver to sender, always inside a gift wrap. Unregistered in the NIP kind list as of 2026-11-04. */
 export const FILE_REQUEST_KIND = 25015;
+/** Rumor kind of a delivery receipt; each `e` tag names a stored message id. Unregistered as of 2026-11-04. */
+export const RECEIPT_KIND = 25016;
+/** Rumor kind of a presence beat or a `phone ping` check. Unregistered as of 2026-11-04. */
+export const PRESENCE_KIND = 25017;
+/** On a presence rumor, asks the listener to answer with a receipt naming the wrap id. */
+export const ACK_TAG = "dg-ack";
+/** On a receipt, says the ping was rate limited and the sender should try later. */
+export const BUSY_TAG = "dg-busy";
+const CONTROL_KINDS: ReadonlySet<number> = new Set([FILE_REQUEST_KIND, RECEIPT_KIND, PRESENCE_KIND]);
 export const CALL_TAG = "dg-call";
 /** Carries the caller's self-reported name, so a fresh admit can name the new contact after it. */
 export const SELF_NAME_TAG = "dg-as";
@@ -98,6 +113,25 @@ export function wrapTagged(
 		{ kind: rumor.kind ?? CHAT_MESSAGE_KIND, content: rumor.content, tags: [["p", contactPub], ...rumor.tags] },
 		sk,
 		contactPub,
+	);
+}
+
+/** A NIP-59 wrap of kind 21059 around a normal seal; `created_at` is now, since nothing is stored to hide it in. */
+export function wrapEphemeral(rumor: { kind: number; content: string; tags: string[][] }, sk: Uint8Array, toPub: string): NostrEvent {
+	const seal = nip59.createSeal(
+		nip59.createRumor({ kind: rumor.kind, content: rumor.content, tags: [["p", toPub], ...rumor.tags] }, sk),
+		sk,
+		toPub,
+	);
+	const wrapKey = generateSecretKey();
+	return finalizeEvent(
+		{
+			kind: EPHEMERAL_GIFT_WRAP_KIND,
+			content: nip44.encrypt(JSON.stringify(seal), nip44.getConversationKey(wrapKey, toPub)),
+			created_at: Math.floor(Date.now() / 1000),
+			tags: [["p", toPub]],
+		},
+		wrapKey,
 	);
 }
 
@@ -179,6 +213,8 @@ function admit(event: NostrEvent, rumor: Rumor, keyId: string, gate: Gate, now: 
 		text: body.text,
 		...(body.offer ? { image: { offer: body.offer, keyId } } : {}),
 		...(body.phi ? { phi: body.phi } : {}),
+		...(body.ext ? { ext: body.ext } : {}),
+		...(body.fromExt ? { fromExt: body.fromExt } : {}),
 	};
 	const existing = gate.contacts.get(rumor.pubkey);
 	const isChat = rumor.kind === CHAT_MESSAGE_KIND;
@@ -373,6 +409,24 @@ export function capIds(ids: string[], limit: number): string[] {
 	return ids.length > limit ? ids.slice(ids.length - limit) : ids;
 }
 
+/** Ids that expire after `ttlSeconds`; the oldest is dropped once `limit` is exceeded. */
+export function createReplayGuard(ttlSeconds: number, limit: number): { has(key: string, now: number): boolean; add(key: string, now: number): void } {
+	const seen = new Map<string, number>();
+	return {
+		has(key, now) {
+			for (const [held, until] of seen) {
+				if (until > now) break;
+				seen.delete(held);
+			}
+			return seen.has(key);
+		},
+		add(key, now) {
+			seen.set(key, now + ttlSeconds);
+			if (seen.size > limit) seen.delete(seen.keys().next().value as string);
+		},
+	};
+}
+
 /** Adds `value` to `set`, then evicts the oldest entry once `limit` is exceeded. */
 export function addBounded<T>(set: Set<T>, value: T, limit: number): void {
 	set.add(value);
@@ -530,12 +584,20 @@ export function shortPubkey(pub: string): string {
 	return pub.slice(0, PUBKEY_PREFIX_LEN);
 }
 
-type Opened = { kind: "ok"; rumor: Rumor } | { kind: "request"; rumor: Rumor } | { kind: "undecryptable" } | { kind: "not-chat" };
+type Opened = { kind: "ok"; rumor: Rumor } | { kind: "control"; rumor: Rumor } | { kind: "undecryptable" } | { kind: "not-chat" };
+
+function isBeat(rumor: Rumor): boolean {
+	return rumor.kind === PRESENCE_KIND && !rumor.tags.some((tag) => tag[0] === ACK_TAG);
+}
 
 function openDetailed(event: NostrEvent, sk: Uint8Array): Opened {
 	try {
+		if (event.kind === EPHEMERAL_GIFT_WRAP_KIND) {
+			const rumor = nip17.unwrapEvent({ ...event, kind: GIFT_WRAP_KIND }, sk);
+			return isBeat(rumor) ? { kind: "control", rumor } : { kind: "not-chat" };
+		}
 		const rumor = nip17.unwrapEvent(event, sk);
-		if (rumor.kind === FILE_REQUEST_KIND) return { kind: "request", rumor };
+		if (CONTROL_KINDS.has(rumor.kind)) return { kind: "control", rumor };
 		return rumor.kind === CHAT_MESSAGE_KIND || rumor.kind === FILE_MESSAGE_KIND ? { kind: "ok", rumor } : { kind: "not-chat" };
 	} catch {
 		return { kind: "undecryptable" };
@@ -556,15 +618,17 @@ export function classifyIncoming(
 	gate: Gate,
 	now: number,
 	ownPubs: readonly string[] = keys.map((held) => held.pub),
-): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } | { held: HeldThread } | { request: FileRequestRumor } {
+): { admitted: Admitted } | { drop: DroppedRing } | { probe: true } | { held: HeldThread } | { control: ControlRumor } {
 	const key = pickKey(event, keys);
 	if (!key) return { drop: { id: event.id, reason: "not addressed to a loaded key" } };
 	const opened = openDetailed(event, key.sk);
 	if (opened.kind === "undecryptable") return { drop: { id: event.id, reason: "could not open the wrap" } };
 	if (opened.kind === "not-chat") return { drop: { id: event.id, reason: "not a chat message" } };
-	if (opened.kind === "request") {
+	if (opened.kind === "control") {
 		const { rumor } = opened;
-		return { request: { id: getEventHash(rumor), from: rumor.pubkey, keyId: key.id, createdAt: rumor.created_at, tags: rumor.tags } };
+		return {
+			control: { id: getEventHash(rumor), wrapId: event.id, kind: rumor.kind, from: rumor.pubkey, keyId: key.id, createdAt: rumor.created_at, tags: rumor.tags },
+		};
 	}
 	if (isSelfProbe(opened.rumor, ownPubs)) return { probe: true };
 	const threadContacts = [...gate.contacts.entries()].map(([pub, contact]) => ({ pub, keyId: contact.keyId }));
@@ -587,8 +651,8 @@ export type SubscribeHooks = {
 	onEvent?: (id: string) => void;
 	/** A thread rumor that was not admitted. The body stays out of the log line the listener prints. */
 	onHeld?: (held: HeldThread) => void;
-	/** A file fetch request; the handler decides, and a refused one leaves no log line. */
-	onRequest?: (request: FileRequestRumor) => void;
+	/** A control rumor; the handler decides, and a refused one leaves no log line. */
+	onControl?: (control: ControlRumor) => void;
 };
 
 /**
@@ -609,17 +673,17 @@ export function subscribe(
 	const known = new Set(seen.ids);
 	const strangers = new Set<string>();
 	const ownPubs = keys.map((held) => held.pub);
-	return pool.subscribe(relays, inboxFilter(ownPubs, seen.cursor, now()), {
+	return pool.subscribe(relays, { ...inboxFilter(ownPubs, seen.cursor, now()), kinds: [GIFT_WRAP_KIND, EPHEMERAL_GIFT_WRAP_KIND] }, {
 		onevent(event) {
 			hooks.onEvent?.(event.id);
 			if (known.has(event.id) || strangers.has(event.id)) return;
 			let result = classifyIncoming(event, keys, gate(), now(), ownPubs);
-			if (!("admitted" in result) && !("probe" in result) && !("request" in result) && hooks.reread) {
+			if (!("admitted" in result) && !("probe" in result) && !("control" in result) && hooks.reread) {
 				result = classifyIncoming(event, keys, hooks.reread(), now(), ownPubs);
 			}
-			if ("request" in result) {
+			if ("control" in result) {
 				addBounded(known, event.id, STRANGER_ID_LIMIT);
-				hooks.onRequest?.(result.request);
+				hooks.onControl?.(result.control);
 				return;
 			}
 			if ("probe" in result) {

@@ -259,6 +259,13 @@ export function writeStderr(value: string): Promise<void> {
 export async function readCappedStdin(
 	capBytes: number,
 ): Promise<string | undefined> {
+	return (await readCappedStdinBytes(capBytes))?.toString("utf8");
+}
+
+/** Like readCappedStdin, but keeps the raw bytes. */
+export async function readCappedStdinBytes(
+	capBytes: number,
+): Promise<Buffer | undefined> {
 	const chunks: Uint8Array[] = [];
 	let total = 0;
 	const reader = Bun.stdin.stream().getReader();
@@ -275,7 +282,7 @@ export async function readCappedStdin(
 	} finally {
 		reader.releaseLock();
 	}
-	return Buffer.concat(chunks).toString("utf8");
+	return Buffer.concat(chunks);
 }
 
 type KillSeams = {
