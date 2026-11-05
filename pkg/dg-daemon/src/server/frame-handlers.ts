@@ -13,6 +13,7 @@ import {
 import {
 	handlePwExtBrowserResult,
 	handlePwExtCli,
+	handlePwExtCliCancel,
 	sendPwExtResult,
 	settleRejectedPwExtResult,
 } from "./pw-ext";
@@ -43,6 +44,7 @@ import {
 	validateOverwatchMerge,
 	validateIsoTimestamp,
 	validateProtoCliRequest,
+	validatePwExtCliCancel,
 	validatePwExtCliRequest,
 	validateProtoIdentifier,
 } from "@dg/common";
@@ -332,6 +334,8 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			try { return validateProtoCliRequest(value); } catch { return undefined; }
 		case "cli-pw-ext-request":
 			try { return validatePwExtCliRequest(value); } catch { return undefined; }
+		case "cli-pw-ext-cancel":
+			try { return validatePwExtCliCancel(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -541,6 +545,8 @@ async function handleCliFrame(
 			return handleProtoCli(ws, sessionId, frame, deps);
 		case "cli-pw-ext-request":
 			return handlePwExtCli(ws, sessionId, frame, deps);
+		case "cli-pw-ext-cancel":
+			return handlePwExtCliCancel(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {

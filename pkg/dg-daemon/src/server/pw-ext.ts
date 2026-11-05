@@ -6,6 +6,7 @@ import {
 	isRecord,
 	PW_EXT_DEFAULT_TIMEOUT_MS,
 	PW_EXT_MIN_EXTENSION_VERSION,
+	type PwExtCliCancel,
 	type PwExtCliRequest,
 	type PwExtResponse,
 	validateChatFrame,
@@ -24,10 +25,23 @@ type Socket = ServerWebSocket<SocketState>;
 type Result = { ok: true; data: PwExtResponse } | { ok: false; error: string };
 type Pending = {
 	sessionId: string;
+	requestId: string;
 	requester: Socket;
 	extension: Socket;
 	finish: (result: Result, deliver?: boolean) => void;
 };
+
+function cancelInExtension(entry: Pending): void {
+	void sendViaQueue(
+		entry.extension,
+		JSON.stringify({
+			type: "pw-ext-browser-cancel",
+			sessionId: entry.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: entry.requestId,
+		}),
+	).catch(() => {});
+}
 type RelayState = { pending: Map<string, Pending>; used: Map<string, Set<string>> };
 const states = new WeakMap<ConnectionManager, RelayState>();
 const MAX_SESSION_REQUEST_IDS = 10_000;
@@ -130,6 +144,7 @@ export async function handlePwExtCli(
 	const timeoutMs = frame.timeoutMs ?? PW_EXT_DEFAULT_TIMEOUT_MS;
 	const entry: Pending = {
 		sessionId,
+		requestId: frame.requestId,
 		requester,
 		extension,
 		finish: (answer, deliver = true) => {
@@ -154,9 +169,11 @@ export async function handlePwExtCli(
 		timeoutMs,
 	);
 	pending.set(requestKey, entry);
-	offRequester = onSocketClose(requester, () =>
-		entry.finish({ ok: false, error: "pw --ext requester disconnected." }, false),
-	);
+	offRequester = onSocketClose(requester, () => {
+		if (settled) return;
+		cancelInExtension(entry);
+		entry.finish({ ok: false, error: "pw --ext requester disconnected." }, false);
+	});
 	offExtension = onSocketClose(extension, () =>
 		entry.finish({
 			ok: false,
@@ -181,6 +198,19 @@ export async function handlePwExtCli(
 			error: "pw --ext request could not be sent; reconnect the extension.",
 		});
 	}
+}
+
+/** Cancels a pending request only for the CLI socket that sent it. */
+export function handlePwExtCliCancel(
+	requester: Socket,
+	sessionId: string,
+	frame: PwExtCliCancel,
+	deps: FrameHandlerDeps,
+): void {
+	const entry = relayState(deps).pending.get(key(sessionId, frame.requestId));
+	if (!entry || entry.requester !== requester) return;
+	cancelInExtension(entry);
+	entry.finish({ ok: false, error: "pw --ext request canceled." }, false);
 }
 
 /** Settles only the pending request this extension socket owns; late or foreign replies are ignored. */

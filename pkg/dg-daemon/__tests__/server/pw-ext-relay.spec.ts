@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { CHAT_MAX_PAYLOAD_BYTES, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import {
+	CHAT_MAX_PAYLOAD_BYTES,
+	CHAT_PROTOCOL_VERSION,
+	PW_EXT_MIN_EXTENSION_VERSION,
+} from "@dg/common";
+
+const MIN_VERSION = PW_EXT_MIN_EXTENSION_VERSION.join(".");
+const [MAJOR, MINOR] = PW_EXT_MIN_EXTENSION_VERSION;
+const OLDER_VERSION =
+	MINOR > 0 ? `${MAJOR}.${MINOR - 1}.99` : `${MAJOR - 1}.999.999`;
 import {
 	cleanupDgHome,
 	closeSockets,
@@ -56,7 +65,7 @@ async function boot() {
 async function extension(
 	port: number,
 	credentials: Credentials,
-	extensionVersion = "1.41.0",
+	extensionVersion = MIN_VERSION,
 ) {
 	const socket = wsExtensionSocket(port);
 	sockets.push(socket);
@@ -169,11 +178,11 @@ describe("daemon pw --ext relay", () => {
 
 	it("refuses an extension that predates pw --ext", async () => {
 		const { cli, results, port, bootstrap } = await boot();
-		const page = await extension(port, bootstrap, "1.40.0");
+		const page = await extension(port, bootstrap, OLDER_VERSION);
 		const requestId = request(cli);
 		const answer = await result(results, requestId);
 		expect(answer.ok).toBe(false);
-		expect(answer.error).toContain("1.41.0");
+		expect(answer.error).toContain(MIN_VERSION);
 		expect(
 			page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request"),
 		).toBe(false);
@@ -284,6 +293,64 @@ describe("daemon pw --ext relay", () => {
 		expect(
 			otherResults.filter((raw) => (raw as CliResult).requestId === requestId),
 		).toHaveLength(1);
+	});
+
+	it("forwards a cancel from the requesting CLI to the extension", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { timeoutMs: 5000 });
+		await relay(page.frames, requestId);
+		send(cli, { type: "cli-pw-ext-cancel", requestId });
+		const cancel = await waitForValue(
+			() =>
+				page.frames.find(
+					(raw) =>
+						frameType(raw) === "pw-ext-browser-cancel" &&
+						(raw as RelayFrame).requestId === requestId,
+				),
+			700,
+			"extension cancel",
+		);
+		expect(cancel).toMatchObject({ sessionId: bootstrap.sessionId });
+		reply(page.socket, bootstrap, requestId);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(
+			results.filter((raw) => (raw as CliResult).type === "cli-pw-ext-result"),
+		).toHaveLength(0);
+	});
+
+	it("ignores a cancel from a CLI that did not send the request", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { timeoutMs: 5000 });
+		await relay(page.frames, requestId);
+		const other = await connectCli(port, bootstrap);
+		sockets.push(other);
+		send(other, { type: "cli-pw-ext-cancel", requestId });
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		expect(
+			page.frames.some((raw) => frameType(raw) === "pw-ext-browser-cancel"),
+		).toBe(false);
+		reply(page.socket, bootstrap, requestId);
+		expect((await result(results, requestId)).ok).toBe(true);
+	});
+
+	it("tells the extension to cancel when the requesting CLI disconnects", async () => {
+		const { cli, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { timeoutMs: 5000 });
+		await relay(page.frames, requestId);
+		cli.close();
+		await waitForValue(
+			() =>
+				page.frames.find(
+					(raw) =>
+						frameType(raw) === "pw-ext-browser-cancel" &&
+						(raw as RelayFrame).requestId === requestId,
+				),
+			1500,
+			"extension cancel after disconnect",
+		);
 	});
 
 	it("fails the request when the extension disconnects", async () => {
