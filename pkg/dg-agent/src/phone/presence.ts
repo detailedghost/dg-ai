@@ -35,6 +35,24 @@ export const PING_ANSWER_CAP = 10;
 export const BUSY_ANSWER_CAP = 10;
 const PING_WINDOW_SECONDS = 60;
 const SEEN_SECONDS = 60 * 60;
+/** Relays known to forward kind 21059 wraps live (checked 2026-11-04). */
+const BEAT_RELAY_HOSTS: ReadonlySet<string> = new Set(["relay.damus.io", "relay.primal.net"]);
+/** Rejects kind 21059 as rate limited (checked 2026-11-04). */
+const NO_BEAT_HOSTS: ReadonlySet<string> = new Set(["nos.lol"]);
+
+function relayHost(url: string): string {
+	try {
+		return new URL(url).hostname.toLowerCase();
+	} catch {
+		return "";
+	}
+}
+
+/** The beat allowlist within `relays`, else `relays` without the hosts that reject kind 21059. */
+export function beatRelays(relays: readonly string[]): string[] {
+	const allowed = relays.filter((relay) => BEAT_RELAY_HOSTS.has(relayHost(relay)));
+	return allowed.length > 0 ? allowed : relays.filter((relay) => !NO_BEAT_HOSTS.has(relayHost(relay)));
+}
 const ID_PATTERN = /^[0-9a-f]{64}$/;
 
 export type PresenceConfig = { minMs: number; maxMs: number; random: () => number };
@@ -103,8 +121,11 @@ export function createPresence(deps: PresenceDeps): Presence {
 		const key = contact && deps.keys().find((entry) => entry.id === contact.keyId);
 		if (!key) return;
 		const rumor = { kind, content: "", tags };
-		const event = kind === PRESENCE_KIND ? wrapEphemeral(rumor, key.sk, pubkeyHex(npub)) : wrapTagged(rumor, key.sk, pubkeyHex(npub));
-		await publish(deps.pool, contactRelays(deps.db, npub), event, { confirmMs: deps.confirmMs, confirmById: false }).catch(() => undefined);
+		const beat = kind === PRESENCE_KIND;
+		const relays = beat ? beatRelays(contactRelays(deps.db, npub)) : contactRelays(deps.db, npub);
+		if (relays.length === 0) return;
+		const event = beat ? wrapEphemeral(rumor, key.sk, pubkeyHex(npub)) : wrapTagged(rumor, key.sk, pubkeyHex(npub));
+		await publish(deps.pool, relays, event, { confirmMs: deps.confirmMs, confirmById: false }).catch(() => undefined);
 	};
 
 	const seenAt = (npub: string, at: number) => {

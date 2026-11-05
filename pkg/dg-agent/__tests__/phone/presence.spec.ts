@@ -8,7 +8,7 @@ import { PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener } from "../../src/phone/listener";
-import { PING_ANSWER_CAP, PRESENCE_FANOUT } from "../../src/phone/presence";
+import { beatRelays, PING_ANSWER_CAP, PRESENCE_FANOUT } from "../../src/phone/presence";
 import { addContact, numberKeyId } from "../../src/phone/store";
 import { createFakePool, type FakePool, makeHomeTracker, parseNdjson } from "./fake-pool";
 import { fakeWormhole } from "./fake-wormhole";
@@ -627,6 +627,45 @@ describe("ephemeral beats", () => {
 			expect(bob.deps.db.recentMessages(10).some((row) => row.text === "sneaky")).toBe(false);
 			expect(opened(alice, RECEIPT_KIND)).toEqual([]);
 		} finally {
+			await bobListener.stop();
+		}
+	});
+});
+
+describe("beat relays", () => {
+	it("keeps the beat allowlist, else the contact relays without nos.lol", () => {
+		expect(beatRelays(["wss://nos.lol", "wss://relay.damus.io/", "wss://relay.primal.net"])).toEqual(["wss://relay.damus.io/", "wss://relay.primal.net"]);
+		expect(beatRelays(["wss://nos.lol", "wss://relay.example", "wss://NOS.lol/"])).toEqual(["wss://relay.example"]);
+		expect(beatRelays(["wss://nos.lol"])).toEqual([]);
+	});
+
+	it("never publishes a beat to nos.lol, while a receipt still may", async () => {
+		const alice = await boot("a");
+		const bob = await boot("b");
+		const relays = ["wss://nos.lol", "wss://relay.damus.io"];
+		addContact(alice.deps.db, { npub: bob.npub, handle: "b", relays, keyId: numberKeyId(alice.deps.db), addedAt: clock, via: "accept" });
+		addContact(bob.deps.db, { npub: alice.npub, handle: "a", relays, keyId: numberKeyId(bob.deps.db), addedAt: clock, via: "accept" });
+		const sent: { kind: number; relays: string[] }[] = [];
+		const publish = pool.publish;
+		pool.publish = (targets, event) => {
+			sent.push({ kind: event.kind, relays: [...targets] });
+			return publish(targets, event);
+		};
+		const bobListener = listen(bob);
+		await bobListener.started;
+		const aliceListener = listen(alice);
+		await aliceListener.started;
+		try {
+			await phoneSay("+b", "hi", alice.deps);
+			const said = printed(alice)[0] as { id: string };
+			await waitUntil(() => typeof deliveredAt(alice, said.id) === "number");
+			expect(sent.filter((entry) => entry.kind === 1059).every((entry) => entry.relays.includes("wss://nos.lol"))).toBe(true);
+
+			const beats = sent.filter((entry) => entry.kind === EPHEMERAL_GIFT_WRAP_KIND);
+			expect(beats.length).toBeGreaterThan(0);
+			expect(beats.every((entry) => entry.relays.join() === "wss://relay.damus.io")).toBe(true);
+		} finally {
+			await aliceListener.stop();
 			await bobListener.stop();
 		}
 	});

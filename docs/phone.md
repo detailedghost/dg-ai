@@ -327,9 +327,12 @@ throwaway keys found:
 | --- | --- |
 | `relay.damus.io` | Forwards it live. Returns it by id for a few seconds, gone after 33 s. |
 | `relay.primal.net` | Forwards it live, and still returns it by id after 33 s, so it stores it. |
-| `nos.lol` | Rejects it: `rate-limited: slow down matey`. It accepts kind 1059 from the same kind of key. |
+| `nos.lol` | Rejects it: `rate-limited: slow down matey`. It accepts kind 1059 from the same kind of key. Beats skip it. |
 
-So a beat reaches a listener through damus and primal, but not nos.lol.
+So beats skip nos.lol. A beat goes to the contact's relays that are
+`relay.damus.io` or `relay.primal.net`. When the contact has neither, it
+goes to the contact's other relays, still without nos.lol. Ping checks and
+receipts use every saved relay of the contact.
 
 When the listener stores a kind 14 or 15 message from a contact, direct or
 thread, it queues a receipt to the sender. Ids are batched per contact, at
