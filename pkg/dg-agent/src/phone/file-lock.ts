@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -6,48 +7,72 @@ import { DgCliError } from "@dg/common";
 import { ensurePrivateDir } from "@dg/common/node";
 
 const LOCK_STALE_MS = 30_000;
-const LIVE_PID_CEILING_MS = 10 * 60_000;
 const LOCK_WAIT_MS = 50;
 const LOCK_HEARTBEAT_MS = LOCK_STALE_MS / 3;
 
 let lockBreaks = 0;
+let ownStart: { value: string | undefined } | undefined;
 
-function holderAlive(content: string): boolean | undefined {
+/** Reads when `pid` started, or undefined where this platform cannot tell. */
+export type StartTimeReader = (pid: number) => string | undefined;
+
+function readStartTime(pid: number): string | undefined {
 	try {
-		const holder: unknown = JSON.parse(content);
-		if (typeof holder !== "object" || holder === null) return undefined;
-		const { pid, host } = holder as { pid?: unknown; host?: unknown };
-		if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0 || host !== hostname()) return undefined;
-		try {
-			process.kill(pid, 0);
-			return true;
-		} catch (err) {
-			return (err as NodeJS.ErrnoException).code !== "ESRCH";
+		if (process.platform === "linux") {
+			const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+			return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] || undefined;
 		}
+		if (process.platform === "win32") return undefined;
+		const ps = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 2_000 });
+		return (ps.status === 0 && ps.stdout.trim()) || undefined;
 	} catch {
 		return undefined;
 	}
 }
 
-function lockStale(path: string): boolean {
+/** Default `StartTimeReader`; on Windows it reads nothing, so a live pid keeps its lock there. */
+export function processStartTime(pid: number): string | undefined {
+	if (pid !== process.pid) return readStartTime(pid);
+	ownStart ??= { value: readStartTime(pid) };
+	return ownStart.value;
+}
+
+function holderAlive(content: string, readStart: StartTimeReader): boolean | undefined {
 	try {
-		const alive = holderAlive(readFileSync(path, "utf8"));
-		const age = Date.now() - statSync(path).mtimeMs;
-		if (alive === undefined) return age >= LOCK_STALE_MS;
-		return !alive || age >= LIVE_PID_CEILING_MS;
+		const holder: unknown = JSON.parse(content);
+		if (typeof holder !== "object" || holder === null) return undefined;
+		const { pid, host, start } = holder as { pid?: unknown; host?: unknown; start?: unknown };
+		if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0 || host !== hostname()) return undefined;
+		try {
+			process.kill(pid, 0);
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code === "ESRCH") return false;
+		}
+		const current = typeof start === "string" ? readStart(pid) : undefined;
+		return current === undefined || current === start;
+	} catch {
+		return undefined;
+	}
+}
+
+function lockStale(path: string, readStart: StartTimeReader): boolean {
+	try {
+		const alive = holderAlive(readFileSync(path, "utf8"), readStart);
+		if (alive !== undefined) return !alive;
+		return Date.now() - statSync(path).mtimeMs >= LOCK_STALE_MS;
 	} catch {
 		return false;
 	}
 }
 
-function breakStaleLock(path: string): void {
+function breakStaleLock(path: string, readStart: StartTimeReader): void {
 	const aside = `${path}.${process.pid}.${(lockBreaks += 1)}`;
 	try {
 		renameSync(path, aside);
 	} catch {
 		return;
 	}
-	if (!lockStale(aside)) {
+	if (!lockStale(aside, readStart)) {
 		try {
 			writeFileSync(path, readFileSync(aside), { flag: "wx", mode: 0o600 });
 		} catch {}
@@ -56,15 +81,15 @@ function breakStaleLock(path: string): void {
 }
 
 /** Takes the lock file once; returns its release, or undefined while another process holds it. */
-export function tryFileLock(root: string, name: string): (() => void) | undefined {
+export function tryFileLock(root: string, name: string, readStart: StartTimeReader = processStartTime): (() => void) | undefined {
 	ensurePrivateDir(root);
 	const path = join(root, name);
-	const token = JSON.stringify({ pid: process.pid, host: hostname(), id: randomBytes(8).toString("hex") });
+	const token = JSON.stringify({ pid: process.pid, host: hostname(), start: readStart(process.pid), id: randomBytes(8).toString("hex") });
 	try {
 		writeFileSync(path, token, { flag: "wx", mode: 0o600 });
 	} catch (err) {
 		if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-		if (lockStale(path)) breakStaleLock(path);
+		if (lockStale(path, readStart)) breakStaleLock(path, readStart);
 		return undefined;
 	}
 	return () => {

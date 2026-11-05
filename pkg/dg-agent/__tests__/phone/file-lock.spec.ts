@@ -30,33 +30,53 @@ function deadPid(): number {
 	return child.pid;
 }
 
+const START = "start-a";
+const startedAt = (start: string | undefined) => () => start;
+
+function holder(extra: Record<string, unknown> = {}): string {
+	return JSON.stringify({ pid: process.pid, host: hostname(), start: START, id: "x", ...extra });
+}
+
 describe("file lock takeover", () => {
 	it("keeps a lock whose holder is alive even when it is past the stale window", () => {
-		const path = plantLock(JSON.stringify({ pid: process.pid, host: hostname(), id: "x" }));
-		expect(tryFileLock(root, NAME)).toBeUndefined();
-		expect(tryFileLock(root, NAME)).toBeUndefined();
+		const path = plantLock(holder());
+		expect(tryFileLock(root, NAME, startedAt(START))).toBeUndefined();
+		expect(tryFileLock(root, NAME, startedAt(START))).toBeUndefined();
 		expect(existsSync(path)).toBe(true);
 	});
 
-	it("takes over a live-pid lock older than the hard ceiling", () => {
-		plantLock(JSON.stringify({ pid: process.pid, host: hostname(), id: "x" }), 11 * 60);
-		tryFileLock(root, NAME);
-		const release = tryFileLock(root, NAME);
+	it("keeps a live sync holder that has held the lock for more than 10 minutes", () => {
+		const path = plantLock(holder(), 11 * 60);
+		expect(tryFileLock(root, NAME, startedAt(START))).toBeUndefined();
+		expect(tryFileLock(root, NAME, startedAt(START))).toBeUndefined();
+		expect(readFileSync(path, "utf8")).toBe(holder());
+	});
+
+	it("takes over a lock whose pid was reused by a process with a different start time", () => {
+		plantLock(holder(), 0);
+		tryFileLock(root, NAME, startedAt("start-b"));
+		const release = tryFileLock(root, NAME, startedAt("start-b"));
 		expect(release).toBeFunction();
 		release?.();
 	});
 
-	it("keeps a live-pid lock whose heartbeat is inside the hard ceiling", () => {
-		const path = plantLock(JSON.stringify({ pid: process.pid, host: hostname(), id: "x" }), 9 * 60);
-		expect(tryFileLock(root, NAME)).toBeUndefined();
-		expect(tryFileLock(root, NAME)).toBeUndefined();
+	it("keeps a live-pid lock older than 10 minutes when the start time cannot be read", () => {
+		const path = plantLock(holder(), 11 * 60);
+		expect(tryFileLock(root, NAME, startedAt(undefined))).toBeUndefined();
+		expect(tryFileLock(root, NAME, startedAt(undefined))).toBeUndefined();
 		expect(existsSync(path)).toBe(true);
 	});
 
+	it("records the holder start time with its pid and host", () => {
+		const release = tryFileLock(root, NAME, startedAt(START));
+		expect(JSON.parse(readFileSync(join(root, NAME), "utf8"))).toMatchObject({ pid: process.pid, host: hostname(), start: START });
+		release?.();
+	});
+
 	it("takes over a lock whose holder pid is dead", () => {
-		plantLock(JSON.stringify({ pid: deadPid(), host: hostname(), id: "x" }), 0);
-		tryFileLock(root, NAME);
-		const release = tryFileLock(root, NAME);
+		plantLock(holder({ pid: deadPid() }), 0);
+		tryFileLock(root, NAME, startedAt(START));
+		const release = tryFileLock(root, NAME, startedAt(START));
 		expect(release).toBeFunction();
 		release?.();
 	});
