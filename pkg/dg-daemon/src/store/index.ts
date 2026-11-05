@@ -2093,6 +2093,13 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		);
 	}
 
+	deleteAsset(sessionId: string, id: string): void {
+		this.db.run(
+			`UPDATE assets SET state = 'deleted', deleted_at = ? WHERE session_id = ? AND id = ? AND state = 'active'`,
+			[new Date().toISOString(), sessionId, id],
+		);
+	}
+
 	#assetBytesAad(sessionId: string, id: string): Buffer {
 		return this.#aad(
 			AAD_ASSET_BYTES,

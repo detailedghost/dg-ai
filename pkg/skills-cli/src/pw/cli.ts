@@ -29,6 +29,8 @@ export async function main(
 		env.err(versionError);
 		return 1;
 	}
+	if (optionArgs(argv).includes("--ext"))
+		return (await import("./ext")).runExt(argv, env);
 	try {
 		const args = normalize(argv);
 		const name = commandName(args);

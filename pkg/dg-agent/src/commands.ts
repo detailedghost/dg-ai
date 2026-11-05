@@ -1,10 +1,6 @@
 import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
-	ASSET_FILENAME_HEADER,
-	CHAT_ASSETS_PATH,
-	CLI_SESSION_ID_HEADER,
-	CLI_SESSION_TOKEN_HEADER,
 	type CliRecvResult,
 	DgCliError,
 	describeError,
@@ -19,7 +15,7 @@ import {
 	frameEnvelope,
 	loadManifestFile,
 	loadSubagentManifestFile,
-	loopbackHostHeader,
+	postAsset,
 	readAssetSourceFile,
 	resolveCliSession,
 	resolveManifestForPublish,
@@ -71,10 +67,6 @@ function isSessionPending(value: unknown): value is {
 
 function isSessionClosed(value: unknown): value is { type: "session-closed" } {
 	return isRecord(value) && value.type === "session-closed";
-}
-
-function isAssetUploadResult(value: unknown): value is { assetId: string } {
-	return isRecord(value) && typeof value.assetId === "string";
 }
 
 async function connectFor(command: Command): Promise<CliClient> {
@@ -257,33 +249,8 @@ export function registerAgentCommands(program: Command): void {
 			const filename = basename(source);
 			const bytes = readAssetSourceFile(source);
 
-			const resp = await fetch(
-				`http://127.0.0.1:${session.port}${CHAT_ASSETS_PATH}`,
-				{
-					method: "POST",
-					headers: {
-						...loopbackHostHeader(session.port),
-						[CLI_SESSION_ID_HEADER]: session.sessionId,
-						[CLI_SESSION_TOKEN_HEADER]: session.token,
-						[ASSET_FILENAME_HEADER]: encodeURIComponent(filename),
-					},
-					body: new Uint8Array(
-						bytes.buffer as ArrayBuffer,
-						bytes.byteOffset,
-						bytes.byteLength,
-					),
-				},
-			);
-			if (!resp.ok) {
-				throw new DgCliError(await resp.text());
-			}
-			const result: unknown = await resp.json();
-			if (!isAssetUploadResult(result)) {
-				throw new DgCliError(
-					"dg-daemon returned a malformed asset upload response",
-				);
-			}
-			await writeStdout(`${result.assetId}\n`);
+			const assetId = await postAsset(session, filename, bytes);
+			await writeStdout(`${assetId}\n`);
 		});
 
 	program

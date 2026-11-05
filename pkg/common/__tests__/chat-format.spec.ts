@@ -316,6 +316,38 @@ function buildProtoBrowserProgressFrame(
 	};
 }
 
+function buildPwExtBrowserRequestFrame() {
+	return {
+		type: "pw-ext-browser-request",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		request: { verb: "current" },
+		timeoutMs: 1000,
+	};
+}
+
+function buildPwExtBrowserCancelFrame() {
+	return {
+		type: "pw-ext-browser-cancel",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+	};
+}
+
+function buildPwExtBrowserResultFrame() {
+	return {
+		type: "pw-ext-browser-result",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		ok: true,
+		data: { text: "### Page" },
+	};
+}
+
 function buildOverwatchStateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "overwatch-state" as const,
@@ -377,6 +409,9 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["proto-browser-request", buildProtoBrowserRequestFrame],
 	["proto-browser-result", buildProtoBrowserResultFrame],
 	["proto-browser-progress", buildProtoBrowserProgressFrame],
+	["pw-ext-browser-request", buildPwExtBrowserRequestFrame],
+	["pw-ext-browser-cancel", buildPwExtBrowserCancelFrame],
+	["pw-ext-browser-result", buildPwExtBrowserResultFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],

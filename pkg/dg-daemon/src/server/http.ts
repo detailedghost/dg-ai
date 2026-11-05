@@ -46,6 +46,7 @@ import {
 	assetContentDisposition,
 	resolveAssetContentType,
 } from "../assets/content-type";
+import { deleteStagedAsset } from "../assets/delete";
 import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
@@ -401,6 +402,13 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				req.method === "GET"
 			) {
 				return handleAssetGet(req, url, deps);
+			}
+
+			if (
+				url.pathname.startsWith(`${CHAT_ASSETS_PATH}/`) &&
+				req.method === "DELETE"
+			) {
+				return handleAssetDelete(req, url, deps);
 			}
 
 			if (
@@ -1329,6 +1337,31 @@ const ASSET_ERROR_RESPONSES: Record<
 		message: "refused: staged asset failed integrity checks",
 	},
 };
+
+function handleAssetDelete(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+): Response {
+	const credentials = requireSessionCredentials(req, deps.registry);
+	if (credentials instanceof Response) return credentials;
+	let id: string;
+	try {
+		id = decodeURIComponent(url.pathname.slice(`${CHAT_ASSETS_PATH}/`.length));
+		deleteStagedAsset(
+			{ paths: deps.paths, store: deps.store },
+			credentials.sessionId,
+			id,
+		);
+	} catch {
+		return new Response("refused: invalid asset id", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	deps.noteActivity();
+	return new Response(null, { status: 204, headers: NOSNIFF_HEADERS });
+}
 
 async function handleAssetGet(
 	req: Request,

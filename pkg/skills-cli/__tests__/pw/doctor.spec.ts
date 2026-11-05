@@ -114,6 +114,14 @@ describe("pwChecks list", () => {
 		expect(ids.some((id) => /state/.test(id))).toBe(true);
 	});
 
+	test("checks the extension pairing for pw --ext as information only", async () => {
+		const paired = pwChecks.find((check) => check.id === "extension-paired");
+		expect(paired).toBeDefined();
+		const result = await paired!.run(context());
+		expect(result.status).toBe("info");
+		expect(result.detail).toStartWith("--ext only:");
+	});
+
 	test("has unique check ids", () => {
 		const ids = pwChecks.map((check) => check.id);
 		expect(new Set(ids).size).toBe(ids.length);

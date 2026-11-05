@@ -1,11 +1,14 @@
 import {
+	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
+	CHAT_MAX_ASSET_BYTES,
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_PATH,
 	type ChatFrame,
+	type PwExtRequest,
 	type SessionBootstrap,
 	emitRedacted,
 	noteSecret,
@@ -29,6 +32,16 @@ import {
 	type ProtoBrowserRequest,
 	type ProtoResultFrame,
 } from "./proto";
+import {
+	createPwExtHandler,
+	type PwExtBrowserApi,
+	type PwExtContext,
+	type PwExtResult,
+} from "./pw-ext";
+import {
+	createPwExtApprover,
+	type PwExtApprovalApi,
+} from "./pw-ext-approval";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import {
 	CHAT_SESSION_KEY_PREFIX,
@@ -53,6 +66,7 @@ function chatSessionKey(sessionId: string): string {
 }
 
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
+const PW_EXT_LIVENESS_MS = 250;
 
 type ChatActionApi = {
 	onClicked: {
@@ -171,6 +185,12 @@ export type RegisterChatOptions = {
 		request: ProtoBrowserRequest,
 		onProgress: (status: string) => void,
 	) => Promise<ProtoResultFrame>;
+	pwExtHandler?: (
+		request: PwExtRequest,
+		timeoutMs: number,
+		signal?: AbortSignal,
+		context?: PwExtContext,
+	) => Promise<PwExtResult>;
 };
 
 function isMarkerCapturedMessage(
@@ -237,8 +257,30 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const protoHandler =
 		options.protoHandler ??
 		createProtoHandler({ browserApi: api as unknown as ProtoBrowserApi });
+	let defaultPwExt: ReturnType<typeof createPwExtHandler> | undefined;
+	const pwExtHandler =
+		options.pwExtHandler ??
+		((
+			request: PwExtRequest,
+			timeoutMs: number,
+			signal?: AbortSignal,
+			context?: PwExtContext,
+		) => {
+			defaultPwExt ??= createPwExtHandler({
+				browserApi: api as unknown as PwExtBrowserApi,
+				approve: createPwExtApprover(api as unknown as PwExtApprovalApi),
+			});
+			return defaultPwExt(request, timeoutMs, signal, context);
+		});
 	const pendingInbox = new Set<string>();
 	const pendingProto = new Set<string>();
+	const pendingPwExt = new Set<string>();
+	const pwExtCancels = new Map<string, { sessionId: string; cancel: AbortController }>();
+	function cancelPwExt(sessionId?: string): void {
+		for (const entry of pwExtCancels.values())
+			if (sessionId === undefined || entry.sessionId === sessionId)
+				entry.cancel.abort();
+	}
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	function holdBootstrap(bootstrap: SessionBootstrap): void {
 		noteSecret(bootstrap.token);
@@ -277,6 +319,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const cleanup = () => {
 			if (currentSocket !== socket) return;
 			currentSocket = undefined;
+			cancelPwExt();
 			stopKeepalive();
 			failPendingConfigRequests("the daemon connection closed");
 		};
@@ -643,9 +686,103 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				.finally(() => pendingProto.delete(requestKey));
 			return;
 		}
+		if (frame.type === "pw-ext-browser-cancel") {
+			if (bootstrapsBySession.has(frame.sessionId))
+				pwExtCancels
+					.get(JSON.stringify([frame.sessionId, frame.requestId]))
+					?.cancel.abort();
+			return;
+		}
+		if (frame.type === "pw-ext-browser-request") {
+			const bootstrap = bootstrapsBySession.get(frame.sessionId);
+			const socket = currentSocket;
+			const requestKey = JSON.stringify([frame.sessionId, frame.requestId]);
+			if (
+				!bootstrap ||
+				!socket ||
+				!keepaliveEligible.has(frame.sessionId) ||
+				pendingPwExt.has(requestKey)
+			) {
+				return;
+			}
+			pendingPwExt.add(requestKey);
+			const live = () =>
+				currentSocket === socket &&
+				bootstrapsBySession.get(frame.sessionId) === bootstrap &&
+				keepaliveEligible.has(frame.sessionId);
+			const cancel = new AbortController();
+			pwExtCancels.set(requestKey, { sessionId: frame.sessionId, cancel });
+			const watch = setInterval(() => {
+				if (!live()) cancel.abort();
+			}, PW_EXT_LIVENESS_MS);
+			const deadline = setTimeout(() => cancel.abort(), frame.timeoutMs);
+			const sendPwExt = (result: PwExtResult): void => {
+				if (!live()) return;
+				try {
+					socket.send(
+						JSON.stringify({
+							type: "pw-ext-browser-result",
+							...result,
+							sessionId: frame.sessionId,
+							requestId: frame.requestId,
+							token: bootstrap.token,
+							protocolVersion: CHAT_PROTOCOL_VERSION,
+						}),
+					);
+				} catch {
+					return;
+				}
+			};
+			const context: PwExtContext = {
+				async fetchAsset(assetId) {
+					const response = await fetch(
+						`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
+						{
+							headers: {
+								"X-Dg-Session-Id": bootstrap.sessionId,
+								"X-Dg-Session-Token": bootstrap.token,
+							},
+						},
+					);
+					if (!response.ok) throw new Error("the staged file is not available");
+					const blob = await response.blob();
+					if (blob.size > CHAT_MAX_ASSET_BYTES)
+						throw new Error("the staged file is too large");
+					return blob;
+				},
+				async deleteAsset(assetId) {
+					await fetch(
+						`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
+						{
+							method: "DELETE",
+							headers: {
+								"X-Dg-Session-Id": bootstrap.sessionId,
+								"X-Dg-Session-Token": bootstrap.token,
+							},
+						},
+					);
+				},
+			};
+			void pwExtHandler(frame.request, frame.timeoutMs, cancel.signal, context)
+				.then(sendPwExt)
+				.catch(() =>
+					sendPwExt({
+						ok: false,
+						error: "pw --ext failed in the extension before it reported a result.",
+					}),
+				)
+				.finally(() => {
+					clearInterval(watch);
+					clearTimeout(deadline);
+					pwExtCancels.delete(requestKey);
+					pendingPwExt.delete(requestKey);
+				});
+			return;
+		}
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {
 			client.forgetSession(frame.sessionId);
 			bootstrapsBySession.delete(frame.sessionId);
+			cancelPwExt(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			void api.storage.session.remove(chatSessionKey(frame.sessionId));
 			if (keepaliveEligible.size === 0) stopKeepalive();
@@ -672,6 +809,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		}
 		if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			bootstrapsBySession.delete(frame.sessionId);
+			cancelPwExt(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			void api.storage.session.remove(chatSessionKey(frame.sessionId));
 			if (keepaliveEligible.size === 0) stopKeepalive();
@@ -882,6 +1020,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						for (const sessionId of closedIds) {
 							client.forgetSession(sessionId);
 							bootstrapsBySession.delete(sessionId);
+							cancelPwExt(sessionId);
 							keepaliveEligible.delete(sessionId);
 							await api.storage.session.remove(chatSessionKey(sessionId));
 						}
@@ -946,6 +1085,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 							await client.disconnectSession(sessionId);
 							await api.storage.session.remove(chatSessionKey(sessionId));
 							bootstrapsBySession.delete(sessionId);
+							cancelPwExt(sessionId);
 							keepaliveEligible.delete(sessionId);
 							if (keepaliveEligible.size === 0) stopKeepalive();
 							broadcastPairingStatus();

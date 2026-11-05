@@ -255,3 +255,44 @@ describe("GET /assets/:id", () => {
 		expect(await resp.text()).toContain("maximum size");
 	});
 });
+
+describe("DELETE /assets/:id", () => {
+	it("deletes the owning session's asset and its staged file", async () => {
+		const { port, bootstrap, paths } = await bootWithAsset({
+			id: "asset-del",
+			filename: "a.txt",
+			contentType: "text/plain",
+			bytes: Buffer.from("hello"),
+		});
+		const file = join(getConfiguredAssetDirectory(paths), bootstrap.sessionId, "asset-del");
+		expect(await Bun.file(file).exists()).toBe(true);
+		const deleted = await fetch(assetUrl(port, "asset-del"), {
+			method: "DELETE",
+			headers: authedHeaders(port, bootstrap),
+		});
+		expect(deleted.status).toBe(204);
+		expect(await Bun.file(file).exists()).toBe(false);
+		const after = await fetch(assetUrl(port, "asset-del"), {
+			headers: authedHeaders(port, bootstrap),
+		});
+		expect(after.status).toBe(404);
+	});
+
+	it("refuses a delete without the session capability", async () => {
+		const { port, bootstrap } = await bootWithAsset({
+			id: "asset-keep",
+			filename: "a.txt",
+			contentType: "text/plain",
+			bytes: Buffer.from("hello"),
+		});
+		const refused = await fetch(assetUrl(port, "asset-keep"), {
+			method: "DELETE",
+			headers: authedHeaders(port, { sessionId: bootstrap.sessionId, token: "wrong" }),
+		});
+		expect(refused.status).toBe(401);
+		const still = await fetch(assetUrl(port, "asset-keep"), {
+			headers: authedHeaders(port, bootstrap),
+		});
+		expect(still.status).toBe(200);
+	});
+});

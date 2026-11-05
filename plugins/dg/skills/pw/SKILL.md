@@ -19,6 +19,14 @@ If a step fails, run dg-skills doctor pw pw-code stash.
 
 `/dg:pw` drives a browser through `playwright-core`. It needs Bun >= 1.4.0 and Google Chrome or Microsoft Edge. Below, `pw <command>` means `dg-skills pw <command>`.
 
+**Usage:** `dg-skills pw [--ext] <command> [args]`
+
+## Flags
+
+| Flag | Short | Effect | Default |
+|---|---|---|---|
+| `--ext` | | Act on the human's real browser through the paired dg-ai-extension. See "Real browser". | off (local is the default) |
+
 ## Calling rules
 
 - Run every step as `dg-skills pw <command>`. Open with `pw open`.
@@ -74,6 +82,11 @@ Opening a persistent session that another directory holds is refused. Close it t
 Snapshots, screenshots, downloads, traces, and videos land in `dg-skills stash pw`. Nothing goes to the project unless you pass `--out=<dir>`.
 `pw state save <name>` stores a login in a private directory. Prefer it over `pw state-save <file>`, which leaves a full cookie jar in a plain file.
 
+## Real browser (`--ext`)
+
+Use `--ext` only when the human asks you to look at or act on the page they have open. Plain `pw` stays the default for tests, recording, mocking and isolated runs.
+Every `--ext` call opens an approval window in the browser. If the human denies, stop and do not retry. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, refs, uploads and blocked pages: `references/real-browser.md`.
+
 ## Security
 
 A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings pass a guard that allows only locator calls. `pw eval` runs JavaScript in the page, so run only code you wrote or checked.
@@ -90,3 +103,4 @@ A target is a ref, a CSS selector, or a `getBy...(...)` string. `getBy` strings 
 | `pw-code` recipes and approval | `references/running-code.md` |
 | Cookies, storage, state files | `references/storage-state.md` |
 | Tracing and video | `references/tracing.md`, `references/video-recording.md` |
+| Real browser with `--ext` | `references/real-browser.md` |

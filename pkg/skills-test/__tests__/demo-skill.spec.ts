@@ -111,9 +111,13 @@ describe("demo skill", () => {
 			(match) => match[1] as string,
 		);
 		expect([...new Set(links)].sort()).toEqual([
+			"references/attach-pr.md",
 			"references/authoring.md",
 			"references/extension.md",
 		]);
+		expect(skillFile("references/attach-pr.md")).toContain(
+			"dg-skills pw --ext upload",
+		);
 		for (const link of links) expect(skillFile(link)).not.toContain("TODO");
 		expect(skillFile("references/extension.md")).toMatch(/Alt\+Shift\+D/);
 		expect(skillFile("references/authoring.md")).toMatch(

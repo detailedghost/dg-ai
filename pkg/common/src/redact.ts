@@ -60,7 +60,8 @@ const PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
 
 function envSecrets(): string[] {
 	const values: string[] = [];
-	for (const [name, value] of Object.entries(process.env)) {
+	const env = typeof process === "undefined" ? undefined : process?.env;
+	for (const [name, value] of Object.entries(env ?? {})) {
 		if (!value || value.length < 8 || !SECRET_NAME.test(name)) continue;
 		values.push(value);
 	}

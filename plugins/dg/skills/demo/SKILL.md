@@ -56,7 +56,7 @@ dg-skills demo --help >/dev/null 2>&1 ||
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
 On Windows PowerShell, pipe the raw `bootstrap.ps1` to `Invoke-Expression`.
-If a step fails, run dg-skills doctor demo install rerun.
+If a step fails, run dg-skills doctor demo install rerun pw.
 
 Walk the plan yourself first, so you hit a bad selector before the human does.
 Run `dg-skills demo --verify /tmp/ai/demo/tour.md`. It prints `{"ok": boolean, "findings": [...]}`. A finding is `selector-unresolved`,
@@ -87,6 +87,7 @@ Confirm the `start screen open` line printed, then stop. `dg-skills demo status 
 | `--verify <plan>` | none | Walk the plan and print findings JSON. Local unless `--ext`. | off |
 | `--print` | none | `--ext` only: print the marker URL. | off |
 | `--edit` | none | `--ext` only: open the review panel first. | off |
+| `--attach-pr <pr>` | none | Skill flag, not a CLI flag: after the run, attach the video to a GitHub PR. See [references/attach-pr.md](references/attach-pr.md). | off |
 
 On WSL, `demo` drives the Windows browser by default and falls back to headless
 Chromium inside WSL, like the [`pw` skill](../pw/SKILL.md). Headless needs `--video`.

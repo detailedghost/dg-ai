@@ -18,6 +18,7 @@ export * from "./pairing";
 export * from "./plan-format";
 export * from "./protected-branch";
 export * from "./proto-format";
+export * from "./pw-ext-format";
 export * from "./regex";
 export * from "./serial-queue";
 export * from "./session-connect";
