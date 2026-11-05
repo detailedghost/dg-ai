@@ -32,7 +32,8 @@ set of fields per verb, so the wire carries no code and no approval.
 The extension (`pkg/extension/lib/background/pw-ext.ts`) acts on the active tab
 of the last focused normal window. Before it asks, it refuses browser settings
 pages, extension pages, `file:` and `about:` pages, the web stores, and the
-signed-in Proton Mail tab. It then opens an extension popup window,
+signed-in Proton Mail tab, for every verb except `current`, which hides those
+tabs' URLs and titles, and `open`, which opens a new tab. It then opens an extension popup window,
 `pw-approve.html`, that names the verb and the tab. Write verbs say that they
 change the page. Every call asks; nothing is remembered. Only that popup page,
 loaded with a random per-request nonce, can answer
@@ -40,7 +41,8 @@ loaded with a random per-request nonce, can answer
 second request while one is open counts as deny. After approval the extension
 checks that the tab did not navigate, then runs a fixed function from
 `pkg/extension/lib/features/pw-ext-page.ts` in the isolated world through
-`scripting.executeScript`. That function checks the document URL against the
+`scripting.executeScript`. Session teardown cancels a pending request, and
+the handler checks for cancellation again just before it acts. That function checks the document URL against the
 approved URL before it acts, and a screenshot is discarded if the window shows
 another tab after capture. The output passes `redactText` in the extension and
 again in the CLI, and stays under 100,000 characters of text or the proto

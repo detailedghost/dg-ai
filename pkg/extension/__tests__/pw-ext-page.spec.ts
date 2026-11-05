@@ -222,3 +222,34 @@ describe("review round 1 hardening", () => {
 		expect(JSON.stringify(click).length).toBeLessThan(500);
 	});
 });
+
+describe("review round 2 hardening", () => {
+	it("leaves multiline and long secrets out of ancestor names and text", () => {
+		const long = "k".repeat(120);
+		page(`<div role="group"><div contenteditable="true" id="api_token">correct
+horse
+battery
+staple</div></div>
+		<button><span>Save</span><textarea name="client_secret">${long}</textarea></button>`);
+		const text = JSON.stringify(pwExtPageAction({ kind: "snapshot" }));
+		for (const word of ["correct", "horse", "staple", "kkkkkkkkkk"])
+			expect(text).not.toContain(word);
+		expect(text).toContain('button \\"Save\\"');
+	});
+
+	it("returns nothing when a selection crosses a secret field", () => {
+		page(`<p id="a">public</p><div contenteditable="true" id="api_token">hidden-secret</div><p id="b">after</p>`);
+		const range = window.document.createRange();
+		range.setStart(el<Node>("#a") as never, 0);
+		range.setEnd(el<Node>("#b") as never, 1);
+		window.getSelection()?.addRange(range);
+		expect(pwExtPageAction({ kind: "selection" })).toEqual({ text: "" });
+	});
+
+	it("redacts token-like text before it leaves the page", () => {
+		page(`<p>Bearer super-secret-access-token and ghp_abcdefghijklmnopqrstu</p>`);
+		const text = JSON.stringify(pwExtPageAction({ kind: "snapshot" }));
+		expect(text).not.toContain("super-secret-access-token");
+		expect(text).not.toContain("ghp_abcdefghijklmnopqrstu");
+	});
+});

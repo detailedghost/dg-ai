@@ -139,7 +139,10 @@ export function pwExtPageAction(
 		if (ids)
 			return ids
 				.split(/\s+/)
-				.map((id) => doc.getElementById(id)?.textContent ?? "")
+				.map((id) => {
+					const target = doc.getElementById(id);
+					return target ? safeText(target) : "";
+				})
 				.join(" ");
 		const aria = el.getAttribute("aria-label");
 		if (aria) return aria;
@@ -147,14 +150,15 @@ export function pwExtPageAction(
 			const label = doc.querySelector(
 				`label[for="${el.id.replace(/["\\]/g, "\\$&")}"]`,
 			);
-			if (label) return label.textContent ?? "";
+			if (label) return safeText(label);
 		}
 		const wrapping = el.closest("label");
 		if (wrapping) {
 			const copy = wrapping.cloneNode(true) as Element;
 			for (const field of copy.querySelectorAll("input,select,textarea"))
 				field.remove();
-			if (copy.textContent?.trim()) return copy.textContent;
+			const text = safeText(copy);
+			if (text.trim()) return text;
 		}
 		return (
 			el.getAttribute("alt") ??
@@ -169,7 +173,7 @@ export function pwExtPageAction(
 		if (label.trim()) return squash(label);
 		if (["textbox", "searchbox", "combobox", "checkbox", "radio"].includes(r))
 			return "";
-		return squash(el.textContent ?? "");
+		return squash(safeText(el));
 	};
 
 	const describe = (el: Element): string => {
@@ -183,13 +187,72 @@ export function pwExtPageAction(
 			doc.querySelectorAll("textarea,[contenteditable],[role='textbox']"),
 		).filter(isSecret);
 
-	const scrub = (value: string): string => {
-		let out = value;
-		for (const field of secretFields()) {
-			const secret = (field.textContent ?? "").trim();
-			if (secret) out = out.split(secret).join(REDACTED);
-		}
-		return out;
+	const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
+	const BLOCK = /^(P|DIV|LI|UL|OL|H[1-6]|TR|TABLE|SECTION|ARTICLE|HEADER|FOOTER|NAV|MAIN|ASIDE|FORM|BLOCKQUOTE|PRE|DT|DD|BR|LABEL|BUTTON)$/;
+
+	const safeText = (root: Element): string => {
+		const parts: string[] = [];
+		const visit = (node: Node): void => {
+			if (node.nodeType === 3) {
+				parts.push(node.nodeValue ?? "");
+				return;
+			}
+			if (node.nodeType !== 1) return;
+			const el = node as Element;
+			if (SKIP_TAGS.has(el.tagName) || isSecret(el)) return;
+			for (const child of Array.from(el.childNodes)) visit(child);
+		};
+		visit(root);
+		return parts.join(" ");
+	};
+
+	const visibleText = (): string => {
+		const parts: string[] = [];
+		const visit = (node: Node): void => {
+			if (node.nodeType === 3) {
+				const value = (node.nodeValue ?? "").replace(/\s+/g, " ");
+				if (value.trim()) parts.push(value);
+				return;
+			}
+			if (node.nodeType !== 1) return;
+			const el = node as Element;
+			if (SKIP_TAGS.has(el.tagName) || el.tagName === "TEXTAREA") return;
+			if (isSecret(el) || hidden(el)) return;
+			const block = BLOCK.test(el.tagName);
+			if (block) parts.push("\n");
+			for (const child of Array.from(el.childNodes)) visit(child);
+			if (block) parts.push("\n");
+		};
+		visit(doc.body);
+		return parts
+			.join("")
+			.replace(/[ \t]*\n[ \t]*/g, "\n")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim();
+	};
+
+	const TOKEN_PATTERNS: [RegExp, string][] = [
+		[/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, `Bearer ${REDACTED}`],
+		[/([?#&](?:token|access_token|refresh_token|id_token|code|session|api_key|apikey|key|password|secret)=)[^&#\s]+/gi, `$1${REDACTED}`],
+		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
+		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, REDACTED],
+		[/((?:password|passwd|secret|token|api[-_]?key)\s*[:=]\s*)\S+/gi, `$1${REDACTED}`],
+	];
+	const redactTokens = (value: string): string =>
+		TOKEN_PATTERNS.reduce(
+			(out, [pattern, replacement]) => out.replace(pattern, replacement),
+			value,
+		);
+	const sanitize = (result: PwExtPageResult): PwExtPageResult => {
+		const out: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(result))
+			out[key] =
+				typeof value === "string"
+					? redactTokens(value)
+					: Array.isArray(value)
+						? value.map((entry) => redactTokens(String(entry)))
+						: value;
+		return out as PwExtPageResult;
 	};
 
 	const insideSecret = (node: Node | null | undefined): boolean => {
@@ -248,7 +311,7 @@ export function pwExtPageAction(
 				if (!LEAF.has(r)) {
 					walk(child, depth + 1);
 					if (lines.length === before + 1) {
-						const text = squash(child.textContent ?? "", 120);
+						const text = squash(safeText(child), 120);
 						if (text) lines[before] += `: ${text}`;
 					}
 				}
@@ -256,13 +319,10 @@ export function pwExtPageAction(
 		};
 		walk(doc.body, 0);
 		if (nodes >= NODE_MAX) lines.push(`[truncated: more than ${NODE_MAX} nodes]`);
-		const body = doc.body as HTMLElement;
-		const text = (body.innerText ?? body.textContent ?? "")
-			.replace(/\n{3,}/g, "\n\n")
-			.trim();
+		const text = visibleText();
 		return {
-			tree: cap(scrub(lines.join("\n")), TREE_MAX),
-			text: cap(scrub(text), TEXT_MAX),
+			tree: cap(lines.join("\n"), TREE_MAX),
+			text: cap(text, TEXT_MAX),
 		};
 	};
 
@@ -344,10 +404,11 @@ export function pwExtPageAction(
 		if (
 			insideSecret(selected?.anchorNode) ||
 			insideSecret(selected?.focusNode) ||
-			(active && insideSecret(active))
+			(active && insideSecret(active)) ||
+			secretFields().some((field) => selected?.containsNode(field, true))
 		)
 			return { text: "" };
-		return { text: cap(scrub(selected?.toString() ?? ""), SELECTION_MAX) };
+		return { text: cap(selected?.toString() ?? "", SELECTION_MAX) };
 	};
 
 	const consoleCapture = (): PwExtPageResult => {
@@ -383,16 +444,19 @@ export function pwExtPageAction(
 		return {
 			error: "The page changed after approval; nothing was done. Retry.",
 		};
-	switch (action.kind) {
-		case "snapshot":
-			return snapshot();
-		case "click":
-			return click(action.target);
-		case "fill":
-			return fill(action.target, action.value);
-		case "selection":
-			return selection();
-		case "console":
-			return consoleCapture();
-	}
+	const run = (): PwExtPageResult => {
+		switch (action.kind) {
+			case "snapshot":
+				return snapshot();
+			case "click":
+				return click(action.target);
+			case "fill":
+				return fill(action.target, action.value);
+			case "selection":
+				return selection();
+			case "console":
+				return consoleCapture();
+		}
+	};
+	return sanitize(run());
 }

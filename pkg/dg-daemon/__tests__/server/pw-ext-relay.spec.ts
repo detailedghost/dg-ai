@@ -266,6 +266,26 @@ describe("daemon pw --ext relay", () => {
 		expect(answer.error).toMatch(/size limit/);
 	});
 
+	it("refuses a reused requestId so a late reply cannot settle a new call", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { timeoutMs: 100 });
+		await relay(page.frames, requestId);
+		expect((await result(results, requestId, 2000)).error).toMatch(/timed out/);
+		const other = await connectCli(port, bootstrap);
+		sockets.push(other);
+		const otherResults = collectFrames(other);
+		request(other, { requestId, request: { verb: "click", target: "e1" } });
+		const reused = await result(otherResults, requestId);
+		expect(reused.ok).toBe(false);
+		expect(reused.error).toMatch(/already used/);
+		reply(page.socket, bootstrap, requestId, { text: "old snapshot result" });
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(
+			otherResults.filter((raw) => (raw as CliResult).requestId === requestId),
+		).toHaveLength(1);
+	});
+
 	it("fails the request when the extension disconnects", async () => {
 		const { cli, results, port, bootstrap } = await boot();
 		const page = await extension(port, bootstrap);

@@ -25,6 +25,11 @@ type Tab = {
 	incognito?: boolean;
 };
 
+type TabEvent<T> = {
+	addListener(listener: T): void;
+	removeListener(listener: T): void;
+};
+
 /** Promise-based Chromium MV3 surface the handler needs. */
 export type PwExtBrowserApi = {
 	windows: {
@@ -44,6 +49,9 @@ export type PwExtBrowserApi = {
 			windowId: number,
 			options: { format: "jpeg"; quality: number },
 		): Promise<string>;
+		onActivated: TabEvent<(info: { tabId: number; windowId: number }) => void>;
+		onUpdated: TabEvent<(tabId: number, change: { url?: string; status?: string }) => void>;
+		onRemoved: TabEvent<(tabId: number) => void>;
 	};
 	scripting: {
 		executeScript(details: {
@@ -77,6 +85,10 @@ const STORE_HOSTS = new Set([
 export const PW_EXT_MAILBOX_ERROR =
 	"pw --ext does not read or change the signed-in Proton Mail tab. Use dg-skills inbox.";
 const MAX_TABS = 200;
+const CANCELED: PwExtResult = {
+	ok: false,
+	error: "The request was canceled before it ran.",
+};
 const MAX_PAGE_RESULT_CHARS = 150_000;
 const PAGE_RESULT_KEYS = [
 	["tree", "text"],
@@ -157,7 +169,7 @@ function detailFor(request: PwExtRequest): string | undefined {
 		case "click":
 			return `Click ${request.target}`;
 		case "fill":
-			return `Fill ${request.target} with "${(request.value ?? "").slice(0, 200)}"`;
+			return `Fill ${request.target} with:\n${request.value ?? ""}`;
 		default:
 			return undefined;
 	}
@@ -191,6 +203,31 @@ export function createPwExtHandler({
 		return tab;
 	}
 
+	function watchTab(tab: Tab & { id: number }) {
+		let changed = false;
+		const onActivated = (info: { windowId: number }) => {
+			if (info.windowId === tab.windowId) changed = true;
+		};
+		const onUpdated = (tabId: number, change: { url?: string; status?: string }) => {
+			if (tabId === tab.id && (change.url !== undefined || change.status === "loading"))
+				changed = true;
+		};
+		const onRemoved = (tabId: number) => {
+			if (tabId === tab.id) changed = true;
+		};
+		api.tabs.onActivated.addListener(onActivated);
+		api.tabs.onUpdated.addListener(onUpdated);
+		api.tabs.onRemoved.addListener(onRemoved);
+		return {
+			changed: () => changed,
+			stop() {
+				api.tabs.onActivated.removeListener(onActivated);
+				api.tabs.onUpdated.removeListener(onUpdated);
+				api.tabs.onRemoved.removeListener(onRemoved);
+			},
+		};
+	}
+
 	async function inPage(tab: Tab & { id: number }, action: PwExtPageAction) {
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
@@ -215,6 +252,7 @@ export function createPwExtHandler({
 	async function run(
 		request: PwExtRequest,
 		tab: Tab & { id: number },
+		watch?: { changed(): boolean },
 	): Promise<PwExtResult> {
 		const ok = (text: string, image?: string): PwExtResult => ({
 			ok: true,
@@ -241,7 +279,12 @@ export function createPwExtHandler({
 					active: true,
 					windowId: tab.windowId,
 				});
-				if (after.url !== tab.url || after.active === false || shown?.id !== tab.id)
+				if (
+					watch?.changed() ||
+					after.url !== tab.url ||
+					after.active === false ||
+					shown?.id !== tab.id
+				)
 					return {
 						ok: false,
 						error: "The tab changed during the screenshot; it was discarded.",
@@ -332,19 +375,25 @@ export function createPwExtHandler({
 				timeoutMs,
 				signal,
 			);
-			if (signal?.aborted)
-				return { ok: false, error: "The request was canceled before it ran." };
+			if (signal?.aborted) return CANCELED;
 			if (!approved)
 				return { ok: false, error: "The request was denied in the browser." };
-			if (scoped) {
-				const now = await api.tabs.get(tab.id);
-				if (now.url !== tab.url || now.active === false)
-					return {
-						ok: false,
-						error: "The tab changed after approval; nothing was done. Retry.",
-					};
+			const target = { ...tab, id: tab.id };
+			const watch = request.verb === "screenshot" ? watchTab(target) : undefined;
+			try {
+				if (scoped) {
+					const now = await api.tabs.get(tab.id);
+					if (now.url !== tab.url || now.active === false)
+						return {
+							ok: false,
+							error: "The tab changed after approval; nothing was done. Retry.",
+						};
+				}
+				if (signal?.aborted) return CANCELED;
+				return await run(request, target, watch);
+			} finally {
+				watch?.stop();
 			}
-			return await run(request, { ...tab, id: tab.id });
 		} catch (error) {
 			return {
 				ok: false,

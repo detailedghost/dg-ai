@@ -55,6 +55,8 @@ Rules:
   those fields. Screenshots are not redacted: they show what is on the screen.
 - If the dg session closes while the approval window is open, the request is
   canceled and the window closes.
+  If only the CLI stops (for example Ctrl-C), the window stays open until you
+  answer it or it times out; deny it if you no longer want the action.
 - There is no code execution: no `eval`, no `run-code`, and no other pw flags.
 - `console` starts capture on the first call for a tab. It shows errors after
   that point, not `console.warn` output and not earlier errors.

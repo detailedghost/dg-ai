@@ -266,6 +266,12 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const pendingInbox = new Set<string>();
 	const pendingProto = new Set<string>();
 	const pendingPwExt = new Set<string>();
+	const pwExtCancels = new Map<string, { sessionId: string; cancel: AbortController }>();
+	function cancelPwExt(sessionId?: string): void {
+		for (const entry of pwExtCancels.values())
+			if (sessionId === undefined || entry.sessionId === sessionId)
+				entry.cancel.abort();
+	}
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	function holdBootstrap(bootstrap: SessionBootstrap): void {
 		noteSecret(bootstrap.token);
@@ -304,6 +310,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const cleanup = () => {
 			if (currentSocket !== socket) return;
 			currentSocket = undefined;
+			cancelPwExt();
 			stopKeepalive();
 			failPendingConfigRequests("the daemon connection closed");
 		};
@@ -688,6 +695,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				bootstrapsBySession.get(frame.sessionId) === bootstrap &&
 				keepaliveEligible.has(frame.sessionId);
 			const cancel = new AbortController();
+			pwExtCancels.set(requestKey, { sessionId: frame.sessionId, cancel });
 			const watch = setInterval(() => {
 				if (!live()) cancel.abort();
 			}, PW_EXT_LIVENESS_MS);
@@ -718,6 +726,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				)
 				.finally(() => {
 					clearInterval(watch);
+					pwExtCancels.delete(requestKey);
 					pendingPwExt.delete(requestKey);
 				});
 			return;
@@ -725,6 +734,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {
 			client.forgetSession(frame.sessionId);
 			bootstrapsBySession.delete(frame.sessionId);
+			cancelPwExt(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			void api.storage.session.remove(chatSessionKey(frame.sessionId));
 			if (keepaliveEligible.size === 0) stopKeepalive();
@@ -751,6 +761,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		}
 		if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			bootstrapsBySession.delete(frame.sessionId);
+			cancelPwExt(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			void api.storage.session.remove(chatSessionKey(frame.sessionId));
 			if (keepaliveEligible.size === 0) stopKeepalive();
@@ -961,6 +972,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						for (const sessionId of closedIds) {
 							client.forgetSession(sessionId);
 							bootstrapsBySession.delete(sessionId);
+							cancelPwExt(sessionId);
 							keepaliveEligible.delete(sessionId);
 							await api.storage.session.remove(chatSessionKey(sessionId));
 						}
@@ -1025,6 +1037,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 							await client.disconnectSession(sessionId);
 							await api.storage.session.remove(chatSessionKey(sessionId));
 							bootstrapsBySession.delete(sessionId);
+							cancelPwExt(sessionId);
 							keepaliveEligible.delete(sessionId);
 							if (keepaliveEligible.size === 0) stopKeepalive();
 							broadcastPairingStatus();

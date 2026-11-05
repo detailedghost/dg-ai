@@ -34,12 +34,17 @@ function harness(
 		duringCapture?: Partial<Tab>;
 		signal?: AbortSignal;
 		abortOnApprove?: AbortController;
+		switchBackDuringCapture?: boolean;
+		abortOnFinalGet?: AbortController;
 	} = {},
 ) {
 	let tabs = options.tabs ?? [WEB_TAB];
 	const prompts: PwExtApprovalPrompt[] = [];
 	const executed: unknown[] = [];
 	const created: unknown[] = [];
+	const activated: Array<(info: { tabId: number; windowId: number }) => void> = [];
+	const updated: Array<(tabId: number) => void> = [];
+	let gets = 0;
 	const api = {
 		windows: {
 			getLastFocused: mock(async () => ({ id: 3, type: "normal" })),
@@ -52,7 +57,22 @@ function harness(
 						(query.windowId === undefined || tab.windowId === query.windowId),
 				),
 			),
+			onActivated: {
+				addListener: (fn: (info: { tabId: number; windowId: number }) => void) =>
+					activated.push(fn),
+				removeListener: () => {},
+			},
+			onUpdated: {
+				addListener: (fn: (tabId: number) => void) => updated.push(fn),
+				removeListener: () => {},
+			},
+			onRemoved: {
+				addListener: () => {},
+				removeListener: () => {},
+			},
 			get: mock(async (id: number) => {
+				gets++;
+				if (gets === 1) options.abortOnFinalGet?.abort();
 				const tab = tabs.find((candidate) => candidate.id === id);
 				if (!tab) throw new Error("No tab");
 				return tab;
@@ -62,6 +82,10 @@ function harness(
 				return { id: 99, windowId: 3, url: (props as { url: string }).url };
 			}),
 			captureVisibleTab: mock(async () => {
+				if (options.switchBackDuringCapture) {
+					for (const fn of activated) fn({ tabId: 8, windowId: 3 });
+					for (const fn of activated) fn({ tabId: 7, windowId: 3 });
+				}
 				if (options.duringCapture)
 					tabs = tabs.map((tab) =>
 						tab.id === WEB_TAB.id ? { ...tab, ...options.duringCapture } : tab,
@@ -92,7 +116,13 @@ function harness(
 	});
 	return {
 		run: (request: PwExtRequest) =>
-			handler(request, 60_000, options.abortOnApprove?.signal ?? options.signal),
+			handler(
+				request,
+				60_000,
+				options.abortOnApprove?.signal ??
+					options.abortOnFinalGet?.signal ??
+					options.signal,
+			),
 		api,
 		prompts,
 		executed,
@@ -117,6 +147,30 @@ describe("pw --ext background handler", () => {
 			ok: false,
 			error: expect.stringContaining("changed"),
 		});
+	});
+
+	it("discards a screenshot when the window switched away and back during capture", async () => {
+		const h = harness({ switchBackDuringCapture: true });
+		expect(await h.run({ verb: "screenshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("changed"),
+		});
+	});
+
+	it("does nothing when the request is canceled during the final tab check", async () => {
+		const h = harness({ abortOnFinalGet: new AbortController() });
+		expect(await h.run({ verb: "click", target: "e1" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("canceled"),
+		});
+		expect(h.executed).toEqual([]);
+	});
+
+	it("shows the full fill value in the approval", async () => {
+		const value = `${"a".repeat(250)}\nsecond line`;
+		const h = harness({ pageResult: { detail: "filled" } });
+		await h.run({ verb: "fill", target: "e2", value });
+		expect(h.prompts[0]?.detail).toBe(`Fill e2 with:\n${value}`);
 	});
 
 	it("does nothing when the request is canceled during approval", async () => {
@@ -172,7 +226,7 @@ describe("pw --ext background handler", () => {
 		expect(h.prompts[0]).toMatchObject({
 			verb: "fill",
 			write: true,
-			detail: 'Fill e2 with "cats"',
+			detail: "Fill e2 with:\ncats",
 		});
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).not.toContain("cats");

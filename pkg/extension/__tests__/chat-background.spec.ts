@@ -1511,6 +1511,6 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 			protocolVersion: CHAT_PROTOCOL_VERSION,
 		}),
 	);
-	await new Promise((resolve) => setTimeout(resolve, 700));
+	await settle();
 	expect(seen?.aborted).toBe(true);
 });

@@ -26,6 +26,9 @@ browser through the paired dg-ai-extension. Run one verb per Bash call.
   errors.
 - Browser settings pages, extension pages, private windows and the signed-in
   Proton Mail tab are refused. Ask the human to switch to a web page tab.
+  `current` and `open` still work there: `current` hides those tabs, and `open`
+  opens a new tab.
+- The approval window shows the full `fill` text.
 - `fill` never takes passwords or secrets. Ask the human to type them.
 - Output is redacted and capped. Screenshots are not redacted.
 - `--ext` takes no other flags and runs no code. On a failure, run

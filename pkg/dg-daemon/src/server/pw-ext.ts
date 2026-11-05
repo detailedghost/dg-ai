@@ -28,19 +28,22 @@ type Pending = {
 	extension: Socket;
 	finish: (result: Result, deliver?: boolean) => void;
 };
-const states = new WeakMap<ConnectionManager, Map<string, Pending>>();
+type RelayState = { pending: Map<string, Pending>; used: Map<string, Set<string>> };
+const states = new WeakMap<ConnectionManager, RelayState>();
+const MAX_SESSION_REQUEST_IDS = 10_000;
 const MAX_PENDING = 16;
 const MAX_REQUESTER_PENDING = 2;
 const MIN_VERSION = PW_EXT_MIN_EXTENSION_VERSION.join(".");
 
-function pendingMap(deps: FrameHandlerDeps): Map<string, Pending> {
+function relayState(deps: FrameHandlerDeps): RelayState {
 	let existing = states.get(deps.connections);
 	if (!existing) {
-		const owned = new Map<string, Pending>();
+		const owned: RelayState = { pending: new Map(), used: new Map() };
 		existing = owned;
 		states.set(deps.connections, owned);
 		deps.registry.on("closed", ({ sessionId }: { sessionId: string }) => {
-			for (const pending of owned.values())
+			owned.used.delete(sessionId);
+			for (const pending of owned.pending.values())
 				if (pending.sessionId === sessionId)
 					pending.finish({
 						ok: false,
@@ -90,9 +93,13 @@ export async function handlePwExtCli(
 		sendPwExtResult(requester, sessionId, frame.requestId, { ok: false, error });
 	if (deps.registry.get(sessionId)?.state !== "active")
 		return fail("pw --ext requires an active dg session.");
-	const pending = pendingMap(deps);
+	const { pending, used } = relayState(deps);
 	const requestKey = key(sessionId, frame.requestId);
-	if (pending.has(requestKey)) return fail("duplicate requestId");
+	const usedIds = used.get(sessionId) ?? new Set<string>();
+	if (usedIds.has(frame.requestId))
+		return fail("pw --ext requestId was already used on this session; send a new one.");
+	if (usedIds.size >= MAX_SESSION_REQUEST_IDS)
+		return fail("pw --ext request capacity reached; start a new session.");
 	let mine = 0;
 	for (const entry of pending.values()) if (entry.requester === requester) mine++;
 	if (mine >= MAX_REQUESTER_PENDING || pending.size >= MAX_PENDING)
@@ -110,6 +117,8 @@ export async function handlePwExtCli(
 				: `No extension peer on session ${sessionId}. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.`,
 		);
 	const extension = peers[0] as Socket;
+	usedIds.add(frame.requestId);
+	used.set(sessionId, usedIds);
 	if (!versionAtLeastMinimum(extension.data.extensionVersion))
 		return fail(
 			`pw --ext requires dg-ai-extension ${MIN_VERSION} or newer; update the extension, reload it, and reconnect this session.`,
@@ -180,7 +189,7 @@ export function handlePwExtBrowserResult(
 	frame: Extract<ChatFrame, { type: "pw-ext-browser-result" }>,
 	deps: FrameHandlerDeps,
 ): void {
-	const entry = pendingMap(deps).get(key(frame.sessionId, frame.requestId));
+	const entry = relayState(deps).pending.get(key(frame.sessionId, frame.requestId));
 	if (!entry || entry.extension !== socket || !isExtensionPeer(socket)) return;
 	entry.finish(
 		frame.ok
@@ -203,7 +212,7 @@ export function settleRejectedPwExtResult(
 	if (!isExtensionPeer(socket)) return false;
 	const sessionId = typeof raw.sessionId === "string" ? raw.sessionId : "";
 	const requestId = typeof raw.requestId === "string" ? raw.requestId : "";
-	const entry = pendingMap(deps).get(key(sessionId, requestId));
+	const entry = relayState(deps).pending.get(key(sessionId, requestId));
 	if (!entry || entry.extension !== socket) return false;
 	try {
 		authorizeFrame(
