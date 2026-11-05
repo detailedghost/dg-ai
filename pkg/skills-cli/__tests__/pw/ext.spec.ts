@@ -75,7 +75,7 @@ describe("pw --ext", () => {
 		const env = clientEnv();
 		const d = deps(() => ({
 			ok: true,
-			data: { text: "### Page\n- Page URL: https://x.test/?token=abcdef123456" },
+			data: { text: "### Page\n- Page URL: https://x.test/?token=zzzzzzzzzzzz" },
 		}));
 		expect(await runExt(["--ext", "snapshot"], env, d.value)).toBe(0);
 		expect(d.sent).toEqual([
@@ -86,7 +86,7 @@ describe("pw --ext", () => {
 			},
 		]);
 		expect(env.stdout.join("\n")).toContain("### Page");
-		expect(env.stdout.join("\n")).not.toContain("abcdef123456");
+		expect(env.stdout.join("\n")).not.toContain("zzzzzzzzzzzz");
 		expect(d.closed()).toBe(true);
 	});
 

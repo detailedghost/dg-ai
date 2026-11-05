@@ -18,7 +18,7 @@ type Tab = {
 const WEB_TAB: Tab = {
 	id: 7,
 	windowId: 3,
-	url: "https://app.example.test/home?token=abcdef1234567890",
+	url: "https://app.example.test/home?token=zzzzzzzzzzzzzzzz",
 	title: "Home",
 	active: true,
 };
@@ -263,7 +263,7 @@ describe("pw --ext background handler", () => {
 		expect(answer.data.text).toContain("### Page");
 		expect(answer.data.text).toContain('- button "Go" [ref=e1]');
 		expect(answer.data.text).toContain("### Visible text");
-		expect(answer.data.text).not.toContain("abcdef1234567890");
+		expect(answer.data.text).not.toContain("zzzzzzzzzzzzzzzz");
 		expect(answer.data.text).not.toContain("ghp_abcdefghij");
 		expect(answer.data.text).not.toContain("me@example.test");
 	});
@@ -517,7 +517,7 @@ describe("pw --ext round 3", () => {
 				tools: [
 					{
 						name: "search",
-						description: "Search issues with token=abcdef123456",
+						description: "Search issues with token=zzzzzzzzzzzz",
 						inputSchema: '{"type":"object"}',
 					},
 				],
@@ -527,7 +527,7 @@ describe("pw --ext round 3", () => {
 		expect(some.prompts[0]).toMatchObject({ verb: "tools", write: false });
 		expect(listed.ok && listed.data.text).toContain("- search: Search issues");
 		expect(listed.ok && listed.data.text).toContain('input: {"type":"object"}');
-		expect(listed.ok && listed.data.text).not.toContain("abcdef123456");
+		expect(listed.ok && listed.data.text).not.toContain("zzzzzzzzzzzz");
 	});
 
 	it("calls a WebMCP tool after an approval with its description and exact args", async () => {
