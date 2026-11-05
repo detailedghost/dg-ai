@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, isAlive, readCappedStdin, resolveDgPaths, writeFileAtomic, writeStdout } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, isAlive, readCappedStdin, readCappedStdinBytes, resolveDgPaths, writeFileAtomic, writeStdout } from "@dg/common/node";
 import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
@@ -20,6 +20,8 @@ import {
 import { OUTBOX_DIR, PHONE_SYSTEM_SENDER, PhoneDb } from "./db";
 import { IMAGE_TEXT, MAX_IMAGE_BYTES, prepareImage, type PreparedImage, storedFile } from "./image";
 import type { WormholeDeps } from "./wormhole";
+import { defaultVaultClient, PHI_NOT_STORED_TEXT, type VaultClient, vaultPlaceholder } from "./vault";
+import { defaultTerminal, type ExecOpts, phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm, readVaultForSend, type Terminal } from "./vault-commands";
 import {
 	defaultCrontab,
 	type CrontabIO,
@@ -111,7 +113,7 @@ import {
 	notePhoneDrift,
 } from "./store";
 
-export { defaultListenerArgv };
+export { defaultListenerArgv, type ExecOpts, phoneVaultAdd, phoneVaultExec, phoneVaultList, phoneVaultOpen, phoneVaultRm };
 
 export type PhoneDeps = KeyDeps & {
 	createPool: () => PhonePool & { close(relays: string[]): void };
@@ -128,6 +130,10 @@ export type PhoneDeps = KeyDeps & {
 	sleep?: (ms: number) => Promise<void>;
 	listenerArgv?: (extraArgs: string[]) => string[];
 	wormhole?: WormholeDeps;
+	/** Reads under the phone-vault grant; absent means the vault refuses. */
+	vaultClient?: () => VaultClient;
+	readStdinBytes?: (capBytes: number) => Promise<Buffer | undefined>;
+	terminal?: Terminal;
 };
 
 export type RunDeps = PhoneDeps & {
@@ -153,7 +159,7 @@ export type OpenCloseDeps = PhoneDeps &
 
 const MAX_SEND_BYTES = 64 * 1024;
 
-export type SayOpts = { image?: string; phi?: boolean };
+export type SayOpts = { image?: string; phi?: boolean; vault?: string };
 const STOP_WAIT_MS = 5000;
 
 function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
@@ -217,6 +223,9 @@ function defaultDeps(session?: string): PhoneDeps {
 			process.stderr.write(text);
 		},
 		readStdin: () => readCappedStdin(MAX_SEND_BYTES),
+		readStdinBytes: readCappedStdinBytes,
+		vaultClient: defaultVaultClient(paths),
+		terminal: defaultTerminal(),
 		now: () => Math.floor(Date.now() / 1000),
 		kill: (pid, signal) => process.kill(pid, signal),
 		spawnListener: defaultSpawnListener,
@@ -695,20 +704,33 @@ async function readSayBody(textArg: string | undefined, deps: PhoneDeps): Promis
 	return body;
 }
 
+/** What one send carries, and what its own row keeps: never PHI, only a placeholder for it. */
+type Outgoing = { image?: PreparedImage; phi: boolean; vault?: string };
+
+async function prepareOutgoing(textArg: string | undefined, opts: SayOpts, deps: PhoneDeps): Promise<Outgoing & { text?: string }> {
+	if (opts.vault === undefined) return { image: prepareImageSend(textArg, opts, deps), phi: opts.phi === true };
+	if (opts.image !== undefined) throw new DgCliError("--vault and --image cannot be used together");
+	if (textArg !== undefined) throw new DgCliError("--vault takes no text");
+	const item = await readVaultForSend(opts.vault, deps);
+	if (item.kind === "text") {
+		if (Buffer.byteLength(item.text) > MAX_SEND_BYTES) throw new DgCliError("vault item is over 64 KiB, too large to send as text");
+		return { text: item.text, phi: true, vault: opts.vault };
+	}
+	if (!readFilesOn(deps.db)) throw new DgCliError("files are off; the human runs phone files on");
+	return { image: prepareImage(item.plain), phi: true, vault: opts.vault };
+}
+
 function saveOutgoing(
 	deps: PhoneDeps,
 	row: { id: string; ts: number; sender: string; contact: string; text: string; thread_id?: string },
-	image: PreparedImage | undefined,
-	phi: boolean,
+	sent: Outgoing,
 ): void {
-	deps.db.addMessage({
-		...row,
-		direction: "out",
-		call: 0,
-		text: image ? IMAGE_TEXT : row.text,
-		file: image ? JSON.stringify(image.file) : null,
-		phi,
-	});
+	const stored = sent.vault !== undefined
+		? { text: vaultPlaceholder(sent.vault), file: null }
+		: sent.image
+			? { text: IMAGE_TEXT, file: JSON.stringify(sent.image.file) }
+			: { text: sent.phi ? PHI_NOT_STORED_TEXT : row.text, file: null };
+	deps.db.addMessage({ ...row, direction: "out", call: 0, ...stored, phi: sent.phi });
 }
 
 export function phonePresence(state: string | undefined, deps: PhoneDeps): void {
@@ -727,13 +749,13 @@ async function phoneSayThread(
 	handleArg: string,
 	textArg: string | undefined,
 	deps: PhoneDeps,
-	image: PreparedImage | undefined,
-	phi: boolean,
+	sent: Outgoing & { text?: string },
 ): Promise<void> {
+	const { image, phi } = sent;
 	const handle = parseThreadHandle(handleArg);
 	const thread = deps.db.getThreadByHandle(handle);
 	if (!thread) throw new DgCliError(`no group ${handle}`);
-	const body = image ? image.content : await readSayBody(textArg, deps);
+	const body = image ? image.content : (sent.text ?? (await readSayBody(textArg, deps)));
 	const loaded = await ensureKey(deps, thread.key_id);
 	const selfNpub = npubOf(loaded.sk);
 	const others = deps.db.listThreadMemberNpubs(thread.id).filter((npub) => npub !== selfNpub);
@@ -777,8 +799,7 @@ async function phoneSayThread(
 			saveOutgoing(
 				deps,
 				{ id: delivered.rumorId, ts: createdAt, sender: selfNpub, contact: selfNpub, text: body, thread_id: thread.id },
-				image,
-				phi,
+				sent,
 			);
 			await restartStaleListener(deps, { spawn: true });
 		} else {
@@ -810,13 +831,13 @@ async function phoneSayThread(
 
 export async function phoneSay(handleArg: string, textArg: string | undefined, deps: PhoneDeps, opts: SayOpts = {}): Promise<void> {
 	migrateIfNeeded(deps.paths);
-	const image = prepareImageSend(textArg, opts, deps);
-	const phi = opts.phi === true;
-	if (handleArg.startsWith("#")) return phoneSayThread(handleArg, textArg, deps, image, phi);
+	const sent = await prepareOutgoing(textArg, opts, deps);
+	const { image, phi } = sent;
+	if (handleArg.startsWith("#")) return phoneSayThread(handleArg, textArg, deps, sent);
 	const handle = normalizeHandle(handleArg);
 	const contact = findContactByHandle(deps.db, handle);
 	if (!contact) throw new DgCliError(`no contact +${handle}`);
-	const body = image ? image.content : await readSayBody(textArg, deps);
+	const body = image ? image.content : (sent.text ?? (await readSayBody(textArg, deps)));
 	const sk = (await ensureKey(deps, contact.keyId)).sk;
 	const contactPub = pubkeyHex(contact.npub);
 	const event =
@@ -839,7 +860,7 @@ export async function phoneSay(handleArg: string, textArg: string | undefined, d
 			unstage?.();
 			throw err;
 		}
-		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, image, phi);
+		saveOutgoing(deps, { id: event.id, ts: deps.now(), sender: npubOf(sk), contact: contact.npub, text: body }, sent);
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, id: event.id, ...relayFields(report), delivered: false });
 	} finally {
@@ -1365,6 +1386,11 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneThreadNew,
 	phoneThreadList,
 	phoneThreadShow,
+	phoneVaultAdd,
+	phoneVaultList,
+	phoneVaultRm,
+	phoneVaultOpen,
+	phoneVaultExec,
 	ignoreHangup,
 	deps: defaultDeps,
 	openCloseDeps: defaultOpenCloseDeps,

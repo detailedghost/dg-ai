@@ -32,6 +32,11 @@ export type PhoneApi = Pick<
 	| "phoneThreadNew"
 	| "phoneThreadList"
 	| "phoneThreadShow"
+	| "phoneVaultAdd"
+	| "phoneVaultList"
+	| "phoneVaultRm"
+	| "phoneVaultOpen"
+	| "phoneVaultExec"
 > & {
 	ignoreHangup(): void;
 	deps(session?: string): Commands.PhoneDeps;
@@ -127,7 +132,8 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 			.argument("<handle>", "the contact's +handle, or a #group")
 			.argument("[text]", "message text, or - to read it from stdin; omit with --image")
 			.option("--image <path>", "send one PNG, JPEG, or WebP image instead of text")
-			.option("--phi", "mark the message as PHI: tags it and keeps the sent row and any outbox copy 24 hours, not 7 days")
+			.option("--phi", "mark the message as PHI: tags it, stores only a placeholder row, and keeps any outbox copy 24 hours, not 7 days")
+			.option("--vault <name>", "send a vault item, text or image, without printing it; implies --phi")
 			.action(async (handle: string, text: string | undefined, opts: Commands.SayOpts) => {
 				const phone = await load();
 				await phone.phoneSay(handle, text, phone.deps(getSession()), opts);
@@ -192,6 +198,57 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 				phone.phoneThreadShow(handle, phone.deps(getSession()));
 			});
 	};
+	const vault = group.command("vault").description("a store for PHI that agents can use but never read");
+
+	vault
+		.command("add")
+		.description("seal a file, or stdin, as a vault item; prints the name, size, and dates only")
+		.argument("<name>", "item name; names hold no PHI")
+		.argument("[file]", "file to read; stdin when omitted")
+		.action(async (name: string, file: string | undefined) => {
+			const phone = await load();
+			await phone.phoneVaultAdd(name, file, phone.deps(getSession()));
+		});
+
+	vault
+		.command("list")
+		.description("list item names, sizes, types, senders, and dates; never content")
+		.action(async () => {
+			const phone = await load();
+			await phone.phoneVaultList(phone.deps(getSession()));
+		});
+
+	vault
+		.command("rm")
+		.description("delete one vault item")
+		.argument("<name>", "item name")
+		.action(async (name: string) => {
+			const phone = await load();
+			await phone.phoneVaultRm(name, phone.deps(getSession()));
+		});
+
+	vault
+		.command("open")
+		.description("human only: show an item on this terminal; refuses in an agent session or without a TTY")
+		.argument("<name>", "item name")
+		.action(async (name: string) => {
+			const phone = await load();
+			await phone.phoneVaultOpen(name, phone.deps(getSession()));
+		});
+
+	vault
+		.command("exec")
+		.description("run a command with the item on stdin or in one env var; its stdout becomes a new item")
+		.argument("<name>", "item name")
+		.argument("<cmd...>", "the command and its args, after --")
+		.option("--env <var>", "pass a text item under 64 KiB in this env var instead of stdin")
+		.option("--stdin", "pass the item on stdin (the default)")
+		.option("--out <name>", "name of the new item; never overwrites (default <name>-out)")
+		.action(async (name: string, argv: string[], opts: Commands.ExecOpts) => {
+			const phone = await load();
+			await phone.phoneVaultExec(name, argv, opts, phone.deps(getSession()));
+		});
+
 	attachGroupVerbs(group.command("group").description("a static multi-party room with a #handle"));
 	attachGroupVerbs(renamedAlias(group, "thread", "group"));
 
