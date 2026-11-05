@@ -93,16 +93,18 @@ export function createImageReceiver(deps: ImageReceiverDeps): ImageReceiver {
 		return true;
 	};
 
-	const defer = (row: ImageFetchRow, now: number, reason: FetchFailure) => {
+	const defer = (row: ImageFetchRow, now: number, reason: FetchFailure | "vault unavailable") => {
 		const attempts = row.attempts + 1;
 		const delay = Math.min(IMAGE_RETRY_BASE_SECONDS * 2 ** (attempts - 1), IMAGE_RETRY_MAX_SECONDS);
-		if (now + delay >= row.deadline) return fail(row, reason === "tool unavailable" ? "fetch failed" : "sender offline");
+		if (now + delay >= row.deadline) {
+			return fail(row, reason === "vault unavailable" ? reason : reason === "tool unavailable" ? "fetch failed" : "sender offline");
+		}
 		deps.db.deferImageFetch(row.message_id, attempts, now + delay);
 	};
 
 	const sealPhi = async (row: ImageFetchRow, message: MessageRow, plain: Buffer) => {
 		const key = await deps.vault?.current();
-		if (!key) return fail(row, "vault unavailable");
+		if (!key) return defer(row, deps.now(), "vault unavailable");
 		const handle = findContactByNpub(deps.db, message.sender)?.handle ?? UNKNOWN_SENDER_HANDLE;
 		finish(row, sealReceived(deps.db, deps.paths.phoneRoot, { key, sender: message.sender, handle, plain }, deps.now()).text);
 	};

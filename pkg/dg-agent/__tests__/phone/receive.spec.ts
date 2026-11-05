@@ -634,6 +634,34 @@ describe("createImageReceiver", () => {
 		expect(bob.deps.db.imageFetches()).toEqual([]);
 	});
 
+	function phiPendingRow(id: string, sealed: ReturnType<typeof seal>, deadline: number): void {
+		bob.deps.db.addMessage({ id, direction: "in", ts: clock, sender: alice.npub, contact: alice.npub, text: "[image pending]", call: 0, phi: true });
+		bob.deps.db.addImageFetch({ ...fetchFields(alice, id), key_id: numberKeyId(bob.deps.db), ...sealedFields(sealed), deadline });
+	}
+
+	it("retries a PHI image with the normal backoff when no vault key can be reached, and writes no file", async () => {
+		const sealed = seal(pngOfSize());
+		phiPendingRow("img", sealed, clock + PHI_TTL_SECONDS);
+
+		await transferWhile(sealed, () => {}, wormholeFor());
+
+		expect(row(bob, "img")?.text).toBe("[image pending]");
+		expect(bob.deps.db.imageFetches()[0]).toMatchObject({ attempts: 1, next_at: clock + IMAGE_RETRY_BASE_SECONDS });
+		expect(filesIn(bob)).toEqual([]);
+		expect(bob.deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("stores vault unavailable once the next PHI retry would pass the deadline", async () => {
+		const sealed = seal(pngOfSize());
+		phiPendingRow("img", sealed, clock + 30);
+
+		await transferWhile(sealed, () => {}, wormholeFor());
+
+		expect(row(bob, "img")).toMatchObject({ text: "[image unavailable: vault unavailable]", file: null });
+		expect(bob.deps.db.imageFetches()).toEqual([]);
+		expect(filesIn(bob)).toEqual([]);
+	});
+
 	it("stores sender offline without a request when the deadline already passed", async () => {
 		pendingRow("img", { deadline: clock - 1 });
 		const images = receiver();
@@ -897,25 +925,5 @@ describe("PHI vault receive", () => {
 		const hooked = JSON.parse(readFileSync(out, "utf8").trim()) as { text: string; file?: unknown };
 		expect(hooked.text).toBe(stored?.text as string);
 		expect(hooked.file).toBeUndefined();
-	});
-
-	it("stores vault unavailable for a PHI image when no vault key can be reached, and writes no file", async () => {
-		const sealed = seal(pngOfSize());
-		stageAt(alice, sealed.cipher, bob);
-		const aliceListener = listen(alice, wormholeFor());
-		const bobListener = listen(bob, wormholeFor());
-		await Promise.all([aliceListener.started, bobListener.started]);
-		let stored: ReturnType<typeof row>;
-		try {
-			const event = offerEvent(alice, bob, sealed, {}, [["dg-phi", "1"]]);
-			await deliver(event);
-			stored = await settled(bob, event.id);
-		} finally {
-			await bobListener.stop();
-			await aliceListener.stop();
-		}
-
-		expect(stored).toMatchObject({ text: "[image unavailable: vault unavailable]", file: null });
-		expect(filesIn(bob)).toEqual([]);
 	});
 });

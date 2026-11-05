@@ -390,7 +390,8 @@ A received `dg-phi` text or image goes straight into the vault. `unread`,
 `messages`, and the `--on-message` JSON show only
 `[PHI: vault item <name> from +handle]`, with a name this phone made:
 `<handle>-<yyyymmddhhmm>-<4 hex>`. When no vault key can be reached, the
-content is dropped and the row reads `[PHI: vault unavailable from +handle]`.
+text is dropped and the row reads `[PHI: vault unavailable from +handle]`; an
+image retries until its deadline.
 
 `phone vault exec` passes the item on stdin, or in one env var with
 `--env`, and stores the command's stdout (5 MiB at most) as a new item. It

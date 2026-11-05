@@ -276,8 +276,9 @@ this phone makes: `<handle>-<yyyymmddhhmm>-<4 hex>`. `messages`, `unread`,
 and the `--on-message` JSON show only `[PHI: vault item <name> from +handle]`.
 A PHI image is decrypted in memory into the vault; it never reaches
 `files/`, the hook payload, or the log. When no vault key can be reached,
-the content is dropped: the row reads `[PHI: vault unavailable from +handle]`,
-or `[image unavailable: vault unavailable]` for an image.
+a text is dropped and its row reads `[PHI: vault unavailable from +handle]`.
+An image fetch retries with the normal backoff and, at its deadline, reads
+`[image unavailable: vault unavailable]`.
 
 `text --vault <name>` implies `--phi` and decrypts the item in memory. A
 text item is sent as the message (64 KiB at most). An image item goes
