@@ -192,9 +192,11 @@ describe("pw main routes --ext", () => {
 	});
 });
 
+const VISIBLE_TMP = "/tmp";
+
 describe("pw --ext round 3", () => {
 	function workdir(): string {
-		const dir = mkdtempSync(join(tmpdir(), "pw-ext-cwd-"));
+		const dir = mkdtempSync(join(VISIBLE_TMP, "pw-ext-cwd-"));
 		dirs.push(dir);
 		return dir;
 	}
@@ -298,6 +300,17 @@ describe("pw --ext round 3", () => {
 		const d = deps(() => ({ ok: true, data: { text: "x" } }));
 		expect(
 			await runExt(["--ext", "upload", "#f", "id_ed25519"], clientEnv(hidden), d.value),
+		).toBe(2);
+		expect(d.posted).toEqual([]);
+	});
+
+	test("refuses a hidden working directory outside the home", async () => {
+		const hidden = join(workdir(), ".private");
+		mkdirSync(hidden);
+		writeFileSync(join(hidden, "notes.txt"), "x");
+		const d = deps(() => ({ ok: true, data: { text: "x" } }));
+		expect(
+			await runExt(["--ext", "upload", "#f", "notes.txt"], clientEnv(hidden), d.value),
 		).toBe(2);
 		expect(d.posted).toEqual([]);
 	});

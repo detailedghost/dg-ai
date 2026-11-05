@@ -125,14 +125,12 @@ function stageFile(file: string, cwd: string): StagedFile {
 		}
 	});
 	const root = roots.find((candidate) => within(candidate, real));
-	const userHome = process.env["HOME"] ? realpathOrSelf(process.env["HOME"]) : "";
+	const trusted = [scratchRoot(), demosDir()].map(realpathOrSelf);
 	if (
 		root &&
-		root === roots[0] &&
 		realpathOrSelf(cwd) === root &&
-		userHome &&
-		within(userHome, root) &&
-		relative(userHome, root).split(sep).some((part) => part.startsWith("."))
+		!trusted.includes(root) &&
+		root.split(sep).some((part) => part.startsWith("."))
 	)
 		throw new ExtUsageError(
 			"pw --ext upload refuses a working directory inside a hidden folder.",
