@@ -8,6 +8,10 @@ import type { KeychainBackend, KeychainLookupResult } from "./key-resolution";
 const SERVICE = "dg-server";
 export const ACCOUNT = "chat-store-kek";
 const SCOPE_HASH_CHARS = 12;
+const BASE64_KEY = /^[A-Za-z0-9+/]{1,512}={0,2}$/;
+const SECURITY_TOKEN = /^[A-Za-z0-9][A-Za-z0-9:._-]*$/;
+const DPAPI_STORE_SCRIPT = (dpapiPath: string): string =>
+	`$ErrorActionPreference = 'Stop'; [IO.File]::WriteAllBytes('${powershellQuote(dpapiPath)}', [Security.Cryptography.ProtectedData]::Protect([Convert]::FromBase64String([Console]::In.ReadToEnd().Trim()), $null, 'CurrentUser'))`;
 
 export class RealKeychainInTestError extends Error {
 	constructor(backend: string) {
@@ -152,7 +156,7 @@ export function secretToolBackend(account: string): KeychainBackend {
 
 export function macKeychainBackend(account: string): KeychainBackend {
 	assertNotUnderTest("security");
-	return {
+	const backend: KeychainBackend = {
 		async lookup(): Promise<KeychainLookupResult> {
 			try {
 				const result = await runCapture("security", [
@@ -174,18 +178,14 @@ export function macKeychainBackend(account: string): KeychainBackend {
 			}
 		},
 		async store(keyBase64: string): Promise<"stored" | "unreachable"> {
+			if (!BASE64_KEY.test(keyBase64) || !SECURITY_TOKEN.test(account)) return "unreachable";
 			try {
-				const result = await runCapture("security", [
-					"add-generic-password",
-					"-U",
-					"-a",
-					account,
-					"-s",
-					SERVICE,
-					"-w",
-					keyBase64,
-				]);
-				return result.status === 0 ? "stored" : "unreachable";
+				const result = await runCapture("security", ["-i"], {
+					stdin: `add-generic-password -U -a ${account} -s ${SERVICE} -w ${keyBase64}\n`,
+				});
+				if (result.status !== 0) return "unreachable";
+				const stored = await backend.lookup();
+				return stored.status === "found" && stored.keyBase64 === keyBase64 ? "stored" : "unreachable";
 			} catch {
 				return "unreachable";
 			}
@@ -199,10 +199,11 @@ export function macKeychainBackend(account: string): KeychainBackend {
 			}
 		},
 	};
+	return backend;
 }
 
 function powershellQuote(value: string): string {
-	return value.replace(/'/g, "''");
+	return value.replace(/['\u2018\u2019\u201A\u201B]/g, "$&$&");
 }
 
 export function dpapiBackend(dpapiPath: string): KeychainBackend {
@@ -227,11 +228,12 @@ export function dpapiBackend(dpapiPath: string): KeychainBackend {
 		},
 		async store(keyBase64: string): Promise<"stored" | "unreachable"> {
 			try {
-				const result = await runCapture("powershell.exe", [
-					"-NoProfile",
-					"-Command",
-					`[IO.File]::WriteAllBytes('${powershellQuote(dpapiPath)}', [Security.Cryptography.ProtectedData]::Protect([Convert]::FromBase64String('${keyBase64}'), $null, 'CurrentUser'))`,
-				]);
+				if (!BASE64_KEY.test(keyBase64)) return "unreachable";
+				const result = await runCapture(
+					"powershell.exe",
+					["-NoProfile", "-NonInteractive", "-Command", DPAPI_STORE_SCRIPT(dpapiPath)],
+					{ stdin: keyBase64 },
+				);
 				return result.status === 0 ? "stored" : "unreachable";
 			} catch {
 				return "unreachable";

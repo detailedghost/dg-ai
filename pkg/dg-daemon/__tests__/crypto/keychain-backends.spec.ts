@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
@@ -159,29 +159,140 @@ describe("test-run guard for the real keychain backends", () => {
 	});
 });
 
-describe("macKeychainBackend store", () => {
-	it("updates an existing entry by passing -U to security", async () => {
-		const bin = mkdtempSync(join(tmpdir(), "dg-fake-security-"));
-		const out = join(bin, "argv.txt");
-		try {
-			writeFileSync(join(bin, "security"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${out}"\n`, { mode: 0o755 });
-			const script = `import { macKeychainBackend } from ${JSON.stringify(join(import.meta.dir, "../../src/crypto/keychain-backends"))};
-process.stdout.write(await macKeychainBackend("acct").store("test-value"));`;
-			const { NODE_ENV: _omitted, ...inherited } = process.env;
-			const child = Bun.spawn([process.execPath, "-e", script], {
-				env: { ...inherited, PATH: bin },
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const stored = await new Response(child.stdout).text();
-			await child.exited;
+const KEY = "dGVzdC1rZXktYnl0ZXMtZm9yLXN0b3JlLWNoZWNr/+==";
 
-			expect(stored).toBe("stored");
-			const argv = readFileSync(out, "utf8").trim().split("\n");
-			expect(argv.slice(0, 2)).toEqual(["add-generic-password", "-U"]);
-		} finally {
-			rmSync(bin, { recursive: true, force: true });
-		}
+type StoreRun = { stored: string; childOut: string; argv: string; stdin: string };
+
+async function runStore(
+	backendCall: string,
+	fakeName: "security" | "powershell.exe",
+	fakeScript: string,
+	{ env: fakeEnv = {}, key = KEY }: { env?: Record<string, string>; key?: string } = {},
+): Promise<StoreRun> {
+	const bin = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "dg-fake-store-"));
+	try {
+		writeFileSync(join(bin, fakeName), fakeScript.replaceAll("$DIR", bin), { mode: 0o755 });
+		const script = `import { dpapiBackend, macKeychainBackend } from ${JSON.stringify(join(import.meta.dir, "../../src/crypto/keychain-backends"))};
+process.stdout.write(await ${backendCall}.store(${JSON.stringify(key)}));`;
+		const { NODE_ENV: _omitted, ...inherited } = process.env;
+		const child = Bun.spawn([process.execPath, "-e", script], {
+			env: { ...inherited, ...fakeEnv, PATH: bin },
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+		await child.exited;
+		const read = (name: string): string => (existsSync(join(bin, name)) ? readFileSync(join(bin, name), "utf8") : "");
+		return { stored: stdout, childOut: stdout + stderr, argv: read("argv.txt"), stdin: read("stdin.txt") };
+	} finally {
+		rmSync(bin, { recursive: true, force: true });
+	}
+}
+
+const FAKE_SECURITY = `#!/bin/sh
+printf '%s\\n' "$@" >> "$DIR/argv.txt"
+if [ "$1" = "-i" ]; then
+	IFS= read -r line
+	printf '%s\\n' "$line" > "$DIR/stdin.txt"
+	[ "$FAKE_MODE" = "fail" ] && { echo "security: failed" >&2; exit 1; }
+	[ "$FAKE_MODE" = "silent-fail" ] && { echo "security: SecKeychainItemCreateFromContent failed" >&2; exit 0; }
+	exit 0
+fi
+if [ "$1" = "find-generic-password" ]; then
+	[ "$FAKE_MODE" = "silent-fail" ] && { echo "The specified item could not be found in the keychain." >&2; exit 44; }
+	[ "$FAKE_MODE" = "stale" ] && { echo "b2xkLWtleQ=="; exit 0; }
+	IFS= read -r line < "$DIR/stdin.txt"
+	printf '%s\\n' "\${line##* }"
+	exit 0
+fi
+exit 2
+`;
+
+describe("macKeychainBackend store", () => {
+	it("sends the add command with -U on stdin and keeps the key off argv", async () => {
+		const run = await runStore('macKeychainBackend("acct")', "security", FAKE_SECURITY);
+
+		expect(run.stored).toBe("stored");
+		expect(run.argv).not.toContain(KEY);
+		expect(run.argv.split("\n")[0]).toBe("-i");
+		expect(run.stdin.trim()).toBe(`add-generic-password -U -a acct -s dg-server -w ${KEY}`);
+	});
+
+	it("rejects without leaking the key when security exits non-zero", async () => {
+		const run = await runStore('macKeychainBackend("acct")', "security", FAKE_SECURITY, { env: { FAKE_MODE: "fail" } });
+
+		expect(run.stored).toBe("unreachable");
+		expect(run.childOut).not.toContain(KEY);
+	});
+
+	it("rejects when security -i exits zero but the entry was not written", async () => {
+		const run = await runStore('macKeychainBackend("acct")', "security", FAKE_SECURITY, { env: { FAKE_MODE: "silent-fail" } });
+
+		expect(run.stored).toBe("unreachable");
+		expect(run.childOut).not.toContain(KEY);
+	});
+
+	it("refuses a key or account that needs quoting before it reaches security", async () => {
+		const run = await runStore('macKeychainBackend("acct")', "security", FAKE_SECURITY);
+		const bad = await runStore('macKeychainBackend("a b")', "security", FAKE_SECURITY);
+
+		expect(run.stored).toBe("stored");
+		expect(bad.stored).toBe("unreachable");
+		expect(bad.stdin).toBe("");
+	});
+
+	it.each([
+		["a space", "AAAA AAAA"],
+		["a newline", "AAAA\nAAAA"],
+		["a length past the cap", "A".repeat(513)],
+	])("refuses a key with %s before it reaches security", async (_label, key) => {
+		const run = await runStore('macKeychainBackend("acct")', "security", FAKE_SECURITY, { key });
+
+		expect(run.stored).toBe("unreachable");
+		expect(run.stdin).toBe("");
+	});
+
+	it("refuses an account that starts with a dash", async () => {
+		const run = await runStore('macKeychainBackend("-T")', "security", FAKE_SECURITY);
+
+		expect(run.stored).toBe("unreachable");
+		expect(run.stdin).toBe("");
+	});
+
+	it("rejects when the read-back returns a different key", async () => {
+		const run = await runStore('macKeychainBackend("acct")', "security", FAKE_SECURITY, { env: { FAKE_MODE: "stale" } });
+
+		expect(run.stored).toBe("unreachable");
+		expect(run.childOut).not.toContain(KEY);
+	});
+});
+
+const FAKE_POWERSHELL = `#!/bin/sh
+printf '%s\\n' "$@" > "$DIR/argv.txt"
+IFS= read -r line
+printf '%s' "$line" > "$DIR/stdin.txt"
+[ "$FAKE_MODE" = "fail" ] && { echo "boom" >&2; exit 1; }
+exit 0
+`;
+
+describe("dpapiBackend store", () => {
+	it("reads the key from stdin through a fixed script and keeps the key off argv", async () => {
+		const run = await runStore('dpapiBackend("C:/dg/it\'s.dpapi")', "powershell.exe", FAKE_POWERSHELL);
+
+		expect(run.stored).toBe("stored");
+		expect(run.argv).not.toContain(KEY);
+		expect(run.argv).toContain("-NonInteractive");
+		expect(run.argv).toContain("'C:/dg/it''s.dpapi'");
+		expect(run.stdin).toBe(KEY);
+	});
+
+	it("rejects without leaking the key when powershell exits non-zero", async () => {
+		const run = await runStore('dpapiBackend("C:\\dg\\key.dpapi")', "powershell.exe", FAKE_POWERSHELL, {
+			env: { FAKE_MODE: "fail" },
+		});
+
+		expect(run.stored).toBe("unreachable");
+		expect(run.childOut).not.toContain(KEY);
 	});
 });
 
