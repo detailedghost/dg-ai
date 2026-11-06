@@ -8,6 +8,7 @@ import {
 	requireStringArray,
 	requireStringRecord,
 } from "./assert";
+import { bootstrapHint, defineRelayFeature } from "./relay-format";
 import type {
 	AnswerPageMeta,
 	ProtoBrowserData,
@@ -434,6 +435,118 @@ export function validateProtoCliRequest(value: unknown): ProtoCliRequest {
 	}
 	return value as ProtoCliRequest;
 }
+
+export type ProtoRelayBodies = {
+	cliRequest: ProtoCliRequest;
+	browserRequest: {
+		requestId: string;
+		phase: "scrape" | "plant";
+		slug: string;
+		markedUrl: string;
+		timeoutMs?: number;
+	};
+	browserResult: {
+		requestId: string;
+		ok: boolean;
+		data?: ProtoBrowserData;
+		notReady?: ProtoNotReadyError;
+		error?: string;
+	};
+	browserProgress: { requestId: string; status: string };
+};
+
+/** The marked URL without its marker hash, safe to show in a timeout message. */
+export function markedUrlForTimeout(markedUrl: string): string {
+	try {
+		const url = new URL(markedUrl);
+		url.hash = "";
+		return url.toString();
+	} catch {
+		const hash = markedUrl.indexOf("#");
+		return hash >= 0 ? markedUrl.slice(0, hash) : markedUrl;
+	}
+}
+
+export const PROTO_RELAY = defineRelayFeature<ProtoRelayBodies>()({
+	name: "proto",
+	frames: {
+		cliRequest: "cli-proto-request",
+		cliResult: "cli-proto-result",
+		browserRequest: "proto-browser-request",
+		browserResult: "proto-browser-result",
+		browserProgress: "proto-browser-progress",
+	},
+	validateCliRequest: validateProtoCliRequest,
+	caps: { pending: 32, perRequester: 4, sessionIds: 10_000 },
+	timeoutMs: (cli) => cli.timeoutMs ?? PROTO_DEFAULT_TIMEOUT_MS[cli.phase],
+	toBrowserRequest: (cli, timeoutMs) => ({
+		phase: cli.phase,
+		slug: cli.slug,
+		markedUrl: cli.markedUrl,
+		timeoutMs,
+	}),
+	fromBrowserRequest: ({ phase, slug, markedUrl, timeoutMs }) =>
+		timeoutMs === undefined
+			? { phase, slug, markedUrl }
+			: { phase, slug, markedUrl, timeoutMs },
+	toCliResult: (frame) =>
+		frame.ok
+			? { ok: true, data: frame.data }
+			: frame.notReady
+				? { ok: false, notReady: frame.notReady }
+				: { ok: false, error: frame.error },
+	checks: [
+		{ check: "active", refusal: "Prototype --ext requires an active dg session." },
+		{ check: "pendingDuplicate", refuseOtherRequester: "duplicate requestId" },
+		{
+			check: "replay",
+			refusal:
+				"Prototype requestId was already used on this session; send a new one.",
+		},
+		{
+			check: "cap",
+			of: ["requester"],
+			refusal:
+				"Prototype has too many pending requests from this client; wait for existing work to finish.",
+		},
+		{
+			check: "cap",
+			of: ["pending", "sessionIds"],
+			refusal:
+				"Prototype request capacity reached; finish pending work or start a new session.",
+		},
+		{
+			check: "peers",
+			multiple:
+				"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
+			none: ({ sessionId, port }) =>
+				`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId}. ` +
+				`Open ${bootstrapHint(port)} in the browser where the extension is loaded, then retry. ` +
+				`Run dg-skills inbox bootstrap-url --session ${sessionId} to print the real URL (that pairing is shared across every daemon feature, not just inbox).`,
+		},
+		{ check: "burn" },
+	],
+	strings: {
+		activeRequired: "Prototype --ext requires an active dg session.",
+		sessionClosed: "Prototype session closed before the extension replied.",
+		timeout: ({ cli, timeoutMs, lastStatus }) =>
+			lastStatus
+				? `Prototype ${cli.phase} timed out after ${timeoutMs}ms; last report from the extension: ${lastStatus}.`
+				: `Prototype ${cli.phase} timed out after ${timeoutMs}ms with no report from the extension. It may not have loaded ${markedUrlForTimeout(cli.markedUrl)} in a paired browser, or it predates this change; rebuild and reload the unpacked extension and retry.`,
+		requesterDisconnected: "Prototype requester disconnected.",
+		extensionDisconnected: "Prototype extension disconnected before replying.",
+		sendFailed:
+			"Prototype extension request could not be sent; reconnect the extension.",
+		rejected: (detail) =>
+			`Prototype result could not be delivered: ${detail}`.slice(0, 2048),
+		unreadableFailAll:
+			"Prototype result exceeded the relay size limit and could not be delivered.",
+		extensionFailed:
+			"Prototype extension request failed before the browser reported a result.",
+	},
+	rejected: { afterOversized: "return" },
+	flags: { failAllOnUnreadable: true },
+});
 
 /** Validate the structural ProtoPlan contract without sanitizing its markup. */
 export function validateProtoPlan(value: unknown): ProtoPlan {

@@ -12,6 +12,7 @@ import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	INBOX_RELAY,
+	PROTO_RELAY,
 	PW_EXT_MIN_EXTENSION_VERSION,
 	PW_EXT_RELAY,
 } from "@dg/common";
@@ -25,6 +26,7 @@ import {
 	type RelayHooks,
 	type RelayOutcome,
 } from "../../src/server/browser-relay";
+import { protoRelayHooks } from "../../src/server/proto";
 import { pwExtRelayHooks } from "../../src/server/pw-ext";
 import {
 	abortPendingWork,
@@ -41,6 +43,7 @@ import {
 	settleOversizedRelays,
 } from "../../src/server/frame-handlers";
 import type { Logger } from "../../src/server/log";
+import { WS_PAYLOAD_HEADROOM_BYTES } from "../../src/server/http";
 import { ChatStore } from "../../src/store";
 import type { CredentialStore } from "../../src/store/credentials-store";
 import { inboxProfile } from "../../../common/__tests__/utils/inbox-fixtures";
@@ -1951,5 +1954,938 @@ describe("inbox relay invalid CLI frames", () => {
 		const cli = w.cli();
 		await w.post(cli, inboxRequest({ requestId: "x".repeat(129), operation: "nope" }));
 		expect(inboxResults(cli)[0]).toMatchObject({ requestId: "invalid-request", ok: false });
+	});
+});
+
+const PROTO_SLUG = "account-summary-1a2b3c4d";
+const PROTO_URL = "https://example.test/account#_proto=fixture";
+const PROTO_STYLE_GUIDE = {
+	meta: { url: "https://example.test/account", scrapedAt: 1, sameOrigin: true },
+	tokens: {
+		customProps: {},
+		colors: ["rgb(0, 0, 0)"],
+		fontStack: "sans-serif",
+		typeScale: [],
+		spacing: [],
+		radii: [],
+		shadows: [],
+	},
+	components: { button: {}, input: {}, link: {} },
+};
+const PROTO_DATA = { kind: "style-guide", styleGuide: PROTO_STYLE_GUIDE };
+const PROTO_VERDICT = {
+	slug: PROTO_SLUG,
+	action: "approve",
+	selectedKey: "compact",
+	ts: 1,
+};
+const PROTO_NOT_READY = {
+	code: "login-page",
+	message: "the page requires sign-in",
+	landedUrl: "https://example.test/login",
+} as const;
+const PROTO_REFUSAL = {
+	active: "Prototype --ext requires an active dg session.",
+	used: "Prototype requestId was already used on this session; send a new one.",
+	tooMany:
+		"Prototype has too many pending requests from this client; wait for existing work to finish.",
+	capacity:
+		"Prototype request capacity reached; finish pending work or start a new session.",
+	multiple:
+		"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
+	noPeer: (sessionId: string) =>
+		`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId}. Open http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity> in the browser where the extension is loaded, then retry. Run dg-skills inbox bootstrap-url --session ${sessionId} to print the real URL (that pairing is shared across every daemon feature, not just inbox).`,
+};
+const PROTO_END = {
+	closed: "Prototype session closed before the extension replied.",
+	extension: "Prototype extension disconnected before replying.",
+	sendFailed:
+		"Prototype extension request could not be sent; reconnect the extension.",
+	unreadable:
+		"Prototype result exceeded the relay size limit and could not be delivered.",
+	rejected: (detail: string) =>
+		`Prototype result could not be delivered: ${detail}`,
+};
+
+function protoRequest(overrides: Frame = {}): Frame {
+	return {
+		type: "cli-proto-request",
+		requestId: randomUUID(),
+		phase: "scrape",
+		slug: PROTO_SLUG,
+		markedUrl: PROTO_URL,
+		timeoutMs: 60_000,
+		...overrides,
+	};
+}
+
+function protoReply(w: World, requestId: string, overrides: Frame = {}): Frame {
+	return {
+		type: "proto-browser-result",
+		sessionId: w.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: w.token,
+		requestId,
+		ok: true,
+		data: PROTO_DATA,
+		...overrides,
+	};
+}
+
+function oversizedPreviewReply(
+	w: World,
+	requestId: string,
+	overrides: Frame = {},
+): string {
+	return JSON.stringify(
+		protoReply(w, requestId, {
+			data: {
+				kind: "verdict",
+				verdict: PROTO_VERDICT,
+				previewDataUrl: `data:image/png;base64,${"A".repeat(CHAT_MAX_PAYLOAD_BYTES)}`,
+			},
+			...overrides,
+		}),
+	);
+}
+
+function protoResults(ws: FakeSocket): Frame[] {
+	return sentOfType(ws, "cli-proto-result");
+}
+
+function oversizeMessage(raw: string): string {
+	return `payload of ${Buffer.byteLength(raw)} bytes exceeds CHAT_MAX_PAYLOAD_BYTES (${CHAT_MAX_PAYLOAD_BYTES})`;
+}
+
+async function protoSettled(
+	w: World,
+	cli: FakeSocket,
+	ext: FakeSocket,
+	id: string,
+) {
+	await w.post(cli, protoRequest({ requestId: id }));
+	await w.post(ext, protoReply(w, id));
+	await until(() => protoResults(cli).length === 1);
+}
+
+async function protoFillPending(w: World, clients: number): Promise<FakeSocket[]> {
+	const requesters = Array.from({ length: clients }, () => w.cli());
+	for (const [client, requester] of requesters.entries())
+		for (let i = 0; i < 4; i++)
+			await w.post(requester, protoRequest({ requestId: `c${client}-${i}` }));
+	return requesters;
+}
+
+describe("proto relay bytes", () => {
+	it("sends the pinned browser request and CLI result bytes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, {
+			type: "cli-proto-request",
+			requestId: "r-1",
+			phase: "scrape",
+			slug: PROTO_SLUG,
+			markedUrl: PROTO_URL,
+			timeoutMs: 1000,
+		});
+		expect(ext.send.mock.calls).toHaveLength(1);
+		expect(ext.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "proto-browser-request",
+				sessionId: w.sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "r-1",
+				phase: "scrape",
+				slug: PROTO_SLUG,
+				markedUrl: PROTO_URL,
+				timeoutMs: 1000,
+			}),
+		);
+		await w.post(ext, protoReply(w, "r-1"));
+		await until(() => cli.send.mock.calls.length === 1);
+		expect(cli.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "cli-proto-result",
+				sessionId: w.sessionId,
+				requestId: "r-1",
+				ok: true,
+				data: PROTO_DATA,
+			}),
+		);
+	});
+
+	it("sends the phase default as the deadline when the CLI names none", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "r-1", timeoutMs: undefined }));
+		expect(sentOfType(ext, "proto-browser-request")[0]).toMatchObject({
+			timeoutMs: 45_000,
+		});
+	});
+
+	it("sends a not-ready result with no error key", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "r-1", phase: "plant" }));
+		await w.post(
+			ext,
+			protoReply(w, "r-1", {
+				ok: false,
+				data: undefined,
+				notReady: PROTO_NOT_READY,
+			}),
+		);
+		await until(() => cli.send.mock.calls.length === 1);
+		expect(cli.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "cli-proto-result",
+				sessionId: w.sessionId,
+				requestId: "r-1",
+				ok: false,
+				notReady: PROTO_NOT_READY,
+			}),
+		);
+	});
+
+	it("sends a failed extension result as an error result", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "r-1" }));
+		await w.post(
+			ext,
+			protoReply(w, "r-1", { ok: false, data: undefined, error: "expired" }),
+		);
+		await until(() => cli.send.mock.calls.length === 1);
+		expect(cli.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "cli-proto-result",
+				sessionId: w.sessionId,
+				requestId: "r-1",
+				ok: false,
+				error: "expired",
+			}),
+		);
+	});
+
+	it("delivers a result only to the requesting CLI", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const other = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "r-1" }));
+		await w.post(ext, protoReply(w, "r-1"));
+		await until(() => protoResults(cli).length === 1);
+		await quiet();
+		expect(other.send.mock.calls).toHaveLength(0);
+		expect(w.store.claimNext(w.sessionId)).toBeUndefined();
+	});
+});
+
+describe("proto relay check order", () => {
+	it("answers the active refusal before the duplicate drop", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		const record = w.registry.get(w.sessionId);
+		if (!record) throw new Error("session missing");
+		record.state = "closed";
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(protoResults(cli)).toMatchObject([
+			{ ok: false, error: PROTO_REFUSAL.active },
+		]);
+	});
+
+	it("answers duplicate requestId for a pending id even when the other socket has 4 pending", async () => {
+		const w = await world();
+		const owner = w.cli();
+		const other = w.cli();
+		w.extension();
+		await w.post(owner, protoRequest({ requestId: "taken" }));
+		for (let i = 0; i < 4; i++)
+			await w.post(other, protoRequest({ requestId: `o${i}` }));
+		await w.post(other, protoRequest({ requestId: "taken" }));
+		expect(protoResults(other)).toMatchObject([
+			{ ok: false, error: "duplicate requestId" },
+		]);
+		expect(protoResults(owner)).toEqual([]);
+	});
+
+	it("answers the replay refusal before the requester cap", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await protoSettled(w, cli, ext, "used");
+		for (let i = 0; i < 4; i++)
+			await w.post(cli, protoRequest({ requestId: `p${i}` }));
+		await w.post(cli, protoRequest({ requestId: "used" }));
+		expect(protoResults(cli)).toHaveLength(2);
+		expect(protoResults(cli)[1]).toMatchObject({
+			ok: false,
+			error: PROTO_REFUSAL.used,
+		});
+	});
+
+	it("answers the requester cap before the pending cap", async () => {
+		const w = await world();
+		w.extension();
+		const requesters = await protoFillPending(w, 8);
+		const first = requesters[0] as FakeSocket;
+		await w.post(first, protoRequest({ requestId: "fresh" }));
+		expect(protoResults(first)).toMatchObject([
+			{ ok: false, error: PROTO_REFUSAL.tooMany },
+		]);
+	});
+
+	it("answers the pending cap before the peers refusal", async () => {
+		const w = await world();
+		w.extension();
+		await protoFillPending(w, 8);
+		const other = w.registry.create({
+			cwd: w.dgHome,
+			agentIdentity: "other",
+			role: "agent",
+		});
+		const extra = w.cli({ capabilities: [[other.sessionId, other.token]] });
+		const relay = createBrowserRelay({ deps: w.deps, feature: PROTO_RELAY });
+		await relay.handleRequest(extra, other.sessionId, {
+			type: "cli-proto-request",
+			requestId: "fresh",
+			phase: "scrape",
+			slug: PROTO_SLUG,
+			markedUrl: PROTO_URL,
+		});
+		expect(protoResults(extra)).toMatchObject([
+			{ ok: false, error: PROTO_REFUSAL.capacity },
+		]);
+	});
+
+	it("answers the no-peer refusal with the bootstrap hint and the multiple-peers refusal", async () => {
+		const w = await world();
+		const cli = w.cli();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		w.extension();
+		w.extension();
+		await w.post(cli, protoRequest({ requestId: "b" }));
+		expect(protoResults(cli)).toMatchObject([
+			{ ok: false, error: PROTO_REFUSAL.noPeer(w.sessionId) },
+			{ ok: false, error: PROTO_REFUSAL.multiple },
+		]);
+	});
+
+	it("refuses zero or several extension peers without a browser request", async () => {
+		for (const count of [0, 2]) {
+			const w = await world();
+			const cli = w.cli();
+			const peers = Array.from({ length: count }, () => w.extension());
+			await w.post(cli, protoRequest());
+			expect(protoResults(cli)).toHaveLength(1);
+			for (const peer of peers)
+				expect(sentOfType(peer, "proto-browser-request")).toEqual([]);
+		}
+	});
+
+	it("accepts any extension version", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension("0.0.1");
+		await w.post(cli, protoRequest({ requestId: "r-1" }));
+		expect(sentOfType(ext, "proto-browser-request")).toHaveLength(1);
+	});
+});
+
+describe("proto relay duplicates", () => {
+	it("drops a pending id resent by the same requester without an answer", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		await quiet();
+		expect(cli.send.mock.calls).toHaveLength(0);
+		expect(sentOfType(ext, "proto-browser-request")).toHaveLength(1);
+	});
+
+	it("refuses a pending id resent by another CLI without replacing the original", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const other = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		await w.post(other, protoRequest({ requestId: "a", markedUrl: "https://example.test/other#x" }));
+		expect(protoResults(other)).toMatchObject([
+			{ ok: false, error: "duplicate requestId" },
+		]);
+		await w.post(ext, protoReply(w, "a"));
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({ ok: true, data: PROTO_DATA });
+	});
+});
+
+describe("proto relay replay guard", () => {
+	it("refuses a resend of an id that already settled", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await protoSettled(w, cli, ext, "a");
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(protoResults(cli)[1]).toMatchObject({
+			ok: false,
+			error: PROTO_REFUSAL.used,
+		});
+		expect(sentOfType(ext, "proto-browser-request")).toHaveLength(1);
+	});
+
+	it("forwards the id again after the session emits closed and refuses after a real close", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await protoSettled(w, cli, ext, "a");
+		w.deps.registry.emit("closed", { sessionId: w.sessionId, reason: "closed" });
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(sentOfType(ext, "proto-browser-request")).toHaveLength(2);
+		w.registry.close(w.sessionId, "cli");
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(protoResults(cli).at(-1)).toMatchObject({
+			ok: false,
+			error: PROTO_REFUSAL.active,
+		});
+	});
+
+	it("lets a request refused for no peer or for several peers be resent with the same id", async () => {
+		const w = await world();
+		const cli = w.cli();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		const first = w.extension();
+		const second = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(protoResults(cli)[1]).toMatchObject({ error: PROTO_REFUSAL.multiple });
+		w.connections.remove(second);
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(sentOfType(first, "proto-browser-request")).toHaveLength(1);
+		expect(protoResults(cli)).toHaveLength(2);
+	});
+
+	it("refuses the fourth distinct id on a small table", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		const relay = createBrowserRelay({
+			deps: w.deps,
+			feature: {
+				...PROTO_RELAY,
+				caps: { ...PROTO_RELAY.caps, sessionIds: 3 },
+			},
+		});
+		const request = (requestId: string) =>
+			relay.handleRequest(cli, w.sessionId, {
+				type: "cli-proto-request",
+				requestId,
+				phase: "scrape",
+				slug: PROTO_SLUG,
+				markedUrl: PROTO_URL,
+			});
+		for (const requestId of ["a", "b", "c"]) {
+			await request(requestId);
+			relay.handleResult(ext, {
+				sessionId: w.sessionId,
+				requestId,
+				ok: true,
+				data: PROTO_DATA as never,
+			});
+		}
+		await request("d");
+		expect(protoResults(cli).at(-1)).toMatchObject({
+			ok: false,
+			error: PROTO_REFUSAL.capacity,
+		});
+	});
+
+	it("refuses a resend after a throwing send", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		rejectSends(ext);
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		await until(() => protoResults(cli).length === 1);
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		expect(protoResults(cli)[1]).toMatchObject({ error: PROTO_REFUSAL.used });
+	});
+
+	it("refuses the fifth pending request from one requester across two sessions", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const other = w.registry.create({
+			cwd: w.dgHome,
+			agentIdentity: "other",
+			role: "agent",
+		});
+		w.connections.add(
+			fakeSocket("ws", {
+				extensionVersion: MIN_VERSION,
+				capabilities: [[other.sessionId, other.token]],
+			}),
+		);
+		w.extension();
+		const relay = createBrowserRelay({ deps: w.deps, feature: PROTO_RELAY });
+		const request = (sessionId: string, requestId: string) =>
+			relay.handleRequest(cli, sessionId, {
+				type: "cli-proto-request",
+				requestId,
+				phase: "scrape",
+				slug: PROTO_SLUG,
+				markedUrl: PROTO_URL,
+			});
+		for (let i = 0; i < 2; i++) {
+			await request(w.sessionId, `a${i}`);
+			await request(other.sessionId, `b${i}`);
+		}
+		await request(w.sessionId, "fifth");
+		expect(protoResults(cli)).toMatchObject([
+			{ ok: false, error: PROTO_REFUSAL.tooMany },
+		]);
+	});
+});
+
+describe("proto relay timeout text", () => {
+	it("reports the last progress report from the owning extension", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a", timeoutMs: 250 }));
+		await w.post(ext, {
+			type: "proto-browser-progress",
+			sessionId: w.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			token: w.token,
+			requestId: "a",
+			status: "loading",
+		});
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: "Prototype scrape timed out after 250ms; last report from the extension: loading.",
+		});
+	});
+
+	it("names the missing report and the page without its hash", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension();
+		await w.post(cli, protoRequest({ requestId: "a", timeoutMs: 20 }));
+		await until(() => protoResults(cli).length === 1);
+		const error = String(protoResults(cli)[0]?.error);
+		expect(error).toContain("timed out after 20ms with no report from the extension");
+		expect(error).toContain("https://example.test/account in a paired browser");
+		expect(error).not.toContain("#_proto=");
+	});
+
+	it("ignores progress from a socket that does not own the request", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension();
+		const other = w.extension();
+		w.connections.remove(other);
+		await w.post(cli, protoRequest({ requestId: "a", timeoutMs: 30 }));
+		await w.post(other, {
+			type: "proto-browser-progress",
+			sessionId: w.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			token: w.token,
+			requestId: "a",
+			status: "forged",
+		});
+		await until(() => protoResults(cli).length === 1);
+		expect(String(protoResults(cli)[0]?.error)).toContain("no report from the extension");
+	});
+
+	it("expires a request, ignores its late reply and accepts the next request", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a", timeoutMs: 20 }));
+		await until(() => protoResults(cli).length === 1);
+		await w.post(ext, protoReply(w, "a"));
+		await w.post(cli, protoRequest({ requestId: "b" }));
+		await w.post(ext, protoReply(w, "b"));
+		await until(() => protoResults(cli).length === 2);
+		expect(protoResults(cli)[1]).toMatchObject({ requestId: "b", ok: true });
+	});
+});
+
+describe("proto relay unreadable results", () => {
+	async function pending(count = 1) {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		for (let i = 1; i <= count; i++)
+			await w.post(cli, protoRequest({ requestId: `r-${i}` }));
+		return { w, cli, ext };
+	}
+
+	it("delivers the verdict without the preview when the preview made the result oversized", async () => {
+		const { w, cli, ext } = await pending();
+		const raw = oversizedPreviewReply(w, "r-1");
+		expect(Buffer.byteLength(raw)).toBeGreaterThan(CHAT_MAX_PAYLOAD_BYTES);
+		expect(Buffer.byteLength(raw)).toBeLessThan(
+			CHAT_MAX_PAYLOAD_BYTES + WS_PAYLOAD_HEADROOM_BYTES,
+		);
+		await w.postRaw(ext, raw);
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: true,
+			data: { kind: "verdict", verdict: PROTO_VERDICT },
+		});
+		expect(JSON.stringify(protoResults(cli)[0])).not.toContain("previewDataUrl");
+		expect(sentOfType(ext, "error")).toEqual([]);
+		expect(ext.data.invalidFrameCount).toBe(0);
+	});
+
+	it("settles with the rejected text when the result is still invalid after the strip", async () => {
+		const { w, cli, ext } = await pending();
+		const raw = oversizedPreviewReply(w, "r-1", { extra: true });
+		await w.postRaw(ext, raw);
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.rejected("unknown proto result field"),
+		});
+		expect(sentOfType(ext, "error")).toEqual([]);
+		expect(ext.data.invalidFrameCount).toBe(0);
+	});
+
+	it("fails every pending request for an unreadable oversized payload and strikes the extension", async () => {
+		const { w, cli, ext } = await pending(2);
+		const raw = "x".repeat(CHAT_MAX_PAYLOAD_BYTES + 1);
+		await w.postRaw(ext, raw);
+		await until(() => protoResults(cli).length === 2);
+		for (const result of protoResults(cli))
+			expect(result).toMatchObject({ ok: false, error: PROTO_END.unreadable });
+		expect(sentOfType(ext, "error")).toMatchObject([
+			{ message: oversizeMessage(raw) },
+		]);
+		expect(ext.data.invalidFrameCount).toBe(1);
+	});
+
+	it("fails the other pending requests of the socket for an oversized result that matches none", async () => {
+		const { w, cli, ext } = await pending(2);
+		const raw = oversizedPreviewReply(w, "unknown-id");
+		await w.postRaw(ext, raw);
+		await until(() => protoResults(cli).length === 2);
+		for (const result of protoResults(cli))
+			expect(result).toMatchObject({ ok: false, error: PROTO_END.unreadable });
+		expect(sentOfType(ext, "error")).toMatchObject([
+			{ message: oversizeMessage(raw) },
+		]);
+		expect(ext.data.invalidFrameCount).toBe(1);
+	});
+
+	it("settles with the rejected text when an invalid result reaches the extension socket", async () => {
+		const { w, cli, ext } = await pending();
+		await w.post(ext, protoReply(w, "r-1", { extra: true }));
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.rejected("unknown proto result field"),
+		});
+		expect(sentOfType(ext, "error")).toEqual([]);
+		expect(ext.data.invalidFrameCount).toBe(0);
+	});
+
+	it("reports a protocol version mismatch found while salvaging an oversized result", async () => {
+		const { w, cli, ext } = await pending();
+		await w.postRaw(ext, oversizedPreviewReply(w, "r-1", { protocolVersion: 2 }));
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			error: PROTO_END.rejected(
+				`protocol version mismatch: daemon expects ${CHAT_PROTOCOL_VERSION}`,
+			),
+		});
+	});
+
+	it("leaves a normal-size result with a wrong protocol version to the general error", async () => {
+		const { w, cli, ext } = await pending();
+		await w.post(ext, protoReply(w, "r-1", { protocolVersion: 2 }));
+		await quiet();
+		expect(protoResults(cli)).toEqual([]);
+		expect(sentOfType(ext, "error")).toHaveLength(1);
+		expect(ext.data.invalidFrameCount).toBe(1);
+	});
+
+	it("authorizes the token inside salvage and settles with the authorization message", async () => {
+		const { w, cli, ext } = await pending();
+		await w.postRaw(ext, oversizedPreviewReply(w, "r-1", { token: "forged-token" }));
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.rejected(
+				`session ${w.sessionId} is not authorized for this frame`,
+			),
+		});
+	});
+
+	it("settles with the rejected text when the oversized result carries no token", async () => {
+		const { w, cli, ext } = await pending();
+		await w.postRaw(ext, oversizedPreviewReply(w, "r-1", { token: undefined }));
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.rejected(
+				'chat frame.token must be a non-empty string',
+			),
+		});
+	});
+
+	it("leaves pending inbox and pw-ext requests alone when an extension sends an unreadable payload", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, inboxRequest({ requestId: "i-1" }));
+		await w.post(cli, pwRequest({ requestId: "p-1" }));
+		await w.postRaw(ext, "x".repeat(CHAT_MAX_PAYLOAD_BYTES + 1));
+		await quiet();
+		expect(inboxResults(cli)).toEqual([]);
+		expect(cliResults(cli)).toEqual([]);
+		expect(ext.data.invalidFrameCount).toBe(1);
+	});
+
+	it("fails nothing for an unreadable payload from a CLI socket", async () => {
+		const { w, cli } = await pending();
+		await w.postRaw(cli, "x".repeat(CHAT_MAX_PAYLOAD_BYTES + 1));
+		await quiet();
+		expect(protoResults(cli)).toEqual([]);
+		expect(cli.data.invalidFrameCount).toBe(1);
+	});
+
+	it("settles nothing for an oversized result from a second extension socket and strikes it", async () => {
+		const { w, cli } = await pending();
+		const second = w.extension();
+		const raw = oversizedPreviewReply(w, "r-1");
+		await w.postRaw(second, raw);
+		await quiet();
+		expect(protoResults(cli)).toEqual([]);
+		expect(sentOfType(second, "error")).toMatchObject([
+			{ message: oversizeMessage(raw) },
+		]);
+		expect(second.data.invalidFrameCount).toBe(1);
+	});
+});
+
+describe("proto relay result ownership", () => {
+	async function pending() {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "r-1" }));
+		return { w, cli, ext };
+	}
+
+	it("ignores a result from a second extension socket and from a page socket", async () => {
+		const { w, cli } = await pending();
+		await w.post(w.extension(), protoReply(w, "r-1"));
+		await w.post(w.page(), protoReply(w, "r-1"));
+		await quiet();
+		expect(protoResults(cli)).toEqual([]);
+	});
+
+	it("ignores a result for another request or with a wrong token", async () => {
+		const { w, cli, ext } = await pending();
+		await w.post(ext, protoReply(w, "wrong-request-id"));
+		await w.post(ext, protoReply(w, "r-1", { token: "forged-token" }));
+		await quiet();
+		expect(protoResults(cli)).toEqual([]);
+		await w.post(ext, protoReply(w, "r-1"));
+		await until(() => protoResults(cli).length === 1);
+	});
+
+	it("ignores a second result for a settled request", async () => {
+		const { w, cli, ext } = await pending();
+		await w.post(ext, protoReply(w, "r-1"));
+		await w.post(ext, protoReply(w, "r-1"));
+		await quiet();
+		expect(protoResults(cli)).toHaveLength(1);
+	});
+
+	it("refreshes the session activity before it handles a result", async () => {
+		const { w, ext } = await pending();
+		const record = w.registry.get(w.sessionId);
+		if (!record) throw new Error("session missing");
+		record.lastActivityAt = 0;
+		await w.post(ext, protoReply(w, "r-1"));
+		expect(record.lastActivityAt).toBeGreaterThan(0);
+	});
+});
+
+describe("proto relay ends", () => {
+	it("sends nothing to anyone when the requester closes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		abortPendingWork(cli);
+		await quiet();
+		expect(cli.send.mock.calls).toHaveLength(0);
+		expect(sentFrames(ext).map((frame) => frame.type)).toEqual([
+			"proto-browser-request",
+		]);
+		await w.post(ext, protoReply(w, "a"));
+		await quiet();
+		expect(cli.send.mock.calls).toHaveLength(0);
+	});
+
+	it("answers when the extension closes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		abortPendingWork(ext);
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.extension,
+		});
+	});
+
+	it("answers when the session closes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension();
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		w.deps.registry.emit("closed", { sessionId: w.sessionId, reason: "closed" });
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.closed,
+		});
+	});
+
+	it("answers when the extension send fails", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		rejectSends(ext);
+		await w.post(cli, protoRequest({ requestId: "a" }));
+		await until(() => protoResults(cli).length === 1);
+		expect(protoResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: PROTO_END.sendFailed,
+		});
+	});
+
+	it("sends no cancel frame to the extension on a timeout or a requester close", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const closing = w.cli();
+		const ext = w.extension();
+		await w.post(cli, protoRequest({ requestId: "a", timeoutMs: 20 }));
+		await w.post(closing, protoRequest({ requestId: "b" }));
+		abortPendingWork(closing);
+		await until(() => protoResults(cli).length === 1);
+		expect(sentFrames(ext).map((frame) => frame.type)).toEqual([
+			"proto-browser-request",
+			"proto-browser-request",
+		]);
+	});
+});
+
+describe("proto relay settled outcome", () => {
+	it("settles a delivered not-ready result with kind error carrying the result", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension();
+		const outcomes: RelayOutcome[] = [];
+		const relay = createBrowserRelay({
+			deps: w.deps,
+			feature: PROTO_RELAY,
+			hooks: { settled: ({ outcome }) => outcomes.push(outcome) },
+		});
+		await relay.handleRequest(cli, w.sessionId, {
+			type: "cli-proto-request",
+			requestId: "a",
+			phase: "plant",
+			slug: PROTO_SLUG,
+			markedUrl: PROTO_URL,
+		});
+		relay.handleResult(ext, {
+			sessionId: w.sessionId,
+			requestId: "a",
+			ok: false,
+			notReady: PROTO_NOT_READY,
+		});
+		const expected = {
+			kind: "error",
+			result: { ok: false, notReady: PROTO_NOT_READY },
+		} satisfies RelayOutcome;
+		expect(outcomes).toEqual([expected]);
+	});
+
+	it("slices the rejected text to exactly 2048 characters", () => {
+		expect(PROTO_RELAY.strings.rejected?.("x".repeat(5000))).toHaveLength(2048);
+	});
+});
+
+describe("proto relay salvage hook", () => {
+	it("repairs a frame without throwing for a socket that holds the token", async () => {
+		const w = await world();
+		const ext = w.extension();
+		const raw = JSON.parse(oversizedPreviewReply(w, "a")) as Record<string, unknown>;
+		const frame = protoRelayHooks().salvage?.({ raw, socket: ext });
+		expect(frame).toMatchObject({
+			type: "proto-browser-result",
+			requestId: "a",
+			data: { kind: "verdict", verdict: PROTO_VERDICT },
+		});
+		expect(JSON.stringify(frame)).not.toContain("previewDataUrl");
+	});
+
+	it("rejects a result that changed type", async () => {
+		const w = await world();
+		const ext = w.extension();
+		const raw = {
+			type: "proto-browser-progress",
+			sessionId: w.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			token: w.token,
+			requestId: "a",
+			status: "x",
+		};
+		expect(() => protoRelayHooks().salvage?.({ raw, socket: ext })).toThrow(
+			"prototype result changed type",
+		);
+	});
+});
+
+describe("proto relay invalid CLI frames", () => {
+	it("answers an invalid request with the validator message and one strike, send first", async () => {
+		const strikes: number[] = [];
+		const w = await world();
+		const cli = w.cli({
+			send: mock((_payload: string) => strikes.push(cli.data.invalidFrameCount)),
+		});
+		await w.post(cli, protoRequest({ requestId: "r-1", phase: "nope" }));
+		expect(protoResults(cli)).toMatchObject([
+			{
+				sessionId: w.sessionId,
+				requestId: "r-1",
+				ok: false,
+				error: 'proto cli request.phase must be "scrape" or "plant"',
+			},
+		]);
+		expect(strikes).toEqual([0]);
+		expect(cli.data.invalidFrameCount).toBe(1);
+	});
+
+	it("answers with invalid-request when the id is too long", async () => {
+		const w = await world();
+		const cli = w.cli();
+		await w.post(cli, protoRequest({ requestId: "x".repeat(129), phase: "nope" }));
+		expect(protoResults(cli)[0]).toMatchObject({
+			requestId: "invalid-request",
+			ok: false,
+		});
 	});
 });

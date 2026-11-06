@@ -88,3 +88,13 @@ describe("bootstrapHint", () => {
 		);
 	});
 });
+
+describe("RELAY_FEATURES", () => {
+	it("lists inbox, proto and pw-ext in that order", () => {
+		expect(RELAY_FEATURES.map((feature) => feature.name)).toEqual([
+			"inbox",
+			"proto",
+			"pw-ext",
+		]);
+	});
+});

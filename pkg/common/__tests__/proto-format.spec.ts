@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	assembleAnswerPage,
 	canonicalizeStyleGuide,
+	markedUrlForTimeout,
 	PROTO_DEFAULT_TIMEOUT_MS,
 	PROTO_MAX_MARKUP_CHARS,
 	PROTO_MAX_VARIATIONS,
@@ -10,6 +11,7 @@ import {
 	STYLE_GUIDE_MAX_CONTROLS,
 	PROTO_MARKED_URL_MAX_LENGTH,
 	PROTO_PREVIEW_MAX_CHARS,
+	PROTO_RELAY,
 	validateProtoBrowserData,
 	validateProtoCliRequest,
 	validateProtoIdentifier,
@@ -843,5 +845,136 @@ describe("assembleAnswerPage", () => {
 		expect(page).toContain("<style>\uFFFD</style>");
 		expect(page).toContain('style="content:\uFFFD"');
 		expect(page).toContain(">Safe</div>");
+	});
+});
+
+describe("PROTO_RELAY table", () => {
+	const cli = {
+		type: "cli-proto-request",
+		requestId: "r",
+		phase: "scrape",
+		slug: "account-summary-1a2b3c4d",
+		markedUrl: "https://example.test/account#_proto=fixture",
+	} as const;
+	const notReady = {
+		code: "login-page",
+		message: "the page requires sign-in",
+		landedUrl: "https://example.test/login",
+	} as const;
+
+	it("names the feature and its five frames", () => {
+		expect(PROTO_RELAY.name).toBe("proto");
+		expect(PROTO_RELAY.frames).toEqual({
+			cliRequest: "cli-proto-request",
+			cliResult: "cli-proto-result",
+			browserRequest: "proto-browser-request",
+			browserResult: "proto-browser-result",
+			browserProgress: "proto-browser-progress",
+		});
+	});
+
+	it("pins the caps, the oversized behavior and the flags", () => {
+		expect(PROTO_RELAY.caps).toEqual({
+			pending: 32,
+			perRequester: 4,
+			sessionIds: 10_000,
+		});
+		expect(PROTO_RELAY.rejected).toEqual({ afterOversized: "return" });
+		expect(PROTO_RELAY.flags.failAllOnUnreadable).toBe(true);
+	});
+
+	it("lists the checks in refusal order", () => {
+		expect(PROTO_RELAY.checks.map((entry) => entry.check)).toEqual([
+			"active",
+			"pendingDuplicate",
+			"replay",
+			"cap",
+			"cap",
+			"peers",
+			"burn",
+		]);
+	});
+
+	it("uses the request deadline or the phase default", () => {
+		expect(PROTO_RELAY.timeoutMs({ ...cli, timeoutMs: 250 })).toBe(250);
+		expect(PROTO_RELAY.timeoutMs(cli)).toBe(45_000);
+		expect(PROTO_RELAY.timeoutMs({ ...cli, phase: "plant" })).toBe(900_000);
+	});
+
+	it("spreads the request fields and the deadline into the browser frame", () => {
+		const body = PROTO_RELAY.toBrowserRequest(cli, 1000);
+		expect(body).toEqual({
+			phase: "scrape",
+			slug: "account-summary-1a2b3c4d",
+			markedUrl: "https://example.test/account#_proto=fixture",
+			timeoutMs: 1000,
+		});
+		expect(Object.keys(body)).toEqual([
+			"phase",
+			"slug",
+			"markedUrl",
+			"timeoutMs",
+		]);
+	});
+
+	it("reads the request back with and without a deadline", () => {
+		const frame = {
+			requestId: "r",
+			phase: "plant",
+			slug: "s",
+			markedUrl: "https://example.test/#x",
+		} as const;
+		expect(PROTO_RELAY.fromBrowserRequest(frame)).toEqual({
+			phase: "plant",
+			slug: "s",
+			markedUrl: "https://example.test/#x",
+		});
+		expect(
+			Object.keys(PROTO_RELAY.fromBrowserRequest({ ...frame, timeoutMs: 5 })),
+		).toEqual(["phase", "slug", "markedUrl", "timeoutMs"]);
+	});
+
+	it("turns an ok, a not-ready and an error result into CLI results", () => {
+		const data = { kind: "verdict", verdict: { slug: "s" } } as never;
+		expect(PROTO_RELAY.toCliResult({ requestId: "r", ok: true, data })).toEqual({
+			ok: true,
+			data,
+		});
+		const notReadyResult = PROTO_RELAY.toCliResult({
+			requestId: "r",
+			ok: false,
+			notReady,
+		});
+		expect(notReadyResult).toEqual({ ok: false, notReady });
+		expect("error" in notReadyResult).toBe(false);
+		expect(
+			PROTO_RELAY.toCliResult({ requestId: "r", ok: false, error: "boom" }),
+		).toEqual({ ok: false, error: "boom" });
+	});
+
+	it("words a timeout with the last report or with the page it never loaded", () => {
+		const ctx = { sessionId: "s", cli, timeoutMs: 20 };
+		expect(PROTO_RELAY.strings.timeout({ ...ctx, lastStatus: "loading" })).toBe(
+			"Prototype scrape timed out after 20ms; last report from the extension: loading.",
+		);
+		expect(PROTO_RELAY.strings.timeout(ctx)).toBe(
+			"Prototype scrape timed out after 20ms with no report from the extension. It may not have loaded https://example.test/account in a paired browser, or it predates this change; rebuild and reload the unpacked extension and retry.",
+		);
+	});
+
+	it("slices the whole rejected text to 2048 characters", () => {
+		const rejected = PROTO_RELAY.strings.rejected;
+		expect(rejected?.("boom")).toBe(
+			"Prototype result could not be delivered: boom",
+		);
+		expect(rejected?.("x".repeat(3000))).toHaveLength(2048);
+	});
+});
+
+describe("markedUrlForTimeout", () => {
+	it("clears the hash of a URL and cuts the text before # otherwise", () => {
+		expect(markedUrlForTimeout("https://a/b#x")).toBe("https://a/b");
+		expect(markedUrlForTimeout("not a url#x")).toBe("not a url");
+		expect(markedUrlForTimeout("not a url")).toBe("not a url");
 	});
 });

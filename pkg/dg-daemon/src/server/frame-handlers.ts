@@ -18,6 +18,7 @@ import {
 	OVERWATCH_MAX_LANES,
 	OVERWATCH_MAX_MERGES,
 	INBOX_RELAY,
+	PROTO_RELAY,
 	PW_EXT_RELAY,
 	validateChatFrame,
 	validateCredentialsCliRequest,
@@ -26,7 +27,6 @@ import {
 	validateOverwatchLaneUpdate,
 	validateOverwatchMerge,
 	validateIsoTimestamp,
-	validateProtoCliRequest,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -75,13 +75,7 @@ import {
 import { handleInboxCli } from "./inbox";
 import type { Logger } from "./log";
 import { pinOriginIfUnset } from "./origin";
-import {
-	failPendingProtoForExtension,
-	handleProtoBrowserProgress,
-	handleProtoBrowserResult,
-	handleProtoCli,
-	settleRejectedProtoBrowserResult,
-} from "./proto";
+import { protoRelayHooks } from "./proto";
 import { pwExtRelayHooks } from "./pw-ext";
 
 export type FrameHandlerDeps = {
@@ -383,6 +377,7 @@ function relaysFor(deps: FrameHandlerDeps): RelayRoutes {
 	if (!routes) {
 		routes = buildRelayRoutes(deps, [
 			{ feature: INBOX_RELAY, handleCliRequest: handleInboxCli },
+			{ feature: PROTO_RELAY, hooks: protoRelayHooks() },
 			{ feature: PW_EXT_RELAY, hooks: pwExtRelayHooks(deps) },
 		]);
 		relayRoutes.set(deps.connections, routes);
@@ -435,8 +430,6 @@ function parseCliFrame(
 			(key) => key === "protocolVersion" || allowed.includes(key),
 		);
 	switch (value.type) {
-		case "cli-proto-request":
-			try { return validateProtoCliRequest(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -651,8 +644,6 @@ async function handleCliFrame(
 	if (route?.role === "cliCancel")
 		return route.relay.handleCancel(ws, sessionId, frame as { requestId: string });
 	switch (frame.type) {
-		case "cli-proto-request":
-			return handleProtoCli(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {
@@ -1127,10 +1118,6 @@ async function dispatchFrame(
 	if (route?.role === "browserProgress")
 		return route.relay.handleProgress(ws, frame as RelayProgressFrame);
 	switch (frame.type) {
-		case "proto-browser-result":
-			return handleProtoBrowserResult(ws, frame, deps);
-		case "proto-browser-progress":
-			return handleProtoBrowserProgress(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":
@@ -1236,21 +1223,9 @@ export async function handleSocketMessage(
 		} catch {
 			parsedOversize = undefined;
 		}
-		if (settleRejectedProtoBrowserResult(ws, parsedOversize, deps)) return;
 		const { byName } = relaysFor(deps);
 		if (settleOversizedRelays(ws, parsedOversize, byName.values())) return;
 		failUnreadableRelays(ws, parsedOversize, byName.values());
-		const unreadable = parsedOversize === undefined;
-		const protoResult =
-			isRecord(parsedOversize) &&
-			parsedOversize.type === "proto-browser-result";
-		if ((unreadable || protoResult) && isExtensionPeer(ws)) {
-			failPendingProtoForExtension(
-				ws,
-				deps,
-				`Prototype result exceeded the relay size limit and could not be delivered.`,
-			);
-		}
 		await sendError(
 			ws,
 			TRANSPORT_ERROR_SESSION_ID,
@@ -1271,17 +1246,6 @@ export async function handleSocketMessage(
 	if (isConnectHandshake(parsed)) {
 		await handleConnectHandshake(ws, parsed, deps);
 		return;
-	}
-
-	if (isRecord(parsed) && parsed.type === "cli-proto-request" && ws.data.kind === "cli") {
-		try { validateProtoCliRequest(parsed); }
-		catch (err) {
-			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
-			const requestId = invalidRequestId(parsed);
-			await sendViaQueue(ws, JSON.stringify({ type: "cli-proto-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, CLI_ERROR_MAX_CHARS) }));
-			noteInvalid(ws);
-			return;
-		}
 	}
 
 	if (isRecord(parsed) && ws.data.kind === "cli") {
@@ -1341,7 +1305,6 @@ export async function handleSocketMessage(
 	try {
 		frame = validateChatFrame(parsed);
 	} catch (err) {
-		if (settleRejectedProtoBrowserResult(ws, parsed, deps)) return;
 		for (const relay of relaysFor(deps).byName.values())
 			if (relay.settleRejected(ws, parsed)) return;
 		await sendError(ws, rawSessionId, describeError(err));
