@@ -1,5 +1,5 @@
-import { fail, requireRecord } from "./assert";
-import { bootstrapHint, defineRelayFeature } from "./relay-format";
+import { fail, requireRecord, requireString } from "./assert";
+import type { RelayWire } from "./relay-format";
 
 /** Maximum metadata page size, independent of a workflow's total message limit. */
 export const INBOX_MAX_PAGE_SIZE = 200;
@@ -539,17 +539,7 @@ export type InboxRelayBodies = {
 	};
 };
 
-const INBOX_VERSION_PATTERN =
-	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-
-function inboxExtensionSupported(version: string | undefined): boolean {
-	const match = version?.match(INBOX_VERSION_PATTERN);
-	if (!match) return false;
-	const major = Number(match[1]);
-	return major > 1 || (major === 1 && Number(match[2]) >= 11);
-}
-
-export const INBOX_RELAY = defineRelayFeature<InboxRelayBodies>()({
+export const INBOX_WIRE = {
 	name: "inbox",
 	frames: {
 		cliRequest: "cli-inbox-request",
@@ -557,62 +547,46 @@ export const INBOX_RELAY = defineRelayFeature<InboxRelayBodies>()({
 		browserRequest: "inbox-browser-request",
 		browserResult: "inbox-browser-result",
 	},
-	validateCliRequest: validateInboxCliRequest,
-	caps: { pending: 128, perRequester: 8, sessionIds: 10_000 },
-	timeoutMs: (cli) => cli.timeoutMs ?? INBOX_DEFAULT_TIMEOUT_MS,
-	toBrowserRequest: (cli) => ({ request: cli.request! }),
-	fromBrowserRequest: (frame) => frame.request,
-	toCliResult: (frame) =>
-		frame.ok
-			? { ok: true, value: validateInboxBrowserResponse(frame.data) }
-			: { ok: false, error: frame.error },
-	checks: [
-		{ check: "active", refusal: "Inbox requires an active dg session." },
-		{ check: "pendingDuplicate" },
-		{
-			check: "cap",
-			of: ["requester"],
-			refusal:
-				"Inbox has too many pending requests from this client; wait for existing work to finish.",
+	validators: {
+		"inbox-browser-request": (value, path) => {
+			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("inbox requestId exceeds 128 characters");
+			validateInboxBrowserRequest(value.request);
 		},
-		{
-			check: "replay",
-			refusal: "Inbox requestId was already used; create a new requestId.",
+		"inbox-browser-result": (value, path) => {
+			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("inbox requestId exceeds 128 characters");
+			if (typeof value.ok !== "boolean")
+				fail("inbox result.ok must be a boolean");
+			if (value.ok) {
+				if (value.error !== undefined)
+					fail("successful inbox result must not contain an error");
+				validateInboxBrowserResponse(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail("failed inbox result must not contain data");
+				requireString(value.error, "inbox result.error", { nonEmpty: true });
+				if ((value.error as string).length > 2048)
+					fail("inbox result.error exceeds 2048 characters");
+			}
+			for (const key of Object.keys(value)) {
+				if (
+					![
+						"type",
+						"protocolVersion",
+						"sessionId",
+						"token",
+						"requestId",
+						"ok",
+						"data",
+						"error",
+					].includes(key)
+				)
+					fail("unknown inbox result field");
+			}
 		},
-		{
-			check: "cap",
-			of: ["sessionIds", "pending"],
-			refusal:
-				"Inbox request capacity reached; finish pending work or start a new session.",
-		},
-		{ check: "burn" },
-		{
-			check: "peers",
-			multiple:
-				"Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session.",
-			none: ({ sessionId, port }) =>
-				`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId} and open an authenticated Proton Mail tab. ` +
-				`Open ${bootstrapHint(port)} in the browser where the extension is loaded, then reload the Proton Mail tab. ` +
-				"Inbox requires dg extension 1.11.0 or newer.",
-		},
-		{
-			check: "version",
-			accepts: inboxExtensionSupported,
-			refusal:
-				"Inbox requires dg extension 1.11.0 or newer; update the extension, reload it, and reconnect this session.",
-		},
-	],
-	strings: {
-		activeRequired: "Inbox requires an active dg session.",
-		sessionClosed: "Inbox session closed before the extension replied.",
-		timeout: () =>
-			"Inbox extension request timed out; check the authenticated Proton tab and retry with a new requestId.",
-		requesterDisconnected: "Inbox requester disconnected.",
-		extensionDisconnected: "Inbox extension disconnected before replying.",
-		sendFailed:
-			"Inbox extension request could not be sent; reconnect the extension.",
-		extensionFailed:
-			"Proton extension request failed. Open or reload the mail tab and retry.",
 	},
-	flags: { failAllOnUnreadable: false },
-});
+	inbound: ["inbox-browser-result"],
+} as const satisfies RelayWire;

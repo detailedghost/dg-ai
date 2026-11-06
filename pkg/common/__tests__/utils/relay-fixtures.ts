@@ -33,6 +33,13 @@ export const TEST_RELAY = defineRelayFeature<TestRelayBodies>()({
 		browserCancel: "test-browser-cancel",
 		browserProgress: "test-browser-progress",
 	},
+	validators: {
+		"test-browser-request": () => {},
+		"test-browser-cancel": () => {},
+		"test-browser-result": () => {},
+		"test-browser-progress": () => {},
+	},
+	inbound: ["test-browser-result", "test-browser-progress"],
 	validateCliRequest(value): TestCliRequest {
 		requireRecord(value, "test request");
 		requireString(value.requestId, "test request.requestId", { nonEmpty: true });

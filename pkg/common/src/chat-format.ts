@@ -1,10 +1,4 @@
 import {
-	validateInboxBrowserRequest,
-	validateInboxBrowserResponse,
-	type InboxBrowserRequest,
-	type InboxBrowserResponse,
-} from "./inbox-format";
-import {
 	fail,
 	requireFiniteNumber,
 	requireOneOf,
@@ -12,33 +6,17 @@ import {
 	requireString,
 } from "./assert";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
+import { INBOX_WIRE } from "./inbox-format";
+import { PROTO_WIRE, validateProtoIdentifier } from "./proto-format";
+import { PW_EXT_WIRE } from "./pw-ext-format";
+import type { RELAY_FEATURES } from "./relay-features";
 import {
-	PROTO_MAX_TIMEOUT_MS,
-	validateProtoBrowserData,
-	validateProtoIdentifier,
-	validateProtoMarkedUrl,
-	validateProtoNotReadyError,
-} from "./proto-format";
-import type { ProtoBrowserData, ProtoNotReadyError } from "./types";
-import {
-	type PwExtRequest,
-	type PwExtResponse,
-	validatePwExtRequest,
-	validatePwExtRequestId,
-	validatePwExtResponse,
-	validatePwExtTimeout,
-} from "./pw-ext-format";
+	type RelayChatFrame,
+	relayFrameTypes,
+	relayValidators,
+} from "./relay-format";
 
 const UTF8_ENCODER = new TextEncoder();
-
-function requireOnlyKeys(
-	value: Record<string, unknown>,
-	path: string,
-	allowed: readonly string[],
-): void {
-	for (const key of Object.keys(value))
-		if (!allowed.includes(key)) fail(`${path} has unknown field "${key}"`);
-}
 
 /** Byte length of `value` once JSON-serialized and UTF-8 encoded. */
 export function jsonByteLength(value: unknown): number {
@@ -233,66 +211,13 @@ export type OverwatchAction = {
 	note?: string;
 };
 
-type Envelope<SessionId extends string = string> = {
+export type Envelope<SessionId extends string = string> = {
 	sessionId: SessionId;
 	protocolVersion: number;
 };
 
 export type ChatFrame =
-	| (Envelope & {
-			type: "inbox-browser-request";
-			requestId: string;
-			request: InboxBrowserRequest;
-	  })
-	| (Envelope & {
-			type: "inbox-browser-result";
-			token: string;
-			requestId: string;
-			ok: boolean;
-			data?: InboxBrowserResponse;
-			error?: string;
-	  })
-	| (Envelope & {
-			type: "proto-browser-request";
-			requestId: string;
-			phase: "scrape" | "plant";
-			slug: string;
-			markedUrl: string;
-			timeoutMs?: number;
-	  })
-	| (Envelope & {
-			type: "proto-browser-result";
-			token: string;
-			requestId: string;
-			ok: boolean;
-			data?: ProtoBrowserData;
-			notReady?: ProtoNotReadyError;
-			error?: string;
-	  })
-	| (Envelope & {
-			type: "proto-browser-progress";
-			token: string;
-			requestId: string;
-			status: string;
-	  })
-	| (Envelope & {
-			type: "pw-ext-browser-request";
-			requestId: string;
-			request: PwExtRequest;
-			timeoutMs: number;
-	  })
-	| (Envelope & {
-			type: "pw-ext-browser-cancel";
-			requestId: string;
-	  })
-	| (Envelope & {
-			type: "pw-ext-browser-result";
-			token: string;
-			requestId: string;
-			ok: boolean;
-			data?: PwExtResponse;
-			error?: string;
-	  })
+	| RelayChatFrame<(typeof RELAY_FEATURES)[number]>
 	| (Envelope & {
 			type: "user-message";
 			token: string;
@@ -369,15 +294,7 @@ export type ChatFrame =
 			error?: string;
 	  });
 
-const CHAT_FRAME_TYPES = new Set([
-	"inbox-browser-request",
-	"inbox-browser-result",
-	"proto-browser-request",
-	"proto-browser-result",
-	"proto-browser-progress",
-	"pw-ext-browser-request",
-	"pw-ext-browser-cancel",
-	"pw-ext-browser-result",
+const HAND_FRAME_TYPES = [
 	"user-message",
 	"ack",
 	"agent-message",
@@ -402,13 +319,9 @@ const CHAT_FRAME_TYPES = new Set([
 	"overwatch-state",
 	"overwatch-open",
 	"overwatch-open-result",
-]);
+] as const;
 
-const INBOUND_FRAME_TYPES = new Set([
-	"inbox-browser-result",
-	"proto-browser-result",
-	"proto-browser-progress",
-	"pw-ext-browser-result",
+const HAND_INBOUND_TYPES = [
 	"user-message",
 	"command-invocation",
 	"session-create",
@@ -419,7 +332,21 @@ const INBOUND_FRAME_TYPES = new Set([
 	"config-get",
 	"config-set",
 	"overwatch-open-result",
+] as const;
+
+const RELAY_WIRE = [INBOX_WIRE, PROTO_WIRE, PW_EXT_WIRE] as const;
+
+export const CHAT_FRAME_TYPES: ReadonlySet<string> = new Set([
+	...relayFrameTypes(RELAY_WIRE, "all"),
+	...HAND_FRAME_TYPES,
 ]);
+
+export const INBOUND_FRAME_TYPES: ReadonlySet<string> = new Set([
+	...relayFrameTypes(RELAY_WIRE, "inbound"),
+	...HAND_INBOUND_TYPES,
+]);
+
+const RELAY_VALIDATORS = relayValidators(RELAY_WIRE);
 
 function requireProgressState(
 	value: unknown,
@@ -789,167 +716,6 @@ function validateFrameBody(
 				fail(`${path}.messages must be an array`);
 			}
 			return;
-		case "inbox-browser-request":
-			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("inbox requestId exceeds 128 characters");
-			validateInboxBrowserRequest(value.request);
-			return;
-		case "inbox-browser-result":
-			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("inbox requestId exceeds 128 characters");
-			if (typeof value.ok !== "boolean")
-				fail("inbox result.ok must be a boolean");
-			if (value.ok) {
-				if (value.error !== undefined)
-					fail("successful inbox result must not contain an error");
-				validateInboxBrowserResponse(value.data);
-			} else {
-				if (value.data !== undefined)
-					fail("failed inbox result must not contain data");
-				requireString(value.error, "inbox result.error", { nonEmpty: true });
-				if ((value.error as string).length > 2048)
-					fail("inbox result.error exceeds 2048 characters");
-			}
-			for (const key of Object.keys(value)) {
-				if (
-					![
-						"type",
-						"protocolVersion",
-						"sessionId",
-						"token",
-						"requestId",
-						"ok",
-						"data",
-						"error",
-					].includes(key)
-				)
-					fail("unknown inbox result field");
-			}
-			return;
-		case "proto-browser-request":
-			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("proto requestId exceeds 128 characters");
-			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
-			validateProtoIdentifier(value.slug, `${path}.slug`);
-			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
-			if (value.timeoutMs !== undefined) {
-				requireFiniteNumber(value.timeoutMs, `${path}.timeoutMs`);
-				if (
-					value.timeoutMs <= 0 ||
-					value.timeoutMs > PROTO_MAX_TIMEOUT_MS
-				) {
-					fail(
-						`${path}.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
-					);
-				}
-			}
-			return;
-		case "proto-browser-result":
-			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("proto requestId exceeds 128 characters");
-			if (typeof value.ok !== "boolean")
-				fail("proto result.ok must be a boolean");
-			if (value.ok) {
-				if (value.error !== undefined || value.notReady !== undefined)
-					fail("successful proto result must not contain an error or notReady");
-				validateProtoBrowserData(value.data);
-			} else {
-				if (value.data !== undefined)
-					fail("failed proto result must not contain data");
-				if (
-					(value.error === undefined) === (value.notReady === undefined)
-				) {
-					fail(
-						"failed proto result must contain exactly one of error or notReady",
-					);
-				}
-				if (value.error !== undefined) {
-					requireString(value.error, "proto result.error", {
-						nonEmpty: true,
-					});
-					if ((value.error as string).length > 2048)
-						fail("proto result.error exceeds 2048 characters");
-				} else {
-					validateProtoNotReadyError(value.notReady);
-				}
-			}
-			for (const key of Object.keys(value)) {
-				if (
-					![
-						"type",
-						"protocolVersion",
-						"sessionId",
-						"token",
-						"requestId",
-						"ok",
-						"data",
-						"notReady",
-						"error",
-					].includes(key)
-				)
-					fail("unknown proto result field");
-			}
-			return;
-		case "pw-ext-browser-request":
-			validatePwExtRequestId(value.requestId, `${path}.requestId`);
-			validatePwExtRequest(value.request);
-			validatePwExtTimeout(value.timeoutMs, `${path}.timeoutMs`);
-			requireOnlyKeys(value, path, [
-				"type",
-				"protocolVersion",
-				"sessionId",
-				"requestId",
-				"request",
-				"timeoutMs",
-			]);
-			return;
-		case "pw-ext-browser-cancel":
-			validatePwExtRequestId(value.requestId, `${path}.requestId`);
-			requireOnlyKeys(value, path, [
-				"type",
-				"protocolVersion",
-				"sessionId",
-				"requestId",
-			]);
-			return;
-		case "pw-ext-browser-result":
-			validatePwExtRequestId(value.requestId, `${path}.requestId`);
-			if (typeof value.ok !== "boolean")
-				fail(`${path}.ok must be a boolean`);
-			if (value.ok) {
-				if (value.error !== undefined)
-					fail(`successful ${path} must not contain an error`);
-				validatePwExtResponse(value.data);
-			} else {
-				if (value.data !== undefined)
-					fail(`failed ${path} must not contain data`);
-				requireString(value.error, `${path}.error`, { nonEmpty: true });
-				if ((value.error as string).length > 2048)
-					fail(`${path}.error exceeds 2048 characters`);
-			}
-			requireOnlyKeys(value, path, [
-				"type",
-				"protocolVersion",
-				"sessionId",
-				"token",
-				"requestId",
-				"ok",
-				"data",
-				"error",
-			]);
-			return;
-		case "proto-browser-progress":
-			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("proto requestId exceeds 128 characters");
-			requireString(value.status, `${path}.status`, { nonEmpty: true });
-			if ((value.status as string).length > 512)
-				fail("proto progress status exceeds 512 characters");
-			return;
 		case "config-get":
 			requireString(value.key, `${path}.key`, { nonEmpty: true });
 			return;
@@ -989,8 +755,11 @@ function validateFrameBody(
 				fail(`${path}.error is required when ok is false`);
 			}
 			return;
-		default:
-			fail(`${path}.type "${type}" is not a ratified discriminant`);
+		default: {
+			const validate = RELAY_VALIDATORS.get(type);
+			if (!validate) fail(`${path}.type "${type}" is not a ratified discriminant`);
+			validate(value, path);
+		}
 	}
 }
 

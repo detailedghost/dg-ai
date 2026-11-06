@@ -1,3 +1,5 @@
+import type { Envelope } from "./chat-format";
+
 declare const bodies: unique symbol;
 
 export type RelayBodies = {
@@ -8,6 +10,11 @@ export type RelayBodies = {
 	browserResult: { requestId: string; ok: boolean };
 	browserProgress?: { requestId: string; status: string };
 };
+
+export type RelayFrameValidator = (
+	value: Record<string, unknown>,
+	path: string,
+) => void;
 
 export type RelayCliResult = { readonly ok: boolean } & Readonly<
 	Record<string, unknown>
@@ -75,6 +82,8 @@ export type RelayFeature<
 		readonly browserCancel?: string;
 		readonly browserProgress?: string;
 	};
+	readonly validators: Readonly<Record<string, RelayFrameValidator>>;
+	readonly inbound: readonly string[];
 	validateCliRequest(value: unknown): Cli;
 	validateCliCancel?(value: unknown): { requestId: string };
 	readonly caps: {
@@ -97,6 +106,11 @@ export type RelayFeature<
 
 export type AnyRelayFeature = RelayFeature;
 
+export type RelayWire = Pick<
+	AnyRelayFeature,
+	"name" | "frames" | "validators" | "inbound"
+>;
+
 export type RequestOf<F extends AnyRelayFeature> = ReturnType<
 	F["fromBrowserRequest"]
 >;
@@ -106,6 +120,67 @@ export type ResultBody<F extends AnyRelayFeature> = F extends {
 }
 	? Omit<R, "requestId">
 	: never;
+
+type BrowserRole =
+	| "browserRequest"
+	| "browserCancel"
+	| "browserResult"
+	| "browserProgress";
+
+type CliRole = "cliRequest" | "cliCancel";
+
+type BrowserFrameOf<F extends AnyRelayFeature, Role extends BrowserRole> =
+	F extends {
+		readonly frames: { readonly [K in Role]: infer Type extends string };
+		readonly inbound: readonly (infer Inbound)[];
+		readonly [bodies]?: { readonly [K in Role]: infer Body };
+	}
+		? Envelope & { type: Type } & ([Type] extends [Inbound]
+					? { token: string }
+					: unknown) &
+				Body
+		: never;
+
+type CliFrameOf<F extends AnyRelayFeature, Role extends CliRole> = F extends {
+	readonly frames: { readonly [K in Role]: string };
+	readonly [bodies]?: { readonly [K in Role]: infer Body };
+}
+	? Body
+	: never;
+
+/** The ChatFrame members of one or more relay tables. */
+export type RelayChatFrame<F extends AnyRelayFeature> = {
+	[Role in BrowserRole]: BrowserFrameOf<F, Role>;
+}[BrowserRole];
+
+/** The CLI request and cancel frames of one or more relay tables. */
+export type RelayCliFrame<F extends AnyRelayFeature> = {
+	[Role in CliRole]: CliFrameOf<F, Role>;
+}[CliRole];
+
+/** Browser frame types of the tables, or only those that carry a token. */
+export function relayFrameTypes(
+	features: readonly RelayWire[],
+	which: "inbound" | "all",
+): string[] {
+	return features.flatMap(({ frames, inbound }) =>
+		which === "inbound"
+			? inbound
+			: [
+					frames.browserRequest,
+					frames.browserResult,
+					frames.browserCancel,
+					frames.browserProgress,
+				].filter((type) => type !== undefined),
+	);
+}
+
+/** One validator per browser frame type across the tables. */
+export function relayValidators(
+	features: readonly RelayWire[],
+): Map<string, RelayFrameValidator> {
+	return new Map(features.flatMap(({ validators }) => Object.entries(validators)));
+}
 
 /** Checks one feature table and tags it with its frame body types. */
 export function defineRelayFeature<Bodies extends RelayBodies>() {

@@ -4,12 +4,12 @@ import {
 	INBOX_MAX_CACHE_BYTES,
 	INBOX_MAX_MESSAGE_IDS,
 	INBOX_MAX_PAGE_SIZE,
-	INBOX_RELAY,
 	validateInboxBrowserRequest,
 	validateInboxBrowserResponse,
 	validateInboxCliRequest,
 	validateInboxProfile,
 } from "../src/inbox-format";
+import { INBOX_RELAY } from "../src/relay-features";
 import { inboxBrowserRequest, inboxCliRequest, inboxProfile } from "./utils/inbox-fixtures";
 
 describe("validateInboxProfile", () => {

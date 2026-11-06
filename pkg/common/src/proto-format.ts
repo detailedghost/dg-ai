@@ -8,7 +8,7 @@ import {
 	requireStringArray,
 	requireStringRecord,
 } from "./assert";
-import { bootstrapHint, defineRelayFeature } from "./relay-format";
+import type { RelayWire } from "./relay-format";
 import type {
 	AnswerPageMeta,
 	ProtoBrowserData,
@@ -467,7 +467,7 @@ export function markedUrlForTimeout(markedUrl: string): string {
 	}
 }
 
-export const PROTO_RELAY = defineRelayFeature<ProtoRelayBodies>()({
+export const PROTO_WIRE = {
 	name: "proto",
 	frames: {
 		cliRequest: "cli-proto-request",
@@ -476,77 +476,84 @@ export const PROTO_RELAY = defineRelayFeature<ProtoRelayBodies>()({
 		browserResult: "proto-browser-result",
 		browserProgress: "proto-browser-progress",
 	},
-	validateCliRequest: validateProtoCliRequest,
-	caps: { pending: 32, perRequester: 4, sessionIds: 10_000 },
-	timeoutMs: (cli) => cli.timeoutMs ?? PROTO_DEFAULT_TIMEOUT_MS[cli.phase],
-	toBrowserRequest: (cli, timeoutMs) => ({
-		phase: cli.phase,
-		slug: cli.slug,
-		markedUrl: cli.markedUrl,
-		timeoutMs,
-	}),
-	fromBrowserRequest: ({ phase, slug, markedUrl, timeoutMs }) =>
-		timeoutMs === undefined
-			? { phase, slug, markedUrl }
-			: { phase, slug, markedUrl, timeoutMs },
-	toCliResult: (frame) =>
-		frame.ok
-			? { ok: true, data: frame.data }
-			: frame.notReady
-				? { ok: false, notReady: frame.notReady }
-				: { ok: false, error: frame.error },
-	checks: [
-		{ check: "active", refusal: "Prototype --ext requires an active dg session." },
-		{ check: "pendingDuplicate", refuseOtherRequester: "duplicate requestId" },
-		{
-			check: "replay",
-			refusal:
-				"Prototype requestId was already used on this session; send a new one.",
+	validators: {
+		"proto-browser-request": (value, path) => {
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
+			validateProtoIdentifier(value.slug, `${path}.slug`);
+			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
+			if (value.timeoutMs !== undefined) {
+				requireFiniteNumber(value.timeoutMs, `${path}.timeoutMs`);
+				if (
+					value.timeoutMs <= 0 ||
+					value.timeoutMs > PROTO_MAX_TIMEOUT_MS
+				) {
+					fail(
+						`${path}.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
+					);
+				}
+			}
 		},
-		{
-			check: "cap",
-			of: ["requester"],
-			refusal:
-				"Prototype has too many pending requests from this client; wait for existing work to finish.",
+		"proto-browser-result": (value, path) => {
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			if (typeof value.ok !== "boolean")
+				fail("proto result.ok must be a boolean");
+			if (value.ok) {
+				if (value.error !== undefined || value.notReady !== undefined)
+					fail("successful proto result must not contain an error or notReady");
+				validateProtoBrowserData(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail("failed proto result must not contain data");
+				if (
+					(value.error === undefined) === (value.notReady === undefined)
+				) {
+					fail(
+						"failed proto result must contain exactly one of error or notReady",
+					);
+				}
+				if (value.error !== undefined) {
+					requireString(value.error, "proto result.error", {
+						nonEmpty: true,
+					});
+					if ((value.error as string).length > 2048)
+						fail("proto result.error exceeds 2048 characters");
+				} else {
+					validateProtoNotReadyError(value.notReady);
+				}
+			}
+			for (const key of Object.keys(value)) {
+				if (
+					![
+						"type",
+						"protocolVersion",
+						"sessionId",
+						"token",
+						"requestId",
+						"ok",
+						"data",
+						"notReady",
+						"error",
+					].includes(key)
+				)
+					fail("unknown proto result field");
+			}
 		},
-		{
-			check: "cap",
-			of: ["pending", "sessionIds"],
-			refusal:
-				"Prototype request capacity reached; finish pending work or start a new session.",
+		"proto-browser-progress": (value, path) => {
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			requireString(value.status, `${path}.status`, { nonEmpty: true });
+			if ((value.status as string).length > 512)
+				fail("proto progress status exceeds 512 characters");
 		},
-		{
-			check: "peers",
-			multiple:
-				"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
-			none: ({ sessionId, port }) =>
-				`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId}. ` +
-				`Open ${bootstrapHint(port)} in the browser where the extension is loaded, then retry. ` +
-				`Run dg-skills inbox bootstrap-url --session ${sessionId} to print the real URL (that pairing is shared across every daemon feature, not just inbox).`,
-		},
-		{ check: "burn" },
-	],
-	strings: {
-		activeRequired: "Prototype --ext requires an active dg session.",
-		sessionClosed: "Prototype session closed before the extension replied.",
-		timeout: ({ cli, timeoutMs, lastStatus }) =>
-			lastStatus
-				? `Prototype ${cli.phase} timed out after ${timeoutMs}ms; last report from the extension: ${lastStatus}.`
-				: `Prototype ${cli.phase} timed out after ${timeoutMs}ms with no report from the extension. It may not have loaded ${markedUrlForTimeout(cli.markedUrl)} in a paired browser, or it predates this change; rebuild and reload the unpacked extension and retry.`,
-		requesterDisconnected: "Prototype requester disconnected.",
-		extensionDisconnected: "Prototype extension disconnected before replying.",
-		sendFailed:
-			"Prototype extension request could not be sent; reconnect the extension.",
-		rejected: (detail) =>
-			`Prototype result could not be delivered: ${detail}`.slice(0, 2048),
-		unreadableFailAll:
-			"Prototype result exceeded the relay size limit and could not be delivered.",
-		extensionFailed:
-			"Prototype extension request failed before the browser reported a result.",
 	},
-	rejected: { afterOversized: "return" },
-	flags: { failAllOnUnreadable: true },
-});
+	inbound: ["proto-browser-result", "proto-browser-progress"],
+} as const satisfies RelayWire;
 
 /** Validate the structural ProtoPlan contract without sanitizing its markup. */
 export function validateProtoPlan(value: unknown): ProtoPlan {

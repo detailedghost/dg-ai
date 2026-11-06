@@ -5,12 +5,12 @@ import {
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MAX_TIMEOUT_MS,
 	PW_EXT_MIN_EXTENSION_VERSION,
-	PW_EXT_RELAY,
 	validatePwExtCliRequest,
 	validatePwExtRequest,
 	validatePwExtResponse,
 	validatePwExtCliCancel,
 } from "../src/pw-ext-format";
+import { PW_EXT_RELAY } from "../src/relay-features";
 
 describe("validatePwExtRequest", () => {
 	it.each([

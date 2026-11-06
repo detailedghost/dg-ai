@@ -1,7 +1,6 @@
 import type { CredentialsCliRequest } from "./credentials-format";
-import type { InboxCliRequest } from "./inbox-format";
-import type { ProtoCliRequest } from "./proto-format";
-import type { PwExtCliCancel, PwExtCliRequest } from "./pw-ext-format";
+import type { RELAY_FEATURES } from "./relay-features";
+import type { RelayCliFrame } from "./relay-format";
 import type {
 	ChatFrame,
 	CommandEntry,
@@ -85,10 +84,7 @@ export type CliOverwatchSnapshotResult = {
 };
 
 export type CliFrame =
-	| InboxCliRequest
-	| ProtoCliRequest
-	| PwExtCliRequest
-	| PwExtCliCancel
+	| RelayCliFrame<(typeof RELAY_FEATURES)[number]>
 	| CredentialsCliRequest
 	| CliRecvRequest
 	| CliAckRequest
