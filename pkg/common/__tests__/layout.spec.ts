@@ -810,6 +810,35 @@ posix("ensureLayout multi-file retry", () => {
 	});
 });
 
+posix("ensureLayout running entry file", () => {
+	test("keeps the lib source that holds the running file, schedules its removal, and removes it on a later start", async () => {
+		const running = legacyAt("lib", "1.0.0", "dg.js");
+		put(running, "bundle");
+		put(legacyAt("lib", "1.0.0", "other.js"), "other");
+		const pendingFile = legacyAt(".pending-removal.json");
+
+		const first = await run({ entryFile: () => running });
+
+		expect(outcomeAt(first, "lib")).toMatchObject({ kind: "scheduled" });
+		expect(readFileSync(running, "utf8")).toBe("bundle");
+		expect(readFileSync(join(paths.libDir, "1.0.0", "dg.js"), "utf8")).toBe("bundle");
+		expect(JSON.parse(readFileSync(pendingFile, "utf8"))).toEqual([
+			{ name: nameOf("lib"), from: legacyAt("lib"), to: paths.libDir },
+		]);
+
+		const second = await run({ entryFile: () => running }, { ...paths });
+
+		expect(outcomeAt(second, "lib")).toMatchObject({ kind: "scheduled" });
+		expect(existsSync(running)).toBe(true);
+
+		const third = await run({ entryFile: () => join(paths.libDir, "1.0.0", "dg.js") }, { ...paths });
+
+		expect(outcomeAt(third, "lib")).toMatchObject({ kind: "moved" });
+		expect(existsSync(legacyAt("lib"))).toBe(false);
+		expect(existsSync(pendingFile)).toBe(false);
+	});
+});
+
 posix("ensureLayout stale pending records", () => {
 	test("takes the lock to drop a record whose source is gone and removes the pending file", async () => {
 		put(legacyAt("bin", "dg-skills"), "x");

@@ -459,4 +459,22 @@ describe("folderUnused", () => {
 
 		expect(folderUnused(root, "phone.db")).toBe(false);
 	});
+
+	it.each(["phone.db.backup", "phone.db.migrating", "phone.db.tmp", "phone.dbx"])("is false when %s sits beside an empty db", (name) => {
+		const root = join(dir, `extra-${name}`);
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 0);
+		writeFileSync(join(root, name), "data");
+
+		expect(folderUnused(root, "phone.db")).toBe(false);
+	});
+
+	it.each(["phone.db-wal", "phone.db-shm", "phone.db-journal"])("is true when the empty sidecar %s sits beside an empty db", (name) => {
+		const root = join(dir, `side-${name}`);
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 0);
+		writeFileSync(join(root, name), "");
+
+		expect(folderUnused(root, "phone.db")).toBe(true);
+	});
 });

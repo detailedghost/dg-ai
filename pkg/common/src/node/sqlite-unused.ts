@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const JOURNAL_MODE_BYTES = { start: 18, end: 20, rollback: 1 } as const;
 const UNUSED_DB_MAX_BYTES = 1024 * 1024;
+const SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
 
 const nonEmpty = (path: string): boolean => {
 	try {
@@ -33,12 +34,12 @@ export function sqliteUnused(dbFile: string): boolean {
 	}
 }
 
-/** True when the folder is empty, or holds only `<dbName>*` files whose db is unused. */
+/** True when the folder is empty, or holds only `<dbName>` and its `-wal`, `-shm` and `-journal` files, with the db unused. */
 export function folderUnused(dir: string, dbName?: string): boolean {
 	try {
 		const names = readdirSync(dir);
 		if (names.length === 0) return true;
-		return dbName !== undefined && names.every((name) => name.startsWith(dbName)) && sqliteUnused(join(dir, dbName));
+		return dbName !== undefined && names.every((name) => name === dbName || SIDECAR_SUFFIXES.some((suffix) => name === `${dbName}${suffix}`)) && sqliteUnused(join(dir, dbName));
 	} catch {
 		return false;
 	}

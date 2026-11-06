@@ -1,5 +1,5 @@
 import { DgCliError } from "@dg/common";
-import { layoutResult } from "@dg/common/node/layout";
+import { assertNotBlocked, layoutResult } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import type { AcceptOpts } from "./accept-name";
 import type * as Commands from "./commands";
@@ -403,6 +403,10 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 			const deps = phone.openCloseDeps(session);
 			const layout = layoutResult(deps.paths);
 			if (!layout) return;
+			if (!MANAGES_LISTENER.has(action.name())) {
+				assertNotBlocked(deps.paths, "phone-friend");
+				assertNotBlocked(deps.paths, "phone");
+			}
 			(await import("./migrate")).migrateIfNeeded(deps.paths);
 			const outcome = layout.phone;
 			const restarts = outcome?.kind === "moved" || outcome?.kind === "setAside" ? outcome.stopped : false;

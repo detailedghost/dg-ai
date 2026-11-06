@@ -107,6 +107,7 @@ export type MoveSeams = {
 	afterCopy?: (from: string, to: string) => void;
 	rename?: (from: string, to: string) => void;
 	removeTree?: (path: string) => void;
+	inUse?: (from: string) => boolean;
 };
 
 export type MoveResult = "moved" | "failed" | "kept" | "scheduled";
@@ -182,7 +183,8 @@ export function moveVerified(from: string | readonly string[], to: string, seams
 		log(`dg: kept ${pairs[0]?.from}; ${failure}`);
 		return "failed";
 	}
-	if (pairs.map((pair) => removeSource(pair.from, seams)).every(Boolean)) return "moved";
+	const removed = pairs.map((pair) => !seams.inUse?.(pair.from) && removeSource(pair.from, seams));
+	if (removed.every(Boolean)) return "moved";
 	log(`dg: copied ${pairs[0]?.from} to ${pairs[0]?.to}; it is in use, so the next dg start removes it`);
 	return "scheduled";
 }

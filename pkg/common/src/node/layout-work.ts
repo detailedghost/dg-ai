@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync, rmSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { type DgPaths } from "./dg-paths";
 import { writeFileAtomic } from "./fs";
 import {
@@ -277,13 +277,32 @@ function blockedOutcome(step: Step, reason: BlockedOutcome["reason"], refused = 
 	return { ...facts, kind: "blocked", fix: blockedText(facts) };
 }
 
+const holdsFile = (root: string, file: string): boolean => {
+	const rel = relative(root, file);
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
+
+function realOr(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+}
+
+const runningInside = (seams: LayoutSeams, root: string): boolean => {
+	const file = seams.entryFile();
+	if (file === undefined) return false;
+	return holdsFile(resolve(root), resolve(file)) || holdsFile(realOr(root), realOr(file));
+};
+
 function retryRecord(record: Pending, { seams, say }: Context): "removed" | "incomplete" | "held" {
 	if (!exists(seams, record.from)) return "removed";
 	if (!exists(seams, record.to) || !treeContained(record.from, record.to)) {
 		say(`dg: kept ${record.from}; its copy at ${record.to} no longer holds every file`);
 		return "incomplete";
 	}
-	if (!removeSource(record.from)) return "held";
+	if (runningInside(seams, record.from) || !removeSource(record.from)) return "held";
 	say(`dg: removed ${record.from}; its copy at ${record.to} was complete`);
 	return "removed";
 }
@@ -323,6 +342,7 @@ function copyAcross(step: Step, { hooks, seams, say }: Context, placed: { stoppe
 			say(line);
 		},
 		verify: step.verify ? hooks[step.verify] : undefined,
+		inUse: (source) => runningInside(seams, source),
 	});
 	if (result === "failed") return settled(step, { kind: "failed", error: reported.at(-1) ?? "" });
 	if (result === "kept") return settled(step, { kind: "kept", reason: "target-used" });

@@ -28,6 +28,7 @@ export type LayoutSeams = {
 	load: () => Promise<LayoutWork>;
 	log: (line: string) => void;
 	now: () => number;
+	entryFile: () => string | undefined;
 	lock: <T>(root: string, fn: () => Promise<T>) => Promise<T>;
 };
 
@@ -166,6 +167,7 @@ export function resolveSeams(hooks: LayoutHooks): LayoutSeams {
 		load: async () => (await hooks.load?.()) ?? (await import("./layout-work")),
 		log: hooks.log ?? ((line) => void process.stderr.write(`${line}\n`)),
 		now: hooks.now ?? Date.now,
+		entryFile: hooks.entryFile ?? (() => process.argv[1]),
 		lock: hooks.lock ?? withCliLockError((root, fn) => withInstallLock(root, fn)),
 	};
 }

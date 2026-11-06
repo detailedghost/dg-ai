@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DgCliError } from "@dg/common";
@@ -131,6 +131,57 @@ describe("the phone group preAction conversion", () => {
 		await drive("memory", "search");
 
 		expect(calls).toEqual(["migrate", "memory search"]);
+		spy.mockRestore();
+	});
+});
+
+describe("the phone group preAction with an unmoved entry", () => {
+	function liveLine(): string {
+		const line = join(paths.legacyHome, "phone-friend", "default");
+		mkdirSync(line, { recursive: true });
+		writeFileSync(join(line, "phone-friend.db"), "line");
+		writeFileSync(join(line, "listener.pid"), JSON.stringify({ pid: process.pid }));
+		return line;
+	}
+
+	it("refuses a phone verb while a per-line listener keeps phone-friend, before conversion and the body", async () => {
+		const spy = spyOnMigrate();
+		const line = liveLine();
+		await ensureLayout(paths, { log: () => {} });
+
+		await expect(drive("phone", "number")).rejects.toThrow(`dg: kept ${join(paths.legacyHome, "phone-friend")}`);
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(calls).toEqual([]);
+		expect(existsSync(line)).toBe(true);
+		expect(existsSync(paths.phoneRoot)).toBe(false);
+		spy.mockRestore();
+	});
+
+	it("refuses a phone verb when the phone-friend move failed", async () => {
+		const spy = spyOnMigrate();
+		liveLine();
+		const result = await ensureLayout(paths, { log: () => {} });
+		Object.assign(result, { "phone-friend": { kind: "failed", from: "a", to: "b", error: "dg: kept a; moving it to b failed: boom" } });
+
+		await expect(drive("phone", "number")).rejects.toThrow("boom");
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(calls).toEqual([]);
+		spy.mockRestore();
+	});
+
+	it("lets phone close run while phone-friend is kept", async () => {
+		const spy = spyOnMigrate();
+		liveLine();
+		await ensureLayout(paths, { log: () => {} });
+		const api = { ...fakeApi(), phoneClose: async () => void calls.push("close") } as unknown as PhoneApi;
+		const program = new Command().exitOverride();
+		registerPhoneGroup(program, async () => api);
+
+		await program.parseAsync(["phone", "close"], { from: "user" });
+
+		expect(calls).toEqual(["migrate", "close"]);
 		spy.mockRestore();
 	});
 });
