@@ -26,6 +26,7 @@ import {
 	serveNarrationAsset,
 } from "./narration-assets";
 import { writeNarrationWav } from "./narration";
+import { guardedDest } from "../utils/layout-guard";
 import { profileDir } from "./paths";
 import { playerScript } from "./player-asset";
 import {
@@ -70,12 +71,12 @@ const recording = (job: PlayerJob) => ({
 	recordVideo: { dir: join(job.dir, "rec"), size: VIEWPORT },
 });
 
-async function launchLocal(
+export async function launchLocal(
 	job: PlayerJob,
 	plan: LocalPlan,
 ): Promise<PlayerSession> {
 	const { chromium } = await import("playwright-core");
-	const profile = job.profile ?? profileDir();
+	const profile = job.profile ?? guardedDest("demo-profile", profileDir());
 	ensurePrivateDir(profile);
 	const context = await chromium.launchPersistentContext(profile, {
 		headless: plan.headless,

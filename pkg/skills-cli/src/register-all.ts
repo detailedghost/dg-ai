@@ -6,6 +6,7 @@ import { registerBg } from "./commands/bg";
 import { registerCatchup } from "./commands/catchup";
 import { registerChain } from "./commands/chain";
 import { registerChannelReview } from "./commands/channel-review";
+import { registerClean } from "./commands/clean";
 import { registerClipboardImage } from "./commands/clipboard-image";
 import { registerCredentials } from "./commands/credentials";
 import { registerDb } from "./commands/db";
@@ -81,5 +82,6 @@ export function registerAll(program: Command): void {
 	registerSniff(program);
 	registerSsms(program);
 	registerDoctor(program);
+	registerClean(program);
 	registerRequireExtension(program);
 }

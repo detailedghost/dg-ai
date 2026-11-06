@@ -53,7 +53,7 @@ describe("selfCommand in bundle mode", () => {
 	it("detects bundle mode from the recorded name even when the entry file is not dg.js", () => {
 		setProgramName("dg-agent");
 		expect(Bun.main.endsWith("dg.js")).toBe(false);
-		expect(selfCommand(["phone", "__run"]).slice(2)).toEqual(["dg-agent", "phone", "__run"]);
+		expect(selfCommand(["phone", "listen"]).slice(2)).toEqual(["dg-agent", "phone", "listen"]);
 	});
 
 	it("ignores opts.entrypoint once a name is recorded", () => {
@@ -77,21 +77,21 @@ describe("programCommand", () => {
 
 	it("returns [runtimeBin, entry, name, ...args] for a sibling program", () => {
 		setProgramName("dg-agent");
-		expect(programCommand("dg-daemon", ["__serve"])).toEqual([
+		expect(programCommand("dg-daemon", ["serve"])).toEqual([
 			process.execPath,
 			Bun.main,
 			"dg-daemon",
-			"__serve",
+			"serve",
 		]);
 	});
 
 	it("runs the sibling package's source entry when no bundle program is recorded", () => {
 		resetProgramName();
 		const pkgRoot = join(import.meta.dir, "..", "..");
-		expect(programCommand("dg-daemon", ["__serve"])).toEqual([
+		expect(programCommand("dg-daemon", ["serve"])).toEqual([
 			process.execPath,
 			join(pkgRoot, "dg-daemon", "src", "index.ts"),
-			"__serve",
+			"serve",
 		]);
 		expect(programCommand("dg-skills", ["bg"])[1]).toBe(join(pkgRoot, "skills-cli", "src", "index.ts"));
 		expect(programCommand("dg-agent", [])[1]).toBe(join(pkgRoot, "dg-agent", "src", "index.ts"));
@@ -99,7 +99,7 @@ describe("programCommand", () => {
 
 	it("never injects a versioned lib directory", () => {
 		setProgramName("dg-agent");
-		const argv = programCommand("dg-daemon", ["__serve"]);
+		const argv = programCommand("dg-daemon", ["serve"]);
 		for (const part of argv) expect(part).not.toMatch(/[\\/]lib[\\/]\d+\.\d+\.\d+/);
 	});
 });
@@ -109,17 +109,17 @@ describe("launcherCommand", () => {
 
 	it("uses the runtime/current and lib/current links for a stable unit argv", () => {
 		const bunName = process.platform === "win32" ? "bun.exe" : "bun";
-		expect(launcherCommand(root, "dg-agent", ["phone", "__run"])).toEqual([
+		expect(launcherCommand(root, "dg-agent", ["phone", "listen"])).toEqual([
 			join(root, "runtime", "current", bunName),
 			join(root, "lib", "current", "dg.js"),
 			"dg-agent",
 			"phone",
-			"__run",
+			"listen",
 		]);
 	});
 
 	it("never names a version directory", () => {
-		for (const part of launcherCommand(root, "dg-daemon", ["__serve"])) {
+		for (const part of launcherCommand(root, "dg-daemon", ["serve"])) {
 			expect(part).not.toMatch(/bun-v\d|[\\/]lib[\\/]\d+\.\d+\.\d+/);
 		}
 	});
@@ -127,7 +127,7 @@ describe("launcherCommand", () => {
 	it.each([".dg", "./.dg", "dg-root", ""])(
 		"rejects the relative root %p so the exec target never depends on the working directory",
 		(relativeRoot) => {
-			expect(() => launcherCommand(relativeRoot, "dg-agent", ["phone", "__run"])).toThrow(
+			expect(() => launcherCommand(relativeRoot, "dg-agent", ["phone", "listen"])).toThrow(
 				"launcher root must be absolute",
 			);
 		},

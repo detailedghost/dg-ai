@@ -17,7 +17,7 @@ const enabled =
 	process.env.PW_E2E === "1" && process.env.DG_NARRATION_E2E === "1";
 
 describe.skipIf(!enabled)(
-	"__player --video --narration both against a local http server",
+	"player --video --narration both against a local http server",
 	() => {
 		let dir: string;
 		let server: ReturnType<typeof Bun.serve>;

@@ -5,12 +5,14 @@ import { spawn } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { DgCliError } from "@dg/common";
 import { type DgPaths, isAlive, resolveDgPaths } from "@dg/common/node";
 import { setProgramName } from "@dg/common/node/program";
 import { generateSecretKey, getPublicKey, nip17, nip19 } from "nostr-tools";
@@ -19,12 +21,14 @@ import {
 	phoneContacts,
 	phoneInbox,
 	phoneOpen,
+	phoneRun,
 	phoneSay,
 	phoneStatus,
 	phoneVoicemail,
 	registerPhoneCommands,
 	type OpenCloseDeps,
 	type PhoneDeps,
+	type RunDeps,
 } from "../../src/phone/commands";
 import { PhoneDb } from "../../src/phone/db";
 import { listenerPidPath } from "../../src/phone/listener";
@@ -33,6 +37,7 @@ import {
 	disableLegacyDaemonJobs,
 	legacyRoot,
 	legacyRootPresent,
+	linesAwaitConversion,
 	type JobCli,
 	type MigrateDeps,
 	migrateIfNeeded,
@@ -42,87 +47,12 @@ import {
 } from "../../src/phone/migrate";
 import { DEFAULT_RELAYS, findContactByHandle, numberKeyId, readCursor, readNumber } from "../../src/phone/store";
 import { blockingSleep, createFakePool, freshNpub, makePhoneDeps, makeTempHome } from "./fake-pool";
+import { writeLegacyLine } from "./legacy-line-fixture";
 
 const NOW = 1_800_000_000;
 
 function freshHome(): string {
 	return makeTempHome("dg-phone-migrate-");
-}
-
-type LegacyMessageFixture = {
-	id: string;
-	direction: "in" | "out";
-	ts: number;
-	sender: string;
-	contact: string;
-	text: string;
-	call?: boolean;
-	readAt?: number | null;
-};
-
-type LegacyLineFixture = {
-	contact?: string;
-	name?: string;
-	relays?: string[];
-	nsec?: string;
-	keyInStore?: boolean;
-	invite?: { secret: string; expiresAt: number; name?: string; as?: string };
-	cursor?: number;
-	messages?: LegacyMessageFixture[];
-	listenerPid?: number;
-};
-
-/** Builds a line database in the exact v1 shape phone-friend wrote it in, from the schema kept
- * here (see `git show 70fc701:pkg/dg-agent/src/phone-friend/db.ts`), so the migration under test
- * reads real legacy bytes rather than a stand-in fixture format. */
-function writeLegacyLine(paths: DgPaths, line: string, fixture: LegacyLineFixture): void {
-	const dir = join(paths.phoneFriendRoot, line);
-	mkdirSync(dir, { recursive: true });
-	const db = new Database(join(dir, "phone-friend.db"), { create: true, strict: true });
-	db.run(`CREATE TABLE messages (
-		id TEXT PRIMARY KEY,
-		direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
-		ts INTEGER NOT NULL,
-		sender TEXT NOT NULL,
-		contact TEXT NOT NULL,
-		text TEXT NOT NULL,
-		call INTEGER NOT NULL DEFAULT 0,
-		read_at INTEGER
-	) STRICT`);
-	db.run("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT");
-	const setSetting = (key: string, value: unknown) =>
-		db.query("INSERT INTO settings (key, value) VALUES ($key, $value)").run({ key, value: JSON.stringify(value) });
-	if (fixture.contact !== undefined || fixture.name !== undefined || fixture.relays !== undefined) {
-		setSetting("config", {
-			relays: fixture.relays ?? DEFAULT_RELAYS,
-			contact: fixture.contact,
-			name: fixture.name,
-		});
-	}
-	if (fixture.nsec !== undefined) setSetting("nsec", fixture.nsec);
-	if (fixture.keyInStore) setSetting("key_in_store", true);
-	if (fixture.invite !== undefined) setSetting("invite", fixture.invite);
-	if (fixture.cursor !== undefined) setSetting("cursor", fixture.cursor);
-	const insertMessage = db.query(
-		`INSERT INTO messages (id, direction, ts, sender, contact, text, call, read_at)
-		VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt)`,
-	);
-	for (const message of fixture.messages ?? []) {
-		insertMessage.run({
-			id: message.id,
-			direction: message.direction,
-			ts: message.ts,
-			sender: message.sender,
-			contact: message.contact,
-			text: message.text,
-			call: message.call ? 1 : 0,
-			readAt: message.readAt ?? null,
-		});
-	}
-	db.close();
-	if (fixture.listenerPid !== undefined) {
-		writeFileSync(join(dir, "listener.pid"), `${fixture.listenerPid}\n`);
-	}
 }
 
 function writeWhoami(paths: DgPaths, name: string): void {
@@ -751,7 +681,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 		}
 	});
 
-	it("restarts a phone __run that is not this process so it reloads keys", () => {
+	it("restarts a phone listen that is not this process so it reloads keys", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -782,7 +712,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 		}
 	});
 
-	it("adopts this process when it is already phone __run", () => {
+	it("adopts this process when it is already phone listen", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -938,7 +868,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 		}
 	});
 
-	it("starts one phone __run against phone.db when the legacy command would exit, and only says so if it stays up", () => {
+	it("starts one phone listen against phone.db when the legacy command would exit, and only says so if it stays up", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -981,11 +911,11 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						},
 					}),
 				),
-			).toThrow("A phone __run listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.");
+			).toThrow("A phone listen listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.");
 
 			expect(restored).toHaveLength(1);
 			expect(restored[0]).toContain("phone");
-			expect(restored[0]).toContain("__run");
+			expect(restored[0]).toContain("listen");
 			expect(restored[0]?.includes("phone-friend")).toBe(false);
 			expect(restored[0]?.includes("--line")).toBe(false);
 			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(8888);
@@ -1017,7 +947,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						kill: (pid) => {
 							alive.delete(pid);
 						},
-						commandArgs: () => ["/old/dg-agent", "phone", "__run"],
+						commandArgs: () => ["/old/dg-agent", "phone", "listen"],
 						startListener: () => {
 							throw new Error("spawn failed");
 						},
@@ -1032,7 +962,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				),
 			).toThrow("No listener stayed up. phone.db was kept. Run phone open.");
 
-			expect(restored).toEqual([["/old/dg-agent", "phone", "__run"]]);
+			expect(restored).toEqual([["/old/dg-agent", "phone", "listen"]]);
 			expect(existsSync(PhoneDb.path(paths))).toBe(true);
 			expect(existsSync(listenerPidPath(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
@@ -1062,7 +992,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						kill: (pid) => {
 							alive.delete(pid);
 						},
-						commandArgs: () => ["/old/dg-agent", "phone", "__run"],
+						commandArgs: () => ["/old/dg-agent", "phone", "listen"],
 						sleepSync: blockingSleep,
 						startListener: () => {
 							throw new Error("spawn failed");
@@ -1151,7 +1081,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					return { code: 0, stdout: "", stderr: "" };
 				},
 				which: () => "/resolved/bin",
-				listenerArgv: (extra: string[]) => ["/fake/execPath", "phone", "__run", ...extra],
+				listenerArgv: (extra: string[]) => ["/fake/execPath", "phone", "listen", ...extra],
 				spawnListener: () => {
 					spawned.push(1);
 					return 1;
@@ -1360,6 +1290,101 @@ describe("read-only phone commands", () => {
 			if (previousHome === undefined) delete process.env.DG_HOME;
 			else process.env.DG_HOME = previousHome;
 			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("migrateIfNeeded: no legacy phone-friend root", () => {
+	it("returns migrated false and creates no folder or migration lock", () => {
+		const home = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: home } });
+			const before = readdirSync(home, { recursive: true });
+
+			expect(migrateIfNeeded(paths, fakeMigrateDeps())).toEqual({ migrated: false });
+
+			expect(readdirSync(home, { recursive: true })).toEqual(before);
+			expect(existsSync(migrationLockPath(paths))).toBe(false);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("the migration lock and the install lock", () => {
+	it("use different files", () => {
+		const home = freshHome();
+		try {
+			const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+			const installLock = join(paths.dataDir, ".install.lock");
+
+			expect(migrationLockPath(paths)).not.toBe(installLock);
+			expect(dirname(migrationLockPath(paths))).not.toBe(dirname(installLock));
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("phoneRun: unconverted phone-friend lines", () => {
+	function lazyRunDeps(paths: DgPaths): RunDeps {
+		return {
+			paths,
+			get db(): PhoneDb {
+				throw new Error("phone.db was opened");
+			},
+		} as unknown as RunDeps;
+	}
+
+	it("fails with the wait-for-conversion text and creates no phone.db", async () => {
+		const home = freshHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: home } });
+			writeLegacyLine(paths, "default", { contact: freshNpub(), nsec: nip19.nsecEncode(generateSecretKey()) });
+
+			const failure = await phoneRun({}, lazyRunDeps(paths)).then(
+				() => undefined,
+				(err: unknown) => err,
+			);
+
+			expect(failure).toBeInstanceOf(DgCliError);
+			expect((failure as DgCliError).exitCode).toBe(1);
+			expect((failure as DgCliError).message).toBe("dg: phone-friend lines wait for conversion; run dg-agent phone status");
+			expect(existsSync(PhoneDb.path(paths))).toBe(false);
+			expect(existsSync(migrationLockPath(paths))).toBe(false);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+
+	it("also fails for lines in a legacy home no program has moved, and creates no phone.db", async () => {
+		const home = freshHome();
+		try {
+			const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+			writeLegacyLine({ phoneFriendRoot: join(paths.legacyHome, "phone-friend") }, "default", { nsec: nip19.nsecEncode(generateSecretKey()) });
+
+			await expect(phoneRun({}, lazyRunDeps(paths))).rejects.toThrow("phone-friend lines wait for conversion");
+			expect(existsSync(PhoneDb.path(paths))).toBe(false);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("linesAwaitConversion", () => {
+	it("is false with no lines anywhere and once phone.db exists beside a legacy home", () => {
+		const home = freshHome();
+		try {
+			const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+			expect(linesAwaitConversion(paths)).toBe(false);
+
+			writeLegacyLine({ phoneFriendRoot: join(paths.legacyHome, "phone-friend") }, "default", {});
+			expect(linesAwaitConversion(paths)).toBe(true);
+
+			PhoneDb.open(paths).close();
+			expect(linesAwaitConversion(paths)).toBe(false);
+		} finally {
+			rmSync(home, { recursive: true, force: true });
 		}
 	});
 });

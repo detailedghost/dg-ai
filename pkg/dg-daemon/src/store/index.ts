@@ -31,6 +31,7 @@ import {
 	ensurePrivateDir,
 	readSessionFiles,
 } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import {
 	buildAad,
 	type CipherBox,
@@ -566,6 +567,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		seams: StoreSeams = {},
 	): Promise<ChatStore> {
 		const env = seams.env ?? process.env;
+		assertNotBlocked(paths, "daemon");
 		const db = openDaemonDatabase(paths);
 		try {
 			const existingRow = db

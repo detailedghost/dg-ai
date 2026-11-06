@@ -1,3 +1,33 @@
+import type { LayoutHooks } from "@dg/common/node/layout";
+import type { Command } from "commander";
+
+const SKIP = new Set(["status"]);
+
+type HookSeams = { platform?: NodeJS.Platform };
+
+export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHooks {
+	if (commandName !== "serve") return {};
+	const hooks: LayoutHooks = {
+		load: async () => {
+			const { daemonLayoutHooks } = await import("./layout-hooks");
+			Object.assign(hooks, daemonLayoutHooks({ platform: seams.platform }));
+		},
+	};
+	return hooks;
+}
+
+async function afterLayout(action: Command): Promise<void> {
+	if (action.name() !== "serve") return;
+	const [{ daemonLayoutHooks }, { resolveDgPaths }, { assertNotBlocked }] = await Promise.all([
+		import("./layout-hooks"),
+		import("@dg/common/node/dg-paths"),
+		import("@dg/common/node/layout"),
+	]);
+	const paths = resolveDgPaths();
+	assertNotBlocked(paths, "daemon");
+	await daemonLayoutHooks().keychainMove(paths);
+}
+
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
 		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
@@ -11,6 +41,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		{ registerPairCommand },
 		{ registerSessionCommands },
 		{ registerServiceCommands },
+		{ ensureLayout },
+		{ installLayoutPreAction },
 	] = await Promise.all([
 		import("commander"),
 		import("@dg/common"),
@@ -19,6 +51,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		import("./commands/pair"),
 		import("./commands/sessions"),
 		import("./commands/service"),
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/layout-preaction"),
 	]);
 	const program = new Command();
 	program
@@ -30,10 +64,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.exitOverride();
 
 	program
-		.command("__serve", { hidden: true })
-		.description(
-			"internal: run the daemon in the foreground (never call directly)",
-		)
+		.command("serve")
+		.description("Run the daemon in the foreground; dg starts this for you")
 		.action(async () => {
 			const { cmdServe } = await import("./server/bootstrap");
 			if ((await cmdServe()) === "serving") await forever();
@@ -52,6 +84,13 @@ export async function main(argv: readonly string[]): Promise<number> {
 	registerPairCommand(program);
 	registerSessionCommands(program);
 	registerServiceCommands(program);
+
+	installLayoutPreAction(program, {
+		skip: SKIP,
+		hooksFor: (action) => hooksFor(action.name()),
+		ensure: ensureLayout,
+		after: afterLayout,
+	});
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });

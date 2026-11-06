@@ -3,6 +3,7 @@ import { writeFileAtomic } from "@dg/common/node";
 import { type SystemChannel, systemBrowserPresent } from "./core/browser";
 import { browsersDir, downloadedChromium, markerPath } from "./core/downloaded";
 import { ensurePrivateDir } from "./core/files";
+import { guardedDest } from "../utils/layout-guard";
 
 export type BrowserStatus = {
 	system: SystemChannel | "none";
@@ -35,7 +36,7 @@ async function installChromium(
 
 export async function installBrowser(
 	install: RegistryInstall = installChromium,
-	dir: string = browsersDir(),
+	dir: string = guardedDest("browsers", browsersDir()),
 ): Promise<{ version: string; executablePath: string }> {
 	ensurePrivateDir(dir);
 	const installed = await install(dir);

@@ -10,7 +10,7 @@ const record = { pid: 1, key: KEY };
 describe("daemonCommand", () => {
 	test("equals the self command for the hidden daemon route", () => {
 		expect(daemonCommandModule.daemonCommand()).toEqual(
-			selfCommand(["pw", "__daemon"]),
+			selfCommand(["pw", "daemon"]),
 		);
 	});
 
@@ -19,7 +19,7 @@ describe("daemonCommand", () => {
 		process.env["PW_DAEMON"] = "/x/pw-daemon";
 		try {
 			expect(daemonCommandModule.daemonCommand()).toEqual(
-				selfCommand(["pw", "__daemon"]),
+				selfCommand(["pw", "daemon"]),
 			);
 		} finally {
 			if (previous === undefined) delete process.env["PW_DAEMON"];
@@ -36,7 +36,7 @@ describe("isDaemonOf", () => {
 				"/opt/dg/dg.js",
 				"dg-skills",
 				"pw",
-				"__daemon",
+				"daemon",
 				SPEC,
 			]),
 		).toBe(true);
@@ -47,7 +47,7 @@ describe("isDaemonOf", () => {
 			"/usr/bin/bun",
 			"/repo/pkg/skills-cli/src/index.ts",
 			"pw",
-			"__daemon",
+			"daemon",
 			SPEC,
 		];
 		expect(isDaemonOf(record, cmdline)).toBe(true);
@@ -55,7 +55,7 @@ describe("isDaemonOf", () => {
 
 	test("accepts the compiled binary command line", () => {
 		expect(
-			isDaemonOf(record, ["/home/u/.dg/bin/dg-skills", "pw", "__daemon", SPEC]),
+			isDaemonOf(record, ["/home/u/.dg/bin/dg-skills", "pw", "daemon", SPEC]),
 		).toBe(true);
 	});
 
@@ -65,7 +65,7 @@ describe("isDaemonOf", () => {
 			"/opt/dg/dg.js",
 			"dg-skills",
 			"pw",
-			"__daemon",
+			"daemon",
 			JSON.stringify({ key: "other" }),
 		];
 		expect(isDaemonOf(record, cmdline)).toBe(false);
@@ -90,7 +90,7 @@ describe("isDaemonOf", () => {
 				"/opt/dg/dg.js",
 				"dg-skills",
 				"pw",
-				"__daemon",
+				"daemon",
 				"nope",
 			]),
 		).toBe(false);

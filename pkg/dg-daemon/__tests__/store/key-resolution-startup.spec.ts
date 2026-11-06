@@ -6,6 +6,7 @@ import { resolveDgPaths } from "@dg/common/node";
 import { mintFallbackKeyFile } from "../../src/crypto/key-file";
 import { fingerprintKey } from "../../src/crypto/key-resolution";
 import { ChatStore } from "../../src/store";
+import { fakeKeychain } from "../utils/fake-keychain";
 import {
 	cleanupDgHome,
 	FILE_ONLY_SEAMS,
@@ -96,6 +97,23 @@ describe("ChatStore.open — key resolution across restarts", () => {
 
 			expect(lookupCalls).toBe(0);
 			store.close();
+		} finally {
+			cleanupDgHome(dgHome);
+		}
+	});
+	it("reopening with an injected keychain never stores or removes: no lazy move runs at store open", async () => {
+		const dgHome = freshDgHome();
+		try {
+			const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			const keychain = fakeKeychain(undefined);
+			const seams = { env: { DG_KEY_SOURCE: "keychain" }, keychain: keychain.backend };
+			(await ChatStore.open(paths, seams)).close();
+			keychain.calls.length = 0;
+
+			(await ChatStore.open(paths, seams)).close();
+
+			expect(keychain.calls).not.toContain("store");
+			expect(keychain.calls).not.toContain("remove");
 		} finally {
 			cleanupDgHome(dgHome);
 		}

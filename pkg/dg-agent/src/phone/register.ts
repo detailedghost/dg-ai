@@ -1,4 +1,6 @@
 import { DgCliError } from "@dg/common";
+import type { DgPaths } from "@dg/common/node";
+import { assertNotBlocked, layoutResult } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import type { AcceptOpts } from "./accept-name";
 import type * as Commands from "./commands";
@@ -27,8 +29,6 @@ export type PhoneApi = Pick<
 	| "phoneOpen"
 	| "phoneClose"
 	| "phoneRefresh"
-	| "moveLegacyPhoneHome"
-	| "phoneRollbackHome"
 	| "phoneRun"
 	| "phoneThreadNew"
 	| "phoneThreadList"
@@ -47,7 +47,7 @@ export type PhoneApi = Pick<
 
 const EXIT_REMOVED_VERB = 2;
 
-const OWNS_HOME_MOVE = new Set(["__refresh", "__rollback-home", "__run"]);
+const OWNS_HOME_MOVE = new Set(["listen"]);
 const MANAGES_LISTENER = new Set(["close", "off"]);
 
 /** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
@@ -68,6 +68,16 @@ function renamedAlias(group: Command, oldName: string, newName: string): Command
 }
 
 type PhoneLoader = () => Promise<PhoneApi>;
+
+function phoneWritable(paths: DgPaths): boolean {
+	try {
+		assertNotBlocked(paths, "phone");
+		return true;
+	} catch (error) {
+		if (error instanceof DgCliError) return false;
+		throw error;
+	}
+}
 
 /** Attaches every phone verb to `group`, plus the hidden renamed-verb aliases, the one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
 function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => string | undefined): void {
@@ -332,24 +342,16 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.action(close);
 
 	group
-		.command("__refresh", { hidden: true })
-		.description("internal: restart a listener whose binary or keys drifted")
+		.command("refresh")
+		.description("Restart a listener whose binary or keys drifted; dg starts this for you")
 		.action(async () => {
 			const phone = await load();
 			await phone.phoneRefresh(phone.openCloseDeps(getSession()));
 		});
 
 	group
-		.command("__rollback-home", { hidden: true })
-		.description("internal: copy phone state back to the old phone folder for an older release")
-		.action(async () => {
-			const phone = await load();
-			phone.phoneRollbackHome(phone.deps(getSession()));
-		});
-
-	group
-		.command("__run", { hidden: true })
-		.description("internal: run the always-on listener in the foreground (never call directly)")
+		.command("listen")
+		.description("Run the phone listener; dg starts this for you")
 		.option("--on-message <argv...>", "command and args to run for each delivered message")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
 		.option("--dg-home <dir>", "state directory for this listener; overrides DG_HOME")
@@ -410,7 +412,18 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 			if (OWNS_HOME_MOVE.has(action.name())) return;
 			const phone = await load();
 			const deps = phone.openCloseDeps(session);
-			if ((await phone.moveLegacyPhoneHome(deps)) && !MANAGES_LISTENER.has(action.name())) await phone.phoneOpen({}, Object.create(deps, { write: { value: () => {} } }));
+			const layout = layoutResult(deps.paths);
+			if (!layout) return;
+			if (MANAGES_LISTENER.has(action.name())) {
+				if (!phoneWritable(deps.paths)) return;
+			} else {
+				assertNotBlocked(deps.paths, "phone-friend");
+				assertNotBlocked(deps.paths, "phone");
+			}
+			(await import("./migrate")).migrateIfNeeded(deps.paths);
+			const outcome = layout.phone;
+			const restarts = outcome?.kind === "moved" || outcome?.kind === "setAside" ? outcome.stopped : false;
+			if (restarts && !MANAGES_LISTENER.has(action.name())) await phone.phoneOpen({}, Object.create(deps, { write: { value: () => {} } }));
 		});
 	attachPhoneVerbs(group, load, () => session);
 }

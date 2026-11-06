@@ -31,7 +31,7 @@ import { USAGE as PROTOTYPE_USAGE, main as runPrototype } from "../prototype";
 import { DEFAULT_TIMEOUT_SEC } from "../prototype/args";
 import { assertExtensionInstalled } from "../utils/cli-only";
 import { addProtoMarker, protoPayloadFits } from "../utils/proto-marker";
-import { answerPagePath, protoScratchPath, protoSlug } from "../utils/proto-paths";
+import { answerPagePath, assertProtoScratchWritable, protoScratchPath, protoSlug } from "../utils/proto-paths";
 
 const DEFAULT_TIMEOUT_MS = 45_000;
 /** A human deciding on a planted page, not a download; same wait as local mode's `wait` default. */
@@ -553,6 +553,7 @@ export async function scrapePrototype(
 		throw new TypeError("proto scrape requires an http(s) URL");
 	}
 
+	assertProtoScratchWritable();
 	const slug = protoSlug(url);
 	const markedUrl = addProtoMarker(url, {
 		phase: "scrape",

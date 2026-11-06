@@ -59,7 +59,7 @@ function deps(dir: string, overrides: Partial<EnsureDeps> = {}): EnsureDeps {
 		isAlive: () => false,
 		verdict: () => "foreign",
 		ownsProcess: () => true,
-		argv: ["/fake/dg-agent", "phone", "__run"],
+		argv: ["/fake/dg-agent", "phone", "listen"],
 		hook: null,
 		spawnListener: () => 4242,
 		...overrides,
@@ -260,7 +260,7 @@ describe("ensureListener", () => {
 
 	it("recognizes this binary or a phone listener, and not an unrelated process", () => {
 		expect(commandOwnsEnsure(["/bin/dg-agent", "phone", "open", "--ensure"], "/bin/dg-agent")).toBe(true);
-		expect(commandOwnsEnsure(["node", "phone", "__run"], undefined)).toBe(true);
+		expect(commandOwnsEnsure(["node", "phone", "listen"], undefined)).toBe(true);
 		expect(commandOwnsEnsure(["node", "phone", "open"], undefined)).toBe(true);
 		expect(commandOwnsEnsure(["node", "phone", "inbox"], undefined)).toBe(false);
 		expect(commandOwnsEnsure(["/bin/sleep", "30"], "/bin/dg-agent")).toBe(false);
@@ -453,7 +453,7 @@ describe("ensure cron line", () => {
 	});
 
 	it("builds phone open --ensure from the listener argv", () => {
-		expect(openEnsureArgv((extra) => ["/usr/bin/bun", "/src/index.ts", "phone", "__run", ...extra])).toEqual([
+		expect(openEnsureArgv((extra) => ["/usr/bin/bun", "/src/index.ts", "phone", "listen", ...extra])).toEqual([
 			"/usr/bin/bun",
 			"/src/index.ts",
 			"phone",
@@ -596,7 +596,7 @@ describe("phone open --ensure", () => {
 				return { code: 0, stdout: "", stderr: "" };
 			},
 			which: () => "/bin/true",
-			listenerArgv: (extra) => ["/fake/dg-agent", "phone", "__run", ...extra],
+			listenerArgv: (extra) => ["/fake/dg-agent", "phone", "listen", ...extra],
 			spawnListener: (argv, logPath) => {
 				spawned.push({ argv, logPath });
 				return 6400;
@@ -628,7 +628,7 @@ describe("phone open --ensure", () => {
 		expect(h.ran).toEqual([]);
 		expect(h.replaced).toEqual([]);
 		expect(h.spawned).toHaveLength(1);
-		expect(h.spawned[0]?.argv).toEqual(["/fake/dg-agent", "phone", "__run"]);
+		expect(h.spawned[0]?.argv).toEqual(["/fake/dg-agent", "phone", "listen"]);
 
 		h.out.length = 0;
 		await phoneOpen({ ensure: true }, h.deps);

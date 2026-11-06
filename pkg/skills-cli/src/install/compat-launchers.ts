@@ -43,6 +43,20 @@ export function compatLauncherText(
 	].join("\n");
 }
 
+/** True when the legacy bin file is the launcher text written by `syncCompatLaunchers` and its replacement exists in the launcher folder. */
+export function isCompatLauncher(paths: DgPaths, file: string, platform: NodeJS.Platform): boolean {
+	const replacement = join(paths.binDir, file);
+	if (!existsSync(replacement)) return false;
+	try {
+		const text = readFileSync(join(paths.legacyHome, "bin", file), "utf8");
+		const release = RELEASE_IN_TEXT.exec(text)?.[1];
+		const name = platform === "win32" ? file.replace(/\.cmd$/, "") : file;
+		return release !== undefined && text === compatLauncherText(name, replacement, release, platform);
+	} catch {
+		return false;
+	}
+}
+
 function writeAtomic(path: string, text: string): void {
 	const staged = `${path}.${process.pid}.tmp`;
 	try {

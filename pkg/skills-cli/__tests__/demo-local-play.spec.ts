@@ -45,7 +45,7 @@ describe("demo <plan> local default", () => {
 		expect(world.spawned).toHaveLength(1);
 		const { argv } = world.spawned[0]!;
 		expect(argv.slice(0, -3)).toEqual(selfCommand([]));
-		expect(argv.slice(-3, -1)).toEqual(["demo", "__player"]);
+		expect(argv.slice(-3, -1)).toEqual(["demo", "player"]);
 		expect(typeof playerJob().slug).toBe("string");
 		expect(run.out).toContain("start screen open in");
 		expect(run.out).toContain(`dg-skills demo status ${playerJob().slug}`);
@@ -333,7 +333,7 @@ describe("demo <plan> browser selection", () => {
 		await world.drive(registerDemo, ["demo", world.planPath], demoDeps());
 		const slug = String(playerJob().slug);
 		const live = Bun.spawn(
-			[process.execPath, "-e", "setInterval(() => {}, 1000)", "--", "__player", JSON.stringify({ slug })],
+			[process.execPath, "-e", "setInterval(() => {}, 1000)", "--", "player", JSON.stringify({ slug })],
 			{ stdout: "ignore", stderr: "ignore", stdin: "ignore" },
 		);
 		try {

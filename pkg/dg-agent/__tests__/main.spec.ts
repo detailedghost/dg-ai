@@ -58,8 +58,8 @@ describe("dg-agent main", () => {
 		}
 	});
 
-	it("returns 0 from the hidden phone __run action without calling process.exit", async () => {
-		const code = await main(["phone", "__run"]);
+	it("returns 0 from the phone listen action without calling process.exit", async () => {
+		const code = await main(["phone", "listen"]);
 		expect(code).toBe(0);
 		expect(phoneRun).toHaveBeenCalledTimes(1);
 		expect(exitCalls).toEqual([]);

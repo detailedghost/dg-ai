@@ -4,6 +4,7 @@ import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { resolveDgPaths, type DgPaths } from "@dg/common/node";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { phoneNumber, phoneOpen, phoneRefresh, phoneRun, phoneStatus, phoneVoicemail, type OpenCloseDeps } from "../../src/phone/commands";
+import { systemdUnitPath } from "../../src/phone/autostart";
 import { PhoneDb } from "../../src/phone/db";
 import { createFileKey, keyName, markKeyInStore, type KeyClient } from "../../src/phone/keys";
 import {
@@ -70,7 +71,7 @@ function harness(): Harness {
 			return { code: 0, stdout: "", stderr: "" };
 		},
 		which: (name) => `/resolved/${name}`,
-		listenerArgv: (extra) => ["/fake/dg-agent", "phone", "__run", ...extra],
+		listenerArgv: (extra) => ["/fake/dg-agent", "phone", "listen", ...extra],
 		spawnListener: () => {
 			const pid = 7000 + spawned.length;
 			spawned.push(pid);
@@ -353,7 +354,7 @@ describe("a listener that will not stop", () => {
 		}
 	});
 
-	it("does not restart the systemd unit from inside phone __run", async () => {
+	it("does not restart the systemd unit from inside phone listen", async () => {
 		const h = harness();
 		const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], { stdio: "ignore" });
 		const pid = child.pid;
@@ -422,7 +423,7 @@ describe("a listener that will not stop", () => {
 	});
 });
 
-describe("phone __refresh", () => {
+describe("phone refresh", () => {
 	it("does not create a phone when this install has never used one", async () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: tracker.freshHome() } });
 		const deps = {
@@ -442,6 +443,56 @@ describe("phone __refresh", () => {
 		await phoneRefresh(deps);
 
 		expect(existsSync(PhoneDb.path(paths))).toBe(false);
+	});
+
+	it("replaces a systemd unit written with the old verb before it restarts the listener", async () => {
+		const h = harness();
+		const oldUnit = 'ExecStart="/fake/dg-agent" "phone" "__run"';
+		const unitPath = systemdUnitPath("/home/u", {});
+		const written = new Map<string, string>([[unitPath, oldUnit]]);
+		h.deps.writeFile = (path, data) => {
+			written.set(path, String(data));
+		};
+		const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], { stdio: "ignore" });
+		const pid = child.pid;
+		if (pid === undefined) throw new Error("helper did not start");
+		try {
+			writePid(h.paths, { pid, version: "1.19.1" });
+			writeListener(h.deps.db, { autostart: { kind: "systemd" } });
+
+			await phoneRefresh(h.deps);
+
+			expect(written.get(unitPath)).toContain('ExecStart="/fake/dg-agent" "phone" "listen"');
+			expect(written.get(unitPath)).not.toContain("__run");
+			expect(h.ran.at(-1)).toEqual(["systemctl", "--user", "restart", "dg-phone.service"]);
+		} finally {
+			child.kill();
+		}
+	});
+
+	it("repairs a systemd unit with the old verb when no listener runs", async () => {
+		const h = harness();
+		const unitPath = systemdUnitPath("/home/u", {});
+		const written = new Map<string, string>([[unitPath, 'ExecStart="/fake/dg-agent" "phone" "__run"']]);
+		h.deps.writeFile = (path, data) => {
+			written.set(path, String(data));
+		};
+		writeListener(h.deps.db, { autostart: { kind: "systemd" } });
+
+		await phoneRefresh(h.deps);
+
+		expect(written.get(unitPath)).toContain('ExecStart="/fake/dg-agent" "phone" "listen"');
+		expect(h.ran.at(-1)).toEqual(["systemctl", "--user", "restart", "dg-phone.service"]);
+		expect(h.spawned).toEqual([]);
+	});
+
+	it("starts nothing when no listener runs and autostart is off", async () => {
+		const h = harness();
+
+		await phoneRefresh(h.deps);
+
+		expect(h.ran).toEqual([]);
+		expect(h.spawned).toEqual([]);
 	});
 
 	it("stops a detached listener whose version differs and starts one replacement", async () => {

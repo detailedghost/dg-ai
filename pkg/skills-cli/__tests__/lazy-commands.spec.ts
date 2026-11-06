@@ -53,6 +53,7 @@ const GOLDEN_COMMANDS = [
 	"sniff",
 	"ssms",
 	"doctor",
+	"clean",
 	"require-extension",
 ];
 

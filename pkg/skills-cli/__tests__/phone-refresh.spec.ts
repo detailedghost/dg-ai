@@ -1,7 +1,7 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { programCommand, setProgramName } from "@dg/common/node/program";
-import { refreshPhoneListener } from "../src/install/phone-listener";
+import { refreshPhoneListener, restartPhoneListener } from "../src/install/phone-listener";
 
 describe("refreshPhoneListener", () => {
 	it("warns with the refresh's stderr when it exits non-zero, and stays quiet on success", () => {
@@ -33,10 +33,10 @@ describe("refreshPhoneListener", () => {
 });
 
 describe("refreshPhoneListener argv", () => {
-	it("spawns programCommand(dg-agent, [phone, __refresh]) and never the cmd shim", () => {
+	it("spawns programCommand(dg-agent, [phone, refresh]) and never the cmd shim", () => {
 		setProgramName("dg-agent");
 		try {
-			const [command, ...args] = programCommand("dg-agent", ["phone", "__refresh"]);
+			const [command, ...args] = programCommand("dg-agent", ["phone", "refresh"]);
 			const calls: { command: string; args: readonly string[]; timeout: number }[] = [];
 
 			refreshPhoneListener(((cmd: string, argv: readonly string[], options: { timeout?: number }) => {
@@ -46,9 +46,29 @@ describe("refreshPhoneListener argv", () => {
 
 			expect(calls).toEqual([{ command, args, timeout: 8_000 }]);
 			expect(calls[0].command.endsWith(".cmd")).toBe(false);
-			expect(calls[0].args.slice(-3)).toEqual(["dg-agent", "phone", "__refresh"]);
+			expect(calls[0].args.slice(-3)).toEqual(["dg-agent", "phone", "refresh"]);
 		} finally {
 			setProgramName(undefined);
+		}
+	});
+});
+
+describe("restartPhoneListener", () => {
+	it("spawns phone open, and warns with the stderr tail when it exits non-zero", () => {
+		const warn = spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const calls: (readonly string[])[] = [];
+			restartPhoneListener(((_cmd: string, argv: readonly string[]) => {
+				calls.push(argv);
+				return { status: 0 } as ReturnType<typeof spawnSync>;
+			}) as typeof spawnSync);
+			expect(calls[0].slice(-2)).toEqual(["phone", "open"]);
+			expect(warn).not.toHaveBeenCalled();
+
+			restartPhoneListener((() => ({ status: 1, stderr: "boom\n" }) as ReturnType<typeof spawnSync>) as typeof spawnSync);
+			expect(warn).toHaveBeenCalledWith("warning: phone listener was not restarted: boom");
+		} finally {
+			warn.mockRestore();
 		}
 	});
 });

@@ -91,7 +91,7 @@ async function ensureExtension(skipBuild: boolean): Promise<void> {
 function startDaemon(): ChildProcess {
 	const child = spawn(
 		"bun",
-		["pkg/dg-daemon/src/index.ts", "__serve"],
+		["pkg/dg-daemon/src/index.ts", "serve"],
 		{
 			cwd: ROOT,
 			stdio: "inherit",

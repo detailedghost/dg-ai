@@ -12,13 +12,12 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { skillDirectoryNames } from "@dg/common";
-import { personasDest, run, skillsInstallDest } from "@dg/common/node";
+import { assertSkillsDestMoved, moveVerified, personasDest, removeSource, resolveDgPaths, run, skillsInstallDest, withInstallLock } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { fetchBundle } from "./bundle";
-import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
-import { moveVerified, removeSource } from "./migrate-home";
 import { PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
@@ -189,6 +188,9 @@ export function removeRetiredBinaries(): void {
 /** Installs the pinned runtime and the bundle, then points the three shims at them. */
 async function installBundle(release: PickedBundle): Promise<void> {
 	const root = installRoot();
+	const paths = resolveDgPaths();
+	assertNotBlocked(paths, "runtime");
+	assertNotBlocked(paths, "lib");
 	await withInstallLock(root, () => installBundleLocked(root, release));
 }
 
@@ -254,6 +256,7 @@ async function installCliOnly(keepCache: boolean, version?: string): Promise<voi
 	const releases = await listReleases();
 	if (version) await installBundle(pickBundle(releases, version));
 	else await installNewestBundle(releases);
+	assertSkillsDestMoved(process.env, homedir());
 	const skillsDest = skillsInstallDest(process.env, homedir());
 	const personas = installPackagedPersonas(skillsDest);
 	setCliOnly(true);

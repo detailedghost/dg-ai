@@ -21,7 +21,7 @@ const playerArgv = [
 	"-e",
 	"setInterval(() => {}, 1000)",
 	"--",
-	"__player",
+	"player",
 	JSON.stringify({ slug: "local-player-tour" }),
 ];
 
@@ -32,7 +32,7 @@ const liveChild = (argv: string[]) => {
 };
 
 const playerChild = (forSlug = slug) =>
-	liveChild([process.execPath, "-e", "setInterval(() => {}, 1000)", "__player", JSON.stringify({ slug: forSlug })]);
+	liveChild([process.execPath, "-e", "setInterval(() => {}, 1000)", "player", JSON.stringify({ slug: forSlug })]);
 
 const slug = "local-player-tour";
 
@@ -75,7 +75,7 @@ describe("player pid matching", () => {
 			"-e",
 			"setInterval(() => {}, 1000)",
 			"demo",
-			"__player",
+			"player",
 			jobFor(jobSlug),
 			...extra,
 		]);
@@ -87,6 +87,14 @@ describe("player pid matching", () => {
 
 	test("accepts a player whose job slug matches exactly", async () => {
 		const child = livePlayerFor(slug);
+		expect((await status()).out).toBe(`running (pid ${child.pid})`);
+	});
+
+	test("accepts the old release's __player argv", async () => {
+		const child = liveChild([process.execPath, "-e", "setInterval(() => {}, 1000)", "demo", "__player", jobFor(slug)]);
+		const dir = join(world.demosDir, slug);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "player.pid"), String(child.pid));
 		expect((await status()).out).toBe(`running (pid ${child.pid})`);
 	});
 

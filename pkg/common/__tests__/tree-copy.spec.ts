@@ -1,10 +1,14 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
 	chmodSync,
+	existsSync,
+	readdirSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	readlinkSync,
+	renameSync,
 	rmSync,
 	statSync,
 	symlinkSync,
@@ -12,7 +16,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyTree, treeContained, treeMatches } from "@dg/common/node";
+import {
+	copyTree,
+	moveVerified,
+	removeSource,
+	setAsideUnusedRoot,
+	treeContained,
+	treeMatches,
+} from "@dg/common/node";
+import { folderUnused, sqliteUnused } from "../src/node/sqlite-unused";
 
 let dir: string;
 let from: string;
@@ -128,5 +140,341 @@ describe.skipIf(process.platform === "win32")("copyTree", () => {
 			copyTree(join(dir, `fresh-${name}`), join(to, name));
 		}
 		expect(treeMatches(from, to)).toBe(true);
+	});
+});
+
+const busy = (): never => {
+	throw Object.assign(new Error("in use"), { code: "EBUSY" });
+};
+
+function sqliteFile(file: string, rows: number, wal = false): void {
+	const db = new Database(file);
+	if (wal) db.run("PRAGMA journal_mode = WAL");
+	db.run("CREATE TABLE keys (id INTEGER PRIMARY KEY, name TEXT)");
+	for (let row = 0; row < rows; row++) db.run("INSERT INTO keys (name) VALUES (?)", [`k${row}`]);
+	db.close();
+}
+
+function folderBytes(root: string): Record<string, string> {
+	return Object.fromEntries(
+		readdirSync(root).map((name) => {
+			const stat = statSync(join(root, name));
+			return [name, `${stat.size}:${stat.mtimeMs}:${readFileSync(join(root, name)).toString("base64")}`];
+		}),
+	);
+}
+
+describe("moveVerified", () => {
+	it("copies the tree, removes the source and returns moved", async () => {
+		const result = await moveVerified(from, to, { log: () => {} });
+
+		expect(result).toBe("moved");
+		expect(existsSync(from)).toBe(false);
+		expect(readFileSync(join(to, "sub", "run"), "utf8")).toBe("#!/bin/sh\n");
+	});
+
+	it("keeps both sides and returns kept when the target already exists", async () => {
+		mkdirSync(to);
+
+		expect(await moveVerified(from, to, { log: () => {} })).toBe("kept");
+		expect(existsSync(join(from, "sub", "run"))).toBe(true);
+	});
+
+	it("fails the move, removes the copy and keeps the source when verify returns a problem", async () => {
+		const lines: string[] = [];
+		const seen: string[] = [];
+
+		const result = await moveVerified(from, to, {
+			log: (line) => lines.push(line),
+			verify: (copy) => {
+				seen.push(copy);
+				return ["row count differs"];
+			},
+		});
+
+		expect(result).toBe("failed");
+		expect(seen).toEqual([to]);
+		expect(existsSync(to)).toBe(false);
+		expect(existsSync(join(from, "sub", "run"))).toBe(true);
+		expect(lines.join("\n")).toContain("row count differs");
+	});
+
+	it("moves when verify returns no problem", async () => {
+		expect(await moveVerified(from, to, { log: () => {}, verify: () => [] })).toBe("moved");
+	});
+
+	it("returns failed and removes the copy when the copy does not match the source", async () => {
+		const result = await moveVerified(from, to, {
+			log: () => {},
+			afterCopy: () => writeFileSync(join(to, "sub", "run"), "changed after the copy"),
+		});
+
+		expect(result).toBe("failed");
+		expect(existsSync(to)).toBe(false);
+		expect(existsSync(from)).toBe(true);
+	});
+
+	it("returns scheduled and keeps both copies when the source is held open", async () => {
+		const lines: string[] = [];
+
+		const result = await moveVerified(from, to, { log: (line) => lines.push(line), rename: busy });
+
+		expect(result).toBe("scheduled");
+		expect(existsSync(join(from, "sub", "run"))).toBe(true);
+		expect(existsSync(join(to, "sub", "run"))).toBe(true);
+	});
+});
+
+describe("moveVerified with a list of files", () => {
+	const seed = (): string[] => {
+		const files = ["memory.db", "memory.db-wal"].map((name) => join(from, name));
+		for (const file of files) writeFileSync(file, `bytes of ${file}`);
+		return files;
+	};
+
+	it("returns scheduled with the first file gone when only the -wal file is held", async () => {
+		const files = seed();
+
+		const result = await moveVerified(files, to, {
+			log: () => {},
+			rename: (source, target) => (source.endsWith("-wal") ? busy() : renameSync(source, target)),
+		});
+
+		expect(result).toBe("scheduled");
+		expect(existsSync(files[0] as string)).toBe(false);
+		expect(existsSync(files[1] as string)).toBe(true);
+		expect(readdirSync(to).sort()).toEqual(["memory.db", "memory.db-wal"]);
+	});
+
+	it("moves every file into the folder as one unit", async () => {
+		const files = seed();
+
+		const result = await moveVerified(files, to, { log: () => {} });
+
+		expect(result).toBe("moved");
+		expect(readdirSync(to).sort()).toEqual(["memory.db", "memory.db-wal"]);
+		expect(files.some((file) => existsSync(file))).toBe(false);
+	});
+
+	it("removes every copy and keeps every source when one copy fails its check", async () => {
+		const files = seed();
+
+		const result = await moveVerified(files, to, {
+			log: () => {},
+			verify: (copy) => (copy.endsWith("-wal") ? ["wal differs"] : []),
+		});
+
+		expect(result).toBe("failed");
+		expect(readdirSync(to)).toEqual([]);
+		expect(files.every((file) => existsSync(file))).toBe(true);
+	});
+
+	it("keeps every source when one target file already exists", async () => {
+		const files = seed();
+		mkdirSync(to);
+		writeFileSync(join(to, "memory.db-wal"), "other");
+
+		expect(await moveVerified(files, to, { log: () => {} })).toBe("kept");
+		expect(readdirSync(to)).toEqual(["memory.db-wal"]);
+		expect(files.every((file) => existsSync(file))).toBe(true);
+	});
+});
+
+describe("removeSource", () => {
+	it("removes the source and returns true", () => {
+		expect(removeSource(from, {})).toBe(true);
+		expect(existsSync(from)).toBe(false);
+		expect(readdirSync(dir)).toEqual([]);
+	});
+
+	it("returns false and leaves the source when the rename fails", () => {
+		expect(removeSource(from, { rename: busy })).toBe(false);
+		expect(existsSync(join(from, "sub", "run"))).toBe(true);
+	});
+});
+
+describe("setAsideUnusedRoot", () => {
+	it("renames the root to <root>.empty-<ts> and leaves no folder at the old path", () => {
+		const root = join(dir, "phone");
+		mkdirSync(root);
+
+		setAsideUnusedRoot(root, 1_700_000_000_000);
+
+		expect(existsSync(root)).toBe(false);
+		const aside = readdirSync(dir).filter((name) => name.startsWith("phone.empty-"));
+		expect(aside).toHaveLength(1);
+	});
+});
+
+describe("sqliteUnused", () => {
+	it("is true for a db whose tables are all empty and false once a table has a row", () => {
+		sqliteFile(join(dir, "empty.db"), 0);
+		sqliteFile(join(dir, "used.db"), 1);
+
+		expect(sqliteUnused(join(dir, "empty.db"))).toBe(true);
+		expect(sqliteUnused(join(dir, "used.db"))).toBe(false);
+	});
+
+	it("leaves a WAL-mode db folder byte-identical, with no new -wal or -shm file", () => {
+		const folder = join(dir, "db");
+		mkdirSync(folder);
+		const file = join(folder, "phone.db");
+		sqliteFile(file, 0, true);
+		const before = folderBytes(folder);
+
+		expect(sqliteUnused(file)).toBe(true);
+
+		expect(folderBytes(folder)).toEqual(before);
+	});
+
+	it("counts a db with a non-empty -wal file as used", () => {
+		const file = join(dir, "phone.db");
+		sqliteFile(file, 0);
+		writeFileSync(`${file}-wal`, Buffer.alloc(64, 1));
+
+		expect(sqliteUnused(file)).toBe(false);
+	});
+});
+
+describe("sqliteUnused limits", () => {
+	it("is false without opening a db file larger than 1 MiB", () => {
+		const file = join(dir, "big.db");
+		sqliteFile(file, 0);
+		writeFileSync(file, Buffer.concat([readFileSync(file), Buffer.alloc(1024 * 1024)]));
+
+		expect(sqliteUnused(file)).toBe(false);
+	});
+
+	it("reads a table whose name holds a double quote", () => {
+		const empty = join(dir, "quoted-empty.db");
+		const used = join(dir, "quoted-used.db");
+		for (const [file, rows] of [[empty, 0], [used, 1]] as const) {
+			const db = new Database(file);
+			db.run('CREATE TABLE "a""b" (id INTEGER)');
+			if (rows > 0) db.run('INSERT INTO "a""b" (id) VALUES (1)');
+			db.close();
+		}
+
+		expect(sqliteUnused(empty)).toBe(true);
+		expect(sqliteUnused(used)).toBe(false);
+	});
+
+	it("stays out of the node index and tree-copy so importing them never loads bun:sqlite", () => {
+		const src = join(import.meta.dir, "..", "src", "node");
+
+		expect(readFileSync(join(src, "index.ts"), "utf8")).not.toContain("sqlite-unused");
+		expect(readFileSync(join(src, "tree-copy.ts"), "utf8")).not.toContain("bun:sqlite");
+	});
+});
+
+describe("sqliteUnused edge cases", () => {
+	it("is false for a missing file and for a file that is not a database", () => {
+		writeFileSync(join(dir, "junk.db"), "not a database at all, just text");
+
+		expect(sqliteUnused(join(dir, "missing.db"))).toBe(false);
+		expect(sqliteUnused(join(dir, "junk.db"))).toBe(false);
+	});
+
+	it("is true for a db with no tables", () => {
+		const file = join(dir, "bare.db");
+		const db = new Database(file);
+		db.run("CREATE TABLE gone (id INTEGER)");
+		db.run("DROP TABLE gone");
+		db.close();
+
+		expect(sqliteUnused(file)).toBe(true);
+	});
+
+	it("is false when only the second of two tables holds a row", () => {
+		const file = join(dir, "two.db");
+		const db = new Database(file);
+		db.run("CREATE TABLE a (id INTEGER)");
+		db.run("CREATE TABLE b (id INTEGER)");
+		db.run("INSERT INTO b (id) VALUES (1)");
+		db.close();
+
+		expect(sqliteUnused(file)).toBe(false);
+	});
+
+	it("ignores the internal sqlite_sequence table of an autoincrement db", () => {
+		const file = join(dir, "seq.db");
+		const db = new Database(file);
+		db.run("CREATE TABLE a (id INTEGER PRIMARY KEY AUTOINCREMENT)");
+		db.run("INSERT INTO a DEFAULT VALUES");
+		db.run("DELETE FROM a");
+		db.close();
+
+		expect(sqliteUnused(file)).toBe(true);
+	});
+
+	it("treats an empty -wal file as unused", () => {
+		const file = join(dir, "phone.db");
+		sqliteFile(file, 0);
+		writeFileSync(`${file}-wal`, "");
+
+		expect(sqliteUnused(file)).toBe(true);
+	});
+});
+
+describe("folderUnused", () => {
+	it("is true for an empty folder and false for a folder with another file", () => {
+		const empty = join(dir, "empty");
+		const other = join(dir, "other");
+		mkdirSync(empty);
+		mkdirSync(other);
+		writeFileSync(join(other, "notes.txt"), "mine");
+
+		expect(folderUnused(empty, "phone.db")).toBe(true);
+		expect(folderUnused(other, "phone.db")).toBe(false);
+	});
+
+	it("is true when the folder holds only db files that are unused and false when one holds a row", () => {
+		const root = join(dir, "phone");
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 0);
+		expect(folderUnused(root, "phone.db")).toBe(true);
+
+		rmSync(join(root, "phone.db"));
+		sqliteFile(join(root, "phone.db"), 2);
+		expect(folderUnused(root, "phone.db")).toBe(false);
+	});
+
+	it("is false for a missing folder", () => {
+		expect(folderUnused(join(dir, "missing"), "phone.db")).toBe(false);
+	});
+
+	it("is false for a folder with files when no db name is given", () => {
+		const root = join(dir, "plain");
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 0);
+
+		expect(folderUnused(root)).toBe(false);
+	});
+
+	it("is false when a db-prefixed sidecar sits beside a db that holds a row", () => {
+		const root = join(dir, "sidecar");
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 1);
+		writeFileSync(join(root, "phone.db-shm"), "");
+
+		expect(folderUnused(root, "phone.db")).toBe(false);
+	});
+
+	it.each(["phone.db.backup", "phone.db.migrating", "phone.db.tmp", "phone.dbx"])("is false when %s sits beside an empty db", (name) => {
+		const root = join(dir, `extra-${name}`);
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 0);
+		writeFileSync(join(root, name), "data");
+
+		expect(folderUnused(root, "phone.db")).toBe(false);
+	});
+
+	it.each(["phone.db-wal", "phone.db-shm", "phone.db-journal"])("is true when the empty sidecar %s sits beside an empty db", (name) => {
+		const root = join(dir, `side-${name}`);
+		mkdirSync(root);
+		sqliteFile(join(root, "phone.db"), 0);
+		writeFileSync(join(root, name), "");
+
+		expect(folderUnused(root, "phone.db")).toBe(true);
 	});
 });
