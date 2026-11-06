@@ -36,7 +36,8 @@ read a per-feature table that lives in `pkg/common`.
   unreadable result. The pw-ext staged-asset delete and the proto preview strip
   use them. The relay owns all lifecycle. It catches a hook throw, logs the
   error class and feature name, and goes on, so one bad hook cannot stop a CLI
-  result or a session close.
+  result or a session close. A `prepare` throw settles the request as an error
+  with fixed text and burns no request id, like a `prepare` error return.
 - **D5.** The relay members of `ChatFrame`, `CHAT_FRAME_TYPES`,
   `INBOUND_FRAME_TYPES`, the relay validator cases and `CliFrame` come from the
   feature tables. Chat-only frames stay hand-written.

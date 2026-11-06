@@ -110,6 +110,7 @@ type CheckOutcome =
 type CapCounter = Extract<RelayCheck, { check: "cap" }>["of"][number];
 
 const TIMEOUT_FALLBACK = "The relay request timed out.";
+const PREPARE_FALLBACK = "The relay could not prepare the request.";
 
 const states = new WeakMap<ConnectionManager, Map<string, RelayState>>();
 
@@ -407,12 +408,18 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 				return sendCliResult({ requester, sessionId, requestId, result });
 			};
 			if (relayHooks.prepare) {
-				const prepared = relayHooks.prepare({
-					sessionId,
-					requestId,
-					requester,
-					cli,
-				});
+				let prepared: ReturnType<NonNullable<RelayHooks["prepare"]>>;
+				try {
+					prepared = relayHooks.prepare({
+						sessionId,
+						requestId,
+						requester,
+						cli,
+					});
+				} catch (error) {
+					logHookFailure(deps, feature, "prepare", error);
+					return refuse(PREPARE_FALLBACK);
+				}
 				if ("error" in prepared) return refuse(prepared.error);
 				cli = prepared;
 			}

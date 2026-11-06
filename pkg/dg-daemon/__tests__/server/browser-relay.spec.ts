@@ -1104,6 +1104,29 @@ describe("relay hook and string safety", () => {
 		},
 	};
 
+	it("settles a request as an error with fixed text when the prepare hook throws", async () => {
+		const kinds: string[] = [];
+		let calls = 0;
+		const h = await guarded(TEST_RELAY, {
+			prepare: ({ cli }) => {
+				calls++;
+				if (calls === 1) throw new TypeError("secret frame data");
+				return cli;
+			},
+			settled: ({ outcome }) => kinds.push(outcome.kind),
+		});
+		const cli = h.w.cli();
+		await h.request(cli, "a");
+		expect(sentOfType(cli, "cli-test-result")).toMatchObject([
+			{ ok: false, error: "The relay could not prepare the request." },
+		]);
+		expect(kinds).toEqual(["error"]);
+		expect(h.errors).toEqual(["relay test prepare hook threw TypeError"]);
+		await h.request(cli, "a");
+		expect(sentOfType(h.ext, "test-browser-request")).toHaveLength(1);
+		expect(kinds).toEqual(["error"]);
+	});
+
 	it("still delivers the CLI result when a settled hook throws", async () => {
 		const h = await guarded(TEST_RELAY, throwingHook);
 		const cli = h.w.cli();
