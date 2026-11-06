@@ -1,14 +1,41 @@
+import type { LayoutHooks } from "@dg/common/node/layout";
+
 export const VERSION = process.env.DG_BUILD_VERSION ?? "dev";
+
+const SKIP = new Set(["hooks run"]);
+
+type HookSeams = { platform?: NodeJS.Platform };
+
+export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHooks {
+	if (commandName !== "install") return {};
+	const hooks: LayoutHooks = {
+		load: async () => {
+			const [{ daemonLayoutHooks }, { resolveDgPaths }, { ssmsConfigDir }] = await Promise.all([
+				import("@dg/dg-daemon/layout-hooks"),
+				import("@dg/common/node/dg-paths"),
+				import("./install/layout"),
+			]);
+			const paths = resolveDgPaths();
+			Object.assign(hooks, daemonLayoutHooks({ platform: seams.platform }), {
+				"ssms.configDir": () => ssmsConfigDir(paths),
+			});
+		},
+	};
+	return hooks;
+}
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
 		process.stdout.write(`${VERSION}\n`);
 		return 0;
 	}
-	const [{ Command, CommanderError }, { registerAll }] = await Promise.all([
-		import("commander"),
-		import("./register-all"),
-	]);
+	const [{ Command, CommanderError }, { registerAll }, { ensureLayout }, { installLayoutPreAction }] =
+		await Promise.all([
+			import("commander"),
+			import("./register-all"),
+			import("@dg/common/node/layout"),
+			import("@dg/common/node/layout-preaction"),
+		]);
 	const program = new Command()
 		.name("dg-skills")
 		.description(
@@ -19,6 +46,11 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.exitOverride();
 	program.enablePositionalOptions();
 	registerAll(program);
+	installLayoutPreAction(program, {
+		skip: SKIP,
+		hooksFor: (action) => hooksFor(action.name()),
+		ensure: ensureLayout,
+	});
 	try {
 		await program.parseAsync([...argv], { from: "user" });
 		return typeof process.exitCode === "number" ? process.exitCode : 0;

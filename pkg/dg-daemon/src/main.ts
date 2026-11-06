@@ -1,3 +1,20 @@
+import type { LayoutHooks } from "@dg/common/node/layout";
+
+const SKIP = new Set(["status"]);
+
+type HookSeams = { platform?: NodeJS.Platform };
+
+export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHooks {
+	if (commandName !== "__serve") return {};
+	const hooks: LayoutHooks = {
+		load: async () => {
+			const { daemonLayoutHooks } = await import("./layout-hooks");
+			Object.assign(hooks, daemonLayoutHooks({ platform: seams.platform }));
+		},
+	};
+	return hooks;
+}
+
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
 		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
@@ -11,6 +28,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		{ registerPairCommand },
 		{ registerSessionCommands },
 		{ registerServiceCommands },
+		{ ensureLayout },
+		{ installLayoutPreAction },
 	] = await Promise.all([
 		import("commander"),
 		import("@dg/common"),
@@ -19,6 +38,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		import("./commands/pair"),
 		import("./commands/sessions"),
 		import("./commands/service"),
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/layout-preaction"),
 	]);
 	const program = new Command();
 	program
@@ -52,6 +73,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 	registerPairCommand(program);
 	registerSessionCommands(program);
 	registerServiceCommands(program);
+
+	installLayoutPreAction(program, {
+		skip: SKIP,
+		hooksFor: (action) => hooksFor(action.name()),
+		ensure: ensureLayout,
+	});
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });

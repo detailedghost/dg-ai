@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { accountHome, allowSendHome } from "@dg/ssms";
 import { moveVerified, withInstallLock } from "@dg/common/node";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node/dg-paths";
@@ -40,15 +40,27 @@ function moveSsmsAllowFile(passwdLegacy: string, trustedConfig: string, log: (li
 	moveVerified(allowFile, join(trustedConfig, "ssms", "config.yaml"), { log });
 }
 
+function passwdLocations(passwdHome: string | undefined): { legacy: string; trusted: string } | undefined {
+	const legacy = passwdHome && resolveDgPaths({ homeDir: passwdHome, env: {} }).legacyHome;
+	const trusted = passwdHome && allowSendHome(passwdHome);
+	return legacy && trusted ? { legacy, trusted } : undefined;
+}
+
+/** The folder that holds ssms config: the trusted passwd-home folder when it shares this legacy home, else the config dir. */
+export function ssmsConfigDir(paths: DgPaths, passwdHome: string | undefined = installPasswdHome()): string {
+	const found = passwdLocations(passwdHome);
+	return found && resolve(found.legacy) === resolve(paths.legacyHome) ? found.trusted : paths.configDir;
+}
+
 /** Moves the fixed ssms allow file from the passwd home into the trusted config folder. */
 export async function migrateBeforeInstall(
 	paths: DgPaths = resolveDgPaths(),
 	log: (line: string) => void = console.log,
 	passwdHome: string | undefined = installPasswdHome(),
 ): Promise<void> {
-	const passwdLegacy = passwdHome && resolveDgPaths({ homeDir: passwdHome, env: {} }).legacyHome;
-	const trustedConfig = passwdHome && allowSendHome(passwdHome);
-	if (!passwdLegacy || !trustedConfig) return;
+	const found = passwdLocations(passwdHome);
+	if (!found) return;
+	const { legacy: passwdLegacy, trusted: trustedConfig } = found;
 	await withInstallLock(paths.dataDir, () => moveSsmsAllowFile(passwdLegacy, trustedConfig, log));
 }
 

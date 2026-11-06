@@ -104,11 +104,20 @@ function legacyHome(platform: NodeJS.Platform, home: string, env: Env): string {
 	return posix.join(home, ".dg");
 }
 
-/** Every dg root and file for this OS; a non-empty `DG_HOME` maps each role to `<DG_HOME>/<role>`. */
-export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
-	const platform = seams.platform ?? process.platform;
-	const home = seams.homeDir ?? homedir();
-	const env = seams.env ?? process.env;
+const ENV_KEYS = [
+	"DG_HOME",
+	"XDG_CONFIG_HOME",
+	"XDG_DATA_HOME",
+	"XDG_STATE_HOME",
+	"XDG_CACHE_HOME",
+	"LOCALAPPDATA",
+	"APPDATA",
+	"USERPROFILE",
+] as const;
+
+const memo = new Map<string, DgPaths>();
+
+function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPaths {
 	const path = platform === "win32" ? win32 : posix;
 	const r = roots(platform, home, env);
 	const daemonDir = path.join(r.stateDir, "daemon");
@@ -138,6 +147,19 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 		phoneFriendRoot: path.join(r.stateDir, "phone-friend"),
 		legacyHome: legacyHome(platform, home, env),
 	};
+}
+
+/** Every dg root and file for this OS, one object per distinct input tuple; a non-empty `DG_HOME` maps each role to `<DG_HOME>/<role>`. */
+export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
+	const platform = seams.platform ?? process.platform;
+	const home = seams.homeDir ?? homedir();
+	const env = seams.env ?? process.env;
+	const key = JSON.stringify([platform, home, ...ENV_KEYS.map((name) => env[name])]);
+	const known = memo.get(key);
+	if (known) return known;
+	const created = computeDgPaths(platform, home, env);
+	memo.set(key, created);
+	return created;
 }
 
 /** `PATH` with the dg launcher folder first, so children call the launchers by name. */

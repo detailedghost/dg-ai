@@ -5,6 +5,7 @@ import {
 	wait,
 } from "@dg/common";
 import { exitAfterDrain } from "@dg/common/async";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import {
 	checkWslNetworking,
 	type DgPaths,
@@ -71,6 +72,7 @@ async function awaitBindRival(
 
 export async function cmdStatus(): Promise<void> {
 	const paths = resolveDgPaths();
+	assertNotBlocked(paths, "daemon");
 	const handle = readPidFile(paths);
 	if (!handle) {
 		console.log("dg-daemon: no live daemon");

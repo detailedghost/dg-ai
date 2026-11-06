@@ -1,4 +1,9 @@
 import type { SessionRole } from "@dg/common";
+import type { LayoutHooks } from "@dg/common/node/layout";
+
+const SKIP = new Set(["phone __run"]);
+
+export const hooksFor = (_commandName: string): LayoutHooks => ({});
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
@@ -11,12 +16,16 @@ export async function main(argv: readonly string[]): Promise<number> {
 		{ registerAgentCommands },
 		{ registerMemoryCommands },
 		{ registerLazyPhoneCommands },
+		{ ensureLayout },
+		{ installLayoutPreAction },
 	] = await Promise.all([
 		import("commander"),
 		import("@dg/common"),
 		import("./commands"),
 		import("./memory/commands"),
 		import("./phone/register"),
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/layout-preaction"),
 	]);
 	const program = new Command();
 	program
@@ -112,6 +121,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 			console.log(url);
 			if (opts.open) await openUrlOrHint(url);
 		});
+
+	installLayoutPreAction(program, {
+		skip: SKIP,
+		hooksFor: (action) => hooksFor(action.name()),
+		ensure: ensureLayout,
+	});
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });

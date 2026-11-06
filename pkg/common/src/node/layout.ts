@@ -31,7 +31,8 @@ export type LayoutSeams = {
 	lock: <T>(root: string, fn: () => Promise<T>) => Promise<T>;
 };
 
-export type LayoutHooks = Partial<LayoutSeams> & Partial<OwnerHooks>;
+export type LayoutHooks = Partial<Omit<LayoutSeams, "load">> &
+	Partial<OwnerHooks> & { load?: () => Promise<LayoutWork | void> };
 
 export type MoveEntry = {
 	name: string;
@@ -142,14 +143,30 @@ const WORK_NAMES: ReadonlySet<string> = new Set(
 	moveEntries.map((entry) => [entry.from].flat()[0]?.split("/")[0] ?? ""),
 );
 
+/** Turns a lock that gave up into a `DgCliError` with the same message; errors from the guarded body pass through. */
+export const withCliLockError =
+	(lock: LayoutSeams["lock"]): LayoutSeams["lock"] =>
+	async (root, fn) => {
+		let entered = false;
+		try {
+			return await lock(root, () => {
+				entered = true;
+				return fn();
+			});
+		} catch (error) {
+			if (!entered && error instanceof Error && !(error instanceof DgCliError)) throw new DgCliError(error.message);
+			throw error;
+		}
+	};
+
 export function resolveSeams(hooks: LayoutHooks): LayoutSeams {
 	return {
 		readdir: hooks.readdir ?? ((path) => readdirSync(path)),
 		lstat: hooks.lstat ?? ((path) => lstatSync(path)),
-		load: hooks.load ?? (() => import("./layout-work")),
+		load: async () => (await hooks.load?.()) ?? (await import("./layout-work")),
 		log: hooks.log ?? ((line) => void process.stderr.write(`${line}\n`)),
 		now: hooks.now ?? Date.now,
-		lock: hooks.lock ?? ((root, fn) => withInstallLock(root, fn)),
+		lock: hooks.lock ?? withCliLockError((root, fn) => withInstallLock(root, fn)),
 	};
 }
 

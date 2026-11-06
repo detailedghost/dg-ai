@@ -13,6 +13,10 @@
 		"./node/dg-paths": "./src/node/dg-paths.ts",
 		"./node/layout": "./src/node/layout.ts",
 		"./node/layout-work": "./src/node/layout-work.ts",
+		"./node/layout-preaction": "./src/node/layout-preaction.ts",
+		"./node/sqlite-unused": "./src/node/sqlite-unused.ts",
+		"./node/pidfile": "./src/node/pidfile.ts",
+		"./node/plugin-cache": "./src/node/plugin-cache.ts",
 		"./msal": "./src/msal/index.ts",
 		"./daemon-db": "./src/node/daemon-db.ts"
 	},
