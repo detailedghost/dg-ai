@@ -54,17 +54,34 @@ contact with an existing key. Rename a contact afterward with
 
 ## Groups
 
-A group is a NIP-17 room with at most 16 members, this phone included. Its id is a hash of the sorted participant npubs, this phone included. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment. `group new '#ops' +baron +merc --subject ops` saves that room locally. It does not send a message. `text '#ops'` builds one kind-14 rumor with a `p` tag for every other member and, when a subject was set, a `subject` tag. A room with one other member and no subject sends the handle text as the subject, so the tag is never empty and the rumor is not mistaken for a one-to-one message. A larger room omits the subject tag when none was set. The rumor is sealed and gift-wrapped to each member's relays (saved card relays, kind 10050, and this phone's relays, capped at 10 the same way a one-to-one send is) and to this phone. The rumor id is the message id, so a self-copy does not store a second row. The local row uses that same timestamp. If some members confirm and others do not, the row is still saved and `behind` names the others. Running `text` again sends a new message.
+A group is a NIP-17 room with at most 16 members, this phone included. Its id is a hash of the sorted participant npubs, this phone included.
+Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment. `group new '#ops' +baron +merc --subject ops` saves that room locally.
+It does not send a message. `text '#ops'` builds one kind-14 rumor with a `p` tag for every other member and, when a subject was set, a `subject` tag.
+A room with one other member and no subject sends the handle text as the subject, so the tag is never empty and the rumor is not mistaken for a one-to-one message.
+A larger room omits the subject tag when none was set.
+The rumor is sealed and gift-wrapped to each member's relays (saved card relays, kind 10050, and this phone's relays,
+capped at 10 the same way a one-to-one send is) and to this phone.
+The rumor id is the message id, so a self-copy does not store a second row. The local row uses that same timestamp.
+If some members confirm and others do not, the row is still saved and `behind` names the others. Running `text` again sends a new message.
 
-A contact handle cannot start with `#`. `contacts rename` and `accept --name` reject one. One-to-one rows keep `thread_id` empty, and `messages +contact` does not show group rows.
+A contact handle cannot start with `#`. `contacts rename` and `accept --name` reject one.
+One-to-one rows keep `thread_id` empty, and `messages +contact` does not show group rows.
 
-On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a group message. The listener admits it only when the sender is already a contact or is this phone, every other member is a contact on the same key, and that key is the one that opened the wrap. It creates the local group under that key if it is new. The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken. A known sender with an unknown member is held: one notice says how many groups are held, and the message body is not in the notice. A stranger's group is dropped. Nothing is stored, and the log line is a pubkey prefix only.
+On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a group message.
+The listener admits it only when the sender is already a contact or is this phone,
+every other member is a contact on the same key, and that key is the one that opened the wrap.
+It creates the local group under that key if it is new.
+The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken.
+A known sender with an unknown member is held: one notice says how many groups are held, and the message body is not in the notice.
+A stranger's group is dropped. Nothing is stored, and the log line is a pubkey prefix only.
 
 `unread`, `watch`, and `messages` show a group row as `[#ops] +baron: ...`.
 
 ## Turn-taking
 
-Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder. Address other agents by the name on their card. Name a designated responder in the room's first message. Do not reply to every message. If every agent answers every line, the room loops.
+Reply only when a message addresses you by the name on your card (`--as`), or when you are the designated responder.
+Address other agents by the name on their card. Name a designated responder in the room's first message. Do not reply to every message.
+If every agent answers every line, the room loops.
 
 ## Sending
 
@@ -559,38 +576,40 @@ The phone folder is `phone/` in the dg state root:
 - Windows: `%LOCALAPPDATA%\dg\state\phone`
 - With `DG_HOME` set: `$DG_HOME/state/phone`
 
-Older releases kept it in `~/.dg/phone`. The first `phone __refresh` after an
-upgrade moves it, and `dg-skills install` runs that command:
+Older releases kept it in `~/.dg/phone`. Any `dg-agent phone` command moves
+it, and so does `dg-skills install`. When no listener runs, any other
+`dg-agent` command moves it too. The move has these steps:
 
 1. It stops the listener that runs from the old folder.
 2. It copies the folder to the new root.
 3. It checks the copy. It opens the copied `phone.db`, runs
    `PRAGMA integrity_check`, and decodes every key stored in the database.
-4. Only when every check passes, it removes the old folder. Then it installs
-   the login autostart unit again, with the absolute launcher path from the
-   new layout, and starts the listener.
+4. Only when every check passes, it removes the old folder. Then it starts the
+   listener again, unless the command is `close` or `off`.
 
-When a check fails, the copy is removed, the old folder stays, and the
-command prints `rollback: dg-agent phone __rollback-home`. The listener
-stays stopped, so it cannot start a new, empty phone at the new root. The move
-never writes over a phone folder that already exists at the new root.
+When a check fails, dg removes the copy and keeps the old folder. The command
+prints `dg: kept <old folder>; the copy failed its check: <problem>`. The
+listener stays stopped, so it cannot start a new, empty phone at the new root.
+The move never writes over a phone folder that holds data at the new root.
 
-To go back to an older release, stop the listener with `dg-agent phone close`,
-then run `dg-agent phone __rollback-home`. It refuses while the listener runs. It
-copies the phone folder back to `~/.dg/phone` and checks that copy the same
-way. It keeps the new folder and refuses to write over an old folder that
-still exists.
+`phone __run` never moves the folder. On a home that has not moved, it exits
+with `dg: <old folder> has not moved to <new folder>; run dg-skills install`.
+The next phone command or `dg-skills install` fixes it.
+
+To go back to an older release, follow
+[Roll back](install.md#roll-back-to-a-release-that-uses-dg) in the install
+guide. A `phone.empty-<ts>` folder is a set-aside copy. See
+[Clean up](install.md#clean-up) to remove it.
 
 ## Migration and the `phone-friend` alias
 
-`status`, `messages`, and `contacts` only read. They do not migrate, and they
-do not stop a listener. Before `phone.db` exists they report
-`"migration_pending": true` and `"next": "run phone open to migrate"`.
-`messages` and `contacts` also print the old rows, read-only, and the same hint
-on stderr. The first writing command (`number`, `invite`, `accept`, `text`,
-`unread`, `open`, `close`, or a contact edit) runs the migration once
-when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists and
-`~/.dg/phone/phone.db` does not. It reads every line before it signals a
+Every `dg-agent phone` command except `__run` converts old phone-friend
+lines first, once, after the phone folder moves. No command body does the
+conversion itself. The conversion runs when an old
+`<state>/phone-friend/<line>/phone-friend.db` exists and
+`<state>/phone/phone.db` does not. A conversion error fails that phone command.
+`phone __run` exits with `dg: phone-friend lines wait for conversion; run dg-agent phone status`
+while old lines still wait. It reads every line before it signals a
 listener, so a database that cannot be read leaves every listener running.
 It copies every line's existing nostr key and never mints one. A line that
 already published a contact, an invite, or an outbound message, and has no
@@ -620,10 +639,10 @@ against it. That is reported only when the process stays up. The old
 `phone-friend --line` command is not restarted: this binary rejects it.
 The old root stays in place on that failure.
 
-A start that succeeds renames the old root to `~/.dg/phone-friend.migrated`
-and prints a one-line summary to stderr. Every later command sees `phone.db`
-and does nothing further. To roll back, rename `~/.dg/phone-friend.migrated`
-back to `~/.dg/phone-friend` and run the previous `dg-agent` binary.
+A start that succeeds renames the old root to `phone-friend.migrated` in the
+same state folder and prints a one-line summary to stderr. Every later command
+sees `phone.db` and does nothing further. To use an older release, follow
+[Roll back](install.md#roll-back-to-a-release-that-uses-dg).
 `status` reports `"legacy_root_present": true` if the old root is still
 sitting next to the new database.
 

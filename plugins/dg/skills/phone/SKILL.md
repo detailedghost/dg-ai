@@ -456,18 +456,21 @@ and your saved number and listener settings. The only other files are
 **7 days**, then deleted, including unread messages — an agent away for
 more than a week loses what it missed.
 
-## Migration and rollback
+## Migration
 
-`status`, `messages`, and `contacts` only read. They do not migrate and they do
-not stop a listener. Before migration they report `"migration_pending": true`
-and `"next": "run phone open to migrate"`, and `messages` and `contacts` print
-the old rows read-only. The first writing command (`number`, `invite`,
-`accept`, `text`, `unread`, `open`, `close`, or a contact edit) reads every
-line, then copies its existing key (never a newly minted one), contact, and
-message into the new database once. A published line with no key stops the
-migration before any listener is signaled and says to restore that line's
-nsec, or the credential `phone-friend/<line>/nostr-key`, then run `phone open`.
-`dg-skills install` prints that failure as a warning.
+Every `dg-agent phone` command except `__run` converts old phone-friend lines
+first, once. A command that only reads, such as `status`, `messages`, or
+`contacts`, converts too. The conversion reads every line, then copies its
+existing key (never a newly minted one), contact, and message into the new
+database. A conversion error fails that command. A published line with no key
+stops the migration before any listener is signaled and says to restore that
+line's nsec, or the credential `phone-friend/<line>/nostr-key`, then run
+`phone open`. `dg-skills install` prints that failure as a warning.
+`phone __run` never converts. While old lines wait, it exits 1 with
+`dg: phone-friend lines wait for conversion; run dg-agent phone status`.
+
+No command rolls the data back. The manual steps are in `docs/install.md`,
+section `Roll back to a release that uses ~/.dg`.
 
 This process's own `phone __run` is kept. Any other live listener, including a
 `phone __run` that is not this process, is restarted so it reloads keys. An old `phone-friend`
@@ -482,10 +485,9 @@ exited stays stopped. If the new listener fails to start, `phone.db` is kept
 and one `phone __run` is started against it, reported only if that process
 stays up. The old per-line listener command is not restarted. The old
 root stays in place on that failure
-and is renamed to `~/.dg/phone-friend.migrated` only after a start that
-succeeded. Every later command is a no-op migration check. To roll back, rename
-`~/.dg/phone-friend.migrated` back to `~/.dg/phone-friend` and run the old
-binary. `phone status` reports `"legacy_root_present": true` if the old root
+and is renamed to `phone-friend.migrated` in the same state folder only after a
+start that succeeded. Every later command is a no-op migration check.
+`phone status` reports `"legacy_root_present": true` if the old root
 is still in place alongside the new database.
 
 ## Set up the other side
