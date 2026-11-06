@@ -19,7 +19,7 @@ Date: 2026-11-03
 
 dg installs one pinned Bun runtime under `<root>/runtime/bun-v<version>/` and
 one minified, code-split bundle per release under `<root>/lib/<version>/`.
-`<root>` is `${DG_HOME:-~/.dg}`. `runtime/current` and `lib/current` are
+`<root>` is the data root from `resolveDgPaths` (`~/.local/share/dg` on Linux, `<DG_HOME>/data` when `DG_HOME` is set). `runtime/current` and `lib/current` are
 symlinks (directory junctions on Windows), replaced by create-then-rename.
 `bin/dg-skills`, `bin/dg-agent` and `bin/dg-daemon` are shims (`.cmd` on
 Windows) that run `runtime/current/bun lib/current/dg.js <program>`.
