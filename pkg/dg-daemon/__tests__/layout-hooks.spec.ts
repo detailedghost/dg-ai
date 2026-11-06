@@ -121,13 +121,15 @@ describe("daemonLayoutHooks daemon.stop", () => {
 		expect(written.join("")).toContain(`dg: kept ${dir}; stop the dg-daemon service, then run dg-skills install again`);
 	});
 
-	test("returns stopped without a signal when the pid file instanceId is not live", async () => {
+	test("returns stopped without a signal when the probe fails and the pid is reused by another process", async () => {
 		const child = sleeper();
 		writeHandle(child.pid, "someone-else");
 		const signals: unknown[] = [];
+		const asked: [number, string][] = [];
 		const stop = stopOf({
 			platform: "linux",
 			isLive: async () => false,
+			isOurDaemon: (pid: number, pidFile: string) => (asked.push([pid, pidFile]), "foreign"),
 			kill: (...args: unknown[]) => {
 				signals.push(args);
 			},
@@ -137,6 +139,92 @@ describe("daemonLayoutHooks daemon.stop", () => {
 		const result = await stop(dir);
 
 		expect(result).toBe("stopped");
+		expect(signals).toEqual([]);
+		expect(asked).toEqual([[child.pid, join(dir, "daemon.pid")]]);
+	});
+
+	test("sends SIGTERM and returns stopped when the probe fails and the pid is our hung daemon", async () => {
+		const child = sleeper();
+		writeHandle(child.pid, "hung");
+		const signals: [number, string][] = [];
+		const stop = stopOf({
+			platform: "linux",
+			isLive: async () => false,
+			isOurDaemon: () => "ours",
+			kill: (pid: number, signal: string) => {
+				signals.push([pid, signal]);
+				child.kill("SIGKILL");
+			},
+			sleep: async () => {
+				await child.exited;
+			},
+		});
+
+		expect(await stop(dir)).toBe("stopped");
+		expect(signals).toEqual([[child.pid, "SIGTERM"]]);
+	});
+
+	test("escalates to SIGKILL when our hung daemon ignores SIGTERM", async () => {
+		const child = sleeper();
+		writeHandle(child.pid, "hung");
+		const signals: [number, string][] = [];
+		const sleeps: number[] = [];
+		const stop = stopOf({
+			platform: "linux",
+			isLive: async () => false,
+			isOurDaemon: () => "ours",
+			kill: (pid: number, signal: string) => {
+				signals.push([pid, signal]);
+				if (signal === "SIGKILL") child.kill("SIGKILL");
+			},
+			sleep: async (ms: number) => {
+				sleeps.push(ms);
+				if (signals.some(([, signal]) => signal === "SIGKILL")) await child.exited;
+			},
+		});
+
+		expect(await stop(dir)).toBe("stopped");
+		expect(signals).toEqual([
+			[child.pid, "SIGTERM"],
+			[child.pid, "SIGKILL"],
+		]);
+		expect(sleeps.length).toBeGreaterThan(STOP_CAP_MS / POLL_MS);
+	});
+
+	test("returns still-running after SIGTERM and SIGKILL when our hung daemon will not exit", async () => {
+		const child = sleeper();
+		writeHandle(child.pid, "hung");
+		const signals: [number, string][] = [];
+		const stop = stopOf({
+			platform: "linux",
+			isLive: async () => false,
+			isOurDaemon: () => "ours",
+			kill: (pid: number, signal: string) => {
+				signals.push([pid, signal]);
+			},
+			sleep: async () => {},
+		});
+
+		expect(await stop(dir)).toBe("still-running");
+		expect(signals.map(([, signal]) => signal)).toEqual(["SIGTERM", "SIGKILL"]);
+		expect(existsSync(join(dir, "daemon.pid"))).toBe(true);
+	});
+
+	test("returns still-running without a signal when the probe fails and the identity cannot be decided", async () => {
+		const child = sleeper();
+		writeHandle(child.pid, "hung");
+		const signals: unknown[] = [];
+		const stop = stopOf({
+			platform: "linux",
+			isLive: async () => false,
+			isOurDaemon: () => "unknown",
+			kill: (...args: unknown[]) => {
+				signals.push(args);
+			},
+			sleep: async () => {},
+		});
+
+		expect(await stop(dir)).toBe("still-running");
 		expect(signals).toEqual([]);
 	});
 
@@ -172,7 +260,13 @@ describe("daemonLayoutHooks daemon.stop", () => {
 	test("keeps the pid file when the instance is not live but the pid is alive", async () => {
 		const child = sleeper();
 		writeHandle(child.pid, "someone-else");
-		const stop = stopOf({ platform: "linux", isLive: async () => false, kill: () => {}, sleep: async () => {} });
+		const stop = stopOf({
+			platform: "linux",
+			isLive: async () => false,
+			isOurDaemon: () => "foreign",
+			kill: () => {},
+			sleep: async () => {},
+		});
 
 		expect(await stop(dir)).toBe("stopped");
 
@@ -251,7 +345,7 @@ describe("daemonLayoutHooks daemon.stop", () => {
 });
 
 describe("daemonLayoutHooks module", () => {
-	test("imports only node builtins, the common node subpaths and the crypto folder", () => {
+	test("imports only node builtins, the common node subpaths, the crypto folder and the identity module", () => {
 		const text = readFileSync(join(SRC, "layout-hooks.ts"), "utf8");
 		const specifiers = [...text.matchAll(/(?:^|\n)\s*(?:import|export)\b[^;]*?\sfrom\s+["']([^"']+)["']|(?:^|\n)\s*import\s+["']([^"']+)["']/g)].map(
 			(match) => (match[1] ?? match[2]) as string,
@@ -262,7 +356,8 @@ describe("daemonLayoutHooks module", () => {
 			expect(
 				specifier.startsWith("node:") ||
 					specifier.startsWith("@dg/common/node") ||
-					specifier.startsWith("./crypto/"),
+					specifier.startsWith("./crypto/") ||
+					specifier === "./legacy-daemon-identity",
 			).toBe(true);
 	});
 

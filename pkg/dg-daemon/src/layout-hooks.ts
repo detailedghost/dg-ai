@@ -7,6 +7,7 @@ import { pidAlive } from "@dg/common/node/plugin-cache";
 import { resolveKeyMode } from "./crypto/key-resolution";
 import { keychainAccountsForPaths, nativeBackendFor } from "./crypto/keychain-backends";
 import { type KeychainMoveResult, type KeychainPair, moveKeychainKey } from "./crypto/keychain-step";
+import { type DaemonIdentity, isOurDaemon as defaultIsOurDaemon } from "./legacy-daemon-identity";
 
 type DaemonHandle = Parameters<typeof isDaemonLive>[0];
 
@@ -18,6 +19,7 @@ type StopResult = "stopped" | "still-running" | "refused";
 export type DaemonLayoutDeps = {
 	kill: (pid: number, signal: NodeJS.Signals) => void;
 	isLive: (handle: DaemonHandle) => Promise<boolean>;
+	isOurDaemon: (pid: number, pidFile: string) => DaemonIdentity;
 	sleep: (ms: number) => Promise<void>;
 	platform: NodeJS.Platform;
 	env: Record<string, string | undefined>;
@@ -69,6 +71,7 @@ function keychainMoveStep({ platform, env, warn, backends }: KeychainMoveDeps): 
 export function daemonLayoutHooks({
 	kill = (pid, signal) => void process.kill(pid, signal),
 	isLive = (handle) => isDaemonLive(handle),
+	isOurDaemon = defaultIsOurDaemon,
 	sleep = (ms) => Bun.sleep(ms),
 	platform = process.platform,
 	env = process.env,
@@ -78,6 +81,22 @@ export function daemonLayoutHooks({
 	"daemon.stop": (legacyDaemonDir: string) => Promise<StopResult>;
 	keychainMove: (paths: DgPaths) => Promise<KeychainMoveResult>;
 } {
+	async function stopPid(pid: number, signals: NodeJS.Signals[]): Promise<StopResult> {
+		for (const signal of signals) {
+			try {
+				kill(pid, signal);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ESRCH") return "stopped";
+				throw error;
+			}
+			for (let waited = 0; waited < STOP_CAP_MS; waited += POLL_MS) {
+				await sleep(POLL_MS);
+				if (!pidAlive(pid)) return "stopped";
+			}
+		}
+		return "still-running";
+	}
+
 	return {
 		keychainMove: keychainMoveStep({ platform, env, warn, backends }),
 		"daemon.stop": async (legacyDaemonDir) => {
@@ -89,21 +108,19 @@ export function daemonLayoutHooks({
 			}
 			const pidPath = join(legacyDaemonDir, "daemon.pid");
 			const handle = readPidFile({ pidPath });
-			if (!handle || !(await isLive(handle))) {
-				if (!handle || !pidAlive(handle.pid)) rmSync(pidPath, { force: true });
+			if (!handle) {
+				rmSync(pidPath, { force: true });
 				return "stopped";
 			}
-			try {
-				kill(handle.pid, "SIGTERM");
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ESRCH") return "stopped";
-				throw error;
+			if (await isLive(handle)) return stopPid(handle.pid, ["SIGTERM"]);
+			if (!pidAlive(handle.pid)) {
+				rmSync(pidPath, { force: true });
+				return "stopped";
 			}
-			for (let waited = 0; waited < STOP_CAP_MS; waited += POLL_MS) {
-				await sleep(POLL_MS);
-				if (!pidAlive(handle.pid)) return "stopped";
-			}
-			return "still-running";
+			const identity = isOurDaemon(handle.pid, pidPath);
+			if (identity === "foreign") return "stopped";
+			if (identity === "unknown") return "still-running";
+			return stopPid(handle.pid, ["SIGTERM", "SIGKILL"]);
 		},
 	};
 }

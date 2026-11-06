@@ -105,7 +105,11 @@ The move follows these rules:
    program removes it and prints one line.
 5. When a process that writes a folder is still running, dg blocks that entry.
    Only the daemon's own start and `dg-skills install` stop an old daemon.
-   On Linux and macOS they send SIGTERM. On Windows dg never stops it: it
+   On Linux and macOS they send SIGTERM. When the old daemon is hung and does
+   not answer its health check, they first confirm the pid is the dg daemon
+   that wrote the pid file, then send SIGTERM and, if it stays, SIGKILL; a pid
+   that another program reused gets no signal, and a pid dg cannot identify
+   blocks the move. On Windows dg never stops it: it
    prints the service line, and you stop the `dg-daemon` service, then run
    `dg-skills install` again.
 6. The phone state moves on any `dg-agent phone` command and on
