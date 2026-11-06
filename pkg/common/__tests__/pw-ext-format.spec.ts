@@ -4,7 +4,6 @@ import {
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MAX_TIMEOUT_MS,
-	isPwExtWriteVerb,
 	validatePwExtCliRequest,
 	validatePwExtRequest,
 	validatePwExtResponse,
@@ -49,14 +48,6 @@ describe("validatePwExtRequest", () => {
 		{ verb: "fill", target: "e1", value: 3 },
 	])("rejects %p", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
-	});
-
-	it("names only open, click and fill as write verbs", () => {
-		expect(
-			["current", "snapshot", "screenshot", "selection", "console", "open", "click", "fill"].filter(
-				(verb) => isPwExtWriteVerb(verb as never),
-			),
-		).toEqual(["open", "click", "fill"]);
 	});
 });
 
@@ -185,12 +176,6 @@ describe("pw --ext round 3 verbs", () => {
 		{ verb: "call", tool: "x", args: { big: "y".repeat(20_000) } },
 	])("rejects %p", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
-	});
-
-	it("counts upload and call as write verbs and tools as a read verb", () => {
-		expect(isPwExtWriteVerb("upload")).toBe(true);
-		expect(isPwExtWriteVerb("call")).toBe(true);
-		expect(isPwExtWriteVerb("tools")).toBe(false);
 	});
 });
 

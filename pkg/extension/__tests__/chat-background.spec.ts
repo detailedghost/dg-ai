@@ -1426,7 +1426,7 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 	await settle();
 	await flushMicrotasks();
 
-	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, 60_000, expect.any(AbortSignal), expect.objectContaining({ fetchAsset: expect.any(Function), deleteAsset: expect.any(Function) })]] as never);
+	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, expect.any(AbortSignal), expect.objectContaining({ fetchAsset: expect.any(Function), deleteAsset: expect.any(Function) })]] as never);
 	const results = socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
 		.filter((frame) => frame.type === "pw-ext-browser-result");
@@ -1476,7 +1476,7 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 	const bootstrap = makeBootstrap();
 	let seen: AbortSignal | undefined;
 	const pwExtHandler = mock(
-		(_request: unknown, _timeout: number, signal?: AbortSignal) =>
+		(_request: unknown, signal?: AbortSignal) =>
 			new Promise<{ ok: false; error: string }>((resolve) => {
 				seen = signal;
 				signal?.addEventListener("abort", () =>
@@ -1524,7 +1524,6 @@ test("registerChat aborts a pending pw-ext request on a daemon cancel frame", as
 	const pwExtHandler = mock(
 		(
 			_request: unknown,
-			_timeout: number,
 			signal?: AbortSignal,
 			ctx?: { fetchAsset(id: string): Promise<Blob> },
 		) =>
@@ -1570,7 +1569,7 @@ test("registerChat aborts a pw-ext request at its relay deadline", async () => {
 	const bootstrap = makeBootstrap();
 	let seen: AbortSignal | undefined;
 	const pwExtHandler = mock(
-		(_request: unknown, _timeout: number, signal?: AbortSignal) =>
+		(_request: unknown, signal?: AbortSignal) =>
 			new Promise<{ ok: false; error: string }>((resolve) => {
 				seen = signal;
 				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));

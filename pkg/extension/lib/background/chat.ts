@@ -38,10 +38,6 @@ import {
 	type PwExtContext,
 	type PwExtResult,
 } from "./pw-ext";
-import {
-	createPwExtApprover,
-	type PwExtApprovalApi,
-} from "./pw-ext-approval";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import {
 	CHAT_SESSION_KEY_PREFIX,
@@ -187,7 +183,6 @@ export type RegisterChatOptions = {
 	) => Promise<ProtoResultFrame>;
 	pwExtHandler?: (
 		request: PwExtRequest,
-		timeoutMs: number,
 		signal?: AbortSignal,
 		context?: PwExtContext,
 	) => Promise<PwExtResult>;
@@ -262,15 +257,13 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		options.pwExtHandler ??
 		((
 			request: PwExtRequest,
-			timeoutMs: number,
 			signal?: AbortSignal,
 			context?: PwExtContext,
 		) => {
 			defaultPwExt ??= createPwExtHandler({
 				browserApi: api as unknown as PwExtBrowserApi,
-				approve: createPwExtApprover(api as unknown as PwExtApprovalApi),
 			});
-			return defaultPwExt(request, timeoutMs, signal, context);
+			return defaultPwExt(request, signal, context);
 		});
 	const pendingInbox = new Set<string>();
 	const pendingProto = new Set<string>();
@@ -763,7 +756,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					);
 				},
 			};
-			void pwExtHandler(frame.request, frame.timeoutMs, cancel.signal, context)
+			void pwExtHandler(frame.request, cancel.signal, context)
 				.then(sendPwExt)
 				.catch(() =>
 					sendPwExt({

@@ -44,27 +44,21 @@ the release that ships `pw --ext`.
 
 Rules:
 
-- The browser opens a small approval window for every call. It names the verb
-  and the tab. Write verbs say that they change the page. Close the window or
-  click Deny to refuse. The CLI cannot approve.
-- Before the window opens, `click`, `fill` and `upload` read only their target
-  element (tag, role, accessible name, short text) and show it. A target that
-  does not resolve is refused with no prompt. `call` reads the page's tool list
-  first and shows the tool name, description, hints and the exact args.
-- After approval, the extension checks that the tab did not change, and the
-  page function checks the document URL again before it acts. A write also
-  checks that it acts on the same element the approval showed. If any of
-  these changed, nothing runs. A reload at the same URL is not detected.
+- Passing `--ext` is the grant. The browser asks for no approval per call. The
+  CLI controls the active tab until the command ends.
+- The page function checks the document URL against the tab URL before it
+  acts. If the page changed, nothing runs. A reload at the same URL is not
+  detected.
 - Browser settings pages (`chrome://`, `edge://`, `brave://`, `about:`),
   extension pages, `file:` pages, the web stores, private windows, and the
-  signed-in Proton Mail tab are refused before any prompt. `current` still runs
+  signed-in Proton Mail tab are refused. `current` still runs
   and shows those tabs without their URL or title. `open` still runs and opens a
   new tab.
 - Text output is redacted (tokens, keys, emails, secret query values) and
   capped. Password and secret field contents are left out, and `fill` refuses
   those fields. Screenshots are not redacted: they show what is on the screen.
 - If the dg session closes, or the CLI stops (Ctrl-C, SIGTERM or a closed
-  socket), the request is canceled and the approval window closes.
+  socket), the request is canceled and nothing more runs.
 - There is no code execution of agent code: no `eval`, no `run-code`, and no
   other pw flags. `call` runs the site's own WebMCP tool code, so it is a write
   verb.
@@ -77,11 +71,9 @@ Rules:
   folder itself or a working directory with a hidden folder anywhere in its
   path. It refuses hidden files and folders, a file that is a symbolic
   link, folders, and a file that changes while it is checked. The CLI stages the bytes in the local dg-daemon asset store
-  before the approval; the extension fetches them only after approval, and only
-  to an `https:` page. The approval shows the path, name, size, type,
-  destination origin and the target element. The staged copy is deleted as
-  soon as the extension fetches it, and also when the request is denied,
-  canceled, times out or fails.
+  before the request; the extension fetches them only for an `https:` page. The
+  staged copy is deleted as soon as the extension fetches it, and also when the
+  request is canceled, times out or fails.
 - `tools` uses the WebMCP `document.modelContext` API, or the older
   `navigator.modelContextTesting` preview. With neither, it prints "This page
   exposes no WebMCP tools." Tool discovery and a tool call each have a timeout;

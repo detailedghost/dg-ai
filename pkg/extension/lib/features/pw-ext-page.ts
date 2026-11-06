@@ -1,11 +1,9 @@
 export type PwExtPageAction =
 	| { kind: "snapshot" }
-	| { kind: "click"; target: string; handle?: string }
-	| { kind: "fill"; target: string; value: string; handle?: string }
-	| { kind: "describe"; target: string; handle?: string }
+	| { kind: "click"; target: string }
+	| { kind: "fill"; target: string; value: string }
 	| {
 			kind: "upload";
-			handle?: string;
 			target: string;
 			base64: string;
 			fileName: string;
@@ -14,19 +12,9 @@ export type PwExtPageAction =
 	| { kind: "selection" }
 	| { kind: "console" };
 
-/** What the approval shows about a click, fill or upload target. */
-export type PwExtElement = {
-	tag: string;
-	role: string;
-	name: string;
-	text: string;
-	href: string;
-};
-
 export type PwExtPageResult =
 	| { tree: string; text: string }
 	| { detail: string }
-	| { element: PwExtElement }
 	| { text: string }
 	| { started: boolean; entries: string[] }
 	| { error: string };
@@ -46,7 +34,6 @@ export function pwExtPageAction(
 	const doc = document;
 	const win = doc.defaultView as unknown as Window & Record<symbol, unknown>;
 	const REFS = Symbol.for("dg.pwExt.refs");
-	const HANDLES = Symbol.for("dg.pwExt.handles");
 	const CONSOLE = Symbol.for("dg.pwExt.console");
 	const SECRET_NAME = /pass|secret|token|otp|cvv|cvc|ssn|pin\b|api[-_]?key/i;
 	const TEXT_INPUTS = new Set([
@@ -370,8 +357,8 @@ export function pwExtPageAction(
 		return matches[0] as Element;
 	};
 
-	const click = (target: string, handle?: string): PwExtPageResult => {
-		const el = bound(target, handle);
+	const click = (target: string): PwExtPageResult => {
+		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
 		if ((el as HTMLButtonElement).disabled)
 			return { error: `${describe(el)} is disabled.` };
@@ -388,8 +375,8 @@ export function pwExtPageAction(
 		return { detail: `clicked ${describe(el)}` };
 	};
 
-	const fill = (target: string, value: string, handle?: string): PwExtPageResult => {
-		const el = bound(target, handle);
+	const fill = (target: string, value: string): PwExtPageResult => {
+		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
 		if (isSecret(el))
 			return { error: "pw --ext does not fill password or secret fields." };
@@ -416,76 +403,13 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(el)}` };
 	};
 
-	const destination = (el: Element): string => {
-		const link = el.closest("a[href]") as HTMLAnchorElement | null;
-		if (link) return String(link.href ?? "");
-		const control = el as HTMLButtonElement;
-		const submits =
-			(el.tagName === "BUTTON" && (control.type ?? "submit") === "submit") ||
-			(el.tagName === "INPUT" && ["submit", "image"].includes(control.type));
-		if (submits && control.form)
-			return String(control.formAction || control.form.action || "");
-		return "";
-	};
-
-	const fingerprint = (el: Element): string => {
-		const input = el as HTMLInputElement;
-		const r = role(el) ?? el.tagName.toLowerCase();
-		return JSON.stringify([
-			el.tagName,
-			r,
-			name(el, r),
-			squash(safeText(el), 120),
-			input.type ?? "",
-			Boolean(input.disabled),
-			Boolean(input.readOnly),
-			el.getAttribute("contenteditable") ?? "",
-			destination(el),
-		]);
-	};
-
-	const bound = (target: string, handle?: string): Element | string => {
-		const el = resolve(target);
-		if (typeof el === "string" || handle === undefined) return el;
-		const handles = win[HANDLES] as
-			| Map<string, { el: Element; print: string }>
-			| undefined;
-		const approved = handles?.get(handle);
-		handles?.delete(handle);
-		if (approved?.el !== el || !el.isConnected || fingerprint(el) !== approved.print)
-			return "The element changed after approval; nothing was done. Retry.";
-		return el;
-	};
-
-	const describeTarget = (target: string, handle?: string): PwExtPageResult => {
-		const el = resolve(target);
-		if (typeof el === "string") return { error: el };
-		if (handle !== undefined)
-			win[HANDLES] = new Map([[handle, { el, print: fingerprint(el) }]]);
-		const tag = el.tagName.toLowerCase().slice(0, 40);
-		const r = role(el) ?? tag;
-		return {
-			element: {
-				tag,
-				role: r,
-				name: name(el, r),
-				text: squash(safeText(el), 120),
-				href: (() => {
-					const full = destination(el);
-					return full.length > 2048 ? `${full.slice(0, 2048)}…` : full;
-				})(),
-			},
-		};
-	};
-
 	const upload = (
 		target: string,
 		base64: string,
 		fileName: string,
 		fileType: string,
-		handle?: string,
 	): PwExtPageResult => {
-		const el = bound(target, handle);
+		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
 		const input = el as HTMLInputElement;
 		if (el.tagName !== "INPUT" || input.type.toLowerCase() !== "file" || input.disabled)
@@ -555,27 +479,24 @@ export function pwExtPageAction(
 
 	if (expectUrl !== undefined && doc.URL !== expectUrl)
 		return {
-			error: "The page changed after approval; nothing was done. Retry.",
+			error: "The page changed; nothing was done. Retry.",
 		};
 	const run = (): PwExtPageResult => {
 		switch (action.kind) {
 			case "snapshot":
 				return snapshot();
 			case "click":
-				return click(action.target, action.handle);
+				return click(action.target);
 			case "fill":
-				return fill(action.target, action.value, action.handle);
+				return fill(action.target, action.value);
 			case "selection":
 				return selection();
-			case "describe":
-				return describeTarget(action.target, action.handle);
 			case "upload":
 				return upload(
 					action.target,
 					action.base64,
 					action.fileName,
 					action.fileType,
-					action.handle,
 				);
 			case "console":
 				return consoleCapture();
