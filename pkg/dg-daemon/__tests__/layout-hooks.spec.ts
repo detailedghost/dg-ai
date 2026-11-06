@@ -243,15 +243,15 @@ describe("daemonLayoutHooks daemon.stop", () => {
 		expect(existsSync(join(dir, "daemon.pid"))).toBe(true);
 	});
 
-	test("supplies only the daemon.stop key", () => {
+	test("supplies only the daemon.stop hook and the keychainMove post-step", () => {
 		const hooks = daemonLayoutHooks({ platform: "linux" } as Parameters<typeof daemonLayoutHooks>[0]);
 
-		expect(Object.keys(hooks)).toEqual(["daemon.stop"]);
+		expect(Object.keys(hooks).sort()).toEqual(["daemon.stop", "keychainMove"]);
 	});
 });
 
 describe("daemonLayoutHooks module", () => {
-	test("imports only the pidfile and plugin-cache subpaths and node builtins", () => {
+	test("imports only node builtins, the common node subpaths and the crypto folder", () => {
 		const text = readFileSync(join(SRC, "layout-hooks.ts"), "utf8");
 		const specifiers = [...text.matchAll(/(?:^|\n)\s*(?:import|export)\b[^;]*?\sfrom\s+["']([^"']+)["']|(?:^|\n)\s*import\s+["']([^"']+)["']/g)].map(
 			(match) => (match[1] ?? match[2]) as string,
@@ -261,8 +261,8 @@ describe("daemonLayoutHooks module", () => {
 		for (const specifier of specifiers)
 			expect(
 				specifier.startsWith("node:") ||
-					specifier === "@dg/common/node/pidfile" ||
-					specifier === "@dg/common/node/plugin-cache",
+					specifier.startsWith("@dg/common/node") ||
+					specifier.startsWith("./crypto/"),
 			).toBe(true);
 	});
 

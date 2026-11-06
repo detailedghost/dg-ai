@@ -6,7 +6,7 @@ import { type DgPaths, runCapture } from "@dg/common/node";
 import type { KeychainBackend, KeychainLookupResult } from "./key-resolution";
 
 const SERVICE = "dg-server";
-const ACCOUNT = "chat-store-kek";
+export const ACCOUNT = "chat-store-kek";
 const SCOPE_HASH_CHARS = 12;
 
 export class RealKeychainInTestError extends Error {
@@ -37,70 +37,63 @@ export function keychainAccountFor(
 	return `${ACCOUNT}:${scope}`;
 }
 
+type AccountPaths = Pick<DgPaths, "legacyHome" | "stateDir">;
+
+const hasDgHome = ({ legacyHome, stateDir }: AccountPaths): boolean => stateDir === join(legacyHome, "state");
+
 /** The keychain account scoped by the state root, and the one the old flat home used. */
 export function keychainAccountsForPaths(
-	paths: Pick<DgPaths, "legacyHome" | "stateDir">,
+	paths: AccountPaths,
 	homeDir: string = homedir(),
 ): { current: string; legacy: string } {
 	return {
 		current: keychainAccountFor(paths.stateDir, homeDir),
-		legacy: keychainAccountFor(paths.legacyHome, homeDir),
+		legacy: hasDgHome(paths) ? keychainAccountFor(paths.legacyHome, homeDir) : ACCOUNT,
 	};
 }
 
-/**
- * Reads the key from the current account and moves an old-account entry into it: write, read back, compare,
- * and only then delete the old entry. A failed step keeps the old entry, reads from it, and warns once with the
- * key name, never its value.
- */
-export function migratingKeychainBackend(
-	current: KeychainBackend,
-	legacy: KeychainBackend,
-	warn: (line: string) => void,
-): KeychainBackend {
-	let warned = false;
-	const warnOnce = (reason: string, outcome = "dg keeps the old entry and reads it from the old account") => {
-		if (warned) return;
-		warned = true;
-		warn(`dg: keychain secret ${ACCOUNT} ${reason}; ${outcome}`);
+/** Maps every backend rejection to `unreachable`, so no caller holds an error that could carry the key. */
+export function guardedBackend(backend: KeychainBackend): KeychainBackend {
+	return {
+		sourceLabel: backend.sourceLabel,
+		async lookup(): Promise<KeychainLookupResult> {
+			try {
+				return await backend.lookup();
+			} catch {
+				return { status: "unreachable" };
+			}
+		},
+		async store(keyBase64) {
+			try {
+				return await backend.store(keyBase64);
+			} catch {
+				return "unreachable";
+			}
+		},
+		remove: backend.remove
+			? async () => {
+					try {
+						return (await backend.remove?.()) ?? "unreachable";
+					} catch {
+						return "unreachable";
+					}
+				}
+			: undefined,
 	};
-	const dropLegacy = async () => {
-		const removed = await legacy.remove?.().catch(() => "unreachable" as const);
-		if (removed !== "removed")
-			warnOnce(
-				"moved to the new account, but the old entry could not be deleted",
-				"dg reads the new account, and a copy stays in the old one",
-			);
-	};
+}
+
+/** Reads the current account, then the old one while it is absent; writes go to the current account only. */
+function readThroughBackend(current: KeychainBackend, legacy: KeychainBackend): KeychainBackend {
 	return {
 		sourceLabel: current.sourceLabel,
 		async lookup(): Promise<KeychainLookupResult> {
 			const found = await current.lookup();
-			const old = await legacy.lookup().catch((): KeychainLookupResult => ({ status: "unreachable" }));
-			if (old.status === "unreachable" && found.status === "absent") return old;
-			if (old.status !== "found") return found;
-			if (found.status === "found") {
-				if (found.keyBase64 === old.keyBase64) {
-					await dropLegacy();
-					return found;
-				}
-				warnOnce("differs between the old and the new account");
-				return old;
-			}
-			if (found.status === "unreachable" || (await current.store(old.keyBase64)) !== "stored") {
-				warnOnce("could not be written to the new account");
-				return old;
-			}
-			const check = await current.lookup();
-			if (check.status !== "found" || check.keyBase64 !== old.keyBase64) {
-				warnOnce("did not read back the same from the new account");
-				return old;
-			}
-			await dropLegacy();
-			return check;
+			if (found.status !== "absent") return found;
+			const old = await legacy.lookup();
+			return old.status === "absent" ? current.lookup() : old;
 		},
 		store: (keyBase64) => current.store(keyBase64),
-		remove: current.remove ? () => current.remove?.() ?? Promise.resolve("unreachable" as const) : undefined,
+		remove: current.remove ? async () => (await current.remove?.()) ?? "unreachable" : undefined,
 	};
 }
 
@@ -184,6 +177,7 @@ export function macKeychainBackend(account: string): KeychainBackend {
 			try {
 				const result = await runCapture("security", [
 					"add-generic-password",
+					"-U",
 					"-a",
 					account,
 					"-s",
@@ -246,25 +240,20 @@ export function dpapiBackend(dpapiPath: string): KeychainBackend {
 	};
 }
 
-const warnOnStderr = (line: string) => {
-	process.stderr.write(`${line}\n`);
+export type KeychainSeams = {
+	platform?: NodeJS.Platform;
+	backendFor?: (account: string) => KeychainBackend;
 };
+
+export const nativeBackendFor = (platform: NodeJS.Platform): KeychainSeams["backendFor"] =>
+	platform === "linux" ? secretToolBackend : platform === "darwin" ? macKeychainBackend : undefined;
 
 export function createKeychainBackendForPlatform(
 	paths: Pick<DgPaths, "legacyHome" | "stateDir" | "daemonDir">,
-	warn: (line: string) => void = warnOnStderr,
+	{ platform = process.platform, backendFor = nativeBackendFor(platform) }: KeychainSeams = {},
 ): KeychainBackend | undefined {
-	const accounts = () => keychainAccountsForPaths(paths);
-	if (process.platform === "linux") {
-		const { current, legacy } = accounts();
-		return migratingKeychainBackend(secretToolBackend(current), secretToolBackend(legacy), warn);
-	}
-	if (process.platform === "darwin") {
-		const { current, legacy } = accounts();
-		return migratingKeychainBackend(macKeychainBackend(current), macKeychainBackend(legacy), warn);
-	}
-	if (process.platform === "win32") {
-		return dpapiBackend(join(paths.daemonDir, "key.dpapi"));
-	}
-	return undefined;
+	if (platform === "win32") return dpapiBackend(join(paths.daemonDir, "key.dpapi"));
+	if (!backendFor) return undefined;
+	const { current, legacy } = keychainAccountsForPaths(paths);
+	return readThroughBackend(guardedBackend(backendFor(current)), guardedBackend(backendFor(legacy)));
 }

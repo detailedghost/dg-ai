@@ -1,18 +1,22 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import {
 	createKeychainBackendForPlatform,
+	guardedBackend,
 	dpapiBackend,
 	keychainAccountFor,
 	keychainAccountsForPaths,
 	macKeychainBackend,
-	migratingKeychainBackend,
 	RealKeychainInTestError,
 	secretToolBackend,
 } from "../../src/crypto/keychain-backends";
-import type { KeychainBackend, KeychainLookupResult } from "../../src/crypto/key-resolution";
+import type { KeychainBackend } from "../../src/crypto/key-resolution";
 import { ChatStore } from "../../src/store";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
+import { type FakeKeychain, fakeKeychain, OTHER_SECRET, SECRET } from "../utils/fake-keychain";
 
 const HOME = "/home/someone";
 
@@ -53,125 +57,74 @@ describe("keychainAccountsForPaths", () => {
 	});
 });
 
-const SECRET = Buffer.from("secret-key-encryption-key-32bytes").toString("base64");
+describe("createKeychainBackendForPlatform", () => {
+	const paths = resolveDgPaths({ platform: "linux", homeDir: HOME, env: {} });
+	const accounts = keychainAccountsForPaths(paths, HOME);
 
-type Fake = { value?: string; removed: number; backend: KeychainBackend };
-
-function fakeKeychain(
-	value: string | undefined,
-	opts: { storeFails?: boolean; storeAs?: string; removeFails?: boolean } = {},
-): Fake {
-	const fake: Fake = {
-		value,
-		removed: 0,
-		backend: {
-			async lookup(): Promise<KeychainLookupResult> {
-				return fake.value === undefined ? { status: "absent" } : { status: "found", keyBase64: fake.value };
-			},
-			async store(keyBase64) {
-				if (opts.storeFails) return "unreachable";
-				fake.value = opts.storeAs ?? keyBase64;
-				return "stored";
-			},
-			async remove() {
-				if (opts.removeFails) return "unreachable";
-				fake.value = undefined;
-				fake.removed += 1;
-				return "removed";
-			},
-		},
-	};
-	return fake;
-}
-
-describe("migratingKeychainBackend", () => {
-	function open(current: Fake, legacy: Fake) {
-		const warnings: string[] = [];
-		const backend = migratingKeychainBackend(current.backend, legacy.backend, (line) => warnings.push(line));
-		return { backend, warnings };
+	function build(current: FakeKeychain, legacy: FakeKeychain): KeychainBackend {
+		const byAccount = new Map([
+			[accounts.current, current.backend],
+			[accounts.legacy, legacy.backend],
+		]);
+		const backend = createKeychainBackendForPlatform(paths, {
+			platform: "linux",
+			backendFor: (account: string) => byAccount.get(account) as KeychainBackend,
+		} as never);
+		return backend as KeychainBackend;
 	}
 
-	it("copies the old entry to the new account, checks it, then deletes the old entry", async () => {
-		const current = fakeKeychain(undefined);
-		const legacy = fakeKeychain(SECRET);
-		const { backend, warnings } = open(current, legacy);
-
-		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
-		expect(current.value).toBe(SECRET);
-		expect(legacy.value).toBeUndefined();
-		expect(warnings).toEqual([]);
-	});
-
-	it("keeps the old entry and reads from it when the new account cannot be written", async () => {
-		const current = fakeKeychain(undefined, { storeFails: true });
-		const legacy = fakeKeychain(SECRET);
-		const { backend, warnings } = open(current, legacy);
-
-		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
-		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
-		expect(legacy.value).toBe(SECRET);
-		expect(warnings).toHaveLength(1);
-		expect(warnings[0]).toContain("chat-store-kek");
-		expect(warnings[0]).not.toContain(SECRET);
-	});
-
-	it("keeps the old entry when the new entry reads back different", async () => {
-		const current = fakeKeychain(undefined, { storeAs: "bWFuZ2xlZA==" });
-		const legacy = fakeKeychain(SECRET);
-		const { backend, warnings } = open(current, legacy);
-
-		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
-		expect(legacy.value).toBe(SECRET);
-		expect(legacy.removed).toBe(0);
-		expect(warnings).toHaveLength(1);
-		expect(warnings.join("")).not.toContain(SECRET);
-	});
-
-	it("finishes a move whose old entry could not be deleted the last time", async () => {
+	it("reads the current account first and never asks the legacy account when the current one holds a key", async () => {
 		const current = fakeKeychain(SECRET);
+		const legacy = fakeKeychain(OTHER_SECRET);
+
+		expect(await build(current, legacy).lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(legacy.calls).toEqual([]);
+	});
+
+	it("falls back to the legacy account read-only when the current account is absent", async () => {
+		const current = fakeKeychain(undefined);
 		const legacy = fakeKeychain(SECRET);
-		const { backend, warnings } = open(current, legacy);
 
-		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
-		expect(legacy.value).toBeUndefined();
-		expect(warnings).toEqual([]);
+		expect(await build(current, legacy).lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(current.count("store") + current.count("remove")).toBe(0);
+		expect(legacy.count("store") + legacy.count("remove")).toBe(0);
 	});
 
-	it("warns once and keeps the old entry when it cannot be deleted", async () => {
-		const current = fakeKeychain(undefined);
-		const legacy = fakeKeychain(SECRET, { removeFails: true });
-		const { backend, warnings } = open(current, legacy);
-
-		expect(await backend.lookup()).toEqual({ status: "found", keyBase64: SECRET });
-		expect(current.value).toBe(SECRET);
-		expect(legacy.value).toBe(SECRET);
-		expect(warnings).toEqual([
-			"dg: keychain secret chat-store-kek moved to the new account, but the old entry could not be deleted; dg reads the new account, and a copy stays in the old one",
-		]);
-	});
-
-	it("reports unreachable, not absent, when the new account is empty and the old one cannot be read", async () => {
-		const current = fakeKeychain(undefined);
-		const legacy: KeychainBackend = {
-			lookup: async () => ({ status: "unreachable" }),
-			store: async () => "unreachable",
-		};
-		const warnings: string[] = [];
-		const backend = migratingKeychainBackend(current.backend, legacy, (line) => warnings.push(line));
-
-		expect(await backend.lookup()).toEqual({ status: "unreachable" });
-		expect(current.value).toBeUndefined();
-	});
-
-	it("reads only the new account when there is no old entry and stores new keys there", async () => {
-		const current = fakeKeychain(undefined);
+	it("returns the current key when a concurrent step deletes the legacy entry between the two reads", async () => {
+		const current = fakeKeychain(SECRET, { reads: [{ status: "absent" }] });
 		const legacy = fakeKeychain(undefined);
-		const { backend } = open(current, legacy);
 
-		expect(await backend.lookup()).toEqual({ status: "absent" });
-		expect(await backend.store(SECRET)).toBe("stored");
-		expect(current.value).toBe(SECRET);
-		expect(legacy.value).toBeUndefined();
+		expect(await build(current, legacy).lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(current.count("lookup")).toBe(2);
+	});
+
+	it("reports absent only when both accounts are absent", async () => {
+		expect(await build(fakeKeychain(undefined), fakeKeychain(undefined)).lookup()).toEqual({ status: "absent" });
+	});
+
+	it("reports unreachable, not absent, when the current account is absent and the legacy one cannot be read", async () => {
+		const legacy = fakeKeychain(undefined, { lookupUnreachable: true });
+
+		expect(await build(fakeKeychain(undefined), legacy).lookup()).toEqual({ status: "unreachable" });
+	});
+
+	it("reports unreachable when the current account cannot be read", async () => {
+		const current = fakeKeychain(undefined, { lookupUnreachable: true });
+
+		expect(await build(current, fakeKeychain(SECRET)).lookup()).toEqual({ status: "unreachable" });
+	});
+
+	it("stores and removes on the current account only", async () => {
+		const current = fakeKeychain(undefined);
+		const legacy = fakeKeychain(SECRET);
+		const backend = build(current, legacy);
+
+		expect(await backend.store(OTHER_SECRET)).toBe("stored");
+		expect(await backend.remove?.()).toBe("removed");
+
+		expect(current.calls).toEqual(["store", "remove"]);
+		expect(legacy.calls).toEqual([]);
+		expect(legacy.value).toBe(SECRET);
 	});
 });
 
@@ -203,5 +156,56 @@ describe("test-run guard for the real keychain backends", () => {
 		} finally {
 			cleanupDgHome(dgHome);
 		}
+	});
+});
+
+describe("macKeychainBackend store", () => {
+	it("updates an existing entry by passing -U to security", async () => {
+		const bin = mkdtempSync(join(tmpdir(), "dg-fake-security-"));
+		const out = join(bin, "argv.txt");
+		try {
+			writeFileSync(join(bin, "security"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${out}"\n`, { mode: 0o755 });
+			const script = `import { macKeychainBackend } from ${JSON.stringify(join(import.meta.dir, "../../src/crypto/keychain-backends"))};
+process.stdout.write(await macKeychainBackend("acct").store("test-value"));`;
+			const { NODE_ENV: _omitted, ...inherited } = process.env;
+			const child = Bun.spawn([process.execPath, "-e", script], {
+				env: { ...inherited, PATH: bin },
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const stored = await new Response(child.stdout).text();
+			await child.exited;
+
+			expect(stored).toBe("stored");
+			const argv = readFileSync(out, "utf8").trim().split("\n");
+			expect(argv.slice(0, 2)).toEqual(["add-generic-password", "-U"]);
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("guardedBackend", () => {
+	it("maps every rejection to unreachable without carrying the message", async () => {
+		const guarded = guardedBackend(fakeKeychain(SECRET, { rejectWith: `boom ${SECRET}` }).backend);
+
+		expect(await guarded.lookup()).toEqual({ status: "unreachable" });
+		expect(await guarded.store(SECRET)).toBe("unreachable");
+		expect(await guarded.remove?.()).toBe("unreachable");
+	});
+
+	it("passes results through when the backend works", async () => {
+		const fake = fakeKeychain(undefined);
+		const guarded = guardedBackend(fake.backend);
+
+		expect(await guarded.store(SECRET)).toBe("stored");
+		expect(await guarded.lookup()).toEqual({ status: "found", keyBase64: SECRET });
+		expect(await guarded.remove?.()).toBe("removed");
+	});
+
+	it("exposes no remove when the backend has none", () => {
+		const { remove: _omitted, ...rest } = fakeKeychain(undefined).backend;
+
+		expect(guardedBackend(rest).remove).toBeUndefined();
 	});
 });

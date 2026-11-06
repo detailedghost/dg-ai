@@ -1,4 +1,5 @@
 import type { LayoutHooks } from "@dg/common/node/layout";
+import type { Command } from "commander";
 
 const SKIP = new Set(["status"]);
 
@@ -13,6 +14,15 @@ export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHook
 		},
 	};
 	return hooks;
+}
+
+async function afterLayout(action: Command): Promise<void> {
+	if (action.name() !== "__serve") return;
+	const [{ daemonLayoutHooks }, { resolveDgPaths }] = await Promise.all([
+		import("./layout-hooks"),
+		import("@dg/common/node/dg-paths"),
+	]);
+	await daemonLayoutHooks().keychainMove(resolveDgPaths());
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -78,6 +88,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		skip: SKIP,
 		hooksFor: (action) => hooksFor(action.name()),
 		ensure: ensureLayout,
+		after: afterLayout,
 	});
 
 	try {
