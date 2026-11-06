@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.43.0 (2026-11-06)
+
+### Features
+
+- feat(pw): drop the per-call approval popup for pw --ext ([#151](https://github.com/detailedghost/dg-ai/pull/151))
+
 ## v1.42.1 (2026-11-06)
 
 ### Fixes
