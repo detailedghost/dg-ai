@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import { readDgConfig, resolveDgPaths, writeDgConfig } from "@dg/common/node";
+import { cliLauncher } from "../doctor/probes";
 import {
 	describeStripResolution,
 	resolveStripAiCoauthors,
@@ -34,6 +35,7 @@ export interface HooksIo {
 	home?: string;
 	cwd?: string;
 	launcher?: string;
+	platform?: NodeJS.Platform;
 }
 
 const USAGE = `usage: hooks <command>
@@ -65,9 +67,8 @@ function writers(
 	};
 }
 
-function defaultLauncher(env: HookEnv): string {
-	const bin = process.platform === "win32" ? "dg-skills.exe" : "dg-skills";
-	return join(resolveDgPaths({ env }).binDir, bin);
+function defaultLauncher(env: HookEnv, platform?: NodeJS.Platform): string {
+	return cliLauncher(resolveDgPaths({ env }).binDir, platform);
 }
 
 interface Parsed {
@@ -376,7 +377,7 @@ export async function main(
 	}
 	try {
 		const parsed = parseArgs(rest);
-		const launcher = io.launcher ?? defaultLauncher(io.env);
+		const launcher = io.launcher ?? defaultLauncher(io.env, io.platform);
 		if (!isAbsolute(launcher))
 			throw new UsageError(`launcher ${launcher} must be an absolute path`);
 		const all = writers(
