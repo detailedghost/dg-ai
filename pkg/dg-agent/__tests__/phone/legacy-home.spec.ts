@@ -6,7 +6,7 @@ import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
 import { PhoneDb } from "../../src/phone/db";
 import { createFileKey } from "../../src/phone/keys";
-import { registerLazyPhoneCommands } from "../../src/phone/register";
+import { type PhoneApi, registerLazyPhoneCommands, registerPhoneGroup } from "../../src/phone/register";
 
 let dir: string;
 let savedHome: string | undefined;
@@ -120,5 +120,61 @@ describe("legacy phone home through the command wiring", () => {
 
 		expect(existsSync(join(legacyRoot(), "phone.db"))).toBe(true);
 		expect(readdirSync(join(newRoot(), "..")).filter((name) => name.startsWith("phone.empty-"))).toEqual([]);
+	});
+});
+
+describe("listener restart after the move", () => {
+	function fakeApi(moved: boolean): { api: PhoneApi; calls: string[] } {
+		const calls: string[] = [];
+		const stub = (name: string) => async () => {
+			calls.push(name);
+		};
+		const api = {
+			deps: () => ({}),
+			openCloseDeps: () => ({}),
+			moveLegacyPhoneHome: async () => {
+				calls.push("move");
+				return moved;
+			},
+			phoneOpen: stub("open"),
+			phoneClose: stub("close"),
+			phoneContacts: () => {
+				calls.push("contacts");
+			},
+			phoneRun: stub("run"),
+			ignoreHangup: () => {},
+			runDeps: () => ({}),
+		} as unknown as PhoneApi;
+		return { api, calls };
+	}
+
+	async function drive(api: PhoneApi, ...argv: string[]): Promise<void> {
+		const program = new Command().exitOverride();
+		registerPhoneGroup(program, async () => api);
+		await program.parseAsync(["phone", ...argv], { from: "user" });
+	}
+
+	it("restarts a listener the move stopped before an ordinary command runs", async () => {
+		const { api, calls } = fakeApi(true);
+
+		await drive(api, "contacts");
+
+		expect(calls).toEqual(["move", "open", "contacts"]);
+	});
+
+	it("leaves the listener to close", async () => {
+		const { api, calls } = fakeApi(true);
+
+		await drive(api, "close");
+
+		expect(calls).toEqual(["move", "close"]);
+	});
+
+	it("does not move any home for the listener process", async () => {
+		const { api, calls } = fakeApi(true);
+
+		await drive(api, "__run", "--dg-home", dir);
+
+		expect(calls).toEqual(["run"]);
 	});
 });

@@ -47,7 +47,8 @@ export type PhoneApi = Pick<
 
 const EXIT_REMOVED_VERB = 2;
 
-const OWNS_HOME_MOVE = new Set(["__refresh", "__rollback-home"]);
+const OWNS_HOME_MOVE = new Set(["__refresh", "__rollback-home", "__run"]);
+const MANAGES_LISTENER = new Set(["open", "on", "close", "off"]);
 
 /** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
 const REMOVED_VERBS: Record<string, string> = {
@@ -408,7 +409,8 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 			}
 			if (OWNS_HOME_MOVE.has(action.name())) return;
 			const phone = await load();
-			await phone.moveLegacyPhoneHome(phone.openCloseDeps(session));
+			const deps = phone.openCloseDeps(session);
+			if ((await phone.moveLegacyPhoneHome(deps)) && !MANAGES_LISTENER.has(action.name())) await phone.phoneOpen({}, deps);
 		});
 	attachPhoneVerbs(group, load, () => session);
 }
