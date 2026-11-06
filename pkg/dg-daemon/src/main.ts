@@ -18,11 +18,14 @@ export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHook
 
 async function afterLayout(action: Command): Promise<void> {
 	if (action.name() !== "__serve") return;
-	const [{ daemonLayoutHooks }, { resolveDgPaths }] = await Promise.all([
+	const [{ daemonLayoutHooks }, { resolveDgPaths }, { assertNotBlocked }] = await Promise.all([
 		import("./layout-hooks"),
 		import("@dg/common/node/dg-paths"),
+		import("@dg/common/node/layout"),
 	]);
-	await daemonLayoutHooks().keychainMove(resolveDgPaths());
+	const paths = resolveDgPaths();
+	assertNotBlocked(paths, "daemon");
+	await daemonLayoutHooks().keychainMove(paths);
 }
 
 export async function main(argv: readonly string[]): Promise<number> {

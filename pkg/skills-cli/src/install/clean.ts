@@ -12,6 +12,7 @@ import {
 	withCliLockError,
 } from "@dg/common/node/layout";
 import { folderUnused } from "@dg/common/node/sqlite-unused";
+import { isCompatLauncher } from "./compat-launchers";
 import { PROGRAMS } from "./shims";
 
 type Table = readonly MoveEntry[];
@@ -31,7 +32,7 @@ export type CleanSeams = {
 export type CleanSnapshot = {
 	readonly asides: Readonly<Record<string, { readonly live: string; readonly names: readonly string[] }>>;
 	readonly unused: Readonly<Record<string, boolean>>;
-	readonly bin: { readonly path: string; readonly names: readonly string[] } | undefined;
+	readonly bin: { readonly path: string; readonly names: readonly string[]; readonly others: readonly string[] } | undefined;
 	readonly home: { readonly path: string; readonly kind: "directory" | "other"; readonly names: readonly string[] } | undefined;
 	readonly platform: NodeJS.Platform;
 };
@@ -74,10 +75,8 @@ function orAbsent<T>(read: () => T): T | undefined {
 
 function binAction(bin: CleanSnapshot["bin"], platform: NodeJS.Platform): CleanAction[] {
 	if (!bin) return [];
-	const ordered = launcherFiles(platform);
-	const others = bin.names.filter((name) => !ordered.includes(name));
-	if (others.length > 0) return [{ kind: "keepBin", path: bin.path, others }];
-	return [{ kind: "removeBin", path: bin.path, launchers: ordered.filter((file) => bin.names.includes(file)) }];
+	if (bin.others.length > 0) return [{ kind: "keepBin", path: bin.path, others: bin.others }];
+	return [{ kind: "removeBin", path: bin.path, launchers: launcherFiles(platform).filter((file) => bin.names.includes(file)) }];
 }
 
 export function planClean(table: Table, snapshot: CleanSnapshot): CleanAction[] {
@@ -131,7 +130,7 @@ function takeSnapshot(table: Table, paths: DgPaths, seams: CleanSeams): CleanSna
 	return {
 		asides,
 		unused,
-		bin: binNames && { path: binPath, names: binNames },
+		bin: binNames && { path: binPath, names: binNames, others: keptBinNames(binNames, paths, seams) },
 		home: homeStat && { path: paths.legacyHome, kind: homeStat.isDirectory() ? "directory" : "other", names: homeNames },
 		platform: seams.platform,
 	};
@@ -152,9 +151,9 @@ function removeWith(path: string, remove: (path: string) => void, log: CleanSeam
 
 type ApplyArgs = { action: CleanAction; tally: Tally; paths: DgPaths; seams: CleanSeams };
 
-function foreignBinNames(path: string, seams: CleanSeams): string[] {
+function keptBinNames(names: readonly string[], paths: DgPaths, seams: CleanSeams): string[] {
 	const launchers = new Set(launcherFiles(seams.platform));
-	return (orAbsent(() => seams.readdir(path)) ?? []).filter((name) => !launchers.has(name));
+	return names.filter((name) => !launchers.has(name) || !isCompatLauncher(paths, name, seams.platform));
 }
 
 async function applyAction({ action, tally, paths, seams }: ApplyArgs): Promise<Tally> {
@@ -174,10 +173,10 @@ async function applyAction({ action, tally, paths, seams }: ApplyArgs): Promise<
 			log(`dg: kept ${action.path}; it holds data`);
 			return tally;
 		case "keepBin":
-			log(`dg: kept ${action.path}; it holds files that are not dg launchers: ${action.others.join(", ")}`);
+			log(`dg: kept ${action.path}; it holds files that are not dg launchers with a replacement: ${action.others.join(", ")}`);
 			return { ...tally, binKept: true };
 		case "removeBin": {
-			const others = foreignBinNames(action.path, seams);
+			const others = keptBinNames(orAbsent(() => seams.readdir(action.path)) ?? [], paths, seams);
 			if (others.length > 0) {
 				return applyAction({ action: { kind: "keepBin", path: action.path, others }, tally, paths, seams });
 			}

@@ -257,8 +257,8 @@ bring `~/.dg/bin` back.
 - `dg-ai-*` folders. Install removes them.
 - A set-aside copy that holds data. It prints
   `dg: kept <path>; it holds data`.
-- A `bin` folder that holds other files. It prints
-  `dg: kept <path>; it holds files that are not dg launchers: <names>`.
+- A `bin` folder that holds other files, or launchers with no replacement in the new launcher folder. It prints
+  `dg: kept <path>; it holds files that are not dg launchers with a replacement: <names>`.
 - A pending copy that is still in use.
 
 When a removal fails, it prints

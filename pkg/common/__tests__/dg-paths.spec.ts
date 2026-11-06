@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { posix, win32 } from "node:path";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, posix, win32 } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 
 const home = "/h";
@@ -252,6 +254,25 @@ describe("resolveDgPaths memoization", () => {
 
 		expect(other).not.toBe(resolveDgPaths());
 		expect(other.dataDir).toBe("/other-dg-home/data");
+	});
+
+	it("resolves a relative DG_HOME against the working directory of each call", () => {
+		const start = process.cwd();
+		const first = realpathSync(mkdtempSync(join(tmpdir(), "dg-paths-a-")));
+		const second = realpathSync(mkdtempSync(join(tmpdir(), "dg-paths-b-")));
+		try {
+			process.chdir(first);
+			const before = resolveDgPaths(linux({ DG_HOME: "rel-home" }));
+			process.chdir(second);
+			const after = resolveDgPaths(linux({ DG_HOME: "rel-home" }));
+
+			expect(before.dataDir).toBe(join(first, "rel-home", "data"));
+			expect(after.dataDir).toBe(join(second, "rel-home", "data"));
+		} finally {
+			process.chdir(start);
+			rmSync(first, { recursive: true, force: true });
+			rmSync(second, { recursive: true, force: true });
+		}
 	});
 
 	it("returns a different object when any XDG value, the home or the platform differs", () => {

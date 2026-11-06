@@ -996,6 +996,29 @@ posix("assertNotBlocked", () => {
 		expect(existsSync(paths.stateDir)).toBe(false);
 	});
 
+	test("throws the has-not-moved text for a child-kept parent whose target is missing", async () => {
+		put(legacyAt("daemon", "daemon.db"), "db");
+		put(legacyAt("daemon", "logs", "daemon-1.log"), "legacy log");
+		put(join(paths.logDir, "daemon-2.log"), "current log");
+		const result = await run();
+		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "kept", reason: "child-kept" });
+
+		const error = thrown(() => assertNotBlocked(paths, "daemon"));
+
+		expect(error).toBeInstanceOf(DgCliError);
+		expect((error as Error).message).toBe(notMoved(legacyAt("daemon"), paths.daemonDir));
+		expect(existsSync(paths.daemonDir)).toBe(false);
+	});
+
+	test("returns for a target-used kept entry because its target exists", async () => {
+		put(legacyAt("daemon", "daemon.db"), "legacy");
+		put(join(paths.daemonDir, "daemon.db"), "current");
+		const result = await run();
+		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "kept", reason: "target-used" });
+
+		expect(thrown(() => assertNotBlocked(paths, "daemon"))).toBeUndefined();
+	});
+
 	test("returns on a cache miss when both exist, when only the target exists, and when neither exists", () => {
 		expect(thrown(() => assertNotBlocked({ ...paths }, "daemon"))).toBeUndefined();
 

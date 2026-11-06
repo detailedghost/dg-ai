@@ -202,12 +202,15 @@ const exists = (path: string): boolean => {
 	}
 };
 
-/** Throws the kept, failed or has-not-moved text when a writer holds the entry, its move failed, or it has not moved. */
+/** Throws the kept, failed or has-not-moved text when a writer holds the entry, its move failed, or it stayed with no data at its target. */
 export function assertNotBlocked(paths: DgPaths, name: EntryName): void {
 	const cached = results.get(paths)?.[name];
 	if (cached) {
 		if (cached.kind === "blocked") throw new DgCliError(cached.fix);
 		if (cached.kind === "failed") throw new DgCliError(cached.error);
+		if (cached.kind === "kept" && exists(cached.from) && !exists(cached.to)) {
+			throw new DgCliError(blockedText({ reason: "no-hook", from: cached.from, to: cached.to }));
+		}
 		return;
 	}
 	const entry = moveEntries.find((candidate) => candidate.name === name);

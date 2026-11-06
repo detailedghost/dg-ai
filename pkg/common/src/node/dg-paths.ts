@@ -154,7 +154,8 @@ export function resolveDgPaths(seams: SystemSeams = {}): DgPaths {
 	const platform = seams.platform ?? process.platform;
 	const home = seams.homeDir ?? homedir();
 	const env = seams.env ?? process.env;
-	const key = JSON.stringify([platform, home, ...ENV_KEYS.map((name) => env[name])]);
+	const root = env.DG_HOME ? dgHome(platform, env.DG_HOME) : undefined;
+	const key = JSON.stringify([platform, home, root, ...ENV_KEYS.map((name) => env[name])]);
 	const known = memo.get(key);
 	if (known) return known;
 	const created = computeDgPaths(platform, home, env);
