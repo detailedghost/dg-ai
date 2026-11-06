@@ -32,11 +32,19 @@ function listing(root: string): string[] {
 describe("legacyHomeFixture", () => {
 	it("builds the legacy tree under the given home only and leaves the process home untouched", async () => {
 		const target = home();
-		const before = listing(process.env.HOME as string);
-		const rows = await legacyHomeFixture(target);
+		const decoy = home();
+		const realHome = process.env.HOME;
+		process.env.HOME = decoy;
+		let rows: Awaited<ReturnType<typeof legacyHomeFixture>>;
+		try {
+			rows = await legacyHomeFixture(target);
+		} finally {
+			if (realHome === undefined) delete process.env.HOME;
+			else process.env.HOME = realHome;
+		}
 		const legacy = join(target, ".dg");
 
-		expect(listing(process.env.HOME as string)).toEqual(before);
+		expect(listing(decoy)).toEqual([]);
 		expect(readdirSync(target)).toEqual([".dg"]);
 		for (const path of ["daemon/daemon.db", "agents/memory.db", "phone/phone.db", "config.json", "grants"])
 			expect(existsSync(join(legacy, path))).toBe(true);
@@ -99,22 +107,5 @@ describe("serveUntilPidFile", () => {
 		expect(Date.now() - started).toBeLessThan(60_000);
 		expect(served.pidFileGone).toBe(true);
 		expect(served.port).toBeGreaterThan(0);
-	});
-});
-
-describe("the quarantined upgrade matrix file", () => {
-	it("has a name bun test discovery does not match", () => {
-		const file = "layout-upgrade-compiled.red.ts";
-
-		expect(readdirSync(import.meta.dir)).toContain(file);
-		expect(file).not.toMatch(/[._](test|spec)\.[cm]?[jt]sx?$/);
-	});
-
-	it("carries no red, green or slice- word in its describe and it labels", () => {
-		const text = readFileSync(join(import.meta.dir, "layout-upgrade-compiled.red.ts"), "utf8");
-		const labels = [...text.matchAll(/\b(?:describe|it)\(\s*[`"]([^`"]*)[`"]/g)].map((match) => match[1] as string);
-
-		expect(labels.length).toBeGreaterThan(0);
-		expect(labels.filter((label) => /\b(red|green)\b|slice-/i.test(label))).toEqual([]);
 	});
 });

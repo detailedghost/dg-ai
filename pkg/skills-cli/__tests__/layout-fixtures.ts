@@ -159,7 +159,8 @@ export function serveUntilPidFile(home: string): Promise<ServeRun> {
 }
 
 export function precreatePhoneRoot(home: string, mode: "unused" | "used"): void {
-	const db = PhoneDb.open(perOsPaths(home));
+	const { phoneRoot } = perOsPaths(home);
+	const db = PhoneDb.openAt(join(phoneRoot, "phone.db"), phoneRoot);
 	try {
 		if (mode === "used") db.putKey({ id: "precreated", nsec: "precreated-secret", in_store: 0 });
 	} finally {

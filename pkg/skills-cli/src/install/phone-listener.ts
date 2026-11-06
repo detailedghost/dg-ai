@@ -25,10 +25,9 @@ function refreshFailed(result: { error?: Error; status?: number | null }): boole
 	return typeof result.status === "number" && result.status !== 0;
 }
 
-/** Restarts a drifted phone listener. A failed refresh is a warning. */
-export function refreshPhoneListener(spawn: typeof spawnSync = spawnSync): void {
+function runListenerVerb(verb: string, label: string, spawn: typeof spawnSync): void {
 	try {
-		const [command, ...args] = programCommand("dg-agent", ["phone", "__refresh"]);
+		const [command, ...args] = programCommand("dg-agent", ["phone", verb]);
 		const result = spawn(command, args, {
 			stdio: ["ignore", "ignore", "pipe"],
 			encoding: "utf8",
@@ -36,9 +35,19 @@ export function refreshPhoneListener(spawn: typeof spawnSync = spawnSync): void 
 		});
 		if (!refreshFailed(result)) return;
 		const detail = lastLine(stderrText(result.stderr)) || result.error?.message || `exit ${result.status}`;
-		console.warn(`warning: phone listener was not refreshed: ${detail}`);
+		console.warn(`warning: phone listener was not ${label}: ${detail}`);
 	} catch (err) {
 		const detail = err instanceof Error ? err.message : String(err);
-		console.warn(`warning: phone listener was not refreshed: ${detail}`);
+		console.warn(`warning: phone listener was not ${label}: ${detail}`);
 	}
+}
+
+/** Restarts a drifted phone listener. A failed refresh is a warning. */
+export function refreshPhoneListener(spawn: typeof spawnSync = spawnSync): void {
+	runListenerVerb("__refresh", "refreshed", spawn);
+}
+
+/** Starts the listener that the layout move stopped; install's `__refresh` child finds no moved phone and no running listener. */
+export function restartPhoneListener(spawn: typeof spawnSync = spawnSync): void {
+	runListenerVerb("open", "restarted", spawn);
 }

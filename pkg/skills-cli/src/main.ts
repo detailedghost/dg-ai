@@ -1,3 +1,4 @@
+import type { Command } from "commander";
 import type { LayoutHooks } from "@dg/common/node/layout";
 
 export const VERSION = process.env.DG_BUILD_VERSION ?? "dev";
@@ -10,18 +11,38 @@ export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHook
 	if (commandName !== "install") return {};
 	const hooks: LayoutHooks = {
 		load: async () => {
-			const [{ daemonLayoutHooks }, { resolveDgPaths }, { ssmsConfigDir }] = await Promise.all([
+			const [{ daemonLayoutHooks }, { phoneLayoutHooks }, { resolveDgPaths }, { ssmsConfigDir }] = await Promise.all([
 				import("@dg/dg-daemon/layout-hooks"),
+				import("@dg/dg-agent/layout-hooks"),
 				import("@dg/common/node/dg-paths"),
 				import("./install/layout"),
 			]);
 			const paths = resolveDgPaths();
-			Object.assign(hooks, daemonLayoutHooks({ platform: seams.platform }), {
+			Object.assign(hooks, daemonLayoutHooks({ platform: seams.platform }), phoneLayoutHooks(), {
 				"ssms.configDir": () => ssmsConfigDir(paths),
 			});
 		},
 	};
 	return hooks;
+}
+
+type PhoneOutcome = { kind: string; stopped?: boolean } | undefined;
+
+type ListenerRestartSeams = { phoneOutcome: () => Promise<PhoneOutcome>; restart: () => Promise<void> };
+
+const phoneOutcomeOf = async (): Promise<PhoneOutcome> => {
+	const [{ layoutResult }, { resolveDgPaths }] = await Promise.all([import("@dg/common/node/layout"), import("@dg/common/node/dg-paths")]);
+	return layoutResult(resolveDgPaths())?.phone;
+};
+
+const restartListener = async (): Promise<void> => (await import("./install/phone-listener")).restartPhoneListener();
+
+export function registerListenerRestart(program: Command, { phoneOutcome, restart }: ListenerRestartSeams): void {
+	program.hook("postAction", async (_thisCommand, action) => {
+		if (action.name() !== "install") return;
+		const phone = await phoneOutcome();
+		if ((phone?.kind === "moved" || phone?.kind === "setAside") && phone.stopped) await restart();
+	});
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -51,6 +72,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		hooksFor: (action) => hooksFor(action.name()),
 		ensure: ensureLayout,
 	});
+	registerListenerRestart(program, { phoneOutcome: phoneOutcomeOf, restart: restartListener });
 	try {
 		await program.parseAsync([...argv], { from: "user" });
 		return typeof process.exitCode === "number" ? process.exitCode : 0;

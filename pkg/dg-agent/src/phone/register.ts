@@ -1,4 +1,5 @@
 import { DgCliError } from "@dg/common";
+import { layoutResult } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import type { AcceptOpts } from "./accept-name";
 import type * as Commands from "./commands";
@@ -27,8 +28,6 @@ export type PhoneApi = Pick<
 	| "phoneOpen"
 	| "phoneClose"
 	| "phoneRefresh"
-	| "moveLegacyPhoneHome"
-	| "phoneRollbackHome"
 	| "phoneRun"
 	| "phoneThreadNew"
 	| "phoneThreadList"
@@ -47,7 +46,7 @@ export type PhoneApi = Pick<
 
 const EXIT_REMOVED_VERB = 2;
 
-const OWNS_HOME_MOVE = new Set(["__refresh", "__rollback-home", "__run"]);
+const OWNS_HOME_MOVE = new Set(["__run"]);
 const MANAGES_LISTENER = new Set(["close", "off"]);
 
 /** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
@@ -340,14 +339,6 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		});
 
 	group
-		.command("__rollback-home", { hidden: true })
-		.description("internal: copy phone state back to the old phone folder for an older release")
-		.action(async () => {
-			const phone = await load();
-			phone.phoneRollbackHome(phone.deps(getSession()));
-		});
-
-	group
 		.command("__run", { hidden: true })
 		.description("internal: run the always-on listener in the foreground (never call directly)")
 		.option("--on-message <argv...>", "command and args to run for each delivered message")
@@ -410,7 +401,9 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 			if (OWNS_HOME_MOVE.has(action.name())) return;
 			const phone = await load();
 			const deps = phone.openCloseDeps(session);
-			if ((await phone.moveLegacyPhoneHome(deps)) && !MANAGES_LISTENER.has(action.name())) await phone.phoneOpen({}, Object.create(deps, { write: { value: () => {} } }));
+			const outcome = layoutResult(deps.paths)?.phone;
+			const restarts = outcome?.kind === "moved" || outcome?.kind === "setAside" ? outcome.stopped : false;
+			if (restarts && !MANAGES_LISTENER.has(action.name())) await phone.phoneOpen({}, Object.create(deps, { write: { value: () => {} } }));
 		});
 	attachPhoneVerbs(group, load, () => session);
 }

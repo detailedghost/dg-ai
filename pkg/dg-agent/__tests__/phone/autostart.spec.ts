@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
@@ -15,6 +16,7 @@ import {
 	windowsTaskXmlBytes,
 	windowsTaskXmlPath,
 } from "../../src/phone/autostart";
+import { listenerArgvFor } from "../../src/phone/listener";
 
 const paths = resolveDgPaths({ platform: "linux", homeDir: "/home/u", env: {} });
 
@@ -354,5 +356,17 @@ describe("formatAutostartState", () => {
 		expect(formatAutostartState(undefined)).toBeNull();
 		expect(formatAutostartState({ kind: "systemd" })).toBe("systemd");
 		expect(formatAutostartState({ kind: "unavailable", reason: "no systemd user bus" })).toBe("unavailable: no systemd user bus");
+	});
+});
+
+describe("listener unit text", () => {
+	const spec = { argv: listenerArgvFor(paths, []), logPath: join(paths.phoneRoot, "listener.log") };
+
+	it("names the absolute launcher path and never ~ or $HOME", () => {
+		for (const text of [systemdUnitText(spec), launchdPlistText(spec), windowsTaskXml(spec)]) {
+			expect(text).toContain("/home/u/.local/share/dg/runtime/current/bun");
+			expect(text).not.toContain("~");
+			expect(text).not.toContain("$HOME");
+		}
 	});
 });

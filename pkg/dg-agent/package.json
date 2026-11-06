@@ -5,6 +5,7 @@
 	"type": "module",
 	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
 	"exports": {
+		"./layout-hooks": "./src/layout-hooks.ts",
 		"./main": "./src/main.ts"
 	},
 	"scripts": {

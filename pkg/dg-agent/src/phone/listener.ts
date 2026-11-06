@@ -270,7 +270,7 @@ export const STUCK_RETRY_INTERVAL_MS = 30 * 60 * 1000;
 /** How often the running listener re-reads keys and resubscribes when they changed. */
 export const KEY_WATCH_INTERVAL_MS = 5_000;
 
-export function listenerPidPath(paths: DgPaths): string {
+export function listenerPidPath(paths: Pick<DgPaths, "phoneRoot">): string {
 	return join(paths.phoneRoot, "listener.pid");
 }
 
@@ -389,7 +389,7 @@ export function listenerGeneration(pid: number): ListenerGeneration | undefined 
 
 /** Undefined for no file, a parse failure, a pid that is not a safe positive integer, or a pid that is dead or a zombie. */
 export function readListenerPid(
-	paths: DgPaths,
+	paths: Pick<DgPaths, "phoneRoot">,
 	alive: (pid: number) => boolean = (pid) => listenerProcessAlive(pid),
 ): ListenerPid | undefined {
 	const path = listenerPidPath(paths);

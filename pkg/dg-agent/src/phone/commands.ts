@@ -53,7 +53,6 @@ import {
 } from "./listener";
 import { acceptControl, applyReceipt, replayGuard } from "./presence";
 import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
-import { movePhoneState, phoneRootUnused, rollbackPhoneState, setAsideUnusedRoot } from "./migrate-home";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import {
@@ -1237,12 +1236,15 @@ function liveListener(deps: OpenCloseDeps): ReturnType<typeof readListenerPid> {
 /** Sends SIGTERM, through `isOurListener`'s extra check against a reused pid, and waits for the
  * listener's own pid file to go away before returning; `open`/`close` both need the old listener
  * fully stopped before installing or reporting on the next one, so neither ever runs two at once. */
-async function stopRunningListener(deps: OpenCloseDeps, pid: number, paths: DgPaths = deps.paths): Promise<void> {
+export async function stopRunningListener(
+	deps: Pick<OpenCloseDeps, "isOurListener" | "kill" | "sleep"> & { paths: Pick<DgPaths, "phoneRoot"> },
+	pid: number,
+): Promise<void> {
 	if (deps.isOurListener(pid)) deps.kill(pid, "SIGTERM");
-	for (let waited = 0; readListenerPid(paths)?.pid === pid && waited < STOP_WAIT_MS; waited += 100) {
+	for (let waited = 0; readListenerPid(deps.paths)?.pid === pid && waited < STOP_WAIT_MS; waited += 100) {
 		await deps.sleep(100);
 	}
-	if (readListenerPid(paths)?.pid === pid) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
+	if (readListenerPid(deps.paths)?.pid === pid) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
 }
 
 async function phoneOpenEnsure(
@@ -1369,43 +1371,8 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	printJson(deps, { pid: running?.pid ?? null, status: "closed", autostart });
 }
 
-/**
- * Moves phone state out of the old flat home into the state dir, stopping a listener that runs from
- * there first. Returns true when a listener was running, so the caller starts it from the new layout.
- */
-export async function moveLegacyPhoneHome(deps: OpenCloseDeps): Promise<boolean> {
-	const oldRoot = join(deps.paths.legacyHome, "phone");
-	if (oldRoot === deps.paths.phoneRoot || !existsSync(oldRoot)) return false;
-	if (existsSync(deps.paths.phoneRoot) && !(phoneRootUnused(deps.paths.phoneRoot) && setAsideUnusedRoot(deps.paths.phoneRoot))) return false;
-	const oldPaths = { ...deps.paths, phoneRoot: oldRoot };
-	const running = readListenerPid(oldPaths);
-	const live = !!running && running.pid !== process.pid && deps.isOurListener(running.pid);
-	if (running && live) await stopRunningListener(deps, running.pid, oldPaths);
-	const log = (line: string) => (deps.writeErr ?? ((text: string) => process.stderr.write(text)))(`${line}\n`);
-	const moved = movePhoneState(oldRoot, deps.paths.phoneRoot, log).moved;
-	if (live && !moved)
-		log(`dg: stopped the phone listener at ${oldRoot}, and its state did not move. Fix the cause above, then run dg-skills install again`);
-	return moved && live;
-}
-
-/** Copies phone state back to the old flat home so an older release can read it. */
-export function phoneRollbackHome(deps: PhoneDeps): void {
-	const running = readListenerPid(deps.paths);
-	if (running && running.pid !== process.pid && (deps.isOurListener ?? isOurListener)(running.pid))
-		throw new DgCliError(
-			"the phone listener is running; stop it with dg-agent phone close, then run dg-agent phone __rollback-home again",
-		);
-	const log = (line: string) => (deps.writeErr ?? ((text: string) => process.stderr.write(text)))(`${line}\n`);
-	const result = rollbackPhoneState(deps.paths.phoneRoot, join(deps.paths.legacyHome, "phone"), log);
-	if (!result.moved) throw new DgCliError(`phone state was not copied back: ${result.failures.join("; ")}`);
-}
-
 /** Restarts a listener whose binary or keys drifted. No-ops when this install has never used phone. */
 export async function phoneRefresh(deps: OpenCloseDeps): Promise<void> {
-	if (await moveLegacyPhoneHome(deps)) {
-		await phoneOpen({}, deps);
-		return;
-	}
 	if (!existsSync(PhoneDb.path(deps.paths)) && !legacyRoot(deps.paths)) return;
 	migrateIfNeeded(deps.paths);
 	if (!existsSync(PhoneDb.path(deps.paths))) return;
@@ -1442,8 +1409,6 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneOpen,
 	phoneClose,
 	phoneRefresh,
-	moveLegacyPhoneHome,
-	phoneRollbackHome,
 	phoneRun,
 	phoneThreadNew,
 	phoneThreadList,
