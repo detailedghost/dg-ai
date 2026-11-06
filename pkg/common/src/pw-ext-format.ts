@@ -1,5 +1,6 @@
 import { fail, requireRecord, requireString } from "./assert";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
+import { defineRelayFeature } from "./relay-format";
 
 export const PW_EXT_READ_VERBS = [
 	"current",
@@ -228,3 +229,106 @@ export function validatePwExtCliRequest(value: unknown): PwExtCliRequest {
 		validatePwExtTimeout(value.timeoutMs, `${path}.timeoutMs`);
 	return value as PwExtCliRequest;
 }
+
+export type PwExtRelayBodies = {
+	cliRequest: PwExtCliRequest;
+	cliCancel: PwExtCliCancel;
+	browserRequest: {
+		requestId: string;
+		request: PwExtRequest;
+		timeoutMs: number;
+	};
+	browserCancel: { requestId: string };
+	browserResult: {
+		requestId: string;
+		ok: boolean;
+		data?: PwExtResponse;
+		error?: string;
+	};
+};
+
+const MIN_VERSION = PW_EXT_MIN_EXTENSION_VERSION.join(".");
+
+function versionAtLeastMinimum(version: string | undefined): boolean {
+	const match = version?.match(/^(\d+)\.(\d+)\.(\d+)(?:[+-].*)?$/);
+	if (!match) return false;
+	const actual = match.slice(1, 4).map(Number);
+	for (let i = 0; i < 3; i++) {
+		const want = PW_EXT_MIN_EXTENSION_VERSION[i] as number;
+		if ((actual[i] as number) !== want) return (actual[i] as number) > want;
+	}
+	return true;
+}
+
+export const PW_EXT_RELAY = defineRelayFeature<PwExtRelayBodies>()({
+	name: "pw-ext",
+	frames: {
+		cliRequest: "cli-pw-ext-request",
+		cliResult: "cli-pw-ext-result",
+		cliCancel: "cli-pw-ext-cancel",
+		browserRequest: "pw-ext-browser-request",
+		browserResult: "pw-ext-browser-result",
+		browserCancel: "pw-ext-browser-cancel",
+	},
+	validateCliRequest: validatePwExtCliRequest,
+	validateCliCancel: validatePwExtCliCancel,
+	caps: { pending: 16, perRequester: 2, sessionIds: 10_000 },
+	timeoutMs: (cli) => cli.timeoutMs ?? PW_EXT_DEFAULT_TIMEOUT_MS,
+	toBrowserRequest: (cli, timeoutMs) => ({ request: cli.request, timeoutMs }),
+	fromBrowserRequest: (frame) => frame.request,
+	toCliResult: (frame) =>
+		frame.ok
+			? { ok: true, data: frame.data }
+			: { ok: false, error: frame.error },
+	checks: [
+		{ check: "active", refusal: "pw --ext requires an active dg session." },
+		{
+			check: "replay",
+			refusal:
+				"pw --ext requestId was already used on this session; send a new one.",
+		},
+		{
+			check: "cap",
+			of: ["sessionIds"],
+			refusal: "pw --ext request capacity reached; start a new session.",
+		},
+		{
+			check: "cap",
+			of: ["requester", "pending"],
+			refusal:
+				"pw --ext has too many pending requests; wait for the open requests to finish.",
+		},
+		{
+			check: "peers",
+			multiple:
+				"Multiple extension peers make the pw --ext request ambiguous; keep one extension connected to this session.",
+			none: ({ sessionId }) =>
+				`No extension peer on session ${sessionId}. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.`,
+		},
+		{ check: "burn" },
+		{
+			check: "version",
+			accepts: versionAtLeastMinimum,
+			refusal: `pw --ext requires dg-ai-extension ${MIN_VERSION} or newer; update the extension, reload it, and reconnect this session.`,
+		},
+	],
+	strings: {
+		activeRequired: "pw --ext requires an active dg session.",
+		sessionClosed: "pw --ext session closed before the extension replied.",
+		timeout: ({ timeoutMs }) =>
+			`pw --ext timed out after ${timeoutMs}ms; the extension was told to cancel it.`,
+		requesterDisconnected: "pw --ext requester disconnected.",
+		extensionDisconnected: "pw --ext extension disconnected before replying.",
+		sendFailed: "pw --ext request could not be sent; reconnect the extension.",
+		canceled: "pw --ext request canceled.",
+		rejected: (detail) =>
+			`pw --ext result could not be delivered: ${detail}`.slice(0, 2048),
+		extensionFailed:
+			"pw --ext failed in the extension before it reported a result.",
+	},
+	rejected: {
+		oversizedReason: "it exceeded the relay size limit",
+		afterOversized: "continue",
+	},
+	flags: { failAllOnUnreadable: false },
+});

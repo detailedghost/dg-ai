@@ -34,7 +34,9 @@ read a per-feature table that lives in `pkg/common`.
 - **D4.** Feature-only logic attaches through optional daemon hooks. `prepare`
   runs before forwarding. `settled` runs after any end. `salvage` repairs an
   unreadable result. The pw-ext staged-asset delete and the proto preview strip
-  use them. The relay owns all lifecycle.
+  use them. The relay owns all lifecycle. It catches a hook throw, logs the
+  error class and feature name, and goes on, so one bad hook cannot stop a CLI
+  result or a session close.
 - **D5.** The relay members of `ChatFrame`, `CHAT_FRAME_TYPES`,
   `INBOUND_FRAME_TYPES`, the relay validator cases and `CliFrame` come from the
   feature tables. Chat-only frames stay hand-written.

@@ -1,24 +1,6 @@
-import {
-	handleCredentialsRequest,
-	sendCredentialsResult,
-} from "./credentials";
-import { handleInboxCli, handleInboxBrowserResult } from "./inbox";
-import {
-	failPendingProtoForExtension,
-	handleProtoCli,
-	handleProtoBrowserProgress,
-	handleProtoBrowserResult,
-	settleRejectedProtoBrowserResult,
-} from "./proto";
-import {
-	handlePwExtBrowserResult,
-	handlePwExtCli,
-	handlePwExtCliCancel,
-	sendPwExtResult,
-	settleRejectedPwExtResult,
-} from "./pw-ext";
 import { randomUUID } from "node:crypto";
 import {
+	type AnyRelayFeature,
 	authorizeFrame,
 	applyOverwatchLaneUpdate,
 	CHAT_MAX_MANIFEST_BYTES,
@@ -35,6 +17,7 @@ import {
 	OVERWATCH_SESSION_ID,
 	OVERWATCH_MAX_LANES,
 	OVERWATCH_MAX_MERGES,
+	PW_EXT_RELAY,
 	validateChatFrame,
 	validateCredentialsCliRequest,
 	validateInboxCliRequest,
@@ -44,8 +27,6 @@ import {
 	validateOverwatchMerge,
 	validateIsoTimestamp,
 	validateProtoCliRequest,
-	validatePwExtCliCancel,
-	validatePwExtCliRequest,
 	validateProtoIdentifier,
 } from "@dg/common";
 import {
@@ -74,6 +55,11 @@ import {
 	type PeekedMessage,
 } from "../store";
 import type { CredentialStore } from "../store/credentials-store";
+import {
+	type BrowserRelay,
+	createBrowserRelay,
+	type RelayHooks,
+} from "./browser-relay";
 import type { ConnectionManager } from "./connection";
 import {
 	isExtensionPeer,
@@ -82,8 +68,21 @@ import {
 	type SocketState,
 	sendViaQueue,
 } from "./connection";
+import {
+	handleCredentialsRequest,
+	sendCredentialsResult,
+} from "./credentials";
+import { handleInboxBrowserResult, handleInboxCli } from "./inbox";
 import type { Logger } from "./log";
 import { pinOriginIfUnset } from "./origin";
+import {
+	failPendingProtoForExtension,
+	handleProtoBrowserProgress,
+	handleProtoBrowserResult,
+	handleProtoCli,
+	settleRejectedProtoBrowserResult,
+} from "./proto";
+import { pwExtRelayHooks } from "./pw-ext";
 
 export type FrameHandlerDeps = {
 	registry: SessionRegistry;
@@ -321,8 +320,115 @@ type ConnectHandshake = {
 	extensionVersion?: string;
 };
 
-function parseCliFrame(value: unknown): CliFrame | undefined {
+type RelayResultFrame = Parameters<BrowserRelay["handleResult"]>[1];
+type RelayProgressFrame = Parameters<BrowserRelay["handleProgress"]>[1];
+
+type RelayRole = keyof AnyRelayFeature["frames"];
+
+type RelayEntry = {
+	feature: AnyRelayFeature;
+	hooks?: RelayHooks;
+	handleCliRequest?(input: {
+		requester: ServerWebSocket<SocketState>;
+		sessionId: string;
+		cli: { requestId: string };
+		deps: FrameHandlerDeps;
+		relay: BrowserRelay;
+	}): Promise<void>;
+};
+
+type RelayRoute = {
+	relay: BrowserRelay;
+	role: RelayRole;
+	handleCliRequest: Required<RelayEntry>["handleCliRequest"];
+};
+
+type RelayRoutes = {
+	byName: Map<string, BrowserRelay>;
+	byFrame: Map<string, RelayRoute>;
+};
+
+const relayRoutes = new WeakMap<ConnectionManager, RelayRoutes>();
+
+const CLI_REQUEST_ID_MAX_CHARS = 128;
+const CLI_ERROR_MAX_CHARS = 2048;
+
+export function buildRelayRoutes(
+	deps: FrameHandlerDeps,
+	entries: readonly RelayEntry[],
+): RelayRoutes {
+	const byName = new Map<string, BrowserRelay>();
+	const byFrame = new Map<string, RelayRoute>();
+	for (const listed of entries) {
+		const { feature } = listed;
+		const relay = createBrowserRelay({ deps, feature, hooks: listed.hooks });
+		const handleCliRequest: RelayRoute["handleCliRequest"] =
+			listed.handleCliRequest ??
+			(({ requester, sessionId, cli }) =>
+				relay.handleRequest(requester, sessionId, cli));
+		byName.set(feature.name, relay);
+		for (const role of Object.keys(feature.frames) as RelayRole[]) {
+			const type = feature.frames[role];
+			if (type === undefined) continue;
+			if (byFrame.has(type))
+				throw new Error(`relay frame type ${type} is registered twice`);
+			byFrame.set(type, { relay, role, handleCliRequest });
+		}
+	}
+	return { byName, byFrame };
+}
+
+function relaysFor(deps: FrameHandlerDeps): RelayRoutes {
+	let routes = relayRoutes.get(deps.connections);
+	if (!routes) {
+		routes = buildRelayRoutes(deps, [
+			{ feature: PW_EXT_RELAY, hooks: pwExtRelayHooks(deps) },
+		]);
+		relayRoutes.set(deps.connections, routes);
+	}
+	return routes;
+}
+
+function routeOf(
+	deps: FrameHandlerDeps,
+	type: unknown,
+): RelayRoute | undefined {
+	return typeof type === "string"
+		? relaysFor(deps).byFrame.get(type)
+		: undefined;
+}
+
+function invalidRequestId(frame: Record<string, unknown>): string {
+	return typeof frame.requestId === "string" &&
+		frame.requestId.length <= CLI_REQUEST_ID_MAX_CHARS
+		? frame.requestId
+		: "invalid-request";
+}
+
+function parseRelayCli(
+	route: RelayRoute,
+	value: Record<string, unknown>,
+): CliFrame | undefined {
+	const { feature } = route.relay;
+	try {
+		const parsed =
+			route.role === "cliRequest"
+				? feature.validateCliRequest(value)
+				: feature.validateCliCancel?.(value);
+		return parsed as CliFrame | undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function parseCliFrame(
+	value: unknown,
+	deps: FrameHandlerDeps,
+): CliFrame | undefined {
 	if (!isRecord(value)) return undefined;
+	const route = routeOf(deps, value.type);
+	if (route?.role === "cliRequest" || route?.role === "cliCancel")
+		return parseRelayCli(route, value);
 	const hasOnlyKeys = (allowed: readonly string[]) =>
 		Object.keys(value).every(
 			(key) => key === "protocolVersion" || allowed.includes(key),
@@ -332,10 +438,6 @@ function parseCliFrame(value: unknown): CliFrame | undefined {
 			try { return validateInboxCliRequest(value); } catch { return undefined; }
 		case "cli-proto-request":
 			try { return validateProtoCliRequest(value); } catch { return undefined; }
-		case "cli-pw-ext-request":
-			try { return validatePwExtCliRequest(value); } catch { return undefined; }
-		case "cli-pw-ext-cancel":
-			try { return validatePwExtCliCancel(value); } catch { return undefined; }
 		case "cli-recv":
 			if (
 				typeof value.block === "boolean" &&
@@ -538,15 +640,22 @@ async function handleCliFrame(
 		return;
 	}
 	deps.registry.touch(sessionId);
+	const route = routeOf(deps, frame.type);
+	if (route?.role === "cliRequest")
+		return route.handleCliRequest({
+			requester: ws,
+			sessionId,
+			cli: frame as { requestId: string },
+			deps,
+			relay: route.relay,
+		});
+	if (route?.role === "cliCancel")
+		return route.relay.handleCancel(ws, sessionId, frame as { requestId: string });
 	switch (frame.type) {
 		case "cli-inbox-request":
 			return handleInboxCli(ws, sessionId, frame, deps);
 		case "cli-proto-request":
 			return handleProtoCli(ws, sessionId, frame, deps);
-		case "cli-pw-ext-request":
-			return handlePwExtCli(ws, sessionId, frame, deps);
-		case "cli-pw-ext-cancel":
-			return handlePwExtCliCancel(ws, sessionId, frame, deps);
 		case "cli-recv":
 			return handleCliRecv(ws, sessionId, frame, deps);
 		case "cli-ack": {
@@ -1015,6 +1124,11 @@ async function dispatchFrame(
 		return;
 	}
 	deps.registry.touch(frame.sessionId);
+	const route = routeOf(deps, frame.type);
+	if (route?.role === "browserResult")
+		return route.relay.handleResult(ws, frame as RelayResultFrame);
+	if (route?.role === "browserProgress")
+		return route.relay.handleProgress(ws, frame as RelayProgressFrame);
 	switch (frame.type) {
 		case "inbox-browser-result":
 			return handleInboxBrowserResult(ws, frame, deps);
@@ -1022,8 +1136,6 @@ async function dispatchFrame(
 			return handleProtoBrowserResult(ws, frame, deps);
 		case "proto-browser-progress":
 			return handleProtoBrowserProgress(ws, frame, deps);
-		case "pw-ext-browser-result":
-			return handlePwExtBrowserResult(ws, frame, deps);
 		case "user-message":
 			return handleUserMessage(ws, frame, deps);
 		case "session-create":
@@ -1076,6 +1188,43 @@ async function dispatchFrame(
 	}
 }
 
+/** Settles pending requests for an oversized result; true when the feature says to stop handling the frame. */
+export function settleOversizedRelays(
+	ws: ServerWebSocket<SocketState>,
+	parsed: unknown,
+	relays: Iterable<BrowserRelay>,
+): boolean {
+	for (const relay of relays) {
+		const { rejected } = relay.feature;
+		if (
+			rejected &&
+			relay.settleRejected(ws, parsed, rejected.oversizedReason) &&
+			rejected.afterOversized === "return"
+		)
+			return true;
+	}
+	return false;
+}
+
+/** Fails every pending request of the extension for features that treat an unreadable frame as fatal. */
+export function failUnreadableRelays(
+	ws: ServerWebSocket<SocketState>,
+	parsed: unknown,
+	relays: Iterable<BrowserRelay>,
+): void {
+	for (const relay of relays) {
+		const { flags, frames, strings } = relay.feature;
+		if (
+			flags.failAllOnUnreadable &&
+			strings.unreadableFailAll !== undefined &&
+			(parsed === undefined ||
+				(isRecord(parsed) && parsed.type === frames.browserResult)) &&
+			isExtensionPeer(ws)
+		)
+			relay.failAll(ws, strings.unreadableFailAll);
+	}
+}
+
 export async function handleSocketMessage(
 	ws: ServerWebSocket<SocketState>,
 	raw: string | Buffer,
@@ -1093,12 +1242,9 @@ export async function handleSocketMessage(
 			parsedOversize = undefined;
 		}
 		if (settleRejectedProtoBrowserResult(ws, parsedOversize, deps)) return;
-		settleRejectedPwExtResult(
-			ws,
-			parsedOversize,
-			deps,
-			"it exceeded the relay size limit",
-		);
+		const { byName } = relaysFor(deps);
+		if (settleOversizedRelays(ws, parsedOversize, byName.values())) return;
+		failUnreadableRelays(ws, parsedOversize, byName.values());
 		const unreadable = parsedOversize === undefined;
 		const protoResult =
 			isRecord(parsedOversize) &&
@@ -1136,8 +1282,8 @@ export async function handleSocketMessage(
 		try { validateInboxCliRequest(parsed); }
 		catch (err) {
 			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
-			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
-			await sendViaQueue(ws, JSON.stringify({ type: "cli-inbox-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
+			const requestId = invalidRequestId(parsed);
+			await sendViaQueue(ws, JSON.stringify({ type: "cli-inbox-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, CLI_ERROR_MAX_CHARS) }));
 			noteInvalid(ws);
 			return;
 		}
@@ -1147,21 +1293,27 @@ export async function handleSocketMessage(
 		try { validateProtoCliRequest(parsed); }
 		catch (err) {
 			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
-			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
-			await sendViaQueue(ws, JSON.stringify({ type: "cli-proto-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, 2048) }));
+			const requestId = invalidRequestId(parsed);
+			await sendViaQueue(ws, JSON.stringify({ type: "cli-proto-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, CLI_ERROR_MAX_CHARS) }));
 			noteInvalid(ws);
 			return;
 		}
 	}
 
-	if (isRecord(parsed) && parsed.type === "cli-pw-ext-request" && ws.data.kind === "cli") {
-		try { validatePwExtCliRequest(parsed); }
-		catch (err) {
-			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
-			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
-			await sendPwExtResult(ws, sessionId, requestId, { ok: false, error: describeError(err).slice(0, 2048) });
-			noteInvalid(ws);
-			return;
+	if (isRecord(parsed) && ws.data.kind === "cli") {
+		const route = routeOf(deps, parsed.type);
+		if (route?.role === "cliRequest") {
+			try { route.relay.feature.validateCliRequest(parsed); }
+			catch (err) {
+				await route.relay.refuse({
+					requester: ws,
+					sessionId: cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID,
+					requestId: invalidRequestId(parsed),
+					error: describeError(err).slice(0, CLI_ERROR_MAX_CHARS),
+				});
+				noteInvalid(ws);
+				return;
+			}
 		}
 	}
 
@@ -1169,8 +1321,8 @@ export async function handleSocketMessage(
 		let request: CredentialsCliRequest;
 		try { request = validateCredentialsCliRequest(parsed); }
 		catch (err) {
-			const requestId = typeof parsed.requestId === "string" && parsed.requestId.length <= 128 ? parsed.requestId : "invalid-request";
-			await sendCredentialsResult(ws, requestId, { ok: false, error: describeError(err).slice(0, 2048) });
+			const requestId = invalidRequestId(parsed);
+			await sendCredentialsResult(ws, requestId, { ok: false, error: describeError(err).slice(0, CLI_ERROR_MAX_CHARS) });
 			noteInvalid(ws);
 			return;
 		}
@@ -1178,7 +1330,7 @@ export async function handleSocketMessage(
 		return;
 	}
 
-	const cliFrame = parseCliFrame(parsed);
+	const cliFrame = parseCliFrame(parsed, deps);
 	if (cliFrame) {
 		if (ws.data.kind !== "cli") {
 			await sendError(
@@ -1206,7 +1358,8 @@ export async function handleSocketMessage(
 		frame = validateChatFrame(parsed);
 	} catch (err) {
 		if (settleRejectedProtoBrowserResult(ws, parsed, deps)) return;
-		if (settleRejectedPwExtResult(ws, parsed, deps)) return;
+		for (const relay of relaysFor(deps).byName.values())
+			if (relay.settleRejected(ws, parsed)) return;
 		await sendError(ws, rawSessionId, describeError(err));
 		noteInvalid(ws);
 		return;
