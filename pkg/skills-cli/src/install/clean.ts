@@ -201,6 +201,14 @@ function applyAll(plan: readonly CleanAction[], paths: DgPaths, seams: CleanSeam
 	);
 }
 
+/** Paths that `dg-skills clean` would remove now; reads only. */
+export function pendingCleanPaths(paths: DgPaths = resolveDgPaths(), overrides: Partial<CleanSeams> = {}): string[] {
+	const seams: CleanSeams = { ...defaultSeams, ...overrides };
+	return planClean(moveEntries, takeSnapshot(moveEntries, paths, seams)).flatMap((action) =>
+		action.kind.startsWith("remove") ? [action.path] : [],
+	);
+}
+
 export async function runClean(paths: DgPaths = resolveDgPaths(), overrides: Partial<CleanSeams> = {}): Promise<number> {
 	const seams: CleanSeams = { ...defaultSeams, ...overrides };
 	const refusals = refusalLines(await seams.ensure(paths, { log: seams.log }));

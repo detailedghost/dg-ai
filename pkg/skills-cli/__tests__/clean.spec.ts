@@ -17,7 +17,9 @@ import { basename, dirname, join, relative } from "node:path";
 import { type DgPaths, resolveDgPaths, withInstallLock } from "@dg/common/node";
 import { blockedText, ensureLayout, type LayoutResult, moveEntries, withCliLockError } from "@dg/common/node/layout";
 import { compatLauncherText, syncCompatLaunchers } from "../src/install/compat-launchers";
-import { type CleanSnapshot, planClean, runClean } from "../src/install/clean";
+import { type CleanSnapshot, pendingCleanPaths, planClean, runClean } from "../src/install/clean";
+import { cleanChecks } from "../src/install/clean-doctor";
+import type { DoctorContext } from "../src/doctor/types";
 import { PROGRAMS } from "../src/install/shims";
 
 const posix = describe.skipIf(process.platform === "win32");
@@ -573,5 +575,32 @@ describe("planClean", () => {
 		expect(read).not.toHaveBeenCalled();
 		stat.mockRestore();
 		read.mockRestore();
+	});
+});
+
+const doctorContext = (): DoctorContext => ({
+	home,
+	env: {},
+	paths,
+	installedVersion: "dev",
+	memo: (_key, make) => make(),
+});
+
+posix("pendingCleanPaths and the leftovers doctor check", () => {
+	test("names an unused set-aside folder and warns with the clean fix", async () => {
+		mkdirSync(asideOf("daemon"), { recursive: true });
+
+		expect(pendingCleanPaths(paths)).toEqual([asideOf("daemon")]);
+		const result = await cleanChecks[0]?.run(doctorContext());
+		expect(result).toMatchObject({ status: "warn", fix: "dg-skills clean" });
+	});
+
+	test("passes when the old home holds only folders that clean keeps", async () => {
+		mkdirSync(join(paths.legacyHome, "dg-ai-notes"), { recursive: true });
+
+		expect(pendingCleanPaths(paths)).toEqual([]);
+		const result = await cleanChecks[0]?.run(doctorContext());
+		expect(result).toMatchObject({ status: "ok" });
+		expect(existsSync(join(paths.legacyHome, "dg-ai-notes"))).toBe(true);
 	});
 });

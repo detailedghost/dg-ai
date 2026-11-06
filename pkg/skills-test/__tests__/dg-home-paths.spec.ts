@@ -10,6 +10,8 @@ const ALLOWED: Record<string, string> = {
 	"pkg/common/src/node/dg-paths.ts": "legacyHome names the old flat home for the migration",
 	"pkg/dg-daemon/src/crypto/keychain-backends.ts": "the old keychain account is named after the old home so the migration can find and move it",
 	"pkg/skills-cli/src/install/compat-launchers.ts": "the notice launchers name the old path they replace",
+	"pkg/skills-cli/src/commands/clean.ts": "the command help names the old home it cleans up",
+	"pkg/skills-cli/src/install/clean.ts": "the notice names the old launcher paths that stopped working",
 	"pkg/skills-cli/src/doctor/probes.ts": "doctor recognizes the old allow rule form to print its replacement",
 };
 
