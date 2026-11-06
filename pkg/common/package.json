@@ -11,6 +11,8 @@
 		"./node": "./src/node/index.ts",
 		"./node/program": "./src/node/program.ts",
 		"./node/dg-paths": "./src/node/dg-paths.ts",
+		"./node/layout": "./src/node/layout.ts",
+		"./node/layout-work": "./src/node/layout-work.ts",
 		"./msal": "./src/msal/index.ts",
 		"./daemon-db": "./src/node/daemon-db.ts"
 	},

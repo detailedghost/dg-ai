@@ -12,13 +12,11 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { skillDirectoryNames } from "@dg/common";
-import { personasDest, run, skillsInstallDest } from "@dg/common/node";
+import { moveVerified, personasDest, removeSource, run, skillsInstallDest, withInstallLock } from "@dg/common/node";
 import { fetchBundle } from "./bundle";
-import { withInstallLock } from "./lock";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
 import { finishLauncherLayout, migrateBeforeInstall } from "./layout";
-import { moveVerified, removeSource } from "./migrate-home";
 import { PROGRAMS } from "./shims";
 import {
 	assertSkillsOnlyFlags,
