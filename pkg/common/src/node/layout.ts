@@ -79,7 +79,7 @@ export const LAYOUT_TABLE = [
 		verify: "phone.verify",
 		stop: "phone.stop",
 	},
-	{ name: "phone-friend", from: "phone-friend", to: (paths) => paths.phoneFriendRoot, live: "phone-friend/*.pid" },
+	{ name: "phone-friend", from: "phone-friend", to: (paths) => paths.phoneFriendRoot, live: "phone-friend/*/listener.pid" },
 	{ name: "inbox", from: "inbox", to: (paths) => join(paths.stateDir, "inbox") },
 	{ name: "browser-profiles", from: "browser-profiles", to: (paths) => join(paths.stateDir, "browser-profiles") },
 	{ name: "demo-profile", from: "demo-profile", to: (paths) => join(paths.stateDir, "demo-profile") },
@@ -198,11 +198,12 @@ const exists = (path: string): boolean => {
 	}
 };
 
-/** Throws the kept or has-not-moved text when a writer still holds the entry or the move has not happened. */
+/** Throws the kept, failed or has-not-moved text when a writer holds the entry, its move failed, or it has not moved. */
 export function assertNotBlocked(paths: DgPaths, name: EntryName): void {
 	const cached = results.get(paths)?.[name];
 	if (cached) {
 		if (cached.kind === "blocked") throw new DgCliError(cached.fix);
+		if (cached.kind === "failed") throw new DgCliError(cached.error);
 		return;
 	}
 	const entry = moveEntries.find((candidate) => candidate.name === name);

@@ -357,6 +357,18 @@ posix("runClean bin launchers", () => {
 		expect(existsSync(paths.legacyHome)).toBe(false);
 	});
 
+	test("names the launchers in program order whatever order the file system lists them", async () => {
+		putLaunchers(legacyBin());
+		const readdir = (path: string): string[] => {
+			const names = readdirSync(path);
+			return path === legacyBin() ? names.reverse() : names;
+		};
+
+		const { lines } = await run(paths, { readdir });
+
+		expect(lines).toContain(noticeLine());
+	});
+
 	test("removes bin with its notice and keeps a legacy home that holds a dg-ai folder", async () => {
 		putLaunchers(legacyBin());
 		mkdirSync(join(paths.legacyHome, "dg-ai-extension"), { recursive: true });

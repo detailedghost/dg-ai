@@ -12,8 +12,11 @@ export type LayoutPreActionOptions = {
 const pathBelowProgram = (command: Command): string[] =>
 	command.parent ? [...pathBelowProgram(command.parent), command.name()] : [];
 
-/** True when the command path below the program name, or that path plus its first raw argument, is in the skip set. */
+const HELP_FLAGS: ReadonlySet<string> = new Set(["--help", "-h"]);
+
+/** True for a forwarded help flag, or when the command path (alone or plus its first raw argument) is in the skip set. */
 export function shouldSkip(action: Command, skip: ReadonlySet<string>): boolean {
+	if (HELP_FLAGS.has(action.args[0] ?? "")) return true;
 	const path = pathBelowProgram(action).join(" ");
 	return skip.has(path) || skip.has(`${path} ${action.args[0] ?? ""}`);
 }

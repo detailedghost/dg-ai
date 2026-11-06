@@ -101,30 +101,45 @@ function pidFileLive(file: string): boolean {
 	}
 }
 
-/** True when a pid file under the legacy home, named by a path or a one-star pattern, names a running process. */
+function expandPattern(dir: string, segments: readonly string[], readdir: LayoutSeams["readdir"]): string[] {
+	const [head, ...rest] = segments;
+	if (head === undefined) return [dir];
+	if (!head.includes("*")) return expandPattern(join(dir, head), rest, readdir);
+	const [prefix = "", suffix = ""] = head.split("*");
+	return legacyNames(dir, readdir)
+		.filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+		.flatMap((name) => expandPattern(join(dir, name), rest, readdir));
+}
+
+/** True when a pid file under the legacy home, named by a path whose segments may hold one star each, names a running process. */
 export function isLive(
 	legacyHome: string,
 	pattern: string,
 	readdir: LayoutSeams["readdir"] = (path) => readdirSync(path),
 ): boolean {
-	const dir = join(legacyHome, dirname(pattern));
-	const [prefix = "", suffix] = basename(pattern).split("*");
-	const names =
-		suffix === undefined
-			? [prefix]
-			: legacyNames(dir, readdir).filter((name) => name.startsWith(prefix) && name.endsWith(suffix));
-	return names.some((name) => pidFileLive(join(dir, name)));
+	return expandPattern(legacyHome, pattern.split("/"), readdir).some(pidFileLive);
 }
 
-function readPending(legacyHome: string): Pending[] {
+function entryNamed(record: { from: string; to: string }, paths: DgPaths, hooks: LayoutHooks): string | undefined {
+	return LAYOUT_TABLE.filter(isMoveEntry).find((entry) => {
+		const dest = destOf(entry, paths, hooks);
+		return (
+			sourcesOf(entry, paths.legacyHome).includes(record.from) &&
+			(record.to === dest || record.to === join(dest, basename(record.from)))
+		);
+	})?.name;
+}
+
+function readPending(paths: DgPaths, hooks: LayoutHooks): Pending[] {
 	try {
-		const records: unknown = JSON.parse(readFileSync(join(legacyHome, PENDING_FILE), "utf8"));
-		return Array.isArray(records)
-			? records.filter(
-					(record): record is Pending =>
-						typeof record?.name === "string" && typeof record?.from === "string" && typeof record?.to === "string",
-				)
-			: [];
+		const records: unknown = JSON.parse(readFileSync(join(paths.legacyHome, PENDING_FILE), "utf8"));
+		if (!Array.isArray(records)) return [];
+		return records.flatMap((record): Pending[] => {
+			if (typeof record?.from !== "string" || typeof record?.to !== "string") return [];
+			const ends = { from: record.from, to: record.to };
+			const name = typeof record.name === "string" ? record.name : entryNamed(ends, paths, hooks);
+			return name === undefined ? [] : [{ ...ends, name }];
+		});
 	} catch {
 		return [];
 	}
@@ -169,7 +184,7 @@ function factsOf(
 /** Reads the legacy tree and the targets once; the plan is pure over what this returns. */
 export function snapshot(paths: DgPaths, hooks: LayoutHooks): Snapshot {
 	const seams = resolveSeams(hooks);
-	const pending = readPending(paths.legacyHome);
+	const pending = readPending(paths, hooks);
 	return {
 		legacyHome: paths.legacyHome,
 		facts: Object.fromEntries(
@@ -294,8 +309,9 @@ function setAside(step: Step, { seams, say }: Context): { asideTo: string } | { 
 		return { asideTo };
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
-		say(`dg: kept ${step.from}; setting aside ${step.dest} failed: ${reason}`);
-		return { error: reason };
+		const line = `dg: kept ${step.from}; setting aside ${step.dest} failed: ${reason}`;
+		say(line);
+		return { error: line };
 	}
 }
 

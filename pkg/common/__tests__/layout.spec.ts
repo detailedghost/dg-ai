@@ -569,6 +569,25 @@ posix("ensureLayout live writers", () => {
 		expect(lines[0]).toContain(legacyAt("phone"));
 	});
 
+	test("blocks a phone-friend entry whose line holds a live listener pid file", async () => {
+		put(legacyAt("phone-friend", "default", "listener.pid"), livePid());
+		put(legacyAt("phone-friend", "default", "phone-friend.db"), "legacy");
+
+		const result = await run();
+
+		expect(result["phone-friend"]).toMatchObject({ kind: "blocked", reason: "live-writer" });
+		expect(existsSync(paths.phoneFriendRoot)).toBe(false);
+	});
+
+	test("moves a phone-friend entry whose line pid file names a dead process", async () => {
+		put(legacyAt("phone-friend", "default", "listener.pid"), JSON.stringify({ pid: 2 ** 22 + 12345 }));
+		put(legacyAt("phone-friend", "default", "phone-friend.db"), "legacy");
+
+		const result = await run();
+
+		expect(result["phone-friend"]).toMatchObject({ kind: "moved" });
+	});
+
 	test("blocks an entry that needs phone.verify without the hook, touches nothing and logs nothing", async () => {
 		put(legacyAt("phone", "phone.db"), "legacy");
 
@@ -733,6 +752,17 @@ posix("ensureLayout pending removals", () => {
 		expect(lines.filter((line) => line === removed)).toHaveLength(1);
 	});
 
+	test("removes the source of a record from the previous release that holds only from and to", async () => {
+		seedPending();
+		put(legacyAt(".pending-removal.json"), JSON.stringify([{ from: legacyAt("runtime"), to: paths.runtimeDir }]));
+
+		const result = await run();
+
+		expect(outcomeAt(result, "runtime")).toMatchObject({ kind: "moved" });
+		expect(existsSync(legacyAt("runtime"))).toBe(false);
+		expect(existsSync(legacyAt(".pending-removal.json"))).toBe(false);
+	});
+
 	test("keeps and names a source whose copy no longer holds every file", async () => {
 		seedPending();
 		writeFileSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"), "other bytes");
@@ -850,6 +880,29 @@ posix("assertNotBlocked", () => {
 
 		expect(error).toBeInstanceOf(DgCliError);
 		expect((error as Error).message).toBe(notMoved(legacyAt("phone"), paths.phoneRoot));
+	});
+
+	test("throws the failed-check line after a failed move", async () => {
+		put(legacyAt("phone", "phone.db"), "legacy");
+		await run({ "phone.verify": () => ["row count differs"], "phone.stop": async () => "stopped" as const });
+
+		const error = thrown(() => assertNotBlocked(paths, "phone"));
+
+		expect(error).toBeInstanceOf(DgCliError);
+		expect((error as Error).message).toBe(`dg: kept ${legacyAt("phone")}; the copy failed its check: row count differs`);
+	});
+
+	test("throws the set-aside failure line after a failed set-aside", async () => {
+		const now = 1_700_000_000_000;
+		put(legacyAt("daemon", "daemon.db"), "db bytes");
+		mkdirSync(paths.daemonDir, { recursive: true });
+		put(join(`${paths.daemonDir}.empty-${now}`, "occupied"), "x");
+		await run({ now: () => now } as Partial<LayoutHooks>);
+
+		const error = thrown(() => assertNotBlocked(paths, "daemon"));
+
+		expect(error).toBeInstanceOf(DgCliError);
+		expect((error as Error).message).toStartWith(`dg: kept ${legacyAt("daemon")}; setting aside ${paths.daemonDir} failed: `);
 	});
 
 	test("builds the same texts through blockedText", async () => {

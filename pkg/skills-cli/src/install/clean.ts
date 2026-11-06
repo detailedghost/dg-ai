@@ -74,10 +74,10 @@ function orAbsent<T>(read: () => T): T | undefined {
 
 function binAction(bin: CleanSnapshot["bin"], platform: NodeJS.Platform): CleanAction[] {
 	if (!bin) return [];
-	const launchers = new Set(launcherFiles(platform));
-	const others = bin.names.filter((name) => !launchers.has(name));
+	const ordered = launcherFiles(platform);
+	const others = bin.names.filter((name) => !ordered.includes(name));
 	if (others.length > 0) return [{ kind: "keepBin", path: bin.path, others }];
-	return [{ kind: "removeBin", path: bin.path, launchers: bin.names }];
+	return [{ kind: "removeBin", path: bin.path, launchers: ordered.filter((file) => bin.names.includes(file)) }];
 }
 
 export function planClean(table: Table, snapshot: CleanSnapshot): CleanAction[] {

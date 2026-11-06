@@ -125,6 +125,31 @@ describe("installLayoutPreAction skip sets", () => {
 	});
 });
 
+describe("installLayoutPreAction forwarded help", () => {
+	const rawProgram = () => {
+		const { program, ensured, ran } = wire(["spec"], SKILLS_SKIP);
+		leaf(program, "spec").helpOption(false).allowUnknownOption();
+		return { program, ensured, ran };
+	};
+
+	test.each([["--help"], ["-h"]])("a raw command given %s first records no ensure call", async (flag) => {
+		const { program, ensured, ran } = rawProgram();
+
+		await run(program, ["spec", flag]);
+
+		expect(ensured).toHaveLength(0);
+		expect(ran).toEqual(["spec"]);
+	});
+
+	test("a raw command with an ordinary argument still records one ensure call", async () => {
+		const { program, ensured } = rawProgram();
+
+		await run(program, ["spec", "slugify", "x"]);
+
+		expect(ensured).toHaveLength(1);
+	});
+});
+
 describe("installLayoutPreAction commands that never reach a body", () => {
 	const quiet = (program: Command): Command => {
 		program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
