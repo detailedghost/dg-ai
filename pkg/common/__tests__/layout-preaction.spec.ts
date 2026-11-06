@@ -128,7 +128,9 @@ describe("installLayoutPreAction skip sets", () => {
 describe("installLayoutPreAction forwarded help", () => {
 	const rawProgram = () => {
 		const { program, ensured, ran } = wire(["spec"], SKILLS_SKIP);
-		leaf(program, "spec").helpOption(false).allowUnknownOption();
+		const spec = leaf(program, "spec").helpOption(false).allowUnknownOption();
+		program.enablePositionalOptions();
+		spec.parseOptions = (argv) => ({ operands: [...argv], unknown: [] });
 		return { program, ensured, ran };
 	};
 
@@ -139,6 +141,31 @@ describe("installLayoutPreAction forwarded help", () => {
 
 		expect(ensured).toHaveLength(0);
 		expect(ran).toEqual(["spec"]);
+	});
+
+	test.each([["--help"], ["-h"]])("a raw command given %s after a subcommand records no ensure call", async (flag) => {
+		const { program, ensured, ran } = rawProgram();
+
+		await run(program, ["spec", "worktree", "remove", flag]);
+
+		expect(ensured).toHaveLength(0);
+		expect(ran).toEqual(["spec"]);
+	});
+
+	test("a raw command stops scanning for help at --", async () => {
+		const { program, ensured } = rawProgram();
+
+		await run(program, ["spec", "run", "--", "--help"]);
+
+		expect(ensured).toHaveLength(1);
+	});
+
+	test("a raw command ignores an argument that only contains a help flag", async () => {
+		const { program, ensured } = rawProgram();
+
+		await run(program, ["spec", "run", "--helpful", "x-h"]);
+
+		expect(ensured).toHaveLength(1);
 	});
 
 	test("a raw command with an ordinary argument still records one ensure call", async () => {

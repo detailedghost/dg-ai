@@ -117,6 +117,22 @@ describe("installChecks layout check", () => {
 		expect(result.fix).toContain("dg-skills install");
 	});
 
+	test("says install moves a legacy runtime and lib that the launchers still read", async () => {
+		const home = fixtures.tmp("doctor-layout-launchers-");
+		const paths = resolveDgPaths({ platform: "linux", homeDir: home, env: {} });
+		for (const name of ["runtime", "lib"]) {
+			mkdirSync(join(paths.legacyHome, name), { recursive: true });
+			writeFileSync(join(paths.legacyHome, name, "file"), name);
+		}
+
+		const result = await runCheck(home, paths);
+
+		expect(result.status).toBe("warn");
+		expect(result.detail).toContain(movedText(join(paths.legacyHome, "runtime"), paths.runtimeDir));
+		expect(result.detail).toContain(movedText(join(paths.legacyHome, "lib"), paths.libDir));
+		expect(result.fix).toContain("dg-skills install");
+	});
+
 	test("warns with the kept text for a live daemon pid file and names nothing else", async () => {
 		const { home, paths, legacy } = world("blocked");
 

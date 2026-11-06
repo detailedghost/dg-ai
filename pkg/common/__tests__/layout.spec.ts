@@ -61,7 +61,8 @@ function sqliteFile(file: string, rows: number): void {
 
 const legacyAt = (...parts: string[]): string => join(paths.legacyHome, ...parts);
 const livePid = (): string => JSON.stringify({ pid: process.pid });
-const run = (hooks: Partial<LayoutHooks> = {}, target: DgPaths = paths) => ensureLayout(target, { log, ...hooks });
+const run = (hooks: Partial<LayoutHooks> = {}, target: DgPaths = paths) =>
+	ensureLayout(target, { log, launchers: true, ...hooks });
 const outcomeAt = (result: Awaited<ReturnType<typeof run>>, from: string) =>
 	(result as Record<string, { kind: string; [key: string]: unknown }>)[nameOf(from)];
 
@@ -438,6 +439,49 @@ posix("ensureLayout moves", () => {
 
 		expect(counts.lock).toBe(1);
 		expect(existsSync(join(paths.dataDir, ".install.lock"))).toBe(false);
+	});
+});
+
+posix("ensureLayout launcher-bound entries", () => {
+	const bound = ["runtime", "lib"];
+
+	test("leaves runtime and lib in place, silent and blocked, without the launchers hook", async () => {
+		seedLegacy();
+
+		const result = await ensureLayout(paths, { log });
+
+		for (const from of bound) {
+			expect(outcomeAt(result, from)).toMatchObject({ kind: "blocked", reason: "no-hook" });
+			expect(existsSync(legacyAt(from))).toBe(true);
+			expect(existsSync(from === "runtime" ? paths.runtimeDir : paths.libDir)).toBe(false);
+		}
+		expect(lines).toEqual([]);
+	});
+
+	test("still moves the other entries without the launchers hook", async () => {
+		seedLegacy();
+
+		const result = await ensureLayout(paths, { log });
+
+		expect(outcomeAt(result, "skills")).toMatchObject({ kind: "moved" });
+	});
+
+	test("moves runtime and lib when the launchers hook is supplied", async () => {
+		seedLegacy();
+
+		const result = await ensureLayout(paths, { log, launchers: true });
+
+		for (const from of bound) expect(outcomeAt(result, from)).toMatchObject({ kind: "moved" });
+		expect(existsSync(join(paths.libDir, "1.0.0", "dg.js"))).toBe(true);
+	});
+
+	test("reports a used target as kept, not as unmoved, without the hook", async () => {
+		put(legacyAt("lib", "1.0.0", "dg.js"), "old");
+		put(join(paths.libDir, "2.0.0", "dg.js"), "new");
+
+		const result = await ensureLayout(paths, { log });
+
+		expect(outcomeAt(result, "lib")).toMatchObject({ kind: "kept", reason: "target-used" });
 	});
 });
 

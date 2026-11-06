@@ -198,7 +198,8 @@ export function snapshot(paths: DgPaths, hooks: LayoutHooks): Snapshot {
 }
 
 const missingKey = (entry: MoveEntry, hooks: LayoutHooks): boolean =>
-	[entry.verify, entry.needsKey].some((key) => key !== undefined && hooks[key] === undefined);
+	[entry.verify, entry.needsKey].some((key) => key !== undefined && hooks[key] === undefined) ||
+	(entry.launcherBound === true && hooks.launchers === undefined);
 
 function decide(entry: MoveEntry, facts: Facts, hooks: LayoutHooks): Action {
 	if (!facts.present) return { kind: "absent" };

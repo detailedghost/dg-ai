@@ -14,9 +14,14 @@ const pathBelowProgram = (command: Command): string[] =>
 
 const HELP_FLAGS: ReadonlySet<string> = new Set(["--help", "-h"]);
 
-/** True for a forwarded help flag, or when the command path (alone or plus its first raw argument) is in the skip set. */
+const asksForHelp = (args: readonly string[]): boolean => {
+	const end = args.indexOf("--");
+	return (end === -1 ? args : args.slice(0, end)).some((arg) => HELP_FLAGS.has(arg));
+};
+
+/** True for a forwarded help flag before any `--`, or when the command path (alone or plus its first raw argument) is in the skip set. */
 export function shouldSkip(action: Command, skip: ReadonlySet<string>): boolean {
-	if (HELP_FLAGS.has(action.args[0] ?? "")) return true;
+	if (asksForHelp(action.args)) return true;
 	const path = pathBelowProgram(action).join(" ");
 	return skip.has(path) || skip.has(`${path} ${action.args[0] ?? ""}`);
 }

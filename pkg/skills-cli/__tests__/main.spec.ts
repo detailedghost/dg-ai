@@ -173,6 +173,58 @@ describe("registerListenerRestart", () => {
 		expect(await run("install", phone)).toEqual(["body"]);
 	});
 
+	it("restarts the listener once when the install body throws, and rethrows the error", async () => {
+		const calls: string[] = [];
+		const program = new Command().exitOverride();
+		program.command("install").action(() => {
+			calls.push("body");
+			throw new Error("install failed");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => ({ kind: "moved", stopped: true }),
+			restart: async () => {
+				calls.push("restart");
+			},
+		});
+
+		await expect(program.parseAsync(["install"], { from: "user" })).rejects.toThrow("install failed");
+
+		expect(calls).toEqual(["body", "restart"]);
+	});
+
+	it("keeps the install error when the restart also fails", async () => {
+		const program = new Command().exitOverride();
+		program.command("install").action(() => {
+			throw new Error("install failed");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => ({ kind: "moved", stopped: true }),
+			restart: async () => {
+				throw new Error("restart failed");
+			},
+		});
+
+		await expect(program.parseAsync(["install"], { from: "user" })).rejects.toThrow("install failed");
+	});
+
+	it("does not restart the listener after a failing command other than install", async () => {
+		const calls: string[] = [];
+		const program = new Command().exitOverride();
+		program.command("doctor").action(() => {
+			throw new Error("doctor failed");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => ({ kind: "moved", stopped: true }),
+			restart: async () => {
+				calls.push("restart");
+			},
+		});
+
+		await expect(program.parseAsync(["doctor"], { from: "user" })).rejects.toThrow("doctor failed");
+
+		expect(calls).toEqual([]);
+	});
+
 	it("does not restart the listener after a command other than install", async () => {
 		expect(await run("doctor", { kind: "moved", stopped: true })).toEqual(["body"]);
 	});

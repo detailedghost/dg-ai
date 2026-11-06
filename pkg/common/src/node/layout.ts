@@ -33,7 +33,7 @@ export type LayoutSeams = {
 };
 
 export type LayoutHooks = Partial<Omit<LayoutSeams, "load">> &
-	Partial<OwnerHooks> & { load?: () => Promise<LayoutWork | void> };
+	Partial<OwnerHooks> & { load?: () => Promise<LayoutWork | void>; launchers?: true };
 
 export type MoveEntry = {
 	name: string;
@@ -44,6 +44,7 @@ export type MoveEntry = {
 	stop?: StopKey;
 	verify?: "phone.verify";
 	needsKey?: "ssms.configDir";
+	launcherBound?: true;
 };
 
 type MarkerEntry = { name: string; from: string; marker: true };
@@ -51,11 +52,12 @@ type MarkerEntry = { name: string; from: string; marker: true };
 export type LayoutEntry = MoveEntry | MarkerEntry;
 
 const DAEMON = { live: "daemon/*.pid", stop: "daemon.stop" } as const;
+const LAUNCHED = { launcherBound: true } as const;
 const SSMS = { live: "ssms/*.pid" } as const;
 
 export const LAYOUT_TABLE = [
-	{ name: "runtime", from: "runtime", to: (paths) => paths.runtimeDir },
-	{ name: "lib", from: "lib", to: (paths) => paths.libDir },
+	{ name: "runtime", from: "runtime", to: (paths) => paths.runtimeDir, ...LAUNCHED },
+	{ name: "lib", from: "lib", to: (paths) => paths.libDir, ...LAUNCHED },
 	{ name: "skills", from: "skills", to: (paths) => paths.skillsDir },
 	{ name: "browsers", from: "browsers", to: (paths) => paths.browsersDir },
 	{ name: "demo-narration", from: "demo-narration", to: (paths) => join(paths.dataDir, "demo-narration") },

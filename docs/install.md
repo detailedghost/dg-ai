@@ -151,12 +151,12 @@ stop matching. `dg-skills doctor` warns and names the new rule,
 
 | Command | What moves |
 | --- | --- |
-| `--help`, `--version` | Nothing. |
+| `--help`, `-h` anywhere before a `--`, `--version` | Nothing. |
 | `dg-skills hooks run`, `dg-agent phone __run`, `dg-daemon status` | Nothing. These commands skip the move. |
-| `dg-skills install` | Everything. It stops an old daemon and an old phone listener, then restarts the listener. |
+| `dg-skills install` | Everything. It stops an old daemon and an old phone listener, moves `runtime/` and `lib/`, then rewrites the launchers and restarts the listener, also when the install fails. |
 | `dg-skills doctor` | What it can, before it reports. The `layout` check then lists what is left. |
 | `dg-skills clean` | What it can, then it removes the leftovers. |
-| `dg-skills spec`, `dg-agent memory` and other commands | The daemon, memory, grants and config. They leave `phone/` and the ssms config until a `dg-agent phone` command or install runs. |
+| `dg-skills spec`, `dg-agent memory` and other commands | The daemon, memory, grants and config. They leave `runtime/`, `lib/`, `phone/` and the ssms config until install (or, for `phone/`, a `dg-agent phone` command) runs. Old `~/.dg/bin` launchers read `runtime/` and `lib/`, and only install rewrites them. |
 | `dg-agent phone <verb>` | The phone folder, then the phone-friend lines. |
 | `dg-agent start` | The same as `dg-agent` commands. It starts `dg-daemon`, and the daemon's own start moves the daemon folder. |
 

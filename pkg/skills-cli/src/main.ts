@@ -10,6 +10,7 @@ type HookSeams = { platform?: NodeJS.Platform };
 export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHooks {
 	if (commandName !== "install") return {};
 	const hooks: LayoutHooks = {
+		launchers: true,
 		load: async () => {
 			const [{ daemonLayoutHooks }, { phoneLayoutHooks }, { resolveDgPaths }, { ssmsConfigDir }] = await Promise.all([
 				import("@dg/dg-daemon/layout-hooks"),
@@ -38,11 +39,28 @@ const phoneOutcomeOf = async (): Promise<PhoneOutcome> => {
 const restartListener = async (): Promise<void> => (await import("./install/phone-listener")).restartPhoneListener();
 
 export function registerListenerRestart(program: Command, { phoneOutcome, restart }: ListenerRestartSeams): void {
-	program.hook("postAction", async (_thisCommand, action) => {
-		if (action.name() !== "install") return;
+	let installing = false;
+	program.hook("preAction", (_thisCommand, action) => {
+		installing = action.name() === "install";
+	});
+	const restartIfStopped = async (): Promise<void> => {
+		if (!installing) return;
+		installing = false;
 		const phone = await phoneOutcome();
 		if ((phone?.kind === "moved" || phone?.kind === "setAside") && phone.stopped) await restart();
-	});
+	};
+	const parse = program.parseAsync.bind(program);
+	program.parseAsync = async (...args) => {
+		let parsed: Command;
+		try {
+			parsed = await parse(...args);
+		} catch (error) {
+			await restartIfStopped().catch(() => undefined);
+			throw error;
+		}
+		await restartIfStopped();
+		return parsed;
+	};
 }
 
 export async function main(argv: readonly string[]): Promise<number> {

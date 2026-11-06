@@ -96,6 +96,23 @@ posix("commands that skip the layout move", () => {
 });
 
 posix("commands that run the layout move", () => {
+	it("dg-skills spec slugify leaves runtime and lib where the legacy launchers read them, without a line", async () => {
+		const { home, paths, legacy } = await legacyHome();
+		for (const name of ["runtime", "lib"]) {
+			mkdirSync(join(legacy, name, "1.0.0"), { recursive: true });
+			writeFileSync(join(legacy, name, "1.0.0", "file"), name);
+		}
+
+		const run = await runProgram(home, "dg-skills", ["spec", "slugify", "x"]);
+
+		expect(run.code).toBe(0);
+		expect(existsSync(join(legacy, "runtime", "1.0.0", "file"))).toBe(true);
+		expect(existsSync(join(legacy, "lib", "1.0.0", "file"))).toBe(true);
+		expect(existsSync(paths.runtimeDir)).toBe(false);
+		expect(existsSync(paths.libDir)).toBe(false);
+		expect(lines(run.stderr)).toEqual([]);
+	});
+
 	it("dg-skills spec slugify moves daemon, memory, grants and config and leaves phone and ssms silent", async () => {
 		const { home, paths, legacy } = await legacyHome();
 		mkdirSync(join(legacy, "ssms"), { recursive: true });
@@ -177,6 +194,8 @@ describe("dg-skills hooksFor", () => {
 		expect(install["ssms.configDir"]?.()).toBeString();
 		expect(spec["daemon.stop"]).toBeUndefined();
 		expect(spec["ssms.configDir"]).toBeUndefined();
+		expect(install.launchers).toBe(true);
+		expect(spec.launchers).toBeUndefined();
 	});
 
 	it("install composes no phone-friend hook", async () => {

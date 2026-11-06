@@ -486,6 +486,19 @@ posix("runClean bin launchers", () => {
 });
 
 describe("runClean refusal", () => {
+	test("refuses while runtime has not moved, keeps it and removes nothing", async () => {
+		putFile(join(paths.legacyHome, "runtime", "bun"));
+		putAsides();
+		const expected = blockedText((await idleResult()).runtime as never);
+
+		const { code, lines } = await run(paths);
+
+		expect(code).toBe(1);
+		expect(lines).toContain(expected);
+		expect(existsSync(join(paths.legacyHome, "runtime", "bun"))).toBe(true);
+		for (const name of ["daemon", "phone", "channel-review"] as const) expect(existsSync(asideOf(name))).toBe(true);
+	});
+
 	test("refuses with the has-not-moved text for a legacy phone folder that no hook moves", async () => {
 		putFile(join(paths.legacyHome, "phone", "phone.db"));
 		putAsides();
