@@ -198,6 +198,20 @@ describe("hooks usage errors", () => {
 		expect(world.text(world.paths.claude)).toBe(before);
 	});
 
+	test("the default launcher on Windows is the dg-skills.cmd shim the installer writes", async () => {
+		world.seed(world.paths.claude, {});
+		const result = await world.cli(["enable", "format"], {
+			launcher: undefined,
+			platform: "win32",
+		});
+		expect(result.code).toBe(0);
+		const command = world.readJson(world.paths.claude).hooks?.PostToolUse?.[0]
+			?.hooks[0]?.command;
+		expect(command).toBe(
+			`${join(world.dgHome, "bin", "dg-skills.cmd")} hooks run format`,
+		);
+	});
+
 	test("a launcher path with a space is refused or written quoted", async () => {
 		world.seed(world.paths.claude, {});
 		const spaced = join(world.dgHome, "my bin", "dg-skills");
