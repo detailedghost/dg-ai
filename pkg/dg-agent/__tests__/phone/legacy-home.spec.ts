@@ -131,12 +131,15 @@ describe("listener restart after the move", () => {
 		};
 		const api = {
 			deps: () => ({}),
-			openCloseDeps: () => ({}),
+			openCloseDeps: () => ({ write: (text: string) => calls.push(`stdout:${text}`) }),
 			moveLegacyPhoneHome: async () => {
 				calls.push("move");
 				return moved;
 			},
-			phoneOpen: stub("open"),
+			phoneOpen: async (_opts: unknown, deps: { write(text: string): void }) => {
+				deps.write("listener started");
+				calls.push("open");
+			},
 			phoneClose: stub("close"),
 			phoneContacts: () => {
 				calls.push("contacts");
@@ -160,6 +163,22 @@ describe("listener restart after the move", () => {
 		await drive(api, "contacts");
 
 		expect(calls).toEqual(["move", "open", "contacts"]);
+	});
+
+	it("keeps the restart output off stdout", async () => {
+		const { api, calls } = fakeApi(true);
+
+		await drive(api, "contacts");
+
+		expect(calls.some((call) => call.startsWith("stdout:"))).toBe(false);
+	});
+
+	it("restarts for open, since a cron-only open does not start the listener", async () => {
+		const { api, calls } = fakeApi(true);
+
+		await drive(api, "open", "--print-cron");
+
+		expect(calls.slice(0, 2)).toEqual(["move", "open"]);
 	});
 
 	it("leaves the listener to close", async () => {
