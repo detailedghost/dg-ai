@@ -215,3 +215,5 @@ sequenceDiagram
 - `pkg/extension/lib/background/pw-ext.ts`
 - `pkg/extension/lib/features/pw-ext-page.ts`
 - `pkg/skills-cli/src/pw/ext.ts`
+- `pkg/common/src/relay-format.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
+- `pkg/dg-daemon/src/server/browser-relay.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
