@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.42.1 (2026-11-06)
+
+### Fixes
+
+- fix(hooks): point the Windows hook launcher at the dg-skills.cmd shim ([#149](https://github.com/detailedghost/dg-ai/pull/149))
+- fix(phone): move the legacy phone home before any command opens the db ([#147](https://github.com/detailedghost/dg-ai/pull/147))
+
 ## v1.42.0 (2026-11-05)
 
 ### Features
