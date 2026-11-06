@@ -3,6 +3,46 @@
 Status: Proposed
 Date: 2026-11-05
 
+## Amended 2026-11-05: no per-call approval
+
+The human decided: "we just always give access to the CLI to control the
+browser if given explicitly. We don't need to approve every single browser
+action that's taking place in the extension anymore."
+
+Passing `--ext` on the CLI is now the explicit grant. The extension no longer
+opens `pw-approve.html`. The approval page, its port, and the approver
+(`pw-ext-approval.ts`) are deleted, and there is no setting to bring them back.
+The accepted text below stays as the record of the first decision. Where it
+describes the popup, the pre-prompt reads of the target element and tool list,
+the approved size, or the element handle, this amendment replaces it.
+
+Guards that remain:
+
+- Blocked pages: browser settings pages, extension pages, `file:` and `about:`
+  pages, the web stores, private windows, and the signed-in Proton Mail tab
+  (`PW_EXT_BLOCKED_ERROR`, `PW_EXT_MAILBOX_ERROR`).
+- Text and URL redaction in the extension and again in the CLI, and the output
+  size caps.
+- Daemon session ownership, CLI auth, the pending request caps, and the
+  `PW_EXT_MIN_EXTENSION_VERSION` gate.
+- The page function checks the document URL against the tab URL before it acts.
+  A screenshot is discarded if the window shows another tab after capture.
+- Upload goes only to `https:` pages. The staged file is deleted right after the
+  fetch, a size that differs from the declared size is refused, and the 25 MiB
+  cap holds.
+- Timeouts, the relay deadline, and cancel on a closed session or a stopped CLI.
+  `cli-pw-ext-cancel` and `pw-ext-browser-cancel` still stop a request in flight.
+
+Removed because it had no job without the popup: the element fingerprint and
+handle. It bound the element the human saw in the prompt to the element the
+write used. Now one page call resolves the target and acts, so no gap is left to
+guard. The second tab recheck after approval is gone for the same reason.
+
+The wire format did not change. It carried no approval field, so an older
+daemon or extension still interoperates. An older extension still shows its
+popup; a newer one does not. `PW_EXT_MIN_EXTENSION_VERSION` stays at 1.42.0
+because the CLI works with both.
+
 ## Context
 
 - Plain `dg-skills pw` drives its own Playwright browser. An agent cannot see
@@ -173,6 +213,5 @@ sequenceDiagram
 - `pkg/common/src/pw-ext-format.ts`
 - `pkg/dg-daemon/src/server/pw-ext.ts`
 - `pkg/extension/lib/background/pw-ext.ts`
-- `pkg/extension/lib/background/pw-ext-approval.ts`
 - `pkg/extension/lib/features/pw-ext-page.ts`
 - `pkg/skills-cli/src/pw/ext.ts`

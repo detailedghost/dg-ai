@@ -184,7 +184,7 @@ describe("WebMCP", () => {
 });
 
 describe("review round 3 hardening", () => {
-	it("refuses the console hook on a document other than the approved one", () => {
+	it("refuses the console hook on a document other than the tab's", () => {
 		pageConsole();
 		expect(pwExtConsoleHook("https://other.example.test/")).toEqual({
 			error: expect.stringContaining("changed"),

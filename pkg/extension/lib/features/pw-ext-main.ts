@@ -26,7 +26,7 @@ export function pwExtConsoleHook(
 ): { entries: string[] } | { error: string } {
 	try {
 		if (expectUrl !== undefined && document.URL !== expectUrl)
-			return { error: "The page changed after approval; nothing was done. Retry." };
+			return { error: "The page changed; nothing was done. Retry." };
 		const MAX_ENTRIES = 50;
 		const MAX_CHARS = 500;
 		const REDACTED = "[redacted]";
@@ -116,7 +116,7 @@ export async function pwExtWebMcp(
 		return out.length > max ? `${out.slice(0, max)}…` : out;
 	};
 	const changed = () => expectUrl !== undefined && document.URL !== expectUrl;
-	const CHANGED = { error: "The page changed after approval; nothing was done. Retry." };
+	const CHANGED = { error: "The page changed; nothing was done. Retry." };
 	const withTimeout = async <T,>(work: Promise<T>, ms: number, what: string): Promise<T> => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {

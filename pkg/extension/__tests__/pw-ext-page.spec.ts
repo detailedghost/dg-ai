@@ -179,7 +179,7 @@ describe("console", () => {
 });
 
 describe("review round 1 hardening", () => {
-	it("refuses to act when the document URL differs from the approved URL", () => {
+	it("refuses to act when the document URL differs from the tab URL", () => {
 		page(`<button id="go">Go</button>`);
 		let clicks = 0;
 		el<HTMLElement>("#go").addEventListener("click", () => clicks++);
@@ -254,21 +254,6 @@ staple</div></div>
 	});
 });
 
-describe("describe target before approval", () => {
-	it("returns tag, role, name and short text without values", () => {
-		page(`<label for="q">Search</label><input id="q" value="private draft"><button id="b">Save <b>now</b></button>`);
-		expect(pwExtPageAction({ kind: "describe", target: "#q" })).toEqual({
-			element: { tag: "input", role: "textbox", name: "Search", text: "", href: "" },
-		});
-		expect(pwExtPageAction({ kind: "describe", target: "#b" })).toEqual({
-			element: { tag: "button", role: "button", name: "Save now", text: "Save now", href: "" },
-		});
-		expect(pwExtPageAction({ kind: "describe", target: "#none" })).toEqual({
-			error: expect.stringContaining("No element"),
-		});
-	});
-});
-
 describe("upload", () => {
 	it("sets one file on a file input and fires input and change", () => {
 		page(`<input id="f" type="file" aria-label="Attach">`);
@@ -309,104 +294,11 @@ describe("upload", () => {
 });
 
 describe("review round 3 hardening", () => {
-	it("acts only on the element that was described for the approval", () => {
-		page(`<button id="action">Preview</button>`);
-		let previews = 0;
-		el<HTMLElement>("#action").addEventListener("click", () => previews++);
-		expect(
-			pwExtPageAction({ kind: "describe", target: "#action", handle: "h1" }),
-		).toMatchObject({ element: { name: "Preview" } });
-		window.document.body.innerHTML = `<button id="action">Delete all</button>`;
-		let deletes = 0;
-		el<HTMLElement>("#action").addEventListener("click", () => deletes++);
-		expect(
-			pwExtPageAction({ kind: "click", target: "#action", handle: "h1" }),
-		).toEqual({ error: expect.stringContaining("changed") });
-		expect(deletes).toBe(0);
-		expect(previews).toBe(0);
-	});
-
-	it("acts when the described element is still the target, once", () => {
-		page(`<button id="go">Go</button>`);
-		pwExtPageAction({ kind: "describe", target: "#go", handle: "h2" });
-		expect(pwExtPageAction({ kind: "click", target: "#go", handle: "h2" })).toEqual({
-			detail: 'clicked button "Go"',
-		});
-		expect(pwExtPageAction({ kind: "click", target: "#go", handle: "h2" })).toEqual({
-			error: expect.stringContaining("changed"),
-		});
-	});
-
 	it("redacts a long token before shortening a field value", () => {
 		const jwt = `eyJ${"A".repeat(40)}.${"B".repeat(300)}.${"C".repeat(40)}`;
 		page(`<input aria-label="Data" value="${jwt}"><p>mail me@example.test</p>`);
 		const text = JSON.stringify(pwExtPageAction({ kind: "snapshot" }));
 		expect(text).not.toContain("eyJAAAA");
 		expect(text).not.toContain("me@example.test");
-	});
-});
-
-describe("copilot round 1", () => {
-	it("refuses a write when the described element changed its name or text", () => {
-		page(`<button id="act">Preview</button>`);
-		let clicks = 0;
-		el<HTMLElement>("#act").addEventListener("click", () => clicks++);
-		pwExtPageAction({ kind: "describe", target: "#act", handle: "h" });
-		el<HTMLElement>("#act").textContent = "Delete all";
-		expect(pwExtPageAction({ kind: "click", target: "#act", handle: "h" })).toEqual({
-			error: expect.stringContaining("changed"),
-		});
-		expect(clicks).toBe(0);
-	});
-
-	it("refuses an upload when the described input changed type", () => {
-		page(`<input id="f" type="file" aria-label="Attach">`);
-		pwExtPageAction({ kind: "describe", target: "#f", handle: "h" });
-		el<HTMLInputElement>("#f").setAttribute("aria-label", "Profile photo, public");
-		expect(
-			pwExtPageAction({
-				kind: "upload",
-				target: "#f",
-				base64: "aGk=",
-				fileName: "a.txt",
-				fileType: "text/plain",
-				handle: "h",
-			}),
-		).toEqual({ error: expect.stringContaining("changed") });
-	});
-});
-
-describe("copilot round 2", () => {
-	it("describes a link destination and refuses a click after it changes", () => {
-		page(`<a id="l" href="/safe">Open</a>`);
-		expect(pwExtPageAction({ kind: "describe", target: "#l", handle: "h" })).toEqual({
-			element: {
-				tag: "a",
-				role: "link",
-				name: "Open",
-				text: "Open",
-				href: "https://app.example.test/safe",
-			},
-		});
-		el<HTMLAnchorElement>("#l").setAttribute("href", "https://evil.example.test/");
-		expect(pwExtPageAction({ kind: "click", target: "#l", handle: "h" })).toEqual({
-			error: expect.stringContaining("changed"),
-		});
-	});
-});
-
-describe("copilot round 3", () => {
-	it("pins the full destination even past the shown length", () => {
-		const long = `/p?${"a".repeat(3000)}`;
-		page(`<a id="l" href="${long}x">Open</a>`);
-		const described = pwExtPageAction({ kind: "describe", target: "#l", handle: "h" }) as {
-			element: { href: string };
-		};
-		expect(described.element.href.length).toBeLessThan(2100);
-		expect(described.element.href.endsWith("…")).toBe(true);
-		el<HTMLAnchorElement>("#l").setAttribute("href", `${long}y`);
-		expect(pwExtPageAction({ kind: "click", target: "#l", handle: "h" })).toEqual({
-			error: expect.stringContaining("changed"),
-		});
 	});
 });

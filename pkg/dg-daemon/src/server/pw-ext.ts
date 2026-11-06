@@ -136,7 +136,7 @@ export async function handlePwExtCli(
 	for (const entry of pending.values()) if (entry.requester === requester) mine++;
 	if (mine >= MAX_REQUESTER_PENDING || pending.size >= MAX_PENDING)
 		return fail(
-			"pw --ext has too many pending requests; wait for the open approval to finish.",
+			"pw --ext has too many pending requests; wait for the open requests to finish.",
 		);
 	const peers: Socket[] = [];
 	deps.connections.forEachCapableOf(sessionId, (socket) => {

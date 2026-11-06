@@ -1,10 +1,8 @@
 import {
 	isPwExtWebUrl,
-	isPwExtWriteVerb,
 	PW_EXT_MAX_TEXT_CHARS,
 	type PwExtRequest,
 	type PwExtResponse,
-	type PwExtVerb,
 	redactText,
 	validatePwExtRequest,
 } from "@dg/common";
@@ -14,7 +12,6 @@ import {
 	pwExtWebMcp,
 } from "@/lib/features/pw-ext-main";
 import {
-	type PwExtElement,
 	type PwExtPageAction,
 	type PwExtPageResult,
 	pwExtPageAction,
@@ -67,15 +64,6 @@ export type PwExtBrowserApi = {
 			args: unknown[];
 		}): Promise<Array<{ result?: unknown }>>;
 	};
-};
-
-/** What the human sees before one call runs. */
-export type PwExtApprovalPrompt = {
-	verb: PwExtVerb;
-	write: boolean;
-	tabTitle: string;
-	tabUrl: string;
-	detail?: string;
 };
 
 export type PwExtResult =
@@ -189,21 +177,6 @@ function pageLines(tab: Tab): string[] {
 	];
 }
 
-function sizeText(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function elementLines(element: PwExtElement): string[] {
-	const name = element.name ? ` "${element.name}"` : "";
-	return [
-		`Element: ${element.role}${name} <${element.tag}>`,
-		...(element.text && element.text !== element.name ? [`Text: ${element.text}`] : []),
-		...(element.href ? [`Goes to: ${element.href}`] : []),
-	].map((line) => redactText(line));
-}
-
 function base64Of(bytes: Uint8Array): string {
 	let binary = "";
 	for (let i = 0; i < bytes.length; i += 0x8000)
@@ -244,18 +217,12 @@ function defaultIsChromium(): boolean {
 	return typeof runtime?.getBrowserInfo !== "function";
 }
 
-/** Runs one approved pw --ext verb against the active tab of the last focused window. */
+/** Runs one pw --ext verb against the active tab of the last focused window. */
 export function createPwExtHandler({
 	browserApi: api,
-	approve,
 	isChromium = defaultIsChromium,
 }: {
 	browserApi: PwExtBrowserApi;
-	approve: (
-		prompt: PwExtApprovalPrompt,
-		timeoutMs: number,
-		signal?: AbortSignal,
-	) => Promise<boolean>;
 	isChromium?: () => boolean;
 }) {
 	async function activeTab(): Promise<Tab | undefined> {
@@ -313,76 +280,6 @@ export function createPwExtHandler({
 		return frame?.result;
 	}
 
-	async function prepare(
-		request: PwExtRequest,
-		tab: Tab & { id: number },
-		handle: string,
-	): Promise<{ detail?: string } | { error: string }> {
-		switch (request.verb) {
-			case "current":
-				return { detail: "Read the URL and title of every open tab" };
-			case "open":
-				return { detail: `Open ${request.url} in a new tab` };
-			case "click":
-			case "fill":
-			case "upload": {
-				if (request.verb === "upload" && new URL(tab.url as string).protocol !== "https:")
-					return { error: "pw --ext uploads files only to https pages." };
-				const described = await inPage(tab, {
-					kind: "describe",
-					target: request.target as string,
-					handle,
-				});
-				if ("error" in described) return { error: clean(described.error) };
-				if (!("element" in described))
-					return { error: "The page returned an unexpected result." };
-				const element = elementLines(described.element);
-				if (request.verb === "click")
-					return { detail: [`Click ${request.target}`, ...element].join("\n") };
-				if (request.verb === "fill")
-					return {
-						detail: [
-							`Fill ${request.target}`,
-							...element,
-							`With:\n${request.value ?? ""}`,
-						].join("\n"),
-					};
-				return {
-					detail: [
-						`Upload ${request.filePath}`,
-						`File: ${request.fileName}, ${sizeText(request.fileSize ?? 0)}, ${request.fileType}`,
-						`To: ${new URL(tab.url as string).origin}`,
-						...element,
-					].join("\n"),
-				};
-			}
-			case "call": {
-				const listed = webMcpResult(
-					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]),
-				);
-				if ("error" in listed) return { error: clean(listed.error) };
-				const tool =
-					"tools" in listed
-						? listed.tools.find((candidate) => candidate.name === request.tool)
-						: undefined;
-				if (!tool)
-					return {
-						error: `No WebMCP tool named ${request.tool} on this page. Run pw --ext tools.`,
-					};
-				return {
-					detail: [
-						`Call WebMCP tool ${tool.name}`,
-						`Description: ${clean(tool.description)}`,
-						...(tool.annotations ? [`Hints: ${tool.annotations}`] : []),
-						`Args:\n${JSON.stringify(request.args, null, 2)}`,
-					].join("\n"),
-				};
-			}
-			default:
-				return {};
-		}
-	}
-
 	async function listTabs(active: Tab): Promise<string> {
 		const tabs = (await api.tabs.query({}))
 			.filter((tab) => !tab.incognito)
@@ -400,7 +297,6 @@ export function createPwExtHandler({
 		tab: Tab & { id: number },
 		watch?: { changed(): boolean },
 		context?: PwExtContext,
-		handle?: string,
 		signal?: AbortSignal,
 	): Promise<PwExtResult> {
 		const ok = (text: string, image?: string): PwExtResult => ({
@@ -419,6 +315,8 @@ export function createPwExtHandler({
 				return ok(`### Result\nOpened ${request.url} in tab ${opened.id}`);
 			}
 			case "upload": {
+				if (new URL(tab.url as string).protocol !== "https:")
+					return { ok: false, error: "pw --ext uploads files only to https pages." };
 				if (!context) return { ok: false, error: "Upload needs a paired session." };
 				let blob: Blob;
 				try {
@@ -430,7 +328,7 @@ export function createPwExtHandler({
 				if (blob.size !== request.fileSize)
 					return {
 						ok: false,
-						error: "The staged file size does not match the approved size; nothing was uploaded.",
+						error: "The staged file size does not match the declared size; nothing was uploaded.",
 					};
 				const base64 = base64Of(new Uint8Array(await blob.arrayBuffer()));
 				if (signal?.aborted) return CANCELED;
@@ -440,7 +338,6 @@ export function createPwExtHandler({
 					base64,
 					fileName: request.fileName as string,
 					fileType: request.fileType as string,
-					handle,
 				});
 				if ("error" in result) return { ok: false, error: clean(result.error) };
 				if (!("detail" in result))
@@ -512,13 +409,12 @@ export function createPwExtHandler({
 			default: {
 				const action: PwExtPageAction =
 					request.verb === "click"
-						? { kind: "click", target: request.target as string, handle }
+						? { kind: "click", target: request.target as string }
 						: request.verb === "fill"
 							? {
 									kind: "fill",
 									target: request.target as string,
 									value: request.value as string,
-									handle,
 								}
 							: { kind: request.verb };
 				const result = await inPage(tab, action);
@@ -567,7 +463,6 @@ export function createPwExtHandler({
 
 	return async (
 		raw: PwExtRequest,
-		timeoutMs: number,
 		signal?: AbortSignal,
 		context?: PwExtContext,
 	): Promise<PwExtResult> => {
@@ -594,37 +489,11 @@ export function createPwExtHandler({
 				return { ok: false, error: PW_EXT_BLOCKED_ERROR };
 			if (scoped && mailbox(tab.url))
 				return { ok: false, error: PW_EXT_MAILBOX_ERROR };
-			const handle = crypto.randomUUID();
-			const prepared = await prepare(request, { ...tab, id: tab.id }, handle);
-			if ("error" in prepared) return { ok: false, error: prepared.error };
-			if (signal?.aborted) return CANCELED;
-			const approved = await approve(
-				{
-					verb: request.verb,
-					write: isPwExtWriteVerb(request.verb),
-					tabTitle: shownTitle(tab),
-					tabUrl: shownUrl(tab),
-					...(prepared.detail ? { detail: prepared.detail } : {}),
-				},
-				timeoutMs,
-				signal,
-			);
-			if (signal?.aborted) return CANCELED;
-			if (!approved)
-				return { ok: false, error: "The request was denied in the browser." };
 			const target = { ...tab, id: tab.id };
 			const watch = request.verb === "screenshot" ? watchTab(target) : undefined;
 			try {
-				if (scoped) {
-					const now = await api.tabs.get(tab.id);
-					if (now.url !== tab.url || now.active === false)
-						return {
-							ok: false,
-							error: "The tab changed after approval; nothing was done. Retry.",
-						};
-				}
 				if (signal?.aborted) return CANCELED;
-				return await run(request, target, watch, context, handle, signal);
+				return await run(request, target, watch, context, signal);
 			} finally {
 				watch?.stop();
 			}

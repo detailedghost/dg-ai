@@ -186,7 +186,7 @@ const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 export const EXT_HELP = `Usage: dg-skills pw --ext <verb> [args]
 
 Drive your real browser through the paired dg-ai-extension.
-The browser asks you to approve every call.
+Passing --ext gives the CLI control of the active tab. The browser asks for no approval per call.
 
 Read verbs (they never change the page):
   current                 active tab URL and title, plus open tabs
@@ -196,7 +196,7 @@ Read verbs (they never change the page):
   console                 errors and console warnings since the first call
   tools                   WebMCP tools the page exposes
 
-Write verbs (each needs its own approval):
+Write verbs (they change the page):
   open <url>              open an http(s) URL in a new tab
   click <ref|selector>    click one element
   fill <ref|selector> <text>  set the value of one text field
@@ -366,7 +366,7 @@ export async function runExt(
 		return 0;
 	} catch (error) {
 		if (interrupted) {
-			env.err("pw --ext canceled; the browser closes the approval window.");
+			env.err("pw --ext canceled; the extension was told to cancel it.");
 			return 130;
 		}
 		env.err(redactText(error instanceof Error ? error.message : String(error)));

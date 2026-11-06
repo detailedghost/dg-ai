@@ -20,7 +20,7 @@ export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
 	| (typeof PW_EXT_WRITE_VERBS)[number];
 
-/** Relay deadline used when the caller omits timeoutMs; it covers the human approval. */
+/** Relay deadline used when the caller omits timeoutMs. */
 export const PW_EXT_DEFAULT_TIMEOUT_MS = 120_000;
 export const PW_EXT_MAX_TIMEOUT_MS = 300_000;
 export const PW_EXT_MAX_TEXT_CHARS = 100_000;
@@ -35,7 +35,7 @@ export const PW_EXT_MAX_TOOL_NAME_CHARS = 128;
 /** First extension release that answers pw-ext frames. */
 export const PW_EXT_MIN_EXTENSION_VERSION = [1, 42, 0] as const;
 
-/** One fixed browser action; the wire carries no code and no approval. */
+/** One fixed browser action; the wire carries no code. */
 export type PwExtRequest = {
 	verb: PwExtVerb;
 	url?: string;
@@ -101,10 +101,6 @@ function onlyKeys(
 ): void {
 	for (const key of Object.keys(value))
 		if (!allowed.includes(key)) fail(`${path} has unknown field "${key}"`);
-}
-
-export function isPwExtWriteVerb(verb: PwExtVerb): boolean {
-	return (PW_EXT_WRITE_VERBS as readonly string[]).includes(verb);
 }
 
 /** Only http and https pages are reachable; browser and extension pages are not. */

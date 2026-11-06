@@ -85,7 +85,7 @@ flowchart LR
 - [0031 — Serve the chat and board pages from the daemon on loopback](0031-loopback-pages.md) — Accepted:
   `dg-daemon` serves `/chat` and `/board` behind a token and loopback-origin gate; the extension is the `--ext` path.
 - [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md) — Proposed:
-  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve.
+  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone.
 
 ## Adding an ADR
 
