@@ -292,9 +292,8 @@ function realOr(path: string): string {
 }
 
 const runningInside = (seams: LayoutSeams, root: string): boolean => {
-	const file = seams.entryFile();
-	if (file === undefined) return false;
-	return holdsFile(resolve(root), resolve(file)) || holdsFile(realOr(root), realOr(file));
+	const files = [seams.entryFile(), seams.execPath()].filter((file) => file !== undefined);
+	return files.some((file) => holdsFile(resolve(root), resolve(file)) || holdsFile(realOr(root), realOr(file)));
 };
 
 function retryRecord(record: Pending, { seams, say }: Context): "removed" | "incomplete" | "held" {

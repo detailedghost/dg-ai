@@ -883,6 +883,30 @@ posix("ensureLayout running entry file", () => {
 	});
 });
 
+posix("ensureLayout running executable", () => {
+	test("keeps the runtime source that holds the running executable, then removes it on a start from the new path", async () => {
+		const bun = legacyAt("runtime", "bun-v1.4.1", "bun");
+		put(bun, "bun", 0o755);
+		symlinkSync(legacyAt("runtime", "bun-v1.4.1"), legacyAt("runtime", "current"));
+		const pendingFile = legacyAt(".pending-removal.json");
+
+		const first = await run({ execPath: () => legacyAt("runtime", "current", "bun") });
+
+		expect(outcomeAt(first, "runtime")).toMatchObject({ kind: "scheduled" });
+		expect(readFileSync(bun, "utf8")).toBe("bun");
+		expect(readFileSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"), "utf8")).toBe("bun");
+		expect(JSON.parse(readFileSync(pendingFile, "utf8"))).toEqual([
+			{ name: nameOf("runtime"), from: legacyAt("runtime"), to: paths.runtimeDir },
+		]);
+
+		const second = await run({ execPath: () => join(paths.runtimeDir, "bun-v1.4.1", "bun") }, { ...paths });
+
+		expect(outcomeAt(second, "runtime")).toMatchObject({ kind: "moved" });
+		expect(existsSync(legacyAt("runtime"))).toBe(false);
+		expect(existsSync(pendingFile)).toBe(false);
+	});
+});
+
 posix("ensureLayout stale pending records", () => {
 	test("takes the lock to drop a record whose source is gone and removes the pending file", async () => {
 		put(legacyAt("bin", "dg-skills"), "x");

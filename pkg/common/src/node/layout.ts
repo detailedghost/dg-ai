@@ -29,6 +29,7 @@ export type LayoutSeams = {
 	log: (line: string) => void;
 	now: () => number;
 	entryFile: () => string | undefined;
+	execPath: () => string;
 	lock: <T>(root: string, fn: () => Promise<T>) => Promise<T>;
 };
 
@@ -170,6 +171,7 @@ export function resolveSeams(hooks: LayoutHooks): LayoutSeams {
 		log: hooks.log ?? ((line) => void process.stderr.write(`${line}\n`)),
 		now: hooks.now ?? Date.now,
 		entryFile: hooks.entryFile ?? (() => process.argv[1]),
+		execPath: hooks.execPath ?? (() => process.execPath),
 		lock: hooks.lock ?? withCliLockError((root, fn) => withInstallLock(root, fn)),
 	};
 }
