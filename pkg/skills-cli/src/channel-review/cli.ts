@@ -17,6 +17,7 @@ import {
 	stop,
 } from "@dg/channel-review";
 import { describeError, isRecord } from "@dg/common";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { Argument, type Command, Option } from "commander";
 import { runSubtree } from "../utils/lazy-command";
 import {
@@ -225,11 +226,12 @@ export function registerChannelReview(program: Command): void {
 			new Argument("[name]", "environment").choices(ENV_NAMES),
 		)
 		.action((name: EnvName | undefined) => {
-			const path = channelReviewPaths("dev").configPath;
+			const { configPath: path, dg } = channelReviewPaths("dev");
 			if (name === undefined) {
 				printSavedEnv(path);
 				return;
 			}
+			assertNotBlocked(dg, "channel-review-config");
 			saveDefaultEnv(path, name);
 			io.out(`default env: ${name}`);
 		});

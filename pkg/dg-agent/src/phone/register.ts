@@ -1,4 +1,5 @@
 import { DgCliError } from "@dg/common";
+import type { DgPaths } from "@dg/common/node";
 import { assertNotBlocked, layoutResult } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import type { AcceptOpts } from "./accept-name";
@@ -67,6 +68,16 @@ function renamedAlias(group: Command, oldName: string, newName: string): Command
 }
 
 type PhoneLoader = () => Promise<PhoneApi>;
+
+function phoneWritable(paths: DgPaths): boolean {
+	try {
+		assertNotBlocked(paths, "phone");
+		return true;
+	} catch (error) {
+		if (error instanceof DgCliError) return false;
+		throw error;
+	}
+}
 
 /** Attaches every phone verb to `group`, plus the hidden renamed-verb aliases, the one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
 function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => string | undefined): void {
@@ -403,7 +414,9 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 			const deps = phone.openCloseDeps(session);
 			const layout = layoutResult(deps.paths);
 			if (!layout) return;
-			if (!MANAGES_LISTENER.has(action.name())) {
+			if (MANAGES_LISTENER.has(action.name())) {
+				if (!phoneWritable(deps.paths)) return;
+			} else {
 				assertNotBlocked(deps.paths, "phone-friend");
 				assertNotBlocked(deps.paths, "phone");
 			}

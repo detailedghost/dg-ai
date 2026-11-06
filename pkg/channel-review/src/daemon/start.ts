@@ -10,6 +10,7 @@ import {
 import { dirname } from "node:path";
 import { describeError, wait } from "@dg/common";
 import { ensurePrivateDir, type SystemSeams } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { type ChannelConfig, loadConfig, resolveEnv } from "../config";
 import { channelReviewPaths } from "../paths";
 import type { RunnerName } from "../runners/types";
@@ -98,6 +99,8 @@ export async function start(
 	}
 
 	const paths = channelReviewPaths(env.name, system);
+	assertNotBlocked(paths.dg, "channel-review");
+	assertNotBlocked(paths.dg, "daemon");
 	const existing = readPidRecord(paths.pidPath);
 	if (existing !== undefined && (await isOurDaemon(existing.pid, platform))) {
 		io.err(`a ${env.name} daemon is already running (pid ${existing.pid})`);

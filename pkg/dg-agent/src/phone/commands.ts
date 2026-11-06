@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, readCappedStdin, readCappedStdinBytes, resolveDgPaths, writeFileAtomic, writeStdout } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
@@ -1169,6 +1170,7 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 
 export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: RunDeps): Promise<void> {
 	if (linesAwaitConversion(deps.paths)) throw new DgCliError("dg: phone-friend lines wait for conversion; run dg-agent phone status");
+	assertNotBlocked(deps.paths, "phone");
 	await restartStaleListener(deps, { spawn: false });
 	const timeoutSeconds = parseOnMessageTimeoutSeconds(opts.onMessageTimeout);
 	const hook: CommandPushTarget | undefined = opts.onMessage?.length

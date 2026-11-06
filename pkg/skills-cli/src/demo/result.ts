@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensurePrivateDir, writeFileAtomic } from "@dg/common/node";
 import { isAlive, readCmdline } from "../pw/core/registry";
-import { demosDir, legacyDemosDir } from "./paths";
+import { demosDir, demosWriteDir, legacyDemosDir } from "./paths";
 
 export type DemoResult = {
 	slug: string;
@@ -47,7 +47,7 @@ export function readResult(slug: string): DemoResult | undefined {
 
 export function writeResult(
 	result: DemoResult,
-	dir = join(demosDir(), result.slug),
+	dir = join(demosWriteDir(), result.slug),
 ): void {
 	ensurePrivateDir(dir);
 	writeFileAtomic(

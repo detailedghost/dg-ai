@@ -19,6 +19,7 @@ import {
 	ensurePrivateDir,
 	writeFileAtomic,
 } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 
 export const PAIRING_TTL_MS = 5 * 60 * 1_000;
 export const PAIRING_MAX_ATTEMPTS = 5;
@@ -158,6 +159,7 @@ export function createPairingCode(
 	paths: DgPaths,
 	now = Date.now(),
 ): { code: string; expiresAt: number } {
+	assertNotBlocked(paths, "pairing");
 	return withPairingLock(paths, () => {
 		const code = randomInt(1_000_000).toString().padStart(6, "0");
 		const salt = randomBytes(16).toString("base64url");

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
+import { assertEntryMoved } from "./layout-guard";
 import type { Command } from "commander";
 import { cliDest } from "./lib";
 
@@ -13,6 +14,7 @@ export const isCliOnly = (): boolean => existsSync(cliOnlyMarker());
 export function setCliOnly(enabled: boolean): void {
 	const marker = cliOnlyMarker();
 	if (!enabled) return rmSync(marker, { force: true });
+	assertEntryMoved("cli-only");
 	mkdirSync(dirname(marker), { recursive: true });
 	writeFileSync(marker, "");
 }

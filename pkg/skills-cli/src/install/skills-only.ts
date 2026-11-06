@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+	assertSkillsDestMoved,
 	installSkillTree,
 	installPersonas,
 	listPersonaFiles,
@@ -51,9 +52,10 @@ export function runSkillsOnlyInstall(input: SkillsOnlyRequest): SkillsOnlyResult
 			`no skill instruction files at ${source}. Pass --repo <dg checkout>.`,
 		);
 	}
-	const dest =
-		input.dest ||
-		skillsInstallDest(input.env ?? process.env, input.home ?? homedir());
+	const env = input.env ?? process.env;
+	const home = input.home ?? homedir();
+	if (!input.dest) assertSkillsDestMoved(env, home);
+	const dest = input.dest || skillsInstallDest(env, home);
 	const personaNames = listPersonaFiles(root);
 	const files = installSkillTree(source, dest);
 	if (personaNames.length === 0) return { dest, files, personas: [] };

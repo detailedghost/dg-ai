@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { filesToInstall } from "../skill-files";
 import { resolveDgPaths } from "./dg-paths";
+import { assertNotBlocked } from "./layout";
 
 export function skillsInstallDest(
 	env: Record<string, string | undefined>,
@@ -25,6 +26,17 @@ export function skillsInstallDest(
 ): string {
 	if (env.DG_SKILLS_DEST) return env.DG_SKILLS_DEST;
 	return resolveDgPaths({ env, homeDir: home }).skillsDir;
+}
+
+/** Throws while the legacy skills or agents folder has not moved to the default install destination; a `DG_SKILLS_DEST` override is never refused. */
+export function assertSkillsDestMoved(
+	env: Record<string, string | undefined>,
+	home: string = homedir(),
+): void {
+	if (env.DG_SKILLS_DEST) return;
+	const paths = resolveDgPaths({ env, homeDir: home });
+	assertNotBlocked(paths, "skills");
+	assertNotBlocked(paths, "personas");
 }
 
 /** Relative path with `/` separators. `pathSep` is injectable so tests can cover Windows. */
