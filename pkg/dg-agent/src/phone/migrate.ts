@@ -118,6 +118,11 @@ export function legacyRoot(paths: DgPaths): string | undefined {
 	return hasLegacyLines(paths.phoneFriendRoot) ? paths.phoneFriendRoot : undefined;
 }
 
+/** True while phone-friend lines still wait for conversion, at the per-OS root or in a legacy home no program has moved yet. */
+export function linesAwaitConversion(paths: DgPaths): boolean {
+	return legacyRoot(paths) !== undefined || (!existsSync(PhoneDb.path(paths)) && hasLegacyLines(join(paths.legacyHome, "phone-friend")));
+}
+
 /** True once `phone.db` exists but the old root is still sitting next to it unrenamed: the
  * one-way migration ran, but its last step (renaming the old root for rollback) failed. A
  * `status` command surfaces this as `legacy_root_present`. */
@@ -385,14 +390,7 @@ function releaseMigrationLock(paths: DgPaths): void {
 	rmSync(migrationLockPath(paths), { force: true });
 }
 
-/**
- * A writing `phone` command calls this first. Runs once: reads every legacy line, then moves its
- * key, contact, invite, and message into one `phone.db`. This process's own `phone __run` is
- * kept. Any other listener is stopped and exactly one new listener is started against
- * `phone.db`, with its pid recorded. If that start throws, one `phone __run` is started against
- * the kept `phone.db` and reported only if it stays up. This binary rejects `phone-friend --line`.
- * Read-only commands do not call this.
- */
+/** Converts every legacy phone-friend line into one `phone.db`; the phone group preAction calls it once per phone command. */
 export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigrateDeps()): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
 

@@ -5,6 +5,7 @@ import { bundleCommand } from "./bundle-build";
 import {
 	fixtureHome,
 	legacyHomeFixture,
+	legacyPhoneFriendFixture,
 	type FixtureRows,
 	perOsPaths,
 	runProgram,
@@ -122,6 +123,19 @@ posix("dg-agent phone verbs and the legacy phone folder", () => {
 		expect(run.code).toBe(1);
 		const text = `dg: ${join(paths.legacyHome, "phone")} has not moved to ${paths.phoneRoot}; run dg-skills install`;
 		expect(stderrLines(run.stderr).filter((line) => line.includes(text))).toHaveLength(1);
+		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
+	});
+
+	it("exits 1 with the wait-for-conversion text and creates no phone.db for phone __run beside unconverted phone-friend lines", async () => {
+		const home = fixtureHome();
+		homes.push(home);
+		await legacyPhoneFriendFixture(home);
+		const paths = perOsPaths(home);
+
+		const run = await runProgram(home, "dg-agent", ["phone", "__run"]);
+
+		expect(run.code).toBe(1);
+		expect(run.stderr).toContain("dg: phone-friend lines wait for conversion; run dg-agent phone status");
 		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
 	});
 

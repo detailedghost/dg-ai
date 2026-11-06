@@ -401,7 +401,10 @@ export function registerPhoneGroup(program: Command, load: PhoneLoader): void {
 			if (OWNS_HOME_MOVE.has(action.name())) return;
 			const phone = await load();
 			const deps = phone.openCloseDeps(session);
-			const outcome = layoutResult(deps.paths)?.phone;
+			const layout = layoutResult(deps.paths);
+			if (!layout) return;
+			(await import("./migrate")).migrateIfNeeded(deps.paths);
+			const outcome = layout.phone;
 			const restarts = outcome?.kind === "moved" || outcome?.kind === "setAside" ? outcome.stopped : false;
 			if (restarts && !MANAGES_LISTENER.has(action.name())) await phone.phoneOpen({}, Object.create(deps, { write: { value: () => {} } }));
 		});

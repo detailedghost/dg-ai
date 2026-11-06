@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
@@ -73,6 +73,17 @@ describe("dg-agent start-up module loading", () => {
 
 		expect(loaded.filter((path) => path.endsWith("/src/layout-hooks.ts") && path.includes("dg-agent"))).toEqual([]);
 		expect(loaded.filter((path) => path.endsWith("/dg-agent/src/phone/commands.ts"))).toEqual([]);
+	});
+
+	it("does not load phone/migrate.ts for memory search on a home with legacy phone-friend lines", async () => {
+		const lines = join(dir, "home", ".dg", "phone-friend", "default");
+		mkdirSync(lines, { recursive: true });
+		writeFileSync(join(lines, "phone-friend.db"), "");
+
+		const loaded = await loadedModules(memorySearch);
+
+		expect(loaded.filter((path) => path.endsWith("/dg-agent/src/phone/migrate.ts"))).toEqual([]);
+		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
 	});
 
 	it("loads layout-hooks.ts only after the fast path finds a legacy phone folder", async () => {

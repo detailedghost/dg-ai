@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import type { ProgramName } from "@dg/common/node/program";
+import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import { writeLegacyLine } from "../../dg-agent/__tests__/phone/legacy-line-fixture";
 import { PhoneDb } from "../../dg-agent/src/phone/db";
 import { bundleCommand } from "./bundle-build";
 import { onTestRunEnd } from "./test-run-end";
@@ -22,6 +24,8 @@ export type ProgramRun = { code: number; stdout: string; stderr: string };
 export type FixtureRows = { memoryId: string; token: string; npub: string };
 
 export type ServeRun = { code: number; port: number; pidFile: string; pidFileGone: boolean; stderr: string };
+
+export type PhoneFriendRows = FixtureRows & { contactNpub: string };
 
 export type LegacyOptions = { fakeLiveDaemon?: boolean; fakeLiveListener?: boolean };
 
@@ -247,4 +251,15 @@ export async function legacyHomeFixture(home: string, options: LegacyOptions = {
 
 export function fixtureHome(): string {
 	return tempRoot("dg-layout-home-");
+}
+
+/** Extends `legacyHomeFixture`: removes its `phone/` folder, since a `phone.db` would suppress the conversion, and adds one phone-friend line whose `default` key is the number key. `npub` is that key's. */
+export async function legacyPhoneFriendFixture(home: string): Promise<PhoneFriendRows> {
+	const rows = await legacyHomeFixture(home);
+	const legacy = join(home, ".dg");
+	rmSync(join(legacy, "phone"), { recursive: true, force: true });
+	const secret = generateSecretKey();
+	const contactNpub = nip19.npubEncode(getPublicKey(generateSecretKey()));
+	writeLegacyLine({ phoneFriendRoot: join(legacy, "phone-friend") }, "default", { contact: contactNpub, nsec: nip19.nsecEncode(secret) });
+	return { ...rows, npub: nip19.npubEncode(getPublicKey(secret)), contactNpub };
 }

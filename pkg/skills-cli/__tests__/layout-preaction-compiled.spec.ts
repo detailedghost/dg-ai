@@ -179,6 +179,14 @@ describe("dg-skills hooksFor", () => {
 		expect(spec["ssms.configDir"]).toBeUndefined();
 	});
 
+	it("install composes no phone-friend hook", async () => {
+		const hooksFor = await loadHooksFor();
+		const install = hooksFor("install");
+		await install.load?.();
+
+		expect(Object.keys(install).filter((key) => key.includes("phone-friend"))).toEqual([]);
+	});
+
 	it("install passes the injected platform through to daemon.stop", async () => {
 		const hooksFor = await loadHooksFor();
 		const hooks = hooksFor("install", { platform: "win32" });

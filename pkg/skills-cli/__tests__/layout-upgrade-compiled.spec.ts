@@ -6,6 +6,7 @@ import {
 	type FixtureRows,
 	fixtureHome,
 	legacyHomeFixture,
+	legacyPhoneFriendFixture,
 	perOsPaths,
 	phoneKeyIds,
 	precreatePhoneRoot,
@@ -109,6 +110,46 @@ describe("legacy home upgrade through the compiled programs", () => {
 			expect(problems).toEqual([]);
 		}, CASE_TIMEOUT_MS);
 	}
+});
+
+describe("legacy phone-friend lines through the compiled programs", () => {
+	for (const order of orders(STEPS)) {
+		it(`converts the lines into phone.db when started in order ${order.map((step) => step.name).join(" -> ")}`, async () => {
+			const home = fixtureHome();
+			homes.push(home);
+			const rows = await legacyPhoneFriendFixture(home);
+			const paths = perOsPaths(home);
+			for (const step of order) await step.run(home, rows);
+
+			const number = await runProgram(home, "dg-agent", ["phone", "number"]);
+			const contacts = await runProgram(home, "dg-agent", ["phone", "contacts"]);
+			const problems: string[] = [];
+			if (!existsSync(join(paths.phoneRoot, "phone.db"))) problems.push(`missing phone.db at ${paths.phoneRoot}`);
+			if (!number.stdout.includes(rows.npub)) problems.push(`phone number does not print ${rows.npub}`);
+			if (!contacts.stdout.includes(rows.contactNpub)) problems.push(`phone contacts does not list ${rows.contactNpub}`);
+			if (existsSync(paths.phoneFriendRoot)) problems.push(`unrenamed legacy root ${paths.phoneFriendRoot}`);
+			if (!existsSync(`${paths.phoneFriendRoot}.migrated`)) problems.push(`missing ${paths.phoneFriendRoot}.migrated`);
+			for (const path of emptySetAsides(home)) problems.push(`unexpected set-aside copy ${path}`);
+			for (const name of legacyResidue(home)) problems.push(`legacy folder still present: ${name}`);
+			expect(problems).toEqual([]);
+		}, CASE_TIMEOUT_MS);
+	}
+});
+
+describe("a memory command beside legacy phone-friend lines", () => {
+	it("converts nothing and creates neither phone.db nor a migration lock", async () => {
+		const home = fixtureHome();
+		homes.push(home);
+		const rows = await legacyPhoneFriendFixture(home);
+		const paths = perOsPaths(home);
+
+		const search = await runProgram(home, "dg-agent", ["memory", "search", rows.token, "--identity", FIXTURE_IDENTITY]);
+
+		expect(search.code).toBe(0);
+		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
+		expect(existsSync(join(paths.phoneRoot, "phone.db.migrating"))).toBe(false);
+		expect(existsSync(`${paths.phoneFriendRoot}.migrated`)).toBe(false);
+	}, CASE_TIMEOUT_MS);
 });
 
 describe("legacy phone folder beside a pre-created per-OS phone root", () => {
