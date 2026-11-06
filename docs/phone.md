@@ -178,7 +178,7 @@ ones. The vault is still one store per machine.
 
 ## The listener and delivery
 
-`open` runs one always-on listener (`phone __run` under the hood) that holds
+`open` runs one always-on listener (`phone listen` under the hood) that holds
 a single relay subscription for every key you hold, admits messages from
 known contacts and valid cards, and stores them. `unread`, `watch`, and
 `messages` only read what the listener has already caught. None of them query
@@ -431,10 +431,12 @@ process still dies with the login session. `open --ensure`, usually from the
 cron line above, is what starts it again. The lock keeps two ensures from
 starting two listeners.
 
-Either name of the listener (`phone __run` or the old `phone-friend __run`)
-is recognized as "ours" by pid, so a running listener survives the alias
-rename, and there is exactly one autostart unit regardless of which name
-installed it: `listenerArgv` always bakes in `phone __run`.
+Every name of the listener (`phone listen`, the old `phone __run`, or the old
+`phone-friend __run`) is recognized as "ours" by pid, so a running listener
+survives the renames, and there is exactly one autostart unit regardless of
+which name installed it: `listenerArgv` always bakes in `phone listen`.
+`phone refresh`, which `dg-skills install` runs, rewrites an autostart unit
+that still names `__run` before it restarts the listener.
 
 The listener's pid, start time, binary version, and a short hash of the keys it
 subscribed to live at `<phoneRoot>/listener.pid`. The hash is not a secret. Its
@@ -592,7 +594,7 @@ prints `dg: kept <old folder>; the copy failed its check: <problem>`. The
 listener stays stopped, so it cannot start a new, empty phone at the new root.
 The move never writes over a phone folder that holds data at the new root.
 
-`phone __run` never moves the folder. On a home that has not moved, it exits
+`phone listen` never moves the folder. On a home that has not moved, it exits
 with `dg: <old folder> has not moved to <new folder>; run dg-skills install`.
 The next phone command or `dg-skills install` fixes it.
 
@@ -603,12 +605,12 @@ guide. A `phone.empty-<ts>` folder is a set-aside copy. See
 
 ## Migration and the `phone-friend` alias
 
-Every `dg-agent phone` command except `__run` converts old phone-friend
+Every `dg-agent phone` command except `listen` converts old phone-friend
 lines first, once, after the phone folder moves. No command body does the
 conversion itself. The conversion runs when an old
 `<state>/phone-friend/<line>/phone-friend.db` exists and
 `<state>/phone/phone.db` does not. A conversion error fails that phone command.
-`phone __run` exits with `dg: phone-friend lines wait for conversion; run dg-agent phone status`
+`phone listen` exits with `dg: phone-friend lines wait for conversion; run dg-agent phone status`
 while old lines still wait. It reads every line before it signals a
 listener, so a database that cannot be read leaves every listener running.
 It copies every line's existing nostr key and never mints one. A line that
@@ -621,11 +623,11 @@ the `default` line only when that line still has its key; otherwise it is
 the first keyed line by name. Contacts, messages, and read marks are carried
 over.
 
-This process's own `phone __run` is kept, and `listener.pid` points at it, so
-nothing starts a second one. Any other live listener, including a `phone __run`
-that is not this process, is stopped and exactly one new `phone __run` is
+This process's own `phone listen` is kept, and `listener.pid` points at it, so
+nothing starts a second one. Any other live listener, including a `phone listen`
+that is not this process, is stopped and exactly one new `phone listen` is
 started against `phone.db`, then that pid is recorded. An old `phone-friend
-__run` is not kept: it would keep writing the old database. `open` installs
+listen` is not kept: it would keep writing the old database. `open` installs
 login autostart when that listener has none yet, stopping the detached process
 first so the service manager's copy is the only one. Once autostart is
 recorded, a later `open` reuses the process unless its version or keys drifted.
@@ -634,7 +636,7 @@ each of them and, only after every one has exited, starts exactly one new listen
 records its pid. If one will not exit, no new listener is started and
 `phone.db` is not written. That process keeps running. Any listener that
 already exited stays stopped. If the new listener fails to start after the
-old ones have exited, `phone.db` is kept and one `phone __run` is started
+old ones have exited, `phone.db` is kept and one `phone listen` is started
 against it. That is reported only when the process stays up. The old
 `phone-friend --line` command is not restarted: this binary rejects it.
 The old root stays in place on that failure.

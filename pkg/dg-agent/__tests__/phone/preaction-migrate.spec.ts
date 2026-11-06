@@ -78,22 +78,22 @@ describe("the phone group preAction conversion", () => {
 		spy.mockRestore();
 	});
 
-	it("converts for the __refresh child that install starts", async () => {
+	it("converts for the refresh child that install starts", async () => {
 		const spy = spyOnMigrate();
 		await ensure();
 
-		await drive("phone", "__refresh");
+		await drive("phone", "refresh");
 
 		expect(spy).toHaveBeenCalledTimes(1);
 		expect(calls).toEqual(["migrate", "refresh"]);
 		spy.mockRestore();
 	});
 
-	it("never converts for the __run listener process", async () => {
+	it("never converts for the listen listener process", async () => {
 		const spy = spyOnMigrate();
 		await ensure();
 
-		await drive("phone", "__run");
+		await drive("phone", "listen");
 
 		expect(spy).not.toHaveBeenCalled();
 		expect(calls).toEqual(["run"]);

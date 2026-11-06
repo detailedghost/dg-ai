@@ -56,9 +56,9 @@ describe("dg-daemon main", () => {
 		expect(exitCalls).toEqual([]);
 	});
 
-	it("returns 0 from __serve when the daemon defers to a live rival, without calling process.exit", async () => {
+	it("returns 0 from serve when the daemon defers to a live rival, without calling process.exit", async () => {
 		serveOutcome = "deferred";
-		const code = await main(["__serve"]);
+		const code = await main(["serve"]);
 		expect(code).toBe(0);
 		expect(exitCalls).toEqual([]);
 	});

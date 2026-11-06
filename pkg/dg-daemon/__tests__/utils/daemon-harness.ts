@@ -147,7 +147,7 @@ export function spawnServe(
 	port: number,
 	extraEnv: Record<string, string> = {},
 ) {
-	return Bun.spawn([process.execPath, ENTRY, "__serve"], {
+	return Bun.spawn([process.execPath, ENTRY, "serve"], {
 		env: subprocessEnv(dgHome, port, extraEnv),
 		stdout: "pipe",
 		stderr: "pipe",

@@ -11,7 +11,7 @@ const ON_MESSAGE_RETRY_DELAYS_MS = [5_000, 30_000, 120_000, 300_000];
 /** In-process attempts before a stuck `--on-message` message waits for the next listener start. */
 export const ON_MESSAGE_MAX_ATTEMPTS = 5;
 
-/** Shared by `phone __run` and `phone open`, which both accept `--on-message-timeout`. */
+/** Shared by `phone listen` and `phone open`, which both accept `--on-message-timeout`. */
 export function parseOnMessageTimeoutSeconds(value: string | undefined): number {
 	const seconds = value === undefined ? DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS : Number(value);
 	if (!Number.isFinite(seconds) || seconds <= 0) {

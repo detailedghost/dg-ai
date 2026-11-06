@@ -681,7 +681,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 		}
 	});
 
-	it("restarts a phone __run that is not this process so it reloads keys", () => {
+	it("restarts a phone listen that is not this process so it reloads keys", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -712,7 +712,7 @@ describe("migrateIfNeeded: adopting one live listener", () => {
 		}
 	});
 
-	it("adopts this process when it is already phone __run", () => {
+	it("adopts this process when it is already phone listen", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -868,7 +868,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 		}
 	});
 
-	it("starts one phone __run against phone.db when the legacy command would exit, and only says so if it stays up", () => {
+	it("starts one phone listen against phone.db when the legacy command would exit, and only says so if it stays up", () => {
 		const dir = freshHome();
 		try {
 			const paths = resolveDgPaths({ env: { DG_HOME: dir } });
@@ -911,11 +911,11 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						},
 					}),
 				),
-			).toThrow("A phone __run listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.");
+			).toThrow("A phone listen listener (pid 8888) stayed up against phone.db. The old per-line listeners were not restarted.");
 
 			expect(restored).toHaveLength(1);
 			expect(restored[0]).toContain("phone");
-			expect(restored[0]).toContain("__run");
+			expect(restored[0]).toContain("listen");
 			expect(restored[0]?.includes("phone-friend")).toBe(false);
 			expect(restored[0]?.includes("--line")).toBe(false);
 			expect(JSON.parse(readFileSync(listenerPidPath(paths), "utf8")).pid).toBe(8888);
@@ -947,7 +947,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						kill: (pid) => {
 							alive.delete(pid);
 						},
-						commandArgs: () => ["/old/dg-agent", "phone", "__run"],
+						commandArgs: () => ["/old/dg-agent", "phone", "listen"],
 						startListener: () => {
 							throw new Error("spawn failed");
 						},
@@ -962,7 +962,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 				),
 			).toThrow("No listener stayed up. phone.db was kept. Run phone open.");
 
-			expect(restored).toEqual([["/old/dg-agent", "phone", "__run"]]);
+			expect(restored).toEqual([["/old/dg-agent", "phone", "listen"]]);
 			expect(existsSync(PhoneDb.path(paths))).toBe(true);
 			expect(existsSync(listenerPidPath(paths))).toBe(false);
 			expect(existsSync(paths.phoneFriendRoot)).toBe(true);
@@ -992,7 +992,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 						kill: (pid) => {
 							alive.delete(pid);
 						},
-						commandArgs: () => ["/old/dg-agent", "phone", "__run"],
+						commandArgs: () => ["/old/dg-agent", "phone", "listen"],
 						sleepSync: blockingSleep,
 						startListener: () => {
 							throw new Error("spawn failed");
@@ -1081,7 +1081,7 @@ describe("migrateIfNeeded: replacing listeners without duplicating one", () => {
 					return { code: 0, stdout: "", stderr: "" };
 				},
 				which: () => "/resolved/bin",
-				listenerArgv: (extra: string[]) => ["/fake/execPath", "phone", "__run", ...extra],
+				listenerArgv: (extra: string[]) => ["/fake/execPath", "phone", "listen", ...extra],
 				spawnListener: () => {
 					spawned.push(1);
 					return 1;

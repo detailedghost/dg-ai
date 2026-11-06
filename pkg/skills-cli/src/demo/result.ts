@@ -58,7 +58,7 @@ export function writeResult(
 }
 
 const isPlayerOf = (slug: string, cmdline: string[]): boolean => {
-	const at = cmdline.indexOf("__player");
+	const at = cmdline.findIndex((arg) => arg === "player" || arg === "__player");
 	if (at < 0) return false;
 	try {
 		const job = JSON.parse(cmdline[at + 1] ?? "") as { slug?: unknown };

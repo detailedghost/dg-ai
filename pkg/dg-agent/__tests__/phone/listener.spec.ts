@@ -1065,6 +1065,7 @@ describe("runListener", () => {
 
 describe("isListenerArgs", () => {
 	it("matches the current and the old listener's argv, and nothing else", () => {
+		expect(isListenerArgs(["dg-agent", "phone", "listen"])).toBe(true);
 		expect(isListenerArgs(["dg-agent", "phone", "__run"])).toBe(true);
 		expect(isListenerArgs(["dg-agent", "phone-friend", "__run"])).toBe(true);
 		expect(isListenerArgs(["dg-agent", "phone", "number"])).toBe(false);
@@ -1114,8 +1115,8 @@ describe("one listener at a time", () => {
 		expect(pool.relaysUsed.some((relays) => relays.includes("wss://invite.example") && relays.includes("wss://saved.example"))).toBe(true);
 	});
 
-	it("a second phone __run leaves the first listener's claim and pid file alone", async () => {
-		const holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1e9)", "phone", "__run"], { stdio: "ignore" });
+	it("a second phone listen leaves the first listener's claim and pid file alone", async () => {
+		const holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1e9)", "phone", "listen"], { stdio: "ignore" });
 		try {
 			if (holder.pid === undefined) throw new Error("helper listener did not start");
 			expect(isOurListener(holder.pid)).toBe(true);
@@ -1245,9 +1246,9 @@ describe("commandLookupFromText", () => {
 		expect(commandLookupFromText(0, "")).toEqual({ kind: "unknown" });
 		expect(commandLookupFromText(0, "   ")).toEqual({ kind: "unknown" });
 		expect(commandLookupFromText(null, undefined)).toEqual({ kind: "unknown" });
-		expect(commandLookupFromText(0, "C:\\dg\\dg-agent.exe phone __run")).toEqual({
+		expect(commandLookupFromText(0, "C:\\dg\\dg-agent.exe phone listen")).toEqual({
 			kind: "args",
-			args: ["C:\\dg\\dg-agent.exe", "phone", "__run"],
+			args: ["C:\\dg\\dg-agent.exe", "phone", "listen"],
 		});
 		expect(commandLookupFromText(0, "notepad.exe")).toEqual({ kind: "args", args: ["notepad.exe"] });
 	});

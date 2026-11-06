@@ -8,7 +8,7 @@ import type { DemoResult } from "../src/demo/result";
 
 const enabled = process.env.PW_E2E === "1";
 
-describe.skipIf(!enabled)("__player --video against a local http server", () => {
+describe.skipIf(!enabled)("player --video against a local http server", () => {
 	let dir: string;
 	let server: ReturnType<typeof Bun.serve>;
 

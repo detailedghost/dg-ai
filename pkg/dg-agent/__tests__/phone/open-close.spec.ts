@@ -76,7 +76,7 @@ function harness(overrides: Partial<OpenCloseDeps> = {}): Harness {
 			return { code: 0, stdout: "", stderr: "" };
 		},
 		which: (name) => `/resolved${name.startsWith("/") ? name : `/${name}`}`,
-		listenerArgv: (extra) => ["/fake/execPath", "phone", "__run", ...extra],
+		listenerArgv: (extra) => ["/fake/execPath", "phone", "listen", ...extra],
 		spawnListener: (argv, logPath) => {
 			const pid = nextPid;
 			nextPid += 1;
@@ -133,7 +133,7 @@ describe("phoneOpen", () => {
 			["systemctl", "--user", "daemon-reload"],
 			["systemctl", "--user", "enable", "--now", "dg-phone.service"],
 		]);
-		expect(unitText(h.written[0]?.text)).toContain('ExecStart="/fake/execPath" "phone" "__run"');
+		expect(unitText(h.written[0]?.text)).toContain('ExecStart="/fake/execPath" "phone" "listen"');
 		expect(lines()[0]).toEqual({ pid: null, status: "started", autostart: "systemd", hook: null });
 	});
 
@@ -290,7 +290,7 @@ describe("phoneOpen", () => {
 		expect(h.spawned[0]?.argv).toEqual([
 			"/fake/execPath",
 			"phone",
-			"__run",
+			"listen",
 			"--on-message",
 			"/resolved/usr/bin/notify",
 			"--on-message-timeout",

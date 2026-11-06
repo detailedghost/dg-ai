@@ -256,7 +256,7 @@ export async function playLocal(
 		timeoutMin: opts.timeout ?? DEFAULT_TIMEOUT_MIN,
 	};
 	const { pid } = deps.spawn(
-		selfCommand(["demo", "__player", JSON.stringify(job)]),
+		selfCommand(["demo", "player", JSON.stringify(job)]),
 		join(dir, timestampedName("player", "log")),
 	);
 	writeFileAtomic(join(dir, "player.pid"), String(pid), 0o600);

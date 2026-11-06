@@ -7,7 +7,7 @@ Date: 2026-11-05
 
 - [ADR 0025](0025-per-os-layout.md) moved dg files from `~/.dg` into the per-OS roots, but four places carry the move, each with its own trigger:
   `pkg/skills-cli/src/install/migrate-home.ts` on `dg-skills install`, `moveLegacyPhoneHome` in `pkg/dg-agent/src/phone/commands.ts`,
-  `pkg/dg-agent/src/phone/migrate.ts` on `phone __refresh`, and `pkg/dg-daemon/src/crypto/keychain-backends.ts` on first daemon use.
+  `pkg/dg-agent/src/phone/migrate.ts` on `phone refresh`, and `pkg/dg-daemon/src/crypto/keychain-backends.ts` on first daemon use.
 - A user who ran any other command first never saw the move run. The state stayed split between `~/.dg` and the per-OS roots.
 - v1.42.0 shipped two bugs from that split. The daemon, agent memory, inbox and channel review opened an empty per-OS store
   beside a full legacy one. The phone move failed on an existing target and lost the phone state.

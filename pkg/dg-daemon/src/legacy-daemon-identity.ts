@@ -6,9 +6,9 @@ export type DaemonIdentity = "ours" | "foreign" | "unknown";
 const PID_FILE_START_SLACK_MS = 2000;
 const DAEMON_ARG = /(^|[\\/])dg-daemon([\\/.]|$)/;
 
-/** True for the argv of a `dg-daemon __serve` process, however it was launched. */
+/** True for the argv of a `dg-daemon serve` process, or the old `__serve` one, however it was launched. */
 export function isDaemonServeArgs(args: readonly string[]): boolean {
-	return args.includes("__serve") && args.some((arg) => DAEMON_ARG.test(arg));
+	return (args.includes("serve") || args.includes("__serve")) && args.some((arg) => DAEMON_ARG.test(arg));
 }
 
 /** Ours needs a dg-daemon serve command line and a start no later than the pid file write, give or take the slack. */

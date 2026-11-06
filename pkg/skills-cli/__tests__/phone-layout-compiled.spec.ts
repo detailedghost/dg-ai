@@ -114,11 +114,11 @@ posix("dg-agent phone verbs and the legacy phone folder", () => {
 		expect(alive(pid)).toBe(true);
 	});
 
-	it("exits 1 with the has-not-moved text and creates no phone.db for phone __run on an unmoved legacy phone", async () => {
+	it("exits 1 with the has-not-moved text and creates no phone.db for phone listen on an unmoved legacy phone", async () => {
 		const { home } = await legacyHome();
 		const paths = perOsPaths(home);
 
-		const run = await runProgram(home, "dg-agent", ["phone", "__run"]);
+		const run = await runProgram(home, "dg-agent", ["phone", "listen"]);
 
 		expect(run.code).toBe(1);
 		const text = `dg: ${join(paths.legacyHome, "phone")} has not moved to ${paths.phoneRoot}; run dg-skills install`;
@@ -126,13 +126,13 @@ posix("dg-agent phone verbs and the legacy phone folder", () => {
 		expect(existsSync(join(paths.phoneRoot, "phone.db"))).toBe(false);
 	});
 
-	it("exits 1 with the wait-for-conversion text and creates no phone.db for phone __run beside unconverted phone-friend lines", async () => {
+	it("exits 1 with the wait-for-conversion text and creates no phone.db for phone listen beside unconverted phone-friend lines", async () => {
 		const home = fixtureHome();
 		homes.push(home);
 		await legacyPhoneFriendFixture(home);
 		const paths = perOsPaths(home);
 
-		const run = await runProgram(home, "dg-agent", ["phone", "__run"]);
+		const run = await runProgram(home, "dg-agent", ["phone", "listen"]);
 
 		expect(run.code).toBe(1);
 		expect(run.stderr).toContain("dg: phone-friend lines wait for conversion; run dg-agent phone status");

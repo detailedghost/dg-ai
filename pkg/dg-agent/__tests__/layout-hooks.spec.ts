@@ -264,13 +264,13 @@ describe("phone group preAction after ensureLayout", () => {
 		expect(calls).toEqual(["close"]);
 	});
 
-	it("starts the listener once for __refresh after a stopped-and-moved phone", async () => {
+	it("starts the listener once for refresh after a stopped-and-moved phone", async () => {
 		seedPhone(legacyPhone(), true);
 		seedLiveListener(legacyPhone());
 		await layoutForPhoneVerb();
 		const calls: string[] = [];
 
-		await drive(calls, "__refresh");
+		await drive(calls, "refresh");
 
 		expect(calls.filter((call) => call === "open")).toHaveLength(1);
 		expect(calls).toContain("refresh");
@@ -279,7 +279,7 @@ describe("phone group preAction after ensureLayout", () => {
 	it("does nothing for the listener process before ensureLayout ran, and never restarts", async () => {
 		const calls: string[] = [];
 
-		await drive(calls, "__run");
+		await drive(calls, "listen");
 
 		expect(calls).toEqual(["run"]);
 	});

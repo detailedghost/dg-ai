@@ -14,6 +14,8 @@ describe("isDaemonServeArgs", () => {
 		[["/usr/bin/bun", "/repo/pkg/dg-daemon/src/index.ts", "__serve"]],
 		[["/home/u/bin/dg-daemon", "__serve"]],
 		[["C:\\dg\\dg-daemon.exe", "__serve"]],
+		[["/usr/bin/bun", "/home/u/.dg/lib/current/dg.js", "dg-daemon", "serve"]],
+		[["/home/u/bin/dg-daemon", "serve"]],
 	])("accepts %j", (args) => {
 		expect(isDaemonServeArgs(args)).toBe(true);
 	});
@@ -23,6 +25,7 @@ describe("isDaemonServeArgs", () => {
 		[["/usr/bin/bun", "/repo/pkg/dg-daemon/src/index.ts", "status"]],
 		[["/usr/bin/node", "server.js", "__serve"]],
 		[["/usr/bin/vim", "notes-dg-daemon.txt", "__serve"]],
+		[["/usr/bin/node", "server.js", "serve"]],
 	])("rejects %j", (args) => {
 		expect(isDaemonServeArgs(args)).toBe(false);
 	});

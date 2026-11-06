@@ -36,7 +36,7 @@ const agent: Step = {
 };
 
 const daemon: Step = {
-	name: "dg-daemon __serve until pid file",
+	name: "dg-daemon serve until pid file",
 	run: async (home) => (await serveUntilPidFile(home)).stderr,
 };
 

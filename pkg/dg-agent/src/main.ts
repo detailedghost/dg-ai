@@ -2,7 +2,7 @@ import type { SessionRole } from "@dg/common";
 import type { LayoutHooks } from "@dg/common/node/layout";
 import type { Command } from "commander";
 
-const SKIP = new Set(["phone __run"]);
+const SKIP = new Set(["phone listen"]);
 
 const topLevelName = (command: Command): string => (command.parent?.parent ? topLevelName(command.parent) : command.name());
 

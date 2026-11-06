@@ -169,13 +169,15 @@ const MAX_SEND_BYTES = 64 * 1024;
 export type SayOpts = { image?: string; phi?: boolean; vault?: string; as?: string };
 const STOP_WAIT_MS = 5000;
 
-function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
+type ManagedKind = "systemd" | "launchd" | "task";
+
+function isManagedKind(kind: string | undefined): kind is ManagedKind {
 	return kind === "systemd" || kind === "launchd" || kind === "task";
 }
 
 /** Stops a listener this binary started when its version or keys no longer match the database.
  * Does nothing unless `kill` and `isOurListener` are injected, and never signals this process.
- * A managed restart runs only from a separate command. `phone __run` signals the other pid and
+ * A managed restart runs only from a separate command. `phone listen` signals the other pid and
  * then subscribes itself, so it cannot restart the unit it is running under. */
 async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): Promise<void> {
 	if (!deps.kill || !deps.isOurListener) return;
@@ -1357,18 +1359,26 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 }
 
 /** Restarts a listener whose binary or keys drifted. No-ops when this install has never used phone. */
+async function reinstallManaged(deps: OpenCloseDeps, saved: ReturnType<typeof readListener>, kind: ManagedKind): Promise<void> {
+	const argv = deps.listenerArgv(onMessageArgvFor(saved?.onMessage));
+	await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
+	for (const restart of managedRestartCommands(kind, deps.uid)) await deps.run(restart);
+}
+
 export async function phoneRefresh(deps: OpenCloseDeps): Promise<void> {
-	if (!existsSync(PhoneDb.path(deps.paths)) && !legacyRoot(deps.paths)) return;
 	if (!existsSync(PhoneDb.path(deps.paths))) return;
+	const saved = readListener(deps.db);
+	const kind = saved?.autostart?.kind;
 	const running = readListenerPid(deps.paths);
-	if (!running || running.pid === process.pid || !deps.isOurListener(running.pid)) return;
+	if (!running || running.pid === process.pid || !deps.isOurListener(running.pid)) {
+		if (isManagedKind(kind)) await reinstallManaged(deps, saved, kind);
+		return;
+	}
 	const drift = await listenerDrift(deps, running);
 	if (!drift.restart) return;
 	if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
-	const saved = readListener(deps.db);
-	const kind = saved?.autostart?.kind;
 	if (isManagedKind(kind)) {
-		for (const argv of managedRestartCommands(kind, deps.uid)) await deps.run(argv);
+		await reinstallManaged(deps, saved, kind);
 		return;
 	}
 	await stopRunningListener(deps, running.pid);

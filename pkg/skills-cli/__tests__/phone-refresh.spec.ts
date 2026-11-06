@@ -33,10 +33,10 @@ describe("refreshPhoneListener", () => {
 });
 
 describe("refreshPhoneListener argv", () => {
-	it("spawns programCommand(dg-agent, [phone, __refresh]) and never the cmd shim", () => {
+	it("spawns programCommand(dg-agent, [phone, refresh]) and never the cmd shim", () => {
 		setProgramName("dg-agent");
 		try {
-			const [command, ...args] = programCommand("dg-agent", ["phone", "__refresh"]);
+			const [command, ...args] = programCommand("dg-agent", ["phone", "refresh"]);
 			const calls: { command: string; args: readonly string[]; timeout: number }[] = [];
 
 			refreshPhoneListener(((cmd: string, argv: readonly string[], options: { timeout?: number }) => {
@@ -46,7 +46,7 @@ describe("refreshPhoneListener argv", () => {
 
 			expect(calls).toEqual([{ command, args, timeout: 8_000 }]);
 			expect(calls[0].command.endsWith(".cmd")).toBe(false);
-			expect(calls[0].args.slice(-3)).toEqual(["dg-agent", "phone", "__refresh"]);
+			expect(calls[0].args.slice(-3)).toEqual(["dg-agent", "phone", "refresh"]);
 		} finally {
 			setProgramName(undefined);
 		}

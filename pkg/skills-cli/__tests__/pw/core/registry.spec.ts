@@ -168,7 +168,7 @@ describe("isDaemonOf", () => {
 		entry,
 		"dg-skills",
 		"pw",
-		"__daemon",
+		"daemon",
 		JSON.stringify({ name: "x", key }),
 	];
 
@@ -178,7 +178,7 @@ describe("isDaemonOf", () => {
 			"/h/.bun/bin/bun",
 			"/r/pkg/skills-cli/src/index.ts",
 			"pw",
-			"__daemon",
+			"daemon",
 			'{"key":"gh"}',
 		];
 		expect(isDaemonOf({ pid: 1, key: "gh" }, source)).toBe(true);
@@ -186,7 +186,7 @@ describe("isDaemonOf", () => {
 			isDaemonOf({ pid: 1, key: "gh" }, [
 				"/h/.dg/bin/dg-skills",
 				"pw",
-				"__daemon",
+				"daemon",
 				'{"key":"gh"}',
 			]),
 		).toBe(true);
@@ -204,7 +204,7 @@ describe("isDaemonOf", () => {
 			isDaemonOf({ pid: 1, key: "gh" }, [
 				"/bin/zsh",
 				"-c",
-				"pgrep -f dg-skills pw __daemon gh",
+				"pgrep -f dg-skills pw daemon gh",
 			]),
 		).toBe(false);
 	});
@@ -216,7 +216,7 @@ describe("isDaemonOf", () => {
 				"/opt/dg/dg.js",
 				"dg-skills",
 				"pw",
-				"__daemon",
+				"daemon",
 				"gh",
 			]),
 		).toBe(false);

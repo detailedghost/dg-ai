@@ -458,7 +458,7 @@ more than a week loses what it missed.
 
 ## Migration
 
-Every `dg-agent phone` command except `__run` converts old phone-friend lines
+Every `dg-agent phone` command except `listen` converts old phone-friend lines
 first, once. A command that only reads, such as `status`, `messages`, or
 `contacts`, converts too. The conversion reads every line, then copies its
 existing key (never a newly minted one), contact, and message into the new
@@ -466,14 +466,14 @@ database. A conversion error fails that command. A published line with no key
 stops the migration before any listener is signaled and says to restore that
 line's nsec, or the credential `phone-friend/<line>/nostr-key`, then run
 `phone open`. `dg-skills install` prints that failure as a warning.
-`phone __run` never converts. While old lines wait, it exits 1 with
+`phone listen` never converts. While old lines wait, it exits 1 with
 `dg: phone-friend lines wait for conversion; run dg-agent phone status`.
 
 No command rolls the data back. The manual steps are in `docs/install.md`,
 section `Roll back to a release that uses ~/.dg`.
 
-This process's own `phone __run` is kept. Any other live listener, including a
-`phone __run` that is not this process, is restarted so it reloads keys. An old `phone-friend`
+This process's own `phone listen` is kept. Any other live listener, including a
+`phone listen` that is not this process, is restarted so it reloads keys. An old `phone-friend`
 listener is stopped and exactly one new listener is started against
 `phone.db`, and its pid is recorded. `open` installs login autostart when
 none is recorded yet, stopping that detached process first so only the
@@ -482,7 +482,7 @@ listener is stopped, and exactly one new listener starts only after each of
 them has exited. If one will not exit, nothing new is started and `phone.db`
 is not written. That process keeps running, and any listener that already
 exited stays stopped. If the new listener fails to start, `phone.db` is kept
-and one `phone __run` is started against it, reported only if that process
+and one `phone listen` is started against it, reported only if that process
 stays up. The old per-line listener command is not restarted. The old
 root stays in place on that failure
 and is renamed to `phone-friend.migrated` in the same state folder only after a

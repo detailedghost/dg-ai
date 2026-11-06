@@ -6,7 +6,7 @@ const SKIP = new Set(["status"]);
 type HookSeams = { platform?: NodeJS.Platform };
 
 export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHooks {
-	if (commandName !== "__serve") return {};
+	if (commandName !== "serve") return {};
 	const hooks: LayoutHooks = {
 		load: async () => {
 			const { daemonLayoutHooks } = await import("./layout-hooks");
@@ -17,7 +17,7 @@ export function hooksFor(commandName: string, seams: HookSeams = {}): LayoutHook
 }
 
 async function afterLayout(action: Command): Promise<void> {
-	if (action.name() !== "__serve") return;
+	if (action.name() !== "serve") return;
 	const [{ daemonLayoutHooks }, { resolveDgPaths }, { assertNotBlocked }] = await Promise.all([
 		import("./layout-hooks"),
 		import("@dg/common/node/dg-paths"),
@@ -64,10 +64,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.exitOverride();
 
 	program
-		.command("__serve", { hidden: true })
-		.description(
-			"internal: run the daemon in the foreground (never call directly)",
-		)
+		.command("serve")
+		.description("Run the daemon in the foreground; dg starts this for you")
 		.action(async () => {
 			const { cmdServe } = await import("./server/bootstrap");
 			if ((await cmdServe()) === "serving") await forever();

@@ -81,7 +81,7 @@ function harness(): Harness {
 			return { code: 0, stdout: "", stderr: "" };
 		},
 		which: (name) => `/resolved${name.startsWith("/") ? name : `/${name}`}`,
-		listenerArgv: (extra) => ["/fake/execPath", "phone", "__run", ...extra],
+		listenerArgv: (extra) => ["/fake/execPath", "phone", "listen", ...extra],
 		spawnListener: () => {
 			throw new Error("alias tests expect the systemd path to succeed");
 		},
@@ -159,7 +159,7 @@ describe("phone hidden synonyms and removed verbs", () => {
 		await h.program.parseAsync(["phone", "on"], { from: "user" });
 
 		expect(h.written).toHaveLength(1);
-		expect(h.written[0]?.text).toContain('ExecStart="/fake/execPath" "phone" "__run"');
+		expect(h.written[0]?.text).toContain('ExecStart="/fake/execPath" "phone" "listen"');
 		expect(h.written[0]?.path).toContain("dg-phone.service");
 
 		await h.program.parseAsync(["phone", "close"], { from: "user" });

@@ -369,8 +369,8 @@ describe("daemonLayoutHooks module", () => {
 });
 
 describe("dg-daemon hooksFor", () => {
-	test("__serve supplies daemon.stop and passes the injected platform through", async () => {
-		const hooks = hooksFor("__serve", { platform: "win32" });
+	test("serve supplies daemon.stop and passes the injected platform through", async () => {
+		const hooks = hooksFor("serve", { platform: "win32" });
 		await hooks.load?.();
 
 		expect(typeof hooks["daemon.stop"]).toBe("function");
@@ -378,8 +378,8 @@ describe("dg-daemon hooksFor", () => {
 		expect(written.join("")).toContain("stop the dg-daemon service");
 	});
 
-	test("__serve on linux does not refuse", async () => {
-		const hooks = hooksFor("__serve", { platform: "linux" });
+	test("serve on linux does not refuse", async () => {
+		const hooks = hooksFor("serve", { platform: "linux" });
 		await hooks.load?.();
 
 		expect(await hooks["daemon.stop"]?.(join(dir, "missing"))).toBe("stopped");

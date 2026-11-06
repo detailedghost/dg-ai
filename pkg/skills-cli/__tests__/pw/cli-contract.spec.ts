@@ -62,7 +62,7 @@ describe("pw main hidden daemon route", () => {
 			[
 				process.execPath,
 				"-e",
-				`import(${JSON.stringify(entry)}).then((m) => m.main(["__daemon"]))`,
+				`import(${JSON.stringify(entry)}).then((m) => m.main(["daemon"]))`,
 			],
 			{
 				stdout: "pipe",

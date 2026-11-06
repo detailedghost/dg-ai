@@ -135,7 +135,7 @@ describe.skipIf(process.env.PW_E2E !== "1" || !clear || !built)(
 				}),
 			);
 
-			proc = Bun.spawn([process.execPath, DAEMON_ENTRY, "__serve"], {
+			proc = Bun.spawn([process.execPath, DAEMON_ENTRY, "serve"], {
 				env: daemonEnv(dgHome),
 				stdout: "pipe",
 				stderr: "pipe",

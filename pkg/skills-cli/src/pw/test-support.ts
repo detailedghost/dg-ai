@@ -304,7 +304,7 @@ export function spawnFakeDaemonProcess(
 		process.execPath,
 		script,
 		"pw",
-		"__daemon",
+		"daemon",
 		JSON.stringify({ key }),
 	]);
 	const deadline = Date.now() + 2_000;

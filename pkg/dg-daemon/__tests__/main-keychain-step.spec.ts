@@ -45,14 +45,14 @@ describe("dg-daemon main keychain step composition", () => {
 		expect(calls).toEqual([]);
 	});
 
-	it("runs the keychain step for __serve", async () => {
-		const { calls } = await runMain("__serve");
+	it("runs the keychain step for serve", async () => {
+		const { calls } = await runMain("serve");
 
 		expect(calls.filter((call) => call === "lookup").length).toBeGreaterThan(0);
 	});
 
-	it("does not touch the keychain for __serve when DG_KEY_SOURCE is file", async () => {
-		const { calls } = await runMain("__serve", { DG_KEY_SOURCE: "file" });
+	it("does not touch the keychain for serve when DG_KEY_SOURCE is file", async () => {
+		const { calls } = await runMain("serve", { DG_KEY_SOURCE: "file" });
 
 		expect(calls).toEqual([]);
 	});

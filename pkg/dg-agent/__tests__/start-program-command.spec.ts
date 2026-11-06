@@ -28,7 +28,7 @@ describe("dg-agent start in bundle mode", () => {
 		rmSync(dgHome, { recursive: true, force: true });
 	});
 
-	it("spawns [bun, dg.js, dg-daemon, __serve] when the daemon is not live", async () => {
+	it("spawns [bun, dg.js, dg-daemon, serve] when the daemon is not live", async () => {
 		const spawned: { command: string; args: string[] }[] = [];
 		const spawn = (command: string, args: string[]) => {
 			spawned.push({ command, args });
@@ -39,6 +39,6 @@ describe("dg-agent start in bundle mode", () => {
 		);
 		expect(spawned).toHaveLength(1);
 		const { command, args } = spawned[0];
-		expect([command, ...args]).toEqual([process.execPath, Bun.main, "dg-daemon", "__serve"]);
+		expect([command, ...args]).toEqual([process.execPath, Bun.main, "dg-daemon", "serve"]);
 	});
 });

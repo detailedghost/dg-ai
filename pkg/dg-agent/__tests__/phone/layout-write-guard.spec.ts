@@ -27,7 +27,7 @@ beforeEach(() => {
 
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-posix("phone __run, which skips ensureLayout", () => {
+posix("phone listen, which skips ensureLayout", () => {
 	it("creates no phone folder while the legacy phone folder holds data", async () => {
 		put(join(paths.legacyHome, "phone", "phone.db"), "rows");
 

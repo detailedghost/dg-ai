@@ -293,7 +293,7 @@ async function runDaemonProcess(
 	...args: string[]
 ): Promise<{ code: number; out: string }> {
 	const proc = Bun.spawn(
-		[process.execPath, "run", ENTRY, "pw", "__daemon", ...args],
+		[process.execPath, "run", ENTRY, "pw", "daemon", ...args],
 		{
 			stdout: "pipe",
 			stderr: "pipe",

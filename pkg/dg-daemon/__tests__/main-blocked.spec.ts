@@ -50,11 +50,11 @@ async function blockDaemon(): Promise<void> {
 }
 
 posix("dg-daemon main with a blocked daemon entry", () => {
-	it("refuses __serve before it writes the owner token or opens a store", async () => {
+	it("refuses serve before it writes the owner token or opens a store", async () => {
 		await blockDaemon();
 		const paths = resolveDgPaths();
 
-		const code = await main(["__serve"]);
+		const code = await main(["serve"]);
 
 		expect(code).toBe(1);
 		expect(existsSync(join(paths.daemonDir, "owner.token"))).toBe(false);

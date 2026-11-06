@@ -131,7 +131,7 @@ posix("commands that run the layout move", () => {
 		expect(run.stderr).not.toContain(join(legacy, "ssms"));
 	});
 
-	it("dg-daemon __serve moves daemon before daemon.db opens and keeps the fixture crypto_meta row", async () => {
+	it("dg-daemon serve moves daemon before daemon.db opens and keeps the fixture crypto_meta row", async () => {
 		const { home, paths, legacy } = await legacyHome();
 		const legacyDb = new Database(join(legacy, "daemon", "daemon.db"), { readonly: true });
 		const legacyKey = (legacyDb.query("SELECT key_id FROM crypto_meta WHERE id = 1").get() as { key_id: string }).key_id;
@@ -161,7 +161,7 @@ posix("a live legacy daemon", () => {
 		expect(existsSync(paths.dbPath)).toBe(false);
 	});
 
-	it("dg-agent memory search moves memory and blocks daemon with one stderr line, then dg-daemon __serve moves daemon and stops nothing", async () => {
+	it("dg-agent memory search moves memory and blocks daemon with one stderr line, then dg-daemon serve moves daemon and stops nothing", async () => {
 		const { home, rows, paths, legacy } = await legacyHome({ fakeLiveDaemon: true });
 		const sleeper = (JSON.parse(readFileSync(join(legacy, "daemon", "daemon.pid"), "utf8")) as { pid: number }).pid;
 

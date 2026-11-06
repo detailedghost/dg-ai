@@ -152,7 +152,7 @@ stop matching. `dg-skills doctor` warns and names the new rule,
 | Command | What moves |
 | --- | --- |
 | `--help`, `-h` anywhere before a `--`, `--version` | Nothing. |
-| `dg-skills hooks run`, `dg-agent phone __run`, `dg-daemon status` | Nothing. These commands skip the move. |
+| `dg-skills hooks run`, `dg-agent phone listen`, `dg-daemon status` | Nothing. These commands skip the move. |
 | `dg-skills install` | Everything. It stops an old daemon and an old phone listener, moves `runtime/` and `lib/`, then rewrites the launchers and restarts the listener, also when the install fails. |
 | `dg-skills doctor` | What it can, before it reports. The `layout` check then lists what is left. |
 | `dg-skills clean` | What it can, then it removes the leftovers. |
@@ -184,7 +184,7 @@ dg prints each line once for each process.
 | `dg: kept <from>; the copy failed its check: <problem>` | The copy did not pass the check, for example the phone key check. dg removed the copy. | Fix the problem named, then run `dg-skills install`. |
 | `dg: kept <from>; moving it to <to> failed: <reason>` | The copy or its byte check failed. dg removed the copy. | Fix the reason, then run `dg-skills install`. |
 | `dg: kept <from>; setting aside <to> failed: <reason>` | dg could not rename the unused target. | Fix the reason, then run `dg-skills install`. |
-| `dg: phone-friend lines wait for conversion; run dg-agent phone status` | `dg-agent phone __run` found old phone-friend lines that no command has converted. It exits 1. | Run `dg-agent phone status`. |
+| `dg: phone-friend lines wait for conversion; run dg-agent phone status` | `dg-agent phone listen` found old phone-friend lines that no command has converted. It exits 1. | Run `dg-agent phone status`. |
 
 <!-- markdownlint-enable MD013 -->
 

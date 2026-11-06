@@ -30,7 +30,7 @@ import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
-	return programCommand("dg-daemon", ["__serve"]);
+	return programCommand("dg-daemon", ["serve"]);
 }
 
 export type StartSeams = {

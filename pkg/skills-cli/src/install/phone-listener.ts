@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { programCommand } from "@dg/common/node/program";
 
-/** Long enough for `phone __refresh` to stop a listener and start its replacement. */
+/** Long enough for `phone refresh` to stop a listener and start its replacement. */
 const REFRESH_TIMEOUT_MS = 8_000;
 
 function stderrText(stderr: unknown): string {
@@ -44,10 +44,10 @@ function runListenerVerb(verb: string, label: string, spawn: typeof spawnSync): 
 
 /** Restarts a drifted phone listener. A failed refresh is a warning. */
 export function refreshPhoneListener(spawn: typeof spawnSync = spawnSync): void {
-	runListenerVerb("__refresh", "refreshed", spawn);
+	runListenerVerb("refresh", "refreshed", spawn);
 }
 
-/** Starts the listener that the layout move stopped; install's `__refresh` child finds no moved phone and no running listener. */
+/** Starts the listener that the layout move stopped; install's `phone refresh` child finds no moved phone and no running listener. */
 export function restartPhoneListener(spawn: typeof spawnSync = spawnSync): void {
 	runListenerVerb("open", "restarted", spawn);
 }

@@ -74,7 +74,8 @@ export function registerDemo(
 			console.log(statusLine(slug));
 		});
 	demo
-		.command("__player", { hidden: true })
+		.command("player")
+		.description("Serve the demo player; dg starts this for you")
 		.argument("<job>", "the player job as JSON")
 		.action(async (job: string) => {
 			const { servePlayer } = await import("../demo/local");

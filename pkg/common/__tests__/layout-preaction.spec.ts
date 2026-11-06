@@ -9,12 +9,12 @@ import { ensureLayout, type LayoutHooks, type LayoutResult, withCliLockError } f
 import { installLayoutPreAction, shouldSkip } from "@dg/common/node/layout-preaction";
 
 const SKILLS_SKIP = new Set(["hooks run"]);
-const AGENT_SKIP = new Set(["phone __run"]);
+const AGENT_SKIP = new Set(["phone listen"]);
 const DAEMON_SKIP = new Set(["status"]);
 
 const SKILLS_TREE = ["hooks run", "spec slugify", "doctor", "clean", "install"];
-const AGENT_TREE = ["phone __run", "phone status", "memory search", "start"];
-const DAEMON_TREE = ["status", "__serve", "job list"];
+const AGENT_TREE = ["phone listen", "phone status", "memory search", "start"];
+const DAEMON_TREE = ["status", "serve", "job list"];
 
 function stub(paths: readonly string[], ran: string[]): Command {
 	const root = new Command().name("prog").exitOverride();
@@ -89,14 +89,14 @@ describe("shouldSkip", () => {
 		const root = stub(DAEMON_TREE, []);
 
 		expect(shouldSkip(leaf(root, "status"), DAEMON_SKIP)).toBe(true);
-		expect(shouldSkip(leaf(root, "__serve"), DAEMON_SKIP)).toBe(false);
+		expect(shouldSkip(leaf(root, "serve"), DAEMON_SKIP)).toBe(false);
 	});
 });
 
 describe("installLayoutPreAction skip sets", () => {
 	test.each([
 		["hooks run", ["hooks", "run", "x"], SKILLS_TREE, SKILLS_SKIP],
-		["phone __run", ["phone", "__run"], AGENT_TREE, AGENT_SKIP],
+		["phone listen", ["phone", "listen"], AGENT_TREE, AGENT_SKIP],
 		["status", ["status"], DAEMON_TREE, DAEMON_SKIP],
 	] as const)("%s returns before ensure is called", async (_name, argv, tree, skip) => {
 		const { program, ensured, ran } = wire(tree, skip);
@@ -114,7 +114,7 @@ describe("installLayoutPreAction skip sets", () => {
 		["install", ["install"], SKILLS_TREE, SKILLS_SKIP],
 		["memory search", ["memory", "search", "x"], AGENT_TREE, AGENT_SKIP],
 		["phone status", ["phone", "status"], AGENT_TREE, AGENT_SKIP],
-		["__serve", ["__serve"], DAEMON_TREE, DAEMON_SKIP],
+		["serve", ["serve"], DAEMON_TREE, DAEMON_SKIP],
 	] as const)("%s records one ensure call", async (_name, argv, tree, skip) => {
 		const { program, ensured, ran } = wire(tree, skip);
 

@@ -47,7 +47,7 @@ export type PhoneApi = Pick<
 
 const EXIT_REMOVED_VERB = 2;
 
-const OWNS_HOME_MOVE = new Set(["__run"]);
+const OWNS_HOME_MOVE = new Set(["listen"]);
 const MANAGES_LISTENER = new Set(["close", "off"]);
 
 /** `phone-friend`'s old verbs that have no new equivalent: each fails outright, naming its replacement. */
@@ -342,16 +342,16 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.action(close);
 
 	group
-		.command("__refresh", { hidden: true })
-		.description("internal: restart a listener whose binary or keys drifted")
+		.command("refresh")
+		.description("Restart a listener whose binary or keys drifted; dg starts this for you")
 		.action(async () => {
 			const phone = await load();
 			await phone.phoneRefresh(phone.openCloseDeps(getSession()));
 		});
 
 	group
-		.command("__run", { hidden: true })
-		.description("internal: run the always-on listener in the foreground (never call directly)")
+		.command("listen")
+		.description("Run the phone listener; dg starts this for you")
 		.option("--on-message <argv...>", "command and args to run for each delivered message")
 		.option("--on-message-timeout <seconds>", "seconds before --on-message is killed", String(DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS))
 		.option("--dg-home <dir>", "state directory for this listener; overrides DG_HOME")
