@@ -180,6 +180,7 @@ dg-skills stat done "Phone feature"
 dg-skills stat status "Phone feature" queued --eta "~30 min"
 ```
 
+- `--eta` accepts only `<5 min`, `~15 min`, `~30 min`, `~1 hr`, `>1 hr` and `unknown`. Any other value fails with a non-zero exit and an error that lists these buckets. Use `>1 hr` for work longer than an hour.
 - When you start a task or hand the user a step, `stat add` it with the status that fits (`running`, `queued`, `blocked-user`, `needs-user`); add `--eta <bucket>` when you can estimate.
 - When you finish one, `stat done "<match>"`. It matches parents and sub-items by a case-insensitive substring; 0 or 2+ matches is an error listing every candidate, so make the match specific.
 - `--at <n>` places a new top-level item at position `n` (default: the end), and fails with a non-zero exit, writing nothing, when status/ETA order forbids that position (a `--at` past the end appends); `--under <n|match>` adds it as a sub-item of that open top-level item instead.

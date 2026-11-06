@@ -159,7 +159,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 `DG_SKILLS_ONLY=1` is the shell equivalent of `--skills-only`. This is separate
 from `--cli-only`, which writes `~/.dg/cli-only`. Every skills-only path also
 installs the `dg-skills` CLI from the latest `skills-v*` release into
-`${DG_HOME:-~/.dg}/bin`, checked against the release's `SHA256SUMS`, because the
+the launcher folder ([install layout](install.md#where-dg-keeps-its-files)), checked against the release's `SHA256SUMS`, because the
 skills run it. It fetches no `dg-daemon`, `dg-agent` or extension, leaves the
 `cli-only` marker untouched, and never executes skill content. Set
 `DG_SKILLS_NO_CLI=1` with the bootstraps for an offline copy that skips the CLI.
@@ -307,9 +307,11 @@ Should list `install`, `batch-open`, `launch`, `demo`, `rerun`, and `channel-rev
 grouping/tours work with the browser or demo skill. For the chat harness:
 
 ```bash
-"${DG_HOME:-$HOME/.dg}/bin/dg-agent" --help
-"${DG_HOME:-$HOME/.dg}/bin/dg-daemon" status
+dg-agent --help
+dg-daemon status
 ```
+
+If a bare name does not answer, call `${DG_HOME:-$HOME/.local}/bin/<name>` instead.
 
 `dg-agent --help` should list `start`, `recv`, `send`, `progress`, `spawn`,
 `stage`, `close`, `manifest` and `memory` — `status` is a `dg-daemon` command,

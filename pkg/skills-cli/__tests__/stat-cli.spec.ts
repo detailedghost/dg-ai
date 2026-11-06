@@ -38,6 +38,17 @@ function checklistFile(stateDir: string): string {
 }
 
 describe("dg-skills stat mutations", () => {
+	test("add rejects an unknown eta and lists every accepted bucket", async () => {
+		await withRoot(async (env, root) => {
+			const run = await stat(["add", "long task", "--eta", "~3 hr"], env, root);
+			expect(run.exitCode).toBe(1);
+			expect(run.stderr).toContain(
+				'--eta must be one of <5 min, ~15 min, ~30 min, ~1 hr, >1 hr, unknown, got "~3 hr"',
+			);
+			expect(existsSync(join(env.AI_STATE_DIR as string, "stat"))).toBe(false);
+		});
+	});
+
 	test("add reports the sanitized stored text, not a mere trim of the argument", async () => {
 		await withRoot(async (env, root) => {
 			const run = await stat(["add", "  foo\tbar\nbaz  "], env, root);
