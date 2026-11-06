@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { copyTree, treeMatches } from "@dg/common/node";
 import { nip19 } from "nostr-tools";
@@ -97,4 +97,31 @@ export function rollbackPhoneState(
 	}
 	log(`phone state copied back to ${oldRoot}`);
 	return { moved: true, failures: [] };
+}
+
+/** True when the root holds only a `phone.db` whose every table is empty, so nothing would be lost by setting it aside. */
+export function phoneRootUnused(root: string): boolean {
+	const dbPath = join(root, "phone.db");
+	if (!existsSync(dbPath)) return false;
+	if (readdirSync(root).some((name) => !name.startsWith("phone.db"))) return false;
+	let db: Database | undefined;
+	try {
+		db = new Database(dbPath, { readonly: true, strict: true });
+		const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[];
+		return tables.every(({ name }) => db?.query(`SELECT 1 FROM "${name}" LIMIT 1`).get() === null);
+	} catch {
+		return false;
+	} finally {
+		db?.close();
+	}
+}
+
+/** Renames an unused root to `<root>.empty-<timestamp>`; returns false when the rename fails. */
+export function setAsideUnusedRoot(root: string, now: () => number = Date.now): boolean {
+	try {
+		renameSync(root, `${root}.empty-${now()}`);
+		return true;
+	} catch {
+		return false;
+	}
 }
