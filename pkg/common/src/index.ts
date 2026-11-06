@@ -20,6 +20,8 @@ export * from "./protected-branch";
 export * from "./proto-format";
 export * from "./pw-ext-format";
 export * from "./regex";
+export * from "./relay-features";
+export * from "./relay-format";
 export * from "./serial-queue";
 export * from "./session-connect";
 export * from "./skill-files";

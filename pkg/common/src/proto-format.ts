@@ -8,6 +8,7 @@ import {
 	requireStringArray,
 	requireStringRecord,
 } from "./assert";
+import type { RelayWire } from "./relay-format";
 import type {
 	AnswerPageMeta,
 	ProtoBrowserData,
@@ -434,6 +435,125 @@ export function validateProtoCliRequest(value: unknown): ProtoCliRequest {
 	}
 	return value as ProtoCliRequest;
 }
+
+export type ProtoRelayBodies = {
+	cliRequest: ProtoCliRequest;
+	browserRequest: {
+		requestId: string;
+		phase: "scrape" | "plant";
+		slug: string;
+		markedUrl: string;
+		timeoutMs?: number;
+	};
+	browserResult: {
+		requestId: string;
+		ok: boolean;
+		data?: ProtoBrowserData;
+		notReady?: ProtoNotReadyError;
+		error?: string;
+	};
+	browserProgress: { requestId: string; status: string };
+};
+
+/** The marked URL without its marker hash, safe to show in a timeout message. */
+export function markedUrlForTimeout(markedUrl: string): string {
+	try {
+		const url = new URL(markedUrl);
+		url.hash = "";
+		return url.toString();
+	} catch {
+		const hash = markedUrl.indexOf("#");
+		return hash >= 0 ? markedUrl.slice(0, hash) : markedUrl;
+	}
+}
+
+export const PROTO_WIRE = {
+	name: "proto",
+	frames: {
+		cliRequest: "cli-proto-request",
+		cliResult: "cli-proto-result",
+		browserRequest: "proto-browser-request",
+		browserResult: "proto-browser-result",
+		browserProgress: "proto-browser-progress",
+	},
+	validators: {
+		"proto-browser-request": (value, path) => {
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
+			validateProtoIdentifier(value.slug, `${path}.slug`);
+			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
+			if (value.timeoutMs !== undefined) {
+				requireFiniteNumber(value.timeoutMs, `${path}.timeoutMs`);
+				if (
+					value.timeoutMs <= 0 ||
+					value.timeoutMs > PROTO_MAX_TIMEOUT_MS
+				) {
+					fail(
+						`${path}.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
+					);
+				}
+			}
+		},
+		"proto-browser-result": (value, path) => {
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			if (typeof value.ok !== "boolean")
+				fail("proto result.ok must be a boolean");
+			if (value.ok) {
+				if (value.error !== undefined || value.notReady !== undefined)
+					fail("successful proto result must not contain an error or notReady");
+				validateProtoBrowserData(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail("failed proto result must not contain data");
+				if (
+					(value.error === undefined) === (value.notReady === undefined)
+				) {
+					fail(
+						"failed proto result must contain exactly one of error or notReady",
+					);
+				}
+				if (value.error !== undefined) {
+					requireString(value.error, "proto result.error", {
+						nonEmpty: true,
+					});
+					if ((value.error as string).length > 2048)
+						fail("proto result.error exceeds 2048 characters");
+				} else {
+					validateProtoNotReadyError(value.notReady);
+				}
+			}
+			for (const key of Object.keys(value)) {
+				if (
+					![
+						"type",
+						"protocolVersion",
+						"sessionId",
+						"token",
+						"requestId",
+						"ok",
+						"data",
+						"notReady",
+						"error",
+					].includes(key)
+				)
+					fail("unknown proto result field");
+			}
+		},
+		"proto-browser-progress": (value, path) => {
+			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("proto requestId exceeds 128 characters");
+			requireString(value.status, `${path}.status`, { nonEmpty: true });
+			if ((value.status as string).length > 512)
+				fail("proto progress status exceeds 512 characters");
+		},
+	},
+	inbound: ["proto-browser-result", "proto-browser-progress"],
+} as const satisfies RelayWire;
 
 /** Validate the structural ProtoPlan contract without sanitizing its markup. */
 export function validateProtoPlan(value: unknown): ProtoPlan {

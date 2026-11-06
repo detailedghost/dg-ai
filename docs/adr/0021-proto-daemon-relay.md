@@ -160,3 +160,5 @@ sequenceDiagram
 - `pkg/extension/lib/features/prototype.ts`
 - `pkg/extension/entrypoints/demo-tour.content.ts`
 - `pkg/skills-cli/src/commands/proto.ts`
+- `pkg/common/src/relay-format.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
+- `pkg/dg-daemon/src/server/browser-relay.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))

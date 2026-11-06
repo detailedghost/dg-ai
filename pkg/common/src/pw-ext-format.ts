@@ -1,5 +1,6 @@
 import { fail, requireRecord, requireString } from "./assert";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
+import type { RelayWire } from "./relay-format";
 
 export const PW_EXT_READ_VERBS = [
 	"current",
@@ -228,3 +229,92 @@ export function validatePwExtCliRequest(value: unknown): PwExtCliRequest {
 		validatePwExtTimeout(value.timeoutMs, `${path}.timeoutMs`);
 	return value as PwExtCliRequest;
 }
+
+export type PwExtRelayBodies = {
+	cliRequest: PwExtCliRequest;
+	cliCancel: PwExtCliCancel;
+	browserRequest: {
+		requestId: string;
+		request: PwExtRequest;
+		timeoutMs: number;
+	};
+	browserCancel: { requestId: string };
+	browserResult: {
+		requestId: string;
+		ok: boolean;
+		data?: PwExtResponse;
+		error?: string;
+	};
+};
+
+function requireOnlyKeys(
+	value: Record<string, unknown>,
+	path: string,
+	allowed: readonly string[],
+): void {
+	for (const key of Object.keys(value))
+		if (!allowed.includes(key)) fail(`${path} has unknown field "${key}"`);
+}
+
+export const PW_EXT_WIRE = {
+	name: "pw-ext",
+	frames: {
+		cliRequest: "cli-pw-ext-request",
+		cliResult: "cli-pw-ext-result",
+		cliCancel: "cli-pw-ext-cancel",
+		browserRequest: "pw-ext-browser-request",
+		browserResult: "pw-ext-browser-result",
+		browserCancel: "pw-ext-browser-cancel",
+	},
+	validators: {
+		"pw-ext-browser-request": (value, path) => {
+			validatePwExtRequestId(value.requestId, `${path}.requestId`);
+			validatePwExtRequest(value.request);
+			validatePwExtTimeout(value.timeoutMs, `${path}.timeoutMs`);
+			requireOnlyKeys(value, path, [
+				"type",
+				"protocolVersion",
+				"sessionId",
+				"requestId",
+				"request",
+				"timeoutMs",
+			]);
+		},
+		"pw-ext-browser-cancel": (value, path) => {
+			validatePwExtRequestId(value.requestId, `${path}.requestId`);
+			requireOnlyKeys(value, path, [
+				"type",
+				"protocolVersion",
+				"sessionId",
+				"requestId",
+			]);
+		},
+		"pw-ext-browser-result": (value, path) => {
+			validatePwExtRequestId(value.requestId, `${path}.requestId`);
+			if (typeof value.ok !== "boolean")
+				fail(`${path}.ok must be a boolean`);
+			if (value.ok) {
+				if (value.error !== undefined)
+					fail(`successful ${path} must not contain an error`);
+				validatePwExtResponse(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail(`failed ${path} must not contain data`);
+				requireString(value.error, `${path}.error`, { nonEmpty: true });
+				if ((value.error as string).length > 2048)
+					fail(`${path}.error exceeds 2048 characters`);
+			}
+			requireOnlyKeys(value, path, [
+				"type",
+				"protocolVersion",
+				"sessionId",
+				"token",
+				"requestId",
+				"ok",
+				"data",
+				"error",
+			]);
+		},
+	},
+	inbound: ["pw-ext-browser-result"],
+} as const satisfies RelayWire;

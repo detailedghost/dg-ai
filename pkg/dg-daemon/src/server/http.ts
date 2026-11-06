@@ -106,6 +106,7 @@ export type HttpServerDeps = {
 	supervisor: Supervisor;
 };
 
+export const WS_PAYLOAD_HEADROOM_BYTES = 4096;
 const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -286,7 +287,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		websocket: {
 			idleTimeout: 120,
 			sendPings: true,
-			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + 4096,
+			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + WS_PAYLOAD_HEADROOM_BYTES,
 			open(ws) {
 				connections.add(ws);
 				noteActivity();
