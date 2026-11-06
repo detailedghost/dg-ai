@@ -78,6 +78,10 @@ describe("bootstrapHint", () => {
 		);
 	});
 
+	it("keeps the literal placeholder when the port is zero", () => {
+		expect(bootstrapHint(0)).toBe(bootstrapHint());
+	});
+
 	it("keeps the literal placeholder when the port is unknown", () => {
 		expect(bootstrapHint()).toBe(
 			"http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>",

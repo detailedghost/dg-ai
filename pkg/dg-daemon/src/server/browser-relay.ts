@@ -254,11 +254,20 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 		ctx,
 	}: CheckInput): CheckOutcome {
 		const requestKey = key(sessionId, requestId);
-		const peers: Socket[] = [];
-		deps.connections.forEachCapableOf(sessionId, (socket) => {
-			if (isExtensionPeer(socket)) peers.push(socket);
-		});
-		const extension = peers.length === 1 ? peers[0] : undefined;
+		let scanned: { peers: Socket[]; extension: Socket | undefined } | undefined;
+		const scan = () => {
+			if (!scanned) {
+				const peers: Socket[] = [];
+				deps.connections.forEachCapableOf(sessionId, (socket) => {
+					if (isExtensionPeer(socket)) peers.push(socket);
+				});
+				scanned = {
+					peers,
+					extension: peers.length === 1 ? peers[0] : undefined,
+				};
+			}
+			return scanned;
+		};
 		for (const check of feature.checks) {
 			switch (check.check) {
 				case "active":
@@ -285,7 +294,8 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 					)
 						return { refusal: check.refusal };
 					break;
-				case "peers":
+				case "peers": {
+					const { peers, extension } = scan();
 					if (!extension)
 						return {
 							refusal: peers.length
@@ -293,6 +303,7 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 								: check.none({ ...ctx, port: readPidFile(deps.paths)?.port }),
 						};
 					break;
+				}
 				case "burn": {
 					let ids = state.used.get(sessionId);
 					if (!ids) {
@@ -303,7 +314,7 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 					break;
 				}
 				case "version":
-					if (!check.accepts(extension?.data.extensionVersion))
+					if (!check.accepts(scan().extension?.data.extensionVersion))
 						return { refusal: check.refusal };
 					break;
 				default: {
@@ -312,6 +323,7 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 				}
 			}
 		}
+		const { extension } = scan();
 		if (!extension) throw new Error(`relay ${feature.name} has no peers check`);
 		return { extension };
 	}

@@ -1,8 +1,17 @@
-import { afterEach, describe, expect, it, type Mock, mock } from "bun:test";
+import {
+	afterEach,
+	describe,
+	expect,
+	it,
+	type Mock,
+	mock,
+	spyOn,
+} from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	INBOX_RELAY,
 	PW_EXT_MIN_EXTENSION_VERSION,
 	PW_EXT_RELAY,
 } from "@dg/common";
@@ -34,6 +43,7 @@ import {
 import type { Logger } from "../../src/server/log";
 import { ChatStore } from "../../src/store";
 import type { CredentialStore } from "../../src/store/credentials-store";
+import { inboxProfile } from "../../../common/__tests__/utils/inbox-fixtures";
 import {
 	TEST_RELAY,
 	type TestCliRequest,
@@ -1307,5 +1317,639 @@ describe("pw-ext staged asset cleanup", () => {
 				requester: w.cli(),
 			}),
 		).not.toThrow();
+	});
+});
+
+const INBOX_EXTENSION = "1.11.0";
+const INBOX_FOLDERS = { folders: [{ id: "folder-a", name: "Reviewed" }] };
+const INBOX_REFUSAL = {
+	active: "Inbox requires an active dg session.",
+	tooMany:
+		"Inbox has too many pending requests from this client; wait for existing work to finish.",
+	used: "Inbox requestId was already used; create a new requestId.",
+	capacity:
+		"Inbox request capacity reached; finish pending work or start a new session.",
+	multiple:
+		"Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session.",
+	oldVersion:
+		"Inbox requires dg extension 1.11.0 or newer; update the extension, reload it, and reconnect this session.",
+	noPeer: (sessionId: string) =>
+		`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId} and open an authenticated Proton Mail tab. Open http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity> in the browser where the extension is loaded, then reload the Proton Mail tab. Inbox requires dg extension 1.11.0 or newer.`,
+	storage:
+		"Inbox configuration storage failed; check daemon health and encryption key access.",
+};
+const INBOX_END = {
+	timeout:
+		"Inbox extension request timed out; check the authenticated Proton tab and retry with a new requestId.",
+	closed: "Inbox session closed before the extension replied.",
+	extension: "Inbox extension disconnected before replying.",
+	sendFailed:
+		"Inbox extension request could not be sent; reconnect the extension.",
+};
+
+function inboxRequest(overrides: Frame = {}): Frame {
+	return {
+		type: "cli-inbox-request",
+		requestId: randomUUID(),
+		operation: "browser",
+		request: { operation: "list-folders" },
+		timeoutMs: 60_000,
+		...overrides,
+	};
+}
+
+function inboxReply(w: World, requestId: string, overrides: Frame = {}): Frame {
+	return {
+		type: "inbox-browser-result",
+		sessionId: w.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: w.token,
+		requestId,
+		ok: true,
+		data: INBOX_FOLDERS,
+		...overrides,
+	};
+}
+
+function inboxResults(ws: FakeSocket): Frame[] {
+	return sentOfType(ws, "cli-inbox-result");
+}
+
+describe("inbox relay bytes", () => {
+	it("sends the pinned browser request and CLI result bytes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		const request = { operation: "list-folders" };
+		await w.post(cli, {
+			type: "cli-inbox-request",
+			requestId: "r-1",
+			operation: "browser",
+			request,
+		});
+		expect(ext.send.mock.calls).toHaveLength(1);
+		expect(ext.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "inbox-browser-request",
+				sessionId: w.sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				requestId: "r-1",
+				request,
+			}),
+		);
+		await w.post(ext, inboxReply(w, "r-1"));
+		await until(() => cli.send.mock.calls.length === 1);
+		expect(cli.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "cli-inbox-result",
+				sessionId: w.sessionId,
+				requestId: "r-1",
+				ok: true,
+				value: INBOX_FOLDERS,
+			}),
+		);
+	});
+
+	it("sends a failed extension result as an error result", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-2" }));
+		await w.post(
+			ext,
+			inboxReply(w, "r-2", { ok: false, data: undefined, error: "expired" }),
+		);
+		await until(() => cli.send.mock.calls.length === 1);
+		expect(cli.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "cli-inbox-result",
+				sessionId: w.sessionId,
+				requestId: "r-2",
+				ok: false,
+				error: "expired",
+			}),
+		);
+	});
+});
+
+describe("inbox relay check order", () => {
+	async function settled(w: World, cli: FakeSocket, ext: FakeSocket, id: string) {
+		await w.post(cli, inboxRequest({ requestId: id }));
+		await w.post(ext, inboxReply(w, id));
+		await until(() => inboxResults(cli).length === 1);
+	}
+
+	it("answers the active refusal before the duplicate drop", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "a" }));
+		const record = w.registry.get(w.sessionId);
+		if (!record) throw new Error("session missing");
+		record.state = "closed";
+		await w.post(cli, inboxRequest({ requestId: "a" }));
+		expect(inboxResults(cli)).toMatchObject([
+			{ ok: false, error: INBOX_REFUSAL.active },
+		]);
+	});
+
+	it("drops a pending id resent by the same requester before the requester cap", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension(INBOX_EXTENSION);
+		for (let i = 0; i < 8; i++)
+			await w.post(cli, inboxRequest({ requestId: `p${i}` }));
+		await w.post(cli, inboxRequest({ requestId: "p0" }));
+		await quiet();
+		expect(cli.send.mock.calls).toHaveLength(0);
+	});
+
+	it("answers the requester cap before the replay refusal", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await settled(w, cli, ext, "used");
+		for (let i = 0; i < 8; i++)
+			await w.post(cli, inboxRequest({ requestId: `p${i}` }));
+		await w.post(cli, inboxRequest({ requestId: "used" }));
+		expect(inboxResults(cli)).toHaveLength(2);
+		expect(inboxResults(cli)[1]).toMatchObject({
+			ok: false,
+			error: INBOX_REFUSAL.tooMany,
+		});
+	});
+
+	it("answers the replay refusal before the pending cap and the pending cap before the peers refusal", async () => {
+		const w = await world();
+		const settler = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await settled(w, settler, ext, "used");
+		for (let client = 0; client < 16; client++) {
+			const cli = w.cli();
+			for (let i = 0; i < 8; i++)
+				await w.post(cli, inboxRequest({ requestId: `c${client}-${i}` }));
+		}
+		await w.post(settler, inboxRequest({ requestId: "used" }));
+		expect(inboxResults(settler)[1]).toMatchObject({ error: INBOX_REFUSAL.used });
+		await w.post(settler, inboxRequest({ requestId: "fresh" }));
+		expect(inboxResults(settler)[2]).toMatchObject({
+			ok: false,
+			error: INBOX_REFUSAL.capacity,
+		});
+		w.extension(INBOX_EXTENSION);
+		await w.post(settler, inboxRequest({ requestId: "fresh-2" }));
+		expect(inboxResults(settler)[3]).toMatchObject({
+			error: INBOX_REFUSAL.capacity,
+		});
+	});
+
+	it("answers the replay refusal before the peers refusal", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await settled(w, cli, ext, "used");
+		abortPendingWork(ext);
+		w.connections.remove(ext);
+		await w.post(cli, inboxRequest({ requestId: "used" }));
+		expect(inboxResults(cli)[1]).toMatchObject({ error: INBOX_REFUSAL.used });
+	});
+
+	it("answers the peers refusal before the version refusal", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension("1.10.0");
+		w.extension("1.10.0");
+		await w.post(cli, inboxRequest());
+		expect(inboxResults(cli)).toMatchObject([
+			{ ok: false, error: INBOX_REFUSAL.multiple },
+		]);
+	});
+
+	it("answers the no-peer refusal with the bootstrap hint", async () => {
+		const w = await world();
+		const cli = w.cli();
+		await w.post(cli, inboxRequest());
+		expect(inboxResults(cli)).toMatchObject([
+			{ ok: false, error: INBOX_REFUSAL.noPeer(w.sessionId) },
+		]);
+	});
+});
+
+describe("inbox relay burn point and duplicates", () => {
+	it("refuses a resend of an id refused for no peer, even after an extension connects", async () => {
+		const w = await world();
+		const cli = w.cli();
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		expect(inboxResults(cli)[0]).toMatchObject({
+			error: INBOX_REFUSAL.noPeer(w.sessionId),
+		});
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		expect(inboxResults(cli)[1]).toMatchObject({ error: INBOX_REFUSAL.used });
+		expect(sentOfType(ext, "inbox-browser-request")).toEqual([]);
+	});
+
+	it("burns the id before the version refusal", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension("1.10.99");
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		expect(inboxResults(cli)[0]).toMatchObject({
+			error: INBOX_REFUSAL.oldVersion,
+		});
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		expect(inboxResults(cli)[1]).toMatchObject({ error: INBOX_REFUSAL.used });
+	});
+
+	it("accepts an extension version with build metadata", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension("1.11.0+build.1");
+		await w.post(cli, inboxRequest());
+		expect(sentOfType(ext, "inbox-browser-request")).toHaveLength(1);
+		expect(inboxResults(cli)).toEqual([]);
+	});
+
+	it("drops a pending id resent by the same requester without an answer", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "a" }));
+		await w.post(cli, inboxRequest({ requestId: "a" }));
+		await quiet();
+		expect(cli.send.mock.calls).toHaveLength(0);
+		expect(sentOfType(ext, "inbox-browser-request")).toHaveLength(1);
+	});
+
+	it("refuses a pending id resent by another CLI socket", async () => {
+		const w = await world();
+		const first = w.cli();
+		const second = w.cli();
+		w.extension(INBOX_EXTENSION);
+		await w.post(first, inboxRequest({ requestId: "a" }));
+		await w.post(second, inboxRequest({ requestId: "a" }));
+		expect(inboxResults(second)).toMatchObject([
+			{ ok: false, error: INBOX_REFUSAL.used },
+		]);
+		expect(inboxResults(first)).toEqual([]);
+	});
+
+	it("refuses the ninth pending request from one requester across two sessions", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const other = w.registry.create({
+			cwd: w.dgHome,
+			agentIdentity: "other",
+			role: "agent",
+		});
+		w.connections.add(
+			fakeSocket("ws", {
+				extensionVersion: INBOX_EXTENSION,
+				capabilities: [[other.sessionId, other.token]],
+			}),
+		);
+		w.extension(INBOX_EXTENSION);
+		const relay = createBrowserRelay({ deps: w.deps, feature: INBOX_RELAY });
+		const request = (sessionId: string, requestId: string) =>
+			relay.handleRequest(cli, sessionId, {
+				type: "cli-inbox-request",
+				requestId,
+				operation: "browser",
+				request: { operation: "list-folders" },
+			});
+		for (let i = 0; i < 4; i++) {
+			await request(w.sessionId, `a${i}`);
+			await request(other.sessionId, `b${i}`);
+		}
+		await request(w.sessionId, "ninth");
+		expect(inboxResults(cli)).toMatchObject([
+			{ ok: false, error: INBOX_REFUSAL.tooMany },
+		]);
+	});
+});
+
+describe("inbox relay store branch", () => {
+	it("answers an inactive session without touching relay state", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "warm", operation: "profile-list", request: undefined }));
+		const listeners = w.registry.listenerCount("closed");
+		const record = w.registry.get(w.sessionId);
+		if (!record) throw new Error("session missing");
+		record.state = "closed";
+		await w.post(cli, inboxRequest({ requestId: "same", operation: "profile-list", request: undefined }));
+		expect(inboxResults(cli)[1]).toMatchObject({
+			requestId: "same",
+			ok: false,
+			error: INBOX_REFUSAL.active,
+		});
+		record.state = "active";
+		await w.post(cli, inboxRequest({ requestId: "same" }));
+		expect(sentOfType(ext, "inbox-browser-request")).toMatchObject([
+			{ requestId: "same" },
+		]);
+		expect(w.registry.listenerCount("closed")).toBe(listeners);
+	});
+
+	it("round-trips a profile through the store with no extension send", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		const profile = inboxProfile();
+		await w.post(cli, inboxRequest({ requestId: "set", operation: "profile-set", request: undefined, name: "personal", profile }));
+		await w.post(cli, inboxRequest({ requestId: "get", operation: "profile-get", request: undefined, name: "personal" }));
+		expect(cli.send.mock.calls[0]?.[0]).toBe(
+			JSON.stringify({
+				type: "cli-inbox-result",
+				sessionId: w.sessionId,
+				requestId: "set",
+				ok: true,
+				value: null,
+			}),
+		);
+		expect(inboxResults(cli)[1]).toMatchObject({ requestId: "get", ok: true, value: profile });
+		expect(w.store.getInboxProfile("personal")).toEqual(profile);
+		expect(ext.send.mock.calls).toHaveLength(0);
+	});
+
+	it("answers a store failure with the storage string", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const failing = spyOn(w.store, "getInboxProfile").mockImplementation(() => {
+			throw new Error("disk");
+		});
+		cleanups.push(() => failing.mockRestore());
+		await w.post(cli, inboxRequest({ operation: "profile-get", request: undefined, name: "personal" }));
+		expect(inboxResults(cli)).toMatchObject([
+			{ ok: false, error: INBOX_REFUSAL.storage },
+		]);
+	});
+});
+
+describe("inbox relay ends", () => {
+	it("answers a timeout and sends the extension no cancel frame", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1", timeoutMs: 20 }));
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: INBOX_END.timeout,
+		});
+		expect(sentFrames(ext).map((frame) => frame.type)).toEqual([
+			"inbox-browser-request",
+		]);
+	});
+
+	it("sends nothing to anyone when the requester closes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		abortPendingWork(cli);
+		await quiet();
+		expect(cli.send.mock.calls).toHaveLength(0);
+		expect(sentFrames(ext).map((frame) => frame.type)).toEqual([
+			"inbox-browser-request",
+		]);
+	});
+
+	it("answers when the extension closes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		abortPendingWork(ext);
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: INBOX_END.extension,
+		});
+	});
+
+	it("answers when the session closes", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		w.deps.registry.emit("closed", { sessionId: w.sessionId, reason: "closed" });
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: INBOX_END.closed,
+		});
+	});
+
+	it("answers when the extension send fails", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		rejectSends(ext);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({
+			ok: false,
+			error: INBOX_END.sendFailed,
+		});
+	});
+
+	it("ignores a second result for a settled request", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		await w.post(ext, inboxReply(w, "r-1"));
+		await w.post(ext, inboxReply(w, "r-1"));
+		await quiet();
+		expect(inboxResults(cli)).toHaveLength(1);
+	});
+
+	it("ignores a result from a second extension socket or a page socket", async () => {
+		const w = await world();
+		const cli = w.cli();
+		w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		await w.post(w.extension(INBOX_EXTENSION), inboxReply(w, "r-1"));
+		await w.post(w.page(), inboxReply(w, "r-1"));
+		await quiet();
+		expect(inboxResults(cli)).toEqual([]);
+	});
+
+	it("ignores the wrong request, wrong session, and wrong token", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		await w.post(ext, inboxReply(w, "wrong-request-id"));
+		await w.post(ext, inboxReply(w, "r-1", { sessionId: "other-session" }));
+		await w.post(ext, inboxReply(w, "r-1", { token: "wrong-token" }));
+		await quiet();
+		expect(inboxResults(cli)).toEqual([]);
+		await w.post(ext, inboxReply(w, "r-1"));
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({ ok: true });
+	});
+
+	it("abandons a disconnected requester without routing its late result to another CLI", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		abortPendingWork(cli);
+		const nextCli = w.cli();
+		await w.post(ext, inboxReply(w, "r-1"));
+		await quiet();
+		expect(inboxResults(cli)).toEqual([]);
+		expect(inboxResults(nextCli)).toEqual([]);
+		await w.post(nextCli, inboxRequest({ requestId: "r-2" }));
+		await w.post(ext, inboxReply(w, "r-2"));
+		await until(() => inboxResults(nextCli).length === 1);
+		expect(inboxResults(nextCli)[0]).toMatchObject({
+			requestId: "r-2",
+			ok: true,
+		});
+		expect(inboxResults(cli)).toEqual([]);
+	});
+
+	it("ignores a late reply after a timeout and accepts the next request", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1", timeoutMs: 20 }));
+		await until(() => inboxResults(cli).length === 1);
+		await w.post(ext, inboxReply(w, "r-1"));
+		await quiet();
+		expect(inboxResults(cli)).toHaveLength(1);
+		await w.post(cli, inboxRequest({ requestId: "r-2" }));
+		await w.post(ext, inboxReply(w, "r-2"));
+		await until(() => inboxResults(cli).length === 2);
+		expect(inboxResults(cli)[1]).toMatchObject({ requestId: "r-2", ok: true });
+	});
+
+	it("keeps the relay usable after a provider failure", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		await w.post(
+			ext,
+			inboxReply(w, "r-1", { ok: false, data: undefined, error: "expired" }),
+		);
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({ ok: false, error: "expired" });
+		await w.post(cli, inboxRequest({ requestId: "r-2" }));
+		await w.post(ext, inboxReply(w, "r-2"));
+		await until(() => inboxResults(cli).length === 2);
+		expect(inboxResults(cli)[1]).toMatchObject({ requestId: "r-2", ok: true });
+	});
+
+	it("refreshes the session activity before it handles a result", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1" }));
+		const record = w.registry.get(w.sessionId);
+		if (!record) throw new Error("session missing");
+		record.lastActivityAt = 0;
+		await w.post(ext, inboxReply(w, "r-1"));
+		expect(record.lastActivityAt).toBeGreaterThan(0);
+	});
+});
+
+describe("inbox relay unreadable results", () => {
+	async function pending() {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		await w.post(cli, inboxRequest({ requestId: "r-1", timeoutMs: 100 }));
+		return { w, cli, ext };
+	}
+
+	it("keeps waiting for the timeout after an oversized result", async () => {
+		const { w, cli, ext } = await pending();
+		const raw = JSON.stringify(
+			inboxReply(w, "r-1", {
+				data: { folders: [{ id: "x", name: "x".repeat(CHAT_MAX_PAYLOAD_BYTES) }] },
+			}),
+		);
+		await w.postRaw(ext, raw);
+		expect(inboxResults(cli)).toEqual([]);
+		expect(sentOfType(ext, "error")).toMatchObject([
+			{
+				message: `payload of ${Buffer.byteLength(raw)} bytes exceeds CHAT_MAX_PAYLOAD_BYTES (${CHAT_MAX_PAYLOAD_BYTES})`,
+			},
+		]);
+		expect(ext.data.invalidFrameCount).toBe(1);
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({ error: INBOX_END.timeout });
+	});
+
+	it("keeps waiting for the timeout after an invalid result", async () => {
+		const { w, cli, ext } = await pending();
+		await w.post(
+			ext,
+			inboxReply(w, "r-1", { data: { messages: [{ id: "m", body: "raw" }] } }),
+		);
+		expect(inboxResults(cli)).toEqual([]);
+		expect(sentOfType(ext, "error")).toHaveLength(1);
+		expect(ext.data.invalidFrameCount).toBe(1);
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({ error: INBOX_END.timeout });
+	});
+
+	it("propagates a validator throw and keeps the request armed", async () => {
+		const w = await world();
+		const cli = w.cli();
+		const ext = w.extension(INBOX_EXTENSION);
+		const relay = createBrowserRelay({ deps: w.deps, feature: INBOX_RELAY });
+		await relay.handleRequest(cli, w.sessionId, {
+			type: "cli-inbox-request",
+			requestId: "a",
+			operation: "browser",
+			request: { operation: "list-folders" },
+			timeoutMs: 30,
+		});
+		const data = JSON.parse('{"messages":[{"id":"m","body":"raw"}]}');
+		expect(() =>
+			relay.handleResult(ext, {
+				sessionId: w.sessionId,
+				requestId: "a",
+				ok: true,
+				data,
+			}),
+		).toThrow();
+		await until(() => inboxResults(cli).length === 1);
+		expect(inboxResults(cli)[0]).toMatchObject({ error: INBOX_END.timeout });
+	});
+});
+
+describe("inbox relay invalid CLI frames", () => {
+	it("answers an invalid request with the validator message and one strike, send first", async () => {
+		const strikes: number[] = [];
+		const w = await world();
+		const cli = w.cli({
+			send: mock((_payload: string) => strikes.push(cli.data.invalidFrameCount)),
+		});
+		await w.post(cli, inboxRequest({ requestId: "r-1", operation: "nope" }));
+		expect(inboxResults(cli)).toMatchObject([
+			{
+				sessionId: w.sessionId,
+				requestId: "r-1",
+				ok: false,
+				error:
+					"inbox CLI request.operation must be one of profile-get, profile-set, profile-list, cache-get, cache-set, browser",
+			},
+		]);
+		expect(strikes).toEqual([0]);
+		expect(cli.data.invalidFrameCount).toBe(1);
+	});
+
+	it("answers with invalid-request when the id is too long", async () => {
+		const w = await world();
+		const cli = w.cli();
+		await w.post(cli, inboxRequest({ requestId: "x".repeat(129), operation: "nope" }));
+		expect(inboxResults(cli)[0]).toMatchObject({ requestId: "invalid-request", ok: false });
 	});
 });

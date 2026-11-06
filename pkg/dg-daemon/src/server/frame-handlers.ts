@@ -17,10 +17,10 @@ import {
 	OVERWATCH_SESSION_ID,
 	OVERWATCH_MAX_LANES,
 	OVERWATCH_MAX_MERGES,
+	INBOX_RELAY,
 	PW_EXT_RELAY,
 	validateChatFrame,
 	validateCredentialsCliRequest,
-	validateInboxCliRequest,
 	validateCommandManifest,
 	validateOverwatchAction,
 	validateOverwatchLaneUpdate,
@@ -72,7 +72,7 @@ import {
 	handleCredentialsRequest,
 	sendCredentialsResult,
 } from "./credentials";
-import { handleInboxBrowserResult, handleInboxCli } from "./inbox";
+import { handleInboxCli } from "./inbox";
 import type { Logger } from "./log";
 import { pinOriginIfUnset } from "./origin";
 import {
@@ -382,6 +382,7 @@ function relaysFor(deps: FrameHandlerDeps): RelayRoutes {
 	let routes = relayRoutes.get(deps.connections);
 	if (!routes) {
 		routes = buildRelayRoutes(deps, [
+			{ feature: INBOX_RELAY, handleCliRequest: handleInboxCli },
 			{ feature: PW_EXT_RELAY, hooks: pwExtRelayHooks(deps) },
 		]);
 		relayRoutes.set(deps.connections, routes);
@@ -434,8 +435,6 @@ function parseCliFrame(
 			(key) => key === "protocolVersion" || allowed.includes(key),
 		);
 	switch (value.type) {
-		case "cli-inbox-request":
-			try { return validateInboxCliRequest(value); } catch { return undefined; }
 		case "cli-proto-request":
 			try { return validateProtoCliRequest(value); } catch { return undefined; }
 		case "cli-recv":
@@ -652,8 +651,6 @@ async function handleCliFrame(
 	if (route?.role === "cliCancel")
 		return route.relay.handleCancel(ws, sessionId, frame as { requestId: string });
 	switch (frame.type) {
-		case "cli-inbox-request":
-			return handleInboxCli(ws, sessionId, frame, deps);
 		case "cli-proto-request":
 			return handleProtoCli(ws, sessionId, frame, deps);
 		case "cli-recv":
@@ -1130,8 +1127,6 @@ async function dispatchFrame(
 	if (route?.role === "browserProgress")
 		return route.relay.handleProgress(ws, frame as RelayProgressFrame);
 	switch (frame.type) {
-		case "inbox-browser-result":
-			return handleInboxBrowserResult(ws, frame, deps);
 		case "proto-browser-result":
 			return handleProtoBrowserResult(ws, frame, deps);
 		case "proto-browser-progress":
@@ -1276,17 +1271,6 @@ export async function handleSocketMessage(
 	if (isConnectHandshake(parsed)) {
 		await handleConnectHandshake(ws, parsed, deps);
 		return;
-	}
-
-	if (isRecord(parsed) && parsed.type === "cli-inbox-request" && ws.data.kind === "cli") {
-		try { validateInboxCliRequest(parsed); }
-		catch (err) {
-			const sessionId = cliSessionId(ws) ?? TRANSPORT_ERROR_SESSION_ID;
-			const requestId = invalidRequestId(parsed);
-			await sendViaQueue(ws, JSON.stringify({ type: "cli-inbox-result", sessionId, requestId, ok: false, error: describeError(err).slice(0, CLI_ERROR_MAX_CHARS) }));
-			noteInvalid(ws);
-			return;
-		}
 	}
 
 	if (isRecord(parsed) && parsed.type === "cli-proto-request" && ws.data.kind === "cli") {

@@ -122,5 +122,5 @@ export function defineRelayFeature<Bodies extends RelayBodies>() {
 }
 
 export function bootstrapHint(port?: number): string {
-	return `http://127.0.0.1:${port ?? "<port>"}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
+	return `http://127.0.0.1:${port ? port : "<port>"}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
 }

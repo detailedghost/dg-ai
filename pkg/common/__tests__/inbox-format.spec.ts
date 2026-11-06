@@ -4,6 +4,7 @@ import {
 	INBOX_MAX_CACHE_BYTES,
 	INBOX_MAX_MESSAGE_IDS,
 	INBOX_MAX_PAGE_SIZE,
+	INBOX_RELAY,
 	validateInboxBrowserRequest,
 	validateInboxBrowserResponse,
 	validateInboxCliRequest,
@@ -146,5 +147,99 @@ describe("validateInboxCliRequest — cache byte limit", () => {
 		const input = inboxCliRequest({ operation: "cache-set", request: undefined, name: "personal", provider: "gmail", cache });
 		expect(validateInboxCliRequest(input)).toMatchObject({ cache });
 		expect(() => validateInboxCliRequest({ ...input, cache: cache + "é" })).toThrow();
+	});
+});
+
+describe("INBOX_RELAY table", () => {
+	const version = INBOX_RELAY.checks.flatMap((entry) =>
+		entry.check === "version" ? [entry] : [],
+	)[0];
+
+	it("names the feature and its four frames", () => {
+		expect(INBOX_RELAY.name).toBe("inbox");
+		expect(INBOX_RELAY.frames).toEqual({
+			cliRequest: "cli-inbox-request",
+			cliResult: "cli-inbox-result",
+			browserRequest: "inbox-browser-request",
+			browserResult: "inbox-browser-result",
+		});
+	});
+
+	it("pins the caps and flags", () => {
+		expect(INBOX_RELAY.caps).toEqual({
+			pending: 128,
+			perRequester: 8,
+			sessionIds: 10_000,
+		});
+		expect("rejected" in INBOX_RELAY).toBe(false);
+		expect("rejected" in INBOX_RELAY.strings).toBe(false);
+		expect(INBOX_RELAY.flags.failAllOnUnreadable).toBe(false);
+	});
+
+	it("lists the checks in refusal order", () => {
+		expect(INBOX_RELAY.checks.map((entry) => entry.check)).toEqual([
+			"active",
+			"pendingDuplicate",
+			"cap",
+			"replay",
+			"cap",
+			"burn",
+			"peers",
+			"version",
+		]);
+	});
+
+	it.each(["1.11.0", "2.0.0", "1.11.0+build.1", "1.12.3"])(
+		"accepts extension version %s",
+		(value) => {
+			expect(version?.accepts(value)).toBe(true);
+		},
+	);
+
+	it.each([
+		"1.10.99",
+		"1.11.0-beta",
+		"01.11.0",
+		"1.011.0",
+		"1.11",
+		"1.11.0.1",
+		undefined,
+	])("refuses extension version %s", (value) => {
+		expect(version?.accepts(value)).toBe(false);
+	});
+
+	it("uses the request deadline or the inbox default", () => {
+		expect(INBOX_RELAY.timeoutMs(inboxCliRequest({ timeoutMs: 250 }))).toBe(250);
+		expect(INBOX_RELAY.timeoutMs(inboxCliRequest())).toBe(30_000);
+	});
+
+	it("sends only the request in the browser frame", () => {
+		const cli = inboxCliRequest({ request: { operation: "list-folders" } });
+		expect(INBOX_RELAY.toBrowserRequest(cli)).toEqual({
+			request: { operation: "list-folders" },
+		});
+		expect(Object.keys(INBOX_RELAY.toBrowserRequest(cli))).toEqual([
+			"request",
+		]);
+	});
+
+	it("reads the request back from the browser frame", () => {
+		expect(
+			INBOX_RELAY.fromBrowserRequest({
+				requestId: "r",
+				request: { operation: "list-folders" },
+			}),
+		).toEqual({ operation: "list-folders" });
+	});
+
+	it("turns an ok result into a validated value and a failure into an error", () => {
+		const data = { folders: [{ id: "folder-a", name: "Reviewed" }] };
+		expect(INBOX_RELAY.toCliResult({ requestId: "r", ok: true, data })).toEqual({
+			ok: true,
+			value: data,
+		});
+		expect(
+			INBOX_RELAY.toCliResult({ requestId: "r", ok: false, error: "expired" }),
+		).toEqual({ ok: false, error: "expired" });
 	});
 });
