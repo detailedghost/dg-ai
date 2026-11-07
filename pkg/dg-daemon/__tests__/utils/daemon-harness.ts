@@ -16,6 +16,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	DG_CHROME_EXTENSION_ORIGIN,
 	OWNER_TOKEN_HEADER,
 	type DaemonHandle,
 	type SessionBootstrap,
@@ -583,8 +584,7 @@ export async function connectCli(
 	return ws;
 }
 
-export const EXTENSION_ORIGIN =
-	"chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+export const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
 export const BROWSER_ORIGIN = "https://evil.example";
 
 export function wsExtensionSocket(port: number): WebSocket {

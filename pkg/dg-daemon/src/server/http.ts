@@ -84,6 +84,7 @@ import {
 	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
+	isTrustedExtensionOrigin,
 	isLocalPageOrigin,
 	pinOriginIfUnset,
 	requireLocalPageOrigin,
@@ -143,8 +144,8 @@ function requireExtensionOrigin(
 	paths: DgPaths,
 ): Response | undefined {
 	const origin = req.headers.get("origin");
-	if (!isExtensionOrigin(origin)) {
-		return new Response("refused: requires an extension-scheme Origin", {
+	if (!isTrustedExtensionOrigin(origin)) {
+		return new Response("refused: requires the DeeGee extension Origin", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
 		});
@@ -919,7 +920,10 @@ function handleWsUpgrade(
 	if (!localPage) pinOriginIfUnset(deps.paths, origin as string);
 	const data = localPage
 		? { ...createSocketState("ws", deps.logger), localPage: true }
-		: createSocketState("ws", deps.logger, origin as string);
+		: {
+				...createSocketState("ws", deps.logger, origin as string),
+				stillPinned: () => getPinnedOrigin(deps.paths) === origin,
+			};
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

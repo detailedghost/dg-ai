@@ -19,6 +19,7 @@ export type SocketState = {
 	originHeader?: string;
 	extensionVersion?: string;
 	localPage: boolean;
+	stillPinned?: () => boolean;
 };
 
 export function createSocketState(
@@ -65,7 +66,11 @@ export function sessionAdoptPayload(
 
 /** A chat socket from the extension, the only peer that can serve browser relays and overwatch opens. */
 export function isExtensionPeer(ws: ServerWebSocket<SocketState>): boolean {
-	return ws.data.kind === "ws" && !ws.data.localPage;
+	return (
+		ws.data.kind === "ws" &&
+		!ws.data.localPage &&
+		(ws.data.stillPinned?.() ?? true)
+	);
 }
 
 /** Registers work to abandon when the socket goes away; returns the de-registration for the settled path. */

@@ -1,4 +1,4 @@
-import { CHAT_WS_PATH } from "@dg/common";
+import { CHAT_WS_PATH, DG_CHROME_EXTENSION_ORIGIN } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { readConfig, writeConfig } from "./config-store";
 
@@ -11,6 +11,14 @@ export function isExtensionOrigin(origin: string | null): boolean {
 	} catch {
 		return false;
 	}
+}
+
+export function isTrustedExtensionOrigin(origin: string | null): boolean {
+	if (!isExtensionOrigin(origin)) return false;
+	return (
+		new URL(origin as string).protocol !== "chrome-extension:" ||
+		origin === DG_CHROME_EXTENSION_ORIGIN
+	);
 }
 
 export function isBrowserOrigin(origin: string | null): boolean {

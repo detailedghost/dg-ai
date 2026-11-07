@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, validateSessionAdopt } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
-import { getPinnedOrigin } from "../../src/server/origin";
+import { clearPinnedOrigin, getPinnedOrigin } from "../../src/server/origin";
 import {
 	bootServe,
 	cleanupDgHome,
@@ -82,6 +82,54 @@ describe("zero-touch extension link", () => {
 			},
 		});
 		expect(second.status).toBe(400);
+	});
+
+	it("refuses a foreign chrome extension origin while nothing is pinned", async () => {
+		const { port, dgHome } = await boot();
+
+		const refused = await fetch(`http://127.0.0.1:${port}/ws`, {
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				Connection: "Upgrade",
+				Upgrade: "websocket",
+				"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+				"Sec-WebSocket-Version": "13",
+				Origin: "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			},
+		});
+
+		expect(refused.status).toBe(400);
+		expect(
+			getPinnedOrigin(resolveDgPaths({ env: { DG_HOME: dgHome } })),
+		).toBeUndefined();
+	});
+
+	it("pins the first firefox extension origin on first contact", async () => {
+		const { port, dgHome } = await boot();
+		const Ctor = WebSocket as unknown as new (
+			url: string,
+			options: Bun.WebSocketOptions,
+		) => WebSocket;
+		const socket = new Ctor(`ws://127.0.0.1:${port}/ws`, {
+			headers: { Origin: "moz-extension://11111111-2222-3333-4444-555555555555" },
+		});
+		sockets.push(socket);
+		await waitForOpen(socket);
+
+		expect(getPinnedOrigin(resolveDgPaths({ env: { DG_HOME: dgHome } }))).toBe(
+			"moz-extension://11111111-2222-3333-4444-555555555555",
+		);
+	});
+
+	it("stops pushing session-adopt to a socket whose origin is no longer pinned", async () => {
+		const { port, dgHome } = await boot();
+		const { frames } = await linkExtension(port);
+		clearPinnedOrigin(resolveDgPaths({ env: { DG_HOME: dgHome } }));
+
+		await registerSession(port);
+		await Bun.sleep(200);
+
+		expect(adoptFrames(frames)).toEqual([]);
 	});
 
 	it("replies extensionLinked true on /start while an extension socket is admitted", async () => {
