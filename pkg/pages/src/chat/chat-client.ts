@@ -151,6 +151,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let retryTimer: ReturnType<typeof setTimeout> | undefined;
 	let socketGeneration = 0;
 	let everConnected = false;
+	let socketAdmitted = true;
 	let knownInstanceId: string | undefined;
 	let lastSessionList: Extract<ChatFrame, { type: "session-list" }> | undefined;
 	const capabilities = new Map<string, string>();
@@ -229,7 +230,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		if (typeof frame.type === "string") noteMessage("out", frame.type);
 		const generation = socketGeneration;
 		void enqueueSend(async () => {
-			if (generation !== socketGeneration) return;
+			if (generation !== socketGeneration || !socketAdmitted) return;
 			socket?.send(JSON.stringify(frame));
 		});
 	}
@@ -251,7 +252,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		const generationAtEnqueue = socketGeneration;
 		void enqueueSend(async () => {
 			if (!outbox.includes(msg)) return;
-			if (socketGeneration !== generationAtEnqueue) return;
+			if (socketGeneration !== generationAtEnqueue || !socketAdmitted) return;
 			const token = capabilities.get(msg.sessionId);
 			if (!token) return;
 			socket?.send(
@@ -474,7 +475,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			return;
 		}
 		socket = opened;
-		let admitted = options.admitPort === undefined;
+		socketAdmitted = options.admitPort === undefined;
+		let closed = false;
 		opened.addEventListener("open", () => {
 			if (socket !== opened) return;
 			const { admitPort } = options;
@@ -484,12 +486,12 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			}
 			void admitPort(port).then(
 				(accepted) => {
-					if (socket !== opened) return;
+					if (socket !== opened || closed) return;
 					if (!accepted) {
 						opened.close?.();
 						return;
 					}
-					admitted = true;
+					socketAdmitted = true;
 					handleOpen();
 				},
 				() => {
@@ -498,10 +500,11 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			);
 		});
 		opened.addEventListener("close", () => {
+			closed = true;
 			if (socket === opened) scheduleReconnect();
 		});
 		opened.addEventListener("message", (event) => {
-			if (socket === opened && admitted) handleMessage(event);
+			if (socket === opened && socketAdmitted) handleMessage(event);
 		});
 		opened.addEventListener("error", () => {
 			if (socket === opened) handleError();

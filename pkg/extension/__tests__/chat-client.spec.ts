@@ -1474,3 +1474,58 @@ test("frames flow once admitPort accepts the daemon", async () => {
 
 	expect(seen).toEqual(["session-list"]);
 });
+
+test("a late admission for a socket that already closed does not mark the client connected", async () => {
+	const socket = makeFakeSocket(mockFn);
+	let admit: (admitted: boolean) => void = () => undefined;
+	const client = createChatClient({
+		openSocket: () => socket,
+		admitPort: () =>
+			new Promise<boolean>((resolve) => {
+				admit = resolve;
+			}),
+		backoffBaseMs: 60_000,
+	});
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	socket.dispatch("close");
+
+	admit(true);
+	await flushMicrotasks();
+
+	expect(client.getConnectionState()).toBe("reconnecting");
+	expect(socket.send.mock.calls.length).toBe(0);
+});
+
+test("a replacement socket sends nothing, not even an unpair, until its daemon is admitted", async () => {
+	const sockets = [makeFakeSocket(mockFn), makeFakeSocket(mockFn)];
+	let opened = 0;
+	let admitCalls = 0;
+	let admitSecond: (admitted: boolean) => void = () => undefined;
+	const client = createChatClient({
+		openSocket: () => sockets[opened++] as never,
+		admitPort: () => {
+			admitCalls += 1;
+			return admitCalls === 1
+				? Promise.resolve(true)
+				: new Promise<boolean>((resolve) => {
+						admitSecond = resolve;
+					});
+		},
+	});
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+	sockets[0]?.send.mock.calls.splice(0);
+
+	client.retryNow();
+	sockets[1]?.dispatch("open");
+	void client.disconnectSession(bootstrap.sessionId).catch(() => undefined);
+	client.closeSession(bootstrap.sessionId);
+	await flushMicrotasks();
+	admitSecond(false);
+	await flushMicrotasks();
+
+	expect(sockets[1]?.send.mock.calls.length).toBe(0);
+});
