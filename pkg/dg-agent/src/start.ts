@@ -142,12 +142,8 @@ async function bootstrapFreshDaemon(
 	return handle.port;
 }
 
-function sessionUrl(
-	port: number,
-	bootstrap: SessionBootstrap,
-	options: StartOptions,
-): string {
-	return buildBootstrapUrl(port, bootstrap, options.ext ? "/start" : "/chat");
+function sessionUrl(port: number, bootstrap: SessionBootstrap): string {
+	return buildBootstrapUrl(port, bootstrap, "/chat");
 }
 
 async function openIfRequested(
@@ -197,7 +193,7 @@ export async function cmdStart(
 		);
 		if (claimed) {
 			console.error(cliNextStep("claimed", claimed.sessionId));
-			const url = sessionUrl(targetPort, claimed, options);
+			const url = sessionUrl(targetPort, claimed);
 			printSession(targetPort, claimed.sessionId, url, options);
 			await openIfRequested(url, options, seams);
 			return;
@@ -210,7 +206,7 @@ export async function cmdStart(
 		workset: options.workset,
 		agentIdentity: options.agentIdentity,
 	});
-	const url = sessionUrl(targetPort, bootstrap, options);
+	const url = sessionUrl(targetPort, bootstrap);
 	console.error(cliNextStep("registered", bootstrap.sessionId));
 	printSession(targetPort, bootstrap.sessionId, url, options);
 	await openIfRequested(url, options, seams);

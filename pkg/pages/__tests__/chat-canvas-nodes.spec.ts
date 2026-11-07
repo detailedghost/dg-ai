@@ -1,23 +1,26 @@
 import { expect, mock, test } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
 import { Window } from "happy-dom";
-import { canvasPositionKey } from "@dg/pages/chat/chat-canvas";
-import { stubChromeStorage } from "./utils/chrome-storage";
-import { click, fire, pointer } from "./utils/dom-events";
+import { canvasPositionKey } from "../src/chat/chat-canvas";
+import { renderChatPage as renderSharedChatPage } from "../src/chat/main";
+import type { PositionArea } from "../src/runtime";
+import { click, fire, flushMicrotasks, pointer } from "./utils/dom-events";
 import { buildSessionListFrame } from "./utils/frame-fixtures";
-import { flushMicrotasks } from "./utils/relay-harness";
+import { makePositionArea } from "./utils/position-area";
 
-mock.module("wxt/browser", () => ({
-	browser: {
-		storage: { session: { get: mock(() => Promise.resolve({})) } },
-		runtime: {
-			onMessage: { addListener: mock(() => undefined) },
-			sendMessage: mock(() => Promise.resolve({ ok: true })),
-		},
-	},
-}));
+let positionArea: PositionArea;
 
-const { renderChatPage } = await import("../entrypoints/chat/main");
+function stubPositions(initial: Record<string, unknown> = {}) {
+	const stub = makePositionArea(initial);
+	positionArea = stub.area;
+	return stub.data;
+}
+
+function renderChatPage(
+	options: Parameters<typeof renderSharedChatPage>[0],
+): Promise<void> {
+	return renderSharedChatPage({ positionArea, ...options });
+}
 
 function newRoot(): HTMLElement {
 	const window = new Window();
@@ -95,7 +98,7 @@ function boardNode(root: HTMLElement, sessionId: string): HTMLElement | null {
 }
 
 test("each live session's node moves onto the board when the canvas opens", async () => {
-	stubChromeStorage();
+	stubPositions();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await openCanvas(root, fake, ["session-a", "session-b"]);
@@ -108,7 +111,7 @@ test("each live session's node moves onto the board when the canvas opens", asyn
 });
 
 test("a node with a saved position appears at exactly that position", async () => {
-	stubChromeStorage({
+	stubPositions({
 		[canvasPositionKey("session-a")]: { x: 420, y: 260 },
 	});
 	const root = newRoot();
@@ -122,7 +125,7 @@ test("a node with a saved position appears at exactly that position", async () =
 });
 
 test("nodes with no saved position get distinct default slots rather than stacking at the origin", async () => {
-	stubChromeStorage();
+	stubPositions();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await openCanvas(root, fake, ["session-a", "session-b", "session-c"]);
@@ -135,7 +138,7 @@ test("nodes with no saved position get distinct default slots rather than stacki
 });
 
 test("dragging a node moves it and persists the new position", async () => {
-	const data = stubChromeStorage({
+	const data = stubPositions({
 		[canvasPositionKey("session-a")]: { x: 100, y: 100 },
 	});
 	const root = newRoot();
@@ -159,7 +162,7 @@ test("dragging a node moves it and persists the new position", async () => {
 });
 
 test("dragging a node pans neither the board nor the other nodes", async () => {
-	stubChromeStorage({
+	stubPositions({
 		[canvasPositionKey("session-a")]: { x: 100, y: 100 },
 		[canvasPositionKey("session-b")]: { x: 500, y: 100 },
 	});
@@ -181,7 +184,7 @@ test("dragging a node pans neither the board nor the other nodes", async () => {
 });
 
 test("focusing a node parked far off-view pans the board until it is in view", async () => {
-	stubChromeStorage({
+	stubPositions({
 		[canvasPositionKey("session-a")]: { x: 0, y: 0 },
 		[canvasPositionKey("session-b")]: { x: 9000, y: 7000 },
 	});
@@ -202,7 +205,7 @@ test("focusing a node parked far off-view pans the board until it is in view", a
 });
 
 test("switching back to the rail returns the nodes to the thread pane and drops their board positions", async () => {
-	stubChromeStorage();
+	stubPositions();
 	const root = newRoot();
 	const fake = makeFakeClient();
 	await openCanvas(root, fake, ["session-a"]);
@@ -223,7 +226,7 @@ test("switching back to the rail returns the nodes to the thread pane and drops 
 });
 
 test("a closed session's stored position is pruned rather than left behind forever", async () => {
-	const data = stubChromeStorage({
+	const data = stubPositions({
 		[canvasPositionKey("session-a")]: { x: 10, y: 10 },
 		[canvasPositionKey("session-gone")]: { x: 20, y: 20 },
 	});
@@ -236,7 +239,7 @@ test("a closed session's stored position is pruned rather than left behind forev
 });
 
 test("focusing a node already in view leaves the board where it is, so the canvas does not jerk on every focus", async () => {
-	stubChromeStorage({
+	stubPositions({
 		[canvasPositionKey("session-a")]: { x: 120, y: 120 },
 	});
 	const root = newRoot();
@@ -254,7 +257,7 @@ test("focusing a node already in view leaves the board where it is, so the canva
 });
 
 test("a session that closes mid-drag cancels the drag instead of persisting a position for a node that is gone", async () => {
-	const data = stubChromeStorage({
+	const data = stubPositions({
 		[canvasPositionKey("session-a")]: { x: 100, y: 100 },
 	});
 	const root = newRoot();

@@ -40,7 +40,6 @@ export default defineConfig({
 				"storage",
 				"scripting",
 				"downloads",
-				...(firefox ? [] : ["sidePanel"]),
 				// activeTab is what getMediaStreamId means by "invoked for the current page";
 				// <all_urls> does not satisfy it, so without this every record gesture throws.
 				...(firefox ? [] : ["activeTab", "tabCapture", "offscreen"]),
@@ -71,15 +70,8 @@ export default defineConfig({
 						minimum_chrome_version: "118",
 					}),
 			action: {
-				default_title: "DeeGee chat",
+				default_title: "DeeGee",
 			},
-			...(firefox
-				? {}
-				: {
-						side_panel: {
-							default_path: "chat.html",
-						},
-					}),
 			commands: {
 				"start-demo-recording": {
 					suggested_key: { default: "Alt+Shift+D" },

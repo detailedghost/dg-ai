@@ -748,7 +748,7 @@ function resultFrames(relay: { sentFrames(): Body[] }, type: string): Body[] {
 	return relay.sentFrames().filter((frame) => frame.type === type);
 }
 
-describe("registerChat relay wiring", () => {
+describe("registerDaemonLink relay wiring", () => {
 	it.each(FEATURE_NAMES)(
 		"answers a %s request through the default handler with one correctly shaped result frame",
 		async (name) => {
@@ -838,7 +838,7 @@ describe("registerChat relay wiring", () => {
 		[
 			"MSG.sessionDisconnect confirmed by a session-disconnected frame",
 			async (relay) => {
-				const reply = relay.postAsChatPage({
+				const reply = relay.postAsOptionsPage({
 					type: MSG.sessionDisconnect,
 					sessionId: relay.sessionId,
 				});
@@ -864,7 +864,7 @@ describe("registerChat relay wiring", () => {
 						? new Response(JSON.stringify({ daemon: "dg-daemon", instanceId: "i-1" }))
 						: new Response(JSON.stringify({ closed: [relay.sessionId] }))) as never);
 				try {
-					await relay.postAsChatPage({ type: MSG.sessionClear });
+					await relay.postAsOptionsPage({ type: MSG.sessionClear });
 				} finally {
 					fetchSpy.mockRestore();
 				}
@@ -911,7 +911,7 @@ describe("registerChat relay wiring", () => {
 		expect(signals[0]?.aborted).toBe(true);
 	});
 
-	it("shares no pending state between two registerChat instances", async () => {
+	it("shares no pending state between two registerDaemonLink instances", async () => {
 		const { signals, handler } = abortAware();
 		const first = await bootRelay({ relayHandlers: { "pw-ext": handler as never } });
 		const second = await bootRelay();
@@ -951,7 +951,7 @@ describe("registerChat relay wiring", () => {
 	});
 });
 
-describe("registerChat asset context", () => {
+describe("registerDaemonLink asset context", () => {
 	async function bootWithContext() {
 		const contexts: Array<{
 			fetchAsset(assetId: string): Promise<Blob>;
@@ -1044,8 +1044,8 @@ describe("background module layout", () => {
 	const lib = fileURLToPath(new URL("../lib/background/", import.meta.url));
 	const read = (name: string) => readFileSync(`${lib}${name}`, "utf8");
 
-	it("keeps storage access out of chat.ts", () => {
-		expect(read("chat.ts")).not.toMatch(/api\.storage\.session/);
+	it("keeps storage access out of daemon-link.ts", () => {
+		expect(read("daemon-link.ts")).not.toMatch(/api\.storage\.session/);
 	});
 
 	it("keeps relay-dispatch.ts and pairing-store.ts free of chat.ts imports", () => {

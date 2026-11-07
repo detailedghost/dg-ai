@@ -46,7 +46,9 @@ describe("Claude as the runner, with sessions stored in the daemon database", ()
 
 		const started = await runCli(dgHome, port, ["start", "-a", "claude"]);
 		expect(started.exitCode).toBe(0);
-		expect(started.stderr).toContain("open the extension side panel and choose Connect");
+		expect(started.stderr).toContain(
+			"open the DeeGee popup and run dg-agent pair <code>",
+		);
 		expect(started.stderr).not.toContain("sk-");
 		const bootstrap = validateSessionBootstrap(decodeChatMarker(started.stdout.trim()));
 		expect(bootstrap.agentIdentity).toBe("claude");

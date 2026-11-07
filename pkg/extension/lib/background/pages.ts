@@ -1,8 +1,9 @@
-import { type ChatFrame, emitRedacted } from "@dg/common";
-import { MSG } from "@dg/pages/chat-messages";
-
-export const CHAT_PAGE_PATH = "chat.html";
-export const OVERWATCH_PAGE_PATH = "overwatch.html";
+import {
+	type ChatFrame,
+	type SessionBootstrap,
+	emitRedacted,
+} from "@dg/common";
+import { localPageUrl } from "@dg/pages/chat-marker";
 
 type ActionApi = {
 	onClicked: {
@@ -16,19 +17,17 @@ export type PagesBrowserApi = {
 	runtime: {
 		getURL(path: string): string;
 		sendMessage(message: unknown): Promise<unknown>;
+		openOptionsPage(): Promise<void>;
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
-		query?(queryInfo: {
-			url: string;
-		}): Promise<{ id?: number; windowId?: number }[]>;
+		query?(queryInfo: Record<string, never>): Promise<
+			{ id?: number; windowId?: number; url?: string }[]
+		>;
 		update?(tabId: number, props: { active: boolean }): unknown;
 	};
 	windows?: {
 		update(windowId: number, props: { focused: boolean }): unknown;
-	};
-	sidePanel?: {
-		open(options: { tabId?: number }): Promise<void>;
 	};
 };
 
@@ -43,20 +42,30 @@ export type OverwatchOpenCompletion = {
 	error?: string;
 };
 
+function originAndPath(url: string | undefined): string | undefined {
+	if (!url) return undefined;
+	try {
+		const parsed = new URL(url);
+		return parsed.origin + parsed.pathname;
+	} catch {
+		return undefined;
+	}
+}
+
 export async function handleOverwatchFrame(
 	frame: ChatFrame,
 	api: OverwatchBrowserApi,
+	bootstrap: SessionBootstrap | undefined,
 ): Promise<OverwatchOpenCompletion | undefined> {
-	if (frame.type === "overwatch-state") {
-		await api.runtime
-			.sendMessage({ type: MSG.overwatchState, frame })
-			.catch(() => undefined);
-		return undefined;
-	}
-	if (frame.type !== "overwatch-open") return undefined;
-	const url = api.runtime.getURL(OVERWATCH_PAGE_PATH);
-	const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
-	const existing = matches[0];
+	if (frame.type !== "overwatch-open" || !bootstrap) return undefined;
+	const url = localPageUrl({
+		port: bootstrap.port,
+		path: "/board",
+		bootstrap,
+	});
+	const board = originAndPath(url);
+	const tabs = api.tabs.query ? await api.tabs.query({}) : [];
+	const existing = tabs.find((tab) => originAndPath(tab.url) === board);
 	if (existing?.id !== undefined && api.tabs.update) {
 		await api.tabs.update(existing.id, { active: true });
 		if (existing.windowId !== undefined && api.windows) {
@@ -71,10 +80,16 @@ export async function handleOverwatchFrame(
 export async function handleOverwatchFrameSafely(
 	frame: ChatFrame,
 	api: OverwatchBrowserApi,
-	complete: (result: OverwatchOpenCompletion) => void = () => undefined,
+	{
+		bootstrap,
+		complete,
+	}: {
+		bootstrap: SessionBootstrap | undefined;
+		complete: (result: OverwatchOpenCompletion) => void;
+	},
 ): Promise<void> {
 	try {
-		const result = await handleOverwatchFrame(frame, api);
+		const result = await handleOverwatchFrame(frame, api, bootstrap);
 		if (result) complete(result);
 	} catch (error) {
 		if (frame.type === "overwatch-open") {
@@ -104,43 +119,27 @@ export function createPages({
 	browserApi: PagesBrowserApi;
 	maybeStartRecording: (tab?: chrome.tabs.Tab) => Promise<boolean>;
 }) {
-	async function presentChat(tab?: { id?: number }): Promise<void> {
-		if (api.sidePanel) {
-			try {
-				await api.sidePanel.open(
-					tab?.id !== undefined ? { tabId: tab.id } : {},
-				);
-				return;
-			} catch {
-				// Opening the side panel needs a user gesture Chrome will accept.
-			}
-		}
-		const url = api.runtime.getURL(CHAT_PAGE_PATH);
-		const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
-		const existing = matches[0];
-		if (existing?.id !== undefined && api.tabs.update) {
-			await api.tabs.update(existing.id, { active: true });
-			if (existing.windowId !== undefined && api.windows) {
-				await api.windows.update(existing.windowId, { focused: true });
-			}
-			return;
-		}
-		await api.tabs.create({ url });
-	}
-
 	return {
-		presentChat,
 		onFrame(
 			frame: ChatFrame,
-			sendCompletion: (result: OverwatchOpenCompletion) => void,
+			{
+				sendCompletion,
+				bootstrap,
+			}: {
+				sendCompletion: (result: OverwatchOpenCompletion) => void;
+				bootstrap: SessionBootstrap | undefined;
+			},
 		): void {
-			void handleOverwatchFrameSafely(frame, api, sendCompletion);
+			void handleOverwatchFrameSafely(frame, api, {
+				bootstrap,
+				complete: sendCompletion,
+			});
 		},
 		registerActionClick(): void {
 			resolveActionApi(api).onClicked.addListener((tab) => {
 				void (async () => {
 					if (await maybeStartRecording(tab)) return;
-					await presentChat(tab);
+					await api.runtime.openOptionsPage();
 				})();
 			});
 		},

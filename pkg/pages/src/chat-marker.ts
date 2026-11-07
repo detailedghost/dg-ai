@@ -35,6 +35,24 @@ function decodePayload(payload: string): unknown {
 	return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+function encodePayload(value: unknown): string {
+	const bytes = new TextEncoder().encode(JSON.stringify(value));
+	const bin = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+	return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function localPageUrl({
+	port,
+	path,
+	bootstrap,
+}: {
+	port: number;
+	path: "/chat" | "/board";
+	bootstrap: SessionBootstrap;
+}): string {
+	return `http://127.0.0.1:${port}${path}#${CHAT_MARKER_KEY}=${encodePayload(bootstrap)}`;
+}
+
 export function stripChatMarker(url: string): string {
 	const [base, hash] = url.split("#");
 	if (!hash) return url;

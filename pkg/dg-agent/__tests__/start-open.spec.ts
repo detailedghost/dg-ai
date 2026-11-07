@@ -120,24 +120,75 @@ describe("dg-agent start bootstrap URL", () => {
 		expect(bootstrap.token.length).toBeGreaterThan(0);
 	});
 
-	it("prints the extension /start URL with --ext", async () => {
-		const { logs } = await runStart({ ext: true });
-		const url = logs.at(-1) ?? "";
-		expect(url.startsWith(`http://127.0.0.1:${port}/start#_chat=`)).toBe(true);
-		expect(validateSessionBootstrap(decodeChatMarker(url)).port).toBe(port);
+	describe.each([
+		["default", {}],
+		["--ext", { ext: true }],
+	] as const)("%s start variant", (_name, flags) => {
+		it("prints the /chat page URL and never the /start page", async () => {
+			const { logs } = await runStart({ ...flags });
+			const url = logs.at(-1) ?? "";
+			expect(url.startsWith(`http://127.0.0.1:${port}/chat#_chat=`)).toBe(
+				true,
+			);
+			expect(url).not.toContain("/start");
+			expect(validateSessionBootstrap(decodeChatMarker(url)).port).toBe(port);
+		});
+
+		it("carries the /chat URL in the --json url field", async () => {
+			const { logs } = await runStart({ ...flags, json: true });
+			const payload = JSON.parse(logs.at(-1) ?? "{}") as { url: string };
+			expect(payload.url.startsWith(`http://127.0.0.1:${port}/chat#_chat=`)).toBe(
+				true,
+			);
+		});
+
+		it("opens the printed /chat URL with tryOpen on --open", async () => {
+			const { logs, opened } = await runStart({ ...flags, open: true });
+			const printed = logs.at(-1) ?? "";
+			expect(printed).toContain("/chat#_chat=");
+			expect(opened).toEqual([printed]);
+		});
+
+		it("opens the --json URL on --open", async () => {
+			const { logs, opened } = await runStart({
+				...flags,
+				json: true,
+				open: true,
+			});
+			const payload = JSON.parse(logs.at(-1) ?? "{}") as { url: string };
+			expect(opened).toEqual([payload.url]);
+		});
+
+		it("opens a claimed session's /chat URL on --open", async () => {
+			const sessionId = await createWaitingSession();
+			const { logs, opened } = await runStart({
+				...flags,
+				fresh: false,
+				sessionId,
+				open: true,
+			});
+			const printed = logs.at(-1) ?? "";
+			expect(printed).toContain("/chat#_chat=");
+			expect(opened).toEqual([printed]);
+			expect(validateSessionBootstrap(decodeChatMarker(printed)).sessionId).toBe(
+				sessionId,
+			);
+		});
+	});
+
+	it("gives --ext and the default the same URL for one claimed session", async () => {
+		const sessionId = await createWaitingSession();
+
+		const local = await runStart({ fresh: false, sessionId });
+		const ext = await runStart({ fresh: false, sessionId, ext: true });
+
+		expect(ext.logs.at(-1)).toBe(local.logs.at(-1));
 	});
 
 	it("opens the printed local URL with tryOpen on --open", async () => {
 		const { logs, opened } = await runStart({ open: true });
 		const printed = logs.at(-1) ?? "";
 		expect(printed).toContain("/chat#_chat=");
-		expect(opened).toEqual([printed]);
-	});
-
-	it("opens the printed extension URL with tryOpen on --ext --open", async () => {
-		const { logs, opened } = await runStart({ ext: true, open: true });
-		const printed = logs.at(-1) ?? "";
-		expect(printed).toContain("/start#_chat=");
 		expect(opened).toEqual([printed]);
 	});
 
@@ -156,12 +207,6 @@ describe("dg-agent start bootstrap URL", () => {
 		);
 	});
 
-	it("carries the /start URL in the --json url field with --ext", async () => {
-		const { logs } = await runStart({ json: true, ext: true });
-		const payload = JSON.parse(logs.at(-1) ?? "{}") as { url: string };
-		expect(payload.url).toContain("/start#_chat=");
-	});
-
 	it("keeps one session in the chat and extension URLs of a claimed session", async () => {
 		const sessionId = await createWaitingSession();
 
@@ -174,21 +219,6 @@ describe("dg-agent start bootstrap URL", () => {
 		expect(local.opened).toEqual([localUrl]);
 		expect(localBootstrap.sessionId).toBe(sessionId);
 		expect(decodeChatMarker(ext.logs.at(-1) ?? "")).toEqual(localBootstrap);
-	});
-
-	it("opens the /start URL for a claimed session with --ext --open", async () => {
-		const sessionId = await createWaitingSession();
-
-		const { logs, opened } = await runStart({
-			fresh: false,
-			sessionId,
-			ext: true,
-			open: true,
-		});
-		const printed = logs.at(-1) ?? "";
-
-		expect(printed).toContain("/start#_chat=");
-		expect(opened).toEqual([printed]);
 	});
 
 	it("opens the --json URL with --open", async () => {

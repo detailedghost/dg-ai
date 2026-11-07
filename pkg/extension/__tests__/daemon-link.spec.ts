@@ -10,10 +10,7 @@ import {
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
-import {
-	CHAT_PAGE_PATH,
-	handleOverwatchFrameSafely,
-} from "@/lib/background/pages";
+import { handleOverwatchFrameSafely } from "@/lib/background/pages";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
@@ -30,7 +27,7 @@ import {
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
-const { registerChat, registerRecording } = await import("@/lib/background");
+const { registerDaemonLink, registerRecording } = await import("@/lib/background");
 const { MSG } = await import("@dg/pages/chat-messages");
 const { browser: mockedBrowser } = await import("wxt/browser");
 
@@ -61,8 +58,8 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 	let onMessageListener: Listener | undefined;
 	let onClickedListener: ClickListener | undefined;
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
-	const tabsQuery = mock((_queryInfo: { url: string }) =>
-		Promise.resolve([] as { id?: number; windowId?: number }[]),
+	const tabsQuery = mock((_queryInfo: object) =>
+		Promise.resolve([] as { id?: number; windowId?: number; url?: string }[]),
 	);
 	const tabsUpdate = mock((_tabId: number, _props: { active: boolean }) =>
 		Promise.resolve(),
@@ -71,6 +68,7 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 		Promise.resolve(),
 	);
 	const sendMessage = mock((_message: unknown) => Promise.resolve(undefined));
+	const openOptionsPage = mock(() => Promise.resolve());
 	const onStartupAdd = mock((_cb: () => void) => undefined);
 	const onInstalledAdd = mock((_cb: () => void) => undefined);
 	const api = {
@@ -90,6 +88,7 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			getManifest: () => ({ version: "1.9.3" }),
 			sendMessage,
+			openOptionsPage,
 			onStartup: { addListener: onStartupAdd },
 			onInstalled: { addListener: onInstalledAdd },
 		},
@@ -107,33 +106,34 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 		tabsUpdate,
 		windowsUpdate,
 		sendMessage,
+		openOptionsPage,
 		getOnMessage: () => onMessageListener,
 		getOnClicked: () => onClickedListener,
 	};
 }
 
 function extensionPageSender(api: ReturnType<typeof makeBrowserApi>["api"]) {
-	return { url: api.runtime.getURL("chat.html") };
+	return { url: api.runtime.getURL("options.html") };
 }
 
-test("registerChat is exported as a function from the background barrel", () => {
-	expect(typeof registerChat).toBe("function");
+test("registerDaemonLink is exported as a function from the background barrel", () => {
+	expect(typeof registerDaemonLink).toBe("function");
 });
 
-test("the background entrypoint imports registerChat from the barrel and invokes it", () => {
+test("the background entrypoint imports registerDaemonLink from the barrel and invokes it", () => {
 	const source = readFileSync(
 		fileURLToPath(new URL("../entrypoints/background.ts", import.meta.url)),
 		"utf8",
 	);
 	expect(source).toMatch(
-		/import\s*\{[^}]*\bregisterChat\b[^}]*\}\s*from\s*["']@\/lib\/background["']/,
+		/import\s*\{[^}]*\bregisterDaemonLink\b[^}]*\}\s*from\s*["']@\/lib\/background["']/,
 	);
-	expect(source).toMatch(/registerChat\s*\(/);
+	expect(source).toMatch(/registerDaemonLink\s*\(/);
 });
 
-test("a captured marker acknowledges connection setup and opens chat", async () => {
+test("a captured marker acknowledges connection setup and opens no tab", async () => {
 	const { api, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api, openSocket: () => makeFakeSocket() });
+	registerDaemonLink({ browserApi: api, openSocket: () => makeFakeSocket() });
 	const listener = getOnMessage();
 	expect(typeof listener).toBe("function");
 	const sendResponse = mock(() => undefined);
@@ -147,17 +147,14 @@ test("a captured marker acknowledges connection setup and opens chat", async () 
 
 	expect(keepChannel).toBe(true);
 	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-	expect(tabsCreate).toHaveBeenCalledTimes(1);
-	expect(tabsCreate).toHaveBeenCalledWith({
-		url: api.runtime.getURL(CHAT_PAGE_PATH),
-	});
+	expect(tabsCreate).not.toHaveBeenCalled();
 });
 
 test("a pairing write that fails when the session confirms does not stop that session's keepalive", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	local.set.mockImplementation(() => Promise.reject(new Error("storage failed")));
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
@@ -174,7 +171,7 @@ test("a pairing write that fails when the session confirms does not stop that se
 
 test("ignores a marker-captured message carrying a malformed bootstrap rather than partially storing it", async () => {
 	const { api, local, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api });
+	registerDaemonLink({ browserApi: api });
 	const listener = getOnMessage();
 
 	listener?.(
@@ -190,7 +187,7 @@ test("ignores a marker-captured message carrying a malformed bootstrap rather th
 
 test("ignores a marker-captured message whose bootstrap is a DaemonHandle carrying a spurious agentIdentity (no token)", async () => {
 	const { api, local, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api });
+	registerDaemonLink({ browserApi: api });
 	const listener = getOnMessage();
 	const daemonWithAgentIdentity = {
 		pid: 4242,
@@ -213,7 +210,7 @@ test("ignores a marker-captured message whose bootstrap is a DaemonHandle carryi
 
 test("ignores an otherwise well-formed bootstrap whose port falls outside the daemon's ratified range", async () => {
 	const { api, local, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api });
+	registerDaemonLink({ browserApi: api });
 	const listener = getOnMessage();
 	const outOfRange = makeBootstrap({ port: 9999 });
 
@@ -228,12 +225,12 @@ test("ignores an otherwise well-formed bootstrap whose port falls outside the da
 	expect(tabsCreate).not.toHaveBeenCalled();
 });
 
-test("regression: a pending recording still starts from the toolbar action, and chat does not also open", async () => {
-	const { api, tabsCreate, getOnClicked } = makeBrowserApi();
+test("regression: a pending recording still starts from the toolbar action, and settings do not also open", async () => {
+	const { api, openOptionsPage, getOnClicked } = makeBrowserApi();
 	const maybeStartRecording = mock((_tab?: chrome.tabs.Tab) =>
 		Promise.resolve(true),
 	);
-	registerChat({ browserApi: api, maybeStartRecording });
+	registerDaemonLink({ browserApi: api, maybeStartRecording });
 	const onClicked = getOnClicked();
 	expect(typeof onClicked).toBe("function");
 	const tab = { id: 7 } as chrome.tabs.Tab;
@@ -242,15 +239,15 @@ test("regression: a pending recording still starts from the toolbar action, and 
 	await settle();
 
 	expect(maybeStartRecording).toHaveBeenCalledWith(tab);
-	expect(tabsCreate).not.toHaveBeenCalled();
+	expect(openOptionsPage).not.toHaveBeenCalled();
 });
 
-test("regression: the toolbar action opens chat when there is no pending recording", async () => {
-	const { api, tabsCreate, getOnClicked } = makeBrowserApi();
+test("regression: the toolbar action opens settings when there is no pending recording", async () => {
+	const { api, openOptionsPage, getOnClicked } = makeBrowserApi();
 	const maybeStartRecording = mock((_tab?: chrome.tabs.Tab) =>
 		Promise.resolve(false),
 	);
-	registerChat({ browserApi: api, maybeStartRecording });
+	registerDaemonLink({ browserApi: api, maybeStartRecording });
 	const onClicked = getOnClicked();
 	const tab = { id: 7 } as chrome.tabs.Tab;
 
@@ -258,18 +255,16 @@ test("regression: the toolbar action opens chat when there is no pending recordi
 	await settle();
 
 	expect(maybeStartRecording).toHaveBeenCalledWith(tab);
-	expect(tabsCreate).toHaveBeenCalledWith({
-		url: api.runtime.getURL(CHAT_PAGE_PATH),
-	});
+	expect(openOptionsPage).toHaveBeenCalledTimes(1);
 });
 
-test("regression: registerChat wires exactly one action.onClicked listener, never a second independent one", () => {
+test("regression: registerDaemonLink wires exactly one action.onClicked listener, never a second independent one", () => {
 	const { api } = makeBrowserApi();
-	registerChat({ browserApi: api });
+	registerDaemonLink({ browserApi: api });
 	expect(api.action.onClicked.addListener).toHaveBeenCalledTimes(1);
 });
 
-test("registerChat's default browser-api seam registers the toolbar listener on Firefox's MV2 global (browserAction, no action)", () => {
+test("registerDaemonLink's default browser-api seam registers the toolbar listener on Firefox's MV2 global (browserAction, no action)", () => {
 	const mv2Browser = mockedBrowser as Record<string, unknown>;
 	const addListener = mock(() => undefined);
 	mv2Browser.browserAction = { onClicked: { addListener } };
@@ -278,7 +273,7 @@ test("registerChat's default browser-api seam registers the toolbar listener on 
 		getURL: mock((path: string) => path),
 	};
 	try {
-		expect(() => registerChat()).not.toThrow();
+		expect(() => registerDaemonLink()).not.toThrow();
 		expect(addListener).toHaveBeenCalledTimes(1);
 	} finally {
 		delete mv2Browser.browserAction;
@@ -316,7 +311,7 @@ test("sends no keepalive before the daemon confirms this session's connect hands
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	await captureMarker(getOnMessage, makeBootstrap());
 
 	socket.dispatch("open");
@@ -330,7 +325,7 @@ test("sends a keepalive immediately once the daemon confirms the session, then p
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -360,7 +355,7 @@ test("the production default keepalive interval is at most 20s, not just an over
 		return 0 as unknown as ReturnType<typeof setInterval>;
 	}) as typeof setInterval;
 	try {
-		registerChat({ browserApi: api, openSocket });
+		registerDaemonLink({ browserApi: api, openSocket });
 		const bootstrap = makeBootstrap();
 		await captureMarker(getOnMessage, bootstrap);
 		socket.dispatch("open");
@@ -380,7 +375,7 @@ test("the first frame sent on open is the connect capability handshake carrying 
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -403,7 +398,7 @@ test("the keepalive frames are real ratified ChatFrames, not ad-hoc pings the da
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -434,7 +429,7 @@ test("sends the first keepalive frame immediately once the daemon confirms the s
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 10_000 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 10_000 });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -455,7 +450,7 @@ test("opens the WebSocket at the bootstrap's own port, never a hardcoded one", a
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap({ port: CHAT_DEFAULT_PORT + 3 });
 
 	await captureMarker(getOnMessage, bootstrap);
@@ -469,7 +464,7 @@ test("keepalive stops once the socket reports itself closed, leaving no dangling
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -493,7 +488,7 @@ test("keepalive stops once the socket reports an error, leaving no dangling time
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -517,7 +512,7 @@ test("regression: with no chat tab attached, an inbound frame for a captured ses
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	const client = registerChat({ browserApi: api, openSocket });
+	const client = registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -557,6 +552,7 @@ test("reports an overwatch open failure from the browser API", async () => {
 				requestId: "open-request-1",
 			},
 			api,
+			{ bootstrap: makeBootstrap(), complete: () => undefined },
 		);
 
 		expect(error).toHaveBeenCalledWith(
@@ -577,11 +573,13 @@ test("an inbound overwatch-open focuses the existing board tab and replies to th
 		windowsUpdate,
 	} = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 	tabsQuery.mockImplementation(() =>
-		Promise.resolve([{ id: 41, windowId: 7 }]),
+		Promise.resolve([
+			{ id: 41, windowId: 7, url: `http://127.0.0.1:${bootstrap.port}/board` },
+		]),
 	);
 	const tabsCreatedBeforeOpen = tabsCreate.mock.calls.length;
 
@@ -625,21 +623,19 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 	});
 	const { api, getOnMessage, tabsQuery } = makeBrowserApi();
 	let resolveQuery:
-		| ((matches: { id?: number; windowId?: number }[]) => void)
+		| ((matches: { id?: number; windowId?: number; url?: string }[]) => void)
 		| undefined;
-	tabsQuery.mockImplementation((queryInfo: { url?: string }) => {
-		if (queryInfo.url?.includes("overwatch.html")) {
-			return new Promise((resolve) => {
+	tabsQuery.mockImplementation(
+		() =>
+			new Promise((resolve) => {
 				resolveQuery = resolve;
-			});
-		}
-		return Promise.resolve([]);
-	});
+			}),
+	);
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
 		(async () =>
 			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
 	);
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -712,7 +708,7 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 	}
 });
 
-test("registerChat drops a pw-ext result whose admission socket was replaced by a reconnect", async () => {
+test("registerDaemonLink drops a pw-ext result whose admission socket was replaced by a reconnect", async () => {
 	const sockets: FakeSocket[] = [];
 	const openSocket = mock((_url: string) => {
 		const socket = makeFakeSocket();
@@ -732,7 +728,7 @@ test("registerChat drops a pw-ext result whose admission socket was replaced by 
 		(async () =>
 			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
 	);
-	registerChat({ browserApi: api, openSocket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	registerDaemonLink({ browserApi: api, openSocket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	sockets[0]?.dispatch("open");
 	await settle();
@@ -796,7 +792,7 @@ test("regression: the background's socket reopens automatically after the daemon
 	);
 
 	const { api, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	await captureMarker(getOnMessage, makeBootstrap());
 
 	const scheduled: Array<() => void> = [];
@@ -861,7 +857,7 @@ test("regression: the background rediscovers a relocated daemon via GET /healthz
 	}) as unknown as typeof fetch);
 
 	const { api, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 
 	sockets[0]?.dispatch("open");
@@ -896,7 +892,7 @@ test("regression: the background's reconnect backoff grows across attempts and s
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	const { api, getOnMessage } = makeBrowserApi();
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	await captureMarker(getOnMessage, makeBootstrap());
 
 	const delays: number[] = [];
@@ -922,7 +918,7 @@ test("a closed session stops drawing keepalives, so its dead token cannot burn t
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
+	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const closing = makeBootstrap({
 		sessionId: "sess-closing",
 		token: "tok-closing",
@@ -960,262 +956,11 @@ test("a closed session stops drawing keepalives, so its dead token cannot burn t
 	expect(tokensAfter).toContain(staying.token);
 });
 
-test("regression: a session created via session-pending is registered for keepalive, not silently dropped", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	const requester = makeBootstrap();
-	await captureMarker(getOnMessage, requester);
-
-	socket.dispatch("open");
-	await settle();
-	socket.dispatch(
-		"message",
-		message(buildSessionListFrame(requester.sessionId)),
-	);
-	await settle();
-
-	socket.dispatch(
-		"message",
-		message({
-			type: "session-pending",
-			sessionId: requester.sessionId,
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-			newSession: { sessionId: "sess-spawned", token: "tok-spawned" },
-		}),
-	);
-	socket.dispatch("message", message(buildSessionListFrame("sess-spawned")));
-	await new Promise((resolve) => setTimeout(resolve, 40));
-
-	const tokens = socket.send.mock.calls
-		.map(
-			([raw]) => JSON.parse(raw as string) as { type: string; token?: string },
-		)
-		.filter((f) => f.type === "keepalive")
-		.map((f) => f.token);
-	expect(tokens).toContain("tok-spawned");
-});
-
-test("a session created via session-pending is stored in local storage once it confirms and survives the requester closing", async () => {
-	const { api, local, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
-	const requester = makeBootstrap();
-	await captureMarker(getOnMessage, requester);
-	socket.dispatch("open");
-	await settle();
-	socket.dispatch("message", message(buildSessionListFrame(requester.sessionId)));
-	await settle();
-
-	socket.dispatch(
-		"message",
-		message({
-			type: "session-pending",
-			sessionId: requester.sessionId,
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-			newSession: { sessionId: "sess-spawned", token: "tok-spawned" },
-		}),
-	);
-	await settle();
-	expect(local.data).not.toHaveProperty([pairingKey("sess-spawned")]);
-
-	socket.dispatch("message", message(buildSessionListFrame("sess-spawned")));
-	await settle();
-	socket.dispatch(
-		"message",
-		message({
-			type: "session-closed",
-			sessionId: requester.sessionId,
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-		}),
-	);
-	await settle();
-
-	expect(local.data[pairingKey("sess-spawned")]).toEqual({
-		...requester,
-		sessionId: "sess-spawned",
-		token: "tok-spawned",
-	});
-	expect(local.data).not.toHaveProperty([pairingKey(requester.sessionId)]);
-});
-
-test("a session created via session-pending is removed from local storage when it closes", async () => {
-	const { api, local, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
-	const requester = makeBootstrap();
-	await captureMarker(getOnMessage, requester);
-	socket.dispatch("open");
-	await settle();
-	socket.dispatch(
-		"message",
-		message({
-			type: "session-pending",
-			sessionId: requester.sessionId,
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-			newSession: { sessionId: "sess-spawned", token: "tok-spawned" },
-		}),
-	);
-	socket.dispatch("message", message(buildSessionListFrame("sess-spawned")));
-	await settle();
-	expect(local.data).toHaveProperty([pairingKey("sess-spawned")]);
-
-	socket.dispatch(
-		"message",
-		message({
-			type: "session-closed",
-			sessionId: "sess-spawned",
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-		}),
-	);
-	await settle();
-
-	expect(local.data).not.toHaveProperty([pairingKey("sess-spawned")]);
-});
-
-test("MSG.clientConnect from an extension page connects the client and responds with the connection state", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
-	const bootstrap = makeBootstrap();
-	const sendResponse = mock((_r: unknown) => undefined);
-
-	getOnMessage()?.(
-		{ type: MSG.clientConnect, bootstrap },
-		extensionPageSender(api),
-		sendResponse,
-	);
-	await settle();
-
-	expect(openSocket).toHaveBeenCalledWith(
-		`ws://127.0.0.1:${bootstrap.port}/ws`,
-	);
-	expect(sendResponse).toHaveBeenCalledWith(
-		expect.objectContaining({ ok: true }),
-	);
-});
-
-test("MSG.clientConnect from a non-extension-page sender is refused without connecting", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
-	const bootstrap = makeBootstrap();
-	const sendResponse = mock((_r: unknown) => undefined);
-
-	getOnMessage()?.(
-		{ type: MSG.clientConnect, bootstrap },
-		{ url: "http://example.com/evil", tab: { id: 9 } },
-		sendResponse,
-	);
-	await settle();
-
-	expect(openSocket).not.toHaveBeenCalled();
-	expect(sendResponse).not.toHaveBeenCalled();
-});
-
-test("MSG.userMessage relays to the daemon as a real user-message frame and acks the sender", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
-	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
-	socket.dispatch("open");
-	await settle();
-	socket.dispatch(
-		"message",
-		message(
-			buildSessionListFrameShared(
-				[
-					{
-						sessionId: bootstrap.sessionId,
-						agentIdentity: bootstrap.agentIdentity,
-					},
-				],
-				{ sessionId: bootstrap.sessionId },
-			),
-		),
-	);
-	await settle();
-	const sendResponse = mock((_r: unknown) => undefined);
-
-	getOnMessage()?.(
-		{ type: MSG.userMessage, sessionId: bootstrap.sessionId, body: "hello" },
-		extensionPageSender(api),
-		sendResponse,
-	);
-	await settle();
-
-	const sent = socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
-	expect(
-		sent.some((f) => f.type === "user-message" && f.body === "hello"),
-	).toBe(true);
-	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-});
-
-test("MSG.sessionCreate relays to the daemon as a real session-create frame", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
-	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
-	socket.dispatch("open");
-	await settle();
-	const sendResponse = mock((_r: unknown) => undefined);
-
-	getOnMessage()?.(
-		{ type: MSG.sessionCreate, sessionId: bootstrap.sessionId, role: "agent" },
-		extensionPageSender(api),
-		sendResponse,
-	);
-	await settle();
-
-	const sent = socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
-	expect(sent.some((f) => f.type === "session-create")).toBe(true);
-	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-});
-
-test("regression #35: MSG.sessionCreate answers with an error when the socket is down", async () => {
-	const { api, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
-	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
-	socket.dispatch("open");
-	await settle();
-	socket.dispatch("close");
-	await settle();
-	const sendResponse = mock((_r: unknown) => undefined);
-	const sentBefore = socket.send.mock.calls.length;
-
-	getOnMessage()?.(
-		{ type: MSG.sessionCreate, sessionId: bootstrap.sessionId, role: "agent" },
-		extensionPageSender(api),
-		sendResponse,
-	);
-	await settle();
-
-	expect(sendResponse).toHaveBeenCalledTimes(1);
-	expect(sendResponse).toHaveBeenCalledWith({
-		ok: false,
-		error: "requestNewSession: not connected to the daemon",
-	});
-	const sent = socket.send.mock.calls
-		.slice(sentBefore)
-		.map(([raw]) => JSON.parse(raw as string));
-	expect(sent.some((f) => f.type === "session-create")).toBe(false);
-});
-
 test("MSG.sessionClose relays to the daemon as a real session-close frame", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
@@ -1232,32 +977,6 @@ test("MSG.sessionClose relays to the daemon as a real session-close frame", asyn
 	const sent = socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
 	expect(sent.some((f) => f.type === "session-close")).toBe(true);
 	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-});
-
-test("every daemon frame is broadcast outward via api.runtime.sendMessage, not just relied on to no-op", async () => {
-	const { api, sendMessage, getOnMessage } = makeBrowserApi();
-	const socket = makeFakeSocket();
-	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
-	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
-	socket.dispatch("open");
-	await settle();
-
-	socket.dispatch(
-		"message",
-		message({
-			type: "agent-message",
-			sessionId: bootstrap.sessionId,
-			protocolVersion: CHAT_PROTOCOL_VERSION,
-			body: "hi from the daemon",
-		}),
-	);
-
-	expect(sendMessage).toHaveBeenCalledWith({
-		type: MSG.frame,
-		frame: expect.objectContaining({ type: "agent-message" }),
-	});
 });
 
 test("regression: registerRecording still wires its message router, unaffected by the removed onClicked registration", () => {
@@ -1279,7 +998,7 @@ test("a closed session's bootstrap is removed from local storage, so the next br
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
@@ -1304,7 +1023,7 @@ test("a closed session's bootstrap is removed from local storage, so the next br
 test("the background announces the manifest version in its connect handshake", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, makeBootstrap());
 
 	socket.dispatch("open");
@@ -1319,7 +1038,7 @@ test("the background announces the manifest version in its connect handshake", a
 test("a socket error is relayed to the chat page as a connection change with its detail", async () => {
 	const { api, getOnMessage, sendMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 
 	socket.dispatch("error");
@@ -1337,7 +1056,7 @@ test("a socket error is relayed to the chat page as a connection change with its
 test("a socket that opens is relayed to the chat page as connected", async () => {
 	const { api, getOnMessage, sendMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, makeBootstrap());
 
 	socket.dispatch("open");
@@ -1361,7 +1080,7 @@ async function inboxRelay({ confirm = true, deferred = false } = {}) {
 		await pending;
 		return { ok: true as const, data: { messages: [], hasMore: false } };
 	});
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { inbox: handler as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { inbox: handler as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1373,7 +1092,7 @@ async function inboxRelay({ confirm = true, deferred = false } = {}) {
 	return { socket, bootstrap, request, handler, sendMessage, release: () => release?.(), results };
 }
 
-test("registerChat sends a correlated authenticated inbox result directly to the daemon socket", async () => {
+test("registerDaemonLink sends a correlated authenticated inbox result directly to the daemon socket", async () => {
 	const relay = await inboxRelay();
 	relay.socket.dispatch("message", message(relay.request));
 	await settle();
@@ -1386,7 +1105,7 @@ test("registerChat sends a correlated authenticated inbox result directly to the
 	expect(sentTypes(relay.socket)).not.toContain("user-message");
 });
 
-test("registerChat suppresses duplicate inbox requests while their provider operation is pending", async () => {
+test("registerDaemonLink suppresses duplicate inbox requests while their provider operation is pending", async () => {
 	const relay = await inboxRelay({ deferred: true });
 	relay.socket.dispatch("message", message(relay.request));
 	relay.socket.dispatch("message", message(relay.request));
@@ -1398,7 +1117,7 @@ test("registerChat suppresses duplicate inbox requests while their provider oper
 	expect(relay.results()).toHaveLength(1);
 });
 
-test("registerChat rejects inbox execution before the authenticated session handshake is confirmed", async () => {
+test("registerDaemonLink rejects inbox execution before the authenticated session handshake is confirmed", async () => {
 	const relay = await inboxRelay({ confirm: false });
 	relay.socket.dispatch("message", message(relay.request));
 	await settle();
@@ -1406,7 +1125,7 @@ test("registerChat rejects inbox execution before the authenticated session hand
 	expect(relay.results()).toEqual([]);
 });
 
-test("registerChat rejects inbox requests for an uncaptured session", async () => {
+test("registerDaemonLink rejects inbox requests for an uncaptured session", async () => {
 	const relay = await inboxRelay();
 	relay.socket.dispatch("message", message({ ...relay.request, sessionId: "uncaptured-session" }));
 	await settle();
@@ -1414,11 +1133,11 @@ test("registerChat rejects inbox requests for an uncaptured session", async () =
 	expect(relay.results()).toEqual([]);
 });
 
-test("registerChat turns a proto-browser-request onFrame into a proto-browser-result", async () => {
+test("registerDaemonLink turns a proto-browser-request onFrame into a proto-browser-result", async () => {
 	const { api, getOnMessage, sendMessage, tabsCreate } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1471,7 +1190,7 @@ test("registerChat turns a proto-browser-request onFrame into a proto-browser-re
 	).toBe(false);
 });
 
-test.each(["session-closed", "close", "error"])("registerChat discards a pending inbox result after %s", async (ending) => {
+test.each(["session-closed", "close", "error"])("registerDaemonLink discards a pending inbox result after %s", async (ending) => {
 	const relay = await inboxRelay({ deferred: true });
 	relay.socket.dispatch("message", message(relay.request));
 	await settle();
@@ -1484,8 +1203,8 @@ test.each(["session-closed", "close", "error"])("registerChat discards a pending
 	expect(relay.results()).toEqual([]);
 });
 
-test("registerChat aborts a pending pw-ext signal on an error drop and still forwards the error frame to the UI", async () => {
-	const { api, sendMessage, getOnMessage } = makeBrowserApi();
+test("registerDaemonLink aborts a pending pw-ext signal on an error drop", async () => {
+	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
 	const signals: AbortSignal[] = [];
@@ -1493,7 +1212,7 @@ test("registerChat aborts a pending pw-ext signal on an error drop and still for
 		signals.push(input.signal);
 		return new Promise<never>(() => undefined);
 	});
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExt as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExt as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1521,13 +1240,9 @@ test("registerChat aborts a pending pw-ext signal on an error drop and still for
 	await settle();
 
 	expect(signals[0]?.aborted).toBe(true);
-	expect(sendMessage).toHaveBeenCalledWith({
-		type: MSG.frame,
-		frame: expect.objectContaining({ type: "error" }),
-	});
 });
 
-test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browser-result", async () => {
+test("registerDaemonLink turns a pw-ext-browser-request into one tokened pw-ext-browser-result", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
@@ -1535,7 +1250,7 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 		ok: true as const,
 		data: { text: "### Page" },
 	}));
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1588,12 +1303,12 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 	expect(() => validateChatFrame(results[0])).not.toThrow();
 });
 
-test("registerChat ignores a pw-ext request for an unpaired session", async () => {
+test("registerDaemonLink ignores a pw-ext request for an unpaired session", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
 	const pwExtRun = mock(async () => ({ ok: false as const, error: "x" }));
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1614,7 +1329,7 @@ test("registerChat ignores a pw-ext request for an unpaired session", async () =
 	expect(pwExtRun).not.toHaveBeenCalled();
 });
 
-test("registerChat cancels a pending pw-ext request when its session closes", async () => {
+test("registerDaemonLink cancels a pending pw-ext request when its session closes", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
@@ -1628,7 +1343,7 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 				);
 			}),
 	);
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1659,7 +1374,7 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 	expect(seen?.aborted).toBe(true);
 });
 
-test("registerChat aborts a pending pw-ext request on a daemon cancel frame", async () => {
+test("registerDaemonLink aborts a pending pw-ext request on a daemon cancel frame", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
@@ -1679,7 +1394,7 @@ test("registerChat aborts a pending pw-ext request on a daemon cancel frame", as
 				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));
 			}),
 	);
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1709,7 +1424,7 @@ test("registerChat aborts a pending pw-ext request on a daemon cancel frame", as
 	expect(seen?.aborted).toBe(true);
 });
 
-test("registerChat aborts a pw-ext request at its relay deadline", async () => {
+test("registerDaemonLink aborts a pw-ext request at its relay deadline", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
@@ -1721,7 +1436,7 @@ test("registerChat aborts a pw-ext request at its relay deadline", async () => {
 				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));
 			}),
 	);
-	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1774,7 +1489,7 @@ function bootWithStored(
 		sockets.push(socket);
 		return socket;
 	});
-	registerChat({
+	registerDaemonLink({
 		browserApi: harness.api,
 		openSocket,
 		relayHandlers: options.relayHandlers as never,
@@ -1818,7 +1533,7 @@ function captureTimeouts() {
 const FIRST = makeBootstrap({ sessionId: "sess-first", token: "tok-first-secret-value" });
 const SECOND = makeBootstrap({ sessionId: "sess-second", token: "tok-second-secret-value" });
 
-test("registerChat connects every stored pairing and sends one connect handshake per pairing when the socket opens", async () => {
+test("registerDaemonLink connects every stored pairing and sends one connect handshake per pairing when the socket opens", async () => {
 	const { sockets, openSocket, sentTypes } = bootWithStored([FIRST, SECOND]);
 	await settle();
 
@@ -1837,10 +1552,10 @@ test("registerChat connects every stored pairing and sends one connect handshake
 	);
 });
 
-test("registerChat registers exactly one onStartup and one onInstalled listener, synchronously", () => {
+test("registerDaemonLink registers exactly one onStartup and one onInstalled listener, synchronously", () => {
 	const { api, onStartupAdd, onInstalledAdd } = makeBrowserApi();
 
-	registerChat({ browserApi: api, openSocket: () => makeFakeSocket() });
+	registerDaemonLink({ browserApi: api, openSocket: () => makeFakeSocket() });
 
 	expect(onStartupAdd).toHaveBeenCalledTimes(1);
 	expect(onInstalledAdd).toHaveBeenCalledTimes(1);
@@ -1988,7 +1703,7 @@ test("a pairing left by an older extension under chat_session in the session are
 	};
 	session.get = mock(async (_keys?: unknown) => ({ ...sessionData }));
 	const openSocket = mock((_url: string) => makeFakeSocket());
-	registerChat({ browserApi: harness.api, openSocket });
+	registerDaemonLink({ browserApi: harness.api, openSocket });
 	await settle();
 	const reply = await new Promise<Record<string, unknown> | undefined>((resolve) => {
 		harness.getOnMessage()?.(
@@ -2028,7 +1743,7 @@ test("MSG.sessionDisconnect on a stored pairing whose socket never connected rem
 test("MSG.markerCaptured writes no key until a session-list confirms the session", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, FIRST);
 	socket.dispatch("open");
 	await settle();
@@ -2046,7 +1761,7 @@ test("MSG.markerCaptured writes no key until a session-list confirms the session
 test("a session list that confirms another session does not persist an unconfirmed one", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, FIRST);
 	await captureMarker(getOnMessage, SECOND);
 	socket.dispatch("open");
@@ -2061,7 +1776,7 @@ test("a session list that confirms another session does not persist an unconfirm
 test("a session that never confirms leaves no key, even after the socket drops", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, FIRST);
 	socket.dispatch("open");
 	await settle();
@@ -2075,7 +1790,7 @@ test("a session that never confirms leaves no key, even after the socket drops",
 test("a bad claim answered with invalid-session leaves no key", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, FIRST);
 	socket.dispatch("open");
 	await settle();
@@ -2098,7 +1813,7 @@ test("a bad claim answered with invalid-session leaves no key", async () => {
 test("a pairing is not written twice when a second session list repeats the confirmation", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, FIRST);
 	socket.dispatch("open");
 	await settle();
@@ -2284,7 +1999,7 @@ test("an Unpair followed by a late adopt of the same session leaves no key", asy
 		await realSet?.(items);
 	});
 	const socket = makeFakeSocket();
-	registerChat({ browserApi: api, openSocket: () => socket });
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	await captureMarker(getOnMessage, FIRST);
 	socket.dispatch("open");
 	await settle();
@@ -2496,9 +2211,8 @@ describe("pairing storage source contract", () => {
 	}
 
 	test.each([
-		"background/chat.ts",
+		"background/daemon-link.ts",
 		"background/pairing-store.ts",
-		"stored-bootstraps.ts",
 	])("%s does not touch storage.session", (path) => {
 		expect(read(path)).not.toMatch(/storage\.session/);
 	});

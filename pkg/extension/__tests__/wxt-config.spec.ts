@@ -6,6 +6,8 @@ type RelevantManifest = {
 	permissions?: string[];
 	minimum_chrome_version?: string;
 	side_panel?: { default_path?: string };
+	action?: { default_title?: string };
+	commands?: Record<string, unknown>;
 };
 
 const manifestFor = config.manifest as unknown as (environment: {
@@ -24,15 +26,27 @@ it("grants capture host access without dropping browser-specific permissions", (
 	expect(chromeManifest.permissions).toContain("tabCapture");
 	expect(chromeManifest.permissions).toContain("offscreen");
 	expect(chromeManifest.permissions).toContain("downloads");
-	expect(chromeManifest.permissions).toContain("sidePanel");
-	expect(chromeManifest.side_panel?.default_path).toBe("chat.html");
+	expect(chromeManifest.permissions).not.toContain("sidePanel");
+	expect(chromeManifest.side_panel).toBeUndefined();
 
 	expect(firefoxManifest.host_permissions ?? []).not.toContain("<all_urls>");
 	expect(firefoxManifest.permissions).not.toContain("tabCapture");
 	expect(firefoxManifest.permissions).not.toContain("offscreen");
-	expect(firefoxManifest.permissions).not.toContain("sidePanel");
-	expect(firefoxManifest.side_panel).toBeUndefined();
 	expect(firefoxManifest.permissions).toContain("downloads");
+});
+
+it("titles the toolbar action DeeGee and keeps the demo recording command", () => {
+	const chromeManifest = manifestFor({ browser: "chrome" });
+	expect(chromeManifest.action?.default_title).toBe("DeeGee");
+	expect(Object.keys(chromeManifest.commands ?? {})).toContain(
+		"start-demo-recording",
+	);
+});
+
+it("keeps the Firefox manifest free of side panel entries", () => {
+	const firefoxManifest = manifestFor({ browser: "firefox" });
+	expect(firefoxManifest.side_panel).toBeUndefined();
+	expect(firefoxManifest.permissions).not.toContain("sidePanel");
 });
 
 /**

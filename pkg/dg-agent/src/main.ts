@@ -39,7 +39,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.option("--orchestrator", "register this session with the orchestrator role")
 		.option("-a, --agent-identity <name>", "agent identity to record")
 		.option("--open", "open the chat page in the default browser")
-		.option("--ext", "hand the session to the dg-ai-extension instead of the local page")
+		.option("--ext", "require the dg-ai-extension for this skill; the chat page URL is the same as without it")
 		.option("--fresh", "register a new session even if the extension is waiting")
 		.option("-s, --session <id>", "claim this waiting session instead of creating one")
 		.option(

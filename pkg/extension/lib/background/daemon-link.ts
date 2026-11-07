@@ -74,7 +74,7 @@ export type ChatBrowserApi = PagesBrowserApi & {
 	};
 };
 
-export type RegisterChatOptions = {
+export type RegisterDaemonLinkOptions = {
 	browserApi?: ChatBrowserApi;
 	openSocket?: (url: string) => ChatClientSocket;
 	keepaliveIntervalMs?: number;
@@ -154,7 +154,9 @@ function pwExtContext({
 }
 
 /** Wires the daemon socket and the runtime message routing. */
-export function registerChat(options: RegisterChatOptions = {}): ChatClient {
+export function registerDaemonLink(
+	options: RegisterDaemonLinkOptions = {},
+): ChatClient {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
 	const keepaliveIntervalMs =
@@ -276,32 +278,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (!result || !sendOverwatchOpenCompletion(result)) return;
 			pendingOverwatchOpenCompletions.shift();
 		}
-	}
-
-	function dispatchCommand(
-		sessionId: string,
-		commandLabel: string,
-		params: Record<string, unknown>,
-	): { ok: boolean; error?: string } {
-		const socket = currentSocket;
-		const bootstrap = bootstrapsBySession.get(sessionId);
-		if (!socket || !bootstrap) {
-			return {
-				ok: false,
-				error: "no chat session is open — start one to run a command",
-			};
-		}
-		socket.send(
-			JSON.stringify({
-				type: "command-invocation",
-				sessionId,
-				token: bootstrap.token,
-				protocolVersion: CHAT_PROTOCOL_VERSION,
-				commandLabel,
-				params,
-			}),
-		);
-		return { ok: true };
 	}
 
 	function requestDaemonConfig(
@@ -478,18 +454,20 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 		}
-		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
 		const requestSocket = currentSocket;
 		const requestBootstrap = firstConfirmedBootstrap();
-		pages.onFrame(frame, (result) => {
-			if (
-				currentSocket === requestSocket &&
-				sendOverwatchOpenCompletion(result, requestSocket, requestBootstrap)
-			) {
-				return;
-			}
-			pendingOverwatchOpenCompletions.push(result);
-			flushOverwatchOpenCompletions();
+		pages.onFrame(frame, {
+			bootstrap: requestBootstrap,
+			sendCompletion(result) {
+				if (
+					currentSocket === requestSocket &&
+					sendOverwatchOpenCompletion(result, requestSocket, requestBootstrap)
+				) {
+					return;
+				}
+				pendingOverwatchOpenCompletions.push(result);
+				flushOverwatchOpenCompletions();
+			},
 		});
 		if (frame.type === "config-result") {
 			configWaiters
@@ -504,18 +482,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			forgetStoredPairing(frame.sessionId);
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
-			return;
-		}
-		if (frame.type === "session-pending") {
-			const requester = bootstrapsBySession.get(frame.sessionId);
-			if (requester) {
-				const spawned = {
-					...requester,
-					sessionId: frame.newSession.sessionId,
-					token: frame.newSession.token,
-				};
-				holdBootstrap(spawned);
-			}
 			return;
 		}
 		if (frame.type !== "session-list") return;
@@ -554,7 +520,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (!bootstrap) return undefined;
 			void (async () => {
 				try {
-					await pages.presentChat();
 					currentPairingId = bootstrap.sessionId;
 					holdBootstrap(bootstrap);
 					client.connect(bootstrap);
@@ -578,9 +543,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 				case MSG.connectionRequest:
 					void ready.then(() => sendResponse(pairingStatus()));
 					return true;
-				case MSG.bootstrapsRequest:
-					sendResponse({ bootstraps: [...bootstrapsBySession.values()] });
-					return undefined;
 				case MSG.connectionRetry: {
 					void (async () => {
 						const port = await daemonPort();
@@ -727,47 +689,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					})();
 					return true;
 				}
-				case MSG.clientConnect: {
-					const bootstrap = asSessionBootstrap(payload.bootstrap);
-					if (!bootstrap) return undefined;
-					currentPairingId ??= bootstrap.sessionId;
-					holdBootstrap(bootstrap);
-					client.connect(bootstrap);
-					broadcastPairingStatus();
-					sendResponse({ ok: true, state: client.getConnectionState() });
-					return undefined;
-				}
-				case MSG.userMessage:
-					if (
-						typeof payload.sessionId !== "string" ||
-						typeof payload.body !== "string"
-					) {
-						return undefined;
-					}
-					client.sendUserMessage(payload.sessionId, payload.body, {
-						...(typeof payload.messageId === "string"
-							? { messageId: payload.messageId }
-							: {}),
-						...(typeof payload.subagentName === "string"
-							? { subagentName: payload.subagentName }
-							: {}),
-					});
-					sendResponse({ ok: true });
-					return undefined;
-				case MSG.sessionCreate:
-					if (
-						typeof payload.sessionId !== "string" ||
-						(payload.role !== "orchestrator" && payload.role !== "agent")
-					) {
-						return undefined;
-					}
-					client.requestNewSession(
-						payload.sessionId,
-						payload.role,
-						typeof payload.workset === "string" ? payload.workset : undefined,
-					);
-					sendResponse({ ok: true });
-					return undefined;
 				case MSG.sessionDisconnect: {
 					if (
 						typeof payload.sessionId !== "string" ||
@@ -819,25 +740,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						typeof payload.value === "string" ? payload.value : undefined,
 					).then(sendResponse);
 					return true;
-				}
-				case MSG.commandInvocation: {
-					if (
-						typeof payload.sessionId !== "string" ||
-						typeof payload.commandLabel !== "string" ||
-						payload.commandLabel.length === 0
-					) {
-						return undefined;
-					}
-					const params =
-						typeof payload.params === "object" &&
-						payload.params !== null &&
-						!Array.isArray(payload.params)
-							? (payload.params as Record<string, unknown>)
-							: {};
-					sendResponse(
-						dispatchCommand(payload.sessionId, payload.commandLabel, params),
-					);
-					return undefined;
 				}
 				default:
 					return undefined;

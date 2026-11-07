@@ -184,19 +184,3 @@ describe("createPairingStore list", () => {
 		await expect(store.list()).rejects.toThrow("read failed");
 	});
 });
-
-describe("loadStoredBootstraps", () => {
-	test("reads the pairings through the local pairing store", async () => {
-		const { browser } = await import("wxt/browser");
-		const { loadStoredBootstraps } = await import("@/lib/stored-bootstraps");
-		const valid = makeBootstrap();
-		const local = makeLocalArea({
-			[`pairing:${valid.sessionId}`]: valid,
-			[`pairing:sess-bad`]: { port: 1 },
-			[`chat_session:sess-old`]: makeBootstrap({ sessionId: "sess-old" }),
-		});
-		(browser as unknown as { storage: unknown }).storage = makeStorage(local);
-
-		expect(await loadStoredBootstraps()).toEqual([valid]);
-	});
-});

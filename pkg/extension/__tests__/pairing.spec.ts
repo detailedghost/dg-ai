@@ -7,7 +7,7 @@ import { frameEvent, makeFakeSocket, makeStorage, settle } from "./utils/relay-h
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
-const { registerChat } = await import("@/lib/background/chat");
+const { registerDaemonLink } = await import("@/lib/background/daemon-link");
 const { mountPairing } = await import("@/lib/features/pairing");
 
 import { buildSessionListFrame } from "./utils/frame-fixtures";
@@ -61,6 +61,7 @@ function backgroundHarness() {
 			},
 			getURL: (path: string) => `chrome-extension://pair-test/${path}`,
 			getManifest: () => ({ version: "1.10.0" }),
+			openOptionsPage: mock(() => Promise.resolve()),
 			sendMessage: mock((message: unknown) => {
 				for (const subscriber of subscribers) subscriber(message);
 				return Promise.resolve();
@@ -74,7 +75,7 @@ function backgroundHarness() {
 		windows: { update: mock(() => Promise.resolve()) },
 		storage: makeStorage(),
 	};
-	registerChat({ browserApi: api, openSocket });
+	registerDaemonLink({ browserApi: api, openSocket });
 	const runtime = {
 		onMessage: {
 			addListener: (listener: (message: unknown) => void) => { subscribers.add(listener); },

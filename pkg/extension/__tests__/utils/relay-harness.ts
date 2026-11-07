@@ -4,7 +4,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	type SessionBootstrap,
 } from "@dg/common";
-import { type RegisterChatOptions, registerChat } from "@/lib/background/chat";
+import { type RegisterDaemonLinkOptions, registerDaemonLink } from "@/lib/background/daemon-link";
 import { MSG } from "@dg/pages/chat-messages";
 
 export type Listener = (
@@ -50,9 +50,7 @@ export function frameEvent(frame: Record<string, unknown>) {
 export const settle = (): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, 0));
 
-export async function flushMicrotasks(times = 40): Promise<void> {
-	for (let i = 0; i < times; i++) await Promise.resolve();
-}
+export { flushMicrotasks } from "./dom-events";
 
 export function makeBootstrapFactory(
 	defaults: SessionBootstrap,
@@ -67,17 +65,7 @@ export const makeBootstrap = makeBootstrapFactory({
 	agentIdentity: "claude-orchestrator",
 });
 
-/** Captures a globalThis property's descriptor and returns a closure that restores it. */
-export function captureGlobal(name: string): () => void {
-	const original = Object.getOwnPropertyDescriptor(globalThis, name);
-	return () => {
-		if (original) {
-			Object.defineProperty(globalThis, name, original);
-		} else {
-			Reflect.deleteProperty(globalThis, name);
-		}
-	};
-}
+export { captureGlobal } from "../../../pages/__tests__/utils/globals";
 
 export type LocalArea = {
 	data: Record<string, unknown>;
@@ -114,7 +102,7 @@ export type BootRelayOptions = {
 	confirmSession?: boolean;
 	sessionId?: string;
 	token?: string;
-	relayHandlers?: RegisterChatOptions["relayHandlers"];
+	relayHandlers?: RegisterDaemonLinkOptions["relayHandlers"];
 	local?: LocalArea;
 };
 
@@ -123,7 +111,6 @@ export type BootedRelay = {
 	posted: unknown[];
 	postAs(senderUrl: string, message: unknown): Promise<unknown>;
 	postAsOptionsPage(message: unknown): Promise<unknown>;
-	postAsChatPage(message: unknown): Promise<unknown>;
 	extensionUrl(path: string): string;
 	sessionId: string;
 	token: string;
@@ -150,11 +137,12 @@ export async function bootRelay(
 			},
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
+			openOptionsPage: mock(() => Promise.resolve()),
 		},
 		tabs: { create: mock(() => Promise.resolve()) },
 		storage,
 	};
-	registerChat({
+	registerDaemonLink({
 		browserApi: api,
 		openSocket: () => socket,
 		maybeStartRecording: () => Promise.resolve(false),
@@ -204,8 +192,6 @@ export async function bootRelay(
 		postAs,
 		postAsOptionsPage: (message) =>
 			postAs(api.runtime.getURL("options.html"), message),
-		postAsChatPage: (message) =>
-			postAs(api.runtime.getURL("chat.html"), message),
 		extensionUrl: (path) => api.runtime.getURL(path),
 		sessionId,
 		token,

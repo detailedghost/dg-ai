@@ -1,6 +1,6 @@
 import {
 	registerAgentTabs,
-	registerChat,
+	registerDaemonLink,
 	registerProto,
 	registerRecording,
 	registerTabGrouping,
@@ -15,5 +15,5 @@ export default defineBackground(() => {
 	registerTourState();
 	registerProto();
 	registerRecording();
-	registerChat();
+	registerDaemonLink();
 });

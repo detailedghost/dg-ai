@@ -4,7 +4,7 @@ export function cliNextStep(
 	sessionId: string,
 ): string {
 	if (kind === "registered") {
-		return `dg-agent: session ${sessionId} is ready. Next: open the extension side panel and choose Connect.`;
+		return `dg-agent: session ${sessionId} is ready. Next: open the DeeGee popup and run dg-agent pair <code>.`;
 	}
 	if (kind === "claimed") {
 		return `dg-agent: attached to the session the extension is waiting on (${sessionId}). Next: dg-agent recv --block.`;
