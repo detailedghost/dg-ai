@@ -81,8 +81,9 @@ describe.each(
 		return peers.none({ sessionId } as never);
 	};
 
-	it("tells the agent to pair from the popup for this session", () => {
-		expect(hint("sess-1")).toContain("dg-agent pair <code> -s sess-1");
+	it("tells the agent to start the session and install the extension", () => {
+		expect(hint("sess-1")).toContain("Start the session with dg-agent start.");
+		expect(hint("sess-1")).toContain("install it with dg-skills install");
 	});
 
 	it("prints no /start URL and no token placeholder", () => {

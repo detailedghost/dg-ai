@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { protoCliHarness } from "./proto-cli-harness";
 
 describe("proto --ext connect error", () => {
-	test("tells the agent to pair from the DeeGee popup and prints no /start URL", async () => {
+	test("tells the agent to start a session and install the extension, with no /start URL", async () => {
 		const h = protoCliHarness();
 		try {
 			const result = await h.run(
@@ -12,7 +12,7 @@ describe("proto --ext connect error", () => {
 			);
 
 			expect(result.code).not.toBe(0);
-			expect(result.stderr).toContain("dg-agent pair <code>");
+			expect(result.stderr).toContain("Run dg-agent start.");
 			expect(result.stderr).not.toContain("/start");
 			expect(result.stderr).not.toContain("#_chat=");
 		} finally {

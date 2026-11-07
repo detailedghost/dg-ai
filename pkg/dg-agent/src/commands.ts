@@ -17,6 +17,7 @@ import {
 	loadSubagentManifestFile,
 	postAsset,
 	readAssetSourceFile,
+	mintPageCode,
 	resolveCliSession,
 	resolveManifestForPublish,
 	writeStderr,
@@ -24,7 +25,7 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { registerOverwatchCommands } from "./overwatch";
-import { mintPageCode, tryOpenAgentUrl } from "./start";
+import { tryOpenAgentUrl } from "./start";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 

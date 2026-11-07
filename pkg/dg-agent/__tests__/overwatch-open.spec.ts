@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import type { CliRequest, SessionBootstrap } from "@dg/common";
-import { openFailedHint } from "@dg/common/node";
+import { mintPageCode, openFailedHint } from "@dg/common/node";
 import {
 	bootServe,
 	killDaemonByPidFile,
@@ -12,7 +12,6 @@ import {
 } from "@dg/dg-daemon/test-harness";
 import { Command } from "commander";
 import { localBootstrap } from "../src/commands";
-import { mintPageCode } from "../src/start";
 import {
 	type OverwatchClient,
 	registerOverwatchCommands,

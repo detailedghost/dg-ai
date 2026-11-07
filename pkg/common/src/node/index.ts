@@ -11,6 +11,7 @@ export * from "./marker";
 export * from "./oauth-loopback";
 export * from "./daemon-id";
 export * from "./owner-token";
+export * from "./page-code";
 export * from "./dg-paths";
 export * from "./plugin-cache";
 export * from "./pidfile";

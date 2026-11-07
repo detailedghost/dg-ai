@@ -1,7 +1,9 @@
 import {
+	CHAT_CODE_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	OWNER_TOKEN_HEADER,
 } from "@dg/common";
 import {
 	resolveDgPaths,
@@ -118,10 +120,19 @@ export function inboxDaemonFixture(
 	const sessionId = "fixture-cli-session";
 	const token = "fixture-cli-private-token";
 	const requests: Record<string, unknown>[] = [];
+	const mints: { sessionId: unknown; owner: string | null }[] = [];
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port: 0,
-		fetch(request, server) {
+		async fetch(request, server) {
+			if (new URL(request.url).pathname === CHAT_CODE_PATH) {
+				const body = (await request.json()) as { sessionId?: unknown };
+				mints.push({
+					sessionId: body.sessionId,
+					owner: request.headers.get(OWNER_TOKEN_HEADER),
+				});
+				return Response.json({ code: "one-time-code" });
+			}
 			if (
 				new URL(request.url).pathname !== "/cli" ||
 				request.headers.get(CLI_SESSION_ID_HEADER) !== sessionId ||
@@ -157,6 +168,7 @@ export function inboxDaemonFixture(
 		token,
 		port: server.port ?? 0,
 		requests,
+		mints,
 		stop: () => server.stop(true),
 	};
 }

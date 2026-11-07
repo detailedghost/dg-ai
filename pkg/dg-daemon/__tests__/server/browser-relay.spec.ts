@@ -1350,11 +1350,11 @@ describe("pw-ext staged asset cleanup", () => {
 
 const INBOX_EXTENSION = "1.11.0";
 function noPeerHint(sessionId: string, required: readonly string[]): RegExp {
-	const pair = `dg-agent pair <code> -s ${sessionId}`.replace(
-		/[.*+?^${}()|[\]\\]/g,
-		"\\$&",
-	);
-	const lookaheads = [pair, ...required].map((part) => `(?=.*${part})`);
+	const lookaheads = [
+		`No extension peer on session ${sessionId}`,
+		"Start the session with dg-agent start\\.",
+		...required,
+	].map((part) => `(?=.*${part})`);
 	return new RegExp(`^(?!.*/start#_chat=)${lookaheads.join("")}.*$`, "s");
 }
 

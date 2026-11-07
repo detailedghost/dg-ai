@@ -81,7 +81,7 @@ export const INBOX_RELAY = defineRelayFeature<InboxRelayBodies>()({
 			multiple:
 				"Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session.",
 			none: ({ sessionId }) =>
-				`No extension peer on session ${sessionId}. Pair the browser: open the DeeGee popup, read its six-digit code, and run dg-agent pair <code> -s ${sessionId}. ` +
+				`No extension peer on session ${sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install. ` +
 				"Then open or reload an authenticated Proton Mail tab and retry. " +
 				"Inbox requires dg extension 1.11.0 or newer.",
 		},
@@ -153,7 +153,7 @@ export const PROTO_RELAY = defineRelayFeature<ProtoRelayBodies>()({
 			multiple:
 				"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
 			none: ({ sessionId }) =>
-				`No extension peer on session ${sessionId}. Pair the browser: open the DeeGee popup, read its six-digit code, and run dg-agent pair <code> -s ${sessionId}. ` +
+				`No extension peer on session ${sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install. ` +
 				"Then retry.",
 		},
 		{ check: "burn" },
