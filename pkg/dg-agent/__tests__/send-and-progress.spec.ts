@@ -8,7 +8,7 @@ import {
 	waitForOpen,
 	wsExtensionSocket,
 } from "@dg/dg-daemon/test-harness";
-import { nextParsedMessage, runCli } from "./cli-wire";
+import { nextFrameOfType, nextParsedMessage, runCli } from "./cli-wire";
 
 let dgHome: string;
 
@@ -37,7 +37,7 @@ describe("dg-daemon send", () => {
 			bootstrap.sessionId,
 			"the agent's whole reply",
 		]);
-		const frame = await nextParsedMessage(page);
+		const frame = await nextFrameOfType(page, "agent-message");
 		await cliDone;
 		page.close();
 
@@ -65,7 +65,7 @@ describe("dg-daemon progress", () => {
 			"--state",
 			"awaiting-input",
 		]);
-		const frame = await nextParsedMessage(page);
+		const frame = await nextFrameOfType(page, "progress");
 		await cliDone;
 		page.close();
 
