@@ -587,8 +587,7 @@ describe("stale terms across docs, extension README and skills", () => {
 		const text = readRepoFile("docs", "jobs-and-services.md");
 		expect(text).not.toMatch(/a page for that is the next step/);
 		expect(text).toMatch(/dg-daemon job\b/);
-		expect(text).toMatch(/\/jobs/);
-		expect(text).toMatch(/\/feed/);
+		expect(text).not.toMatch(/\/jobs|\/feed/);
 	});
 
 	test("the stat skill points at the daemon /board page", () => {
