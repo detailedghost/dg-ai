@@ -35,7 +35,7 @@ import {
 	setUserVersionProvider,
 } from "../utils/key-source";
 import { readConfig } from "./config-store";
-import { ConnectionManager, sendViaQueue } from "./connection";
+import { ConnectionManager, isExtensionPeer, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import {
@@ -282,10 +282,12 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 				void send.finally(() => pendingCloseSends.delete(send));
 				notified.add(ws);
 			};
+			const keepsExtensionState = reason === "daemon-shutdown";
 			connections.forEachCapableOf(sessionId, (ws) => {
-				notify(ws);
+				if (!(keepsExtensionState && isExtensionPeer(ws))) notify(ws);
 				ws.data.capabilities.delete(sessionId);
 			});
+			if (keepsExtensionState) return;
 			connections.forEachExtension((ws) => {
 				if (!notified.has(ws)) notify(ws);
 			});

@@ -334,4 +334,29 @@ describe("zero-touch extension link", () => {
 
 		expect(frames.filter((frame) => frameType(frame) === "session-closed")).toHaveLength(1);
 	});
+
+	it("sends session-closed to no extension socket when the daemon shuts down", async () => {
+		const { port, proc } = await boot();
+		const credentials = await registerSession(port);
+		const link = await linkExtension(port);
+		const holder = wsExtensionSocket(port);
+		sockets.push(holder);
+		const holderFrames = collectFrames(holder);
+		await waitForOpen(holder);
+		sendConnectHandshake(holder, credentials, CHAT_PROTOCOL_VERSION);
+		await waitForValue(
+			() => holderFrames.find((frame) => frameType(frame) === "session-list"),
+			3000,
+			"session-list after the handshake",
+		);
+
+		proc.kill();
+		await proc.exited;
+		await Bun.sleep(100);
+
+		const closed = (frames: unknown[]) =>
+			frames.filter((frame) => frameType(frame) === "session-closed");
+		expect(closed(link.frames)).toEqual([]);
+		expect(closed(holderFrames)).toEqual([]);
+	});
 });
