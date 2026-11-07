@@ -4,7 +4,7 @@ import {
 	type SessionAdopt,
 } from "@dg/common";
 import type { ServerWebSocket } from "bun";
-import type { SessionRecord } from "../session/registry";
+import type { SessionRecord, SessionRegistry } from "../session/registry";
 import type { Logger } from "./log";
 
 export type SocketKind = "ws" | "cli";
@@ -62,6 +62,17 @@ export function sessionAdoptPayload(
 			daemonId: link.daemonId,
 		},
 	} satisfies SessionAdopt);
+}
+
+export function adoptActiveSessions(
+	ws: ServerWebSocket<SocketState>,
+	registry: Pick<SessionRegistry, "list" | "get">,
+	link: DaemonLink,
+): void {
+	for (const { sessionId } of registry.list()) {
+		const record = registry.get(sessionId);
+		if (record) void sendViaQueue(ws, sessionAdoptPayload(record, link));
+	}
 }
 
 /** A chat socket from the extension, the only peer that can serve browser relays and overwatch opens. */

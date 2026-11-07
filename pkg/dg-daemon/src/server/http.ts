@@ -70,7 +70,6 @@ import {
 	isExtensionPeer,
 	resolveDrainWaiters,
 	sendViaQueue,
-	sessionAdoptPayload,
 	type SocketState,
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
@@ -251,17 +250,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		overwatchOpenRequests: new Map(),
 	};
 
-	const adoptActiveSessions = (ws: ServerWebSocket<SocketState>): void => {
-		for (const { sessionId } of registry.list()) {
-			const record = registry.get(sessionId);
-			if (!record) continue;
-			void sendViaQueue(
-				ws,
-				sessionAdoptPayload(record, { port, daemonId: deps.daemonId }),
-			);
-		}
-	};
-
 	const attachLimiter = createAttachLimiter();
 	const pageCodes = createPageCodes();
 	const exchangeLimiter = createAttachLimiter();
@@ -289,7 +277,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + WS_PAYLOAD_HEADROOM_BYTES,
 			open(ws) {
 				connections.add(ws);
-				if (isExtensionPeer(ws)) adoptActiveSessions(ws);
 				noteActivity();
 			},
 			message(ws, message) {

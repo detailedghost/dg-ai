@@ -1538,6 +1538,10 @@ const ADOPT_BOOTSTRAP = {
 	daemonId: "daemon-test",
 };
 
+function sentTypes(socket: FakeSocket | undefined): string[] {
+	return sentFrames(socket as FakeSocket).map((frame) => frame.type as string);
+}
+
 function linkClient(options: Record<string, unknown> = {}) {
 	const adopted: unknown[] = [];
 	const sockets: FakeSocket[] = [];
@@ -1558,7 +1562,7 @@ function linkClient(options: Record<string, unknown> = {}) {
 	return { client, adopted, sockets, closes };
 }
 
-test("a link client connects with zero capabilities and sends no frame on open", async () => {
+test("a link client connects with zero capabilities and sends only link-ready on open", async () => {
 	const { client, sockets } = linkClient();
 	client.openLink?.(47823);
 
@@ -1566,7 +1570,50 @@ test("a link client connects with zero capabilities and sends no frame on open",
 	await flushMicrotasks();
 
 	expect(client.getConnectionState()).toBe("connected");
-	expect(sockets[0]?.send.mock.calls.length).toBe(0);
+	expect(sentTypes(sockets[0])).toEqual(["link-ready"]);
+});
+
+test("a link client sends link-ready only after the port is admitted", async () => {
+	let admit: (admitted: boolean) => void = () => undefined;
+	const { client, sockets } = linkClient({
+		admitPort: () =>
+			new Promise<boolean>((resolve) => {
+				admit = resolve;
+			}),
+	});
+	client.openLink?.(47823);
+
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+	expect(sentTypes(sockets[0])).toEqual([]);
+
+	admit(true);
+	await flushMicrotasks();
+	expect(sentTypes(sockets[0])).toEqual(["link-ready"]);
+});
+
+test("a link client sends link-ready again after it reconnects", async () => {
+	const { client, sockets } = linkClient({ findPort: async () => 47824 });
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	sockets[0]?.dispatch("close");
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	sockets[1]?.dispatch("open");
+	await flushMicrotasks();
+
+	expect(sentTypes(sockets[1])).toEqual(["link-ready"]);
+});
+
+test("a client without a link option never sends link-ready", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(sentTypes(socket)).not.toContain("link-ready");
 });
 
 test("a link client reconnects after the socket closes with zero capabilities", async () => {

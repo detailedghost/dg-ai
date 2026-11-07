@@ -180,8 +180,9 @@ describe("zero-touch extension link", () => {
 	it("pushes session-adopt when a /cli session-create frame makes a session", async () => {
 		const { port, dgHome } = await boot();
 		const parent = await registerSession(port);
-		const { frames } = await linkExtension(port);
-		await waitForValue(() => adoptFrames(frames)[0], 3000, "connect push");
+		const { socket, frames } = await linkExtension(port);
+		socket.send(JSON.stringify({ type: "link-ready" }));
+		await waitForValue(() => adoptFrames(frames)[0], 3000, "replay push");
 		frames.length = 0;
 
 		const child = await spawnSession(dgHome, port, parent.sessionId, {
@@ -200,12 +201,23 @@ describe("zero-touch extension link", () => {
 		});
 	});
 
-	it("pushes one session-adopt per active session when an extension socket connects", async () => {
+	it("does not replay active sessions when an extension socket opens", async () => {
+		const { port } = await boot();
+		await registerSession(port);
+
+		const { frames } = await linkExtension(port);
+		await Bun.sleep(200);
+
+		expect(adoptFrames(frames)).toEqual([]);
+	});
+
+	it("replays one session-adopt per active session after link-ready", async () => {
 		const { port } = await boot();
 		const first = await registerSession(port);
 		const second = await registerSession(port);
 
-		const { frames } = await linkExtension(port);
+		const { socket, frames } = await linkExtension(port);
+		socket.send(JSON.stringify({ type: "link-ready" }));
 		await waitForValue(
 			() => (adoptFrames(frames).length >= 2 ? true : undefined),
 			3000,
@@ -217,6 +229,19 @@ describe("zero-touch extension link", () => {
 			(frame) => validateSessionAdopt(frame).bootstrap.sessionId,
 		);
 		expect(adopted.sort()).toEqual([first.sessionId, second.sessionId].sort());
+	});
+
+	it("ignores link-ready from a /cli socket", async () => {
+		const { port } = await boot();
+		const credentials = await registerSession(port);
+		const cli = await connectCli(port, credentials);
+		sockets.push(cli);
+		const cliFrames = collectFrames(cli);
+
+		cli.send(JSON.stringify({ type: "link-ready" }));
+		await Bun.sleep(200);
+
+		expect(adoptFrames(cliFrames)).toEqual([]);
 	});
 
 	it("never pushes session-adopt to a /cli socket", async () => {

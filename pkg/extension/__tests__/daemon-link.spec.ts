@@ -265,7 +265,9 @@ const pairingKeys = (local: LocalArea) =>
 async function expectNoSessionFrames(sockets: FakeSocket[]): Promise<void> {
 	for (const socket of sockets) socket.dispatch("open");
 	await settle();
-	for (const socket of sockets) expect(sentTypes(socket)).toEqual([]);
+	for (const socket of sockets) {
+		expect(sentTypes(socket).filter((type) => type !== "link-ready")).toEqual([]);
+	}
 }
 
 function sentTypes(socket: FakeSocket): string[] {

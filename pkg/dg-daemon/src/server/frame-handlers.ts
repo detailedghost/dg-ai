@@ -12,6 +12,7 @@ import {
 	type CliFrame,
 	type CredentialsCliRequest,
 	describeError,
+	isLinkFrame,
 	isRecord,
 	type OverwatchBoard,
 	OVERWATCH_SESSION_ID,
@@ -28,6 +29,7 @@ import {
 	validateOverwatchMerge,
 	validateIsoTimestamp,
 	validateProtoIdentifier,
+	validateLinkFrame,
 } from "@dg/common";
 import {
 	type DgPaths,
@@ -62,6 +64,7 @@ import {
 } from "./browser-relay";
 import type { ConnectionManager } from "./connection";
 import {
+	adoptActiveSessions,
 	isExtensionPeer,
 	onSocketClose,
 	registerInvalidFrame,
@@ -1259,6 +1262,24 @@ export async function handleSocketMessage(
 
 	if (isConnectHandshake(parsed)) {
 		await handleConnectHandshake(ws, parsed, deps);
+		return;
+	}
+
+	if (isLinkFrame(parsed)) {
+		try {
+			validateLinkFrame(parsed);
+		} catch (err) {
+			await sendError(ws, TRANSPORT_ERROR_SESSION_ID, describeError(err));
+			noteInvalid(ws);
+			return;
+		}
+		if (isExtensionPeer(ws)) {
+			deps.noteActivity();
+			adoptActiveSessions(ws, deps.registry, {
+				port: deps.port,
+				daemonId: deps.daemonId,
+			});
+		}
 		return;
 	}
 

@@ -328,6 +328,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			sendConnectHandshake(sessionId, token);
 			sendHistoryRequest(sessionId, token);
 		}
+		if (options.link) send({ type: "link-ready" });
 	}
 
 	function scheduleRetry(): void {

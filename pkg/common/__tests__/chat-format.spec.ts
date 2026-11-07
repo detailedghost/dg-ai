@@ -17,6 +17,7 @@ import {
 	tryValidateSessionBootstrap,
 	validateChatFrame,
 	validateCommandManifest,
+	validateLinkFrame,
 	validateSessionAdopt,
 } from "../src/index";
 import { TEST_RELAY } from "./utils/relay-fixtures";
@@ -1050,4 +1051,19 @@ describe("validateSessionAdopt", () => {
 	it("rejects a frame of another type", () => {
 		expect(() => validateSessionAdopt({ ...frame, type: "session-list" })).toThrow();
 	});
+});
+
+describe("validateLinkFrame", () => {
+	it("accepts a link-ready frame", () => {
+		expect(validateLinkFrame({ type: "link-ready" })).toEqual({
+			type: "link-ready",
+		});
+	});
+
+	it.each([{ type: "link-other" }, { type: "keepalive" }, {}, "link-ready", null])(
+		"rejects %p",
+		(value) => {
+			expect(() => validateLinkFrame(value)).toThrow();
+		},
+	);
 });
