@@ -220,7 +220,7 @@ test("a dismissed session is not re-adopted after a worker restart", async () =>
 	expect(restarted.sent(socket).some((frame) => frame.type === "connect")).toBe(false);
 });
 
-test("a session-list without the dismissed session removes its dismissed key", async () => {
+test("a session-list without the dismissed session keeps its dismissed key and stored pairing", async () => {
 	const local = makeLocalArea({
 		[DAEMON_ID_KEY]: TEST_DAEMON_ID,
 		[dismissedKey("sess-gone")]: true,
@@ -230,19 +230,23 @@ test("a session-list without the dismissed session removes its dismissed key", a
 	const socket = await openLink(boot);
 	socket.dispatch("message", adoptFrame(PUSHED));
 	await settle();
+	socket.dispatch(
+		"message",
+		message(buildSessionListFrame([{ sessionId: PUSHED.sessionId, agentIdentity: PUSHED.agentIdentity }], { sessionId: PUSHED.sessionId })),
+	);
+	await settle();
+	const pairingKey = Object.keys(local.data).find((key) => key.startsWith("pairing:"));
 
 	socket.dispatch(
 		"message",
-		message(
-			buildSessionListFrame([{ sessionId: "sess-live", agentIdentity: "claude-orchestrator" }], {
-				sessionId: PUSHED.sessionId,
-			}),
-		),
+		message(buildSessionListFrame([], { sessionId: PUSHED.sessionId })),
 	);
 	await settle();
 
-	expect(dismissedKey("sess-gone") in local.data).toBe(false);
+	expect(local.data[dismissedKey("sess-gone")]).toBe(true);
 	expect(local.data[dismissedKey("sess-live")]).toBe(true);
+	expect(pairingKey).toBeDefined();
+	expect(pairingKey as string in local.data).toBe(true);
 });
 
 test("a session-closed frame removes the dismissed key", async () => {

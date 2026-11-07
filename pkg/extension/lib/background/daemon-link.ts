@@ -615,9 +615,6 @@ export function registerDaemonLink(
 			return;
 		}
 		if (frame.type !== "session-list") return;
-		void pairingStore
-			.releaseExcept(new Set(frame.sessions.map((entry) => entry.sessionId)))
-			.catch(logStoreError);
 		const presenceChanged = frame.sessions.some(
 			({ sessionId, presence }) =>
 				bootstrapsBySession.has(sessionId) &&

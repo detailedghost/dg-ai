@@ -97,13 +97,5 @@ export function createPairingStore({
 		release({ sessionId }: { sessionId: string }): Promise<void> {
 			return storage.local.remove(dismissedKeyOf(sessionId));
 		},
-		async releaseExcept(activeSessionIds: ReadonlySet<string>): Promise<void> {
-			const stale = Object.keys((await storage.local.get()) ?? {}).filter(
-				(key) =>
-					key.startsWith(DISMISSED_KEY_PREFIX) &&
-					!activeSessionIds.has(key.slice(DISMISSED_KEY_PREFIX.length)),
-			);
-			if (stale.length > 0) await storage.local.remove(stale);
-		},
 	};
 }
