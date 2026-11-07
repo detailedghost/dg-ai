@@ -35,9 +35,9 @@ import {
 import {
 	createPages,
 	type OverwatchOpenCompletion,
-	originAndPath,
+	openLocalPage,
 	type PagesBrowserApi,
-} from "./pages";
+} from "./local-pages";
 import { isExtensionPageSender, isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
@@ -456,19 +456,10 @@ export function registerDaemonLink(
 			path: "/chat",
 			bootstrap: { ...bootstrap, port },
 		});
-		const chatPage = originAndPath(url);
-		const open = (
-			await (api.tabs.query?.({ url: `http://127.0.0.1:${port}/chat*` }) ?? [])
-		).find((tab) => tab.id !== undefined && originAndPath(tab.url) === chatPage);
-		if (open?.id === undefined || !api.tabs.update || !api.tabs.reload) {
-			await api.tabs.create({ url });
-			return { ok: true };
-		}
-		await api.tabs.update(open.id, { url, active: true });
-		await api.tabs.reload(open.id);
-		if (open.windowId !== undefined) {
-			await api.windows?.update(open.windowId, { focused: true });
-		}
+		await openLocalPage(api, {
+			url,
+			query: { url: `http://127.0.0.1:${port}/chat*` },
+		});
 		return { ok: true };
 	}
 

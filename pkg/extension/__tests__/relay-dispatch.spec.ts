@@ -1033,7 +1033,7 @@ describe("background module layout", () => {
 	});
 
 	it("keeps relay-dispatch.ts and pairing-store.ts free of chat.ts imports", () => {
-		for (const name of ["relay-dispatch.ts", "pairing-store.ts", "pages.ts"]) {
+		for (const name of ["relay-dispatch.ts", "pairing-store.ts", "local-pages.ts"]) {
 			expect(read(name)).not.toMatch(/from\s+["'][^"']*\/chat["']|from\s+["']\.\/chat["']/);
 		}
 	});

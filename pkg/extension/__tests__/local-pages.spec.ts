@@ -7,7 +7,7 @@ import {
 } from "@dg/common";
 import { MSG } from "@dg/pages/chat-messages";
 import { readChatBootstrap } from "@dg/pages/chat-marker";
-import { createPages, type PagesBrowserApi } from "@/lib/background/pages";
+import { createPages, type PagesBrowserApi } from "@/lib/background/local-pages";
 import { flushMicrotasks, makeBootstrap } from "./utils/relay-harness";
 
 type OpenTab = { id?: number; windowId?: number; url?: string };

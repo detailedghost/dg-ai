@@ -10,7 +10,7 @@ import {
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
-import { handleOverwatchFrameSafely } from "@/lib/background/pages";
+import { handleOverwatchFrameSafely } from "@/lib/background/local-pages";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
