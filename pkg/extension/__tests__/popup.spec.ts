@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, jest, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { CHAT_DEFAULT_PORT } from "@dg/common";
+import { GROUP_COLORS } from "@/lib/config";
 import { Window } from "happy-dom";
 import { MSG } from "@dg/pages/chat-messages";
 
@@ -80,13 +82,19 @@ type World = {
 	offer: Row;
 	replies: Record<string, unknown>;
 	port: number | undefined;
+	agentTabs: Row;
+	tabsFail: boolean;
+	holdTabs?: Promise<void>;
+	holdAdopt?: Promise<void>;
 };
 
-function activeTab(id: number) {
-	return Object.assign([{ id }], { id });
+const PAGE_URL = "https://example.test/page";
+
+function activeTab(id: number, extra: Row = {}) {
+	return Object.assign([{ id, url: PAGE_URL, ...extra }], { id });
 }
 
-type BootOptions = { tabId?: number; noActiveTab?: boolean };
+type BootOptions = { tabId?: number; noActiveTab?: boolean; tab?: Row };
 
 function boot(initial: Partial<World> = {}, options: BootOptions = {}) {
 	const world: World = {
@@ -94,6 +102,8 @@ function boot(initial: Partial<World> = {}, options: BootOptions = {}) {
 		offer: pendingOffer(),
 		replies: {},
 		port: CHAT_DEFAULT_PORT,
+		agentTabs: { groups: [] },
+		tabsFail: false,
 		...initial,
 	};
 	const listeners = new Set<(message: unknown) => void>();
@@ -111,6 +121,12 @@ function boot(initial: Partial<World> = {}, options: BootOptions = {}) {
 			const type = (message as Row).type as string;
 			if (type === MSG.connectionRequest) return Promise.resolve(world.connection);
 			if (type === MSG.pairOfferRequest) return Promise.resolve(world.offer);
+			if (type === MSG.agentTabsRequest)
+				return (world.holdTabs ?? Promise.resolve()).then(() =>
+					world.tabsFail ? Promise.reject(new Error("asleep")) : world.agentTabs,
+				);
+			if (type === MSG.agentTabAdopt && world.holdAdopt)
+				return world.holdAdopt.then(() => world.replies[type] ?? { ok: true });
 			return Promise.resolve(world.replies[type] ?? { ok: true });
 		}),
 	};
@@ -120,7 +136,13 @@ function boot(initial: Partial<World> = {}, options: BootOptions = {}) {
 		findPort: () => Promise.resolve(world.port),
 		now: () => NOW,
 		queryActiveTab: () =>
-			Promise.resolve(options.noActiveTab ? [] : activeTab(options.tabId ?? 7)),
+			Promise.resolve(
+				options.noActiveTab
+					? []
+					: options.tab
+						? [options.tab]
+						: activeTab(options.tabId ?? 7),
+			),
 	} as never);
 	return {
 		world,
@@ -429,7 +451,6 @@ describe("mountPopup paired view", () => {
 		["connected with cli presence", { connected: true, presence: "cli", runs: [] }, "Connected", "on"],
 		["connected, cli, with a run", { connected: true, presence: "cli", runs: [run()] }, "Working", "busy"],
 		["disconnected with a run", { connected: false, presence: "cli", runs: [run()] }, "Working", "busy"],
-		["connected but waiting", { connected: true, presence: "waiting", runs: [] }, "Idle", ""],
 		["connected with no presence", { connected: true, presence: undefined, runs: [] }, "Idle", ""],
 		["disconnected with cli presence", { connected: false, presence: "cli", runs: [] }, "Idle", ""],
 		["connected but idle", { connected: true, presence: "idle", runs: [] }, "Idle", ""],
@@ -929,5 +950,659 @@ describe("mountPopup token hygiene", () => {
 
 		expect(harness.root.innerHTML).not.toContain("super-secret-token");
 		harness.handle.destroy();
+	});
+});
+
+const ALPHA_ID = "aaaaaaaa-0000-0000-0000-000000000001";
+const BETA_ID = "bbbbbbbb-0000-0000-0000-000000000002";
+
+const tabRow = (tabId: number, overrides: Row = {}): Row => ({
+	tabId,
+	title: `Title ${tabId}`,
+	url: `https://host-${tabId}.example.test/path`,
+	selected: false,
+	active: false,
+	...overrides,
+});
+
+const groupOf = (sessionId: string, color: string, tabs: Row[]): Row => ({
+	sessionId,
+	color,
+	tabs,
+});
+
+function withTabs(sessions: Row[], groups: Row[]): Partial<World> {
+	return { ...paired(...sessions), agentTabs: { groups } };
+}
+
+function treeOf(root: HTMLElement, identity: string): HTMLElement | null {
+	return cardOf(root, identity).parentElement?.querySelector("ul.tree") ?? null;
+}
+
+const tabItems = (tree: Element | null): HTMLElement[] =>
+	[...(tree?.querySelectorAll<HTMLElement>("li.it:not(.run)") ?? [])];
+
+function accessibleText(node: Element): string {
+	return [
+		node.textContent ?? "",
+		node.getAttribute("aria-label") ?? "",
+		...[...node.querySelectorAll("[aria-label]")].map(
+			(child) => child.getAttribute("aria-label") ?? "",
+		),
+	].join(" ");
+}
+
+function menuItemOf(root: HTMLElement, label: string): HTMLButtonElement | undefined {
+	return [...root.querySelectorAll<HTMLButtonElement>("[role='menuitem']")].find((item) =>
+		item.textContent?.includes(label),
+	);
+}
+
+function reasonOf(item: Element | undefined): string {
+	if (!item) return "";
+	const described = item.getAttribute("aria-describedby");
+	const target = described ? item.ownerDocument.getElementById(described)?.textContent : "";
+	return [
+		item.getAttribute("title"),
+		item.getAttribute("aria-description"),
+		item.getAttribute("aria-label"),
+		item.textContent,
+		target,
+	].join(" ");
+}
+
+async function openAgentMenu(harness: Awaited<ReturnType<typeof mounted>>, identity: string) {
+	harness.root
+		.querySelector<HTMLButtonElement>(`[aria-label="Menu for ${identity}"]`)
+		?.click();
+	await settle();
+}
+
+const popupCss = readFileSync(
+	new URL("../entrypoints/popup/style.css", import.meta.url),
+	"utf8",
+);
+
+describe("mountPopup agent tabs", () => {
+	const alpha = session({ sessionId: ALPHA_ID, agentIdentity: "alpha" });
+	const beta = session({ sessionId: BETA_ID, agentIdentity: "beta" });
+
+	test("lists each tab of a group as an li.it row with title and host, the selected one marked act", async () => {
+		const harness = await mounted(
+			withTabs(
+				[alpha],
+				[
+					groupOf(ALPHA_ID, "blue", [
+						tabRow(11, { title: "First page" }),
+						tabRow(12, { selected: true, title: "Second page" }),
+						tabRow(13, { active: true, title: "Third page" }),
+					]),
+				],
+			),
+		);
+
+		const rows = tabItems(treeOf(harness.root, "alpha"));
+
+		expect(rows).toHaveLength(3);
+		expect(rows.map((row) => row.querySelector(".t")?.textContent)).toEqual([
+			"First page",
+			"Second page",
+			"Third page",
+		]);
+		expect(rows.map((row) => row.querySelector(".mono")?.textContent)).toEqual([
+			"host-11.example.test",
+			"host-12.example.test",
+			"host-13.example.test",
+		]);
+		expect(rows.map((row) => row.classList.contains("act"))).toEqual([false, true, false]);
+		expect(rows[0]?.querySelector(".t")?.getAttribute("title")).toBe("First page");
+		harness.handle.destroy();
+	});
+
+	test.each([
+		["about:blank", "about:blank"],
+		["a chrome:// page", "chrome://extensions/"],
+		["no url", undefined],
+	])("shows an empty host for %s", async (_name, url) => {
+		const harness = await mounted(
+			withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { url })])]),
+		);
+
+		const [row] = tabItems(treeOf(harness.root, "alpha"));
+
+		expect(row?.querySelector(".t")?.textContent).toBe("Title 11");
+		expect(row?.querySelector(".mono")?.textContent ?? "").toBe("");
+		harness.handle.destroy();
+	});
+
+	test("renders tab rows first and then the run rows", async () => {
+		const harness = await mounted(
+			withTabs(
+				[{ ...alpha, runs: [run({ sessionId: ALPHA_ID })] }],
+				[groupOf(ALPHA_ID, "blue", [tabRow(11), tabRow(12, { selected: true })])],
+			),
+		);
+
+		const rows = [...(treeOf(harness.root, "alpha")?.querySelectorAll("li.it") ?? [])];
+
+		expect(rows.map((row) => row.classList.contains("run"))).toEqual([false, false, true]);
+		harness.handle.destroy();
+	});
+
+	test("renders only the run row for an agent with one run and no tabs", async () => {
+		const harness = await mounted(
+			withTabs(
+				[{ ...alpha, runs: [run({ sessionId: ALPHA_ID })] }],
+				[groupOf(ALPHA_ID, "blue", [])],
+			),
+		);
+
+		const tree = treeOf(harness.root, "alpha");
+
+		expect(tabItems(tree)).toHaveLength(0);
+		expect(tree?.querySelectorAll("li.it.run")).toHaveLength(1);
+		expect(cardOf(harness.root, "alpha").classList.contains("nokids")).toBe(false);
+		harness.handle.destroy();
+	});
+
+	test("marks an agent with no tabs and no runs as nokids and renders no tree", async () => {
+		const harness = await mounted(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [])]));
+
+		expect(cardOf(harness.root, "alpha").classList.contains("nokids")).toBe(true);
+		expect(treeOf(harness.root, "alpha")).toBeNull();
+		harness.handle.destroy();
+	});
+
+	test("an agent with tabs is not nokids and its pill stays driven by runs only", async () => {
+		const harness = await mounted(
+			withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { selected: true })])]),
+		);
+
+		const card = cardOf(harness.root, "alpha");
+
+		expect(card.classList.contains("nokids")).toBe(false);
+		expect(card.querySelector(".pill")?.textContent?.trim()).toBe("Connected");
+		harness.handle.destroy();
+	});
+
+	test("renders a hostile title as text and creates no element from it", async () => {
+		const title = "<img src=x onerror=alert(1)>";
+		const harness = await mounted(
+			withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { title })])]),
+		);
+
+		const tree = treeOf(harness.root, "alpha");
+
+		expect(tree?.querySelector(".t")?.textContent).toBe(title);
+		expect(tree?.querySelector("img")).toBeNull();
+		harness.handle.destroy();
+	});
+
+	test("keeps the full text of a 120-character title in the title attribute", async () => {
+		const title = "w".repeat(120);
+		const harness = await mounted(
+			withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { title })])]),
+		);
+
+		const cell = treeOf(harness.root, "alpha")?.querySelector(".t");
+
+		expect(cell?.getAttribute("title")).toBe(title);
+		harness.handle.destroy();
+	});
+
+	test("the title cell shrinks and ellipsizes in the stylesheet", () => {
+		const rules = [...popupCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+			.filter(([, selector]) => /\.tree[^,]*\.t\b/.test(selector as string))
+			.map(([, , body]) => body)
+			.join(";");
+
+		expect(rules).toMatch(/min-width:\s*0/);
+		expect(rules).toMatch(/text-overflow:\s*ellipsis/);
+		expect(rules).toMatch(/overflow:\s*hidden/);
+	});
+
+	test("renders every tab and run row and marks the selected tab", async () => {
+		const tabs = Array.from({ length: 7 }, (_, i) => tabRow(20 + i, { selected: i === 6 }));
+		const busy = session({ sessionId: ALPHA_ID, agentIdentity: "alpha", runs: [run({ sessionId: ALPHA_ID })] });
+		const harness = await mounted(withTabs([busy], [groupOf(ALPHA_ID, "blue", tabs)]));
+
+		const tree = treeOf(harness.root, "alpha");
+		const rows = tabItems(tree);
+
+		expect(rows).toHaveLength(7);
+		expect(rows.map((row) => row.classList.contains("act"))).toEqual([
+			false, false, false, false, false, false, true,
+		]);
+		expect(rows[6]?.getAttribute("aria-current")).toBe("true");
+		expect(tree?.querySelectorAll("li.run")).toHaveLength(1);
+		harness.handle.destroy();
+	});
+
+	test("the tree scrolls inside a max height in the stylesheet", () => {
+		const rules = [...popupCss.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+			.filter(([, selector]) => (selector as string).trim() === ".tree")
+			.map(([, , body]) => body)
+			.join(";");
+
+		expect(rules).toMatch(/max-height:\s*\d+px/);
+		expect(rules).toMatch(/overflow-y:\s*auto/);
+	});
+
+	test.each([
+		["a file tab", "file:///tmp/notes.txt", ""],
+		["a chrome page", "chrome://settings/", ""],
+		["a blank page", "about:blank", ""],
+		["an ftp tab", "ftp://files.example.test/a", "files.example.test"],
+		["an unparsable url", "not a url", ""],
+	])("renders the host of %s", async (_name, url, host) => {
+		const harness = await mounted(
+			withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { url })])]),
+		);
+
+		expect(treeOf(harness.root, "alpha")?.querySelector(".mono")?.textContent).toBe(host);
+		harness.handle.destroy();
+	});
+
+	test("shows each agent only its own tabs", async () => {
+		const harness = await mounted(
+			withTabs(
+				[alpha, beta],
+				[
+					groupOf(ALPHA_ID, "blue", [tabRow(11, { title: "alpha tab" })]),
+					groupOf(BETA_ID, "red", [tabRow(21, { title: "beta tab" })]),
+				],
+			),
+		);
+
+		expect(treeOf(harness.root, "alpha")?.textContent).toContain("alpha tab");
+		expect(treeOf(harness.root, "alpha")?.textContent).not.toContain("beta tab");
+		expect(treeOf(harness.root, "beta")?.textContent).toContain("beta tab");
+		expect(treeOf(harness.root, "beta")?.textContent).not.toContain("alpha tab");
+		harness.handle.destroy();
+	});
+
+	describe("group color", () => {
+		const squareOf = (root: HTMLElement, identity: string) =>
+			cardOf(root, identity).querySelector('[aria-hidden="true"]');
+
+		test("shows an aria-hidden square before the identity and names the color in the accessible text", async () => {
+			const harness = await mounted(
+				withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11)])]),
+			);
+			const card = cardOf(harness.root, "alpha");
+			const square = squareOf(harness.root, "alpha");
+			const order = [...card.querySelectorAll("*")];
+
+			expect(square?.getAttribute("aria-hidden")).toBe("true");
+			expect(square?.textContent).toBe("");
+			expect(order.indexOf(square as Element)).toBeLessThan(
+				order.indexOf(card.querySelector("b") as Element),
+			);
+			expect(accessibleText(card)).toContain("alpha, blue group");
+			harness.handle.destroy();
+		});
+
+		test("renders a different square for every group color", async () => {
+			const squares = new Set<string>();
+			for (const color of GROUP_COLORS) {
+				const harness = await mounted(
+					withTabs([alpha], [groupOf(ALPHA_ID, color, [tabRow(11)])]),
+				);
+				squares.add(squareOf(harness.root, "alpha")?.outerHTML ?? "");
+				expect(accessibleText(cardOf(harness.root, "alpha"))).toContain(`${color} group`);
+				harness.handle.destroy();
+			}
+
+			expect(squares.size).toBe(GROUP_COLORS.length);
+		});
+
+		test.each(GROUP_COLORS)(
+			"the stylesheet styles .gc-%s for light and for dark",
+			(color) => {
+				const dark = [
+					...popupCss.matchAll(/@media \(prefers-color-scheme: dark\)\s*\{([\s\S]*?)\n\}/g),
+				]
+					.map(([, body]) => body)
+					.join("\n");
+				const light = popupCss.replace(/@media \(prefers-color-scheme: dark\)\s*\{[\s\S]*?\n\}/g, "");
+				const rule = new RegExp(`\\.gc-${color}\\s*\\{[^}]*background:`);
+
+				expect(light).toMatch(rule);
+				expect(dark).toMatch(rule);
+			},
+		);
+
+		test("hides the swatch and the screen-reader group text when no group record exists", async () => {
+			const harness = await mounted(withTabs([alpha], []));
+
+			const card = cardOf(harness.root, "alpha");
+
+			expect(card.querySelector<HTMLElement>(".swatch")?.hidden).toBe(true);
+			expect(card.querySelector(".sr")?.textContent).toBe("");
+			expect(accessibleText(card)).not.toContain("group");
+			harness.handle.destroy();
+		});
+
+		test("falls back to grey when a group record has an unknown color", async () => {
+			const harness = await mounted(
+				withTabs([alpha], [groupOf(ALPHA_ID, "chartreuse", [tabRow(11)])]),
+			);
+
+			const card = cardOf(harness.root, "alpha");
+
+			expect(card.querySelector<HTMLElement>(".swatch")?.hidden).toBe(false);
+			expect(card.querySelector(".swatch")?.classList.contains("gc-grey")).toBe(true);
+			expect(accessibleText(card)).toContain("grey group");
+			harness.handle.destroy();
+		});
+
+		test("an unknown color still renders the card without throwing", async () => {
+			const harness = await mounted(
+				withTabs([alpha], [groupOf(ALPHA_ID, "chartreuse", [tabRow(11)])]),
+			);
+
+			expect(cardOf(harness.root, "alpha")).toBeDefined();
+			harness.handle.destroy();
+		});
+	});
+
+	describe("Add this tab", () => {
+		const inGroup = (...ids: number[]) =>
+			ids.map((id) => tabRow(id, { selected: false }));
+
+		test("sends agentTabAdopt with the active tab id, session id and identity, then re-requests the list", async () => {
+			const harness = await mounted(
+				withTabs([alpha, beta], [groupOf(ALPHA_ID, "blue", []), groupOf(BETA_ID, "red", [])]),
+				{ tabId: 7 },
+			);
+			const before = harness.sent(MSG.agentTabsRequest).length;
+
+			await openAgentMenu(harness, "beta");
+			const item = menuItemOf(harness.root, "Add this tab");
+			expect(item).toBeDefined();
+			expect(item?.getAttribute("aria-disabled")).toBeNull();
+			item?.click();
+			await settle();
+
+			expect(harness.sent(MSG.agentTabAdopt)).toEqual([
+				{ type: MSG.agentTabAdopt, sessionId: BETA_ID, agentIdentity: "beta", tabId: 7 },
+			]);
+			expect(harness.sent(MSG.agentTabsRequest).length).toBeGreaterThan(before);
+			harness.handle.destroy();
+		});
+
+		test("a refused adopt shows the reply error inside that card", async () => {
+			const harness = await mounted(
+				{
+					...withTabs([alpha, beta], [groupOf(ALPHA_ID, "blue", []), groupOf(BETA_ID, "red", [])]),
+					replies: { [MSG.agentTabAdopt]: { ok: false, error: "incognito tabs cannot be shared" } },
+				},
+				{ tabId: 7 },
+			);
+
+			await openAgentMenu(harness, "beta");
+			menuItemOf(harness.root, "Add this tab")?.click();
+			await settle();
+
+			expect(cardOf(harness.root, "beta").querySelector(".note.err")?.textContent).toBe(
+				"incognito tabs cannot be shared",
+			);
+			expect(cardOf(harness.root, "alpha").querySelector(".note.err")).toBeNull();
+			harness.handle.destroy();
+		});
+
+		test("keeps Open chat first in the menu", async () => {
+			const harness = await mounted(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [])]));
+
+			await openAgentMenu(harness, "alpha");
+
+			const labels = [...harness.root.querySelectorAll("[role='menuitem']")].map((item) =>
+				item.textContent?.trim(),
+			);
+			expect(labels[0]).toBe("Open chat");
+			expect(labels.some((label) => label?.includes("Add this tab"))).toBe(true);
+			harness.handle.destroy();
+		});
+
+		test.each([
+			["there is no active tab", { noActiveTab: true }],
+			["the active tab has no id", { tab: { url: PAGE_URL } }],
+		])("is disabled when %s", async (_name, options) => {
+			const harness = await mounted(
+				withTabs([alpha], [groupOf(ALPHA_ID, "blue", [])]),
+				options as BootOptions,
+			);
+
+			await openAgentMenu(harness, "alpha");
+			const item = menuItemOf(harness.root, "Add this tab");
+			item?.click();
+			await settle();
+
+			expect(item?.getAttribute("aria-disabled")).toBe("true");
+			expect(harness.sent(MSG.agentTabAdopt)).toHaveLength(0);
+			harness.handle.destroy();
+		});
+
+		test.each([
+			["an incognito tab", { id: 7, url: PAGE_URL, incognito: true }],
+			["a chrome:// page", { id: 7, url: "chrome://extensions/" }],
+			["a web store page", { id: 7, url: "https://chromewebstore.google.com/detail/x" }],
+			["a Proton Mail tab", { id: 7, url: "https://mail.proton.me/u/0/inbox" }],
+			["a tab with no url", { id: 7 }],
+		])("is disabled with a reason for %s", async (_name, tab) => {
+			const harness = await mounted(
+				withTabs([alpha], [groupOf(ALPHA_ID, "blue", [])]),
+				{ tab },
+			);
+
+			await openAgentMenu(harness, "alpha");
+			const item = menuItemOf(harness.root, "Add this tab");
+			item?.click();
+			await settle();
+
+			expect(item?.getAttribute("aria-disabled")).toBe("true");
+			expect(reasonOf(item).trim().length).toBeGreaterThan("Add this tab".length);
+			expect(harness.sent(MSG.agentTabAdopt)).toHaveLength(0);
+			harness.handle.destroy();
+		});
+
+		test("is disabled with the owner's name when the tab sits in a busy agent's group", async () => {
+			const harness = await mounted(
+				withTabs(
+					[{ ...alpha, runs: [run({ sessionId: ALPHA_ID })] }, beta],
+					[groupOf(ALPHA_ID, "blue", inGroup(7)), groupOf(BETA_ID, "red", [])],
+				),
+				{ tabId: 7 },
+			);
+
+			await openAgentMenu(harness, "beta");
+			const item = menuItemOf(harness.root, "Add this tab");
+			item?.click();
+			await settle();
+
+			expect(item?.getAttribute("aria-disabled")).toBe("true");
+			expect(reasonOf(item)).toContain("alpha is using this tab");
+			expect(harness.sent(MSG.agentTabAdopt)).toHaveLength(0);
+			harness.handle.destroy();
+		});
+
+		test("stays enabled when the tab sits in another agent's group and that agent has no runs", async () => {
+			const harness = await mounted(
+				withTabs(
+					[alpha, beta],
+					[groupOf(ALPHA_ID, "blue", inGroup(7)), groupOf(BETA_ID, "red", [])],
+				),
+				{ tabId: 7 },
+			);
+
+			await openAgentMenu(harness, "beta");
+			const item = menuItemOf(harness.root, "Add this tab");
+
+			expect(item).toBeDefined();
+			expect(item?.getAttribute("aria-disabled")).toBeNull();
+			harness.handle.destroy();
+		});
+
+		test("reads Select this tab for a tab already in the agent's group and sends the adopt message", async () => {
+			const harness = await mounted(
+				withTabs(
+					[{ ...alpha, runs: [run({ sessionId: ALPHA_ID })] }],
+					[groupOf(ALPHA_ID, "blue", inGroup(7))],
+				),
+				{ tabId: 7 },
+			);
+
+			await openAgentMenu(harness, "alpha");
+			const item = menuItemOf(harness.root, "Select this tab");
+
+			expect(menuItemOf(harness.root, "Add this tab")).toBeUndefined();
+			expect(item).toBeDefined();
+			expect(item?.getAttribute("aria-disabled")).toBeNull();
+			item?.click();
+			await settle();
+			expect(harness.sent(MSG.agentTabAdopt)).toEqual([
+				{ type: MSG.agentTabAdopt, sessionId: ALPHA_ID, agentIdentity: "alpha", tabId: 7 },
+			]);
+			harness.handle.destroy();
+		});
+
+		test("never moves a tab itself: the popup source calls neither tabs.group nor innerHTML", () => {
+			const source = readFileSync(
+				new URL("../lib/features/popup.ts", import.meta.url),
+				"utf8",
+			);
+
+			expect(source).not.toMatch(/tabs\.group/);
+			expect(source).not.toMatch(/innerHTML/);
+		});
+	});
+
+	describe("live update", () => {
+		test("a tick issues both requests and renders once the pair has answered", async () => {
+			jest.useFakeTimers();
+			const harness = boot(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { title: "old" })])]));
+			await harness.handle.ready;
+			await flush();
+			const connections = harness.sent(MSG.connectionRequest).length;
+			const lists = harness.sent(MSG.agentTabsRequest).length;
+			let release: () => void = () => undefined;
+			harness.world.holdTabs = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			harness.world.connection = paired({ ...alpha, runs: [run({ sessionId: ALPHA_ID })] })
+				.connection as Row;
+			harness.world.agentTabs = { groups: [groupOf(ALPHA_ID, "blue", [tabRow(11, { title: "new" })])] };
+
+			jest.advanceTimersByTime(2000);
+			await flush();
+
+			expect(harness.sent(MSG.connectionRequest).length).toBe(connections + 1);
+			expect(harness.sent(MSG.agentTabsRequest).length).toBe(lists + 1);
+			expect(cardOf(harness.root, "alpha").querySelector(".pill")?.textContent?.trim()).toBe("Connected");
+			expect(treeOf(harness.root, "alpha")?.textContent).toContain("old");
+
+			release();
+			await flush();
+
+			expect(cardOf(harness.root, "alpha").querySelector(".pill")?.textContent?.trim()).toBe("Working");
+			expect(treeOf(harness.root, "alpha")?.textContent).toContain("new");
+			expect(treeOf(harness.root, "alpha")?.textContent).not.toContain("old");
+			harness.handle.destroy();
+		});
+
+		test("an open menu survives the tick", async () => {
+			jest.useFakeTimers();
+			const harness = boot(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11)])]));
+			await harness.handle.ready;
+			await flush();
+			const trigger = harness.root.querySelector<HTMLButtonElement>('[aria-label="Menu for alpha"]');
+			trigger?.click();
+			await flush();
+			const panel = harness.root.querySelector("[role='menu']");
+			harness.world.agentTabs = {
+				groups: [groupOf(ALPHA_ID, "blue", [tabRow(11), tabRow(12)])],
+			};
+
+			jest.advanceTimersByTime(2000);
+			await flush();
+
+			expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+			expect(harness.root.querySelector("[role='menu']")).toBe(panel);
+			expect(tabItems(treeOf(harness.root, "alpha"))).toHaveLength(2);
+			harness.handle.destroy();
+		});
+
+		test("a rejected agentTabsRequest keeps the previous tab rows while the pills still update", async () => {
+			jest.useFakeTimers();
+			const harness = boot(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { title: "kept" })])]));
+			await harness.handle.ready;
+			await flush();
+			harness.world.tabsFail = true;
+			harness.world.connection = paired({ ...alpha, runs: [run({ sessionId: ALPHA_ID })] })
+				.connection as Row;
+
+			jest.advanceTimersByTime(2000);
+			await flush();
+
+			expect(treeOf(harness.root, "alpha")?.textContent).toContain("kept");
+			expect(cardOf(harness.root, "alpha").querySelector(".pill")?.textContent?.trim()).toBe("Working");
+			harness.handle.destroy();
+		});
+
+		test("drops a late agentTabsRequest reply after destroy without rendering", async () => {
+			jest.useFakeTimers();
+			let release: () => void = () => undefined;
+			const hold = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const harness = boot({
+				...withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11, { title: "ghost tab" })])]),
+				holdTabs: hold,
+			});
+			harness.handle.destroy();
+
+			release();
+			await flush();
+
+			expect(harness.root.textContent).not.toContain("ghost tab");
+			expect(harness.root.querySelectorAll(".ag")).toHaveLength(0);
+		});
+
+		test("an in-flight adopt suppresses the next tick and forces a re-read when it settles", async () => {
+			jest.useFakeTimers();
+			let release: () => void = () => undefined;
+			const harness = boot(
+				withTabs([alpha], [groupOf(ALPHA_ID, "blue", [])]),
+				{ tabId: 7 },
+			);
+			await harness.handle.ready;
+			await flush();
+			harness.world.holdAdopt = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			harness.root.querySelector<HTMLButtonElement>('[aria-label="Menu for alpha"]')?.click();
+			await flush();
+			menuItemOf(harness.root, "Add this tab")?.click();
+			await flush();
+			const connections = harness.sent(MSG.connectionRequest).length;
+			const lists = harness.sent(MSG.agentTabsRequest).length;
+
+			jest.advanceTimersByTime(4000);
+			await flush();
+
+			expect(harness.sent(MSG.connectionRequest)).toHaveLength(connections);
+			expect(harness.sent(MSG.agentTabsRequest)).toHaveLength(lists);
+
+			harness.world.agentTabs = {
+				groups: [groupOf(ALPHA_ID, "blue", [tabRow(7, { selected: true, title: "adopted" })])],
+			};
+			release();
+			await flush();
+
+			expect(harness.sent(MSG.connectionRequest).length).toBeGreaterThan(connections);
+			expect(harness.sent(MSG.agentTabsRequest).length).toBeGreaterThan(lists);
+			expect(treeOf(harness.root, "alpha")?.textContent).toContain("adopted");
+			harness.handle.destroy();
+		});
 	});
 });

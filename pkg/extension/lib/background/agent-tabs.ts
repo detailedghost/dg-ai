@@ -1,11 +1,21 @@
+import {
+	type AgentTabAdoptReply,
+	type AgentTabsReply,
+	BLOCKED_TAB_ERROR,
+	MSG,
+	PRIVATE_TAB_ERROR,
+} from "@dg/pages/chat-messages";
 import { browser } from "wxt/browser";
 import { GROUP_COLORS, type GroupColor } from "@/lib/config";
+import { createPairingStore } from "./pairing-store";
+import { allowedPage, mailbox } from "./tab-guards";
 
 export type BrowserTab = {
 	id?: number;
 	windowId?: number;
 	groupId?: number;
 	url?: string;
+	pendingUrl?: string;
 	title?: string;
 	active?: boolean;
 	incognito?: boolean;
@@ -50,7 +60,10 @@ export type AgentTabsBrowserApi = {
 			groupId: number,
 			props: { title: string; color: GroupColor },
 		): Promise<unknown>;
-		get(groupId: number): Promise<{ windowId: number }>;
+		get(groupId: number): Promise<{
+			windowId: number;
+			color?: GroupColor;
+		}>;
 	};
 };
 
@@ -143,10 +156,12 @@ export function createAgentTabs({
 	browserApi: api,
 	storage,
 	lock = navigator.locks,
+	busy = () => false,
 }: {
 	browserApi: AgentTabsBrowserApi;
 	storage: AgentTabsStorage;
 	lock?: AgentTabsLock;
+	busy?(agent: { sessionId: string }): boolean;
 }) {
 	const locked = <T>(task: () => Promise<T>) => lock.request(LOCK_NAME, task);
 
@@ -168,7 +183,7 @@ export function createAgentTabs({
 						{
 							tabId: tab.id,
 							title: tab.title ?? "",
-							url: tab.url ?? "",
+							url: tab.url || tab.pendingUrl || "",
 							selected: tab.id === record.selectedTabId,
 							active: tab.active ?? false,
 						},
@@ -216,6 +231,36 @@ export function createAgentTabs({
 		return first;
 	}
 
+	async function joinGroup({
+		record,
+		groupWindow,
+		sessionId,
+		agentIdentity,
+		tabId,
+	}: {
+		record: AgentRecord | undefined;
+		groupWindow: number | undefined;
+		sessionId: string;
+		agentIdentity: string;
+		tabId: number;
+	}): Promise<AgentRecord> {
+		if (record && groupWindow !== undefined) {
+			await api.tabs.group({ groupId: record.groupId, tabIds: [tabId] });
+			return record;
+		}
+		const groupId = await api.tabs.group({ tabIds: [tabId] });
+		const title = groupTitle({ agentIdentity, sessionId });
+		const color =
+			record?.color ??
+			leastUsedColor(
+				(await readRecords(storage)).filter(
+					(other) => other.sessionId !== sessionId,
+				),
+			);
+		await api.tabGroups.update(groupId, { title, color });
+		return { sessionId, agentIdentity, groupId, title, color };
+	}
+
 	return {
 		open({
 			sessionId,
@@ -241,27 +286,88 @@ export function createAgentTabs({
 				if (tabId === undefined) throw new Error("The browser opened no tab.");
 				try {
 					await api.tabs.update(tabId, { autoDiscardable: false });
-					if (record && groupWindow !== undefined) {
-						await api.tabs.group({ groupId: record.groupId, tabIds: [tabId] });
-						return { tabId };
-					}
-					const groupId = await api.tabs.group({ tabIds: [tabId] });
-					const title = groupTitle({ agentIdentity, sessionId });
-					const color =
-						record?.color ??
-						leastUsedColor(
-							(await readRecords(storage)).filter(
-								(other) => other.sessionId !== sessionId,
-							),
-						);
-					await api.tabGroups.update(groupId, { title, color });
-					await write({ sessionId, agentIdentity, groupId, title, color });
+					const joined = await joinGroup({
+						record,
+						groupWindow,
+						sessionId,
+						agentIdentity,
+						tabId,
+					});
+					if (joined !== record) await write(joined);
 					return { tabId };
 				} catch (error) {
 					await api.tabs.remove(tabId).catch(() => undefined);
 					throw error;
 				}
 			});
+		},
+
+		adopt({
+			sessionId,
+			agentIdentity,
+			tabId,
+		}: {
+			sessionId: string;
+			agentIdentity: string;
+			tabId: number;
+		}): Promise<void> {
+			return locked(async () => {
+				const tab = await api.tabs.get(tabId).catch(() => undefined);
+				if (!tab) throw new Error("tab not found");
+				if (tab.incognito) throw new Error(PRIVATE_TAB_ERROR);
+				if (!allowedPage(tab.url) || mailbox(tab.url))
+					throw new Error(BLOCKED_TAB_ERROR);
+				const records = await readRecords(storage);
+				const record = records.find((other) => other.sessionId === sessionId);
+				if (record && tab.groupId === record.groupId) {
+					await write({ ...record, selectedTabId: tabId });
+					return;
+				}
+				const owner = records.find(
+					(other) => other.groupId === tab.groupId && other.sessionId !== sessionId,
+				);
+				if (owner && busy({ sessionId: owner.sessionId }))
+					throw new Error(`${owner.agentIdentity} is using this tab`);
+				const groupWindow = await liveGroupWindow(record);
+				if (
+					record &&
+					groupWindow !== undefined &&
+					(await api.tabs.query({ groupId: record.groupId })).length >=
+						MAX_AGENT_TABS
+				)
+					throw new AgentGroupFullError();
+				const joined = await joinGroup({
+					record,
+					groupWindow,
+					sessionId,
+					agentIdentity,
+					tabId,
+				});
+				await write({ ...joined, selectedTabId: tabId });
+				if (owner?.selectedTabId === tabId) {
+					const last = (await rows(owner)).at(-1);
+					await write(
+						last
+							? { ...owner, selectedTabId: last.tabId }
+							: withoutSelection(owner),
+					);
+				}
+			});
+		},
+
+		async groups(): Promise<AgentTabsReply["groups"]> {
+			return Promise.all(
+				(await readRecords(storage)).map(async (record) => {
+					const group = await api.tabGroups
+						.get(record.groupId)
+						.catch(() => undefined);
+					return {
+						sessionId: record.sessionId,
+						color: group?.color ?? record.color,
+						tabs: group ? await rows(record) : [],
+					};
+				}),
+			);
 		},
 
 		async list({ sessionId }: { sessionId: string }): Promise<AgentTab[]> {
@@ -349,20 +455,82 @@ export function createAgentTabs({
 
 export type AgentTabs = ReturnType<typeof createAgentTabs>;
 
-/** Clear an agent's selection when its selected tab closes. */
-export function registerAgentTabs(): void {
+const errorText = (error: unknown) =>
+	error instanceof Error ? error.message : String(error);
+
+function adoptRequest(message: unknown) {
+	const { sessionId, agentIdentity, tabId } = message as Record<string, unknown>;
+	return typeof sessionId === "string" &&
+		typeof agentIdentity === "string" &&
+		typeof tabId === "number"
+		? { sessionId, agentIdentity, tabId }
+		: undefined;
+}
+
+/** Keep agent records in step with the browser and answer the popup's tab requests. */
+export function registerAgentTabs({
+	busy,
+}: { busy?(agent: { sessionId: string }): boolean } = {}): void {
 	const storage = browser.storage as unknown as AgentTabsStorage;
-	browser.tabs.onRemoved.addListener((tabId) => {
+	const agentTabs = createAgentTabs({
+		browserApi: browser as unknown as AgentTabsBrowserApi,
+		storage,
+		busy,
+	});
+	const pairings = createPairingStore({ storage: browser.storage });
+
+	async function answer(
+		message: { type: unknown },
+		sender: { id?: string; tab?: unknown },
+	): Promise<AgentTabsReply | AgentTabAdoptReply> {
+		try {
+			if (sender.id !== browser.runtime.id || sender.tab !== undefined)
+				return { ok: false, error: "not allowed" };
+			if (message.type === MSG.agentTabsRequest)
+				return { groups: await agentTabs.groups() };
+			const request = adoptRequest(message);
+			if (!request) return { ok: false, error: "invalid request" };
+			const held = (await pairings.list()).find(
+				({ sessionId }) => sessionId === request.sessionId,
+			);
+			if (!held) return { ok: false, error: "this agent is not paired" };
+			await agentTabs.adopt({ ...request, agentIdentity: held.agentIdentity });
+			return { ok: true };
+		} catch (error) {
+			return { ok: false, error: errorText(error) };
+		}
+	}
+
+	browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+		const type = (message as { type?: unknown } | null | undefined)?.type;
+		if (type !== MSG.agentTabsRequest && type !== MSG.agentTabAdopt)
+			return undefined;
+		void answer(message as { type: unknown }, sender).then(sendResponse);
+		return true;
+	});
+
+	const withLock = (task: () => Promise<void>) =>
 		void navigator.locks
-			.request(LOCK_NAME, async () => {
-				for (const record of await readRecords(storage))
-					if (record.selectedTabId === tabId)
-						await storage.session.set({
-							[recordKey(record.sessionId)]: withoutSelection(record),
-						});
-			})
+			.request(LOCK_NAME, task)
 			.catch((error: unknown) =>
 				console.warn("[dg-ai-extension] agent tab cleanup failed", error),
 			);
-	});
+
+	browser.tabs.onRemoved.addListener((tabId) =>
+		withLock(async () => {
+			for (const record of await readRecords(storage))
+				if (record.selectedTabId === tabId)
+					await storage.session.set({
+						[recordKey(record.sessionId)]: withoutSelection(record),
+					});
+		}),
+	);
+
+	browser.tabGroups.onRemoved.addListener((group) =>
+		withLock(async () => {
+			for (const record of await readRecords(storage))
+				if (record.groupId === group.id)
+					await storage.session.remove(recordKey(record.sessionId));
+		}),
+	);
 }

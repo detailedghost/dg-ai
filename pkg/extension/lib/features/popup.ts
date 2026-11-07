@@ -1,6 +1,11 @@
+import { allowedPage, mailbox } from "@/lib/background/tab-guards";
+import type { GroupColor } from "@/lib/config";
 import { videoRecordingSupported } from "@/lib/features/demo-recorder";
 import {
+	type AgentTabView,
+	BLOCKED_TAB_ERROR,
 	MSG,
+	PRIVATE_TAB_ERROR,
 	type PairingRun,
 	type PairingSession,
 	type RecordDemoReply,
@@ -18,6 +23,8 @@ const LOGO_PIXELS = "44";
 const DAEMON_DOWN = "Daemon not running. Run dg-agent start.";
 const NO_TOUR = "Open a page with a DeeGee video tour first.";
 const NO_ACTIVE_TAB = "No active tab found. Open a page and try again.";
+const ADD_TAB = "Add this tab";
+const SELECT_TAB = "Select this tab";
 const NO_SHORTCUT =
 	"No keyboard shortcut is assigned to DeeGee. Assign one in your browser's extension shortcuts.";
 
@@ -33,7 +40,25 @@ const PILLS = {
 	idle: { label: "Idle", variant: "" },
 } as const;
 
-const PRESENCES: readonly string[] = ["cli", "waiting", "gone", "idle"];
+const GROUP_SWATCH: Readonly<Record<GroupColor, string>> = {
+	grey: "gc-grey",
+	blue: "gc-blue",
+	red: "gc-red",
+	yellow: "gc-yellow",
+	green: "gc-green",
+	pink: "gc-pink",
+	purple: "gc-purple",
+	cyan: "gc-cyan",
+	orange: "gc-orange",
+};
+
+const HOSTLESS_PROTOCOLS: ReadonlySet<string> = new Set([
+	"about:",
+	"chrome:",
+	"chrome-extension:",
+]);
+
+const PRESENCES: readonly string[] = ["cli", "gone", "idle"];
 
 type PopupRuntime = {
 	onMessage: {
@@ -48,8 +73,12 @@ export type PopupDeps = {
 	runtime: PopupRuntime;
 	findPort(): Promise<number | undefined>;
 	now(): number;
-	queryActiveTab?(): Promise<Array<{ id?: number }>>;
+	queryActiveTab?(): Promise<
+		Array<{ id?: number; url?: string; incognito?: boolean }>
+	>;
 };
+
+type GroupView = { color: GroupColor; tabs: AgentTabView[] };
 
 export type PopupHandle = { ready: Promise<void>; destroy(): void };
 
@@ -59,6 +88,8 @@ type CardView = {
 	card: HTMLElement;
 	name: HTMLElement;
 	shortId: HTMLElement;
+	swatch: HTMLElement;
+	colorName: HTMLElement;
 	pill: HTMLElement;
 	menu: HTMLButtonElement;
 	unpair: HTMLButtonElement;
@@ -128,6 +159,43 @@ function parseSessions(reply: unknown): PairingSession[] {
 	});
 }
 
+function parseTabs(value: unknown): AgentTabView[] {
+	if (!Array.isArray(value)) return [];
+	return value.flatMap((item) => {
+		const tab = (item ?? {}) as Partial<AgentTabView>;
+		return typeof tab.tabId === "number"
+			? [
+					{
+						tabId: tab.tabId,
+						title: typeof tab.title === "string" ? tab.title : "",
+						url: typeof tab.url === "string" ? tab.url : "",
+						selected: tab.selected === true,
+						active: tab.active === true,
+					},
+				]
+			: [];
+	});
+}
+
+function parseGroups(reply: unknown): Map<string, GroupView> | undefined {
+	const list = (reply as { groups?: unknown } | undefined)?.groups;
+	if (!Array.isArray(list)) return undefined;
+	const groups = new Map<string, GroupView>();
+	for (const item of list) {
+		const fields = (item ?? {}) as Record<string, unknown>;
+		if (typeof fields.sessionId !== "string") continue;
+		groups.set(fields.sessionId, {
+			color:
+				typeof fields.color === "string" &&
+				Object.hasOwn(GROUP_SWATCH, fields.color)
+					? (fields.color as GroupColor)
+					: "grey",
+			tabs: parseTabs(fields.tabs),
+		});
+	}
+	return groups;
+}
+
 function parseRecordReply(reply: unknown): RecordDemoReply | undefined {
 	const fields = (reply ?? {}) as Record<string, unknown>;
 	switch (fields.outcome) {
@@ -170,6 +238,30 @@ export function renderAgentItems(
 	});
 }
 
+function hostOf(url: string): string {
+	try {
+		const parsed = new URL(url);
+		return HOSTLESS_PROTOCOLS.has(parsed.protocol) ? "" : parsed.host;
+	} catch {
+		return "";
+	}
+}
+
+function renderTabItems(
+	tabs: readonly AgentTabView[],
+	doc: Document,
+): HTMLLIElement[] {
+	return tabs.map((tab) => {
+		const row = element(doc, "li", tab.selected ? "it act" : "it");
+		const title = tab.title || "New tab";
+		const label = element(doc, "span", "t", title);
+		label.setAttribute("title", title);
+		row.append(label, element(doc, "span", "mono", hostOf(tab.url)));
+		if (tab.selected) row.setAttribute("aria-current", "true");
+		return row;
+	});
+}
+
 export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	const { runtime, findPort, now } = deps;
 	const queryActiveTab =
@@ -182,6 +274,9 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	let unpaired: PairingHandle | undefined;
 	let paired: PairedView | undefined;
 	let recordNote: HTMLElement | undefined;
+	let groups = new Map<string, GroupView>();
+	let sessions: PairingSession[] = [];
+	let adopting = 0;
 
 	const sub = element(doc, "div", "sub");
 	const title = element(doc, "div", "grow");
@@ -206,6 +301,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
 	function menuItem(label: string, run: () => void): HTMLButtonElement {
 		const item = button(doc, "btn btn-sm menu-item", label, () => {
+			if (item.getAttribute("aria-disabled") === "true") return;
 			closeMenu(true);
 			run();
 		});
@@ -315,11 +411,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
 	async function readAgents(): Promise<void> {
 		const version = ++readVersion;
-		const reply = await runtime
-			.sendMessage({ type: MSG.connectionRequest })
-			.catch(() => undefined);
+		const [reply, tabsReply] = await Promise.all([
+			runtime.sendMessage({ type: MSG.connectionRequest }).catch(() => undefined),
+			runtime.sendMessage({ type: MSG.agentTabsRequest }).catch(() => undefined),
+		]);
 		if (destroyed || version !== readVersion) return;
-		const sessions = parseSessions(reply);
+		sessions = parseSessions(reply);
+		groups = parseGroups(tabsReply) ?? groups;
 		const daemonDown =
 			sessions.length > 0 &&
 			sessions.every((session) => !session.connected) &&
@@ -361,13 +459,81 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		);
 	}
 
+	async function adoptTab(view: CardView, tabId: number): Promise<void> {
+		adopting += 1;
+		const reply = (await runtime
+			.sendMessage({
+				type: MSG.agentTabAdopt,
+				sessionId: view.session.sessionId,
+				agentIdentity: view.session.agentIdentity,
+				tabId,
+			})
+			.catch(() => undefined)) as { ok?: unknown; error?: unknown } | undefined;
+		adopting -= 1;
+		if (destroyed) return;
+		showCardError(
+			view,
+			reply?.ok === true
+				? undefined
+				: typeof reply?.error === "string"
+					? reply.error
+					: BACKGROUND_UNREACHABLE,
+		);
+		await readAgents();
+	}
+
+	function adoptState(
+		session: PairingSession,
+		tab: { id?: number; url?: string; incognito?: boolean } | undefined,
+	): { label: string; tabId?: number; reason?: string } {
+		const tabId = tab?.id;
+		if (tabId === undefined) return { label: ADD_TAB, reason: NO_ACTIVE_TAB };
+		if (tab?.incognito) return { label: ADD_TAB, reason: PRIVATE_TAB_ERROR };
+		if (!allowedPage(tab?.url) || mailbox(tab?.url))
+			return { label: ADD_TAB, reason: BLOCKED_TAB_ERROR };
+		const holds = (sessionId: string) =>
+			groups.get(sessionId)?.tabs.some((other) => other.tabId === tabId);
+		if (holds(session.sessionId)) return { label: SELECT_TAB, tabId };
+		const owner = sessions.find(
+			(other) => other.sessionId !== session.sessionId && holds(other.sessionId),
+		);
+		return owner && owner.runs.length > 0
+			? { label: ADD_TAB, reason: `${owner.agentIdentity} is using this tab` }
+			: { label: ADD_TAB, tabId };
+	}
+
+	function adoptItem(view: CardView): HTMLButtonElement {
+		let target: number | undefined;
+		const item = menuItem(ADD_TAB, () => {
+			if (target !== undefined) void adoptTab(view, target);
+		});
+		item.setAttribute("aria-disabled", "true");
+		void queryActiveTab()
+			.catch(() => [])
+			.then(([tab]) => {
+				if (destroyed) return;
+				const { label, reason, tabId } = adoptState(view.session, tab);
+				target = tabId;
+				if (tabId === undefined) item.setAttribute("aria-disabled", "true");
+				else item.removeAttribute("aria-disabled");
+				item.replaceChildren(
+					...(reason ? [label, " ", element(doc, "span", "why", reason)] : [label]),
+				);
+				if (reason) item.setAttribute("title", reason);
+			});
+		return item;
+	}
+
 	function createCard(session: PairingSession): CardView {
 		const wrapper = element(doc, "div", "agent");
 		const card = element(doc, "div", "ag");
 		const name = element(doc, "b");
 		const shortId = element(doc, "div", "mono");
+		const swatch = element(doc, "span", "swatch");
+		swatch.setAttribute("aria-hidden", "true");
+		const colorName = element(doc, "span", "sr");
 		const identity = element(doc, "div", "grow");
-		identity.append(name, shortId);
+		identity.append(name, colorName, shortId);
 		const pill = element(doc, "span", "pill");
 		const menuAnchor = element(doc, "div", "menu-host");
 		const row = element(doc, "div", "row");
@@ -377,16 +543,19 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 			card,
 			name,
 			shortId,
+			swatch,
+			colorName,
 			pill,
 			menu: menuTrigger(`Menu for ${session.agentIdentity}`, menuAnchor, () => [
 				menuItem("Open chat", () => void openChat(view)),
+				adoptItem(view),
 			]),
 			unpair: button(doc, "btn btn-sm btn-danger", "Unpair", () => {
 				void unpair(view);
 			}),
 		};
 		menuAnchor.append(view.menu);
-		row.append(identity, pill, menuAnchor, view.unpair);
+		row.append(swatch, identity, pill, menuAnchor, view.unpair);
 		card.append(row);
 		wrapper.append(card);
 		return view;
@@ -401,7 +570,18 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		setText(view.pill, label);
 		view.menu.setAttribute("aria-label", `Menu for ${session.agentIdentity}`);
 		view.unpair.setAttribute("aria-label", `Unpair ${session.agentIdentity}`);
-		const rows = renderAgentItems(session, { doc, now });
+		const group = groups.get(session.sessionId);
+		view.swatch.hidden = group === undefined;
+		if (group) {
+			view.swatch.className = `swatch ${GROUP_SWATCH[group.color]}`;
+			setText(view.colorName, `, ${group.color} group`);
+		} else {
+			setText(view.colorName, "");
+		}
+		const rows = [
+			...renderTabItems(group?.tabs ?? [], doc),
+			...renderAgentItems(session, { doc, now }),
+		];
 		view.card.classList.toggle("nokids", rows.length === 0);
 		if (rows.length === 0) {
 			view.tree?.remove();
@@ -515,7 +695,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	}
 
 	function tick(): void {
-		if (destroyed || doc.hidden) return;
+		if (destroyed || doc.hidden || adopting > 0) return;
 		void readAgents();
 		if (unpaired) void unpaired.refresh();
 		else if (paired?.fold.open) void paired.foldPairing?.refresh();

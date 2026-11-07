@@ -12,10 +12,12 @@ import { pruneStaleRecordings } from "@/utils/recording-db";
 export default defineBackground(() => {
 	void pruneStaleRecordings();
 	registerTabGrouping();
-	registerAgentTabs();
 	registerTourState();
 	registerProto();
 	registerRecording();
 	const link = registerDaemonLink();
+	registerAgentTabs({
+		busy: ({ sessionId }) => link.pending(sessionId).length > 0,
+	});
 	registerPairOffer({ adopt: link.adopt });
 });

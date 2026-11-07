@@ -24,6 +24,8 @@ export const MSG = {
 	openChat: "dg-chat:open-chat",
 	recordDemo: "dg-chat:record-demo",
 	pairOfferRequest: "dg-chat:pair-offer-request",
+	agentTabsRequest: "dg-chat:agent-tabs-request",
+	agentTabAdopt: "dg-chat:agent-tab-adopt",
 } as const;
 
 export type ConfigRelayReply = {
@@ -60,3 +62,20 @@ export type RecordDemoReply =
 	| { outcome: "no-tour" }
 	| { outcome: "refused"; reason: string }
 	| { outcome: "capture-failed"; shortcut: string | null };
+
+export type AgentTabView = {
+	tabId: number;
+	title: string;
+	url: string;
+	selected: boolean;
+	active: boolean;
+};
+
+export type AgentTabsReply = {
+	groups: Array<{ sessionId: string; color: string; tabs: AgentTabView[] }>;
+};
+
+export type AgentTabAdoptReply = { ok: true } | { ok: false; error: string };
+
+export const PRIVATE_TAB_ERROR = "incognito tabs cannot be shared";
+export const BLOCKED_TAB_ERROR = "this page cannot be shared with an agent";

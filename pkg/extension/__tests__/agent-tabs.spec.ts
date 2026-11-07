@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { CHAT_DEFAULT_PORT } from "@dg/common";
+import { MSG } from "@dg/pages/chat-messages";
 import {
 	AgentGroupFullError,
 	agentGroupIds,
@@ -16,16 +18,48 @@ import {
 	tabOf,
 	windowOf,
 } from "./utils/fake-browser";
+import { makeLocalArea } from "./utils/relay-harness";
+
+type Listener = (
+	message: unknown,
+	sender: unknown,
+	sendResponse: (reply: unknown) => void,
+) => boolean | undefined;
 
 let currentBrowser: FakeBrowser["api"];
+let currentLocal = makeLocalArea();
+let currentListeners = new Set<Listener>();
+let currentGroupRemoved = new Set<(group: { id: number }) => void>();
+
+const EXTENSION_ID = "ext-self";
 
 mock.module("wxt/browser", () => ({
 	browser: {
 		get storage() {
-			return currentBrowser.storage;
+			return { session: currentBrowser.storage.session, local: currentLocal };
 		},
 		get tabs() {
 			return currentBrowser.tabs;
+		},
+		get windows() {
+			return currentBrowser.windows;
+		},
+		get tabGroups() {
+			return {
+				...currentBrowser.tabGroups,
+				onRemoved: {
+					addListener: (fn: (group: { id: number }) => void) =>
+						currentGroupRemoved.add(fn),
+				},
+			};
+		},
+		get runtime() {
+			return {
+				id: EXTENSION_ID,
+				onMessage: {
+					addListener: (fn: Listener) => currentListeners.add(fn),
+				},
+			};
 		},
 	},
 }));
@@ -583,6 +617,8 @@ describe("registerAgentTabs", () => {
 	function register(seed: Seed = {}) {
 		const fake = createFakeBrowser(seed);
 		currentBrowser = fake.api;
+		currentListeners = new Set();
+		currentGroupRemoved = new Set();
 		Object.defineProperty(navigator, "locks", {
 			value: createLock(),
 			configurable: true,
@@ -628,5 +664,495 @@ describe("registerAgentTabs", () => {
 		await settle();
 
 		expect(fake.record(SESSION_A)?.selectedTabId).toBe(5);
+	});
+});
+
+
+const BOOTSTRAP = {
+	port: CHAT_DEFAULT_PORT,
+	token: "tok-secret-value",
+};
+
+function pairingKey(sessionId: string) {
+	return `pairing:${sessionId}`;
+}
+
+function holdPairing(sessionId: string, agentIdentity = "agent") {
+	currentLocal.data[pairingKey(sessionId)] = {
+		...BOOTSTRAP,
+		sessionId,
+		agentIdentity,
+	};
+}
+
+type Reply = { handled: boolean | undefined; reply?: Record<string, unknown> };
+
+describe("agent tabs messages", () => {
+	const originalLocks = Object.getOwnPropertyDescriptor(navigator, "locks");
+
+	afterEach(() => {
+		if (originalLocks) Object.defineProperty(navigator, "locks", originalLocks);
+		else Reflect.deleteProperty(navigator, "locks");
+	});
+
+	function boot(
+		seed: Seed = {},
+		options: { busy?: (arg: { sessionId: string }) => boolean; held?: string[] } = {},
+	) {
+		const fake = createFakeBrowser(seed);
+		currentBrowser = fake.api;
+		currentLocal = makeLocalArea();
+		currentListeners = new Set();
+		currentGroupRemoved = new Set();
+		Object.defineProperty(navigator, "locks", {
+			value: createLock(),
+			configurable: true,
+		});
+		for (const sessionId of options.held ?? [SESSION_A, SESSION_B])
+			holdPairing(sessionId, `agent-${sessionId.slice(0, 2)}`);
+		registerAgentTabs(options.busy ? { busy: options.busy } : undefined);
+		const [listener] = [...currentListeners];
+		const send = (
+			message: unknown,
+			sender: unknown = { id: EXTENSION_ID },
+		): Promise<Reply> =>
+			new Promise((resolve) => {
+				const handled = (listener as Listener)(message, sender, (reply) =>
+					resolve({ handled, reply: reply as Record<string, unknown> }),
+				);
+				if (handled !== true) resolve({ handled });
+			});
+		const adopt = (sessionId: string, tabId: number, agentIdentity = "agent", sender?: unknown) =>
+			send({ type: MSG.agentTabAdopt, sessionId, agentIdentity, tabId }, sender);
+		const list = (sender?: unknown) =>
+			send({ type: MSG.agentTabsRequest }, sender);
+		return { fake, send, adopt, list };
+	}
+
+
+	it("registers exactly one runtime message listener", () => {
+		boot();
+
+		expect(currentListeners.size).toBe(1);
+	});
+
+	describe("list", () => {
+		it("returns one group per record with its tabs and the selected flag", async () => {
+			const { fake, list } = boot({
+				tabs: [
+					tabOf({ id: 5, groupId: 10, title: "Five", url: "https://five.example.test/" }),
+					tabOf({ id: 6, groupId: 10 }),
+					tabOf({ id: 8, groupId: 11 }),
+					tabOf({ id: 9 }),
+				],
+				groups: [
+					{ id: 10, windowId: 1, title: "t", color: "blue" },
+					{ id: 11, windowId: 1, title: "t", color: "green" },
+				],
+			});
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10, selectedTabId: 6 }));
+			fake.seedRecord(recordOf({ sessionId: SESSION_B, groupId: 11, color: "green" }));
+
+			const { handled, reply } = await list();
+			const groups = (reply?.groups as Array<{ sessionId: string; tabs: Array<Record<string, unknown>> }>).slice().sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+
+			expect(handled).toBe(true);
+			expect(groups.map((group) => group.sessionId)).toEqual([SESSION_A, SESSION_B]);
+			expect(groups[0]?.tabs.map((tab) => [tab.tabId, tab.selected])).toEqual([
+				[5, false],
+				[6, true],
+			]);
+			expect(groups[0]?.tabs[0]).toMatchObject({
+				title: "Five",
+				url: "https://five.example.test/",
+			});
+			expect(groups[1]?.tabs.map((tab) => tab.tabId)).toEqual([8]);
+		});
+
+		it("leaves incognito tabs out of a group's rows", async () => {
+			const { fake, list } = boot({
+				windows: [windowOf({ id: 1 }), windowOf({ id: 2, incognito: true })],
+				tabs: [
+					tabOf({ id: 5, groupId: 10 }),
+					tabOf({ id: 6, groupId: 10, windowId: 2, incognito: true }),
+				],
+				groups: [{ id: 10, windowId: 1, title: "t", color: "blue" }],
+			});
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10 }));
+
+			const { reply } = await list();
+
+			const [group] = reply?.groups as Array<{ tabs: Array<{ tabId: number }> }>;
+			expect(group?.tabs.map((tab) => tab.tabId)).toEqual([5]);
+		});
+
+		it("reads the color from the live group when the user recolored it", async () => {
+			const { fake, list } = boot({
+				tabs: [tabOf({ id: 5, groupId: 10 })],
+				groups: [{ id: 10, windowId: 1, title: "t", color: "red" }],
+			});
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10, color: "blue" }));
+
+			const { reply } = await list();
+
+			expect((reply?.groups as Array<{ color: string }>)[0]?.color).toBe("red");
+		});
+
+		it("returns no tabs and keeps the record color for a group that is gone, without recreating it", async () => {
+			const { fake, list } = boot();
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 77, color: "pink" }));
+
+			const { reply } = await list();
+
+			expect(reply?.groups).toEqual([{ sessionId: SESSION_A, color: "pink", tabs: [] }]);
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.raw.tabGroups.update).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)?.groupId).toBe(77);
+		});
+
+		it("returns an empty list when no agent has a record", async () => {
+			const { list } = boot();
+
+			expect((await list()).reply).toEqual({ groups: [] });
+		});
+	});
+
+	describe("adopt", () => {
+		const plain = (id: number, overrides: Partial<Parameters<typeof tabOf>[0]> = {}) =>
+			tabOf({ id, url: `https://page-${id}.example.test/`, ...overrides });
+
+		it("groups the tab into a new group for the session, selects it and replies ok", async () => {
+			const { fake, adopt } = boot({ tabs: [plain(5)] });
+			holdPairing(SESSION_A, "claude");
+
+			const { reply } = await adopt(SESSION_A, 5, "claude");
+
+			expect(reply).toEqual({ ok: true });
+			const record = fake.record(SESSION_A);
+			expect(record).toMatchObject({
+				sessionId: SESSION_A,
+				agentIdentity: "claude",
+				selectedTabId: 5,
+				title: groupTitle({ agentIdentity: "claude", sessionId: SESSION_A }),
+			});
+			expect(groupOf(fake, 5)).toBe(record?.groupId as number);
+			expect(fake.groups.get(record?.groupId as number)?.title).toBe(record?.title as string);
+		});
+
+		it("names the group after the held pairing, not the identity in the message", async () => {
+			const { fake, adopt } = boot({ tabs: [plain(5)] });
+			holdPairing(SESSION_A, "claude");
+
+			const { reply } = await adopt(SESSION_A, 5, "spoofed");
+
+			expect(reply).toEqual({ ok: true });
+			expect(fake.record(SESSION_A)).toMatchObject({
+				agentIdentity: "claude",
+				title: groupTitle({ agentIdentity: "claude", sessionId: SESSION_A }),
+			});
+		});
+
+		it("joins the existing group of the session and moves the selection to the tab", async () => {
+			const { fake, adopt } = boot({
+				tabs: [plain(5, { groupId: 10 }), plain(6)],
+				groups: [{ id: 10, windowId: 1, title: "t", color: "blue" }],
+			});
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10, selectedTabId: 5 }));
+
+			const { reply } = await adopt(SESSION_A, 6);
+
+			expect(reply).toEqual({ ok: true });
+			expect(groupOf(fake, 6)).toBe(10);
+			expect(fake.record(SESSION_A)?.selectedTabId).toBe(6);
+			expect(fake.groups.size).toBe(1);
+		});
+
+		it("selects a tab already in the group without calling tabs.group", async () => {
+			const { fake, adopt } = boot({
+				tabs: [plain(5, { groupId: 10 }), plain(6, { groupId: 10 })],
+				groups: [{ id: 10, windowId: 1, title: "t", color: "blue" }],
+			});
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10, selectedTabId: 5 }));
+
+			const { reply } = await adopt(SESSION_A, 6);
+
+			expect(reply).toEqual({ ok: true });
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)?.selectedTabId).toBe(6);
+		});
+
+		it("replies tab not found for a tab id that no longer exists and changes nothing", async () => {
+			const { fake, adopt } = boot();
+
+			const { reply } = await adopt(SESSION_A, 999);
+
+			expect(reply).toEqual({ ok: false, error: "tab not found" });
+			expect(fake.record(SESSION_A)).toBeUndefined();
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+		});
+
+		it("refuses an incognito tab", async () => {
+			const { fake, adopt } = boot({
+				windows: [windowOf({ id: 1 }), windowOf({ id: 2, incognito: true })],
+				tabs: [plain(5, { windowId: 2, incognito: true })],
+			});
+
+			const { reply } = await adopt(SESSION_A, 5);
+
+			expect(reply).toEqual({ ok: false, error: "incognito tabs cannot be shared" });
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)).toBeUndefined();
+		});
+
+		it.each([
+			["a browser settings page", "chrome://extensions/"],
+			["about:blank", "about:blank"],
+			["an extension page", "chrome-extension://abcdefghijklmnop/popup.html"],
+			["a web store page", "https://chromewebstore.google.com/detail/x"],
+			["the Proton Mail tab", "https://mail.proton.me/u/0/inbox"],
+		])("refuses %s as a disallowed page", async (_name, url) => {
+			const { fake, adopt } = boot({ tabs: [plain(5, { url })] });
+
+			const { reply } = await adopt(SESSION_A, 5);
+
+			expect(reply).toEqual({
+				ok: false,
+				error: "this page cannot be shared with an agent",
+			});
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)).toBeUndefined();
+		});
+
+		it("refuses a session that holds no pairing", async () => {
+			const { fake, adopt } = boot({ tabs: [plain(5)] }, { held: [SESSION_B] });
+
+			const { reply } = await adopt(SESSION_A, 5);
+
+			expect(reply?.ok).toBe(false);
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)).toBeUndefined();
+		});
+
+		describe("a tab in another agent's group", () => {
+			const world = (): Seed => ({
+				tabs: [
+					plain(5, { groupId: 10 }),
+					plain(6, { groupId: 10 }),
+					plain(8, { groupId: 11 }),
+				],
+				groups: [
+					{ id: 10, windowId: 1, title: "t", color: "blue" },
+					{ id: 11, windowId: 1, title: "t", color: "red" },
+				],
+			});
+			const seedOwners = (fake: FakeBrowser) => {
+				fake.seedRecord(
+					recordOf({
+						sessionId: SESSION_A,
+						agentIdentity: "owner",
+						groupId: 10,
+						selectedTabId: 5,
+					}),
+				);
+				fake.seedRecord(
+					recordOf({ sessionId: SESSION_B, groupId: 11, selectedTabId: 8, color: "red" }),
+				);
+			};
+
+			it("is refused with the owner's name and moves nothing when the owner is busy", async () => {
+				const busy = mock((_arg: { sessionId: string }) => true);
+				const { fake, adopt } = boot(world(), { busy });
+				seedOwners(fake);
+				const before = [fake.record(SESSION_A), fake.record(SESSION_B)];
+
+				const { reply } = await adopt(SESSION_B, 5);
+
+				expect(reply).toEqual({ ok: false, error: "owner is using this tab" });
+				expect(busy).toHaveBeenCalledWith({ sessionId: SESSION_A });
+				expect(groupOf(fake, 5)).toBe(10);
+				expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+				expect([fake.record(SESSION_A), fake.record(SESSION_B)]).toEqual(before);
+			});
+
+			it("moves when the owner is not busy and updates both records", async () => {
+				const { fake, adopt } = boot(world(), { busy: () => false });
+				seedOwners(fake);
+
+				const { reply } = await adopt(SESSION_B, 5);
+
+				expect(reply).toEqual({ ok: true });
+				expect(groupOf(fake, 5)).toBe(11);
+				expect(fake.record(SESSION_B)?.selectedTabId).toBe(5);
+				expect([undefined, 6]).toContain(fake.record(SESSION_A)?.selectedTabId);
+			});
+
+			it("keeps the old selection when the moved tab was not the selected one", async () => {
+				const { fake, adopt } = boot(world(), { busy: () => false });
+				seedOwners(fake);
+
+				await adopt(SESSION_B, 6);
+
+				expect(groupOf(fake, 6)).toBe(11);
+				expect(fake.record(SESSION_A)?.selectedTabId).toBe(5);
+			});
+
+			it("tolerates the old group vanishing when it loses its last tab", async () => {
+				const { fake, adopt } = boot(
+					{
+						tabs: [plain(5, { groupId: 10 }), plain(8, { groupId: 11 })],
+						groups: [
+							{ id: 10, windowId: 1, title: "t", color: "blue" },
+							{ id: 11, windowId: 1, title: "t", color: "red" },
+						],
+					},
+					{ busy: () => false },
+				);
+				seedOwners(fake);
+				const group = fake.raw.tabs.group.getMockImplementation() as (
+					options: { tabIds: number[]; groupId?: number },
+				) => Promise<number>;
+				fake.raw.tabs.group.mockImplementation(async (options) => {
+					const id = await group(options);
+					fake.groups.delete(10);
+					return id;
+				});
+
+				const { reply } = await adopt(SESSION_B, 5);
+
+				expect(reply).toEqual({ ok: true });
+				expect(fake.record(SESSION_A)?.selectedTabId).toBeUndefined();
+				expect(fake.record(SESSION_B)?.selectedTabId).toBe(5);
+			});
+
+			it("defaults to not busy when no busy function is passed", async () => {
+				const { fake, adopt } = boot(world());
+				seedOwners(fake);
+
+				const { reply } = await adopt(SESSION_B, 5);
+
+				expect(reply).toEqual({ ok: true });
+				expect(groupOf(fake, 5)).toBe(11);
+			});
+		});
+	});
+
+	describe("listener", () => {
+		it("refuses a message from a tab and moves nothing", async () => {
+			const { fake, adopt, list } = boot({ tabs: [tabOf({ id: 5 })] });
+			const sender = { id: EXTENSION_ID, tab: { id: 1 } };
+
+			const adopted = await adopt(SESSION_A, 5, "agent", sender);
+			const listed = await list(sender);
+
+			expect(adopted.reply).toMatchObject({ ok: false });
+			expect(listed.reply).toMatchObject({ ok: false });
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)).toBeUndefined();
+		});
+
+		it("refuses a message from another extension and moves nothing", async () => {
+			const { fake, adopt, list } = boot({ tabs: [tabOf({ id: 5 })] });
+			const sender = { id: "some-other-extension" };
+
+			const adopted = await adopt(SESSION_A, 5, "agent", sender);
+			const listed = await list(sender);
+
+			expect(adopted.reply).toMatchObject({ ok: false });
+			expect(listed.reply).toMatchObject({ ok: false });
+			expect(fake.raw.tabs.group).not.toHaveBeenCalled();
+			expect(fake.record(SESSION_A)).toBeUndefined();
+		});
+
+		it.each([
+			[MSG.connectionRequest],
+			[MSG.openChat],
+			["not-a-dg-message"],
+		])("returns undefined without answering a %s message", async (type) => {
+			const { send } = boot();
+			const respond = mock(() => undefined);
+			const [listener] = [...currentListeners];
+
+			const returned = (listener as Listener)({ type }, { id: EXTENSION_ID }, respond);
+			await Bun.sleep(0);
+			await send({ type });
+
+			expect(returned).toBeUndefined();
+			expect(respond).not.toHaveBeenCalled();
+		});
+
+		it("returns undefined for a message with no type", () => {
+			boot();
+			const [listener] = [...currentListeners];
+
+			expect((listener as Listener)(undefined, { id: EXTENSION_ID }, () => undefined)).toBeUndefined();
+			expect((listener as Listener)("text", { id: EXTENSION_ID }, () => undefined)).toBeUndefined();
+		});
+
+		it("replies ok false with the error text when the browser call throws", async () => {
+			const { fake, adopt } = boot({ tabs: [tabOf({ id: 5 })] });
+			fake.raw.tabs.group.mockRejectedValueOnce(new Error("group failed"));
+
+			const { handled, reply } = await adopt(SESSION_A, 5);
+
+			expect(handled).toBe(true);
+			expect(reply).toEqual({ ok: false, error: "group failed" });
+		});
+	});
+
+	describe("tab group removal", () => {
+		it("drops the record of a group the user closed", async () => {
+			const { fake } = boot();
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10 }));
+			fake.seedRecord(recordOf({ sessionId: SESSION_B, groupId: 11 }));
+
+			for (const fn of currentGroupRemoved) fn({ id: 10 });
+			await Bun.sleep(0);
+
+			expect(fake.record(SESSION_A)).toBeUndefined();
+			expect(fake.record(SESSION_B)).toBeDefined();
+		});
+
+		it("keeps every record when an unrelated group is removed", async () => {
+			const { fake } = boot();
+			fake.seedRecord(recordOf({ sessionId: SESSION_A, groupId: 10 }));
+
+			for (const fn of currentGroupRemoved) fn({ id: 99 });
+			await Bun.sleep(0);
+
+			expect(fake.record(SESSION_A)).toBeDefined();
+		});
+	});
+});
+
+describe("createAgentTabs adopt", () => {
+	it("refuses a tab in a busy agent's group and moves nothing", async () => {
+		const fake = createFakeBrowser({
+			tabs: [tabOf({ id: 5, groupId: 10 })],
+			groups: [{ id: 10, windowId: 1, title: "t", color: "blue" }],
+		});
+		fake.seedRecord(recordOf({ sessionId: SESSION_A, agentIdentity: "owner", groupId: 10 }));
+		const agentTabs = createAgentTabs({
+			browserApi: fake.api,
+			storage: fake.api.storage,
+			lock: createLock(),
+			busy: ({ sessionId }) => sessionId === SESSION_A,
+		});
+
+		await expect(
+			agentTabs.adopt({ sessionId: SESSION_B, agentIdentity: "agent", tabId: 5 }),
+		).rejects.toThrow();
+
+		expect(groupOf(fake, 5)).toBe(10);
+		expect(fake.record(SESSION_B)).toBeUndefined();
+	});
+
+	it("adopts a loose tab and makes it the selected tab", async () => {
+		const { fake, agentTabs } = setup({ tabs: [tabOf({ id: 5 })] });
+
+		await agentTabs.adopt({ sessionId: SESSION_A, agentIdentity: "agent", tabId: 5 });
+
+		expect(await agentTabs.selected({ sessionId: SESSION_A })).toMatchObject({ tabId: 5 });
+		expect(await agentTabs.owns({ sessionId: SESSION_A, tabId: 5 })).toBe(true);
+		expect(fake.groups.size).toBe(1);
 	});
 });
