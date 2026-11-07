@@ -1636,3 +1636,53 @@ describe("mountPopup agent tabs", () => {
 		});
 	});
 });
+
+describe("mountPopup daemon changed", () => {
+	const changed = (sessions: Row[] = []): Partial<World> => ({
+		connection: { connected: false, sessions, daemonChanged: true },
+	});
+
+	test("shows The daemon changed with a Trust this daemon button instead of the pairing code", async () => {
+		const { root } = await mounted(changed());
+
+		expect(root.textContent).toContain("The daemon changed");
+		expect(byText(root, "button", "Trust this daemon")).toBeDefined();
+		expect(root.querySelector(".unpaired")).toBeNull();
+	});
+
+	test("shows the notice over a paired list when the pinned daemon is gone", async () => {
+		const { root } = await mounted(changed([session({ connected: false })]));
+
+		expect(root.textContent).toContain("The daemon changed");
+		expect(cards(root)).toHaveLength(0);
+	});
+
+	test("does not show the notice when the connection reply reports no change", async () => {
+		const { root } = await mounted();
+
+		expect(root.textContent).not.toContain("The daemon changed");
+		expect(byText(root, "button", "Trust this daemon")).toBeUndefined();
+	});
+
+	test("Trust this daemon sends the trust message and reads the state again", async () => {
+		const harness = await mounted(changed());
+		harness.world.connection = { connected: false, sessions: [] };
+
+		byText<HTMLButtonElement>(harness.root, "button", "Trust this daemon")?.click();
+		await settle();
+
+		expect(harness.sent(MSG.trustDaemon)).toHaveLength(1);
+		expect(harness.root.textContent).not.toContain("The daemon changed");
+	});
+
+	test("shows the error when trusting the daemon fails", async () => {
+		const harness = await mounted(changed());
+		harness.world.replies[MSG.trustDaemon] = { ok: false, error: "Daemon unreachable." };
+
+		byText<HTMLButtonElement>(harness.root, "button", "Trust this daemon")?.click();
+		await settle();
+
+		expect(harness.root.textContent).toContain("Daemon unreachable.");
+		expect(byText(harness.root, "button", "Trust this daemon")).toBeDefined();
+	});
+});

@@ -20,6 +20,7 @@ export const MSG = {
 	pairOfferRequest: "dg-chat:pair-offer-request",
 	agentTabsRequest: "dg-chat:agent-tabs-request",
 	agentTabAdopt: "dg-chat:agent-tab-adopt",
+	trustDaemon: "dg-chat:trust-daemon",
 } as const;
 
 export type ConfigRelayReply = {

@@ -21,6 +21,9 @@ import {
 const TICK_MS = 2000;
 const LOGO_PIXELS = "44";
 const DAEMON_DOWN = "Daemon not running. Run dg-agent start.";
+const DAEMON_CHANGED = "The daemon changed";
+const DAEMON_CHANGED_HELP =
+	"A different daemon is running. Trust it to keep using this browser with it.";
 const NO_TOUR = "Open a page with a DeeGee video tour first.";
 const NO_ACTIVE_TAB = "No active tab found. Open a page and try again.";
 const ADD_TAB = "Add this tab";
@@ -273,6 +276,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	let openMenu: OpenMenu | undefined;
 	let unpaired: PairingHandle | undefined;
 	let paired: PairedView | undefined;
+	let changed: HTMLElement | undefined;
 	let recordNote: HTMLElement | undefined;
 	let groups = new Map<string, GroupView>();
 	let sessions: PairingSession[] = [];
@@ -417,6 +421,10 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 			runtime.sendMessage({ type: MSG.agentTabsRequest }).catch(() => undefined),
 		]);
 		if (destroyed || version !== readVersion) return;
+		if ((reply as { daemonChanged?: unknown } | undefined)?.daemonChanged === true) {
+			showDaemonChanged();
+			return;
+		}
 		sessions = parseSessions(reply);
 		groups = parseGroups(tabsReply) ?? groups;
 		const daemonDown =
@@ -639,6 +647,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
 	function showPaired(sessions: PairingSession[], daemonDown: boolean): void {
 		if (!paired) {
+			changed = undefined;
 			unpaired?.destroy();
 			unpaired = undefined;
 			paired = createPaired();
@@ -671,7 +680,45 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		});
 	}
 
+	async function trustDaemon(error: HTMLElement, trust: HTMLButtonElement): Promise<void> {
+		trust.disabled = true;
+		const reply = (await runtime
+			.sendMessage({ type: MSG.trustDaemon })
+			.catch(() => undefined)) as { ok?: unknown; error?: unknown } | undefined;
+		if (destroyed) return;
+		setText(error, replyError(reply) ?? "");
+		trust.disabled = false;
+		await readAgents();
+	}
+
+	function showDaemonChanged(): void {
+		if (changed) return;
+		unpaired?.destroy();
+		unpaired = undefined;
+		if (paired) {
+			paired.foldPairing?.destroy();
+			if (openMenu && paired.section.contains(openMenu.panel)) closeMenu(false);
+			paired = undefined;
+		}
+		const section = element(doc, "div", "changed");
+		const error = element(doc, "p", "note err");
+		error.setAttribute("role", "status");
+		const trust = button(doc, "btn", "Trust this daemon", () => {
+			void trustDaemon(error, trust);
+		});
+		section.append(
+			element(doc, "h2", "", DAEMON_CHANGED),
+			element(doc, "p", "", DAEMON_CHANGED_HELP),
+			trust,
+			error,
+		);
+		changed = section;
+		body.replaceChildren(section);
+		setText(sub, "daemon changed");
+	}
+
 	function showUnpaired(): void {
+		changed = undefined;
 		if (unpaired) return;
 		if (paired) {
 			paired.foldPairing?.destroy();

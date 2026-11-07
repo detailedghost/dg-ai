@@ -6,10 +6,11 @@ import {
 } from "@dg/common";
 
 const PAIRING_KEY_PREFIX = "pairing:";
+const DISMISSED_KEY_PREFIX = "dismissed:";
 const CHAT_MAX_PORT = CHAT_DEFAULT_PORT + CHAT_PORT_FALLBACK_COUNT;
 
 export type PairingStorage = {
-	get(): Promise<Record<string, unknown>>;
+	get(keys?: string | string[]): Promise<Record<string, unknown>>;
 	set(items: Record<string, unknown>): Promise<void>;
 	remove(keys: string | string[]): Promise<void>;
 };
@@ -20,6 +21,10 @@ export type PairingStore = ReturnType<typeof createPairingStore>;
 
 function keyOf(sessionId: string): string {
 	return `${PAIRING_KEY_PREFIX}${sessionId}`;
+}
+
+function dismissedKeyOf(sessionId: string): string {
+	return `${DISMISSED_KEY_PREFIX}${sessionId}`;
 }
 
 /** Validates a bootstrap and rejects ports outside the daemon's range. */
@@ -81,6 +86,24 @@ export function createPairingStore({
 			return serialized(sessionId, () =>
 				storage.local.remove(keyOf(sessionId)),
 			);
+		},
+		dismiss({ sessionId }: { sessionId: string }): Promise<void> {
+			return storage.local.set({ [dismissedKeyOf(sessionId)]: true });
+		},
+		async isDismissed({ sessionId }: { sessionId: string }): Promise<boolean> {
+			const key = dismissedKeyOf(sessionId);
+			return (await storage.local.get(key))?.[key] === true;
+		},
+		release({ sessionId }: { sessionId: string }): Promise<void> {
+			return storage.local.remove(dismissedKeyOf(sessionId));
+		},
+		async releaseExcept(activeSessionIds: ReadonlySet<string>): Promise<void> {
+			const stale = Object.keys((await storage.local.get()) ?? {}).filter(
+				(key) =>
+					key.startsWith(DISMISSED_KEY_PREFIX) &&
+					!activeSessionIds.has(key.slice(DISMISSED_KEY_PREFIX.length)),
+			);
+			if (stale.length > 0) await storage.local.remove(stale);
 		},
 	};
 }

@@ -1529,3 +1529,178 @@ test("a replacement socket sends nothing, not even an unpair, until its daemon i
 
 	expect(sockets[1]?.send.mock.calls.length).toBe(0);
 });
+
+const ADOPT_BOOTSTRAP = {
+	port: 47823,
+	sessionId: "pushed-session",
+	token: "pushed-token",
+	agentIdentity: "claude-orchestrator",
+	daemonId: "daemon-test",
+};
+
+function linkClient(options: Record<string, unknown> = {}) {
+	const adopted: unknown[] = [];
+	const sockets: FakeSocket[] = [];
+	const closes: MockFn<[]>[] = [];
+	const client = createChatClient({
+		openSocket: () => {
+			const socket = makeFakeSocket(mockFn);
+			const close = mockFn(() => undefined);
+			closes.push(close);
+			sockets.push(socket);
+			return { ...socket, close } as never;
+		},
+		link: { onSessionAdopt: (bootstrap) => adopted.push(bootstrap) },
+		backoffBaseMs: 1,
+		randomJitter: () => 0,
+		...options,
+	});
+	return { client, adopted, sockets, closes };
+}
+
+test("a link client connects with zero capabilities and sends no frame on open", async () => {
+	const { client, sockets } = linkClient();
+	client.openLink?.(47823);
+
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	expect(client.getConnectionState()).toBe("connected");
+	expect(sockets[0]?.send.mock.calls.length).toBe(0);
+});
+
+test("a link client reconnects after the socket closes with zero capabilities", async () => {
+	const { client, sockets } = linkClient({ findPort: async () => 47824 });
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	sockets[0]?.dispatch("close");
+	await new Promise((resolve) => setTimeout(resolve, 30));
+
+	expect(sockets.length).toBe(2);
+	expect(client.getPort?.()).toBe(47824);
+});
+
+test("a client without a link option does not reconnect with zero capabilities", async () => {
+	const sockets: FakeSocket[] = [];
+	const client = createChatClient({
+		openSocket: () => {
+			const socket = makeFakeSocket(mockFn);
+			sockets.push(socket);
+			return socket;
+		},
+		findPort: async () => 47824,
+		backoffBaseMs: 1,
+		randomJitter: () => 0,
+	});
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+	client.forgetSession(bootstrap.sessionId);
+
+	expect(sockets.length).toBe(1);
+	expect(client.getConnectionState()).toBe("daemon-not-running");
+});
+
+test("a link client keeps its socket open when the last session is forgotten", async () => {
+	const { client, sockets, closes } = linkClient();
+	const bootstrap = makeBootstrap();
+	client.openLink?.(47823);
+	client.connect(bootstrap);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	client.forgetSession(bootstrap.sessionId);
+
+	expect(closes[0]?.mock.calls.length).toBe(0);
+	expect(client.getConnectionState()).toBe("connected");
+});
+
+test("a link client routes a session-adopt frame to the callback once the port is admitted", async () => {
+	const { client, adopted, sockets } = linkClient({ admitPort: async () => true });
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	sockets[0]?.dispatch(
+		"message",
+		message({ type: "session-adopt", bootstrap: ADOPT_BOOTSTRAP }),
+	);
+
+	expect(adopted).toEqual([ADOPT_BOOTSTRAP]);
+});
+
+test("a session-adopt frame that arrives before admitPort resolves is ignored", async () => {
+	let admit: (admitted: boolean) => void = () => undefined;
+	const { client, adopted, sockets } = linkClient({
+		admitPort: () =>
+			new Promise<boolean>((resolve) => {
+				admit = resolve;
+			}),
+	});
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+
+	sockets[0]?.dispatch(
+		"message",
+		message({ type: "session-adopt", bootstrap: ADOPT_BOOTSTRAP }),
+	);
+	admit(true);
+	await flushMicrotasks();
+
+	expect(adopted).toEqual([]);
+});
+
+test("a session-adopt frame without a daemonId is dropped", async () => {
+	const { client, adopted, sockets } = linkClient();
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+	const { daemonId: _omitted, ...unpinned } = ADOPT_BOOTSTRAP;
+
+	sockets[0]?.dispatch(
+		"message",
+		message({ type: "session-adopt", bootstrap: unpinned }),
+	);
+
+	expect(adopted).toEqual([]);
+});
+
+test("a client without a link option drops session-adopt frames", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const seen: string[] = [];
+	client.onFrame((frame) => seen.push(frame.type));
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	socket.dispatch(
+		"message",
+		message({ type: "session-adopt", bootstrap: ADOPT_BOOTSTRAP }),
+	);
+
+	expect(seen).toEqual([]);
+});
+
+test("a link client passes a session-closed frame for an unheld session to listeners", async () => {
+	const { client, sockets } = linkClient();
+	const seen: string[] = [];
+	client.onFrame((frame) => seen.push(frame.type));
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	sockets[0]?.dispatch(
+		"message",
+		message({
+			type: "session-closed",
+			sessionId: "pushed-session",
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+		}),
+	);
+
+	expect(seen).toEqual(["session-closed"]);
+});

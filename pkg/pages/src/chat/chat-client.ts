@@ -13,9 +13,11 @@ import {
 	emitRedacted,
 	formatConnectionDrop,
 	noteSecret,
+	type SessionAdopt,
 	type SessionBootstrap,
 	type SessionRole,
 	validateChatFrame,
+	validateSessionAdopt,
 } from "@dg/common";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -64,10 +66,13 @@ export type ChatClientOptions = {
 	keepaliveIntervalMs?: number;
 	admitPort?: (port: number) => Promise<boolean>;
 	findPort?: () => Promise<number | undefined>;
+	link?: { onSessionAdopt(bootstrap: SessionAdopt["bootstrap"]): void };
 };
 
 export type ChatClient = {
 	connect(bootstrap: SessionBootstrap): void;
+	/** Opens, or reopens, the single socket on a port with no session; needs the link option. */
+	openLink?(port: number): void;
 	addSession(bootstrap: SessionBootstrap): void;
 	onFrame(listener: (frame: ChatFrame) => void): void;
 	onConnectionChange(listener: ConnectionListener): void;
@@ -348,7 +353,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			const rediscover =
 				options.findPort ?? (() => findDaemonPort(knownInstanceId));
 			void rediscover().then((rediscovered) => {
-				if (generation !== socketGeneration || capabilities.size === 0) return;
+				if (generation !== socketGeneration || (capabilities.size === 0 && !options.link)) return;
 				if (rediscovered !== undefined) port = rediscovered;
 				openAndBind();
 			});
@@ -376,6 +381,31 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		for (const listener of frameListeners) listener(lastSessionList);
 	}
 
+	function routeSessionAdopt(parsed: unknown): void {
+		if (!options.link) return;
+		try {
+			options.link.onSessionAdopt(validateSessionAdopt(parsed).bootstrap);
+		} catch (err) {
+			emitRedacted(
+				(line) => console.warn(line),
+				`[dg-chat] dropping invalid session-adopt: ${describeError(err)}`,
+				[...capabilities.values()],
+			);
+		}
+	}
+
+	function closeSocketWithoutSessions(): void {
+		if (capabilities.size > 0 || options.link) return;
+		if (retryTimer !== undefined) clearTimeout(retryTimer);
+		retryTimer = undefined;
+		const previous = socket;
+		socket = null;
+		socketGeneration += 1;
+		hasAttemptInFlight = false;
+		previous?.close?.();
+		setConnectionState("daemon-not-running");
+	}
+
 	function handleMessage(event: unknown): void {
 		const raw = (event as { data?: unknown } | undefined)?.data;
 		let parsed: unknown;
@@ -387,6 +417,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				`[dg-chat] dropping unparseable frame: ${err instanceof Error ? err.message : String(err)}`,
 				[...capabilities.values()],
 			);
+			return;
+		}
+		if ((parsed as { type?: unknown } | null)?.type === "session-adopt") {
+			routeSessionAdopt(parsed);
 			return;
 		}
 		let frame: ChatFrame;
@@ -414,7 +448,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		const isOverwatchFrame =
 			frame.sessionId === OVERWATCH_SESSION_ID &&
 			(frame.type === "overwatch-state" || frame.type === "overwatch-open");
-		if (!isOverwatchFrame && !capabilities.has(frame.sessionId)) return;
+		const isLinkClose = options.link !== undefined && frame.type === "session-closed";
+		if (!isOverwatchFrame && !isLinkClose && !capabilities.has(frame.sessionId))
+			return;
 
 		if (frame.type === "session-disconnected") {
 			const waiter = disconnectWaiters.get(frame.sessionId);
@@ -424,16 +460,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			dropOutbox(frame.sessionId);
 			disconnectWaiters.delete(frame.sessionId);
 			waiter.resolve();
-			if (capabilities.size === 0) {
-				if (retryTimer !== undefined) clearTimeout(retryTimer);
-				retryTimer = undefined;
-				const previous = socket;
-				socket = null;
-				socketGeneration += 1;
-				hasAttemptInFlight = false;
-				previous?.close?.();
-				setConnectionState("daemon-not-running");
-			}
+			closeSocketWithoutSessions();
 		}
 		if (frame.type === "error") {
 			disconnectWaiters.get(frame.sessionId)?.reject(new Error("The daemon did not confirm disconnect. Update dg-daemon and retry."));
@@ -555,8 +582,24 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		openAndBind();
 	}
 
+	function reopenAt(next: number): void {
+		port = next;
+		if (retryTimer !== undefined) clearTimeout(retryTimer);
+		retryTimer = undefined;
+		const previous = socket;
+		socket = null;
+		socketGeneration += 1;
+		hasAttemptInFlight = true;
+		previous?.close?.();
+		openAndBind();
+	}
+
 	return {
 		connect: connectSession,
+
+		openLink(next: number): void {
+			if (options.link) reopenAt(next);
+		},
 
 		addSession(bootstrap: SessionBootstrap): void {
 			if (capabilities.has(bootstrap.sessionId)) return;
@@ -684,20 +727,11 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			confirmedSessions.delete(sessionId);
 			disconnectWaiters.delete(sessionId);
 			dropOutbox(sessionId);
-			if (capabilities.size === 0) {
-				if (retryTimer !== undefined) clearTimeout(retryTimer);
-				retryTimer = undefined;
-				const previous = socket;
-				socket = null;
-				socketGeneration += 1;
-				hasAttemptInFlight = false;
-				previous?.close?.();
-				setConnectionState("daemon-not-running");
-			}
+			closeSocketWithoutSessions();
 		},
 
 		retryNow(): void {
-			if (capabilities.size === 0) {
+			if (capabilities.size === 0 && !options.link) {
 				setConnectionState("daemon-not-running");
 				return;
 			}
