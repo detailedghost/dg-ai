@@ -7,10 +7,10 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_PATH,
-	type ChatFrame,
-	type PwExtRequest,
+	type FeatureNamed,
+	RELAY_FEATURES,
+	type RelayFeatureName,
 	type SessionBootstrap,
-	emitRedacted,
 	noteSecret,
 	validateAttachRequest,
 	validateSessionBootstrap,
@@ -21,26 +21,26 @@ import {
 	redactSecrets,
 } from "@dg/pages/chat/chat-connection";
 import { browser } from "wxt/browser";
+import { createInboxHandler, type InboxBrowserApi } from "./inbox";
 import {
-	createInboxHandler,
-	type InboxBrowserApi,
-	type InboxResultFrame,
-} from "./inbox";
+	createPairingStore,
+	type PairingStorage,
+	type PairingStore,
+} from "./pairing-store";
 import {
-	createProtoHandler,
-	type ProtoBrowserApi,
-	type ProtoBrowserRequest,
-	type ProtoResultFrame,
-} from "./proto";
+	createPages,
+	type OverwatchOpenCompletion,
+	type PagesBrowserApi,
+} from "./pages";
+import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
 	type PwExtBrowserApi,
 	type PwExtContext,
-	type PwExtResult,
 } from "./pw-ext";
+import { createRelayDispatcher, type RelayHandler } from "./relay-dispatch";
 import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
 import {
-	CHAT_SESSION_KEY_PREFIX,
 	type ConfigRelayReply,
 	type PairingSession,
 	MSG,
@@ -52,27 +52,11 @@ import {
 	defaultOpenSocket,
 } from "@dg/pages/chat/chat-client";
 
-export const CHAT_PAGE_PATH = "chat.html";
-export const OVERWATCH_PAGE_PATH = "overwatch.html";
-
 export { CHAT_SESSION_KEY_PREFIX } from "@dg/pages/chat-messages";
 
-function chatSessionKey(sessionId: string): string {
-	return `${CHAT_SESSION_KEY_PREFIX}${sessionId}`;
-}
-
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
-const PW_EXT_LIVENESS_MS = 250;
 
-type ChatActionApi = {
-	onClicked: {
-		addListener(listener: (tab?: chrome.tabs.Tab) => void): void;
-	};
-};
-
-export type ChatBrowserApi = {
-	action?: ChatActionApi;
-	browserAction?: ChatActionApi;
+export type ChatBrowserApi = PagesBrowserApi & {
 	runtime: {
 		onMessage: {
 			addListener(
@@ -83,109 +67,22 @@ export type ChatBrowserApi = {
 				) => boolean | undefined,
 			): void;
 		};
-		getURL(path: string): string;
 		getManifest?(): { version: string };
-		sendMessage(message: unknown): Promise<unknown>;
-	};
-	tabs: {
-		create(props: { url: string }): unknown;
-		query?(queryInfo: {
-			url: string;
-		}): Promise<{ id?: number; windowId?: number }[]>;
-		update?(tabId: number, props: { active: boolean }): unknown;
-	};
-	windows?: {
-		update(windowId: number, props: { focused: boolean }): unknown;
-	};
-	sidePanel?: {
-		open(options: { tabId?: number }): Promise<void>;
 	};
 	storage: {
-		session: {
-			get?(): Promise<Record<string, unknown>>;
-			set(items: Record<string, unknown>): Promise<void>;
-			remove(keys: string | string[]): Promise<void>;
-		};
+		session: PairingStorage;
 	};
 };
-
-export type OverwatchBrowserApi = {
-	runtime: Pick<ChatBrowserApi["runtime"], "getURL" | "sendMessage">;
-	tabs: ChatBrowserApi["tabs"];
-	windows?: ChatBrowserApi["windows"];
-};
-
-export type OverwatchOpenCompletion = {
-	requestId: string;
-	ok: boolean;
-	error?: string;
-};
-
-export async function handleOverwatchFrame(
-	frame: ChatFrame,
-	api: OverwatchBrowserApi,
-): Promise<OverwatchOpenCompletion | undefined> {
-	if (frame.type === "overwatch-state") {
-		await api.runtime
-			.sendMessage({ type: MSG.overwatchState, frame })
-			.catch(() => undefined);
-		return undefined;
-	}
-	if (frame.type !== "overwatch-open") return undefined;
-	const url = api.runtime.getURL(OVERWATCH_PAGE_PATH);
-	const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
-	const existing = matches[0];
-	if (existing?.id !== undefined && api.tabs.update) {
-		await api.tabs.update(existing.id, { active: true });
-		if (existing.windowId !== undefined && api.windows) {
-			await api.windows.update(existing.windowId, { focused: true });
-		}
-		return { requestId: frame.requestId, ok: true };
-	}
-	await api.tabs.create({ url });
-	return { requestId: frame.requestId, ok: true };
-}
-
-export async function handleOverwatchFrameSafely(
-	frame: ChatFrame,
-	api: OverwatchBrowserApi,
-	complete: (result: OverwatchOpenCompletion) => void = () => undefined,
-): Promise<void> {
-	try {
-		const result = await handleOverwatchFrame(frame, api);
-		if (result) complete(result);
-	} catch (error) {
-		if (frame.type === "overwatch-open") {
-			complete({
-				requestId: frame.requestId,
-				ok: false,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
-		emitRedacted(
-			(line) => console.error(line),
-			`[dg-ai-extension] overwatch frame failed: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
-}
 
 export type RegisterChatOptions = {
 	browserApi?: ChatBrowserApi;
 	openSocket?: (url: string) => ChatClientSocket;
 	keepaliveIntervalMs?: number;
 	maybeStartRecording?: (tab?: chrome.tabs.Tab) => Promise<boolean>;
-	inboxHandler?: (
-		frame: Extract<ChatFrame, { type: "inbox-browser-request" }>,
-	) => Promise<InboxResultFrame>;
-	protoHandler?: (
-		request: ProtoBrowserRequest,
-		onProgress: (status: string) => void,
-	) => Promise<ProtoResultFrame>;
-	pwExtHandler?: (
-		request: PwExtRequest,
-		signal?: AbortSignal,
-		context?: PwExtContext,
-	) => Promise<PwExtResult>;
+	relayHandlers?: Partial<{
+		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
+	}>;
+	pairingStore?: PairingStore;
 };
 
 function isMarkerCapturedMessage(
@@ -218,12 +115,6 @@ function asSessionBootstrap(candidate: unknown): SessionBootstrap | undefined {
 	}
 }
 
-function resolveActionApi(api: ChatBrowserApi): ChatActionApi {
-	const action = api.action ?? api.browserAction;
-	if (!action) throw new Error("no action or browserAction API available");
-	return action;
-}
-
 function keepaliveFrame(bootstrap: SessionBootstrap): string {
 	return JSON.stringify({
 		type: "keepalive",
@@ -237,7 +128,46 @@ type ConfigWaiter = { key: string; settle(reply: ConfigRelayReply): void };
 
 const CONFIG_ROUND_TRIP_TIMEOUT_MS = 5000;
 
-/** Registers authenticated session transports, including correlated inbox replies that bypass the chat message queue. */
+function stagedAsset(
+	bootstrap: SessionBootstrap,
+	assetId: string,
+	init?: { method: "DELETE" },
+): Promise<Response> {
+	return fetch(
+		`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
+		{
+			...init,
+			headers: {
+				"X-Dg-Session-Id": bootstrap.sessionId,
+				"X-Dg-Session-Token": bootstrap.token,
+			},
+		},
+	);
+}
+
+function pwExtContext({
+	bootstrap,
+}: {
+	bootstrap: SessionBootstrap;
+}): PwExtContext {
+	return {
+		sessionId: bootstrap.sessionId,
+		agentIdentity: bootstrap.agentIdentity,
+		async fetchAsset(assetId) {
+			const response = await stagedAsset(bootstrap, assetId);
+			if (!response.ok) throw new Error("the staged file is not available");
+			const blob = await response.blob();
+			if (blob.size > CHAT_MAX_ASSET_BYTES)
+				throw new Error("the staged file is too large");
+			return blob;
+		},
+		async deleteAsset(assetId) {
+			await stagedAsset(bootstrap, assetId, { method: "DELETE" });
+		},
+	};
+}
+
+/** Wires the daemon socket and the runtime message routing. */
 export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
@@ -246,34 +176,23 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	const maybeStartRecording =
 		options.maybeStartRecording ?? defaultMaybeStartRecording;
 
-	const inboxHandler =
-		options.inboxHandler ??
-		createInboxHandler({ browserApi: api as unknown as InboxBrowserApi });
-	const protoHandler =
-		options.protoHandler ??
-		createProtoHandler({ browserApi: api as unknown as ProtoBrowserApi });
-	let defaultPwExt: ReturnType<typeof createPwExtHandler> | undefined;
-	const pwExtHandler =
-		options.pwExtHandler ??
-		((
-			request: PwExtRequest,
-			signal?: AbortSignal,
-			context?: PwExtContext,
-		) => {
-			defaultPwExt ??= createPwExtHandler({
-				browserApi: api as unknown as PwExtBrowserApi,
-			});
-			return defaultPwExt(request, signal, context);
-		});
-	const pendingInbox = new Set<string>();
-	const pendingProto = new Set<string>();
-	const pendingPwExt = new Set<string>();
-	const pwExtCancels = new Map<string, { sessionId: string; cancel: AbortController }>();
-	function cancelPwExt(sessionId?: string): void {
-		for (const entry of pwExtCancels.values())
-			if (sessionId === undefined || entry.sessionId === sessionId)
-				entry.cancel.abort();
-	}
+	const pairingStore =
+		options.pairingStore ?? createPairingStore({ storage: api.storage });
+	const pages = createPages({ browserApi: api, maybeStartRecording });
+	const relayHandlers: {
+		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
+	} = {
+		inbox: createInboxHandler({
+			browserApi: api as unknown as InboxBrowserApi,
+		}),
+		proto: createProtoHandler({
+			browserApi: api as unknown as ProtoBrowserApi,
+		}),
+		"pw-ext": createPwExtHandler({
+			browserApi: api as unknown as PwExtBrowserApi,
+		}),
+		...options.relayHandlers,
+	};
 	const bootstrapsBySession = new Map<string, SessionBootstrap>();
 	function holdBootstrap(bootstrap: SessionBootstrap): void {
 		noteSecret(bootstrap.token);
@@ -285,6 +204,24 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	let currentSocket: ChatClientSocket | undefined;
 	let currentPairingId: string | undefined;
 	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
+
+	const dispatcher = createRelayDispatcher({
+		features: RELAY_FEATURES,
+		handlers: relayHandlers,
+		send: (frame) => currentSocket?.send(JSON.stringify(frame)),
+		bootstrapFor: (sessionId) => bootstrapsBySession.get(sessionId),
+		live(sessionId) {
+			const socket = currentSocket;
+			const bootstrap = bootstrapsBySession.get(sessionId);
+			if (!socket || !bootstrap || !keepaliveEligible.has(sessionId))
+				return undefined;
+			return () =>
+				currentSocket === socket &&
+				bootstrapsBySession.get(sessionId) === bootstrap &&
+				keepaliveEligible.has(sessionId);
+		},
+		contextFor: { "pw-ext": pwExtContext },
+	});
 
 	function stopKeepalive(): void {
 		if (keepaliveTimer !== undefined) clearInterval(keepaliveTimer);
@@ -312,7 +249,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const cleanup = () => {
 			if (currentSocket !== socket) return;
 			currentSocket = undefined;
-			cancelPwExt();
+			dispatcher.cancelSession();
 			stopKeepalive();
 			failPendingConfigRequests("the daemon connection closed");
 		};
@@ -495,9 +432,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		for (const item of list) {
 			const bootstrap = asSessionBootstrap(item);
 			if (!bootstrap) continue;
-			await api.storage.session.set({
-				[chatSessionKey(bootstrap.sessionId)]: bootstrap,
-			});
+			await pairingStore.put(bootstrap);
 			currentPairingId ??= bootstrap.sessionId;
 			holdBootstrap(bootstrap);
 			client.connect(bootstrap);
@@ -506,31 +441,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		if (adopted > 0) broadcastPairingStatus();
 		return adopted;
 	}
-
-	async function presentChat(tab?: { id?: number }): Promise<void> {
-		if (api.sidePanel) {
-			try {
-				await api.sidePanel.open(
-					tab?.id !== undefined ? { tabId: tab.id } : {},
-				);
-				return;
-			} catch {
-				// Opening the side panel needs a user gesture Chrome will accept.
-			}
-		}
-		const url = api.runtime.getURL(CHAT_PAGE_PATH);
-		const matches = api.tabs.query ? await api.tabs.query({ url }) : [];
-		const existing = matches[0];
-		if (existing?.id !== undefined && api.tabs.update) {
-			await api.tabs.update(existing.id, { active: true });
-			if (existing.windowId !== undefined && api.windows) {
-				await api.windows.update(existing.windowId, { focused: true });
-			}
-			return;
-		}
-		await api.tabs.create({ url });
-	}
-
 	function pairingStatus() {
 		const state = client.getConnectionState();
 		const sessions: PairingSession[] = [...bootstrapsBySession.values()].map(
@@ -561,230 +471,20 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 	client.onConnectionChange((_state, detail) => broadcastPairingStatus(detail));
 
 	client.onFrame((frame) => {
-		if (frame.type === "inbox-browser-request") {
-			const bootstrap = bootstrapsBySession.get(frame.sessionId);
-			const socket = currentSocket;
-			const key = JSON.stringify([frame.sessionId, frame.requestId]);
-			if (
-				!bootstrap ||
-				!socket ||
-				!keepaliveEligible.has(frame.sessionId) ||
-				pendingInbox.has(key)
-			)
-				return;
-			pendingInbox.add(key);
-			void inboxHandler(frame)
-				.then((result) => {
-					if (
-						currentSocket !== socket ||
-						bootstrapsBySession.get(frame.sessionId) !== bootstrap ||
-						!keepaliveEligible.has(frame.sessionId)
-					)
-						return;
-					socket.send(
-						JSON.stringify({
-							...result,
-							sessionId: frame.sessionId,
-							requestId: frame.requestId,
-							token: bootstrap.token,
-						}),
-					);
-				})
-				.catch(() => {
-					if (
-						currentSocket === socket &&
-						bootstrapsBySession.get(frame.sessionId) === bootstrap &&
-						keepaliveEligible.has(frame.sessionId)
-					) {
-						try {
-							socket.send(
-								JSON.stringify({
-									type: "inbox-browser-result",
-									sessionId: frame.sessionId,
-									requestId: frame.requestId,
-									protocolVersion: CHAT_PROTOCOL_VERSION,
-									token: bootstrap.token,
-									ok: false,
-									error:
-										"Proton extension request failed. Open or reload the mail tab and retry.",
-								}),
-							);
-						} catch {
-							// A closed socket cannot carry its pending result.
-						}
-					}
-				})
-				.finally(() => pendingInbox.delete(key));
-			return;
-		}
-		if (frame.type === "proto-browser-request") {
-			const bootstrap = bootstrapsBySession.get(frame.sessionId);
-			const socket = currentSocket;
-			const requestKey = JSON.stringify([frame.sessionId, frame.requestId]);
-			if (
-				!bootstrap ||
-				!socket ||
-				!keepaliveEligible.has(frame.sessionId) ||
-				pendingProto.has(requestKey)
-			) {
-				return;
-			}
-			pendingProto.add(requestKey);
-			const sendProto = (payload: Record<string, unknown>): void => {
-				if (
-					currentSocket !== socket ||
-					bootstrapsBySession.get(frame.sessionId) !== bootstrap ||
-					!keepaliveEligible.has(frame.sessionId)
-				) {
-					return;
-				}
-				try {
-					socket.send(
-						JSON.stringify({
-							...payload,
-							sessionId: frame.sessionId,
-							requestId: frame.requestId,
-							token: bootstrap.token,
-							protocolVersion: CHAT_PROTOCOL_VERSION,
-						}),
-					);
-				} catch {
-					// A closed socket cannot carry its pending result.
-				}
-			};
-			void protoHandler(
-				{
-					phase: frame.phase,
-					slug: frame.slug,
-					markedUrl: frame.markedUrl,
-					...(frame.timeoutMs !== undefined
-						? { timeoutMs: frame.timeoutMs }
-						: {}),
-				},
-				(status) => {
-					sendProto({ type: "proto-browser-progress", status });
-				},
-			)
-				.then((result) => {
-					sendProto({ type: "proto-browser-result", ...result });
-				})
-				.catch(() => {
-					sendProto({
-						type: "proto-browser-result",
-						ok: false,
-						error:
-							"Prototype extension request failed before the browser reported a result.",
-					});
-				})
-				.finally(() => pendingProto.delete(requestKey));
-			return;
-		}
-		if (frame.type === "pw-ext-browser-cancel") {
-			if (bootstrapsBySession.has(frame.sessionId))
-				pwExtCancels
-					.get(JSON.stringify([frame.sessionId, frame.requestId]))
-					?.cancel.abort();
-			return;
-		}
-		if (frame.type === "pw-ext-browser-request") {
-			const bootstrap = bootstrapsBySession.get(frame.sessionId);
-			const socket = currentSocket;
-			const requestKey = JSON.stringify([frame.sessionId, frame.requestId]);
-			if (
-				!bootstrap ||
-				!socket ||
-				!keepaliveEligible.has(frame.sessionId) ||
-				pendingPwExt.has(requestKey)
-			) {
-				return;
-			}
-			pendingPwExt.add(requestKey);
-			const live = () =>
-				currentSocket === socket &&
-				bootstrapsBySession.get(frame.sessionId) === bootstrap &&
-				keepaliveEligible.has(frame.sessionId);
-			const cancel = new AbortController();
-			pwExtCancels.set(requestKey, { sessionId: frame.sessionId, cancel });
-			const watch = setInterval(() => {
-				if (!live()) cancel.abort();
-			}, PW_EXT_LIVENESS_MS);
-			const deadline = setTimeout(() => cancel.abort(), frame.timeoutMs);
-			const sendPwExt = (result: PwExtResult): void => {
-				if (!live()) return;
-				try {
-					socket.send(
-						JSON.stringify({
-							type: "pw-ext-browser-result",
-							...result,
-							sessionId: frame.sessionId,
-							requestId: frame.requestId,
-							token: bootstrap.token,
-							protocolVersion: CHAT_PROTOCOL_VERSION,
-						}),
-					);
-				} catch {
-					return;
-				}
-			};
-			const context: PwExtContext = {
-				async fetchAsset(assetId) {
-					const response = await fetch(
-						`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
-						{
-							headers: {
-								"X-Dg-Session-Id": bootstrap.sessionId,
-								"X-Dg-Session-Token": bootstrap.token,
-							},
-						},
-					);
-					if (!response.ok) throw new Error("the staged file is not available");
-					const blob = await response.blob();
-					if (blob.size > CHAT_MAX_ASSET_BYTES)
-						throw new Error("the staged file is too large");
-					return blob;
-				},
-				async deleteAsset(assetId) {
-					await fetch(
-						`http://127.0.0.1:${bootstrap.port}${CHAT_ASSETS_PATH}/${encodeURIComponent(assetId)}`,
-						{
-							method: "DELETE",
-							headers: {
-								"X-Dg-Session-Id": bootstrap.sessionId,
-								"X-Dg-Session-Token": bootstrap.token,
-							},
-						},
-					);
-				},
-			};
-			void pwExtHandler(frame.request, cancel.signal, context)
-				.then(sendPwExt)
-				.catch(() =>
-					sendPwExt({
-						ok: false,
-						error: "pw --ext failed in the extension before it reported a result.",
-					}),
-				)
-				.finally(() => {
-					clearInterval(watch);
-					clearTimeout(deadline);
-					pwExtCancels.delete(requestKey);
-					pendingPwExt.delete(requestKey);
-				});
-			return;
-		}
+		if (dispatcher.dispatch(frame)) return;
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {
 			client.forgetSession(frame.sessionId);
 			bootstrapsBySession.delete(frame.sessionId);
-			cancelPwExt(frame.sessionId);
+			dispatcher.cancelSession(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
-			void api.storage.session.remove(chatSessionKey(frame.sessionId));
+			void pairingStore.remove({ sessionId: frame.sessionId });
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 		}
 		void api.runtime.sendMessage({ type: MSG.frame, frame }).catch(() => {});
 		const requestSocket = currentSocket;
 		const requestBootstrap = firstConfirmedBootstrap();
-		void handleOverwatchFrameSafely(frame, api, (result) => {
+		pages.onFrame(frame, (result) => {
 			if (
 				currentSocket === requestSocket &&
 				sendOverwatchOpenCompletion(result, requestSocket, requestBootstrap)
@@ -802,9 +502,9 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		}
 		if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			bootstrapsBySession.delete(frame.sessionId);
-			cancelPwExt(frame.sessionId);
+			dispatcher.cancelSession(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
-			void api.storage.session.remove(chatSessionKey(frame.sessionId));
+			void pairingStore.remove({ sessionId: frame.sessionId });
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 			return;
@@ -818,9 +518,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					token: frame.newSession.token,
 				};
 				holdBootstrap(spawned);
-				void api.storage.session
-					.set({ [chatSessionKey(spawned.sessionId)]: spawned })
-					.catch(() => {});
+				void pairingStore.put(spawned).catch(() => {});
 			}
 			return;
 		}
@@ -837,12 +535,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		}
 	});
 
-	resolveActionApi(api).onClicked.addListener((tab) => {
-		void (async () => {
-			if (await maybeStartRecording(tab)) return;
-			await presentChat(tab);
-		})();
-	});
+	pages.registerActionClick();
 
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (isMarkerCapturedMessage(message)) {
@@ -850,10 +543,8 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (!bootstrap) return undefined;
 			void (async () => {
 				try {
-					await api.storage.session.set({
-						[chatSessionKey(bootstrap.sessionId)]: bootstrap,
-					});
-					await presentChat();
+					await pairingStore.put(bootstrap);
+					await pages.presentChat();
 					currentPairingId = bootstrap.sessionId;
 					holdBootstrap(bootstrap);
 					client.connect(bootstrap);
@@ -1013,9 +704,9 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 						for (const sessionId of closedIds) {
 							client.forgetSession(sessionId);
 							bootstrapsBySession.delete(sessionId);
-							cancelPwExt(sessionId);
+							dispatcher.cancelSession(sessionId);
 							keepaliveEligible.delete(sessionId);
-							await api.storage.session.remove(chatSessionKey(sessionId));
+							await pairingStore.remove({ sessionId });
 						}
 						if (keepaliveEligible.size === 0) stopKeepalive();
 						broadcastPairingStatus();
@@ -1076,9 +767,9 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					void (async () => {
 						try {
 							await client.disconnectSession(sessionId);
-							await api.storage.session.remove(chatSessionKey(sessionId));
+							await pairingStore.remove({ sessionId });
 							bootstrapsBySession.delete(sessionId);
-							cancelPwExt(sessionId);
+							dispatcher.cancelSession(sessionId);
 							keepaliveEligible.delete(sessionId);
 							if (keepaliveEligible.size === 0) stopKeepalive();
 							broadcastPairingStatus();
@@ -1141,20 +832,17 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		return undefined;
 	});
 
-	if (api.storage?.session?.get) {
-		void api.storage.session
-			.get()
-			.then((stored) => {
-				for (const [key, value] of Object.entries(stored ?? {})) {
-					if (!key.startsWith(CHAT_SESSION_KEY_PREFIX)) continue;
-					const bootstrap = asSessionBootstrap(value);
-					if (!bootstrap || bootstrapsBySession.has(bootstrap.sessionId)) continue;
-					holdBootstrap(bootstrap);
-					client.connect(bootstrap);
-				}
-			})
-			.catch(() => undefined);
-	}
+	void pairingStore
+		.list()
+		.then((stored) => {
+			for (const candidate of stored) {
+				const bootstrap = asSessionBootstrap(candidate);
+				if (!bootstrap || bootstrapsBySession.has(bootstrap.sessionId)) continue;
+				holdBootstrap(bootstrap);
+				client.connect(bootstrap);
+			}
+		})
+		.catch(() => undefined);
 
 	return client;
 }

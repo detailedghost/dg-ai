@@ -32,7 +32,7 @@ mock.module("wxt/browser", () => ({
 const { renderOverwatchPage } = await import("../entrypoints/overwatch/main");
 const { mountPairing } = await import("@/lib/features/pairing");
 const { handleOverwatchFrame, handleOverwatchFrameSafely } = await import(
-	"@/lib/background/chat"
+	"@/lib/background/pages"
 );
 const { MSG } = await import("@dg/pages/chat-messages");
 const {
@@ -256,7 +256,6 @@ async function renderPairingVariant(
 			sendMessage: mock(() => Promise.resolve({ connected: false })),
 		},
 		findPort: () => Promise.resolve(47823),
-		fetch: () => Promise.resolve(new Response("", { status: 409 })),
 	});
 	await handle.ready;
 	if (name !== "options") click(button(root, "Pair"));
@@ -269,7 +268,7 @@ async function renderPairingVariant(
 		new EventConstructor("submit", { bubbles: true, cancelable: true }),
 	);
 	await Bun.sleep(0);
-	if (!root.textContent?.includes("Paired to another extension")) {
+	if (!root.querySelector(".pair-panel__status")?.textContent) {
 		throw new Error("pairing status did not render");
 	}
 	const markup = root.outerHTML;

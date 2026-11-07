@@ -2,8 +2,25 @@ import { expect, it, mock } from "bun:test";
 import { createInboxHandler } from "../lib/background/inbox";
 
 function frame(request = {}) {
-	return { type: "inbox-browser-request" as const, sessionId: "session-1", requestId: "request-1", protocolVersion: 1,
-		request: { operation: "list-messages" as const, page: 0, pageSize: 50, ...request } };
+	return {
+		request: { operation: "list-messages" as const, page: 0, pageSize: 50, ...request },
+		signal: new AbortController().signal,
+		progress: () => undefined,
+		context: undefined,
+	};
+}
+
+type InboxBody = {
+	ok: boolean;
+	data?: { messages?: Array<{ id?: string }>; hasMore?: boolean };
+	error?: string;
+};
+
+async function call(
+	handler: ReturnType<typeof createInboxHandler>,
+	input: ReturnType<typeof frame>,
+): Promise<InboxBody> {
+	return (await handler(input as never)) as InboxBody;
 }
 
 function browser(tabs: Array<{ id: number; url: string }>, data: unknown = { messages: [], hasMore: false }) {
@@ -21,10 +38,10 @@ function browser(tabs: Array<{ id: number; url: string }>, data: unknown = { mes
 	};
 }
 
-it("selects the single Proton mail tab and preserves session/request identity through MAIN execution", async () => {
+it("selects the single Proton mail tab and returns the sanitized body through MAIN execution", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }, { id: 9, url: "https://other.test" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
-	expect(result).toEqual(expect.objectContaining({ type: "inbox-browser-result", sessionId: "session-1", requestId: "request-1", protocolVersion: 1, ok: true, data: { messages: [], hasMore: false } }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
+	expect(result).toEqual({ ok: true, data: { messages: [], hasMore: false } });
 	expect(api.scripting.executeScript).toHaveBeenCalledTimes(1);
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 8 }, world: "MAIN", func: expect.any(Function), args: [{ ...frame().request, accountHint: "0" }] }));
 });
@@ -32,18 +49,18 @@ it("selects the single Proton mail tab and preserves session/request identity th
 it("refuses ambiguous tabs until an explicit valid tab resolves selection", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }, { id: 9, url: "https://mail.proton.me/u/1/inbox" }]);
 	const handle = createInboxHandler({ browserApi: api as never });
-	const ambiguous = await handle(frame());
+	const ambiguous = await call(handle, frame());
 	expect(ambiguous.ok).toBe(false);
 	expect(JSON.stringify(ambiguous.error)).toMatch(/multiple|ambiguous|choose|tabId/i);
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
-	const selected = await handle(frame({ tabId: 9 }));
+	const selected = await call(handle, frame({ tabId: 9 }));
 	expect(selected.ok).toBe(true);
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 9 } }));
 });
 
 it("uses the account hint to resolve multiple Proton accounts", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }, { id: 9, url: "https://mail.proton.me/u/1/inbox" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "1" }));
 	expect(result.ok).toBe(true);
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 9 } }));
 });
@@ -54,7 +71,7 @@ it("prefers the /u/1 mail root when another Proton tab and a deeper /u/1 page ar
 		{ id: 9, url: "https://mail.proton.me/u/1/inbox/conversation/abc" },
 		{ id: 10, url: "https://mail.proton.me/u/1/" },
 	]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "1" }));
 	expect(result.ok).toBe(true);
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 10 } }));
 });
@@ -65,7 +82,7 @@ it("prefers /u/1/inbox over a deeper page when no /u/1 root is open", async () =
 		{ id: 9, url: "https://mail.proton.me/u/1/inbox/conversation/abc" },
 		{ id: 10, url: "https://mail.proton.me/u/1/inbox" },
 	]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "1" }));
 	expect(result.ok).toBe(true);
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 10 } }));
 });
@@ -76,7 +93,7 @@ it("prefers /u/1/ over /u/1/inbox when accountHint is 1", async () => {
 		{ id: 11, url: "https://mail.proton.me/u/1/inbox" },
 		{ id: 12, url: "https://mail.proton.me/u/1/" },
 	]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "1" }));
 	expect(result.ok).toBe(true);
 	expect(api.scripting.executeScript.mock.calls[0][0]).toEqual(expect.objectContaining({ target: { tabId: 12 } }));
 });
@@ -87,7 +104,7 @@ it("prints matching tab ids and /u/N paths when several /u/1 tabs remain", async
 		{ id: 11, url: "https://mail.proton.me/u/1/inbox/conversation/secret-msg-11" },
 		{ id: 12, url: "https://mail.proton.me/u/1/inbox/conversation/secret-msg-12" },
 	]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "1" }));
 	expect(result.ok).toBe(false);
 	expect(result.error).toContain("Multiple Proton Mail tabs match /u/1");
 	expect(result.error).toContain("11 /u/1");
@@ -104,7 +121,7 @@ it.each([
 	[{ id: 8, url: "https://mail.proton.me.attacker.test/u/0/inbox" }],
 ].map((tabs) => ({ tabs })))("returns an actionable missing-mail-tab error for %j", async ({ tabs }) => {
 	const api = browser(tabs);
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
 	expect(result.ok).toBe(false);
 	expect(JSON.stringify(result.error)).toMatch(/open|sign in|Proton|tab/i);
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
@@ -112,7 +129,7 @@ it.each([
 
 it("names a mail tab that navigated to account settings", async () => {
 	const api = browser([{ id: 8, url: "https://account.proton.me/u/0/mail/filters" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "0" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "0" }));
 	expect(result.ok).toBe(false);
 	expect(result.error).toContain("Mail tab navigated away");
 	expect(result.error).toContain("/u/0");
@@ -121,7 +138,7 @@ it("names a mail tab that navigated to account settings", async () => {
 
 it("names a missing /u/ account when other mail tabs are open", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ accountHint: "1" }));
 	expect(result.ok).toBe(false);
 	expect(result.error).toContain("No Proton mail tab matching /u/1");
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
@@ -129,7 +146,7 @@ it("names a missing /u/ account when other mail tabs are open", async () => {
 
 it("rejects an explicitly selected non-Proton tab before page execution", async () => {
 	const api = browser([{ id: 8, url: "https://other.test" }, { id: 9, url: "https://mail.proton.me/u/0/inbox" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ tabId: 8 }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ tabId: 8 }));
 	expect(result.ok).toBe(false);
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
 });
@@ -137,7 +154,7 @@ it("rejects an explicitly selected non-Proton tab before page execution", async 
 it.each([{ operation: "eval", source: "document.cookie" }, { url: "https://attacker.test" }])(
 	"rejects unapproved executable inputs before selecting or executing a tab %j", async (request) => {
 		const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
-		const result = await createInboxHandler({ browserApi: api as never })(frame(request) as never);
+		const result = await call(createInboxHandler({ browserApi: api as never }), frame(request) as never);
 		expect(result.ok).toBe(false);
 		expect(api.scripting.executeScript).not.toHaveBeenCalled();
 	},
@@ -145,29 +162,29 @@ it.each([{ operation: "eval", source: "document.cookie" }, { url: "https://attac
 
 it("does not trust raw page results to relay body, headers, or secrets", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }], { messages: [{ id: "opaque-id", subject: "customer@example.test", body: "raw-body", token: "secret-token" }], headers: { "x-pm-uid": "secret-uid" }, hasMore: false });
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
 	const serialized = JSON.stringify(result);
 	for (const value of ["customer@example.test", "raw-body", "secret-token", "secret-uid", "x-pm-uid"]) expect(serialized).not.toContain(value);
 });
 
-it("preserves correlation when the page disappears during execution", async () => {
+it("reports a failed result when the page disappears during execution", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
 	api.scripting.executeScript.mockImplementation(async () => { throw new Error("tab closed"); });
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
-	expect(result).toEqual(expect.objectContaining({ sessionId: "session-1", requestId: "request-1", ok: false }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
+	expect(result.ok).toBe(false);
 	expect(JSON.stringify(result.error)).toMatch(/tab|reload|open/i);
 });
 
 it("returns an actionable capability error when MAIN execution is unsupported", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
-	const result = await createInboxHandler({ browserApi: { ...api, scripting: undefined } as never })(frame());
+	const result = await call(createInboxHandler({ browserApi: { ...api, scripting: undefined } as never }), frame());
 	expect(result.ok).toBe(false);
 	expect(JSON.stringify(result.error)).toMatch(/unsupported|browser|upgrade|permission/i);
 });
 
 it("refuses mutation batches above the provider bound before page execution", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ operation: "mark-read", messageIds: Array.from({ length: 201 }, (_, i) => `opaque-${i}`) }) as never);
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ operation: "mark-read", messageIds: Array.from({ length: 201 }, (_, i) => `opaque-${i}`) }) as never);
 	expect(result.ok).toBe(false);
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
 });
@@ -192,7 +209,7 @@ it.each([true, false])("serialized MAIN function uses only the installed bundled
 		execution = executed;
 		return [{ frameId: 0, result: executed.result }];
 	});
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
 	expect(execution).toBeDefined();
 	expect(result.ok).toBe(install);
 	if (install) {
@@ -215,7 +232,7 @@ it("relays safe provider diagnostics from the installed MAIN API without provide
 		});
 		return [{ frameId: 0, result: executed.result }];
 	});
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
 	expect(result.ok).toBe(false);
 	expect(result.error).toContain("auth-expired");
 	expect(result.error).toContain("HTTP 403");
@@ -230,7 +247,7 @@ it.each([
 	{ code: "http-failure", message: "person@example.test", status: "secret-status" },
 ])("rejects arbitrary page diagnostics and relays only fixed messages %j", async (failure) => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }], { __dgInboxFailure: true, ...failure });
-	const result = await createInboxHandler({ browserApi: api as never })(frame());
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame());
 	expect(result.ok).toBe(false);
 	for (const secret of ["private-secret", "person@example.test", "secret-status", "constructor"]) {
 		expect(JSON.stringify(result)).not.toContain(secret);
@@ -239,7 +256,7 @@ it.each([
 
 it("refuses an explicit Proton tab belonging to a different account hint", async () => {
 	const api = browser([{ id: 8, url: "https://mail.proton.me/u/0/inbox" }]);
-	const result = await createInboxHandler({ browserApi: api as never })(frame({ tabId: 8, accountHint: "1" }));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame({ tabId: 8, accountHint: "1" }));
 	expect(result.ok).toBe(false);
 	expect(api.scripting.executeScript).not.toHaveBeenCalled();
 });
@@ -258,7 +275,7 @@ it.each([
 		execution = executed;
 		return [{ frameId: 0, result: executed.result }];
 	});
-	const result = await createInboxHandler({ browserApi: api as never })(frame(request));
+	const result = await call(createInboxHandler({ browserApi: api as never }), frame(request));
 	expect(execution).toBeDefined();
 	expect(execution!.calls).toEqual([]);
 	expect(result.ok).toBe(false);

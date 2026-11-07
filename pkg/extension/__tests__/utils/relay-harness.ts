@@ -4,7 +4,7 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	type SessionBootstrap,
 } from "@dg/common";
-import { registerChat } from "@/lib/background/chat";
+import { type RegisterChatOptions, registerChat } from "@/lib/background/chat";
 import { MSG } from "@dg/pages/chat-messages";
 
 export type Listener = (
@@ -83,6 +83,7 @@ export type BootRelayOptions = {
 	confirmSession?: boolean;
 	sessionId?: string;
 	token?: string;
+	relayHandlers?: RegisterChatOptions["relayHandlers"];
 };
 
 export type BootedRelay = {
@@ -128,6 +129,7 @@ export async function bootRelay(
 		browserApi: api,
 		openSocket: () => socket,
 		maybeStartRecording: () => Promise.resolve(false),
+		relayHandlers: options.relayHandlers,
 	});
 
 	function postAs(senderUrl: string, message: unknown): Promise<unknown> {

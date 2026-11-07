@@ -1,18 +1,13 @@
 import {
 	validateInboxBrowserRequest,
-	type ChatFrame,
+	type INBOX_RELAY,
 	type InboxBrowserRequest,
+	type ResultBody,
 } from "@dg/common";
 import { isProtonMailOrigin } from "../features/inbox-proton-observer";
 import { sanitizeInboxBrowserResponse } from "../features/inbox-proton";
 import { protonOperationDiagnostic } from "../features/inbox-proton-errors";
 
-type RequestFrame = Extract<ChatFrame, { type: "inbox-browser-request" }>;
-/** Correlated result before the session transport attaches its private capability token. */
-export type InboxResultFrame = Omit<
-	Extract<ChatFrame, { type: "inbox-browser-result" }>,
-	"token"
->;
 type MailTab = { id?: number; url?: string };
 /** Injectable tab/MAIN scripting boundary used to select and recheck an authenticated Proton account. */
 export type InboxBrowserApi = {
@@ -103,25 +98,22 @@ function missingMailTabError(hint: string | undefined, sawAccountSettings: boole
 		: "No Proton mail tab. Open https://mail.proton.me/u/N and sign in.";
 }
 
-/** Selects and rechecks an exact Proton tab/account, runs a fixed MAIN operation, and returns sanitized correlated metadata. */
+/** Runs an inbox request in the matching Proton tab and returns the result body. */
 export function createInboxHandler({
 	browserApi,
 }: {
 	browserApi: InboxBrowserApi;
 }) {
-	return async (frame: RequestFrame): Promise<InboxResultFrame> => {
-		const envelope = {
-			type: "inbox-browser-result" as const,
-			sessionId: frame.sessionId,
-			requestId: frame.requestId,
-			protocolVersion: frame.protocolVersion,
-		};
+	return async ({
+		request: raw,
+	}: {
+		request: InboxBrowserRequest;
+	}): Promise<ResultBody<typeof INBOX_RELAY>> => {
 		let request: InboxBrowserRequest;
 		try {
-			request = validateInboxBrowserRequest(frame.request);
+			request = validateInboxBrowserRequest(raw);
 		} catch {
 			return {
-				...envelope,
 				ok: false,
 				error:
 					"Unsupported inbox operation or invalid request. Check the reviewed operation and its bounds.",
@@ -129,7 +121,6 @@ export function createInboxHandler({
 		}
 		if (!browserApi.scripting?.executeScript)
 			return {
-				...envelope,
 				ok: false,
 				error:
 					"This browser does not support MAIN page execution. Upgrade the browser and extension and grant Proton Mail permissions.",
@@ -143,7 +134,6 @@ export function createInboxHandler({
 					(request.accountHint && !accountMatches(tab, request.accountHint))
 				)
 					return {
-						...envelope,
 						ok: false,
 						error: accountSettingsTab(tab)
 							? missingMailTabError(request.accountHint, true)
@@ -164,14 +154,12 @@ export function createInboxHandler({
 				if (hint && tabs.length > 1) tabs = preferAccountTab(tabs, hint);
 				if (tabs.length > 1)
 					return {
-						...envelope,
 						ok: false,
 						error: multipleTabsError(tabs, hint),
 					};
 				tab = tabs[0];
 				if (!tab || tab.id === undefined)
 					return {
-						...envelope,
 						ok: false,
 						error: missingMailTabError(
 							request.accountHint,
@@ -181,7 +169,6 @@ export function createInboxHandler({
 			}
 			if (!tab || tab.id === undefined)
 				return {
-					...envelope,
 					ok: false,
 					error: missingMailTabError(request.accountHint, false),
 				};
@@ -248,7 +235,6 @@ export function createInboxHandler({
 					? protonOperationDiagnostic(result as Record<string, unknown>)
 					: undefined;
 				return {
-					...envelope,
 					ok: false,
 					error:
 						diagnostic ??
@@ -260,16 +246,14 @@ export function createInboxHandler({
 				data = sanitizeInboxBrowserResponse(result);
 			} catch {
 				return {
-					...envelope,
 					ok: false,
 					error:
 						"Proton page returned an unsupported response. Reload the mail tab and retry.",
 				};
 			}
-			return { ...envelope, ok: true, data };
+			return { ok: true, data };
 		} catch {
 			return {
-				...envelope,
 				ok: false,
 				error:
 					"Proton tab execution is unavailable. Open or reload the mail tab and grant the extension scripting permissions; upgrade the browser if MAIN execution is unsupported.",

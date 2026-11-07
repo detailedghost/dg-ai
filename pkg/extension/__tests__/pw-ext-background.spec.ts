@@ -104,28 +104,35 @@ function harness(
 		browserApi: api,
 		isChromium: () => options.chromium ?? true,
 	});
-	return {
-		runWith:
-			(context: { fetchAsset(id: string): Promise<Blob> }) =>
-			(request: PwExtRequest) =>
-				handler(request, options.signal, {
-					deleteAsset: async (assetId: string) => {
-						deleted.push(assetId);
-					},
-					...context,
-				}),
-		run: (request: PwExtRequest) =>
-			handler(request, options.signal, {
-					fetchAsset: async (assetId: string) => {
-						fetched.push(assetId);
-						if (!options.asset) throw new Error("no asset");
-						return options.asset;
-					},
-					deleteAsset: async (assetId: string) => {
-						deleted.push(assetId);
-					},
+	const invoke = (
+		request: PwExtRequest,
+		context: { fetchAsset(id: string): Promise<Blob> },
+	) =>
+		handler({
+			request,
+			timeoutMs: 60_000,
+			signal: options.signal ?? new AbortController().signal,
+			progress: () => undefined,
+			context: {
+				sessionId: "session-1",
+				agentIdentity: "claude-orchestrator",
+				deleteAsset: async (assetId: string) => {
+					deleted.push(assetId);
 				},
-			),
+				...context,
+			},
+		});
+	return {
+		runWith: (context: { fetchAsset(id: string): Promise<Blob> }) => (request: PwExtRequest) =>
+			invoke(request, context),
+		run: (request: PwExtRequest) =>
+			invoke(request, {
+				fetchAsset: async (assetId: string) => {
+					fetched.push(assetId);
+					if (!options.asset) throw new Error("no asset");
+					return options.asset;
+				},
+			}),
 		api,
 		executed,
 		fetched,

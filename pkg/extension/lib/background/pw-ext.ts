@@ -1,6 +1,7 @@
 import {
 	isPwExtWebUrl,
 	PW_EXT_MAX_TEXT_CHARS,
+	type PW_EXT_RELAY,
 	type PwExtRequest,
 	type PwExtResponse,
 	redactText,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/features/pw-ext-page";
 import { isProtonMailOrigin } from "@/lib/features/inbox-proton-observer";
 import { fitPreviewDataUrl } from "./proto";
+import type { RelayHandler } from "./relay-dispatch";
 
 type Tab = {
 	id?: number;
@@ -98,6 +100,8 @@ const TOOL_TIMEOUT_MS = 30_000;
 
 /** Per-request seams that need the session capability. */
 export type PwExtContext = {
+	sessionId: string;
+	agentIdentity: string;
 	fetchAsset(assetId: string): Promise<Blob>;
 	deleteAsset(assetId: string): Promise<void>;
 };
@@ -461,11 +465,11 @@ export function createPwExtHandler({
 		}
 	}
 
-	return async (
-		raw: PwExtRequest,
-		signal?: AbortSignal,
-		context?: PwExtContext,
-	): Promise<PwExtResult> => {
+	return async ({
+		request: raw,
+		signal,
+		context,
+	}: Parameters<RelayHandler<typeof PW_EXT_RELAY>>[0]): Promise<PwExtResult> => {
 		let request: PwExtRequest;
 		try {
 			request = validatePwExtRequest(raw);

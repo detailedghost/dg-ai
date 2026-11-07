@@ -8,11 +8,11 @@ import {
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
+import { CHAT_SESSION_KEY_PREFIX } from "@/lib/background/chat";
 import {
 	CHAT_PAGE_PATH,
-	CHAT_SESSION_KEY_PREFIX,
 	handleOverwatchFrameSafely,
-} from "@/lib/background/chat";
+} from "@/lib/background/pages";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
@@ -712,6 +712,77 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 	}
 });
 
+test("registerChat drops a pw-ext result whose admission socket was replaced by a reconnect", async () => {
+	const sockets: FakeSocket[] = [];
+	const openSocket = mock((_url: string) => {
+		const socket = makeFakeSocket();
+		sockets.push(socket);
+		return socket;
+	});
+	const { api, getOnMessage } = makeBrowserApi();
+	const bootstrap = makeBootstrap();
+	let finish: ((body: { ok: true; data: unknown }) => void) | undefined;
+	const pwExtRun = mock(
+		() =>
+			new Promise<{ ok: true; data: unknown }>((resolve) => {
+				finish = resolve;
+			}),
+	);
+	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+		(async () =>
+			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
+	);
+	registerChat({ browserApi: api, openSocket, relayHandlers: { "pw-ext": pwExtRun as never } });
+	await captureMarker(getOnMessage, bootstrap);
+	sockets[0]?.dispatch("open");
+	await settle();
+	sockets[0]?.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+	sockets[0]?.dispatch(
+		"message",
+		message({
+			type: "pw-ext-browser-request",
+			sessionId: bootstrap.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			requestId: "pw-replaced",
+			request: { verb: "current" },
+			timeoutMs: 60_000,
+		}),
+	);
+	await settle();
+	expect(pwExtRun).toHaveBeenCalledTimes(1);
+
+	const scheduled: Array<() => void> = [];
+	const realSetTimeout = globalThis.setTimeout;
+	globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+		if (ms !== 60_000) scheduled.push(fn);
+		return 0 as unknown as ReturnType<typeof setTimeout>;
+	}) as typeof setTimeout;
+	try {
+		sockets[0]?.dispatch("close");
+		scheduled.shift()?.();
+		await flushMicrotasks();
+		sockets[1]?.dispatch("open");
+		await flushMicrotasks();
+		sockets[1]?.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+		await flushMicrotasks();
+	} finally {
+		globalThis.setTimeout = realSetTimeout;
+		fetchSpy.mockRestore();
+	}
+	expect(sockets).toHaveLength(2);
+	finish?.({ ok: true, data: {} });
+	await flushMicrotasks();
+
+	for (const socket of sockets) {
+		expect(
+			socket.send.mock.calls.some(
+				([raw]) => JSON.parse(raw as string).type === "pw-ext-browser-result",
+			),
+		).toBe(false);
+	}
+});
+
 test("regression: the background's socket reopens automatically after the daemon connection drops", async () => {
 	const sockets: FakeSocket[] = [];
 	const openSocket = mock((_url: string) => {
@@ -1054,6 +1125,21 @@ test("MSG.userMessage relays to the daemon as a real user-message frame and acks
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
+	socket.dispatch(
+		"message",
+		message(
+			buildSessionListFrameShared(
+				[
+					{
+						sessionId: bootstrap.sessionId,
+						agentIdentity: bootstrap.agentIdentity,
+					},
+				],
+				{ sessionId: bootstrap.sessionId },
+			),
+		),
+	);
+	await settle();
 	const sendResponse = mock((_r: unknown) => undefined);
 
 	getOnMessage()?.(
@@ -1270,12 +1356,11 @@ async function inboxRelay({ confirm = true, deferred = false } = {}) {
 	const bootstrap = makeBootstrap();
 	let release: (() => void) | undefined;
 	const pending = deferred ? new Promise<void>((resolve) => { release = resolve; }) : Promise.resolve();
-	const handler = mock(async (frame: Extract<import("@dg/common").ChatFrame, { type: "inbox-browser-request" }>) => {
+	const handler = mock(async (_input: { request: unknown }) => {
 		await pending;
-		return { type: "inbox-browser-result" as const, sessionId: frame.sessionId, requestId: frame.requestId,
-			protocolVersion: CHAT_PROTOCOL_VERSION, ok: true, data: { messages: [], hasMore: false } };
+		return { ok: true as const, data: { messages: [], hasMore: false } };
 	});
-	registerChat({ browserApi: api, openSocket: () => socket, inboxHandler: handler });
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { inbox: handler as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1398,15 +1483,58 @@ test.each(["session-closed", "close", "error"])("registerChat discards a pending
 	expect(relay.results()).toEqual([]);
 });
 
+test("registerChat aborts a pending pw-ext signal on an error drop and still forwards the error frame to the UI", async () => {
+	const { api, sendMessage, getOnMessage } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const bootstrap = makeBootstrap();
+	const signals: AbortSignal[] = [];
+	const pwExt = mock((input: { signal: AbortSignal }) => {
+		signals.push(input.signal);
+		return new Promise<never>(() => undefined);
+	});
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExt as never } });
+	await captureMarker(getOnMessage, bootstrap);
+	socket.dispatch("open");
+	await settle();
+	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
+	await settle();
+	socket.dispatch("message", message({
+		type: "pw-ext-browser-request",
+		sessionId: bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "pw-drop",
+		request: { verb: "current" },
+		timeoutMs: 60_000,
+	}));
+	await settle();
+	expect(signals[0]?.aborted).toBe(false);
+
+	const errorFrame = {
+		type: "error",
+		sessionId: bootstrap.sessionId,
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		code: "invalid-session",
+		message: "unknown session",
+	};
+	socket.dispatch("message", message(errorFrame));
+	await settle();
+
+	expect(signals[0]?.aborted).toBe(true);
+	expect(sendMessage).toHaveBeenCalledWith({
+		type: MSG.frame,
+		frame: expect.objectContaining({ type: "error" }),
+	});
+});
+
 test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browser-result", async () => {
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
-	const pwExtHandler = mock(async () => ({
+	const pwExtRun = mock(async () => ({
 		ok: true as const,
 		data: { text: "### Page" },
 	}));
-	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1426,7 +1554,22 @@ test("registerChat turns a pw-ext-browser-request into one tokened pw-ext-browse
 	await settle();
 	await flushMicrotasks();
 
-	expect(pwExtHandler.mock.calls).toEqual([[{ verb: "current" }, expect.any(AbortSignal), expect.objectContaining({ fetchAsset: expect.any(Function), deleteAsset: expect.any(Function) })]] as never);
+	expect(pwExtRun.mock.calls).toEqual([
+		[
+			{
+				request: { verb: "current" },
+				timeoutMs: 60_000,
+				signal: expect.any(AbortSignal),
+				progress: expect.any(Function),
+				context: expect.objectContaining({
+					sessionId: bootstrap.sessionId,
+					agentIdentity: bootstrap.agentIdentity,
+					fetchAsset: expect.any(Function),
+					deleteAsset: expect.any(Function),
+				}),
+			},
+		],
+	] as never);
 	const results = socket.send.mock.calls
 		.map(([raw]) => JSON.parse(raw as string) as Record<string, unknown>)
 		.filter((frame) => frame.type === "pw-ext-browser-result");
@@ -1448,8 +1591,8 @@ test("registerChat ignores a pw-ext request for an unpaired session", async () =
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
-	const pwExtHandler = mock(async () => ({ ok: false as const, error: "x" }));
-	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	const pwExtRun = mock(async () => ({ ok: false as const, error: "x" }));
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1467,7 +1610,7 @@ test("registerChat ignores a pw-ext request for an unpaired session", async () =
 		}),
 	);
 	await settle();
-	expect(pwExtHandler).not.toHaveBeenCalled();
+	expect(pwExtRun).not.toHaveBeenCalled();
 });
 
 test("registerChat cancels a pending pw-ext request when its session closes", async () => {
@@ -1475,8 +1618,8 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
 	let seen: AbortSignal | undefined;
-	const pwExtHandler = mock(
-		(_request: unknown, signal?: AbortSignal) =>
+	const pwExtRun = mock(
+		({ signal }: { signal: AbortSignal }) =>
 			new Promise<{ ok: false; error: string }>((resolve) => {
 				seen = signal;
 				signal?.addEventListener("abort", () =>
@@ -1484,7 +1627,7 @@ test("registerChat cancels a pending pw-ext request when its session closes", as
 				);
 			}),
 	);
-	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1521,19 +1664,21 @@ test("registerChat aborts a pending pw-ext request on a daemon cancel frame", as
 	const bootstrap = makeBootstrap();
 	let seen: AbortSignal | undefined;
 	let context: { fetchAsset(id: string): Promise<Blob> } | undefined;
-	const pwExtHandler = mock(
-		(
-			_request: unknown,
-			signal?: AbortSignal,
-			ctx?: { fetchAsset(id: string): Promise<Blob> },
-		) =>
+	const pwExtRun = mock(
+		({
+			signal,
+			context: ctx,
+		}: {
+			signal: AbortSignal;
+			context?: { fetchAsset(id: string): Promise<Blob> };
+		}) =>
 			new Promise<{ ok: false; error: string }>((resolve) => {
 				seen = signal;
 				context = ctx;
 				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));
 			}),
 	);
-	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
@@ -1568,14 +1713,14 @@ test("registerChat aborts a pw-ext request at its relay deadline", async () => {
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
 	let seen: AbortSignal | undefined;
-	const pwExtHandler = mock(
-		(_request: unknown, signal?: AbortSignal) =>
+	const pwExtRun = mock(
+		({ signal }: { signal: AbortSignal }) =>
 			new Promise<{ ok: false; error: string }>((resolve) => {
 				seen = signal;
 				signal?.addEventListener("abort", () => resolve({ ok: false, error: "x" }));
 			}),
 	);
-	registerChat({ browserApi: api, openSocket: () => socket, pwExtHandler });
+	registerChat({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await captureMarker(getOnMessage, bootstrap);
 	socket.dispatch("open");
 	await settle();
