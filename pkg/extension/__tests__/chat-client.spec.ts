@@ -1606,6 +1606,49 @@ test("a link client sends link-ready again after it reconnects", async () => {
 	expect(sentTypes(sockets[1])).toEqual(["link-ready"]);
 });
 
+test("a link client with no session sends link-ping on every keepalive interval", async () => {
+	const { client, sockets } = linkClient({ keepaliveIntervalMs: 10 });
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	await new Promise((resolve) => setTimeout(resolve, 55));
+
+	const pings = sentTypes(sockets[0]).filter((type) => type === "link-ping");
+	expect(pings.length).toBeGreaterThanOrEqual(3);
+});
+
+test("a link client stops sending link-ping once its socket closes", async () => {
+	const { client, sockets } = linkClient({
+		keepaliveIntervalMs: 10,
+		findPort: async () => new Promise<number>(() => undefined),
+	});
+	client.openLink?.(47823);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+	sockets[0]?.dispatch("close");
+	const before = sentTypes(sockets[0]).length;
+
+	await new Promise((resolve) => setTimeout(resolve, 40));
+
+	expect(sentTypes(sockets[0]).length).toBe(before);
+});
+
+test("a client without a link option never sends link-ping", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({
+		openSocket: () => socket,
+		keepaliveIntervalMs: 10,
+	});
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	await new Promise((resolve) => setTimeout(resolve, 40));
+
+	expect(sentTypes(socket)).not.toContain("link-ping");
+});
+
 test("a client without a link option never sends link-ready", async () => {
 	const socket = makeFakeSocket(mockFn);
 	const client = createChatClient({ openSocket: () => socket });

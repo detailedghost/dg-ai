@@ -14,6 +14,7 @@ import {
 	describeError,
 	isLinkFrame,
 	isRecord,
+	type LinkFrame,
 	type OverwatchBoard,
 	OVERWATCH_SESSION_ID,
 	OVERWATCH_MAX_LANES,
@@ -1266,8 +1267,9 @@ export async function handleSocketMessage(
 	}
 
 	if (isLinkFrame(parsed)) {
+		let link: LinkFrame;
 		try {
-			validateLinkFrame(parsed);
+			link = validateLinkFrame(parsed);
 		} catch (err) {
 			await sendError(ws, TRANSPORT_ERROR_SESSION_ID, describeError(err));
 			noteInvalid(ws);
@@ -1275,10 +1277,12 @@ export async function handleSocketMessage(
 		}
 		if (isExtensionPeer(ws)) {
 			deps.noteActivity();
-			adoptActiveSessions(ws, deps.registry, {
-				port: deps.port,
-				daemonId: deps.daemonId,
-			});
+			if (link.type === "link-ready") {
+				adoptActiveSessions(ws, deps.registry, {
+					port: deps.port,
+					daemonId: deps.daemonId,
+				});
+			}
 		}
 		return;
 	}

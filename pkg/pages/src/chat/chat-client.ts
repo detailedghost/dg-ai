@@ -104,6 +104,7 @@ export type ChatClient = {
 const DEFAULT_BACKOFF_BASE_MS = 500;
 const DEFAULT_BACKOFF_MAX_MS = 30_000;
 const DEFAULT_ACK_TIMEOUT_MS = 5000;
+const DEFAULT_LINK_PING_MS = 20_000;
 
 function chatSocketUrl(port: number): string {
 	return `ws://127.0.0.1:${port}${CHAT_WS_PATH}`;
@@ -157,6 +158,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let socketGeneration = 0;
 	let everConnected = false;
 	let socketAdmitted = true;
+	let linkPingTimer: ReturnType<typeof setInterval> | undefined;
 	let knownInstanceId: string | undefined;
 	let lastSessionList: Extract<ChatFrame, { type: "session-list" }> | undefined;
 	const capabilities = new Map<string, string>();
@@ -328,7 +330,23 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			sendConnectHandshake(sessionId, token);
 			sendHistoryRequest(sessionId, token);
 		}
-		if (options.link) send({ type: "link-ready" });
+		if (options.link) {
+			send({ type: "link-ready" });
+			startLinkPing();
+		}
+	}
+
+	function stopLinkPing(): void {
+		if (linkPingTimer !== undefined) clearInterval(linkPingTimer);
+		linkPingTimer = undefined;
+	}
+
+	function startLinkPing(): void {
+		stopLinkPing();
+		linkPingTimer = setInterval(
+			() => send({ type: "link-ping" }),
+			options.keepaliveIntervalMs ?? DEFAULT_LINK_PING_MS,
+		);
 	}
 
 	function scheduleRetry(): void {
@@ -371,6 +389,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function handleError(): void {
+		stopLinkPing();
 		setConnectionState(
 			"reconnecting",
 			`could not reach the daemon on port ${port}`,
@@ -491,6 +510,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function openAndBind(): void {
+		stopLinkPing();
 		socketGeneration += 1;
 		confirmedSessions.clear();
 		let opened: ChatClientSocket;
@@ -529,6 +549,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		});
 		opened.addEventListener("close", () => {
 			closed = true;
+			if (socket === opened) stopLinkPing();
 			if (socket === opened) scheduleReconnect();
 		});
 		opened.addEventListener("message", (event) => {

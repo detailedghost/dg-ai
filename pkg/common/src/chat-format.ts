@@ -949,7 +949,7 @@ export function validateSessionAdopt(value: unknown): SessionAdopt {
 	return value as SessionAdopt;
 }
 
-const LINK_FRAME_TYPES = ["link-ready"] as const;
+const LINK_FRAME_TYPES = ["link-ready", "link-ping"] as const;
 
 export type LinkFrame = { type: (typeof LINK_FRAME_TYPES)[number] };
 

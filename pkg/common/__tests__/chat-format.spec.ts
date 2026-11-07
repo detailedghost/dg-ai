@@ -1060,6 +1060,12 @@ describe("validateLinkFrame", () => {
 		});
 	});
 
+	it("accepts a link-ping frame", () => {
+		expect(validateLinkFrame({ type: "link-ping" })).toEqual({
+			type: "link-ping",
+		});
+	});
+
 	it.each([{ type: "link-other" }, { type: "keepalive" }, {}, "link-ready", null])(
 		"rejects %p",
 		(value) => {

@@ -231,6 +231,18 @@ describe("zero-touch extension link", () => {
 		expect(adopted.sort()).toEqual([first.sessionId, second.sessionId].sort());
 	});
 
+	it("accepts link-ping on an extension socket without replying or closing it", async () => {
+		const { port } = await boot();
+		await registerSession(port);
+		const { socket, frames } = await linkExtension(port);
+
+		socket.send(JSON.stringify({ type: "link-ping" }));
+		await Bun.sleep(200);
+
+		expect(frames).toEqual([]);
+		expect(socket.readyState).toBe(WebSocket.OPEN);
+	});
+
 	it("ignores link-ready from a /cli socket", async () => {
 		const { port } = await boot();
 		const credentials = await registerSession(port);
