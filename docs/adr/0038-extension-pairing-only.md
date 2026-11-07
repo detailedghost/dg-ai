@@ -15,7 +15,7 @@ Date: 2026-11-07
 
 The extension keeps one visible surface: the pairing popup. It shows a six-digit code, a QR code and the paired agents. The daemon `/chat` page replaces the extension chat. The `--ext` flag on `chat` and `overwatch` opens the daemon page, and the pairing popup pairs the browser.
 
-- **Offer and claim.** The pairing popup asks the service worker for an offer with `POST /pair/offer`. The daemon keeps each offer in memory and holds only the hash of its code. The agent runs `dg-agent pair <code>`. The CLI posts `POST /pair/claim` with the owner token. A claim refuses any `Origin` header. The service worker polls `GET /pair/offer/<id>` and receives the session bootstrap once.
+- **Offer and claim.** The pairing popup asks the service worker for an offer with `POST /pair/offer`. The daemon keeps each offer in memory and holds only the hash of its code. The agent runs `dg-agent pair <code>`. The CLI posts `POST /pair/claim` with the owner token. A claim refuses any `Origin` header. The service worker polls `POST /pair/offer/<id>` and receives the session bootstrap once. Chromium omits `Origin` on extension GET requests, so the poll is a POST and always carries `Origin`.
 - **Limits.** The daemon allows 8 outstanding offers in the pending state. A rolling window of 5 failures expires every pending offer for good. Later claims return `locked` until the failures age out, and the pairing popup must ask for a new offer. The lockout guards against mistakes and cheap brute force. It does not stop a same-user adversary, who can already read the owner token. Expired offers leave tombstones. The daemon trims tombstones to 8 when it creates the next offer. Otherwise they expire with their TTL. A lockout can expire up to 8 pending offers at once, so the map can briefly hold more than 8 tombstones. The daemon also keeps claimed offers until the extension polls them or they expire.
 - **Code handling.** The QR encodes the text `dg-agent pair <code>`, never a URL. `noteSecret` ignores values under 8 characters, so it cannot mask a six-digit code. The code stays out of logs only because no path prints it. The daemon logger records no request paths, and the CLI prints only the Paired line or daemon error text.
 - **Persistence.** The extension keeps each pairing in `storage.local` under `pairing:<id>` and writes it on the first confirming `session-list`. Pairings survive a browser restart. The daemon-side session expiry is the bound. The residual risk is that every `<all_urls>` content script can read that area. The dg:security review accepted that risk in the slice that added the store.
@@ -75,7 +75,7 @@ sequenceDiagram
     A->>D: POST /pair/claim with owner token, no Origin
     D-->>A: claimed
     loop poll until claimed or expired
-        W->>D: GET /pair/offer/id
+        W->>D: POST /pair/offer/id
     end
     D-->>W: claimed with the session bootstrap
     W->>W: keep the pairing in storage.local

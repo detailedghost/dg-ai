@@ -78,7 +78,7 @@ function fakeDaemon() {
 			created += 1;
 			return Response.json(offerBody(created), { status: 201 });
 		}
-		if (method === "GET" && pathname.startsWith(`${CHAT_PAIR_OFFER_PATH}/`)) {
+		if (method === "POST" && pathname.startsWith(`${CHAT_PAIR_OFFER_PATH}/`)) {
 			return state.pollAnswer();
 		}
 		return new Response("unexpected", { status: 500 });
@@ -87,8 +87,9 @@ function fakeDaemon() {
 		state,
 		fetchFn,
 		calls,
-		posts: () => calls.filter((call) => call.method === "POST"),
-		gets: () => calls.filter((call) => call.method === "GET"),
+		creates: () => calls.filter((call) => call.pathname === CHAT_PAIR_OFFER_PATH),
+		polls: () =>
+			calls.filter((call) => call.pathname !== CHAT_PAIR_OFFER_PATH),
 	};
 }
 
@@ -166,8 +167,8 @@ describe("registerPairOffer create", () => {
 
 		const reply = await harness.request();
 
-		expect(harness.daemon.posts()).toHaveLength(1);
-		expect(harness.daemon.posts()[0]?.pathname).toBe(CHAT_PAIR_OFFER_PATH);
+		expect(harness.daemon.creates()).toHaveLength(1);
+		expect(harness.daemon.creates()[0]?.pathname).toBe(CHAT_PAIR_OFFER_PATH);
 		const offer = offerBody(1);
 		expect(reply).toEqual({
 			status: "pending",
@@ -191,7 +192,7 @@ describe("registerPairOffer create", () => {
 		]);
 		const later = await harness.request();
 
-		expect(harness.daemon.posts()).toHaveLength(1);
+		expect(harness.daemon.creates()).toHaveLength(1);
 		for (const reply of [...replies, later]) {
 			expect(reply).toMatchObject({
 				status: "pending",
@@ -206,7 +207,7 @@ describe("registerPairOffer create", () => {
 
 		const reply = await harness.request({ renew: true });
 
-		expect(harness.daemon.posts()).toHaveLength(2);
+		expect(harness.daemon.creates()).toHaveLength(2);
 		expect(reply).toMatchObject({
 			status: "pending",
 			code: offerBody(2).code,
@@ -223,9 +224,9 @@ describe("registerPairOffer polling", () => {
 		const harness = bootPolling();
 		await harness.request();
 
-		await until(() => harness.daemon.gets().length >= 3);
+		await until(() => harness.daemon.polls().length >= 3);
 
-		for (const call of harness.daemon.gets()) {
+		for (const call of harness.daemon.polls()) {
 			expect(call.pathname).toBe(
 				`${CHAT_PAIR_OFFER_PATH}/${offerBodyId(1)}`,
 			);
@@ -272,20 +273,20 @@ describe("registerPairOffer polling", () => {
 
 		await until(() => (harness.adopt as ReturnType<typeof mock>).mock.calls.length > 0);
 		await pause(POLL_MS * 6);
-		const getsAfterClaim = harness.daemon.gets().length;
+		const pollsAfterClaim = harness.daemon.polls().length;
 		await pause(POLL_MS * 6);
 
 		expect(harness.adopt).toHaveBeenCalledTimes(1);
 		expect(harness.adopt).toHaveBeenCalledWith(claimedBootstrap);
 		expect(harness.session.data).not.toHaveProperty(STORAGE_KEY);
-		expect(harness.daemon.gets()).toHaveLength(getsAfterClaim);
+		expect(harness.daemon.polls()).toHaveLength(pollsAfterClaim);
 		const reply = await harness.request();
 		expect(reply).toEqual({
 			status: "claimed",
 			agentIdentity: claimedBootstrap.agentIdentity,
 		});
 		expect(JSON.stringify(reply)).not.toContain(claimedBootstrap.token);
-		expect(harness.daemon.posts()).toHaveLength(1);
+		expect(harness.daemon.creates()).toHaveLength(1);
 		expect(harness.adopt).toHaveBeenCalledTimes(1);
 	});
 
@@ -303,16 +304,16 @@ describe("registerPairOffer polling", () => {
 
 		await until(() => !(STORAGE_KEY in harness.session.data));
 		await pause(POLL_MS * 4);
-		const settled = harness.daemon.gets().length;
+		const settled = harness.daemon.polls().length;
 		await pause(POLL_MS * 6);
 
-		expect(harness.daemon.gets()).toHaveLength(settled);
+		expect(harness.daemon.polls()).toHaveLength(settled);
 		expect(harness.adopt).not.toHaveBeenCalled();
 		expect(await harness.request()).toMatchObject({
 			status: "pending",
 			code: offerBody(2).code,
 		});
-		expect(harness.daemon.posts()).toHaveLength(2);
+		expect(harness.daemon.creates()).toHaveLength(2);
 	});
 
 	test.each([400, 429, 500, 503])(
@@ -325,7 +326,7 @@ describe("registerPairOffer polling", () => {
 				harness.daemon.state.pollAnswer = () =>
 					new Response("try later", { status });
 
-				await until(() => harness.daemon.gets().length >= 3);
+				await until(() => harness.daemon.polls().length >= 3);
 
 				expect(harness.session.data[STORAGE_KEY]).toEqual({
 					offerId: offerBody(1).offerId,
@@ -335,7 +336,7 @@ describe("registerPairOffer polling", () => {
 					status: "pending",
 					code: offerBody(1).code,
 				});
-				expect(harness.daemon.posts()).toHaveLength(1);
+				expect(harness.daemon.creates()).toHaveLength(1);
 				expect(warn).toHaveBeenCalled();
 
 				harness.daemon.state.pollAnswer = () =>
@@ -360,16 +361,16 @@ describe("registerPairOffer polling", () => {
 			await harness.request();
 			harness.daemon.state.pollAnswer = () =>
 				new Response("down", { status: 503 });
-			await until(() => harness.daemon.gets().length >= 2);
+			await until(() => harness.daemon.polls().length >= 2);
 			expect(harness.session.data).toHaveProperty(STORAGE_KEY);
 
 			now.mockImplementation(() => offerBody(1).expiresAt + 30_001);
 			await until(() => !(STORAGE_KEY in harness.session.data));
 			now.mockImplementation(realNow);
-			const settled = harness.daemon.gets().length;
+			const settled = harness.daemon.polls().length;
 			await pause(POLL_MS * 6);
 
-			expect(harness.daemon.gets()).toHaveLength(settled);
+			expect(harness.daemon.polls()).toHaveLength(settled);
 			expect(harness.adopt).not.toHaveBeenCalled();
 		} finally {
 			now.mockRestore();
@@ -385,7 +386,7 @@ describe("registerPairOffer polling", () => {
 				status: "pending",
 				expiresAt: offerBody(1).expiresAt + 600_000,
 			});
-		await until(() => harness.daemon.gets().length >= 3);
+		await until(() => harness.daemon.polls().length >= 3);
 		expect(harness.session.data).toHaveProperty(STORAGE_KEY);
 		expect(await harness.request()).toMatchObject({
 			status: "pending",
@@ -419,9 +420,9 @@ describe("registerPairOffer polling", () => {
 			return new Response("not found", { status: 404 });
 		}) as unknown as PollAnswer;
 
-		await until(() => harness.daemon.gets().length >= 1);
+		await until(() => harness.daemon.polls().length >= 1);
 		await pause(POLL_MS * 6);
-		expect(harness.daemon.gets()).toHaveLength(1);
+		expect(harness.daemon.polls()).toHaveLength(1);
 		release();
 		await until(
 			() => (harness.adopt as ReturnType<typeof mock>).mock.calls.length > 0,
@@ -445,7 +446,7 @@ describe("registerPairOffer polling", () => {
 
 			await until(() => adopt.mock.calls.length > 0);
 			await pause(POLL_MS * 4);
-			const settled = harness.daemon.gets().length;
+			const settled = harness.daemon.polls().length;
 			await pause(POLL_MS * 6);
 			const first = await harness.request();
 			const second = await harness.request();
@@ -458,8 +459,8 @@ describe("registerPairOffer polling", () => {
 			);
 			expect(adopt).toHaveBeenCalledTimes(1);
 			expect(harness.session.data).not.toHaveProperty(STORAGE_KEY);
-			expect(harness.daemon.gets()).toHaveLength(settled);
-			expect(harness.daemon.posts()).toHaveLength(1);
+			expect(harness.daemon.polls()).toHaveLength(settled);
+			expect(harness.daemon.creates()).toHaveLength(1);
 		} finally {
 			warn.mockRestore();
 		}
@@ -488,10 +489,10 @@ describe("registerPairOffer reconcile after a worker restart", () => {
 
 		const reply = await harness.request();
 
-		expect(harness.daemon.gets()[0]?.pathname).toBe(
+		expect(harness.daemon.polls()[0]?.pathname).toBe(
 			`${CHAT_PAIR_OFFER_PATH}/${stored.offerId}`,
 		);
-		expect(harness.daemon.posts()).toHaveLength(1);
+		expect(harness.daemon.creates()).toHaveLength(1);
 		expect(reply).toMatchObject({
 			status: "pending",
 			code: offerBody(1).code,
@@ -510,7 +511,7 @@ describe("registerPairOffer reconcile after a worker restart", () => {
 		expect(harness.adopt).toHaveBeenCalledTimes(1);
 		expect(harness.adopt).toHaveBeenCalledWith(claimedBootstrap);
 		expect(session.data).not.toHaveProperty(STORAGE_KEY);
-		expect(daemon.posts()).toHaveLength(0);
+		expect(daemon.creates()).toHaveLength(0);
 		expect(reply).toEqual({
 			status: "claimed",
 			agentIdentity: claimedBootstrap.agentIdentity,
@@ -536,7 +537,7 @@ describe("registerPairOffer reconcile after a worker restart", () => {
 			expect(second).toEqual(first);
 			expect(adopt).toHaveBeenCalledTimes(1);
 			expect(session.data).not.toHaveProperty(STORAGE_KEY);
-			expect(daemon.posts()).toHaveLength(0);
+			expect(daemon.creates()).toHaveLength(0);
 		} finally {
 			warn.mockRestore();
 		}
@@ -554,7 +555,7 @@ describe("registerPairOffer reconcile after a worker restart", () => {
 
 		const reply = await harness.request();
 
-		expect(daemon.posts()).toHaveLength(1);
+		expect(daemon.creates()).toHaveLength(1);
 		expect(reply).toMatchObject({
 			status: "pending",
 			code: offerBody(1).code,
@@ -592,7 +593,7 @@ describe("registerPairOffer failures and gates", () => {
 		);
 
 		expect(harness.adopt).toHaveBeenCalledTimes(1);
-		expect(harness.daemon.posts()).toHaveLength(1);
+		expect(harness.daemon.creates()).toHaveLength(1);
 	});
 
 	test("a 429 POST replies error carrying the daemon's text", async () => {
@@ -632,7 +633,7 @@ describe("registerPairOffer failures and gates", () => {
 		await harness.request();
 		const nextReply = await harness.request();
 
-		expect(daemon.posts()).toHaveLength(1);
+		expect(daemon.creates()).toHaveLength(1);
 		expect(nextReply).toEqual({ status: "error", error: text });
 	});
 
@@ -649,12 +650,12 @@ describe("registerPairOffer failures and gates", () => {
 		];
 
 		expect(replies).toEqual(Array(3).fill({ status: "error", error: text }));
-		expect(daemon.posts()).toHaveLength(1);
+		expect(daemon.creates()).toHaveLength(1);
 
 		daemon.state.createAnswer = undefined;
 		const renewed = await harness.request({ renew: true });
 
-		expect(daemon.posts()).toHaveLength(2);
+		expect(daemon.creates()).toHaveLength(2);
 		expect(renewed).toMatchObject({ status: "pending" });
 	});
 
@@ -672,7 +673,7 @@ describe("registerPairOffer failures and gates", () => {
 
 		expect(renewed).toEqual({ status: "error", error: text });
 		expect(next).toEqual({ status: "error", error: text });
-		expect(daemon.posts()).toHaveLength(2);
+		expect(daemon.creates()).toHaveLength(2);
 	});
 
 	test.each([

@@ -106,7 +106,7 @@ export function registerPairOffer({
 		port: number,
 		offerId: string,
 	): Promise<PairOfferStatus | undefined> {
-		const response = await fetchFn(offerUrl(port, offerId));
+		const response = await fetchFn(offerUrl(port, offerId), { method: "POST" });
 		if (response.status === 404) return undefined;
 		if (!response.ok) {
 			throw new Error(

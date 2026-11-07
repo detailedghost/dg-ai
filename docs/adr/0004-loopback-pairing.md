@@ -57,7 +57,7 @@ sequenceDiagram
 
 - The extension no longer creates a session. It asks for an offer with `POST /pair/offer` and shows the code in the pairing popup.
 - The agent claims the offer with `dg-agent pair <code>`. The claim is `POST /pair/claim` with the owner token. It refuses any `Origin` header.
-- The extension polls `GET /pair/offer/<id>` and receives the session bootstrap once. It then opens `/ws` with the session capability.
+- The extension polls `POST /pair/offer/<id>` and receives the session bootstrap once. Chromium omits `Origin` on extension GET requests, so the poll is a POST. It then opens `/ws` with the session capability.
 - The fifth wrong claim inside one five-minute window expires every pending offer for good, and the popup must ask for a new one. The daemon holds at most 8 pending offers. It trims expired tombstones to 8 when it creates the next offer, and otherwise they expire with their TTL. A lockout can expire 8 pending offers at once, so the map can briefly hold more. It also holds any claimed offer the extension has not polled yet.
 - `POST /pair` and `handlePair` no longer exist.
 
@@ -70,7 +70,7 @@ sequenceDiagram
     D-->>E: offer id and expiring code
     A->>D: POST /pair/claim with owner token and code
     D-->>A: claimed
-    E->>D: GET /pair/offer/id
+    E->>D: POST /pair/offer/id
     D-->>E: session bootstrap
     E->>D: /ws with session capability
     D-->>E: authenticated connection and pinned Origin

@@ -368,7 +368,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (
 				url.pathname.startsWith(`${CHAT_PAIR_OFFER_PATH}/`) &&
-				req.method === "GET"
+				req.method === "POST"
 			) {
 				return handlePairOfferStatus(req, url, deps, pairOffers);
 			}

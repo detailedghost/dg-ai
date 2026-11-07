@@ -207,6 +207,19 @@ describe("createPairOffers status", () => {
 		expect(store.status({ offerId: offer.offerId, origin: ORIGIN })).toBeUndefined();
 	});
 
+	it("returns expired for an unread claimed offer past its refreshed expiry", () => {
+		const { store, time } = newStore();
+		const offer = created(store);
+		time.advance(PAIRING_TTL_MS - 1);
+		store.claim({ code: offer.code, bootstrap: BOOTSTRAP });
+		time.advance(PAIRING_TTL_MS + 1);
+
+		expect(store.status({ offerId: offer.offerId, origin: ORIGIN })).toEqual({
+			status: "expired",
+		});
+		expect(store.status({ offerId: offer.offerId, origin: ORIGIN })).toBeUndefined();
+	});
+
 	it("returns expired once after the TTL, then undefined", () => {
 		const { store, time } = newStore();
 		const offer = created(store);

@@ -93,6 +93,7 @@ function statusRequest(
 	origin: string | null = EXTENSION_ORIGIN,
 ): Promise<Response> {
 	return fetch(url(port, `${CHAT_PAIR_OFFER_PATH}/${offerId}`), {
+		method: "POST",
 		headers: {
 			Host: `127.0.0.1:${port}`,
 			...(origin === null ? {} : { Origin: origin }),
@@ -221,7 +222,7 @@ describe("POST /pair/offer", () => {
 	});
 });
 
-describe("GET /pair/offer/<offerId>", () => {
+describe("POST /pair/offer/<offerId>", () => {
 	it("returns pending before the claim", async () => {
 		const daemon = await bootDaemon();
 		const offer = await createOffer(daemon);
@@ -235,6 +236,32 @@ describe("GET /pair/offer/<offerId>", () => {
 		});
 		expect(response.headers.get("cache-control")).toBe("no-store");
 		expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+	});
+
+	it("returns 400 when the status request has no Origin header", async () => {
+		const daemon = await bootDaemon();
+		const offer = await createOffer(daemon);
+
+		expect((await statusRequest(daemon.port, offer.offerId, null)).status).toBe(
+			400,
+		);
+	});
+
+	it("does not serve the status read over GET", async () => {
+		const daemon = await bootDaemon();
+		const offer = await createOffer(daemon);
+
+		const response = await fetch(
+			url(daemon.port, `${CHAT_PAIR_OFFER_PATH}/${offer.offerId}`),
+			{
+				headers: {
+					Host: `127.0.0.1:${daemon.port}`,
+					Origin: EXTENSION_ORIGIN,
+				},
+			},
+		);
+
+		expect(response.status).not.toBe(200);
 	});
 
 	it("returns 404 for an unknown uuid", async () => {
@@ -263,6 +290,7 @@ describe("GET /pair/offer/<offerId>", () => {
 		const response = await fetch(
 			url(daemon.port, `${CHAT_PAIR_OFFER_PATH}/${offer.offerId}/extra`),
 			{
+				method: "POST",
 				headers: {
 					Host: `127.0.0.1:${daemon.port}`,
 					Origin: EXTENSION_ORIGIN,

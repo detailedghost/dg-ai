@@ -60,7 +60,10 @@ async function createOffer(port: number): Promise<PairOffer> {
 async function pollOffer(port: number, offerId: string): Promise<PairOfferStatus> {
 	const response = await fetch(
 		`http://127.0.0.1:${port}${CHAT_PAIR_OFFER_PATH}/${offerId}`,
-		{ headers: { Host: `127.0.0.1:${port}`, Origin: EXTENSION_ORIGIN } },
+		{
+			method: "POST",
+			headers: { Host: `127.0.0.1:${port}`, Origin: EXTENSION_ORIGIN },
+		},
 	);
 	expect(response.status).toBe(200);
 	return validatePairOfferStatus(await response.json());

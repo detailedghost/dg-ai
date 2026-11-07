@@ -226,6 +226,22 @@ describe("pw --ext background handler", () => {
 		expect(h.executed()).toEqual([]);
 	});
 
+	it("does not navigate when the request is canceled while the tab is read", async () => {
+		const cancel = new AbortController();
+		const h = harness({ signal: cancel.signal });
+		h.fake.raw.tabs.get.mockImplementationOnce(async () => {
+			cancel.abort();
+			return WEB_TAB;
+		});
+
+		expect(await h.run({ verb: "open", url: "https://example.test/" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("canceled"),
+		});
+		expect(h.fake.tabs.get(7)?.url).toBe(WEB_TAB.url);
+		expect(h.fake.raw.tabs.update).not.toHaveBeenCalled();
+	});
+
 	it("rejects a malformed or oversized page result", async () => {
 		for (const pageResult of [
 			{ tree: "x".repeat(200_000), text: "" },

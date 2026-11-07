@@ -573,6 +573,7 @@ export function createPwExtHandler({
 			return ok(tabListing(rows));
 		}
 		const tab = await resolveTab(request, context.sessionId);
+		if (signal?.aborted) return CANCELED;
 		if (!tab) {
 			const rows = await agentTabs.list({ sessionId: context.sessionId });
 			if (rows.length) throw new Refusal(SELECTED_GONE);

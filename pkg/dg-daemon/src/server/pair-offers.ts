@@ -129,13 +129,13 @@ export function createPairOffers({
 		}): PairOfferStatus | undefined {
 			const record = records.get(offerId);
 			if (record === undefined || record.origin !== origin) return undefined;
-			if (record.bootstrap !== undefined) {
-				records.delete(offerId);
-				return { status: "claimed", bootstrap: record.bootstrap };
-			}
 			if (record.expired || record.expiresAt <= now()) {
 				records.delete(offerId);
 				return { status: "expired" };
+			}
+			if (record.bootstrap !== undefined) {
+				records.delete(offerId);
+				return { status: "claimed", bootstrap: record.bootstrap };
 			}
 			return { status: "pending", expiresAt: record.expiresAt };
 		},
