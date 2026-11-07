@@ -75,7 +75,7 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--fresh] [-s <id>] [--print-session-id] [--json]` —
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--print-session-id] [--json]` —
   start or reuse the daemon and register a new session. Prints the local chat
   page URL `http://127.0.0.1:<port>/chat#_chat=<base64url>`. The fragment is
   base64url JSON `{ port, sessionId, token, agentIdentity }`, and the page
@@ -87,11 +87,7 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   `--print-session-id` prints the session id before the URL. `--json` prints
   `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
   attaches a workset label, which is how the chat page groups sessions in its
-  rail. `start` claims a session the extension is waiting on, even without
-  `--ext`; pairing the browser is in [references/extension.md](references/extension.md). `--fresh`
-  always registers a new session.
-- `attach [-s <id>] [--open]` — claim a session the extension created. Extension
-  only: [references/extension.md](references/extension.md).
+  rail. Pairing the browser is in [references/extension.md](references/extension.md).
 - `pair <code> [-s, --session <id>]` — pair this session with the browser by
   claiming the six-digit code the extension popup shows.
 - `dg-daemon status` — report the live daemon's status, or that none is
@@ -231,6 +227,6 @@ point of publishing it.
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.
-- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the chat page is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear` archives sessions whose claim has been released. Sessions still waiting for an agent, and sessions whose claim is held between commands, are left alone.
+- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the chat page is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear` archives sessions whose claim has been released. Sessions whose claim is held between commands are left alone.
 - `dg-skills install` refreshes `dg-agent` and `dg-daemon` too, alongside
   itself, so re-running it keeps all three binaries current.

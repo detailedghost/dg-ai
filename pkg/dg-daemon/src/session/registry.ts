@@ -13,7 +13,6 @@ import { triggerAssetCleanup } from "../utils/asset-cleanup";
 import {
 	DEFAULT_AGENT_GONE_MS,
 	DEFAULT_CLI_REATTACH_GRACE_MS,
-	DEFAULT_UNCLAIMED_TTL_MS,
 	isManuallyClearable,
 	shouldReapSession,
 	shouldReleaseClaim,
@@ -29,7 +28,6 @@ export type SessionRecord = {
 	workset?: string;
 	role: SessionRole;
 	state: SessionState;
-	awaitingAgent: boolean;
 	cliAttached: boolean;
 	createdAt: number;
 	lastActivityAt: number;
@@ -44,7 +42,6 @@ export type CreateSessionInput = {
 	agentIdentity: string;
 	workset?: string;
 	role: SessionRole;
-	awaitingAgent?: boolean;
 };
 
 export type CloseReason = "cli" | "canvas" | "daemon-shutdown" | "expired";
@@ -89,7 +86,6 @@ export class SessionRegistry extends EventEmitter {
 			workset: input.workset,
 			role: input.role,
 			state: "active",
-			awaitingAgent: input.awaitingAgent === true,
 			cliAttached: false,
 			createdAt,
 			lastActivityAt: createdAt,
@@ -115,7 +111,6 @@ export class SessionRegistry extends EventEmitter {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state !== "active") return;
 		record.cliAttached = true;
-		record.awaitingAgent = false;
 		record.cliQuietSince = undefined;
 		record.cliDetachedAt = undefined;
 		record.lastActivityAt = this.now();
@@ -188,7 +183,6 @@ export class SessionRegistry extends EventEmitter {
 		isExempt: (sessionId: string) => boolean,
 		limits: {
 			agentGoneMs?: number;
-			unclaimedTtlMs?: number;
 			reattachGraceMs?: number;
 		} = {},
 	): string[] {
@@ -213,7 +207,6 @@ export class SessionRegistry extends EventEmitter {
 		const reapLimits = {
 			sessionTtlMs: ttlMs,
 			agentGoneMs: limits.agentGoneMs ?? DEFAULT_AGENT_GONE_MS,
-			unclaimedTtlMs: limits.unclaimedTtlMs ?? DEFAULT_UNCLAIMED_TTL_MS,
 		};
 		const expired: string[] = [];
 		for (const record of [...this.sessions.values()]) {
@@ -223,7 +216,6 @@ export class SessionRegistry extends EventEmitter {
 						state: record.state,
 						createdAt: record.createdAt,
 						lastActivityAt: record.lastActivityAt,
-						awaitingAgent: record.awaitingAgent,
 						cliAttached: record.cliAttached,
 						cliDetachedAt: record.cliDetachedAt,
 						exempt: isExempt(record.sessionId),
@@ -247,7 +239,6 @@ export class SessionRegistry extends EventEmitter {
 
 	presence(record: SessionRecord): SessionPresence {
 		if (record.cliAttached) return "cli";
-		if (record.awaitingAgent) return "waiting";
 		if (record.cliDetachedAt !== undefined) return "gone";
 		return "idle";
 	}

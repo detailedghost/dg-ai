@@ -1,20 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { validateSessionBootstrap } from "@dg/common";
-import {
-	openFailedHint,
-	resolveDgPaths,
-	writeSessionToken,
-} from "@dg/common/node";
+import { openFailedHint } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
 	decodeChatMarker,
-	EXTENSION_ORIGIN,
 	freshDgHome,
 	killDaemonByPidFile,
 } from "@dg/dg-daemon/test-harness";
-import { writeConfig } from "../../dg-daemon/src/server/config-store";
 import { cmdStart, type StartOptions, type StartSeams } from "../src/start";
 
 const DAEMON_ENTRY = join(import.meta.dir, "../../dg-daemon/src/index.ts");
@@ -66,37 +60,12 @@ async function runStart(
 		errors.push(args.map(String).join(" "));
 	};
 	try {
-		await withDgEnv(() => cmdStart({ fresh: true, ...options }, seams));
+		await withDgEnv(() => cmdStart(options, seams));
 	} finally {
 		console.log = originalLog;
 		console.error = originalError;
 	}
 	return { logs, opened, errors };
-}
-
-async function createWaitingSession(): Promise<string> {
-	const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
-	const created = await fetch(`http://127.0.0.1:${port}/sessions`, {
-		method: "POST",
-		headers: {
-			Host: `127.0.0.1:${port}`,
-			Origin: EXTENSION_ORIGIN,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ agentIdentity: "claude" }),
-	});
-	const { sessionId, token } = (await created.json()) as {
-		sessionId: string;
-		token: string;
-	};
-	writeSessionToken(paths, sessionId, {
-		sessionId,
-		token,
-		cwd: process.cwd(),
-		agentIdentity: "claude",
-	});
-	return sessionId;
 }
 
 describe("dg-agent start bootstrap URL", () => {
@@ -158,31 +127,6 @@ describe("dg-agent start bootstrap URL", () => {
 			const payload = JSON.parse(logs.at(-1) ?? "{}") as { url: string };
 			expect(opened).toEqual([payload.url]);
 		});
-
-		it("opens a claimed session's /chat URL on --open", async () => {
-			const sessionId = await createWaitingSession();
-			const { logs, opened } = await runStart({
-				...flags,
-				fresh: false,
-				sessionId,
-				open: true,
-			});
-			const printed = logs.at(-1) ?? "";
-			expect(printed).toContain("/chat#_chat=");
-			expect(opened).toEqual([printed]);
-			expect(validateSessionBootstrap(decodeChatMarker(printed)).sessionId).toBe(
-				sessionId,
-			);
-		});
-	});
-
-	it("gives --ext and the default the same URL for one claimed session", async () => {
-		const sessionId = await createWaitingSession();
-
-		const local = await runStart({ fresh: false, sessionId });
-		const ext = await runStart({ fresh: false, sessionId, ext: true });
-
-		expect(ext.logs.at(-1)).toBe(local.logs.at(-1));
 	});
 
 	it("opens the printed local URL with tryOpen on --open", async () => {
@@ -207,18 +151,28 @@ describe("dg-agent start bootstrap URL", () => {
 		);
 	});
 
-	it("keeps one session in the chat and extension URLs of a claimed session", async () => {
-		const sessionId = await createWaitingSession();
+	it("registers one new session per start through POST /start and never lists sessions", async () => {
+		const requests: string[] = [];
+		const realFetch = globalThis.fetch;
+		globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push(`${init?.method ?? "GET"} ${new URL(String(input instanceof Request ? input.url : input)).pathname}`);
+			return realFetch(input, init);
+		}) as typeof fetch;
+		let first: string[];
+		let second: string[];
+		try {
+			first = (await runStart({})).logs;
+			second = (await runStart({})).logs;
+		} finally {
+			globalThis.fetch = realFetch;
+		}
 
-		const local = await runStart({ fresh: false, sessionId, open: true });
-		const ext = await runStart({ fresh: false, sessionId, ext: true });
-		const localUrl = local.logs.at(-1) ?? "";
-		const localBootstrap = validateSessionBootstrap(decodeChatMarker(localUrl));
-
-		expect(localUrl).toContain("/chat#_chat=");
-		expect(local.opened).toEqual([localUrl]);
-		expect(localBootstrap.sessionId).toBe(sessionId);
-		expect(decodeChatMarker(ext.logs.at(-1) ?? "")).toEqual(localBootstrap);
+		expect(requests.filter((request) => request === "POST /start")).toHaveLength(2);
+		expect(requests.filter((request) => request.endsWith("/sessions"))).toEqual([]);
+		const ids = [first, second].map(
+			(logs) => validateSessionBootstrap(decodeChatMarker(logs.at(-1) ?? "")).sessionId,
+		);
+		expect(new Set(ids).size).toBe(2);
 	});
 
 	it("opens the --json URL with --open", async () => {

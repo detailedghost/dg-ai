@@ -128,3 +128,17 @@ describe("SessionRegistry presence changes emit changed", () => {
 		expect(changed).toEqual([]);
 	});
 });
+
+describe("SessionRegistry.presence", () => {
+	it("walks idle, cli, gone as the CLI attaches and detaches", () => {
+		const { registry, session } = setup();
+		const listed = () => registry.list().map((entry) => entry.presence);
+
+		expect(listed()).toEqual(["idle"]);
+		registry.noteCliAttached(session.sessionId);
+		expect(listed()).toEqual(["cli"]);
+		registry.noteCliQuiet(session.sessionId);
+		registry.noteCliDetached(session.sessionId);
+		expect(listed()).toEqual(["gone"]);
+	});
+});

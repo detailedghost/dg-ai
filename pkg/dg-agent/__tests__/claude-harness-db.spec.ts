@@ -113,7 +113,6 @@ describe("Claude as the runner, with sessions stored in the daemon database", ()
 			"start",
 			"-a",
 			"reviewer",
-			"--fresh",
 		]);
 		expect(reviewer.exitCode).toBe(0);
 		const reviewerBootstrap = validateSessionBootstrap(

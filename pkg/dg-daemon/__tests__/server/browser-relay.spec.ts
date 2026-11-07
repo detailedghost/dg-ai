@@ -1347,6 +1347,15 @@ describe("pw-ext staged asset cleanup", () => {
 });
 
 const INBOX_EXTENSION = "1.11.0";
+function noPeerHint(sessionId: string, required: readonly string[]): RegExp {
+	const pair = `dg-agent pair <code> -s ${sessionId}`.replace(
+		/[.*+?^${}()|[\]\\]/g,
+		"\\$&",
+	);
+	const lookaheads = [pair, ...required].map((part) => `(?=.*${part})`);
+	return new RegExp(`^(?!.*/start#_chat=)${lookaheads.join("")}.*$`, "s");
+}
+
 const INBOX_FOLDERS = { folders: [{ id: "folder-a", name: "Reviewed" }] };
 const INBOX_REFUSAL = {
 	active: "Inbox requires an active dg session.",
@@ -1360,7 +1369,9 @@ const INBOX_REFUSAL = {
 	oldVersion:
 		"Inbox requires dg extension 1.11.0 or newer; update the extension, reload it, and reconnect this session.",
 	noPeer: (sessionId: string) =>
-		`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId} and open an authenticated Proton Mail tab. Open http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity> in the browser where the extension is loaded, then reload the Proton Mail tab. Inbox requires dg extension 1.11.0 or newer.`,
+		expect.stringMatching(
+			noPeerHint(sessionId, ["1\\.11\\.0", "[Rr]eload"]),
+		),
 	storage:
 		"Inbox configuration storage failed; check daemon health and encryption key access.",
 };
@@ -1551,7 +1562,7 @@ describe("inbox relay check order", () => {
 		]);
 	});
 
-	it("answers the no-peer refusal with the bootstrap hint", async () => {
+	it("answers the no-peer refusal with the pairing hint", async () => {
 		const w = await world();
 		const cli = w.cli();
 		await w.post(cli, inboxRequest());
@@ -2017,7 +2028,7 @@ const PROTO_REFUSAL = {
 	multiple:
 		"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
 	noPeer: (sessionId: string) =>
-		`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId}. Open http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity> in the browser where the extension is loaded, then retry. Run dg-skills inbox bootstrap-url --session ${sessionId} to print the real URL (that pairing is shared across every daemon feature, not just inbox).`,
+		expect.stringMatching(noPeerHint(sessionId, [])),
 };
 const PROTO_END = {
 	closed: "Prototype session closed before the extension replied.",
@@ -2287,7 +2298,7 @@ describe("proto relay check order", () => {
 		]);
 	});
 
-	it("answers the no-peer refusal with the bootstrap hint and the multiple-peers refusal", async () => {
+	it("answers the no-peer refusal with the pairing hint and the multiple-peers refusal", async () => {
 		const w = await world();
 		const cli = w.cli();
 		await w.post(cli, protoRequest({ requestId: "a" }));

@@ -1928,7 +1928,6 @@ const PRESENCE_LABELS: readonly (readonly [string | undefined, string])[] = [
 	["cli", "Agent attached"],
 	["gone", "Agent gone"],
 	["idle", "No agent listening"],
-	["waiting", "No agent listening"],
 	[undefined, "No agent listening"],
 ];
 const ALL_LABELS = [...new Set(PRESENCE_LABELS.map(([, label]) => label))];

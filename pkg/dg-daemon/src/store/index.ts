@@ -2144,17 +2144,16 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 			this.db.run(
 				`INSERT INTO sessions (
 					id, workset, role, created_at, cwd, agent_identity, state,
-					awaiting_agent, cli_attached, created_at_ms, last_activity_at,
+					cli_attached, created_at_ms, last_activity_at,
 					cli_quiet_since, cli_detached_at, closed_at,
 					token_ciphertext, token_iv, token_tag
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO UPDATE SET
 					workset = excluded.workset,
 					role = excluded.role,
 					cwd = excluded.cwd,
 					agent_identity = excluded.agent_identity,
 					state = excluded.state,
-					awaiting_agent = excluded.awaiting_agent,
 					cli_attached = excluded.cli_attached,
 					created_at_ms = excluded.created_at_ms,
 					last_activity_at = excluded.last_activity_at,
@@ -2172,7 +2171,6 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 					record.cwd,
 					record.agentIdentity,
 					record.state,
-					record.awaitingAgent ? 1 : 0,
 					record.cliAttached ? 1 : 0,
 					record.createdAt,
 					record.lastActivityAt,
@@ -2191,7 +2189,7 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 		const rows = this.db
 			.query(
 				`SELECT id, workset, role, cwd, agent_identity, state,
-					awaiting_agent, cli_attached, created_at_ms, last_activity_at,
+					cli_attached, created_at_ms, last_activity_at,
 					cli_quiet_since, cli_detached_at, closed_at,
 					token_ciphertext, token_iv, token_tag
 				 FROM sessions
@@ -2204,7 +2202,6 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 			cwd: string | null;
 			agent_identity: string | null;
 			state: string;
-			awaiting_agent: number;
 			cli_attached: number;
 			created_at_ms: number | null;
 			last_activity_at: number | null;
@@ -2237,7 +2234,6 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 					...(row.workset ? { workset: row.workset } : {}),
 					role: row.role,
 					state: "active",
-					awaitingAgent: row.awaiting_agent === 1,
 					cliAttached: row.cli_attached === 1,
 					createdAt: row.created_at_ms ?? Date.now(),
 					lastActivityAt: row.last_activity_at ?? row.created_at_ms ?? Date.now(),
@@ -2379,7 +2375,6 @@ export class ChatStore extends EventEmitter implements SessionPersistence {
 					agentIdentity: record.agentIdentity,
 					role: record.role === "orchestrator" ? "orchestrator" : "agent",
 					state: "active",
-					awaitingAgent: false,
 					cliAttached: false,
 					createdAt: now,
 					lastActivityAt: now,

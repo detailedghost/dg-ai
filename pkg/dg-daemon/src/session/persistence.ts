@@ -9,7 +9,6 @@ export type PersistedSession = {
 	workset?: string;
 	role: SessionRole;
 	state: "active" | "closed" | "archived";
-	awaitingAgent: boolean;
 	cliAttached: boolean;
 	createdAt: number;
 	lastActivityAt: number;

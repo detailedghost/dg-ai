@@ -135,7 +135,7 @@ export function parseEvery(raw: string): number {
 export type SessionRole = "orchestrator" | "agent";
 
 /** How a live session relates to a CLI agent. Omitted on older frames. */
-export type SessionPresence = "cli" | "waiting" | "gone" | "idle";
+export type SessionPresence = "cli" | "gone" | "idle";
 
 export type SessionSummary = {
 	sessionId: string;
@@ -379,7 +379,6 @@ function validateSessionSummary(value: unknown, path: string): SessionSummary {
 	if (value.presence !== undefined) {
 		requireOneOf(value.presence, `${path}.presence`, [
 			"cli",
-			"waiting",
 			"gone",
 			"idle",
 		] as const);

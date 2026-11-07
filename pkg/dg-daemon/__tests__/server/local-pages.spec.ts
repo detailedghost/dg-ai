@@ -185,13 +185,13 @@ describe("GET /chat and GET /board page shells", () => {
 		expect([404, 405]).toContain(response.status);
 	});
 
-	it("keeps the legacy /start stub for old extensions", async () => {
+	it("answers the retired /start page with 404", async () => {
 		const { port } = await boot();
 
 		const response = await request(port, "/start");
 
-		expect(response.status).toBe(200);
-		expect(response.headers.get("Content-Type")).toStartWith("text/html");
+		expect(response.status).toBe(404);
+		expect(await response.text()).toBe("not found");
 	});
 });
 
@@ -960,15 +960,15 @@ describe("POST /attach with a local page bearer", () => {
 		expect(await response.text()).toBe("That session is not active.");
 	});
 
-	it("refuses intent create from a bearer with 403 and the exact text", async () => {
+	it("rejects intent create from a bearer as an invalid intent", async () => {
 		const { port } = await boot();
 		const held = await liveCli(port);
 
 		const response = await attach(port, held.token, { intent: "create" });
 
-		expect(response.status).toBe(403);
+		expect(response.status).toBe(400);
 		expect(await response.text()).toBe(
-			"refused: local pages cannot create sessions",
+			'attach request.intent must be "attach"',
 		);
 	});
 

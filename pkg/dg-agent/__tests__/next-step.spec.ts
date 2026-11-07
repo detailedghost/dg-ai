@@ -6,22 +6,10 @@ const TOKEN = "session-token-must-not-appear";
 
 describe("cliNextStep", () => {
 	it("tells a new session to pair from the DeeGee popup", () => {
-		const line = cliNextStep("registered", SESSION);
+		const line = cliNextStep(SESSION);
 		expect(line).toContain(`session ${SESSION} is ready`);
 		expect(line).toContain("open the DeeGee popup and run dg-agent pair <code>");
 		expect(line).not.toContain("side panel");
 		expect(line).not.toContain(TOKEN);
-	});
-
-	it("tells a claimed waiting session to recv", () => {
-		expect(cliNextStep("claimed", SESSION)).toBe(
-			`dg-agent: attached to the session the extension is waiting on (${SESSION}). Next: dg-agent recv --block.`,
-		);
-	});
-
-	it("tells an attach to recv and to connect in the panel", () => {
-		expect(cliNextStep("attached", SESSION)).toContain("dg-agent recv --block");
-		expect(cliNextStep("attached", SESSION)).toContain("choose Connect");
-		expect(cliNextStep("attached", SESSION)).not.toContain(TOKEN);
 	});
 });

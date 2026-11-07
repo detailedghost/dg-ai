@@ -40,8 +40,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.option("-a, --agent-identity <name>", "agent identity to record")
 		.option("--open", "open the chat page in the default browser")
 		.option("--ext", "require the dg-ai-extension for this skill; the chat page URL is the same as without it")
-		.option("--fresh", "register a new session even if the extension is waiting")
-		.option("-s, --session <id>", "claim this waiting session instead of creating one")
 		.option(
 			"--print-session-id",
 			"print the session id, then the bootstrap URL",
@@ -56,8 +54,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 				orchestrator?: boolean;
 				agentIdentity?: string;
 				open?: boolean;
-				fresh?: boolean;
-				session?: string;
 				printSessionId?: boolean;
 				json?: boolean;
 				ext?: boolean;
@@ -69,8 +65,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 					role,
 					agentIdentity: opts.agentIdentity,
 					open: opts.open,
-					fresh: opts.fresh,
-					sessionId: opts.session,
 					printSessionId: opts.printSessionId,
 					json: opts.json,
 					ext: opts.ext,
@@ -85,42 +79,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.action(async (code: string, _options: unknown, command: Command) => {
 			const { cmdPair } = await import("./pair");
 			await cmdPair({ code, sessionId: selectedSession(command) });
-		});
-
-	program
-		.command("attach")
-		.description(
-			"claim a session the extension created and is waiting on, instead of registering a new one",
-		)
-		.option("-s, --session <id>", "session id to claim")
-		.option("--open", "open the bootstrap URL in the default browser")
-		.action(async (opts: { session?: string; open?: boolean }) => {
-			const [{ buildBootstrapUrl, isDaemonLive, readPidFile, resolveDgPaths }, { claimWaitingSession }, { cliNextStep }, { openUrlOrHint }] =
-				await Promise.all([import("@dg/common/node"), import("./attach"), import("./next-step"), import("./start")]);
-			const paths = resolveDgPaths();
-			const handle = readPidFile(paths);
-			if (!handle || !(await isDaemonLive(handle))) {
-				throw new DgCliError(
-					"no daemon is running. Open the extension and start a session, or run dg-agent start.",
-					EXIT_GENERAL_FAILURE,
-				);
-			}
-			const claimed = await claimWaitingSession(
-				handle.port,
-				process.cwd(),
-				"attach",
-				opts.session,
-			);
-			if (!claimed) {
-				throw new DgCliError(
-					"no session is waiting. In the extension choose New session for CLI, or run dg-agent start.",
-					EXIT_GENERAL_FAILURE,
-				);
-			}
-			const url = buildBootstrapUrl(handle.port, claimed);
-			console.error(cliNextStep("attached", claimed.sessionId));
-			console.log(url);
-			if (opts.open) await openUrlOrHint(url);
 		});
 
 	try {

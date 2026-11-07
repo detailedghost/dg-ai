@@ -10,6 +10,7 @@ import {
 	bootServe as bootDaemonServe,
 	cleanupDgHome,
 	createCleanupSlot,
+	runStatus,
 	stopServe,
 } from "../utils/daemon-harness";
 
@@ -17,8 +18,11 @@ const cleanupSlot = createCleanupSlot();
 
 afterEach(() => cleanupSlot.run());
 
+let bootedHome = "";
+
 async function bootServe(): Promise<number> {
 	const { dgHome, port, proc } = await bootDaemonServe();
+	bootedHome = dgHome;
 	cleanupSlot.set(async () => {
 		await stopServe(proc);
 		cleanupDgHome(dgHome);
@@ -49,13 +53,17 @@ describe("the shared CHAT_*_PATH constants wire to the real route table", () => 
 		expect(resp.status).not.toBe(404);
 	});
 
-	it("answers GET CHAT_START_PATH with the bootstrap page rather than a 404 route miss", async () => {
+	it("answers GET CHAT_START_PATH with a 404 not found", async () => {
 		const port = await bootServe();
 		const resp = await fetch(`http://127.0.0.1:${port}${CHAT_START_PATH}`, {
 			headers: loopbackHeaders(port),
 		});
-		expect(resp.status).not.toBe(404);
-		expect(await resp.text()).toContain("Starting chat session");
+		expect(resp.status).toBe(404);
+		expect(await resp.text()).toBe("not found");
+		const status = JSON.parse((await runStatus(bootedHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(0);
 	});
 
 	it("answers POST CHAT_ASSETS_PATH rather than a 404 route miss", async () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import {
-	connectionGuidance,
 	handshakeOutcome,
 	reconnectDelayMs,
 	redactSecrets,
@@ -40,17 +39,15 @@ describe("sessionControls", () => {
 		});
 	});
 
-	it("treats gone and idle sessions as stale and waiting sessions as not stale", () => {
+	it("treats gone and idle sessions as stale", () => {
 		const controls = sessionControls(
 			[
 				{ sessionId: "gone", agentIdentity: "claude", presence: "gone" },
 				{ sessionId: "idle", agentIdentity: "claude", presence: "idle" },
-				{ sessionId: "wait", agentIdentity: "claude", presence: "waiting" },
 			],
 			[],
 		);
 		expect(staleSessionIds(controls)).toEqual(["gone", "idle"]);
-		expect(controls.find((item) => item.sessionId === "wait")?.stale).toBe(false);
 	});
 
 	it("defaults a missing presence to idle and includes held sessions missing from the catalog", () => {
@@ -118,41 +115,6 @@ describe("redactSecrets", () => {
 		expect(redactSecrets(`${TOKEN} ${TOKEN}`, [TOKEN, "other-secret-value"])).toBe(
 			"[redacted] [redacted]",
 		);
-	});
-});
-
-describe("connectionGuidance", () => {
-	it("names the next action for each side of an unconnected session", () => {
-		expect(
-			connectionGuidance({ daemonUp: false, paired: false, presences: [] }),
-		).toBe("Start the daemon: run dg-agent start");
-		expect(
-			connectionGuidance({ daemonUp: true, paired: false, presences: [] }),
-		).toBe("No session yet. Run dg-agent start --open to open this page for an agent.");
-		expect(
-			connectionGuidance({
-				daemonUp: true,
-				paired: false,
-				presences: ["waiting"],
-			}),
-		).toBe("A session is waiting for the CLI. Run dg-agent attach in the terminal.");
-		expect(
-			connectionGuidance({ daemonUp: true, paired: false, presences: ["cli"] }),
-		).toBe("The CLI is connected. Choose Connect on that session.");
-		expect(
-			connectionGuidance({ daemonUp: true, paired: true, presences: ["cli"] }),
-		).toBe("Paired — connection confirmed");
-		expect(
-			connectionGuidance({
-				daemonUp: true,
-				paired: false,
-				presences: [],
-				heldDisconnected: true,
-			}),
-		).toBe("Disconnected — waiting for the daemon to confirm the connection.");
-		expect(
-			connectionGuidance({ daemonUp: true, paired: false, presences: ["idle"] }),
-		).toBe("Choose Connect on a session, or run dg-agent start.");
 	});
 });
 

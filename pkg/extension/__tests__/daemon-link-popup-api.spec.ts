@@ -339,7 +339,7 @@ describe("registerDaemonLink connection reply and broadcast", () => {
 					{
 						sessionId: bootstrap.sessionId,
 						agentIdentity: bootstrap.agentIdentity,
-						presence: "waiting",
+						presence: "idle",
 					} as never,
 				]),
 			),
@@ -349,7 +349,7 @@ describe("registerDaemonLink connection reply and broadcast", () => {
 			sessions: Array<Record<string, unknown>>;
 		};
 
-		expect(after.sessions[0]?.presence).toBe("waiting");
+		expect(after.sessions[0]?.presence).toBe("idle");
 	});
 
 	test("every connection broadcast carries runs per session and no token", async () => {

@@ -26,7 +26,6 @@ import {
 	tryOpen,
 } from "@dg/common/node";
 import { programCommand } from "@dg/common/node/program";
-import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
@@ -93,8 +92,6 @@ export type StartOptions = {
 	role?: SessionRole;
 	agentIdentity?: string;
 	open?: boolean;
-	fresh?: boolean;
-	sessionId?: string;
 	printSessionId?: boolean;
 	json?: boolean;
 	ext?: boolean;
@@ -184,22 +181,6 @@ export async function cmdStart(
 			? await attachToRunningDaemon(existing)
 			: await bootstrapFreshDaemon(paths, seams);
 
-	if (!options.fresh) {
-		const claimed = await claimWaitingSession(
-			targetPort,
-			process.cwd(),
-			"start",
-			options.sessionId,
-		);
-		if (claimed) {
-			console.error(cliNextStep("claimed", claimed.sessionId));
-			const url = sessionUrl(targetPort, claimed);
-			printSession(targetPort, claimed.sessionId, url, options);
-			await openIfRequested(url, options, seams);
-			return;
-		}
-	}
-
 	const bootstrap = await registerSession(targetPort, {
 		cwd: process.cwd(),
 		role: options.role ?? "agent",
@@ -207,7 +188,7 @@ export async function cmdStart(
 		agentIdentity: options.agentIdentity,
 	});
 	const url = sessionUrl(targetPort, bootstrap);
-	console.error(cliNextStep("registered", bootstrap.sessionId));
+	console.error(cliNextStep(bootstrap.sessionId));
 	printSession(targetPort, bootstrap.sessionId, url, options);
 	await openIfRequested(url, options, seams);
 }

@@ -77,7 +77,7 @@ export const TEST_RELAY = defineRelayFeature<TestRelayBodies>()({
 		{
 			check: "peers",
 			multiple: "test: several peers",
-			none: ({ sessionId, port }) => `test: no peer on ${sessionId} port ${port}`,
+			none: ({ sessionId }) => `test: no peer on ${sessionId}`,
 		},
 		{ check: "burn" },
 		{

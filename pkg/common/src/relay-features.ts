@@ -20,7 +20,7 @@ import {
 	validatePwExtCliRequest,
 } from "./pw-ext-format";
 import { PW_EXT_MIN_EXTENSION_VERSION } from "./pw-ext-format";
-import { bootstrapHint, defineRelayFeature } from "./relay-format";
+import { defineRelayFeature } from "./relay-format";
 
 const INBOX_VERSION_PATTERN =
 	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
@@ -80,9 +80,9 @@ export const INBOX_RELAY = defineRelayFeature<InboxRelayBodies>()({
 			check: "peers",
 			multiple:
 				"Multiple extension peers make the inbox request ambiguous; keep one extension connected to this session.",
-			none: ({ sessionId, port }) =>
-				`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId} and open an authenticated Proton Mail tab. ` +
-				`Open ${bootstrapHint(port)} in the browser where the extension is loaded, then reload the Proton Mail tab. ` +
+			none: ({ sessionId }) =>
+				`No extension peer on session ${sessionId}. Pair the browser: open the DeeGee popup, read its six-digit code, and run dg-agent pair <code> -s ${sessionId}. ` +
+				"Then open or reload an authenticated Proton Mail tab and retry. " +
 				"Inbox requires dg extension 1.11.0 or newer.",
 		},
 		{
@@ -152,10 +152,9 @@ export const PROTO_RELAY = defineRelayFeature<ProtoRelayBodies>()({
 			check: "peers",
 			multiple:
 				"Multiple extension peers make the prototype request ambiguous; keep one extension connected to this session.",
-			none: ({ sessionId, port }) =>
-				`No extension peer on session ${sessionId}. Connect the dg extension to session ${sessionId}. ` +
-				`Open ${bootstrapHint(port)} in the browser where the extension is loaded, then retry. ` +
-				`Run dg-skills inbox bootstrap-url --session ${sessionId} to print the real URL (that pairing is shared across every daemon feature, not just inbox).`,
+			none: ({ sessionId }) =>
+				`No extension peer on session ${sessionId}. Pair the browser: open the DeeGee popup, read its six-digit code, and run dg-agent pair <code> -s ${sessionId}. ` +
+				"Then retry.",
 		},
 		{ check: "burn" },
 	],

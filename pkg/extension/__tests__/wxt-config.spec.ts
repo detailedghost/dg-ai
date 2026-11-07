@@ -1,4 +1,6 @@
 import { expect, it } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import config from "../wxt.config";
 
 type RelevantManifest = {
@@ -68,9 +70,22 @@ it("declares Chrome 118 so planted @scope CSS applies", () => {
 	expect(chromeManifest.minimum_chrome_version).toBe("118");
 });
 
-it("declares the loopback host permission on the Firefox branch for the chat marker", () => {
+it("declares the loopback host permission on the Firefox branch for daemon requests", () => {
 	const firefoxManifest = manifestFor({ browser: "firefox" });
 	expect(firefoxManifest.host_permissions ?? []).toContain(
 		"http://127.0.0.1/*",
 	);
+});
+
+it("declares no content script that matches the loopback daemon origin", () => {
+	const entrypoints = resolve(import.meta.dir, "..", "entrypoints");
+	const scripts = readdirSync(entrypoints).filter((name) =>
+		name.endsWith(".content.ts"),
+	);
+	expect(scripts.length).toBeGreaterThan(0);
+	for (const name of scripts) {
+		const source = readFileSync(resolve(entrypoints, name), "utf8");
+		const declared = source.match(/matches:\s*\[([^\]]*)\]/)?.[1] ?? "";
+		expect(declared, name).not.toMatch(/127\.0\.0\.1|localhost/);
+	}
 });

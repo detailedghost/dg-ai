@@ -570,6 +570,22 @@ describe("validateChatFrame — session-list SessionSummary entries", () => {
 		});
 		expect(() => validateChatFrame(frame)).toThrow();
 	});
+
+	it.each(["cli", "gone", "idle", undefined])("accepts a summary entry whose presence is %p", (presence) => {
+		const frame = buildSessionListFrame({
+			sessions: [buildSessionSummary({ presence })],
+		});
+		expect(() => validateChatFrame(frame)).not.toThrow();
+	});
+
+	it('rejects a summary entry whose presence is "waiting"', () => {
+		const frame = buildSessionListFrame({
+			sessions: [buildSessionSummary({ presence: "waiting" as never })],
+		});
+		expect(() => validateChatFrame(frame)).toThrow(
+			'presence must be "cli", "gone", or "idle"',
+		);
+	});
 });
 
 describe("validateCommandManifest", () => {

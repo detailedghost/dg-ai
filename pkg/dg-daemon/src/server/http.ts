@@ -16,7 +16,6 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
-	CHAT_SESSIONS_PATH,
 	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
@@ -226,10 +225,6 @@ function requireLoopbackHost(req: Request, port: number): Response | undefined {
 	});
 }
 
-function bootstrapPageHtml(): string {
-	return "<!doctype html><html><head><title>dg chat</title></head><body><p>Starting chat session…</p></body></html>";
-}
-
 function handleHealthCheck(
 	req: Request,
 	port: number,
@@ -362,15 +357,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				if (page) return page;
 			}
 
-			if (url.pathname === CHAT_START_PATH && req.method === "GET") {
-				return new Response(bootstrapPageHtml(), {
-					headers: {
-						"Content-Type": "text/html; charset=utf-8",
-						...NOSNIFF_HEADERS,
-					},
-				});
-			}
-
 			if (url.pathname === CHAT_START_PATH && req.method === "POST") {
 				return handleRegisterSession(req, deps);
 			}
@@ -400,13 +386,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_SESSIONS_LOCAL_PATH && req.method === "GET") {
 				return handleLocalSessions(req, url, deps);
-			}
-			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "GET") {
-				return handleSessionCatalog(req, url, deps);
-			}
-
-			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "POST") {
-				return handleExtensionSessionCreate(req, deps);
 			}
 
 			if (url.pathname === CHAT_WS_PATH) {
@@ -531,9 +510,10 @@ async function handleRegisterSession(
 	req: Request,
 	deps: HttpServerDeps,
 ): Promise<Response> {
-	if (isBrowserOrigin(req.headers.get("origin"))) {
-		return new Response("refused: /start rejects a browser Origin", {
+	if (req.headers.get("origin") !== null) {
+		return new Response("refused: /start accepts only local CLI callers", {
 			status: 400,
+			headers: NOSNIFF_HEADERS,
 		});
 	}
 	const capacityError = requireSessionCapacity(deps);
@@ -577,7 +557,6 @@ async function handleRegisterSession(
 		agentIdentity,
 		workset,
 		role,
-		awaitingAgent: input.awaitingAgent === true,
 	});
 }
 
@@ -798,12 +777,6 @@ async function handleLocalAttach(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (request.intent === "create") {
-		return new Response("refused: local pages cannot create sessions", {
-			status: 403,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
 	if (request.all === true || request.code !== undefined) {
 		return new Response("refused: local pages attach one session by id", {
 			status: 400,
@@ -909,17 +882,6 @@ async function handleAttach(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	if (decision.action === "create") {
-		const capacityError = requireSessionCapacity(deps);
-		if (capacityError) return capacityError;
-		return createSessionResponse(deps, {
-			cwd: process.cwd(),
-			agentIdentity: request.agentIdentity ?? "agent",
-			workset: request.workset,
-			role: request.role ?? "agent",
-			awaitingAgent: true,
-		});
-	}
 	return json({
 		sessions: candidates
 			.filter((session) => decision.sessionIds.includes(session.sessionId))
@@ -950,78 +912,6 @@ function activeCandidates(deps: HttpServerDeps): {
 				state: record.state,
 			},
 		];
-	});
-}
-
-function handleSessionCatalog(
-	req: Request,
-	url: URL,
-	deps: HttpServerDeps,
-): Response {
-	const origin = req.headers.get("origin");
-	if (isBrowserOrigin(origin)) {
-		return new Response("refused: /sessions rejects a browser Origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (origin !== null) {
-		const originError = requirePairOrigin(req, deps.paths);
-		if (originError) return originError;
-	}
-	const waitingOnly = url.searchParams.get("waiting") === "1";
-	const includeCwd = origin === null;
-	const sessions = deps.registry
-		.list()
-		.flatMap((summary) => {
-			const record = deps.registry.get(summary.sessionId);
-			if (!record || record.state !== "active") return [];
-			if (waitingOnly && !record.awaitingAgent) return [];
-			return [
-				{
-					sessionId: record.sessionId,
-					agentIdentity: record.agentIdentity,
-					role: record.role,
-					presence: summary.presence,
-					awaitingAgent: record.awaitingAgent,
-					...(record.workset !== undefined ? { workset: record.workset } : {}),
-					...(includeCwd ? { cwd: record.cwd } : {}),
-				},
-			];
-		});
-	return json({ sessions });
-}
-
-async function handleExtensionSessionCreate(
-	req: Request,
-	deps: HttpServerDeps,
-): Promise<Response> {
-	const originError = requirePinnedExtensionOrigin(req, deps.paths);
-	if (originError) return originError;
-	const capacityError = requireSessionCapacity(deps);
-	if (capacityError) return capacityError;
-	let body: Record<string, unknown> = {};
-	try {
-		const parsed = await req.json();
-		if (typeof parsed === "object" && parsed !== null) {
-			body = parsed as Record<string, unknown>;
-		}
-	} catch {
-		body = {};
-	}
-	const role: SessionRole = body.role === "orchestrator" ? "orchestrator" : "agent";
-	const workset =
-		typeof body.workset === "string" ? body.workset.trim() || undefined : undefined;
-	const agentIdentity =
-		typeof body.agentIdentity === "string" && body.agentIdentity.trim().length > 0
-			? body.agentIdentity.trim()
-			: "agent";
-	return createSessionResponse(deps, {
-		cwd: process.cwd(),
-		agentIdentity,
-		workset,
-		role,
-		awaitingAgent: true,
 	});
 }
 
