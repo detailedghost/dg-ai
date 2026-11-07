@@ -2,6 +2,7 @@ import { emitRedacted, type SessionBootstrap } from "@dg/common";
 import { createOverwatchApi, OverwatchHttpError } from "../board/overwatch";
 import {
 	attachLocalSession,
+	exchangeChatCode,
 	forgetLocalBootstrap,
 	loadLocalBootstraps,
 	localStorageOrMemory,
@@ -15,9 +16,10 @@ import { type ChatPageController, renderChatPage } from "./main";
 const root = document.getElementById("app");
 
 if (root) {
+	void exchangeChatCode(window).then((exchanged) => {
 	const storage = localStorageOrMemory();
 	const bootstrapStorage = sessionStorageOrMemory();
-	const bootstraps = loadLocalBootstraps(window, bootstrapStorage);
+	const bootstraps = loadLocalBootstraps(window, bootstrapStorage, exchanged);
 	const heldTokens = new Map(
 		bootstraps.map((bootstrap) => [bootstrap.sessionId, bootstrap.token]),
 	);
@@ -97,4 +99,5 @@ if (root) {
 				`[dg-chat] could not render the chat page: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		});
+	});
 }

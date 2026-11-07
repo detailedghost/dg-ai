@@ -1,4 +1,4 @@
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -6,9 +6,22 @@ import {
 	type SessionBootstrap,
 } from "@dg/common";
 import { MSG } from "@dg/pages/chat-messages";
-import { readChatBootstrap } from "@dg/pages/chat-marker";
+import { readChatCode } from "@dg/pages/chat-marker";
 import { createPages, type PagesBrowserApi } from "@/lib/background/local-pages";
-import { flushMicrotasks, makeBootstrap } from "./utils/relay-harness";
+import {
+	flushMicrotasks,
+	installDaemonHealthStub,
+	makeBootstrap,
+	TEST_PAGE_CODE,
+} from "./utils/relay-harness";
+
+beforeEach(() => {
+	installDaemonHealthStub();
+});
+
+afterEach(() => {
+	mock.restore();
+});
 
 type OpenTab = { id?: number; windowId?: number; url?: string };
 
@@ -82,7 +95,7 @@ async function open(
 }
 
 describe("createPages overwatch-open", () => {
-	test("opens the daemon board with the first confirmed bootstrap in the fragment", async () => {
+	test("opens the daemon board with a one-time code and no token in the fragment", async () => {
 		const setup = makeApi();
 		const bootstrap = makeBootstrap({ port: 4320 });
 		const sendCompletion = await open(setup, bootstrap);
@@ -92,7 +105,8 @@ describe("createPages overwatch-open", () => {
 		const parsed = new URL(url);
 		expect(parsed.origin).toBe("http://127.0.0.1:4320");
 		expect(parsed.pathname).toBe("/board");
-		expect(readChatBootstrap(url)).toEqual(bootstrap);
+		expect(readChatCode(url)).toBe(TEST_PAGE_CODE);
+		expect(url).not.toContain(bootstrap.token);
 		expect(sendCompletion).toHaveBeenCalledWith({
 			requestId: "open-1",
 			ok: true,
@@ -118,7 +132,7 @@ describe("createPages overwatch-open", () => {
 		expect(tabId).toBe(41);
 		expect(props?.active).toBe(true);
 		expect(new URL(props?.url ?? "").pathname).toBe("/board");
-		expect(readChatBootstrap(props?.url ?? "")).toEqual(bootstrap);
+		expect(readChatCode(props?.url ?? "")).toBe(TEST_PAGE_CODE);
 		expect(setup.tabsReload).toHaveBeenCalledWith(41);
 		expect(setup.windowsUpdate).toHaveBeenCalledWith(7, { focused: true });
 		expect(setup.tabsCreate).not.toHaveBeenCalled();

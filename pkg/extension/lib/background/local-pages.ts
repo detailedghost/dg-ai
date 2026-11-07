@@ -4,7 +4,7 @@ import {
 	describeError,
 	emitRedacted,
 } from "@dg/common";
-import { localPageUrl } from "@dg/pages/chat-marker";
+import { codedPageUrl } from "@dg/pages/chat-marker";
 
 export type PagesBrowserApi = {
 	runtime: {
@@ -74,7 +74,7 @@ export async function handleOverwatchFrame(
 	bootstrap: SessionBootstrap | undefined,
 ): Promise<OverwatchOpenCompletion | undefined> {
 	if (frame.type !== "overwatch-open" || !bootstrap) return undefined;
-	const url = localPageUrl({
+	const url = await codedPageUrl({
 		port: bootstrap.port,
 		path: "/board",
 		bootstrap,

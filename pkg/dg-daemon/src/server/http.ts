@@ -4,6 +4,8 @@ import {
 	AssetTooLargeError,
 	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
+	CHAT_CODE_PATH,
+	CHAT_EXCHANGE_PATH,
 	CHAT_CLI_PATH,
 	CHAT_HEALTH_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
@@ -77,6 +79,7 @@ import {
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
 import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
+import { createPageCodes, type PageCodes } from "./page-codes";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
@@ -270,6 +273,8 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 	const pairOffers = createPairOffers();
 	const attachLimiter = createAttachLimiter();
 	const offerLimiter = createAttachLimiter();
+	const pageCodes = createPageCodes();
+	const exchangeLimiter = createAttachLimiter();
 	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
 		pairOffers.forget(sessionId);
 	});
@@ -381,6 +386,14 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
 				return handleAttach(req, url, deps, attachLimiter);
+			}
+
+			if (url.pathname === CHAT_CODE_PATH && req.method === "POST") {
+				return handleChatCodeMint(req, deps, pageCodes, attachLimiter);
+			}
+
+			if (url.pathname === CHAT_EXCHANGE_PATH && req.method === "POST") {
+				return handleChatCodeExchange(req, deps, pageCodes, exchangeLimiter);
 			}
 
 			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {
@@ -802,6 +815,75 @@ async function handleLocalAttach(
 				agentIdentity: match.agentIdentity,
 			},
 		],
+	});
+}
+
+function handleChatCodeMint(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Response {
+	const originError = requireExtensionOrigin(req, deps.paths);
+	if (originError) return originError;
+	const bearer = bearerToken(req);
+	const record =
+		bearer === undefined
+			? undefined
+			: deps.registry
+					.list()
+					.flatMap((summary) => {
+						const found = deps.registry.get(summary.sessionId);
+						return found ? [found] : [];
+					})
+					.find(
+						(candidate) =>
+							candidate.state === "active" && tokensEqual(candidate.token, bearer),
+					);
+	if (bearer === undefined || record === undefined) {
+		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
+	}
+	if (!limiter.allow(bearer)) {
+		return new Response("too many requests", {
+			status: 429,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	return pairJson({ code: codes.mint(record.sessionId) });
+}
+
+async function handleChatCodeExchange(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: PAIR_HEADERS });
+	if (!isLocalPageOrigin(req.headers.get("origin"), deps.port)) {
+		return refuse("refused", 400);
+	}
+	if (!limiter.allow("exchange")) return refuse("too many requests", 429);
+	let code: unknown;
+	try {
+		code = ((await req.json()) as { code?: unknown }).code;
+	} catch {
+		return refuse("invalid JSON body", 400);
+	}
+	if (typeof code !== "string" || code.length === 0) {
+		return refuse("refused: body must carry a code", 400);
+	}
+	const sessionId = codes.redeem(code);
+	const record = sessionId === undefined ? undefined : deps.registry.get(sessionId);
+	if (record === undefined || record.state !== "active") {
+		return refuse("no such code", 404);
+	}
+	noteSecret(record.token);
+	return pairJson({
+		port: deps.port,
+		sessionId: record.sessionId,
+		token: record.token,
+		agentIdentity: record.agentIdentity,
 	});
 }
 

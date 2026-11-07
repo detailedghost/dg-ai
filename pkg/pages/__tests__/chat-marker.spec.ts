@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { type SessionBootstrap, validateSessionBootstrap } from "@dg/common";
-import { buildBootstrapUrl } from "@dg/common/node";
 import {
 	CHAT_MARKER_KEY,
-	localPageUrl,
+	codedPageUrl,
 	readChatBootstrap,
+	readChatCode,
 	stripChatMarker,
 } from "../src/chat-marker";
 
@@ -106,48 +106,52 @@ test("leaves a URL with no fragment at all unchanged", () => {
 	expect(stripChatMarker(url)).toBe(url);
 });
 
-test("localPageUrl round-trips through readChatBootstrap", () => {
-	const bootstrap = makeBootstrap();
-	const url = localPageUrl({ port: bootstrap.port, path: "/chat", bootstrap });
-	expect(readChatBootstrap(url)).toEqual(validateSessionBootstrap(bootstrap));
-});
-
-test("localPageUrl targets the loopback port and path and carries the token only in the fragment", () => {
+test("codedPageUrl posts the session token as a bearer and puts only the returned code in the fragment", async () => {
 	const bootstrap = makeBootstrap({ port: 4321 });
-	const url = new URL(
-		localPageUrl({ port: 4321, path: "/board", bootstrap }),
-	);
-	expect(url.origin).toBe("http://127.0.0.1:4321");
-	expect(url.pathname).toBe("/board");
-	expect(url.search).toBe("");
-	expect(url.hash.startsWith(`#${CHAT_MARKER_KEY}=`)).toBe(true);
-	expect(url.href).not.toContain("token=");
-});
+	const calls: Array<{ url: string; init: RequestInit }> = [];
+	const fetchFn = (async (url: string, init: RequestInit) => {
+		calls.push({ url, init });
+		return Response.json({ code: "one-time-code" });
+	}) as unknown as typeof fetch;
 
-test("localPageUrl output ends with a padding-free base64url payload", () => {
-	const bootstrap = makeBootstrap({ agentIdentity: "a" });
-	const payload = localPageUrl({
-		port: bootstrap.port,
-		path: "/chat",
-		bootstrap,
-	}).split("#_chat=")[1];
-	expect(payload).toMatch(/^[A-Za-z0-9_-]+$/);
-});
-
-test("localPageUrl equals the node buildBootstrapUrl output", () => {
-	const bootstrap = makeBootstrap();
-	expect(
-		localPageUrl({ port: bootstrap.port, path: "/chat", bootstrap }),
-	).toBe(buildBootstrapUrl(bootstrap.port, bootstrap, "/chat"));
-});
-
-test("localPageUrl encodes a non-ASCII agentIdentity like node and round-trips it", () => {
-	const bootstrap = makeBootstrap({ agentIdentity: "agent \u00e9\u4e2d\u6587 \u{1F980}" });
-	const url = localPageUrl({
-		port: bootstrap.port,
+	const url = await codedPageUrl({
+		port: 4321,
 		path: "/board",
 		bootstrap,
+		fetchFn,
 	});
-	expect(url).toBe(buildBootstrapUrl(bootstrap.port, bootstrap, "/board"));
-	expect(readChatBootstrap(url)?.agentIdentity).toBe(bootstrap.agentIdentity);
+
+	expect(calls[0]?.url).toBe("http://127.0.0.1:4321/chat/code");
+	expect(calls[0]?.init.method).toBe("POST");
+	expect(calls[0]?.init.headers).toEqual({
+		Authorization: `Bearer ${bootstrap.token}`,
+	});
+	expect(url).toBe("http://127.0.0.1:4321/board#_chatcode=one-time-code");
+	expect(url).not.toContain(bootstrap.token);
+});
+
+test("codedPageUrl throws when the daemon refuses to mint a code", async () => {
+	const fetchFn = (async () =>
+		new Response("refused", { status: 403 })) as unknown as typeof fetch;
+
+	await expect(
+		codedPageUrl({ port: 4321, path: "/chat", bootstrap: makeBootstrap(), fetchFn }),
+	).rejects.toThrow(/403/);
+});
+
+test("readChatCode reads the code from the fragment and ignores other keys", () => {
+	expect(readChatCode("http://127.0.0.1:4321/chat#_chatcode=abc-123_x")).toBe(
+		"abc-123_x",
+	);
+	expect(readChatCode("http://127.0.0.1:4321/chat#other=1")).toBeUndefined();
+	expect(readChatCode("http://127.0.0.1:4321/chat")).toBeUndefined();
+});
+
+test("stripChatMarker also removes the chat code and keeps unrelated keys", () => {
+	expect(
+		stripChatMarker("http://127.0.0.1:4321/chat#_chatcode=abc&keep=1"),
+	).toBe("http://127.0.0.1:4321/chat#keep=1");
+	expect(stripChatMarker("http://127.0.0.1:4321/chat#_chatcode=abc")).toBe(
+		"http://127.0.0.1:4321/chat",
+	);
 });

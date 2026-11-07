@@ -1,4 +1,5 @@
 import {
+	exchangeChatCode,
 	forgetLocalBootstrap,
 	loadLocalBootstrap,
 	localStorageOrMemory,
@@ -12,9 +13,10 @@ const BOARD_POLL_MS = 5_000;
 const root = document.getElementById("app");
 
 if (root) {
+	void exchangeChatCode(window).then((exchanged) => {
 	const storage = localStorageOrMemory();
 	const bootstrapStorage = sessionStorageOrMemory();
-	const bootstrap = loadLocalBootstrap(window, bootstrapStorage);
+	const bootstrap = loadLocalBootstrap(window, bootstrapStorage, exchanged);
 	let expired = bootstrap === undefined;
 	let pending = false;
 	let poll: ReturnType<typeof setInterval> | undefined;
@@ -66,5 +68,6 @@ if (root) {
 	}
 	handle.ready.catch((error: unknown) => {
 		console.error("[dg-overwatch] could not render the board:", error);
+	});
 	});
 }

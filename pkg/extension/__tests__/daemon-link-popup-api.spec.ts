@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, mock, spyOn, test } from "bun:test";
 import { CHAT_DEFAULT_PORT, CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { MSG } from "@dg/pages/chat-messages";
-import { readChatBootstrap } from "@dg/pages/chat-marker";
+import { readChatCode } from "@dg/pages/chat-marker";
 import { buildSessionListFrame } from "./utils/frame-fixtures";
 import { agentRecordKey, createLock } from "./utils/fake-browser";
 import {
@@ -13,6 +13,7 @@ import {
 	makeStorage,
 	settle,
 	TEST_DAEMON_ID,
+	TEST_PAGE_CODE,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
@@ -33,11 +34,17 @@ beforeAll(() => {
 });
 
 let daemonUp = true;
+let codeRefused = false;
 
 const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
 	input: unknown,
 ) => {
 	const url = String(input);
+	if (/\/chat\/code$/.test(url)) {
+		return codeRefused
+			? new Response("refused", { status: 403 })
+			: Response.json({ code: TEST_PAGE_CODE });
+	}
 	const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
 	if (daemonUp && [CHAT_DEFAULT_PORT, CHAT_DEFAULT_PORT + 1].includes(port)) {
 		return Response.json({
@@ -51,6 +58,7 @@ const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
 
 afterEach(() => {
 	daemonUp = true;
+	codeRefused = false;
 	fetchSpy.mockClear();
 });
 
@@ -378,7 +386,7 @@ describe("registerDaemonLink connection reply and broadcast", () => {
 });
 
 describe("registerDaemonLink openChat", () => {
-	test("creates a /chat tab that decodes to the session's bootstrap", async () => {
+	test("creates a /chat tab that carries a one-time code and no token", async () => {
 		const harness = boot();
 		await confirmed(harness);
 
@@ -392,12 +400,8 @@ describe("registerDaemonLink openChat", () => {
 		const url = (harness.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
 		expect(new URL(url).pathname).toBe("/chat");
 		expect(new URL(url).origin).toBe(`http://127.0.0.1:${CHAT_DEFAULT_PORT}`);
-		expect(readChatBootstrap(url)).toEqual(
-			expect.objectContaining({
-				sessionId: bootstrap.sessionId,
-				token: bootstrap.token,
-			}),
-		);
+		expect(readChatCode(url)).toBe(TEST_PAGE_CODE);
+		expect(url).not.toContain(bootstrap.token);
 	});
 
 	test("builds the /chat URL from the stored port once its daemon is verified", async () => {
@@ -413,7 +417,6 @@ describe("registerDaemonLink openChat", () => {
 		expect(reply).toEqual({ ok: true });
 		const url = (harness.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
 		expect(new URL(url).origin).toBe(`http://127.0.0.1:${stored.port}`);
-		expect(readChatBootstrap(url)?.port).toBe(stored.port);
 	});
 
 	test("uses the port the connected socket rediscovered after a daemon restart", async () => {
@@ -431,7 +434,6 @@ describe("registerDaemonLink openChat", () => {
 		expect(reply).toEqual({ ok: true });
 		const url = (harness.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
 		expect(new URL(url).origin).toBe(`http://127.0.0.1:${rediscovered}`);
-		expect(readChatBootstrap(url)?.port).toBe(rediscovered);
 	});
 
 	test("looks for an open /chat tab on the daemon port", async () => {
@@ -469,10 +471,25 @@ describe("registerDaemonLink openChat", () => {
 		expect(updatedId).toBe(31);
 		expect(props.active).toBe(true);
 		expect(props.url.split("#")[0]).toBe(expectedUrl);
-		expect(readChatBootstrap(props.url)?.sessionId).toBe(bootstrap.sessionId);
+		expect(readChatCode(props.url)).toBe(TEST_PAGE_CODE);
 		expect(harness.tabsReload).toHaveBeenCalledWith(31);
 		expect(harness.calls).toEqual(["update", "reload"]);
 		expect(harness.windowsUpdate).toHaveBeenCalledWith(3, { focused: true });
+	});
+
+	test("replies an error and opens nothing when the daemon refuses to issue a page code", async () => {
+		const harness = boot();
+		await confirmed(harness);
+		codeRefused = true;
+
+		const reply = (await harness.fromPopup({
+			type: MSG.openChat,
+			sessionId: bootstrap.sessionId,
+		})) as { ok: boolean; error?: string };
+
+		expect(reply.ok).toBe(false);
+		expect(reply.error).toContain("403");
+		expect(harness.tabsCreate).not.toHaveBeenCalled();
 	});
 
 	test("replies an error and opens nothing when no daemon port is known", async () => {

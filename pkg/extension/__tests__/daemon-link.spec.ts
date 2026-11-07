@@ -25,6 +25,7 @@ import {
 	installDaemonHealthStub,
 	settle,
 	TEST_DAEMON_ID,
+	TEST_PAGE_CODE,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
@@ -585,7 +586,10 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 			}),
 	);
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async () => daemonIdentity()) as unknown as typeof fetch,
+		(async (input: RequestInfo | URL) =>
+			String(input).endsWith("/chat/code")
+				? Response.json({ code: TEST_PAGE_CODE })
+				: daemonIdentity()) as unknown as typeof fetch,
 	);
 	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
@@ -677,7 +681,10 @@ test("registerDaemonLink drops a pw-ext result whose admission socket was replac
 			}),
 	);
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async () => daemonIdentity()) as unknown as typeof fetch,
+		(async (input: RequestInfo | URL) =>
+			String(input).endsWith("/chat/code")
+				? Response.json({ code: TEST_PAGE_CODE })
+				: daemonIdentity()) as unknown as typeof fetch,
 	);
 	registerDaemonLink({ browserApi: api, openSocket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await adoptBootstrap(bootstrap);
@@ -738,7 +745,10 @@ test("regression: the background's socket reopens automatically after the daemon
 		return s;
 	});
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async () => daemonIdentity()) as unknown as typeof fetch,
+		(async (input: RequestInfo | URL) =>
+			String(input).endsWith("/chat/code")
+				? Response.json({ code: TEST_PAGE_CODE })
+				: daemonIdentity()) as unknown as typeof fetch,
 	);
 
 	const { api, getOnMessage } = makeBrowserApi();

@@ -1,9 +1,10 @@
 import {
 	CHAT_ATTACH_PATH,
+	CHAT_EXCHANGE_PATH,
 	type SessionBootstrap,
 	tryValidateSessionBootstrap,
 } from "@dg/common";
-import { readChatBootstrap, stripChatMarker } from "./chat-marker";
+import { readChatBootstrap, readChatCode, stripChatMarker } from "./chat-marker";
 import { browserStorage, memoryStorage, type PageStorage } from "./runtime";
 
 const LEGACY_BOOTSTRAP_KEY = "dg_local_bootstrap";
@@ -115,6 +116,7 @@ export function forgetLocalBootstrap(
 export function loadLocalBootstraps(
 	win: Window,
 	storage: PageStorage,
+	exchanged?: SessionBootstrap,
 ): SessionBootstrap[] {
 	const navigation = win.performance
 		.getEntriesByType("navigation")
@@ -129,6 +131,7 @@ export function loadLocalBootstraps(
 	}
 	const refused = refusedTokens(storage);
 	const presented =
+		exchanged ??
 		fromHref ??
 		(navigation === undefined ? undefined : readChatBootstrap(navigation));
 	const pagePort = Number(win.location.port);
@@ -153,8 +156,29 @@ export function loadLocalBootstraps(
 export function loadLocalBootstrap(
 	win: Window,
 	storage: PageStorage,
+	exchanged?: SessionBootstrap,
 ): SessionBootstrap | undefined {
-	return loadLocalBootstraps(win, storage).at(0);
+	return loadLocalBootstraps(win, storage, exchanged).at(0);
+}
+
+/** Strips a one-time code from the address and trades it with the daemon for the session bootstrap. */
+export async function exchangeChatCode(
+	win: Window,
+	fetchFn: typeof fetch = globalThis.fetch.bind(globalThis),
+): Promise<SessionBootstrap | undefined> {
+	const code = readChatCode(win.location.href);
+	if (code === undefined) return undefined;
+	win.history.replaceState(win.history.state, "", stripChatMarker(win.location.href));
+	try {
+		const response = await fetchFn(`${win.location.origin}${CHAT_EXCHANGE_PATH}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ code }),
+		});
+		return response.ok ? tryValidateSessionBootstrap(await response.json()) : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export type LocalAttachResult =

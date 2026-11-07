@@ -3,6 +3,8 @@ import type { SessionPresence, SessionRole } from "./chat-format";
 import { PAIR_CODE_PATTERN } from "./pairing";
 
 export const CHAT_ATTACH_PATH = "/attach";
+export const CHAT_CODE_PATH = "/chat/code";
+export const CHAT_EXCHANGE_PATH = "/chat/exchange";
 export const CHAT_SESSIONS_CLEAR_PATH = "/sessions/clear";
 export const CHAT_SESSIONS_LOCAL_PATH = "/sessions/local";
 

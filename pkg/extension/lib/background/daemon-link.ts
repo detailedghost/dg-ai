@@ -13,7 +13,7 @@ import {
 	noteSecret,
 	validateAttachRequest,
 } from "@dg/common";
-import { localPageUrl } from "@dg/pages/chat-marker";
+import { codedPageUrl } from "@dg/pages/chat-marker";
 import {
 	fetchDaemonHealth,
 	findDaemonPort,
@@ -493,10 +493,10 @@ export function registerDaemonLink(
 		const live =
 			client.getConnectionState() === "connected" ? client.getPort?.() : undefined;
 		const port = live ?? verifiedPort;
-		const url = localPageUrl({
+		const url = await codedPageUrl({
 			port,
 			path: "/chat",
-			bootstrap: { ...withoutPin(bootstrap), port },
+			bootstrap: withoutPin(bootstrap),
 		});
 		await openLocalPage(api, {
 			url,
