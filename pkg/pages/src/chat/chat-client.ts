@@ -474,6 +474,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			return;
 		}
 		socket = opened;
+		let admitted = options.admitPort === undefined;
 		opened.addEventListener("open", () => {
 			if (socket !== opened) return;
 			const { admitPort } = options;
@@ -482,10 +483,14 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				return;
 			}
 			void admitPort(port).then(
-				(admitted) => {
+				(accepted) => {
 					if (socket !== opened) return;
-					if (admitted) handleOpen();
-					else opened.close?.();
+					if (!accepted) {
+						opened.close?.();
+						return;
+					}
+					admitted = true;
+					handleOpen();
 				},
 				() => {
 					if (socket === opened) opened.close?.();
@@ -496,7 +501,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			if (socket === opened) scheduleReconnect();
 		});
 		opened.addEventListener("message", (event) => {
-			if (socket === opened) handleMessage(event);
+			if (socket === opened && admitted) handleMessage(event);
 		});
 		opened.addEventListener("error", () => {
 			if (socket === opened) handleError();

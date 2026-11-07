@@ -1431,3 +1431,46 @@ test("findPort replaces the unpinned fallback when the socket reconnects", async
 
 	expect(urls.at(-1)).toContain(":47825/");
 });
+
+test("frames that arrive before admitPort resolves are ignored, so a squatter cannot trigger a token send", async () => {
+	const socket = makeFakeSocket(mockFn);
+	let admit: (admitted: boolean) => void = () => undefined;
+	const client = createChatClient({
+		openSocket: () => ({ ...socket, close: () => undefined }),
+		admitPort: () =>
+			new Promise<boolean>((resolve) => {
+				admit = resolve;
+			}),
+	});
+	const seen: string[] = [];
+	client.onFrame((frame) => seen.push(frame.type));
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	socket.dispatch("open");
+
+	confirmSessions(socket, bootstrap.sessionId);
+	admit(false);
+	await flushMicrotasks();
+	confirmSessions(socket, bootstrap.sessionId);
+
+	expect(seen).toEqual([]);
+	expect(socket.send.mock.calls.length).toBe(0);
+});
+
+test("frames flow once admitPort accepts the daemon", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({
+		openSocket: () => socket,
+		admitPort: async () => true,
+	});
+	const seen: string[] = [];
+	client.onFrame((frame) => seen.push(frame.type));
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	confirmSessions(socket, bootstrap.sessionId);
+
+	expect(seen).toEqual(["session-list"]);
+});

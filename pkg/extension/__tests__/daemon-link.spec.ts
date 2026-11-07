@@ -1881,9 +1881,10 @@ test("MSG.connectionRetry rewrites the stored port of a confirmed pairing to the
 		token: "tok-moved-secret-value",
 		port: CHAT_DEFAULT_PORT,
 	});
+	let moved = false;
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
 		const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
-		return port === relocatedPort
+		return port === (moved ? relocatedPort : CHAT_DEFAULT_PORT)
 			? ({
 					ok: true,
 					json: async () => ({
@@ -1903,6 +1904,7 @@ test("MSG.connectionRetry rewrites the stored port of a confirmed pairing to the
 		await settle();
 		socket.dispatch("message", message(buildSessionListFrame(stored.sessionId)));
 		await settle();
+		moved = true;
 
 		const reply = await boot.ask({ type: MSG.connectionRetry });
 		await settle();
