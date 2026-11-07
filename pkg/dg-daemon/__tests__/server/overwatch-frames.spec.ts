@@ -289,14 +289,13 @@ describe("overwatch CLI frames", () => {
 		).toMatchObject({ overwatch: { event: "board-changed" } });
 	});
 
-	it("does not deliver overwatch frames before the extension handshake", async () => {
+	it("delivers overwatch frames to a link socket before any session handshake", async () => {
 		const { port, credentials } = await bootWithSession();
 		const extension = wsExtensionSocket(port);
 		await waitForOpen(extension);
 		const cli = await connectCli(port, credentials);
 		sockets.push(extension, cli);
 		const extensionFrames = collectFrames(extension);
-		const cliFrames = collectFrames(cli);
 
 		send(cli, {
 			type: "cli-overwatch-set",
@@ -305,16 +304,13 @@ describe("overwatch CLI frames", () => {
 			stage: "review",
 			kind: "chat",
 		});
-		send(cli, { type: "cli-overwatch-open" });
-		const error = await waitForValue(
-			() => cliFrames.find((frame) => frameType(frame) === "error"),
+		const state = await waitForValue(
+			() => extensionFrames.find((frame) => frameType(frame) === "overwatch-state"),
 			3000,
-			"extension-not-connected error",
+			"overwatch-state on the link socket",
 		);
-		await Bun.sleep(100);
 
-		expect(error).toMatchObject({ message: "extension not connected" });
-		expect(extensionFrames).toEqual([]);
+		expect(state).toMatchObject({ board: { lanes: [{ chat: "print" }] } });
 	});
 
 	it("returns an error when opening without an extension connection", async () => {

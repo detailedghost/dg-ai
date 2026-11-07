@@ -1,5 +1,10 @@
-import { createSerialQueue, describeError } from "@dg/common";
+import {
+	createSerialQueue,
+	describeError,
+	type SessionAdopt,
+} from "@dg/common";
 import type { ServerWebSocket } from "bun";
+import type { SessionRecord } from "../session/registry";
 import type { Logger } from "./log";
 
 export type SocketKind = "ws" | "cli";
@@ -33,6 +38,29 @@ export function createSocketState(
 		originHeader,
 		localPage: false,
 	};
+}
+
+export type DaemonLink = { port: number; daemonId: string };
+
+export type AdoptableSession = Pick<
+	SessionRecord,
+	"sessionId" | "token" | "agentIdentity"
+>;
+
+export function sessionAdoptPayload(
+	record: AdoptableSession,
+	link: DaemonLink,
+): string {
+	return JSON.stringify({
+		type: "session-adopt",
+		bootstrap: {
+			port: link.port,
+			sessionId: record.sessionId,
+			token: record.token,
+			agentIdentity: record.agentIdentity,
+			daemonId: link.daemonId,
+		},
+	} satisfies SessionAdopt);
 }
 
 /** A chat socket from the extension, the only peer that can serve browser relays and overwatch opens. */
@@ -119,11 +147,15 @@ export class ConnectionManager {
 		let count = 0;
 		for (const ws of this.sockets) {
 			if (!isExtensionPeer(ws)) continue;
-			if (ws.data.capabilities.size === 0) continue;
 			count++;
 			fn(ws);
 		}
 		return count;
+	}
+
+	pushSessionAdopt(record: AdoptableSession, link: DaemonLink): number {
+		const payload = sessionAdoptPayload(record, link);
+		return this.forEachExtension((ws) => void sendViaQueue(ws, payload));
 	}
 
 	forEachCapableOf(

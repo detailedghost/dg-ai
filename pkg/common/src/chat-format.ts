@@ -929,3 +929,22 @@ export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 	});
 	return value as SessionBootstrap;
 }
+
+export type SessionAdopt = {
+	type: "session-adopt";
+	bootstrap: SessionBootstrap & { daemonId: string };
+};
+
+export function validateSessionAdopt(value: unknown): SessionAdopt {
+	requireRecord(value, "session-adopt");
+	if (value.type !== "session-adopt") {
+		fail('session-adopt.type must be "session-adopt"');
+	}
+	const bootstrap = validateSessionBootstrap(value.bootstrap);
+	requireString(
+		(bootstrap as Record<string, unknown>).daemonId,
+		"session-adopt.bootstrap.daemonId",
+		{ nonEmpty: true },
+	);
+	return value as SessionAdopt;
+}

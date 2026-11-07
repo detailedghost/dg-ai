@@ -43,7 +43,7 @@ import {
 	readOwnerToken,
 	tokensEqual,
 } from "@dg/common/node";
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import { installAssetLifecycle } from "../assets/cleanup";
 import {
 	assetContentDisposition,
@@ -74,7 +74,10 @@ import {
 	abortPendingWork,
 	type ConnectionManager,
 	createSocketState,
+	isExtensionPeer,
 	resolveDrainWaiters,
+	sendViaQueue,
+	sessionAdoptPayload,
 	type SocketState,
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
@@ -89,6 +92,7 @@ import {
 	isBrowserOrigin,
 	isExtensionOrigin,
 	isLocalPageOrigin,
+	pinOriginIfUnset,
 	requireLocalPageOrigin,
 } from "./origin";
 import { localPageResponse } from "./pages";
@@ -267,7 +271,20 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		store,
 		credentials,
 		dispatchScheduler,
+		port,
+		daemonId: deps.daemonId,
 		overwatchOpenRequests: new Map(),
+	};
+
+	const adoptActiveSessions = (ws: ServerWebSocket<SocketState>): void => {
+		for (const { sessionId } of registry.list()) {
+			const record = registry.get(sessionId);
+			if (!record) continue;
+			void sendViaQueue(
+				ws,
+				sessionAdoptPayload(record, { port, daemonId: deps.daemonId }),
+			);
+		}
 	};
 
 	const pairOffers = createPairOffers();
@@ -302,6 +319,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + WS_PAYLOAD_HEADROOM_BYTES,
 			open(ws) {
 				connections.add(ws);
+				if (isExtensionPeer(ws)) adoptActiveSessions(ws);
 				noteActivity();
 			},
 			message(ws, message) {
@@ -595,12 +613,18 @@ function createSessionResponse(
 		return new Response(`cwd does not resolve: ${input.cwd}`, { status: 400 });
 	}
 	deps.noteActivity();
+	const extensionLinked =
+		deps.connections.pushSessionAdopt(record, {
+			port: deps.port,
+			daemonId: deps.daemonId,
+		}) > 0;
 
 	return json({
 		port: deps.port,
 		sessionId: record.sessionId,
 		token: record.token,
 		agentIdentity: record.agentIdentity,
+		extensionLinked,
 	});
 }
 
@@ -1120,6 +1144,7 @@ function handleWsUpgrade(
 			)
 		: requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
+	if (!localPage) pinOriginIfUnset(deps.paths, origin as string);
 	const data = localPage
 		? { ...createSocketState("ws", deps.logger), localPage: true }
 		: createSocketState("ws", deps.logger, origin as string);

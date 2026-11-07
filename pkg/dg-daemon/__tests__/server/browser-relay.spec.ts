@@ -123,6 +123,8 @@ async function world() {
 		store,
 		credentials: {} as CredentialStore,
 		dispatchScheduler: new DispatchScheduler(),
+		port: 0,
+		daemonId: "test-daemon",
 		overwatchOpenRequests: new Map(),
 	};
 	const session = registry.create({

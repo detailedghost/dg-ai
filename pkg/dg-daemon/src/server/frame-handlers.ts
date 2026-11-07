@@ -87,6 +87,8 @@ export type FrameHandlerDeps = {
 	store: ChatStore;
 	credentials: CredentialStore;
 	dispatchScheduler: DispatchScheduler;
+	port: number;
+	daemonId: string;
 	overwatchOpenRequests: Map<string, OverwatchOpenRequest>;
 };
 
@@ -956,6 +958,10 @@ async function handleSessionCreate(
 	}
 	ws.data.capabilities.set(record.sessionId, record.token);
 	deps.noteActivity();
+	deps.connections.pushSessionAdopt(record, {
+		port: deps.port,
+		daemonId: deps.daemonId,
+	});
 	await sendFrame(ws, frame.sessionId, {
 		type: "session-pending",
 		newSession: { sessionId: record.sessionId, token: record.token },
