@@ -149,6 +149,29 @@ function rowsFor(
 	});
 }
 
+type Fixture = Parameters<Parameters<typeof rowsFor>[1]>[0];
+
+const TAB_ID_ERROR = "pw-ext request.tabId must be a non-negative integer";
+
+function tabRequestRows(t: Fixture): readonly GoldenRow[] {
+	const withRequest = (request: unknown) => t.with({ request });
+	return [
+		t.ok("request verb tabs", withRequest({ verb: "tabs" })),
+		t.ok("request verb new", withRequest({ verb: "new" })),
+		t.ok("request verb new with url", withRequest({ verb: "new", url: "https://example.com/" })),
+		t.ok("request verb select", withRequest({ verb: "select", tabId: 4 })),
+		t.ok("request verb close", withRequest({ verb: "close" })),
+		t.ok("request tabId on snapshot", withRequest({ verb: "snapshot", tabId: 7 })),
+		t.err("request tabId -1", withRequest({ verb: "snapshot", tabId: -1 }), TAB_ID_ERROR),
+		t.err("request tabId 1.5", withRequest({ verb: "snapshot", tabId: 1.5 }), TAB_ID_ERROR),
+		t.err("request tabId 2147483648", withRequest({ verb: "snapshot", tabId: 2_147_483_648 }), TAB_ID_ERROR),
+		t.err("request tabId string", withRequest({ verb: "snapshot", tabId: "7" }), TAB_ID_ERROR),
+		t.err("request select without tabId", withRequest({ verb: "select" }), TAB_ID_ERROR),
+		t.err("request new javascript url", withRequest({ verb: "new", url: "javascript:alert(1)" }), "pw-ext request.url must be an http or https URL"),
+		t.err("request tabId on tabs", withRequest({ verb: "tabs", tabId: 1 }), 'pw-ext request.tabId is not used by "tabs"'),
+	];
+}
+
 const inboxRequestRows = rowsFor("inbox-browser-request", (t) => [
 	t.ok("ok"),
 	t.err("requestId missing", t.without("requestId"), "chat frame.requestId must be a non-empty string"),
@@ -293,6 +316,7 @@ const pwExtRequestRows = rowsFor("pw-ext-browser-request", (t) => [
 	t.err("requestId 129 characters", t.with({ requestId: "x".repeat(129) }), "chat frame.requestId exceeds 128 characters"),
 	t.err("request not an object", t.with({ request: "current" }), "pw-ext request must be an object"),
 	t.err("request verb unsupported", t.with({ request: { verb: "eval" } }), "pw-ext request.verb is not a supported verb"),
+	...tabRequestRows(t),
 	t.err("timeoutMs missing", t.without("timeoutMs"), "chat frame.timeoutMs must be an integer between 1 and 300000"),
 	t.err("timeoutMs 1.5", t.with({ timeoutMs: 1.5 }), "chat frame.timeoutMs must be an integer between 1 and 300000"),
 	t.err("timeoutMs 0", t.with({ timeoutMs: 0 }), "chat frame.timeoutMs must be an integer between 1 and 300000"),
@@ -434,6 +458,7 @@ const cliPwExtRows = rowsFor("cli-pw-ext-request", (t) => [
 	t.ok("requestId 128 characters", t.with({ requestId: "x".repeat(128) })),
 	t.err("requestId 129 characters", t.with({ requestId: "x".repeat(129) }), "pw-ext CLI request.requestId exceeds 128 characters"),
 	t.err("request not an object", t.with({ request: "current" }), "pw-ext request must be an object"),
+	...tabRequestRows(t),
 	t.ok("timeoutMs omitted", t.without("timeoutMs")),
 	t.err("timeoutMs 1.5", t.with({ timeoutMs: 1.5 }), "pw-ext CLI request.timeoutMs must be an integer between 1 and 300000"),
 	t.err("timeoutMs 0", t.with({ timeoutMs: 0 }), "pw-ext CLI request.timeoutMs must be an integer between 1 and 300000"),

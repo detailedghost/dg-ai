@@ -1,3 +1,4 @@
+export { registerAgentTabs } from "./agent-tabs";
 export { registerChat } from "./chat";
 export { registerProto } from "./proto";
 export { registerRecording } from "./recording";

@@ -1,4 +1,5 @@
 import {
+	registerAgentTabs,
 	registerChat,
 	registerProto,
 	registerRecording,
@@ -10,6 +11,7 @@ import { pruneStaleRecordings } from "@/utils/recording-db";
 export default defineBackground(() => {
 	void pruneStaleRecordings();
 	registerTabGrouping();
+	registerAgentTabs();
 	registerTourState();
 	registerProto();
 	registerRecording();
