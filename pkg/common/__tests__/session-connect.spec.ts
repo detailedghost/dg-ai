@@ -101,11 +101,10 @@ describe("decideAttach", () => {
 		state: "closed" as const,
 	};
 
-	it("requires a pairing code until the extension origin is pinned", () => {
+	it("requires an accepted pairing code before returning any session", () => {
 		const decision = decideAttach({
 			intent: "attach",
 			all: true,
-			pinned: false,
 			codeAccepted: false,
 			sessions: [live],
 		});
@@ -121,7 +120,6 @@ describe("decideAttach", () => {
 		const decision = decideAttach({
 			intent: "attach",
 			all: true,
-			pinned: false,
 			codeAccepted: true,
 			sessions: [live, closed],
 		});
@@ -132,8 +130,7 @@ describe("decideAttach", () => {
 		const decision = decideAttach({
 			intent: "attach",
 			sessionId: "session-live",
-			pinned: true,
-			codeAccepted: false,
+			codeAccepted: true,
 			sessions: [live, closed],
 		});
 		expect(decision).toEqual({ action: "return", sessionIds: ["session-live"] });
@@ -143,8 +140,7 @@ describe("decideAttach", () => {
 		const decision = decideAttach({
 			intent: "attach",
 			sessionId: "missing",
-			pinned: true,
-			codeAccepted: false,
+			codeAccepted: true,
 			sessions: [live],
 		});
 		expect(decision.action).toBe("reject");
@@ -158,8 +154,7 @@ describe("decideAttach", () => {
 	it("refuses to dump every token unless all is set", () => {
 		const decision = decideAttach({
 			intent: "attach",
-			pinned: true,
-			codeAccepted: false,
+			codeAccepted: true,
 			sessions: [live],
 		});
 		expect(decision).toEqual({
@@ -173,8 +168,7 @@ describe("decideAttach", () => {
 		const decision = decideAttach({
 			intent: "attach",
 			all: true,
-			pinned: true,
-			codeAccepted: false,
+			codeAccepted: true,
 			sessions: [closed],
 		});
 		expect(decision.action).toBe("reject");

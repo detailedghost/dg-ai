@@ -1,5 +1,6 @@
 import { fail, requireOneOf, requireRecord, requireString } from "./assert";
 import type { SessionPresence, SessionRole } from "./chat-format";
+import { PAIR_CODE_PATTERN } from "./pairing";
 
 export const CHAT_ATTACH_PATH = "/attach";
 export const CHAT_SESSIONS_CLEAR_PATH = "/sessions/clear";
@@ -41,7 +42,7 @@ export function validateAttachRequest(value: unknown): AttachRequest {
 	requireOneOf(intent, "attach request.intent", ["attach"] as const);
 	if (value.code !== undefined) {
 		requireString(value.code, "attach request.code");
-		if (!/^\d{6}$/.test(value.code)) {
+		if (!PAIR_CODE_PATTERN.test(value.code)) {
 			fail("attach request.code must be exactly six digits");
 		}
 	}
@@ -64,11 +65,10 @@ export function decideAttach(input: {
 	intent: AttachIntent;
 	sessionId?: string;
 	all?: boolean;
-	pinned: boolean;
 	codeAccepted: boolean;
 	sessions: AttachCandidate[];
 }): AttachDecision {
-	if (!input.codeAccepted && !input.pinned) {
+	if (!input.codeAccepted) {
 		return { action: "reject", status: 401, message: CODE_REQUIRED };
 	}
 	const active = input.sessions.filter((session) => session.state === "active");

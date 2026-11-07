@@ -13,6 +13,7 @@ import {
 	PW_EXT_READ_VERBS,
 	PW_EXT_MAX_UPLOAD_BYTES,
 	PW_EXT_WRITE_VERBS,
+	describeError,
 	redactText,
 	validatePwExtRequest,
 	validatePwExtResponse,
@@ -247,7 +248,7 @@ function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
 		parsed = readArgs(argv);
 	} catch (error) {
 		throw new ExtUsageError(
-			`${error instanceof Error ? error.message : String(error)}\nRun: dg-skills pw --ext --help`,
+			`${describeError(error)}\nRun: dg-skills pw --ext --help`,
 		);
 	}
 	if (parsed.values.help) return "help";

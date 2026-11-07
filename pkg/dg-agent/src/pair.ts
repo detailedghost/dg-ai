@@ -9,7 +9,7 @@ import {
 } from "@dg/common";
 import {
 	loopbackHostHeader,
-	readOwnerToken,
+	requireOwnerToken,
 	resolveCliSession,
 	resolveDgPaths,
 	writeStdout,
@@ -30,7 +30,7 @@ export async function cmdPair({
 	noteSecret(code);
 	const paths = resolveDgPaths();
 	const session = await resolveCliSession(sessionId, paths);
-	const owner = readOwnerToken(paths) ?? "";
+	const owner = requireOwnerToken(paths);
 	const response = await fetch(
 		`http://127.0.0.1:${session.port}${CHAT_PAIR_CLAIM_PATH}`,
 		{

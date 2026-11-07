@@ -83,6 +83,7 @@ import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
+	bearerToken,
 	claimsLocalPage,
 	getPinnedOrigin,
 	isBrowserOrigin,
@@ -516,6 +517,8 @@ async function handleRegisterSession(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
+	const ownerRefused = requireOwnerCredential(req, deps.paths);
+	if (ownerRefused) return ownerRefused;
 	const capacityError = requireSessionCapacity(deps);
 	if (capacityError) return capacityError;
 	const contentType = (req.headers.get("content-type") ?? "")
@@ -741,13 +744,6 @@ function pairingAttemptResponse(
 	});
 }
 
-function bearerToken(req: Request): string | undefined {
-	const authorization = req.headers.get("authorization");
-	return authorization?.startsWith("Bearer ")
-		? authorization.slice(7)
-		: undefined;
-}
-
 async function handleLocalAttach(
 	req: Request,
 	url: URL,
@@ -755,33 +751,26 @@ async function handleLocalAttach(
 	limiter: AttachLimiter,
 	bearer: string,
 ): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: NOSNIFF_HEADERS });
 	const originError =
 		req.headers.get("origin") === null
-			? new Response("refused", { status: 400, headers: NOSNIFF_HEADERS })
+			? refuse("refused", 400)
 			: requireLocalPageOrigin(req, url, deps.port, (token) =>
 					deps.registry.tokenIsLive(token),
 				);
 	if (originError) return originError;
 	if (!limiter.allow(bearer)) {
-		return new Response("too many attach requests", {
-			status: 429,
-			headers: NOSNIFF_HEADERS,
-		});
+		return refuse("too many attach requests", 429);
 	}
 	let request: ReturnType<typeof validateAttachRequest>;
 	try {
 		request = validateAttachRequest(await req.json());
 	} catch (err) {
-		return new Response(describeError(err), {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return refuse(describeError(err), 400);
 	}
 	if (request.all === true || request.code !== undefined) {
-		return new Response("refused: local pages attach one session by id", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return refuse("refused: local pages attach one session by id", 400);
 	}
 	const records = deps.registry.list().flatMap((summary) => {
 		const record = deps.registry.get(summary.sessionId);
@@ -800,22 +789,12 @@ async function handleLocalAttach(
 		})),
 	});
 	if (decision.action === "reject") {
-		return new Response(decision.message, {
-			status: decision.status,
-			headers: NOSNIFF_HEADERS,
-		});
+		return refuse(decision.message, decision.status);
 	}
 	const match = records.find(
-		(record) =>
-			decision.action === "return" &&
-			record.sessionId === decision.sessionIds[0],
+		(record) => record.sessionId === decision.sessionIds[0],
 	);
-	if (!match) {
-		return new Response("That session is not active.", {
-			status: 404,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
+	if (!match) return refuse("That session is not active.", 404);
 	noteSecret(match.token);
 	return json({
 		sessions: [
@@ -859,8 +838,6 @@ async function handleAttach(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	const origin = req.headers.get("origin");
-	const pinned = getPinnedOrigin(deps.paths) === origin;
 	let codeAccepted = false;
 	if (request.code !== undefined) {
 		const attempt = consumePairingAttempt(deps.paths, request.code);
@@ -872,7 +849,6 @@ async function handleAttach(
 		intent: request.intent,
 		sessionId: request.sessionId,
 		all: request.all,
-		pinned,
 		codeAccepted,
 		sessions: candidates,
 	});
@@ -934,11 +910,8 @@ function requireOwnerCredential(
 }
 
 function hasLiveSessionBearer(req: Request, deps: HttpServerDeps): boolean {
-	const authorization = req.headers.get("authorization");
-	return (
-		authorization?.startsWith("Bearer ") === true &&
-		deps.registry.tokenIsLive(authorization.slice(7))
-	);
+	const bearer = bearerToken(req);
+	return bearer !== undefined && deps.registry.tokenIsLive(bearer);
 }
 
 function handleLocalSessions(

@@ -142,11 +142,14 @@ export function subprocessEnv(
 	return env;
 }
 
+const dgHomeByPort = new Map<number, string>();
+
 export function spawnServe(
 	dgHome: string,
 	port: number,
 	extraEnv: Record<string, string> = {},
 ) {
+	dgHomeByPort.set(port, dgHome);
 	return Bun.spawn([process.execPath, ENTRY, "__serve"], {
 		env: subprocessEnv(dgHome, port, extraEnv),
 		stdout: "pipe",
@@ -377,6 +380,15 @@ export function decodeChatMarker(url: string): unknown {
 	return JSON.parse(json);
 }
 
+export function ownerTokenHeader(port: number): Record<string, string> {
+	const home = dgHomeByPort.get(port);
+	const owner = readOwnerToken(
+		resolveDgPaths(home === undefined ? undefined : { env: { DG_HOME: home } }),
+	);
+	if (owner === undefined) throw new Error("owner token was not written");
+	return { [OWNER_TOKEN_HEADER]: owner };
+}
+
 export type SessionBoot = {
 	dgHome: string;
 	port: number;
@@ -398,6 +410,7 @@ export async function registerSession(
 		method: "POST",
 		headers: {
 			Host: `127.0.0.1:${port}`,
+			...ownerTokenHeader(port),
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({

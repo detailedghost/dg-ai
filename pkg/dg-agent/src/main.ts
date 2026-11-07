@@ -39,7 +39,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.option("--orchestrator", "register this session with the orchestrator role")
 		.option("-a, --agent-identity <name>", "agent identity to record")
 		.option("--open", "open the chat page in the default browser")
-		.option("--ext", "require the dg-ai-extension for this skill; the chat page URL is the same as without it")
+		.option("--ext", "accepted for skills that require the dg-ai-extension; behaves like the default")
 		.option(
 			"--print-session-id",
 			"print the session id, then the bootstrap URL",
@@ -56,7 +56,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 				open?: boolean;
 				printSessionId?: boolean;
 				json?: boolean;
-				ext?: boolean;
 			}) => {
 				const role: SessionRole = opts.orchestrator ? "orchestrator" : "agent";
 				const { cmdStart } = await import("./start");
@@ -67,7 +66,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 					open: opts.open,
 					printSessionId: opts.printSessionId,
 					json: opts.json,
-					ext: opts.ext,
 				});
 			},
 		);

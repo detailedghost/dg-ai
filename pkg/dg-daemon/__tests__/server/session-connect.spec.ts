@@ -16,6 +16,7 @@ import {
 	EXTENSION_ORIGIN,
 	frameType,
 	freshDgHome,
+	ownerTokenHeader,
 	registerSession,
 	runDaemonCommand,
 	runStatus,
@@ -150,6 +151,38 @@ describe("extension to CLI and CLI to extension", () => {
 		expect(status.sessionCount).toBe(1);
 	});
 
+	it("refuses an all-sessions attach from the pinned Origin when no code is sent", async () => {
+		const { port, paths } = await boot();
+		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
+
+		const response = await extensionPost(port, "/attach", {
+			intent: "attach",
+			all: true,
+		});
+
+		expect(response.status).toBe(401);
+		expect(await response.text()).not.toContain(bootstrap.token);
+	});
+
+	it("attaches every session from the pinned Origin when the code is right", async () => {
+		const { port, paths } = await boot();
+		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
+		const paired = await runDaemonCommand(dgHome, "pair");
+		const code = paired.stdout.match(/Pairing code: (\d{6})/)?.[1];
+
+		const response = await extensionPost(port, "/attach", {
+			intent: "attach",
+			all: true,
+			code,
+		});
+
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { sessions: { token: string }[] };
+		expect(body.sessions.map((session) => session.token)).toEqual([bootstrap.token]);
+	});
+
 	it("refuses an attach with intent create from the pinned extension Origin", async () => {
 		const { port } = await boot();
 		await registerSession(port, { agentIdentity: "claude" });
@@ -204,6 +237,48 @@ describe("POST /start origin policy", () => {
 			sessionCount: number;
 		};
 		expect(status.sessionCount).toBe(0);
+	});
+});
+
+describe("POST /start owner credential", () => {
+	function startRequest(port: number, headers: Record<string, string>) {
+		return fetch(`http://127.0.0.1:${port}/start`, {
+			method: "POST",
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				"Content-Type": "application/json",
+				...headers,
+			},
+			body: JSON.stringify({ cwd: process.cwd(), role: "agent" }),
+		});
+	}
+
+	it("refuses a caller with no owner token and creates no session", async () => {
+		const { port } = await boot();
+
+		const response = await startRequest(port, {});
+
+		expect(response.status).toBe(401);
+		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(0);
+	});
+
+	it("refuses a wrong owner token", async () => {
+		const { port } = await boot();
+
+		const response = await startRequest(port, { [OWNER_TOKEN_HEADER]: "wrong" });
+
+		expect(response.status).toBe(401);
+	});
+
+	it("registers a session when the owner token is sent", async () => {
+		const { port } = await boot();
+
+		const response = await startRequest(port, ownerTokenHeader(port));
+
+		expect(response.status).toBe(200);
 	});
 });
 

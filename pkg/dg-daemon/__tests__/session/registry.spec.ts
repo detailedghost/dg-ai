@@ -39,6 +39,27 @@ describe("SessionRegistry presence changes emit changed", () => {
 		expect(changed).toEqual([{ sessionId: session.sessionId }]);
 	});
 
+	it("emits nothing from a second noteCliAttached while the session stays attached", () => {
+		const { registry, session, changed } = setup();
+		registry.noteCliAttached(session.sessionId);
+		changed.length = 0;
+
+		registry.noteCliAttached(session.sessionId);
+
+		expect(changed).toEqual([]);
+	});
+
+	it("emits changed again when noteCliAttached follows a quiet period", () => {
+		const { registry, session, changed } = setup();
+		registry.noteCliAttached(session.sessionId);
+		registry.noteCliQuiet(session.sessionId);
+		changed.length = 0;
+
+		registry.noteCliAttached(session.sessionId);
+
+		expect(changed).toEqual([{ sessionId: session.sessionId }]);
+	});
+
 	it("emits nothing from noteCliAttached for an unknown session", () => {
 		const { registry, changed } = setup();
 

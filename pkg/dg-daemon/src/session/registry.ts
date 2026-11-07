@@ -110,6 +110,13 @@ export class SessionRegistry extends EventEmitter {
 	noteCliAttached(sessionId: string): void {
 		const record = this.sessions.get(sessionId);
 		if (!record || record.state !== "active") return;
+		if (
+			record.cliAttached &&
+			record.cliQuietSince === undefined &&
+			record.cliDetachedAt === undefined
+		) {
+			return;
+		}
 		record.cliAttached = true;
 		record.cliQuietSince = undefined;
 		record.cliDetachedAt = undefined;

@@ -7,6 +7,7 @@ import {
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
 	EXIT_PROTOCOL_MISMATCH,
+	OWNER_TOKEN_HEADER,
 	type SessionBootstrap,
 	type SessionRole,
 	validateSessionBootstrap,
@@ -20,6 +21,7 @@ import {
 	loopbackHostHeader,
 	readPidFile,
 	requireMatchingProtocol,
+	requireOwnerToken,
 	resolveDgPaths,
 	type OpenSeams,
 	openFailedHint,
@@ -70,12 +72,18 @@ type RegisterInput = {
 	agentIdentity?: string;
 };
 
-async function registerSession(port: number, input: RegisterInput) {
+async function registerSession(
+	port: number,
+	paths: DgPaths,
+	input: RegisterInput,
+) {
+	const owner = requireOwnerToken(paths);
 	const resp = await fetch(`http://127.0.0.1:${port}${CHAT_START_PATH}`, {
 		method: "POST",
 		headers: {
 			...loopbackHostHeader(port),
 			"Content-Type": "application/json",
+			[OWNER_TOKEN_HEADER]: owner,
 		},
 		body: JSON.stringify(input),
 	});
@@ -94,7 +102,6 @@ export type StartOptions = {
 	open?: boolean;
 	printSessionId?: boolean;
 	json?: boolean;
-	ext?: boolean;
 };
 
 async function fetchStatus(port: number) {
@@ -181,7 +188,7 @@ export async function cmdStart(
 			? await attachToRunningDaemon(existing)
 			: await bootstrapFreshDaemon(paths, seams);
 
-	const bootstrap = await registerSession(targetPort, {
+	const bootstrap = await registerSession(targetPort, paths, {
 		cwd: process.cwd(),
 		role: options.role ?? "agent",
 		workset: options.workset,

@@ -91,7 +91,6 @@ describe("dg-agent start bootstrap URL", () => {
 
 	describe.each([
 		["default", {}],
-		["--ext", { ext: true }],
 	] as const)("%s start variant", (_name, flags) => {
 		it("prints the /chat page URL and never the /start page", async () => {
 			const { logs } = await runStart({ ...flags });
