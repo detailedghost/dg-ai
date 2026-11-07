@@ -644,7 +644,7 @@ async function handleChatCodeMint(
 	limiter: AttachLimiter,
 ): Promise<Response> {
 	if (req.headers.has(OWNER_TOKEN_HEADER)) {
-		return handleOwnerCodeMint(req, deps, codes);
+		return handleOwnerCodeMint(req, deps, codes, limiter);
 	}
 	const originError = requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
@@ -674,31 +674,35 @@ async function handleChatCodeMint(
 	return pairJson({ code: codes.mint(record.sessionId) });
 }
 
+const OWNER_MINT_LIMIT_KEY = "owner";
+
 async function handleOwnerCodeMint(
 	req: Request,
 	deps: HttpServerDeps,
 	codes: PageCodes,
+	limiter: AttachLimiter,
 ): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: PAIR_HEADERS });
 	if (req.headers.get("origin") !== null) {
-		return new Response("refused: the owner token takes no Origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return refuse("refused: the owner token takes no Origin", 400);
 	}
-	const ownerRefused = requireOwnerCredential(req, deps.paths);
-	if (ownerRefused) return ownerRefused;
+	if (!hasOwnerCredential(req, deps.paths)) return refuse("refused", 401);
+	if (!limiter.allow(OWNER_MINT_LIMIT_KEY)) {
+		return refuse("too many requests", 429);
+	}
 	let sessionId: unknown;
 	try {
 		sessionId = ((await req.json()) as { sessionId?: unknown }).sessionId;
 	} catch {
-		return new Response("invalid JSON body", { status: 400 });
+		return refuse("invalid JSON body", 400);
 	}
 	if (typeof sessionId !== "string" || sessionId.length === 0) {
-		return new Response("body must carry a sessionId", { status: 400 });
+		return refuse("body must carry a sessionId", 400);
 	}
 	const record = deps.registry.get(sessionId);
 	if (record === undefined || record.state !== "active") {
-		return new Response("no such session", { status: 404 });
+		return refuse("no such session", 404);
 	}
 	return pairJson({ code: codes.mint(record.sessionId) });
 }

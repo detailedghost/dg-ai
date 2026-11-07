@@ -155,6 +155,47 @@ describe("POST /chat/code with the owner token", () => {
 		expect((await mintAsOwner(port, { sessionId: session.sessionId })).status).toBe(404);
 	});
 
+	it("sets nosniff and no-store on every owner response", async () => {
+		const { port, session } = await boot();
+
+		const responses = [
+			await mintAsOwner(port, { sessionId: session.sessionId }),
+			await mintAsOwner(port, { sessionId: "no-such-session" }),
+			await mintAsOwner(port, {}),
+			await mintAsOwner(
+				port,
+				{ sessionId: session.sessionId },
+				{ owner: { "X-Dg-Owner-Token": "wrong" } },
+			),
+			await mintAsOwner(
+				port,
+				{ sessionId: session.sessionId },
+				{ origin: EXTENSION_ORIGIN },
+			),
+		];
+
+		expect(responses.map((response) => response.status)).toEqual([
+			200, 404, 400, 401, 400,
+		]);
+		for (const response of responses) {
+			expect(response.headers.get("cache-control")).toBe("no-store");
+			expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+		}
+	});
+
+	it("answers 429 once the owner mint limit is spent", async () => {
+		const { port, session } = await boot();
+
+		const statuses: number[] = [];
+		for (let attempt = 0; attempt < 31; attempt++) {
+			const response = await mintAsOwner(port, { sessionId: session.sessionId });
+			statuses.push(response.status);
+		}
+
+		expect(statuses.slice(0, 30)).toEqual(Array(30).fill(200));
+		expect(statuses[30]).toBe(429);
+	});
+
 	it("refuses a wrong owner token and a body without a sessionId", async () => {
 		const { port, session } = await boot();
 
