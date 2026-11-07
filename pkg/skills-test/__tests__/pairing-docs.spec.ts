@@ -7,6 +7,7 @@ import { REPO_ROOT, cells, readRepoFile, section } from "./test-support";
 
 const ADR_DIR = join(REPO_ROOT, "docs", "adr");
 const ADR_0038 = "0038-extension-pairing-only.md";
+const ADR_0039 = "0039-zero-touch-pairing.md";
 const UPGRADE_HEADING = "Upgrading from a release without the pairing popup";
 const ADR_HEADINGS = [
 	"Context",
@@ -171,30 +172,61 @@ describe("ADR 0038 extension-pairing-only", () => {
 		);
 	});
 
-	test("every path the References section names exists in the tree", () => {
-		const references = sectionBody(adr, "References");
-		const names = [...references.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-		for (const file of [
-			"pair-offers.ts",
-			"pair.ts",
-			"relay-dispatch.ts",
-			"agent-tabs.ts",
-			"daemon-link.ts",
-			"pairing-store.ts",
-		]) {
-			expect(names.some((name) => name.endsWith(file))).toBe(true);
-		}
-		for (const name of names.filter((n) => /^(pkg|docs|plugins)\//.test(n))) {
-			expect(existsSync(join(REPO_ROOT, name))).toBe(true);
-		}
-	});
-
 	test("trust-model text matches the lockout and offer limits in the daemon", () => {
 		expect(adr).toMatch(/8 outstanding/);
 		expect(adr).toMatch(/same-user adversary/);
 		expect(adr).toMatch(/<all_urls>/);
 		expect(adr).toMatch(/bearer/);
 		expect(adr).toMatch(/non-`cli`/);
+	});
+});
+
+describe("ADR 0039 zero-touch-pairing", () => {
+	const adr = readAdr(ADR_0039);
+
+	test("follows the template headings in order and carries a status", () => {
+		expect(adr).toMatch(/^# 0039 — .+/m);
+		expect(adr).toMatch(/^Status: (Proposed|Accepted)$/m);
+		expect(adr).toMatch(/^Date: \d{4}-\d{2}-\d{2}$/m);
+		expect(headingsOf(adr, 2)).toEqual(ADR_HEADINGS);
+	});
+
+	test("links 0004 and 0038", () => {
+		expect(adr).toContain("](0004-loopback-pairing.md)");
+		expect(adr).toContain(`](${ADR_0038})`);
+	});
+
+	test("states the decision, the trust trade-off and the removed surface", () => {
+		expect(adr).toMatch(/session-adopt/);
+		expect(adr).toMatch(/daemon:id/);
+		expect(adr).toMatch(/Trust this daemon/);
+		expect(adr).toMatch(/dismissed:<sessionId>/);
+		expect(adr).toMatch(/_chatcode/);
+		expect(adr).toMatch(/dg-agent spawn/);
+		expect(sectionBody(adr, "Consequences")).toMatch(/trust trade-off/);
+		expect(sectionBody(adr, "Consequences")).toMatch(/same user/);
+		expect(sectionBody(adr, "Consequences")).toMatch(/proxy that copies the live daemon/);
+		expect(sectionBody(adr, "Decision")).toMatch(/POST \/pair\/offer/);
+		expect(sectionBody(adr, "Alternatives considered").length).toBeGreaterThan(200);
+	});
+
+	test("the diagram is one sequence diagram with the three participants", () => {
+		expect(adr.match(/```mermaid/g)?.length).toBe(1);
+		const diagram = sectionBody(adr, "Diagrams");
+		expect(diagram).toContain("sequenceDiagram");
+		for (const participant of ["pkg/dg-agent", "pkg/dg-daemon", "pkg/extension"]) {
+			expect(diagram).toContain(participant);
+		}
+	});
+
+	test("every path the References section names exists in the tree", () => {
+		const names = [...sectionBody(adr, "References").matchAll(/`([^`]+)`/g)].map(
+			(m) => m[1],
+		);
+		expect(names.length).toBeGreaterThan(0);
+		for (const name of names) {
+			expect(existsSync(join(REPO_ROOT, name))).toBe(true);
+		}
 	});
 });
 
@@ -209,6 +241,24 @@ describe("ADR index and amendments", () => {
 		const previous = lines.findIndex((line) => line.includes("0037-"));
 		expect(previous).toBeGreaterThanOrEqual(0);
 		expect(at).toBeGreaterThan(previous);
+	});
+
+	test("toc.md lists 0039 once, after 0038", () => {
+		const lines = toc.split("\n");
+		const hits = lines.filter((line) => line.includes(ADR_0039));
+		expect(hits).toHaveLength(1);
+		const at = lines.findIndex((line) => line.includes(ADR_0039));
+		const previous = lines.findIndex((line) => line.includes(ADR_0038));
+		expect(previous).toBeGreaterThanOrEqual(0);
+		expect(at).toBeGreaterThan(previous);
+	});
+
+	test("0004 and 0038 each carry a Superseded in part link to 0039", () => {
+		for (const name of [adrFileFor("0004"), ADR_0038]) {
+			expect(readAdr(name)).toMatch(
+				/^Superseded in part by \[0039\]\(0039-zero-touch-pairing\.md\)\.$/m,
+			);
+		}
 	});
 
 	test("0004 stays Accepted in the file and in toc.md", () => {
@@ -259,7 +309,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 			"dg-skills install",
 			"chrome://extensions",
 			"popup",
-			"dg-agent pair <code>",
+			"dg-agent start",
 			"dg-skills pw --ext open",
 		].map((needle) => joined.indexOf(needle));
 		for (const index of order) expect(index).toBeGreaterThanOrEqual(0);
@@ -328,8 +378,8 @@ describe("AGENT-INSTALL upgrade section", () => {
 				"utf8",
 			);
 			const from = text.indexOf('.command("start")');
-			const to = text.indexOf('.command("pair")');
-			return from >= 0 && to > from ? text.slice(from, to) : "";
+			const next = text.indexOf(".command(", from + 1);
+			return from >= 0 ? text.slice(from, next > from ? next : undefined) : "";
 		})();
 		type Signature = { scope?: RegExp; pattern: RegExp };
 		const signatures: Array<[string, Signature[]]> = [
@@ -381,7 +431,6 @@ describe("AGENT-INSTALL upgrade section", () => {
 
 	test("compatibility paragraphs cover old and new pairings of binaries", () => {
 		for (const needle of [
-			"POST /pair/offer",
 			"GET /sessions?waiting=1",
 			"Clear disconnected",
 			"dg-daemon sessions clear",
@@ -389,7 +438,6 @@ describe("AGENT-INSTALL upgrade section", () => {
 			"Unpair",
 			"/board",
 			"/chat",
-			"stale `/start#_chat=` URL gets 404",
 			"CHANGELOG.md",
 		]) {
 			expect(upgrade).toContain(needle);
@@ -414,7 +462,6 @@ describe("AGENT-INSTALL upgrade section", () => {
 			"Working",
 			"Idle",
 			"Unpair",
-			"Pair another agent",
 			"Add this tab",
 			"Open chat",
 		]) {
@@ -429,7 +476,7 @@ describe("AGENT-INSTALL upgrade section", () => {
 			.filter((l) => /^\|.*(chat|overwatch) --ext/.test(l));
 		expect(rows.length).toBeGreaterThan(0);
 		for (const row of rows) {
-			expect(row).toMatch(/pairing popup|popup/);
+			expect(row).toMatch(/loaded the extension/);
 			expect(row).not.toMatch(/optional/i);
 		}
 	});
@@ -454,13 +501,19 @@ describe("AGENT-INSTALL upgrade section", () => {
 });
 
 describe("CLI surface named by the docs", () => {
-	test("dg-agent pair --help shows the code argument and the docs name the session flag", async () => {
-		const { code, text } = await runHelp([AGENT_ENTRY, "pair", "--help"]);
+	test("dg-agent spawn --help shows the command argument and the docs name the -- form", async () => {
+		const { code, text } = await runHelp([AGENT_ENTRY, "spawn", "--help"]);
 		expect(code).toBe(0);
-		expect(text).toMatch(/<code>/);
+		expect(text).toMatch(/\[command\.\.\.\]/);
+		expect(text).toContain("DG_SESSION_ID");
 		const doc = readRepoFile("docs", "AGENT-INSTALL.md");
-		expect(doc).toContain("dg-agent pair <code>");
-		expect(doc).toContain("`-s, --session <id>`");
+		expect(doc).toContain("dg-agent spawn -- <command");
+		expect(doc).toContain("DG_SESSION_ID");
+	});
+
+	test("dg-agent has no pair command", async () => {
+		const { text } = await runHelp([AGENT_ENTRY, "--help"]);
+		expect(text).not.toMatch(/^\s+pair\b/m);
 	});
 
 	test("dg-agent start and overwatch open expose --ext", async () => {
@@ -608,18 +661,5 @@ describe("markdown links resolve", () => {
 				.map((target) => `${relative(REPO_ROOT, file)} -> ${target}`);
 		});
 		expect(broken).toEqual([]);
-	});
-
-	test("the 0038 sequence diagram declares the five participants and the offer, claim, poll, connect flow", () => {
-		const adr = readAdr(ADR_0038);
-		const diagram = section(adr, "```mermaid", "```");
-		expect(diagram.trimStart().startsWith("sequenceDiagram")).toBe(true);
-		const participants = [...diagram.matchAll(/^\s*participant \w+ as (.+)$/gm)].map(
-			(m) => m[1],
-		);
-		expect(participants.length).toBe(5);
-		for (const word of ["offer", "claim", "poll", "connect"]) {
-			expect(diagram.toLowerCase()).toContain(word);
-		}
 	});
 });

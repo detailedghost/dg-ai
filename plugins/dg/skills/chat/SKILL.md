@@ -1,6 +1,6 @@
 ---
 name: chat
-description: Talk to a human through a live local chat page that dg-daemon serves on loopback and opens in the default browser, with no extension needed, using the dg-agent CLI. Pass --ext to also require the dg-ai-extension and pair the browser from its popup with dg-agent pair. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
+description: Talk to a human through a live local chat page that dg-daemon serves on loopback and opens in the default browser, with no extension needed, using the dg-agent CLI. The browser extension pairs by itself when a session starts. Pass --ext to also require the dg-ai-extension. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session or to run a command inside one, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
 ---
 
 # Chat
@@ -8,8 +8,9 @@ description: Talk to a human through a live local chat page that dg-daemon serve
 Hold a real conversation with a human in a browser tab while you work. The
 `dg-daemon` daemon hosts many chat sessions on loopback and serves the chat page
 itself, and this skill is the agent side of the loop. The page needs no
-extension. Pass `--ext` to require the `dg-ai-extension`; the local chat page still
-opens, and the browser pairs from the DeeGee popup with `dg-agent pair <code>`.
+extension. When the `dg-ai-extension` is loaded, it pairs with every new session
+on its own. No code and no human step are needed. Pass `--ext` to require the
+extension.
 
 Commands run the **compiled `dg-agent` binary** from your PATH — a
 self-contained binary, no Bun needed at runtime. `dg-agent start` launches the
@@ -46,7 +47,7 @@ dg-agent <command> <args>
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--ext` | none | Open the local chat page; pair the browser from the DeeGee popup with dg-agent pair <code>. Needs the extension. | off (local is the default) |
+| `--ext` | none | Same as the default, and the extension must be installed. | off (local is the default) |
 
 To use the extension, run the gate command, then the line below it:
 
@@ -55,8 +56,39 @@ To use the extension, run the gate command, then the line below it:
 dg-agent start --ext --open
 ```
 
-Popup pairing details and WSL networking for a Windows-side browser:
+Extension details and WSL networking for a Windows-side browser:
 [references/extension.md](references/extension.md).
+
+## Pair the browser
+
+Run this command:
+
+```bash
+dg-agent start
+```
+
+It prints one of two lines on stderr and prints nothing on stdout.
+
+Paired:
+
+```text
+Paired <identity> (<id8>) with the browser extension.
+```
+
+Nothing more to do. Go to the loop below.
+
+No extension:
+
+```text
+No browser extension is connected. Install it with: dg-skills install
+```
+
+1. Run `dg-skills install`.
+1. Ask the human to open `chrome://extensions`, turn on Developer mode, and choose **Load unpacked** once. The folder path is in the `dg-skills install` output. This is the only human step.
+1. Run `dg-agent start` again. It prints the Paired line.
+
+Every later session pairs on its own. The human does not unpair or pair again.
+If the human clicks **Unpair** in the popup, that session stays unpaired until it closes.
 
 ## The loop
 
@@ -76,20 +108,18 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 ## Commands
 
 - `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--print-session-id] [--json]` —
-  start or reuse the daemon and register a new session. Prints the local chat
-  page URL `http://127.0.0.1:<port>/chat#_chat=<base64url>`. The fragment is
-  base64url JSON `{ port, sessionId, token, agentIdentity }`, and the page
-  keeps it out of the page request. `--open` opens that URL in the default
-  browser. On WSL it only prints the URL unless `DG_OPEN_WINDOWS=1` is set.
-  When the agent is headless or remote, open the URL in a browser on
-  the machine that runs the daemon. `--ext` prints and opens the same
-  `http://127.0.0.1:<port>/chat#_chat=<base64url>` URL; it only gates on the extension.
-  `--print-session-id` prints the session id before the URL. `--json` prints
-  `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
-  attaches a workset label, which is how the chat page groups sessions in its
-  rail. Pairing the browser is in [references/extension.md](references/extension.md).
-- `pair <code> [-s, --session <id>]` — pair this session with the browser by
-  claiming the six-digit code the extension popup shows.
+  start or reuse the daemon and register a new session. The extension adopts
+  the session. `start` prints one line on stderr and nothing on stdout. The
+  line is `Paired <identity> (<id8>) with the browser extension.` or
+  `No browser extension is connected. Install it with: dg-skills install`.
+  `--print-session-id` prints only the session id on stdout. `--json` prints
+  `{"sessionId","port","extensionLinked"}`. `--open` opens the chat page in the
+  default browser through a one-time code and prints no URL. The code works
+  once, within 60 seconds. On WSL it does not open a browser unless
+  `DG_OPEN_WINDOWS=1` is set. `--ext` gates on the extension and behaves like
+  the default. `-w` attaches a workset label, which is how the chat page groups
+  sessions in its rail. The session token never appears in output. Pairing
+  details are in [references/extension.md](references/extension.md).
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message
@@ -117,8 +147,11 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   not as a second instruction.
 - `progress --state <running|awaiting-input>` — publish an explicit state. Any
   other value is rejected.
-- `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>]` — spawn
-  another background chat session and print its bootstrap JSON.
+- `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>] [-- <command...>]` —
+  spawn another background chat session. Without `--`, it prints the bootstrap
+  JSON. With `--`, it runs `<command...>` with `DG_SESSION_ID` set to the new
+  session and exits with the exit code of that command. Example:
+  `dg-agent spawn --workset review -- bun test`.
 - `stage <path>` — stage an asset for later presentation and print its id. The
   bytes are encrypted at rest and served only to the owning session.
 - `overwatch <subcommand>` — manage the shared launch board; see the `overwatch`
@@ -128,8 +161,9 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   human may run from the chat composer, and optionally the subagent names they
   may `@`-mention.
 
-`-s, --session <id>` selects a session explicitly. Without it, the sole session
-whose realpath-matching cwd matches yours is used.
+`-s, --session <id>` selects a session explicitly. Without it, the CLI uses
+`DG_SESSION_ID`, then the sole session whose realpath-matching cwd matches
+yours.
 
 ## Memory
 
@@ -220,7 +254,11 @@ point of publishing it.
 ## Notes
 
 - Every session is **loopback-only** and capability-gated. A token authorises
-  one session; it is never written to a log or a URL query string.
+  one session; it is never written to a log, a URL, or a command output.
+- The daemon trusts any process that the same user runs on this machine, and
+  it does so silently. A local program can fake an `Origin` header. The daemon
+  id pin stops a process on a free port. It does not stop a proxy that copies
+  the live daemon.
 - Messages and staged assets are encrypted at rest. The data key comes from the
   OS keychain when one is available, and from a file-backed key otherwise.
 - `~/.dg` is two independent trees: `daemon/` holds the encrypted `daemon.db`

@@ -6,7 +6,7 @@ Default workspaces live below `${DG_HOME:-~/.dg}/inbox`; switching project
 directories does not switch mailboxes. `--data-path <fixture.json>` runs offline.
 
 Set `S` to the session id from `dg-agent start` (`--print-session-id` or
-`--json` prints it without decoding the bootstrap URL). Pass `--session "$S"`
+`--json` prints it). Pass `--session "$S"`
 on each command. That is required when the working directory differs from the
 registered session or several sessions exist, which is the usual case for an
 agent.

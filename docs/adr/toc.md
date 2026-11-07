@@ -90,6 +90,8 @@ flowchart LR
   one table-driven relay in the daemon and one dispatcher in the extension carry inbox, proto and pw-ext; frames stay byte-identical
 - [0038 — Reduce the extension to pairing and tab control](0038-extension-pairing-only.md) — Proposed:
   the extension keeps a pairing popup and per-agent tab groups; offer and claim pairing replaces `POST /pair`; the daemon `/chat` page replaces the extension chat
+- [0039 — Pair the browser with no code and no human step](0039-zero-touch-pairing.md) — Proposed:
+  the extension keeps a link socket and adopts every session the daemon pushes; code pairing and token URLs are gone
 
 ## Adding an ADR
 
