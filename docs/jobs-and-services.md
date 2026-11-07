@@ -69,8 +69,5 @@ No page lists jobs or the feed. Manage jobs with `dg-daemon job list`,
 `dg-daemon job disable <label>` and `dg-daemon job rm <label>`. A job started with
 `--notify <identity>` queues one agent message for each new feed item.
 
-The daemon also serves `/jobs` and `/feed` as JSON routes. They are not pages a
-human opens. The daemon gates them by `Origin` header or session bearer token, and the `Origin` check does not authenticate a non-browser client. These routes have no client since the dashboard left. ADR 0038 lists them as not done.
-
 See the [developer guide](DEVELOPER.md) for the daemon’s configuration and
 [the architecture records](adr/toc.md) for process and storage decisions.

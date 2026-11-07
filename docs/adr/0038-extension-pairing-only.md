@@ -43,7 +43,8 @@ The word "pairing popup" names this surface throughout. [ADR 0035](0035-pw-ext-r
 - **Neutral:** schema 13 drops the `awaiting_agent` column. The migration is forward-only. An older daemon stops on a newer database. The daemon writes a `pre-migration-v13-` snapshot first.
 - **Neutral:** `storage.local` is per browser profile. Two profiles hold one session only if the agent pairs twice. The relay then refuses requests with the `Multiple extension peers` text.
 - **Not done:** limit the `session-create` WebSocket frame. A socket that holds one session capability can still create sessions, and a later change can bound or gate it.
-- **Not done:** the `/jobs` and `/feed` JSON routes lost their only client with the dashboard. They stay reachable. `refuseForeignOrigin` checks the extension origin and no credential when an `Origin` header is present. Before the first pairing any extension origin passes. After the pin, any loopback client that sends the pinned `Origin` passes. A later change gates them by owner token or live bearer. The `readSessionFiles` fallback stays in the CLI client. The overwatch wire frames stay. The `sidePanel` field stays in `pkg/common/src/connection-drop.ts`. Each is dead or near dead, and a later change removes it.
+- **Done later:** the `/jobs` and `/feed` JSON routes lost their only client with the dashboard, so a later change deleted them with their constants, handler and tests.
+- **Not done:** The `readSessionFiles` fallback stays in the CLI client. The overwatch wire frames stay. The `sidePanel` field stays in `pkg/common/src/connection-drop.ts`. Each is dead or near dead, and a later change removes it.
 
 ## Alternatives considered
 
