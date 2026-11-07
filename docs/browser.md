@@ -46,9 +46,13 @@ Vivaldi, and Firefox 139+ (grouping is feature-detected, skipped where absent).
 
 Grouping is **opt-in per batch** with `--ext`: `batch-open --ext` and `launch` append a
 `#_tab_group=<name>` marker to each URL, the extension groups those tabs into
-`<name>` and strips the marker. Tabs you open by hand are never grouped. Group
-color is set in the extension's Options (default blue); the name comes from
+`<name>` and strips the marker. Tabs you open by hand are never grouped.
+Group color is set in the extension's Options (default random per group); the name comes from
 `--group` (default `PRs`). `demo` uses a `#_demo=` marker, while `proto` uses a
 compressed `#_proto=` marker for its local CLI/extension handoff.
+
+Tab groups that `dg-skills pw --ext` makes for an agent take their title from the
+agent identity and the first four characters of the session id. They take their
+color from the first unused group color. The Options color does not affect them.
 
 See [installation](install.md) and the [browser skill](../plugins/dg/skills/browser/SKILL.md).

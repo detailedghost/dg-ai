@@ -29,9 +29,15 @@ capability token, with messages and staged assets encrypted at rest. On WSL it
 needs **mirrored** networking mode, since NAT cannot reach the loopback port
 from the Windows-side browser.
 
-Pass `--ext` to `dg-agent start` or `dg-agent overwatch open` to use the
-dg-ai-extension side panel instead. See
-[ADR 0031](adr/0031-loopback-pages.md).
+Pass `--ext` to `dg-agent start` or `dg-agent overwatch open` to require the
+dg-ai-extension. `dg-agent start --ext` prints the local `/chat` URL, and `--open`
+opens it. `dg-agent overwatch open --ext` makes the paired browser open `/board`.
+That command has no `--open` flag. The human reads the six-digit code in the
+extension's pairing popup. The agent runs `dg-agent pair <code>`. See
+[ADR 0031](adr/0031-loopback-pages.md) and [ADR 0038](adr/0038-extension-pairing-only.md).
+
+Upgrading from a release without the pairing popup? Read
+[the upgrade section](AGENT-INSTALL.md#upgrading-from-a-release-without-the-pairing-popup).
 
 An agent can also address another agent directly — `dg-agent send --to <identity>`
 queues a message for that identity instead of the human, and the recipient's

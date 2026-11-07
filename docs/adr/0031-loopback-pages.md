@@ -73,3 +73,12 @@ extension side panel replaces the page.
 - [`origin.ts`](../../pkg/dg-daemon/src/server/origin.ts)
 - [`build.ts`](../../pkg/pages/build.ts)
 - [ADR 0028](0028-local-default-extension-opt-in.md)
+
+## Amended 2026-11-07: --ext opens the daemon page (ADR 0038)
+
+[ADR 0038](0038-extension-pairing-only.md) removed the extension's chat panel and the `GET /start` page. The text above stays as the record of the first decision. Where it says that `--ext` opens `/start#_chat=bootstrap` and that the `side panel` replaces the page, this amendment replaces it.
+
+- `dg-agent start --ext` prints the daemon `/chat` URL, and `--open` opens it, like `start` without `--ext`.
+- `dg-agent overwatch open --ext` opens `/board`.
+- `--ext` now means the browser must be paired with the extension. The human pairs it from the pairing popup.
+- The page no longer reads its token only from the fragment. A page that holds one live token can also call `POST /attach` with a bearer header. Each call returns the bootstrap of one active agent-role session whose presence is `cli`, other than its own. The Origin check binds browsers only. ADR 0038 states the limits.

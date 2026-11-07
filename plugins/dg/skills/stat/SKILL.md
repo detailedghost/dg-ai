@@ -188,7 +188,7 @@ dg-skills stat status "Phone feature" queued --eta "~30 min"
 
 ## `--overwatch`
 
-A second exception to read-only: it publishes this session's work to the live overwatch board in the dg extension.
+A second exception to read-only: it publishes this session's work to the live overwatch board on the daemon's /board page.
 
 1. Load the `/dg:overwatch` skill and follow it. It owns the session start, the lane publish commands and the board open step. Publish one lane per checklist item and per session-only row, with its task, stage, MR, ETA and next step.
 2. Open or focus the board tab as `/dg:overwatch` describes.
