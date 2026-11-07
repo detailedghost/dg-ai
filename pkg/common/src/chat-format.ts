@@ -908,6 +908,16 @@ export function validateDaemonHandle(value: unknown): DaemonHandle {
 	return value as DaemonHandle;
 }
 
+export function tryValidateSessionBootstrap(
+	value: unknown,
+): SessionBootstrap | undefined {
+	try {
+		return validateSessionBootstrap(value);
+	} catch {
+		return undefined;
+	}
+}
+
 export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 	requireRecord(value, "session bootstrap");
 	requireFiniteNumber(value.port, "session bootstrap.port");

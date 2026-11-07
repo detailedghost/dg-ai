@@ -1,7 +1,7 @@
 import {
 	CHAT_ATTACH_PATH,
 	type SessionBootstrap,
-	validateSessionBootstrap,
+	tryValidateSessionBootstrap,
 } from "@dg/common";
 import { readChatBootstrap, stripChatMarker } from "./chat-marker";
 import { browserStorage, memoryStorage, type PageStorage } from "./runtime";
@@ -41,21 +41,13 @@ export function sessionStorageOrMemory(): PageStorage {
 	}
 }
 
-function parseBootstrap(value: unknown): SessionBootstrap | undefined {
-	try {
-		return validateSessionBootstrap(value);
-	} catch {
-		return undefined;
-	}
-}
-
 function readHeld(storage: PageStorage): SessionBootstrap[] {
 	try {
 		const parsed: unknown = JSON.parse(
 			storage.get(HELD_BOOTSTRAPS_KEY) ?? "[]",
 		);
 		if (!Array.isArray(parsed)) return [];
-		return parsed.flatMap((entry) => parseBootstrap(entry) ?? []);
+		return parsed.flatMap((entry) => tryValidateSessionBootstrap(entry) ?? []);
 	} catch {
 		return [];
 	}
@@ -65,7 +57,7 @@ function readLegacy(storage: PageStorage): SessionBootstrap | undefined {
 	const stored = storage.get(LEGACY_BOOTSTRAP_KEY);
 	if (!stored) return undefined;
 	try {
-		return parseBootstrap(JSON.parse(stored));
+		return tryValidateSessionBootstrap(JSON.parse(stored));
 	} catch {
 		return undefined;
 	}
@@ -184,7 +176,7 @@ async function readAttachedBootstrap(
 	try {
 		const body: unknown = await response.json();
 		const sessions = (body as { sessions?: unknown }).sessions;
-		return Array.isArray(sessions) ? parseBootstrap(sessions[0]) : undefined;
+		return Array.isArray(sessions) ? tryValidateSessionBootstrap(sessions[0]) : undefined;
 	} catch {
 		return undefined;
 	}

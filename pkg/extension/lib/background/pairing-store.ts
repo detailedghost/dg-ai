@@ -2,7 +2,7 @@ import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	type SessionBootstrap,
-	validateSessionBootstrap,
+	tryValidateSessionBootstrap,
 } from "@dg/common";
 
 const PAIRING_KEY_PREFIX = "pairing:";
@@ -24,15 +24,11 @@ function keyOf(sessionId: string): string {
 export function asSessionBootstrap(
 	candidate: unknown,
 ): SessionBootstrap | undefined {
-	try {
-		const bootstrap = validateSessionBootstrap(candidate);
-		if (bootstrap.port < CHAT_DEFAULT_PORT || bootstrap.port > CHAT_MAX_PORT) {
-			return undefined;
-		}
-		return bootstrap;
-	} catch {
-		return undefined;
-	}
+	const bootstrap = tryValidateSessionBootstrap(candidate);
+	if (!bootstrap) return undefined;
+	return bootstrap.port < CHAT_DEFAULT_PORT || bootstrap.port > CHAT_MAX_PORT
+		? undefined
+		: bootstrap;
 }
 
 export function createPairingStore({
