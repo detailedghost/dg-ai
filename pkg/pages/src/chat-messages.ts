@@ -11,13 +11,11 @@ export const MSG = {
 	connection: "dg-chat:connection",
 	connectionRequest: "dg-chat:connection-request",
 	connectionRetry: "dg-chat:connection-retry",
-	sessionAttach: "dg-chat:session-attach",
 	overwatchState: "dg-chat:overwatch-state",
 	configRequest: "dg-chat:config-request",
 	commandInvocation: "dg-chat:command-invocation",
 	openChat: "dg-chat:open-chat",
 	recordDemo: "dg-chat:record-demo",
-	pairOfferRequest: "dg-chat:pair-offer-request",
 	agentTabsRequest: "dg-chat:agent-tabs-request",
 	agentTabAdopt: "dg-chat:agent-tab-adopt",
 	trustDaemon: "dg-chat:trust-daemon",
@@ -43,13 +41,6 @@ export type PairingSession = {
 	presence?: SessionPresence;
 	runs: PairingRun[];
 };
-
-export type PairOfferState =
-	| { status: "pending"; code: string; expiresAt: number }
-	| { status: "claimed"; agentIdentity: string }
-	| { status: "expired" }
-	| { status: "daemon-down" }
-	| { status: "error"; error: string };
 
 export type RecordDemoReply =
 	| { outcome: "started" }

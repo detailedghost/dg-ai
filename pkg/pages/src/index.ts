@@ -10,8 +10,5 @@ export type {
 export type {
 	PageRuntime,
 	PageStorage,
-	PairingControl,
-	PairingMount,
-	PairingMountOptions,
 	PositionArea,
 } from "./runtime";

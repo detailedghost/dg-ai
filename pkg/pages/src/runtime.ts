@@ -15,23 +15,6 @@ export type PageRuntime = {
 	storage: PageStorage;
 };
 
-export type PairingControl = {
-	setConnected(connected: boolean): void;
-	setCurrentSession(sessionId: string | undefined): void;
-	destroy(): void;
-};
-
-export type PairingMountOptions = {
-	initialConnected?: boolean;
-	findPort?: () => Promise<number | undefined>;
-	onDaemon?(reachable: boolean): void;
-};
-
-export type PairingMount = (
-	host: HTMLElement,
-	options: PairingMountOptions,
-) => PairingControl;
-
 export type PositionArea = {
 	get(keys: null): Promise<Record<string, unknown>>;
 	set(items: Record<string, unknown>): Promise<void>;

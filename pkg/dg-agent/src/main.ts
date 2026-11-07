@@ -9,7 +9,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	const [
 		{ Command, CommanderError },
 		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
-		{ registerAgentCommands, selectedSession },
+		{ registerAgentCommands },
 		{ registerMemoryCommands },
 		{ registerLazyPhoneCommands },
 	] = await Promise.all([
@@ -69,15 +69,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 				});
 			},
 		);
-
-	program
-		.command("pair")
-		.description("pair this session with the browser extension")
-		.argument("<code>", "6 digit code the extension popup shows")
-		.action(async (code: string, _options: unknown, command: Command) => {
-			const { cmdPair } = await import("./pair");
-			await cmdPair({ code, sessionId: selectedSession(command) });
-		});
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });

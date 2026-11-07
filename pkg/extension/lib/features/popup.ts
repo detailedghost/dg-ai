@@ -12,14 +12,11 @@ import {
 } from "@dg/pages/chat-messages";
 import { browser } from "wxt/browser";
 import { button, element } from "./dom";
-import {
-	BACKGROUND_UNREACHABLE,
-	type PairingHandle,
-	mountPairing,
-} from "./pairing";
 
 const TICK_MS = 2000;
 const LOGO_PIXELS = "44";
+const BACKGROUND_UNREACHABLE =
+	"DeeGee is not responding. Close and reopen this popup.";
 const DAEMON_DOWN = "Daemon not running. Run dg-agent start.";
 const DAEMON_CHANGED = "The daemon changed";
 const DAEMON_CHANGED_HELP =
@@ -104,11 +101,8 @@ type PairedView = {
 	section: HTMLElement;
 	count: HTMLElement;
 	list: HTMLElement;
-	fold: HTMLDetailsElement;
-	foldBody: HTMLElement;
 	cards: Map<string, CardView>;
 	banner?: HTMLElement;
-	foldPairing?: PairingHandle;
 };
 
 type OpenMenu = { trigger: HTMLButtonElement; panel: HTMLElement };
@@ -274,7 +268,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	let destroyed = false;
 	let readVersion = 0;
 	let openMenu: OpenMenu | undefined;
-	let unpaired: PairingHandle | undefined;
+	let empty: { reachable: boolean } | undefined;
 	let paired: PairedView | undefined;
 	let changed: HTMLElement | undefined;
 	let recordNote: HTMLElement | undefined;
@@ -427,13 +421,12 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		}
 		sessions = parseSessions(reply);
 		groups = parseGroups(tabsReply) ?? groups;
-		const daemonDown =
-			sessions.length > 0 &&
-			sessions.every((session) => !session.connected) &&
-			(await findPort()) === undefined;
+		const daemonReachable =
+			sessions.some((session) => session.connected) ||
+			(await findPort()) !== undefined;
 		if (destroyed || version !== readVersion) return;
-		if (sessions.length === 0) showUnpaired();
-		else showPaired(sessions, daemonDown);
+		if (sessions.length === 0) showEmpty(daemonReachable);
+		else showPaired(sessions, !daemonReachable);
 	}
 
 	async function unpair(view: CardView): Promise<void> {
@@ -602,23 +595,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		const section = element(doc, "div", "paired");
 		const count = element(doc, "div", "cnt");
 		const list = element(doc, "div", "agents");
-		const foldBody = element(doc, "div", "alt-body");
-		const fold = element(doc, "details", "alt");
-		fold.append(element(doc, "summary", "", "Pair another agent"), foldBody);
-		section.append(count, list, fold);
+		section.append(count, list);
 		const view: PairedView = {
 			section,
 			count,
 			list,
-			fold,
-			foldBody,
 			cards: new Map(),
 		};
-		fold.addEventListener("toggle", () => {
-			if (destroyed || !fold.open) return;
-			if (view.foldPairing) void view.foldPairing.refresh();
-			else view.foldPairing = mountPairing(foldBody, { runtime, pasteFold: false });
-		});
 		return view;
 	}
 
@@ -648,8 +631,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	function showPaired(sessions: PairingSession[], daemonDown: boolean): void {
 		if (!paired) {
 			changed = undefined;
-			unpaired?.destroy();
-			unpaired = undefined;
+			empty = undefined;
 			paired = createPaired();
 			body.replaceChildren(paired.section);
 			setText(sub, "pairing");
@@ -693,10 +675,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 
 	function showDaemonChanged(): void {
 		if (changed) return;
-		unpaired?.destroy();
-		unpaired = undefined;
+		empty = undefined;
 		if (paired) {
-			paired.foldPairing?.destroy();
 			if (openMenu && paired.section.contains(openMenu.panel)) closeMenu(false);
 			paired = undefined;
 		}
@@ -717,33 +697,31 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		setText(sub, "daemon changed");
 	}
 
-	function showUnpaired(): void {
+	function showEmpty(daemonReachable: boolean): void {
 		changed = undefined;
-		if (unpaired) return;
+		if (empty?.reachable === daemonReachable) return;
 		if (paired) {
-			paired.foldPairing?.destroy();
 			if (openMenu && paired.section.contains(openMenu.panel)) closeMenu(false);
 			paired = undefined;
 		}
-		const section = element(doc, "div", "unpaired");
-		unpaired = mountPairing(section, {
-			runtime,
-			onState: (state) =>
-				setText(sub, state.status === "daemon-down" ? "daemon down" : "scan to pair"),
-		});
+		const section = element(doc, "div", "empty");
+		const note = element(doc, "p", "note");
+		note.setAttribute("role", "status");
+		if (daemonReachable) {
+			note.append("Start an agent with ", element(doc, "code", "", "dg-agent start"), ".");
+		} else {
+			note.textContent = DAEMON_DOWN;
+		}
+		section.append(note);
+		empty = { reachable: daemonReachable };
 		body.replaceChildren(section);
-		setText(sub, "scan to pair");
+		setText(sub, daemonReachable ? "no agents" : "daemon down");
 	}
 
 	function tick(): void {
 		if (destroyed || doc.hidden || adopting > 0 || ticking) return;
 		ticking = true;
-		const reads = [readAgents()];
-		if (unpaired) reads.push(unpaired.refresh());
-		else if (paired?.fold.open && paired.foldPairing) {
-			reads.push(paired.foldPairing.refresh());
-		}
-		void Promise.allSettled(reads).then(() => {
+		void readAgents().finally(() => {
 			ticking = false;
 		});
 	}
@@ -775,15 +753,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	const timer = setInterval(tick, TICK_MS);
 
 	return {
-		ready: readAgents().then(() => unpaired?.ready),
+		ready: readAgents(),
 		destroy() {
 			destroyed = true;
 			clearInterval(timer);
 			runtime.onMessage.removeListener(onRuntimeMessage);
 			doc.removeEventListener("keydown", onKeyDown);
 			doc.removeEventListener("pointerdown", onPointerDown);
-			unpaired?.destroy();
-			paired?.foldPairing?.destroy();
 		},
 	};
 }

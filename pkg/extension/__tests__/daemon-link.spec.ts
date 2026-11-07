@@ -3,7 +3,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
 	CHAT_DEFAULT_PORT,
-	clearNotedSecrets,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -2194,33 +2193,6 @@ test("the connection request reply and the connection broadcast carry no token",
 		expect(text).not.toContain("token");
 		expect(text).not.toContain(FIRST.token);
 		expect(text).not.toContain(SECOND.token);
-	}
-});
-
-const MASKED = makeBootstrap({ sessionId: "sess-masked", token: "tok-masked-on-load-only" });
-
-test("a stored token is masked in an error reply after it was loaded at startup", async () => {
-	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async (input: RequestInfo | URL) =>
-			String(input).includes("/healthz")
-				? Response.json({
-					daemon: "dg-daemon",
-					instanceId: "test",
-					daemonId: TEST_DAEMON_ID,
-				})
-				: new Response(`nope ${MASKED.token}`, { status: 404 })) as unknown as typeof fetch,
-	);
-	try {
-		clearNotedSecrets();
-		const { ask } = bootWithStored([MASKED]);
-		await settle();
-
-		const reply = await ask({ type: MSG.sessionAttach, all: true, code: "123456" });
-
-		expect(String(reply?.error)).not.toContain(MASKED.token);
-		expect(String(reply?.error)).toContain("[redacted]");
-	} finally {
-		fetchSpy.mockRestore();
 	}
 });
 

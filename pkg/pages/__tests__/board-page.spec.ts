@@ -18,7 +18,6 @@ import {
 } from "../src/board/overwatch";
 import { click } from "./utils/dom-events";
 import { captureGlobal } from "./utils/globals";
-import { makeFakePairingMount } from "./utils/pairing-mount";
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
 
@@ -455,70 +454,6 @@ describe("the overwatch page", () => {
 		expect(pill.hidden).toBe(false);
 		expect(pill.getAttribute("role")).toBe("status");
 		expect(pill.textContent).toBe("Daemon unreachable");
-		handle.stop();
-	});
-
-	test("tells the pairing control when the relayed connection is confirmed", async () => {
-		const root = newRoot();
-		const listeners = new Set<RuntimeListener>();
-		const pairing = makeFakePairingMount();
-		const handle = renderOverwatchPage({
-			root,
-			runtime: {
-				onMessage: {
-					addListener(listener: RuntimeListener) {
-						listeners.add(listener);
-					},
-				},
-				sendMessage: () => Promise.resolve({ connected: false }),
-			},
-			mountPairing: pairing.mount,
-			connect: () =>
-				Promise.resolve({
-					baseUrl: "http://127.0.0.1:47823",
-					getBoard: () => Promise.resolve(buildBoard()),
-					sendAction: () => Promise.resolve({ ok: true as const }),
-				}),
-			now: () => NOW,
-			schedule: () => 1,
-			cancel: () => undefined,
-		});
-		await handle.ready;
-		await Bun.sleep(0);
-		expect(pairing.connectedCalls).toEqual([]);
-
-		for (const listener of listeners) {
-			listener({
-				type: MSG.connection,
-				state: "connected",
-				connected: true,
-				sessions: [],
-			});
-		}
-
-		expect(pairing.connectedCalls).toEqual([true]);
-		handle.stop();
-	});
-
-	test("points the pairing control at the port the board api connected to", async () => {
-		const root = newRoot();
-		const pairing = makeFakePairingMount();
-		const handle = renderOverwatchPage({
-			root,
-			runtime: {
-				onMessage: { addListener: () => undefined },
-				sendMessage: () => Promise.resolve({ connected: false }),
-			},
-			mountPairing: pairing.mount,
-			connect: () =>
-				Promise.resolve(createOverwatchApi("http://127.0.0.1:47823")),
-			now: () => NOW,
-			schedule: () => 1,
-			cancel: () => undefined,
-		});
-		await handle.ready;
-
-		expect(await pairing.findPort?.()).toBe(47823);
 		handle.stop();
 	});
 

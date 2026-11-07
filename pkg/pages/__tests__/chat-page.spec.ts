@@ -8,7 +8,6 @@ import { renderChatPage as renderSharedChatPage } from "../src/chat/main";
 import type { PositionArea } from "../src/runtime";
 import { click, keydown, typeValue } from "./utils/dom-events";
 import { buildSessionListFrame as sessionListFrame } from "./utils/frame-fixtures";
-import { makeFakePairingMount } from "./utils/pairing-mount";
 import { makePositionArea } from "./utils/position-area";
 
 let relayMessageListener: ((message: unknown) => void) | undefined;
@@ -1333,15 +1332,11 @@ async function renderToolbarPage(
 ) {
 	const root = newRoot();
 	const fake = makeFakeClient(initialState);
-	const connected = initialState === "connected";
-	const pairing = makeFakePairingMount();
 	await renderChatPage({
 		root,
 		createClient: () => fake.client as never,
 		loadBootstraps: async () => bootstraps(),
-		mountPairing: pairing.mount,
 	});
-	pairing.reportDaemon(connected);
 	fake.emit(
 		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
 	);

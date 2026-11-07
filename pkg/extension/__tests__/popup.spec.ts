@@ -8,7 +8,6 @@ import { MSG } from "@dg/pages/chat-messages";
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { mountPopup, renderAgentItems } = await import("@/lib/features/popup");
-const { renderPairQr } = await import("@/lib/features/pair-qr");
 
 type Row = Record<string, unknown>;
 
@@ -71,15 +70,8 @@ const run = (overrides: Row = {}): Row => ({
 	...overrides,
 });
 
-const pendingOffer = (code = "123456"): Row => ({
-	status: "pending",
-	code,
-	expiresAt: NOW + 300_000,
-});
-
 type World = {
 	connection: Row;
-	offer: Row;
 	replies: Record<string, unknown>;
 	port: number | undefined;
 	agentTabs: Row;
@@ -99,7 +91,6 @@ type BootOptions = { tabId?: number; noActiveTab?: boolean; tab?: Row };
 function boot(initial: Partial<World> = {}, options: BootOptions = {}) {
 	const world: World = {
 		connection: { connected: false, sessions: [] },
-		offer: pendingOffer(),
 		replies: {},
 		port: CHAT_DEFAULT_PORT,
 		agentTabs: { groups: [] },
@@ -120,7 +111,6 @@ function boot(initial: Partial<World> = {}, options: BootOptions = {}) {
 		sendMessage: mock((message: unknown) => {
 			const type = (message as Row).type as string;
 			if (type === MSG.connectionRequest) return Promise.resolve(world.connection);
-			if (type === MSG.pairOfferRequest) return Promise.resolve(world.offer);
 			if (type === MSG.agentTabsRequest)
 				return (world.holdTabs ?? Promise.resolve()).then(() =>
 					world.tabsFail ? Promise.reject(new Error("asleep")) : world.agentTabs,
@@ -195,12 +185,6 @@ function isHidden(node: Element | null | undefined): boolean {
 	return !node || node.closest("[hidden]") !== null;
 }
 
-function qrPath(root: HTMLElement | Document, text: string): string {
-	const doc = "createElementNS" in root ? root : root.ownerDocument;
-	overrideGlobal("document", doc);
-	return renderPairQr({ text }).querySelector("path")?.getAttribute("d") ?? "";
-}
-
 function key(root: HTMLElement, name: string, target?: Element): void {
 	const View = root.ownerDocument.defaultView as unknown as {
 		KeyboardEvent: typeof KeyboardEvent;
@@ -221,20 +205,6 @@ function clickOutside(root: HTMLElement): void {
 	}
 }
 
-function toggleOpen(root: HTMLElement, details: HTMLDetailsElement, open: boolean): void {
-	details.open = open;
-	const View = root.ownerDocument.defaultView as unknown as { Event: typeof Event };
-	details.dispatchEvent(new View.Event("toggle"));
-}
-
-function foldOf(root: HTMLElement, summary: string): HTMLDetailsElement {
-	const found = [...root.querySelectorAll<HTMLDetailsElement>("details")].find(
-		(details) => details.querySelector("summary")?.textContent?.trim() === summary,
-	);
-	if (!found) throw new Error(`no details named ${summary}`);
-	return found;
-}
-
 function stubClose(root: HTMLElement) {
 	const close = mock(() => undefined);
 	const view = root.ownerDocument.defaultView as unknown as { close: () => void };
@@ -252,7 +222,8 @@ function supportVideo(on: boolean): void {
 
 describe("mountPopup header and icon", () => {
 	test.each([
-		["unpaired", {}, "scan to pair"],
+		["empty", {}, "no agents"],
+		["daemon down", { port: undefined }, "daemon down"],
 		["paired", paired(session()), "pairing"],
 	])("the %s state shows the 44 px icon, the DeeGee title and the sub line", async (_name, world, sub) => {
 		const { root, handle } = await mounted(world as Partial<World>);
@@ -266,121 +237,57 @@ describe("mountPopup header and icon", () => {
 		expect(root.querySelector(".sub")?.textContent?.trim()).toBe(sub);
 		handle.destroy();
 	});
-
-	test("the unpaired daemon-down state does not tell the user to scan", async () => {
-		const { root, handle } = await mounted({ offer: { status: "daemon-down" } });
-
-		expect(root.querySelector(".sub")?.textContent?.trim()).toBe("daemon down");
-		handle.destroy();
-	});
-
-	test.each([
-		["expired", { offer: { status: "expired" } }],
-		["daemon-down", { offer: { status: "daemon-down" } }],
-		["error", { offer: { status: "error", error: "boom" } }],
-		["claimed", { offer: { status: "claimed", agentIdentity: "agent-z" } }],
-	])("the icon renders in the %s unpaired state", async (_name, world) => {
-		const { root, handle } = await mounted(world as Partial<World>);
-
-		expect(root.querySelector("img")?.getAttribute("src")?.endsWith("/icon/48.png")).toBe(true);
-		expect(root.querySelector("img")?.getAttribute("alt")?.length).toBeGreaterThan(0);
-		handle.destroy();
-	});
 });
 
-describe("mountPopup unpaired", () => {
-	test("shows the six digit code, its QR, the scan copy and an open paste fold", async () => {
+describe("mountPopup empty state", () => {
+	test("tells the user to start an agent when no agent is paired and the daemon is reachable", async () => {
 		const { root, handle } = await mounted();
 
-		expect(root.textContent).toContain("123456");
-		const svg = root.querySelector('svg[aria-label="Pair QR code"]');
-		expect(svg).not.toBeNull();
-		expect(svg?.querySelector("path")?.getAttribute("d")).toBe(
-			qrPath(root, "dg-agent pair 123456"),
+		expect(root.querySelector(".note[role='status']")?.textContent).toBe(
+			"Start an agent with dg-agent start.",
 		);
-		expect(root.textContent).toContain(
-			"Copy the pair command from the QR code, or run dg-agent pair 123456 in the agent's terminal.",
-		);
-		const fold = foldOf(root, "Paste a code instead");
-		expect(fold.open).toBe(true);
-		const input = fold.querySelector("input");
-		expect(input?.getAttribute("inputmode")).toBe("numeric");
-		expect(input?.getAttribute("maxlength")).toBe("6");
-		expect(input?.getAttribute("pattern")).toBe("\\d{6}");
-		expect(input?.getAttribute("placeholder")).toBe("123456");
-		expect(input?.getAttribute("autocomplete")).toBe("off");
+		expect(root.querySelector(".note code")?.textContent).toBe("dg-agent start");
 		handle.destroy();
 	});
 
-	test("requests the offer once on mount", async () => {
-		const { sent, handle } = await mounted();
+	test("renders no code, QR or paste form", async () => {
+		const { root, handle } = await mounted();
 
-		expect(sent(MSG.pairOfferRequest)).toHaveLength(1);
+		expect(root.textContent).not.toMatch(/\d{6}/);
+		expect(root.querySelector("svg")).toBeNull();
+		expect(root.querySelector("input")).toBeNull();
+		expect(root.querySelector("form")).toBeNull();
+		expect(root.querySelector("details")).toBeNull();
 		handle.destroy();
 	});
 
-	test("an expired offer shows a status note above the code area", async () => {
-		const { root, handle } = await mounted({ offer: { status: "expired" } });
+	test("says the daemon is not running when no daemon answers", async () => {
+		const { root, handle } = await mounted({ port: undefined });
 
-		const note = root.querySelector(".note[role='status']");
-		expect(note?.textContent).toContain("Code expired.");
-		handle.destroy();
-	});
-
-	test("a claimed offer shows a status note naming the agent", async () => {
-		const { root, handle } = await mounted({
-			offer: { status: "claimed", agentIdentity: "agent-z" },
-		});
-
-		expect(root.querySelector(".note[role='status']")?.textContent).toContain("Paired agent-z");
-		handle.destroy();
-	});
-
-	test("a 429 error shows the daemon's text in a status note", async () => {
-		const { root, handle } = await mounted({
-			offer: { status: "error", error: "too many pairing offers; wait for one to expire" },
-		});
-
-		expect(root.querySelector(".note[role='status']")?.textContent).toContain(
-			"too many pairing offers; wait for one to expire",
+		expect(root.querySelector(".note[role='status']")?.textContent).toBe(
+			"Daemon not running. Run dg-agent start.",
 		);
 		handle.destroy();
 	});
 
-	test("a daemon-down offer shows the start command and hides the paste fold", async () => {
-		const { root, handle } = await mounted({ offer: { status: "daemon-down" } });
-
-		expect(root.querySelector(".note[role='status']")?.textContent).toContain(
-			"Start the daemon: run dg-agent start",
-		);
-		const fold = [...root.querySelectorAll("details")].find(
-			(details) => details.querySelector("summary")?.textContent?.trim() === "Paste a code instead",
-		);
-		expect(isHidden(fold)).toBe(true);
-		handle.destroy();
-	});
-
-	test("while the daemon is down the 2 s tick re-requests the offer and the code appears once it starts", async () => {
+	test("keeps the same node across ticks while the state does not change", async () => {
 		jest.useFakeTimers();
-		const harness = boot({ offer: { status: "daemon-down" } });
+		const harness = boot();
 		await harness.handle.ready;
 		await flush();
-		expect(harness.root.textContent).not.toContain("123456");
-		const before = harness.sent(MSG.pairOfferRequest).length;
+		const note = harness.root.querySelector(".note");
 
-		harness.world.offer = pendingOffer("123456");
-		jest.advanceTimersByTime(2000);
+		jest.advanceTimersByTime(4000);
 		await flush();
 
-		expect(harness.sent(MSG.pairOfferRequest).length).toBeGreaterThan(before);
-		expect(harness.root.textContent).toContain("123456");
+		expect(harness.root.querySelector(".note")).toBe(note);
 		harness.handle.destroy();
 	});
 
 	test("a tick is skipped while the previous tick's reads are still in flight", async () => {
 		jest.useFakeTimers();
 		let release: () => void = () => undefined;
-		const harness = boot({ offer: { status: "daemon-down" } });
+		const harness = boot();
 		await harness.handle.ready;
 		await flush();
 		harness.world.holdTabs = new Promise<void>((resolve) => {
@@ -390,12 +297,10 @@ describe("mountPopup unpaired", () => {
 		jest.advanceTimersByTime(2000);
 		await flush();
 		const connections = harness.sent(MSG.connectionRequest).length;
-		const offers = harness.sent(MSG.pairOfferRequest).length;
 		jest.advanceTimersByTime(4000);
 		await flush();
 
 		expect(harness.sent(MSG.connectionRequest)).toHaveLength(connections);
-		expect(harness.sent(MSG.pairOfferRequest)).toHaveLength(offers);
 
 		release();
 		await flush();
@@ -403,42 +308,18 @@ describe("mountPopup unpaired", () => {
 		await flush();
 
 		expect(harness.sent(MSG.connectionRequest).length).toBeGreaterThan(connections);
-		expect(harness.sent(MSG.pairOfferRequest).length).toBeGreaterThan(offers);
 		harness.handle.destroy();
 	});
 
-	test("the tick keeps re-requesting a pending offer every 2 s", async () => {
-		jest.useFakeTimers();
-		const harness = boot();
-		await harness.handle.ready;
-		await flush();
-		const before = harness.sent(MSG.pairOfferRequest).length;
-
-		jest.advanceTimersByTime(2000);
-		await flush();
-		jest.advanceTimersByTime(2000);
-		await flush();
-
-		expect(harness.sent(MSG.pairOfferRequest).length - before).toBe(2);
-		harness.handle.destroy();
-	});
-
-	test("a claimed agent switches the popup to the paired view and stops the offer requests", async () => {
-		jest.useFakeTimers();
-		const harness = boot();
-		await harness.handle.ready;
-		await flush();
+	test("an adopted agent switches the popup to the paired view", async () => {
+		const harness = await mounted();
 
 		harness.world.connection = paired(session()).connection as Row;
 		harness.broadcast(harness.world.connection);
-		await flush();
-		const before = harness.sent(MSG.pairOfferRequest).length;
-		jest.advanceTimersByTime(6000);
-		await flush();
+		await settle();
 
 		expect(harness.root.querySelector(".cnt")?.textContent).toContain("1 agent connected");
-		expect(harness.root.querySelector('svg[aria-label="Pair QR code"]')).toBeNull();
-		expect(harness.sent(MSG.pairOfferRequest)).toHaveLength(before);
+		expect(harness.root.querySelector(".note code")).toBeNull();
 		harness.handle.destroy();
 	});
 });
@@ -537,58 +418,14 @@ describe("mountPopup paired view", () => {
 		handle.destroy();
 	});
 
-	test("ends with a closed Pair another agent fold and requests no offer on mount", async () => {
-		const { root, handle, sent } = await mounted(paired(alpha));
+	test("renders no pairing fold, code, QR or paste form", async () => {
+		const { root, handle } = await mounted(paired(alpha));
 
-		const fold = foldOf(root, "Pair another agent");
-		expect(fold.open).toBe(false);
-		expect(sent(MSG.pairOfferRequest)).toHaveLength(0);
-		const folds = [...root.querySelectorAll("details")];
-		expect(folds.at(-1)).toBe(fold);
+		expect(root.querySelector("details")).toBeNull();
+		expect(root.querySelector("input")).toBeNull();
+		expect(root.querySelector("svg")).toBeNull();
+		expect(root.textContent).not.toContain("Pair another agent");
 		handle.destroy();
-	});
-
-	test("the first open of Pair another agent requests the offer and shows code, QR and a plain labeled paste field", async () => {
-		const { root, handle, sent } = await mounted(paired(alpha));
-		const fold = foldOf(root, "Pair another agent");
-
-		toggleOpen(root, fold, true);
-		await settle();
-
-		expect(sent(MSG.pairOfferRequest)).toHaveLength(1);
-		expect(fold.textContent).toContain("123456");
-		expect(fold.querySelector('svg[aria-label="Pair QR code"]')).not.toBeNull();
-		expect(fold.querySelectorAll("details")).toHaveLength(0);
-		const input = fold.querySelector("input");
-		expect(input).not.toBeNull();
-		const id = input?.getAttribute("id");
-		const labeled =
-			(id && fold.querySelector(`label[for="${id}"]`)) || input?.closest("label");
-		expect(labeled).toBeTruthy();
-		handle.destroy();
-	});
-
-	test("while the fold is open the tick re-requests the offer, and closed it does not", async () => {
-		jest.useFakeTimers();
-		const harness = boot(paired(alpha));
-		await harness.handle.ready;
-		await flush();
-		const fold = foldOf(harness.root, "Pair another agent");
-		toggleOpen(harness.root, fold, true);
-		await flush();
-		const afterOpen = harness.sent(MSG.pairOfferRequest).length;
-
-		jest.advanceTimersByTime(2000);
-		await flush();
-		const afterTick = harness.sent(MSG.pairOfferRequest).length;
-		toggleOpen(harness.root, fold, false);
-		await flush();
-		jest.advanceTimersByTime(6000);
-		await flush();
-
-		expect(afterTick).toBe(afterOpen + 1);
-		expect(harness.sent(MSG.pairOfferRequest)).toHaveLength(afterTick);
-		harness.handle.destroy();
 	});
 });
 
@@ -642,13 +479,9 @@ describe("mountPopup reading the agent list", () => {
 		harness.handle.destroy();
 	});
 
-	test("a re-read keeps the card nodes, the pairing subtree, an open fold and an open menu", async () => {
+	test("a re-read keeps the card nodes and an open menu", async () => {
 		const alpha = session({ agentIdentity: "alpha" });
 		const harness = await mounted(paired(alpha));
-		const fold = foldOf(harness.root, "Pair another agent");
-		toggleOpen(harness.root, fold, true);
-		await settle();
-		const svg = fold.querySelector('svg[aria-label="Pair QR code"]');
 		const card = cardOf(harness.root, "alpha");
 		const trigger = card.querySelector<HTMLButtonElement>('[aria-label="Menu for alpha"]');
 		trigger?.click();
@@ -661,8 +494,6 @@ describe("mountPopup reading the agent list", () => {
 
 		expect(cardOf(harness.root, "alpha")).toBe(card);
 		expect(card.querySelector(".pill")?.textContent?.trim()).toBe("Working");
-		expect(fold.open).toBe(true);
-		expect(fold.querySelector('svg[aria-label="Pair QR code"]')).toBe(svg);
 		expect(trigger?.getAttribute("aria-expanded")).toBe("true");
 		harness.handle.destroy();
 	});
@@ -1642,12 +1473,12 @@ describe("mountPopup daemon changed", () => {
 		connection: { connected: false, sessions, daemonChanged: true },
 	});
 
-	test("shows The daemon changed with a Trust this daemon button instead of the pairing code", async () => {
+	test("shows The daemon changed with a Trust this daemon button instead of the empty state", async () => {
 		const { root } = await mounted(changed());
 
 		expect(root.textContent).toContain("The daemon changed");
 		expect(byText(root, "button", "Trust this daemon")).toBeDefined();
-		expect(root.querySelector(".unpaired")).toBeNull();
+		expect(root.querySelector(".empty")).toBeNull();
 	});
 
 	test("shows the notice over a paired list when the pinned daemon is gone", async () => {

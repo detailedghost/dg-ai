@@ -1,6 +1,5 @@
 import {
 	CHAT_ASSETS_PATH,
-	CHAT_ATTACH_PATH,
 	CHAT_DEFAULT_PORT,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_PROTOCOL_VERSION,
@@ -12,7 +11,6 @@ import {
 	describeError,
 	emitRedacted,
 	noteSecret,
-	validateAttachRequest,
 } from "@dg/common";
 import { codedPageUrl } from "@dg/pages/chat-marker";
 import {
@@ -433,58 +431,6 @@ export function registerDaemonLink(
 		return { ...bootstrap, daemonId };
 	}
 
-	async function postDaemon(
-		path: string,
-		body: unknown,
-	): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
-		const port = await daemonPort();
-		if (port === undefined) {
-			return { ok: false, error: DAEMON_UNREACHABLE };
-		}
-		try {
-			const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(body),
-			});
-			const text = await response.text();
-			if (!response.ok) {
-				return { ok: false, error: redactSecrets(text, knownTokens()) };
-			}
-			try {
-				return { ok: true, value: text.length === 0 ? {} : JSON.parse(text) };
-			} catch {
-				return {
-					ok: false,
-					error: "The daemon returned a response the extension could not read.",
-				};
-			}
-		} catch (error) {
-			return { ok: false, error: safeError(error) };
-		}
-	}
-
-	async function adoptBootstraps(value: unknown): Promise<number> {
-		const list = Array.isArray(value)
-			? value
-			: typeof value === "object" &&
-					value !== null &&
-					Array.isArray((value as { sessions?: unknown }).sessions)
-				? (value as { sessions: unknown[] }).sessions
-				: [value];
-		let adopted = 0;
-		for (const item of list) {
-			const bootstrap = asSessionBootstrap(item);
-			if (!bootstrap) continue;
-			const paired = await pinToDaemon(bootstrap).catch(() => undefined);
-			if (!paired) continue;
-			holdBootstrap(paired);
-			client.connect(paired);
-			adopted += 1;
-		}
-		if (adopted > 0) broadcastPairingStatus();
-		return adopted;
-	}
 	function holdAndConnect(bootstrap: PairedBootstrap): void {
 		holdBootstrap(bootstrap);
 		client.connect(bootstrap);
@@ -761,37 +707,6 @@ export function registerDaemonLink(
 						client.retryNow();
 						broadcastPairingStatus();
 						sendResponse({ ok: true, state: client.getConnectionState() });
-					})();
-					return true;
-				}
-				case MSG.sessionAttach: {
-					void (async () => {
-						try {
-							const request = validateAttachRequest({
-								intent: "attach",
-								...(typeof payload.code === "string" ? { code: payload.code } : {}),
-								...(typeof payload.sessionId === "string"
-									? { sessionId: payload.sessionId }
-									: {}),
-								...(payload.all === true ? { all: true } : {}),
-							});
-							const result = await postDaemon(CHAT_ATTACH_PATH, request);
-							if (!result.ok) {
-								sendResponse({ ok: false, error: result.error });
-								return;
-							}
-							const adopted = await adoptBootstraps(result.value);
-							sendResponse(
-								adopted > 0
-									? { ok: true }
-									: {
-											ok: false,
-											error: "The daemon did not return a session.",
-										},
-							);
-						} catch (error) {
-							sendResponse({ ok: false, error: safeError(error) });
-						}
 					})();
 					return true;
 				}

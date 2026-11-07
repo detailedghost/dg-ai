@@ -3,10 +3,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { ForwardOnlyVersionError } from "../../common/src/node/sqlite";
 import { PW_EXT_MIN_EXTENSION_VERSION } from "../../common/src/pw-ext-format";
-import {
-	PAIRING_MAX_ATTEMPTS,
-	PAIRING_TTL_MS,
-} from "../../dg-daemon/src/pairing";
 import { REPO_ROOT, cells, readRepoFile, section } from "./test-support";
 
 const ADR_DIR = join(REPO_ROOT, "docs", "adr");
@@ -194,7 +190,6 @@ describe("ADR 0038 extension-pairing-only", () => {
 	});
 
 	test("trust-model text matches the lockout and offer limits in the daemon", () => {
-		expect(adr).toContain(`${PAIRING_MAX_ATTEMPTS} failures`);
 		expect(adr).toMatch(/8 outstanding/);
 		expect(adr).toMatch(/same-user adversary/);
 		expect(adr).toMatch(/<all_urls>/);
@@ -399,12 +394,6 @@ describe("AGENT-INSTALL upgrade section", () => {
 		]) {
 			expect(upgrade).toContain(needle);
 		}
-	});
-
-	test("pairing facts match the daemon constants", () => {
-		const minutes = PAIRING_TTL_MS / 60_000;
-		expect(upgrade).toMatch(new RegExp(`${minutes}-minute`));
-		expect(upgrade).toContain(`${PAIRING_MAX_ATTEMPTS}-wrong-code`);
 	});
 
 	test("the persistence note replaces the session-storage claim", () => {

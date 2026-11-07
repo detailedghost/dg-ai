@@ -45,7 +45,6 @@ import { createIcon, type IconName } from "./icons";
 import {
 	memoryStorage,
 	type PageRuntime,
-	type PairingMount,
 	type PositionArea,
 	positionAreaFor,
 } from "../runtime";
@@ -70,7 +69,6 @@ export type ChatPageOptions = {
 	assetOrigin?: string;
 	positionArea?: PositionArea;
 	pruneStalePositions?: boolean;
-	mountPairing?: PairingMount;
 	attachSession?: (
 		sessionId: string,
 		held: SessionBootstrap[],
@@ -525,17 +523,12 @@ export async function renderChatPage(
 	threadError.setAttribute("role", "alert");
 	threadError.hidden = true;
 	const threadNodes = element(doc, "div", "chat-thread__nodes");
-	const pairHost = element(doc, "div", "chat-pair");
-	thread.append(threadHeader, threadError, pairHost, threadNodes);
+	thread.append(threadHeader, threadError, threadNodes);
 
 	const moveStatus = element(doc, "div", "chat-move-status");
 	moveStatus.setAttribute("role", "status");
 	root.append(rail, thread, moveStatus);
 	root.dataset.view = "rail";
-	const pairing = options.mountPairing?.(pairHost, {
-		initialConnected:
-			bootstraps.length > 0 && client.getConnectionState() === "connected",
-	});
 
 	let canvas: ReturnType<typeof createChatCanvas> | undefined;
 	let canvasContainer: HTMLElement | undefined;
@@ -781,7 +774,6 @@ export async function renderChatPage(
 
 	function updateConnectionStatus(): void {
 		const state = pillState();
-		pairing?.setConnected(state === "connected");
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
 		const message = connectionStatusLabel(state, connectionDetail);
@@ -873,7 +865,6 @@ export async function renderChatPage(
 
 	function setSelected(sessionId: string): void {
 		selectedSessionId = sessionId;
-		pairing?.setCurrentSession(sessionId);
 		sessions.markSessionRead(sessionId);
 		syncPage();
 	}
@@ -1155,7 +1146,6 @@ export async function renderChatPage(
 			}
 		}
 
-		pairing?.setCurrentSession(selectedSessionId);
 		const selected = selectedSessionId
 			? sessions.get(selectedSessionId)
 			: undefined;

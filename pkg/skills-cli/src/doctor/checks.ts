@@ -63,7 +63,7 @@ const INSTALL_TOOL: Record<string, ToolInstall> = {
 export const PLUGIN_INSTALL = "claude plugin install dg@detailedghost";
 export const PLUGIN_UPDATE = "claude plugin update dg@detailedghost";
 const DAEMON_START = "dg-agent start";
-const DAEMON_PAIR = "dg-daemon pair";
+const LOAD_EXTENSION = "open the browser with the DeeGee extension loaded; it links to the daemon on its own";
 
 export interface ToolSpec {
 	tool: string;
@@ -369,10 +369,8 @@ export const pairingCheck: DoctorCheck = {
 					);
 		}
 		return warn(
-			existsSync(ctx.paths.pairingPath)
-				? "a pairing code is pending and no extension has connected yet; enter the code in the extension"
-				: "no extension has connected to the daemon yet; open the extension to check, or start pairing",
-			DAEMON_PAIR,
+			"no extension has connected to the daemon yet; open the extension to check",
+			LOAD_EXTENSION,
 		);
 	},
 };
