@@ -91,6 +91,8 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   always registers a new session.
 - `attach [-s <id>] [--open]` — claim a session the extension created. Extension
   only: [references/extension.md](references/extension.md).
+- `pair <code> [-s, --session <id>]` — pair this session with the browser by
+  claiming the six-digit code the extension popup shows.
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message
