@@ -393,7 +393,7 @@ async function main(): Promise<void> {
 	}
 	console.log(`test Chrome profile: ${flags.profile}`);
 	console.log(`extension: ${EXTENSION_DIR}`);
-	console.log("Quit Chrome to stop. The toolbar icon opens the extension settings.");
+	console.log("Quit Chrome to stop. The DeeGee action button opens the popup.");
 	await new Promise<void>((resolvePromise) => {
 		chrome.on("exit", () => resolvePromise());
 	});

@@ -12,17 +12,12 @@ import {
 	getNarrationMode,
 	NARRATION_MODES,
 	type NarrationMode,
-	getTheme,
 	patchConfig,
-	type ThemeSetting,
-	THEMES,
 	VOICES,
 	voiceLabel,
 } from "@/lib/config";
-import { PAGES, type PageId, resolvePage } from "@/lib/options-nav";
 import { failStatus, flashStatus } from "@/lib/ui-helpers";
 import { loadKokoro } from "@/utils/kokoro";
-import { mountPairing } from "@/lib/features/pairing";
 import { mountAssetDirectoryPanel } from "./asset-directory";
 import "./style.css";
 
@@ -73,13 +68,6 @@ function fail(status: HTMLElement, prefix: string, e: unknown): void {
 	console.error(`[dg-ai-extension] ${prefix}`, e);
 }
 
-/** Paint a theme and label the button with the one it switches to. */
-function applyTheme(theme: ThemeSetting): void {
-	document.documentElement.dataset.theme = theme;
-	const other = THEMES.find((t) => t.value !== theme);
-	$<HTMLButtonElement>("theme").textContent = other?.label ?? "Light";
-}
-
 async function load(): Promise<void> {
 	try {
 		const cfg = await getConfig();
@@ -87,7 +75,6 @@ async function load(): Promise<void> {
 		populateNarration(getNarrationMode(cfg.narration));
 		populateVoices(cfg.voice || DEFAULTS.voice);
 		populateQuality(getVideoQuality(cfg.videoQuality));
-		applyTheme(getTheme(cfg.theme));
 	} catch (e) {
 		// Surfaced rather than swallowed: empty dropdowns are the visible symptom.
 		fail($<HTMLElement>("status"), "Could not read saved settings", e);
@@ -116,16 +103,6 @@ async function persist(statusId: string): Promise<void> {
 		flashStatus(status, "Saved ✓");
 	} catch (e) {
 		fail(status, "Save failed", e);
-	}
-}
-
-function showPage(id: PageId): void {
-	for (const p of PAGES) {
-		$<HTMLElement>(`page-${p}`).hidden = p !== id;
-		const link = document.querySelector(`[data-nav="${p}"]`);
-		if (!link) continue;
-		if (p === id) link.setAttribute("aria-current", "page");
-		else link.removeAttribute("aria-current");
 	}
 }
 
@@ -204,20 +181,9 @@ $<HTMLButtonElement>("testTts").addEventListener(
 	() => void testNarration(),
 );
 $<HTMLButtonElement>("ttsDownload").addEventListener("click", downloadTest);
-$<HTMLButtonElement>("theme").addEventListener("click", () => {
-	const next: ThemeSetting =
-		document.documentElement.dataset.theme === "light" ? "dark" : "light";
-	applyTheme(next);
-	void patchConfig({ theme: next });
-});
-window.addEventListener("hashchange", () =>
-	showPage(resolvePage(window.location.hash)),
-);
 
 mountAssetDirectoryPanel($<HTMLElement>("assetDirectoryPanel"), {
 	transport: createLiveAssetDirectoryTransport(),
 });
-mountPairing($<HTMLElement>("pairPanel"), { variant: "options" });
 
-showPage(resolvePage(window.location.hash));
 void load();

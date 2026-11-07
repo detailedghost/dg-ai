@@ -50,13 +50,11 @@ type Listener = (
 	sender: unknown,
 	sendResponse: (r: unknown) => void,
 ) => boolean | undefined;
-type ClickListener = (tab?: chrome.tabs.Tab) => void;
 
 const pairingKey = (sessionId: string) => `pairing:${sessionId}`;
 
 function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 	let onMessageListener: Listener | undefined;
-	let onClickedListener: ClickListener | undefined;
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
 	const tabsQuery = mock((_queryInfo: object) =>
 		Promise.resolve([] as { id?: number; windowId?: number; url?: string }[]),
@@ -68,17 +66,9 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 		Promise.resolve(),
 	);
 	const sendMessage = mock((_message: unknown) => Promise.resolve(undefined));
-	const openOptionsPage = mock(() => Promise.resolve());
 	const onStartupAdd = mock((_cb: () => void) => undefined);
 	const onInstalledAdd = mock((_cb: () => void) => undefined);
 	const api = {
-		action: {
-			onClicked: {
-				addListener: mock((cb: ClickListener) => {
-					onClickedListener = cb;
-				}),
-			},
-		},
 		runtime: {
 			onMessage: {
 				addListener: mock((cb: Listener) => {
@@ -88,7 +78,6 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			getManifest: () => ({ version: "1.9.3" }),
 			sendMessage,
-			openOptionsPage,
 			onStartup: { addListener: onStartupAdd },
 			onInstalled: { addListener: onInstalledAdd },
 		},
@@ -106,9 +95,7 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 		tabsUpdate,
 		windowsUpdate,
 		sendMessage,
-		openOptionsPage,
 		getOnMessage: () => onMessageListener,
-		getOnClicked: () => onClickedListener,
 	};
 }
 
@@ -225,59 +212,18 @@ test("ignores an otherwise well-formed bootstrap whose port falls outside the da
 	expect(tabsCreate).not.toHaveBeenCalled();
 });
 
-test("regression: a pending recording still starts from the toolbar action, and settings do not also open", async () => {
-	const { api, openOptionsPage, getOnClicked } = makeBrowserApi();
-	const maybeStartRecording = mock((_tab?: chrome.tabs.Tab) =>
-		Promise.resolve(true),
-	);
-	registerDaemonLink({ browserApi: api, maybeStartRecording });
-	const onClicked = getOnClicked();
-	expect(typeof onClicked).toBe("function");
-	const tab = { id: 7 } as chrome.tabs.Tab;
-
-	onClicked?.(tab);
-	await settle();
-
-	expect(maybeStartRecording).toHaveBeenCalledWith(tab);
-	expect(openOptionsPage).not.toHaveBeenCalled();
-});
-
-test("regression: the toolbar action opens settings when there is no pending recording", async () => {
-	const { api, openOptionsPage, getOnClicked } = makeBrowserApi();
-	const maybeStartRecording = mock((_tab?: chrome.tabs.Tab) =>
-		Promise.resolve(false),
-	);
-	registerDaemonLink({ browserApi: api, maybeStartRecording });
-	const onClicked = getOnClicked();
-	const tab = { id: 7 } as chrome.tabs.Tab;
-
-	onClicked?.(tab);
-	await settle();
-
-	expect(maybeStartRecording).toHaveBeenCalledWith(tab);
-	expect(openOptionsPage).toHaveBeenCalledTimes(1);
-});
-
-test("regression: registerDaemonLink wires exactly one action.onClicked listener, never a second independent one", () => {
-	const { api } = makeBrowserApi();
-	registerDaemonLink({ browserApi: api });
-	expect(api.action.onClicked.addListener).toHaveBeenCalledTimes(1);
-});
-
-test("registerDaemonLink's default browser-api seam registers the toolbar listener on Firefox's MV2 global (browserAction, no action)", () => {
-	const mv2Browser = mockedBrowser as Record<string, unknown>;
+test("registerDaemonLink falls back to the wxt browser global when no browserApi is passed", () => {
+	const globalBrowser = mockedBrowser as Record<string, unknown>;
 	const addListener = mock(() => undefined);
-	mv2Browser.browserAction = { onClicked: { addListener } };
-	mv2Browser.runtime = {
-		onMessage: { addListener: mock(() => undefined) },
+	globalBrowser.runtime = {
+		onMessage: { addListener },
 		getURL: mock((path: string) => path),
 	};
 	try {
 		expect(() => registerDaemonLink()).not.toThrow();
 		expect(addListener).toHaveBeenCalledTimes(1);
 	} finally {
-		delete mv2Browser.browserAction;
-		delete mv2Browser.runtime;
+		delete globalBrowser.runtime;
 	}
 });
 
@@ -512,7 +458,7 @@ test("regression: with no chat tab attached, an inbound frame for a captured ses
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	const client = registerDaemonLink({ browserApi: api, openSocket });
+	const { client } = registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
 	await captureMarker(getOnMessage, bootstrap);
 
@@ -1048,7 +994,7 @@ test("a socket error is relayed to the chat page as a connection change with its
 		type: MSG.connection,
 		state: "reconnecting",
 		connected: false,
-		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false }],
+		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false, runs: [] }],
 		detail: `could not reach the daemon on port ${CHAT_DEFAULT_PORT}`,
 	});
 });
@@ -1066,7 +1012,7 @@ test("a socket that opens is relayed to the chat page as connected", async () =>
 		type: MSG.connection,
 		state: "connected",
 		connected: false,
-		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false }],
+		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false, runs: [] }],
 	});
 });
 

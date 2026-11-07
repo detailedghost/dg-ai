@@ -15,6 +15,7 @@ import {
 	RECORD_COMMAND,
 	recordingRefusal,
 } from "@/lib/background/recording";
+import { MSG as CHAT_MSG } from "@dg/pages/chat-messages";
 import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 
@@ -536,7 +537,7 @@ describe("maybeStartRecording", () => {
 		}
 	});
 
-	it("says nothing to a tab that has no video tour, so the toolbar opens settings", async () => {
+	it("says nothing to a tab that has no video tour", async () => {
 		const startRecording = mock(
 			async (_tabId: number, _script: TourScript) => undefined,
 		);
@@ -664,5 +665,192 @@ describe("maybeStartRecording", () => {
 		expect(await maybeStartRecording(tab, startRecording)).toBe(true);
 		expect(storageRemove).toHaveBeenCalledWith("demo_active_recording");
 		expect(startRecording).toHaveBeenCalledWith(TAB_ID, tutorialActionVideo);
+	});
+});
+
+describe("recordDemo message from the popup", () => {
+	const POPUP_TAB_ID = 42;
+	const popupSender = {
+		url: "chrome-extension://test-ext/popup.html",
+	} as chrome.runtime.MessageSender;
+	const videoTour: TourScript = {
+		startUrl: "https://app.example",
+		mode: "video",
+		steps: [{ body: "Tour" }],
+	};
+	const startVideoRecording = mock(
+		async (_tabId: number, _script: TourScript) => undefined,
+	);
+	const sendResponse = mock((_data: unknown) => undefined);
+	const sendTabMessage = mock((_tabId: number, _msg: unknown) => undefined);
+	const tabsGet = mock(async (id: number) => ({ id }));
+
+	const router = createRecordingRouter({
+		stopVideoRecording,
+		relayPlayStep,
+		relayCaptureCleared,
+		handleClearForCapture,
+		handleRecordingReady,
+		handleNarrationComplete,
+		handleNarrationProgress,
+		handleRecordingSaved,
+		confirmDownload,
+		discardRecording,
+		warmNarration,
+		startVideoRecording,
+	} as never);
+
+	function stubChrome(options: { state?: unknown; active?: unknown } = {}) {
+		const state =
+			"state" in options
+				? options.state
+				: { script: videoTour, phase: "tutorial" };
+		Object.assign(chrome, {
+			runtime: {
+				...chrome.runtime,
+				getURL: (path: string) => `chrome-extension://test-ext/${path}`,
+			},
+			tabs: { sendMessage: sendTabMessage, get: tabsGet },
+			commands: {
+				getAll: mock(async () => [
+					{ name: RECORD_COMMAND, shortcut: "Alt+Shift+D" },
+				]),
+			},
+			storage: {
+				local: {
+					get: mock(async (key: string) => {
+						if (key === `demo_tour:${POPUP_TAB_ID}`)
+							return { [key]: state };
+						if (key === "demo_active_recording")
+							return { [key]: options.active };
+						return {};
+					}),
+					set: mock(async () => undefined),
+					remove: mock(async () => undefined),
+				},
+			},
+		});
+	}
+
+	async function ask(
+		sender: chrome.runtime.MessageSender = popupSender,
+		tabId: number = POPUP_TAB_ID,
+	) {
+		router({ type: CHAT_MSG.recordDemo, tabId } as never, sender, sendResponse);
+		await settle();
+	}
+
+	beforeEach(() => {
+		startVideoRecording.mockClear();
+		sendResponse.mockClear();
+		sendTabMessage.mockClear();
+		tabsGet.mockClear();
+		startVideoRecording.mockImplementation(async () => undefined);
+	});
+
+	it("starts recording the popup-supplied tab and replies started", async () => {
+		stubChrome();
+
+		await ask();
+
+		expect(tabsGet).toHaveBeenCalledWith(POPUP_TAB_ID);
+		expect(startVideoRecording).toHaveBeenCalledTimes(1);
+		expect(startVideoRecording.mock.calls[0]?.[0]).toBe(POPUP_TAB_ID);
+		expect(startVideoRecording.mock.calls[0]?.[1]).toEqual(videoTour);
+		expect(sendResponse).toHaveBeenCalledWith({ outcome: "started" });
+	});
+
+	it("replies no-tour for a tab that is not running a video tour", async () => {
+		stubChrome({
+			state: { script: { ...videoTour, mode: "walkthrough" }, phase: "tutorial" },
+		});
+
+		await ask();
+
+		expect(sendResponse).toHaveBeenCalledWith({ outcome: "no-tour" });
+		expect(startVideoRecording).not.toHaveBeenCalled();
+	});
+
+	it("replies no-tour for a tab with no stored tour at all", async () => {
+		stubChrome({ state: undefined });
+
+		await ask();
+
+		expect(sendResponse).toHaveBeenCalledWith({ outcome: "no-tour" });
+		expect(startVideoRecording).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["the tab lookup rejects", () => Promise.reject(new Error("No tab with id"))],
+		["the looked-up tab has no id", () => Promise.resolve({})],
+	])("replies refused instead of no-tour when %s", async (_name, lookup) => {
+		stubChrome();
+		tabsGet.mockImplementationOnce(lookup as never);
+
+		await ask();
+
+		expect(sendResponse).toHaveBeenCalledWith({
+			outcome: "refused",
+			reason: "That tab is no longer open.",
+		});
+		expect(startVideoRecording).not.toHaveBeenCalled();
+	});
+
+	it("replies refused with the tour's refusal reason", async () => {
+		const state = { script: videoTour, phase: "setup" as const };
+		stubChrome({ state });
+
+		await ask();
+
+		const reason = recordingRefusal(state);
+		expect(reason).not.toBeNull();
+		expect(sendResponse).toHaveBeenCalledWith({ outcome: "refused", reason });
+		expect(startVideoRecording).not.toHaveBeenCalled();
+	});
+
+	it("replies refused when another tab is mid-recording", async () => {
+		stubChrome({
+			active: { tabId: 999, hideBody: false },
+		});
+
+		await ask();
+
+		expect(sendResponse).toHaveBeenCalledTimes(1);
+		const reply = sendResponse.mock.calls[0]?.[0] as {
+			outcome: string;
+			reason: string;
+		};
+		expect(reply.outcome).toBe("refused");
+		expect(reply.reason.length).toBeGreaterThan(0);
+		expect(startVideoRecording).not.toHaveBeenCalled();
+	});
+
+	it("replies capture-failed with the assigned shortcut when the capture start throws", async () => {
+		stubChrome();
+		startVideoRecording.mockImplementation(async () => {
+			throw new Error("Extension has not been invoked for the current page");
+		});
+
+		await ask();
+
+		expect(sendResponse).toHaveBeenCalledWith({
+			outcome: "capture-failed",
+			shortcut: "Alt+Shift+D",
+		});
+	});
+
+	it.each([
+		["a content script tab", { tab: { id: 5 }, url: "https://example.com/" }],
+		["a content script tab inside the extension origin", { tab: { id: 5 }, url: "chrome-extension://test-ext/review.html" }],
+		["a web page url", { url: "https://example.com/" }],
+		["an empty sender", {}],
+	])("refuses a recordDemo from %s and starts nothing", async (_name, sender) => {
+		stubChrome();
+
+		await ask(sender as chrome.runtime.MessageSender);
+
+		expect(startVideoRecording).not.toHaveBeenCalled();
+		expect(tabsGet).not.toHaveBeenCalled();
+		expect(sendResponse).not.toHaveBeenCalledWith({ outcome: "started" });
 	});
 });

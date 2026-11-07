@@ -1,6 +1,7 @@
 import {
 	registerAgentTabs,
 	registerDaemonLink,
+	registerPairOffer,
 	registerProto,
 	registerRecording,
 	registerTabGrouping,
@@ -15,5 +16,6 @@ export default defineBackground(() => {
 	registerTourState();
 	registerProto();
 	registerRecording();
-	registerDaemonLink();
+	const link = registerDaemonLink();
+	registerPairOffer({ adopt: link.adopt });
 });

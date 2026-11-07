@@ -1,3 +1,5 @@
+import type { SessionPresence } from "@dg/common";
+
 export const CHAT_SESSION_KEY_PREFIX = "chat_session:";
 
 export const MSG = {
@@ -19,6 +21,9 @@ export const MSG = {
 	overwatchState: "dg-chat:overwatch-state",
 	configRequest: "dg-chat:config-request",
 	commandInvocation: "dg-chat:command-invocation",
+	openChat: "dg-chat:open-chat",
+	recordDemo: "dg-chat:record-demo",
+	pairOfferRequest: "dg-chat:pair-offer-request",
 } as const;
 
 export type ConfigRelayReply = {
@@ -27,9 +32,31 @@ export type ConfigRelayReply = {
 	error?: string;
 };
 
+export type PairingRun = {
+	sessionId: string;
+	requestId: string;
+	feature: string;
+	startedAt: number;
+};
+
 export type PairingSession = {
 	sessionId: string;
 	agentIdentity: string;
 	connected: boolean;
 	current?: boolean;
+	presence?: SessionPresence;
+	runs: PairingRun[];
 };
+
+export type PairOfferState =
+	| { status: "pending"; code: string; expiresAt: number }
+	| { status: "claimed"; agentIdentity: string }
+	| { status: "expired" }
+	| { status: "daemon-down" }
+	| { status: "error"; error: string };
+
+export type RecordDemoReply =
+	| { outcome: "started" }
+	| { outcome: "no-tour" }
+	| { outcome: "refused"; reason: string }
+	| { outcome: "capture-failed"; shortcut: string | null };

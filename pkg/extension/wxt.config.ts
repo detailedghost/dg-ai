@@ -69,9 +69,6 @@ export default defineConfig({
 						// Also covers the Chrome 116 service-worker WebSocket keepalive.
 						minimum_chrome_version: "118",
 					}),
-			action: {
-				default_title: "DeeGee",
-			},
 			commands: {
 				"start-demo-recording": {
 					suggested_key: { default: "Alt+Shift+D" },

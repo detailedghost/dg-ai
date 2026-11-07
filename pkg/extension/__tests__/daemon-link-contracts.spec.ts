@@ -62,7 +62,6 @@ function boot() {
 	registerDaemonLink({
 		browserApi: api as never,
 		openSocket,
-		maybeStartRecording: () => Promise.resolve(false),
 	});
 	return {
 		api,

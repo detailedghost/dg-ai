@@ -128,7 +128,7 @@ describe("connectionGuidance", () => {
 		).toBe("Start the daemon: run dg-agent start");
 		expect(
 			connectionGuidance({ daemonUp: true, paired: false, presences: [] }),
-		).toBe("No session yet. Choose New session for CLI, then run dg-agent attach.");
+		).toBe("No session yet. Run dg-agent start --open to open this page for an agent.");
 		expect(
 			connectionGuidance({
 				daemonUp: true,

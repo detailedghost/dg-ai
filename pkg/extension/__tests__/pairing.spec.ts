@@ -1,22 +1,14 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { CHAT_DEFAULT_PORT, type SessionBootstrap } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@dg/pages/chat-messages";
-import { frameEvent, makeFakeSocket, makeStorage, settle } from "./utils/relay-harness";
+import { settle } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
-const { registerDaemonLink } = await import("@/lib/background/daemon-link");
 const { mountPairing } = await import("@/lib/features/pairing");
+const { renderPairQr } = await import("@/lib/features/pair-qr");
 
-import { buildSessionListFrame } from "./utils/frame-fixtures";
-
-type BackgroundListener = (
-	message: unknown,
-	sender: unknown,
-	sendResponse: (response: unknown) => void,
-) => boolean | undefined;
+type OfferReply = Record<string, unknown>;
 
 const windows = new Set<Window>();
 
@@ -33,66 +25,31 @@ function newRoot(): HTMLElement {
 	return root as unknown as HTMLElement;
 }
 
-function bootstrap(): SessionBootstrap {
+function stubRuntime(
+	offer: { reply: OfferReply },
+	other: (message: Record<string, unknown>) => unknown = () => ({ ok: true }),
+) {
 	return {
-		port: CHAT_DEFAULT_PORT,
-		sessionId: "paired-session",
-		token: "paired-token",
-		agentIdentity: "extension",
+		onMessage: { addListener: mock(() => undefined) },
+		sendMessage: mock((message: unknown) => {
+			const payload = message as Record<string, unknown>;
+			return Promise.resolve(
+				payload.type === MSG.pairOfferRequest ? offer.reply : other(payload),
+			);
+		}),
 	};
 }
 
-function backgroundHarness() {
-	let listener: BackgroundListener | undefined;
-	const sockets: ReturnType<typeof makeFakeSocket>[] = [];
-	const subscribers = new Set<(message: unknown) => void>();
-	const openSocket = mock(() => {
-		const socket = makeFakeSocket();
-		sockets.push(socket);
-		return socket;
-	});
-	const api = {
-		action: { onClicked: { addListener: mock(() => undefined) } },
-		runtime: {
-			onMessage: {
-				addListener(next: BackgroundListener) {
-					listener = next;
-				},
-			},
-			getURL: (path: string) => `chrome-extension://pair-test/${path}`,
-			getManifest: () => ({ version: "1.10.0" }),
-			openOptionsPage: mock(() => Promise.resolve()),
-			sendMessage: mock((message: unknown) => {
-				for (const subscriber of subscribers) subscriber(message);
-				return Promise.resolve();
-			}),
-		},
-		tabs: {
-			create: mock(() => Promise.resolve()),
-			query: mock(() => Promise.resolve([])),
-			update: mock(() => Promise.resolve()),
-		},
-		windows: { update: mock(() => Promise.resolve()) },
-		storage: makeStorage(),
-	};
-	registerDaemonLink({ browserApi: api, openSocket });
-	const runtime = {
-		onMessage: {
-			addListener: (listener: (message: unknown) => void) => { subscribers.add(listener); },
-			removeListener: (listener: (message: unknown) => void) => { subscribers.delete(listener); },
-		},
-		sendMessage(message: unknown): Promise<unknown> {
-			return new Promise((resolve) => {
-				const keepChannel = listener?.(
-					message,
-					{ url: api.runtime.getURL("options.html") },
-					resolve,
-				);
-				if (!keepChannel) resolve(undefined);
-			});
-		},
-	};
-	return { runtime, openSocket, sockets, api };
+function sent(runtime: ReturnType<typeof stubRuntime>, type: string) {
+	return runtime.sendMessage.mock.calls
+		.map(([message]) => message as Record<string, unknown>)
+		.filter((message) => message.type === type);
+}
+
+function button(root: HTMLElement, label: string): HTMLButtonElement | undefined {
+	return [...root.querySelectorAll("button")].find(
+		(candidate) => candidate.textContent?.trim() === label,
+	) as HTMLButtonElement | undefined;
 }
 
 async function submit(root: HTMLElement, code: string): Promise<void> {
@@ -108,292 +65,291 @@ async function submit(root: HTMLElement, code: string): Promise<void> {
 	await settle();
 }
 
-function stubRuntime(
-	reply: (message: Record<string, unknown>) => unknown,
-) {
-	return {
-		onMessage: { addListener: mock(() => undefined) },
-		sendMessage: mock((message: unknown) =>
-			Promise.resolve(reply(message as Record<string, unknown>)),
-		),
-	};
-}
-
-function attachMessages(runtime: ReturnType<typeof stubRuntime>) {
-	return runtime.sendMessage.mock.calls
-		.map(([message]) => message as Record<string, unknown>)
-		.filter((message) => message.type === MSG.sessionAttach);
-}
-
-function spyOnFetch() {
-	const spy = mock(() => Promise.reject(new Error("fetch must not be called")));
-	const original = globalThis.fetch;
-	globalThis.fetch = spy as unknown as typeof fetch;
-	return {
-		spy,
-		restore() {
-			globalThis.fetch = original;
-		},
-	};
-}
-
-test("submitting a six digit code asks the background to attach every session and calls no fetch", async () => {
-	const root = newRoot();
-	const runtime = stubRuntime((message) =>
-		message.type === MSG.connectionRequest ? { connected: false } : { ok: true },
-	);
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+function qrPathFor(root: HTMLElement, text: string): string {
+	const original = Object.getOwnPropertyDescriptor(globalThis, "document");
+	Object.defineProperty(globalThis, "document", {
+		configurable: true,
+		value: root.ownerDocument,
 	});
-	await handle.ready;
-	const network = spyOnFetch();
 	try {
-		await submit(root, "123456");
+		return renderPairQr({ text }).querySelector("path")?.getAttribute("d") ?? "";
 	} finally {
-		network.restore();
+		if (original) Object.defineProperty(globalThis, "document", original);
+		else Reflect.deleteProperty(globalThis, "document");
 	}
+}
 
-	expect(attachMessages(runtime)).toEqual([
-		{ type: MSG.sessionAttach, all: true, code: "123456" },
-	]);
-	expect(network.spy).not.toHaveBeenCalled();
-	expect(
-		runtime.sendMessage.mock.calls.some(
-			([message]) => (message as { type?: string }).type === MSG.markerCaptured,
-		),
-	).toBe(false);
-	handle.destroy();
+const pending = (code = "123456"): OfferReply => ({
+	status: "pending",
+	code,
+	expiresAt: 9_999_999,
 });
 
-test("a failed attach shows the daemon's error text and re-enables the form", async () => {
-	const root = newRoot();
-	const runtime = stubRuntime((message) =>
-		message.type === MSG.sessionAttach
-			? {
-					ok: false,
-					error: "incorrect pairing code; 4 attempts left",
-				}
-			: { connected: false },
-	);
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+describe("mountPairing offer view", () => {
+	test("asks the background for an offer once on mount", async () => {
+		const runtime = stubRuntime({ reply: pending() });
+		const handle = mountPairing(newRoot(), { runtime });
+		await handle.ready;
+
+		const requests = sent(runtime, MSG.pairOfferRequest);
+		expect(requests).toHaveLength(1);
+		expect(requests[0]).not.toHaveProperty("renew");
+		handle.destroy();
 	});
-	await handle.ready;
 
-	await submit(root, "123456");
+	test("a pending offer shows the code, its QR and the scan copy", async () => {
+		const root = newRoot();
+		const handle = mountPairing(root, {
+			runtime: stubRuntime({ reply: pending("654321") }),
+		});
+		await handle.ready;
 
-	expect(root.querySelector("[role='status']")?.textContent).toBe(
-		"incorrect pairing code; 4 attempts left",
-	);
-	expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
-	expect(
-		root.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled,
-	).toBe(false);
-	handle.destroy();
-});
-
-test("a successful attach refreshes the session list from the background", async () => {
-	const root = newRoot();
-	const attached = bootstrap();
-	let attachedYet = false;
-	const runtime = stubRuntime((message) => {
-		if (message.type === MSG.sessionAttach) {
-			attachedYet = true;
-			return { ok: true };
-		}
-		if (message.type === MSG.connectionRequest) {
-			return attachedYet
-				? {
-						connected: true,
-						sessions: [
-							{
-								sessionId: attached.sessionId,
-								agentIdentity: "claude",
-								connected: true,
-							},
-						],
-					}
-				: { connected: false };
-		}
-		return undefined;
+		expect(root.textContent).toContain("654321");
+		expect(root.querySelector('svg[aria-label="Pair QR code"]')).not.toBeNull();
+		expect(root.textContent).toContain(
+			"Copy the pair command from the QR code, or run dg-agent pair 654321 in the agent's terminal.",
+		);
+		handle.destroy();
 	});
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+
+	test("the QR encodes the pair command for the shown code, leading zero kept", async () => {
+		const root = newRoot();
+		const handle = mountPairing(root, {
+			runtime: stubRuntime({ reply: pending("012345") }),
+		});
+		await handle.ready;
+		const expected = qrPathFor(root, "dg-agent pair 012345");
+
+		expect(expected).not.toBe("");
+		expect(
+			root
+				.querySelector('svg[aria-label="Pair QR code"]')
+				?.querySelector("path")
+				?.getAttribute("d"),
+		).toBe(expected);
+		handle.destroy();
 	});
-	await handle.ready;
-	expect(root.querySelectorAll(".pair-session")).toHaveLength(0);
 
-	await submit(root, "123456");
+	test("a claimed offer names the paired agent and shows no QR", async () => {
+		const root = newRoot();
+		const handle = mountPairing(root, {
+			runtime: stubRuntime({
+				reply: { status: "claimed", agentIdentity: "claude-reviewer" },
+			}),
+		});
+		await handle.ready;
 
-	expect(root.querySelectorAll(".pair-session")).toHaveLength(1);
-	expect(root.textContent).toContain("claude");
-	expect(root.textContent).toContain("1 connected session");
-	handle.destroy();
-});
-
-test("ignores a second submission while the attach is pending", async () => {
-	const root = newRoot();
-	let resolveAttach: ((reply: unknown) => void) | undefined;
-	const runtime = {
-		onMessage: { addListener: mock(() => undefined) },
-		sendMessage: mock((message: unknown) =>
-			(message as Record<string, unknown>).type === MSG.sessionAttach
-				? new Promise((resolve) => {
-						resolveAttach = resolve;
-					})
-				: Promise.resolve({ connected: false }),
-		),
-	};
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+		expect(root.textContent).toContain("Paired claude-reviewer");
+		expect(root.querySelector('svg[aria-label="Pair QR code"]')).toBeNull();
+		handle.destroy();
 	});
-	await handle.ready;
 
-	await submit(root, "123456");
-	await submit(root, "123456");
+	test("an expired offer says so and New code requests a renewal", async () => {
+		const root = newRoot();
+		const offer = { reply: { status: "expired" } as OfferReply };
+		const runtime = stubRuntime(offer);
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+		expect(root.textContent).toContain("Code expired.");
 
-	expect(
-		runtime.sendMessage.mock.calls.filter(
-			([message]) => (message as { type?: string }).type === MSG.sessionAttach,
-		),
-	).toHaveLength(1);
-	expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(true);
-	resolveAttach?.({ ok: true });
-	await settle();
-	handle.destroy();
-});
+		offer.reply = pending("111222");
+		button(root, "New code")?.click();
+		await settle();
 
-test("an empty session list tells the user to start an agent and pair", async () => {
-	const root = newRoot();
-	const runtime = stubRuntime((message) =>
-		message.type === MSG.connectionRequest
-			? { connected: false, sessions: [] }
-			: { sessions: [] },
-	);
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+		expect(sent(runtime, MSG.pairOfferRequest).at(-1)).toMatchObject({
+			renew: true,
+		});
+		expect(root.textContent).toContain("111222");
+		handle.destroy();
 	});
-	await handle.ready;
 
-	expect(root.querySelector("[role='status']")?.textContent).toBe(
-		"No agent is connected. Start one with dg-agent start, then pair.",
-	);
-	handle.destroy();
-});
+	test("an error shows the daemon's text and Try again requests a renewal", async () => {
+		const root = newRoot();
+		const runtime = stubRuntime({
+			reply: {
+				status: "error",
+				error: "too many pairing offers; wait for one to expire",
+			},
+		});
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+		expect(root.textContent).toContain(
+			"too many pairing offers; wait for one to expire",
+		);
 
-test("the contextual Pair entry stays visible with confirmed connection status", async () => {
-	const disconnectedRoot = newRoot();
-	const disconnected = mountPairing(disconnectedRoot, {
-		variant: "entry",
-		runtime: {
+		button(root, "Try again")?.click();
+		await settle();
+
+		expect(sent(runtime, MSG.pairOfferRequest).at(-1)).toMatchObject({
+			renew: true,
+		});
+		handle.destroy();
+	});
+
+	test("a daemon-down offer shows the start command and no QR", async () => {
+		const root = newRoot();
+		const handle = mountPairing(root, {
+			runtime: stubRuntime({ reply: { status: "daemon-down" } }),
+		});
+		await handle.ready;
+
+		expect(root.textContent).toContain("Start the daemon: run dg-agent start");
+		expect(root.querySelector('svg[aria-label="Pair QR code"]')).toBeNull();
+		handle.destroy();
+	});
+
+	test("no render and no message follows destroy", async () => {
+		const root = newRoot();
+		let release: ((reply: OfferReply) => void) | undefined;
+		const runtime = {
 			onMessage: { addListener: mock(() => undefined) },
-			sendMessage: mock(() => Promise.resolve({ connected: false })),
-		},
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-	});
-	await disconnected.ready;
-	expect(disconnectedRoot.hidden).toBe(false);
-	expect(disconnectedRoot.textContent).toContain("Not paired");
-	expect(disconnectedRoot.querySelector("button")?.textContent).toBe("Pair");
+			sendMessage: mock(
+				() =>
+					new Promise((resolve) => {
+						release = resolve as (reply: OfferReply) => void;
+					}),
+			),
+		};
+		const handle = mountPairing(root, { runtime });
+		handle.destroy();
+		const before = runtime.sendMessage.mock.calls.length;
 
-	const connectedRoot = newRoot();
-	const connected = mountPairing(connectedRoot, {
-		variant: "entry",
-		runtime: {
+		release?.(pending("999888"));
+		await settle();
+
+		expect(root.textContent).not.toContain("999888");
+		expect(runtime.sendMessage.mock.calls).toHaveLength(before);
+	});
+
+	test("the panel never sends the retired catalog, launch or clear messages", async () => {
+		const root = newRoot();
+		const runtime = stubRuntime({ reply: pending() });
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+		await submit(root, "123456");
+
+		const types = runtime.sendMessage.mock.calls.map(
+			([message]) => (message as { type?: string }).type,
+		);
+		expect(types).not.toContain(MSG.sessionCatalog);
+		expect(types).not.toContain(MSG.sessionLaunch);
+		expect(types).not.toContain(MSG.sessionClear);
+		handle.destroy();
+	});
+
+	test("renders nothing from a token field on the offer reply", async () => {
+		const root = newRoot();
+		const handle = mountPairing(root, {
+			runtime: stubRuntime({
+				reply: {
+					status: "claimed",
+					agentIdentity: "agent-x",
+					token: "leaky-token",
+				},
+			}),
+		});
+		await handle.ready;
+
+		expect(root.innerHTML).not.toContain("leaky-token");
+		handle.destroy();
+	});
+});
+
+describe("mountPairing paste form", () => {
+	test("submitting a six digit code asks the background to attach every session", async () => {
+		const root = newRoot();
+		const runtime = stubRuntime({ reply: pending() });
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+
+		await submit(root, "123456");
+
+		expect(sent(runtime, MSG.sessionAttach)).toEqual([
+			{ type: MSG.sessionAttach, all: true, code: "123456" },
+		]);
+		handle.destroy();
+	});
+
+	test("the code input is numeric, six digits long and not remembered", async () => {
+		const root = newRoot();
+		const handle = mountPairing(root, {
+			runtime: stubRuntime({ reply: pending() }),
+		});
+		await handle.ready;
+		const input = root.querySelector<HTMLInputElement>("input");
+
+		expect(input?.getAttribute("placeholder")).toBe("123456");
+		expect(input?.getAttribute("inputmode")).toBe("numeric");
+		expect(input?.getAttribute("maxlength")).toBe("6");
+		expect(input?.getAttribute("autocomplete")).toBe("off");
+		expect(input?.getAttribute("pattern")).toBe("\\d{6}");
+		handle.destroy();
+	});
+
+	test("a value that is not six digits sends nothing and shows the length hint", async () => {
+		const root = newRoot();
+		const runtime = stubRuntime({ reply: pending() });
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+
+		await submit(root, "12ab");
+
+		expect(sent(runtime, MSG.sessionAttach)).toHaveLength(0);
+		expect(root.querySelector("[role='status']")?.textContent).toBe(
+			"Enter a 6 digit code.",
+		);
+		handle.destroy();
+	});
+
+	test("a failed attach shows the daemon's error text and re-enables the form", async () => {
+		const root = newRoot();
+		const runtime = stubRuntime({ reply: pending() }, (message) =>
+			message.type === MSG.sessionAttach
+				? { ok: false, error: "incorrect pairing code; 4 attempts left" }
+				: { ok: true },
+		);
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+
+		await submit(root, "123456");
+
+		expect(root.textContent).toContain(
+			"incorrect pairing code; 4 attempts left",
+		);
+		expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
+		expect(
+			root.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled,
+		).toBe(false);
+		handle.destroy();
+	});
+
+	test("ignores a second submission while the attach is pending", async () => {
+		const root = newRoot();
+		let resolveAttach: ((reply: unknown) => void) | undefined;
+		const runtime = {
 			onMessage: { addListener: mock(() => undefined) },
-			sendMessage: mock(() => Promise.resolve({ connected: true })),
-		},
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+			sendMessage: mock((message: unknown) =>
+				(message as Record<string, unknown>).type === MSG.sessionAttach
+					? new Promise((resolve) => {
+							resolveAttach = resolve;
+						})
+					: Promise.resolve(pending()),
+			),
+		};
+		const handle = mountPairing(root, { runtime });
+		await handle.ready;
+
+		await submit(root, "123456");
+		await submit(root, "123456");
+
+		expect(
+			runtime.sendMessage.mock.calls.filter(
+				([message]) => (message as { type?: string }).type === MSG.sessionAttach,
+			),
+		).toHaveLength(1);
+		expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(true);
+		resolveAttach?.({ ok: true });
+		await settle();
+		handle.destroy();
 	});
-	await connected.ready;
-	expect(connectedRoot.hidden).toBe(false);
-	expect(connectedRoot.textContent).toContain("connection confirmed");
-});
-
-test("the code input rejects values that are not exactly six digits", async () => {
-	const root = newRoot();
-	const runtime = stubRuntime(() => ({ connected: false }));
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-	});
-	await handle.ready;
-	const input = root.querySelector<HTMLInputElement>("input");
-	expect(input?.getAttribute("inputmode")).toBe("numeric");
-	expect(input?.getAttribute("autocomplete")).toBe("one-time-code");
-
-	await submit(root, "12ab");
-
-	expect(attachMessages(runtime)).toHaveLength(0);
-	expect(root.querySelector("[role='status']")?.textContent).toBe(
-		"Enter a 6 digit code.",
-	);
-});
-
-test("an unavailable daemon shows the start command", async () => {
-	const root = newRoot();
-	const handle = mountPairing(root, {
-		variant: "entry",
-		runtime: {
-			onMessage: { addListener: mock(() => undefined) },
-			sendMessage: mock(() => Promise.resolve({ connected: false })),
-		},
-		findPort: () => Promise.resolve(undefined),
-	});
-	await handle.ready;
-
-	expect(root.textContent).toContain("Start the daemon: run dg-agent start");
-	expect(root.querySelector<HTMLButtonElement>("button")?.hidden).toBe(true);
-});
-
-test("the options page includes its Pair section mount point", () => {
-	const html = readFileSync(
-		new URL("../entrypoints/options/index.html", import.meta.url),
-		"utf8",
-	);
-	expect(html).toContain('id="pairPanel"');
-});
-
-
-test("disconnecting a previous session removes its credentials without interrupting the current session", async () => {
-	const root = newRoot();
-	const background = backgroundHarness();
-	const older = bootstrap();
-	const newer = { ...older, sessionId: "newer-session", token: "newer-token" };
-	await background.runtime.sendMessage({ type: MSG.markerCaptured, bootstrap: older });
-	await background.runtime.sendMessage({ type: MSG.markerCaptured, bootstrap: newer });
-	const first = background.sockets[0]!;
-	first.dispatch("open");
-	first.dispatch("message", frameEvent(buildSessionListFrame([older, newer], { sessionId: older.sessionId })));
-	first.dispatch("message", frameEvent(buildSessionListFrame([older, newer], { sessionId: newer.sessionId })));
-	await settle();
-	const handle = mountPairing(root, { variant: "options", runtime: background.runtime });
-	await handle.ready;
-	expect(root.textContent).toContain("2 connected sessions");
-	expect(root.querySelector(".pair-session--current")?.textContent).toContain(newer.sessionId.slice(0, 8));
-	expect(root.querySelector(".pair-session--current")?.textContent).toContain("Current");
-	root.querySelector<HTMLButtonElement>(".pair-session button")?.click();
-	await settle();
-	first.dispatch("message", frameEvent({ type: "session-disconnected", sessionId: older.sessionId, protocolVersion: 1 }));
-	await settle();
-	expect(background.api.storage.local.remove).toHaveBeenCalledWith(`pairing:${older.sessionId}`);
-	expect(root.querySelectorAll(".pair-session")).toHaveLength(1);
-	expect(background.sockets).toHaveLength(1);
-	const frames = first.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
-	expect(frames.some((frame) => frame.type === "session-disconnect" && frame.sessionId === older.sessionId)).toBe(true);
-	expect(frames.some((frame) => frame.type === "session-close")).toBe(false);
-	expect(root.textContent).toContain("1 connected session");
-	first.dispatch("error");
-	handle.destroy();
 });

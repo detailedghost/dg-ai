@@ -1,4 +1,5 @@
 import { tourHasAutomaticActions } from "@dg/common";
+import { MSG as CHAT_MSG, type RecordDemoReply } from "@dg/pages/chat-messages";
 import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
 import {
@@ -17,6 +18,7 @@ import {
 	videoRecordingSupported,
 	warmNarration,
 } from "@/lib/features/demo-recorder";
+import { isPopupSender } from "./popup-sender";
 
 type RecordingMessage = {
 	type?: string;
@@ -102,6 +104,7 @@ export type RecordingDeps = {
 	discardRecording: typeof discardRecording;
 	relayCaptureCleared: typeof relayCaptureCleared;
 	warmNarration: typeof warmNarration;
+	startVideoRecording?: typeof startVideoRecording;
 };
 
 const defaultDeps: RecordingDeps = {
@@ -176,6 +179,18 @@ export function createRecordingRouter(
 ) => boolean | undefined {
 	const routes = buildRoutes(deps);
 	return (msg, sender, sendResponse) => {
+		if (msg?.type === CHAT_MSG.recordDemo) {
+			if (
+				!isPopupSender(sender, chrome.runtime.getURL("")) ||
+				typeof msg.tabId !== "number"
+			)
+				return undefined;
+			void recordDemoFromPopup(
+				msg.tabId,
+				deps.startVideoRecording ?? startVideoRecording,
+			).then(sendResponse as (reply: RecordDemoReply) => void);
+			return true;
+		}
 		if (
 			msg?.type === MSG.videoConfirmDownload &&
 			typeof msg.tabId === "number"
@@ -213,6 +228,38 @@ export function createRecordingRouter(
 
 export const handleRecordingMessage = createRecordingRouter(defaultDeps);
 
+type RecordingAttempt =
+	| { outcome: "started" }
+	| { outcome: "no-tour" }
+	| { outcome: "refused"; reason: string }
+	| { outcome: "capture-failed"; error: unknown };
+
+async function attemptRecording(
+	tabId: number,
+	startRecording: typeof startVideoRecording,
+): Promise<RecordingAttempt> {
+	const key = `demo_tour:${tabId}`;
+	const stored = (await chrome.storage.local.get(key)) as Record<
+		string,
+		RecordingTourState | undefined
+	>;
+	const state = stored[key];
+	const script = state?.script;
+	if (script?.mode !== "video") return { outcome: "no-tour" };
+	const refusal = recordingRefusal(state);
+	if (refusal) return { outcome: "refused", reason: refusal };
+	// One offscreen doc captures one tab; must be decided before startRecording
+	// ever calls acquireStreamId — see that function's doc comment for why.
+	const activeConflict = await activeRecordingRefusal(tabId);
+	if (activeConflict) return { outcome: "refused", reason: activeConflict };
+	try {
+		await startRecording(tabId, script);
+		return { outcome: "started" };
+	} catch (error) {
+		return { outcome: "capture-failed", error };
+	}
+}
+
 /** Start recording iff the active tab runs a video tour; returns whether it did. */
 export async function maybeStartRecording(
 	tab?: chrome.tabs.Tab,
@@ -220,43 +267,43 @@ export async function maybeStartRecording(
 ): Promise<boolean> {
 	if (!tab?.id) return false;
 	if (!videoRecordingSupported()) return false;
-	const key = `demo_tour:${tab.id}`;
-	const stored = (await chrome.storage.local.get(key)) as Record<
-		string,
-		RecordingTourState | undefined
-	>;
-	const state = stored[key];
-	const script = state?.script;
-	if (script?.mode !== "video") return false;
+	const attempt = await attemptRecording(tab.id, startRecording);
+	if (attempt.outcome === "no-tour") return false;
 	// Declining is still "handled" — but say so on the page, or the keypress the user
 	// was told to press does nothing at all.
-	const refusal = recordingRefusal(state);
-	if (refusal) {
+	if (attempt.outcome === "refused") {
 		void chrome.tabs.sendMessage(tab.id, {
 			type: MSG.videoBlocked,
-			reason: refusal,
+			reason: attempt.reason,
 		});
-		return true;
 	}
-	// One offscreen doc captures one tab; must be decided before startRecording
-	// ever calls acquireStreamId — see that function's doc comment for why.
-	const activeConflict = await activeRecordingRefusal(tab.id);
-	if (activeConflict) {
-		void chrome.tabs.sendMessage(tab.id, {
-			type: MSG.videoBlocked,
-			reason: activeConflict,
-		});
-		return true;
-	}
-	try {
-		await startRecording(tab.id, script);
-	} catch (err) {
+	if (attempt.outcome === "capture-failed") {
 		// Surface the failure in the page instead of failing silently.
-		const error = err instanceof Error ? err.message : String(err);
-		void chrome.tabs.sendMessage(tab.id, { type: MSG.videoError, error });
-		console.error("[dg-ai-extension] start recording failed:", err);
+		const { error } = attempt;
+		void chrome.tabs.sendMessage(tab.id, {
+			type: MSG.videoError,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		console.error("[dg-ai-extension] start recording failed:", error);
 	}
 	return true;
+}
+
+async function recordDemoFromPopup(
+	tabId: number,
+	startRecording: typeof startVideoRecording,
+): Promise<RecordDemoReply> {
+	const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+	if (tab?.id === undefined)
+		return { outcome: "refused", reason: "That tab is no longer open." };
+	const attempt = await attemptRecording(tab.id, startRecording);
+	if (attempt.outcome !== "capture-failed") return attempt;
+	console.error("[dg-ai-extension] start recording failed:", attempt.error);
+	const commands = await chrome.commands.getAll().catch(() => []);
+	return {
+		outcome: "capture-failed",
+		shortcut: assignedRecordShortcut(commands),
+	};
 }
 
 export function registerRecording(): void {

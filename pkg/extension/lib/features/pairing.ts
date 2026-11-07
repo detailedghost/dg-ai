@@ -1,489 +1,246 @@
 import { PAIR_CODE_PATTERN } from "@dg/common";
+import { MSG, type PairOfferState } from "@dg/pages/chat-messages";
 import { browser } from "wxt/browser";
-import { MSG, type PairingSession } from "@dg/pages/chat-messages";
-import { findDaemonPort } from "@dg/pages/daemon-port";
-import {
-	type PublicSession,
-	connectionGuidance,
-	sessionControls,
-	staleSessionIds,
-} from "@dg/pages/chat/chat-connection";
-
-type PairRuntimeListener = (message: unknown) => void;
+import { button, element } from "./dom";
+import { renderPairQr } from "./pair-qr";
 
 export type PairRuntime = {
-	onMessage?: {
-		addListener(listener: PairRuntimeListener): void;
-		removeListener?(listener: PairRuntimeListener): void;
-	};
-	sendMessage?(message: unknown): Promise<unknown>;
+	sendMessage(message: unknown): Promise<unknown>;
 };
 
 export type PairingOptions = {
-	variant: "entry" | "options";
-	initialConnected?: boolean;
 	runtime?: PairRuntime;
-	findPort?: () => Promise<number | undefined>;
-	onDaemon?(reachable: boolean): void;
+	pasteFold?: boolean;
+	onState?: (state: PairOfferState) => void;
 };
 
 export type PairingHandle = {
 	ready: Promise<void>;
-	setConnected(connected: boolean): void;
-	setCurrentSession(sessionId: string | undefined): void;
+	refresh(): Promise<void>;
 	destroy(): void;
 };
 
 const START_DAEMON = "Start the daemon: run dg-agent start";
-const ASK_FOR_CODE = "Run dg-daemon pair in a terminal, then enter the code";
-const NO_AGENT =
-	"No agent is connected. Start one with dg-agent start, then pair.";
+export const BACKGROUND_UNREACHABLE =
+	"DeeGee is not responding. Close and reopen this popup.";
+const PASTE_FAILED = "Could not pair. Retry, or check that the daemon is running.";
 
-function element<K extends keyof HTMLElementTagNameMap>(
-	doc: Document,
-	tag: K,
-	className: string,
-	text?: string,
-): HTMLElementTagNameMap[K] {
-	const node = doc.createElement(tag);
-	node.className = className;
-	if (text !== undefined) node.textContent = text;
-	return node;
+function asOfferState(reply: unknown): PairOfferState {
+	const fallback: PairOfferState = {
+		status: "error",
+		error: BACKGROUND_UNREACHABLE,
+	};
+	if (typeof reply !== "object" || reply === null) return fallback;
+	const fields = reply as Record<string, unknown>;
+	switch (fields.status) {
+		case "pending":
+			return typeof fields.code === "string" &&
+				PAIR_CODE_PATTERN.test(fields.code) &&
+				typeof fields.expiresAt === "number"
+				? { status: "pending", code: fields.code, expiresAt: fields.expiresAt }
+				: fallback;
+		case "claimed":
+			return typeof fields.agentIdentity === "string"
+				? { status: "claimed", agentIdentity: fields.agentIdentity }
+				: fallback;
+		case "error":
+			return typeof fields.error === "string"
+				? { status: "error", error: fields.error }
+				: fallback;
+		case "expired":
+		case "daemon-down":
+			return { status: fields.status };
+		default:
+			return fallback;
+	}
 }
 
-function isConnectedReply(value: unknown): boolean {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		(value as Record<string, unknown>).connected === true
-	);
-}
-
-function isPairingSuccessReply(value: unknown): boolean {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		(value as Record<string, unknown>).ok === true
-	);
+function offerKey(state: PairOfferState): string {
+	switch (state.status) {
+		case "pending":
+			return `pending:${state.code}`;
+		case "claimed":
+			return `claimed:${state.agentIdentity}`;
+		case "error":
+			return `error:${state.error}`;
+		default:
+			return state.status;
+	}
 }
 
 export function mountPairing(
 	root: HTMLElement,
-	options: PairingOptions,
+	options: PairingOptions = {},
 ): PairingHandle {
 	const doc = root.ownerDocument;
 	const runtime =
 		options.runtime ??
-		((browser as unknown as { runtime?: PairRuntime }).runtime ?? {});
-	const findPort = options.findPort ?? (() => findDaemonPort());
-	let port: number | undefined;
-	let connected = options.initialConnected ?? false;
-	let refreshVersion = 0;
-	let pending = false;
-	let sessions: PairingSession[] = [];
+		((browser as unknown as { runtime: PairRuntime }).runtime);
 	let destroyed = false;
-	let selectedSessionId: string | undefined;
-	let catalog: PublicSession[] = [];
+	let shown: string | undefined;
+	let inFlight: Promise<void> | undefined;
+	let attaching = false;
 
-	root.classList.add("pair-shell", `pair-shell--${options.variant}`);
-	root.hidden = true;
-	const panel = element(doc, "section", "pair-panel");
-	const heading = element(
-		doc,
-		"h2",
-		options.variant === "options" ? "sec-h" : "pair-panel__title",
-		options.variant === "options" ? "Pairing" : "Not paired",
-	);
-	const copy = element(doc, "p", "pair-panel__copy");
-	const reveal = element(doc, "button", "pair-button", "Pair");
-	reveal.type = "button";
-	const form = element(doc, "form", "pair-form");
-	const label = element(doc, "label", "pair-form__label", "Pair code");
-	const input = element(doc, "input", "pair-form__input");
-	input.type = "text";
-	input.inputMode = "numeric";
-	input.autocomplete = "one-time-code";
-	input.pattern = "[0-9]{6}";
-	input.maxLength = 6;
-	input.required = true;
-	label.append(input);
-	const submit = element(doc, "button", "pair-button", "Pair");
+	const offer = element(doc, "div", "pair-offer");
+
+	const input = element(doc, "input", "pair-form__input grow");
+	for (const [name, value] of Object.entries({
+		id: "pair-code",
+		type: "text",
+		placeholder: "123456",
+		inputmode: "numeric",
+		maxlength: "6",
+		autocomplete: "off",
+		pattern: "\\d{6}",
+		required: "",
+	})) {
+		input.setAttribute(name, value);
+	}
+	const submit = element(doc, "button", "btn", "Pair");
 	submit.type = "submit";
-	const status = element(doc, "p", "pair-panel__status");
+	const form = element(doc, "form", "pair-form");
+	form.append(input, submit);
+	const label = element(doc, "label", "lbl", "Pair code");
+	label.setAttribute("for", "pair-code");
+	const status = element(doc, "p", "note");
 	status.setAttribute("role", "status");
-	form.append(label, submit);
-	const directions = element(
-		doc,
-		"p",
-		"pair-panel__copy",
-		"Attach CLI session connects one that is already open. New session for CLI creates one here; then run dg-agent attach in the terminal.",
-	);
-	const attachButton = element(doc, "button", "pair-button", "Attach CLI session");
-	attachButton.type = "button";
-	const launchButton = element(doc, "button", "pair-button", "New session for CLI");
-	launchButton.type = "button";
-	const clearButton = element(doc, "button", "pair-button", "Clear disconnected");
-	clearButton.type = "button";
-	const retryButton = element(doc, "button", "pair-button", "Retry");
-	retryButton.type = "button";
-	const actions = element(doc, "div", "pair-actions");
-	actions.append(attachButton, launchButton, clearButton, retryButton);
-	const sessionList = element(doc, "ul", "pair-sessions");
-	panel.append(heading, copy, reveal, form, directions, actions, status, sessionList);
-	root.replaceChildren(panel);
+	const paste = element(doc, "div", "paste");
+	paste.append(label, form, status);
 
-	function controls() {
-		const held = sessions.map((session) => ({
-			sessionId: session.sessionId,
-			connected: session.connected,
-		}));
-		const listed =
-			catalog.length > 0
-				? catalog
-				: sessions.map((session) => ({
-						sessionId: session.sessionId,
-						agentIdentity: session.agentIdentity,
-						presence: session.connected
-							? ("cli" as const)
-							: ("idle" as const),
-					}));
-		return sessionControls(listed, held);
+	let pasteSection: HTMLElement = paste;
+	if (options.pasteFold !== false) {
+		const fold = element(doc, "details", "alt");
+		fold.open = true;
+		fold.append(element(doc, "summary", "", "Paste a code instead"), paste);
+		pasteSection = fold;
 	}
+	root.replaceChildren(offer, pasteSection);
 
-	function renderSessions(): void {
-		sessionList.replaceChildren();
-		const rows = controls();
-		clearButton.hidden = staleSessionIds(rows).length === 0;
-		for (const session of sessions) {
-			const hasSelection = sessions.some((item) => item.sessionId === selectedSessionId);
-			const isCurrent = hasSelection ? session.sessionId === selectedSessionId : session.current === true;
-			const row = element(doc, "li", isCurrent ? "pair-session pair-session--current" : "pair-session");
-			const control = rows.find((item) => item.sessionId === session.sessionId);
-			const label = element(
-				doc,
-				"span",
-				"pair-session__label",
-				`${isCurrent ? "Current · " : ""}${session.agentIdentity} · ${session.sessionId.slice(0, 8)} · ${session.connected ? "Connected" : "Disconnected"}`,
-			);
-			if (control?.canConnect) {
-				const connect = element(doc, "button", "pair-button", "Connect");
-				connect.type = "button";
-				connect.setAttribute(
-					"aria-label",
-					`Connect ${session.agentIdentity} ${session.sessionId.slice(0, 8)}`,
+	function renderOffer(state: PairOfferState): void {
+		const children: HTMLElement[] = [];
+		const note = (text: string) => {
+			const line = element(doc, "p", "note", text);
+			line.setAttribute("role", "status");
+			children.push(line);
+		};
+		const retry = (text: string) =>
+			children.push(button(doc, "btn btn-sm", text, () => void request(true)));
+		switch (state.status) {
+			case "pending": {
+				const copy = element(doc, "div");
+				copy.append(
+					element(doc, "b", "", "Scan"),
+					element(
+						doc,
+						"p",
+						"sub",
+						`Copy the pair command from the QR code, or run dg-agent pair ${state.code} in the agent's terminal.`,
+					),
+					element(doc, "div", "code", state.code),
 				);
-				connect.addEventListener("click", () => {
-					void runCommand({
-						type: MSG.sessionAttach,
-						sessionId: session.sessionId,
-						...codePayload(),
-					});
-				});
-				row.append(label, connect);
-				sessionList.append(row);
-				continue;
-			}
-			const disconnect = element(doc, "button", "pair-button", "Disconnect");
-			disconnect.type = "button";
-			disconnect.setAttribute(
-				"aria-label",
-				`Disconnect ${session.agentIdentity} ${session.sessionId.slice(0, 8)}`,
-			);
-			disconnect.addEventListener("click", () => {
-				disconnect.disabled = true;
-				void (async () => {
-					try {
-						const reply = await runtime.sendMessage?.({
-							type: MSG.sessionDisconnect,
-							sessionId: session.sessionId,
-						});
-						if (!isPairingSuccessReply(reply)) throw new Error("disconnect failed");
-						await refresh();
-					} catch {
-						status.textContent = "Could not disconnect this session. Try again.";
-						disconnect.disabled = false;
-					}
-				})();
-			});
-			row.append(label, disconnect);
-			if (control?.canStop) {
-				const stop = element(doc, "button", "pair-button", "Stop");
-				stop.type = "button";
-				stop.setAttribute(
-					"aria-label",
-					`Stop ${session.agentIdentity} ${session.sessionId.slice(0, 8)}`,
+				const box = element(doc, "div", "qrbox");
+				box.append(
+					renderPairQr({ text: `dg-agent pair ${state.code}`, doc }),
+					copy,
 				);
-				stop.addEventListener("click", () => {
-					stop.disabled = true;
-					void runCommand({ type: MSG.sessionClose, sessionId: session.sessionId });
-				});
-				row.append(stop);
+				children.push(box);
+				break;
 			}
-			sessionList.append(row);
+			case "claimed":
+				note(`Paired ${state.agentIdentity}`);
+				break;
+			case "expired":
+				note("Code expired.");
+				retry("New code");
+				break;
+			case "error":
+				note(state.error);
+				retry("Try again");
+				break;
+			case "daemon-down":
+				note(START_DAEMON);
+				break;
 		}
-		for (const control of rows) {
-			if (sessions.some((session) => session.sessionId === control.sessionId)) continue;
-			const row = element(doc, "li", "pair-session");
-			const label = element(
-				doc,
-				"span",
-				"pair-session__label",
-				`${control.agentIdentity} · ${control.sessionId.slice(0, 8)} · ${control.presence}`,
-			);
-			const connect = element(doc, "button", "pair-button", "Connect");
-			connect.type = "button";
-			connect.addEventListener("click", () => {
-				void runCommand({
-					type: MSG.sessionAttach,
-					sessionId: control.sessionId,
-					...codePayload(),
+		offer.replaceChildren(...children);
+		pasteSection.hidden = state.status === "daemon-down";
+	}
+
+	function show(state: PairOfferState): void {
+		options.onState?.(state);
+		const key = offerKey(state);
+		if (key === shown) return;
+		shown = key;
+		renderOffer(state);
+	}
+
+	function request(renew: boolean): Promise<void> {
+		if (destroyed) return Promise.resolve();
+		if (inFlight && !renew) return inFlight;
+		const task = (async () => {
+			let reply: unknown;
+			try {
+				reply = await runtime.sendMessage({
+					type: MSG.pairOfferRequest,
+					...(renew ? { renew: true } : {}),
 				});
-			});
-			row.append(label, connect);
-			sessionList.append(row);
-		}
-		sessionList.hidden = sessionList.childElementCount === 0;
-	}
-
-	function codePayload(): { code?: string } {
-		return PAIR_CODE_PATTERN.test(input.value) ? { code: input.value } : {};
-	}
-
-	async function runCommand(message: unknown): Promise<void> {
-		try {
-			const reply = await runtime.sendMessage?.(message);
-			if (!isPairingSuccessReply(reply)) {
-				const error =
-					typeof reply === "object" &&
-					reply !== null &&
-					typeof (reply as { error?: unknown }).error === "string"
-						? (reply as { error: string }).error
-						: "Could not update the session. Retry, or check that the daemon is running.";
-				status.textContent = error;
-				return;
+			} catch {
+				reply = undefined;
 			}
-			await refresh();
-		} catch {
-			status.textContent = "Could not reach the extension background. Retry.";
-		}
+			if (!destroyed) show(asOfferState(reply));
+		})().finally(() => {
+			if (inFlight === task) inFlight = undefined;
+		});
+		inFlight = task;
+		return task;
 	}
 
-	function showConnected(): void {
-		options.onDaemon?.(true);
-		root.hidden = false;
-		heading.textContent = "Paired";
-		const count = sessions.filter((session) => session.connected).length;
-		copy.textContent =
-			count > 0
-				? `${count} connected session${count === 1 ? "" : "s"}`
-				: "Connected to the daemon";
-		reveal.textContent = "Pair another session";
-		reveal.hidden = false;
-		form.hidden = true;
-		status.textContent = "Paired — connection confirmed";
-		renderSessions();
-	}
-
-	function showUnavailable(): void {
-		options.onDaemon?.(false);
-		root.hidden = false;
-		heading.textContent = "Not paired";
-		copy.textContent = START_DAEMON;
-		renderSessions();
-		reveal.hidden = true;
-		form.hidden = true;
+	async function attach(code: string): Promise<void> {
+		attaching = true;
+		input.disabled = true;
+		submit.disabled = true;
+		form.setAttribute("aria-busy", "true");
 		status.textContent = "";
-	}
-
-	function showReady(): void {
-		options.onDaemon?.(true);
-		root.hidden = false;
-		heading.textContent = "Not paired";
-		reveal.textContent = "Pair";
-		copy.textContent = ASK_FOR_CODE;
-		renderSessions();
-		status.textContent = "";
-		input.disabled = false;
-		submit.disabled = false;
-		if (options.variant === "entry") {
-			reveal.hidden = false;
-			form.hidden = true;
-		} else {
-			reveal.hidden = true;
-			form.hidden = false;
-		}
-	}
-
-	async function refresh(): Promise<void> {
-		const version = ++refreshVersion;
-		let connectionReply: unknown;
 		try {
-			connectionReply = await runtime.sendMessage?.({
-				type: MSG.connectionRequest,
+			const reply = await runtime.sendMessage({
+				type: MSG.sessionAttach,
+				all: true,
+				code,
 			});
-		} catch {}
-		if (version !== refreshVersion || destroyed) return;
-		applySessions(connectionReply);
-		const catalogTask = loadCatalog();
-		connected = isConnectedReply(connectionReply);
-		if (connected) {
-			showConnected();
-		} else {
-			port = await findPort();
-			if (version !== refreshVersion || destroyed) return;
-			if (port === undefined) showUnavailable();
-			else showReady();
-			if (sessions.length > 0) {
+			if (destroyed) return;
+			const fields = (reply ?? {}) as { ok?: unknown; error?: unknown };
+			if (fields.ok === true) input.value = "";
+			else
 				status.textContent =
-					"Disconnected — waiting for the daemon to confirm the connection.";
-			}
-		}
-		await catalogTask;
-		if (version !== refreshVersion || destroyed) return;
-		renderSessions();
-		const presences = catalog.flatMap((session) =>
-			session.presence ? [session.presence] : [],
-		);
-		const daemonUp = port !== undefined || connected;
-		status.textContent =
-			daemonUp && !connected && sessions.length === 0 && catalog.length === 0
-				? NO_AGENT
-				: connectionGuidance({
-						daemonUp,
-						paired: connected,
-						presences,
-						heldDisconnected: sessions.some((session) => !session.connected),
-					});
-	}
-
-	async function loadCatalog(): Promise<void> {
-		try {
-			const reply = await runtime.sendMessage?.({ type: MSG.sessionCatalog });
-			if (typeof reply !== "object" || reply === null) return;
-			const items = (reply as { sessions?: unknown }).sessions;
-			if (!Array.isArray(items)) return;
-			catalog = items.filter(
-				(item): item is PublicSession =>
-					typeof item === "object" &&
-					item !== null &&
-					typeof (item as { sessionId?: unknown }).sessionId === "string" &&
-					typeof (item as { agentIdentity?: unknown }).agentIdentity === "string",
-			);
+					typeof fields.error === "string" ? fields.error : PASTE_FAILED;
 		} catch {
-			catalog = [];
+			if (!destroyed) status.textContent = PASTE_FAILED;
+		} finally {
+			attaching = false;
+			input.disabled = false;
+			submit.disabled = false;
+			form.removeAttribute("aria-busy");
 		}
-	}
-
-	function applySessions(value: unknown): void {
-		if (typeof value !== "object" || value === null) return;
-		const items = (value as Record<string, unknown>).sessions;
-		if (!Array.isArray(items)) return;
-		sessions = items.filter(
-			(item): item is PairingSession =>
-				typeof item === "object" &&
-				item !== null &&
-				typeof item.sessionId === "string" &&
-				typeof item.agentIdentity === "string" &&
-				typeof item.connected === "boolean",
-		);
-	}
-
-	function setConnected(nextConnected: boolean): void {
-		connected = nextConnected;
-		refreshVersion += 1;
-		void refresh();
-	}
-
-	function onRuntimeMessage(message: unknown): void {
-		if (typeof message !== "object" || message === null) return;
-		const payload = message as Record<string, unknown>;
-		if (payload.type !== MSG.connection) return;
-		applySessions(payload);
-		connected = isConnectedReply(payload);
-		refreshVersion += 1;
-		if (connected) showConnected();
-		else void refresh();
 	}
 
 	input.addEventListener("input", () => {
 		input.value = input.value.replace(/\D/g, "").slice(0, 6);
 		status.textContent = "";
 	});
-	reveal.addEventListener("click", () => {
-		if (port === undefined) {
-			void findPort().then((value) => {
-				port = value;
-			});
-		}
-		reveal.hidden = true;
-		form.hidden = false;
-		input.disabled = false;
-		submit.disabled = false;
-		input.value = "";
-		input.focus();
-	});
 	form.addEventListener("submit", (event) => {
 		event.preventDefault();
-		if (pending) return;
-		void (async () => {
-			const code = input.value;
-			if (!PAIR_CODE_PATTERN.test(code)) {
-				status.textContent = "Enter a 6 digit code.";
-				return;
-			}
-			if (port === undefined) {
-				showUnavailable();
-				return;
-			}
-			pending = true;
-			input.disabled = true;
-			submit.disabled = true;
-			form.setAttribute("aria-busy", "true");
-			status.textContent = "";
-			try {
-				await runCommand({ type: MSG.sessionAttach, all: true, code });
-			} finally {
-				pending = false;
-				form.removeAttribute("aria-busy");
-				input.disabled = false;
-				submit.disabled = false;
-			}
-		})();
+		if (attaching) return;
+		if (!PAIR_CODE_PATTERN.test(input.value)) {
+			status.textContent = "Enter a 6 digit code.";
+			return;
+		}
+		void attach(input.value);
 	});
 
-	attachButton.addEventListener("click", () => {
-		void runCommand({
-			type: MSG.sessionAttach,
-			all: true,
-			...codePayload(),
-		});
-	});
-	launchButton.addEventListener("click", () => {
-		void runCommand({
-			type: MSG.sessionLaunch,
-			...codePayload(),
-		});
-	});
-	clearButton.addEventListener("click", () => {
-		void runCommand({ type: MSG.sessionClear });
-	});
-	retryButton.addEventListener("click", () => {
-		void runCommand({ type: MSG.connectionRetry });
-	});
-
-	runtime.onMessage?.addListener(onRuntimeMessage);
-	const ready = refresh();
 	return {
-		ready,
-		setConnected,
-		setCurrentSession(sessionId) {
-			selectedSessionId = sessionId;
-			renderSessions();
-		},
+		ready: request(false),
+		refresh: () => request(false),
 		destroy() {
 			destroyed = true;
-			refreshVersion += 1;
-			runtime.onMessage?.removeListener?.(onRuntimeMessage);
 		},
 	};
 }

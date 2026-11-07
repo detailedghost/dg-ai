@@ -67,10 +67,7 @@ async function open(
 	frame: ChatFrame = overwatchOpen(),
 ) {
 	const sendCompletion = mock((_r: unknown) => undefined);
-	const pages = createPages({
-		browserApi: setup.api,
-		maybeStartRecording: () => Promise.resolve(false),
-	});
+	const pages = createPages({ browserApi: setup.api });
 	pages.onFrame(frame, { sendCompletion, bootstrap });
 	await flushMicrotasks();
 	return sendCompletion;
@@ -187,62 +184,13 @@ describe("createPages overwatch-open", () => {
 	});
 });
 
-describe("createPages action click", () => {
-	function click(api: PagesBrowserApi, started: boolean) {
-		const maybeStartRecording = mock((_tab?: chrome.tabs.Tab) =>
-			Promise.resolve(started),
-		);
-		createPages({ browserApi: api, maybeStartRecording }).registerActionClick();
-		return maybeStartRecording;
-	}
-
-	test("starts a pending recording and does not open settings", async () => {
+describe("createPages without a toolbar click handler", () => {
+	test("exposes no action click registration and adds no click listener", () => {
 		const setup = makeApi();
-		const maybeStartRecording = click(setup.api, true);
-		const tab = { id: 7 } as chrome.tabs.Tab;
 
-		setup.clickListeners[0]?.(tab);
-		await flushMicrotasks();
+		const pages = createPages({ browserApi: setup.api } as never);
 
-		expect(maybeStartRecording).toHaveBeenCalledWith(tab);
-		expect(setup.openOptionsPage).not.toHaveBeenCalled();
-		expect(setup.tabsCreate).not.toHaveBeenCalled();
-	});
-
-	test("opens the options page when no recording is pending", async () => {
-		const setup = makeApi();
-		click(setup.api, false);
-
-		setup.clickListeners[0]?.({ id: 7 } as chrome.tabs.Tab);
-		await flushMicrotasks();
-
-		expect(setup.openOptionsPage).toHaveBeenCalledTimes(1);
-		expect(setup.tabsCreate).not.toHaveBeenCalled();
-	});
-
-	test("registers exactly one listener on the Chrome action API", () => {
-		const setup = makeApi();
-		click(setup.api, false);
-		expect(setup.onClicked.addListener).toHaveBeenCalledTimes(1);
-	});
-
-	test("registers exactly one listener on Firefox's browserAction", async () => {
-		const setup = makeApi();
-		const addListener = mock((_cb: (tab?: chrome.tabs.Tab) => void) => undefined);
-		const { action: _action, ...rest } = setup.api as unknown as Record<
-			string,
-			unknown
-		>;
-		const api = {
-			...rest,
-			browserAction: { onClicked: { addListener } },
-		} as unknown as PagesBrowserApi;
-		click(api, false);
-
-		expect(addListener).toHaveBeenCalledTimes(1);
+		expect(pages).not.toHaveProperty("registerActionClick");
 		expect(setup.onClicked.addListener).not.toHaveBeenCalled();
-		addListener.mock.calls[0]?.[0]({ id: 1 } as chrome.tabs.Tab);
-		await flushMicrotasks();
-		expect(setup.openOptionsPage).toHaveBeenCalledTimes(1);
 	});
 });

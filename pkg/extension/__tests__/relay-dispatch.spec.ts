@@ -855,22 +855,6 @@ describe("registerDaemonLink relay wiring", () => {
 			},
 		],
 		[
-			"MSG.sessionClear closing the session",
-			async (relay) => {
-				const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
-					input: unknown,
-				) =>
-					String(input).endsWith("/healthz")
-						? new Response(JSON.stringify({ daemon: "dg-daemon", instanceId: "i-1" }))
-						: new Response(JSON.stringify({ closed: [relay.sessionId] }))) as never);
-				try {
-					await relay.postAsOptionsPage({ type: MSG.sessionClear });
-				} finally {
-					fetchSpy.mockRestore();
-				}
-			},
-		],
-		[
 			"socket teardown",
 			async (relay) => {
 				relay.socket.dispatch("close");

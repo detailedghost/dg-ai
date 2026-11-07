@@ -93,7 +93,7 @@ export function makeStorage(local: LocalArea = makeLocalArea()) {
 		local,
 		session: {
 			set: mock(() => Promise.resolve()),
-			remove: mock(() => Promise.resolve()),
+			remove: mock((_key: string) => Promise.resolve()),
 		},
 	};
 }
@@ -145,7 +145,6 @@ export async function bootRelay(
 	registerDaemonLink({
 		browserApi: api,
 		openSocket: () => socket,
-		maybeStartRecording: () => Promise.resolve(false),
 		relayHandlers: options.relayHandlers,
 	});
 

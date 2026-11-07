@@ -5,26 +5,21 @@ import {
 } from "@dg/common";
 import { localPageUrl } from "@dg/pages/chat-marker";
 
-type ActionApi = {
-	onClicked: {
-		addListener(listener: (tab?: chrome.tabs.Tab) => void): void;
-	};
-};
-
 export type PagesBrowserApi = {
-	action?: ActionApi;
-	browserAction?: ActionApi;
 	runtime: {
 		getURL(path: string): string;
 		sendMessage(message: unknown): Promise<unknown>;
-		openOptionsPage(): Promise<void>;
 	};
 	tabs: {
 		create(props: { url: string }): unknown;
-		query?(queryInfo: Record<string, never>): Promise<
+		query?(queryInfo: { url?: string }): Promise<
 			{ id?: number; windowId?: number; url?: string }[]
 		>;
-		update?(tabId: number, props: { active: boolean }): unknown;
+		update?(
+			tabId: number,
+			props: { url?: string; active?: boolean },
+		): unknown;
+		reload?(tabId: number): unknown;
 	};
 	windows?: {
 		update(windowId: number, props: { focused: boolean }): unknown;
@@ -42,7 +37,7 @@ export type OverwatchOpenCompletion = {
 	error?: string;
 };
 
-function originAndPath(url: string | undefined): string | undefined {
+export function originAndPath(url: string | undefined): string | undefined {
 	if (!url) return undefined;
 	try {
 		const parsed = new URL(url);
@@ -106,19 +101,7 @@ export async function handleOverwatchFrameSafely(
 	}
 }
 
-function resolveActionApi(api: PagesBrowserApi): ActionApi {
-	const action = api.action ?? api.browserAction;
-	if (!action) throw new Error("no action or browserAction API available");
-	return action;
-}
-
-export function createPages({
-	browserApi: api,
-	maybeStartRecording,
-}: {
-	browserApi: PagesBrowserApi;
-	maybeStartRecording: (tab?: chrome.tabs.Tab) => Promise<boolean>;
-}) {
+export function createPages({ browserApi: api }: { browserApi: PagesBrowserApi }) {
 	return {
 		onFrame(
 			frame: ChatFrame,
@@ -133,14 +116,6 @@ export function createPages({
 			void handleOverwatchFrameSafely(frame, api, {
 				bootstrap,
 				complete: sendCompletion,
-			});
-		},
-		registerActionClick(): void {
-			resolveActionApi(api).onClicked.addListener((tab) => {
-				void (async () => {
-					if (await maybeStartRecording(tab)) return;
-					await api.runtime.openOptionsPage();
-				})();
 			});
 		},
 	};

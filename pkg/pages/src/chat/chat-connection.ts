@@ -95,7 +95,7 @@ export function connectionGuidance(input: {
 		return "Disconnected — waiting for the daemon to confirm the connection.";
 	}
 	if (input.presences.length === 0) {
-		return "No session yet. Choose New session for CLI, then run dg-agent attach.";
+		return "No session yet. Run dg-agent start --open to open this page for an agent.";
 	}
 	return "Choose Connect on a session, or run dg-agent start.";
 }

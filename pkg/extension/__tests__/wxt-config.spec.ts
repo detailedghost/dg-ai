@@ -35,9 +35,9 @@ it("grants capture host access without dropping browser-specific permissions", (
 	expect(firefoxManifest.permissions).toContain("downloads");
 });
 
-it("titles the toolbar action DeeGee and keeps the demo recording command", () => {
+it("leaves the toolbar action title to the popup page and keeps the demo recording command", () => {
 	const chromeManifest = manifestFor({ browser: "chrome" });
-	expect(chromeManifest.action?.default_title).toBe("DeeGee");
+	expect(chromeManifest.action?.default_title).toBeUndefined();
 	expect(Object.keys(chromeManifest.commands ?? {})).toContain(
 		"start-demo-recording",
 	);

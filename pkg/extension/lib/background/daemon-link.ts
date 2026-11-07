@@ -3,22 +3,27 @@ import {
 	CHAT_ATTACH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_PROTOCOL_VERSION,
-	CHAT_SESSIONS_CLEAR_PATH,
-	CHAT_SESSIONS_PATH,
 	type FeatureNamed,
 	RELAY_FEATURES,
 	type RelayFeatureName,
 	type SessionBootstrap,
+	type SessionPresence,
 	emitRedacted,
 	noteSecret,
 	validateAttachRequest,
 } from "@dg/common";
+import { localPageUrl } from "@dg/pages/chat-marker";
 import { fetchDaemonHealth, findDaemonPort } from "@dg/pages/daemon-port";
 import {
 	handshakeOutcome,
 	redactSecrets,
 } from "@dg/pages/chat/chat-connection";
 import { browser } from "wxt/browser";
+import {
+	type AgentTabsBrowserApi,
+	type AgentTabsStorage,
+	createAgentTabs,
+} from "./agent-tabs";
 import { createInboxHandler, type InboxBrowserApi } from "./inbox";
 import {
 	asSessionBootstrap,
@@ -29,16 +34,21 @@ import {
 import {
 	createPages,
 	type OverwatchOpenCompletion,
+	originAndPath,
 	type PagesBrowserApi,
 } from "./pages";
+import { isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
 	type PwExtBrowserApi,
 	type PwExtContext,
 } from "./pw-ext";
-import { createRelayDispatcher, type RelayHandler } from "./relay-dispatch";
-import { maybeStartRecording as defaultMaybeStartRecording } from "@/lib/background/recording";
+import {
+	createRelayDispatcher,
+	type RelayHandler,
+	type RelayRun,
+} from "./relay-dispatch";
 import {
 	type ConfigRelayReply,
 	type PairingSession,
@@ -52,6 +62,8 @@ import {
 } from "@dg/pages/chat/chat-client";
 
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
+const DAEMON_UNREACHABLE =
+	"Daemon unreachable. Start it with dg-agent start, then retry.";
 
 export type ChatBrowserApi = PagesBrowserApi & {
 	runtime: {
@@ -78,7 +90,6 @@ export type RegisterDaemonLinkOptions = {
 	browserApi?: ChatBrowserApi;
 	openSocket?: (url: string) => ChatClientSocket;
 	keepaliveIntervalMs?: number;
-	maybeStartRecording?: (tab?: chrome.tabs.Tab) => Promise<boolean>;
 	relayHandlers?: Partial<{
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	}>;
@@ -156,17 +167,23 @@ function pwExtContext({
 /** Wires the daemon socket and the runtime message routing. */
 export function registerDaemonLink(
 	options: RegisterDaemonLinkOptions = {},
-): ChatClient {
+): {
+	client: ChatClient;
+	adopt(bootstrap: SessionBootstrap): Promise<void>;
+	pending(sessionId?: string): RelayRun[];
+} {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
 	const openSocket = options.openSocket ?? defaultOpenSocket;
 	const keepaliveIntervalMs =
 		options.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS;
-	const maybeStartRecording =
-		options.maybeStartRecording ?? defaultMaybeStartRecording;
 
 	const pairingStore =
 		options.pairingStore ?? createPairingStore({ storage: api.storage });
-	const pages = createPages({ browserApi: api, maybeStartRecording });
+	const pages = createPages({ browserApi: api });
+	const agentTabs = createAgentTabs({
+		browserApi: api as unknown as AgentTabsBrowserApi,
+		storage: api.storage as unknown as AgentTabsStorage,
+	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	} = {
@@ -178,6 +195,7 @@ export function registerDaemonLink(
 		}),
 		"pw-ext": createPwExtHandler({
 			browserApi: api as unknown as PwExtBrowserApi,
+			agentTabs,
 		}),
 		...options.relayHandlers,
 	};
@@ -186,6 +204,7 @@ export function registerDaemonLink(
 		noteSecret(bootstrap.token);
 		bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
 	}
+	const presenceBySession = new Map<string, SessionPresence | undefined>();
 	const keepaliveEligible = new Set<string>();
 	const configWaiters: ConfigWaiter[] = [];
 	const pendingOverwatchOpenCompletions: OverwatchOpenCompletion[] = [];
@@ -352,6 +371,18 @@ export function registerDaemonLink(
 		void pairingStore.remove({ sessionId }).catch(logStoreError);
 	}
 
+	function forgetAgentTabs(sessionId: string): void {
+		void Promise.resolve()
+			.then(() => agentTabs.forget({ sessionId }))
+			.catch((error: unknown) =>
+				emitRedacted(
+					(line) => console.warn(line),
+					`[dg-chat] agent tab cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+					knownTokens(),
+				),
+			);
+	}
+
 	async function daemonPort(): Promise<number | undefined> {
 		const hinted =
 			firstConfirmedBootstrap()?.port ??
@@ -366,10 +397,7 @@ export function registerDaemonLink(
 	): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
 		const port = await daemonPort();
 		if (port === undefined) {
-			return {
-				ok: false,
-				error: "Daemon unreachable. Start it with dg-agent start, then retry.",
-			};
+			return { ok: false, error: DAEMON_UNREACHABLE };
 		}
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -414,6 +442,50 @@ export function registerDaemonLink(
 		if (adopted > 0) broadcastPairingStatus();
 		return adopted;
 	}
+	function holdAndConnect(bootstrap: SessionBootstrap): void {
+		currentPairingId = bootstrap.sessionId;
+		holdBootstrap(bootstrap);
+		client.connect(bootstrap);
+		broadcastPairingStatus();
+	}
+
+	async function adopt(bootstrap: SessionBootstrap): Promise<void> {
+		const checked = asSessionBootstrap(bootstrap);
+		if (!checked) throw new Error("The pairing bootstrap is not valid.");
+		holdAndConnect(checked);
+	}
+
+	async function openChat(
+		sessionId: unknown,
+	): Promise<{ ok: true } | { ok: false; error: string }> {
+		const bootstrap =
+			typeof sessionId === "string"
+				? bootstrapsBySession.get(sessionId)
+				: undefined;
+		if (!bootstrap) return { ok: false, error: "This agent is not paired." };
+		const port = await daemonPort();
+		if (port === undefined) return { ok: false, error: DAEMON_UNREACHABLE };
+		const url = localPageUrl({
+			port,
+			path: "/chat",
+			bootstrap: { ...bootstrap, port },
+		});
+		const chatPage = originAndPath(url);
+		const open = (
+			await (api.tabs.query?.({ url: `http://127.0.0.1:${port}/chat*` }) ?? [])
+		).find((tab) => tab.id !== undefined && originAndPath(tab.url) === chatPage);
+		if (open?.id === undefined || !api.tabs.update || !api.tabs.reload) {
+			await api.tabs.create({ url });
+			return { ok: true };
+		}
+		await api.tabs.update(open.id, { url, active: true });
+		await api.tabs.reload(open.id);
+		if (open.windowId !== undefined) {
+			await api.windows?.update(open.windowId, { focused: true });
+		}
+		return { ok: true };
+	}
+
 	function pairingStatus() {
 		const state = client.getConnectionState();
 		const sessions: PairingSession[] = [...bootstrapsBySession.values()].map(
@@ -422,6 +494,8 @@ export function registerDaemonLink(
 				agentIdentity,
 				current: sessionId === currentPairingId,
 				connected: state === "connected" && keepaliveEligible.has(sessionId),
+				presence: presenceBySession.get(sessionId),
+				runs: dispatcher.pending(sessionId),
 			}),
 		);
 		return {
@@ -450,7 +524,11 @@ export function registerDaemonLink(
 			bootstrapsBySession.delete(frame.sessionId);
 			dispatcher.cancelSession(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
-			if (frame.code === "invalid-session") forgetStoredPairing(frame.sessionId);
+			presenceBySession.delete(frame.sessionId);
+			if (frame.code === "invalid-session") {
+				forgetStoredPairing(frame.sessionId);
+				forgetAgentTabs(frame.sessionId);
+			}
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 		}
@@ -477,14 +555,27 @@ export function registerDaemonLink(
 		}
 		if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			bootstrapsBySession.delete(frame.sessionId);
+			presenceBySession.delete(frame.sessionId);
 			dispatcher.cancelSession(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
 			forgetStoredPairing(frame.sessionId);
+			forgetAgentTabs(frame.sessionId);
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 			return;
 		}
 		if (frame.type !== "session-list") return;
+		const presenceChanged = frame.sessions.some(
+			({ sessionId, presence }) =>
+				bootstrapsBySession.has(sessionId) &&
+				presenceBySession.get(sessionId) !== presence,
+		);
+		for (const { sessionId, presence } of frame.sessions) {
+			if (bootstrapsBySession.has(sessionId)) {
+				presenceBySession.set(sessionId, presence);
+			}
+		}
+		if (presenceChanged) broadcastPairingStatus();
 		const sessionId = frame.sessionId;
 		const bootstrap = bootstrapsBySession.get(sessionId);
 		if (!bootstrap || keepaliveEligible.has(sessionId)) return;
@@ -512,18 +603,13 @@ export function registerDaemonLink(
 	api.runtime.onStartup?.addListener(wakeWorker);
 	api.runtime.onInstalled?.addListener(wakeWorker);
 
-	pages.registerActionClick();
-
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (isMarkerCapturedMessage(message)) {
 			const bootstrap = asSessionBootstrap(message.bootstrap);
 			if (!bootstrap) return undefined;
 			void (async () => {
 				try {
-					currentPairingId = bootstrap.sessionId;
-					holdBootstrap(bootstrap);
-					client.connect(bootstrap);
-					broadcastPairingStatus();
+					holdAndConnect(bootstrap);
 					sendResponse({ ok: true });
 				} catch (error) {
 					sendResponse({
@@ -547,11 +633,7 @@ export function registerDaemonLink(
 					void (async () => {
 						const port = await daemonPort();
 						if (port === undefined) {
-							sendResponse({
-								ok: false,
-								error:
-									"Daemon unreachable. Start it with dg-agent start, then retry.",
-							});
+							sendResponse({ ok: false, error: DAEMON_UNREACHABLE });
 							return;
 						}
 						for (const bootstrap of bootstrapsBySession.values()) {
@@ -565,35 +647,6 @@ export function registerDaemonLink(
 						client.retryNow();
 						broadcastPairingStatus();
 						sendResponse({ ok: true, state: client.getConnectionState() });
-					})();
-					return true;
-				}
-				case MSG.sessionCatalog: {
-					void (async () => {
-						const port = await daemonPort();
-						if (port === undefined) {
-							sendResponse({ sessions: [] });
-							return;
-						}
-						try {
-							const response = await fetch(
-								`http://127.0.0.1:${port}${CHAT_SESSIONS_PATH}`,
-							);
-							const text = await response.text();
-							if (!response.ok) {
-								sendResponse({
-									sessions: [],
-									error: redactSecrets(text, knownTokens()),
-								});
-								return;
-							}
-							const body = JSON.parse(text) as { sessions?: unknown };
-							sendResponse({
-								sessions: Array.isArray(body.sessions) ? body.sessions : [],
-							});
-						} catch (error) {
-							sendResponse({ sessions: [], error: safeError(error) });
-						}
 					})();
 					return true;
 				}
@@ -628,68 +681,14 @@ export function registerDaemonLink(
 					})();
 					return true;
 				}
-				case MSG.sessionLaunch: {
-					void (async () => {
-						try {
-							const workset =
-								typeof payload.workset === "string" ? payload.workset : undefined;
-							const result =
-								typeof payload.code === "string"
-									? await postDaemon(CHAT_ATTACH_PATH, {
-											intent: "create",
-											code: payload.code,
-											...(workset ? { workset } : {}),
-										})
-									: await postDaemon(CHAT_SESSIONS_PATH, {
-											...(workset ? { workset } : {}),
-										});
-							if (!result.ok) {
-								sendResponse({ ok: false, error: result.error });
-								return;
-							}
-							const adopted = await adoptBootstraps(result.value);
-							sendResponse(
-								adopted > 0
-									? { ok: true }
-									: {
-											ok: false,
-											error: "The daemon did not create a session.",
-										},
-							);
-						} catch (error) {
-							sendResponse({ ok: false, error: safeError(error) });
-						}
-					})();
+				case MSG.openChat:
+					if (!isPopupSender(sender, api.runtime.getURL(""))) return undefined;
+					void openChat(payload.sessionId).then(sendResponse, (error: unknown) =>
+						sendResponse({ ok: false, error: safeError(error) }),
+					);
 					return true;
-				}
-				case MSG.sessionClear: {
-					void (async () => {
-						const result = await postDaemon(CHAT_SESSIONS_CLEAR_PATH, {});
-						if (!result.ok) {
-							sendResponse({ ok: false, error: result.error });
-							return;
-						}
-						const closedIds = Array.isArray(
-							(result.value as { closed?: unknown }).closed,
-						)
-							? ((result.value as { closed: unknown[] }).closed.filter(
-									(id): id is string => typeof id === "string",
-								))
-							: [];
-						for (const sessionId of closedIds) {
-							client.forgetSession(sessionId);
-							bootstrapsBySession.delete(sessionId);
-							dispatcher.cancelSession(sessionId);
-							keepaliveEligible.delete(sessionId);
-							forgetStoredPairing(sessionId);
-						}
-						if (keepaliveEligible.size === 0) stopKeepalive();
-						broadcastPairingStatus();
-						sendResponse({ ok: true, closed: closedIds });
-					})();
-					return true;
-				}
 				case MSG.sessionDisconnect: {
+					if (!isPopupSender(sender, api.runtime.getURL(""))) return undefined;
 					if (
 						typeof payload.sessionId !== "string" ||
 						!bootstrapsBySession.has(payload.sessionId)
@@ -706,7 +705,9 @@ export function registerDaemonLink(
 						}
 						dispatcher.cancelSession(sessionId);
 						const removal = pairingStore.remove({ sessionId });
+						forgetAgentTabs(sessionId);
 						bootstrapsBySession.delete(sessionId);
+						presenceBySession.delete(sessionId);
 						keepaliveEligible.delete(sessionId);
 						if (keepaliveEligible.size === 0) stopKeepalive();
 						broadcastPairingStatus();
@@ -753,5 +754,5 @@ export function registerDaemonLink(
 		return undefined;
 	});
 
-	return client;
+	return { client, adopt, pending: dispatcher.pending };
 }
