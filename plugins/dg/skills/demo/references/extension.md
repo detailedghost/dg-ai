@@ -16,7 +16,7 @@ start screen always offers Review. Known limit: the local review panel keeps its
 ## Recording
 
 For a video, excluded setup runs first. After the handoff, the user presses
-`Alt+Shift+D` (or clicks the DeeGee toolbar icon) to start recording. The tour then
+`Alt+Shift+D` (or opens the DeeGee popup and chooses Record demo) to start recording. The tour then
 auto-plays and saves `dg-demo/<tour>/<tour>.webm` and
 `dg-demo/<tour>/<tour>.demo.md` to the user's Downloads folder.
 

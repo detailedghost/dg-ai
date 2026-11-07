@@ -64,11 +64,13 @@ signals the whole process group. A running service keeps the daemon from its
 idle exit. Nothing starts the daemon at login yet, so `autostart` only applies
 once the daemon is running.
 
-The extension's **dashboard page** shows what has come in — jobs and their next
-run on the left, the feed on the right — and hands any item to an agent. Jobs
-are added by CLI for now; a page for that is the next step. The dashboard reads
-with a session token that the extension holds, so pair the extension or attach
-it to a session first.
+No page lists jobs or the feed. Manage jobs with `dg-daemon job list`,
+`dg-daemon job run <label>`, `dg-daemon job enable <label>`,
+`dg-daemon job disable <label>` and `dg-daemon job rm <label>`. A job started with
+`--notify <identity>` queues one agent message for each new feed item.
+
+The daemon also serves `/jobs` and `/feed` as JSON routes. They are not pages a
+human opens. The daemon gates them by `Origin` header or session bearer token, and the `Origin` check does not authenticate a non-browser client. These routes have no client since the dashboard left. ADR 0038 lists them as not done.
 
 See the [developer guide](DEVELOPER.md) for the daemon’s configuration and
 [the architecture records](adr/toc.md) for process and storage decisions.

@@ -1,7 +1,10 @@
 # @dg/extension — dg-ai-extension
 
-WXT MV3 browser extension. Features: tab grouping, guided demo tours with video
-recording and TTS narration, and live-page prototype comparisons.
+WXT MV3 browser extension. Features:
+pairing popup, per-agent tab groups, relay to inbox, proto and pw --ext.
+
+Upgrading from a release without the pairing popup? Read
+[the upgrade section](../../docs/AGENT-INSTALL.md#upgrading-from-a-release-without-the-pairing-popup).
 
 ## Development commands
 
@@ -10,7 +13,7 @@ bun install          # from repo root (wires @dg/common)
 bun run dev          # WXT dev server with hot reload
 bun run build        # production build → .output/
 bun run lint         # tsc --noEmit
-bun test             # unit tests (45 specs)
+bun test             # unit tests
 bun run zip          # build + package for Chrome
 bun run zip:firefox  # build + package for Firefox
 ```

@@ -332,7 +332,7 @@ export function registerOverwatchCommands(
 	overwatch
 		.command("open")
 		.description("open the overwatch board in the default browser")
-		.option("--ext", "focus the board in the dg-ai-extension instead")
+		.option("--ext", "open the board in the paired browser through the dg-ai-extension")
 		.action(async (options: { ext?: boolean }, command: Command) => {
 			await openBoard(dependencies, command, options.ext === true);
 		});

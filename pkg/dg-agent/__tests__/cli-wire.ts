@@ -28,6 +28,17 @@ export function nextParsedMessage(
 	});
 }
 
+/** Skips frames, such as presence `session-list` re-broadcasts, until one of `type` arrives. */
+export async function nextFrameOfType(
+	ws: WebSocket,
+	type: string,
+): Promise<unknown> {
+	for (;;) {
+		const frame = await nextParsedMessage(ws);
+		if ((frame as { type?: unknown }).type === type) return frame;
+	}
+}
+
 export type CliRunResult = {
 	stdout: string;
 	stderr: string;

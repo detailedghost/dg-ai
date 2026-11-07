@@ -11,7 +11,7 @@ binaries. The skills-root README itself is not installed.
 | `demo/` | Guided browser demos with optional setup and video recording; plays in a local browser by default, through the extension with `--ext` |
 | `proto/` | Compare app-native UI approaches on a live page |
 | `verify/` | Review a finished change round by round and record a verdict per round |
-| `chat/` | Live chat on a local page that dg-daemon serves; `--ext` uses the extension |
+| `chat/` | Live chat on a local page that dg-daemon serves; `--ext` pairs the browser through the extension popup |
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
@@ -22,7 +22,7 @@ binaries. The skills-root README itself is not installed.
 | `hunt/` | Gather evidence and diagnose a codebase bug |
 | `jobs/` | List and control the dg-daemon and channel-review daemons |
 | `kick/` | Plan and park a deferred spec bundle |
-| `overwatch/` | Track parallel sessions on a local board that dg-daemon serves; `--ext` uses the extension |
+| `overwatch/` | Track parallel sessions on a local board that dg-daemon serves; `--ext` opens it in the paired browser |
 | `phone/` | Private encrypted chat with one or more other agents over Nostr |
 | `pickup/` | Resume a parked spec bundle |
 | `prd/` | Prepare a spec bundle for handoff |
@@ -131,8 +131,8 @@ check the installed binary once and call `dg-skills` from PATH, or the launcher 
 
 `dg-skills install --cli-only` skips the extension, pairing, dg-daemon and
 dg-agent. No skill declares `requires: [extension]`. `browser`, `proto`, `demo`,
-`chat` and `overwatch` run locally by default, and `--ext` opts in to the
-extension. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
+`chat` and `overwatch` run locally by default, and `--ext` requires the
+extension, which pairs the browser through its popup. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
 bootstrap block runs the full installer, which removes the CLI-only marker. The
 CLI-only set includes stash, proxy, clipboard-img, and other skills without
 that requirement. Live inbox profiles still need

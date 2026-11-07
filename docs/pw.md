@@ -22,21 +22,32 @@ never pass it unless the human asks.
 
 ## Real browser (`--ext`)
 
-`dg-skills pw --ext <verb>` acts on the active tab of your real Chromium
-browser through the paired dg-ai-extension. It needs a running dg-daemon
-session with the extension paired. The extension must be at least the version
-in `PW_EXT_MIN_EXTENSION_VERSION` (`pkg/common/src/pw-ext-format.ts`), which is
-the release that ships `pw --ext`.
+`dg-skills pw --ext <verb>` acts on the agent's selected tab in your real
+Chromium browser through the paired dg-ai-extension. It needs a running
+dg-daemon session with the extension paired. The extension must be at least the
+version in `PW_EXT_MIN_EXTENSION_VERSION` (`pkg/common/src/pw-ext-format.ts`),
+which is the first release with per-agent tab groups. An older extension is
+refused with the update text: `pw --ext requires dg-ai-extension <version> or
+newer; update the extension, reload it, and reconnect this session.`
+
+Each paired agent gets its own Chrome tab group, titled with the agent name and
+the first four characters of its session id. The agent sees and acts only on
+tabs in its own group. To give an agent one of your tabs, use the extension
+popup.
 
 | Verb | Kind | Effect |
 |---|---|---|
-| `current` | read | Active tab URL and title, plus the open tabs |
+| `current` | read | URL and title of the agent's selected tab |
+| `tabs` | read | The tabs in the agent's group, the selected one marked |
 | `snapshot` | read | Accessibility tree with refs, and the visible text, on stdout |
-| `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw` |
+| `screenshot` | read | Visible part of the tab, saved to `dg-skills stash pw`; brings the tab to the front first |
 | `selection` | read | Selected text |
 | `console` | read | Errors, and console warnings and errors after the first call |
 | `tools` | read | WebMCP tools the page exposes: name, description, input schema |
-| `open <url>` | write | Opens an http or https URL in a new tab |
+| `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
+| `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
+| `select <tabId>` | write | Makes a tab of the group the selected tab |
+| `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
 | `fill <ref or selector> <text>` | write | Sets the value of one text field |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input |
@@ -45,23 +56,32 @@ the release that ships `pw --ext`.
 Rules:
 
 - Passing `--ext` is the grant. The browser asks for no approval per call. The
-  CLI controls the active tab until the command ends.
+  CLI controls the agent's tab group until the command ends.
+- Every verb acts on the agent's selected tab. `--tab <id>` targets one tab of
+  the group once and does not change the selection. `tabs`, `new` and `select`
+  take no `--tab`. `close` takes a tab id or `--tab`, not both.
+- A tab outside the agent's group is refused. If you close the selected tab or
+  drag it out of the group, the agent is told to run `pw --ext tabs` and then
+  `pw --ext select <id>`. A group holds at most 200 tabs.
+- `screenshot` brings the tab to the front, captures it, and leaves it in front.
+  It also restores a minimized window.
 - The page function checks the document URL against the tab URL before it
   acts. If the page changed, nothing runs. A reload at the same URL is not
   detected.
 - Browser settings pages (`chrome://`, `edge://`, `brave://`, `about:`),
   extension pages, `file:` pages, the web stores, private windows, and the
-  signed-in Proton Mail tab are refused. `current` still runs
-  and shows those tabs without their URL or title. `open` still runs and opens a
-  new tab.
+  signed-in Proton Mail tab are refused. `tabs`, `new` and `close` still run
+  when the selected tab is one of them, and `tabs` shows those tabs without their
+  URL or title. `open` navigates a settings page to a web page. The Proton Mail
+  tab is never read, closed or navigated.
 - Text output is redacted (tokens, keys, emails, secret query values) and
   capped. Password and secret field contents are left out, and `fill` refuses
   those fields. Screenshots are not redacted: they show what is on the screen.
 - If the dg session closes, or the CLI stops (Ctrl-C, SIGTERM or a closed
   socket), the request is canceled and nothing more runs.
 - There is no code execution of agent code: no `eval`, no `run-code`, and no
-  other pw flags. `call` runs the site's own WebMCP tool code, so it is a write
-  verb.
+  pw flags besides `--tab`. `call` runs the site's own WebMCP tool code, so it
+  is a write verb.
 - `console` adds a small wrapper to the page's own `console.warn` and
   `console.error` on the first call. It runs in the page's own context, stays
   for the life of the document, and sees only messages after that first call.
@@ -80,6 +100,8 @@ Rules:
   the site's own tool code can keep running after it.
 - `click` and `fill` send synthetic events. A page that checks for trusted
   input ignores them.
+- A CLI newer than a running dg-daemon gets the daemon's validator error for
+  `tabId` or a new verb until you restart `dg-daemon`.
 - Firefox is not supported.
 
 See [ADR 0035](adr/0035-pw-ext-real-browser.md).

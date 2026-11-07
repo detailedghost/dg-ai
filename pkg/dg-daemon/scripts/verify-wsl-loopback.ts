@@ -42,12 +42,12 @@ async function main(): Promise<void> {
 
 	console.log(
 		"[3/3] MANUAL STEP — open a browser on the WINDOWS side (not inside WSL) " +
-			`and navigate to: http://127.0.0.1:${handle.port}/start\n\n` +
+			`and navigate to: http://127.0.0.1:${handle.port}/healthz\n\n` +
 			"Confirm:\n" +
-			"  - The page loads (a fetch failure here means WSL is in NAT mode —\n" +
+			"  - The page shows JSON with \"daemon\":\"dg-daemon\" and the instance id\n" +
+			`    ${handle.instanceId} (a failure here means WSL is in NAT mode —\n` +
 			"    set networkingMode=mirrored under [wsl2] in %UserProfile%\\.wslconfig,\n" +
-			"    then run `wsl --shutdown` and restart).\n" +
-			"  - The page's console shows a WebSocket connecting to /ws with no error.\n\n" +
+			"    then run `wsl --shutdown` and restart).\n\n" +
 			"This script cannot drive a Windows-side browser itself — record the\n" +
 			"result of this manual check in the PR/slice notes.",
 	);

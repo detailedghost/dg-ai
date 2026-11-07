@@ -505,14 +505,13 @@ describe("options/style.css — accent token aliases the chat page reads", () =>
 });
 
 describe("patchConfig — fields the caller did not send", () => {
-	it("writes back the stored theme, so saving another setting cannot reset it", async () => {
+	it("writes back the stored narration mode, so saving another setting cannot reset it", async () => {
 		syncGet.mockImplementation(() =>
 			Promise.resolve({
 				color: "random",
 				voice: "af_heart",
-				narration: "both",
+				narration: "captions",
 				videoQuality: "1440p",
-				theme: "light",
 			}),
 		);
 		syncSet.mockClear();
@@ -520,7 +519,7 @@ describe("patchConfig — fields the caller did not send", () => {
 		await patchConfig({ voice: "am_michael" });
 
 		expect(syncSet).toHaveBeenCalledWith(
-			expect.objectContaining({ theme: "light", voice: "am_michael" }),
+			expect.objectContaining({ narration: "captions", voice: "am_michael" }),
 		);
 	});
 });

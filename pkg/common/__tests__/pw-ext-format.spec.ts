@@ -5,6 +5,7 @@ import {
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MAX_TIMEOUT_MS,
 	PW_EXT_MIN_EXTENSION_VERSION,
+	type PwExtCliRequest,
 	validatePwExtCliRequest,
 	validatePwExtRequest,
 	validatePwExtResponse,
@@ -281,7 +282,6 @@ describe("PW_EXT_RELAY table", () => {
 					sessionId: "s-1",
 					cli: { type: "cli-pw-ext-request", requestId: "r", request: { verb: "current" } },
 					timeoutMs: 1,
-					port: 4321,
 				}),
 		).toBe(
 			"No extension peer on session s-1. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.",
@@ -365,5 +365,77 @@ describe("PW_EXT_RELAY table", () => {
 		expect(strings.extensionFailed).toBe(
 			"pw --ext failed in the extension before it reported a result.",
 		);
+	});
+});
+
+describe("validatePwExtRequest tab verbs and tabId", () => {
+	const TAB_ID_ERROR = "pw-ext request.tabId must be a non-negative integer";
+	const MAX_TAB_ID = 2_147_483_647;
+
+	it.each([
+		{ verb: "snapshot", tabId: 7 },
+		{ verb: "snapshot", tabId: 0 },
+		{ verb: "snapshot", tabId: MAX_TAB_ID },
+		{ verb: "click", target: "e4", tabId: 3 },
+		{ verb: "fill", target: "e4", value: "v", tabId: 3 },
+		{ verb: "open", url: "https://example.com/", tabId: 3 },
+		{ verb: "screenshot", tabId: 3 },
+		{ verb: "tabs" },
+		{ verb: "new" },
+		{ verb: "new", url: "https://example.com/a?b=1" },
+		{ verb: "select", tabId: 12 },
+		{ verb: "close" },
+		{ verb: "close", tabId: 12 },
+	])("accepts %p", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request);
+	});
+
+	it.each([
+		[{ verb: "snapshot", tabId: -1 }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: 1.5 }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: MAX_TAB_ID + 1 }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: "7" }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: Number.NaN }, TAB_ID_ERROR],
+		[{ verb: "close", tabId: -1 }, TAB_ID_ERROR],
+		[{ verb: "select" }, TAB_ID_ERROR],
+		[{ verb: "tabs", tabId: 1 }, 'pw-ext request.tabId is not used by "tabs"'],
+		[{ verb: "new", tabId: 1 }, 'pw-ext request.tabId is not used by "new"'],
+		[
+			{ verb: "new", url: "javascript:alert(1)" },
+			"pw-ext request.url must be an http or https URL",
+		],
+		[
+			{ verb: "new", url: "chrome://settings" },
+			"pw-ext request.url must be an http or https URL",
+		],
+		[
+			{ verb: "new", url: `https://example.com/${"a".repeat(2100)}` },
+			"pw-ext request.url exceeds 2048 characters",
+		],
+		[{ verb: "new", url: "" }, "pw-ext request.url must be a non-empty string"],
+		[{ verb: "tabs", surprise: true }, 'pw-ext request has unknown field "surprise"'],
+		[{ verb: "close", url: "https://example.com/" }, 'pw-ext request has unknown field "url"'],
+		[{ verb: "select", tabId: 1, url: "https://example.com/" }, 'pw-ext request has unknown field "url"'],
+	])("rejects %p with %s", (request, message) => {
+		expect(() => validatePwExtRequest(request)).toThrow(new TypeError(message));
+	});
+
+	it("accepts the tab verbs inside a CLI request", () => {
+		const frame: PwExtCliRequest = {
+			type: "cli-pw-ext-request",
+			requestId: "r1",
+			request: { verb: "select", tabId: 4 },
+		};
+
+		expect(validatePwExtCliRequest(frame)).toEqual(frame);
+	});
+});
+
+describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
+	it("is at least the first release with per-agent tab groups", () => {
+		const [major, minor, patch] = PW_EXT_MIN_EXTENSION_VERSION;
+		const floor = major * 1_000_000 + minor * 1_000 + patch;
+
+		expect(floor).toBeGreaterThanOrEqual(1_044_000);
 	});
 });

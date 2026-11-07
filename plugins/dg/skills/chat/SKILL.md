@@ -1,6 +1,6 @@
 ---
 name: chat
-description: Talk to a human through a live local chat page that dg-daemon serves on loopback and opens in the default browser, with no extension needed, using the dg-agent CLI. Pass --ext to use the dg-ai-extension side panel instead. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
+description: Talk to a human through a live local chat page that dg-daemon serves on loopback and opens in the default browser, with no extension needed, using the dg-agent CLI. Pass --ext to also require the dg-ai-extension and pair the browser from its popup with dg-agent pair. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
 ---
 
 # Chat
@@ -8,7 +8,8 @@ description: Talk to a human through a live local chat page that dg-daemon serve
 Hold a real conversation with a human in a browser tab while you work. The
 `dg-daemon` daemon hosts many chat sessions on loopback and serves the chat page
 itself, and this skill is the agent side of the loop. The page needs no
-extension. Pass `--ext` to hand the session to the `dg-ai-extension` instead.
+extension. Pass `--ext` to require the `dg-ai-extension`; the local chat page still
+opens, and the browser pairs from the DeeGee popup with `dg-agent pair <code>`.
 
 Commands run the **compiled `dg-agent` binary** from your PATH — a
 self-contained binary, no Bun needed at runtime. `dg-agent start` launches the
@@ -45,7 +46,7 @@ dg-agent <command> <args>
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--ext` | none | Hand the session to the dg-ai-extension side panel instead of the local page. Needs the extension. | off (local is the default) |
+| `--ext` | none | Open the local chat page; pair the browser from the DeeGee popup with dg-agent pair <code>. Needs the extension. | off (local is the default) |
 
 To use the extension, run the gate command, then the line below it:
 
@@ -54,7 +55,7 @@ To use the extension, run the gate command, then the line below it:
 dg-agent start --ext --open
 ```
 
-Side panel details and WSL networking for a Windows-side browser:
+Popup pairing details and WSL networking for a Windows-side browser:
 [references/extension.md](references/extension.md).
 
 ## The loop
@@ -74,23 +75,21 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--fresh] [-s <id>] [--print-session-id] [--json]` —
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--print-session-id] [--json]` —
   start or reuse the daemon and register a new session. Prints the local chat
   page URL `http://127.0.0.1:<port>/chat#_chat=<base64url>`. The fragment is
   base64url JSON `{ port, sessionId, token, agentIdentity }`, and the page
   keeps it out of the page request. `--open` opens that URL in the default
   browser. On WSL it only prints the URL unless `DG_OPEN_WINDOWS=1` is set.
   When the agent is headless or remote, open the URL in a browser on
-  the machine that runs the daemon. `--ext` prints the extension URL
-  `/start#_chat=<base64url>` instead, and `--open` then opens that.
+  the machine that runs the daemon. `--ext` prints and opens the same
+  `http://127.0.0.1:<port>/chat#_chat=<base64url>` URL; it only gates on the extension.
   `--print-session-id` prints the session id before the URL. `--json` prints
   `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
   attaches a workset label, which is how the chat page groups sessions in its
-  rail. `start` claims a session the extension is waiting on, even without
-  `--ext`; see [references/extension.md](references/extension.md). `--fresh`
-  always registers a new session.
-- `attach [-s <id>] [--open]` — claim a session the extension created. Extension
-  only: [references/extension.md](references/extension.md).
+  rail. Pairing the browser is in [references/extension.md](references/extension.md).
+- `pair <code> [-s, --session <id>]` — pair this session with the browser by
+  claiming the six-digit code the extension popup shows.
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message
@@ -228,6 +227,6 @@ point of publishing it.
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.
-- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the side panel is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear`, or **Clear disconnected** in the panel, archives sessions whose claim has been released. Sessions still waiting for an agent, and sessions whose claim is held between commands, are left alone.
+- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the chat page is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear` archives sessions whose claim has been released. Sessions whose claim is held between commands are left alone.
 - `dg-skills install` refreshes `dg-agent` and `dg-daemon` too, alongside
   itself, so re-running it keeps all three binaries current.

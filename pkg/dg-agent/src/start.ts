@@ -7,6 +7,7 @@ import {
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
 	EXIT_PROTOCOL_MISMATCH,
+	OWNER_TOKEN_HEADER,
 	type SessionBootstrap,
 	type SessionRole,
 	validateSessionBootstrap,
@@ -20,13 +21,13 @@ import {
 	loopbackHostHeader,
 	readPidFile,
 	requireMatchingProtocol,
+	requireOwnerToken,
 	resolveDgPaths,
 	type OpenSeams,
 	openFailedHint,
 	tryOpen,
 } from "@dg/common/node";
 import { programCommand } from "@dg/common/node/program";
-import { claimWaitingSession } from "./attach";
 import { cliNextStep } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
@@ -71,12 +72,18 @@ type RegisterInput = {
 	agentIdentity?: string;
 };
 
-async function registerSession(port: number, input: RegisterInput) {
+async function registerSession(
+	port: number,
+	paths: DgPaths,
+	input: RegisterInput,
+) {
+	const owner = requireOwnerToken(paths);
 	const resp = await fetch(`http://127.0.0.1:${port}${CHAT_START_PATH}`, {
 		method: "POST",
 		headers: {
 			...loopbackHostHeader(port),
 			"Content-Type": "application/json",
+			[OWNER_TOKEN_HEADER]: owner,
 		},
 		body: JSON.stringify(input),
 	});
@@ -93,11 +100,8 @@ export type StartOptions = {
 	role?: SessionRole;
 	agentIdentity?: string;
 	open?: boolean;
-	fresh?: boolean;
-	sessionId?: string;
 	printSessionId?: boolean;
 	json?: boolean;
-	ext?: boolean;
 };
 
 async function fetchStatus(port: number) {
@@ -142,12 +146,8 @@ async function bootstrapFreshDaemon(
 	return handle.port;
 }
 
-function sessionUrl(
-	port: number,
-	bootstrap: SessionBootstrap,
-	options: StartOptions,
-): string {
-	return buildBootstrapUrl(port, bootstrap, options.ext ? "/start" : "/chat");
+function sessionUrl(port: number, bootstrap: SessionBootstrap): string {
+	return buildBootstrapUrl(port, bootstrap, "/chat");
 }
 
 async function openIfRequested(
@@ -188,30 +188,14 @@ export async function cmdStart(
 			? await attachToRunningDaemon(existing)
 			: await bootstrapFreshDaemon(paths, seams);
 
-	if (!options.fresh) {
-		const claimed = await claimWaitingSession(
-			targetPort,
-			process.cwd(),
-			"start",
-			options.sessionId,
-		);
-		if (claimed) {
-			console.error(cliNextStep("claimed", claimed.sessionId));
-			const url = sessionUrl(targetPort, claimed, options);
-			printSession(targetPort, claimed.sessionId, url, options);
-			await openIfRequested(url, options, seams);
-			return;
-		}
-	}
-
-	const bootstrap = await registerSession(targetPort, {
+	const bootstrap = await registerSession(targetPort, paths, {
 		cwd: process.cwd(),
 		role: options.role ?? "agent",
 		workset: options.workset,
 		agentIdentity: options.agentIdentity,
 	});
-	const url = sessionUrl(targetPort, bootstrap, options);
-	console.error(cliNextStep("registered", bootstrap.sessionId));
+	const url = sessionUrl(targetPort, bootstrap);
+	console.error(cliNextStep(bootstrap.sessionId));
 	printSession(targetPort, bootstrap.sessionId, url, options);
 	await openIfRequested(url, options, seams);
 }

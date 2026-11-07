@@ -48,7 +48,7 @@ describe("dg-agent main", () => {
 		const saved = process.env.DG_HOME;
 		process.env.DG_HOME = dgHome;
 		try {
-			const code = await main(["attach"]);
+			const code = await main(["pair", "123456"]);
 			expect(code).toBe(1);
 			expect(exitCalls).toEqual([]);
 		} finally {
@@ -58,10 +58,73 @@ describe("dg-agent main", () => {
 		}
 	});
 
+	it("lists the start options and neither --fresh nor --session on start --help", async () => {
+		const chunks: string[] = [];
+		const realWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			chunks.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+		try {
+			await main(["start", "--help"]);
+		} catch {
+		} finally {
+			process.stdout.write = realWrite;
+		}
+		const help = chunks.join("");
+
+		for (const option of ["--ext", "--open", "--json", "--print-session-id", "-w", "-a", "--orchestrator"]) {
+			expect(help).toContain(option);
+		}
+		expect(help).not.toContain("--fresh");
+		expect(help).not.toContain("--session ");
+	});
+
+	it("lists no attach command on --help", async () => {
+		const chunks: string[] = [];
+		const realWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			chunks.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+		try {
+			await main(["--help"]);
+		} catch {
+		} finally {
+			process.stdout.write = realWrite;
+		}
+
+		expect(chunks.join("")).not.toMatch(/^\s+attach\b/m);
+	});
+
 	it("returns 0 from the hidden phone __run action without calling process.exit", async () => {
 		const code = await main(["phone", "__run"]);
 		expect(code).toBe(0);
 		expect(phoneRun).toHaveBeenCalledTimes(1);
 		expect(exitCalls).toEqual([]);
+	});
+
+	it("registers pair and rejects a malformed code with the usage text and exit 1", async () => {
+		const lines: string[] = [];
+		console.error = (...args: unknown[]) => {
+			lines.push(args.join(" "));
+		};
+		const stderrWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			lines.push(String(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+		let code: number;
+		try {
+			code = await main(["pair", "12345"]);
+		} finally {
+			process.stderr.write = stderrWrite;
+		}
+
+		expect(code).toBe(1);
+		expect(exitCalls).toEqual([]);
+		expect(lines.join("\n")).toContain(
+			"pair takes a 6 digit code from the extension popup.",
+		);
 	});
 });

@@ -9,7 +9,6 @@ import {
 	type RelayCtx,
 	validateChatFrame,
 } from "@dg/common";
-import { readPidFile } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
 import {
 	type ConnectionManager,
@@ -301,7 +300,7 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 						return {
 							refusal: peers.length
 								? check.multiple
-								: check.none({ ...ctx, port: readPidFile(deps.paths)?.port }),
+								: check.none(ctx),
 						};
 					break;
 				}

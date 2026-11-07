@@ -329,7 +329,7 @@ describe("dg-skills inbox daemon integration", () => {
 });
 
 describe("dg-skills inbox daemon response boundary", () => {
-	test("a missing extension names the session, bootstrap URL, reload step, and version", async () => {
+	test("a missing extension names the session, the pairing command, reload step, and version", async () => {
 		const h = inboxCliHarness();
 		const server = inboxDaemonFixture(h, (request, reply) => {
 			reply({
@@ -339,7 +339,9 @@ describe("dg-skills inbox daemon response boundary", () => {
 				requestId: request.requestId,
 				ok: false,
 				error:
-					"Connect the dg extension to this session and open an authenticated Proton Mail tab.",
+					`No extension peer on session ${request.sessionId}. Pair the browser: open the DeeGee popup, read its six-digit code, and run dg-agent pair <code> -s ${request.sessionId}. ` +
+					"Then open or reload an authenticated Proton Mail tab and retry. " +
+					"Inbox requires dg extension 1.11.0 or newer.",
 			});
 		});
 		try {
@@ -354,11 +356,10 @@ describe("dg-skills inbox daemon response boundary", () => {
 			);
 			expect(result.stderr).toContain(server.sessionId);
 			expect(result.stderr).toContain(
-				`http://127.0.0.1:${server.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`,
+				`dg-agent pair <code> -s ${server.sessionId}`,
 			);
-			expect(result.stderr).toContain(
-				`dg-skills inbox bootstrap-url --session ${server.sessionId}`,
-			);
+			expect(result.stderr).not.toContain("/start");
+			expect(result.stderr).not.toContain("#_chat=");
 			expect(result.stderr).not.toContain(server.token);
 			expect(result.stdout).not.toContain(server.token);
 			expect(result.stderr).toMatch(/reload/i);
@@ -369,7 +370,7 @@ describe("dg-skills inbox daemon response boundary", () => {
 		}
 	}, 6000);
 
-	test("bootstrap-url prints the real start URL only when asked", async () => {
+	test("bootstrap-url prints the local chat URL only when asked", async () => {
 		const h = inboxCliHarness();
 		const server = inboxDaemonFixture(h, () => {});
 		try {
@@ -384,7 +385,7 @@ describe("dg-skills inbox daemon response boundary", () => {
 			]);
 			expect(printed.code, printed.stderr).toBe(0);
 			expect(printed.stdout).toContain(
-				`http://127.0.0.1:${server.port}/start#_chat=`,
+				`http://127.0.0.1:${server.port}/chat#_chat=`,
 			);
 			expect(printed.stderr).not.toContain(server.token);
 			const fragment = printed.stdout.trim().split("#_chat=")[1] ?? "";

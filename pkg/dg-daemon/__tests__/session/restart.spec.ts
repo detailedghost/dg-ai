@@ -12,6 +12,7 @@ import {
 	waitForDaemonExit,
 	waitForHealth,
 } from "../utils/daemon-harness";
+import { readSessionList } from "../utils/session-list";
 
 let dgHome = "";
 
@@ -57,13 +58,7 @@ describe("daemon restart", () => {
 			};
 			expect(body.sessions[0]?.token).toBe(bootstrap.token);
 
-			const before = await fetch(`http://127.0.0.1:${secondPort}/sessions`, {
-				headers: { Host: `127.0.0.1:${secondPort}` },
-			});
-			const idle = (await before.json()) as {
-				sessions: { sessionId: string; presence: string; role: string }[];
-			};
-			expect(idle.sessions).toEqual([
+			expect(await readSessionList(secondPort, bootstrap)).toEqual([
 				expect.objectContaining({
 					sessionId: bootstrap.sessionId,
 					presence: "idle",
@@ -73,13 +68,13 @@ describe("daemon restart", () => {
 
 			const again = await connectCli(secondPort, bootstrap);
 			again.close();
-			const after = await fetch(`http://127.0.0.1:${secondPort}/sessions`, {
-				headers: { Host: `127.0.0.1:${secondPort}` },
-			});
-			const live = (await after.json()) as {
-				sessions: { presence: string }[];
-			};
-			expect(live.sessions[0]?.presence).toBe("cli");
+			expect(await readSessionList(secondPort, bootstrap)).toEqual([
+				expect.objectContaining({
+					sessionId: bootstrap.sessionId,
+					presence: "cli",
+					role: "orchestrator",
+				}),
+			]);
 		} finally {
 			await stopServe(second);
 		}

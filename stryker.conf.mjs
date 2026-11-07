@@ -21,7 +21,6 @@ const config = {
 		"pkg/dg-daemon/src/session/archive.ts",
 		"pkg/dg-daemon/src/session/local-sessions.ts",
 		"pkg/extension/lib/features/chat-connection.ts",
-		"pkg/dg-agent/src/attach.ts",
 		"pkg/dg-agent/src/next-step.ts",
 	],
 	testFiles: [
@@ -32,7 +31,6 @@ const config = {
 		"pkg/dg-daemon/__tests__/session/local-sessions.spec.ts",
 		"pkg/extension/__tests__/chat-connection.spec.ts",
 		"pkg/extension/__tests__/chat-drop-log.spec.ts",
-		"pkg/dg-agent/__tests__/attach.spec.ts",
 		"pkg/dg-agent/__tests__/next-step.spec.ts",
 	],
 	bun: {
@@ -45,7 +43,6 @@ const config = {
 			"pkg/dg-daemon/__tests__/session/local-sessions.spec.ts",
 			"pkg/extension/__tests__/chat-connection.spec.ts",
 			"pkg/extension/__tests__/chat-drop-log.spec.ts",
-			"pkg/dg-agent/__tests__/attach.spec.ts",
 			"pkg/dg-agent/__tests__/next-step.spec.ts",
 		],
 	},

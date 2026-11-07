@@ -14,9 +14,10 @@ describe("chat skill extension notes", () => {
 		"utf8",
 	);
 
-	test("the side panel attach notes moved into references/extension.md", () => {
-		expect(reference).toMatch(/side panel/i);
-		expect(reference).toMatch(/Attach CLI session/);
-		expect(skill).not.toMatch(/Attach CLI session/);
+	test("the extension notes describe popup pairing and never a side panel", () => {
+		expect(reference).toMatch(/dg-agent pair/);
+		expect(reference).not.toMatch(/side panel/i);
+		expect(reference).not.toMatch(/Attach CLI session|New session for CLI/);
+		expect(skill).not.toMatch(/side panel|Attach CLI session/i);
 	});
 });

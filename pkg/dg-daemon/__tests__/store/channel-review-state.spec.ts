@@ -29,7 +29,7 @@ describe("channel-review sharing daemon.db", () => {
 		original.saveSession({
 			sessionId: "compat-session", token: "compat-session-token",
 			cwd: "/work/app", agentIdentity: "codex", role: "agent",
-			state: "active", awaitingAgent: false, cliAttached: false,
+			state: "active", cliAttached: false,
 			createdAt: 1_000, lastActivityAt: 2_000,
 		});
 		const sessions = original.loadSessions();

@@ -34,7 +34,7 @@ timeout. If scrape or plant times out anyway, report:
 
 > Prototype scrape timed out. Run the browser skill's `install` command, confirm
 > the extension is enabled in the browser that opened, confirm it is paired to
-> this session (open the daemon's printed `/start#_chat=` URL in that browser),
+> this session (open the DeeGee popup and run `dg-agent pair <code>`),
 > and retry.
 
 A typed not-ready error (`login-page`, `http-error`, `redirected`, or

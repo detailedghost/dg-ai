@@ -16,6 +16,9 @@ import {
 } from "../utils/daemon-harness";
 
 const MIN_VERSION = PW_EXT_MIN_EXTENSION_VERSION.join(".");
+const [MAJOR, MINOR] = PW_EXT_MIN_EXTENSION_VERSION;
+const OLDER_VERSION = `${MAJOR}.${MINOR - 1}.0`;
+const VERSION_REFUSAL = `pw --ext requires dg-ai-extension ${MIN_VERSION} or newer; update the extension, reload it, and reconnect this session.`;
 
 type CliResult = {
 	type: string;
@@ -152,5 +155,72 @@ describe("daemon pw --ext relay", () => {
 			ok: true,
 			data,
 		});
+	});
+
+	it.each([
+		{ verb: "tabs" },
+		{ verb: "new", url: "https://a.example/" },
+		{ verb: "select", tabId: 3 },
+		{ verb: "close", tabId: 3 },
+		{ verb: "snapshot", tabId: 5 },
+	])("forwards the tab request %p unchanged", async (verbRequest) => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { request: verbRequest });
+		const forwarded = await relay(page.frames, requestId);
+
+		expect(forwarded.request).toEqual(verbRequest);
+		const data = reply(page.socket, bootstrap, requestId);
+		expect(await result(results, requestId)).toMatchObject({ ok: true, data });
+	});
+
+	it("refuses a request on a session whose extension is older than the floor", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap, OLDER_VERSION);
+		const requestId = request(cli);
+
+		expect(await result(results, requestId)).toMatchObject({
+			ok: false,
+			error: VERSION_REFUSAL,
+		});
+		expect(
+			page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request"),
+		).toBe(false);
+	});
+
+	it("still forwards a proto request on a session whose extension is older than the pw-ext floor", async () => {
+		const { cli, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap, OLDER_VERSION);
+		const requestId = randomUUID();
+		send(cli, {
+			type: "cli-proto-request",
+			requestId,
+			phase: "scrape",
+			slug: "account-summary-1a2b3c4d",
+			markedUrl: "https://example.test/account#_proto=fixture",
+			timeoutMs: 1000,
+		});
+
+		const forwarded = await waitForValue(
+			() =>
+				page.frames.find(
+					(frame) =>
+						frameType(frame) === "proto-browser-request" &&
+						(frame as { requestId?: string }).requestId === requestId,
+				),
+			700,
+			"proto request forwarded to the older extension",
+		);
+		expect(forwarded).toBeDefined();
+	});
+
+	it("serves a request on a session whose extension is exactly the floor", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap, MIN_VERSION);
+		const requestId = request(cli);
+		await relay(page.frames, requestId);
+		const data = reply(page.socket, bootstrap, requestId);
+
+		expect(await result(results, requestId)).toMatchObject({ ok: true, data });
 	});
 });

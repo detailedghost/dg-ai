@@ -96,3 +96,4 @@ sequenceDiagram
 - `pkg/dg-daemon/src/server/inbox.ts`
 - `pkg/dg-daemon/src/server/proto.ts`
 - `pkg/dg-daemon/src/server/pw-ext.ts`
+- [ADR 0038](0038-extension-pairing-only.md) (the extension pairs through the pairing popup; agent tab groups scope `pw --ext`)

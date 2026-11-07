@@ -1,4 +1,4 @@
-import type { ProgressState } from "@dg/common";
+import type { ProgressState, SessionPresence } from "@dg/common";
 import type { ChatSessionEntry } from "./chat-sessions";
 import type {
 	FetchAsset,
@@ -25,6 +25,7 @@ export type ChatNode = {
 	transcript: TranscriptView;
 	composer: Composer;
 	render(entry: ChatSessionEntry): void;
+	setActive(active: boolean): void;
 	destroy(): void;
 };
 
@@ -43,6 +44,17 @@ export function statusLabel(status: ProgressState | "unknown"): string {
 			return "agent-gone";
 		case "unknown":
 			return "unknown";
+	}
+}
+
+export function presenceLabel(presence: SessionPresence | undefined): string {
+	switch (presence) {
+		case "cli":
+			return "Agent attached";
+		case "gone":
+			return "Agent gone";
+		default:
+			return "No agent listening";
 	}
 }
 
@@ -160,6 +172,16 @@ export function createChatNode(
 		transcript,
 		composer,
 		render,
+		setActive(active: boolean): void {
+			if (!active) {
+				transcriptElement.remove();
+				composerElement.remove();
+				return;
+			}
+			if (transcriptElement.parentElement !== element) {
+				element.append(transcriptElement, composerElement);
+			}
+		},
 		destroy(): void {
 			element.remove();
 		},

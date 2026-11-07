@@ -60,18 +60,6 @@ export function removeSessionToken(paths: DgPaths, sessionId: string): void {
 	rmSync(sessionFilePath(paths, sessionId), { force: true });
 }
 
-export function readSessionToken(paths: DgPaths, sessionId: string): string {
-	const override = process.env.DG_SESSION_TOKEN;
-	if (override !== undefined) {
-		noteSecret(override);
-		return override;
-	}
-	const raw = readFileSync(sessionFilePath(paths, sessionId), "utf8");
-	const token = (JSON.parse(raw) as { token: string }).token;
-	noteSecret(token);
-	return token;
-}
-
 export type SessionIdentityRecord = {
 	sessionId: string;
 	cwd: string;
