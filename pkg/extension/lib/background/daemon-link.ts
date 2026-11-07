@@ -38,7 +38,7 @@ import {
 	originAndPath,
 	type PagesBrowserApi,
 } from "./pages";
-import { isPopupSender } from "./popup-sender";
+import { isExtensionPageSender, isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
@@ -96,12 +96,6 @@ export type RegisterDaemonLinkOptions = {
 	}>;
 	pairingStore?: PairingStore;
 };
-
-function isExtensionPageSender(sender: unknown, api: ChatBrowserApi): boolean {
-	if (typeof sender !== "object" || sender === null) return false;
-	const url = (sender as { url?: unknown }).url;
-	return typeof url === "string" && url.startsWith(api.runtime.getURL(""));
-}
 
 function keepaliveFrame(bootstrap: SessionBootstrap): string {
 	return JSON.stringify({
@@ -596,7 +590,7 @@ export function registerDaemonLink(
 
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (typeof message !== "object" || message === null) return undefined;
-		if (!isExtensionPageSender(sender, api)) return undefined;
+		if (!isExtensionPageSender(sender, api.runtime.getURL(""))) return undefined;
 		const payload = message as Record<string, unknown>;
 		try {
 			switch (payload.type) {

@@ -582,6 +582,53 @@ describe("agent tabs forget", () => {
 	});
 });
 
+describe("agent tabs browser removals", () => {
+	function lockedSetup() {
+		const fake = createFakeBrowser({
+			tabs: [tabOf({ id: 5, groupId: 10 }), tabOf({ id: 6, groupId: 10 })],
+			groups: [{ id: 10, windowId: 1, title: "agent · ab12" }],
+		});
+		const lock = createLock();
+		const request = mock(lock.request.bind(lock));
+		const agentTabs = createAgentTabs({
+			browserApi: fake.api,
+			storage: fake.api.storage,
+			lock: { request } as typeof lock,
+		});
+		fake.seedRecord(
+			recordOf({ sessionId: SESSION_A, groupId: 10, selectedTabId: 5 }),
+		);
+		return { fake, agentTabs, request };
+	}
+
+	it("clears a stored selection through the injected lock when its tab is removed", async () => {
+		const { fake, agentTabs, request } = lockedSetup();
+
+		await agentTabs.tabRemoved({ tabId: 5 });
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(fake.record(SESSION_A)?.selectedTabId).toBeUndefined();
+		expect(fake.record(SESSION_A)?.groupId).toBe(10);
+	});
+
+	it("keeps the selection when another tab is removed", async () => {
+		const { fake, agentTabs } = lockedSetup();
+
+		await agentTabs.tabRemoved({ tabId: 6 });
+
+		expect(fake.record(SESSION_A)?.selectedTabId).toBe(5);
+	});
+
+	it("drops the record through the injected lock when its group is removed", async () => {
+		const { fake, agentTabs, request } = lockedSetup();
+
+		await agentTabs.groupRemoved({ groupId: 10 });
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(fake.record(SESSION_A)).toBeUndefined();
+	});
+});
+
 describe("agentGroupIds", () => {
 	it("returns the group id of every agent record", async () => {
 		const { fake } = setup();
