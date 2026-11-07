@@ -1,4 +1,5 @@
 import type { SessionRole } from "@dg/common";
+import type { Command } from "commander";
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
@@ -8,7 +9,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	const [
 		{ Command, CommanderError },
 		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
-		{ registerAgentCommands },
+		{ registerAgentCommands, selectedSession },
 		{ registerMemoryCommands },
 		{ registerLazyPhoneCommands },
 	] = await Promise.all([
@@ -76,6 +77,15 @@ export async function main(argv: readonly string[]): Promise<number> {
 				});
 			},
 		);
+
+	program
+		.command("pair")
+		.description("pair this session with the browser extension")
+		.argument("<code>", "6 digit code the extension popup shows")
+		.action(async (code: string, _options: unknown, command: Command) => {
+			const { cmdPair } = await import("./pair");
+			await cmdPair({ code, sessionId: selectedSession(command) });
+		});
 
 	program
 		.command("attach")

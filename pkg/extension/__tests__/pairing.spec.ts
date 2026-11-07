@@ -113,179 +113,187 @@ async function submit(root: HTMLElement, code: string): Promise<void> {
 	await settle();
 }
 
-test("a correct code sends the bootstrap through the marker path and connects the background", async () => {
-	const root = newRoot();
-	const background = backgroundHarness();
-	const pairBootstrap = bootstrap();
-	const fetchPair = mock(() =>
-		Promise.resolve(
-			new Response(JSON.stringify(pairBootstrap), {
-				status: 200,
-				headers: { "content-type": "application/json" },
-			}),
-		),
-	);
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime: background.runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-		fetch: fetchPair,
-	});
-	await handle.ready;
-
-	await submit(root, "123456");
-
-	expect(fetchPair).toHaveBeenCalledWith(
-		`http://127.0.0.1:${CHAT_DEFAULT_PORT}/pair`,
-		expect.objectContaining({
-			method: "POST",
-			body: JSON.stringify({ code: "123456" }),
-		}),
-	);
-	expect(background.sessionSet).toHaveBeenCalledTimes(1);
-	expect(background.openSocket).toHaveBeenCalledWith(
-		`ws://127.0.0.1:${CHAT_DEFAULT_PORT}/ws`,
-	);
-	expect(root.querySelector("[role='status']")?.textContent).toContain("waiting for the daemon");
-	background.sockets[0]?.dispatch("open");
-	await settle();
-	expect(root.textContent).not.toContain("connection confirmed");
-	background.sockets[0]?.dispatch("message", frameEvent(buildSessionListFrame([pairBootstrap])));
-	await settle();
-	expect(root.querySelector("[role='status']")?.textContent).toContain("connection confirmed");
-	expect(root.textContent).toContain("1 connected session");
-	expect(root.querySelectorAll(".pair-session")).toHaveLength(1);
-	expect(root.textContent).not.toContain(pairBootstrap.token);
-	background.sockets[0]?.dispatch("error");
-	handle.destroy();
-
-});
-
-test("reports a background setup failure instead of claiming pairing succeeded", async () => {
-	const root = newRoot();
-	const pairBootstrap = bootstrap();
-	const runtime = {
+function stubRuntime(
+	reply: (message: Record<string, unknown>) => unknown,
+) {
+	return {
 		onMessage: { addListener: mock(() => undefined) },
 		sendMessage: mock((message: unknown) =>
-			Promise.resolve(
-				(message as Record<string, unknown>).type === MSG.connectionRequest
-					? { connected: false }
-					: { ok: false, error: "storage failed" },
-			),
+			Promise.resolve(reply(message as Record<string, unknown>)),
 		),
 	};
+}
+
+function attachMessages(runtime: ReturnType<typeof stubRuntime>) {
+	return runtime.sendMessage.mock.calls
+		.map(([message]) => message as Record<string, unknown>)
+		.filter((message) => message.type === MSG.sessionAttach);
+}
+
+function spyOnFetch() {
+	const spy = mock(() => Promise.reject(new Error("fetch must not be called")));
+	const original = globalThis.fetch;
+	globalThis.fetch = spy as unknown as typeof fetch;
+	return {
+		spy,
+		restore() {
+			globalThis.fetch = original;
+		},
+	};
+}
+
+test("submitting a six digit code asks the background to attach every session and calls no fetch", async () => {
+	const root = newRoot();
+	const runtime = stubRuntime((message) =>
+		message.type === MSG.connectionRequest ? { connected: false } : { ok: true },
+	);
 	const handle = mountPairing(root, {
 		variant: "options",
 		runtime,
 		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-		fetch: () => Promise.resolve(Response.json(pairBootstrap)),
+	});
+	await handle.ready;
+	const network = spyOnFetch();
+	try {
+		await submit(root, "123456");
+	} finally {
+		network.restore();
+	}
+
+	expect(attachMessages(runtime)).toEqual([
+		{ type: MSG.sessionAttach, all: true, code: "123456" },
+	]);
+	expect(network.spy).not.toHaveBeenCalled();
+	expect(
+		runtime.sendMessage.mock.calls.some(
+			([message]) => (message as { type?: string }).type === MSG.markerCaptured,
+		),
+	).toBe(false);
+	handle.destroy();
+});
+
+test("a failed attach shows the daemon's error text and re-enables the form", async () => {
+	const root = newRoot();
+	const runtime = stubRuntime((message) =>
+		message.type === MSG.sessionAttach
+			? {
+					ok: false,
+					error: "incorrect pairing code; 4 attempts left",
+				}
+			: { connected: false },
+	);
+	const handle = mountPairing(root, {
+		variant: "options",
+		runtime,
+		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
 	});
 	await handle.ready;
 
 	await submit(root, "123456");
 
 	expect(root.querySelector("[role='status']")?.textContent).toBe(
-		"Could not finish pairing. Run dg-daemon pair again, then retry.",
+		"incorrect pairing code; 4 attempts left",
 	);
 	expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(false);
+	expect(
+		root.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled,
+	).toBe(false);
+	handle.destroy();
 });
 
-test("ignores a second submission while pairing is pending", async () => {
+test("a successful attach refreshes the session list from the background", async () => {
 	const root = newRoot();
-	let resolvePair: ((response: Response) => void) | undefined;
-	const pendingPair = new Promise<Response>((resolve) => {
-		resolvePair = resolve;
+	const attached = bootstrap();
+	let attachedYet = false;
+	const runtime = stubRuntime((message) => {
+		if (message.type === MSG.sessionAttach) {
+			attachedYet = true;
+			return { ok: true };
+		}
+		if (message.type === MSG.connectionRequest) {
+			return attachedYet
+				? {
+						connected: true,
+						sessions: [
+							{
+								sessionId: attached.sessionId,
+								agentIdentity: "claude",
+								connected: true,
+							},
+						],
+					}
+				: { connected: false };
+		}
+		return undefined;
 	});
-	const fetchPair = mock(() => pendingPair);
+	const handle = mountPairing(root, {
+		variant: "options",
+		runtime,
+		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
+	});
+	await handle.ready;
+	expect(root.querySelectorAll(".pair-session")).toHaveLength(0);
+
+	await submit(root, "123456");
+
+	expect(root.querySelectorAll(".pair-session")).toHaveLength(1);
+	expect(root.textContent).toContain("claude");
+	expect(root.textContent).toContain("1 connected session");
+	handle.destroy();
+});
+
+test("ignores a second submission while the attach is pending", async () => {
+	const root = newRoot();
+	let resolveAttach: ((reply: unknown) => void) | undefined;
 	const runtime = {
 		onMessage: { addListener: mock(() => undefined) },
 		sendMessage: mock((message: unknown) =>
-			Promise.resolve(
-				(message as Record<string, unknown>).type === MSG.connectionRequest
-					? { connected: false }
-					: { ok: true },
-			),
+			(message as Record<string, unknown>).type === MSG.sessionAttach
+				? new Promise((resolve) => {
+						resolveAttach = resolve;
+					})
+				: Promise.resolve({ connected: false }),
 		),
 	};
 	const handle = mountPairing(root, {
 		variant: "options",
 		runtime,
 		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-		fetch: fetchPair,
 	});
 	await handle.ready;
 
 	await submit(root, "123456");
 	await submit(root, "123456");
 
-	expect(fetchPair).toHaveBeenCalledTimes(1);
+	expect(
+		runtime.sendMessage.mock.calls.filter(
+			([message]) => (message as { type?: string }).type === MSG.sessionAttach,
+		),
+	).toHaveLength(1);
 	expect(root.querySelector<HTMLInputElement>("input")?.disabled).toBe(true);
-	expect(root.querySelector<HTMLButtonElement>("button[type='submit']")?.disabled).toBe(
-		true,
-	);
-	resolvePair?.(Response.json(bootstrap()));
+	resolveAttach?.({ ok: true });
 	await settle();
-	expect(root.querySelector("[role='status']")?.textContent).toContain("waiting for the daemon");
+	handle.destroy();
 });
 
-describe.each([
-	[401, { attemptsLeft: 3 }, "Wrong code. 3 tries left."],
-	[404, {}, "Code expired. Run dg-daemon pair again."],
-	[410, {}, "Code expired. Run dg-daemon pair again."],
-	[
-		409,
-		{},
-		"Paired to another extension. Run dg-daemon origin clear, then try again.",
-	],
-] as const)("pairing error %i", (status, body, message) => {
-	test(`shows ${message}`, async () => {
-		const root = newRoot();
-		const handle = mountPairing(root, {
-			variant: "options",
-			runtime: {
-				onMessage: { addListener: mock(() => undefined) },
-				sendMessage: mock(() => Promise.resolve({ connected: false })),
-			},
-			findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-			fetch: () =>
-				Promise.resolve(
-					new Response(JSON.stringify(body), {
-						status,
-						headers: { "content-type": "application/json" },
-					}),
-				),
-		});
-		await handle.ready;
-
-		await submit(root, "123456");
-
-		expect(root.querySelector("[role='status']")?.textContent).toBe(message);
-	});
-});
-
-test("a text 401 response reports the daemon's remaining attempts", async () => {
+test("an empty session list tells the user to start an agent and pair", async () => {
 	const root = newRoot();
+	const runtime = stubRuntime((message) =>
+		message.type === MSG.connectionRequest
+			? { connected: false, sessions: [] }
+			: { sessions: [] },
+	);
 	const handle = mountPairing(root, {
 		variant: "options",
-		runtime: {
-			onMessage: { addListener: mock(() => undefined) },
-			sendMessage: mock(() => Promise.resolve({ connected: false })),
-		},
+		runtime,
 		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-		fetch: () =>
-			Promise.resolve(
-				new Response("incorrect pairing code; 4 attempts left", {
-					status: 401,
-				}),
-			),
 	});
 	await handle.ready;
 
-	await submit(root, "123456");
-
 	expect(root.querySelector("[role='status']")?.textContent).toBe(
-		"Wrong code. 4 tries left.",
+		"No agent is connected. Start one with dg-agent start, then pair.",
 	);
+	handle.destroy();
 });
 
 test("the contextual Pair entry stays visible with confirmed connection status", async () => {
@@ -319,15 +327,11 @@ test("the contextual Pair entry stays visible with confirmed connection status",
 
 test("the code input rejects values that are not exactly six digits", async () => {
 	const root = newRoot();
-	const fetchPair = mock(() => Promise.resolve(new Response()));
+	const runtime = stubRuntime(() => ({ connected: false }));
 	const handle = mountPairing(root, {
 		variant: "options",
-		runtime: {
-			onMessage: { addListener: mock(() => undefined) },
-			sendMessage: mock(() => Promise.resolve({ connected: false })),
-		},
+		runtime,
 		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-		fetch: fetchPair,
 	});
 	await handle.ready;
 	const input = root.querySelector<HTMLInputElement>("input");
@@ -336,7 +340,7 @@ test("the code input rejects values that are not exactly six digits", async () =
 
 	await submit(root, "12ab");
 
-	expect(fetchPair).not.toHaveBeenCalled();
+	expect(attachMessages(runtime)).toHaveLength(0);
 	expect(root.querySelector("[role='status']")?.textContent).toBe(
 		"Enter a 6 digit code.",
 	);
@@ -396,35 +400,5 @@ test("disconnecting a previous session removes its credentials without interrupt
 	expect(frames.some((frame) => frame.type === "session-close")).toBe(false);
 	expect(root.textContent).toContain("1 connected session");
 	first.dispatch("error");
-	handle.destroy();
-});
-
-
-test("pairing another session waits for that session's confirmation even when an older one is connected", async () => {
-	const root = newRoot();
-	const background = backgroundHarness();
-	const older = bootstrap();
-	const newer = { ...older, sessionId: "newer-session", token: "newer-token" };
-	await background.runtime.sendMessage({ type: MSG.markerCaptured, bootstrap: older });
-	const socket = background.sockets[0]!;
-	socket.dispatch("open");
-	socket.dispatch("message", frameEvent(buildSessionListFrame([older])));
-	await settle();
-	const handle = mountPairing(root, {
-		variant: "options",
-		runtime: background.runtime,
-		findPort: () => Promise.resolve(CHAT_DEFAULT_PORT),
-		fetch: () => Promise.resolve(Response.json(newer)),
-	});
-	await handle.ready;
-	root.querySelector<HTMLButtonElement>("button")?.click();
-	await settle();
-	await submit(root, "123456");
-	expect(root.querySelector("[role='status']")?.textContent).toContain("waiting for the daemon");
-	socket.dispatch("message", frameEvent(buildSessionListFrame([older, newer], { sessionId: newer.sessionId })));
-	await settle();
-	expect(root.querySelector("[role='status']")?.textContent).toContain("connection confirmed");
-	expect(root.textContent).toContain("2 connected sessions");
-	socket.dispatch("error");
 	handle.destroy();
 });

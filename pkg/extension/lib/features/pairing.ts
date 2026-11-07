@@ -1,8 +1,4 @@
-import {
-	CHAT_PAIR_PATH,
-	type PairResponse,
-	validatePairResponse,
-} from "@dg/common";
+import { PAIR_CODE_PATTERN } from "@dg/common";
 import { browser } from "wxt/browser";
 import { MSG, type PairingSession } from "@dg/pages/chat-messages";
 import { findDaemonPort } from "@dg/pages/daemon-port";
@@ -28,7 +24,6 @@ export type PairingOptions = {
 	initialConnected?: boolean;
 	runtime?: PairRuntime;
 	findPort?: () => Promise<number | undefined>;
-	fetch?: (input: string, init: RequestInit) => Promise<Response>;
 	onDaemon?(reachable: boolean): void;
 };
 
@@ -41,11 +36,8 @@ export type PairingHandle = {
 
 const START_DAEMON = "Start the daemon: run dg-agent start";
 const ASK_FOR_CODE = "Run dg-daemon pair in a terminal, then enter the code";
-const CODE_EXPIRED = "Code expired. Run dg-daemon pair again.";
-const OTHER_EXTENSION =
-	"Paired to another extension. Run dg-daemon origin clear, then try again.";
-const CONNECTION_FAILED =
-	"Could not finish pairing. Run dg-daemon pair again, then retry.";
+const NO_AGENT =
+	"No agent is connected. Start one with dg-agent start, then pair.";
 
 function element<K extends keyof HTMLElementTagNameMap>(
 	doc: Document,
@@ -75,27 +67,6 @@ function isPairingSuccessReply(value: unknown): boolean {
 	);
 }
 
-async function errorMessage(response: Response): Promise<string> {
-	if (response.status === 401) {
-		let attemptsLeft: unknown;
-		try {
-			const body = await response.text();
-			try {
-				attemptsLeft = (JSON.parse(body) as Record<string, unknown>)
-					.attemptsLeft;
-			} catch {
-				attemptsLeft = Number(/(\d+)\s+attempts? left/i.exec(body)?.[1]);
-			}
-		} catch {}
-		return typeof attemptsLeft === "number" && Number.isFinite(attemptsLeft)
-			? `Wrong code. ${attemptsLeft} tries left.`
-			: "Wrong code.";
-	}
-	if (response.status === 404 || response.status === 410) return CODE_EXPIRED;
-	if (response.status === 409) return OTHER_EXTENSION;
-	return "Could not pair. Try again.";
-}
-
 export function mountPairing(
 	root: HTMLElement,
 	options: PairingOptions,
@@ -105,15 +76,12 @@ export function mountPairing(
 		options.runtime ??
 		((browser as unknown as { runtime?: PairRuntime }).runtime ?? {});
 	const findPort = options.findPort ?? (() => findDaemonPort());
-	const fetchPair = options.fetch ?? ((input, init) => fetch(input, init));
 	let port: number | undefined;
 	let connected = options.initialConnected ?? false;
 	let refreshVersion = 0;
 	let pending = false;
 	let sessions: PairingSession[] = [];
-	let confirmationTimer: number | undefined;
 	let destroyed = false;
-	let awaitingSessionId: string | undefined;
 	let selectedSessionId: string | undefined;
 	let catalog: PublicSession[] = [];
 
@@ -163,12 +131,6 @@ export function mountPairing(
 	const sessionList = element(doc, "ul", "pair-sessions");
 	panel.append(heading, copy, reveal, form, directions, actions, status, sessionList);
 	root.replaceChildren(panel);
-
-	function clearConfirmationTimer(): void {
-		if (confirmationTimer !== undefined)
-			doc.defaultView?.clearTimeout(confirmationTimer);
-		confirmationTimer = undefined;
-	}
 
 	function controls() {
 		const held = sessions.map((session) => ({
@@ -284,7 +246,7 @@ export function mountPairing(
 	}
 
 	function codePayload(): { code?: string } {
-		return /^\d{6}$/.test(input.value) ? { code: input.value } : {};
+		return PAIR_CODE_PATTERN.test(input.value) ? { code: input.value } : {};
 	}
 
 	async function runCommand(message: unknown): Promise<void> {
@@ -308,14 +270,6 @@ export function mountPairing(
 
 	function showConnected(): void {
 		options.onDaemon?.(true);
-		if (
-			sessions.some(
-				(session) => session.sessionId === awaitingSessionId && session.connected,
-			)
-		) {
-			awaitingSessionId = undefined;
-		}
-		if (awaitingSessionId === undefined) clearConfirmationTimer();
 		root.hidden = false;
 		heading.textContent = "Paired";
 		const count = sessions.filter((session) => session.connected).length;
@@ -326,9 +280,7 @@ export function mountPairing(
 		reveal.textContent = "Pair another session";
 		reveal.hidden = false;
 		form.hidden = true;
-		status.textContent = awaitingSessionId === undefined
-			? "Paired — connection confirmed"
-			: "Code accepted — waiting for the daemon to confirm the new session.";
+		status.textContent = "Paired — connection confirmed";
 		renderSessions();
 	}
 
@@ -392,12 +344,16 @@ export function mountPairing(
 		const presences = catalog.flatMap((session) =>
 			session.presence ? [session.presence] : [],
 		);
-		status.textContent = connectionGuidance({
-			daemonUp: port !== undefined || connected,
-			paired: connected,
-			presences,
-			heldDisconnected: sessions.some((session) => !session.connected),
-		});
+		const daemonUp = port !== undefined || connected;
+		status.textContent =
+			daemonUp && !connected && sessions.length === 0 && catalog.length === 0
+				? NO_AGENT
+				: connectionGuidance({
+						daemonUp,
+						paired: connected,
+						presences,
+						heldDisconnected: sessions.some((session) => !session.connected),
+					});
 	}
 
 	async function loadCatalog(): Promise<void> {
@@ -470,7 +426,8 @@ export function mountPairing(
 		event.preventDefault();
 		if (pending) return;
 		void (async () => {
-			if (!/^\d{6}$/.test(input.value)) {
+			const code = input.value;
+			if (!PAIR_CODE_PATTERN.test(code)) {
 				status.textContent = "Enter a 6 digit code.";
 				return;
 			}
@@ -483,52 +440,13 @@ export function mountPairing(
 			submit.disabled = true;
 			form.setAttribute("aria-busy", "true");
 			status.textContent = "";
-			let paired = false;
 			try {
-				const response = await fetchPair(
-					`http://127.0.0.1:${port}${CHAT_PAIR_PATH}`,
-					{
-						method: "POST",
-						headers: { "content-type": "application/json" },
-						body: JSON.stringify({ code: input.value }),
-					},
-				);
-				if (!response.ok) {
-					status.textContent = await errorMessage(response);
-					return;
-				}
-				const bootstrap: PairResponse = validatePairResponse(
-					await response.json(),
-				);
-				awaitingSessionId = bootstrap.sessionId;
-				const reply = await runtime.sendMessage?.({
-					type: MSG.markerCaptured,
-					bootstrap,
-				});
-				if (!isPairingSuccessReply(reply)) {
-					awaitingSessionId = undefined;
-					status.textContent = CONNECTION_FAILED;
-					return;
-				}
-				paired = true;
-				if (awaitingSessionId !== undefined) {
-					status.textContent = "Code accepted — waiting for the daemon to confirm the connection.";
-					clearConfirmationTimer();
-					confirmationTimer = doc.defaultView?.setTimeout(() => {
-						if (awaitingSessionId === undefined || destroyed) return;
-						status.textContent = "Connection not confirmed. Check that the daemon is running, or disconnect this session and pair again.";
-						input.disabled = false;
-						submit.disabled = false;
-					}, 10_000);
-				}
-			} catch {
-				awaitingSessionId = undefined;
-				showUnavailable();
+				await runCommand({ type: MSG.sessionAttach, all: true, code });
 			} finally {
 				pending = false;
 				form.removeAttribute("aria-busy");
-				input.disabled = paired;
-				submit.disabled = paired;
+				input.disabled = false;
+				submit.disabled = false;
 			}
 		})();
 	});
@@ -564,7 +482,6 @@ export function mountPairing(
 		},
 		destroy() {
 			destroyed = true;
-			clearConfirmationTimer();
 			refreshVersion += 1;
 			runtime.onMessage?.removeListener?.(onRuntimeMessage);
 		},

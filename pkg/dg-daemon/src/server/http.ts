@@ -11,7 +11,8 @@ import {
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
-	CHAT_PAIR_PATH,
+	CHAT_PAIR_CLAIM_PATH,
+	CHAT_PAIR_OFFER_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
@@ -26,14 +27,16 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
+	noteSecret,
 	type OverwatchAction,
 	OVERWATCH_SESSION_ID,
-	type PairRequest,
+	type PairClaimRequest,
+	type PairClaimResponse,
 	type SessionRole,
 	decideAttach,
 	validateAttachRequest,
 	validateOverwatchAction,
-	validatePairRequest,
+	validatePairClaimRequest,
 } from "@dg/common";
 import {
 	type DgPaths,
@@ -87,6 +90,7 @@ import {
 	requireLocalPageOrigin,
 } from "./origin";
 import { localPageResponse } from "./pages";
+import { createPairOffers, type PairOffers } from "./pair-offers";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -267,6 +271,11 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		overwatchOpenRequests: new Map(),
 	};
 
+	const pairOffers = createPairOffers();
+	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
+		pairOffers.forget(sessionId);
+	});
+
 	const boundServer = Bun.serve<SocketState>({
 		hostname: "127.0.0.1",
 		port,
@@ -363,8 +372,19 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				return handleRegisterSession(req, deps);
 			}
 
-			if (url.pathname === CHAT_PAIR_PATH && req.method === "POST") {
-				return handlePair(req, deps);
+			if (url.pathname === CHAT_PAIR_OFFER_PATH && req.method === "POST") {
+				return handlePairOfferCreate(req, deps, pairOffers);
+			}
+
+			if (
+				url.pathname.startsWith(`${CHAT_PAIR_OFFER_PATH}/`) &&
+				req.method === "GET"
+			) {
+				return handlePairOfferStatus(req, url, deps, pairOffers);
+			}
+
+			if (url.pathname === CHAT_PAIR_CLAIM_PATH && req.method === "POST") {
+				return handlePairClaim(req, deps, pairOffers);
 			}
 
 			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
@@ -593,59 +613,123 @@ function createSessionResponse(
 	});
 }
 
-async function handlePair(
+const PAIR_HEADERS = { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" };
+
+const PAIR_OFFER_ID =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const PAIR_CLAIM_REFUSALS = {
+	"no-match": {
+		status: 404,
+		text: "no pairing offer matches this code; open the extension popup and read the code again",
+	},
+	expired: {
+		status: 410,
+		text: "pairing offer expired; open the extension popup for a new code",
+	},
+	locked: {
+		status: 429,
+		text: "too many wrong pairing codes; reopen the extension popup for a new code",
+	},
+} as const;
+
+function pairText(body: string, status: number): Response {
+	return new Response(body, { status, headers: PAIR_HEADERS });
+}
+
+function pairJson(body: unknown, status = 200): Response {
+	return json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+function noStore(response: Response): Response {
+	response.headers.set("Cache-Control", "no-store");
+	return response;
+}
+
+function pairOrigin(req: Request, paths: DgPaths): string | Response {
+	const refusal = requirePairOrigin(req, paths);
+	return refusal ? noStore(refusal) : (req.headers.get("origin") ?? "");
+}
+
+function handlePairOfferCreate(
 	req: Request,
 	deps: HttpServerDeps,
+	offers: PairOffers,
+): Response {
+	const origin = pairOrigin(req, deps.paths);
+	if (origin instanceof Response) return origin;
+	const offer = offers.create({ origin });
+	if ("outcome" in offer) {
+		return pairText("too many pairing offers; wait for one to expire", 429);
+	}
+	return pairJson(offer, 201);
+}
+
+function handlePairOfferStatus(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+	offers: PairOffers,
+): Response {
+	const origin = pairOrigin(req, deps.paths);
+	if (origin instanceof Response) return origin;
+	const offerId = url.pathname.slice(CHAT_PAIR_OFFER_PATH.length + 1);
+	if (!PAIR_OFFER_ID.test(offerId)) {
+		return pairText("no pairing offer with that id", 404);
+	}
+	const status = offers.status({ offerId, origin });
+	return status === undefined
+		? pairText("no pairing offer with that id", 404)
+		: pairJson(status);
+}
+
+async function handlePairClaim(
+	req: Request,
+	deps: HttpServerDeps,
+	offers: PairOffers,
 ): Promise<Response> {
-	const originError = requirePairOrigin(req, deps.paths);
-	if (originError) return originError;
-	const capacityError = requireSessionCapacity(deps);
-	if (capacityError) return capacityError;
+	if (req.headers.get("origin") !== null) {
+		return pairText("refused: /pair/claim is loopback-only", 400);
+	}
+	const refused = requireOwnerCredential(req, deps.paths);
+	if (refused) return noStore(refused);
 	const contentType = (req.headers.get("content-type") ?? "")
 		.split(";")[0]
 		.trim();
 	if (contentType !== "application/json") {
-		return new Response("Content-Type must be application/json", {
-			status: 415,
-		});
+		return pairText("Content-Type must be application/json", 415);
 	}
 
-	let request: PairRequest;
+	let request: PairClaimRequest;
 	try {
-		request = validatePairRequest(await req.json());
+		request = validatePairClaimRequest(await req.json());
 	} catch (err) {
-		return new Response(describeError(err), {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return pairText(describeError(err), 400);
 	}
 
-	const attempt = consumePairingAttempt(deps.paths, request.code);
-	if (attempt.outcome === "missing") {
-		return new Response("no pairing code is pending; run `dg-daemon pair`", {
-			status: 404,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "expired") {
-		return new Response("pairing code expired; run `dg-daemon pair`", {
-			status: 410,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "incorrect") {
-		return new Response(
-			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
-			{ status: 401, headers: NOSNIFF_HEADERS },
-		);
+	const record = deps.registry.get(request.sessionId);
+	if (!record || record.state !== "active") {
+		return pairText("session not found", 404);
 	}
 
-	return createSessionResponse(deps, {
-		cwd: process.cwd(),
-		agentIdentity: "extension",
-		workset: "paired",
-		role: "agent",
+	noteSecret(record.token);
+	const result = offers.claim({
+		code: request.code,
+		bootstrap: {
+			port: deps.port,
+			sessionId: record.sessionId,
+			token: record.token,
+			agentIdentity: record.agentIdentity,
+		},
 	});
+	if (result.outcome !== "claimed") {
+		const refusal = PAIR_CLAIM_REFUSALS[result.outcome];
+		return pairText(refusal.text, refusal.status);
+	}
+	return pairJson({
+		ok: true,
+		agentIdentity: record.agentIdentity,
+	} satisfies PairClaimResponse);
 }
 
 function pairingAttemptResponse(

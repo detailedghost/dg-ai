@@ -64,4 +64,28 @@ describe("dg-agent main", () => {
 		expect(phoneRun).toHaveBeenCalledTimes(1);
 		expect(exitCalls).toEqual([]);
 	});
+
+	it("registers pair and rejects a malformed code with the usage text and exit 1", async () => {
+		const lines: string[] = [];
+		console.error = (...args: unknown[]) => {
+			lines.push(args.join(" "));
+		};
+		const stderrWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			lines.push(String(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+		let code: number;
+		try {
+			code = await main(["pair", "12345"]);
+		} finally {
+			process.stderr.write = stderrWrite;
+		}
+
+		expect(code).toBe(1);
+		expect(exitCalls).toEqual([]);
+		expect(lines.join("\n")).toContain(
+			"pair takes a 6 digit code from the extension popup.",
+		);
+	});
 });

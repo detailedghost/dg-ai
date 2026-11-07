@@ -40,8 +40,12 @@ export type PairingAttempt =
 	| { outcome: "incorrect"; attemptsLeft: number }
 	| { outcome: "accepted" };
 
-function hashPairingCode(salt: string, code: string): string {
+export function hashPairingCode(salt: string, code: string): string {
 	return createHash("sha256").update(`${salt}${code}`).digest("hex");
+}
+
+export function generatePairingCode(): string {
+	return randomInt(1_000_000).toString().padStart(6, "0");
 }
 
 function isPairingRecord(value: unknown): value is PairingRecord {
@@ -159,7 +163,7 @@ export function createPairingCode(
 	now = Date.now(),
 ): { code: string; expiresAt: number } {
 	return withPairingLock(paths, () => {
-		const code = randomInt(1_000_000).toString().padStart(6, "0");
+		const code = generatePairingCode();
 		const salt = randomBytes(16).toString("base64url");
 		const expiresAt = now + PAIRING_TTL_MS;
 		writePairingRecord(paths, {
