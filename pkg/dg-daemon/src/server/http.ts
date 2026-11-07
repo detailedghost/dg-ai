@@ -271,6 +271,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 	const pairOffers = createPairOffers();
 	const attachLimiter = createAttachLimiter();
+	const offerLimiter = createAttachLimiter();
 	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
 		pairOffers.forget(sessionId);
 	});
@@ -363,7 +364,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === CHAT_PAIR_OFFER_PATH && req.method === "POST") {
-				return handlePairOfferCreate(req, deps, pairOffers);
+				return handlePairOfferCreate(req, deps, pairOffers, offerLimiter);
 			}
 
 			if (
@@ -640,9 +641,13 @@ function handlePairOfferCreate(
 	req: Request,
 	deps: HttpServerDeps,
 	offers: PairOffers,
+	limiter: AttachLimiter,
 ): Response {
 	const origin = pairOrigin(req, deps.paths);
 	if (origin instanceof Response) return origin;
+	if (!limiter.allow(origin)) {
+		return pairText("too many pairing offers; wait a minute", 429);
+	}
 	const offer = offers.create({ origin });
 	if ("outcome" in offer) {
 		return pairText("too many pairing offers; wait for one to expire", 429);

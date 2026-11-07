@@ -134,6 +134,8 @@ async function createOffer(
 	return validatePairOffer(await response.json());
 }
 
+const OFFER_LIMIT = 30;
+
 function wrongCode(code: string): string {
 	return `${code.slice(0, -1)}${(Number(code.at(-1)) + 1) % 10}`;
 }
@@ -203,6 +205,17 @@ describe("POST /pair/offer", () => {
 		for (let index = 0; index < 12; index++) {
 			expect((await offerRequest(daemon.port)).status).toBe(201);
 		}
+	});
+
+	it("refuses offer creation past the per-origin limit with 429", async () => {
+		const daemon = await bootDaemon();
+		writeConfig(daemon.paths, { pinnedOrigin: EXTENSION_ORIGIN });
+
+		for (let index = 0; index < OFFER_LIMIT; index++) {
+			expect((await offerRequest(daemon.port)).status).toBe(201);
+		}
+
+		expect((await offerRequest(daemon.port)).status).toBe(429);
 	});
 
 	it("does not offer the retired POST /pair route", async () => {
