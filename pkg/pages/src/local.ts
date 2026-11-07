@@ -4,7 +4,7 @@ import {
 	type SessionBootstrap,
 	tryValidateSessionBootstrap,
 } from "@dg/common";
-import { readChatBootstrap, readChatCode, stripChatMarker } from "./chat-marker";
+import { readChatCode, stripChatMarker } from "./chat-marker";
 import { browserStorage, memoryStorage, type PageStorage } from "./runtime";
 
 const LEGACY_BOOTSTRAP_KEY = "dg_local_bootstrap";
@@ -112,41 +112,25 @@ export function forgetLocalBootstrap(
 	}
 }
 
-/** Strips the fragment after reading it; an installed extension may strip it first, so the navigation entry keeps the original URL. */
 export function loadLocalBootstraps(
 	win: Window,
 	storage: PageStorage,
 	exchanged?: SessionBootstrap,
 ): SessionBootstrap[] {
-	const navigation = win.performance
-		.getEntriesByType("navigation")
-		.at(0)?.name;
-	const fromHref = readChatBootstrap(win.location.href);
-	if (fromHref) {
-		win.history.replaceState(
-			win.history.state,
-			"",
-			stripChatMarker(win.location.href),
-		);
-	}
 	const refused = refusedTokens(storage);
-	const presented =
-		exchanged ??
-		fromHref ??
-		(navigation === undefined ? undefined : readChatBootstrap(navigation));
 	const pagePort = Number(win.location.port);
 	const samePort = (entry: SessionBootstrap) => entry.port === pagePort;
 	const legacy = readLegacy(storage);
 	let held = readHeld(storage).filter(samePort);
 	if (legacy && samePort(legacy)) held = withEntry(held, legacy, refused);
-	if (presented && samePort(presented)) {
-		held = withEntry(held, presented, refused);
+	if (exchanged && samePort(exchanged)) {
+		held = withEntry(held, exchanged, refused);
 	}
 	held = held.filter((entry) => !refused.includes(entry.token));
-	if (legacy || presented) storeLocalBootstraps(storage, held);
+	if (legacy || exchanged) storeLocalBootstraps(storage, held);
 	if (legacy) storage.remove(LEGACY_BOOTSTRAP_KEY);
-	const selected = presented
-		? held.find((entry) => entry.sessionId === presented.sessionId)
+	const selected = exchanged
+		? held.find((entry) => entry.sessionId === exchanged.sessionId)
 		: undefined;
 	return selected
 		? [selected, ...held.filter((entry) => entry !== selected)]

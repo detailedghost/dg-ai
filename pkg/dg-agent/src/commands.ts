@@ -24,7 +24,7 @@ import {
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { registerOverwatchCommands } from "./overwatch";
-import { tryOpenAgentUrl } from "./start";
+import { mintPageCode, tryOpenAgentUrl } from "./start";
 
 const DEFAULT_RECV_TIMEOUT_MS = 30_000;
 
@@ -161,6 +161,7 @@ export function registerAgentCommands(program: Command): void {
 		write: writeStdout,
 		writeError: writeStderr,
 		tryOpen: tryOpenAgentUrl,
+		mintPageCode,
 		localBootstrap,
 	});
 
@@ -202,6 +203,10 @@ export function registerAgentCommands(program: Command): void {
 	program
 		.command("spawn")
 		.description("spawn another background chat session")
+		.argument(
+			"[command...]",
+			"command to run with DG_SESSION_ID set to the new session; put it after --",
+		)
 		.option("--workset <label>", "workset label for the new session")
 		.option("--orchestrator", "give the new session the orchestrator role")
 		.option(
@@ -210,6 +215,7 @@ export function registerAgentCommands(program: Command): void {
 		)
 		.action(
 			async (
+				argv: string[],
 				options: {
 					workset?: string;
 					orchestrator?: boolean;
@@ -218,6 +224,7 @@ export function registerAgentCommands(program: Command): void {
 				command: Command,
 			) => {
 				const client = await connectFor(command);
+				let sessionId: string;
 				try {
 					const result = await client.request(
 						{
@@ -232,10 +239,21 @@ export function registerAgentCommands(program: Command): void {
 						isSessionPending,
 						5_000,
 					);
-					await writeStdout(`${JSON.stringify(result.newSession)}\n`);
+					sessionId = result.newSession.sessionId;
+					if (argv.length === 0) {
+						await writeStdout(`${JSON.stringify(result.newSession)}\n`);
+					}
 				} finally {
 					client.close();
 				}
+				if (argv.length === 0) return;
+				const child = Bun.spawn(argv, {
+					env: { ...process.env, DG_SESSION_ID: sessionId },
+					stdin: "inherit",
+					stdout: "inherit",
+					stderr: "inherit",
+				});
+				process.exitCode = await child.exited;
 			},
 		);
 

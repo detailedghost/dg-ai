@@ -1,4 +1,12 @@
-/** Stderr hint after start. The bootstrap URL stays on stdout, and this line has no token. */
-export function cliNextStep(sessionId: string): string {
-	return `dg-agent: session ${sessionId} is ready. Next: open the DeeGee popup and run dg-agent pair <code>.`;
+import type { SessionBootstrap } from "@dg/common";
+
+const SESSION_ID_PREFIX = 8;
+
+export function startNotice(
+	{ agentIdentity, sessionId }: Pick<SessionBootstrap, "agentIdentity" | "sessionId">,
+	extensionLinked: boolean,
+): string {
+	return extensionLinked
+		? `Paired ${agentIdentity} (${sessionId.slice(0, SESSION_ID_PREFIX)}) with the browser extension.`
+		: "No browser extension is connected. Install it with: dg-skills install";
 }

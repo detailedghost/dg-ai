@@ -649,12 +649,15 @@ async function handleLocalAttach(
 	});
 }
 
-function handleChatCodeMint(
+async function handleChatCodeMint(
 	req: Request,
 	deps: HttpServerDeps,
 	codes: PageCodes,
 	limiter: AttachLimiter,
-): Response {
+): Promise<Response> {
+	if (req.headers.has(OWNER_TOKEN_HEADER)) {
+		return handleOwnerCodeMint(req, deps, codes);
+	}
 	const originError = requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
 	const bearer = bearerToken(req);
@@ -679,6 +682,35 @@ function handleChatCodeMint(
 			status: 429,
 			headers: NOSNIFF_HEADERS,
 		});
+	}
+	return pairJson({ code: codes.mint(record.sessionId) });
+}
+
+async function handleOwnerCodeMint(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+): Promise<Response> {
+	if (req.headers.get("origin") !== null) {
+		return new Response("refused: the owner token takes no Origin", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const ownerRefused = requireOwnerCredential(req, deps.paths);
+	if (ownerRefused) return ownerRefused;
+	let sessionId: unknown;
+	try {
+		sessionId = ((await req.json()) as { sessionId?: unknown }).sessionId;
+	} catch {
+		return new Response("invalid JSON body", { status: 400 });
+	}
+	if (typeof sessionId !== "string" || sessionId.length === 0) {
+		return new Response("body must carry a sessionId", { status: 400 });
+	}
+	const record = deps.registry.get(sessionId);
+	if (record === undefined || record.state !== "active") {
+		return new Response("no such session", { status: 404 });
 	}
 	return pairJson({ code: codes.mint(record.sessionId) });
 }

@@ -38,15 +38,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.option("-w, --workset <label>", "workset label to attach to this session")
 		.option("--orchestrator", "register this session with the orchestrator role")
 		.option("-a, --agent-identity <name>", "agent identity to record")
-		.option("--open", "open the chat page in the default browser")
+		.option("--open", "open the chat page in the default browser, paired through a one-time code")
 		.option("--ext", "accepted for skills that require the dg-ai-extension; behaves like the default")
-		.option(
-			"--print-session-id",
-			"print the session id, then the bootstrap URL",
-		)
+		.option("--print-session-id", "print only the session id")
 		.option(
 			"--json",
-			"print sessionId, port, and the bootstrap URL as one JSON object",
+			"print sessionId, port, and extensionLinked as one JSON object",
 		)
 		.action(
 			async (opts: {

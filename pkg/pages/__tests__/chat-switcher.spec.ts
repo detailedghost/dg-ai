@@ -380,7 +380,7 @@ describe("chat page held set", () => {
 		expect(net.sockets).toHaveLength(0);
 	});
 
-	test("a /chat#_chat= load in a tab that already holds a session holds both and starts the socket with both", async () => {
+	test("a /chat#_chatcode= load in a tab that already holds a session holds both and starts the socket with both", async () => {
 		const net = await openPage(chatHref(B), { sessionStorage: held(A) });
 
 		net.sockets[0]?.handle.fire("open");
@@ -394,7 +394,7 @@ describe("chat page held set", () => {
 		expect(JSON.parse(net.win.sessionStorage.getItem(HELD_KEY) ?? "[]")).toEqual([A, B]);
 	});
 
-	test("a /chat#_chat= load after a bare /chat starts the socket", async () => {
+	test("a /chat#_chatcode= load after a bare /chat starts the socket", async () => {
 		await openPage(chatHref());
 		const net = await openPage(chatHref(A));
 

@@ -102,6 +102,7 @@ async function runOverwatchWithClient(args: string[], client: StubClient) {
 			output.push(value);
 		},
 		tryOpen: async () => true,
+		mintPageCode: async () => "code",
 		writeError: async () => undefined,
 		localBootstrap: async () => {
 			throw new Error("unexpected local bootstrap");
@@ -318,6 +319,7 @@ describe("dg-agent overwatch", () => {
 			},
 			write: async () => undefined,
 			tryOpen: async () => true,
+			mintPageCode: async () => "code",
 			writeError: async () => undefined,
 			localBootstrap: async () => {
 				throw new Error("unexpected local bootstrap");
@@ -358,6 +360,7 @@ describe("dg-agent overwatch", () => {
 			},
 			write: async () => undefined,
 			tryOpen: async () => true,
+			mintPageCode: async () => "code",
 			writeError: async () => undefined,
 			localBootstrap: async () => {
 				throw new Error("unexpected local bootstrap");
@@ -397,6 +400,7 @@ describe("dg-agent overwatch", () => {
 			},
 			write: async () => undefined,
 			tryOpen: async () => true,
+			mintPageCode: async () => "code",
 			writeError: async () => undefined,
 			localBootstrap: async () => {
 				throw new Error("unexpected local bootstrap");

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-	CHAT_MARKER_KEY,
 	CHAT_PROTOCOL_VERSION,
 	type SessionBootstrap,
 } from "@dg/common";
@@ -12,6 +11,7 @@ import {
 	createChatClient,
 } from "../src/chat/chat-client";
 import { SESSION_ENDED_TEXT } from "../src/local";
+import { exchangeReply, pageFragment } from "./utils/page-code";
 
 const BOOTSTRAP: SessionBootstrap = {
 	port: 47823,
@@ -441,10 +441,6 @@ let saved: Partial<Record<(typeof GLOBAL_KEYS)[number], unknown>> = {};
 let openWindow: Window | undefined;
 let imports = 0;
 
-function pageFragment(value: unknown): string {
-	return `${CHAT_MARKER_KEY}=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
-}
-
 function installPage(
 	href: string,
 	respond: () => Promise<Response> = () =>
@@ -505,7 +501,10 @@ function installPage(
 		localStorage: win.localStorage,
 		sessionStorage: win.sessionStorage,
 		WebSocket: FakeSocket,
-		fetch: () => respond(),
+		fetch: (input: unknown, init?: RequestInit) => {
+			const exchanged = exchangeReply(String(input), init);
+			return exchanged ? Promise.resolve(exchanged) : respond();
+		},
 		setTimeout: (callback: () => void, ms = 0) => {
 			net.timeouts.push({ callback, ms });
 			return net.timeouts.length;

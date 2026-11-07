@@ -1,5 +1,8 @@
 import { afterEach } from "bun:test";
-import { CHAT_MARKER_KEY, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { exchangeReply, pageFragment } from "./page-code";
+
+export { pageFragment };
 import { Window } from "happy-dom";
 
 type Listener = (event?: unknown) => void;
@@ -39,10 +42,6 @@ const realSetTimeout = globalThis.setTimeout;
 let saved: Partial<Record<(typeof GLOBAL_KEYS)[number], unknown>> = {};
 let openWindow: Window | undefined;
 let imports = 0;
-
-export function pageFragment(value: unknown): string {
-	return `${CHAT_MARKER_KEY}=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
-}
 
 export function installPage(
 	href: string,
@@ -114,6 +113,8 @@ export function installPage(
 		sessionStorage: win.sessionStorage,
 		WebSocket: FakeSocket,
 		fetch: (input: unknown, init?: RequestInit) => {
+			const exchanged = exchangeReply(String(input), init);
+			if (exchanged) return Promise.resolve(exchanged);
 			const call = { url: String(input), init };
 			net.fetches.push(call);
 			return respond(call);

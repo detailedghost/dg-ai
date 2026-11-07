@@ -3,21 +3,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import type { CliRequest, SessionBootstrap } from "@dg/common";
-import { validateSessionBootstrap } from "@dg/common";
-import { buildBootstrapUrl, openFailedHint } from "@dg/common/node";
+import { openFailedHint } from "@dg/common/node";
 import {
 	bootServe,
-	decodeChatMarker,
 	killDaemonByPidFile,
 	registerSession,
 	type ServeBoot,
 } from "@dg/dg-daemon/test-harness";
 import { Command } from "commander";
 import { localBootstrap } from "../src/commands";
+import { mintPageCode } from "../src/start";
 import {
 	type OverwatchClient,
 	registerOverwatchCommands,
 } from "../src/overwatch";
+
+const CODE = "one-time-code";
 
 const BOOTSTRAP: SessionBootstrap = {
 	port: 43117,
@@ -59,6 +60,7 @@ async function runOpen(
 	const client = new RecordingClient();
 	const written: string[] = [];
 	const errors: string[] = [];
+	const minted: SessionBootstrap[] = [];
 	const program = new Command();
 	program.exitOverride();
 	registerOverwatchCommands(program.command("overwatch"), {
@@ -73,34 +75,26 @@ async function runOpen(
 			opened.push(url);
 			return launched;
 		},
+		mintPageCode: async (bootstrap) => {
+			minted.push(bootstrap);
+			return CODE;
+		},
 		openFailedHint: () => openFailedHint(wsl),
 		localBootstrap,
 	});
 	await program.parseAsync(["node", "dg-agent", "overwatch", "open", ...args]);
-	return { client, opened, written, errors };
+	return { client, opened, written, errors, minted };
 }
 
 describe("dg-agent overwatch open", () => {
-	it("opens the local /board page with tryOpen by default", async () => {
-		const { opened, client } = await runOpen([]);
+	it("opens the local /board page with a one-time code by default", async () => {
+		const { opened, client, minted } = await runOpen([]);
 
-		expect(opened).toHaveLength(1);
-		expect(
-			opened[0].startsWith(`http://127.0.0.1:${BOOTSTRAP.port}/board#_chat=`),
-		).toBe(true);
-		expect(validateSessionBootstrap(decodeChatMarker(opened[0]))).toEqual(
-			BOOTSTRAP,
-		);
+		expect(opened).toEqual([
+			`http://127.0.0.1:${BOOTSTRAP.port}/board#_chatcode=${CODE}`,
+		]);
+		expect(minted).toEqual([BOOTSTRAP]);
 		expect(client.frames).toEqual([]);
-	});
-
-	it("builds the board URL from the same fragment format as the chat URL", async () => {
-		const { opened } = await runOpen([]);
-		const chatFragment = buildBootstrapUrl(BOOTSTRAP.port, BOOTSTRAP).split(
-			"#",
-		)[1];
-
-		expect(opened[0].split("#")[1]).toBe(chatFragment);
 	});
 
 	it("sends cli-overwatch-open and does not call tryOpen with --ext", async () => {
@@ -111,29 +105,24 @@ describe("dg-agent overwatch open", () => {
 		expect(client.closeCount).toBe(1);
 	});
 
-	it("prints the board URL it opens", async () => {
-		const { opened, written } = await runOpen([]);
+	it("prints no URL and no token to stdout", async () => {
+		const { written, errors } = await runOpen([]);
 
-		expect(written).toEqual([`${opened[0]}\n`]);
-	});
-
-	it("still prints the board URL when the browser does not launch", async () => {
-		const { opened, written } = await runOpen([], undefined, [], false);
-
-		expect(written).toEqual([`${opened[0]}\n`]);
+		expect(written).toEqual([]);
+		expect([...written, ...errors].join("")).not.toContain(BOOTSTRAP.token);
 	});
 
 	it("writes one stderr line when the browser does not launch", async () => {
 		const { errors } = await runOpen([], undefined, [], false);
 
-		expect(errors).toEqual(["could not open a browser; open the URL above\n"]);
+		expect(errors).toEqual([`${openFailedHint(false)}\n`]);
 	});
 
 	it("names the DG_OPEN_WINDOWS opt-in on WSL when the browser does not launch", async () => {
 		const { errors } = await runOpen([], undefined, [], false, true);
 
 		expect(errors).toEqual([
-			"could not open a browser; open the URL above (set DG_OPEN_WINDOWS=1 to open the Windows browser)\n",
+			`${openFailedHint(true)}\n`,
 		]);
 	});
 
@@ -181,7 +170,7 @@ describe("localBootstrap", () => {
 		expect(message).not.toContain("..");
 	});
 
-	it("resolves the registered session and the board URL decodes to it", async () => {
+	it("resolves the registered session and mints a code that exchanges for it", async () => {
 		daemon = await bootServe();
 		process.env.DG_HOME = daemon.dgHome;
 		const registered = await registerSession(daemon.port, {
@@ -196,9 +185,18 @@ describe("localBootstrap", () => {
 			token: registered.token,
 			agentIdentity: "overwatch-board",
 		});
-		const { opened } = await runOpen([], async () => bootstrap);
-		expect(validateSessionBootstrap(decodeChatMarker(opened[0]))).toEqual(
-			bootstrap,
+		const code = await mintPageCode(bootstrap);
+		const traded = await fetch(`http://127.0.0.1:${daemon.port}/chat/exchange`, {
+			method: "POST",
+			headers: {
+				Host: `127.0.0.1:${daemon.port}`,
+				Origin: `http://127.0.0.1:${daemon.port}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ code }),
+		});
+		expect(((await traded.json()) as { sessionId: string }).sessionId).toBe(
+			registered.sessionId,
 		);
 	}, 30_000);
 });

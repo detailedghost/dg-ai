@@ -1,15 +1,18 @@
 import { describe, expect, it } from "bun:test";
-import { cliNextStep } from "../src/next-step";
+import { startNotice } from "../src/next-step";
 
 const SESSION = "11111111-1111-1111-1111-111111111111";
-const TOKEN = "session-token-must-not-appear";
 
-describe("cliNextStep", () => {
-	it("tells a new session to pair from the DeeGee popup", () => {
-		const line = cliNextStep(SESSION);
-		expect(line).toContain(`session ${SESSION} is ready`);
-		expect(line).toContain("open the DeeGee popup and run dg-agent pair <code>");
-		expect(line).not.toContain("side panel");
-		expect(line).not.toContain(TOKEN);
+describe("startNotice", () => {
+	it("names the paired agent and the first eight characters of the session id", () => {
+		expect(startNotice({ agentIdentity: "claude-js", sessionId: SESSION }, true)).toBe(
+			"Paired claude-js (11111111) with the browser extension.",
+		);
+	});
+
+	it("points at the installer when no extension is linked", () => {
+		expect(startNotice({ agentIdentity: "claude-js", sessionId: SESSION }, false)).toBe(
+			"No browser extension is connected. Install it with: dg-skills install",
+		);
 	});
 });
