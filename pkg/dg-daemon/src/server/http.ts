@@ -97,6 +97,7 @@ const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
 export type HttpServerDeps = {
 	port: number;
 	instanceId: string;
+	daemonId: string;
 	paths: DgPaths;
 	registry: SessionRegistry;
 	connections: ConnectionManager;
@@ -226,7 +227,7 @@ function requireLoopbackHost(req: Request, port: number): Response | undefined {
 function handleHealthCheck(
 	req: Request,
 	port: number,
-	instanceId: string,
+	ids: { instanceId: string; daemonId: string },
 ): Response {
 	const failsHostOrOrigin =
 		!isLoopbackHost(req.headers.get("host"), port) ||
@@ -237,7 +238,7 @@ function handleHealthCheck(
 	return json({
 		daemon: "dg-daemon",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
-		instanceId,
+		...ids,
 	});
 }
 
@@ -334,7 +335,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				url.pathname === CHAT_HEALTH_PATH ||
 				url.pathname === CHAT_LEGACY_HEALTH_PATH;
 			if (isHealth) {
-				return handleHealthCheck(req, port, deps.instanceId);
+				return handleHealthCheck(req, port, {
+					instanceId: deps.instanceId,
+					daemonId: deps.daemonId,
+				});
 			}
 
 			const hostError = requireLoopbackHost(req, port);

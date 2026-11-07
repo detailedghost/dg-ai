@@ -167,6 +167,7 @@ let activeTimers: ReturnType<typeof spyTimers> | undefined;
 afterEach(() => {
 	activeTimers?.restore();
 	activeTimers = undefined;
+	mock.restore();
 });
 
 function makeRig(
@@ -970,7 +971,7 @@ describe("registerDaemonLink asset context", () => {
 		const blob = new Blob(["hello"]);
 		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
 			(async () => new Response(blob)) as never,
-		);
+		).mockClear();
 		try {
 			const fetched = await context.fetchAsset("asset id/1");
 			expect(await fetched.text()).toBe("hello");
@@ -1011,7 +1012,7 @@ describe("registerDaemonLink asset context", () => {
 		const { context, assetUrl, headers } = await bootWithContext();
 		const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
 			(async () => new Response(null, { status: 204 })) as never,
-		);
+		).mockClear();
 		try {
 			await context.deleteAsset("asset id/1");
 			const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];

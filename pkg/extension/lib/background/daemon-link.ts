@@ -14,7 +14,12 @@ import {
 	validateAttachRequest,
 } from "@dg/common";
 import { localPageUrl } from "@dg/pages/chat-marker";
-import { fetchDaemonHealth, findDaemonPort } from "@dg/pages/daemon-port";
+import {
+	fetchDaemonHealth,
+	findDaemonPort,
+	findPinnedDaemonPort,
+	portHasDaemonId,
+} from "@dg/pages/daemon-port";
 import {
 	handshakeOutcome,
 	redactSecrets,
@@ -29,6 +34,7 @@ import { createInboxHandler, type InboxBrowserApi } from "./inbox";
 import {
 	asSessionBootstrap,
 	createPairingStore,
+	type PairedBootstrap,
 	type PairingStorage,
 	type PairingStore,
 } from "./pairing-store";
@@ -97,6 +103,10 @@ export type RegisterDaemonLinkOptions = {
 	pairingStore?: PairingStore;
 };
 
+function withoutPin({ daemonId: _pinned, ...bootstrap }: PairedBootstrap): SessionBootstrap {
+	return bootstrap;
+}
+
 function keepaliveFrame(bootstrap: SessionBootstrap): string {
 	return JSON.stringify({
 		type: "keepalive",
@@ -155,6 +165,7 @@ export function registerDaemonLink(
 ): {
 	client: ChatClient;
 	adopt(bootstrap: SessionBootstrap): Promise<void>;
+	daemonPort(): Promise<number | undefined>;
 	pending(sessionId?: string): RelayRun[];
 } {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
@@ -184,8 +195,8 @@ export function registerDaemonLink(
 		}),
 		...options.relayHandlers,
 	};
-	const bootstrapsBySession = new Map<string, SessionBootstrap>();
-	function holdBootstrap(bootstrap: SessionBootstrap): void {
+	const bootstrapsBySession = new Map<string, PairedBootstrap>();
+	function holdBootstrap(bootstrap: PairedBootstrap): void {
 		noteSecret(bootstrap.token);
 		bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
 	}
@@ -252,7 +263,7 @@ export function registerDaemonLink(
 	function firstConfirmedBootstrap(): SessionBootstrap | undefined {
 		for (const sessionId of keepaliveEligible) {
 			const bootstrap = bootstrapsBySession.get(sessionId);
-			if (bootstrap) return bootstrap;
+			if (bootstrap) return withoutPin(bootstrap);
 		}
 		return undefined;
 	}
@@ -328,8 +339,20 @@ export function registerDaemonLink(
 		});
 	}
 
+	function heldDaemonId(): string | undefined {
+		return [...bootstrapsBySession.values()][0]?.daemonId;
+	}
+
 	const client = createChatClient({
 		openSocket: openSocketWithKeepaliveTeardown,
+		admitPort: async (port) => {
+			const daemonId = heldDaemonId();
+			return daemonId !== undefined && (await portHasDaemonId(port, daemonId));
+		},
+		findPort: async () => {
+			const daemonId = heldDaemonId();
+			return daemonId === undefined ? undefined : findPinnedDaemonPort(daemonId);
+		},
 		extensionVersion: api.runtime.getManifest?.().version,
 		keepaliveIntervalMs,
 	});
@@ -368,11 +391,27 @@ export function registerDaemonLink(
 	}
 
 	async function daemonPort(): Promise<number | undefined> {
+		const daemonId = heldDaemonId();
+		if (daemonId === undefined) return findDaemonPort();
 		const hinted =
 			firstConfirmedBootstrap()?.port ??
 			[...bootstrapsBySession.values()][0]?.port;
-		if (hinted !== undefined && (await fetchDaemonHealth(hinted))) return hinted;
-		return findDaemonPort();
+		if (hinted !== undefined && (await portHasDaemonId(hinted, daemonId))) {
+			return hinted;
+		}
+		return findPinnedDaemonPort(daemonId);
+	}
+
+	async function pinToDaemon(bootstrap: SessionBootstrap): Promise<PairedBootstrap> {
+		const daemonId = (await fetchDaemonHealth(bootstrap.port))?.daemonId;
+		if (daemonId === undefined) {
+			throw new Error("The daemon at this port did not identify itself.");
+		}
+		const held = heldDaemonId();
+		if (held !== undefined && held !== daemonId) {
+			throw new Error("This agent belongs to a different daemon than your other pairings.");
+		}
+		return { ...bootstrap, daemonId };
 	}
 
 	async function postDaemon(
@@ -418,14 +457,16 @@ export function registerDaemonLink(
 		for (const item of list) {
 			const bootstrap = asSessionBootstrap(item);
 			if (!bootstrap) continue;
-			holdBootstrap(bootstrap);
-			client.connect(bootstrap);
+			const paired = await pinToDaemon(bootstrap).catch(() => undefined);
+			if (!paired) continue;
+			holdBootstrap(paired);
+			client.connect(paired);
 			adopted += 1;
 		}
 		if (adopted > 0) broadcastPairingStatus();
 		return adopted;
 	}
-	function holdAndConnect(bootstrap: SessionBootstrap): void {
+	function holdAndConnect(bootstrap: PairedBootstrap): void {
 		holdBootstrap(bootstrap);
 		client.connect(bootstrap);
 		broadcastPairingStatus();
@@ -434,7 +475,7 @@ export function registerDaemonLink(
 	async function adopt(bootstrap: SessionBootstrap): Promise<void> {
 		const checked = asSessionBootstrap(bootstrap);
 		if (!checked) throw new Error("The pairing bootstrap is not valid.");
-		holdAndConnect(checked);
+		holdAndConnect(await pinToDaemon(checked));
 	}
 
 	async function openChat(
@@ -445,16 +486,17 @@ export function registerDaemonLink(
 				? bootstrapsBySession.get(sessionId)
 				: undefined;
 		if (!bootstrap) return { ok: false, error: "This agent is not paired." };
-		if ((await daemonPort()) === undefined) {
+		const verifiedPort = await daemonPort();
+		if (verifiedPort === undefined) {
 			return { ok: false, error: DAEMON_UNREACHABLE };
 		}
 		const live =
 			client.getConnectionState() === "connected" ? client.getPort?.() : undefined;
-		const port = live ?? bootstrap.port;
+		const port = live ?? verifiedPort;
 		const url = localPageUrl({
 			port,
 			path: "/chat",
-			bootstrap: { ...bootstrap, port },
+			bootstrap: { ...withoutPin(bootstrap), port },
 		});
 		await openLocalPage(api, {
 			url,
@@ -713,5 +755,5 @@ export function registerDaemonLink(
 		return undefined;
 	});
 
-	return { client, adopt, pending: dispatcher.pending };
+	return { client, adopt, daemonPort, pending: dispatcher.pending };
 }

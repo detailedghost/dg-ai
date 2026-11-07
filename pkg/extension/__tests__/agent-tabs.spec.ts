@@ -732,6 +732,7 @@ function holdPairing(sessionId: string, agentIdentity = "agent") {
 		...BOOTSTRAP,
 		sessionId,
 		agentIdentity,
+		daemonId: "daemon-test",
 	};
 }
 

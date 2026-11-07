@@ -62,6 +62,8 @@ export type ChatClientOptions = {
 	randomJitter?: () => number;
 	extensionVersion?: string;
 	keepaliveIntervalMs?: number;
+	admitPort?: (port: number) => Promise<boolean>;
+	findPort?: () => Promise<number | undefined>;
 };
 
 export type ChatClient = {
@@ -333,12 +335,18 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		if (retryTimer !== undefined) clearTimeout(retryTimer);
 		retryTimer = setTimeout(() => {
 			retryTimer = undefined;
-			if (everConnected && knownInstanceId === undefined) {
+			if (
+				!options.findPort &&
+				everConnected &&
+				knownInstanceId === undefined
+			) {
 				openAndBind();
 				return;
 			}
 			const generation = socketGeneration;
-			void findDaemonPort(knownInstanceId).then((rediscovered) => {
+			const rediscover =
+				options.findPort ?? (() => findDaemonPort(knownInstanceId));
+			void rediscover().then((rediscovered) => {
 				if (generation !== socketGeneration || capabilities.size === 0) return;
 				if (rediscovered !== undefined) port = rediscovered;
 				openAndBind();
@@ -467,7 +475,22 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		}
 		socket = opened;
 		opened.addEventListener("open", () => {
-			if (socket === opened) handleOpen();
+			if (socket !== opened) return;
+			const { admitPort } = options;
+			if (!admitPort || port === undefined) {
+				handleOpen();
+				return;
+			}
+			void admitPort(port).then(
+				(admitted) => {
+					if (socket !== opened) return;
+					if (admitted) handleOpen();
+					else opened.close?.();
+				},
+				() => {
+					if (socket === opened) opened.close?.();
+				},
+			);
 		});
 		opened.addEventListener("close", () => {
 			if (socket === opened) scheduleReconnect();

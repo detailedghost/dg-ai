@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
@@ -12,10 +12,20 @@ import {
 	makeFakeSocket,
 	makeLocalArea,
 	makeStorage,
+	installDaemonHealthStub,
 	settle,
+	TEST_DAEMON_ID,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
+
+beforeEach(() => {
+	installDaemonHealthStub();
+});
+
+afterEach(() => {
+	mock.restore();
+});
 
 const { registerDaemonLink } = await import("@/lib/background/daemon-link");
 
@@ -109,9 +119,10 @@ describe("registerDaemonLink adopt without a chat page", () => {
 		);
 		await settle();
 
-		expect(link.local.data[`pairing:${bootstrap.sessionId}`]).toEqual(
-			bootstrap,
-		);
+		expect(link.local.data[`pairing:${bootstrap.sessionId}`]).toEqual({
+			...bootstrap,
+			daemonId: TEST_DAEMON_ID,
+		});
 	});
 
 	test("never opens a tab or a side panel", async () => {

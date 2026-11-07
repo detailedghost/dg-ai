@@ -12,6 +12,7 @@ import {
 	makeLocalArea,
 	makeStorage,
 	settle,
+	TEST_DAEMON_ID,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
@@ -38,8 +39,12 @@ const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
 ) => {
 	const url = String(input);
 	const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
-	if (daemonUp && port === CHAT_DEFAULT_PORT) {
-		return Response.json({ daemon: "dg-daemon", instanceId: "inst-1" });
+	if (daemonUp && [CHAT_DEFAULT_PORT, CHAT_DEFAULT_PORT + 1].includes(port)) {
+		return Response.json({
+			daemon: "dg-daemon",
+			instanceId: "inst-1",
+			daemonId: TEST_DAEMON_ID,
+		});
 	}
 	return new Response("down", { status: 503 });
 }) as unknown as typeof fetch);
@@ -395,7 +400,7 @@ describe("registerDaemonLink openChat", () => {
 		);
 	});
 
-	test("builds the /chat URL from the stored bootstrap port, not a rediscovered daemon port", async () => {
+	test("builds the /chat URL from the stored port once its daemon is verified", async () => {
 		const harness = boot();
 		const stored = makeBootstrap({ port: CHAT_DEFAULT_PORT + 1 });
 		await harness.link.adopt(stored);
@@ -471,9 +476,9 @@ describe("registerDaemonLink openChat", () => {
 	});
 
 	test("replies an error and opens nothing when no daemon port is known", async () => {
-		daemonUp = false;
 		const harness = boot();
 		await confirmed(harness);
+		daemonUp = false;
 
 		const reply = (await harness.fromPopup({
 			type: MSG.openChat,

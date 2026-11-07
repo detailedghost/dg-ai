@@ -1,4 +1,4 @@
-import { type Mock, mock } from "bun:test";
+import { type Mock, mock, spyOn } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
@@ -141,6 +141,7 @@ export async function bootRelay(
 		tabs: { create: mock(() => Promise.resolve()) },
 		storage,
 	};
+	installDaemonHealthStub();
 	const link = registerDaemonLink({
 		browserApi: api,
 		openSocket: () => socket,
@@ -192,4 +193,19 @@ export async function bootRelay(
 				([raw]) => JSON.parse(raw as string) as Record<string, unknown>,
 			),
 	};
+}
+
+export const TEST_DAEMON_ID = "daemon-test";
+
+export function installDaemonHealthStub(daemonId: string = TEST_DAEMON_ID) {
+	const realFetch = globalThis.fetch;
+	return spyOn(globalThis, "fetch").mockImplementation(((
+		input: Parameters<typeof fetch>[0],
+		init?: Parameters<typeof fetch>[1],
+	) =>
+		/\/healthz$/.test(String(input))
+			? Promise.resolve(
+					Response.json({ daemon: "dg-daemon", instanceId: "inst-test", daemonId }),
+				)
+			: realFetch(input, init)) as typeof fetch);
 }

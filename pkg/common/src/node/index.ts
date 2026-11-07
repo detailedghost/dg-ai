@@ -9,6 +9,7 @@ export * from "./install-skills";
 export * from "./manifest-load";
 export * from "./marker";
 export * from "./oauth-loopback";
+export * from "./daemon-id";
 export * from "./owner-token";
 export * from "./dg-paths";
 export * from "./plugin-cache";

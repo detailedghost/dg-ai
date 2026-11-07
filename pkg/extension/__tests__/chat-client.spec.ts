@@ -1370,3 +1370,64 @@ test("session-list frames reach listeners unfiltered, including sessions the cli
 		list?.type === "session-list" && list.sessions.map((entry) => entry.sessionId),
 	).toEqual(["session-a", "not-held"]);
 });
+
+test("admitPort refuses a daemon that fails the check before any frame carrying a token is sent", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const close = mockFn(() => socket.dispatch("close"));
+	const client = createChatClient({
+		openSocket: () => ({ ...socket, close }),
+		admitPort: async () => false,
+		backoffBaseMs: 60_000,
+	});
+	client.connect(makeBootstrap());
+
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(close.mock.calls.length).toBe(1);
+	expect(socket.send.mock.calls.length).toBe(0);
+	expect(client.getConnectionState()).toBe("reconnecting");
+});
+
+test("admitPort lets the handshake through for a daemon that passes the check", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const checked: number[] = [];
+	const client = createChatClient({
+		openSocket: () => socket,
+		admitPort: async (port) => {
+			checked.push(port);
+			return true;
+		},
+	});
+	client.connect(makeBootstrap());
+
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(checked).toEqual([47823]);
+	expect((sentFrames(socket)[0] as { type: string }).type).toBe("connect");
+	expect(client.getConnectionState()).toBe("connected");
+});
+
+test("findPort replaces the unpinned fallback when the socket reconnects", async () => {
+	const sockets = [makeFakeSocket(mockFn), makeFakeSocket(mockFn)];
+	const urls: string[] = [];
+	let opened = 0;
+	const client = createChatClient({
+		openSocket: (url) => {
+			urls.push(url);
+			return sockets[opened++] as never;
+		},
+		findPort: async () => 47825,
+		backoffBaseMs: 1,
+		randomJitter: () => 0,
+	});
+	client.connect(makeBootstrap());
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	sockets[0]?.dispatch("close");
+	await new Promise((resolve) => setTimeout(resolve, 30));
+
+	expect(urls.at(-1)).toContain(":47825/");
+});
