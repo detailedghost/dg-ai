@@ -305,6 +305,7 @@ commands (`recv`, `send`, `progress`, `spawn`, `stage`, `close`, `manifest`)
 need a live daemon on the other end of the loopback socket; `memory` does
 not — `MemoryStore` opens `agents/memory.db` directly, so every memory verb
 works with nothing else running.
+When several sessions share one working directory, a chat command resolves its session in this order: `--session`, then the `DG_SESSION_ID` environment variable, then the one session registered for the working directory. A process that launches a child agent sets `DG_SESSION_ID` to the child session id.
 
 `send --to <identity>` queues a message for another agent identity instead of
 the human, in a second table (`agent_messages`) rather than a nullable column

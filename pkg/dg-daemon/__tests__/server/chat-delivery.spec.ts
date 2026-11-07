@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { CHAT_PROTOCOL_VERSION, DgCliError } from "@dg/common";
-import { type SessionTokenRecord, selectSoleSession } from "@dg/common/node";
+import {
+	resolveCliSession,
+	resolveDgPaths,
+	type SessionTokenRecord,
+	selectSoleSession,
+} from "@dg/common/node";
 import {
 	cleanupDgHome,
 	closeSockets,
@@ -10,6 +15,7 @@ import {
 	frameType,
 	freshTempDir,
 	killDaemonByPidFile,
+	registerSession,
 	send,
 	sendConnectHandshake,
 	startWithSession,
@@ -143,5 +149,36 @@ describe("selectSoleSession when two live sessions share one working directory",
 		const other = freshTempDir("dg-sole-session");
 
 		expect(selectSoleSession([record("a", cwd), record("b", other)], cwd).sessionId).toBe("a");
+	});
+});
+
+describe("resolveCliSession when two live sessions share one working directory", () => {
+	it("honors DG_SESSION_ID before cwd matching", async () => {
+		const started = await startWithSession();
+		dgHome = started.dgHome;
+		const second = await registerSession(started.port);
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+
+		await expect(resolveCliSession(undefined, paths, {})).rejects.toThrow(
+			/found 2 matches/,
+		);
+		const resolved = await resolveCliSession(undefined, paths, {
+			DG_SESSION_ID: second.sessionId,
+		});
+
+		expect(resolved.sessionId).toBe(second.sessionId);
+	});
+
+	it("prefers an explicit session id over DG_SESSION_ID", async () => {
+		const started = await startWithSession();
+		dgHome = started.dgHome;
+		const second = await registerSession(started.port);
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+
+		const resolved = await resolveCliSession(started.bootstrap.sessionId, paths, {
+			DG_SESSION_ID: second.sessionId,
+		});
+
+		expect(resolved.sessionId).toBe(started.bootstrap.sessionId);
 	});
 });
