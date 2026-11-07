@@ -270,18 +270,24 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		"closed",
 		({ sessionId, reason }: { sessionId: string; reason: CloseReason }) => {
 			logger.info(`session ${sessionId} closed (${reason})`);
-			connections.forEachCapableOf(sessionId, (ws) => {
-				const send = sendViaQueue(
-					ws,
-					JSON.stringify({
-						sessionId,
-						protocolVersion: CHAT_PROTOCOL_VERSION,
-						type: "session-closed",
-					}),
-				);
+			const payload = JSON.stringify({
+				sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				type: "session-closed",
+			});
+			const notified = new Set<object>();
+			const notify = (ws: Parameters<typeof sendViaQueue>[0]) => {
+				const send = sendViaQueue(ws, payload);
 				pendingCloseSends.add(send);
 				void send.finally(() => pendingCloseSends.delete(send));
+				notified.add(ws);
+			};
+			connections.forEachCapableOf(sessionId, (ws) => {
+				notify(ws);
 				ws.data.capabilities.delete(sessionId);
+			});
+			connections.forEachExtension((ws) => {
+				if (!notified.has(ws)) notify(ws);
 			});
 		},
 	);

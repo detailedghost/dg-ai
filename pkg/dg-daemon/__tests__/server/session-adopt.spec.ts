@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { validateSessionAdopt } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION, validateSessionAdopt } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import { getPinnedOrigin } from "../../src/server/origin";
 import {
 	bootServe,
 	cleanupDgHome,
+	closeSession,
 	closeSockets,
 	collectFrames,
 	connectCli,
@@ -13,6 +14,7 @@ import {
 	frameType,
 	ownerTokenHeader,
 	registerSession,
+	sendConnectHandshake,
 	spawnSession,
 	stopServe,
 	waitForOpen,
@@ -205,5 +207,46 @@ describe("zero-touch extension link", () => {
 		await Bun.sleep(100);
 
 		expect(adoptFrames(pageFrames)).toEqual([]);
+	});
+
+	it("sends session-closed to a link socket that holds no capability for the session", async () => {
+		const { port, dgHome } = await boot();
+		const { frames } = await linkExtension(port);
+		const credentials = await registerSession(port);
+		await waitForValue(() => adoptFrames(frames)[0], 3000, "session-adopt push");
+
+		await closeSession(dgHome, port, credentials.sessionId);
+
+		const closed = await waitForValue(
+			() => frames.find((frame) => frameType(frame) === "session-closed"),
+			3000,
+			"session-closed on the link socket",
+		);
+		expect((closed as { sessionId?: string }).sessionId).toBe(credentials.sessionId);
+	});
+
+	it("sends session-closed once to an extension socket that also holds the session", async () => {
+		const { port, dgHome } = await boot();
+		const credentials = await registerSession(port);
+		const socket = wsExtensionSocket(port);
+		sockets.push(socket);
+		const frames = collectFrames(socket);
+		await waitForOpen(socket);
+		sendConnectHandshake(socket, credentials, CHAT_PROTOCOL_VERSION);
+		await waitForValue(
+			() => frames.find((frame) => frameType(frame) === "session-list"),
+			3000,
+			"session-list after the handshake",
+		);
+
+		await closeSession(dgHome, port, credentials.sessionId);
+		await waitForValue(
+			() => frames.find((frame) => frameType(frame) === "session-closed"),
+			3000,
+			"session-closed on the holding socket",
+		);
+		await Bun.sleep(100);
+
+		expect(frames.filter((frame) => frameType(frame) === "session-closed")).toHaveLength(1);
 	});
 });
