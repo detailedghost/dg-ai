@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { CHAT_DEFAULT_PORT, type SessionBootstrap } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "@dg/pages/chat-messages";
-import { frameEvent, makeFakeSocket, settle } from "./utils/relay-harness";
+import { frameEvent, makeFakeSocket, makeStorage, settle } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
@@ -44,7 +44,6 @@ function bootstrap(): SessionBootstrap {
 
 function backgroundHarness() {
 	let listener: BackgroundListener | undefined;
-	const sessionSet = mock(() => Promise.resolve());
 	const sockets: ReturnType<typeof makeFakeSocket>[] = [];
 	const subscribers = new Set<(message: unknown) => void>();
 	const openSocket = mock(() => {
@@ -73,12 +72,7 @@ function backgroundHarness() {
 			update: mock(() => Promise.resolve()),
 		},
 		windows: { update: mock(() => Promise.resolve()) },
-		storage: {
-			session: {
-				set: sessionSet,
-				remove: mock(() => Promise.resolve()),
-			},
-		},
+		storage: makeStorage(),
 	};
 	registerChat({ browserApi: api, openSocket });
 	const runtime = {
@@ -97,7 +91,7 @@ function backgroundHarness() {
 			});
 		},
 	};
-	return { runtime, sessionSet, openSocket, sockets, api };
+	return { runtime, openSocket, sockets, api };
 }
 
 async function submit(root: HTMLElement, code: string): Promise<void> {
@@ -392,7 +386,7 @@ test("disconnecting a previous session removes its credentials without interrupt
 	await settle();
 	first.dispatch("message", frameEvent({ type: "session-disconnected", sessionId: older.sessionId, protocolVersion: 1 }));
 	await settle();
-	expect(background.api.storage.session.remove).toHaveBeenCalledWith(`chat_session:${older.sessionId}`);
+	expect(background.api.storage.local.remove).toHaveBeenCalledWith(`pairing:${older.sessionId}`);
 	expect(root.querySelectorAll(".pair-session")).toHaveLength(1);
 	expect(background.sockets).toHaveLength(1);
 	const frames = first.send.mock.calls.map(([raw]) => JSON.parse(raw as string));

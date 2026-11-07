@@ -1,4 +1,4 @@
-import { mock } from "bun:test";
+import { type Mock, mock } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
@@ -79,11 +79,43 @@ export function captureGlobal(name: string): () => void {
 	};
 }
 
+export type LocalArea = {
+	data: Record<string, unknown>;
+	get: Mock<(keys?: unknown) => Promise<Record<string, unknown>>>;
+	set: Mock<(items: Record<string, unknown>) => Promise<void>>;
+	remove: Mock<(keys: string | string[]) => Promise<void>>;
+};
+
+export function makeLocalArea(initial: Record<string, unknown> = {}): LocalArea {
+	const data = { ...initial };
+	return {
+		data,
+		get: mock(async (_keys?: unknown) => ({ ...data })),
+		set: mock(async (items: Record<string, unknown>) => {
+			Object.assign(data, items);
+		}),
+		remove: mock(async (keys: string | string[]) => {
+			for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
+		}),
+	};
+}
+
+export function makeStorage(local: LocalArea = makeLocalArea()) {
+	return {
+		local,
+		session: {
+			set: mock(() => Promise.resolve()),
+			remove: mock(() => Promise.resolve()),
+		},
+	};
+}
+
 export type BootRelayOptions = {
 	confirmSession?: boolean;
 	sessionId?: string;
 	token?: string;
 	relayHandlers?: RegisterChatOptions["relayHandlers"];
+	local?: LocalArea;
 };
 
 export type BootedRelay = {
@@ -96,6 +128,7 @@ export type BootedRelay = {
 	sessionId: string;
 	token: string;
 	sentFrames(): Record<string, unknown>[];
+	local: LocalArea;
 };
 
 export async function bootRelay(
@@ -106,6 +139,7 @@ export async function bootRelay(
 	const socket = makeFakeSocket();
 	let onMessage: Listener | undefined;
 	const posted: unknown[] = [];
+	const storage = makeStorage(options.local);
 	const api = {
 		action: { onClicked: { addListener: mock(() => undefined) } },
 		runtime: {
@@ -118,12 +152,7 @@ export async function bootRelay(
 			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
 		},
 		tabs: { create: mock(() => Promise.resolve()) },
-		storage: {
-			session: {
-				set: mock(() => Promise.resolve()),
-				remove: mock(() => Promise.resolve()),
-			},
-		},
+		storage,
 	};
 	registerChat({
 		browserApi: api,
@@ -180,6 +209,7 @@ export async function bootRelay(
 		extensionUrl: (path) => api.runtime.getURL(path),
 		sessionId,
 		token,
+		local: storage.local,
 		sentFrames: () =>
 			socket.send.mock.calls.map(
 				([raw]) => JSON.parse(raw as string) as Record<string, unknown>,

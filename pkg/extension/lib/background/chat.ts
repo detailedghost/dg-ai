@@ -2,8 +2,6 @@ import {
 	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
 	CHAT_MAX_ASSET_BYTES,
-	CHAT_DEFAULT_PORT,
-	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_PATH,
@@ -11,9 +9,9 @@ import {
 	RELAY_FEATURES,
 	type RelayFeatureName,
 	type SessionBootstrap,
+	emitRedacted,
 	noteSecret,
 	validateAttachRequest,
-	validateSessionBootstrap,
 } from "@dg/common";
 import { fetchDaemonHealth, findDaemonPort } from "@dg/pages/daemon-port";
 import {
@@ -23,6 +21,7 @@ import {
 import { browser } from "wxt/browser";
 import { createInboxHandler, type InboxBrowserApi } from "./inbox";
 import {
+	asSessionBootstrap,
 	createPairingStore,
 	type PairingStorage,
 	type PairingStore,
@@ -52,8 +51,6 @@ import {
 	defaultOpenSocket,
 } from "@dg/pages/chat/chat-client";
 
-export { CHAT_SESSION_KEY_PREFIX } from "@dg/pages/chat-messages";
-
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
 
 export type ChatBrowserApi = PagesBrowserApi & {
@@ -68,9 +65,12 @@ export type ChatBrowserApi = PagesBrowserApi & {
 			): void;
 		};
 		getManifest?(): { version: string };
+		onStartup?: { addListener(listener: () => void): void };
+		onInstalled?: { addListener(listener: () => void): void };
 	};
 	storage: {
-		session: PairingStorage;
+		local: PairingStorage;
+		session: Omit<PairingStorage, "get"> & Partial<Pick<PairingStorage, "get">>;
 	};
 };
 
@@ -95,24 +95,10 @@ function isMarkerCapturedMessage(
 	);
 }
 
-const CHAT_MAX_PORT = CHAT_DEFAULT_PORT + CHAT_PORT_FALLBACK_COUNT;
-
 function isExtensionPageSender(sender: unknown, api: ChatBrowserApi): boolean {
 	if (typeof sender !== "object" || sender === null) return false;
 	const url = (sender as { url?: unknown }).url;
 	return typeof url === "string" && url.startsWith(api.runtime.getURL(""));
-}
-
-function asSessionBootstrap(candidate: unknown): SessionBootstrap | undefined {
-	try {
-		const bootstrap = validateSessionBootstrap(candidate);
-		if (bootstrap.port < CHAT_DEFAULT_PORT || bootstrap.port > CHAT_MAX_PORT) {
-			return undefined;
-		}
-		return bootstrap;
-	} catch {
-		return undefined;
-	}
 }
 
 function keepaliveFrame(bootstrap: SessionBootstrap): string {
@@ -378,6 +364,18 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		return redactSecrets(message, knownTokens());
 	}
 
+	function logStoreError(error: unknown): void {
+		emitRedacted(
+			(line) => console.warn(line),
+			`[dg-chat] pairing storage failed: ${error instanceof Error ? error.message : String(error)}`,
+			knownTokens(),
+		);
+	}
+
+	function forgetStoredPairing(sessionId: string): void {
+		void pairingStore.remove({ sessionId }).catch(logStoreError);
+	}
+
 	async function daemonPort(): Promise<number | undefined> {
 		const hinted =
 			firstConfirmedBootstrap()?.port ??
@@ -432,7 +430,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		for (const item of list) {
 			const bootstrap = asSessionBootstrap(item);
 			if (!bootstrap) continue;
-			await pairingStore.put(bootstrap);
 			currentPairingId ??= bootstrap.sessionId;
 			holdBootstrap(bootstrap);
 			client.connect(bootstrap);
@@ -477,7 +474,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			bootstrapsBySession.delete(frame.sessionId);
 			dispatcher.cancelSession(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
-			void pairingStore.remove({ sessionId: frame.sessionId });
+			if (frame.code === "invalid-session") forgetStoredPairing(frame.sessionId);
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 		}
@@ -504,7 +501,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			bootstrapsBySession.delete(frame.sessionId);
 			dispatcher.cancelSession(frame.sessionId);
 			keepaliveEligible.delete(frame.sessionId);
-			void pairingStore.remove({ sessionId: frame.sessionId });
+			forgetStoredPairing(frame.sessionId);
 			if (keepaliveEligible.size === 0) stopKeepalive();
 			broadcastPairingStatus();
 			return;
@@ -518,7 +515,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					token: frame.newSession.token,
 				};
 				holdBootstrap(spawned);
-				void pairingStore.put(spawned).catch(() => {});
 			}
 			return;
 		}
@@ -527,6 +523,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		const bootstrap = bootstrapsBySession.get(sessionId);
 		if (!bootstrap || keepaliveEligible.has(sessionId)) return;
 		keepaliveEligible.add(sessionId);
+		void pairingStore.put(bootstrap).catch(logStoreError);
 		broadcastPairingStatus();
 		currentSocket?.send(keepaliveFrame(bootstrap));
 		flushOverwatchOpenCompletions();
@@ -534,6 +531,20 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			keepaliveTimer = setInterval(sendKeepalives, keepaliveIntervalMs);
 		}
 	});
+
+	const ready = pairingStore
+		.list()
+		.then((stored) => {
+			for (const bootstrap of stored) {
+				if (bootstrapsBySession.has(bootstrap.sessionId)) continue;
+				holdBootstrap(bootstrap);
+				client.connect(bootstrap);
+			}
+		})
+		.catch(logStoreError);
+	const wakeWorker = () => void ready;
+	api.runtime.onStartup?.addListener(wakeWorker);
+	api.runtime.onInstalled?.addListener(wakeWorker);
 
 	pages.registerActionClick();
 
@@ -543,7 +554,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 			if (!bootstrap) return undefined;
 			void (async () => {
 				try {
-					await pairingStore.put(bootstrap);
 					await pages.presentChat();
 					currentPairingId = bootstrap.sessionId;
 					holdBootstrap(bootstrap);
@@ -566,8 +576,8 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		try {
 			switch (payload.type) {
 				case MSG.connectionRequest:
-					sendResponse(pairingStatus());
-					return undefined;
+					void ready.then(() => sendResponse(pairingStatus()));
+					return true;
 				case MSG.bootstrapsRequest:
 					sendResponse({ bootstraps: [...bootstrapsBySession.values()] });
 					return undefined;
@@ -586,6 +596,9 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 							const next = { ...bootstrap, port };
 							holdBootstrap(next);
 							client.connect(next);
+							if (keepaliveEligible.has(bootstrap.sessionId)) {
+								void pairingStore.put(next).catch(logStoreError);
+							}
 						}
 						client.retryNow();
 						broadcastPairingStatus();
@@ -706,7 +719,7 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 							bootstrapsBySession.delete(sessionId);
 							dispatcher.cancelSession(sessionId);
 							keepaliveEligible.delete(sessionId);
-							await pairingStore.remove({ sessionId });
+							forgetStoredPairing(sessionId);
 						}
 						if (keepaliveEligible.size === 0) stopKeepalive();
 						broadcastPairingStatus();
@@ -767,14 +780,20 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 					void (async () => {
 						try {
 							await client.disconnectSession(sessionId);
-							await pairingStore.remove({ sessionId });
-							bootstrapsBySession.delete(sessionId);
-							dispatcher.cancelSession(sessionId);
-							keepaliveEligible.delete(sessionId);
-							if (keepaliveEligible.size === 0) stopKeepalive();
-							broadcastPairingStatus();
-							sendResponse({ ok: true });
 						} catch {
+							client.forgetSession(sessionId);
+						}
+						dispatcher.cancelSession(sessionId);
+						const removal = pairingStore.remove({ sessionId });
+						bootstrapsBySession.delete(sessionId);
+						keepaliveEligible.delete(sessionId);
+						if (keepaliveEligible.size === 0) stopKeepalive();
+						broadcastPairingStatus();
+						try {
+							await removal;
+							sendResponse({ ok: true });
+						} catch (error) {
+							logStoreError(error);
 							sendResponse({ ok: false });
 						}
 					})();
@@ -831,18 +850,6 @@ export function registerChat(options: RegisterChatOptions = {}): ChatClient {
 		}
 		return undefined;
 	});
-
-	void pairingStore
-		.list()
-		.then((stored) => {
-			for (const candidate of stored) {
-				const bootstrap = asSessionBootstrap(candidate);
-				if (!bootstrap || bootstrapsBySession.has(bootstrap.sessionId)) continue;
-				holdBootstrap(bootstrap);
-				client.connect(bootstrap);
-			}
-		})
-		.catch(() => undefined);
 
 	return client;
 }

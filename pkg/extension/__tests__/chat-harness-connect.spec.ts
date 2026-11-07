@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { CHAT_DEFAULT_PORT, type SessionBootstrap } from "@dg/common";
 import { MSG } from "@dg/pages/chat-messages";
+import { makeLocalArea, makeStorage } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
@@ -36,7 +37,7 @@ test("the toolbar opens the side panel instead of a new tab when the browser all
 				sendMessage: () => Promise.resolve(undefined),
 			},
 			tabs: { create: tabsCreate },
-			storage: { session: { set: () => Promise.resolve(), remove: () => Promise.resolve() } },
+			storage: makeStorage(),
 			sidePanel: { open: sideOpen },
 		},
 		maybeStartRecording: () => Promise.resolve(false),
@@ -84,13 +85,9 @@ test("an attach reply that fails does not echo a stored session token", async ()
 					sendMessage: () => Promise.resolve(undefined),
 				},
 				tabs: { create: () => Promise.resolve() },
-				storage: {
-					session: {
-						set: () => Promise.resolve(),
-						remove: () => Promise.resolve(),
-						get: () => Promise.resolve({ ["chat_session:" + bootstrap.sessionId]: bootstrap }),
-					},
-				},
+				storage: makeStorage(
+					makeLocalArea({ [`pairing:${bootstrap.sessionId}`]: bootstrap }),
+				),
 			},
 			openSocket: () => ({
 				send() {},

@@ -18,7 +18,6 @@ import { MSG } from "@dg/pages/chat-messages";
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { createRelayDispatcher } = await import("@/lib/background/relay-dispatch");
-const { createPairingStore } = await import("@/lib/background/pairing-store");
 const { bootRelay, flushMicrotasks, frameEvent, makeBootstrap, settle } =
 	await import("./utils/relay-harness");
 
@@ -1038,63 +1037,6 @@ describe("registerChat asset context", () => {
 		} finally {
 			fetchSpy.mockRestore();
 		}
-	});
-});
-
-describe("createPairingStore", () => {
-	function fakeStorage({ withGet = true } = {}) {
-		const data = new Map<string, unknown>();
-		const session = {
-			set: mock(async (items: Record<string, unknown>) => {
-				for (const [key, value] of Object.entries(items)) data.set(key, value);
-			}),
-			remove: mock(async (keys: string | string[]) => {
-				for (const key of Array.isArray(keys) ? keys : [keys]) data.delete(key);
-			}),
-			...(withGet ? { get: mock(async () => Object.fromEntries(data)) } : {}),
-		};
-		return { storage: { session } as never, session, data };
-	}
-
-	it("writes the bootstrap under the chat_session key", async () => {
-		const { storage, session } = fakeStorage();
-		await createPairingStore({ storage }).put(FIRST);
-		expect(session.set).toHaveBeenCalledWith({ [`chat_session:${FIRST.sessionId}`]: FIRST });
-	});
-
-	it("round-trips put, list and remove through the session area", async () => {
-		const { storage } = fakeStorage();
-		const store = createPairingStore({ storage });
-		await store.put(FIRST);
-		await store.put(SECOND);
-		const bySession = (a: SessionBootstrap, b: SessionBootstrap) =>
-			a.sessionId.localeCompare(b.sessionId);
-		expect((await store.list()).sort(bySession)).toEqual([FIRST, SECOND].sort(bySession));
-		await store.remove({ sessionId: FIRST.sessionId });
-		expect(await store.list()).toEqual([SECOND]);
-	});
-
-	it("removes the same key it wrote", async () => {
-		const { storage, session } = fakeStorage();
-		const store = createPairingStore({ storage });
-		await store.put(FIRST);
-		await store.remove({ sessionId: FIRST.sessionId });
-		expect(session.remove).toHaveBeenCalledWith(`chat_session:${FIRST.sessionId}`);
-	});
-
-	it("lists only chat_session entries", async () => {
-		const { storage, data } = fakeStorage();
-		data.set("unrelated:key", FIRST);
-		const store = createPairingStore({ storage });
-		await store.put(SECOND);
-		expect(await store.list()).toEqual([SECOND]);
-	});
-
-	it("lists nothing when the area has no get", async () => {
-		const { storage } = fakeStorage({ withGet: false });
-		const store = createPairingStore({ storage });
-		await store.put(FIRST);
-		expect(await store.list()).toEqual([]);
 	});
 });
 

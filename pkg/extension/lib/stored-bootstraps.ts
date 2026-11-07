@@ -1,20 +1,8 @@
-import { type SessionBootstrap, validateSessionBootstrap } from "@dg/common";
-import { CHAT_SESSION_KEY_PREFIX } from "@dg/pages/chat-messages";
+import type { SessionBootstrap } from "@dg/common";
 import { browser } from "wxt/browser";
+import { createPairingStore } from "@/lib/background/pairing-store";
 
-/** Session bootstraps the background keeps in extension session storage. */
-export async function loadStoredBootstraps(): Promise<SessionBootstrap[]> {
-	const stored = await (
-		browser.storage.session as unknown as {
-			get(): Promise<Record<string, unknown>>;
-		}
-	).get();
-	const bootstraps: SessionBootstrap[] = [];
-	for (const [key, value] of Object.entries(stored)) {
-		if (!key.startsWith(CHAT_SESSION_KEY_PREFIX)) continue;
-		try {
-			bootstraps.push(validateSessionBootstrap(value));
-		} catch {}
-	}
-	return bootstraps;
+/** Pairings the background keeps in extension local storage. */
+export function loadStoredBootstraps(): Promise<SessionBootstrap[]> {
+	return createPairingStore({ storage: browser.storage }).list();
 }

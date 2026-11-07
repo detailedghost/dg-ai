@@ -25,7 +25,7 @@ let storedSessions: Record<string, unknown> = {};
 
 mock.module("wxt/browser", () => ({
 	browser: {
-		storage: { session: { get: () => Promise.resolve(storedSessions) } },
+		storage: { local: { get: () => Promise.resolve(storedSessions) } },
 	},
 }));
 
@@ -1002,7 +1002,7 @@ describe("board reads from the extension page", () => {
 
 	test("sends the stored session token as a Bearer header", async () => {
 		storedSessions = {
-			"chat_session:session-a": {
+			"pairing:session-a": {
 				port: 47823,
 				sessionId: "session-a",
 				token: "tok-a",
@@ -1019,7 +1019,7 @@ describe("board reads from the extension page", () => {
 
 	test("sends the token of a session spawned by New chat once the original session entry is gone", async () => {
 		storedSessions = {
-			"chat_session:session-b": {
+			"pairing:session-b": {
 				port: 47823,
 				sessionId: "session-b",
 				token: "tok-b",
@@ -1098,8 +1098,8 @@ describe("board token stays with its own daemon port", () => {
 
 	test("reads from the stored session's port and moves to a newly stored session on another port", async () => {
 		storedSessions = {
-			"chat_session:session-a": {
-				port: 47900,
+			"pairing:session-a": {
+				port: 47824,
 				sessionId: "session-a",
 				token: "tok-a",
 				agentIdentity: "claude",
@@ -1122,13 +1122,13 @@ describe("board token stays with its own daemon port", () => {
 			});
 			await handle.ready;
 			expect(calls[0]).toEqual({
-				url: "http://127.0.0.1:47900/overwatch",
+				url: "http://127.0.0.1:47824/overwatch",
 				authorization: "Bearer tok-a",
 			});
 
 			storedSessions = {
-				"chat_session:session-b": {
-					port: 47901,
+				"pairing:session-b": {
+					port: 47825,
 					sessionId: "session-b",
 					token: "tok-b",
 					agentIdentity: "claude",
@@ -1147,7 +1147,7 @@ describe("board token stays with its own daemon port", () => {
 		expect(calls.length).toBeGreaterThan(0);
 		for (const call of calls) {
 			expect(call).toEqual({
-				url: "http://127.0.0.1:47901/overwatch",
+				url: "http://127.0.0.1:47825/overwatch",
 				authorization: "Bearer tok-b",
 			});
 		}
@@ -1155,14 +1155,14 @@ describe("board token stays with its own daemon port", () => {
 
 	test("tries the next stored token for the port when the daemon refuses the first", async () => {
 		const bootstrap = (sessionId: string, token: string) => ({
-			port: 47900,
+			port: 47824,
 			sessionId,
 			token,
 			agentIdentity: "claude",
 		});
 		storedSessions = {
-			"chat_session:session-old": bootstrap("session-old", "tok-old"),
-			"chat_session:session-live": bootstrap("session-live", "tok-live"),
+			"pairing:session-old": bootstrap("session-old", "tok-old"),
+			"pairing:session-live": bootstrap("session-live", "tok-live"),
 		};
 		const { calls, restore } = stubFetch((url) => {
 			const last = calls.at(-1);
@@ -1195,21 +1195,21 @@ describe("board token stays with its own daemon port", () => {
 
 	test("tries the next stored session when the first one's daemon is offline", async () => {
 		storedSessions = {
-			"chat_session:session-gone": {
-				port: 47900,
+			"pairing:session-gone": {
+				port: 47824,
 				sessionId: "session-gone",
 				token: "tok-gone",
 				agentIdentity: "claude",
 			},
-			"chat_session:session-live": {
-				port: 47901,
+			"pairing:session-live": {
+				port: 47825,
 				sessionId: "session-live",
 				token: "tok-live",
 				agentIdentity: "claude",
 			},
 		};
 		const { calls, restore } = stubFetch((url) =>
-			url === "http://127.0.0.1:47901/overwatch"
+			url === "http://127.0.0.1:47825/overwatch"
 				? Promise.resolve(Response.json({ lanes: [], merges: [] }))
 				: Promise.reject(new TypeError("Failed to fetch")),
 		);
@@ -1230,7 +1230,7 @@ describe("board token stays with its own daemon port", () => {
 
 		expect(calls.filter((call) => call.url.endsWith("/healthz"))).toEqual([]);
 		expect(calls.at(-1)).toEqual({
-			url: "http://127.0.0.1:47901/overwatch",
+			url: "http://127.0.0.1:47825/overwatch",
 			authorization: "Bearer tok-live",
 		});
 	});
@@ -1247,12 +1247,12 @@ describe("board token stays with its own daemon port", () => {
 			failPreviousPort: () => Promise<Response>,
 		): Promise<Call[]> {
 			storedSessions = {
-				"chat_session:session-a": bootstrap(47900, "a"),
-				"chat_session:session-b": bootstrap(47901, "b"),
+				"pairing:session-a": bootstrap(47824, "a"),
+				"pairing:session-b": bootstrap(47825, "b"),
 			};
 			let previousPortDown = false;
 			const { calls, restore } = stubFetch((url) =>
-				url === "http://127.0.0.1:47900/overwatch" && previousPortDown
+				url === "http://127.0.0.1:47824/overwatch" && previousPortDown
 					? failPreviousPort()
 					: url.endsWith("/overwatch")
 						? Promise.resolve(Response.json({ lanes: [], merges: [] }))
@@ -1269,7 +1269,7 @@ describe("board token stays with its own daemon port", () => {
 				});
 				await handle.ready;
 				expect(calls[0]).toEqual({
-					url: "http://127.0.0.1:47900/overwatch",
+					url: "http://127.0.0.1:47824/overwatch",
 					authorization: "Bearer tok-a",
 				});
 				previousPortDown = true;
@@ -1285,8 +1285,8 @@ describe("board token stays with its own daemon port", () => {
 
 		function expectTokensStayOnTheirPorts(calls: Call[]) {
 			const tokenByPort: Record<string, string> = {
-				"47900": "Bearer tok-a",
-				"47901": "Bearer tok-b",
+				"47824": "Bearer tok-a",
+				"47825": "Bearer tok-b",
 			};
 			for (const call of calls) {
 				if (call.authorization === null) continue;
@@ -1301,11 +1301,11 @@ describe("board token stays with its own daemon port", () => {
 			);
 
 			expect(calls[0]).toEqual({
-				url: "http://127.0.0.1:47900/overwatch",
+				url: "http://127.0.0.1:47824/overwatch",
 				authorization: "Bearer tok-a",
 			});
 			expect(calls.at(-1)).toEqual({
-				url: "http://127.0.0.1:47901/overwatch",
+				url: "http://127.0.0.1:47825/overwatch",
 				authorization: "Bearer tok-b",
 			});
 			expectTokensStayOnTheirPorts(calls);
@@ -1317,11 +1317,11 @@ describe("board token stays with its own daemon port", () => {
 			);
 
 			expect(calls[0]).toEqual({
-				url: "http://127.0.0.1:47900/overwatch",
+				url: "http://127.0.0.1:47824/overwatch",
 				authorization: "Bearer tok-a",
 			});
 			expect(calls.at(-1)).toEqual({
-				url: "http://127.0.0.1:47901/overwatch",
+				url: "http://127.0.0.1:47825/overwatch",
 				authorization: "Bearer tok-b",
 			});
 			expectTokensStayOnTheirPorts(calls);
