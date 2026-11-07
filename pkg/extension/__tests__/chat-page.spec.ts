@@ -73,6 +73,20 @@ function makeFakeClient(
 				listeners.add(listener);
 			},
 			sendUserMessage: mock(() => "message-id"),
+			sendUserMessageAndWait(
+				this: { sendUserMessage(...args: unknown[]): unknown },
+				...args: unknown[]
+			) {
+				try {
+					this.sendUserMessage(...args);
+					return Promise.resolve({ ok: true });
+				} catch (error) {
+					return Promise.resolve({
+						ok: false,
+						error: error instanceof Error ? error.message : String(error),
+					});
+				}
+			},
 			getConnectionState: () => state,
 			requestNewSession: mock((requestingSessionId: string) => {
 				requestedSessions.push({ requestingSessionId });
@@ -830,7 +844,7 @@ test("a send that is accepted still appends the user message to the transcript",
 	).toContain("hello agent");
 });
 
-test("regression: a rejected send does not render as delivered, and shows a visible error", async () => {
+test("regression: a rejected send renders as not delivered, and shows a visible error", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
 	fake.client.sendUserMessage = mock(() => {
@@ -851,7 +865,9 @@ test("regression: a rejected send does not render as delivered, and shows a visi
 	keydown(input, "Enter");
 	await new Promise((resolve) => setTimeout(resolve, 0));
 
-	expect(root.textContent).not.toContain("will this vanish?");
+	const row = root.querySelector<HTMLElement>(".chat-transcript__message--user");
+	expect(row?.textContent).toContain("will this vanish?");
+	expect(row?.dataset.delivery).toBe("not-delivered");
 	const error = root.querySelector(".chat-thread__error");
 	expect(error).not.toBeNull();
 	expect(error?.hasAttribute("hidden")).toBe(false);
@@ -899,6 +915,7 @@ test("regression: the daemon-unreachable zero-state does not flash when connect(
 		onFrame: mock(() => {}),
 		onConnectionChange: mock(() => {}),
 		sendUserMessage: mock(() => "message-id"),
+		sendUserMessageAndWait: mock(async () => ({ ok: true })),
 		getConnectionState: () => state,
 		requestNewSession: mock(() => {}),
 		closeSession: mock(() => {}),

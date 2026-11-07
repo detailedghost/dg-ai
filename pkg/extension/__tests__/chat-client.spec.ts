@@ -49,6 +49,20 @@ function mockFn<Args extends unknown[], R>(
 	return fn;
 }
 
+function confirmSessions(socket: FakeSocket, ...sessionIds: string[]): void {
+	socket.dispatch(
+		"message",
+		message(
+			buildSessionListFrame(
+				sessionIds.map((sessionId) => ({
+					sessionId,
+					agentIdentity: "claude-orchestrator",
+				})),
+			),
+		),
+	);
+}
+
 function sentFrames(socket: FakeSocket): ChatFrame[] {
 	return socket.send.mock.calls.map(([raw]) => JSON.parse(raw as string));
 }
@@ -70,6 +84,7 @@ test("sendUserMessage sends a frame carrying the connected session's own session
 	const bootstrap = makeBootstrap();
 	client.connect(bootstrap);
 	socket.dispatch("open");
+	confirmSessions(socket, bootstrap.sessionId);
 
 	client.sendUserMessage(bootstrap.sessionId, "hello agent", {
 		messageId: "msg-abc",
@@ -596,6 +611,7 @@ test("messages composed while disconnected are queued and flushed exactly once, 
 		const bootstrap = makeBootstrap();
 		client.connect(bootstrap);
 		sockets[0]?.dispatch("open");
+		confirmSessions(sockets[0] as FakeSocket, bootstrap.sessionId);
 		sockets[0]?.dispatch("close");
 
 		const firstId = client.sendUserMessage(bootstrap.sessionId, "first", {
@@ -613,6 +629,7 @@ test("messages composed while disconnected are queued and flushed exactly once, 
 
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
+		confirmSessions(sockets[1] as FakeSocket, bootstrap.sessionId);
 		await flushMicrotasks();
 
 		const flushed = sentFrames(sockets[1] as FakeSocket).filter(
@@ -647,6 +664,7 @@ test("does not resend a message already acked before the drop, but does resend o
 		const bootstrap = makeBootstrap();
 		client.connect(bootstrap);
 		sockets[0]?.dispatch("open");
+		confirmSessions(sockets[0] as FakeSocket, bootstrap.sessionId);
 
 		const ackedId = client.sendUserMessage(bootstrap.sessionId, "acked", {
 			messageId: "msg-acked",
@@ -664,6 +682,7 @@ test("does not resend a message already acked before the drop, but does resend o
 		sockets[0]?.dispatch("close");
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
+		confirmSessions(sockets[1] as FakeSocket, bootstrap.sessionId);
 		await flushMicrotasks();
 
 		const resent = sentFrames(sockets[1] as FakeSocket)
@@ -695,6 +714,7 @@ test("an ack for a messageId not in the outbox is ignored, leaving queued messag
 		const bootstrap = makeBootstrap();
 		client.connect(bootstrap);
 		sockets[0]?.dispatch("open");
+		confirmSessions(sockets[0] as FakeSocket, bootstrap.sessionId);
 
 		const queuedId = client.sendUserMessage(
 			bootstrap.sessionId,
@@ -717,6 +737,7 @@ test("an ack for a messageId not in the outbox is ignored, leaving queued messag
 		sockets[0]?.dispatch("close");
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
+		confirmSessions(sockets[1] as FakeSocket, bootstrap.sessionId);
 		await flushMicrotasks();
 
 		const resent = sentFrames(sockets[1] as FakeSocket)
@@ -816,6 +837,7 @@ test("regression: a second connect() call while the daemon is unreachable does n
 		fireScheduledReconnect(scheduled);
 		await flushMicrotasks(30);
 		sockets[0]?.dispatch("open");
+		confirmSessions(sockets[0] as FakeSocket, bootstrapA.sessionId);
 		await flushMicrotasks();
 
 		const sent = sentFrames(sockets[0] as FakeSocket).filter(
@@ -902,6 +924,7 @@ test("a session-pending frame grants capability for the newly created session, s
 			newSession: { sessionId: "session-new", token: "token-new" },
 		}),
 	);
+	confirmSessions(socket, "session-new");
 
 	expect(() => client.sendUserMessage("session-new", "hi")).not.toThrow();
 	await flushMicrotasks();
@@ -953,6 +976,7 @@ test("a session-closed frame revokes the session's capability and prunes its que
 
 		fireScheduledReconnect(scheduled);
 		sockets[1]?.dispatch("open");
+		confirmSessions(sockets[1] as FakeSocket, bootstrap.sessionId);
 		await flushMicrotasks();
 
 		const resent = sentFrames(sockets[1] as FakeSocket).filter(
@@ -1080,6 +1104,7 @@ test("disconnectSession removes only the selected capability after daemon confir
 	client.connect(older);
 	client.connect(newer);
 	socket.dispatch("open");
+	confirmSessions(socket, older.sessionId, newer.sessionId);
 	await flushMicrotasks();
 	const disconnected = client.disconnectSession(older.sessionId);
 	await flushMicrotasks();

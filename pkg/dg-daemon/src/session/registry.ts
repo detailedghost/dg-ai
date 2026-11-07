@@ -120,6 +120,7 @@ export class SessionRegistry extends EventEmitter {
 		record.cliDetachedAt = undefined;
 		record.lastActivityAt = this.now();
 		this.persist(record);
+		this.emit("changed", { sessionId });
 	}
 
 	/** The last CLI socket for this claim closed. The claim itself stays held. */
@@ -129,6 +130,7 @@ export class SessionRegistry extends EventEmitter {
 		if (record.cliQuietSince !== undefined) return;
 		record.cliQuietSince = this.now();
 		this.persist(record);
+		this.emit("changed", { sessionId });
 	}
 
 	noteCliDetached(sessionId: string): void {
@@ -138,6 +140,7 @@ export class SessionRegistry extends EventEmitter {
 		record.cliDetachedAt = this.now();
 		this.persist(record);
 		this.emit("agent-gone", { sessionId });
+		this.emit("changed", { sessionId });
 	}
 
 	validate(sessionId: string, token: string): boolean {

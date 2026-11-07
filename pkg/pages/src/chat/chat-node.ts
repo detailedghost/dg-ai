@@ -1,4 +1,4 @@
-import type { ProgressState } from "@dg/common";
+import type { ProgressState, SessionPresence } from "@dg/common";
 import type { ChatSessionEntry } from "./chat-sessions";
 import type {
 	FetchAsset,
@@ -43,6 +43,17 @@ export function statusLabel(status: ProgressState | "unknown"): string {
 			return "agent-gone";
 		case "unknown":
 			return "unknown";
+	}
+}
+
+export function presenceLabel(presence: SessionPresence | undefined): string {
+	switch (presence) {
+		case "cli":
+			return "Agent attached";
+		case "gone":
+			return "Agent gone";
+		default:
+			return "No agent listening";
 	}
 }
 

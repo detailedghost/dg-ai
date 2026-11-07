@@ -1,11 +1,17 @@
 
-import type { ChatFrame, ProgressState, SessionRole } from "@dg/common";
+import type {
+	ChatFrame,
+	ProgressState,
+	SessionPresence,
+	SessionRole,
+} from "@dg/common";
 
 export type ChatSessionEntry = {
 	sessionId: string;
 	agentIdentity: string;
 	role: SessionRole;
 	workset?: string;
+	presence?: SessionPresence;
 	status: ProgressState | "unknown";
 	unreadCount: number;
 };
@@ -31,6 +37,7 @@ export function createChatSessions(): ChatSessions {
 				agentIdentity: summary.agentIdentity,
 				role: summary.role,
 				workset: summary.workset,
+				presence: summary.presence,
 				status:
 					existing?.status && existing.status !== "unknown"
 						? existing.status

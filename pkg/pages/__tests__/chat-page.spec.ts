@@ -109,3 +109,49 @@ test("renderChatPage removes the node when session-closed arrives", async () => 
 
 	expect(root.querySelectorAll(".chat-node")).toHaveLength(0);
 });
+
+const LONG_SESSION = { ...SESSION, sessionId: "0123abcd-ef01-4567-89ab-cdef01234567" };
+
+const PRESENCE_LABELS: readonly (readonly [string | undefined, string])[] = [
+	["cli", "Agent attached"],
+	["gone", "Agent gone"],
+	["idle", "No agent listening"],
+	["waiting", "No agent listening"],
+	[undefined, "No agent listening"],
+];
+const ALL_LABELS = [...new Set(PRESENCE_LABELS.map(([, label]) => label))];
+
+for (const [presence, label] of PRESENCE_LABELS) {
+	test(`renderChatPage header shows ${label} for session-list presence ${presence ?? "missing"} with identity and short session id`, async () => {
+		const root = newRoot();
+		const fake = fakeClient();
+		await renderChatPage({
+			root,
+			createClient: () => fake.client as never,
+			loadBootstraps: async () => [LONG_SESSION],
+		});
+
+		fake.emit({
+			type: "session-list",
+			sessionId: LONG_SESSION.sessionId,
+			protocolVersion: CHAT_PROTOCOL_VERSION,
+			sessions: [
+				{
+					sessionId: LONG_SESSION.sessionId,
+					agentIdentity: LONG_SESSION.agentIdentity,
+					role: "agent",
+					...(presence === undefined ? {} : { presence }),
+				},
+			],
+		});
+
+		const text = root.textContent ?? "";
+		expect(text).toContain(label);
+		for (const other of ALL_LABELS.filter((entry) => entry !== label)) {
+			expect(text).not.toContain(other);
+		}
+		expect(text).toContain(LONG_SESSION.agentIdentity);
+		expect(text).toContain(LONG_SESSION.sessionId.slice(0, 8));
+		expect(text).not.toContain(LONG_SESSION.sessionId.slice(0, 9));
+	});
+}

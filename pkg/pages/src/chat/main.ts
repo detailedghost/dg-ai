@@ -24,11 +24,13 @@ import type {
 	ChatConnectionState,
 	ConnectionListener,
 	SendUserMessageOptions,
+	SendUserMessageResult,
 } from "./chat-client";
 import {
 	type ChatNode,
 	createChatNode,
 	groupSessionsByWorkset,
+	presenceLabel,
 	statusLabel,
 	type WorksetGroup,
 } from "./chat-node";
@@ -73,13 +75,14 @@ function isConnectionState(value: unknown): value is ChatConnectionState {
 	);
 }
 
-type PillState = ChatConnectionState | "not-paired";
+type PillState = ChatConnectionState | "not-paired" | "connecting";
 
 const NOT_PAIRED_HINT = "Not paired";
 
 function connectionStatusLabel(state: PillState, detail?: string): string {
 	const label = {
 		"not-paired": NOT_PAIRED_HINT,
+		connecting: "Connecting…",
 		reconnecting: "Reconnecting to daemon…",
 		"daemon-not-running": "Daemon unreachable",
 		connected: "",
@@ -102,18 +105,13 @@ function isChatHistoryItem(value: unknown): value is ChatHistoryItem {
 	);
 }
 
-type SendResult = { ok: true } | { ok: false; error: string };
+type SendResult = SendUserMessageResult;
 
 type PageChatClient = ChatClient & {
 	sendCommandInvocation(
 		sessionId: string,
 		commandLabel: string,
 		params?: Record<string, unknown>,
-	): Promise<SendResult>;
-	sendUserMessageAndWait(
-		sessionId: string,
-		body: string,
-		opts?: SendUserMessageOptions,
 	): Promise<SendResult>;
 	requestNewSessionAndWait(
 		requestingSessionId: string,
@@ -404,20 +402,9 @@ function sendAndWaitForAccept(
 	client: ChatClient,
 	sessionId: string,
 	body: string,
+	messageId: string,
 ): Promise<SendResult> {
-	const maybeRelay = client as Partial<PageChatClient>;
-	if (maybeRelay.sendUserMessageAndWait) {
-		return maybeRelay.sendUserMessageAndWait(sessionId, body);
-	}
-	try {
-		client.sendUserMessage(sessionId, body);
-		return Promise.resolve({ ok: true });
-	} catch (error) {
-		return Promise.resolve({
-			ok: false,
-			error: error instanceof Error ? error.message : String(error),
-		});
-	}
+	return client.sendUserMessageAndWait(sessionId, body, { messageId });
 }
 
 function iconControl<K extends "button" | "a">(
@@ -592,7 +579,8 @@ export async function renderChatPage(
 	const threadHeader = element(doc, "header", "chat-thread__header");
 	const breadcrumb = element(doc, "div", "chat-thread__breadcrumb");
 	const threadHeading = element(doc, "h2", "chat-thread__heading", "Chat");
-	threadHeader.append(breadcrumb, threadHeading);
+	const threadMeta = element(doc, "div", "chat-thread__meta");
+	threadHeader.append(breadcrumb, threadHeading, threadMeta);
 	const threadError = element(doc, "div", "chat-thread__error");
 	threadError.setAttribute("role", "alert");
 	threadError.hidden = true;
@@ -887,9 +875,32 @@ export async function renderChatPage(
 			create.disabled = disabled;
 	}
 
+	function isSessionConfirmed(): boolean {
+		if (!client.isSessionConfirmed) return true;
+		const liveSessionId =
+			selectedSessionId && bootstrapBySession.has(selectedSessionId)
+				? selectedSessionId
+				: [...bootstrapBySession.keys()][0];
+		return liveSessionId ? client.isSessionConfirmed(liveSessionId) : false;
+	}
+
+	function renderSessionHeader(entry: ChatSessionEntry | undefined): void {
+		breadcrumb.textContent = entry
+			? `${entry.workset ?? "Loose chats"} / ${entry.agentIdentity}`
+			: "DeeGee / chat";
+		threadHeading.textContent = entry?.agentIdentity ?? "Chat";
+		threadMeta.textContent = entry
+			? `${entry.sessionId.slice(0, 8)} · ${presenceLabel(entry.presence)}`
+			: "";
+	}
+
 	function updateConnectionStatus(): void {
 		const connection = client.getConnectionState();
-		const state: PillState = isPaired() ? connection : "not-paired";
+		const state: PillState = !isPaired()
+			? "not-paired"
+			: connection === "connected" && !isSessionConfirmed()
+				? "connecting"
+				: connection;
 		pairing?.setConnected(state === "connected");
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
@@ -973,10 +984,18 @@ export async function renderChatPage(
 			port: bootstrap?.port,
 			assetOrigin: options.assetOrigin,
 			onSubmit: (body) => {
-				void sendAndWaitForAccept(client, sessionId, body).then((result) => {
-					if (result.ok) node.transcript.appendUserMessage(body);
-					else showError(result.error);
-				});
+				const messageId = crypto.randomUUID();
+				node.transcript.appendUserMessage(body, messageId);
+				void sendAndWaitForAccept(client, sessionId, body, messageId).then(
+					(result) => {
+						if (result.ok) {
+							node.transcript.setDelivery(messageId, "delivered");
+							return;
+						}
+						node.transcript.setDelivery(messageId, "not-delivered");
+						if (result.reason !== "timeout") showError(result.error);
+					},
+				);
 			},
 			onClose: () => {
 				try {
@@ -1148,10 +1167,7 @@ export async function renderChatPage(
 		const selected = selectedSessionId
 			? sessions.get(selectedSessionId)
 			: undefined;
-		breadcrumb.textContent = selected
-			? `${selected.workset ?? "Loose chats"} / ${selected.agentIdentity}`
-			: "DeeGee / chat";
-		threadHeading.textContent = selected?.agentIdentity ?? "Chat";
+		renderSessionHeader(selected);
 		updateConnectionStatus();
 		paintVimCursor();
 	}
@@ -1342,6 +1358,9 @@ export async function renderChatPage(
 					frame,
 					bootstrapBySession.get(frame.sessionId)?.token ?? "",
 				);
+				break;
+			case "ack":
+				node?.transcript.setDelivery(frame.messageId, "delivered");
 				break;
 			case "command-result":
 				node?.transcript.appendCommandResult(frame);

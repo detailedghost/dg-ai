@@ -515,6 +515,12 @@
 	text-transform: uppercase;
 }
 
+.chat-thread__meta {
+	color: var(--chat-muted);
+	font-family: var(--mono);
+	font-size: 0.78rem;
+}
+
 .chat-thread__nodes {
 	display: flex;
 	min-height: 0;
@@ -576,6 +582,16 @@
 .chat-transcript__message--user {
 	border-left: 0.125rem solid var(--chat-line);
 	padding-left: 1rem;
+}
+
+.chat-transcript__message--user[data-delivery="pending"] {
+	opacity: 0.6;
+}
+
+.chat-transcript__delivery {
+	margin-top: 0.25rem;
+	color: var(--chat-accent-secondary);
+	font-size: 0.78rem;
 }
 
 .chat-transcript__progress {
