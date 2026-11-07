@@ -221,7 +221,7 @@ describe("mountPairing offer view", () => {
 		expect(runtime.sendMessage.mock.calls).toHaveLength(before);
 	});
 
-	test("the panel never sends the retired catalog, launch or clear messages", async () => {
+	test("the panel sends only offer requests and the attach request", async () => {
 		const root = newRoot();
 		const runtime = stubRuntime({ reply: pending() });
 		const handle = mountPairing(root, { runtime });
@@ -231,9 +231,9 @@ describe("mountPairing offer view", () => {
 		const types = runtime.sendMessage.mock.calls.map(
 			([message]) => (message as { type?: string }).type,
 		);
-		expect(types).not.toContain(MSG.sessionCatalog);
-		expect(types).not.toContain(MSG.sessionLaunch);
-		expect(types).not.toContain(MSG.sessionClear);
+		expect([...new Set(types)].sort()).toEqual(
+			[MSG.pairOfferRequest, MSG.sessionAttach].sort(),
+		);
 		handle.destroy();
 	});
 

@@ -122,7 +122,10 @@ describe("agent tabs open", () => {
 		expect(tab?.url).toBe(URL_A);
 		expect(tab?.active).toBe(false);
 		expect(tab?.autoDiscardable).toBe(false);
-		expect(fake.raw.tabs.group.mock.calls[0]?.[0]).toEqual({ tabIds: [tabId] });
+		expect(fake.raw.tabs.group.mock.calls[0]?.[0]).toEqual({
+			tabIds: [tabId],
+			createProperties: { windowId: tab?.windowId as number },
+		});
 		expect(fake.raw.tabGroups.update).toHaveBeenCalledWith(groupId, {
 			title,
 			color: expect.any(String),

@@ -1,3 +1,4 @@
+import { describeError } from "@dg/common";
 import {
 	type AgentTabAdoptReply,
 	type AgentTabsReply,
@@ -47,7 +48,11 @@ export type AgentTabsBrowserApi = {
 			props: { url?: string; active?: boolean; autoDiscardable?: boolean },
 		): Promise<BrowserTab>;
 		remove(tabId: number): Promise<void>;
-		group(options: { tabIds: number[]; groupId?: number }): Promise<number>;
+		group(options: {
+			tabIds: number[];
+			groupId?: number;
+			createProperties?: { windowId: number };
+		}): Promise<number>;
 		get(tabId: number): Promise<BrowserTab>;
 		query(query: {
 			groupId?: number;
@@ -237,18 +242,23 @@ export function createAgentTabs({
 		sessionId,
 		agentIdentity,
 		tabId,
+		windowId,
 	}: {
 		record: AgentRecord | undefined;
 		groupWindow: number | undefined;
 		sessionId: string;
 		agentIdentity: string;
 		tabId: number;
+		windowId: number | undefined;
 	}): Promise<AgentRecord> {
 		if (record && groupWindow !== undefined) {
 			await api.tabs.group({ groupId: record.groupId, tabIds: [tabId] });
 			return record;
 		}
-		const groupId = await api.tabs.group({ tabIds: [tabId] });
+		const groupId = await api.tabs.group({
+			tabIds: [tabId],
+			...(windowId === undefined ? {} : { createProperties: { windowId } }),
+		});
 		const title = groupTitle({ agentIdentity, sessionId });
 		const color =
 			record?.color ??
@@ -292,6 +302,7 @@ export function createAgentTabs({
 						sessionId,
 						agentIdentity,
 						tabId,
+						windowId: tab.windowId,
 					});
 					if (joined !== record) await write(joined);
 					return { tabId };
@@ -342,6 +353,7 @@ export function createAgentTabs({
 					sessionId,
 					agentIdentity,
 					tabId,
+					windowId: tab.windowId,
 				});
 				await write({ ...joined, selectedTabId: tabId });
 				if (owner?.selectedTabId === tabId) {
@@ -455,9 +467,6 @@ export function createAgentTabs({
 
 export type AgentTabs = ReturnType<typeof createAgentTabs>;
 
-const errorText = (error: unknown) =>
-	error instanceof Error ? error.message : String(error);
-
 function adoptRequest(message: unknown) {
 	const { sessionId, agentIdentity, tabId } = message as Record<string, unknown>;
 	return typeof sessionId === "string" &&
@@ -497,7 +506,7 @@ export function registerAgentTabs({
 			await agentTabs.adopt({ ...request, agentIdentity: held.agentIdentity });
 			return { ok: true };
 		} catch (error) {
-			return { ok: false, error: errorText(error) };
+			return { ok: false, error: describeError(error) };
 		}
 	}
 

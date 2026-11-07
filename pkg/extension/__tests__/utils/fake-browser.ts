@@ -234,8 +234,21 @@ export function createFakeBrowser(
 				}
 			}),
 			group: mock(
-				async ({ tabIds, groupId }: { tabIds: number[]; groupId?: number }) => {
+				async ({
+					tabIds,
+					groupId,
+					createProperties,
+				}: {
+					tabIds: number[];
+					groupId?: number;
+					createProperties?: { windowId: number };
+				}) => {
 					const first = need(tabIds[0] as number);
+					if (
+						createProperties &&
+						createProperties.windowId !== first.windowId
+					)
+						throw new Error("tab is not in the requested window");
 					let id = groupId;
 					if (id === undefined) {
 						id = state.nextGroupId++;

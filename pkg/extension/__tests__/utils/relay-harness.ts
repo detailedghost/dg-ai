@@ -5,7 +5,6 @@ import {
 	type SessionBootstrap,
 } from "@dg/common";
 import { type RegisterDaemonLinkOptions, registerDaemonLink } from "@/lib/background/daemon-link";
-import { MSG } from "@dg/pages/chat-messages";
 
 export type Listener = (
 	msg: unknown,
@@ -142,7 +141,7 @@ export async function bootRelay(
 		tabs: { create: mock(() => Promise.resolve()) },
 		storage,
 	};
-	registerDaemonLink({
+	const link = registerDaemonLink({
 		browserApi: api,
 		openSocket: () => socket,
 		relayHandlers: options.relayHandlers,
@@ -156,19 +155,12 @@ export async function bootRelay(
 		});
 	}
 
-	onMessage?.(
-		{
-			type: MSG.markerCaptured,
-			bootstrap: {
-				port: CHAT_DEFAULT_PORT,
-				sessionId,
-				token,
-				agentIdentity: "claude-orchestrator",
-			},
-		},
-		{},
-		mock(() => undefined),
-	);
+	await link.adopt({
+		port: CHAT_DEFAULT_PORT,
+		sessionId,
+		token,
+		agentIdentity: "claude-orchestrator",
+	});
 	await settle();
 	socket.dispatch("open");
 	await settle();

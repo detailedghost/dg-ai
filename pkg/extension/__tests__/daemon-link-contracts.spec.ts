@@ -7,7 +7,6 @@ import {
 import { readChatBootstrap } from "@dg/pages/chat-marker";
 import { buildSessionListFrame } from "./utils/frame-fixtures";
 import {
-	type Listener,
 	frameEvent,
 	makeBootstrapFactory,
 	makeFakeSocket,
@@ -19,7 +18,6 @@ import {
 mock.module("wxt/browser", () => ({ browser: {} }));
 
 const { registerDaemonLink } = await import("@/lib/background/daemon-link");
-const { MSG } = await import("@dg/pages/chat-messages");
 
 const makeBootstrap = makeBootstrapFactory({
 	port: CHAT_DEFAULT_PORT,
@@ -29,18 +27,13 @@ const makeBootstrap = makeBootstrapFactory({
 });
 
 function boot() {
-	let onMessage: Listener | undefined;
 	const local = makeLocalArea();
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
 	const sidePanelOpen = mock(() => Promise.resolve());
 	const api = {
 		action: { onClicked: { addListener: mock(() => undefined) } },
 		runtime: {
-			onMessage: {
-				addListener: mock((cb: Listener) => {
-					onMessage = cb;
-				}),
-			},
+			onMessage: { addListener: mock(() => undefined) },
 			getURL: (path: string) => `chrome-extension://test-ext/${path}`,
 			getManifest: () => ({ version: "1.9.3" }),
 			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
@@ -59,23 +52,18 @@ function boot() {
 	};
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
-	registerDaemonLink({
+	const link = registerDaemonLink({
 		browserApi: api as never,
 		openSocket,
 	});
 	return {
+		adopt: link.adopt,
 		api,
 		local,
 		socket,
 		openSocket,
 		tabsCreate,
 		sidePanelOpen,
-		post(message: unknown) {
-			return new Promise<unknown>((resolve) => {
-				const kept = onMessage?.(message, {}, resolve);
-				if (!kept) resolve(undefined);
-			});
-		},
 	};
 }
 
@@ -95,13 +83,12 @@ function overwatchOpen(requestId: string) {
 }
 
 describe("registerDaemonLink adopt without a chat page", () => {
-	test("a captured marker connects to the daemon and acknowledges", async () => {
+	test("an adopted bootstrap connects to the daemon", async () => {
 		const link = boot();
 		const bootstrap = makeBootstrap({ port: CHAT_DEFAULT_PORT + 1 });
 
-		const reply = await link.post({ type: MSG.markerCaptured, bootstrap });
+		await link.adopt(bootstrap);
 
-		expect(reply).toEqual({ ok: true });
 		expect(link.openSocket).toHaveBeenCalledTimes(1);
 		expect(String(link.openSocket.mock.calls[0]?.[0])).toContain(
 			`:${bootstrap.port}`,
@@ -111,7 +98,7 @@ describe("registerDaemonLink adopt without a chat page", () => {
 	test("holds the bootstrap in memory and writes the key only on the first confirming session-list", async () => {
 		const link = boot();
 		const bootstrap = makeBootstrap();
-		await link.post({ type: MSG.markerCaptured, bootstrap });
+		await link.adopt(bootstrap);
 		link.socket.dispatch("open");
 		await settle();
 		expect(link.local.data).toEqual({});
@@ -130,7 +117,7 @@ describe("registerDaemonLink adopt without a chat page", () => {
 	test("never opens a tab or a side panel", async () => {
 		const link = boot();
 		const bootstrap = makeBootstrap();
-		await link.post({ type: MSG.markerCaptured, bootstrap });
+		await link.adopt(bootstrap);
 		link.socket.dispatch("open");
 		await settle();
 		link.socket.dispatch(
@@ -148,7 +135,7 @@ describe("registerDaemonLink overwatch-open", () => {
 	async function confirmed() {
 		const link = boot();
 		const bootstrap = makeBootstrap();
-		await link.post({ type: MSG.markerCaptured, bootstrap });
+		await link.adopt(bootstrap);
 		link.socket.dispatch("open");
 		await settle();
 		link.socket.dispatch(
@@ -185,7 +172,7 @@ describe("registerDaemonLink overwatch-open", () => {
 	test("stays silent while no session is confirmed", async () => {
 		const link = boot();
 		const bootstrap = makeBootstrap();
-		await link.post({ type: MSG.markerCaptured, bootstrap });
+		await link.adopt(bootstrap);
 		link.socket.dispatch("open");
 		await settle();
 

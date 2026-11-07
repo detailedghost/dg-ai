@@ -27,8 +27,14 @@ import {
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
-const { registerDaemonLink, registerRecording } = await import("@/lib/background");
+const { registerDaemonLink: registerLink, registerRecording } = await import("@/lib/background");
 const { MSG } = await import("@dg/pages/chat-messages");
+
+let lastLink: ReturnType<typeof registerLink> | undefined;
+const registerDaemonLink: typeof registerLink = (options) => {
+	lastLink = registerLink(options);
+	return lastLink;
+};
 const { browser: mockedBrowser } = await import("wxt/browser");
 
 const makeBootstrap = makeBootstrapFactory({
@@ -59,9 +65,11 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 	const tabsQuery = mock((_queryInfo: object) =>
 		Promise.resolve([] as { id?: number; windowId?: number; url?: string }[]),
 	);
-	const tabsUpdate = mock((_tabId: number, _props: { active: boolean }) =>
-		Promise.resolve(),
+	const tabsUpdate = mock(
+		(_tabId: number, _props: { url?: string; active: boolean }) =>
+			Promise.resolve(),
 	);
+	const tabsReload = mock((_tabId: number) => Promise.resolve());
 	const windowsUpdate = mock((_windowId: number, _props: { focused: boolean }) =>
 		Promise.resolve(),
 	);
@@ -81,7 +89,12 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 			onStartup: { addListener: onStartupAdd },
 			onInstalled: { addListener: onInstalledAdd },
 		},
-		tabs: { create: tabsCreate, query: tabsQuery, update: tabsUpdate },
+		tabs: {
+			create: tabsCreate,
+			query: tabsQuery,
+			update: tabsUpdate,
+			reload: tabsReload,
+		},
 		windows: { update: windowsUpdate },
 		storage: makeStorage(local),
 	};
@@ -93,6 +106,7 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 		tabsCreate,
 		tabsQuery,
 		tabsUpdate,
+		tabsReload,
 		windowsUpdate,
 		sendMessage,
 		getOnMessage: () => onMessageListener,
@@ -118,23 +132,34 @@ test("the background entrypoint imports registerDaemonLink from the barrel and i
 	expect(source).toMatch(/registerDaemonLink\s*\(/);
 });
 
-test("a captured marker acknowledges connection setup and opens no tab", async () => {
-	const { api, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerDaemonLink({ browserApi: api, openSocket: () => makeFakeSocket() });
-	const listener = getOnMessage();
-	expect(typeof listener).toBe("function");
+test("adopting a bootstrap connects without opening a tab", async () => {
+	const { api, tabsCreate } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	const openSocket = mock((_url: string) => socket);
+	const link = registerDaemonLink({ browserApi: api, openSocket });
+
+	await link.adopt(makeBootstrap());
+
+	expect(openSocket).toHaveBeenCalledTimes(1);
+	expect(tabsCreate).not.toHaveBeenCalled();
+});
+
+test("ignores a marker-captured message from any extension context", async () => {
+	const { api, local, getOnMessage } = makeBrowserApi();
+	const openSocket = mock((_url: string) => makeFakeSocket());
+	registerDaemonLink({ browserApi: api, openSocket });
 	const sendResponse = mock(() => undefined);
 
-	const keepChannel = listener?.(
-		{ type: MSG.markerCaptured, bootstrap: makeBootstrap() },
-		{},
+	const keepChannel = getOnMessage()?.(
+		{ type: "dg-chat:marker-captured", bootstrap: makeBootstrap() },
+		extensionPageSender(api),
 		sendResponse,
 	);
 	await settle();
 
-	expect(keepChannel).toBe(true);
-	expect(sendResponse).toHaveBeenCalledWith({ ok: true });
-	expect(tabsCreate).not.toHaveBeenCalled();
+	expect(keepChannel).toBeUndefined();
+	expect(openSocket).not.toHaveBeenCalled();
+	expect(local.set).not.toHaveBeenCalled();
 });
 
 test("a pairing write that fails when the session confirms does not stop that session's keepalive", async () => {
@@ -143,7 +168,7 @@ test("a pairing write that fails when the session confirms does not stop that se
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 
@@ -156,56 +181,23 @@ test("a pairing write that fails when the session confirms does not stop that se
 	expect(types).toContain("keepalive");
 });
 
-test("ignores a marker-captured message carrying a malformed bootstrap rather than partially storing it", async () => {
-	const { api, local, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerDaemonLink({ browserApi: api });
-	const listener = getOnMessage();
+const daemonHandleWithAgentIdentity = {
+	pid: 4242,
+	port: 4317,
+	instanceId: "instance-1",
+	versions: { package: "1.0.0", protocol: 1 },
+	agentIdentity: "claude-orchestrator",
+};
 
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: { port: 4317 } },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
+test.each([
+	["a malformed bootstrap", { port: 4317 }],
+	["a DaemonHandle carrying a spurious agentIdentity (no token)", daemonHandleWithAgentIdentity],
+	["a well-formed bootstrap whose port falls outside the ratified range", makeBootstrap({ port: 9999 })],
+])("adopt rejects %s without storing anything", async (_name, bootstrap) => {
+	const { api, local, tabsCreate } = makeBrowserApi();
+	const link = registerDaemonLink({ browserApi: api });
 
-	expect(local.set).not.toHaveBeenCalled();
-	expect(tabsCreate).not.toHaveBeenCalled();
-});
-
-test("ignores a marker-captured message whose bootstrap is a DaemonHandle carrying a spurious agentIdentity (no token)", async () => {
-	const { api, local, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerDaemonLink({ browserApi: api });
-	const listener = getOnMessage();
-	const daemonWithAgentIdentity = {
-		pid: 4242,
-		port: 4317,
-		instanceId: "instance-1",
-		versions: { package: "1.0.0", protocol: 1 },
-		agentIdentity: "claude-orchestrator",
-	};
-
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: daemonWithAgentIdentity },
-		{},
-		mock(() => undefined),
-	);
-	await settle();
-
-	expect(local.set).not.toHaveBeenCalled();
-	expect(tabsCreate).not.toHaveBeenCalled();
-});
-
-test("ignores an otherwise well-formed bootstrap whose port falls outside the daemon's ratified range", async () => {
-	const { api, local, tabsCreate, getOnMessage } = makeBrowserApi();
-	registerDaemonLink({ browserApi: api });
-	const listener = getOnMessage();
-	const outOfRange = makeBootstrap({ port: 9999 });
-
-	listener?.(
-		{ type: MSG.markerCaptured, bootstrap: outOfRange },
-		{},
-		mock(() => undefined),
-	);
+	await expect(link.adopt(bootstrap as never)).rejects.toThrow();
 	await settle();
 
 	expect(local.set).not.toHaveBeenCalled();
@@ -241,15 +233,8 @@ function sentTypes(socket: FakeSocket): string[] {
 	);
 }
 
-async function captureMarker(
-	getOnMessage: () => Listener | undefined,
-	bootstrap: SessionBootstrap,
-): Promise<void> {
-	getOnMessage()?.(
-		{ type: MSG.markerCaptured, bootstrap },
-		{},
-		mock(() => undefined),
-	);
+async function adoptBootstrap(bootstrap: SessionBootstrap): Promise<void> {
+	await lastLink?.adopt(bootstrap);
 	await settle();
 }
 
@@ -258,7 +243,7 @@ test("sends no keepalive before the daemon confirms this session's connect hands
 	const socket = makeFakeSocket();
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
-	await captureMarker(getOnMessage, makeBootstrap());
+	await adoptBootstrap(makeBootstrap());
 
 	socket.dispatch("open");
 	await settle();
@@ -273,7 +258,7 @@ test("sends a keepalive immediately once the daemon confirms the session, then p
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -303,7 +288,7 @@ test("the production default keepalive interval is at most 20s, not just an over
 	try {
 		registerDaemonLink({ browserApi: api, openSocket });
 		const bootstrap = makeBootstrap();
-		await captureMarker(getOnMessage, bootstrap);
+		await adoptBootstrap(bootstrap);
 		socket.dispatch("open");
 		await settle();
 		socket.dispatch(
@@ -323,7 +308,7 @@ test("the first frame sent on open is the connect capability handshake carrying 
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -346,7 +331,7 @@ test("the keepalive frames are real ratified ChatFrames, not ad-hoc pings the da
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -377,7 +362,7 @@ test("sends the first keepalive frame immediately once the daemon confirms the s
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 10_000 });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -399,7 +384,7 @@ test("opens the WebSocket at the bootstrap's own port, never a hardcoded one", a
 	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap({ port: CHAT_DEFAULT_PORT + 3 });
 
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	expect(openSocket).toHaveBeenCalledWith(
 		`ws://127.0.0.1:${CHAT_DEFAULT_PORT + 3}/ws`,
@@ -412,7 +397,7 @@ test("keepalive stops once the socket reports itself closed, leaving no dangling
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -436,7 +421,7 @@ test("keepalive stops once the socket reports an error, leaving no dangling time
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket, keepaliveIntervalMs: 15 });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -460,7 +445,7 @@ test("regression: with no chat tab attached, an inbound frame for a captured ses
 	const openSocket = mock((_url: string) => socket);
 	const { client } = registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	socket.dispatch("open");
 	await settle();
@@ -516,12 +501,13 @@ test("an inbound overwatch-open focuses the existing board tab and replies to th
 		tabsCreate,
 		tabsQuery,
 		tabsUpdate,
+		tabsReload,
 		windowsUpdate,
 	} = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	tabsQuery.mockImplementation(() =>
 		Promise.resolve([
 			{ id: 41, windowId: 7, url: `http://127.0.0.1:${bootstrap.port}/board` },
@@ -543,7 +529,11 @@ test("an inbound overwatch-open focuses the existing board tab and replies to th
 	);
 	await settle();
 
-	expect(tabsUpdate).toHaveBeenCalledWith(41, { active: true });
+	expect(tabsUpdate).toHaveBeenCalledWith(41, {
+		url: expect.stringContaining("/board#"),
+		active: true,
+	});
+	expect(tabsReload).toHaveBeenCalledWith(41);
 	expect(windowsUpdate).toHaveBeenCalledWith(7, { focused: true });
 	expect(tabsCreate).toHaveBeenCalledTimes(tabsCreatedBeforeOpen);
 	expect(
@@ -583,7 +573,7 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 	);
 	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 
 	sockets[0]?.dispatch("open");
 	await settle();
@@ -675,7 +665,7 @@ test("registerDaemonLink drops a pw-ext result whose admission socket was replac
 			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
 	);
 	registerDaemonLink({ browserApi: api, openSocket, relayHandlers: { "pw-ext": pwExtRun as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	sockets[0]?.dispatch("open");
 	await settle();
 	sockets[0]?.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -739,7 +729,7 @@ test("regression: the background's socket reopens automatically after the daemon
 
 	const { api, getOnMessage } = makeBrowserApi();
 	registerDaemonLink({ browserApi: api, openSocket });
-	await captureMarker(getOnMessage, makeBootstrap());
+	await adoptBootstrap(makeBootstrap());
 
 	const scheduled: Array<() => void> = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -804,7 +794,7 @@ test("regression: the background rediscovers a relocated daemon via GET /healthz
 
 	const { api, getOnMessage } = makeBrowserApi();
 	registerDaemonLink({ browserApi: api, openSocket });
-	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
+	await adoptBootstrap(makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 
 	sockets[0]?.dispatch("open");
 	await flushMicrotasks();
@@ -839,7 +829,7 @@ test("regression: the background's reconnect backoff grows across attempts and s
 	const openSocket = mock((_url: string) => socket);
 	const { api, getOnMessage } = makeBrowserApi();
 	registerDaemonLink({ browserApi: api, openSocket });
-	await captureMarker(getOnMessage, makeBootstrap());
+	await adoptBootstrap(makeBootstrap());
 
 	const delays: number[] = [];
 	const realSetTimeout = globalThis.setTimeout;
@@ -873,8 +863,8 @@ test("a closed session stops drawing keepalives, so its dead token cannot burn t
 		sessionId: "sess-staying",
 		token: "tok-staying",
 	});
-	await captureMarker(getOnMessage, closing);
-	await captureMarker(getOnMessage, staying);
+	await adoptBootstrap(closing);
+	await adoptBootstrap(staying);
 
 	socket.dispatch("open");
 	await settle();
@@ -908,7 +898,7 @@ test("MSG.sessionClose relays to the daemon as a real session-close frame", asyn
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	const sendResponse = mock((_r: unknown) => undefined);
@@ -946,7 +936,7 @@ test("a closed session's bootstrap is removed from local storage, so the next br
 	const openSocket = mock((_url: string) => socket);
 	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -970,7 +960,7 @@ test("the background announces the manifest version in its connect handshake", a
 	const { api, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, makeBootstrap());
+	await adoptBootstrap(makeBootstrap());
 
 	socket.dispatch("open");
 	await settle();
@@ -985,7 +975,7 @@ test("a socket error is relayed to the chat page as a connection change with its
 	const { api, getOnMessage, sendMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, makeBootstrap({ port: CHAT_DEFAULT_PORT }));
+	await adoptBootstrap(makeBootstrap({ port: CHAT_DEFAULT_PORT }));
 
 	socket.dispatch("error");
 	await settle();
@@ -994,7 +984,7 @@ test("a socket error is relayed to the chat page as a connection change with its
 		type: MSG.connection,
 		state: "reconnecting",
 		connected: false,
-		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false, runs: [] }],
+		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, connected: false, runs: [] }],
 		detail: `could not reach the daemon on port ${CHAT_DEFAULT_PORT}`,
 	});
 });
@@ -1003,7 +993,7 @@ test("a socket that opens is relayed to the chat page as connected", async () =>
 	const { api, getOnMessage, sendMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, makeBootstrap());
+	await adoptBootstrap(makeBootstrap());
 
 	socket.dispatch("open");
 	await settle();
@@ -1012,7 +1002,7 @@ test("a socket that opens is relayed to the chat page as connected", async () =>
 		type: MSG.connection,
 		state: "connected",
 		connected: false,
-		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, current: true, connected: false, runs: [] }],
+		sessions: [{ sessionId: makeBootstrap().sessionId, agentIdentity: makeBootstrap().agentIdentity, connected: false, runs: [] }],
 	});
 });
 
@@ -1027,7 +1017,7 @@ async function inboxRelay({ confirm = true, deferred = false } = {}) {
 		return { ok: true as const, data: { messages: [], hasMore: false } };
 	});
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { inbox: handler as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	if (confirm) socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1084,7 +1074,7 @@ test("registerDaemonLink turns a proto-browser-request onFrame into a proto-brow
 	const socket = makeFakeSocket();
 	const bootstrap = makeBootstrap();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1159,7 +1149,7 @@ test("registerDaemonLink aborts a pending pw-ext signal on an error drop", async
 		return new Promise<never>(() => undefined);
 	});
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExt as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1197,7 +1187,7 @@ test("registerDaemonLink turns a pw-ext-browser-request into one tokened pw-ext-
 		data: { text: "### Page" },
 	}));
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1255,7 +1245,7 @@ test("registerDaemonLink ignores a pw-ext request for an unpaired session", asyn
 	const bootstrap = makeBootstrap();
 	const pwExtRun = mock(async () => ({ ok: false as const, error: "x" }));
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1290,7 +1280,7 @@ test("registerDaemonLink cancels a pending pw-ext request when its session close
 			}),
 	);
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1341,7 +1331,7 @@ test("registerDaemonLink aborts a pending pw-ext request on a daemon cancel fram
 			}),
 	);
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1383,7 +1373,7 @@ test("registerDaemonLink aborts a pw-ext request at its relay deadline", async (
 			}),
 	);
 	registerDaemonLink({ browserApi: api, openSocket: () => socket, relayHandlers: { "pw-ext": pwExtRun as never } });
-	await captureMarker(getOnMessage, bootstrap);
+	await adoptBootstrap(bootstrap);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(bootstrap.sessionId)));
@@ -1553,7 +1543,7 @@ test("a store read failure is logged without the token and leaves storage untouc
 	);
 	try {
 		const { getOnMessage } = bootWithStored([], { local });
-		await captureMarker(getOnMessage, FIRST);
+		await adoptBootstrap(FIRST);
 		gate.fail(new Error(`read failed for ${FIRST.token}`));
 		await settle();
 
@@ -1686,11 +1676,11 @@ test("MSG.sessionDisconnect on a stored pairing whose socket never connected rem
 	expect(sessionIdsOf(await ask({ type: MSG.connectionRequest }))).toEqual([]);
 });
 
-test("MSG.markerCaptured writes no key until a session-list confirms the session", async () => {
+test("adopt writes no key until a session-list confirms the session", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, FIRST);
+	await adoptBootstrap(FIRST);
 	socket.dispatch("open");
 	await settle();
 
@@ -1708,8 +1698,8 @@ test("a session list that confirms another session does not persist an unconfirm
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, FIRST);
-	await captureMarker(getOnMessage, SECOND);
+	await adoptBootstrap(FIRST);
+	await adoptBootstrap(SECOND);
 	socket.dispatch("open");
 	await settle();
 
@@ -1723,7 +1713,7 @@ test("a session that never confirms leaves no key, even after the socket drops",
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, FIRST);
+	await adoptBootstrap(FIRST);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("close");
@@ -1737,7 +1727,7 @@ test("a bad claim answered with invalid-session leaves no key", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, FIRST);
+	await adoptBootstrap(FIRST);
 	socket.dispatch("open");
 	await settle();
 
@@ -1760,7 +1750,7 @@ test("a pairing is not written twice when a second session list repeats the conf
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, FIRST);
+	await adoptBootstrap(FIRST);
 	socket.dispatch("open");
 	await settle();
 
@@ -1946,7 +1936,7 @@ test("an Unpair followed by a late adopt of the same session leaves no key", asy
 	});
 	const socket = makeFakeSocket();
 	registerDaemonLink({ browserApi: api, openSocket: () => socket });
-	await captureMarker(getOnMessage, FIRST);
+	await adoptBootstrap(FIRST);
 	socket.dispatch("open");
 	await settle();
 	socket.dispatch("message", message(buildSessionListFrame(FIRST.sessionId)));

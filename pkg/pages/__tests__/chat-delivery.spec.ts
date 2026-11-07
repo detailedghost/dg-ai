@@ -194,6 +194,31 @@ describe("chat client session confirmation (H4: connected on socket open)", () =
 		expect(client.isSessionConfirmed(BOOTSTRAP.sessionId)).toBe(true);
 	});
 
+	test("confirms a session created by New chat on session-pending even though its session-list came first", async () => {
+		const { client, sockets } = newClient();
+		client.connect(BOOTSTRAP);
+		sockets[0]?.fire("open");
+		sockets[0]?.receive(sessionList("cli"));
+		sockets[0]?.receive(sessionList("cli", "session-b"));
+
+		sockets[0]?.receive(
+			frame("session-pending", {
+				newSession: { sessionId: "session-b", token: "tok-b" },
+			}),
+		);
+		client.sendUserMessage("session-b", "hello");
+
+		expect(client.isSessionConfirmed("session-b")).toBe(true);
+		await until(
+			() =>
+				sockets[0]?.sent.find(
+					(entry) =>
+						entry.type === "user-message" && entry.sessionId === "session-b",
+				),
+			"the user-message frame for the new session",
+		);
+	});
+
 	test("never emits a connection state outside the exported ChatConnectionState union", () => {
 		const { client, sockets, states } = newClient({ backoffBaseMs: 60_000 });
 		client.connect(BOOTSTRAP);

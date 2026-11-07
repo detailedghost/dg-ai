@@ -8,6 +8,7 @@ import {
 	type RelayFeatureName,
 	type SessionBootstrap,
 	type SessionPresence,
+	describeError,
 	emitRedacted,
 	noteSecret,
 	validateAttachRequest,
@@ -95,16 +96,6 @@ export type RegisterDaemonLinkOptions = {
 	}>;
 	pairingStore?: PairingStore;
 };
-
-function isMarkerCapturedMessage(
-	message: unknown,
-): message is { type: typeof MSG.markerCaptured; bootstrap: unknown } {
-	return (
-		typeof message === "object" &&
-		message !== null &&
-		(message as Record<string, unknown>).type === MSG.markerCaptured
-	);
-}
 
 function isExtensionPageSender(sender: unknown, api: ChatBrowserApi): boolean {
 	if (typeof sender !== "object" || sender === null) return false;
@@ -209,7 +200,6 @@ export function registerDaemonLink(
 	const configWaiters: ConfigWaiter[] = [];
 	const pendingOverwatchOpenCompletions: OverwatchOpenCompletion[] = [];
 	let currentSocket: ChatClientSocket | undefined;
-	let currentPairingId: string | undefined;
 	let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
 
 	const dispatcher = createRelayDispatcher({
@@ -355,14 +345,14 @@ export function registerDaemonLink(
 	}
 
 	function safeError(error: unknown): string {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = describeError(error);
 		return redactSecrets(message, knownTokens());
 	}
 
 	function logStoreError(error: unknown): void {
 		emitRedacted(
 			(line) => console.warn(line),
-			`[dg-chat] pairing storage failed: ${error instanceof Error ? error.message : String(error)}`,
+			`[dg-chat] pairing storage failed: ${describeError(error)}`,
 			knownTokens(),
 		);
 	}
@@ -377,7 +367,7 @@ export function registerDaemonLink(
 			.catch((error: unknown) =>
 				emitRedacted(
 					(line) => console.warn(line),
-					`[dg-chat] agent tab cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+					`[dg-chat] agent tab cleanup failed: ${describeError(error)}`,
 					knownTokens(),
 				),
 			);
@@ -434,7 +424,6 @@ export function registerDaemonLink(
 		for (const item of list) {
 			const bootstrap = asSessionBootstrap(item);
 			if (!bootstrap) continue;
-			currentPairingId ??= bootstrap.sessionId;
 			holdBootstrap(bootstrap);
 			client.connect(bootstrap);
 			adopted += 1;
@@ -443,7 +432,6 @@ export function registerDaemonLink(
 		return adopted;
 	}
 	function holdAndConnect(bootstrap: SessionBootstrap): void {
-		currentPairingId = bootstrap.sessionId;
 		holdBootstrap(bootstrap);
 		client.connect(bootstrap);
 		broadcastPairingStatus();
@@ -463,13 +451,11 @@ export function registerDaemonLink(
 				? bootstrapsBySession.get(sessionId)
 				: undefined;
 		if (!bootstrap) return { ok: false, error: "This agent is not paired." };
-		const port = await daemonPort();
-		if (port === undefined) return { ok: false, error: DAEMON_UNREACHABLE };
-		const url = localPageUrl({
-			port,
-			path: "/chat",
-			bootstrap: { ...bootstrap, port },
-		});
+		if ((await daemonPort()) === undefined) {
+			return { ok: false, error: DAEMON_UNREACHABLE };
+		}
+		const { port } = bootstrap;
+		const url = localPageUrl({ port, path: "/chat", bootstrap });
 		const chatPage = originAndPath(url);
 		const open = (
 			await (api.tabs.query?.({ url: `http://127.0.0.1:${port}/chat*` }) ?? [])
@@ -492,7 +478,6 @@ export function registerDaemonLink(
 			({ sessionId, agentIdentity }) => ({
 				sessionId,
 				agentIdentity,
-				current: sessionId === currentPairingId,
 				connected: state === "connected" && keepaliveEligible.has(sessionId),
 				presence: presenceBySession.get(sessionId),
 				runs: dispatcher.pending(sessionId),
@@ -604,23 +589,6 @@ export function registerDaemonLink(
 	api.runtime.onInstalled?.addListener(wakeWorker);
 
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-		if (isMarkerCapturedMessage(message)) {
-			const bootstrap = asSessionBootstrap(message.bootstrap);
-			if (!bootstrap) return undefined;
-			void (async () => {
-				try {
-					holdAndConnect(bootstrap);
-					sendResponse({ ok: true });
-				} catch (error) {
-					sendResponse({
-						ok: false,
-						error: safeError(error),
-					});
-				}
-			})();
-			return true;
-		}
-
 		if (typeof message !== "object" || message === null) return undefined;
 		if (!isExtensionPageSender(sender, api)) return undefined;
 		const payload = message as Record<string, unknown>;

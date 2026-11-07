@@ -1,6 +1,7 @@
 import {
 	type ChatFrame,
 	type SessionBootstrap,
+	describeError,
 	emitRedacted,
 } from "@dg/common";
 import { localPageUrl } from "@dg/pages/chat-marker";
@@ -61,8 +62,9 @@ export async function handleOverwatchFrame(
 	const board = originAndPath(url);
 	const tabs = api.tabs.query ? await api.tabs.query({}) : [];
 	const existing = tabs.find((tab) => originAndPath(tab.url) === board);
-	if (existing?.id !== undefined && api.tabs.update) {
-		await api.tabs.update(existing.id, { active: true });
+	if (existing?.id !== undefined && api.tabs.update && api.tabs.reload) {
+		await api.tabs.update(existing.id, { url, active: true });
+		await api.tabs.reload(existing.id);
 		if (existing.windowId !== undefined && api.windows) {
 			await api.windows.update(existing.windowId, { focused: true });
 		}
@@ -91,12 +93,12 @@ export async function handleOverwatchFrameSafely(
 			complete({
 				requestId: frame.requestId,
 				ok: false,
-				error: error instanceof Error ? error.message : String(error),
+				error: describeError(error),
 			});
 		}
 		emitRedacted(
 			(line) => console.error(line),
-			`[dg-ai-extension] overwatch frame failed: ${error instanceof Error ? error.message : String(error)}`,
+			`[dg-ai-extension] overwatch frame failed: ${describeError(error)}`,
 		);
 	}
 }

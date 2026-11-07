@@ -277,6 +277,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	let groups = new Map<string, GroupView>();
 	let sessions: PairingSession[] = [];
 	let adopting = 0;
+	let ticking = false;
 
 	const sub = element(doc, "div", "sub");
 	const title = element(doc, "div", "grow");
@@ -444,19 +445,19 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		await readAgents();
 	}
 
+	function replyError(
+		reply: { ok?: unknown; error?: unknown } | undefined,
+	): string | undefined {
+		if (reply?.ok === true) return undefined;
+		return typeof reply?.error === "string" ? reply.error : BACKGROUND_UNREACHABLE;
+	}
+
 	async function openChat(view: CardView): Promise<void> {
 		const reply = (await runtime
 			.sendMessage({ type: MSG.openChat, sessionId: view.session.sessionId })
 			.catch(() => undefined)) as { ok?: unknown; error?: unknown } | undefined;
 		if (destroyed) return;
-		showCardError(
-			view,
-			reply?.ok === true
-				? undefined
-				: typeof reply?.error === "string"
-					? reply.error
-					: BACKGROUND_UNREACHABLE,
-		);
+		showCardError(view, replyError(reply));
 	}
 
 	async function adoptTab(view: CardView, tabId: number): Promise<void> {
@@ -471,14 +472,7 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 			.catch(() => undefined)) as { ok?: unknown; error?: unknown } | undefined;
 		adopting -= 1;
 		if (destroyed) return;
-		showCardError(
-			view,
-			reply?.ok === true
-				? undefined
-				: typeof reply?.error === "string"
-					? reply.error
-					: BACKGROUND_UNREACHABLE,
-		);
+		showCardError(view, replyError(reply));
 		await readAgents();
 	}
 
@@ -695,10 +689,16 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	}
 
 	function tick(): void {
-		if (destroyed || doc.hidden || adopting > 0) return;
-		void readAgents();
-		if (unpaired) void unpaired.refresh();
-		else if (paired?.fold.open) void paired.foldPairing?.refresh();
+		if (destroyed || doc.hidden || adopting > 0 || ticking) return;
+		ticking = true;
+		const reads = [readAgents()];
+		if (unpaired) reads.push(unpaired.refresh());
+		else if (paired?.fold.open && paired.foldPairing) {
+			reads.push(paired.foldPairing.refresh());
+		}
+		void Promise.allSettled(reads).then(() => {
+			ticking = false;
+		});
 	}
 
 	function onRuntimeMessage(message: unknown): void {

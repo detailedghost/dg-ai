@@ -897,13 +897,15 @@ export async function renderChatPage(
 			: "Chat";
 	}
 
-	function updateConnectionStatus(): void {
+	function pillState(): PillState {
+		if (!isPaired()) return "not-paired";
 		const connection = client.getConnectionState();
-		const state: PillState = !isPaired()
-			? "not-paired"
-			: connection === "connected" && !isSessionConfirmed()
-				? "connecting"
-				: connection;
+		if (connection === "connected" && !isSessionConfirmed()) return "connecting";
+		return connection;
+	}
+
+	function updateConnectionStatus(): void {
+		const state = pillState();
 		pairing?.setConnected(state === "connected");
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
@@ -1012,10 +1014,10 @@ export async function renderChatPage(
 		}
 	}
 
-	function finishMove(cancelled: boolean): void {
+	function finishMove(canceled: boolean): void {
 		if (!moving) return;
-		if (cancelled) order = moving.originalOrder;
-		announceMove(cancelled ? "Move cancelled." : "Position saved.");
+		if (canceled) order = moving.originalOrder;
+		announceMove(canceled ? "Move canceled." : "Position saved.");
 		moving = undefined;
 		syncPage();
 	}
@@ -1126,7 +1128,7 @@ export async function renderChatPage(
 			if (liveIds.has(sessionId) && isHeld(sessionId)) continue;
 			if (moving?.sessionId === sessionId) {
 				moving = undefined;
-				announceMove("Move cancelled — the session closed.");
+				announceMove("Move canceled — the session closed.");
 			}
 			if (activeDrag?.sessionId === sessionId) activeDrag.cancel();
 			autocompletes.get(sessionId)?.destroy();

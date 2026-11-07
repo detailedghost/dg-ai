@@ -1,7 +1,7 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_PROTOCOL_VERSION, type ChatFrame } from "@dg/common";
+import { CHAT_PROTOCOL_VERSION, type ChatFrame, describeError } from "@dg/common";
 import { Window } from "happy-dom";
 import { MSG } from "../src/chat-messages";
 import { renderChatPage as renderSharedChatPage } from "../src/chat/main";
@@ -98,7 +98,7 @@ function makeFakeClient(
 				} catch (error) {
 					return Promise.resolve({
 						ok: false,
-						error: error instanceof Error ? error.message : String(error),
+						error: describeError(error),
 					});
 				}
 			},
@@ -1212,7 +1212,7 @@ test("closing the session armed for a keyboard move cancels move mode instead of
 	} as ChatFrame);
 
 	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
-		"Move cancelled — the session closed.",
+		"Move canceled — the session closed.",
 	);
 	expect(
 		Array.from(root.querySelectorAll(".chat-rail__row")).map(
@@ -1227,7 +1227,7 @@ test("closing the session armed for a keyboard move cancels move mode instead of
 	);
 
 	expect(root.querySelector(".chat-move-status")?.textContent).toBe(
-		"Move cancelled — the session closed.",
+		"Move canceled — the session closed.",
 	);
 });
 

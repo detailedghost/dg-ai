@@ -9,6 +9,7 @@ import {
 	type ConnectionDropInput,
 	type DropMessage,
 	createSerialQueue,
+	describeError,
 	emitRedacted,
 	formatConnectionDrop,
 	noteSecret,
@@ -437,6 +438,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		if (frame.type === "session-pending") {
 			capabilities.set(frame.newSession.sessionId, frame.newSession.token);
 			noteSecret(frame.newSession.token);
+			confirmedSessions.add(frame.newSession.sessionId);
+			flushOutbox(new Set([frame.newSession.sessionId]));
 		}
 
 		if (frame.type === "ack") {
@@ -570,7 +573,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				} catch (error) {
 					waiter.settle({
 						ok: false,
-						error: error instanceof Error ? error.message : String(error),
+						error: describeError(error),
 					});
 				}
 			});

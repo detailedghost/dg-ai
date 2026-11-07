@@ -1,4 +1,4 @@
-import { tourHasAutomaticActions } from "@dg/common";
+import { describeError, tourHasAutomaticActions } from "@dg/common";
 import { MSG as CHAT_MSG, type RecordDemoReply } from "@dg/pages/chat-messages";
 import { type DownloadResult, MSG } from "@/lib/demo-messages";
 import type { TourScript } from "@/lib/demo-types";
@@ -282,7 +282,7 @@ export async function maybeStartRecording(
 		const { error } = attempt;
 		void chrome.tabs.sendMessage(tab.id, {
 			type: MSG.videoError,
-			error: error instanceof Error ? error.message : String(error),
+			error: describeError(error),
 		});
 		console.error("[dg-ai-extension] start recording failed:", error);
 	}

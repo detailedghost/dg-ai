@@ -377,6 +377,36 @@ describe("mountPopup unpaired", () => {
 		harness.handle.destroy();
 	});
 
+	test("a tick is skipped while the previous tick's reads are still in flight", async () => {
+		jest.useFakeTimers();
+		let release: () => void = () => undefined;
+		const harness = boot({ offer: { status: "daemon-down" } });
+		await harness.handle.ready;
+		await flush();
+		harness.world.holdTabs = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+
+		jest.advanceTimersByTime(2000);
+		await flush();
+		const connections = harness.sent(MSG.connectionRequest).length;
+		const offers = harness.sent(MSG.pairOfferRequest).length;
+		jest.advanceTimersByTime(4000);
+		await flush();
+
+		expect(harness.sent(MSG.connectionRequest)).toHaveLength(connections);
+		expect(harness.sent(MSG.pairOfferRequest)).toHaveLength(offers);
+
+		release();
+		await flush();
+		jest.advanceTimersByTime(2000);
+		await flush();
+
+		expect(harness.sent(MSG.connectionRequest).length).toBeGreaterThan(connections);
+		expect(harness.sent(MSG.pairOfferRequest).length).toBeGreaterThan(offers);
+		harness.handle.destroy();
+	});
+
 	test("the tick keeps re-requesting a pending offer every 2 s", async () => {
 		jest.useFakeTimers();
 		const harness = boot();

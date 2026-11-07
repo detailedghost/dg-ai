@@ -395,6 +395,22 @@ describe("registerDaemonLink openChat", () => {
 		);
 	});
 
+	test("builds the /chat URL from the stored bootstrap port, not a rediscovered daemon port", async () => {
+		const harness = boot();
+		const stored = makeBootstrap({ port: CHAT_DEFAULT_PORT + 1 });
+		await harness.link.adopt(stored);
+
+		const reply = await harness.fromPopup({
+			type: MSG.openChat,
+			sessionId: stored.sessionId,
+		});
+
+		expect(reply).toEqual({ ok: true });
+		const url = (harness.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
+		expect(new URL(url).origin).toBe(`http://127.0.0.1:${stored.port}`);
+		expect(readChatBootstrap(url)?.port).toBe(stored.port);
+	});
+
 	test("looks for an open /chat tab on the daemon port", async () => {
 		const harness = boot();
 		await confirmed(harness);
@@ -493,17 +509,6 @@ describe("registerDaemonLink popup-only message gate", () => {
 		).toBe(false);
 		expect(harness.local.data).toHaveProperty(key);
 		expect(harness.storage.session.remove).not.toHaveBeenCalled();
-	});
-
-	test.each(["sessionCatalog", "sessionLaunch", "sessionClear"] as const)("%s is no longer handled for extension pages", async (name) => {
-		const harness = boot();
-		await confirmed(harness);
-		fetchSpy.mockClear();
-
-		const reply = await harness.fromOptions({ type: MSG[name] });
-
-		expect(reply).toBeUndefined();
-		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 });
 

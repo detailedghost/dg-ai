@@ -3,6 +3,7 @@ import {
 	type PairOffer,
 	type PairOfferStatus,
 	type SessionBootstrap,
+	describeError,
 	emitRedacted,
 	validatePairOffer,
 	validatePairOfferStatus,
@@ -13,6 +14,7 @@ import { browser } from "wxt/browser";
 import { isPopupSender } from "./popup-sender";
 
 const DEFAULT_POLL_INTERVAL_MS = 1500;
+const POLL_FAILURE_GRACE_MS = 30_000;
 const OFFER_KEY = "pairOffer";
 const ADOPT_FAILED = "Pairing could not finish. Try again.";
 
@@ -126,7 +128,7 @@ export function registerPairOffer({
 		} catch (error) {
 			emitRedacted(
 				(line) => console.warn(line),
-				`[dg-chat] adopting the claimed pairing failed: ${error instanceof Error ? error.message : String(error)}`,
+				`[dg-chat] adopting the claimed pairing failed: ${describeError(error)}`,
 				[bootstrap.token],
 			);
 			return { status: "error", error: ADOPT_FAILED };
@@ -164,7 +166,7 @@ export function registerPairOffer({
 	function schedulePoll(port: number, offer: PairOffer): void {
 		timer = setTimeout(() => {
 			void poll(port, offer)
-				.catch(logPollFailure)
+				.catch((error: unknown) => failPoll(error, offer))
 				.finally(() => {
 					if (live === offer) schedulePoll(port, offer);
 				});
@@ -229,9 +231,11 @@ export function registerPairOffer({
 		return createOffer(port);
 	}
 
-	function logPollFailure(error: unknown): void {
-		console.warn(
-			`[dg-chat] pair offer poll failed: ${error instanceof Error ? error.message : String(error)}`,
+	async function failPoll(error: unknown, offer: PairOffer): Promise<void> {
+		console.warn(`[dg-chat] pair offer poll failed: ${describeError(error)}`);
+		if (Date.now() <= offer.expiresAt + POLL_FAILURE_GRACE_MS) return;
+		await serialize(() =>
+			settle(offer, () => Promise.resolve({ status: "expired" })),
 		);
 	}
 
@@ -243,7 +247,7 @@ export function registerPairOffer({
 			(error: unknown) =>
 				sendResponse({
 					status: "error",
-					error: error instanceof Error ? error.message : String(error),
+					error: describeError(error),
 				} satisfies PairOfferState),
 		);
 		return true;

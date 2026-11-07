@@ -29,11 +29,13 @@ const claimedBootstrap: SessionBootstrap = {
 	agentIdentity: "claude-reviewer",
 };
 
+const OFFER_EXPIRES_AT = Date.now() + 3_600_000;
+
 function offerBody(n: number) {
 	return {
 		offerId: `offer-${n}`,
 		code: String(100000 + n),
-		expiresAt: 9_000_000 + n,
+		expiresAt: OFFER_EXPIRES_AT + n,
 	};
 }
 
@@ -348,6 +350,32 @@ describe("registerPairOffer polling", () => {
 			}
 		},
 	);
+
+	test("a failing poll settles the offer as expired once its expiry plus the grace has passed", async () => {
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		const realNow = Date.now.bind(Date);
+		const now = spyOn(Date, "now");
+		try {
+			const harness = bootPolling();
+			await harness.request();
+			harness.daemon.state.pollAnswer = () =>
+				new Response("down", { status: 503 });
+			await until(() => harness.daemon.gets().length >= 2);
+			expect(harness.session.data).toHaveProperty(STORAGE_KEY);
+
+			now.mockImplementation(() => offerBody(1).expiresAt + 30_001);
+			await until(() => !(STORAGE_KEY in harness.session.data));
+			now.mockImplementation(realNow);
+			const settled = harness.daemon.gets().length;
+			await pause(POLL_MS * 6);
+
+			expect(harness.daemon.gets()).toHaveLength(settled);
+			expect(harness.adopt).not.toHaveBeenCalled();
+		} finally {
+			now.mockRestore();
+			warn.mockRestore();
+		}
+	});
 
 	test("a claim that lands after the original local deadline is still adopted", async () => {
 		const harness = bootPolling();

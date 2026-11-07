@@ -16,9 +16,11 @@ function makeApi(tabs: OpenTab[] = []) {
 	const clickListeners: Array<(tab?: chrome.tabs.Tab) => void> = [];
 	const tabsCreate = mock((_props: { url: string }) => Promise.resolve());
 	const tabsQuery = mock((_info: object) => Promise.resolve(tabs));
-	const tabsUpdate = mock((_id: number, _props: { active: boolean }) =>
-		Promise.resolve(),
+	const tabsUpdate = mock(
+		(_id: number, _props: { url?: string; active: boolean }) =>
+			Promise.resolve(),
 	);
+	const tabsReload = mock((_id: number) => Promise.resolve());
 	const windowsUpdate = mock((_id: number, _props: { focused: boolean }) =>
 		Promise.resolve(),
 	);
@@ -36,7 +38,12 @@ function makeApi(tabs: OpenTab[] = []) {
 			sendMessage,
 			openOptionsPage,
 		},
-		tabs: { create: tabsCreate, query: tabsQuery, update: tabsUpdate },
+		tabs: {
+			create: tabsCreate,
+			query: tabsQuery,
+			update: tabsUpdate,
+			reload: tabsReload,
+		},
 		windows: { update: windowsUpdate },
 	} as unknown as PagesBrowserApi;
 	return {
@@ -46,6 +53,7 @@ function makeApi(tabs: OpenTab[] = []) {
 		tabsCreate,
 		tabsQuery,
 		tabsUpdate,
+		tabsReload,
 		windowsUpdate,
 		sendMessage,
 		openOptionsPage,
@@ -99,13 +107,19 @@ describe("createPages overwatch-open", () => {
 		expect(url).not.toContain("overwatch.html");
 	});
 
-	test("focuses an open board tab and creates none", async () => {
+	test("navigates an open board tab to the bootstrap-bearing URL, reloads and focuses it, and creates none", async () => {
 		const setup = makeApi([
 			{ id: 41, windowId: 7, url: "http://127.0.0.1:4317/board" },
 		]);
-		const sendCompletion = await open(setup, makeBootstrap({ port: 4317 }));
+		const bootstrap = makeBootstrap({ port: 4317 });
+		const sendCompletion = await open(setup, bootstrap);
 
-		expect(setup.tabsUpdate).toHaveBeenCalledWith(41, { active: true });
+		const [tabId, props] = setup.tabsUpdate.mock.calls[0] ?? [];
+		expect(tabId).toBe(41);
+		expect(props?.active).toBe(true);
+		expect(new URL(props?.url ?? "").pathname).toBe("/board");
+		expect(readChatBootstrap(props?.url ?? "")).toEqual(bootstrap);
+		expect(setup.tabsReload).toHaveBeenCalledWith(41);
 		expect(setup.windowsUpdate).toHaveBeenCalledWith(7, { focused: true });
 		expect(setup.tabsCreate).not.toHaveBeenCalled();
 		expect(sendCompletion).toHaveBeenCalledWith({
@@ -124,7 +138,7 @@ describe("createPages overwatch-open", () => {
 			JSON.stringify(info),
 		);
 		for (const query of queries) expect(query).not.toContain("_chat");
-		expect(setup.tabsUpdate).toHaveBeenCalledWith(41, { active: true });
+		expect(setup.tabsUpdate.mock.calls[0]?.[0]).toBe(41);
 		expect(setup.tabsCreate).not.toHaveBeenCalled();
 	});
 

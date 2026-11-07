@@ -150,7 +150,12 @@ export function loadLocalBootstraps(
 	held = held.filter((entry) => !refused.includes(entry.token));
 	if (legacy || presented) storeLocalBootstraps(storage, held);
 	if (legacy) storage.remove(LEGACY_BOOTSTRAP_KEY);
-	return held;
+	const selected = presented
+		? held.find((entry) => entry.sessionId === presented.sessionId)
+		: undefined;
+	return selected
+		? [selected, ...held.filter((entry) => entry !== selected)]
+		: held;
 }
 
 export function loadLocalBootstrap(

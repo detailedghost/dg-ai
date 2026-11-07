@@ -225,10 +225,21 @@ test("loadLocalBootstraps keeps both sessions when two fragments load in the sam
 	loadLocalBootstraps(fakeWindow(chatUrl(a), undefined, replaced), storage);
 	const held = loadLocalBootstraps(fakeWindow(chatUrl(b), undefined, replaced), storage);
 
-	expect(held).toEqual([a, b]);
+	expect(held).toEqual([b, a]);
 	expect(heldIds(storage)).toEqual([a.sessionId, b.sessionId]);
 	expect(storage.get(LEGACY_KEY)).toBeNull();
 	expect(replaced).toEqual([BARE_CHAT, BARE_CHAT]);
+});
+
+test("loadLocalBootstraps lists the session from the new fragment first while keeping the held set", () => {
+	const storage = memoryStorage();
+	const [a, b] = [bootstrapFor(1), bootstrapFor(2)];
+	storeLocalBootstraps(storage, [a]);
+
+	const held = loadLocalBootstraps(fakeWindow(chatUrl(b)), storage);
+
+	expect(held).toEqual([b, a]);
+	expect(heldIds(storage)).toEqual([a.sessionId, b.sessionId]);
 });
 
 test("loadLocalBootstraps restores the whole held set on a reload without a fragment", () => {
