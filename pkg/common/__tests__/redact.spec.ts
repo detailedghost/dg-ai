@@ -176,7 +176,6 @@ describe("logging paths", () => {
 				sessionIds: ["sess-abc123", "22222222-2222-4222-8222-222222222222"],
 				port: 47823,
 				socket: { readyState: "closed", url: "ws://127.0.0.1:47823/ws" },
-				sidePanel: { open: true, lifecycle: "open" },
 				serviceWorker: { active: true, lifecycle: "running" },
 				lastMessages: [
 					{
@@ -195,7 +194,6 @@ describe("logging paths", () => {
 			sessionIds: string[];
 			port: number;
 			socket: { readyState: string };
-			sidePanel: { open: boolean };
 			serviceWorker: { lifecycle: string };
 			lastMessages: { direction: string; type: string; summary: string }[];
 			daemon: { reachable: boolean };
@@ -208,7 +206,7 @@ describe("logging paths", () => {
 		]);
 		expect(report.port).toBe(47823);
 		expect(report.socket.readyState).toBe("closed");
-		expect(report.sidePanel.open).toBe(true);
+		expect(report).not.toHaveProperty("sidePanel");
 		expect(report.serviceWorker.lifecycle).toBe("running");
 		expect(report.lastMessages[0]).toMatchObject({
 			direction: "out",

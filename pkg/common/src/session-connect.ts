@@ -6,13 +6,11 @@ export const CHAT_ATTACH_PATH = "/attach";
 export const CHAT_SESSIONS_CLEAR_PATH = "/sessions/clear";
 export const CHAT_SESSIONS_LOCAL_PATH = "/sessions/local";
 
-export type AttachIntent = "attach";
-
 export type AttachRequest = {
 	code?: string;
 	sessionId?: string;
 	all?: boolean;
-	intent: AttachIntent;
+	intent: "attach";
 };
 
 export type AttachCandidate = {
@@ -62,7 +60,7 @@ export function validateAttachRequest(value: unknown): AttachRequest {
 
 /** Decides whether an extension attach call may see session capabilities. */
 export function decideAttach(input: {
-	intent: AttachIntent;
+	intent: "attach";
 	sessionId?: string;
 	all?: boolean;
 	codeAccepted: boolean;

@@ -189,7 +189,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 					readyState: phase === "dropped" ? "closed" : connectionState,
 					url: port === undefined ? undefined : socketUrl(),
 				},
-				sidePanel: { lifecycle: "unknown" },
 				serviceWorker: { lifecycle: "active", active: true },
 				lastMessages: recent,
 				timers: {
