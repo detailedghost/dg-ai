@@ -109,7 +109,15 @@ export function pinOriginIfUnset(paths: DgPaths, origin: string): void {
 
 export function getPinnedOrigin(paths: DgPaths): string | undefined {
 	const pinned = readConfig(paths)[PINNED_ORIGIN_KEY];
-	return typeof pinned === "string" ? pinned : undefined;
+	if (typeof pinned !== "string") return undefined;
+	if (
+		pinned.startsWith("chrome-extension:") &&
+		pinned !== DG_CHROME_EXTENSION_ORIGIN
+	) {
+		writeConfig(paths, { [PINNED_ORIGIN_KEY]: DG_CHROME_EXTENSION_ORIGIN });
+		return DG_CHROME_EXTENSION_ORIGIN;
+	}
+	return pinned;
 }
 
 export function clearPinnedOrigin(paths: DgPaths): void {

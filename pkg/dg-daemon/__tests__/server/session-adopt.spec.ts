@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, validateSessionAdopt } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
+import { writeConfig } from "../../src/server/config-store";
 import { clearPinnedOrigin, getPinnedOrigin } from "../../src/server/origin";
 import {
 	bootServe,
@@ -102,6 +103,38 @@ describe("zero-touch extension link", () => {
 		expect(
 			getPinnedOrigin(resolveDgPaths({ env: { DG_HOME: dgHome } })),
 		).toBeUndefined();
+	});
+
+	it("replaces a stale chrome pin with the fixed extension origin", async () => {
+		const { port, dgHome } = await boot();
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		writeConfig(paths, {
+			pinnedOrigin: "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		});
+
+		await linkExtension(port);
+
+		expect(getPinnedOrigin(paths)).toBe(EXTENSION_ORIGIN);
+	});
+
+	it("keeps a firefox pin as it is", async () => {
+		const { port, dgHome } = await boot();
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		writeConfig(paths, { pinnedOrigin: "moz-extension://kept" });
+
+		const refused = await fetch(`http://127.0.0.1:${port}/ws`, {
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				Connection: "Upgrade",
+				Upgrade: "websocket",
+				"Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+				"Sec-WebSocket-Version": "13",
+				Origin: EXTENSION_ORIGIN,
+			},
+		});
+
+		expect(refused.status).toBe(400);
+		expect(getPinnedOrigin(paths)).toBe("moz-extension://kept");
 	});
 
 	it("pins the first firefox extension origin on first contact", async () => {
