@@ -242,7 +242,7 @@ export function registerAgentCommands(program: Command): void {
 					);
 					sessionId = result.newSession.sessionId;
 					if (argv.length === 0) {
-						await writeStdout(`${JSON.stringify(result.newSession)}\n`);
+						await writeStdout(`${JSON.stringify({ sessionId })}\n`);
 					}
 				} finally {
 					client.close();

@@ -119,7 +119,7 @@ describe("dg-daemon spawn", () => {
 		expect(result.exitCode).toBe(3);
 	});
 
-	it("keeps the bootstrap JSON when no command follows", async () => {
+	it("prints only the session id when no command follows", async () => {
 		const { port, bootstrap } = await startWithSession();
 
 		const result = await runCli(dgHome, port, [
@@ -129,9 +129,12 @@ describe("dg-daemon spawn", () => {
 		]);
 
 		expect(result.exitCode).toBe(0);
-		expect(Object.keys(JSON.parse(result.stdout)).sort()).toEqual(
-			expect.arrayContaining(["sessionId", "token"]),
+		const printed = JSON.parse(result.stdout) as { sessionId: string };
+		expect(Object.keys(printed)).toEqual(["sessionId"]);
+		expect((await sessionCredentials(dgHome, printed.sessionId)).sessionId).toBe(
+			printed.sessionId,
 		);
+		expect(result.stdout).not.toContain("token");
 	});
 
 	it("binds the spawned session to a distinct agent identity via --agent-identity", async () => {

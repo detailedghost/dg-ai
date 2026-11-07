@@ -148,8 +148,8 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 - `progress --state <running|awaiting-input>` — publish an explicit state. Any
   other value is rejected.
 - `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>] [-- <command...>]` —
-  spawn another background chat session. Without `--`, it prints the bootstrap
-  JSON. With `--`, it runs `<command...>` with `DG_SESSION_ID` set to the new
+  spawn another background chat session. Without `--`, it prints
+  `{"sessionId":"<id>"}` and no token. With `--`, it runs `<command...>` with `DG_SESSION_ID` set to the new
   session and exits with the exit code of that command. Example:
   `dg-agent spawn --workset review -- bun test`.
 - `stage <path>` — stage an asset for later presentation and print its id. The
