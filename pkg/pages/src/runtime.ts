@@ -1,6 +1,7 @@
 export type PageStorage = {
 	get(key: string): string | null;
 	set(key: string, value: string): void;
+	remove(key: string): void;
 };
 
 type RuntimeListener = (message: unknown) => void;
@@ -46,6 +47,9 @@ export function memoryStorage(): PageStorage {
 		set: (key, value) => {
 			entries.set(key, value);
 		},
+		remove: (key) => {
+			entries.delete(key);
+		},
 	};
 }
 
@@ -67,6 +71,14 @@ export function browserStorage(storage: Storage): PageStorage {
 				refused.delete(key);
 			} catch {
 				refused.set(key, value);
+			}
+		},
+		remove(key) {
+			refused.delete(key);
+			try {
+				storage.removeItem(key);
+			} catch {
+				refused.set(key, "");
 			}
 		},
 	};

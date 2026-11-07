@@ -1714,9 +1714,6 @@ test("regression #35: New chat on a stored session shows the background's reject
 			workset: "ws-1",
 		}),
 	);
-	expect(relaySentMessages).not.toContainEqual(
-		expect.objectContaining({ type: MSG.sessionLaunch }),
-	);
 	const error = root.querySelector(".chat-thread__error");
 	expect(error?.hasAttribute("hidden")).toBe(false);
 	expect(error?.textContent).toContain("not connected to the daemon");
@@ -1965,8 +1962,9 @@ for (const [presence, label] of PRESENCE_LABELS) {
 		for (const other of ALL_LABELS.filter((entry) => entry !== label)) {
 			expect(text).not.toContain(other);
 		}
-		expect(text).toContain(LONG_SESSION.agentIdentity);
-		expect(text).toContain(LONG_SESSION.sessionId.slice(0, 8));
+		expect(text).toContain(
+			`Talking to ${LONG_SESSION.agentIdentity} · ${LONG_SESSION.sessionId.slice(0, 8)} · ${label}`,
+		);
 		expect(text).not.toContain(LONG_SESSION.sessionId.slice(0, 9));
 	});
 }

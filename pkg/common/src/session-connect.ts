@@ -1,5 +1,5 @@
 import { fail, requireOneOf, requireRecord, requireString } from "./assert";
-import type { SessionRole } from "./chat-format";
+import type { SessionPresence, SessionRole } from "./chat-format";
 
 export const CHAT_ATTACH_PATH = "/attach";
 export const CHAT_SESSIONS_PATH = "/sessions";
@@ -28,6 +28,13 @@ export type AttachDecision =
 	| { action: "reject"; status: number; message: string }
 	| { action: "return"; sessionIds: string[] }
 	| { action: "create" };
+
+export type LocalAttachCandidate = {
+	sessionId: string;
+	role: SessionRole;
+	presence: SessionPresence;
+	state: "active" | "closed";
+};
 
 export type WaitingCandidate = {
 	sessionId: string;
@@ -118,6 +125,29 @@ export function decideAttach(input: {
 		return { action: "reject", status: 404, message: NONE_OPEN };
 	}
 	return { action: "return", sessionIds: active.map((session) => session.sessionId) };
+}
+
+/** Decides which one session a local page holding a live token may attach. */
+export function decideLocalAttach(input: {
+	sessionId?: string;
+	callerSessionId?: string;
+	registry: LocalAttachCandidate[];
+}): AttachDecision {
+	if (input.sessionId === undefined) {
+		return { action: "reject", status: 400, message: CHOOSE_ONE };
+	}
+	const match = input.registry.find(
+		(session) =>
+			session.sessionId === input.sessionId &&
+			session.sessionId !== input.callerSessionId &&
+			session.state === "active" &&
+			session.role === "agent" &&
+			session.presence === "cli",
+	);
+	if (!match) {
+		return { action: "reject", status: 404, message: "That session is not active." };
+	}
+	return { action: "return", sessionIds: [match.sessionId] };
 }
 
 /** Picks the session an already-running CLI should claim. */

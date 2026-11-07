@@ -25,6 +25,7 @@ export type ChatNode = {
 	transcript: TranscriptView;
 	composer: Composer;
 	render(entry: ChatSessionEntry): void;
+	setActive(active: boolean): void;
 	destroy(): void;
 };
 
@@ -171,6 +172,16 @@ export function createChatNode(
 		transcript,
 		composer,
 		render,
+		setActive(active: boolean): void {
+			if (!active) {
+				transcriptElement.remove();
+				composerElement.remove();
+				return;
+			}
+			if (transcriptElement.parentElement !== element) {
+				element.append(transcriptElement, composerElement);
+			}
+		},
 		destroy(): void {
 			element.remove();
 		},

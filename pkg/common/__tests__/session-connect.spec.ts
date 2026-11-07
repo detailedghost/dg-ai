@@ -5,6 +5,7 @@ import {
 	CHAT_SESSIONS_LOCAL_PATH,
 	CHAT_SESSIONS_PATH,
 	decideAttach,
+	decideLocalAttach,
 	selectWaitingSession,
 	validateAttachRequest,
 } from "../src/session-connect";
@@ -344,5 +345,64 @@ describe("selectWaitingSession", () => {
 			expect(missing.message).toBe("No session nope is registered.");
 			expect(missing.message).not.toContain(TOKEN);
 		}
+	});
+});
+
+describe("decideLocalAttach", () => {
+	type Candidate = Parameters<typeof decideLocalAttach>[0]["registry"][number];
+	const candidate = (overrides: Partial<Candidate> = {}): Candidate => ({
+		sessionId: "target",
+		role: "agent",
+		presence: "cli",
+		state: "active",
+		...overrides,
+	});
+	const NOT_ACTIVE = {
+		action: "reject",
+		status: 404,
+		message: "That session is not active.",
+	} as const;
+
+	it("returns only the requested session when it is active, role agent and presence cli", () => {
+		expect(
+			decideLocalAttach({
+				sessionId: "target",
+				registry: [candidate({ sessionId: "other" }), candidate()],
+			}),
+		).toEqual({ action: "return", sessionIds: ["target"] });
+	});
+
+	it("rejects the caller's own session with 404", () => {
+		expect(
+			decideLocalAttach({
+				sessionId: "target",
+				callerSessionId: "target",
+				registry: [candidate()],
+			}),
+		).toEqual(NOT_ACTIVE);
+	});
+
+	it("rejects a missing sessionId with 400 instead of listing sessions", () => {
+		expect(
+			decideLocalAttach({ registry: [candidate(), candidate({ sessionId: "b" })] }),
+		).toMatchObject({ action: "reject", status: 400 });
+	});
+
+	it("answers 404 for an unknown id, a closed session, a non-agent role and any presence other than cli", () => {
+		const cases: Partial<Candidate>[] = [
+			{ state: "closed" },
+			{ role: "orchestrator" },
+			{ presence: "idle" },
+			{ presence: "gone" },
+			{ presence: "waiting" },
+		];
+		for (const overrides of cases) {
+			expect(
+				decideLocalAttach({ sessionId: "target", registry: [candidate(overrides)] }),
+			).toEqual(NOT_ACTIVE);
+		}
+		expect(decideLocalAttach({ sessionId: "missing", registry: [candidate()] })).toEqual(
+			NOT_ACTIVE,
+		);
 	});
 });

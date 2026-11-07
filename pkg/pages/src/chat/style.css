@@ -468,6 +468,30 @@
 	white-space: nowrap;
 }
 
+.chat-rail__meta {
+	overflow: hidden;
+	color: var(--chat-muted);
+	font-family: var(--mono);
+	font-size: 0.68rem;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.chat-rail__row[aria-disabled="true"] {
+	opacity: 0.55;
+}
+
+.chat-rail__row[aria-disabled="true"] .chat-rail__focus {
+	cursor: not-allowed;
+}
+
+.chat-rail__entry-error {
+	margin: 0;
+	padding: 0 0.65rem 0.55rem;
+	color: var(--chat-accent);
+	font-size: 0.72rem;
+}
+
 .chat-rail__status,
 .chat-node__status {
 	margin-left: auto;

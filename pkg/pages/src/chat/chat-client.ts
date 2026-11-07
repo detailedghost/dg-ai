@@ -56,7 +56,6 @@ export type ChatClientOptions = {
 		url: string,
 		held: ReadonlyMap<string, string>,
 	) => ChatClientSocket;
-	heldSessionsOnly?: boolean;
 	backoffBaseMs?: number;
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
@@ -66,6 +65,7 @@ export type ChatClientOptions = {
 
 export type ChatClient = {
 	connect(bootstrap: SessionBootstrap): void;
+	addSession(bootstrap: SessionBootstrap): void;
 	onFrame(listener: (frame: ChatFrame) => void): void;
 	onConnectionChange(listener: ConnectionListener): void;
 	sendUserMessage(
@@ -367,15 +367,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 	function emitSessionList(): void {
 		if (!lastSessionList) return;
-		const frame = options.heldSessionsOnly
-			? {
-					...lastSessionList,
-					sessions: lastSessionList.sessions.filter((session) =>
-						capabilities.has(session.sessionId),
-					),
-				}
-			: lastSessionList;
-		for (const listener of frameListeners) listener(frame);
+		for (const listener of frameListeners) listener(lastSessionList);
 	}
 
 	function handleMessage(event: unknown): void {
@@ -460,8 +452,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		}
 
 		for (const listener of frameListeners) listener(frame);
-		if (frame.type === "session-pending" && options.heldSessionsOnly)
-			emitSessionList();
 	}
 
 	function openAndBind(): void {
@@ -520,20 +510,27 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		return messageId;
 	}
 
-	return {
-		connect(bootstrap: SessionBootstrap): void {
-			capabilities.set(bootstrap.sessionId, bootstrap.token);
-			noteSecret(bootstrap.token);
-			if (hasAttemptInFlight) {
-				if (connectionState === "connected") {
-					sendConnectHandshake(bootstrap.sessionId, bootstrap.token);
-					sendHistoryRequest(bootstrap.sessionId, bootstrap.token);
-				}
-				return;
+	function connectSession(bootstrap: SessionBootstrap): void {
+		capabilities.set(bootstrap.sessionId, bootstrap.token);
+		noteSecret(bootstrap.token);
+		if (hasAttemptInFlight) {
+			if (connectionState === "connected") {
+				sendConnectHandshake(bootstrap.sessionId, bootstrap.token);
+				sendHistoryRequest(bootstrap.sessionId, bootstrap.token);
 			}
-			hasAttemptInFlight = true;
-			port = bootstrap.port;
-			openAndBind();
+			return;
+		}
+		hasAttemptInFlight = true;
+		port = bootstrap.port;
+		openAndBind();
+	}
+
+	return {
+		connect: connectSession,
+
+		addSession(bootstrap: SessionBootstrap): void {
+			if (capabilities.has(bootstrap.sessionId)) return;
+			connectSession(bootstrap);
 		},
 
 		onFrame(listener: (frame: ChatFrame) => void): void {

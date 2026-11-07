@@ -1220,3 +1220,153 @@ test("sendCommandInvocation reports a failure and sends nothing while the socket
 		sentFrames(socket).filter((f) => f.type === "command-invocation"),
 	).toEqual([]);
 });
+
+const makeSecondBootstrap = () =>
+	makeBootstrap({ sessionId: "session-b", token: "token-b" });
+
+function frameSummary(socket: FakeSocket, from = 0) {
+	return socket.send.mock.calls
+		.slice(from)
+		.map(
+			([raw]) =>
+				JSON.parse(raw as string) as {
+					type: string;
+					sessionId: string;
+					token?: string;
+				},
+		)
+		.map((frame) => ({
+			type: frame.type,
+			sessionId: frame.sessionId,
+			token: frame.token,
+		}));
+}
+
+test("addSession on a connected client sends connect and history-request for the new session and nothing else", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const first = makeBootstrap();
+	const second = makeSecondBootstrap();
+	client.connect(first);
+	socket.dispatch("open");
+	await flushMicrotasks();
+	const before = socket.send.mock.calls.length;
+
+	client.addSession(second);
+	await flushMicrotasks();
+
+	expect(frameSummary(socket, before)).toEqual([
+		{ type: "connect", sessionId: second.sessionId, token: second.token },
+		{ type: "history-request", sessionId: second.sessionId, token: second.token },
+	]);
+});
+
+test("addSession on a connected client keeps the socket open", async () => {
+	let opened = 0;
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({
+		openSocket: () => {
+			opened += 1;
+			return socket;
+		},
+	});
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+
+	client.addSession(makeSecondBootstrap());
+	await flushMicrotasks();
+
+	expect(opened).toBe(1);
+});
+
+test("addSession before the socket opens joins the open-time handshake for both sessions exactly once", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const first = makeBootstrap();
+	const second = makeSecondBootstrap();
+	client.connect(first);
+
+	client.addSession(second);
+	expect(socket.send.mock.calls).toHaveLength(0);
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	const summary = frameSummary(socket);
+	for (const bootstrap of [first, second]) {
+		for (const type of ["connect", "history-request"]) {
+			expect(
+				summary.filter(
+					(frame) => frame.type === type && frame.sessionId === bootstrap.sessionId,
+				),
+			).toHaveLength(1);
+		}
+	}
+});
+
+test("addSession for a session the client already holds sends nothing", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const first = makeBootstrap();
+	client.connect(first);
+	socket.dispatch("open");
+	await flushMicrotasks();
+	const before = socket.send.mock.calls.length;
+
+	client.addSession(first);
+	client.addSession({ ...first, token: "another-token" });
+	await flushMicrotasks();
+
+	expect(socket.send.mock.calls).toHaveLength(before);
+});
+
+test("a session added with addSession is unconfirmed until a session-list includes it", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const first = makeBootstrap();
+	const second = makeSecondBootstrap();
+	client.connect(first);
+	socket.dispatch("open");
+	confirmSessions(socket, first.sessionId);
+
+	client.addSession(second);
+
+	expect(client.isSessionConfirmed?.(first.sessionId)).toBe(true);
+	expect(client.isSessionConfirmed?.(second.sessionId)).toBe(false);
+
+	confirmSessions(socket, first.sessionId, second.sessionId);
+
+	expect(client.isSessionConfirmed?.(second.sessionId)).toBe(true);
+});
+
+test("a session added with addSession can send once confirmed", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const second = makeSecondBootstrap();
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	client.addSession(second);
+	confirmSessions(socket, second.sessionId);
+
+	client.sendUserMessage(second.sessionId, "hello b", { messageId: "msg-b" });
+	await flushMicrotasks();
+
+	expect(
+		sentFrames(socket).find((frame) => frame.type === "user-message"),
+	).toMatchObject({ sessionId: second.sessionId, token: second.token, body: "hello b" });
+});
+
+test("session-list frames reach listeners unfiltered, including sessions the client does not hold", () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({ openSocket: () => socket });
+	const received: ChatFrame[] = [];
+	client.onFrame((frame) => received.push(frame));
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+
+	confirmSessions(socket, "session-a", "not-held");
+
+	const list = received.find((frame) => frame.type === "session-list");
+	expect(
+		list?.type === "session-list" && list.sessions.map((entry) => entry.sessionId),
+	).toEqual(["session-a", "not-held"]);
+});

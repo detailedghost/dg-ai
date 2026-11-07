@@ -34,6 +34,7 @@ import {
 	type PairClaimResponse,
 	type SessionRole,
 	decideAttach,
+	decideLocalAttach,
 	validateAttachRequest,
 	validateOverwatchAction,
 	validatePairClaimRequest,
@@ -79,6 +80,7 @@ import {
 	type SocketState,
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
+import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
@@ -272,6 +274,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 	};
 
 	const pairOffers = createPairOffers();
+	const attachLimiter = createAttachLimiter();
 	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
 		pairOffers.forget(sessionId);
 	});
@@ -388,7 +391,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
-				return handleAttach(req, deps);
+				return handleAttach(req, url, deps, attachLimiter);
 			}
 
 			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {
@@ -759,10 +762,110 @@ function pairingAttemptResponse(
 	});
 }
 
+function bearerToken(req: Request): string | undefined {
+	const authorization = req.headers.get("authorization");
+	return authorization?.startsWith("Bearer ")
+		? authorization.slice(7)
+		: undefined;
+}
+
+async function handleLocalAttach(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+	limiter: AttachLimiter,
+	bearer: string,
+): Promise<Response> {
+	const originError =
+		req.headers.get("origin") === null
+			? new Response("refused", { status: 400, headers: NOSNIFF_HEADERS })
+			: requireLocalPageOrigin(req, url, deps.port, (token) =>
+					deps.registry.tokenIsLive(token),
+				);
+	if (originError) return originError;
+	if (!limiter.allow(bearer)) {
+		return new Response("too many attach requests", {
+			status: 429,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	let request: ReturnType<typeof validateAttachRequest>;
+	try {
+		request = validateAttachRequest(await req.json());
+	} catch (err) {
+		return new Response(describeError(err), {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (request.intent === "create") {
+		return new Response("refused: local pages cannot create sessions", {
+			status: 403,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	if (request.all === true || request.code !== undefined) {
+		return new Response("refused: local pages attach one session by id", {
+			status: 400,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const records = deps.registry.list().flatMap((summary) => {
+		const record = deps.registry.get(summary.sessionId);
+		return record ? [record] : [];
+	});
+	const decision = decideLocalAttach({
+		sessionId: request.sessionId,
+		callerSessionId: records.find((record) =>
+			tokensEqual(record.token, bearer),
+		)?.sessionId,
+		registry: records.map((record) => ({
+			sessionId: record.sessionId,
+			role: record.role,
+			presence: deps.registry.presence(record),
+			state: record.state,
+		})),
+	});
+	if (decision.action === "reject") {
+		return new Response(decision.message, {
+			status: decision.status,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	const match = records.find(
+		(record) =>
+			decision.action === "return" &&
+			record.sessionId === decision.sessionIds[0],
+	);
+	if (!match) {
+		return new Response("That session is not active.", {
+			status: 404,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	noteSecret(match.token);
+	return json({
+		sessions: [
+			{
+				port: deps.port,
+				sessionId: match.sessionId,
+				token: match.token,
+				agentIdentity: match.agentIdentity,
+			},
+		],
+	});
+}
+
 async function handleAttach(
 	req: Request,
+	url: URL,
 	deps: HttpServerDeps,
+	limiter: AttachLimiter,
 ): Promise<Response> {
+	const bearer = bearerToken(req);
+	if (bearer !== undefined && claimsLocalPage(req, url, deps.port)) {
+		return handleLocalAttach(req, url, deps, limiter, bearer);
+	}
 	const originError = requirePairOrigin(req, deps.paths);
 	if (originError) return originError;
 	let body: unknown;
