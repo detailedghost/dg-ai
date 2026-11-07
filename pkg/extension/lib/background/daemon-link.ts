@@ -454,8 +454,14 @@ export function registerDaemonLink(
 		if ((await daemonPort()) === undefined) {
 			return { ok: false, error: DAEMON_UNREACHABLE };
 		}
-		const { port } = bootstrap;
-		const url = localPageUrl({ port, path: "/chat", bootstrap });
+		const live =
+			client.getConnectionState() === "connected" ? client.getPort?.() : undefined;
+		const port = live ?? bootstrap.port;
+		const url = localPageUrl({
+			port,
+			path: "/chat",
+			bootstrap: { ...bootstrap, port },
+		});
 		const chatPage = originAndPath(url);
 		const open = (
 			await (api.tabs.query?.({ url: `http://127.0.0.1:${port}/chat*` }) ?? [])

@@ -75,6 +75,8 @@ export type ChatClient = {
 		opts?: SendUserMessageOptions,
 	): string;
 	getConnectionState(): ChatConnectionState;
+	/** The daemon port the socket uses now, after any instance-matched rediscovery. */
+	getPort?(): number | undefined;
 	isSessionConfirmed?(sessionId: string): boolean;
 	sendUserMessageAndWait(
 		sessionId: string,
@@ -585,6 +587,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 		getConnectionState(): ChatConnectionState {
 			return connectionState;
+		},
+
+		getPort(): number | undefined {
+			return port;
 		},
 
 		requestNewSession(

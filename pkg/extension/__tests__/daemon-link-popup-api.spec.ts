@@ -411,6 +411,24 @@ describe("registerDaemonLink openChat", () => {
 		expect(readChatBootstrap(url)?.port).toBe(stored.port);
 	});
 
+	test("uses the port the connected socket rediscovered after a daemon restart", async () => {
+		const harness = boot();
+		await confirmed(harness);
+		const rediscovered = CHAT_DEFAULT_PORT + 2;
+		(harness.link.client as { getPort?: () => number | undefined }).getPort =
+			() => rediscovered;
+
+		const reply = await harness.fromPopup({
+			type: MSG.openChat,
+			sessionId: bootstrap.sessionId,
+		});
+
+		expect(reply).toEqual({ ok: true });
+		const url = (harness.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
+		expect(new URL(url).origin).toBe(`http://127.0.0.1:${rediscovered}`);
+		expect(readChatBootstrap(url)?.port).toBe(rediscovered);
+	});
+
 	test("looks for an open /chat tab on the daemon port", async () => {
 		const harness = boot();
 		await confirmed(harness);
