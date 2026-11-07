@@ -69,6 +69,7 @@ function boot() {
 	});
 	return {
 		adopt: link.adopt,
+		client: link.client,
 		api,
 		local,
 		socket,
@@ -157,6 +158,24 @@ describe("registerDaemonLink overwatch-open", () => {
 		await settle();
 		return { link, bootstrap };
 	}
+
+	test("asks the live daemon port, not the stored one, for the board code", async () => {
+		const { link, bootstrap } = await confirmed();
+		const livePort = bootstrap.port + 2;
+		(link.client as { getPort?: () => number | undefined }).getPort = () => livePort;
+
+		link.socket.dispatch("message", overwatchOpen("open-live"));
+		await settle();
+
+		const url = (link.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
+		expect(new URL(url).origin).toBe(`http://127.0.0.1:${livePort}`);
+		const mintCalls = (
+			globalThis.fetch as unknown as { mock: { calls: [string][] } }
+		).mock.calls.filter(([target]) => String(target).endsWith("/chat/code"));
+		expect(mintCalls.map(([target]) => target)).toEqual([
+			`http://127.0.0.1:${livePort}/chat/code`,
+		]);
+	});
 
 	test("opens /board with a one-time code, not the token, in the fragment and answers ok", async () => {
 		const { link, bootstrap } = await confirmed();

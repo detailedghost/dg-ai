@@ -551,7 +551,12 @@ export function registerDaemonLink(
 			broadcastPairingStatus();
 		}
 		const requestSocket = currentSocket;
-		const requestBootstrap = firstConfirmedBootstrap();
+		const confirmedBootstrap = firstConfirmedBootstrap();
+		const livePort = client.getPort?.();
+		const requestBootstrap =
+			confirmedBootstrap && livePort !== undefined
+				? { ...confirmedBootstrap, port: livePort }
+				: confirmedBootstrap;
 		pages.onFrame(frame, {
 			bootstrap: requestBootstrap,
 			sendCompletion(result) {
