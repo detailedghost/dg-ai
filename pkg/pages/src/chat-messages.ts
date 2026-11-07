@@ -5,7 +5,6 @@ export const CHAT_SESSION_KEY_PREFIX = "chat_session:";
 export const MSG = {
 	clientConnect: "dg-chat:client-connect",
 	userMessage: "dg-chat:user-message",
-	sessionCreate: "dg-chat:session-create",
 	sessionClose: "dg-chat:session-close",
 	sessionDisconnect: "dg-chat:session-disconnect",
 	frame: "dg-chat:frame",

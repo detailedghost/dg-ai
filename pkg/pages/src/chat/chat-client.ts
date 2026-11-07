@@ -83,11 +83,6 @@ export type ChatClient = {
 		body: string,
 		opts?: SendAndWaitOptions,
 	): Promise<SendUserMessageResult>;
-	requestNewSession(
-		requestingSessionId: string,
-		role: SessionRole,
-		workset?: string,
-	): void;
 	closeSession(sessionId: string): void;
 	disconnectSession(sessionId: string): Promise<void>;
 	forgetSession(sessionId: string): void;
@@ -590,30 +585,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 		getPort(): number | undefined {
 			return port;
-		},
-
-		requestNewSession(
-			requestingSessionId: string,
-			role: SessionRole,
-			workset?: string,
-		): void {
-			const token = capabilities.get(requestingSessionId);
-			if (!token) {
-				throw new Error(
-					`requestNewSession: session ${requestingSessionId} is not captured by this client`,
-				);
-			}
-			if (connectionState !== "connected") {
-				throw new Error("requestNewSession: not connected to the daemon");
-			}
-			send({
-				type: "session-create",
-				sessionId: requestingSessionId,
-				token,
-				protocolVersion: CHAT_PROTOCOL_VERSION,
-				role,
-				...(workset ? { workset } : {}),
-			});
 		},
 
 		disconnectSession(sessionId: string): Promise<void> {

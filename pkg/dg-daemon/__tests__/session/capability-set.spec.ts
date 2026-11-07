@@ -120,6 +120,40 @@ describe("session-create grants the requesting socket a new capability", () => {
 });
 
 describe("session-create authorization", () => {
+	it("refuses session-create from a page socket that holds a live capability and creates nothing", async () => {
+		const before = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		const page = wsExtensionSocket(port);
+		const frames = collectFrames(page);
+		await waitForOpen(page);
+		sendConnectHandshake(page, sessionA, CHAT_PROTOCOL_VERSION);
+		await waitForValue(
+			() => frames.find((f) => frameType(f) === "session-list"),
+			2000,
+			"the handshake session-list",
+		);
+
+		send(page, {
+			type: "session-create",
+			sessionId: sessionA.sessionId,
+			token: sessionA.token,
+			role: "agent",
+		});
+
+		await waitForValue(
+			() => frames.find((f) => frameType(f) === "error"),
+			2000,
+			"a refusal of session-create from a page socket",
+		);
+		const after = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(after.sessionCount).toBe(before.sessionCount);
+		expect(frames.some((f) => frameType(f) === "session-pending")).toBe(false);
+		page.close();
+	});
+
 	it("refuses session-create over a live socket's own capability when the token is wrong, and refuses it for a foreign session's real token — creating nothing either way", async () => {
 		const ws = await connectCli(port, sessionA);
 		const frames = collectFrames(ws);
@@ -312,11 +346,13 @@ describe("/ws capability capture via the post-connect handshake frame", () => {
 
 describe("session-list echoes workset and role, round-tripped through validateChatFrame", () => {
 	it("carries a worksetted orchestrator session in a session-list frame the shared validator accepts", async () => {
-		const ws = wsExtensionSocket(port);
-		await waitForOpen(ws);
-		const frames = collectFrames(ws);
-		sendConnectHandshake(ws, sessionA, CHAT_PROTOCOL_VERSION);
-		send(ws, {
+		const page = wsExtensionSocket(port);
+		await waitForOpen(page);
+		const frames = collectFrames(page);
+		sendConnectHandshake(page, sessionA, CHAT_PROTOCOL_VERSION);
+		const agent = await connectCli(port, sessionA);
+		const agentFrames = collectFrames(agent);
+		send(agent, {
 			type: "session-create",
 			sessionId: sessionA.sessionId,
 			token: sessionA.token,
@@ -325,7 +361,7 @@ describe("session-list echoes workset and role, round-tripped through validateCh
 		});
 
 		const pending = await waitForValue(
-			() => frames.find((f) => frameType(f) === "session-pending"),
+			() => agentFrames.find((f) => frameType(f) === "session-pending"),
 			2000,
 			"a session-pending response for the worksetted orchestrator session",
 		);
@@ -357,7 +393,8 @@ describe("session-list echoes workset and role, round-tripped through validateCh
 		expect(summary?.role).toBe("orchestrator");
 		expect(summary?.agentIdentity.length).toBeGreaterThan(0);
 
-		ws.close();
+		agent.close();
+		page.close();
 	});
 });
 

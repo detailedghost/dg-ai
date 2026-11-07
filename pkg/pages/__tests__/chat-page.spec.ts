@@ -70,8 +70,7 @@ function makeFakeClient(
 			detail?: string,
 		) => void
 	>();
-	const requestedSessions: Array<{ requestingSessionId: string }> = [];
-	const closedSessions: string[] = [];
+		const closedSessions: string[] = [];
 	let state: "connected" | "reconnecting" | "daemon-not-running" = initialState;
 	return {
 		client: {
@@ -103,9 +102,6 @@ function makeFakeClient(
 				}
 			},
 			getConnectionState: () => state,
-			requestNewSession: mock((requestingSessionId: string) => {
-				requestedSessions.push({ requestingSessionId });
-			}),
 			closeSession: mock((sessionId: string) => {
 				closedSessions.push(sessionId);
 			}),
@@ -120,8 +116,7 @@ function makeFakeClient(
 			state = next;
 			for (const listener of connectionListeners) listener(next, detail);
 		},
-		requestedSessions,
-		closedSessions,
+				closedSessions,
 	};
 }
 
@@ -231,33 +226,6 @@ test("the status badge on each node reflects that session's own state, including
 			?.querySelector("[data-status]")
 			?.getAttribute("data-status"),
 	).toBe("agent-gone");
-});
-
-test("the create-chat affordance asks the client for a new session bound to the requesting session", async () => {
-	const root = newRoot();
-	const fake = makeFakeClient();
-	await renderChatPage({
-		root,
-		createClient: () => fake.client as never,
-		loadBootstraps: async () => bootstraps(),
-	});
-	fake.emit(
-		sessionListFrame([
-			{
-				sessionId: "session-a",
-				agentIdentity: "claude-js",
-				role: "orchestrator",
-			},
-		]),
-	);
-
-	const createButton = root.querySelector<HTMLButtonElement>(
-		"[data-action='create-chat']",
-	);
-	expect(createButton).not.toBeNull();
-	createButton?.click();
-
-	expect(fake.requestedSessions.length).toBe(1);
 });
 
 test("the close control on a node emits a session-close frame for that session, not a local hide", async () => {
@@ -932,7 +900,6 @@ test("regression: the daemon-unreachable zero-state does not flash when connect(
 		sendUserMessage: mock(() => "message-id"),
 		sendUserMessageAndWait: mock(async () => ({ ok: true })),
 		getConnectionState: () => state,
-		requestNewSession: mock(() => {}),
 		closeSession: mock(() => {}),
 	};
 	await renderChatPage({
@@ -1081,7 +1048,7 @@ test("the canvas is an optional second view: off by default, revealed by an acce
 	expect(toggle.getAttribute("aria-pressed")).toBe("false");
 });
 
-test("the canvas chrome carries the create-chat button, the daemon banner and zoom controls", async () => {
+test("the canvas chrome carries the daemon banner and zoom controls but no create-chat button", async () => {
 	stubPositions();
 	const root = newRoot();
 	const fake = makeFakeClient();
@@ -1101,7 +1068,7 @@ test("the canvas chrome carries the create-chat button, the daemon banner and zo
 
 	const chrome = root.querySelector(".chat-canvas__chrome");
 	expect(chrome).not.toBeNull();
-	expect(chrome?.querySelector("[data-action='create-chat']")).not.toBeNull();
+	expect(chrome?.querySelector("[data-action='create-chat']")).toBeNull();
 	expect(chrome?.querySelector("[data-action='zoom-in']")).not.toBeNull();
 	expect(chrome?.querySelector("[data-action='zoom-out']")).not.toBeNull();
 	expect(chrome?.querySelector("[data-canvas-connection]")).not.toBeNull();
@@ -1304,25 +1271,6 @@ test("vim: x closes the session under the cursor", async () => {
 	expect(fake.closedSessions).toEqual(["session-a"]);
 });
 
-test("vim: the leader key requests a new chat session", async () => {
-	const root = newRoot();
-	const fake = makeFakeClient();
-	await renderChatPage({
-		root,
-		createClient: () => fake.client as never,
-		loadBootstraps: async () => bootstraps(),
-	});
-	fake.emit(
-		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
-	);
-	click(vimToggleButton(root));
-
-	keydown(root.ownerDocument, "\\");
-	keydown(root.ownerDocument, "n");
-
-	expect(fake.requestedSessions.length).toBe(1);
-});
-
 test("vim: Escape leaves vim mode", async () => {
 	const root = newRoot();
 	const fake = makeFakeClient();
@@ -1417,7 +1365,6 @@ test("the sidebar toolbar keeps common actions visible and moves rare actions in
 	).map((control) => (control as HTMLElement).dataset.action);
 
 	expect(visibleActions).toEqual([
-		"create-chat",
 		"toggle-canvas",
 		"toggle-overflow",
 	]);
@@ -1439,7 +1386,7 @@ test("every sidebar icon control has matching aria-label and title text", async 
 			control.getAttribute("title"),
 		]);
 
-	expect(labels.length).toBe(6);
+	expect(labels.length).toBe(5);
 	expect(labels.every(([label, title]) => label && label === title)).toBe(true);
 });
 
@@ -1516,78 +1463,6 @@ test("the daemon status pill is hidden when connected and names the state otherw
 	expect(pill.textContent).toBe("Daemon unreachable");
 });
 
-function createChatButton(root: HTMLElement): HTMLButtonElement {
-	return toolbarControl(root, "create-chat") as HTMLButtonElement;
-}
-
-test("the new chat button is enabled when connected and disabled while the daemon is unreachable", async () => {
-	const connected = newRoot();
-	await renderChatPage({
-		root: connected,
-		createClient: () => makeFakeClient("connected").client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: makeFakePairingMount().mount,
-	});
-	expect(createChatButton(connected).disabled).toBe(false);
-
-	const down = newRoot();
-	const downClient = makeFakeClient("daemon-not-running");
-	const unreachable = makeFakePairingMount();
-	await renderChatPage({
-		root: down,
-		createClient: () => downClient.client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: unreachable.mount,
-	});
-	downClient.emit(
-		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
-	);
-	const downButton = createChatButton(down);
-	expect(downButton.disabled).toBe(true);
-
-	unreachable.reportDaemon(false);
-	expect(downButton.disabled).toBe(true);
-
-	const up = newRoot();
-	const upClient = makeFakeClient("daemon-not-running");
-	const reachable = makeFakePairingMount();
-	await renderChatPage({
-		root: up,
-		createClient: () => upClient.client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: reachable.mount,
-	});
-	const upButton = createChatButton(up);
-	expect(upButton.disabled).toBe(true);
-	reachable.reportDaemon(true);
-	expect(upButton.disabled).toBe(false);
-});
-
-test("the new chat button stays disabled after a drop until the pairing mount reports the daemon up", async () => {
-	const root = newRoot();
-	const fake = makeFakeClient("connected");
-	const pairing = makeFakePairingMount();
-	await renderChatPage({
-		root,
-		createClient: () => fake.client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: pairing.mount,
-	});
-	pairing.reportDaemon(true);
-	const button = createChatButton(root);
-	expect(button.disabled).toBe(false);
-
-	fake.emitConnection("daemon-not-running");
-	expect(button.disabled).toBe(true);
-	expect(pairing.connectedCalls.at(-1)).toBe(false);
-
-	pairing.reportDaemon(true);
-	expect(button.disabled).toBe(false);
-
-	fake.emitConnection("daemon-not-running");
-	expect(button.disabled).toBe(false);
-});
-
 const NOT_PAIRED_HINT = "Not paired";
 
 function statusPill(root: HTMLElement): HTMLElement {
@@ -1659,198 +1534,6 @@ test("a connection change relayed from the service worker updates the pill with 
 
 	relayMessageListener?.({ type: MSG.connection, state: "connected" });
 	expect(pill.hidden).toBe(true);
-});
-
-function isSessionCreate(message: unknown): boolean {
-	return (
-		typeof message === "object" &&
-		message !== null &&
-		(message as { type?: unknown }).type === MSG.sessionCreate
-	);
-}
-
-async function renderRelayPageWithStoredSession(
-	reply: (message: unknown) => Promise<unknown>,
-): Promise<HTMLElement> {
-	const root = newRoot();
-	relaySentMessages.length = 0;
-	relayReply = (message) =>
-		isSessionCreate(message) ? reply(message) : relayDefaultReply(message);
-	const pairing = makeFakePairingMount();
-	await renderChatPage({
-		root,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: pairing.mount,
-	});
-	pairing.reportDaemon(true);
-	relayMessageListener?.({
-		type: MSG.frame,
-		frame: sessionListFrame([
-			{ sessionId: "session-a", agentIdentity: "claude-js", workset: "ws-1" },
-		]),
-	});
-	relayMessageListener?.({ type: MSG.connection, state: "reconnecting" });
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	return root;
-}
-
-test("regression #35: New chat on a stored session shows the background's rejection instead of failing silently", async () => {
-	const root = await renderRelayPageWithStoredSession(() =>
-		Promise.resolve({
-			ok: false,
-			error: "requestNewSession: not connected to the daemon",
-		}),
-	);
-	const button = createChatButton(root);
-	expect(button.disabled).toBe(false);
-	click(button);
-	await new Promise((resolve) => setTimeout(resolve, 0));
-
-	expect(relaySentMessages).toContainEqual(
-		expect.objectContaining({
-			type: MSG.sessionCreate,
-			sessionId: "session-a",
-			role: "agent",
-			workset: "ws-1",
-		}),
-	);
-	const error = root.querySelector(".chat-thread__error");
-	expect(error?.hasAttribute("hidden")).toBe(false);
-	expect(error?.textContent).toContain("not connected to the daemon");
-});
-
-test("regression #35: New chat on a stored session shows an error when the background never answers", async () => {
-	const root = await renderRelayPageWithStoredSession(() =>
-		Promise.reject(new Error("The message port closed before a response was received.")),
-	);
-	const button = createChatButton(root);
-	expect(button.disabled).toBe(false);
-	click(button);
-	await new Promise((resolve) => setTimeout(resolve, 0));
-
-	const error = root.querySelector(".chat-thread__error");
-	expect(error?.hasAttribute("hidden")).toBe(false);
-	expect(error?.textContent).toContain("message port closed");
-});
-
-test("New chat on a stored session leaves the error surface hidden when the background accepts", async () => {
-	const root = await renderRelayPageWithStoredSession(() =>
-		Promise.resolve({ ok: true }),
-	);
-	const button = createChatButton(root);
-	expect(button.disabled).toBe(false);
-	click(button);
-	await new Promise((resolve) => setTimeout(resolve, 0));
-
-	expect(relaySentMessages).toContainEqual(
-		expect.objectContaining({ type: MSG.sessionCreate }),
-	);
-	expect(root.querySelector(".chat-thread__error")?.hasAttribute("hidden")).toBe(true);
-});
-
-test("New chat with an injected client surfaces a synchronous requestNewSession failure", async () => {
-	const root = newRoot();
-	const fake = makeFakeClient();
-	fake.client.requestNewSession = mock(() => {
-		throw new Error("requestNewSession: not connected to the daemon");
-	});
-	const pairing = makeFakePairingMount();
-	await renderChatPage({
-		root,
-		createClient: () => fake.client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: pairing.mount,
-	});
-	pairing.reportDaemon(true);
-	fake.emit(
-		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
-	);
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	click(createChatButton(root));
-	await new Promise((resolve) => setTimeout(resolve, 0));
-
-	const error = root.querySelector(".chat-thread__error");
-	expect(error?.hasAttribute("hidden")).toBe(false);
-	expect(error?.textContent).toContain("not connected to the daemon");
-});
-
-test("New chat with an injected client keeps the error surface hidden when requestNewSession succeeds", async () => {
-	const root = newRoot();
-	const fake = makeFakeClient();
-	const pairing = makeFakePairingMount();
-	await renderChatPage({
-		root,
-		createClient: () => fake.client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: pairing.mount,
-	});
-	pairing.reportDaemon(true);
-	fake.emit(
-		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
-	);
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	click(createChatButton(root));
-	await new Promise((resolve) => setTimeout(resolve, 0));
-
-	expect(fake.requestedSessions).toEqual([{ requestingSessionId: "session-a" }]);
-	expect(root.querySelector(".chat-thread__error")?.hasAttribute("hidden")).toBe(true);
-});
-
-test("regression #35: a rejected New chat leaves the page reporting the socket as not connected", async () => {
-	const root = await renderRelayPageWithStoredSession(() =>
-		Promise.resolve({
-			ok: false,
-			error: "requestNewSession: not connected to the daemon",
-		}),
-	);
-	click(createChatButton(root));
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	root.querySelector<HTMLElement>(".chat-rail__focus")?.click();
-
-	const pill = statusPill(root);
-	expect(pill.hidden).toBe(false);
-	expect(pill.dataset.connection).toBe("reconnecting");
-});
-
-test("an accepted relayed request marks the page connected", async () => {
-	const root = await renderRelayPageWithStoredSession(() =>
-		Promise.resolve({ ok: true }),
-	);
-	click(createChatButton(root));
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	root.querySelector<HTMLElement>(".chat-rail__focus")?.click();
-
-	expect(statusPill(root).hidden).toBe(true);
-});
-
-test("New chat with an injected client whose wait rejects still shows the error", async () => {
-	const root = newRoot();
-	const fake = makeFakeClient();
-	const client = {
-		...fake.client,
-		requestNewSessionAndWait: mock(() =>
-			Promise.reject(new Error("relay channel closed")),
-		),
-	};
-	const pairing = makeFakePairingMount();
-	await renderChatPage({
-		root,
-		createClient: () => client as never,
-		loadBootstraps: async () => bootstraps(),
-		mountPairing: pairing.mount,
-	});
-	pairing.reportDaemon(true);
-	fake.emit(
-		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
-	);
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	click(createChatButton(root));
-	await new Promise((resolve) => setTimeout(resolve, 0));
-
-	expect(client.requestNewSessionAndWait).toHaveBeenCalledTimes(1);
-	const error = root.querySelector(".chat-thread__error");
-	expect(error?.hasAttribute("hidden")).toBe(false);
-	expect(error?.textContent).toContain("relay channel closed");
 });
 
 const RECORDED_SESSION = {
@@ -1967,3 +1650,22 @@ for (const [presence, label] of PRESENCE_LABELS) {
 		expect(text).not.toContain(LONG_SESSION.sessionId.slice(0, 9));
 	});
 }
+
+test("the page offers no way to create a session", async () => {
+	const root = newRoot();
+	const fake = makeFakeClient();
+	await renderChatPage({
+		root,
+		createClient: () => fake.client as never,
+		loadBootstraps: async () => bootstraps(),
+	});
+	fake.emit(
+		sessionListFrame([{ sessionId: "session-a", agentIdentity: "claude-js" }]),
+	);
+	click(vimToggleButton(root));
+	keydown(root.ownerDocument, "\\");
+	keydown(root.ownerDocument, "n");
+
+	expect(root.querySelector("[data-action='create-chat']")).toBeNull();
+	expect("requestNewSession" in fake.client).toBe(false);
+});

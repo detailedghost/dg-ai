@@ -43,7 +43,6 @@ function makeFakeClient() {
 			},
 			sendUserMessage: mock(() => "message-id"),
 			getConnectionState: () => "connected" as const,
-			requestNewSession: mock(() => {}),
 			closeSession: mock(() => {}),
 		},
 		emit(frame: ChatFrame) {

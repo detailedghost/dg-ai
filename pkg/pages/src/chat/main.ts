@@ -3,7 +3,6 @@ import {
 	type CommandEntry,
 	OVERWATCH_SESSION_ID,
 	type SessionBootstrap,
-	type SessionRole,
 	validateChatFrame,
 } from "@dg/common";
 import { MSG } from "../chat-messages";
@@ -126,11 +125,6 @@ type PageChatClient = ChatClient & {
 		sessionId: string,
 		commandLabel: string,
 		params?: Record<string, unknown>,
-	): Promise<SendResult>;
-	requestNewSessionAndWait(
-		requestingSessionId: string,
-		role: SessionRole,
-		workset?: string,
 	): Promise<SendResult>;
 };
 
@@ -293,33 +287,6 @@ function createRelayChatClient(runtime: RelayRuntime): PageChatClient {
 			return connectionState;
 		},
 
-		requestNewSession(
-			requestingSessionId: string,
-			role: SessionRole,
-			workset?: string,
-		): void {
-			if (!knownSessions.has(requestingSessionId)) {
-				throw new Error(
-					`Session ${requestingSessionId} is not available in this chat page`,
-				);
-			}
-			send(sessionCreateMessage(requestingSessionId, role, workset));
-		},
-
-		requestNewSessionAndWait(
-			requestingSessionId: string,
-			role: SessionRole,
-			workset?: string,
-		): Promise<SendResult> {
-			if (!knownSessions.has(requestingSessionId)) {
-				return Promise.resolve({
-					ok: false,
-					error: `Session ${requestingSessionId} is not available in this chat page`,
-				});
-			}
-			return sendAndWait(sessionCreateMessage(requestingSessionId, role, workset));
-		},
-
 		disconnectSession(sessionId: string): Promise<void> {
 			return sendAndWait({ type: MSG.sessionDisconnect, sessionId }).then((reply) => {
 				if (!reply.ok) throw new Error(reply.error);
@@ -363,45 +330,6 @@ function createRelayChatClient(runtime: RelayRuntime): PageChatClient {
 			});
 		},
 	};
-}
-
-function sessionCreateMessage(
-	requestingSessionId: string,
-	role: SessionRole,
-	workset?: string,
-): Record<string, unknown> {
-	return {
-		type: MSG.sessionCreate,
-		sessionId: requestingSessionId,
-		role,
-		...(workset ? { workset } : {}),
-	};
-}
-
-function requestNewSessionThroughClient(
-	client: ChatClient,
-	requestingSessionId: string,
-	role: SessionRole,
-	workset?: string,
-): Promise<SendResult> {
-	const maybeRelay = client as Partial<PageChatClient>;
-	if (maybeRelay.requestNewSessionAndWait) {
-		return maybeRelay
-			.requestNewSessionAndWait(requestingSessionId, role, workset)
-			.catch((error: unknown): SendResult => ({
-				ok: false,
-				error: error instanceof Error ? error.message : String(error),
-			}));
-	}
-	try {
-		client.requestNewSession(requestingSessionId, role, workset);
-		return Promise.resolve({ ok: true });
-	} catch (error) {
-		return Promise.resolve({
-			ok: false,
-			error: error instanceof Error ? error.message : String(error),
-		});
-	}
 }
 
 function dispatchCommandThroughClient(
@@ -504,8 +432,6 @@ export async function renderChatPage(
 	let order = bootstraps.map((bootstrap) => bootstrap.sessionId);
 	let selectedSessionId: string | undefined = order[0];
 	let tokenRejected = false;
-	// A stored session is not a live daemon. Stay false until the pairing probe reports.
-	let daemonReachable = !options.mountPairing;
 	let connectionDetail: string | undefined;
 	let moving: { sessionId: string; originalOrder: string[] } | undefined;
 	let activeDrag: { sessionId: string; cancel(): void } | undefined;
@@ -525,14 +451,6 @@ export async function renderChatPage(
 	const railActions = element(doc, "div", "chat-rail__actions");
 	railActions.setAttribute("role", "toolbar");
 	railActions.setAttribute("aria-label", "Sidebar actions");
-	const createButton = iconControl(
-		doc,
-		"button",
-		"create-chat",
-		"plus",
-		"New chat",
-	);
-	createButton.classList.add("chat-icon-button--primary");
 	const canvasButton = iconControl(
 		doc,
 		"button",
@@ -582,7 +500,7 @@ export async function renderChatPage(
 		control.append(element(doc, "span", "chat-rail__overflow-label", label));
 	}
 	overflowMenu.append(...overflowItems.map(([control]) => control));
-	railActions.append(createButton, canvasButton, overflowButton, overflowMenu);
+	railActions.append(canvasButton, overflowButton, overflowMenu);
 	railHeader.append(brand, railActions, connectionStatus);
 	const vimFilterInput = element(doc, "input", "chat-vimfilter");
 	vimFilterInput.type = "text";
@@ -617,10 +535,6 @@ export async function renderChatPage(
 	const pairing = options.mountPairing?.(pairHost, {
 		initialConnected:
 			bootstraps.length > 0 && client.getConnectionState() === "connected",
-		onDaemon(reachable) {
-			daemonReachable = reachable;
-			syncCreateChatDisabled();
-		},
 	});
 
 	let canvas: ReturnType<typeof createChatCanvas> | undefined;
@@ -651,15 +565,6 @@ export async function renderChatPage(
 		});
 
 		const canvasChrome = canvas.chromeElement;
-		const canvasCreate = element(
-			doc,
-			"button",
-			"chat-button chat-button--primary",
-			"+ New",
-		);
-		canvasCreate.type = "button";
-		canvasCreate.dataset.action = "create-chat";
-		canvasCreate.addEventListener("click", requestNewChatSession);
 		const zoomOut = element(doc, "button", "chat-button", "Zoom out");
 		zoomOut.type = "button";
 		zoomOut.dataset.action = "zoom-out";
@@ -671,7 +576,7 @@ export async function renderChatPage(
 		const canvasConnection = element(doc, "div", "chat-canvas__connection");
 		canvasConnection.dataset.canvasConnection = "";
 		canvasConnection.setAttribute("role", "status");
-		canvasChrome.append(canvasConnection, zoomOut, zoomIn, canvasCreate);
+		canvasChrome.append(canvasConnection, zoomOut, zoomIn);
 		updateConnectionStatus();
 	}
 
@@ -836,27 +741,6 @@ export async function renderChatPage(
 		moveStatus.textContent = message;
 	}
 
-	function requestNewChatSession(): void {
-		const requestingSessionId =
-			(selectedSessionId && bootstrapBySession.has(selectedSessionId)
-				? selectedSessionId
-				: undefined) ??
-			[...bootstrapBySession.keys()][0];
-		if (requestingSessionId) {
-			const selected = sessions.get(requestingSessionId);
-			void requestNewSessionThroughClient(
-				client,
-				requestingSessionId,
-				"agent",
-				selected?.workset,
-			).then((result) => {
-				if (!result.ok) showError(result.error);
-			});
-			return;
-		}
-		showError("Start a chat from your agent, then open its link.");
-	}
-
 	function showError(error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
 		threadError.textContent = redactSecrets(message, [
@@ -867,15 +751,6 @@ export async function renderChatPage(
 
 	function isPaired(): boolean {
 		return !tokenRejected && (bootstraps.length > 0 || sessions.list().length > 0);
-	}
-
-	function syncCreateChatDisabled(): void {
-		const disabled =
-			client.getConnectionState() === "daemon-not-running" && !daemonReachable;
-		for (const create of root.querySelectorAll<HTMLButtonElement>(
-			'button[data-action="create-chat"]',
-		))
-			create.disabled = disabled;
 	}
 
 	function isSessionConfirmed(): boolean {
@@ -911,7 +786,6 @@ export async function renderChatPage(
 		connectionStatus.hidden = state === "connected";
 		const message = connectionStatusLabel(state, connectionDetail);
 		connectionStatus.textContent = message;
-		syncCreateChatDisabled();
 		const canvasBanner = canvasContainer?.querySelector<HTMLElement>(
 			"[data-canvas-connection]",
 		);
@@ -1351,9 +1225,6 @@ export async function renderChatPage(
 				},
 			},
 		},
-		leaderActions: {
-			n: () => requestNewChatSession(),
-		},
 		onCursorChange: (_list, id) => {
 			vimCursorId = id;
 			paintVimCursor();
@@ -1409,8 +1280,6 @@ export async function renderChatPage(
 		setOverflowOpen(false);
 	});
 	syncThemeButton();
-
-	createButton.addEventListener("click", requestNewChatSession);
 
 	vimToggle.addEventListener("click", () => {
 		if (vim.isActive()) vim.disable();
@@ -1524,20 +1393,8 @@ export async function renderChatPage(
 		}
 	});
 
-	// Entering daemon-not-running retires the last probe. A repeat of the same
-	// state must not clear a probe that already answered for this drop:
-	// setConnected starts another refresh, and clearing here would disable
-	// New chat until that refresh got past findPort.
-	let lastConnectionState = client.getConnectionState();
-	client.onConnectionChange((state, detail) => {
+	client.onConnectionChange((_state, detail) => {
 		connectionDetail = detail;
-		if (
-			state === "daemon-not-running" &&
-			lastConnectionState !== "daemon-not-running"
-		) {
-			daemonReachable = false;
-		}
-		lastConnectionState = state;
 		updateConnectionStatus();
 	});
 
