@@ -68,6 +68,8 @@ import {
 } from "@dg/pages/chat/chat-client";
 
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
+const LINK_RETRY_ALARM = "dg-link-retry";
+const LINK_RETRY_PERIOD_MINUTES = 0.5;
 const DAEMON_ID_KEY = "daemon:id";
 const DAEMON_UNREACHABLE =
 	"Daemon unreachable. Start it with dg-agent start, then retry.";
@@ -86,6 +88,11 @@ export type ChatBrowserApi = PagesBrowserApi & {
 		getManifest?(): { version: string };
 		onStartup?: { addListener(listener: () => void): void };
 		onInstalled?: { addListener(listener: () => void): void };
+	};
+	alarms?: {
+		create(name: string, info: { periodInMinutes: number }): unknown;
+		clear(name: string): unknown;
+		onAlarm: { addListener(listener: (alarm: { name: string }) => void): void };
 	};
 	storage: {
 		local: PairingStorage;
@@ -555,7 +562,25 @@ export function registerDaemonLink(
 			.catch(() => {});
 	}
 
-	client.onConnectionChange((_state, detail) => broadcastPairingStatus(detail));
+	let linkRetryArmed = false;
+	function syncLinkRetryAlarm(state: ReturnType<ChatClient["getConnectionState"]>): void {
+		if (!api.alarms) return;
+		if (state === "connected") {
+			if (!linkRetryArmed) return;
+			linkRetryArmed = false;
+			void Promise.resolve(api.alarms.clear(LINK_RETRY_ALARM)).catch(() => {});
+		} else if (!linkRetryArmed) {
+			linkRetryArmed = true;
+			api.alarms.create(LINK_RETRY_ALARM, {
+				periodInMinutes: LINK_RETRY_PERIOD_MINUTES,
+			});
+		}
+	}
+
+	client.onConnectionChange((state, detail) => {
+		syncLinkRetryAlarm(state);
+		broadcastPairingStatus(detail);
+	});
 
 	client.onFrame((frame) => {
 		if (dispatcher.dispatch(frame)) return;
@@ -663,6 +688,16 @@ export function registerDaemonLink(
 		client.openLink?.(port ?? CHAT_DEFAULT_PORT);
 	}
 	void startLink();
+	syncLinkRetryAlarm(client.getConnectionState());
+	api.alarms?.onAlarm.addListener((alarm) => {
+		if (alarm.name !== LINK_RETRY_ALARM) return;
+		if (client.getConnectionState() === "connected") return;
+		void (async () => {
+			await ready;
+			const port = await daemonPort();
+			client.openLink?.(port ?? CHAT_DEFAULT_PORT);
+		})();
+	});
 	const wakeWorker = () => void ready;
 	api.runtime.onStartup?.addListener(wakeWorker);
 	api.runtime.onInstalled?.addListener(wakeWorker);
