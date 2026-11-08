@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { slugify } from "@dg/common";
 import { selfCommand } from "@dg/common/node";
@@ -99,7 +99,7 @@ describe("demo <plan> with a headless browser plan", () => {
 	};
 
 	afterEach(() => {
-		delete process.env.DEMO_LOCAL_PW;
+		delete process.env.DG_DEMO_LOCAL_PW;
 	});
 
 	test("records unattended with no flag", async () => {
@@ -110,10 +110,10 @@ describe("demo <plan> with a headless browser plan", () => {
 	});
 
 	test("exits 2 when excluded setup needs a person to type an unset variable", async () => {
-		delete process.env.DEMO_LOCAL_PW;
+		delete process.env.DG_DEMO_LOCAL_PW;
 		const run = await world.drive(
 			registerDemo,
-			["demo", withSetup("$DEMO_LOCAL_PW")],
+			["demo", withSetup("$DG_DEMO_LOCAL_PW")],
 			demoDeps(headless()),
 		);
 		expect(run.code).toBe(2);
@@ -122,27 +122,27 @@ describe("demo <plan> with a headless browser plan", () => {
 	});
 
 	test("exits 2 in the foreground when a recorded step names an unset variable", async () => {
-		delete process.env.DEMO_LOCAL_PW;
+		delete process.env.DG_DEMO_LOCAL_PW;
 		const plan = JSON.parse(readFileSync(world.planPath, "utf8"));
 		const file = join(dirname(world.planPath), "recorded-login.json");
 		writeFileSync(
 			file,
 			JSON.stringify({
 				...plan,
-				steps: [...plan.steps, { title: "Password", body: "Sign in.", selector: "#pw", action: { do: "fill", value: "$DEMO_LOCAL_PW" } }],
+				steps: [...plan.steps, { title: "Password", body: "Sign in.", selector: "#pw", action: { do: "fill", value: "$DG_DEMO_LOCAL_PW" } }],
 			}),
 		);
 		const run = await world.drive(registerDemo, ["demo", file], demoDeps(headless()));
 		expect(run.code).toBe(2);
-		expect(run.err).toContain("demo: set $DEMO_LOCAL_PW or move the login to ## Setup");
+		expect(run.err).toContain("demo: set $DG_DEMO_LOCAL_PW or move the login to ## Setup");
 		expect(world.spawned).toHaveLength(0);
 	});
 
 	test("runs setup unattended when its variable is set", async () => {
-		process.env.DEMO_LOCAL_PW = "x";
+		process.env.DG_DEMO_LOCAL_PW = "x";
 		const run = await world.drive(
 			registerDemo,
-			["demo", withSetup("$DEMO_LOCAL_PW")],
+			["demo", withSetup("$DG_DEMO_LOCAL_PW")],
 			demoDeps(headless()),
 		);
 		expect(run.code).toBe(0);
@@ -396,8 +396,33 @@ describe("demo <plan> browser selection", () => {
 		);
 		expect(run.code).toBe(1);
 		expect(run.err).toContain("demo: --out must be outside a git work tree");
-		expect(checked).toEqual([world.home]);
+		expect(checked).toEqual([realpathSync(world.home)]);
 		expect(world.spawned).toHaveLength(0);
+	});
+
+	test("--out checks the real path of a symlinked parent", async () => {
+		const real = join(world.home, "real");
+		mkdirSync(real);
+		symlinkSync(real, join(world.home, "link"));
+		const checked: string[] = [];
+		const run = await world.drive(
+			registerDemo,
+			["demo", "--out", join(world.home, "link", "x.mp4"), world.planPath],
+			demoDeps({ inGitWorkTree: (dir) => (checked.push(dir), true) }),
+		);
+		expect(run.code).toBe(1);
+		expect(checked).toEqual([realpathSync(real)]);
+	});
+
+	test("--out is passed to the player as an absolute path", async () => {
+		const previous = process.cwd();
+		process.chdir(world.home);
+		try {
+			await world.drive(registerDemo, ["demo", "--out", "rel/x.mp4", world.planPath], demoDeps());
+		} finally {
+			process.chdir(previous);
+		}
+		expect(playerJob().out).toBe(join(realpathSync(world.home), "rel", "x.mp4"));
 	});
 
 	test("--out outside a git work tree is passed to the player", async () => {

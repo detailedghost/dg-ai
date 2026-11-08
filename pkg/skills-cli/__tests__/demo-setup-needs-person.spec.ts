@@ -28,24 +28,24 @@ describe("setupNeedsPerson", () => {
 		expect(setupNeedsPerson(excluded(fill("dante")), {})).toBe(false);
 	});
 	test("is true when a setup fill names an unset variable", () => {
-		expect(setupNeedsPerson(excluded(fill("$DEMO_PW")), {})).toBe(true);
+		expect(setupNeedsPerson(excluded(fill("$DG_DEMO_PW")), {})).toBe(true);
 	});
 	test("is true when the variable is empty", () => {
-		expect(setupNeedsPerson(excluded(fill("$DEMO_PW")), { DEMO_PW: "" })).toBe(true);
+		expect(setupNeedsPerson(excluded(fill("$DG_DEMO_PW")), { DG_DEMO_PW: "" })).toBe(true);
 	});
 	test("is false when every variable is set", () => {
-		expect(setupNeedsPerson(excluded(fill("$DEMO_PW")), { DEMO_PW: "x" })).toBe(false);
+		expect(setupNeedsPerson(excluded(fill("$DG_DEMO_PW")), { DG_DEMO_PW: "x" })).toBe(false);
 	});
 	test("is false when setup is part of the tour", () => {
 		expect(
-			setupNeedsPerson({ ...base, setup: { includeInTour: true, steps: [fill("$DEMO_PW")] } }, {}),
+			setupNeedsPerson({ ...base, setup: { includeInTour: true, steps: [fill("$DG_DEMO_PW")] } }, {}),
 		).toBe(false);
 	});
 });
 
 describe("unsetFillVariables", () => {
 	test("lists each unset variable once, in step order", () => {
-		const steps = [fill("$B"), fill("$A"), fill("$B"), fill("$SET"), fill("plain")];
-		expect(unsetFillVariables(steps, { SET: "1" })).toEqual(["B", "A"]);
+		const steps = [fill("$DG_DEMO_B"), fill("$DG_DEMO_A"), fill("$DG_DEMO_B"), fill("$DG_DEMO_SET"), fill("plain")];
+		expect(unsetFillVariables(steps, { DG_DEMO_SET: "1" })).toEqual(["DG_DEMO_B", "DG_DEMO_A"]);
 	});
 });

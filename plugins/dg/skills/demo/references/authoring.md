@@ -34,7 +34,7 @@ N. **<title>** [`<css-selector>`] [→ <navigate-url>] [<action>] — <body> [`<
 - `→ <navigate-url>` — navigate here before showing this step (multi-page).
 - `<action>` — an action the **tour itself** performs on the spotlighted
   element: `@click` (clicks it) or `@type="<text>"` (types `<text>` into it, or the
-  value of env var `NAME` when `<text>` is `$NAME`; see [Credentials](#credentials) —
+  value of env var `DG_DEMO_*` when `<text>` is `$DG_DEMO_*`; see [Credentials](#credentials) —
   a literal `"` or `\` inside `<text>` must be escaped as `\"` / `\\`). Omit
   for no automatic action — the step just spotlights. **With `--ext`, timing is mode-aware:**
   in `video` mode it fires on a short timer right after the callout shows
@@ -114,18 +114,21 @@ you set one. Only local mode uses them.
 
 ## Credentials
 
-`@type="$NAME"` types the value of env var `NAME`. The name must match
-`^\$[A-Z_][A-Z0-9_]*$`. The plan never holds the value, and logs and results never
-print it.
+`@type="$DG_DEMO_VELORA_PW"` types the value of that env var. Only `$DG_DEMO_*`
+variables resolve, with names matching `^\$DG_DEMO_[A-Z0-9_]+$`, and only into
+`input[type=password]` fields. A value like `$AWS_SECRET_ACCESS_KEY` fails validation,
+and a non-password target fails the run. The plan never holds the value, and logs and
+results never print it.
 
 - In a recorded step, an unset `NAME` refuses with exit 2:
-  `demo: set $NAME or move the login to ## Setup`.
+  `demo: set $DG_DEMO_VELORA_PW or move the login to ## Setup`.
 - In `## Setup` with `includeSetup: false`, the login runs in an unrecorded context and
   hands its session to the recording.
 - If a setup fill names an unset variable, a headed window opens, shows
-  "Type it here, then continue.", and waits for a navigation or for the next setup
-  step's selector to appear. End setup on the page after login, for example with a
-  last setup step that targets an element of the signed-in page.
+  "Type it here, then continue.", and waits for a navigation, for Enter or a blur in
+  the filled field, or for the next setup step's selector to appear. After a
+  navigation, the run skips each later setup step whose selector does not show within
+  2 s and prints `skipped setup step N after the sign-in`.
 - On a headless-only plan (WSL without `--windows` or `--wsl-headed`), that case
   refuses with exit 2.
 - `demo --verify` reports `env-unset` and names the variable.
@@ -191,7 +194,7 @@ video in source order.
 Setup actions (`@click` / `@type="..."`, see the step-line grammar above) are
 stored in the Markdown plan and URL marker. Never put credentials, passwords,
 API/session tokens, recovery codes, or MFA/one-time codes in an `@type="..."`
-action's value. Use `@type="$NAME"` for a secret that an env var holds.
+action's value. Use `@type="$DG_DEMO_VELORA_PW"` for a password that an env var holds.
 With `--ext`, you can also leave sensitive fields as manual, user-paced setup steps
 (no action, `click` or `next` timing) so the user enters those values directly.
 With `--ext`, playback always asks for explicit approval before any authored setup

@@ -15,8 +15,8 @@ Local mode has no start screen. It records at once and saves
 `<cacheDir>/demos/<slug>/<slug>-<stamp>.mp4`. Add `-n` for a Kokoro voice. Pass
 `--out <file>.mp4` to pick the path. Install `ffmpeg` for MP4 output. With `--ext`,
 you review the plan in the extension, and video lands in your Downloads folder.
-Type a secret with `@type="$NAME"` in the plan. The recorder reads env var `NAME`,
-and the plan never holds the value.
+Type a password with `@type="$DG_DEMO_VELORA_PW"` in the plan. Only `$DG_DEMO_*`
+variables resolve, and only into password fields. The plan never holds the value.
 
 Tours can include a setup phase for login, configuration, or seeded data. Setup
 is excluded from the tutorial and recording by default, but can be explicitly

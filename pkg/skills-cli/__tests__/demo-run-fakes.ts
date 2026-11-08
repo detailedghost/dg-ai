@@ -5,6 +5,7 @@ import { GEOMETRY } from "../src/demo/recorder/encode";
 import type { PlayerSession } from "../src/demo/player-process";
 
 export type FakeLocator = {
+	filled: string[];
 	focused: number;
 	typed: string[];
 	clicked: number;
@@ -16,6 +17,9 @@ export type FakeOptions = {
 	hang?: boolean;
 	noVideo?: boolean;
 	visible?: Record<string, boolean>;
+	notPassword?: string[];
+	navigatesOnPrompt?: boolean;
+	gotoDelayMs?: number;
 };
 
 export type OpenCall = { record: boolean; state: unknown };
@@ -28,7 +32,7 @@ export function fakeBrowser(options: FakeOptions) {
 	const evaluated: unknown[] = [];
 
 	const locatorFor = (selector: string) => {
-		const state = locators.get(selector) ?? { focused: 0, typed: [], clicked: 0 };
+		const state = locators.get(selector) ?? { filled: [], focused: 0, typed: [], clicked: 0 };
 		locators.set(selector, state);
 		const handle = {
 			waitFor: async () => {
@@ -37,6 +41,8 @@ export function fakeBrowser(options: FakeOptions) {
 			scrollIntoViewIfNeeded: async () => undefined,
 			boundingBox: async () => null,
 			isVisible: async () => options.visible?.[selector] ?? true,
+			evaluate: async () => !options.notPassword?.includes(selector),
+			fill: async (text: string) => void state.filled.push(text),
 			focus: async () => void state.focused++,
 			click: async () => void state.clicked++,
 			pressSequentially: async (text: string) => void state.typed.push(text),
@@ -44,16 +50,21 @@ export function fakeBrowser(options: FakeOptions) {
 		return { first: () => handle };
 	};
 
-	const newPage = () => ({
+	const newPage = () => {
+		let current = "https://example.test/";
+		return {
 		goto: async (url: string) => {
 			log.push(`goto ${url}`);
 			if (options.hang) await new Promise(() => undefined);
+			if (options.gotoDelayMs) await new Promise((r) => setTimeout(r, options.gotoDelayMs));
 		},
-		url: () => "https://example.test/",
+		url: () => current,
 		viewportSize: () => null,
 		locator: locatorFor,
 		waitForLoadState: async () => undefined,
-		waitForURL: async () => undefined,
+		waitForURL: async () => {
+			if (options.navigatesOnPrompt) current = "https://example.test/home";
+		},
 		evaluate: async (_fn: unknown, arg: unknown) => void evaluated.push(arg),
 		close: async () => undefined,
 		video: () =>
@@ -67,7 +78,8 @@ export function fakeBrowser(options: FakeOptions) {
 							return file;
 						},
 					},
-	});
+		};
+	};
 
 	const newContext = (record: boolean, state: unknown) => {
 		opens.push({ record, state });

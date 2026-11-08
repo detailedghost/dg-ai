@@ -3,7 +3,7 @@ import { wslChromiumArgs } from "@dg/common/node";
 import type { Page } from "playwright-core";
 import { pickLaunch } from "../pw/core/browser";
 import type { VerifyResult } from "../utils/demo-verify";
-import { playbackSteps, recordTour, StepError, VIEWPORT } from "./recorder/drive";
+import { PasswordFieldError, playbackSteps, recordTour, StepError, VIEWPORT } from "./recorder/drive";
 
 export type VerifySession = { page: Page; close(): Promise<void> };
 
@@ -59,6 +59,11 @@ const flattenSetup = (script: TourScript): TourScript => {
 
 function findingFor(error: unknown, script: TourScript): VerifyResult {
 	const steps = playbackSteps(script);
+	if (error instanceof PasswordFieldError)
+		return {
+			ok: false,
+			findings: [{ step: error.index + 1, kind: "harness-error", message: error.message }],
+		};
 	if (error instanceof StepError)
 		return {
 			ok: false,

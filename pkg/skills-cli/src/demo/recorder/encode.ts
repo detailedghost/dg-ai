@@ -34,6 +34,9 @@ export type EncodeResult =
 
 const VIDEO_FILTER = "scale=1440:810:flags=lanczos,setsar=1,setdar=16/9,fps=30";
 
+export const canEncode = (deps: EncodeDeps = DEFAULT_DEPS): boolean =>
+	Boolean(deps.which("ffmpeg") && deps.which("ffprobe"));
+
 /** Encode the recording to an H.264 MP4 and check its geometry; without ffmpeg the webm stays. */
 export function encodeMp4(input: EncodeInput, deps: EncodeDeps = DEFAULT_DEPS): EncodeResult {
 	const ffmpeg = deps.which("ffmpeg");

@@ -65,13 +65,31 @@ describe("verifyLocal", () => {
 			],
 		});
 		const unset = opening({ dir }, { OTHER: "hunter2" });
-		expect(await verifyLocal(fill("$DEMO_PW"), unset.deps)).toEqual({
+		expect(await verifyLocal(fill("$DG_DEMO_PW"), unset.deps)).toEqual({
 			ok: false,
-			findings: [{ step: 2, kind: "env-unset", variable: "DEMO_PW" }],
+			findings: [{ step: 2, kind: "env-unset", variable: "DG_DEMO_PW" }],
 		});
-		const set = opening({ dir }, { DEMO_PW: "hunter2" });
-		expect(await verifyLocal(fill("$DEMO_PW"), set.deps)).toEqual({ ok: true, findings: [] });
+		const set = opening({ dir }, { DG_DEMO_PW: "hunter2" });
+		expect(await verifyLocal(fill("$DG_DEMO_PW"), set.deps)).toEqual({ ok: true, findings: [] });
 		expect(set.browser.locators.get("#two")?.typed).toEqual(["hunter2"]);
+	});
+
+	test("names the step and variable when an env fill targets a non-password field", async () => {
+		const { deps, browser } = opening({ dir, notPassword: ["#two"] }, { DG_DEMO_PW: "hunter2" });
+		const result = await verifyLocal(
+			{
+				...script(),
+				steps: [{ title: "User", body: "b", selector: "#two", action: { do: "fill", value: "$DG_DEMO_PW" } }],
+			},
+			deps,
+		);
+		expect(result).toEqual({
+			ok: false,
+			findings: [
+				{ step: 1, kind: "harness-error", message: "step 1: $DG_DEMO_PW can only be typed into a password field" },
+			],
+		});
+		expect(browser.locators.get("#two")?.typed).toEqual([]);
 	});
 
 	test("turns an open failure into a harness-error finding", async () => {

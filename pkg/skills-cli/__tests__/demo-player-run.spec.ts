@@ -27,7 +27,7 @@ afterEach(() => {
 	log.mockRestore();
 	error.mockRestore();
 	home.restore();
-	delete process.env.DEMO_PW;
+	delete process.env.DG_DEMO_PW;
 	rmSync(dir, { recursive: true, force: true });
 	rmSync(home.dir, { recursive: true, force: true });
 });
@@ -204,19 +204,19 @@ describe("runPlayer credentials", () => {
 		});
 
 	test("refuses an unset variable in a recorded step before opening a browser", async () => {
-		delete process.env.DEMO_PW;
+		delete process.env.DG_DEMO_PW;
 		const browser = fakeBrowser({ dir });
-		const code = await runPlayer(job({ script: login("$DEMO_PW") }), { launch: browser.launch });
+		const code = await runPlayer(job({ script: login("$DG_DEMO_PW") }), { launch: browser.launch });
 		expect(code).toBe(2);
-		expect(error).toHaveBeenCalledWith("demo: set $DEMO_PW or move the login to ## Setup");
+		expect(error).toHaveBeenCalledWith("demo: set $DG_DEMO_PW or move the login to ## Setup");
 		expect(browser.opens).toEqual([]);
-		expect(result()).toMatchObject({ outcome: "error", error: "demo: set $DEMO_PW or move the login to ## Setup" });
+		expect(result()).toMatchObject({ outcome: "error", error: "demo: set $DG_DEMO_PW or move the login to ## Setup" });
 	});
 
 	test("types the variable's value and writes it nowhere", async () => {
-		process.env.DEMO_PW = "s3cret-pw-value";
+		process.env.DG_DEMO_PW = "s3cret-pw-value";
 		const browser = fakeBrowser({ dir });
-		const code = await runPlayer(job({ script: login("$DEMO_PW") }), {
+		const code = await runPlayer(job({ script: login("$DG_DEMO_PW") }), {
 			launch: browser.launch,
 			encode: fakeEncode().deps,
 		});
@@ -229,6 +229,38 @@ describe("runPlayer credentials", () => {
 			readdirSync(dir).join(" "),
 		].join("\n");
 		expect(everything).not.toContain("s3cret-pw-value");
+	});
+});
+
+describe("runPlayer password-only env fills", () => {
+	test("refuses to type a variable into a field that is not a password", async () => {
+		process.env.DG_DEMO_PW = "s3cret";
+		const browser = fakeBrowser({ dir, notPassword: ["#user"] });
+		const code = await runPlayer(
+			job({
+				script: script({
+					steps: [{ body: "Type.", selector: "#user", action: { do: "fill", value: "$DG_DEMO_PW" }, advance: 0 }],
+				}),
+			}),
+			{ launch: browser.launch, encode: fakeEncode().deps },
+		);
+		expect(code).toBe(1);
+		expect(result().error).toBe("step 1: $DG_DEMO_PW can only be typed into a password field");
+		expect(browser.locators.get("#user")?.typed).toEqual([]);
+		expect(browser.locators.get("#user")?.filled).toEqual([]);
+	});
+
+	test("clears the field before typing", async () => {
+		const browser = fakeBrowser({ dir });
+		await runPlayer(
+			job({
+				script: script({
+					steps: [{ body: "Type.", selector: "#user", action: { do: "fill", value: "dante" }, advance: 0 }],
+				}),
+			}),
+			{ launch: browser.launch, encode: fakeEncode().deps },
+		);
+		expect(browser.locators.get("#user")).toMatchObject({ filled: [""], typed: ["dante"] });
 	});
 });
 
@@ -245,9 +277,9 @@ describe("runPlayer setup", () => {
 		});
 
 	test("signs in on an unrecorded context, then records with its storage state", async () => {
-		process.env.DEMO_PW = "pw";
+		process.env.DG_DEMO_PW = "pw";
 		const browser = fakeBrowser({ dir });
-		const code = await runPlayer(job({ script: withSetup("$DEMO_PW") }), {
+		const code = await runPlayer(job({ script: withSetup("$DG_DEMO_PW") }), {
 			launch: browser.launch,
 			encode: fakeEncode().deps,
 		});
@@ -258,10 +290,28 @@ describe("runPlayer setup", () => {
 		expect(browser.locators.get("#pass")?.typed).toEqual(["pw"]);
 	});
 
+	test("skips setup steps that never appear after the person's sign-in moved the page", async () => {
+		delete process.env.DG_DEMO_PW;
+		const browser = fakeBrowser({ dir, navigatesOnPrompt: true, missing: ["#gone"] });
+		const steps = [
+			{ title: "Password", body: "Sign in.", selector: "#pass", action: { do: "fill" as const, value: "$DG_DEMO_PW" } },
+			{ title: "Submit", body: "Go.", selector: "#gone", action: { do: "click" as const } },
+			{ title: "Home", body: "Landed.", selector: "#home" },
+		];
+		const code = await runPlayer(
+			job({ script: script({ setup: { includeInTour: false, steps } }) }),
+			{ launch: browser.launch, encode: fakeEncode().deps },
+		);
+		expect(code).toBe(0);
+		expect(logged()).toContain("demo run-tour: skipped setup step 2 after the sign-in");
+		expect(logged()).not.toContain("skipped setup step 3");
+		expect(browser.locators.get("#gone")?.clicked).toBe(0);
+	});
+
 	test("asks a person to type an unset variable and does not type it", async () => {
-		delete process.env.DEMO_PW;
+		delete process.env.DG_DEMO_PW;
 		const browser = fakeBrowser({ dir, visible: { "#home": false } });
-		const code = await runPlayer(job({ script: withSetup("$DEMO_PW") }), {
+		const code = await runPlayer(job({ script: withSetup("$DG_DEMO_PW") }), {
 			launch: browser.launch,
 			encode: fakeEncode().deps,
 		});
@@ -336,6 +386,30 @@ describe("runPlayer narration", () => {
 		expect(code).toBe(0);
 		expect(logged()).toContain("narration failed (wasm crashed); recorded without voice");
 		expect(result().audio).toBe("none");
+	});
+
+	test("keeps absolute offsets in the sidecar WAV so it lines up with the untrimmed webm", async () => {
+		const run = async (present: boolean, deps = fakeEncode(present).deps) => {
+			await runPlayer(narrated(), {
+				launch: fakeBrowser({ dir, gotoDelayMs: 300 }).launch,
+				encode: deps,
+				fetch: releaseFetch(),
+				synthesize: async (_context, texts) => texts.map(() => clip),
+			});
+			return result();
+		};
+		let muxedBytes = 0;
+		const inner = fakeEncode();
+		await run(true, {
+			which: inner.deps.which,
+			run: (cmd) => {
+				if (cmd[0]?.endsWith("ffmpeg")) muxedBytes = readFileSync(cmd[cmd.indexOf(join(dir, "voice.wav"))] as string).length;
+				return inner.deps.run(cmd);
+			},
+		});
+		const sidecar = await run(false);
+		const wav = readFileSync((sidecar.video as string).replace(/\.webm$/, ".wav"));
+		expect(wav.length - muxedBytes).toBeGreaterThan(24_000 * 2 * 0.2);
 	});
 
 	test("does not fetch assets without --narration", async () => {

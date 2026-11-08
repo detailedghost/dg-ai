@@ -39,9 +39,11 @@ interaction. Full grammar: [references/authoring.md](references/authoring.md).
 
 ### Credentials
 
-Type a secret with `@type="$NAME"`. The recorder types the value of environment variable
-`NAME`. The plan never holds the value. Logs and results never print it. In a recorded
-step, an unset `NAME` refuses with exit 2: `demo: set $NAME or move the login to ## Setup`.
+Type a secret with `@type="$DG_DEMO_VELORA_PW"`. Only `$DG_DEMO_*` variables resolve, and
+only into password fields. Any other `$NAME` that looks like a variable fails validation,
+and a `$DG_DEMO_*` fill aimed at a non-password field fails the run. The plan never holds
+the value. Logs and results never print it. In a recorded step, an unset variable refuses
+with exit 2: `demo: set $DG_DEMO_VELORA_PW or move the login to ## Setup`.
 
 ### Setup steps, when the tour needs prerequisite state
 
@@ -51,13 +53,14 @@ human asks to show the preparation. Setup runs first in an unrecorded context an
 its login to the recording. **video narration and capture start only after that handoff**, so a recording
 never contains the preparation. With `includeSetup: true`, setup steps become the
 leading tutorial steps. The human types credentials, MFA codes, and CAPTCHA answers.
-Never put those values in a fill action. Use `@type="$NAME"` for a password instead.
+Never put those values in a fill action. Use `@type="$DG_DEMO_VELORA_PW"` for a password instead.
 
 If a setup fill names an unset variable, a headed window opens and shows
 "Type it here, then continue." The human types the value there. Then the run goes on
-after a navigation, or when the next setup step's selector appears. End setup on the
-page after login, for example with a last setup step that targets an element of the
-signed-in page. A headless-only plan, such as WSL without `--windows` or
+after a navigation, after the human presses Enter in the field, after the field loses
+focus with a value in it, or when the next setup step's selector appears. If the page
+navigated during the wait, the run skips each later setup step whose selector does not
+show within 2 s and prints `skipped setup step N after the sign-in`. A headless-only plan, such as WSL without `--windows` or
 `--wsl-headed`, refuses this case with exit 2.
 
 ## Step 2 — Verify, then record

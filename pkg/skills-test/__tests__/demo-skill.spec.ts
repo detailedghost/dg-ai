@@ -98,8 +98,11 @@ describe("demo skill", () => {
 	});
 
 	test("documents credentials, intro and outro, the browser finder and ffmpeg", () => {
-		expect(skill).toContain('@type="$NAME"');
-		expect(skill).toContain("demo: set $NAME or move the login to ## Setup");
+		expect(skill).toContain('@type="$DG_DEMO_VELORA_PW"');
+		expect(skill).toContain("`$DG_DEMO_*` variables resolve");
+		expect(skill).toContain("password fields");
+		expect(skill).toContain("demo: set $DG_DEMO_VELORA_PW or move the login to ## Setup");
+		expect(skill).toContain("skips each later setup step");
 		expect(skill).toContain("Type it here, then continue.");
 		expect(skill).toContain("`intro` and `outro`");
 		expect(skill).toContain("`DG_BROWSER`");

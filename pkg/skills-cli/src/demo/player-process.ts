@@ -30,7 +30,7 @@ import {
 } from "./player-job";
 import { type LaunchPick, pickLaunch } from "../pw/core/browser";
 import { playbackSteps, recordTour, VIEWPORT } from "./recorder/drive";
-import { type EncodeDeps, encodeMp4 } from "./recorder/encode";
+import { canEncode, type EncodeDeps, encodeMp4 } from "./recorder/encode";
 import {
 	narrationClips,
 	narrationHolds,
@@ -67,10 +67,10 @@ export type PlayerHooks = {
 
 const OFFLINE_LINE =
 	"narration assets are not downloaded; running captions-only";
+const SETTLE_MS = 1_500;
 const PERSON_PROMPT = "Type it here, then continue.";
 
 export const contextOptions = (job: PlayerJob, record: boolean) => ({
-	bypassCSP: true,
 	...(record
 		? {
 				screen: VIEWPORT,
@@ -79,6 +79,16 @@ export const contextOptions = (job: PlayerJob, record: boolean) => ({
 			}
 		: {}),
 });
+
+async function restoreState(context: BrowserContext, state: StorageState): Promise<void> {
+	await context.addCookies(state.cookies);
+	if (state.origins.length === 0) return;
+	await context.addInitScript((origins) => {
+		const entry = origins.find((origin) => origin.origin === location.origin);
+		for (const { name, value } of entry?.localStorage ?? [])
+			if (localStorage.getItem(name) === null) localStorage.setItem(name, value);
+	}, state.origins);
+}
 
 async function launchLocal(
 	job: PlayerJob,
@@ -89,7 +99,7 @@ async function launchLocal(
 	ensurePrivateDir(profile);
 	let current: BrowserContext | undefined;
 	return {
-		async open(record) {
+		async open(record, state) {
 			current = await chromium.launchPersistentContext(profile, {
 				headless: plan.headless,
 				...("channel" in plan.pick
@@ -99,6 +109,7 @@ async function launchLocal(
 				viewport: VIEWPORT,
 				...contextOptions(job, record),
 			});
+			if (state) await restoreState(current, state);
 			return current;
 		},
 		close: async () => {
@@ -221,12 +232,30 @@ function waitForPerson(timeoutMs: number): NonNullable<Parameters<typeof recordT
 		await target.focus();
 		const upcoming = next?.selector ? page.locator(next.selector).first() : undefined;
 		const waiting = upcoming && !(await upcoming.isVisible());
-		const signals = [page.waitForURL((url) => url.href !== before, { timeout: timeoutMs })];
+		const signals = [
+			page.waitForURL((url) => url.href !== before, { timeout: timeoutMs }),
+			target.evaluate(
+				(el) =>
+					new Promise<void>((resolve) => {
+						const done = () => {
+							if ((el as HTMLInputElement).value) resolve();
+						};
+						el.addEventListener("keydown", (event) => {
+							if ((event as KeyboardEvent).key === "Enter") done();
+						});
+						el.addEventListener("blur", done);
+					}),
+			),
+		];
 		if (upcoming && waiting) signals.push(upcoming.waitFor({ state: "visible", timeout: timeoutMs }));
 		await Promise.any(signals).catch(() => {
 			throw new Error("timed out waiting for a person to continue");
 		});
+		await page
+			.waitForURL((url) => url.href !== before, { timeout: SETTLE_MS })
+			.catch(() => undefined);
 		await clearOverlays(page);
+		return { navigated: page.url() !== before };
 	};
 }
 
@@ -333,6 +362,8 @@ export async function runPlayer(
 					overlays: false,
 					hold: () => 0,
 					onMissingEnv: waitForPerson(timeoutMs),
+					onSkippedStep: (index) =>
+						console.log(`demo ${job.slug}: skipped setup step ${index + 1} after the sign-in`),
 				},
 			);
 			state = await context.storageState();
@@ -358,7 +389,9 @@ export async function runPlayer(
 		const webm = video ? await video.path().catch(() => undefined) : undefined;
 		if (!webm) throw new Error("no video was written: the browser could not record this run");
 
-		const placed = clips ? narrationClips(clips, result.offsets, result.startMs) : [];
+		const placed = clips
+			? narrationClips(clips, result.offsets, canEncode(hooks.encode) ? result.startMs : 0)
+			: [];
 		if (placed.length > 0) {
 			const wav = assembleNarrationWav(placed);
 			writeFileAtomic(voiceFile, Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength), 0o600);

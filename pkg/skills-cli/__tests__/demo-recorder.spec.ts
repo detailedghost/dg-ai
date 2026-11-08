@@ -7,7 +7,7 @@ import { chromium, type Page } from "playwright-core";
 import { contextOptions } from "../src/demo/player-process";
 import type { PlayerJob } from "../src/demo/player-job";
 import { MissingEnvError } from "@dg/common";
-import { introChapter, playbackSteps, recordTour, StepError } from "../src/demo/recorder/drive";
+import { introChapter, PasswordFieldError, playbackSteps, recordTour, StepError } from "../src/demo/recorder/drive";
 import { arrowSide, captionOnTop, OVERLAY_IDS } from "../src/demo/recorder/overlays";
 import { findInstalledChromium } from "../src/utils/find-browser";
 
@@ -77,19 +77,21 @@ function fixture() {
 			const html =
 				url.pathname === "/home"
 					? '<!doctype html><title>Home</title><h1 id="welcome">Welcome</h1><div style="height:560px"></div><button id="low">Low</button>'
-					: '<!doctype html><title>Sign in</title><form method="post" action="/login"><label>Username <input id="user" name="user"></label><label>Password <input id="pass" name="password" type="password"></label><button id="go" type="submit">Sign in</button></form>';
+					: '<!doctype html><title>Sign in</title><form method="post" action="/login"><label>Username <input id="user" name="user" value="old-"></label><label>Password <input id="pass" name="password" type="password"></label><button id="go" type="submit">Sign in</button></form>';
 			return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", ...STRICT } });
 		},
 	});
 	return { server, received, url: `http://127.0.0.1:${server.port}` };
 }
 
-type Snapshot = { caption: boolean; focus: boolean; arrow: boolean; rec: boolean; shadow: boolean };
+type Snapshot = { path: string; text: string; caption: boolean; focus: boolean; arrow: boolean; rec: boolean; shadow: boolean };
 
 const snapshot = (page: Page): Promise<Snapshot> =>
 	page.evaluate((ids) => {
 		const text = document.documentElement.innerText;
 		return {
+			path: location.pathname,
+			text: document.getElementById(ids.caption)?.innerText ?? "",
 			caption: Boolean(document.getElementById(ids.caption)),
 			focus: Boolean(document.getElementById(ids.focus)),
 			arrow: Boolean(document.getElementById(ids.arrow)),
@@ -117,13 +119,13 @@ describe("recordTour in a real browser", () => {
 					outro: { eyebrow: "Wrap-up", title: "Done", detail: "Bye" },
 					steps: [
 						{ selector: "#user", title: "Username", body: "Type your username.", action: { do: "fill", value: "dante" } },
-						{ selector: "#pass", title: "Password", body: "Type your password.", action: { do: "fill", value: "$DEMO_PW" } },
-						{ selector: "#go", title: "Sign in", body: "Sign in.", action: { do: "click" } },
+						{ selector: "#pass", title: "Password", body: "Type your password.", action: { do: "fill", value: "$DG_DEMO_PW" } },
+						{ selector: "#go", title: "Sign in", body: "Submit the form.", action: { do: "click" } },
 						{ selector: "#low", title: "Low button", body: "Near the bottom." },
 					],
 				};
 				const result = await recordTour(page, script, {
-					env: { DEMO_PW: "s3cret-pw" },
+					env: { DG_DEMO_PW: "s3cret-pw" },
 					overlays: true,
 					hold: () => 50,
 					chapterMs: 50,
@@ -142,6 +144,7 @@ describe("recordTour in a real browser", () => {
 				expect(seen.length).toBeGreaterThan(0);
 				expect(seen.some((s) => s.caption && s.focus && s.arrow)).toBe(true);
 				expect(seen.every((s) => !s.rec && !s.shadow)).toBe(true);
+				expect(seen.some((s) => s.path === "/home" && s.text.includes("Submit the form."))).toBe(true);
 				expect(readdirSync(join(dir, "rec")).some((f) => f.endsWith(".webm"))).toBe(true);
 			} finally {
 				await launched.close();
@@ -177,14 +180,14 @@ describe("recordTour in a real browser", () => {
 			const script: TourScript = {
 				startUrl: `${site.url}/`,
 				steps: [
-					{ selector: "#pass", body: "Type it.", action: { do: "fill", value: "$DEMO_PW" } },
+					{ selector: "#pass", body: "Type it.", action: { do: "fill", value: "$DG_DEMO_PW" } },
 					{ selector: "#go", body: "Go.", action: { do: "click" } },
 				],
 			};
 			const base = { env: {}, overlays: false, hold: () => 0, selectorTimeoutMs: 2000 };
 			const error = await recordTour(page, script, base).catch((e: unknown) => e);
 			expect(error).toBeInstanceOf(MissingEnvError);
-			expect((error as MissingEnvError).variable).toBe("DEMO_PW");
+			expect((error as MissingEnvError).variable).toBe("DG_DEMO_PW");
 			expect(site.received).toEqual([]);
 
 			const asked: number[] = [];
@@ -193,10 +196,23 @@ describe("recordTour in a real browser", () => {
 				onMissingEnv: async ({ target, index }) => {
 					asked.push(index);
 					await target.fill("typed-by-person");
+					return { navigated: false };
 				},
 			});
 			expect(asked).toEqual([0]);
 			expect(site.received).toEqual(["typed-by-person"]);
+
+			const wrongField = await recordTour(
+				page,
+				{
+					startUrl: `${site.url}/`,
+					steps: [{ selector: "#user", body: "Type.", action: { do: "fill", value: "$DG_DEMO_PW" } }],
+				},
+				{ ...base, env: { DG_DEMO_PW: "s3cret" } },
+			).catch((e: unknown) => e);
+			expect(wrongField).toBeInstanceOf(PasswordFieldError);
+			expect((wrongField as Error).message).toBe("step 1: $DG_DEMO_PW can only be typed into a password field");
+			expect(await page.locator("#user").inputValue()).toBe("old-");
 		} finally {
 			await launched.close();
 			site.server.stop(true);
@@ -211,6 +227,8 @@ describe("recordTour typing failures", () => {
 			scrollIntoViewIfNeeded: async () => undefined,
 			boundingBox: async () => null,
 			click: async () => undefined,
+			evaluate: async () => true,
+			fill: async () => undefined,
 			pressSequentially: async (text: string) => {
 				throw new Error(`call log: typing "${text}" failed`);
 			},
@@ -222,11 +240,33 @@ describe("recordTour typing failures", () => {
 		} as unknown as Page;
 		const error = await recordTour(
 			page,
-			{ startUrl: "https://app.example/", steps: [{ selector: "#pw", body: "b", action: { do: "fill", value: "$PW" } }] },
-			{ env: { PW: "s3cret-pw" }, overlays: false, hold: () => 0 },
+			{ startUrl: "https://app.example/", steps: [{ selector: "#pw", body: "b", action: { do: "fill", value: "$DG_DEMO_PW" } }] },
+			{ env: { DG_DEMO_PW: "s3cret-pw" }, overlays: false, hold: () => 0 },
 		).catch((e: unknown) => e);
 		expect(error).toBeInstanceOf(StepError);
 		expect((error as Error).message).toBe("step 1: could not type into #pw");
 		expect(String((error as Error).stack)).not.toContain("s3cret-pw");
+	});
+});
+
+describe("recordTour fills", () => {
+	test.skipIf(!browser)("replaces a prefilled value instead of appending", async () => {
+		const site = fixture();
+		const launched = await chromium.launch({ executablePath: browser as string, args: ["--no-sandbox"] });
+		try {
+			const page = await (await launched.newContext({ viewport: VIEW })).newPage();
+			await recordTour(
+				page,
+				{
+					startUrl: `${site.url}/`,
+					steps: [{ selector: "#user", body: "Type.", action: { do: "fill", value: "dante" } }],
+				},
+				{ env: {}, overlays: false, hold: () => 0 },
+			);
+			expect(await page.locator("#user").inputValue()).toBe("dante");
+		} finally {
+			await launched.close();
+			site.server.stop(true);
+		}
 	});
 });

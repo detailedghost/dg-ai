@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync, rmSync } from "node:fs";
+import { closeSync, existsSync, openSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { slugify } from "@dg/common";
 import {
@@ -87,9 +87,9 @@ export const defaultLocalDeps: LocalDeps = {
 };
 
 function nearestExistingDir(path: string): string {
-	let dir = dirname(resolve(path));
+	let dir = dirname(path);
 	while (!existsSync(dir)) dir = dirname(dir);
-	return dir;
+	return realpathSync(dir);
 }
 
 function pickFor(opts: LocalOpts, deps: LocalDeps): LaunchPick {
@@ -182,11 +182,12 @@ export async function playLocal(
 		console.error(error.message);
 		return error.exitCode;
 	}
-	if (opts.out && !opts.out.endsWith(".mp4")) {
+	const out = opts.out ? resolve(opts.out) : undefined;
+	if (out && !out.endsWith(".mp4")) {
 		console.error("demo: --out must name a .mp4 file");
 		return 1;
 	}
-	if (opts.out && deps.inGitWorkTree(nearestExistingDir(opts.out))) {
+	if (out && deps.inGitWorkTree(nearestExistingDir(out))) {
 		console.error("demo: --out must be outside a git work tree");
 		return 1;
 	}
@@ -226,7 +227,7 @@ export async function playLocal(
 		dir,
 		startUrl: script.startUrl,
 		plan,
-		...(opts.out ? { out: opts.out } : {}),
+		...(out ? { out } : {}),
 		...(opts.narration ? { narration: true } : {}),
 		timeoutMin: opts.timeout ?? DEFAULT_TIMEOUT_MIN,
 	};

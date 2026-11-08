@@ -12,6 +12,7 @@ import {
 	captionOnTop,
 	clearOverlays,
 	hideChapter,
+	OVERLAY_IDS,
 	showCaption,
 	showChapter,
 	showFocus,
@@ -32,7 +33,10 @@ export type DriveOptions = {
 	/** Clock for offsets; the player counts from the start of the recording. */
 	now?(): number;
 	/** Called instead of throwing when a fill names an unset env variable; the handler leaves the field filled. */
-	onMissingEnv?(prompt: MissingEnvPrompt): Promise<void>;
+	onMissingEnv?(prompt: MissingEnvPrompt): Promise<{ navigated: boolean }>;
+	/** Called for a step skipped because the page moved on during a person's sign-in. */
+	onSkippedStep?(index: number): void;
+	skippedStepMs?: number;
 };
 
 export type MissingEnvPrompt = {
@@ -55,6 +59,15 @@ export class StepError extends Error {
 	}
 }
 
+export class PasswordFieldError extends StepError {
+	constructor(
+		index: number,
+		readonly variable: string,
+	) {
+		super(index, `$${variable} can only be typed into a password field`);
+	}
+}
+
 export const VIEWPORT = { width: 1440, height: 810 };
 
 const DEFAULTS = {
@@ -62,6 +75,7 @@ const DEFAULTS = {
 	selectorTimeoutMs: 15_000,
 	chapterMs: 2_600,
 	leadMs: 600,
+	skippedStepMs: 2_000,
 };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -79,6 +93,12 @@ export function playbackSteps(script: TourScript): { step: TourStep; setup: bool
 	const setupCount = script.setup?.includeInTour ? script.setup.steps.length : 0;
 	return tutorial.map((step, i) => ({ step, setup: i < setupCount }));
 }
+
+const isPasswordField = (target: Locator): Promise<boolean> =>
+	target.evaluate((el) => el instanceof HTMLInputElement && el.type === "password");
+
+const hasCaption = (page: Page): Promise<boolean> =>
+	page.evaluate((id) => document.getElementById(id) !== null, OVERLAY_IDS.caption);
 
 async function chapter(page: Page, card: TourChapter | undefined, ms: number, pause: (ms: number) => Promise<void>) {
 	if (!card) return;
@@ -98,6 +118,7 @@ export async function recordTour(
 	const now = options.now ?? Date.now;
 	const viewport = page.viewportSize() ?? VIEWPORT;
 	const offsets: number[] = [];
+	let signedInByPerson = false;
 
 	await page.goto(script.startUrl, { waitUntil: "load" });
 	const startMs = now();
@@ -110,9 +131,14 @@ export async function recordTour(
 		const target = step.selector ? page.locator(step.selector).first() : null;
 		let box = null;
 		if (target) {
+			const timeout = signedInByPerson ? o.skippedStepMs : o.selectorTimeoutMs;
 			try {
-				await target.waitFor({ state: "visible", timeout: o.selectorTimeoutMs });
+				await target.waitFor({ state: "visible", timeout });
 			} catch {
+				if (signedInByPerson) {
+					o.onSkippedStep?.(index);
+					continue;
+				}
 				throw new StepError(
 					index,
 					`selector ${step.selector} did not resolve in ${o.selectorTimeoutMs / 1000}s`,
@@ -122,13 +148,14 @@ export async function recordTour(
 			box = await target.boundingBox();
 		}
 		offsets.push(now());
+		const caption = {
+			eyebrow: step.title ?? `Step ${index + 1}`,
+			body: step.body,
+			accent,
+			top: captionOnTop(box, viewport),
+		};
 		if (o.overlays) {
-			await showCaption(page, {
-				eyebrow: step.title ?? `Step ${index + 1}`,
-				body: step.body,
-				accent,
-				top: captionOnTop(box, viewport),
-			});
+			await showCaption(page, caption);
 			if (box) await showFocus(page, { box, side: arrowSide(box, viewport), accent });
 		}
 		if (step.action && target) {
@@ -136,14 +163,19 @@ export async function recordTour(
 			if (step.action.do === "click") {
 				await target.click();
 				await page.waitForLoadState("load");
+				if (o.overlays && !(await hasCaption(page))) await showCaption(page, caption);
 			} else {
 				const name = envReference(step.action.value);
+				if (name && !(await isPasswordField(target)))
+					throw new PasswordFieldError(index, name);
 				if (name && !o.env[name] && o.onMissingEnv) {
-					await o.onMissingEnv({ page, target, step, index, next: steps[index + 1]?.step });
+					const person = await o.onMissingEnv({ page, target, step, index, next: steps[index + 1]?.step });
+					signedInByPerson ||= person.navigated;
 				} else {
 					const text = resolveFill(step.action.value, o.env);
 					await target.click();
 					try {
+						await target.fill("");
 						await target.pressSequentially(text, { delay: o.overlays ? o.typeDelayMs : 0 });
 					} catch {
 						throw new StepError(index, `could not type into ${step.selector}`);

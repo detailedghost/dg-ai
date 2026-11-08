@@ -61,7 +61,7 @@ describe("openSession over the Windows plan", () => {
 				setup: {
 					includeInTour: false,
 					steps: [
-						{ title: "Sign in", body: "Log in.", selector: "#p", action: { do: "fill", value: "$DEMO_UNSET_PW" } },
+						{ title: "Sign in", body: "Log in.", selector: "#p", action: { do: "fill", value: "$DG_DEMO_UNSET_PW" } },
 					],
 				},
 			},
@@ -93,7 +93,7 @@ describe("openSession over the Windows plan", () => {
 	});
 
 	test("keeps the headless fallback when excluded setup has every variable set", async () => {
-		process.env.DEMO_FALLBACK_PW = "x";
+		process.env.DG_DEMO_FALLBACK_PW = "x";
 		const log = spyOn(console, "log").mockImplementation(() => undefined);
 		const l = launchers(true);
 		const base = job(windows);
@@ -105,7 +105,7 @@ describe("openSession over the Windows plan", () => {
 					setup: {
 						includeInTour: false,
 						steps: [
-							{ title: "Sign in", body: "Log in.", selector: "#p", action: { do: "fill", value: "$DEMO_FALLBACK_PW" } },
+							{ title: "Sign in", body: "Log in.", selector: "#p", action: { do: "fill", value: "$DG_DEMO_FALLBACK_PW" } },
 						],
 					},
 				},
@@ -114,7 +114,7 @@ describe("openSession over the Windows plan", () => {
 		);
 		expect(l.used).toEqual(["windows", "local"]);
 		log.mockRestore();
-		delete process.env.DEMO_FALLBACK_PW;
+		delete process.env.DG_DEMO_FALLBACK_PW;
 	});
 });
 

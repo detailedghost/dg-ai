@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { TourScript } from "@dg/common";
 import {
 	formatAction,
+	envReference,
 	MissingEnvError,
 	resolveFill,
 	parseAction,
@@ -198,24 +199,60 @@ describe("resolveFill()", () => {
 	});
 
 	it("reads a $NAME reference from the environment", () => {
-		expect(resolveFill("$VELORA_DEMO_PASSWORD", { VELORA_DEMO_PASSWORD: "s3cret" })).toBe("s3cret");
+		expect(resolveFill("$DG_DEMO_VELORA_PW", { DG_DEMO_VELORA_PW: "s3cret" })).toBe("s3cret");
 	});
 
 	it("throws MissingEnvError naming the variable, never a value", () => {
 		const error = (() => {
 			try {
-				resolveFill("$VELORA_DEMO_PASSWORD", { OTHER: "s3cret" });
+				resolveFill("$DG_DEMO_VELORA_PW", { OTHER: "s3cret" });
 			} catch (e) {
 				return e;
 			}
 		})();
 		expect(error).toBeInstanceOf(MissingEnvError);
-		expect((error as Error).message).toContain("VELORA_DEMO_PASSWORD");
+		expect((error as Error).message).toContain("DG_DEMO_VELORA_PW");
 		expect((error as Error).message).not.toContain("s3cret");
 	});
 
 	it("treats a lowercase or partial $ string as literal text", () => {
 		expect(resolveFill("$lower", {})).toBe("$lower");
 		expect(resolveFill("pay $5", {})).toBe("pay $5");
+	});
+
+	it("reads only $DG_DEMO_* names as references", () => {
+		expect(envReference("$DG_DEMO_X1")).toBe("DG_DEMO_X1");
+		expect(envReference("$AWS_SECRET_ACCESS_KEY")).toBeUndefined();
+	});
+});
+
+describe("validate() fill references", () => {
+	const fill = (value: string) => ({
+		startUrl: "https://app.example/",
+		steps: [
+			{ body: "a" },
+			{ body: "b", selector: "#p", action: { do: "fill", value } },
+		],
+	});
+
+	it("accepts a $DG_DEMO_* reference and literal text", () => {
+		expect(() => validate(fill("$DG_DEMO_PW"))).not.toThrow();
+		expect(() => validate(fill("pay $5"))).not.toThrow();
+		expect(() => validate(fill("$lower"))).not.toThrow();
+	});
+
+	it("rejects a variable-looking value without the prefix", () => {
+		expect(() => validate(fill("$AWS_SECRET_ACCESS_KEY"))).toThrow(
+			"step 1: only $DG_DEMO_* variables can be typed",
+		);
+	});
+
+	it("rejects it in setup steps too", () => {
+		expect(() =>
+			validate({
+				...fill("x"),
+				setup: { includeInTour: false, steps: [{ body: "s", selector: "#p", action: { do: "fill", value: "$HOME" } }] },
+			}),
+		).toThrow("setup step 0: only $DG_DEMO_* variables can be typed");
 	});
 });

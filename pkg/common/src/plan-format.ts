@@ -53,6 +53,8 @@ function validateSteps(
 			if (a?.do === "fill") {
 				if (typeof a.value !== "string")
 					throw new Error(`${label}: fill action needs a string 'value'`);
+				if (ENV_LIKE.test(a.value) && !ENV_REF.test(a.value))
+					throw new Error(`${label}: only $DG_DEMO_* variables can be typed`);
 			} else if (a?.do !== "click")
 				throw new Error(`${label}: 'action.do' must be 'click' or 'fill'`);
 		}
@@ -174,7 +176,8 @@ export function formatChapter(chapter: TourChapter): string {
 
 // --- @type="$NAME" env references ---
 
-const ENV_REF = /^\$([A-Z_][A-Z0-9_]*)$/;
+const ENV_REF = /^\$(DG_DEMO_[A-Z0-9_]+)$/;
+const ENV_LIKE = /^\$[A-Z_][A-Z0-9_]*$/;
 
 export class MissingEnvError extends Error {
 	constructor(readonly variable: string) {

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ setDefaultTimeout(180_000);
 
 const executablePath = process.env.PW_E2E === "1" ? findInstalledChromium() : null;
 
-describe("runPlayer against a local login", () => {
+describe.skipIf(!executablePath)("runPlayer against a local login", () => {
 	let dir: string;
 	let server: ReturnType<typeof Bun.serve>;
 	const received: string[] = [];
@@ -74,10 +74,10 @@ describe("runPlayer against a local login", () => {
 		timeoutMin: 2,
 	});
 
-	test.skipIf(!executablePath)(
-		"waits for a person to type an unset password in setup, then records the signed-in tour",
+	test(
+		"waits for a person to type an unset password and press Enter, skips the submit step, then records the signed-in tour",
 		async () => {
-			delete process.env.DEMO_E2E_PW;
+			delete process.env.DG_DEMO_E2E_PW;
 			const base = `http://127.0.0.1:${server.port}`;
 			const script: TourScript = {
 				title: "E2E Tour",
@@ -85,7 +85,8 @@ describe("runPlayer against a local login", () => {
 				setup: {
 					includeInTour: false,
 					steps: [
-						{ title: "Password", body: "Sign in.", selector: "#pass", action: { do: "fill", value: "$DEMO_E2E_PW" } },
+						{ title: "Password", body: "Sign in.", selector: "#pass", action: { do: "fill", value: "$DG_DEMO_E2E_PW" } },
+						{ title: "Submit", body: "Go.", selector: "#go", action: { do: "click" as const } },
 						{ title: "Signed in", body: "Home.", selector: "#welcome" },
 					],
 				},
@@ -104,16 +105,20 @@ describe("runPlayer against a local login", () => {
 						if (!caption.includes("Type it here, then continue.") || prompted) continue;
 						prompted = true;
 						await page.fill("#pass", "typed-by-person").catch(() => undefined);
-						await page.click("#go").catch(() => undefined);
+						await page.press("#pass", "Enter").catch(() => undefined);
 					}
 			}, 300);
+			const logs: string[] = [];
+			const log = spyOn(console, "log").mockImplementation((...parts: unknown[]) => void logs.push(parts.join(" ")));
 			try {
 				const code = await runPlayer(job(script), { launch: async () => session });
 				expect(code).toBe(0);
 			} finally {
 				clearInterval(person);
+				log.mockRestore();
 			}
 			expect(prompted).toBe(true);
+			expect(logs.join("\n")).toContain("demo e2e-tour: skipped setup step 2 after the sign-in");
 			expect(received).toContain("typed-by-person");
 			const result = JSON.parse(readFileSync(join(dir, "e2e-tour.result.json"), "utf8")) as DemoResult;
 			expect(result).toMatchObject({ outcome: "done", mode: "video" });
