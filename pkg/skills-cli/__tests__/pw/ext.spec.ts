@@ -10,7 +10,11 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PwExtCliRequest } from "@dg/common";
+import {
+	PW_EXT_READ_VERBS,
+	PW_EXT_WRITE_VERBS,
+	type PwExtCliRequest,
+} from "@dg/common";
 import { main } from "../../src/pw/cli";
 import { type ExtClient, type ExtDeps, runExt } from "../../src/pw/ext";
 import { clientEnv, useTempScratch } from "../../src/pw/test-support";
@@ -183,6 +187,132 @@ describe("pw --ext", () => {
 		expect(env.stdout.join("\n")).toContain("snapshot");
 		expect(env.stdout.join("\n")).toContain("no approval per call");
 		expect(env.stdout.join("\n")).not.toContain("approve every call");
+	});
+});
+
+describe("pw --ext tab verbs and --tab", () => {
+	const TAB_USAGE = "pw --ext --tab takes a tab id from pw --ext tabs.";
+
+	test.each([
+		[["--tab", "12", "snapshot"], { verb: "snapshot", tabId: 12 }],
+		[["snapshot", "--tab", "12"], { verb: "snapshot", tabId: 12 }],
+		[["--tab", "0", "snapshot"], { verb: "snapshot", tabId: 0 }],
+		[["--tab", "12", "click", "e4"], { verb: "click", target: "e4", tabId: 12 }],
+		[["--tab", "12", "screenshot"], { verb: "screenshot", tabId: 12 }],
+		[["tabs"], { verb: "tabs" }],
+		[["new"], { verb: "new" }],
+		[["new", "https://a.example"], { verb: "new", url: "https://a.example" }],
+		[["select", "12"], { verb: "select", tabId: 12 }],
+		[["close"], { verb: "close" }],
+		[["close", "12"], { verb: "close", tabId: 12 }],
+		[["--tab", "12", "close"], { verb: "close", tabId: 12 }],
+	])("maps %p to %p", async (argv, request) => {
+		const d = deps(() => ({ ok: true, data: { text: "ok" } }));
+
+		expect(await runExt(["--ext", ...argv], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual(request as never);
+	});
+
+	test("points to the --tab=<value> form for a negative --tab in the space form", async () => {
+		const env = clientEnv();
+		const d = deps(() => ({ ok: true, data: { text: "x" } }));
+
+		expect(await runExt(["--ext", "--tab", "-1", "snapshot"], env, d.value)).toBe(2);
+		expect(env.stderr.join("\n")).toContain("--tab=-XYZ");
+		expect(d.sent).toEqual([]);
+	});
+
+	test("prints the tab usage text for a --tab value that is not an id", async () => {
+		for (const value of ["x", "-1", "1.5", ""]) {
+			const env = clientEnv();
+			const d = deps(() => ({ ok: true, data: { text: "x" } }));
+
+			expect(await runExt(["--ext", `--tab=${value}`, "snapshot"], env, d.value)).toBe(2);
+			expect(env.stderr.join("\n")).toContain(TAB_USAGE);
+			expect(d.sent).toEqual([]);
+		}
+	});
+
+	test.each([
+		[["select", "abc"]],
+		[["select", "1.5"]],
+		[["close", "abc"]],
+		[["select"]],
+		[["--tab", "3", "tabs"]],
+		[["--tab", "3", "new"]],
+		[["--tab", "3", "new", "https://a.example"]],
+		[["select", "3", "--tab", "4"]],
+		[["select", "--tab", "4"]],
+		[["close", "3", "--tab", "4"]],
+		[["tabs", "extra"]],
+		[["new", "https://a.example", "extra"]],
+		[["select", "1", "2"]],
+		[["close", "1", "2"]],
+		[["new", "chrome://settings"]],
+		[["new", "javascript:alert(1)"]],
+	])("refuses %p with exit 2 and sends nothing", async (argv) => {
+		const env = clientEnv();
+		const d = deps(() => ({ ok: true, data: { text: "x" } }));
+
+		expect(await runExt(["--ext", ...argv], env, d.value)).toBe(2);
+		expect(d.sent).toEqual([]);
+		expect(env.stderr.join("\n")).not.toBe("");
+	});
+
+	test.each([
+		[["--tab", "3", "tabs"], "pw --ext tabs does not take --tab."],
+		[["--tab", "3", "new"], "pw --ext new does not take --tab."],
+		[
+			["select", "3", "--tab", "4"],
+			"pw --ext select takes a tab id, not --tab.",
+		],
+		[["select", "--tab", "4"], "pw --ext select takes a tab id, not --tab."],
+		[["--tab", "4", "select"], "pw --ext select takes a tab id, not --tab."],
+		[
+			["close", "3", "--tab", "4"],
+			"pw --ext close takes a tab id or --tab, not both.",
+		],
+	])("prints the exact usage text for %p", async (argv, text) => {
+		const env = clientEnv();
+		await runExt(["--ext", ...argv], env, deps(() => ({})).value);
+
+		expect(env.stderr.join("\n")).toContain(text);
+	});
+
+	test("states the optional and required positionals in the arity message", async () => {
+		const env = clientEnv();
+		await runExt(["--ext", "new", "a", "b"], env, deps(() => ({})).value);
+
+		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
+	});
+
+	test("lists all 15 verbs for an unknown verb", async () => {
+		const env = clientEnv();
+		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
+		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
+
+		expect(verbs).toHaveLength(15);
+		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
+		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
+	});
+
+	test("does not tell a user with an unknown flag that no other flags exist", async () => {
+		const env = clientEnv();
+		await runExt(["--ext", "--bogus", "snapshot"], env, deps(() => ({})).value);
+
+		expect(env.stderr.join("\n")).not.toContain("takes no other flags");
+	});
+
+	test("lists the four tab verbs and --tab in help", async () => {
+		const env = clientEnv();
+		await runExt(["--ext", "--help"], env, deps(() => ({})).value);
+		const help = env.stdout.join("\n");
+
+		for (const verb of ["tabs", "new", "select", "close"]) expect(help).toContain(verb);
+		expect(help).toContain("--tab");
+		expect(help).toContain("the agent's selected tab");
+		expect(help).not.toContain("active tab");
+		expect(help).not.toContain("takes no other flags");
 	});
 });
 

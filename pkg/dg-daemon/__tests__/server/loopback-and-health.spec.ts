@@ -11,6 +11,7 @@ import {
 	cleanupDgHome,
 	createCleanupSlot,
 	freshDgHome,
+	ownerTokenHeader,
 	spawnServe,
 	stopServe,
 } from "../utils/daemon-harness";
@@ -37,6 +38,7 @@ describe("request bodies the daemon refuses at the socket layer", () => {
 			method: "POST",
 			headers: {
 				Host: `127.0.0.1:${port}`,
+				...ownerTokenHeader(port),
 				"Content-Type": "application/json",
 			},
 			body: bloated,
@@ -52,6 +54,7 @@ describe("request bodies the daemon refuses at the socket layer", () => {
 			method: "POST",
 			headers: {
 				Host: `127.0.0.1:${port}`,
+				...ownerTokenHeader(port),
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({ cwd: process.cwd() }),

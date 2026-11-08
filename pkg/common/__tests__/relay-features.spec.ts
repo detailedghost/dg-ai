@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
 	type AnyRelayFeature,
-	bootstrapHint,
 	RELAY_FEATURES,
 } from "../src/index";
 import { TEST_RELAY } from "./utils/relay-fixtures";
@@ -71,21 +70,24 @@ describe("relay frame type names", () => {
 	});
 });
 
-describe("bootstrapHint", () => {
-	it("names the port when it is known", () => {
-		expect(bootstrapHint(4321)).toBe(
-			"http://127.0.0.1:4321/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>",
-		);
+describe.each(
+	RELAY_FEATURES.filter((feature) => feature.name !== "pw-ext").map(
+		(feature) => [feature.name, feature] as const,
+	),
+)("missing-peer hint of %s", (_name, feature) => {
+	const peers = feature.checks.find((entry) => entry.check === "peers");
+	const hint = (sessionId: string) => {
+		if (peers?.check !== "peers") throw new Error("no peers check");
+		return peers.none({ sessionId } as never);
+	};
+
+	it("tells the agent to pair from the popup for this session", () => {
+		expect(hint("sess-1")).toContain("dg-agent pair <code> -s sess-1");
 	});
 
-	it("keeps the literal placeholder when the port is zero", () => {
-		expect(bootstrapHint(0)).toBe(bootstrapHint());
-	});
-
-	it("keeps the literal placeholder when the port is unknown", () => {
-		expect(bootstrapHint()).toBe(
-			"http://127.0.0.1:<port>/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>",
-		);
+	it("prints no /start URL and no token placeholder", () => {
+		expect(hint("sess-1")).not.toContain("/start#_chat=");
+		expect(hint("sess-1")).not.toContain("token");
 	});
 });
 

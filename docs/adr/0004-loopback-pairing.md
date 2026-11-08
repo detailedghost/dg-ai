@@ -50,3 +50,28 @@ sequenceDiagram
 - [pkg/dg-daemon/src/server/origin.ts](../../pkg/dg-daemon/src/server/origin.ts)
 - [pkg/dg-daemon/src/pairing.ts](../../pkg/dg-daemon/src/pairing.ts)
 - [pkg/common/src/node/session-tokens.ts](../../pkg/common/src/node/session-tokens.ts)
+
+## Amended 2026-11-07: offer and claim replace POST /pair
+
+[ADR 0038](0038-extension-pairing-only.md) changed how a session reaches the extension. The origin pin, the owner token, the six-digit code, its five-minute life and the five-attempt limit still hold. The text above stays as the record of the first decision. Where it describes `POST /pair` or says the extension must acquire a session, this amendment replaces it. The origin pin stays the trust anchor. Offer and claim bootstrap only the first pairing.
+
+- The extension no longer creates a session. It asks for an offer with `POST /pair/offer` and shows the code in the pairing popup.
+- The agent claims the offer with `dg-agent pair <code>`. The claim is `POST /pair/claim` with the owner token. It refuses any `Origin` header.
+- The extension polls `POST /pair/offer/<id>` and receives the session bootstrap once. Chromium omits `Origin` on extension GET requests, so the poll is a POST. It then opens `/ws` with the session capability.
+- The fifth wrong claim inside one five-minute window expires every pending offer for good, and the popup must ask for a new one. The daemon holds at most 8 pending offers. It trims expired tombstones to 8 when it creates the next offer, and otherwise they expire with their TTL. A lockout can expire 8 pending offers at once, so the map can briefly hold more. It also holds any claimed offer the extension has not polled yet.
+- `POST /pair` and `handlePair` no longer exist.
+
+```mermaid
+sequenceDiagram
+    participant A as pkg/dg-agent
+    participant D as pkg/dg-daemon
+    participant E as pkg/extension
+    E->>D: POST /pair/offer with extension Origin
+    D-->>E: offer id and expiring code
+    A->>D: POST /pair/claim with owner token and code
+    D-->>A: claimed
+    E->>D: POST /pair/offer/id
+    D-->>E: session bootstrap
+    E->>D: /ws with session capability
+    D-->>E: authenticated connection and pinned Origin
+```

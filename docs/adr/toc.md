@@ -88,6 +88,8 @@ flowchart LR
   fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone.
 - [0037 — One browser relay for inbox, proto and pw-ext](0037-one-browser-relay.md) — Proposed:
   one table-driven relay in the daemon and one dispatcher in the extension carry inbox, proto and pw-ext; frames stay byte-identical
+- [0038 — Reduce the extension to pairing and tab control](0038-extension-pairing-only.md) — Proposed:
+  the extension keeps a pairing popup and per-agent tab groups; offer and claim pairing replaces `POST /pair`; the daemon `/chat` page replaces the extension chat
 
 ## Adding an ADR
 

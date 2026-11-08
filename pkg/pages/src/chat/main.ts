@@ -1,11 +1,13 @@
 import {
 	type ChatFrame,
 	type CommandEntry,
+	OVERWATCH_SESSION_ID,
 	type SessionBootstrap,
 	type SessionRole,
 	validateChatFrame,
 } from "@dg/common";
 import { MSG } from "../chat-messages";
+import { SESSION_ENDED_TEXT } from "../local";
 import { isTextEntryFocused } from "../dom-focus";
 import {
 	attachCommandAutocomplete,
@@ -24,11 +26,13 @@ import type {
 	ChatConnectionState,
 	ConnectionListener,
 	SendUserMessageOptions,
+	SendUserMessageResult,
 } from "./chat-client";
 import {
 	type ChatNode,
 	createChatNode,
 	groupSessionsByWorkset,
+	presenceLabel,
 	statusLabel,
 	type WorksetGroup,
 } from "./chat-node";
@@ -36,6 +40,7 @@ import type { ChatSessionEntry } from "./chat-sessions";
 import { createChatSessions } from "./chat-sessions";
 import type { ChatHistoryItem } from "./chat-transcript";
 import { redactSecrets } from "./chat-connection";
+import type { LocalAttachResult } from "../local";
 import { createVimNav } from "../vim-nav";
 import { createIcon, type IconName } from "./icons";
 import {
@@ -53,6 +58,10 @@ type MotionQuery = {
 
 type RelayRuntime = Required<Pick<PageRuntime, "onMessage" | "sendMessage">>;
 
+export type ChatPageController = {
+	dropSession(sessionId: string): void;
+};
+
 export type ChatPageOptions = {
 	root?: HTMLElement;
 	matchMedia?: (query: string) => MotionQuery;
@@ -63,6 +72,13 @@ export type ChatPageOptions = {
 	positionArea?: PositionArea;
 	pruneStalePositions?: boolean;
 	mountPairing?: PairingMount;
+	attachSession?: (
+		sessionId: string,
+		held: SessionBootstrap[],
+	) => Promise<LocalAttachResult>;
+	onHeldAdopted?: (bootstrap: SessionBootstrap) => void;
+	onHeldEnded?: (bootstrap: SessionBootstrap) => void;
+	onController?: (controller: ChatPageController) => void;
 };
 
 function isConnectionState(value: unknown): value is ChatConnectionState {
@@ -73,13 +89,14 @@ function isConnectionState(value: unknown): value is ChatConnectionState {
 	);
 }
 
-type PillState = ChatConnectionState | "not-paired";
+type PillState = ChatConnectionState | "not-paired" | "connecting";
 
 const NOT_PAIRED_HINT = "Not paired";
 
 function connectionStatusLabel(state: PillState, detail?: string): string {
 	const label = {
 		"not-paired": NOT_PAIRED_HINT,
+		connecting: "Connecting…",
 		reconnecting: "Reconnecting to daemon…",
 		"daemon-not-running": "Daemon unreachable",
 		connected: "",
@@ -102,18 +119,13 @@ function isChatHistoryItem(value: unknown): value is ChatHistoryItem {
 	);
 }
 
-type SendResult = { ok: true } | { ok: false; error: string };
+type SendResult = SendUserMessageResult;
 
 type PageChatClient = ChatClient & {
 	sendCommandInvocation(
 		sessionId: string,
 		commandLabel: string,
 		params?: Record<string, unknown>,
-	): Promise<SendResult>;
-	sendUserMessageAndWait(
-		sessionId: string,
-		body: string,
-		opts?: SendUserMessageOptions,
 	): Promise<SendResult>;
 	requestNewSessionAndWait(
 		requestingSessionId: string,
@@ -218,19 +230,25 @@ function createRelayChatClient(runtime: RelayRuntime): PageChatClient {
 		};
 	}
 
+	function connect(bootstrap: SessionBootstrap): void {
+		knownSessions.add(bootstrap.sessionId);
+		void runtime
+			.sendMessage({ type: MSG.clientConnect, bootstrap })
+			.then((response) => {
+				if (typeof response !== "object" || response === null) return;
+				const state = (response as Record<string, unknown>).state;
+				if (isConnectionState(state)) connectionState = state;
+			})
+			.catch(() => {
+				connectionState = "daemon-not-running";
+			});
+	}
+
 	return {
-		connect(bootstrap): void {
-			knownSessions.add(bootstrap.sessionId);
-			void runtime
-				.sendMessage({ type: MSG.clientConnect, bootstrap })
-				.then((response) => {
-					if (typeof response !== "object" || response === null) return;
-					const state = (response as Record<string, unknown>).state;
-					if (isConnectionState(state)) connectionState = state;
-				})
-				.catch(() => {
-					connectionState = "daemon-not-running";
-				});
+		connect,
+
+		addSession(bootstrap): void {
+			if (!knownSessions.has(bootstrap.sessionId)) connect(bootstrap);
 		},
 
 		onFrame(listener): void {
@@ -404,20 +422,9 @@ function sendAndWaitForAccept(
 	client: ChatClient,
 	sessionId: string,
 	body: string,
+	messageId: string,
 ): Promise<SendResult> {
-	const maybeRelay = client as Partial<PageChatClient>;
-	if (maybeRelay.sendUserMessageAndWait) {
-		return maybeRelay.sendUserMessageAndWait(sessionId, body);
-	}
-	try {
-		client.sendUserMessage(sessionId, body);
-		return Promise.resolve({ ok: true });
-	} catch (error) {
-		return Promise.resolve({
-			ok: false,
-			error: error instanceof Error ? error.message : String(error),
-		});
-	}
+	return client.sendUserMessageAndWait(sessionId, body, { messageId });
 }
 
 function iconControl<K extends "button" | "a">(
@@ -491,8 +498,11 @@ export async function renderChatPage(
 	const bootstrapBySession = new Map(
 		bootstraps.map((bootstrap) => [bootstrap.sessionId, bootstrap]),
 	);
+	const trackHeld = options.attachSession !== undefined;
+	const attaching = new Set<string>();
+	const railErrors = new Map<string, string>();
 	let order = bootstraps.map((bootstrap) => bootstrap.sessionId);
-	let selectedSessionId = order[0];
+	let selectedSessionId: string | undefined = order[0];
 	let tokenRejected = false;
 	// A stored session is not a live daemon. Stay false until the pairing probe reports.
 	let daemonReachable = !options.mountPairing;
@@ -844,26 +854,7 @@ export async function renderChatPage(
 			});
 			return;
 		}
-		if (!sendMessage) {
-			showError("Start a chat from your agent, then open its link.");
-			return;
-		}
-		void sendMessage({ type: MSG.sessionLaunch })
-			.then((reply) => {
-				if (
-					typeof reply === "object" &&
-					reply !== null &&
-					(reply as { ok?: unknown }).ok === false
-				) {
-					const error = (reply as { error?: unknown }).error;
-					showError(
-						typeof error === "string"
-							? error
-							: "Could not create a session. Pair with the daemon, then retry.",
-					);
-				}
-			})
-			.catch((error: unknown) => showError(error));
+		showError("Start a chat from your agent, then open its link.");
 	}
 
 	function showError(error: unknown): void {
@@ -887,9 +878,34 @@ export async function renderChatPage(
 			create.disabled = disabled;
 	}
 
-	function updateConnectionStatus(): void {
+	function isSessionConfirmed(): boolean {
+		if (!client.isSessionConfirmed) return true;
+		const liveSessionId =
+			selectedSessionId && bootstrapBySession.has(selectedSessionId)
+				? selectedSessionId
+				: [...bootstrapBySession.keys()][0];
+		return liveSessionId ? client.isSessionConfirmed(liveSessionId) : false;
+	}
+
+	function renderSessionHeader(entry: ChatSessionEntry | undefined): void {
+		const identity = entry?.agentIdentity || "agent";
+		breadcrumb.textContent = entry
+			? `${entry.workset ?? "Loose chats"} / ${identity}`
+			: "DeeGee / chat";
+		threadHeading.textContent = entry
+			? `Talking to ${identity} · ${entry.sessionId.slice(0, 8)} · ${presenceLabel(entry.presence)}`
+			: "Chat";
+	}
+
+	function pillState(): PillState {
+		if (!isPaired()) return "not-paired";
 		const connection = client.getConnectionState();
-		const state: PillState = isPaired() ? connection : "not-paired";
+		if (connection === "connected" && !isSessionConfirmed()) return "connecting";
+		return connection;
+	}
+
+	function updateConnectionStatus(): void {
+		const state = pillState();
 		pairing?.setConnected(state === "connected");
 		connectionStatus.dataset.connection = state;
 		connectionStatus.hidden = state === "connected";
@@ -904,6 +920,81 @@ export async function renderChatPage(
 			canvasBanner.hidden = state === "connected";
 			canvasBanner.textContent = message;
 		}
+	}
+
+	function isHeld(sessionId: string): boolean {
+		return !trackHeld || bootstrapBySession.has(sessionId);
+	}
+
+	function isListed(entry: ChatSessionEntry): boolean {
+		if (entry.sessionId === OVERWATCH_SESSION_ID) return false;
+		return entry.role === "agent" || isHeld(entry.sessionId);
+	}
+
+	function isAttachable(entry: ChatSessionEntry): boolean {
+		return isHeld(entry.sessionId) || entry.presence === "cli";
+	}
+
+	function heldBootstraps(): SessionBootstrap[] {
+		const selected = selectedSessionId
+			? bootstrapBySession.get(selectedSessionId)
+			: undefined;
+		const others = [...bootstrapBySession.values()].filter(
+			(bootstrap) => bootstrap !== selected,
+		);
+		return selected ? [selected, ...others] : others;
+	}
+
+	function dropHeld(sessionId: string, announce: boolean): void {
+		const bootstrap = bootstrapBySession.get(sessionId);
+		if (!bootstrap) return;
+		bootstrapBySession.delete(sessionId);
+		options.onHeldEnded?.(bootstrap);
+		if (bootstrapBySession.size === 0) tokenRejected = true;
+		else if (announce) railErrors.set(sessionId, SESSION_ENDED_TEXT);
+	}
+
+	async function attachEntry(entry: ChatSessionEntry): Promise<void> {
+		if (!options.attachSession || attaching.has(entry.sessionId)) return;
+		attaching.add(entry.sessionId);
+		railErrors.delete(entry.sessionId);
+		const result = await options
+			.attachSession(entry.sessionId, heldBootstraps())
+			.catch((): LocalAttachResult => ({
+				status: "failed",
+				message: "Could not attach that session.",
+				refused: [],
+			}));
+		attaching.delete(entry.sessionId);
+		for (const refused of result.refused) {
+			dropHeld(refused.sessionId, false);
+		}
+		if (result.status === "attached") {
+			const { bootstrap } = result;
+			bootstrapBySession.set(bootstrap.sessionId, bootstrap);
+			tokenRejected = false;
+			options.onHeldAdopted?.(bootstrap);
+			client.addSession(bootstrap);
+			setSelected(bootstrap.sessionId);
+			return;
+		}
+		if (result.status !== "ended") {
+			railErrors.set(
+				entry.sessionId,
+				redactSecrets(
+					result.message,
+					[...bootstrapBySession.values()].map((held) => held.token),
+				),
+			);
+		}
+		syncPage();
+	}
+
+	function activate(sessionId: string): void {
+		const entry = sessions.get(sessionId);
+		if (!entry || !isListed(entry) || !isAttachable(entry)) return;
+		if (isHeld(sessionId)) setSelected(sessionId);
+		else void attachEntry(entry);
 	}
 
 	function setSelected(sessionId: string): void {
@@ -923,10 +1014,10 @@ export async function renderChatPage(
 		}
 	}
 
-	function finishMove(cancelled: boolean): void {
+	function finishMove(canceled: boolean): void {
 		if (!moving) return;
-		if (cancelled) order = moving.originalOrder;
-		announceMove(cancelled ? "Move cancelled." : "Position saved.");
+		if (canceled) order = moving.originalOrder;
+		announceMove(canceled ? "Move canceled." : "Position saved.");
 		moving = undefined;
 		syncPage();
 	}
@@ -973,10 +1064,18 @@ export async function renderChatPage(
 			port: bootstrap?.port,
 			assetOrigin: options.assetOrigin,
 			onSubmit: (body) => {
-				void sendAndWaitForAccept(client, sessionId, body).then((result) => {
-					if (result.ok) node.transcript.appendUserMessage(body);
-					else showError(result.error);
-				});
+				const messageId = crypto.randomUUID();
+				node.transcript.appendUserMessage(body, messageId);
+				void sendAndWaitForAccept(client, sessionId, body, messageId).then(
+					(result) => {
+						if (result.ok) {
+							node.transcript.setDelivery(messageId, "delivered");
+							return;
+						}
+						node.transcript.setDelivery(messageId, "not-delivered");
+						if (result.reason !== "timeout") showError(result.error);
+					},
+				);
 			},
 			onClose: () => {
 				try {
@@ -1026,10 +1125,10 @@ export async function renderChatPage(
 			orderedIds.add(entry.sessionId);
 		}
 		for (const [sessionId, node] of nodes) {
-			if (liveIds.has(sessionId)) continue;
+			if (liveIds.has(sessionId) && isHeld(sessionId)) continue;
 			if (moving?.sessionId === sessionId) {
 				moving = undefined;
-				announceMove("Move cancelled — the session closed.");
+				announceMove("Move canceled — the session closed.");
 			}
 			if (activeDrag?.sessionId === sessionId) activeDrag.cancel();
 			autocompletes.get(sessionId)?.destroy();
@@ -1044,10 +1143,17 @@ export async function renderChatPage(
 
 		const orderedEntries = order
 			.map((sessionId) => sessions.get(sessionId))
-			.filter((entry) => entry !== undefined);
+			.filter((entry): entry is ChatSessionEntry => entry !== undefined)
+			.filter(isListed);
 		const groups = groupSessionsByWorkset(orderedEntries);
-		if (!selectedSessionId || !liveIds.has(selectedSessionId)) {
-			selectedSessionId = groups[0]?.sessions[0]?.sessionId;
+		if (
+			!selectedSessionId ||
+			!liveIds.has(selectedSessionId) ||
+			!isHeld(selectedSessionId)
+		) {
+			selectedSessionId = orderedEntries.find((entry) =>
+				isHeld(entry.sessionId),
+			)?.sessionId;
 		}
 
 		const activeElement = doc.activeElement as HTMLElement | null;
@@ -1080,11 +1186,30 @@ export async function renderChatPage(
 				row.dataset.active = String(entry.sessionId === selectedSessionId);
 				if (moving?.sessionId === entry.sessionId) row.dataset.moving = "true";
 				row.hidden = !vimFilterMatches(entry);
+				const held = isHeld(entry.sessionId);
+				const unavailable = !isAttachable(entry);
+				row.dataset.held = String(held);
+				if (unavailable) {
+					row.setAttribute("aria-disabled", "true");
+					row.title = "Agent not attached";
+				}
 
 				const focus = element(doc, "button", "chat-rail__focus");
 				focus.type = "button";
+				focus.disabled = unavailable;
 				focus.append(
-					element(doc, "span", "chat-rail__identity", entry.agentIdentity),
+					element(
+						doc,
+						"span",
+						"chat-rail__identity",
+						entry.agentIdentity || "agent",
+					),
+					element(
+						doc,
+						"span",
+						"chat-rail__meta",
+						`${entry.sessionId.slice(0, 8)} · ${presenceLabel(entry.presence)}`,
+					),
 				);
 				const status = element(
 					doc,
@@ -1094,24 +1219,36 @@ export async function renderChatPage(
 				);
 				status.dataset.status = entry.status;
 				focus.appendChild(status);
-				focus.addEventListener("click", () => {
+				row.addEventListener("click", () => {
 					if (moving && moving.sessionId !== entry.sessionId) {
 						swapSessions(moving.sessionId, entry.sessionId);
 						finishMove(false);
 						return;
 					}
-					setSelected(entry.sessionId);
+					activate(entry.sessionId);
 				});
 
 				row.append(focus);
+				const railError = railErrors.get(entry.sessionId);
+				if (railError) {
+					const error = element(
+						doc,
+						"p",
+						"chat-rail__entry-error",
+						railError,
+					);
+					error.setAttribute("role", "alert");
+					row.append(error);
+				}
 				section.appendChild(row);
 
-				const node = ensureNode(entry.sessionId);
+				const node = held ? ensureNode(entry.sessionId) : undefined;
 				if (node) {
 					const onCanvas =
 						root.dataset.view === "canvas" && canvas !== undefined;
 					const focused = entry.sessionId === selectedSessionId;
 					node.element.hidden = onCanvas ? false : !focused;
+					node.setActive(onCanvas || focused);
 					const transcript = node.element.querySelector(".chat-transcript");
 					if (onCanvas || focused)
 						transcript?.setAttribute("aria-live", "polite");
@@ -1148,10 +1285,7 @@ export async function renderChatPage(
 		const selected = selectedSessionId
 			? sessions.get(selectedSessionId)
 			: undefined;
-		breadcrumb.textContent = selected
-			? `${selected.workset ?? "Loose chats"} / ${selected.agentIdentity}`
-			: "DeeGee / chat";
-		threadHeading.textContent = selected?.agentIdentity ?? "Chat";
+		renderSessionHeader(selected);
 		updateConnectionStatus();
 		paintVimCursor();
 	}
@@ -1211,7 +1345,7 @@ export async function renderChatPage(
 		lists: {
 			sessions: {
 				rowIds: vimRowIds,
-				select: (id) => setSelected(id),
+				select: (id) => activate(id),
 				actions: {
 					x: (id) => closeSessionById(id),
 				},
@@ -1325,14 +1459,22 @@ export async function renderChatPage(
 
 	client.onFrame((frame) => {
 		sessions.applyFrame(frame);
+		if (frame.type === "session-closed") dropHeld(frame.sessionId, true);
+		if (frame.type === "session-list") {
+			for (const sessionId of railErrors.keys()) {
+				if (!sessions.get(sessionId)) railErrors.delete(sessionId);
+			}
+		}
 		if (frame.type === "session-pending") {
 			const requester = bootstrapBySession.get(frame.sessionId);
 			if (requester) {
-				bootstrapBySession.set(frame.newSession.sessionId, {
+				const adopted = {
 					...requester,
 					sessionId: frame.newSession.sessionId,
 					token: frame.newSession.token,
-				});
+				};
+				bootstrapBySession.set(adopted.sessionId, adopted);
+				options.onHeldAdopted?.(adopted);
 			}
 		}
 		const node = nodes.get(frame.sessionId);
@@ -1342,6 +1484,9 @@ export async function renderChatPage(
 					frame,
 					bootstrapBySession.get(frame.sessionId)?.token ?? "",
 				);
+				break;
+			case "ack":
+				node?.transcript.setDelivery(frame.messageId, "delivered");
 				break;
 			case "command-result":
 				node?.transcript.appendCommandResult(frame);
@@ -1362,14 +1507,14 @@ export async function renderChatPage(
 			case "error":
 				showError(frame.message);
 				if (frame.code === "invalid-session") {
-					bootstrapBySession.delete(frame.sessionId);
-					if (bootstrapBySession.size === 0) tokenRejected = true;
+					dropHeld(frame.sessionId, true);
 					updateConnectionStatus();
 				}
 				break;
 		}
 		if (
 			frame.type === "session-list" ||
+			frame.type === "session-pending" ||
 			frame.type === "session-closed" ||
 			frame.type === "session-disconnected" ||
 			frame.type === "progress" ||
@@ -1396,9 +1541,20 @@ export async function renderChatPage(
 		updateConnectionStatus();
 	});
 
+	options.onController?.({
+		dropSession(sessionId) {
+			dropHeld(sessionId, false);
+			syncPage();
+			updateConnectionStatus();
+		},
+	});
 	for (const bootstrap of bootstraps) client.connect(bootstrap);
 	if (bootstraps.length === 0) {
-		showEmpty("no-session", "No sessions yet", "Start a DeeGee chat.");
+		showEmpty(
+			"no-session",
+			"No sessions yet",
+			"Run dg-agent start --open to open this page for an agent.",
+		);
 		updateConnectionStatus();
 	} else {
 		await new Promise<void>((resolve) => setTimeout(resolve, 0));

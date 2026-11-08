@@ -8,6 +8,7 @@ import {
 	cleanupDgHome,
 	createCleanupSlot,
 	EXTENSION_ORIGIN,
+	ownerTokenHeader,
 	sendConnectHandshake,
 	stopServe,
 	waitForOpen,
@@ -41,6 +42,7 @@ async function registerSession(port: number) {
 		method: "POST",
 		headers: {
 			Host: `127.0.0.1:${port}`,
+			...ownerTokenHeader(port),
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({ cwd: process.cwd(), role: "agent" }),

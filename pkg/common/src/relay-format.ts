@@ -24,7 +24,6 @@ export type RelayCtx<Cli = { requestId: string }> = {
 	readonly sessionId: string;
 	readonly cli: Cli;
 	readonly timeoutMs: number;
-	readonly port?: number;
 	readonly lastStatus?: string;
 	readonly detail?: string;
 };
@@ -194,8 +193,4 @@ export function defineRelayFeature<Bodies extends RelayBodies>() {
 	>(
 		table: T,
 	): T & { readonly [bodies]?: Bodies } => table;
-}
-
-export function bootstrapHint(port?: number): string {
-	return `http://127.0.0.1:${port ? port : "<port>"}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
 }

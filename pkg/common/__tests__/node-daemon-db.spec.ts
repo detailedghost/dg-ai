@@ -12,6 +12,9 @@ function freshPaths() {
 	homes.push(home);
 	return resolveDgPaths({ env: { DG_HOME: home } });
 }
+function sessionColumns(db: Database): string[] {
+	return (db.query("PRAGMA table_info(sessions)").all() as { name: string }[]).map(column => column.name);
+}
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
 
 describe("openDaemonDatabase", () => {
@@ -41,6 +44,29 @@ describe("openDaemonDatabase", () => {
 		expect(readSchemaVersion(retry)).toBe(CURRENT_SCHEMA_VERSION);
 		expect(retry.query("SELECT count(*) AS n FROM channel_review_requests").get()).toEqual({ n: 0 });
 		retry.close(true);
+	});
+
+	test("creates a sessions table without awaiting_agent on a fresh database", () => {
+		const db = openDaemonDatabase(freshPaths());
+		expect(CURRENT_SCHEMA_VERSION).toBe(13);
+		expect(sessionColumns(db)).not.toContain("awaiting_agent");
+		db.close(true);
+	});
+
+	test("drops awaiting_agent from a schema-12 database and keeps its rows", () => {
+		const paths = freshPaths();
+		mkdirSync(paths.daemonDir, { recursive: true });
+		const old = new Database(paths.dbPath, { strict: true, create: true });
+		runMigrations(old, SCHEMA_STEPS.filter(step => step.version <= 12));
+		expect(sessionColumns(old)).toContain("awaiting_agent");
+		old.run("INSERT INTO sessions (id, created_at, awaiting_agent) VALUES (?, ?, 1)", ["session-kept", "2026-01-01T00:00:00.000Z"]);
+		old.close(true);
+
+		const db = openDaemonDatabase(paths);
+		expect(readSchemaVersion(db)).toBe(13);
+		expect(sessionColumns(db)).not.toContain("awaiting_agent");
+		expect(db.query("SELECT count(*) AS n FROM sessions WHERE id = ?").get("session-kept")).toEqual({ n: 1 });
+		db.close(true);
 	});
 
 	test("refuses a forward database without changing its version", () => {

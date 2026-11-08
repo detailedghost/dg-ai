@@ -16,6 +16,7 @@ import {
 	EXTENSION_ORIGIN,
 	frameType,
 	freshDgHome,
+	ownerTokenHeader,
 	registerSession,
 	runDaemonCommand,
 	runStatus,
@@ -27,6 +28,7 @@ import {
 	waitForValue,
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
+import { readSessionList } from "../utils/session-list";
 
 let dgHome = "";
 let stop: (() => Promise<void>) | undefined;
@@ -101,6 +103,25 @@ describe("connection handshake", () => {
 	});
 });
 
+describe("session presence in the session-list frame", () => {
+	it("lists a started session as idle, then cli once the CLI socket opens", async () => {
+		const { port } = await boot();
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
+
+		expect(
+			(await readSessionList(port, bootstrap)).map((session) => session.presence),
+		).toEqual(["idle"]);
+
+		const cli = cliSocket(port, bootstrap);
+		await waitForOpen(cli);
+
+		expect(
+			(await readSessionList(port, bootstrap)).map((session) => session.presence),
+		).toEqual(["cli"]);
+		cli.close();
+	});
+});
+
 describe("extension to CLI and CLI to extension", () => {
 	it("attaches an already-open CLI session instead of minting an orphan", async () => {
 		const { port } = await boot();
@@ -130,39 +151,168 @@ describe("extension to CLI and CLI to extension", () => {
 		expect(status.sessionCount).toBe(1);
 	});
 
-	it("creates a waiting session the CLI catalog can see without a token, then a live CLI is not clearable", async () => {
+	it("refuses an all-sessions attach from the pinned Origin when no code is sent", async () => {
 		const { port, paths } = await boot();
 		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
-		const created = await extensionPost(port, "/sessions", {
-			agentIdentity: "claude",
-		});
-		expect(created.status).toBe(200);
-		const bootstrap = (await created.json()) as {
-			sessionId: string;
-			token: string;
-		};
-		expect(bootstrap.token.length).toBeGreaterThan(8);
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
 
-		const catalog = await fetch(`http://127.0.0.1:${port}/sessions?waiting=1`, {
-			headers: { Host: `127.0.0.1:${port}` },
+		const response = await extensionPost(port, "/attach", {
+			intent: "attach",
+			all: true,
 		});
-		const listed = (await catalog.json()) as {
-			sessions: {
-				sessionId: string;
-				awaitingAgent: boolean;
-				token?: string;
-				cwd: string;
-			}[];
-		};
-		expect(listed.sessions.map((session) => session.sessionId)).toEqual([
-			bootstrap.sessionId,
-		]);
-		expect(listed.sessions[0]?.awaitingAgent).toBe(true);
-		expect(JSON.stringify(listed)).not.toContain(bootstrap.token);
 
+		expect(response.status).toBe(401);
+		expect(await response.text()).not.toContain(bootstrap.token);
+	});
+
+	it("attaches every session from the pinned Origin when the code is right", async () => {
+		const { port, paths } = await boot();
+		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
+		const paired = await runDaemonCommand(dgHome, "pair");
+		const code = paired.stdout.match(/Pairing code: (\d{6})/)?.[1];
+
+		const response = await extensionPost(port, "/attach", {
+			intent: "attach",
+			all: true,
+			code,
+		});
+
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { sessions: { token: string }[] };
+		expect(body.sessions.map((session) => session.token)).toEqual([bootstrap.token]);
+	});
+
+	it("refuses an attach with intent create from the pinned extension Origin", async () => {
+		const { port } = await boot();
+		await registerSession(port, { agentIdentity: "claude" });
+		const paired = await runDaemonCommand(dgHome, "pair");
+		const code = paired.stdout.match(/Pairing code: (\d{6})/)?.[1];
+		expect(code).toBeDefined();
+
+		const response = await extensionPost(port, "/attach", {
+			intent: "create",
+			code,
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain(
+			'attach request.intent must be "attach"',
+		);
+
+		const retry = await extensionPost(port, "/attach", {
+			intent: "attach",
+			all: true,
+			code,
+		});
+		expect(retry.status).toBe(200);
+		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(1);
+	});
+});
+
+describe("POST /start origin policy", () => {
+	it.each([
+		["an unpinned extension Origin", "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+		["a Firefox extension Origin", "moz-extension://abc"],
+		["the literal null Origin", "null"],
+		["a web Origin", "http://evil.example"],
+	])("refuses %s and creates no session", async (_name, origin) => {
+		const { port } = await boot();
+
+		const response = await fetch(`http://127.0.0.1:${port}/start`, {
+			method: "POST",
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				Origin: origin,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ cwd: process.cwd(), role: "agent" }),
+		});
+
+		expect(response.status).toBe(400);
+		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(0);
+	});
+});
+
+describe("POST /start owner credential", () => {
+	function startRequest(port: number, headers: Record<string, string>) {
+		return fetch(`http://127.0.0.1:${port}/start`, {
+			method: "POST",
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				"Content-Type": "application/json",
+				...headers,
+			},
+			body: JSON.stringify({ cwd: process.cwd(), role: "agent" }),
+		});
+	}
+
+	it("refuses a caller with no owner token and creates no session", async () => {
+		const { port } = await boot();
+
+		const response = await startRequest(port, {});
+
+		expect(response.status).toBe(401);
+		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(0);
+	});
+
+	it("refuses a wrong owner token", async () => {
+		const { port } = await boot();
+
+		const response = await startRequest(port, { [OWNER_TOKEN_HEADER]: "wrong" });
+
+		expect(response.status).toBe(401);
+	});
+
+	it("registers a session when the owner token is sent", async () => {
+		const { port } = await boot();
+
+		const response = await startRequest(port, ownerTokenHeader(port));
+
+		expect(response.status).toBe(200);
+	});
+});
+
+describe("session catalog route", () => {
+	it.each([
+		["/sessions", undefined],
+		["/sessions?waiting=1", undefined],
+		["/sessions", EXTENSION_ORIGIN],
+		["/sessions?waiting=1", EXTENSION_ORIGIN],
+	])("answers GET %s with 404 for origin %p", async (path, origin) => {
+		const { port, paths } = await boot();
+		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
+		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
+
+		const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+			headers: {
+				Host: `127.0.0.1:${port}`,
+				...(origin === undefined ? {} : { Origin: origin }),
+			},
+		});
+
+		expect(response.status).toBe(404);
+		expect(await response.text()).not.toContain(bootstrap.sessionId);
+	});
+});
+
+describe("manual cleanup", () => {
+	it("closes the session with no CLI and leaves the one with a live CLI socket", async () => {
+		const { port } = await boot();
+		const idle = await registerSession(port, { agentIdentity: "old" });
+		const driven = await registerSession(port, { agentIdentity: "next" });
 		const cli = cliSocket(port, {
-			sessionId: bootstrap.sessionId,
-			token: bootstrap.token,
+			sessionId: driven.sessionId,
+			token: driven.token,
 		});
 		await waitForOpen(cli);
 
@@ -170,45 +320,11 @@ describe("extension to CLI and CLI to extension", () => {
 			method: "POST",
 			headers: ownerHeaders(port),
 		});
-		expect(((await cleared.json()) as { closed: string[] }).closed).toEqual([]);
 
-		const page = await connectPage(port, {
-			sessionId: bootstrap.sessionId,
-			token: bootstrap.token,
-		});
-		cli.close();
-		page.close();
-	});
-});
-
-describe("manual cleanup", () => {
-	it("closes disconnected sessions and leaves one that is still waiting", async () => {
-		const { port, paths } = await boot();
-		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
-		const idle = await registerSession(port, { agentIdentity: "old" });
-		const waiting = await extensionPost(port, "/sessions", {
-			agentIdentity: "next",
-		});
-		const waitingBody = (await waiting.json()) as { sessionId: string };
-
-		const cleared = await fetch(`http://127.0.0.1:${port}/sessions/clear`, {
-			method: "POST",
-			headers: ownerHeaders(port),
-		});
 		expect(((await cleared.json()) as { closed: string[] }).closed).toEqual([
 			idle.sessionId,
 		]);
-
-		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
-			headers: { Host: `127.0.0.1:${port}`, Origin: EXTENSION_ORIGIN },
-		});
-		const body = (await catalog.json()) as {
-			sessions: { sessionId: string }[];
-		};
-		expect(body.sessions.map((session) => session.sessionId)).toEqual([
-			waitingBody.sessionId,
-		]);
-		expect(JSON.stringify(body)).not.toContain(idle.token);
+		cli.close();
 	});
 
 	it("refuses a local token read and a clear that omit the owner credential", async () => {
@@ -241,16 +357,6 @@ describe("manual cleanup", () => {
 		});
 		expect(cleared.status).toBe(401);
 		expect(await cleared.text()).not.toContain(bootstrap.token);
-
-		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
-			headers: { Host: `127.0.0.1:${port}` },
-		});
-		const body = (await catalog.json()) as {
-			sessions: { sessionId: string }[];
-		};
-		expect(body.sessions.map((session) => session.sessionId)).toContain(
-			bootstrap.sessionId,
-		);
 
 		const named = await fetch(
 			`http://127.0.0.1:${port}/sessions/local?session=${bootstrap.sessionId}`,

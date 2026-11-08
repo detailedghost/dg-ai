@@ -26,7 +26,7 @@ import { resolveDgPaths } from "@dg/common/node/dg-paths";
 
 const ROOT = resolve(import.meta.dir, "..");
 const EXTENSION_DIR = resolve(ROOT, "pkg/extension/.output/chrome-mv3");
-const CHAT_PAGE = "chat.html";
+const OPTIONS_PAGE = "options.html";
 const DEBUG_PORT = Number(process.env.DG_TEST_CHROME_PORT ?? 9333);
 
 type Flags = {
@@ -60,7 +60,7 @@ function parseFlags(argv: string[]): Flags {
 			console.log(`Usage: bun scripts/test-chrome.ts [--skip-build] [--with-daemon] [--screenshot <png>] [--profile <dir>]
 
   --with-daemon   start dg-daemon in the background (state in the per-OS state dir, or DG_HOME)
-  --screenshot    open the chat side panel page at 420×900 and write a PNG
+  --screenshot    open the extension options page and write a PNG
   --skip-build    reuse pkg/extension/.output/chrome-mv3
   --profile       Chromium user-data-dir (default test-chrome in the dg cache dir)
 `);
@@ -137,14 +137,14 @@ function extensionId(targets: DebugTarget[]): string | undefined {
 	return undefined;
 }
 
-async function openChatTarget(id: string): Promise<DebugTarget> {
-	const url = `chrome-extension://${id}/${CHAT_PAGE}`;
+async function openOptionsTarget(id: string): Promise<DebugTarget> {
+	const url = `chrome-extension://${id}/${OPTIONS_PAGE}`;
 	const response = await fetch(
 		`http://127.0.0.1:${DEBUG_PORT}/json/new?${encodeURIComponent(url)}`,
 		{ method: "PUT" },
 	);
 	if (!response.ok) {
-		throw new Error(`could not open the chat page: HTTP ${response.status}`);
+		throw new Error(`could not open the options page: HTTP ${response.status}`);
 	}
 	return (await response.json()) as DebugTarget;
 }
@@ -203,9 +203,7 @@ function connectCdp(url: string): Promise<{
 }
 
 type PageProbe = {
-	pill?: string;
 	pairStatus?: string;
-	pairHeading?: string;
 };
 
 function reportDrop(input: ConnectionDropInput): void {
@@ -237,16 +235,14 @@ function consoleMessages(events: CdpMessage[]): DropMessage[] {
 	return messages.slice(-8);
 }
 
-async function probeChat(cdp: {
+async function probeOptions(cdp: {
 	send<T>(method: string, params?: Record<string, unknown>): Promise<T>;
 }): Promise<PageProbe> {
 	const result = await cdp.send<{ result?: { value?: PageProbe } }>(
 		"Runtime.evaluate",
 		{
 			expression: `({
-				pill: document.querySelector(".chat-rail__connection")?.textContent ?? "",
-				pairStatus: document.querySelector(".pair-panel__status")?.textContent ?? "",
-				pairHeading: document.querySelector(".pair-panel__title, .sec-h")?.textContent ?? ""
+				pairStatus: document.querySelector(".pair-panel__status")?.textContent ?? ""
 			})`,
 			returnByValue: true,
 		},
@@ -255,13 +251,13 @@ async function probeChat(cdp: {
 }
 
 function pageShowsDrop(probe: PageProbe): boolean {
-	const text = `${probe.pill ?? ""} ${probe.pairStatus ?? ""}`;
+	const text = probe.pairStatus ?? "";
 	return /unreachable|not confirmed|could not|rejected|disconnected|expired/i.test(
 		text,
 	);
 }
 
-async function captureChat(pngPath: string): Promise<void> {
+async function captureOptions(pngPath: string): Promise<void> {
 	const expectedId = extensionIdFromPath(EXTENSION_DIR);
 	let targets = await waitForTargets();
 	const deadline = Date.now() + 15_000;
@@ -278,54 +274,38 @@ async function captureChat(pngPath: string): Promise<void> {
 			reason:
 				"extension did not register a Chrome target. Branded Chrome ignores --load-extension; set DG_TEST_CHROME_BIN to Chrome for Testing.",
 			serviceWorker: { active: false, lifecycle: "missing" },
-			sidePanel: { open: false, lifecycle: "missing" },
 			daemon: { reachable: false },
 		});
 		throw new Error(
 			"extension did not register a Chrome target. Branded Chrome ignores --load-extension; set DG_TEST_CHROME_BIN to Chrome for Testing.",
 		);
 	}
-	const page = await openChatTarget(id);
+	const page = await openOptionsTarget(id);
 	if (!page.webSocketDebuggerUrl) {
-		throw new Error("chat page has no debugger socket");
+		throw new Error("options page has no debugger socket");
 	}
 	await Bun.sleep(600);
 	const cdp = await connectCdp(page.webSocketDebuggerUrl);
 	try {
 		await cdp.send("Runtime.enable");
 		await cdp.send("Page.enable");
-		await cdp.send("Emulation.setDeviceMetricsOverride", {
-			width: 420,
-			height: 900,
-			deviceScaleFactor: 1,
-			mobile: false,
-		});
-		await cdp.send("Runtime.evaluate", {
-			expression:
-				"document.documentElement.style.width='420px'; document.body.style.width='420px'; true",
-		});
 		await Bun.sleep(400);
-		const probe = await probeChat(cdp);
+		const probe = await probeOptions(cdp);
 		const worker = targets.find(
 			(target) => target.type === "service_worker" && target.url.includes(id),
 		);
 		if (pageShowsDrop(probe)) {
 			reportDrop({
-				phase: probe.pill?.includes("unreachable")
+				phase: /unreachable/i.test(probe.pairStatus ?? "")
 					? "daemon-discover"
 					: "dropped",
-				reason: `${probe.pairHeading ?? ""} ${probe.pill ?? ""} ${probe.pairStatus ?? ""}`.trim(),
-				sidePanel: {
-					open: true,
-					url: page.url,
-					lifecycle: probe.pairHeading || "open",
-				},
+				reason: (probe.pairStatus ?? "").trim(),
 				serviceWorker: {
 					active: worker !== undefined,
 					lifecycle: worker ? "running" : "missing",
 				},
 				lastMessages: consoleMessages(cdp.events),
-				daemon: { reachable: !probe.pill?.includes("unreachable") },
+				daemon: { reachable: !/unreachable/i.test(probe.pairStatus ?? "") },
 			});
 		}
 		const shot = await cdp.send<{ data: string }>("Page.captureScreenshot", {
@@ -405,7 +385,7 @@ async function main(): Promise<void> {
 	});
 	if (flags.screenshot) {
 		try {
-			await captureChat(flags.screenshot);
+			await captureOptions(flags.screenshot);
 		} finally {
 			stop();
 		}
@@ -413,7 +393,7 @@ async function main(): Promise<void> {
 	}
 	console.log(`test Chrome profile: ${flags.profile}`);
 	console.log(`extension: ${EXTENSION_DIR}`);
-	console.log("Quit Chrome to stop. The toolbar icon opens the chat side panel.");
+	console.log("Quit Chrome to stop. The DeeGee action button opens the popup.");
 	await new Promise<void>((resolvePromise) => {
 		chrome.on("exit", () => resolvePromise());
 	});
@@ -424,7 +404,6 @@ main().catch((error: unknown) => {
 	reportDrop({
 		phase: "dropped",
 		reason: message,
-		sidePanel: { lifecycle: "unknown" },
 		serviceWorker: { lifecycle: "unknown" },
 	});
 	logHarnessLine(message);

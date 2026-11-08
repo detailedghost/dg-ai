@@ -1,7 +1,6 @@
 import { DEFAULT_IDLE_TTL_MS } from "../server/idle-ttl";
 
 export const DEFAULT_AGENT_GONE_MS = 60_000;
-export const DEFAULT_UNCLAIMED_TTL_MS = 5 * 60_000;
 /** How long a claimed session may sit between CLI commands before the claim is released. */
 export const DEFAULT_CLI_REATTACH_GRACE_MS = DEFAULT_IDLE_TTL_MS;
 
@@ -9,7 +8,6 @@ export type ReapSnapshot = {
 	state: "active" | "closed";
 	createdAt: number;
 	lastActivityAt: number;
-	awaitingAgent: boolean;
 	cliAttached: boolean;
 	cliDetachedAt?: number;
 	exempt: boolean;
@@ -18,7 +16,6 @@ export type ReapSnapshot = {
 export type ReapLimits = {
 	sessionTtlMs: number;
 	agentGoneMs: number;
-	unclaimedTtlMs: number;
 };
 
 /**
@@ -34,9 +31,6 @@ export function shouldReapSession(
 ): boolean {
 	if (snapshot.state !== "active") return false;
 	if (snapshot.exempt || snapshot.cliAttached) return false;
-	if (snapshot.awaitingAgent) {
-		return now - snapshot.createdAt >= limits.unclaimedTtlMs;
-	}
 	if (snapshot.cliDetachedAt !== undefined) {
 		return now - snapshot.cliDetachedAt >= limits.agentGoneMs;
 	}
@@ -64,15 +58,10 @@ export function shouldReleaseClaim(
 	return now - snapshot.cliQuietSince >= graceMs;
 }
 
-/** Manual clear drops sessions no CLI is driving, and leaves ones still waiting for an agent. */
+/** Manual clear drops sessions no CLI is driving. */
 export function isManuallyClearable(snapshot: {
 	state: "active" | "closed";
 	cliAttached: boolean;
-	awaitingAgent: boolean;
 }): boolean {
-	return (
-		snapshot.state === "active" &&
-		!snapshot.cliAttached &&
-		!snapshot.awaitingAgent
-	);
+	return snapshot.state === "active" && !snapshot.cliAttached;
 }

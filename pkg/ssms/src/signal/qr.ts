@@ -1,4 +1,3 @@
-/// <reference path="../qrcode.d.ts" />
 import QRCode from "qrcode";
 
 export async function renderQr(uri: string): Promise<string> {

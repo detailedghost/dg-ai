@@ -39,9 +39,18 @@ export function isLocalPageOrigin(origin: string | null, port: number): boolean 
 	}
 }
 
-function presentedToken(req: Request, url: URL): string | null {
+const BEARER_PREFIX = "Bearer ";
+
+export function bearerToken(req: Request): string | undefined {
 	const authorization = req.headers.get("authorization");
-	if (authorization?.startsWith("Bearer ")) return authorization.slice(7);
+	return authorization?.startsWith(BEARER_PREFIX)
+		? authorization.slice(BEARER_PREFIX.length)
+		: undefined;
+}
+
+function presentedToken(req: Request, url: URL): string | null {
+	const bearer = bearerToken(req);
+	if (bearer !== undefined) return bearer;
 	return url.pathname === CHAT_WS_PATH ? url.searchParams.get("token") : null;
 }
 

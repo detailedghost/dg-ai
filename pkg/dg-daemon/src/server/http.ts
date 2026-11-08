@@ -11,11 +11,11 @@ import {
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
-	CHAT_PAIR_PATH,
+	CHAT_PAIR_CLAIM_PATH,
+	CHAT_PAIR_OFFER_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
-	CHAT_SESSIONS_PATH,
 	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
@@ -26,14 +26,17 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
+	noteSecret,
 	type OverwatchAction,
 	OVERWATCH_SESSION_ID,
-	type PairRequest,
+	type PairClaimRequest,
+	type PairClaimResponse,
 	type SessionRole,
 	decideAttach,
+	decideLocalAttach,
 	validateAttachRequest,
 	validateOverwatchAction,
-	validatePairRequest,
+	validatePairClaimRequest,
 } from "@dg/common";
 import {
 	type DgPaths,
@@ -76,9 +79,11 @@ import {
 	type SocketState,
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
+import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
+	bearerToken,
 	claimsLocalPage,
 	getPinnedOrigin,
 	isBrowserOrigin,
@@ -87,6 +92,7 @@ import {
 	requireLocalPageOrigin,
 } from "./origin";
 import { localPageResponse } from "./pages";
+import { createPairOffers, type PairOffers } from "./pair-offers";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -220,10 +226,6 @@ function requireLoopbackHost(req: Request, port: number): Response | undefined {
 	});
 }
 
-function bootstrapPageHtml(): string {
-	return "<!doctype html><html><head><title>dg chat</title></head><body><p>Starting chat session…</p></body></html>";
-}
-
 function handleHealthCheck(
 	req: Request,
 	port: number,
@@ -266,6 +268,12 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		dispatchScheduler,
 		overwatchOpenRequests: new Map(),
 	};
+
+	const pairOffers = createPairOffers();
+	const attachLimiter = createAttachLimiter();
+	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
+		pairOffers.forget(sessionId);
+	});
 
 	const boundServer = Bun.serve<SocketState>({
 		hostname: "127.0.0.1",
@@ -350,25 +358,27 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				if (page) return page;
 			}
 
-			if (url.pathname === CHAT_START_PATH && req.method === "GET") {
-				return new Response(bootstrapPageHtml(), {
-					headers: {
-						"Content-Type": "text/html; charset=utf-8",
-						...NOSNIFF_HEADERS,
-					},
-				});
-			}
-
 			if (url.pathname === CHAT_START_PATH && req.method === "POST") {
 				return handleRegisterSession(req, deps);
 			}
 
-			if (url.pathname === CHAT_PAIR_PATH && req.method === "POST") {
-				return handlePair(req, deps);
+			if (url.pathname === CHAT_PAIR_OFFER_PATH && req.method === "POST") {
+				return handlePairOfferCreate(req, deps, pairOffers);
+			}
+
+			if (
+				url.pathname.startsWith(`${CHAT_PAIR_OFFER_PATH}/`) &&
+				req.method === "POST"
+			) {
+				return handlePairOfferStatus(req, url, deps, pairOffers);
+			}
+
+			if (url.pathname === CHAT_PAIR_CLAIM_PATH && req.method === "POST") {
+				return handlePairClaim(req, deps, pairOffers);
 			}
 
 			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
-				return handleAttach(req, deps);
+				return handleAttach(req, url, deps, attachLimiter);
 			}
 
 			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {
@@ -377,13 +387,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_SESSIONS_LOCAL_PATH && req.method === "GET") {
 				return handleLocalSessions(req, url, deps);
-			}
-			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "GET") {
-				return handleSessionCatalog(req, url, deps);
-			}
-
-			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "POST") {
-				return handleExtensionSessionCreate(req, deps);
 			}
 
 			if (url.pathname === CHAT_WS_PATH) {
@@ -508,11 +511,14 @@ async function handleRegisterSession(
 	req: Request,
 	deps: HttpServerDeps,
 ): Promise<Response> {
-	if (isBrowserOrigin(req.headers.get("origin"))) {
-		return new Response("refused: /start rejects a browser Origin", {
+	if (req.headers.get("origin") !== null) {
+		return new Response("refused: /start accepts only local CLI callers", {
 			status: 400,
+			headers: NOSNIFF_HEADERS,
 		});
 	}
+	const ownerRefused = requireOwnerCredential(req, deps.paths);
+	if (ownerRefused) return ownerRefused;
 	const capacityError = requireSessionCapacity(deps);
 	if (capacityError) return capacityError;
 	const contentType = (req.headers.get("content-type") ?? "")
@@ -554,7 +560,6 @@ async function handleRegisterSession(
 		agentIdentity,
 		workset,
 		role,
-		awaitingAgent: input.awaitingAgent === true,
 	});
 }
 
@@ -593,59 +598,123 @@ function createSessionResponse(
 	});
 }
 
-async function handlePair(
+const PAIR_HEADERS = { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" };
+
+const PAIR_OFFER_ID =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const PAIR_CLAIM_REFUSALS = {
+	"no-match": {
+		status: 404,
+		text: "no pairing offer matches this code; open the extension popup and read the code again",
+	},
+	expired: {
+		status: 410,
+		text: "pairing offer expired; open the extension popup for a new code",
+	},
+	locked: {
+		status: 429,
+		text: "too many wrong pairing codes; reopen the extension popup for a new code",
+	},
+} as const;
+
+function pairText(body: string, status: number): Response {
+	return new Response(body, { status, headers: PAIR_HEADERS });
+}
+
+function pairJson(body: unknown, status = 200): Response {
+	return json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+function noStore(response: Response): Response {
+	response.headers.set("Cache-Control", "no-store");
+	return response;
+}
+
+function pairOrigin(req: Request, paths: DgPaths): string | Response {
+	const refusal = requirePairOrigin(req, paths);
+	return refusal ? noStore(refusal) : (req.headers.get("origin") ?? "");
+}
+
+function handlePairOfferCreate(
 	req: Request,
 	deps: HttpServerDeps,
+	offers: PairOffers,
+): Response {
+	const origin = pairOrigin(req, deps.paths);
+	if (origin instanceof Response) return origin;
+	const offer = offers.create({ origin });
+	if ("outcome" in offer) {
+		return pairText("too many pairing offers; wait for one to expire", 429);
+	}
+	return pairJson(offer, 201);
+}
+
+function handlePairOfferStatus(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+	offers: PairOffers,
+): Response {
+	const origin = pairOrigin(req, deps.paths);
+	if (origin instanceof Response) return origin;
+	const offerId = url.pathname.slice(CHAT_PAIR_OFFER_PATH.length + 1);
+	if (!PAIR_OFFER_ID.test(offerId)) {
+		return pairText("no pairing offer with that id", 404);
+	}
+	const status = offers.status({ offerId, origin });
+	return status === undefined
+		? pairText("no pairing offer with that id", 404)
+		: pairJson(status);
+}
+
+async function handlePairClaim(
+	req: Request,
+	deps: HttpServerDeps,
+	offers: PairOffers,
 ): Promise<Response> {
-	const originError = requirePairOrigin(req, deps.paths);
-	if (originError) return originError;
-	const capacityError = requireSessionCapacity(deps);
-	if (capacityError) return capacityError;
+	if (req.headers.get("origin") !== null) {
+		return pairText("refused: /pair/claim is loopback-only", 400);
+	}
+	const refused = requireOwnerCredential(req, deps.paths);
+	if (refused) return noStore(refused);
 	const contentType = (req.headers.get("content-type") ?? "")
 		.split(";")[0]
 		.trim();
 	if (contentType !== "application/json") {
-		return new Response("Content-Type must be application/json", {
-			status: 415,
-		});
+		return pairText("Content-Type must be application/json", 415);
 	}
 
-	let request: PairRequest;
+	let request: PairClaimRequest;
 	try {
-		request = validatePairRequest(await req.json());
+		request = validatePairClaimRequest(await req.json());
 	} catch (err) {
-		return new Response(describeError(err), {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return pairText(describeError(err), 400);
 	}
 
-	const attempt = consumePairingAttempt(deps.paths, request.code);
-	if (attempt.outcome === "missing") {
-		return new Response("no pairing code is pending; run `dg-daemon pair`", {
-			status: 404,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "expired") {
-		return new Response("pairing code expired; run `dg-daemon pair`", {
-			status: 410,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "incorrect") {
-		return new Response(
-			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
-			{ status: 401, headers: NOSNIFF_HEADERS },
-		);
+	const record = deps.registry.get(request.sessionId);
+	if (!record || record.state !== "active") {
+		return pairText("session not found", 404);
 	}
 
-	return createSessionResponse(deps, {
-		cwd: process.cwd(),
-		agentIdentity: "extension",
-		workset: "paired",
-		role: "agent",
+	noteSecret(record.token);
+	const result = offers.claim({
+		code: request.code,
+		bootstrap: {
+			port: deps.port,
+			sessionId: record.sessionId,
+			token: record.token,
+			agentIdentity: record.agentIdentity,
+		},
 	});
+	if (result.outcome !== "claimed") {
+		const refusal = PAIR_CLAIM_REFUSALS[result.outcome];
+		return pairText(refusal.text, refusal.status);
+	}
+	return pairJson({
+		ok: true,
+		agentIdentity: record.agentIdentity,
+	} satisfies PairClaimResponse);
 }
 
 function pairingAttemptResponse(
@@ -675,10 +744,80 @@ function pairingAttemptResponse(
 	});
 }
 
+async function handleLocalAttach(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+	limiter: AttachLimiter,
+	bearer: string,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: NOSNIFF_HEADERS });
+	const originError =
+		req.headers.get("origin") === null
+			? refuse("refused", 400)
+			: requireLocalPageOrigin(req, url, deps.port, (token) =>
+					deps.registry.tokenIsLive(token),
+				);
+	if (originError) return originError;
+	if (!limiter.allow(bearer)) {
+		return refuse("too many attach requests", 429);
+	}
+	let request: ReturnType<typeof validateAttachRequest>;
+	try {
+		request = validateAttachRequest(await req.json());
+	} catch (err) {
+		return refuse(describeError(err), 400);
+	}
+	if (request.all === true || request.code !== undefined) {
+		return refuse("refused: local pages attach one session by id", 400);
+	}
+	const records = deps.registry.list().flatMap((summary) => {
+		const record = deps.registry.get(summary.sessionId);
+		return record ? [record] : [];
+	});
+	const decision = decideLocalAttach({
+		sessionId: request.sessionId,
+		callerSessionId: records.find((record) =>
+			tokensEqual(record.token, bearer),
+		)?.sessionId,
+		registry: records.map((record) => ({
+			sessionId: record.sessionId,
+			role: record.role,
+			presence: deps.registry.presence(record),
+			state: record.state,
+		})),
+	});
+	if (decision.action === "reject") {
+		return refuse(decision.message, decision.status);
+	}
+	const match = records.find(
+		(record) => record.sessionId === decision.sessionIds[0],
+	);
+	if (!match) return refuse("That session is not active.", 404);
+	noteSecret(match.token);
+	return json({
+		sessions: [
+			{
+				port: deps.port,
+				sessionId: match.sessionId,
+				token: match.token,
+				agentIdentity: match.agentIdentity,
+			},
+		],
+	});
+}
+
 async function handleAttach(
 	req: Request,
+	url: URL,
 	deps: HttpServerDeps,
+	limiter: AttachLimiter,
 ): Promise<Response> {
+	const bearer = bearerToken(req);
+	if (bearer !== undefined && claimsLocalPage(req, url, deps.port)) {
+		return handleLocalAttach(req, url, deps, limiter, bearer);
+	}
 	const originError = requirePairOrigin(req, deps.paths);
 	if (originError) return originError;
 	let body: unknown;
@@ -699,8 +838,6 @@ async function handleAttach(
 			headers: NOSNIFF_HEADERS,
 		});
 	}
-	const origin = req.headers.get("origin");
-	const pinned = getPinnedOrigin(deps.paths) === origin;
 	let codeAccepted = false;
 	if (request.code !== undefined) {
 		const attempt = consumePairingAttempt(deps.paths, request.code);
@@ -712,7 +849,6 @@ async function handleAttach(
 		intent: request.intent,
 		sessionId: request.sessionId,
 		all: request.all,
-		pinned,
 		codeAccepted,
 		sessions: candidates,
 	});
@@ -720,17 +856,6 @@ async function handleAttach(
 		return new Response(decision.message, {
 			status: decision.status,
 			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (decision.action === "create") {
-		const capacityError = requireSessionCapacity(deps);
-		if (capacityError) return capacityError;
-		return createSessionResponse(deps, {
-			cwd: process.cwd(),
-			agentIdentity: request.agentIdentity ?? "agent",
-			workset: request.workset,
-			role: request.role ?? "agent",
-			awaitingAgent: true,
 		});
 	}
 	return json({
@@ -766,78 +891,6 @@ function activeCandidates(deps: HttpServerDeps): {
 	});
 }
 
-function handleSessionCatalog(
-	req: Request,
-	url: URL,
-	deps: HttpServerDeps,
-): Response {
-	const origin = req.headers.get("origin");
-	if (isBrowserOrigin(origin)) {
-		return new Response("refused: /sessions rejects a browser Origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (origin !== null) {
-		const originError = requirePairOrigin(req, deps.paths);
-		if (originError) return originError;
-	}
-	const waitingOnly = url.searchParams.get("waiting") === "1";
-	const includeCwd = origin === null;
-	const sessions = deps.registry
-		.list()
-		.flatMap((summary) => {
-			const record = deps.registry.get(summary.sessionId);
-			if (!record || record.state !== "active") return [];
-			if (waitingOnly && !record.awaitingAgent) return [];
-			return [
-				{
-					sessionId: record.sessionId,
-					agentIdentity: record.agentIdentity,
-					role: record.role,
-					presence: summary.presence,
-					awaitingAgent: record.awaitingAgent,
-					...(record.workset !== undefined ? { workset: record.workset } : {}),
-					...(includeCwd ? { cwd: record.cwd } : {}),
-				},
-			];
-		});
-	return json({ sessions });
-}
-
-async function handleExtensionSessionCreate(
-	req: Request,
-	deps: HttpServerDeps,
-): Promise<Response> {
-	const originError = requirePinnedExtensionOrigin(req, deps.paths);
-	if (originError) return originError;
-	const capacityError = requireSessionCapacity(deps);
-	if (capacityError) return capacityError;
-	let body: Record<string, unknown> = {};
-	try {
-		const parsed = await req.json();
-		if (typeof parsed === "object" && parsed !== null) {
-			body = parsed as Record<string, unknown>;
-		}
-	} catch {
-		body = {};
-	}
-	const role: SessionRole = body.role === "orchestrator" ? "orchestrator" : "agent";
-	const workset =
-		typeof body.workset === "string" ? body.workset.trim() || undefined : undefined;
-	const agentIdentity =
-		typeof body.agentIdentity === "string" && body.agentIdentity.trim().length > 0
-			? body.agentIdentity.trim()
-			: "agent";
-	return createSessionResponse(deps, {
-		cwd: process.cwd(),
-		agentIdentity,
-		workset,
-		role,
-		awaitingAgent: true,
-	});
-}
-
 function hasOwnerCredential(req: Request, paths: DgPaths): boolean {
 	const presented = req.headers.get(OWNER_TOKEN_HEADER) ?? "";
 	const expected = readOwnerToken(paths) ?? "";
@@ -857,11 +910,8 @@ function requireOwnerCredential(
 }
 
 function hasLiveSessionBearer(req: Request, deps: HttpServerDeps): boolean {
-	const authorization = req.headers.get("authorization");
-	return (
-		authorization?.startsWith("Bearer ") === true &&
-		deps.registry.tokenIsLive(authorization.slice(7))
-	);
+	const bearer = bearerToken(req);
+	return bearer !== undefined && deps.registry.tokenIsLive(bearer);
 }
 
 function handleLocalSessions(

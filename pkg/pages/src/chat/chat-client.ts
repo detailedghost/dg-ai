@@ -9,6 +9,7 @@ import {
 	type ConnectionDropInput,
 	type DropMessage,
 	createSerialQueue,
+	describeError,
 	emitRedacted,
 	formatConnectionDrop,
 	noteSecret,
@@ -43,6 +44,12 @@ export type SendUserMessageOptions = {
 	subagentName?: string;
 };
 
+export type SendUserMessageResult =
+	| { ok: true }
+	| { ok: false; error: string; reason?: "timeout" };
+
+export type SendAndWaitOptions = SendUserMessageOptions & { timeoutMs?: number };
+
 export type { ChatHealth, DaemonName } from "../daemon-port";
 
 export type ChatClientOptions = {
@@ -50,7 +57,6 @@ export type ChatClientOptions = {
 		url: string,
 		held: ReadonlyMap<string, string>,
 	) => ChatClientSocket;
-	heldSessionsOnly?: boolean;
 	backoffBaseMs?: number;
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
@@ -60,6 +66,7 @@ export type ChatClientOptions = {
 
 export type ChatClient = {
 	connect(bootstrap: SessionBootstrap): void;
+	addSession(bootstrap: SessionBootstrap): void;
 	onFrame(listener: (frame: ChatFrame) => void): void;
 	onConnectionChange(listener: ConnectionListener): void;
 	sendUserMessage(
@@ -68,6 +75,14 @@ export type ChatClient = {
 		opts?: SendUserMessageOptions,
 	): string;
 	getConnectionState(): ChatConnectionState;
+	/** The daemon port the socket uses now, after any instance-matched rediscovery. */
+	getPort?(): number | undefined;
+	isSessionConfirmed?(sessionId: string): boolean;
+	sendUserMessageAndWait(
+		sessionId: string,
+		body: string,
+		opts?: SendAndWaitOptions,
+	): Promise<SendUserMessageResult>;
 	requestNewSession(
 		requestingSessionId: string,
 		role: SessionRole,
@@ -86,6 +101,7 @@ export type ChatClient = {
 
 const DEFAULT_BACKOFF_BASE_MS = 500;
 const DEFAULT_BACKOFF_MAX_MS = 30_000;
+const DEFAULT_ACK_TIMEOUT_MS = 5000;
 
 function chatSocketUrl(port: number): string {
 	return `ws://127.0.0.1:${port}${CHAT_WS_PATH}`;
@@ -116,6 +132,12 @@ type QueuedMessage = {
 	subagentName?: string;
 };
 
+type AckWaiter = {
+	timeoutMs: number;
+	settle(result: SendUserMessageResult): void;
+	timer?: ReturnType<typeof setTimeout>;
+};
+
 type OutboundFrame = Record<string, unknown>;
 
 export function createChatClient(options: ChatClientOptions = {}): ChatClient {
@@ -135,6 +157,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let knownInstanceId: string | undefined;
 	let lastSessionList: Extract<ChatFrame, { type: "session-list" }> | undefined;
 	const capabilities = new Map<string, string>();
+	const confirmedSessions = new Set<string>();
+	const ackWaiters = new Map<string, AckWaiter>();
 	const disconnectWaiters = new Map<string, { resolve(): void; reject(error: Error): void }>();
 	const frameListeners = new Set<(frame: ChatFrame) => void>();
 	const connectionListeners = new Set<ConnectionListener>();
@@ -245,11 +269,48 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 					...(msg.subagentName ? { subagentName: msg.subagentName } : {}),
 				}),
 			);
+			startAckTimer(msg.messageId);
 		});
 	}
 
-	function flushOutbox(): void {
-		for (const msg of outbox) sendQueuedMessage(msg);
+	function startAckTimer(messageId: string): void {
+		const waiter = ackWaiters.get(messageId);
+		if (!waiter || waiter.timer !== undefined) return;
+		waiter.timer = setTimeout(() => {
+			const idx = outbox.findIndex((m) => m.messageId === messageId);
+			if (idx !== -1) outbox.splice(idx, 1);
+			waiter.settle({ ok: false, reason: "timeout", error: "The daemon did not confirm this message." });
+		}, waiter.timeoutMs);
+	}
+
+	function dropOutbox(sessionId: string): void {
+		for (let i = outbox.length - 1; i >= 0; i--) {
+			const msg = outbox[i];
+			if (msg?.sessionId !== sessionId) continue;
+			outbox.splice(i, 1);
+			ackWaiters
+				.get(msg.messageId)
+				?.settle({ ok: false, error: "The session closed before the daemon confirmed this message." });
+		}
+	}
+
+	function flushOutbox(sessionIds: ReadonlySet<string>): void {
+		for (const msg of outbox) {
+			if (sessionIds.has(msg.sessionId)) sendQueuedMessage(msg);
+		}
+	}
+
+	function confirmSessions(
+		frame: Extract<ChatFrame, { type: "session-list" }>,
+	): void {
+		const fresh = new Set<string>();
+		for (const summary of frame.sessions) {
+			if (!capabilities.has(summary.sessionId)) continue;
+			if (confirmedSessions.has(summary.sessionId)) continue;
+			confirmedSessions.add(summary.sessionId);
+			fresh.add(summary.sessionId);
+		}
+		if (fresh.size > 0) flushOutbox(fresh);
 	}
 
 	function handleOpen(): void {
@@ -265,7 +326,6 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			sendConnectHandshake(sessionId, token);
 			sendHistoryRequest(sessionId, token);
 		}
-		flushOutbox();
 	}
 
 	function scheduleRetry(): void {
@@ -293,6 +353,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function scheduleReconnect(): void {
+		confirmedSessions.clear();
 		logDrop("dropped", "socket closed");
 		for (const waiter of disconnectWaiters.values()) waiter.reject(new Error("The connection closed before disconnect was confirmed."));
 		disconnectWaiters.clear();
@@ -309,15 +370,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 	function emitSessionList(): void {
 		if (!lastSessionList) return;
-		const frame = options.heldSessionsOnly
-			? {
-					...lastSessionList,
-					sessions: lastSessionList.sessions.filter((session) =>
-						capabilities.has(session.sessionId),
-					),
-				}
-			: lastSessionList;
-		for (const listener of frameListeners) listener(frame);
+		for (const listener of frameListeners) listener(lastSessionList);
 	}
 
 	function handleMessage(event: unknown): void {
@@ -349,6 +402,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			logDrop("handshake", frame.message ?? frame.code ?? "handshake rejected");
 		}
 		if (frame.type === "session-list") {
+			confirmSessions(frame);
 			lastSessionList = frame;
 			emitSessionList();
 			return;
@@ -363,9 +417,8 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			const waiter = disconnectWaiters.get(frame.sessionId);
 			if (!waiter) return;
 			capabilities.delete(frame.sessionId);
-			for (let i = outbox.length - 1; i >= 0; i--) {
-				if (outbox[i]?.sessionId === frame.sessionId) outbox.splice(i, 1);
-			}
+			confirmedSessions.delete(frame.sessionId);
+			dropOutbox(frame.sessionId);
 			disconnectWaiters.delete(frame.sessionId);
 			waiter.resolve();
 			if (capabilities.size === 0) {
@@ -387,27 +440,28 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		if (frame.type === "session-pending") {
 			capabilities.set(frame.newSession.sessionId, frame.newSession.token);
 			noteSecret(frame.newSession.token);
+			confirmedSessions.add(frame.newSession.sessionId);
+			flushOutbox(new Set([frame.newSession.sessionId]));
 		}
 
 		if (frame.type === "ack") {
 			const idx = outbox.findIndex((m) => m.messageId === frame.messageId);
 			if (idx !== -1) outbox.splice(idx, 1);
+			ackWaiters.get(frame.messageId)?.settle({ ok: true });
 		}
 
 		if (frame.type === "session-closed") {
 			capabilities.delete(frame.sessionId);
-			for (let i = outbox.length - 1; i >= 0; i--) {
-				if (outbox[i]?.sessionId === frame.sessionId) outbox.splice(i, 1);
-			}
+			confirmedSessions.delete(frame.sessionId);
+			dropOutbox(frame.sessionId);
 		}
 
 		for (const listener of frameListeners) listener(frame);
-		if (frame.type === "session-pending" && options.heldSessionsOnly)
-			emitSessionList();
 	}
 
 	function openAndBind(): void {
 		socketGeneration += 1;
+		confirmedSessions.clear();
 		let opened: ChatClientSocket;
 		try {
 			opened = openSocket(socketUrl(), capabilities);
@@ -432,20 +486,56 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		});
 	}
 
-	return {
-		connect(bootstrap: SessionBootstrap): void {
-			capabilities.set(bootstrap.sessionId, bootstrap.token);
-			noteSecret(bootstrap.token);
-			if (hasAttemptInFlight) {
-				if (connectionState === "connected") {
-					sendConnectHandshake(bootstrap.sessionId, bootstrap.token);
-					sendHistoryRequest(bootstrap.sessionId, bootstrap.token);
-				}
-				return;
+	function queueUserMessage(
+		sessionId: string,
+		body: string,
+		opts: SendUserMessageOptions,
+	): string {
+		if (!capabilities.has(sessionId) || disconnectWaiters.has(sessionId)) {
+			throw new Error(
+				`sendUserMessage: session ${sessionId} is not captured by this client`,
+			);
+		}
+		const bodyBytes = UTF8_ENCODER.encode(body).length;
+		if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
+			throw new Error(
+				`sendUserMessage: body is ${bodyBytes} bytes, exceeding CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
+			);
+		}
+		const messageId = opts.messageId ?? crypto.randomUUID();
+		const msg: QueuedMessage = {
+			sessionId,
+			messageId,
+			body,
+			subagentName: opts.subagentName,
+		};
+		outbox.push(msg);
+		if (connectionState === "connected" && confirmedSessions.has(sessionId))
+			sendQueuedMessage(msg);
+		return messageId;
+	}
+
+	function connectSession(bootstrap: SessionBootstrap): void {
+		capabilities.set(bootstrap.sessionId, bootstrap.token);
+		noteSecret(bootstrap.token);
+		if (hasAttemptInFlight) {
+			if (connectionState === "connected") {
+				sendConnectHandshake(bootstrap.sessionId, bootstrap.token);
+				sendHistoryRequest(bootstrap.sessionId, bootstrap.token);
 			}
-			hasAttemptInFlight = true;
-			port = bootstrap.port;
-			openAndBind();
+			return;
+		}
+		hasAttemptInFlight = true;
+		port = bootstrap.port;
+		openAndBind();
+	}
+
+	return {
+		connect: connectSession,
+
+		addSession(bootstrap: SessionBootstrap): void {
+			if (capabilities.has(bootstrap.sessionId)) return;
+			connectSession(bootstrap);
 		},
 
 		onFrame(listener: (frame: ChatFrame) => void): void {
@@ -461,31 +551,46 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			body: string,
 			opts: SendUserMessageOptions = {},
 		): string {
-			if (!capabilities.has(sessionId) || disconnectWaiters.has(sessionId)) {
-				throw new Error(
-					`sendUserMessage: session ${sessionId} is not captured by this client`,
-				);
-			}
-			const bodyBytes = UTF8_ENCODER.encode(body).length;
-			if (bodyBytes > CHAT_MAX_MESSAGE_BODY_BYTES) {
-				throw new Error(
-					`sendUserMessage: body is ${bodyBytes} bytes, exceeding CHAT_MAX_MESSAGE_BODY_BYTES (${CHAT_MAX_MESSAGE_BODY_BYTES})`,
-				);
-			}
+			return queueUserMessage(sessionId, body, opts);
+		},
+
+		sendUserMessageAndWait(
+			sessionId: string,
+			body: string,
+			{ timeoutMs = DEFAULT_ACK_TIMEOUT_MS, ...opts }: SendAndWaitOptions = {},
+		): Promise<SendUserMessageResult> {
 			const messageId = opts.messageId ?? crypto.randomUUID();
-			const msg: QueuedMessage = {
-				sessionId,
-				messageId,
-				body,
-				subagentName: opts.subagentName,
-			};
-			outbox.push(msg);
-			if (connectionState === "connected") sendQueuedMessage(msg);
-			return messageId;
+			return new Promise((resolve) => {
+				const waiter: AckWaiter = {
+					timeoutMs,
+					settle(result) {
+						clearTimeout(waiter.timer);
+						ackWaiters.delete(messageId);
+						resolve(result);
+					},
+				};
+				ackWaiters.set(messageId, waiter);
+				try {
+					queueUserMessage(sessionId, body, { ...opts, messageId });
+				} catch (error) {
+					waiter.settle({
+						ok: false,
+						error: describeError(error),
+					});
+				}
+			});
+		},
+
+		isSessionConfirmed(sessionId: string): boolean {
+			return connectionState === "connected" && confirmedSessions.has(sessionId);
 		},
 
 		getConnectionState(): ChatConnectionState {
 			return connectionState;
+		},
+
+		getPort(): number | undefined {
+			return port;
 		},
 
 		requestNewSession(
@@ -575,10 +680,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 
 		forgetSession(sessionId: string): void {
 			capabilities.delete(sessionId);
+			confirmedSessions.delete(sessionId);
 			disconnectWaiters.delete(sessionId);
-			for (let i = outbox.length - 1; i >= 0; i--) {
-				if (outbox[i]?.sessionId === sessionId) outbox.splice(i, 1);
-			}
+			dropOutbox(sessionId);
 			if (capabilities.size === 0) {
 				if (retryTimer !== undefined) clearTimeout(retryTimer);
 				retryTimer = undefined;

@@ -1,6 +1,6 @@
 ---
 name: overwatch
-description: Open the live DeeGee Overwatch board as a local page that dg-daemon serves on loopback, keep it current across parallel chats, route board actions, and publish its read-only phone snapshot. Pass --ext to open the board in the dg-ai-extension instead.
+description: Open the live DeeGee Overwatch board as a local page that dg-daemon serves on loopback, keep it current across parallel chats, route board actions, and publish its read-only phone snapshot. Pass --ext to open the board in the paired browser through the dg-ai-extension instead.
 ---
 
 # Overwatch
@@ -44,7 +44,7 @@ session when finished.
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--ext` | none | `overwatch open` only: focus the board in the dg-ai-extension instead of opening the local page. Needs the extension. | off (local is the default) |
+| `--ext` | none | `overwatch open` only: open /board in the paired browser through the dg-ai-extension instead of the default browser. Needs the extension. | off (local is the default) |
 
 To use the extension, run the gate command, then the line below it:
 
@@ -53,7 +53,7 @@ To use the extension, run the gate command, then the line below it:
 dg-agent overwatch open --ext
 ```
 
-Side panel details and WSL networking for a Windows-side browser:
+Paired browser details and WSL networking for a Windows-side browser:
 [references/extension.md](references/extension.md).
 
 ## Keep the board current

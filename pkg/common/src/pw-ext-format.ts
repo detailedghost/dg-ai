@@ -9,6 +9,7 @@ export const PW_EXT_READ_VERBS = [
 	"selection",
 	"console",
 	"tools",
+	"tabs",
 ] as const;
 export const PW_EXT_WRITE_VERBS = [
 	"open",
@@ -16,6 +17,9 @@ export const PW_EXT_WRITE_VERBS = [
 	"fill",
 	"upload",
 	"call",
+	"new",
+	"select",
+	"close",
 ] as const;
 export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
@@ -33,12 +37,14 @@ export const PW_EXT_MAX_VALUE_BYTES = 4096;
 export const PW_EXT_MAX_UPLOAD_BYTES = 26_214_400;
 export const PW_EXT_MAX_CALL_ARGS_BYTES = 16_384;
 export const PW_EXT_MAX_TOOL_NAME_CHARS = 128;
-/** First extension release that answers pw-ext frames. */
-export const PW_EXT_MIN_EXTENSION_VERSION = [1, 42, 0] as const;
+export const PW_EXT_MAX_TAB_ID = 2_147_483_647;
+/** First extension release with per-agent tab groups. */
+export const PW_EXT_MIN_EXTENSION_VERSION = [1, 44, 0] as const;
 
 /** One fixed browser action; the wire carries no code. */
 export type PwExtRequest = {
 	verb: PwExtVerb;
+	tabId?: number;
 	url?: string;
 	target?: string;
 	value?: string;
@@ -73,17 +79,29 @@ export type PwExtCliResult = {
 };
 
 const FIELDS: Record<PwExtVerb, readonly string[]> = {
-	current: [],
-	snapshot: [],
-	screenshot: [],
-	selection: [],
-	console: [],
-	open: ["url"],
-	click: ["target"],
-	fill: ["target", "value"],
-	upload: ["target", "assetId", "fileName", "fileSize", "fileType", "filePath"],
-	tools: [],
-	call: ["tool", "args"],
+	current: ["tabId"],
+	snapshot: ["tabId"],
+	screenshot: ["tabId"],
+	selection: ["tabId"],
+	console: ["tabId"],
+	tabs: ["tabId"],
+	open: ["tabId", "url"],
+	new: ["tabId", "url"],
+	select: ["tabId"],
+	close: ["tabId"],
+	click: ["tabId", "target"],
+	fill: ["tabId", "target", "value"],
+	upload: [
+		"tabId",
+		"target",
+		"assetId",
+		"fileName",
+		"fileSize",
+		"fileType",
+		"filePath",
+	],
+	tools: ["tabId"],
+	call: ["tabId", "tool", "args"],
 };
 
 const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -121,7 +139,17 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 		fail(`${path}.verb is not a supported verb`);
 	const verb = value.verb as PwExtVerb;
 	onlyKeys(value, ["verb", ...FIELDS[verb]], path);
-	if (verb === "open") {
+	if ((verb === "tabs" || verb === "new") && value.tabId !== undefined)
+		fail(`${path}.tabId is not used by "${verb}"`);
+	if (
+		(value.tabId !== undefined || verb === "select") &&
+		(typeof value.tabId !== "number" ||
+			!Number.isSafeInteger(value.tabId) ||
+			value.tabId < 0 ||
+			value.tabId > PW_EXT_MAX_TAB_ID)
+	)
+		fail(`${path}.tabId must be a non-negative integer`);
+	if (verb === "open" || (verb === "new" && value.url !== undefined)) {
 		requireString(value.url, `${path}.url`, { nonEmpty: true });
 		if (value.url.length > PW_EXT_MAX_URL_CHARS)
 			fail(`${path}.url exceeds ${PW_EXT_MAX_URL_CHARS} characters`);

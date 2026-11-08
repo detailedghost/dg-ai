@@ -14,21 +14,13 @@
       <p class="sub mt-2">
         // local-first browser tooling &mdash; no cloud, no tracking
       </p>
-      <nav class="mt-4 flex gap-2" aria-label="Settings sections">
-        <a class="navbtn" data-nav="settings" href="#/settings">Settings</a>
-        <a class="navbtn" data-nav="privacy" href="#/privacy">Privacy</a>
-        <a class="navbtn" data-nav="kudos" href="#/kudos">Kudos</a>
-        <button class="navbtn ml-auto" id="theme" type="button">Light</button>
-      </nav>
     </header>
 
     <main>
-      <section id="page-settings" aria-label="Settings">
+      <section aria-label="Settings">
         <p class="note">
           Changes save as you make them &mdash; there is no Save button.
         </p>
-
-        <div id="pairPanel"></div>
 
         <div class="panel">
           <h2 class="sec-h">Tab grouping</h2>
@@ -99,124 +91,96 @@
         </div>
       </section>
 
-      <section id="page-privacy" aria-label="Privacy" hidden>
-        <div class="panel panel-alt">
-          <h2 class="sec-h">Privacy</h2>
-          <p class="note">
-            DeeGee processes prototype, tour, and recording data on your
-            machine. It has no account system, telemetry, or upload service.
-          </p>
-          <ul class="klist list-disc pl-5">
-            <li>
-              <b>Prototype sampling is limited.</b> Records the full page URL.
-              Inspects rendered elements, computed CSS, root custom
-              properties, and representative control styles. Excludes page
-              text and typed form values.
-            </li>
-            <li>
-              <b>Marked URLs are visible to the page.</b> Plans travel in the
-              URL fragment, not to the site's server. Scripts already on the
-              page can read it before DeeGee removes it. No secrets in a plan.
-            </li>
-            <li>
-              <b>Site access requires your approval.</b> Requests
-              <code>&lt;all_urls&gt;</code> so marked prototype and tour pages
-              work on the site you choose. Prototype behavior starts only on
-              a DeeGee-marked URL.
-            </li>
-            <li>
-              <b>Artifacts stay local.</b> Style guides and verdicts go
-              through Downloads. A screenshot may be saved on approval, where
-              capture is supported. The CLI writes into your local project.
-              None of it is uploaded.
-            </li>
-            <li>
-              <b>No telemetry.</b> Not of any kind. Settings stay in
-              extension storage.
-            </li>
-            <li>
-              <b>Existing network features are separate.</b> Kokoro narration
-              runs locally, after downloading its model from Hugging Face.
-              Its ONNX runtime ships with the extension. jsDelivr access
-              stays, for upstream runtime fallbacks. Pages you open still
-              make their own network requests.
-            </li>
-          </ul>
-        </div>
-      </section>
+      <details class="panel panel-alt">
+        <summary class="sec-h cursor-pointer">Privacy</summary>
+        <p class="note">
+          DeeGee processes prototype, tour, and recording data on your
+          machine. It has no account system, telemetry, or upload service.
+        </p>
+        <ul class="klist list-disc pl-5">
+          <li>
+            <b>Prototype sampling is limited.</b> Records the full page URL.
+            Inspects rendered elements, computed CSS, root custom properties,
+            and representative control styles. Excludes page text and typed
+            form values.
+          </li>
+          <li>
+            <b>Marked URLs are visible to the page.</b> Plans travel in the
+            URL fragment, not to the site's server. Scripts already on the
+            page can read it before DeeGee removes it. No secrets in a plan.
+          </li>
+          <li>
+            <b>Site access requires your approval.</b> Requests
+            <code>&lt;all_urls&gt;</code> so marked prototype and tour pages
+            work on the site you choose. Prototype behavior starts only on a
+            DeeGee-marked URL.
+          </li>
+          <li>
+            <b>Artifacts stay local.</b> Style guides and verdicts go through
+            Downloads. A screenshot may be saved on approval, where capture is
+            supported. The CLI writes into your local project. None of it is
+            uploaded.
+          </li>
+          <li>
+            <b>No telemetry.</b> Not of any kind. Settings stay in extension
+            storage.
+          </li>
+          <li>
+            <b>Existing network features are separate.</b> Kokoro narration
+            runs locally, after downloading its model from Hugging Face. Its
+            ONNX runtime ships with the extension. jsDelivr access stays, for
+            upstream runtime fallbacks. Pages you open still make their own
+            network requests.
+          </li>
+        </ul>
+      </details>
 
-      <section id="page-kudos" aria-label="Kudos" hidden>
-        <div class="panel panel-alt">
-          <h2 class="sec-h">Kudos</h2>
-          <p class="note">
-            DeeGee stands on excellent open-source work. Thank you to:
-          </p>
-          <ul class="klist list-disc pl-5">
-            <li>
-              Browser implementers and the
-              <a
-                href="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions"
-                target="_blank"
-                rel="noopener"
-                >WebExtensions community</a
-              >
-              &mdash; the content-script, Downloads, tab capture, Shadow DOM,
-              CSSOM, and Compression Streams foundations behind live prototypes.
-            </li>
-            <li>
-              <a href="https://wxt.dev" target="_blank" rel="noopener">WXT</a>
-              &mdash; the web-extension framework.
-            </li>
-            <li>
-              <a
-                href="https://github.com/hexgrad/kokoro"
-                target="_blank"
-                rel="noopener"
-                >Kokoro</a
-              >
-              &amp;
-              <a
-                href="https://www.npmjs.com/package/kokoro-js"
-                target="_blank"
-                rel="noopener"
-                >kokoro-js</a
-              >
-              &mdash; local neural text-to-speech.
-            </li>
-            <li>
-              <a
-                href="https://github.com/huggingface/transformers.js"
-                target="_blank"
-                rel="noopener"
-                >Transformers.js</a
-              >
-              &mdash; in-browser model runtime.
-            </li>
-            <li>
-              <a
-                href="https://github.com/microsoft/onnxruntime"
-                target="_blank"
-                rel="noopener"
-                >ONNX Runtime Web</a
-              >
-              &mdash; the wasm inference backend.
-            </li>
-            <li>
-              <a
-                href="https://github.com/tj/commander.js"
-                target="_blank"
-                rel="noopener"
-                >Commander.js</a
-              >
-              &mdash; the CLI framework.
-            </li>
-            <li>
-              <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a>
-              &mdash; the runtime the CLI runs on.
-            </li>
-          </ul>
-        </div>
-      </section>
+      <details class="panel panel-alt">
+        <summary class="sec-h cursor-pointer">Kudos</summary>
+        <p class="note">
+          DeeGee stands on excellent open-source work. Thank you to:
+        </p>
+        <ul class="klist list-disc pl-5">
+          <li>
+            <a href="https://wxt.dev" target="_blank" rel="noopener">WXT</a>
+            &mdash; the web-extension framework.
+          </li>
+          <li>
+            <a
+              href="https://github.com/hexgrad/kokoro"
+              target="_blank"
+              rel="noopener"
+              >Kokoro</a
+            >
+            &amp;
+            <a
+              href="https://www.npmjs.com/package/kokoro-js"
+              target="_blank"
+              rel="noopener"
+              >kokoro-js</a
+            >
+            &mdash; local neural text-to-speech.
+          </li>
+          <li>
+            <a
+              href="https://github.com/huggingface/transformers.js"
+              target="_blank"
+              rel="noopener"
+              >Transformers.js</a
+            >
+            &mdash; in-browser model runtime.
+          </li>
+          <li>
+            <a
+              href="https://github.com/microsoft/onnxruntime"
+              target="_blank"
+              rel="noopener"
+              >ONNX Runtime Web</a
+            >
+            &mdash; the wasm inference backend.
+          </li>
+        </ul>
+      </details>
     </main>
 
     <script type="module" src="./main.ts"></script>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 
 type FakeTab = {
 	id: number;
@@ -14,6 +14,7 @@ const state = {
 	groups: [] as FakeGroup[],
 	nextGroupId: 1,
 	session: new Map<string, unknown>(),
+	sessionListFails: false,
 };
 
 function indexOf(tabId: number): { windowId: number; index: number } {
@@ -46,9 +47,13 @@ mock.module("wxt/browser", () => ({
 		storage: {
 			sync: { get: mock(async () => ({ color: "blue" })) },
 			session: {
-				get: mock(async (key: string) =>
-					state.session.has(key) ? { [key]: state.session.get(key) } : {},
-				),
+				get: mock(async (key?: string | null) => {
+					if (key === undefined || key === null) {
+						if (state.sessionListFails) throw new Error("storage unavailable");
+						return Object.fromEntries(state.session);
+					}
+					return state.session.has(key) ? { [key]: state.session.get(key) } : {};
+				}),
 				set: mock(async (items: Record<string, unknown>) => {
 					for (const [k, v] of Object.entries(items)) state.session.set(k, v);
 				}),
@@ -132,6 +137,7 @@ import { addGroupMarker } from "../../skills-cli/src/utils/marker";
 const { forgetTab, onTabComplete } = await import(
 	"@/lib/features/tab-grouping"
 );
+const { browser } = await import("wxt/browser");
 
 function addTab(id: number, windowId: number, url: string, groupId = -1) {
 	state.tabs.set(id, { id, windowId, groupId, url });
@@ -173,6 +179,7 @@ beforeEach(() => {
 	state.groups = [];
 	state.nextGroupId = 1;
 	state.session.clear();
+	state.sessionListFails = false;
 });
 
 describe("onTabComplete", () => {
@@ -412,4 +419,85 @@ describe("onTabComplete", () => {
 			expect(state.tabs.get(77)?.url).toBe("https://github.com/o/r/pull/5");
 		},
 	);
+});
+
+describe("onTabComplete with an agent group", () => {
+	const AGENT_TITLE = "agent · ab12";
+	const agentRecord = (groupId: number, title = AGENT_TITLE) => ({
+		sessionId: "ab12cdef",
+		agentIdentity: "agent",
+		groupId,
+		title,
+		color: "blue",
+	});
+	const groupCalls = () =>
+		(browser.tabs.group as unknown as { mock: { calls: unknown[][] } }).mock
+			.calls.map(([args]) => args as { tabIds: number[]; groupId?: number });
+
+	beforeEach(() => {
+		(browser.tabs.group as unknown as { mockClear(): void }).mockClear();
+	});
+
+	it("never pushes a marked tab into an agent's group", async () => {
+		addGroup(10, 1, AGENT_TITLE);
+		state.session.set("agentTabs:ab12cdef", agentRecord(10));
+		addTab(90, 1, "https://example.com/", 10);
+		markedTab(91, 1, 0, defaultBatch, AGENT_TITLE);
+		await onTabComplete(91);
+
+		expect(groupCalls().every((call) => call.groupId !== 10)).toBe(true);
+		expect(groupCalls()).toEqual([{ tabIds: [91] }]);
+		expect(state.tabs.get(91)?.groupId).not.toBe(10);
+		expect(state.tabs.get(91)?.groupId).not.toBe(-1);
+		expect(state.groups).toHaveLength(2);
+		expect(state.tabs.get(90)?.groupId).toBe(10);
+		expect(state.tabs.get(91)?.url).toBe("https://github.com/o/r/pull/91");
+	});
+
+	it("lets later tabs of that marker batch join the new group, not the agent's", async () => {
+		addGroup(10, 1, AGENT_TITLE);
+		state.session.set("agentTabs:ab12cdef", agentRecord(10));
+		markedTab(92, 1, 0, defaultBatch, AGENT_TITLE);
+		markedTab(93, 1, 1, defaultBatch, AGENT_TITLE);
+		await Promise.all([92, 93].map(onTabComplete));
+
+		expect(state.tabs.get(92)?.groupId).toBe(state.tabs.get(93)?.groupId);
+		expect(state.tabs.get(92)?.groupId).not.toBe(10);
+		expect(groupCalls().every((call) => call.groupId !== 10)).toBe(true);
+	});
+
+	it("still joins an existing group whose title has no agent record", async () => {
+		addGroup(5, 1, "IP");
+		addGroup(10, 1, AGENT_TITLE);
+		state.session.set("agentTabs:ab12cdef", agentRecord(10));
+		markedTab(94, 1, 0);
+		await onTabComplete(94);
+
+		expect(groupCalls()).toEqual([{ tabIds: [94], groupId: 5 }]);
+		expect(state.tabs.get(94)?.groupId).toBe(5);
+	});
+
+	it("still groups a marked tab normally when the agent records cannot be read", async () => {
+		addGroup(5, 1, "IP");
+		state.sessionListFails = true;
+		markedTab(96, 1, 0);
+		const warn = spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			await onTabComplete(96);
+			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			warn.mockRestore();
+		}
+
+		expect(groupCalls()).toEqual([{ tabIds: [96], groupId: 5 }]);
+		expect(state.tabs.get(96)?.groupId).toBe(5);
+	});
+
+	it("groups normally when session storage holds no agent record", async () => {
+		addGroup(5, 1, "IP");
+		markedTab(95, 1, 0);
+		await onTabComplete(95);
+
+		expect(state.tabs.get(95)?.groupId).toBe(5);
+	});
 });

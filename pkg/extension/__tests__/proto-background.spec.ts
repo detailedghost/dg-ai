@@ -97,6 +97,21 @@ function defaultRequest(
 	};
 }
 
+function callProto(
+	handler: ReturnType<typeof createProtoHandler>,
+	request: ProtoBrowserRequest,
+	progress: (status: string) => void,
+) {
+	const input = {
+		request,
+		timeoutMs: request.timeoutMs,
+		signal: new AbortController().signal,
+		progress,
+		context: undefined,
+	};
+	return handler(input as Parameters<typeof handler>[0]);
+}
+
 function buildStyleGuide(): StyleGuide {
 	return {
 		meta: { url: "https://example.test/account", scrapedAt: 1, sameOrigin: true },
@@ -141,7 +156,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		});
 		const handler = createProtoHandler({ browserApi: api });
 
-		const result = await handler(defaultRequest(), mock(() => {}));
+		const result = await callProto(handler, defaultRequest(), mock(() => {}));
 
 		expect(result).toEqual({
 			ok: false,
@@ -153,7 +168,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const { api } = buildApi({ create: mock(async () => ({})) });
 		const handler = createProtoHandler({ browserApi: api });
 
-		const result = await handler(defaultRequest(), mock(() => {}));
+		const result = await callProto(handler, defaultRequest(), mock(() => {}));
 
 		expect(result).toEqual({
 			ok: false,
@@ -166,7 +181,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const styleGuide = buildStyleGuide();
 
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		listener(
 			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide },
@@ -184,7 +199,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
 		const handler = createProtoHandler({ browserApi: api });
 
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		listener(
 			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide: { ready: true } },
@@ -202,10 +217,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const verdict = buildVerdict();
 
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 		listener({ type: PROTO_SAVE_VERDICT, verdict }, { tab: { id: 9 } }, () => {});
 
@@ -218,10 +230,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const { api, listener } = buildApi({ create: mock(async () => ({ id: 9 })) });
 		const handler = createProtoHandler({ browserApi: api });
 
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 		listener(
 			{ type: PROTO_SAVE_VERDICT, verdict: { slug: "account-summary" } },
@@ -245,10 +254,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const verdict = buildVerdict();
 
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 		const captureResponse = await new Promise((resolve) => {
 			const keepChannelOpen = listener(
@@ -282,10 +288,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const verdict = buildVerdict();
 
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 		const captureResponse = await new Promise((resolve) => {
 			listener(
@@ -315,7 +318,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			query,
 		});
 		const handler = createProtoHandler({ browserApi: api });
-		void handler(defaultRequest({ phase: "plant" }), mock(() => {}));
+		void callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 
 		const captureResponse = await new Promise((resolve) => {
@@ -337,7 +340,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const notReady = buildNotReady();
 
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		listener({ type: PROTO_NOT_READY, error: notReady }, { tab: { id: 7 } }, () => {});
 
@@ -348,7 +351,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const { api, listener } = buildApi({ create: mock(async () => ({ id: 7 })) });
 		const handler = createProtoHandler({ browserApi: api });
 
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		listener(
 			{ type: PROTO_NOT_READY, error: { code: "not-a-real-code" } },
@@ -366,7 +369,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const onProgress = mock((_status: string) => {});
 
-		const resultPromise = handler(defaultRequest(), onProgress);
+		const resultPromise = callProto(handler, defaultRequest(), onProgress);
 		await flush();
 		listener(
 			{ type: PROTO_PROGRESS, status: "ready; scraping the style guide" },
@@ -414,7 +417,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const styleGuide = buildStyleGuide();
 
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		listener(
 			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide },
@@ -440,7 +443,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const handler = createProtoHandler({ browserApi: api });
 		const styleGuide = buildStyleGuide();
 
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		listener(
 			{ type: PROTO_SAVE_STYLE_GUIDE, styleGuide },
@@ -471,10 +474,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			captureVisibleTab,
 			query,
 		});
-		void createProtoHandler({ browserApi: api })(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		void callProto(createProtoHandler({ browserApi: api }), defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 
 		const captureResponse = await new Promise((resolve) => {
@@ -506,10 +506,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		});
 		const handler = createProtoHandler({ browserApi: api });
 		const verdict = buildVerdict();
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 
 		const captureResponse = await new Promise((resolve) => {
@@ -547,10 +544,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		});
 		const handler = createProtoHandler({ browserApi: api });
 		const verdict = buildVerdict();
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 
 		const captureResponse = await new Promise((resolve) => {
@@ -612,10 +606,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			});
 			const handler = createProtoHandler({ browserApi: api });
 			const verdict = buildVerdict();
-			const resultPromise = handler(
-				defaultRequest({ phase: "plant" }),
-				mock(() => {}),
-			);
+			const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 			await flush();
 			const captureResponse = await new Promise((resolve) => {
 				listener(
@@ -651,7 +642,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			create: mock(async () => ({ id: 7 })),
 		});
 		const handler = createProtoHandler({ browserApi: api });
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		removeTab(7);
 		expect(await resultPromise).toEqual({
@@ -670,7 +661,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			create: mock(async () => ({ id: 7 })),
 		});
 		const handler = createProtoHandler({ browserApi: api });
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 		await flush();
 		const pending = await new Promise((resolve) => {
 			listener({ type: PROTO_HAS_PENDING }, { tab: { id: 7 } }, resolve);
@@ -696,10 +687,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			query: mock(async () => [{ id: 7 }]),
 		});
 		const handler = createProtoHandler({ browserApi: api, deadlineMs: 400 });
-		const resultPromise = handler(
-			defaultRequest({ phase: "plant" }),
-			mock(() => {}),
-		);
+		const resultPromise = callProto(handler, defaultRequest({ phase: "plant" }), mock(() => {}));
 		await flush();
 		const captureResponse = await new Promise((resolve) => {
 			listener(
@@ -753,7 +741,7 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 			remove,
 		});
 		const handler = createProtoHandler({ browserApi: api, deadlineMs: 30 });
-		const resultPromise = handler(defaultRequest(), mock(() => {}));
+		const resultPromise = callProto(handler, defaultRequest(), mock(() => {}));
 
 		await expect(resultPromise).resolves.toEqual({
 			ok: false,
@@ -776,21 +764,15 @@ describe("requestPrototypeBrowserWork / createProtoHandler", () => {
 		const { api } = buildApi({ create });
 		const handler = createProtoHandler({ browserApi: api });
 		expect(
-			await handler(
-				defaultRequest({ markedUrl: "javascript:alert(1)" }),
-				mock(() => {}),
-			),
+			await callProto(handler, defaultRequest({ markedUrl: "javascript:alert(1)" }), mock(() => {})),
 		).toEqual({
 			ok: false,
 			error: "the prototype URL must be an http(s) URL",
 		});
 		expect(
-			await handler(
-				defaultRequest({
+			await callProto(handler, defaultRequest({
 					markedUrl: `https://example.test/${"a".repeat(40_000)}`,
-				}),
-				mock(() => {}),
-			),
+				}), mock(() => {})),
 		).toEqual({
 			ok: false,
 			error: "the prototype URL exceeds the marker URL limit",

@@ -207,8 +207,8 @@ not a floor on the whole step. So it always lengthens that step, and you can hol
 a beat on an important frame without guessing how long its narration will run.
 
 Because Chrome requires a user gesture to start tab capture, the page shows a
-"press to start" modal; the user presses `Alt+Shift+D` (or clicks the DeeGee
-toolbar icon) once, then it's fully automatic through to the saved-confirmation
+"press to start" modal; the user presses `Alt+Shift+D` (or opens the DeeGee
+popup and chooses Record demo) once, then it's fully automatic through to the saved-confirmation
 message. Chrome/Edge only — `tabCapture`/`offscreen` aren't available in Firefox.
 
 In video mode the manual Next/Back/jump controls are hidden (there's no one to
