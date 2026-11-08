@@ -14,6 +14,7 @@ regexTarget = "secret"
 paths = [
   '''(?:^|/)pkg/dg-daemon/__tests__/server/http-polish\.spec\.ts$''',
   '''(?:^|/)pkg/dg-daemon/__tests__/server/local-pages\.spec\.ts$''',
+  '''(?:^|/)pkg/dg-daemon/__tests__/server/session-adopt\.spec\.ts$''',
   '''(?:^|/)pkg/dg-daemon/__tests__/server/upgrade-origin-and-host\.spec\.ts$''',
   '''(?:^|/)pkg/dg-server/__tests__/server/upgrade-origin-and-host\.spec\.ts$''',
 ]
@@ -73,3 +74,24 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)pkg/inbox/src/protonmail/__test__/fixtures/test-bridge-tls\.ts$''']
 regexes = ['''^-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC2K0kajDeyj1wy\n''']
+
+[[allowlists]]
+description = "Fixture SHA-256 digest in the extension options page spec"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/extension/__tests__/options-page\.spec\.ts$''']
+regexes = ['''^2093195ba40ed729a120cd0a135a75a44f6f30135cac2e1040c04aa218e738df$''']
+
+[[allowlists]]
+description = "Fake GitHub token in the extension chat background redaction spec"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/extension/__tests__/chat-background\.spec\.ts$''']
+regexes = ['''^ghp_abcdef1234567890ABCDEF$''']
+
+[[allowlists]]
+description = "Public RSA key that pins the Chrome extension id, not a secret"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/extension/wxt\.config\.ts$''']
+regexes = ['''^MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA''']
