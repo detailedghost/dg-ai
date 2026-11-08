@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0.0 (2026-11-08)
+
+### Breaking
+
+- feat(pairing)!: pair the CLI and extension with no codes ([#157](https://github.com/detailedghost/dg-ai/pull/157))
+
 ## v2.0.1 (2026-11-08)
 
 ### Fixes
