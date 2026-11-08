@@ -47,9 +47,7 @@ describe("pw main with no browser installed", () => {
 		const started: string[] = [];
 		const env = clientEnv();
 		expect(await main(["open"], env, commandsWithoutBrowser(started))).toBe(3);
-		expect(env.stderr).toEqual([
-			"No browser found. Ask the user, then run: dg-skills pw install-browser (downloads about 150 MB)",
-		]);
+		expect(env.stderr).toEqual([new BrowserMissingError().message]);
 		expect(env.stdout).toEqual([]);
 		expect(started).toEqual([]);
 	});
