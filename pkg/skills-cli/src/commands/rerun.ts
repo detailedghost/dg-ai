@@ -15,7 +15,7 @@ export function registerRerun(
 ): void {
 	addLocalOptions(addExtOption(program.command("rerun")))
 		.description(
-			"replay a saved demo plan (.md) in a local browser, or via the dg-ai-extension with --ext",
+			"record a saved demo plan (.md) to an MP4 in a local browser, or replay it via the dg-ai-extension with --ext",
 		)
 		.argument(
 			"<plan>",
@@ -23,7 +23,7 @@ export function registerRerun(
 		)
 		.option(
 			"--video",
-			"record the replay to a video now, with no start screen",
+			"--ext: start in video mode; local mode always records",
 		)
 		.option("--print", "--ext only: print the marked URL instead of opening it")
 		.action(async (plan: string, opts: CommandOpts) => {

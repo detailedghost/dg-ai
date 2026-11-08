@@ -3,7 +3,6 @@ import { join, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { buildPages } from "../pages/build";
 import { hashBundle, playwrightMetadata } from "../skills-cli/build";
-import { buildPlayer } from "../tour-ui/build";
 
 const ROOT = import.meta.dir;
 const PKG = join(ROOT, "..");
@@ -70,9 +69,9 @@ function revision(): string | undefined {
 
 export async function buildLauncher(outdir: string): Promise<{ lib: string; tarball: string }> {
 	const plugins = [playwrightMetadata, namedChunks];
-	const [player] = await Promise.all([buildPlayer(), buildPages()]);
+	await buildPages();
 	const { version } = JSON.parse(readFileSync(join(PKG, "skills-cli", "package.json"), "utf8")) as { version: string };
-	const sha = process.env.DG_BUILD_SHA ?? revision() ?? (await hashBundle(ENTRY, plugins, [player]));
+	const sha = process.env.DG_BUILD_SHA ?? revision() ?? (await hashBundle(ENTRY, plugins));
 	const lib = join(outdir, "lib");
 	rmSync(outdir, { recursive: true, force: true });
 	const result = await Bun.build({

@@ -1,36 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TourScript } from "@dg/common";
-import * as realVerify from "../src/utils/demo-verify";
-import { tourPageFor, verifyLocal } from "../src/demo/verify-local";
+import { verifyLocal, type VerifyLocalDeps } from "../src/demo/verify-local";
+import { findInstalledChromium } from "../src/utils/find-browser";
+import { fakeBrowser } from "./demo-run-fakes";
 
-type Overlay = { kind: "none" | "consent" | "step" | "done"; index: number };
+setDefaultTimeout(90_000);
 
-function fakePage(script: TourScript, missing: string[] = []) {
-	let index = 0;
-	let consented = false;
-	return {
-		async readTourOverlay(): Promise<Overlay> {
-			if (!consented) return { kind: "consent", index: 0 };
-			if (index >= script.steps.length) return { kind: "done", index };
-			return { kind: "step", index };
-		},
-		async clickThroughTour() {
-			if (!consented) consented = true;
-			else index++;
-			return true;
-		},
-		async selectorResolves(selector: string) {
-			return !missing.includes(selector);
-		},
-		async locationHref() {
-			return script.startUrl;
-		},
-		drainNavigations(): string[] {
-			return [];
-		},
-	};
-}
+let dir: string;
+beforeEach(() => {
+	dir = mkdtempSync(join(tmpdir(), "dg-verify-local-"));
+});
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const script = (): TourScript => ({
 	title: "t",
@@ -41,88 +24,57 @@ const script = (): TourScript => ({
 	],
 });
 
-describe("walkTour through a local page", () => {
-	test("a selector that misses reports selector-unresolved for step 2", async () => {
-		const s = script();
-		const result = await realVerify.walkTour(fakePage(s, ["#two"]) as never, s);
-		expect(result.ok).toBe(false);
-		expect(result.findings).toEqual([
-			{ step: 2, kind: "selector-unresolved", selector: "#two" },
-		]);
-	});
-
-	test("a clean plan reports ok true with no findings", async () => {
-		const s = script();
-		const result = await realVerify.walkTour(fakePage(s) as never, s);
-		expect(result).toEqual({ ok: true, findings: [] });
-	});
-});
-
-const SRC = (file: string) => join(import.meta.dir, "..", "src", file);
-
-async function inSubprocess(body: string): Promise<unknown> {
-	const code = `
-import { mock } from "bun:test";
-import * as real from ${JSON.stringify(SRC("utils/demo-verify.ts"))};
-mock.module(${JSON.stringify(SRC("utils/demo-verify.ts"))}, () => ({
-  ...real,
-  resolveExtensionDir: () => { throw new Error("the extension build must not be required"); },
-}));
-const { verifyLocal } = await import(${JSON.stringify(SRC("demo/verify-local.ts"))});
-${body}
-`;
-	const child = Bun.spawn([process.execPath, "-e", code], {
-		stdout: "pipe",
-		stderr: "pipe",
-		stdin: "ignore",
-	});
-	const [out, err] = await Promise.all([
-		new Response(child.stdout).text(),
-		new Response(child.stderr).text(),
-		child.exited,
-	]);
-	const line = out.trim().split("\n").at(-1) ?? "";
-	try {
-		return JSON.parse(line);
-	} catch {
-		throw new Error(`no JSON result\nstdout: ${out}\nstderr: ${err}`);
-	}
+function opening(options: Parameters<typeof fakeBrowser>[0], env: VerifyLocalDeps["env"] = {}) {
+	const browser = fakeBrowser(options);
+	const closed: string[] = [];
+	const deps: VerifyLocalDeps = {
+		env,
+		open: async () => {
+			const context = await browser.session.open(false);
+			return {
+				page: await context.newPage(),
+				close: async () => void closed.push("closed"),
+			};
+		},
+	};
+	return { browser, deps, closed };
 }
 
 describe("verifyLocal", () => {
-	test("never resolves the extension build and reports the walker's findings", async () => {
-		const result = await inSubprocess(`
-let index = 0;
-let consented = false;
-const closed = [];
-const page = {
-  readTourOverlay: async () => !consented ? { kind: "consent", index: 0 } : index >= 2 ? { kind: "done", index } : { kind: "step", index },
-  clickThroughTour: async () => { if (!consented) consented = true; else index++; return true; },
-  selectorResolves: async (sel) => sel !== "#two",
-  locationHref: async () => "https://example.test/",
-  drainNavigations: () => [],
-};
-const script = { title: "t", startUrl: "https://example.test/", steps: [
-  { title: "One", body: "a", selector: "#one" },
-  { title: "Two", body: "b", selector: "#two" },
-] };
-const result = await verifyLocal(script, { open: async () => ({ page, close: async () => void closed.push("closed") }) });
-console.log(JSON.stringify({ kinds: result.findings.map((f) => f.kind), closed }));
-`);
-		expect(result).toEqual({ kinds: ["selector-unresolved"], closed: ["closed"] });
+	test("reports ok for a plan whose selectors all resolve", async () => {
+		const { deps, closed } = opening({ dir });
+		expect(await verifyLocal(script(), deps)).toEqual({ ok: true, findings: [] });
+		expect(closed).toEqual(["closed"]);
 	});
 
-	test("reports ok true for a clean plan", async () => {
-		const { verifyLocal } = await import("../src/demo/verify-local");
-		const s = script();
-		const result = await verifyLocal(s, {
-			open: async () => ({ page: fakePage(s) as never, close: async () => {} }),
+	test("names the step and selector that did not resolve", async () => {
+		const { deps } = opening({ dir, missing: ["#two"] });
+		const result = await verifyLocal(script(), deps);
+		expect(result).toEqual({
+			ok: false,
+			findings: [{ step: 2, kind: "selector-unresolved", selector: "#two" }],
 		});
-		expect(result).toEqual({ ok: true, findings: [] });
+	});
+
+	test("names the variable, never its value, when a fill needs an unset env variable", async () => {
+		const fill = (value: string): TourScript => ({
+			...script(),
+			steps: [
+				{ title: "User", body: "a", selector: "#one", action: { do: "fill", value: "dante" } },
+				{ title: "Password", body: "b", selector: "#two", action: { do: "fill", value } },
+			],
+		});
+		const unset = opening({ dir }, { OTHER: "hunter2" });
+		expect(await verifyLocal(fill("$DEMO_PW"), unset.deps)).toEqual({
+			ok: false,
+			findings: [{ step: 2, kind: "env-unset", variable: "DEMO_PW" }],
+		});
+		const set = opening({ dir }, { DEMO_PW: "hunter2" });
+		expect(await verifyLocal(fill("$DEMO_PW"), set.deps)).toEqual({ ok: true, findings: [] });
+		expect(set.browser.locators.get("#two")?.typed).toEqual(["hunter2"]);
 	});
 
 	test("turns an open failure into a harness-error finding", async () => {
-		const { verifyLocal } = await import("../src/demo/verify-local");
 		const result = await verifyLocal(script(), {
 			open: async () => {
 				throw new Error("no browser");
@@ -134,142 +86,113 @@ console.log(JSON.stringify({ kinds: result.findings.map((f) => f.kind), closed }
 		});
 	});
 
-	test("closes the session when the walk throws", async () => {
-		const { verifyLocal } = await import("../src/demo/verify-local");
+	test("closes the session and reports a harness-error when the page throws", async () => {
 		const closed: string[] = [];
 		const result = await verifyLocal(script(), {
 			open: async () => ({
 				page: {
-					readTourOverlay: async () => {
+					viewportSize: () => null,
+					goto: async () => {
 						throw new Error("page crashed");
 					},
 				} as never,
 				close: async () => void closed.push("closed"),
 			}),
 		});
-		expect(result.findings[0]?.kind).toBe("harness-error");
+		expect(result.findings[0]).toMatchObject({ kind: "harness-error", message: "page crashed" });
 		expect(closed).toEqual(["closed"]);
 	});
-});
 
-describe("local page adapter", () => {
-	const adapter = (state: unknown, calls: string[] = []) =>
-		tourPageFor(
-			{
-				evaluate: async (expression) => {
-					calls.push(expression);
-					return expression.includes("state()") ? JSON.stringify(state) : true;
-				},
-				url: () => "https://example.test/",
-			},
-			() => [],
-		);
-
-	test("reads the step the player reports", async () => {
-		expect(await adapter({ kind: "step", index: 1, total: 2 }).readTourOverlay()).toEqual({
-			kind: "step",
-			index: 1,
-			total: 2,
-		});
-	});
-
-	test("reads done from the player state, not from a bridge message", async () => {
-		expect(await adapter({ kind: "done" }).readTourOverlay()).toEqual({ kind: "done" });
-	});
-
-	test("an errored tour throws instead of reading as done", async () => {
-		await expect(
-			adapter({ kind: "ended", outcome: "error", error: "boom" }).readTourOverlay(),
-		).rejects.toThrow("boom");
-	});
-
-	test("a stopped tour throws", async () => {
-		await expect(
-			adapter({ kind: "ended", outcome: "stopped" }).readTourOverlay(),
-		).rejects.toThrow("stopped early");
-	});
-
-	test("advances through the player, never through page markup", async () => {
-		const calls: string[] = [];
-		expect(await adapter({ kind: "none" }, calls).clickThroughTour()).toBe(true);
-		expect(calls).toEqual(["window.__dgTour ? window.__dgTour.advance() : false"]);
+	test("never shows captions: the dry run skips every overlay", async () => {
+		const { deps, browser } = opening({ dir });
+		await verifyLocal(script(), deps);
+		expect(browser.evaluated).toEqual([]);
 	});
 });
 
 describe("verifyLocal with excluded setup", () => {
+	const withSetup = (): TourScript => ({
+		...script(),
+		setup: {
+			includeInTour: false,
+			steps: [
+				{ title: "S1", body: "a", selector: "#s1" },
+				{ title: "S2", body: "b", selector: "#s2", navigate: "https://a.test/login" },
+			],
+		},
+	});
+
 	test("walks setup and tutorial as one flat sequence", async () => {
-		const s: TourScript = {
-			...script(),
-			setup: {
-				includeInTour: false,
-				steps: [
-					{ title: "S1", body: "a", selector: "#s1" },
-					{ title: "S2", body: "b", selector: "#s2" },
-				],
-			},
-		};
-		let opened: TourScript | undefined;
-		const flat = { ...s, steps: [...s.setup!.steps, ...s.steps] };
-		const result = await verifyLocal(s, {
-			open: async (given) => {
-				opened = given;
-				return {
-					page: fakePage(flat, ["#two"]) as never,
-					close: async () => {},
-				};
-			},
-		});
-		expect(opened?.setup?.includeInTour).toBe(true);
-		expect(result.findings).toEqual([
-			{ step: 4, kind: "selector-unresolved", selector: "#two" },
+		const { deps } = opening({ dir, missing: ["#two"] });
+		const result = await verifyLocal(withSetup(), deps);
+		expect(result.findings).toEqual([{ step: 4, kind: "selector-unresolved", selector: "#two" }]);
+	});
+
+	test("returns to the start URL for the first tutorial step after setup moved away", async () => {
+		const { deps, browser } = opening({ dir });
+		await verifyLocal(withSetup(), deps);
+		expect(browser.log.filter((line) => line.startsWith("goto "))).toEqual([
+			"goto https://example.test/",
+			"goto https://a.test/login",
+			"goto https://example.test/",
 		]);
 	});
 
-	const openedScript = async (s: TourScript): Promise<TourScript | undefined> => {
-		let opened: TourScript | undefined;
-		await verifyLocal(s, {
-			open: async (given) => {
-				opened = given;
-				throw new Error("stop");
-			},
-		});
-		return opened;
-	};
-
-	test("keeps the first tutorial step on the start URL after a setup step moved to another page", async () => {
-		const opened = await openedScript({
-			...script(),
-			setup: {
-				includeInTour: false,
-				steps: [{ title: "S1", body: "a", navigate: "https://a.test/login" }],
-			},
-		});
-		expect(opened?.setup?.steps[0]?.navigate).toBe("https://a.test/login");
-		expect(opened?.steps[0]?.navigate).toBe("https://example.test/");
-		expect(opened?.steps[1]?.navigate).toBeUndefined();
-	});
-
 	test("leaves a first tutorial step that names its own URL alone", async () => {
-		const base = script();
-		const opened = await openedScript({
-			...base,
-			steps: [{ ...base.steps[0]!, navigate: "https://b.test/" }, base.steps[1]!],
-			setup: {
-				includeInTour: false,
-				steps: [{ title: "S1", body: "a", navigate: "https://a.test/login" }],
-			},
-		});
-		expect(opened?.steps[0]?.navigate).toBe("https://b.test/");
+		const base = withSetup();
+		const { deps, browser } = opening({ dir });
+		await verifyLocal(
+			{ ...base, steps: [{ ...base.steps[0]!, navigate: "https://b.test/" }, base.steps[1]!] },
+			deps,
+		);
+		expect(browser.log.filter((line) => line.startsWith("goto ")).at(-1)).toBe("goto https://b.test/");
 	});
 
 	test("adds no start navigation when setup is already part of the tour", async () => {
-		const opened = await openedScript({
-			...script(),
-			setup: {
-				includeInTour: true,
-				steps: [{ title: "S1", body: "a", navigate: "https://a.test/login" }],
+		const base = withSetup();
+		const { deps, browser } = opening({ dir });
+		await verifyLocal({ ...base, setup: { ...base.setup!, includeInTour: true } }, deps);
+		expect(browser.log.filter((line) => line.startsWith("goto "))).toEqual([
+			"goto https://example.test/",
+			"goto https://a.test/login",
+		]);
+	});
+});
+
+const browser = process.env.PW_E2E === "1" ? findInstalledChromium() : null;
+
+describe("verifyLocal in a real browser", () => {
+	test.skipIf(!browser)("follows a click that submits a form and navigates", async () => {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch(req) {
+				const url = new URL(req.url);
+				if (url.pathname === "/login" && req.method === "POST")
+					return new Response(null, { status: 303, headers: { Location: "/home" } });
+				const html =
+					url.pathname === "/home"
+						? '<!doctype html><h1 id="welcome">Welcome</h1>'
+						: '<!doctype html><form method="post" action="/login"><input id="user" name="user"><button id="go" type="submit">Go</button></form>';
+				return new Response(html, { headers: { "Content-Type": "text/html" } });
 			},
 		});
-		expect(opened?.steps[0]?.navigate).toBeUndefined();
+		try {
+			const base = `http://127.0.0.1:${server.port}`;
+			const plan = (last: string): TourScript => ({
+				startUrl: `${base}/`,
+				steps: [
+					{ title: "User", body: "Name.", selector: "#user", action: { do: "fill", value: "dante" } },
+					{ title: "Go", body: "Submit.", selector: "#go", action: { do: "click" } },
+					{ title: "Home", body: "Landed.", selector: last },
+				],
+			});
+			expect(await verifyLocal(plan("#welcome"))).toEqual({ ok: true, findings: [] });
+			expect((await verifyLocal(plan("#nope"))).findings).toEqual([
+				{ step: 3, kind: "selector-unresolved", selector: "#nope" },
+			]);
+		} finally {
+			server.stop(true);
+		}
 	});
 });

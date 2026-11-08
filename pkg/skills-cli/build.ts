@@ -35,7 +35,6 @@ export const playwrightMetadata: Bun.BunPlugin = {
 export async function hashBundle(
 	entrypoint: string,
 	plugins: Bun.BunPlugin[],
-	extraInputs: string[] = [],
 ): Promise<string> {
 	const result = await Bun.build({
 		entrypoints: [entrypoint],
@@ -50,7 +49,5 @@ export async function hashBundle(
 		a.path.localeCompare(b.path),
 	))
 		hash.update(new Uint8Array(await output.arrayBuffer()));
-	for (const path of extraInputs)
-		hash.update(new Uint8Array(await Bun.file(path).arrayBuffer()));
 	return hash.digest("hex");
 }

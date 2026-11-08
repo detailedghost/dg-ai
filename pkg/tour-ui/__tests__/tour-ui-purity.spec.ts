@@ -44,7 +44,6 @@ describe("@dg/tour-ui purity", () => {
 			"ui-helpers.ts",
 			"video-timing.ts",
 			"narration-progress.ts",
-			join("hosts", "player-entry.ts"),
 		]) {
 			expect(names).toContain(expected);
 		}

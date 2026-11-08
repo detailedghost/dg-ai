@@ -12,6 +12,7 @@ export type FakeLocalDeps = {
 	windowsBrowserPresent(): boolean;
 	pickLaunch(): LaunchPick;
 	spawn(argv: string[], logPath: string): { pid: number };
+	inGitWorkTree(dir: string): boolean;
 };
 
 export type DemoWorld = {
@@ -73,6 +74,7 @@ export function demoWorld(): DemoWorld {
 					spawned.push({ argv, logPath });
 					return { pid: 4242 };
 				},
+				inGitWorkTree: () => false,
 				...over,
 			};
 		},

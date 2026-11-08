@@ -7,28 +7,27 @@ import { resolveVerifyBrowser, verifyBrowserAvailable } from "../src/verify/play
 
 setDefaultTimeout(60_000);
 
-const job = (video: boolean): PlayerJob => ({
+const job = (): PlayerJob => ({
 	slug: "s",
 	planPath: "/tmp/none",
 	dir: "/tmp/none",
-	video,
 	startUrl: "https://example.test/",
 	script: { title: "t", startUrl: "https://example.test/", steps: [] },
 });
 
 describe("contextOptions", () => {
-	test.each([[true], [false]])("bypasses the page CSP with video %p", (video) => {
-		expect(contextOptions(job(video), true)).toMatchObject({ bypassCSP: true });
-		expect(contextOptions(job(video), false)).toMatchObject({ bypassCSP: true });
+	test("bypasses the page CSP with and without recording", () => {
+		expect(contextOptions(job(), true)).toMatchObject({ bypassCSP: true });
+		expect(contextOptions(job(), false)).toMatchObject({ bypassCSP: true });
 	});
 
 	test("records video into the job dir only when asked", () => {
-		expect(contextOptions(job(true), true)).toMatchObject({
+		expect(contextOptions(job(), true)).toMatchObject({
 			screen: { width: 1440, height: 810 },
 			deviceScaleFactor: 1,
 			recordVideo: { size: { width: 1440, height: 810 } },
 		});
-		expect(contextOptions(job(true), false)).not.toHaveProperty("recordVideo");
+		expect(contextOptions(job(), false)).not.toHaveProperty("recordVideo");
 	});
 });
 
@@ -52,7 +51,7 @@ describe("contextOptions in a real browser", () => {
 			args: ["--no-sandbox"],
 		});
 		try {
-			const context = await launched.newContext(contextOptions(job(false), false));
+			const context = await launched.newContext(contextOptions(job(), false));
 			await context.route(`${NARRATION_ASSET_BASE}**`, (route) =>
 				route.fulfill({ contentType: "text/javascript", body: "window.__narration = true;" }),
 			);

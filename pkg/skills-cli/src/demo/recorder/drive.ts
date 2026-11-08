@@ -1,11 +1,12 @@
 import {
+	envReference,
 	partitionTourSteps,
 	resolveFill,
 	type TourChapter,
 	type TourScript,
 	type TourStep,
 } from "@dg/common";
-import type { Page } from "playwright-core";
+import type { Locator, Page } from "playwright-core";
 import {
 	arrowSide,
 	captionOnTop,
@@ -30,6 +31,16 @@ export type DriveOptions = {
 	pause?(ms: number): Promise<void>;
 	/** Clock for offsets; the player counts from the start of the recording. */
 	now?(): number;
+	/** Called instead of throwing when a fill names an unset env variable; the handler leaves the field filled. */
+	onMissingEnv?(prompt: MissingEnvPrompt): Promise<void>;
+};
+
+export type MissingEnvPrompt = {
+	page: Page;
+	target: Locator;
+	step: TourStep;
+	index: number;
+	next: TourStep | undefined;
 };
 
 /** `startMs` is when the first frame worth keeping begins; `offsets` are when each step's caption shows. */
@@ -43,6 +54,8 @@ export class StepError extends Error {
 		super(`step ${index + 1}: ${message}`);
 	}
 }
+
+export const VIEWPORT = { width: 1440, height: 810 };
 
 const DEFAULTS = {
 	typeDelayMs: 55,
@@ -83,7 +96,7 @@ export async function recordTour(
 	const o = { ...DEFAULTS, ...options };
 	const pause = options.pause ?? sleep;
 	const now = options.now ?? Date.now;
-	const viewport = page.viewportSize() ?? { width: 1440, height: 810 };
+	const viewport = page.viewportSize() ?? VIEWPORT;
 	const offsets: number[] = [];
 
 	await page.goto(script.startUrl, { waitUntil: "load" });
@@ -124,9 +137,18 @@ export async function recordTour(
 				await target.click();
 				await page.waitForLoadState("load");
 			} else {
-				const text = resolveFill(step.action.value, o.env);
-				await target.click();
-				await target.pressSequentially(text, { delay: o.overlays ? o.typeDelayMs : 0 });
+				const name = envReference(step.action.value);
+				if (name && !o.env[name] && o.onMissingEnv) {
+					await o.onMissingEnv({ page, target, step, index, next: steps[index + 1]?.step });
+				} else {
+					const text = resolveFill(step.action.value, o.env);
+					await target.click();
+					try {
+						await target.pressSequentially(text, { delay: o.overlays ? o.typeDelayMs : 0 });
+					} catch {
+						throw new StepError(index, `could not type into ${step.selector}`);
+					}
+				}
 			}
 		}
 		await pause(o.hold(step, index));

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { closeSync, openSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, existsSync, openSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { slugify } from "@dg/common";
 import {
 	ensurePrivateDir,
@@ -22,13 +22,15 @@ import { demosDir } from "./paths";
 import { loadScript, savePlan } from "./plan-file";
 import {
 	DEFAULT_TIMEOUT_MIN,
+	EnvRefusedError,
 	type BrowserPlan,
-	type NarrationChoice,
 	type PlayerArgv,
 	type PlayerJob,
 	SETUP_NEEDS_PERSON,
 	setupNeedsPerson,
+	unsetFillVariables,
 } from "./player-job";
+import { playbackSteps } from "./recorder/drive";
 import { playerPid } from "./result";
 
 export type LocalDeps = {
@@ -36,14 +38,14 @@ export type LocalDeps = {
 	windowsBrowserPresent(): boolean;
 	pickLaunch(): LaunchPick;
 	spawn(argv: string[], logPath: string): { pid: number };
+	inGitWorkTree(dir: string): boolean;
 };
 
 export type LocalOpts = {
-	video?: boolean;
 	print?: boolean;
 	edit?: boolean;
 	out?: string;
-	narration?: NarrationChoice;
+	narration?: boolean;
 	browser?: "chrome" | "msedge" | "chromium";
 	windows?: boolean;
 	wslHeaded?: boolean;
@@ -75,41 +77,19 @@ export const defaultLocalDeps: LocalDeps = {
 		exePath("chrome") !== null || exePath("msedge") !== null,
 	pickLaunch: () => pickLaunch(),
 	spawn: spawnDetached,
+	inGitWorkTree: (dir) => {
+		const result = Bun.spawnSync(
+			["git", "-C", dir, "rev-parse", "--is-inside-work-tree"],
+			{ stdout: "pipe", stderr: "ignore" },
+		);
+		return result.exitCode === 0 && result.stdout.toString().trim() === "true";
+	},
 };
 
-const NARRATIONS: readonly string[] = ["both", "voice", "captions"];
-const VOICE_ID = /^[a-z]{2}_[a-z]{1,32}$/;
-
-function savedChoice(dir: string): { narration?: NarrationChoice; voice?: string } {
-	try {
-		const saved = JSON.parse(readFileSync(join(dir, "choice.json"), "utf8")) as {
-			narration?: NarrationChoice;
-			voice?: string;
-		};
-		return {
-			...(saved.narration && NARRATIONS.includes(saved.narration)
-				? { narration: saved.narration }
-				: {}),
-			...(saved.voice && VOICE_ID.test(saved.voice) ? { voice: saved.voice } : {}),
-		};
-	} catch {
-		return {};
-	}
-}
-
-function saveNarrationChoice(dir: string, narration: NarrationChoice): void {
-	let existing: Record<string, unknown> = {};
-	try {
-		const parsed: unknown = JSON.parse(readFileSync(join(dir, "choice.json"), "utf8"));
-		if (parsed && typeof parsed === "object") existing = parsed as Record<string, unknown>;
-	} catch {
-		existing = {};
-	}
-	writeFileAtomic(
-		join(dir, "choice.json"),
-		JSON.stringify({ ...existing, narration }),
-		0o600,
-	);
+function nearestExistingDir(path: string): string {
+	let dir = dirname(resolve(path));
+	while (!existsSync(dir)) dir = dirname(dir);
+	return dir;
 }
 
 function pickFor(opts: LocalOpts, deps: LocalDeps): LaunchPick {
@@ -202,27 +182,27 @@ export async function playLocal(
 		console.error(error.message);
 		return error.exitCode;
 	}
-	if (opts.narration && !opts.video) {
-		console.error(
-			"demo: --narration needs --video; the start screen offers it otherwise",
-		);
+	if (opts.out && !opts.out.endsWith(".mp4")) {
+		console.error("demo: --out must name a .mp4 file");
 		return 1;
 	}
-	if (opts.out && !opts.out.endsWith(".webm")) {
-		console.error("demo: --out must name a .webm file");
+	if (opts.out && deps.inGitWorkTree(nearestExistingDir(opts.out))) {
+		console.error("demo: --out must be outside a git work tree");
 		return 1;
 	}
-	const { plan, warning } = resolved;
-	if (plan.mode === "local" && plan.headless && !opts.video) {
-		console.error(
-			"demo: the start screen needs a visible browser; pass --video for an unattended recording, or --windows / --wsl-headed",
-		);
+	const [unset] = unsetFillVariables(
+		playbackSteps(script).map(({ step }) => step),
+		process.env,
+	);
+	if (unset) {
+		console.error(new EnvRefusedError(unset).message);
 		return 2;
 	}
+	const { plan, warning } = resolved;
 	if (
 		plan.mode === "local" &&
 		plan.headless &&
-		setupNeedsPerson(script)
+		setupNeedsPerson(script, process.env)
 	) {
 		console.error(SETUP_NEEDS_PERSON);
 		return 2;
@@ -239,20 +219,15 @@ export async function playLocal(
 	ensurePrivateDir(demosDir());
 	ensurePrivateDir(dir);
 	rmSync(join(dir, `${slug}.result.json`), { force: true });
-	const saved = opts.video ? savedChoice(dir) : {};
-	const narration = opts.narration ?? saved.narration;
-	if (opts.video && opts.narration) saveNarrationChoice(dir, opts.narration);
 	const planPath = savePlan(script, dir);
 	const job: PlayerArgv = {
 		slug,
 		planPath,
 		dir,
-		video: opts.video === true,
 		startUrl: script.startUrl,
 		plan,
 		...(opts.out ? { out: opts.out } : {}),
-		...(narration ? { narration } : {}),
-		...(narration && saved.voice ? { voice: saved.voice } : {}),
+		...(opts.narration ? { narration: true } : {}),
 		timeoutMin: opts.timeout ?? DEFAULT_TIMEOUT_MIN,
 	};
 	const { pid } = deps.spawn(
@@ -264,9 +239,7 @@ export async function playLocal(
 	const title = script.title ?? slug;
 	const where = planLabel(plan);
 	console.log(
-		job.video
-			? `demo "${title}": recording in ${where}. Results: dg-skills demo status ${slug}`
-			: `demo "${title}": start screen open in ${where}. The human picks there. Results: dg-skills demo status ${slug}`,
+		`demo "${title}": recording in ${where}. Results: dg-skills demo status ${slug}`,
 	);
 	return 0;
 }

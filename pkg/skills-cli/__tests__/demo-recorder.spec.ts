@@ -6,6 +6,7 @@ import type { TourScript } from "@dg/common";
 import { chromium, type Page } from "playwright-core";
 import { contextOptions } from "../src/demo/player-process";
 import type { PlayerJob } from "../src/demo/player-job";
+import { MissingEnvError } from "@dg/common";
 import { introChapter, playbackSteps, recordTour, StepError } from "../src/demo/recorder/drive";
 import { arrowSide, captionOnTop, OVERLAY_IDS } from "../src/demo/recorder/overlays";
 import { findInstalledChromium } from "../src/utils/find-browser";
@@ -166,5 +167,66 @@ describe("recordTour in a real browser", () => {
 			await launched.close();
 			site.server.stop(true);
 		}
+	});
+
+	test.skipIf(!browser)("throws MissingEnvError for an unset variable, or hands the field to onMissingEnv", async () => {
+		const site = fixture();
+		const launched = await chromium.launch({ executablePath: browser as string, args: ["--no-sandbox"] });
+		try {
+			const page = await (await launched.newContext({ viewport: VIEW })).newPage();
+			const script: TourScript = {
+				startUrl: `${site.url}/`,
+				steps: [
+					{ selector: "#pass", body: "Type it.", action: { do: "fill", value: "$DEMO_PW" } },
+					{ selector: "#go", body: "Go.", action: { do: "click" } },
+				],
+			};
+			const base = { env: {}, overlays: false, hold: () => 0, selectorTimeoutMs: 2000 };
+			const error = await recordTour(page, script, base).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(MissingEnvError);
+			expect((error as MissingEnvError).variable).toBe("DEMO_PW");
+			expect(site.received).toEqual([]);
+
+			const asked: number[] = [];
+			await recordTour(page, script, {
+				...base,
+				onMissingEnv: async ({ target, index }) => {
+					asked.push(index);
+					await target.fill("typed-by-person");
+				},
+			});
+			expect(asked).toEqual([0]);
+			expect(site.received).toEqual(["typed-by-person"]);
+		} finally {
+			await launched.close();
+			site.server.stop(true);
+		}
+	});
+});
+
+describe("recordTour typing failures", () => {
+	test("reports a failed fill without the typed text", async () => {
+		const target = {
+			waitFor: async () => undefined,
+			scrollIntoViewIfNeeded: async () => undefined,
+			boundingBox: async () => null,
+			click: async () => undefined,
+			pressSequentially: async (text: string) => {
+				throw new Error(`call log: typing "${text}" failed`);
+			},
+		};
+		const page = {
+			viewportSize: () => VIEW,
+			goto: async () => null,
+			locator: () => ({ first: () => target }),
+		} as unknown as Page;
+		const error = await recordTour(
+			page,
+			{ startUrl: "https://app.example/", steps: [{ selector: "#pw", body: "b", action: { do: "fill", value: "$PW" } }] },
+			{ env: { PW: "s3cret-pw" }, overlays: false, hold: () => 0 },
+		).catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(StepError);
+		expect((error as Error).message).toBe("step 1: could not type into #pw");
+		expect(String((error as Error).stack)).not.toContain("s3cret-pw");
 	});
 });

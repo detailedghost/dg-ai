@@ -3,44 +3,49 @@ import {
 	copyFileSync,
 	existsSync,
 	mkdirSync,
-	mkdtempSync,
 	renameSync,
 	rmSync,
 	unlinkSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { NARRATION_ASSET_BASE } from "@dg/common";
-import { ensurePrivateDir, wslChromiumArgs } from "@dg/common/node";
-import type { Browser, BrowserContext, Page, Route } from "playwright-core";
+import { dirname, extname, join } from "node:path";
+import { holdFor } from "@dg/common";
+import {
+	ensurePrivateDir,
+	wslChromiumArgs,
+	writeFileAtomic,
+} from "@dg/common/node";
+import type { Browser, BrowserContext } from "playwright-core";
 import pkg from "../../package.json" with { type: "json" };
-import {
-	type BridgeEnd,
-	createBridge,
-	tourOrigins,
-	trustedSource,
-} from "./bridge";
-import { type MuxDeps, muxVideo, needsTrim } from "./mux";
-import {
-	ensureNarrationAssets,
-	isNetworkFailure,
-	serveNarrationAsset,
-} from "./narration-assets";
-import { writeNarrationWav } from "./narration";
+import { ensureNarrationAssets, isNetworkFailure } from "./narration-assets";
+import { assembleNarrationWav } from "./narration";
 import { profileDir } from "./paths";
-import { playerScript } from "./player-asset";
 import {
 	DEFAULT_TIMEOUT_MIN,
 	type BrowserPlan,
+	EnvRefusedError,
 	type PlayerJob,
 	SetupRefusedError,
 	setupNeedsPerson,
+	unsetFillVariables,
 } from "./player-job";
 import { type LaunchPick, pickLaunch } from "../pw/core/browser";
+import { playbackSteps, recordTour, VIEWPORT } from "./recorder/drive";
+import { type EncodeDeps, encodeMp4 } from "./recorder/encode";
+import {
+	narrationClips,
+	narrationHolds,
+	type SpokenClip,
+	synthesize,
+} from "./recorder/narrate";
 import { type DemoResult, writeResult } from "./result";
+import { clearOverlays, showCaption, THEME } from "./recorder/overlays";
+
+export { VIEWPORT };
+
+export type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
 export type PlayerSession = {
-	context: BrowserContext;
-	canRecord?: boolean;
+	open(record: boolean, state?: StorageState): Promise<BrowserContext>;
 	close(): Promise<void>;
 };
 
@@ -54,17 +59,15 @@ export type Launchers = {
 };
 
 export type PlayerHooks = {
-	onProgress?(page: Page, index: number): void | Promise<void>;
 	launch?(job: PlayerJob): Promise<PlayerSession>;
 	fetch?: typeof fetch;
-	mux?: MuxDeps;
+	synthesize?: typeof synthesize;
+	encode?: EncodeDeps;
 };
 
 const OFFLINE_LINE =
 	"narration assets are not downloaded; running captions-only";
-const DEFAULT_VOICE = "af_heart";
-
-export const VIEWPORT = { width: 1440, height: 810 };
+const PERSON_PROMPT = "Type it here, then continue.";
 
 export const contextOptions = (job: PlayerJob, record: boolean) => ({
 	bypassCSP: true,
@@ -84,16 +87,24 @@ async function launchLocal(
 	const { chromium } = await import("playwright-core");
 	const profile = job.profile ?? profileDir();
 	ensurePrivateDir(profile);
-	const context = await chromium.launchPersistentContext(profile, {
-		headless: plan.headless,
-		...("channel" in plan.pick
-			? { channel: plan.pick.channel }
-			: { executablePath: plan.pick.executablePath }),
-		args: wslChromiumArgs(),
-		viewport: job.video || plan.headless ? VIEWPORT : null,
-		...contextOptions(job, true),
-	});
-	return { context, close: () => context.close() };
+	let current: BrowserContext | undefined;
+	return {
+		async open(record) {
+			current = await chromium.launchPersistentContext(profile, {
+				headless: plan.headless,
+				...("channel" in plan.pick
+					? { channel: plan.pick.channel }
+					: { executablePath: plan.pick.executablePath }),
+				args: wslChromiumArgs(),
+				viewport: VIEWPORT,
+				...contextOptions(job, record),
+			});
+			return current;
+		},
+		close: async () => {
+			await current?.close().catch(() => undefined);
+		},
+	};
 }
 
 async function launchWindows(
@@ -117,18 +128,14 @@ async function launchWindows(
 	try {
 		browser = await chromium.connectOverCDP(windows.cdpUrl);
 		const connected = browser;
-		const create = (record: boolean) =>
+		const open = (record: boolean, state?: StorageState) =>
 			connected.newContext({
-				viewport: job.video ? VIEWPORT : null,
+				viewport: VIEWPORT,
+				...(state ? { storageState: state } : {}),
 				...contextOptions(job, record),
 			});
-		let canRecord = true;
-		const context = await create(true).catch((error: unknown) => {
-			if (job.video) throw error;
-			canRecord = false;
-			return create(false);
-		});
-		return { context, close, canRecord };
+		await (await open(true)).close();
+		return { open, close };
 	} catch (error) {
 		await close();
 		throw error;
@@ -155,8 +162,7 @@ export async function openSession(
 	try {
 		return await launchers.windows(job, plan);
 	} catch (error) {
-		if (!job.video) throw error;
-		if (setupNeedsPerson(job.script)) throw new SetupRefusedError();
+		if (setupNeedsPerson(job.script, process.env)) throw new SetupRefusedError();
 		const reason = (error instanceof Error ? error.message : String(error))
 			.split("\n")[0];
 		console.log(
@@ -172,6 +178,7 @@ export async function openSession(
 	}
 }
 
+
 const pad = (n: number): string => String(n).padStart(2, "0");
 
 function stamp(at = new Date()): string {
@@ -181,9 +188,10 @@ function stamp(at = new Date()): string {
 
 function freeName(path: string): string {
 	if (!existsSync(path)) return path;
-	const base = path.replace(/\.webm$/, "");
+	const ext = extname(path);
+	const base = path.slice(0, path.length - ext.length);
 	for (let n = 2; ; n++) {
-		const next = `${base}-${n}.webm`;
+		const next = `${base}-${n}${ext}`;
 		if (!existsSync(next)) return next;
 	}
 }
@@ -198,217 +206,203 @@ function moveFile(from: string, to: string): void {
 	}
 }
 
+const messageOf = (error: unknown): string =>
+	error instanceof Error ? error.message : String(error);
+
+function waitForPerson(timeoutMs: number): NonNullable<Parameters<typeof recordTour>[2]["onMissingEnv"]> {
+	return async ({ page, target, step, index, next }) => {
+		const before = page.url();
+		await showCaption(page, {
+			eyebrow: step.title ?? `Step ${index + 1}`,
+			body: PERSON_PROMPT,
+			accent: THEME.setupAccent,
+			top: false,
+		});
+		await target.focus();
+		const upcoming = next?.selector ? page.locator(next.selector).first() : undefined;
+		const waiting = upcoming && !(await upcoming.isVisible());
+		const signals = [page.waitForURL((url) => url.href !== before, { timeout: timeoutMs })];
+		if (upcoming && waiting) signals.push(upcoming.waitFor({ state: "visible", timeout: timeoutMs }));
+		await Promise.any(signals).catch(() => {
+			throw new Error("timed out waiting for a person to continue");
+		});
+		await clearOverlays(page);
+	};
+}
+
+type Narration = (SpokenClip | null)[] | undefined;
+
+async function narrate(job: PlayerJob, context: BrowserContext, texts: string[], hooks: PlayerHooks): Promise<Narration> {
+	try {
+		const assetDir = await ensureNarrationAssets(pkg.version, { fetch: hooks.fetch });
+		return await (hooks.synthesize ?? synthesize)(context, texts, { assetDir });
+	} catch (error) {
+		if (isNetworkFailure(error)) console.log(OFFLINE_LINE);
+		else console.log(`demo ${job.slug}: narration failed (${messageOf(error)}); recorded without voice`);
+		return undefined;
+	}
+}
+
+type Finished = Pick<DemoResult, "video" | "encoded" | "audio">;
+
+function finishVideo(
+	job: PlayerJob,
+	webm: string,
+	voice: string | undefined,
+	startMs: number,
+	hooks: PlayerHooks,
+): Finished {
+	const target = job.out ?? freeName(join(job.dir, `${job.slug}-${stamp()}.mp4`));
+	mkdirSync(dirname(target), { recursive: true });
+	const outcome = encodeMp4({ webm, out: target, audio: voice, startMs }, hooks.encode);
+	if (outcome.encoded) {
+		if (voice) rmSync(voice, { force: true });
+		if (!job.out) chmodSync(target, 0o600);
+		return { video: target, encoded: true, audio: voice ? "muxed" : "none" };
+	}
+	const raw = target.replace(/\.mp4$/, ".webm");
+	const kept = job.out ? raw : freeName(raw);
+	moveFile(webm, kept);
+	if (!job.out) chmodSync(kept, 0o600);
+	let audio: Finished["audio"] = "none";
+	if (voice) {
+		moveFile(voice, kept.replace(/\.webm$/, ".wav"));
+		audio = "sidecar";
+	}
+	console.log(`demo ${job.slug}: ffmpeg not found; kept the raw webm. Install ffmpeg to get an MP4.`);
+	return { video: kept, encoded: false, audio };
+}
+
 export async function runPlayer(
 	job: PlayerJob,
 	hooks: PlayerHooks = {},
 ): Promise<number> {
 	ensurePrivateDir(job.dir);
-	const origins = tourOrigins(job.script);
-	let page: Page | undefined;
-	const clipsDir = join(job.dir, "clips");
-	rmSync(clipsDir, { recursive: true, force: true });
-	const offsets = new Map<number, number>();
-	let recordingStart = Date.now();
-	let assets: Promise<string> | undefined;
-	const narrationAssets = (): Promise<string> =>
-		(assets ??= ensureNarrationAssets(pkg.version, { fetch: hooks.fetch }));
-	let voiceGranted = false;
-	const bridge = createBridge({
-		job,
-		onNarrationFailed: (reason) =>
-			console.log(
-				`demo ${job.slug}: narration failed (${reason}); recorded without voice`,
-			),
-		onOversized: (key) =>
-			console.log(
-				`demo ${job.slug}: refused a page storage write over 1 MiB (key ${key})`,
-			),
-		onProgress: (index) => {
-			offsets.set(index, Date.now() - recordingStart);
-			return page ? hooks.onProgress?.(page, index) : undefined;
-		},
-		onVoiceChoice: async () => {
-			try {
-				await narrationAssets();
-				voiceGranted = true;
-				return "voice";
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				if (isNetworkFailure(error)) console.log(OFFLINE_LINE);
-				else console.log(`demo ${job.slug}: ${message}; running captions-only`);
-				return "captions-only";
-			}
-		},
+	const startedAt = new Date().toISOString();
+	const recDir = join(job.dir, "rec");
+	const voiceFile = join(job.dir, "voice.wav");
+	const timeoutMs = (job.timeoutMin ?? DEFAULT_TIMEOUT_MIN) * 60_000;
+	const opened = new Set<BrowserContext>();
+	const closing = new Set<BrowserContext>();
+	let stop: () => void = () => undefined;
+	const stopped = new Promise<"stopped">((resolve) => {
+		stop = () => resolve("stopped");
 	});
-	const startOffsetMs = (): number | undefined =>
-		offsets.size ? Math.min(...offsets.values()) : undefined;
-	const finishVideo = async (
-		target: string,
-	): Promise<{ audio: DemoResult["audio"]; trimmed: boolean }> => {
-		const wav = target.replace(/\.webm$/, ".wav");
-		const kept = (): DemoResult["audio"] => (existsSync(wav) ? "sidecar" : "none");
-		const stage = mkdtempSync(join(dirname(target), ".dg-mux-"));
-		const staged = join(stage, basename(target));
-		try {
-			const voiced = writeNarrationWav({ clipsDir, offsets, out: wav });
-			const startMs = startOffsetMs();
-			if (!voiced && !needsTrim(startMs)) return { audio: "none", trimmed: false };
-			const outcome = await muxVideo(
+	const timer = setTimeout(stop, timeoutMs);
+	let session: PlayerSession | undefined;
+	let finished: Finished = { encoded: false, audio: "none" };
+	let startOffsetMs: number | undefined;
+	let end: { outcome: DemoResult["outcome"]; error?: string } = { outcome: "done" };
+	let refusal: number | undefined;
+	let keepRaw = false;
+
+	const open = async (record: boolean, state?: StorageState): Promise<BrowserContext> => {
+		const context = await (session as PlayerSession).open(record, state);
+		opened.add(context);
+		context.once("close", () => {
+			if (!closing.has(context)) stop();
+		});
+		return context;
+	};
+	const close = async (context: BrowserContext): Promise<void> => {
+		closing.add(context);
+		await context.close().catch(() => undefined);
+	};
+	const freshPage = async (context: BrowserContext) => {
+		const initial = context.pages()[0];
+		const page = await context.newPage();
+		if (initial) await initial.close().catch(() => undefined);
+		return page;
+	};
+
+	const run = async (): Promise<void> => {
+		const steps = playbackSteps(job.script);
+		const missing = unsetFillVariables(steps.map(({ step }) => step), process.env)[0];
+		if (missing) throw new EnvRefusedError(missing);
+		session = await (hooks.launch ?? openSession)(job);
+
+		const setup = job.script.setup;
+		let state: StorageState | undefined;
+		if (setup && !setup.includeInTour && setup.steps.length > 0) {
+			const context = await open(false);
+			await recordTour(
+				await freshPage(context),
+				{ startUrl: job.script.startUrl, steps: setup.steps },
 				{
-					video: target,
-					...(voiced ? { wav } : {}),
-					...(startMs === undefined ? {} : { startMs }),
-					out: staged,
-					timeoutMs: Math.max(60_000, 2 * (Date.now() - recordingStart)),
+					env: process.env,
+					overlays: false,
+					hold: () => 0,
+					onMissingEnv: waitForPerson(timeoutMs),
 				},
-				hooks.mux,
 			);
-			if (outcome.audio === "sidecar" || (outcome.audio === "none" && !outcome.trimmed))
-				return outcome;
-			moveFile(staged, target);
-			rmSync(wav, { force: true });
-			if (!job.out) chmodSync(target, 0o600);
-			return outcome;
+			state = await context.storageState();
+			await close(context);
+		}
+
+		const context = await open(true, state);
+		const texts = steps.map(({ step }) => step.body);
+		const clips = job.narration ? await narrate(job, context, texts, hooks) : undefined;
+		const recorded = steps.map(({ step }) => step);
+		const holds = clips ? narrationHolds(recorded, clips) : recorded.map((step) => holdFor(step, null));
+		const live = await freshPage(context);
+		const recordingStart = Date.now();
+		const result = await recordTour(live, job.script, {
+			env: process.env,
+			overlays: true,
+			hold: (_, i) => holds[i] ?? 0,
+			now: () => Date.now() - recordingStart,
+		});
+		startOffsetMs = result.startMs;
+		const video = live.video();
+		await close(context);
+		const webm = video ? await video.path().catch(() => undefined) : undefined;
+		if (!webm) throw new Error("no video was written: the browser could not record this run");
+
+		const placed = clips ? narrationClips(clips, result.offsets, result.startMs) : [];
+		if (placed.length > 0) {
+			const wav = assembleNarrationWav(placed);
+			writeFileAtomic(voiceFile, Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength), 0o600);
+		}
+		try {
+			finished = finishVideo(job, webm, placed.length > 0 ? voiceFile : undefined, result.startMs, hooks);
 		} catch (error) {
-			console.log(
-				`demo ${job.slug}: could not finish the video (${error instanceof Error ? error.message : String(error)}); video saved as recorded`,
-			);
-			return { audio: kept(), trimmed: false };
-		} finally {
-			rmSync(stage, { recursive: true, force: true });
+			keepRaw = true;
+			throw new Error(`could not save the video: ${messageOf(error)}; the raw recording stays in ${recDir}`);
 		}
 	};
-	let session: PlayerSession | undefined;
-	let end: BridgeEnd;
-	let video: string | undefined;
-	let keepRaw = false;
-	let audio: DemoResult["audio"];
-	let trimmed = false;
-	let refusal: number | undefined;
-	try {
-		session = await (hooks.launch ?? openSession)(job);
-		const { context } = session;
-		const launched = context.pages()[0];
-		const live = await context.newPage();
-		recordingStart = Date.now();
-		if (launched && launched !== live)
-			await launched.close().catch(() => undefined);
-		page = live;
-		await live.route(`${NARRATION_ASSET_BASE}**`, async (route: Route) => {
-			try {
-				if (!voiceGranted) throw new Error("narration is not enabled");
-				const dir = await narrationAssets();
-				const { pathname } = new URL(route.request().url());
-				await route.fulfill(serveNarrationAsset(dir, pathname));
-			} catch {
-				await route.fulfill({
-					status: 404,
-					headers: { "access-control-allow-origin": "*" },
-					body: "",
-				});
-			}
-		});
-		await live.exposeBinding("__dgDemoBridge", (source, msg: unknown) =>
-			trustedSource(source, origins) ? bridge.handle(msg) : undefined,
-		);
-		await live.addInitScript(playerScript());
-		const tourOptions = job.video
-			? {
-					mode: "video",
-					...(job.narration
-						? {
-								narration: {
-									narration: job.narration,
-									voice: job.voice ?? DEFAULT_VOICE,
-								},
-							}
-						: {}),
-				}
-			: session.canRecord === false
-				? { noVideo: true }
-				: {};
-		const tour = `window.__dgTour.run(${JSON.stringify(job.script)}, ${JSON.stringify(tourOptions)})`;
-		const run = (): void => {
-			if (!trustedSource({ frame: live.mainFrame(), page: live }, origins))
-				return;
-			void live.evaluate(tour).catch(() => undefined);
-		};
-		live.on("domcontentloaded", run);
-		await live.goto(job.startUrl);
 
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const stopped: BridgeEnd = { outcome: "stopped" };
-		const closed = new Promise<BridgeEnd>((resolve) =>
-			context.once("close", () => resolve(stopped)),
-		);
-		const pageGone = new Promise<BridgeEnd>((resolve) => {
-			if (live.isClosed()) return resolve(stopped);
-			live.once("close", () => resolve(stopped));
-		});
-		const timedOut = new Promise<BridgeEnd>((resolve) => {
-			timer = setTimeout(
-				() => resolve(stopped),
-				(job.timeoutMin ?? DEFAULT_TIMEOUT_MIN) * 60_000,
-			);
-		});
-		end = await Promise.race([bridge.done, closed, pageGone, timedOut]);
-		clearTimeout(timer);
-	} catch (error) {
-		end = {
-			outcome: "error",
-			error: error instanceof Error ? error.message : String(error),
-		};
-		if (error instanceof SetupRefusedError) {
+	const attempt = run().then(
+		() => undefined,
+		(error: unknown) => error,
+	);
+	const winner = await Promise.race([attempt, stopped]);
+	clearTimeout(timer);
+	if (winner === "stopped") end = { outcome: "stopped" };
+	else if (winner !== undefined) {
+		const error = winner;
+		end = { outcome: "error", error: messageOf(error) };
+		if (error instanceof SetupRefusedError || error instanceof EnvRefusedError) {
 			refusal = error.exitCode;
 			console.error(error.message);
 		} else console.log(`demo ${job.slug}: ${end.error}`);
 	}
 
-	if (session) {
-		const recorded = page?.video() ?? undefined;
-		await session.context.close().catch(() => undefined);
-		await session.close().catch(() => undefined);
-		const source = recorded
-			? await recorded.path().catch(() => undefined)
-			: undefined;
-		if (bridge.mode() === "video" && source) {
-			const target = job.out ?? freeName(join(job.dir, `${job.slug}-${stamp()}.webm`));
-			try {
-				moveFile(source, target);
-				if (!job.out) chmodSync(target, 0o600);
-				video = target;
-				({ audio, trimmed } = await finishVideo(target));
-			} catch (error) {
-				end = {
-					outcome: "error",
-					error: `could not save the video: ${error instanceof Error ? error.message : String(error)}; the raw recording stays in ${dirname(source)}`,
-				};
-				keepRaw = true;
-			}
-		}
-		if (!keepRaw) rmSync(join(job.dir, "rec"), { recursive: true, force: true });
-	}
-	if (bridge.mode() === "video" && !video && end.outcome !== "error") {
-		end = {
-			outcome: "error",
-			error: "no video was written: the browser could not record this run",
-		};
-		console.log(`demo ${job.slug}: ${end.error}`);
-	}
+	for (const context of opened) await close(context);
+	await session?.close().catch(() => undefined);
+	if (!keepRaw) rmSync(recDir, { recursive: true, force: true });
+	if (end.outcome !== "done") rmSync(voiceFile, { force: true });
 
-	rmSync(clipsDir, { recursive: true, force: true });
 	const result: DemoResult = {
 		slug: job.slug,
 		outcome: end.outcome,
-		mode: bridge.mode(),
+		mode: "video",
 		steps: job.script.steps.length,
-		...(video ? { video } : {}),
-		...(bridge.mode() === "video" ? { audio: audio ?? "none" } : {}),
-		...(video && startOffsetMs() !== undefined
-			? { startOffsetMs: startOffsetMs(), trimmed }
-			: {}),
+		...(finished.video ? { video: finished.video } : {}),
+		encoded: finished.encoded,
+		audio: finished.audio,
+		...(finished.video && startOffsetMs !== undefined ? { startOffsetMs } : {}),
 		plan: job.planPath,
-		startedAt: bridge.startedAt,
+		startedAt,
 		endedAt: new Date().toISOString(),
 		...(end.error ? { error: end.error } : {}),
 	};
