@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type { TourScript } from "@dg/common";
 import {
 	formatAction,
+	MissingEnvError,
+	resolveFill,
 	parseAction,
 	toPlanMarkdown,
 	validate,
@@ -159,5 +161,61 @@ describe("parseAction()", () => {
 
 	it("returns undefined when the meta segment has no action", () => {
 		expect(parseAction("\`#sel\` → https://x.test")).toBeUndefined();
+	});
+});
+
+describe("chapter cards", () => {
+	const md = (fm: string) =>
+		`---\ntitle: Dash\nstartUrl: https://app.example\n${fm}\n---\n\n## Steps\n\n1. **Home** — Hi.\n`;
+
+	it("reads intro and outro as eyebrow, title and detail", () => {
+		const parsed = validate(
+			parsePlanMarkdown(
+				md('intro: "Getting started | Your dashboard | Where things are"\noutro: "Wrap-up | Done | Next: forms"'),
+			),
+		);
+		expect(parsed.intro).toEqual({ eyebrow: "Getting started", title: "Your dashboard", detail: "Where things are" });
+		expect(parsed.outro).toEqual({ eyebrow: "Wrap-up", title: "Done", detail: "Next: forms" });
+	});
+
+	it("round-trips chapters through toPlanMarkdown", () => {
+		const withChapters: TourScript = {
+			...script,
+			intro: { eyebrow: "Demo", title: "Search", detail: "Find things" },
+			outro: { eyebrow: "Wrap-up", title: "Done", detail: "Bye" },
+		};
+		expect(validate(parsePlanMarkdown(toPlanMarkdown(withChapters)))).toEqual(withChapters);
+	});
+
+	it.each([["intro"], ["outro"]])("rejects a %s without three parts, naming the key", (key) => {
+		expect(() => validate(parsePlanMarkdown(md(`${key}: "Only | two"`)))).toThrow(key);
+	});
+});
+
+describe("resolveFill()", () => {
+	it("returns literal text unchanged", () => {
+		expect(resolveFill("cute puppies", {})).toBe("cute puppies");
+	});
+
+	it("reads a $NAME reference from the environment", () => {
+		expect(resolveFill("$VELORA_DEMO_PASSWORD", { VELORA_DEMO_PASSWORD: "s3cret" })).toBe("s3cret");
+	});
+
+	it("throws MissingEnvError naming the variable, never a value", () => {
+		const error = (() => {
+			try {
+				resolveFill("$VELORA_DEMO_PASSWORD", { OTHER: "s3cret" });
+			} catch (e) {
+				return e;
+			}
+		})();
+		expect(error).toBeInstanceOf(MissingEnvError);
+		expect((error as Error).message).toContain("VELORA_DEMO_PASSWORD");
+		expect((error as Error).message).not.toContain("s3cret");
+	});
+
+	it("treats a lowercase or partial $ string as literal text", () => {
+		expect(resolveFill("$lower", {})).toBe("$lower");
+		expect(resolveFill("pay $5", {})).toBe("pay $5");
 	});
 });
