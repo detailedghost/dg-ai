@@ -4,10 +4,10 @@ import {
 	AssetTooLargeError,
 	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
+	CHAT_CODE_PATH,
+	CHAT_EXCHANGE_PATH,
 	CHAT_CLI_PATH,
-	CHAT_FEED_PATH,
 	CHAT_HEALTH_PATH,
-	CHAT_JOBS_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
@@ -54,7 +54,6 @@ import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
-import { runJobNow } from "../jobs/runner";
 import { consumePairingAttempt } from "../pairing";
 import type { Supervisor } from "../services/supervisor";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
@@ -62,7 +61,7 @@ import type {
 	CreateSessionInput,
 	SessionRegistry,
 } from "../session/registry";
-import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
+import type { ChatStore } from "../store";
 import type { CredentialStore } from "../store/credentials-store";
 import {
 	DEFAULT_ARCHIVE_MAX_ROWS,
@@ -80,6 +79,7 @@ import {
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
 import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
+import { createPageCodes, type PageCodes } from "./page-codes";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
@@ -100,6 +100,7 @@ const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
 export type HttpServerDeps = {
 	port: number;
 	instanceId: string;
+	daemonId: string;
 	paths: DgPaths;
 	registry: SessionRegistry;
 	connections: ConnectionManager;
@@ -229,7 +230,7 @@ function requireLoopbackHost(req: Request, port: number): Response | undefined {
 function handleHealthCheck(
 	req: Request,
 	port: number,
-	instanceId: string,
+	ids: { instanceId: string; daemonId: string },
 ): Response {
 	const failsHostOrOrigin =
 		!isLoopbackHost(req.headers.get("host"), port) ||
@@ -240,7 +241,7 @@ function handleHealthCheck(
 	return json({
 		daemon: "dg-daemon",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
-		instanceId,
+		...ids,
 	});
 }
 
@@ -271,6 +272,9 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 	const pairOffers = createPairOffers();
 	const attachLimiter = createAttachLimiter();
+	const offerLimiter = createAttachLimiter();
+	const pageCodes = createPageCodes();
+	const exchangeLimiter = createAttachLimiter();
 	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
 		pairOffers.forget(sessionId);
 	});
@@ -336,7 +340,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				url.pathname === CHAT_HEALTH_PATH ||
 				url.pathname === CHAT_LEGACY_HEALTH_PATH;
 			if (isHealth) {
-				return handleHealthCheck(req, port, deps.instanceId);
+				return handleHealthCheck(req, port, {
+					instanceId: deps.instanceId,
+					daemonId: deps.daemonId,
+				});
 			}
 
 			const hostError = requireLoopbackHost(req, port);
@@ -363,7 +370,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === CHAT_PAIR_OFFER_PATH && req.method === "POST") {
-				return handlePairOfferCreate(req, deps, pairOffers);
+				return handlePairOfferCreate(req, deps, pairOffers, offerLimiter);
 			}
 
 			if (
@@ -379,6 +386,14 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
 				return handleAttach(req, url, deps, attachLimiter);
+			}
+
+			if (url.pathname === CHAT_CODE_PATH && req.method === "POST") {
+				return handleChatCodeMint(req, deps, pageCodes, attachLimiter);
+			}
+
+			if (url.pathname === CHAT_EXCHANGE_PATH && req.method === "POST") {
+				return handleChatCodeExchange(req, deps, pageCodes, exchangeLimiter);
 			}
 
 			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {
@@ -413,15 +428,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				req.method === "DELETE"
 			) {
 				return handleAssetDelete(req, url, deps);
-			}
-
-			if (
-				url.pathname === CHAT_JOBS_PATH ||
-				url.pathname.startsWith(`${CHAT_JOBS_PATH}/`) ||
-				url.pathname === CHAT_FEED_PATH ||
-				url.pathname.startsWith(`${CHAT_FEED_PATH}/`)
-			) {
-				return handleSchedulerRoute(req, url, deps, dispatchScheduler);
 			}
 
 			if (
@@ -640,9 +646,13 @@ function handlePairOfferCreate(
 	req: Request,
 	deps: HttpServerDeps,
 	offers: PairOffers,
+	limiter: AttachLimiter,
 ): Response {
 	const origin = pairOrigin(req, deps.paths);
 	if (origin instanceof Response) return origin;
+	if (!limiter.allow(origin)) {
+		return pairText("too many pairing offers; wait a minute", 429);
+	}
 	const offer = offers.create({ origin });
 	if ("outcome" in offer) {
 		return pairText("too many pairing offers; wait for one to expire", 429);
@@ -808,6 +818,75 @@ async function handleLocalAttach(
 	});
 }
 
+function handleChatCodeMint(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Response {
+	const originError = requireExtensionOrigin(req, deps.paths);
+	if (originError) return originError;
+	const bearer = bearerToken(req);
+	const record =
+		bearer === undefined
+			? undefined
+			: deps.registry
+					.list()
+					.flatMap((summary) => {
+						const found = deps.registry.get(summary.sessionId);
+						return found ? [found] : [];
+					})
+					.find(
+						(candidate) =>
+							candidate.state === "active" && tokensEqual(candidate.token, bearer),
+					);
+	if (bearer === undefined || record === undefined) {
+		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
+	}
+	if (!limiter.allow(bearer)) {
+		return new Response("too many requests", {
+			status: 429,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	return pairJson({ code: codes.mint(record.sessionId) });
+}
+
+async function handleChatCodeExchange(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: PAIR_HEADERS });
+	if (!isLocalPageOrigin(req.headers.get("origin"), deps.port)) {
+		return refuse("refused", 400);
+	}
+	if (!limiter.allow("exchange")) return refuse("too many requests", 429);
+	let code: unknown;
+	try {
+		code = ((await req.json()) as { code?: unknown }).code;
+	} catch {
+		return refuse("invalid JSON body", 400);
+	}
+	if (typeof code !== "string" || code.length === 0) {
+		return refuse("refused: body must carry a code", 400);
+	}
+	const sessionId = codes.redeem(code);
+	const record = sessionId === undefined ? undefined : deps.registry.get(sessionId);
+	if (record === undefined || record.state !== "active") {
+		return refuse("no such code", 404);
+	}
+	noteSecret(record.token);
+	return pairJson({
+		port: deps.port,
+		sessionId: record.sessionId,
+		token: record.token,
+		agentIdentity: record.agentIdentity,
+	});
+}
+
 async function handleAttach(
 	req: Request,
 	url: URL,
@@ -909,11 +988,6 @@ function requireOwnerCredential(
 	return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
 }
 
-function hasLiveSessionBearer(req: Request, deps: HttpServerDeps): boolean {
-	const bearer = bearerToken(req);
-	return bearer !== undefined && deps.registry.tokenIsLive(bearer);
-}
-
 function handleLocalSessions(
 	req: Request,
 	url: URL,
@@ -976,25 +1050,6 @@ function handleSessionClear(req: Request, deps: HttpServerDeps): Response {
 	return json({ closed });
 }
 
-function parseLimit(raw: string | null): number | undefined | "invalid" {
-	if (raw === null) return undefined;
-	const value = Number(raw);
-	if (!Number.isInteger(value) || value <= 0) return "invalid";
-	return value;
-}
-
-async function readIdentity(req: Request): Promise<string | undefined> {
-	try {
-		const body = (await req.json()) as Record<string, unknown>;
-		const identity = body.identity;
-		return typeof identity === "string" && identity.length > 0
-			? identity
-			: undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 function decodeSegment(segment: string): string | undefined {
 	try {
 		return decodeURIComponent(segment);
@@ -1049,136 +1104,6 @@ async function handleServiceRoute(
 				status: SERVICE_ACTION_STATUS[result.kind],
 				headers: NOSNIFF_HEADERS,
 			});
-}
-
-async function handleSchedulerRoute(
-	req: Request,
-	url: URL,
-	deps: HttpServerDeps,
-	scheduler: DispatchScheduler,
-): Promise<Response> {
-	const originError = refuseForeignOrigin(req, deps.paths, () =>
-		hasLiveSessionBearer(req, deps),
-	);
-	if (originError) return originError;
-	const { store, logger } = deps;
-	const runnerDeps = { store, scheduler, logger };
-	const isJobs = url.pathname.startsWith(CHAT_JOBS_PATH);
-	const base = isJobs ? CHAT_JOBS_PATH : CHAT_FEED_PATH;
-	const rest = url.pathname
-		.slice(base.length)
-		.split("/")
-		.filter((segment) => segment.length > 0)
-		.map((segment) => decodeURIComponent(segment));
-
-	if (isJobs && rest.length === 0 && req.method === "GET") {
-		const unread = store.countUnreadByJob();
-		return json({
-			jobs: store.listJobSummaries().map((job) => ({
-				id: job.id,
-				label: job.label,
-				intervalMs: job.intervalMs ?? null,
-				cronExpr: job.cronExpr ?? null,
-				enabled: job.enabled,
-				nextRunAt: job.nextRunAt,
-				lastRunAt: job.lastRunAt ?? null,
-				lastExitCode: job.lastExitCode ?? null,
-				lastError: job.lastError ?? null,
-				notifyIdentity: job.notifyIdentity ?? null,
-				unread: unread[job.id] ?? 0,
-			})),
-		});
-	}
-
-	if (
-		isJobs &&
-		rest.length === 2 &&
-		rest[1] === "run" &&
-		req.method === "POST"
-	) {
-		const outcome = await runJobNow(rest[0], runnerDeps);
-		if (!outcome) {
-			return new Response("no such job", {
-				status: 404,
-				headers: NOSNIFF_HEADERS,
-			});
-		}
-		return json(outcome);
-	}
-
-	if (!isJobs && rest.length === 0 && req.method === "GET") {
-		const limit = parseLimit(url.searchParams.get("limit"));
-		if (limit === "invalid") {
-			return new Response("refused: limit must be a positive integer", {
-				status: 400,
-				headers: NOSNIFF_HEADERS,
-			});
-		}
-		const items = store.listFeedItems({
-			jobId: url.searchParams.get("jobId") ?? undefined,
-			unreadOnly: url.searchParams.get("unread") === "true",
-			limit,
-		});
-		return json({
-			items: items.map((item) => ({
-				id: item.id,
-				jobId: item.jobId,
-				createdAt: item.createdAt,
-				title: item.title,
-				meta: item.meta ?? null,
-				url: item.url ?? null,
-				read: item.readAt !== undefined,
-			})),
-		});
-	}
-
-	if (
-		!isJobs &&
-		rest.length === 1 &&
-		rest[0] === "read-all" &&
-		req.method === "POST"
-	) {
-		return json({ marked: store.markAllRead() });
-	}
-
-	if (!isJobs && rest.length === 2 && req.method === "POST") {
-		const [itemId, action] = rest;
-		if (action === "read") {
-			if (!store.markFeedItemRead(itemId)) {
-				return new Response("no such item", {
-					status: 404,
-					headers: NOSNIFF_HEADERS,
-				});
-			}
-			return json({ ok: true });
-		}
-		if (action === "queue") {
-			const identity = await readIdentity(req);
-			if (!identity) {
-				return new Response("refused: body must carry a non-empty identity", {
-					status: 400,
-					headers: NOSNIFF_HEADERS,
-				});
-			}
-			const item = store.getFeedItem(itemId);
-			if (!item) {
-				return new Response("no such item", {
-					status: 404,
-					headers: NOSNIFF_HEADERS,
-				});
-			}
-			store.insertAgentMessage({
-				senderSessionId: SCHEDULER_SESSION_ID,
-				senderIdentity: "dashboard",
-				recipientIdentity: identity,
-				id: randomUUID(),
-				body: [item.title, item.meta, item.url].filter(Boolean).join("\n"),
-			});
-			return json({ ok: true });
-		}
-	}
-
-	return new Response("not found", { status: 404, headers: NOSNIFF_HEADERS });
 }
 
 function handleWsUpgrade(

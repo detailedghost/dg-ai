@@ -1,4 +1,4 @@
-import { describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -10,7 +10,7 @@ import {
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
-import { handleOverwatchFrameSafely } from "@/lib/background/pages";
+import { handleOverwatchFrameSafely } from "@/lib/background/local-pages";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
@@ -22,10 +22,21 @@ import {
 	type LocalArea,
 	makeLocalArea,
 	makeStorage,
+	installDaemonHealthStub,
 	settle,
+	TEST_DAEMON_ID,
+	TEST_PAGE_CODE,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
+
+beforeEach(() => {
+	installDaemonHealthStub();
+});
+
+afterEach(() => {
+	mock.restore();
+});
 
 const { registerDaemonLink: registerLink, registerRecording } = await import("@/lib/background");
 const { MSG } = await import("@dg/pages/chat-messages");
@@ -226,6 +237,13 @@ test("regression: lib/background/recording.ts no longer registers its own action
 	);
 	expect(source).not.toMatch(/action\.onClicked/);
 });
+
+function daemonIdentity(daemonId = TEST_DAEMON_ID): Response {
+	return {
+		ok: true,
+		json: async () => ({ daemon: "dg-daemon", instanceId: "inst-test", daemonId }),
+	} as unknown as Response;
+}
 
 function sentTypes(socket: FakeSocket): string[] {
 	return socket.send.mock.calls.map(
@@ -568,8 +586,10 @@ test("an overwatch-open completion waits for the replacement socket handshake af
 			}),
 	);
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async () =>
-			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
+		(async (input: RequestInfo | URL) =>
+			String(input).endsWith("/chat/code")
+				? Response.json({ code: TEST_PAGE_CODE })
+				: daemonIdentity()) as unknown as typeof fetch,
 	);
 	registerDaemonLink({ browserApi: api, openSocket });
 	const bootstrap = makeBootstrap();
@@ -661,8 +681,10 @@ test("registerDaemonLink drops a pw-ext result whose admission socket was replac
 			}),
 	);
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async () =>
-			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
+		(async (input: RequestInfo | URL) =>
+			String(input).endsWith("/chat/code")
+				? Response.json({ code: TEST_PAGE_CODE })
+				: daemonIdentity()) as unknown as typeof fetch,
 	);
 	registerDaemonLink({ browserApi: api, openSocket, relayHandlers: { "pw-ext": pwExtRun as never } });
 	await adoptBootstrap(bootstrap);
@@ -723,8 +745,10 @@ test("regression: the background's socket reopens automatically after the daemon
 		return s;
 	});
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async () =>
-			({ ok: false }) as unknown as Response) as unknown as typeof fetch,
+		(async (input: RequestInfo | URL) =>
+			String(input).endsWith("/chat/code")
+				? Response.json({ code: TEST_PAGE_CODE })
+				: daemonIdentity()) as unknown as typeof fetch,
 	);
 
 	const { api, getOnMessage } = makeBrowserApi();
@@ -753,7 +777,7 @@ test("regression: the background's socket reopens automatically after the daemon
 	}
 });
 
-test("regression: the background rediscovers a relocated daemon via GET /healthz, preferring the matching instanceId over a decoy", async () => {
+test("regression: the background rediscovers a relocated daemon via GET /healthz, pinned to the stored daemonId over a decoy daemon", async () => {
 	const sockets: FakeSocket[] = [];
 	const openSocket = mock((_url: string) => {
 		const s = makeFakeSocket();
@@ -772,7 +796,11 @@ test("regression: the background rediscovers a relocated daemon via GET /healthz
 			if (port === CHAT_DEFAULT_PORT) {
 				return {
 					ok: true,
-					json: async () => ({ daemon: "dg-daemon", instanceId: "inst-fixed" }),
+					json: async () => ({
+						daemon: "dg-daemon",
+						instanceId: "inst-fixed",
+						daemonId: TEST_DAEMON_ID,
+					}),
 				} as unknown as Response;
 			}
 			return { ok: false } as unknown as Response;
@@ -780,13 +808,21 @@ test("regression: the background rediscovers a relocated daemon via GET /healthz
 		if (port === decoyPort) {
 			return {
 				ok: true,
-				json: async () => ({ daemon: "dg-daemon", instanceId: "inst-other" }),
+				json: async () => ({
+					daemon: "dg-daemon",
+					instanceId: "inst-other",
+					daemonId: "squatter-daemon",
+				}),
 			} as unknown as Response;
 		}
 		if (port === relocatedPort) {
 			return {
 				ok: true,
-				json: async () => ({ daemon: "dg-daemon", instanceId: "inst-fixed" }),
+				json: async () => ({
+						daemon: "dg-daemon",
+						instanceId: "inst-fixed",
+						daemonId: TEST_DAEMON_ID,
+					}),
 			} as unknown as Response;
 		}
 		return { ok: false } as unknown as Response;
@@ -1409,7 +1445,10 @@ function makeGate(): Gate {
 
 function storedPairings(...bootstraps: SessionBootstrap[]) {
 	return Object.fromEntries(
-		bootstraps.map((bootstrap) => [pairingKey(bootstrap.sessionId), bootstrap]),
+		bootstraps.map((bootstrap) => [
+			pairingKey(bootstrap.sessionId),
+			{ ...bootstrap, daemonId: TEST_DAEMON_ID },
+		]),
 	);
 }
 
@@ -1691,7 +1730,10 @@ test("adopt writes no key until a session-list confirms the session", async () =
 	await settle();
 
 	expect(Object.keys(local.data)).toEqual([pairingKey(FIRST.sessionId)]);
-	expect(local.data[pairingKey(FIRST.sessionId)]).toEqual(FIRST);
+	expect(local.data[pairingKey(FIRST.sessionId)]).toEqual({
+		...FIRST,
+		daemonId: TEST_DAEMON_ID,
+	});
 });
 
 test("a session list that confirms another session does not persist an unconfirmed one", async () => {
@@ -1839,12 +1881,17 @@ test("MSG.connectionRetry rewrites the stored port of a confirmed pairing to the
 		token: "tok-moved-secret-value",
 		port: CHAT_DEFAULT_PORT,
 	});
+	let moved = false;
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
 		const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
-		return port === relocatedPort
+		return port === (moved ? relocatedPort : CHAT_DEFAULT_PORT)
 			? ({
 					ok: true,
-					json: async () => ({ daemon: "dg-daemon", instanceId: "inst-moved" }),
+					json: async () => ({
+						daemon: "dg-daemon",
+						instanceId: "inst-moved",
+						daemonId: TEST_DAEMON_ID,
+					}),
 				} as unknown as Response)
 			: ({ ok: false } as unknown as Response);
 	}) as unknown as typeof fetch);
@@ -1857,12 +1904,17 @@ test("MSG.connectionRetry rewrites the stored port of a confirmed pairing to the
 		await settle();
 		socket.dispatch("message", message(buildSessionListFrame(stored.sessionId)));
 		await settle();
+		moved = true;
 
 		const reply = await boot.ask({ type: MSG.connectionRetry });
 		await settle();
 
 		expect(reply?.ok).toBe(true);
-		expect(local.data[pairingKey(stored.sessionId)]).toEqual({ ...stored, port: relocatedPort });
+		expect(local.data[pairingKey(stored.sessionId)]).toEqual({
+			...stored,
+			daemonId: TEST_DAEMON_ID,
+			port: relocatedPort,
+		});
 	} finally {
 		fetchSpy.mockRestore();
 	}
@@ -2065,7 +2117,10 @@ test("a protocol version mismatch drop keeps the stored key, forgets the session
 	} finally {
 		timers.restore();
 	}
-	expect(local.data[pairingKey(FIRST.sessionId)]).toEqual(FIRST);
+	expect(local.data[pairingKey(FIRST.sessionId)]).toEqual({
+		...FIRST,
+		daemonId: TEST_DAEMON_ID,
+	});
 	expect(local.remove).not.toHaveBeenCalled();
 	expect(sessionIdsOf(await ask({ type: MSG.connectionRequest }))).toEqual([]);
 });
@@ -2117,7 +2172,11 @@ test("a stored token is masked in an error reply after it was loaded at startup"
 	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
 		(async (input: RequestInfo | URL) =>
 			String(input).includes("/healthz")
-				? Response.json({ daemon: "dg-daemon", instanceId: "test" })
+				? Response.json({
+					daemon: "dg-daemon",
+					instanceId: "test",
+					daemonId: TEST_DAEMON_ID,
+				})
 				: new Response(`nope ${MASKED.token}`, { status: 404 })) as unknown as typeof fetch,
 	);
 	try {
@@ -2163,5 +2222,102 @@ describe("pairing storage source contract", () => {
 
 	test("the pairing store reads and writes extension local storage", () => {
 		expect(read("background/pairing-store.ts")).toMatch(/storage\.local/);
+	});
+});
+
+describe("daemon identity pin", () => {
+	function healthByPort(identities: Record<number, string | undefined>) {
+		return spyOn(globalThis, "fetch").mockImplementation((async (url: string) => {
+			const port = Number(/:(\d+)\/healthz$/.exec(url)?.[1]);
+			const daemonId = identities[port];
+			return daemonId === undefined
+				? ({ ok: false } as unknown as Response)
+				: daemonIdentity(daemonId);
+		}) as unknown as typeof fetch);
+	}
+
+	test("adopt refuses a daemon that reports no daemonId and stores nothing", async () => {
+		const { api, local } = makeBrowserApi();
+		spyOn(globalThis, "fetch").mockImplementation((async () =>
+			({
+				ok: true,
+				json: async () => ({ daemon: "dg-daemon", instanceId: "inst-old" }),
+			}) as unknown as Response) as unknown as typeof fetch);
+		const link = registerDaemonLink({ browserApi: api, openSocket: () => makeFakeSocket() });
+
+		await expect(link.adopt(makeBootstrap())).rejects.toThrow(/did not identify/);
+		await settle();
+
+		expect(local.set).not.toHaveBeenCalled();
+	});
+
+	test("adopt refuses a second pairing that belongs to a different daemon", async () => {
+		const { api } = makeBrowserApi();
+		const socket = makeFakeSocket();
+		healthByPort({ [CHAT_DEFAULT_PORT]: "daemon-a", [CHAT_DEFAULT_PORT + 1]: "daemon-b" });
+		const link = registerDaemonLink({ browserApi: api, openSocket: () => socket });
+		await link.adopt(makeBootstrap({ sessionId: "sess-a", port: CHAT_DEFAULT_PORT }));
+
+		await expect(
+			link.adopt(makeBootstrap({ sessionId: "sess-b", port: CHAT_DEFAULT_PORT + 1 })),
+		).rejects.toThrow(/different daemon/);
+	});
+
+	test("a socket that opens on a port held by another daemon sends no token", async () => {
+		const sockets: FakeSocket[] = [];
+		const closes: number[] = [];
+		const { api } = makeBrowserApi();
+		const spy = healthByPort({ [CHAT_DEFAULT_PORT]: "daemon-a" });
+		registerDaemonLink({
+			browserApi: api,
+			openSocket: () => {
+				const socket = makeFakeSocket();
+				sockets.push(socket);
+				return Object.assign(socket, { close: () => closes.push(1) }) as never;
+			},
+		});
+		await adoptBootstrap(makeBootstrap({ port: CHAT_DEFAULT_PORT }));
+		spy.mockClear();
+		healthByPort({ [CHAT_DEFAULT_PORT]: "squatter" });
+
+		sockets[0]?.dispatch("open");
+		await settle();
+
+		expect(sockets[0]?.send.mock.calls.length).toBe(0);
+		expect(closes).toEqual([1]);
+	});
+
+	test("connection retry and open chat refuse a port that only a squatter answers", async () => {
+		const { api, tabsCreate } = makeBrowserApi();
+		healthByPort({ [CHAT_DEFAULT_PORT]: "daemon-a" });
+		const link = registerDaemonLink({ browserApi: api, openSocket: () => makeFakeSocket() });
+		const bootstrap = makeBootstrap({ port: CHAT_DEFAULT_PORT });
+		await adoptBootstrap(bootstrap);
+		healthByPort({ [CHAT_DEFAULT_PORT]: "squatter", [CHAT_DEFAULT_PORT + 1]: "squatter" });
+
+		expect(await link.daemonPort()).toBeUndefined();
+		const reply = await new Promise<Record<string, unknown> | undefined>((resolve) => {
+			const handler = (api.runtime.onMessage.addListener as unknown as {
+				mock: { calls: [Listener][] };
+			}).mock.calls[0]?.[0];
+			handler?.(
+				{ type: MSG.openChat, sessionId: bootstrap.sessionId },
+				{ url: api.runtime.getURL("popup.html") },
+				(r) => resolve(r as Record<string, unknown>),
+			);
+		});
+
+		expect(reply?.ok).toBe(false);
+		expect(tabsCreate).not.toHaveBeenCalled();
+	});
+
+	test("a stored pairing without a daemonId is not restored or connected", async () => {
+		const { daemonId: _unpinned, ...legacy } = { ...makeBootstrap(), daemonId: "x" };
+		const boot = bootWithStored([], {
+			local: makeLocalArea({ [pairingKey(legacy.sessionId)]: legacy }),
+		});
+		await settle();
+
+		expect(boot.openSocket).not.toHaveBeenCalled();
 	});
 });

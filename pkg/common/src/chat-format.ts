@@ -51,6 +51,7 @@ export const CHAT_DEFAULT_PORT = 47823;
 export const CHAT_PORT_FALLBACK_COUNT = 9;
 
 export const CHAT_MARKER_KEY = "_chat";
+export const CHAT_CODE_KEY = "_chatcode";
 
 export const CHAT_HEALTH_PATH = "/healthz";
 /** Answered alongside CHAT_HEALTH_PATH for one release, for extensions the user has not reloaded yet. */
@@ -60,8 +61,6 @@ export const CHAT_STATUS_PATH = "/status";
 export const CHAT_WS_PATH = "/ws";
 export const CHAT_CLI_PATH = "/cli";
 export const CHAT_ASSETS_PATH = "/assets";
-export const CHAT_JOBS_PATH = "/jobs";
-export const CHAT_FEED_PATH = "/feed";
 export const CHAT_SERVICES_PATH = "/services";
 
 export type JobState = "ok" | "failed" | "paused";
@@ -906,6 +905,16 @@ export function validateDaemonHandle(value: unknown): DaemonHandle {
 		"daemon handle.versions.protocol",
 	);
 	return value as DaemonHandle;
+}
+
+export function tryValidateSessionBootstrap(
+	value: unknown,
+): SessionBootstrap | undefined {
+	try {
+		return validateSessionBootstrap(value);
+	} catch {
+		return undefined;
+	}
 }
 
 export function validateSessionBootstrap(value: unknown): SessionBootstrap {

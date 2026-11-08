@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
@@ -106,6 +106,10 @@ beforeEach(() => {
 	syncGet.mockClear();
 	syncSet.mockClear();
 	sessionGet.mockClear();
+});
+
+afterEach(() => {
+	mock.restore();
 });
 
 describe("createLiveAssetDirectoryTransport — the real page→background→socket relay", () => {

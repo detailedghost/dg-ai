@@ -1,10 +1,10 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
 } from "@dg/common";
-import { readChatBootstrap } from "@dg/pages/chat-marker";
+import { readChatCode } from "@dg/pages/chat-marker";
 import { buildSessionListFrame } from "./utils/frame-fixtures";
 import {
 	frameEvent,
@@ -12,10 +12,21 @@ import {
 	makeFakeSocket,
 	makeLocalArea,
 	makeStorage,
+	installDaemonHealthStub,
 	settle,
+	TEST_DAEMON_ID,
+	TEST_PAGE_CODE,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
+
+beforeEach(() => {
+	installDaemonHealthStub();
+});
+
+afterEach(() => {
+	mock.restore();
+});
 
 const { registerDaemonLink } = await import("@/lib/background/daemon-link");
 
@@ -58,6 +69,7 @@ function boot() {
 	});
 	return {
 		adopt: link.adopt,
+		client: link.client,
 		api,
 		local,
 		socket,
@@ -109,9 +121,10 @@ describe("registerDaemonLink adopt without a chat page", () => {
 		);
 		await settle();
 
-		expect(link.local.data[`pairing:${bootstrap.sessionId}`]).toEqual(
-			bootstrap,
-		);
+		expect(link.local.data[`pairing:${bootstrap.sessionId}`]).toEqual({
+			...bootstrap,
+			daemonId: TEST_DAEMON_ID,
+		});
 	});
 
 	test("never opens a tab or a side panel", async () => {
@@ -146,7 +159,25 @@ describe("registerDaemonLink overwatch-open", () => {
 		return { link, bootstrap };
 	}
 
-	test("opens /board with the confirmed bootstrap in the fragment and answers ok", async () => {
+	test("asks the live daemon port, not the stored one, for the board code", async () => {
+		const { link, bootstrap } = await confirmed();
+		const livePort = bootstrap.port + 2;
+		(link.client as { getPort?: () => number | undefined }).getPort = () => livePort;
+
+		link.socket.dispatch("message", overwatchOpen("open-live"));
+		await settle();
+
+		const url = (link.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
+		expect(new URL(url).origin).toBe(`http://127.0.0.1:${livePort}`);
+		const mintCalls = (
+			globalThis.fetch as unknown as { mock: { calls: [string][] } }
+		).mock.calls.filter(([target]) => String(target).endsWith("/chat/code"));
+		expect(mintCalls.map(([target]) => target)).toEqual([
+			`http://127.0.0.1:${livePort}/chat/code`,
+		]);
+	});
+
+	test("opens /board with a one-time code, not the token, in the fragment and answers ok", async () => {
 		const { link, bootstrap } = await confirmed();
 
 		link.socket.dispatch("message", overwatchOpen("open-1"));
@@ -156,7 +187,8 @@ describe("registerDaemonLink overwatch-open", () => {
 		const url = (link.tabsCreate.mock.calls[0]?.[0] as { url: string }).url;
 		expect(new URL(url).origin).toBe(`http://127.0.0.1:${bootstrap.port}`);
 		expect(new URL(url).pathname).toBe("/board");
-		expect(readChatBootstrap(url)).toEqual(bootstrap);
+		expect(readChatCode(url)).toBe(TEST_PAGE_CODE);
+		expect(url).not.toContain(bootstrap.token);
 		expect(
 			sentFrames(link.socket).find((f) => f.type === "overwatch-open-result"),
 		).toEqual({

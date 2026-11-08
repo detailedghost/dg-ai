@@ -3,6 +3,7 @@ import { CHAT_MARKER_KEY } from "@dg/common";
 import { readChatBootstrap } from "../src/chat-marker";
 import {
 	attachLocalSession,
+	exchangeChatCode,
 	forgetLocalBootstrap,
 	loadLocalBootstrap,
 	loadLocalBootstraps,
@@ -27,7 +28,11 @@ function fakeWindow(
 	replaced: string[] = [],
 ): Window {
 	return {
-		location: { href, port: new URL(href).port },
+		location: {
+			href,
+			port: new URL(href).port,
+			origin: new URL(href).origin,
+		},
 		history: {
 			state: null,
 			replaceState: (_state: unknown, _title: string, url: string) => {
@@ -381,4 +386,52 @@ test("attachLocalSession reaches a live third token after two are refused", asyn
 
 	expect(bearers).toEqual([`Bearer ${a.token}`, `Bearer ${b.token}`, `Bearer ${c.token}`]);
 	expect(result).toEqual({ status: "attached", bootstrap: target, refused: [a, b] });
+});
+
+test("exchangeChatCode strips the code from the address and trades it for the bootstrap", async () => {
+	const replaced: string[] = [];
+	const win = fakeWindow("http://127.0.0.1:47823/chat#_chatcode=one-time", undefined, replaced);
+	const calls: Array<{ url: string; init: RequestInit }> = [];
+	const fetchFn = (async (url: string, init: RequestInit) => {
+		calls.push({ url, init });
+		return Response.json(BOOTSTRAP);
+	}) as unknown as typeof fetch;
+
+	const exchanged = await exchangeChatCode(win, fetchFn);
+
+	expect(exchanged).toEqual(BOOTSTRAP);
+	expect(replaced).toEqual(["http://127.0.0.1:47823/chat"]);
+	expect(calls[0]?.url).toBe("http://127.0.0.1:47823/chat/exchange");
+	expect(calls[0]?.init.method).toBe("POST");
+	expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ code: "one-time" });
+});
+
+test("exchangeChatCode makes no request when the address carries no code", async () => {
+	let called = false;
+	const fetchFn = (async () => {
+		called = true;
+		return Response.json(BOOTSTRAP);
+	}) as unknown as typeof fetch;
+
+	expect(await exchangeChatCode(fakeWindow("http://127.0.0.1:47823/chat"), fetchFn)).toBeUndefined();
+	expect(called).toBe(false);
+});
+
+test("exchangeChatCode returns undefined when the daemon refuses the code", async () => {
+	const fetchFn = (async () =>
+		new Response("no such code", { status: 404 })) as unknown as typeof fetch;
+
+	expect(
+		await exchangeChatCode(fakeWindow("http://127.0.0.1:47823/chat#_chatcode=spent"), fetchFn),
+	).toBeUndefined();
+});
+
+test("loadLocalBootstraps puts a bootstrap won by code exchange first and stores it", () => {
+	const storage = memoryStorage();
+	const win = fakeWindow("http://127.0.0.1:47823/chat");
+
+	const loaded = loadLocalBootstraps(win, storage, BOOTSTRAP);
+
+	expect(loaded).toEqual([BOOTSTRAP]);
+	expect(loadLocalBootstraps(win, storage)).toEqual([BOOTSTRAP]);
 });

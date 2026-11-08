@@ -14,6 +14,7 @@ import {
 	type RelayCliFrame,
 	relayFrameTypes,
 	relayValidators,
+	tryValidateSessionBootstrap,
 	validateChatFrame,
 	validateCommandManifest,
 } from "../src/index";
@@ -997,5 +998,23 @@ describe("ChatFrame relay members keep their wire shape", () => {
 			ok: true,
 		} satisfies ProtoResult;
 		expect([keys, success.ok]).toEqual([true, true]);
+	});
+});
+
+describe("tryValidateSessionBootstrap", () => {
+	const bootstrap = {
+		port: 47823,
+		sessionId: "session-a",
+		token: "token-a",
+		agentIdentity: "claude",
+	};
+
+	it("returns a valid bootstrap", () => {
+		expect(tryValidateSessionBootstrap(bootstrap)).toEqual(bootstrap);
+	});
+
+	it("returns undefined instead of throwing for an invalid bootstrap", () => {
+		expect(tryValidateSessionBootstrap({ ...bootstrap, token: "" })).toBeUndefined();
+		expect(tryValidateSessionBootstrap("nope")).toBeUndefined();
 	});
 });

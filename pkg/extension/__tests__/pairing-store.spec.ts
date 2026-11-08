@@ -2,22 +2,27 @@ import { describe, expect, mock, test } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
-	type SessionBootstrap,
 } from "@dg/common";
-import { createPairingStore } from "@/lib/background/pairing-store";
 import {
-	makeBootstrapFactory,
+	createPairingStore,
+	type PairedBootstrap,
+} from "@/lib/background/pairing-store";
+import {
 	makeLocalArea,
 	makeStorage,
 } from "./utils/relay-harness";
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
-const makeBootstrap = makeBootstrapFactory({
+const makeBootstrap = (
+	overrides: Partial<PairedBootstrap> = {},
+): PairedBootstrap => ({
 	port: CHAT_DEFAULT_PORT,
 	sessionId: "sess-one",
 	token: "tok-one-secret-value",
 	agentIdentity: "claude",
+	daemonId: "daemon-one",
+	...overrides,
 });
 
 const MAX_PORT = CHAT_DEFAULT_PORT + CHAT_PORT_FALLBACK_COUNT;
@@ -27,7 +32,7 @@ function storeOver(initial: Record<string, unknown> = {}) {
 	return { local, store: createPairingStore({ storage: makeStorage(local) }) };
 }
 
-const bySession = (a: SessionBootstrap, b: SessionBootstrap) =>
+const bySession = (a: PairedBootstrap, b: PairedBootstrap) =>
 	a.sessionId.localeCompare(b.sessionId);
 
 describe("createPairingStore keys", () => {
@@ -182,5 +187,21 @@ describe("createPairingStore list", () => {
 		const store = createPairingStore({ storage: makeStorage(local) });
 
 		await expect(store.list()).rejects.toThrow("read failed");
+	});
+});
+
+describe("pairing store daemon pin", () => {
+	test("keeps the daemonId a pairing was stored with", async () => {
+		const { store } = storeOver();
+		await store.put(makeBootstrap({ daemonId: "daemon-pinned" }));
+
+		expect((await store.list())[0]?.daemonId).toBe("daemon-pinned");
+	});
+
+	test("ignores a stored pairing that carries no daemonId", async () => {
+		const { daemonId: _unpinned, ...legacy } = makeBootstrap();
+		const { store } = storeOver({ "pairing:sess-one": legacy });
+
+		expect(await store.list()).toEqual([]);
 	});
 });

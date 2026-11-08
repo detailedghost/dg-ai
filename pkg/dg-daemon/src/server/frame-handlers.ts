@@ -925,6 +925,14 @@ async function handleSessionCreate(
 	frame: Extract<ChatFrame, { type: "session-create" }>,
 	deps: FrameHandlerDeps,
 ): Promise<void> {
+	if (ws.data.kind !== "cli") {
+		await sendError(
+			ws,
+			frame.sessionId,
+			"session-create: only an agent connection may create sessions",
+		);
+		return;
+	}
 	const requester = deps.registry.get(frame.sessionId);
 	if (!requester) {
 		await sendError(ws, frame.sessionId, "session-create: requester unknown");

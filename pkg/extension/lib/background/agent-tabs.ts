@@ -462,6 +462,21 @@ export function createAgentTabs({
 		forget({ sessionId }: { sessionId: string }): Promise<void> {
 			return locked(() => storage.session.remove(recordKey(sessionId)));
 		},
+
+		tabRemoved({ tabId }: { tabId: number }): Promise<void> {
+			return locked(async () => {
+				for (const record of await readRecords(storage))
+					if (record.selectedTabId === tabId) await write(withoutSelection(record));
+			});
+		},
+
+		groupRemoved({ groupId }: { groupId: number }): Promise<void> {
+			return locked(async () => {
+				for (const record of await readRecords(storage))
+					if (record.groupId === groupId)
+						await storage.session.remove(recordKey(record.sessionId));
+			});
+		},
 	};
 }
 
@@ -518,28 +533,17 @@ export function registerAgentTabs({
 		return true;
 	});
 
-	const withLock = (task: () => Promise<void>) =>
-		void navigator.locks
-			.request(LOCK_NAME, task)
-			.catch((error: unknown) =>
-				console.warn("[dg-ai-extension] agent tab cleanup failed", error),
-			);
+	const logCleanupFailure = (error: unknown) =>
+		console.warn("[dg-ai-extension] agent tab cleanup failed", error);
 
-	browser.tabs.onRemoved.addListener((tabId) =>
-		withLock(async () => {
-			for (const record of await readRecords(storage))
-				if (record.selectedTabId === tabId)
-					await storage.session.set({
-						[recordKey(record.sessionId)]: withoutSelection(record),
-					});
-		}),
+	browser.tabs.onRemoved.addListener(
+		(tabId) => void agentTabs.tabRemoved({ tabId }).catch(logCleanupFailure),
 	);
 
-	browser.tabGroups.onRemoved.addListener((group) =>
-		withLock(async () => {
-			for (const record of await readRecords(storage))
-				if (record.groupId === group.id)
-					await storage.session.remove(recordKey(record.sessionId));
-		}),
+	browser.tabGroups.onRemoved.addListener(
+		(group) =>
+			void agentTabs
+				.groupRemoved({ groupId: group.id })
+				.catch(logCleanupFailure),
 	);
 }

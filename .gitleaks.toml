@@ -83,10 +83,13 @@ paths = ['''(?:^|/)pkg/extension/__tests__/options-page\.spec\.ts$''']
 regexes = ['''^2093195ba40ed729a120cd0a135a75a44f6f30135cac2e1040c04aa218e738df$''']
 
 [[allowlists]]
-description = "Fake GitHub token in the extension chat background redaction spec"
+description = "Fake GitHub token in the extension redaction specs"
 condition = "AND"
 regexTarget = "secret"
-paths = ['''(?:^|/)pkg/extension/__tests__/chat-background\.spec\.ts$''']
+paths = [
+  '''(?:^|/)pkg/extension/__tests__/chat-background\.spec\.ts$''',
+  '''(?:^|/)pkg/extension/__tests__/daemon-link\.spec\.ts$''',
+]
 regexes = ['''^ghp_abcdef1234567890ABCDEF$''']
 
 [[allowlists]]

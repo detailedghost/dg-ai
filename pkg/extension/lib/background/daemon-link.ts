@@ -13,8 +13,13 @@ import {
 	noteSecret,
 	validateAttachRequest,
 } from "@dg/common";
-import { localPageUrl } from "@dg/pages/chat-marker";
-import { fetchDaemonHealth, findDaemonPort } from "@dg/pages/daemon-port";
+import { codedPageUrl } from "@dg/pages/chat-marker";
+import {
+	fetchDaemonHealth,
+	findDaemonPort,
+	findPinnedDaemonPort,
+	portHasDaemonId,
+} from "@dg/pages/daemon-port";
 import {
 	handshakeOutcome,
 	redactSecrets,
@@ -29,16 +34,17 @@ import { createInboxHandler, type InboxBrowserApi } from "./inbox";
 import {
 	asSessionBootstrap,
 	createPairingStore,
+	type PairedBootstrap,
 	type PairingStorage,
 	type PairingStore,
 } from "./pairing-store";
 import {
 	createPages,
 	type OverwatchOpenCompletion,
-	originAndPath,
+	openLocalPage,
 	type PagesBrowserApi,
-} from "./pages";
-import { isPopupSender } from "./popup-sender";
+} from "./local-pages";
+import { isExtensionPageSender, isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
@@ -97,10 +103,8 @@ export type RegisterDaemonLinkOptions = {
 	pairingStore?: PairingStore;
 };
 
-function isExtensionPageSender(sender: unknown, api: ChatBrowserApi): boolean {
-	if (typeof sender !== "object" || sender === null) return false;
-	const url = (sender as { url?: unknown }).url;
-	return typeof url === "string" && url.startsWith(api.runtime.getURL(""));
+function withoutPin({ daemonId: _pinned, ...bootstrap }: PairedBootstrap): SessionBootstrap {
+	return bootstrap;
 }
 
 function keepaliveFrame(bootstrap: SessionBootstrap): string {
@@ -161,6 +165,7 @@ export function registerDaemonLink(
 ): {
 	client: ChatClient;
 	adopt(bootstrap: SessionBootstrap): Promise<void>;
+	daemonPort(): Promise<number | undefined>;
 	pending(sessionId?: string): RelayRun[];
 } {
 	const api = options.browserApi ?? (browser as unknown as ChatBrowserApi);
@@ -190,8 +195,8 @@ export function registerDaemonLink(
 		}),
 		...options.relayHandlers,
 	};
-	const bootstrapsBySession = new Map<string, SessionBootstrap>();
-	function holdBootstrap(bootstrap: SessionBootstrap): void {
+	const bootstrapsBySession = new Map<string, PairedBootstrap>();
+	function holdBootstrap(bootstrap: PairedBootstrap): void {
 		noteSecret(bootstrap.token);
 		bootstrapsBySession.set(bootstrap.sessionId, bootstrap);
 	}
@@ -258,7 +263,7 @@ export function registerDaemonLink(
 	function firstConfirmedBootstrap(): SessionBootstrap | undefined {
 		for (const sessionId of keepaliveEligible) {
 			const bootstrap = bootstrapsBySession.get(sessionId);
-			if (bootstrap) return bootstrap;
+			if (bootstrap) return withoutPin(bootstrap);
 		}
 		return undefined;
 	}
@@ -334,8 +339,20 @@ export function registerDaemonLink(
 		});
 	}
 
+	function heldDaemonId(): string | undefined {
+		return [...bootstrapsBySession.values()][0]?.daemonId;
+	}
+
 	const client = createChatClient({
 		openSocket: openSocketWithKeepaliveTeardown,
+		admitPort: async (port) => {
+			const daemonId = heldDaemonId();
+			return daemonId !== undefined && (await portHasDaemonId(port, daemonId));
+		},
+		findPort: async () => {
+			const daemonId = heldDaemonId();
+			return daemonId === undefined ? undefined : findPinnedDaemonPort(daemonId);
+		},
 		extensionVersion: api.runtime.getManifest?.().version,
 		keepaliveIntervalMs,
 	});
@@ -374,11 +391,27 @@ export function registerDaemonLink(
 	}
 
 	async function daemonPort(): Promise<number | undefined> {
+		const daemonId = heldDaemonId();
+		if (daemonId === undefined) return findDaemonPort();
 		const hinted =
 			firstConfirmedBootstrap()?.port ??
 			[...bootstrapsBySession.values()][0]?.port;
-		if (hinted !== undefined && (await fetchDaemonHealth(hinted))) return hinted;
-		return findDaemonPort();
+		if (hinted !== undefined && (await portHasDaemonId(hinted, daemonId))) {
+			return hinted;
+		}
+		return findPinnedDaemonPort(daemonId);
+	}
+
+	async function pinToDaemon(bootstrap: SessionBootstrap): Promise<PairedBootstrap> {
+		const daemonId = (await fetchDaemonHealth(bootstrap.port))?.daemonId;
+		if (daemonId === undefined) {
+			throw new Error("The daemon at this port did not identify itself.");
+		}
+		const held = heldDaemonId();
+		if (held !== undefined && held !== daemonId) {
+			throw new Error("This agent belongs to a different daemon than your other pairings.");
+		}
+		return { ...bootstrap, daemonId };
 	}
 
 	async function postDaemon(
@@ -424,14 +457,16 @@ export function registerDaemonLink(
 		for (const item of list) {
 			const bootstrap = asSessionBootstrap(item);
 			if (!bootstrap) continue;
-			holdBootstrap(bootstrap);
-			client.connect(bootstrap);
+			const paired = await pinToDaemon(bootstrap).catch(() => undefined);
+			if (!paired) continue;
+			holdBootstrap(paired);
+			client.connect(paired);
 			adopted += 1;
 		}
 		if (adopted > 0) broadcastPairingStatus();
 		return adopted;
 	}
-	function holdAndConnect(bootstrap: SessionBootstrap): void {
+	function holdAndConnect(bootstrap: PairedBootstrap): void {
 		holdBootstrap(bootstrap);
 		client.connect(bootstrap);
 		broadcastPairingStatus();
@@ -440,7 +475,7 @@ export function registerDaemonLink(
 	async function adopt(bootstrap: SessionBootstrap): Promise<void> {
 		const checked = asSessionBootstrap(bootstrap);
 		if (!checked) throw new Error("The pairing bootstrap is not valid.");
-		holdAndConnect(checked);
+		holdAndConnect(await pinToDaemon(checked));
 	}
 
 	async function openChat(
@@ -451,30 +486,22 @@ export function registerDaemonLink(
 				? bootstrapsBySession.get(sessionId)
 				: undefined;
 		if (!bootstrap) return { ok: false, error: "This agent is not paired." };
-		if ((await daemonPort()) === undefined) {
+		const verifiedPort = await daemonPort();
+		if (verifiedPort === undefined) {
 			return { ok: false, error: DAEMON_UNREACHABLE };
 		}
 		const live =
 			client.getConnectionState() === "connected" ? client.getPort?.() : undefined;
-		const port = live ?? bootstrap.port;
-		const url = localPageUrl({
+		const port = live ?? verifiedPort;
+		const url = await codedPageUrl({
 			port,
 			path: "/chat",
-			bootstrap: { ...bootstrap, port },
+			bootstrap: withoutPin(bootstrap),
 		});
-		const chatPage = originAndPath(url);
-		const open = (
-			await (api.tabs.query?.({ url: `http://127.0.0.1:${port}/chat*` }) ?? [])
-		).find((tab) => tab.id !== undefined && originAndPath(tab.url) === chatPage);
-		if (open?.id === undefined || !api.tabs.update || !api.tabs.reload) {
-			await api.tabs.create({ url });
-			return { ok: true };
-		}
-		await api.tabs.update(open.id, { url, active: true });
-		await api.tabs.reload(open.id);
-		if (open.windowId !== undefined) {
-			await api.windows?.update(open.windowId, { focused: true });
-		}
+		await openLocalPage(api, {
+			url,
+			query: { url: `http://127.0.0.1:${port}/chat*` },
+		});
 		return { ok: true };
 	}
 
@@ -524,7 +551,12 @@ export function registerDaemonLink(
 			broadcastPairingStatus();
 		}
 		const requestSocket = currentSocket;
-		const requestBootstrap = firstConfirmedBootstrap();
+		const confirmedBootstrap = firstConfirmedBootstrap();
+		const livePort = client.getPort?.();
+		const requestBootstrap =
+			confirmedBootstrap && livePort !== undefined
+				? { ...confirmedBootstrap, port: livePort }
+				: confirmedBootstrap;
 		pages.onFrame(frame, {
 			bootstrap: requestBootstrap,
 			sendCompletion(result) {
@@ -596,7 +628,7 @@ export function registerDaemonLink(
 
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (typeof message !== "object" || message === null) return undefined;
-		if (!isExtensionPageSender(sender, api)) return undefined;
+		if (!isExtensionPageSender(sender, api.runtime.getURL(""))) return undefined;
 		const payload = message as Record<string, unknown>;
 		try {
 			switch (payload.type) {
@@ -728,5 +760,5 @@ export function registerDaemonLink(
 		return undefined;
 	});
 
-	return { client, adopt, pending: dispatcher.pending };
+	return { client, adopt, daemonPort, pending: dispatcher.pending };
 }

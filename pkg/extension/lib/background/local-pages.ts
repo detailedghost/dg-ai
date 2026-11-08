@@ -4,7 +4,7 @@ import {
 	describeError,
 	emitRedacted,
 } from "@dg/common";
-import { localPageUrl } from "@dg/pages/chat-marker";
+import { codedPageUrl } from "@dg/pages/chat-marker";
 
 export type PagesBrowserApi = {
 	runtime: {
@@ -48,29 +48,38 @@ export function originAndPath(url: string | undefined): string | undefined {
 	}
 }
 
+export async function openLocalPage(
+	api: OverwatchBrowserApi,
+	{ url, query }: { url: string; query: { url?: string } },
+): Promise<void> {
+	const page = originAndPath(url);
+	const tabs = api.tabs.query ? await api.tabs.query(query) : [];
+	const existing = tabs.find(
+		(tab) => tab.id !== undefined && originAndPath(tab.url) === page,
+	);
+	if (existing?.id === undefined || !api.tabs.update || !api.tabs.reload) {
+		await api.tabs.create({ url });
+		return;
+	}
+	await api.tabs.update(existing.id, { url, active: true });
+	await api.tabs.reload(existing.id);
+	if (existing.windowId !== undefined) {
+		await api.windows?.update(existing.windowId, { focused: true });
+	}
+}
+
 export async function handleOverwatchFrame(
 	frame: ChatFrame,
 	api: OverwatchBrowserApi,
 	bootstrap: SessionBootstrap | undefined,
 ): Promise<OverwatchOpenCompletion | undefined> {
 	if (frame.type !== "overwatch-open" || !bootstrap) return undefined;
-	const url = localPageUrl({
+	const url = await codedPageUrl({
 		port: bootstrap.port,
 		path: "/board",
 		bootstrap,
 	});
-	const board = originAndPath(url);
-	const tabs = api.tabs.query ? await api.tabs.query({}) : [];
-	const existing = tabs.find((tab) => originAndPath(tab.url) === board);
-	if (existing?.id !== undefined && api.tabs.update && api.tabs.reload) {
-		await api.tabs.update(existing.id, { url, active: true });
-		await api.tabs.reload(existing.id);
-		if (existing.windowId !== undefined && api.windows) {
-			await api.windows.update(existing.windowId, { focused: true });
-		}
-		return { requestId: frame.requestId, ok: true };
-	}
-	await api.tabs.create({ url });
+	await openLocalPage(api, { url, query: {} });
 	return { requestId: frame.requestId, ok: true };
 }
 

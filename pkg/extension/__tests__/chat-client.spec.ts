@@ -1370,3 +1370,162 @@ test("session-list frames reach listeners unfiltered, including sessions the cli
 		list?.type === "session-list" && list.sessions.map((entry) => entry.sessionId),
 	).toEqual(["session-a", "not-held"]);
 });
+
+test("admitPort refuses a daemon that fails the check before any frame carrying a token is sent", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const close = mockFn(() => socket.dispatch("close"));
+	const client = createChatClient({
+		openSocket: () => ({ ...socket, close }),
+		admitPort: async () => false,
+		backoffBaseMs: 60_000,
+	});
+	client.connect(makeBootstrap());
+
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(close.mock.calls.length).toBe(1);
+	expect(socket.send.mock.calls.length).toBe(0);
+	expect(client.getConnectionState()).toBe("reconnecting");
+});
+
+test("admitPort lets the handshake through for a daemon that passes the check", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const checked: number[] = [];
+	const client = createChatClient({
+		openSocket: () => socket,
+		admitPort: async (port) => {
+			checked.push(port);
+			return true;
+		},
+	});
+	client.connect(makeBootstrap());
+
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	expect(checked).toEqual([47823]);
+	expect((sentFrames(socket)[0] as { type: string }).type).toBe("connect");
+	expect(client.getConnectionState()).toBe("connected");
+});
+
+test("findPort replaces the unpinned fallback when the socket reconnects", async () => {
+	const sockets = [makeFakeSocket(mockFn), makeFakeSocket(mockFn)];
+	const urls: string[] = [];
+	let opened = 0;
+	const client = createChatClient({
+		openSocket: (url) => {
+			urls.push(url);
+			return sockets[opened++] as never;
+		},
+		findPort: async () => 47825,
+		backoffBaseMs: 1,
+		randomJitter: () => 0,
+	});
+	client.connect(makeBootstrap());
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+
+	sockets[0]?.dispatch("close");
+	await new Promise((resolve) => setTimeout(resolve, 30));
+
+	expect(urls.at(-1)).toContain(":47825/");
+});
+
+test("frames that arrive before admitPort resolves are ignored, so a squatter cannot trigger a token send", async () => {
+	const socket = makeFakeSocket(mockFn);
+	let admit: (admitted: boolean) => void = () => undefined;
+	const client = createChatClient({
+		openSocket: () => ({ ...socket, close: () => undefined }),
+		admitPort: () =>
+			new Promise<boolean>((resolve) => {
+				admit = resolve;
+			}),
+	});
+	const seen: string[] = [];
+	client.onFrame((frame) => seen.push(frame.type));
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	socket.dispatch("open");
+
+	confirmSessions(socket, bootstrap.sessionId);
+	admit(false);
+	await flushMicrotasks();
+	confirmSessions(socket, bootstrap.sessionId);
+
+	expect(seen).toEqual([]);
+	expect(socket.send.mock.calls.length).toBe(0);
+});
+
+test("frames flow once admitPort accepts the daemon", async () => {
+	const socket = makeFakeSocket(mockFn);
+	const client = createChatClient({
+		openSocket: () => socket,
+		admitPort: async () => true,
+	});
+	const seen: string[] = [];
+	client.onFrame((frame) => seen.push(frame.type));
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	socket.dispatch("open");
+	await flushMicrotasks();
+
+	confirmSessions(socket, bootstrap.sessionId);
+
+	expect(seen).toEqual(["session-list"]);
+});
+
+test("a late admission for a socket that already closed does not mark the client connected", async () => {
+	const socket = makeFakeSocket(mockFn);
+	let admit: (admitted: boolean) => void = () => undefined;
+	const client = createChatClient({
+		openSocket: () => socket,
+		admitPort: () =>
+			new Promise<boolean>((resolve) => {
+				admit = resolve;
+			}),
+		backoffBaseMs: 60_000,
+	});
+	client.connect(makeBootstrap());
+	socket.dispatch("open");
+	socket.dispatch("close");
+
+	admit(true);
+	await flushMicrotasks();
+
+	expect(client.getConnectionState()).toBe("reconnecting");
+	expect(socket.send.mock.calls.length).toBe(0);
+});
+
+test("a replacement socket sends nothing, not even an unpair, until its daemon is admitted", async () => {
+	const sockets = [makeFakeSocket(mockFn), makeFakeSocket(mockFn)];
+	let opened = 0;
+	let admitCalls = 0;
+	let admitSecond: (admitted: boolean) => void = () => undefined;
+	const client = createChatClient({
+		openSocket: () => sockets[opened++] as never,
+		admitPort: () => {
+			admitCalls += 1;
+			return admitCalls === 1
+				? Promise.resolve(true)
+				: new Promise<boolean>((resolve) => {
+						admitSecond = resolve;
+					});
+		},
+	});
+	const bootstrap = makeBootstrap();
+	client.connect(bootstrap);
+	sockets[0]?.dispatch("open");
+	await flushMicrotasks();
+	sockets[0]?.send.mock.calls.splice(0);
+
+	client.retryNow();
+	sockets[1]?.dispatch("open");
+	void client.disconnectSession(bootstrap.sessionId).catch(() => undefined);
+	client.closeSession(bootstrap.sessionId);
+	await flushMicrotasks();
+	admitSecond(false);
+	await flushMicrotasks();
+
+	expect(sockets[1]?.send.mock.calls.length).toBe(0);
+});

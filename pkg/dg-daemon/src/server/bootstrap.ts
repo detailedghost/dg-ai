@@ -8,6 +8,7 @@ import { exitAfterDrain } from "@dg/common/async";
 import {
 	checkWslNetworking,
 	type DgPaths,
+	ensureDaemonId,
 	ensureOwnerToken,
 	isDaemonLive,
 	loopbackHostHeader,
@@ -92,6 +93,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 
 	const logger = createLogger(paths);
 	ensureOwnerToken(paths);
+	const daemonId = ensureDaemonId(paths);
 	const store = await ChatStore.open(paths);
 	const credentials = await CredentialStore.open(paths, store.cryptoMeta());
 	store.recoverStaleClaims();
@@ -124,6 +126,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			server = createHttpServer({
 				port: candidate,
 				instanceId,
+				daemonId,
 				paths,
 				registry,
 				connections,

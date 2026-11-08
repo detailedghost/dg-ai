@@ -2,7 +2,7 @@ import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PORT_FALLBACK_COUNT,
 	type SessionBootstrap,
-	validateSessionBootstrap,
+	tryValidateSessionBootstrap,
 } from "@dg/common";
 
 const PAIRING_KEY_PREFIX = "pairing:";
@@ -14,6 +14,8 @@ export type PairingStorage = {
 	remove(keys: string | string[]): Promise<void>;
 };
 
+export type PairedBootstrap = SessionBootstrap & { daemonId: string };
+
 export type PairingStore = ReturnType<typeof createPairingStore>;
 
 function keyOf(sessionId: string): string {
@@ -24,15 +26,22 @@ function keyOf(sessionId: string): string {
 export function asSessionBootstrap(
 	candidate: unknown,
 ): SessionBootstrap | undefined {
-	try {
-		const bootstrap = validateSessionBootstrap(candidate);
-		if (bootstrap.port < CHAT_DEFAULT_PORT || bootstrap.port > CHAT_MAX_PORT) {
-			return undefined;
-		}
-		return bootstrap;
-	} catch {
-		return undefined;
-	}
+	const bootstrap = tryValidateSessionBootstrap(candidate);
+	if (!bootstrap) return undefined;
+	return bootstrap.port < CHAT_DEFAULT_PORT || bootstrap.port > CHAT_MAX_PORT
+		? undefined
+		: bootstrap;
+}
+
+/** A stored pairing is usable only when it carries the daemon identity it was pinned to. */
+export function asPairedBootstrap(
+	candidate: unknown,
+): PairedBootstrap | undefined {
+	const bootstrap = asSessionBootstrap(candidate);
+	const { daemonId } = (candidate ?? {}) as { daemonId?: unknown };
+	return bootstrap && typeof daemonId === "string" && daemonId.length > 0
+		? { ...bootstrap, daemonId }
+		: undefined;
 }
 
 export function createPairingStore({
@@ -55,15 +64,15 @@ export function createPairingStore({
 	}
 
 	return {
-		async list(): Promise<SessionBootstrap[]> {
+		async list(): Promise<PairedBootstrap[]> {
 			const stored = await storage.local.get();
 			return Object.entries(stored ?? {}).flatMap(([key, value]) => {
 				if (!key.startsWith(PAIRING_KEY_PREFIX)) return [];
-				const bootstrap = asSessionBootstrap(value);
+				const bootstrap = asPairedBootstrap(value);
 				return bootstrap ? [bootstrap] : [];
 			});
 		},
-		put(bootstrap: SessionBootstrap): Promise<void> {
+		put(bootstrap: PairedBootstrap): Promise<void> {
 			return serialized(bootstrap.sessionId, () =>
 				storage.local.set({ [keyOf(bootstrap.sessionId)]: bootstrap }),
 			);
