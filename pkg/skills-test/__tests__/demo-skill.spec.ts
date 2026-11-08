@@ -69,7 +69,12 @@ describe("demo skill", () => {
 			expect(byFlag(flag)).toBeDefined();
 		}
 		expect(byFlag("`--ext`")?.[3]).toBe("off (local is the default)");
-		expect(byFlag("--out")?.[3]).toBe("`<state>/demos/<slug>/<slug>-<ts>.webm`");
+		expect(byFlag("--out")?.[3]).toBe(
+			"`<cacheDir>/demos/<slug>/<slug>-<stamp>.mp4`",
+		);
+		expect(byFlag("--narration")?.[1]).toBe("`-n`");
+		expect(byFlag("--narration")?.[2]).toMatch(/^Switch, no value/);
+		expect(byFlag("--narration")?.[3]).toMatch(/^off/);
 		expect(byFlag("--print")?.[2]).toMatch(/^`--ext` only/);
 		expect(byFlag("--edit")?.[2]).toMatch(/^`--ext` only/);
 	});
@@ -80,21 +85,35 @@ describe("demo skill", () => {
 		);
 	});
 
-	test("stops at the start-screen line and runs the local command first", () => {
+	test("records in local mode with no start-screen instruction", () => {
 		expect(skill).toContain("dg-skills demo /tmp/ai/demo/tour.md");
-		expect(skill).toMatch(
-			/Confirm the `start screen open` line printed, then stop/,
-		);
+		expect(skill).toContain("dg-skills demo status <slug>");
+		expect(skill).toContain("Add `-n` only when the human asks for voice");
+		expect(skill).not.toMatch(/start screen open/);
+		expect(skill).not.toMatch(/approval gate/);
+		expect(skill).not.toMatch(/--narration <mode>/);
+		expect(skill).toContain("no start\nscreen");
 		const firstRun = skill.indexOf("dg-skills demo /tmp/ai/demo/tour.md");
 		expect(skill.slice(0, firstRun)).not.toMatch(/demo --ext/);
 	});
 
+	test("documents credentials, intro and outro, the browser finder and ffmpeg", () => {
+		expect(skill).toContain('@type="$NAME"');
+		expect(skill).toContain("demo: set $NAME or move the login to ## Setup");
+		expect(skill).toContain("Type it here, then continue.");
+		expect(skill).toContain("`intro` and `outro`");
+		expect(skill).toContain("`DG_BROWSER`");
+		expect(skill).toContain("`ffmpeg`");
+		expect(skill).toContain("`env-unset`");
+		expect(skill).not.toContain("unrecorded-navigation");
+	});
+
 	test("describes the narration download, checksum, ffmpeg and CSP behavior", () => {
-		const narration = skill.split("## Narration")[1]?.split("\n## ")[0] ?? "";
+		const narration = skill.split("## Output and narration")[1]?.split("\n## ")[0] ?? "";
 		expect(narration).toMatch(/first voiced run/);
 		expect(narration).toMatch(/86 MB/);
 		expect(narration).toMatch(/checksum/);
-		expect(narration).toMatch(/`ffmpeg` is optional/);
+		expect(narration).toMatch(/Without it, the raw webm stays/);
 		expect(narration).toMatch(/Content Security Policy/);
 	});
 
@@ -125,8 +144,8 @@ describe("demo skill", () => {
 		);
 	});
 
-	test("stays under 113 lines", () => {
-		expect(skill.trimEnd().split("\n").length).toBeLessThan(113);
+	test("stays under 150 lines", () => {
+		expect(skill.trimEnd().split("\n").length).toBeLessThan(150);
 	});
 });
 
@@ -144,6 +163,28 @@ describe("shared tour UI ADR", () => {
 		expect(adr).toContain("0029-local-demo-player-wsl-debug-port.md");
 		expect(wsl).toContain("0030-shared-tour-ui-and-local-player.md");
 		expect(toc).toContain("(0030-shared-tour-ui-and-local-player.md)");
+		expect(adr).toContain("sequenceDiagram");
+	});
+});
+
+describe("local demo recorder ADR", () => {
+	const adr = readFileSync(
+		join(ADR_DIR, "0040-local-demo-recorder.md"),
+		"utf8",
+	);
+	const toc = readFileSync(join(ADR_DIR, "toc.md"), "utf8");
+
+	test("is Accepted, listed in the index, and marks 0029 and 0030 superseded in part", () => {
+		expect(adr).toMatch(/^Status: Accepted$/m);
+		expect(toc).toContain("(0040-local-demo-recorder.md)");
+		for (const old of [
+			"0029-local-demo-player-wsl-debug-port.md",
+			"0030-shared-tour-ui-and-local-player.md",
+		]) {
+			expect(readFileSync(join(ADR_DIR, old), "utf8")).toContain(
+				"Superseded in part by [ADR 0040](0040-local-demo-recorder.md)",
+			);
+		}
 		expect(adr).toContain("sequenceDiagram");
 	});
 });

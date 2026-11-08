@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-11-02
 
+Superseded in part by [ADR 0040](0040-local-demo-recorder.md).
+
 ## Context
 
 - The local `demo` player drives a real browser through the Chrome DevTools
@@ -13,7 +15,7 @@ Date: 2026-11-02
 - The port has no authentication. Any local process that reaches 127.0.0.1 can
   attach and control the browser.
 - The player is the
-  [demo bridge](../../pkg/skills-cli/src/demo/bridge.ts) plus the
+  demo bridge (`pkg/skills-cli/src/demo/bridge.ts`, removed by [ADR 0040](0040-local-demo-recorder.md)) plus the
   [player process](../../pkg/skills-cli/src/demo/player-process.ts).
 
 ## Decision

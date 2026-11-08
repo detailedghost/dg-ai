@@ -208,30 +208,24 @@ describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
 	}
 });
 
-// Rewritten post-611ca75: one CLI command opens both walkthrough and video;
-// the browser's start screen, not a chat table, is the approval gate.
 describe("demo workflow parity", () => {
 	const demo = readFileSync(join(SKILLS_DIR, "demo", "SKILL.md"), "utf8");
 
-	test("new walkthroughs open on the local start screen", () => {
+	test("local mode runs verify, then records with one command", () => {
 		expect(demo).toContain("dg-skills demo /tmp/ai/demo/tour.md");
+		expect(demo).toContain("dg-skills demo --verify /tmp/ai/demo/tour.md");
 	});
 
-	test("mode (walkthrough vs video) is chosen in the browser, not a CLI flag", () => {
-		expect(demo).toContain("no `--video` flag");
-		expect(demo).toContain("the mode is chosen in the browser");
+	test("local mode always records and has no start screen", () => {
+		expect(demo).toContain("Local mode always records.");
+		expect(demo).not.toContain("start screen open");
+		expect(demo).not.toContain("which is the approval gate");
 	});
 
-	test("the editor is required rather than host-discretionary", () => {
-		expect(demo).toContain("Your job is two steps");
+	test("the agent writes, verifies, runs and reports", () => {
+		expect(demo).toContain("## Step 1");
 		expect(demo).toContain("## Step 2");
-		expect(demo).toContain("Open it in a browser");
-		expect(demo).toContain("Confirm the `start screen open` line printed, then stop");
-	});
-
-	test("the start screen is the only approval gate", () => {
-		expect(demo).toContain("shows the **start screen**");
-		expect(demo).toContain("which is the approval gate");
+		expect(demo).toContain("Report that path to the human.");
 		expect(demo).not.toContain("Chat approval gate");
 		expect(demo).not.toContain("After chat approval");
 	});
@@ -294,8 +288,8 @@ describe("demo verify-and-correct loop", () => {
 		).toBe(true);
 	});
 
-	test("still chooses mode/narration/voice in the browser, not in chat", () => {
-		expect(demo).toContain("Don't ask them in chat");
+	test("adds voice only when the human asks", () => {
+		expect(demo).toContain("Add `-n` only when the human asks for voice");
 	});
 });
 

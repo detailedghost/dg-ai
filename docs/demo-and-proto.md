@@ -1,21 +1,26 @@
 # Guided tours and live-page prototypes
 
-Play a **live guided tour** of a feature. Plain `/dg:demo` plays it in a local
-browser that the CLI starts, with no extension. Add `--ext` to play it in your real
-browser through the extension instead. Either way, the tour spotlights each element
-and shows explanatory text boxes, step by step:
+Show off a feature with a guided demo. Plain `/dg:demo` records an MP4 in a local
+browser that the CLI starts, with no extension. A recorder clicks and types in the
+real UI, and adds chapter cards, captions, and a highlight on each target. Add
+`--ext` to play a live, interactive tour in your real browser through the extension
+instead:
 
 ```text
 Claude Code: /dg:demo 1517
 Codex:      $dg:demo 1517
 ```
 
-You review the plan on the start screen before it plays. Recorded video lands in
-`<state>/demos/<slug>/` for a local run, and in your Downloads folder with `--ext`.
+Local mode has no start screen. It records at once and saves
+`<cacheDir>/demos/<slug>/<slug>-<stamp>.mp4`. Add `-n` for a Kokoro voice. Pass
+`--out <file>.mp4` to pick the path. Install `ffmpeg` for MP4 output. With `--ext`,
+you review the plan in the extension, and video lands in your Downloads folder.
+Type a secret with `@type="$NAME"` in the plan. The recorder reads env var `NAME`,
+and the plan never holds the value.
 
 Tours can include a setup phase for login, configuration, or seeded data. Setup
 is excluded from the tutorial and recording by default, but can be explicitly
-included as the opening steps.
+included as the opening steps. See [ADR 0040](adr/0040-local-demo-recorder.md).
 
 Prototype before you build. Plain `/dg:proto` runs the **local mode**, which
 needs no browser extension:
