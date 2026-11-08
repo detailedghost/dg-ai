@@ -163,6 +163,12 @@ export async function showFocus(page: Page, focus: FocusInput): Promise<void> {
 	);
 }
 
+export async function hideFocus(page: Page): Promise<void> {
+	await page.evaluate((ids) => {
+		for (const id of [ids.focus, ids.arrow]) document.getElementById(id)?.remove();
+	}, OVERLAY_IDS);
+}
+
 export async function clearOverlays(page: Page): Promise<void> {
 	await page.evaluate((ids) => {
 		for (const id of Object.values(ids)) document.getElementById(id)?.remove();

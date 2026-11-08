@@ -26,7 +26,9 @@ describe.skipIf(!executablePath)("the local launcher keeps a sign-in across cont
 				const body =
 					url.pathname === "/login"
 						? "<script>localStorage.setItem('token','t1')</script>in"
-						: `<script>document.title = document.cookie + '|' + localStorage.getItem('token')</script>`;
+						: url.pathname === "/logout"
+							? "<script>localStorage.removeItem('token')</script>out"
+							: `<script>document.title = document.cookie + '|' + localStorage.getItem('token')</script>`;
 				return new Response(body, { headers });
 			},
 		});
@@ -63,6 +65,9 @@ describe.skipIf(!executablePath)("the local launcher keeps a sign-in across cont
 			const page = await recording.newPage();
 			await page.goto(`http://127.0.0.1:${server.port}/whoami`);
 			expect(await page.title()).toBe("sid=abc|t1");
+			await page.goto(`http://127.0.0.1:${server.port}/logout`);
+			await page.goto(`http://127.0.0.1:${server.port}/whoami`);
+			expect(await page.title()).toBe("sid=abc|null");
 		} finally {
 			await session.close();
 		}

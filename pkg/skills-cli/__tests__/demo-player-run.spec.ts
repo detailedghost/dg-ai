@@ -188,6 +188,24 @@ describe("runPlayer failures and stops", () => {
 		expect(browser.log).toContain("session closed");
 	});
 
+	test("a launch that resolves after the timeout is closed and drives nothing", async () => {
+		const browser = fakeBrowser({ dir });
+		let late: Promise<void> = Promise.resolve();
+		const code = await runPlayer(job({ timeoutMin: 0.001 }), {
+			launch: () => {
+				const session = new Promise<typeof browser.session>((r) => setTimeout(() => r(browser.session), 200));
+				late = session.then(() => new Promise((r) => setTimeout(r, 50)));
+				return session;
+			},
+			encode: fakeEncode().deps,
+		});
+		expect(code).toBe(0);
+		expect(result().outcome).toBe("stopped");
+		await late;
+		expect(browser.opens).toEqual([]);
+		expect(browser.log).toEqual(["session closed"]);
+	});
+
 	test("closing the browser mid-run ends as stopped", async () => {
 		const browser = fakeBrowser({ dir, hang: true });
 		setTimeout(() => browser.closeBrowser(), 20);

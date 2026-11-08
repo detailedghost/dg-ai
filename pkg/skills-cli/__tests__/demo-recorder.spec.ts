@@ -154,6 +154,40 @@ describe("recordTour in a real browser", () => {
 		},
 	);
 
+	test.skipIf(!browser)("drops the outline and arrow on a step with no target", async () => {
+		const site = fixture();
+		const launched = await chromium.launch({ executablePath: browser as string, args: ["--no-sandbox"] });
+		try {
+			const page = await (await launched.newContext({ viewport: VIEW })).newPage();
+			const seen: Snapshot[] = [];
+			await recordTour(
+				page,
+				{
+					startUrl: `${site.url}/`,
+					steps: [
+						{ selector: "#user", body: "Targeted." },
+						{ body: "Overview." },
+					],
+				},
+				{
+					env: {},
+					overlays: true,
+					hold: () => 10,
+					chapterMs: 0,
+					leadMs: 0,
+					pause: async () => {
+						if (await page.locator(`#${OVERLAY_IDS.caption}`).count()) seen.push(await snapshot(page));
+					},
+				},
+			);
+			expect(seen.find((s) => s.text.includes("Targeted."))).toMatchObject({ focus: true, arrow: true });
+			expect(seen.find((s) => s.text.includes("Overview."))).toMatchObject({ focus: false, arrow: false });
+		} finally {
+			await launched.close();
+			site.server.stop(true);
+		}
+	});
+
 	test.skipIf(!browser)("names the step and selector when a target never appears", async () => {
 		const site = fixture();
 		const launched = await chromium.launch({ executablePath: browser as string, args: ["--no-sandbox"] });

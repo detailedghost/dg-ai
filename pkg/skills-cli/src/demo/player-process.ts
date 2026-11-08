@@ -82,12 +82,21 @@ export const contextOptions = (job: PlayerJob, record: boolean) => ({
 
 async function restoreState(context: BrowserContext, state: StorageState): Promise<void> {
 	await context.addCookies(state.cookies);
-	if (state.origins.length === 0) return;
-	await context.addInitScript((origins) => {
-		const entry = origins.find((origin) => origin.origin === location.origin);
-		for (const { name, value } of entry?.localStorage ?? [])
-			if (localStorage.getItem(name) === null) localStorage.setItem(name, value);
-	}, state.origins);
+	const seeded = state.origins.filter((origin) => origin.localStorage.length > 0);
+	if (seeded.length === 0) return;
+	const page = await context.newPage();
+	try {
+		for (const { origin, localStorage: items } of seeded) {
+			await page.route(`${origin}/**`, (route) => route.fulfill({ contentType: "text/html", body: "" }));
+			await page.goto(`${origin}/`);
+			await page.evaluate((entries) => {
+				for (const { name, value } of entries) localStorage.setItem(name, value);
+			}, items);
+			await page.unrouteAll();
+		}
+	} finally {
+		await page.close();
+	}
 }
 
 async function launchLocal(
@@ -313,9 +322,13 @@ export async function runPlayer(
 	const timeoutMs = (job.timeoutMin ?? DEFAULT_TIMEOUT_MIN) * 60_000;
 	const opened = new Set<BrowserContext>();
 	const closing = new Set<BrowserContext>();
+	let cancelled = false;
 	let stop: () => void = () => undefined;
 	const stopped = new Promise<"stopped">((resolve) => {
-		stop = () => resolve("stopped");
+		stop = () => {
+			cancelled = true;
+			resolve("stopped");
+		};
 	});
 	const timer = setTimeout(stop, timeoutMs);
 	let session: PlayerSession | undefined;
@@ -327,6 +340,10 @@ export async function runPlayer(
 
 	const open = async (record: boolean, state?: StorageState): Promise<BrowserContext> => {
 		const context = await (session as PlayerSession).open(record, state);
+		if (cancelled) {
+			await context.close().catch(() => undefined);
+			throw new Error("the run was stopped");
+		}
 		opened.add(context);
 		context.once("close", () => {
 			if (!closing.has(context)) stop();
@@ -348,7 +365,12 @@ export async function runPlayer(
 		const steps = playbackSteps(job.script);
 		const missing = unsetFillVariables(steps.map(({ step }) => step), process.env)[0];
 		if (missing) throw new EnvRefusedError(missing);
-		session = await (hooks.launch ?? openSession)(job);
+		const launched = await (hooks.launch ?? openSession)(job);
+		if (cancelled) {
+			await launched.close().catch(() => undefined);
+			return;
+		}
+		session = launched;
 
 		const setup = job.script.setup;
 		let state: StorageState | undefined;
@@ -386,6 +408,7 @@ export async function runPlayer(
 		startOffsetMs = result.startMs;
 		const video = live.video();
 		await close(context);
+		if (cancelled) return;
 		const webm = video ? await video.path().catch(() => undefined) : undefined;
 		if (!webm) throw new Error("no video was written: the browser could not record this run");
 

@@ -11,6 +11,7 @@ import {
 	arrowSide,
 	captionOnTop,
 	clearOverlays,
+	hideFocus,
 	hideChapter,
 	OVERLAY_IDS,
 	showCaption,
@@ -157,6 +158,7 @@ export async function recordTour(
 		if (o.overlays) {
 			await showCaption(page, caption);
 			if (box) await showFocus(page, { box, side: arrowSide(box, viewport), accent });
+			else await hideFocus(page);
 		}
 		if (step.action && target) {
 			if (o.overlays) await pause(o.leadMs);
