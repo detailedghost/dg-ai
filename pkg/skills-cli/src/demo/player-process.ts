@@ -66,8 +66,9 @@ const DEFAULT_VOICE = "af_heart";
 
 const VIEWPORT = { width: 1280, height: 720 };
 
-const recording = (job: PlayerJob) => ({
-	recordVideo: { dir: join(job.dir, "rec"), size: VIEWPORT },
+export const contextOptions = (job: PlayerJob, record: boolean) => ({
+	bypassCSP: true,
+	...(record ? { recordVideo: { dir: join(job.dir, "rec"), size: VIEWPORT } } : {}),
 });
 
 async function launchLocal(
@@ -84,7 +85,7 @@ async function launchLocal(
 			: { executablePath: plan.pick.executablePath }),
 		args: wslChromiumArgs(),
 		viewport: job.video || plan.headless ? VIEWPORT : null,
-		...recording(job),
+		...contextOptions(job, true),
 	});
 	return { context, close: () => context.close() };
 }
@@ -113,7 +114,7 @@ async function launchWindows(
 		const create = (record: boolean) =>
 			connected.newContext({
 				viewport: job.video ? VIEWPORT : null,
-				...(record ? recording(job) : {}),
+				...contextOptions(job, record),
 			});
 		let canRecord = true;
 		const context = await create(true).catch((error: unknown) => {
