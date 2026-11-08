@@ -12,7 +12,9 @@ import {
 	type CliFrame,
 	type CredentialsCliRequest,
 	describeError,
+	isLinkFrame,
 	isRecord,
+	type LinkFrame,
 	type OverwatchBoard,
 	OVERWATCH_SESSION_ID,
 	OVERWATCH_MAX_LANES,
@@ -28,6 +30,7 @@ import {
 	validateOverwatchMerge,
 	validateIsoTimestamp,
 	validateProtoIdentifier,
+	validateLinkFrame,
 } from "@dg/common";
 import {
 	type DgPaths,
@@ -62,6 +65,7 @@ import {
 } from "./browser-relay";
 import type { ConnectionManager } from "./connection";
 import {
+	adoptActiveSessions,
 	isExtensionPeer,
 	onSocketClose,
 	registerInvalidFrame,
@@ -87,6 +91,8 @@ export type FrameHandlerDeps = {
 	store: ChatStore;
 	credentials: CredentialStore;
 	dispatchScheduler: DispatchScheduler;
+	port: number;
+	daemonId: string;
 	overwatchOpenRequests: Map<string, OverwatchOpenRequest>;
 };
 
@@ -956,6 +962,10 @@ async function handleSessionCreate(
 	}
 	ws.data.capabilities.set(record.sessionId, record.token);
 	deps.noteActivity();
+	deps.connections.pushSessionAdopt(record, {
+		port: deps.port,
+		daemonId: deps.daemonId,
+	});
 	await sendFrame(ws, frame.sessionId, {
 		type: "session-pending",
 		newSession: { sessionId: record.sessionId, token: record.token },
@@ -1253,6 +1263,27 @@ export async function handleSocketMessage(
 
 	if (isConnectHandshake(parsed)) {
 		await handleConnectHandshake(ws, parsed, deps);
+		return;
+	}
+
+	if (isLinkFrame(parsed)) {
+		let link: LinkFrame;
+		try {
+			link = validateLinkFrame(parsed);
+		} catch (err) {
+			await sendError(ws, TRANSPORT_ERROR_SESSION_ID, describeError(err));
+			noteInvalid(ws);
+			return;
+		}
+		if (isExtensionPeer(ws)) {
+			deps.noteActivity();
+			if (link.type === "link-ready") {
+				adoptActiveSessions(ws, deps.registry, {
+					port: deps.port,
+					daemonId: deps.daemonId,
+				});
+			}
+		}
 		return;
 	}
 

@@ -1,6 +1,6 @@
 import {
 	CHAT_ASSETS_PATH,
-	CHAT_ATTACH_PATH,
+	CHAT_DEFAULT_PORT,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_PROTOCOL_VERSION,
 	type FeatureNamed,
@@ -11,7 +11,6 @@ import {
 	describeError,
 	emitRedacted,
 	noteSecret,
-	validateAttachRequest,
 } from "@dg/common";
 import { codedPageUrl } from "@dg/pages/chat-marker";
 import {
@@ -69,6 +68,9 @@ import {
 } from "@dg/pages/chat/chat-client";
 
 const DEFAULT_KEEPALIVE_INTERVAL_MS = 20_000;
+const LINK_RETRY_ALARM = "dg-link-retry";
+const LINK_RETRY_PERIOD_MINUTES = 0.5;
+const DAEMON_ID_KEY = "daemon:id";
 const DAEMON_UNREACHABLE =
 	"Daemon unreachable. Start it with dg-agent start, then retry.";
 
@@ -86,6 +88,11 @@ export type ChatBrowserApi = PagesBrowserApi & {
 		getManifest?(): { version: string };
 		onStartup?: { addListener(listener: () => void): void };
 		onInstalled?: { addListener(listener: () => void): void };
+	};
+	alarms?: {
+		create(name: string, info: { periodInMinutes: number }): unknown;
+		clear(name: string): unknown;
+		onAlarm: { addListener(listener: (alarm: { name: string }) => void): void };
 	};
 	storage: {
 		local: PairingStorage;
@@ -339,20 +346,35 @@ export function registerDaemonLink(
 		});
 	}
 
-	function heldDaemonId(): string | undefined {
-		return [...bootstrapsBySession.values()][0]?.daemonId;
+	let pinnedDaemonId: string | undefined;
+	const adoptingSessions = new Set<string>();
+
+	async function pinDaemon(daemonId: string): Promise<void> {
+		pinnedDaemonId = daemonId;
+		await api.storage.local
+			.set({ [DAEMON_ID_KEY]: daemonId })
+			.catch(logStoreError);
 	}
 
 	const client = createChatClient({
 		openSocket: openSocketWithKeepaliveTeardown,
 		admitPort: async (port) => {
-			const daemonId = heldDaemonId();
-			return daemonId !== undefined && (await portHasDaemonId(port, daemonId));
+			await ready;
+			if (pinnedDaemonId !== undefined) {
+				return portHasDaemonId(port, pinnedDaemonId);
+			}
+			const daemonId = (await fetchDaemonHealth(port))?.daemonId;
+			if (daemonId === undefined) return false;
+			void pinDaemon(daemonId);
+			return true;
 		},
 		findPort: async () => {
-			const daemonId = heldDaemonId();
-			return daemonId === undefined ? undefined : findPinnedDaemonPort(daemonId);
+			await ready;
+			return pinnedDaemonId === undefined
+				? findDaemonPort()
+				: findPinnedDaemonPort(pinnedDaemonId);
 		},
+		link: { onSessionAdopt: (bootstrap) => void adoptPushed(bootstrap) },
 		extensionVersion: api.runtime.getManifest?.().version,
 		keepaliveIntervalMs,
 	});
@@ -391,7 +413,8 @@ export function registerDaemonLink(
 	}
 
 	async function daemonPort(): Promise<number | undefined> {
-		const daemonId = heldDaemonId();
+		await ready;
+		const daemonId = pinnedDaemonId;
 		if (daemonId === undefined) return findDaemonPort();
 		const hinted =
 			firstConfirmedBootstrap()?.port ??
@@ -407,65 +430,14 @@ export function registerDaemonLink(
 		if (daemonId === undefined) {
 			throw new Error("The daemon at this port did not identify itself.");
 		}
-		const held = heldDaemonId();
-		if (held !== undefined && held !== daemonId) {
+		await ready;
+		if (pinnedDaemonId !== undefined && pinnedDaemonId !== daemonId) {
 			throw new Error("This agent belongs to a different daemon than your other pairings.");
 		}
+		if (pinnedDaemonId === undefined) void pinDaemon(daemonId);
 		return { ...bootstrap, daemonId };
 	}
 
-	async function postDaemon(
-		path: string,
-		body: unknown,
-	): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
-		const port = await daemonPort();
-		if (port === undefined) {
-			return { ok: false, error: DAEMON_UNREACHABLE };
-		}
-		try {
-			const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(body),
-			});
-			const text = await response.text();
-			if (!response.ok) {
-				return { ok: false, error: redactSecrets(text, knownTokens()) };
-			}
-			try {
-				return { ok: true, value: text.length === 0 ? {} : JSON.parse(text) };
-			} catch {
-				return {
-					ok: false,
-					error: "The daemon returned a response the extension could not read.",
-				};
-			}
-		} catch (error) {
-			return { ok: false, error: safeError(error) };
-		}
-	}
-
-	async function adoptBootstraps(value: unknown): Promise<number> {
-		const list = Array.isArray(value)
-			? value
-			: typeof value === "object" &&
-					value !== null &&
-					Array.isArray((value as { sessions?: unknown }).sessions)
-				? (value as { sessions: unknown[] }).sessions
-				: [value];
-		let adopted = 0;
-		for (const item of list) {
-			const bootstrap = asSessionBootstrap(item);
-			if (!bootstrap) continue;
-			const paired = await pinToDaemon(bootstrap).catch(() => undefined);
-			if (!paired) continue;
-			holdBootstrap(paired);
-			client.connect(paired);
-			adopted += 1;
-		}
-		if (adopted > 0) broadcastPairingStatus();
-		return adopted;
-	}
 	function holdAndConnect(bootstrap: PairedBootstrap): void {
 		holdBootstrap(bootstrap);
 		client.connect(bootstrap);
@@ -476,6 +448,63 @@ export function registerDaemonLink(
 		const checked = asSessionBootstrap(bootstrap);
 		if (!checked) throw new Error("The pairing bootstrap is not valid.");
 		holdAndConnect(await pinToDaemon(checked));
+	}
+
+	async function adoptPushed(bootstrap: PairedBootstrap): Promise<void> {
+		await ready;
+		const { sessionId } = bootstrap;
+		if (
+			bootstrap.daemonId !== pinnedDaemonId ||
+			bootstrapsBySession.has(sessionId) ||
+			adoptingSessions.has(sessionId)
+		) {
+			return;
+		}
+		adoptingSessions.add(sessionId);
+		try {
+			if (await pairingStore.isDismissed({ sessionId })) return;
+			await adopt(withoutPin(bootstrap));
+		} catch (error) {
+			logStoreError(error);
+		} finally {
+			adoptingSessions.delete(sessionId);
+		}
+	}
+
+	async function daemonChanged(): Promise<boolean> {
+		if (
+			pinnedDaemonId === undefined ||
+			client.getConnectionState() === "connected"
+		) {
+			return false;
+		}
+		if ((await findPinnedDaemonPort(pinnedDaemonId)) !== undefined) return false;
+		return (await findDaemonPort()) !== undefined;
+	}
+
+	async function trustLiveDaemon(): Promise<
+		{ ok: true } | { ok: false; error: string }
+	> {
+		const port = await findDaemonPort();
+		const daemonId =
+			port === undefined ? undefined : (await fetchDaemonHealth(port))?.daemonId;
+		if (port === undefined || daemonId === undefined) {
+			return { ok: false, error: DAEMON_UNREACHABLE };
+		}
+		await pinDaemon(daemonId);
+		for (const held of [...bootstrapsBySession.values()]) {
+			if (held.daemonId === daemonId) continue;
+			client.forgetSession(held.sessionId);
+			bootstrapsBySession.delete(held.sessionId);
+			presenceBySession.delete(held.sessionId);
+			keepaliveEligible.delete(held.sessionId);
+			dispatcher.cancelSession(held.sessionId);
+			forgetStoredPairing(held.sessionId);
+			forgetAgentTabs(held.sessionId);
+		}
+		client.openLink?.(port);
+		broadcastPairingStatus();
+		return { ok: true };
 	}
 
 	async function openChat(
@@ -533,7 +562,25 @@ export function registerDaemonLink(
 			.catch(() => {});
 	}
 
-	client.onConnectionChange((_state, detail) => broadcastPairingStatus(detail));
+	let linkRetryArmed = false;
+	function syncLinkRetryAlarm(state: ReturnType<ChatClient["getConnectionState"]>): void {
+		if (!api.alarms) return;
+		if (state === "connected") {
+			if (!linkRetryArmed) return;
+			linkRetryArmed = false;
+			void Promise.resolve(api.alarms.clear(LINK_RETRY_ALARM)).catch(() => {});
+		} else if (!linkRetryArmed) {
+			linkRetryArmed = true;
+			api.alarms.create(LINK_RETRY_ALARM, {
+				periodInMinutes: LINK_RETRY_PERIOD_MINUTES,
+			});
+		}
+	}
+
+	client.onConnectionChange((state, detail) => {
+		syncLinkRetryAlarm(state);
+		broadcastPairingStatus(detail);
+	});
 
 	client.onFrame((frame) => {
 		if (dispatcher.dispatch(frame)) return;
@@ -576,6 +623,11 @@ export function registerDaemonLink(
 				?.settle({ key: frame.key, value: frame.value, error: frame.error });
 			return;
 		}
+		if (frame.type === "session-closed") {
+			void pairingStore
+				.release({ sessionId: frame.sessionId })
+				.catch(logStoreError);
+		}
 		if (frame.type === "session-closed" || frame.type === "session-disconnected") {
 			bootstrapsBySession.delete(frame.sessionId);
 			presenceBySession.delete(frame.sessionId);
@@ -612,16 +664,40 @@ export function registerDaemonLink(
 		}
 	});
 
-	const ready = pairingStore
-		.list()
-		.then((stored) => {
-			for (const bootstrap of stored) {
-				if (bootstrapsBySession.has(bootstrap.sessionId)) continue;
-				holdBootstrap(bootstrap);
-				client.connect(bootstrap);
-			}
-		})
-		.catch(logStoreError);
+	const ready = (async () => {
+		const stored = await pairingStore.list();
+		const kept = (await api.storage.local.get(DAEMON_ID_KEY))?.[DAEMON_ID_KEY];
+		const daemonId =
+			typeof kept === "string" && kept.length > 0 ? kept : stored[0]?.daemonId;
+		if (daemonId === undefined) return;
+		if (daemonId === kept) pinnedDaemonId = daemonId;
+		else void pinDaemon(daemonId);
+		for (const bootstrap of stored) {
+			if (bootstrap.daemonId !== daemonId) continue;
+			if (bootstrapsBySession.has(bootstrap.sessionId)) continue;
+			holdBootstrap(bootstrap);
+			client.connect(bootstrap);
+		}
+	})().catch(logStoreError);
+
+	async function startLink(): Promise<void> {
+		await ready;
+		if (client.getPort?.() !== undefined) return;
+		const port = await daemonPort();
+		if (client.getPort?.() !== undefined) return;
+		client.openLink?.(port ?? CHAT_DEFAULT_PORT);
+	}
+	void startLink();
+	syncLinkRetryAlarm(client.getConnectionState());
+	api.alarms?.onAlarm.addListener((alarm) => {
+		if (alarm.name !== LINK_RETRY_ALARM) return;
+		if (client.getConnectionState() === "connected") return;
+		void (async () => {
+			await ready;
+			const port = await daemonPort();
+			client.openLink?.(port ?? CHAT_DEFAULT_PORT);
+		})();
+	});
 	const wakeWorker = () => void ready;
 	api.runtime.onStartup?.addListener(wakeWorker);
 	api.runtime.onInstalled?.addListener(wakeWorker);
@@ -633,7 +709,17 @@ export function registerDaemonLink(
 		try {
 			switch (payload.type) {
 				case MSG.connectionRequest:
-					void ready.then(() => sendResponse(pairingStatus()));
+					void ready
+						.then(daemonChanged)
+						.then((changed) =>
+							sendResponse({ ...pairingStatus(), daemonChanged: changed }),
+						);
+					return true;
+				case MSG.trustDaemon:
+					if (!isPopupSender(sender, api.runtime.getURL(""))) return undefined;
+					void trustLiveDaemon().then(sendResponse, (error: unknown) =>
+						sendResponse({ ok: false, error: safeError(error) }),
+					);
 					return true;
 				case MSG.connectionRetry: {
 					void (async () => {
@@ -653,37 +739,6 @@ export function registerDaemonLink(
 						client.retryNow();
 						broadcastPairingStatus();
 						sendResponse({ ok: true, state: client.getConnectionState() });
-					})();
-					return true;
-				}
-				case MSG.sessionAttach: {
-					void (async () => {
-						try {
-							const request = validateAttachRequest({
-								intent: "attach",
-								...(typeof payload.code === "string" ? { code: payload.code } : {}),
-								...(typeof payload.sessionId === "string"
-									? { sessionId: payload.sessionId }
-									: {}),
-								...(payload.all === true ? { all: true } : {}),
-							});
-							const result = await postDaemon(CHAT_ATTACH_PATH, request);
-							if (!result.ok) {
-								sendResponse({ ok: false, error: result.error });
-								return;
-							}
-							const adopted = await adoptBootstraps(result.value);
-							sendResponse(
-								adopted > 0
-									? { ok: true }
-									: {
-											ok: false,
-											error: "The daemon did not return a session.",
-										},
-							);
-						} catch (error) {
-							sendResponse({ ok: false, error: safeError(error) });
-						}
 					})();
 					return true;
 				}
@@ -710,7 +765,10 @@ export function registerDaemonLink(
 							client.forgetSession(sessionId);
 						}
 						dispatcher.cancelSession(sessionId);
-						const removal = pairingStore.remove({ sessionId });
+						const removal = Promise.all([
+							pairingStore.remove({ sessionId }),
+							pairingStore.dismiss({ sessionId }),
+						]);
 						forgetAgentTabs(sessionId);
 						bootstrapsBySession.delete(sessionId);
 						presenceBySession.delete(sessionId);

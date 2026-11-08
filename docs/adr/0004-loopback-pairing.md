@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-10-16
 
+Superseded in part by [0039](0039-zero-touch-pairing.md).
+
 ## Context
 
 - An ordinary web page can try to contact a loopback service.
@@ -48,7 +50,7 @@ sequenceDiagram
 - [pkg/dg-daemon/src/server/http.ts](../../pkg/dg-daemon/src/server/http.ts)
 - [pkg/dg-daemon/src/server/host-guard.ts](../../pkg/dg-daemon/src/server/host-guard.ts)
 - [pkg/dg-daemon/src/server/origin.ts](../../pkg/dg-daemon/src/server/origin.ts)
-- [pkg/dg-daemon/src/pairing.ts](../../pkg/dg-daemon/src/pairing.ts)
+- `pkg/dg-daemon/src/pairing.ts` (removed by [0039](0039-zero-touch-pairing.md))
 - [pkg/common/src/node/session-tokens.ts](../../pkg/common/src/node/session-tokens.ts)
 
 ## Amended 2026-11-07: offer and claim replace POST /pair

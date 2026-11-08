@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { buildBootstrapUrl } from "../src/node/marker";
 import {
 	clearNotedSecrets,
 	emitRedacted,
@@ -73,12 +72,15 @@ describe("redactText", () => {
 	});
 
 	it("redacts a bootstrap url and a query token", () => {
-		const url = buildBootstrapUrl(47823, {
-			port: 47823,
-			sessionId: "11111111-1111-1111-1111-111111111111",
-			token: TOKEN,
-			agentIdentity: "claude",
-		});
+		const payload = Buffer.from(
+			JSON.stringify({
+				port: 47823,
+				sessionId: "11111111-1111-1111-1111-111111111111",
+				token: TOKEN,
+				agentIdentity: "claude",
+			}),
+		).toString("base64url");
+		const url = `http://127.0.0.1:47823/chat#_chat=${payload}`;
 		const line = redactText(`${url} http://127.0.0.1:9/cb?access_token=${TOKEN}`);
 		expect(line).not.toContain(TOKEN);
 		expect(line).toContain("#_chat=[redacted]");

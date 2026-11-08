@@ -13,10 +13,10 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
 	ASSET_FILENAME_HEADER,
-	CHAT_MARKER_KEY,
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	DG_CHROME_EXTENSION_ORIGIN,
 	OWNER_TOKEN_HEADER,
 	type DaemonHandle,
 	type SessionBootstrap,
@@ -355,31 +355,6 @@ export async function stopServe(proc: Subprocess): Promise<void> {
 	await proc.exited;
 }
 
-export function extractUrl(stdout: string): string {
-	const match = stdout.match(/https?:\/\/\S+/);
-	if (!match) {
-		throw new Error(`no URL found in stdout: ${JSON.stringify(stdout)}`);
-	}
-	return match[0];
-}
-
-export function decodeChatMarker(url: string): unknown {
-	const hashIndex = url.indexOf("#");
-	if (hashIndex < 0) throw new Error(`URL carries no fragment: ${url}`);
-	const fragment = url.slice(hashIndex + 1);
-	const entry = fragment
-		.split("&")
-		.find((part) => part.startsWith(`${CHAT_MARKER_KEY}=`));
-	if (!entry) {
-		throw new Error(
-			`fragment carries no ${CHAT_MARKER_KEY} marker: ${fragment}`,
-		);
-	}
-	const encoded = entry.slice(CHAT_MARKER_KEY.length + 1);
-	const json = Buffer.from(encoded, "base64url").toString("utf8");
-	return JSON.parse(json);
-}
-
 export function ownerTokenHeader(port: number): Record<string, string> {
 	const home = dgHomeByPort.get(port);
 	const owner = readOwnerToken(
@@ -609,8 +584,7 @@ export async function connectCli(
 	return ws;
 }
 
-export const EXTENSION_ORIGIN =
-	"chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+export const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
 export const BROWSER_ORIGIN = "https://evil.example";
 
 export function wsExtensionSocket(port: number): WebSocket {

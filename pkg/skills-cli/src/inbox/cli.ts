@@ -1,10 +1,8 @@
 import {
-	buildBootstrapUrl,
+	buildCodeUrl,
 	CliClient,
-	readSessionFiles,
-	readSessionIdentities,
+	mintPageCode,
 	resolveCliSession,
-	resolveDgPaths,
 	type ResolvedSession,
 } from "@dg/common/node";
 import { main, redactPublicValue, type InboxRuntime } from "@dg/inbox";
@@ -293,37 +291,23 @@ function isExtensionConnectError(error: string): boolean {
 }
 
 const bootstrapUrlHelp = `inbox bootstrap-url [--session ID]
-Prints this session's local chat URL to stdout. The URL contains the session token.
-Connect errors do not include the token.`;
+Prints a local chat URL that carries a one-time code, not the session token.
+The URL works once, within 60 seconds. Run the command again for a new URL.`;
 
-/** Session id, the pairing command, the reload step, and the extension version. The token stays out of this text. */
+/** Session id, the start step, the reload step, and the extension version. The token stays out of this text. */
 function extensionConnectError(session: ResolvedSession): string {
 	return [
-		`No extension peer on session ${session.sessionId}. Pair the browser: open the DeeGee popup, read its six-digit code, and run dg-agent pair <code> -s ${session.sessionId}.`,
+		`No extension peer on session ${session.sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install.`,
 		"Then reload the Proton Mail tab so the extension observes session headers.",
 		"Inbox requires dg extension 1.11.0 or newer.",
 	].join(" ");
 }
 
-/** Prints the local chat URL with the session token. Callers must opt in. */
+/** Prints a one-time-code chat URL. Callers must opt in. */
 async function printBootstrapUrl(sessionId: string | undefined): Promise<void> {
 	const resolved = await resolveCliSession(sessionId);
-	const paths = resolveDgPaths();
-	const record =
-		readSessionFiles(paths.sessionsDir).find(
-			(item) => item.sessionId === resolved.sessionId,
-		) ??
-		readSessionIdentities(paths.dbPath).find(
-			(item) => item.sessionId === resolved.sessionId,
-		);
-	console.log(
-		buildBootstrapUrl(resolved.port, {
-			port: resolved.port,
-			sessionId: resolved.sessionId,
-			token: resolved.token,
-			agentIdentity: record?.agentIdentity ?? "agent",
-		}),
-	);
+	const code = await mintPageCode(resolved);
+	console.log(buildCodeUrl(resolved.port, code));
 }
 
 const VALUE_FLAGS = new Set([

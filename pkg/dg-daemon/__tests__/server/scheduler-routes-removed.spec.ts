@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { DG_CHROME_EXTENSION_ORIGIN } from "@dg/common";
 import {
 	bootServe,
 	cleanupDgHome,
@@ -6,7 +7,7 @@ import {
 	stopServe,
 } from "../utils/daemon-harness";
 
-const EXTENSION_ORIGIN = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
+const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
 
 const cleanupSlot = createCleanupSlot();
 

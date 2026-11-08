@@ -3,7 +3,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
 	CHAT_DEFAULT_PORT,
-	clearNotedSecrets,
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
@@ -30,11 +29,19 @@ import {
 
 mock.module("wxt/browser", () => ({ browser: {} }));
 
+const realWebSocket = globalThis.WebSocket;
+
 beforeEach(() => {
 	installDaemonHealthStub();
+	globalThis.WebSocket = class {
+		send(): void {}
+		close(): void {}
+		addEventListener(): void {}
+	} as unknown as typeof WebSocket;
 });
 
 afterEach(() => {
+	globalThis.WebSocket = realWebSocket;
 	mock.restore();
 });
 
@@ -169,8 +176,8 @@ test("ignores a marker-captured message from any extension context", async () =>
 	await settle();
 
 	expect(keepChannel).toBeUndefined();
-	expect(openSocket).not.toHaveBeenCalled();
-	expect(local.set).not.toHaveBeenCalled();
+	expect(pairingKeys(local)).toEqual([]);
+	expect(pairingWrites(local)).toEqual([]);
 });
 
 test("a pairing write that fails when the session confirms does not stop that session's keepalive", async () => {
@@ -211,7 +218,7 @@ test.each([
 	await expect(link.adopt(bootstrap as never)).rejects.toThrow();
 	await settle();
 
-	expect(local.set).not.toHaveBeenCalled();
+	expect(pairingWrites(local)).toEqual([]);
 	expect(tabsCreate).not.toHaveBeenCalled();
 });
 
@@ -243,6 +250,24 @@ function daemonIdentity(daemonId = TEST_DAEMON_ID): Response {
 		ok: true,
 		json: async () => ({ daemon: "dg-daemon", instanceId: "inst-test", daemonId }),
 	} as unknown as Response;
+}
+
+const pairingWrites = (local: LocalArea) =>
+	local.set.mock.calls.filter(([items]) =>
+		Object.keys(items).some((key) => key.startsWith("pairing:")),
+	);
+
+const pairingKeys = (local: LocalArea) =>
+	Object.keys(local.data)
+		.filter((key) => key.startsWith("pairing:"))
+		.sort();
+
+async function expectNoSessionFrames(sockets: FakeSocket[]): Promise<void> {
+	for (const socket of sockets) socket.dispatch("open");
+	await settle();
+	for (const socket of sockets) {
+		expect(sentTypes(socket).filter((type) => type !== "link-ready")).toEqual([]);
+	}
 }
 
 function sentTypes(socket: FakeSocket): string[] {
@@ -1582,13 +1607,15 @@ test("a store read failure is logged without the token and leaves storage untouc
 	);
 	try {
 		const { getOnMessage } = bootWithStored([], { local });
-		await adoptBootstrap(FIRST);
+		const adopting = adoptBootstrap(FIRST);
 		gate.fail(new Error(`read failed for ${FIRST.token}`));
-		await settle();
+		await adopting;
 
 		expect(lines.length).toBeGreaterThan(0);
 		expect(lines.join("\n")).not.toContain(FIRST.token);
-		expect(local.set).not.toHaveBeenCalled();
+		expect(local.set).not.toHaveBeenCalledWith(
+			expect.objectContaining({ [pairingKey(FIRST.sessionId)]: expect.anything() }),
+		);
 		expect(local.remove).not.toHaveBeenCalled();
 	} finally {
 		for (const spy of spies) spy.mockRestore();
@@ -1609,7 +1636,7 @@ test("a store read failure at startup logs the failure and leaves stored pairing
 		await settle();
 
 		expect(lines.join("\n")).toContain("pairing storage failed");
-		expect(local.set).not.toHaveBeenCalled();
+		expect(pairingWrites(local)).toEqual([]);
 		expect(local.remove).not.toHaveBeenCalled();
 	} finally {
 		for (const spy of spies) spy.mockRestore();
@@ -1661,10 +1688,10 @@ test("a stored pairing whose port is outside the daemon range never opens a sock
 		sessionId: "sess-tampered",
 		port: CHAT_DEFAULT_PORT + CHAT_PORT_FALLBACK_COUNT + 1,
 	});
-	const { openSocket, ask } = bootWithStored([tampered]);
+	const { sockets, ask } = bootWithStored([tampered]);
 	await settle();
 
-	expect(openSocket).not.toHaveBeenCalled();
+	await expectNoSessionFrames(sockets);
 	expect(sessionIdsOf(await ask({ type: MSG.connectionRequest }))).toEqual([]);
 });
 
@@ -1677,7 +1704,12 @@ test("a pairing left by an older extension under chat_session in the session are
 		get: (keys?: unknown) => Promise<Record<string, unknown>>;
 	};
 	session.get = mock(async (_keys?: unknown) => ({ ...sessionData }));
-	const openSocket = mock((_url: string) => makeFakeSocket());
+	const sockets: FakeSocket[] = [];
+	const openSocket = mock((_url: string) => {
+		const socket = makeFakeSocket();
+		sockets.push(socket);
+		return socket;
+	});
 	registerDaemonLink({ browserApi: harness.api, openSocket });
 	await settle();
 	const reply = await new Promise<Record<string, unknown> | undefined>((resolve) => {
@@ -1688,13 +1720,13 @@ test("a pairing left by an older extension under chat_session in the session are
 		);
 	});
 
-	expect(openSocket).not.toHaveBeenCalled();
+	await expectNoSessionFrames(sockets);
 	expect(sessionIdsOf(reply)).toEqual([]);
 	expect(harness.api.storage.session.set).not.toHaveBeenCalled();
 	expect(harness.api.storage.session.remove).not.toHaveBeenCalled();
-	expect(local.set).not.toHaveBeenCalled();
+	expect(pairingWrites(local)).toEqual([]);
 	expect(local.remove).not.toHaveBeenCalled();
-	expect(local.data).toEqual({});
+	expect(pairingKeys(local)).toEqual([]);
 	expect(Object.keys(sessionData)).toEqual([`chat_session:${legacy.sessionId}`]);
 });
 
@@ -1723,13 +1755,13 @@ test("adopt writes no key until a session-list confirms the session", async () =
 	socket.dispatch("open");
 	await settle();
 
-	expect(local.set).not.toHaveBeenCalled();
-	expect(local.data).toEqual({});
+	expect(pairingWrites(local)).toEqual([]);
+	expect(pairingKeys(local)).toEqual([]);
 
 	socket.dispatch("message", message(buildSessionListFrame(FIRST.sessionId)));
 	await settle();
 
-	expect(Object.keys(local.data)).toEqual([pairingKey(FIRST.sessionId)]);
+	expect(pairingKeys(local)).toEqual([pairingKey(FIRST.sessionId)]);
 	expect(local.data[pairingKey(FIRST.sessionId)]).toEqual({
 		...FIRST,
 		daemonId: TEST_DAEMON_ID,
@@ -1748,7 +1780,7 @@ test("a session list that confirms another session does not persist an unconfirm
 	socket.dispatch("message", message(buildSessionListFrame(SECOND.sessionId)));
 	await settle();
 
-	expect(Object.keys(local.data)).toEqual([pairingKey(SECOND.sessionId)]);
+	expect(pairingKeys(local)).toEqual([pairingKey(SECOND.sessionId)]);
 });
 
 test("a session that never confirms leaves no key, even after the socket drops", async () => {
@@ -1761,8 +1793,8 @@ test("a session that never confirms leaves no key, even after the socket drops",
 	socket.dispatch("close");
 	await settle();
 
-	expect(local.data).toEqual({});
-	expect(local.set).not.toHaveBeenCalled();
+	expect(pairingKeys(local)).toEqual([]);
+	expect(pairingWrites(local)).toEqual([]);
 });
 
 test("a bad claim answered with invalid-session leaves no key", async () => {
@@ -1785,7 +1817,7 @@ test("a bad claim answered with invalid-session leaves no key", async () => {
 	);
 	await settle();
 
-	expect(local.data).toEqual({});
+	expect(pairingKeys(local)).toEqual([]);
 });
 
 test("a pairing is not written twice when a second session list repeats the confirmation", async () => {
@@ -1800,7 +1832,7 @@ test("a pairing is not written twice when a second session list repeats the conf
 	socket.dispatch("message", message(buildSessionListFrame(FIRST.sessionId)));
 	await settle();
 
-	expect(local.set).toHaveBeenCalledTimes(1);
+	expect(pairingWrites(local)).toHaveLength(1);
 });
 
 async function confirmedPairing(options: { relayHandlers?: Record<string, unknown>; local?: LocalArea } = {}) {
@@ -2018,7 +2050,7 @@ test("an Unpair followed by a late adopt of the same session leaves no key", asy
 	expect(local.data).not.toHaveProperty([pairingKey(FIRST.sessionId)]);
 });
 
-test("an invalid-session error for a stored pairing removes its key, keeps the other pairing and schedules no retry", async () => {
+test("an invalid-session error for a stored pairing removes its key, keeps the other pairing and schedules only the link reconnect", async () => {
 	const { sockets, local, ask } = bootWithStored([FIRST]);
 	await settle();
 	const socket = sockets[0] as FakeSocket;
@@ -2040,7 +2072,7 @@ test("an invalid-session error for a stored pairing removes its key, keeps the o
 		socket.dispatch("close");
 		await flushMicrotasks();
 
-		expect(timers.scheduled).toHaveLength(0);
+		expect(timers.scheduled).toHaveLength(1);
 	} finally {
 		timers.restore();
 	}
@@ -2068,7 +2100,7 @@ test("an invalid-session error for one stored pairing leaves the other pairing s
 	);
 	await settle();
 
-	expect(Object.keys(local.data)).toEqual([pairingKey(SECOND.sessionId)]);
+	expect(pairingKeys(local)).toEqual([pairingKey(SECOND.sessionId)]);
 	expect(sessionIdsOf(await ask({ type: MSG.connectionRequest }))).toEqual([SECOND.sessionId]);
 });
 
@@ -2092,7 +2124,7 @@ test("a session-closed frame removes the stored key of a pairing that never conf
 	expect(local.data).not.toHaveProperty([pairingKey(FIRST.sessionId)]);
 });
 
-test("a protocol version mismatch drop keeps the stored key, forgets the session in memory and schedules no retry", async () => {
+test("a protocol version mismatch drop keeps the stored key, forgets the session in memory and schedules only the link reconnect", async () => {
 	const { sockets, local, ask } = bootWithStored([FIRST]);
 	await settle();
 	const socket = sockets[0] as FakeSocket;
@@ -2113,7 +2145,7 @@ test("a protocol version mismatch drop keeps the stored key, forgets the session
 		socket.dispatch("close");
 		await flushMicrotasks();
 
-		expect(timers.scheduled).toHaveLength(0);
+		expect(timers.scheduled).toHaveLength(1);
 	} finally {
 		timers.restore();
 	}
@@ -2138,7 +2170,7 @@ test("a daemon that is down at browser start is not a drop: no key is removed an
 		timers.restore();
 	}
 	expect(local.remove).not.toHaveBeenCalled();
-	expect(Object.keys(local.data).sort()).toEqual(
+	expect(pairingKeys(local)).toEqual(
 		[pairingKey(FIRST.sessionId), pairingKey(SECOND.sessionId)].sort(),
 	);
 });
@@ -2163,33 +2195,6 @@ test("the connection request reply and the connection broadcast carry no token",
 		expect(text).not.toContain("token");
 		expect(text).not.toContain(FIRST.token);
 		expect(text).not.toContain(SECOND.token);
-	}
-});
-
-const MASKED = makeBootstrap({ sessionId: "sess-masked", token: "tok-masked-on-load-only" });
-
-test("a stored token is masked in an error reply after it was loaded at startup", async () => {
-	const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-		(async (input: RequestInfo | URL) =>
-			String(input).includes("/healthz")
-				? Response.json({
-					daemon: "dg-daemon",
-					instanceId: "test",
-					daemonId: TEST_DAEMON_ID,
-				})
-				: new Response(`nope ${MASKED.token}`, { status: 404 })) as unknown as typeof fetch,
-	);
-	try {
-		clearNotedSecrets();
-		const { ask } = bootWithStored([MASKED]);
-		await settle();
-
-		const reply = await ask({ type: MSG.sessionAttach, all: true, code: "123456" });
-
-		expect(String(reply?.error)).not.toContain(MASKED.token);
-		expect(String(reply?.error)).toContain("[redacted]");
-	} finally {
-		fetchSpy.mockRestore();
 	}
 });
 
@@ -2248,7 +2253,7 @@ describe("daemon identity pin", () => {
 		await expect(link.adopt(makeBootstrap())).rejects.toThrow(/did not identify/);
 		await settle();
 
-		expect(local.set).not.toHaveBeenCalled();
+		expect(pairingWrites(local)).toEqual([]);
 	});
 
 	test("adopt refuses a second pairing that belongs to a different daemon", async () => {
@@ -2318,6 +2323,6 @@ describe("daemon identity pin", () => {
 		});
 		await settle();
 
-		expect(boot.openSocket).not.toHaveBeenCalled();
+		await expectNoSessionFrames(boot.sockets);
 	});
 });

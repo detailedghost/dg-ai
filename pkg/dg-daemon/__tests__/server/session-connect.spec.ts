@@ -122,94 +122,54 @@ describe("session presence in the session-list frame", () => {
 	});
 });
 
-describe("extension to CLI and CLI to extension", () => {
-	it("attaches an already-open CLI session instead of minting an orphan", async () => {
-		const { port } = await boot();
-		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
-		const paired = await runDaemonCommand(dgHome, "pair");
-		const code = paired.stdout.match(/Pairing code: (\d{6})/)?.[1];
-		expect(code).toBeDefined();
+describe("code pairing is removed", () => {
+	it.each(["/pair/offer", "/pair/offer/0b7c1a52-0000-4000-8000-000000000000", "/pair/claim"])(
+		"answers POST %s with 404",
+		async (path) => {
+			const { port } = await boot();
 
-		const response = await extensionPost(port, "/attach", {
-			intent: "attach",
-			all: true,
-			code,
-		});
-		expect(response.status).toBe(200);
-		const body = (await response.json()) as {
-			sessions: { sessionId: string; token: string; agentIdentity: string }[];
-		};
-		expect(body.sessions.map((session) => session.sessionId)).toEqual([
-			bootstrap.sessionId,
-		]);
-		expect(body.sessions[0]?.agentIdentity).toBe("claude");
-		expect(body.sessions[0]?.token).toBe(bootstrap.token);
+			const response = await extensionPost(port, path, {});
 
-		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
-			sessionCount: number;
-		};
-		expect(status.sessionCount).toBe(1);
-	});
+			expect(response.status).toBe(404);
+		},
+	);
 
-	it("refuses an all-sessions attach from the pinned Origin when no code is sent", async () => {
+	it.each([
+		["a code", { intent: "attach", code: "123456" }],
+		["the all flag", { intent: "attach", all: true }],
+		["a code and the all flag", { intent: "attach", all: true, code: "123456" }],
+	])("refuses an extension /attach with %s and leaks no token", async (_name, body) => {
 		const { port, paths } = await boot();
 		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
 		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
 
-		const response = await extensionPost(port, "/attach", {
-			intent: "attach",
-			all: true,
-		});
+		const response = await extensionPost(port, "/attach", body);
 
-		expect(response.status).toBe(401);
+		expect(response.status).toBe(400);
 		expect(await response.text()).not.toContain(bootstrap.token);
 	});
 
-	it("attaches every session from the pinned Origin when the code is right", async () => {
+	it("refuses an extension /attach that names a session", async () => {
 		const { port, paths } = await boot();
 		writeConfig(paths, { pinnedOrigin: EXTENSION_ORIGIN });
 		const bootstrap = await registerSession(port, { agentIdentity: "claude" });
-		const paired = await runDaemonCommand(dgHome, "pair");
-		const code = paired.stdout.match(/Pairing code: (\d{6})/)?.[1];
 
 		const response = await extensionPost(port, "/attach", {
 			intent: "attach",
-			all: true,
-			code,
-		});
-
-		expect(response.status).toBe(200);
-		const body = (await response.json()) as { sessions: { token: string }[] };
-		expect(body.sessions.map((session) => session.token)).toEqual([bootstrap.token]);
-	});
-
-	it("refuses an attach with intent create from the pinned extension Origin", async () => {
-		const { port } = await boot();
-		await registerSession(port, { agentIdentity: "claude" });
-		const paired = await runDaemonCommand(dgHome, "pair");
-		const code = paired.stdout.match(/Pairing code: (\d{6})/)?.[1];
-		expect(code).toBeDefined();
-
-		const response = await extensionPost(port, "/attach", {
-			intent: "create",
-			code,
+			sessionId: bootstrap.sessionId,
 		});
 
 		expect(response.status).toBe(400);
-		expect(await response.text()).toContain(
-			'attach request.intent must be "attach"',
-		);
+		expect(await response.text()).not.toContain(bootstrap.token);
+	});
 
-		const retry = await extensionPost(port, "/attach", {
-			intent: "attach",
-			all: true,
-			code,
-		});
-		expect(retry.status).toBe(200);
-		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
-			sessionCount: number;
-		};
-		expect(status.sessionCount).toBe(1);
+	it("has no dg-daemon pair command", async () => {
+		dgHome = freshDgHome();
+
+		const result = await runDaemonCommand(dgHome, "pair");
+
+		expect(result.exitCode).not.toBe(0);
+		expect(result.stderr).toMatch(/unknown command/);
 	});
 });
 

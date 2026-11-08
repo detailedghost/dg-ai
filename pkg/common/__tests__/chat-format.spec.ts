@@ -17,6 +17,8 @@ import {
 	tryValidateSessionBootstrap,
 	validateChatFrame,
 	validateCommandManifest,
+	validateLinkFrame,
+	validateSessionAdopt,
 } from "../src/index";
 import { TEST_RELAY } from "./utils/relay-fixtures";
 
@@ -1017,4 +1019,57 @@ describe("tryValidateSessionBootstrap", () => {
 		expect(tryValidateSessionBootstrap({ ...bootstrap, token: "" })).toBeUndefined();
 		expect(tryValidateSessionBootstrap("nope")).toBeUndefined();
 	});
+});
+
+describe("validateSessionAdopt", () => {
+	const frame = {
+		type: "session-adopt" as const,
+		bootstrap: {
+			port: 47823,
+			sessionId: "session-a",
+			token: "token-a",
+			agentIdentity: "claude",
+			daemonId: "daemon-a",
+		},
+	};
+
+	it("accepts a complete session-adopt frame", () => {
+		expect(validateSessionAdopt(frame)).toEqual(frame);
+	});
+
+	it.each(["port", "sessionId", "token", "agentIdentity", "daemonId"])(
+		"rejects a frame whose bootstrap lacks %s",
+		(field) => {
+			const { [field]: _omitted, ...bootstrap } = frame.bootstrap as Record<
+				string,
+				unknown
+			>;
+			expect(() => validateSessionAdopt({ ...frame, bootstrap })).toThrow();
+		},
+	);
+
+	it("rejects a frame of another type", () => {
+		expect(() => validateSessionAdopt({ ...frame, type: "session-list" })).toThrow();
+	});
+});
+
+describe("validateLinkFrame", () => {
+	it("accepts a link-ready frame", () => {
+		expect(validateLinkFrame({ type: "link-ready" })).toEqual({
+			type: "link-ready",
+		});
+	});
+
+	it("accepts a link-ping frame", () => {
+		expect(validateLinkFrame({ type: "link-ping" })).toEqual({
+			type: "link-ping",
+		});
+	});
+
+	it.each([{ type: "link-other" }, { type: "keepalive" }, {}, "link-ready", null])(
+		"rejects %p",
+		(value) => {
+			expect(() => validateLinkFrame(value)).toThrow();
+		},
+	);
 });

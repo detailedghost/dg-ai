@@ -1,12 +1,15 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
+import { DG_CHROME_EXTENSION_ID } from "@dg/common";
 import baseline from "./fixtures/manifest-permissions.json";
 
 const EXT = resolve(import.meta.dir, "..");
 const OUT = resolve(EXT, ".output", "chrome-mv3");
 
 type Manifest = {
+	key?: string;
 	permissions: string[];
 	host_permissions: string[];
 	action?: { default_popup?: string; default_title?: string };
@@ -68,6 +71,18 @@ describe("wxt build", () => {
 			[...baseline.host_permissions].sort(),
 		);
 		expect(manifest.permissions).toContain("activeTab");
+	});
+
+	it("pins the chrome extension id through the manifest key", () => {
+		const digest = createHash("sha256")
+			.update(Buffer.from(manifest.key as string, "base64"))
+			.digest("hex")
+			.slice(0, 32);
+		const id = [...digest]
+			.map((char) => String.fromCharCode(97 + Number.parseInt(char, 16)))
+			.join("");
+
+		expect(id).toBe(DG_CHROME_EXTENSION_ID);
 	});
 
 	it("wires the popup as the toolbar action and titles it from the popup page", () => {

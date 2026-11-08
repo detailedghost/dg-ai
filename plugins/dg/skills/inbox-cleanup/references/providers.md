@@ -7,23 +7,18 @@ daemon session with the installed companion binary:
 dg-agent start --open
 ```
 
-`dg-agent start` prints one bootstrap URL:
-
-```text
-http://127.0.0.1:<port>/chat#_chat=<base64url>
-```
-
-The `#_chat=` fragment is base64url-encoded JSON
-`{ port, sessionId, token, agentIdentity }`. `--open` asks the default browser
-to open that URL. Pair the browser by opening the DeeGee popup and running
-`dg-agent pair <code>`. Reload the Proton Mail tab after it connects.
+`dg-agent start` prints one line on stderr and nothing on stdout. The line is
+`Paired <identity> (<id8>) with the browser extension.` or
+`No browser extension is connected. Install it with: dg-skills install`. The
+extension pairs with the session on its own. Reload the Proton Mail tab after
+it connects. `--open` opens the chat page through a one-time code and prints
+no URL.
 
 Keep the session id and pass `--session ID` when your command's working
 directory differs from the registered session, or when several sessions exist.
-`dg-agent start --print-session-id` prints the session id on its own line and
-then the bootstrap URL, so an agent does not have to decode the fragment.
-`dg-agent start --json` prints one object `{"sessionId","port","url"}` instead
-of those lines. The token stays inside the URL fragment.
+`dg-agent start --print-session-id` prints the session id on stdout.
+`dg-agent start --json` prints one object `{"sessionId","port","extensionLinked"}`
+instead. No output carries the session token.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 both run locally. Proton runs locally through a pw-managed profile by default.
 With `--ext`, Proton needs exactly one extension connected to that session, and the
@@ -82,8 +77,12 @@ says the mail tab navigated away instead of a generic sign-in error. `dg-skills
 inbox status` reports local message counts and, with `--session`, which check
 failed: no extension peer on that session, no mail tab matching `/u/N`, or
 missing `x-pm-uid`. A missing extension peer names the session and tells you to
-pair from the DeeGee popup with `dg-agent pair <code>`. `dg-skills inbox
-bootstrap-url --session ID` prints the session's local chat URL.
+start the session with `dg-agent start` and install the extension with
+`dg-skills install` if none is connected. `dg-skills inbox bootstrap-url
+--session ID` prints a chat URL,
+`http://127.0.0.1:<port>/chat#_chatcode=<code>`, with a one-time code. The URL works once, within 60 seconds. It never
+carries the session token.
+
 Chrome 116+ (MV3, MAIN world) and Firefox 128+ both run that observer. The
 plugin's broader Firefox features may require a newer Firefox. Bootstrap
 (`bootstrap.sh`, which runs `dg-skills install`) stages the Chrome MV3 build at

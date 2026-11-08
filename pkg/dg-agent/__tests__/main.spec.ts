@@ -104,7 +104,7 @@ describe("dg-agent main", () => {
 		expect(exitCalls).toEqual([]);
 	});
 
-	it("registers pair and rejects a malformed code with the usage text and exit 1", async () => {
+	it("has no pair command", async () => {
 		const lines: string[] = [];
 		console.error = (...args: unknown[]) => {
 			lines.push(args.join(" "));
@@ -116,15 +116,13 @@ describe("dg-agent main", () => {
 		}) as typeof process.stderr.write;
 		let code: number;
 		try {
-			code = await main(["pair", "12345"]);
+			code = await main(["pair", "123456"]);
 		} finally {
 			process.stderr.write = stderrWrite;
 		}
 
 		expect(code).toBe(1);
 		expect(exitCalls).toEqual([]);
-		expect(lines.join("\n")).toContain(
-			"pair takes a 6 digit code from the extension popup.",
-		);
+		expect(lines.join("\n")).toContain("unknown command 'pair'");
 	});
 });

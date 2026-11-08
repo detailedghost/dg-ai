@@ -717,20 +717,7 @@ describe("dg-skills doctor edge cases", () => {
 		}
 	});
 
-	test("a pending pairing code alone is not reported as paired", async () => {
-		world.healthy(["launch"]);
-		mkdirSync(world.paths.stateDir, { recursive: true });
-		writeFileSync(world.paths.pairingPath, "{}");
-		const { report } = await world.report(["launch"]);
-		const pairing = checksOf(report, "launch").find(
-			(check) => check.id === "extension-paired",
-		);
-		expect(pairing?.status).toBe("warn");
-		expect(pairing?.detail).toContain("pending");
-		expect(pairing?.fix).toBe("dg-daemon pair");
-	});
-
-	test("an extension that never connected warns with the pair command", async () => {
+	test("an extension that never connected warns to load the extension", async () => {
 		world.healthy(["launch"]);
 		const { report } = await world.report(["launch"]);
 		const pairing = checksOf(report, "launch").find(

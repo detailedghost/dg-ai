@@ -1,5 +1,10 @@
-import { createSerialQueue, describeError } from "@dg/common";
+import {
+	createSerialQueue,
+	describeError,
+	type SessionAdopt,
+} from "@dg/common";
 import type { ServerWebSocket } from "bun";
+import type { SessionRecord, SessionRegistry } from "../session/registry";
 import type { Logger } from "./log";
 
 export type SocketKind = "ws" | "cli";
@@ -14,6 +19,7 @@ export type SocketState = {
 	originHeader?: string;
 	extensionVersion?: string;
 	localPage: boolean;
+	stillPinned?: () => boolean;
 };
 
 export function createSocketState(
@@ -35,9 +41,47 @@ export function createSocketState(
 	};
 }
 
+export type DaemonLink = { port: number; daemonId: string };
+
+export type AdoptableSession = Pick<
+	SessionRecord,
+	"sessionId" | "token" | "agentIdentity"
+>;
+
+export function sessionAdoptPayload(
+	record: AdoptableSession,
+	link: DaemonLink,
+): string {
+	return JSON.stringify({
+		type: "session-adopt",
+		bootstrap: {
+			port: link.port,
+			sessionId: record.sessionId,
+			token: record.token,
+			agentIdentity: record.agentIdentity,
+			daemonId: link.daemonId,
+		},
+	} satisfies SessionAdopt);
+}
+
+export function adoptActiveSessions(
+	ws: ServerWebSocket<SocketState>,
+	registry: Pick<SessionRegistry, "list" | "get">,
+	link: DaemonLink,
+): void {
+	for (const { sessionId } of registry.list()) {
+		const record = registry.get(sessionId);
+		if (record) void sendViaQueue(ws, sessionAdoptPayload(record, link));
+	}
+}
+
 /** A chat socket from the extension, the only peer that can serve browser relays and overwatch opens. */
 export function isExtensionPeer(ws: ServerWebSocket<SocketState>): boolean {
-	return ws.data.kind === "ws" && !ws.data.localPage;
+	return (
+		ws.data.kind === "ws" &&
+		!ws.data.localPage &&
+		(ws.data.stillPinned?.() ?? true)
+	);
 }
 
 /** Registers work to abandon when the socket goes away; returns the de-registration for the settled path. */
@@ -119,11 +163,15 @@ export class ConnectionManager {
 		let count = 0;
 		for (const ws of this.sockets) {
 			if (!isExtensionPeer(ws)) continue;
-			if (ws.data.capabilities.size === 0) continue;
 			count++;
 			fn(ws);
 		}
 		return count;
+	}
+
+	pushSessionAdopt(record: AdoptableSession, link: DaemonLink): number {
+		const payload = sessionAdoptPayload(record, link);
+		return this.forEachExtension((ws) => void sendViaQueue(ws, payload));
 	}
 
 	forEachCapableOf(

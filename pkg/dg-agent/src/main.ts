@@ -9,7 +9,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	const [
 		{ Command, CommanderError },
 		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
-		{ registerAgentCommands, selectedSession },
+		{ registerAgentCommands },
 		{ registerMemoryCommands },
 		{ registerLazyPhoneCommands },
 	] = await Promise.all([
@@ -38,15 +38,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 		.option("-w, --workset <label>", "workset label to attach to this session")
 		.option("--orchestrator", "register this session with the orchestrator role")
 		.option("-a, --agent-identity <name>", "agent identity to record")
-		.option("--open", "open the chat page in the default browser")
+		.option("--open", "open the chat page in the default browser, paired through a one-time code")
 		.option("--ext", "accepted for skills that require the dg-ai-extension; behaves like the default")
-		.option(
-			"--print-session-id",
-			"print the session id, then the bootstrap URL",
-		)
+		.option("--print-session-id", "print only the session id")
 		.option(
 			"--json",
-			"print sessionId, port, and the bootstrap URL as one JSON object",
+			"print sessionId, port, and extensionLinked as one JSON object",
 		)
 		.action(
 			async (opts: {
@@ -69,15 +66,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 				});
 			},
 		);
-
-	program
-		.command("pair")
-		.description("pair this session with the browser extension")
-		.argument("<code>", "6 digit code the extension popup shows")
-		.action(async (code: string, _options: unknown, command: Command) => {
-			const { cmdPair } = await import("./pair");
-			await cmdPair({ code, sessionId: selectedSession(command) });
-		});
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });

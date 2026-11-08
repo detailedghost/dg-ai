@@ -19,6 +19,7 @@ import {
 	findFileContaining,
 	getConfiguredAssetDirectory,
 	killDaemonByPidFile,
+	sessionCredentials,
 	sendConnectHandshake,
 	waitForOpen,
 	waitForValue,
@@ -78,6 +79,62 @@ describe("dg-daemon spawn", () => {
 		expect(spawned).toBeDefined();
 		expect(spawned?.agentIdentity).toBe(bootstrap.agentIdentity);
 		page.close();
+	});
+
+	it("runs the command after -- with DG_SESSION_ID set to the new session and prints no bootstrap", async () => {
+		const { port, bootstrap } = await startWithSession();
+
+		const result = await runCli(dgHome, port, [
+			"spawn",
+			"--session",
+			bootstrap.sessionId,
+			"--",
+			"sh",
+			"-c",
+			"echo $DG_SESSION_ID",
+		]);
+
+		expect(result.exitCode).toBe(0);
+		const printed = result.stdout.trim();
+		expect(printed).not.toBe(bootstrap.sessionId);
+		expect((await sessionCredentials(dgHome, printed)).sessionId).toBe(printed);
+		expect(result.stdout).not.toContain("token");
+	});
+
+	it("exits with the exit code of the command after --", async () => {
+		const { port, bootstrap } = await startWithSession();
+
+		const result = await runCli(dgHome, port, [
+			"spawn",
+			"--session",
+			bootstrap.sessionId,
+			"--workset",
+			"w",
+			"--",
+			"sh",
+			"-c",
+			"exit 3",
+		]);
+
+		expect(result.exitCode).toBe(3);
+	});
+
+	it("prints only the session id when no command follows", async () => {
+		const { port, bootstrap } = await startWithSession();
+
+		const result = await runCli(dgHome, port, [
+			"spawn",
+			"--session",
+			bootstrap.sessionId,
+		]);
+
+		expect(result.exitCode).toBe(0);
+		const printed = JSON.parse(result.stdout) as { sessionId: string };
+		expect(Object.keys(printed)).toEqual(["sessionId"]);
+		expect((await sessionCredentials(dgHome, printed.sessionId)).sessionId).toBe(
+			printed.sessionId,
+		);
+		expect(result.stdout).not.toContain("token");
 	});
 
 	it("binds the spawned session to a distinct agent identity via --agent-identity", async () => {

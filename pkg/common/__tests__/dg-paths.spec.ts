@@ -183,7 +183,6 @@ describe("resolveDgPaths files", () => {
 		expect(paths.credentialsDbPath).toBe("/t/state/daemon/credentials.db");
 		expect(paths.keyPath).toBe("/t/state/daemon/key");
 		expect(paths.daemonConfigPath).toBe("/t/state/daemon/config.json");
-		expect(paths.pairingPath).toBe("/t/state/pairing.json");
 		expect(paths.agentsDir).toBe("/t/state/agents");
 		expect(paths.sessionsDir).toBe("/t/state/agents/sessions");
 		expect(paths.assetsDir).toBe("/t/state/agents/assets");

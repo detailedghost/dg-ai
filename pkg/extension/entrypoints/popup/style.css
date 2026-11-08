@@ -353,77 +353,9 @@ body {
 	max-width: 45%;
 }
 
-.qrbox {
-	display: flex;
-	gap: 12px;
-	align-items: center;
-	justify-content: center;
-	margin: 0 6px 12px 0;
-	border: 2px solid var(--line);
-	background: var(--panel);
-	padding: 16px;
-	box-shadow: 6px 6px 0 var(--accent2);
-}
-
-.qrbox svg {
-	display: block;
-	flex: none;
-}
-
-.qrbox .sub {
-	max-width: 150px;
-	margin: 4px 0 0;
-}
-
-.code {
-	margin-top: 6px;
-	font-family: var(--mono);
-	font-size: 24px;
-	letter-spacing: 0.2em;
-}
-
-details.alt summary {
-	cursor: pointer;
-	font-size: 13px;
-	color: var(--accent-ink);
-}
-
-.paired > details.alt {
-	margin-top: 12px;
-}
-
-.alt-body,
-.paste {
-	margin-top: 8px;
-}
-
 summary:focus-visible,
 .link:focus-visible,
 .menu-btn:focus-visible,
 .menu-item:focus-visible {
 	outline: 2px solid var(--accent);
-}
-
-.pair-form {
-	display: flex;
-	gap: 8px;
-	align-items: flex-end;
-}
-
-.pair-form__input {
-	width: 100%;
-	min-height: 44px;
-	border: 2px solid var(--line);
-	padding: 8px 10px;
-	font-family: var(--mono);
-	font-size: 18px;
-	letter-spacing: 0.3em;
-	background: var(--bg);
-	color: var(--ink);
-}
-
-.pair-form__input:focus {
-	outline: none;
-	border-color: var(--accent);
-	box-shadow: 0 0 0 2px var(--accent);
 }

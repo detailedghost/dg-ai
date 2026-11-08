@@ -3,6 +3,8 @@
 Status: Proposed
 Date: 2026-11-07
 
+Superseded in part by [0039](0039-zero-touch-pairing.md).
+
 ## Context
 
 - The extension held a chat in a browser panel that duplicated the page `dg-daemon` serves at `/chat`. Two chat surfaces drifted apart.

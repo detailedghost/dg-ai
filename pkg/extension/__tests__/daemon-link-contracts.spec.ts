@@ -113,7 +113,7 @@ describe("registerDaemonLink adopt without a chat page", () => {
 		await link.adopt(bootstrap);
 		link.socket.dispatch("open");
 		await settle();
-		expect(link.local.data).toEqual({});
+		expect(link.local.data).toEqual({ "daemon:id": TEST_DAEMON_ID });
 
 		link.socket.dispatch(
 			"message",

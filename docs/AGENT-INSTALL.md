@@ -84,7 +84,7 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
 - The extension stays required for every `--ext` command. Each one starts with
   the gate `--ext only: dg-skills require-extension <skill> || exit 1`.
   `chat --ext` and `overwatch --ext` open the same local page as without
-  `--ext`. The human then pairs the browser from the pairing popup. See
+  `--ext`. The extension then pairs with each new session on its own. See
   [Pair the browser with an agent session](#pair-the-browser-with-an-agent-session).
 - To add the extension later, run `dg-skills install`. It installs the extension
   and removes the marker. Then follow Step 2 below
@@ -325,7 +325,7 @@ dg-daemon status
 
 If a bare name does not answer, call `${DG_HOME:-$HOME/.local}/bin/<name>` instead.
 
-`dg-agent --help` should list `start`, `pair`, `recv`, `send`, `progress`,
+`dg-agent --help` should list `start`, `recv`, `send`, `progress`,
 `spawn`, `stage`, `close`, `manifest` and `memory`. `status` is a `dg-daemon` command,
 not a `dg-agent` one. `dg-daemon status` reports that no daemon is running
 yet, though `memory` works regardless. It opens `~/.dg/agents/memory.db`
@@ -342,15 +342,15 @@ ______________________________________________________________________
 | `claude plugin marketplace add` / `install` / `update` | Yes, with user authorization |
 | `bootstrap.sh` (install CLI + extension) | Yes |
 | `dg-skills install` (stage extension + refresh the runtime and the bundle) | Yes |
-| `dg-agent start` (register a chat session) | Yes |
+| `dg-agent start` (register a chat session; the extension pairs on its own) | Yes |
 | `dg-agent start --open` (open the chat page) | Yes (default browser; on WSL only with `DG_OPEN_WINDOWS=1`) |
 | Read a human's chat reply (`dg-agent recv --block`) | Yes — it waits for them |
-| `chat --ext` / `overwatch --ext` (open the local page; the extension is required) | Yes, once the human has paired the browser from the pairing popup |
-| `dg-agent pair <code>` (pair a session with the browser) | Yes, with the code the human reads from the pairing popup |
-| Read the code in the pairing popup, or click Unpair | No, the human does it in the browser |
+| `chat --ext` / `overwatch --ext` (open the local page; the extension is required) | Yes, once the human has loaded the extension |
+| `dg-agent spawn -- <command>` (run a command in a new session, with `DG_SESSION_ID` set) | Yes |
+| Click Unpair, or click Trust this daemon after a daemon home reset | No, the human does it in the popup |
 | Switch WSL to mirrored networking mode | No — manual host config |
 | Add `dg-daemon-blt` and `dg-agent-blt` to branch protection | No — repo admin |
-| Load unpacked in the browser | No — manual browser UI |
+| Load unpacked in the browser (the only routine human step) | No — manual browser UI |
 | `launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
 | `batch-open --ext` / `demo --ext` / `rerun --ext` | Yes (extension loaded) |
 | `demo` / `rerun` without `--ext` | Yes (local browser; the human picks on the start screen) |
@@ -372,12 +372,14 @@ those. See [SMS providers](ssms.md).
 The shared inbox-cleanup skill runs the dg-skills inbox command. Update
 dg-skills, dg-agent, dg-daemon, and the extension together with dg-skills install.
 Start a dg session before configuring encrypted inbox profiles. Proton also
-requires one paired extension and a signed-in Proton mail tab. A headless
+requires one connected extension and a signed-in Proton mail tab. A headless
 agent cannot rely on `dg-agent start --open`. Run `dg-agent start
---print-session-id` to print the session id. Open the pairing popup in the
-browser where the extension is loaded. Run `dg-agent pair <code> -s <id>` with the
-code it shows, then reload the Proton Mail tab. Pass the session id as
-`--session` on inbox commands. Gmail and
+--print-session-id` to print the session id. The extension pairs with the
+session on its own. If the command prints that no extension is connected,
+run `dg-skills install` and ask the human to load the extension. Reload the
+Proton Mail tab. Pass the session id as `--session` on inbox commands. Run
+`dg-skills inbox bootstrap-url --session <id>` for a chat URL with a one-time
+code. That URL works once, within 60 seconds. Gmail and
 Outlook need a registered OAuth client and the provider's delegated permissions.
 Explicit --data-path fixtures work without those services. Read
 [provider setup](../plugins/dg/skills/inbox-cleanup/references/providers.md) and
@@ -414,23 +416,26 @@ ______________________________________________________________________
 
 ## Pair the browser with an agent session
 
-The extension has one surface: the pairing popup. Click the DeeGee button in
-the browser toolbar to open it. The popup shows a six-digit code, a QR code
-and the agents that are paired.
+Pairing needs no code and no human step. The extension keeps a link socket to
+its daemon and adopts every new session that the daemon pushes. Load the
+extension once with **Load unpacked**. That is the only routine human step.
 
-Pair a session in three steps:
+An agent pairs a session in one step:
 
-1. Open the pairing popup. Read the six-digit code.
-1. In the agent session, run `dg-agent pair <code> [-s <id>]`. The `-s, --session <id>` option names the session. Without it, the CLI picks the one session for the current directory.
-1. Wait for the agent to appear in the popup. Its pill reads Idle at first.
+1. Run `dg-agent start`.
+1. Read the line on stderr. `Paired <identity> (<id8>) with the browser extension.` means the extension adopted the session. `No browser extension is connected. Install it with: dg-skills install` means none is loaded. Run `dg-skills install` and ask the human to load the extension.
 
-The pill reads Connected only while the agent's CLI holds the session socket open. Commands such as `dg-agent recv` open that socket. `dg-agent start` and `dg-agent pair` do not, so right after pairing the pill reads Idle.
+`dg-agent start` prints nothing on stdout. `--print-session-id` prints the session id. `--json` prints `{sessionId, port, extensionLinked}`. `--open` opens the chat page through a one-time code and prints no URL. `dg-agent overwatch open` also uses a one-time code. A code works once, within 60 seconds.
 
-The QR code encodes the text `dg-agent pair <code>`. A phone camera shows that text, and it opens no page. The code lives 5 minutes. The fifth wrong code in the window expires every offer, and the popup then asks for a new one. If the daemon is not running, the popup says so. Run `dg-agent start` first.
+To run a command inside a new session, use `dg-agent spawn -- <command...>`. It runs the command with `DG_SESSION_ID` set and exits with the exit code of that command. The CLI picks its session from `--session`, then `DG_SESSION_ID`, then the one session for the current directory.
 
-To pair by hand, open **Paste a code instead** in the popup and enter a code from `dg-daemon pair`. That path attaches every active agent session.
+The pill reads Connected only while the agent's CLI holds the session socket open. Commands such as `dg-agent recv` open that socket. Right after `dg-agent start`, the pill reads Idle.
 
-Pairings are kept in the extension's local storage until you click Unpair or the daemon expires the session. They survive a browser restart. The local storage is per browser profile. A second profile needs its own pairing.
+The daemon pins the extension origin on first contact. The extension pins the daemon id on first contact and refuses a port that reports another id. After a daemon home reset, the popup shows "The daemon changed" with **Trust this daemon**. The human clicks it once to pin the new daemon. This step is rare.
+
+Pairings are kept in the extension's local storage until you click Unpair or the daemon expires the session. They survive a browser restart. The local storage is per browser profile. A second profile adopts each session on its own.
+
+**Trust trade-off.** The daemon trusts any process that the same user runs on this machine, and it does so silently. A local program can fake an `Origin` header. The daemon id pin stops a process on a free port. It does not stop a proxy that copies the live daemon. See [ADR 0039](adr/0039-zero-touch-pairing.md).
 
 ### Checking and unpairing paired sessions
 
@@ -442,9 +447,8 @@ The popup lists each paired agent with its identity, a short session id and a pi
 
 Each agent row has these controls:
 
-- **Unpair** removes that session's saved pairing and closes its connection. The agent session keeps running. Other pairings stay connected.
+- **Unpair** removes that session's saved pairing and closes its connection. The agent session keeps running. Other pairings stay connected. The extension does not adopt that session again until it closes.
 - **Menu**, the per-agent menu, holds **Open chat** and **Add this tab**. **Open chat** opens the daemon `/chat` page for that session. **Add this tab** hands the current tab to that agent.
-- **Pair another agent** adds a session without replacing the others.
 
 Under each agent, the popup lists its tab group with the group color. The popup scrolls inside a fixed height when the list grows long.
 
@@ -463,9 +467,9 @@ ______________________________________________________________________
 Older releases paired through pages inside the extension. The first release with the pairing popup removes those pages. Follow these steps in order:
 
 1. Run `dg-skills install`. It updates the daemon before the extension.
-1. Restart the daemon. `dg-daemon` has no stop command, so read the `pid` field of `daemon.pid` in the daemon folder and stop that process. The next `dg-agent start` starts the new one.
-1. Reload the extension in `chrome://extensions`, then open the pairing popup.
-1. In each agent session, run `dg-agent pair <code>` with the code the popup shows.
+1. Restart the daemon. `dg-daemon` has no stop command, so read the `pid` field of `daemon.pid` in the daemon folder and stop that process. The next session start launches the new one.
+1. Reload the extension in `chrome://extensions`, then open the popup.
+1. In each agent session, run `dg-agent start`. The extension adopts the session.
 1. Run `dg-skills pw --ext open <url>`, or click **Add this tab** in the popup, so the agent has a tab.
 
 Restart the daemon right after the upgrade. A channel-review run can apply schema 13 while an old daemon still runs. The old daemon's `saveSession` then fails until you restart it.
@@ -474,32 +478,33 @@ Restart the daemon right after the upgrade. A channel-review run can apply schem
 
 | Removed | Replacement |
 | --- | --- |
-| The extension side panel | The daemon `/chat` page. Run `dg-agent start --open`, or click **Open chat** in the pairing popup. |
+| The extension side panel | The daemon `/chat` page. Run `dg-agent start --open`, or click **Open chat** in the popup. |
 | The extension dashboard page | `dg-daemon job list` and `dg-daemon job run <label>` manage jobs. A job with `--notify` sends new feed items to an agent as messages. |
 | The extension overwatch page | The daemon `/board` page. Run `dg-agent overwatch open`. |
-| `dg-agent attach` | `dg-agent pair <code>` |
-| `dg-agent start --fresh` and `dg-agent start -s <id>` | `dg-agent start` registers the session. `dg-agent pair <code> [-s <id>]` pairs it. |
-| `GET /start` | The `/chat` page. Pair from the pairing popup. |
+| `dg-agent attach` | `dg-agent start`. The extension adopts the session. |
+| `dg-agent start --fresh` and `dg-agent start -s <id>` | `dg-agent start` registers the session and the extension adopts it. |
+| `GET /start` | The `/chat` page. |
 | `POST /sessions` and `GET /sessions` | `dg-agent start` registers sessions. |
 | `/attach { intent: "create" }` | `/attach { intent: "attach" }`, which the `/chat` switcher sends with a page bearer. |
-| `POST /pair` | `POST /pair/offer` and `POST /pair/claim` |
+| `POST /pair`, and the offer and claim routes that replaced it | None. The extension adopts each session that the daemon pushes. |
+| The `pair` command of `dg-agent` and `dg-daemon`, and the popup code, QR and paste form | None. Run `dg-agent start`. |
 | `DG_SESSION_TOKEN` | None. Pass `-s <id>` to name a session. The CLI asks the daemon for that session's token. |
 | `DG_UNCLAIMED_TTL_MS` | None. No session waits for an agent. |
 | The waiting presence | None. A session has a CLI, or it is idle or gone. |
 
 ### What else changed
 
-The toolbar button opens the pairing popup, not the Options page. Record demo moved to the popup menu. Alt+Shift+D still starts a recording on the page.
+The toolbar button opens the popup, not the Options page. Record demo moved to the popup menu. Alt+Shift+D still starts a recording on the page.
 
 The Options page is slim. The Pairing page, the navigation and the theme toggle are gone. The page ignores a stored theme value and follows the browser theme. Privacy and Kudos are folded sections at the bottom.
 
-`dg-agent start --ext` prints the daemon `/chat` URL, and `--open` opens it. `dg-agent overwatch open --ext` opens `/board`. Neither opens a page inside the extension.
+`dg-agent start --ext` requires the extension and behaves like `dg-agent start`. `--open` opens the daemon `/chat` page through a one-time code. `dg-agent overwatch open --ext` opens `/board`. Neither opens a page inside the extension.
 
-The pairing code has six digits and a 5-minute life. The fifth failure in one window expires every pending offer, and the popup must ask for a new one. This 5-wrong-code lockout guards against mistakes and cheap brute force. It does not stop a process that runs as you.
+The daemon trusts any process of the same user on this machine, without a prompt. Origin headers can be faked by local programs. The daemon id pin stops a process on a free port, not a proxy that copies the live daemon.
 
 The `/chat` header reads `Talking to <identity> · <id8> · <presence>`. The switcher lists every connected agent. The connection pill says Connected only after the daemon confirms the session. An open socket alone does not count.
 
-Pairings persist. Pair each session once. After that, the extension reconnects on its own until you click **Unpair** or the daemon expires the session.
+Pairings persist. After a session starts, the extension reconnects on its own until you click **Unpair** or the daemon expires the session.
 
 `dg-skills pw --ext` acts on the agent's own tab group, not the active tab. A new agent has no tab, so a verb that needs a tab says "This agent has no tab yet." Run `dg-skills pw --ext open <url>` or `dg-skills pw --ext new <url>`. Or click **Add this tab** in the popup. Manage the group with `dg-skills pw --ext tabs`, `dg-skills pw --ext select <tabId>` and `dg-skills pw --ext close [tabId]`. Add `--tab <id>` to any verb to target one tab once. `current` no longer lists tabs. Use `tabs`.
 
@@ -507,8 +512,8 @@ Pairings persist. Pair each session once. After that, the extension reconnects o
 
 ### Mixed versions
 
-- **Old extension, new daemon.** An extension older than the floor still pairs through its Attach CLI control with a `dg-daemon pair` code. Its main code form posts `POST /pair`, which returns 404. The daemon refuses `dg-skills pw --ext` with the update text. The refusal text reads: "pw --ext requires dg-ai-extension 1.44.0 or newer; update the extension, reload it, and reconnect this session." A stale `/start#_chat=` URL gets 404.
-- **New extension, old daemon.** The popup cannot get an offer, because `POST /pair/offer` does not exist on the old daemon. Update the daemon first.
+- **Old extension, new daemon.** An extension older than the floor posts to routes that now return 404, so it cannot pair. The daemon refuses `dg-skills pw --ext` with the update text. The refusal text reads: "pw --ext requires dg-ai-extension 1.44.0 or newer; update the extension, reload it, and reconnect this session."
+- **New extension, old daemon.** An old daemon does not push sessions, so the extension adopts none. Update the daemon first.
 - **Mixed binaries.** Update dg-agent, dg-daemon and the extension together. An old `dg-agent start` fails on `GET /sessions?waiting=1`. A new extension rejects a `session-list` that carries `waiting` until the old daemon reaps it.
 
 ### Roll back the database

@@ -35,7 +35,7 @@ import {
 	setUserVersionProvider,
 } from "../utils/key-source";
 import { readConfig } from "./config-store";
-import { ConnectionManager, sendViaQueue } from "./connection";
+import { ConnectionManager, isExtensionPeer, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import {
@@ -270,18 +270,26 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		"closed",
 		({ sessionId, reason }: { sessionId: string; reason: CloseReason }) => {
 			logger.info(`session ${sessionId} closed (${reason})`);
-			connections.forEachCapableOf(sessionId, (ws) => {
-				const send = sendViaQueue(
-					ws,
-					JSON.stringify({
-						sessionId,
-						protocolVersion: CHAT_PROTOCOL_VERSION,
-						type: "session-closed",
-					}),
-				);
+			const payload = JSON.stringify({
+				sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				type: "session-closed",
+			});
+			const notified = new Set<object>();
+			const notify = (ws: Parameters<typeof sendViaQueue>[0]) => {
+				const send = sendViaQueue(ws, payload);
 				pendingCloseSends.add(send);
 				void send.finally(() => pendingCloseSends.delete(send));
+				notified.add(ws);
+			};
+			const keepsExtensionState = reason === "daemon-shutdown";
+			connections.forEachCapableOf(sessionId, (ws) => {
+				if (!(keepsExtensionState && isExtensionPeer(ws))) notify(ws);
 				ws.data.capabilities.delete(sessionId);
+			});
+			if (keepsExtensionState) return;
+			connections.forEachExtension((ws) => {
+				if (!notified.has(ws)) notify(ws);
 			});
 		},
 	);

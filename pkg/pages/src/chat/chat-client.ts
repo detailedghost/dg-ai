@@ -13,9 +13,11 @@ import {
 	emitRedacted,
 	formatConnectionDrop,
 	noteSecret,
+	type SessionAdopt,
 	type SessionBootstrap,
 	type SessionRole,
 	validateChatFrame,
+	validateSessionAdopt,
 } from "@dg/common";
 
 const UTF8_ENCODER = new TextEncoder();
@@ -64,10 +66,13 @@ export type ChatClientOptions = {
 	keepaliveIntervalMs?: number;
 	admitPort?: (port: number) => Promise<boolean>;
 	findPort?: () => Promise<number | undefined>;
+	link?: { onSessionAdopt(bootstrap: SessionAdopt["bootstrap"]): void };
 };
 
 export type ChatClient = {
 	connect(bootstrap: SessionBootstrap): void;
+	/** Opens, or reopens, the single socket on a port with no session; needs the link option. */
+	openLink?(port: number): void;
 	addSession(bootstrap: SessionBootstrap): void;
 	onFrame(listener: (frame: ChatFrame) => void): void;
 	onConnectionChange(listener: ConnectionListener): void;
@@ -99,6 +104,7 @@ export type ChatClient = {
 const DEFAULT_BACKOFF_BASE_MS = 500;
 const DEFAULT_BACKOFF_MAX_MS = 30_000;
 const DEFAULT_ACK_TIMEOUT_MS = 5000;
+const DEFAULT_LINK_PING_MS = 20_000;
 
 function chatSocketUrl(port: number): string {
 	return `ws://127.0.0.1:${port}${CHAT_WS_PATH}`;
@@ -152,6 +158,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	let socketGeneration = 0;
 	let everConnected = false;
 	let socketAdmitted = true;
+	let linkPingTimer: ReturnType<typeof setInterval> | undefined;
 	let knownInstanceId: string | undefined;
 	let lastSessionList: Extract<ChatFrame, { type: "session-list" }> | undefined;
 	const capabilities = new Map<string, string>();
@@ -323,6 +330,23 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			sendConnectHandshake(sessionId, token);
 			sendHistoryRequest(sessionId, token);
 		}
+		if (options.link) {
+			send({ type: "link-ready" });
+			startLinkPing();
+		}
+	}
+
+	function stopLinkPing(): void {
+		if (linkPingTimer !== undefined) clearInterval(linkPingTimer);
+		linkPingTimer = undefined;
+	}
+
+	function startLinkPing(): void {
+		stopLinkPing();
+		linkPingTimer = setInterval(
+			() => send({ type: "link-ping" }),
+			options.keepaliveIntervalMs ?? DEFAULT_LINK_PING_MS,
+		);
 	}
 
 	function scheduleRetry(): void {
@@ -348,7 +372,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			const rediscover =
 				options.findPort ?? (() => findDaemonPort(knownInstanceId));
 			void rediscover().then((rediscovered) => {
-				if (generation !== socketGeneration || capabilities.size === 0) return;
+				if (generation !== socketGeneration || (capabilities.size === 0 && !options.link)) return;
 				if (rediscovered !== undefined) port = rediscovered;
 				openAndBind();
 			});
@@ -365,6 +389,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function handleError(): void {
+		stopLinkPing();
 		setConnectionState(
 			"reconnecting",
 			`could not reach the daemon on port ${port}`,
@@ -374,6 +399,31 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	function emitSessionList(): void {
 		if (!lastSessionList) return;
 		for (const listener of frameListeners) listener(lastSessionList);
+	}
+
+	function routeSessionAdopt(parsed: unknown): void {
+		if (!options.link) return;
+		try {
+			options.link.onSessionAdopt(validateSessionAdopt(parsed).bootstrap);
+		} catch (err) {
+			emitRedacted(
+				(line) => console.warn(line),
+				`[dg-chat] dropping invalid session-adopt: ${describeError(err)}`,
+				[...capabilities.values()],
+			);
+		}
+	}
+
+	function closeSocketWithoutSessions(): void {
+		if (capabilities.size > 0 || options.link) return;
+		if (retryTimer !== undefined) clearTimeout(retryTimer);
+		retryTimer = undefined;
+		const previous = socket;
+		socket = null;
+		socketGeneration += 1;
+		hasAttemptInFlight = false;
+		previous?.close?.();
+		setConnectionState("daemon-not-running");
 	}
 
 	function handleMessage(event: unknown): void {
@@ -387,6 +437,10 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 				`[dg-chat] dropping unparseable frame: ${err instanceof Error ? err.message : String(err)}`,
 				[...capabilities.values()],
 			);
+			return;
+		}
+		if ((parsed as { type?: unknown } | null)?.type === "session-adopt") {
+			routeSessionAdopt(parsed);
 			return;
 		}
 		let frame: ChatFrame;
@@ -414,7 +468,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		const isOverwatchFrame =
 			frame.sessionId === OVERWATCH_SESSION_ID &&
 			(frame.type === "overwatch-state" || frame.type === "overwatch-open");
-		if (!isOverwatchFrame && !capabilities.has(frame.sessionId)) return;
+		const isLinkClose = options.link !== undefined && frame.type === "session-closed";
+		if (!isOverwatchFrame && !isLinkClose && !capabilities.has(frame.sessionId))
+			return;
 
 		if (frame.type === "session-disconnected") {
 			const waiter = disconnectWaiters.get(frame.sessionId);
@@ -424,16 +480,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			dropOutbox(frame.sessionId);
 			disconnectWaiters.delete(frame.sessionId);
 			waiter.resolve();
-			if (capabilities.size === 0) {
-				if (retryTimer !== undefined) clearTimeout(retryTimer);
-				retryTimer = undefined;
-				const previous = socket;
-				socket = null;
-				socketGeneration += 1;
-				hasAttemptInFlight = false;
-				previous?.close?.();
-				setConnectionState("daemon-not-running");
-			}
+			closeSocketWithoutSessions();
 		}
 		if (frame.type === "error") {
 			disconnectWaiters.get(frame.sessionId)?.reject(new Error("The daemon did not confirm disconnect. Update dg-daemon and retry."));
@@ -463,6 +510,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function openAndBind(): void {
+		stopLinkPing();
 		socketGeneration += 1;
 		confirmedSessions.clear();
 		let opened: ChatClientSocket;
@@ -501,6 +549,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		});
 		opened.addEventListener("close", () => {
 			closed = true;
+			if (socket === opened) stopLinkPing();
 			if (socket === opened) scheduleReconnect();
 		});
 		opened.addEventListener("message", (event) => {
@@ -555,8 +604,24 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		openAndBind();
 	}
 
+	function reopenAt(next: number): void {
+		port = next;
+		if (retryTimer !== undefined) clearTimeout(retryTimer);
+		retryTimer = undefined;
+		const previous = socket;
+		socket = null;
+		socketGeneration += 1;
+		hasAttemptInFlight = true;
+		previous?.close?.();
+		openAndBind();
+	}
+
 	return {
 		connect: connectSession,
+
+		openLink(next: number): void {
+			if (options.link) reopenAt(next);
+		},
 
 		addSession(bootstrap: SessionBootstrap): void {
 			if (capabilities.has(bootstrap.sessionId)) return;
@@ -684,20 +749,11 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 			confirmedSessions.delete(sessionId);
 			disconnectWaiters.delete(sessionId);
 			dropOutbox(sessionId);
-			if (capabilities.size === 0) {
-				if (retryTimer !== undefined) clearTimeout(retryTimer);
-				retryTimer = undefined;
-				const previous = socket;
-				socket = null;
-				socketGeneration += 1;
-				hasAttemptInFlight = false;
-				previous?.close?.();
-				setConnectionState("daemon-not-running");
-			}
+			closeSocketWithoutSessions();
 		},
 
 		retryNow(): void {
-			if (capabilities.size === 0) {
+			if (capabilities.size === 0 && !options.link) {
 				setConnectionState("daemon-not-running");
 				return;
 			}

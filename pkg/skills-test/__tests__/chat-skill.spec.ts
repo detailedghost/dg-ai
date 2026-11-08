@@ -14,10 +14,25 @@ describe("chat skill extension notes", () => {
 		"utf8",
 	);
 
-	test("the extension notes describe popup pairing and never a side panel", () => {
-		expect(reference).toMatch(/dg-agent pair/);
-		expect(reference).not.toMatch(/side panel/i);
-		expect(reference).not.toMatch(/Attach CLI session|New session for CLI/);
-		expect(skill).not.toMatch(/side panel|Attach CLI session/i);
+	test("the extension notes describe zero-touch pairing and never a code or a side panel", () => {
+		for (const text of [skill, reference]) {
+			expect(text).toContain("dg-agent start");
+			expect(text).toContain("dg-skills install");
+			expect(text).toContain(
+				"No browser extension is connected. Install it with: dg-skills install",
+			);
+			expect(text).toContain(
+				"Paired <identity> (<id8>) with the browser extension.",
+			);
+			expect(text).not.toMatch(/dg-agent pair|six-digit|pairing code|_chat=/);
+			expect(text).not.toMatch(/side panel|Attach CLI session|New session for CLI/i);
+		}
+		expect(reference).toContain("Load unpacked");
+	});
+
+	test("the skill documents spawn with a command and the session lookup order", () => {
+		expect(skill).toContain("[-- <command...>]");
+		expect(skill).toContain("DG_SESSION_ID");
+		expect(skill).toContain("extensionLinked");
 	});
 });

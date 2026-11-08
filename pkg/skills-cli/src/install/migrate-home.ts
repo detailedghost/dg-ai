@@ -82,7 +82,6 @@ function legacyMoves(paths: DgPaths, ssmsConfigDir: string): Move[] {
 		{ from: at("daemon", "logs"), to: paths.logDir },
 		{ from: at("daemon"), to: paths.daemonDir },
 		{ from: at("grants"), to: paths.grantsDir },
-		{ from: at("pairing.json"), to: paths.pairingPath },
 		{ from: at("phone-friend"), to: paths.phoneFriendRoot },
 		{ from: at("inbox"), to: join(paths.stateDir, "inbox") },
 		{

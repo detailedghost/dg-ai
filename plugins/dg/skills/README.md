@@ -11,7 +11,7 @@ binaries. The skills-root README itself is not installed.
 | `demo/` | Guided browser demos with optional setup and video recording; plays in a local browser by default, through the extension with `--ext` |
 | `proto/` | Compare app-native UI approaches on a live page |
 | `verify/` | Review a finished change round by round and record a verdict per round |
-| `chat/` | Live chat on a local page that dg-daemon serves; `--ext` pairs the browser through the extension popup |
+| `chat/` | Live chat on a local page that dg-daemon serves; the extension pairs with each session on its own |
 | `inbox-cleanup/` | Review Proton Mail, Gmail, or Outlook cleanup with redacted feedback |
 | `channel-review/` | Local thrash reviews for Teams PR and MR requests through a bot relay |
 | `google-sms-cleanup/` | Review Messages for Web without deletion or unapproved sends |
@@ -129,10 +129,10 @@ adjacent dg-daemon (`daemon-v*`). Most compiled helpers run through dg-skills
 (`skills-v*`). User terminal commands can use `dg-skills`; skill instructions
 check the installed binary once and call `dg-skills` from PATH, or the launcher path the block names.
 
-`dg-skills install --cli-only` skips the extension, pairing, dg-daemon and
+`dg-skills install --cli-only` skips the extension, dg-daemon and
 dg-agent. No skill declares `requires: [extension]`. `browser`, `proto`, `demo`,
 `chat` and `overwatch` run locally by default, and `--ext` requires the
-extension, which pairs the browser through its popup. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
+extension, which pairs with each session on its own. `chat` and `overwatch` still need dg-agent and dg-daemon, so their
 bootstrap block runs the full installer, which removes the CLI-only marker. The
 CLI-only set includes stash, proxy, clipboard-img, and other skills without
 that requirement. Live inbox profiles still need

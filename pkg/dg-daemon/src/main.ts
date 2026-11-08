@@ -8,7 +8,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE, forever },
 		{ registerJobCommands },
 		{ registerOriginCommands },
-		{ registerPairCommand },
 		{ registerSessionCommands },
 		{ registerServiceCommands },
 	] = await Promise.all([
@@ -16,7 +15,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 		import("@dg/common"),
 		import("./commands/jobs"),
 		import("./commands/origin"),
-		import("./commands/pair"),
 		import("./commands/sessions"),
 		import("./commands/service"),
 	]);
@@ -49,7 +47,6 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 	registerJobCommands(program);
 	registerOriginCommands(program);
-	registerPairCommand(program);
 	registerSessionCommands(program);
 	registerServiceCommands(program);
 

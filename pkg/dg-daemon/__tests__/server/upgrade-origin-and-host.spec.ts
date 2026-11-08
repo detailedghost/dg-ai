@@ -50,6 +50,16 @@ async function registerSession(port: number) {
 	return validateSessionBootstrap(await resp.json());
 }
 
+const FIREFOX_ORIGIN = "moz-extension://first";
+
+function firefoxSocket(port: number, origin: string): WebSocket {
+	const Ctor = WebSocket as unknown as new (
+		url: string,
+		options: Bun.WebSocketOptions,
+	) => WebSocket;
+	return new Ctor(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: origin } });
+}
+
 function upgradeRequest(
 	port: number,
 	path: string,
@@ -162,7 +172,7 @@ describe("trust-on-first-use origin pinning", () => {
 		const port = await bootServe();
 		const bootstrap = await registerSession(port);
 
-		const first = wsExtensionSocket(port);
+		const first = firefoxSocket(port, FIREFOX_ORIGIN);
 		await waitForOpen(first);
 		sendConnectHandshake(first, bootstrap, CHAT_PROTOCOL_VERSION);
 		await new Promise((r) => setTimeout(r, 300));
@@ -170,7 +180,7 @@ describe("trust-on-first-use origin pinning", () => {
 
 		const resp = await upgradeRequest(port, "/ws", {
 			Host: `127.0.0.1:${port}`,
-			Origin: "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			Origin: "moz-extension://other",
 		});
 		expect(resp.status).toBe(400);
 		expect(await resp.text()).toContain("dg-daemon origin clear");
@@ -180,13 +190,13 @@ describe("trust-on-first-use origin pinning", () => {
 		const { port, dgHome } = await bootServeWithHome();
 		const bootstrap = await registerSession(port);
 
-		const first = wsExtensionSocket(port);
+		const first = firefoxSocket(port, FIREFOX_ORIGIN);
 		await waitForOpen(first);
 		sendConnectHandshake(first, bootstrap, CHAT_PROTOCOL_VERSION);
 		await new Promise((r) => setTimeout(r, 300));
 		first.close();
 
-		const otherOrigin = "chrome-extension://cccccccccccccccccccccccccccccccc";
+		const otherOrigin = "moz-extension://other";
 		const stillRefused = await upgradeRequest(port, "/ws", {
 			Host: `127.0.0.1:${port}`,
 			Origin: otherOrigin,

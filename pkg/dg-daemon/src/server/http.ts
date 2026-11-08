@@ -11,8 +11,6 @@ import {
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
-	CHAT_PAIR_CLAIM_PATH,
-	CHAT_PAIR_OFFER_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
@@ -29,21 +27,17 @@ import {
 	noteSecret,
 	type OverwatchAction,
 	OVERWATCH_SESSION_ID,
-	type PairClaimRequest,
-	type PairClaimResponse,
 	type SessionRole,
-	decideAttach,
 	decideLocalAttach,
 	validateAttachRequest,
 	validateOverwatchAction,
-	validatePairClaimRequest,
 } from "@dg/common";
 import {
 	type DgPaths,
 	readOwnerToken,
 	tokensEqual,
 } from "@dg/common/node";
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import { installAssetLifecycle } from "../assets/cleanup";
 import {
 	assetContentDisposition,
@@ -54,7 +48,6 @@ import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
-import { consumePairingAttempt } from "../pairing";
 import type { Supervisor } from "../services/supervisor";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import type {
@@ -74,7 +67,9 @@ import {
 	abortPendingWork,
 	type ConnectionManager,
 	createSocketState,
+	isExtensionPeer,
 	resolveDrainWaiters,
+	sendViaQueue,
 	type SocketState,
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
@@ -88,11 +83,12 @@ import {
 	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
+	isTrustedExtensionOrigin,
 	isLocalPageOrigin,
+	pinOriginIfUnset,
 	requireLocalPageOrigin,
 } from "./origin";
 import { localPageResponse } from "./pages";
-import { createPairOffers, type PairOffers } from "./pair-offers";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -147,8 +143,8 @@ function requireExtensionOrigin(
 	paths: DgPaths,
 ): Response | undefined {
 	const origin = req.headers.get("origin");
-	if (!isExtensionOrigin(origin)) {
-		return new Response("refused: requires an extension-scheme Origin", {
+	if (!isTrustedExtensionOrigin(origin)) {
+		return new Response("refused: requires the DeeGee extension Origin", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
 		});
@@ -202,24 +198,6 @@ function requireLocalOrPinnedOrigin(
 	return requirePinnedExtensionOrigin(req, deps.paths);
 }
 
-function requirePairOrigin(req: Request, paths: DgPaths): Response | undefined {
-	const origin = req.headers.get("origin");
-	if (origin === null || !isExtensionOrigin(origin)) {
-		return new Response("refused: /pair requires an extension-scheme Origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	const pinnedOrigin = getPinnedOrigin(paths);
-	if (pinnedOrigin !== undefined && pinnedOrigin !== origin) {
-		return new Response(
-			"refused: another extension origin is pinned; run `dg-daemon origin clear` and try again",
-			{ status: 409, headers: NOSNIFF_HEADERS },
-		);
-	}
-	return undefined;
-}
-
 function requireLoopbackHost(req: Request, port: number): Response | undefined {
 	if (isLoopbackHost(req.headers.get("host"), port)) return undefined;
 	return new Response("refused: Host header is not the loopback authority", {
@@ -267,17 +245,14 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		store,
 		credentials,
 		dispatchScheduler,
+		port,
+		daemonId: deps.daemonId,
 		overwatchOpenRequests: new Map(),
 	};
 
-	const pairOffers = createPairOffers();
 	const attachLimiter = createAttachLimiter();
-	const offerLimiter = createAttachLimiter();
 	const pageCodes = createPageCodes();
 	const exchangeLimiter = createAttachLimiter();
-	registry.on("closed", ({ sessionId }: { sessionId: string }) => {
-		pairOffers.forget(sessionId);
-	});
 
 	const boundServer = Bun.serve<SocketState>({
 		hostname: "127.0.0.1",
@@ -367,21 +342,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_START_PATH && req.method === "POST") {
 				return handleRegisterSession(req, deps);
-			}
-
-			if (url.pathname === CHAT_PAIR_OFFER_PATH && req.method === "POST") {
-				return handlePairOfferCreate(req, deps, pairOffers, offerLimiter);
-			}
-
-			if (
-				url.pathname.startsWith(`${CHAT_PAIR_OFFER_PATH}/`) &&
-				req.method === "POST"
-			) {
-				return handlePairOfferStatus(req, url, deps, pairOffers);
-			}
-
-			if (url.pathname === CHAT_PAIR_CLAIM_PATH && req.method === "POST") {
-				return handlePairClaim(req, deps, pairOffers);
 			}
 
 			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
@@ -595,163 +555,25 @@ function createSessionResponse(
 		return new Response(`cwd does not resolve: ${input.cwd}`, { status: 400 });
 	}
 	deps.noteActivity();
+	const extensionLinked =
+		deps.connections.pushSessionAdopt(record, {
+			port: deps.port,
+			daemonId: deps.daemonId,
+		}) > 0;
 
 	return json({
 		port: deps.port,
 		sessionId: record.sessionId,
 		token: record.token,
 		agentIdentity: record.agentIdentity,
+		extensionLinked,
 	});
 }
 
 const PAIR_HEADERS = { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" };
 
-const PAIR_OFFER_ID =
-	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-const PAIR_CLAIM_REFUSALS = {
-	"no-match": {
-		status: 404,
-		text: "no pairing offer matches this code; open the extension popup and read the code again",
-	},
-	expired: {
-		status: 410,
-		text: "pairing offer expired; open the extension popup for a new code",
-	},
-	locked: {
-		status: 429,
-		text: "too many wrong pairing codes; reopen the extension popup for a new code",
-	},
-} as const;
-
-function pairText(body: string, status: number): Response {
-	return new Response(body, { status, headers: PAIR_HEADERS });
-}
-
 function pairJson(body: unknown, status = 200): Response {
 	return json(body, { status, headers: { "Cache-Control": "no-store" } });
-}
-
-function noStore(response: Response): Response {
-	response.headers.set("Cache-Control", "no-store");
-	return response;
-}
-
-function pairOrigin(req: Request, paths: DgPaths): string | Response {
-	const refusal = requirePairOrigin(req, paths);
-	return refusal ? noStore(refusal) : (req.headers.get("origin") ?? "");
-}
-
-function handlePairOfferCreate(
-	req: Request,
-	deps: HttpServerDeps,
-	offers: PairOffers,
-	limiter: AttachLimiter,
-): Response {
-	const origin = pairOrigin(req, deps.paths);
-	if (origin instanceof Response) return origin;
-	if (!limiter.allow(origin)) {
-		return pairText("too many pairing offers; wait a minute", 429);
-	}
-	const offer = offers.create({ origin });
-	if ("outcome" in offer) {
-		return pairText("too many pairing offers; wait for one to expire", 429);
-	}
-	return pairJson(offer, 201);
-}
-
-function handlePairOfferStatus(
-	req: Request,
-	url: URL,
-	deps: HttpServerDeps,
-	offers: PairOffers,
-): Response {
-	const origin = pairOrigin(req, deps.paths);
-	if (origin instanceof Response) return origin;
-	const offerId = url.pathname.slice(CHAT_PAIR_OFFER_PATH.length + 1);
-	if (!PAIR_OFFER_ID.test(offerId)) {
-		return pairText("no pairing offer with that id", 404);
-	}
-	const status = offers.status({ offerId, origin });
-	return status === undefined
-		? pairText("no pairing offer with that id", 404)
-		: pairJson(status);
-}
-
-async function handlePairClaim(
-	req: Request,
-	deps: HttpServerDeps,
-	offers: PairOffers,
-): Promise<Response> {
-	if (req.headers.get("origin") !== null) {
-		return pairText("refused: /pair/claim is loopback-only", 400);
-	}
-	const refused = requireOwnerCredential(req, deps.paths);
-	if (refused) return noStore(refused);
-	const contentType = (req.headers.get("content-type") ?? "")
-		.split(";")[0]
-		.trim();
-	if (contentType !== "application/json") {
-		return pairText("Content-Type must be application/json", 415);
-	}
-
-	let request: PairClaimRequest;
-	try {
-		request = validatePairClaimRequest(await req.json());
-	} catch (err) {
-		return pairText(describeError(err), 400);
-	}
-
-	const record = deps.registry.get(request.sessionId);
-	if (!record || record.state !== "active") {
-		return pairText("session not found", 404);
-	}
-
-	noteSecret(record.token);
-	const result = offers.claim({
-		code: request.code,
-		bootstrap: {
-			port: deps.port,
-			sessionId: record.sessionId,
-			token: record.token,
-			agentIdentity: record.agentIdentity,
-		},
-	});
-	if (result.outcome !== "claimed") {
-		const refusal = PAIR_CLAIM_REFUSALS[result.outcome];
-		return pairText(refusal.text, refusal.status);
-	}
-	return pairJson({
-		ok: true,
-		agentIdentity: record.agentIdentity,
-	} satisfies PairClaimResponse);
-}
-
-function pairingAttemptResponse(
-	attempt: ReturnType<typeof consumePairingAttempt>,
-): Response {
-	if (attempt.outcome === "missing") {
-		return new Response("no pairing code is pending; run `dg-daemon pair`", {
-			status: 404,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "expired") {
-		return new Response("pairing code expired; run `dg-daemon pair`", {
-			status: 410,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "incorrect") {
-		return new Response(
-			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
-			{ status: 401, headers: NOSNIFF_HEADERS },
-		);
-	}
-	return new Response("pairing code was not accepted", {
-		status: 401,
-		headers: NOSNIFF_HEADERS,
-	});
 }
 
 async function handleLocalAttach(
@@ -778,9 +600,6 @@ async function handleLocalAttach(
 		request = validateAttachRequest(await req.json());
 	} catch (err) {
 		return refuse(describeError(err), 400);
-	}
-	if (request.all === true || request.code !== undefined) {
-		return refuse("refused: local pages attach one session by id", 400);
 	}
 	const records = deps.registry.list().flatMap((summary) => {
 		const record = deps.registry.get(summary.sessionId);
@@ -818,12 +637,15 @@ async function handleLocalAttach(
 	});
 }
 
-function handleChatCodeMint(
+async function handleChatCodeMint(
 	req: Request,
 	deps: HttpServerDeps,
 	codes: PageCodes,
 	limiter: AttachLimiter,
-): Response {
+): Promise<Response> {
+	if (req.headers.has(OWNER_TOKEN_HEADER)) {
+		return handleOwnerCodeMint(req, deps, codes, limiter);
+	}
 	const originError = requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
 	const bearer = bearerToken(req);
@@ -848,6 +670,39 @@ function handleChatCodeMint(
 			status: 429,
 			headers: NOSNIFF_HEADERS,
 		});
+	}
+	return pairJson({ code: codes.mint(record.sessionId) });
+}
+
+const OWNER_MINT_LIMIT_KEY = "owner";
+
+async function handleOwnerCodeMint(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: PAIR_HEADERS });
+	if (req.headers.get("origin") !== null) {
+		return refuse("refused: the owner token takes no Origin", 400);
+	}
+	if (!hasOwnerCredential(req, deps.paths)) return refuse("refused", 401);
+	if (!limiter.allow(OWNER_MINT_LIMIT_KEY)) {
+		return refuse("too many requests", 429);
+	}
+	let sessionId: unknown;
+	try {
+		sessionId = ((await req.json()) as { sessionId?: unknown }).sessionId;
+	} catch {
+		return refuse("invalid JSON body", 400);
+	}
+	if (typeof sessionId !== "string" || sessionId.length === 0) {
+		return refuse("body must carry a sessionId", 400);
+	}
+	const record = deps.registry.get(sessionId);
+	if (record === undefined || record.state !== "active") {
+		return refuse("no such session", 404);
 	}
 	return pairJson({ code: codes.mint(record.sessionId) });
 }
@@ -897,76 +752,9 @@ async function handleAttach(
 	if (bearer !== undefined && claimsLocalPage(req, url, deps.port)) {
 		return handleLocalAttach(req, url, deps, limiter, bearer);
 	}
-	const originError = requirePairOrigin(req, deps.paths);
-	if (originError) return originError;
-	let body: unknown;
-	try {
-		body = await req.json();
-	} catch {
-		return new Response("invalid JSON body", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	let request: ReturnType<typeof validateAttachRequest>;
-	try {
-		request = validateAttachRequest(body);
-	} catch (err) {
-		return new Response(describeError(err), {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	let codeAccepted = false;
-	if (request.code !== undefined) {
-		const attempt = consumePairingAttempt(deps.paths, request.code);
-		if (attempt.outcome !== "accepted") return pairingAttemptResponse(attempt);
-		codeAccepted = true;
-	}
-	const candidates = activeCandidates(deps);
-	const decision = decideAttach({
-		intent: request.intent,
-		sessionId: request.sessionId,
-		all: request.all,
-		codeAccepted,
-		sessions: candidates,
-	});
-	if (decision.action === "reject") {
-		return new Response(decision.message, {
-			status: decision.status,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	return json({
-		sessions: candidates
-			.filter((session) => decision.sessionIds.includes(session.sessionId))
-			.map((session) => ({
-				port: deps.port,
-				sessionId: session.sessionId,
-				token: session.token,
-				agentIdentity: session.agentIdentity,
-			})),
-	});
-}
-
-function activeCandidates(deps: HttpServerDeps): {
-	sessionId: string;
-	token: string;
-	agentIdentity: string;
-	state: "active" | "closed";
-}[] {
-	const listed = deps.registry.list();
-	return listed.flatMap((summary) => {
-		const record = deps.registry.get(summary.sessionId);
-		if (!record || record.state !== "active") return [];
-		return [
-			{
-				sessionId: record.sessionId,
-				token: record.token,
-				agentIdentity: record.agentIdentity,
-				state: record.state,
-			},
-		];
+	return new Response("refused: attach requires a local page", {
+		status: 400,
+		headers: NOSNIFF_HEADERS,
 	});
 }
 
@@ -1120,9 +908,13 @@ function handleWsUpgrade(
 			)
 		: requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
+	if (!localPage) pinOriginIfUnset(deps.paths, origin as string);
 	const data = localPage
 		? { ...createSocketState("ws", deps.logger), localPage: true }
-		: createSocketState("ws", deps.logger, origin as string);
+		: {
+				...createSocketState("ws", deps.logger, origin as string),
+				stillPinned: () => getPinnedOrigin(deps.paths) === origin,
+			};
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

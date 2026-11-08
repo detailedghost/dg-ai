@@ -1,7 +1,6 @@
 import {
 	registerAgentTabs,
 	registerDaemonLink,
-	registerPairOffer,
 	registerProto,
 	registerRecording,
 	registerTabGrouping,
@@ -19,5 +18,4 @@ export default defineBackground(() => {
 	registerAgentTabs({
 		busy: ({ sessionId }) => link.pending(sessionId).length > 0,
 	});
-	registerPairOffer({ adopt: link.adopt, findPort: link.daemonPort });
 });

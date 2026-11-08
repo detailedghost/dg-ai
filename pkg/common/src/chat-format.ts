@@ -929,3 +929,41 @@ export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 	});
 	return value as SessionBootstrap;
 }
+
+export type SessionAdopt = {
+	type: "session-adopt";
+	bootstrap: SessionBootstrap & { daemonId: string };
+};
+
+export function validateSessionAdopt(value: unknown): SessionAdopt {
+	requireRecord(value, "session-adopt");
+	if (value.type !== "session-adopt") {
+		fail('session-adopt.type must be "session-adopt"');
+	}
+	const bootstrap = validateSessionBootstrap(value.bootstrap);
+	requireString(
+		(bootstrap as Record<string, unknown>).daemonId,
+		"session-adopt.bootstrap.daemonId",
+		{ nonEmpty: true },
+	);
+	return value as SessionAdopt;
+}
+
+const LINK_FRAME_TYPES = ["link-ready", "link-ping"] as const;
+
+export type LinkFrame = { type: (typeof LINK_FRAME_TYPES)[number] };
+
+export function isLinkFrame(value: unknown): value is { type: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as { type?: unknown }).type === "string" &&
+		(value as { type: string }).type.startsWith("link-")
+	);
+}
+
+export function validateLinkFrame(value: unknown): LinkFrame {
+	requireRecord(value, "link frame");
+	requireOneOf(value.type, "link frame.type", LINK_FRAME_TYPES);
+	return { type: value.type };
+}

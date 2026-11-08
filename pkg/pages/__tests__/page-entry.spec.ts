@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { CHAT_MARKER_KEY, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { CHAT_CODE_KEY, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { exchangeReply, pageFragment as fragment } from "./utils/page-code";
 import { Window } from "happy-dom";
 
 const BOOTSTRAP = {
@@ -42,10 +43,6 @@ afterEach(async () => {
 	await openWindow?.happyDOM.close();
 	openWindow = undefined;
 });
-
-function fragment(value: unknown): string {
-	return `${CHAT_MARKER_KEY}=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
-}
 
 type SocketListener = (event: unknown) => void;
 
@@ -173,6 +170,8 @@ function installGlobals(href: string): Net {
 		sessionStorage: win.sessionStorage,
 		WebSocket: FakeSocket,
 		fetch: (url: string, init?: RequestInit) => {
+			const exchanged = exchangeReply(url, init);
+			if (exchanged) return Promise.resolve(exchanged);
 			net.fetches.push({ url, init });
 			return net.respond(url);
 		},
@@ -361,7 +360,7 @@ describe("chat page entry wiring", () => {
 
 		expect(storedHeld(net)).toMatchObject([{ token: BOOTSTRAP.token }]);
 		expect(net.win.localStorage.getItem(HELD_BOOTSTRAPS_KEY)).toBeNull();
-		expect(net.win.location.href).not.toContain(CHAT_MARKER_KEY);
+		expect(net.win.location.href).not.toContain(CHAT_CODE_KEY);
 	});
 
 	test("drops the stored bootstrap when the socket closes before it opens and the daemon refuses the token", async () => {

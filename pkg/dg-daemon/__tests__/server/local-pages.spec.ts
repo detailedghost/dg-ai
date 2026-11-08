@@ -4,7 +4,6 @@ import { CHAT_PROTOCOL_VERSION } from "@dg/common";
 import { inboxBrowserRequest } from "../../../common/__tests__/utils/inbox-fixtures";
 import { resolveDgPaths } from "@dg/common/node";
 import { ASSET_DIRECTORY_CONFIG_KEY } from "../../src/assets/config";
-import { consumePairingAttempt, createPairingCode } from "../../src/pairing";
 import { readConfig } from "../../src/server/config-store";
 import { getPinnedOrigin } from "../../src/server/origin";
 import {
@@ -906,11 +905,9 @@ describe("POST /attach with a local page bearer", () => {
 		expect(await response.text()).not.toContain(target.token);
 	});
 
-	it("requires a sessionId and refuses all or code from a bearer without touching the pairing counter", async () => {
-		const { port, dgHome } = await boot();
+	it("requires a sessionId and refuses all or code from a bearer", async () => {
+		const { port } = await boot();
 		const held = await liveCli(port);
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		createPairingCode(paths);
 
 		const bodies = [
 			{ intent: "attach" },
@@ -923,9 +920,6 @@ describe("POST /attach with a local page bearer", () => {
 				expect((await attach(port, held.token, body)).status).toBe(400);
 			}
 		}
-
-		const next = consumePairingAttempt(paths, "000000");
-		expect(next).toEqual({ outcome: "incorrect", attemptsLeft: 4 });
 	});
 
 	it("answers 429 with the exact text on the 31st request in a minute and keeps the limit per token", async () => {
@@ -972,7 +966,7 @@ describe("POST /attach with a local page bearer", () => {
 		);
 	});
 
-	it("keeps the extension Origin path: a code-less extension attach is still 401 and an http Origin without a bearer is 400", async () => {
+	it("keeps the extension Origin path: an extension attach is refused with 400 and so is an http Origin without a bearer", async () => {
 		const { port } = await boot();
 		const target = await liveCli(port);
 		const body = { intent: "attach", sessionId: target.sessionId };
@@ -980,7 +974,8 @@ describe("POST /attach with a local page bearer", () => {
 		const extension = await attach(port, undefined, body, EXTENSION_ORIGIN);
 		const plainPage = await attach(port, undefined, body, loopbackOrigin(port));
 
-		expect(extension.status).toBe(401);
+		expect(extension.status).toBe(400);
+		expect(await extension.text()).not.toContain(target.token);
 		expect(plainPage.status).toBe(400);
 		expect(await plainPage.text()).not.toContain(target.token);
 	});

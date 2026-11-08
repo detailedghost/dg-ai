@@ -1,6 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import { CHAT_MARKER_KEY } from "@dg/common";
-import { readChatBootstrap } from "../src/chat-marker";
 import {
 	attachLocalSession,
 	exchangeChatCode,
@@ -10,6 +9,8 @@ import {
 	storeLocalBootstraps,
 } from "../src/local";
 import { browserStorage, memoryStorage, positionAreaFor } from "../src/runtime";
+
+const BARE_CHAT = "http://127.0.0.1:47823/chat";
 
 const BOOTSTRAP = {
 	port: 47823,
@@ -46,40 +47,27 @@ function fakeWindow(
 	} as unknown as Window;
 }
 
-test("readChatBootstrap decodes the _chat fragment marker", () => {
+test("loadLocalBootstraps ignores a _chat marker in the address and in the navigation entry", () => {
 	const url = `http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`;
+	const replaced: string[] = [];
 
-	expect(readChatBootstrap(url)).toEqual(BOOTSTRAP);
+	expect(loadLocalBootstraps(fakeWindow(url, url, replaced), memoryStorage())).toEqual([]);
+	expect(replaced).toEqual([]);
 });
 
-test("readChatBootstrap ignores a missing or malformed marker", () => {
-	expect(readChatBootstrap("http://127.0.0.1:47823/chat")).toBeUndefined();
-	expect(
-		readChatBootstrap("http://127.0.0.1:47823/chat#_chat=!!!"),
-	).toBeUndefined();
-	expect(
-		readChatBootstrap(`http://127.0.0.1:47823/chat#${marker({ port: 1 })}`),
-	).toBeUndefined();
-});
-
-test("loadLocalBootstrap falls back to the navigation entry when an extension stripped the fragment", () => {
+test("loadLocalBootstrap ignores a refused token that the exchange presents again", () => {
 	const storage = memoryStorage();
-	const navigation = `http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`;
+	loadLocalBootstrap(fakeWindow(BARE_CHAT), storage, BOOTSTRAP);
 
-	const loaded = loadLocalBootstrap(
-		fakeWindow("http://127.0.0.1:47823/chat", navigation),
-		storage,
-	);
+	forgetLocalBootstrap(storage, BOOTSTRAP.token);
 
-	expect(loaded).toEqual(BOOTSTRAP);
+	expect(loadLocalBootstrap(fakeWindow(BARE_CHAT), storage, BOOTSTRAP)).toBeUndefined();
 });
 
 test("loadLocalBootstrap restores the stored session on a reload without a fragment", () => {
 	const storage = memoryStorage();
 	loadLocalBootstrap(
-		fakeWindow(`http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`),
-		storage,
-	);
+		fakeWindow(BARE_CHAT), storage, BOOTSTRAP);
 
 	const reloaded = loadLocalBootstrap(
 		fakeWindow("http://127.0.0.1:47823/chat"),
@@ -89,38 +77,10 @@ test("loadLocalBootstrap restores the stored session on a reload without a fragm
 	expect(reloaded).toEqual(BOOTSTRAP);
 });
 
-test("loadLocalBootstrap strips the token fragment from the address bar after reading it", () => {
-	const replaced: string[] = [];
-
-	loadLocalBootstrap(
-		fakeWindow(
-			`http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`,
-			undefined,
-			replaced,
-		),
-		memoryStorage(),
-	);
-
-	expect(replaced).toEqual(["http://127.0.0.1:47823/chat"]);
-});
-
-test("loadLocalBootstrap leaves the address bar alone when no marker is present", () => {
-	const replaced: string[] = [];
-
-	loadLocalBootstrap(
-		fakeWindow("http://127.0.0.1:47823/chat", undefined, replaced),
-		memoryStorage(),
-	);
-
-	expect(replaced).toEqual([]);
-});
-
 test("forgetLocalBootstrap drops the stored session so a reload cannot reuse a refused token", () => {
 	const storage = memoryStorage();
 	loadLocalBootstrap(
-		fakeWindow(`http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`),
-		storage,
-	);
+		fakeWindow(BARE_CHAT), storage, BOOTSTRAP);
 
 	forgetLocalBootstrap(storage, BOOTSTRAP.token);
 
@@ -129,33 +89,16 @@ test("forgetLocalBootstrap drops the stored session so a reload cannot reuse a r
 	).toBeUndefined();
 });
 
-test("loadLocalBootstrap ignores a refused token that the fragment or the navigation entry presents again", () => {
-	const storage = memoryStorage();
-	const url = `http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`;
-	loadLocalBootstrap(fakeWindow(url), storage);
-
-	forgetLocalBootstrap(storage, BOOTSTRAP.token);
-
-	expect(loadLocalBootstrap(fakeWindow(url), storage)).toBeUndefined();
-	expect(
-		loadLocalBootstrap(fakeWindow("http://127.0.0.1:47823/chat", url), storage),
-	).toBeUndefined();
-});
-
 test("loadLocalBootstrap still accepts a different token after another was refused", () => {
 	const storage = memoryStorage();
 	loadLocalBootstrap(
-		fakeWindow(`http://127.0.0.1:47823/chat#${marker(BOOTSTRAP)}`),
-		storage,
-	);
+		fakeWindow(BARE_CHAT), storage, BOOTSTRAP);
 	forgetLocalBootstrap(storage, BOOTSTRAP.token);
 	const fresh = { ...BOOTSTRAP, sessionId: "session-b", token: "tok-b" };
 
 	expect(
 		loadLocalBootstrap(
-			fakeWindow(`http://127.0.0.1:47823/chat#${marker(fresh)}`),
-			storage,
-		),
+			fakeWindow(BARE_CHAT), storage, fresh),
 	).toEqual(fresh);
 });
 
@@ -203,7 +146,6 @@ test("browserStorage keeps a value in memory when the browser refuses the write"
 const HELD_KEY = "dg_local_bootstraps";
 const LEGACY_KEY = "dg_local_bootstrap";
 const REFUSED_KEY = "dg_local_refused";
-const BARE_CHAT = "http://127.0.0.1:47823/chat";
 
 function bootstrapFor(index: number) {
 	return {
@@ -211,10 +153,6 @@ function bootstrapFor(index: number) {
 		sessionId: `session-${index}`,
 		token: `tok-${index}`,
 	};
-}
-
-function chatUrl(value: unknown, path = "chat"): string {
-	return `http://127.0.0.1:47823/${path}#${marker(value)}`;
 }
 
 function heldIds(storage: ReturnType<typeof memoryStorage>): string[] {
@@ -225,15 +163,12 @@ function heldIds(storage: ReturnType<typeof memoryStorage>): string[] {
 test("loadLocalBootstraps keeps both sessions when two fragments load in the same tab and drops the single key", () => {
 	const storage = memoryStorage();
 	const [a, b] = [bootstrapFor(1), bootstrapFor(2)];
-	const replaced: string[] = [];
-
-	loadLocalBootstraps(fakeWindow(chatUrl(a), undefined, replaced), storage);
-	const held = loadLocalBootstraps(fakeWindow(chatUrl(b), undefined, replaced), storage);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, a);
+	const held = loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, b);
 
 	expect(held).toEqual([b, a]);
 	expect(heldIds(storage)).toEqual([a.sessionId, b.sessionId]);
 	expect(storage.get(LEGACY_KEY)).toBeNull();
-	expect(replaced).toEqual([BARE_CHAT, BARE_CHAT]);
 });
 
 test("loadLocalBootstraps lists the session from the new fragment first while keeping the held set", () => {
@@ -241,7 +176,7 @@ test("loadLocalBootstraps lists the session from the new fragment first while ke
 	const [a, b] = [bootstrapFor(1), bootstrapFor(2)];
 	storeLocalBootstraps(storage, [a]);
 
-	const held = loadLocalBootstraps(fakeWindow(chatUrl(b)), storage);
+	const held = loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, b);
 
 	expect(held).toEqual([b, a]);
 	expect(heldIds(storage)).toEqual([a.sessionId, b.sessionId]);
@@ -259,8 +194,8 @@ test("loadLocalBootstraps deduplicates a fragment for a session it already holds
 	const storage = memoryStorage();
 	const a = bootstrapFor(1);
 
-	loadLocalBootstraps(fakeWindow(chatUrl(a)), storage);
-	loadLocalBootstraps(fakeWindow(chatUrl(a)), storage);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, a);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, a);
 
 	expect(heldIds(storage)).toEqual([a.sessionId]);
 });
@@ -270,7 +205,7 @@ test("loadLocalBootstraps caps the set at 16 entries and evicts the oldest on th
 	const all = Array.from({ length: 17 }, (_, index) => bootstrapFor(index + 1));
 
 	for (const entry of all) {
-		loadLocalBootstraps(fakeWindow(chatUrl(entry)), storage);
+		loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, entry);
 	}
 
 	expect(heldIds(storage)).toEqual(all.slice(1).map((entry) => entry.sessionId));
@@ -282,7 +217,7 @@ test("loadLocalBootstraps evicts the oldest refused entry before an older live o
 	storeLocalBootstraps(storage, all.slice(0, 16));
 	storage.set("dg_local_refused", JSON.stringify([all[5].token]));
 
-	loadLocalBootstraps(fakeWindow(chatUrl(all[16])), storage);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, all[16]);
 
 	expect(heldIds(storage)).toEqual(
 		all.filter((_, index) => index !== 5).map((entry) => entry.sessionId),
@@ -314,14 +249,14 @@ test("loadLocalBootstraps returns an empty set for a corrupt array and for a tab
 test("forgetLocalBootstrap removes only the refused session, remembers its token and ignores it when presented again", () => {
 	const storage = memoryStorage();
 	const [a, b] = [bootstrapFor(1), bootstrapFor(2)];
-	loadLocalBootstraps(fakeWindow(chatUrl(a)), storage);
-	loadLocalBootstraps(fakeWindow(chatUrl(b)), storage);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, a);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, b);
 
 	forgetLocalBootstrap(storage, a.token);
 
 	expect(heldIds(storage)).toEqual([b.sessionId]);
 	expect(JSON.parse(storage.get(REFUSED_KEY) ?? "[]")).toContain(a.token);
-	expect(loadLocalBootstraps(fakeWindow(chatUrl(a)), storage)).toEqual([b]);
+	expect(loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, a)).toEqual([b]);
 });
 
 test("loadLocalBootstrap returns the first live entry of the held set and moves on when it is forgotten", () => {
@@ -340,7 +275,7 @@ test("loadLocalBootstrap still gives the board a session after a /board fragment
 	const storage = memoryStorage();
 	const a = bootstrapFor(1);
 
-	loadLocalBootstraps(fakeWindow(chatUrl(a, "board")), storage);
+	loadLocalBootstraps(fakeWindow("http://127.0.0.1:47823/board"), storage, a);
 
 	expect(loadLocalBootstrap(fakeWindow("http://127.0.0.1:47823/board"), storage)).toEqual(a);
 });
@@ -350,8 +285,8 @@ test("loadLocalBootstraps ignores a fragment whose port is not the page port", (
 	const a = bootstrapFor(1);
 	const forged = { ...bootstrapFor(2), port: 9 };
 
-	loadLocalBootstraps(fakeWindow(chatUrl(a)), storage);
-	const held = loadLocalBootstraps(fakeWindow(chatUrl(forged)), storage);
+	loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, a);
+	const held = loadLocalBootstraps(fakeWindow(BARE_CHAT), storage, forged);
 
 	expect(held).toEqual([a]);
 	expect(heldIds(storage)).toEqual([a.sessionId]);
