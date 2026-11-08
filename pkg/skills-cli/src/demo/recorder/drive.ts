@@ -28,10 +28,12 @@ export type DriveOptions = {
 	chapterMs?: number;
 	leadMs?: number;
 	pause?(ms: number): Promise<void>;
+	/** Clock for offsets; the player counts from the start of the recording. */
 	now?(): number;
 };
 
-export type DriveResult = { steps: number; offsets: number[] };
+/** `startMs` is when the first frame worth keeping begins; `offsets` are when each step's caption shows. */
+export type DriveResult = { steps: number; startMs: number; offsets: number[] };
 
 export class StepError extends Error {
 	constructor(
@@ -83,9 +85,9 @@ export async function recordTour(
 	const now = options.now ?? Date.now;
 	const viewport = page.viewportSize() ?? { width: 1440, height: 810 };
 	const offsets: number[] = [];
-	const start = now();
 
 	await page.goto(script.startUrl, { waitUntil: "load" });
+	const startMs = now();
 	if (o.overlays) await chapter(page, introChapter(script), o.chapterMs, pause);
 
 	const steps = playbackSteps(script);
@@ -106,7 +108,7 @@ export async function recordTour(
 			await target.scrollIntoViewIfNeeded();
 			box = await target.boundingBox();
 		}
-		offsets.push(now() - start);
+		offsets.push(now());
 		if (o.overlays) {
 			await showCaption(page, {
 				eyebrow: step.title ?? `Step ${index + 1}`,
@@ -134,5 +136,5 @@ export async function recordTour(
 		await clearOverlays(page);
 		await chapter(page, script.outro, o.chapterMs, pause);
 	}
-	return { steps: steps.length, offsets };
+	return { steps: steps.length, startMs, offsets };
 }
