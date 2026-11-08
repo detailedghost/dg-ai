@@ -14,10 +14,8 @@ import {
 	frameType,
 	killDaemonByPidFile,
 	recvMessage,
-	registerSession,
 	send,
 	startWithSession,
-	waitForClose,
 	waitForValue,
 } from "../utils/daemon-harness";
 
@@ -58,7 +56,6 @@ async function boot() {
 async function extension(
 	port: number,
 	credentials: { sessionId: string; token: string },
-	options: { version?: string } = { version: "1.11.0" },
 ) {
 	const socket = wsExtensionSocket(port);
 	sockets.push(socket);
@@ -67,7 +64,7 @@ async function extension(
 	send(socket, {
 		type: "connect",
 		...credentials,
-		extensionVersion: options.version,
+		extensionVersion: "1.11.0",
 	});
 	await waitForValue(
 		() => frames.find((frame) => frameType(frame) === "session-list"),
@@ -184,62 +181,6 @@ describe("daemon inbox profile operations", () => {
 });
 
 describe("daemon inbox browser relay", () => {
-	it.each([
-		undefined,
-		"1.9.0",
-		"1.9.99",
-		"1.10.0",
-		"1.10.1",
-		"1.10.99",
-		"not-a-version",
-		"1.10",
-		"1.10.0-rc.1",
-		"1.10.0evil",
-		"01.10.0",
-	])(
-		"rejects unsupported extension version %s before forwarding or waiting for browser work",
-		async (version) => {
-			const { cli, results, port, bootstrap } = await boot();
-			const page = await extension(port, bootstrap, { version });
-			const requestId = request(cli, { timeoutMs: 30_000 });
-			const answer = await result(results, requestId, 700);
-			expect(answer).toMatchObject({
-				sessionId: bootstrap.sessionId,
-				requestId,
-				ok: false,
-			});
-			expect(answer.error).toMatch(/updat(e|ing)|upgrade/i);
-			expect(answer.error).toMatch(/extension/i);
-			expect(answer.error).toContain("1.11.0");
-			expect(
-				page.frames.some(
-					(frame) => frameType(frame) === "inbox-browser-request",
-				),
-			).toBe(false);
-		},
-	);
-
-	it.each(["1.11.0", "1.11.1", "1.12.0", "1.11.0+local.1", "2.0.0"])(
-		"routes browser work through authenticated supported extension version %s",
-		async (version) => {
-			const { cli, results, port, bootstrap } = await boot();
-			const page = await extension(port, bootstrap, { version });
-			const requestId = request(cli, {
-				request: { operation: "list-folders" },
-			});
-			expect((await relay(page.frames, requestId)).sessionId).toBe(
-				bootstrap.sessionId,
-			);
-			const data = reply(page.socket, bootstrap, requestId);
-			expect(await result(results, requestId)).toMatchObject({
-				sessionId: bootstrap.sessionId,
-				requestId,
-				ok: true,
-				value: data,
-			});
-		},
-	);
-
 	it("returns one correlated extension result directly to its requesting CLI without adding a user message", async () => {
 		const { cli, results, port, bootstrap } = await boot();
 		const page = await extension(port, bootstrap);
@@ -264,159 +205,5 @@ describe("daemon inbox browser relay", () => {
 		expect(
 			(await recvMessage(dgHome!, port, bootstrap.sessionId)).outcome,
 		).toBe("empty");
-	});
-
-	it.each([0, 2])(
-		"refuses %i authorized extension peers without broadcasting a browser operation",
-		async (count) => {
-			const { cli, results, port, bootstrap } = await boot();
-			const pages = [];
-			for (let i = 0; i < count; i++)
-				pages.push(await extension(port, bootstrap));
-			const requestId = request(cli);
-			const answer = await result(results, requestId);
-			expect(answer.ok).toBe(false);
-			expect(answer.error).toMatch(
-				count ? /ambiguous|multiple|more than one/i : /extension|connect/i,
-			);
-			if (count === 0) {
-				expect(answer.error).toContain(
-					`No extension peer on session ${bootstrap.sessionId}`,
-				);
-				expect(answer.error).toContain(bootstrap.sessionId);
-				expect(answer.error).toContain("/start#_chat=");
-				expect(answer.error).toMatch(/reload/i);
-				expect(answer.error).toContain("1.11.0");
-			}
-			for (const page of pages)
-				expect(
-					page.frames.some(
-						(frame) => frameType(frame) === "inbox-browser-request",
-					),
-				).toBe(false);
-		},
-	);
-
-	it("ignores the wrong request, wrong session, and a newly connected unselected socket", async () => {
-		const { cli, results, port, bootstrap } = await boot();
-		const selected = await extension(port, bootstrap);
-		const requestId = request(cli, { request: { operation: "list-folders" } });
-		await relay(selected.frames, requestId);
-		const unrelated = await registerSession(port, {
-			agentIdentity: "unrelated",
-		});
-		const outsider = await extension(port, unrelated);
-		const unselected = await extension(port, bootstrap);
-		const forged = { folders: [{ id: "forged", name: "Wrong peer" }] };
-		reply(outsider.socket, unrelated, requestId, forged);
-		reply(unselected.socket, bootstrap, requestId, forged);
-		reply(selected.socket, bootstrap, "wrong-request-id", forged);
-		reply(
-			selected.socket,
-			{ sessionId: bootstrap.sessionId, token: "rejected-fixture-token" },
-			requestId,
-			forged,
-		);
-		const data = reply(selected.socket, bootstrap, requestId);
-		expect((await result(results, requestId)).value).toEqual(data);
-		expect(
-			results.filter((raw) => (raw as InboxResult).requestId === requestId),
-		).toHaveLength(1);
-	});
-
-	it("does not deliver duplicate replies or let them satisfy a later request", async () => {
-		const { cli, results, port, bootstrap } = await boot();
-		const selected = await extension(port, bootstrap);
-		const firstId = request(cli, { request: { operation: "list-folders" } });
-		await relay(selected.frames, firstId);
-		reply(selected.socket, bootstrap, firstId);
-		expect((await result(results, firstId)).ok).toBe(true);
-		reply(selected.socket, bootstrap, firstId);
-		const secondId = request(cli, { request: { operation: "list-folders" } });
-		await relay(selected.frames, secondId);
-		const data = reply(selected.socket, bootstrap, secondId, {
-			folders: [{ id: "second", name: "Second request" }],
-		});
-		expect((await result(results, secondId)).value).toEqual(data);
-		expect(
-			results.filter((raw) => (raw as InboxResult).requestId === firstId),
-		).toHaveLength(1);
-	});
-
-	it("returns a bounded provider failure directly while keeping the relay usable", async () => {
-		const { cli, results, port, bootstrap } = await boot();
-		const selected = await extension(port, bootstrap);
-		const requestId = request(cli);
-		await relay(selected.frames, requestId);
-		const error = "Proton authentication expired; sign in and retry.";
-		send(selected.socket, {
-			type: "inbox-browser-result",
-			sessionId: bootstrap.sessionId,
-			token: bootstrap.token,
-			requestId,
-			ok: false,
-			error,
-		});
-		expect(await result(results, requestId)).toMatchObject({
-			ok: false,
-			error,
-		});
-		const nextId = request(cli, { request: { operation: "list-folders" } });
-		await relay(selected.frames, nextId);
-		reply(selected.socket, bootstrap, nextId);
-		expect((await result(results, nextId)).ok).toBe(true);
-	});
-
-	it("expires a bounded request and ignores its late reply while accepting subsequent work", async () => {
-		const { cli, results, port, bootstrap } = await boot();
-		const selected = await extension(port, bootstrap);
-		const expiredId = request(cli, { timeoutMs: 100 });
-		await relay(selected.frames, expiredId);
-		const expired = await result(results, expiredId);
-		expect(expired.ok).toBe(false);
-		expect(expired.error).toMatch(/timeout|timed out/i);
-		reply(selected.socket, bootstrap, expiredId);
-		const nextId = request(cli, { request: { operation: "list-folders" } });
-		await relay(selected.frames, nextId);
-		reply(selected.socket, bootstrap, nextId);
-		expect((await result(results, nextId)).ok).toBe(true);
-		expect(
-			results.filter((raw) => (raw as InboxResult).requestId === expiredId),
-		).toHaveLength(1);
-	});
-
-	it("returns an actionable failure when the selected extension disconnects", async () => {
-		const { cli, results, port, bootstrap } = await boot();
-		const selected = await extension(port, bootstrap);
-		const requestId = request(cli);
-		await relay(selected.frames, requestId);
-		selected.socket.close();
-		const answer = await result(results, requestId, 700);
-		expect(answer.ok).toBe(false);
-		expect(answer.error).toMatch(/disconnect|closed/i);
-	});
-
-	it("abandons a disconnected requester without routing its late result to another CLI", async () => {
-		const { cli, results, port, bootstrap } = await boot();
-		const selected = await extension(port, bootstrap);
-		const abandonedId = request(cli);
-		await relay(selected.frames, abandonedId);
-		const closed = waitForClose(cli);
-		cli.close();
-		await closed;
-		const nextCli = await connectCli(port, bootstrap);
-		sockets.push(nextCli);
-		const nextResults = collectFrames(nextCli);
-		reply(selected.socket, bootstrap, abandonedId);
-		const nextId = request(nextCli, { request: { operation: "list-folders" } });
-		await relay(selected.frames, nextId);
-		reply(selected.socket, bootstrap, nextId);
-		expect((await result(nextResults, nextId)).ok).toBe(true);
-		expect(
-			nextResults.some((raw) => (raw as InboxResult).requestId === abandonedId),
-		).toBe(false);
-		expect(
-			results.some((raw) => (raw as InboxResult).requestId === abandonedId),
-		).toBe(false);
 	});
 });

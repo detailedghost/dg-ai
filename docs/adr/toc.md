@@ -86,6 +86,8 @@ flowchart LR
   `dg-daemon` serves `/chat` and `/board` behind a token and loopback-origin gate; the extension is the `--ext` path.
 - [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md) — Proposed:
   fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone.
+- [0037 — One browser relay for inbox, proto and pw-ext](0037-one-browser-relay.md) — Proposed:
+  one table-driven relay in the daemon and one dispatcher in the extension carry inbox, proto and pw-ext; frames stay byte-identical
 
 ## Adding an ADR
 
