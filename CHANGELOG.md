@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.1 (2026-11-08)
+
+### Fixes
+
+- fix(pairing): close the deferred Known Issues from #155 ([#156](https://github.com/detailedghost/dg-ai/pull/156))
+
 ## v2.0.0 (2026-11-08)
 
 ### Breaking
