@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.0 (2026-11-08)
+
+### Breaking
+
+- feat(extension)!: pair agents from a toolbar popup and drop the extension pages ([#155](https://github.com/detailedghost/dg-ai/pull/155))
+
 ## v1.43.0 (2026-11-06)
 
 ### Features
