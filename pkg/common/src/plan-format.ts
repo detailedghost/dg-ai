@@ -67,10 +67,10 @@ function validateChapter(value: unknown, key: string): void {
 		!c ||
 		typeof c !== "object" ||
 		!["eyebrow", "title", "detail"].every(
-			(field) => typeof c[field] === "string" && (c[field] as string).length > 0,
+			(field) => typeof c[field] === "string" && /^[^|"\n]+$/.test(c[field] as string),
 		)
 	)
-		throw new Error(`script.${key} must be "Eyebrow | Title | Detail"`);
+		throw new Error(`script.${key} must be "Eyebrow | Title | Detail", with no | or " in a part`);
 }
 
 /** Structural validation — the extension trusts what the CLI encodes. */

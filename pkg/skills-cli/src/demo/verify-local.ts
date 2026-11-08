@@ -49,9 +49,8 @@ const flattenSetup = (script: TourScript): TourScript => {
 	const { setup } = script;
 	if (!setup || setup.includeInTour) return script;
 	const [first, ...rest] = script.steps;
-	const moves = setup.steps.some((step) => step.navigate);
 	const steps =
-		first && !first.navigate && moves
+		first && !first.navigate && setup.steps.length > 0
 			? [{ ...first, navigate: script.startUrl }, ...rest]
 			: script.steps;
 	return { ...script, steps, setup: { ...setup, includeInTour: true } };

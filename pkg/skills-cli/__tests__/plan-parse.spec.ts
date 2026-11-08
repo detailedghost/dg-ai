@@ -188,6 +188,11 @@ describe("chapter cards", () => {
 		expect(validate(parsePlanMarkdown(toPlanMarkdown(withChapters)))).toEqual(withChapters);
 	});
 
+	it.each([["|"], ['"'], ["\n"]])("rejects a chapter field that holds %j, which the saved plan cannot carry", (bad) => {
+		const intro = { eyebrow: "Demo", title: "Search", detail: `A ${bad} B` };
+		expect(() => validate({ ...script, intro })).toThrow("script.intro");
+	});
+
 	it.each([["intro"], ["outro"]])("rejects a %s without three parts, naming the key", (key) => {
 		expect(() => validate(parsePlanMarkdown(md(`${key}: "Only | two"`)))).toThrow(key);
 	});

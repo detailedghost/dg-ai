@@ -156,6 +156,24 @@ describe("verifyLocal with excluded setup", () => {
 		]);
 	});
 
+	test("returns to the start URL after setup even when setup moved only by a click", async () => {
+		const { deps, browser } = opening({ dir });
+		await verifyLocal(
+			{
+				...script(),
+				setup: {
+					includeInTour: false,
+					steps: [{ title: "Go", body: "a", selector: "#go", action: { do: "click" } }],
+				},
+			},
+			deps,
+		);
+		expect(browser.log.filter((line) => line.startsWith("goto "))).toEqual([
+			"goto https://example.test/",
+			"goto https://example.test/",
+		]);
+	});
+
 	test("leaves a first tutorial step that names its own URL alone", async () => {
 		const base = withSetup();
 		const { deps, browser } = opening({ dir });
