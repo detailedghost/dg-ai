@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0.1 (2026-11-08)
+
+### Fixes
+
+- fix(demo): voice on strict-CSP pages and no REC badge in videos ([#159](https://github.com/detailedghost/dg-ai/pull/159))
+
 ## v3.0.0 (2026-11-08)
 
 ### Breaking
