@@ -23,7 +23,11 @@ describe("contextOptions", () => {
 	});
 
 	test("records video into the job dir only when asked", () => {
-		expect(contextOptions(job(true), true)).toHaveProperty("recordVideo");
+		expect(contextOptions(job(true), true)).toMatchObject({
+			screen: { width: 1440, height: 810 },
+			deviceScaleFactor: 1,
+			recordVideo: { size: { width: 1440, height: 810 } },
+		});
 		expect(contextOptions(job(true), false)).not.toHaveProperty("recordVideo");
 	});
 });

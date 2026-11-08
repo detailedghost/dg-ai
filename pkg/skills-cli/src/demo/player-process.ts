@@ -64,11 +64,17 @@ const OFFLINE_LINE =
 	"narration assets are not downloaded; running captions-only";
 const DEFAULT_VOICE = "af_heart";
 
-const VIEWPORT = { width: 1280, height: 720 };
+export const VIEWPORT = { width: 1440, height: 810 };
 
 export const contextOptions = (job: PlayerJob, record: boolean) => ({
 	bypassCSP: true,
-	...(record ? { recordVideo: { dir: join(job.dir, "rec"), size: VIEWPORT } } : {}),
+	...(record
+		? {
+				screen: VIEWPORT,
+				deviceScaleFactor: 1,
+				recordVideo: { dir: join(job.dir, "rec"), size: VIEWPORT },
+			}
+		: {}),
 });
 
 async function launchLocal(
