@@ -1,111 +1,131 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runPlayer } from "../src/demo/player-process";
-import { verifyLocal } from "../src/demo/verify-local";
+import type { TourScript } from "@dg/common";
+import { chromium } from "playwright-core";
+import type { PlayerJob } from "../src/demo/player-job";
+import { type PlayerSession, runPlayer } from "../src/demo/player-process";
 import type { DemoResult } from "../src/demo/result";
+import { OVERLAY_IDS } from "../src/demo/recorder/overlays";
+import { findInstalledChromium } from "../src/utils/find-browser";
 
-const enabled = process.env.PW_E2E === "1";
+setDefaultTimeout(180_000);
 
-describe.skipIf(!enabled)("__player --video against a local http server", () => {
+const executablePath = process.env.PW_E2E === "1" ? findInstalledChromium() : null;
+
+describe.skipIf(!executablePath)("runPlayer against a local login", () => {
 	let dir: string;
 	let server: ReturnType<typeof Bun.serve>;
-
-	const previousHome = process.env.DG_HOME;
+	const received: string[] = [];
 
 	beforeAll(() => {
 		dir = mkdtempSync(join(tmpdir(), "dg-player-e2e-"));
-		process.env.DG_HOME = join(dir, "dg-home");
 		server = Bun.serve({
-			port: 0,
 			hostname: "127.0.0.1",
-			fetch: () =>
-				new Response(
-					'<!doctype html><h1 id="one">One</h1><p id="two">Two</p>',
-					{ headers: { "content-type": "text/html" } },
-				),
+			port: 0,
+			async fetch(req) {
+				const url = new URL(req.url);
+				if (url.pathname === "/login" && req.method === "POST") {
+					received.push(String((await req.formData()).get("password")));
+					return new Response(null, {
+						status: 303,
+						headers: { Location: "/home", "Set-Cookie": "sid=1; Path=/" },
+					});
+				}
+				const signedIn = req.headers.get("cookie")?.includes("sid=1");
+				const html =
+					url.pathname === "/home"
+						? '<!doctype html><title>Home</title><h1 id="welcome">Welcome</h1>'
+						: signedIn
+							? '<!doctype html><title>Start</title><h1 id="start">Signed in</h1>'
+							: '<!doctype html><title>Sign in</title><form method="post" action="/login"><input id="pass" name="password" type="password"><button id="go" type="submit">Sign in</button></form>';
+				return new Response(html, { headers: { "Content-Type": "text/html" } });
+			},
 		});
 	});
 	afterAll(() => {
 		server.stop(true);
-		if (previousHome === undefined) delete process.env.DG_HOME;
-		else process.env.DG_HOME = previousHome;
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	test("records a webm, writes result.json and shows the overlay mid-run", async () => {
-		const slug = "e2e-tour";
-		const planPath = join(dir, `${slug}.demo.md`);
-		writeFileSync(planPath, "");
-		const shots: Array<{ withOverlay: Buffer; without: Buffer; text: string }> = [];
-		const job = {
-			slug,
-			planPath,
-			dir,
-			video: true,
-			profile: join(dir, "profile"),
-			startUrl: `http://127.0.0.1:${server.port}/`,
-			script: {
-				title: "E2E Tour",
-				startUrl: `http://127.0.0.1:${server.port}/`,
-				mode: "video" as const,
-				steps: [
-					{ title: "First stop", body: "alpha", selector: "#one", advance: 600 },
-					{ title: "Second stop", body: "beta", selector: "#two", advance: 600 },
-				],
+	const sessionOf = (): { session: PlayerSession; browser: Promise<import("playwright-core").Browser> } => {
+		const browser = chromium.launch({ executablePath: executablePath as string, args: ["--no-sandbox"] });
+		const session: PlayerSession = {
+			open: async (record, state) => {
+				const launched = await browser;
+				return launched.newContext({
+					viewport: { width: 1440, height: 810 },
+					...(state ? { storageState: state } : {}),
+					...(record ? { recordVideo: { dir: join(dir, "rec"), size: { width: 1440, height: 810 } } } : {}),
+				});
 			},
+			close: async () => void (await (await browser).close()),
 		};
-		await runPlayer(job, {
-			onProgress: async (page, index) => {
-				if (index !== 0) return;
-				const hosts = "[id^='dg-']";
-				const withOverlay = await page.screenshot();
-				const text = await page.evaluate(
-					(selector) =>
-						[...document.querySelectorAll(selector)]
-							.map((host) => host.shadowRoot?.textContent ?? "")
-							.join("\n"),
-					hosts,
-				);
-				await page.addStyleTag({ content: `${hosts} { display: none !important }` });
-				const without = await page.screenshot();
-				shots.push({ withOverlay, without, text });
-			},
-		});
+		return { session, browser };
+	};
 
-		const files = readdirSync(dir);
-		const webm = files.find((name) => /^e2e-tour-\d{8}-\d{4}\.webm$/.test(name));
-		expect(webm).toBeDefined();
-		expect(statSync(join(dir, webm as string)).size).toBeGreaterThan(1024);
+	const job = (script: TourScript): PlayerJob => ({
+		slug: "e2e-tour",
+		planPath: join(dir, "e2e-tour.demo.md"),
+		dir,
+		startUrl: script.startUrl,
+		script,
+		timeoutMin: 2,
+	});
 
-		const result = JSON.parse(
-			readFileSync(join(dir, `${slug}.result.json`), "utf8"),
-		) as DemoResult;
-		expect(result.outcome).toBe("done");
-		expect(result.steps).toBe(2);
-
-		expect(shots).toHaveLength(1);
-		expect(shots[0]?.text).toContain("First stop");
-		expect(shots[0]?.withOverlay.length).toBeGreaterThan(1024);
-		expect(shots[0]?.withOverlay.equals(shots[0]?.without as Buffer)).toBe(false);
-	}, 120_000);
-
-	test("verifyLocal walks a plan through the real local adapter", async () => {
-		const startUrl = `http://127.0.0.1:${server.port}/`;
-		const plan = (second: string) => ({
-			title: "Verify Tour",
-			startUrl,
-			steps: [
-				{ title: "First stop", body: "alpha", selector: "#one" },
-				{ title: "Second stop", body: "beta", selector: second },
-			],
-		});
-		expect(await verifyLocal(plan("#two"))).toEqual({ ok: true, findings: [] });
-		const missed = await verifyLocal(plan("#missing"));
-		expect(missed.ok).toBe(false);
-		expect(missed.findings).toEqual([
-			{ step: 2, kind: "selector-unresolved", selector: "#missing" },
-		]);
-	}, 120_000);
+	test(
+		"waits for a person to type an unset password and press Enter, skips the submit step, then records the signed-in tour",
+		async () => {
+			delete process.env.DG_DEMO_E2E_PW;
+			const base = `http://127.0.0.1:${server.port}`;
+			const script: TourScript = {
+				title: "E2E Tour",
+				startUrl: `${base}/`,
+				setup: {
+					includeInTour: false,
+					steps: [
+						{ title: "Password", body: "Sign in.", selector: "#pass", action: { do: "fill", value: "$DG_DEMO_E2E_PW" } },
+						{ title: "Submit", body: "Go.", selector: "#go", action: { do: "click" as const } },
+						{ title: "Signed in", body: "Home.", selector: "#welcome" },
+					],
+				},
+				steps: [{ title: "Start", body: "You are signed in.", selector: "#start", advance: 300 }],
+			};
+			const { session, browser } = sessionOf();
+			let prompted = false;
+			const person = setInterval(async () => {
+				const contexts = (await browser).contexts();
+				for (const context of contexts)
+					for (const page of context.pages()) {
+						const caption = await page
+							.locator(`#${OVERLAY_IDS.caption}`)
+							.innerText({ timeout: 200 })
+							.catch(() => "");
+						if (!caption.includes("Type it here, then continue.") || prompted) continue;
+						prompted = true;
+						await page.fill("#pass", "typed-by-person").catch(() => undefined);
+						await page.press("#pass", "Enter").catch(() => undefined);
+					}
+			}, 300);
+			const logs: string[] = [];
+			const log = spyOn(console, "log").mockImplementation((...parts: unknown[]) => void logs.push(parts.join(" ")));
+			try {
+				const code = await runPlayer(job(script), { launch: async () => session });
+				expect(code).toBe(0);
+			} finally {
+				clearInterval(person);
+				log.mockRestore();
+			}
+			expect(prompted).toBe(true);
+			expect(logs.join("\n")).toContain("demo e2e-tour: skipped setup step 2 after the sign-in");
+			expect(received).toContain("typed-by-person");
+			const result = JSON.parse(readFileSync(join(dir, "e2e-tour.result.json"), "utf8")) as DemoResult;
+			expect(result).toMatchObject({ outcome: "done", mode: "video" });
+			expect(result.video).toMatch(/\.(mp4|webm)$/);
+			expect(existsSync(result.video as string)).toBe(true);
+			expect(JSON.stringify(result)).not.toContain("typed-by-person");
+			expect(readdirSync(dir).some((name) => name === "rec")).toBe(false);
+		},
+	);
 });

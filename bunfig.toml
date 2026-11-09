@@ -1,2 +1,2 @@
 [test]
-preload = ["./pkg/skills-cli/__tests__/test-home-fence.ts", "./pkg/common/src/redact-console.ts", "./pkg/skills-cli/__tests__/build-player-shim.ts", "./pkg/dg-daemon/__tests__/build-pages-shim.ts"]
+preload = ["./pkg/skills-cli/__tests__/test-home-fence.ts", "./pkg/common/src/redact-console.ts", "./pkg/dg-daemon/__tests__/build-pages-shim.ts"]

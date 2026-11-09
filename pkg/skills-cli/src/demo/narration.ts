@@ -1,9 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { writeFileAtomic } from "@dg/common/node";
-
-export const NARRATION_SAMPLE_RATE = 24_000;
-
 export type Clip = { offsetMs: number; sampleRate: number; pcm: Float32Array };
 
 const WAV_HEADER_BYTES = 44;
@@ -55,38 +49,4 @@ export function assembleNarrationWav(clips: Clip[]): Uint8Array {
 		);
 	}
 	return wav;
-}
-
-export const clipFile = (clipsDir: string, index: number): string =>
-	join(clipsDir, `${index}.f32`);
-
-/** Writes the sidecar WAV from the clips the bridge saved; returns false when no clip was written. */
-export function writeNarrationWav(opts: {
-	clipsDir: string;
-	offsets: ReadonlyMap<number, number>;
-	out: string;
-}): boolean {
-	const clips: Clip[] = [];
-	for (const [index, offsetMs] of opts.offsets) {
-		const file = clipFile(opts.clipsDir, index);
-		if (!existsSync(file)) continue;
-		const bytes = readFileSync(file);
-		if (bytes.length === 0 || bytes.length % Float32Array.BYTES_PER_ELEMENT !== 0)
-			continue;
-		const pcm =
-			bytes.byteOffset % Float32Array.BYTES_PER_ELEMENT === 0
-				? new Float32Array(
-						bytes.buffer,
-						bytes.byteOffset,
-						bytes.length / Float32Array.BYTES_PER_ELEMENT,
-					)
-				: new Float32Array(
-						bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
-					);
-		clips.push({ offsetMs, sampleRate: NARRATION_SAMPLE_RATE, pcm });
-	}
-	if (clips.length === 0) return false;
-	const wav = assembleNarrationWav(clips);
-	writeFileAtomic(opts.out, Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength), 0o600);
-	return true;
 }

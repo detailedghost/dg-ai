@@ -2,6 +2,8 @@
 
 Pass `--ext` to play a tour through the dg-ai-extension in the user's own browser.
 The plan format is the same as the local flow. See [authoring.md](authoring.md).
+Local mode has no tour, start screen, or review. It records an MP4. Only local mode
+uses `intro` and `outro`.
 
 ```bash
 dg-skills demo --ext /tmp/ai/demo/tour.md
@@ -10,8 +12,8 @@ dg-skills rerun --ext <path-to>.demo.md
 
 ## Review panel
 
-`--edit` (with `--ext`) opens the review panel before the tour plays. Locally, the
-start screen always offers Review. Known limit: the local review panel keeps its draft only while the page stays on one URL.
+`--edit` (with `--ext`) opens the review panel before the tour plays. Local mode has
+no review panel.
 
 ## Recording
 
@@ -28,7 +30,7 @@ synthesis fails, the video still records without voice.
 
 `demo --ext --verify <plan>` walks the plan through the extension harness. It needs
 a built extension (`bun run --filter='@dg/extension' build`) and a browser that can
-load it. Plain `--verify` needs neither.
+load it. Plain `--verify` drives the local recorder and needs neither.
 
 ## Dev checkout
 

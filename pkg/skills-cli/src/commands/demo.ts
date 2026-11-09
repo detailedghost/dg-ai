@@ -16,12 +16,7 @@ export function addLocalOptions(command: Command): Command {
 				["chrome", "msedge", "chromium"],
 			),
 		)
-		.addOption(
-			new Option(
-				"--narration <mode>",
-				"with --video: voiceover and captions (both), voiceover only (voice) or silent (captions); default is the saved start-screen choice",
-			).choices(["both", "voice", "captions"]),
-		)
+		.option("-n, --narration", "add a voiceover to the recording")
 		.option("--windows", "WSL: drive the Windows-side browser over CDP")
 		.option(
 			"--wsl-headed",
@@ -41,7 +36,7 @@ export function registerDemo(
 	const demo = addLocalOptions(
 		addExtOption(program.command("demo"))
 			.description(
-				"play a guided tour in a local browser, or through the dg-ai-extension with --ext",
+				"record a guided tour to an MP4 in a local browser, or play it through the dg-ai-extension with --ext",
 			)
 			.argument(
 				"[script]",
@@ -49,7 +44,7 @@ export function registerDemo(
 			)
 			.option(
 				"--video",
-				"record the tour to a video now, with no start screen",
+				"--ext: start in video mode; local mode always records",
 			)
 			.option("--print", "--ext only: print the marked URL instead of opening it")
 			.option(

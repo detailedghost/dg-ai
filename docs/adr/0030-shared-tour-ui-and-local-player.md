@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-11-02
 
+Superseded in part by [ADR 0040](0040-local-demo-recorder.md).
+
 ## Context
 
 - The tour overlay, start screen, and editor lived only in the extension content

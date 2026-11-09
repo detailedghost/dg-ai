@@ -1,71 +1,18 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { envReference, MissingEnvError, type TourScript } from "@dg/common";
 import { wslChromiumArgs } from "@dg/common/node";
+import type { Page } from "playwright-core";
 import { pickLaunch } from "../pw/core/browser";
-import type { TourScript } from "../utils/plan-format";
-import {
-	type TourPage,
-	type VerifyResult,
-	walkTour,
-} from "../utils/demo-verify";
-import { createBridge, tourOrigins, trustedSource } from "./bridge";
-import { playerScript } from "./player-asset";
+import type { VerifyResult } from "../utils/demo-verify";
+import { playbackSteps, recordTour, SelectorError, StepError, VIEWPORT } from "./recorder/drive";
 
-export type VerifySession = { page: TourPage; close(): Promise<void> };
+export type VerifySession = { page: Page; close(): Promise<void> };
 
 export type VerifyLocalDeps = {
-	open(script: TourScript): Promise<VerifySession>;
+	open(): Promise<VerifySession>;
+	env?: Record<string, string | undefined>;
 };
 
-const VIEWPORT = { width: 1280, height: 720 };
-
-export const STATE_PROBE = "JSON.stringify(window.__dgTour ? window.__dgTour.state() : { kind: 'none' })";
-const ADVANCE = "window.__dgTour ? window.__dgTour.advance() : false";
-
-type EvalPage = {
-	evaluate(expression: string): Promise<unknown>;
-	url(): string;
-};
-
-export function tourPageFor(
-	page: EvalPage,
-	drainNavigations: () => string[],
-): TourPage {
-	return {
-		async readTourOverlay() {
-			const probed = JSON.parse(String(await page.evaluate(STATE_PROBE))) as
-				| { kind: "none" | "done" }
-				| { kind: "step"; index: number; total: number }
-				| { kind: "ended"; outcome: string; error?: string };
-			if (probed.kind === "ended")
-				throw new Error(
-					probed.outcome === "error"
-						? `the tour failed: ${probed.error ?? "unknown error"}`
-						: "the tour stopped early",
-				);
-			return probed;
-		},
-		async clickThroughTour() {
-			return Boolean(await page.evaluate(ADVANCE));
-		},
-		async selectorResolves(selector) {
-			return Boolean(
-				await page.evaluate(
-					`(() => { try { return document.querySelector(${JSON.stringify(selector)}) !== null; } catch { return false; } })()`,
-				),
-			);
-		},
-		async locationHref() {
-			return page.url();
-		},
-		drainNavigations,
-	};
-}
-
-export async function openLocalSession(
-	script: TourScript,
-): Promise<VerifySession> {
+export async function openLocalSession(): Promise<VerifySession> {
 	const { chromium } = await import("playwright-core");
 	const pick = pickLaunch();
 	const browser = await chromium.launch({
@@ -75,38 +22,14 @@ export async function openLocalSession(
 			: { executablePath: pick.executablePath }),
 		args: wslChromiumArgs(),
 	});
-	const dir = mkdtempSync(join(tmpdir(), "dg-verify-"));
-	const close = async (): Promise<void> => {
-		await browser.close().catch(() => undefined);
-		rmSync(dir, { recursive: true, force: true });
-	};
 	try {
 		const context = await browser.newContext({ viewport: VIEWPORT });
-		const page = await context.newPage();
-		const bridge = createBridge({
-			job: { dir, planPath: join(dir, "plan.md"), slug: "verify", video: false },
-		});
-		const origins = tourOrigins(script);
-		const navigations: string[] = [];
-		page.on("framenavigated", (frame) => {
-			if (frame === page.mainFrame()) navigations.push(frame.url());
-		});
-		await page.exposeBinding("__dgDemoBridge", (source, msg: unknown) =>
-			trustedSource(source, origins) ? bridge.handle(msg) : undefined,
-		);
-		await page.addInitScript(playerScript());
-		const tour = `window.__dgTour.run(${JSON.stringify({ ...script, mode: "walkthrough" })}, { mode: "walkthrough" })`;
-		page.on("domcontentloaded", () => {
-			if (!trustedSource({ frame: page.mainFrame(), page }, origins)) return;
-			void page.evaluate(tour).catch(() => undefined);
-		});
-		await page.goto(script.startUrl);
-		const tourPage = tourPageFor(page, () =>
-			navigations.splice(0, navigations.length),
-		);
-		return { page: tourPage, close };
+		return {
+			page: await context.newPage(),
+			close: () => browser.close().catch(() => undefined),
+		};
 	} catch (error) {
-		await close();
+		await browser.close().catch(() => undefined);
 		throw error;
 	}
 }
@@ -126,13 +49,43 @@ const flattenSetup = (script: TourScript): TourScript => {
 	const { setup } = script;
 	if (!setup || setup.includeInTour) return script;
 	const [first, ...rest] = script.steps;
-	const moves = setup.steps.some((step) => step.navigate);
 	const steps =
-		first && !first.navigate && moves
+		first && !first.navigate && setup.steps.length > 0
 			? [{ ...first, navigate: script.startUrl }, ...rest]
 			: script.steps;
 	return { ...script, steps, setup: { ...setup, includeInTour: true } };
 };
+
+function findingFor(error: unknown, script: TourScript): VerifyResult {
+	const steps = playbackSteps(script);
+	if (error instanceof SelectorError)
+		return {
+			ok: false,
+			findings: [
+				{
+					step: error.index + 1,
+					kind: "selector-unresolved",
+					selector: steps[error.index]?.step.selector ?? "",
+				},
+			],
+		};
+	if (error instanceof StepError)
+		return {
+			ok: false,
+			findings: [{ step: error.index + 1, kind: "harness-error", message: error.message }],
+		};
+	if (error instanceof MissingEnvError) {
+		const at = steps.findIndex(
+			({ step }) =>
+				step.action?.do === "fill" && envReference(step.action.value) === error.variable,
+		);
+		return {
+			ok: false,
+			findings: [{ step: at + 1, kind: "env-unset", variable: error.variable }],
+		};
+	}
+	return harnessError(error);
+}
 
 export async function verifyLocal(
 	given: TourScript,
@@ -141,14 +94,19 @@ export async function verifyLocal(
 	const script = flattenSetup(given);
 	let session: VerifySession;
 	try {
-		session = await deps.open(script);
+		session = await deps.open();
 	} catch (error) {
 		return harnessError(error);
 	}
 	try {
-		return await walkTour(session.page, script);
+		await recordTour(session.page, script, {
+			env: deps.env ?? process.env,
+			overlays: false,
+			hold: () => 0,
+		});
+		return { ok: true, findings: [] };
 	} catch (error) {
-		return harnessError(error);
+		return findingFor(error, script);
 	} finally {
 		await session.close().catch(() => undefined);
 	}

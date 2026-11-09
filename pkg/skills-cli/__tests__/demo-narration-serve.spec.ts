@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBridge } from "../src/demo/bridge";
 import { ensureNarrationAssets, serveNarrationAsset } from "../src/demo/narration-assets";
 
 let dir: string;
@@ -22,7 +21,7 @@ afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-describe("serveNarrationAsset", () => {
+describe("serveNarrationAsset symlinks", () => {
 	test("serves nested files and returns 404 for a symlink that leaves the asset directory", () => {
 		const assets = join(dir, "assets");
 		mkdirSync(join(assets, "ort"), { recursive: true });
@@ -46,16 +45,36 @@ describe("ensureNarrationAssets limits", () => {
 	});
 });
 
-describe("bridge clip limit", () => {
-	test("ignores an oversized clip without writing a file", async () => {
-		const job = { dir, planPath: join(dir, "p.md"), slug: "s", video: true };
-		const bridge = createBridge({ job });
-		await bridge.handle({
-			kind: "clip",
-			index: 0,
-			sampleRate: 24000,
-			pcm: "A".repeat(12 * 1024 * 1024),
-		});
-		expect(await Bun.file(join(dir, "clips", "0.f32")).exists()).toBe(false);
+describe("serveNarrationAsset", () => {
+	let root: string;
+	let dir: string;
+	beforeEach(() => {
+		root = mkdtempSync(join(tmpdir(), "dg-serve-asset-"));
+		dir = join(root, "assets");
+		mkdirSync(join(dir, "ort"), { recursive: true });
+		writeFileSync(join(dir, "kokoro.js"), "// kokoro");
+		writeFileSync(join(dir, "ort", "a.wasm"), "wasm");
+		writeFileSync(join(root, "secret.js"), "secret");
+		writeFileSync(join(dir, "x.txt"), "text");
+	});
+	afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+	test("serves allowlisted files with their content types", () => {
+		expect(
+			serveNarrationAsset(dir, "/narration/kokoro.js").headers["content-type"],
+		).toBe("text/javascript");
+		expect(serveNarrationAsset(dir, "/narration/ort/a.wasm").status).toBe(200);
+	});
+
+	test.each([
+		["encoded parent traversal", "/narration/..%2fsecret.js"],
+		["encoded double parent traversal", "/narration/..%2f..%2fetc%2fpasswd.js"],
+		["dot-dot segment inside a path", "/narration/ort/%2e%2e/%2e%2e/secret.js"],
+		["encoded absolute path", "/narration/%2Fetc%2Fx.js"],
+		["lone percent", "/narration/%"],
+		["extension outside the allowlist", "/narration/x.txt"],
+		["path outside the narration prefix", "/other/kokoro.js"],
+	])("returns 404 for %s", (_label, pathname) => {
+		expect(serveNarrationAsset(dir, pathname).status).toBe(404);
 	});
 });

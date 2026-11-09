@@ -353,7 +353,7 @@ ______________________________________________________________________
 | Load unpacked in the browser (the only routine human step) | No — manual browser UI |
 | `launch` cold-start with extension (`--ext` only) | Yes (browser fully closed) |
 | `batch-open --ext` / `demo --ext` / `rerun --ext` | Yes (extension loaded) |
-| `demo` / `rerun` without `--ext` | Yes (local browser; the human picks on the start screen) |
+| `demo` / `rerun` without `--ext` | Yes (local browser; it records an MP4 with no start screen, and `ffmpeg` is needed for MP4 output) |
 | `batch-open` without `--ext` | No (plain tabs) |
 
 ## Google SMS cleanup

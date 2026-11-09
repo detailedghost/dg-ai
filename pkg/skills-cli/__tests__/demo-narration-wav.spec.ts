@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import {
-	assembleNarrationWav,
-	clipFile,
-	writeNarrationWav,
-} from "../src/demo/narration";
+import { assembleNarrationWav } from "../src/demo/narration";
 
 const RATE = 24_000;
 
@@ -91,26 +84,5 @@ describe("assembleNarrationWav", () => {
 			]),
 		);
 		expect(shuffled.samples).toEqual(decoded.samples);
-	});
-});
-
-describe("writeNarrationWav", () => {
-	test("drops a truncated clip file and keeps the rest", () => {
-		const root = mkdtempSync(join(tmpdir(), "dg-wav-"));
-		try {
-			const clips = join(root, "clips");
-			mkdirSync(clips);
-			writeFileSync(clipFile(clips, 0), Buffer.from(new Float32Array([0.5]).buffer));
-			writeFileSync(clipFile(clips, 1), Buffer.from([1, 2, 3]));
-			const out = join(root, "voice.wav");
-			const offsets = new Map([
-				[0, 0],
-				[1, 100],
-			]);
-			expect(writeNarrationWav({ clipsDir: clips, offsets, out })).toBe(true);
-			expect(Bun.file(out).size).toBe(44 + 2);
-		} finally {
-			rmSync(root, { recursive: true, force: true });
-		}
 	});
 });

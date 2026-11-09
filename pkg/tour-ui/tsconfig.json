@@ -14,5 +14,5 @@
 			"@dg/common/*": ["../common/src/*"]
 		}
 	},
-	"include": ["build.ts", "src/**/*", "__tests__/**/*"]
+	"include": ["src/**/*", "__tests__/**/*"]
 }
