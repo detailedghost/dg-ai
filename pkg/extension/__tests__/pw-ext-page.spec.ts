@@ -291,6 +291,13 @@ describe("fill", () => {
 		expect(JSON.stringify(result)).not.toContain("SSSS");
 	});
 
+	it("masks a held secret after the page collapses its whitespace", () => {
+		const secret = "orchid  maple  lantern";
+		page(`<p>${secret}</p>`);
+		const result = pwExtPageAction({ kind: "snapshot" }, undefined, false, [secret]);
+		expect(JSON.stringify(result)).not.toContain("maple");
+	});
+
 	it("refuses a non-editable target", () => {
 		page(`<button id="b">B</button><input id="r" readonly>`);
 		for (const target of ["#b", "#r"])

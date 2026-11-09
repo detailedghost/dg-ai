@@ -281,4 +281,13 @@ describe("redactLiterals", () => {
 		expect(redactLiterals("cvv 123 ok 123", ["123", ""])).toBe("cvv [redacted] ok [redacted]");
 		expect(redactLiterals("plain", [])).toBe("plain");
 	});
+
+	it("masks the whitespace-collapsed form of a secret", () => {
+		expect(redactLiterals("pw orchid maple lantern", ["orchid  maple\tlantern"])).toBe("pw [redacted]");
+	});
+
+	it("masks the clipped start of a secret before an ellipsis", () => {
+		expect(redactLiterals(`${"x".repeat(10)}739…`, ["739123"])).toBe(`${"x".repeat(10)}[redacted]…`);
+		expect(redactLiterals("code 739 ok", ["739123"])).toBe("code 739 ok");
+	});
 });

@@ -1213,6 +1213,19 @@ describe("pw --ext unmask", () => {
 		expect(h.executed().find((call) => call.world === "MAIN")?.args).toEqual([WEB_TAB.url, true]);
 	});
 
+	it("masks the clipped start of a filled secret in MAIN-world console output", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ entries: [`${"x".repeat(497)}739…`] }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		options.pageResult = { started: false, entries: [] };
+		expect(JSON.stringify(await h.run({ verb: "console" }))).not.toContain("739");
+	});
+
 	it("masks a filled secret in a later tabs listing", async () => {
 		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
 		const h = harness({ ...options, tabs: [{ ...WEB_TAB, title: "Code 739123 sent" }] });

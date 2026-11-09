@@ -254,7 +254,13 @@ export function pwExtPageAction(
 		[/((?:password|passwd|secret|token|api[-_]?key)\s*[:=]\s*)\S+/gi, `$1${REDACTED}`],
 		...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
 	];
-	const literals = secrets.filter((secret) => secret.length > 0).sort((a, b) => b.length - a.length);
+	const literals = [
+		...new Set(
+			secrets
+				.filter((secret) => secret.length > 0)
+				.flatMap((secret) => [secret, secret.replace(/\s+/g, " ")]),
+		),
+	].sort((a, b) => b.length - a.length);
 	const redactTokens = (value: string): string =>
 		TOKEN_PATTERNS.reduce(
 			(out, [pattern, replacement]) => out.replace(pattern, replacement),

@@ -76,12 +76,22 @@ function replaceLiteral(message: string, secret: string): string {
 	return message.split(secret).join(REDACTED);
 }
 
-/** Masks each given secret wherever it appears, whatever its length. */
+/** Masks each given secret, its whitespace-collapsed form, and any clipped start of it before an ellipsis. */
 export function redactLiterals(message: string, secrets: readonly string[]): string {
-	return [...secrets]
-		.filter((secret) => secret.length > 0)
-		.sort((a, b) => b.length - a.length)
-		.reduce((out, secret) => out.split(secret).join(REDACTED), message);
+	const literals = [
+		...new Set(
+			secrets
+				.filter((secret) => secret.length > 0)
+				.flatMap((secret) => [secret, secret.replace(/\s+/g, " ")]),
+		),
+	].sort((a, b) => b.length - a.length);
+	const whole = literals.reduce((out, secret) => out.split(secret).join(REDACTED), message);
+	return literals.reduce((out, secret) => {
+		let clipped = out;
+		for (let size = secret.length - 1; size > 0; size--)
+			clipped = clipped.split(`${secret.slice(0, size)}…`).join(`${REDACTED}…`);
+		return clipped;
+	}, whole);
 }
 
 function redactWith(
