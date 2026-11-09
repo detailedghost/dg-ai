@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
@@ -12,8 +12,11 @@ import {
 	type PwExtVerb,
 	PW_EXT_READ_VERBS,
 	PW_EXT_MAX_UPLOAD_BYTES,
+	PW_EXT_UNMASK_DEFAULT_MINUTES,
+	PW_EXT_UNMASK_MAX_MINUTES,
 	PW_EXT_WRITE_VERBS,
 	describeError,
+	redactSecrets,
 	redactText,
 	validatePwExtRequest,
 	validatePwExtResponse,
@@ -47,6 +50,9 @@ export type ExtDeps = {
 	connect(sessionId?: string): Promise<ExtClient>;
 	cliOnly(): boolean;
 	onInterrupt(handler: () => void): () => void;
+	/** Where `fill --value-env` and `--value-stdin` read a secret. */
+	env?: Readonly<Record<string, string | undefined>>;
+	readStdin?: () => string;
 };
 
 const DEFAULT_DEPS: ExtDeps = {
@@ -185,6 +191,7 @@ const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
 	count: ["target"],
 	fill: ["target", "value"],
 	upload: ["target", "file"],
+	unmask: [],
 	tools: [],
 	call: ["tool", "json-args"],
 };
@@ -193,6 +200,10 @@ const OPTIONS = {
 	help: { type: "boolean" },
 	tab: { type: "string" },
 	session: { type: "string" },
+	minutes: { type: "string" },
+	off: { type: "boolean" },
+	"value-env": { type: "string" },
+	"value-stdin": { type: "boolean" },
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
@@ -223,12 +234,24 @@ Write verbs (they change the page):
   close [tabId]           close a tab of the group (the agent's selected tab by default)
   click <ref|selector>    click one element
   fill <ref|selector> <text>  set one text, date or time field (YYYY-MM-DD, HH:MM), or pick a select option by value or label
+  fill <ref|selector> --value-env NAME | --value-stdin
+                          set a password or secret field during an unmask; the value never goes in argv or output
   upload <ref|selector> <file>  set one file on a file input (https pages only)
-  call <tool> <json-args> run one WebMCP tool of the page`;
+  call <tool> <json-args> run one WebMCP tool of the page
+  unmask [--minutes N]    ask the user, in the browser, to show emails and user names and allow secret fill
+                          on this tab's site for N minutes (1-${PW_EXT_UNMASK_MAX_MINUTES}, default ${PW_EXT_UNMASK_DEFAULT_MINUTES})
+  unmask --off            end the unmask now`;
 
 class ExtUsageError extends Error {}
 
-type Parsed = { request: PwExtRequest; staged?: StagedFile; session?: string };
+type Parsed = {
+	request: PwExtRequest;
+	staged?: StagedFile;
+	session?: string;
+	secret?: string;
+};
+
+type SecretSource = Pick<ExtDeps, "env" | "readStdin">;
 
 function readArgs(argv: readonly string[]) {
 	return parseArgs({
@@ -249,7 +272,31 @@ function positionalLabel(name: string): string {
 	return name.endsWith("?") ? `[<${name.slice(0, -1)}>]` : `<${name}>`;
 }
 
-function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
+function readSecret(
+	values: { "value-env"?: string; "value-stdin"?: boolean },
+	source: SecretSource,
+): string {
+	const name = values["value-env"];
+	if (name !== undefined && values["value-stdin"])
+		throw new ExtUsageError("pw --ext fill takes --value-env or --value-stdin, not both.");
+	const raw =
+		name !== undefined
+			? (source.env ?? process.env)[name]
+			: (source.readStdin ?? (() => readFileSync(0, "utf8")))().replace(/\r?\n$/, "");
+	if (!raw)
+		throw new ExtUsageError(
+			name !== undefined
+				? `pw --ext fill --value-env ${name}: the environment variable is not set or is empty.`
+				: "pw --ext fill --value-stdin: stdin is empty.",
+		);
+	return raw;
+}
+
+function parseRequest(
+	argv: readonly string[],
+	cwd: string,
+	source: SecretSource = {},
+): Parsed | "help" {
 	let parsed: ReturnType<typeof readArgs>;
 	try {
 		parsed = readArgs(argv);
@@ -264,7 +311,19 @@ function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
 		throw new ExtUsageError(
 			`Unknown pw --ext verb: ${verb ?? "(none)"}. Use one of: ${[...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS].join(", ")}.`,
 		);
-	const names = POSITIONALS[verb as PwExtVerb];
+	const secretFill =
+		parsed.values["value-env"] !== undefined || parsed.values["value-stdin"] === true;
+	if (secretFill && verb !== "fill")
+		throw new ExtUsageError("--value-env and --value-stdin work only with pw --ext fill.");
+	if ((parsed.values.minutes !== undefined || parsed.values.off) && verb !== "unmask")
+		throw new ExtUsageError("--minutes and --off work only with pw --ext unmask.");
+	if (parsed.values.off && parsed.values.minutes !== undefined)
+		throw new ExtUsageError("pw --ext unmask takes --minutes or --off, not both.");
+	if (secretFill && rest.length !== 1)
+		throw new ExtUsageError(
+			"pw --ext fill takes a secret only from --value-env or --value-stdin, never as an argument.",
+		);
+	const names = secretFill ? ["target"] : POSITIONALS[verb as PwExtVerb];
 	const tab =
 		parsed.values.tab === undefined
 			? undefined
@@ -312,15 +371,35 @@ function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
 					? tabIdOf(value, `pw --ext ${verb} takes a tab id from pw --ext tabs.`)
 					: value;
 		});
+	let secret: string | undefined;
+	if (secretFill) {
+		secret = readSecret(parsed.values, source);
+		Object.assign(request, { value: secret, secret: true });
+	}
+	if (verb === "unmask") {
+		if (parsed.values.off) request.off = true;
+		else {
+			const text = parsed.values.minutes ?? String(PW_EXT_UNMASK_DEFAULT_MINUTES);
+			const minutes = Number(text);
+			if (!/^\d+$/.test(text) || minutes < 1 || minutes > PW_EXT_UNMASK_MAX_MINUTES)
+				throw new ExtUsageError(
+					`pw --ext unmask --minutes takes a whole number from 1 to ${PW_EXT_UNMASK_MAX_MINUTES}.`,
+				);
+			request.minutes = minutes;
+		}
+	}
 	if (tab !== undefined) request.tabId = tab;
 	try {
 		return {
 			request: validatePwExtRequest(request),
 			...(staged ? { staged } : {}),
 			...(parsed.values.session === undefined ? {} : { session: parsed.values.session }),
+			...(secret === undefined ? {} : { secret }),
 		};
 	} catch (error) {
-		throw new ExtUsageError(error instanceof Error ? error.message : String(error));
+		throw new ExtUsageError(
+			redactText(error instanceof Error ? error.message : String(error), secret ? [secret] : []),
+		);
 	}
 }
 
@@ -356,7 +435,7 @@ export async function runExt(
 ): Promise<number> {
 	let parsed: Parsed | "help";
 	try {
-		parsed = parseRequest(argv, env.cwd);
+		parsed = parseRequest(argv, env.cwd, deps);
 	} catch (error) {
 		env.err((error as Error).message);
 		return 2;
@@ -378,6 +457,7 @@ export async function runExt(
 		);
 		return 1;
 	}
+	const secrets = parsed.secret ? [parsed.secret] : [];
 	const requestId = crypto.randomUUID();
 	let interrupted = false;
 	const stopListening = deps.onInterrupt(() => {
@@ -403,7 +483,7 @@ export async function runExt(
 			PW_EXT_DEFAULT_TIMEOUT_MS + 5_000,
 		);
 		if (!reply.ok) {
-			env.err(redactText(reply.error ?? "pw --ext failed in the browser."));
+			env.err(redactText(reply.error ?? "pw --ext failed in the browser.", secrets));
 			return 1;
 		}
 		let data: ReturnType<typeof validatePwExtResponse>;
@@ -415,7 +495,7 @@ export async function runExt(
 			);
 			return 1;
 		}
-		const lines = [redactText(data.text)];
+		const lines = [redactSecrets(data.text, secrets)];
 		if (data.image)
 			lines.push(
 				"### Result",
@@ -428,7 +508,7 @@ export async function runExt(
 			env.err("pw --ext canceled; the extension was told to cancel it.");
 			return 130;
 		}
-		env.err(redactText(error instanceof Error ? error.message : String(error)));
+		env.err(redactText(error instanceof Error ? error.message : String(error), secrets));
 		return 1;
 	} finally {
 		stopListening();

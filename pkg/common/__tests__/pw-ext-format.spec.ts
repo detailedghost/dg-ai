@@ -457,3 +457,28 @@ describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
 		expect(floor).toBeGreaterThanOrEqual(1_044_000);
 	});
 });
+
+describe("pw --ext unmask and secret fill", () => {
+	it.each([
+		{ verb: "unmask", minutes: 15 },
+		{ verb: "unmask", minutes: 1, tabId: 4 },
+		{ verb: "unmask", minutes: 60 },
+		{ verb: "unmask", off: true },
+		{ verb: "fill", target: "#pw", value: "one-time", secret: true },
+	])("accepts %o", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request);
+	});
+
+	it.each([
+		[{ verb: "unmask" }, "minutes"],
+		[{ verb: "unmask", minutes: 0 }, "minutes"],
+		[{ verb: "unmask", minutes: 61 }, "minutes"],
+		[{ verb: "unmask", minutes: 1.5 }, "minutes"],
+		[{ verb: "unmask", off: true, minutes: 5 }, "not used with off"],
+		[{ verb: "unmask", off: false }, "off"],
+		[{ verb: "fill", target: "#pw", value: "x", secret: false }, "secret"],
+		[{ verb: "click", target: "#b", secret: true }, "unknown field"],
+	])("rejects %o", (request, message) => {
+		expect(() => validatePwExtRequest(request)).toThrow(message);
+	});
+});

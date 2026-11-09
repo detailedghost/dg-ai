@@ -14,11 +14,12 @@ export function clearNotedSecrets(): void {
 	notedSecrets.clear();
 }
 
-const PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
-	{
-		pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-		replacement: REDACTED,
-	},
+const EMAIL = {
+	pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+	replacement: REDACTED,
+};
+
+const SECRET_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
 	{
 		pattern: /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
 		replacement: `Bearer ${REDACTED}`,
@@ -58,6 +59,8 @@ const PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
 	},
 ];
 
+const PATTERNS = [EMAIL, ...SECRET_PATTERNS];
+
 function envSecrets(): string[] {
 	const values: string[] = [];
 	const env = typeof process === "undefined" ? undefined : process?.env;
@@ -73,20 +76,36 @@ function replaceLiteral(message: string, secret: string): string {
 	return message.split(secret).join(REDACTED);
 }
 
-/** Redacts credentials from a log line. Short explicit secrets are left alone. */
-export function redactText(
+function redactWith(
+	patterns: ReadonlyArray<{ pattern: RegExp; replacement: string }>,
 	message: string,
-	secrets: readonly string[] = [],
+	secrets: readonly string[],
 ): string {
 	const literals = [...secrets, ...notedSecrets, ...envSecrets()].sort(
 		(a, b) => b.length - a.length,
 	);
 	let redacted = message;
 	for (const secret of literals) redacted = replaceLiteral(redacted, secret);
-	for (const { pattern, replacement } of PATTERNS) {
+	for (const { pattern, replacement } of patterns) {
 		redacted = redacted.replace(pattern, replacement);
 	}
 	return redacted;
+}
+
+/** Redacts credentials from a log line. Short explicit secrets are left alone. */
+export function redactText(
+	message: string,
+	secrets: readonly string[] = [],
+): string {
+	return redactWith(PATTERNS, message, secrets);
+}
+
+/** Like redactText, but leaves email addresses in place, for a user-approved unmask. */
+export function redactSecrets(
+	message: string,
+	secrets: readonly string[] = [],
+): string {
+	return redactWith(SECRET_PATTERNS, message, secrets);
 }
 
 export function redactUnknown(value: unknown): unknown {

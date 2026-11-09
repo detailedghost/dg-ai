@@ -36,7 +36,10 @@ group, until the human hands you a tab from the extension popup.
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
 | `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
-| `fill <ref or selector> <text>` | write | Sets one text, date or time field (`YYYY-MM-DD`, `HH:MM`), or picks a single-select option by value or label |
+| `fill <ref or selector> <text>` | write | Sets one text field, or a date or time field (`date` as `YYYY-MM-DD`, `time` as `HH:MM`, plus `datetime-local`, `month` and `week`), or picks one `<select>` option by value, then label, then case-insensitive label. A multi-select is refused |
+| `fill <ref or selector> --value-env NAME` | write | Sets a password or secret field from your environment variable `NAME`. Needs an `unmask` grant |
+| `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs an `unmask` grant |
+| `unmask [--minutes N]` | write | Asks the human, in a browser popup, to unmask the selected tab's origin for `N` minutes (1 to 60, default 15). `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input of an https page |
 | `call <tool> <json-args>` | write | Runs one WebMCP tool; `json-args` is a JSON object |
 
@@ -69,7 +72,20 @@ group, until the human hands you a tab from the extension popup.
   `tabs`, `new` and `close` still work when the selected tab is a settings page,
   and `open` navigates it to a web page. `tabs` hides the URL and title of those
   tabs. The Proton Mail tab is never read, closed or navigated.
-- `fill` never takes passwords or secrets. Ask the human to type them.
+- Without a grant, `fill` refuses passwords and secrets. To get real emails,
+  user names or a secret fill, run `pw --ext unmask [--minutes N]` and tell the
+  human to click Allow in the popup. No answer in 60 seconds, or a closed
+  window, means deny. You cannot grant it yourself. Ask only when the task
+  needs it.
+- A grant covers one origin, in your tab group only, until its time, until
+  `pw --ext unmask --off`, or until the tab group changes or closes. It never
+  covers a mailbox or a browser-internal page. Run `unmask --off` as soon as you
+  finish. Tokens, API keys, JWTs and `password=` values stay masked.
+- Each reply under a grant starts with `### Unmask` and
+  `unmasked on <origin> until HH:MM (approved in the browser)`.
+- Never put a secret in argv. Use `fill <target> --value-env NAME` or
+  `--value-stdin`. The result says only `filled <field>`. An extension that
+  lacks `unmask` refuses the verb at once.
 - Output is redacted and capped. Screenshots are not redacted.
 - Ctrl-C on the CLI cancels the request.
 - `--ext` runs no agent code. On a failure, run `dg-skills doctor pw`.

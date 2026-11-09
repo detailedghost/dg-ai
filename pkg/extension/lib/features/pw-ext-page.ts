@@ -2,7 +2,7 @@ export type PwExtPageAction =
 	| { kind: "snapshot" }
 	| { kind: "click"; target: string }
 	| { kind: "count"; target: string }
-	| { kind: "fill"; target: string; value: string }
+	| { kind: "fill"; target: string; value: string; secret?: boolean }
 	| {
 			kind: "upload";
 			target: string;
@@ -24,6 +24,7 @@ export type PwExtPageResult =
 export function pwExtPageAction(
 	action: PwExtPageAction,
 	expectUrl?: string,
+	unmask = false,
 ): PwExtPageResult {
 	const TREE_MAX = 60_000;
 	const TEXT_MAX = 30_000;
@@ -250,7 +251,7 @@ export function pwExtPageAction(
 		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
 		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, REDACTED],
 		[/((?:password|passwd|secret|token|api[-_]?key)\s*[:=]\s*)\S+/gi, `$1${REDACTED}`],
-		[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
+		...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
 	];
 	const redactTokens = (value: string): string =>
 		TOKEN_PATTERNS.reduce(
@@ -458,18 +459,25 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(input)}` };
 	};
 
-	const fill = (target: string, value: string): PwExtPageResult => {
+	const fill = (target: string, value: string, secret: boolean): PwExtPageResult => {
 		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
-		if (isSecret(el))
-			return { error: "pw --ext does not fill password or secret fields." };
+		if (isSecret(el) && !unmask)
+			return {
+				error: "pw --ext fills a password or secret field only during an unmask grant. Run pw --ext unmask; the user approves it in the browser.",
+			};
+		if (isSecret(el) && !secret)
+			return {
+				error: "Pass a password or secret with --value-env <NAME> or --value-stdin, never on the command line.",
+			};
 		const input = el as HTMLInputElement;
 		if (input.disabled || input.readOnly) return { error: `${describe(el)} cannot be filled.` };
 		if (el.tagName === "SELECT") return pick(el as HTMLSelectElement, value);
 		if (el.tagName === "INPUT" && Object.hasOwn(DATE_INPUTS, input.type.toLowerCase())) return fillDate(input, value);
 		const editable = el.getAttribute("contenteditable") === "true";
 		const field =
-			(el.tagName === "INPUT" && TEXT_INPUTS.has(input.type.toLowerCase())) ||
+			(el.tagName === "INPUT" &&
+				(TEXT_INPUTS.has(input.type.toLowerCase()) || (secret && input.type.toLowerCase() === "password"))) ||
 			el.tagName === "TEXTAREA";
 		if ((!field && !editable) || input.disabled || input.readOnly)
 			return { error: `${describe(el)} cannot be filled.` };
@@ -567,7 +575,7 @@ export function pwExtPageAction(
 			case "count":
 				return count(action.target);
 			case "fill":
-				return fill(action.target, action.value);
+				return fill(action.target, action.value, action.secret === true);
 			case "selection":
 				return selection();
 			case "upload":

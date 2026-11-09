@@ -4,6 +4,7 @@ import {
 	emitRedacted,
 	installRedactingConsole,
 	noteSecret,
+	redactSecrets,
 	redactText,
 } from "../src/redact";
 import {
@@ -260,5 +261,16 @@ describe("redactText without a process global", () => {
 			if (descriptor) Object.defineProperty(globalThis, "process", descriptor);
 		}
 		expect(output).toBe("token [redacted]");
+	});
+});
+
+describe("redactSecrets", () => {
+	it("keeps email addresses but masks tokens, keys and literal secrets", () => {
+		const text = "user ada@example.test token=abc123def456 key sk-abcdefgh12345678 pass Hunter2-secret";
+		const out = redactSecrets(text, ["Hunter2-secret"]);
+		expect(out).toContain("ada@example.test");
+		expect(out).not.toContain("sk-abcdefgh12345678");
+		expect(out).not.toContain("Hunter2-secret");
+		expect(redactText(text)).not.toContain("ada@example.test");
 	});
 });

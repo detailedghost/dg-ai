@@ -323,12 +323,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 16 verbs for an unknown verb", async () => {
+	test("lists all 17 verbs for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(16);
+		expect(verbs).toHaveLength(17);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});
@@ -537,3 +537,90 @@ function afterEachCleanup(dirs: string[]) {
 		for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 	});
 }
+
+describe("pw --ext unmask and secret fill", () => {
+	const ok = () => ({ ok: true, data: { text: "done" } });
+
+	test("asks for 15 minutes by default", async () => {
+		const d = deps(ok);
+		expect(await runExt(["--ext", "unmask"], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual({ verb: "unmask", minutes: 15 });
+	});
+
+	test("sends --off alone", async () => {
+		const d = deps(ok);
+		expect(await runExt(["--ext", "unmask", "--off"], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual({ verb: "unmask", off: true });
+	});
+
+	for (const minutes of ["0", "61", "1.5", "x"])
+		test(`rejects --minutes ${minutes}`, async () => {
+			const env = clientEnv();
+			const d = deps(ok);
+			expect(await runExt(["--ext", "unmask", "--minutes", minutes], env, d.value)).toBe(2);
+			expect(env.stderr.join("\n")).toContain("a whole number from 1 to 60");
+			expect(d.sent).toHaveLength(0);
+		});
+
+	test("rejects --minutes with --off and on other verbs", async () => {
+		const both = clientEnv();
+		expect(await runExt(["--ext", "unmask", "--off", "--minutes", "5"], both, deps(ok).value)).toBe(2);
+		const other = clientEnv();
+		expect(await runExt(["--ext", "snapshot", "--off"], other, deps(ok).value)).toBe(2);
+		expect(other.stderr.join("\n")).toContain("only with pw --ext unmask");
+	});
+
+	test("reads a secret from --value-env and keeps it out of the output", async () => {
+		const env = clientEnv();
+		const d = deps(() => ({ ok: true, data: { text: "filled e5 hunter2-secret-x" } }), {
+			env: { PW_SECRET: "hunter2-secret-x" },
+		});
+		expect(await runExt(["--ext", "fill", "e5", "--value-env", "PW_SECRET"], env, d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual({
+			verb: "fill",
+			target: "e5",
+			value: "hunter2-secret-x",
+			secret: true,
+		});
+		expect(env.stdout.join("\n")).not.toContain("hunter2-secret-x");
+	});
+
+	test("reads a secret from --value-stdin without the trailing newline", async () => {
+		const d = deps(ok, { readStdin: () => "from-stdin-123\n" });
+		expect(await runExt(["--ext", "fill", "e5", "--value-stdin"], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toMatchObject({ value: "from-stdin-123", secret: true });
+	});
+
+	test("refuses a secret value in argv", async () => {
+		const env = clientEnv();
+		const d = deps(ok, { env: { PW_SECRET: "abc" } });
+		expect(
+			await runExt(["--ext", "fill", "e5", "plain", "--value-env", "PW_SECRET"], env, d.value),
+		).toBe(2);
+		expect(env.stderr.join("\n")).toContain("never as an argument");
+		expect(d.sent).toHaveLength(0);
+	});
+
+	test("refuses an unset variable and empty stdin", async () => {
+		const unset = clientEnv();
+		expect(
+			await runExt(["--ext", "fill", "e5", "--value-env", "NOPE"], unset, deps(ok, { env: {} }).value),
+		).toBe(2);
+		expect(unset.stderr.join("\n")).toContain("not set or is empty");
+		const empty = clientEnv();
+		expect(
+			await runExt(["--ext", "fill", "e5", "--value-stdin"], empty, deps(ok, { readStdin: () => "" }).value),
+		).toBe(2);
+	});
+
+	test("keeps emails an unmask shows, but still masks tokens", async () => {
+		const env = clientEnv();
+		const d = deps(() => ({
+			ok: true,
+			data: { text: "ann@example.com token ghp_abcdefghijklmnopqrstuvwxyz0123456789" },
+		}));
+		await runExt(["--ext", "snapshot"], env, d.value);
+		expect(env.stdout.join("\n")).toContain("ann@example.com");
+		expect(env.stdout.join("\n")).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+	});
+});

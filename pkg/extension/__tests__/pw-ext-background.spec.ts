@@ -52,6 +52,8 @@ type Options = {
 	chromium?: boolean;
 	signal?: AbortSignal;
 	windowState?: "normal" | "minimized" | "maximized";
+	approval?: "allow" | "deny" | "timeout";
+	clock?: { now: number };
 };
 
 type Executed = {
@@ -101,10 +103,19 @@ function harness(options: Options = {}) {
 		storage: fake.api.storage,
 		lock: createLock(),
 	});
+	const approvalRequests: unknown[] = [];
+	const clock = options.clock ?? { now: Date.UTC(2026, 10, 9, 15, 0) };
 	const handler = createPwExtHandler({
 		browserApi: fake.api,
 		agentTabs,
 		isChromium: () => options.chromium ?? true,
+		approvals: {
+			request: async (request) => {
+				approvalRequests.push(request);
+				return options.approval ?? "deny";
+			},
+		},
+		now: () => clock.now,
 	});
 	const call = (
 		request: PwExtRequest,
@@ -129,6 +140,8 @@ function harness(options: Options = {}) {
 			context,
 		} as never);
 	return {
+		approvalRequests,
+		clock,
 		run: (request: PwExtRequest) => call(request),
 		runWith:
 			(context: { fetchAsset(id: string): Promise<Blob> }) =>
@@ -197,6 +210,7 @@ describe("pw --ext background handler", () => {
 		expect(h.executed()[0]?.args).toEqual([
 			{ kind: "click", target: "e1" },
 			WEB_TAB.url,
+			false,
 		]);
 		expect(h.executed()[0]?.target.tabId).toBe(7);
 	});
@@ -207,7 +221,7 @@ describe("pw --ext background handler", () => {
 
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).toContain("#q matches 1 element");
-		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url]);
+		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false]);
 	});
 
 	it("runs a fill and keeps the typed value out of the result", async () => {
@@ -951,6 +965,7 @@ describe("pw --ext round 3", () => {
 				fileType: "video/webm",
 			},
 			WEB_TAB.url,
+			false,
 		]);
 		expect(answer).toMatchObject({ ok: true });
 	});
@@ -1084,5 +1099,72 @@ describe("pw --ext round 3 review fixes", () => {
 			expect(lines).toHaveLength(50);
 			expect(lines.every((line) => line.length <= 520)).toBe(true);
 		}
+	});
+});
+
+describe("pw --ext unmask", () => {
+	const SNAPSHOT = { tree: 'textbox "Email" [ref=e1]: ada@clinic.test', text: "ada@clinic.test token=abc123def456" };
+	const ORIGIN = "https://app.example.test";
+
+	it("asks in the browser, names the site and agent, and grants for the minutes asked", async () => {
+		const h = harness({ approval: "allow" });
+		const answer = await h.run({ verb: "unmask", minutes: 15 });
+		expect(answer).toEqual({ ok: true, data: { text: expect.stringContaining(`Unmasked on ${ORIGIN} until`) } });
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({ origin: ORIGIN, lines: expect.arrayContaining([`Agent: ${IDENTITY}`]) }),
+		]);
+	});
+
+	it("shows email addresses during a grant, keeps tokens masked, and marks the output", async () => {
+		const h = harness({ approval: "allow", pageResult: SNAPSHOT });
+		const before = await h.run({ verb: "snapshot" });
+		expect(JSON.stringify(before)).not.toContain("ada@clinic.test");
+		await h.run({ verb: "unmask", minutes: 5 });
+		const after = await h.run({ verb: "snapshot" });
+		const text = after.ok ? after.data.text : "";
+		expect(text).toContain("ada@clinic.test");
+		expect(text).toContain(`unmasked on ${ORIGIN} until`);
+		expect(text).not.toContain("abc123def456");
+		expect(h.executed().at(-1)?.args[2]).toBe(true);
+	});
+
+	it.each([
+		["deny", "denied"],
+		["timeout", "60 seconds"],
+	] as const)("a %s answer grants nothing", async (approval, message) => {
+		const h = harness({ approval, pageResult: SNAPSHOT });
+		expect(await h.run({ verb: "unmask", minutes: 15 })).toEqual({ ok: false, error: expect.stringContaining(message) });
+		const after = await h.run({ verb: "snapshot" });
+		expect(JSON.stringify(after)).not.toContain("ada@clinic.test");
+	});
+
+	it("ends at its time and on --off", async () => {
+		const h = harness({ approval: "allow", pageResult: SNAPSHOT });
+		await h.run({ verb: "unmask", minutes: 1 });
+		h.clock.now += 61_000;
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("ada@clinic.test");
+		await h.run({ verb: "unmask", minutes: 10 });
+		expect(await h.run({ verb: "unmask", off: true })).toEqual({
+			ok: true,
+			data: { text: expect.stringContaining(`Ended the unmask on ${ORIGIN}`) },
+		});
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("ada@clinic.test");
+	});
+
+	it("is refused on the Proton mailbox and asks nothing", async () => {
+		const h = harness({ approval: "allow", tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
+		expect(await h.run({ verb: "unmask", minutes: 15 })).toEqual({
+			ok: false,
+			error: expect.stringContaining("Proton Mail"),
+		});
+		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("never echoes a secret fill value, even when the page repeats it", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled Temp-Pass-123" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const answer = await h.run({ verb: "fill", target: "#pw", value: "Temp-Pass-123", secret: true });
+		expect(JSON.stringify(answer)).not.toContain("Temp-Pass-123");
+		expect(h.executed().at(-1)?.args[0]).toEqual({ kind: "fill", target: "#pw", value: "Temp-Pass-123", secret: true });
 	});
 });

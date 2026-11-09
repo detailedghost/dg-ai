@@ -1,9 +1,11 @@
 import {
 	PW_EXT_MAX_TEXT_CHARS,
+	PW_EXT_UNMASK_DEFAULT_MINUTES,
 	type PW_EXT_RELAY,
 	type PwExtRequest,
 	type PwExtResponse,
 	type PwExtVerb,
+	redactSecrets,
 	redactText,
 	validatePwExtRequest,
 } from "@dg/common";
@@ -27,8 +29,10 @@ import {
 	createAgentTabs,
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
+import { type Approvals, browserApprovals } from "./approval";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
+import { createUnmaskGrants, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
 	mailbox,
@@ -107,12 +111,14 @@ const BLOCKS_BROWSER_PAGE: ReadonlySet<PwExtVerb> = new Set([
 	"current",
 	"screenshot",
 	"select",
+	"unmask",
 ]);
 const BLOCKS_MAILBOX: ReadonlySet<PwExtVerb> = new Set([
 	...PAGE_VERBS,
 	"screenshot",
 	"close",
 	"open",
+	"unmask",
 ]);
 const NEEDS_LOADED_TAB: ReadonlySet<PwExtVerb> = new Set([
 	...PAGE_VERBS,
@@ -188,8 +194,21 @@ function cap(text: string): string {
 const SECRET_PAIR =
 	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
 
-function clean(text: string): string {
-	return cap(redactText(text).replace(SECRET_PAIR, "$1$2[redacted]"));
+/** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
+function clean(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
+	const literal = secrets.reduce(
+		(out, secret) => (secret.length >= 4 ? out.split(secret).join("[redacted]") : out),
+		text,
+	);
+	const redact = unmasked ? redactSecrets : redactText;
+	return cap(redact(literal, secrets).replace(SECRET_PAIR, "$1$2[redacted]"));
+}
+
+const clock = (at: number) => new Date(at).toTimeString().slice(0, 5);
+
+function unmaskLine(grant: UnmaskGrant): string {
+	return `### Unmask
+unmasked on ${grant.origin} until ${clock(grant.until)} (approved in the browser)`;
 }
 
 function shownUrl(tab: Pick<BrowserTab, "url">): string {
@@ -260,10 +279,16 @@ export function createPwExtHandler({
 	browserApi: api,
 	agentTabs = createAgentTabs({ browserApi: api, storage: api.storage }),
 	isChromium = defaultIsChromium,
+	approvals,
+	now = Date.now,
+	grants = createUnmaskGrants({ storage: api.storage, now }),
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
 	isChromium?: () => boolean;
+	approvals?: Pick<Approvals, "request">;
+	now?: () => number;
+	grants?: UnmaskGrants;
 }) {
 	const ok = (text: string, image?: string): PwExtResult => ({
 		ok: true,
@@ -295,11 +320,11 @@ export function createPwExtHandler({
 		};
 	}
 
-	async function inPage(tab: LiveTab, action: PwExtPageAction) {
+	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false) {
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
 			func: pwExtPageAction,
-			args: [action, tab.url as string],
+			args: [action, tab.url as string, unmasked],
 		});
 		return pageResult(frame?.result);
 	}
@@ -375,9 +400,48 @@ export function createPwExtHandler({
 		context: PwExtContext,
 		signal: AbortSignal | undefined,
 	): Promise<PwExtResult> {
+		const grant = await grants.active(context.sessionId, tab);
+		const shown = (text: string): PwExtResult => ({
+			ok: true,
+			data: {
+				text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, {
+					unmasked: grant !== undefined,
+					secrets: request.secret ? [request.value as string] : [],
+				}),
+			},
+		});
+		const failed = (error: string): PwExtResult => ({
+			ok: false,
+			error: clean(error, { unmasked: grant !== undefined, secrets: request.secret ? [request.value as string] : [] }),
+		});
 		switch (request.verb) {
 			case "current":
-				return ok(pageLines(tab).join("\n"));
+				return shown(pageLines(tab).join("\n"));
+			case "unmask": {
+				const origin = new URL(tab.url as string).origin;
+				if (request.off) {
+					const ended = await grants.revoke(context.sessionId, origin);
+					return ok(`### Result\n${ended ? "Ended the unmask" : "No unmask was active"} on ${origin}.`);
+				}
+				const minutes = request.minutes ?? PW_EXT_UNMASK_DEFAULT_MINUTES;
+				const answer = await (approvals ?? browserApprovals()).request({
+					title: "Let the agent see personal data?",
+					origin,
+					lines: [
+						`Agent: ${context.agentIdentity}`,
+						"Shows email addresses and user names in pw --ext output on this site.",
+						"Lets the agent fill password fields here, from a value it never echoes.",
+						`Ends in ${minutes} minutes, on pw --ext unmask --off, or when the agent's tab group closes.`,
+					],
+				});
+				if (signal?.aborted) return CANCELED;
+				if (answer === "timeout")
+					return { ok: false, error: "No answer in the browser within 60 seconds; nothing was unmasked." };
+				if (answer === "deny") return { ok: false, error: "The user denied the unmask in the browser." };
+				const until = now() + minutes * 60_000;
+				await grants.grant(context.sessionId, { origin, groupId: tab.groupId ?? -1, until });
+				return ok(`### Result\nUnmasked on ${origin} until ${clock(until)}, approved in the browser.`);
+			}
 			case "open": {
 				await api.tabs.update(tab.id, { url: request.url as string });
 				return ok(`### Result\nOpened ${request.url} in tab ${tab.id}`);
@@ -514,12 +578,13 @@ export function createPwExtHandler({
 									kind: "fill",
 									target: request.target as string,
 									value: request.value as string,
+									...(request.secret ? { secret: true } : {}),
 								}
 							: { kind: request.verb };
-				const result = await inPage(tab, action);
-				if ("error" in result) return { ok: false, error: clean(result.error) };
+				const result = await inPage(tab, action, grant !== undefined);
+				if ("error" in result) return failed(result.error);
 				if ("tree" in result)
-					return ok(
+					return shown(
 						[
 							...pageLines(tab),
 							"### Snapshot",
@@ -529,7 +594,7 @@ export function createPwExtHandler({
 						].join("\n"),
 					);
 				if ("detail" in result)
-					return ok([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
+					return shown([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
 				if ("entries" in result) {
 					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url])) as
 						| { entries?: unknown }
@@ -555,7 +620,7 @@ export function createPwExtHandler({
 				}
 				if (!("text" in result))
 					return { ok: false, error: "The page returned an unexpected result." };
-				return ok([...pageLines(tab), "### Selection", result.text].join("\n"));
+				return shown([...pageLines(tab), "### Selection", result.text].join("\n"));
 			}
 		}
 	}

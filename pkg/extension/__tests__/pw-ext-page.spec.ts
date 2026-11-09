@@ -414,3 +414,33 @@ describe("review round 3 hardening", () => {
 		expect(text).not.toContain("me@example.test");
 	});
 });
+
+describe("unmask grant", () => {
+	it("shows email addresses in a snapshot only while unmasked, and keeps tokens masked", () => {
+		page(`<label for="e">Email</label><input id="e" value="ada@clinic.test"><p>token=abc123def456 ada@clinic.test</p>`);
+		const masked = pwExtPageAction({ kind: "snapshot" }) as { tree: string; text: string };
+		expect(`${masked.tree}${masked.text}`).not.toContain("ada@clinic.test");
+		const shown = pwExtPageAction({ kind: "snapshot" }, undefined, true) as { tree: string; text: string };
+		expect(shown.tree).toContain("ada@clinic.test");
+		expect(shown.text).toContain("ada@clinic.test");
+		expect(shown.text).not.toContain("abc123def456");
+	});
+
+	it("keeps a password field's value out of the snapshot even while unmasked", () => {
+		page(`<label>Password <input id="p" type="password" value="Temp-Pass-123"></label>`);
+		const shown = pwExtPageAction({ kind: "snapshot" }, undefined, true) as { tree: string; text: string };
+		expect(`${shown.tree}${shown.text}`).not.toContain("Temp-Pass-123");
+	});
+
+	it("fills a password field only with a grant and a secret value, and never echoes it", () => {
+		page(`<label>Password <input id="p" type="password"></label>`);
+		const action = { kind: "fill" as const, target: "#p", value: "Temp-Pass-123" };
+		expect(pwExtPageAction(action)).toEqual({ error: expect.stringContaining("pw --ext unmask") });
+		expect(pwExtPageAction(action, undefined, true)).toEqual({ error: expect.stringContaining("--value-env") });
+		expect(el<HTMLInputElement>("#p").value).toBe("");
+		const result = pwExtPageAction({ ...action, secret: true }, undefined, true);
+		expect(result).toEqual({ detail: expect.stringContaining("filled") });
+		expect(JSON.stringify(result)).not.toContain("Temp-Pass-123");
+		expect(el<HTMLInputElement>("#p").value).toBe("Temp-Pass-123");
+	});
+});

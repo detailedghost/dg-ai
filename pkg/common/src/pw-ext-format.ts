@@ -21,6 +21,7 @@ export const PW_EXT_WRITE_VERBS = [
 	"new",
 	"select",
 	"close",
+	"unmask",
 ] as const;
 export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
@@ -39,6 +40,9 @@ export const PW_EXT_MAX_UPLOAD_BYTES = 26_214_400;
 export const PW_EXT_MAX_CALL_ARGS_BYTES = 16_384;
 export const PW_EXT_MAX_TOOL_NAME_CHARS = 128;
 export const PW_EXT_MAX_TAB_ID = 2_147_483_647;
+/** Upper bound and default length of a user-approved unmask grant. */
+export const PW_EXT_UNMASK_MAX_MINUTES = 60;
+export const PW_EXT_UNMASK_DEFAULT_MINUTES = 15;
 /** First extension release with per-agent tab groups. */
 export const PW_EXT_MIN_EXTENSION_VERSION = [1, 44, 0] as const;
 
@@ -56,6 +60,10 @@ export type PwExtRequest = {
 	filePath?: string;
 	tool?: string;
 	args?: Record<string, unknown>;
+	/** fill only: the value is a secret from the CLI's env or stdin; never echoed. */
+	secret?: boolean;
+	minutes?: number;
+	off?: boolean;
 };
 
 /** Redacted, size-capped output; image is a screenshot data URL. */
@@ -92,7 +100,8 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	close: ["tabId"],
 	click: ["tabId", "target"],
 	count: ["tabId", "target"],
-	fill: ["tabId", "target", "value"],
+	fill: ["tabId", "target", "value", "secret"],
+	unmask: ["tabId", "minutes", "off"],
 	upload: [
 		"tabId",
 		"target",
@@ -193,7 +202,20 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 		if (bytes(value.target) > PW_EXT_MAX_TARGET_BYTES)
 			fail(`${path}.target exceeds ${PW_EXT_MAX_TARGET_BYTES} bytes`);
 	}
+	if (verb === "unmask") {
+		if (value.off !== undefined && value.off !== true) fail(`${path}.off must be true when set`);
+		if (value.off === true && value.minutes !== undefined)
+			fail(`${path}.minutes is not used with off`);
+		if (
+			value.off !== true &&
+			(!Number.isSafeInteger(value.minutes) ||
+				(value.minutes as number) < 1 ||
+				(value.minutes as number) > PW_EXT_UNMASK_MAX_MINUTES)
+		)
+			fail(`${path}.minutes must be an integer from 1 to ${PW_EXT_UNMASK_MAX_MINUTES}`);
+	}
 	if (verb === "fill") {
+		if (value.secret !== undefined && value.secret !== true) fail(`${path}.secret must be true when set`);
 		requireString(value.value, `${path}.value`);
 		if (bytes(value.value) > PW_EXT_MAX_VALUE_BYTES)
 			fail(`${path}.value exceeds ${PW_EXT_MAX_VALUE_BYTES} bytes`);
