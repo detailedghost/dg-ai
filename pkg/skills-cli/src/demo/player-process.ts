@@ -80,6 +80,18 @@ export const contextOptions = (job: PlayerJob, record: boolean) => ({
 		: {}),
 });
 
+type TabStorage = { origin: string; items: [string, string][] };
+
+const readTabStorage = (): TabStorage => ({
+	origin: location.origin,
+	items: Object.entries(sessionStorage),
+});
+
+function seedTabStorage({ origin, items }: TabStorage): void {
+	if (location.origin !== origin || sessionStorage.length > 0) return;
+	for (const [name, value] of items) sessionStorage.setItem(name, value);
+}
+
 async function restoreState(context: BrowserContext, state: StorageState): Promise<void> {
 	await context.addCookies(state.cookies);
 	const seeded = state.origins.filter((origin) => origin.localStorage.length > 0);
@@ -323,13 +335,25 @@ export async function runPlayer(
 	const opened = new Set<BrowserContext>();
 	const closing = new Set<BrowserContext>();
 	let cancelled = false;
+	const pending = new Set<ReturnType<typeof setTimeout>>();
 	let stop: () => void = () => undefined;
 	const stopped = new Promise<"stopped">((resolve) => {
 		stop = () => {
 			cancelled = true;
+			for (const wait of pending) clearTimeout(wait);
+			pending.clear();
 			resolve("stopped");
 		};
 	});
+	const pause = (ms: number): Promise<void> =>
+		new Promise((resolve) => {
+			if (cancelled) return;
+			const wait = setTimeout(() => {
+				pending.delete(wait);
+				resolve();
+			}, ms);
+			pending.add(wait);
+		});
 	const timer = setTimeout(stop, timeoutMs);
 	let session: PlayerSession | undefined;
 	let finished: Finished = { encoded: false, audio: "none" };
@@ -374,25 +398,30 @@ export async function runPlayer(
 
 		const setup = job.script.setup;
 		let state: StorageState | undefined;
+		let tab: TabStorage | undefined;
 		if (setup && !setup.includeInTour && setup.steps.length > 0) {
 			const context = await open(false);
+			const page = await freshPage(context);
 			await recordTour(
-				await freshPage(context),
+				page,
 				{ startUrl: job.script.startUrl, steps: setup.steps },
 				{
 					env: process.env,
 					overlays: false,
 					hold: () => 0,
+					pause,
 					onMissingEnv: waitForPerson(timeoutMs),
 					onSkippedStep: (index) =>
 						console.log(`demo ${job.slug}: skipped setup step ${index + 1} after the sign-in`),
 				},
 			);
 			state = await context.storageState();
+			tab = await page.evaluate(readTabStorage).catch(() => undefined);
 			await close(context);
 		}
 
 		const context = await open(true, state);
+		if (tab && tab.items.length > 0) await context.addInitScript(seedTabStorage, tab);
 		const texts = steps.map(({ step }) => step.body);
 		const clips = job.narration ? await narrate(job, context, texts, hooks) : undefined;
 		const recorded = steps.map(({ step }) => step);
@@ -403,6 +432,7 @@ export async function runPlayer(
 			env: process.env,
 			overlays: true,
 			hold: (_, i) => holds[i] ?? 0,
+			pause,
 			now: () => Date.now() - recordingStart,
 		});
 		startOffsetMs = result.startMs;

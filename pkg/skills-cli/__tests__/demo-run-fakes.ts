@@ -20,6 +20,7 @@ export type FakeOptions = {
 	notPassword?: string[];
 	navigatesOnPrompt?: boolean;
 	gotoDelayMs?: number;
+	tabStorage?: { origin: string; items: [string, string][] };
 };
 
 export type OpenCall = { record: boolean; state: unknown };
@@ -30,6 +31,7 @@ export function fakeBrowser(options: FakeOptions) {
 	const log: string[] = [];
 	const closes: Array<() => void> = [];
 	const evaluated: unknown[] = [];
+	const initScripts: OpenCall[] = [];
 
 	const locatorFor = (selector: string) => {
 		const state = locators.get(selector) ?? { filled: [], focused: 0, typed: [], clicked: 0 };
@@ -50,7 +52,7 @@ export function fakeBrowser(options: FakeOptions) {
 		return { first: () => handle };
 	};
 
-	const newPage = () => {
+	const newPage = (record: boolean) => {
 		let current = "https://example.test/";
 		return {
 		goto: async (url: string) => {
@@ -65,7 +67,10 @@ export function fakeBrowser(options: FakeOptions) {
 		waitForURL: async () => {
 			if (options.navigatesOnPrompt) current = "https://example.test/home";
 		},
-		evaluate: async (_fn: unknown, arg: unknown) => void evaluated.push(arg),
+		evaluate: async (_fn: unknown, arg?: unknown) => {
+			if (!record && arg === undefined) return options.tabStorage;
+			evaluated.push(arg);
+		},
 		close: async () => undefined,
 		video: () =>
 			options.noVideo
@@ -86,7 +91,8 @@ export function fakeBrowser(options: FakeOptions) {
 		const handlers: Array<() => void> = [];
 		const context = {
 			pages: () => [],
-			newPage: async () => newPage(),
+			newPage: async () => newPage(record),
+			addInitScript: async (_fn: unknown, arg: unknown) => void initScripts.push({ record, state: arg }),
 			storageState: async () => ({ cookies: [{ name: "sid" }], origins: [] }),
 			once: (_event: string, handler: () => void) => void handlers.push(handler),
 			close: async () => {
@@ -110,6 +116,7 @@ export function fakeBrowser(options: FakeOptions) {
 		log,
 		locators,
 		evaluated,
+		initScripts,
 		closeBrowser: () => closes.forEach((close) => close()),
 	};
 }

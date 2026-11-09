@@ -188,6 +188,27 @@ describe("runPlayer failures and stops", () => {
 		expect(browser.log).toContain("session closed");
 	});
 
+	test("the timeout cancels a pending step hold", async () => {
+		const HOLD = 600_000;
+		const set = spyOn(globalThis, "setTimeout");
+		const clear = spyOn(globalThis, "clearTimeout");
+		try {
+			const browser = fakeBrowser({ dir });
+			const code = await runPlayer(
+				job({ timeoutMin: 0.001, script: script({ steps: [{ body: "Wait", advance: HOLD }] }) }),
+				{ launch: browser.launch, encode: fakeEncode().deps },
+			);
+			expect(code).toBe(0);
+			expect(result().outcome).toBe("stopped");
+			const holds = set.mock.calls.flatMap((call, i) => (call[1] === HOLD ? [set.mock.results[i]?.value as ReturnType<typeof setTimeout>] : []));
+			expect(holds).toHaveLength(1);
+			expect(clear.mock.calls.map((call) => call[0])).toContain(holds[0]);
+		} finally {
+			set.mockRestore();
+			clear.mockRestore();
+		}
+	});
+
 	test("a launch that resolves after the timeout is closed and drives nothing", async () => {
 		const browser = fakeBrowser({ dir });
 		let late: Promise<void> = Promise.resolve();
@@ -306,6 +327,18 @@ describe("runPlayer setup", () => {
 		expect(browser.opens[1]?.state).toEqual({ cookies: [{ name: "sid" }], origins: [] });
 		expect(browser.log.indexOf("close setup")).toBeLessThan(browser.log.lastIndexOf("goto https://example.test/"));
 		expect(browser.locators.get("#pass")?.typed).toEqual(["pw"]);
+	});
+
+	test("carries the setup tab's session storage into the recording", async () => {
+		process.env.DG_DEMO_PW = "pw";
+		const tabStorage = { origin: "https://example.test", items: [["token", "t1"]] as [string, string][] };
+		const browser = fakeBrowser({ dir, tabStorage });
+		const code = await runPlayer(job({ script: withSetup("$DG_DEMO_PW") }), {
+			launch: browser.launch,
+			encode: fakeEncode().deps,
+		});
+		expect(code).toBe(0);
+		expect(browser.initScripts).toEqual([{ record: true, state: tabStorage }]);
 	});
 
 	test("skips setup steps that never appear after the person's sign-in moved the page", async () => {
