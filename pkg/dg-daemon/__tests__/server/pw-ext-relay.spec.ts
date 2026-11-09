@@ -207,6 +207,38 @@ describe("daemon pw --ext relay", () => {
 		).toBe(false);
 	});
 
+	it("refuses unmask at once when the extension lists verbs without it", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap, MIN_VERSION, {
+			pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS].filter(
+				(verb) => verb !== "unmask",
+			),
+		});
+		const requestId = request(cli, { request: { verb: "unmask", minutes: 15 } });
+
+		expect(await result(results, requestId)).toMatchObject({
+			ok: false,
+			error: "pw --ext unmask needs a newer dg-ai-extension; update the extension, reload it, and reconnect this session.",
+		});
+		expect(
+			page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request"),
+		).toBe(false);
+	});
+
+	it("refuses unmask at once when the extension lists no verbs", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { request: { verb: "unmask", off: true } });
+
+		expect(await result(results, requestId)).toMatchObject({
+			ok: false,
+			error: "pw --ext unmask needs a newer dg-ai-extension; update the extension, reload it, and reconnect this session.",
+		});
+		expect(
+			page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request"),
+		).toBe(false);
+	});
+
 	it("forwards count when the extension lists it", async () => {
 		const { cli, results, port, bootstrap } = await boot();
 		const page = await extension(port, bootstrap, MIN_VERSION, {
