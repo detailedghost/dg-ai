@@ -87,7 +87,10 @@ async function ensureConfig(): Promise<boolean> {
 	const deps = defaultSetupDeps();
 	if (existsSync(deps.configPath) || !deps.isTTY) return true;
 	const answer = (await deps.ask("No channel-review config yet. Run setup now? [Y/n]: ")).trim().toLowerCase();
-	if (answer !== "" && !answer.startsWith("y")) return true;
+	if (answer !== "" && !answer.startsWith("y")) {
+		deps.close();
+		return true;
+	}
 	process.exitCode = await runSetup({}, deps);
 	return process.exitCode === 0;
 }

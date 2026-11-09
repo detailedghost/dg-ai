@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createInterface } from "node:readline/promises";
+import { createInterface, type Interface } from "node:readline";
 import {
+	type ChannelConfig,
 	channelReviewPaths,
 	ENV_NAMES,
 	type EnvName,
@@ -20,6 +21,7 @@ export type SetupDeps = {
 	configPath: string;
 	isTTY: boolean;
 	ask(question: string): Promise<string>;
+	close(): void;
 	write(line: string): void;
 	gitEmail(): string | undefined;
 	region(): string | undefined;
@@ -35,14 +37,21 @@ const REQUIRED_KEYS = [
 	"relay.appName, relay.secret.id, key, region",
 ];
 
-/** Reads one visible line from the terminal. */
-export async function promptLine(question: string): Promise<string> {
-	const rl = createInterface({ input: process.stdin, output: process.stderr });
-	try {
-		return await rl.question(question);
-	} finally {
-		rl.close();
-	}
+/** One readline for every question; its line iterator buffers lines typed or pasted ahead. */
+export function linePrompt(): { ask(question: string): Promise<string>; close(): void } {
+	let rl: Interface | undefined;
+	let lines: AsyncIterator<string> | undefined;
+	return {
+		ask: async (question) => {
+			rl ??= createInterface({ input: process.stdin, terminal: false });
+			lines ??= rl[Symbol.asyncIterator]();
+			process.stderr.write(question);
+			const next = await lines.next();
+			if (next.done) throw new DgCliError("setup canceled: input ended");
+			return next.value;
+		},
+		close: () => rl?.close(),
+	};
 }
 
 function readGitEmail(): string | undefined {
@@ -54,8 +63,8 @@ function readGitEmail(): string | undefined {
 export const defaultSetupDeps = (): SetupDeps => ({
 	configPath: channelReviewPaths("dev").configPath,
 	isTTY: Boolean(process.stdin.isTTY && process.stderr.isTTY),
-	ask: promptLine,
-	write: (line) => console.error(line),
+	...linePrompt(),
+	write: (line) => process.stderr.write(`${line}\n`),
 	gitEmail: readGitEmail,
 	region: () => process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION,
 	connectRelay: async (env) => {
@@ -141,12 +150,19 @@ export async function runSetup(flags: SetupFlags, deps: SetupDeps = defaultSetup
 		return 1;
 	}
 	deps.write(`Creating ${deps.configPath}. Press Enter to keep a [default].`);
-	const raw = await askConfig(deps);
-	const config = validateConfig(raw, deps.configPath);
-	ensurePrivateDir(dirname(deps.configPath));
-	writeFileAtomic(deps.configPath, `${JSON.stringify(raw, null, "\t")}\n`, 0o600);
-	deps.write(`Saved ${deps.configPath}.`);
-	if (await yes(deps, "Store the relay secret in the dg credential store now?", true)) {
+	let config: ChannelConfig;
+	let relayNow: boolean;
+	try {
+		const raw = await askConfig(deps);
+		config = validateConfig(raw, deps.configPath);
+		ensurePrivateDir(dirname(deps.configPath));
+		writeFileAtomic(deps.configPath, `${JSON.stringify(raw, null, "\t")}\n`, 0o600);
+		deps.write(`Saved ${deps.configPath}.`);
+		relayNow = await yes(deps, "Store the relay secret in the dg credential store now?", true);
+	} finally {
+		deps.close();
+	}
+	if (relayNow) {
 		try {
 			await deps.connectRelay(config.env.default);
 		} catch (error) {

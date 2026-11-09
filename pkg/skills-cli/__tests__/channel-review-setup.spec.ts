@@ -33,6 +33,7 @@ function deps(answers: string[], overrides: Partial<SetupDeps> = {}) {
 			if (next === undefined) throw new Error(`no answer for: ${question}`);
 			return next;
 		},
+		close: () => {},
 		write: (line) => lines.push(line),
 		gitEmail: () => "me@example.com",
 		region: () => undefined,
