@@ -10,6 +10,7 @@ export const PW_EXT_READ_VERBS = [
 	"console",
 	"tools",
 	"tabs",
+	"count",
 ] as const;
 export const PW_EXT_WRITE_VERBS = [
 	"open",
@@ -90,6 +91,7 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	select: ["tabId"],
 	close: ["tabId"],
 	click: ["tabId", "target"],
+	count: ["tabId", "target"],
 	fill: ["tabId", "target", "value"],
 	upload: [
 		"tabId",
@@ -186,7 +188,7 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 		if (bytes(JSON.stringify(value.args)) > PW_EXT_MAX_CALL_ARGS_BYTES)
 			fail(`${path}.args exceeds ${PW_EXT_MAX_CALL_ARGS_BYTES} bytes`);
 	}
-	if (verb === "click" || verb === "fill" || verb === "upload") {
+	if (verb === "click" || verb === "fill" || verb === "upload" || verb === "count") {
 		requireString(value.target, `${path}.target`, { nonEmpty: true });
 		if (bytes(value.target) > PW_EXT_MAX_TARGET_BYTES)
 			fail(`${path}.target exceeds ${PW_EXT_MAX_TARGET_BYTES} bytes`);

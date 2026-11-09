@@ -26,6 +26,8 @@ describe("validatePwExtRequest", () => {
 		{ verb: "click", target: "#save" },
 		{ verb: "fill", target: "e3", value: "" },
 		{ verb: "fill", target: "input[name=q]", value: "hello" },
+		{ verb: "count", target: "input[type=file]" },
+		{ verb: "count", target: "e4", tabId: 3 },
 	])("accepts %p", (request) => {
 		expect(validatePwExtRequest(request)).toEqual(request);
 	});
@@ -49,6 +51,9 @@ describe("validatePwExtRequest", () => {
 		{ verb: "fill", target: "e1" },
 		{ verb: "fill", target: "e1", value: "v".repeat(5000) },
 		{ verb: "fill", target: "e1", value: 3 },
+		{ verb: "count" },
+		{ verb: "count", target: "" },
+		{ verb: "count", target: "#q", value: "x" },
 	])("rejects %p", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
 	});

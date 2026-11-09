@@ -1,6 +1,7 @@
 export type PwExtPageAction =
 	| { kind: "snapshot" }
 	| { kind: "click"; target: string }
+	| { kind: "count"; target: string }
 	| { kind: "fill"; target: string; value: string }
 	| {
 			kind: "upload";
@@ -30,6 +31,7 @@ export function pwExtPageAction(
 	const NODE_MAX = 2_000;
 	const DEPTH_MAX = 16;
 	const CONSOLE_MAX = 50;
+	const COUNT_LIST_MAX = 20;
 	const REDACTED = "[redacted]";
 	const doc = document;
 	const win = doc.defaultView as unknown as Window & Record<symbol, unknown>;
@@ -338,23 +340,53 @@ export function pwExtPageAction(
 		};
 	};
 
-	const resolve = (target: string): Element | string => {
+	const candidates = (target: string): Element[] | string => {
 		if (/^e\d+$/.test(target)) {
 			const found = (win[REFS] as Map<string, Element> | undefined)?.get(target);
 			if (!found || !found.isConnected)
 				return `Ref ${target} not found. Run dg-skills pw --ext snapshot again.`;
-			return found;
+			return [found];
 		}
-		let matches: Element[];
 		try {
-			matches = Array.from(doc.querySelectorAll(target));
+			return Array.from(doc.querySelectorAll(target));
 		} catch {
 			return `${target} is not a valid CSS selector or ref.`;
 		}
+	};
+
+	const resolve = (target: string): Element | string => {
+		const matches = candidates(target);
+		if (typeof matches === "string") return matches;
 		if (matches.length === 0) return `No element matches ${target}.`;
 		if (matches.length > 1)
 			return `${target} matches ${matches.length} elements; use a ref from snapshot or a narrower selector.`;
 		return matches[0] as Element;
+	};
+
+	const tagOf = (el: Element): string => {
+		const attrs = ["type", "id", "name"].flatMap((attr) => {
+			const value = el.getAttribute(attr);
+			return value === null ? [] : [` ${attr}="${squash(value, 80)}"`];
+		});
+		return `<${el.tagName.toLowerCase()}${attrs.join("")}>`;
+	};
+
+	const count = (target: string): PwExtPageResult => {
+		const matches = candidates(target);
+		if (typeof matches === "string") return { error: matches };
+		const listed = matches.slice(0, COUNT_LIST_MAX).map((el, i) => {
+			const label = describe(el);
+			const tag = tagOf(el);
+			return `${i + 1}. ${tag}${label === el.tagName.toLowerCase() ? "" : ` ${label}`}`;
+		});
+		const more = matches.length - listed.length;
+		return {
+			detail: [
+				`${target} matches ${matches.length} element${matches.length === 1 ? "" : "s"}`,
+				...listed,
+				...(more > 0 ? [`… ${more} more`] : []),
+			].join("\n"),
+		};
 	};
 
 	const click = (target: string): PwExtPageResult => {
@@ -487,6 +519,8 @@ export function pwExtPageAction(
 				return snapshot();
 			case "click":
 				return click(action.target);
+			case "count":
+				return count(action.target);
 			case "fill":
 				return fill(action.target, action.value);
 			case "selection":
