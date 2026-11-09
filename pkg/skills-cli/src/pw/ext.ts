@@ -222,7 +222,7 @@ Write verbs (they change the page):
   select <tabId>          make a tab of the group the agent's selected tab
   close [tabId]           close a tab of the group (the agent's selected tab by default)
   click <ref|selector>    click one element
-  fill <ref|selector> <text>  set the value of one text field
+  fill <ref|selector> <text>  set one text, date or time field (YYYY-MM-DD, HH:MM), or pick a select option by value or label
   upload <ref|selector> <file>  set one file on a file input (https pages only)
   call <tool> <json-args> run one WebMCP tool of the page`;
 

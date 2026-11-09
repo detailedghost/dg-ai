@@ -47,6 +47,13 @@ export function pwExtPageAction(
 		"tel",
 		"number",
 	]);
+	const DATE_INPUTS: Record<string, [RegExp, string]> = {
+		date: [/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD"],
+		time: [/^\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/, "HH:MM (24-hour)"],
+		"datetime-local": [/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, "YYYY-MM-DDTHH:MM"],
+		month: [/^\d{4}-\d{2}$/, "YYYY-MM"],
+		week: [/^\d{4}-W\d{2}$/, "YYYY-Www"],
+	};
 	const INTERACTIVE = new Set([
 		"link",
 		"button",
@@ -407,12 +414,59 @@ export function pwExtPageAction(
 		return { detail: `clicked ${describe(el)}` };
 	};
 
+	const fire = (el: Element): void => {
+		const EventCtor = (win as unknown as typeof globalThis).Event;
+		el.dispatchEvent(new EventCtor("input", { bubbles: true }));
+		el.dispatchEvent(new EventCtor("change", { bubbles: true }));
+	};
+
+	const setValue = (el: Element, value: string): void => {
+		const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+		if (setter) setter.call(el, value);
+		else (el as HTMLInputElement).value = value;
+	};
+
+	const pick = (select: HTMLSelectElement, value: string): PwExtPageResult => {
+		if (select.multiple) return { error: `${describe(select)} allows multiple choices; pw --ext picks one option only.` };
+		const options = [...select.options];
+		const label = (option: HTMLOptionElement) => option.text.replace(/\s+/g, " ").trim();
+		const lower = value.toLowerCase();
+		const index = [
+			options.findIndex((option) => option.value === value),
+			options.findIndex((option) => label(option) === value),
+			options.findIndex((option) => label(option).toLowerCase() === lower),
+		].find((at) => at >= 0);
+		if (index === undefined) {
+			const names = options.slice(0, 10).map((option) => `"${squash(label(option), 40)}"`);
+			const more = options.length > 10 ? `, … ${options.length - 10} more` : "";
+			return { error: `${describe(select)} has no option "${squash(value, 40)}". Options: ${names.join(", ")}${more}.` };
+		}
+		select.selectedIndex = index;
+		fire(select);
+		return { detail: `selected "${squash(label(options[index] as HTMLOptionElement), 40)}" in ${describe(select)}` };
+	};
+
+	const fillDate = (input: HTMLInputElement, value: string): PwExtPageResult => {
+		const [pattern, format] = DATE_INPUTS[input.type.toLowerCase()] as [RegExp, string];
+		if (!pattern.test(value)) return { error: `${describe(input)} takes ${format}.` };
+		setValue(input, value);
+		if (input.value !== value) {
+			setValue(input, "");
+			return { error: `${describe(input)} takes ${format}.` };
+		}
+		fire(input);
+		return { detail: `filled ${describe(input)}` };
+	};
+
 	const fill = (target: string, value: string): PwExtPageResult => {
 		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
 		if (isSecret(el))
 			return { error: "pw --ext does not fill password or secret fields." };
 		const input = el as HTMLInputElement;
+		if (input.disabled || input.readOnly) return { error: `${describe(el)} cannot be filled.` };
+		if (el.tagName === "SELECT") return pick(el as HTMLSelectElement, value);
+		if (el.tagName === "INPUT" && Object.hasOwn(DATE_INPUTS, input.type.toLowerCase())) return fillDate(input, value);
 		const editable = el.getAttribute("contenteditable") === "true";
 		const field =
 			(el.tagName === "INPUT" && TEXT_INPUTS.has(input.type.toLowerCase())) ||
@@ -421,17 +475,8 @@ export function pwExtPageAction(
 			return { error: `${describe(el)} cannot be filled.` };
 		input.focus?.();
 		if (editable) el.textContent = value;
-		else {
-			const setter = Object.getOwnPropertyDescriptor(
-				Object.getPrototypeOf(el),
-				"value",
-			)?.set;
-			if (setter) setter.call(el, value);
-			else input.value = value;
-		}
-		const EventCtor = (win as unknown as typeof globalThis).Event;
-		el.dispatchEvent(new EventCtor("input", { bubbles: true }));
-		el.dispatchEvent(new EventCtor("change", { bubbles: true }));
+		else setValue(el, value);
+		fire(el);
 		return { detail: `filled ${describe(el)}` };
 	};
 

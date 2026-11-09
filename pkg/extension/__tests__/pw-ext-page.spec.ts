@@ -179,6 +179,67 @@ describe("fill", () => {
 		expect(el<HTMLInputElement>("#t").value).toBe("");
 	});
 
+	describe("select", () => {
+		const SELECT = `<label>Doctor <select id="s"><option value="">Select rank</option><option value="1">Dr. Ada Lane</option><option value="2">Dr. Bo Park</option></select></label>`;
+
+		it.each([
+			["2", "2"],
+			["Dr. Ada Lane", "1"],
+			["dr. bo park", "2"],
+		])("picks the option %s and fires input and change", (value, picked) => {
+			page(SELECT);
+			const select = el<HTMLSelectElement>("#s");
+			const events: string[] = [];
+			select.addEventListener("input", () => events.push("input"));
+			select.addEventListener("change", () => events.push("change"));
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value })).toEqual({
+				detail: expect.stringContaining("selected"),
+			});
+			expect(select.value).toBe(picked);
+			expect(events).toEqual(["input", "change"]);
+		});
+
+		it("names the options when nothing matches, and changes nothing", () => {
+			page(SELECT);
+			const result = pwExtPageAction({ kind: "fill", target: "#s", value: "Dr. Nobody" });
+			expect(result).toEqual({ error: expect.stringContaining('no option "Dr. Nobody"') });
+			expect((result as { error: string }).error).toContain("Dr. Ada Lane");
+			expect(el<HTMLSelectElement>("#s").value).toBe("");
+		});
+
+		it("refuses a multiple select", () => {
+			page(`<select id="s" multiple aria-label="Tags"><option>a</option></select>`);
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "a" })).toEqual({
+				error: expect.stringContaining("multiple"),
+			});
+		});
+	});
+
+	describe("date and time", () => {
+		it.each([
+			["date", "2026-11-20"],
+			["time", "09:30"],
+			["datetime-local", "2026-11-20T09:30"],
+		])("sets a %s input", (type, value) => {
+			page(`<input id="d" type="${type}" aria-label="When">`);
+			expect(pwExtPageAction({ kind: "fill", target: "#d", value })).toEqual({
+				detail: expect.stringContaining("filled"),
+			});
+			expect(el<HTMLInputElement>("#d").value).toBe(value);
+		});
+
+		it.each([
+			["date", "11/20/2026", "YYYY-MM-DD"],
+			["time", "9:30 AM", "HH:MM"],
+		])("rejects a %s value in the wrong format and names the format", (type, value, format) => {
+			page(`<input id="d" type="${type}" aria-label="When">`);
+			expect(pwExtPageAction({ kind: "fill", target: "#d", value })).toEqual({
+				error: expect.stringContaining(format),
+			});
+			expect(el<HTMLInputElement>("#d").value).toBe("");
+		});
+	});
+
 	it("refuses a non-editable target", () => {
 		page(`<button id="b">B</button><input id="r" readonly>`);
 		for (const target of ["#b", "#r"])

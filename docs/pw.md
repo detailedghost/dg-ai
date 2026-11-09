@@ -50,7 +50,7 @@ popup.
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
 | `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
-| `fill <ref or selector> <text>` | write | Sets the value of one text field |
+| `fill <ref or selector> <text>` | write | Sets one text, date or time field (`YYYY-MM-DD`, `HH:MM`), or picks a single-select option by value or label |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input |
 | `call <tool> <json-args>` | write | Runs one WebMCP tool of the page |
 
