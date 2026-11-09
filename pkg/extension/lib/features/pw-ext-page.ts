@@ -261,11 +261,29 @@ export function pwExtPageAction(
 				.flatMap((secret) => [secret, secret.replace(/\s+/g, " ")]),
 		),
 	].sort((a, b) => b.length - a.length);
-	const redactTokens = (value: string): string =>
-		TOKEN_PATTERNS.reduce(
-			(out, [pattern, replacement]) => out.replace(pattern, replacement),
-			literals.reduce((out, secret) => out.split(secret).join(REDACTED), value),
-		);
+	const redactTokens = (value: string): string => {
+		const masked = new Uint8Array(value.length);
+		for (const secret of literals)
+			for (let at = value.indexOf(secret); at !== -1; at = value.indexOf(secret, at + 1))
+				masked.fill(1, at, at + secret.length);
+		for (const [pattern, replacement] of TOKEN_PATTERNS)
+			for (const match of value.matchAll(pattern)) {
+				const kept = replacement.startsWith("$1")
+					? (match[1] ?? "").length
+					: replacement.startsWith("Bearer")
+						? (/^Bearer\s+/i.exec(match[0])?.[0].length ?? 0)
+						: 0;
+				masked.fill(1, (match.index ?? 0) + kept, (match.index ?? 0) + match[0].length);
+			}
+		const parts: string[] = [];
+		let start = 0;
+		for (let i = 0; i <= value.length; i++) {
+			if (i < value.length && masked[i] === (masked[start] ?? 0)) continue;
+			parts.push(masked[start] ? REDACTED : value.slice(start, i));
+			start = i;
+		}
+		return parts.join("");
+	};
 	const sanitize = (result: PwExtPageResult): PwExtPageResult => {
 		const out: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(result))

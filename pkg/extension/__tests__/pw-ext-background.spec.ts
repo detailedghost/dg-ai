@@ -1243,6 +1243,40 @@ describe("pw --ext unmask", () => {
 		expect(text).not.toContain("### Unmask");
 	});
 
+	it("masks personal data again when the tab leaves its group during a WebMCP call", async () => {
+		let h: ReturnType<typeof harness>;
+		h = harness({
+			approval: "allow",
+			mainResult: () => {
+				const tab = h.fake.tabs.get(7);
+				if (tab) tab.groupId = -1;
+				return { api: "modelContext", output: "owner ada@example.com" };
+			},
+		});
+		await h.run({ verb: "unmask", minutes: 15 });
+		const text = outcome(await h.run({ verb: "call", tool: "search", args: {} }));
+		expect(text).not.toContain("ada@example.com");
+		expect(text).not.toContain("### Unmask");
+	});
+
+	it("does not fill a secret when the request is canceled while the secret is stored", async () => {
+		const cancel = new AbortController();
+		const h = harness({ approval: "allow", signal: cancel.signal, pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const set = h.fake.raw.storage.session.set;
+		const original = set.getMockImplementation();
+		set.mockImplementationOnce(async (items: Record<string, unknown>) => {
+			cancel.abort();
+			return original?.(items);
+		});
+		const before = h.executed().length;
+		expect(await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("canceled"),
+		});
+		expect(h.executed()).toHaveLength(before);
+	});
+
 	it("masks a filled secret that the tabs listing cap cuts in two", async () => {
 		const secret = "739123";
 		const listing = async (last: number) => {

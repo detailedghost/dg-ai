@@ -291,6 +291,12 @@ describe("fill", () => {
 		expect(JSON.stringify(result)).not.toContain("SSSS");
 	});
 
+	it("keeps masking a token value when a held secret is its label", () => {
+		page(`<p>token=opensesame-value</p>`);
+		const result = pwExtPageAction({ kind: "snapshot" }, undefined, false, ["token"]);
+		expect(JSON.stringify(result)).not.toContain("opensesame");
+	});
+
 	it("masks a held secret after the page collapses its whitespace", () => {
 		const secret = "orchid  maple  lantern";
 		page(`<p>${secret}</p>`);

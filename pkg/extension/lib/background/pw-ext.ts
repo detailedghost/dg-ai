@@ -419,7 +419,9 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		const grant = await grants.active(context.sessionId, tab);
 		const result = await perform(request, tab, context, signal, grant);
-		if (!grant || (await grants.active(context.sessionId, tab))) return result;
+		if (!grant) return result;
+		const live = await api.tabs.get(tab.id).catch(() => undefined);
+		if (live && (await grants.active(context.sessionId, live))) return result;
 		return result.ok
 			? { ...result, data: { ...result.data, text: mask(result.data.text.replace(`${unmaskLine(grant)}\n`, "")) } }
 			: { ...result, error: mask(result.error) };
@@ -434,6 +436,7 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
 		const secrets = await remember(context.sessionId, request);
+		if (signal?.aborted) return CANCELED;
 		const page = () => pageLines(tab, unmasked);
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
