@@ -31,7 +31,10 @@ function titleOf(key: string, members: GroupMember[]): string {
 	const first = members[0] as GroupMember;
 	if (key === "allow-rule") return `allow rules (${members.length})`;
 	if (members.length === 1) return `${first.item}: ${first.check.detail}`;
-	return `${first.check.id} (${members.length})`;
+	const same = (pick: (m: GroupMember) => string) => members.every((m) => pick(m) === pick(first));
+	if (same((m) => m.check.id)) return `${first.check.id} (${members.length})`;
+	if (same((m) => m.check.detail)) return `${first.check.detail} (${members.length})`;
+	return `${members.length} checks share one fix`;
 }
 
 function actionOf(key: string, members: GroupMember[], fix: string | null): FixAction | null {

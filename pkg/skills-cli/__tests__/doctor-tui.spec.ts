@@ -62,6 +62,28 @@ describe("groupReport", () => {
 	});
 });
 
+describe("group titles", () => {
+	const two = (a: CheckReport, b: CheckReport): DoctorReport => ({
+		ok: false,
+		items: [
+			{ item: "one", checks: [a] },
+			{ item: "two", checks: [b] },
+		],
+	});
+
+	test("checks with different ids and one detail are named by the detail", () => {
+		const [group] = groupReport(
+			two(check("credential-a", "warn", "daemon is down", DAEMON), check("credential-b", "warn", "daemon is down", DAEMON)),
+		);
+		expect(group?.title).toBe("daemon is down (2)");
+	});
+
+	test("checks with different ids and details are counted", () => {
+		const [group] = groupReport(two(check("a", "warn", "x", DAEMON), check("b", "warn", "y", DAEMON)));
+		expect(group?.title).toBe("2 checks share one fix");
+	});
+});
+
 describe("runnableFix", () => {
 	test.each([
 		["dg-agent start", ["dg-agent", "start"]],
