@@ -21,15 +21,27 @@ export function runnableFix(fix: string | null): string[] | null {
 	return fix !== null && RUNNABLE.test(fix) ? fix.split(/\s+/) : null;
 }
 
+const RULE = /Bash\([^()]*\)/g;
+
+/** The allow rules in a fix that is only rules; null when the fix also holds an instruction. */
+export function allowRulesIn(fix: string | null): string[] | null {
+	if (fix === null) return null;
+	const rules = fix.match(RULE);
+	return rules && fix.replace(RULE, "").trim() === "" ? rules : null;
+}
+
 function keyOf(member: GroupMember): string {
 	const { item, check } = member;
-	if (check.id === "allow-rule" && check.fix) return "allow-rule";
+	if (check.id === "allow-rule" && allowRulesIn(check.fix)) return "allow-rule";
 	return check.fix ? `fix:${check.fix}` : `check:${item}:${check.id}`;
 }
 
+const actionRules = (members: GroupMember[]): number =>
+	new Set(members.flatMap((m) => allowRulesIn(m.check.fix) ?? [])).size;
+
 function titleOf(key: string, members: GroupMember[]): string {
 	const first = members[0] as GroupMember;
-	if (key === "allow-rule") return `allow rules (${members.length})`;
+	if (key === "allow-rule") return `allow rules (${actionRules(members)})`;
 	if (members.length === 1) return `${first.item}: ${first.check.detail}`;
 	const same = (pick: (m: GroupMember) => string) => members.every((m) => pick(m) === pick(first));
 	if (same((m) => m.check.id)) return `${first.check.id} (${members.length})`;
@@ -39,7 +51,7 @@ function titleOf(key: string, members: GroupMember[]): string {
 
 function actionOf(key: string, members: GroupMember[], fix: string | null): FixAction | null {
 	if (key === "allow-rule")
-		return { kind: "allow-rule", rules: [...new Set(members.flatMap((m) => (m.check.fix ? [m.check.fix] : [])))] };
+		return { kind: "allow-rule", rules: [...new Set(members.flatMap((m) => allowRulesIn(m.check.fix) ?? []))] };
 	const argv = runnableFix(fix);
 	return argv ? { kind: "run", argv } : null;
 }

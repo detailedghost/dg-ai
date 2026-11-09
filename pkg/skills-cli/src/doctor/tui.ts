@@ -10,6 +10,7 @@ export type TuiDeps = {
 	rerun(): Promise<DoctorReport>;
 	runCommand(argv: string[]): Promise<number>;
 	addAllowRules(rules: string[]): Promise<void>;
+	size(): { rows: number; columns: number };
 };
 
 const ICON = { ok: "✅", info: "ℹ️", warn: "⚠️", fail: "❌" } as const;
@@ -33,19 +34,59 @@ function hint(group: Group): string {
 	return group.fix ? "fix by hand" : "";
 }
 
-/** Draws the full screen for one state. */
-export function render(state: State): string {
+const MIN_MEMBERS = 3;
+
+function clip(line: string, columns: number): string {
+	const chars = [...line];
+	return chars.length <= columns ? line : `${chars.slice(0, Math.max(1, columns - 1)).join("")}…`;
+}
+
+function header(group: Group, selected: boolean): string {
+	const tail = hint(group);
+	return `${selected ? ">" : " "} ${ICON[group.status]} ${group.title}${tail ? `    ${tail}` : ""}`;
+}
+
+/** Draws one screen: rows clipped to the terminal width, scrolled so the cursor row and its details show. */
+export function render(state: State, size: { rows: number; columns: number }): string {
+	const body = Math.max(1, size.rows - 2);
+	const room = Math.max(MIN_MEMBERS, body - state.groups.length - 1);
 	const lines: string[] = [];
+	let cursorStart = 0;
+	let cursorEnd = 0;
 	state.groups.forEach((group, index) => {
-		const mark = index === state.cursor ? ">" : " ";
-		const tail = hint(group);
-		lines.push(`${mark} ${ICON[group.status]} ${group.title}${tail ? `    ${tail}` : ""}`);
-		if (!state.open.has(group.key)) return;
-		for (const { item, check } of group.members) lines.push(`      ${item} · ${check.id}: ${check.detail}`);
-		if (group.fix && group.action?.kind !== "allow-rule") lines.push(`      Fix: ${group.fix}`);
+		const selected = index === state.cursor;
+		if (selected) cursorStart = lines.length;
+		lines.push(header(group, selected));
+		if (state.open.has(group.key)) {
+			const shown = group.members.slice(0, room);
+			for (const { item, check } of shown) lines.push(`      ${item} · ${check.id}: ${check.detail}`);
+			const hidden = group.members.length - shown.length;
+			if (hidden > 0) lines.push(`      … ${hidden} more; dg-skills doctor --plain lists all`);
+			if (group.fix && group.action?.kind !== "allow-rule") lines.push(`      Fix: ${group.fix}`);
+		}
+		if (selected) cursorEnd = lines.length - 1;
 	});
-	lines.push("", state.status || HELP);
-	return `${CLEAR}${lines.join("\n")}\n`;
+	const top = Math.min(cursorStart, Math.max(0, cursorEnd - body + 1));
+	const visible = lines.slice(top, top + body).map((line) => clip(line, size.columns));
+	visible.push("", clip(state.status || HELP, size.columns));
+	return `${CLEAR}${visible.join("\n")}\n`;
+}
+
+/** Splits raw terminal input into keys; an unfinished escape sequence stays in `rest`. */
+export function splitKeys(buffer: string): { keys: string[]; rest: string } {
+	const keys: string[] = [];
+	let at = 0;
+	while (at < buffer.length) {
+		if (buffer[at] === "\u001b") {
+			if (buffer.length - at < 3) break;
+			keys.push(buffer.slice(at, at + 3));
+			at += 3;
+		} else {
+			keys.push(buffer[at] as string);
+			at += 1;
+		}
+	}
+	return { keys, rest: buffer.slice(at) };
 }
 
 async function nextKey(keys: AsyncIterator<string>): Promise<string> {
@@ -56,7 +97,7 @@ async function nextKey(keys: AsyncIterator<string>): Promise<string> {
 function prompt(group: Group): string | null {
 	if (group.action?.kind === "run") return `Run ${group.action.argv.join(" ")}? [y/N]`;
 	if (group.action?.kind === "allow-rule")
-		return `Add ${group.action.rules.length} allow rules to ~/.claude/settings.json: ${group.action.rules.join(", ")}? [y/N]`;
+		return `Add ${group.action.rules.length} allow rules to ~/.claude/settings.json? [y/N]  (→ lists them)`;
 	return null;
 }
 
@@ -79,7 +120,7 @@ export async function runTui(report: DoctorReport, deps: TuiDeps): Promise<Docto
 	let current = report;
 	const state: State = { groups: groupReport(report), cursor: 0, open: new Set(), status: "" };
 	for (;;) {
-		deps.write(render(state));
+		deps.write(render(state, deps.size()));
 		state.status = "";
 		const key = await nextKey(keys);
 		const group = state.groups[state.cursor];
@@ -95,7 +136,7 @@ export async function runTui(report: DoctorReport, deps: TuiDeps): Promise<Docto
 				continue;
 			}
 			state.status = question;
-			deps.write(render(state));
+			deps.write(render(state, deps.size()));
 			if ((await nextKey(keys)).toLowerCase() !== "y") {
 				state.status = "Skipped.";
 				continue;
@@ -131,12 +172,17 @@ export function addAllowRules(rules: string[], home: string = process.env.HOME ?
 function keyStream(stdin: NodeJS.ReadStream) {
 	const queue: string[] = [];
 	let waiting: ((key: string) => void) | null = null;
+	let pending = "";
 	const onData = (chunk: string) => {
-		if (waiting) {
-			const resolve = waiting;
-			waiting = null;
-			resolve(chunk);
-		} else queue.push(chunk);
+		const split = splitKeys(pending + chunk);
+		pending = split.rest;
+		for (const key of split.keys) {
+			if (waiting) {
+				const resolve = waiting;
+				waiting = null;
+				resolve(key);
+			} else queue.push(key);
+		}
 	};
 	const listen = () => {
 		stdin.setRawMode(true);
@@ -181,6 +227,7 @@ export function terminalDeps(rerun: () => Promise<DoctorReport>): TuiDeps & { cl
 			}
 		},
 		addAllowRules: (rules) => addAllowRules(rules),
+		size: () => ({ rows: process.stdout.rows || 24, columns: process.stdout.columns || 80 }),
 		close: stream.stop,
 	};
 }

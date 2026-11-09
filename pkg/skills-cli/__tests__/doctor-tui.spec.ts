@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { groupReport, runnableFix } from "../src/doctor/groups";
-import { addAllowRules, KEY, render, runTui, type TuiDeps } from "../src/doctor/tui";
+import { allowRulesIn, groupReport, runnableFix } from "../src/doctor/groups";
+import { addAllowRules, KEY, render, runTui, splitKeys, type TuiDeps } from "../src/doctor/tui";
 import type { CheckReport, DoctorReport } from "../src/doctor/types";
 
 const check = (id: string, status: CheckReport["status"], detail: string, fix: string | null = null): CheckReport => ({
@@ -127,6 +127,7 @@ function fake(keys: string[], next: DoctorReport = report()): Fake {
 		addAllowRules: async (rules) => {
 			value.added.push(rules);
 		},
+		size: () => ({ rows: 40, columns: 200 }),
 	};
 	return value;
 }
@@ -200,9 +201,79 @@ describe("runTui", () => {
 
 describe("render", () => {
 	test("marks only the row under the cursor", () => {
-		const screen = render({ groups: groupReport(report()), cursor: 2, open: new Set(), status: "" });
+		const screen = render({ groups: groupReport(report()), cursor: 2, open: new Set(), status: "" }, { rows: 40, columns: 200 });
 		expect(screen.match(/^> /gm)).toHaveLength(1);
 		expect(screen).toContain("> ⚠️ allow rules (2)    enter: add all to ~/.claude/settings.json");
+	});
+});
+
+describe("render in a small terminal", () => {
+	const many: DoctorReport = {
+		ok: false,
+		items: Array.from({ length: 30 }, (_, index) => ({
+			item: `item-${index}`,
+			checks: [check("allow-rule", "warn", `no allow rule for item-${index}`, `Bash(dg-skills item-${index}:*)`)],
+		})),
+	};
+
+	test("caps an expanded row and names how many are hidden", () => {
+		const groups = groupReport(many);
+		const screen = render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 12, columns: 200 });
+		const lines = screen.replace("\u001b[2J\u001b[H", "").trimEnd().split("\n");
+		expect(lines.length).toBeLessThanOrEqual(12);
+		expect(screen).toContain("… 22 more; dg-skills doctor --plain lists all");
+	});
+
+	test("clips long lines to the terminal width", () => {
+		const screen = render({ groups: groupReport(report()), cursor: 0, open: new Set(), status: "" }, { rows: 40, columns: 20 });
+		for (const line of screen.replace("\u001b[2J\u001b[H", "").split("\n")) expect([...line].length).toBeLessThanOrEqual(20);
+	});
+
+	test("scrolls so the cursor row shows", () => {
+		const rows: DoctorReport = {
+			ok: false,
+			items: Array.from({ length: 20 }, (_, index) => ({
+				item: `item-${index}`,
+				checks: [check(`check-${index}`, "fail", `broken ${index}`, `do thing ${index}`)],
+			})),
+		};
+		const screen = render({ groups: groupReport(rows), cursor: 19, open: new Set(), status: "" }, { rows: 8, columns: 200 });
+		expect(screen).toContain("> ❌ item-19: broken 19");
+		expect(screen).not.toContain("item-0:");
+	});
+});
+
+describe("splitKeys", () => {
+	test("splits several keys in one chunk", () => {
+		expect(splitKeys(`${KEY.down}${KEY.down}\ry`)).toEqual({ keys: [KEY.down, KEY.down, "\r", "y"], rest: "" });
+	});
+
+	test("keeps an unfinished escape sequence for the next chunk", () => {
+		const first = splitKeys("\u001b[");
+		expect(first).toEqual({ keys: [], rest: "\u001b[" });
+		expect(splitKeys(`${first.rest}B`)).toEqual({ keys: [KEY.down], rest: "" });
+	});
+});
+
+describe("allowRulesIn", () => {
+	test("splits several rules in one fix", () => {
+		expect(allowRulesIn("Bash(dg-skills hooks status:*) Bash(dg-skills hooks list:*)")).toEqual([
+			"Bash(dg-skills hooks status:*)",
+			"Bash(dg-skills hooks list:*)",
+		]);
+	});
+
+	test("refuses a fix that also holds an instruction", () => {
+		expect(allowRulesIn("replace it with Bash(dg-skills hooks status:*)")).toBeNull();
+		expect(allowRulesIn("jq . ~/.claude/settings.json")).toBeNull();
+	});
+
+	test("an instruction fix on an allow-rule check stays a manual row", () => {
+		const groups = groupReport({
+			ok: true,
+			items: [{ item: "hooks", checks: [check("allow-rule", "warn", "too broad", "replace it with Bash(dg-skills hooks status:*)")] }],
+		});
+		expect(groups[0]?.action).toBeNull();
 	});
 });
 
