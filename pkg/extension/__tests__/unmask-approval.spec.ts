@@ -59,6 +59,18 @@ describe("unmask grants", () => {
 		expect(await restarted.secrets("s1")).toHaveLength(MAX_FILLED_SECRETS);
 		expect(await restarted.secrets("s2")).toEqual([]);
 	});
+
+	it("forgets every grant and secret of an ended session", async () => {
+		const storage = memoryStorage();
+		const grants = createUnmaskGrants({ storage, now: () => 0 });
+		await grants.grant("s1", { origin: "https://app.example.test", groupId: 10, until: 5_000 });
+		await grants.remember("s1", "hunter2");
+		await grants.remember("s2", "kept");
+		await grants.forget("s1");
+		expect(await grants.active("s1", TAB)).toBeUndefined();
+		expect(await grants.secrets("s1")).toEqual([]);
+		expect(await grants.secrets("s2")).toEqual(["kept"]);
+	});
 });
 
 function fakeWindows() {

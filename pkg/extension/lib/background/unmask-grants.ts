@@ -71,6 +71,14 @@ export function createUnmaskGrants({
 			});
 		},
 
+		/** Drops every grant and remembered secret of an ended session. */
+		forget(sessionId: string): Promise<void> {
+			return serial(async () => {
+				await storage.session.remove(keyOf(sessionId));
+				await storage.session.remove(secretsKey(sessionId));
+			});
+		},
+
 		revoke(sessionId: string, origin: string): Promise<boolean> {
 			return serial(async () => {
 				const held = await read(sessionId);

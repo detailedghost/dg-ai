@@ -1226,6 +1226,23 @@ describe("pw --ext unmask", () => {
 		expect(JSON.stringify(await h.run({ verb: "console" }))).not.toContain("739");
 	});
 
+	it("masks personal data again when the grant ends during a WebMCP call", async () => {
+		const clock = { now: Date.UTC(2026, 10, 9, 15, 0) };
+		const h = harness({
+			approval: "allow",
+			clock,
+			mainResult: () => {
+				clock.now += 16 * 60_000;
+				return { api: "modelContext", output: "owner ada@example.com" };
+			},
+		});
+		await h.run({ verb: "unmask", minutes: 15 });
+		const text = outcome(await h.run({ verb: "call", tool: "search", args: {} }));
+		expect(text).toContain("owner");
+		expect(text).not.toContain("ada@example.com");
+		expect(text).not.toContain("### Unmask");
+	});
+
 	it("masks a filled secret that the tabs listing cap cuts in two", async () => {
 		const secret = "739123";
 		const listing = async (last: number) => {
