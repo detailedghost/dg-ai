@@ -210,17 +210,22 @@ dg-skills update           # update, then run doctor
 the command exits 1 when any step failed:
 
 1. The Bun runtime, the dg bundle, the launchers, and the staged
-   dg-ai-extension, the same as `dg-skills install`.
+   dg-ai-extension, pinned to the newest release. A CLI-only install stays
+   CLI-only, and each staged browser target is refreshed. The step fails
+   when the installed version is not the newest afterward.
 2. The Claude plugin: `claude plugin marketplace update detailedghost`, then
    `claude plugin update dg@detailedghost` (or `install` when it is missing).
    Skipped when `claude` is not on `PATH`.
-3. The Codex plugin, when `~/.codex/config.toml` enables `dg@detailedghost`:
+3. The Codex plugin, when the Codex config (`$CODEX_HOME`, default
+   `~/.codex`) enables `dg@detailedghost`:
    `codex plugin marketplace upgrade detailedghost`, then
    `codex plugin add dg@detailedghost`. A marketplace that points at a local
    folder is replaced with `detailedghost/dg-ai` first.
 4. `dg-skills doctor`, as one summary line.
 
-`--version <x.y.z>` updates to that release. Restart Claude Code and Codex
+`update` always goes to the newest release, because the plugins follow their
+marketplace. To install one exact release, use `dg-skills install --version
+<x.y.z>`. Restart Claude Code and Codex
 sessions afterward, and reload the extension. The `/dg:update` skill runs
 `--check`, asks, and then runs the update.
 

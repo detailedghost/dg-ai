@@ -19,22 +19,23 @@ If a step fails, run dg-skills doctor update install.
 
 ## Usage
 
-**Usage:** `/dg:update [--version <x.y.z>]`
+**Usage:** `/dg:update`
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--version <x.y.z>` | none | Update to that release instead of the newest. | newest |
 | `--check` | none | Print installed and newest versions and change nothing. The skill always runs it first. | off |
 
 ## Run
 
 1. Run `dg-skills update --check`. Exit 0 means every part is current: say so and stop. Exit 1 means a part is behind: show the lines.
 2. Say what the update changes: it downloads the release, replaces the runtime, bundle and launchers, stages the extension, and runs `claude plugin` and `codex plugin` commands. Ask before you go on. On a no, stop.
-3. Run `dg-skills update` (add `--version <x.y.z>` when the user gave one). Each step prints ✅, ⏭️ or ❌, then a doctor summary.
+3. Run `dg-skills update`. Each step prints ✅, ⏭️ or ❌, then a doctor summary.
 4. Report each step in one line. For a ❌ step, give its message and the doctor item to check.
 5. Tell the user to restart Claude Code and Codex sessions so the new skills load, and to reload the dg-ai-extension.
+
+To install one exact release instead of the newest, use `dg-skills install --version <x.y.z>`. `update` always goes to the newest release, because the plugins can only follow their marketplace.
 
 ## Rules
 

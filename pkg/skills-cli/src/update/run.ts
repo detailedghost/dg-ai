@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { describeError, isRecord } from "@dg/common";
 import { installedPlugins } from "../doctor/probes";
 import { type Runner, runSync } from "../install/recommended-plugins";
-import { compareVersions, listReleases, pickBundle, readCurrentVersion } from "../utils/lib";
+import { isCliOnly } from "../utils/cli-only";
+import { compareVersions, listReleases, pickBundle, readCurrentVersion, readMarker } from "../utils/lib";
 
 export const MARKETPLACE = "detailedghost";
 export const MARKETPLACE_SOURCE = "detailedghost/dg-ai";
@@ -14,13 +15,18 @@ export type StepStatus = "ok" | "skipped" | "failed";
 
 export type StepResult = { name: string; status: StepStatus; detail: string };
 
-export type UpdateOptions = { version?: string; check?: boolean };
+export type UpdateOptions = { check?: boolean };
+
+export type InstallTarget = "chrome" | "firefox" | "cli-only";
 
 export type UpdateDeps = {
 	home: string;
-	install(version?: string): Promise<void>;
-	newestVersion(version?: string): Promise<string>;
+	codexHome: string;
+	install(target: InstallTarget, version: string): Promise<void>;
+	newestVersion(): Promise<string>;
 	installedVersion(): string | undefined;
+	stagedExtensions(): Partial<Record<"chrome" | "firefox", string>>;
+	cliOnly(): boolean;
 	which(name: string): string | null;
 	run: Runner;
 	doctorSummary(): Promise<string>;
@@ -43,45 +49,50 @@ function runAll(name: string, steps: string[][], run: Runner, done: string): Ste
 	return { name, status: "ok", detail: done };
 }
 
-type CodexState = { enabled: boolean; source?: string };
+type CodexState = { enabled: boolean; source?: string; local: boolean };
 
-/** Reads whether ~/.codex/config.toml enables the dg plugin, and where its marketplace points. */
-export function codexState(home: string): CodexState {
+/** Reads whether the Codex config enables the dg plugin, and where its marketplace points. */
+export function codexState(codexHome: string): CodexState {
 	try {
-		const config: unknown = Bun.TOML.parse(readFileSync(join(home, ".codex", "config.toml"), "utf8"));
-		if (!isRecord(config)) return { enabled: false };
+		const config: unknown = Bun.TOML.parse(readFileSync(join(codexHome, "config.toml"), "utf8"));
+		if (!isRecord(config)) return { enabled: false, local: false };
 		const plugins = isRecord(config.plugins) ? config.plugins : {};
 		const plugin = plugins[PLUGIN_REF];
 		const markets = isRecord(config.marketplaces) ? config.marketplaces : {};
 		const market = markets[MARKETPLACE];
 		const source = isRecord(market) && typeof market.source === "string" ? market.source : undefined;
-		return { enabled: isRecord(plugin) && plugin.enabled === true, source };
+		const local = isRecord(market) && market.source_type === "local";
+		return { enabled: isRecord(plugin) && plugin.enabled === true, source, local };
 	} catch {
-		return { enabled: false };
+		return { enabled: false, local: false };
 	}
 }
 
 /** Newest dg plugin version in the Codex plugin cache. */
-export function codexPluginVersion(home: string): string | undefined {
+export function codexPluginVersion(codexHome: string): string | undefined {
 	try {
-		const dir = join(home, ".codex", "plugins", "cache", MARKETPLACE, "dg");
-		return readdirSync(dir).sort(compareVersions).pop();
+		return readdirSync(join(codexHome, "plugins", "cache", MARKETPLACE, "dg")).sort(compareVersions).pop();
 	} catch {
 		return undefined;
 	}
 }
 
-const isGithubSource = (source: string | undefined): boolean =>
-	source !== undefined && /detailedghost\/dg-ai(\.git)?$/.test(source);
+function guarded(name: string, step: () => StepResult): StepResult {
+	try {
+		return step();
+	} catch (error) {
+		return { name, status: "failed", detail: describeError(error) };
+	}
+}
 
 function claudeStep(deps: UpdateDeps): StepResult {
 	const name = "Claude plugin";
 	if (!deps.which("claude")) return { name, status: "skipped", detail: "claude is not on PATH" };
 	const refreshed = deps.run(["claude", "plugin", "marketplace", "update", MARKETPLACE]);
 	if (refreshed.status !== 0) {
-		const added = deps.run(["claude", "plugin", "marketplace", "add", MARKETPLACE_SOURCE]);
-		if (added.status !== 0)
-			return failure(name, ["claude", "plugin", "marketplace", "add", MARKETPLACE_SOURCE], added.stderr, added.status);
+		const add = ["claude", "plugin", "marketplace", "add", MARKETPLACE_SOURCE];
+		const added = deps.run(add);
+		if (added.status !== 0) return failure(name, add, added.stderr, added.status);
 	}
 	const installed = installedPlugins(deps.home).length > 0;
 	const argv = ["claude", "plugin", installed ? "update" : "install", PLUGIN_REF];
@@ -91,41 +102,56 @@ function claudeStep(deps: UpdateDeps): StepResult {
 function codexStep(deps: UpdateDeps): StepResult {
 	const name = "Codex plugin";
 	if (!deps.which("codex")) return { name, status: "skipped", detail: "codex is not on PATH" };
-	const state = codexState(deps.home);
-	if (!state.enabled) return { name, status: "skipped", detail: `${PLUGIN_REF} is not enabled in ~/.codex/config.toml` };
-	const market = isGithubSource(state.source)
-		? [["codex", "plugin", "marketplace", "upgrade", MARKETPLACE]]
-		: [
+	const state = codexState(deps.codexHome);
+	if (!state.enabled) return { name, status: "skipped", detail: `${PLUGIN_REF} is not enabled in the Codex config` };
+	const repoint = state.local || state.source === undefined;
+	const market = repoint
+		? [
 				...(state.source === undefined ? [] : [["codex", "plugin", "marketplace", "remove", MARKETPLACE]]),
 				["codex", "plugin", "marketplace", "add", MARKETPLACE_SOURCE],
-			];
-	const moved = isGithubSource(state.source) ? "" : `; marketplace now ${MARKETPLACE_SOURCE}`;
+			]
+		: [["codex", "plugin", "marketplace", "upgrade", MARKETPLACE]];
+	const moved = repoint ? `; marketplace now ${MARKETPLACE_SOURCE}` : "";
 	return runAll(name, [...market, ["codex", "plugin", "add", PLUGIN_REF]], deps.run, `updated ${PLUGIN_REF}${moved}`);
 }
 
-async function installStep(deps: UpdateDeps, version?: string): Promise<StepResult> {
+function installTargets(deps: UpdateDeps): InstallTarget[] {
+	if (deps.cliOnly()) return ["cli-only"];
+	const staged = Object.keys(deps.stagedExtensions()) as InstallTarget[];
+	return staged.length > 0 ? staged : ["chrome"];
+}
+
+async function installStep(deps: UpdateDeps): Promise<StepResult> {
 	const name = "CLI, runtime and extension";
 	try {
-		await deps.install(version);
-		return { name, status: "ok", detail: `dg ${deps.installedVersion() ?? "unknown"} installed` };
+		const version = await deps.newestVersion();
+		for (const target of installTargets(deps)) await deps.install(target, version);
+		const installed = deps.installedVersion();
+		if (installed !== version)
+			return { name, status: "failed", detail: `dg ${installed ?? "unknown"} is installed, not ${version}` };
+		return { name, status: "ok", detail: `dg ${version} installed` };
 	} catch (error) {
 		return { name, status: "failed", detail: describeError(error) };
 	}
 }
 
 /** Prints installed and newest versions; changes nothing. */
-async function check(opts: UpdateOptions, deps: UpdateDeps): Promise<number> {
+async function check(deps: UpdateDeps): Promise<number> {
 	let newest: string;
 	try {
-		newest = await deps.newestVersion(opts.version);
+		newest = await deps.newestVersion();
 	} catch (error) {
 		deps.log(`Could not read the newest release: ${describeError(error)}`);
 		return 1;
 	}
+	const staged = Object.entries(deps.stagedExtensions()).map(
+		([target, version]): [string, string | undefined, boolean] => [`${target} extension`, version, true],
+	);
 	const rows: [string, string | undefined, boolean][] = [
 		["dg CLI", deps.installedVersion(), true],
+		...staged,
 		["Claude plugin", installedPlugins(deps.home)[0]?.version, Boolean(deps.which("claude"))],
-		["Codex plugin", codexPluginVersion(deps.home), codexState(deps.home).enabled],
+		["Codex plugin", codexPluginVersion(deps.codexHome), codexState(deps.codexHome).enabled],
 	];
 	let stale = false;
 	for (const [label, version, used] of rows) {
@@ -141,17 +167,17 @@ async function check(opts: UpdateOptions, deps: UpdateDeps): Promise<number> {
 	return stale ? 1 : 0;
 }
 
-/** Updates every dg part, then runs doctor; exit 1 when a step failed. */
+/** Updates every dg part to the newest release, then runs doctor; exit 1 when a step failed. */
 export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<number> {
-	if (opts.check) return check(opts, deps);
+	if (opts.check) return check(deps);
 	const steps: StepResult[] = [];
 	const report = (step: StepResult) => {
 		steps.push(step);
 		deps.log(`${STEP_ICON[step.status]} ${step.name}: ${step.detail}`);
 	};
-	report(await installStep(deps, opts.version));
-	report(claudeStep(deps));
-	report(codexStep(deps));
+	report(await installStep(deps));
+	report(guarded("Claude plugin", () => claudeStep(deps)));
+	report(guarded("Codex plugin", () => codexStep(deps)));
 	try {
 		deps.log(`Doctor: ${await deps.doctorSummary()}. Run dg-skills doctor for details.`);
 	} catch (error) {
@@ -162,14 +188,24 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<
 }
 
 export function defaultUpdateDeps(): UpdateDeps {
+	const home = process.env.HOME ?? homedir();
 	return {
-		home: process.env.HOME ?? homedir(),
-		install: async (version) => {
+		home,
+		codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
+		install: async (target, version) => {
 			const { runInstall } = await import("../install/cli");
-			await runInstall(undefined, { version });
+			if (target === "cli-only") await runInstall(undefined, { cliOnly: true, version });
+			else await runInstall(target, { version });
 		},
-		newestVersion: async (version) => pickBundle(await listReleases(), version).version,
+		newestVersion: async () => pickBundle(await listReleases()).version,
 		installedVersion: () => readCurrentVersion(),
+		stagedExtensions: () => {
+			const marker = readMarker();
+			return Object.fromEntries(
+				(["chrome", "firefox"] as const).flatMap((target) => (marker[target] ? [[target, marker[target]]] : [])),
+			);
+		},
+		cliOnly: isCliOnly,
 		which: (name) => Bun.which(name),
 		run: runSync,
 		doctorSummary: async () => {
