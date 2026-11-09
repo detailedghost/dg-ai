@@ -585,6 +585,17 @@ describe("pw --ext unmask and secret fill", () => {
 		expect(env.stdout.join("\n")).not.toContain("hunter2-secret-x");
 	});
 
+	test("masks a short secret on output and on error", async () => {
+		const out = clientEnv();
+		const shown = deps(() => ({ ok: true, data: { text: "cvv 739 set" } }), { env: { CVV: "739" } });
+		expect(await runExt(["--ext", "fill", "e5", "--value-env", "CVV"], out, shown.value)).toBe(0);
+		expect(out.stdout.join("\n")).not.toContain("739");
+		const err = clientEnv();
+		const failed = deps(() => ({ ok: false, error: "bad cvv 739" }), { env: { CVV: "739" } });
+		expect(await runExt(["--ext", "fill", "e5", "--value-env", "CVV"], err, failed.value)).toBe(1);
+		expect(err.stderr.join("\n")).not.toContain("739");
+	});
+
 	test("reads a secret from --value-stdin without the trailing newline", async () => {
 		const d = deps(ok, { readStdin: () => "from-stdin-123\n" });
 		expect(await runExt(["--ext", "fill", "e5", "--value-stdin"], clientEnv(), d.value)).toBe(0);

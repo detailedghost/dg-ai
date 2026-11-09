@@ -76,6 +76,14 @@ function replaceLiteral(message: string, secret: string): string {
 	return message.split(secret).join(REDACTED);
 }
 
+/** Masks each given secret wherever it appears, whatever its length. */
+export function redactLiterals(message: string, secrets: readonly string[]): string {
+	return [...secrets]
+		.filter((secret) => secret.length > 0)
+		.sort((a, b) => b.length - a.length)
+		.reduce((out, secret) => out.split(secret).join(REDACTED), message);
+}
+
 function redactWith(
 	patterns: ReadonlyArray<{ pattern: RegExp; replacement: string }>,
 	message: string,

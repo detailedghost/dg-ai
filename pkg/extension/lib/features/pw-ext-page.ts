@@ -442,6 +442,10 @@ export function pwExtPageAction(
 			const more = options.length > 10 ? `, … ${options.length - 10} more` : "";
 			return { error: `${describe(select)} has no option "${squash(value, 40)}". Options: ${names.join(", ")}${more}.` };
 		}
+		const option = options[index] as HTMLOptionElement;
+		const group = option.parentElement as HTMLOptGroupElement | null;
+		if (option.disabled || (group?.tagName === "OPTGROUP" && group.disabled))
+			return { error: `The option "${squash(label(option), 40)}" in ${describe(select)} is disabled.` };
 		select.selectedIndex = index;
 		fire(select);
 		return { detail: `selected "${squash(label(options[index] as HTMLOptionElement), 40)}" in ${describe(select)}` };
@@ -451,7 +455,7 @@ export function pwExtPageAction(
 		const [pattern, format] = DATE_INPUTS[input.type.toLowerCase()] as [RegExp, string];
 		if (!pattern.test(value)) return { error: `${describe(input)} takes ${format}.` };
 		setValue(input, value);
-		if (input.value !== value) {
+		if (input.value === "") {
 			setValue(input, "");
 			return { error: `${describe(input)} takes ${format}.` };
 		}

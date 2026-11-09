@@ -16,6 +16,7 @@ import {
 	PW_EXT_UNMASK_MAX_MINUTES,
 	PW_EXT_WRITE_VERBS,
 	describeError,
+	redactLiterals,
 	redactSecrets,
 	redactText,
 	validatePwExtRequest,
@@ -398,7 +399,10 @@ function parseRequest(
 		};
 	} catch (error) {
 		throw new ExtUsageError(
-			redactText(error instanceof Error ? error.message : String(error), secret ? [secret] : []),
+			redactText(
+				redactLiterals(error instanceof Error ? error.message : String(error), secret ? [secret] : []),
+				secret ? [secret] : [],
+			),
 		);
 	}
 }
@@ -483,7 +487,7 @@ export async function runExt(
 			PW_EXT_DEFAULT_TIMEOUT_MS + 5_000,
 		);
 		if (!reply.ok) {
-			env.err(redactText(reply.error ?? "pw --ext failed in the browser.", secrets));
+			env.err(redactText(redactLiterals(reply.error ?? "pw --ext failed in the browser.", secrets), secrets));
 			return 1;
 		}
 		let data: ReturnType<typeof validatePwExtResponse>;
@@ -495,7 +499,7 @@ export async function runExt(
 			);
 			return 1;
 		}
-		const lines = [redactSecrets(data.text, secrets)];
+		const lines = [redactSecrets(redactLiterals(data.text, secrets), secrets)];
 		if (data.image)
 			lines.push(
 				"### Result",
@@ -508,7 +512,9 @@ export async function runExt(
 			env.err("pw --ext canceled; the extension was told to cancel it.");
 			return 130;
 		}
-		env.err(redactText(error instanceof Error ? error.message : String(error), secrets));
+		env.err(
+			redactText(redactLiterals(error instanceof Error ? error.message : String(error), secrets), secrets),
+		);
 		return 1;
 	} finally {
 		stopListening();

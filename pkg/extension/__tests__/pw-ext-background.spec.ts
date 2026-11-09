@@ -1111,7 +1111,13 @@ describe("pw --ext unmask", () => {
 		const answer = await h.run({ verb: "unmask", minutes: 15 });
 		expect(answer).toEqual({ ok: true, data: { text: expect.stringContaining(`Unmasked on ${ORIGIN} until`) } });
 		expect(h.approvalRequests).toEqual([
-			expect.objectContaining({ origin: ORIGIN, lines: expect.arrayContaining([`Agent: ${IDENTITY}`]) }),
+			expect.objectContaining({
+				origin: ORIGIN,
+				lines: expect.arrayContaining([
+					`Agent: ${IDENTITY}`,
+					`Tab group: ${groupTitle({ agentIdentity: IDENTITY, sessionId: SESSION })}`,
+				]),
+			}),
 		]);
 	});
 
@@ -1158,6 +1164,31 @@ describe("pw --ext unmask", () => {
 			error: expect.stringContaining("Proton Mail"),
 		});
 		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("shows email addresses in the page title and on console output during a grant", async () => {
+		const h = harness({
+			approval: "allow",
+			tabs: [{ ...WEB_TAB, title: "ada@clinic.test - Users" }],
+			pageResult: { started: false, entries: ["error for ada@clinic.test"] },
+			mainResult: () => ({ entries: [] }),
+		});
+		await h.run({ verb: "unmask", minutes: 5 });
+		const current = await h.run({ verb: "current" });
+		expect(current.ok ? current.data.text : "").toContain("Page Title: ada@clinic.test - Users");
+		const logged = await h.run({ verb: "console" });
+		const text = logged.ok ? logged.data.text : "";
+		expect(text).toContain("error for ada@clinic.test");
+		expect(text).toContain(`unmasked on ${ORIGIN} until`);
+	});
+
+	it("masks a short secret fill value on success and error", async () => {
+		const ok = harness({ approval: "allow", pageResult: { detail: "cvv 739 set" } });
+		await ok.run({ verb: "unmask", minutes: 15 });
+		expect(JSON.stringify(await ok.run({ verb: "fill", target: "#cvv", value: "739", secret: true }))).not.toContain("739");
+		const bad = harness({ approval: "allow", pageResult: { error: "bad cvv 739" } });
+		await bad.run({ verb: "unmask", minutes: 15 });
+		expect(JSON.stringify(await bad.run({ verb: "fill", target: "#cvv", value: "739", secret: true }))).not.toContain("739");
 	});
 
 	it("never echoes a secret fill value, even when the page repeats it", async () => {

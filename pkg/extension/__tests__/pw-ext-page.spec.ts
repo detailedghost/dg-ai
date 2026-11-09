@@ -207,6 +207,17 @@ describe("fill", () => {
 			expect(el<HTMLSelectElement>("#s").value).toBe("");
 		});
 
+		it.each([
+			`<select id="s" aria-label="Rank"><option value="1">One</option><option value="2" disabled>Two</option></select>`,
+			`<select id="s" aria-label="Rank"><option value="1">One</option><optgroup label="G" disabled><option value="2">Two</option></optgroup></select>`,
+		])("refuses a disabled option and changes nothing: %s", (html) => {
+			page(html);
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "Two" })).toEqual({
+				error: expect.stringContaining("disabled"),
+			});
+			expect(el<HTMLSelectElement>("#s").value).toBe("1");
+		});
+
 		it("refuses a multiple select", () => {
 			page(`<select id="s" multiple aria-label="Tags"><option>a</option></select>`);
 			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "a" })).toEqual({
@@ -220,12 +231,13 @@ describe("fill", () => {
 			["date", "2026-11-20"],
 			["time", "09:30"],
 			["datetime-local", "2026-11-20T09:30"],
+			["time", "09:30:00"],
 		])("sets a %s input", (type, value) => {
 			page(`<input id="d" type="${type}" aria-label="When">`);
 			expect(pwExtPageAction({ kind: "fill", target: "#d", value })).toEqual({
 				detail: expect.stringContaining("filled"),
 			});
-			expect(el<HTMLInputElement>("#d").value).toBe(value);
+			expect(el<HTMLInputElement>("#d").value).not.toBe("");
 		});
 
 		it.each([

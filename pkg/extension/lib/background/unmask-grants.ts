@@ -23,6 +23,13 @@ export function createUnmaskGrants({
 		else await storage.session.remove(keyOf(sessionId));
 	}
 
+	let queue: Promise<unknown> = Promise.resolve();
+	function serial<T>(update: () => Promise<T>): Promise<T> {
+		const next = queue.then(update, update);
+		queue = next.catch(() => undefined);
+		return next;
+	}
+
 	return {
 		async active(
 			sessionId: string,
@@ -35,16 +42,20 @@ export function createUnmaskGrants({
 			);
 		},
 
-		async grant(sessionId: string, grant: UnmaskGrant): Promise<void> {
-			const others = (await read(sessionId)).filter((held) => held.origin !== grant.origin);
-			await write(sessionId, [...others, grant]);
+		grant(sessionId: string, grant: UnmaskGrant): Promise<void> {
+			return serial(async () => {
+				const others = (await read(sessionId)).filter((held) => held.origin !== grant.origin);
+				await write(sessionId, [...others, grant]);
+			});
 		},
 
-		async revoke(sessionId: string, origin: string): Promise<boolean> {
-			const held = await read(sessionId);
-			const kept = held.filter((grant) => grant.origin !== origin);
-			await write(sessionId, kept);
-			return kept.length !== held.length;
+		revoke(sessionId: string, origin: string): Promise<boolean> {
+			return serial(async () => {
+				const held = await read(sessionId);
+				const kept = held.filter((grant) => grant.origin !== origin);
+				await write(sessionId, kept);
+				return kept.length !== held.length;
+			});
 		},
 	};
 }

@@ -4,6 +4,7 @@ import {
 	emitRedacted,
 	installRedactingConsole,
 	noteSecret,
+	redactLiterals,
 	redactSecrets,
 	redactText,
 } from "../src/redact";
@@ -272,5 +273,12 @@ describe("redactSecrets", () => {
 		expect(out).not.toContain("sk-abcdefgh12345678");
 		expect(out).not.toContain("Hunter2-secret");
 		expect(redactText(text)).not.toContain("ada@example.test");
+	});
+});
+
+describe("redactLiterals", () => {
+	it("masks a given secret of any length, and ignores an empty one", () => {
+		expect(redactLiterals("cvv 123 ok 123", ["123", ""])).toBe("cvv [redacted] ok [redacted]");
+		expect(redactLiterals("plain", [])).toBe("plain");
 	});
 });

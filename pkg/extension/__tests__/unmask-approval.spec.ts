@@ -37,6 +37,17 @@ describe("unmask grants", () => {
 		expect(await grants.revoke("s1", "https://app.example.test")).toBe(false);
 		expect(storage.data).toEqual({});
 	});
+
+	it("does not bring back a revoked grant when a grant for another site runs at the same time", async () => {
+		const grants = createUnmaskGrants({ storage: memoryStorage(), now: () => 0 });
+		await grants.grant("s1", { origin: "https://app.example.test", groupId: 10, until: 5_000 });
+		await Promise.all([
+			grants.revoke("s1", "https://app.example.test"),
+			grants.grant("s1", { origin: "https://other.example.test", groupId: 10, until: 5_000 }),
+		]);
+		expect(await grants.active("s1", TAB)).toBeUndefined();
+		expect(await grants.active("s1", { ...TAB, url: "https://other.example.test/" })).toBeDefined();
+	});
 });
 
 function fakeWindows() {
