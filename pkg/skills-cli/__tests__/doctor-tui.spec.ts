@@ -150,12 +150,26 @@ describe("runTui", () => {
 	});
 
 	test("enter then y runs the fix and checks again", async () => {
-		const d = fake([KEY.enter, "y", "q"]);
+		const d = fake([KEY.enter, "y", "x", "q"]);
 		await runTui(report(), d);
 		expect(d.screens[1]).toContain("Run dg-agent start? [y/N]");
 		expect(d.ran).toEqual([["dg-agent", "start"]]);
 		expect(d.reruns).toBe(1);
 		expect(d.screens.at(-1)).toContain("dg-agent start exited 0.");
+	});
+
+	test("after a fix runs, its output stays until a key press", async () => {
+		const d = fake([KEY.enter, "y", "x", "q"]);
+		await runTui(report(), d);
+		expect(d.screens.some((screen) => screen.includes("dg-agent start exited 0. Press any key to go back to the list."))).toBe(true);
+		expect(d.reruns).toBe(1);
+	});
+
+	test("enter on the allow-rules row opens it so the rules show before the question", async () => {
+		const d = fake([KEY.down, KEY.down, KEY.enter, "n", "q"]);
+		await runTui(report(), d);
+		const question = d.screens.find((screen) => screen.includes("allow rules listed above")) ?? "";
+		expect(question).toContain("Bash(dg-skills inbox:*)");
 	});
 
 	test("enter then any other key skips the fix", async () => {
@@ -182,7 +196,7 @@ describe("runTui", () => {
 
 	test("returns the report from the last check, for the exit code", async () => {
 		const fixed: DoctorReport = { ok: true, items: [{ item: "shared", checks: [check("x", "ok", "fine")] }] };
-		const d = fake([KEY.enter, "y", "q"], fixed);
+		const d = fake([KEY.enter, "y", "x", "q"], fixed);
 		expect(await runTui(report(), d)).toBe(fixed);
 	});
 
@@ -240,6 +254,36 @@ describe("render in a small terminal", () => {
 		const screen = render({ groups: groupReport(rows), cursor: 19, open: new Set(), status: "" }, { rows: 8, columns: 200 });
 		expect(screen).toContain("> ❌ item-19: broken 19");
 		expect(screen).not.toContain("item-0:");
+	});
+});
+
+describe("render fits the terminal", () => {
+	const plain = (screen: string) => screen.replace("\u001b[2J\u001b[H", "");
+
+	test("ends without a newline, so a full screen does not scroll", () => {
+		const screen = render({ groups: groupReport(report()), cursor: 0, open: new Set(), status: "" }, { rows: 8, columns: 80 });
+		expect(screen.endsWith("\n")).toBe(false);
+		expect(plain(screen).split("\n").length).toBeLessThanOrEqual(8);
+	});
+
+	test("measures wide icons in terminal cells", () => {
+		const screen = render({ groups: groupReport(report()), cursor: 0, open: new Set(), status: "" }, { rows: 40, columns: 20 });
+		for (const line of plain(screen).split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(20);
+	});
+
+	test("wraps a long Fix line instead of cutting it", () => {
+		const fix = "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only";
+		const groups = groupReport({ ok: false, items: [{ item: "shared", checks: [check("cli", "fail", "missing", fix)] }] });
+		const screen = plain(render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 40, columns: 40 }));
+		expect(screen.replace(/\s/g, "")).toContain(fix.replace(/\s/g, ""));
+	});
+
+	test("an open allow-rules row lists the exact rules", () => {
+		const groups = groupReport(report());
+		const allow = groups.find((g) => g.action?.kind === "allow-rule");
+		const screen = render({ groups, cursor: 2, open: new Set([allow?.key ?? ""]), status: "" }, { rows: 40, columns: 200 });
+		expect(screen).toContain("      Bash(dg-skills inbox:*)");
+		expect(screen).toContain("      Bash(dg-skills db:*)");
 	});
 });
 

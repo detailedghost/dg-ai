@@ -36,9 +36,30 @@ function hint(group: Group): string {
 
 const MIN_MEMBERS = 3;
 
-function clip(line: string, columns: number): string {
-	const chars = [...line];
-	return chars.length <= columns ? line : `${chars.slice(0, Math.max(1, columns - 1)).join("")}…`;
+/** Cuts a line to the terminal width in cells, ending with an ellipsis when cut. */
+export function clip(line: string, columns: number): string {
+	if (Bun.stringWidth(line) <= columns) return line;
+	let out = "";
+	for (const char of line) {
+		if (Bun.stringWidth(`${out}${char}…`) > columns) break;
+		out += char;
+	}
+	return `${out}…`;
+}
+
+/** Breaks a line into rows that each fit the terminal width in cells, so nothing is hidden. */
+export function wrap(line: string, columns: number, indent = ""): string[] {
+	const rows: string[] = [];
+	let row = "";
+	for (const char of line) {
+		if (row !== "" && row !== indent && Bun.stringWidth(`${row}${char}`) > columns) {
+			rows.push(row);
+			row = indent;
+		}
+		row += char;
+	}
+	rows.push(row);
+	return rows;
 }
 
 function header(group: Group, selected: boolean): string {
@@ -46,9 +67,22 @@ function header(group: Group, selected: boolean): string {
 	return `${selected ? ">" : " "} ${ICON[group.status]} ${group.title}${tail ? `    ${tail}` : ""}`;
 }
 
-/** Draws one screen: rows clipped to the terminal width, scrolled so the cursor row and its details show. */
+function details(group: Group, room: number, columns: number): string[] {
+	const pad = "      ";
+	const rules = group.action?.kind === "allow-rule" ? group.action.rules : null;
+	const entries = rules ?? group.members.map(({ item, check }) => `${item} · ${check.id}: ${check.detail}`);
+	const shown = entries.slice(0, room);
+	const lines = shown.flatMap((entry) => (rules ? wrap(`${pad}${entry}`, columns, pad) : [clip(`${pad}${entry}`, columns)]));
+	const hidden = entries.length - shown.length;
+	if (hidden > 0) lines.push(clip(`${pad}… ${hidden} more; dg-skills doctor --plain lists all`, columns));
+	if (group.fix && !rules) lines.push(...wrap(`${pad}Fix: ${group.fix}`, columns, pad));
+	return lines;
+}
+
+/** Draws one screen that fits the terminal, scrolled so the cursor row and its details show. */
 export function render(state: State, size: { rows: number; columns: number }): string {
-	const body = Math.max(1, size.rows - 2);
+	const footer = wrap(state.status || HELP, size.columns);
+	const body = Math.max(1, size.rows - footer.length - 1);
 	const room = Math.max(MIN_MEMBERS, body - state.groups.length - 1);
 	const lines: string[] = [];
 	let cursorStart = 0;
@@ -56,20 +90,12 @@ export function render(state: State, size: { rows: number; columns: number }): s
 	state.groups.forEach((group, index) => {
 		const selected = index === state.cursor;
 		if (selected) cursorStart = lines.length;
-		lines.push(header(group, selected));
-		if (state.open.has(group.key)) {
-			const shown = group.members.slice(0, room);
-			for (const { item, check } of shown) lines.push(`      ${item} · ${check.id}: ${check.detail}`);
-			const hidden = group.members.length - shown.length;
-			if (hidden > 0) lines.push(`      … ${hidden} more; dg-skills doctor --plain lists all`);
-			if (group.fix && group.action?.kind !== "allow-rule") lines.push(`      Fix: ${group.fix}`);
-		}
+		lines.push(clip(header(group, selected), size.columns));
+		if (state.open.has(group.key)) lines.push(...details(group, room, size.columns));
 		if (selected) cursorEnd = lines.length - 1;
 	});
 	const top = Math.min(cursorStart, Math.max(0, cursorEnd - body + 1));
-	const visible = lines.slice(top, top + body).map((line) => clip(line, size.columns));
-	visible.push("", clip(state.status || HELP, size.columns));
-	return `${CLEAR}${visible.join("\n")}\n`;
+	return `${CLEAR}${[...lines.slice(top, top + body), "", ...footer].join("\n")}`;
 }
 
 /** Splits raw terminal input into keys; an unfinished escape sequence stays in `rest`. */
@@ -97,7 +123,7 @@ async function nextKey(keys: AsyncIterator<string>): Promise<string> {
 function prompt(group: Group): string | null {
 	if (group.action?.kind === "run") return `Run ${group.action.argv.join(" ")}? [y/N]`;
 	if (group.action?.kind === "allow-rule")
-		return `Add ${group.action.rules.length} allow rules to ~/.claude/settings.json? [y/N]  (→ lists them)`;
+		return `Add the ${group.action.rules.length} allow rules listed above to ~/.claude/settings.json? [y/N]`;
 	return null;
 }
 
@@ -136,6 +162,7 @@ export async function runTui(report: DoctorReport, deps: TuiDeps): Promise<Docto
 				continue;
 			}
 			state.status = question;
+			if (group.action?.kind === "allow-rule") state.open.add(group.key);
 			deps.write(render(state, deps.size()));
 			if ((await nextKey(keys)).toLowerCase() !== "y") {
 				state.status = "Skipped.";
@@ -146,6 +173,10 @@ export async function runTui(report: DoctorReport, deps: TuiDeps): Promise<Docto
 				done = await apply(group, deps);
 			} catch (error) {
 				done = `Fix failed: ${error instanceof Error ? error.message : String(error)}`;
+			}
+			if (group.action?.kind === "run") {
+				deps.write(`\n${done} Press any key to go back to the list.\n`);
+				await nextKey(keys);
 			}
 			current = await deps.rerun();
 			state.groups = groupReport(current);
