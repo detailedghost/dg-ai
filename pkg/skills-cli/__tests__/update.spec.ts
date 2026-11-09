@@ -277,6 +277,16 @@ describe("dg-skills update", () => {
 		expect(d.lines.join("\n")).not.toContain("extension");
 	});
 
+	test("a standalone Codex skills folder is named with the command that refreshes it", async () => {
+		mkdirSync(join(codexHome, "skills"), { recursive: true });
+		const d = fake({ tools: ["codex"], installedVersion: () => "3.1.0", stagedExtensions: () => ({}) });
+		await runUpdate({ check: true }, d);
+		expect(d.lines.join("\n")).toContain("are not refreshed here, refresh them with: curl -fsSL");
+		const u = fake({ tools: ["codex"], stagedExtensions: () => ({}) });
+		await runUpdate({}, u);
+		expect(u.lines.join("\n")).toContain("⏭️ Codex plugin: dg@detailedghost is not enabled in the Codex config; skills copied into");
+	});
+
 	test("--check exits 0 when everything is current", async () => {
 		claudePlugin("3.1.0");
 		const d = fake({ tools: ["claude"], installedVersion: () => "3.1.0", stagedExtensions: () => ({ chrome: "3.1.0" }) });

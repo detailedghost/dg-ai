@@ -225,6 +225,10 @@ the command exits 1 when any step failed:
    also reports things `update` does not own, such as a stopped daemon, so it
    does not change the exit code.
 
+Skills copied into `$CODEX_HOME/skills` by a `DG_INSTALL_CODEX=1` bootstrap
+are not refreshed by `update`. When Codex has no dg plugin but has that
+folder, `update` and `--check` print the bootstrap command that refreshes it.
+
 The Claude step updates the user scope. A project or local install that is
 still behind gets a warning line with the command to run in that project.
 

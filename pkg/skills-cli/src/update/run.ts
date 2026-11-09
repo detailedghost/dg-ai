@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describeError, isRecord } from "@dg/common";
@@ -149,7 +149,12 @@ function codexStep(deps: UpdateDeps): StepResult {
 	const name = "Codex plugin";
 	if (!deps.which("codex")) return { name, status: "skipped", detail: "codex is not on PATH" };
 	const state = codexState(deps.codexHome);
-	if (!state.enabled) return { name, status: "skipped", detail: `${PLUGIN_REF} is not enabled in the Codex config` };
+	if (!state.enabled)
+		return {
+			name,
+			status: "skipped",
+			detail: `${PLUGIN_REF} is not enabled in the Codex config${standaloneNote(deps)}`,
+		};
 	const repoint = state.local || state.source === undefined;
 	const market = repoint
 		? [
@@ -159,6 +164,16 @@ function codexStep(deps: UpdateDeps): StepResult {
 		: [["codex", "plugin", "marketplace", "upgrade", MARKETPLACE]];
 	const moved = repoint ? `; marketplace now ${MARKETPLACE_SOURCE}` : "";
 	return runAll(name, [...market, ["codex", "plugin", "add", PLUGIN_REF]], deps.run, `updated ${PLUGIN_REF}${moved}`);
+}
+
+const STANDALONE_REFRESH =
+	"curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh";
+
+/** Skills copied into $CODEX_HOME/skills by a standalone install are not refreshed here; say how to refresh them. */
+function standaloneNote(deps: UpdateDeps): string {
+	return existsSync(join(deps.codexHome, "skills"))
+		? `; skills copied into ${join(deps.codexHome, "skills")} are not refreshed here, refresh them with: ${STANDALONE_REFRESH}`
+		: "";
 }
 
 function installTargets(deps: UpdateDeps): InstallTarget[] {
@@ -226,6 +241,8 @@ async function check(deps: UpdateDeps): Promise<number> {
 		stale ||= !current;
 		deps.log(`${current ? "✅" : "⬆️"} ${label}: ${version ?? "not installed"}${current ? "" : ` -> ${newest}`}`);
 	}
+	const note = codexState(deps.codexHome).enabled ? "" : standaloneNote(deps);
+	if (note) deps.log(`⚠️ Codex${note}`);
 	deps.log(stale ? "Run dg-skills update to bring these up to date." : `Everything is at ${newest}.`);
 	return stale ? 1 : 0;
 }
