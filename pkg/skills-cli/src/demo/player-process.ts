@@ -29,7 +29,7 @@ import {
 	unsetFillVariables,
 } from "./player-job";
 import { type LaunchPick, pickLaunch } from "../pw/core/browser";
-import { playbackSteps, recordTour, VIEWPORT } from "./recorder/drive";
+import { playbackSteps, recordTour, settle, VIEWPORT } from "./recorder/drive";
 import { canEncode, type EncodeDeps, encodeMp4 } from "./recorder/encode";
 import {
 	narrationClips,
@@ -68,6 +68,7 @@ export type PlayerHooks = {
 const OFFLINE_LINE =
 	"narration assets are not downloaded; running captions-only";
 const SETTLE_MS = 1_500;
+const LOGIN_SETTLE_MS = 15_000;
 const PERSON_PROMPT = "Type it here, then continue.";
 
 export const contextOptions = (job: PlayerJob, record: boolean) => ({
@@ -275,6 +276,7 @@ function waitForPerson(timeoutMs: number): NonNullable<Parameters<typeof recordT
 		await page
 			.waitForURL((url) => url.href !== before, { timeout: SETTLE_MS })
 			.catch(() => undefined);
+		await settle(page, LOGIN_SETTLE_MS);
 		await clearOverlays(page);
 		return { navigated: page.url() !== before };
 	};
@@ -415,7 +417,7 @@ export async function runPlayer(
 						console.log(`demo ${job.slug}: skipped setup step ${index + 1} after the sign-in`),
 				},
 			);
-			state = await context.storageState();
+			state = await context.storageState({ indexedDB: true });
 			tab = await page.evaluate(readTabStorage).catch(() => undefined);
 			await close(context);
 		}

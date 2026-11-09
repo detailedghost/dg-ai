@@ -92,6 +92,21 @@ describe("verifyLocal", () => {
 		expect(browser.locators.get("#two")?.typed).toEqual([]);
 	});
 
+	test("reports a typing failure on a resolved field as a harness error, not a selector", async () => {
+		const { deps } = opening({ dir, untypable: ["#two"] });
+		const result = await verifyLocal(
+			{
+				...script(),
+				steps: [{ title: "Name", body: "b", selector: "#two", action: { do: "fill", value: "dante" } }],
+			},
+			deps,
+		);
+		expect(result).toEqual({
+			ok: false,
+			findings: [{ step: 1, kind: "harness-error", message: "step 1: could not type into #two" }],
+		});
+	});
+
 	test("turns an open failure into a harness-error finding", async () => {
 		const result = await verifyLocal(script(), {
 			open: async () => {

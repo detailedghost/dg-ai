@@ -325,6 +325,7 @@ describe("runPlayer setup", () => {
 		expect(code).toBe(0);
 		expect(browser.opens.map((call) => call.record)).toEqual([false, true]);
 		expect(browser.opens[1]?.state).toEqual({ cookies: [{ name: "sid" }], origins: [] });
+		expect(browser.snapshots).toEqual([{ indexedDB: true }]);
 		expect(browser.log.indexOf("close setup")).toBeLessThan(browser.log.lastIndexOf("goto https://example.test/"));
 		expect(browser.locators.get("#pass")?.typed).toEqual(["pw"]);
 	});
@@ -371,6 +372,8 @@ describe("runPlayer setup", () => {
 		expect(field?.focused).toBe(1);
 		expect(field?.typed).toEqual([]);
 		expect(JSON.stringify(browser.evaluated)).toContain("Type it here, then continue.");
+		expect(browser.log.indexOf("load networkidle")).toBeGreaterThan(-1);
+		expect(browser.log.indexOf("load networkidle")).toBeLessThan(browser.log.indexOf("close setup"));
 		expect(result().outcome).toBe("done");
 	});
 });

@@ -20,6 +20,7 @@ export type FakeOptions = {
 	notPassword?: string[];
 	navigatesOnPrompt?: boolean;
 	gotoDelayMs?: number;
+	untypable?: string[];
 	tabStorage?: { origin: string; items: [string, string][] };
 };
 
@@ -32,6 +33,7 @@ export function fakeBrowser(options: FakeOptions) {
 	const closes: Array<() => void> = [];
 	const evaluated: unknown[] = [];
 	const initScripts: OpenCall[] = [];
+	const snapshots: unknown[] = [];
 
 	const locatorFor = (selector: string) => {
 		const state = locators.get(selector) ?? { filled: [], focused: 0, typed: [], clicked: 0 };
@@ -47,7 +49,10 @@ export function fakeBrowser(options: FakeOptions) {
 			fill: async (text: string) => void state.filled.push(text),
 			focus: async () => void state.focused++,
 			click: async () => void state.clicked++,
-			pressSequentially: async (text: string) => void state.typed.push(text),
+			pressSequentially: async (text: string) => {
+				if (options.untypable?.includes(selector)) throw new Error("element is readonly");
+				state.typed.push(text);
+			},
 		};
 		return { first: () => handle };
 	};
@@ -63,7 +68,7 @@ export function fakeBrowser(options: FakeOptions) {
 		url: () => current,
 		viewportSize: () => null,
 		locator: locatorFor,
-		waitForLoadState: async () => undefined,
+		waitForLoadState: async (state: string) => void log.push(`load ${state}`),
 		waitForURL: async () => {
 			if (options.navigatesOnPrompt) current = "https://example.test/home";
 		},
@@ -93,7 +98,10 @@ export function fakeBrowser(options: FakeOptions) {
 			pages: () => [],
 			newPage: async () => newPage(record),
 			addInitScript: async (_fn: unknown, arg: unknown) => void initScripts.push({ record, state: arg }),
-			storageState: async () => ({ cookies: [{ name: "sid" }], origins: [] }),
+			storageState: async (options?: unknown) => {
+				snapshots.push(options);
+				return { cookies: [{ name: "sid" }], origins: [] };
+			},
 			once: (_event: string, handler: () => void) => void handlers.push(handler),
 			close: async () => {
 				log.push(`close ${record ? "recording" : "setup"}`);
@@ -117,6 +125,7 @@ export function fakeBrowser(options: FakeOptions) {
 		locators,
 		evaluated,
 		initScripts,
+		snapshots,
 		closeBrowser: () => closes.forEach((close) => close()),
 	};
 }

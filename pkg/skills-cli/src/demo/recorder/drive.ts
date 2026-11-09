@@ -62,6 +62,8 @@ export class StepError extends Error {
 	}
 }
 
+export class SelectorError extends StepError {}
+
 export class PasswordFieldError extends StepError {
 	constructor(
 		index: number,
@@ -83,7 +85,7 @@ const DEFAULTS = {
 };
 
 /** Waits for a click's requests, and any page load they start, before the next step reads the page. */
-async function settle(page: Page, timeout: number): Promise<void> {
+export async function settle(page: Page, timeout: number): Promise<void> {
 	await page.waitForLoadState("networkidle", { timeout }).catch(() => undefined);
 	await page.waitForLoadState("load");
 }
@@ -149,7 +151,7 @@ export async function recordTour(
 					o.onSkippedStep?.(index);
 					continue;
 				}
-				throw new StepError(
+				throw new SelectorError(
 					index,
 					`selector ${step.selector} did not resolve in ${o.selectorTimeoutMs / 1000}s`,
 				);

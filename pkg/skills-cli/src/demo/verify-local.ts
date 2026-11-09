@@ -3,7 +3,7 @@ import { wslChromiumArgs } from "@dg/common/node";
 import type { Page } from "playwright-core";
 import { pickLaunch } from "../pw/core/browser";
 import type { VerifyResult } from "../utils/demo-verify";
-import { PasswordFieldError, playbackSteps, recordTour, StepError, VIEWPORT } from "./recorder/drive";
+import { playbackSteps, recordTour, SelectorError, StepError, VIEWPORT } from "./recorder/drive";
 
 export type VerifySession = { page: Page; close(): Promise<void> };
 
@@ -58,12 +58,7 @@ const flattenSetup = (script: TourScript): TourScript => {
 
 function findingFor(error: unknown, script: TourScript): VerifyResult {
 	const steps = playbackSteps(script);
-	if (error instanceof PasswordFieldError)
-		return {
-			ok: false,
-			findings: [{ step: error.index + 1, kind: "harness-error", message: error.message }],
-		};
-	if (error instanceof StepError)
+	if (error instanceof SelectorError)
 		return {
 			ok: false,
 			findings: [
@@ -73,6 +68,11 @@ function findingFor(error: unknown, script: TourScript): VerifyResult {
 					selector: steps[error.index]?.step.selector ?? "",
 				},
 			],
+		};
+	if (error instanceof StepError)
+		return {
+			ok: false,
+			findings: [{ step: error.index + 1, kind: "harness-error", message: error.message }],
 		};
 	if (error instanceof MissingEnvError) {
 		const at = steps.findIndex(
