@@ -84,8 +84,9 @@ group, until the human hands you a tab from the extension popup.
 - Each reply under a grant starts with `### Unmask` and
   `unmasked on <origin> until HH:MM (approved in the browser)`.
 - Never put a secret in argv. Use `fill <target> --value-env NAME` or
-  `--value-stdin`. The result says only `filled <field>`. An extension that
-  lacks `unmask` refuses the verb at once.
+  `--value-stdin`. These work only on a password or secret field. The result
+  says only `filled <field>`, and later output of the session masks the value.
+  An extension that lacks `unmask` refuses the verb at once.
 - Output is redacted and capped. Screenshots are not redacted.
 - Ctrl-C on the CLI cancels the request.
 - `--ext` runs no agent code. On a failure, run `dg-skills doctor pw`.

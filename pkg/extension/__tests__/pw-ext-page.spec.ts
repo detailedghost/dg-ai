@@ -268,6 +268,29 @@ describe("fill", () => {
 		});
 	});
 
+	it("keeps the old date when the browser rejects a new one", () => {
+		page(`<input id="d" type="date" aria-label="When" value="2026-11-20">`);
+		expect(pwExtPageAction({ kind: "fill", target: "#d", value: "2026-99-99" })).toEqual({
+			error: expect.stringContaining("YYYY-MM-DD"),
+		});
+		expect(el<HTMLInputElement>("#d").value).toBe("2026-11-20");
+	});
+
+	it("applies the grant when it reads captured page errors, not when it captures them", () => {
+		page(`<p>x</p>`);
+		pwExtPageAction({ kind: "console" });
+		window.dispatchEvent(new window.ErrorEvent("error", { message: "failed for ada@clinic.test" }));
+		expect(JSON.stringify(pwExtPageAction({ kind: "console" }))).not.toContain("ada@clinic.test");
+		expect(JSON.stringify(pwExtPageAction({ kind: "console" }, undefined, true))).toContain("ada@clinic.test");
+	});
+
+	it("masks a held secret before it shortens page text", () => {
+		const secret = "S".repeat(100);
+		page(`<h1>${secret}</h1>`);
+		const result = pwExtPageAction({ kind: "snapshot" }, undefined, false, [secret]);
+		expect(JSON.stringify(result)).not.toContain("SSSS");
+	});
+
 	it("refuses a non-editable target", () => {
 		page(`<button id="b">B</button><input id="r" readonly>`);
 		for (const target of ["#b", "#r"])

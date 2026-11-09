@@ -34,7 +34,7 @@ import {
 import { type Approvals, browserApprovals } from "./approval";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
-import { createUnmaskGrants, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
+import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
 	mailbox,
@@ -193,8 +193,6 @@ function cap(text: string): string {
 		: text;
 }
 
-const MAX_FILLED_SECRETS = 20;
-
 const SECRET_PAIR =
 	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
 
@@ -291,13 +289,19 @@ export function createPwExtHandler({
 	now?: () => number;
 	grants?: UnmaskGrants;
 }) {
-	const filled = new Map<string, string[]>();
-	function remember(sessionId: string, request: PwExtRequest): string[] {
-		const held = filled.get(sessionId) ?? [];
-		if (request.verb !== "fill" || !request.secret) return held;
-		const next = [...held.filter((value) => value !== request.value), request.value as string].slice(-MAX_FILLED_SECRETS);
-		filled.set(sessionId, next);
-		return next;
+	async function remember(sessionId: string, request: PwExtRequest): Promise<string[]> {
+		if (request.verb === "fill" && request.secret && !(await grants.remember(sessionId, request.value as string)))
+			throw new Refusal(
+				`This session already filled ${MAX_FILLED_SECRETS} secret values; start a new dg session to fill more.`,
+			);
+		return grants.secrets(sessionId);
+	}
+
+	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
+		if (!secrets.length) return result;
+		return result.ok
+			? { ...result, data: { ...result.data, text: cap(redactLiterals(result.data.text, secrets)) } }
+			: { ...result, error: redactLiterals(result.error, secrets) };
 	}
 
 	const ok = (text: string, image?: string): PwExtResult => ({
@@ -330,11 +334,11 @@ export function createPwExtHandler({
 		};
 	}
 
-	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false) {
+	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false, secrets: string[] = []) {
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
 			func: pwExtPageAction,
-			args: [action, tab.url as string, unmasked],
+			args: [action, tab.url as string, unmasked, secrets],
 		});
 		return pageResult(frame?.result);
 	}
@@ -412,7 +416,7 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		const grant = await grants.active(context.sessionId, tab);
 		const unmasked = grant !== undefined;
-		const secrets = remember(context.sessionId, request);
+		const secrets = await remember(context.sessionId, request);
 		const page = () => pageLines(tab, unmasked);
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
@@ -588,7 +592,7 @@ export function createPwExtHandler({
 									...(request.secret ? { secret: true } : {}),
 								}
 							: { kind: request.verb };
-				const result = await inPage(tab, action, grant !== undefined);
+				const result = await inPage(tab, action, unmasked, secrets);
 				if ("error" in result) return failed(result.error);
 				if ("tree" in result)
 					return shown(
@@ -674,15 +678,18 @@ export function createPwExtHandler({
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
+		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
+		const held = async () => [...typed, ...(await grants.secrets(context.sessionId).catch(() => []))];
 		try {
-			return await execute(request, context, signal);
+			const result = await execute(request, context, signal);
+			return scrub(result, await held());
 		} catch (error) {
 			if (error instanceof Refusal) return { ok: false, error: error.message };
 			return {
 				ok: false,
 				error: clean(
 					`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
-					{ secrets: remember(context.sessionId, request) },
+					{ secrets: await held() },
 				).slice(0, 2048),
 			};
 		}

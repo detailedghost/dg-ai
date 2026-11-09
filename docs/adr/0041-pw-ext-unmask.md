@@ -54,9 +54,11 @@ unmasked on <origin> until HH:MM (approved in the browser)
 A secret fill takes its value from the CLI environment or from stdin:
 `pw --ext fill <ref|selector> --value-env NAME` or `--value-stdin`. The CLI
 never accepts a secret value as a positional argument, so the value stays out of
-argv and the process list. The extension removes the value from all output, and
-the result says only `filled <field>`. Without a grant, the refusal names
-`pw --ext unmask`.
+argv and the process list. A secret fill works only on a password or secret
+field. The extension keeps each secret fill value in `storage.session` for the
+session (at most 50 values) and removes it from all later output of that
+session, and the result says only `filled <field>`. Without a grant, the refusal
+names `pw --ext unmask`.
 
 An extension that does not list `unmask` in its `pwExtVerbs` handshake refuses
 the verb at once.

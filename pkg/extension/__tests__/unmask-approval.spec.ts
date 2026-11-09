@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createApprovals } from "@/lib/background/approval";
-import { createUnmaskGrants } from "@/lib/background/unmask-grants";
+import { createUnmaskGrants, MAX_FILLED_SECRETS } from "@/lib/background/unmask-grants";
 
 function memoryStorage() {
 	const data: Record<string, unknown> = {};
@@ -47,6 +47,17 @@ describe("unmask grants", () => {
 		]);
 		expect(await grants.active("s1", TAB)).toBeUndefined();
 		expect(await grants.active("s1", { ...TAB, url: "https://other.example.test/" })).toBeDefined();
+	});
+
+	it("keeps secret fill values in session storage and refuses more past the cap", async () => {
+		const storage = memoryStorage();
+		const grants = createUnmaskGrants({ storage, now: () => 0 });
+		for (let i = 0; i < MAX_FILLED_SECRETS; i++) expect(await grants.remember("s1", `v${i}`)).toBe(true);
+		expect(await grants.remember("s1", "v0")).toBe(true);
+		expect(await grants.remember("s1", "one-more")).toBe(false);
+		const restarted = createUnmaskGrants({ storage, now: () => 0 });
+		expect(await restarted.secrets("s1")).toHaveLength(MAX_FILLED_SECRETS);
+		expect(await restarted.secrets("s2")).toEqual([]);
 	});
 });
 

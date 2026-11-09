@@ -4,6 +4,10 @@ import type { AgentTabsStorage } from "./agent-tabs";
 export type UnmaskGrant = { origin: string; groupId: number; until: number };
 
 const keyOf = (sessionId: string) => `pwExtUnmask:${sessionId}`;
+const secretsKey = (sessionId: string) => `pwExtSecrets:${sessionId}`;
+
+/** Most distinct secret fill values one session may hold for masking. */
+export const MAX_FILLED_SECRETS = 50;
 
 /** Unmask grants per session in storage.session; a grant ends at its time, on revoke, or when its tab group is gone. */
 export function createUnmaskGrants({
@@ -30,7 +34,14 @@ export function createUnmaskGrants({
 		return next;
 	}
 
+	async function secrets(sessionId: string): Promise<string[]> {
+		const stored = (await storage.session.get(secretsKey(sessionId)))[secretsKey(sessionId)];
+		return Array.isArray(stored) ? stored.filter((value): value is string => typeof value === "string") : [];
+	}
+
 	return {
+		secrets,
+
 		async active(
 			sessionId: string,
 			tab: { url?: string; groupId?: number },
@@ -46,6 +57,17 @@ export function createUnmaskGrants({
 			return serial(async () => {
 				const others = (await read(sessionId)).filter((held) => held.origin !== grant.origin);
 				await write(sessionId, [...others, grant]);
+			});
+		},
+
+		/** Remembers a secret fill value; returns false when the session is full. */
+		remember(sessionId: string, secret: string): Promise<boolean> {
+			return serial(async () => {
+				const held = await secrets(sessionId);
+				if (held.includes(secret)) return true;
+				if (held.length >= MAX_FILLED_SECRETS) return false;
+				await storage.session.set({ [secretsKey(sessionId)]: [...held, secret] });
+				return true;
 			});
 		},
 

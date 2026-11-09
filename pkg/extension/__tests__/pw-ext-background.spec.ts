@@ -211,6 +211,7 @@ describe("pw --ext background handler", () => {
 			{ kind: "click", target: "e1" },
 			WEB_TAB.url,
 			false,
+			[],
 		]);
 		expect(h.executed()[0]?.target.tabId).toBe(7);
 	});
@@ -221,7 +222,7 @@ describe("pw --ext background handler", () => {
 
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).toContain("#q matches 1 element");
-		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false]);
+		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false, []]);
 	});
 
 	it("runs a fill and keeps the typed value out of the result", async () => {
@@ -966,6 +967,7 @@ describe("pw --ext round 3", () => {
 			},
 			WEB_TAB.url,
 			false,
+			[],
 		]);
 		expect(answer).toMatchObject({ ok: true });
 	});
@@ -1209,6 +1211,22 @@ describe("pw --ext unmask", () => {
 		await h.run({ verb: "unmask", minutes: 5 });
 		await h.run({ verb: "console" });
 		expect(h.executed().find((call) => call.world === "MAIN")?.args).toEqual([WEB_TAB.url, true]);
+	});
+
+	it("masks a filled secret in a later tabs listing", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness({ ...options, tabs: [{ ...WEB_TAB, title: "Code 739123 sent" }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		expect(JSON.stringify(await h.run({ verb: "tabs" }))).not.toContain("739123");
+	});
+
+	it("passes held secrets to the page so it masks them before it shortens text", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		await h.run({ verb: "snapshot" });
+		expect(h.executed().at(-1)?.args[3]).toEqual(["739123"]);
 	});
 
 	it("never echoes a secret fill value, even when the page repeats it", async () => {

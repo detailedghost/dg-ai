@@ -25,6 +25,7 @@ export function pwExtPageAction(
 	action: PwExtPageAction,
 	expectUrl?: string,
 	unmask = false,
+	secrets: string[] = [],
 ): PwExtPageResult {
 	const TREE_MAX = 60_000;
 	const TEXT_MAX = 30_000;
@@ -253,10 +254,11 @@ export function pwExtPageAction(
 		[/((?:password|passwd|secret|token|api[-_]?key)\s*[:=]\s*)\S+/gi, `$1${REDACTED}`],
 		...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
 	];
+	const literals = secrets.filter((secret) => secret.length > 0).sort((a, b) => b.length - a.length);
 	const redactTokens = (value: string): string =>
 		TOKEN_PATTERNS.reduce(
 			(out, [pattern, replacement]) => out.replace(pattern, replacement),
-			value,
+			literals.reduce((out, secret) => out.split(secret).join(REDACTED), value),
 		);
 	const sanitize = (result: PwExtPageResult): PwExtPageResult => {
 		const out: Record<string, unknown> = {};
@@ -454,9 +456,10 @@ export function pwExtPageAction(
 	const fillDate = (input: HTMLInputElement, value: string): PwExtPageResult => {
 		const [pattern, format] = DATE_INPUTS[input.type.toLowerCase()] as [RegExp, string];
 		if (!pattern.test(value)) return { error: `${describe(input)} takes ${format}.` };
+		const before = input.value;
 		setValue(input, value);
 		if (input.value === "") {
-			setValue(input, "");
+			setValue(input, before);
 			return { error: `${describe(input)} takes ${format}.` };
 		}
 		fire(input);
@@ -541,11 +544,11 @@ export function pwExtPageAction(
 
 	const consoleCapture = (): PwExtPageResult => {
 		const existing = win[CONSOLE] as string[] | undefined;
-		if (existing) return { started: false, entries: [...existing] };
+		if (existing) return { started: false, entries: existing.map((entry) => squash(entry, 500)) };
 		const entries: string[] = [];
 		win[CONSOLE] = entries;
 		const push = (line: string) => {
-			entries.push(squash(line, 500));
+			entries.push(line.slice(0, 20_000));
 			if (entries.length > CONSOLE_MAX) entries.shift();
 		};
 		win.addEventListener(
