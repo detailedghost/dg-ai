@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type ProgramName, programCommand } from "@dg/common/node/program";
 import { updateJsonFile } from "../hooks/settings/json-file";
 import { type Group, groupReport } from "./groups";
 import type { DoctorReport } from "./types";
@@ -71,9 +72,16 @@ function details(group: Group, room: number, columns: number): string[] {
 	const pad = "      ";
 	const rules = group.action?.kind === "allow-rule" ? group.action.rules : null;
 	const entries = rules ?? group.members.map(({ item, check }) => `${item} · ${check.id}: ${check.detail}`);
-	const shown = entries.slice(0, room);
-	const lines = shown.flatMap((entry) => (rules ? wrap(`${pad}${entry}`, columns, pad) : [clip(`${pad}${entry}`, columns)]));
-	const hidden = entries.length - shown.length;
+	const lines: string[] = [];
+	let shown = 0;
+	for (const entry of entries) {
+		const rows = rules ? wrap(`${pad}${entry}`, columns, pad) : [clip(`${pad}${entry}`, columns)];
+		const notice = shown + 1 < entries.length ? 1 : 0;
+		if (shown > 0 && lines.length + rows.length + notice > room) break;
+		lines.push(...rows);
+		shown++;
+	}
+	const hidden = entries.length - shown;
 	if (hidden > 0) lines.push(clip(`${pad}… ${hidden} more; dg-skills doctor --plain lists all`, columns));
 	if (group.fix && !rules) lines.push(...wrap(`${pad}Fix: ${group.fix}`, columns, pad));
 	return lines;
@@ -252,7 +260,9 @@ export function terminalDeps(rerun: () => Promise<DoctorReport>): TuiDeps & { cl
 			stream.stop();
 			process.stdout.write(`${CLEAR}$ ${argv.join(" ")}\n`);
 			try {
-				return await Bun.spawn(argv, { stdio: ["inherit", "inherit", "inherit"] }).exited;
+				const [name, ...args] = argv;
+				return await Bun.spawn(programCommand(name as ProgramName, args), { stdio: ["inherit", "inherit", "inherit"] })
+					.exited;
 			} finally {
 				stream.listen();
 			}

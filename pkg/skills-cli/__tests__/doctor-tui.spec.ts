@@ -235,7 +235,15 @@ describe("render in a small terminal", () => {
 		const screen = render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 12, columns: 200 });
 		const lines = screen.replace("\u001b[2J\u001b[H", "").trimEnd().split("\n");
 		expect(lines.length).toBeLessThanOrEqual(12);
-		expect(screen).toContain("… 22 more; dg-skills doctor --plain lists all");
+		expect(screen).toContain("… 23 more; dg-skills doctor --plain lists all");
+	});
+
+	test("counts wrapped rule rows and always shows the hidden notice in a narrow terminal", () => {
+		const groups = groupReport(many);
+		const screen = render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 12, columns: 20 });
+		const lines = screen.replace("\u001b[2J\u001b[H", "").split("\n");
+		expect(lines.length).toBeLessThanOrEqual(12);
+		expect(lines.some((line) => line.includes("more;"))).toBe(true);
 	});
 
 	test("clips long lines to the terminal width", () => {
