@@ -140,6 +140,16 @@ describe("channel-review doctor config check", () => {
 		expect(result.detail).toContain("chats is required");
 	});
 
+	test("fails when the default env has no settings", async () => {
+		await runSetup({}, deps([...DEV_ANSWERS, "n"]).value);
+		const config = JSON.parse(readFileSync(configPath(), "utf8"));
+		delete config.envs;
+		writeFileSync(configPath(), JSON.stringify(config));
+		const result = await configCheck.run(context());
+		expect(result.status).toBe("fail");
+		expect(result.detail).toContain("envs.dev.baseUrl is required");
+	});
+
 	test("passes after setup", async () => {
 		await runSetup({}, deps([...DEV_ANSWERS, "n"]).value);
 		expect((await configCheck.run(context())).status).toBe("ok");

@@ -3,6 +3,7 @@ import {
 	channelReviewPaths,
 	DATADOG_CREDENTIAL,
 	loadConfig,
+	resolveEnv,
 	SENTRY_CREDENTIAL,
 } from "@dg/channel-review";
 import { describeError } from "@dg/common";
@@ -23,7 +24,7 @@ export const configCheck: DoctorCheck = {
 		const setup = `${CLI_PATH} channel-review setup`;
 		if (!existsSync(path)) return fail(`no config at ${path}`, setup);
 		try {
-			loadConfig(path, { homeDir: ctx.home, env: ctx.env });
+			resolveEnv(loadConfig(path, { homeDir: ctx.home, env: ctx.env }));
 			return ok(`config ${path} is valid`);
 		} catch (error) {
 			return fail(describeError(error), `fix ${path}, or run ${setup} --force`);
