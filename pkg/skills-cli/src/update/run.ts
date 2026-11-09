@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describeError, isRecord } from "@dg/common";
+import { DOCTOR_REGISTRY } from "../doctor/registry";
+import { runDoctor, summarizeReport } from "../doctor/runner";
 import { claudeConfigDir, type Runner, runSync } from "../install/recommended-plugins";
 import { isCliOnly } from "../utils/cli-only";
 import { compareVersions, listReleases, pickBundle, readCurrentVersion, readMarker } from "../utils/lib";
@@ -16,7 +18,7 @@ export type StepResult = { name: string; status: StepStatus; detail: string };
 
 export type UpdateOptions = { check?: boolean };
 
-export type InstallTarget = "chrome" | "firefox" | "cli-only";
+export type InstallTarget = "chrome" | "firefox" | "cli-only" | "bundle";
 
 export type UpdateDeps = {
 	claudeHome: string;
@@ -179,7 +181,7 @@ function standaloneNote(deps: UpdateDeps): string {
 function installTargets(deps: UpdateDeps): InstallTarget[] {
 	if (deps.cliOnly()) return ["cli-only"];
 	const staged = Object.keys(deps.stagedExtensions()) as InstallTarget[];
-	return staged.length > 0 ? staged : ["chrome"];
+	return staged.length > 0 ? staged : ["bundle"];
 }
 
 async function installStep(deps: UpdateDeps, version: string): Promise<StepResult> {
@@ -281,8 +283,9 @@ export function defaultUpdateDeps(): UpdateDeps {
 		claudeHome: claudeConfigDir(home),
 		codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
 		install: async (target, version) => {
-			const { runInstall } = await import("../install/cli");
-			if (target === "cli-only") await runInstall(undefined, { cliOnly: true, version });
+			const { installBundleOnly, runInstall } = await import("../install/cli");
+			if (target === "bundle") await installBundleOnly(version);
+			else if (target === "cli-only") await runInstall(undefined, { cliOnly: true, version });
 			else await runInstall(target, { version });
 		},
 		newestVersion: async () => pickBundle(await listReleases()).version,
@@ -296,13 +299,7 @@ export function defaultUpdateDeps(): UpdateDeps {
 		cliOnly: isCliOnly,
 		which: (name) => Bun.which(name),
 		run: runSync,
-		doctorSummary: async () => {
-			const [{ DOCTOR_REGISTRY }, { runDoctor, summarizeReport }] = await Promise.all([
-				import("../doctor/registry"),
-				import("../doctor/runner"),
-			]);
-			return summarizeReport(await runDoctor([], DOCTOR_REGISTRY));
-		},
+		doctorSummary: async () => summarizeReport(await runDoctor([], DOCTOR_REGISTRY)),
 		log: (line) => console.log(line),
 	};
 }

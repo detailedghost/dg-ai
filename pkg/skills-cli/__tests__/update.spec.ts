@@ -100,6 +100,12 @@ describe("dg-skills update", () => {
 		expect(d.installs).toEqual(["cli-only@3.1.0"]);
 	});
 
+	test("an install with no staged extension refreshes only the runtime and bundle", async () => {
+		const d = fake({ tools: [], stagedExtensions: () => ({}) });
+		expect(await runUpdate({}, d)).toBe(0);
+		expect(d.installs).toEqual(["bundle@3.1.0"]);
+	});
+
 	test("refreshes every staged browser target", async () => {
 		const d = fake({ tools: [], stagedExtensions: () => ({ chrome: "3.0.1", firefox: "3.0.1" }) });
 		await runUpdate({}, d);
