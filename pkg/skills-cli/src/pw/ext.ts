@@ -44,14 +44,14 @@ export type ExtClient = {
 };
 
 export type ExtDeps = {
-	connect(): Promise<ExtClient>;
+	connect(sessionId?: string): Promise<ExtClient>;
 	cliOnly(): boolean;
 	onInterrupt(handler: () => void): () => void;
 };
 
 const DEFAULT_DEPS: ExtDeps = {
-	async connect() {
-		const session = await resolveCliSession();
+	async connect(sessionId) {
+		const session = await resolveCliSession(sessionId);
 		const client = await CliClient.connect(session);
 		return {
 			request: (frame, accept, timeoutMs) =>
@@ -182,6 +182,7 @@ const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
 	select: ["tabId"],
 	close: ["tabId?"],
 	click: ["target"],
+	count: ["target"],
 	fill: ["target", "value"],
 	upload: ["target", "file"],
 	tools: [],
@@ -191,14 +192,19 @@ const OPTIONS = {
 	ext: { type: "boolean" },
 	help: { type: "boolean" },
 	tab: { type: "string" },
+	session: { type: "string" },
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
-export const EXT_HELP = `Usage: dg-skills pw --ext [--tab <id>] <verb> [args]
+export const EXT_HELP = `Usage: dg-skills pw --ext [--session <id>] [--tab <id>] <verb> [args]
 
 Drive your real browser through the paired dg-ai-extension.
 Passing --ext gives the CLI control of the tabs in the agent's own tab group. The browser asks for no approval per call.
 Every verb acts on the agent's selected tab. --tab <id> targets one tab of the group once, without changing the selection.
+
+Session: each dg session has its own tab group. The CLI picks the session from --session <id>,
+then the DG_SESSION_ID environment variable, then the one session registered for the working directory.
+Under --ext, --session takes a dg session id, not a pw browser session name.
 
 Read verbs (they never change the page):
   current                 the agent's selected tab URL and title
@@ -207,6 +213,7 @@ Read verbs (they never change the page):
   screenshot              visible part of the agent's selected tab, saved to scratch; brings the tab to the front
   selection               selected text
   console                 errors and console warnings since the first call
+  count <ref|selector>    how many elements match, with tag, type, id and name for each; use it to test a selector before click, fill or upload
   tools                   WebMCP tools the page exposes
 
 Write verbs (they change the page):
@@ -221,7 +228,9 @@ Write verbs (they change the page):
 
 class ExtUsageError extends Error {}
 
-type Parsed = { request: PwExtRequest; staged?: StagedFile };
+const UNSUPPORTED = "Unsupported pw --ext request.";
+
+type Parsed = { request: PwExtRequest; staged?: StagedFile; session?: string };
 
 function readArgs(argv: readonly string[]) {
 	return parseArgs({
@@ -307,7 +316,11 @@ function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
 		});
 	if (tab !== undefined) request.tabId = tab;
 	try {
-		return { request: validatePwExtRequest(request), ...(staged ? { staged } : {}) };
+		return {
+			request: validatePwExtRequest(request),
+			...(staged ? { staged } : {}),
+			...(parsed.values.session === undefined ? {} : { session: parsed.values.session }),
+		};
 	} catch (error) {
 		throw new ExtUsageError(error instanceof Error ? error.message : String(error));
 	}
@@ -360,7 +373,7 @@ export async function runExt(
 	}
 	let client: ExtClient;
 	try {
-		client = await deps.connect();
+		client = await deps.connect(parsed.session);
 	} catch (error) {
 		env.err(
 			`pw --ext needs a dg-daemon session with the paired dg-ai-extension. Run dg-skills doctor pw for the steps. ${redactText(error instanceof Error ? error.message : String(error))}`,
@@ -392,7 +405,14 @@ export async function runExt(
 			PW_EXT_DEFAULT_TIMEOUT_MS + 5_000,
 		);
 		if (!reply.ok) {
-			env.err(redactText(reply.error ?? "pw --ext failed in the browser."));
+			const error = reply.error ?? "pw --ext failed in the browser.";
+			env.err(
+				redactText(
+					error === UNSUPPORTED
+						? `${error} The extension may be older than this CLI: update the dg-ai-extension and reload it.`
+						: error,
+				),
+			);
 			return 1;
 		}
 		let data: ReturnType<typeof validatePwExtResponse>;

@@ -44,6 +44,7 @@ popup.
 | `selection` | read | Selected text |
 | `console` | read | Errors, and console warnings and errors after the first call |
 | `tools` | read | WebMCP tools the page exposes: name, description, input schema |
+| `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. Test a selector with it before `click`, `fill` or `upload` |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
@@ -57,6 +58,10 @@ Rules:
 
 - Passing `--ext` is the grant. The browser asks for no approval per call. The
   CLI controls the agent's tab group until the command ends.
+- Each dg session has its own tab group. The CLI picks the session from
+  `--session <id>`, then the `DG_SESSION_ID` environment variable, then the one
+  session registered for the working directory. Under `--ext`, `--session` takes
+  a dg session id, not a pw browser session name.
 - Every verb acts on the agent's selected tab. `--tab <id>` targets one tab of
   the group once and does not change the selection. `tabs`, `new` and `select`
   take no `--tab`. `close` takes a tab id or `--tab`, not both.

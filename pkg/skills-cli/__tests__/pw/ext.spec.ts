@@ -98,6 +98,7 @@ describe("pw --ext", () => {
 		[["open", "https://example.test/"], { verb: "open", url: "https://example.test/" }],
 		[["click", "e3"], { verb: "click", target: "e3" }],
 		[["fill", "#q", "cats"], { verb: "fill", target: "#q", value: "cats" }],
+		[["count", "input[type=file]"], { verb: "count", target: "input[type=file]" }],
 		[["current"], { verb: "current" }],
 		[["selection"], { verb: "selection" }],
 		[["console"], { verb: "console" }],
@@ -105,6 +106,49 @@ describe("pw --ext", () => {
 		const d = deps(() => ({ ok: true, data: { text: "ok" } }));
 		expect(await runExt(["--ext", ...argv], clientEnv(), d.value)).toBe(0);
 		expect(d.sent[0]?.request).toEqual(request as never);
+	});
+
+	test.each([
+		[["--session", "abc", "current"]],
+		[["--session=abc", "current"]],
+	])("passes --session to the session lookup: %p", async (argv) => {
+		const asked: (string | undefined)[] = [];
+		const d = deps(() => ({ ok: true, data: { text: "ok" } }));
+		const connect = d.value.connect;
+		d.value.connect = (sessionId) => {
+			asked.push(sessionId);
+			return connect(sessionId);
+		};
+		expect(await runExt(["--ext", ...argv], clientEnv(), d.value)).toBe(0);
+		expect(asked).toEqual(["abc"]);
+	});
+
+	test("leaves the session choice to the lookup without --session", async () => {
+		const asked: (string | undefined)[] = [];
+		const d = deps(() => ({ ok: true, data: { text: "ok" } }));
+		const connect = d.value.connect;
+		d.value.connect = (sessionId) => {
+			asked.push(sessionId);
+			return connect(sessionId);
+		};
+		await runExt(["--ext", "current"], clientEnv(), d.value);
+		expect(asked).toEqual([undefined]);
+	});
+
+	test("documents --session, DG_SESSION_ID and count in the help", async () => {
+		const env = clientEnv();
+		expect(await runExt(["--ext", "--help"], env, deps(() => ({})).value)).toBe(0);
+		const help = env.stdout.join("\n");
+		expect(help).toContain("--session <id>");
+		expect(help).toContain("DG_SESSION_ID");
+		expect(help).toContain("count <ref|selector>");
+	});
+
+	test("tells the user to update the extension when it does not know the verb", async () => {
+		const env = clientEnv();
+		const d = deps(() => ({ ok: false, error: "Unsupported pw --ext request." }));
+		expect(await runExt(["--ext", "count", "#q"], env, d.value)).toBe(1);
+		expect(env.stderr.join("\n")).toContain("update the dg-ai-extension");
 	});
 
 	test("saves a screenshot to the pw scratch dir and prints the path", async () => {
@@ -286,12 +330,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 15 verbs for an unknown verb", async () => {
+	test("lists all 16 verbs for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(15);
+		expect(verbs).toHaveLength(16);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});

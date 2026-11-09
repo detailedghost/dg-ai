@@ -13,9 +13,11 @@ group, until the human hands you a tab from the extension popup.
 2. Otherwise take one `pw --ext snapshot` and act on its refs (`e4`) or on a
    narrow CSS selector. Do not take a new full snapshot or a screenshot after
    every step.
-3. Use `pw --ext current` and `pw --ext selection` for small reads. Use
+3. To test a selector, run `pw --ext count <selector>`. It changes nothing.
+   Never test a selector with `click`, `fill` or `upload`: one match acts at once.
+4. Use `pw --ext current` and `pw --ext selection` for small reads. Use
    `pw --ext tabs` to list your tabs.
-4. Take a screenshot only for a visual check. Images cost far more than text.
+5. Take a screenshot only for a visual check. Images cost far more than text.
 
 ## Verbs
 
@@ -28,6 +30,7 @@ group, until the human hands you a tab from the extension popup.
 | `selection` | read | Selected text |
 | `console` | read | Errors and console warnings since the first `console` call |
 | `tools` | read | WebMCP tools of the page: name, description, input schema |
+| `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. Test a selector with it before `click`, `fill` or `upload` |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
@@ -41,6 +44,10 @@ group, until the human hands you a tab from the extension popup.
 
 - `--ext` is the grant. The browser asks for no approval per call, so act only
   on what the human asked for.
+- Each dg session has its own tab group. The CLI picks the session from
+  `--session <id>`, then the `DG_SESSION_ID` environment variable, then the one
+  session registered for the working directory. Under `--ext`, `--session` takes
+  a dg session id, not a pw browser session name.
 - Every verb acts on the agent's selected tab. `--tab <id>` targets one tab of
   the group once and leaves the selection alone. It cannot go with `tabs`,
   `new` or `select`, and it cannot go with a tab id on `close`.
