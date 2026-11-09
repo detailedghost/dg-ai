@@ -211,7 +211,9 @@ the command exits 1 when any step failed:
 
 1. The Bun runtime, the dg bundle, the launchers, and the staged
    dg-ai-extension, pinned to the newest release. A CLI-only install stays
-   CLI-only, each staged browser target is refreshed, and an install with no
+   CLI-only, the staged browser extension is refreshed (with both Chrome and
+   Firefox staged, Chrome is refreshed and the step names the command for
+   Firefox, so the bundle is fetched once), and an install with no
    staged extension (such as a skills-only install) gets only the runtime and
    bundle. The step fails
    when the installed version is not the newest afterward.

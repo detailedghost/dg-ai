@@ -21,6 +21,7 @@ export type UpdateOptions = { check?: boolean };
 export type InstallTarget = "chrome" | "firefox" | "cli-only" | "bundle";
 
 export type UpdateDeps = {
+	platform: NodeJS.Platform;
 	claudeHome: string;
 	codexHome: string;
 	install(target: InstallTarget, version: string): Promise<void>;
@@ -168,30 +169,40 @@ function codexStep(deps: UpdateDeps): StepResult {
 	return runAll(name, [...market, ["codex", "plugin", "add", PLUGIN_REF]], deps.run, `updated ${PLUGIN_REF}${moved}`);
 }
 
-const STANDALONE_REFRESH =
-	"curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh";
+const BOOTSTRAP = "https://github.com/detailedghost/dg-ai/releases/latest/download";
+
+/** The bootstrap command that refreshes standalone Codex skills, keeping a CLI-only install CLI-only. */
+export function standaloneRefresh(platform: NodeJS.Platform, cliOnly: boolean): string {
+	if (platform === "win32")
+		return `$env:DG_INSTALL_CODEX = "1"; ${cliOnly ? '$env:DG_CLI_ONLY = "1"; ' : ""}irm ${BOOTSTRAP}/bootstrap.ps1 | iex`;
+	return `curl -fsSL ${BOOTSTRAP}/bootstrap.sh | DG_INSTALL_CODEX=1 sh${cliOnly ? " -s -- --cli-only" : ""}`;
+}
 
 /** Skills copied into $CODEX_HOME/skills by a standalone install are not refreshed here; say how to refresh them. */
 function standaloneNote(deps: UpdateDeps): string {
 	return existsSync(join(deps.codexHome, "skills"))
-		? `; skills copied into ${join(deps.codexHome, "skills")} are not refreshed here, refresh them with: ${STANDALONE_REFRESH}`
+		? `; skills copied into ${join(deps.codexHome, "skills")} are not refreshed here, refresh them with: ${standaloneRefresh(deps.platform, deps.cliOnly())}`
 		: "";
 }
 
-function installTargets(deps: UpdateDeps): InstallTarget[] {
-	if (deps.cliOnly()) return ["cli-only"];
-	const staged = Object.keys(deps.stagedExtensions()) as InstallTarget[];
-	return staged.length > 0 ? staged : ["bundle"];
+/** One install per update, so the bundle is fetched and pruned once and the previous one stays for rollback. */
+function installTarget(deps: UpdateDeps): { target: InstallTarget; others: string[] } {
+	if (deps.cliOnly()) return { target: "cli-only", others: [] };
+	const staged = (["chrome", "firefox"] as const).filter((target) => deps.stagedExtensions()[target] !== undefined);
+	const [first, ...others] = staged;
+	return { target: first ?? "bundle", others };
 }
 
 async function installStep(deps: UpdateDeps, version: string): Promise<StepResult> {
 	const name = "CLI, runtime and extension";
 	try {
-		for (const target of installTargets(deps)) await deps.install(target, version);
+		const { target, others } = installTarget(deps);
+		await deps.install(target, version);
 		const installed = deps.installedVersion();
 		if (installed !== version)
 			return { name, status: "failed", detail: `dg ${installed ?? "unknown"} is installed, not ${version}` };
-		return { name, status: "ok", detail: `dg ${version} installed` };
+		const more = others.map((other) => `; run dg-skills install ${other} to refresh the ${other} extension too`).join("");
+		return { name, status: "ok", detail: `dg ${version} installed${more}` };
 	} catch (error) {
 		return { name, status: "failed", detail: describeError(error) };
 	}
@@ -280,6 +291,7 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<
 export function defaultUpdateDeps(): UpdateDeps {
 	const home = process.env.HOME ?? homedir();
 	return {
+		platform: process.platform,
 		claudeHome: claudeConfigDir(home),
 		codexHome: process.env.CODEX_HOME ?? join(home, ".codex"),
 		install: async (target, version) => {

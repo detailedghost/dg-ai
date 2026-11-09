@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codexState, type InstallTarget, runUpdate, type UpdateDeps } from "../src/update/run";
+import { codexState, type InstallTarget, runUpdate, standaloneRefresh, type UpdateDeps } from "../src/update/run";
 
 let home: string;
 let codexHome: string;
@@ -48,6 +48,7 @@ function fake(overrides: FakeOptions = {}): Fake {
 	const { failing = [], tools = ["claude", "codex"], stuck = false, ...rest } = overrides;
 	let installed = "3.0.1";
 	return {
+		platform: "linux",
 		claudeHome: claudeHome(),
 		codexHome,
 		calls,
@@ -106,10 +107,25 @@ describe("dg-skills update", () => {
 		expect(d.installs).toEqual(["bundle@3.1.0"]);
 	});
 
-	test("refreshes every staged browser target", async () => {
+	test("installs once with two browsers staged and names the command for the other", async () => {
 		const d = fake({ tools: [], stagedExtensions: () => ({ chrome: "3.0.1", firefox: "3.0.1" }) });
+		expect(await runUpdate({}, d)).toBe(0);
+		expect(d.installs).toEqual(["chrome@3.1.0"]);
+		expect(d.lines[0]).toContain("run dg-skills install firefox to refresh the firefox extension too");
+	});
+
+	test("a Firefox-only install refreshes Firefox", async () => {
+		const d = fake({ tools: [], stagedExtensions: () => ({ firefox: "3.0.1" }) });
 		await runUpdate({}, d);
-		expect(d.installs).toEqual(["chrome@3.1.0", "firefox@3.1.0"]);
+		expect(d.installs).toEqual(["firefox@3.1.0"]);
+	});
+
+	test.each([
+		["linux", false, "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh"],
+		["linux", true, "curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | DG_INSTALL_CODEX=1 sh -s -- --cli-only"],
+		["win32", true, '$env:DG_INSTALL_CODEX = "1"; $env:DG_CLI_ONLY = "1"; irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex'],
+	] as const)("the standalone refresh on %s (cli-only %s) is %s", (platform, cliOnly, command) => {
+		expect(standaloneRefresh(platform, cliOnly)).toBe(command);
 	});
 
 	test("fails the install step when the installed version did not move", async () => {
