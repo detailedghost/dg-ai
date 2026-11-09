@@ -138,7 +138,8 @@ export async function recordTour(
 
 	const steps = playbackSteps(script);
 	for (const [index, { step, setup }] of steps.entries()) {
-		if (step.navigate) await page.goto(step.navigate, { waitUntil: "load" });
+		if (step.navigate && new URL(step.navigate, page.url()).href !== page.url())
+			await page.goto(step.navigate, { waitUntil: "load" });
 		const accent = setup ? THEME.setupAccent : THEME.accent;
 		const target = step.selector ? page.locator(step.selector).first() : null;
 		let box = null;

@@ -172,7 +172,7 @@ describe("verifyLocal with excluded setup", () => {
 	});
 
 	test("returns to the start URL after setup even when setup moved only by a click", async () => {
-		const { deps, browser } = opening({ dir });
+		const { deps, browser } = opening({ dir, clickNavigates: { "#go": "https://example.test/home" } });
 		await verifyLocal(
 			{
 				...script(),

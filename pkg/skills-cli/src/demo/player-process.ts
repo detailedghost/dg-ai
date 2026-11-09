@@ -383,8 +383,9 @@ export async function runPlayer(
 	const freshPage = async (context: BrowserContext) => {
 		const initial = context.pages()[0];
 		const page = await context.newPage();
+		const openedAt = Date.now();
 		if (initial) await initial.close().catch(() => undefined);
-		return page;
+		return { page, openedAt };
 	};
 
 	const run = async (): Promise<void> => {
@@ -403,7 +404,7 @@ export async function runPlayer(
 		let tab: TabStorage | undefined;
 		if (setup && !setup.includeInTour && setup.steps.length > 0) {
 			const context = await open(false);
-			const page = await freshPage(context);
+			const { page } = await freshPage(context);
 			await recordTour(
 				page,
 				{ startUrl: job.script.startUrl, steps: setup.steps },
@@ -428,8 +429,7 @@ export async function runPlayer(
 		const clips = job.narration ? await narrate(job, context, texts, hooks) : undefined;
 		const recorded = steps.map(({ step }) => step);
 		const holds = clips ? narrationHolds(recorded, clips) : recorded.map((step) => holdFor(step, null));
-		const live = await freshPage(context);
-		const recordingStart = Date.now();
+		const { page: live, openedAt: recordingStart } = await freshPage(context);
 		const result = await recordTour(live, job.script, {
 			env: process.env,
 			overlays: true,
@@ -455,7 +455,8 @@ export async function runPlayer(
 			finished = finishVideo(job, webm, placed.length > 0 ? voiceFile : undefined, result.startMs, hooks);
 		} catch (error) {
 			keepRaw = true;
-			throw new Error(`could not save the video: ${messageOf(error)}; the raw recording stays in ${recDir}`);
+			const voice = placed.length > 0 ? ` and the narration in ${voiceFile}` : "";
+			throw new Error(`could not save the video: ${messageOf(error)}; the raw recording stays in ${recDir}${voice}`);
 		}
 	};
 
@@ -478,7 +479,7 @@ export async function runPlayer(
 	for (const context of opened) await close(context);
 	await session?.close().catch(() => undefined);
 	if (!keepRaw) rmSync(recDir, { recursive: true, force: true });
-	if (end.outcome !== "done") rmSync(voiceFile, { force: true });
+	if (end.outcome !== "done" && !keepRaw) rmSync(voiceFile, { force: true });
 
 	const result: DemoResult = {
 		slug: job.slug,

@@ -131,6 +131,28 @@ describe("runPlayer recording", () => {
 		expect(existsSync(join(dir, "rec"))).toBe(true);
 	});
 
+	test("skips a step's navigate when the page is already there", async () => {
+		const browser = fakeBrowser({ dir });
+		const steps = [
+			{ body: "here", navigate: START, advance: 0 },
+			{ body: "there", navigate: "https://example.test/other", advance: 0 },
+		];
+		expect(await runPlayer(job({ script: script({ steps }) }), { launch: browser.launch, encode: fakeEncode().deps })).toBe(0);
+		expect(browser.log.filter((line) => line.startsWith("goto "))).toEqual([
+			`goto ${START}`,
+			"goto https://example.test/other",
+		]);
+	});
+
+	test("counts a slow close of the initial page in the trim offset", async () => {
+		const code = await runPlayer(job(), {
+			launch: fakeBrowser({ dir, initialCloseMs: 120 }).launch,
+			encode: fakeEncode().deps,
+		});
+		expect(code).toBe(0);
+		expect(result().startOffsetMs).toBeGreaterThanOrEqual(120);
+	});
+
 	test("creates the job dir when it does not exist yet", async () => {
 		const nested = join(dir, "nested", "deeper");
 		await runPlayer(job({ dir: nested }), {
@@ -412,6 +434,19 @@ describe("runPlayer narration", () => {
 		const saved = result();
 		expect(saved).toMatchObject({ encoded: false, audio: "sidecar" });
 		expect(existsSync((saved.video as string).replace(/\.webm$/, ".wav"))).toBe(true);
+	});
+
+	test("keeps the WAV beside the raw recording when the encoder fails", async () => {
+		const encode = fakeEncode();
+		const code = await runPlayer(narrated(), {
+			launch: fakeBrowser({ dir }).launch,
+			encode: { which: encode.deps.which, run: () => ({ status: 1, stdout: "", stderr: "no libx264" }) },
+			fetch: releaseFetch(),
+			synthesize: async (_context, texts) => texts.map(() => clip),
+		});
+		expect(code).toBe(1);
+		expect(result().error).toContain(`the narration in ${join(dir, "voice.wav")}`);
+		expect(existsSync(join(dir, "voice.wav"))).toBe(true);
 	});
 
 	test("records captions only and prints one line when the assets cannot download", async () => {

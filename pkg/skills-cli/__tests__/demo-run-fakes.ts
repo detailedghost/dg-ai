@@ -21,6 +21,8 @@ export type FakeOptions = {
 	navigatesOnPrompt?: boolean;
 	gotoDelayMs?: number;
 	untypable?: string[];
+	initialCloseMs?: number;
+	clickNavigates?: Record<string, string>;
 	tabStorage?: { origin: string; items: [string, string][] };
 };
 
@@ -35,7 +37,7 @@ export function fakeBrowser(options: FakeOptions) {
 	const initScripts: OpenCall[] = [];
 	const snapshots: unknown[] = [];
 
-	const locatorFor = (selector: string) => {
+	const locatorFor = (selector: string, moveTo: (url: string) => void) => {
 		const state = locators.get(selector) ?? { filled: [], focused: 0, typed: [], clicked: 0 };
 		locators.set(selector, state);
 		const handle = {
@@ -48,7 +50,11 @@ export function fakeBrowser(options: FakeOptions) {
 			evaluate: async () => !options.notPassword?.includes(selector),
 			fill: async (text: string) => void state.filled.push(text),
 			focus: async () => void state.focused++,
-			click: async () => void state.clicked++,
+			click: async () => {
+				state.clicked++;
+				const to = options.clickNavigates?.[selector];
+				if (to) moveTo(to);
+			},
 			pressSequentially: async (text: string) => {
 				if (options.untypable?.includes(selector)) throw new Error("element is readonly");
 				state.typed.push(text);
@@ -62,12 +68,13 @@ export function fakeBrowser(options: FakeOptions) {
 		return {
 		goto: async (url: string) => {
 			log.push(`goto ${url}`);
+			current = url;
 			if (options.hang) await new Promise(() => undefined);
 			if (options.gotoDelayMs) await new Promise((r) => setTimeout(r, options.gotoDelayMs));
 		},
 		url: () => current,
 		viewportSize: () => null,
-		locator: locatorFor,
+		locator: (selector: string) => locatorFor(selector, (url) => (current = url)),
 		waitForLoadState: async (state: string) => void log.push(`load ${state}`),
 		waitForURL: async () => {
 			if (options.navigatesOnPrompt) current = "https://example.test/home";
@@ -95,7 +102,10 @@ export function fakeBrowser(options: FakeOptions) {
 		opens.push({ record, state });
 		const handlers: Array<() => void> = [];
 		const context = {
-			pages: () => [],
+			pages: () =>
+				options.initialCloseMs
+					? [{ close: () => new Promise((r) => setTimeout(r, options.initialCloseMs)) }]
+					: [],
 			newPage: async () => newPage(record),
 			addInitScript: async (_fn: unknown, arg: unknown) => void initScripts.push({ record, state: arg }),
 			storageState: async (options?: unknown) => {
