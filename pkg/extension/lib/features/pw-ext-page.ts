@@ -375,7 +375,7 @@ export function pwExtPageAction(
 		const matches = candidates(target);
 		if (typeof matches === "string") return { error: matches };
 		const listed = matches.slice(0, COUNT_LIST_MAX).map((el, i) => {
-			const label = describe(el);
+			const label = insideSecret(el) ? REDACTED : describe(el);
 			const tag = tagOf(el);
 			return `${i + 1}. ${tag}${label === el.tagName.toLowerCase() ? "" : ` ${label}`}`;
 		});

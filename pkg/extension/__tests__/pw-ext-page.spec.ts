@@ -129,6 +129,16 @@ describe("click", () => {
 		expect(lines.at(-1)).toBe("… 5 more");
 	});
 
+	it("redacts matches inside a secret field when counting", () => {
+		page(`<div contenteditable="true" id="api_token"><span>private-field-value</span></div><span>public</span>`);
+		const result = pwExtPageAction({ kind: "count", target: "span" }) as { detail: string };
+		expect(result.detail.split("\n")).toEqual([
+			"span matches 2 elements",
+			"1. <span> [redacted]",
+			'2. <span> span "public"',
+		]);
+	});
+
 	it("refuses an invalid selector when counting", () => {
 		page("<p>x</p>");
 		expect(pwExtPageAction({ kind: "count", target: "[[" })).toEqual({
