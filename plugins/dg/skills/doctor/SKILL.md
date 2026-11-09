@@ -5,7 +5,7 @@ description: Check that the dg skills have what they need and walk through the f
 
 # Skill: doctor
 
-One report, one item at a time. The CLI checks tools, versions, credentials by name, the daemon and the allow rules. It only reads and reports: it never edits settings, never fixes anything, never decrypts a credential and never starts the daemon or a browser.
+One report, one item at a time. The CLI checks tools, versions, credentials by name, the daemon and the allow rules. It only reads and reports: it never edits settings, never fixes anything, never decrypts a credential and never starts the daemon or a browser. Always pass `--json`: without it, a person at a terminal gets an interactive list instead of a report.
 
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
