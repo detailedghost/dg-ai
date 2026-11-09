@@ -79,7 +79,7 @@ export function cachedPluginVersion(configHome: string): string | undefined {
 	}
 }
 
-/** The dg plugin version Claude has installed, from installed_plugins.json. */
+/** The oldest dg plugin version Claude has installed in any scope, from installed_plugins.json. */
 export function claudePluginVersion(claudeHome: string): string | undefined {
 	try {
 		const doc: unknown = JSON.parse(readFileSync(join(claudeHome, "plugins", "installed_plugins.json"), "utf8"));
@@ -88,7 +88,7 @@ export function claudePluginVersion(claudeHome: string): string | undefined {
 		const versions = (Array.isArray(entries) ? entries : []).flatMap((entry) =>
 			isRecord(entry) && typeof entry.version === "string" ? [entry.version] : [],
 		);
-		return versions.sort(compareVersions).pop();
+		return versions.sort(compareVersions)[0];
 	} catch {
 		return undefined;
 	}

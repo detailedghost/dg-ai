@@ -10,12 +10,12 @@ First run: install or refresh the CLI when it is missing or too old. Each Bash c
 ```bash
 dg-skills update --help 2>&1 | grep -q -- --check ||
   "${DG_HOME:-$HOME/.local}/bin/dg-skills" update --help 2>&1 | grep -q -- --check ||
-  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
+  curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
 
-An older CLI has no `update` command and prints its general help instead, so the check looks for the `--check` flag.
+An older CLI has no `update` command and prints its general help instead, so the check looks for the `--check` flag. The bootstrap is a full install. On a machine set up with `--cli-only`, end that line with `| sh -s -- --cli-only` instead, so it stays CLI-only.
 
 If a step fails, run dg-skills doctor update install.
 

@@ -221,6 +221,19 @@ describe("dg-skills update", () => {
 		expect(d.lines).toContain("⬆️ Claude plugin: 3.0.1 -> 3.1.0");
 	});
 
+	test("--check reports the oldest installed scope, so a stale project install is not hidden", async () => {
+		mkdirSync(join(claudeHome(), "plugins"), { recursive: true });
+		writeFileSync(
+			join(claudeHome(), "plugins", "installed_plugins.json"),
+			JSON.stringify({
+				plugins: { "dg@detailedghost": [{ scope: "user", version: "3.1.0" }, { scope: "project", version: "3.0.1" }] },
+			}),
+		);
+		const d = fake({ tools: ["claude"], installedVersion: () => "3.1.0", stagedExtensions: () => ({}) });
+		expect(await runUpdate({ check: true }, d)).toBe(1);
+		expect(d.lines).toContain("⬆️ Claude plugin: 3.0.1 -> 3.1.0");
+	});
+
 	test("--check leaves out extension markers on a CLI-only install", async () => {
 		const d = fake({ tools: [], cliOnly: () => true, installedVersion: () => "3.1.0" });
 		expect(await runUpdate({ check: true }, d)).toBe(0);
