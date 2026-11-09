@@ -38,6 +38,8 @@ export type DriveOptions = {
 	/** Called for a step skipped because the page moved on during a person's sign-in. */
 	onSkippedStep?(index: number): void;
 	skippedStepMs?: number;
+	/** Cap on waiting for the network to go quiet after a click; some apps never do. */
+	settleTimeoutMs?: number;
 };
 
 export type MissingEnvPrompt = {
@@ -77,7 +79,14 @@ const DEFAULTS = {
 	chapterMs: 2_600,
 	leadMs: 600,
 	skippedStepMs: 2_000,
+	settleTimeoutMs: 10_000,
 };
+
+/** Waits for a click's requests, and any page load they start, before the next step reads the page. */
+async function settle(page: Page, timeout: number): Promise<void> {
+	await page.waitForLoadState("networkidle", { timeout }).catch(() => undefined);
+	await page.waitForLoadState("load");
+}
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -164,7 +173,7 @@ export async function recordTour(
 			if (o.overlays) await pause(o.leadMs);
 			if (step.action.do === "click") {
 				await target.click();
-				await page.waitForLoadState("load");
+				await settle(page, o.settleTimeoutMs);
 				if (o.overlays && !(await hasCaption(page))) await showCaption(page, caption);
 			} else {
 				const name = envReference(step.action.value);

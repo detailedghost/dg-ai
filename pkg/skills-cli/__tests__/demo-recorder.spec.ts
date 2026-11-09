@@ -304,3 +304,56 @@ describe("recordTour fills", () => {
 		}
 	});
 });
+
+/** A sign-in that calls an API first and loads the next page only after it answers, like a single-page app. */
+function slowSignIn() {
+	const server = Bun.serve({
+		hostname: "127.0.0.1",
+		port: 0,
+		async fetch(req) {
+			const url = new URL(req.url);
+			if (url.pathname === "/api/login") {
+				await Bun.sleep(400);
+				return Response.json({ ok: true });
+			}
+			if (url.pathname === "/app.js")
+				return new Response(
+					'document.getElementById("go").addEventListener("click", async () => { await fetch("/api/login", { method: "POST" }); location.assign("/home"); });',
+					{ headers: { "Content-Type": "text/javascript", ...STRICT } },
+				);
+			const html =
+				url.pathname === "/home"
+					? '<!doctype html><title>Home</title><input id="note"><a id="done" href="#">Done</a>'
+					: '<!doctype html><title>Sign in</title><input id="note"><button id="go" type="button">Sign in</button><script src="/app.js"></script>';
+			return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", ...STRICT } });
+		},
+	});
+	return { server, url: `http://127.0.0.1:${server.port}` };
+}
+
+describe("recordTour after a click that loads a page", () => {
+	test.skipIf(!browser)("a dry run waits for the new page before the next step", async () => {
+		const site = slowSignIn();
+		const launched = await chromium.launch({ executablePath: browser as string, args: ["--no-sandbox"] });
+		try {
+			const page = await (await launched.newContext({ viewport: VIEW })).newPage();
+			await recordTour(
+				page,
+				{
+					startUrl: `${site.url}/`,
+					steps: [
+						{ selector: "#go", body: "Sign in.", action: { do: "click" } },
+						{ selector: "#note", body: "Write a note.", action: { do: "fill", value: "after sign-in" } },
+						{ selector: "#done", body: "Done." },
+					],
+				},
+				{ env: {}, overlays: false, hold: () => 0 },
+			);
+			expect(new URL(page.url()).pathname).toBe("/home");
+			expect(await page.locator("#note").inputValue()).toBe("after sign-in");
+		} finally {
+			await launched.close();
+			site.server.stop(true);
+		}
+	});
+});
