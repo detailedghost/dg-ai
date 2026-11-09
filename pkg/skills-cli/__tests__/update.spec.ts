@@ -20,6 +20,10 @@ const claudeHome = () => join(home, ".claude");
 
 function claudePlugin(version: string) {
 	mkdirSync(join(claudeHome(), "plugins", "cache", "detailedghost", "dg", version), { recursive: true });
+	writeFileSync(
+		join(claudeHome(), "plugins", "installed_plugins.json"),
+		JSON.stringify({ version: 2, plugins: { "dg@detailedghost": [{ scope: "user", version }] } }),
+	);
 }
 
 function codexConfig(source: string | undefined, { enabled = true, type = "git" } = {}) {
@@ -207,6 +211,20 @@ describe("dg-skills update", () => {
 			"⬆️ Codex plugin: 1.0.1 -> 3.1.0",
 			"Run dg-skills update to bring these up to date.",
 		]);
+	});
+
+	test("--check reads the installed Claude plugin, not a newer folder left in the cache", async () => {
+		claudePlugin("3.1.0");
+		claudePlugin("3.0.1");
+		const d = fake({ tools: ["claude"], installedVersion: () => "3.1.0", stagedExtensions: () => ({}) });
+		expect(await runUpdate({ check: true }, d)).toBe(1);
+		expect(d.lines).toContain("⬆️ Claude plugin: 3.0.1 -> 3.1.0");
+	});
+
+	test("--check leaves out extension markers on a CLI-only install", async () => {
+		const d = fake({ tools: [], cliOnly: () => true, installedVersion: () => "3.1.0" });
+		expect(await runUpdate({ check: true }, d)).toBe(0);
+		expect(d.lines.join("\n")).not.toContain("extension");
 	});
 
 	test("--check exits 0 when everything is current", async () => {

@@ -67,7 +67,7 @@ export function codexState(codexHome: string): CodexState {
 	}
 }
 
-/** Newest dg plugin version in a Claude or Codex config directory's plugin cache. */
+/** Newest dg plugin version in the Codex plugin cache, which keeps only the installed copy. */
 export function cachedPluginVersion(configHome: string): string | undefined {
 	try {
 		return readdirSync(join(configHome, "plugins", "cache", MARKETPLACE, "dg"))
@@ -79,10 +79,25 @@ export function cachedPluginVersion(configHome: string): string | undefined {
 	}
 }
 
+/** The dg plugin version Claude has installed, from installed_plugins.json. */
+export function claudePluginVersion(claudeHome: string): string | undefined {
+	try {
+		const doc: unknown = JSON.parse(readFileSync(join(claudeHome, "plugins", "installed_plugins.json"), "utf8"));
+		const plugins = isRecord(doc) && isRecord(doc.plugins) ? doc.plugins : {};
+		const entries = plugins[PLUGIN_REF];
+		const versions = (Array.isArray(entries) ? entries : []).flatMap((entry) =>
+			isRecord(entry) && typeof entry.version === "string" ? [entry.version] : [],
+		);
+		return versions.sort(compareVersions).pop();
+	} catch {
+		return undefined;
+	}
+}
+
 /** Turns a plugin step that ran cleanly into a failure when the cache is still behind the release. */
-function reached(step: StepResult, configHome: string, version: string): StepResult {
+function reached(step: StepResult, current: () => string | undefined, version: string): StepResult {
 	if (step.status !== "ok") return step;
-	const cached = cachedPluginVersion(configHome);
+	const cached = current();
 	if (cached !== undefined && compareVersions(cached, version) >= 0) return step;
 	return {
 		...step,
@@ -108,7 +123,7 @@ function claudeStep(deps: UpdateDeps): StepResult {
 		const added = deps.run(add);
 		if (added.status !== 0) return failure(name, add, added.stderr, added.status);
 	}
-	const installed = cachedPluginVersion(deps.claudeHome) !== undefined;
+	const installed = claudePluginVersion(deps.claudeHome) !== undefined;
 	const argv = ["claude", "plugin", installed ? "update" : "install", PLUGIN_REF];
 	return runAll(name, [argv], deps.run, `${installed ? "updated" : "installed"} ${PLUGIN_REF}`);
 }
@@ -157,13 +172,13 @@ async function check(deps: UpdateDeps): Promise<number> {
 		deps.log(`Could not read the newest release: ${describeError(error)}`);
 		return 1;
 	}
-	const staged = Object.entries(deps.stagedExtensions()).map(
+	const staged = Object.entries(deps.cliOnly() ? {} : deps.stagedExtensions()).map(
 		([target, version]): [string, string | undefined, boolean] => [`${target} extension`, version, true],
 	);
 	const rows: [string, string | undefined, boolean][] = [
 		["dg CLI", deps.installedVersion(), true],
 		...staged,
-		["Claude plugin", cachedPluginVersion(deps.claudeHome), Boolean(deps.which("claude"))],
+		["Claude plugin", claudePluginVersion(deps.claudeHome), Boolean(deps.which("claude"))],
 		["Codex plugin", cachedPluginVersion(deps.codexHome), codexState(deps.codexHome).enabled],
 	];
 	let stale = false;
@@ -196,8 +211,8 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<
 		return 1;
 	}
 	report(await installStep(deps, version));
-	report(reached(guarded("Claude plugin", () => claudeStep(deps)), deps.claudeHome, version));
-	report(reached(guarded("Codex plugin", () => codexStep(deps)), deps.codexHome, version));
+	report(reached(guarded("Claude plugin", () => claudeStep(deps)), () => claudePluginVersion(deps.claudeHome), version));
+	report(reached(guarded("Codex plugin", () => codexStep(deps)), () => cachedPluginVersion(deps.codexHome), version));
 	try {
 		deps.log(`Doctor: ${await deps.doctorSummary()}. Run dg-skills doctor for details.`);
 	} catch (error) {

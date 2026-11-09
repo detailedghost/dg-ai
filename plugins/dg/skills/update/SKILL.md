@@ -8,12 +8,14 @@ description: Update every dg part to the newest release with one command. Checks
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-dg-skills update --help >/dev/null 2>&1 ||
-  "${DG_HOME:-$HOME/.local}/bin/dg-skills" update --help >/dev/null 2>&1 ||
+dg-skills update --help 2>&1 | grep -q -- --check ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" update --help 2>&1 | grep -q -- --check ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
 Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+An older CLI has no `update` command and prints its general help instead, so the check looks for the `--check` flag.
 
 If a step fails, run dg-skills doctor update install.
 
