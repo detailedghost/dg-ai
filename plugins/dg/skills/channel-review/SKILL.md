@@ -25,7 +25,8 @@ For PowerShell, use [the raw bootstrap.ps1](https://github.com/detailedghost/dg-
 Read [setup](references/setup.md) and [commands](references/commands.md) before
 changing config or choosing custom reactions. To set this up for a new person,
 follow [relay setup](references/relay-setup.md), then run
-`dg-skills channel-review setup` in a terminal to create config.json.
+`dg-skills channel-review setup` in a terminal to create config.json. Its keys
+match [the example config](references/config.example.json).
 
 Require the dg plugin, AWS CLI with SSO access, `gh` (`glab` for GitLab), a signed-in
 runner CLI, and the thrash skill on every machine. The dg plugin ships `/dg:thrash` and its persona.
