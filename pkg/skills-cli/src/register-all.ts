@@ -17,6 +17,7 @@ import { registerFile } from "./commands/file";
 import { registerHooks } from "./commands/hooks";
 import { registerInbox } from "./commands/inbox";
 import { registerInstall } from "./commands/install";
+import { registerUpdate } from "./commands/update";
 import { registerJot } from "./commands/jot";
 import { registerLaunch } from "./commands/launch";
 import { registerMeaningful } from "./commands/meaningful";
@@ -49,6 +50,7 @@ export function registerAll(program: Command): void {
 	registerErd(program);
 	registerTestLive(program);
 	registerInstall(program);
+	registerUpdate(program);
 	registerBatchOpen(program);
 	registerLaunch(program);
 	registerDemo(program);
