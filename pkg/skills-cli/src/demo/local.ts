@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, openSync, realpathSync, rmSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { slugify } from "@dg/common";
 import {
@@ -85,6 +85,14 @@ export const defaultLocalDeps: LocalDeps = {
 		return result.exitCode === 0 && result.stdout.toString().trim() === "true";
 	},
 };
+
+function isSymlink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
 
 function nearestExistingDir(path: string): string {
 	let dir = dirname(path);
@@ -185,6 +193,10 @@ export async function playLocal(
 	const out = opts.out ? resolve(opts.out) : undefined;
 	if (out && !out.endsWith(".mp4")) {
 		console.error("demo: --out must name a .mp4 file");
+		return 1;
+	}
+	if (out && isSymlink(out)) {
+		console.error("demo: --out must not be a symlink");
 		return 1;
 	}
 	if (out && deps.inGitWorkTree(nearestExistingDir(out))) {

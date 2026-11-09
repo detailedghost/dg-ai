@@ -414,6 +414,16 @@ describe("demo <plan> browser selection", () => {
 		expect(checked).toEqual([realpathSync(real)]);
 	});
 
+	test("--out that is itself a symlink is refused, even when it dangles", async () => {
+		const target = join(world.home, "in-repo.mp4");
+		const link = join(world.home, "out.mp4");
+		symlinkSync(target, link);
+		const run = await world.drive(registerDemo, ["demo", "--out", link, world.planPath], demoDeps());
+		expect(run.code).toBe(1);
+		expect(run.err).toContain("demo: --out must not be a symlink");
+		expect(world.spawned).toHaveLength(0);
+	});
+
 	test("--out is passed to the player as an absolute path", async () => {
 		const previous = process.cwd();
 		process.chdir(world.home);
