@@ -221,7 +221,12 @@ the command exits 1 when any step failed:
    `codex plugin marketplace upgrade detailedghost`, then
    `codex plugin add dg@detailedghost`. A marketplace that points at a local
    folder is replaced with `detailedghost/dg-ai` first.
-4. `dg-skills doctor`, as one summary line.
+4. `dg-skills doctor`, as one summary line. It is information only. Doctor
+   also reports things `update` does not own, such as a stopped daemon, so it
+   does not change the exit code.
+
+The Claude step updates the user scope. A project or local install that is
+still behind gets a warning line with the command to run in that project.
 
 `update` always goes to the newest release, because the plugins follow their
 marketplace. To install one exact release, use `dg-skills install --version

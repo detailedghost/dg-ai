@@ -79,19 +79,36 @@ export function cachedPluginVersion(configHome: string): string | undefined {
 	}
 }
 
-/** The oldest dg plugin version Claude has installed in any scope, from installed_plugins.json. */
-export function claudePluginVersion(claudeHome: string): string | undefined {
+export type ClaudeInstall = { scope: string; version: string; projectPath?: string };
+
+/** Every scope where Claude has the dg plugin installed, from installed_plugins.json. */
+export function claudeInstalls(claudeHome: string): ClaudeInstall[] {
 	try {
 		const doc: unknown = JSON.parse(readFileSync(join(claudeHome, "plugins", "installed_plugins.json"), "utf8"));
 		const plugins = isRecord(doc) && isRecord(doc.plugins) ? doc.plugins : {};
 		const entries = plugins[PLUGIN_REF];
-		const versions = (Array.isArray(entries) ? entries : []).flatMap((entry) =>
-			isRecord(entry) && typeof entry.version === "string" ? [entry.version] : [],
+		return (Array.isArray(entries) ? entries : []).flatMap((entry) =>
+			isRecord(entry) && typeof entry.scope === "string" && typeof entry.version === "string"
+				? [
+						{
+							scope: entry.scope,
+							version: entry.version,
+							...(typeof entry.projectPath === "string" ? { projectPath: entry.projectPath } : {}),
+						},
+					]
+				: [],
 		);
-		return versions.sort(compareVersions)[0];
 	} catch {
-		return undefined;
+		return [];
 	}
+}
+
+/** The user-scope dg plugin version, which is the install update refreshes. */
+export const claudePluginVersion = (claudeHome: string): string | undefined =>
+	claudeInstalls(claudeHome).find((install) => install.scope === "user")?.version;
+
+function scopeLabel(install: ClaudeInstall): string {
+	return install.projectPath ? `${install.scope} ${install.projectPath}` : install.scope;
 }
 
 /** Turns a plugin step that ran cleanly into a failure when the cache is still behind the release. */
@@ -124,7 +141,7 @@ function claudeStep(deps: UpdateDeps): StepResult {
 		if (added.status !== 0) return failure(name, add, added.stderr, added.status);
 	}
 	const installed = claudePluginVersion(deps.claudeHome) !== undefined;
-	const argv = ["claude", "plugin", installed ? "update" : "install", PLUGIN_REF];
+	const argv = ["claude", "plugin", installed ? "update" : "install", PLUGIN_REF, "--scope", "user"];
 	return runAll(name, [argv], deps.run, `${installed ? "updated" : "installed"} ${PLUGIN_REF}`);
 }
 
@@ -163,6 +180,24 @@ async function installStep(deps: UpdateDeps, version: string): Promise<StepResul
 	}
 }
 
+function claudeRows(deps: UpdateDeps): [string, string | undefined, boolean][] {
+	const used = Boolean(deps.which("claude"));
+	const others = claudeInstalls(deps.claudeHome).filter((install) => install.scope !== "user");
+	return [
+		["Claude plugin (user)", claudePluginVersion(deps.claudeHome), used],
+		...others.map((install): [string, string, boolean] => [`Claude plugin (${scopeLabel(install)})`, install.version, used]),
+	];
+}
+
+/** Names each other Claude scope that is still behind, with the command that updates it. */
+function otherScopes(deps: UpdateDeps, version: string): void {
+	for (const install of claudeInstalls(deps.claudeHome)) {
+		if (install.scope === "user" || compareVersions(install.version, version) >= 0) continue;
+		const where = install.projectPath ? `in ${install.projectPath}, ` : "";
+		deps.log(`⚠️ Claude plugin (${scopeLabel(install)}) is ${install.version}; ${where}run claude plugin update ${PLUGIN_REF} --scope ${install.scope}`);
+	}
+}
+
 /** Prints installed and newest versions; changes nothing. */
 async function check(deps: UpdateDeps): Promise<number> {
 	let newest: string;
@@ -178,7 +213,7 @@ async function check(deps: UpdateDeps): Promise<number> {
 	const rows: [string, string | undefined, boolean][] = [
 		["dg CLI", deps.installedVersion(), true],
 		...staged,
-		["Claude plugin", claudePluginVersion(deps.claudeHome), Boolean(deps.which("claude"))],
+		...claudeRows(deps),
 		["Codex plugin", cachedPluginVersion(deps.codexHome), codexState(deps.codexHome).enabled],
 	];
 	let stale = false;
@@ -213,8 +248,9 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps): Promise<
 	report(await installStep(deps, version));
 	report(reached(guarded("Claude plugin", () => claudeStep(deps)), () => claudePluginVersion(deps.claudeHome), version));
 	report(reached(guarded("Codex plugin", () => codexStep(deps)), () => cachedPluginVersion(deps.codexHome), version));
+	if (deps.which("claude")) otherScopes(deps, version);
 	try {
-		deps.log(`Doctor: ${await deps.doctorSummary()}. Run dg-skills doctor for details.`);
+		deps.log(`Doctor (information only, not part of the exit code): ${await deps.doctorSummary()}. Run dg-skills doctor for details.`);
 	} catch (error) {
 		deps.log(`Doctor did not run: ${describeError(error)}`);
 	}

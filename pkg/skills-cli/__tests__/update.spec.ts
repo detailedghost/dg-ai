@@ -85,12 +85,12 @@ describe("dg-skills update", () => {
 		expect(d.installs).toEqual(["chrome@3.1.0"]);
 		expect(d.calls).toEqual([
 			"claude plugin marketplace update detailedghost",
-			"claude plugin update dg@detailedghost",
+			"claude plugin update dg@detailedghost --scope user",
 			"codex plugin marketplace upgrade detailedghost",
 			"codex plugin add dg@detailedghost",
 		]);
 		expect(d.lines[0]).toBe("✅ CLI, runtime and extension: dg 3.1.0 installed");
-		expect(d.lines.join("\n")).toContain("Doctor: 10 passed");
+		expect(d.lines.join("\n")).toContain("Doctor (information only, not part of the exit code): 10 passed");
 		expect(d.lines.at(-1)).toContain("Restart Claude Code and Codex sessions");
 	});
 
@@ -118,7 +118,7 @@ describe("dg-skills update", () => {
 		expect(d.calls).toEqual([
 			"claude plugin marketplace update detailedghost",
 			"claude plugin marketplace add detailedghost/dg-ai",
-			"claude plugin install dg@detailedghost",
+			"claude plugin install dg@detailedghost --scope user",
 		]);
 	});
 
@@ -165,7 +165,7 @@ describe("dg-skills update", () => {
 		expect(text).toContain("❌ CLI, runtime and extension: network down");
 		expect(text).toContain("❌ Claude plugin: claude wrapper cannot start");
 		expect(d.calls).toContain("codex plugin add dg@detailedghost");
-		expect(text).toContain("Doctor:");
+		expect(text).toContain("Doctor (information only");
 	});
 
 	test("a plugin that stays behind after a clean update fails and points to the pinned-marketplace docs", async () => {
@@ -191,9 +191,9 @@ describe("dg-skills update", () => {
 
 	test("a nonzero plugin command names the command and its first error line", async () => {
 		claudePlugin("3.0.1");
-		const d = fake({ tools: ["claude"], failing: ["claude plugin update dg@detailedghost"] });
+		const d = fake({ tools: ["claude"], failing: ["claude plugin update dg@detailedghost --scope user"] });
 		expect(await runUpdate({}, d)).toBe(1);
-		expect(d.lines.join("\n")).toContain("❌ Claude plugin: claude plugin update dg@detailedghost: claude broke");
+		expect(d.lines.join("\n")).toContain("❌ Claude plugin: claude plugin update dg@detailedghost --scope user: claude broke");
 	});
 
 	test("--check lists what is behind, the staged extension too, changes nothing, and exits 1", async () => {
@@ -207,7 +207,7 @@ describe("dg-skills update", () => {
 		expect(d.lines).toEqual([
 			"✅ dg CLI: 3.1.0",
 			"⬆️ chrome extension: 3.0.1 -> 3.1.0",
-			"⬆️ Claude plugin: 1.34.2 -> 3.1.0",
+			"⬆️ Claude plugin (user): 1.34.2 -> 3.1.0",
 			"⬆️ Codex plugin: 1.0.1 -> 3.1.0",
 			"Run dg-skills update to bring these up to date.",
 		]);
@@ -218,7 +218,7 @@ describe("dg-skills update", () => {
 		claudePlugin("3.0.1");
 		const d = fake({ tools: ["claude"], installedVersion: () => "3.1.0", stagedExtensions: () => ({}) });
 		expect(await runUpdate({ check: true }, d)).toBe(1);
-		expect(d.lines).toContain("⬆️ Claude plugin: 3.0.1 -> 3.1.0");
+		expect(d.lines).toContain("⬆️ Claude plugin (user): 3.0.1 -> 3.1.0");
 	});
 
 	test("--check reports the oldest installed scope, so a stale project install is not hidden", async () => {
@@ -231,7 +231,44 @@ describe("dg-skills update", () => {
 		);
 		const d = fake({ tools: ["claude"], installedVersion: () => "3.1.0", stagedExtensions: () => ({}) });
 		expect(await runUpdate({ check: true }, d)).toBe(1);
-		expect(d.lines).toContain("⬆️ Claude plugin: 3.0.1 -> 3.1.0");
+		expect(d.lines).toContain("✅ Claude plugin (user): 3.1.0");
+		expect(d.lines).toContain("⬆️ Claude plugin (project): 3.0.1 -> 3.1.0");
+	});
+
+	test("update refreshes the user scope and names the command for a stale project scope", async () => {
+		mkdirSync(join(claudeHome(), "plugins"), { recursive: true });
+		writeFileSync(
+			join(claudeHome(), "plugins", "installed_plugins.json"),
+			JSON.stringify({
+				plugins: {
+					"dg@detailedghost": [
+						{ scope: "user", version: "3.0.1" },
+						{ scope: "project", version: "3.0.1", projectPath: "/work/app" },
+					],
+				},
+			}),
+		);
+		const d = fake({ tools: ["claude"], stagedExtensions: () => ({}) });
+		d.run = (argv) => {
+			d.calls.push(argv.join(" "));
+			if (argv[2] === "update")
+				writeFileSync(
+					join(claudeHome(), "plugins", "installed_plugins.json"),
+					JSON.stringify({
+						plugins: {
+							"dg@detailedghost": [
+								{ scope: "user", version: "3.1.0" },
+								{ scope: "project", version: "3.0.1", projectPath: "/work/app" },
+							],
+						},
+					}),
+				);
+			return { status: 0, stdout: "", stderr: "" };
+		};
+		expect(await runUpdate({}, d)).toBe(0);
+		expect(d.lines).toContain(
+			"⚠️ Claude plugin (project /work/app) is 3.0.1; in /work/app, run claude plugin update dg@detailedghost --scope project",
+		);
 	});
 
 	test("--check leaves out extension markers on a CLI-only install", async () => {
