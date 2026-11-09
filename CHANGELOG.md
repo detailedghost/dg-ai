@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.1.0 (2026-11-09)
+
+### Features
+
+- feat(pw): add pw --ext count, --session, and a verb handshake ([#164](https://github.com/detailedghost/dg-ai/pull/164))
+- feat(skills-cli): add dg-skills update and the /dg:update skill ([#162](https://github.com/detailedghost/dg-ai/pull/162))
+- feat(skills-cli): interactive dg-skills doctor ([#163](https://github.com/detailedghost/dg-ai/pull/163))
+
+### Fixes
+
+- fix(channel-review): add a setup step for a missing config ([#161](https://github.com/detailedghost/dg-ai/pull/161))
+
 ## v3.0.1 (2026-11-08)
 
 ### Fixes
