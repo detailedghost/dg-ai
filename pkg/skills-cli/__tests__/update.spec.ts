@@ -16,10 +16,10 @@ afterEach(() => {
 	rmSync(home, { recursive: true, force: true });
 });
 
+const claudeHome = () => join(home, ".claude");
+
 function claudePlugin(version: string) {
-	mkdirSync(join(home, ".claude", "plugins", "cache", "detailedghost", "dg", version, "plugins", "dg", "skills"), {
-		recursive: true,
-	});
+	mkdirSync(join(claudeHome(), "plugins", "cache", "detailedghost", "dg", version), { recursive: true });
 }
 
 function codexConfig(source: string | undefined, { enabled = true, type = "git" } = {}) {
@@ -35,16 +35,16 @@ function codexPlugin(version: string) {
 
 type Fake = UpdateDeps & { calls: string[]; lines: string[]; installs: string[] };
 
-type FakeOptions = Partial<UpdateDeps> & { failing?: string[]; tools?: string[] };
+type FakeOptions = Partial<UpdateDeps> & { failing?: string[]; tools?: string[]; stuck?: boolean };
 
 function fake(overrides: FakeOptions = {}): Fake {
 	const calls: string[] = [];
 	const lines: string[] = [];
 	const installs: string[] = [];
-	const { failing = [], tools = ["claude", "codex"], ...rest } = overrides;
+	const { failing = [], tools = ["claude", "codex"], stuck = false, ...rest } = overrides;
 	let installed = "3.0.1";
 	return {
-		home,
+		claudeHome: claudeHome(),
 		codexHome,
 		calls,
 		lines,
@@ -61,9 +61,10 @@ function fake(overrides: FakeOptions = {}): Fake {
 		run: (argv) => {
 			const line = argv.join(" ");
 			calls.push(line);
-			return failing.includes(line)
-				? { status: 1, stdout: "", stderr: `${argv[0]} broke\n` }
-				: { status: 0, stdout: "", stderr: "" };
+			if (failing.includes(line)) return { status: 1, stdout: "", stderr: `${argv[0]} broke\n` };
+			if (!stuck && /^claude plugin (update|install) /.test(line)) claudePlugin("3.1.0");
+			if (!stuck && line === "codex plugin add dg@detailedghost") codexPlugin("3.1.0");
+			return { status: 0, stdout: "", stderr: "" };
 		},
 		doctorSummary: async () => "10 passed, 0 info, 0 to review, 0 failed",
 		log: (line) => lines.push(line),
@@ -161,6 +162,27 @@ describe("dg-skills update", () => {
 		expect(text).toContain("❌ Claude plugin: claude wrapper cannot start");
 		expect(d.calls).toContain("codex plugin add dg@detailedghost");
 		expect(text).toContain("Doctor:");
+	});
+
+	test("a plugin that stays behind after a clean update fails and points to the pinned-marketplace docs", async () => {
+		claudePlugin("3.0.1");
+		const d = fake({ tools: ["claude"], stuck: true });
+		expect(await runUpdate({}, d)).toBe(1);
+		const text = d.lines.join("\n");
+		expect(text).toContain("❌ Claude plugin: the dg plugin is 3.0.1, not 3.1.0");
+		expect(text).toContain("docs/install.md");
+	});
+
+	test("the newest release cannot be read: nothing runs, exit 1", async () => {
+		const d = fake({
+			newestVersion: async () => {
+				throw new Error("GitHub API 503");
+			},
+		});
+		expect(await runUpdate({}, d)).toBe(1);
+		expect(d.installs).toEqual([]);
+		expect(d.calls).toEqual([]);
+		expect(d.lines).toEqual(["❌ Could not read the newest release: GitHub API 503"]);
 	});
 
 	test("a nonzero plugin command names the command and its first error line", async () => {

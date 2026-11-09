@@ -21,6 +21,7 @@ const GOLDEN_COMMANDS = [
 	"erd",
 	"test-live",
 	"install",
+	"update",
 	"batch-open",
 	"launch",
 	"demo",
