@@ -431,6 +431,16 @@ Wave 4 adds `jot`, `bg`, `cls`, `stat`, `sniff`, `nope`, `find-work`, and
 `find-work` are instruction-only. After the merge, smoke `jot`, `bg`, `sniff`,
 and `doctor` from outside the checkout with the installed plugin tree.
 Run `dg-skills doctor` after an install or upgrade to check every command.
+On a terminal, `dg-skills doctor` opens an interactive list. Failures come
+first, then warnings. Checks that share one fix merge into one row, all
+missing allow rules merge into one row, and info and passed checks fold into
+one row each. Keys: ↑/↓ move, → shows the items in a row, ← hides them, Enter
+offers the row's fix, and q quits. Enter runs a fix only after `y`, and only
+when the fix is a plain `dg-skills` or `dg-agent` command, or the allow-rules
+row, which adds the rules to `permissions.allow` in `~/.claude/settings.json`
+and keeps every other rule. Any other fix is shown for you to run. After a
+fix, the checks run again. `--plain` prints the old text report, and `--json`
+and any non-terminal output do not change.
 
 Wave 5 adds `db`, `erd`, `eli5`, `ticket`, and `test-live`. The CLI
 commands are `dg-skills db`, `dg-skills erd`, and `dg-skills test-live`;
