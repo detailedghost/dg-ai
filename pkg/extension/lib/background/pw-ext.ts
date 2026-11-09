@@ -197,9 +197,13 @@ const SECRET_PAIR =
 	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
 
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
-function clean(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
+function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
 	const redact = unmasked ? redactSecrets : redactText;
-	return cap(redact(redactLiterals(text, secrets), secrets).replace(SECRET_PAIR, "$1$2[redacted]"));
+	return redact(redactLiterals(text, secrets), secrets).replace(SECRET_PAIR, "$1$2[redacted]");
+}
+
+function clean(text: string, options: { unmasked?: boolean; secrets?: string[] } = {}): string {
+	return cap(mask(text, options));
 }
 
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5);
@@ -298,15 +302,14 @@ export function createPwExtHandler({
 	}
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
-		if (!secrets.length) return result;
-		return result.ok
-			? { ...result, data: { ...result.data, text: cap(redactLiterals(result.data.text, secrets)) } }
-			: { ...result, error: redactLiterals(result.error, secrets) };
+		if (result.ok)
+			return { ...result, data: { ...result.data, text: cap(redactLiterals(result.data.text, secrets)) } };
+		return secrets.length ? { ...result, error: redactLiterals(result.error, secrets) } : result;
 	}
 
 	const ok = (text: string, image?: string): PwExtResult => ({
 		ok: true,
-		data: { text: clean(text), ...(image ? { image } : {}) },
+		data: { text: mask(text), ...(image ? { image } : {}) },
 	});
 
 	function watchTab(tab: LiveTab) {

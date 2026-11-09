@@ -286,6 +286,11 @@ describe("redactLiterals", () => {
 		expect(redactLiterals("pw orchid maple lantern", ["orchid  maple\tlantern"])).toBe("pw [redacted]");
 	});
 
+	it("masks the JSON-escaped form of a secret", () => {
+		const secret = 'pa"ss\\word';
+		expect(redactLiterals(JSON.stringify({ value: secret }), [secret])).toBe('{"value":"[redacted]"}');
+	});
+
 	it("masks the clipped start of a secret before an ellipsis", () => {
 		expect(redactLiterals(`${"x".repeat(10)}739…`, ["739123"])).toBe(`${"x".repeat(10)}[redacted]…`);
 		expect(redactLiterals("code 739 ok", ["739123"])).toBe("code 739 ok");

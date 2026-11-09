@@ -76,13 +76,13 @@ function replaceLiteral(message: string, secret: string): string {
 	return message.split(secret).join(REDACTED);
 }
 
-/** Masks each given secret, its whitespace-collapsed form, and any clipped start of it before an ellipsis. */
+/** Masks each given secret, its whitespace-collapsed and JSON-escaped forms, and any clipped start before an ellipsis. */
 export function redactLiterals(message: string, secrets: readonly string[]): string {
 	const literals = [
 		...new Set(
 			secrets
 				.filter((secret) => secret.length > 0)
-				.flatMap((secret) => [secret, secret.replace(/\s+/g, " ")]),
+				.flatMap((secret) => [secret, secret.replace(/\s+/g, " "), JSON.stringify(secret).slice(1, -1)]),
 		),
 	].sort((a, b) => b.length - a.length);
 	const whole = literals.reduce((out, secret) => out.split(secret).join(REDACTED), message);

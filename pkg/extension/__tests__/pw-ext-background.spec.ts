@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { PwExtRequest } from "@dg/common";
+import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
 import {
@@ -1224,6 +1224,25 @@ describe("pw --ext unmask", () => {
 		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
 		options.pageResult = { started: false, entries: [] };
 		expect(JSON.stringify(await h.run({ verb: "console" }))).not.toContain("739");
+	});
+
+	it("masks a filled secret that the tabs listing cap cuts in two", async () => {
+		const secret = "739123";
+		const listing = async (last: number) => {
+			const tabs = Array.from({ length: 25 }, (_, i) =>
+				groupTab(100 + i, { url: "https://a.example.test/", title: i === 24 ? `${"x".repeat(last)}${secret}` : "x".repeat(4000) }),
+			);
+			const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [WEB_TAB, ...tabs] });
+			await h.run({ verb: "unmask", minutes: 15 });
+			await h.run({ verb: "fill", target: "#otp", value: secret, secret: true });
+			return outcome(await h.run({ verb: "tabs" }));
+		};
+		const line = (await listing(4000)).indexOf("- 124: ");
+		expect(line).toBeGreaterThan(0);
+		const cut = PW_EXT_MAX_TEXT_CHARS - "\n[truncated]".length;
+		const listed = await listing(cut - 3 - line - "- 124: ".length);
+		expect(listed).toContain("[truncated]");
+		expect(listed).not.toMatch(/x739/);
 	});
 
 	it("masks a filled secret in a later tabs listing", async () => {
