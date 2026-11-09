@@ -6,6 +6,8 @@ import {
 	CHAT_PORT_FALLBACK_COUNT,
 	CHAT_PROTOCOL_VERSION,
 	OVERWATCH_SESSION_ID,
+	PW_EXT_READ_VERBS,
+	PW_EXT_WRITE_VERBS,
 	type SessionBootstrap,
 	validateChatFrame,
 } from "@dg/common";
@@ -365,6 +367,7 @@ test("the first frame sent on open is the connect capability handshake carrying 
 		token: bootstrap.token,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
 		extensionVersion: "1.9.3",
+		pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS],
 	});
 });
 
@@ -1030,6 +1033,21 @@ test("the background announces the manifest version in its connect handshake", a
 		.map(([raw]) => JSON.parse(raw))
 		.find((frame) => frame.type === "connect");
 	expect(connect).toMatchObject({ extensionVersion: "1.9.3" });
+});
+
+test("the background lists the pw --ext verbs it supports in its connect handshake", async () => {
+	const { api } = makeBrowserApi();
+	const socket = makeFakeSocket();
+	registerDaemonLink({ browserApi: api, openSocket: () => socket });
+	await adoptBootstrap(makeBootstrap());
+
+	socket.dispatch("open");
+	await settle();
+
+	const connect = socket.send.mock.calls
+		.map(([raw]) => JSON.parse(raw))
+		.find((frame) => frame.type === "connect");
+	expect(connect.pwExtVerbs).toEqual([...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS]);
 });
 
 test("a socket error is relayed to the chat page as a connection change with its detail", async () => {

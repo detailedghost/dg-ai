@@ -26,6 +26,8 @@ describe("validatePwExtRequest", () => {
 		{ verb: "click", target: "#save" },
 		{ verb: "fill", target: "e3", value: "" },
 		{ verb: "fill", target: "input[name=q]", value: "hello" },
+		{ verb: "count", target: "input[type=file]" },
+		{ verb: "count", target: "e4", tabId: 3 },
 	])("accepts %p", (request) => {
 		expect(validatePwExtRequest(request)).toEqual(request);
 	});
@@ -49,6 +51,9 @@ describe("validatePwExtRequest", () => {
 		{ verb: "fill", target: "e1" },
 		{ verb: "fill", target: "e1", value: "v".repeat(5000) },
 		{ verb: "fill", target: "e1", value: 3 },
+		{ verb: "count" },
+		{ verb: "count", target: "" },
+		{ verb: "count", target: "#q", value: "x" },
 	])("rejects %p", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
 	});
@@ -253,6 +258,7 @@ describe("PW_EXT_RELAY table", () => {
 			"peers",
 			"burn",
 			"version",
+			"supports",
 		]);
 		expect(caps.map((entry) => (entry.check === "cap" ? entry.of : []))).toEqual(
 			[["sessionIds"], ["requester", "pending"]],
@@ -262,7 +268,7 @@ describe("PW_EXT_RELAY table", () => {
 	it("keeps the refusal strings", () => {
 		expect(
 			PW_EXT_RELAY.checks.map((entry) =>
-				"refusal" in entry ? entry.refusal : undefined,
+				"refusal" in entry && typeof entry.refusal === "string" ? entry.refusal : undefined,
 			),
 		).toEqual([
 			"pw --ext requires an active dg session.",
@@ -272,6 +278,7 @@ describe("PW_EXT_RELAY table", () => {
 			undefined,
 			undefined,
 			`pw --ext requires dg-ai-extension ${minVersion} or newer; update the extension, reload it, and reconnect this session.`,
+			undefined,
 		]);
 		expect(peers?.check === "peers" && peers.multiple).toBe(
 			"Multiple extension peers make the pw --ext request ambiguous; keep one extension connected to this session.",
@@ -305,6 +312,17 @@ describe("PW_EXT_RELAY table", () => {
 		expect(
 			versionCheck?.check === "version" && versionCheck.accepts(version),
 		).toBe(expected);
+	});
+
+	it.each([
+		[{}, "current", true],
+		[{}, "count", false],
+		[{ pwExtVerbs: ["current"] }, "count", false],
+		[{ pwExtVerbs: ["current", "count"] }, "count", true],
+	])("supports peer %p for verb %p: %p", (peer, verb, expected) => {
+		const supports = PW_EXT_RELAY.checks.find((entry) => entry.check === "supports");
+		const cli = { type: "cli-pw-ext-request" as const, requestId: "r", request: { verb: verb as never } };
+		expect(supports?.check === "supports" && supports.accepts(peer, cli)).toBe(expected);
 	});
 
 	it("maps a CLI request to the browser request fields", () => {

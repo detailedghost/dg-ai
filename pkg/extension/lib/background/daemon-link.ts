@@ -11,6 +11,8 @@ import {
 	describeError,
 	emitRedacted,
 	noteSecret,
+	PW_EXT_READ_VERBS,
+	PW_EXT_WRITE_VERBS,
 } from "@dg/common";
 import { codedPageUrl } from "@dg/pages/chat-marker";
 import {
@@ -376,6 +378,7 @@ export function registerDaemonLink(
 		},
 		link: { onSessionAdopt: (bootstrap) => void adoptPushed(bootstrap) },
 		extensionVersion: api.runtime.getManifest?.().version,
+		pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS],
 		keepaliveIntervalMs,
 	});
 

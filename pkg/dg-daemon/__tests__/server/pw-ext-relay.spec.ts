@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { PW_EXT_MIN_EXTENSION_VERSION } from "@dg/common";
+import {
+	PW_EXT_MIN_EXTENSION_VERSION,
+	PW_EXT_READ_VERBS,
+	PW_EXT_WRITE_VERBS,
+} from "@dg/common";
 import {
 	cleanupDgHome,
 	closeSockets,
@@ -61,12 +65,13 @@ async function extension(
 	port: number,
 	credentials: Credentials,
 	extensionVersion = MIN_VERSION,
+	extra: Record<string, unknown> = {},
 ) {
 	const socket = wsExtensionSocket(port);
 	sockets.push(socket);
 	const frames = collectFrames(socket);
 	await waitForOpen(socket);
-	send(socket, { type: "connect", ...credentials, extensionVersion });
+	send(socket, { type: "connect", ...credentials, extensionVersion, ...extra });
 	await waitForValue(
 		() => frames.find((frame) => frameType(frame) === "session-list"),
 		700,
@@ -186,6 +191,42 @@ describe("daemon pw --ext relay", () => {
 		expect(
 			page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request"),
 		).toBe(false);
+	});
+
+	it("refuses count at once when the extension does not list it", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli, { request: { verb: "count", target: "#q" } });
+
+		expect(await result(results, requestId)).toMatchObject({
+			ok: false,
+			error: "pw --ext count needs a newer dg-ai-extension; update the extension, reload it, and reconnect this session.",
+		});
+		expect(
+			page.frames.some((frame) => frameType(frame) === "pw-ext-browser-request"),
+		).toBe(false);
+	});
+
+	it("forwards count when the extension lists it", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap, MIN_VERSION, {
+			pwExtVerbs: [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS],
+		});
+		const requestId = request(cli, { request: { verb: "count", target: "#q" } });
+		const forwarded = await relay(page.frames, requestId);
+
+		expect(forwarded.request).toEqual({ verb: "count", target: "#q" });
+		const data = reply(page.socket, bootstrap, requestId);
+		expect(await result(results, requestId)).toMatchObject({ ok: true, data });
+	});
+
+	it("keeps forwarding the older verbs to an extension that lists none", async () => {
+		const { cli, results, port, bootstrap } = await boot();
+		const page = await extension(port, bootstrap);
+		const requestId = request(cli);
+		await relay(page.frames, requestId);
+		const data = reply(page.socket, bootstrap, requestId);
+		expect(await result(results, requestId)).toMatchObject({ ok: true, data });
 	});
 
 	it("still forwards a proto request on a session whose extension is older than the pw-ext floor", async () => {

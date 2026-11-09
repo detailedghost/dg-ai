@@ -94,6 +94,7 @@ const discardedTab = (tabId: number) =>
 const PAGE_VERBS = [
 	"snapshot",
 	"click",
+	"count",
 	"fill",
 	"upload",
 	"selection",
@@ -506,8 +507,8 @@ export function createPwExtHandler({
 			}
 			default: {
 				const action: PwExtPageAction =
-					request.verb === "click"
-						? { kind: "click", target: request.target as string }
+					request.verb === "click" || request.verb === "count"
+						? { kind: request.verb, target: request.target as string }
 						: request.verb === "fill"
 							? {
 									kind: "fill",

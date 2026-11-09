@@ -95,6 +95,57 @@ describe("click", () => {
 		});
 	});
 
+	it("counts matches and lists each one without touching the page", () => {
+		page(`
+			<input type="file" id="file-banner" name="banner">
+			<input type="file" id="file-picture" name="picture">
+			<input type="file" id="file-mark">
+		`);
+		let changed = 0;
+		for (const input of window.document.querySelectorAll("input"))
+			input.addEventListener("change", () => changed++);
+		const result = pwExtPageAction({ kind: "count", target: "input[type=file]" }) as { detail: string };
+		expect(result.detail.split("\n")).toEqual([
+			"input[type=file] matches 3 elements",
+			'1. <input type="file" id="file-banner" name="banner"> button',
+			'2. <input type="file" id="file-picture" name="picture"> button',
+			'3. <input type="file" id="file-mark"> button',
+		]);
+		expect(changed).toBe(0);
+	});
+
+	it("counts zero matches as a result, not an error", () => {
+		page("<p>none</p>");
+		expect(pwExtPageAction({ kind: "count", target: "input[type=file]" })).toEqual({
+			detail: "input[type=file] matches 0 elements",
+		});
+	});
+
+	it("caps the listed matches", () => {
+		page("<button>x</button>".repeat(25));
+		const lines = (pwExtPageAction({ kind: "count", target: "button" }) as { detail: string }).detail.split("\n");
+		expect(lines[0]).toBe("button matches 25 elements");
+		expect(lines).toHaveLength(22);
+		expect(lines.at(-1)).toBe("… 5 more");
+	});
+
+	it("redacts matches inside a secret field when counting", () => {
+		page(`<div contenteditable="true" id="api_token"><span>private-field-value</span></div><span>public</span>`);
+		const result = pwExtPageAction({ kind: "count", target: "span" }) as { detail: string };
+		expect(result.detail.split("\n")).toEqual([
+			"span matches 2 elements",
+			"1. <span> [redacted]",
+			'2. <span> span "public"',
+		]);
+	});
+
+	it("refuses an invalid selector when counting", () => {
+		page("<p>x</p>");
+		expect(pwExtPageAction({ kind: "count", target: "[[" })).toEqual({
+			error: "[[ is not a valid CSS selector or ref.",
+		});
+	});
+
 	it("asks for a new snapshot when a ref is unknown", () => {
 		page(`<button>Go</button>`);
 		expect(pwExtPageAction({ kind: "click", target: "e9" })).toEqual({

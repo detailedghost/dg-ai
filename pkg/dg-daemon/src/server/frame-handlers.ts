@@ -318,7 +318,11 @@ type ConnectHandshake = {
 	token: string;
 	protocolVersion: number;
 	extensionVersion?: string;
+	pwExtVerbs?: string[];
 };
+
+const MAX_PW_EXT_VERBS = 64;
+const MAX_PW_EXT_VERB_CHARS = 32;
 
 type RelayResultFrame = Parameters<BrowserRelay["handleResult"]>[1];
 type RelayProgressFrame = Parameters<BrowserRelay["handleProgress"]>[1];
@@ -884,7 +888,13 @@ function isConnectHandshake(value: unknown): value is ConnectHandshake {
 		typeof record.token === "string" &&
 		typeof record.protocolVersion === "number" &&
 		(record.extensionVersion === undefined ||
-			typeof record.extensionVersion === "string")
+			typeof record.extensionVersion === "string") &&
+		(record.pwExtVerbs === undefined ||
+			(Array.isArray(record.pwExtVerbs) &&
+				record.pwExtVerbs.length <= MAX_PW_EXT_VERBS &&
+				record.pwExtVerbs.every(
+					(verb) => typeof verb === "string" && verb.length <= MAX_PW_EXT_VERB_CHARS,
+				)))
 	);
 }
 
@@ -915,6 +925,9 @@ async function handleConnectHandshake(
 	ws.data.capabilities.set(handshake.sessionId, handshake.token);
 	if (handshake.extensionVersion) {
 		ws.data.extensionVersion = handshake.extensionVersion;
+	}
+	if (handshake.pwExtVerbs) {
+		ws.data.pwExtVerbs = handshake.pwExtVerbs;
 	}
 	deps.noteActivity();
 	await sendFrame(ws, handshake.sessionId, {

@@ -47,7 +47,18 @@ export type RelayCheck<Cli = { requestId: string }> =
 			readonly check: "version";
 			accepts(version: string | undefined): boolean;
 			readonly refusal: string;
+	  }
+	| {
+			readonly check: "supports";
+			accepts(peer: RelayPeer, cli: Cli): boolean;
+			refusal(cli: Cli): string;
 	  };
+
+/** What the one extension peer announced in its connect handshake. */
+export type RelayPeer = {
+	readonly extensionVersion?: string;
+	readonly pwExtVerbs?: readonly string[];
+};
 
 export type RelayStrings<Cli = { requestId: string }> = {
 	readonly activeRequired: string;

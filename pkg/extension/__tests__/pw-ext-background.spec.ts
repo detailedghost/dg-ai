@@ -201,6 +201,15 @@ describe("pw --ext background handler", () => {
 		expect(h.executed()[0]?.target.tabId).toBe(7);
 	});
 
+	it("runs a count in the page and prints its match list", async () => {
+		const h = harness({ pageResult: { detail: "#q matches 1 element\n1. <input id=\"q\">" } });
+		const answer = await h.run({ verb: "count", target: "#q" });
+
+		expect(answer).toMatchObject({ ok: true });
+		if (answer.ok) expect(answer.data.text).toContain("#q matches 1 element");
+		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url]);
+	});
+
 	it("runs a fill and keeps the typed value out of the result", async () => {
 		const h = harness({ pageResult: { detail: 'filled textbox "Search"' } });
 		const answer = await h.run({ verb: "fill", target: "e2", value: "cats" });

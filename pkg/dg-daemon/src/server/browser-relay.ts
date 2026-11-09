@@ -317,6 +317,10 @@ export function createBrowserRelay<F extends AnyRelayFeature>({
 					if (!check.accepts(scan().extension?.data.extensionVersion))
 						return { refusal: check.refusal };
 					break;
+				case "supports":
+					if (!check.accepts(scan().extension?.data ?? {}, ctx.cli))
+						return { refusal: check.refusal(ctx.cli) };
+					break;
 				default: {
 					const unreachable: never = check;
 					return unreachable;

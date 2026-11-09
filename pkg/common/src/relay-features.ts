@@ -34,6 +34,9 @@ function inboxExtensionSupported(version: string | undefined): boolean {
 
 const MIN_VERSION = PW_EXT_MIN_EXTENSION_VERSION.join(".");
 
+/** Verbs an extension must name in its handshake; older extensions drop them silently. */
+const PW_EXT_LISTED_VERBS: ReadonlySet<string> = new Set(["count"]);
+
 function versionAtLeastMinimum(version: string | undefined): boolean {
 	const match = version?.match(/^(\d+)\.(\d+)\.(\d+)(?:[+-].*)?$/);
 	if (!match) return false;
@@ -222,6 +225,15 @@ export const PW_EXT_RELAY = defineRelayFeature<PwExtRelayBodies>()({
 			check: "version",
 			accepts: versionAtLeastMinimum,
 			refusal: `pw --ext requires dg-ai-extension ${MIN_VERSION} or newer; update the extension, reload it, and reconnect this session.`,
+		},
+		{
+			check: "supports",
+			accepts: (peer, cli) =>
+				peer.pwExtVerbs
+					? peer.pwExtVerbs.includes(cli.request.verb)
+					: !PW_EXT_LISTED_VERBS.has(cli.request.verb),
+			refusal: (cli) =>
+				`pw --ext ${cli.request.verb} needs a newer dg-ai-extension; update the extension, reload it, and reconnect this session.`,
 		},
 	],
 	strings: {
