@@ -18,6 +18,7 @@ export type SocketState = {
 	closeWaiters: Set<() => void>;
 	originHeader?: string;
 	extensionVersion?: string;
+	pwExtVerbs?: readonly string[];
 	localPage: boolean;
 	stillPinned?: () => boolean;
 };

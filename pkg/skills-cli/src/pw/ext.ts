@@ -228,8 +228,6 @@ Write verbs (they change the page):
 
 class ExtUsageError extends Error {}
 
-const UNSUPPORTED = "Unsupported pw --ext request.";
-
 type Parsed = { request: PwExtRequest; staged?: StagedFile; session?: string };
 
 function readArgs(argv: readonly string[]) {
@@ -405,14 +403,7 @@ export async function runExt(
 			PW_EXT_DEFAULT_TIMEOUT_MS + 5_000,
 		);
 		if (!reply.ok) {
-			const error = reply.error ?? "pw --ext failed in the browser.";
-			env.err(
-				redactText(
-					error === UNSUPPORTED
-						? `${error} The extension may be older than this CLI: update the dg-ai-extension and reload it.`
-						: error,
-				),
-			);
+			env.err(redactText(reply.error ?? "pw --ext failed in the browser."));
 			return 1;
 		}
 		let data: ReturnType<typeof validatePwExtResponse>;

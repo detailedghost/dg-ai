@@ -144,13 +144,6 @@ describe("pw --ext", () => {
 		expect(help).toContain("count <ref|selector>");
 	});
 
-	test("tells the user to update the extension when it does not know the verb", async () => {
-		const env = clientEnv();
-		const d = deps(() => ({ ok: false, error: "Unsupported pw --ext request." }));
-		expect(await runExt(["--ext", "count", "#q"], env, d.value)).toBe(1);
-		expect(env.stderr.join("\n")).toContain("update the dg-ai-extension");
-	});
-
 	test("saves a screenshot to the pw scratch dir and prints the path", async () => {
 		const env = clientEnv();
 		const d = deps(() => ({

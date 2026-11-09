@@ -63,6 +63,7 @@ export type ChatClientOptions = {
 	backoffMaxMs?: number;
 	randomJitter?: () => number;
 	extensionVersion?: string;
+	pwExtVerbs?: readonly string[];
 	keepaliveIntervalMs?: number;
 	admitPort?: (port: number) => Promise<boolean>;
 	findPort?: () => Promise<number | undefined>;
@@ -114,6 +115,7 @@ function buildConnectFrame(
 	sessionId: string,
 	token: string,
 	extensionVersion?: string,
+	pwExtVerbs?: readonly string[],
 ): Record<string, unknown> {
 	return {
 		type: "connect",
@@ -121,6 +123,7 @@ function buildConnectFrame(
 		token,
 		protocolVersion: CHAT_PROTOCOL_VERSION,
 		...(extensionVersion ? { extensionVersion } : {}),
+		...(pwExtVerbs ? { pwExtVerbs } : {}),
 	};
 }
 
@@ -243,7 +246,9 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	}
 
 	function sendConnectHandshake(sessionId: string, token: string): void {
-		send(buildConnectFrame(sessionId, token, options.extensionVersion));
+		send(
+			buildConnectFrame(sessionId, token, options.extensionVersion, options.pwExtVerbs),
+		);
 	}
 
 	function sendHistoryRequest(sessionId: string, token: string): void {
