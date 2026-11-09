@@ -197,6 +197,33 @@ they disagree. The next release ships the new `runtime.json`.
 `dg-skills install` then downloads the new runtime once, checks the bundle on
 it, and points `runtime/current` at it.
 
+## Update everything
+
+One command brings every dg part to the newest release:
+
+```bash
+dg-skills update --check   # print installed and newest versions; change nothing
+dg-skills update           # update, then run doctor
+```
+
+`update` runs these steps in order. A failed step does not stop the rest, and
+the command exits 1 when any step failed:
+
+1. The Bun runtime, the dg bundle, the launchers, and the staged
+   dg-ai-extension, the same as `dg-skills install`.
+2. The Claude plugin: `claude plugin marketplace update detailedghost`, then
+   `claude plugin update dg@detailedghost` (or `install` when it is missing).
+   Skipped when `claude` is not on `PATH`.
+3. The Codex plugin, when `~/.codex/config.toml` enables `dg@detailedghost`:
+   `codex plugin marketplace upgrade detailedghost`, then
+   `codex plugin add dg@detailedghost`. A marketplace that points at a local
+   folder is replaced with `detailedghost/dg-ai` first.
+4. `dg-skills doctor`, as one summary line.
+
+`--version <x.y.z>` updates to that release. Restart Claude Code and Codex
+sessions afterward, and reload the extension. The `/dg:update` skill runs
+`--check`, asks, and then runs the update.
+
 ## Update the Claude Code plugin
 
 Pin the marketplace once to the `latest` tag. Do not pin `master`. Set the

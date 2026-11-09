@@ -61,7 +61,7 @@ const INSTALL_TOOL: Record<string, ToolInstall> = {
 };
 
 export const PLUGIN_INSTALL = "claude plugin install dg@detailedghost";
-export const PLUGIN_UPDATE = "claude plugin update dg@detailedghost";
+export const PLUGIN_UPDATE = `${CLI_PATH} update`;
 const DAEMON_START = "dg-agent start";
 const LOAD_EXTENSION = "open the browser with the DeeGee extension loaded; it links to the daemon on its own";
 

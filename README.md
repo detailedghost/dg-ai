@@ -92,6 +92,7 @@ Claude Code also accepts the bare `/<name>`.
 | `stat` | Show this session's in-flight work, status, and ETA in one table |
 | `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg-skills test-live` |
 | `ticket` | File a Jira ticket using the registered project, assignee, sprint, and issue types |
+| `update` | Update every dg part to the newest release; `dg-skills update` |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |

@@ -52,6 +52,7 @@ binaries. The skills-root README itself is not installed.
 | `nope/` | Reset to the correct file-search defaults and record a feedback note |
 | `find-work/` | Find actionable work and run each item in a parallel worktree |
 | `doctor/` | Check what the dg skills need and walk through fixes (`dg-skills doctor`) |
+| `update/` | Update every dg part to the newest release (`dg-skills update`) |
 | `bot-commit-email/` | Git commit and review email for every bot (`dante+<botname>@detailedghost.com`) |
 | `db/` | Query PostgreSQL and Snowflake with read-safe defaults (`dg-skills db`) |
 | `eli5/` | Explain a concept, file, error, or codebase as if the reader is five |
@@ -108,6 +109,7 @@ skills/
   nope/
   find-work/
   doctor/
+  update/
   bot-commit-email/
   db/
   eli5/
