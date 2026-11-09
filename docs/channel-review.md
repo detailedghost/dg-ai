@@ -34,4 +34,5 @@ Installing the skill does not authorize starting unattended automation.
 
 The [CLI-only installation](install.md#cli-only-install) supports channel review
 without the browser extension. The channel-review process still needs its own
-runner, authentication, relay, and private configuration.
+runner, authentication, relay, and private configuration. Run
+`dg-skills channel-review setup` in a terminal to create that configuration.

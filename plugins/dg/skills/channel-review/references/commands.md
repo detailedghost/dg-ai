@@ -14,6 +14,7 @@ Runner availability, login, missing thrash, and timeouts have separate codes.
 
 | Command | Flags or arguments | Result |
 | --- | --- | --- |
+| `dg-skills channel-review setup` | `--force` | Ask for each required setting on a terminal and write `config.json` (mode 0600), then offer to store the relay secret. `--force` replaces an existing file. Without a terminal, write `config.example.json` beside it as a template and exit 1. |
 | `dg-skills channel-review start` | `--env dev\|prod`, `--runner claude\|codex\|copilot\|grok`, `--chat-id <id>` | Start the background daemon. |
 | `dg-skills channel-review stop` | `--env dev\|prod` | Stop the selected environment's daemon. |
 | `dg-skills channel-review status` | `--env dev\|prod` | Print daemon state, watched chats, last event IDs per chat, runner probes, and preflight as JSON; preflight checks each chat when stopped and exits 1 if any check errors. |

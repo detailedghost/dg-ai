@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
 	channelReviewPaths,
 	createSystemPlatform,
@@ -26,6 +26,7 @@ import {
 	runConnect,
 } from "./connect";
 import { type MigrateFlags, runMigrateEnv } from "./migrate";
+import { defaultSetupDeps, runSetup, type SetupFlags } from "./setup";
 
 type RunFlags = {
 	env?: EnvName;
@@ -81,7 +82,21 @@ function printSavedEnv(path: string): void {
 	}
 }
 
+/** Offers setup on a terminal when the config is missing; false means stop. */
+async function ensureConfig(): Promise<boolean> {
+	const deps = defaultSetupDeps();
+	if (existsSync(deps.configPath) || !deps.isTTY) return true;
+	const answer = (await deps.ask("No channel-review config yet. Run setup now? [Y/n]: ")).trim().toLowerCase();
+	if (answer !== "" && !answer.startsWith("y")) {
+		deps.close();
+		return true;
+	}
+	process.exitCode = await runSetup({}, deps);
+	return process.exitCode === 0;
+}
+
 async function runDaemon(flags: RunFlags): Promise<void> {
+	if (!(await ensureConfig())) return;
 	const configPath = channelReviewPaths("dev").configPath;
 	const config = loadConfig(configPath);
 	const env = resolveEnv(config, flags.env);
@@ -114,12 +129,21 @@ export function registerChannelReview(program: Command): void {
 	command.addCommand(registerEmojis({ io }));
 
 	command
+		.command("setup")
+		.description("create the config file by answering a few questions")
+		.option("--force", "replace an existing config file")
+		.action(async (flags: SetupFlags) => {
+			process.exitCode = await runSetup(flags);
+		});
+
+	command
 		.command("start")
 		.description("start the review daemon in the background")
 		.addOption(envOption())
 		.addOption(runnerOption())
 		.addOption(chatIdOption())
 		.action(async (flags: RunFlags) => {
+			if (!(await ensureConfig())) return;
 			process.exitCode = await start(flags, {
 				platform: createSystemPlatform(),
 				io,
