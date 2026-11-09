@@ -295,4 +295,10 @@ describe("redactLiterals", () => {
 		expect(redactLiterals(`${"x".repeat(10)}739…`, ["739123"])).toBe(`${"x".repeat(10)}[redacted]…`);
 		expect(redactLiterals("code 739 ok", ["739123"])).toBe("code 739 ok");
 	});
+
+	it("leaves a clipped start shorter than 3 characters", () => {
+		expect(redactLiterals("code 73…", ["739123"])).toBe("code 73…");
+		expect(redactLiterals("code 739…", ["739123"])).toBe("code [redacted]…");
+		expect(redactLiterals("code 739123 73…", ["739123"])).toBe("code [redacted] 73…");
+	});
 });

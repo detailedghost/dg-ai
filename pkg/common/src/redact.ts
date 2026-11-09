@@ -76,7 +76,9 @@ function replaceLiteral(message: string, secret: string): string {
 	return message.split(secret).join(REDACTED);
 }
 
-/** Masks each given secret, its whitespace-collapsed and JSON-escaped forms, and any clipped start before an ellipsis. */
+const MIN_CLIPPED_START = 3;
+
+/** Masks each given secret, its whitespace-collapsed and JSON-escaped forms, and a clipped start of 3+ characters before an ellipsis. */
 export function redactLiterals(message: string, secrets: readonly string[]): string {
 	const literals = [
 		...new Set(
@@ -88,7 +90,7 @@ export function redactLiterals(message: string, secrets: readonly string[]): str
 	const whole = literals.reduce((out, secret) => out.split(secret).join(REDACTED), message);
 	return literals.reduce((out, secret) => {
 		let clipped = out;
-		for (let size = secret.length - 1; size > 0; size--)
+		for (let size = secret.length - 1; size >= MIN_CLIPPED_START; size--)
 			clipped = clipped.split(`${secret.slice(0, size)}…`).join(`${REDACTED}…`);
 		return clipped;
 	}, whole);
