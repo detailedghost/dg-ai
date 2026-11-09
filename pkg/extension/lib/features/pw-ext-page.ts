@@ -430,7 +430,7 @@ export function pwExtPageAction(
 	const pick = (select: HTMLSelectElement, value: string): PwExtPageResult => {
 		if (select.multiple) return { error: `${describe(select)} allows multiple choices; pw --ext picks one option only.` };
 		const options = [...select.options];
-		const label = (option: HTMLOptionElement) => option.text.replace(/\s+/g, " ").trim();
+		const label = (option: HTMLOptionElement) => (option.getAttribute("label") || option.text).replace(/\s+/g, " ").trim();
 		const lower = value.toLowerCase();
 		const index = [
 			options.findIndex((option) => option.value === value),
@@ -474,6 +474,8 @@ export function pwExtPageAction(
 			return {
 				error: "Pass a password or secret with --value-env <NAME> or --value-stdin, never on the command line.",
 			};
+		if (secret && !isSecret(el))
+			return { error: "--value-env and --value-stdin fill only a password or secret field." };
 		const input = el as HTMLInputElement;
 		if (input.disabled || input.readOnly) return { error: `${describe(el)} cannot be filled.` };
 		if (el.tagName === "SELECT") return pick(el as HTMLSelectElement, value);

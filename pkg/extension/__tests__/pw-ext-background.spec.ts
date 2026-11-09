@@ -1090,7 +1090,7 @@ describe("pw --ext round 3 review fixes", () => {
 		const answer = await h.run({ verb: "console" });
 		const main = h.executed().find((call) => call.world === "MAIN");
 
-		expect(main?.args).toEqual([WEB_TAB.url]);
+		expect(main?.args).toEqual([WEB_TAB.url, false]);
 		expect(answer.ok).toBe(true);
 		if (answer.ok) {
 			const lines = answer.data.text
@@ -1189,6 +1189,26 @@ describe("pw --ext unmask", () => {
 		const bad = harness({ approval: "allow", pageResult: { error: "bad cvv 739" } });
 		await bad.run({ verb: "unmask", minutes: 15 });
 		expect(JSON.stringify(await bad.run({ verb: "fill", target: "#cvv", value: "739", secret: true }))).not.toContain("739");
+	});
+
+	it("keeps masking a filled secret in later replies of the session", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		options.pageResult = { tree: 'text "The code 739123 is not valid"', text: "The code 739123 is not valid" };
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("739123");
+	});
+
+	it("tells the MAIN-world console hook about the grant", async () => {
+		const h = harness({
+			approval: "allow",
+			pageResult: { started: false, entries: [] },
+			mainResult: () => ({ entries: [] }),
+		});
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "console" });
+		expect(h.executed().find((call) => call.world === "MAIN")?.args).toEqual([WEB_TAB.url, true]);
 	});
 
 	it("never echoes a secret fill value, even when the page repeats it", async () => {

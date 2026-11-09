@@ -47,6 +47,16 @@ describe("console hook", () => {
 		});
 	});
 
+	it("masks email addresses unless unmasked, and always masks tokens", () => {
+		const console = pageConsole();
+		pwExtConsoleHook();
+		console.warn("ada@clinic.test token=abc123def456");
+		expect(pwExtConsoleHook()).toEqual({ entries: ["[warning] [redacted] token=[redacted]"] });
+		expect(pwExtConsoleHook(undefined, true)).toEqual({
+			entries: ["[warning] ada@clinic.test token=[redacted]"],
+		});
+	});
+
 	it("bounds the buffer and each entry", () => {
 		const console = pageConsole();
 		pwExtConsoleHook();

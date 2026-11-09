@@ -218,6 +218,22 @@ describe("fill", () => {
 			expect(el<HTMLSelectElement>("#s").value).toBe("1");
 		});
 
+		it("matches an option by its label attribute, as the browser shows it", () => {
+			page(`<select id="s" aria-label="Doctor"><option value="">-</option><option value="1" label="Dr. Ada">fallback</option></select>`);
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "Dr. Ada" })).toEqual({
+				detail: expect.stringContaining("Dr. Ada"),
+			});
+			expect(el<HTMLSelectElement>("#s").value).toBe("1");
+		});
+
+		it("refuses a secret value for a field that is not secret", () => {
+			page(SELECT);
+			const secret = "x".repeat(60);
+			const result = pwExtPageAction({ kind: "fill", target: "#s", value: secret, secret: true }, undefined, true);
+			expect(result).toEqual({ error: expect.stringContaining("only a password or secret field") });
+			expect(JSON.stringify(result)).not.toContain("xxxx");
+		});
+
 		it("refuses a multiple select", () => {
 			page(`<select id="s" multiple aria-label="Tags"><option>a</option></select>`);
 			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "a" })).toEqual({

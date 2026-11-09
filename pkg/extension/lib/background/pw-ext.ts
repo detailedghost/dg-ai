@@ -193,6 +193,8 @@ function cap(text: string): string {
 		: text;
 }
 
+const MAX_FILLED_SECRETS = 20;
+
 const SECRET_PAIR =
 	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
 
@@ -289,6 +291,15 @@ export function createPwExtHandler({
 	now?: () => number;
 	grants?: UnmaskGrants;
 }) {
+	const filled = new Map<string, string[]>();
+	function remember(sessionId: string, request: PwExtRequest): string[] {
+		const held = filled.get(sessionId) ?? [];
+		if (request.verb !== "fill" || !request.secret) return held;
+		const next = [...held.filter((value) => value !== request.value), request.value as string].slice(-MAX_FILLED_SECRETS);
+		filled.set(sessionId, next);
+		return next;
+	}
+
 	const ok = (text: string, image?: string): PwExtResult => ({
 		ok: true,
 		data: { text: clean(text), ...(image ? { image } : {}) },
@@ -401,7 +412,7 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		const grant = await grants.active(context.sessionId, tab);
 		const unmasked = grant !== undefined;
-		const secrets = request.secret ? [request.value as string] : [];
+		const secrets = remember(context.sessionId, request);
 		const page = () => pageLines(tab, unmasked);
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
@@ -489,7 +500,7 @@ export function createPwExtHandler({
 			}
 			case "tools": {
 				const listed = webMcpResult(
-					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]),
+					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url, unmasked]),
 				);
 				if ("error" in listed) return failed(listed.error);
 				if (!("tools" in listed) || listed.tools.length === 0)
@@ -515,6 +526,7 @@ export function createPwExtHandler({
 							timeoutMs: TOOL_TIMEOUT_MS,
 						},
 						tab.url,
+						unmasked,
 					]),
 				);
 				if ("error" in called) return failed(called.error);
@@ -591,7 +603,7 @@ export function createPwExtHandler({
 				if ("detail" in result)
 					return shown([`### Result`, result.detail, ...page()].join("\n"));
 				if ("entries" in result) {
-					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url])) as
+					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url, unmasked])) as
 						| { entries?: unknown }
 						| undefined;
 					const warnings = Array.isArray(hooked?.entries)
@@ -670,7 +682,7 @@ export function createPwExtHandler({
 				ok: false,
 				error: clean(
 					`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
-					{ secrets: request.verb === "fill" && request.secret ? [request.value as string] : [] },
+					{ secrets: remember(context.sessionId, request) },
 				).slice(0, 2048),
 			};
 		}
