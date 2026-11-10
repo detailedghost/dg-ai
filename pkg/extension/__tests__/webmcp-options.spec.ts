@@ -36,7 +36,13 @@ function change(target: Element): void {
 	target.dispatchEvent(new view.Event("change"));
 }
 
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+let inFlight = 0;
+
+async function settle(): Promise<void> {
+	do {
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+	} while (inFlight > 0);
+}
 
 async function mount({ available = true } = {}) {
 	const window = new Window();
@@ -51,7 +57,12 @@ async function mount({ available = true } = {}) {
 		available,
 		request: async (message) => {
 			messages.push(message);
-			return handleWebMcpRequest(scripts, message);
+			inFlight++;
+			try {
+				return await handleWebMcpRequest(scripts, message);
+			} finally {
+				inFlight--;
+			}
 		},
 	});
 	await settle();
