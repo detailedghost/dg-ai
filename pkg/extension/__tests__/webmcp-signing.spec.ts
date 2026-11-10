@@ -83,3 +83,72 @@ describe("loadSigningKey", () => {
 		expect(await two.verify(bytes("p"), await one.sign(bytes("p")))).toBe(false);
 	});
 });
+
+describe("loadSigningKey persistence", () => {
+	function abortingFactory(counters: { opens: number }): IDBFactory {
+		const request = <T>(result: T) => {
+			const pending: { result: T; onsuccess?: () => void; onerror?: () => void } = { result };
+			queueMicrotask(() => pending.onsuccess?.());
+			return pending;
+		};
+		const tx: { oncomplete?: () => void; onabort?: () => void; onerror?: () => void; error: Error | null; objectStore(): unknown } = {
+			error: new Error("quota exceeded"),
+			objectStore: () => ({
+				get: () => request(undefined),
+				put: () => {
+					setTimeout(() => tx.onabort?.(), 0);
+					return request("script-signing");
+				},
+			}),
+		};
+		const db = { transaction: () => tx, close: () => undefined, createObjectStore: () => undefined };
+		return {
+			open: () => {
+				counters.opens++;
+				const opening: { result: unknown; onsuccess?: () => void; onupgradeneeded?: () => void } = { result: db };
+				queueMicrotask(() => opening.onsuccess?.());
+				return opening;
+			},
+		} as unknown as IDBFactory;
+	}
+
+	it("rejects when the transaction aborts after the put succeeded", async () => {
+		await expect(loadSigningKey(abortingFactory({ opens: 0 }))).rejects.toThrow("quota exceeded");
+	});
+
+	it("caches nothing from an aborted load and retries on the next call", async () => {
+		const counters = { opens: 0 };
+		const factory = abortingFactory(counters);
+		const signer = createWebMcpSigner({ loadKey: () => loadSigningKey(factory) });
+
+		await expect(signer.sign(bytes("a"))).rejects.toThrow("quota exceeded");
+		await expect(signer.sign(bytes("a"))).rejects.toThrow("quota exceeded");
+
+		expect(counters.opens).toBe(2);
+	});
+
+	it("resolves a stored key only after the transaction completes", async () => {
+		const factory = new IDBFactory();
+		await loadSigningKey(factory);
+		const events: string[] = [];
+		const original = factory.open.bind(factory);
+		factory.open = ((name: string, version?: number) => {
+			const opening = original(name, version);
+			opening.addEventListener("success", () => {
+				const db = opening.result;
+				const transaction = db.transaction.bind(db);
+				db.transaction = ((...args: Parameters<typeof transaction>) => {
+					const tx = transaction(...args);
+					tx.addEventListener("complete", () => events.push("complete"));
+					return tx;
+				}) as typeof db.transaction;
+			});
+			return opening;
+		}) as typeof factory.open;
+
+		await loadSigningKey(factory);
+		events.push("resolved");
+
+		expect(events).toEqual(["complete", "resolved"]);
+	});
+});

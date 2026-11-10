@@ -30,11 +30,17 @@ export async function loadSigningKey(factory: IDBFactory = indexedDB): Promise<C
 	try {
 		const candidate = await crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 		const tx = db.transaction(STORE, "readwrite");
+		const committed = new Promise<void>((resolve, reject) => {
+			tx.oncomplete = () => resolve();
+			tx.onabort = () => reject(tx.error ?? new Error("The signing key was not saved"));
+			tx.onerror = () => reject(tx.error ?? new Error("The signing key was not saved"));
+		});
+		committed.catch(() => undefined);
 		const store = tx.objectStore(STORE);
 		const existing = await settled(store.get(KEY_ID));
-		if (existing) return existing as CryptoKey;
-		await settled(store.put(candidate, KEY_ID));
-		return candidate;
+		if (!existing) await settled(store.put(candidate, KEY_ID));
+		await committed;
+		return (existing as CryptoKey | undefined) ?? candidate;
 	} finally {
 		db.close();
 	}
