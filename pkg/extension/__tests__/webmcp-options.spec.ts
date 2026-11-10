@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
 import { mountWebMcpScriptsPanel } from "../entrypoints/options/webmcp-scripts";
-import { createWebMcpScripts } from "@/lib/background/webmcp-scripts";
+import { createWebMcpScripts, handleWebMcpRequest } from "@/lib/background/webmcp-scripts";
 
 const windows = new Set<Window>();
 
@@ -46,11 +46,13 @@ async function mount({ available = true } = {}) {
 	document.body.appendChild(container);
 	const storage = memoryStorage();
 	const scripts = createWebMcpScripts({ storage, scripting: null, userScripts: null, newId: () => "s1" });
-	const messages: unknown[] = [];
+	const messages: { type: string; [key: string]: unknown }[] = [];
 	mountWebMcpScriptsPanel(container, {
-		scripts,
 		available,
-		sendMessage: async (message) => void messages.push(message),
+		request: async (message) => {
+			messages.push(message);
+			return handleWebMcpRequest(scripts, message);
+		},
 	});
 	await settle();
 	const q = <T extends Element>(selector: string) => container.querySelector(selector) as unknown as T;
@@ -69,7 +71,8 @@ async function mount({ available = true } = {}) {
 		button("Add script").click();
 		await settle();
 	};
-	return { container, scripts, storage, messages, q, button, add };
+	const writes = () => messages.filter((message) => !["dg-webmcp:list", "dg-webmcp:code"].includes(message.type));
+	return { container, scripts, storage, messages, writes, q, button, add };
 }
 
 describe("web mcp scripts panel", () => {
@@ -111,7 +114,7 @@ describe("web mcp scripts panel", () => {
 	});
 
 	it("adds a script as needs approval with the first 12 hex of its hash and no message sent before the write", async () => {
-		const { q, add, messages } = await mount();
+		const { q, add, writes } = await mount();
 
 		await add();
 
@@ -120,7 +123,15 @@ describe("web mcp scripts panel", () => {
 		expect(row.textContent).toContain("https://deals.example.com/*");
 		expect(row.textContent).toContain("needs approval");
 		expect(row.querySelector("[data-webmcp-sha]")?.textContent).toMatch(/^[0-9a-f]{12}$/);
-		expect(messages).toEqual([{ type: "dg-webmcp:reconcile" }]);
+		expect(writes()).toEqual([
+			{
+				type: "dg-webmcp:add",
+				name: "Flights",
+				matches: ["https://flights.example.com/*", "https://deals.example.com/*"],
+				code: "registerDgTool({});",
+				source: "paste",
+			},
+		]);
 	});
 
 	it("approves, then toggles Disable and Enable and shows the status", async () => {
@@ -176,7 +187,7 @@ describe("web mcp scripts panel", () => {
 	});
 
 	it("toggles the built-in through its checkbox", async () => {
-		const { q, scripts, messages } = await mount();
+		const { q, scripts, writes } = await mount();
 		const box = q<HTMLInputElement>('[data-webmcp-row="outlook"] input[type="checkbox"]');
 
 		box.checked = false;
@@ -184,7 +195,7 @@ describe("web mcp scripts panel", () => {
 		await settle();
 
 		expect((await scripts.list())[0]?.enabled).toBe(false);
-		expect(messages).toEqual([{ type: "dg-webmcp:reconcile" }]);
+		expect(writes()).toEqual([{ type: "dg-webmcp:set-enabled", id: "outlook", enabled: false }]);
 	});
 
 	it("replaces the code from a chosen file and returns the row to needs approval", async () => {
@@ -223,8 +234,8 @@ describe("web mcp scripts panel", () => {
 		});
 	});
 
-	it("sends one reconcile message per change: add, approve, disable, enable, replace and remove", async () => {
-		const { q, add, button, messages } = await mount();
+	it("sends the matching message for add, approve, disable, enable, replace and remove", async () => {
+		const { q, add, button, writes } = await mount();
 		await add();
 		button("Approve").click();
 		await settle();
@@ -239,12 +250,20 @@ describe("web mcp scripts panel", () => {
 		button("Remove").click();
 		await settle();
 
-		expect(messages).toHaveLength(6);
-		expect(messages.every((message) => (message as { type: string }).type === "dg-webmcp:reconcile")).toBe(true);
+		const sha = (writes()[1] as unknown as { sha256: string }).sha256;
+		expect(sha).toMatch(/^[0-9a-f]{64}$/);
+		expect(writes().map(({ type, ...rest }) => [type, rest])).toEqual([
+			["dg-webmcp:add", expect.any(Object)],
+			["dg-webmcp:approve", { id: "s1", sha256: sha }],
+			["dg-webmcp:set-enabled", { id: "s1", enabled: false }],
+			["dg-webmcp:set-enabled", { id: "s1", enabled: true }],
+			["dg-webmcp:replace", { id: "s1", code: "n();" }],
+			["dg-webmcp:remove", { id: "s1" }],
+		]);
 	});
 
 	it("shows the rejection message and sends nothing when add fails", async () => {
-		const { container, q, button, messages } = await mount();
+		const { container, q, button, writes, scripts } = await mount();
 		(q<HTMLInputElement>("[data-webmcp-name]")).value = "Bad";
 		(q<HTMLTextAreaElement>("[data-webmcp-sites]")).value = "<all_urls>";
 		(q<HTMLTextAreaElement>("[data-webmcp-code]")).value = "x();";
@@ -253,7 +272,8 @@ describe("web mcp scripts panel", () => {
 		await settle();
 
 		expect(container.querySelector('[role="status"]')?.textContent).toContain("match pattern");
-		expect(messages).toEqual([]);
+		expect(writes().map((message) => message.type)).toEqual(["dg-webmcp:add"]);
+		expect(await scripts.list()).toHaveLength(1);
 	});
 
 	it("renders a hostile script name as text, not markup", async () => {
@@ -266,12 +286,22 @@ describe("web mcp scripts panel", () => {
 		expect(row.textContent).toContain('<img src=x onerror="boom()">');
 	});
 
+	it("reads records and code only through list and code messages", async () => {
+		const { messages, add } = await mount();
+		await add();
+
+		const types = new Set(messages.map((message) => message.type));
+
+		expect(types.has("dg-webmcp:list")).toBe(true);
+		expect(types.has("dg-webmcp:code")).toBe(true);
+	});
+
 	it("never touches scripting or userScripts itself", () => {
 		const source = require("node:fs").readFileSync(
 			new URL("../entrypoints/options/webmcp-scripts.ts", import.meta.url),
 			"utf8",
 		) as string;
 
-		expect(source).not.toMatch(/registerContentScripts|userScripts|innerHTML/);
+		expect(source).not.toMatch(/registerContentScripts|userScripts|innerHTML|storage/);
 	});
 });

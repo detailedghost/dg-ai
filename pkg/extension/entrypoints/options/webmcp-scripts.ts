@@ -1,17 +1,13 @@
 import { describeError, type WebMcpScriptRecord } from "@dg/common";
-import {
-	WEBMCP_RECONCILE_MESSAGE,
-	type WebMcpScripts,
-} from "@/lib/background/webmcp-scripts";
+import { WEBMCP_MESSAGES, type WebMcpReply } from "@/lib/background/webmcp-scripts";
 import { failStatus, flashStatus } from "@/lib/ui-helpers";
 
 export const WEBMCP_UNAVAILABLE_NOTE =
 	"Third-party scripts need Chrome 120 or newer and the Allow User Scripts toggle for dg-ai-extension on chrome://extensions (Developer mode before Chrome 138).";
 
 export type MountWebMcpScriptsPanelOptions = {
-	scripts: WebMcpScripts;
 	available: boolean;
-	sendMessage?: (message: { type: string }) => Promise<unknown>;
+	request?: (message: { type: string; [key: string]: unknown }) => Promise<unknown>;
 };
 
 type ChosenFile = { name: string; text(): Promise<string> };
@@ -23,13 +19,16 @@ function statusOf(record: WebMcpScriptRecord): "approved" | "needs approval" | "
 
 export function mountWebMcpScriptsPanel(
 	container: HTMLElement,
-	{
-		scripts,
-		available,
-		sendMessage = (message) => browser.runtime.sendMessage(message),
-	}: MountWebMcpScriptsPanelOptions,
+	{ available, request = (message) => browser.runtime.sendMessage(message) }: MountWebMcpScriptsPanelOptions,
 ): void {
 	const doc = container.ownerDocument;
+
+	async function call<T = void>(message: { type: string; [key: string]: unknown }): Promise<T> {
+		const reply = (await request(message)) as WebMcpReply | undefined;
+		if (!reply) throw new Error("The extension background did not answer");
+		if (!reply.ok) throw new Error(reply.error);
+		return reply.value as T;
+	}
 
 	function el<K extends keyof HTMLElementTagNameMap>(
 		tag: K,
@@ -61,7 +60,6 @@ export function mountWebMcpScriptsPanel(
 	async function run(change: () => Promise<void>, done: string): Promise<boolean> {
 		try {
 			await change();
-			await sendMessage({ type: WEBMCP_RECONCILE_MESSAGE });
 			await render();
 			flashStatus(status, done);
 			return true;
@@ -91,7 +89,7 @@ export function mountWebMcpScriptsPanel(
 			box.type = "checkbox";
 			box.checked = record.enabled;
 			box.addEventListener("change", () => {
-				void run(() => scripts.setEnabled(record.id, box.checked), "Saved ✓");
+				void run(() => call({ type: WEBMCP_MESSAGES.setEnabled, id: record.id, enabled: box.checked }), "Saved ✓");
 			});
 			label.appendChild(box);
 			label.appendChild(doc.createTextNode(" Enabled"));
@@ -119,7 +117,7 @@ export function mountWebMcpScriptsPanel(
 			actions.appendChild(
 				button(
 					"Approve",
-					() => void run(() => scripts.approve(record.id, record.sha256), "Approved ✓"),
+					() => void run(() => call({ type: WEBMCP_MESSAGES.approve, id: record.id, sha256: record.sha256 }), "Approved ✓"),
 					!available,
 				),
 			);
@@ -128,12 +126,12 @@ export function mountWebMcpScriptsPanel(
 			actions.appendChild(
 				button(
 					enable ? "Enable" : "Disable",
-					() => void run(() => scripts.setEnabled(record.id, enable), "Saved ✓"),
+					() => void run(() => call({ type: WEBMCP_MESSAGES.setEnabled, id: record.id, enabled: enable }), "Saved ✓"),
 				),
 			);
 		}
 		actions.appendChild(
-			button("Remove", () => void run(() => scripts.remove(record.id), "Removed ✓")),
+			button("Remove", () => void run(() => call({ type: WEBMCP_MESSAGES.remove, id: record.id }), "Removed ✓")),
 		);
 		item.appendChild(actions);
 
@@ -143,17 +141,17 @@ export function mountWebMcpScriptsPanel(
 		replace.addEventListener("change", () => {
 			const file = (replace.files as unknown as ChosenFile[] | null)?.[0];
 			if (!file) return;
-			void run(async () => scripts.replaceCode(record.id, await file.text()), "Code replaced ✓");
+			void run(async () => call({ type: WEBMCP_MESSAGES.replace, id: record.id, code: await file.text() }), "Code replaced ✓");
 		});
 		item.appendChild(replace);
 		return item;
 	}
 
 	async function render(): Promise<void> {
-		const records = await scripts.list();
+		const records = await call<WebMcpScriptRecord[]>({ type: WEBMCP_MESSAGES.list });
 		const views = await Promise.all(
 			records.map((record) =>
-				record.source !== "built-in" && record.approvedAt === undefined ? scripts.code(record.id) : undefined,
+				record.source !== "built-in" && record.approvedAt === undefined ? call<string | undefined>({ type: WEBMCP_MESSAGES.code, id: record.id }) : undefined,
 			),
 		);
 		rows.replaceChildren(...records.map((record, index) => row(record, views[index])));
@@ -205,7 +203,8 @@ export function mountWebMcpScriptsPanel(
 			.filter(Boolean);
 		const added = await run(
 			async () => {
-				await scripts.addThirdParty({
+				await call({
+					type: WEBMCP_MESSAGES.add,
 					name: name.value.trim() || chosenName,
 					matches,
 					code: code.value,

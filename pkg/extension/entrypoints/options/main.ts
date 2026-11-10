@@ -18,11 +18,7 @@ import {
 } from "@/lib/config";
 import { failStatus, flashStatus } from "@/lib/ui-helpers";
 import { loadKokoro } from "@/utils/kokoro";
-import {
-	createWebMcpScripts,
-	userScriptsAvailable,
-	type WebMcpStorage,
-} from "@/lib/background/webmcp-scripts";
+import { userScriptsAvailable } from "@/lib/background/webmcp-scripts";
 import { mountAssetDirectoryPanel } from "./asset-directory";
 import { mountWebMcpScriptsPanel } from "./webmcp-scripts";
 import "./style.css";
@@ -193,11 +189,6 @@ mountAssetDirectoryPanel($<HTMLElement>("assetDirectoryPanel"), {
 });
 
 mountWebMcpScriptsPanel($<HTMLElement>("webmcpScriptsPanel"), {
-	scripts: createWebMcpScripts({
-		storage: browser.storage as unknown as WebMcpStorage,
-		scripting: null,
-		userScripts: null,
-	}),
 	available: userScriptsAvailable(),
 });
 

@@ -3,13 +3,24 @@ import {
 	createSerialQueue,
 	describeError,
 	validateWebMcpScriptRecord,
+	WEBMCP_MAX_MATCHES,
 	WEBMCP_MAX_SCRIPTS,
 	WEBMCP_SCRIPT_MAX_BYTES,
 	type WebMcpScriptRecord,
 } from "@dg/common";
 import { defaultIsChromium } from "./pw-ext";
 
-export const WEBMCP_RECONCILE_MESSAGE = "dg-webmcp:reconcile";
+export const WEBMCP_MESSAGES = {
+	list: "dg-webmcp:list",
+	code: "dg-webmcp:code",
+	add: "dg-webmcp:add",
+	approve: "dg-webmcp:approve",
+	setEnabled: "dg-webmcp:set-enabled",
+	replace: "dg-webmcp:replace",
+	remove: "dg-webmcp:remove",
+} as const;
+
+export type WebMcpReply = { ok: true; value?: unknown } | { ok: false; error: string };
 
 const RECORDS_KEY = "webmcpScripts";
 const codeKey = (id: string) => `webmcpScriptCode:${id}`;
@@ -392,7 +403,66 @@ function chromiumUserScripts(): WebMcpUserScripts | null {
 	}
 }
 
-type ReconcileApi = {
+const ID_MAX_CHARS = 64;
+const SHA256_CHARS = 64;
+const NAME_MAX_CHARS = 100;
+const MATCH_MAX_CHARS = 200;
+
+function text(message: Record<string, unknown>, key: string, max: number): string {
+	const value = message[key];
+	if (typeof value !== "string" || value.length > max)
+		throw new Error(`Invalid request: ${key} must be text of at most ${max} characters`);
+	return value;
+}
+
+function matchList(message: Record<string, unknown>): string[] {
+	const value = message.matches;
+	if (
+		!Array.isArray(value) ||
+		value.length > WEBMCP_MAX_MATCHES ||
+		value.some((entry) => typeof entry !== "string" || entry.length > MATCH_MAX_CHARS)
+	)
+		throw new Error(`Invalid request: matches must be a list of at most ${WEBMCP_MAX_MATCHES} patterns`);
+	return value as string[];
+}
+
+async function dispatch(scripts: WebMcpScripts, message: Record<string, unknown>): Promise<unknown> {
+	switch (message.type) {
+		case WEBMCP_MESSAGES.list:
+			return scripts.list();
+		case WEBMCP_MESSAGES.code:
+			return scripts.code(text(message, "id", ID_MAX_CHARS));
+		case WEBMCP_MESSAGES.add:
+			return scripts.addThirdParty({
+				name: text(message, "name", NAME_MAX_CHARS),
+				matches: matchList(message),
+				code: text(message, "code", WEBMCP_SCRIPT_MAX_BYTES),
+				source: message.source === "file" ? "file" : "paste",
+			});
+		case WEBMCP_MESSAGES.approve:
+			return scripts.approve(text(message, "id", ID_MAX_CHARS), text(message, "sha256", SHA256_CHARS));
+		case WEBMCP_MESSAGES.setEnabled:
+			if (typeof message.enabled !== "boolean") throw new Error("Invalid request: enabled must be true or false");
+			return scripts.setEnabled(text(message, "id", ID_MAX_CHARS), message.enabled);
+		case WEBMCP_MESSAGES.replace:
+			return scripts.replaceCode(text(message, "id", ID_MAX_CHARS), text(message, "code", WEBMCP_SCRIPT_MAX_BYTES));
+		case WEBMCP_MESSAGES.remove:
+			return scripts.remove(text(message, "id", ID_MAX_CHARS));
+		default:
+			throw new Error("Unknown request");
+	}
+}
+
+/** Validates one options-page request and runs it through the shared registry. */
+export async function handleWebMcpRequest(scripts: WebMcpScripts, message: unknown): Promise<WebMcpReply> {
+	try {
+		return { ok: true, value: await dispatch(scripts, (message ?? {}) as Record<string, unknown>) };
+	} catch (error) {
+		return { ok: false, error: describeError(error) };
+	}
+}
+
+type RegistryApi = {
 	runtime: {
 		id: string;
 		getURL(path: string): string;
@@ -404,33 +474,35 @@ type ReconcileApi = {
 					message: unknown,
 					sender: { id?: string; url?: string },
 					sendResponse: (response?: unknown) => void,
-				) => undefined,
+				) => true | undefined,
 			): void;
 		};
 	};
 };
 
-/** The one place that registers scripts: runs reconcile on install, startup and a message from the options page. */
+const REQUEST_TYPES = new Set<string>(Object.values(WEBMCP_MESSAGES));
+
+/** The only writer of the script registry: serves the options page, and reconciles on install and startup. */
 export function registerWebMcpScripts({
-	api = browser as unknown as ReconcileApi,
+	api = browser as unknown as RegistryApi,
 	scripts = createWebMcpScripts({
 		storage: browser.storage as unknown as WebMcpStorage,
 		scripting: browser.scripting as unknown as WebMcpScripting,
 		userScripts: chromiumUserScripts,
 	}),
-}: { api?: ReconcileApi; scripts?: Pick<WebMcpScripts, "reconcile"> } = {}): void {
+}: { api?: RegistryApi; scripts?: WebMcpScripts } = {}): void {
 	const run = () => void scripts.reconcile();
 	api.runtime.onInstalled.addListener(run);
 	api.runtime.onStartup.addListener(run);
 	const page = api.runtime.getURL(OPTIONS_PAGE);
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-		if ((message as { type?: unknown } | undefined)?.type !== WEBMCP_RECONCILE_MESSAGE) return undefined;
+		const type = (message as { type?: unknown } | null)?.type;
+		if (typeof type !== "string" || !REQUEST_TYPES.has(type)) return undefined;
 		if (sender.id !== api.runtime.id || (sender.url ?? "").split(/[?#]/)[0] !== page) {
 			sendResponse(undefined);
 			return undefined;
 		}
-		run();
-		sendResponse(true);
-		return undefined;
+		void handleWebMcpRequest(scripts, message).then(sendResponse);
+		return true;
 	});
 }

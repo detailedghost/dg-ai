@@ -9,7 +9,6 @@ import {
 	createWebMcpScripts,
 	registerWebMcpScripts,
 	userScriptsAvailable,
-	WEBMCP_RECONCILE_MESSAGE,
 } from "@/lib/background/webmcp-scripts";
 
 const sha = (code: string) => createHash("sha256").update(code).digest("hex");
@@ -722,14 +721,24 @@ describe("userScriptsAvailable", () => {
 
 describe("registerWebMcpScripts", () => {
 	const OPTIONS_URL = "chrome-extension://abc/options.html";
+	const OPTIONS = { id: "abc", url: OPTIONS_URL };
+	type Sender = { id?: string; url?: string };
 
 	function boot() {
 		const listeners = {
 			installed: [] as (() => void)[],
 			startup: [] as (() => void)[],
-			message: [] as ((message: unknown, sender: { id?: string; url?: string }, reply: (value?: unknown) => void) => unknown)[],
+			message: [] as ((message: unknown, sender: Sender, reply: (value?: unknown) => void) => unknown)[],
 		};
-		let reconciles = 0;
+		const harness = setup();
+		const reconciled = { count: 0 };
+		const scripts = {
+			...harness.scripts,
+			reconcile: async () => {
+				reconciled.count++;
+				await harness.scripts.reconcile();
+			},
+		};
 		registerWebMcpScripts({
 			api: {
 				runtime: {
@@ -740,56 +749,135 @@ describe("registerWebMcpScripts", () => {
 					onMessage: { addListener: (listener) => void listeners.message.push(listener) },
 				},
 			},
-			scripts: { reconcile: async () => void reconciles++ },
+			scripts,
 		});
-		const send = (sender: { id?: string; url?: string }, message: unknown = { type: WEBMCP_RECONCILE_MESSAGE }) => {
-			let reply: unknown = "unset";
-			for (const listener of listeners.message) listener(message, sender, (value) => (reply = value));
-			return reply;
+		const send = (sender: Sender, message: unknown) =>
+			new Promise<unknown>((resolve) => {
+				let kept = false;
+				for (const listener of listeners.message) kept = listener(message, sender, resolve) === true || kept;
+				if (!kept) resolve(undefined);
+			});
+		const validAdd = {
+			type: "dg-webmcp:add",
+			name: "Flights",
+			matches: ["https://flights.example.com/*"],
+			code: "registerDgTool({});",
 		};
-		return { listeners, send, reconciles: () => reconciles };
+		return { ...harness, listeners, send, reconciled, validAdd };
 	}
 
 	it("reconciles on install and on startup", () => {
-		const { listeners, reconciles } = boot();
+		const { listeners, reconciled } = boot();
 
 		listeners.installed[0]?.();
 		listeners.startup[0]?.();
 
-		expect(reconciles()).toBe(2);
+		expect(reconciled.count).toBe(2);
 	});
 
-	it("reconciles on a message from the options page, ignoring any query or hash", () => {
-		const { send, reconciles } = boot();
+	it("persists two concurrent add messages from the options page", async () => {
+		const { send, validAdd, scripts } = boot();
 
-		send({ id: "abc", url: `${OPTIONS_URL}?x=1#top` });
+		const replies = await Promise.all([
+			send({ ...OPTIONS, url: `${OPTIONS_URL}?x=1#top` }, { ...validAdd, name: "One" }),
+			send(OPTIONS, { ...validAdd, name: "Two" }),
+		]);
 
-		expect(reconciles()).toBe(1);
+		expect(replies.map((reply) => (reply as { ok: boolean }).ok)).toEqual([true, true]);
+		expect((await scripts.list()).map((record) => record.name)).toEqual(["Outlook on the web", "One", "Two"]);
 	});
 
-	it("ignores the message from a content script that shares the extension id", () => {
-		const { send, reconciles } = boot();
+	it("lists records and reads code for the options page", async () => {
+		const { send, validAdd } = boot();
+		const added = (await send(OPTIONS, validAdd)) as { value: { id: string } };
 
-		send({ id: "abc", url: "https://evil.example.com/page" });
+		const list = (await send(OPTIONS, { type: "dg-webmcp:list" })) as { ok: true; value: { id: string }[] };
+		const code = await send(OPTIONS, { type: "dg-webmcp:code", id: added.value.id });
 
-		expect(reconciles()).toBe(0);
+		expect(list.value.map((record) => record.id)).toEqual(["outlook", added.value.id]);
+		expect(code).toEqual({ ok: true, value: "registerDgTool({});" });
 	});
 
-	it("ignores the message from another extension and from a sender without a url", () => {
-		const { send, reconciles } = boot();
+	it("approves, toggles, replaces and removes through messages", async () => {
+		const { send, validAdd, scripts, calls } = boot();
+		const added = (await send(OPTIONS, validAdd)) as { value: { id: string; sha256: string } };
+		const { id, sha256 } = added.value;
 
-		send({ id: "other", url: OPTIONS_URL });
-		send({ id: "abc" });
+		await send(OPTIONS, { type: "dg-webmcp:approve", id, sha256 });
+		expect(calls.userRegister.map((script) => script.id)).toEqual([`dg-webmcp-user-${id}`]);
+		await send(OPTIONS, { type: "dg-webmcp:set-enabled", id, enabled: false });
+		expect((await scripts.list()).find((record) => record.id === id)?.enabled).toBe(false);
+		await send(OPTIONS, { type: "dg-webmcp:replace", id, code: "next();" });
+		expect((await scripts.list()).find((record) => record.id === id)?.approvedAt).toBeUndefined();
+		await send(OPTIONS, { type: "dg-webmcp:remove", id });
 
-		expect(reconciles()).toBe(0);
+		expect((await scripts.list()).some((record) => record.id === id)).toBe(false);
 	});
 
-	it("ignores unrelated messages", () => {
-		const { send, reconciles } = boot();
+	it("reports a rejection as a plain error reply", async () => {
+		const { send } = boot();
 
-		send({ id: "abc", url: OPTIONS_URL }, { type: "dg-approval:get" });
-		send({ id: "abc", url: OPTIONS_URL }, null);
+		expect(await send(OPTIONS, { type: "dg-webmcp:remove", id: "outlook" })).toEqual({
+			ok: false,
+			error: "Built-in scripts cannot be removed",
+		});
+	});
 
-		expect(reconciles()).toBe(0);
+	it.each([
+		["a non-string name", { name: 5 }],
+		["matches that are not an array", { matches: "https://a.example.com/*" }],
+		["a non-string match", { matches: [5] }],
+		["too many matches", { matches: Array.from({ length: 11 }, (_, index) => `https://a${index}.example.com/*`) }],
+		["non-string code", { code: { x: 1 } }],
+		["code over the size limit", { code: "a".repeat(WEBMCP_SCRIPT_MAX_BYTES + 1) }],
+	])("refuses an add with %s and stores nothing", async (_label, override) => {
+		const { send, validAdd, scripts } = boot();
+
+		const reply = (await send(OPTIONS, { ...validAdd, ...override })) as { ok: boolean; error: string };
+
+		expect(reply.ok).toBe(false);
+		expect(reply.error).toEqual(expect.any(String));
+		expect((await scripts.list()).map((record) => record.id)).toEqual(["outlook"]);
+	});
+
+	it.each([
+		["approve without a string id", { type: "dg-webmcp:approve", id: 1, sha256: "a" }],
+		["approve without a string sha256", { type: "dg-webmcp:approve", id: "s1", sha256: 1 }],
+		["set-enabled with a non-boolean", { type: "dg-webmcp:set-enabled", id: "outlook", enabled: "yes" }],
+		["replace with non-string code", { type: "dg-webmcp:replace", id: "s1", code: 1 }],
+		["remove without an id", { type: "dg-webmcp:remove" }],
+	])("refuses %s", async (_label, message) => {
+		const { send } = boot();
+
+		const reply = (await send(OPTIONS, message)) as { ok: boolean };
+
+		expect(reply.ok).toBe(false);
+	});
+
+	it("ignores a message from a content script that shares the extension id and changes nothing", async () => {
+		const { send, validAdd, scripts } = boot();
+
+		const reply = await send({ id: "abc", url: "https://evil.example.com/page" }, validAdd);
+
+		expect(reply).toBeUndefined();
+		expect((await scripts.list()).map((record) => record.id)).toEqual(["outlook"]);
+	});
+
+	it("ignores another extension and a sender without a url", async () => {
+		const { send, validAdd, scripts } = boot();
+
+		expect(await send({ id: "other", url: OPTIONS_URL }, validAdd)).toBeUndefined();
+		expect(await send({ id: "abc" }, validAdd)).toBeUndefined();
+		expect((await scripts.list()).map((record) => record.id)).toEqual(["outlook"]);
+	});
+
+	it("ignores unrelated messages and the retired reconcile message", async () => {
+		const { send, reconciled } = boot();
+
+		await send(OPTIONS, { type: "dg-approval:get" });
+		await send(OPTIONS, null);
+		await send(OPTIONS, { type: "dg-webmcp:reconcile" });
+
+		expect(reconciled.count).toBe(0);
 	});
 });
