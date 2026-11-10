@@ -52,20 +52,31 @@ describe("unmask grants", () => {
 	it("keeps secret fill values in session storage and refuses more past the cap", async () => {
 		const storage = memoryStorage();
 		const grants = createUnmaskGrants({ storage, now: () => 0 });
-		for (let i = 0; i < MAX_FILLED_SECRETS; i++) expect(await grants.remember("s1", `v${i}`)).toBe(true);
-		expect(await grants.remember("s1", "v0")).toBe(true);
-		expect(await grants.remember("s1", "one-more")).toBe(false);
+		for (let i = 0; i < MAX_FILLED_SECRETS; i++) expect(await grants.reserve("s1", `v${i}`)).toBe("added");
+		expect(await grants.reserve("s1", "v0")).toBe("held");
+		expect(await grants.reserve("s1", "one-more")).toBe("full");
 		const restarted = createUnmaskGrants({ storage, now: () => 0 });
 		expect(await restarted.secrets("s1")).toHaveLength(MAX_FILLED_SECRETS);
 		expect(await restarted.secrets("s2")).toEqual([]);
+	});
+
+	it("releases one reserved secret and keeps the others", async () => {
+		const storage = memoryStorage();
+		const grants = createUnmaskGrants({ storage, now: () => 0 });
+		await grants.reserve("s1", "orchid-maple");
+		await grants.reserve("s1", "kept-value");
+		await grants.release("s1", "orchid-maple");
+		expect(await grants.secrets("s1")).toEqual(["kept-value"]);
+		await grants.release("s1", "kept-value");
+		expect(storage.data).toEqual({});
 	});
 
 	it("forgets every grant and secret of an ended session", async () => {
 		const storage = memoryStorage();
 		const grants = createUnmaskGrants({ storage, now: () => 0 });
 		await grants.grant("s1", { origin: "https://app.example.test", groupId: 10, until: 5_000 });
-		await grants.remember("s1", "hunter2");
-		await grants.remember("s2", "kept");
+		await grants.reserve("s1", "hunter2");
+		await grants.reserve("s2", "kept");
 		await grants.forget("s1");
 		expect(await grants.active("s1", TAB)).toBeUndefined();
 		expect(await grants.secrets("s1")).toEqual([]);

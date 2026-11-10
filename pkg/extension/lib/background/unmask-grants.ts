@@ -60,14 +60,25 @@ export function createUnmaskGrants({
 			});
 		},
 
-		/** Remembers a secret fill value; returns false when the session is full. */
-		remember(sessionId: string, secret: string): Promise<boolean> {
+		/** Holds a secret fill value for masking before the fill runs. */
+		reserve(sessionId: string, secret: string): Promise<"added" | "held" | "full"> {
 			return serial(async () => {
 				const held = await secrets(sessionId);
-				if (held.includes(secret)) return true;
-				if (held.length >= MAX_FILLED_SECRETS) return false;
+				if (held.includes(secret)) return "held";
+				if (held.length >= MAX_FILLED_SECRETS) return "full";
 				await storage.session.set({ [secretsKey(sessionId)]: [...held, secret] });
-				return true;
+				return "added";
+			});
+		},
+
+		/** Drops a reserved secret whose fill is known not to have changed the page. */
+		release(sessionId: string, secret: string): Promise<void> {
+			return serial(async () => {
+				const held = await secrets(sessionId);
+				const kept = held.filter((value) => value !== secret);
+				if (kept.length === held.length) return;
+				if (kept.length) await storage.session.set({ [secretsKey(sessionId)]: kept });
+				else await storage.session.remove(secretsKey(sessionId));
 			});
 		},
 

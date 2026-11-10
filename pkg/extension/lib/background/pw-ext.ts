@@ -303,13 +303,6 @@ export function createPwExtHandler({
 	now?: () => number;
 	grants?: UnmaskGrants;
 }) {
-	async function heldWith(sessionId: string, filling: string | undefined): Promise<string[]> {
-		const stored = await grants.secrets(sessionId);
-		if (filling === undefined || stored.includes(filling)) return stored;
-		if (stored.length >= MAX_FILLED_SECRETS) throw new Refusal(SECRETS_FULL);
-		return [filling, ...stored];
-	}
-
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
 		if (result.ok)
 			return { ...result, data: { ...result.data, text: cap(redactLiterals(result.data.text, secrets)) } };
@@ -445,8 +438,16 @@ export function createPwExtHandler({
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
 		const filling = request.verb === "fill" && request.secret ? (request.value as string) : undefined;
-		const secrets = await heldWith(context.sessionId, filling);
-		if (signal?.aborted) return CANCELED;
+		const reserved = filling === undefined ? "held" : await grants.reserve(context.sessionId, filling);
+		if (reserved === "full") throw new Refusal(SECRETS_FULL);
+		const release = async () => {
+			if (reserved === "added") await grants.release(context.sessionId, filling as string);
+		};
+		const secrets = await grants.secrets(context.sessionId);
+		if (signal?.aborted) {
+			await release();
+			return CANCELED;
+		}
 		const page = () => pageLines(tab, unmasked);
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
@@ -621,9 +622,10 @@ export function createPwExtHandler({
 								}
 							: { kind: request.verb };
 				const result = await inPage(tab, action, unmasked, secrets);
-				if ("error" in result) return failed(result.error);
-				if (filling !== undefined && !(await grants.remember(context.sessionId, filling)))
-					throw new Refusal(SECRETS_FULL);
+				if ("error" in result) {
+					await release();
+					return failed(result.error);
+				}
 				if ("tree" in result)
 					return shown(
 						[

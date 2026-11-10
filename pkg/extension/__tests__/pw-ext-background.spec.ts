@@ -1290,9 +1290,7 @@ describe("pw --ext unmask", () => {
 			ok: false,
 			error: expect.stringContaining("fill only a password or secret field"),
 		});
-		expect(h.fake.raw.storage.session.set.mock.calls.flat()).not.toContainEqual(
-			expect.objectContaining({ [`pwExtSecrets:${SESSION}`]: expect.anything() }),
-		);
+		expect(await h.fake.api.storage.session.get(`pwExtSecrets:${SESSION}`)).toEqual({});
 		options.pageResult = { tree: 'text "orchid-maple test"', text: "orchid-maple test" };
 		await h.run({ verb: "unmask", off: true });
 		const after = await h.run({ verb: "snapshot" });
@@ -1300,20 +1298,29 @@ describe("pw --ext unmask", () => {
 		expect(h.executed().at(-1)?.args[3]).toEqual([]);
 	});
 
-	it("holds a secret only after the fill succeeds", async () => {
+	it("holds a secret before the fill runs, so a lost page reply still masks it later", async () => {
 		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
 		await h.run({ verb: "unmask", minutes: 15 });
-		const set = h.fake.raw.storage.session.set;
-		const stored = () =>
-			set.mock.calls.some(([items]) => Object.hasOwn(items as object, `pwExtSecrets:${SESSION}`));
-		let storedBeforeFill: boolean | undefined;
-		h.fake.state.script = () => {
-			storedBeforeFill = stored();
-			return { detail: "filled" };
+		let heldAtFill: unknown;
+		h.fake.state.script = (details) => {
+			heldAtFill = (details as { args: unknown[] }).args[3];
+			throw new Error("the page reply was lost");
 		};
+		expect((await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true })).ok).toBe(false);
+		expect(heldAtFill).toEqual(["orchid-maple"]);
+		h.fake.state.script = () => ({ tree: 'text "orchid-maple"', text: "orchid-maple" });
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("orchid-maple");
+	});
+
+	it("keeps an already held secret when a later fill of it is refused", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
 		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
-		expect(storedBeforeFill).toBe(false);
-		expect(stored()).toBe(true);
+		options.pageResult = { error: "#pw cannot be filled." };
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		options.pageResult = { tree: 'text "orchid-maple"', text: "orchid-maple" };
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("orchid-maple");
 	});
 
 	it.each(["x", "ab", "abc", "a \t\n "])("refuses a secret fill value shorter than 4 characters (%p)", async (value) => {
