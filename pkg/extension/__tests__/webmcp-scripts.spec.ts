@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import {
 	WEBMCP_MAX_SCRIPTS,
@@ -81,7 +81,7 @@ function setup({ userScripts = true, failIds = [] as string[], probeFails = fals
 		createWebMcpScripts({
 			storage,
 			scripting: registrars ? scripting : null,
-			userScripts: registrars && userScripts ? userScriptsApi : null,
+			userScripts: registrars && userScripts ? () => userScriptsApi : null,
 			newId: () => `s${++counter}`,
 			now: () => 1000,
 		});
@@ -578,6 +578,101 @@ describe("reconcile userScripts probe", () => {
 
 		expect(calls.userRegister).toEqual([]);
 		expect(calls.register.map((script) => script.id)).toContain("dg-webmcp-outlook");
+	});
+});
+
+describe("serialized mutations", () => {
+	it("keeps both writes when two setEnabled calls overlap", async () => {
+		const { scripts } = setup();
+		const first = await scripts.addThirdParty(draft());
+		const second = await scripts.addThirdParty(draft({ name: "Second" }));
+		await approveNow(scripts, first.id);
+		await approveNow(scripts, second.id);
+
+		await Promise.all([scripts.setEnabled(first.id, false), scripts.setEnabled(second.id, false)]);
+
+		const records = await scripts.list();
+		expect(records.find((record) => record.id === first.id)?.enabled).toBe(false);
+		expect(records.find((record) => record.id === second.id)?.enabled).toBe(false);
+	});
+
+	it("keeps both results when an add overlaps a remove", async () => {
+		const { scripts } = setup();
+		const first = await scripts.addThirdParty(draft());
+
+		const [added] = await Promise.all([scripts.addThirdParty(draft({ name: "Second" })), scripts.remove(first.id)]);
+
+		expect((await scripts.list()).map((record) => record.id)).toEqual(["outlook", added.id]);
+	});
+
+	it("keeps rejecting for the caller while later calls still run", async () => {
+		const { scripts } = setup();
+
+		const results = await Promise.allSettled([scripts.remove("outlook"), scripts.addThirdParty(draft())]);
+
+		expect(results.map((result) => result.status)).toEqual(["rejected", "fulfilled"]);
+	});
+});
+
+describe("lazy userScripts", () => {
+	function lazy() {
+		const registered: string[] = [];
+		const api = {
+			register: async (scripts: { id: string }[]) => void registered.push(...scripts.map((script) => script.id)),
+			unregister: async () => undefined,
+			getScripts: async () => [] as { id: string }[],
+		};
+		let available = false;
+		const storage = memoryStorage();
+		const scripts = createWebMcpScripts({
+			storage,
+			scripting: null,
+			userScripts: () => (available ? api : undefined),
+			newId: () => "s1",
+			now: () => 1000,
+		});
+		return { scripts, registered, turnOn: () => void (available = true) };
+	}
+
+	it("registers an approved script on a later reconcile once the toggle is on", async () => {
+		const { scripts, registered, turnOn } = lazy();
+		const { id, sha256 } = await scripts.addThirdParty(draft());
+		await scripts.approve(id, sha256);
+		expect(registered).toEqual([]);
+
+		turnOn();
+		await scripts.reconcile();
+
+		expect(registered).toEqual([`dg-webmcp-user-${id}`]);
+	});
+
+	it("warns once naming the toggle when approved scripts cannot be registered", async () => {
+		const { scripts } = lazy();
+		const { id, sha256 } = await scripts.addThirdParty(draft());
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await scripts.approve(id, sha256);
+			warn.mockClear();
+			await scripts.reconcile();
+
+			expect(warn).toHaveBeenCalledTimes(1);
+			expect(String(warn.mock.calls[0]?.join(" "))).toContain("Allow User Scripts");
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("does not warn when no third-party script is approved", async () => {
+		const { scripts } = lazy();
+		await scripts.addThirdParty(draft());
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await scripts.reconcile();
+
+			expect(warn).not.toHaveBeenCalled();
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });
 

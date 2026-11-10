@@ -93,7 +93,7 @@ export function createWebMcpScripts({
 }: {
 	storage: WebMcpStorage;
 	scripting: WebMcpScripting | null;
-	userScripts: WebMcpUserScripts | null;
+	userScripts: (() => WebMcpUserScripts | null | undefined) | null;
 	digest?: (text: string) => Promise<string>;
 	newId?: () => string;
 	now?: () => number;
@@ -101,6 +101,17 @@ export function createWebMcpScripts({
 	const enqueue = createSerialQueue((error) =>
 		console.warn("[dg-ai-extension] web mcp reconcile failed", describeError(error)),
 	);
+	function locked<T>(task: () => Promise<T>): Promise<T> {
+		return new Promise<T>((resolve, reject) => {
+			void enqueue(async () => {
+				try {
+					resolve(await task());
+				} catch (error) {
+					reject(error);
+				}
+			});
+		});
+	}
 	const builtInIds = new Set<string>(BUILT_IN_SCRIPTS.map((script) => script.id));
 
 	async function readStored(): Promise<WebMcpScriptRecord[]> {
@@ -156,8 +167,18 @@ export function createWebMcpScripts({
 
 	const unregisterBuiltIn = (id: string) =>
 		scripting ? scripting.unregisterContentScripts({ ids: [id] }).catch(() => undefined) : Promise.resolve();
-	const unregisterUser = (id: string) =>
-		userScripts ? userScripts.unregister({ ids: [id] }).catch(() => undefined) : Promise.resolve();
+	function userRegistrar(): WebMcpUserScripts | null {
+		try {
+			return userScripts?.() ?? null;
+		} catch {
+			return null;
+		}
+	}
+	const unregisterUser = async (id: string): Promise<void> => {
+		await userRegistrar()
+			?.unregister({ ids: [id] })
+			.catch(() => undefined);
+	};
 
 	async function verifiedApprovals(stored: WebMcpScriptRecord[]): Promise<Map<string, string>> {
 		const verified = new Map<string, string>();
@@ -218,9 +239,9 @@ export function createWebMcpScripts({
 		registrar: WebMcpUserScripts,
 		records: WebMcpScriptRecord[],
 		approved: Map<string, string>,
-	): Promise<void> {
+	): Promise<boolean> {
 		const live = await liveIds(() => registrar.getScripts());
-		if (live === null) return;
+		if (live === null) return false;
 		const own = records.filter((record) => !builtInIds.has(record.id));
 		const wanted = new Map<string, WebMcpScriptRecord>(
 			own
@@ -248,97 +269,114 @@ export function createWebMcpScripts({
 				`registration of ${id} failed`,
 			);
 		}
+		return true;
 	}
 
 	async function runReconcile(): Promise<void> {
 		const approved = await verifiedApprovals(await readStored());
 		const records = merge(await readStored());
 		if (scripting) await reconcileBuiltIns(scripting, records);
-		if (userScripts) await reconcileThirdParty(userScripts, records, approved);
+		if (!userScripts) return;
+		const registrar = userRegistrar();
+		if (registrar && (await reconcileThirdParty(registrar, records, approved))) return;
+		if (approved.size > 0)
+			console.warn(
+				"[dg-ai-extension] web mcp third-party scripts skipped: turn on Allow User Scripts for dg-ai-extension on chrome://extensions",
+			);
 	}
 
-	const reconcile = () => enqueue(runReconcile);
+	const reconcile = () => locked(runReconcile);
 
 	return {
 		list: async () => merge(await readStored()),
 
 		code: storedCode,
 
-		async addThirdParty({ name, matches, code, source = "paste" }: WebMcpScriptDraft): Promise<WebMcpScriptRecord> {
-			if (source !== "paste" && source !== "file")
-				throw new Error("Third-party scripts use the paste or file source");
-			assertCodeSize(code);
-			const stored = await readStored();
-			if (stored.filter((record) => !builtInIds.has(record.id)).length >= WEBMCP_MAX_SCRIPTS)
-				throw new Error(`At most ${WEBMCP_MAX_SCRIPTS} third-party scripts are allowed`);
-			const record = validateWebMcpScriptRecord({
-				id: newId(),
-				name,
-				matches,
-				sha256: await digest(code),
-				source,
-				enabled: false,
+		addThirdParty({ name, matches, code, source = "paste" }: WebMcpScriptDraft): Promise<WebMcpScriptRecord> {
+			return locked(async () => {
+				if (source !== "paste" && source !== "file")
+					throw new Error("Third-party scripts use the paste or file source");
+				assertCodeSize(code);
+				const stored = await readStored();
+				if (stored.filter((record) => !builtInIds.has(record.id)).length >= WEBMCP_MAX_SCRIPTS)
+					throw new Error(`At most ${WEBMCP_MAX_SCRIPTS} third-party scripts are allowed`);
+				const record = validateWebMcpScriptRecord({
+					id: newId(),
+					name,
+					matches,
+					sha256: await digest(code),
+					source,
+					enabled: false,
+				});
+				await storage.local.set({ [codeKey(record.id)]: code });
+				await writeStored([...stored, record]);
+				return record;
 			});
-			await storage.local.set({ [codeKey(record.id)]: code });
-			await writeStored([...stored, record]);
-			return record;
 		},
 
-		async approve(id: string, expectedSha256: string): Promise<void> {
-			const record = await requireThirdParty(id);
-			const code = await storedCode(id);
-			if (code === undefined) throw new Error(`Script ${id} has no stored code`);
-			assertCodeSize(code);
-			const sha256 = await digest(code);
-			if (sha256 !== expectedSha256 || sha256 !== record.sha256) throw new Error(REVIEW_AGAIN);
-			await storage.local.set({ [approvalKey(id)]: await approvalDigest(code, record.matches) });
-			await mutate((records) =>
-				records.map((entry) => (entry.id === id ? { ...entry, enabled: true, approvedAt: now() } : entry)),
-			);
-			await reconcile();
-		},
-
-		async setEnabled(id: string, enabled: boolean): Promise<void> {
-			await mutate((records) => {
-				if (records.some((record) => record.id === id)) {
-					return records.map((record) => (record.id === id ? { ...record, enabled } : record));
-				}
-				const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
-				if (!builtIn) throw new Error(`Unknown script ${id}`);
-				return [
-					...records,
-					validateWebMcpScriptRecord({
-						...builtIn,
-						matches: [...builtIn.matches],
-						sha256: EMPTY_HASH,
-						source: "built-in",
-						enabled,
-					}),
-				];
+		approve(id: string, expectedSha256: string): Promise<void> {
+			return locked(async () => {
+				const record = await requireThirdParty(id);
+				const code = await storedCode(id);
+				if (code === undefined) throw new Error(`Script ${id} has no stored code`);
+				assertCodeSize(code);
+				const sha256 = await digest(code);
+				if (sha256 !== expectedSha256 || sha256 !== record.sha256) throw new Error(REVIEW_AGAIN);
+				await storage.local.set({ [approvalKey(id)]: await approvalDigest(code, record.matches) });
+				await mutate((records) =>
+					records.map((entry) => (entry.id === id ? { ...entry, enabled: true, approvedAt: now() } : entry)),
+				);
+				await runReconcile();
 			});
-			await reconcile();
 		},
 
-		async replaceCode(id: string, code: string): Promise<void> {
-			await requireThirdParty(id);
-			assertCodeSize(code);
-			const sha256 = await digest(code);
-			await storage.local.set({ [codeKey(id)]: code });
-			await storage.local.remove(approvalKey(id));
-			await mutate((records) =>
-				records.map((record) => (record.id === id ? { ...withoutApproval(record), sha256 } : record)),
-			);
-			await unregisterUser(`${USER_PREFIX}${id}`);
-			await reconcile();
+		setEnabled(id: string, enabled: boolean): Promise<void> {
+			return locked(async () => {
+				await mutate((records) => {
+					if (records.some((record) => record.id === id)) {
+						return records.map((record) => (record.id === id ? { ...record, enabled } : record));
+					}
+					const builtIn = BUILT_IN_SCRIPTS.find((script) => script.id === id);
+					if (!builtIn) throw new Error(`Unknown script ${id}`);
+					return [
+						...records,
+						validateWebMcpScriptRecord({
+							...builtIn,
+							matches: [...builtIn.matches],
+							sha256: EMPTY_HASH,
+							source: "built-in",
+							enabled,
+						}),
+					];
+				});
+				await runReconcile();
+			});
 		},
 
-		async remove(id: string): Promise<void> {
-			if (builtInIds.has(id)) throw new Error("Built-in scripts cannot be removed");
-			await requireThirdParty(id);
-			await mutate((records) => records.filter((record) => record.id !== id));
-			await storage.local.remove([codeKey(id), approvalKey(id)]);
-			await unregisterUser(`${USER_PREFIX}${id}`);
-			await reconcile();
+		replaceCode(id: string, code: string): Promise<void> {
+			return locked(async () => {
+				await requireThirdParty(id);
+				assertCodeSize(code);
+				const sha256 = await digest(code);
+				await storage.local.set({ [codeKey(id)]: code });
+				await storage.local.remove(approvalKey(id));
+				await mutate((records) =>
+					records.map((record) => (record.id === id ? { ...withoutApproval(record), sha256 } : record)),
+				);
+				await unregisterUser(`${USER_PREFIX}${id}`);
+				await runReconcile();
+			});
+		},
+
+		remove(id: string): Promise<void> {
+			return locked(async () => {
+				if (builtInIds.has(id)) throw new Error("Built-in scripts cannot be removed");
+				await requireThirdParty(id);
+				await mutate((records) => records.filter((record) => record.id !== id));
+				await storage.local.remove([codeKey(id), approvalKey(id)]);
+				await unregisterUser(`${USER_PREFIX}${id}`);
+				await runReconcile();
+			});
 		},
 
 		reconcile,
@@ -378,7 +416,7 @@ export function registerWebMcpScripts({
 	scripts = createWebMcpScripts({
 		storage: browser.storage as unknown as WebMcpStorage,
 		scripting: browser.scripting as unknown as WebMcpScripting,
-		userScripts: chromiumUserScripts(),
+		userScripts: chromiumUserScripts,
 	}),
 }: { api?: ReconcileApi; scripts?: Pick<WebMcpScripts, "reconcile"> } = {}): void {
 	const run = () => void scripts.reconcile();
