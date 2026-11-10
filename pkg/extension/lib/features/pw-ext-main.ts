@@ -1,10 +1,4 @@
-export type PwExtTool = {
-	name: string;
-	title?: string;
-	description: string;
-	inputSchema?: string;
-	annotations?: string;
-};
+import type { PwExtTool } from "@dg/common";
 
 export type PwExtWebMcpAction =
 	| { kind: "tools"; timeoutMs?: number }
@@ -170,17 +164,31 @@ export async function pwExtWebMcp(
 		if (api === "none") return { api, tools: [] };
 		if (changed()) return CHANGED;
 		const discoveryMs = action.kind === "call" ? action.timeoutMs : (action.timeoutMs ?? 10_000);
-		const raw: Raw[] = await withTimeout(
-			Promise.resolve(
-				modern
-					? modern.getTools()
-					: ((legacy?.listTools ?? legacy?.getTools)?.call(legacy) ?? []),
-			),
-			discoveryMs,
-			"WebMCP tool discovery",
-		);
+		const discover = async (): Promise<Raw[]> => {
+			const raw: Raw[] = await withTimeout(
+				Promise.resolve(
+					modern
+						? modern.getTools()
+						: ((legacy?.listTools ?? legacy?.getTools)?.call(legacy) ?? []),
+				),
+				discoveryMs,
+				"WebMCP tool discovery",
+			);
+			return Array.isArray(raw) ? raw.slice(0, MAX_TOOLS) : [];
+		};
+		let list = await discover();
 		if (changed()) return CHANGED;
-		const list = Array.isArray(raw) ? raw.slice(0, MAX_TOOLS) : [];
+		const registry = (globalThis as unknown as Record<symbol, { unregisterAll?: unknown } | undefined>)[
+			Symbol.for("dg.webmcp.tools")
+		];
+		if (
+			list.some((tool) => !/^dg_[a-z0-9]+_[a-z0-9_]+$/.test(String(tool.name))) &&
+			typeof registry?.unregisterAll === "function"
+		) {
+			registry.unregisterAll();
+			list = await discover();
+			if (changed()) return CHANGED;
+		}
 		if (action.kind === "tools") {
 			const tools: PwExtTool[] = list.map((tool) => {
 				const entry: PwExtTool = {
@@ -210,7 +218,7 @@ export async function pwExtWebMcp(
 		try {
 			const output = await Promise.race([
 				modern
-					? modern.executeTool(tool, action.args, { signal: controller.signal })
+					? modern.executeTool({ name: action.tool }, action.args, { signal: controller.signal })
 					: legacy!.executeTool(action.tool, JSON.stringify(action.args)),
 				timeout,
 			]);

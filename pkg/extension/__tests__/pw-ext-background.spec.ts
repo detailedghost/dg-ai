@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
+import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
 import {
@@ -54,6 +55,7 @@ type Options = {
 	windowState?: "normal" | "minimized" | "maximized";
 	approval?: "allow" | "deny" | "closed" | "timeout" | "unopened";
 	clock?: { now: number };
+	onApproval?: () => void;
 };
 
 type Executed = {
@@ -112,6 +114,7 @@ function harness(options: Options = {}) {
 		approvals: {
 			request: async (request) => {
 				approvalRequests.push(request);
+				options.onApproval?.();
 				return options.approval ?? "deny";
 			},
 		},
@@ -143,6 +146,8 @@ function harness(options: Options = {}) {
 		approvalRequests,
 		clock,
 		run: (request: PwExtRequest) => call(request),
+		runAs: (sessionId: string, request: PwExtRequest) =>
+			call(request, { sessionId, agentIdentity: IDENTITY, deleteAsset: async () => undefined, fetchAsset: async () => new Blob() }),
 		runWith:
 			(context: { fetchAsset(id: string): Promise<Blob> }) =>
 			(request: PwExtRequest) =>
@@ -1447,5 +1452,377 @@ describe("pw --ext unmask", () => {
 			error: expect.stringContaining("unmask ended"),
 		});
 		expect(h.executed()).toHaveLength(before);
+	});
+});
+
+describe("pw --ext WebMCP approval", () => {
+	const OWA = "https://outlook.live.com/mail/0/";
+	const owaTab = { ...WEB_TAB, url: OWA, title: "Mail" };
+	const ran = () => ({ api: "modelContext", output: "done" });
+
+	it("asks before dg_outlook_delete with the tool, origin and ids, and runs only after Allow", async () => {
+		const actions: unknown[] = [];
+		const h = harness({
+			tabs: [owaTab],
+			approval: "allow",
+			mainResult: (action) => {
+				actions.push(action);
+				return ran();
+			},
+		});
+		const answer = await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["AAMkADQ1="] } });
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({
+				title: "Allow dg_outlook_delete on https://outlook.live.com?",
+				origin: "https://outlook.live.com",
+				lines: expect.arrayContaining([`Agent: ${IDENTITY}`, 'Args: {"ids":["AAMkADQ1="]}']),
+			}),
+		]);
+		expect(actions).toHaveLength(1);
+		expect(answer.ok && answer.data.text).toContain("done");
+	});
+
+	it("returns the deny error and does not run the tool", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ tabs: [owaTab], approval: "deny", mainResult: (action) => void actions.push(action) });
+		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "The user denied dg_outlook_delete in the browser.",
+		});
+		expect(actions).toEqual([]);
+	});
+
+	it("returns the timeout error and does not run the tool", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ tabs: [owaTab], approval: "timeout", mainResult: (action) => void actions.push(action) });
+		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "No answer in the browser within 60 seconds; dg_outlook_delete did not run.",
+		});
+		expect(actions).toEqual([]);
+	});
+
+	it("asks again on a second call of an each-class tool", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } });
+		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } });
+		expect(h.approvalRequests).toHaveLength(2);
+	});
+
+	it("asks once per session for a session-class tool and again for another session", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		h.fake.seedRecord(recordOf({ sessionId: OTHER_SESSION, agentIdentity: IDENTITY, groupId: GROUP, selectedTabId: 7 }));
+		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } } as const;
+		await h.run(move);
+		await h.run(move);
+		expect(h.approvalRequests).toHaveLength(1);
+		await h.runAs(OTHER_SESSION, move);
+		expect(h.approvalRequests).toHaveLength(2);
+	});
+
+	it("asks again when the stored session grant names another tab group", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } } as const;
+		h.fake.api.storage.session.set({
+			[`webmcpGrants:${SESSION}`]: [{ origin: "https://outlook.live.com", tool: "dg_outlook_move", groupId: OTHER_GROUP }],
+		});
+		await h.run(move);
+		expect(h.approvalRequests).toHaveLength(1);
+	});
+
+	it("runs a read tool and a site tool without asking", async () => {
+		const h = harness({ tabs: [owaTab], approval: "deny", mainResult: ran });
+		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
+		expect((await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("asks every time for an unknown dg_ tool", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		await h.run({ verb: "call", tool: "dg_outlook_unknown", args: {} });
+		await h.run({ verb: "call", tool: "dg_outlook_unknown", args: {} });
+		expect(h.approvalRequests).toHaveLength(2);
+	});
+
+	it("refuses a dg_ name that fails the name rule, asks nothing and runs nothing", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ approval: "allow", mainResult: (action) => void actions.push(action) });
+		expect(await h.run({ verb: "call", tool: "dg_x", args: {} })).toEqual({
+			ok: false,
+			error: "Unknown dg tool name dg_x.",
+		});
+		expect(h.approvalRequests).toEqual([]);
+		expect(actions).toEqual([]);
+	});
+
+	it("returns CANCELED and runs nothing when the request aborts during approval", async () => {
+		const controller = new AbortController();
+		const actions: unknown[] = [];
+		const h = harness({
+			tabs: [owaTab],
+			approval: "allow",
+			signal: controller.signal,
+			onApproval: () => controller.abort(),
+			mainResult: (action) => void actions.push(action),
+		});
+		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "The request was canceled before it ran.",
+		});
+		expect(actions).toEqual([]);
+	});
+
+	it("clips the args line to 600 characters and says how many were cut", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		await h.run({ verb: "call", tool: "dg_outlook_delete", args: { note: "n".repeat(5_000) } });
+		const line = (h.approvalRequests[0] as { lines: string[] }).lines.find((entry) => entry.startsWith("Args: "));
+		expect(line).toMatch(/^Args: .{600} \(\d+ more characters not shown\)$/);
+	});
+
+	it("fails cleanly when the tab has no URL", async () => {
+		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
+		const tab = h.fake.tabs.get(7);
+		if (tab) delete (tab as { url?: string }).url;
+		expect((await h.run({ verb: "call", tool: "dg_outlook_delete", args: {} })).ok).toBe(false);
+		expect(h.approvalRequests).toEqual([]);
+	});
+});
+
+describe("pw --ext WebMCP on a mailbox tab", () => {
+	const protonTab = { ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox", title: "Inbox" };
+	const LISTING = {
+		api: "modelContext",
+		tools: [
+			{ name: "dg_outlook_list", description: "List mail for ada@clinic.test", inputSchema: '{"type":"object"}' },
+			{ name: "site_tool", description: "A site tool" },
+			{ name: "dg_x", description: "Too short a name" },
+			{ name: "dg_outlook_delete", description: "Delete mail" },
+		],
+	};
+
+	it("asks for dg_outlook_list on the Proton mailbox, since the Outlook script does not own that origin, and runs it only after Allow", async () => {
+		const actions: unknown[] = [];
+		const run = (approval: "allow" | "deny") => {
+			const h = harness({
+				tabs: [protonTab],
+				approval,
+				mainResult: (action) => {
+					actions.push(action);
+					return { api: "modelContext", output: "[]" };
+				},
+			});
+			return h;
+		};
+		const denied = run("deny");
+		expect((await denied.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(false);
+		expect(denied.approvalRequests).toHaveLength(1);
+		expect(actions).toEqual([]);
+		const allowed = run("allow");
+		expect((await allowed.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
+		expect(allowed.approvalRequests).toHaveLength(1);
+		expect(actions).toHaveLength(1);
+	});
+
+	it("asks every time for a dg_ tool on a foreign origin even when its table class is session", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, url: "https://evil.example/app" }],
+			approval: "allow",
+			mainResult: () => ({ api: "modelContext", output: "x" }),
+		});
+		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"] } });
+		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"] } });
+		expect(h.approvalRequests).toHaveLength(2);
+	});
+
+	it("asks nothing for dg_outlook_list on outlook.live.com", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
+			approval: "deny",
+			mainResult: () => ({ api: "modelContext", output: "[]" }),
+		});
+		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("replaces a page-sourced error on the mailbox tab with a fixed message", async () => {
+		const h = harness({
+			tabs: [protonTab],
+			approval: "allow",
+			mainResult: () => ({ error: "leak@x.com secret text" }),
+		});
+		const fixed = { ok: false as const, error: "The WebMCP tool failed on the protected mailbox tab." };
+		expect(await h.run({ verb: "tools" })).toEqual(fixed);
+		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual(fixed);
+	});
+
+	it("still asks for a destructive dg tool", async () => {
+		const h = harness({ tabs: [protonTab], approval: "deny", mainResult: () => ({ api: "modelContext", output: "x" }) });
+		expect((await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).ok).toBe(false);
+		expect(h.approvalRequests).toHaveLength(1);
+	});
+
+	it.each(["site_tool", "dg_x", "search_flights"])("refuses call %s with the mailbox error", async (tool) => {
+		const h = harness({ tabs: [protonTab], approval: "allow", mainResult: () => ({ api: "modelContext", output: "x" }) });
+		expect(await h.run({ verb: "call", tool, args: {} })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+		expect(h.approvalRequests).toEqual([]);
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("lists only dg_ names in text and data.tools", async () => {
+		const h = harness({ tabs: [protonTab], mainResult: () => LISTING });
+		const answer = await h.run({ verb: "tools" });
+		if (!answer.ok) throw new Error(answer.error);
+		expect(answer.data.tools?.map((tool) => tool.name)).toEqual(["dg_outlook_list", "dg_outlook_delete"]);
+		expect(answer.data.text).toContain("dg_outlook_list");
+		expect(answer.data.text).not.toContain("site_tool");
+		expect(answer.data.text).not.toContain("dg_x");
+		expect(answer.data.text).not.toContain("ada@clinic.test");
+		expect(JSON.stringify(answer.data.tools)).not.toContain("ada@clinic.test");
+	});
+
+	it("filters in the background, so the page function sees no name filter", async () => {
+		const h = harness({ tabs: [protonTab], mainResult: () => LISTING });
+		await h.run({ verb: "tools" });
+		expect(h.executed().at(-1)?.args[0]).toEqual({ kind: "tools" });
+	});
+
+	it("says there are no tools when the page lists none with a dg_ name", async () => {
+		const h = harness({
+			tabs: [protonTab],
+			mainResult: () => ({ api: "modelContext", tools: [{ name: "site_tool", description: "s" }] }),
+		});
+		const answer = await h.run({ verb: "tools" });
+		expect(answer.ok && answer.data.text).toContain("This page exposes no WebMCP tools.");
+		expect(answer.ok && answer.data.tools).toEqual([]);
+	});
+
+	it.each(["snapshot", "click", "fill", "count", "selection", "console", "screenshot", "unmask", "upload"] as const)(
+		"still refuses %s",
+		async (verb) => {
+			const h = harness({ tabs: [protonTab], approval: "allow" });
+			const request = {
+				snapshot: { verb: "snapshot" },
+				click: { verb: "click", target: "e1" },
+				fill: { verb: "fill", target: "e1", value: "x" },
+				count: { verb: "count", target: "e1" },
+				selection: { verb: "selection" },
+				console: { verb: "console" },
+				screenshot: { verb: "screenshot" },
+				unmask: { verb: "unmask", minutes: 5 },
+				upload: {
+					verb: "upload",
+					target: "#file",
+					assetId: "123e4567-e89b-42d3-a456-426614174000",
+					fileName: "f.txt",
+					fileSize: 1,
+					fileType: "text/plain",
+					filePath: "~/f.txt",
+				},
+			}[verb] as PwExtRequest;
+			expect(await h.run(request)).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+		},
+	);
+});
+
+describe("pw --ext tools verb data", () => {
+	it("returns data.tools beside the text on a normal page", async () => {
+		const h = harness({
+			mainResult: () => ({
+				api: "modelContext",
+				tools: [{ name: "search", description: "Search issues", inputSchema: '{"type":"object"}' }],
+			}),
+		});
+		const answer = await h.run({ verb: "tools" });
+		expect(answer).toEqual({
+			ok: true,
+			data: {
+				text: expect.stringContaining("- search: Search issues"),
+				tools: [{ name: "search", description: "Search issues", inputSchema: '{"type":"object"}' }],
+			},
+		});
+	});
+
+	it("redacts a token in data.tools the same as in the text", async () => {
+		const h = harness({
+			mainResult: () => ({
+				api: "modelContext",
+				tools: [{ name: "search", description: "Search with token=zzzzzzzzzzzz" }],
+			}),
+		});
+		const answer = await h.run({ verb: "tools" });
+		expect(JSON.stringify(answer)).not.toContain("zzzzzzzzzzzz");
+	});
+});
+
+describe("pw --ext call output", () => {
+	const OUTPUT = { api: "modelContext", output: '{"from":"ada@clinic.test"}' };
+
+	it("keeps an email address under an active unmask grant and redacts it without one", async () => {
+		const h = harness({
+			approval: "allow",
+			mainResult: () => OUTPUT,
+		});
+		const before = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		expect(JSON.stringify(before)).not.toContain("ada@clinic.test");
+		expect(JSON.stringify(before)).toContain("[redacted]");
+		await h.run({ verb: "unmask", minutes: 5 });
+		const after = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		expect(JSON.stringify(after)).toContain("ada@clinic.test");
+	});
+
+	it("passes an OWA item id through unchanged", async () => {
+		const id = "AAMkADQ1ZTI3LTc0OWUtNGMwNS1iYjJmLWQ5MGI4OGE4ZTM1NQBGAAAAAAAbc9WvQ1k3RYaQ0q7yB8HaBwDfDYlFqjH4QZxAu3SVPHaQAAAAAAEMAADfDYlFqjH4QZxAu3SVPHaQAAB5mYQmAAA=";
+		const h = harness({
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/" }],
+			mainResult: () => ({ api: "modelContext", output: JSON.stringify({ items: [{ id }] }) }),
+		});
+		const answer = await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		expect(answer.ok && answer.data.text).toContain(id);
+	});
+});
+
+describe("pw --ext data.tools redaction", () => {
+	const LISTING = {
+		api: "modelContext",
+		tools: [
+			{ name: "pick_hunter2secret", description: "d" },
+			{ name: "access_token=abc123xyz", description: "d" },
+			{ name: "plain", description: "mail ada@clinic.test" },
+		],
+	};
+
+	it("redacts a filled secret literal and a token pair in tool names, as the text does", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" }, mainResult: () => LISTING });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: "hunter2secret", secret: true });
+		const answer = await h.run({ verb: "tools" });
+		if (!answer.ok) throw new Error(answer.error);
+		const dump = JSON.stringify(answer.data.tools);
+		expect(dump).not.toContain("hunter2secret");
+		expect(dump).not.toContain("abc123xyz");
+		expect(answer.data.text).not.toContain("hunter2secret");
+	});
+
+	it("redacts emails in data.tools when the unmask grant ends during the request", async () => {
+		const clock = { now: Date.UTC(2026, 10, 9, 15, 0) };
+		const h = harness({
+			approval: "allow",
+			clock,
+			mainResult: () => {
+				clock.now += 16 * 60_000;
+				return LISTING;
+			},
+		});
+		await h.run({ verb: "unmask", minutes: 15 });
+		const answer = await h.run({ verb: "tools" });
+		if (!answer.ok) throw new Error(answer.error);
+		expect(JSON.stringify(answer.data.tools)).not.toContain("ada@clinic.test");
+	});
+
+	it("keeps an email in data.tools during an active grant", async () => {
+		const h = harness({ approval: "allow", mainResult: () => LISTING });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const answer = await h.run({ verb: "tools" });
+		expect(answer.ok && JSON.stringify(answer.data.tools)).toContain("ada@clinic.test");
 	});
 });

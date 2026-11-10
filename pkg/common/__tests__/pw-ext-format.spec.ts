@@ -66,6 +66,40 @@ describe("validatePwExtResponse", () => {
 		expect(validatePwExtResponse(value)).toEqual(value);
 	});
 
+	it("accepts a structured tools list", () => {
+		const value = {
+			text: "ok",
+			tools: [{ name: "dg_outlook_list", description: "List mail", title: "List", inputSchema: "{}", annotations: "{}" }],
+		};
+		expect(validatePwExtResponse(value)).toEqual(value);
+		expect(validatePwExtResponse({ text: "ok", tools: [{ name: "a", description: "b" }] })).toEqual({
+			text: "ok",
+			tools: [{ name: "a", description: "b" }],
+		});
+	});
+
+	it("accepts 100 tools and rejects 101", () => {
+		const tool = { name: "dg_outlook_list", description: "d" };
+		expect(() => validatePwExtResponse({ text: "ok", tools: Array(100).fill(tool) })).not.toThrow();
+		expect(() => validatePwExtResponse({ text: "ok", tools: Array(101).fill(tool) })).toThrow();
+	});
+
+	it.each([
+		{ text: "ok", tools: "list" },
+		{ text: "ok", tools: [null] },
+		{ text: "ok", tools: [{ name: 1, description: "d" }] },
+		{ text: "ok", tools: [{ name: "a", description: 2 }] },
+		{ text: "ok", tools: [{ name: "a" }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", inputSchema: {} }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", title: 3 }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", annotations: false }] },
+		{ text: "ok", tools: [{ name: "", description: "d" }] },
+		{ text: "ok", tools: [{ name: "n".repeat(129), description: "d" }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", extra: "x" }] },
+	])("rejects tools %p", (value) => {
+		expect(() => validatePwExtResponse(value)).toThrow();
+	});
+
 	it.each([
 		{},
 		{ text: 1 },

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { DG_TOOL_NAME } from "@dg/common";
 import { Window } from "happy-dom";
 import { pwExtConsoleHook, pwExtWebMcp } from "@/lib/features/pw-ext-main";
 
@@ -255,5 +256,93 @@ describe("review round 3 hardening", () => {
 		expect(await pwExtWebMcp({ kind: "tools", timeoutMs: 50 })).toEqual({
 			error: expect.stringContaining("timed out"),
 		});
+	});
+});
+
+describe("WebMCP dg tool registry", () => {
+	const REGISTRY_KEY = Symbol.for("dg.webmcp.tools");
+	const slot = globalThis as unknown as Record<symbol, unknown>;
+
+	afterEach(() => {
+		delete slot[REGISTRY_KEY];
+	});
+
+	function pageWith(dgTools: string[], siteTools: string[]) {
+		const state = { dg: [...dgTools], unregistered: 0, listedAfterUnregister: [] as string[][] };
+		slot[REGISTRY_KEY] = {
+			unregisterAll: () => {
+				state.unregistered += 1;
+				state.dg = [];
+			},
+			names: () => [...state.dg],
+		};
+		Object.defineProperty(window.document, "modelContext", {
+			configurable: true,
+			value: {
+				getTools: async () => {
+					const tools = [...state.dg, ...siteTools].map((name) => ({ name, description: name }));
+					if (state.unregistered) state.listedAfterUnregister.push(tools.map((tool) => tool.name));
+					return tools;
+				},
+				executeTool: async (tool: { name: string }) => `ran ${tool.name}`,
+			},
+		});
+		return state;
+	}
+
+	it("unregisters the dg tools before listing when the site has its own, so no dg_ name is listed", async () => {
+		const state = pageWith(["dg_outlook_list", "dg_outlook_read"], ["site_tool"]);
+		const result = (await pwExtWebMcp({ kind: "tools" })) as { tools: { name: string }[] };
+		expect(state.unregistered).toBe(1);
+		expect(result.tools.map((tool) => tool.name)).toEqual(["site_tool"]);
+		expect(state.listedAfterUnregister.length).toBeGreaterThan(0);
+	});
+
+	it("keeps the dg tools when no site tool is present", async () => {
+		const state = pageWith(["dg_outlook_list"], []);
+		const result = (await pwExtWebMcp({ kind: "tools" })) as { tools: { name: string }[] };
+		expect(state.unregistered).toBe(0);
+		expect(result.tools.map((tool) => tool.name)).toEqual(["dg_outlook_list"]);
+	});
+
+	it("lists a site tool and a dg tool together when no dg registry exists", async () => {
+		Object.defineProperty(window.document, "modelContext", {
+			configurable: true,
+			value: {
+				getTools: async () => [
+					{ name: "dg_outlook_list", description: "d" },
+					{ name: "site_tool", description: "s" },
+				],
+				executeTool: async () => "x",
+			},
+		});
+		const result = (await pwExtWebMcp({ kind: "tools" })) as { tools: { name: string }[] };
+		expect(result.tools.map((tool) => tool.name)).toEqual(["dg_outlook_list", "site_tool"]);
+	});
+
+	it("does not run a dg tool that the site's own tools displaced", async () => {
+		pageWith(["dg_outlook_list"], ["site_tool"]);
+		expect(
+			await pwExtWebMcp({ kind: "call", tool: "dg_outlook_list", args: {}, timeoutMs: 1000 }),
+		).toEqual({ error: expect.stringContaining("No WebMCP tool") });
+	});
+
+	it("reports a tool a dg script registered through the shim under the modelContext api", async () => {
+		const { installModelContextShim, registerDgTool } = await import("@/lib/features/webmcp-shim");
+		installModelContextShim(window.document as unknown as Document);
+		registerDgTool(
+			{ name: "dg_outlook_list", description: "List mail", inputSchema: { type: "object" }, execute: () => "[]" },
+			window.document as unknown as Document,
+		);
+		const listed = (await pwExtWebMcp({ kind: "tools" })) as { api: string; tools: { name: string }[] };
+		expect(listed.api).toBe("modelContext");
+		expect(listed.tools.map((tool) => tool.name)).toEqual(["dg_outlook_list"]);
+		expect(
+			await pwExtWebMcp({ kind: "call", tool: "dg_outlook_list", args: {}, timeoutMs: 1000 }),
+		).toEqual({ api: "modelContext", output: "[]" });
+	});
+
+	it("inlines the same dg name regex as isDgToolName", () => {
+		expect(pwExtWebMcp.toString()).toContain(DG_TOOL_NAME.source);
 	});
 });

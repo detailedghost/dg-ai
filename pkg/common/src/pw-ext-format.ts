@@ -73,8 +73,18 @@ export type PwExtRequest = {
 	off?: boolean;
 };
 
-/** Redacted, size-capped output; image is a screenshot data URL. */
-export type PwExtResponse = { text: string; image?: string };
+export type PwExtTool = {
+	name: string;
+	title?: string;
+	description: string;
+	inputSchema?: string;
+	annotations?: string;
+};
+
+export const PW_EXT_MAX_TOOLS = 100;
+
+/** Redacted, size-capped output; image is a screenshot data URL; tools is the structured list of the tools verb. */
+export type PwExtResponse = { text: string; image?: string; tools?: PwExtTool[] };
 
 export type PwExtCliRequest = {
 	type: "cli-pw-ext-request";
@@ -230,10 +240,26 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 	return value as PwExtRequest;
 }
 
+function validatePwExtTools(value: unknown, path: string): void {
+	if (!Array.isArray(value)) fail(`${path} must be an array`);
+	if (value.length > PW_EXT_MAX_TOOLS) fail(`${path} exceeds ${PW_EXT_MAX_TOOLS} entries`);
+	for (const [index, tool] of value.entries()) {
+		const entry = `${path}[${index}]`;
+		requireRecord(tool, entry);
+		onlyKeys(tool, ["name", "title", "description", "inputSchema", "annotations"], entry);
+		requireString(tool.name, `${entry}.name`, { nonEmpty: true });
+		if (tool.name.length > PW_EXT_MAX_TOOL_NAME_CHARS)
+			fail(`${entry}.name exceeds ${PW_EXT_MAX_TOOL_NAME_CHARS} characters`);
+		requireString(tool.description, `${entry}.description`);
+		for (const key of ["title", "inputSchema", "annotations"])
+			if (tool[key] !== undefined) requireString(tool[key], `${entry}.${key}`);
+	}
+}
+
 export function validatePwExtResponse(value: unknown): PwExtResponse {
 	const path = "pw-ext response";
 	requireRecord(value, path);
-	onlyKeys(value, ["text", "image"], path);
+	onlyKeys(value, ["text", "image", "tools"], path);
 	requireString(value.text, `${path}.text`);
 	if (value.text.length > PW_EXT_MAX_TEXT_CHARS)
 		fail(`${path}.text exceeds ${PW_EXT_MAX_TEXT_CHARS} characters`);
@@ -244,6 +270,7 @@ export function validatePwExtResponse(value: unknown): PwExtResponse {
 		if (!IMAGE_DATA_URL.test(value.image))
 			fail(`${path}.image must be a base64 JPEG or PNG data URL`);
 	}
+	if (value.tools !== undefined) validatePwExtTools(value.tools, `${path}.tools`);
 	return value as PwExtResponse;
 }
 
