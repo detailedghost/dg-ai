@@ -56,6 +56,7 @@ type Options = {
 	approval?: "allow" | "deny" | "closed" | "timeout" | "unopened";
 	clock?: { now: number };
 	onApproval?: () => void;
+	enabledBuiltIns?: () => Promise<Set<string>>;
 };
 
 type Executed = {
@@ -119,6 +120,7 @@ function harness(options: Options = {}) {
 			},
 		},
 		now: () => clock.now,
+		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
 	});
 	const call = (
 		request: PwExtRequest,
@@ -1632,27 +1634,37 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		],
 	};
 
-	it("asks for dg_outlook_list on the Proton mailbox, since the Outlook script does not own that origin, and runs it only after Allow", async () => {
-		const actions: unknown[] = [];
-		const run = (approval: "allow" | "deny") => {
+	const allEnabled = async () => new Set(["outlook"]);
+
+	it.each(["dg_outlook_list", "dg_outlook_delete", "dg_proton_x"])(
+		"refuses call %s on the Proton mailbox even with every built-in enabled",
+		async (tool) => {
 			const h = harness({
 				tabs: [protonTab],
-				approval,
-				mainResult: (action) => {
-					actions.push(action);
-					return { api: "modelContext", output: "[]" };
-				},
+				approval: "allow",
+				enabledBuiltIns: allEnabled,
+				mainResult: () => ({ api: "modelContext", output: "[]" }),
 			});
-			return h;
-		};
-		const denied = run("deny");
-		expect((await denied.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(false);
-		expect(denied.approvalRequests).toHaveLength(1);
-		expect(actions).toEqual([]);
-		const allowed = run("allow");
-		expect((await allowed.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
-		expect(allowed.approvalRequests).toHaveLength(1);
-		expect(actions).toHaveLength(1);
+			expect(await h.run({ verb: "call", tool, args: {} })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+			expect(h.approvalRequests).toEqual([]);
+			expect(h.executed()).toEqual([]);
+		},
+	);
+
+	it("fails closed when the enabled built-ins cannot be read", async () => {
+		const h = harness({
+			tabs: [protonTab],
+			enabledBuiltIns: async () => {
+				throw new Error("storage down");
+			},
+			mainResult: () => LISTING,
+		});
+		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual({
+			ok: false,
+			error: PW_EXT_MAILBOX_ERROR,
+		});
+		const listed = await h.run({ verb: "tools" });
+		expect(listed.ok && listed.data.tools).toEqual([]);
 	});
 
 	it("asks every time for a dg_ tool on a foreign origin even when its table class is session", async () => {
@@ -1684,13 +1696,6 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		});
 		const fixed = { ok: false as const, error: "The WebMCP tool failed on the protected mailbox tab." };
 		expect(await h.run({ verb: "tools" })).toEqual(fixed);
-		expect(await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).toEqual(fixed);
-	});
-
-	it("still asks for a destructive dg tool", async () => {
-		const h = harness({ tabs: [protonTab], approval: "deny", mainResult: () => ({ api: "modelContext", output: "x" }) });
-		expect((await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).ok).toBe(false);
-		expect(h.approvalRequests).toHaveLength(1);
 	});
 
 	it.each(["site_tool", "dg_x", "search_flights"])("refuses call %s with the mailbox error", async (tool) => {
@@ -1700,16 +1705,18 @@ describe("pw --ext WebMCP on a mailbox tab", () => {
 		expect(h.executed()).toEqual([]);
 	});
 
-	it("lists only dg_ names in text and data.tools", async () => {
-		const h = harness({ tabs: [protonTab], mainResult: () => LISTING });
+	it("leaves out every tool the mailbox rule does not allow, in text and data.tools", async () => {
+		const h = harness({
+			tabs: [protonTab],
+			enabledBuiltIns: allEnabled,
+			mainResult: () => ({ ...LISTING, tools: [...LISTING.tools, { name: "dg_proton_x", description: "Proton tool" }] }),
+		});
 		const answer = await h.run({ verb: "tools" });
 		if (!answer.ok) throw new Error(answer.error);
-		expect(answer.data.tools?.map((tool) => tool.name)).toEqual(["dg_outlook_list", "dg_outlook_delete"]);
-		expect(answer.data.text).toContain("dg_outlook_list");
-		expect(answer.data.text).not.toContain("site_tool");
-		expect(answer.data.text).not.toContain("dg_x");
-		expect(answer.data.text).not.toContain("ada@clinic.test");
-		expect(JSON.stringify(answer.data.tools)).not.toContain("ada@clinic.test");
+		expect(answer.data.tools).toEqual([]);
+		for (const name of ["dg_outlook_list", "dg_outlook_delete", "dg_proton_x", "site_tool", "dg_x"])
+			expect(answer.data.text).not.toContain(name);
+		expect(answer.data.text).toContain("This page exposes no WebMCP tools.");
 	});
 
 	it("filters in the background, so the page function sees no name filter", async () => {

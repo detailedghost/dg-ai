@@ -1,7 +1,9 @@
 import {
 	PW_EXT_NO_TAB_ERROR as NO_TAB,
 	approvalClassOf,
+	BUILT_IN_SCRIPTS,
 	isDgToolName,
+	mailboxToolAllowed,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MIN_SECRET_CHARS,
@@ -146,8 +148,18 @@ type TabVerbRequest = PwExtRequest & {
 	verb: Exclude<PwExtVerb, "tabs" | "new">;
 };
 
-function mailboxPasses(verb: PwExtVerb, tool: string | undefined): boolean {
-	return verb === "tools" || (verb === "call" && tool !== undefined && isDgToolName(tool));
+const BUILT_INS_KEY = "webmcpScripts";
+
+async function storedEnabledBuiltIns(storage: unknown): Promise<Set<string>> {
+	const local = (storage as { local?: { get(key: string): Promise<Record<string, unknown>> } }).local;
+	if (!local) return new Set();
+	const stored = (await local.get(BUILT_INS_KEY))[BUILT_INS_KEY];
+	const records = Array.isArray(stored) ? (stored as { id?: unknown; source?: unknown; enabled?: unknown }[]) : [];
+	return new Set(
+		BUILT_IN_SCRIPTS.filter(
+			(script) => !records.some((record) => record?.id === script.id && record.source === "built-in" && record.enabled === false),
+		).map((script) => script.id),
+	);
 }
 
 function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
@@ -319,6 +331,7 @@ export function createPwExtHandler({
 	now = Date.now,
 	grants = createUnmaskGrants({ storage: api.storage, now }),
 	webmcpGrants = createWebMcpGrants({ storage: api.storage }),
+	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
@@ -327,7 +340,10 @@ export function createPwExtHandler({
 	now?: () => number;
 	grants?: UnmaskGrants;
 	webmcpGrants?: WebMcpGrants;
+	enabledBuiltIns?: () => Promise<Set<string>>;
 }) {
+	const enabledOrNone = () => enabledBuiltIns().catch(() => new Set<string>());
+
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
 		if (result.ok)
 			return {
@@ -439,14 +455,19 @@ export function createPwExtHandler({
 		return selected ? liveTab(selected.tabId) : undefined;
 	}
 
-	function guard(verb: PwExtVerb, tab: LiveTab, tool?: string): void {
+	async function guard(verb: PwExtVerb, tab: LiveTab, tool?: string): Promise<void> {
 		if (tab.incognito) throw new Refusal(PW_EXT_PRIVATE_ERROR);
 		if (BLOCKS_BROWSER_PAGE.has(verb) && !allowedPage(tab.url))
 			throw new Refusal(PW_EXT_BLOCKED_ERROR);
-		if (BLOCKS_MAILBOX.has(verb) && mailbox(tab.url) && !mailboxPasses(verb, tool))
+		if (BLOCKS_MAILBOX.has(verb) && mailbox(tab.url) && !(await mailboxPasses(verb, tab, tool)))
 			throw new Refusal(PW_EXT_MAILBOX_ERROR);
 		if (NEEDS_LOADED_TAB.has(verb) && tab.discarded)
 			throw new Refusal(discardedTab(tab.id));
+	}
+
+	async function mailboxPasses(verb: PwExtVerb, tab: LiveTab, tool: string | undefined): Promise<boolean> {
+		if (verb === "tools") return true;
+		return verb === "call" && tool !== undefined && mailboxToolAllowed(tool, new URL(tab.url as string).origin, await enabledOrNone());
 	}
 
 	async function openInGroup(
@@ -604,7 +625,9 @@ export function createPwExtHandler({
 				);
 				if ("error" in listed) return pageError(listed.error);
 				const found = "tools" in listed ? listed.tools : [];
-				const listedTools = mailbox(tab.url) ? found.filter((tool) => isDgToolName(tool.name)) : found;
+				const enabled = mailbox(tab.url) ? await enabledOrNone() : undefined;
+				const origin = new URL(tab.url as string).origin;
+				const listedTools = enabled ? found.filter((tool) => mailboxToolAllowed(tool.name, origin, enabled)) : found;
 				if (listedTools.length === 0)
 					return withTools(
 						shown([...page(), "### WebMCP tools", "This page exposes no WebMCP tools."].join("\n")),
@@ -818,7 +841,7 @@ export function createPwExtHandler({
 			if (request.verb === "open") return openInGroup(request.url as string, context);
 			throw new Refusal(NO_TAB);
 		}
-		guard(request.verb, tab, request.tool);
+		await guard(request.verb, tab, request.tool);
 		return run(request, tab, context, signal);
 	}
 

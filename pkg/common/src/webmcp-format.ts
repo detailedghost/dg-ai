@@ -59,16 +59,27 @@ function patternCoversOrigin(pattern: string, origin: string): boolean {
 	}
 }
 
+function builtInOwning(name: string) {
+	return BUILT_IN_SCRIPTS.find((script) => name.startsWith(`dg_${script.id}_`));
+}
+
+function builtInCovers(owner: BuiltInWebMcpScript | undefined, origin: string): boolean {
+	return owner?.matches.some((pattern) => patternCoversOrigin(pattern, origin)) === true;
+}
+
 /** The approval class of a tool; with an origin, a dg_ tool keeps its table class only on the origins of the built-in script that owns its prefix. */
 export function approvalClassOf(name: string, origin?: string): WebMcpApprovalClass | undefined {
 	if (!name.startsWith("dg_")) return undefined;
-	if (origin !== undefined) {
-		const owner = BUILT_IN_SCRIPTS.find((script) => name.startsWith(`dg_${script.id}_`));
-		if (!owner?.matches.some((pattern) => patternCoversOrigin(pattern, origin))) return "each";
-	}
+	if (origin !== undefined && !builtInCovers(builtInOwning(name), origin)) return "each";
 	return Object.hasOwn(WEBMCP_TOOL_CLASSES, name)
 		? WEBMCP_TOOL_CLASSES[name as keyof typeof WEBMCP_TOOL_CLASSES]
 		: "each";
+}
+
+/** True when the tool belongs to an enabled built-in script whose match patterns cover the origin. */
+export function mailboxToolAllowed(name: string, origin: string, enabledBuiltInIds: ReadonlySet<string>): boolean {
+	const owner = isDgToolName(name) ? builtInOwning(name) : undefined;
+	return owner !== undefined && enabledBuiltInIds.has(owner.id) && builtInCovers(owner, origin);
 }
 
 const SCRIPT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;

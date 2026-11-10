@@ -3,6 +3,7 @@ import {
 	approvalClassOf,
 	BUILT_IN_SCRIPTS,
 	isDgToolName,
+	mailboxToolAllowed,
 	validateWebMcpScriptRecord,
 	WEBMCP_MAX_MATCHES,
 	WEBMCP_TOOL_CLASSES,
@@ -60,6 +61,25 @@ describe("approvalClassOf with an origin", () => {
 		["search_flights", "https://evil.example", undefined],
 	])("gives %s on %s the class %s", (name, origin, expected) => {
 		expect(approvalClassOf(name, origin)).toBe(expected);
+	});
+});
+
+describe("mailboxToolAllowed", () => {
+	const enabled = new Set(["outlook"]);
+
+	it.each([
+		["dg_outlook_list", "https://outlook.office.com", enabled, true],
+		["dg_outlook_delete", "https://outlook.live.com", enabled, true],
+		["dg_outlook_list", "https://outlook.live.com", new Set<string>(), false],
+		["dg_outlook_list", "https://mail.proton.me", enabled, false],
+		["dg_outlook_list", "https://outlook.live.com.evil.example", enabled, false],
+		["dg_outlook_list", "http://outlook.live.com", enabled, false],
+		["dg_proton_x", "https://outlook.live.com", new Set(["outlook", "proton"]), false],
+		["dg_x", "https://outlook.live.com", enabled, false],
+		["site_tool", "https://outlook.live.com", enabled, false],
+		["dg_outlook_list", "not a url", enabled, false],
+	])("gives %s on %s the answer %p", (name, origin, ids, expected) => {
+		expect(mailboxToolAllowed(name, origin, ids)).toBe(expected);
 	});
 });
 
