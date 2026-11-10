@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
 import { mountWebMcpScriptsPanel } from "../entrypoints/options/webmcp-scripts";
+import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
 import { createWebMcpScripts, handleWebMcpRequest } from "@/lib/background/webmcp-scripts";
 
 const windows = new Set<Window>();
@@ -44,6 +45,10 @@ async function settle(): Promise<void> {
 	} while (inFlight > 0);
 }
 
+const signer = createWebMcpSigner({
+	loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+});
+
 async function mount({ available = true } = {}) {
 	const window = new Window();
 	windows.add(window);
@@ -51,7 +56,7 @@ async function mount({ available = true } = {}) {
 	const container = document.createElement("div");
 	document.body.appendChild(container);
 	const storage = memoryStorage();
-	const scripts = createWebMcpScripts({ storage, scripting: null, userScripts: null, newId: () => "s1" });
+	const scripts = createWebMcpScripts({ signer, storage, scripting: null, userScripts: null, newId: () => "s1" });
 	const messages: { type: string; [key: string]: unknown }[] = [];
 	mountWebMcpScriptsPanel(container, {
 		available,

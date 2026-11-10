@@ -5,11 +5,24 @@ import {
 	WEBMCP_SCRIPT_MAX_BYTES,
 	type WebMcpScriptRecord,
 } from "@dg/common";
+import { createWebMcpSigner, type WebMcpSigner } from "@/lib/background/webmcp-signing";
 import {
 	createWebMcpScripts,
 	registerWebMcpScripts,
 	userScriptsAvailable,
 } from "@/lib/background/webmcp-scripts";
+
+const freshSigner = (): WebMcpSigner =>
+	createWebMcpSigner({
+		loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+	});
+
+const brokenSigner = (): WebMcpSigner =>
+	createWebMcpSigner({
+		loadKey: async () => {
+			throw new Error("indexeddb unavailable");
+		},
+	});
 
 const sha = (code: string) => createHash("sha256").update(code).digest("hex");
 
@@ -31,7 +44,12 @@ function memoryStorage() {
 	};
 }
 
-function setup({ userScripts = true, failIds = [] as string[], probeFails = false } = {}) {
+function setup({
+	userScripts = true,
+	failIds = [] as string[],
+	probeFails = false,
+	signer = freshSigner(),
+} = {}) {
 	const storage = memoryStorage();
 	const live = { content: new Set<string>(), user: new Set<string>() };
 	const calls = {
@@ -76,8 +94,9 @@ function setup({ userScripts = true, failIds = [] as string[], probeFails = fals
 		},
 	};
 	let counter = 0;
-	const make = (registrars: boolean) =>
+	const make = (registrars: boolean, withSigner: WebMcpSigner = signer) =>
 		createWebMcpScripts({
+			signer: withSigner,
 			storage,
 			scripting: registrars ? scripting : null,
 			userScripts: registrars && userScripts ? () => userScriptsApi : null,
@@ -85,7 +104,7 @@ function setup({ userScripts = true, failIds = [] as string[], probeFails = fals
 			now: () => 1000,
 		});
 	const scripts = make(true);
-	return { storage, calls, live, scripts, make };
+	return { storage, calls, live, scripts, make, signer };
 }
 
 const approveNow = async (scripts: ReturnType<typeof setup>["scripts"], id: string) =>
@@ -342,7 +361,7 @@ describe("reconcile", () => {
 
 	it("stores the approval without registering anything when both registrars are null", async () => {
 		const storage = memoryStorage();
-		const scripts = createWebMcpScripts({ storage, scripting: null, userScripts: null, newId: () => "x" });
+		const scripts = createWebMcpScripts({ signer: freshSigner(), storage, scripting: null, userScripts: null, newId: () => "x" });
 
 		const { id } = await scripts.addThirdParty(draft());
 		await approveNow(scripts, id);
@@ -624,6 +643,7 @@ describe("lazy userScripts", () => {
 		let available = false;
 		const storage = memoryStorage();
 		const scripts = createWebMcpScripts({
+			signer: freshSigner(),
 			storage,
 			scripting: null,
 			userScripts: () => (available ? api : undefined),
@@ -672,6 +692,161 @@ describe("lazy userScripts", () => {
 		} finally {
 			warn.mockRestore();
 		}
+	});
+});
+
+describe("approval signing", () => {
+	const macKey = (id: string) => `webmcpMac:${id}`;
+
+	async function approved() {
+		const harness = setup();
+		const { id } = await harness.scripts.addThirdParty(draft());
+		await approveNow(harness.scripts, id);
+		harness.calls.userRegister.length = 0;
+		return { ...harness, id };
+	}
+
+	const refused = async ({ scripts, storage, calls, id }: Awaited<ReturnType<typeof approved>>) => {
+		await scripts.reconcile();
+		expect(calls.userRegister).toEqual([]);
+		expect((await stored(storage)).find((record) => record.id === id)?.approvedAt).toBeUndefined();
+	};
+
+	it("stores a MAC beside the record and registers a good signed record", async () => {
+		const { scripts, storage, calls, id } = await approved();
+
+		await scripts.reconcile();
+
+		expect(typeof storage.data[macKey(id)]).toBe("string");
+		expect(calls.userRegister.map((script) => script.id)).toEqual([`dg-webmcp-user-${id}`]);
+	});
+
+	it("refuses a record with no MAC", async () => {
+		const harness = await approved();
+		delete harness.storage.data[macKey(harness.id)];
+
+		await refused(harness);
+	});
+
+	it("refuses a record whose sites changed even when the approval digest was recomputed", async () => {
+		const harness = await approved();
+		const matches = ["https://bank.example.com/*"];
+		harness.storage.data.webmcpScripts = (harness.storage.data.webmcpScripts as WebMcpScriptRecord[]).map(
+			(record) => (record.id === harness.id ? { ...record, matches } : record),
+		);
+		harness.storage.data[`webmcpApproval:${harness.id}`] = sha(`registerDgTool({});\n${JSON.stringify(matches)}`);
+
+		await refused(harness);
+	});
+
+	it("refuses a record whose code and hashes were all rewritten together", async () => {
+		const harness = await approved();
+		const code = "evil();";
+		harness.storage.data[`webmcpScriptCode:${harness.id}`] = code;
+		harness.storage.data.webmcpScripts = (harness.storage.data.webmcpScripts as WebMcpScriptRecord[]).map(
+			(record) => (record.id === harness.id ? { ...record, sha256: sha(code) } : record),
+		);
+		harness.storage.data[`webmcpApproval:${harness.id}`] = sha(
+			`${code}\n${JSON.stringify(["https://flights.example.com/*"])}`,
+		);
+
+		await refused(harness);
+	});
+
+	it("refuses an approval time that was forged onto an unapproved record", async () => {
+		const { scripts, storage, calls } = setup();
+		const { id } = await scripts.addThirdParty(draft());
+		const matches = ["https://flights.example.com/*"];
+		storage.data.webmcpScripts = (storage.data.webmcpScripts as WebMcpScriptRecord[]).map((record) => ({
+			...record,
+			enabled: true,
+			approvedAt: 5,
+		}));
+		storage.data[`webmcpApproval:${id}`] = sha(`registerDgTool({});\n${JSON.stringify(matches)}`);
+
+		await scripts.reconcile();
+
+		expect(calls.userRegister).toEqual([]);
+	});
+
+	it("refuses a MAC made with another key", async () => {
+		const first = await approved();
+		const other = first.make(true, freshSigner());
+
+		await other.reconcile();
+
+		expect(first.calls.userRegister).toEqual([]);
+		expect((await stored(first.storage)).find((record) => record.id === first.id)?.approvedAt).toBeUndefined();
+	});
+
+	it("lists a record with a bad MAC as needing approval before any reconcile", async () => {
+		const { scripts, storage, id } = await approved();
+		storage.data[macKey(id)] = "00".repeat(32);
+
+		expect((await scripts.list()).find((record) => record.id === id)?.approvedAt).toBeUndefined();
+	});
+
+	it("clears the MAC on replaceCode and remove", async () => {
+		const first = await approved();
+		const second = await first.scripts.addThirdParty(draft());
+		await approveNow(first.scripts, second.id);
+
+		await first.scripts.replaceCode(first.id, "next();");
+		await first.scripts.remove(second.id);
+
+		expect(macKey(first.id) in first.storage.data).toBe(false);
+		expect(macKey(second.id) in first.storage.data).toBe(false);
+	});
+
+	it("fails closed on approve when the key cannot load, storing no approval", async () => {
+		const { scripts, storage, calls } = setup({ signer: brokenSigner() });
+		const { id, sha256 } = await scripts.addThirdParty(draft());
+
+		await expect(scripts.approve(id, sha256)).rejects.toThrow("indexeddb unavailable");
+
+		expect((await stored(storage)).find((record) => record.id === id)?.approvedAt).toBeUndefined();
+		expect(calls.userRegister).toEqual([]);
+	});
+
+	it("registers built-ins but no third-party script, keeps the approval and warns once when the key cannot load", async () => {
+		const good = await approved();
+		const broken = good.make(true, brokenSigner());
+		good.calls.register.length = 0;
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await broken.reconcile();
+			await broken.reconcile();
+
+			const keyWarnings = warn.mock.calls.filter((call) => String(call.join(" ")).includes("signing key"));
+			expect(keyWarnings).toHaveLength(1);
+		} finally {
+			warn.mockRestore();
+		}
+
+		expect(good.calls.userRegister).toEqual([]);
+		expect(good.calls.register.map((script) => script.id)).toContain("dg-webmcp-outlook");
+		expect(good.live.user.size).toBe(0);
+		expect((await stored(good.storage)).find((record) => record.id === good.id)?.approvedAt).toBe(1000);
+	});
+
+	it("generates the key once per signer across many approvals", async () => {
+		let loads = 0;
+		const key = await crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+		const signer = createWebMcpSigner({
+			loadKey: async () => {
+				loads++;
+				return key;
+			},
+		});
+		const { scripts } = setup({ signer });
+		const first = await scripts.addThirdParty(draft());
+		const second = await scripts.addThirdParty(draft());
+
+		await approveNow(scripts, first.id);
+		await approveNow(scripts, second.id);
+		await scripts.reconcile();
+
+		expect(loads).toBe(1);
 	});
 });
 

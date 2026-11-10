@@ -9,6 +9,7 @@ import {
 	type WebMcpScriptRecord,
 } from "@dg/common";
 import { defaultIsChromium } from "./pw-ext";
+import { createWebMcpSigner, type WebMcpSigner } from "./webmcp-signing";
 
 export const WEBMCP_MESSAGES = {
 	list: "dg-webmcp:list",
@@ -25,6 +26,7 @@ export type WebMcpReply = { ok: true; value?: unknown } | { ok: false; error: st
 const RECORDS_KEY = "webmcpScripts";
 const codeKey = (id: string) => `webmcpScriptCode:${id}`;
 const approvalKey = (id: string) => `webmcpApproval:${id}`;
+const macKey = (id: string) => `webmcpMac:${id}`;
 const SHIM_FILE = "webmcp-shim.js";
 const OPTIONS_PAGE = "/options.html";
 const EMPTY_HASH = "0".repeat(64);
@@ -95,6 +97,7 @@ function assertCodeSize(code: string): void {
 
 /** Script records and code in storage.local; only the injected scripting and userScripts seams register anything. */
 export function createWebMcpScripts({
+	signer,
 	storage,
 	scripting,
 	userScripts,
@@ -102,6 +105,7 @@ export function createWebMcpScripts({
 	newId = () => crypto.randomUUID(),
 	now = Date.now,
 }: {
+	signer: WebMcpSigner;
 	storage: WebMcpStorage;
 	scripting: WebMcpScripting | null;
 	userScripts: (() => WebMcpUserScripts | null | undefined) | null;
@@ -191,20 +195,47 @@ export function createWebMcpScripts({
 			.catch(() => undefined);
 	};
 
-	async function verifiedApprovals(stored: WebMcpScriptRecord[]): Promise<Map<string, string>> {
+	const macPayload = async (record: WebMcpScriptRecord, code: string, approvedAt: number) =>
+		new TextEncoder().encode(
+			JSON.stringify([record.id, record.sha256, record.matches, approvedAt, await approvalDigest(code, record.matches)]),
+		);
+
+	type ApprovalCheck = { verified: Map<string, string>; stale: Set<string>; keyFailed: boolean };
+
+	async function checkApprovals(stored: WebMcpScriptRecord[]): Promise<ApprovalCheck> {
 		const verified = new Map<string, string>();
 		const stale = new Set<string>();
 		for (const record of stored) {
 			if (builtInIds.has(record.id) || record.approvedAt === undefined) continue;
 			const code = await storedCode(record.id);
-			const pinned = (await storage.local.get(approvalKey(record.id)))[approvalKey(record.id)];
+			const local = await storage.local.get([approvalKey(record.id), macKey(record.id)]);
+			const mac = local[macKey(record.id)];
 			if (
-				code !== undefined &&
-				(await digest(code)) === record.sha256 &&
-				pinned === (await approvalDigest(code, record.matches))
-			)
-				verified.set(record.id, code);
-			else stale.add(record.id);
+				code === undefined ||
+				typeof mac !== "string" ||
+				(await digest(code)) !== record.sha256 ||
+				local[approvalKey(record.id)] !== (await approvalDigest(code, record.matches))
+			) {
+				stale.add(record.id);
+				continue;
+			}
+			try {
+				if (await signer.verify(await macPayload(record, code, record.approvedAt), mac)) verified.set(record.id, code);
+				else stale.add(record.id);
+			} catch {
+				return { verified: new Map(), stale: new Set(), keyFailed: true };
+			}
+		}
+		return { verified, stale, keyFailed: false };
+	}
+
+	let keyWarned = false;
+
+	async function verifiedApprovals(stored: WebMcpScriptRecord[]): Promise<Map<string, string>> {
+		const { verified, stale, keyFailed } = await checkApprovals(stored);
+		if (keyFailed && !keyWarned) {
+			keyWarned = true;
+			console.warn("[dg-ai-extension] web mcp signing key unavailable: third-party scripts stay off");
 		}
 		if (stale.size > 0)
 			await mutate((records) => records.map((record) => (stale.has(record.id) ? withoutApproval(record) : record)));
@@ -299,7 +330,17 @@ export function createWebMcpScripts({
 	const reconcile = () => locked(runReconcile);
 
 	return {
-		list: async () => merge(await readStored()),
+		async list(): Promise<WebMcpScriptRecord[]> {
+			const stored = await readStored();
+			const { verified } = await checkApprovals(stored);
+			return merge(
+				stored.map((record) =>
+					!builtInIds.has(record.id) && record.approvedAt !== undefined && !verified.has(record.id)
+						? withoutApproval(record)
+						: record,
+				),
+			);
+		},
 
 		code: storedCode,
 
@@ -333,9 +374,14 @@ export function createWebMcpScripts({
 				assertCodeSize(code);
 				const sha256 = await digest(code);
 				if (sha256 !== expectedSha256 || sha256 !== record.sha256) throw new Error(REVIEW_AGAIN);
-				await storage.local.set({ [approvalKey(id)]: await approvalDigest(code, record.matches) });
+				const approvedAt = now();
+				const mac = await signer.sign(await macPayload(record, code, approvedAt));
+				await storage.local.set({
+					[approvalKey(id)]: await approvalDigest(code, record.matches),
+					[macKey(id)]: mac,
+				});
 				await mutate((records) =>
-					records.map((entry) => (entry.id === id ? { ...entry, enabled: true, approvedAt: now() } : entry)),
+					records.map((entry) => (entry.id === id ? { ...entry, enabled: true, approvedAt } : entry)),
 				);
 				await runReconcile();
 			});
@@ -370,7 +416,7 @@ export function createWebMcpScripts({
 				assertCodeSize(code);
 				const sha256 = await digest(code);
 				await storage.local.set({ [codeKey(id)]: code });
-				await storage.local.remove(approvalKey(id));
+				await storage.local.remove([approvalKey(id), macKey(id)]);
 				await mutate((records) =>
 					records.map((record) => (record.id === id ? { ...withoutApproval(record), sha256 } : record)),
 				);
@@ -384,7 +430,7 @@ export function createWebMcpScripts({
 				if (builtInIds.has(id)) throw new Error("Built-in scripts cannot be removed");
 				await requireThirdParty(id);
 				await mutate((records) => records.filter((record) => record.id !== id));
-				await storage.local.remove([codeKey(id), approvalKey(id)]);
+				await storage.local.remove([codeKey(id), approvalKey(id), macKey(id)]);
 				await unregisterUser(`${USER_PREFIX}${id}`);
 				await runReconcile();
 			});
@@ -486,6 +532,7 @@ const REQUEST_TYPES = new Set<string>(Object.values(WEBMCP_MESSAGES));
 export function registerWebMcpScripts({
 	api = browser as unknown as RegistryApi,
 	scripts = createWebMcpScripts({
+		signer: createWebMcpSigner(),
 		storage: browser.storage as unknown as WebMcpStorage,
 		scripting: browser.scripting as unknown as WebMcpScripting,
 		userScripts: chromiumUserScripts,
