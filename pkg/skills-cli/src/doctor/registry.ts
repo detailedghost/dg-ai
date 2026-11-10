@@ -28,6 +28,7 @@ import { proxyChecks } from "../proxy/doctor";
 import { pwChecks, pwCodeChecks } from "../pw/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
+import { skillChecks } from "../skill/doctor";
 import { sniffChecks } from "../sniff/doctor";
 import { ssmsChecks } from "../ssms/doctor";
 import { specChecks } from "../spec/doctor";
@@ -77,6 +78,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	bg: bgChecks,
 	stat: statChecks,
 	sniff: sniffChecks,
+	skill: skillChecks,
 	ssms: ssmsChecks,
 	hooks: hooksChecks,
 	"require-extension": requireExtensionChecks,

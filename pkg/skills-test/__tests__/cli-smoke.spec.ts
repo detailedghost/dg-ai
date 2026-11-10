@@ -70,6 +70,7 @@ describe("dg-skills CLI", () => {
 			"bg",
 			"stat",
 			"sniff",
+			"skill",
 			"doctor",
 			"db",
 			"erd",

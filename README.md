@@ -134,6 +134,10 @@ Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume r
 `powershell.exe`), Wayland (`wl-paste`), or X11 (`xclip`); `-` writes PNG bytes to
 stdout. The clipboard skill resolves its default destination through stash.
 
+`dg-skills skill audit [dirs] [--threshold N] [--json] [--fix]` reports token weight and hygiene issues for skill folders, and
+`dg-skills skill split --list <dir>` / `--apply <manifest.json>` moves `SKILL.md` sections into reference files after a backup
+under the AI state root. Run `dg-skills skill --help` for the manifest shape and exit codes.
+
 Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-cutover) steps after each wave.
 
 ## Supported browsers
@@ -150,4 +154,5 @@ Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-
 - [Developer guide](docs/DEVELOPER.md)
 
 - [Contributing](docs/contributing.md)
+
 - [Security](SECURITY.md)

@@ -52,6 +52,7 @@ const GOLDEN_COMMANDS = [
 	"bg",
 	"stat",
 	"sniff",
+	"skill",
 	"ssms",
 	"doctor",
 	"require-extension",
