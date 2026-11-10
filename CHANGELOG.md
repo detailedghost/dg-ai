@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.0.0 (2026-11-10)
+
+### Breaking
+
+- feat(demo)!: record local demos with a Node Playwright recorder ([#160](https://github.com/detailedghost/dg-ai/pull/160))
+
+### Features
+
+- feat(skills-cli): add dg-skills skill audit and split ([#168](https://github.com/detailedghost/dg-ai/pull/168))
+
 ## v3.1.0 (2026-11-09)
 
 ### Features
