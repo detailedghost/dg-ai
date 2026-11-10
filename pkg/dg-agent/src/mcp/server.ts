@@ -3,6 +3,7 @@ import {
 	isPwExtCliResult,
 	PW_EXT_DEFAULT_TIMEOUT_MS,
 	PW_EXT_MAX_TAB_ID,
+	PW_EXT_NO_TAB_ERROR,
 	type PwExtCliRequest,
 	type PwExtCliResult,
 	type PwExtRequest,
@@ -182,6 +183,7 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 
 	async function exposures(): Promise<Map<string, Exposure>> {
 		const listing = await send({ verb: "tabs" });
+		if (!listing.ok && listing.error === PW_EXT_NO_TAB_ERROR) return new Map();
 		if (!listing.ok)
 			throw new McpError(ErrorCode.InternalError, listing.error ?? "pw --ext tabs failed.");
 		const tabs = parseTabIds(listing.data?.text ?? "").slice(0, MAX_TAB_LOOKUPS);

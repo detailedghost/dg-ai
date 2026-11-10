@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	PW_EXT_DEFAULT_TIMEOUT_MS,
+	PW_EXT_NO_TAB_ERROR,
 	type PwExtCliRequest,
 	type PwExtCliResult,
 	type PwExtRequest,
@@ -225,6 +226,18 @@ describe("dg-agent mcp server tools/list", () => {
 		);
 	});
 
+	it("returns an empty list when the tabs verb reports that the agent has no tab yet", async () => {
+		const handler: Handler = () => ({ ok: false, error: PW_EXT_NO_TAB_ERROR });
+		const { client } = await connectClient([handler]);
+		expect((await client.listTools()).tools).toEqual([]);
+	});
+
+	it("still fails when the tabs verb returns another error", async () => {
+		const handler: Handler = () => ({ ok: false, error: "The browser is not paired." });
+		const { client } = await connectClient([handler]);
+		await expect(client.listTools()).rejects.toThrow("The browser is not paired.");
+	});
+
 	it("returns an empty list when the agent has no tabs", async () => {
 		const { client } = await connectClient([mailbox({})]);
 		expect((await client.listTools()).tools).toEqual([]);
@@ -269,6 +282,14 @@ describe("dg-agent mcp server tools/call", () => {
 		await client.callTool({ name: "dg_outlook_list", arguments: { tab: 7, folder: "inbox" } });
 		expect(calls(sent)).toEqual([{ verb: "call", tabId: 7, tool: "dg_outlook_list", args: { folder: "inbox" } }]);
 		expect(sent.filter((entry) => entry.frame.request.verb !== "call")).toEqual([]);
+	});
+
+	it("returns the open-the-site error when the agent has no tab yet", async () => {
+		const handler: Handler = () => ({ ok: false, error: PW_EXT_NO_TAB_ERROR });
+		const { client } = await connectClient([handler]);
+		const result = await client.callTool({ name: "dg_outlook_list", arguments: {} });
+		expect(result.isError).toBe(true);
+		expect(textOf(result)).toBe("No agent tab exposes dg_outlook_list. Open the site with pw --ext new <url>.");
 	});
 
 	it("returns an error to open the site when no tab exposes the tool", async () => {

@@ -81,6 +81,8 @@ export type PwExtTool = {
 	annotations?: string;
 };
 
+export const PW_EXT_NO_TAB_ERROR = "This agent has no tab yet. Run pw --ext new <url> first.";
+
 export const PW_EXT_MAX_TOOLS = 100;
 
 /** Redacted, size-capped output; image is a screenshot data URL; tools is the structured list of the tools verb. */

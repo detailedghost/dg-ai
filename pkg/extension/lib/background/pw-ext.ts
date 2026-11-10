@@ -1,4 +1,5 @@
 import {
+	PW_EXT_NO_TAB_ERROR as NO_TAB,
 	approvalClassOf,
 	isDgToolName,
 	isPwExtSecretTooShort,
@@ -94,7 +95,6 @@ const CANCELED: PwExtResult = {
 	error: "The request was canceled before it ran.",
 };
 const NO_SESSION = "pw --ext needs a paired session.";
-const NO_TAB = "This agent has no tab yet. Run pw --ext new <url> first.";
 const UNMASK_REFUSED = {
 	deny: "The user clicked Deny in the browser; nothing was unmasked.",
 	closed: "The approval window was closed without an answer; nothing was unmasked.",
