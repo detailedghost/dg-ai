@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { stateRoot } from "@dg/common/node";
 import { headingKeyword, nearAboveBelow } from "./audit";
 
@@ -37,25 +37,25 @@ const isTableRow = (line: string) => /^\s*\|.*\|\s*$/.test(line);
 
 /** H2 sections outside code fences; duplicate slugs get a -2, -3 suffix. */
 export function parseSections(lines: string[]): { preamble: number; sections: Section[] } {
-	let fenceDelim: string | null = null;
+	let fence: string | null = null;
 	const starts: { line: number; heading: string }[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? "";
-		const delim = line.match(/^(```|~~~)/)?.[1];
-		if (delim) {
-			if (fenceDelim === null) fenceDelim = delim;
-			else if (fenceDelim === delim) fenceDelim = null;
-		}
-		if (fenceDelim === null && line.startsWith("## ")) starts.push({ line: i, heading: line.slice(3).trim() });
+		const [, delim = "", rest = ""] = line.match(/^(`{3,}|~{3,})(.*)$/) ?? [];
+		if (delim && fence === null) fence = delim;
+		else if (delim && fence && delim[0] === fence[0] && delim.length >= fence.length && rest.trim() === "")
+			fence = null;
+		if (fence === null && line.startsWith("## ")) starts.push({ line: i, heading: line.slice(3).trim() });
 	}
-	const slugCounts = new Map<string, number>();
+	const used = new Set<string>();
 	const sections = starts.map((start, s) => {
 		const end = starts[s + 1]?.line ?? lines.length;
 		const base = slugify(start.heading);
-		const seen = (slugCounts.get(base) ?? 0) + 1;
-		slugCounts.set(base, seen);
+		let slug = base;
+		for (let n = 2; used.has(slug); n++) slug = `${base}-${n}`;
+		used.add(slug);
 		return {
-			slug: seen === 1 ? base : `${base}-${seen}`,
+			slug,
 			heading: start.heading,
 			startLine: start.line,
 			endLine: end,
@@ -113,7 +113,14 @@ export function listSections(skillDir: string, entryOverride?: string) {
 }
 
 function readManifest(manifestPath: string): { skillDir: string; entry?: string; moves: Move[] } {
-	const m = JSON.parse(readFileSync(manifestPath, "utf8"));
+	let m: { skillDir?: unknown; entry?: string; moves?: unknown };
+	try {
+		m = JSON.parse(readFileSync(manifestPath, "utf8"));
+	} catch (error) {
+		throw new SplitError(`manifest error: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	if (typeof m !== "object" || m === null || Array.isArray(m))
+		throw new SplitError("manifest error: the manifest must be a JSON object");
 	if (typeof m.skillDir !== "string" || m.skillDir.length === 0)
 		throw new SplitError("manifest error: skillDir must be a non-empty string");
 	if (!Array.isArray(m.moves) || m.moves.length === 0)
@@ -121,7 +128,18 @@ function readManifest(manifestPath: string): { skillDir: string; entry?: string;
 	for (const mv of m.moves)
 		if (typeof mv?.slug !== "string" || typeof mv?.dest !== "string")
 			throw new SplitError(`manifest error: each move needs string slug/dest, got ${JSON.stringify(mv)}`);
-	return { skillDir: m.skillDir.replace(/\/$/, ""), entry: m.entry, moves: m.moves };
+	return { skillDir: m.skillDir.replace(/\/$/, ""), entry: m.entry, moves: m.moves as Move[] };
+}
+
+/** Router rows shaped to the section's two-column table, or null when it has none. */
+export function routerRows(body: string[], entries: { heading: string; dest: string }[]): string[] | null {
+	const header = body.find(isTableRow);
+	const cells = header?.split("|").slice(1, -1) ?? [];
+	if (cells.length !== 2) return null;
+	const pathFirst = /file|path/i.test(cells[0] ?? "");
+	return entries.map(({ heading, dest }) =>
+		pathFirst ? `| \`${dest}\` | ${heading} |` : `| ${heading} | \`${dest}\` |`,
+	);
 }
 
 /** Move the manifest's sections verbatim into reference files after a durable backup. */
@@ -134,10 +152,15 @@ export function applyManifest(manifestPath: string): ApplyResult {
 	const missing = moves.filter((mv) => !bySlug.has(mv.slug)).map((mv) => mv.slug);
 	if (missing.length) throw new SplitError(`unknown section slug(s): ${missing.join(", ")}`);
 	const sectionOf = (slug: string) => bySlug.get(slug) as Section;
+	const entryReal = realpathSync(entryPath);
+	const intoEntry = moves.find(
+		(mv) => resolve(skillDir, mv.dest) === resolve(entryPath) || resolve(skillDir, mv.dest) === entryReal,
+	);
+	if (intoEntry) throw new SplitError(`move "${intoEntry.slug}" targets the entry file itself`);
 
 	const backup = join(stateRoot(), "skill-cleanup", "backups", `${basename(skillDir)}-${Date.now()}`);
 	mkdirSync(dirname(backup), { recursive: true });
-	cpSync(skillDir, backup, { recursive: true });
+	cpSync(realpathSync(skillDir), backup, { recursive: true, dereference: true });
 
 	const destContent = new Map<string, string[]>();
 	for (const mv of moves) {
@@ -157,8 +180,11 @@ export function applyManifest(manifestPath: string): ApplyResult {
 	}
 
 	const movedSlugs = new Set(moves.map((mv) => mv.slug));
+	const entries = moves.map((mv) => ({ heading: sectionOf(mv.slug).heading, dest: mv.dest }));
 	const newRows = moves.map((mv) => `| ${sectionOf(mv.slug).heading} | \`${mv.dest}\` |`);
-	const existingRouter = findExistingRouter(sections, movedSlugs);
+	const candidate = findExistingRouter(sections, movedSlugs);
+	const mergedRows = candidate ? routerRows(lines.slice(candidate.startLine, candidate.endLine), entries) : null;
+	const existingRouter = mergedRows ? candidate : undefined;
 	const firstMoved = Math.min(...moves.map((mv) => sectionOf(mv.slug).startLine));
 	const out: string[] = [];
 	for (let i = 0; i < lines.length; ) {
@@ -172,8 +198,7 @@ export function applyManifest(manifestPath: string): ApplyResult {
 		if (sec && sec === existingRouter) {
 			const body = lines.slice(sec.startLine, sec.endLine);
 			const lastRow = body.reduce((last, l, j) => (isTableRow(l) ? j : last), -1);
-			if (lastRow === -1) out.push(...body, ...newRows);
-			else out.push(...body.slice(0, lastRow + 1), ...newRows, ...body.slice(lastRow + 1));
+			out.push(...body.slice(0, lastRow + 1), ...(mergedRows ?? []), ...body.slice(lastRow + 1));
 			i = sec.endLine;
 			continue;
 		}

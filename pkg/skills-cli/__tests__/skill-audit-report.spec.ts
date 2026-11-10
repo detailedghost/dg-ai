@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approxTokens, audit, type FileEntry } from "../src/skill/audit";
@@ -256,4 +256,24 @@ test("doFix=true on a dir with no issues → fixed[] stays empty", () => {
 	const result = audit(dir, 1500, true) as Audit;
 	expect(result.fixed).toEqual([]);
 	expect(result.issues).toEqual([]);
+});
+
+test("--fix does not overwrite SKILL.md when skill.md also exists", () => {
+	const dir = makeSkill("both-entries", { "SKILL.md": "# upper\n", "skill.md": "# lower\n" });
+	const names = readdirSync(dir);
+	if (!names.includes("SKILL.md") || !names.includes("skill.md")) return;
+	const result = audit(dir, 1500, true) as Audit;
+	expect(readFileSync(join(dir, "SKILL.md"), "utf8")).toBe("# upper\n");
+	expect(result.issues.some((i) => i.includes("both SKILL.md and skill.md"))).toBe(true);
+});
+
+test("a relative skill dir with a relative link finishes and resolves the link", () => {
+	const dir = makeSkill("rel-skill", { "SKILL.md": "[r](references/real.md)\n", "references/real.md": "# r" });
+	const cwd = process.cwd();
+	process.chdir(dir);
+	try {
+		expect((audit(".") as Audit).issues).toEqual([]);
+	} finally {
+		process.chdir(cwd);
+	}
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { headingKeyword } from "../src/skill/audit";
@@ -164,4 +164,48 @@ test("apply: rejects a manifest with no moves with a SplitError", () => {
 	writeEntry(["# Skill", "## Details", "x", ""].join("\n"));
 	const manifest = writeManifest({ skillDir, moves: [] });
 	expect(() => applyManifest(manifest)).toThrow(SplitError);
+});
+
+test("parseSections: a generated suffix never collides with a real heading slug", () => {
+	const { sections } = parseSections(["## Setup", "a", "## Setup", "b", "## Setup 2", "c"]);
+	const slugs = sections.map((s) => s.slug);
+	expect(new Set(slugs).size).toBe(3);
+});
+
+test("parseSections: a four-backtick fence holding a three-backtick example hides its headings", () => {
+	const lines = ["## Real", "````md", "```", "## Example", "```", "````", "## After"];
+	expect(parseSections(lines).sections.map((s) => s.heading)).toEqual(["Real", "After"]);
+});
+
+test("apply: rejects a move into the entry file before writing anything", () => {
+	writeEntry(["# Skill", "## Details", "x", ""].join("\n"));
+	const manifest = writeManifest({ skillDir, moves: [{ slug: "details", dest: "SKILL.md" }] });
+	expect(() => applyManifest(manifest)).toThrow(SplitError);
+	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("## Details");
+});
+
+test("apply: malformed or null manifests throw SplitError", () => {
+	const bad = join(tmp, "bad.json");
+	writeFileSync(bad, "{ nope");
+	expect(() => applyManifest(bad)).toThrow(SplitError);
+	expect(() => applyManifest(writeManifest(null))).toThrow(SplitError);
+});
+
+test("apply: the backup of a symlinked skill dir keeps the original entry", () => {
+	writeEntry(["# Skill", "## Details", "original", ""].join("\n"));
+	const link = join(tmp, "linked-skill");
+	symlinkSync(skillDir, link);
+	const result = applyManifest(writeManifest({ skillDir: link, moves: [{ slug: "details", dest: "references/d.md" }] }));
+	expect(readFileSync(join(result.backup, "SKILL.md"), "utf8")).toContain("## Details");
+	expect(readdirSync(result.backup)).not.toContain("references");
+});
+
+test("apply: rows follow a File-first References table", () => {
+	writeEntry(
+		["# Skill", "## References", "| File | When to read |", "|---|---|", "| `references/a.md` | always |", "## Details", "x", ""].join(
+			"\n",
+		),
+	);
+	applyManifest(writeManifest({ skillDir, moves: [{ slug: "details", dest: "references/details.md" }] }));
+	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("| `references/details.md` | Details |");
 });

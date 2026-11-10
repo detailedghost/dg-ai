@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "examples"]);
 const JUNK = [/Zone\.Identifier$/, /\.DS_Store$/, /Thumbs\.db$/];
@@ -50,9 +50,10 @@ function walk(dir: string, root: string, out: FileEntry[], junk: string[], vendo
 /** Relative `[text](a/b.md)` links outside code that resolve from no ancestor up to the skills root. */
 export function brokenLinks(root: string, files: FileEntry[]): string[] {
 	const out: string[] = [];
-	const skillsRoot = dirname(root);
+	const skillRoot = resolve(root);
+	const skillsRoot = dirname(skillRoot);
 	for (const f of files) {
-		const text = readFileSync(join(root, f.path), "utf8");
+		const text = readFileSync(join(skillRoot, f.path), "utf8");
 		const seen = new Set<string>();
 		for (const m of text.matchAll(SCAN_RE)) {
 			const href = m[1];
@@ -60,7 +61,7 @@ export function brokenLinks(root: string, files: FileEntry[]): string[] {
 			if (seen.has(href)) continue;
 			seen.add(href);
 			const bases: string[] = [];
-			for (let d = dirname(join(root, f.path)); d.startsWith(skillsRoot); d = dirname(d)) bases.push(d);
+			for (let d = dirname(join(skillRoot, f.path)); d.startsWith(skillsRoot + sep); d = dirname(d)) bases.push(d);
 			bases.push(skillsRoot);
 			if (!bases.some((b) => existsSync(join(b, href)))) out.push(`${f.path} → ${href}`);
 		}
@@ -109,7 +110,7 @@ export function backReferencedHeadings(text: string): string[] {
 }
 
 export function audit(skillDir: string, threshold = 1500, doFix = false): Audit | null {
-	const dir = skillDir.replace(/\/$/, "");
+	const dir = resolve(skillDir);
 	const files: FileEntry[] = [];
 	const junkFull: string[] = [];
 	const vendor = { v: false };
@@ -124,7 +125,10 @@ export function audit(skillDir: string, threshold = 1500, doFix = false): Audit 
 	const fixed: string[] = [];
 
 	const lowercaseEntry = files.find((f) => f.path === "skill.md");
-	if (lowercaseEntry) {
+	const bothEntries = lowercaseEntry !== undefined && readdirSync(dir).includes("SKILL.md");
+	if (bothEntries) {
+		issues.push("both SKILL.md and skill.md exist — merge them by hand; --fix will not overwrite SKILL.md");
+	} else if (lowercaseEntry) {
 		if (doFix) {
 			renameSync(join(dir, "skill.md"), join(dir, "SKILL.md"));
 			lowercaseEntry.path = "SKILL.md";
