@@ -182,8 +182,6 @@ function longCriticalPath(label: { order: string; text: string }): string {
 interface Best {
 	bucket: EtaBucket;
 	item: ChecklistItem;
-	topIndex: number;
-	inOpen: boolean;
 }
 
 function findCritical(model: ChecklistModel): { anyUnfinished: boolean; best: Best | null } {
@@ -197,12 +195,7 @@ function findCritical(model: ChecklistModel): { anyUnfinished: boolean; best: Be
 		if (ownerFor(item.status) !== "agent") continue;
 		if (!item.eta || item.eta === "unknown") continue;
 		if (!best || etaRank(item.eta) > etaRank(best.bucket)) {
-			best = {
-				bucket: item.eta,
-				item,
-				topIndex: entry.topIndex,
-				inOpen: entry.scope === "open-top" || entry.scope === "open-child",
-			};
+			best = { bucket: item.eta, item };
 		}
 	}
 	return { anyUnfinished, best };
@@ -236,6 +229,19 @@ function totalLine(total: TotalResult | null, prefix: string): string | null {
 	return `${prefix}${body}`;
 }
 
+/** Labels for the first open plan step and the first item off the critical path. */
+function planMarks(model: ChecklistModel): { here?: string; side?: string } {
+	const tops = locateAll(model).filter((e) => e.scope === "open-top");
+	return {
+		here: tops.find((e) => !isSide(e.item))?.label,
+		side: tops.find((e) => isSide(e.item))?.label,
+	};
+}
+
+function hiddenDoneLine(count: number, prefix: string): string[] {
+	return count > 0 ? [`${prefix}...and ${count} earlier done`] : [];
+}
+
 function noChecklistMessage(): string {
 	return `No checklist yet. Add one with: ${CLI_PATH} stat add "<text>"`;
 }
@@ -253,12 +259,17 @@ function indentFor(order: string): string {
 export function renderEmoji(model: ChecklistModel): string {
 	if (isEmptyModel(model)) return `${noChecklistMessage()}\n`;
 	const { rows, hiddenDoneCount } = flattenForDisplay(model);
-	const lines = rows.map((row) => {
+	const marks = planMarks(model);
+	const lines = hiddenDoneLine(hiddenDoneCount, "");
+	for (const row of rows) {
 		const etaSuffix =
 			row.owner === "agent" && row.status !== "done" && row.eta ? ` [${row.eta}]` : "";
-		return `${indentFor(row.order)}${displayNumber(row.order)}. ${STATUS_EMOJI[row.status]} ${row.text}${etaSuffix}`;
-	});
-	if (hiddenDoneCount > 0) lines.push(`...and ${hiddenDoneCount} more done`);
+		if (row.order === marks.side) lines.push("", "Off the critical path:");
+		const here = row.order === marks.here ? "  ← you are here" : "";
+		lines.push(
+			`${indentFor(row.order)}${displayNumber(row.order)}. ${STATUS_EMOJI[row.status]} ${row.text}${etaSuffix}${here}`,
+		);
+	}
 	const total = totalLine(computeTotal(model), "");
 	if (total) lines.push("", total);
 	const waiting = waitingLine(model, "");
@@ -269,13 +280,18 @@ export function renderEmoji(model: ChecklistModel): string {
 export function renderPlain(model: ChecklistModel): string {
 	if (isEmptyModel(model)) return toAscii(`${noChecklistMessage()}\n`);
 	const { rows, hiddenDoneCount } = flattenForDisplay(model);
-	const lines = rows.map((row) => {
+	const marks = planMarks(model);
+	const lines = hiddenDoneLine(hiddenDoneCount, "");
+	for (const row of rows) {
 		const box = row.status === "done" ? "x" : " ";
 		const etaSuffix =
 			row.owner === "agent" && row.status !== "done" && row.eta ? ` [${row.eta}]` : "";
-		return `${indentFor(row.order)}${displayNumber(row.order)}. [${box}] ${row.status}: ${row.text}${etaSuffix}`;
-	});
-	if (hiddenDoneCount > 0) lines.push(`...and ${hiddenDoneCount} more done`);
+		if (row.order === marks.side) lines.push("", "Off the critical path:");
+		const here = row.order === marks.here ? "  <- you are here" : "";
+		lines.push(
+			`${indentFor(row.order)}${displayNumber(row.order)}. [${box}] ${row.status}: ${row.text}${etaSuffix}${here}`,
+		);
+	}
 	const total = totalLine(computeTotal(model), "# ");
 	if (total) lines.push("", total);
 	const waiting = waitingLine(model, "");
@@ -292,13 +308,13 @@ export function renderLong(model: ChecklistModel): string {
 		return `${lines.join("\n")}\n`;
 	}
 	const { rows, hiddenDoneCount } = flattenForDisplay(model);
+	lines.push(...hiddenDoneLine(hiddenDoneCount, "# "));
 	for (const row of rows) {
 		const owner = row.owner ?? "-";
 		const eta = row.owner === "agent" && row.status !== "done" && row.eta ? row.eta : "-";
 		const order = row.order.includes(".") ? "-" : row.order;
 		lines.push([order, owner, row.status, tsvField(row.text), "-", "-", eta].join("\t"));
 	}
-	if (hiddenDoneCount > 0) lines.push(`# ...and ${hiddenDoneCount} more done`);
 	const total = computeTotal(model);
 	if (total) {
 		const line = total.label
@@ -338,12 +354,10 @@ function toJsonItem(item: ChecklistItem, order: string): JsonItem {
 }
 
 export function renderJsonModel(model: ChecklistModel): JsonChecklist {
-	const open = displayOpen(model).map((item, i) => toJsonItem(item, String(i + 1)));
-	let n = model.open.length;
-	const done = model.done.map((item) => {
-		n++;
-		return toJsonItem(item, String(n));
-	});
+	const tops = locateAll(model).filter((e) => e.scope === "open-top" || e.scope === "done-top");
+	const labelOf = (item: ChecklistItem) => tops.find((e) => e.item === item)?.label ?? "";
+	const open = displayEntries(model).map(({ item }) => toJsonItem(item, labelOf(item)));
+	const done = model.done.map((item) => toJsonItem(item, labelOf(item)));
 	const total = computeTotal(model);
 	return {
 		open,
@@ -371,62 +385,31 @@ interface Located {
 	topIndex: number;
 }
 
-const GROUP_BLOCKED = 0;
-const GROUP_CRITICAL = 1;
-const GROUP_AGENT = 2;
-const GROUP_PARKED = 3;
-const GROUP_NEEDS_USER = 4;
-
-function isAgentBucket(item: ChecklistItem): boolean {
-	return item.status !== "blocked-user" && item.status !== "needs-user" && item.status !== "parked";
+function isSide(item: ChecklistItem): boolean {
+	return item.status === "needs-user" || item.status === "parked";
 }
 
-function chainRank(item: ChecklistItem): number {
-	let rank = 0;
-	for (const member of [item, ...item.children]) {
-		if (member.status === "done" || member.status === "parked") continue;
-		if (ownerFor(member.status) !== "agent" || !member.eta) continue;
-		rank = Math.max(rank, etaRank(member.eta));
-	}
-	return rank;
-}
-
-/** Open top-level items in display order: blocked-user, critical chain, other chains by ETA, parked, needs-user. Ties keep stored order. */
+/** Open top-level items in plan order: stored order, with needs-user and parked items moved after the plan. */
 function displayEntries(model: ChecklistModel): { item: ChecklistItem; topIndex: number }[] {
-	const { best } = findCritical(model);
-	const critical =
-		best?.inOpen && isAgentBucket(model.open[best.topIndex] as ChecklistItem)
-			? best.topIndex
-			: undefined;
-	const keyed = model.open.map((item, topIndex) => {
-		let group = GROUP_AGENT;
-		if (item.status === "blocked-user") group = GROUP_BLOCKED;
-		else if (topIndex === critical) group = GROUP_CRITICAL;
-		else if (item.status === "needs-user") group = GROUP_NEEDS_USER;
-		else if (item.status === "parked") group = GROUP_PARKED;
-		return { item, topIndex, group, rank: group === GROUP_AGENT ? chainRank(item) : 0 };
-	});
-	const hasEta = (rank: number) => (rank > 0 ? 0 : 1);
-	keyed.sort(
-		(a, b) =>
-			a.group - b.group ||
-			hasEta(a.rank) - hasEta(b.rank) ||
-			b.rank - a.rank ||
-			a.topIndex - b.topIndex,
-	);
-	return keyed;
+	const entries = model.open.map((item, topIndex) => ({ item, topIndex }));
+	return [...entries.filter((e) => !isSide(e.item)), ...entries.filter((e) => isSide(e.item))];
 }
 
-function displayOpen(model: ChecklistModel): ChecklistItem[] {
-	return displayEntries(model).map((entry) => entry.item);
-}
-
+/** Done items first, oldest first, so numbers run in plan order; `topIndex` stays the index into `model.done`. */
 function collect(
 	open: { item: ChecklistItem; topIndex: number }[],
 	done: ChecklistItem[],
 ): Located[] {
 	const out: Located[] = [];
 	let n = 0;
+	for (let topIndex = done.length - 1; topIndex >= 0; topIndex--) {
+		const item = done[topIndex] as ChecklistItem;
+		n++;
+		out.push({ item, label: String(n), scope: "done-top", topIndex });
+		item.children.forEach((child, i) =>
+			out.push({ item: child, label: `${n}.${i + 1}`, scope: "done-child", topIndex }),
+		);
+	}
 	for (const { item, topIndex } of open) {
 		n++;
 		out.push({ item, label: String(n), scope: "open-top", topIndex });
@@ -434,13 +417,6 @@ function collect(
 			out.push({ item: child, label: `${n}.${i + 1}`, scope: "open-child", topIndex }),
 		);
 	}
-	done.forEach((item, topIndex) => {
-		n++;
-		out.push({ item, label: String(n), scope: "done-top", topIndex });
-		item.children.forEach((child, i) =>
-			out.push({ item: child, label: `${n}.${i + 1}`, scope: "done-child", topIndex }),
-		);
-	});
 	return out;
 }
 
@@ -615,7 +591,8 @@ export function addItem(
 	});
 	if (opts.at === undefined) return withLabel(insertedAt(model.open.length), item);
 
-	const wanted = clampPosition(opts.at, model.open.length);
+	const firstOpen = model.done.length;
+	const wanted = clampPosition(opts.at - firstOpen, model.open.length);
 	let best = { model: insertedAt(model.open.length), distance: Number.POSITIVE_INFINITY, shownAt: 0 };
 	for (let stored = 0; stored <= model.open.length && best.distance > 0; stored++) {
 		const candidate = insertedAt(stored);
@@ -623,8 +600,8 @@ export function addItem(
 		const distance = Math.abs(shownAt - wanted);
 		if (distance < best.distance) best = { model: candidate, distance, shownAt };
 	}
-	if (best.distance > 0 && opts.at <= model.open.length) {
-		return { ok: false, placement: { wanted: opts.at, landsAt: best.shownAt + 1 } };
+	if (best.distance > 0 && opts.at <= firstOpen + model.open.length) {
+		return { ok: false, placement: { wanted: opts.at, landsAt: firstOpen + best.shownAt + 1 } };
 	}
 	return withLabel(best.model, item);
 }

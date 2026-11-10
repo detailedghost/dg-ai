@@ -76,7 +76,7 @@ export function registerStat(program: Command): void {
 			`one of ${STATUSES.filter((s) => s !== "done").join(", ")} (default queued)`,
 		)
 		.option("--eta <bucket>", `one of ${ETA_BUCKETS.join(", ")}`)
-		.option("--at <n>", "1-based position among open top-level items (default: end); fails if status/ETA order forbids that position")
+		.option("--at <n>", "position by the number shown, counted from the first open item (default: end); fails if the item would land elsewhere")
 		.option("--under <nOrMatch>", "add as a sub-item of this open top-level item")
 		.action(
 			async (
@@ -99,7 +99,7 @@ export function registerStat(program: Command): void {
 					const added = addItem(model, text, { status, eta, at, under: options.under });
 					if (!added.ok && "placement" in added) {
 						throw new Error(
-							`add: --at ${added.placement.wanted} is not reachable; the item would land at position ${added.placement.landsAt} because display order follows status and ETA`,
+							`add: --at ${added.placement.wanted} is not reachable; the item would land at position ${added.placement.landsAt} because needs-user and parked items sit after the plan`,
 						);
 					}
 					if (!added.ok) reportMatchFailure("add", options.under ?? "", added.candidates);

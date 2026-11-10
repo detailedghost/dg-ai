@@ -69,7 +69,7 @@ describe("dg-skills stat checklist", () => {
 			const nfLines = (await runAwk(["-F", "\t", "!/^#/ {print NF}"], out)).trim().split("\n");
 			expect(new Set(nfLines)).toEqual(new Set(["7"]));
 			const statusColumn = await runAwk(["-F", "\t", "!/^#/ && NR>1 {print $3}"], out);
-			expect(statusColumn.trim().split("\n")).toEqual(["blocked-user", "running", "running"]);
+			expect(statusColumn.trim().split("\n")).toEqual(["running", "running", "blocked-user"]);
 		});
 	});
 
@@ -85,27 +85,29 @@ describe("dg-skills stat checklist", () => {
 
 	test("add --under takes the number the checklist shows, not the stored position", async () => {
 		await withRoot(async (env) => {
+			await runCli(["stat", "add", "sign", "--status", "needs-user"], env);
 			await runCli(["stat", "add", "short", "--status", "running", "--eta", "<5 min"], env);
-			await runCli(["stat", "add", "long", "--status", "running", "--eta", ">1 hr"], env);
 			const added = await runCli(["stat", "add", "kid", "--under", "1"], env);
 			expect(JSON.parse(added.out)).toMatchObject({ order: "1.1", text: "kid" });
 			const { out } = await runCli(["stat", "checklist", "-p"], env);
-			expect(out.split("\n").slice(0, 3)).toEqual([
-				"1. [ ] running: long [>1 hr]",
+			expect(out.split("\n").slice(0, 5)).toEqual([
+				"1. [ ] running: short [<5 min]  <- you are here",
 				"   1. [ ] queued: kid",
-				"2. [ ] running: short [<5 min]",
+				"",
+				"Off the critical path:",
+				"2. [ ] needs-user: sign",
 			]);
 		});
 	});
 
 	test("add --at exits non-zero and writes nothing when the position is unreachable", async () => {
 		await withRoot(async (env) => {
-			await runCli(["stat", "add", "Approve it", "--status", "blocked-user"], env);
+			await runCli(["stat", "add", "Build it", "--status", "running"], env);
 			const before = await runCli(["stat", "checklist", "-p"], env);
-			const failed = await runCli(["stat", "add", "Later", "--at", "1"], env);
+			const failed = await runCli(["stat", "add", "Sign it", "--status", "needs-user", "--at", "1"], env);
 			expect(failed.code).not.toBe(0);
 			expect(failed.err).toContain(
-				"add: --at 1 is not reachable; the item would land at position 2 because display order follows status and ETA",
+				"add: --at 1 is not reachable; the item would land at position 2 because needs-user and parked items sit after the plan",
 			);
 			const after = await runCli(["stat", "checklist", "-p"], env);
 			expect(after.out).toBe(before.out);
@@ -164,9 +166,9 @@ describe("dg-skills stat checklist", () => {
 		await withRoot(async (env) => {
 			await runCli(["stat", "add", "Phone feature to PR", "--status", "running", "--eta", "~1 hr"], env);
 			const emoji = await runCli(["stat", "checklist"], env);
-			expect(emoji.out).toMatch(/Phone feature to PR \[~1 hr\]\n\nTotal: /);
+			expect(emoji.out).toMatch(/Phone feature to PR \[~1 hr\]  ← you are here\n\nTotal: /);
 			const plain = await runCli(["stat", "checklist", "-p"], env);
-			expect(plain.out).toMatch(/Phone feature to PR \[~1 hr\]\n\n# Total: /);
+			expect(plain.out).toMatch(/Phone feature to PR \[~1 hr\]  <- you are here\n\n# Total: /);
 		});
 	});
 
@@ -230,7 +232,7 @@ describe("dg-skills stat checklist", () => {
 			await runCli(["stat", "done", "a"], env);
 			await runCli(["stat", "status", "a", "queued"], env);
 			const { out } = await runCli(["stat", "checklist"], env);
-			expect(out.split("\n").filter(Boolean)).toEqual(["1. ⏳ b", "2. ⏳ a", "Total: unknown"]);
+			expect(out.split("\n").filter(Boolean)).toEqual(["1. ⏳ b  ← you are here", "2. ⏳ a", "Total: unknown"]);
 		});
 	});
 });
