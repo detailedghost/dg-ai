@@ -28,7 +28,7 @@ const REGISTRY_KEY = Symbol.for("dg.webmcp.tools");
 
 function createShim(): ModelContext {
 	const tools = new Map<string, WebMcpTool>();
-	return {
+	const shim: ModelContext = {
 		registerTool(tool, { signal } = {}) {
 			if (signal?.aborted) return;
 			if (tools.has(tool.name)) throw new Error(`The tool ${tool.name} is already registered.`);
@@ -52,6 +52,8 @@ function createShim(): ModelContext {
 			return output;
 		},
 	};
+	Object.defineProperty(shim, Symbol.for("dg.webmcp.shim"), { value: true });
+	return shim;
 }
 
 /** Returns the page's own modelContext when it has one; otherwise defines a non-writable one. */

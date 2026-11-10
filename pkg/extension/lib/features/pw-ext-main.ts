@@ -135,6 +135,20 @@ export async function pwExtWebMcp(
 			return undefined;
 		}
 	};
+	const wholeJson = (value: unknown, max: number): string | undefined => {
+		if (value === undefined || value === null) return undefined;
+		try {
+			const raw = typeof value === "string" ? value : JSON.stringify(value);
+			if (typeof raw !== "string" || raw.length > max * 4) return undefined;
+			let out = raw;
+			for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
+			if (out.length > max) return undefined;
+			JSON.parse(out);
+			return out;
+		} catch {
+			return undefined;
+		}
+	};
 	type Raw = {
 		name?: unknown;
 		title?: unknown;
@@ -159,16 +173,36 @@ export async function pwExtWebMcp(
 		| undefined;
 	const modern = doc.modelContext;
 	const legacy = nav?.modelContextTesting;
-	const api = modern ? "modelContext" : legacy ? "modelContextTesting" : "none";
+	let useModern = Boolean(modern);
+	let api: "modelContext" | "modelContextTesting" | "none" = modern ? "modelContext" : legacy ? "modelContextTesting" : "none";
+	const registryOf = () =>
+		(globalThis as unknown as Record<symbol, { unregisterAll?: unknown } | undefined>)[
+			Symbol.for("dg.webmcp.tools")
+		];
 	try {
 		if (api === "none") return { api, tools: [] };
 		if (changed()) return CHANGED;
 		const discoveryMs = action.kind === "call" ? action.timeoutMs : (action.timeoutMs ?? 10_000);
+		const shimmed = (modern as object | undefined as Record<symbol, unknown> | undefined)?.[Symbol.for("dg.webmcp.shim")] === true;
+		if (shimmed && legacy) {
+			const legacyList = await withTimeout(
+				Promise.resolve((legacy.listTools ?? legacy.getTools)?.call(legacy) ?? []),
+				discoveryMs,
+				"WebMCP tool discovery",
+			);
+			if (changed()) return CHANGED;
+			if (Array.isArray(legacyList) && legacyList.length > 0) {
+				useModern = false;
+				api = "modelContextTesting";
+				const early = registryOf();
+				if (typeof early?.unregisterAll === "function") early.unregisterAll();
+			}
+		}
 		const discover = async (): Promise<Raw[]> => {
 			const raw: Raw[] = await withTimeout(
 				Promise.resolve(
-					modern
-						? modern.getTools()
+					useModern
+						? modern!.getTools()
 						: ((legacy?.listTools ?? legacy?.getTools)?.call(legacy) ?? []),
 				),
 				discoveryMs,
@@ -178,9 +212,7 @@ export async function pwExtWebMcp(
 		};
 		let list = await discover();
 		if (changed()) return CHANGED;
-		const registry = (globalThis as unknown as Record<symbol, { unregisterAll?: unknown } | undefined>)[
-			Symbol.for("dg.webmcp.tools")
-		];
+		const registry = registryOf();
 		if (
 			list.some((tool) => !/^dg_[a-z0-9]+_[a-z0-9_]+$/.test(String(tool.name))) &&
 			typeof registry?.unregisterAll === "function"
@@ -196,9 +228,9 @@ export async function pwExtWebMcp(
 					description: clip(String(tool.description ?? ""), DESCRIPTION_MAX),
 				};
 				if (typeof tool.title === "string") entry.title = clip(tool.title, 200);
-				const schema = json(tool.inputSchema, SCHEMA_MAX);
+				const schema = wholeJson(tool.inputSchema, SCHEMA_MAX);
 				if (schema) entry.inputSchema = schema;
-				const annotations = json(tool.annotations, 500);
+				const annotations = wholeJson(tool.annotations, 500);
 				if (annotations) entry.annotations = annotations;
 				return entry;
 			});
@@ -217,8 +249,8 @@ export async function pwExtWebMcp(
 		});
 		try {
 			const output = await Promise.race([
-				modern
-					? modern.executeTool({ name: action.tool }, action.args, { signal: controller.signal })
+				useModern
+					? modern!.executeTool({ name: action.tool }, action.args, { signal: controller.signal })
 					: legacy!.executeTool(action.tool, JSON.stringify(action.args)),
 				timeout,
 			]);

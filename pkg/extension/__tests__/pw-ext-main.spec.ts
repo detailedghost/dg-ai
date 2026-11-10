@@ -125,7 +125,7 @@ describe("WebMCP", () => {
 			annotations: '{"readOnlyHint":true}',
 		});
 		expect(result.tools[1]?.description.length).toBeLessThanOrEqual(1001);
-		expect(result.tools[1]?.inputSchema.length).toBeLessThanOrEqual(4001);
+		expect(result.tools[1]?.inputSchema).toBeUndefined();
 	});
 
 	it("calls one tool by name with the given args", async () => {
@@ -344,5 +344,73 @@ describe("WebMCP dg tool registry", () => {
 
 	it("inlines the same dg name regex as isDgToolName", () => {
 		expect(pwExtWebMcp.toString()).toContain(DG_TOOL_NAME.source);
+	});
+});
+
+describe("WebMCP schemas", () => {
+	it("omits a schema over the limit instead of clipping it", async () => {
+		installModelContext([
+			{ name: "big", description: "d", inputSchema: { type: "object", note: "n".repeat(5000) } },
+			{ name: "small", description: "d", inputSchema: { type: "object", properties: { q: { type: "string" } } } },
+			{ name: "hints", description: "d", annotations: { note: "n".repeat(900) } },
+		]);
+		const { tools } = (await pwExtWebMcp({ kind: "tools" })) as { tools: Record<string, string>[] };
+		expect(tools[0]).toEqual({ name: "big", description: "d" });
+		expect(() => JSON.parse(tools[1]!.inputSchema!)).not.toThrow();
+		expect(tools[2]).toEqual({ name: "hints", description: "d" });
+	});
+
+	it("redacts a token in a schema before the length check", async () => {
+		installModelContext([{ name: "t", description: "d", inputSchema: { default: "token=abc123def456" } }]);
+		const { tools } = (await pwExtWebMcp({ kind: "tools" })) as { tools: Record<string, string>[] };
+		expect(tools[0]?.inputSchema).not.toContain("abc123def456");
+		expect(() => JSON.parse(tools[0]!.inputSchema!)).not.toThrow();
+	});
+});
+
+describe("WebMCP legacy API next to the dg shim", () => {
+	const slot = globalThis as unknown as Record<symbol, unknown>;
+
+	afterEach(() => {
+		delete slot[Symbol.for("dg.webmcp.tools")];
+	});
+
+	async function pageWithShim(legacyTools: { name: string; description: string }[]) {
+		const { installModelContextShim, registerDgTool } = await import("@/lib/features/webmcp-shim");
+		const doc = window.document as unknown as Document;
+		installModelContextShim(doc);
+		registerDgTool({ name: "dg_outlook_list", description: "List", execute: () => "[]" }, doc);
+		const executed: unknown[] = [];
+		Object.defineProperty(window.navigator, "modelContextTesting", {
+			configurable: true,
+			value: {
+				listTools: async () => legacyTools,
+				executeTool: async (name: string, input: string) => {
+					executed.push([name, input]);
+					return "legacy ok";
+				},
+			},
+		});
+		return executed;
+	}
+
+	it("lets the site's legacy tools win and unregisters the dg tools", async () => {
+		const executed = await pageWithShim([{ name: "site_tool", description: "Site" }]);
+		expect(await pwExtWebMcp({ kind: "tools" })).toEqual({
+			api: "modelContextTesting",
+			tools: [{ name: "site_tool", description: "Site" }],
+		});
+		expect((slot[Symbol.for("dg.webmcp.tools")] as { names(): string[] }).names()).toEqual([]);
+		expect(
+			await pwExtWebMcp({ kind: "call", tool: "site_tool", args: { a: 1 }, timeoutMs: 1000 }),
+		).toEqual({ api: "modelContextTesting", output: "legacy ok" });
+		expect(executed).toEqual([["site_tool", '{"a":1}']]);
+	});
+
+	it("falls back to the shim when the legacy API lists nothing", async () => {
+		await pageWithShim([]);
+		const result = (await pwExtWebMcp({ kind: "tools" })) as { api: string; tools: { name: string }[] };
+		expect(result.api).toBe("modelContext");
+		expect(result.tools.map((tool) => tool.name)).toEqual(["dg_outlook_list"]);
 	});
 });
