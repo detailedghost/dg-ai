@@ -33,7 +33,7 @@ import {
 	groupTitle,
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
-import { type Approvals, browserApprovals } from "./approval";
+import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
@@ -91,6 +91,12 @@ const CANCELED: PwExtResult = {
 };
 const NO_SESSION = "pw --ext needs a paired session.";
 const NO_TAB = "This agent has no tab yet. Run pw --ext new <url> first.";
+const UNMASK_REFUSED = {
+	deny: "The user clicked Deny in the browser; nothing was unmasked.",
+	closed: "The approval window was closed without an answer; nothing was unmasked.",
+	timeout: "No answer in the browser within 60 seconds; nothing was unmasked.",
+	unopened: "The approval window could not open; nothing was unmasked.",
+} satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
 const SECRET_TOO_SHORT = `pw --ext fills a secret of at least ${PW_EXT_MIN_SECRET_CHARS} characters only.`;
 const SECRETS_FULL = `This session already filled ${MAX_FILLED_SECRETS} secret values; start a new dg session to fill more.`;
 const SELECTED_GONE =
@@ -469,9 +475,7 @@ export function createPwExtHandler({
 					],
 				});
 				if (signal?.aborted) return CANCELED;
-				if (answer === "timeout")
-					return { ok: false, error: "No answer in the browser within 60 seconds; nothing was unmasked." };
-				if (answer === "deny") return { ok: false, error: "The user denied the unmask in the browser." };
+				if (answer !== "allow") return { ok: false, error: UNMASK_REFUSED[answer] };
 				const until = now() + minutes * 60_000;
 				await grants.grant(context.sessionId, { origin, groupId: tab.groupId ?? -1, until });
 				return ok(`### Result\nUnmasked on ${origin} until ${clock(until)}, approved in the browser.`);

@@ -1,7 +1,8 @@
 import { describeError } from "@dg/common";
 
 export type ApprovalRequest = { title: string; origin: string; lines: string[] };
-export type ApprovalAnswer = "allow" | "deny" | "timeout";
+/** deny is a Deny click; closed is the approval window closed with no answer; unopened is a window that could not open. */
+export type ApprovalAnswer = "allow" | "deny" | "closed" | "timeout" | "unopened";
 
 export const APPROVAL_TIMEOUT_MS = 60_000;
 export const APPROVAL_PAGE = "/approve.html";
@@ -47,7 +48,7 @@ export function createApprovals({
 	}
 
 	windows.onRemoved((windowId) => {
-		for (const [id, entry] of pending) if (entry.windowId === windowId) settle(id, "deny");
+		for (const [id, entry] of pending) if (entry.windowId === windowId) settle(id, "closed");
 	});
 
 	return {
@@ -63,12 +64,13 @@ export function createApprovals({
 				windows
 					.open(pageUrl(`${APPROVAL_PAGE}?id=${encodeURIComponent(id)}`))
 					.then((windowId) => {
-						if (pending.get(id) === entry) entry.windowId = windowId;
-						else if (windowId !== undefined) void windows.close(windowId).catch(() => undefined);
+						if (windowId === undefined) settle(id, "unopened");
+						else if (pending.get(id) === entry) entry.windowId = windowId;
+						else void windows.close(windowId).catch(() => undefined);
 					})
 					.catch((error: unknown) => {
 						console.warn("[dg-ai-extension] approval window failed", describeError(error));
-						settle(id, "deny");
+						settle(id, "unopened");
 					});
 			});
 		},

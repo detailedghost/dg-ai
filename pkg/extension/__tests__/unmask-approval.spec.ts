@@ -107,13 +107,41 @@ describe("approvals", () => {
 		expect(w.closed).toEqual([41]);
 	});
 
-	it("denies when the window is closed", async () => {
+	it("answers closed, not deny, when its own window is closed", async () => {
 		const w = fakeWindows();
 		const approvals = createApprovals({ windows: w.windows, pageUrl: (p) => p, newId: () => "id1" });
 		const answer = approvals.request(REQUEST);
 		await Bun.sleep(0);
 		w.removeWindow(41);
-		expect(await answer).toBe("deny");
+		expect(await answer).toBe("closed");
+	});
+
+	it("ignores the close of another window", async () => {
+		const w = fakeWindows();
+		const approvals = createApprovals({ windows: w.windows, pageUrl: (p) => p, newId: () => "id1" });
+		const answer = approvals.request(REQUEST);
+		await Bun.sleep(0);
+		w.removeWindow(7);
+		expect(approvals.show("id1")).toEqual(REQUEST);
+		approvals.answer("id1", true);
+		expect(await answer).toBe("allow");
+	});
+
+	it("is not settled by the late close of the window of an earlier denied request", async () => {
+		const w = fakeWindows();
+		let next = 0;
+		const approvals = createApprovals({ windows: w.windows, pageUrl: (p) => p, newId: () => `id${++next}` });
+		const first = approvals.request(REQUEST);
+		await Bun.sleep(0);
+		approvals.answer("id1", false);
+		expect(await first).toBe("deny");
+		const second = approvals.request(REQUEST);
+		await Bun.sleep(0);
+		w.removeWindow(41);
+		approvals.answer("id1", false);
+		expect(approvals.show("id2")).toEqual(REQUEST);
+		approvals.answer("id2", true);
+		expect(await second).toBe("allow");
 	});
 
 	it("times out with no answer", async () => {
@@ -122,11 +150,14 @@ describe("approvals", () => {
 		expect(await approvals.request(REQUEST)).toBe("timeout");
 	});
 
-	it("denies when the window cannot open", async () => {
+	it.each([
+		["rejects", async () => Promise.reject(new Error("no windows"))],
+		["gives no window id", async () => undefined],
+	])("answers unopened, not deny, when the window open %s", async (_name, open) => {
 		const approvals = createApprovals({
-			windows: { ...fakeWindows().windows, open: async () => Promise.reject(new Error("no windows")) },
+			windows: { ...fakeWindows().windows, open },
 			pageUrl: (p) => p,
 		});
-		expect(await approvals.request(REQUEST)).toBe("deny");
+		expect(await approvals.request(REQUEST)).toBe("unopened");
 	});
 });

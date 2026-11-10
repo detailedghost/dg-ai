@@ -29,7 +29,6 @@ async function show(): Promise<void> {
 	$("actions").hidden = false;
 	$<HTMLButtonElement>("allow").addEventListener("click", () => void answer(true));
 	$<HTMLButtonElement>("deny").addEventListener("click", () => void answer(false));
-	$<HTMLButtonElement>("deny").focus();
 }
 
 void show();

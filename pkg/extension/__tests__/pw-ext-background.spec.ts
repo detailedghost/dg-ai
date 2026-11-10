@@ -52,7 +52,7 @@ type Options = {
 	chromium?: boolean;
 	signal?: AbortSignal;
 	windowState?: "normal" | "minimized" | "maximized";
-	approval?: "allow" | "deny" | "timeout";
+	approval?: "allow" | "deny" | "closed" | "timeout" | "unopened";
 	clock?: { now: number };
 };
 
@@ -1137,8 +1137,10 @@ describe("pw --ext unmask", () => {
 	});
 
 	it.each([
-		["deny", "denied"],
+		["deny", "clicked Deny"],
+		["closed", "closed without an answer"],
 		["timeout", "60 seconds"],
+		["unopened", "could not open"],
 	] as const)("a %s answer grants nothing", async (approval, message) => {
 		const h = harness({ approval, pageResult: SNAPSHOT });
 		expect(await h.run({ verb: "unmask", minutes: 15 })).toEqual({ ok: false, error: expect.stringContaining(message) });
