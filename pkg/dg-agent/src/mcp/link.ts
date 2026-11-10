@@ -15,8 +15,13 @@ export async function connectCliLink(
 		CliClient.connect(value),
 ): Promise<McpLink> {
 	const client = await connect(session);
+	let closed = false;
+	client.onClose(() => {
+		closed = true;
+	});
 	return {
 		async request(frame, accept, timeoutMs) {
+			if (closed) throw new McpLinkClosedError(false);
 			try {
 				return await client.request(frame, accept, timeoutMs);
 			} catch (error) {

@@ -31,8 +31,16 @@ const TAB_DESCRIPTION =
 	"Tab id from pw --ext tabs. Needed when several tabs expose this tool.";
 
 export class McpLinkClosedError extends Error {
-	constructor() {
+	constructor(readonly submitted = true) {
 		super("dg-daemon closed the CLI connection");
+	}
+}
+
+class CallInterruptedError extends Error {
+	constructor(tool: string) {
+		super(
+			`The connection closed before the result arrived; ${tool} may have run. Check the mailbox before you retry.`,
+		);
 	}
 }
 
@@ -166,6 +174,8 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 			} catch (error) {
 				if (!(error instanceof McpLinkClosedError)) throw error;
 				drop(pending, active);
+				if (request.verb === "call" && error.submitted)
+					throw new CallInterruptedError(request.tool as string);
 			}
 		}
 	}

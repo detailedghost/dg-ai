@@ -340,6 +340,38 @@ describe("dg-agent mcp server session loss", () => {
 		expect(connectCount()).toBe(2);
 	});
 
+	it("sends a call once, reports it may have run, and serves the next call on the new link", async () => {
+		const closesDuringCall: Handler = (request) => {
+			if (request.verb === "call") throw new McpLinkClosedError();
+			return only(request);
+		};
+		const { client, sent, connectCount } = await connectClient([closesDuringCall, only]);
+		const first = await client.callTool({ name: "dg_outlook_list", arguments: { tab: 5 } });
+		expect(first.isError).toBe(true);
+		expect(textOf(first)).toBe(
+			"The connection closed before the result arrived; dg_outlook_list may have run. Check the mailbox before you retry.",
+		);
+		expect(sent.filter((entry) => entry.frame.request.verb === "call")).toHaveLength(1);
+		const second = await client.callTool({ name: "dg_outlook_list", arguments: { tab: 5 } });
+		expect(second.isError).toBeFalsy();
+		expect(connectCount()).toBe(2);
+	});
+
+	it("retries a call that closed before it was submitted", async () => {
+		let failed = false;
+		const notSent: Handler = (request) => {
+			if (request.verb === "call" && !failed) {
+				failed = true;
+				throw new McpLinkClosedError(false);
+			}
+			return only(request);
+		};
+		const { client, connectCount } = await connectClient([notSent, only]);
+		const result = await client.callTool({ name: "dg_outlook_list", arguments: { tab: 5 } });
+		expect(result.isError).toBeFalsy();
+		expect(connectCount()).toBe(2);
+	});
+
 	it("returns the lost-session text on every call after a second close", async () => {
 		const { client, connectCount } = await connectClient([closing]);
 		for (let i = 0; i < 2; i += 1) {
