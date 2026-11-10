@@ -1185,12 +1185,12 @@ describe("pw --ext unmask", () => {
 	});
 
 	it("masks a short secret fill value on success and error", async () => {
-		const ok = harness({ approval: "allow", pageResult: { detail: "cvv 739 set" } });
+		const ok = harness({ approval: "allow", pageResult: { detail: "cvv 7391 set" } });
 		await ok.run({ verb: "unmask", minutes: 15 });
-		expect(JSON.stringify(await ok.run({ verb: "fill", target: "#cvv", value: "739", secret: true }))).not.toContain("739");
-		const bad = harness({ approval: "allow", pageResult: { error: "bad cvv 739" } });
+		expect(JSON.stringify(await ok.run({ verb: "fill", target: "#cvv", value: "7391", secret: true }))).not.toContain("7391");
+		const bad = harness({ approval: "allow", pageResult: { error: "bad cvv 7391" } });
 		await bad.run({ verb: "unmask", minutes: 15 });
-		expect(JSON.stringify(await bad.run({ verb: "fill", target: "#cvv", value: "739", secret: true }))).not.toContain("739");
+		expect(JSON.stringify(await bad.run({ verb: "fill", target: "#cvv", value: "7391", secret: true }))).not.toContain("7391");
 	});
 
 	it("keeps masking a filled secret in later replies of the session", async () => {
@@ -1259,15 +1259,15 @@ describe("pw --ext unmask", () => {
 		expect(text).not.toContain("### Unmask");
 	});
 
-	it("does not fill a secret when the request is canceled while the secret is stored", async () => {
+	it("does not fill a secret when the request is canceled while held secrets are read", async () => {
 		const cancel = new AbortController();
 		const h = harness({ approval: "allow", signal: cancel.signal, pageResult: { detail: "filled" } });
 		await h.run({ verb: "unmask", minutes: 15 });
-		const set = h.fake.raw.storage.session.set;
-		const original = set.getMockImplementation();
-		set.mockImplementationOnce(async (items: Record<string, unknown>) => {
-			cancel.abort();
-			return original?.(items);
+		const get = h.fake.raw.storage.session.get;
+		const original = get.getMockImplementation();
+		get.mockImplementation(async (keys?: string | string[] | null) => {
+			if (keys === `pwExtSecrets:${SESSION}`) cancel.abort();
+			return original?.(keys) as never;
 		});
 		const before = h.executed().length;
 		expect(await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true })).toEqual({
@@ -1275,6 +1275,55 @@ describe("pw --ext unmask", () => {
 			error: expect.stringContaining("canceled"),
 		});
 		expect(h.executed()).toHaveLength(before);
+	});
+
+	it("holds no secret when the page refuses the fill", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { error: "--value-env and --value-stdin fill only a password or secret field." } as unknown,
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		expect(await h.run({ verb: "fill", target: "e2", value: "orchid-maple", secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("fill only a password or secret field"),
+		});
+		expect(h.fake.raw.storage.session.set.mock.calls.flat()).not.toContainEqual(
+			expect.objectContaining({ [`pwExtSecrets:${SESSION}`]: expect.anything() }),
+		);
+		options.pageResult = { tree: 'text "orchid-maple test"', text: "orchid-maple test" };
+		await h.run({ verb: "unmask", off: true });
+		const after = await h.run({ verb: "snapshot" });
+		expect(outcome(after)).toContain("orchid-maple test");
+		expect(h.executed().at(-1)?.args[3]).toEqual([]);
+	});
+
+	it("holds a secret only after the fill succeeds", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const set = h.fake.raw.storage.session.set;
+		const stored = () =>
+			set.mock.calls.some(([items]) => Object.hasOwn(items as object, `pwExtSecrets:${SESSION}`));
+		let storedBeforeFill: boolean | undefined;
+		h.fake.state.script = () => {
+			storedBeforeFill = stored();
+			return { detail: "filled" };
+		};
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		expect(storedBeforeFill).toBe(false);
+		expect(stored()).toBe(true);
+	});
+
+	it.each(["x", "ab", "abc", "a \t\n "])("refuses a secret fill value shorter than 4 characters (%p)", async (value) => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const before = h.executed().length;
+		expect(await h.run({ verb: "fill", target: "#pw", value, secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("at least 4 characters"),
+		});
+		expect(h.executed()).toHaveLength(before);
+		expect(await h.fake.api.storage.session.get(`pwExtSecrets:${SESSION}`)).toEqual({});
 	});
 
 	it("masks a filled secret that the tabs listing cap cuts in two", async () => {

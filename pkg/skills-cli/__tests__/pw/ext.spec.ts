@@ -587,13 +587,25 @@ describe("pw --ext unmask and secret fill", () => {
 
 	test("masks a short secret on output and on error", async () => {
 		const out = clientEnv();
-		const shown = deps(() => ({ ok: true, data: { text: "cvv 739 set" } }), { env: { CVV: "739" } });
+		const shown = deps(() => ({ ok: true, data: { text: "cvv 7391 set" } }), { env: { CVV: "7391" } });
 		expect(await runExt(["--ext", "fill", "e5", "--value-env", "CVV"], out, shown.value)).toBe(0);
-		expect(out.stdout.join("\n")).not.toContain("739");
+		expect(out.stdout.join("\n")).not.toContain("7391");
 		const err = clientEnv();
-		const failed = deps(() => ({ ok: false, error: "bad cvv 739" }), { env: { CVV: "739" } });
+		const failed = deps(() => ({ ok: false, error: "bad cvv 7391" }), { env: { CVV: "7391" } });
 		expect(await runExt(["--ext", "fill", "e5", "--value-env", "CVV"], err, failed.value)).toBe(1);
-		expect(err.stderr.join("\n")).not.toContain("739");
+		expect(err.stderr.join("\n")).not.toContain("7391");
+	});
+
+	test.each([
+		["x", { env: { PW_SECRET: "x" } }, ["--value-env", "PW_SECRET"]],
+		["two-letter stdin", { readStdin: () => "ab\n" }, ["--value-stdin"]],
+		["white space", { env: { PW_SECRET: "a \t\n " } }, ["--value-env", "PW_SECRET"]],
+	] as const)("refuses a secret shorter than 4 characters (%s) and sends nothing", async (_name, source, flags) => {
+		const env = clientEnv();
+		const d = deps(ok, source);
+		expect(await runExt(["--ext", "fill", "e5", ...flags], env, d.value)).toBe(2);
+		expect(env.stderr.join("\n")).toContain("at least 4 characters");
+		expect(d.sent).toHaveLength(0);
 	});
 
 	test("reads a secret from --value-stdin without the trailing newline", async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "../src/index";
 import {
+	isPwExtSecretTooShort,
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MAX_TIMEOUT_MS,
@@ -480,5 +481,20 @@ describe("pw --ext unmask and secret fill", () => {
 		[{ verb: "click", target: "#b", secret: true }, "unknown field"],
 	])("rejects %o", (request, message) => {
 		expect(() => validatePwExtRequest(request)).toThrow(message);
+	});
+});
+
+describe("isPwExtSecretTooShort", () => {
+	it.each([
+		["", true],
+		["x", true],
+		["abc", true],
+		["a   \t\n", true],
+		["   \t", true],
+		["abcd", false],
+		["ab cd", false],
+		["Temp-Pass-123", false],
+	])("%p is too short: %p", (value, short) => {
+		expect(isPwExtSecretTooShort(value)).toBe(short);
 	});
 });

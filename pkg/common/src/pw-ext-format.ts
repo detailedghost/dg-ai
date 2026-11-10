@@ -43,6 +43,13 @@ export const PW_EXT_MAX_TAB_ID = 2_147_483_647;
 /** Upper bound and default length of a user-approved unmask grant. */
 export const PW_EXT_UNMASK_MAX_MINUTES = 60;
 export const PW_EXT_UNMASK_DEFAULT_MINUTES = 15;
+/** Shortest secret fill value, so masking it never wrecks the rest of the output. */
+export const PW_EXT_MIN_SECRET_CHARS = 4;
+
+/** True when a secret fill value, with white space runs counted as one, is shorter than PW_EXT_MIN_SECRET_CHARS. */
+export function isPwExtSecretTooShort(value: string): boolean {
+	return value.replace(/\s+/g, " ").length < PW_EXT_MIN_SECRET_CHARS;
+}
 /** First extension release with per-agent tab groups. */
 export const PW_EXT_MIN_EXTENSION_VERSION = [1, 44, 0] as const;
 

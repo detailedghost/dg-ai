@@ -1,5 +1,7 @@
 import {
+	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
+	PW_EXT_MIN_SECRET_CHARS,
 	PW_EXT_UNMASK_DEFAULT_MINUTES,
 	type PW_EXT_RELAY,
 	type PwExtRequest,
@@ -89,6 +91,8 @@ const CANCELED: PwExtResult = {
 };
 const NO_SESSION = "pw --ext needs a paired session.";
 const NO_TAB = "This agent has no tab yet. Run pw --ext new <url> first.";
+const SECRET_TOO_SHORT = `pw --ext fills a secret of at least ${PW_EXT_MIN_SECRET_CHARS} characters only.`;
+const SECRETS_FULL = `This session already filled ${MAX_FILLED_SECRETS} secret values; start a new dg session to fill more.`;
 const SELECTED_GONE =
 	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
 const GROUP_FULL = `This agent's tab group is full (${MAX_AGENT_TABS} tabs). Close some with pw --ext close <id>.`;
@@ -293,12 +297,11 @@ export function createPwExtHandler({
 	now?: () => number;
 	grants?: UnmaskGrants;
 }) {
-	async function remember(sessionId: string, request: PwExtRequest): Promise<string[]> {
-		if (request.verb === "fill" && request.secret && !(await grants.remember(sessionId, request.value as string)))
-			throw new Refusal(
-				`This session already filled ${MAX_FILLED_SECRETS} secret values; start a new dg session to fill more.`,
-			);
-		return grants.secrets(sessionId);
+	async function heldWith(sessionId: string, filling: string | undefined): Promise<string[]> {
+		const stored = await grants.secrets(sessionId);
+		if (filling === undefined || stored.includes(filling)) return stored;
+		if (stored.length >= MAX_FILLED_SECRETS) throw new Refusal(SECRETS_FULL);
+		return [filling, ...stored];
 	}
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
@@ -435,7 +438,8 @@ export function createPwExtHandler({
 		grant: UnmaskGrant | undefined,
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
-		const secrets = await remember(context.sessionId, request);
+		const filling = request.verb === "fill" && request.secret ? (request.value as string) : undefined;
+		const secrets = await heldWith(context.sessionId, filling);
 		if (signal?.aborted) return CANCELED;
 		const page = () => pageLines(tab, unmasked);
 		const shown = (text: string): PwExtResult => ({
@@ -614,6 +618,8 @@ export function createPwExtHandler({
 							: { kind: request.verb };
 				const result = await inPage(tab, action, unmasked, secrets);
 				if ("error" in result) return failed(result.error);
+				if (filling !== undefined && !(await grants.remember(context.sessionId, filling)))
+					throw new Refusal(SECRETS_FULL);
 				if ("tree" in result)
 					return shown(
 						[
@@ -698,6 +704,8 @@ export function createPwExtHandler({
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
+		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
+			return { ok: false, error: SECRET_TOO_SHORT };
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
 		const held = async () => [...typed, ...(await grants.secrets(context.sessionId).catch(() => []))];
 		try {

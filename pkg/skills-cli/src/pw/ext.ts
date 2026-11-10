@@ -16,6 +16,8 @@ import {
 	PW_EXT_UNMASK_MAX_MINUTES,
 	PW_EXT_WRITE_VERBS,
 	describeError,
+	isPwExtSecretTooShort,
+	PW_EXT_MIN_SECRET_CHARS,
 	redactLiterals,
 	redactSecrets,
 	redactText,
@@ -290,6 +292,8 @@ function readSecret(
 				? `pw --ext fill --value-env ${name}: the environment variable is not set or is empty.`
 				: "pw --ext fill --value-stdin: stdin is empty.",
 		);
+	if (isPwExtSecretTooShort(raw))
+		throw new ExtUsageError(`pw --ext fill: the secret value must be at least ${PW_EXT_MIN_SECRET_CHARS} characters.`);
 	return raw;
 }
 
