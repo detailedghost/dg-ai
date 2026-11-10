@@ -698,6 +698,14 @@ describe("plan display order", () => {
 		expect(json.done.map((o) => `${o.order} ${o.text}`)).toEqual(["1 old"]);
 	});
 
+	test("JSON done items run oldest first, matching their numbers", () => {
+		const model: ChecklistModel = {
+			open: [],
+			done: [item("newer", { status: "done" }), item("older", { status: "done" })],
+		};
+		expect(renderJsonModel(model).done.map((o) => `${o.order} ${o.text}`)).toEqual(["1 older", "2 newer"]);
+	});
+
 	test("stored order is untouched by display", () => {
 		const model = mixed();
 		renderEmoji(model);

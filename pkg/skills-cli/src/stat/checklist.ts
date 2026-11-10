@@ -357,7 +357,7 @@ export function renderJsonModel(model: ChecklistModel): JsonChecklist {
 	const tops = locateAll(model).filter((e) => e.scope === "open-top" || e.scope === "done-top");
 	const labelOf = (item: ChecklistItem) => tops.find((e) => e.item === item)?.label ?? "";
 	const open = displayEntries(model).map(({ item }) => toJsonItem(item, labelOf(item)));
-	const done = model.done.map((item) => toJsonItem(item, labelOf(item)));
+	const done = tops.filter((e) => e.scope === "done-top").map((e) => toJsonItem(e.item, e.label));
 	const total = computeTotal(model);
 	return {
 		open,
