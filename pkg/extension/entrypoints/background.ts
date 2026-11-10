@@ -6,6 +6,7 @@ import {
 	registerRecording,
 	registerTabGrouping,
 	registerTourState,
+	registerWebMcpScripts,
 } from "@/lib/background";
 import { pruneStaleRecordings } from "@/utils/recording-db";
 
@@ -16,6 +17,7 @@ export default defineBackground(() => {
 	registerProto();
 	registerRecording();
 	registerApprovals();
+	registerWebMcpScripts();
 	const link = registerDaemonLink();
 	registerAgentTabs({
 		busy: ({ sessionId }) => link.pending(sessionId).length > 0,

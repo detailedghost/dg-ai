@@ -73,7 +73,8 @@ export function approvalClassOf(name: string, origin?: string): WebMcpApprovalCl
 
 const SCRIPT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
-const MATCH_PATTERN = /^https:\/\/(?:\*\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\/\S*$/;
+const MATCH_PATTERN =
+	/^https:\/\/(?:\*\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)\/\S*$/;
 const RECORD_KEYS = ["id", "name", "matches", "sha256", "source", "enabled", "approvedAt"];
 
 export function validateWebMcpScriptRecord(value: unknown): WebMcpScriptRecord {

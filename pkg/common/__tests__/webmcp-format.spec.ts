@@ -122,3 +122,16 @@ describe("validateWebMcpScriptRecord", () => {
 		expect(validateWebMcpScriptRecord(value)).toEqual(value);
 	});
 });
+
+describe("validateWebMcpScriptRecord wildcard hosts", () => {
+	it.each(["https://*.com/*", "https://*.io/*", "https://*.example/*"])("rejects the top-level wildcard %s", (match) => {
+		expect(() => validateWebMcpScriptRecord({ ...RECORD, matches: [match] })).toThrow("match pattern");
+	});
+
+	it.each(["https://*.example.com/*", "https://*.shop.example.co.uk/path/*", "https://example.com/*"])(
+		"accepts %s",
+		(match) => {
+			expect(validateWebMcpScriptRecord({ ...RECORD, matches: [match] }).matches).toEqual([match]);
+		},
+	);
+});

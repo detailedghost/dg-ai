@@ -299,7 +299,7 @@ function webMcpResult(raw: unknown): PwExtWebMcpResult {
 	throw new Error("The page returned an unexpected WebMCP result.");
 }
 
-function defaultIsChromium(): boolean {
+export function defaultIsChromium(): boolean {
 	const runtime = (
 		globalThis as { browser?: { runtime?: { getBrowserInfo?: unknown } } }
 	).browser?.runtime;

@@ -8,7 +8,8 @@
 		"activeTab",
 		"tabCapture",
 		"offscreen",
-		"alarms"
+		"alarms",
+		"userScripts"
 	],
 	"host_permissions": [
 		"<all_urls>",

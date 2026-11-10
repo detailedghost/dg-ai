@@ -40,6 +40,7 @@ describe("slim settings page", () => {
 
 		for (const id of [
 			"assetDirectoryPanel",
+			"webmcpScriptsPanel",
 			"color",
 			"narration",
 			"voice",

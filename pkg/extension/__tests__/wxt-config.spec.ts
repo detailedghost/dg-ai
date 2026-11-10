@@ -37,6 +37,11 @@ it("grants capture host access without dropping browser-specific permissions", (
 	expect(firefoxManifest.permissions).toContain("downloads");
 });
 
+it("requests userScripts on Chrome only", () => {
+	expect(manifestFor({ browser: "chrome" }).permissions).toContain("userScripts");
+	expect(manifestFor({ browser: "firefox" }).permissions).not.toContain("userScripts");
+});
+
 it("leaves the toolbar action title to the popup page and keeps the demo recording command", () => {
 	const chromeManifest = manifestFor({ browser: "chrome" });
 	expect(chromeManifest.action?.default_title).toBeUndefined();
