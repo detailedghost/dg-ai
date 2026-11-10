@@ -32,7 +32,7 @@ test("the approval page focuses no button, so a stray Enter or Space cannot answ
 	setGlobal("browser", { runtime: { sendMessage } });
 	await import("@/entrypoints/approve/main");
 	for (let i = 0; i < 20; i++) await Promise.resolve();
-	expect(window.document.getElementById("actions")?.hidden).toBe(false);
+	expect(window.document.getElementById("actions")?.hasAttribute("hidden")).toBe(false);
 	const focused = window.document.activeElement;
 	expect(focused?.id === "deny" || focused?.id === "allow").toBe(false);
 	expect(sent).toEqual([{ type: "dg-approval:get", id: "id1" }]);
