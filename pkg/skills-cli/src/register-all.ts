@@ -29,6 +29,7 @@ import { registerProxy } from "./commands/proxy";
 import { registerPw } from "./commands/pw";
 import { registerPwCode } from "./commands/pw-code";
 import { registerRerun } from "./commands/rerun";
+import { registerSkill } from "./commands/skill";
 import { registerSniff } from "./commands/sniff";
 import { registerSsms } from "./commands/ssms";
 import { registerSpec } from "./commands/spec";
@@ -81,6 +82,7 @@ export function registerAll(program: Command): void {
 	registerBg(program);
 	registerStat(program);
 	registerSniff(program);
+	registerSkill(program);
 	registerSsms(program);
 	registerDoctor(program);
 	registerRequireExtension(program);
