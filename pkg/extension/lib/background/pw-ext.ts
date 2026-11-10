@@ -773,9 +773,27 @@ export function createPwExtHandler({
 			class: approvalClass,
 		});
 		if (signal?.aborted) return CANCELED;
-		if (answer === "timeout")
-			return { ok: false, error: `No answer in the browser within 60 seconds; ${tool} did not run.` };
-		if (answer === "deny") return { ok: false, error: `The user denied ${tool} in the browser.` };
+		if (answer !== "allow") {
+			const reason =
+				answer === "timeout"
+					? "No answer in the browser within 60 seconds"
+					: answer === "closed"
+						? "The approval window was closed"
+						: answer === "unopened"
+							? "The approval window could not open"
+							: "";
+			return {
+				ok: false,
+				error: answer === "deny" ? `The user denied ${tool} in the browser.` : `${reason || "The approval was not given"}; ${tool} did not run.`,
+			};
+		}
+		const live = await api.tabs.get(tab.id).catch(() => undefined);
+		if (
+			!live ||
+			live.groupId !== tab.groupId ||
+			!(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id }))
+		)
+			return { ok: false, error: `The tab left the agent's group; ${tool} did not run.` };
 		return undefined;
 	}
 

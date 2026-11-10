@@ -128,7 +128,7 @@ describe("requestWebMcpApproval", () => {
 	});
 
 	it("stores no grant on deny or timeout", async () => {
-		for (const answer of ["deny", "timeout"] as const) {
+		for (const answer of ["deny", "timeout", "closed", "unopened"] as const) {
 			const { storage, ask } = setup(answer);
 			await ask({ tool: "dg_outlook_move", class: "session" });
 			expect(storage.data).toEqual({});

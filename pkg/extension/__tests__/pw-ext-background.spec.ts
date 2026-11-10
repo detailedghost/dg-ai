@@ -1555,6 +1555,38 @@ describe("pw --ext WebMCP approval", () => {
 		expect(actions).toEqual([]);
 	});
 
+	it.each([
+		["dg_outlook_delete", "closed", "The approval window was closed; dg_outlook_delete did not run."],
+		["dg_outlook_delete", "unopened", "The approval window could not open; dg_outlook_delete did not run."],
+		["dg_outlook_move", "closed", "The approval window was closed; dg_outlook_move did not run."],
+		["dg_outlook_move", "unopened", "The approval window could not open; dg_outlook_move did not run."],
+	] as const)("does not run %s and stores no grant when the answer is %s", async (tool, approval, error) => {
+		const actions: unknown[] = [];
+		const h = harness({ tabs: [owaTab], approval, mainResult: (action) => void actions.push(action) });
+		expect(await h.run({ verb: "call", tool, args: { ids: ["a"] } })).toEqual({ ok: false, error });
+		expect(actions).toEqual([]);
+		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
+	});
+
+	it("refuses and runs nothing when the tab leaves the group while the approval is open", async () => {
+		const actions: unknown[] = [];
+		let h: ReturnType<typeof harness>;
+		h = harness({
+			tabs: [owaTab],
+			approval: "allow",
+			onApproval: () => {
+				const tab = h.fake.tabs.get(7);
+				if (tab) tab.groupId = -1;
+			},
+			mainResult: (action) => void actions.push(action),
+		});
+		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "The tab left the agent's group; dg_outlook_delete did not run.",
+		});
+		expect(actions).toEqual([]);
+	});
+
 	it("returns CANCELED and runs nothing when the request aborts during approval", async () => {
 		const controller = new AbortController();
 		const actions: unknown[] = [];
