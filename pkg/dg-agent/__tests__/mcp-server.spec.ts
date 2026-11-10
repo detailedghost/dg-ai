@@ -43,7 +43,7 @@ function tabsReply(ids: readonly number[]): Reply {
 	};
 }
 
-function fakeLink(handler: Handler, sent: Sent[]): McpLink {
+function fakeLink(handler: Handler, sent: Sent[], cancels: string[]): McpLink {
 	return {
 		async request(frame, accept, timeoutMs) {
 			sent.push({ frame, timeoutMs });
@@ -57,26 +57,30 @@ function fakeLink(handler: Handler, sent: Sent[]): McpLink {
 			if (!accept(result)) throw new Error("reply rejected");
 			return result;
 		},
+		cancel(requestId) {
+			cancels.push(requestId);
+		},
 		close() {},
 	};
 }
 
 async function connectClient(handlers: Handler[], overrides: { connects?: () => void } = {}) {
 	const sent: Sent[] = [];
+	const cancels: string[] = [];
 	let connects = 0;
 	const server = createDgMcpServer({
 		connect: async () => {
 			overrides.connects?.();
 			const handler = handlers[Math.min(connects, handlers.length - 1)] as Handler;
 			connects += 1;
-			return fakeLink(handler, sent);
+			return fakeLink(handler, sent, cancels);
 		},
 		now: () => 1_700_000_000_000,
 	});
 	const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 	const client = new Client({ name: "test", version: "0" });
 	await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
-	return { client, sent, connectCount: () => connects };
+	return { client, sent, cancels, connectCount: () => connects };
 }
 
 function textOf(result: unknown): string {
@@ -345,6 +349,72 @@ describe("dg-agent mcp server concurrency", () => {
 			client.listTools(),
 		]);
 		expect(peak).toBe(2);
+	});
+});
+
+describe("dg-agent mcp server cancellation", () => {
+	function gated() {
+		const releases: Array<() => void> = [];
+		const handler: Handler = async (request) => {
+			if (request.verb === "call") await new Promise<void>((resolve) => releases.push(resolve));
+			return { ok: true, data: { text: "done" } };
+		};
+		return { handler, releases };
+	}
+	const callArgs = (tab: number) => ({ name: "dg_outlook_list", arguments: { tab } });
+	const until = async (check: () => boolean) => {
+		for (let i = 0; i < 200 && !check(); i += 1) await Bun.sleep(5);
+	};
+
+	it("never sends a call canceled while it waits for a relay slot", async () => {
+		const { handler, releases } = gated();
+		const { client, sent } = await connectClient([handler]);
+		const controller = new AbortController();
+		const first = client.callTool(callArgs(1));
+		const second = client.callTool(callArgs(2));
+		await until(() => releases.length === 2);
+		const third = client.callTool(callArgs(3), undefined, { signal: controller.signal });
+		const outcome = third.then(() => "resolved", () => "rejected");
+		await Bun.sleep(20);
+		controller.abort();
+		expect(await outcome).toBe("rejected");
+		await Bun.sleep(20);
+		releases.forEach((release) => release());
+		await Promise.all([first, second]);
+		await Bun.sleep(20);
+		const tabs = sent.map((entry) => entry.frame.request.tabId);
+		expect(tabs.sort()).toEqual([1, 2]);
+	});
+
+	it("sends one cancel frame with the request id when a submitted call is canceled", async () => {
+		const { handler, releases } = gated();
+		const { client, sent, cancels } = await connectClient([handler]);
+		const controller = new AbortController();
+		const pending = client.callTool(callArgs(1), undefined, { signal: controller.signal });
+		const outcome = pending.then(() => "resolved", () => "rejected");
+		await until(() => releases.length === 1);
+		controller.abort();
+		expect(await outcome).toBe("rejected");
+		await until(() => cancels.length > 0);
+		expect(cancels).toEqual([sent[0]?.frame.requestId as string]);
+		releases.forEach((release) => release());
+	});
+
+	it("frees the relay slot of a canceled call for the next call", async () => {
+		const { handler, releases } = gated();
+		const { client } = await connectClient([handler]);
+		const controllers = [new AbortController(), new AbortController()];
+		const stuck = controllers.map((controller, i) =>
+			client.callTool(callArgs(i + 1), undefined, { signal: controller.signal }).catch(() => undefined),
+		);
+		await until(() => releases.length === 2);
+		controllers.forEach((controller) => controller.abort());
+		await Promise.all(stuck);
+		const next = client.callTool(callArgs(3));
+		await until(() => releases.length === 3);
+		releases[2]?.();
+		expect(textOf(await next)).toBe("done");
+		releases.forEach((release) => release());
 	});
 });
 

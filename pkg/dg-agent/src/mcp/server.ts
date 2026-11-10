@@ -45,6 +45,12 @@ class CallInterruptedError extends Error {
 	}
 }
 
+class CanceledError extends Error {
+	constructor() {
+		super("The request was canceled.");
+	}
+}
+
 class LostSessionError extends Error {
 	constructor() {
 		super(LOST_SESSION);
@@ -52,6 +58,7 @@ class LostSessionError extends Error {
 }
 
 export type McpLink = {
+	cancel(requestId: string): void;
 	request(
 		frame: PwExtCliRequest,
 		accept: (value: unknown) => value is PwExtCliResult,
@@ -117,12 +124,25 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 	let slots = MAX_IN_FLIGHT;
 	const waiting: Array<() => void> = [];
 
-	async function takeSlot(): Promise<void> {
+	async function takeSlot(signal?: AbortSignal): Promise<void> {
+		if (signal?.aborted) throw new CanceledError();
 		if (slots > 0) {
 			slots -= 1;
 			return;
 		}
-		await new Promise<void>((resolve) => waiting.push(resolve));
+		await new Promise<void>((resolve, reject) => {
+			const grant = () => {
+				signal?.removeEventListener("abort", abandon);
+				resolve();
+			};
+			const abandon = () => {
+				const index = waiting.indexOf(grant);
+				if (index >= 0) waiting.splice(index, 1);
+				reject(new CanceledError());
+			};
+			waiting.push(grant);
+			signal?.addEventListener("abort", abandon, { once: true });
+		});
 	}
 
 	function releaseSlot(): void {
@@ -151,27 +171,52 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		if (closes > MAX_RECONNECTS) lost = true;
 	}
 
-	async function send(request: PwExtRequest): Promise<PwExtCliResult> {
-		await takeSlot();
+	async function send(request: PwExtRequest, signal?: AbortSignal): Promise<PwExtCliResult> {
+		await takeSlot(signal);
 		try {
-			return await sendUnthrottled(request);
+			return await sendUnthrottled(request, signal);
 		} finally {
 			releaseSlot();
 		}
 	}
 
-	async function sendUnthrottled(request: PwExtRequest): Promise<PwExtCliResult> {
+	function submit(
+		active: McpLink,
+		request: PwExtRequest,
+		requestId: string,
+		signal?: AbortSignal,
+	): Promise<PwExtCliResult> {
+		const reply = active.request(
+			{ type: "cli-pw-ext-request", requestId, request },
+			isPwExtCliResult(requestId),
+			REQUEST_TIMEOUT_MS,
+		);
+		if (!signal) return reply;
+		return new Promise<PwExtCliResult>((resolve, reject) => {
+			const onAbort = () => {
+				try {
+					active.cancel(requestId);
+				} catch {}
+				reply.catch(() => {});
+				reject(new CanceledError());
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+			reply.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+		});
+	}
+
+	async function sendUnthrottled(
+		request: PwExtRequest,
+		signal?: AbortSignal,
+	): Promise<PwExtCliResult> {
 		for (;;) {
 			const pending = acquire();
 			const active = await pending;
+			if (signal?.aborted) throw new CanceledError();
 			sequence += 1;
 			const requestId = `dg-agent-mcp-${now()}-${sequence}`;
 			try {
-				return await active.request(
-					{ type: "cli-pw-ext-request", requestId, request },
-					isPwExtCliResult(requestId),
-					REQUEST_TIMEOUT_MS,
-				);
+				return await submit(active, request, requestId, signal);
 			} catch (error) {
 				if (!(error instanceof McpLinkClosedError)) throw error;
 				drop(pending, active);
@@ -181,15 +226,15 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		}
 	}
 
-	async function exposures(): Promise<Map<string, Exposure>> {
-		const listing = await send({ verb: "tabs" });
+	async function exposures(signal?: AbortSignal): Promise<Map<string, Exposure>> {
+		const listing = await send({ verb: "tabs" }, signal);
 		if (!listing.ok && listing.error === PW_EXT_NO_TAB_ERROR) return new Map();
 		if (!listing.ok)
 			throw new McpError(ErrorCode.InternalError, listing.error ?? "pw --ext tabs failed.");
 		const tabs = parseTabIds(listing.data?.text ?? "").slice(0, MAX_TAB_LOOKUPS);
 		const replies = await Promise.all(tabs.map(async (tabId) => ({
 			tabId,
-			reply: await send({ verb: "tools", tabId }),
+			reply: await send({ verb: "tools", tabId }, signal),
 		})));
 		const found = new Map<string, Exposure>();
 		let firstError: string | undefined;
@@ -220,13 +265,13 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		return found;
 	}
 
-	async function pickTab(name: string, given: unknown): Promise<number> {
+	async function pickTab(name: string, given: unknown, signal?: AbortSignal): Promise<number> {
 		if (given !== undefined) {
 			if (typeof given !== "number" || !Number.isSafeInteger(given) || given < 0 || given > PW_EXT_MAX_TAB_ID)
 				throw new Error("tab must be a tab id from pw --ext tabs.");
 			return given;
 		}
-		const tabs = (await exposures()).get(name)?.tabs ?? [];
+		const tabs = (await exposures(signal)).get(name)?.tabs ?? [];
 		if (tabs.length === 0)
 			throw new Error(`No agent tab exposes ${name}. Open the site with pw --ext new <url>.`);
 		if (tabs.length > 1)
@@ -234,9 +279,9 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		return tabs[0] as number;
 	}
 
-	server.setRequestHandler(ListToolsRequestSchema, async () => {
+	server.setRequestHandler(ListToolsRequestSchema, async (_request, extra) => {
 		try {
-			const found = await exposures();
+			const found = await exposures(extra.signal);
 			return {
 				tools: [...found.values()].map(({ tool }) => ({
 					name: tool.name,
@@ -250,13 +295,13 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		}
 	});
 
-	server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
+	server.setRequestHandler(CallToolRequestSchema, async ({ params }, extra) => {
 		const { name } = params;
 		if (!isDgToolName(name)) return failure(`${name} is not a dg tool.`);
 		try {
 			const { tab, ...args } = params.arguments ?? {};
-			const tabId = await pickTab(name, tab);
-			const reply = await send({ verb: "call", tabId, tool: name, args });
+			const tabId = await pickTab(name, tab, extra.signal);
+			const reply = await send({ verb: "call", tabId, tool: name, args }, extra.signal);
 			if (!reply.ok) return failure(reply.error ?? `${name} failed in the browser.`);
 			const { text } = validatePwExtResponse(reply.data);
 			return { content: [{ type: "text" as const, text }] };

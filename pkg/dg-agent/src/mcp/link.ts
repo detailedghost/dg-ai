@@ -28,6 +28,8 @@ export async function connectCliLink(
 				throw closedConnection(error) ? new McpLinkClosedError() : error;
 			}
 		},
+		cancel: (requestId) =>
+			client.send({ type: "cli-pw-ext-cancel", requestId }),
 		close: () => client.close(),
 	};
 }
