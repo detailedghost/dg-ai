@@ -27,18 +27,20 @@ origin of the agent's selected tab. `N` is 1 to 60 and defaults to 15.
 `pw --ext unmask --off` ends the grant at once.
 
 The extension opens a small popup window. It shows the session, the site
-origin, what the grant allows, and the duration. It has Allow and Deny, and Deny
-has focus. No answer in 60 seconds means deny. Closing the window means deny.
-Only a click in that extension-owned window grants. The wire carries no consent
-field, so an agent cannot grant itself.
+origin, what the grant allows, and the duration. It has Allow and Deny, and no
+button has focus, so a stray Enter or Space key cannot answer it. Deny, no answer
+in 60 seconds, a closed window, or a window that cannot open grants nothing. The
+reply names which of these occurred. Only a click in that extension-owned window
+grants. The wire carries no consent field, so an agent cannot grant itself.
 
 While the grant holds, and only for that origin and only in that session's agent
 tab group:
 
-- Email addresses and user names are no longer masked in snapshots and other
-  page text.
+- Email addresses are no longer masked in snapshots and other page text. User
+  names are not masked, with or without a grant.
 - Tokens, API keys, JWTs and `password=` values stay masked.
-- `fill` may set a password or secret field.
+- `fill` may set a password or secret field. The secret value must have at
+  least 4 characters, so that masking it cannot wreck other output.
 
 The grant is bound to the tab group id. It ends at its time, on `--off`, or when
 the tab group changes or closes. It never covers a mailbox origin (the Proton
@@ -77,9 +79,9 @@ and for a short time. Every other guard of ADR 0035 stays.
   60 minutes, and it never covers a mailbox.
 - **Good:** secret values do not reach argv, shell history or output.
 - **Bad:** the human must be at the browser to answer. An unattended agent gets
-  a denial after 60 seconds.
-- **Bad:** while the grant holds, the agent reads real emails and user names from
-  that origin. Screenshots were never redacted, so they gain nothing new.
+  a refusal after 60 seconds.
+- **Bad:** while the grant holds, the agent reads real email addresses from that
+  origin. Screenshots were never redacted, so they gain nothing new.
 - **Bad:** the secret value is in the CLI environment or stdin until the CLI
   reads it. The human must trust the agent's shell.
 - **Neutral:** an extension without `unmask` in `pwExtVerbs` refuses the verb.

@@ -241,7 +241,7 @@ Write verbs (they change the page):
                           set a password or secret field during an unmask; the value never goes in argv or output
   upload <ref|selector> <file>  set one file on a file input (https pages only)
   call <tool> <json-args> run one WebMCP tool of the page
-  unmask [--minutes N]    ask the user, in the browser, to show emails and user names and allow secret fill
+  unmask [--minutes N]    ask the user, in the browser, to show email addresses and allow secret fill
                           on this tab's site for N minutes (1-${PW_EXT_UNMASK_MAX_MINUTES}, default ${PW_EXT_UNMASK_DEFAULT_MINUTES})
   unmask --off            end the unmask now`;
 

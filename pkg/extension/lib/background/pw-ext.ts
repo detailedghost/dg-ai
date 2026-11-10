@@ -469,7 +469,7 @@ export function createPwExtHandler({
 					lines: [
 						`Agent: ${context.agentIdentity}`,
 						`Tab group: ${groupTitle(context)}`,
-						"Shows email addresses and user names in pw --ext output on this site.",
+						"Shows email addresses in pw --ext output on this site.",
 						"Lets the agent fill password fields here, from a value it never echoes.",
 						`Ends in ${minutes} minutes, on pw --ext unmask --off, or when the agent's tab group closes.`,
 					],

@@ -87,12 +87,13 @@ Rules:
   those fields unless an unmask grant holds. Screenshots are not redacted: they
   show what is on the screen.
 - `unmask` asks you, in a small extension popup window, to let the agent see
-  real email addresses and user names on one site. The popup shows the session,
-  the origin, what the grant allows and the duration. It has Allow and Deny, and
-  Deny has focus. No answer in 60 seconds, or closing the window, means deny.
-  Only your click in that window grants. The agent cannot grant itself.
+  real email addresses on one site. The popup shows the session, the origin,
+  what the grant allows and the duration. It has Allow and Deny, and no button
+  has focus. Deny, no answer in 60 seconds, a closed window, or a window that
+  cannot open grants nothing, and the reply says which occurred. Only your click
+  in that window grants. The agent cannot grant itself.
 - While a grant holds, on that origin only and in that session's agent tab group
-  only, emails and user names show unmasked and `fill` may set a password or
+  only, email addresses show unmasked and `fill` may set a password or
   secret field. Tokens, API keys, JWTs and `password=` values stay masked.
 - The grant ends at its time, on `unmask --off`, or when the tab group changes
   or closes. It never covers a mailbox origin or a browser-internal page. An
@@ -101,8 +102,9 @@ Rules:
 - Each page reply under a grant starts with `### Unmask`, then
   `unmasked on <origin> until HH:MM (approved in the browser)`.
 - A secret value never goes in argv. Use `fill <target> --value-env NAME` or
-  `--value-stdin`. The value is removed from all output, and the result says only
-  `filled <field>`. Without a grant, the refusal names `pw --ext unmask`.
+  `--value-stdin`. The value must have at least 4 characters. It is removed from
+  all output, and the result says only `filled <field>`. Without a grant, the
+  refusal names `pw --ext unmask`.
 - If the dg session closes, or the CLI stops (Ctrl-C, SIGTERM or a closed
   socket), the request is canceled and nothing more runs.
 - There is no code execution of agent code: no `eval`, no `run-code`, and no

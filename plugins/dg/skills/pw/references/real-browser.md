@@ -72,10 +72,11 @@ group, until the human hands you a tab from the extension popup.
   `tabs`, `new` and `close` still work when the selected tab is a settings page,
   and `open` navigates it to a web page. `tabs` hides the URL and title of those
   tabs. The Proton Mail tab is never read, closed or navigated.
-- Without a grant, `fill` refuses passwords and secrets. To get real emails,
-  user names or a secret fill, run `pw --ext unmask [--minutes N]` and tell the
-  human to click Allow in the popup. No answer in 60 seconds, or a closed
-  window, means deny. You cannot grant it yourself. Ask only when the task
+- Without a grant, `fill` refuses passwords and secrets. To get real email
+  addresses or a secret fill, run `pw --ext unmask [--minutes N]` and tell the
+  human to click Allow in the popup. User names are not masked. Deny, no answer
+  in 60 seconds, a closed window, or a window that cannot open grants nothing;
+  the reply says which. You cannot grant it yourself. Ask only when the task
   needs it.
 - A grant covers one origin, in your tab group only, until its time, until
   `pw --ext unmask --off`, or until the tab group changes or closes. It never
@@ -84,8 +85,9 @@ group, until the human hands you a tab from the extension popup.
 - Each reply under a grant starts with `### Unmask` and
   `unmasked on <origin> until HH:MM (approved in the browser)`.
 - Never put a secret in argv. Use `fill <target> --value-env NAME` or
-  `--value-stdin`. These work only on a password or secret field. The result
-  says only `filled <field>`, and later output of the session masks the value.
+  `--value-stdin`. These work only on a password or secret field, with a value
+  of at least 4 characters. The result says only `filled <field>`, and later
+  output of the session masks the value.
   An extension that lacks `unmask` refuses the verb at once.
 - Output is redacted and capped. Screenshots are not redacted.
 - Ctrl-C on the CLI cancels the request.
@@ -94,3 +96,5 @@ group, until the human hands you a tab from the extension popup.
   update text. Update the extension, reload it, and reconnect the session. A
   running `dg-daemon` older than the CLI answers a `--tab` or a new verb with its
   own validator error until you restart it.
+- After an extension reload, run `pw --ext new` again. The reload clears the
+  agent's tab binding.

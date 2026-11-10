@@ -100,7 +100,7 @@ flowchart LR
   local `demo` always records an MP4 with a Node recorder; `$NAME` credentials, a setup handoff, and one browser finder; the start screen is gone.
 
 - [0041 — pw --ext: user-approved, time-boxed unmask](0041-pw-ext-unmask.md) — Accepted:
-  `pw --ext unmask` lets the human allow real emails, user names and secret `fill` on one origin for 1 to 60 minutes; only a click in an extension-owned window grants. Amends 0035.
+  `pw --ext unmask` lets the human allow real email addresses and secret `fill` on one origin for 1 to 60 minutes; only a click in an extension-owned window grants. Amends 0035.
 
 ## Adding an ADR
 
