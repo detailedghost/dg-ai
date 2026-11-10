@@ -41,7 +41,7 @@ export function parseSections(lines: string[]): { preamble: number; sections: Se
 	const starts: { line: number; heading: string }[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? "";
-		const [, delim = "", rest = ""] = line.match(/^(`{3,}|~{3,})(.*)$/) ?? [];
+		const [, delim = "", rest = ""] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
 		if (delim && fence === null) fence = delim;
 		else if (delim && fence && delim[0] === fence[0] && delim.length >= fence.length && rest.trim() === "")
 			fence = null;
@@ -153,8 +153,12 @@ export function applyManifest(manifestPath: string): ApplyResult {
 	if (missing.length) throw new SplitError(`unknown section slug(s): ${missing.join(", ")}`);
 	const sectionOf = (slug: string) => bySlug.get(slug) as Section;
 	const entryReal = realpathSync(entryPath);
+	const destReal = (dest: string) => {
+		const full = resolve(skillDir, dest);
+		return existsSync(full) ? realpathSync(full) : full;
+	};
 	const intoEntry = moves.find(
-		(mv) => resolve(skillDir, mv.dest) === resolve(entryPath) || resolve(skillDir, mv.dest) === entryReal,
+		(mv) => resolve(skillDir, mv.dest) === resolve(entryPath) || destReal(mv.dest) === entryReal,
 	);
 	if (intoEntry) throw new SplitError(`move "${intoEntry.slug}" targets the entry file itself`);
 

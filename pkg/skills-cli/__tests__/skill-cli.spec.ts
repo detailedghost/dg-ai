@@ -58,6 +58,14 @@ describe("dg-skills skill", () => {
 		expect(report.results[0]?.issues).toEqual(["junk file: .DS_Store"]);
 	});
 
+	test("audit exits 1 and names a target it cannot read", async () => {
+		const root = home();
+		const run = await skill(["audit", join(root, "absent"), "--json"], root);
+		expect(run.exitCode).toBe(1);
+		expect(run.stderr).toContain("cannot read");
+		expect((JSON.parse(run.stdout) as { failed: unknown[] }).failed).toHaveLength(1);
+	});
+
 	test("audit --fix deletes junk and exits 0", async () => {
 		const root = home();
 		const junky = skillDir(root, "junky", { "SKILL.md": "# junky\n", ".DS_Store": "x" });

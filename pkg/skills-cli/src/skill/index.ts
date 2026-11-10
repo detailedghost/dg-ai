@@ -39,10 +39,20 @@ function runAudit(args: string[]): number {
 	const doFix = args.includes("--fix");
 	const positional = args.filter((a, i) => !a.startsWith("--") && (thresholdIdx < 0 || i !== thresholdIdx + 1));
 	const targets = positional.length > 0 ? positional : defaultTargets();
-	const results = targets.map((t) => audit(t, threshold, doFix)).filter((r): r is Audit => r !== null);
-	if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ threshold, results }, null, 2)}\n`);
+	const results: Audit[] = [];
+	const failed: { target: string; error: string }[] = [];
+	for (const t of targets) {
+		try {
+			const r = audit(t, threshold, doFix);
+			if (r) results.push(r);
+		} catch (error) {
+			failed.push({ target: t, error: error instanceof Error ? error.message : String(error) });
+		}
+	}
+	for (const f of failed) process.stderr.write(`skill audit: cannot read ${f.target}: ${f.error}\n`);
+	if (args.includes("--json")) process.stdout.write(`${JSON.stringify({ threshold, results, failed }, null, 2)}\n`);
 	else for (const r of results) process.stdout.write(`${formatAudit(r).join("\n")}\n`);
-	return results.some((r) => r.issues.length > 0) ? 1 : 0;
+	return failed.length > 0 || results.some((r) => r.issues.length > 0) ? 1 : 0;
 }
 
 function runSplit(args: string[]): number {

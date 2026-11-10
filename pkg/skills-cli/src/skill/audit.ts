@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { parseYaml, splitDocument } from "../spec/frontmatter";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "examples"]);
 const JUNK = [/Zone\.Identifier$/, /\.DS_Store$/, /Thumbs\.db$/];
@@ -70,12 +71,11 @@ export function brokenLinks(root: string, files: FileEntry[]): string[] {
 }
 
 function descriptionLength(root: string): number {
-	try {
-		const head = readFileSync(join(root, "SKILL.md"), "utf8").slice(0, 4000);
-		return head.match(/^description:\s*(.+)$/m)?.[1]?.length ?? 0;
-	} catch {
-		return 0;
-	}
+	const entry = join(root, "SKILL.md");
+	if (!existsSync(entry)) return 0;
+	const parsed = parseYaml(splitDocument(readFileSync(entry, "utf8")).front);
+	const value = parsed.ok ? (parsed.value as { description?: unknown } | null)?.description : undefined;
+	return typeof value === "string" ? value.length : 0;
 }
 
 /** A Process/Steps/Flow/Workflow H2 plus a numbered list marks an entry read start to finish. */
@@ -114,11 +114,7 @@ export function audit(skillDir: string, threshold = 1500, doFix = false): Audit 
 	const files: FileEntry[] = [];
 	const junkFull: string[] = [];
 	const vendor = { v: false };
-	try {
-		walk(dir, dir, files, junkFull, vendor);
-	} catch {
-		return null;
-	}
+	walk(dir, dir, files, junkFull, vendor);
 	if (files.length === 0 && junkFull.length === 0) return null;
 
 	const issues: string[] = [];

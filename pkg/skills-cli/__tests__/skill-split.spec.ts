@@ -209,3 +209,17 @@ test("apply: rows follow a File-first References table", () => {
 	applyManifest(writeManifest({ skillDir, moves: [{ slug: "details", dest: "references/details.md" }] }));
 	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("| `references/details.md` | Details |");
 });
+
+test("parseSections: an indented fence still hides its headings", () => {
+	const lines = ["## Real", "   ```", "## Example", "   ```", "## After"];
+	expect(parseSections(lines).sections.map((s) => s.heading)).toEqual(["Real", "After"]);
+});
+
+test("apply: rejects a destination that is a symlink to the entry file", () => {
+	writeEntry(["# Skill", "## Details", "x", ""].join("\n"));
+	mkdirSync(join(skillDir, "references"), { recursive: true });
+	symlinkSync(join(skillDir, "SKILL.md"), join(skillDir, "references", "alias.md"));
+	const manifest = writeManifest({ skillDir, moves: [{ slug: "details", dest: "references/alias.md" }] });
+	expect(() => applyManifest(manifest)).toThrow(SplitError);
+	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("## Details");
+});

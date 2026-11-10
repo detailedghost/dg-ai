@@ -37,9 +37,8 @@ function expectedTokens(content: string): number {
 	return approxTokens(Buffer.byteLength(content, "utf8"));
 }
 
-test("audit returns null for a nonexistent directory", () => {
-	const result = audit(join(tmp, "does-not-exist"));
-	expect(result).toBeNull();
+test("audit throws for a nonexistent directory", () => {
+	expect(() => audit(join(tmp, "does-not-exist"))).toThrow();
 });
 
 test("audit returns null for a dir with no .md files and no junk", () => {
@@ -276,4 +275,9 @@ test("a relative skill dir with a relative link finishes and resolves the link",
 	} finally {
 		process.chdir(cwd);
 	}
+});
+
+test("a folded YAML description is measured after decoding", () => {
+	const dir = makeSkill("folded", { "SKILL.md": `---\ndescription: >-\n  ${"word ".repeat(120)}\n---\n# s\n` });
+	expect((audit(dir) as Audit).issues.some((i) => i.includes("frontmatter description"))).toBe(true);
 });
