@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "../src/index";
 import {
+	isPwExtCliResult,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
@@ -531,4 +532,23 @@ describe("isPwExtSecretTooShort", () => {
 	])("%p is too short: %p", (value, short) => {
 		expect(isPwExtSecretTooShort(value)).toBe(short);
 	});
+});
+
+describe("isPwExtCliResult", () => {
+	const frame = { type: "cli-pw-ext-result", requestId: "r", ok: true };
+
+	it("accepts a result frame with the same requestId", () => {
+		expect(isPwExtCliResult("r")(frame)).toBe(true);
+	});
+
+	it("rejects a result frame with another requestId", () => {
+		expect(isPwExtCliResult("other")(frame)).toBe(false);
+	});
+
+	it.each([null, "text", 4, { type: "cli-recv-result", requestId: "r" }])(
+		"rejects %p",
+		(value) => {
+			expect(isPwExtCliResult("r")(value)).toBe(false);
+		},
+	);
 });

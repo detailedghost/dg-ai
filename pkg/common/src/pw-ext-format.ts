@@ -104,6 +104,18 @@ export type PwExtCliResult = {
 	error?: string;
 };
 
+export function isPwExtCliResult(requestId: string) {
+	return (value: unknown): value is PwExtCliResult => {
+		const frame = value as Partial<PwExtCliResult> | null;
+		return (
+			typeof frame === "object" &&
+			frame !== null &&
+			frame.type === "cli-pw-ext-result" &&
+			frame.requestId === requestId
+		);
+	};
+}
+
 const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	current: ["tabId"],
 	snapshot: ["tabId"],

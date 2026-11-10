@@ -259,6 +259,33 @@ export function registerAgentCommands(program: Command): void {
 		);
 
 	program
+		.command("mcp")
+		.description("serve the dg tools of the agent's tabs as an MCP server on stdio")
+		.action(async (_options: unknown, command: Command) => {
+			const session = await resolveCliSession(selectedSession(command));
+			const [{ StdioServerTransport }, { connectCliLink }, { createDgMcpServer }] =
+				await Promise.all([
+					import("@modelcontextprotocol/sdk/server/stdio.js"),
+					import("./mcp/link"),
+					import("./mcp/server"),
+				]);
+			const server = createDgMcpServer({
+				connect: () => connectCliLink(session),
+				now: Date.now,
+			});
+			const closed = new Promise<void>((resolve) => {
+				const previous = server.onclose;
+				server.onclose = () => {
+					previous?.();
+					resolve();
+				};
+			});
+			process.stdin.once("end", () => void server.close());
+			await server.connect(new StdioServerTransport());
+			await closed;
+		});
+
+	program
 		.command("stage")
 		.description("stage an asset for later presentation")
 		.argument("<path>", "asset file path")

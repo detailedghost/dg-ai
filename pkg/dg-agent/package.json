@@ -15,6 +15,7 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
+		"@modelcontextprotocol/sdk": "^1.32.2",
 		"commander": "^15.1.0",
 		"nostr-tools": "^2.26.0"
 	},

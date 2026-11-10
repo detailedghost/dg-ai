@@ -16,6 +16,7 @@ import {
 	PW_EXT_UNMASK_MAX_MINUTES,
 	PW_EXT_WRITE_VERBS,
 	describeError,
+	isPwExtCliResult,
 	isPwExtSecretTooShort,
 	PW_EXT_MIN_SECRET_CHARS,
 	redactLiterals,
@@ -411,18 +412,6 @@ function parseRequest(
 	}
 }
 
-function isResult(requestId: string) {
-	return (value: unknown): value is PwExtCliResult => {
-		const frame = value as Partial<PwExtCliResult> | null;
-		return (
-			typeof frame === "object" &&
-			frame !== null &&
-			frame.type === "cli-pw-ext-result" &&
-			frame.requestId === requestId
-		);
-	};
-}
-
 async function saveImage(dataUrl: string): Promise<string> {
 	const match = /^data:image\/(jpeg|png);base64,(.*)$/.exec(dataUrl);
 	if (!match) throw new Error("Invalid screenshot data.");
@@ -487,7 +476,7 @@ export async function runExt(
 		}
 		const reply = await client.request(
 			{ type: "cli-pw-ext-request", requestId, request },
-			isResult(requestId),
+			isPwExtCliResult(requestId),
 			PW_EXT_DEFAULT_TIMEOUT_MS + 5_000,
 		);
 		if (!reply.ok) {
