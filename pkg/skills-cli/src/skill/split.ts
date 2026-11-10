@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { stateRoot } from "@dg/common/node";
 import { headingKeyword, nearAboveBelow } from "./audit";
 
@@ -128,6 +128,8 @@ function readManifest(manifestPath: string): { skillDir: string; entry?: string;
 	for (const mv of m.moves)
 		if (typeof mv?.slug !== "string" || typeof mv?.dest !== "string")
 			throw new SplitError(`manifest error: each move needs string slug/dest, got ${JSON.stringify(mv)}`);
+		else if (isAbsolute(mv.dest) || normalize(mv.dest).split(sep)[0] === "..")
+			throw new SplitError(`manifest error: dest must be a relative path inside the skill dir, got ${mv.dest}`);
 	return { skillDir: m.skillDir.replace(/\/$/, ""), entry: m.entry, moves: m.moves as Move[] };
 }
 
@@ -210,13 +212,32 @@ export function applyManifest(manifestPath: string): ApplyResult {
 		i++;
 	}
 
-	const finalEntryText = out.join("\n").replace(/\n{3,}/g, "\n\n");
+	const finalEntryText = out.join("\n");
 	writeFileSync(entryPath, finalEntryText);
 	return {
 		backup,
 		moved: moves.length,
 		dests: [...destContent.keys()],
 		entry: entryPath,
-		warnings: detectDanglingReferences(finalEntryText, moves, bySlug),
+		warnings: [
+			...detectDanglingReferences(finalEntryText, moves, bySlug),
+			...linkWarnings(finalEntryText, moves, (slug) => lines.slice(sectionOf(slug).startLine, sectionOf(slug).endLine).join("\n")),
+		],
 	};
+}
+
+/** Moved relative links that now resolve from a deeper folder, and kept #fragments that pointed at moved headings. */
+export function linkWarnings(remainingText: string, moves: Move[], textOf: (slug: string) => string): string[] {
+	const warnings: string[] = [];
+	for (const mv of moves) {
+		const nested = dirname(normalize(mv.dest)) !== ".";
+		const relative = [...textOf(mv.slug).matchAll(/\]\(([^)#\s]+)[^)]*\)/g)]
+			.map((m) => m[1] ?? "")
+			.filter((href) => !/^([a-z]+:|\/|~)/i.test(href));
+		if (nested && relative.length > 0)
+			warnings.push(`relative links in "${mv.slug}" now resolve from ${dirname(mv.dest)}/ — check ${[...new Set(relative)].join(", ")}`);
+		if (remainingText.includes(`](#${mv.slug})`))
+			warnings.push(`kept text links to #${mv.slug}, which moved to ${mv.dest} — point it at the new file`);
+	}
+	return warnings;
 }

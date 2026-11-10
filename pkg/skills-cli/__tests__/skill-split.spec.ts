@@ -223,3 +223,24 @@ test("apply: rejects a destination that is a symlink to the entry file", () => {
 	expect(() => applyManifest(manifest)).toThrow(SplitError);
 	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("## Details");
 });
+
+test("apply: rejects absolute and escaping destinations", () => {
+	writeEntry(["# Skill", "## Details", "x", ""].join("\n"));
+	for (const dest of ["/SKILL.md", "../other.md"]) {
+		expect(() => applyManifest(writeManifest({ skillDir, moves: [{ slug: "details", dest }] }))).toThrow(SplitError);
+	}
+	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("## Details");
+});
+
+test("apply: keeps retained blank lines verbatim", () => {
+	writeEntry(["# Skill", "## Keep", "```", "a", "", "", "b", "```", "## Move", "m", ""].join("\n"));
+	applyManifest(writeManifest({ skillDir, moves: [{ slug: "move", dest: "references/move.md" }] }));
+	expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("a\n\n\nb");
+});
+
+test("apply: warns about moved relative links and kept fragment links", () => {
+	writeEntry(["# Skill", "See [details](#details).", "## Details", "[sib](../other/SKILL.md)", ""].join("\n"));
+	const result = applyManifest(writeManifest({ skillDir, moves: [{ slug: "details", dest: "references/details.md" }] }));
+	expect(result.warnings.some((w) => w.includes("../other/SKILL.md"))).toBe(true);
+	expect(result.warnings.some((w) => w.includes("#details"))).toBe(true);
+});
