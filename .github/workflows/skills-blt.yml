@@ -75,6 +75,7 @@ jobs:
         working-directory: pkg/skills-cli
         env:
           DG_VERIFY_NO_SANDBOX: "1"
+          DG_BOOTSTRAP_E2E: "1"
         run: bun test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
   skills-blt:
