@@ -429,7 +429,7 @@ describe("skills-only docs", () => {
 	});
 });
 
-describe("bootstrap.sh --skills-only", () => {
+describe.skipIf(process.env.DG_BOOTSTRAP_E2E !== "1")("bootstrap.sh --skills-only", () => {
 	afterEach(removeBootstrapDirs);
 	afterAll(removeBootstrapFixtures);
 
