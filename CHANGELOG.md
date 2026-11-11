@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.1.0 (2026-11-11)
+
+### Features
+
+- feat(stat): show the checklist in plan order ([#170](https://github.com/detailedghost/dg-ai/pull/170))
+
 ## v4.0.0 (2026-11-10)
 
 ### Breaking
