@@ -15,14 +15,14 @@ import {
 	skillFilesCheck,
 } from "../doctor/checks";
 import { CLI_PATH } from "../doctor/probes";
-import { type DoctorCheck, fail, ok } from "../doctor/types";
+import { type DoctorCheck, fail, ok, warn } from "../doctor/types";
 
 export const configCheck: DoctorCheck = {
 	id: "config",
 	run(ctx) {
 		const path = channelReviewPaths("dev", { homeDir: ctx.home, env: ctx.env }).configPath;
 		const setup = `${CLI_PATH} channel-review setup`;
-		if (!existsSync(path)) return fail(`no config at ${path}`, setup);
+		if (!existsSync(path)) return warn(`no config at ${path}; channel-review is not set up`, setup);
 		try {
 			resolveEnv(loadConfig(path, { homeDir: ctx.home, env: ctx.env }));
 			return ok(`config ${path} is valid`);

@@ -127,9 +127,10 @@ describe("channel-review setup", () => {
 describe("channel-review doctor config check", () => {
 	const context = () => createContext({ home: dir, env: { HOME: dir, DG_HOME: dir } });
 
-	test("fails with the setup command when the config is missing", async () => {
+	test("warns with the setup command when the config is missing", async () => {
 		const result = await configCheck.run(context());
-		expect(result.status).toBe("fail");
+		expect(result.status).toBe("warn");
+		expect(result.detail).toContain("channel-review is not set up");
 		expect(result.fix).toBe("dg-skills channel-review setup");
 	});
 
