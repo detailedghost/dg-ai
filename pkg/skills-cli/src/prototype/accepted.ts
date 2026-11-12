@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Fingerprint, Reading } from "../layout/fingerprint";
 import {
@@ -91,6 +91,7 @@ async function readLayouts(
 	let skipped: string | null = null;
 	let shots = false;
 	try {
+		rmSync(join(dir, SHOTS_DIR), { recursive: true, force: true });
 		mkdirSync(join(dir, SHOTS_DIR), { recursive: true });
 		for (const viewport of VIEWPORTS) {
 			for (const theme of THEMES) {
@@ -197,7 +198,7 @@ export async function refingerprint(
 		url,
 		fingerprint: captured.fingerprint,
 		skipped: captured.skipped,
-		shots: captured.shots ? `${SHOTS_DIR}/` : prior.shots,
+		shots: captured.shots ? `${SHOTS_DIR}/` : existsSync(join(dir, SHOTS_DIR)) ? prior.shots : null,
 	};
 	store(dir, updated);
 	return updated;

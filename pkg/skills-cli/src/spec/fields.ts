@@ -210,6 +210,25 @@ function coerce(value: string): string | number | boolean {
 	return /^-?\d+$/.test(value) ? Number(value) : value;
 }
 
+async function deleteFields(spec: string, fieldPaths: string[]): Promise<void> {
+	const { front, body } = splitDocument(await readText(spec));
+	const doc = parseDocument(front, { uniqueKeys: false });
+	let changed = false;
+	for (const fieldPath of fieldPaths) {
+		const tokens = parseFieldPath(fieldPath);
+		const target = tokens && resolveNegativeIndices(doc, tokens);
+		if (target && doc.hasIn(target)) {
+			doc.deleteIn(target);
+			changed = true;
+		}
+	}
+	if (changed)
+		replaceText(
+			spec,
+			`---\n${doc.toString({ lineWidth: 0, flowCollectionPadding: false })}---\n${body}`,
+		);
+}
+
 async function setField(
 	spec: string,
 	fieldPath: string,
@@ -360,6 +379,8 @@ export async function prototypeRefCommand(args: string[]): Promise<number> {
 	if (source) {
 		await setField(plan, `slices[${index}].prototype.accepted`, copy("ACCEPTED.md"));
 		await setField(plan, `slices[${index}].prototype.record`, copy("accepted.json"));
+	} else {
+		await deleteFields(plan, [`slices[${index}].prototype.accepted`, `slices[${index}].prototype.record`]);
 	}
 	say(`${plan}: recorded prototype for slice ${slice} -> ${destRel}\n`);
 	return 0;

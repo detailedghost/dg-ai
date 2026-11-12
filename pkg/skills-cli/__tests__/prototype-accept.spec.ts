@@ -346,6 +346,17 @@ describe("recordAcceptance", () => {
 		expect(seen.every((request) => new URL(request.url).searchParams.get("width") === null)).toBe(true);
 	});
 
+	test("clears the reference shots of the previous acceptance before it captures", async () => {
+		mkdirSync(join(root, "sandbox", "accepted"), { recursive: true });
+		writeFileSync(join(root, "sandbox", "accepted", "tablet-dark.png"), "old");
+		writeFileSync(join(root, "sandbox", "accepted", "stale.png"), "old");
+		await recordAcceptance(target(), claim, { open: fake(found), now });
+		const files = readdirSync(join(root, "sandbox", "accepted"));
+		expect(files).toHaveLength(6);
+		expect(files).not.toContain("stale.png");
+		expect(readFileSync(join(root, "sandbox", "accepted", "tablet-dark.png"), "utf8")).not.toBe("old");
+	});
+
 	test("records a skip when the root is missing and still keeps the shots", async () => {
 		const record = await recordAcceptance(
 			target(),

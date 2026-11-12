@@ -584,6 +584,17 @@ describe("dg-skills spec prototype-ref with an accepted record", () => {
 		});
 	});
 
+	test("drops the old accepted page and record when a plain asset replaces them", async () => {
+		sandbox();
+		expect((await ref("sandbox", "D")).exitCode).toBe(0);
+		put("proto.html", "<html></html>\n");
+		expect((await ref("proto.html", "a")).exitCode).toBe(0);
+		const plan = read("bundle/plan.md");
+		expect(plan).toContain("      path: prototype/slice_2_proto.html\n");
+		expect(plan).not.toContain("accepted: prototype/");
+		expect(plan).not.toContain("record: prototype/");
+	});
+
 	test("accepts the record file itself as the path", async () => {
 		sandbox();
 		expect((await ref("sandbox/accepted.json", "D")).exitCode).toBe(0);
