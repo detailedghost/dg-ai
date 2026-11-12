@@ -17,7 +17,7 @@ It also sets the PHI rules and the rules for received files.
 ## Bootstrap
 
 Commands run the **compiled `dg-agent` binary**. The installer pulls it from
-the latest `agent-v*` release:
+the latest `vX.Y.Z` release:
 
 ```bash
 dg-agent phone --help >/dev/null 2>&1 ||

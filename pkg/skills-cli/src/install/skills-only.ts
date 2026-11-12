@@ -1,6 +1,6 @@
 /**
  * `install --skills-only` copies plugins/dg/skills as instruction files.
- * It never spawns anything inside a skill. The install command then fetches only the dg-skills CLI.
+ * It never spawns anything inside a skill. The install command then fetches the dg bundle and its launchers, never the extension.
  */
 
 import { existsSync } from "node:fs";
@@ -70,6 +70,6 @@ export function skillsOnlyReport(result: SkillsOnlyResult): string {
 		...(result.personasDir
 			? [`Installed ${result.personas.length} personas at ${result.personasDir}.`]
 			: []),
-		"Skills-only install: no skill content was executed. Fetching only the dg-skills CLI (no daemon, agent or extension).",
+		"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension).",
 	].join("\n");
 }

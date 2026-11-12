@@ -16,9 +16,8 @@ Commands run the **compiled `dg-agent` binary** from your PATH — a
 self-contained binary, no Bun needed at runtime. `dg-agent start` launches the
 daemon itself when none is running, by resolving `dg-daemon` next to it in the
 same directory, so both binaries must be installed together. On first use,
-bootstrap them once (the installer pulls `dg-agent` from the latest `agent-v*`
-release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
-`skills-v*`):
+bootstrap them once (the installer pulls `dg-agent`, `dg-daemon` and
+`dg-skills` from the latest `vX.Y.Z` release):
 
 ```bash
 dg-agent --version >/dev/null 2>&1 ||
