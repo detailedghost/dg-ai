@@ -145,6 +145,8 @@ export interface CompileOptions {
 	improvements?: boolean;
 	maxImprovements?: number;
 	reReview?: ReReview;
+	/** Adds the "Reviewed from the diff only" item to the Review limits section. */
+	diffOnly?: boolean;
 	cleared?: Cleared;
 	headSha?: string;
 	classHistory?: Readonly<Record<string, number>>;
@@ -153,6 +155,8 @@ export interface CompileOptions {
 	/** Thread ids an earlier review cleared; they stay out of the open tally and are written forward. */
 	clearedThreads?: string[];
 }
+
+const DIFF_ONLY_LIMIT = "Reviewed from the diff only: the code checkout was not available.";
 
 export interface ReReview {
 	sha: string;
@@ -1078,6 +1082,7 @@ function clearedText({ fixed, sha, answered }: Cleared): string {
 interface BodySlots {
 	reconsider: boolean;
 	reReview?: ReReview;
+	reviewLimits: string[];
 	cleared?: Cleared;
 	hints: Array<{ name: string; text: string }>;
 	unposted: string[];
@@ -1129,6 +1134,7 @@ function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): str
 						]
 					: [],
 			},
+			{ heading: "Review limits", items: slots.reviewLimits },
 		]),
 		...renderAlert("TIP", [{ heading: "Strengths", items: review.strengths }]),
 		...renderAlert("WARNING", [
@@ -1483,13 +1489,14 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		const count = opts.classHistory?.[classKey(name)] ?? 0;
 		return count >= CLASS_HINT_MIN_PRS ? [{ name, text: classHint(count) }] : [];
 	});
+	const reviewLimits = opts.diffOnly ? [DIFF_ONLY_LIMIT] : [];
 	const reconsider =
 		decided.verdict === "request_changes" &&
 		opts.round !== undefined &&
 		opts.round > (opts.policy?.reconsiderAfter ?? DEFAULT_RECONSIDER_AFTER);
 	return {
 		...compiled,
-		body: renderBody(compiled, { reconsider, reReview: opts.reReview, cleared, hints, unposted, clearedThreads }),
+		body: renderBody(compiled, { reconsider, reReview: opts.reReview, reviewLimits, cleared, hints, unposted, clearedThreads }),
 	};
 }
 

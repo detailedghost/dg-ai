@@ -1278,6 +1278,19 @@ describe("review rounds, slice A", () => {
 			expect(review.body).toContain("- **Cleared:** 2 fixed in `9f3c2e1`, 1 answered.");
 		});
 
+		test("adds the Review limits section after Re-review only when diffOnly is set", () => {
+			const output = { changed: "Adds a.", strengths: [], opportunities: [], findings: [] };
+			const reReview = { sha: "4b7a9d0aaaa", files: 3, lines: 42 };
+			const plain = compileReview(FILES, output, { ...NO_OPTS, reReview });
+			const limited = compileReview(FILES, output, { ...NO_OPTS, reReview, diffOnly: true });
+			expect(plain.body).not.toContain("Review limits");
+			expect(limited.body).toContain(
+				"> **Review limits**\n>\n> - Reviewed from the diff only: the code checkout was not available.\n",
+			);
+			expect(limited.body.indexOf("Re-review")).toBeLessThan(limited.body.indexOf("Review limits"));
+			expect(compileReview(FILES, output, { ...NO_OPTS, reReview, diffOnly: false }).body).toBe(plain.body);
+		});
+
 		test("leaves the Re-review and Cleared slots out when no data is given", () => {
 			const review = compileReview(FILES, { ...NO_SWOT, changed: "Adds a.", findings: [] }, NO_OPTS);
 			expect(review.body).not.toContain("Re-review");

@@ -19,7 +19,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { shellCommand } from "@dg/common/node";
 import { BACKENDS } from "../src/proxy";
 import { THRASH_REVIEW_MARKER } from "../src/thrash/constants";
@@ -195,6 +195,7 @@ describe("local mode", () => {
 		expect(out.mode).toBe("local");
 		expect(out.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
 		expect(out.untracked).toEqual(["untracked.txt"]);
+		expect(out.repo).toMatchObject({ root: repo, source: "cwd" });
 		expect(readFileSync(out.chunks[0].annotatedPath, "utf8")).toContain(
 			"old:- new:2 + const b = 3;",
 		);
@@ -238,7 +239,8 @@ describe("local mode", () => {
 			nit: 0,
 		});
 		const stored = JSON.parse(readFileSync(output.reviewPath, "utf8"));
-		expect(Object.keys(stored).sort()).toEqual(["review", "target"]);
+		expect(Object.keys(stored).sort()).toEqual(["repo", "review", "target"]);
+		expect(stored.repo).toMatchObject({ root: repo, source: "cwd" });
 		expect(stored.target).toBe(".");
 		expect(stored.review).toMatchObject({
 			verdict: output.verdict,
@@ -1884,5 +1886,313 @@ describe("thrash review hardening", () => {
 		});
 		expect(result.exitCode).toBe(EXIT.OK);
 		expect(JSON.parse(result.stdout)[0]).toMatchObject({ number: 12, changed: 3 });
+	});
+});
+
+describe("thrash review checkout", () => {
+	const PR_13 = PR_URL.replace("12", "13");
+	const HEAD_FILE = "const a = 1;\nconst b = 3;\nconst c = 4;\nexport { a, b };\n";
+
+	interface Remote {
+		path: string;
+		sha12: string;
+		sha13: string;
+	}
+
+	function makeRemote(): Remote {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-remote-");
+		cliFixtures.runGit(["init", "-q"], dir);
+		cliFixtures.runGit(["symbolic-ref", "HEAD", "refs/heads/main"], dir);
+		cliFixtures.runGit(["config", "user.email", "t@t.t"], dir);
+		cliFixtures.runGit(["config", "user.name", "T"], dir);
+		mkdirSync(join(dir, "src"));
+		cliFixtures.commitFile(dir, "src/a.ts", "const a = 1;\nconst b = 2;\nexport { a, b };\n", "chore: base");
+		cliFixtures.runGit(["checkout", "-q", "-b", "pr"], dir);
+		const sha12 = cliFixtures.commitFile(dir, "src/a.ts", HEAD_FILE, "feat: head 12");
+		cliFixtures.runGit(["update-ref", "refs/pull/12/head", sha12], dir);
+		const sha13 = cliFixtures.commitFile(dir, "src/a.ts", `${HEAD_FILE}// 13\n`, "feat: head 13");
+		cliFixtures.runGit(["update-ref", "refs/pull/13/head", sha13], dir);
+		cliFixtures.runGit(["checkout", "-q", "main"], dir);
+		return { path: dir, sha12, sha13 };
+	}
+
+	interface Env {
+		env: Record<string, string>;
+		cwd: string;
+		gh: ReturnType<typeof fakeGh>;
+		cloneLog: string;
+		headFile: string;
+		postFlag: string;
+	}
+
+	function setup(remote: Remote, opts: { cloneFails?: boolean; cloneSleep?: number; postFails?: boolean } = {}): Env {
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const inputs = cliFixtures.tmp(createdDirs, "thrash-inputs-");
+		const cloneLog = join(inputs, "clones.log");
+		const headFile = join(inputs, "head");
+		const diffFixture = join(inputs, "pr.diff");
+		const pulls = join(inputs, "pulls.json");
+		writeFileSync(headFile, remote.sha12);
+		writeFileSync(diffFixture, GH_DIFF);
+		const pr = (number: number, sha: string, head: string, base: string) => ({
+			number,
+			title: `PR ${number}`,
+			html_url: PR_URL.replace("12", String(number)),
+			state: "open",
+			merged_at: null,
+			head: { ref: head, sha },
+			base: { ref: base },
+		});
+		writeFileSync(pulls, JSON.stringify([pr(12, remote.sha12, "a", "main"), pr(13, remote.sha13, "b", "a")]));
+		const clone = opts.cloneFails
+			? `echo clone >> "${cloneLog}"\n    exit 1`
+			: `echo clone >> "${cloneLog}"\n    sleep ${opts.cloneSleep ?? 0}\n    dir="$4"; shift 5\n    exec git clone "$@" "file://${remote.path}" "$dir"`;
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"repo clone"*)
+    ${clone}
+    ;;
+  *"contents/"*)
+    echo 'gh: Not Found (HTTP 404)' >&2
+    exit 1
+    ;;
+  *"pr diff"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"pr view"*)
+    printf '{"number":12,"title":"t","body":"","headRefName":"a","baseRefName":"main","headRefOid":"%s"}' "$(cat "${headFile}")"
+    ;;
+  *"api graphql"*)
+    echo '${EMPTY_THREADS}'
+    ;;
+  *"pulls --method GET"*)
+    cat "${pulls}"
+    ;;
+  *"--method POST"*)
+    ${opts.postFails ? "echo 'post failed' >&2; exit 1" : `cat > /dev/null; echo '{"html_url":"${PR_URL}#pullrequestreview-1"}'`}
+    ;;
+  *"pulls/"*"/reviews"*)
+    echo '[[]]'
+    ;;`),
+		);
+		return {
+			env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFixture },
+			cwd,
+			gh,
+			cloneLog,
+			headFile,
+			postFlag: "",
+		};
+	}
+
+	function cloneCalls(e: Env): number {
+		return cliFixtures.readCalls(e.cloneLog).length;
+	}
+
+	function diffOf(e: Env, args: string[] = [PR_URL]) {
+		const result = run(["diff", ...args], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(result.stdout);
+		const plan = JSON.parse(readFileSync(out.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		return { out, plan };
+	}
+
+	function compileOf(e: Env, out: { diffPath: string; chunks: Array<{ findingsPath: string }> }, url = PR_URL) {
+		findingsFile(out, []);
+		const result = run(["compile", url, "--diff", out.diffPath, "--json"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const reviewPath = JSON.parse(result.stdout).reviewPath as string;
+		return { reviewPath, review: JSON.parse(readFileSync(reviewPath, "utf8")) };
+	}
+
+	function post(e: Env, reviewPath: string, url = PR_URL, extra: string[] = ["--confirm"]) {
+		return run(["post", url, "--review", reviewPath, ...extra], { cwd: e.cwd, env: e.env });
+	}
+
+	test("diff builds a scratch tree at the PR head and reports it in the plan and on stdout", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		const { out, plan } = diffOf(e);
+		expect(plan.repo).toMatchObject({ headSha: remote.sha12, source: "clone" });
+		expect(isAbsolute(plan.repo.root)).toBe(false);
+		expect(out.repo).toMatchObject({ headSha: remote.sha12, source: "clone" });
+		expect(isAbsolute(out.repo.root)).toBe(true);
+		expect(out.repo.root).toBe(join(dirname(out.diffPath), plan.repo.root));
+		expect(out.repo.root.startsWith(scratch)).toBe(true);
+		expect(readFileSync(join(out.repo.root, "src/a.ts"), "utf8")).toBe(HEAD_FILE);
+	});
+
+	test("diff exits 0 with source none when the clone fails", () => {
+		const e = setup(makeRemote(), { cloneFails: true });
+		const { out, plan } = diffOf(e);
+		expect(plan.repo).toMatchObject({ root: "", source: "none" });
+		expect(out.repo.source).toBe("none");
+	});
+
+	test("a second diff after the head moved gives a tree at the new head SHA", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		diffOf(e);
+		writeFileSync(e.headFile, remote.sha13);
+		cliFixtures.runGit(["update-ref", "refs/pull/12/head", remote.sha13], remote.path);
+		const { out } = diffOf(e);
+		expect(out.repo.headSha).toBe(remote.sha13);
+		expect(readFileSync(join(out.repo.root, "src/a.ts"), "utf8")).toBe(`${HEAD_FILE}// 13\n`);
+	});
+
+	test.each([
+		["before", ["--no-repo", PR_URL]],
+		["after", [PR_URL, "--no-repo"]],
+	])("diff --no-repo %s the URL skips the checkout and writes no repo key", (_label, args) => {
+		const e = setup(makeRemote());
+		const { out, plan } = diffOf(e, args);
+		expect(out.target).toBe(PR_URL);
+		expect("repo" in plan).toBe(false);
+		expect("repo" in out).toBe(false);
+		expect(cloneCalls(e)).toBe(0);
+		expect(cliFixtures.readCalls(e.gh.log).some((call) => call.includes("contents/"))).toBe(false);
+	});
+
+	test("compile copies repo with an absolute root and notes a diff-only review only for source none", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		const { out } = diffOf(e);
+		const { review } = compileOf(e, out);
+		expect(review.repo).toEqual({ ...out.repo });
+		expect(review.review.body).not.toContain("Review limits");
+
+		const failing = setup(remote, { cloneFails: true });
+		const none = diffOf(failing);
+		expect(compileOf(failing, none.out).review.review.body).toContain(
+			"Reviewed from the diff only: the code checkout was not available.",
+		);
+	});
+
+	test("compile on a --no-repo plan has no diff-only line and no repo key", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e, [PR_URL, "--no-repo"]);
+		const { review } = compileOf(e, out);
+		expect("repo" in review).toBe(false);
+		expect(review.review.body).not.toContain("Review limits");
+	});
+
+	test("post removes the scratch tree after a publish", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath } = compileOf(e, out);
+		expect(existsSync(out.repo.root)).toBe(true);
+		const result = post(e, reviewPath);
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(false);
+	});
+
+	test("post leaves a repo.root outside thrash scratch in place", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath, review } = compileOf(e, out);
+		const outside = cliFixtures.tmp(createdDirs, "thrash-outside-");
+		writeFileSync(join(outside, "keep.txt"), "x");
+		writeFileSync(reviewPath, JSON.stringify({ ...review, repo: { ...review.repo, root: outside } }));
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+		expect(existsSync(join(outside, "keep.txt"))).toBe(true);
+	});
+
+	test.each(["/", "scratch"])("post with repo.root %s deletes nothing", (which) => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath, review } = compileOf(e, out);
+		const root = which === "/" ? "/" : dirname(out.repo.root);
+		writeFileSync(reviewPath, JSON.stringify({ ...review, repo: { ...review.repo, root } }));
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+		expect(existsSync(out.diffPath)).toBe(true);
+	});
+
+	test("post --dry-run removes the scratch tree and makes no provider call", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath } = compileOf(e, out);
+		const before = cliFixtures.readCalls(e.gh.log).length;
+		const result = post(e, reviewPath, PR_URL, ["--dry-run"]);
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(false);
+		expect(cliFixtures.readCalls(e.gh.log).slice(before)).toEqual([]);
+	});
+
+	test("post keeps the tree after a failed publish and after a refusal for a missing --confirm", () => {
+		const e = setup(makeRemote(), { postFails: true });
+		const { out } = diffOf(e);
+		const { reviewPath } = compileOf(e, out);
+		expect(post(e, reviewPath, PR_URL, []).exitCode).not.toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+		expect(post(e, reviewPath).exitCode).not.toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+	});
+
+	test("post exits as before for a review file with no repo", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e, [PR_URL, "--no-repo"]);
+		const { reviewPath } = compileOf(e, out);
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+	});
+
+	test("post reads repo from the review file and never from plan.json", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath, review } = compileOf(e, out);
+		const { repo: _repo, ...bare } = review;
+		writeFileSync(reviewPath, JSON.stringify(bare));
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+	});
+
+	test("stack --diff makes one clone for two open PRs and each post removes only its own tree", () => {
+		const e = setup(makeRemote(), { cloneSleep: 0.2 });
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const rows = JSON.parse(result.stdout) as Array<{
+			number: number;
+			diffPath: string;
+			chunks: Array<{ findingsPath: string }>;
+			repo: { root: string; headSha: string; source: string };
+		}>;
+		expect(cloneCalls(e)).toBe(1);
+		expect(rows.map((row) => row.repo.source)).toEqual(["clone", "clone"]);
+		expect(new Set(rows.map((row) => row.repo.root)).size).toBe(2);
+		expect(rows.every((row) => isAbsolute(row.repo.root))).toBe(true)
+		const shared = readdirSync(dirname(rows[0].repo.root)).find((name) => name.startsWith("clone-"));
+		expect(shared).toBeDefined();
+		const sharedDir = join(dirname(rows[0].repo.root), shared ?? "");
+
+		const [first, second] = rows.map((row) => compileOf(e, row, PR_URL.replace("12", String(row.number))));
+		expect(post(e, first.reviewPath, PR_URL).exitCode).toBe(EXIT.OK);
+		expect(existsSync(rows[0].repo.root)).toBe(false);
+		expect(existsSync(rows[1].repo.root)).toBe(true);
+		expect(existsSync(sharedDir)).toBe(true);
+		const last = post(e, second.reviewPath, PR_13);
+		expect(last.exitCode, last.stderr).toBe(EXIT.OK);
+		expect(existsSync(rows[1].repo.root)).toBe(false);
+		expect(existsSync(sharedDir)).toBe(false);
+	});
+
+	test("stack --diff --no-repo prints no repo key and makes no clone", () => {
+		const e = setup(makeRemote());
+		const result = run(["stack", PR_URL, "--diff", "--no-repo"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).some((row: object) => "repo" in row)).toBe(false);
+		expect(cloneCalls(e)).toBe(0);
+	});
+
+	test("stack --diff makes no per-PR clone when the shared clone fails", () => {
+		const e = setup(makeRemote(), { cloneFails: true });
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(cloneCalls(e)).toBe(1);
+		expect(JSON.parse(result.stdout).map((row: { repo: { source: string } }) => row.repo.source)).toEqual(["none", "none"]);
+	});
+
+	test("--help names --no-repo", () => {
+		const result = run(["--help"]);
+		expect(`${result.stdout}${result.stderr}`).toContain("--no-repo");
 	});
 });

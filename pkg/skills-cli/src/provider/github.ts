@@ -40,7 +40,7 @@ import {
 	truncateLogExcerpt,
 } from "./types";
 
-const PR_JSON_FIELDS = "number,title,url,state,headRefName,baseRefName,body,mergedAt";
+const PR_JSON_FIELDS = "number,title,url,state,headRefName,baseRefName,body,mergedAt,headRefOid";
 const PAGE_SIZE = 100;
 const MAX_LIST_PAGES = 50;
 const DEFAULT_HOST = "github.com";
@@ -84,6 +84,7 @@ function normalizeGhPr(raw: Record<string, unknown>): PullRequest {
 		state,
 		headRefName: raw.headRefName as string,
 		baseRefName: raw.baseRefName as string,
+		headSha: raw.headRefOid as string | undefined,
 		body: (raw.body as string) ?? "",
 		mergedAt: (raw.mergedAt as string | null) ?? null,
 		merged: state === "MERGED",
@@ -109,6 +110,7 @@ function normalizeGhPrRest(raw: Record<string, unknown>): PullRequest {
 		state,
 		headRefName: (head?.ref as string) ?? "",
 		baseRefName: (base?.ref as string) ?? "",
+		headSha: head?.sha as string | undefined,
 		body: (raw.body as string) ?? "",
 		mergedAt,
 		merged: mergedAt !== null,
@@ -540,6 +542,40 @@ async function fetchDiffSince(tag: ShellTag, ref: PrRef, sha: string): Promise<s
 	}
 }
 
+const RAW_CONTENT_ACCEPT = "Accept: application/vnd.github.raw+json";
+const LISTING_ENTRY_TYPES = new Set(["file", "dir", "submodule", "symlink"]);
+
+function isContentsMetadata(entry: unknown): boolean {
+	if (typeof entry !== "object" || entry === null) return false;
+	const { type, path, sha, _links } = entry as Record<string, unknown>;
+	return typeof type === "string" && LISTING_ENTRY_TYPES.has(type) && typeof path === "string" && typeof sha === "string" && typeof _links === "object";
+}
+
+function isDirectoryOrSubmodule(text: string): boolean {
+	const head = text.trimStart()[0];
+	if (head !== "[" && head !== "{") return false;
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (Array.isArray(parsed)) return parsed.length > 0 && parsed.every(isContentsMetadata);
+		return isContentsMetadata(parsed);
+	} catch {
+		return false;
+	}
+}
+
+async function getFileAtRef(tag: ShellTag, ref: PrRef, path: string, sha: string): Promise<string | null> {
+	const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+	try {
+		const result =
+			await tag`api repos/${ownerRepoPath(ref.repo)}/contents/${encodedPath}?ref=${sha} -H ${RAW_CONTENT_ACCEPT} ${apiHostFlags(ref.repo)}`;
+		const text = result.stdout.toString();
+		return isDirectoryOrSubmodule(text) ? null : text;
+	} catch (err) {
+		if (isCliErrorContaining(err, "http 404")) return null;
+		throw err;
+	}
+}
+
 const GITHUB_REVIEW_EVENTS: Record<ReviewVerdict, string> = {
 	approve: "APPROVE",
 	request_changes: "REQUEST_CHANGES",
@@ -760,6 +796,7 @@ export function createGithubProvider(): Provider {
 		createIssue: (input, repo) => createIssue(tag, input, repo),
 		addLabelsToIssue: (number, labels, repo) => addLabelsToIssue(tag, number, labels, repo),
 		ensureLabel: (name, repo) => ensureLabel(tag, name, repo),
+		getFileAtRef: (ref, path, sha) => getFileAtRef(tag, ref, path, sha),
 		checkAuth: () => checkAuthStatus(tag),
 	};
 }

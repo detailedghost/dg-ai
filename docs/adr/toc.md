@@ -102,6 +102,9 @@ flowchart LR
 - [0041 — pw --ext: user-approved, time-boxed unmask](0041-pw-ext-unmask.md) — Accepted:
   `pw --ext unmask` lets the human allow real email addresses and secret `fill` on one origin for 1 to 60 minutes; only a click in an extension-owned window grants. Amends 0035.
 
+- [0042 — thrash: review from a scratch checkout of the PR head](0042-thrash-review-checkout.md) — Accepted:
+  `thrash diff` builds a hardened scratch tree of the PR head (cwd, clone, api, none) and `thrash post` deletes it; a stack shares one clone.
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

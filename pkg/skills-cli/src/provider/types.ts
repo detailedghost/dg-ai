@@ -93,6 +93,7 @@ export const FIELD_MAP = {
 	headRefName: { github: "headRefName", gitlab: "source_branch" },
 	baseRefName: { github: "baseRefName", gitlab: "target_branch" },
 	mergedAt: { github: "mergedAt", gitlab: "merged_at" },
+	headSha: { github: "headRefOid", gitlab: "sha" },
 } as const;
 
 /** Repository identity and default branch resolved by the selected provider CLI. */
@@ -111,6 +112,7 @@ export interface PullRequest {
 	state: PrState;
 	headRefName: string;
 	baseRefName: string;
+	headSha?: string;
 	body: string;
 	mergedAt: string | null;
 	merged: boolean;
@@ -411,6 +413,8 @@ export interface Provider {
 	addLabelsToIssue(number: number, labels: string[], repo?: RepoRef): Promise<Issue>;
 	/** Idempotent: creates the label if it doesn't exist, no-ops (never recolors) if it does. */
 	ensureLabel(name: string, repo?: RepoRef): Promise<void>;
+	/** File text at `sha`; null when the path is missing at that commit or is a directory or submodule. */
+	getFileAtRef(ref: PrRef, path: string, sha: string): Promise<string | null>;
 	/** Return false for CLI authentication failure; startup/setup failures may reject. */
 	checkAuth(): Promise<boolean>;
 }

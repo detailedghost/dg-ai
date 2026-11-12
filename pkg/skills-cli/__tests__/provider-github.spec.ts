@@ -93,6 +93,7 @@ function rawPr(n: number, state: "OPEN" | "CLOSED" | "MERGED", overrides: Record
 		url: `https://github.com/acme/widgets/pull/${n}`,
 		state,
 		headRefName: `feature-${n}`,
+		headRefOid: `sha${n}`,
 		baseRefName: "main",
 		body: `body of PR ${n}`,
 		mergedAt: state === "MERGED" ? "2026-01-01T00:00:00Z" : null,
@@ -107,7 +108,7 @@ function rawPrRest(n: number, state: "open" | "closed", overrides: Record<string
 		title: `PR #${n}`,
 		html_url: `https://github.com/acme/widgets/pull/${n}`,
 		state,
-		head: { ref: `feature-${n}` },
+		head: { ref: `feature-${n}`, sha: `sha${n}` },
 		base: { ref: "main" },
 		body: `body of PR ${n}`,
 		merged_at: null,
@@ -232,8 +233,9 @@ describe("viewPullRequest", () => {
 		expect(pr.state).toBe("MERGED");
 		expect(pr.merged).toBe(true);
 		expect(pr.mergedAt).toBe("2026-01-01T00:00:00Z");
+		expect(pr.headSha).toBe("sha42");
 		expect(readCalls(log)).toEqual([
-			"pr view 42 --json number,title,url,state,headRefName,baseRefName,body,mergedAt",
+			"pr view 42 --json number,title,url,state,headRefName,baseRefName,body,mergedAt,headRefOid",
 		]);
 	});
 });
@@ -866,6 +868,21 @@ describe("closePullRequest", () => {
 });
 
 describe("listPullRequests — pagination", () => {
+	test("maps the REST head sha onto headSha", async () => {
+		process.env.FAKE_PAGE1_JSON = writeJson("page1.json", [rawPrRest(5, "open")]);
+		fakeGh(
+			ghScript(`
+  *"-F page=1 "*)
+    cat "$FAKE_PAGE1_JSON"
+    exit 0
+    ;;`),
+		);
+
+		const result = await createGithubProvider().listPullRequests({});
+
+		expect(result.map((pr) => pr.headSha)).toEqual(["sha5"]);
+	});
+
 	test("collects results that span more than one 100-item page", async () => {
 		const page1 = Array.from({ length: 100 }, (_, i) =>
 			rawPrRest(i + 1, i === 99 ? "closed" : "open", i === 99 ? { merged_at: "2026-01-01T00:00:00Z" } : {}),
@@ -1514,6 +1531,83 @@ describe("fetchDiffSince", () => {
 	test("rethrows other failures", async () => {
 		fakeGh(script("echo 'gh: Bad credentials (HTTP 401)' >&2; exit 1"));
 		await expect(createGithubProvider().fetchDiffSince(ref, "abc1234")).rejects.toThrow();
+	});
+});
+
+describe("getFileAtRef", () => {
+	const ref = { number: 12, repo: { host: "github.com", owner: "acme", repo: "widgets" } };
+	const script = (body: string) =>
+		ghScript(`
+  *"contents/"*)
+    ${body}
+    ;;`);
+
+	test("returns the file text for a 200, asking for the raw media type at the sha", async () => {
+		const log = callLogPath();
+		fakeGh(script("printf 'hello\\n'; exit 0"));
+
+		expect(await createGithubProvider().getFileAtRef(ref, "src/a.ts", "abc1234")).toBe("hello\n");
+		expect(readCalls(log)).toEqual([
+			"api repos/acme/widgets/contents/src/a.ts?ref=abc1234 -H Accept: application/vnd.github.raw+json",
+		]);
+	});
+
+	test("returns null for a 404", async () => {
+		fakeGh(script("echo 'gh: Not Found (HTTP 404)' >&2; exit 1"));
+		expect(await createGithubProvider().getFileAtRef(ref, "gone.ts", "abc1234")).toBeNull();
+	});
+
+	test("returns null for a directory listing", async () => {
+		fakeGh(
+			script(
+				`echo '[{"type":"file","name":"a.ts","path":"src/a.ts","sha":"s1","_links":{}}]'; exit 0`,
+			),
+		);
+		expect(await createGithubProvider().getFileAtRef(ref, "src", "abc1234")).toBeNull();
+	});
+
+	test("returns null for a submodule entry", async () => {
+		fakeGh(
+			script(`echo '{"type":"submodule","name":"vendor","path":"vendor","sha":"s1","_links":{}}'; exit 0`),
+		);
+		expect(await createGithubProvider().getFileAtRef(ref, "vendor", "abc1234")).toBeNull();
+	});
+
+	test("returns a JSON file as text", async () => {
+		fakeGh(script(`echo '[{"type":"x"}]'; exit 0`));
+		expect(await createGithubProvider().getFileAtRef(ref, "data.json", "abc1234")).toBe('[{"type":"x"}]\n');
+	});
+
+	test("encodes each path segment", async () => {
+		const log = callLogPath();
+		fakeGh(script("echo ok; exit 0"));
+
+		await createGithubProvider().getFileAtRef(ref, "my docs/a b#c.md", "abc1234");
+
+		expect(readCalls(log)[0]).toStartWith("api repos/acme/widgets/contents/my%20docs/a%20b%23c.md?ref=abc1234 ");
+	});
+
+	test("routes a self-hosted host through --hostname", async () => {
+		const log = callLogPath();
+		fakeGh(script("echo ok; exit 0"));
+
+		await createGithubProvider().getFileAtRef(
+			{ number: 1, repo: { host: "ghe.corp.test", owner: "acme", repo: "widgets" } },
+			"a.ts",
+			"abc1234",
+		);
+
+		expect(readCalls(log)[0]).toEndWith("--hostname ghe.corp.test");
+	});
+
+	test("rejects on any other failure", async () => {
+		fakeGh(script("echo 'gh: Bad credentials (HTTP 401)' >&2; exit 1"));
+		await expect(createGithubProvider().getFileAtRef(ref, "a.ts", "abc1234")).rejects.toThrow();
+	});
+
+	test("rejects on a failure whose text only says not found", async () => {
+		fakeGh(script("echo 'gh: repository not found (HTTP 403)' >&2; exit 1"));
+		await expect(createGithubProvider().getFileAtRef(ref, "a.ts", "abc1234")).rejects.toThrow();
 	});
 });
 

@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
-import { scratchPath } from "@dg/common/node";
+import { isPathInside, scratchPath } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProviderForUrl } from "../provider/index";
 import {
@@ -15,6 +15,7 @@ import {
 	type ReviewVerdict,
 } from "../provider/types";
 import { git, resolveBaseSha } from "../utils/git";
+import { type CheckoutResult, prepareSharedClone, removeCheckoutTree, resolveCheckout, type SharedClone } from "./checkout";
 import { CLASS_HISTORY_PRS } from "./constants";
 import { parsePolicy } from "./policy";
 import { defineCommand, EXIT } from "../utils/legacy-command";
@@ -29,6 +30,7 @@ import {
 	chunkSummary,
 	clearedThreadIds,
 	compileReview,
+	type DiffFile,
 	diffStats,
 	lastReviewedSha,
 	mergeOutputs,
@@ -76,13 +78,24 @@ interface PlanFile extends Coverage {
 	contextPath: string;
 	reReview?: ReReview;
 	prDiffPath?: string;
+	repo?: CheckoutResult;
 	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string }>;
 }
 
 interface ReviewFile {
 	target: string;
 	review: CompiledReview;
+	repo?: CheckoutResult;
 }
+
+type CheckoutRunner = (pr: PullRequest | null, files: DiffFile[]) => Promise<CheckoutResult>;
+
+interface WriteDiffOptions {
+	reviewer?: string;
+	checkout?: CheckoutRunner;
+}
+
+const NO_REMOTE_FILES = { getFileAtRef: () => Promise.resolve(null) };
 
 function isUrl(arg: string): boolean {
 	return /^https?:\/\//.test(arg);
@@ -194,18 +207,18 @@ function planPathFor(diffPath: string): string {
 }
 
 const BODY_LIMIT = 4000;
+const NO_REPO = "--no-repo";
 
 async function renderContext(
 	target: DiffTarget,
 	files: ReturnType<typeof parseUnifiedDiff>,
 	plan: ChunkPlan,
+	pr: PullRequest | null,
 	since?: string,
 ): Promise<string> {
 	const lines: string[] = ["# Change context", ""];
 	if (target.mode === "remote") {
-		try {
-			const provider = await getProviderForUrl(target.url);
-			const pr = await provider.viewPullRequest(prRef(target));
+		if (pr) {
 			lines.push(
 				`Title: ${pr.title}`,
 				`Head: ${pr.headRefName}`,
@@ -215,9 +228,6 @@ async function renderContext(
 				pr.body.slice(0, BODY_LIMIT) || "(none)",
 				"",
 			);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			process.stderr.write(`thrash diff: could not read PR details, context has files only: ${message}\n`);
 		}
 	} else {
 		lines.push(`Local review of ${target.relPath} against ${target.base}`, "");
@@ -236,10 +246,32 @@ async function renderContext(
 	return `${lines.join("\n")}\n`;
 }
 
-async function writeDiff(target: DiffTarget, reviewer?: string) {
+async function viewPr(target: DiffTarget): Promise<PullRequest | null> {
+	if (target.mode === "local") return null;
+	try {
+		const provider = await getProviderForUrl(target.url);
+		return await provider.viewPullRequest(prRef(target));
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`thrash diff: could not read PR details, context has files only: ${message}\n`);
+		return null;
+	}
+}
+
+function absoluteRepoRoot(planRoot: string, root: string): string {
+	return !root || path.isAbsolute(root) ? root : resolvePlanPath(planRoot, root);
+}
+
+function planRepoRoot(planRoot: string, repo: CheckoutResult): string {
+	return !repo.root || !isPathInside(repo.root, planRoot) ? repo.root : relativePlanPath(planRoot, repo.root);
+}
+
+async function writeDiff(target: DiffTarget, { reviewer, checkout }: WriteDiffOptions = {}) {
 	const { text, since, prText } = await fetchReviewDiff(target, reviewer);
 	const files = parseUnifiedDiff(text);
 	const stats = diffStats(files);
+	const pr = await viewPr(target);
+	const repo = checkout ? await checkout(pr, files) : undefined;
 	const reReview = since === undefined ? undefined : { sha: since, files: stats.files, lines: stats.changed };
 	const slug = targetSlug(target);
 	const diffPath = scratchPath(TOOL, `${slug}.diff`);
@@ -255,11 +287,12 @@ async function writeDiff(target: DiffTarget, reviewer?: string) {
 	writeFileSync(diffPath, text);
 	const prDiffPath = scratchPath(TOOL, `${slug}.pr.diff`);
 	if (prText !== undefined) writeFileSync(prDiffPath, prText);
-	writeFileSync(contextPath, await renderContext(target, files, plan, since));
+	writeFileSync(contextPath, await renderContext(target, files, plan, pr, since));
 	const planPath = planPathFor(diffPath);
 	const planRoot = path.dirname(planPath);
 	const planFile: PlanFile = {
 		contextPath: relativePlanPath(planRoot, contextPath),
+		...(repo && { repo: { ...repo, root: planRepoRoot(planRoot, repo) } }),
 		...(reReview && { reReview }),
 		...(prText !== undefined && { prDiffPath: relativePlanPath(planRoot, prDiffPath) }),
 		chunks: chunks.map((chunk) => ({
@@ -270,7 +303,7 @@ async function writeDiff(target: DiffTarget, reviewer?: string) {
 		skipped: plan.skipped,
 	};
 	writeFileSync(planPath, JSON.stringify(planFile, null, 2));
-	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats, ...(reReview && { reReview }) };
+	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats, ...(reReview && { reReview }), ...(repo && { repo }) };
 }
 
 async function cmdDiff(args: string[]): Promise<number> {
@@ -280,7 +313,16 @@ async function cmdDiff(args: string[]): Promise<number> {
 		resolved.mode === "local"
 			? { ...resolved, base: await resolveBaseSha(optionalOption(args, "--base"), "thrash") }
 			: resolved;
-	const written = await writeDiff(target, optionalOption(args, "--reviewer"));
+	const checkout: CheckoutRunner | undefined = args.includes(NO_REPO)
+		? undefined
+		: async (pr, files) =>
+				resolveCheckout({
+					target,
+					pr,
+					files,
+					provider: target.mode === "remote" ? await getProviderForUrl(target.url) : NO_REMOTE_FILES,
+				});
+	const written = await writeDiff(target, { reviewer: optionalOption(args, "--reviewer"), checkout });
 	const untracked = target.mode === "local" ? await listUntracked(target) : [];
 	printJson({
 		target: arg,
@@ -402,6 +444,7 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		reviewer,
 		headSha: optionalOption(args, "--head-sha"),
 		reReview: plan.reReview,
+		diffOnly: plan.repo?.source === "none" || undefined,
 		prFiles,
 		classHistory: output.findings.some((f) => f.class) ? await readClassHistory(target, reviewer) : undefined,
 		improvements: args.includes("--improvements") || undefined,
@@ -409,7 +452,8 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
 	rmSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), { force: true });
-	writeFileSync(reviewPath, JSON.stringify({ target: arg, review } satisfies ReviewFile, null, 2));
+	const repo = plan.repo && { ...plan.repo, root: absoluteRepoRoot(planRoot, plan.repo.root) };
+	writeFileSync(reviewPath, JSON.stringify({ target: arg, review, ...(repo && { repo }) } satisfies ReviewFile, null, 2));
 
 	let addressFile: string | undefined;
 	if (target.mode === "local") {
@@ -445,6 +489,7 @@ async function cmdPost(args: string[]): Promise<number> {
 	input.commitId = optionalOption(args, "--head-sha");
 	if (isPostDryRun(args)) {
 		// Report-only: no provider lookup, no gh or glab call, no .posted.json.
+		await removeCheckoutTree(stored.repo?.root ?? "");
 		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });
 		return EXIT.OK;
 	}
@@ -458,6 +503,7 @@ async function cmdPost(args: string[]): Promise<number> {
 	const provider = await getProviderForUrl(target.url);
 	const posted = await provider.postReview(prRef(target), input);
 	writeFileSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), JSON.stringify(posted, null, 2));
+	await removeCheckoutTree(stored.repo?.root ?? "");
 	printJson({ ...posted, requestedVerdict: stored.review.verdict });
 	return EXIT.OK;
 }
@@ -508,6 +554,22 @@ async function stackCandidates(
 	}
 }
 
+async function stackCheckouts(
+	provider: Awaited<ReturnType<typeof getProviderForUrl>>,
+	target: RemoteTarget,
+	stack: PullRequest[],
+): Promise<(prTarget: RemoteTarget, listed: PullRequest) => CheckoutRunner> {
+	const sharedClone: SharedClone | null = stack.some((pr) => stackState(pr) === "open")
+		? await prepareSharedClone(target)
+		: null;
+	let queue: Promise<unknown> = Promise.resolve();
+	return (prTarget, listed) => (_viewed, files) => {
+		const next = queue.then(() => resolveCheckout({ target: prTarget, pr: listed, files, provider }, { sharedClone }));
+		queue = next;
+		return next;
+	};
+}
+
 async function cmdStack(args: string[]): Promise<number> {
 	const arg = positional(args, "stack");
 	const target = await resolveTarget(arg);
@@ -528,6 +590,7 @@ async function cmdStack(args: string[]): Promise<number> {
 		return EXIT.OK;
 	}
 	const merged = stack.filter((pr) => stackState(pr) === "merged");
+	const checkouts = args.includes(NO_REPO) ? undefined : await stackCheckouts(provider, target, stack);
 	const rows = await Promise.all(
 		stack.map(async (pr) => {
 			const state = stackState(pr);
@@ -538,10 +601,9 @@ async function cmdStack(args: string[]): Promise<number> {
 				writeFileSync(statusPath, JSON.stringify(status, null, 2));
 				return { number: pr.number, url: pr.url, state, reviewed: false, statusPath };
 			}
-			const { diffPath, contextPath, chunks, skipped, stats } = await writeDiff({
-				...target,
-				url: pr.url,
-				number: pr.number,
+			const prTarget = { ...target, url: pr.url, number: pr.number };
+			const { diffPath, contextPath, chunks, skipped, stats, repo } = await writeDiff(prTarget, {
+				checkout: checkouts?.(prTarget, pr),
 			});
 			appendFileSync(contextPath, mergedContextSection(merged));
 			return {
@@ -554,6 +616,7 @@ async function cmdStack(args: string[]): Promise<number> {
 				chunks,
 				skipped: skipped.length,
 				changed: stats.changed,
+				...(repo && { repo }),
 			};
 		}),
 	);
@@ -586,7 +649,7 @@ const command = defineCommand({
 	subcommands: {
 		diff: {
 			description:
-				"Fetch the diff for a URL or path, split it into review chunks, write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local",
+				"Fetch the diff for a URL or path, split it into review chunks, write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local; --no-repo skips the code checkout",
 			args: ["target"],
 			run: cmdDiff,
 		},
@@ -603,7 +666,7 @@ const command = defineCommand({
 		},
 		stack: {
 			description:
-				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed",
+				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed; --no-repo skips the code checkout",
 			args: ["target"],
 			run: cmdStack,
 		},
