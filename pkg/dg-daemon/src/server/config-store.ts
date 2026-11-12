@@ -52,6 +52,7 @@ export function writeServiceEntry(
 	label: string,
 	entry: Record<string, unknown> | undefined,
 ): void {
+	assertNotBlocked(paths, "daemon");
 	const file = paths.daemonConfigPath;
 	const config = readConfigStrict(paths);
 	const current = config.services;
