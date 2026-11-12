@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
-import { ensureLayout, type LayoutResult, type Outcome } from "@dg/common/node/layout";
+import { DAEMON_ASIDE_MARK, ensureLayout, type LayoutResult, type Outcome } from "@dg/common/node/layout";
 import { keychainAccountsForPaths } from "../../src/crypto/keychain-backends";
 import { decideKeychainMove } from "../../src/crypto/keychain-step";
 import { daemonLayoutHooks } from "../../src/layout-hooks";
@@ -194,6 +194,39 @@ describe("keychainMove decision table", () => {
 
 		expect(pair.current.calls).toEqual([]);
 		expect(pair.legacy.calls).toEqual([]);
+	});
+});
+
+describe("keychainMove after a set-aside move in an earlier process", () => {
+	const markIn = (paths: DgPaths): string => {
+		mkdirSync(paths.daemonDir, { recursive: true });
+		const mark = join(paths.daemonDir, DAEMON_ASIDE_MARK);
+		writeFileSync(mark, "");
+		return mark;
+	};
+
+	it("replaces a differing current key and removes the mark when the daemon folder holds the mark", async () => {
+		const pair = pairOf(OTHER_SECRET, SECRET);
+		const paths = await prime(freshPaths(), "absent");
+		const mark = markIn(paths);
+
+		const result = await stepOf(pair).step.keychainMove(paths);
+
+		expect(result).toBe("moved");
+		expect(pair.current.value).toBe(SECRET);
+		expect(pair.legacy.count("remove")).toBe(1);
+		expect(existsSync(mark)).toBe(false);
+	});
+
+	it("keeps the mark when the step keeps both entries", async () => {
+		const pair = pairOf(undefined, SECRET, { current: { storeFails: true } });
+		const paths = await prime(freshPaths(), "absent");
+		const mark = markIn(paths);
+
+		const result = await stepOf(pair).step.keychainMove(paths);
+
+		expect(result).toBe("kept");
+		expect(existsSync(mark)).toBe(true);
 	});
 });
 

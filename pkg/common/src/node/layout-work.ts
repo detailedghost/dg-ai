@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { type DgPaths } from "./dg-paths";
 import { writeFileAtomic } from "./fs";
@@ -66,6 +66,7 @@ type Step = {
 	to: string;
 	liveDir?: string;
 	verify?: "phone.verify";
+	asideMark?: string;
 	records: readonly Pending[];
 	action: Action;
 };
@@ -230,6 +231,7 @@ function planEntry(
 		to: facts.to,
 		liveDir: entry.live === undefined ? undefined : join(legacyHome, dirname(entry.live)),
 		verify: entry.verify,
+		asideMark: entry.asideMark,
 		records: facts.records,
 		action: childKept && (decided.kind === "move" || decided.kind === "setAside") ? { kind: "skip" } : decided,
 	};
@@ -334,6 +336,14 @@ function setAside(step: Step, { seams, say }: Context): { asideTo: string } | { 
 	}
 }
 
+function markAside(dest: string, mark: string, say: Context["say"]): void {
+	try {
+		writeFileSync(join(dest, mark), "", { mode: 0o600 });
+	} catch (error) {
+		say(`dg: could not write ${join(dest, mark)}: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
 function copyAcross(step: Step, { hooks, seams, say }: Context, placed: { stopped: boolean; asideTo?: string }): Applied {
 	const reported: string[] = [];
 	const result = moveVerified(step.listed ? step.sources : step.from, step.dest, {
@@ -346,6 +356,7 @@ function copyAcross(step: Step, { hooks, seams, say }: Context, placed: { stoppe
 	});
 	if (result === "failed") return settled(step, { kind: "failed", error: reported.at(-1) ?? "" });
 	if (result === "kept") return settled(step, { kind: "kept", reason: "target-used" });
+	if (placed.asideTo !== undefined && step.asideMark !== undefined) markAside(step.dest, step.asideMark, say);
 	if (result === "scheduled") return { ...settled(step, { kind: "scheduled" }), pending: scheduledRecords(step, seams) };
 	return settled(
 		step,

@@ -1,7 +1,7 @@
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type DgPaths, withInstallLock } from "@dg/common/node";
-import { layoutResult, resolveSeams, withCliLockError } from "@dg/common/node/layout";
+import { DAEMON_ASIDE_MARK, layoutResult, resolveSeams, withCliLockError } from "@dg/common/node/layout";
 import { isDaemonLive, readPidFile } from "@dg/common/node/pidfile";
 import { pidAlive } from "@dg/common/node/plugin-cache";
 import { resolveKeyMode } from "./crypto/key-resolution";
@@ -54,14 +54,17 @@ function keychainMoveStep({ platform, env, warn, backends }: KeychainMoveDeps): 
 		}
 		const known = moves.get(paths.legacyHome);
 		if (known) return known;
-		const running = lock(paths.dataDir, () =>
-			moveKeychainKey({
+		const running = lock(paths.dataDir, async () => {
+			const mark = join(paths.daemonDir, DAEMON_ASIDE_MARK);
+			const result = await moveKeychainKey({
 				pair: backends(paths),
 				...accountNames(paths),
-				daemonOutcome,
+				daemonOutcome: existsSync(mark) ? "setAside" : daemonOutcome,
 				warn,
-			}),
-		);
+			});
+			if (result !== "kept") rmSync(mark, { force: true });
+			return result;
+		});
 		moves.set(paths.legacyHome, running);
 		return running;
 	};
