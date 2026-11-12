@@ -367,7 +367,6 @@ No command copies the data back. A release from before the per-OS layout reads
 | daemon-logs | `~/.local/state/dg/log` | `~/.dg/daemon/logs` |
 | daemon | `~/.local/state/dg/daemon` | `~/.dg/daemon` |
 | grants | `~/.local/state/dg/grants` | `~/.dg/grants` |
-| pairing | `~/.local/state/dg/pairing.json` | `~/.dg/pairing.json` |
 | phone | `~/.local/state/dg/phone` | `~/.dg/phone` |
 | phone-friend | `~/.local/state/dg/phone-friend` | `~/.dg/phone-friend` |
 | inbox | `~/.local/state/dg/inbox` | `~/.dg/inbox` |
