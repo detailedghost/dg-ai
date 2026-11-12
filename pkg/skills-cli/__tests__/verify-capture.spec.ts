@@ -415,6 +415,7 @@ describe("layout capture", () => {
 		const ready = setup(recordJson());
 		const shots = join(dir, ".agents", "prototype", "notes", "accepted");
 		mkdirSync(shots, { recursive: true });
+		writeFileSync(join(shots, "..", "accepted.json"), JSON.stringify(recordJson()));
 		for (const viewport of ["desktop", "tablet", "mobile"])
 			for (const theme of ["light", "dark"]) writeFileSync(join(shots, `${viewport}-${theme}.png`), PNG);
 		const { capturer } = fake(control("bottom", 900));
@@ -435,6 +436,7 @@ describe("layout capture", () => {
 		try {
 			const shots = join(protoDir("notes", { cwd: dir, light: true }), "accepted");
 			mkdirSync(shots, { recursive: true });
+			writeFileSync(join(shots, "..", "accepted.json"), JSON.stringify(recordJson()));
 			for (const viewport of ["desktop", "tablet", "mobile"])
 				for (const theme of ["light", "dark"]) writeFileSync(join(shots, `${viewport}-${theme}.png`), PNG);
 			const { capturer } = fake(control("bottom", 900));
@@ -445,6 +447,19 @@ describe("layout capture", () => {
 			if (previous === undefined) delete process.env.AI_SCRATCH_DIR;
 			else process.env.AI_SCRATCH_DIR = previous;
 		}
+	});
+
+	test("skips reference shots that belong to a later acceptance", async () => {
+		const ready = setup(recordJson());
+		const shots = join(dir, ".agents", "prototype", "notes", "accepted");
+		mkdirSync(shots, { recursive: true });
+		writeFileSync(join(shots, "..", "accepted.json"), JSON.stringify(recordJson({ variant: "B", at: "2026-11-04T00:00:00Z" })));
+		for (const viewport of ["desktop", "tablet", "mobile"])
+			for (const theme of ["light", "dark"]) writeFileSync(join(shots, `${viewport}-${theme}.png`), PNG);
+		const { capturer } = fake(control("bottom", 900));
+		const [captured] = await run(ready, capturer);
+		const section = sectionFromCapture(captured as NonNullable<typeof captured>, { round: 1 });
+		expect(section.images.some((image) => image.target)).toBe(false);
 	});
 
 	test("skips reference shots silently when the sandbox is absent", async () => {
@@ -485,6 +500,7 @@ describe("layout capture", () => {
 		const ready = setup(recordJson(), { targetUrl: "http://127.0.0.1:4321/?variant=D" });
 		const shots = join(dir, ".agents", "prototype", "notes", "accepted");
 		mkdirSync(shots, { recursive: true });
+		writeFileSync(join(shots, "..", "accepted.json"), JSON.stringify(recordJson()));
 		writeFileSync(join(shots, "desktop-light.png"), PNG);
 		const { capturer, requests } = fake(control("bottom", 900));
 		await run(ready, capturer);

@@ -166,7 +166,7 @@ An accepted row stays accepted in later rounds of the same item. A round added b
 `status` prints `| layout: N unaccepted` for an item with open rows. `ALL APPROVED` waits until N is 0.
 A control that shows record data, such as a select of names or a button with a user title, needs a `data-testid`. The test id wins identity, so the row does not break when the data changes.
 Pixel differences never fail a review.
-When no prototype page runs, the board shows the reference shots from the prototype sandbox in the prototype column. A missing sandbox, or a prototype name found in two worktrees, leaves the column empty.
+When no prototype page runs, the board shows the reference shots from the prototype sandbox in the prototype column. A missing sandbox, a prototype name found in two worktrees, or a sandbox that accepted a different pick since, leaves the column empty.
 
 ## Versions
 

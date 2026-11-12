@@ -177,6 +177,15 @@ main{min-height:100vh;display:flex;flex-direction:column;padding:16px;box-sizing
 		}, page);
 	});
 
+	test.skipIf(!browser)("reports a button clipped by its own ancestor as occluded", async () => {
+		const page = bare('<div style="height:300px"><header style="height:0;overflow:hidden"><button type="button">Menu</button></header></div>');
+		await withPage(async (request, capturer) => {
+			const menu = controls(await capturer.shot(request())).find((row) => row.name === "Menu");
+			expect(menu?.visible).toBe(true);
+			expect(menu?.occluded).toBe(true);
+		}, page);
+	});
+
 	test.skipIf(!browser)("reports a header button clipped in the prototype but shown in the build", async () => {
 		const clipped = bare('<header style="max-height:0;overflow:hidden"><button type="button">Menu</button></header><section style="height:300px">Content</section>');
 		const shown = bare('<header><button type="button">Menu</button></header><section style="height:300px">Content</section>');

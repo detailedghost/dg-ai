@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node
 import { join, resolve } from "node:path";
 import { type Difference, diffReadings, type LayoutCheck, layoutCheck, notChecked } from "../layout/diff";
 import { isLayoutError, type LayoutResult, type Reading } from "../layout/fingerprint";
-import { type AcceptedRecord, readRecord } from "../layout/record";
+import { type AcceptedRecord, RECORD_FILE, readRecord } from "../layout/record";
 import { protoDir } from "../prototype/paths";
 import { type AxeReport, axeSummary, mergeAxe } from "./axe";
 import type { BoardImage, Section, VerifyPaths } from "./board";
@@ -65,7 +65,10 @@ function referenceDir(accepted: AcceptedRecord | undefined, cwd: string): string
 	if (!shots) return undefined;
 	for (const light of [false, true]) {
 		try {
-			const dir = join(protoDir(accepted.name, { cwd, light }), shots);
+			const sandbox = protoDir(accepted.name, { cwd, light });
+			const current = readRecord(join(sandbox, RECORD_FILE));
+			if (current.at !== accepted.at || current.variant !== accepted.variant) continue;
+			const dir = join(sandbox, shots);
 			if (existsSync(dir)) return dir;
 		} catch {}
 	}

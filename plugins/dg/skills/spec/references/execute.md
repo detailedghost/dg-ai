@@ -43,7 +43,9 @@ not inject a prototype reference into a slice's brief when it has none.
 
 When the key also holds `.accepted` and `.record`, the agent reads the `ACCEPTED.md` page and reproduces the
 recorded layout: the same controls in the same order and position band, with the same ones hidden. The
-verify manifest item for that slice carries `record: <slices[N].prototype.record>`.
+verify manifest item for that slice carries `record: <bundle>/<slices[N].prototype.record>`. The
+stored path is relative to the spec bundle, and verify resolves `record` against its working directory,
+so join the two first.
 
 ## 2. Worktree — reuse `/dg:sdlc` setup.md Step 1 verbatim
 

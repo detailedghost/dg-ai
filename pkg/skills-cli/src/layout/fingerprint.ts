@@ -249,10 +249,11 @@ export function collectLayout(selectors: {
 			[rect.left + inset, rect.bottom - inset],
 			[rect.right - inset, rect.bottom - inset],
 		];
-		for (const [x, y] of points) {
+		const centerMustHit = getComputedStyle(el).pointerEvents !== "none";
+		for (const [index, [x, y]] of points.entries()) {
 			const hit = document.elementFromPoint(x, y);
-			if (hit && hit !== el && !el.contains(hit) && !hit.contains(el))
-				return hit;
+			if (!hit || hit === el || el.contains(hit)) continue;
+			if (!hit.contains(el) || (index === 0 && centerMustHit)) return hit;
 		}
 		return null;
 	};
