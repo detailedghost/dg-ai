@@ -19,9 +19,12 @@ const asksForHelp = (args: readonly string[]): boolean => {
 	return (end === -1 ? args : args.slice(0, end)).some((arg) => HELP_FLAGS.has(arg));
 };
 
-/** True for a forwarded help flag before any `--`, or when the command path (alone or plus its first raw argument) is in the skip set. */
+const handlesOwnHelp = (action: Command): boolean =>
+	action.createHelp().visibleOptions(action).some((option) => HELP_FLAGS.has(option.long ?? ""));
+
+/** True for a help flag before any `--` forwarded by a command without its own help, or when the command path (alone or plus its first raw argument) is in the skip set. */
 export function shouldSkip(action: Command, skip: ReadonlySet<string>): boolean {
-	if (asksForHelp(action.args)) return true;
+	if (!handlesOwnHelp(action) && asksForHelp(action.args)) return true;
 	const path = pathBelowProgram(action).join(" ");
 	return skip.has(path) || skip.has(`${path} ${action.args[0] ?? ""}`);
 }

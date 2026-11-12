@@ -177,6 +177,17 @@ describe("installLayoutPreAction forwarded help", () => {
 	});
 });
 
+describe("installLayoutPreAction native help", () => {
+	test.each([["--help"], ["-h"]])("a native command given %s after -- records one ensure call", async (flag) => {
+		const { program, ensured, ran } = wire(SKILLS_TREE, SKILLS_SKIP);
+
+		await run(program, ["spec", "slugify", "--", flag]);
+
+		expect(ensured).toHaveLength(1);
+		expect(ran).toEqual(["spec slugify"]);
+	});
+});
+
 describe("installLayoutPreAction commands that never reach a body", () => {
 	const quiet = (program: Command): Command => {
 		program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
