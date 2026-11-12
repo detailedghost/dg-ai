@@ -288,6 +288,18 @@ describe("dg-agent mcp server tools/call", () => {
 		expect(sent.filter((entry) => entry.frame.request.verb !== "call")).toEqual([]);
 	});
 
+	it("routes with dg_tab and keeps the tool's own tab input", async () => {
+		const own = { type: "object", properties: { tab: { type: "string" } }, required: ["tab"] };
+		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
+		const { tools } = await client.listTools();
+		expect(tools[0]?.inputSchema.properties).toEqual({
+			tab: { type: "string" },
+			dg_tab: expect.objectContaining({ type: "integer" }),
+		});
+		await client.callTool({ name: "dg_example_read", arguments: { dg_tab: 2, tab: "settings" } });
+		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { tab: "settings" } }]);
+	});
+
 	it("returns the open-the-site error when the agent has no tab yet", async () => {
 		const handler: Handler = () => ({ ok: false, error: PW_EXT_NO_TAB_ERROR });
 		const { client } = await connectClient([handler]);

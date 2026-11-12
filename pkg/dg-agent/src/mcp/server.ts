@@ -84,7 +84,7 @@ function parseTabIds(text: string): number[] {
 	return [...ids];
 }
 
-function withTabProperty(raw: string | undefined): Tool["inputSchema"] {
+function parseSchema(raw: string | undefined): { schema: Record<string, unknown>; properties: Record<string, unknown> } {
 	let schema: Record<string, unknown> = { type: "object" };
 	try {
 		const parsed: unknown = JSON.parse(raw ?? "");
@@ -96,10 +96,20 @@ function withTabProperty(raw: string | undefined): Tool["inputSchema"] {
 		typeof existing === "object" && existing !== null && !Array.isArray(existing)
 			? (existing as Record<string, unknown>)
 			: {};
+	return { schema, properties };
+}
+
+/** The argument that picks the tab: tab, or dg_tab when the tool has its own tab input. */
+function tabKey(raw: string | undefined): "tab" | "dg_tab" {
+	return Object.hasOwn(parseSchema(raw).properties, "tab") ? "dg_tab" : "tab";
+}
+
+function withTabProperty(raw: string | undefined): Tool["inputSchema"] {
+	const { schema, properties } = parseSchema(raw);
 	return {
 		...schema,
 		type: "object",
-		properties: { ...properties, tab: { type: "integer", description: TAB_DESCRIPTION } },
+		properties: { ...properties, [tabKey(raw)]: { type: "integer", description: TAB_DESCRIPTION } } as Record<string, object>,
 	};
 }
 
@@ -121,6 +131,7 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 	let closes = 0;
 	let lost = false;
 	let sequence = 0;
+	let listed: Map<string, Exposure> | undefined;
 	let slots = MAX_IN_FLIGHT;
 	const waiting: Array<() => void> = [];
 
@@ -262,20 +273,26 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		}
 		if (firstError !== undefined && usable === 0)
 			throw new McpError(ErrorCode.InternalError, firstError);
+		listed = found;
 		return found;
 	}
 
-	async function pickTab(name: string, given: unknown, signal?: AbortSignal): Promise<number> {
+	async function pickTab(
+		name: string,
+		key: string,
+		given: unknown,
+		signal?: AbortSignal,
+	): Promise<number> {
 		if (given !== undefined) {
 			if (typeof given !== "number" || !Number.isSafeInteger(given) || given < 0 || given > PW_EXT_MAX_TAB_ID)
-				throw new Error("tab must be a tab id from pw --ext tabs.");
+				throw new Error(`${key} must be a tab id from pw --ext tabs.`);
 			return given;
 		}
 		const tabs = (await exposures(signal)).get(name)?.tabs ?? [];
 		if (tabs.length === 0)
 			throw new Error(`No agent tab exposes ${name}. Open the site with pw --ext new <url>.`);
 		if (tabs.length > 1)
-			throw new Error(`Several tabs expose ${name}: ${tabs.join(", ")}. Pass tab.`);
+			throw new Error(`Several tabs expose ${name}: ${tabs.join(", ")}. Pass ${key}.`);
 		return tabs[0] as number;
 	}
 
@@ -299,8 +316,11 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		const { name } = params;
 		if (!isDgToolName(name)) return failure(`${name} is not a dg tool.`);
 		try {
-			const { tab, ...args } = params.arguments ?? {};
-			const tabId = await pickTab(name, tab, extra.signal);
+			const all = params.arguments ?? {};
+			const own = listed?.get(name);
+			const key = own ? tabKey(own.tool.inputSchema) : "tab";
+			const { [key]: tab, ...args } = all;
+			const tabId = await pickTab(name, key, tab, extra.signal);
 			const reply = await send({ verb: "call", tabId, tool: name, args }, extra.signal);
 			if (!reply.ok) return failure(reply.error ?? `${name} failed in the browser.`);
 			const { text } = validatePwExtResponse(reply.data);
