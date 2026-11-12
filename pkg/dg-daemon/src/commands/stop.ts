@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import {
 	CHAT_SERVICES_PATH,
 	type DaemonHandle,
@@ -22,6 +21,7 @@ import {
 	resolveDgPaths,
 	resolveLiveDaemon,
 } from "@dg/common/node";
+import { type DaemonIdentity, isOurDaemon } from "../legacy-daemon-identity";
 import { startedLine } from "./start";
 
 const POLL_MS = 100;
@@ -33,7 +33,7 @@ export type StopSeams = {
 	platform?: NodeJS.Platform;
 	kill?: (pid: number, signal: NodeJS.Signals | 0) => void;
 	exec?: (command: string, args: string[]) => void;
-	commandLine?: (pid: number) => string[] | undefined;
+	identify?: (pid: number) => DaemonIdentity;
 	waitMs?: number;
 	listTimeoutMs?: number;
 };
@@ -100,22 +100,6 @@ async function listServicePids(
 		isSignalablePid(service.pid)
 			? [service.pid]
 			: [],
-	);
-}
-
-function readCommandLine(pid: number): string[] | undefined {
-	try {
-		return readFileSync(`/proc/${pid}/cmdline`, "utf8")
-			.split("\0")
-			.filter((arg) => arg.length > 0);
-	} catch {
-		return undefined;
-	}
-}
-
-function isDaemonCommandLine(argv: string[] | undefined): boolean {
-	return Boolean(
-		argv?.includes("__serve") && argv.some((arg) => arg.includes("dg-daemon")),
 	);
 }
 
@@ -203,12 +187,9 @@ async function stopSilentDaemon(
 			EXIT_GENERAL_FAILURE,
 		);
 	}
-	const platform = seams.platform ?? process.platform;
-	const argv =
-		platform === "linux"
-			? (seams.commandLine ?? readCommandLine)(handle.pid)
-			: undefined;
-	if (!isDaemonCommandLine(argv)) {
+	const identify =
+		seams.identify ?? ((pid: number) => isOurDaemon(pid, paths.pidPath));
+	if (identify(handle.pid) !== "ours") {
 		throw new DgCliError(
 			`pid ${handle.pid} does not answer and this CLI cannot confirm it is dg-daemon; nothing was killed`,
 			EXIT_GENERAL_FAILURE,

@@ -116,7 +116,7 @@ describe("ensureDaemonRunning", () => {
 	});
 
 	it("spawns the argv of the daemonArgv seam with the detached options when no daemon is live", async () => {
-		const argv = ["/opt/dg/bun", "/opt/dg/dg.js", "dg-daemon", "__serve"];
+		const argv = ["/opt/dg/bun", "/opt/dg/dg.js", "dg-daemon", "serve"];
 		const recorder = recordingSpawn(() => live());
 
 		const result = await ensureDaemonRunning(paths, {
@@ -152,7 +152,7 @@ describe("ensureDaemonRunning", () => {
 		expect(result.handle.instanceId).not.toBe(dead.handle.instanceId);
 	});
 
-	it("spawns [execPath, Bun.main, dg-daemon, __serve] in bundle mode", async () => {
+	it("spawns [execPath, Bun.main, dg-daemon, serve] in bundle mode", async () => {
 		setProgramName("dg-agent");
 		const recorder = recordingSpawn(() => live());
 
@@ -163,7 +163,7 @@ describe("ensureDaemonRunning", () => {
 			process.execPath,
 			Bun.main,
 			"dg-daemon",
-			"__serve",
+			"serve",
 		]);
 	});
 

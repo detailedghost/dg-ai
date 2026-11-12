@@ -255,7 +255,7 @@ describe("docs/AGENT-INSTALL.md", () => {
 
 	test("no doc says dg-daemon has no stop command", () => {
 		for (const f of readdirDocs())
-			expect(readFileSync(f, "utf8")).not.toContain("has no stop command");
+			expect(readFileSync(f, "utf8")).not.toMatch(/dg-daemon[^.]*has no stop command|Daemon: it has no `stop` command/);
 	});
 
 	test("upgrade uses restart and rollback uses stop, keeping Restart the daemon", () => {

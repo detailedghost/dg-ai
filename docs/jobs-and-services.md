@@ -161,9 +161,11 @@ within 3 s, `--force` still kills the daemon and reports the list failure.
 
 If the pid in the pid file still runs but `/healthz` does not answer (a hung or
 stopped daemon), `dg-daemon stop` keeps the pid file and exits 1 with
-`does not answer`. `dg-daemon stop --force` then kills that pid only if its
-command line names `dg-daemon` (Linux only; on another platform it kills
-nothing). It cannot list the services, so it exits 1 and says that a service
+`does not answer`. `dg-daemon stop --force` then kills that pid only if it is the
+`dg-daemon serve` process that wrote the pid file: its command line names
+`dg-daemon serve` and it started no later than the pid file. This check works
+on Linux and macOS; on Windows, and for a process it cannot identify, it kills
+nothing. It cannot list the services, so it exits 1 and says that a service
 process can still run.
 
 `dg-daemon restart` stops the daemon, which ends each session, then starts it

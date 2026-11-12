@@ -450,8 +450,6 @@ describe("dg-daemon stop seams", () => {
 		writePidFileAtomic(paths, handleFor({ pid, port: allocatePort() }));
 	}
 
-	const DAEMON_ARGV = ["bun", "/repo/pkg/dg-daemon/src/index.ts", "__serve"];
-
 	it("exits 1, sends no signal and keeps the pid file when the pid runs but healthz does not answer", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242]);
@@ -472,7 +470,7 @@ describe("dg-daemon stop seams", () => {
 		expect(existsSync(paths.pidPath)).toBe(true);
 	});
 
-	it("kills a silent daemon with --force when its command line names dg-daemon, and warns that a service can run", async () => {
+	it("kills a silent daemon with --force when it is identified as our dg-daemon, and warns that a service can run", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242]);
 		silentPidFile(paths, 424242);
@@ -484,7 +482,7 @@ describe("dg-daemon stop seams", () => {
 				kill: table.kill,
 				exec: table.exec,
 				waitMs: 2000,
-				commandLine: () => DAEMON_ARGV,
+				identify: () => "ours",
 			},
 		).catch((err: unknown) => err);
 
@@ -497,12 +495,11 @@ describe("dg-daemon stop seams", () => {
 	});
 
 	it.each([
-		["another process", "linux", ["sleep", "1000"]],
-		["an unreadable command line", "linux", undefined],
-		["a platform with no way to identify it", "darwin", DAEMON_ARGV],
+		["another process or a reused pid", "foreign"],
+		["a pid it cannot identify", "unknown"],
 	] as const)(
-		"refuses to kill a silent pid on %s",
-		async (_name, platform, argv) => {
+		"refuses to kill a silent pid that is %s",
+		async (_name, identity) => {
 			const { paths } = seamHome();
 			const table = fakeProcessTable([424242]);
 			silentPidFile(paths, 424242);
@@ -510,11 +507,11 @@ describe("dg-daemon stop seams", () => {
 			const failure = await cmdStop(
 				{ force: true },
 				{
-					platform,
+					platform: "linux",
 					kill: table.kill,
 					exec: table.exec,
 					waitMs: 100,
-					commandLine: () => (argv ? [...argv] : undefined),
+					identify: () => identity,
 				},
 			).catch((err: unknown) => err);
 
