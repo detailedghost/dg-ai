@@ -3,7 +3,7 @@ import {
 	type CommandEntry,
 	OVERWATCH_SESSION_ID,
 	type SessionBootstrap,
-	validateChatFrame,
+	validatePageChatFrame,
 } from "@dg/common";
 import { MSG } from "../chat-messages";
 import { SESSION_ENDED_TEXT } from "../local";
@@ -155,7 +155,7 @@ function createRelayChatClient(runtime: RelayRuntime): PageChatClient {
 		}
 		let frame: ChatFrame;
 		try {
-			frame = validateChatFrame((message as Record<string, unknown>).frame);
+			frame = validatePageChatFrame((message as Record<string, unknown>).frame);
 		} catch {
 			return;
 		}

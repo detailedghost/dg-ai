@@ -3,7 +3,7 @@ import {
 	type OverwatchAction,
 	type OverwatchBoard,
 	type OverwatchLane,
-	validateChatFrame,
+	validatePageChatFrame,
 } from "@dg/common";
 import { MSG } from "../chat-messages";
 import { patchKeyedList } from "../dom-keyed-list";
@@ -79,7 +79,7 @@ function relayFrame(message: unknown): ChatFrame | undefined {
 	const payload = message as Record<string, unknown>;
 	if (payload.type !== MSG.overwatchState) return undefined;
 	try {
-		return validateChatFrame(payload.frame);
+		return validatePageChatFrame(payload.frame);
 	} catch {
 		return undefined;
 	}

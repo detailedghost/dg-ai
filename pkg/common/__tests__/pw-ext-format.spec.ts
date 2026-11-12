@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "../src/index";
+import { CHAT_PROTOCOL_VERSION, validateChatFrame, validatePageChatFrame } from "../src/index";
 import {
+	isPwExtCliResult,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
+	PW_EXT_MAX_TOOLS,
 	PW_EXT_MAX_TIMEOUT_MS,
 	PW_EXT_MIN_EXTENSION_VERSION,
 	type PwExtCliRequest,
@@ -64,6 +66,40 @@ describe("validatePwExtResponse", () => {
 	it("accepts text and a screenshot image", () => {
 		const value = { text: "ok", image: "data:image/jpeg;base64,AAAA" };
 		expect(validatePwExtResponse(value)).toEqual(value);
+	});
+
+	it("accepts a structured tools list", () => {
+		const value = {
+			text: "ok",
+			tools: [{ name: "dg_outlook_list", description: "List mail", title: "List", inputSchema: "{}", annotations: "{}" }],
+		};
+		expect(validatePwExtResponse(value)).toEqual(value);
+		expect(validatePwExtResponse({ text: "ok", tools: [{ name: "a", description: "b" }] })).toEqual({
+			text: "ok",
+			tools: [{ name: "a", description: "b" }],
+		});
+	});
+
+	it("accepts 100 tools and rejects 101", () => {
+		const tool = { name: "dg_outlook_list", description: "d" };
+		expect(() => validatePwExtResponse({ text: "ok", tools: Array(100).fill(tool) })).not.toThrow();
+		expect(() => validatePwExtResponse({ text: "ok", tools: Array(101).fill(tool) })).toThrow();
+	});
+
+	it.each([
+		{ text: "ok", tools: "list" },
+		{ text: "ok", tools: [null] },
+		{ text: "ok", tools: [{ name: 1, description: "d" }] },
+		{ text: "ok", tools: [{ name: "a", description: 2 }] },
+		{ text: "ok", tools: [{ name: "a" }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", inputSchema: {} }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", title: 3 }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", annotations: false }] },
+		{ text: "ok", tools: [{ name: "", description: "d" }] },
+		{ text: "ok", tools: [{ name: "n".repeat(129), description: "d" }] },
+		{ text: "ok", tools: [{ name: "a", description: "d", extra: "x" }] },
+	])("rejects tools %p", (value) => {
+		expect(() => validatePwExtResponse(value)).toThrow();
 	});
 
 	it.each([
@@ -143,6 +179,36 @@ describe("pw-ext chat frames", () => {
 			validateChatFrame({ ...ok, data: { text: "x".repeat(PW_EXT_MAX_TEXT_CHARS + 1) } }),
 		).toThrow();
 		expect(() => validateChatFrame({ ...ok, extra: 1 })).toThrow();
+	});
+
+	it("validates every tool in the extension result on the full validator", () => {
+		const ok = {
+			...envelope,
+			type: "pw-ext-browser-result",
+			token: "t",
+			ok: true,
+			data: { text: "hi", tools: [{ name: "search", description: "d" }] },
+		};
+		expect(validateChatFrame(ok)).toEqual(ok as never);
+		const withTools = (tools: unknown) => ({ ...ok, data: { text: "hi", tools } });
+		expect(() => validateChatFrame(withTools([{ description: "d" }]))).toThrow();
+		expect(() => validateChatFrame(withTools([{ name: "search", description: "d", extra: 1 }]))).toThrow();
+		expect(() => validateChatFrame(withTools("search"))).toThrow();
+		expect(() =>
+			validateChatFrame(withTools(Array.from({ length: PW_EXT_MAX_TOOLS + 1 }, () => ({ name: "t", description: "d" })))),
+		).toThrow();
+	});
+
+	it("rejects every pw-ext frame on the page validator", () => {
+		const frames = [
+			{ ...envelope, type: "pw-ext-browser-request", request: { verb: "click", target: "e1" }, timeoutMs: 1000 },
+			{ ...envelope, type: "pw-ext-browser-cancel" },
+			{ ...envelope, type: "pw-ext-browser-result", token: "t", ok: true, data: { text: "hi" } },
+		];
+		for (const frame of frames) {
+			expect(validateChatFrame(frame)).toEqual(frame as never);
+			expect(() => validatePageChatFrame(frame)).toThrow();
+		}
 	});
 });
 
@@ -497,4 +563,23 @@ describe("isPwExtSecretTooShort", () => {
 	])("%p is too short: %p", (value, short) => {
 		expect(isPwExtSecretTooShort(value)).toBe(short);
 	});
+});
+
+describe("isPwExtCliResult", () => {
+	const frame = { type: "cli-pw-ext-result", requestId: "r", ok: true };
+
+	it("accepts a result frame with the same requestId", () => {
+		expect(isPwExtCliResult("r")(frame)).toBe(true);
+	});
+
+	it("rejects a result frame with another requestId", () => {
+		expect(isPwExtCliResult("other")(frame)).toBe(false);
+	});
+
+	it.each([null, "text", 4, { type: "cli-recv-result", requestId: "r" }])(
+		"rejects %p",
+		(value) => {
+			expect(isPwExtCliResult("r")(value)).toBe(false);
+		},
+	);
 });

@@ -5,7 +5,7 @@ import {
 	type OverwatchBoard,
 	type OverwatchLane,
 	type OverwatchStage,
-	validateChatFrame,
+	validatePageChatFrame,
 } from "@dg/common";
 import { findDaemonPort } from "../daemon-port";
 
@@ -44,7 +44,7 @@ export class OverwatchHttpError extends Error {
 }
 
 function parseBoard(value: unknown): OverwatchBoard {
-	const frame = validateChatFrame({
+	const frame = validatePageChatFrame({
 		type: "overwatch-state",
 		sessionId: OVERWATCH_SESSION_ID,
 		protocolVersion: CHAT_PROTOCOL_VERSION,

@@ -249,6 +249,11 @@ export class CliClient {
 		});
 	}
 
+	/** Runs the handler once when the socket closes, for any reason. */
+	onClose(handler: () => void): void {
+		this.socket.addEventListener("close", handler, { once: true });
+	}
+
 	/** Closes the host-owned connection once all required requests have settled. */
 	close(): void {
 		this.socket.close();

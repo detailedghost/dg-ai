@@ -63,7 +63,7 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe("wxt build", () => {
-	it("keeps the chrome-mv3 permissions unchanged", () => {
+	it("keeps the chrome-mv3 permissions at the recorded baseline", () => {
 		expect([...manifest.permissions].sort()).toEqual(
 			[...baseline.permissions].sort(),
 		);
@@ -71,6 +71,11 @@ describe("wxt build", () => {
 			[...baseline.host_permissions].sort(),
 		);
 		expect(manifest.permissions).toContain("activeTab");
+	});
+
+	it("declares userScripts for chrome and ships the third-party prelude", () => {
+		expect(manifest.permissions).toContain("userScripts");
+		expect(existsSync(resolve(OUT, "webmcp-shim.js"))).toBe(true);
 	});
 
 	it("pins the chrome extension id through the manifest key", () => {
