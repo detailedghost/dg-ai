@@ -2,7 +2,7 @@ export type PwExtPageAction =
 	| { kind: "snapshot" }
 	| { kind: "click"; target: string }
 	| { kind: "count"; target: string }
-	| { kind: "fill"; target: string; value: string; secret?: boolean }
+	| { kind: "fill"; target: string; value: string; secret?: boolean; until?: number }
 	| {
 			kind: "upload";
 			target: string;
@@ -490,10 +490,10 @@ export function pwExtPageAction(
 		return { detail: `filled ${describe(input)}` };
 	};
 
-	const fill = (target: string, value: string, secret: boolean): PwExtPageResult => {
+	const fill = (target: string, value: string, secret: boolean, until?: number): PwExtPageResult => {
 		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
-		if (isSecret(el) && !unmask)
+		if (isSecret(el) && (!unmask || (until !== undefined && Date.now() >= until)))
 			return {
 				error: "pw --ext fills a password or secret field only during an unmask grant. Run pw --ext unmask; the user approves it in the browser.",
 			};
@@ -608,7 +608,7 @@ export function pwExtPageAction(
 			case "count":
 				return count(action.target);
 			case "fill":
-				return fill(action.target, action.value, action.secret === true);
+				return fill(action.target, action.value, action.secret === true, action.until);
 			case "selection":
 				return selection();
 			case "upload":

@@ -234,6 +234,17 @@ describe("fill", () => {
 			expect(JSON.stringify(result)).not.toContain("xxxx");
 		});
 
+		it("refuses a secret fill once the unmask deadline passed", () => {
+			page(`<input id="p" type="password" aria-label="Password">`);
+			const result = pwExtPageAction(
+				{ kind: "fill", target: "#p", value: "orchid-maple", secret: true, until: Date.now() - 1 },
+				undefined,
+				true,
+			);
+			expect(result).toEqual({ error: expect.stringContaining("only during an unmask grant") });
+			expect(el<HTMLInputElement>("#p").value).toBe("");
+		});
+
 		it("refuses a multiple select", () => {
 			page(`<select id="s" multiple aria-label="Tags"><option>a</option></select>`);
 			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "a" })).toEqual({

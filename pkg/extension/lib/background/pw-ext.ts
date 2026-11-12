@@ -99,6 +99,7 @@ const UNMASK_REFUSED = {
 } satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
 const SECRET_TOO_SHORT = `pw --ext fills a secret of at least ${PW_EXT_MIN_SECRET_CHARS} characters only.`;
 const SECRETS_FULL = `This session already filled ${MAX_FILLED_SECRETS} secret values; start a new dg session to fill more.`;
+const UNMASK_ENDED = "The unmask ended before the fill ran; nothing was filled. Run pw --ext unmask again.";
 const SELECTED_GONE =
 	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
 const GROUP_FULL = `This agent's tab group is full (${MAX_AGENT_TABS} tabs). Close some with pw --ext close <id>.`;
@@ -209,7 +210,7 @@ const SECRET_PAIR =
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
 function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
 	const redact = unmasked ? redactSecrets : redactText;
-	return redact(redactLiterals(text, secrets), secrets).replace(SECRET_PAIR, "$1$2[redacted]");
+	return redactLiterals(redact(text).replace(SECRET_PAIR, "$1$2[redacted]"), secrets);
 }
 
 function clean(text: string, options: { unmasked?: boolean; secrets?: string[] } = {}): string {
@@ -339,6 +340,23 @@ export function createPwExtHandler({
 		};
 	}
 
+	const fills = new Map<string, { active: number; kept: boolean }>();
+
+	/** Counts in-flight secret fills of one value, so one failed fill cannot unmask a value another fill wrote. */
+	function holdFill(sessionId: string, secret: string) {
+		const key = `${sessionId}\n${secret}`;
+		const entry = fills.get(key) ?? { active: 0, kept: false };
+		entry.active++;
+		fills.set(key, entry);
+		return {
+			alone: () => entry.active === 1 && !entry.kept,
+			done(kept: boolean) {
+				if (kept) entry.kept = true;
+				if (--entry.active === 0) fills.delete(key);
+			},
+		};
+	}
+
 	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false, secrets: string[] = []) {
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
@@ -420,7 +438,21 @@ export function createPwExtHandler({
 		signal: AbortSignal | undefined,
 	): Promise<PwExtResult> {
 		const grant = await grants.active(context.sessionId, tab);
-		const result = await perform(request, tab, context, signal, grant);
+		const filling = request.verb === "fill" && request.secret ? (request.value as string) : undefined;
+		const hold = filling === undefined ? undefined : holdFill(context.sessionId, filling);
+		let dropped = false;
+		let result: PwExtResult;
+		try {
+			const reserved = filling === undefined ? "held" : await grants.reserve(context.sessionId, filling);
+			if (reserved === "full") throw new Refusal(SECRETS_FULL);
+			const release = async () => {
+				dropped = true;
+				if (reserved === "added" && hold?.alone()) await grants.release(context.sessionId, filling as string);
+			};
+			result = await perform(request, tab, context, signal, grant, release);
+		} finally {
+			hold?.done(!dropped);
+		}
 		if (!grant) return result;
 		const live = await api.tabs.get(tab.id).catch(() => undefined);
 		if (live && (await grants.active(context.sessionId, live))) return result;
@@ -435,14 +467,9 @@ export function createPwExtHandler({
 		context: PwExtContext,
 		signal: AbortSignal | undefined,
 		grant: UnmaskGrant | undefined,
+		release: () => Promise<void>,
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
-		const filling = request.verb === "fill" && request.secret ? (request.value as string) : undefined;
-		const reserved = filling === undefined ? "held" : await grants.reserve(context.sessionId, filling);
-		if (reserved === "full") throw new Refusal(SECRETS_FULL);
-		const release = async () => {
-			if (reserved === "added") await grants.release(context.sessionId, filling as string);
-		};
 		const secrets = await grants.secrets(context.sessionId);
 		if (signal?.aborted) {
 			await release();
@@ -618,9 +645,16 @@ export function createPwExtHandler({
 									kind: "fill",
 									target: request.target as string,
 									value: request.value as string,
-									...(request.secret ? { secret: true } : {}),
+									...(request.secret ? { secret: true, ...(grant ? { until: grant.until } : {}) } : {}),
 								}
 							: { kind: request.verb };
+				if (request.verb === "fill" && request.secret && grant) {
+					const live = await api.tabs.get(tab.id).catch(() => undefined);
+					if (!live || !(await grants.active(context.sessionId, live))) {
+						await release();
+						return failed(UNMASK_ENDED);
+					}
+				}
 				const result = await inPage(tab, action, unmasked, secrets);
 				if ("error" in result) {
 					await release();
