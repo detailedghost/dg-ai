@@ -20,6 +20,8 @@ import qaWriter from "../../../../plugins/dg/agents/qa-writer.md" with { type: "
 import reviewer from "../../../../plugins/dg/agents/reviewer.md" with { type: "text" };
 import security from "../../../../plugins/dg/agents/security.md" with { type: "text" };
 import shell from "../../../../plugins/dg/agents/shell.md" with { type: "text" };
+import thrashConsolidate from "../../../../plugins/dg/agents/thrash-consolidate.md" with { type: "text" };
+import thrashVerify from "../../../../plugins/dg/agents/thrash-verify.md" with { type: "text" };
 import thrash from "../../../../plugins/dg/agents/thrash.md" with { type: "text" };
 import wave from "../../../../plugins/dg/agents/wave.md" with { type: "text" };
 
@@ -44,6 +46,8 @@ export const packagedPersonas: Record<string, string> = {
 	security,
 	shell,
 	thrash,
+	"thrash-consolidate": thrashConsolidate,
+	"thrash-verify": thrashVerify,
 	wave,
 };
 

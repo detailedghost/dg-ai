@@ -8,9 +8,10 @@ skills-only install copies every persona in `plugins/dg/agents` to that folder. 
 file is missing, report the missing persona and stop; do not invent its review
 checklists.
 
-Launch one agent per chunk in one message so they run in parallel, at the same `SPICE`.
-Every chunk gets the same `CONTEXT` file, which holds the title, description, base and
-head, the full file list, and the chunk plan. A small diff is one chunk.
+Launch one agent per chunk (a bundle) in waves of 16 or fewer, one message for each wave, so
+they run in parallel, at the same `SPICE`. Every chunk gets the same `CONTEXT` file, which holds
+the title, description, base and head, the full file list, and the chunk plan. A small diff is
+one chunk. In a headless run, every agent of a wave starts in the foreground.
 
 ## Template
 
@@ -25,6 +26,9 @@ SPICE: <1-5>
 MIN_TIER: <tier or "none">
 IMPROVEMENTS: <on or off>
 TARGET: <URL or local path>
+REPO: <absolute path of the tree>
+REPO_PARTIAL: yes
+BUNDLE: <chunk contextPath>
 
 Read ANNOTATED_DIFF, then CONTEXT. Run the checklists for SPICE per your system prompt. Classify each
 finding's tier before you write it. Cite only the labeled `old:`/`new:` values from ANNOTATED_DIFF; never a line
@@ -33,6 +37,11 @@ Write exactly one fenced json block with "changed", "strengths", "opportunities"
 Reply with only: WROTE <path> <count> findings
 ```
 
+`CONTEXT` is the top-level plan `contextPath`. `BUNDLE` is the chunk `contextPath`. The two keys
+have one name in `plan.json` and name different files. Leave out `REPO:` and `BUNDLE:` when the
+plan has no repository (no `repo` key, or `repo.source` `none`). Add `REPO_PARTIAL: yes` only for
+`repo.source` `api`, and leave the line out otherwise. A reviewer sets no `id`.
+
 `IMPROVEMENTS` is `on` only with `--improvements` or a policy that sets `improvements: true`.
 Pass the same value to `compile`. The persona's security checklist runs on every review and
 needs no input; the agent tags those findings `"tag": "security"`.
@@ -40,6 +49,43 @@ needs no input; the agent tags those findings `"tag": "security"`.
 Each finding may also carry `class` and `otherPlaces` (one comment for a repeated mistake),
 `preExisting`, `tag`, and `kind: "improvement"`. The persona explains each field. `compile`
 validates and renders them; never edit them by hand.
+
+## Verify template
+
+One `dg:thrash-verify` agent for each `tasks[]` entry of `triage --stage merge`, in waves of 16 or fewer.
+
+```text
+You are running inside /dg:thrash.
+
+TASK: <task taskPath>
+REPO: <absolute path of the tree>
+REPO_PARTIAL: yes
+VERDICT_PATH: <task verdictPath>
+
+Read TASK, then the cited lines under REPO. Write one JSON verdict to VERDICT_PATH.
+Reply with only: WROTE <path> <verdict>, or NO_REPO <id>
+```
+
+`REPO_PARTIAL: yes` only for `repo.source` `api`. In a stacked run, `REPO` is the tree of the PR
+that owns the task.
+
+## Consolidate template
+
+One `dg:thrash-consolidate` agent for each review with more than one `chunks[]` entry.
+
+```text
+You are running inside /dg:thrash.
+
+CONSOLIDATE_INPUT: <consolidateInputPath>
+CONTEXT: <contextPath>
+OUTPUT_PATH: <consolidatedPath>
+
+Read CONSOLIDATE_INPUT, then CONTEXT. Group repeats. Write one fenced json block to OUTPUT_PATH.
+Reply with only: WROTE <path> <count> findings
+```
+
+`CONTEXT` is the top-level plan `contextPath`. `OUTPUT_PATH` is the `consolidatedPath` that
+`--stage apply` prints.
 
 ## After return
 
@@ -54,6 +100,10 @@ Write the fenced json block to FINDINGS_PATH now<, fixing: error text>. Reply wi
 ```
 
 Then stop that PR if a chunk fails again and show the user both errors.
+
+A verifier is never resumed. A reply that is not a `WROTE` line, `NO_REPO <id>`, or a missing
+verdict file means the finding is unverified. A consolidator is resumed once with the same prompt
+and the error text. When it fails again, `compile` uses the verified set from the consolidate input.
 
 ## Proxy backend
 
