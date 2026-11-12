@@ -2409,3 +2409,285 @@ describe("thrash review bundles", () => {
 		expect(result.stderr).toContain("not inside a git repository");
 	});
 });
+
+describe("thrash triage review", () => {
+	const GOLDEN = join(import.meta.dir, "fixtures", "thrash", "no-triage.review.json");
+	const CRITICAL = { path: "src/a.ts", line: 3, tier: "critical", title: "Crash", body: "Crashes on empty input." };
+	const HIGH = { path: "src/a.ts", line: 2, tier: "high", title: "Leak", body: "Leaks a handle." };
+	const MEDIUM = { path: "src/a.ts", line: 2, tier: "medium", title: "Slow", body: "Scans twice." };
+
+	interface Flow {
+		repo: string;
+		diff: { diffPath: string; chunks: Array<{ findingsPath: string }> };
+		consolidated: string;
+		inputPath: string;
+	}
+
+	function localDiff(extra: string[] = []) {
+		const repo = fixtureRepo();
+		const result = run(["diff", ".", ...extra], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		return { repo, diff: JSON.parse(result.stdout) };
+	}
+
+	function triaged(findings: unknown[], spice = "3"): Flow {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, findings);
+		const merge = run(["triage", "--diff", diff.diffPath, "--stage", "merge", "--spice", spice], { cwd: repo });
+		expect(merge.exitCode, merge.stderr).toBe(EXIT.OK);
+		const apply = run(["triage", "--diff", diff.diffPath, "--stage", "apply"], { cwd: repo });
+		expect(apply.exitCode, apply.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(apply.stdout);
+		return { repo, diff, consolidated: out.consolidatedPath, inputPath: out.consolidateInputPath };
+	}
+
+	function compile(flow: Flow) {
+		const result = run(["compile", ".", "--diff", flow.diff.diffPath, "--json"], { cwd: flow.repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(result.stdout);
+		const stored = JSON.parse(readFileSync(out.reviewPath, "utf8"));
+		return { out, stored, review: stored.review, stderr: result.stderr };
+	}
+
+	function consolidate(flow: Flow, findings: unknown[], extra: Record<string, unknown> = {}) {
+		writeFileSync(flow.consolidated, JSON.stringify({ changed: "", strengths: [], opportunities: [], findings, ...extra }));
+	}
+
+	test("compile with no triage files writes the same review file as before triage existed", () => {
+		const { repo, diff } = localDiff(["--no-repo"]);
+		findingsFile(diff, [
+			{ path: "src/a.ts", line: 2, tier: "critical", body: "Breaks callers." },
+			{ path: "src/a.ts", line: 3, tier: "low", body: "Rename this." },
+		]);
+		const result = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const stored = readFileSync(JSON.parse(result.stdout).reviewPath, "utf8");
+		expect(stored).toBe(readFileSync(GOLDEN, "utf8"));
+	});
+
+	test("compile with neither a consolidated file nor a consolidate input posts the chunk findings", () => {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, [HIGH]);
+		const result = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const stored = JSON.parse(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8"));
+		expect(stored.review.comments).toHaveLength(1);
+		expect(stored).not.toHaveProperty("rejected");
+		expect(result.stderr).not.toContain("consolidated");
+	});
+
+	test("compile posts the findings of a parseable consolidated file", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [{ id: "c1-1", title: "New title", body: "New body." }]);
+		const { review, stderr } = compile(flow);
+		expect(stderr).toBe("");
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0]).toMatchObject({ title: "New title", tier: "high" });
+		expect(review.comments[0].body).toContain("New body.");
+	});
+
+	test("compile warns about a broken consolidated file and posts the consolidate input findings", () => {
+		const flow = triaged([HIGH]);
+		writeFileSync(flow.consolidated, "not json at all");
+		const { review, stderr } = compile(flow);
+		expect(stderr).toContain("thrash: consolidated file does not parse");
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0].body).toContain("Leaks a handle.");
+	});
+
+	test("compile keeps the tier and the anchor of the verified set when the consolidated file changes them", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [{ id: "c1-1", title: "New title", body: "New body.", tier: "low", line: 9 }]);
+		const { review } = compile(flow);
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0]).toMatchObject({ tier: "high", newLine: 2, title: "New title" });
+		expect(review.comments[0].body).toContain("New body.");
+	});
+
+	test("compile drops a consolidated finding with an unknown id and names it on stderr", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [
+			{ id: "c1-1", body: "Kept." },
+			{ id: "c9-9", body: "Ghost." },
+		]);
+		const { review, stderr } = compile(flow);
+		expect(stderr).toContain("c9-9");
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0].body).not.toContain("Ghost.");
+	});
+
+	test("compile keeps a critical finding the consolidated file leaves out", () => {
+		const flow = triaged([HIGH, CRITICAL]);
+		consolidate(flow, [{ id: "c1-1", body: "Kept." }]);
+		const { review } = compile(flow);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.comments.map((c: { tier: string }) => c.tier).sort()).toEqual(["critical", "high"]);
+	});
+
+	test("compile groups a higher finding under a keeper and gives one comment with the higher tier", () => {
+		const flow = triaged([MEDIUM, { ...HIGH, line: 3, title: "Leak", body: "Leaks elsewhere." }]);
+		consolidate(flow, [{ id: "c1-1", body: "One class.", class: "resource-use", otherPlaces: ["src/a.ts:3"] }]);
+		const { review } = compile(flow);
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0].tier).toBe("high");
+	});
+
+	test("compile does not group a critical finding under a pre-existing keeper", () => {
+		const flow = triaged([{ ...MEDIUM, preExisting: true, line: 1 }, CRITICAL]);
+		consolidate(flow, [{ id: "c1-1", body: "Old issue.", class: "resource-use", otherPlaces: ["src/a.ts:3"] }]);
+		const { review } = compile(flow);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.comments.map((c: { tier: string }) => c.tier)).toContain("critical");
+	});
+
+	test("compile does not count an unverified finding that the consolidator grouped under another", () => {
+		const flow = triaged([MEDIUM, { ...HIGH, line: 3 }]);
+		const ungrouped = compile(flow);
+		expect(ungrouped.review.body).toContain("2 findings not verified.");
+		consolidate(flow, [{ id: "c1-1", body: "One class.", class: "resource-use", otherPlaces: ["src/a.ts:3"] }]);
+		const { review } = compile(flow);
+		expect(review.body).toContain("1 finding not verified.");
+		expect(review.body).not.toContain("2 findings not verified.");
+	});
+
+	test("compile lists two rejected findings in the summary and in the review file with their reasons", () => {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, [HIGH, CRITICAL]);
+		const merge = JSON.parse(
+			run(["triage", "--diff", diff.diffPath, "--stage", "merge"], { cwd: repo }).stdout,
+		) as { tasks: Array<{ id: string; verdictPath: string }> };
+		for (const task of merge.tasks) {
+			writeFileSync(task.verdictPath, JSON.stringify({ id: task.id, verdict: "rejected", reason: `no ${task.id}` }));
+		}
+		const apply = run(["triage", "--diff", diff.diffPath, "--stage", "apply"], { cwd: repo });
+		expect(JSON.parse(apply.stdout)).toMatchObject({ rejected: 2, confirmed: 0 });
+		const { stored, review } = compile({ repo, diff, consolidated: "", inputPath: "" });
+		expect(review.comments).toHaveLength(0);
+		expect(review.body).toContain("2 findings rejected on verification.");
+		expect(stored.rejected).toEqual([
+			{ id: "c1-2", tier: "critical", title: "Crash", reason: "no c1-2" },
+			{ id: "c1-1", tier: "high", title: "Leak", reason: "no c1-1" },
+		]);
+		expect(review).not.toHaveProperty("rejected");
+	});
+
+	test("a second diff removes the consolidate input and the consolidated file of the first run", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [{ id: "c1-1", body: "Kept." }]);
+		expect(existsSync(flow.inputPath)).toBe(true);
+		const again = run(["diff", "."], { cwd: flow.repo });
+		expect(again.exitCode, again.stderr).toBe(EXIT.OK);
+		expect(existsSync(flow.inputPath)).toBe(false);
+		expect(existsSync(flow.consolidated)).toBe(false);
+	});
+
+	test("triage with a missing or invalid --stage exits non-zero and names both values", () => {
+		const { repo, diff } = localDiff();
+		for (const args of [["--stage"], ["--stage", "bogus"], []]) {
+			const result = run(["triage", "--diff", diff.diffPath, ...args], { cwd: repo });
+			expect(result.exitCode).not.toBe(EXIT.OK);
+			expect(result.stderr).toContain("merge");
+			expect(result.stderr).toContain("apply");
+		}
+	});
+
+	test("triage rejects a spice outside 1 to 5 with the error compile gives", () => {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, [HIGH]);
+		const triage = run(["triage", "--diff", diff.diffPath, "--stage", "merge", "--spice", "9"], { cwd: repo });
+		const compileResult = run(["compile", ".", "--diff", diff.diffPath, "--spice", "9"], { cwd: repo });
+		expect(triage.exitCode).not.toBe(EXIT.OK);
+		const message = (stderr: string) => stderr.replace(/^thrash \w+: /, "");
+		expect(message(triage.stderr)).toBe(message(compileResult.stderr));
+	});
+
+	test("apply with a merged file and no tasks file exits non-zero and names the tasks file", () => {
+		const flow = triaged([HIGH]);
+		rmSync(flow.inputPath);
+		const tasks = flow.consolidated.replace(/\.consolidated\.md$/, ".verify.tasks.json");
+		rmSync(tasks);
+		const result = run(["triage", "--diff", flow.diff.diffPath, "--stage", "apply"], { cwd: flow.repo });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("verify.tasks.json");
+	});
+
+	describe("prior threads", () => {
+		const FINDING = { path: "src/a.ts", line: 2, tier: "critical", title: "Crash", body: "Crashes on empty input." };
+
+		function remote(thread: unknown | null) {
+			const dir = cliFixtures.tmp(createdDirs, "thrash-shield-");
+			const diffFile = join(dir, "pr.diff");
+			const threads = join(dir, "threads.json");
+			writeFileSync(diffFile, GH_DIFF);
+			const gh = fakeGh(
+				cliFixtures.shScript(`
+  *"pr diff 12"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"pr view 12"*)
+    echo '{"headRefOid":"abc123"}'
+    ;;
+  *"api graphql"*)
+    cat "$FAKE_THREADS"
+    ;;
+  *"reviews"*)
+    echo '[[]]'
+    ;;`),
+			);
+			const env = { GH_BIN: gh.bin, AI_VCS_PROVIDER: "github", FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFile, FAKE_THREADS: threads };
+			const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+			const diff = JSON.parse(run(["diff", PR_URL], { cwd, env }).stdout);
+			findingsFile(diff, [FINDING]);
+			const first = run(["compile", PR_URL, "--diff", diff.diffPath, "--json"], { cwd, env });
+			expect(first.exitCode, first.stderr).toBe(EXIT.OK);
+			const body = JSON.parse(readFileSync(JSON.parse(first.stdout).reviewPath, "utf8")).review.comments[0].body;
+			const nodes = thread
+				? [
+						{
+							id: "thread-1",
+							isResolved: false,
+							isOutdated: true,
+							path: "src/a.ts",
+							line: null,
+							originalLine: 2,
+							comments: {
+								nodes: [
+									{ databaseId: 1, author: { login: "thrashley[bot]" }, body, createdAt: "2026-02-01T00:00:00Z", diffHunk: GH_DIFF },
+								],
+							},
+						},
+					]
+				: [];
+			writeFileSync(
+				threads,
+				JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo: { hasNextPage: false } } } } } }),
+			);
+			return { cwd, env, diff };
+		}
+
+		function compileWithInput(setup: ReturnType<typeof remote>, rejected: unknown[]) {
+			const input = setup.diff.diffPath.replace(/\.diff$/, ".consolidate.input.json");
+			writeFileSync(
+				input,
+				JSON.stringify({ changed: "Adds a.", strengths: [], opportunities: [], findings: [], rejected, unverified: [] }),
+			);
+			const policy = join(dirname(input), "policy.yml");
+			writeFileSync(policy, "phases:\n  - block:\n      critical: 0\n");
+			const result = run(["compile", PR_URL, "--diff", setup.diff.diffPath, "--policy", policy, "--json"], {
+				cwd: setup.cwd,
+				env: setup.env,
+			});
+			expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+			return JSON.parse(result.stdout);
+		}
+
+		test("compile with the consolidate input and one rejected entry keeps the prior blocker thread open", () => {
+			const setup = remote(true);
+			const cleared = compileWithInput(setup, []);
+			expect(cleared.tally.critical).toBe(0);
+			const shielded = compileWithInput(setup, [{ ...FINDING, side: "new", id: "c1-1", reason: "guarded upstream" }]);
+			expect(shielded.tally.critical).toBe(1);
+			expect(shielded.verdict).toBe("request_changes");
+		});
+	});
+});

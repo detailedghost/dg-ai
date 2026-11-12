@@ -1,0 +1,40 @@
+{
+  "target": ".",
+  "review": {
+    "verdict": "request_changes",
+    "reason": "1 critical finding is open",
+    "spice": 2,
+    "tally": {
+      "critical": 1,
+      "high": 0,
+      "medium": 0,
+      "low": 1,
+      "nit": 0
+    },
+    "changed": "Adds a.",
+    "strengths": [],
+    "opportunities": [],
+    "comments": [
+      {
+        "path": "src/a.ts",
+        "newLine": 2,
+        "tier": "critical",
+        "title": "",
+        "body": "💀 **Critical** Breaks callers."
+      },
+      {
+        "path": "src/a.ts",
+        "newLine": 3,
+        "tier": "low",
+        "title": "",
+        "body": "🧹 **Low** Rename this."
+      }
+    ],
+    "unanchored": [],
+    "dropped": [],
+    "preExisting": [],
+    "classes": [],
+    "trigger": "manual",
+    "body": "## Thrash review <span title=\"Spice 2 of 5\">🌶️🌶️○○○</span>\n\n<span title=\"Critical\">💀</span> 1 · <span title=\"High\">🔥</span> 0 · <span title=\"Medium\">⚠️</span> 0 · <span title=\"Low\">🧹</span> 1 · <span title=\"Nit\">🔬</span> 0 · **Verdict:** Request changes. 1 critical finding is open. · 2 line comments, 0 file comments\n\n> [!NOTE]\n> **What changed**\n>\n> - Adds a.\n\n**Trigger:** Manual (CLI)\n\n<!-- dg:thrash-review -->"
+  }
+}

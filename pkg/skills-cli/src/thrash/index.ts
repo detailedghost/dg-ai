@@ -20,6 +20,19 @@ import { CLASS_HISTORY_PRS } from "./constants";
 import { planReviewChunks } from "./bundles";
 import { INVESTIGATE_BUDGET_MS, investigate, listTrackedFiles, MAX_HITS_DEFAULT } from "./investigate";
 import { parsePolicy } from "./policy";
+import {
+	applyVerdicts,
+	type ConsolidatedOutput,
+	type ConsolidateInput,
+	mergeChunks,
+	parseConsolidateInput,
+	parseConsolidated,
+	readVerdictTexts,
+	removeTriageFiles,
+	resolveCompileFindings,
+	triagePaths,
+	type VerifyTask,
+} from "./triage";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { optionalOption, requireOption } from "../utils/options";
 import {
@@ -27,6 +40,7 @@ import {
 	annotateDiff,
 	classPrCounts,
 	type ChunkPlan,
+	type AgentOutput,
 	type CompiledReview,
 	type Coverage,
 	chunkSummary,
@@ -40,6 +54,7 @@ import {
 	parseSpice,
 	parseTier,
 	parseUnifiedDiff,
+	type RejectedEntry,
 	relativePlanPath,
 	resolvePlanPath,
 	renderAddressFile,
@@ -80,6 +95,7 @@ interface PlanFile extends Coverage {
 	reReview?: ReReview;
 	prDiffPath?: string;
 	repo?: CheckoutResult;
+	consolidatedPath?: string;
 	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string; contextPath?: string }>;
 }
 
@@ -87,6 +103,7 @@ interface ReviewFile {
 	target: string;
 	review: CompiledReview;
 	repo?: CheckoutResult;
+	rejected?: RejectedEntry[];
 }
 
 type CheckoutRunner = (pr: PullRequest | null, files: DiffFile[]) => Promise<CheckoutResult>;
@@ -293,6 +310,7 @@ async function writeDiff(target: DiffTarget, { reviewer, checkout }: WriteDiffOp
 	const slug = targetSlug(target);
 	const diffPath = scratchPath(TOOL, `${slug}.diff`);
 	removeBundleFiles(slug);
+	removeTriageFiles(diffPath);
 	const { plan, contexts, warnings } = planReviewChunks(files, repo, {
 		investigate,
 		maxHits: MAX_HITS_DEFAULT,
@@ -443,6 +461,97 @@ function parseMaxEvent(raw: string | undefined): ReviewVerdict | undefined {
 	return event === "request-changes" ? "request_changes" : event;
 }
 
+function readPlan(diffPath: string): { plan: PlanFile; planPath: string; planRoot: string } {
+	const planPath = planPathFor(diffPath);
+	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
+	return { plan, planPath, planRoot: path.dirname(path.resolve(planPath)) };
+}
+
+function readChunkOutput(chunk: PlanFile["chunks"][number], planRoot: string) {
+	const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
+	if (!existsSync(findingsPath)) {
+		throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${findingsPath}`);
+	}
+	return parseAgentOutput(readFileSync(findingsPath, "utf8"));
+}
+
+function readTriageFile<T>(file: string, label: string): T {
+	if (!existsSync(file)) throw new Error(`${label} not found at ${file}; run thrash triage --stage merge first`);
+	return JSON.parse(readFileSync(file, "utf8")) as T;
+}
+
+function triageMerge(diffPath: string, spice: number): number {
+	const { plan, planRoot } = readPlan(diffPath);
+	const paths = triagePaths(diffPath);
+	const chunks = plan.chunks.map((chunk) => ({
+		id: chunk.id,
+		output: readChunkOutput(chunk, planRoot),
+		contextPath: chunk.contextPath ? resolvePlanPath(planRoot, chunk.contextPath) : null,
+	}));
+	removeTriageFiles(diffPath);
+	const { merged, tasks, overCap } = mergeChunks(chunks, { spice, paths });
+	writeFileSync(paths.merged, JSON.stringify(merged, null, 2));
+	writeFileSync(paths.tasks, JSON.stringify({ tasks, overCap }, null, 2));
+	for (const task of tasks) writeFileSync(paths.taskPath(task.id), JSON.stringify(task, null, 2));
+	printJson({
+		mergedPath: paths.merged,
+		tasksPath: paths.tasks,
+		tasks: tasks.map(({ id, verdictPath }) => ({ id, taskPath: paths.taskPath(id), verdictPath })),
+		overCap,
+	});
+	return EXIT.OK;
+}
+
+function triageApply(diffPath: string): number {
+	const { planPath, planRoot } = readPlan(diffPath);
+	const paths = triagePaths(diffPath);
+	const merged = readTriageFile<AgentOutput>(paths.merged, "merged findings file");
+	const { tasks, overCap } = readTriageFile<{ tasks: VerifyTask[]; overCap: string[] }>(paths.tasks, "verify tasks file");
+	rmSync(paths.consolidated, { force: true });
+	const { verdicts, input, counts } = applyVerdicts({ merged, tasks, overCap, verdictTexts: readVerdictTexts(tasks) });
+	writeFileSync(paths.verdicts, JSON.stringify({ verdicts }, null, 2));
+	writeFileSync(paths.consolidateInput, JSON.stringify(input, null, 2));
+	const raw = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
+	raw.consolidatedPath = relativePlanPath(planRoot, paths.consolidated);
+	writeFileSync(planPath, JSON.stringify(raw, null, 2));
+	printJson({ consolidateInputPath: paths.consolidateInput, consolidatedPath: paths.consolidated, ...counts });
+	return EXIT.OK;
+}
+
+function cmdTriage(args: string[]): number {
+	const diffPath = requireOption(args, "--diff");
+	const index = args.indexOf("--stage");
+	const stage = index === -1 ? undefined : args[index + 1];
+	if (stage !== "merge" && stage !== "apply") {
+		throw new Error(`--stage must be merge or apply${stage ? `, got "${stage}"` : ""}`);
+	}
+	const spice = parseSpice(optionalOption(args, "--spice"));
+	return stage === "merge" ? triageMerge(diffPath, spice) : triageApply(diffPath);
+}
+
+function readConsolidated(plan: PlanFile, planRoot: string): ConsolidatedOutput | { error: string } | null {
+	if (!plan.consolidatedPath) return null;
+	const file = resolvePlanPath(planRoot, plan.consolidatedPath);
+	if (!existsSync(file)) return null;
+	try {
+		return parseConsolidated(readFileSync(file, "utf8"));
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : String(err) };
+	}
+}
+
+function readConsolidateInput(file: string): ConsolidateInput | null {
+	if (!existsSync(file)) return null;
+	try {
+		return parseConsolidateInput(readFileSync(file, "utf8"));
+	} catch (err) {
+		process.stderr.write(
+			`thrash: consolidate input does not parse (${err instanceof Error ? err.message : String(err)}), using the chunk findings\n`,
+		);
+		return null;
+	}
+}
+
 async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
 	const arg = positional(args, "compile", [
 		"--diff",
@@ -459,21 +568,23 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
-	const planPath = planPathFor(diffPath);
-	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
-	const planRoot = path.dirname(path.resolve(planPath));
+	const { plan, planRoot } = readPlan(diffPath);
 	const prFiles = plan.prDiffPath
 		? parseUnifiedDiff(readFileSync(resolvePlanPath(planRoot, plan.prDiffPath), "utf8"))
 		: undefined;
-	const output = mergeOutputs(
-		plan.chunks.map((chunk) => {
-			const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
-			if (!existsSync(findingsPath)) {
-				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${findingsPath}`);
-			}
-			return parseAgentOutput(readFileSync(findingsPath, "utf8"));
+	const resolved = resolveCompileFindings({
+		consolidated: readConsolidated(plan, planRoot),
+		input: readConsolidateInput(triagePaths(diffPath).consolidateInput),
+		chunkOutput: () => mergeOutputs(plan.chunks.map((chunk) => readChunkOutput(chunk, planRoot))),
+	});
+	for (const warning of new Set(resolved.warnings)) process.stderr.write(`thrash: ${warning}\n`);
+	const output: AgentOutput = {
+		...resolved.output,
+		findings: resolved.output.findings.map((finding) => {
+			const key = finding.id === undefined ? undefined : resolved.matchKeys.get(finding.id);
+			return key ? { ...finding, matchKey: key.class ?? key.title } : finding;
 		}),
-	);
+	};
 	const minTierRaw = optionalOption(args, "--min-tier");
 	const policyPath = optionalOption(args, "--policy");
 	const round = parseOptionalFlag(wholeNumber(1), optionalOption(args, "--round"), "--round");
@@ -496,6 +607,8 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		reReview: plan.reReview,
 		diffOnly: plan.repo?.source === "none" || undefined,
 		prFiles,
+		rejected: resolved.rejected.length > 0 ? resolved.rejected : undefined,
+		unverified: resolved.unverified || undefined,
 		classHistory: output.findings.some((f) => f.class) ? await readClassHistory(target, reviewer) : undefined,
 		improvements: args.includes("--improvements") || undefined,
 		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,
@@ -503,7 +616,15 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
 	rmSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), { force: true });
 	const repo = plan.repo && { ...plan.repo, root: absoluteRepoRoot(planRoot, plan.repo.root) };
-	writeFileSync(reviewPath, JSON.stringify({ target: arg, review, ...(repo && { repo }) } satisfies ReviewFile, null, 2));
+	const { rejected, ...postable } = review;
+	writeFileSync(
+		reviewPath,
+		JSON.stringify(
+			{ target: arg, review: postable, ...(repo && { repo }), ...(rejected && { rejected }) } satisfies ReviewFile,
+			null,
+			2,
+		),
+	);
 
 	let addressFile: string | undefined;
 	if (target.mode === "local") {
@@ -719,6 +840,12 @@ const command = defineCommand({
 			description: "Publish a compiled review to the PR or MR and save the result next to it; --review <file> [--dry-run] [--confirm]. An approve or request-changes event needs --confirm; a comment-only review does not. --dry-run or DG_THRASH_DRY_RUN=1 prints the review and makes no provider call",
 			args: ["target"],
 			run: cmdPost,
+		},
+		triage: {
+			description:
+				"Verify findings in two stages; --diff <file> --stage merge [--spice N] numbers every chunk finding c<chunk>-<n>, writes the merged findings and one verify task for each finding in scope (16 at most), and prints their paths as JSON; --stage apply reads the verdict files, writes the consolidate input and prints the counts as JSON",
+			args: [],
+			run: (args) => Promise.resolve(cmdTriage(args)),
 		},
 		stack: {
 			description:

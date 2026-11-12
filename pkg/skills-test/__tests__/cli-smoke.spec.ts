@@ -377,7 +377,7 @@ describe("dg-skills CLI", () => {
 	test("thrash --help lists review operations without accessing a provider", async () => {
 		const { code, out } = await runCli(["thrash", "--help"]);
 		expect(code).toBe(0);
-		for (const command of ["diff", "investigate", "compile", "post", "stack", "tally"]) {
+		for (const command of ["diff", "investigate", "triage", "compile", "post", "stack", "tally"]) {
 			expect(out).toContain(command);
 		}
 	});
