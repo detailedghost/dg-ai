@@ -13,6 +13,7 @@ import {
 	noteSecret,
 	PW_EXT_READ_VERBS,
 	PW_EXT_WRITE_VERBS,
+	validateChatFrame,
 } from "@dg/common";
 import { codedPageUrl } from "@dg/pages/chat-marker";
 import {
@@ -365,6 +366,7 @@ export function registerDaemonLink(
 
 	const client = createChatClient({
 		openSocket: openSocketWithKeepaliveTeardown,
+		validateFrame: validateChatFrame,
 		admitPort: async (port) => {
 			await ready;
 			if (pinnedDaemonId !== undefined) {

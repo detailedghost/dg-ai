@@ -7,6 +7,8 @@ export * from "./redact";
 export * from "./async";
 export * from "./channel";
 export * from "./chat-format";
+export * from "./chat-frame";
+export * from "./chat-frame-page";
 export * from "./cli-wire";
 export * from "./credentials-format";
 export * from "./errors";

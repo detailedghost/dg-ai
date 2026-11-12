@@ -8,10 +8,11 @@ import {
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
 import { INBOX_WIRE } from "./inbox-format";
 import { PROTO_WIRE, validateProtoIdentifier } from "./proto-format";
-import { PW_EXT_WIRE } from "./pw-ext-format";
 import type { RELAY_FEATURES } from "./relay-features";
 import {
 	type RelayChatFrame,
+	type RelayFrameValidator,
+	type RelayWire,
 	relayFrameTypes,
 	relayValidators,
 } from "./relay-format";
@@ -333,19 +334,26 @@ const HAND_INBOUND_TYPES = [
 	"overwatch-open-result",
 ] as const;
 
-const RELAY_WIRE = [INBOX_WIRE, PROTO_WIRE, PW_EXT_WIRE] as const;
+/** Relay tables whose frames reach the chat and board pages. */
+export const PAGE_RELAY_WIRE = [INBOX_WIRE, PROTO_WIRE] as const;
 
-export const CHAT_FRAME_TYPES: ReadonlySet<string> = new Set([
-	...relayFrameTypes(RELAY_WIRE, "all"),
-	...HAND_FRAME_TYPES,
-]);
+export type ChatFrameRules = {
+	frameTypes: ReadonlySet<string>;
+	inboundTypes: ReadonlySet<string>;
+	relayValidators: ReadonlyMap<string, RelayFrameValidator>;
+};
 
-export const INBOUND_FRAME_TYPES: ReadonlySet<string> = new Set([
-	...relayFrameTypes(RELAY_WIRE, "inbound"),
-	...HAND_INBOUND_TYPES,
-]);
-
-const RELAY_VALIDATORS = relayValidators(RELAY_WIRE);
+/** The hand-written frames plus the frames of the given relay tables. */
+export function chatFrameRules(relayWire: readonly RelayWire[]): ChatFrameRules {
+	return {
+		frameTypes: new Set([...relayFrameTypes(relayWire, "all"), ...HAND_FRAME_TYPES]),
+		inboundTypes: new Set([
+			...relayFrameTypes(relayWire, "inbound"),
+			...HAND_INBOUND_TYPES,
+		]),
+		relayValidators: relayValidators(relayWire),
+	};
+}
 
 function requireProgressState(
 	value: unknown,
@@ -628,6 +636,7 @@ function validateFrameBody(
 	type: string,
 	value: Record<string, unknown>,
 	path: string,
+	relayValidatorsByType: ReadonlyMap<string, RelayFrameValidator>,
 ): void {
 	switch (type) {
 		case "user-message":
@@ -754,17 +763,24 @@ function validateFrameBody(
 			}
 			return;
 		default: {
-			const validate = RELAY_VALIDATORS.get(type);
+			const validate = relayValidatorsByType.get(type);
 			if (!validate) fail(`${path}.type "${type}" is not a ratified discriminant`);
 			validate(value, path);
 		}
 	}
 }
 
-export function validateChatFrame(value: unknown): ChatFrame {
+/** A chat frame validator that accepts only the frame types in `rules`. */
+export function createChatFrameValidator(
+	rules: ChatFrameRules,
+): (value: unknown) => ChatFrame {
+	return (value) => validateChatFrameWith(rules, value);
+}
+
+function validateChatFrameWith(rules: ChatFrameRules, value: unknown): ChatFrame {
 	requireRecord(value, "chat frame");
 	const { type } = value;
-	if (typeof type !== "string" || !CHAT_FRAME_TYPES.has(type)) {
+	if (typeof type !== "string" || !rules.frameTypes.has(type)) {
 		fail(
 			`chat frame.type must be one of the ratified discriminants, got ${String(type)}`,
 		);
@@ -772,13 +788,13 @@ export function validateChatFrame(value: unknown): ChatFrame {
 	requireString(value.sessionId, "chat frame.sessionId", { nonEmpty: true });
 	requireFiniteNumber(value.protocolVersion, "chat frame.protocolVersion");
 
-	if (INBOUND_FRAME_TYPES.has(type)) {
+	if (rules.inboundTypes.has(type)) {
 		requireString(value.token, "chat frame.token", { nonEmpty: true });
 	} else if (Object.hasOwn(value, "token")) {
 		fail(`chat frame.token must not be present on outbound "${type}" frames`);
 	}
 
-	validateFrameBody(type, value, "chat frame");
+	validateFrameBody(type, value, "chat frame", rules.relayValidators);
 
 	const size = jsonByteLength(value);
 	if (size > CHAT_MAX_PAYLOAD_BYTES) {

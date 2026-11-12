@@ -16,7 +16,7 @@ import {
 	type SessionAdopt,
 	type SessionBootstrap,
 	type SessionRole,
-	validateChatFrame,
+	validatePageChatFrame,
 	validateSessionAdopt,
 } from "@dg/common";
 
@@ -68,6 +68,8 @@ export type ChatClientOptions = {
 	admitPort?: (port: number) => Promise<boolean>;
 	findPort?: () => Promise<number | undefined>;
 	link?: { onSessionAdopt(bootstrap: SessionAdopt["bootstrap"]): void };
+	/** Defaults to the page validator, which rejects pw-ext relay frames. */
+	validateFrame?: (value: unknown) => ChatFrame;
 };
 
 export type ChatClient = {
@@ -151,6 +153,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 	const backoffBaseMs = options.backoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS;
 	const backoffMaxMs = options.backoffMaxMs ?? DEFAULT_BACKOFF_MAX_MS;
 	const randomJitter = options.randomJitter ?? Math.random;
+	const validateFrame = options.validateFrame ?? validatePageChatFrame;
 
 	let socket: ChatClientSocket | null = null;
 	let port: number | undefined;
@@ -450,7 +453,7 @@ export function createChatClient(options: ChatClientOptions = {}): ChatClient {
 		}
 		let frame: ChatFrame;
 		try {
-			frame = validateChatFrame(parsed);
+			frame = validateFrame(parsed);
 		} catch (err) {
 			emitRedacted(
 				(line) => console.warn(line),

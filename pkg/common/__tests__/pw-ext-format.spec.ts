@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { CHAT_PROTOCOL_VERSION, validateChatFrame } from "../src/index";
+import { CHAT_PROTOCOL_VERSION, validateChatFrame, validatePageChatFrame } from "../src/index";
 import {
 	isPwExtCliResult,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
+	PW_EXT_MAX_TOOLS,
 	PW_EXT_MAX_TIMEOUT_MS,
 	PW_EXT_MIN_EXTENSION_VERSION,
 	type PwExtCliRequest,
@@ -178,6 +179,36 @@ describe("pw-ext chat frames", () => {
 			validateChatFrame({ ...ok, data: { text: "x".repeat(PW_EXT_MAX_TEXT_CHARS + 1) } }),
 		).toThrow();
 		expect(() => validateChatFrame({ ...ok, extra: 1 })).toThrow();
+	});
+
+	it("validates every tool in the extension result on the full validator", () => {
+		const ok = {
+			...envelope,
+			type: "pw-ext-browser-result",
+			token: "t",
+			ok: true,
+			data: { text: "hi", tools: [{ name: "search", description: "d" }] },
+		};
+		expect(validateChatFrame(ok)).toEqual(ok as never);
+		const withTools = (tools: unknown) => ({ ...ok, data: { text: "hi", tools } });
+		expect(() => validateChatFrame(withTools([{ description: "d" }]))).toThrow();
+		expect(() => validateChatFrame(withTools([{ name: "search", description: "d", extra: 1 }]))).toThrow();
+		expect(() => validateChatFrame(withTools("search"))).toThrow();
+		expect(() =>
+			validateChatFrame(withTools(Array.from({ length: PW_EXT_MAX_TOOLS + 1 }, () => ({ name: "t", description: "d" })))),
+		).toThrow();
+	});
+
+	it("rejects every pw-ext frame on the page validator", () => {
+		const frames = [
+			{ ...envelope, type: "pw-ext-browser-request", request: { verb: "click", target: "e1" }, timeoutMs: 1000 },
+			{ ...envelope, type: "pw-ext-browser-cancel" },
+			{ ...envelope, type: "pw-ext-browser-result", token: "t", ok: true, data: { text: "hi" } },
+		];
+		for (const frame of frames) {
+			expect(validateChatFrame(frame)).toEqual(frame as never);
+			expect(() => validatePageChatFrame(frame)).toThrow();
+		}
 	});
 });
 
