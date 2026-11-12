@@ -60,7 +60,7 @@ export async function stageRuntime(root: string, pin: RuntimePin): Promise<strin
 		const zip = new Uint8Array(await res.arrayBuffer());
 		if (sha256Hex(zip) !== asset.sha256.toLowerCase()) throw new Error(`checksum mismatch for ${asset.file}`);
 		mkdirSync(runtimeDir, { recursive: true });
-		const staging = mkdtempSync(join(runtimeDir, `.${dirName}.staging-`));
+		const staging = mkdtempSync(join(runtimeDir, `install-${dirName}-`));
 		try {
 			const zipPath = join(staging, "bun.zip");
 			writeFileSync(zipPath, zip);

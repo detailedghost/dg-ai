@@ -9,7 +9,7 @@ export async function installLocal(root: string, source: string, base: string, v
 		const lib = join(root, "lib");
 		mkdirSync(lib, { recursive: true });
 		const previous = readCurrent(root, "lib");
-		const staging = mkdtempSync(join(lib, `.${version}.staging-`));
+		const staging = mkdtempSync(join(lib, `install-${version}-`));
 		try {
 			cpSync(source, staging, { recursive: true });
 			renameSync(staging, join(lib, version));

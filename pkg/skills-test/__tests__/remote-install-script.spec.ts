@@ -43,7 +43,7 @@ describe("installLocal", () => {
 
 	test("does not remove another run's staging directory", async () => {
 		const { root, source } = sandbox();
-		const foreign = join(root, "lib", `.${BASE}.9.9.staging-abc`);
+		const foreign = join(root, "lib", `install-${BASE}.9.9-abc`);
 		mkdirSync(foreign);
 
 		await installLocal(root, source, BASE, `${BASE}.1.1`);
