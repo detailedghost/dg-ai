@@ -97,6 +97,7 @@ async function readLayouts(
 				const target = new URL(page);
 				target.searchParams.set("variant", variant);
 				target.searchParams.set("mode", theme);
+				target.searchParams.delete("width");
 				const shot = await capturer.shot({
 					url: target.toString(),
 					headers: {},

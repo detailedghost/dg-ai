@@ -339,6 +339,13 @@ describe("recordAcceptance", () => {
 		expect(JSON.parse(readFileSync(join(root, "sandbox", "accepted.json"), "utf8"))).toEqual(record);
 	});
 
+	test("drops the toolbar width override so each viewport reads the full layout", async () => {
+		const seen: CaptureRequest[] = [];
+		await recordAcceptance(target(), { ...claim, url: "http://127.0.0.1:4321/?variant=D&width=mobile" }, { open: fake(found, seen), now });
+		expect(seen).toHaveLength(6);
+		expect(seen.every((request) => new URL(request.url).searchParams.get("width") === null)).toBe(true);
+	});
+
 	test("records a skip when the root is missing and still keeps the shots", async () => {
 		const record = await recordAcceptance(
 			target(),

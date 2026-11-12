@@ -739,4 +739,47 @@ describe("review board in a browser", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	test.skipIf(!browser)("the overview stays open while a stored approve leaves a layout difference unaccepted", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-layout-open-"));
+		const paths = verifyPaths(dir);
+		const side = { path: "button.add", box: { x: 0, y: 0, w: 100, h: 40 }, band: "bottom", hband: "left", visible: true };
+		const difference: Difference = {
+			id: "d-1",
+			viewport: "desktop",
+			theme: "light",
+			role: "admin",
+			kind: "moved",
+			control: { role: "button", name: "Add note", testid: null },
+			expected: side,
+			found: { ...side, band: "top" },
+		};
+		writeBoard(paths, {
+			name: "layout",
+			sections: [
+				{
+					id: "notes-r1",
+					title: "Notes",
+					round: 1,
+					images: [{ label: "desktop · light · default", before: "missing", after: "missing" }],
+					checks: { layout: { status: "fail", differences: [difference] } },
+				},
+			],
+			pending: [],
+		});
+		writeFileSync(paths.verdicts, JSON.stringify({ "notes-r1": { status: "approved", note: "", at: "t" } }));
+		const server = await startVerifyServer({ name: "layout", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			await page.goto(`http://127.0.0.1:${server.port}/#overview`);
+			await page.waitForSelector("#sum-body tr");
+			expect(await page.textContent("#sum-body")).toContain("Needs review");
+			expect(await page.locator("#end h2", { hasText: "All approved" }).count()).toBe(0);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });

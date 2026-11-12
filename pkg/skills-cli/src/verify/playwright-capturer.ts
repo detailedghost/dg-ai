@@ -107,6 +107,10 @@ export async function openPlaywrightCapturer(options?: {
 						menuFound = true;
 					}
 				}
+				if (request.fingerprintRoot) {
+					await page.waitForSelector(request.fingerprintRoot, { state: "attached", timeout: 5_000 }).catch(() => undefined);
+					await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+				}
 				const fingerprint = request.fingerprintRoot
 					? await page.evaluate(collectLayout, {
 							root: request.fingerprintRoot,

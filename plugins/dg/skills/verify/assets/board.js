@@ -329,7 +329,7 @@ const successorOf = (s) => sections.find((x) => x.follows === s.id);
 
 function resolved(s) {
   const v = verdicts[s.id] || {};
-  if (v.status === "approved" && !v.note) return true;
+  if (v.status === "approved" && !v.note && layoutSettled(s)) return true;
   const next = successorOf(s);
   return next ? resolved(next) : false;
 }
@@ -423,6 +423,11 @@ function layoutCarried(s) {
     for (const id of verdicts[prev.id]?.layout || []) out.add(id);
   }
   return out;
+}
+
+function layoutSettled(s) {
+  const ids = new Set([...layoutCarried(s), ...(verdicts[s.id]?.layout || [])]);
+  return layoutRows(s).every((row) => ids.has(row.id));
 }
 
 function layoutAccepted(s) {
@@ -693,6 +698,7 @@ function chainState(chain) {
   if (!v?.status) return "Needs review";
   if (v.status === "skip") return "Skipped";
   if (v.status === "changes" || v.status === "more" || v.note) return "Waiting on agent";
+  if (!layoutSettled(chain.last)) return "Needs review";
   return "Done";
 }
 

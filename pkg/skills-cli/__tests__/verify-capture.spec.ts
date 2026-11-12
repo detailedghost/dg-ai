@@ -6,6 +6,7 @@ import type { ControlRow, Reading } from "../src/layout/fingerprint";
 import { captureSession, sectionFromCapture } from "../src/verify/capture";
 import { verifyPaths } from "../src/verify/board";
 import { parseManifest } from "../src/verify/manifest";
+import { protoDir } from "../src/prototype/paths";
 import {
 	type Capturer,
 	type CaptureRequest,
@@ -425,6 +426,25 @@ describe("layout capture", () => {
 		const target = defaults[0]?.target as string;
 		expect(existsSync(join(ready.paths.shotsDir, target.replace("/shots/", "")))).toBe(true);
 		expect(section.images.filter((image) => image.target)).toHaveLength(6);
+	});
+
+	test("uses the reference shots of a light prototype from the scratch sandbox", async () => {
+		const ready = setup(recordJson());
+		const previous = process.env.AI_SCRATCH_DIR;
+		process.env.AI_SCRATCH_DIR = join(dir, "scratch");
+		try {
+			const shots = join(protoDir("notes", { cwd: dir, light: true }), "accepted");
+			mkdirSync(shots, { recursive: true });
+			for (const viewport of ["desktop", "tablet", "mobile"])
+				for (const theme of ["light", "dark"]) writeFileSync(join(shots, `${viewport}-${theme}.png`), PNG);
+			const { capturer } = fake(control("bottom", 900));
+			const [captured] = await run(ready, capturer);
+			const section = sectionFromCapture(captured as NonNullable<typeof captured>, { round: 1 });
+			expect(section.images.filter((image) => image.target)).toHaveLength(6);
+		} finally {
+			if (previous === undefined) delete process.env.AI_SCRATCH_DIR;
+			else process.env.AI_SCRATCH_DIR = previous;
+		}
 	});
 
 	test("skips reference shots silently when the sandbox is absent", async () => {

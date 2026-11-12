@@ -61,13 +61,15 @@ function compareLayout(
 }
 
 function referenceDir(accepted: AcceptedRecord | undefined, cwd: string): string | undefined {
-	if (!accepted?.shots) return undefined;
-	try {
-		const dir = join(protoDir(accepted.name, { cwd, light: false }), accepted.shots);
-		return existsSync(dir) ? dir : undefined;
-	} catch {
-		return undefined;
+	const shots = accepted?.shots;
+	if (!shots) return undefined;
+	for (const light of [false, true]) {
+		try {
+			const dir = join(protoDir(accepted.name, { cwd, light }), shots);
+			if (existsSync(dir)) return dir;
+		} catch {}
 	}
+	return undefined;
 }
 
 /** Capture each target item at every viewport, theme, and state into the target's section folder. */
