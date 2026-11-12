@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.1.0 (2026-11-12)
+
+### Features
+
+- feat(extension): Web MCP dg tools, approval, script registry and dg-agent mcp ([#167](https://github.com/detailedghost/dg-ai/pull/167))
+
 ## v5.0.0 (2026-11-12)
 
 ### Breaking
