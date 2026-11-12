@@ -98,6 +98,12 @@ describe("refactor discovery.md", () => {
 		expect(discovery).toContain("$(dg-skills stash refactor <id>.verdict.json)");
 	});
 
+	test("removes old verdict files before the verifiers launch", () => {
+		const remove = 'rm -f "$(dg-skills stash refactor <id>.verdict.json)"';
+		expect(discovery).toContain(remove);
+		expect(discovery.indexOf(remove)).toBeLessThan(discovery.indexOf("Launch one `dg:thrash-verify`"));
+	});
+
 	test("lists the task fields with no tier and the verifier prompt line", () => {
 		expect(text).toContain("`id`, `path`, `line`, `title`, `body`, `evidence`");
 		expect(text).toContain("It has no `tier`");

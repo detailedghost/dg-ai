@@ -211,11 +211,18 @@ export function readVerdictTexts(tasks: VerifyTask[]): Map<string, string | null
 	);
 }
 
+function mergeEvidence(existing: Evidence[], added: Evidence[]): Evidence[] {
+	const key = (entry: Evidence) => JSON.stringify([entry.path, entry.line, entry.note]);
+	const seen = new Set(existing.map(key));
+	return [...existing, ...added.filter((entry) => !seen.has(key(entry)) && seen.add(key(entry)))];
+}
+
 export function applyVerdicts({ merged, tasks, overCap, verdictTexts }: ApplyInput): ApplyResult {
 	const verdicts: Verdict[] = [];
 	const unverified = new Set(overCap);
 	const rejected = new Map<string, RejectedFinding>();
 	const adjusted = new Map<string, Verdict>();
+	const confirmedEvidence = new Map<string, NonNullable<Verdict["evidence"]>>();
 	const byId = new Map(merged.findings.map((finding) => [finding.id, finding]));
 	const counts: VerdictCounts = { confirmed: 0, adjusted: 0, rejected: 0, unverified: 0 };
 	for (const task of tasks) {
@@ -230,17 +237,19 @@ export function applyVerdicts({ merged, tasks, overCap, verdictTexts }: ApplyInp
 		else if (verdict.verdict === "adjusted") {
 			if (verdict.tier) adjusted.set(task.id, verdict);
 			else unverified.add(task.id);
-		}
+		} else if (verdict.evidence?.length) confirmedEvidence.set(task.id, verdict.evidence);
 	}
 	const findings: Finding[] = [];
 	for (const finding of merged.findings) {
 		const id = finding.id as string;
 		if (rejected.has(id)) continue;
 		const change = adjusted.get(id);
-		if (change?.tier) {
-			const evidence = [...(finding.evidence ?? []), ...(change.evidence ?? [])];
-			findings.push({ ...finding, tier: change.tier, ...(evidence.length > 0 && { evidence }) });
-		} else findings.push(finding);
+		const evidence = mergeEvidence(finding.evidence ?? [], change?.evidence ?? confirmedEvidence.get(id) ?? []);
+		findings.push({
+			...finding,
+			...(change?.tier && { tier: change.tier }),
+			...(evidence.length > 0 && { evidence }),
+		});
 	}
 	counts.rejected = rejected.size;
 	counts.adjusted = adjusted.size;

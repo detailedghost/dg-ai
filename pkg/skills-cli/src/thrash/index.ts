@@ -734,8 +734,9 @@ async function stackCheckouts(
 		? await prepareSharedClone(target)
 		: null;
 	let queue: Promise<unknown> = Promise.resolve();
-	return (prTarget, listed) => (_viewed, files) => {
-		const next = queue.then(() => resolveCheckout({ target: prTarget, pr: listed, files, provider }, { sharedClone }));
+	return (prTarget, listed) => (viewed, files) => {
+		const pr = viewed?.headSha ? { ...listed, headSha: viewed.headSha } : listed;
+		const next = queue.then(() => resolveCheckout({ target: prTarget, pr, files, provider }, { sharedClone }));
 		queue = next;
 		return next;
 	};

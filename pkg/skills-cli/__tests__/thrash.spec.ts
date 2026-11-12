@@ -2040,6 +2040,18 @@ describe("thrash review checkout", () => {
 		expect(readFileSync(join(out.repo.root, "src/a.ts"), "utf8")).toBe(`${HEAD_FILE}// 13\n`);
 	});
 
+	test("stack --diff checks out the freshly viewed head when it moved after the listing", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		writeFileSync(e.headFile, remote.sha13);
+		cliFixtures.runGit(["update-ref", "refs/pull/12/head", remote.sha13], remote.path);
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const row = JSON.parse(result.stdout).find((r: { number: number }) => r.number === 12);
+		expect(row.repo.headSha).toBe(remote.sha13);
+		expect(readFileSync(join(row.repo.root, "src/a.ts"), "utf8")).toBe(`${HEAD_FILE}// 13\n`);
+	});
+
 	test.each([
 		["before", ["--no-repo", PR_URL]],
 		["after", [PR_URL, "--no-repo"]],

@@ -75,7 +75,13 @@ Write one task file per candidate at `$(dg-skills stash refactor <id>.task.json)
 - `title` and `body` are statements of fact that can be checked: the files, the call counts, the deletion-test claim.
 - `evidence` has 5 entries at most `{ "path", "line", "note" }`: the top caller hits (`note` is the symbol name) and the dependents (`line: null`).
 
-The verdict file is `$(dg-skills stash refactor <id>.verdict.json)`. Launch one `dg:thrash-verify` agent per candidate, all in one message, 4 agents at most. The prompt gives `TASK`, `REPO` (the `root`, or the scope path when investigate did not run) and `VERDICT_PATH`, and has this line: `verify the facts in title and body about the code`.
+The verdict file is `$(dg-skills stash refactor <id>.verdict.json)`. Before the verifiers launch, delete the old verdict file of each candidate, so that a verifier that writes nothing leaves no stale verdict:
+
+```bash
+rm -f "$(dg-skills stash refactor <id>.verdict.json)"
+```
+
+Launch one `dg:thrash-verify` agent per candidate, all in one message, 4 agents at most. The prompt gives `TASK`, `REPO` (the `root`, or the scope path when investigate did not run) and `VERDICT_PATH`, and has this line: `verify the facts in title and body about the code`.
 
 The verifier has no shell step. It reads with Read, Grep and Glob and writes only the verdict file. It replies `WROTE <path> <verdict>` or `NO_REPO <id>`.
 

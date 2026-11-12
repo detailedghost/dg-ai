@@ -228,6 +228,21 @@ describe("applyVerdicts", () => {
 		]);
 	});
 
+	test("appends confirmed evidence once and skips entries that already exist", () => {
+		const base = setup([finding({ tier: "high", evidence: [{ path: "x.ts", line: 1, note: "old" }] })]);
+		const result = run(base, {
+			"c1-1": verdictText("c1-1", {
+				verdict: "confirmed",
+				evidence: [{ path: "x.ts", line: 1, note: "old" }, { path: "y.ts", line: 2, note: "new" }],
+			}),
+		});
+		expect(result.input.findings[0].tier).toBe("high");
+		expect(result.input.findings[0].evidence).toEqual([
+			{ path: "x.ts", line: 1, note: "old" },
+			{ path: "y.ts", line: 2, note: "new" },
+		]);
+	});
+
 	test("keeps every overCap finding and lists its id as unverified", () => {
 		const { merged, tasks, overCap } = merge([distinct(18, "medium")]);
 		const texts = Object.fromEntries(tasks.map((task) => [task.id, verdictText(task.id, { verdict: "confirmed" })]));
