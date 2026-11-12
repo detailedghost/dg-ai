@@ -152,12 +152,12 @@ export function createWebMcpScripts({
 	}
 
 	function merge(stored: WebMcpScriptRecord[]): WebMcpScriptRecord[] {
-		const builtIns = BUILT_IN_SCRIPTS.map((script) => ({
+		const builtIns = BUILT_IN_SCRIPTS.map(({ enabledByDefault, ...script }) => ({
 			...script,
 			matches: [...script.matches],
 			sha256: EMPTY_HASH,
 			source: "built-in" as const,
-			enabled: stored.find((record) => record.id === script.id)?.enabled ?? true,
+			enabled: stored.find((record) => record.id === script.id)?.enabled ?? enabledByDefault,
 		}));
 		return [...builtIns, ...stored.filter((record) => !builtInIds.has(record.id))];
 	}
@@ -398,7 +398,8 @@ export function createWebMcpScripts({
 					return [
 						...records,
 						validateWebMcpScriptRecord({
-							...builtIn,
+							id: builtIn.id,
+							name: builtIn.name,
 							matches: [...builtIn.matches],
 							sha256: EMPTY_HASH,
 							source: "built-in",

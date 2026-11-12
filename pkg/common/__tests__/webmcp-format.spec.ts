@@ -97,12 +97,13 @@ describe("isDgToolName", () => {
 });
 
 describe("BUILT_IN_SCRIPTS", () => {
-	it("holds the Outlook script for both Outlook origins", () => {
+	it("holds the Outlook script for both Outlook origins, off by default", () => {
 		expect(BUILT_IN_SCRIPTS).toEqual([
 			{
 				id: "outlook",
 				name: "Outlook on the web",
 				matches: ["https://outlook.office.com/*", "https://outlook.live.com/*"],
+				enabledByDefault: false,
 			},
 		]);
 	});
