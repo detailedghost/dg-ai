@@ -108,6 +108,11 @@ function openLog(logDir: string, logFile: string, maxBytes: number): number {
 	return openSync(logFile, "a", 0o600);
 }
 
+/** Pid file the supervisor writes for a running service. */
+export function servicePidFile(daemonDir: string, label: string): string {
+	return join(daemonDir, "services", `${label}.pid`);
+}
+
 export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const { logger } = deps;
 	const backoffMs = deps.backoffMs ?? exponentialBackoffMs;
@@ -118,7 +123,8 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 
 	const logFileFor = (label: string) =>
 		join(deps.paths.logDir, `service-${label}.log`);
-	const pidFileFor = (label: string) => join(pidDir, `${label}.pid`);
+	const pidFileFor = (label: string) =>
+		servicePidFile(deps.paths.daemonDir, label);
 
 	function passedEnv(decl: ServiceDecl): Record<string, string> {
 		return Object.fromEntries(

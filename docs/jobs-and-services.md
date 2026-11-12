@@ -76,7 +76,9 @@ writes this entry to the config file. It works with no daemon running:
 `service rm <label>` removes the entry. It refuses while the service is running
 or in backoff: run `dg-daemon service stop <label>` first. It also refuses when
 the daemon pid runs but does not answer, because it cannot check the state of
-the service. You can also edit
+the service, and when an earlier instance of the service still runs after a
+daemon crash. `service add` and `service rm` take a lock on the config file,
+so two runs at once do not lose an entry. You can also edit
 the file by hand. Only a script declared there can start, and `argv` runs with
 no shell.
 

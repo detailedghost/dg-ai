@@ -61,6 +61,16 @@ const add = (
 	runCli(dgHome, ["service", "add", label, ...flags, "--", ...command], opts);
 
 describe("service add", () => {
+	it("keeps every entry when several service add runs write at once", async () => {
+		const { dgHome, cwd } = setup();
+		const labels = Array.from({ length: 8 }, (_, i) => `bot${i}`);
+		const results = await Promise.all(
+			labels.map((label) => add(dgHome, label, ["--cwd", cwd])),
+		);
+		expect(results.map((result) => result.code)).toEqual(labels.map(() => 0));
+		expect(Object.keys(storedConfig(dgHome).services).sort()).toEqual(labels);
+	}, 30_000);
+
 	it("stores an absolute argv[0] and autostart, then prints the next line for no daemon", async () => {
 		const { dgHome, cwd } = setup();
 		const result = await add(dgHome, "bot", ["--cwd", cwd, "--autostart"]);
@@ -450,6 +460,30 @@ describe("service rm", () => {
 			expect(Object.keys(storedConfig(dgHome).services)).toEqual(["bot"]);
 		} finally {
 			silent.kill("SIGKILL");
+		}
+	});
+
+	it("refuses while an earlier instance of the service still runs with no daemon", async () => {
+		const { dgHome } = setup();
+		writeConfigFile(dgHome, {
+			services: { bot: { argv: ["/bin/x"], cwd: "/srv" } },
+		});
+		const orphan = Bun.spawn(
+			[process.execPath, "-e", "setInterval(()=>{},1000)"],
+			{ stdout: "ignore", stderr: "ignore" },
+		);
+		try {
+			const { daemonDir } = resolveDgPaths({ env: { DG_HOME: dgHome } });
+			mkdirSync(join(daemonDir, "services"), { recursive: true });
+			writeFileSync(join(daemonDir, "services", "bot.pid"), String(orphan.pid));
+			const result = await runCli(dgHome, ["service", "rm", "bot"]);
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(
+				`service "bot" still runs as pid ${orphan.pid}`,
+			);
+			expect(Object.keys(storedConfig(dgHome).services)).toEqual(["bot"]);
+		} finally {
+			orphan.kill("SIGKILL");
 		}
 	});
 

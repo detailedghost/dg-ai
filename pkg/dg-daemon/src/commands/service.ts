@@ -1,5 +1,5 @@
-import { existsSync, statSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
 import {
 	CHAT_SERVICES_PATH,
 	DgCliError,
@@ -13,15 +13,33 @@ import {
 	checkExecutableResolves,
 	isAlive,
 	isDaemonLive,
+	isSignalablePid,
 	loopbackHostHeader,
 	readOwnerToken,
 	readPidFile,
 	resolveDgPaths,
+	withInstallLock,
 } from "@dg/common/node";
 import type { Command } from "commander";
 import { readConfigStrict, writeServiceEntry } from "../server/config-store";
 import { parseServiceEntry, SERVICES_CONFIG_KEY } from "../services/config";
-import type { ServiceStatus } from "../services/supervisor";
+import { type ServiceStatus, servicePidFile } from "../services/supervisor";
+
+function withConfigLock<T>(
+	paths: ReturnType<typeof resolveDgPaths>,
+	fn: () => T | Promise<T>,
+): Promise<T> {
+	return withInstallLock(dirname(paths.daemonConfigPath), fn);
+}
+
+function readInstancePid(file: string): number | undefined {
+	try {
+		const pid = Number.parseInt(readFileSync(file, "utf8"), 10);
+		return isSignalablePid(pid) && isAlive(pid) ? pid : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 async function findLiveDaemon(
 	paths: ReturnType<typeof resolveDgPaths>,
@@ -160,36 +178,38 @@ export function registerServiceCommands(program: Command): void {
 					fail("service add: no command given — put it after a bare --");
 				}
 				const paths = resolveDgPaths();
-				const config = guardConfig(() => readConfigStrict(paths));
-				if (isDeclared(config, label)) {
-					fail(`a service labelled "${label}" already exists`);
-				}
-				const cwd = resolve(options.cwd);
-				if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
-					fail(`--cwd: no such directory: ${options.cwd}`);
-				}
-				const stopTimeoutMs =
-					options.stopTimeout === undefined
-						? undefined
-						: parseEvery(options.stopTimeout, "--stop-timeout");
-				const [command, ...rest] = argv;
-				const executable = resolveExecutable(command);
-				const entry = {
-					argv: [executable, ...rest],
-					cwd,
-					...(options.autostart ? { autostart: true } : {}),
-					...(options.envFile === undefined
-						? {}
-						: { envFile: resolve(options.envFile) }),
-					...(options.passEnv === undefined
-						? {}
-						: { passEnv: options.passEnv }),
-					...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
-					...(options.grant === undefined ? {} : { grant: options.grant }),
-				};
-				const parsed = parseServiceEntry(label, entry);
-				if (!parsed.ok) fail(`service add: ${parsed.error}`);
-				guardConfig(() => writeServiceEntry(paths, label, entry));
+				await withConfigLock(paths, () => {
+					const config = guardConfig(() => readConfigStrict(paths));
+					if (isDeclared(config, label)) {
+						fail(`a service labelled "${label}" already exists`);
+					}
+					const cwd = resolve(options.cwd);
+					if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
+						fail(`--cwd: no such directory: ${options.cwd}`);
+					}
+					const stopTimeoutMs =
+						options.stopTimeout === undefined
+							? undefined
+							: parseEvery(options.stopTimeout, "--stop-timeout");
+					const [command, ...rest] = argv;
+					const executable = resolveExecutable(command);
+					const entry = {
+						argv: [executable, ...rest],
+						cwd,
+						...(options.autostart ? { autostart: true } : {}),
+						...(options.envFile === undefined
+							? {}
+							: { envFile: resolve(options.envFile) }),
+						...(options.passEnv === undefined
+							? {}
+							: { passEnv: options.passEnv }),
+						...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
+						...(options.grant === undefined ? {} : { grant: options.grant }),
+					};
+					const parsed = parseServiceEntry(label, entry);
+					if (!parsed.ok) fail(`service add: ${parsed.error}`);
+					guardConfig(() => writeServiceEntry(paths, label, entry));
+				});
 				console.log(`added service "${label}"`);
 				console.log(
 					nextStepLine(
@@ -207,34 +227,47 @@ export function registerServiceCommands(program: Command): void {
 		.argument("<label>")
 		.action(async (label: string) => {
 			const paths = resolveDgPaths();
-			const config = guardConfig(() => readConfigStrict(paths));
-			if (!isDeclared(config, label)) {
-				throw new DgCliError(
-					`no service labelled "${label}"`,
-					EXIT_GENERAL_FAILURE,
-				);
-			}
-			const pidHandle = readPidFile(paths);
-			const live = await findLiveDaemon(paths);
-			if (!live && pidHandle && isAlive(pidHandle.pid)) {
-				throw new DgCliError(
-					`dg-daemon (pid ${pidHandle.pid}) does not answer, so the state of service "${label}" is unknown — run dg-daemon stop --force first`,
-					EXIT_GENERAL_FAILURE,
-				);
-			}
-			if (live) {
-				const { services } = (await callDaemon(CHAT_SERVICES_PATH, "GET")) as {
-					services: ServiceStatus[];
-				};
-				const state = services.find((entry) => entry.label === label)?.state;
-				if (state === "running" || state === "backoff") {
+			await withConfigLock(paths, async () => {
+				const config = guardConfig(() => readConfigStrict(paths));
+				if (!isDeclared(config, label)) {
 					throw new DgCliError(
-						`service "${label}" is ${state} — stop it first with dg-daemon service stop ${label}`,
+						`no service labelled "${label}"`,
 						EXIT_GENERAL_FAILURE,
 					);
 				}
-			}
-			guardConfig(() => writeServiceEntry(paths, label, undefined));
+				const pidHandle = readPidFile(paths);
+				const live = await findLiveDaemon(paths);
+				if (!live && pidHandle && isAlive(pidHandle.pid)) {
+					throw new DgCliError(
+						`dg-daemon (pid ${pidHandle.pid}) does not answer, so the state of service "${label}" is unknown — run dg-daemon stop --force first`,
+						EXIT_GENERAL_FAILURE,
+					);
+				}
+				if (live) {
+					const { services } = (await callDaemon(
+						CHAT_SERVICES_PATH,
+						"GET",
+					)) as {
+						services: ServiceStatus[];
+					};
+					const state = services.find((entry) => entry.label === label)?.state;
+					if (state === "running" || state === "backoff") {
+						throw new DgCliError(
+							`service "${label}" is ${state} — stop it first with dg-daemon service stop ${label}`,
+							EXIT_GENERAL_FAILURE,
+						);
+					}
+				}
+				const instance = servicePidFile(paths.daemonDir, label);
+				const instancePid = readInstancePid(instance);
+				if (instancePid !== undefined) {
+					throw new DgCliError(
+						`service "${label}" still runs as pid ${instancePid} — stop it, or delete ${instance} if that pid is not the service`,
+						EXIT_GENERAL_FAILURE,
+					);
+				}
+				guardConfig(() => writeServiceEntry(paths, label, undefined));
+			});
 			console.log(`removed service "${label}"`);
 		});
 
