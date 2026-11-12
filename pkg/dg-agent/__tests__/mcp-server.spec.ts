@@ -283,6 +283,8 @@ describe("dg-agent mcp server tools/call", () => {
 
 	it("sends the given tab and strips tab from the args", async () => {
 		const { client, sent } = await connectClient([both]);
+		await client.listTools();
+		sent.length = 0;
 		await client.callTool({ name: "dg_outlook_list", arguments: { tab: 7, folder: "inbox" } });
 		expect(calls(sent)).toEqual([{ verb: "call", tabId: 7, tool: "dg_outlook_list", args: { folder: "inbox" } }]);
 		expect(sent.filter((entry) => entry.frame.request.verb !== "call")).toEqual([]);
@@ -298,6 +300,13 @@ describe("dg-agent mcp server tools/call", () => {
 		});
 		await client.callTool({ name: "dg_example_read", arguments: { dg_tab: 2, tab: "settings" } });
 		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { tab: "settings" } }]);
+	});
+
+	it("finds the tool schema before routing when the client calls without a listing", async () => {
+		const own = { type: "object", properties: { tab: { type: "string" }, dg_tab: { type: "string" } } };
+		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
+		await client.callTool({ name: "dg_example_read", arguments: { dg_tab_2: 1, tab: "settings", dg_tab: "x" } });
+		expect(calls(sent)).toEqual([{ verb: "call", tabId: 1, tool: "dg_example_read", args: { tab: "settings", dg_tab: "x" } }]);
 	});
 
 	it("returns the open-the-site error when the agent has no tab yet", async () => {
@@ -334,6 +343,8 @@ describe("dg-agent mcp server tools/call", () => {
 
 	it.each([-1, 1.5, "7"])("returns isError for the tab value %p", async (tab) => {
 		const { client, sent } = await connectClient([both]);
+		await client.listTools();
+		sent.length = 0;
 		const result = await client.callTool({ name: "dg_outlook_list", arguments: { tab } });
 		expect(result.isError).toBe(true);
 		expect(sent).toEqual([]);
@@ -408,7 +419,7 @@ describe("dg-agent mcp server cancellation", () => {
 		controller.abort();
 		expect(await outcome).toBe("rejected");
 		await until(() => cancels.length > 0);
-		expect(cancels).toEqual([sent[0]?.frame.requestId as string]);
+		expect(cancels).toEqual([sent.find((entry) => entry.frame.request.verb === "call")?.frame.requestId as string]);
 		releases.forEach((release) => release());
 	});
 

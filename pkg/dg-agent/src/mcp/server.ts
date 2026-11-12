@@ -99,9 +99,13 @@ function parseSchema(raw: string | undefined): { schema: Record<string, unknown>
 	return { schema, properties };
 }
 
-/** The argument that picks the tab: tab, or dg_tab when the tool has its own tab input. */
-function tabKey(raw: string | undefined): "tab" | "dg_tab" {
-	return Object.hasOwn(parseSchema(raw).properties, "tab") ? "dg_tab" : "tab";
+/** The argument that picks the tab: the first of tab, dg_tab, dg_tab_2, … that the tool does not use. */
+function tabKey(raw: string | undefined): string {
+	const { properties } = parseSchema(raw);
+	if (!Object.hasOwn(properties, "tab")) return "tab";
+	let key = "dg_tab";
+	for (let n = 2; Object.hasOwn(properties, key); n++) key = `dg_tab_${n}`;
+	return key;
 }
 
 function withTabProperty(raw: string | undefined): Tool["inputSchema"] {
@@ -317,8 +321,8 @@ export function createDgMcpServer({ connect, now }: DgMcpDeps): Server {
 		if (!isDgToolName(name)) return failure(`${name} is not a dg tool.`);
 		try {
 			const all = params.arguments ?? {};
-			const own = listed?.get(name);
-			const key = own ? tabKey(own.tool.inputSchema) : "tab";
+			const own = listed?.has(name) ? listed : await exposures(extra.signal);
+			const key = tabKey(own.get(name)?.tool.inputSchema);
 			const { [key]: tab, ...args } = all;
 			const tabId = await pickTab(name, key, tab, extra.signal);
 			const reply = await send({ verb: "call", tabId, tool: name, args }, extra.signal);
