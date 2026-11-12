@@ -44,7 +44,11 @@ describe("readProcessIdentity", () => {
 	test("reads the command line and a plausible start time of the test's own child", async () => {
 		const child = Bun.spawn(["sleep", "300"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
 		try {
-			const identity = readProcessIdentity(child.pid);
+			let identity = readProcessIdentity(child.pid);
+			for (let tries = 0; identity.kind !== "found" && tries < 100; tries++) {
+				await Bun.sleep(20);
+				identity = readProcessIdentity(child.pid);
+			}
 			expect(identity.kind).toBe("found");
 			if (identity.kind !== "found") return;
 			expect(identity.args).toEqual(["sleep", "300"]);
