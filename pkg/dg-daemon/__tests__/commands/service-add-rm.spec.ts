@@ -11,7 +11,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { resolveDgPaths } from "@dg/common/node";
+import { CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
 import { parseServices } from "../../src/services/config";
 import {
 	allocatePort,
@@ -423,6 +424,33 @@ describe("service rm", () => {
 		const result = await runCli(dgHome, ["service", "rm", "bot"]);
 		expect(result.code).toBe(0);
 		expect(storedConfig(dgHome).services).toEqual({});
+	});
+
+	it("refuses and keeps the entry when the daemon pid runs but does not answer", async () => {
+		const { dgHome } = setup();
+		writeConfigFile(dgHome, {
+			services: { bot: { argv: ["/bin/x"], cwd: "/srv" } },
+		});
+		const silent = Bun.spawn(
+			[process.execPath, "-e", "setInterval(()=>{},1000)"],
+			{ stdout: "ignore", stderr: "ignore" },
+		);
+		try {
+			writePidFileAtomic(resolveDgPaths({ env: { DG_HOME: dgHome } }), {
+				pid: silent.pid,
+				port: await allocatePort(),
+				instanceId: crypto.randomUUID(),
+				versions: { package: "9.9.9", protocol: CHAT_PROTOCOL_VERSION },
+			});
+			const result = await runCli(dgHome, ["service", "rm", "bot"]);
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain(
+				`dg-daemon (pid ${silent.pid}) does not answer, so the state of service "bot" is unknown`,
+			);
+			expect(Object.keys(storedConfig(dgHome).services)).toEqual(["bot"]);
+		} finally {
+			silent.kill("SIGKILL");
+		}
 	});
 
 	it("refuses an unknown label", async () => {

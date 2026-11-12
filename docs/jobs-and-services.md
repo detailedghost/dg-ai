@@ -74,7 +74,9 @@ writes this entry to the config file. It works with no daemon running:
 | `--grant <prefix>` | `grant` | Credential grant prefix. See [Service API v1](service-api.md). |
 
 `service rm <label>` removes the entry. It refuses while the service is running
-or in backoff: run `dg-daemon service stop <label>` first. You can also edit
+or in backoff: run `dg-daemon service stop <label>` first. It also refuses when
+the daemon pid runs but does not answer, because it cannot check the state of
+the service. You can also edit
 the file by hand. Only a script declared there can start, and `argv` runs with
 no shell.
 
@@ -154,7 +156,8 @@ no service pid from an answer of another instance. A daemon from before this
 change sends no `instanceId`; the command then trusts the `/healthz` check it
 made just before. It also ignores a pid that is not an integer above 1. On
 Windows, `--force` ends the daemon process alone and then each service process
-tree, so a job or dispatch command keeps running.
+tree, so a job or dispatch command keeps running. If `/services` gives no answer
+within 3 s, `--force` still kills the daemon and reports the list failure.
 
 If the pid in the pid file still runs but `/healthz` does not answer (a hung or
 stopped daemon), `dg-daemon stop` keeps the pid file and exits 1 with

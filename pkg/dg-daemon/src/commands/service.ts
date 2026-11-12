@@ -11,6 +11,7 @@ import {
 } from "@dg/common";
 import {
 	checkExecutableResolves,
+	isAlive,
 	isDaemonLive,
 	loopbackHostHeader,
 	readOwnerToken,
@@ -213,7 +214,15 @@ export function registerServiceCommands(program: Command): void {
 					EXIT_GENERAL_FAILURE,
 				);
 			}
-			if (await findLiveDaemon(paths)) {
+			const pidHandle = readPidFile(paths);
+			const live = await findLiveDaemon(paths);
+			if (!live && pidHandle && isAlive(pidHandle.pid)) {
+				throw new DgCliError(
+					`dg-daemon (pid ${pidHandle.pid}) does not answer, so the state of service "${label}" is unknown — run dg-daemon stop --force first`,
+					EXIT_GENERAL_FAILURE,
+				);
+			}
+			if (live) {
 				const { services } = (await callDaemon(CHAT_SERVICES_PATH, "GET")) as {
 					services: ServiceStatus[];
 				};

@@ -528,6 +528,44 @@ describe("dg-daemon stop seams", () => {
 		},
 	);
 
+	it("kills the daemon with a list failure when /services never answers", async () => {
+		const { paths } = seamHome();
+		const table = fakeProcessTable([424242]);
+		const instanceId = crypto.randomUUID();
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch(req) {
+				if (new URL(req.url).pathname === "/healthz")
+					return Response.json({ instanceId });
+				return new Promise<Response>(() => {});
+			},
+		});
+		cleanups.push(() => server.stop(true));
+		ensureOwnerToken(paths);
+		writePidFileAtomic(
+			paths,
+			handleFor({ pid: 424242, port: server.port as number, instanceId }),
+		);
+
+		const failure = await cmdStop(
+			{ force: true },
+			{
+				platform: "linux",
+				kill: table.kill,
+				exec: table.exec,
+				waitMs: 2000,
+				listTimeoutMs: 200,
+			},
+		).catch((err: unknown) => err);
+
+		expect(failure).toBeInstanceOf(DgCliError);
+		expect((failure as DgCliError).message).toContain(
+			"could not list the services (",
+		);
+		expect(table.signals()).toEqual([{ pid: 424242, signal: "SIGKILL" }]);
+	});
+
 	it("treats a /services answer from another instance as a list failure and uses none of its pids", async () => {
 		const { paths } = seamHome();
 		const table = fakeProcessTable([424242, 424243]);

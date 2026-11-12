@@ -27,6 +27,7 @@ import { startedLine } from "./start";
 const POLL_MS = 100;
 const REGULAR_STOP_WAIT_MS = 255_000;
 const FORCE_WAIT_MS = 5_000;
+const LIST_TIMEOUT_MS = 3_000;
 
 export type StopSeams = {
 	platform?: NodeJS.Platform;
@@ -34,6 +35,7 @@ export type StopSeams = {
 	exec?: (command: string, args: string[]) => void;
 	commandLine?: (pid: number) => string[] | undefined;
 	waitMs?: number;
+	listTimeoutMs?: number;
 };
 
 export type StopOptions = { force?: boolean };
@@ -70,6 +72,7 @@ async function waitUntilGone(
 async function listServicePids(
 	paths: DgPaths,
 	handle: DaemonHandle,
+	seams: StopSeams,
 ): Promise<number[]> {
 	const owner = readOwnerToken(paths);
 	const resp = await fetch(
@@ -79,6 +82,7 @@ async function listServicePids(
 				...loopbackHostHeader(handle.port),
 				...(owner === undefined ? {} : { [OWNER_TOKEN_HEADER]: owner }),
 			},
+			signal: AbortSignal.timeout(seams.listTimeoutMs ?? LIST_TIMEOUT_MS),
 		},
 	);
 	if (!resp.ok) throw new Error(`${resp.status} ${(await resp.text()).trim()}`);
@@ -136,7 +140,7 @@ async function forceStop(
 	let listFailure = knownListFailure;
 	if (listFailure === undefined) {
 		try {
-			servicePids = await listServicePids(paths, handle);
+			servicePids = await listServicePids(paths, handle, seams);
 		} catch (err) {
 			listFailure = describeError(err);
 		}
