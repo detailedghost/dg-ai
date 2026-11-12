@@ -197,7 +197,9 @@ function parseVerdict(text: string | null, taskId: string): Verdict | null {
 	if (!isRecord(raw) || raw.id !== taskId) return null;
 	const word = VERDICT_WORDS.find((candidate) => candidate === raw.verdict);
 	if (!word) return null;
-	const verdict: Verdict = { id: taskId, verdict: word, reason: typeof raw.reason === "string" ? raw.reason.trim() : "" };
+	const reason = typeof raw.reason === "string" ? raw.reason.trim() : "";
+	if (word === "rejected" && reason === "") return null;
+	const verdict: Verdict = { id: taskId, verdict: word, reason };
 	if (isTier(raw.tier)) verdict.tier = raw.tier;
 	if (raw.evidence !== undefined) verdict.evidence = parseEvidence(raw.evidence);
 	if (Array.isArray(raw.otherPlaces)) {

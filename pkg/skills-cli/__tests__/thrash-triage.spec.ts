@@ -325,6 +325,19 @@ describe("applyVerdicts", () => {
 		expect(result.counts).toEqual({ confirmed: 0, adjusted: 0, rejected: 0, unverified: 2 });
 	});
 
+	test("a rejected verdict with no reason or a blank reason is unverified and the finding stays", () => {
+		const base = setup(distinct(3, "critical"));
+		const result = run(base, {
+			"c1-1": JSON.stringify({ id: "c1-1", verdict: "rejected" }),
+			"c1-2": verdictText("c1-2", { verdict: "rejected", reason: "   " }),
+			"c1-3": verdictText("c1-3", { verdict: "rejected", reason: 7 }),
+		});
+		expect(result.input.findings).toHaveLength(3);
+		expect(result.input.rejected).toEqual([]);
+		expect(result.input.unverified).toEqual(["c1-1", "c1-2", "c1-3"]);
+		expect(result.counts).toEqual({ confirmed: 0, adjusted: 0, rejected: 0, unverified: 3 });
+	});
+
 	test("a verdict word outside the three is unverified", () => {
 		const base = setup(distinct(1, "high"));
 		const result = run(base, { "c1-1": verdictText("c1-1", { verdict: "maybe" }) });

@@ -820,6 +820,30 @@ describe("credentials in the scratch tree", () => {
 		expectClean(result.root);
 	});
 
+	it("passes the Windows profile variables to the gh clone", async () => {
+		const fx = fixtureRemote();
+		const dir = tmp("checkout-fake-gh-");
+		const log = join(dir, "gh.log");
+		const saved = { APPDATA: process.env.APPDATA, USERPROFILE: process.env.USERPROFILE };
+		process.env.APPDATA = "C:\\Users\\dev\\AppData\\Roaming";
+		process.env.USERPROFILE = "C:\\Users\\dev";
+		try {
+			writeFakeCli(
+				dir,
+				"gh",
+				`#!/bin/sh\necho "appdata=$APPDATA profile=$USERPROFILE" >> "${log}"\nif [ "$1" = repo ] && [ "$2" = clone ]; then dir="$4"; shift 5; exec git clone "$@" "file://${fx.remote}" "$dir"; fi\nexit 1\n`,
+			);
+			const result = await resolveCheckout(input(fx, []), { cwd: unrelatedCwd() });
+			expect(readFileSync(log, "utf8")).toContain("appdata=C:\\Users\\dev\\AppData\\Roaming profile=C:\\Users\\dev");
+			expect(result.source).toBe("clone");
+		} finally {
+			for (const [key, value] of Object.entries(saved)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+		}
+	});
+
 	it("keeps GITLAB_TOKEN out of the config of a glab clone tree", async () => {
 		const fx = fixtureRemote();
 		const glab = cloningGlab(fx);
