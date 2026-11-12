@@ -56,4 +56,14 @@ posix("dg-skills commands after a legacy entry failed to move", () => {
 		expect(result.code).not.toBe(0);
 		expect(existsSync(join(home, "config", "channel-review", "config.json"))).toBe(false);
 	});
+
+	test("channel-review setup writes no config or template when the legacy channel-review config cannot be copied", async () => {
+		unreadable("channel-review/config.json");
+
+		const result = await runCli(["bun", skillsEntry, "channel-review", "setup"], installEnv(home));
+
+		expect(result.code).not.toBe(0);
+		expect(existsSync(join(home, "config", "channel-review", "config.example.json"))).toBe(false);
+		expect(existsSync(join(home, "config", "channel-review", "config.json"))).toBe(false);
+	});
 });

@@ -87,6 +87,7 @@ function printSavedEnv(path: string): void {
 async function ensureConfig(): Promise<boolean> {
 	const deps = defaultSetupDeps();
 	if (existsSync(deps.configPath) || !deps.isTTY) return true;
+	assertNotBlocked(channelReviewPaths("dev").dg, "channel-review-config");
 	const answer = (await deps.ask("No channel-review config yet. Run setup now? [Y/n]: ")).trim().toLowerCase();
 	if (answer !== "" && !answer.startsWith("y")) {
 		deps.close();
@@ -134,6 +135,7 @@ export function registerChannelReview(program: Command): void {
 		.description("create the config file by answering a few questions")
 		.option("--force", "replace an existing config file")
 		.action(async (flags: SetupFlags) => {
+			assertNotBlocked(channelReviewPaths("dev").dg, "channel-review-config");
 			process.exitCode = await runSetup(flags);
 		});
 
