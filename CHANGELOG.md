@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.1.1 (2026-11-12)
+
+### Fixes
+
+- fix(extension): keep the Outlook Web MCP built-in off until its script ships ([#176](https://github.com/detailedghost/dg-ai/pull/176))
+
 ## v5.1.0 (2026-11-12)
 
 ### Features
