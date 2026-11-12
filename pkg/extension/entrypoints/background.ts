@@ -1,5 +1,6 @@
 import {
 	registerAgentTabs,
+	registerApprovals,
 	registerDaemonLink,
 	registerProto,
 	registerRecording,
@@ -14,6 +15,7 @@ export default defineBackground(() => {
 	registerTourState();
 	registerProto();
 	registerRecording();
+	registerApprovals();
 	const link = registerDaemonLink();
 	registerAgentTabs({
 		busy: ({ sessionId }) => link.pending(sessionId).length > 0,

@@ -14,11 +14,12 @@ export function clearNotedSecrets(): void {
 	notedSecrets.clear();
 }
 
-const PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
-	{
-		pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-		replacement: REDACTED,
-	},
+const EMAIL = {
+	pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+	replacement: REDACTED,
+};
+
+const SECRET_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
 	{
 		pattern: /Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
 		replacement: `Bearer ${REDACTED}`,
@@ -58,6 +59,8 @@ const PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
 	},
 ];
 
+const PATTERNS = [EMAIL, ...SECRET_PATTERNS];
+
 function envSecrets(): string[] {
 	const values: string[] = [];
 	const env = typeof process === "undefined" ? undefined : process?.env;
@@ -68,25 +71,108 @@ function envSecrets(): string[] {
 	return values;
 }
 
-function replaceLiteral(message: string, secret: string): string {
-	if (secret.length < 8 || !message.includes(secret)) return message;
-	return message.split(secret).join(REDACTED);
+const MIN_CLIPPED_START = 3;
+
+function literalForms(secrets: readonly string[]): string[] {
+	return [
+		...new Set(
+			secrets
+				.filter((secret) => secret.length > 0)
+				.flatMap((secret) => [
+					secret,
+					secret.replace(/\s+/g, " "),
+					JSON.stringify(secret).slice(1, -1),
+					secret.replace(/[\r\n]/g, ""),
+				]),
+		),
+	].filter((form) => form.length > 0);
+}
+
+/** Masks each given secret, its whitespace-collapsed, JSON-escaped and line-break-free forms, and a clipped start of 3+ characters before an ellipsis. */
+export function redactLiterals(message: string, secrets: readonly string[]): string {
+	const literals = literalForms(secrets).sort((a, b) => b.length - a.length);
+	const whole = literals.reduce((out, secret) => out.split(secret).join(REDACTED), message);
+	return literals.reduce((out, secret) => {
+		let clipped = out;
+		for (let size = secret.length - 1; size >= MIN_CLIPPED_START; size--)
+			clipped = clipped.split(`${secret.slice(0, size)}…`).join(`${REDACTED}…`);
+		return clipped;
+	}, whole);
+}
+
+/** A credential pattern and the replacement its match gets. */
+export type RedactPattern = { pattern: RegExp; replacement: string };
+
+/** Extra inputs for redactText and redactSecrets. */
+export type RedactOptions = {
+	/** Values masked at any length, with their redactLiterals forms. */
+	literals?: readonly string[];
+	extraPatterns?: readonly RedactPattern[];
+};
+
+function keptEnds(match: string, expanded: string): [number, number] {
+	const at = expanded.indexOf(REDACTED);
+	const before = at === -1 ? "" : expanded.slice(0, at);
+	const after = at === -1 ? "" : expanded.slice(at + REDACTED.length);
+	let head = 0;
+	while (head < match.length && head < before.length && match[head] === before[head]) head++;
+	let tail = 0;
+	while (
+		tail < match.length - head &&
+		tail < after.length &&
+		match[match.length - 1 - tail] === after[after.length - 1 - tail]
+	)
+		tail++;
+	return [head, tail];
+}
+
+function redactWith(
+	patterns: readonly RedactPattern[],
+	message: string,
+	secrets: readonly string[],
+	{ literals = [], extraPatterns = [] }: RedactOptions = {},
+): string {
+	const masked = new Uint8Array(message.length);
+	const values = [
+		...[...secrets, ...notedSecrets, ...envSecrets()].filter((secret) => secret.length >= 8),
+		...literalForms(literals),
+	];
+	for (const value of values)
+		for (let at = message.indexOf(value); at !== -1; at = message.indexOf(value, at + 1))
+			masked.fill(1, at, at + value.length);
+	for (const { pattern, replacement } of [...patterns, ...extraPatterns])
+		for (const match of message.matchAll(pattern)) {
+			const expanded = replacement.replace(/\$(\d)/g, (_, group: string) => match[Number(group)] ?? "");
+			const at = match.index ?? 0;
+			const [head, tail] = keptEnds(match[0], expanded);
+			masked.fill(1, at + head, at + match[0].length - tail);
+		}
+	const parts: string[] = [];
+	let start = 0;
+	for (let i = 1; i <= message.length; i++) {
+		if (i < message.length && masked[i] === masked[start]) continue;
+		parts.push(masked[start] ? REDACTED : message.slice(start, i));
+		start = i;
+	}
+	return parts.join("");
 }
 
 /** Redacts credentials from a log line. Short explicit secrets are left alone. */
 export function redactText(
 	message: string,
 	secrets: readonly string[] = [],
+	options?: RedactOptions,
 ): string {
-	const literals = [...secrets, ...notedSecrets, ...envSecrets()].sort(
-		(a, b) => b.length - a.length,
-	);
-	let redacted = message;
-	for (const secret of literals) redacted = replaceLiteral(redacted, secret);
-	for (const { pattern, replacement } of PATTERNS) {
-		redacted = redacted.replace(pattern, replacement);
-	}
-	return redacted;
+	return redactWith(PATTERNS, message, secrets, options);
+}
+
+/** Like redactText, but leaves email addresses in place, for a user-approved unmask. */
+export function redactSecrets(
+	message: string,
+	secrets: readonly string[] = [],
+	options?: RedactOptions,
+): string {
+	return redactWith(SECRET_PATTERNS, message, secrets, options);
 }
 
 export function redactUnknown(value: unknown): unknown {

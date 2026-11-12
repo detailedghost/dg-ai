@@ -23,6 +23,7 @@ export type PwExtWebMcpResult =
 /** Self-contained MAIN-world hook that records console.warn and console.error from its first call on. */
 export function pwExtConsoleHook(
 	expectUrl?: string,
+	unmask = false,
 ): { entries: string[] } | { error: string } {
 	try {
 		if (expectUrl !== undefined && document.URL !== expectUrl)
@@ -35,7 +36,7 @@ export function pwExtConsoleHook(
 			[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
 			[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, REDACTED],
 			[/((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi, `$1${REDACTED}`],
-			[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
+			...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
 		];
 		const bounded = (value: string): string => {
 			let out = value.length > 20_000 ? value.slice(0, 20_000) : value;
@@ -79,7 +80,7 @@ export function pwExtConsoleHook(
 			const original = target[method];
 			target[method] = function (this: unknown, ...args: unknown[]) {
 				try {
-					entries.push(bounded(`[${label}] ${args.map(text).join(" ")}`));
+					entries.push(`[${label}] ${args.map(text).join(" ")}`.slice(0, 20_000));
 					if (entries.length > MAX_ENTRIES) entries.shift();
 				} catch {
 					return original.apply(this, args);
@@ -97,6 +98,7 @@ export function pwExtConsoleHook(
 export async function pwExtWebMcp(
 	action: PwExtWebMcpAction,
 	expectUrl?: string,
+	unmask = false,
 ): Promise<PwExtWebMcpResult> {
 	const MAX_TOOLS = 100;
 	const DESCRIPTION_MAX = 1000;
@@ -108,7 +110,7 @@ export async function pwExtWebMcp(
 		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
 		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, REDACTED],
 		[/((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi, `$1${REDACTED}`],
-		[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
+		...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
 	];
 	const clip = (value: string, max: number) => {
 		let out = value.length > max * 4 ? value.slice(0, max * 4) : value;

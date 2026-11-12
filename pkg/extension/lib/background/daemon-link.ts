@@ -52,6 +52,7 @@ import {
 	type PwExtBrowserApi,
 	type PwExtContext,
 } from "./pw-ext";
+import { createUnmaskGrants } from "./unmask-grants";
 import {
 	createRelayDispatcher,
 	type RelayHandler,
@@ -189,6 +190,9 @@ export function registerDaemonLink(
 		browserApi: api as unknown as AgentTabsBrowserApi,
 		storage: api.storage as unknown as AgentTabsStorage,
 	});
+	const unmaskGrants = createUnmaskGrants({
+		storage: api.storage as unknown as AgentTabsStorage,
+	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	} = {
@@ -201,6 +205,7 @@ export function registerDaemonLink(
 		"pw-ext": createPwExtHandler({
 			browserApi: api as unknown as PwExtBrowserApi,
 			agentTabs,
+			grants: unmaskGrants,
 		}),
 		...options.relayHandlers,
 	};
@@ -404,15 +409,16 @@ export function registerDaemonLink(
 	}
 
 	function forgetAgentTabs(sessionId: string): void {
-		void Promise.resolve()
-			.then(() => agentTabs.forget({ sessionId }))
-			.catch((error: unknown) =>
-				emitRedacted(
-					(line) => console.warn(line),
-					`[dg-chat] agent tab cleanup failed: ${describeError(error)}`,
-					knownTokens(),
-				),
-			);
+		for (const cleanup of [() => agentTabs.forget({ sessionId }), () => unmaskGrants.forget(sessionId)])
+			void Promise.resolve()
+				.then(cleanup)
+				.catch((error: unknown) =>
+					emitRedacted(
+						(line) => console.warn(line),
+						`[dg-chat] agent tab cleanup failed: ${describeError(error)}`,
+						knownTokens(),
+					),
+				);
 	}
 
 	async function daemonPort(): Promise<number | undefined> {

@@ -1,4 +1,5 @@
 export { registerAgentTabs } from "./agent-tabs";
+export { registerApprovals } from "./approval";
 export { registerDaemonLink } from "./daemon-link";
 export { registerProto } from "./proto";
 export { registerRecording } from "./recording";

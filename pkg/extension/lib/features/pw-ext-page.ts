@@ -2,7 +2,7 @@ export type PwExtPageAction =
 	| { kind: "snapshot" }
 	| { kind: "click"; target: string }
 	| { kind: "count"; target: string }
-	| { kind: "fill"; target: string; value: string }
+	| { kind: "fill"; target: string; value: string; secret?: boolean; until?: number }
 	| {
 			kind: "upload";
 			target: string;
@@ -24,6 +24,8 @@ export type PwExtPageResult =
 export function pwExtPageAction(
 	action: PwExtPageAction,
 	expectUrl?: string,
+	unmask = false,
+	secrets: string[] = [],
 ): PwExtPageResult {
 	const TREE_MAX = 60_000;
 	const TEXT_MAX = 30_000;
@@ -47,6 +49,13 @@ export function pwExtPageAction(
 		"tel",
 		"number",
 	]);
+	const DATE_INPUTS: Record<string, [RegExp, string]> = {
+		date: [/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD"],
+		time: [/^\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/, "HH:MM (24-hour)"],
+		"datetime-local": [/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, "YYYY-MM-DDTHH:MM"],
+		month: [/^\d{4}-\d{2}$/, "YYYY-MM"],
+		week: [/^\d{4}-W\d{2}$/, "YYYY-Www"],
+	};
 	const INTERACTIVE = new Set([
 		"link",
 		"button",
@@ -243,13 +252,40 @@ export function pwExtPageAction(
 		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
 		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, REDACTED],
 		[/((?:password|passwd|secret|token|api[-_]?key)\s*[:=]\s*)\S+/gi, `$1${REDACTED}`],
-		[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED],
+		...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
 	];
-	const redactTokens = (value: string): string =>
-		TOKEN_PATTERNS.reduce(
-			(out, [pattern, replacement]) => out.replace(pattern, replacement),
-			value,
-		);
+	const literals = [
+		...new Set(
+			secrets
+				.filter((secret) => secret.length > 0)
+				.flatMap((secret) => [secret, secret.replace(/\s+/g, " "), secret.replace(/[\r\n]/g, "")]),
+		),
+	]
+		.filter((secret) => secret.length > 0)
+		.sort((a, b) => b.length - a.length);
+	const redactTokens = (value: string): string => {
+		const masked = new Uint8Array(value.length);
+		for (const secret of literals)
+			for (let at = value.indexOf(secret); at !== -1; at = value.indexOf(secret, at + 1))
+				masked.fill(1, at, at + secret.length);
+		for (const [pattern, replacement] of TOKEN_PATTERNS)
+			for (const match of value.matchAll(pattern)) {
+				const kept = replacement.startsWith("$1")
+					? (match[1] ?? "").length
+					: replacement.startsWith("Bearer")
+						? (/^Bearer\s+/i.exec(match[0])?.[0].length ?? 0)
+						: 0;
+				masked.fill(1, (match.index ?? 0) + kept, (match.index ?? 0) + match[0].length);
+			}
+		const parts: string[] = [];
+		let start = 0;
+		for (let i = 0; i <= value.length; i++) {
+			if (i < value.length && masked[i] === (masked[start] ?? 0)) continue;
+			parts.push(masked[start] ? REDACTED : value.slice(start, i));
+			start = i;
+		}
+		return parts.join("");
+	};
 	const sanitize = (result: PwExtPageResult): PwExtPageResult => {
 		const out: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(result))
@@ -407,31 +443,83 @@ export function pwExtPageAction(
 		return { detail: `clicked ${describe(el)}` };
 	};
 
-	const fill = (target: string, value: string): PwExtPageResult => {
+	const fire = (el: Element): void => {
+		const EventCtor = (win as unknown as typeof globalThis).Event;
+		el.dispatchEvent(new EventCtor("input", { bubbles: true }));
+		el.dispatchEvent(new EventCtor("change", { bubbles: true }));
+	};
+
+	const setValue = (el: Element, value: string): void => {
+		const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+		if (setter) setter.call(el, value);
+		else (el as HTMLInputElement).value = value;
+	};
+
+	const pick = (select: HTMLSelectElement, value: string): PwExtPageResult => {
+		if (select.multiple) return { error: `${describe(select)} allows multiple choices; pw --ext picks one option only.` };
+		const options = [...select.options];
+		const label = (option: HTMLOptionElement) => (option.getAttribute("label") || option.text).replace(/\s+/g, " ").trim();
+		const lower = value.toLowerCase();
+		const index = [
+			options.findIndex((option) => option.value === value),
+			options.findIndex((option) => label(option) === value),
+			options.findIndex((option) => label(option).toLowerCase() === lower),
+		].find((at) => at >= 0);
+		if (index === undefined) {
+			const names = options.slice(0, 10).map((option) => `"${squash(label(option), 40)}"`);
+			const more = options.length > 10 ? `, … ${options.length - 10} more` : "";
+			return { error: `${describe(select)} has no option "${squash(value, 40)}". Options: ${names.join(", ")}${more}.` };
+		}
+		const option = options[index] as HTMLOptionElement;
+		const group = option.parentElement as HTMLOptGroupElement | null;
+		if (option.disabled || (group?.tagName === "OPTGROUP" && group.disabled))
+			return { error: `The option "${squash(label(option), 40)}" in ${describe(select)} is disabled.` };
+		select.selectedIndex = index;
+		fire(select);
+		return { detail: `selected "${squash(label(options[index] as HTMLOptionElement), 40)}" in ${describe(select)}` };
+	};
+
+	const fillDate = (input: HTMLInputElement, value: string): PwExtPageResult => {
+		const [pattern, format] = DATE_INPUTS[input.type.toLowerCase()] as [RegExp, string];
+		if (!pattern.test(value)) return { error: `${describe(input)} takes ${format}.` };
+		const before = input.value;
+		setValue(input, value);
+		if (input.value === "") {
+			setValue(input, before);
+			return { error: `${describe(input)} takes ${format}.` };
+		}
+		fire(input);
+		return { detail: `filled ${describe(input)}` };
+	};
+
+	const fill = (target: string, value: string, secret: boolean, until?: number): PwExtPageResult => {
 		const el = resolve(target);
 		if (typeof el === "string") return { error: el };
-		if (isSecret(el))
-			return { error: "pw --ext does not fill password or secret fields." };
+		if (isSecret(el) && (!unmask || (until !== undefined && Date.now() >= until)))
+			return {
+				error: "pw --ext fills a password or secret field only during an unmask grant. Run pw --ext unmask; the user approves it in the browser.",
+			};
+		if (isSecret(el) && !secret)
+			return {
+				error: "Pass a password or secret with --value-env <NAME> or --value-stdin, never on the command line.",
+			};
+		if (secret && !isSecret(el))
+			return { error: "--value-env and --value-stdin fill only a password or secret field." };
 		const input = el as HTMLInputElement;
+		if (input.disabled || input.readOnly) return { error: `${describe(el)} cannot be filled.` };
+		if (el.tagName === "SELECT") return pick(el as HTMLSelectElement, value);
+		if (el.tagName === "INPUT" && Object.hasOwn(DATE_INPUTS, input.type.toLowerCase())) return fillDate(input, value);
 		const editable = el.getAttribute("contenteditable") === "true";
 		const field =
-			(el.tagName === "INPUT" && TEXT_INPUTS.has(input.type.toLowerCase())) ||
+			(el.tagName === "INPUT" &&
+				(TEXT_INPUTS.has(input.type.toLowerCase()) || (secret && input.type.toLowerCase() === "password"))) ||
 			el.tagName === "TEXTAREA";
 		if ((!field && !editable) || input.disabled || input.readOnly)
 			return { error: `${describe(el)} cannot be filled.` };
 		input.focus?.();
 		if (editable) el.textContent = value;
-		else {
-			const setter = Object.getOwnPropertyDescriptor(
-				Object.getPrototypeOf(el),
-				"value",
-			)?.set;
-			if (setter) setter.call(el, value);
-			else input.value = value;
-		}
-		const EventCtor = (win as unknown as typeof globalThis).Event;
-		el.dispatchEvent(new EventCtor("input", { bubbles: true }));
-		el.dispatchEvent(new EventCtor("change", { bubbles: true }));
+		else setValue(el, value);
+		fire(el);
 		return { detail: `filled ${describe(el)}` };
 	};
 
@@ -482,11 +570,11 @@ export function pwExtPageAction(
 
 	const consoleCapture = (): PwExtPageResult => {
 		const existing = win[CONSOLE] as string[] | undefined;
-		if (existing) return { started: false, entries: [...existing] };
+		if (existing) return { started: false, entries: existing.map((entry) => squash(entry, 500)) };
 		const entries: string[] = [];
 		win[CONSOLE] = entries;
 		const push = (line: string) => {
-			entries.push(squash(line, 500));
+			entries.push(line.slice(0, 20_000));
 			if (entries.length > CONSOLE_MAX) entries.shift();
 		};
 		win.addEventListener(
@@ -522,7 +610,7 @@ export function pwExtPageAction(
 			case "count":
 				return count(action.target);
 			case "fill":
-				return fill(action.target, action.value);
+				return fill(action.target, action.value, action.secret === true, action.until);
 			case "selection":
 				return selection();
 			case "upload":

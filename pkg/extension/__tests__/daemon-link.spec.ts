@@ -1765,6 +1765,17 @@ test("MSG.sessionDisconnect on a stored pairing whose socket never connected rem
 	expect(sessionIdsOf(await ask({ type: MSG.connectionRequest }))).toEqual([]);
 });
 
+test("MSG.sessionDisconnect drops the session's unmask grants and remembered secrets", async () => {
+	const local = makeLocalArea(storedPairings(FIRST));
+	const { ask, api } = bootWithStored([], { local });
+	await settle();
+	await ask({ type: MSG.sessionDisconnect, sessionId: FIRST.sessionId });
+	await settle();
+
+	expect(api.storage.session.remove).toHaveBeenCalledWith(`pwExtUnmask:${FIRST.sessionId}`);
+	expect(api.storage.session.remove).toHaveBeenCalledWith(`pwExtSecrets:${FIRST.sessionId}`);
+});
+
 test("adopt writes no key until a session-list confirms the session", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();

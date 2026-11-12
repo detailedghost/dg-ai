@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { PwExtRequest } from "@dg/common";
+import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
 import {
@@ -52,6 +52,8 @@ type Options = {
 	chromium?: boolean;
 	signal?: AbortSignal;
 	windowState?: "normal" | "minimized" | "maximized";
+	approval?: "allow" | "deny" | "closed" | "timeout" | "unopened";
+	clock?: { now: number };
 };
 
 type Executed = {
@@ -101,10 +103,19 @@ function harness(options: Options = {}) {
 		storage: fake.api.storage,
 		lock: createLock(),
 	});
+	const approvalRequests: unknown[] = [];
+	const clock = options.clock ?? { now: Date.UTC(2026, 10, 9, 15, 0) };
 	const handler = createPwExtHandler({
 		browserApi: fake.api,
 		agentTabs,
 		isChromium: () => options.chromium ?? true,
+		approvals: {
+			request: async (request) => {
+				approvalRequests.push(request);
+				return options.approval ?? "deny";
+			},
+		},
+		now: () => clock.now,
 	});
 	const call = (
 		request: PwExtRequest,
@@ -129,6 +140,8 @@ function harness(options: Options = {}) {
 			context,
 		} as never);
 	return {
+		approvalRequests,
+		clock,
 		run: (request: PwExtRequest) => call(request),
 		runWith:
 			(context: { fetchAsset(id: string): Promise<Blob> }) =>
@@ -197,6 +210,8 @@ describe("pw --ext background handler", () => {
 		expect(h.executed()[0]?.args).toEqual([
 			{ kind: "click", target: "e1" },
 			WEB_TAB.url,
+			false,
+			[],
 		]);
 		expect(h.executed()[0]?.target.tabId).toBe(7);
 	});
@@ -207,7 +222,7 @@ describe("pw --ext background handler", () => {
 
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).toContain("#q matches 1 element");
-		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url]);
+		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false, []]);
 	});
 
 	it("runs a fill and keeps the typed value out of the result", async () => {
@@ -951,6 +966,8 @@ describe("pw --ext round 3", () => {
 				fileType: "video/webm",
 			},
 			WEB_TAB.url,
+			false,
+			[],
 		]);
 		expect(answer).toMatchObject({ ok: true });
 	});
@@ -1075,7 +1092,7 @@ describe("pw --ext round 3 review fixes", () => {
 		const answer = await h.run({ verb: "console" });
 		const main = h.executed().find((call) => call.world === "MAIN");
 
-		expect(main?.args).toEqual([WEB_TAB.url]);
+		expect(main?.args).toEqual([WEB_TAB.url, false]);
 		expect(answer.ok).toBe(true);
 		if (answer.ok) {
 			const lines = answer.data.text
@@ -1084,5 +1101,351 @@ describe("pw --ext round 3 review fixes", () => {
 			expect(lines).toHaveLength(50);
 			expect(lines.every((line) => line.length <= 520)).toBe(true);
 		}
+	});
+});
+
+describe("pw --ext unmask", () => {
+	const SNAPSHOT = { tree: 'textbox "Email" [ref=e1]: ada@clinic.test', text: "ada@clinic.test token=abc123def456" };
+	const ORIGIN = "https://app.example.test";
+
+	it("asks in the browser, names the site and agent, and grants for the minutes asked", async () => {
+		const h = harness({ approval: "allow" });
+		const answer = await h.run({ verb: "unmask", minutes: 15 });
+		expect(answer).toEqual({ ok: true, data: { text: expect.stringContaining(`Unmasked on ${ORIGIN} until`) } });
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({
+				origin: ORIGIN,
+				lines: expect.arrayContaining([
+					`Agent: ${IDENTITY}`,
+					`Tab group: ${groupTitle({ agentIdentity: IDENTITY, sessionId: SESSION })}`,
+				]),
+			}),
+		]);
+	});
+
+	it("shows email addresses during a grant, keeps tokens masked, and marks the output", async () => {
+		const h = harness({ approval: "allow", pageResult: SNAPSHOT });
+		const before = await h.run({ verb: "snapshot" });
+		expect(JSON.stringify(before)).not.toContain("ada@clinic.test");
+		await h.run({ verb: "unmask", minutes: 5 });
+		const after = await h.run({ verb: "snapshot" });
+		const text = after.ok ? after.data.text : "";
+		expect(text).toContain("ada@clinic.test");
+		expect(text).toContain(`unmasked on ${ORIGIN} until`);
+		expect(text).not.toContain("abc123def456");
+		expect(h.executed().at(-1)?.args[2]).toBe(true);
+	});
+
+	it.each([
+		["deny", "clicked Deny"],
+		["closed", "closed without an answer"],
+		["timeout", "60 seconds"],
+		["unopened", "could not open"],
+	] as const)("a %s answer grants nothing", async (approval, message) => {
+		const h = harness({ approval, pageResult: SNAPSHOT });
+		expect(await h.run({ verb: "unmask", minutes: 15 })).toEqual({ ok: false, error: expect.stringContaining(message) });
+		const after = await h.run({ verb: "snapshot" });
+		expect(JSON.stringify(after)).not.toContain("ada@clinic.test");
+	});
+
+	it("ends at its time and on --off", async () => {
+		const h = harness({ approval: "allow", pageResult: SNAPSHOT });
+		await h.run({ verb: "unmask", minutes: 1 });
+		h.clock.now += 61_000;
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("ada@clinic.test");
+		await h.run({ verb: "unmask", minutes: 10 });
+		expect(await h.run({ verb: "unmask", off: true })).toEqual({
+			ok: true,
+			data: { text: expect.stringContaining(`Ended the unmask on ${ORIGIN}`) },
+		});
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("ada@clinic.test");
+	});
+
+	it("is refused on the Proton mailbox and asks nothing", async () => {
+		const h = harness({ approval: "allow", tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
+		expect(await h.run({ verb: "unmask", minutes: 15 })).toEqual({
+			ok: false,
+			error: expect.stringContaining("Proton Mail"),
+		});
+		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("shows email addresses in the page title and on console output during a grant", async () => {
+		const h = harness({
+			approval: "allow",
+			tabs: [{ ...WEB_TAB, title: "ada@clinic.test - Users" }],
+			pageResult: { started: false, entries: ["error for ada@clinic.test"] },
+			mainResult: () => ({ entries: [] }),
+		});
+		await h.run({ verb: "unmask", minutes: 5 });
+		const current = await h.run({ verb: "current" });
+		expect(current.ok ? current.data.text : "").toContain("Page Title: ada@clinic.test - Users");
+		const logged = await h.run({ verb: "console" });
+		const text = logged.ok ? logged.data.text : "";
+		expect(text).toContain("error for ada@clinic.test");
+		expect(text).toContain(`unmasked on ${ORIGIN} until`);
+	});
+
+	it("masks a short secret fill value on success and error", async () => {
+		const ok = harness({ approval: "allow", pageResult: { detail: "cvv 7391 set" } });
+		await ok.run({ verb: "unmask", minutes: 15 });
+		expect(JSON.stringify(await ok.run({ verb: "fill", target: "#cvv", value: "7391", secret: true }))).not.toContain("7391");
+		const bad = harness({ approval: "allow", pageResult: { error: "bad cvv 7391" } });
+		await bad.run({ verb: "unmask", minutes: 15 });
+		expect(JSON.stringify(await bad.run({ verb: "fill", target: "#cvv", value: "7391", secret: true }))).not.toContain("7391");
+	});
+
+	it("keeps masking a filled secret in later replies of the session", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		options.pageResult = { tree: 'text "The code 739123 is not valid"', text: "The code 739123 is not valid" };
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("739123");
+	});
+
+	it("tells the MAIN-world console hook about the grant", async () => {
+		const h = harness({
+			approval: "allow",
+			pageResult: { started: false, entries: [] },
+			mainResult: () => ({ entries: [] }),
+		});
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "console" });
+		expect(h.executed().find((call) => call.world === "MAIN")?.args).toEqual([WEB_TAB.url, true]);
+	});
+
+	it("masks the clipped start of a filled secret in MAIN-world console output", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ entries: [`${"x".repeat(497)}739…`] }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		options.pageResult = { started: false, entries: [] };
+		expect(JSON.stringify(await h.run({ verb: "console" }))).not.toContain("739");
+	});
+
+	it("masks personal data again when the grant ends during a WebMCP call", async () => {
+		const clock = { now: Date.UTC(2026, 10, 9, 15, 0) };
+		const h = harness({
+			approval: "allow",
+			clock,
+			mainResult: () => {
+				clock.now += 16 * 60_000;
+				return { api: "modelContext", output: "owner ada@example.com" };
+			},
+		});
+		await h.run({ verb: "unmask", minutes: 15 });
+		const text = outcome(await h.run({ verb: "call", tool: "search", args: {} }));
+		expect(text).toContain("owner");
+		expect(text).not.toContain("ada@example.com");
+		expect(text).not.toContain("### Unmask");
+	});
+
+	it("masks personal data again when the tab leaves its group during a WebMCP call", async () => {
+		let h: ReturnType<typeof harness>;
+		h = harness({
+			approval: "allow",
+			mainResult: () => {
+				const tab = h.fake.tabs.get(7);
+				if (tab) tab.groupId = -1;
+				return { api: "modelContext", output: "owner ada@example.com" };
+			},
+		});
+		await h.run({ verb: "unmask", minutes: 15 });
+		const text = outcome(await h.run({ verb: "call", tool: "search", args: {} }));
+		expect(text).not.toContain("ada@example.com");
+		expect(text).not.toContain("### Unmask");
+	});
+
+	it("does not fill a secret when the request is canceled while held secrets are read", async () => {
+		const cancel = new AbortController();
+		const h = harness({ approval: "allow", signal: cancel.signal, pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const get = h.fake.raw.storage.session.get;
+		const original = get.getMockImplementation();
+		get.mockImplementation(async (keys?: string | string[] | null) => {
+			if (keys === `pwExtSecrets:${SESSION}`) cancel.abort();
+			return original?.(keys) as never;
+		});
+		const before = h.executed().length;
+		expect(await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("canceled"),
+		});
+		expect(h.executed()).toHaveLength(before);
+	});
+
+	it("holds no secret when the page refuses the fill", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { error: "--value-env and --value-stdin fill only a password or secret field." } as unknown,
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		expect(await h.run({ verb: "fill", target: "e2", value: "orchid-maple", secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("fill only a password or secret field"),
+		});
+		expect(await h.fake.api.storage.session.get(`pwExtSecrets:${SESSION}`)).toEqual({});
+		options.pageResult = { tree: 'text "orchid-maple test"', text: "orchid-maple test" };
+		await h.run({ verb: "unmask", off: true });
+		const after = await h.run({ verb: "snapshot" });
+		expect(outcome(after)).toContain("orchid-maple test");
+		expect(h.executed().at(-1)?.args[3]).toEqual([]);
+	});
+
+	it("holds a secret before the fill runs, so a lost page reply still masks it later", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		let heldAtFill: unknown;
+		h.fake.state.script = (details) => {
+			heldAtFill = (details as { args: unknown[] }).args[3];
+			throw new Error("the page reply was lost");
+		};
+		expect((await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true })).ok).toBe(false);
+		expect(heldAtFill).toEqual(["orchid-maple"]);
+		h.fake.state.script = () => ({ tree: 'text "orchid-maple"', text: "orchid-maple" });
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("orchid-maple");
+	});
+
+	it("keeps an already held secret when a later fill of it is refused", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		options.pageResult = { error: "#pw cannot be filled." };
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		options.pageResult = { tree: 'text "orchid-maple"', text: "orchid-maple" };
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("orchid-maple");
+	});
+
+	it.each(["x", "ab", "abc", "a \t\n "])("refuses a secret fill value shorter than 4 characters (%p)", async (value) => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const before = h.executed().length;
+		expect(await h.run({ verb: "fill", target: "#pw", value, secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("at least 4 characters"),
+		});
+		expect(h.executed()).toHaveLength(before);
+		expect(await h.fake.api.storage.session.get(`pwExtSecrets:${SESSION}`)).toEqual({});
+	});
+
+	it("masks a filled secret that the tabs listing cap cuts in two", async () => {
+		const secret = "739123";
+		const listing = async (last: number) => {
+			const tabs = Array.from({ length: 25 }, (_, i) =>
+				groupTab(100 + i, { url: "https://a.example.test/", title: i === 24 ? `${"x".repeat(last)}${secret}` : "x".repeat(4000) }),
+			);
+			const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [WEB_TAB, ...tabs] });
+			await h.run({ verb: "unmask", minutes: 15 });
+			await h.run({ verb: "fill", target: "#otp", value: secret, secret: true });
+			return outcome(await h.run({ verb: "tabs" }));
+		};
+		const line = (await listing(4000)).indexOf("- 124: ");
+		expect(line).toBeGreaterThan(0);
+		const cut = PW_EXT_MAX_TEXT_CHARS - "\n[truncated]".length;
+		const listed = await listing(cut - 3 - line - "- 124: ".length);
+		expect(listed).toContain("[truncated]");
+		expect(listed).not.toMatch(/x739/);
+	});
+
+	it("masks a filled secret in a later tabs listing", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness({ ...options, tabs: [{ ...WEB_TAB, title: "Code 739123 sent" }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		expect(JSON.stringify(await h.run({ verb: "tabs" }))).not.toContain("739123");
+	});
+
+	it("passes held secrets to the page so it masks them before it shortens text", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
+		await h.run({ verb: "snapshot" });
+		expect(h.executed().at(-1)?.args[3]).toEqual(["739123"]);
+	});
+
+	it("never echoes a secret fill value, even when the page repeats it", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled Temp-Pass-123" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const answer = await h.run({ verb: "fill", target: "#pw", value: "Temp-Pass-123", secret: true });
+		expect(JSON.stringify(answer)).not.toContain("Temp-Pass-123");
+		expect(h.executed().at(-1)?.args[0]).toEqual({
+			kind: "fill",
+			target: "#pw",
+			value: "Temp-Pass-123",
+			secret: true,
+			until: h.clock.now + 15 * 60_000,
+		});
+	});
+
+	it("keeps a credential label masked when a filled secret is part of the label", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [{ ...WEB_TAB, title: "password=opensesame-value" }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: "pass", secret: true });
+		const text = outcome(await h.run({ verb: "current" }));
+		expect(text).not.toContain("opensesame-value");
+		expect(text).not.toContain("pass");
+	});
+
+	it("masks the whole filled secret when part of it looks like a token", async () => {
+		const secret = "sk-abcdefgh12345678 tail-passphrase";
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [{ ...WEB_TAB, title: `Hi ${secret}` }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: secret, secret: true });
+		expect(outcome(await h.run({ verb: "current" }))).not.toContain("tail-passphrase");
+		expect(outcome(await h.run({ verb: "tabs" }))).not.toContain("tail-passphrase");
+	});
+
+	it("masks a filled secret after the browser drops its line breaks", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [{ ...WEB_TAB, title: "Hi orchidmaple" }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid\nmaple", secret: true });
+		expect(outcome(await h.run({ verb: "current" }))).not.toContain("orchidmaple");
+	});
+
+	it("keeps masking a secret that one fill wrote when a concurrent fill of it fails", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		let failFirst: (() => void) | undefined;
+		let calls = 0;
+		h.fake.state.script = () => {
+			calls++;
+			if (calls === 1)
+				return new Promise((resolve) => {
+					failFirst = () => resolve({ error: "#pw cannot be filled." });
+				}) as never;
+			return { detail: "filled" };
+		};
+		const first = h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		const second = await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		expect(second.ok).toBe(true);
+		failFirst?.();
+		expect((await first).ok).toBe(false);
+		h.fake.state.script = () => ({ tree: 'text "orchid-maple"', text: "orchid-maple" });
+		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("orchid-maple");
+	});
+
+	it("does not fill a secret when the grant ends while held secrets are read", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" } });
+		await h.run({ verb: "unmask", minutes: 15 });
+		const get = h.fake.raw.storage.session.get;
+		const original = get.getMockImplementation();
+		get.mockImplementation(async (keys?: string | string[] | null) => {
+			if (keys === `pwExtSecrets:${SESSION}`) h.clock.now += 16 * 60_000;
+			return original?.(keys) as never;
+		});
+		const before = h.executed().length;
+		expect(await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true })).toEqual({
+			ok: false,
+			error: expect.stringContaining("unmask ended"),
+		});
+		expect(h.executed()).toHaveLength(before);
 	});
 });

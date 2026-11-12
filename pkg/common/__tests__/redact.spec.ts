@@ -4,6 +4,8 @@ import {
 	emitRedacted,
 	installRedactingConsole,
 	noteSecret,
+	redactLiterals,
+	redactSecrets,
 	redactText,
 } from "../src/redact";
 import {
@@ -260,5 +262,64 @@ describe("redactText without a process global", () => {
 			if (descriptor) Object.defineProperty(globalThis, "process", descriptor);
 		}
 		expect(output).toBe("token [redacted]");
+	});
+});
+
+describe("redactSecrets", () => {
+	it("keeps email addresses but masks tokens, keys and literal secrets", () => {
+		const text = "user ada@example.test token=abc123def456 key sk-abcdefgh12345678 pass Hunter2-secret";
+		const out = redactSecrets(text, ["Hunter2-secret"]);
+		expect(out).toContain("ada@example.test");
+		expect(out).not.toContain("sk-abcdefgh12345678");
+		expect(out).not.toContain("Hunter2-secret");
+		expect(redactText(text)).not.toContain("ada@example.test");
+	});
+});
+
+describe("redactLiterals", () => {
+	it("masks a given secret of any length, and ignores an empty one", () => {
+		expect(redactLiterals("cvv 123 ok 123", ["123", ""])).toBe("cvv [redacted] ok [redacted]");
+		expect(redactLiterals("plain", [])).toBe("plain");
+	});
+
+	it("masks the whitespace-collapsed form of a secret", () => {
+		expect(redactLiterals("pw orchid maple lantern", ["orchid  maple\tlantern"])).toBe("pw [redacted]");
+	});
+
+	it("masks the JSON-escaped form of a secret", () => {
+		const secret = 'pa"ss\\word';
+		expect(redactLiterals(JSON.stringify({ value: secret }), [secret])).toBe('{"value":"[redacted]"}');
+	});
+
+	it("masks the clipped start of a secret before an ellipsis", () => {
+		expect(redactLiterals(`${"x".repeat(10)}739…`, ["739123"])).toBe(`${"x".repeat(10)}[redacted]…`);
+		expect(redactLiterals("code 739 ok", ["739123"])).toBe("code 739 ok");
+	});
+
+	it("leaves a clipped start shorter than 3 characters", () => {
+		expect(redactLiterals("code 73…", ["739123"])).toBe("code 73…");
+		expect(redactLiterals("code 739…", ["739123"])).toBe("code [redacted]…");
+		expect(redactLiterals("code 739123 73…", ["739123"])).toBe("code [redacted] 73…");
+	});
+});
+
+describe("redactText with literals", () => {
+	it("masks a whole literal that holds a token-shaped part", () => {
+		const secret = "sk-abcdefgh12345678 tail-passphrase";
+		expect(redactText(`title ${secret} end`, [], { literals: [secret] })).toBe("title [redacted] end");
+	});
+
+	it("keeps a credential label masked when a literal is part of the label", () => {
+		const out = redactText("password=opensesame-value", [], {
+			literals: ["pass"],
+			extraPatterns: [{ pattern: /\b(password)(=)\S+/gi, replacement: "$1$2[redacted]" }],
+		});
+		expect(out).not.toContain("opensesame");
+		expect(out).not.toContain("pass");
+	});
+
+	it("masks the line-break-free form of a literal", () => {
+		expect(redactText("value orchidmaple", [], { literals: ["orchid\nmaple"] })).toBe("value [redacted]");
+		expect(redactLiterals("value orchidmaple", ["orchid\r\nmaple"])).toBe("value [redacted]");
 	});
 });

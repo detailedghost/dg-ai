@@ -1,9 +1,14 @@
 import {
+	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
+	PW_EXT_MIN_SECRET_CHARS,
+	PW_EXT_UNMASK_DEFAULT_MINUTES,
 	type PW_EXT_RELAY,
 	type PwExtRequest,
 	type PwExtResponse,
 	type PwExtVerb,
+	redactLiterals,
+	redactSecrets,
 	redactText,
 	validatePwExtRequest,
 } from "@dg/common";
@@ -25,10 +30,13 @@ import {
 	type AgentTabsStorage,
 	type BrowserTab,
 	createAgentTabs,
+	groupTitle,
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
+import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
+import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
 	mailbox,
@@ -83,6 +91,15 @@ const CANCELED: PwExtResult = {
 };
 const NO_SESSION = "pw --ext needs a paired session.";
 const NO_TAB = "This agent has no tab yet. Run pw --ext new <url> first.";
+const UNMASK_REFUSED = {
+	deny: "The user clicked Deny in the browser; nothing was unmasked.",
+	closed: "The approval window was closed without an answer; nothing was unmasked.",
+	timeout: "No answer in the browser within 60 seconds; nothing was unmasked.",
+	unopened: "The approval window could not open; nothing was unmasked.",
+} satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
+const SECRET_TOO_SHORT = `pw --ext fills a secret of at least ${PW_EXT_MIN_SECRET_CHARS} characters only.`;
+const SECRETS_FULL = `This session already filled ${MAX_FILLED_SECRETS} secret values; start a new dg session to fill more.`;
+const UNMASK_ENDED = "The unmask ended before the fill ran; nothing was filled. Run pw --ext unmask again.";
 const SELECTED_GONE =
 	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
 const GROUP_FULL = `This agent's tab group is full (${MAX_AGENT_TABS} tabs). Close some with pw --ext close <id>.`;
@@ -107,12 +124,14 @@ const BLOCKS_BROWSER_PAGE: ReadonlySet<PwExtVerb> = new Set([
 	"current",
 	"screenshot",
 	"select",
+	"unmask",
 ]);
 const BLOCKS_MAILBOX: ReadonlySet<PwExtVerb> = new Set([
 	...PAGE_VERBS,
 	"screenshot",
 	"close",
 	"open",
+	"unmask",
 ]);
 const NEEDS_LOADED_TAB: ReadonlySet<PwExtVerb> = new Set([
 	...PAGE_VERBS,
@@ -185,28 +204,44 @@ function cap(text: string): string {
 		: text;
 }
 
-const SECRET_PAIR =
-	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
+const SECRET_PAIR = {
+	pattern: /\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi,
+	replacement: "$1$2[redacted]",
+};
 
-function clean(text: string): string {
-	return cap(redactText(text).replace(SECRET_PAIR, "$1$2[redacted]"));
+/** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
+function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
+	const redact = unmasked ? redactSecrets : redactText;
+	return redactLiterals(redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR] }), secrets);
 }
 
-function shownUrl(tab: Pick<BrowserTab, "url">): string {
+function clean(text: string, options: { unmasked?: boolean; secrets?: string[] } = {}): string {
+	return cap(mask(text, options));
+}
+
+const clock = (at: number) => new Date(at).toTimeString().slice(0, 5);
+
+function unmaskLine(grant: UnmaskGrant): string {
+	return `### Unmask
+unmasked on ${grant.origin} until ${clock(grant.until)} (approved in the browser)`;
+}
+
+function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url)) return "(browser page)";
-	return mailbox(tab.url) ? "(protected mailbox)" : redactText(tab.url);
+	if (mailbox(tab.url)) return "(protected mailbox)";
+	return mask(tab.url as string, { unmasked, secrets });
 }
 
-function shownTitle(tab: Pick<BrowserTab, "url" | "title">): string {
+function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
-	return redactText(tab.title ?? "");
+	return mask(tab.title ?? "", { unmasked, secrets });
 }
 
-function pageLines(tab: Pick<BrowserTab, "url" | "title">): string[] {
-	const title = shownTitle(tab);
+function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
+	const title = shownTitle(tab, unmasked, secrets);
 	return [
 		"### Page",
-		`- Page URL: ${shownUrl(tab)}`,
+		`- Page URL: ${shownUrl(tab, unmasked, secrets)}`,
 		...(title ? [`- Page Title: ${title}`] : []),
 	];
 }
@@ -260,14 +295,26 @@ export function createPwExtHandler({
 	browserApi: api,
 	agentTabs = createAgentTabs({ browserApi: api, storage: api.storage }),
 	isChromium = defaultIsChromium,
+	approvals,
+	now = Date.now,
+	grants = createUnmaskGrants({ storage: api.storage, now }),
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
 	isChromium?: () => boolean;
+	approvals?: Pick<Approvals, "request">;
+	now?: () => number;
+	grants?: UnmaskGrants;
 }) {
+	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
+		if (result.ok)
+			return { ...result, data: { ...result.data, text: cap(redactLiterals(result.data.text, secrets)) } };
+		return secrets.length ? { ...result, error: redactLiterals(result.error, secrets) } : result;
+	}
+
 	const ok = (text: string, image?: string): PwExtResult => ({
 		ok: true,
-		data: { text: clean(text), ...(image ? { image } : {}) },
+		data: { text: mask(text), ...(image ? { image } : {}) },
 	});
 
 	function watchTab(tab: LiveTab) {
@@ -295,11 +342,28 @@ export function createPwExtHandler({
 		};
 	}
 
-	async function inPage(tab: LiveTab, action: PwExtPageAction) {
+	const fills = new Map<string, { active: number; kept: boolean }>();
+
+	/** Counts in-flight secret fills of one value, so one failed fill cannot unmask a value another fill wrote. */
+	function holdFill(sessionId: string, secret: string) {
+		const key = `${sessionId}\n${secret}`;
+		const entry = fills.get(key) ?? { active: 0, kept: false };
+		entry.active++;
+		fills.set(key, entry);
+		return {
+			alone: () => entry.active === 1 && !entry.kept,
+			done(kept: boolean) {
+				if (kept) entry.kept = true;
+				if (--entry.active === 0) fills.delete(key);
+			},
+		};
+	}
+
+	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false, secrets: string[] = []) {
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
 			func: pwExtPageAction,
-			args: [action, tab.url as string],
+			args: [action, tab.url as string, unmasked, secrets],
 		});
 		return pageResult(frame?.result);
 	}
@@ -318,10 +382,10 @@ export function createPwExtHandler({
 		return frame?.result;
 	}
 
-	function tabListing(rows: readonly AgentTab[]): string {
+	function tabListing(rows: readonly AgentTab[], secrets: string[]): string {
 		const lines = rows.slice(0, MAX_AGENT_TABS).map((row) => {
-			const title = shownTitle(row);
-			return `- ${row.selected ? "[selected] " : ""}${row.tabId}: ${title ? `${title} — ` : ""}${shownUrl(row)}`;
+			const title = shownTitle(row, false, secrets);
+			return `- ${row.selected ? "[selected] " : ""}${row.tabId}: ${title ? `${title} — ` : ""}${shownUrl(row, false, secrets)}`;
 		});
 		const hidden = rows.length - MAX_AGENT_TABS;
 		return ["### Tabs", ...lines, ...(hidden > 0 ? [`- … ${hidden} more`] : [])].join(
@@ -375,9 +439,77 @@ export function createPwExtHandler({
 		context: PwExtContext,
 		signal: AbortSignal | undefined,
 	): Promise<PwExtResult> {
+		const grant = await grants.active(context.sessionId, tab);
+		const filling = request.verb === "fill" && request.secret ? (request.value as string) : undefined;
+		const hold = filling === undefined ? undefined : holdFill(context.sessionId, filling);
+		let dropped = false;
+		let result: PwExtResult;
+		try {
+			const reserved = filling === undefined ? "held" : await grants.reserve(context.sessionId, filling);
+			if (reserved === "full") throw new Refusal(SECRETS_FULL);
+			const release = async () => {
+				dropped = true;
+				if (reserved === "added" && hold?.alone()) await grants.release(context.sessionId, filling as string);
+			};
+			result = await perform(request, tab, context, signal, grant, release);
+		} finally {
+			hold?.done(!dropped);
+		}
+		if (!grant) return result;
+		const live = await api.tabs.get(tab.id).catch(() => undefined);
+		if (live && (await grants.active(context.sessionId, live))) return result;
+		return result.ok
+			? { ...result, data: { ...result.data, text: mask(result.data.text.replace(`${unmaskLine(grant)}\n`, "")) } }
+			: { ...result, error: mask(result.error) };
+	}
+
+	async function perform(
+		request: TabVerbRequest,
+		tab: LiveTab,
+		context: PwExtContext,
+		signal: AbortSignal | undefined,
+		grant: UnmaskGrant | undefined,
+		release: () => Promise<void>,
+	): Promise<PwExtResult> {
+		const unmasked = grant !== undefined;
+		const secrets = await grants.secrets(context.sessionId);
+		if (signal?.aborted) {
+			await release();
+			return CANCELED;
+		}
+		const page = () => pageLines(tab, unmasked, secrets);
+		const shown = (text: string): PwExtResult => ({
+			ok: true,
+			data: { text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, { unmasked, secrets }) },
+		});
+		const failed = (error: string): PwExtResult => ({ ok: false, error: clean(error, { unmasked, secrets }) });
 		switch (request.verb) {
 			case "current":
-				return ok(pageLines(tab).join("\n"));
+				return shown(page().join("\n"));
+			case "unmask": {
+				const origin = new URL(tab.url as string).origin;
+				if (request.off) {
+					const ended = await grants.revoke(context.sessionId, origin);
+					return ok(`### Result\n${ended ? "Ended the unmask" : "No unmask was active"} on ${origin}.`);
+				}
+				const minutes = request.minutes ?? PW_EXT_UNMASK_DEFAULT_MINUTES;
+				const answer = await (approvals ?? browserApprovals()).request({
+					title: "Let the agent see personal data?",
+					origin,
+					lines: [
+						`Agent: ${context.agentIdentity}`,
+						`Tab group: ${groupTitle(context)}`,
+						"Shows email addresses in pw --ext output on this site.",
+						"Lets the agent fill password fields here, from a value it never echoes.",
+						`Ends in ${minutes} minutes, on pw --ext unmask --off, or when the agent's tab group closes.`,
+					],
+				});
+				if (signal?.aborted) return CANCELED;
+				if (answer !== "allow") return { ok: false, error: UNMASK_REFUSED[answer] };
+				const until = now() + minutes * 60_000;
+				await grants.grant(context.sessionId, { origin, groupId: tab.groupId ?? -1, until });
+				return ok(`### Result\nUnmasked on ${origin} until ${clock(until)}, approved in the browser.`);
+			}
 			case "open": {
 				await api.tabs.update(tab.id, { url: request.url as string });
 				return ok(`### Result\nOpened ${request.url} in tab ${tab.id}`);
@@ -423,27 +555,27 @@ export function createPwExtHandler({
 					fileName: request.fileName as string,
 					fileType: request.fileType as string,
 				});
-				if ("error" in result) return { ok: false, error: clean(result.error) };
+				if ("error" in result) return failed(result.error);
 				if (!("detail" in result))
 					return { ok: false, error: "The page returned an unexpected result." };
-				return ok([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
+				return shown([`### Result`, result.detail, ...page()].join("\n"));
 			}
 			case "tools": {
 				const listed = webMcpResult(
-					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]),
+					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url, unmasked]),
 				);
-				if ("error" in listed) return { ok: false, error: clean(listed.error) };
+				if ("error" in listed) return failed(listed.error);
 				if (!("tools" in listed) || listed.tools.length === 0)
-					return ok(
-						[...pageLines(tab), "### WebMCP tools", "This page exposes no WebMCP tools."].join("\n"),
+					return shown(
+						[...page(), "### WebMCP tools", "This page exposes no WebMCP tools."].join("\n"),
 					);
 				const rows = listed.tools.flatMap((tool) => [
 					`- ${tool.name}: ${tool.description}`,
 					...(tool.inputSchema ? [`  input: ${tool.inputSchema}`] : []),
 					...(tool.annotations ? [`  hints: ${tool.annotations}`] : []),
 				]);
-				return ok(
-					[...pageLines(tab), `### WebMCP tools (${listed.api})`, ...rows].join("\n"),
+				return shown(
+					[...page(), `### WebMCP tools (${listed.api})`, ...rows].join("\n"),
 				);
 			}
 			case "call": {
@@ -456,13 +588,14 @@ export function createPwExtHandler({
 							timeoutMs: TOOL_TIMEOUT_MS,
 						},
 						tab.url,
+						unmasked,
 					]),
 				);
-				if ("error" in called) return { ok: false, error: clean(called.error) };
+				if ("error" in called) return failed(called.error);
 				if (!("output" in called))
 					return { ok: false, error: "The page returned an unexpected WebMCP result." };
-				return ok(
-					[`### Result`, `WebMCP tool ${request.tool} returned:`, called.output, ...pageLines(tab)].join("\n"),
+				return shown(
+					[`### Result`, `WebMCP tool ${request.tool} returned:`, called.output, ...page()].join("\n"),
 				);
 			}
 			case "screenshot": {
@@ -503,7 +636,7 @@ export function createPwExtHandler({
 				const fitted = await fitPreviewDataUrl(captured);
 				if (!fitted.dataUrl)
 					return { ok: false, error: `Screenshot failed: ${fitted.reason}.` };
-				return ok(pageLines(tab).join("\n"), fitted.dataUrl);
+				return ok(pageLines(tab, false, secrets).join("\n"), fitted.dataUrl);
 			}
 			default: {
 				const action: PwExtPageAction =
@@ -514,14 +647,25 @@ export function createPwExtHandler({
 									kind: "fill",
 									target: request.target as string,
 									value: request.value as string,
+									...(request.secret ? { secret: true, ...(grant ? { until: grant.until } : {}) } : {}),
 								}
 							: { kind: request.verb };
-				const result = await inPage(tab, action);
-				if ("error" in result) return { ok: false, error: clean(result.error) };
+				if (request.verb === "fill" && request.secret && grant) {
+					const live = await api.tabs.get(tab.id).catch(() => undefined);
+					if (!live || !(await grants.active(context.sessionId, live))) {
+						await release();
+						return failed(UNMASK_ENDED);
+					}
+				}
+				const result = await inPage(tab, action, unmasked, secrets);
+				if ("error" in result) {
+					await release();
+					return failed(result.error);
+				}
 				if ("tree" in result)
-					return ok(
+					return shown(
 						[
-							...pageLines(tab),
+							...page(),
 							"### Snapshot",
 							result.tree,
 							"### Visible text",
@@ -529,9 +673,9 @@ export function createPwExtHandler({
 						].join("\n"),
 					);
 				if ("detail" in result)
-					return ok([`### Result`, result.detail, ...pageLines(tab)].join("\n"));
+					return shown([`### Result`, result.detail, ...page()].join("\n"));
 				if ("entries" in result) {
-					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url])) as
+					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url, unmasked])) as
 						| { entries?: unknown }
 						| undefined;
 					const warnings = Array.isArray(hooked?.entries)
@@ -541,9 +685,9 @@ export function createPwExtHandler({
 								.map((entry) => (entry.length > 500 ? `${entry.slice(0, 500)}…` : entry))
 						: [];
 					const entries = [...result.entries, ...warnings];
-					return ok(
+					return shown(
 						[
-							...pageLines(tab),
+							...page(),
 							"### Console",
 							result.started
 								? "Capture started on this tab. Errors and console warnings from now on show on the next console call."
@@ -555,7 +699,7 @@ export function createPwExtHandler({
 				}
 				if (!("text" in result))
 					return { ok: false, error: "The page returned an unexpected result." };
-				return ok([...pageLines(tab), "### Selection", result.text].join("\n"));
+				return shown([...page(), "### Selection", result.text].join("\n"));
 			}
 		}
 	}
@@ -571,7 +715,7 @@ export function createPwExtHandler({
 		if (!isTabVerb(request)) {
 			const rows = await agentTabs.list({ sessionId: context.sessionId });
 			if (!rows.length) throw new Refusal(NO_TAB);
-			return ok(tabListing(rows));
+			return ok(tabListing(rows, await grants.secrets(context.sessionId)));
 		}
 		const tab = await resolveTab(request, context.sessionId);
 		if (signal?.aborted) return CANCELED;
@@ -602,14 +746,20 @@ export function createPwExtHandler({
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
+		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
+			return { ok: false, error: SECRET_TOO_SHORT };
+		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
+		const held = async () => [...typed, ...(await grants.secrets(context.sessionId).catch(() => []))];
 		try {
-			return await execute(request, context, signal);
+			const result = await execute(request, context, signal);
+			return scrub(result, await held());
 		} catch (error) {
 			if (error instanceof Refusal) return { ok: false, error: error.message };
 			return {
 				ok: false,
 				error: clean(
 					`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
+					{ secrets: await held() },
 				).slice(0, 2048),
 			};
 		}

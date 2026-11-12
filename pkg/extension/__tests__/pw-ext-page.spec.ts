@@ -179,6 +179,142 @@ describe("fill", () => {
 		expect(el<HTMLInputElement>("#t").value).toBe("");
 	});
 
+	describe("select", () => {
+		const SELECT = `<label>Doctor <select id="s"><option value="">Select rank</option><option value="1">Dr. Ada Lane</option><option value="2">Dr. Bo Park</option></select></label>`;
+
+		it.each([
+			["2", "2"],
+			["Dr. Ada Lane", "1"],
+			["dr. bo park", "2"],
+		])("picks the option %s and fires input and change", (value, picked) => {
+			page(SELECT);
+			const select = el<HTMLSelectElement>("#s");
+			const events: string[] = [];
+			select.addEventListener("input", () => events.push("input"));
+			select.addEventListener("change", () => events.push("change"));
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value })).toEqual({
+				detail: expect.stringContaining("selected"),
+			});
+			expect(select.value).toBe(picked);
+			expect(events).toEqual(["input", "change"]);
+		});
+
+		it("names the options when nothing matches, and changes nothing", () => {
+			page(SELECT);
+			const result = pwExtPageAction({ kind: "fill", target: "#s", value: "Dr. Nobody" });
+			expect(result).toEqual({ error: expect.stringContaining('no option "Dr. Nobody"') });
+			expect((result as { error: string }).error).toContain("Dr. Ada Lane");
+			expect(el<HTMLSelectElement>("#s").value).toBe("");
+		});
+
+		it.each([
+			`<select id="s" aria-label="Rank"><option value="1">One</option><option value="2" disabled>Two</option></select>`,
+			`<select id="s" aria-label="Rank"><option value="1">One</option><optgroup label="G" disabled><option value="2">Two</option></optgroup></select>`,
+		])("refuses a disabled option and changes nothing: %s", (html) => {
+			page(html);
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "Two" })).toEqual({
+				error: expect.stringContaining("disabled"),
+			});
+			expect(el<HTMLSelectElement>("#s").value).toBe("1");
+		});
+
+		it("matches an option by its label attribute, as the browser shows it", () => {
+			page(`<select id="s" aria-label="Doctor"><option value="">-</option><option value="1" label="Dr. Ada">fallback</option></select>`);
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "Dr. Ada" })).toEqual({
+				detail: expect.stringContaining("Dr. Ada"),
+			});
+			expect(el<HTMLSelectElement>("#s").value).toBe("1");
+		});
+
+		it("refuses a secret value for a field that is not secret", () => {
+			page(SELECT);
+			const secret = "x".repeat(60);
+			const result = pwExtPageAction({ kind: "fill", target: "#s", value: secret, secret: true }, undefined, true);
+			expect(result).toEqual({ error: expect.stringContaining("only a password or secret field") });
+			expect(JSON.stringify(result)).not.toContain("xxxx");
+		});
+
+		it("refuses a secret fill once the unmask deadline passed", () => {
+			page(`<input id="p" type="password" aria-label="Password">`);
+			const result = pwExtPageAction(
+				{ kind: "fill", target: "#p", value: "orchid-maple", secret: true, until: Date.now() - 1 },
+				undefined,
+				true,
+			);
+			expect(result).toEqual({ error: expect.stringContaining("only during an unmask grant") });
+			expect(el<HTMLInputElement>("#p").value).toBe("");
+		});
+
+		it("refuses a multiple select", () => {
+			page(`<select id="s" multiple aria-label="Tags"><option>a</option></select>`);
+			expect(pwExtPageAction({ kind: "fill", target: "#s", value: "a" })).toEqual({
+				error: expect.stringContaining("multiple"),
+			});
+		});
+	});
+
+	describe("date and time", () => {
+		it.each([
+			["date", "2026-11-20"],
+			["time", "09:30"],
+			["datetime-local", "2026-11-20T09:30"],
+			["time", "09:30:00"],
+		])("sets a %s input", (type, value) => {
+			page(`<input id="d" type="${type}" aria-label="When">`);
+			expect(pwExtPageAction({ kind: "fill", target: "#d", value })).toEqual({
+				detail: expect.stringContaining("filled"),
+			});
+			expect(el<HTMLInputElement>("#d").value).not.toBe("");
+		});
+
+		it.each([
+			["date", "11/20/2026", "YYYY-MM-DD"],
+			["time", "9:30 AM", "HH:MM"],
+		])("rejects a %s value in the wrong format and names the format", (type, value, format) => {
+			page(`<input id="d" type="${type}" aria-label="When">`);
+			expect(pwExtPageAction({ kind: "fill", target: "#d", value })).toEqual({
+				error: expect.stringContaining(format),
+			});
+			expect(el<HTMLInputElement>("#d").value).toBe("");
+		});
+	});
+
+	it("keeps the old date when the browser rejects a new one", () => {
+		page(`<input id="d" type="date" aria-label="When" value="2026-11-20">`);
+		expect(pwExtPageAction({ kind: "fill", target: "#d", value: "2026-99-99" })).toEqual({
+			error: expect.stringContaining("YYYY-MM-DD"),
+		});
+		expect(el<HTMLInputElement>("#d").value).toBe("2026-11-20");
+	});
+
+	it("applies the grant when it reads captured page errors, not when it captures them", () => {
+		page(`<p>x</p>`);
+		pwExtPageAction({ kind: "console" });
+		window.dispatchEvent(new window.ErrorEvent("error", { message: "failed for ada@clinic.test" }));
+		expect(JSON.stringify(pwExtPageAction({ kind: "console" }))).not.toContain("ada@clinic.test");
+		expect(JSON.stringify(pwExtPageAction({ kind: "console" }, undefined, true))).toContain("ada@clinic.test");
+	});
+
+	it("masks a held secret before it shortens page text", () => {
+		const secret = "S".repeat(100);
+		page(`<h1>${secret}</h1>`);
+		const result = pwExtPageAction({ kind: "snapshot" }, undefined, false, [secret]);
+		expect(JSON.stringify(result)).not.toContain("SSSS");
+	});
+
+	it("keeps masking a token value when a held secret is its label", () => {
+		page(`<p>token=opensesame-value</p>`);
+		const result = pwExtPageAction({ kind: "snapshot" }, undefined, false, ["token"]);
+		expect(JSON.stringify(result)).not.toContain("opensesame");
+	});
+
+	it("masks a held secret after the page collapses its whitespace", () => {
+		const secret = "orchid  maple  lantern";
+		page(`<p>${secret}</p>`);
+		const result = pwExtPageAction({ kind: "snapshot" }, undefined, false, [secret]);
+		expect(JSON.stringify(result)).not.toContain("maple");
+	});
+
 	it("refuses a non-editable target", () => {
 		page(`<button id="b">B</button><input id="r" readonly>`);
 		for (const target of ["#b", "#r"])
@@ -351,5 +487,35 @@ describe("review round 3 hardening", () => {
 		const text = JSON.stringify(pwExtPageAction({ kind: "snapshot" }));
 		expect(text).not.toContain("eyJAAAA");
 		expect(text).not.toContain("me@example.test");
+	});
+});
+
+describe("unmask grant", () => {
+	it("shows email addresses in a snapshot only while unmasked, and keeps tokens masked", () => {
+		page(`<label for="e">Email</label><input id="e" value="ada@clinic.test"><p>token=abc123def456 ada@clinic.test</p>`);
+		const masked = pwExtPageAction({ kind: "snapshot" }) as { tree: string; text: string };
+		expect(`${masked.tree}${masked.text}`).not.toContain("ada@clinic.test");
+		const shown = pwExtPageAction({ kind: "snapshot" }, undefined, true) as { tree: string; text: string };
+		expect(shown.tree).toContain("ada@clinic.test");
+		expect(shown.text).toContain("ada@clinic.test");
+		expect(shown.text).not.toContain("abc123def456");
+	});
+
+	it("keeps a password field's value out of the snapshot even while unmasked", () => {
+		page(`<label>Password <input id="p" type="password" value="Temp-Pass-123"></label>`);
+		const shown = pwExtPageAction({ kind: "snapshot" }, undefined, true) as { tree: string; text: string };
+		expect(`${shown.tree}${shown.text}`).not.toContain("Temp-Pass-123");
+	});
+
+	it("fills a password field only with a grant and a secret value, and never echoes it", () => {
+		page(`<label>Password <input id="p" type="password"></label>`);
+		const action = { kind: "fill" as const, target: "#p", value: "Temp-Pass-123" };
+		expect(pwExtPageAction(action)).toEqual({ error: expect.stringContaining("pw --ext unmask") });
+		expect(pwExtPageAction(action, undefined, true)).toEqual({ error: expect.stringContaining("--value-env") });
+		expect(el<HTMLInputElement>("#p").value).toBe("");
+		const result = pwExtPageAction({ ...action, secret: true }, undefined, true);
+		expect(result).toEqual({ detail: expect.stringContaining("filled") });
+		expect(JSON.stringify(result)).not.toContain("Temp-Pass-123");
+		expect(el<HTMLInputElement>("#p").value).toBe("Temp-Pass-123");
 	});
 });

@@ -50,7 +50,10 @@ popup.
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
 | `close [tabId]` | write | Closes a tab of the group; the selected tab by default |
 | `click <ref or selector>` | write | Clicks one element |
-| `fill <ref or selector> <text>` | write | Sets the value of one text field |
+| `fill <ref or selector> <text>` | write | Sets one text field, or a date or time field (`date` as `YYYY-MM-DD`, `time` as `HH:MM`, plus `datetime-local`, `month` and `week`), or picks one `<select>` option by value, then label, then case-insensitive label. A multi-select is refused |
+| `fill <ref or selector> --value-env NAME` | write | Sets a password or secret field from the CLI environment variable `NAME`. Needs `unmask` |
+| `fill <ref or selector> --value-stdin` | write | Same, but reads the value from stdin. Needs `unmask` |
+| `unmask [--minutes N]` | write | Asks you for a time-boxed unmask of the selected tab's origin. `N` is 1 to 60, default 15. `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input |
 | `call <tool> <json-args>` | write | Runs one WebMCP tool of the page |
 
@@ -81,7 +84,27 @@ Rules:
   tab is never read, closed or navigated.
 - Text output is redacted (tokens, keys, emails, secret query values) and
   capped. Password and secret field contents are left out, and `fill` refuses
-  those fields. Screenshots are not redacted: they show what is on the screen.
+  those fields unless an unmask grant holds. Screenshots are not redacted: they
+  show what is on the screen.
+- `unmask` asks you, in a small extension popup window, to let the agent see
+  real email addresses on one site. The popup shows the session, the origin,
+  what the grant allows and the duration. It has Allow and Deny, and no button
+  has focus. Deny, no answer in 60 seconds, a closed window, or a window that
+  cannot open grants nothing, and the reply says which occurred. Only your click
+  in that window grants. The agent cannot grant itself.
+- While a grant holds, on that origin only and in that session's agent tab group
+  only, email addresses show unmasked and `fill` may set a password or
+  secret field. Tokens, API keys, JWTs and `password=` values stay masked.
+- The grant ends at its time, on `unmask --off`, or when the tab group changes
+  or closes. It never covers a mailbox origin or a browser-internal page. An
+  extension that does not list `unmask` in its `pwExtVerbs` handshake refuses the
+  verb at once.
+- Each page reply under a grant starts with `### Unmask`, then
+  `unmasked on <origin> until HH:MM (approved in the browser)`.
+- A secret value never goes in argv. Use `fill <target> --value-env NAME` or
+  `--value-stdin`. The value must have at least 4 characters. It is removed from
+  all output, and the result says only `filled <field>`. Without a grant, the
+  refusal names `pw --ext unmask`.
 - If the dg session closes, or the CLI stops (Ctrl-C, SIGTERM or a closed
   socket), the request is canceled and nothing more runs.
 - There is no code execution of agent code: no `eval`, no `run-code`, and no
@@ -109,7 +132,8 @@ Rules:
   `tabId` or a new verb until you restart `dg-daemon`.
 - Firefox is not supported.
 
-See [ADR 0035](adr/0035-pw-ext-real-browser.md).
+See [ADR 0035](adr/0035-pw-ext-real-browser.md) and
+[ADR 0041](adr/0041-pw-ext-unmask.md).
 
 ## Security
 
