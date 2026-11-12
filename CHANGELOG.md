@@ -1,5 +1,112 @@
 # Changelog
 
+## v4.1.0 (2026-11-11)
+
+### Features
+
+- feat(stat): show the checklist in plan order ([#170](https://github.com/detailedghost/dg-ai/pull/170))
+
+## v4.0.0 (2026-11-10)
+
+### Breaking
+
+- feat(demo)!: record local demos with a Node Playwright recorder ([#160](https://github.com/detailedghost/dg-ai/pull/160))
+
+### Features
+
+- feat(skills-cli): add dg-skills skill audit and split ([#168](https://github.com/detailedghost/dg-ai/pull/168))
+
+## v3.1.0 (2026-11-09)
+
+### Features
+
+- feat(pw): add pw --ext count, --session, and a verb handshake ([#164](https://github.com/detailedghost/dg-ai/pull/164))
+- feat(skills-cli): add dg-skills update and the /dg:update skill ([#162](https://github.com/detailedghost/dg-ai/pull/162))
+- feat(skills-cli): interactive dg-skills doctor ([#163](https://github.com/detailedghost/dg-ai/pull/163))
+
+### Fixes
+
+- fix(channel-review): add a setup step for a missing config ([#161](https://github.com/detailedghost/dg-ai/pull/161))
+
+## v3.0.1 (2026-11-08)
+
+### Fixes
+
+- fix(demo): voice on strict-CSP pages and no REC badge in videos ([#159](https://github.com/detailedghost/dg-ai/pull/159))
+
+## v3.0.0 (2026-11-08)
+
+### Breaking
+
+- feat(pairing)!: pair the CLI and extension with no codes ([#157](https://github.com/detailedghost/dg-ai/pull/157))
+
+## v2.0.1 (2026-11-08)
+
+### Fixes
+
+- fix(pairing): close the deferred Known Issues from #155 ([#156](https://github.com/detailedghost/dg-ai/pull/156))
+
+## v2.0.0 (2026-11-08)
+
+### Breaking
+
+- feat(extension)!: pair agents from a toolbar popup and drop the extension pages ([#155](https://github.com/detailedghost/dg-ai/pull/155))
+
+## v1.43.0 (2026-11-06)
+
+### Features
+
+- feat(pw): drop the per-call approval popup for pw --ext ([#151](https://github.com/detailedghost/dg-ai/pull/151))
+
+## v1.42.1 (2026-11-06)
+
+### Fixes
+
+- fix(hooks): point the Windows hook launcher at the dg-skills.cmd shim ([#149](https://github.com/detailedghost/dg-ai/pull/149))
+- fix(phone): move the legacy phone home before any command opens the db ([#147](https://github.com/detailedghost/dg-ai/pull/147))
+
+## v1.42.0 (2026-11-05)
+
+### Features
+
+- feat(pw): drive the real browser with pw --ext ([#143](https://github.com/detailedghost/dg-ai/pull/143))
+
+## v1.41.0 (2026-11-05)
+
+### Features
+
+- feat(phone): add receipts, presence, ping, texting names, a PHI vault and agent extensions ([#142](https://github.com/detailedghost/dg-ai/pull/142))
+
+## v1.40.0 (2026-11-05)
+
+### Features
+
+- feat(phone): send encrypted images over Wormhole and mark PHI ([#140](https://github.com/detailedghost/dg-ai/pull/140))
+
+## v1.39.0 (2026-11-04)
+
+### Features
+
+- feat(spec): cost profiles, greedy slice build, --proxy and --bg ([#139](https://github.com/detailedghost/dg-ai/pull/139))
+
+## v1.38.0 (2026-11-04)
+
+### Features
+
+- feat(install): add --with-recommended for pinned third-party plugins ([#137](https://github.com/detailedghost/dg-ai/pull/137))
+
+## v1.37.0 (2026-11-04)
+
+### Features
+
+- feat(install): keep dg files in per-OS folders ([#136](https://github.com/detailedghost/dg-ai/pull/136))
+
+## v1.36.0 (2026-11-03)
+
+### Features
+
+- feat(runtime): ship one pinned Bun runtime and one minified bundle ([#135](https://github.com/detailedghost/dg-ai/pull/135))
+
 ## v1.35.0 (2026-11-03)
 
 ### Features

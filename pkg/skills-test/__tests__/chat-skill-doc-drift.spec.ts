@@ -5,7 +5,7 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 	const skill = readRepoFile("plugins", "dg", "skills", "chat", "SKILL.md");
 	const errors = readRepoFile("pkg", "common", "src", "errors.ts");
 	const agentCmds = readRepoFile("pkg", "dg-agent", "src", "commands.ts");
-	const entry = readRepoFile("pkg", "dg-agent", "src", "index.ts");
+	const entry = readRepoFile("pkg", "dg-agent", "src", "main.ts");
 	const memoryCmds = readRepoFile(
 		"pkg",
 		"dg-agent",
@@ -47,7 +47,7 @@ describe("the chat SKILL.md does not drift from the daemon's real surface", () =
 	});
 
 	test("a command belonging to another binary names that binary", () => {
-		const daemonEntry = readRepoFile("pkg", "dg-daemon", "src", "index.ts");
+		const daemonEntry = readRepoFile("pkg", "dg-daemon", "src", "main.ts");
 
 		for (const name of declaredCommands(daemonEntry)) {
 			if (declaredCommands(agentCmds, entry, memoryCmds).includes(name)) {

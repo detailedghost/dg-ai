@@ -5,10 +5,10 @@
 		"storage",
 		"scripting",
 		"downloads",
-		"sidePanel",
 		"activeTab",
 		"tabCapture",
-		"offscreen"
+		"offscreen",
+		"alarms"
 	],
 	"host_permissions": [
 		"<all_urls>",

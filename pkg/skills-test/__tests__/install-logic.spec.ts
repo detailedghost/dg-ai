@@ -1,24 +1,19 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 /**
- * Unit smoke tests for the install script's release-asset resolution — the
- * exact logic that broke install (per-part release tags) and the platform→
- * binary mapping the release matrix and bootstrap scripts must agree on.
+ * Unit smoke tests for the install script's release resolution: the exact
+ * logic that broke install (per-part release tags).
  */
 import { describe, expect, test } from "bun:test";
 import {
 	cliBinDir,
 	expectedSha256,
-	cliAssetName,
 	cliDest,
-	cliVersionFile,
-	pickCliAsset,
+	installRoot,
 	pickExtAsset,
 	pickRelease,
 	RELEASE_TAG,
 	type Release,
 } from "@dg/skills-cli/lib";
-import { SUPPORTED_PLATFORMS } from "./supported-platforms";
+import { resolveDgPaths } from "@dg/common/node";
 
 const asset = (name: string, url = `u/${name}`) => ({ name, browser_download_url: url });
 
@@ -54,23 +49,6 @@ const RELEASES: Release[] = [
 		],
 	},
 ];
-
-const SKILLS_SPEC = { binaryName: "dg-skills" };
-const DAEMON_SPEC = { binaryName: "dg-daemon" };
-
-describe("cliAssetName", () => {
-	for (const { platform, arch, assetName } of SUPPORTED_PLATFORMS) {
-		const expected = assetName["dg-skills"];
-		test(`${platform}/${arch} → ${expected}`, () => {
-			expect(cliAssetName("dg-skills", platform, arch)).toBe(expected);
-		});
-	}
-
-	test("unsupported OS/arch → undefined", () => {
-		expect(cliAssetName("dg-skills", "aix", "x64")).toBeUndefined();
-		expect(cliAssetName("dg-skills", "linux", "mips")).toBeUndefined();
-	});
-});
 
 describe("pickRelease", () => {
 	test("picks the newest vX.Y.Z by semver, not by string or list order, and skips drafts and prefixed tags", () => {
@@ -132,83 +110,23 @@ describe("pickExtAsset (extension zip from the vX.Y.Z release)", () => {
 	});
 });
 
-describe("pickCliAsset (binary from the vX.Y.Z release)", () => {
-	test("linux/x64 resolves the newest vX.Y.Z binary, not a prefixed one", () => {
-		const a = pickCliAsset(RELEASES, SKILLS_SPEC, "linux", "x64");
-		expect(a?.name).toBe("dg-skills-linux-x64");
-		expect(a?.version).toBe("1.22.0");
-		expect(a?.url).toBe("u/linux-x64");
-	});
-
-	test("platform with no matching asset in the release → undefined", () => {
-		// linux/arm64 isn't in the fixture's asset list
-		expect(
-			pickCliAsset(RELEASES, SKILLS_SPEC, "linux", "arm64"),
-		).toBeUndefined();
-	});
-
-	test("a pin of 1.22.0 resolves v1.22.0", () => {
-		const a = pickCliAsset(RELEASES, { ...SKILLS_SPEC, version: "1.22.0" }, "linux", "x64");
-		expect(a?.version).toBe("1.22.0");
-		expect(a?.url).toBe("u/linux-x64");
-	});
-
-	test("a pin of 1.21.1 resolves the skills-v and daemon-v tags", () => {
-		const skills = pickCliAsset(RELEASES, { ...SKILLS_SPEC, version: "1.21.1" }, "linux", "x64");
-		const daemon = pickCliAsset(RELEASES, { ...DAEMON_SPEC, version: "1.21.1" }, "linux", "x64");
-		expect(skills?.url).toBe("u/legacy-linux-x64");
-		expect(skills?.version).toBe("1.21.1");
-		expect(daemon?.url).toBe("u/legacy-daemon");
-	});
-
-	test("a pin with no matching release resolves undefined, even though a newer one exists", () => {
-		expect(
-			pickCliAsset(RELEASES, { ...SKILLS_SPEC, version: "9.9.9" }, "linux", "x64"),
-		).toBeUndefined();
-	});
-});
-
-describe("the fetcher is generalized over binaryName", () => {
-	test("cliAssetName builds a dg-daemon name for every supported platform", () => {
-		for (const { platform, arch, assetName } of SUPPORTED_PLATFORMS) {
-			expect(cliAssetName("dg-daemon", platform, arch)).toBe(
-				assetName["dg-daemon"],
-			);
-		}
-	});
-
-	test("pickCliAsset resolves dg-daemon from the same vX.Y.Z release as dg-skills", () => {
-		const picked = pickCliAsset(RELEASES, DAEMON_SPEC, "linux", "x64");
-		expect(picked?.name).toBe("dg-daemon-linux-x64");
-		expect(picked?.version).toBe("1.22.0");
-		expect(picked?.url).toBe("u/srv-linux-x64");
-	});
-
-	test("a platform with no published dg-daemon asset resolves undefined rather than a skills binary", () => {
-		expect(
-			pickCliAsset(RELEASES, DAEMON_SPEC, "darwin", "arm64"),
-		).toBeUndefined();
-	});
-
-	test("cliDest and cliVersionFile are per-binary, so one install cannot overwrite the other", () => {
-		expect(cliDest("dg-skills")).not.toBe(cliDest("dg-daemon"));
-		expect(cliDest("dg-daemon")).toContain("dg-daemon");
-		expect(cliVersionFile("dg-daemon")).toContain(".dg-daemon.version");
-		expect(cliVersionFile("dg-skills")).toContain(".dg-skills.version");
-	});
-
-	test("cliBinDir honors DG_HOME and falls back to ~/.dg/bin", () => {
+describe("install paths and checksum parsing", () => {
+	test("cliBinDir honors DG_HOME and falls back to the per-OS bin dir", () => {
 		expect(cliBinDir({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/bin");
-		expect(cliBinDir({})).toBe(join(homedir(), ".dg", "bin"));
-		expect(cliBinDir({ DG_HOME: "" })).toBe(join(homedir(), ".dg", "bin"));
+		expect(cliBinDir({})).toBe(resolveDgPaths({ env: {} }).binDir);
+		expect(cliBinDir({ DG_HOME: "" })).toBe(resolveDgPaths({ env: {} }).binDir);
 	});
 
-	test("cliDest and cliVersionFile land in the DG_HOME bin directory", () => {
+	test("installRoot is the data dir that holds runtime and lib", () => {
+		expect(installRoot({ DG_HOME: "/opt/dg-home" })).toBe("/opt/dg-home/data");
+	});
+
+	test("cliDest lands in the DG_HOME bin directory, one shim per program", () => {
 		const saved = process.env.DG_HOME;
 		process.env.DG_HOME = "/opt/dg-home";
 		try {
 			expect(cliDest("dg-agent")).toStartWith("/opt/dg-home/bin/dg-agent");
-			expect(cliVersionFile("dg-agent")).toBe("/opt/dg-home/bin/.dg-agent.version");
+			expect(cliDest("dg-agent")).not.toBe(cliDest("dg-daemon"));
 		} finally {
 			if (saved === undefined) delete process.env.DG_HOME;
 			else process.env.DG_HOME = saved;
@@ -225,14 +143,4 @@ describe("the fetcher is generalized over binaryName", () => {
 		expect(expectedSha256(`x${"3".repeat(64)}  dg-skills-linux-x64\n`, "dg-skills-linux-x64")).toBeUndefined();
 	});
 
-	test("pickCliAsset carries the release's SHA256SUMS url only when the release publishes one", () => {
-		const rel = (assets: string[]) => [{
-			tag_name: "v1.0.0",
-			draft: false,
-			assets: assets.map((name) => ({ name, browser_download_url: `https://x/${name}` })),
-		}];
-		const spec = { binaryName: "dg-skills" };
-		expect(pickCliAsset(rel(["dg-skills-linux-x64", "SHA256SUMS"]), spec, "linux", "x64")?.sumsUrl).toBe("https://x/SHA256SUMS");
-		expect(pickCliAsset(rel(["dg-skills-linux-x64"]), spec, "linux", "x64")).not.toHaveProperty("sumsUrl");
-	});
 });

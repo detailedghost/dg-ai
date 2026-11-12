@@ -12,11 +12,14 @@ Reshape commits on the current branch since `main` into a tighter, more reviewab
 Resolve the compiled CLI before running any command:
 
 ```bash
-~/.dg/bin/dg-skills meaningful --help >/dev/null 2>&1 ||
+dg-skills meaningful --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" meaningful --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor meaningful hooks proxy stash.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor meaningful hooks proxy stash.
 
 Repeat this resolution in every fresh shell, delegated execution and resumed
 command; shell variables do not persist between tool calls. Honor the host's
@@ -57,7 +60,7 @@ If any fail, print the reason and stop. Do not attempt to clean up the user's wo
 
 ## Flow
 
-**1. Gather** — run `~/.dg/bin/dg-skills meaningful info`. If `ahead < 2`, stop. Load [references/helper-api.md](references/helper-api.md) for the full JSON schema and field descriptions.
+**1. Gather** — run `dg-skills meaningful info`. If `ahead < 2`, stop. Load [references/helper-api.md](references/helper-api.md) for the full JSON schema and field descriptions.
 
 **2. Propose** — spawn a `dg:reviewer` subagent using the host's configured persona to read per-commit diffs and return ≥3 distinct regrouping options. Load [references/proposal-format.md](references/proposal-format.md) for the exact subagent brief and `=== Option N ===` block format before briefing the subagent. Pass the full `info` JSON including `commits[].author` and `file_authors` so the subagent can assign authorship per group.
 
@@ -67,7 +70,7 @@ The user must select a concrete proposal before applying it. Explain that applyi
 the chosen plan rewrites this branch and pushes the resulting commits. Honor an
 existing approval for that exact plan and operation; do not ask for it again.
 
-**4. Apply** — load [references/helper-api.md](references/helper-api.md) for the JSON plan file format (§Plan File Format (JSON)) and path formulas. Write the chosen plan to the temp file path (`.json` extension), including `author`/`coauthors` per group from the proposal. If `--dry-run`, print the plan path and stop. Otherwise run `~/.dg/bin/dg-skills meaningful apply-json <plan-file>`. Report the backup SHA to the user. The helper keeps every `Co-Authored-By` trailer as written, unless the opt-in `strip-ai-coauthors` hook setting is on (`dg-skills hooks status` shows it, or `DG_STRIP_AI_COAUTHORS=1`). Then it drops AI trailers, and the plan must not add an AI co-author.
+**4. Apply** — load [references/helper-api.md](references/helper-api.md) for the JSON plan file format (§Plan File Format (JSON)) and path formulas. Write the chosen plan to the temp file path (`.json` extension), including `author`/`coauthors` per group from the proposal. If `--dry-run`, print the plan path and stop. Otherwise run `dg-skills meaningful apply-json <plan-file>`. Report the backup SHA to the user. The helper keeps every `Co-Authored-By` trailer as written, unless the opt-in `strip-ai-coauthors` hook setting is on (`dg-skills hooks status` shows it, or `DG_STRIP_AI_COAUTHORS=1`). Then it drops AI trailers, and the plan must not add an AI co-author.
 
 **5. On failure** — if the helper exits non-zero, report the backup SHA and recovery options. Details in [references/helper-api.md](references/helper-api.md) §Failure Recovery.
 

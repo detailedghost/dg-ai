@@ -15,7 +15,7 @@ delegation facility with description "filter copilot comments" and the prompt
 below. Read only the named persona and the lazy instructions needed for this
 phase; no full conversation context.
 
-Resolve the comments path with `~/.dg/bin/dg-skills stash review-loop <PR>.comments.json`. Fill the path into the prompt before delegation.
+Resolve the comments path with `dg-skills stash review-loop <PR>.comments.json`. Fill the path into the prompt before delegation.
 
 ## Prompt Template
 

@@ -1,68 +1,50 @@
 import { emitRedacted, type SessionBootstrap } from "@dg/common";
+import { createOverwatchApi, OverwatchHttpError } from "../board/overwatch";
 import {
+	attachLocalSession,
+	exchangeChatCode,
 	forgetLocalBootstrap,
-	loadLocalBootstrap,
+	loadLocalBootstraps,
 	localStorageOrMemory,
 	SESSION_ENDED_TEXT,
 	sessionStorageOrMemory,
 	storeLocalBootstrap,
 } from "../local";
-import { createOverwatchApi, OverwatchHttpError } from "../board/overwatch";
 import { type ChatClient, createChatClient } from "./chat-client";
-import { renderChatPage } from "./main";
+import { type ChatPageController, renderChatPage } from "./main";
 
 const root = document.getElementById("app");
 
 if (root) {
+	void exchangeChatCode(window).then((exchanged) => {
 	const storage = localStorageOrMemory();
 	const bootstrapStorage = sessionStorageOrMemory();
-	const bootstrap = loadLocalBootstrap(window, bootstrapStorage);
-	let live = bootstrap;
+	const bootstraps = loadLocalBootstraps(window, bootstrapStorage, exchanged);
+	const heldTokens = new Map(
+		bootstraps.map((bootstrap) => [bootstrap.sessionId, bootstrap.token]),
+	);
+	const hadSession = bootstraps.length > 0;
 	let client: ChatClient | undefined;
-	let heldSessions: ReadonlyMap<string, string> = new Map();
+	let controller: ChatPageController | undefined;
 	let rendered = false;
 	let ended: HTMLElement | undefined;
 	const showEnded = (): void => {
-		if (!rendered || ended || live) return;
+		if (!rendered || !hadSession || ended || heldTokens.size > 0) return;
 		ended = document.createElement("p");
 		ended.className = "chat-session-ended";
 		ended.setAttribute("role", "alert");
 		ended.textContent = SESSION_ENDED_TEXT;
 		root.prepend(ended);
 	};
-	const adoptHeld = (
-		held: ReadonlyMap<string, string>,
-	): SessionBootstrap | undefined => {
-		const first = held.entries().next();
-		if (first.done || !bootstrap) return undefined;
-		const [sessionId, token] = first.value;
-		live = { ...bootstrap, sessionId, token };
-		storeLocalBootstrap(bootstrapStorage, live);
-		return live;
-	};
-	const heldBootstrap = (
-		held: ReadonlyMap<string, string>,
-	): SessionBootstrap | undefined => {
-		if (live && held.get(live.sessionId) === live.token) return live;
-		return adoptHeld(held);
-	};
-	const dropLive = (sessionId?: string): void => {
-		if (!live || (sessionId !== undefined && live.sessionId !== sessionId)) {
-			return;
-		}
-		const dropped = live;
-		live = undefined;
-		forgetLocalBootstrap(bootstrapStorage, dropped.token);
-		client?.forgetSession(dropped.sessionId);
-		adoptHeld(heldSessions);
-		showEnded();
-	};
 	const forgetIfRefused = (token: string): void => {
 		createOverwatchApi(window.location.origin, token)
 			.getBoard()
 			.catch((error: unknown) => {
-				if (error instanceof OverwatchHttpError && error.status === 403) {
-					if (live?.token === token) dropLive();
+				if (!(error instanceof OverwatchHttpError) || error.status !== 403) {
+					return;
+				}
+				for (const [sessionId, held] of heldTokens) {
+					if (held === token) controller?.dropSession(sessionId);
 				}
 			});
 	};
@@ -73,10 +55,8 @@ if (root) {
 		assetOrigin: window.location.origin,
 		createClient: () => {
 			client = createChatClient({
-				heldSessionsOnly: true,
 				openSocket: (url, held) => {
-					heldSessions = held;
-					const token = heldBootstrap(held)?.token ?? "";
+					const token = held.values().next().value ?? "";
 					const socket = new WebSocket(
 						`${url}?token=${encodeURIComponent(token)}`,
 					);
@@ -90,17 +70,24 @@ if (root) {
 					return socket;
 				},
 			});
-			client.onFrame((frame) => {
-				if (
-					frame.type === "session-closed" ||
-					(frame.type === "error" && frame.code === "invalid-session")
-				) {
-					dropLive(frame.sessionId);
-				}
-			});
 			return client;
 		},
-		loadBootstraps: () => Promise.resolve(bootstrap ? [bootstrap] : []),
+		loadBootstraps: () => Promise.resolve(bootstraps),
+		attachSession: (sessionId, held) =>
+			attachLocalSession(window.location.origin, sessionId, held),
+		onHeldAdopted: (bootstrap: SessionBootstrap) => {
+			heldTokens.set(bootstrap.sessionId, bootstrap.token);
+			storeLocalBootstrap(bootstrapStorage, bootstrap);
+		},
+		onHeldEnded: (bootstrap: SessionBootstrap) => {
+			heldTokens.delete(bootstrap.sessionId);
+			forgetLocalBootstrap(bootstrapStorage, bootstrap.token);
+			client?.forgetSession(bootstrap.sessionId);
+			showEnded();
+		},
+		onController: (next) => {
+			controller = next;
+		},
 	})
 		.then(() => {
 			rendered = true;
@@ -112,4 +99,5 @@ if (root) {
 				`[dg-chat] could not render the chat page: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		});
+	});
 }

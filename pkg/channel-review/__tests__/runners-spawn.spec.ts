@@ -291,6 +291,24 @@ process.exit(0);
 		}
 	});
 
+	test.skipIf(process.platform === "win32")("puts the dg bin dir first on the child PATH so skills find the bare dg-skills", async () => {
+		const savedHome = process.env.DG_HOME;
+		const savedPath = process.env.PATH;
+		process.env.DG_HOME = "/tmp/dg-runner-home";
+		process.env.PATH = "/usr/bin:/bin";
+		try {
+			const child = script(`console.log("path=" + process.env.PATH);`);
+			const req = request([process.execPath, child]);
+			await runProcess(req);
+			const line = readFileSync(req.logPath, "utf8").match(/path=(.*)/);
+			expect(line?.[1]).toBe("/tmp/dg-runner-home/bin:/usr/bin:/bin");
+		} finally {
+			if (savedHome === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = savedHome;
+			process.env.PATH = savedPath;
+		}
+	});
+
 	test("keeps CLAUDE_CODE_OAUTH_TOKEN only when keepOauthToken is set", async () => {
 		const saved = process.env.CLAUDE_CODE_OAUTH_TOKEN;
 		process.env.CLAUDE_CODE_OAUTH_TOKEN = "set";

@@ -9,7 +9,6 @@ describe("@dg/tour-ui public exports", () => {
 			"showEditPanel",
 			"buildOverlay",
 			"positionCard",
-			"recIndicator",
 			"renderStep",
 			"initialPlayState",
 			"recordingStartState",

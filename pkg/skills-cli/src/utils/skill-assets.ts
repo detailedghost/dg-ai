@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { claudePluginSkillsDirs, isVirtualBunPath } from "@dg/common/node";
+import { claudePluginSkillsDirs, isVirtualBunPath, resolveDgPaths } from "@dg/common/node";
 
 /** Select explicit/configured/source skill roots; a selected root suppresses default fallback discovery. */
 export interface SkillAssetOptions {
@@ -62,7 +62,7 @@ export function resolveSkillAsset(
 	const roots = selected
 		? [selected]
 		: [
-				join(process.env.DG_HOME ?? join(home, ".dg"), "skills"),
+				resolveDgPaths({ homeDir: home }).skillsDir,
 				...[
 					process.env.CLAUDE_PLUGIN_ROOT,
 					process.env.CODEX_PLUGIN_ROOT,

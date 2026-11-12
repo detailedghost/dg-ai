@@ -7,13 +7,13 @@ Derive `slug` from the brief: a 2–5 word snake_case working title. The helper 
 **If `-T`/`--no-worktree`:** skip the worktree. If the current branch is the repo default, `git switch -c feature/<slug>` — never build on main. Otherwise stay on the current branch.
 
 ```sh
-eval "$(~/.dg/bin/dg-skills worktree create "$slug")"
+eval "$(dg-skills worktree create "$slug")"
 # binds WORKTREE_PATH, WORKTREE_BRANCH, WORKTREE_ORIGIN — branch feature/<slug> off latest origin/(main|master)
 ```
 
 The session does not relocate into the worktree — `EnterWorktree({path: <WORKTREE_PATH>})` looks
 like the tool for that, but it refuses this path: its `path` form only accepts a worktree registered
-under `<repo>/.claude/worktrees/`, and `~/.dg/bin/dg-skills worktree create` places its worktrees at
+under `<repo>/.claude/worktrees/`, and `dg-skills worktree create` places its worktrees at
 `$HOME/code/worktrees/<repo>-<slug>` (or a sibling of origin) instead. Being a real linked worktree
 (`git worktree list` shows it) is not what `EnterWorktree` checks — the location is, and this fails
 it. Full detail, including the verbatim refusal, is in the [worktree skill](../../worktree/SKILL.md)'s
@@ -39,7 +39,7 @@ bare `/dg:sdlc` run this ephemeral spec is the only record of `worktree.path`, s
 reboot orphans the worktree, and the origin repo must resolve the same path to clean it up.
 
 ```sh
-SPEC_PATH="$(~/.dg/bin/dg-skills stash -s sdlc <slug>.md)"; SCRATCH_PATH="$(~/.dg/bin/dg-skills stash -s sdlc <slug>-scratch.md)"; touch "$SCRATCH_PATH"
+SPEC_PATH="$(dg-skills stash -s sdlc <slug>.md)"; SCRATCH_PATH="$(dg-skills stash -s sdlc <slug>-scratch.md)"; touch "$SCRATCH_PATH"
 ```
 
 If `SPEC_PATH` already exists with `status: in-progress` (a resumed run), skip derivation — read it, report which slices are already committed, and continue from step 3 or 4 as appropriate.
@@ -48,7 +48,7 @@ If `SPEC_PATH` already exists with `status: in-progress` (a resumed run), skip d
 
 - **Default to ONE slice.** Split only when the work has clearly separable vertical slices; when unsure, don't split.
 - Per slice: `id` (1-based), `name` (kebab), a 2–4 sentence brief, `files` (globs the slice owns), `depends_on` (slice ids), an Engineering checklist, and Testing Criteria opening with `### Contracts` (inputs, outputs, error shapes).
-- Slices in the same dependency layer MUST touch disjoint files — they build in parallel in one working tree. If two dependency-ready slices may overlap, chain them via `depends_on`.
+- Any two slices with no dependency path between them MUST touch disjoint files — they build in parallel in one working tree. If two dependency-ready slices may overlap, chain them via `depends_on`.
 
 **Write the ephemeral spec** (the orchestrator writes it, from the returned plan):
 
@@ -97,7 +97,7 @@ slices:
 ## Issues Remediation
 ```
 
-Frontmatter keys follow the shared schema ([`spec-schema/frontmatter-schema.yaml`](../../spec/spec-schema/frontmatter-schema.yaml)) so `/dg:assign` and `~/.dg/bin/dg-skills spec get` work unchanged on the scratch file.
+Frontmatter keys follow the shared schema ([`spec-schema/frontmatter-schema.yaml`](../../spec/spec-schema/frontmatter-schema.yaml)) so `/dg:assign` and `dg-skills spec get` work unchanged on the scratch file.
 
 > **GATE:** spec written to scratch; frontmatter parses; `slices[]` non-empty.
 
@@ -107,8 +107,8 @@ Invoke the **`/dg:assign` skill** on `$SPEC_PATH` — it reads the live roster a
 
 Then present ONE `AskUserQuestion` — the only human gate before step 7's review:
 
-- Show the slice plan: names, dependency layers, assigned agents.
-- Show a rough token estimate: each slice runs Red + Yellow + Green + wave (+ per-slice `qa[]`) ≈ 5–8 agent calls, mostly sonnet-tier; correction rounds add more. Flag anything token-heavy per the global token-cost gate.
+- Show the slice plan: names, dependency order, assigned agents.
+- Show a rough token estimate: print the output of `dg-skills spec estimate "$SPEC_PATH" --profile balance` (bare `/dg:sdlc` has no profile choice). Flag anything token-heavy per the global token-cost gate.
 - Ask to grant the run-unattended permission set (same keys as `/dg:spec`, all-or-choose): `run_commands`, `git_push`, `gh_pr_create`, `auto_cleanup_worktree`, `slice_commits`, `housekeeping_commit`. Write the granted booleans into the spec's `permissions:` block.
 
 The waves run unattended — a permission not granted here means a mid-run prompt.

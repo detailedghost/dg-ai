@@ -79,7 +79,7 @@ For sub-shape A, keep the existing data fetching above the switcher and swap onl
 
 A fixed bar at the bottom center with a left arrow (previous variant, wraps), a label (`B: Sidebar layout`), and a right arrow (next, wraps). Clicking an arrow updates the `?variant=` search parameter through the framework's router so the variant is shareable and reload-stable. `Left` and `Right` keys also cycle, except while an input, textarea, or `[contenteditable]` has focus. The bar must look distinct from the page, and it is hidden in production builds (`process.env.NODE_ENV !== "production"` or the equivalent).
 
-**Use the shared template. Do not write one from scratch.** `~/.dg/bin/dg-skills prototype components` prints the installed template directory. Copy `PrototypeSwitcher.tsx` for React, Next, or Vite, `PrototypeSwitcher.astro` for Astro, or `prototype-decision-bar.html` for a hand-written self-contained page. Pass `labels` (variant key to description) so the bar renders `slug · KEY: description`.
+**Use the shared template. Do not write one from scratch.** `dg-skills prototype components` prints the installed template directory. Copy `PrototypeSwitcher.tsx` for React, Next, or Vite, `PrototypeSwitcher.astro` for Astro, or `prototype-decision-bar.html` for a hand-written self-contained page. Pass `labels` (variant key to description) so the bar renders `slug · KEY: description`.
 
 **Every picker ships a light/dark toggle.** All templates carry it: `?mode=light|dark` in the URL plus a `dark` class on `<html>`, light by default. Style the variants against `html.dark` so one toggle themes the prototype too. A reviewer who cannot see both modes approves a variant that breaks in the other one. Never strip the toggle or hardcode one theme.
 
@@ -96,23 +96,23 @@ The bar carries three decision controls to the right of the arrows:
 
 ### 4.5 Expose the selection endpoint
 
-For a mounted app, copy the matching endpoint template from the templates directory: `prototype-endpoint.ts` for Node, Vite, Bun, or Express, `prototype-endpoint.next.ts` for Next, or `prototype-endpoint.astro.ts` for Astro. Each is dev-only (keep the `NODE_ENV` guard), checks the variant key against the caller-supplied list, resolves the sentinel path with `~/.dg/bin/dg-skills prototype path <name>`, and writes `variant` plus a newline to it.
+For a mounted app, copy the matching endpoint template from the templates directory: `prototype-endpoint.ts` for Node, Vite, Bun, or Express, `prototype-endpoint.next.ts` for Next, or `prototype-endpoint.astro.ts` for Astro. Each is dev-only (keep the `NODE_ENV` guard), checks the variant key against the caller-supplied list, resolves the sentinel path with `dg-skills prototype path <name>`, and writes `variant` plus a newline to it.
 
 A page served by `prototype serve` or `prototype ui` skips this step. The server injects the decision endpoint (`window.prototypeDecide`, `POST /prototype-decision`).
 
 ### 5. Hand it over
 
-**Never hand over a prototype whose only affordance is switching variants.** A UI prototype the user must decide on carries the notes box and the **Approve** and **Reject** buttons wired to the sentinel, and the agent then blocks on `prototype wait` before treating it as delivered, or says plainly why it cannot. For a prototype with no host app, use `~/.dg/bin/dg-skills prototype ui <plan|manifest>` (see [local-formats.md](local-formats.md)). It builds the page with the full bar, serves and opens it, blocks for the decision, and prints one JSON line. Do not hand-roll a page with only arrow buttons. For a mounted app route, copy the switcher and endpoint templates. Either way a switcher without Approve, Reject, and notes is incomplete.
+**Never hand over a prototype whose only affordance is switching variants.** A UI prototype the user must decide on carries the notes box and the **Approve** and **Reject** buttons wired to the sentinel, and the agent then blocks on `prototype wait` before treating it as delivered, or says plainly why it cannot. For a prototype with no host app, use `dg-skills prototype ui <plan|manifest>` (see [local-formats.md](local-formats.md)). It builds the page with the full bar, serves and opens it, blocks for the decision, and prints one JSON line. Do not hand-roll a page with only arrow buttons. For a mounted app route, copy the switcher and endpoint templates. Either way a switcher without Approve, Reject, and notes is incomplete.
 
 **Someone must end up waiting.** A click writes a durable sentinel (see "Claim an outstanding pick" below), but nothing reports it until something calls `wait` or `status` on it. If a builder subagent mounts the prototype and hands off to a different session or the main loop, decide explicitly which side blocks on `prototype wait <name>` — do not hand off assuming the other side already is, or already will. If neither side can block right now, say so and give the exact `prototype wait <name>` (or `status <name>`) command in the handoff, the same way an AFK handoff does below.
 
-**Before reporting the page live, verify it is actually clean.** If you ran a self-test of the decision bar's own wiring (see "Self-testing a decision bar before handing it over" in [local-build.md](local-build.md)), that self-test must use `confirm --selftest`, never a plain `confirm <name>` — then confirm with `~/.dg/bin/dg-skills prototype status <name> --require-pending` both before telling anyone the page is ready, and again immediately before any `prototype wait <name>` call, including one picked up from a hand-off note. A non-zero exit there means something (a leftover pick, a self-test that targeted the wrong name) already landed in the real sentinel; treat that as a bug to fix, not noise to work around.
+**Before reporting the page live, verify it is actually clean.** If you ran a self-test of the decision bar's own wiring (see "Self-testing a decision bar before handing it over" in [local-build.md](local-build.md)), that self-test must use `confirm --selftest`, never a plain `confirm <name>` — then confirm with `dg-skills prototype status <name> --require-pending` both before telling anyone the page is ready, and again immediately before any `prototype wait <name>` call, including one picked up from a hand-off note. A non-zero exit there means something (a leftover pick, a self-test that targeted the wrong name) already landed in the real sentinel; treat that as a bug to fix, not noise to work around.
 
 **Hand-wire it instead when one document must own every variant**: shared CSS, JS, or state that per-variant fragments cannot express, the usual shape of a motion prototype. Paste `prototype-decision-bar.html` into the page, then run both commands from the same directory every time:
 
 ```sh
-~/.dg/bin/dg-skills prototype serve <html-file> <name> --port=4321
-variant=$(~/.dg/bin/dg-skills prototype wait <name> --timeout=3600 --json)
+dg-skills prototype serve <html-file> <name> --port=4321
+variant=$(dg-skills prototype wait <name> --timeout=3600 --json)
 ```
 
 Read the port that `serve` printed. It moves to the next free port, so the one you asked for may not be the one it listens on.
@@ -128,19 +128,19 @@ Read the port that `serve` printed. It moves to the next free port, so the one y
 For a page that `prototype ui` serves, check and claim with the chain key. `prototype status` from another directory could print `pending` while the decision is stored, but a session chain key avoids that:
 
 ```sh
-~/.dg/bin/dg-skills prototype status <chain>
-~/.dg/bin/dg-skills prototype wait <chain> --timeout=1
+dg-skills prototype status <chain>
+dg-skills prototype wait <chain> --timeout=1
 ```
 
 The second command consumes the decision. Use `prototype status <name>` with no session only for a hand-wired page.
 
 **A claimed pick is the user's decision; act on it with no confirmation question.** The sentinel is the user's real input by construction — nothing a human did not click or type reaches it (`confirm --selftest` writes to `<name>-selftest`, never `<name>`; see local-build.md). Do not re-ask "did you mean to pick B?" once `wait` or `status` reports it. The only reliability work is getting a real pick noticed at all, which "Someone must end up waiting" above and `--require-pending` exist for.
 
-**Do not rely on a live foreground `wait` surviving the session.** If you background it, or hand the prototype off while a pick is outstanding, leave a breadcrumb. Record the prototype name and the literal `~/.dg/bin/dg-skills prototype wait <name>` command both in the handoff note and in `NOTES.md`. A note that only says "awaiting the user's pick" strands the selection.
+**Do not rely on a live foreground `wait` surviving the session.** If you background it, or hand the prototype off while a pick is outstanding, leave a breadcrumb. Record the prototype name and the literal `dg-skills prototype wait <name>` command both in the handoff note and in `NOTES.md`. A note that only says "awaiting the user's pick" strands the selection.
 
 **The CLI writes the acceptance record when it claims an approve.** `prototype wait` and `prototype ui` write `<sandbox>/accepted.json` (gitignored) with the variant, round, notes, and a layout fingerprint. They also write six reference screenshots to `<sandbox>/accepted/`. The decision clients send the page URL, so the claim can open the page in a local browser and read the controls under the feature root. Stdout does not change. One stderr line names the record and either `6 readings` or `skipped: <reason>` with the repair command.
 
-When a pick came with no page URL or no browser, the record says why. Repair it from a running page with `~/.dg/bin/dg-skills prototype fingerprint <name> --url=<loopback-url>`. To record an old prototype that predates the record, run `prototype confirm <name> <key> --source=agent-migrated`, then `prototype wait <name> --timeout=1`, then `prototype fingerprint`. `prototype stop <chain>` marks the latest record final, and `prototype status <name> --json` reports it as `accepted`.
+When a pick came with no page URL or no browser, the record says why. Repair it from a running page with `dg-skills prototype fingerprint <name> --url=<loopback-url>`. To record an old prototype that predates the record, run `prototype confirm <name> <key> --source=agent-migrated`, then `prototype wait <name> --timeout=1`, then `prototype fingerprint`. `prototype stop <chain>` marks the latest record final, and `prototype status <name> --json` reports it as `accepted`.
 
 The selected variant is then available as `$variant` for later steps such as `--publish`. The interesting feedback is usually "the header from B with the sidebar from C".
 
@@ -151,7 +151,7 @@ At the pick step, read the result of `prototype wait <name> --json`:
 - `approve <key>` with no notes: the chain ends. Go to step 6. In a series, this approval moves to the next prototype in the same tab instead.
 - `approve <key>` with notes: the winner is the base of the next round. Build `-n` new variants from it. Change only what the notes ask. Keep everything else in the base exactly as it is, and do not apply "radically different" to the unchanged parts. Run the next round in the same tab.
 - The user types `tweak <key>: <note>`: apply the note to that variant in place in the current round. Build no new variants, start no new round, and do not end the chain. Append the note to the round's `tweaks:` list in `NOTES.md`, bump the reload token, and show the variant again. The viewer has no matching action, so `tweak` is a typed verb only.
-- The user says "done" or "stop": the chain ends with the last picked variant. Run `~/.dg/bin/dg-skills prototype stop <chain>`, then go to step 6.
+- The user says "done" or "stop": the chain ends with the last picked variant. Run `dg-skills prototype stop <chain>`, then go to step 6.
 - Reject: rework the same round.
 - `more`: generate N new variants (default the same count as this round), steered by the notes. Show them in a new round on the same tab, and offer the previous round as context.
 

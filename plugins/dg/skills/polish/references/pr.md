@@ -22,7 +22,8 @@ Hard limits. Reviewers skim, and a wall of prose gets skipped entirely:
 - Follow the sample as prescription *unless* there is a pre-defined pull_request_template.md file already defined
 
 ## Sample
-```
+
+```markdown
 ## Summary
 🎫 ticket
 
@@ -40,7 +41,6 @@ Hard limits. Reviewers skim, and a wall of prose gets skipped entirely:
 < additional links that could be helpful >
 ```
 
-
 ## Writing the body
 
 Heredoc it straight to `gh`; don't stage it as a `.md` file first:
@@ -56,7 +56,7 @@ table rows and line length, and the file is litter afterward. Stdin sidesteps bo
 
 ### De-slop the draft before it goes out
 
-When the `/unslop:unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check. Install it with `/plugin install unslop@detailedghost`.
+When the `/unslop:unslop` skill is not installed, skip this step, print one line saying so, and go on to the prose check. Install it with `dg-skills install --with-recommended`.
 
 Otherwise run `/unslop:unslop` over the draft body as `cleanup`, then apply the suggestions you
 agree with. The 4-sentence cap makes a body short, not human: "This PR introduces a
@@ -89,7 +89,7 @@ order)` block, keeps refs bare/unfenced so GitHub autolinks them, and retargets 
 downstream PR's base branch (`gh pr edit --base`) so its diff is delta-only and merge
 is blocked until the upstream lands:
 
-```
+```text
 ## Stack (merge order)
 
 owner/repo#114 → #2382 → #2383 → main
@@ -99,8 +99,8 @@ owner/repo#114 → #2382 → #2383 → main
 - **#2383 — this PR** — depends on #2382
 ```
 
-Run `~/.dg/bin/dg-skills chain plan <layers...>` first (dry run, no `gh` calls — this is the PR-body draft to
-show at the Batch PRs approval gate), then `~/.dg/bin/dg-skills chain apply <layers...>` after approval to
+Run `dg-skills chain plan <layers...>` first (dry run, no `gh` calls — this is the PR-body draft to
+show at the Batch PRs approval gate), then `dg-skills chain apply <layers...>` after approval to
 retarget bases and upsert this block into every PR in the chain. Add a
 **"superseded by #N"** banner by hand to any PR the stack replaces — `/dg:chain` doesn't
 manage that.
@@ -108,4 +108,4 @@ manage that.
 Default is still one PR per change — only stack when changes genuinely depend on each
 other or span repos. PRs in the same batch with no real dependency between them are
 not a stack; leave them out of `/dg:chain` entirely (or pass them via `--independent` if
-they're being linked in the same board/summary — see `~/.dg/bin/dg-skills chain --help`).
+they're being linked in the same board/summary — see `dg-skills chain --help`).

@@ -20,7 +20,7 @@ import {
 	phoneVoicemail,
 	type PhoneDeps,
 } from "../../src/phone/commands";
-import { MESSAGE_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
+import { MESSAGE_TTL_SECONDS, PHI_TTL_SECONDS, PhoneDb } from "../../src/phone/db";
 import type { Schedule } from "../../src/phone/hook";
 import { readFileKey, type KeyClient } from "../../src/phone/keys";
 import { runListener, type ListenerDeps } from "../../src/phone/listener";
@@ -228,9 +228,9 @@ describe("phone threads", () => {
 		const rumorId = (parseNdjson(sent).at(-1) as { id: string }).id;
 		expect(bob.deps.db.pendingByRumor(rumorId)?.text).toBe("secret-body");
 		const notice = bob.deps.db.recentMessages(20).find((row) => row.sender === "phone");
-		expect(notice?.text).toContain("held thread");
+		expect(notice?.text).toContain("held group");
 		expect(notice?.text).not.toContain("secret-body");
-		expect(stderr.join("")).toContain("held thread");
+		expect(stderr.join("")).toContain("held group");
 		expect(stderr.join("")).not.toContain("secret-body");
 		expect(bob.deps.db.recentMessages(20).filter((row) => row.thread_id !== null)).toEqual([]);
 	});
@@ -315,7 +315,7 @@ describe("phone threads", () => {
 		expect((refusedError as DgCliError).message).toBe("members behind: +b");
 		expect(refusedOut).toEqual([]);
 		expect(refusedDeps.db.recentMessages(5).some((row) => row.text === "nope")).toBe(false);
-		await expect(phoneThreadNew("t", ["+b"], {}, alice.deps)).rejects.toThrow('a thread handle must start with #, got "t"');
+		await expect(phoneThreadNew("t", ["+b"], {}, alice.deps)).rejects.toThrow('a group handle must start with #, got "t"');
 		await expect(phoneThreadNew("#t", ["+missing"], {}, alice.deps)).rejects.toThrow("no contact +missing");
 		await phoneThreadNew("#t", ["+b"], { subject: "t" }, alice.deps);
 		phoneThreadList(alice.deps);
@@ -459,7 +459,7 @@ describe("thread hold limits and partial sends", () => {
 		expect(pending).toHaveLength(5);
 		expect(pending.some((row) => row.text === "held-body-0")).toBe(false);
 		const notice = bob.deps.db.recentMessages(20).find((row) => row.sender === "phone");
-		expect(notice?.text).toBe("5 held threads");
+		expect(notice?.text).toBe("5 held groups");
 		expect(notice?.text).not.toContain("held-body");
 		const keptId = pending[0]?.rumor_id ?? "";
 		const received = clock - MESSAGE_TTL_SECONDS - 10;
@@ -498,7 +498,7 @@ describe("thread hold limits and partial sends", () => {
 				via: "accept",
 			});
 		}
-		await expect(phoneThreadNew("#big", handles, {}, alice.deps)).rejects.toThrow("a thread can have at most 16 members");
+		await expect(phoneThreadNew("#big", handles, {}, alice.deps)).rejects.toThrow("a group can have at most 16 members");
 		expect(alice.deps.db.listThreads()).toEqual([]);
 	});
 
@@ -571,6 +571,40 @@ describe("thread hold limits and partial sends", () => {
 		expect(bob.deps.db.heldNotice()).toBeUndefined();
 	});
 
+	it("holds a PHI thread as phi and expires it 24 hours after it arrives", async () => {
+		clock = Math.floor(Date.now() / 1000);
+		pool = createFakePool();
+		const bob = await boot("b");
+		const bobSk = readFileKey(bob.deps.db, numberKeyId(bob.deps.db));
+		if (!bobSk) throw new Error("missing key");
+		const bobPub = getPublicKey(bobSk);
+		const aliceSk = generateSecretKey();
+		addContact(bob.deps.db, {
+			npub: nip19.npubEncode(getPublicKey(aliceSk)),
+			handle: "alice",
+			relays: RELAYS,
+			keyId: numberKeyId(bob.deps.db),
+			addedAt: clock,
+			via: "accept",
+		});
+		const rumor = nip59.createRumor(
+			{ kind: 14, content: "sensitive", created_at: clock, tags: [["p", bobPub], ["p", getPublicKey(generateSecretKey())], ["subject", "ops"], ["dg-phi", "1"]] },
+			aliceSk,
+		);
+		pool.events.push(nip59.createWrap(nip59.createSeal(rumor, aliceSk, bobPub), bobPub));
+		const listener = listen(bob.deps, 5650);
+		await listener.ready;
+		listener.stop();
+		await listener.run;
+		expect(bob.deps.db.pendingByRumor(rumor.id)).toMatchObject({ phi: 1, text: "[PHI: not stored]" });
+
+		clock += PHI_TTL_SECONDS + 1;
+		bob.deps.db.pruneMessages();
+
+		expect(bob.deps.db.pendingByRumor(rumor.id)).toBeUndefined();
+		expect(bob.deps.db.heldNotice()).toBeUndefined();
+	});
+
 	it("does not rewrite the held notice for a duplicate, and writes none when the new row is evicted", async () => {
 		clock = Math.floor(Date.now() / 1000);
 		pool = createFakePool();
@@ -595,7 +629,7 @@ describe("thread hold limits and partial sends", () => {
 		listener.stop();
 		await listener.run;
 		const notice = bob.deps.db.heldNotice();
-		expect(notice?.text).toBe("1 held thread");
+		expect(notice?.text).toBe("1 held group");
 		clock += 5;
 		listener = listen(bob.deps, 5703);
 		await listener.ready;
@@ -627,8 +661,8 @@ describe("thread hold limits and partial sends", () => {
 		listener.stop();
 		await listener.run;
 		expect(bob.deps.db.pendingByRumor(evicted.rumor.id)).toBeUndefined();
-		expect(before).toBe("1 held thread");
-		expect(bob.deps.db.heldNotice()?.text).toBe("5 held threads");
+		expect(before).toBe("1 held group");
+		expect(bob.deps.db.heldNotice()?.text).toBe("5 held groups");
 	});
 
 	it("holds a thread in the listener when a member disappears before the row is stored", async () => {

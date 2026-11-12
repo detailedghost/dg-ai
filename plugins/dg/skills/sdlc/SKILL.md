@@ -9,14 +9,17 @@ Run a feature brief through the full build pipeline with no spec prerequisite. `
 
 **This skill owns the execution lifecycle.** The slice-wave workflow, execution templates, and stage references live here; `/dg:spec` and `/dg:pickup` reference them instead of carrying copies. For planning-heavy work (discovery interview, roundtable, durable spec in `.agents/spec/`), route to `/dg:spec`.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills assign resolve --help >/dev/null 2>&1 ||
+dg-skills assign resolve --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" assign resolve --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor assign batch-open chain proxy spec stash vcs-provider worktree.
 
 **Usage:** `/dg:sdlc "<feature brief>" [-T|--no-worktree]`.
 
@@ -29,7 +32,7 @@ If a step fails, run ~/.dg/bin/dg-skills doctor assign batch-open chain proxy sp
 
 `WORKTREE_MODE = NOT(NO_WORKTREE)`. Worktree is the default, matching `/dg:spec`.
 
-Steps 5–6 gate the code, step 8 opens a **draft** PR/MR, and the human reviews it on the provider after the run ends — `/dg:address` collects the comments in a later session. Step 8 creates the PR/MR through `~/.dg/bin/dg-skills vcs-provider`, so a GitLab remote gets an MR without a second code path.
+Steps 5–6 gate the code, step 8 opens a **draft** PR/MR, and the human reviews it on the provider after the run ends — `/dg:address` collects the comments in a later session. Step 8 creates the PR/MR through `dg-skills vcs-provider`, so a GitLab remote gets an MR without a second code path.
 
 ## Pipeline
 
@@ -38,11 +41,11 @@ Steps 5–6 gate the code, step 8 opens a **draft** PR/MR, and the human reviews
 | 1 | Worktree off latest `origin/(main\|master)` | references/setup.md |
 | 2 | Derive slices → ephemeral spec in scratch | references/setup.md |
 | 3 | `/dg:assign` agents per slice + launch gate (permissions + token estimate) | references/setup.md |
-| 4 | Slice waves — per dependency layer: Red → Yellow → Green → MiniQA; commit per slice | references/engineering.md |
+| 4 | Slice waves — all pending slices in one call, each gated on its dependencies; commit per slice | references/engineering.md |
 | 5 | Final review + bounded correction; commit fixes | references/finish.md |
 | 6 | Test-name gate, then docs (lore); commit docs | references/finish.md |
 | 7 | Human review moves to the PR/MR — no blocking gate | references/finish.md |
-| 8 | Push + `~/.dg/bin/dg-skills vcs-provider create-pr` (always draft) | references/finish.md |
+| 8 | Push + `dg-skills vcs-provider create-pr` (always draft) | references/finish.md |
 
 Follow steps strictly in order. NEVER skip a gate condition.
 
@@ -58,7 +61,7 @@ Follow steps strictly in order. NEVER skip a gate condition.
 
 ## Ephemeral spec (the input bridge)
 
-`/dg:sdlc` takes a bare brief, but the slice-wave workflow reads each slice's agents out of `slices[]` frontmatter, so the picks have to land on disk — which is why step 3 needs `/dg:assign`'s spec-annotation mode, not a bare recommendation. Step 2 synthesizes a throwaway spec at `$(~/.dg/bin/dg-skills stash -s sdlc <slug>.md)` carrying just enough structure for those tools to bite on. It is scratch, never a deliverable:
+`/dg:sdlc` takes a bare brief, but the slice-wave workflow reads each slice's agents out of `slices[]` frontmatter, so the picks have to land on disk — which is why step 3 needs `/dg:assign`'s spec-annotation mode, not a bare recommendation. Step 2 synthesizes a throwaway spec at `$(dg-skills stash -s sdlc <slug>.md)` carrying just enough structure for those tools to bite on. It is scratch, never a deliverable:
 
 - NEVER write it into `.agents/spec/` (durable specs stay `/dg:spec`'s job) or anywhere inside an installed skills directory.
 - No cleanup step needed — `/cleanup`'s 30-day state TTL walker prunes it when stale.

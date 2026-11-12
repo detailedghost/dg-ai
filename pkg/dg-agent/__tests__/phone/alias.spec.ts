@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
@@ -167,7 +167,7 @@ describe("phone hidden synonyms and removed verbs", () => {
 	});
 
 	it.each([
-		["answer", "answer is gone; run phone open to start the listener, then phone voicemail to read what came in"],
+		["answer", "answer is gone; run phone open to start the listener, then phone unread to read what came in"],
 		["deliver", "deliver is gone; use phone open --on-message to run a program for each message"],
 		["whoami", "whoami is gone; use phone number --as <name>"],
 		["name", "name is gone; use phone contacts rename +old <new>"],
@@ -191,19 +191,31 @@ describe("phone hidden synonyms and removed verbs", () => {
 
 		await expectExit2(
 			h.program.parseAsync(["phone", "--line", "x", "number"], { from: "user" }),
-			"--line is gone: one phone holds every contact; use +handle on say and inbox",
+			"--line is gone: one phone holds every contact; use +handle on text and messages",
 		);
 	});
 
-	it("phone-friend is an unknown command and prints no notice", async () => {
+	it.each(["phone-friend", "say", "voicemail", "inbox", "thread"])("%s is an unknown command", async (name) => {
 		const h = harness();
-		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		const argv = name === "phone-friend" ? [name, "number"] : ["phone", name];
 
-		try {
-			await expect(h.program.parseAsync(["phone-friend", "number"], { from: "user" })).rejects.toThrow("unknown command");
-			expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toContain("this alias goes away");
-		} finally {
-			stderr.mockRestore();
-		}
+		await expect(h.program.parseAsync(argv, { from: "user" })).rejects.toThrow(/unknown command/);
+	});
+});
+
+describe("phone help", () => {
+	it("lists the new names and hides the old ones in phone --help", () => {
+		const h = harness();
+		const help = h.program.commands.find((command) => command.name() === "phone")?.helpInformation() ?? "";
+
+		for (const name of ["text", "unread", "messages", "group"]) expect(help).toMatch(new RegExp(`^  ${name}\\b`, "m"));
+		for (const name of ["say", "voicemail", "inbox", "thread"]) expect(help).not.toMatch(new RegExp(`^  ${name}\\b`, "m"));
+	});
+
+	it("describes the renamed commands without the old words in their help", () => {
+		const h = harness();
+		const help = h.program.commands.find((command) => command.name() === "phone")?.helpInformation() ?? "";
+
+		expect(help).not.toMatch(/voicemail|\bsay\b|\binbox\b|\bthread/i);
 	});
 });

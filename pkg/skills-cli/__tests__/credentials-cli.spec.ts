@@ -8,7 +8,7 @@ import { Command } from "commander";
 import {
 	type CredentialsDeps,
 	registerCredentials,
-} from "../src/commands/credentials";
+} from "../src/credentials/cli";
 import {
 	inboxCliHarness,
 	inboxDaemonFixture,

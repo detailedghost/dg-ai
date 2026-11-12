@@ -1,10 +1,6 @@
 import { realpathSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import {
-	ASSET_FILENAME_HEADER,
-	CHAT_ASSETS_PATH,
-	CLI_SESSION_ID_HEADER,
-	CLI_SESSION_TOKEN_HEADER,
 	type CliRecvResult,
 	DgCliError,
 	describeError,
@@ -19,8 +15,9 @@ import {
 	frameEnvelope,
 	loadManifestFile,
 	loadSubagentManifestFile,
-	loopbackHostHeader,
+	postAsset,
 	readAssetSourceFile,
+	mintPageCode,
 	resolveCliSession,
 	resolveManifestForPublish,
 	writeStderr,
@@ -71,10 +68,6 @@ function isSessionPending(value: unknown): value is {
 
 function isSessionClosed(value: unknown): value is { type: "session-closed" } {
 	return isRecord(value) && value.type === "session-closed";
-}
-
-function isAssetUploadResult(value: unknown): value is { assetId: string } {
-	return isRecord(value) && typeof value.assetId === "string";
 }
 
 async function connectFor(command: Command): Promise<CliClient> {
@@ -169,6 +162,7 @@ export function registerAgentCommands(program: Command): void {
 		write: writeStdout,
 		writeError: writeStderr,
 		tryOpen: tryOpenAgentUrl,
+		mintPageCode,
 		localBootstrap,
 	});
 
@@ -210,6 +204,10 @@ export function registerAgentCommands(program: Command): void {
 	program
 		.command("spawn")
 		.description("spawn another background chat session")
+		.argument(
+			"[command...]",
+			"command to run with DG_SESSION_ID set to the new session; put it after --",
+		)
 		.option("--workset <label>", "workset label for the new session")
 		.option("--orchestrator", "give the new session the orchestrator role")
 		.option(
@@ -218,6 +216,7 @@ export function registerAgentCommands(program: Command): void {
 		)
 		.action(
 			async (
+				argv: string[],
 				options: {
 					workset?: string;
 					orchestrator?: boolean;
@@ -226,6 +225,7 @@ export function registerAgentCommands(program: Command): void {
 				command: Command,
 			) => {
 				const client = await connectFor(command);
+				let sessionId: string;
 				try {
 					const result = await client.request(
 						{
@@ -240,10 +240,21 @@ export function registerAgentCommands(program: Command): void {
 						isSessionPending,
 						5_000,
 					);
-					await writeStdout(`${JSON.stringify(result.newSession)}\n`);
+					sessionId = result.newSession.sessionId;
+					if (argv.length === 0) {
+						await writeStdout(`${JSON.stringify({ sessionId })}\n`);
+					}
 				} finally {
 					client.close();
 				}
+				if (argv.length === 0) return;
+				const child = Bun.spawn(argv, {
+					env: { ...process.env, DG_SESSION_ID: sessionId },
+					stdin: "inherit",
+					stdout: "inherit",
+					stderr: "inherit",
+				});
+				process.exitCode = await child.exited;
 			},
 		);
 
@@ -257,33 +268,8 @@ export function registerAgentCommands(program: Command): void {
 			const filename = basename(source);
 			const bytes = readAssetSourceFile(source);
 
-			const resp = await fetch(
-				`http://127.0.0.1:${session.port}${CHAT_ASSETS_PATH}`,
-				{
-					method: "POST",
-					headers: {
-						...loopbackHostHeader(session.port),
-						[CLI_SESSION_ID_HEADER]: session.sessionId,
-						[CLI_SESSION_TOKEN_HEADER]: session.token,
-						[ASSET_FILENAME_HEADER]: encodeURIComponent(filename),
-					},
-					body: new Uint8Array(
-						bytes.buffer as ArrayBuffer,
-						bytes.byteOffset,
-						bytes.byteLength,
-					),
-				},
-			);
-			if (!resp.ok) {
-				throw new DgCliError(await resp.text());
-			}
-			const result: unknown = await resp.json();
-			if (!isAssetUploadResult(result)) {
-				throw new DgCliError(
-					"dg-daemon returned a malformed asset upload response",
-				);
-			}
-			await writeStdout(`${result.assetId}\n`);
+			const assetId = await postAsset(session, filename, bytes);
+			await writeStdout(`${assetId}\n`);
 		});
 
 	program

@@ -160,3 +160,10 @@ sequenceDiagram
 - `pkg/extension/lib/features/prototype.ts`
 - `pkg/extension/entrypoints/demo-tour.content.ts`
 - `pkg/skills-cli/src/commands/proto.ts`
+- `pkg/common/src/relay-format.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
+- `pkg/dg-daemon/src/server/browser-relay.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
+- [ADR 0038](0038-extension-pairing-only.md) (offer and claim pairing replaces forward pairing for `--ext`)
+
+## Amended 2026-11-07: pairing flow (ADR 0038)
+
+[ADR 0038](0038-extension-pairing-only.md) removed the `GET /start` page and the `/start#_chat=` handoff. The text above stays as the record of the first decision. Where it says to open the session's `/start#_chat=` URL, the human now opens the pairing popup and the agent runs `dg-agent pair <code>`.

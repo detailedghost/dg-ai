@@ -12,10 +12,11 @@ beforeEach(() => {
 	world.installPlugin();
 	world.writeSettings(["demo"]);
 	const dgHome = join(world.home, ".dg");
-	mkdirSync(join(dgHome, "browsers"), { recursive: true });
-	writeFileSync(join(dgHome, "cli-only"), "");
+	mkdirSync(join(dgHome, "data", "browsers"), { recursive: true });
+	mkdirSync(join(dgHome, "config"), { recursive: true });
+	writeFileSync(join(dgHome, "config", "cli-only"), "");
 	writeFileSync(
-		join(dgHome, "browsers", "chromium.json"),
+		join(dgHome, "data", "browsers", "chromium.json"),
 		JSON.stringify({ version: "1.0.0", executablePath: process.execPath }),
 	);
 });
@@ -40,6 +41,25 @@ describe("dg-skills doctor demo on a CLI-only home", () => {
 			expect(check?.status).toBe("info");
 			expect(check?.detail.startsWith(PREFIX)).toBe(true);
 		}
-		expect(checks.some((c) => c.status === "warn" || c.status === "fail")).toBe(false);
+		expect(
+			checks.some((c) => c.id !== "ffmpeg" && (c.status === "warn" || c.status === "fail")),
+		).toBe(false);
+	});
+
+	test("warns with an install hint when ffmpeg or ffprobe is missing", async () => {
+		world.installTool("ffmpeg");
+		const { run, report } = await world.report(["demo"], env());
+		const ffmpeg = checksOf(report, "demo").find((c) => c.id === "ffmpeg");
+		expect(ffmpeg?.status).toBe("warn");
+		expect(ffmpeg?.detail).toContain("ffprobe");
+		expect(ffmpeg?.fix).toContain("install ffmpeg");
+		expect(run.exitCode).toBe(0);
+	});
+
+	test("is ok when ffmpeg and ffprobe are on the PATH", async () => {
+		world.installTool("ffmpeg");
+		world.installTool("ffprobe");
+		const { report } = await world.report(["demo"], env());
+		expect(checksOf(report, "demo").find((c) => c.id === "ffmpeg")?.status).toBe("ok");
 	});
 });

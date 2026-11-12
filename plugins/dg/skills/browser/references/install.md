@@ -9,15 +9,16 @@ then prints the exact path to select with **Load unpacked**.
 Run:
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills install
+if dg-skills install --help >/dev/null 2>&1; then dg-skills install; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" install; fi
 ```
 
 The installer copies the extension to a Windows-native directory:
 
 ```text
-%USERPROFILE%\.dg\dg-ai-extension-chrome
+%LOCALAPPDATA%\dg\dg-ai-extension-chrome
 ```
 
 Use the printed Windows path in Chrome/Edge. This avoids loading from a
@@ -37,7 +38,7 @@ Then:
 Run:
 
 ```powershell
-$dg = Join-Path $env:USERPROFILE ".dg\bin\dg-skills.exe"
+$dg = if ($env:DG_HOME) { Join-Path $env:DG_HOME "bin\dg-skills.cmd" } else { Join-Path $env:LOCALAPPDATA "dg\bin\dg-skills.cmd" }
 if (-not (Test-Path $dg)) {
  irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 }
@@ -47,7 +48,7 @@ if (-not (Test-Path $dg)) {
 The installer copies the extension to:
 
 ```text
-%USERPROFILE%\.dg\dg-ai-extension-chrome
+%LOCALAPPDATA%\dg\dg-ai-extension-chrome
 ```
 
 Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
@@ -58,15 +59,16 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills install
+if dg-skills install --help >/dev/null 2>&1; then dg-skills install; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" install; fi
 ```
 
 The installer copies the extension to:
 
 ```text
-~/.dg/dg-ai-extension-chrome
+~/.local/share/dg/dg-ai-extension-chrome
 ```
 
 Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
@@ -77,19 +79,29 @@ click **Load unpacked**, and select that path.
 Run:
 
 ```bash
-~/.dg/bin/dg-skills install --help >/dev/null 2>&1 ||
+dg-skills install --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" install --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills install
+if dg-skills install --help >/dev/null 2>&1; then dg-skills install; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" install; fi
 ```
 
 The installer copies the extension to:
 
 ```text
-~/.dg/dg-ai-extension-chrome
+~/Library/Application Support/dg/dg-ai-extension-chrome
 ```
 
 Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
 click **Load unpacked**, and select that path.
+
+## After the folder move
+
+Releases before the per-OS layout staged the extension in `~/.dg` (or
+`%USERPROFILE%\.dg` on Windows). The first install after the move copies it to
+the folder above and prints one line. Chrome remembers the old folder, so do
+this once: open `chrome://extensions`, remove the old `dg-ai-extension` entry,
+click **Load unpacked**, and select the new folder. Later installs update that
+folder in place, so a reload is enough.
 
 ## Updating
 

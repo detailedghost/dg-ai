@@ -12,6 +12,8 @@ import {
 	parseAction,
 	parseAdvance,
 	type StepAdvance,
+	parseChapter,
+	type TourChapter,
 	type TourScript,
 	type TourStep,
 } from "@dg/common";
@@ -100,5 +102,7 @@ export function parsePlanMarkdown(md: string): unknown {
 			steps: setup,
 			includeInTour: data.includeSetup === "true",
 		};
+	for (const key of ["intro", "outro"] as const)
+		if (data[key]) script[key] = parseChapter(data[key]) as TourChapter;
 	return script;
 }

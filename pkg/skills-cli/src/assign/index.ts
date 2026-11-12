@@ -1,15 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { bareAgent, isRecord } from "@dg/common";
+import { join, resolve, sep } from "node:path";
+import { isRecord } from "@dg/common";
 import { shellCommand } from "@dg/common/node";
-import { qualifiedAgent } from "../proxy/packaged-personas";
 import { frontmatterOf, parseYaml } from "../spec/frontmatter";
+import { branchSubjects, sliceCommitted } from "../spec/git";
 import { sliceFiles, sliceLayers } from "../spec/lint-waves";
-import {
-	sectionLines,
-	type SliceBlock,
-	sliceBlocks,
-} from "../spec/sections";
+import { type SliceBlock, sliceBlocks } from "../spec/sections";
 import {
 	abspath,
 	needFile,
@@ -17,19 +13,13 @@ import {
 	records,
 	SpecError,
 } from "../spec/shared";
+import { RUNTIMES, type Runtime } from "../tiers";
 import { resolveSkillAsset } from "../utils/skill-assets";
-import {
-	loadTiers,
-	type ResolvedAgent,
-	resolveAgent,
-	type Runtime,
-	type Tier,
-} from "../tiers";
+import { type ResolvedStage, resolveStages } from "./stages";
 
 const PROGRAM = "dg-skills assign";
-const RUNTIMES: readonly Runtime[] = ["claude", "codex", "grok"];
 const USAGE =
-	"usage: dg-skills assign resolve <plan.md> --layer N [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
+	"usage: dg-skills assign resolve <plan.md> [--layer N | --slices <id,id>] [--runtime claude|codex|grok] [--scratch <file>] [--wave <scratch-dir>] [--cwd <dir>]\n";
 const REMINDER =
 	"Workflow return contract: you run unattended under a forced schema. Map intent into the return object instead of acting on it: [SPEC]/[TEST] ambiguity that needs a decision goes in deferrals[] as SPEC or TEST; a change the orchestrator should see but need not decide (for example an assertion you changed) goes in deferrals[] as CONFIRM, which never blocks; do not edit the spec or report unticked checkboxes, the orchestrator ticks them; [NOTE-DURABLE]/[NOTE-SCRATCH] go in notes.durable[]/notes.scratch[], every file you touch goes in the changed-file list. Never call AskUserQuestion: it cannot pause a workflow, and this rule overrides any template that says to ask or pause. Put every unresolved question in deferrals[] and stop that part of the work.";
 const TEMPLATE_FILES = {
@@ -51,24 +41,23 @@ const ENVELOPE_TAIL: Record<string, string> = {
 };
 const ROLES = ["qa-writer", "wave", "security"] as const;
 
-interface Stage {
-	agentType: string;
-	model: string | null;
-	effort: string;
+interface Selection {
+	layer?: number;
+	slices?: string[];
 }
 
 interface Options {
 	plan: string;
-	layer: number;
+	selection: Selection;
 	runtime: Runtime;
 	scratch: string;
 	wave: string;
 	cwd: string;
 }
 
-interface Pin {
-	tier?: Tier;
-	effort?: string;
+interface Chosen {
+	members: Record<string, unknown>[];
+	name: string;
 }
 
 class Refusal extends Error {}
@@ -95,58 +84,26 @@ function parseOptions(argv: string[]): Options | undefined {
 		else throw new SpecError(`unexpected argument: ${arg}`);
 	}
 	const layer = values.get("--layer");
-	if (plan === "" || layer === undefined || !/^\d+$/.test(layer)) return undefined;
+	const ids = values.get("--slices");
+	if (layer !== undefined && ids !== undefined)
+		throw new SpecError("--layer and --slices cannot be combined");
+	if (plan === "") return undefined;
+	if (layer !== undefined && !/^\d+$/.test(layer)) return undefined;
+	if (ids !== undefined && !/^[^,\s]+(,[^,\s]+)*$/.test(ids)) return undefined;
 	const runtime = (values.get("--runtime") ?? "claude") as Runtime;
 	if (!RUNTIMES.includes(runtime))
 		throw new SpecError(`--runtime must be one of ${RUNTIMES.join(", ")}`);
 	return {
 		plan,
-		layer: Number(layer),
+		selection: {
+			...(layer === undefined ? {} : { layer: Number(layer) }),
+			...(ids === undefined ? {} : { slices: ids.split(",") }),
+		},
 		runtime,
 		scratch: values.get("--scratch") ?? "",
 		wave: values.get("--wave") ?? "",
 		cwd: values.get("--cwd") ?? gitTopLevel(),
 	};
-}
-
-function stageFor(
-	name: string,
-	runtime: Runtime,
-	override: { effort?: string; tier?: Tier } = {},
-): Stage {
-	let resolved: ResolvedAgent;
-	try {
-		resolved = resolveAgent(bareAgent(name), { runtime, ...override });
-	} catch (error) {
-		throw new Refusal(error instanceof Error ? error.message : String(error));
-	}
-	return {
-		agentType: qualifiedAgent(name),
-		model: resolved.model,
-		effort: resolved.effort,
-	};
-}
-
-const PIN_KEY = /^\s*(?:[-*]\s*)?\**\s*(model|effort)\b\s*\**\s*[:=]/i;
-const PIN_LINE = /^\s*(?:[-*]\s*)?(model|effort):\s*[`"']?([A-Za-z]+)[`"']?\s*$/;
-
-function executionPin(lines: string[]): Pin {
-	const pin: Pin = {};
-	for (const line of sectionLines(lines, "Execution")) {
-		if (!PIN_KEY.test(line)) continue;
-		const match = PIN_LINE.exec(line);
-		if (!match)
-			throw new Refusal(
-				`## Execution line is malformed, write "model: <tier>" or "effort: <level>": ${line.trim()}`,
-			);
-		if (match[1] === "model") {
-			const tier = match[2] as Tier;
-			if (!Object.hasOwn(loadTiers().tiers, tier))
-				throw new Refusal(`## Execution model "${match[2]}" is not a tier`);
-			pin.tier = tier;
-		} else pin.effort = match[2];
-	}
-	return pin;
 }
 
 const isTesting = (block: SliceBlock) => block.section.startsWith("## Testing");
@@ -221,7 +178,47 @@ function sorted(value: unknown): unknown {
 	);
 }
 
-async function waveArgs(options: Options): Promise<Record<string, unknown>> {
+const bakedStage = ({ agentType, model, effort }: ResolvedStage) => ({
+	agentType,
+	model,
+	effort,
+});
+
+async function choose(
+	options: Options,
+	slices: Record<string, unknown>[],
+	layers: Map<string, number>,
+): Promise<Chosen | null> {
+	const { layer, slices: ids } = options.selection;
+	if (layer !== undefined) {
+		const members = slices.filter(
+			(slice) => layers.get(String(slice.id)) === layer,
+		);
+		if (members.length === 0)
+			throw new Refusal(`layer ${layer} holds no slices`);
+		return { members, name: `layer${layer}` };
+	}
+	if (ids !== undefined) {
+		for (const id of ids)
+			if (!slices.some((slice) => String(slice.id) === id))
+				throw new Refusal(`slice ${id} is not in ${options.plan}`);
+		const members = slices.filter((slice) => ids.includes(String(slice.id)));
+		return { members, name: `s${members.map((slice) => safeId(slice.id)).join("-")}` };
+	}
+	const subjects = await branchSubjects(options.cwd);
+	const members = slices.filter(
+		(slice) => !sliceCommitted(subjects, String(slice.id)),
+	);
+	return members.length === 0 ? null : { members, name: "pending" };
+}
+
+function safeId(id: unknown): string {
+	return String(id).replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+async function waveArgs(
+	options: Options,
+): Promise<{ args: Record<string, unknown>; name: string } | null> {
 	needFile(options.plan);
 	const text = await readText(options.plan);
 	const parsed = parseYaml(frontmatterOf(text));
@@ -231,22 +228,18 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 	const layers = sliceLayers(data);
 	const ownership = sliceFiles(data);
 	const lines = records(text);
-	const pin = executionPin(lines);
-	const members = (data.slices as unknown[])
-		.filter(isRecord)
-		.filter((slice) => layers.get(String(slice.id)) === options.layer);
-	if (members.length === 0)
-		throw new Refusal(`layer ${options.layer} holds no slices`);
-	const slices = members.map((slice) => {
+	const chosen = await choose(
+		options,
+		(data.slices as unknown[]).filter(isRecord),
+		layers,
+	);
+	if (chosen === null) return null;
+	const { members } = chosen;
+	const selected = new Set(members.map((slice) => String(slice.id)));
+	const stages = resolveStages(data, members, options.runtime);
+	const slices = members.map((slice, index) => {
 		const agents = agentsOf(slice);
-		const primary = agents.primary;
-		if (typeof primary !== "string" || primary === "")
-			throw new Refusal(
-				`slice ${String(slice.id)} has no agents.primary; run /dg:assign`,
-			);
-		if ("effort" in agents && typeof agents.effort !== "string")
-			throw new Refusal(`slice ${String(slice.id)} has an empty agents.effort`);
-		const effort = pin.effort ?? (agents.effort as string | undefined);
+		const resolved = stages.slices[index] as (typeof stages.slices)[number];
 		const number = String(slice.id);
 		const blocks = sliceBlocks(lines, number);
 		const proxied = typeof agents.proxy === "string";
@@ -254,23 +247,22 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			proxied && Array.isArray(agents.proxy_skills)
 				? agents.proxy_skills.map(String)
 				: [];
-		const proxyFlags = [
-			...(effort ? ["--effort", effort] : []),
-			...(pin.tier ? ["--tier", pin.tier] : []),
-		].join(" ");
 		const brief = briefOf(blocks);
-		const qa = Array.isArray(agents.qa) ? agents.qa.map(String) : [];
+		const dependsOn = (
+			Array.isArray(slice.depends_on) ? slice.depends_on : []
+		).filter((dep) => selected.has(String(dep)));
 		return {
 			id: slice.id,
 			name: typeof slice.name === "string" ? slice.name : "",
 			...(Array.isArray(slice.files) && slice.files.length > 0
 				? { files: ownership.get(number) ?? slice.files.map(String) }
 				: {}),
-			primary: stageFor(primary, options.runtime, { effort, tier: pin.tier }),
-			qa: qa.map((name) => stageFor(name, options.runtime)),
+			dependsOn,
+			primary: bakedStage(resolved.primary),
+			qa: resolved.qa.map(bakedStage),
 			...(typeof agents.proxy === "string" ? { proxyBackend: agents.proxy } : {}),
 			...(proxySkills.length > 0 ? { proxySkills } : {}),
-			...(proxied && proxyFlags !== "" ? { proxyFlags } : {}),
+			...(proxied && resolved.proxyFlags !== "" ? { proxyFlags: resolved.proxyFlags } : {}),
 			brief:
 				proxySkills.length > 0
 					? `${brief}\n\n${skillInstructions(proxySkills)}`
@@ -278,19 +270,12 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			testingCriteria: testingCriteria(blocks),
 		};
 	});
-	return sorted({
+	const args = sorted({
 		slices,
+		profile: stages.profile,
+		maxCorrectionRounds: stages.maxCorrectionRounds,
 		roles: Object.fromEntries(
-			ROLES.map((role) => [
-				role,
-				role === "qa-writer"
-					? stageFor(
-							role,
-							options.runtime,
-							pin.tier === "fable" ? { effort: pin.effort } : pin,
-						)
-					: stageFor(role, options.runtime),
-			]),
+			ROLES.map((role) => [role, bakedStage(stages.roles[role])]),
 		),
 		specPath: abspath(options.plan),
 		scratchPath: options.scratch,
@@ -300,6 +285,7 @@ async function waveArgs(options: Options): Promise<Record<string, unknown>> {
 			options.cwd,
 		),
 	}) as Record<string, unknown>;
+	return { args, name: chosen.name };
 }
 
 function bake(runner: string, args: Record<string, unknown>): string {
@@ -319,7 +305,12 @@ export async function main(argv: string[]): Promise<number> {
 			process.stdout.write(USAGE);
 			return 2;
 		}
-		const args = await waveArgs(options);
+		const wave = await waveArgs(options);
+		if (wave === null) {
+			process.stdout.write("no pending slices\n");
+			return 0;
+		}
+		const { args, name } = wave;
 		if (options.wave === "") {
 			process.stdout.write(`${JSON.stringify(args, null, 2)}\n`);
 			return 0;
@@ -328,8 +319,12 @@ export async function main(argv: string[]): Promise<number> {
 			resolveSkillAsset("sdlc", "references/templates/slice-wave.workflow.js"),
 			"utf8",
 		);
+		const file = join(options.wave, `slice-wave.${name}.workflow.js`);
+		if (!resolve(file).startsWith(resolve(options.wave) + sep)) {
+			process.stderr.write(`${PROGRAM}: runner path escapes ${options.wave}\n`);
+			return 1;
+		}
 		mkdirSync(options.wave, { recursive: true });
-		const file = join(options.wave, `slice-wave.layer${options.layer}.workflow.js`);
 		writeFileSync(file, bake(runner, args));
 		process.stdout.write(`${file}\n`);
 		return 0;

@@ -17,12 +17,15 @@ import {
 	unwrapIncoming,
 	wrap,
 	wrapProbe,
+	wrapTagged as wrapRumor,
 } from "../../src/phone/chat";
 import { MESSAGE_TTL_SECONDS } from "../../src/phone/db";
+import { FUTURE_SKEW_SECONDS } from "../../src/phone/thread";
 import { SINCE_MARGIN_SECONDS } from "../../src/phone/since";
 import { createFakePool } from "./fake-pool";
 
 const RELAYS = ["wss://a.example", "wss://b.example"];
+const CLOCK = Math.floor(Date.now() / 1000);
 
 function identity(id = "k") {
 	const sk = generateSecretKey();
@@ -43,7 +46,7 @@ describe("wrap and unwrapIncoming", () => {
 		const bob = identity();
 		const event = wrap("hello bob", alice.sk, bob.pub);
 
-		const admitted = unwrapIncoming(event, [bob], gateWithContact(alice.pub), 0);
+		const admitted = unwrapIncoming(event, [bob], gateWithContact(alice.pub), Math.floor(Date.now() / 1000));
 
 		expect(admitted?.message.text).toBe("hello bob");
 		expect(admitted?.message.from).toBe(nip19.npubEncode(alice.pub));
@@ -368,11 +371,11 @@ describe("subscribe", () => {
 			(message) => {
 				received.push(message.text);
 			},
-			() => 1_000,
+			() => CLOCK,
 			{
 				reread: () => {
 					reads += 1;
-					return { contacts: new Map(), secrets: { number: "", invites: [{ secret, expiresAt: 5_000, name: "barron" }] } };
+					return { contacts: new Map(), secrets: { number: "", invites: [{ secret, expiresAt: CLOCK + 4_000, name: "barron" }] } };
 				},
 				onDrop: (drop) => drops.push(drop),
 			},
@@ -398,7 +401,7 @@ describe("subscribe", () => {
 			() => gateWithContact(alice.pub),
 			{ cursor: 0, ids: [] },
 			() => {},
-			() => 1_000,
+			() => CLOCK,
 			{ reread: () => { rereads += 1; return emptyGate(); } },
 		);
 
@@ -421,7 +424,7 @@ describe("subscribe", () => {
 			() => emptyGate(),
 			{ cursor: 0, ids: [] },
 			() => {},
-			() => 1_000,
+			() => CLOCK,
 			{ onDrop: (drop) => drops.push(drop) },
 		);
 		const event = ring("secret-body-text", alice.sk, bob.pub, secret, "x");
@@ -468,7 +471,7 @@ describe("the number secret (reusable, no expiry)", () => {
 		const alice = identity();
 		const bob = identity();
 
-		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "grok"), [bob], gateWithNumber(secret), 1_000);
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "grok"), [bob], gateWithNumber(secret), CLOCK);
 
 		expect(admitted?.message).toMatchObject({ text: "hello", from: nip19.npubEncode(alice.pub), call: true });
 		expect(admitted?.newContact).toMatchObject({ npub: nip19.npubEncode(alice.pub), via: "number", suggestedHandle: "grok", keyId: bob.id });
@@ -479,7 +482,7 @@ describe("the number secret (reusable, no expiry)", () => {
 		const alice = identity();
 		const bob = identity();
 
-		expect(unwrapIncoming(ring("hi", alice.sk, bob.pub, "ef".repeat(32), "grok"), [bob], gateWithNumber(secret), 1_000)).toBeNull();
+		expect(unwrapIncoming(ring("hi", alice.sk, bob.pub, "ef".repeat(32), "grok"), [bob], gateWithNumber(secret), CLOCK)).toBeNull();
 	});
 
 	it("drops the old secret once the number has rotated to a new one", () => {
@@ -487,8 +490,8 @@ describe("the number secret (reusable, no expiry)", () => {
 		const bob = identity();
 		const rotated = gateWithNumber("ff".repeat(32));
 
-		expect(unwrapIncoming(ring("hi", alice.sk, bob.pub, secret, "grok"), [bob], rotated, 1_000)).toBeNull();
-		expect(unwrapIncoming(ring("hi", alice.sk, bob.pub, "ff".repeat(32), "grok"), [bob], rotated, 1_000)).toMatchObject({
+		expect(unwrapIncoming(ring("hi", alice.sk, bob.pub, secret, "grok"), [bob], rotated, CLOCK)).toBeNull();
+		expect(unwrapIncoming(ring("hi", alice.sk, bob.pub, "ff".repeat(32), "grok"), [bob], rotated, CLOCK)).toMatchObject({
 			message: { call: true },
 		});
 	});
@@ -501,7 +504,7 @@ describe("the number secret (reusable, no expiry)", () => {
 		await publish(pool, RELAYS, ring("first", alice.sk, bob.pub, secret, "alice"));
 		await publish(pool, RELAYS, ring("second", mallory.sk, bob.pub, secret, "mallory"));
 
-		const { messages, newContacts } = await fetchNew(pool, RELAYS, [bob], gateWithNumber(secret), { cursor: 0, ids: [] }, () => 2_000);
+		const { messages, newContacts } = await fetchNew(pool, RELAYS, [bob], gateWithNumber(secret), { cursor: 0, ids: [] }, () => CLOCK);
 
 		expect(messages.map((m) => m.text).sort()).toEqual(["first", "second"]);
 		expect(newContacts.map((c) => c.suggestedHandle).sort()).toEqual(["alice", "mallory"]);
@@ -512,7 +515,7 @@ describe("the number secret (reusable, no expiry)", () => {
 		const bob = identity();
 		const gate = { contacts: new Map([[alice.pub, { npub: nip19.npubEncode(alice.pub), handle: "work-alice" }]]), secrets: { number: secret, invites: [] } };
 
-		const admitted = unwrapIncoming(ring("hi again", alice.sk, bob.pub, secret, "alice"), [bob], gate, 1_000);
+		const admitted = unwrapIncoming(ring("hi again", alice.sk, bob.pub, secret, "alice"), [bob], gate, CLOCK);
 
 		expect(admitted?.message.call).toBeUndefined();
 		expect(admitted?.reaccept).toEqual({ npub: nip19.npubEncode(alice.pub), keyId: bob.id });
@@ -522,7 +525,7 @@ describe("the number secret (reusable, no expiry)", () => {
 
 describe("invite secrets (one-time)", () => {
 	function gateWithInvite(secret: string, name?: string): Gate {
-		return { contacts: new Map(), secrets: { number: "", invites: [{ secret, expiresAt: 5_000, name }] } };
+		return { contacts: new Map(), secrets: { number: "", invites: [{ secret, expiresAt: CLOCK + 4_000, name }] } };
 	}
 	const secret = "11".repeat(32);
 
@@ -530,7 +533,7 @@ describe("invite secrets (one-time)", () => {
 		const alice = identity();
 		const bob = identity();
 
-		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gateWithInvite(secret, "velora"), 1_000);
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gateWithInvite(secret, "velora"), CLOCK);
 
 		expect(admitted?.message.call).toBe(true);
 		expect(admitted?.newContact).toMatchObject({ via: "invite", suggestedHandle: "velora", inviteSecret: secret });
@@ -541,10 +544,10 @@ describe("invite secrets (one-time)", () => {
 		const bob = identity();
 		const gate: Gate = {
 			contacts: new Map(),
-			secrets: { number: "", invites: [{ secret, expiresAt: 5_000, name: "velora", relays: ["wss://invite.example"] }] },
+			secrets: { number: "", invites: [{ secret, expiresAt: CLOCK + 4_000, name: "velora", relays: ["wss://invite.example"] }] },
 		};
 
-		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gate, 1_000);
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gate, CLOCK);
 
 		expect(admitted?.newContact?.relays).toEqual(["wss://invite.example"]);
 	});
@@ -553,7 +556,7 @@ describe("invite secrets (one-time)", () => {
 		const alice = identity();
 		const bob = identity();
 
-		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gateWithInvite(secret, "velora"), 1_000);
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "ignored"), [bob], gateWithInvite(secret, "velora"), CLOCK);
 
 		expect(admitted?.newContact?.relays).toBeUndefined();
 	});
@@ -562,7 +565,7 @@ describe("invite secrets (one-time)", () => {
 		const alice = identity();
 		const bob = identity();
 
-		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "grok"), [bob], gateWithInvite(secret), 1_000);
+		const admitted = unwrapIncoming(ring("hello", alice.sk, bob.pub, secret, "grok"), [bob], gateWithInvite(secret), CLOCK);
 
 		expect(admitted?.newContact?.suggestedHandle).toBe("grok");
 	});
@@ -583,7 +586,7 @@ describe("invite secrets (one-time)", () => {
 		await publish(pool, ["wss://a"], ring("me too", mallory.sk, bob.pub, secret, "mallory"));
 		await publish(pool, ["wss://a"], wrap("next", alice.sk, bob.pub));
 
-		const result = await fetchNew(pool, RELAYS, [bob], gateWithInvite(secret), { cursor: 0, ids: [] }, () => 1_300);
+		const result = await fetchNew(pool, RELAYS, [bob], gateWithInvite(secret), { cursor: 0, ids: [] }, () => CLOCK);
 
 		expect(result.messages.map((m) => [m.text, m.call ?? false])).toEqual([
 			["hello", true],
@@ -598,12 +601,12 @@ describe("invite secrets (one-time)", () => {
 		const bob = identity();
 		const gate: Gate = {
 			contacts: new Map(),
-			secrets: { number: "", invites: [{ secret: "aa".repeat(32), expiresAt: 5_000 }, { secret, expiresAt: 5_000 }] },
+			secrets: { number: "", invites: [{ secret: "aa".repeat(32), expiresAt: CLOCK + 4_000 }, { secret, expiresAt: CLOCK + 4_000 }] },
 		};
 
-		const admitted = unwrapIncoming(ring("hi", alice.sk, bob.pub, secret, "x"), [bob], gate, 1_000);
+		const admitted = unwrapIncoming(ring("hi", alice.sk, bob.pub, secret, "x"), [bob], gate, CLOCK);
 
-		expect(admitted?.gate.secrets.invites).toEqual([{ secret: "aa".repeat(32), expiresAt: 5_000 }]);
+		expect(admitted?.gate.secrets.invites).toEqual([{ secret: "aa".repeat(32), expiresAt: CLOCK + 4_000 }]);
 	});
 });
 
@@ -618,7 +621,7 @@ describe("the legacy-key re-accept (multi-key gate)", () => {
 			secrets: { number: secret, invites: [] },
 		};
 
-		const plain = unwrapIncoming(wrap("hi", alice.sk, legacyKey.pub), [legacyKey, numberKey], gate, 1_000);
+		const plain = unwrapIncoming(wrap("hi", alice.sk, legacyKey.pub), [legacyKey, numberKey], gate, CLOCK);
 		expect(plain?.reaccept).toBeUndefined();
 		expect(plain?.message.call).toBeUndefined();
 
@@ -626,7 +629,7 @@ describe("the legacy-key re-accept (multi-key gate)", () => {
 			ring("hi again", alice.sk, numberKey.pub, secret, "alice"),
 			[legacyKey, numberKey],
 			gate,
-			1_000,
+			CLOCK,
 		);
 		expect(reaccept?.reaccept).toEqual({ npub: nip19.npubEncode(alice.pub), keyId: "default" });
 	});
@@ -970,5 +973,93 @@ describe("addBounded", () => {
 
 		expect(set.size).toBe(2);
 		expect([...set]).toEqual(["b", "c"]);
+	});
+});
+
+describe("kind 15 admission", () => {
+	const NOW = Math.floor(Date.now() / 1000);
+	const x = "b".repeat(64);
+	const offerTags = [
+		["file-type", "image/png"],
+		["encryption-algorithm", "aes-gcm"],
+		["decryption-key", "c".repeat(64)],
+		["decryption-nonce", "d".repeat(24)],
+		["x", x],
+		["ox", "e".repeat(64)],
+		["size", "100"],
+	];
+
+	function image(from: { sk: Uint8Array }, to: { pub: string }, extra: string[][] = [], content = `dg-wormhole:${x}`) {
+		return wrapRumor({ kind: 15, content, tags: [...offerTags, ...extra] }, from.sk, to.pub);
+	}
+
+	it("admits an image from a contact as [image] with the offer and the opening key", () => {
+		const alice = identity();
+		const bob = identity("bk");
+
+		const result = classifyIncoming(image(alice, bob), [bob], gateWithContact(alice.pub), NOW);
+
+		if (!("admitted" in result)) throw new Error("expected an admit");
+		expect(result.admitted.message.text).toBe("[image]");
+		expect(result.admitted.message.image).toEqual({
+			offer: { x, ox: "e".repeat(64), size: 100, key: "c".repeat(64), nonce: "d".repeat(24) },
+			keyId: "bk",
+		});
+	});
+
+	it("never stores the rumor content as text, even for a bad offer", () => {
+		const alice = identity();
+		const bob = identity();
+
+		const result = classifyIncoming(image(alice, bob, [], "https://evil.example/blob"), [bob], gateWithContact(alice.pub), NOW);
+
+		if (!("admitted" in result)) throw new Error("expected an admit");
+		expect(result.admitted.message.text).toBe("[image unavailable: bad offer]");
+		expect(result.admitted.message.image).toBeUndefined();
+	});
+
+	it("drops an image from a stranger, even one that carries the number secret", () => {
+		const alice = identity();
+		const bob = identity();
+		const gate: Gate = { contacts: new Map(), secrets: { number: "s3cret", invites: [{ secret: "inv", expiresAt: NOW + 60 }] } };
+
+		const result = classifyIncoming(image(alice, bob, [[CALL_TAG, "s3cret"], [CALL_TAG, "inv"]]), [bob], gate, NOW);
+
+		expect(result).toEqual({ drop: { id: expect.any(String), reason: "no matching contact or invite", pubkeyPrefix: alice.pub.slice(0, 8) } });
+	});
+
+	it("never re-accepts a contact's key from a kind 15 that carries the number secret", () => {
+		const alice = identity();
+		const bob = identity();
+		const gate: Gate = { ...gateWithContact(alice.pub), secrets: { number: "s3cret", invites: [] } };
+
+		const result = classifyIncoming(image(alice, bob, [[CALL_TAG, "s3cret"]]), [bob], gate, NOW);
+
+		if (!("admitted" in result)) throw new Error("expected an admit");
+		expect(result.admitted.reaccept).toBeUndefined();
+	});
+
+	it("marks a dg-phi message as phi, text or image", () => {
+		const alice = identity();
+		const bob = identity();
+		const text = wrapRumor({ content: "note", tags: [["dg-phi", "1"]] }, alice.sk, bob.pub);
+
+		const fromText = classifyIncoming(text, [bob], gateWithContact(alice.pub), NOW);
+		const fromImage = classifyIncoming(image(alice, bob, [["dg-phi", "1"]]), [bob], gateWithContact(alice.pub), NOW);
+		const plain = classifyIncoming(wrap("plain", alice.sk, bob.pub), [bob], gateWithContact(alice.pub), NOW);
+
+		expect("admitted" in fromText && fromText.admitted.message.phi).toBe(true);
+		expect("admitted" in fromImage && fromImage.admitted.message.phi).toBe(true);
+		expect("admitted" in plain && plain.admitted.message.phi).toBeUndefined();
+	});
+
+	it("drops a rumor dated further ahead than the clock skew", () => {
+		const alice = identity();
+		const bob = identity();
+		const event = wrap("from the future", alice.sk, bob.pub);
+
+		const result = classifyIncoming(event, [bob], gateWithContact(alice.pub), NOW - FUTURE_SKEW_SECONDS - 60);
+
+		expect("drop" in result && result.drop.reason).toBe("ahead of the clock");
 	});
 });

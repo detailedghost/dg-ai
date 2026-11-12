@@ -31,6 +31,8 @@ import {
 	threadSendKept,
 	threadSendSucceeded,
 	validPubkey,
+	heldFrom,
+	threadMessageFields,
 } from "../../src/phone/thread";
 
 function person() {
@@ -106,7 +108,7 @@ describe("handles", () => {
 
 	it("rejects a thread handle that does not start with # or is not a handle body", () => {
 		expect(parseThreadHandle("#ops")).toBe("#ops");
-		expect(() => parseThreadHandle("ops")).toThrow('a thread handle must start with #, got "ops"');
+		expect(() => parseThreadHandle("ops")).toThrow('a group handle must start with #, got "ops"');
 		expect(() => parseThreadHandle("#Ops")).toThrow(DgCliError);
 		expect(() => parseThreadHandle("#")).toThrow(DgCliError);
 	});
@@ -177,6 +179,66 @@ describe("classifyThreadRumor", () => {
 		const view = classifyThreadRumor(rumor(tags), [bob.pub], [{ pub: alice.pub, keyId: "k" }, ...known], now, "k", bob.pub);
 		expect(view?.kind).toBe("drop");
 		expect(view?.reason).toBe("thread is too large");
+	});
+
+	describe("kind 15", () => {
+		const x = "b".repeat(64);
+		const offerTags = [
+			["file-type", "image/png"],
+			["encryption-algorithm", "aes-gcm"],
+			["decryption-key", "c".repeat(64)],
+			["decryption-nonce", "d".repeat(24)],
+			["x", x],
+			["ox", "e".repeat(64)],
+			["size", "100"],
+		];
+
+		function image(tags: string[][], content = `dg-wormhole:${x}`) {
+			return nip59.createRumor({ kind: 15, content, created_at: now, tags: [...tags, ...offerTags] }, alice.sk);
+		}
+
+		function classifyImage(tags: string[][], known: { pub: string; keyId?: string }[], content?: string) {
+			return classifyThreadRumor(image(tags, content), [bob.pub], known, now, "k", bob.pub);
+		}
+
+		it("admits an image as [image] with the offer, never the content", () => {
+			const view = classifyImage([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]], contacts(alice.pub, cara.pub));
+			expect(view?.kind).toBe("message");
+			expect(view?.text).toBe("[image]");
+			expect(view?.offer?.x).toBe(x);
+		});
+
+		it("holds an image as the placeholder only", () => {
+			const view = classifyImage([["p", bob.pub], ["p", cara.pub], ["subject", "ops"]], contacts(alice.pub));
+			if (!view) throw new Error("expected a thread view");
+			expect(view.kind).toBe("hold");
+			expect(heldFrom(view).text).toBe("[image]");
+			expect(JSON.stringify(heldFrom(view))).not.toContain("dg-wormhole");
+		});
+
+		it("stores a bad offer as unavailable and never the content", () => {
+			const view = classifyImage([["p", bob.pub], ["subject", "ops"]], contacts(alice.pub), "https://evil.example/x");
+			expect(view?.text).toBe("[image unavailable: bad offer]");
+			expect(view?.offer).toBeUndefined();
+		});
+
+		it("leaves a kind 15 with one p tag and no subject to the one-to-one path", () => {
+			expect(classifyImage([["p", bob.pub]], contacts(alice.pub))).toBeNull();
+		});
+
+		it("marks a dg-phi rumor as phi", () => {
+			const view = classifyImage([["p", bob.pub], ["subject", "ops"], ["dg-phi", "1"]], contacts(alice.pub));
+			if (!view) throw new Error("expected a thread view");
+			expect(view.phi).toBe(true);
+			expect(threadMessageFields(view, "k").phi).toBe(true);
+		});
+
+		it("keeps the phi mark on a held thread", () => {
+			const view = classifyImage([["p", bob.pub], ["p", cara.pub], ["subject", "ops"], ["dg-phi", "1"]], contacts(alice.pub));
+			if (!view) throw new Error("expected a thread view");
+			expect(view.kind).toBe("hold");
+			expect(heldFrom(view).phi).toBe(true);
+		});
 	});
 });
 
@@ -343,6 +405,37 @@ describe("fanoutThread", () => {
 		expect(behindHandles(delivered.members)).toEqual(["+b"]);
 		expect(formatBehind(delivered.members)).not.toContain("hello room");
 	});
+	it("keeps going past a recipient whose send throws and reports that member as failed", async () => {
+		const alice = person();
+		const bob = person();
+		const cara = person();
+		const published: string[] = [];
+		const delivered = await fanoutThread({
+			sk: alice.sk,
+			text: "hello room",
+			createdAt: 50,
+			subject: "ops",
+			fallbackSubject: "ops",
+			recipients: [
+				{ handle: "+b", npub: bob.npub, pub: bob.pub, self: false },
+				{ handle: "+c", npub: cara.npub, pub: cara.pub, self: false },
+				{ handle: "+a", npub: alice.npub, pub: alice.pub, self: true },
+			],
+			relaysFor: async (recipient) => {
+				if (recipient.handle === "+c") throw new Error("relay lookup broke");
+				return ["wss://a.example"];
+			},
+			publishTo: async (relays, event) => {
+				published.push(event.id);
+				return { ok: relays, unconfirmed: [], failed: [] };
+			},
+		});
+
+		expect(published).toHaveLength(2);
+		expect(delivered.members.map((member) => member.handle)).toEqual(["+b", "+c", "+a"]);
+		expect(delivered.members[1]).toMatchObject({ relays_ok: [], relays_unconfirmed: [], relays_failed: [{ relay: "", reason: "relay lookup broke" }] });
+		expect(behindHandles(delivered.members)).toEqual(["+c"]);
+	});
 });
 
 describe("liveThreadAdmission", () => {
@@ -405,9 +498,9 @@ describe("display", () => {
 		expect(senderLabel("npub1abcdefghijklmnop", "baron", undefined)).toBe("+baron");
 		expect(senderLabel("npub1abcdefghijklmnop", undefined, "dg")).toBe("+dg");
 		expect(senderLabel("npub1abcdefghijklmnop", undefined, undefined)).toBe("npub1abcdefghijk");
-		expect(heldThreadsNotice(1)).toBe("1 held thread");
-		expect(heldThreadsNotice(3)).toBe("3 held threads");
-		expect(heldLogLine("abcdef1234567890")).toBe("phone: held thread abcdef12\n");
+		expect(heldThreadsNotice(1)).toBe("1 held group");
+		expect(heldThreadsNotice(3)).toBe("3 held groups");
+		expect(heldLogLine("abcdef1234567890")).toBe("phone: held group abcdef12\n");
 		expect(heldLogLine("abcdef1234567890")).not.toContain("hello");
 		expect(threadDirection("npub1us", ["npub1us"])).toBe("out");
 		expect(threadDirection("npub1them", ["npub1us"])).toBe("in");

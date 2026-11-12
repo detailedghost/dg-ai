@@ -74,6 +74,40 @@ describe("chat sessions in the daemon database", () => {
 		});
 	});
 
+	it("reloads a session saved before the awaiting_agent column was dropped", async () => {
+		await withHome(async (paths) => {
+			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			store.saveSession({
+				sessionId: "pre-drop",
+				token: TOKEN,
+				cwd: "/work/app",
+				agentIdentity: "claude",
+				role: "agent",
+				state: "active",
+				cliAttached: false,
+				createdAt: 1_000,
+				lastActivityAt: 1_000,
+			});
+			store.close();
+
+			const raw = new Database(paths.dbPath);
+			raw.run("ALTER TABLE sessions ADD COLUMN awaiting_agent INTEGER NOT NULL DEFAULT 0");
+			raw.run("UPDATE sessions SET awaiting_agent = 1");
+			raw.run("PRAGMA user_version = 12");
+			raw.close(true);
+
+			const reopened = await ChatStore.open(paths, FILE_ONLY_SEAMS);
+			try {
+				expect(reopened.userVersion()).toBe(13);
+				const loaded = reopened.loadSessions();
+				expect(loaded.map((session) => session.sessionId)).toEqual(["pre-drop"]);
+				expect(Object.hasOwn(loaded[0] ?? {}, "awaitingAgent")).toBe(false);
+			} finally {
+				reopened.close();
+			}
+		});
+	});
+
 	it("two stores pruning the same database delete each archived row once", async () => {
 		await withHome(async (paths) => {
 			const store = await ChatStore.open(paths, FILE_ONLY_SEAMS);
@@ -87,7 +121,6 @@ describe("chat sessions in the daemon database", () => {
 						agentIdentity: "claude",
 						role: "agent",
 						state: "active",
-						awaitingAgent: false,
 						cliAttached: false,
 						createdAt: now,
 						lastActivityAt: now,
@@ -106,7 +139,6 @@ describe("chat sessions in the daemon database", () => {
 							agentIdentity: "claude",
 							role: "agent",
 							state: "closed",
-							awaitingAgent: false,
 							cliAttached: false,
 							createdAt: now,
 							lastActivityAt: now,
@@ -119,7 +151,7 @@ describe("chat sessions in the daemon database", () => {
 				store.close();
 			}
 
-			const dgHome = paths.stateDir;
+			const dgHome = paths.legacyHome;
 			const worker = new URL("./prune-worker.ts", import.meta.url).pathname;
 			const run = () =>
 				Bun.spawn([process.execPath, worker], {
@@ -167,7 +199,6 @@ describe("chat sessions in the daemon database", () => {
 					agentIdentity: "claude",
 					role: "agent",
 					state: "active",
-					awaitingAgent: false,
 					cliAttached: false,
 					createdAt: now,
 					lastActivityAt: now,
@@ -186,7 +217,6 @@ describe("chat sessions in the daemon database", () => {
 						agentIdentity: "claude",
 						role: "agent",
 						state: "closed",
-						awaitingAgent: false,
 						cliAttached: false,
 						createdAt: now,
 						lastActivityAt: now,

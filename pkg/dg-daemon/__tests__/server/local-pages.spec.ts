@@ -18,6 +18,7 @@ import {
 	EXTENSION_ORIGIN,
 	frameType,
 	freshTempDir,
+	readDaemonLog,
 	registerSession,
 	send,
 	sendConnectHandshake,
@@ -35,8 +36,8 @@ afterEach(() => {
 	return cleanupSlot.run();
 });
 
-async function boot() {
-	const running = await bootServe();
+async function boot(extraEnv: Record<string, string> = {}) {
+	const running = await bootServe(extraEnv);
 	cleanupSlot.set(async () => {
 		await stopServe(running.proc);
 		cleanupDgHome(running.dgHome);
@@ -183,13 +184,13 @@ describe("GET /chat and GET /board page shells", () => {
 		expect([404, 405]).toContain(response.status);
 	});
 
-	it("keeps the legacy /start stub for old extensions", async () => {
+	it("answers the retired /start page with 404", async () => {
 		const { port } = await boot();
 
 		const response = await request(port, "/start");
 
-		expect(response.status).toBe(200);
-		expect(response.headers.get("Content-Type")).toStartWith("text/html");
+		expect(response.status).toBe(404);
+		expect(await response.text()).toBe("not found");
 	});
 });
 
@@ -740,5 +741,258 @@ describe("a local page socket beside the extension on one session", () => {
 			);
 			expect(message).toMatchObject({ body: "hello both" });
 		}
+	});
+});
+
+describe("POST /attach with a local page bearer", () => {
+	const ATTACH_LIMIT = 30;
+
+	function attach(
+		port: number,
+		token: string | undefined,
+		body: unknown,
+		origin: string | null = loopbackOrigin(port),
+	): Promise<Response> {
+		return request(port, "/attach", {
+			method: "POST",
+			origin: origin ?? undefined,
+			token,
+			body,
+		});
+	}
+
+	async function liveCli(port: number, input: Parameters<typeof registerSession>[1] = {}) {
+		const session = await registerSession(port, input);
+		const ws = await connectCli(port, session);
+		sockets.push(ws);
+		return session;
+	}
+
+	async function attachStatus(
+		port: number,
+		token: string,
+		sessionId: string,
+	): Promise<number> {
+		return (await attach(port, token, { intent: "attach", sessionId })).status;
+	}
+
+	it("returns exactly the requested cli agent session bootstrap to a live bearer from either loopback host", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port, { agentIdentity: "held" });
+		const other = await liveCli(port, { agentIdentity: "other" });
+
+		for (const host of ["127.0.0.1", "localhost"]) {
+			const response = await attach(
+				port,
+				held.token,
+				{ intent: "attach", sessionId: other.sessionId },
+				loopbackOrigin(port, host),
+			);
+
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({
+				sessions: [
+					{
+						port,
+						sessionId: other.sessionId,
+						token: other.token,
+						agentIdentity: "other",
+					},
+				],
+			});
+		}
+	});
+
+	it("answers 404 with the exact text for a session that is idle, gone, orchestrator, closed or unknown", async () => {
+		const { port, dgHome } = await boot({
+			DG_CLI_REATTACH_GRACE_MS: "0",
+			DG_SESSION_TTL_MS: "400",
+			DG_AGENT_GONE_MS: "60000",
+		});
+		const held = await liveCli(port);
+		const idle = await registerSession(port);
+		const orchestrator = await liveCli(port, { role: "orchestrator" });
+		const gone = await registerSession(port);
+		const goneSocket = await connectCli(port, gone);
+		goneSocket.close();
+		const closed = await liveCli(port);
+		await closeSession(dgHome, port, closed.sessionId);
+
+		let goneStatus = 0;
+		for (let tries = 0; tries < 25 && goneStatus !== 404; tries++) {
+			goneStatus = await attachStatus(port, held.token, gone.sessionId);
+			if (goneStatus !== 404) await new Promise((r) => setTimeout(r, 200));
+		}
+		expect(goneStatus).toBe(404);
+
+		for (const sessionId of [
+			idle.sessionId,
+			gone.sessionId,
+			orchestrator.sessionId,
+			closed.sessionId,
+			"no-such-session",
+		]) {
+			const response = await attach(port, held.token, {
+				intent: "attach",
+				sessionId,
+			});
+			expect(response.status).toBe(404);
+			expect(await response.text()).toBe("That session is not active.");
+		}
+	});
+
+	it("refuses a dead bearer with 403 and never returns a bootstrap", async () => {
+		const { port } = await boot();
+		const target = await liveCli(port);
+
+		const response = await attach(port, "not-a-live-token", {
+			intent: "attach",
+			sessionId: target.sessionId,
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.text()).not.toContain(target.token);
+	});
+
+	it("refuses a bearer request without an Origin with 400", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+		const target = await liveCli(port);
+
+		const response = await attach(
+			port,
+			held.token,
+			{ intent: "attach", sessionId: target.sessionId },
+			null,
+		);
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).not.toContain(target.token);
+	});
+
+	it("refuses a valid bearer carried by a foreign port Origin with 400", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+		const target = await liveCli(port);
+
+		const response = await attach(
+			port,
+			held.token,
+			{ intent: "attach", sessionId: target.sessionId },
+			loopbackOrigin(port + 1),
+		);
+
+		expect(response.status).toBe(400);
+	});
+
+	it("refuses a bearer request that names a foreign Host with 400", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+		const target = await liveCli(port);
+
+		const response = await fetch(`http://127.0.0.1:${port}/attach`, {
+			method: "POST",
+			headers: {
+				Host: "evil.example",
+				Origin: loopbackOrigin(port),
+				Authorization: `Bearer ${held.token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ intent: "attach", sessionId: target.sessionId }),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).not.toContain(target.token);
+	});
+
+	it("requires a sessionId and refuses all or code from a bearer", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+
+		const bodies = [
+			{ intent: "attach" },
+			{ intent: "attach", all: true },
+			{ intent: "attach", all: true, code: "000000" },
+			{ intent: "attach", sessionId: held.sessionId, code: "000000" },
+		];
+		for (let round = 0; round < 3; round++) {
+			for (const body of bodies) {
+				expect((await attach(port, held.token, body)).status).toBe(400);
+			}
+		}
+	});
+
+	it("answers 429 with the exact text on the 31st request in a minute and keeps the limit per token", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+		const target = await liveCli(port);
+		const body = { intent: "attach", sessionId: target.sessionId };
+
+		for (let count = 0; count < ATTACH_LIMIT; count++) {
+			expect((await attach(port, held.token, body)).status).toBe(200);
+		}
+		const limited = await attach(port, held.token, body);
+
+		expect(limited.status).toBe(429);
+		expect(await limited.text()).toBe("too many attach requests");
+		const other = await liveCli(port);
+		expect(
+			(await attach(port, target.token, { intent: "attach", sessionId: other.sessionId })).status,
+		).toBe(200);
+	});
+
+	it("refuses a bearer attaching its own session with 404", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+
+		const response = await attach(port, held.token, {
+			intent: "attach",
+			sessionId: held.sessionId,
+		});
+
+		expect(response.status).toBe(404);
+		expect(await response.text()).toBe("That session is not active.");
+	});
+
+	it("rejects intent create from a bearer as an invalid intent", async () => {
+		const { port } = await boot();
+		const held = await liveCli(port);
+
+		const response = await attach(port, held.token, { intent: "create" });
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toBe(
+			'attach request.intent must be "attach"',
+		);
+	});
+
+	it("keeps the extension Origin path: an extension attach is refused with 400 and so is an http Origin without a bearer", async () => {
+		const { port } = await boot();
+		const target = await liveCli(port);
+		const body = { intent: "attach", sessionId: target.sessionId };
+
+		const extension = await attach(port, undefined, body, EXTENSION_ORIGIN);
+		const plainPage = await attach(port, undefined, body, loopbackOrigin(port));
+
+		expect(extension.status).toBe(400);
+		expect(await extension.text()).not.toContain(target.token);
+		expect(plainPage.status).toBe(400);
+		expect(await plainPage.text()).not.toContain(target.token);
+	});
+
+	it("writes neither the bearer token nor the Authorization header to the daemon log", async () => {
+		const { port, dgHome } = await boot();
+		const held = await liveCli(port);
+		const target = await liveCli(port);
+
+		await attach(port, held.token, { intent: "attach", sessionId: target.sessionId });
+		await attach(port, "stale-bearer-value", { intent: "attach", sessionId: target.sessionId });
+		await attach(port, held.token, { intent: "create" });
+
+		const log = readDaemonLog(dgHome);
+		for (const secret of [held.token, target.token, "stale-bearer-value"]) {
+			expect(log).not.toContain(secret);
+		}
+		expect(log.toLowerCase()).not.toContain("authorization");
 	});
 });

@@ -1,6 +1,10 @@
 import { createSerialQueue, isBatchFresh } from "@dg/common";
 import { browser } from "wxt/browser";
 import {
+	type AgentTabsStorage,
+	agentGroupIds,
+} from "@/lib/background/agent-tabs";
+import {
 	readGroupBatch,
 	readGroupMarker,
 	readGroupPos,
@@ -68,8 +72,15 @@ async function findGroup(
 	windowId: number,
 	title: string,
 ): Promise<{ id: number; windowId: number } | undefined> {
+	const agentGroups = await agentGroupIds({
+		storage: browser.storage as unknown as AgentTabsStorage,
+	}).catch((error: unknown) => {
+		console.warn("[dg-ai-extension] agent group lookup failed", error);
+		return new Set<number>();
+	});
 	const found = (await browser.tabGroups.query({ title })).filter(
-		(g): g is typeof g & { id: number } => g.id !== undefined,
+		(g): g is typeof g & { id: number } =>
+			g.id !== undefined && !agentGroups.has(g.id),
 	);
 	const local = found.filter((g) => g.windowId === windowId);
 	const pool = local.length ? local : found;

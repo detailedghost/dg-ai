@@ -47,19 +47,11 @@ export function resolveColor(c: ColorSetting): GroupColor {
 }
 
 // Group name is per-invocation (from the URL marker); color + demo-narration are configured.
-export const THEMES = [
-	{ value: "dark", label: "Dark" },
-	{ value: "light", label: "Light" },
-] as const;
-
-export type ThemeSetting = (typeof THEMES)[number]["value"];
-
 export type Config = {
 	color: ColorSetting;
 	voice: string;
 	narration: NarrationMode;
 	videoQuality: VideoQuality;
-	theme: ThemeSetting;
 };
 
 export const DEFAULTS: Config = {
@@ -67,7 +59,6 @@ export const DEFAULTS: Config = {
 	voice: "af_heart",
 	narration: "both",
 	videoQuality: DEFAULT_VIDEO_QUALITY,
-	theme: "dark",
 };
 
 /** Coerce an untrusted string (a stored value or a form input) to a NarrationMode. */
@@ -75,13 +66,6 @@ export function getNarrationMode(val: string): NarrationMode {
 	return NARRATION_MODES.some((m) => m.value === val)
 		? (val as NarrationMode)
 		: DEFAULTS.narration;
-}
-
-/** Narrow a stored value to a theme, falling back to the default. */
-export function getTheme(val: string): ThemeSetting {
-	return THEMES.some((t) => t.value === val)
-		? (val as ThemeSetting)
-		: DEFAULTS.theme;
 }
 
 /** The settings-page label for a mode, for read-only display elsewhere. */

@@ -9,6 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { DieError } from "../src/utils/legacy-command";
 import { projectHash } from "../../common/src/node/scratch-paths";
 import * as helper from "../src/deps-upgrade/index";
 import * as cliFixtures from "./cli-fixtures";
@@ -1333,18 +1334,7 @@ describe("package cooldown", () => {
 });
 
 function expectDies(fn: () => unknown, message: string): void {
-	const exit = spyOn(process, "exit").mockImplementation((() => {
-		throw new Error("process.exit");
-	}) as never);
-	const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
-	try {
-		expect(fn).toThrow("process.exit");
-		expect(stderr).toHaveBeenCalledWith(`error: ${message}\n`);
-		expect(exit).toHaveBeenCalledWith(1);
-	} finally {
-		exit.mockRestore();
-		stderr.mockRestore();
-	}
+	expect(fn).toThrow(new DieError(message, 1));
 }
 
 function inTempDir<T>(files: Record<string, string>, fn: () => T): T {

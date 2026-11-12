@@ -23,15 +23,16 @@ export function createContext(
 	const cache = new Map<string, unknown>();
 	const env = overrides.env ?? process.env;
 	const home = overrides.home ?? env.HOME ?? homedir();
+	const paths = overrides.paths ?? resolveDgPaths({ homeDir: home, env });
 	return {
 		home,
 		env,
-		paths: overrides.paths ?? resolveDgPaths({ homeDir: home, env }),
+		paths,
 		installedVersion: overrides.installedVersion ?? pkg.version,
 		extensionDgDirs:
 			overrides.extensionDgDirs ??
 			(() => {
-				const own = join(home, ".dg");
+				const own = paths.legacyHome;
 				if (overrides.home !== undefined) return [own];
 				try {
 					return [...new Set([...extensionDgDirs(env), own])];
@@ -99,21 +100,22 @@ export async function runDoctor(
 	return { items, ok: !failed };
 }
 
+export function summarizeReport(report: DoctorReport): string {
+	const counts = { ok: 0, info: 0, warn: 0, fail: 0 };
+	for (const entry of report.items) for (const check of entry.checks) counts[check.status]++;
+	return `${counts.ok} passed, ${counts.info} info, ${counts.warn} to review, ${counts.fail} failed`;
+}
+
 export function formatReport(report: DoctorReport): string {
 	const lines: string[] = [];
-	const counts = { ok: 0, info: 0, warn: 0, fail: 0 };
 	for (const entry of report.items) {
 		lines.push(entry.item);
 		for (const check of entry.checks) {
-			counts[check.status]++;
 			lines.push(`  ${STATUS_ICON[check.status]} ${check.id}: ${check.detail}`);
 			if (check.fix) lines.push(`      Fix: ${check.fix}`);
 		}
 	}
-	lines.push(
-		"",
-		`${counts.ok} passed, ${counts.info} info, ${counts.warn} to review, ${counts.fail} failed`,
-	);
+	lines.push("", summarizeReport(report));
 	return `${lines.join("\n")}\n`;
 }
 

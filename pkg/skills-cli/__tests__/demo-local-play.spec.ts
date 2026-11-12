@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { slugify } from "@dg/common";
 import { selfCommand } from "@dg/common/node";
@@ -7,7 +7,7 @@ import { BrowserMissingError } from "../src/pw/core/browser";
 import { registerDemo } from "../src/commands/demo";
 import { playLocal } from "../src/demo/local";
 import { DEFAULT_TIMEOUT_MIN } from "../src/demo/player-job";
-import { loadScript } from "../src/commands/demo";
+import { loadScript } from "../src/demo/plan-file";
 import { type DemoWorld, demoWorld } from "./demo-local-fixtures";
 
 let world: DemoWorld;
@@ -39,7 +39,7 @@ function demoDeps(over: Parameters<DemoWorld["localDeps"]>[0] = {}) {
 }
 
 describe("demo <plan> local default", () => {
-	test("spawns the detached player once and prints the start screen line", async () => {
+	test("spawns the detached player once and prints the recording line", async () => {
 		const run = await world.drive(registerDemo, ["demo", world.planPath], demoDeps());
 		expect(run.code).toBe(0);
 		expect(world.spawned).toHaveLength(1);
@@ -47,7 +47,7 @@ describe("demo <plan> local default", () => {
 		expect(argv.slice(0, -3)).toEqual(selfCommand([]));
 		expect(argv.slice(-3, -1)).toEqual(["demo", "__player"]);
 		expect(typeof playerJob().slug).toBe("string");
-		expect(run.out).toContain("start screen open in");
+		expect(run.out).toContain("recording in");
 		expect(run.out).toContain(`dg-skills demo status ${playerJob().slug}`);
 	});
 
@@ -71,54 +71,82 @@ describe("demo <plan> local default", () => {
 		expect(world.spawned[0]?.logPath).not.toBe(world.spawned[1]?.logPath);
 	});
 
-	test("passes --video through to the player job", async () => {
-		await world.drive(registerDemo, ["demo", world.planPath], demoDeps());
-		expect(playerJob().video).toBeFalsy();
-		world.spawned.length = 0;
-		await world.drive(registerDemo, ["demo", "--video", world.planPath], demoDeps());
-		expect(playerJob().video).toBe(true);
+	test("accepts --video and always records", async () => {
+		const run = await world.drive(registerDemo, ["demo", "--video", world.planPath], demoDeps());
+		expect(run.code).toBe(0);
+		expect(run.out).toContain("recording in");
+		expect(playerJob()).not.toHaveProperty("video");
 	});
 });
 
 describe("demo <plan> with a headless browser plan", () => {
-	test("exits 2 naming --video, --windows and --wsl-headed and spawns nothing", async () => {
-		const run = await world.drive(registerDemo, ["demo", world.planPath], demoDeps(headless()));
-		expect(run.code).toBe(2);
-		expect(run.err).toContain(
-			"demo: the start screen needs a visible browser; pass --video for an unattended recording, or --windows / --wsl-headed",
+	const withSetup = (value: string) => {
+		const plan = JSON.parse(readFileSync(world.planPath, "utf8"));
+		const file = join(dirname(world.planPath), "setup.json");
+		writeFileSync(
+			file,
+			JSON.stringify({
+				...plan,
+				setup: {
+					includeInTour: false,
+					steps: [
+						{ title: "Password", body: "Sign in.", selector: "#pw", action: { do: "fill", value } },
+					],
+				},
+			}),
 		);
+		return file;
+	};
+
+	afterEach(() => {
+		delete process.env.DG_DEMO_LOCAL_PW;
+	});
+
+	test("records unattended with no flag", async () => {
+		const run = await world.drive(registerDemo, ["demo", world.planPath], demoDeps(headless()));
+		expect(run.code).toBe(0);
+		expect(world.spawned).toHaveLength(1);
+		expect((playerJob().plan as { headless: boolean }).headless).toBe(true);
+	});
+
+	test("exits 2 when excluded setup needs a person to type an unset variable", async () => {
+		delete process.env.DG_DEMO_LOCAL_PW;
+		const run = await world.drive(
+			registerDemo,
+			["demo", withSetup("$DG_DEMO_LOCAL_PW")],
+			demoDeps(headless()),
+		);
+		expect(run.code).toBe(2);
+		expect(run.err).toContain("setup steps that need a person");
 		expect(world.spawned).toHaveLength(0);
 	});
 
-	test("spawns the player with --video", async () => {
+	test("exits 2 in the foreground when a recorded step names an unset variable", async () => {
+		delete process.env.DG_DEMO_LOCAL_PW;
+		const plan = JSON.parse(readFileSync(world.planPath, "utf8"));
+		const file = join(dirname(world.planPath), "recorded-login.json");
+		writeFileSync(
+			file,
+			JSON.stringify({
+				...plan,
+				steps: [...plan.steps, { title: "Password", body: "Sign in.", selector: "#pw", action: { do: "fill", value: "$DG_DEMO_LOCAL_PW" } }],
+			}),
+		);
+		const run = await world.drive(registerDemo, ["demo", file], demoDeps(headless()));
+		expect(run.code).toBe(2);
+		expect(run.err).toContain("demo: set $DG_DEMO_LOCAL_PW or move the login to ## Setup");
+		expect(world.spawned).toHaveLength(0);
+	});
+
+	test("runs setup unattended when its variable is set", async () => {
+		process.env.DG_DEMO_LOCAL_PW = "x";
 		const run = await world.drive(
 			registerDemo,
-			["demo", "--video", world.planPath],
+			["demo", withSetup("$DG_DEMO_LOCAL_PW")],
 			demoDeps(headless()),
 		);
 		expect(run.code).toBe(0);
 		expect(world.spawned).toHaveLength(1);
-		expect(playerJob().video).toBe(true);
-	});
-
-	test("exits 2 for --video when excluded setup needs a human", async () => {
-		const plan = JSON.parse(readFileSync(world.planPath, "utf8"));
-		const withSetup = join(dirname(world.planPath), "setup.json");
-		writeFileSync(
-			withSetup,
-			JSON.stringify({
-				...plan,
-				setup: { includeInTour: false, steps: [{ title: "Sign in", body: "Log in." }] },
-			}),
-		);
-		const run = await world.drive(
-			registerDemo,
-			["demo", "--video", withSetup],
-			demoDeps(headless()),
-		);
-		expect(run.code).toBe(2);
-		expect(run.err).toContain("setup");
-		expect(world.spawned).toHaveLength(0);
 	});
 
 	test("spawns the player with --wsl-headed", async () => {
@@ -230,11 +258,11 @@ describe("demo <plan> player job", () => {
 	test("--timeout and --out override the defaults", async () => {
 		await world.drive(
 			registerDemo,
-			["demo", "--timeout", "5", "--out", "/tmp/x.webm", "--video", world.planPath],
+			["demo", "--timeout", "5", "--out", "/tmp/x.mp4", world.planPath],
 			demoDeps(),
 		);
 		expect(playerJob().timeoutMin).toBe(5);
-		expect(playerJob().out).toBe("/tmp/x.webm");
+		expect(playerJob().out).toBe("/tmp/x.mp4");
 	});
 
 	test.each(["0", "-3", "abc"])("rejects a non-positive --timeout %s", async (value) => {
@@ -282,11 +310,6 @@ describe("demo <plan> browser selection", () => {
 		const plan = playerJob().plan as { mode: string; headless: boolean };
 		expect(plan.mode).toBe("local");
 		expect(plan.headless).toBe(false);
-	});
-
-	test("--video on a headless WSL plan keeps it headless", async () => {
-		await world.drive(registerDemo, ["demo", "--video", world.planPath], demoDeps(headless()));
-		expect((playerJob().plan as { headless: boolean }).headless).toBe(true);
 	});
 
 	test("--windows plans the Windows browser", async () => {
@@ -347,21 +370,81 @@ describe("demo <plan> browser selection", () => {
 		}
 	});
 
-	test("--out must name a .webm file", async () => {
+	test("--out must name a .mp4 file", async () => {
 		const run = await world.drive(
 			registerDemo,
-			["demo", "--video", "--out", "/tmp/x.mp4", world.planPath],
+			["demo", "--out", "/tmp/x.webm", world.planPath],
 			demoDeps(),
 		);
 		expect(run.code).toBe(1);
-		expect(run.err).toContain(".webm");
+		expect(run.err).toContain(".mp4");
 		expect(world.spawned).toHaveLength(0);
+	});
+
+	test("--out inside a git work tree exits 1 and starts nothing", async () => {
+		const checked: string[] = [];
+		const out = join(world.home, "not-yet", "deeper", "x.mp4");
+		const run = await world.drive(
+			registerDemo,
+			["demo", "--out", out, world.planPath],
+			demoDeps({
+				inGitWorkTree: (dir) => {
+					checked.push(dir);
+					return true;
+				},
+			}),
+		);
+		expect(run.code).toBe(1);
+		expect(run.err).toContain("demo: --out must be outside a git work tree");
+		expect(checked).toEqual([realpathSync(world.home)]);
+		expect(world.spawned).toHaveLength(0);
+	});
+
+	test("--out checks the real path of a symlinked parent", async () => {
+		const real = join(world.home, "real");
+		mkdirSync(real);
+		symlinkSync(real, join(world.home, "link"));
+		const checked: string[] = [];
+		const run = await world.drive(
+			registerDemo,
+			["demo", "--out", join(world.home, "link", "x.mp4"), world.planPath],
+			demoDeps({ inGitWorkTree: (dir) => (checked.push(dir), true) }),
+		);
+		expect(run.code).toBe(1);
+		expect(checked).toEqual([realpathSync(real)]);
+	});
+
+	test("--out that is itself a symlink is refused, even when it dangles", async () => {
+		const target = join(world.home, "in-repo.mp4");
+		const link = join(world.home, "out.mp4");
+		symlinkSync(target, link);
+		const run = await world.drive(registerDemo, ["demo", "--out", link, world.planPath], demoDeps());
+		expect(run.code).toBe(1);
+		expect(run.err).toContain("demo: --out must not be a symlink");
+		expect(world.spawned).toHaveLength(0);
+	});
+
+	test("--out is passed to the player as an absolute path", async () => {
+		const previous = process.cwd();
+		process.chdir(world.home);
+		try {
+			await world.drive(registerDemo, ["demo", "--out", "rel/x.mp4", world.planPath], demoDeps());
+		} finally {
+			process.chdir(previous);
+		}
+		expect(playerJob().out).toBe(join(realpathSync(world.home), "rel", "x.mp4"));
+	});
+
+	test("--out outside a git work tree is passed to the player", async () => {
+		const out = join(world.home, "x.mp4");
+		await world.drive(registerDemo, ["demo", "--out", out, world.planPath], demoDeps());
+		expect(playerJob().out).toBe(out);
 	});
 
 	test("local-only flags with --ext exit 1 and name local mode", async () => {
 		const run = await world.drive(
 			registerDemo,
-			["demo", "--ext", "--out", "/tmp/x.webm", world.planPath],
+			["demo", "--ext", "--out", "/tmp/x.mp4", world.planPath],
 			demoDeps(),
 		);
 		expect(run.code).toBe(1);
@@ -377,10 +460,10 @@ describe("demo <plan> browser selection", () => {
 		expect(statSync(join(dir, "player.pid")).mode & 0o777).toBe(0o600);
 	});
 
-	test("--video with --browser keeps a WSL run headless inside WSL even with a Windows browser", async () => {
+	test("--browser keeps a WSL run headless inside WSL even with a Windows browser", async () => {
 		await world.drive(
 			registerDemo,
-			["demo", "--video", "--browser", "chrome", world.planPath],
+			["demo", "--browser", "chrome", world.planPath],
 			demoDeps({ isWSL: () => true, windowsBrowserPresent: () => true }),
 		);
 		expect(playerJob().plan).toMatchObject({ mode: "local", headless: true });

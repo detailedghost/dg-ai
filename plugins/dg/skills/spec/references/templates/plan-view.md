@@ -37,10 +37,7 @@ Bundle: <bundle path> · Status: <status> · Slices: <count>
 - 👀 <question>
 
 ## Cost
-- <token-cost warning from step 7, one line>
+- <one line per profile, from `dg-skills spec estimate`>
 ```
 
-After the view, ask with `AskUserQuestion`:
-
-- Approve: continue to the next step.
-- Rework: the user says what to change. Revise `plan.md`, print the view again, and ask again. Loop until Approve.
+After the view, ask per plan.md step 8: Approve (with the profile choice) or Rework.

@@ -36,9 +36,9 @@ The orchestrator pre-created your worktree and branch:
 ## Step 1 — Understand
 
 Read the relevant source material based on item type:
-- vcs-issue: `~/.dg/bin/dg-skills vcs-provider view-issue {ITEM_ID}`
+- vcs-issue: `dg-skills vcs-provider view-issue {ITEM_ID}`
 - code-quality: Read `{ITEM_FILE}` around the target line with surrounding context
-- pr-backlog: `~/.dg/bin/dg-skills vcs-provider view-pr {ITEM_ID}` and `~/.dg/bin/dg-skills vcs-provider list-threads {ITEM_ID}`
+- pr-backlog: `dg-skills vcs-provider view-pr {ITEM_ID}` and `dg-skills vcs-provider list-threads {ITEM_ID}`
 - codebase-scan: Read `{ITEM_FILE}` and any related files (imports, callers)
 
 Read CLAUDE.md if it exists — follow project conventions. Check for .agents/school/ files. Read `.agents/monolith.md` if it exists — use the project's canonical terms in code, comments, and the PR body, and avoid the listed aliases.
@@ -85,7 +85,7 @@ If tests fail:
 
 ## Step 6 — Draft PR body (DO NOT create the PR)
 
-Build the PR/MR body as a string. Do NOT run `~/.dg/bin/dg-skills vcs-provider create-pr` — the orchestrator collects all branches and creates PRs/MRs after a human review gate.
+Build the PR/MR body as a string. Do NOT run `dg-skills vcs-provider create-pr` — the orchestrator collects all branches and creates PRs/MRs after a human review gate.
 
 PR body must include these sections:
 - **Summary**: 1-2 bullet points (what changed, why)

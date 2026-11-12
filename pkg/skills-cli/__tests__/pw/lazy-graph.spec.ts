@@ -72,7 +72,6 @@ describe("pw lazy loading", () => {
 			);
 			expect(packages.has("playwright-core")).toBe(false);
 			expect(files.has(path.join(SRC, "demo", "player-process.ts"))).toBe(false);
-			expect(files.has(path.join(SRC, "demo", "player-asset.ts"))).toBe(false);
 		}
 	});
 

@@ -13,7 +13,7 @@ import { REPO_ROOT } from "./test-support";
 
 const ENTRY = join(REPO_ROOT, "pkg", "skills-cli", "src", "index.ts");
 const SKILLS_DIR = join(REPO_ROOT, "plugins", "dg", "skills");
-const CLI_PATH = "~/.dg/bin/dg-skills";
+const CLI_PATH = "dg-skills";
 const DOCTOR_LINE = new RegExp(
 	`^If a step fails, run ${CLI_PATH.replace(/[~./]/g, "\\$&")} doctor ([a-z][a-z-]*(?: [a-z][a-z-]*)*)\\.?$`,
 	"m",

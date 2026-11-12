@@ -13,7 +13,12 @@ import {
 } from "@dg/common/node";
 import { compareVersions, versionGte } from "../utils/lib";
 
-export const CLI_PATH = "~/.dg/bin/dg-skills";
+export const CLI_PATH = "dg-skills";
+export const LEGACY_CLI_PATH = "~/.dg/bin/dg-skills";
+
+export function cliLauncher(binDir: string, platform: NodeJS.Platform = process.platform): string {
+	return join(binDir, platform === "win32" ? "dg-skills.cmd" : "dg-skills");
+}
 const VERSION = /\d+\.\d+(?:\.\d+)?/;
 
 export function whichBinary(
@@ -106,6 +111,11 @@ export function readAllowRules(home: string): AllowRules {
 	} catch (error) {
 		return { error: (error as Error).message };
 	}
+}
+
+/** An allow rule in the `~/.dg/bin/dg-skills` form, which stopped matching once skills called `dg-skills`. */
+export function hasLegacyAllowRule(rules: readonly string[], sub: string): boolean {
+	return rules.includes(`Bash(${LEGACY_CLI_PATH} ${sub}:*)`) || rules.includes(`Bash(${LEGACY_CLI_PATH}:*)`);
 }
 
 export function hasAllowRule(rules: readonly string[], sub: string): boolean {

@@ -104,6 +104,16 @@ fields:
             type: string
             mutability: mutable
             description: 'Primary agent reasoning effort: low|medium|xhigh (defaults per tier in assign/references/model-tiers.json if unset).'
+          complexity:
+            type: string
+            enum: [low, medium, high]
+            mutability: mutable
+            description: 'Slice difficulty rubric: low|medium|high. Read by execution profiles; the enum is enforced by `assign resolve`, not by `validate`.'
+          model:
+            type: string
+            enum: [haiku, sonnet, opus, fable]
+            mutability: mutable
+            description: 'Human override of the primary tier: haiku|sonnet|opus|fable. Fixes the tier only; the enum is enforced by `assign resolve`, not by `validate`.'
           qa:
             type: array
             mutability: mutable
@@ -128,6 +138,17 @@ fields:
       auto_cleanup_worktree: {type: boolean, mutability: mutable}
       slice_commits: {type: boolean, mutability: mutable}
       housekeeping_commit: {type: boolean, mutability: mutable}
+
+  # ---- Execution ---------------------------------------------------------
+  execution:
+    type: object
+    mutability: mutable
+    description: Cost profile for the run. Absent means balance. Read by `assign resolve` and `spec estimate`.
+    fields:
+      profile:
+        type: string
+        enum: [balance, cheap, expensive]
+        mutability: mutable
 
   # ---- Tooling -----------------------------------------------------------
   tools:
@@ -222,7 +243,7 @@ fields:
     type: string
     mode_conditional: parked-only
     mutability: mutable
-    description: Path to the canonical plan file, under the `~/.dg/bin/dg-skills stash -s spec` bucket, backing this parked spec.
+    description: Path to the canonical plan file, under the `dg-skills stash -s spec` bucket, backing this parked spec.
 
   # ---- Captured-context (free-form, append-only) -----------------------
   resolved_open_questions:

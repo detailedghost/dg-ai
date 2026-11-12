@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import {
 	applyConnectionPragmas,
 	type DgPaths,
@@ -8,6 +8,7 @@ import {
 	runMigrations,
 } from "@dg/common/node";
 import { join } from "node:path";
+import { FILE_NAME_PATTERN, FILES_DIR, imageFileName, parseImageFile } from "./image";
 import { migrateThreadSchema } from "./thread-schema";
 
 export type Direction = "in" | "out";
@@ -26,6 +27,42 @@ export type MessageRow = {
 	read_at: number | null;
 	attempts: number;
 	thread_id: string | null;
+	/** JSON `{sha256, type, size}` for an image row, else null. */
+	file: string | null;
+	/** 1 when the sender marked the message as PHI. */
+	phi: number;
+	/** This phone's clock when the row was stored; PHI expiry uses it, never the sender's `ts`. */
+	received_at: number;
+	/** When a recipient's receipt for an outgoing row arrived, else null. */
+	delivered_at: number | null;
+	/** The agent on this machine the row belongs to; null is the shared inbox. */
+	ext: string | null;
+	/** The agent on the other machine: the sender's `dg-from-ext`, or the extension we sent to. */
+	peer_ext: string | null;
+};
+
+/** Which rows a reader sees: null is the shared inbox only, a name is that agent plus the shared inbox. */
+export type ExtView = { ext: string | null };
+
+/** One extension a contact's messages named as their sender. */
+export type ContactExtRow = { ext: string; last_seen: number };
+
+/** Extensions kept per contact; a peer that claims more loses its oldest. */
+const CONTACT_EXT_LIMIT = 16;
+
+/** One image still being fetched; the row, with its key and nonce, is deleted when the fetch ends. */
+export type ImageFetchRow = {
+	message_id: string;
+	sender: string;
+	key_id: string;
+	x: string;
+	ox: string;
+	size: number;
+	key: string;
+	nonce: string;
+	attempts: number;
+	next_at: number;
+	deadline: number;
 };
 
 export type KeyRow = { id: string; nsec: string | null; in_store: number; created_at: number };
@@ -37,7 +74,12 @@ export type ContactRow = {
 	key_id: string;
 	added_at: number;
 	via: string;
+	/** Latest rumor time seen from this contact, else null. */
+	last_seen: number | null;
 };
+
+/** One `phone ping` check: `sender` is our npub that signed it, `contact` the npub it went to. */
+export type PingRow = { id: string; contact: string; sender: string; sent_at: number; delivered_at: number | null; busy_at: number | null };
 
 export type ThreadRow = {
 	id: string;
@@ -58,6 +100,8 @@ export type PendingThreadRow = {
 	ts: number;
 	noticed: number;
 	received_at: number;
+	/** 1 when the sender marked the message as PHI. */
+	phi: number;
 };
 
 export type InviteRow = {
@@ -72,6 +116,44 @@ export type InviteRow = {
 
 /** Messages older than this are deleted, same horizon the old phone-friend lines used. */
 export const MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** NIP-59 backdates each wrap's `created_at` by up to two days, so `since` must reach that far behind the cursor. */
+export const LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
+
+/** PHI rows, their outbox copies, and outbox files with no row live this long instead of the message TTL. */
+export const PHI_TTL_SECONDS = 24 * 60 * 60;
+
+/** Folder under `phoneRoot` that holds staged ciphertext, one file per `x` hash. */
+export const OUTBOX_DIR = "outbox";
+
+/** Folder under `phoneRoot` that holds sealed vault items, one file per random item id. */
+export const VAULT_DIR = "vault";
+const VAULT_ID_PATTERN = /^[0-9a-f]{32}$/;
+const VAULT_VIEW_PATTERN = /^[0-9a-f]{32}\.view\.(?:png|jpg|webp)$/;
+/** A human's viewer copy of a vault image is removed by prune after this, if `vault open` did not remove it. */
+const VAULT_VIEW_GRACE_SECONDS = 60 * 60;
+
+/** One sealed PHI item; `sender` and `expires_at` are bound into the AES-GCM tag with `id`. */
+export type VaultItemRow = {
+	id: string;
+	name: string;
+	sender: string;
+	type: string;
+	size: number;
+	key_period: string;
+	created_at: number;
+	expires_at: number;
+	/** The agent on this machine the item came in for; null is shared. */
+	ext: string | null;
+};
+
+/** A receipt that beat its row to the database is held this long. */
+const EARLY_RECEIPT_SECONDS = 10 * 60;
+/** Held early receipts; the oldest are dropped past this. */
+const EARLY_RECEIPT_LIMIT = 256;
+
+/** A crashed atomic write older than this is removed by prune. */
+const TMP_GRACE_SECONDS = 60;
 
 const SCHEMA: MigrationStep[] = [
 	{
@@ -134,6 +216,106 @@ const SCHEMA: MigrationStep[] = [
 			migrateThreadSchema(db);
 		},
 	},
+	{
+		version: 5,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN file TEXT");
+			db.run("ALTER TABLE messages ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
+			db.run(`CREATE TABLE outbox (
+				sha256 TEXT PRIMARY KEY,
+				key_id TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				phi INTEGER NOT NULL DEFAULT 0
+			) STRICT`);
+			db.run(`CREATE TABLE outbox_recipients (
+				sha256 TEXT NOT NULL REFERENCES outbox(sha256) ON DELETE CASCADE,
+				pubkey TEXT NOT NULL,
+				PRIMARY KEY (sha256, pubkey)
+			) STRICT`);
+		},
+	},
+	{
+		version: 6,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN received_at INTEGER NOT NULL DEFAULT 0");
+			db.run("UPDATE messages SET received_at = ts");
+			db.run(`CREATE TABLE image_fetches (
+				message_id TEXT PRIMARY KEY,
+				sender TEXT NOT NULL,
+				key_id TEXT NOT NULL,
+				x TEXT NOT NULL,
+				ox TEXT NOT NULL,
+				size INTEGER NOT NULL,
+				key TEXT NOT NULL,
+				nonce TEXT NOT NULL,
+				attempts INTEGER NOT NULL DEFAULT 0,
+				next_at INTEGER NOT NULL,
+				deadline INTEGER NOT NULL
+			) STRICT`);
+			db.run("ALTER TABLE pending_threads ADD COLUMN phi INTEGER NOT NULL DEFAULT 0");
+			db.run(`CREATE TABLE expired_ids (
+				id TEXT PRIMARY KEY,
+				expires_at INTEGER NOT NULL
+			) STRICT`);
+		},
+	},
+	{
+		version: 7,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN delivered_at INTEGER");
+			db.run("ALTER TABLE contacts ADD COLUMN last_seen INTEGER");
+			db.run(`CREATE TABLE pings (
+				id TEXT PRIMARY KEY,
+				contact TEXT NOT NULL,
+				sender TEXT NOT NULL,
+				sent_at INTEGER NOT NULL,
+				delivered_at INTEGER,
+				busy_at INTEGER
+			) STRICT`);
+			db.run(`CREATE TABLE early_receipts (
+				id TEXT NOT NULL,
+				signer TEXT NOT NULL,
+				recipient TEXT NOT NULL,
+				at INTEGER NOT NULL,
+				PRIMARY KEY (id, signer)
+			) STRICT`);
+		},
+	},
+	{
+		version: 8,
+		run: (db) => {
+			db.run(`CREATE TABLE vault_items (
+				id TEXT PRIMARY KEY,
+				name TEXT NOT NULL UNIQUE,
+				sender TEXT NOT NULL,
+				type TEXT NOT NULL,
+				size INTEGER NOT NULL,
+				key_period TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				expires_at INTEGER NOT NULL
+			) STRICT`);
+		},
+	},
+	{
+		version: 9,
+		run: (db) => {
+			db.run("ALTER TABLE messages ADD COLUMN ext TEXT");
+			db.run("ALTER TABLE messages ADD COLUMN peer_ext TEXT");
+			db.run("ALTER TABLE vault_items ADD COLUMN ext TEXT");
+			db.run(`CREATE TABLE ext_reads (
+				message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+				ext TEXT NOT NULL,
+				read_at INTEGER NOT NULL,
+				PRIMARY KEY (message_id, ext)
+			) STRICT`);
+			db.run(`CREATE TABLE contact_exts (
+				npub TEXT NOT NULL REFERENCES contacts(npub) ON DELETE CASCADE,
+				ext TEXT NOT NULL,
+				last_seen INTEGER NOT NULL,
+				PRIMARY KEY (npub, ext)
+			) STRICT`);
+		},
+	},
 ];
 
 /** One SQLite file for every key, contact, invite, and message, shared across the whole phone. */
@@ -141,6 +323,7 @@ export class PhoneDb {
 	private constructor(
 		private readonly db: Database,
 		private readonly now: () => number,
+		private readonly dir: string,
 	) {}
 
 	static path(paths: DgPaths): string {
@@ -170,7 +353,7 @@ export class PhoneDb {
 			db.close(true);
 			throw err;
 		}
-		const opened = new PhoneDb(db, now);
+		const opened = new PhoneDb(db, now, dir);
 		opened.pruneMessages();
 		return opened;
 	}
@@ -181,10 +364,167 @@ export class PhoneDb {
 
 	pruneMessages(): void {
 		const cutoff = this.cutoff();
+		const phiCutoff = this.now() - PHI_TTL_SECONDS;
 		const pendingBefore = this.listPending().length;
-		this.db.query("DELETE FROM messages WHERE ts < $cutoff").run({ cutoff });
-		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff").run({ cutoff });
+		const expired = "ts < $cutoff OR (phi = 1 AND received_at < $phiCutoff)";
+		const doomed = this.fileNames(`SELECT file FROM messages WHERE file IS NOT NULL AND direction = 'in' AND (${expired})`, { cutoff, phiCutoff });
+		const now = this.now();
+		const tombstoneUntil = now + MESSAGE_TTL_SECONDS + LOOKBACK_SECONDS;
+		this.db.query("DELETE FROM expired_ids WHERE expires_at <= $now").run({ now });
+		this.db
+			.query("INSERT OR IGNORE INTO expired_ids (id, expires_at) SELECT id, $until FROM messages WHERE phi = 1 AND received_at < $phiCutoff")
+			.run({ until: tombstoneUntil, phiCutoff });
+		this.db
+			.query("INSERT OR IGNORE INTO expired_ids (id, expires_at) SELECT rumor_id, $until FROM pending_threads WHERE phi = 1 AND received_at < $phiCutoff")
+			.run({ until: tombstoneUntil, phiCutoff });
+		this.db.query(`DELETE FROM messages WHERE ${expired}`).run({ cutoff, phiCutoff });
+		this.db.query("DELETE FROM image_fetches WHERE message_id NOT IN (SELECT id FROM messages)").run();
+		this.db.query("DELETE FROM pings WHERE sent_at < $cutoff").run({ cutoff });
+		this.db.query("DELETE FROM early_receipts WHERE at < $early").run({ early: now - EARLY_RECEIPT_SECONDS });
+		this.db.query("DELETE FROM pending_threads WHERE received_at < $cutoff OR (phi = 1 AND received_at < $phiCutoff)").run({ cutoff, phiCutoff });
 		if (this.listPending().length !== pendingBefore) this.syncHeldNotice();
+		this.pruneOutbox(cutoff, phiCutoff);
+		this.pruneFiles(doomed, phiCutoff);
+		this.pruneVault(now);
+	}
+
+	/** Drops expired items and their files, then stray files and old viewer copies; never follows a symlink. */
+	private pruneVault(now: number): void {
+		const folder = join(this.dir, VAULT_DIR);
+		const expired = this.db.query("SELECT id FROM vault_items WHERE expires_at <= $now").all({ now }) as { id: string }[];
+		for (const { id } of expired) {
+			this.removeVaultItem(id);
+			rmSync(join(folder, id), { force: true });
+		}
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const known = this.db.query("SELECT 1 FROM vault_items WHERE id = $id");
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const age = now - stat.mtimeMs / 1000;
+			const stale = VAULT_VIEW_PATTERN.test(name)
+				? age > VAULT_VIEW_GRACE_SECONDS
+				: age > TMP_GRACE_SECONDS && !(VAULT_ID_PATTERN.test(name) && known.get({ id: name }) !== null);
+			if (stale) rmSync(path, { force: true });
+		}
+	}
+
+	/** False when the name is taken. */
+	addVaultItem(row: VaultItemRow): boolean {
+		const result = this.db
+			.query(
+				`INSERT OR IGNORE INTO vault_items (id, name, sender, type, size, key_period, created_at, expires_at, ext)
+				VALUES ($id, $name, $sender, $type, $size, $keyPeriod, $createdAt, $expiresAt, $ext)`,
+			)
+			.run({
+				id: row.id,
+				name: row.name,
+				sender: row.sender,
+				type: row.type,
+				size: row.size,
+				keyPeriod: row.key_period,
+				createdAt: row.created_at,
+				expiresAt: row.expires_at,
+				ext: row.ext,
+			});
+		return result.changes > 0;
+	}
+
+	/** The live item with this name; an expired one is never returned. */
+	vaultItem(name: string): VaultItemRow | undefined {
+		return (
+			(this.db.query("SELECT * FROM vault_items WHERE name = $name AND expires_at > $now").get({ name, now: this.now() }) as VaultItemRow | null) ??
+			undefined
+		);
+	}
+
+	/** Every live item, or with `ext` only that agent's items and the shared ones. */
+	listVaultItems(ext?: string): VaultItemRow[] {
+		const scope = ext === undefined ? "" : "AND (ext IS NULL OR ext = $ext)";
+		return this.db
+			.query(`SELECT * FROM vault_items WHERE expires_at > $now ${scope} ORDER BY created_at, name`)
+			.all({ now: this.now(), ...(ext === undefined ? {} : { ext }) }) as VaultItemRow[];
+	}
+
+	/** True while any row, live or not yet pruned, holds the name. */
+	vaultNameTaken(name: string): boolean {
+		return this.db.query("SELECT 1 FROM vault_items WHERE name = $name").get({ name }) !== null;
+	}
+
+	removeVaultItem(id: string): void {
+		this.db.query("DELETE FROM vault_items WHERE id = $id").run({ id });
+	}
+
+	private expiredId(id: string): boolean {
+		return this.db.query("SELECT 1 FROM expired_ids WHERE id = $id AND expires_at > $now").get({ id, now: this.now() }) !== null;
+	}
+
+	private fileNames(sql: string, params: Record<string, number> = {}): Set<string> {
+		const names = new Set<string>();
+		for (const row of this.db.query(sql).all(params) as { file: string | null }[]) {
+			const file = parseImageFile(row.file);
+			const name = file && imageFileName(file);
+			if (name) names.add(name);
+		}
+		return names;
+	}
+
+	/** Unlinks files of pruned rows, unreferenced files past the PHI window, and old temp writes; never follows a symlink. */
+	private pruneFiles(doomed: ReadonlySet<string>, phiCutoff: number): void {
+		const folder = join(this.dir, FILES_DIR);
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const referenced = this.fileNames("SELECT file FROM messages WHERE file IS NOT NULL AND direction = 'in'");
+		const tmpCutoff = this.now() - TMP_GRACE_SECONDS;
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const age = stat.mtimeMs / 1000;
+			const stale = name.endsWith(".tmp")
+				? age < tmpCutoff
+				: !referenced.has(name) && (doomed.has(name) || !FILE_NAME_PATTERN.test(name) || age < phiCutoff);
+			if (stale) rmSync(path, { force: true });
+		}
+	}
+
+	/** Drops expired outbox rows, then unlinks expired or unreferenced old files; never follows a symlink. */
+	private pruneOutbox(cutoff: number, phiCutoff: number): void {
+		const expired = new Set(
+			(
+				this.db
+					.query("SELECT sha256 FROM outbox WHERE created_at < $cutoff OR (phi = 1 AND created_at < $phiCutoff)")
+					.all({ cutoff, phiCutoff }) as { sha256: string }[]
+			).map((row) => row.sha256),
+		);
+		this.transaction(() => {
+			for (const sha of expired) this.removeOutbox(sha);
+		});
+		const folder = join(this.dir, OUTBOX_DIR);
+		let names: string[];
+		try {
+			names = readdirSync(folder);
+		} catch {
+			return;
+		}
+		const known = this.db.query("SELECT 1 FROM outbox WHERE sha256 = $sha");
+		for (const name of names) {
+			const path = join(folder, name);
+			const stat = lstatSync(path, { throwIfNoEntry: false });
+			if (!stat?.isFile()) continue;
+			const stale = expired.has(name) || (known.get({ sha: name }) === null && stat.mtimeMs / 1000 < phiCutoff);
+			if (stale) rmSync(path, { force: true });
+		}
 	}
 
 	getKey(id: string): KeyRow | undefined {
@@ -237,7 +577,7 @@ export class PhoneDb {
 	}
 
 	/** Inserts only when neither the npub nor the handle exists; false means another writer got there first. */
-	insertContact(row: ContactRow): boolean {
+	insertContact(row: Omit<ContactRow, "last_seen">): boolean {
 		const { changes } = this.db
 			.query(
 				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
@@ -255,7 +595,7 @@ export class PhoneDb {
 		return changes > 0;
 	}
 
-	putContact(row: ContactRow): void {
+	putContact(row: Omit<ContactRow, "last_seen">): void {
 		this.db
 			.query(
 				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
@@ -276,8 +616,38 @@ export class PhoneDb {
 		this.db.query("UPDATE contacts SET key_id = $keyId WHERE npub = $npub").run({ keyId, npub });
 	}
 
+	/** Keeps the later of the stored and given time; returns the stored time from before this call. */
+	touchLastSeen(npub: string, at: number): number | null {
+		return this.transaction(() => {
+			const before = (this.db.query("SELECT last_seen FROM contacts WHERE npub = $npub").get({ npub }) as { last_seen: number | null } | null)?.last_seen ?? null;
+			this.db.query("UPDATE contacts SET last_seen = max(coalesce(last_seen, 0), $at) WHERE npub = $npub").run({ npub, at });
+			return before;
+		});
+	}
+
 	removeContact(npub: string): void {
 		this.db.query("DELETE FROM contacts WHERE npub = $npub").run({ npub });
+	}
+
+	/** Notes that a contact's message named `ext` as its sender; a pubkey that is not a contact is ignored. */
+	touchContactExt(npub: string, ext: string, at: number): void {
+		this.transaction(() => {
+			this.db
+				.query(
+					`INSERT INTO contact_exts (npub, ext, last_seen) SELECT $npub, $ext, $at WHERE EXISTS (SELECT 1 FROM contacts WHERE npub = $npub)
+					ON CONFLICT(npub, ext) DO UPDATE SET last_seen = max(last_seen, $at)`,
+				)
+				.run({ npub, ext, at });
+			this.db
+				.query(
+					"DELETE FROM contact_exts WHERE npub = $npub AND ext NOT IN (SELECT ext FROM contact_exts WHERE npub = $npub ORDER BY last_seen DESC, ext LIMIT $limit)",
+				)
+				.run({ npub, limit: CONTACT_EXT_LIMIT });
+		});
+	}
+
+	contactExts(npub: string): ContactExtRow[] {
+		return this.db.query("SELECT ext, last_seen FROM contact_exts WHERE npub = $npub ORDER BY last_seen DESC, ext").all({ npub }) as ContactExtRow[];
 	}
 
 	listLiveInvites(): InviteRow[] {
@@ -308,13 +678,21 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
-	addMessage(message: Omit<MessageRow, "read_at" | "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
+	addMessage(
+		message: Omit<MessageRow, "read_at" | "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at" | "ext" | "peer_ext"> & {
+			thread_id?: string | null;
+			file?: string | null;
+			phi?: boolean;
+			ext?: string | null;
+			peer_ext?: string | null;
+		},
+	): boolean {
 		this.pruneMessages();
-		if (message.ts < this.cutoff()) return false;
+		if (message.ts < this.cutoff() || this.expiredId(message.id)) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id)
-				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId)`,
+				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts, thread_id, file, phi, received_at, ext, peer_ext)
+				VALUES ($id, $direction, $ts, $sender, $contact, $text, $call, $readAt, 0, $threadId, $file, $phi, $receivedAt, $ext, $peerExt)`,
 			)
 			.run({
 				id: message.id,
@@ -326,13 +704,118 @@ export class PhoneDb {
 				call: message.call,
 				readAt: message.direction === "out" ? this.now() : null,
 				threadId: message.thread_id ?? null,
+				file: message.file ?? null,
+				phi: message.phi ? 1 : 0,
+				receivedAt: this.now(),
+				ext: message.ext ?? null,
+				peerExt: message.peer_ext ?? null,
 			});
+		if (result.changes > 0 && message.direction === "out") this.applyEarlyReceipts(message.id);
 		return result.changes > 0;
+	}
+
+	private applyEarlyReceipts(id: string): void {
+		const held = this.db.query("SELECT signer, recipient, at FROM early_receipts WHERE id = $id ORDER BY at").all({ id }) as {
+			signer: string;
+			recipient: string;
+			at: number;
+		}[];
+		for (const receipt of held) this.applyDelivered(id, receipt.signer, receipt.recipient, receipt.at);
+		this.db.query("DELETE FROM early_receipts WHERE id = $id").run({ id });
+	}
+
+	addImageFetch(row: Omit<ImageFetchRow, "attempts">): void {
+		this.db
+			.query(
+				`INSERT OR IGNORE INTO image_fetches (message_id, sender, key_id, x, ox, size, key, nonce, attempts, next_at, deadline)
+				VALUES ($messageId, $sender, $keyId, $x, $ox, $size, $key, $nonce, 0, $nextAt, $deadline)`,
+			)
+			.run({
+				messageId: row.message_id,
+				sender: row.sender,
+				keyId: row.key_id,
+				x: row.x,
+				ox: row.ox,
+				size: row.size,
+				key: row.key,
+				nonce: row.nonce,
+				nextAt: row.next_at,
+				deadline: row.deadline,
+			});
+	}
+
+	imageFetches(): ImageFetchRow[] {
+		return this.db.query("SELECT * FROM image_fetches ORDER BY next_at, message_id").all() as ImageFetchRow[];
+	}
+
+	/** True when a received row that is not PHI already holds the image with plaintext hash `ox`. */
+	hasPlainImage(ox: string): boolean {
+		return (
+			this.db
+				.query("SELECT 1 FROM messages WHERE direction = 'in' AND phi = 0 AND file IS NOT NULL AND json_extract(file, '$.sha256') = $ox LIMIT 1")
+				.get({ ox }) !== null
+		);
+	}
+
+	pendingImageCount(): number {
+		return (this.db.query("SELECT COUNT(*) AS n FROM image_fetches").get() as { n: number }).n;
+	}
+
+	/** Moves every deferred fetch from `sender` (hex pubkey) up to `now`. */
+	retryImageFetchesFrom(sender: string, now: number): void {
+		this.db.query("UPDATE image_fetches SET next_at = $now WHERE sender = $sender AND next_at > $now").run({ sender, now });
+	}
+
+	deferImageFetch(id: string, attempts: number, nextAt: number): void {
+		this.db.query("UPDATE image_fetches SET attempts = $attempts, next_at = $nextAt WHERE message_id = $id").run({ id, attempts, nextAt });
+	}
+
+	/** Ends a fetch: drops its key and nonce, writes the final text, and makes the row unread again for the hook. */
+	finishImage(id: string, text: string, file: string | null): void {
+		this.transaction(() => {
+			this.db.query("DELETE FROM image_fetches WHERE message_id = $id").run({ id });
+			this.db.query("UPDATE messages SET text = $text, file = $file, read_at = NULL, attempts = 0 WHERE id = $id").run({ id, text, file });
+			this.db.query("DELETE FROM ext_reads WHERE message_id = $id").run({ id });
+		});
+	}
+
+	/** Records a staged outbox blob, the key that sent it, and the pubkeys allowed to fetch it. */
+	addOutbox(sha256: string, keyId: string, recipients: readonly string[], opts: { phi?: boolean } = {}): void {
+		this.transaction(() => {
+			this.db
+				.query("INSERT OR IGNORE INTO outbox (sha256, key_id, created_at, phi) VALUES ($sha256, $keyId, $createdAt, $phi)")
+				.run({ sha256, keyId, createdAt: this.now(), phi: opts.phi ? 1 : 0 });
+			const add = this.db.query("INSERT OR IGNORE INTO outbox_recipients (sha256, pubkey) VALUES ($sha256, $pubkey)");
+			for (const pubkey of recipients) add.run({ sha256, pubkey });
+		});
+	}
+
+	removeOutboxRecipient(sha256: string, pubkey: string): void {
+		this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha256 AND pubkey = $pubkey").run({ sha256, pubkey });
+	}
+
+	removeOutbox(sha256: string): void {
+		this.db.query("DELETE FROM outbox_recipients WHERE sha256 = $sha256").run({ sha256 });
+		this.db.query("DELETE FROM outbox WHERE sha256 = $sha256").run({ sha256 });
+	}
+
+	outboxKeyId(sha256: string): string | undefined {
+		return (this.db.query("SELECT key_id FROM outbox WHERE sha256 = $sha256").get({ sha256 }) as { key_id: string } | null)?.key_id;
+	}
+
+	outboxRecipients(sha256: string): string[] {
+		return (
+			this.db.query("SELECT pubkey FROM outbox_recipients WHERE sha256 = $sha256 ORDER BY pubkey").all({ sha256 }) as {
+				pubkey: string;
+			}[]
+		).map((row) => row.pubkey);
 	}
 
 	/** Inserts a message with its own `read_at`, unlike `addMessage` which infers it from
 	 * direction; migration uses this to carry over an existing read mark exactly. */
-	insertMigratedMessage(message: Omit<MessageRow, "attempts" | "thread_id"> & { thread_id?: string | null }): boolean {
+	insertMigratedMessage(
+		message: Omit<MessageRow, "attempts" | "thread_id" | "file" | "phi" | "received_at" | "delivered_at" | "ext" | "peer_ext"> & { thread_id?: string | null },
+	): boolean {
 		const result = this.db
 			.query(
 				`INSERT OR IGNORE INTO messages (id, direction, ts, sender, contact, text, call, read_at, attempts)
@@ -351,6 +834,10 @@ export class PhoneDb {
 		return result.changes > 0;
 	}
 
+	getMessage(id: string): MessageRow | undefined {
+		return (this.db.query("SELECT * FROM messages WHERE id = $id").get({ id }) as MessageRow | null) ?? undefined;
+	}
+
 	unreadMessages(): MessageRow[] {
 		return this.db
 			.query("SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL ORDER BY ts, id")
@@ -364,12 +851,41 @@ export class PhoneDb {
 		});
 	}
 
-	takeUnread(skip?: ReadonlySet<string>): MessageRow[] {
+	/** Unread incoming rows in one view: the shared view reads `read_at`, an agent only its own marks. */
+	unreadFor(ext: string | null): MessageRow[] {
+		if (ext === null) {
+			return this.db.query("SELECT * FROM messages WHERE direction = 'in' AND ext IS NULL AND read_at IS NULL ORDER BY ts, id").all() as MessageRow[];
+		}
+		return this.db
+			.query(
+				`SELECT * FROM messages WHERE direction = 'in' AND (ext IS NULL OR ext = $ext)
+				AND NOT EXISTS (SELECT 1 FROM ext_reads WHERE message_id = messages.id AND ext = $ext) ORDER BY ts, id`,
+			)
+			.all({ ext }) as MessageRow[];
+	}
+
+	takeUnreadFor(ext: string | null, skip?: ReadonlySet<string>): MessageRow[] {
 		return this.transaction(() => {
-			const rows = this.unreadMessages().filter((row) => !skip?.has(row.id));
-			this.markRead(rows.map((row) => row.id));
+			const rows = this.unreadFor(ext).filter((row) => !skip?.has(row.id));
+			if (ext === null) {
+				this.markRead(rows.map((row) => row.id));
+				return rows;
+			}
+			const mark = this.db.query("INSERT OR IGNORE INTO ext_reads (message_id, ext, read_at) VALUES ($id, $ext, $now)");
+			for (const row of rows) mark.run({ id: row.id, ext, now: this.now() });
 			return rows;
 		});
+	}
+
+	/** Unread incoming rows held for each agent, which the shared view does not show. */
+	waitingByExtension(): Record<string, number> {
+		const rows = this.db
+			.query(
+				`SELECT ext, COUNT(*) AS n FROM messages WHERE direction = 'in' AND ext IS NOT NULL
+				AND NOT EXISTS (SELECT 1 FROM ext_reads WHERE message_id = messages.id AND ext = messages.ext) GROUP BY ext ORDER BY ext`,
+			)
+			.all() as { ext: string; n: number }[];
+		return Object.fromEntries(rows.map((row) => [row.ext, row.n]));
 	}
 
 	/** The oldest unread message still under the hook's attempt cap, or undefined once the queue is empty. */
@@ -377,7 +893,7 @@ export class PhoneDb {
 		return (
 			(this.db
 				.query(
-					"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap AND sender != $sender ORDER BY ts, id LIMIT 1",
+					"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts < $cap AND sender != $sender AND NOT EXISTS (SELECT 1 FROM image_fetches WHERE message_id = messages.id) ORDER BY ts, id LIMIT 1",
 				)
 				.get({ cap, sender: PHONE_SYSTEM_SENDER }) as MessageRow | null) ?? undefined
 		);
@@ -387,7 +903,7 @@ export class PhoneDb {
 	stuckMessages(cap: number): MessageRow[] {
 		return this.db
 			.query(
-				"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap AND sender != $sender ORDER BY ts, id",
+				"SELECT * FROM messages WHERE direction = 'in' AND read_at IS NULL AND attempts >= $cap AND sender != $sender AND NOT EXISTS (SELECT 1 FROM image_fetches WHERE message_id = messages.id) ORDER BY ts, id",
 			)
 			.all({ cap, sender: PHONE_SYSTEM_SENDER }) as MessageRow[];
 	}
@@ -405,21 +921,75 @@ export class PhoneDb {
 	 * A contact filter is one-to-one only (`thread_id` null). A thread filter is that room.
 	 * With neither, every row is returned, thread rows included.
 	 */
-	recentMessages(limit: number, contactNpub?: string, threadId?: string): MessageRow[] {
-		const rows = (
-			threadId !== undefined
-				? this.db
-						.query("SELECT * FROM messages WHERE thread_id = $thread ORDER BY ts DESC, id DESC LIMIT $limit")
-						.all({ thread: threadId, limit })
-				: contactNpub !== undefined
-					? this.db
-							.query(
-								"SELECT * FROM messages WHERE contact = $contact AND thread_id IS NULL ORDER BY ts DESC, id DESC LIMIT $limit",
-							)
-							.all({ contact: contactNpub, limit })
-					: this.db.query("SELECT * FROM messages ORDER BY ts DESC, id DESC LIMIT $limit").all({ limit })
-		) as MessageRow[];
-		return rows.reverse();
+	recentMessages(limit: number, contactNpub?: string, threadId?: string, view?: ExtView): MessageRow[] {
+		const where = [
+			...(threadId !== undefined ? ["thread_id = $thread"] : contactNpub !== undefined ? ["contact = $contact", "thread_id IS NULL"] : []),
+			...(view === undefined ? [] : view.ext === null ? ["ext IS NULL"] : ["(ext IS NULL OR ext = $ext)"]),
+		];
+		const params = {
+			limit,
+			...(threadId !== undefined ? { thread: threadId } : contactNpub !== undefined ? { contact: contactNpub } : {}),
+			...(view?.ext ? { ext: view.ext } : {}),
+		};
+		const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+		const rows = this.db.query(`SELECT * FROM messages ${clause} ORDER BY ts DESC, id DESC LIMIT $limit`).all(params) as MessageRow[];
+		rows.reverse();
+		const ext = view?.ext;
+		if (!ext) return rows;
+		const readAt = this.db.query("SELECT read_at FROM ext_reads WHERE message_id = $id AND ext = $ext");
+		return rows.map((row) =>
+			row.direction === "out" ? row : { ...row, read_at: (readAt.get({ id: row.id, ext }) as { read_at: number } | null)?.read_at ?? null },
+		);
+	}
+
+	/**
+	 * Sets `delivered_at` once on our outgoing row or ping `id`, only when `signer` was a recipient
+	 * and `to` is the npub that sent it. A thread row accepts any member. A receipt for an id not
+	 * stored yet is held, since `text` saves its row after the relays answer.
+	 */
+	markDelivered(id: string, signer: string, to: string, at: number): boolean {
+		if (this.applyDelivered(id, signer, to, at)) return true;
+		const known = this.db.query("SELECT 1 FROM messages WHERE id = $id UNION ALL SELECT 1 FROM pings WHERE id = $id").get({ id });
+		if (known !== null) return false;
+		this.db.query("INSERT OR IGNORE INTO early_receipts (id, signer, recipient, at) VALUES ($id, $signer, $to, $at)").run({ id, signer, to, at });
+		this.db
+			.query("DELETE FROM early_receipts WHERE rowid NOT IN (SELECT rowid FROM early_receipts ORDER BY at DESC, rowid DESC LIMIT $limit)")
+			.run({ limit: EARLY_RECEIPT_LIMIT });
+		return false;
+	}
+
+	private applyDelivered(id: string, signer: string, to: string, at: number): boolean {
+		const message = this.db
+			.query(
+				`UPDATE messages SET delivered_at = $at
+				WHERE id = $id AND direction = 'out' AND delivered_at IS NULL AND sender = $to
+				AND ((thread_id IS NULL AND contact = $signer)
+					OR (thread_id IS NOT NULL AND EXISTS (SELECT 1 FROM thread_members WHERE thread_id = messages.thread_id AND npub = $signer)))`,
+			)
+			.run({ id, signer, to, at });
+		if (message.changes > 0) return true;
+		const ping = this.db
+			.query("UPDATE pings SET delivered_at = $at WHERE id = $id AND delivered_at IS NULL AND contact = $signer AND sender = $to")
+			.run({ id, signer, to, at });
+		return ping.changes > 0;
+	}
+
+	addPing(row: Omit<PingRow, "delivered_at" | "busy_at">): void {
+		this.db
+			.query("INSERT OR IGNORE INTO pings (id, contact, sender, sent_at) VALUES ($id, $contact, $sender, $sentAt)")
+			.run({ id: row.id, contact: row.contact, sender: row.sender, sentAt: row.sent_at });
+	}
+
+	pingRow(id: string): PingRow | undefined {
+		return (this.db.query("SELECT * FROM pings WHERE id = $id").get({ id }) as PingRow | null) ?? undefined;
+	}
+
+	/** Records a rate-limited answer to our ping `id`, under the same recipient check as `markDelivered`. */
+	markBusy(id: string, signer: string, to: string, at: number): boolean {
+		const result = this.db
+			.query("UPDATE pings SET busy_at = $at WHERE id = $id AND delivered_at IS NULL AND busy_at IS NULL AND contact = $signer AND sender = $to")
+			.run({ id, signer, to, at });
+		return result.changes > 0;
 	}
 
 	getThread(id: string): ThreadRow | undefined {
@@ -466,12 +1036,13 @@ export class PhoneDb {
 			.run({ threadId, npub });
 	}
 
-	/** True when this rumor was not already held. `received_at` is this phone's clock, not the sender's. */
-	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at">): boolean {
+	/** True when this rumor was neither held already nor expired as PHI. `received_at` is this phone's clock, not the sender's. */
+	insertPending(row: Omit<PendingThreadRow, "noticed" | "received_at" | "phi"> & { phi?: boolean }): boolean {
+		if (this.expiredId(row.rumor_id)) return false;
 		const result = this.db
 			.query(
-				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at)
-				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt)`,
+				`INSERT OR IGNORE INTO pending_threads (rumor_id, room_id, sender, members, subject, text, ts, noticed, received_at, phi)
+				VALUES ($rumorId, $roomId, $sender, $members, $subject, $text, $ts, 0, $receivedAt, $phi)`,
 			)
 			.run({
 				rumorId: row.rumor_id,
@@ -482,6 +1053,7 @@ export class PhoneDb {
 				text: row.text,
 				ts: row.ts,
 				receivedAt: this.now(),
+				phi: row.phi ? 1 : 0,
 			});
 		return result.changes > 0;
 	}
@@ -516,7 +1088,7 @@ export class PhoneDb {
 			this.db.query("DELETE FROM messages WHERE id = 'phone-held-threads'").run();
 			return;
 		}
-		const text = rooms === 1 ? "1 held thread" : `${rooms} held threads`;
+		const text = rooms === 1 ? "1 held group" : `${rooms} held groups`;
 		this.upsertHeldNotice(text);
 	}
 
@@ -529,6 +1101,7 @@ export class PhoneDb {
 				ON CONFLICT(id) DO UPDATE SET text = $text, ts = $ts, read_at = NULL, attempts = 0`,
 			)
 			.run({ id: "phone-held-threads", ts: this.now(), sender: PHONE_SYSTEM_SENDER, text });
+		this.db.query("DELETE FROM ext_reads WHERE message_id = 'phone-held-threads'").run();
 	}
 
 	get<T>(key: string): T | undefined {

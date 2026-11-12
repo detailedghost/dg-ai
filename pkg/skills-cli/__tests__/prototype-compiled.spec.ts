@@ -18,6 +18,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { cleanupDgHome } from "@dg/dg-daemon/test-harness";
+import { relocatedBundleCommand } from "./bundle-build";
 import { mergeEnv } from "./module-call";
 import { protoDaemonFixture } from "./proto-cli-harness";
 import {
@@ -32,7 +33,7 @@ import {
 setDefaultTimeout(60_000);
 
 let context: SpecContext;
-let binary: string;
+let binary: string[];
 let skills: string;
 let opener: string;
 let outside: string;
@@ -65,7 +66,7 @@ function launch(
 	cwd = outside,
 	extra: Record<string, string | undefined> = {},
 ) {
-	const proc = Bun.spawn([binary, ...args], {
+	const proc = Bun.spawn([...binary, ...args], {
 		cwd,
 		env: env(extra),
 		stdin: "ignore",
@@ -98,21 +99,7 @@ function executable(path: string, source: string): void {
 
 beforeAll(() => {
 	context = newSpecContext();
-	binary = join(context.base, "moved ' install", "dg-skills");
-	mkdirSync(join(binary, ".."), { recursive: true });
-	const build = Bun.spawnSync(
-		[
-			process.execPath,
-			join(import.meta.dir, "../build.ts"),
-			"--outfile",
-			binary,
-		],
-		{
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	);
-	if (build.exitCode !== 0) throw new Error(build.stderr.toString());
+	binary = relocatedBundleCommand(context.base, "dg-skills");
 	skills = join(context.base, "relocated plugin", "skills");
 	cpSync(join(SOURCE_SKILLS, "proto"), join(skills, "proto"), {
 		recursive: true,
@@ -500,8 +487,8 @@ describe("compiled dg-skills proto --ext, plan handoff through a fake daemon", (
 	});
 
 	test("--ext needs the extension on a CLI-only install while local mode still works", async () => {
-		mkdirSync(join(context.base, "dg-home"), { recursive: true });
-		writeFileSync(join(context.base, "dg-home", "cli-only"), "");
+		mkdirSync(join(context.base, "dg-home", "config"), { recursive: true });
+		writeFileSync(join(context.base, "dg-home", "config", "cli-only"), "");
 		const ext = await compiled(["proto", "--ext", "cleanup", "some-slug"]);
 		expect(ext.exitCode).toBe(1);
 		expect(ext.stderr).toContain("needs the dg-ai-extension");

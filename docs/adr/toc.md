@@ -27,6 +27,8 @@ flowchart LR
 ## Installation
 
 - [0001 — Skills-only installation](0001-skills-only-install.md)
+- [0032 — Ship one pinned Bun runtime and one minified bundle](0032-shared-runtime-bundle.md) — Accepted:
+  three shims run one runtime and one code-split bundle in place of three compiled binaries.
 
 ## Platform
 
@@ -65,8 +67,12 @@ flowchart LR
 - [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
+- [0025 — Keep dg files in the per-OS layout](0025-per-os-layout.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
+- [0027 — Offer pinned third-party plugins as an opt-in install](0027-optional-third-party-plugins.md)
 - [0033 — Gate verify on the layout of the accepted prototype](0033-accepted-prototype-layout-gate.md)
+- [0034 — Send images over the phone](0034-phone-image-messages.md) — Proposed:
+  kind 15 behind a default-off `files` setting; the receiver pulls the ciphertext over Magic Wormhole with a kind 25015 request.
 
 ## Skills
 
@@ -76,9 +82,19 @@ flowchart LR
 - [0029 — Accept the WSL remote-debugging port for the local demo player](0029-local-demo-player-wsl-debug-port.md) — Accepted:
   a default local `demo` on WSL opens an unauthenticated 127.0.0.1 debug port for the run.
 - [0030 — Share the tour UI and play demos in a local player](0030-shared-tour-ui-and-local-player.md) — Accepted:
-  the tour UI lives in `pkg/tour-ui` behind `TourHost`, and a Playwright-injected player hosts it for the local default.
+  the tour UI lives in `pkg/tour-ui` behind `TourHost`, and a Playwright-injected player hosts it for the local default. Superseded in part by ADR 0040.
 - [0031 — Serve the chat and board pages from the daemon on loopback](0031-loopback-pages.md) — Accepted:
   `dg-daemon` serves `/chat` and `/board` behind a token and loopback-origin gate; the extension is the `--ext` path.
+- [0035 — Drive the real browser with `pw --ext` behind a per-call approval](0035-pw-ext-real-browser.md) — Proposed:
+  fixed verbs over the daemon relay; an extension popup asks for every call, and the CLI cannot approve. Amended 2026-11-05: passing `--ext` is the grant and the popup is gone.
+- [0037 — One browser relay for inbox, proto and pw-ext](0037-one-browser-relay.md) — Proposed:
+  one table-driven relay in the daemon and one dispatcher in the extension carry inbox, proto and pw-ext; frames stay byte-identical
+- [0038 — Reduce the extension to pairing and tab control](0038-extension-pairing-only.md) — Proposed:
+  the extension keeps a pairing popup and per-agent tab groups; offer and claim pairing replaces `POST /pair`; the daemon `/chat` page replaces the extension chat
+- [0039 — Pair the browser with no code and no human step](0039-zero-touch-pairing.md) — Proposed:
+  the extension keeps a link socket and adopts every session the daemon pushes; code pairing and token URLs are gone
+- [0040 — Record local demos with a Node recorder](0040-local-demo-recorder.md) — Accepted:
+  local `demo` always records an MP4 with a Node recorder; `$NAME` credentials, a setup handoff, and one browser finder; the start screen is gone.
 
 ## Adding an ADR
 

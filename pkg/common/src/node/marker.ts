@@ -1,13 +1,9 @@
-import { CHAT_MARKER_KEY, type SessionBootstrap } from "../index";
+import { CHAT_CODE_KEY } from "../index";
 
-function encodeChatMarker(bootstrap: SessionBootstrap): string {
-	return Buffer.from(JSON.stringify(bootstrap), "utf8").toString("base64url");
-}
-
-export function buildBootstrapUrl(
+export function buildCodeUrl(
 	port: number,
-	bootstrap: SessionBootstrap,
-	path: "/start" | "/chat" | "/board" = "/start",
+	code: string,
+	path: "/chat" | "/board" = "/chat",
 ): string {
-	return `http://127.0.0.1:${port}${path}#${CHAT_MARKER_KEY}=${encodeChatMarker(bootstrap)}`;
+	return `http://127.0.0.1:${port}${path}#${CHAT_CODE_KEY}=${code}`;
 }

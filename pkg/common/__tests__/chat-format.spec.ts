@@ -1,14 +1,26 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
 import {
+	type AnyRelayFeature,
 	authorizeFrame,
+	CHAT_FRAME_TYPES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	type ChatFrame,
 	fitHistoryPage,
+	INBOUND_FRAME_TYPES,
 	PROTO_MAX_TIMEOUT_MS,
+	RELAY_FEATURES,
+	type RelayChatFrame,
+	type RelayCliFrame,
+	relayFrameTypes,
+	relayValidators,
+	tryValidateSessionBootstrap,
 	validateChatFrame,
 	validateCommandManifest,
+	validateLinkFrame,
+	validateSessionAdopt,
 } from "../src/index";
+import { TEST_RELAY } from "./utils/relay-fixtures";
 
 function buildUserMessageFrame(overrides: Record<string, unknown> = {}) {
 	return {
@@ -316,6 +328,38 @@ function buildProtoBrowserProgressFrame(
 	};
 }
 
+function buildPwExtBrowserRequestFrame() {
+	return {
+		type: "pw-ext-browser-request",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		request: { verb: "current" },
+		timeoutMs: 1000,
+	};
+}
+
+function buildPwExtBrowserCancelFrame() {
+	return {
+		type: "pw-ext-browser-cancel",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+	};
+}
+
+function buildPwExtBrowserResultFrame() {
+	return {
+		type: "pw-ext-browser-result",
+		sessionId: "session-a",
+		requestId: "pw-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		token: "token-a",
+		ok: true,
+		data: { text: "### Page" },
+	};
+}
+
 function buildOverwatchStateFrame(overrides: Record<string, unknown> = {}) {
 	return {
 		type: "overwatch-state" as const,
@@ -377,22 +421,16 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["proto-browser-request", buildProtoBrowserRequestFrame],
 	["proto-browser-result", buildProtoBrowserResultFrame],
 	["proto-browser-progress", buildProtoBrowserProgressFrame],
+	["pw-ext-browser-request", buildPwExtBrowserRequestFrame],
+	["pw-ext-browser-cancel", buildPwExtBrowserCancelFrame],
+	["pw-ext-browser-result", buildPwExtBrowserResultFrame],
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],
 ];
 
 function ratifiedDiscriminants(): string[] {
-	const source = readFileSync(
-		new URL("../src/chat-format.ts", import.meta.url),
-		"utf8",
-	);
-	const start = source.indexOf("const CHAT_FRAME_TYPES = new Set([");
-	const end = source.indexOf("]);", start);
-	if (start < 0 || end < 0) throw new Error("CHAT_FRAME_TYPES not found");
-	return Array.from(source.slice(start, end).matchAll(/"([a-z-]+)"/g)).map(
-		(match) => match[1] as string,
-	);
+	return [...CHAT_FRAME_TYPES];
 }
 
 describe("validateChatFrame — frame type coverage", () => {
@@ -534,6 +572,22 @@ describe("validateChatFrame — session-list SessionSummary entries", () => {
 			sessions: [buildSessionSummary({ role: "supervisor" })],
 		});
 		expect(() => validateChatFrame(frame)).toThrow();
+	});
+
+	it.each(["cli", "gone", "idle", undefined])("accepts a summary entry whose presence is %p", (presence) => {
+		const frame = buildSessionListFrame({
+			sessions: [buildSessionSummary({ presence })],
+		});
+		expect(() => validateChatFrame(frame)).not.toThrow();
+	});
+
+	it('rejects a summary entry whose presence is "waiting"', () => {
+		const frame = buildSessionListFrame({
+			sessions: [buildSessionSummary({ presence: "waiting" as never })],
+		});
+		expect(() => validateChatFrame(frame)).toThrow(
+			'presence must be "cli", "gone", or "idle"',
+		);
 	});
 });
 
@@ -725,4 +779,297 @@ describe("validateChatFrame — error frame code", () => {
 			validateChatFrame(buildErrorFrame({ code: "nope" })),
 		).toThrow();
 	});
+});
+
+const MASTER_CHAT_FRAME_TYPES = [
+	"inbox-browser-request",
+	"inbox-browser-result",
+	"proto-browser-request",
+	"proto-browser-result",
+	"proto-browser-progress",
+	"pw-ext-browser-request",
+	"pw-ext-browser-cancel",
+	"pw-ext-browser-result",
+	"user-message",
+	"ack",
+	"agent-message",
+	"progress",
+	"command-invocation",
+	"command-result",
+	"manifest-publish",
+	"session-list",
+	"session-create",
+	"session-pending",
+	"keepalive",
+	"session-close",
+	"session-disconnect",
+	"session-closed",
+	"session-disconnected",
+	"history-request",
+	"history-response",
+	"config-get",
+	"config-set",
+	"error",
+	"config-result",
+	"overwatch-state",
+	"overwatch-open",
+	"overwatch-open-result",
+];
+
+const MASTER_INBOUND_FRAME_TYPES = [
+	"inbox-browser-result",
+	"proto-browser-result",
+	"proto-browser-progress",
+	"pw-ext-browser-result",
+	"user-message",
+	"command-invocation",
+	"session-create",
+	"session-close",
+	"session-disconnect",
+	"keepalive",
+	"history-request",
+	"config-get",
+	"config-set",
+	"overwatch-open-result",
+];
+
+const FIXTURE_BY_TYPE = new Map(FRAME_FIXTURES);
+
+describe("derived frame type sets", () => {
+	it("derives CHAT_FRAME_TYPES equal to the ratified list", () => {
+		expect([...CHAT_FRAME_TYPES].sort()).toEqual(
+			[...MASTER_CHAT_FRAME_TYPES].sort(),
+		);
+	});
+
+	it("derives INBOUND_FRAME_TYPES equal to the inbound list", () => {
+		expect([...INBOUND_FRAME_TYPES].sort()).toEqual(
+			[...MASTER_INBOUND_FRAME_TYPES].sort(),
+		);
+	});
+});
+
+describe("relay tables drive the frame validation", () => {
+	const features: readonly AnyRelayFeature[] = RELAY_FEATURES;
+	for (const feature of features) {
+		const { frames } = feature;
+		const browserTypes = [
+			frames.browserRequest,
+			frames.browserResult,
+			frames.browserCancel,
+			frames.browserProgress,
+		].filter((type) => type !== undefined);
+
+		it(`${feature.name} has one validator per browser frame`, () => {
+			expect(Object.keys(feature.validators).sort()).toEqual(
+				[...browserTypes].sort(),
+			);
+		});
+
+		it(`${feature.name} marks only results and progress as inbound`, () => {
+			expect([...feature.inbound].sort()).toEqual(
+				[frames.browserResult, frames.browserProgress]
+					.filter((type) => type !== undefined)
+					.sort(),
+			);
+		});
+
+		for (const type of browserTypes) {
+			const build = FIXTURE_BY_TYPE.get(type);
+			const inbound = feature.inbound.includes(type);
+			it(
+				inbound
+					? `requires a token on ${type}`
+					: `refuses a token on ${type}`,
+				() => {
+					const frame = build?.() as Record<string, unknown>;
+					expect(() => validateChatFrame(frame)).not.toThrow();
+					if (inbound) {
+						const { token, ...withoutToken } = frame;
+						expect(token).toBeString();
+						expect(() => validateChatFrame(withoutToken)).toThrow(
+							"chat frame.token must be a non-empty string",
+						);
+					} else {
+						expect(() =>
+							validateChatFrame({ ...frame, token: "token-a" }),
+						).toThrow(`must not be present on outbound "${type}" frames`);
+					}
+				},
+			);
+		}
+	}
+});
+
+describe("a synthetic relay table is picked up by every derivation", () => {
+	const FEATURES = [...RELAY_FEATURES, TEST_RELAY] as const;
+
+	it("adds its browser frames to the type list", () => {
+		expect(relayFrameTypes(FEATURES, "all")).toEqual(
+			expect.arrayContaining([
+				"test-browser-request",
+				"test-browser-result",
+				"test-browser-cancel",
+				"test-browser-progress",
+			]),
+		);
+	});
+
+	it("adds only its result and progress frames to the inbound list", () => {
+		const inbound = relayFrameTypes(FEATURES, "inbound");
+		expect(inbound).toEqual(
+			expect.arrayContaining(["test-browser-result", "test-browser-progress"]),
+		);
+		expect(inbound).not.toContain("test-browser-request");
+	});
+
+	it("adds one validator per browser frame to the validator map", () => {
+		const validators = relayValidators(FEATURES);
+		expect(validators.get("test-browser-request")).toBe(
+			TEST_RELAY.validators["test-browser-request"],
+		);
+		expect(validators.size).toBe(
+			RELAY_FEATURES.reduce(
+				(count, { validators }) => count + Object.keys(validators).length,
+				0,
+			) + Object.keys(TEST_RELAY.validators).length,
+		);
+	});
+
+	it("adds its frames to the derived ChatFrame and CliFrame members", () => {
+		type Synthetic = RelayChatFrame<typeof TEST_RELAY>;
+		const cancel = {
+			type: "test-browser-cancel",
+			sessionId: "session-a",
+			protocolVersion: 1,
+			requestId: "r1",
+		} satisfies Extract<Synthetic, { type: "test-browser-cancel" }>;
+		const progress = {
+			type: "test-browser-progress",
+			sessionId: "session-a",
+			protocolVersion: 1,
+			token: "token-a",
+			requestId: "r1",
+			status: "working",
+		} satisfies Extract<Synthetic, { type: "test-browser-progress" }>;
+		const cli = {
+			type: "cli-test-cancel",
+			requestId: "r1",
+		} satisfies RelayCliFrame<typeof TEST_RELAY>;
+		expect([cancel.type, progress.type, cli.type]).toHaveLength(3);
+	});
+});
+
+describe("ChatFrame relay members keep their wire shape", () => {
+	type KeysEqual<A extends PropertyKey, B extends PropertyKey> = [A] extends [B]
+		? [B] extends [A]
+			? true
+			: false
+		: false;
+	type PwRequest = Extract<ChatFrame, { type: "pw-ext-browser-request" }>;
+	type ProtoResult = Extract<ChatFrame, { type: "proto-browser-result" }>;
+
+	it("keeps the pw-ext request keys with a required timeoutMs and no token", () => {
+		const keys: KeysEqual<
+			keyof PwRequest,
+			"type" | "sessionId" | "protocolVersion" | "requestId" | "request" | "timeoutMs"
+		> = true;
+		const timeout: PwRequest["timeoutMs"] extends number ? true : false = true;
+		expect([keys, timeout]).toEqual([true, true]);
+	});
+
+	it("keeps the proto result keys with optional data, notReady and error", () => {
+		const keys: KeysEqual<
+			keyof ProtoResult,
+			| "type"
+			| "sessionId"
+			| "protocolVersion"
+			| "token"
+			| "requestId"
+			| "ok"
+			| "data"
+			| "notReady"
+			| "error"
+		> = true;
+		const success = {
+			type: "proto-browser-result",
+			sessionId: "session-a",
+			protocolVersion: 1,
+			token: "token-a",
+			requestId: "r1",
+			ok: true,
+		} satisfies ProtoResult;
+		expect([keys, success.ok]).toEqual([true, true]);
+	});
+});
+
+describe("tryValidateSessionBootstrap", () => {
+	const bootstrap = {
+		port: 47823,
+		sessionId: "session-a",
+		token: "token-a",
+		agentIdentity: "claude",
+	};
+
+	it("returns a valid bootstrap", () => {
+		expect(tryValidateSessionBootstrap(bootstrap)).toEqual(bootstrap);
+	});
+
+	it("returns undefined instead of throwing for an invalid bootstrap", () => {
+		expect(tryValidateSessionBootstrap({ ...bootstrap, token: "" })).toBeUndefined();
+		expect(tryValidateSessionBootstrap("nope")).toBeUndefined();
+	});
+});
+
+describe("validateSessionAdopt", () => {
+	const frame = {
+		type: "session-adopt" as const,
+		bootstrap: {
+			port: 47823,
+			sessionId: "session-a",
+			token: "token-a",
+			agentIdentity: "claude",
+			daemonId: "daemon-a",
+		},
+	};
+
+	it("accepts a complete session-adopt frame", () => {
+		expect(validateSessionAdopt(frame)).toEqual(frame);
+	});
+
+	it.each(["port", "sessionId", "token", "agentIdentity", "daemonId"])(
+		"rejects a frame whose bootstrap lacks %s",
+		(field) => {
+			const { [field]: _omitted, ...bootstrap } = frame.bootstrap as Record<
+				string,
+				unknown
+			>;
+			expect(() => validateSessionAdopt({ ...frame, bootstrap })).toThrow();
+		},
+	);
+
+	it("rejects a frame of another type", () => {
+		expect(() => validateSessionAdopt({ ...frame, type: "session-list" })).toThrow();
+	});
+});
+
+describe("validateLinkFrame", () => {
+	it("accepts a link-ready frame", () => {
+		expect(validateLinkFrame({ type: "link-ready" })).toEqual({
+			type: "link-ready",
+		});
+	});
+
+	it("accepts a link-ping frame", () => {
+		expect(validateLinkFrame({ type: "link-ping" })).toEqual({
+			type: "link-ping",
+		});
+	});
+
+	it.each([{ type: "link-other" }, { type: "keepalive" }, {}, "link-ready", null])(
+		"rejects %p",
+		(value) => {
+			expect(() => validateLinkFrame(value)).toThrow();
+		},
+	);
 });

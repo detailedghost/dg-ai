@@ -10,14 +10,17 @@ scanning `.agents/spec/`) and, for unnumbered `todo/` bundles, renumbering — t
 `/dg:spec -s <NNN>_<slug>`, which resolves the bundle, sets up its own worktree, and drives `/dg:sdlc`'s
 slice-wave.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+dg-skills spec --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" spec --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor spec.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor spec.
 
 Usage: `/dg:pickup [NNN-or-substring]`.
 
@@ -29,10 +32,10 @@ Usage: `/dg:pickup [NNN-or-substring]`.
 2. **Staleness check.** `references/loading.md` — compare the bundle's `plan.md` `date` against
    `git log` activity on its slices' `files[]` globs; warn and confirm before proceeding if stale.
 3. **Renumber (todo/ bundles only).** If the selected bundle is `.agents/spec/todo/<slug>/`:
-   `nnn=$(~/.dg/bin/dg-skills spec next-nnn --home .agents/spec)`, then
+   `nnn=$(dg-skills spec next-nnn --home .agents/spec)`, then
    `git mv .agents/spec/todo/<slug> .agents/spec/<nnn>_<slug>`. A bundle already under a numbered
    `.agents/spec/<NNN>_<slug>/` dir needs no move.
-4. **Flip status + commit.** `~/.dg/bin/dg-skills spec set <bundle>/plan.md status in-progress`, then commit —
+4. **Flip status + commit.** `dg-skills spec set <bundle>/plan.md status in-progress`, then commit —
    unconditionally, not only when step 3 moved something, and only that bundle, with any `git mv`
    rename already staged:
    `git add -f .agents/spec/<NNN>_<slug>/ ':(exclude).agents/spec/<NNN>_<slug>/roundtable/' && git commit -m "chore(spec): pick up <slug>"`.

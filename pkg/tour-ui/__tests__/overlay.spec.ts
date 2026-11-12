@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { recIndicator, renderStep } from "../src/overlay";
+import { renderStep } from "../src/overlay";
 import {
 	buttons,
 	fakeHost,
@@ -72,8 +72,16 @@ describe("renderStep in a voice-only recording", () => {
 	});
 });
 
-describe("recIndicator", () => {
-	it("labels the recording state", () => {
-		expect(recIndicator().textContent).toContain("REC");
+describe("renderStep while recording", () => {
+	it("burns no REC badge into the recorded step", async () => {
+		const host = fakeHost();
+		const script = threeStepScript({ mode: "video" });
+		const step = script.steps[0];
+		if (!step) throw new Error("fixture needs steps");
+
+		await renderStep(host, { script, index: 0, mode: "video" } as never, step);
+
+		expect(host.liveText()).toContain(step.title as string);
+		expect(host.liveText()).not.toContain("REC");
 	});
 });

@@ -6,7 +6,7 @@ import type { Gate } from "./chat";
 import { PHONE_SYSTEM_SENDER, type ContactRow, type InviteRow, type PhoneDb } from "./db";
 
 export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
-export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string };
+export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string; lastSeen?: number };
 export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string; relays: string[] };
 export type OnMessageConfig = { argv: string[]; timeoutMs: number };
 /** The `--on-message` hook `open` installed and the autostart manager it last reported, so a bare
@@ -28,8 +28,11 @@ const DRIFT_SETTING = "listener_drift";
 const ADMISSION_EPOCH = "admission_epoch";
 /** Same setting name phone-friend's per-line db used for its relay-subscription resume point. */
 const CURSOR_SETTING = "cursor";
-/** Milliseconds `say` and `accept` wait for a relay OK. The env var overrides this. */
+/** Milliseconds `text` and `accept` wait for a relay OK. The env var overrides this. */
 export const PUBLISH_CONFIRM_SETTING = "publish_confirm_ms";
+/** Whether `say --image` may send; off until someone runs `phone files on`. */
+const FILES_SETTING = "files";
+const PRESENCE_SETTING = "presence";
 /** Short-lived kind 10050 lookup results, keyed by recipient pubkey hex. */
 const INBOX_RELAYS_SETTING = "inbox_relays";
 
@@ -44,6 +47,28 @@ export function assertContactHandle(handle: string): void {
 	if (handle.startsWith("#")) {
 		throw new DgCliError(`a contact handle cannot start with "#", got "${handle}"`);
 	}
+}
+
+function assertExtension(value: string, source: string): string {
+	if (!isHandle(value)) throw new DgCliError(`${source} must be 1-32 lowercase letters, digits, or dashes, got "${value}"`);
+	return value;
+}
+
+/** Splits `+handle/ext` into the send target and the agent extension on that machine. */
+export function splitTarget(value: string): { target: string; ext?: string } {
+	const slash = value.indexOf("/");
+	if (slash < 0) return { target: value };
+	const target = value.slice(0, slash);
+	const ext = assertExtension(value.slice(slash + 1), "an extension");
+	if (target.startsWith("#")) throw new DgCliError(`a #group goes to the whole machine; drop /${ext}`);
+	return { target, ext };
+}
+
+/** This agent's own extension: `--as`, else `DG_PHONE_AS`, else none. */
+export function selfExtension(flag: string | undefined, env: Record<string, string | undefined>): string | undefined {
+	if (flag !== undefined) return assertExtension(flag, "--as");
+	const fromEnv = env.DG_PHONE_AS;
+	return fromEnv ? assertExtension(fromEnv, "DG_PHONE_AS") : undefined;
 }
 
 /** Strips a leading `+`, the only prefix the new commands accept on a handle argument. */
@@ -123,6 +148,23 @@ export function readPublishConfirmSetting(db: PhoneDb): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+export function readFilesOn(db: PhoneDb): boolean {
+	return db.get<boolean>(FILES_SETTING) === true;
+}
+
+export function writeFilesOn(db: PhoneDb, on: boolean): void {
+	db.set(FILES_SETTING, on);
+}
+
+/** Beats, receipts, and ping answers go out unless the human turned presence off. */
+export function readPresenceOn(db: PhoneDb): boolean {
+	return db.get<boolean>(PRESENCE_SETTING) !== false;
+}
+
+export function writePresenceOn(db: PhoneDb, on: boolean): void {
+	db.set(PRESENCE_SETTING, on);
+}
+
 /** Cached kind 10050 relays for `pubkey`, or undefined when missing or older than `ttlSeconds`. */
 export function readInboxRelayCache(db: PhoneDb, pubkey: string, now: number, ttlSeconds: number): string[] | undefined {
 	const cache = db.get<Record<string, InboxRelayCacheEntry>>(INBOX_RELAYS_SETTING);
@@ -146,6 +188,7 @@ function toContactRecord(row: ContactRow): ContactRecord {
 		keyId: row.key_id,
 		addedAt: row.added_at,
 		via: row.via,
+		...(row.last_seen === null ? {} : { lastSeen: row.last_seen }),
 	};
 }
 
@@ -161,6 +204,12 @@ export function findContactByHandle(db: PhoneDb, handle: string): ContactRecord 
 export function findContactByNpub(db: PhoneDb, npub: string): ContactRecord | undefined {
 	const row = db.getContactByNpub(npub);
 	return row ? toContactRecord(row) : undefined;
+}
+
+/** The contact's saved relays, or our own when it has none or is not a contact. */
+export function contactRelays(db: PhoneDb, npub: string): string[] {
+	const contact = findContactByNpub(db, npub);
+	return contact?.relays.length ? contact.relays : readRelays(db);
 }
 
 export function requireFreeHandle(db: PhoneDb, handle: string): void {

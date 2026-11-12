@@ -76,8 +76,8 @@ const cliSource = readRepoFile(
 	"pkg",
 	"skills-cli",
 	"src",
-	"commands",
-	"channel-review.ts",
+	"channel-review",
+	"cli.ts",
 );
 const emojisSource = readRepoFile("pkg", "channel-review", "src", "emojis.ts");
 const configSource = readRepoFile("pkg", "channel-review", "src", "config.ts");
@@ -136,17 +136,19 @@ describe("channel-review skill distribution", () => {
 		const block = bootstrapBlock(readSkill()).split("\n");
 		expect(block).toEqual([
 			"```sh",
-			"~/.dg/bin/dg-skills deps-upgrade --help >/dev/null 2>&1 &&",
-			"  ~/.dg/bin/dg-skills channel-review --help >/dev/null 2>&1 ||",
+			"{ dg-skills deps-upgrade --help >/dev/null 2>&1 &&",
+			"  dg-skills channel-review --help >/dev/null 2>&1; } ||",
+			'  { "${DG_HOME:-$HOME/.local}/bin/dg-skills" deps-upgrade --help >/dev/null 2>&1 &&',
+			'  "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help >/dev/null 2>&1; } ||',
 			expect.stringMatching(/^ {2}curl .*bootstrap\.sh \| sh -s -- --cli-only$/),
-			"~/.dg/bin/dg-skills channel-review --help",
+			'if dg-skills deps-upgrade --help >/dev/null 2>&1 && dg-skills channel-review --help >/dev/null 2>&1; then dg-skills channel-review --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" channel-review --help; fi',
 			"```",
 		]);
 	});
 
 	test("SKILL.md and references name the shipped CLI, commands, and vocabulary", () => {
 		const content = allContent();
-		expect(content).toContain(".dg/bin/dg-skills");
+		expect(content).toContain("dg-skills channel-review");
 		expect(content).toMatch(/bootstrap\.sh/);
 		for (const word of [
 			"start",
@@ -294,6 +296,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			(n) => n !== "channel-review",
 		);
 		expect(top).toEqual([
+			"setup",
 			"start",
 			"stop",
 			"status",
@@ -317,6 +320,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				"--env",
 				"--file",
 				"--follow",
+				"--force",
 				"--keep-backup",
 				"--lines",
 				"--org",
@@ -480,7 +484,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				expect(configSource).toMatch(new RegExp(`\\b${segment}\\b`));
 			}
 		for (const rule of [
-			"Bash(<home>/.dg/bin/dg-skills thrash:*)",
+			"Bash(dg-skills thrash:*)",
 			"Read(//<scratch>/thrash/**)",
 			"Grep(//<scratch>/thrash/**)",
 			"Glob(//<scratch>/thrash/**)",
@@ -494,7 +498,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			"Read(//<clones>/**)",
 			"Grep(//<clones>/**)",
 			"Glob(//<clones>/**)",
-			"Bash(<home>/.dg/bin/dg-skills address:*)",
+			"Bash(dg-skills address:*)",
 		])
 			expect(setup).toContain(rule);
 		const address =
@@ -505,7 +509,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			/rec\.addressTimeoutMinutes \?\? (\d+)/.exec(configSource)?.[1],
 		).toBe("60");
 		expect(setup).toContain("`<home>/code/bot`");
-		expect(configSource).toContain(".dg/bin/dg-skills");
+		expect(configSource).toContain('"Bash(dg-skills thrash:*)"');
 		expect(setup).toContain("dg-skills deps-upgrade");
 		for (const name of ["thrash", "address", "deps-upgrade"])
 			expect(setup).toContain(

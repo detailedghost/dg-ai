@@ -45,7 +45,7 @@ function systemOnly(...present: SystemChannel[]) {
 }
 
 function recordDownload(version: string): void {
-	const browsers = path.join(dir, "browsers");
+	const browsers = path.join(dir, "data", "browsers");
 	const executablePath = path.join(browsers, "chromium", "chrome");
 	mkdirSync(path.dirname(executablePath), { recursive: true });
 	writeFileSync(executablePath, "");
@@ -79,6 +79,16 @@ describe("pwChecks browser check", () => {
 		expect(result.detail).toBe("browser: chrome (system)");
 	});
 
+	test("reports an installed Brave before the downloaded chromium", async () => {
+		recordDownload("131.0.1");
+		const result = await createBrowserCheck(
+			systemOnly(),
+			() => "/usr/bin/brave-browser-beta",
+		).run(context());
+		expect(result.status).toBe("ok");
+		expect(result.detail).toBe("browser: /usr/bin/brave-browser-beta (installed)");
+	});
+
 	test("reports a downloaded chromium as ok with its version", async () => {
 		recordDownload("131.0.1");
 		const result = await createBrowserCheck(systemOnly()).run(context());
@@ -98,7 +108,7 @@ describe("pwChecks browser check", () => {
 
 	test("a marker whose executable is gone counts as no browser", async () => {
 		recordDownload("131.0.1");
-		rmSync(path.join(dir, "browsers", "chromium"), { recursive: true });
+		rmSync(path.join(dir, "data", "browsers", "chromium"), { recursive: true });
 		const result = await createBrowserCheck(systemOnly()).run(context());
 		expect(result.status).toBe("warn");
 	});
@@ -112,6 +122,14 @@ describe("pwChecks list", () => {
 		expect(ids).toContain("allow-rule");
 		expect(ids.some((id) => /scratch/.test(id))).toBe(true);
 		expect(ids.some((id) => /state/.test(id))).toBe(true);
+	});
+
+	test("checks the extension pairing for pw --ext as information only", async () => {
+		const paired = pwChecks.find((check) => check.id === "extension-paired");
+		expect(paired).toBeDefined();
+		const result = await paired!.run(context());
+		expect(result.status).toBe("info");
+		expect(result.detail).toStartWith("--ext only:");
 	});
 
 	test("has unique check ids", () => {
@@ -169,7 +187,7 @@ describe("doctor pw-code allow-rule guard", () => {
 		writeFileSync(
 			path.join(world.home, ".claude", "settings.json"),
 			JSON.stringify({
-				permissions: { allow: ["Bash(~/.dg/bin/dg-skills:*)"] },
+				permissions: { allow: ["Bash(dg-skills:*)"] },
 			}),
 		);
 		const { report } = await world.report(["pw-code"]);

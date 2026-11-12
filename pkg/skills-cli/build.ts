@@ -1,7 +1,4 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
-import { parseArgs } from "node:util";
-import { buildPlayer } from "../tour-ui/build";
 
 /** Playwright computes these requires at runtime; make them static so Bun embeds the JSON. */
 export const playwrightMetadata: Bun.BunPlugin = {
@@ -29,27 +26,6 @@ export const playwrightMetadata: Bun.BunPlugin = {
 	},
 };
 
-const COMPILE_TARGETS = [
-	"bun-linux-x64",
-	"bun-linux-arm64",
-	"bun-darwin-x64",
-	"bun-darwin-arm64",
-	"bun-windows-x64",
-	"bun-windows-arm64",
-] as const satisfies readonly Bun.Build.CompileTarget[];
-
-function parseTarget(
-	value: string | undefined,
-): Bun.Build.CompileTarget | undefined {
-	if (value === undefined) return undefined;
-	const target = COMPILE_TARGETS.find((known) => known === value);
-	if (!target)
-		throw new Error(
-			`Unknown --target ${value}. Use one of: ${COMPILE_TARGETS.join(", ")}.`,
-		);
-	return target;
-}
-
 /**
  * Hash every module the entrypoint actually bundles, not just its own file,
  * so the build stamp changes when any dependency it pulls in changes too.
@@ -59,7 +35,6 @@ function parseTarget(
 export async function hashBundle(
 	entrypoint: string,
 	plugins: Bun.BunPlugin[],
-	extraInputs: string[] = [],
 ): Promise<string> {
 	const result = await Bun.build({
 		entrypoints: [entrypoint],
@@ -74,45 +49,5 @@ export async function hashBundle(
 		a.path.localeCompare(b.path),
 	))
 		hash.update(new Uint8Array(await output.arrayBuffer()));
-	for (const path of extraInputs)
-		hash.update(new Uint8Array(await Bun.file(path).arrayBuffer()));
 	return hash.digest("hex");
-}
-
-export async function buildSkillsCli(options: {
-	outfile: string;
-	target?: Bun.Build.CompileTarget;
-	entrypoint?: string;
-	plugins?: Bun.BunPlugin[];
-}): Promise<void> {
-	const playerPath = await buildPlayer();
-	const entrypoint = options.entrypoint ?? join(import.meta.dir, "src/index.ts");
-	const plugins = [playwrightMetadata, ...(options.plugins ?? [])];
-	const buildSha = await hashBundle(entrypoint, plugins, [playerPath]);
-
-	const result = await Bun.build({
-		entrypoints: [entrypoint],
-		compile: {
-			outfile: options.outfile,
-			...(options.target ? { target: options.target } : {}),
-		},
-		external: ["chromium-bidi", "chromium-bidi/*"],
-		plugins,
-		define: {
-			"process.env.DG_SKILLS_BUILD_SHA": JSON.stringify(buildSha),
-		},
-	});
-	if (!result.success)
-		throw new AggregateError(result.logs, "Skills CLI compilation failed.");
-}
-
-if (import.meta.main) {
-	const { values } = parseArgs({
-		args: Bun.argv.slice(2),
-		options: { outfile: { type: "string" }, target: { type: "string" } },
-	});
-	await buildSkillsCli({
-		outfile: values.outfile ?? join(import.meta.dir, "dist/dg-skills"),
-		target: parseTarget(values.target),
-	});
 }

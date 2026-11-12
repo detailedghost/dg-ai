@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_SERVICES_PATH, OWNER_TOKEN_HEADER } from "@dg/common";
+import {
+	CHAT_SERVICES_PATH,
+	DG_CHROME_EXTENSION_ORIGIN,
+	OWNER_TOKEN_HEADER,
+} from "@dg/common";
 import { readOwnerToken, resolveDgPaths } from "@dg/common/node";
 import {
 	bootServe,
@@ -13,7 +17,7 @@ import {
 	subprocessEnv,
 } from "../utils/daemon-harness";
 
-const EXTENSION_ORIGIN = "chrome-extension://abcdefghijklmnopabcdefghijklmnop";
+const EXTENSION_ORIGIN = DG_CHROME_EXTENSION_ORIGIN;
 
 const cleanupSlot = createCleanupSlot();
 
@@ -26,7 +30,7 @@ async function boot(declare: (dgHome: string) => unknown = () => ({})) {
 		await stopServe(proc);
 		cleanupDgHome(dgHome);
 	});
-	const { configPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	const { daemonConfigPath: configPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
 	mkdirSync(join(configPath, ".."), { recursive: true });
 	writeFileSync(configPath, JSON.stringify({ services: declare(dgHome) }));
 	return { dgHome, port };

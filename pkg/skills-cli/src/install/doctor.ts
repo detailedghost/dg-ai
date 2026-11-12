@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
 	activeVersions,
 	formatMegabytes,
@@ -12,20 +11,15 @@ import {
 	bootstrapCommand,
 	skillFilesCheck,
 } from "../doctor/checks";
-import { CLI_PATH, writableDirectory } from "../doctor/probes";
+import { CLI_PATH, cliLauncher, writableDirectory } from "../doctor/probes";
 import { type DoctorCheck, fail, ok, warn } from "../doctor/types";
-
-const binDir = (stateDir: string): string => join(stateDir, "bin");
 
 export const installChecks: DoctorCheck[] = [
 	skillFilesCheck(["browser"]),
 	{
 		id: "cli-binary",
 		run(ctx) {
-			const dest = join(
-				binDir(ctx.paths.stateDir),
-				process.platform === "win32" ? "dg-skills.exe" : "dg-skills",
-			);
+			const dest = cliLauncher(ctx.paths.binDir);
 			return existsSync(dest)
 				? ok(`${CLI_PATH} is installed`)
 				: warn(
@@ -37,7 +31,7 @@ export const installChecks: DoctorCheck[] = [
 	{
 		id: "bin-dir",
 		run(ctx) {
-			const dir = binDir(ctx.paths.stateDir);
+			const dir = ctx.paths.binDir;
 			const result = writableDirectory(dir);
 			return result.writable
 				? ok(`install directory ${dir} is writable`)
@@ -62,7 +56,7 @@ export const installChecks: DoctorCheck[] = [
 			const bytes = remove.reduce((sum, version) => sum + version.bytes, 0);
 			return warn(
 				`${remove.length} stale version(s), ${formatMegabytes(bytes)} reclaimable`,
-				`${CLI_PATH} install`,
+				`${shellCommand([cliLauncher(ctx.paths.binDir)])} install`,
 			);
 		},
 	},

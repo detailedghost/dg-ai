@@ -45,7 +45,7 @@ export function settingsWorld() {
 		opencodeDir: join(home, ".config", "opencode"),
 		opencodeJson: join(home, ".config", "opencode", "opencode.json"),
 		opencodePlugin: join(home, ".config", "opencode", "plugins", "dg-hooks.js"),
-		config: join(dgHome, "config.json"),
+		config: join(dgHome, "config", "config.json"),
 	};
 
 	function seed(file: string, content: string | object) {
@@ -73,6 +73,7 @@ export function settingsWorld() {
 		argv: string[],
 		overrides: {
 			launcher?: string;
+			platform?: NodeJS.Platform;
 			cwd?: string;
 			env?: Record<string, string | undefined>;
 			seams?: Partial<HookSeams>;
@@ -89,7 +90,8 @@ export function settingsWorld() {
 			},
 			home,
 			cwd: overrides.cwd,
-			launcher: overrides.launcher ?? launcher,
+			launcher: "launcher" in overrides ? overrides.launcher : launcher,
+			platform: overrides.platform,
 			seams: {
 				...defaultSeams(),
 				run: async () => ({ status: 0, stdout: "", stderr: "" }),

@@ -218,13 +218,13 @@ describe("tryOpen", () => {
 describe("openFailedHint", () => {
 	it("tells a WSL user how to opt in to the Windows browser", () => {
 		expect(openFailedHint(true)).toBe(
-			"could not open a browser; open the URL above (set DG_OPEN_WINDOWS=1 to open the Windows browser)",
+			"could not open a browser (set DG_OPEN_WINDOWS=1 to open the Windows browser)",
 		);
 	});
 
 	it("keeps the short hint off WSL", () => {
 		expect(openFailedHint(false)).toBe(
-			"could not open a browser; open the URL above",
+			"could not open a browser",
 		);
 	});
 });

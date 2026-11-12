@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderHelp } from "../src/cli/catalog";
-import { accountHome, allowSendHome, runSsms } from "../src/cli/run";
+import { accountHome, allowSendHome, readFixedAllowSend, runSsms } from "../src/cli/run";
 import { createLocalMessagesBrowser } from "../src/google/browser";
 import { connectJsonRpc } from "../src/signal/rpc";
 import { asTextArea, createDocument, node, readyThread } from "./support/document";
@@ -291,15 +291,16 @@ describe("ssms cli", () => {
 		expect(sent.code).toBe(1);
 		expect(sent.stderr).toContain("allow_send");
 		expect(sent.stdout).not.toContain("sent ");
-		expect(allowSendHome("/home/ada")).toBe(join("/home/ada", ".dg"));
+		expect(allowSendHome("/home/ada", "linux")).toBe(join("/home/ada", ".config", "dg"));
+		expect(allowSendHome("/Users/ada", "darwin")).toBe(join("/Users/ada", "Library", "Application Support", "dg"));
 	});
 
 	test("allow_send uses the injected passwd home, not HOME", async () => {
 		const homeViaEnv = makeTempDir("ssms-home-env-");
 		const passwd = makeTempDir("ssms-passwd-");
-		mkdirSync(join(homeViaEnv, ".dg", "ssms"), { recursive: true });
-		writeFileSync(join(homeViaEnv, ".dg", "ssms", "config.yaml"), "allow_send: true\ngoogle:\n  send_enabled: true\n");
-		mkdirSync(join(passwd, ".dg", "ssms"), { recursive: true });
+		mkdirSync(join(homeViaEnv, ".config", "dg", "ssms"), { recursive: true });
+		writeFileSync(join(homeViaEnv, ".config", "dg", "ssms", "config.yaml"), "allow_send: true\ngoogle:\n  send_enabled: true\n");
+		mkdirSync(join(passwd, ".config", "dg", "ssms"), { recursive: true });
 		const previous = process.env.HOME;
 		process.env.HOME = homeViaEnv;
 		try {
@@ -312,7 +313,7 @@ describe("ssms cli", () => {
 			expect(accountHome(501, "darwin", () => {
 				throw new Error("missing");
 			})).toBeUndefined();
-			expect(allowSendHome()).not.toBe(join(homeViaEnv, ".dg"));
+			expect(allowSendHome()).not.toBe(join(homeViaEnv, ".config", "dg"));
 			let token = "";
 			const runtime = {
 				...googleRuntime(homeViaEnv),
@@ -399,5 +400,27 @@ describe("config file", () => {
 		expect(body.actions.every((item: { applied: boolean }) => item.applied === false)).toBe(true);
 		expect(body.deleted).toBe(0);
 		expect(body.allowDelete).toBe(true);
+	});
+});
+
+describe("fixed allow_send config location", () => {
+	test("reads the passwd home config folder and ignores XDG_CONFIG_HOME and DG_HOME", () => {
+		const passwd = makeTempDir("ssms-fixed-");
+		const elsewhere = makeTempDir("ssms-xdg-");
+		const previous = { xdg: process.env.XDG_CONFIG_HOME, dg: process.env.DG_HOME };
+		process.env.XDG_CONFIG_HOME = elsewhere;
+		process.env.DG_HOME = elsewhere;
+		try {
+			mkdirSync(join(passwd, ".config", "dg", "ssms"), { recursive: true });
+			writeFileSync(join(passwd, ".config", "dg", "ssms", "config.yaml"), "allow_send: true\n");
+
+			expect(allowSendHome(passwd, "linux")).toBe(join(passwd, ".config", "dg"));
+			expect(readFixedAllowSend(allowSendHome(passwd, "linux"))).toBe(true);
+		} finally {
+			if (previous.xdg === undefined) delete process.env.XDG_CONFIG_HOME;
+			else process.env.XDG_CONFIG_HOME = previous.xdg;
+			if (previous.dg === undefined) delete process.env.DG_HOME;
+			else process.env.DG_HOME = previous.dg;
+		}
 	});
 });

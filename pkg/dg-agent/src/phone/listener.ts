@@ -4,6 +4,7 @@ import { chmodSync, closeSync, existsSync, linkSync, openSync, readFileSync, ren
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, writeFileAtomic } from "@dg/common/node";
+import { launcherCommand } from "@dg/common/node/program";
 import { nip19 } from "nostr-tools";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import {
@@ -19,6 +20,7 @@ import {
 	type Reaccept,
 	type Seen,
 	capIds,
+	FILE_REQUEST_KIND,
 	STRANGER_ID_LIMIT,
 	type SubscribeExtra,
 	type SubscribeHooks,
@@ -30,8 +32,27 @@ import {
 import { resolvePublishConfirmMs, PUBLISH_CONFIRM_ENV } from "./delivery";
 import { createHookRunner, type Cancel, type HookRunner, type Schedule } from "./hook";
 import { type KeyDeps, ensureNumberKey, loadAllKeys } from "./keys";
-import type { PhoneDb } from "./db";
+import { type ImageFetchRow, MESSAGE_TTL_SECONDS, PHI_TTL_SECONDS, type PhoneDb } from "./db";
+import { IMAGE_PENDING_TEXT, imageUnavailableText } from "./image";
 import type { CommandPushTarget } from "./push";
+import { createPresence, PRESENCE_MAX_MS, PRESENCE_MIN_MS, type PresenceConfig } from "./presence";
+import { createImageReceiver, MAX_PENDING_IMAGES, receiveStorageFull } from "./receive";
+import { createFileRequestHandler } from "./transport";
+import type { WormholeDeps } from "./wormhole";
+import {
+	createVaultKeyCache,
+	deleteVaultItem,
+	MAX_VAULT_BYTES,
+	PHI_NOT_STORED_TEXT,
+	SEALED_OVERHEAD_BYTES,
+	sealReceived,
+	type VaultClient,
+	UNKNOWN_SENDER_HANDLE,
+	type VaultKeyCache,
+	vaultStorageFullText,
+	vaultUnavailableText,
+	withVaultWriteLock,
+} from "./vault";
 import {
 	addContact,
 	addPhoneNotice,
@@ -47,6 +68,8 @@ import {
 	readPublishConfirmSetting,
 	readRelays,
 	notePhoneDrift,
+	pubkeyHex,
+	readFilesOn,
 	setContactKeyId,
 	subscriptionRelays,
 	writeCursor,
@@ -69,7 +92,15 @@ export type ListenerDeps = KeyDeps & {
 	onSignal: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
 	/** Overrides the jittered probe. Tests pass a short confirm and wait so the check stays fast. */
 	liveness?: LivenessConfig;
+	/** Overrides the jittered presence beat gap. */
+	presence?: PresenceConfig;
+	wormhole?: WormholeDeps;
+	/** Reads vault keys under the phone-vault grant; absent means received PHI is dropped, never kept outside the vault. */
+	vaultClient?: () => VaultClient;
 };
+
+/** Where received PHI goes: the period key cache and the phone root that holds `vault/`. */
+type VaultSink = { keys: VaultKeyCache; root: string };
 
 /** Rumor content of the self-addressed liveness probe. Logged nowhere. Not a user message. */
 export { PROBE_TOPIC as LISTENER_PROBE_TEXT } from "./chat";
@@ -591,6 +622,16 @@ export function ignoreHangup(): void {
 	process.on("SIGHUP", () => {});
 }
 
+/** argv for a listener unit or detached spawn, through the stable runtime and lib links. */
+export function defaultListenerArgv(root: string, extraArgs: string[]): string[] {
+	return launcherCommand(root, "dg-agent", ["phone", "__run", ...extraArgs]);
+}
+
+/** The listener argv for this install: the launcher links in the data dir. */
+export function listenerArgvFor(paths: Pick<DgPaths, "dataDir">, extraArgs: string[]): string[] {
+	return defaultListenerArgv(paths.dataDir, extraArgs);
+}
+
 /** Detached listener process. `detached` calls setsid, so the child is its own session. It writes `listener.pid` once `phone __run` is up. */
 export function spawnDetachedListener(argv: string[], logPath: string): number {
 	ensurePrivateDir(dirname(logPath));
@@ -696,8 +737,9 @@ function holdThread(db: PhoneDb, held: HeldThread, receivedAt: number): void {
 		sender: held.senderNpub,
 		members: JSON.stringify(held.memberNpubs),
 		subject: held.subject,
-		text: held.text,
+		text: held.phi ? PHI_NOT_STORED_TEXT : held.text,
 		ts: Math.min(held.ts, receivedAt),
+		phi: held.phi === true,
 	});
 	if (!inserted) return;
 	const drop = pendingIdsToDrop(
@@ -710,12 +752,68 @@ function holdThread(db: PhoneDb, held: HeldThread, receivedAt: number): void {
 	if (survived) process.stderr.write(heldLogLine(held.roomId));
 }
 
+/** The stored text of an admitted message, and the fetch to queue when it is an image this phone should get. */
+function imageAdmission(db: PhoneDb, message: Message, direction: "in" | "out", now: number): { text: string; fetch?: Omit<ImageFetchRow, "attempts"> } {
+	if (!message.image || direction === "out") return { text: message.text };
+	if (!readFilesOn(db)) return { text: imageUnavailableText("files are off") };
+	if (db.pendingImageCount() >= MAX_PENDING_IMAGES) return { text: imageUnavailableText("too many pending") };
+	const { offer, keyId } = message.image;
+	return {
+		text: IMAGE_PENDING_TEXT,
+		fetch: {
+			message_id: message.id,
+			sender: pubkeyHex(message.from),
+			key_id: keyId,
+			...offer,
+			next_at: now,
+			deadline: now + (message.phi ? PHI_TTL_SECONDS : MESSAGE_TTL_SECONDS),
+		},
+	};
+}
+
+type StoredRow = { direction: "in" | "out"; contact: string; call: number; thread_id?: string; ext: string | null; peer_ext: string | null };
+
+/** PHI text goes into the vault and its row keeps only a placeholder; our own echo keeps nothing. */
+function storePhiText(db: PhoneDb, message: Message, row: StoredRow, now: number, vault: VaultSink): boolean {
+	const add = (text: string) => db.addMessage({ id: message.id, ts: message.ts, sender: message.from, text, phi: true, ...row });
+	if (row.direction === "out") return add(PHI_NOT_STORED_TEXT);
+	const handle = findContactByNpub(db, message.from)?.handle ?? UNKNOWN_SENDER_HANDLE;
+	const plain = Buffer.from(message.text, "utf8");
+	if (plain.length > MAX_VAULT_BYTES) return add(vaultStorageFullText(handle));
+	const key = vault.keys.peek();
+	return withVaultWriteLock(vault.root, () => {
+		if (receiveStorageFull(vault.root, plain.length + SEALED_OVERHEAD_BYTES)) return add(vaultStorageFullText(handle));
+		if (!key) return add(vaultUnavailableText(handle));
+		const sealed = sealReceived(db, vault.root, { key, sender: message.from, handle, plain, ext: row.ext }, now);
+		const inserted = add(sealed.text);
+		if (!inserted) deleteVaultItem(db, vault.root, sealed.row);
+		return inserted;
+	});
+}
+
+/** Stores the message row, then its image fetch row when there is one. */
+function storeMessage(db: PhoneDb, message: Message, row: StoredRow, now: number, vault: VaultSink): boolean {
+	if (message.phi && !message.image) return storePhiText(db, message, row, now, vault);
+	const image = imageAdmission(db, message, row.direction, now);
+	const inserted = db.addMessage({ id: message.id, ts: message.ts, sender: message.from, text: image.text, phi: message.phi === true, ...row });
+	if (inserted && image.fetch) db.addImageFetch(image.fetch);
+	return inserted;
+}
+
+/** Stores the row, then notes the sender's claimed extension on their contact. */
+function storeAndNote(db: PhoneDb, message: Message, row: StoredRow, now: number, vault: VaultSink): boolean {
+	const inserted = storeMessage(db, message, row, now, vault);
+	if (inserted && row.direction === "in" && message.fromExt) db.touchContactExt(message.from, message.fromExt, message.ts);
+	return inserted;
+}
+
 function threadContacts(db: PhoneDb): { npub: string; keyId: string }[] {
 	return db.listContacts().map((row) => ({ npub: row.npub, keyId: row.key_id }));
 }
 
 function admitMessage(
 	db: PhoneDb,
+	vault: VaultSink,
 	now: () => number,
 	relays: string[],
 	message: Message,
@@ -740,6 +838,7 @@ function admitMessage(
 						subject: message.thread.subject,
 						text: message.text,
 						ts: message.ts,
+						...(message.phi ? { phi: message.phi } : {}),
 					},
 					now(),
 				);
@@ -759,16 +858,20 @@ function admitMessage(
 				});
 				for (const npub of message.thread.memberNpubs) db.insertThreadMember(message.thread.roomId, npub);
 			}
-			const inserted = db.addMessage({
-				id: message.id,
-				direction: threadDirection(message.from, ownNpubs),
-				ts: message.ts,
-				sender: message.from,
-				contact: message.from,
-				text: message.text,
-				call: 0,
-				thread_id: message.thread.roomId,
-			});
+			const inserted = storeAndNote(
+				db,
+				message,
+				{
+					direction: threadDirection(message.from, ownNpubs),
+					contact: message.from,
+					call: 0,
+					thread_id: message.thread.roomId,
+					ext: null,
+					peer_ext: message.fromExt ?? null,
+				},
+				now(),
+				vault,
+			);
 			return inserted ? "stored" : "duplicate";
 		}
 		if (newContact && !findContactByNpub(db, newContact.npub)) {
@@ -781,15 +884,13 @@ function admitMessage(
 			addPhoneNotice(db, `new contact +${handle}`, now());
 		}
 		if (!findContactByNpub(db, message.from)) return "rejected";
-		const inserted = db.addMessage({
-			id: message.id,
-			direction: "in",
-			ts: message.ts,
-			sender: message.from,
-			contact: message.from,
-			text: message.text,
-			call: message.call ? 1 : 0,
-		});
+		const inserted = storeAndNote(
+			db,
+			message,
+			{ direction: "in", contact: message.from, call: message.call ? 1 : 0, ext: message.ext ?? null, peer_ext: message.fromExt ?? null },
+			now(),
+			vault,
+		);
 		if (!inserted) return "duplicate";
 		if (reaccept) setContactKeyId(db, reaccept.npub, reaccept.keyId);
 		return "stored";
@@ -846,7 +947,33 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	writeListenerPid(deps.paths, listenerPidRecord(deps, relays, keys, since));
 
-	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule) : noopHookRunner();
+	const vault: VaultSink = { keys: createVaultKeyCache(deps, deps.now), root: deps.paths.phoneRoot };
+	await vault.keys.refresh();
+	const hookRunner = deps.hook ? createHookRunner(deps.db, deps.hook, deps.schedule, deps.paths.phoneRoot) : noopHookRunner();
+	const fileRequests = createFileRequestHandler({ db: deps.db, paths: deps.paths, now: deps.now, wormhole: deps.wormhole });
+	const images = createImageReceiver({
+		db: deps.db,
+		paths: deps.paths,
+		pool,
+		now: deps.now,
+		keys: () => keys,
+		schedule: deps.schedule,
+		wormhole: deps.wormhole,
+		vault: vault.keys,
+		onFinish: () => void hookRunner.notify(),
+	});
+	const presenceConfig: PresenceConfig = deps.presence ?? { minMs: PRESENCE_MIN_MS, maxMs: PRESENCE_MAX_MS, random: Math.random };
+	const presence = createPresence({
+		db: deps.db,
+		pool,
+		now: deps.now,
+		keys: () => keys,
+		confirmMs: liveness.confirmMs,
+		onOnline: (pub) => {
+			deps.db.retryImageFetchesFrom(pub, deps.now());
+			images.wake();
+		},
+	});
 
 	const logDrop = (drop: DroppedRing) => {
 		if (loggedDrops.has(drop.id)) return;
@@ -865,12 +992,13 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		for (const held of caught.held) holdThread(deps.db, held, deps.now());
 		for (const message of caught.messages) {
 			if (message.thread) {
-				admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys);
+				if (admitMessage(deps.db, vault, deps.now, readRelays(deps.db), message, keys) === "stored") presence.stored(message);
 				continue;
 			}
 			if (refused.has(message.from)) continue;
 			const stored = admitMessage(
 				deps.db,
+				vault,
 				deps.now,
 				readRelays(deps.db),
 				message,
@@ -879,7 +1007,9 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 				caught.reacceptByMessageId.get(message.id),
 			);
 			if (stored === "rejected") refused.add(message.from);
+			if (stored === "stored") presence.stored(message);
 		}
+		images.wake();
 		return caught.seen;
 	};
 
@@ -890,11 +1020,16 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 
 	await hookRunner.notify();
 	await hookRunner.retryStuck();
-	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => void hookRunner.retryStuck());
+	const cancelStuckRetry = repeat(deps.schedule, STUCK_RETRY_INTERVAL_MS, () => {
+		deps.db.pruneMessages();
+		void vault.keys.refresh();
+		void hookRunner.retryStuck();
+	});
 
 	const onLive = (message: Message, seenNow: Seen, _gate: unknown, extra: SubscribeExtra) => {
 		seen = seenNow;
-		admitMessage(deps.db, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept);
+		if (admitMessage(deps.db, vault, deps.now, readRelays(deps.db), message, keys, extra.newContact, extra.reaccept) === "stored") presence.stored(message);
+		images.wake();
 		rememberAdmission();
 		writeCursor(deps.db, seenNow.cursor);
 		void hookRunner.notify();
@@ -910,6 +1045,10 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 	};
 	const hooks: SubscribeHooks = {
 		onHeld: (held) => holdThread(deps.db, held, deps.now()),
+		onControl: (control) => {
+			presence.handle(control);
+			if (control.kind === FILE_REQUEST_KIND) fileRequests.handle(control);
+		},
 		reread: rereadGate,
 		onDrop: logDrop,
 		onEvent: (id) => addBounded(deliveredIds, id, STRANGER_ID_LIMIT),
@@ -1029,6 +1168,12 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 		}
 	};
 	const cancelLiveness = repeatJitter(deps.schedule, () => livenessDelayMs(liveness.random(), liveness.minMs, liveness.maxMs), checkLiveness);
+	void presence.beat();
+	const cancelPresence = repeatJitter(
+		deps.schedule,
+		() => livenessDelayMs(presenceConfig.random(), presenceConfig.minMs, presenceConfig.maxMs),
+		() => presence.beat(),
+	);
 
 	return new Promise<void>((resolve) => {
 		const shutdown = () => {
@@ -1038,8 +1183,12 @@ async function runClaimedListener(deps: ListenerDeps): Promise<void> {
 			cancelStuckRetry();
 			cancelWatch();
 			cancelLiveness();
+			cancelPresence();
+			presence.stop();
 			hookRunner.stop();
-			void hookRunner.settle().finally(() => {
+			fileRequests.stop();
+			images.stop();
+			void Promise.all([hookRunner.settle(), fileRequests.settle(), images.settle(), presence.settle()]).finally(() => {
 				removeListenerPid(deps.paths);
 				releaseListenerClaim(deps.paths, deps.pid);
 				resolve();

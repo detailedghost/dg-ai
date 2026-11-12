@@ -1,10 +1,4 @@
 import {
-	validateInboxBrowserRequest,
-	validateInboxBrowserResponse,
-	type InboxBrowserRequest,
-	type InboxBrowserResponse,
-} from "./inbox-format";
-import {
 	fail,
 	requireFiniteNumber,
 	requireOneOf,
@@ -12,14 +6,15 @@ import {
 	requireString,
 } from "./assert";
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
+import { INBOX_WIRE } from "./inbox-format";
+import { PROTO_WIRE, validateProtoIdentifier } from "./proto-format";
+import { PW_EXT_WIRE } from "./pw-ext-format";
+import type { RELAY_FEATURES } from "./relay-features";
 import {
-	PROTO_MAX_TIMEOUT_MS,
-	validateProtoBrowserData,
-	validateProtoIdentifier,
-	validateProtoMarkedUrl,
-	validateProtoNotReadyError,
-} from "./proto-format";
-import type { ProtoBrowserData, ProtoNotReadyError } from "./types";
+	type RelayChatFrame,
+	relayFrameTypes,
+	relayValidators,
+} from "./relay-format";
 
 const UTF8_ENCODER = new TextEncoder();
 
@@ -56,6 +51,7 @@ export const CHAT_DEFAULT_PORT = 47823;
 export const CHAT_PORT_FALLBACK_COUNT = 9;
 
 export const CHAT_MARKER_KEY = "_chat";
+export const CHAT_CODE_KEY = "_chatcode";
 
 export const CHAT_HEALTH_PATH = "/healthz";
 /** Answered alongside CHAT_HEALTH_PATH for one release, for extensions the user has not reloaded yet. */
@@ -65,8 +61,6 @@ export const CHAT_STATUS_PATH = "/status";
 export const CHAT_WS_PATH = "/ws";
 export const CHAT_CLI_PATH = "/cli";
 export const CHAT_ASSETS_PATH = "/assets";
-export const CHAT_JOBS_PATH = "/jobs";
-export const CHAT_FEED_PATH = "/feed";
 export const CHAT_SERVICES_PATH = "/services";
 
 export type JobState = "ok" | "failed" | "paused";
@@ -140,7 +134,7 @@ export function parseEvery(raw: string): number {
 export type SessionRole = "orchestrator" | "agent";
 
 /** How a live session relates to a CLI agent. Omitted on older frames. */
-export type SessionPresence = "cli" | "waiting" | "gone" | "idle";
+export type SessionPresence = "cli" | "gone" | "idle";
 
 export type SessionSummary = {
 	sessionId: string;
@@ -216,48 +210,13 @@ export type OverwatchAction = {
 	note?: string;
 };
 
-type Envelope<SessionId extends string = string> = {
+export type Envelope<SessionId extends string = string> = {
 	sessionId: SessionId;
 	protocolVersion: number;
 };
 
 export type ChatFrame =
-	| (Envelope & {
-			type: "inbox-browser-request";
-			requestId: string;
-			request: InboxBrowserRequest;
-	  })
-	| (Envelope & {
-			type: "inbox-browser-result";
-			token: string;
-			requestId: string;
-			ok: boolean;
-			data?: InboxBrowserResponse;
-			error?: string;
-	  })
-	| (Envelope & {
-			type: "proto-browser-request";
-			requestId: string;
-			phase: "scrape" | "plant";
-			slug: string;
-			markedUrl: string;
-			timeoutMs?: number;
-	  })
-	| (Envelope & {
-			type: "proto-browser-result";
-			token: string;
-			requestId: string;
-			ok: boolean;
-			data?: ProtoBrowserData;
-			notReady?: ProtoNotReadyError;
-			error?: string;
-	  })
-	| (Envelope & {
-			type: "proto-browser-progress";
-			token: string;
-			requestId: string;
-			status: string;
-	  })
+	| RelayChatFrame<(typeof RELAY_FEATURES)[number]>
 	| (Envelope & {
 			type: "user-message";
 			token: string;
@@ -334,12 +293,7 @@ export type ChatFrame =
 			error?: string;
 	  });
 
-const CHAT_FRAME_TYPES = new Set([
-	"inbox-browser-request",
-	"inbox-browser-result",
-	"proto-browser-request",
-	"proto-browser-result",
-	"proto-browser-progress",
+const HAND_FRAME_TYPES = [
 	"user-message",
 	"ack",
 	"agent-message",
@@ -364,12 +318,9 @@ const CHAT_FRAME_TYPES = new Set([
 	"overwatch-state",
 	"overwatch-open",
 	"overwatch-open-result",
-]);
+] as const;
 
-const INBOUND_FRAME_TYPES = new Set([
-	"inbox-browser-result",
-	"proto-browser-result",
-	"proto-browser-progress",
+const HAND_INBOUND_TYPES = [
 	"user-message",
 	"command-invocation",
 	"session-create",
@@ -380,7 +331,21 @@ const INBOUND_FRAME_TYPES = new Set([
 	"config-get",
 	"config-set",
 	"overwatch-open-result",
+] as const;
+
+const RELAY_WIRE = [INBOX_WIRE, PROTO_WIRE, PW_EXT_WIRE] as const;
+
+export const CHAT_FRAME_TYPES: ReadonlySet<string> = new Set([
+	...relayFrameTypes(RELAY_WIRE, "all"),
+	...HAND_FRAME_TYPES,
 ]);
+
+export const INBOUND_FRAME_TYPES: ReadonlySet<string> = new Set([
+	...relayFrameTypes(RELAY_WIRE, "inbound"),
+	...HAND_INBOUND_TYPES,
+]);
+
+const RELAY_VALIDATORS = relayValidators(RELAY_WIRE);
 
 function requireProgressState(
 	value: unknown,
@@ -413,7 +378,6 @@ function validateSessionSummary(value: unknown, path: string): SessionSummary {
 	if (value.presence !== undefined) {
 		requireOneOf(value.presence, `${path}.presence`, [
 			"cli",
-			"waiting",
 			"gone",
 			"idle",
 		] as const);
@@ -750,119 +714,6 @@ function validateFrameBody(
 				fail(`${path}.messages must be an array`);
 			}
 			return;
-		case "inbox-browser-request":
-			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("inbox requestId exceeds 128 characters");
-			validateInboxBrowserRequest(value.request);
-			return;
-		case "inbox-browser-result":
-			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("inbox requestId exceeds 128 characters");
-			if (typeof value.ok !== "boolean")
-				fail("inbox result.ok must be a boolean");
-			if (value.ok) {
-				if (value.error !== undefined)
-					fail("successful inbox result must not contain an error");
-				validateInboxBrowserResponse(value.data);
-			} else {
-				if (value.data !== undefined)
-					fail("failed inbox result must not contain data");
-				requireString(value.error, "inbox result.error", { nonEmpty: true });
-				if ((value.error as string).length > 2048)
-					fail("inbox result.error exceeds 2048 characters");
-			}
-			for (const key of Object.keys(value)) {
-				if (
-					![
-						"type",
-						"protocolVersion",
-						"sessionId",
-						"token",
-						"requestId",
-						"ok",
-						"data",
-						"error",
-					].includes(key)
-				)
-					fail("unknown inbox result field");
-			}
-			return;
-		case "proto-browser-request":
-			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("proto requestId exceeds 128 characters");
-			requireOneOf(value.phase, `${path}.phase`, ["scrape", "plant"] as const);
-			validateProtoIdentifier(value.slug, `${path}.slug`);
-			validateProtoMarkedUrl(value.markedUrl, `${path}.markedUrl`);
-			if (value.timeoutMs !== undefined) {
-				requireFiniteNumber(value.timeoutMs, `${path}.timeoutMs`);
-				if (
-					value.timeoutMs <= 0 ||
-					value.timeoutMs > PROTO_MAX_TIMEOUT_MS
-				) {
-					fail(
-						`${path}.timeoutMs must be between 1 and ${PROTO_MAX_TIMEOUT_MS}`,
-					);
-				}
-			}
-			return;
-		case "proto-browser-result":
-			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("proto requestId exceeds 128 characters");
-			if (typeof value.ok !== "boolean")
-				fail("proto result.ok must be a boolean");
-			if (value.ok) {
-				if (value.error !== undefined || value.notReady !== undefined)
-					fail("successful proto result must not contain an error or notReady");
-				validateProtoBrowserData(value.data);
-			} else {
-				if (value.data !== undefined)
-					fail("failed proto result must not contain data");
-				if (
-					(value.error === undefined) === (value.notReady === undefined)
-				) {
-					fail(
-						"failed proto result must contain exactly one of error or notReady",
-					);
-				}
-				if (value.error !== undefined) {
-					requireString(value.error, "proto result.error", {
-						nonEmpty: true,
-					});
-					if ((value.error as string).length > 2048)
-						fail("proto result.error exceeds 2048 characters");
-				} else {
-					validateProtoNotReadyError(value.notReady);
-				}
-			}
-			for (const key of Object.keys(value)) {
-				if (
-					![
-						"type",
-						"protocolVersion",
-						"sessionId",
-						"token",
-						"requestId",
-						"ok",
-						"data",
-						"notReady",
-						"error",
-					].includes(key)
-				)
-					fail("unknown proto result field");
-			}
-			return;
-		case "proto-browser-progress":
-			requireString(value.requestId, `${path}.requestId`, { nonEmpty: true });
-			if ((value.requestId as string).length > 128)
-				fail("proto requestId exceeds 128 characters");
-			requireString(value.status, `${path}.status`, { nonEmpty: true });
-			if ((value.status as string).length > 512)
-				fail("proto progress status exceeds 512 characters");
-			return;
 		case "config-get":
 			requireString(value.key, `${path}.key`, { nonEmpty: true });
 			return;
@@ -902,8 +753,11 @@ function validateFrameBody(
 				fail(`${path}.error is required when ok is false`);
 			}
 			return;
-		default:
-			fail(`${path}.type "${type}" is not a ratified discriminant`);
+		default: {
+			const validate = RELAY_VALIDATORS.get(type);
+			if (!validate) fail(`${path}.type "${type}" is not a ratified discriminant`);
+			validate(value, path);
+		}
 	}
 }
 
@@ -1053,6 +907,16 @@ export function validateDaemonHandle(value: unknown): DaemonHandle {
 	return value as DaemonHandle;
 }
 
+export function tryValidateSessionBootstrap(
+	value: unknown,
+): SessionBootstrap | undefined {
+	try {
+		return validateSessionBootstrap(value);
+	} catch {
+		return undefined;
+	}
+}
+
 export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 	requireRecord(value, "session bootstrap");
 	requireFiniteNumber(value.port, "session bootstrap.port");
@@ -1064,4 +928,42 @@ export function validateSessionBootstrap(value: unknown): SessionBootstrap {
 		nonEmpty: true,
 	});
 	return value as SessionBootstrap;
+}
+
+export type SessionAdopt = {
+	type: "session-adopt";
+	bootstrap: SessionBootstrap & { daemonId: string };
+};
+
+export function validateSessionAdopt(value: unknown): SessionAdopt {
+	requireRecord(value, "session-adopt");
+	if (value.type !== "session-adopt") {
+		fail('session-adopt.type must be "session-adopt"');
+	}
+	const bootstrap = validateSessionBootstrap(value.bootstrap);
+	requireString(
+		(bootstrap as Record<string, unknown>).daemonId,
+		"session-adopt.bootstrap.daemonId",
+		{ nonEmpty: true },
+	);
+	return value as SessionAdopt;
+}
+
+const LINK_FRAME_TYPES = ["link-ready", "link-ping"] as const;
+
+export type LinkFrame = { type: (typeof LINK_FRAME_TYPES)[number] };
+
+export function isLinkFrame(value: unknown): value is { type: string } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as { type?: unknown }).type === "string" &&
+		(value as { type: string }).type.startsWith("link-")
+	);
+}
+
+export function validateLinkFrame(value: unknown): LinkFrame {
+	requireRecord(value, "link frame");
+	requireOneOf(value.type, "link frame.type", LINK_FRAME_TYPES);
+	return { type: value.type };
 }

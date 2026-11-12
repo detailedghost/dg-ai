@@ -2,20 +2,20 @@
 
 Phase-by-phase recipe for the orchestrator. The orchestrator (main agent) does no synthesis — it only dispatches agents and runs the helper. All term writing happens in the `dg:lore` agent.
 
-Helper: `~/.dg/bin/dg-skills monolith` — run it with `--help` for the full subcommand list.
+Helper: `dg-skills monolith` — run it with `--help` for the full subcommand list.
 
 ## Phase 0 — Parse args
 
 Inputs: `--shallow` / `-s` (bool), `--prune` (bool). They are independent.
 
-`--shallow` follows the same convention as `/dg:kick --shallow` and `/dg:pickup --shallow`: output under `$(~/.dg/bin/dg-skills stash -r -s)` instead of the repo, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit. Use it for first-pass scans on repos without `.agents/` infrastructure or for throwaway exploration. Resume the same shallow file by re-running `/dg:monolith --shallow` from the same repo.
+`--shallow` follows the same convention as `/dg:kick --shallow` and `/dg:pickup --shallow`: output under `$(dg-skills stash -r -s)` instead of the repo, no `.agents/` prerequisite, no AGENTS.md/CLAUDE.md retrofit, no git commit. Use it for first-pass scans on repos without `.agents/` infrastructure or for throwaway exploration. Resume the same shallow file by re-running `/dg:monolith --shallow` from the same repo.
 
-`--shallow` ALSO reduces scan parallelism to a single Explore agent. The two behaviors are fused — you cannot have one without the other. To go full → shallow, just delete `.agents/monolith.md` and run `/dg:monolith --shallow`. To promote shallow → full, copy `$(~/.dg/bin/dg-skills stash -s monolith <slug>)/monolith.md` to `.agents/monolith.md` and run `/dg:monolith` (no flag) to refresh.
+`--shallow` ALSO reduces scan parallelism to a single Explore agent. The two behaviors are fused — you cannot have one without the other. To go full → shallow, just delete `.agents/monolith.md` and run `/dg:monolith --shallow`. To promote shallow → full, copy `$(dg-skills stash -s monolith <slug>)/monolith.md` to `.agents/monolith.md` and run `/dg:monolith` (no flag) to refresh.
 
 If `--prune` is set:
 
-1. Run `~/.dg/bin/dg-skills monolith prune <MONOLITH_PATH>` where `<MONOLITH_PATH>` comes from a `bootstrap` call (also passing `--shallow` if the user did). Capture stdout (removed term names).
-2. Run `~/.dg/bin/dg-skills monolith validate <MONOLITH_PATH>`.
+1. Run `dg-skills monolith prune <MONOLITH_PATH>` where `<MONOLITH_PATH>` comes from a `bootstrap` call (also passing `--shallow` if the user did). Capture stdout (removed term names).
+2. Run `dg-skills monolith validate <MONOLITH_PATH>`.
 3. Print "`/dg:monolith --prune`: removed N entries" + the removed list.
 4. Exit. Do not scan, do not invoke agents.
 
@@ -25,19 +25,19 @@ Otherwise continue with Phase 1.
 
 ```sh
 # Standard:
-eval "$(~/.dg/bin/dg-skills monolith bootstrap .)"
+eval "$(dg-skills monolith bootstrap .)"
 
 # Shallow:
-eval "$(~/.dg/bin/dg-skills monolith bootstrap --shallow .)"
+eval "$(dg-skills monolith bootstrap --shallow .)"
 ```
 
 Standard mode captures: `APPEND_MODE`, `MONOLITH_PATH`, `LIGHT_MODE=0`.
-Shallow mode captures additionally: `LIGHT_DIR` (the `$(~/.dg/bin/dg-skills stash -s monolith <slug>)/` parent), `ORIGIN_REPO` (absolute path of the repo, or empty if not in a repo), `SLUG`.
+Shallow mode captures additionally: `LIGHT_DIR` (the `$(dg-skills stash -s monolith <slug>)/` parent), `ORIGIN_REPO` (absolute path of the repo, or empty if not in a repo), `SLUG`.
 
 If `APPEND_MODE=1`, also capture the existing-term list (used to softly hint scanners away from re-defining settled terms; lore still receives the full file):
 
 ```sh
-EXISTING_TERMS=$(~/.dg/bin/dg-skills monolith list-terms "$MONOLITH_PATH")
+EXISTING_TERMS=$(dg-skills monolith list-terms "$MONOLITH_PATH")
 ```
 
 `$EXISTING_TERMS` is one term per line; embed it in scanner prompts as "these are already known — focus on what's missing."
@@ -108,7 +108,7 @@ only job here is to assemble `args` and call the tool.
 
 ```sh
 M=full; [ "$LIGHT_MODE" = "1" ] && M=shallow
-SCOPED=$(~/.dg/bin/dg-skills monolith worktree-gen "$REPO_ROOT" --mode "$M" \
+SCOPED=$(dg-skills monolith worktree-gen "$REPO_ROOT" --mode "$M" \
   --monolith-path "$MONOLITH_PATH" --staging-path "${MONOLITH_PATH}.new")
 ```
 
@@ -144,10 +144,10 @@ Once the workflow returns with `staged: true`, continue to Phase 3.5 against
 
 ```sh
 STAGING="${MONOLITH_PATH}.new"
-CONFLICTS=$(~/.dg/bin/dg-skills stash -u monolith conflicts)
+CONFLICTS=$(dg-skills stash -u monolith conflicts)
 
 if [ -f "$MONOLITH_PATH" ]; then
-  ~/.dg/bin/dg-skills monolith detect-conflicts "$MONOLITH_PATH" "$STAGING" >"$CONFLICTS"
+  dg-skills monolith detect-conflicts "$MONOLITH_PATH" "$STAGING" >"$CONFLICTS"
 fi
 ```
 
@@ -164,7 +164,7 @@ For each TSV line in `$CONFLICTS`, parse `section`, `term`, `old_row`, `new_row`
 After collecting answers, run:
 
 ```sh
-~/.dg/bin/dg-skills monolith apply-conflict-resolution "$STAGING" "$keep_old_tsv" .agents/school/monolith-conflicts.md
+dg-skills monolith apply-conflict-resolution "$STAGING" "$keep_old_tsv" .agents/school/monolith-conflicts.md
 ```
 
 This restores OLD rows in staging for every term the user chose to keep existing or defer.
@@ -172,7 +172,7 @@ This restores OLD rows in staging for every term the user chose to keep existing
 ### Non-interactive (`MONOLITH_NONINTERACTIVE=1` OR stdin not a tty)
 
 ```sh
-~/.dg/bin/dg-skills monolith apply-conflict-resolution "$STAGING" "$CONFLICTS" .agents/school/monolith-conflicts.md
+dg-skills monolith apply-conflict-resolution "$STAGING" "$CONFLICTS" .agents/school/monolith-conflicts.md
 ```
 
 Default behavior: keep all existing rows; log the rejected new candidates with a timestamp. Surface the count in the run summary so the user can review later.
@@ -188,11 +188,11 @@ mv "$STAGING" "$MONOLITH_PATH"
 ```sh
 
 # 4a. Validate format.
-~/.dg/bin/dg-skills monolith validate "$MONOLITH_PATH"
+dg-skills monolith validate "$MONOLITH_PATH"
 
 # 4b. Cap check.
 set +e
-~/.dg/bin/dg-skills monolith cap-report "$MONOLITH_PATH"
+dg-skills monolith cap-report "$MONOLITH_PATH"
 CAP_EXIT=$?
 set -e
 ```
@@ -210,7 +210,7 @@ do not ask `dg:lore` to pick "lowest-signal" entries — partition deterministic
 
 ```sh
 set +e
-~/.dg/bin/dg-skills monolith split "$MONOLITH_PATH"
+dg-skills monolith split "$MONOLITH_PATH"
 SPLIT_EXIT=$?
 set -e
 ```
@@ -250,10 +250,10 @@ than assuming every term lives in `monolith.md`.
 ```sh
 if [ "$LIGHT_MODE" = "0" ]; then
   if [ -f .agents/AGENTS.md ]; then
-    ~/.dg/bin/dg-skills monolith patch-pointer .agents/AGENTS.md
+    dg-skills monolith patch-pointer .agents/AGENTS.md
     POINTER_TARGET=.agents/AGENTS.md
   elif [ -f CLAUDE.md ]; then
-    ~/.dg/bin/dg-skills monolith patch-pointer CLAUDE.md
+    dg-skills monolith patch-pointer CLAUDE.md
     POINTER_TARGET=CLAUDE.md
   else
     echo "warn: no AGENTS.md or CLAUDE.md found — agents won't auto-discover monolith.md. Run /dg:agent-seed to formalize, or add a pointer by hand." >&2
@@ -278,7 +278,7 @@ Print a one-paragraph summary covering:
 End with the path to the file:
 
 - Standard: `Wrote .agents/monolith.md (<bytes> bytes).`
-- Shallow: `Wrote $(~/.dg/bin/dg-skills stash -s monolith <slug>)/monolith.md (<bytes> bytes, uncommitted). Re-run /dg:monolith --shallow from this repo to refresh; promote with cp + /dg:monolith when ready.`
+- Shallow: `Wrote $(dg-skills stash -s monolith <slug>)/monolith.md (<bytes> bytes, uncommitted). Re-run /dg:monolith --shallow from this repo to refresh; promote with cp + /dg:monolith when ready.`
 
 ## Notes
 

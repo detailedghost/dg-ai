@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ProtoPlan, Verdict } from "@dg/common";
-import { exportApprovedAnswer } from "../src/commands/proto";
+import { exportApprovedAnswer } from "../src/proto/cli";
 import { answerPagePath, protoScratchPath, protoSlug } from "../src/utils/proto-paths";
 import { protoDaemonFixture } from "./proto-cli-harness";
 

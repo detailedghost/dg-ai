@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { channelReviewPaths, createStateStore } from "@dg/channel-review";
@@ -26,7 +26,7 @@ const BASE_CONFIG = {
 	},
 };
 
-const configPath = () => join(dgHome, "channel-review", "config.json");
+const configPath = () => join(dgHome, "config", "channel-review", "config.json");
 
 beforeEach(() => {
 	cwd = mkdtempSync(join(tmpdir(), "dg-channel-review-cli-"));
@@ -59,7 +59,8 @@ async function run(args: string[], overrides: Record<string, string | undefined>
 }
 
 function writeConfig(body: Record<string, unknown> = {}): void {
-	mkdirSync(join(dgHome, "channel-review"), { recursive: true });
+	mkdirSync(join(dgHome, "config", "channel-review"), { recursive: true });
+	mkdirSync(join(dgHome, "state", "channel-review"), { recursive: true });
 	writeFileSync(
 		configPath(),
 		`${JSON.stringify({ ...BASE_CONFIG, ...body }, null, "\t")}\n`,
@@ -67,15 +68,15 @@ function writeConfig(body: Record<string, unknown> = {}): void {
 }
 
 describe("channel-review help", () => {
-	test("lists start, stop, status, logs, run, and env", async () => {
+	test("lists start, stop, status, logs, run, env, and setup", async () => {
 		const result = await run(["--help"]);
 		expect(result.code).toBe(0);
-		for (const name of ["start", "stop", "status", "logs", "run", "env"]) {
+		for (const name of ["start", "stop", "status", "logs", "run", "env", "setup"]) {
 			expect(result.stdout).toMatch(new RegExp(`^\\s+${name}\\b`, "m"));
 		}
 	});
 
-	test.each(["start", "stop", "status", "logs", "run", "env"])("%s --help exits 0", async (name) => {
+	test.each(["start", "stop", "status", "logs", "run", "env", "setup"])("%s --help exits 0", async (name) => {
 		const result = await run([name, "--help"]);
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain(name);
@@ -188,7 +189,7 @@ describe("channel-review status", () => {
 			running: false,
 			runners: { claude: "CR-201", codex: "CR-201", copilot: "CR-201", grok: "CR-201" },
 		});
-		expect(body.logPath).toBe(join(dgHome, "channel-review", "daemon.dev.log"));
+		expect(body.logPath).toBe(join(dgHome, "state", "channel-review", "daemon.dev.log"));
 		expect(body.preflight.secret.error).toContain("aws");
 	});
 
@@ -196,7 +197,7 @@ describe("channel-review status", () => {
 		writeConfig();
 		const body = JSON.parse((await run(["status", "--env", "prod"])).stdout);
 		expect(body.env).toBe("prod");
-		expect(body.logPath).toBe(join(dgHome, "channel-review", "daemon.prod.log"));
+		expect(body.logPath).toBe(join(dgHome, "state", "channel-review", "daemon.prod.log"));
 	});
 
 	test("a status without --env reports prod after env prod", async () => {
@@ -208,9 +209,9 @@ describe("channel-review status", () => {
 });
 
 describe("channel-review logs", () => {
-	const logPath = (env = "dev") => join(dgHome, "channel-review", `daemon.${env}.log`);
+	const logPath = (env = "dev") => join(dgHome, "state", "channel-review", `daemon.${env}.log`);
 	const writeLog = (text: string, env = "dev") => {
-		mkdirSync(join(dgHome, "channel-review"), { recursive: true });
+		mkdirSync(join(dgHome, "state", "channel-review"), { recursive: true });
 		writeFileSync(logPath(env), text);
 	};
 
@@ -283,6 +284,21 @@ describe("channel-review start and stop", () => {
 		const result = await run(["start"]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(configPath());
+		expect(result.stderr).toContain("run: dg-skills channel-review setup");
+	});
+
+	test("setup without a terminal writes a template, not config.json, and exits 1", async () => {
+		const result = await run(["setup"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("config.example.json");
+		expect(existsSync(configPath())).toBe(false);
+	});
+
+	test("setup refuses to replace a config without --force", async () => {
+		writeConfig();
+		const result = await run(["setup"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("--force");
 	});
 
 	test("start without the aws CLI exits 1 naming aws", async () => {

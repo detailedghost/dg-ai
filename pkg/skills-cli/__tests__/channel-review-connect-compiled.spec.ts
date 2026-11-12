@@ -3,16 +3,13 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildSkillsCli } from "../build";
+import { playwrightMetadata } from "../build";
 
-test("compiled connect initializes Playwright after removing its source, without Bun on PATH", async () => {
+test("bundled connect initializes Playwright after removing its source, without Bun on PATH", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "dg-connect-compiled-"));
 	try {
 		const entry = join(dir, "entry.ts");
-		const executable = join(
-			dir,
-			process.platform === "win32" ? "probe.exe" : "probe",
-		);
+		const outdir = join(dir, "out");
 		const missingBrowser = join(dir, "missing-chrome");
 		const vendor = join(dir, "playwright-core");
 		cpSync(
@@ -23,7 +20,7 @@ test("compiled connect initializes Playwright after removing its source, without
 		writeFileSync(
 			entry,
 			`
-import { defaultConnectDeps } from ${JSON.stringify(resolve(import.meta.dir, "../src/commands/channel-review-connect.ts"))};
+import { defaultConnectDeps } from ${JSON.stringify(resolve(import.meta.dir, "../src/channel-review/connect.ts"))};
 import { chromium } from ${JSON.stringify(fileURLToPath(import.meta.resolve("playwright-core")))};
 const launch = chromium.launchPersistentContext.bind(chromium);
 chromium.launchPersistentContext = (profile, options) => launch(profile, {
@@ -43,10 +40,13 @@ try {
 }
 `,
 		);
-		await buildSkillsCli({
-			entrypoint: entry,
-			outfile: executable,
+		const built = await Bun.build({
+			entrypoints: [entry],
+			target: "bun",
+			outdir,
+			external: ["chromium-bidi", "chromium-bidi/*"],
 			plugins: [
+				playwrightMetadata,
 				{
 					name: "isolated-playwright",
 					setup(build) {
@@ -61,8 +61,9 @@ try {
 				},
 			],
 		});
+		expect(built.success, built.logs.join("\n")).toBe(true);
 		rmSync(vendor, { recursive: true });
-		const run = Bun.spawn([executable], {
+		const run = Bun.spawn([process.execPath, join(outdir, "entry.js")], {
 			cwd: dir,
 			env: { ...process.env, PATH: "", DG_HOME: join(dir, "home") },
 			stdout: "pipe",

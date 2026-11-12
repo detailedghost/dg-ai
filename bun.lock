@@ -37,7 +37,7 @@
     },
     "pkg/dg-agent": {
       "name": "@dg/dg-agent",
-      "version": "1.35.0",
+      "version": "4.1.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "commander": "^15.0.0",
@@ -51,7 +51,7 @@
     },
     "pkg/dg-daemon": {
       "name": "@dg/dg-daemon",
-      "version": "1.35.0",
+      "version": "4.1.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "commander": "^15.0.0",
@@ -64,16 +64,18 @@
     },
     "pkg/extension": {
       "name": "@dg/extension",
-      "version": "1.35.0",
+      "version": "4.1.0",
       "dependencies": {
         "@dg/common": "workspace:*",
         "@dg/pages": "workspace:*",
         "@dg/tour-ui": "workspace:*",
         "kokoro-js": "^1.2.1",
+        "qrcode": "1.5.4",
       },
       "devDependencies": {
         "@tailwindcss/vite": "^4.3.3",
         "@types/chrome": "^0.3.5",
+        "@types/qrcode": "^1.5.6",
         "bun-types": "^1.4.3",
         "fake-indexeddb": "^6.2.6",
         "happy-dom": "^21.0.3",
@@ -101,6 +103,18 @@
         "typescript": "^7.0.2",
       },
     },
+    "pkg/launcher": {
+      "name": "@dg/launcher",
+      "version": "1.26.0",
+      "devDependencies": {
+        "@dg/common": "workspace:*",
+        "@dg/dg-agent": "workspace:*",
+        "@dg/dg-daemon": "workspace:*",
+        "@dg/skills-cli": "workspace:*",
+        "bun-types": "^1.4.3",
+        "typescript": "^7.0.2",
+      },
+    },
     "pkg/pages": {
       "name": "@dg/pages",
       "version": "1.0.0",
@@ -116,7 +130,7 @@
     },
     "pkg/skills-cli": {
       "name": "@dg/skills-cli",
-      "version": "1.35.0",
+      "version": "4.1.0",
       "dependencies": {
         "@dg/channel-review": "workspace:*",
         "@dg/common": "workspace:*",
@@ -154,10 +168,12 @@
       "name": "@dg/ssms",
       "version": "0.1.0",
       "dependencies": {
+        "@dg/common": "workspace:*",
         "qrcode": "1.5.4",
         "yaml": "2.9.0",
       },
       "devDependencies": {
+        "@types/qrcode": "^1.5.6",
         "bun-types": "1.4.3",
         "typescript": "^7.0.2",
       },
@@ -363,6 +379,8 @@
     "@dg/extension": ["@dg/extension@workspace:pkg/extension"],
 
     "@dg/inbox": ["@dg/inbox@workspace:pkg/inbox"],
+
+    "@dg/launcher": ["@dg/launcher@workspace:pkg/launcher"],
 
     "@dg/pages": ["@dg/pages@workspace:pkg/pages"],
 
@@ -710,6 +728,8 @@
 
     "@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
 
+    "@types/qrcode": ["@types/qrcode@1.5.6", "", { "dependencies": { "@types/node": "*" } }, "sha512-te7NQcV2BOvdj2b1hCAHzAoMNuj65kNBMz0KBaxM6c3VGBOhU0dURQKOtH8CFNI/dsKkwlv32p26qYQTWoB5bw=="],
+
     "@types/triple-beam": ["@types/triple-beam@1.3.5", "", {}, "sha512-6WaYesThRMCl19iryMYP7/x2OVgCtbIVflDGFpWnb9irXI3UjYE4AzmYuiUKY1AJstGijoY+MgUszMgRxIYTYw=="],
 
     "@types/trusted-types": ["@types/trusted-types@2.0.7", "", {}, "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="],
@@ -860,9 +880,9 @@
 
     "color": ["color@5.0.3", "", { "dependencies": { "color-convert": "^3.1.3", "color-string": "^2.1.3" } }, "sha512-ezmVcLR3xAVp8kYOm4GS45ZLLgIE6SPAFoduLr6hTDajwb3KZ2F46gulK3XpcwRFb5KKGCSezCBAY4Dw4HsyXA=="],
 
-    "color-convert": ["color-convert@3.1.3", "", { "dependencies": { "color-name": "^2.0.0" } }, "sha512-fasDH2ont2GqF5HpyO4w0+BcewlhHEZOFn9c1ckZdHpJ56Qb7MHhH/IcJZbBGgvdtwdwNbLvxiBEdg336iA9Sg=="],
+    "color-convert": ["color-convert@2.0.1", "", { "dependencies": { "color-name": "~1.1.4" } }, "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ=="],
 
-    "color-name": ["color-name@2.1.1", "", {}, "sha512-p2FdgwVx1a9yWBHP2wI0VgShkDpgN4kZISkxdNipGBJWpa5G6b04OINlVWCyJj0JmfvcPrgqt95E9k8yvaOJFg=="],
+    "color-name": ["color-name@1.1.4", "", {}, "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA=="],
 
     "color-string": ["color-string@2.1.4", "", { "dependencies": { "color-name": "^2.0.0" } }, "sha512-Bb6Cq8oq0IjDOe8wJmi4JeNn763Xs9cfrBcaylK1tPypWzyoy2G3l90v9k64kjphl/ZJjPIShFztenRomi8WTg=="],
 
@@ -1718,9 +1738,11 @@
 
     "@wxt-dev/storage/@wxt-dev/browser": ["@wxt-dev/browser@0.1.43", "", { "dependencies": { "@types/filesystem": "*", "@types/har-format": "*" } }, "sha512-RMB0zgfe7uuiTp18s9taLeKXoOCLBV418797dnEggiMWmM1JDJekiLtlvrNc6QeZg+amDBy2/KKYuQB2kh/K9A=="],
 
-    "ansi-styles/color-convert": ["color-convert@2.0.1", "", { "dependencies": { "color-name": "~1.1.4" } }, "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ=="],
-
     "axios/https-proxy-agent": ["https-proxy-agent@5.0.1", "", { "dependencies": { "agent-base": "6", "debug": "4" } }, "sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA=="],
+
+    "color/color-convert": ["color-convert@3.1.3", "", { "dependencies": { "color-name": "^2.0.0" } }, "sha512-fasDH2ont2GqF5HpyO4w0+BcewlhHEZOFn9c1ckZdHpJ56Qb7MHhH/IcJZbBGgvdtwdwNbLvxiBEdg336iA9Sg=="],
+
+    "color-string/color-name": ["color-name@2.1.1", "", {}, "sha512-p2FdgwVx1a9yWBHP2wI0VgShkDpgN4kZISkxdNipGBJWpa5G6b04OINlVWCyJj0JmfvcPrgqt95E9k8yvaOJFg=="],
 
     "cross-spawn/path-key": ["path-key@3.1.1", "", {}, "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q=="],
 
@@ -1826,9 +1848,9 @@
 
     "@babel/traverse/@babel/types/@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@8.0.6", "", {}, "sha512-HYx0YmuchRxRSpnjvcNffnPS8DCauKNmnumIuHG3jnQAVewRA7kfJGwF13ayEpSZs7s4R/oBH4eppuXcAQd5JQ=="],
 
-    "ansi-styles/color-convert/color-name": ["color-name@1.1.4", "", {}, "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA=="],
-
     "axios/https-proxy-agent/agent-base": ["agent-base@6.0.2", "", { "dependencies": { "debug": "4" } }, "sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ=="],
+
+    "color/color-convert/color-name": ["color-name@2.1.1", "", {}, "sha512-p2FdgwVx1a9yWBHP2wI0VgShkDpgN4kZISkxdNipGBJWpa5G6b04OINlVWCyJj0JmfvcPrgqt95E9k8yvaOJFg=="],
 
     "cytoscape-fcose/cose-base/layout-base": ["layout-base@2.0.1", "", {}, "sha512-dp3s92+uNI1hWIpPGH3jK2kxE2lMjdXdr+DH8ynZHpd6PUlH6x6cbuXnoMmiNumznqaNO31xu9e79F0uuZ0JFg=="],
 

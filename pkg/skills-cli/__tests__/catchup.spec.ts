@@ -19,6 +19,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { installBundleShim } from "./bundle-build";
 import { isolateCliTests, readCalls, runGit } from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { makeTempDir, scratchFixtures } from "./git-repo-fixtures";
@@ -84,28 +85,17 @@ describe("relocated compiled catchup", () => {
 		bundle = makeTempDir("dg compiled catchup ");
 		stage = join(bundle, "temporary build stage");
 		home = join(bundle, "relocated installed home");
-		binary = join(home, ".dg/bin/dg-skills");
+		binary = join(home, ".local/bin/dg-skills");
 		skills = join(home, "plugins/dg/skills");
 		installedSkill = join(skills, "catchup/SKILL.md");
 		mkdirSync(stage, { recursive: true });
-		mkdirSync(dirname(binary), { recursive: true });
-		const compiled = join(stage, "dg-skills");
-		const build = Bun.spawnSync(
-			[BUN, join(import.meta.dir, "../build.ts"), "--outfile", compiled],
-			{
-				cwd: join(import.meta.dir, "../../.."),
-				env: { ...process.env },
-			},
-		);
-		if (build.exitCode !== 0)
-			throw new Error(`catchup compile failed: ${build.stderr.toString()}`);
+		installBundleShim(binary);
 		const sourceSkill = join(
 			import.meta.dir,
 			"../../../plugins/dg/skills/catchup",
 		);
 		skillBytes = readFileSync(join(sourceSkill, "SKILL.md"));
 		cpSync(sourceSkill, join(skills, "catchup"), { recursive: true });
-		renameSync(compiled, binary);
 		rmSync(stage, { recursive: true, force: true });
 	}, 120_000);
 
@@ -122,7 +112,7 @@ describe("relocated compiled catchup", () => {
 			trace,
 			env: {
 				...process.env,
-				PATH: bin,
+				PATH: `${bin}:${dirname(binary)}`,
 				HOME: home,
 				XDG_CONFIG_HOME: home,
 				DG_HOME: undefined,

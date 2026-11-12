@@ -1,14 +1,16 @@
 import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { DgCliError, describeError } from "@dg/common";
-import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories, selfCommand } from "@dg/common/node";
+import { type DgPaths, ensurePrivateDir, isAlive, realSubdirectories } from "@dg/common/node";
+import { programCommand } from "@dg/common/node/program";
 import { SECRET_BYTES } from "./card";
 import { type Direction, PhoneDb } from "./db";
 import {
 	adoptListenerPid,
 	isZombie,
+	listenerArgvFor,
 	listenerCommandArgs,
 	listenerGeneration,
 	listenerLogPath,
@@ -341,7 +343,7 @@ function defaultMigrateDeps(): MigrateDeps {
 		isAlive,
 		kill: (pid) => process.kill(pid, "SIGTERM"),
 		sleepSync,
-		startListener: (paths) => spawnDetachedListener(selfCommand(["phone", "__run"]), listenerLogPath(paths)),
+		startListener: (paths) => spawnDetachedListener(listenerArgvFor(paths, []), listenerLogPath(paths)),
 		commandArgs: listenerCommandArgs,
 		restoreListener: (paths, argv) => spawnDetachedListener(argv, listenerLogPath(paths)),
 		jobCli: runDaemonJobCli,
@@ -409,17 +411,17 @@ const RESTORE_SETTLE_MS = 500;
 
 /**
  * An argv this binary will keep running. `phone-friend --line` exits 2, so a captured legacy
- * command is not re-executed. A captured `phone __run` (no `--line`) is. Otherwise the current
- * binary's own `phone __run` is used, which writes `phone.db`.
+ * command is not re-executed. A captured `phone __run` (no `--line`) is. Otherwise the stable
+ * launcher's `phone __run` is used, which writes `phone.db`.
  */
-function argvThisBinaryAccepts(saved: SavedListener[]): string[] {
+function argvThisBinaryAccepts(paths: DgPaths, saved: SavedListener[]): string[] {
 	for (const entry of saved) {
 		const argv = entry.argv?.filter((part) => part.length > 0);
 		if (!argv || argv.length === 0) continue;
 		if (argv.includes("--line") || argv.includes("phone-friend")) continue;
 		if (argv.includes("phone") && argv.includes("__run")) return argv;
 	}
-	return selfCommand(["phone", "__run"]);
+	return listenerArgvFor(paths, []);
 }
 
 /**
@@ -431,7 +433,7 @@ function restorePrevious(paths: DgPaths, deps: MigrateDeps, saved: SavedListener
 	if (!existsSync(PhoneDb.path(paths))) return { stayedUp: false };
 	let pid: number;
 	try {
-		pid = deps.restoreListener(paths, argvThisBinaryAccepts(saved));
+		pid = deps.restoreListener(paths, argvThisBinaryAccepts(paths, saved));
 	} catch {
 		return { stayedUp: false };
 	}
@@ -626,25 +628,6 @@ export function readOnlyLegacyView(paths: DgPaths, alive: (pid: number) => boole
 	};
 }
 
-export function siblingDaemonPath(execPath: string, platform: NodeJS.Platform): string {
-	const name = platform === "win32" ? "dg-daemon.exe" : "dg-daemon";
-	return join(dirname(execPath), name);
-}
-
-/** The dg-daemon binary beside this dg-agent, or `dg-daemon` on PATH. */
-export function resolveDaemonExecutable(
-	execPath: string,
-	platform: NodeJS.Platform,
-	exists: (path: string) => boolean,
-	which: (name: string) => string | undefined,
-): string {
-	const sibling = siblingDaemonPath(execPath, platform);
-	if (exists(sibling)) return sibling;
-	const found = which("dg-daemon");
-	if (found) return found;
-	throw new DgCliError("dg-daemon was not found next to dg-agent or on PATH; run `dg-skills install` and try again");
-}
-
 function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const [key, value] of Object.entries(env)) {
@@ -674,14 +657,8 @@ export async function runArgv(argv: string[], env: NodeJS.ProcessEnv = process.e
 	return { code: code ?? 1, stdout, stderr };
 }
 
-/** `dg-daemon job …`, using the daemon installed beside dg-agent. Slice 5 uses this to disable each
+/** `dg-daemon job …` on this runtime and bundle. Slice 5 uses this to disable each
  * migrated line's old voicemail job. */
-export function runDaemonJobCli(args: string[]): Promise<JobCliResult> {
-	const bin = resolveDaemonExecutable(
-		process.execPath,
-		process.platform,
-		existsSync,
-		(name) => Bun.which(name, { PATH: process.env.PATH ?? "" }) ?? undefined,
-	);
-	return runArgv([bin, ...args]);
+export function runDaemonJobCli(args: string[], run: typeof runArgv = runArgv): Promise<JobCliResult> {
+	return run(programCommand("dg-daemon", args));
 }

@@ -2,9 +2,17 @@ import { createHash } from "node:crypto";
 import { DgCliError } from "@dg/common";
 import { nip19, nip59, type NostrEvent } from "nostr-tools";
 import { MESSAGE_TTL_SECONDS } from "./db";
+import { IMAGE_TEXT, type ImageOffer, imageUnavailableText, parseImageOffer } from "./image";
 import { isHandle } from "./store";
 
 const CHAT_MESSAGE_KIND = 14;
+export const FILE_MESSAGE_KIND = 15;
+/** Rumor tag on a message the sender marked as PHI. */
+export const PHI_TAG = "dg-phi";
+/** Rumor tag naming the one agent on the receiving machine a message is for. */
+export const EXT_TAG = "dg-ext";
+/** Rumor tag naming the sending agent, so a reply can route back; a claim, never an identity. */
+export const FROM_EXT_TAG = "dg-from-ext";
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
 /** Participants, including this phone. Larger rooms are dropped, not stored. */
@@ -36,6 +44,7 @@ export type HeldThread = {
 	subject: string | null;
 	text: string;
 	ts: number;
+	phi?: true;
 };
 
 export type ThreadView = {
@@ -52,9 +61,34 @@ export type ThreadView = {
 	reason?: ThreadDropReason;
 	/** The shared contact key this room is filed under, set only when the rumor is admitted. */
 	keyId?: string;
+	offer?: ImageOffer;
+	phi?: true;
+	fromExt?: string;
 };
 
-type RumorView = { id: string; pubkey: string; created_at: number; content: string; tags: string[][] };
+type RumorView = { id: string; kind: number; pubkey: string; created_at: number; content: string; tags: string[][] };
+
+export type RumorBody = { text: string; offer?: ImageOffer; phi?: true; ext?: string; fromExt?: string };
+
+/** A peer's extension tag value, or undefined when it is missing or fails the name rule. */
+function extensionTag(tags: readonly string[][], name: string): string | undefined {
+	const value = tags.find((tag) => tag[0] === name)?.[1];
+	return typeof value === "string" && isHandle(value) ? value : undefined;
+}
+
+/** The stored text of a rumor: a kind 15 is a placeholder plus its offer, never its content. */
+export function rumorBody(rumor: { kind: number; content: string; tags: readonly string[][] }): RumorBody {
+	const ext = extensionTag(rumor.tags, EXT_TAG);
+	const fromExt = extensionTag(rumor.tags, FROM_EXT_TAG);
+	const marks = {
+		...(rumor.tags.some((tag) => tag[0] === PHI_TAG && tag[1] === "1") ? { phi: true as const } : {}),
+		...(ext ? { ext } : {}),
+		...(fromExt ? { fromExt } : {}),
+	};
+	if (rumor.kind !== FILE_MESSAGE_KIND) return { text: rumor.content, ...marks };
+	const offer = parseImageOffer(rumor.content, rumor.tags);
+	return offer ? { text: IMAGE_TEXT, offer, ...marks } : { text: imageUnavailableText("bad offer"), ...marks };
+}
 
 /** Stable room id: sha256 of the sorted participant npubs, our own included. */
 export function threadRoomId(npubs: readonly string[]): string {
@@ -143,11 +177,11 @@ export function dedupeHandle(body: string, taken: (handle: string) => boolean): 
 
 export function parseThreadHandle(value: string): string {
 	if (!value.startsWith("#")) {
-		throw new DgCliError(`a thread handle must start with #, got "${value}"`);
+		throw new DgCliError(`a group handle must start with #, got "${value}"`);
 	}
 	const body = value.slice(1);
 	if (!isHandle(body)) {
-		throw new DgCliError(`a thread handle must be # then 1-32 lowercase letters, digits, or dashes, got "${value}"`);
+		throw new DgCliError(`a group handle must be # then 1-32 lowercase letters, digits, or dashes, got "${value}"`);
 	}
 	return `#${body}`;
 }
@@ -181,8 +215,8 @@ export function classifyThreadRumor(
 		rumorId: rumor.id,
 		senderNpub: nip19.npubEncode(rumor.pubkey),
 		ts: rumor.created_at,
-		text: rumor.content,
 		pubkeyPrefix: rumor.pubkey.slice(0, 8),
+		...rumorBody(rumor),
 	};
 	const drop = (reason: ThreadDropReason): ThreadView => ({ kind: "drop", ...view, reason });
 	if (rumor.created_at < now - MESSAGE_TTL_SECONDS) return drop("older than the message window");
@@ -254,7 +288,7 @@ export function pendingIdsToDrop(rows: readonly PendingCapRow[], perSender = HEL
 
 /** One voicemail line for every held room. The message body is not included. */
 export function heldThreadsNotice(count: number): string {
-	return count === 1 ? "1 held thread" : `${count} held threads`;
+	return count === 1 ? "1 held group" : `${count} held groups`;
 }
 
 export function heldFrom(view: ThreadView): HeldThread {
@@ -266,6 +300,7 @@ export function heldFrom(view: ThreadView): HeldThread {
 		subject: view.subject,
 		text: view.text,
 		ts: view.ts,
+		...(view.phi ? { phi: view.phi } : {}),
 	};
 }
 
@@ -275,12 +310,18 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 	from: string;
 	text: string;
 	thread: ThreadMeta;
+	image?: { offer: ImageOffer; keyId: string };
+	phi?: true;
+	fromExt?: string;
 } {
 	return {
 		id: view.rumorId,
 		ts: view.ts,
 		from: view.senderNpub,
 		text: view.text,
+		...(view.offer ? { image: { offer: view.offer, keyId } } : {}),
+		...(view.phi ? { phi: view.phi } : {}),
+		...(view.fromExt ? { fromExt: view.fromExt } : {}),
 		thread: {
 			roomId: view.roomId,
 			subject: view.subject,
@@ -293,7 +334,7 @@ export function threadMessageFields(view: ThreadView, keyId: string): {
 
 /** Stderr line for one held room. A short id only, never the message body. */
 export function heldLogLine(roomId: string): string {
-	return `phone: held thread ${roomId.slice(0, 8)}\n`;
+	return `phone: held group ${roomId.slice(0, 8)}\n`;
 }
 
 export function threadLine(threadHandle: string, senderLabelText: string, text: string): string {
@@ -372,6 +413,16 @@ export type ThreadRecipient = { handle: string; npub: string; pub: string; self:
 
 export type RelayReport = { ok: string[]; unconfirmed: string[]; failed: RelayFailure[] };
 
+async function sendWrap(
+	input: Pick<Parameters<typeof fanoutThread>[0], "sk" | "relaysFor" | "publishTo">,
+	rumor: ReturnType<typeof nip59.createRumor>,
+	recipient: ThreadRecipient,
+): Promise<RelayReport> {
+	const relays = await input.relaysFor(recipient);
+	const seal = nip59.createSeal(rumor, input.sk, recipient.pub);
+	return input.publishTo(relays, nip59.createWrap(seal, recipient.pub));
+}
+
 /**
  * One kind-14 rumor, a `p` tag per other member, and the subject tag.
  * Each recipient, including us, gets their own seal and gift wrap.
@@ -386,22 +437,26 @@ export async function fanoutThread(input: {
 	recipients: ThreadRecipient[];
 	relaysFor: (recipient: ThreadRecipient) => Promise<string[]>;
 	publishTo: (relays: string[], event: NostrEvent) => Promise<RelayReport>;
+	/** Rumor kind; 14 when absent. */
+	kind?: number;
+	/** Tags that follow `p` and `subject`, such as file or PHI tags. */
+	extraTags?: string[][];
 }): Promise<{ rumorId: string; members: MemberReport[] }> {
 	const others = input.recipients.filter((recipient) => !recipient.self).map((recipient) => recipient.pub);
 	const pubs = [...new Set(others)].sort();
 	const tags: string[][] = pubs.map((pub) => ["p", pub]);
 	if (input.subject.length > 0) tags.push(["subject", input.subject]);
 	else if (pubs.length === 1 && input.fallbackSubject.length > 0) tags.push(["subject", input.fallbackSubject]);
+	if (input.extraTags) tags.push(...input.extraTags);
 	const rumor = nip59.createRumor(
-		{ kind: CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
+		{ kind: input.kind ?? CHAT_MESSAGE_KIND, content: input.text, created_at: input.createdAt, tags },
 		input.sk,
 	);
 	const members: MemberReport[] = [];
 	for (const recipient of input.recipients) {
-		const relays = await input.relaysFor(recipient);
-		const seal = nip59.createSeal(rumor, input.sk, recipient.pub);
-		const event = nip59.createWrap(seal, recipient.pub);
-		const report = await input.publishTo(relays, event);
+		const report = await sendWrap(input, rumor, recipient).catch(
+			(err: unknown): RelayReport => ({ ok: [], unconfirmed: [], failed: [{ relay: "", reason: err instanceof Error ? err.message : String(err) }] }),
+		);
 		members.push({
 			handle: recipient.handle,
 			npub: recipient.npub,

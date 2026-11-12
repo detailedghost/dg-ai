@@ -19,20 +19,20 @@ Windows (x64 or arm64), in PowerShell:
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-These install the compiled CLI binaries and stage the extension; no Bun is needed.
-The extension, all three binaries, and both plugin manifests share one release
-version.
+These install a pinned Bun runtime, one bundle with `dg-skills`, `dg-agent` and
+`dg-daemon`, and the extension; you need no Bun of your own. The extension, the
+bundle, and both plugin manifests share one release version.
 Follow the printed **Load unpacked** steps to load the extension.
 See [install and update](docs/install.md) for Claude Code and Codex plugins,
 standalone skills, updates, **[CLI-only installation](docs/install.md#cli-only-install)**,
 and **[pinning a version](docs/install.md#pin-a-version)**.
-From a checkout, `mise run install:skills` copies instruction files without binaries;
+From a checkout, `mise run install:skills` copies instruction files without the CLI;
 see [skills-only installation](docs/install.md#skills-only-install) for `--skills-only`.
 The [agent install guide](docs/AGENT-INSTALL.md) separates automated steps from
 browser actions that need a person.
 
-Claude Code users can also install the optional `unslop` skill that `/dg:polish` calls when present:
-`/plugin install unslop@detailedghost`.
+To add the optional `unslop` skill that `/dg:polish` calls when present, and other pinned third-party
+plugins, see [Recommended plugins](docs/install.md#recommended-plugins).
 
 ## Skills
 
@@ -90,10 +90,9 @@ Claude Code also accepts the bare `/<name>`.
 | `standard-test` | Language-agnostic rules for writing and reviewing tests |
 | `stash` | Resolve scratch, state, or repository artifact paths |
 | `stat` | Show this session's in-flight work, status, and ETA in one table |
-| `teach` | Teach a concept across sessions |
 | `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg-skills test-live` |
 | `ticket` | File a Jira ticket using the registered project, assignee, sprint, and issue types |
-| `wait-what` | Explain the last answer again, more simply |
+| `update` | Update every dg part to the newest release; `dg-skills update` |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |
@@ -135,6 +134,10 @@ Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume r
 `powershell.exe`), Wayland (`wl-paste`), or X11 (`xclip`); `-` writes PNG bytes to
 stdout. The clipboard skill resolves its default destination through stash.
 
+`dg-skills skill audit [dirs] [--threshold N] [--json] [--fix]` reports token weight and hygiene issues for skill folders, and
+`dg-skills skill split --list <dir>` / `--apply <manifest.json>` moves `SKILL.md` sections into reference files after a backup
+under the AI state root. Run `dg-skills skill --help` for the manifest shape and exit codes.
+
 Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-cutover) steps after each wave.
 
 ## Supported browsers
@@ -151,4 +154,5 @@ Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-
 - [Developer guide](docs/DEVELOPER.md)
 
 - [Contributing](docs/contributing.md)
+
 - [Security](SECURITY.md)

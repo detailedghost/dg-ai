@@ -7,14 +7,17 @@ description: Report this session's in-flight work as a priority-ordered checklis
 
 A four-keystroke glance at this session's work, rendered as one numbered checklist. **Read-only, with one exception:** it cleans up background jobs that have FINISHED (see section 4). Never edit, commit, push, or resume anything, and **never stop a job that is still running**. If reading cannot answer something, report the gap instead of acting.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills stat --help >/dev/null 2>&1 ||
+dg-skills stat --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" stat --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor bg stat vcs-provider worktree.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor bg stat vcs-provider worktree.
 
 ## Usage
 
@@ -47,12 +50,14 @@ One status per item drives its emoji (default view), its word (`--plain` and `--
 Example (`/dg:stat`, default view):
 
 ```
-1. 🛑 Approve the Wave 6/7 PR batch
-2. 🔄 Phone feature to PR [~1 hr]
+1. ✅ Sign in to GitHub
+2. 🔄 Phone feature to PR [~1 hr]  ← you are here
    1. 🔄 Fix the flaky listener test
-3. ⏳ Slice 6 [~15 min]
-4. 👀 Sign the vendor form
-5. ✅ Sign in to GitHub
+3. 🛑 Approve the Wave 6/7 PR batch
+4. ⏳ Slice 6 [~15 min]
+
+Off the critical path:
+5. 👀 Sign the vendor form
 
 Total: ~1 hr (critical path: 2 Phone feature to PR)
 Waiting on you: 2 items. Run /dg:walk stat to walk them.
@@ -61,12 +66,14 @@ Waiting on you: 2 items. Run /dg:walk stat to walk them.
 The same checklist, `--plain`:
 
 ```text
-1. [ ] blocked-user: Approve the Wave 6/7 PR batch
-2. [ ] running: Phone feature to PR [~1 hr]
+1. [x] done: Sign in to GitHub
+2. [ ] running: Phone feature to PR [~1 hr]  <- you are here
    1. [ ] running: Fix the flaky listener test
-3. [ ] queued: Slice 6 [~15 min]
-4. [ ] needs-user: Sign the vendor form
-5. [x] done: Sign in to GitHub
+3. [ ] blocked-user: Approve the Wave 6/7 PR batch
+4. [ ] queued: Slice 6 [~15 min]
+
+Off the critical path:
+5. [ ] needs-user: Sign the vendor form
 
 # Total: ~1 hr (critical path: 2 Phone feature to PR)
 Waiting on you: 2 items. Run /dg:walk stat to walk them.
@@ -76,17 +83,17 @@ The same checklist, `--long` (tab-separated):
 
 ```text
 ORDER	OWNER	STATUS	WORK	DETAIL	PR/MR	ETA
-1	user	blocked-user	Approve the Wave 6/7 PR batch	-	-	-
+1	-	done	Sign in to GitHub	-	-	-
 2	agent	running	Phone feature to PR	-	-	~1 hr
 -	agent	running	Fix the flaky listener test	-	-	-
-3	agent	queued	Slice 6	-	-	~15 min
-4	user	needs-user	Sign the vendor form	-	-	-
-5	-	done	Sign in to GitHub	-	-	-
+3	user	blocked-user	Approve the Wave 6/7 PR batch	-	-	-
+4	agent	queued	Slice 6	-	-	~15 min
+5	user	needs-user	Sign the vendor form	-	-	-
 # Total: ~1 hr (critical path: 2 Phone feature to PR)
 # Waiting on you: 2 items. Run /dg:walk stat to walk them.
 ```
 
-Open items are numbered in display order: `blocked-user` items first, then the critical-path chain, then other agent chains from longest ETA to shortest (no ETA last), then `parked`, then `needs-user`. The data model has no gate relation, so user items sort by status alone. Stored order breaks ties. `--at` and `--under` take the number shown. Done items continue the same numbers, newest first, capped. A sub-item nests one level under its parent and restarts its own number at 1 in the default and `--plain` views. On `--long`, a sub-item row carries `-` in `ORDER` instead and prints directly under its parent, in stored order — rows already print in priority order, so there is nothing to sort. When a sub-item is the critical path, that total reads `(critical path: <text>, under <parent number>)`, using the parent number visible in ORDER. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
+The list reads in plan order, so it shows where the plan stands. Done items come first, oldest first, and take the first numbers. Older done items past the cap are hidden behind an `...and N earlier done` line at the top, and keep their numbers, so ticking the current step changes no other number. Open items follow in stored order, which is the plan order: add them in the order the work runs, and use `--at` to place one. `blocked-user` items stay in place, because they hold up the plan. `needs-user` and `parked` items move after the plan, under an `Off the critical path:` line. The default and `--plain` views mark the first open plan step with `← you are here` (`<- you are here` in `--plain`). `--long` prints neither line, so its rows stay a plain table. `--at` and `--under` take the number shown. A sub-item nests one level under its parent and restarts its own number at 1 in the default and `--plain` views. On `--long`, a sub-item row carries `-` in `ORDER` instead and prints directly under its parent, in stored order — rows already print in plan order, so there is nothing to sort. When a sub-item is the critical path, that total reads `(critical path: <text>, under <parent number>)`, using the parent number visible in ORDER. A sub-item can be ticked on its own; ticking a parent does not tick its sub-items, and finishing every sub-item does not tick the parent — mark each explicitly. User items (`blocked-user`/`needs-user`) never show an ETA, because the wait is on the user, not the agent.
 
 ## 1. Gather: one Bash call, filtered in the shell
 
@@ -97,23 +104,23 @@ b=$(git branch --show-current 2>/dev/null)
 echo "BRANCH=${b:-none}"
 prs=
 if [ -n "$b" ]; then
-  prs=$(~/.dg/bin/dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
+  prs=$(dg-skills vcs-provider list-prs --head "$b" 2>/dev/null | jq -c '[.[]|{number,state,title}]' 2>/dev/null)
 fi
 echo "PRS=${prs:-[]}"
-jobs=$(~/.dg/bin/dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or ((.cwd // "")|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
+jobs=$(dg-skills bg list 2>/dev/null | jq -c --arg d "$PWD" '[.jobs[]|select(.cwd==$d or ((.cwd // "")|startswith($d+"/")))|{id,state,exitCode,logFile,cmd:.command[0:60]}]' 2>/dev/null)
 echo "JOBS=${jobs:-[]}"
-echo "WORKTREES=$(~/.dg/bin/dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
-checklist=$(~/.dg/bin/dg-skills stat checklist --json 2>/dev/null)
+echo "WORKTREES=$(dg-skills worktree list --porcelain 2>/dev/null | tr '\n' ' ')"
+checklist=$(dg-skills stat checklist --json 2>/dev/null)
 echo "CHECKLIST=${checklist:-null}"
 ```
 
-`~/.dg/bin/dg-skills bg list` is machine-wide with no `--cwd` filter. The jq `select` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `~/.dg/bin/dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `~/.dg/bin/dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
+`dg-skills bg list` is machine-wide with no `--cwd` filter. The jq `select` keeps it from dumping every job ever launched. It matches the directory or a path inside it, never a sibling like `/repo-other`. PR lookup goes through `dg-skills vcs-provider`, never `gh` or `glab` directly. The checklist is per repo (shared by linked worktrees) or per cwd outside a repo; `dg-skills stat checklist` already orders, numbers, and totals it, so this gather step only needs its JSON for merging.
 
 Then add what only you know: your current foreground task, how far into it you are, and any subagent or background work this session launched that is not yet on the checklist.
 
 ## 2. Report
 
-Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `~/.dg/bin/dg-skills stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
+Print the checklist view the caller asked for, as the CLI renders it. With no flag this is `dg-skills stat checklist`; `--plain` adds `-p`; `--long` adds `-l`.
 
 The CLI already handles ordering, numbering, sub-items, the done cap, and a Total line computed from the checklist's own unfinished agent items — sub-items included, even under a done parent, and parked work excluded. Two things are still judgment, left to the main loop:
 
@@ -125,7 +132,7 @@ The CLI already handles ordering, numbering, sub-items, the done cap, and a Tota
 
 Append extra rows in the same 7 tab-separated fields the CLI prints (`ORDER OWNER STATUS WORK DETAIL PR/MR ETA`), ASCII only, no embedded tabs or newlines:
 
-- `ORDER`: `-` (these rows have no place in the checklist's priority order).
+- `ORDER`: `-` (these rows have no place in the checklist's plan order).
 - `OWNER`: `agent` for work the agent is driving, `user` for an externally gated row (old "waiting on you").
 - `STATUS`: one of the checklist's seven words, plus `unknown` for a bg job whose state cannot be read (mirrors the old table's `unknown` status).
 - `DETAIL`: CI detail when a PR row has a pipeline (a failed pipeline reads `CI failed: verify:e2e`; a blocked one reads `at production:approve`), else `-`.
@@ -150,13 +157,13 @@ After the report, stop finished background work and drop its records. A job is f
 
 | Substrate | How |
 |---|---|
-| `~/.dg/bin/dg-skills bg` job (`state` is `done` or `canceled`) | One call: `~/.dg/bin/dg-skills bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
+| `dg-skills bg` job (`state` is `done` or `canceled`) | One call: `dg-skills bg prune --cwd "$PWD"`. It removes the records of every job in this tree that is not running, and leaves `running` jobs in `running[]`. It has no per-job filter, so run it only when this tree has no `unknown` job. It matches whole path segments, like the filter in section 1 |
 | Claude Code background Agent or Bash shell that reports completed, failed, or timed out | The main loop calls `TaskStop` once for each finished task it listed in the report. `TaskStop` on a task that already ended is harmless |
 | Workflow | Not killable as one process. Report it finished; stop nothing |
 
 Rules:
 
-- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `~/.dg/bin/dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `~/.dg/bin/dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
+- Clean only rows that show a terminal state. Treat an `unknown` job as unfinished: leave it, and skip `dg-skills bg prune` while this tree has one, because prune would delete the log the user needs to read. Prune also removes the session record that `dg-skills bg update` needs to resume a finished job, so skip it when the user may resume one.
 - Subagents cannot call `TaskStop`. Only the main loop does. A subagent reports the finished tasks and stops there.
 - The total ignores cleaned jobs.
 - Report what was cleaned in one line under the checklist. Default and `--plain` print
@@ -170,21 +177,24 @@ Rules:
 This mirrors the owner's personal stat skill: **`/dg:stat` itself never calls `stat add`, `stat done`, or `stat status`** — those are for the main loop's normal work, run as it lands, so the checklist stays current without anyone hand-editing the file.
 
 ```sh
-~/.dg/bin/dg-skills stat add "Phone feature to PR" --status running --eta "~1 hr"
-~/.dg/bin/dg-skills stat add "Fix the flaky listener test" --status running --under 1
-~/.dg/bin/dg-skills stat add "Approve the Wave 6/7 PR batch" --status blocked-user
-~/.dg/bin/dg-skills stat done "Phone feature"
-~/.dg/bin/dg-skills stat status "Phone feature" queued --eta "~30 min"
+dg-skills stat add "Phone feature to PR" --status running --eta "~1 hr"
+dg-skills stat add "Fix the flaky listener test" --status running --under 1
+dg-skills stat add "Approve the Wave 6/7 PR batch" --status blocked-user
+dg-skills stat done "Phone feature"
+dg-skills stat status "Phone feature" queued --eta "~30 min"
 ```
 
+- `--eta` accepts only `<5 min`, `~15 min`, `~30 min`, `~1 hr`, `>1 hr` and `unknown`. Any other value fails with a non-zero exit and an error that lists these buckets. Use `>1 hr` for work longer than an hour.
 - When you start a task or hand the user a step, `stat add` it with the status that fits (`running`, `queued`, `blocked-user`, `needs-user`); add `--eta <bucket>` when you can estimate.
 - When you finish one, `stat done "<match>"`. It matches parents and sub-items by a case-insensitive substring; 0 or 2+ matches is an error listing every candidate, so make the match specific.
-- `--at <n>` places a new top-level item at position `n` (default: the end), and fails with a non-zero exit, writing nothing, when status/ETA order forbids that position (a `--at` past the end appends); `--under <n|match>` adds it as a sub-item of that open top-level item instead.
+- `--at <n>` places a new top-level item at the shown number `n` (default: the end of the plan). A number inside the done range means the first open slot,
+  and one past the end appends. It fails with a non-zero exit, writing nothing, when a `needs-user` or `parked` item cannot land there, because those sit
+  after the plan. `--under <n|match>` adds it as a sub-item of that open top-level item instead.
 - There is no separate `reopen` command: `stat status "<match>" queued` (or any open status) moves a done item back to the end of the open list.
 
 ## `--overwatch`
 
-A second exception to read-only: it publishes this session's work to the live overwatch board in the dg extension.
+A second exception to read-only: it publishes this session's work to the live overwatch board on the daemon's /board page.
 
 1. Load the `/dg:overwatch` skill and follow it. It owns the session start, the lane publish commands and the board open step. Publish one lane per checklist item and per session-only row, with its task, stage, MR, ETA and next step.
 2. Open or focus the board tab as `/dg:overwatch` describes.
@@ -198,16 +208,16 @@ Its output is POSIX: tab-separated fields, one header line, ASCII only, no embed
 
 The section 4 cleanup summary is a `#`-prefixed line on `--long` too, so the same filter skips it.
 
-Rows already print in priority order — a sub-item's row follows its parent's directly, so no sort step is needed.
+Rows already print in plan order — a sub-item's row follows its parent's directly, so no sort step is needed.
 
 The WORK column:
 
 ```sh
-~/.dg/bin/dg-skills stat checklist -l | awk -F '\t' '!/^#/ && NR>1 {print $4}'
+dg-skills stat checklist -l | awk -F '\t' '!/^#/ && NR>1 {print $4}'
 ```
 
 The STATUS column, header included:
 
 ```sh
-~/.dg/bin/dg-skills stat checklist -l | cut -f3
+dg-skills stat checklist -l | cut -f3
 ```

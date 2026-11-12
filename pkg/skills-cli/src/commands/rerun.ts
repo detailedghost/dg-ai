@@ -5,15 +5,9 @@
  */
 
 import type { Command } from "commander";
-import { findPlan } from "../demo/plan-file";
+import type { CommandOpts, DemoDeps } from "../demo/cli";
 import { addExtOption } from "../utils/ext-flag";
-import {
-	addLocalOptions,
-	type CommandOpts,
-	type DemoDeps,
-	dispatchPlay,
-	loadScript,
-} from "./demo";
+import { addLocalOptions } from "./demo";
 
 export function registerRerun(
 	program: Command,
@@ -21,7 +15,7 @@ export function registerRerun(
 ): void {
 	addLocalOptions(addExtOption(program.command("rerun")))
 		.description(
-			"replay a saved demo plan (.md) in a local browser, or via the dg-ai-extension with --ext",
+			"record a saved demo plan (.md) to an MP4 in a local browser, or replay it via the dg-ai-extension with --ext",
 		)
 		.argument(
 			"<plan>",
@@ -29,10 +23,11 @@ export function registerRerun(
 		)
 		.option(
 			"--video",
-			"record the replay to a video now, with no start screen",
+			"--ext: start in video mode; local mode always records",
 		)
 		.option("--print", "--ext only: print the marked URL instead of opening it")
-		.action((plan: string, opts: CommandOpts) =>
-			dispatchPlay("rerun", loadScript(findPlan(plan)), opts, deps),
-		);
+		.action(async (plan: string, opts: CommandOpts) => {
+			const { runRerun } = await import("../demo/cli");
+			await runRerun(plan, opts, deps);
+		});
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ssmsCommandRuntime } from "../src/commands/ssms";
+import { ssmsCommandRuntime } from "../src/ssms/cli";
 
 describe("ssms interactive approval", () => {
 	test("a real terminal prompts, and a non-terminal does not", async () => {

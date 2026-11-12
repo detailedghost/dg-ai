@@ -9,10 +9,12 @@
 ```
 
 The `unslop` plugin is optional. It installs the upstream `theclaymethod/unslop` skill, which `/dg:polish` calls
-when present.
+when present. To install every recommended plugin at its pinned commit, see
+[Recommended plugins](#recommended-plugins).
 
-**Standalone — one command installs the `dg-skills`, `dg-daemon` and `dg-agent` binaries
-_and_ the browser extension** (compiled binaries, no Bun needed):
+**Standalone — one command installs `dg-skills`, `dg-daemon` and `dg-agent`
+_and_ the browser extension** (no Bun needed; the installer brings its own pinned
+runtime):
 
 macOS / Linux (x64 or arm64):
 
@@ -30,23 +32,215 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 
 <!-- markdownlint-enable MD013 -->
 
-Both install `~/.dg/bin/dg-skills` (`$DG_HOME/bin` when `DG_HOME` is set) (released as `skills-v*`), then run
-`dg-skills install`, which also fetches `~/.dg/bin/dg-daemon` (`daemon-v*`) and
-`~/.dg/bin/dg-agent` (`agent-v*`), stages the extension and prints the **Load
-unpacked** steps. Re-run `dg-skills install` anytime to update all three; each
-is skipped when already current, and a platform with no published binary warns
-and continues instead of failing the install. (Building the extension from
-source with `--local` needs [Bun](https://bun.sh).)
+Both install the pinned Bun runtime and the release bundle into the dg data
+folder, write the `dg-skills`, `dg-agent` and `dg-daemon` launchers into the
+launcher folder (see [Where dg keeps its files](#where-dg-keeps-its-files)),
+then run `dg-skills install`. That
+stages the extension and prints the **Load unpacked** steps. Re-run
+`dg-skills install` anytime to update. A part that is already current is
+skipped. (Building the extension from source with `--local` needs
+[Bun](https://bun.sh).)
 
-## Update from an older CLI
+## Where dg keeps its files
+
+dg follows the conventions of each OS. Install puts the launchers in a
+user-writable folder and the rest under four roots, one for each role.
+
+<!-- markdownlint-disable MD013 -->
+
+| Role | Linux | macOS | Windows | `DG_HOME` set |
+| --- | --- | --- | --- | --- |
+| Launchers | `~/.local/bin` | `~/.local/bin` | `%LOCALAPPDATA%\dg\bin` | `$DG_HOME/bin` |
+| Config: `config.json`, the CLI-only marker, channel-review config | `$XDG_CONFIG_HOME/dg` (`~/.config/dg`) | `~/Library/Application Support/dg` | `%APPDATA%\dg` | `$DG_HOME/config` |
+| Data: runtime, bundle, skills, personas, browsers | `$XDG_DATA_HOME/dg` (`~/.local/share/dg`) | `~/Library/Application Support/dg` | `%LOCALAPPDATA%\dg` | `$DG_HOME/data` |
+| State: daemon, phone, grants, agent sessions and memory | `$XDG_STATE_HOME/dg` (`~/.local/state/dg`) | `~/Library/Application Support/dg/state` | `%LOCALAPPDATA%\dg\state` | `$DG_HOME/state` |
+| Cache: prototypes, demos | `$XDG_CACHE_HOME/dg` (`~/.cache/dg`) | `~/Library/Caches/dg` | `%LOCALAPPDATA%\dg\cache` | `$DG_HOME/cache` |
+| Logs | `<state>/log` | `~/Library/Logs/dg` | `%LOCALAPPDATA%\dg\log` | `$DG_HOME/log` |
+
+<!-- markdownlint-enable MD013 -->
+
+For example, the phone state is in `~/.local/state/dg/phone` on Linux and in
+`~/Library/Application Support/dg/state/phone` on macOS.
+
+When the launcher folder is not on `PATH`, `bootstrap.sh` and
+`dg-skills install` print the line to add. `bootstrap.ps1` adds
+`%LOCALAPPDATA%\dg\bin` to the user `PATH` once and says so. Skills call
+`dg-skills` by name and fall back to `${DG_HOME:-$HOME/.local}/bin/dg-skills`,
+the launcher path, also in the step right after the bootstrap.
+
+### DG_HOME
+
+Set `DG_HOME` to keep everything under one folder, for example for a test or a
+second install. Each role then gets its own subfolder: `$DG_HOME/bin`,
+`$DG_HOME/config`, `$DG_HOME/data`, `$DG_HOME/state`, `$DG_HOME/cache` and
+`$DG_HOME/log`. An empty `DG_HOME` counts as unset.
+
+### Move from ~/.dg
+
+Releases before this layout kept everything in `~/.dg` (or flat in `DG_HOME`).
+The first `dg-skills install` of a new release moves it:
+
+1. Each folder and file moves to its new root. Install copies it, checks that
+   the copy has the same files and bytes, and only then removes the old copy.
+   When the check fails, the old copy stays and install names it.
+2. Install never writes over a destination that exists. It keeps the old copy
+   and says so. When an old folder is still in use after the copy, for example
+   the runtime that runs install on Windows, install leaves it and the next
+   `dg-skills install` removes it.
+3. Install keeps a folder when a process that writes it is still running,
+   such as `dg-daemon`. Stop the process and run install again.
+4. The phone state moves on the next `dg-agent phone __refresh`, which install
+   runs. See [phone](phone.md#where-the-phone-state-lives).
+5. On Linux and macOS, the daemon moves its key in the OS keychain to an
+   account named after the new state root the first time it opens. It copies
+   the key, reads it back, compares it, and only then deletes the old entry.
+   If a step fails, it keeps the old entry, reads from it, and prints one
+   warning that names the key, never its value.
+6. The staged extension folder moves to the data root. The browser remembers
+   the old folder, so install prints one line: open `chrome://extensions`
+   once, remove the old `dg-ai-extension` entry, and load unpacked from the
+   new folder. Later installs update that folder in place.
+7. `ssms` state moves to the state root, and its fixed `config.yaml` moves to
+   the config folder under the passwd home. See [ssms](ssms.md).
+8. Install leaves files it does not know in `~/.dg` and names them once.
+
+`~/.dg/bin` keeps small launchers for `dg-skills`, `dg-agent` and
+`dg-daemon`. Each prints one line on stderr that names the new launcher and
+the release that removes it, then runs the new launcher. The removal release
+is two minor releases after the release that moved the data: a move by 1.34.x
+names 1.36.0. Install deletes these launchers when it installs that release or
+a later one.
+
+Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
+stop matching. `dg-skills doctor` warns and names the new rule,
+`Bash(dg-skills <sub>:*)`.
+
+To go back to an older release, first stop the phone listener with
+`dg-agent phone close`, then run `dg-agent phone __rollback-home` to copy the
+phone state back to `~/.dg/phone`. Then run
+`dg-skills install --version <old>`. The older release writes its launchers to
+`~/.dg/bin` again. Data under the new roots stays where it is.
+
+## Install layout
+
+One release is one bundle. The three programs share it and one runtime. On
+Linux the data folder is `~/.local/share/dg`:
+
+```text
+<data>/
+  runtime/bun-v1.4.1/bun              the pinned Bun runtime (bun.exe on Windows)
+  runtime/current -> bun-v1.4.1       symlink, or a directory junction on Windows
+  lib/<version>/dg.js                 the dispatcher; chunks/ holds each program's code
+  lib/current -> <version>            the version the launchers run
+```
+
+Each launcher in the launcher folder (`.cmd` files on Windows) runs
+`<data>/runtime/current/bun <data>/lib/current/dg.js <program>`. The
+installer never uses a `bun` on your PATH. It replaces `current` by renaming a
+new link over the old one, so a running program keeps working during an
+update. The previous version directory stays in `lib/` until the next
+successful install, for rollback.
+
+Every download is checked before anything changes. `SHA256SUMS` lists
+`runtime.json` and `dg-lib-<version>.tar.gz`, and `runtime.json` lists the
+sha256 of each Bun zip. The installer also runs the new bundle's
+`dg-skills --version` before it moves `lib/current`. A failed check prints
+`checksum mismatch` or the self-check error and leaves the old install as it
+was.
+
+On Linux x64 without AVX2, the installer picks Bun's `-baseline` build.
+
+## Update from a compiled-binary install
 
 The bootstrap URLs above never change. Each release publishes `bootstrap.sh`
 and `bootstrap.ps1` as assets, and `releases/latest` always points at the
 newest one.
 
-CLIs at 1.21.1 or older cannot see the new release scheme. They update once
-through a bridge release, which then follows the new releases. A manual re-run of bootstrap from the URL above
-also works. After that, every update works as usual.
+Releases before the bundle shipped three compiled binaries. A compiled
+`dg-skills install` cannot find the new assets, so update once by re-running
+bootstrap:
+
+```bash
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
+```
+
+On Windows, re-run the `bootstrap.ps1` command above. The new install replaces
+the compiled `dg-skills`, `dg-agent` and `dg-daemon` files with launchers and
+removes their `.version` stamps. After that, `dg-skills install` updates as
+usual.
+
+## Roll back
+
+`dg-skills install --version <previous version>` points `lib/current` at that
+version. While its directory is still in `lib/`, nothing is downloaded. To roll
+back by hand (Linux path shown):
+
+```bash
+ln -sfn <previous version> ~/.local/share/dg/lib/current
+```
+
+A version from before the bundle needs that release's own bootstrap script, as
+the error message says.
+
+## Bump the Bun runtime
+
+Maintainers change the pinned Bun with one command from a checkout:
+
+```bash
+bun scripts/bump-runtime.ts 1.4.2
+```
+
+It reads Bun's `SHASUMS256.txt` for that tag and rewrites
+`pkg/launcher/runtime.json`, the `bun` pin in `.mise/config.toml` and every
+`setup-bun` version in the workflows. `dependency-pinning.spec.ts` fails when
+they disagree. The next release ships the new `runtime.json`.
+`dg-skills install` then downloads the new runtime once, checks the bundle on
+it, and points `runtime/current` at it.
+
+## Update everything
+
+One command brings every dg part to the newest release:
+
+```bash
+dg-skills update --check   # print installed and newest versions; change nothing
+dg-skills update           # update, then run doctor
+```
+
+`update` runs these steps in order. A failed step does not stop the rest, and
+the command exits 1 when any step failed:
+
+1. The Bun runtime, the dg bundle, the launchers, and the staged
+   dg-ai-extension, pinned to the newest release. A CLI-only install stays
+   CLI-only, the staged browser extension is refreshed (with both Chrome and
+   Firefox staged, Chrome is refreshed and the step names the command for
+   Firefox, so the bundle is fetched once), and an install with no
+   staged extension (such as a skills-only install) gets only the runtime and
+   bundle. The step fails
+   when the installed version is not the newest afterward.
+2. The Claude plugin: `claude plugin marketplace update detailedghost`, then
+   `claude plugin update dg@detailedghost` (or `install` when it is missing).
+   Skipped when `claude` is not on `PATH`.
+3. The Codex plugin, when the Codex config (`$CODEX_HOME`, default
+   `~/.codex`) enables `dg@detailedghost`:
+   `codex plugin marketplace upgrade detailedghost`, then
+   `codex plugin add dg@detailedghost`. A marketplace that points at a local
+   folder is replaced with `detailedghost/dg-ai` first.
+4. `dg-skills doctor`, as one summary line. It is information only. Doctor
+   also reports things `update` does not own, such as a stopped daemon, so it
+   does not change the exit code.
+
+Skills copied into `$CODEX_HOME/skills` by a `DG_INSTALL_CODEX=1` bootstrap
+are not refreshed by `update`. When Codex has no dg plugin but has that
+folder, `update` and `--check` print the bootstrap command that refreshes it.
+
+The Claude step updates the user scope. A project or local install that is
+still behind gets a warning line with the command to run in that project.
+
+`update` always goes to the newest release, because the plugins follow their
+marketplace. To install one exact release, use `dg-skills install --version
+<x.y.z>`. Restart Claude Code and Codex
+sessions afterward, and reload the extension. The `/dg:update` skill runs
+`--check`, asks, and then runs the update.
 
 ## Update the Claude Code plugin
 
@@ -71,32 +265,25 @@ Install a specific release instead of the newest, by adding `--version <x.y.z>`
 <!-- markdownlint-disable MD013 -->
 
 ```bash
-curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version 1.19.0
+curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --version X.Y.Z
 ```
 
-Needs 1.21.1 or newer.
-
 ```powershell
-$env:DG_VERSION = "1.19.0"
+$env:DG_VERSION = "X.Y.Z"
 irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps1 | iex
 ```
 
-Needs 1.21.1 or newer.
-
 <!-- markdownlint-enable MD013 -->
 
-This also pins the `daemon-v*`, `agent-v*` and `ext-v*` releases that
-`dg-skills install` fetches afterward to the same version, and combines with
-`--cli-only`/`--agent-only`. An installed binary accepts the same flag:
-`dg-skills install --version 1.19.0`. Leaving it unset installs each binary's
-newest release, as before.
+This pins the bundle, the runtime pin and the extension to that `vX.Y.Z`
+release, and combines with `--cli-only`/`--agent-only`. An installed
+`dg-skills` accepts the same flag: `dg-skills install --version X.Y.Z`.
+Leaving it unset installs the newest release.
 
-If the pinned `skills-v`, `daemon-v`, `agent-v` or `ext-v` release does not
-exist, the whole install fails and names the missing release. It checks
-every pinned release first and changes nothing — no binary and no
-extension — so a pin never leaves some parts updated and others not.
-Leaving the version unset keeps today's behavior: install the newest of
-each, warning and skipping one that can't be reached.
+If the pinned release does not exist, the whole install fails and names it. It
+checks every part first and changes nothing, so a pin never leaves some parts
+updated and others not. A pin to a release from before the bundle fails the
+same way and prints that release's own bootstrap command.
 
 ## Plugin cache
 
@@ -125,12 +312,147 @@ When `DG_HOME` is set to something other than `~/.dg`, install prints
 `note: DG_HOME=<path>; installing there` to stderr before it changes anything,
 and `dg-skills doctor` warns.
 
+## Recommended plugins
+
+Recommended plugins are third-party skills that dg pins but does not
+maintain. No dg skill requires them. Every entry in
+`.claude-plugin/marketplace.json` except `dg` is one:
+
+- `unslop` removes AI writing patterns from prose. `/dg:polish` calls it when
+  present.
+- `mattpocock-skills` ships many skills, including `/teach` and `/wait-what`.
+
+Each entry is pinned to a full commit sha. Installs fetch that commit, not the
+branch head.
+
+### Install
+
+```bash
+dg-skills install --with-recommended
+```
+
+The flag is off by default. It works with the default install, `--cli-only` and
+`--skills-only`. With `--agent-only`, the command exits 1 before it changes
+anything.
+
+With the default install or `--cli-only`, `dg-skills` runs the `claude` CLI to
+install each plugin. It first refreshes the `detailedghost` marketplace once.
+Claude Code installs the commit that its own `detailedghost` marketplace clone
+pins, and that clone follows `master`. `dg-skills` checks the
+installed sha against that marketplace pin. When the marketplace pin differs
+from the pin in this `dg-skills`, it prints a `note:` line that names both.
+When the clone cannot be read, it checks against its own pin. When an installed
+sha differs from the expected pin, it uninstalls and installs again. Only
+user-scope installs count.
+
+`mattpocock-skills` adds many skill descriptions to every Claude Code session.
+That raises the system prompt, so the flag stays opt-in.
+
+### Codex and OpenCode
+
+Use `--skills-only` with `--dest`. A skills-only install copies the dg skills
+from a dg-ai checkout, so pass `--repo` with its path, or run the command
+inside the checkout:
+
+```bash
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
+```
+
+`dg-skills` fetches each pinned commit with git. It copies only the regular
+tracked files of the declared skill folders that hold a `SKILL.md`. `unslop`
+installs as `<dest>/unslop/`. A symlink in the source stops the plugin.
+
+A flat destination skips any skill whose name matches a dg skill. Today those
+are `grill-me` and `wayfinder`. Each skip prints a line. The dg copies win
+because `/dg:spec` and `/dg:grill-me` link to `/dg:wayfinder`, and wayfinder
+runs `dg:grill-me`. In Claude Code, namespaces keep them apart:
+`/dg:grill-me` and `/mattpocock-skills:grill-me`.
+
+### Offline behavior
+
+With no network, no `claude` binary, an unknown sha or a sha mismatch, the
+plugin prints one warning, `⚠ <plugin> skipped: <reason>`. It installs nothing
+for that plugin. If a failure happens while the skills move into place, the
+warning reads `⚠ <plugin> failed: <reason>` instead. The dg skills still
+install and the command continues.
+
+With the `claude` CLI, `dg-skills` checks the user-scope sha after each install.
+If it differs from the pin, `dg-skills` uninstalls the plugin and prints
+`⚠ <plugin> removed: installed <sha>, expected <pin>`. If that uninstall fails,
+the line reads `⚠ <plugin> skipped: installed <sha>, expected <pin>; uninstall
+failed: <reason>`. If the sha cannot be read, the line reads `⚠ <plugin>
+installed, but its commit could not be verified`, and the plugin stays.
+
+When the same command also moves `dg-skills` to another version, the running
+binary still holds the old pins. It then installs no recommended plugin and
+prints `⚠ recommended plugins skipped: dg-skills is now v<version>. Run the
+same dg-skills install command again to install them at its pins.`
+
+### Bump a pin
+
+Maintainers move a pin from a checkout:
+
+```bash
+bun scripts/bump-plugin-pin.ts unslop
+bun scripts/bump-plugin-pin.ts mattpocock-skills --ref main
+```
+
+The script reads the ref with `git ls-remote`, rewrites the sha in
+`.claude-plugin/marketplace.json` and prints `<name>: <old> -> <new>`. It exits
+1 for an unknown name or bad ref, 2 for a missing file and 3 when the repo is
+unreachable. Claude Code does not act on a sha change alone, so the next
+`dg-skills install --with-recommended` uninstalls and installs the plugin
+again.
+
+### Retired and private copies
+
+dg no longer ships `/dg:teach` and `/dg:wait-what`. `/teach` and `/wait-what`
+now come from `--with-recommended` as `mattpocock-skills`. A skills install
+removes an old `teach` or `wait-what` folder from the destination only when its
+`SKILL.md` matches the last dg copy.
+
+If you copied `unslop` by hand, delete the private copies. They shadow the
+pinned plugin and never update:
+
+- `~/.claude/skills/unslop`
+- `~/.agents/skills/unslop`
+- `~/.config/opencode/skills/unslop`
+
+Then reinstall the pinned plugin for your agent.
+
+Claude Code:
+
+```bash
+dg-skills install --with-recommended
+```
+
+Codex and OpenCode need a dg-ai checkout, as above. Replace `~/code/dg-ai`
+with its path.
+
+Codex:
+
+```bash
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.codex/skills --with-recommended
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.agents/skills --with-recommended
+```
+
+OpenCode:
+
+```bash
+dg-skills install --skills-only --repo ~/code/dg-ai --dest ~/.config/opencode/skills --with-recommended
+```
+
+dg marks each recommended skill folder with a `.dg-recommended` file. It
+replaces only folders that have this file. If a folder with the same name is
+already there without the file, dg leaves it alone and prints
+`skipped <name> (a copy dg did not install is already there)`. Delete that
+folder, then run the command again.
+
 ## CLI-only install
 
-Install only the `dg-skills` binary and the skills that run without the browser
-extension. This skips the extension, the extension pairing, `dg-daemon` and
-`dg-agent`. Run it before using the plugin so its skills find `dg-skills` and do
-not start a full install.
+Install the runtime, the bundle and the skills that run without the browser
+extension. This skips the extension and its pairing. Run it before using the
+plugin so its skills find `dg-skills` and do not start a full install.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -150,7 +472,7 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 <!-- markdownlint-enable MD013 -->
 
 `DG_CLI_ONLY=1` works in place of `--cli-only` for the shell form, and an
-installed binary accepts `dg-skills install --cli-only`. Add `DG_INSTALL_CODEX=1`
+installed `dg-skills` accepts `dg-skills install --cli-only`. Add `DG_INSTALL_CODEX=1`
 to copy only the CLI skills into `$CODEX_HOME/skills`.
 
 | Skill | CLI-only |
@@ -185,21 +507,19 @@ skills still need to be available.
 
 Every skill runs locally by default; only `browser launch` always needs the
 extension. A skill run with `--ext` stops with a message that names the fix
-when the extension is missing. `chat` and
-`overwatch` need `dg-agent`, which `--cli-only` skips. Their bootstrap block
-runs the full installer when `dg-agent` is missing, and that install removes
-the CLI-only marker. To add the extension later, run `dg-skills install` (or
-the full bootstrap command above). That also fetches `dg-daemon` and `dg-agent`
-and removes the CLI-only marker at `~/.dg/cli-only`.
+when the extension is missing. To add the extension later, run
+`dg-skills install` (or the full bootstrap command above). That removes the
+CLI-only marker in the dg config folder.
 
 ## Skills-only install
 
 Copy the skill instruction files plus the `dg-skills` CLI they call. This path writes
 `plugins/dg/skills` (each `SKILL.md` plus the reference files next to it,
-including `google-sms-cleanup`) into a directory you choose, then installs
-`dg-skills` from the latest `skills-v*` release into `${DG_HOME:-~/.dg}/bin`,
-verified against that release's `SHA256SUMS`. It does not download `dg-daemon`,
-`dg-agent`, or the extension, and it does not run the text inside a skill.
+including `google-sms-cleanup`) into a directory you choose. Bootstrap copies
+the files before any download. It then installs the runtime and the bundle from
+the latest `vX.Y.Z` release, checked against that release's `SHA256SUMS`, and
+stops. It does not download the extension, and it does not run the text inside
+a skill.
 
 From a checkout:
 
@@ -210,11 +530,11 @@ mise run install:skills
 Or, with Bun:
 
 ```bash
-bun pkg/skills-cli/src/index.ts install --skills-only --dest "$HOME/.dg/skills"
+bun pkg/skills-cli/src/index.ts install --skills-only
 ```
 
-An installed `dg-skills` binary accepts the same flag. Pass `--repo <checkout>`
-when the binary is not running inside this repository.
+An installed `dg-skills` accepts the same flag. Pass `--repo <checkout>`
+when it is not running inside this repository.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -234,8 +554,8 @@ irm https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.ps
 <!-- markdownlint-enable MD013 -->
 
 `DG_SKILLS_ONLY=1` works in place of `--skills-only` for the shell form.
-`DG_SKILLS_DEST` chooses the directory (default: `$DG_HOME/skills` or
-`~/.dg/skills`). Point it at `$CODEX_HOME/skills` when the files should land
+`DG_SKILLS_DEST` chooses the directory (default: `skills/` in the dg data
+folder). Point it at `$CODEX_HOME/skills` when the files should land
 where Codex reads skills. The skills root `README.md` is not installed.
 
 ## Codex plugin
@@ -281,7 +601,7 @@ extension’s URL markers and browser-specific behavior.
 `dg-skills pw` uses a system Chrome or Edge first. With neither, it exits 3 and
 names `dg-skills pw install-browser`. Run that command only when you agree to a
 download of about 150 MB. It stores Chromium under `browsers/` in the dg data
-directory (`~/.dg/browsers` by default) and records it in `chromium.json`.
+folder and records it in `chromium.json`.
 
 `dg-skills doctor pw` reports the result on one line, such as
 `browser: chrome (system)`. To remove the download, run

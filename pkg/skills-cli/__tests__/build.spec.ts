@@ -1,32 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PLAYER_PATH } from "../../tour-ui/build";
-import { buildSkillsCli, hashBundle, playwrightMetadata } from "../build";
-
-describe("buildSkillsCli", () => {
-	test("--version reports a hash of the bundle, so a stale compiled binary is diagnosable", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "dg-skills-build-"));
-		const outfile = join(dir, "dg-skills-test");
-		try {
-			await buildSkillsCli({ outfile });
-			const entrypoint = join(import.meta.dir, "..", "src", "index.ts");
-			const expected = await hashBundle(
-				entrypoint,
-				[playwrightMetadata],
-				[PLAYER_PATH],
-			);
-			const printed = execFileSync(outfile, ["--version"], {
-				encoding: "utf8",
-			}).trim();
-			expect(printed).toBe(expected);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	}, 60_000);
-});
+import { hashBundle } from "../build";
 
 describe("hashBundle", () => {
 	test("changes when a non-entry module the entrypoint imports changes", async () => {

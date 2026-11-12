@@ -11,6 +11,8 @@ import {
 	allowRuleFor,
 	connectedExtensionVersion,
 	CLI_PATH,
+	hasLegacyAllowRule,
+	LEGACY_CLI_PATH,
 	hasAllowRule,
 	installedPlugins,
 	isOlder,
@@ -59,9 +61,9 @@ const INSTALL_TOOL: Record<string, ToolInstall> = {
 };
 
 export const PLUGIN_INSTALL = "claude plugin install dg@detailedghost";
-export const PLUGIN_UPDATE = "claude plugin update dg@detailedghost";
+export const PLUGIN_UPDATE = `${CLI_PATH} update`;
 const DAEMON_START = "dg-agent start";
-const DAEMON_PAIR = "dg-daemon pair";
+const LOAD_EXTENSION = "open the browser with the DeeGee extension loaded; it links to the daemon on its own";
 
 export interface ToolSpec {
 	tool: string;
@@ -96,8 +98,7 @@ export function upgradeCommand(
 		.replace("winget install ", "winget upgrade ");
 }
 
-export const isCliOnly = (ctx: DoctorContext): boolean =>
-	existsSync(join(ctx.paths.stateDir, "cli-only"));
+export const isCliOnly = (ctx: DoctorContext): boolean => existsSync(ctx.paths.cliOnlyMarker);
 
 export function bootstrapCommand(
 	ctx: DoctorContext,
@@ -238,6 +239,11 @@ export function allowRuleCheck(sub: string): DoctorCheck {
 				);
 			if (hasAllowRule(allowed.rules, sub))
 				return ok(`allow rule present for ${CLI_PATH} ${sub}`);
+			if (hasLegacyAllowRule(allowed.rules, sub))
+				return warn(
+					`~/.claude/settings.json has only the old ${LEGACY_CLI_PATH} allow rule for ${sub}; skills now call ${CLI_PATH}`,
+					rule,
+				);
 			return warn(
 				`~/.claude/settings.json has no allow rule for ${CLI_PATH} ${sub}, so Claude asks before each call`,
 				rule,
@@ -333,7 +339,7 @@ export const daemonCheck: DoctorCheck = {
 
 function pinnedOrigin(ctx: DoctorContext): string | null {
 	try {
-		const config: unknown = JSON.parse(readFileSync(ctx.paths.configPath, "utf8"));
+		const config: unknown = JSON.parse(readFileSync(ctx.paths.daemonConfigPath, "utf8"));
 		const pinned = (config as { pinnedOrigin?: unknown } | null)?.pinnedOrigin;
 		return typeof pinned === "string" && pinned.length > 0 ? pinned : null;
 	} catch {
@@ -363,10 +369,8 @@ export const pairingCheck: DoctorCheck = {
 					);
 		}
 		return warn(
-			existsSync(ctx.paths.pairingPath)
-				? "a pairing code is pending and no extension has connected yet; enter the code in the extension"
-				: "no extension has connected to the daemon yet; open the extension to check, or start pairing",
-			DAEMON_PAIR,
+			"no extension has connected to the daemon yet; open the extension to check",
+			LOAD_EXTENSION,
 		);
 	},
 };
@@ -388,7 +392,7 @@ export const cliOnlyCheck: DoctorCheck = {
 	id: "extension-installed",
 	run(ctx) {
 		const legacy = ctx.memo("legacy-extension-dirs", () =>
-			legacyExtensionDirs(ctx.extensionDgDirs?.() ?? [join(ctx.home, ".dg")]),
+			legacyExtensionDirs(ctx.extensionDgDirs?.() ?? [ctx.paths.legacyHome]),
 		);
 		if (legacy.length > 0)
 			return warn(
@@ -437,7 +441,7 @@ export const unslopCheck: DoctorCheck = {
 			? ok("unslop is installed")
 			: warn(
 					"unslop is not installed, so polish skips its prose pass",
-					"claude plugin install unslop@detailedghost",
+					"dg-skills install --with-recommended",
 				);
 	},
 };

@@ -1,4 +1,4 @@
-import { CHAT_WS_PATH } from "@dg/common";
+import { CHAT_WS_PATH, DG_CHROME_EXTENSION_ORIGIN } from "@dg/common";
 import type { DgPaths } from "@dg/common/node";
 import { readConfig, writeConfig } from "./config-store";
 
@@ -11,6 +11,14 @@ export function isExtensionOrigin(origin: string | null): boolean {
 	} catch {
 		return false;
 	}
+}
+
+export function isTrustedExtensionOrigin(origin: string | null): boolean {
+	if (!isExtensionOrigin(origin)) return false;
+	return (
+		new URL(origin as string).protocol !== "chrome-extension:" ||
+		origin === DG_CHROME_EXTENSION_ORIGIN
+	);
 }
 
 export function isBrowserOrigin(origin: string | null): boolean {
@@ -39,9 +47,18 @@ export function isLocalPageOrigin(origin: string | null, port: number): boolean 
 	}
 }
 
-function presentedToken(req: Request, url: URL): string | null {
+const BEARER_PREFIX = "Bearer ";
+
+export function bearerToken(req: Request): string | undefined {
 	const authorization = req.headers.get("authorization");
-	if (authorization?.startsWith("Bearer ")) return authorization.slice(7);
+	return authorization?.startsWith(BEARER_PREFIX)
+		? authorization.slice(BEARER_PREFIX.length)
+		: undefined;
+}
+
+function presentedToken(req: Request, url: URL): string | null {
+	const bearer = bearerToken(req);
+	if (bearer !== undefined) return bearer;
 	return url.pathname === CHAT_WS_PATH ? url.searchParams.get("token") : null;
 }
 
@@ -92,7 +109,15 @@ export function pinOriginIfUnset(paths: DgPaths, origin: string): void {
 
 export function getPinnedOrigin(paths: DgPaths): string | undefined {
 	const pinned = readConfig(paths)[PINNED_ORIGIN_KEY];
-	return typeof pinned === "string" ? pinned : undefined;
+	if (typeof pinned !== "string") return undefined;
+	if (
+		pinned.startsWith("chrome-extension:") &&
+		pinned !== DG_CHROME_EXTENSION_ORIGIN
+	) {
+		writeConfig(paths, { [PINNED_ORIGIN_KEY]: DG_CHROME_EXTENSION_ORIGIN });
+		return DG_CHROME_EXTENSION_ORIGIN;
+	}
+	return pinned;
 }
 
 export function clearPinnedOrigin(paths: DgPaths): void {

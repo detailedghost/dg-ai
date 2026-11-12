@@ -4,17 +4,10 @@ One launch per slice, fanned out in parallel. Each launch is that slice's **assi
 (from `/dg:assign`, step 3) reviewing its own slice before any code is written — a design-level
 sanity pass, not an implementation.
 
-## Model/effort — sonnet default, per-slice escalate
+## Model/effort
 
-**Default: `sonnet`, medium effort**, regardless of what `/dg:assign` picked as the slice's engineering
-persona — this is a review pass, not the build itself, so the model tier is decoupled from the
-primary agent's usual pin.
-
-Before the fan-out, ask the user **once, per-slice** (batch up to 4 slices per `AskUserQuestion`
-call): *"Escalate slice `<N>` (`<name>`) review to opus-5/medium?"* — **Yes** / **No (sonnet
-default)**. Ceiling is `opus-5` at `medium` effort; never go higher for this pass regardless of
-slice risk — a slice that needs more than that should be flagged as `[OPEN — escalate]` for the
-human instead of burning tokens on a bigger review model.
+`sonnet`, `medium` effort, regardless of what `/dg:assign` picked as the slice's engineering persona.
+This is a review pass, not the build, so the tier is decoupled from the primary agent's pin.
 
 ## Launch prompt
 
@@ -28,10 +21,10 @@ human instead of burning tokens on a bigger review model.
 >
 > Review this slice (`<name>`, files: `<files>`) for: **feasibility** (can it be implemented
 > independently within its declared `depends_on`?), **completeness** (missing acceptance criteria
-> or Contracts gaps?), **risk** (integration risk with sibling slices — same-layer slices MUST
-> touch disjoint files — `~/.dg/bin/dg-skills spec lint-waves` already checked the globs, so this is the second
-> line of defense: look for overlap the globs cannot show, such as a generator run or shared
-> fixture), **ambiguity** (any `[ASSUMED]` item from the decision log that needs
+> or Contracts gaps?), **risk** (integration risk with sibling slices — slices with no dependency
+> path between them MUST touch disjoint files — `dg-skills spec lint-waves` already checked the
+> globs, so this is the second line of defense: look for overlap the globs cannot show, such as a
+> generator run or shared fixture), **ambiguity** (any `[ASSUMED]` item from the decision log that needs
 > tightening before engineering starts), and **structure conformance** (if `plan.md` has a
 > `## Code Structure` section, does this slice's Engineering checklist actually honour the type
 > shapes, module homes, and error conventions settled there? A conflict between your slice and that

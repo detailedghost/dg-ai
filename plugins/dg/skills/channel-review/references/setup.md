@@ -74,7 +74,7 @@ writes the text the runner reads, so a prompt injection must not reach a shell
 or your secrets. Each rule has one job. `<scratch>` is `AI_SCRATCH_DIR` or
 `/tmp/ai`. An absolute path in a rule needs the leading `//`.
 
-- `Bash(<home>/.dg/bin/dg-skills thrash:*)` lets thrash call its `dg-skills`
+- `Bash(dg-skills thrash:*)` lets thrash call its `dg-skills`
   subcommand and nothing else in the `dg-skills` binary.
 - `Agent` lets thrash start its reviewer subagents.
 - `Read(//<scratch>/thrash/**)` lets thrash read its own working files.
@@ -102,7 +102,7 @@ review list. `<clones>` is `address.cloneRoot`. The default rules:
   its installed plugin skill files.
 - `Bash(git:*)`, `Bash(gh:*)`, and `Bash(glab:*)` let it commit, push, and
   reply to review threads.
-- `Bash(<home>/.dg/bin/dg-skills address:*)` lets it call its `dg-skills`
+- `Bash(dg-skills address:*)` lets it call its `dg-skills`
   subcommand.
 - `Bash(bun:*)`, `Bash(npm:*)`, `Bash(npx:*)`, `Bash(dotnet:*)`,
   `Bash(python:*)`, and `Bash(pytest:*)` let it build and test.
@@ -182,9 +182,14 @@ checking connectivity again.
 ## Configuration
 
 Read this reference and [commands](commands.md) before changing
-`DG_HOME/channel-review/config.json`. `DG_HOME` defaults to the user's `.dg`
-directory. Start from [config.example.json](config.example.json), which sets
-every required key with placeholder values.
+`config.json` in the `channel-review` folder of the dg config directory
+(`~/.config/dg/channel-review/config.json` on Linux). To create it, run
+`dg-skills channel-review setup` in a terminal. It asks for each required key,
+checks the answers, writes the file with mode 0600, and offers to store the relay
+secret. `--force` replaces an existing file. Without a terminal, setup writes
+[config.example.json](config.example.json) beside it as a template and exits 1.
+`start` and `run` offer setup when the file is missing, and
+`dg-skills doctor channel-review` checks it.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -201,9 +206,9 @@ every required key with placeholder values.
 | `runner.timeoutMinutes` | number | `30` | Positive review time limit in minutes. |
 | `runner.addressTimeoutMinutes` | number | `60` | Positive `$address` time limit in minutes. |
 | `runner.concurrency` | number | `2` | How many reviews or repo jobs run at the same time, from 1 to 8. Each job runs in its own process. New requests get the pending reaction at once, even when every worker is busy. Use `1` to run one job at a time. |
-| `runner.claude.allowedTools` | string array | `Bash(<home>/.dg/bin/dg-skills thrash:*)` and `Bash(~/.dg/bin/dg-skills thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`, and `<source>/plugins/dg/skills/thrash/**` for each local directory marketplace in `~/.claude/plugins/known_marketplaces.json`) | Tools Claude may use. Keep it narrow; see Runner safety. |
+| `runner.claude.allowedTools` | string array | `Bash(dg-skills thrash:*)`, `Agent`, and `Read`, `Grep`, `Glob`, `Edit` limited to `//<scratch>/thrash/**` (`Read` also `~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/thrash/**`, and `<source>/plugins/dg/skills/thrash/**` for each local directory marketplace in `~/.claude/plugins/known_marketplaces.json`) | Tools Claude may use. Keep it narrow; see Runner safety. |
 | `runner.claude.bedrock` | object | unset | Run Claude reviews through Amazon Bedrock. Set `model` (a Bedrock model ID or inference profile ARN) and `region`. `profile` is the AWS profile and is optional. The daemon sets `CLAUDE_CODE_USE_BEDROCK`, `AWS_REGION`, and `AWS_PROFILE` for reviews only, and `model` becomes the default review model. `~model` overrides it. |
-| `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `<home>/.dg/bin/dg-skills address`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
+| `runner.claude.addressAllowedTools` | string array | `Agent`; `Edit`, `Read`, `Grep`, `Glob` limited to `//<clones>/**`; `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/address/**)`; `Bash` for `git`, `gh`, `glab`, `dg-skills address`, `bun`, `npm`, `npx`, `dotnet`, `python`, `pytest` | Tools Claude may use for `$address`. Separate from the review list; see Address allowlist and clone safety. |
 | `runner.grok.model` | string | Unset | Optional `--model` for the Grok CLI. |
 | `runner.grok.tools` | string array | Unset | Optional Grok tool ids, comma-joined into `--tools`. Empty leaves the CLI default. See Grok runner. |
 | `runner.grok.outputFormat` | string | `streaming-json` | `plain`, `json`, or `streaming-json`. |
@@ -287,7 +292,7 @@ to a `bot/fix/*` branch.
 | `deps.ciTimeoutMinutes` | number | `60` | How long the daemon waits for CI on a draft PR before it reports a timeout. |
 | `deps.cooldownDays` | whole number | `7` | The skill only upgrades to versions published at least this many days ago. |
 | `deps.branchPrefix` | string | `chore/deps-update-` | Branch prefix of upgrade PRs. A repo with an open PR on this prefix is skipped. |
-| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, `Bash(<home>/.dg/bin/dg-skills deps-upgrade:*)`, and `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)` | Tools the upgrade agent may use. |
+| `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, `Bash(dg-skills deps-upgrade:*)`, and `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)` | Tools the upgrade agent may use. |
 | `deps.schedule.every` | string | `week` | Default cadence: `day` or `week`. |
 | `deps.schedule.day` | string | `mon` | Default weekday for `week`: `mon` to `sun`. |
 | `deps.schedule.window` | string | `02:00-05:00` | Default local-time window, `HH:MM-HH:MM`. It may cross midnight. |
@@ -423,7 +428,7 @@ during the deploy window cannot reach the daemon; post them again afterward.
 ## Local tasks
 
 The repository's mise config has `remote:*` tasks for local runs:
-`remote:install` builds and installs `dg-skills`, `remote:start`,
+`remote:install` builds the dg bundle and makes it `lib/current`, `remote:start`,
 `remote:stop`, `remote:run`, and `remote:status` wrap those commands,
 `remote:logs` prints the log, `remote:follow` follows it, and `remote:up`
 starts the daemon and follows the log. Set `CR_ENV=prod` to read the prod log.

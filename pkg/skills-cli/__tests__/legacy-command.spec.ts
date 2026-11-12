@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { EXIT } from "../src/utils/legacy-command";
+import { describe, expect, spyOn, test } from "bun:test";
+import {
+	die,
+	DieError,
+	EXIT,
+	runCommandSpec,
+} from "../src/utils/legacy-command";
 
 describe("EXIT", () => {
 	test("UNSUPPORTED is defined and distinct from every other EXIT code", () => {
@@ -16,30 +21,42 @@ describe("EXIT", () => {
 });
 
 describe("die", () => {
-	test("die() terminates with its explicit status", () => {
-		const proc = Bun.spawnSync(
-			[
-				process.execPath,
-				"--eval",
-				`import { die } from "${import.meta.dir}/../src/utils/legacy-command"; die("boom", 2);`,
-			],
-			{ env: { ...process.env } },
-		);
-		expect(proc.exitCode).toBe(2);
-		expect(proc.stderr.toString()).toContain("boom");
+	test("die() throws a DieError carrying its explicit status", () => {
+		expect(() => die("boom", 2)).toThrow(new DieError("boom", 2));
 	});
 
-	test("die() writes 'error: <msg>' to stderr with default code 1", () => {
-		const proc = Bun.spawnSync(
-			[
-				process.execPath,
-				"--eval",
-				`import { die } from "${import.meta.dir}/../src/utils/legacy-command"; die("something failed");`,
-			],
-			{ env: { ...process.env } },
-		);
-		expect(proc.exitCode).toBe(1);
-		expect(proc.stderr.toString()).toContain("error: something failed");
+	test("die() defaults to status 1", () => {
+		try {
+			die("something failed");
+		} catch (error) {
+			expect(error).toBeInstanceOf(DieError);
+			expect((error as DieError).exitCode).toBe(1);
+			return;
+		}
+		throw new Error("die did not throw");
+	});
+
+	test("runCommandSpec reports a die as 'error: <msg>' and resolves with its status", async () => {
+		const written: string[] = [];
+		const stderr = spyOn(process.stderr, "write").mockImplementation(((
+			chunk: string | Uint8Array,
+		) => {
+			written.push(String(chunk));
+			return true;
+		}) as typeof process.stderr.write);
+		try {
+			const code = await runCommandSpec(
+				{
+					name: "t",
+					subcommands: { fail: { run: async () => die("nope", 3) } },
+				},
+				["fail"],
+			);
+			expect(code).toBe(3);
+			expect(written.join("")).toBe("error: nope\n");
+		} finally {
+			stderr.mockRestore();
+		}
 	});
 });
 

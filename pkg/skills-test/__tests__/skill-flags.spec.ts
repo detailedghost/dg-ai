@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT } from "./test-support";
+import { cells, REPO_ROOT } from "./test-support";
 
 const SKILLS_DIR = join(REPO_ROOT, "plugins", "dg", "skills");
 const HEADERS = ["Flag", "Short", "Effect", "Default"];
@@ -22,15 +22,6 @@ function flagsSection(text: string): string[] | undefined {
 	if (start === -1) return undefined;
 	const end = lines.findIndex((line, i) => i > start && line.startsWith("## "));
 	return lines.slice(start + 1, end === -1 ? undefined : end);
-}
-
-function cells(row: string): string[] {
-	return row
-		.trim()
-		.replace(/^\|/, "")
-		.replace(/\|$/, "")
-		.split(/(?<!\\)\|/)
-		.map((cell) => cell.trim());
 }
 
 describe("packaged skills document their flags", () => {

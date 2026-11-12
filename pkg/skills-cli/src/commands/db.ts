@@ -1,7 +1,14 @@
 import type { Command } from "commander";
-import { dbSpec } from "../db";
-import { registerLegacyCommand } from "../utils/legacy-command";
+import { registerLazyLegacy } from "../utils/lazy-command";
+
+const description = `Query PostgreSQL and Snowflake databases with read-safe defaults.
+
+Flags: --write, --limit N, --format tsv|json|markdown, --max-cell N, --schema S, -f file.sql`;
 
 export function registerDb(program: Command): void {
-	registerLegacyCommand(program, dbSpec);
+	registerLazyLegacy(program, {
+		name: "db",
+		description,
+		load: async () => (await import("../db")).dbSpec,
+	});
 }

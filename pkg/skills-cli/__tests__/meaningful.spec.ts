@@ -14,6 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { installBundleShim } from "./bundle-build";
 import { isolateCliTests, runGit } from "./cli-fixtures";
 import { makeTempDir, scratchFixtures } from "./git-repo-fixtures";
 import { writeFakeCli } from "./fake-cli";
@@ -446,8 +447,9 @@ describe("meaningful apply-json", () => {
 
 		test("removes AI trailers when the hooks setting is on", () => {
 			const dgHome = fixtures.tmp("dg-meaningful-home-");
+			mkdirSync(join(dgHome, "config"), { recursive: true });
 			writeFileSync(
-				join(dgHome, "config.json"),
+				join(dgHome, "config", "config.json"),
 				JSON.stringify({ hooks: { "strip-ai-coauthors": { enabled: "on" } } }),
 			);
 			expect(apply({ DG_HOME: dgHome })).toBe(stripped);
@@ -455,8 +457,9 @@ describe("meaningful apply-json", () => {
 
 		test("env 0 overrides the setting being on", () => {
 			const dgHome = fixtures.tmp("dg-meaningful-home-");
+			mkdirSync(join(dgHome, "config"), { recursive: true });
 			writeFileSync(
-				join(dgHome, "config.json"),
+				join(dgHome, "config", "config.json"),
 				JSON.stringify({ hooks: { "strip-ai-coauthors": { enabled: "on" } } }),
 			);
 			expect(apply({ DG_HOME: dgHome, DG_STRIP_AI_COAUTHORS: "0" })).toContain(
@@ -852,11 +855,7 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
   skills = join(install, "skills");
   binary = join(install, "bin", "dg-skills");
   mkdirSync(stage, { recursive: true });
-  mkdirSync(dirname(binary), { recursive: true });
-  const compiled = join(stage, "dg-skills");
-  const build = Bun.spawnSync([BUN_BIN, join(import.meta.dir, "../build.ts"), "--outfile", compiled], { cwd: join(import.meta.dir, "../../.."), env: process.env });
-  if (build.exitCode !== 0) throw new Error(`Compile failed: ${build.stderr.toString()}`);
-  renameSync(compiled, binary);
+  installBundleShim(binary);
 
   const copiedRepo = join(stage, "synthetic source checkout");
   const bootstrap = join(copiedRepo, "pkg", "skills-cli", "bootstrap.sh");
@@ -894,14 +893,14 @@ describe("relocated compiled meaningful and deps-upgrade", () => {
    expect(statSync(join(skills, file)).mode & 0o777).toBe(0o644);
   }
   const cwd = fixtures.tmp("dg external docs cwd ");
-  const bin = join(process.env.HOME!, ".dg/bin");
+  const bin = join(process.env.HOME!, ".local/bin");
   mkdirSync(bin, { recursive: true });
   symlinkSync(binary, join(bin, "dg-skills"));
   for (const skill of ["meaningful", "deps-upgrade"]) {
    const text = readFileSync(join(skills, skill, "SKILL.md"), "utf8");
    const snippet = text.match(/```bash\n([\s\S]*?)```/)?.[1];
    expect(snippet).toBeTruthy();
-   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec ~/.dg/bin/dg-skills "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
+   const proc = Bun.spawnSync(["sh", "-c", `${snippet}\nexec "$HOME/.local/bin/dg-skills" "$@"`, "installed-skill", skill, "--help"], { cwd, env: { ...process.env, PATH: "/usr/bin:/bin", DG_HOME: undefined, DG_SKILLS: undefined, CLAUDE_PLUGIN_ROOT: dirname(skills) } });
    expect(proc.exitCode).toBe(0);
    expect(proc.stdout.toString()).toContain(`Usage: ${skill} <subcommand>`);
    expect(proc.stderr.toString()).toBe("");

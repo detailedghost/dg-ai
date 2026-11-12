@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DEFAULTS, getTheme, patchConfig } from "@/lib/config";
+import { DEFAULTS } from "@/lib/config";
 import { DEMO_THEME_CSS } from "@/lib/picker";
 
 function optionsCss(): string {
@@ -16,19 +16,6 @@ function blockFor(css: string, selector: string): string {
 	if (at < 0) return "";
 	return css.slice(at, css.indexOf("}", at));
 }
-
-describe("dark is the default theme, light is a choice", () => {
-	it("ships dark as the stored default", () => {
-		expect(DEFAULTS.theme).toBe("dark");
-	});
-
-	it("accepts light and falls back to dark for anything unrecognized", () => {
-		expect(getTheme("light")).toBe("light");
-		expect(getTheme("dark")).toBe("dark");
-		expect(getTheme("")).toBe("dark");
-		expect(getTheme("solarized")).toBe("dark");
-	});
-});
 
 describe("options/style.css serves an explicit theme unconditionally", () => {
 	it("defines both explicit themes, on different grounds", () => {
@@ -68,5 +55,11 @@ describe("the demo overlays default to dark too", () => {
 	it("keeps light reachable, gated on the host's own theme", () => {
 		expect(DEMO_THEME_CSS).toContain(':host([data-theme="light"])');
 		expect(DEMO_THEME_CSS).not.toContain("prefers-color-scheme");
+	});
+});
+
+describe("the settings config no longer stores a theme", () => {
+	it("has no theme field in the defaults", () => {
+		expect(DEFAULTS).not.toHaveProperty("theme");
 	});
 });

@@ -1,35 +1,28 @@
 # Provider setup
 
-Run commands through the compiled `~/.dg/bin/dg-skills` binary. Start a
+Run commands through the compiled `dg-skills` binary. Start a
 daemon session with the installed companion binary:
 
 ```sh
-~/.dg/bin/dg-agent start --open
+dg-agent start --open
 ```
 
-`dg-agent start` prints one bootstrap URL:
-
-```text
-http://127.0.0.1:<port>/start#_chat=<base64url>
-```
-
-The `#_chat=` fragment is base64url-encoded JSON
-`{ port, sessionId, token, agentIdentity }`. `--open` asks the default browser
-to open that URL. On a headless or remote agent, `--open` cannot reach the
-browser where the extension is loaded, so open the printed URL in that browser
-yourself. The extension reads the fragment and joins the session. Reload the
-Proton Mail tab after it connects.
+`dg-agent start` prints one line on stderr and nothing on stdout. The line is
+`Paired <identity> (<id8>) with the browser extension.` or
+`No browser extension is connected. Install it with: dg-skills install`. The
+extension pairs with the session on its own. Reload the Proton Mail tab after
+it connects. `--open` opens the chat page through a one-time code and prints
+no URL.
 
 Keep the session id and pass `--session ID` when your command's working
 directory differs from the registered session, or when several sessions exist.
-`dg-agent start --print-session-id` prints the session id on its own line and
-then the bootstrap URL, so an agent does not have to decode the fragment.
-`dg-agent start --json` prints one object `{"sessionId","port","url"}` instead
-of those lines. The token stays inside the URL fragment.
+`dg-agent start --print-session-id` prints the session id on stdout.
+`dg-agent start --json` prints one object `{"sessionId","port","extensionLinked"}`
+instead. No output carries the session token.
 Gmail and Outlook use the daemon for encrypted configuration and OAuth storage;
 both run locally. Proton runs locally through a pw-managed profile by default.
 With `--ext`, Proton needs exactly one extension connected to that session, and the
-gate line (run only the command after the colon) is `--ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1`. Install or
+gate line (run only the command after the colon) is `--ext only: dg-skills require-extension inbox-cleanup || exit 1`. Install or
 update all companion binaries with dg-skills install when protocol versions differ.
 Proton inbox operations require extension version 1.11.0 or newer.
 
@@ -39,10 +32,10 @@ Profile names select accounts with --account-profile NAME in workflow commands.
 The separate --profile NAME workflow flag chooses a saved routing policy.
 
 ```sh
-~/.dg/bin/dg-skills inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
+dg-skills inbox profile set personal --provider gmail --client-id YOUR_DESKTOP_CLIENT_ID \
   --auth-mode browser --session SESSION_ID
-~/.dg/bin/dg-skills inbox profile get personal --session SESSION_ID
-~/.dg/bin/dg-skills inbox profile list --session SESSION_ID
+dg-skills inbox profile get personal --session SESSION_ID
+dg-skills inbox profile list --session SESSION_ID
 ```
 
 Use --json JSON or --file PATH for a complete validated profile. Useful settings
@@ -60,7 +53,7 @@ daemon database. Explicit --data-path fixture commands bypass live services.
 ## Proton Mail
 
 By default Proton runs through a pw profile under `DG_HOME/inbox/proton-profile`.
-Ask the human before running `~/.dg/bin/dg-skills inbox proton sign-in`. It opens
+Ask the human before running `dg-skills inbox proton sign-in`. It opens
 the profile once so the human can sign in, then closes it. On WSL it uses the
 Windows browser through pw, keeps the profile on the Windows side, and never
 opens a headed browser inside WSL. Cookies stay in that profile, and the agent never runs pw commands on the
@@ -83,9 +76,13 @@ account settings in a separate tab. If the only mail tab navigates to
 says the mail tab navigated away instead of a generic sign-in error. `dg-skills
 inbox status` reports local message counts and, with `--session`, which check
 failed: no extension peer on that session, no mail tab matching `/u/N`, or
-missing `x-pm-uid`. A missing extension peer names the session and a placeholder
-start URL. The session token stays out of that error. `dg-skills inbox
-bootstrap-url --session ID` prints the real URL when you ask for it.
+missing `x-pm-uid`. A missing extension peer names the session and tells you to
+start the session with `dg-agent start` and install the extension with
+`dg-skills install` if none is connected. `dg-skills inbox bootstrap-url
+--session ID` prints a chat URL,
+`http://127.0.0.1:<port>/chat#_chatcode=<code>`, with a one-time code. The URL works once, within 60 seconds. It never
+carries the session token.
+
 Chrome 116+ (MV3, MAIN world) and Firefox 128+ both run that observer. The
 plugin's broader Firefox features may require a newer Firefox. Bootstrap
 (`bootstrap.sh`, which runs `dg-skills install`) stages the Chrome MV3 build at
@@ -93,7 +90,7 @@ plugin's broader Firefox features may require a newer Firefox. Bootstrap
 `dg-skills install firefox` for the Firefox build.
 
 ```sh
-~/.dg/bin/dg-skills inbox profile set proton --provider protonmail --account-hint 0 \
+dg-skills inbox profile set proton --provider protonmail --account-hint 0 \
   --session SESSION_ID
 ```
 
@@ -154,7 +151,7 @@ browser or device-code login; a confidential client uses a registered loopback
 redirect and a secret referenced through --client-secret-env.
 
 ```sh
-~/.dg/bin/dg-skills inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
+dg-skills inbox profile set work --provider outlook --client-id YOUR_CLIENT_ID \
   --tenant-id organizations --auth-mode device-code --session SESSION_ID
 ```
 

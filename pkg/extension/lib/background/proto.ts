@@ -202,7 +202,7 @@ async function downscalePreview(dataUrl: string): Promise<string | undefined> {
 	}
 }
 
-async function fitPreviewDataUrl(
+export async function fitPreviewDataUrl(
 	dataUrl: string,
 ): Promise<{ dataUrl?: string; reason?: string }> {
 	if (!PREVIEW_DATA_URL.test(dataUrl)) {
@@ -399,16 +399,14 @@ export function createProtoHandler({
 	browserApi: ProtoBrowserApi;
 	deadlineMs?: number;
 }) {
-	return (
-		request: ProtoBrowserRequest,
-		onProgress: (status: string) => void,
-	): Promise<ProtoResultFrame> =>
-		requestPrototypeBrowserWork(
-			browserApi,
-			request,
-			onProgress,
-			deadlineMs,
-		);
+	return ({
+		request,
+		progress,
+	}: {
+		request: ProtoBrowserRequest;
+		progress: (status: string) => void;
+	}): Promise<ProtoResultFrame> =>
+		requestPrototypeBrowserWork(browserApi, request, progress, deadlineMs);
 }
 
 /** Wire the validated content-to-background prototype reports for every open tab's pending request. */

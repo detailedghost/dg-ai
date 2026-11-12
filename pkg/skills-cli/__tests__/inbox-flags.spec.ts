@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { providerFlag, takeExtFlag, usesFixture } from "../src/commands/inbox";
+import { providerFlag, takeExtFlag, usesFixture } from "../src/inbox/cli";
 
 describe("inbox flag parsing", () => {
 	test("takeExtFlag removes --ext and reports it", () => {

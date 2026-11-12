@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { forever } from "@dg/common";
 import { selfCommand } from "@dg/common/node";
 import { openInBrowser } from "../prototype/ui";
 import {
@@ -166,12 +167,12 @@ async function launch(name: string, paths: VerifyPaths, port: number): Promise<{
 	return { pid: proc.pid, port: bound };
 }
 
-async function runServe(name: string, paths: VerifyPaths, flags: Flags): Promise<number | undefined> {
+async function runServe(name: string, paths: VerifyPaths, flags: Flags): Promise<number> {
 	const port = integer(flags, "port", 0, 65535) ?? 0;
 	if (flags.bools.has("foreground")) {
 		const running = await startVerifyServer({ name, paths, port });
 		write(`verify-serve: http://127.0.0.1:${running.port}/\n`);
-		return undefined;
+		return forever();
 	}
 	const state = readServer(paths) ?? (await launch(name, paths, port));
 	mkdirSync(paths.dir, { recursive: true });

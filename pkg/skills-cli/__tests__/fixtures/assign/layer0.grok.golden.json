@@ -1,4 +1,6 @@
 {
+  "maxCorrectionRounds": 2,
+  "profile": "balance",
   "roles": {
     "qa-writer": {
       "agentType": "dg:qa-writer",
@@ -20,6 +22,7 @@
   "slices": [
     {
       "brief": "## Engineering\n\n### Slice 1 — Parser\n- [ ] Parse input\n",
+      "dependsOn": [],
       "files": [
         "src/parser/**"
       ],
@@ -41,6 +44,7 @@
     },
     {
       "brief": "## Engineering\n\n### Slice 2 — Migration\n- [ ] Add table\n",
+      "dependsOn": [],
       "files": [
         "src/db/**"
       ],

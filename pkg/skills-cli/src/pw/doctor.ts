@@ -1,7 +1,7 @@
-import path from "node:path";
 import { scratchRoot, stateRoot } from "@dg/common/node";
 import {
 	allowRuleCheck,
+	extOnlyChecks,
 	noAllowRuleCheck,
 	skillFilesCheck,
 } from "../doctor/checks";
@@ -11,6 +11,7 @@ import { isWSL } from "@dg/common/node";
 import { type SystemChannel, systemBrowserPresent } from "./core/browser";
 import { exePath } from "./core/windows";
 import { downloadedChromium } from "./core/downloaded";
+import { findInstalledChromium } from "../utils/find-browser";
 
 const SYSTEM_CHANNELS: SystemChannel[] = ["chrome", "msedge"];
 
@@ -36,14 +37,17 @@ export function browserPresent(
 
 export function createBrowserCheck(
 	system: (channel: SystemChannel) => boolean,
+	installed: () => string | null = () => null,
 ): DoctorCheck {
 	return {
 		id: "browser",
 		run(ctx) {
 			const channel = SYSTEM_CHANNELS.find((candidate) => system(candidate));
 			if (channel) return ok(`browser: ${channel} (system)`);
+			const binary = installed();
+			if (binary) return ok(`browser: ${binary} (installed)`);
 			const downloaded = downloadedChromium(
-				path.join(ctx.paths.stateDir, "browsers"),
+				ctx.paths.browsersDir,
 			);
 			if (downloaded)
 				return ok(`browser: chromium ${downloaded.version} (downloaded)`);
@@ -55,8 +59,9 @@ export function createBrowserCheck(
 	};
 }
 
-export const browserStatusCheck = createBrowserCheck((channel) =>
-	browserPresent(channel),
+export const browserStatusCheck = createBrowserCheck(
+	(channel) => browserPresent(channel),
+	() => findInstalledChromium(),
 );
 
 export const pwChecks: DoctorCheck[] = [
@@ -65,6 +70,7 @@ export const pwChecks: DoctorCheck[] = [
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),
 	rootCheck("state-root", "state", ({ env, home }) => stateRoot(env, home)),
 	allowRuleCheck("pw"),
+	...extOnlyChecks,
 ];
 
 export const pwCodeChecks: DoctorCheck[] = [

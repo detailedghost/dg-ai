@@ -13,9 +13,10 @@ import {
 } from "./skill-tree-helpers";
 
 const NAME = "pw";
-const MAX_LINES = 90;
+const MAX_LINES = 106;
 const REFERENCES = [
 	"commands.md",
+	"real-browser.md",
 	"request-mocking.md",
 	"running-code.md",
 	"session-management.md",
@@ -25,7 +26,7 @@ const REFERENCES = [
 	"video-recording.md",
 	"windows.md",
 ];
-const DOCTOR_LINE = /^If a step fails, run ~\/\.dg\/bin\/dg-skills doctor ([a-z][a-z -]*)\.?$/m;
+const DOCTOR_LINE = /^If a step fails, run dg-skills doctor ([a-z][a-z -]*)\.?$/m;
 
 function sentences(text: string): string[] {
 	return text
@@ -110,12 +111,12 @@ describe("packaged pw skill tree", () => {
 		expect(call).toBeGreaterThan(gate);
 	});
 
-	test("calls dg-skills pw from SKILL.md only through the literal installed path", () => {
+	test("calls dg-skills pw from SKILL.md only by the bare launcher name", () => {
 		const calls = skillText(NAME)
 			.split("\n")
 			.filter((line) => /dg-skills pw(?!-code)\s+[a-z]/.test(line) && !line.includes("`dg-skills pw"));
 		expect(calls.length).toBeGreaterThan(0);
-		for (const line of calls) expect(line).toContain("~/.dg/bin/dg-skills");
+		for (const line of calls) expect(line).not.toContain(".dg/bin/");
 	});
 
 	test("names pw and pw-code on the doctor line", () => {

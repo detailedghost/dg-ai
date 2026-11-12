@@ -155,7 +155,7 @@ describe("start", () => {
 		expect([command, ...args.slice(0, 3)]).toEqual(["/usr/bin/bun", import.meta.path, "channel-review", "run"]);
 		expect(flag(args, "--env")).toBe("dev");
 		expect(options.detached).toBe(true);
-		expect(options.cwd).toBe(dirname(h.paths.configPath));
+		expect(options.cwd).toBe(dirname(h.paths.pidPath));
 		expect(options.stdio[0]).toBe("ignore");
 		expect(typeof options.stdio[1]).toBe("number");
 		expect(options.stdio[2]).toBe(options.stdio[1]);
@@ -374,7 +374,7 @@ describe("start with a real detached child", () => {
 				'import { dirname, join } from "node:path";',
 				'const args = process.argv.slice(2);',
 				'const env = args[args.indexOf("--env") + 1] ?? "dev";',
-				'const path = join(process.env.DG_HOME ?? "", "channel-review", `daemon.${env}.pid`);',
+				'const path = join(process.env.DG_HOME ?? "", "state", "channel-review", `daemon.${env}.pid`);',
 				"mkdirSync(dirname(path), { recursive: true });",
 				"writeFileSync(path, JSON.stringify({ pid: process.pid, env }));",
 				"setTimeout(() => process.exit(0), 20000);",

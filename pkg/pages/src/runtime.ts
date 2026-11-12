@@ -1,6 +1,7 @@
 export type PageStorage = {
 	get(key: string): string | null;
 	set(key: string, value: string): void;
+	remove(key: string): void;
 };
 
 type RuntimeListener = (message: unknown) => void;
@@ -13,23 +14,6 @@ export type PageRuntime = {
 	};
 	storage: PageStorage;
 };
-
-export type PairingControl = {
-	setConnected(connected: boolean): void;
-	setCurrentSession(sessionId: string | undefined): void;
-	destroy(): void;
-};
-
-export type PairingMountOptions = {
-	initialConnected?: boolean;
-	findPort?: () => Promise<number | undefined>;
-	onDaemon?(reachable: boolean): void;
-};
-
-export type PairingMount = (
-	host: HTMLElement,
-	options: PairingMountOptions,
-) => PairingControl;
 
 export type PositionArea = {
 	get(keys: null): Promise<Record<string, unknown>>;
@@ -45,6 +29,9 @@ export function memoryStorage(): PageStorage {
 		get: (key) => entries.get(key) ?? null,
 		set: (key, value) => {
 			entries.set(key, value);
+		},
+		remove: (key) => {
+			entries.delete(key);
 		},
 	};
 }
@@ -67,6 +54,14 @@ export function browserStorage(storage: Storage): PageStorage {
 				refused.delete(key);
 			} catch {
 				refused.set(key, value);
+			}
+		},
+		remove(key) {
+			refused.delete(key);
+			try {
+				storage.removeItem(key);
+			} catch {
+				refused.set(key, "");
 			}
 		},
 	};

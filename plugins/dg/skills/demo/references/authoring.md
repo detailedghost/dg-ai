@@ -5,13 +5,16 @@
 You author a tour as a Markdown **plan**: YAML frontmatter + a `## Steps`
 list. Feed it to `dg-skills demo <plan>.md`; the CLI parses it, generates the
 runnable script into a `## Script` fenced block, and plays it. Local play and
-`--ext` play the same plan. Never hand-write the JSON.
+`--ext` play the same plan. Local play always records an MP4. `--ext` plays the
+interactive tour. Never hand-write the JSON.
 
 ```markdown
 ---
 title: Saved filters      # optional — shown in each callout's progress line
 startUrl: http://localhost:4200/dashboard   # required — http(s) entry page
-mode: walkthrough         # optional — walkthrough (default) | video
+mode: walkthrough         # optional — --ext only; local mode always records
+intro: "Demo | Saved filters | Keep your views"   # optional — local mode
+outro: "Done | That is it | Thanks for watching"   # optional — local mode
 ---
 
 ## Steps
@@ -30,9 +33,10 @@ N. **<title>** [`<css-selector>`] [→ <navigate-url>] [<action>] — <body> [`<
 - `` `<css-selector>` `` — element to spotlight; omit for a centered modal.
 - `→ <navigate-url>` — navigate here before showing this step (multi-page).
 - `<action>` — an action the **tour itself** performs on the spotlighted
-  element: `@click` (clicks it) or `@type="<text>"` (types `<text>` into it —
+  element: `@click` (clicks it) or `@type="<text>"` (types `<text>` into it, or the
+  value of env var `DG_DEMO_*` when `<text>` is `$DG_DEMO_*`; see [Credentials](#credentials) —
   a literal `"` or `\` inside `<text>` must be escaped as `\"` / `\\`). Omit
-  for no automatic action — the step just spotlights. **Timing is mode-aware:**
+  for no automatic action — the step just spotlights. **With `--ext`, timing is mode-aware:**
   in `video` mode it fires on a short timer right after the callout shows
   (hands-off playback); in `walkthrough` mode it waits for the user to advance
   past the step (Next, or the target click for a `click` timing) so a live
@@ -92,10 +96,46 @@ The plan generates this shape (also accepted directly as a `.json` file):
 }
 ```
 
-Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
-`pkg/skills-cli/src/commands/demo.ts`.
+Types mirror `pkg/extension/lib/demo-types.ts`. The plan format and its validation
+live in `pkg/common/src/plan-format.ts`.
 
-## Advance modes
+## Intro and outro
+
+Local mode adds a full-screen chapter card before and after the steps. Set them in
+frontmatter as `"Eyebrow | Title | Detail"`:
+
+```yaml
+intro: "Demo | Saved filters | Keep your views"
+outro: "Done | That is it | Thanks for watching"
+```
+
+The intro defaults to the eyebrow `Demo` with the plan `title`. No outro plays unless
+you set one. Only local mode uses them.
+
+## Credentials
+
+`@type="$DG_DEMO_VELORA_PW"` types the value of that env var. Only `$DG_DEMO_*`
+variables resolve, with names matching `^\$DG_DEMO_[A-Z0-9_]+$`, and only into
+`input[type=password]` fields. A value like `$AWS_SECRET_ACCESS_KEY` fails validation,
+and a non-password target fails the run. The plan never holds the value, and logs and
+results never print it.
+
+- In a recorded step, an unset `NAME` refuses with exit 2:
+  `demo: set $DG_DEMO_VELORA_PW or move the login to ## Setup`.
+- In `## Setup` with `includeSetup: false`, the login runs in an unrecorded context and
+  hands its session to the recording.
+- If a setup fill names an unset variable, a headed window opens, shows
+  "Type it here, then continue.", and waits for a navigation, for Enter or a blur in
+  the filled field, or for the next setup step's selector to appear. After a
+  navigation, the run skips each later setup step whose selector does not show within
+  2 s and prints `skipped setup step N after the sign-in`.
+- On a headless-only plan (WSL without `--windows` or `--wsl-headed`), that case
+  refuses with exit 2.
+- `demo --verify` reports `env-unset` and names the variable.
+
+## Advance modes (`--ext`)
+
+Local mode ignores `next` and `click` and holds each step for its timing, or the default dwell of about 3.5 s.
 
 - **`"next"`** (default) — the callout shows a **Next** button; the user drives
   the pace.
@@ -110,7 +150,7 @@ Types mirror `pkg/extension/lib/demo-types.ts` and are validated CLI-side in
   playback). In video mode this is dwell time *after* narration — see
   [Video mode](#video-mode).
 
-## Walkthrough controls
+## Walkthrough controls (`--ext`)
 
 Each step's callout shows **« ‹ › »** — jump to first, back one, forward one,
 jump to last — each disabled at the end it already points to, so the affordance
@@ -144,21 +184,23 @@ includeSetup: false
 1. **Dashboard** — Now begin the tutorial. `next`
 ```
 
-With `includeSetup: false`, setup always runs first as a user-paced preparation
-phase. It finishes before the walkthrough begins or the video recording prompt
-appears, so it is never narrated or captured. Set `includeSetup: true` when the
+With `includeSetup: false`, setup always runs first. In local mode it runs in an
+unrecorded context and hands its login to the recording. With `--ext`, it runs as a
+user-paced phase before the walkthrough begins or the video recording prompt appears.
+Either way, it is never narrated or captured. Set `includeSetup: true` when the
 preparation itself belongs in the demo: setup steps then lead the tutorial and
 video in source order.
 
 Setup actions (`@click` / `@type="..."`, see the step-line grammar above) are
 stored in the Markdown plan and URL marker. Never put credentials, passwords,
 API/session tokens, recovery codes, or MFA/one-time codes in an `@type="..."`
-action's value. Leave sensitive fields as manual, user-paced setup steps (no
-action, `click` or `next` timing) so the user enters those values directly.
-Playback always asks for explicit approval before any authored setup
+action's value. Use `@type="$DG_DEMO_VELORA_PW"` for a password that an env var holds.
+With `--ext`, you can also leave sensitive fields as manual, user-paced setup steps
+(no action, `click` or `next` timing) so the user enters those values directly.
+With `--ext`, playback always asks for explicit approval before any authored setup
 click/fill action can run.
 
-## Multi-page tours
+## Multi-page tours (`--ext`)
 
 Tour state lives in `storage.local`, so it survives navigations. To move to
 another page, set `navigate` on the first step that belongs there — the player
@@ -186,9 +228,30 @@ won't loop.
 - Lead with the verb ("Click…", "Notice…", "Now the results…").
 - Use `title` for the label, `body` for the explanation — don't repeat.
 
-## Video mode
+## Recording (local mode)
 
-Run `demo --video` (or set `"mode": "video"`) to record instead of a live tour.
+Local mode always records. A Node recorder drives the real UI with Playwright: real
+clicks and key-by-key typing. Plain DOM overlays, added through `page.evaluate`, show
+a chapter card, a caption bar, and an outline with an arrow on the target. A strict
+site Content Security Policy does not block them. The video has no REC badge.
+
+The output is an MP4: H.264, 1440x810, 30 fps. The default path is
+`<cacheDir>/demos/<slug>/<slug>-<stamp>.mp4`. `--out` must end in `.mp4` and sit
+outside a git work tree. Without `ffmpeg`, the raw webm stays, with a sidecar `.wav`
+when narrated, and the CLI warns.
+
+Captions and a silent video are the default. `-n` adds a Kokoro voice, made before the
+recording and muxed as AAC. A numeric timing is the dwell after the caption or voice.
+There is no start screen, review panel, or walkthrough control in local mode.
+
+Run `dg-skills demo --verify <plan>` first. It drives the same recorder in a dry run,
+with no overlays and no holds.
+
+## Video mode (`--ext`)
+
+The sections below apply to `--ext` only. Set `"mode": "video"` to record through the
+extension instead of a live tour. See [extension.md](extension.md).
+
 The tour auto-plays hands-free. The extension records the tab (tabCapture → an
 offscreen MediaRecorder → webm) and saves `dg-demo/<tour>/<tour>.zip` (the video
 plus a re-runnable `plan.md`) to the user's **Downloads** folder.
@@ -207,8 +270,8 @@ not a floor on the whole step. So it always lengthens that step, and you can hol
 a beat on an important frame without guessing how long its narration will run.
 
 Because Chrome requires a user gesture to start tab capture, the page shows a
-"press to start" modal; the user presses `Alt+Shift+D` (or clicks the DeeGee
-toolbar icon) once, then it's fully automatic through to the saved-confirmation
+"press to start" modal; the user presses `Alt+Shift+D` (or opens the DeeGee
+popup and chooses Record demo) once, then it's fully automatic through to the saved-confirmation
 message. Chrome/Edge only — `tabCapture`/`offscreen` aren't available in Firefox.
 
 In video mode the manual Next/Back/jump controls are hidden (there's no one to

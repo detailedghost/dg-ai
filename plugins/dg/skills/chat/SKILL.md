@@ -1,6 +1,6 @@
 ---
 name: chat
-description: Talk to a human through a live local chat page that dg-daemon serves on loopback and opens in the default browser, with no extension needed, using the dg-agent CLI. Pass --ext to use the dg-ai-extension side panel instead. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
+description: Talk to a human through a live local chat page that dg-daemon serves on loopback and opens in the default browser, with no extension needed, using the dg-agent CLI. The browser extension pairs by itself when a session starts. Pass --ext to also require the dg-ai-extension. Use start to register a session and open the chat page, recv to collect queued human messages, send to reply (or send --to to message another agent identity), progress to publish state, spawn to add a background session or to run a command inside one, stage to show a file, manifest to publish runnable commands, memory to record and search this agent's own notes, and close to finish. Every session is loopback-only and capability-gated.
 ---
 
 # Chat
@@ -8,9 +8,11 @@ description: Talk to a human through a live local chat page that dg-daemon serve
 Hold a real conversation with a human in a browser tab while you work. The
 `dg-daemon` daemon hosts many chat sessions on loopback and serves the chat page
 itself, and this skill is the agent side of the loop. The page needs no
-extension. Pass `--ext` to hand the session to the `dg-ai-extension` instead.
+extension. When the `dg-ai-extension` is loaded, it pairs with every new session
+on its own. No code and no human step are needed. Pass `--ext` to require the
+extension.
 
-Commands run the **compiled `dg-agent` binary** at `~/.dg/bin/dg-agent` — a
+Commands run the **compiled `dg-agent` binary** from your PATH — a
 self-contained binary, no Bun needed at runtime. `dg-agent start` launches the
 daemon itself when none is running, by resolving `dg-daemon` next to it in the
 same directory, so both binaries must be installed together. On first use,
@@ -19,11 +21,14 @@ release and `dg-daemon` from `daemon-v*`, alongside `dg-skills` from
 `skills-v*`):
 
 ```bash
-[ -x ~/.dg/bin/dg-agent ] ||
+dg-agent --version >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-agent" --version >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
 ```
 
-If the bootstrap fails, run `~/.dg/bin/dg-skills doctor install` and retry.
+Call `dg-agent` in every later step. If `dg-agent` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-agent` instead.
+
+If the bootstrap fails, run `dg-skills doctor install` and retry.
 
 The gate tests `dg-agent`, **not** `dg-skills`. A machine that has already used
 `browser`, `demo` or `proto` already has `dg-skills`, so gating on that binary
@@ -35,14 +40,14 @@ On Windows PowerShell, pipe the repository's raw `bootstrap.ps1` to
 Then run every command through it:
 
 ```bash
-~/.dg/bin/dg-agent <command> <args>
+dg-agent <command> <args>
 ```
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--ext` | none | Hand the session to the dg-ai-extension side panel instead of the local page. Needs the extension. | off (local is the default) |
+| `--ext` | none | Same as the default, and the extension must be installed. | off (local is the default) |
 
 To use the extension, run the gate command, then the line below it:
 
@@ -51,18 +56,49 @@ To use the extension, run the gate command, then the line below it:
 dg-agent start --ext --open
 ```
 
-Side panel details and WSL networking for a Windows-side browser:
+Extension details and WSL networking for a Windows-side browser:
 [references/extension.md](references/extension.md).
+
+## Pair the browser
+
+Run this command:
+
+```bash
+dg-agent start
+```
+
+It prints one of two lines on stderr and prints nothing on stdout.
+
+Paired:
+
+```text
+Paired <identity> (<id8>) with the browser extension.
+```
+
+Nothing more to do. Go to the loop below.
+
+No extension:
+
+```text
+No browser extension is connected. Install it with: dg-skills install
+```
+
+1. Run `dg-skills install`.
+1. Ask the human to open `chrome://extensions`, turn on Developer mode, and choose **Load unpacked** once. The folder path is in the `dg-skills install` output. This is the only human step.
+1. Run `dg-agent start` again. It prints the Paired line.
+
+Every later session pairs on its own. The human does not unpair or pair again.
+If the human clicks **Unpair** in the popup, that session stays unpaired until it closes.
 
 ## The loop
 
 ```bash
-~/.dg/bin/dg-agent start --open              # register a session, open the chat page
-~/.dg/bin/dg-agent progress --state running  # tell the human you are working
-~/.dg/bin/dg-agent send "Looking at it now." # say something
-~/.dg/bin/dg-agent progress --state awaiting-input
-~/.dg/bin/dg-agent recv --block              # wait for their reply
-~/.dg/bin/dg-agent close                     # finish the session
+dg-agent start --open              # register a session, open the chat page
+dg-agent progress --state running  # tell the human you are working
+dg-agent send "Looking at it now." # say something
+dg-agent progress --state awaiting-input
+dg-agent recv --block              # wait for their reply
+dg-agent close                     # finish the session
 ```
 
 `recv` prints one JSON object per call and acknowledges the message only after
@@ -71,23 +107,19 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
 
 ## Commands
 
-- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--fresh] [-s <id>] [--print-session-id] [--json]` —
-  start or reuse the daemon and register a new session. Prints the local chat
-  page URL `http://127.0.0.1:<port>/chat#_chat=<base64url>`. The fragment is
-  base64url JSON `{ port, sessionId, token, agentIdentity }`, and the page
-  keeps it out of the page request. `--open` opens that URL in the default
-  browser. On WSL it only prints the URL unless `DG_OPEN_WINDOWS=1` is set.
-  When the agent is headless or remote, open the URL in a browser on
-  the machine that runs the daemon. `--ext` prints the extension URL
-  `/start#_chat=<base64url>` instead, and `--open` then opens that.
-  `--print-session-id` prints the session id before the URL. `--json` prints
-  `{"sessionId","port","url"}` and leaves the token inside that URL. `-w`
-  attaches a workset label, which is how the chat page groups sessions in its
-  rail. `start` claims a session the extension is waiting on, even without
-  `--ext`; see [references/extension.md](references/extension.md). `--fresh`
-  always registers a new session.
-- `attach [-s <id>] [--open]` — claim a session the extension created. Extension
-  only: [references/extension.md](references/extension.md).
+- `start [-w <label>] [--orchestrator] [-a <name>] [--open] [--ext] [--print-session-id] [--json]` —
+  start or reuse the daemon and register a new session. The extension adopts
+  the session. `start` prints one line on stderr and nothing on stdout. The
+  line is `Paired <identity> (<id8>) with the browser extension.` or
+  `No browser extension is connected. Install it with: dg-skills install`.
+  `--print-session-id` prints only the session id on stdout. `--json` prints
+  `{"sessionId","port","extensionLinked"}`. `--open` opens the chat page in the
+  default browser through a one-time code and prints no URL. The code works
+  once, within 60 seconds. On WSL it does not open a browser unless
+  `DG_OPEN_WINDOWS=1` is set. `--ext` gates on the extension and behaves like
+  the default. `-w` attaches a workset label, which is how the chat page groups
+  sessions in its rail. The session token never appears in output. Pairing
+  details are in [references/extension.md](references/extension.md).
 - `dg-daemon status` — report the live daemon's status, or that none is
   running. This runs on the daemon binary, not `dg-agent`.
 - `recv [--block] [--timeout <ms>]` — receive the next queued message
@@ -115,8 +147,11 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   not as a second instruction.
 - `progress --state <running|awaiting-input>` — publish an explicit state. Any
   other value is rejected.
-- `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>]` — spawn
-  another background chat session and print its bootstrap JSON.
+- `spawn [--workset <label>] [--orchestrator] [--agent-identity <name>] [-- <command...>]` —
+  spawn another background chat session. Without `--`, it prints
+  `{"sessionId":"<id>"}` and no token. With `--`, it runs `<command...>` with `DG_SESSION_ID` set to the new
+  session and exits with the exit code of that command. Example:
+  `dg-agent spawn --workset review -- bun test`.
 - `stage <path>` — stage an asset for later presentation and print its id. The
   bytes are encrypted at rest and served only to the owning session.
 - `overwatch <subcommand>` — manage the shared launch board; see the `overwatch`
@@ -126,8 +161,9 @@ printing it, so a crash mid-print re-delivers rather than loses. Without
   human may run from the chat composer, and optionally the subagent names they
   may `@`-mention.
 
-`-s, --session <id>` selects a session explicitly. Without it, the sole session
-whose realpath-matching cwd matches yours is used.
+`-s, --session <id>` selects a session explicitly. Without it, the CLI uses
+`DG_SESSION_ID`, then the sole session whose realpath-matching cwd matches
+yours.
 
 ## Memory
 
@@ -218,13 +254,17 @@ point of publishing it.
 ## Notes
 
 - Every session is **loopback-only** and capability-gated. A token authorises
-  one session; it is never written to a log or a URL query string.
+  one session; it is never written to a log, a URL, or a command output.
+- The daemon trusts any process that the same user runs on this machine, and
+  it does so silently. A local program can fake an `Origin` header. The daemon
+  id pin stops a process on a free port. It does not stop a proxy that copies
+  the live daemon.
 - Messages and staged assets are encrypted at rest. The data key comes from the
   OS keychain when one is available, and from a file-backed key otherwise.
 - `~/.dg` is two independent trees: `daemon/` holds the encrypted `daemon.db`
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.
-- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the side panel is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear`, or **Clear disconnected** in the panel, archives sessions whose claim has been released. Sessions still waiting for an agent, and sessions whose claim is held between commands, are left alone.
+- Chat sessions live in the daemon database, not as files under `agents/sessions`. Existing session files are imported on startup and then removed. Once an agent has claimed a session, `send`, `progress`, and `recv` may come and go. A gap between those commands does not reap the session or mark the agent gone. The claim is released only after a long quiet period with no CLI command, and the session is then archived even if the chat page is still open. Extension keepalives do not keep a released claim alive. A background pass trims the archive and the message rows that belonged to it, and checkpoints the database. `dg-daemon sessions clear` archives sessions whose claim has been released. Sessions whose claim is held between commands are left alone.
 - `dg-skills install` refreshes `dg-agent` and `dg-daemon` too, alongside
   itself, so re-running it keeps all three binaries current.

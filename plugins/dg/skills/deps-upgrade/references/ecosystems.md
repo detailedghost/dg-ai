@@ -1,6 +1,6 @@
 # Ecosystem Detection
 
-`~/.dg/bin/dg-skills deps-upgrade` auto-detects the project ecosystem by checking for these marker files in the order below. First match wins. Pass `--ecosystem <name>` to override (useful in mixed-ecosystem monorepos).
+`dg-skills deps-upgrade` auto-detects the project ecosystem by checking for these marker files in the order below. First match wins. Pass `--ecosystem <name>` to override (useful in mixed-ecosystem monorepos).
 
 | Marker | Ecosystem | Installer | Audit | `bump-dep` edits | Lock staged |
 |---|---|---|---|---|---|

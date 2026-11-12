@@ -5,16 +5,19 @@ description: Review and clean Proton Mail, Gmail, or Outlook through dg-skills, 
 
 # Inbox cleanup
 
-The executable is `~/.dg/bin/dg-skills`.
+The executable is `dg-skills`.
 On first use, install or refresh the compiled CLI; it needs no Bun at runtime:
 
 ```sh
-~/.dg/bin/dg-skills inbox --help >/dev/null 2>&1 ||
+dg-skills inbox --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" inbox --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-~/.dg/bin/dg-skills inbox --help
+if dg-skills inbox --help >/dev/null 2>&1; then dg-skills inbox --help; else "${DG_HOME:-$HOME/.local}/bin/dg-skills" inbox --help; fi
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor inbox install require-extension.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor inbox install require-extension.
 
 For PowerShell, use the repository's raw bootstrap.ps1. Read [provider setup](references/providers.md)
 and [the cleanup workflow](references/workflow.md) before planning changes.
@@ -25,7 +28,7 @@ under DG_HOME/inbox and remains stable when the working directory changes.
 
 Gmail and Outlook run locally. Proton runs locally through a pw-managed profile
 under DG_HOME/inbox. Before the first Proton command, ask the human whether to
-sign in, then run `~/.dg/bin/dg-skills inbox proton sign-in`. It opens the profile
+sign in, then run `dg-skills inbox proton sign-in`. It opens the profile
 once for the human to sign in (on WSL it uses the Windows browser through pw) and
 closes it. Later commands run the profile headless. A signed-out profile exits 4
 and names the sign-in command. `dg-skills doctor inbox` reports the transport and
@@ -38,7 +41,7 @@ Gate the extension path with this line, and run only the
 command after the colon:
 
 ```text
---ext only: ~/.dg/bin/dg-skills require-extension inbox-cleanup || exit 1
+--ext only: dg-skills require-extension inbox-cleanup || exit 1
 ```
 
 For Proton with `--ext`, use the extension in a signed-in mail tab. Its fixed JavaScript

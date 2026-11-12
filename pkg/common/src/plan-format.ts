@@ -10,7 +10,13 @@
  * pkg/skills-cli/src/utils/plan-parse.ts.
  */
 
-import type { StepAction, StepAdvance, TourScript, TourStep } from "./types";
+import type {
+	StepAction,
+	StepAdvance,
+	TourChapter,
+	TourScript,
+	TourStep,
+} from "./types";
 
 function validateSteps(
 	steps: unknown,
@@ -47,10 +53,24 @@ function validateSteps(
 			if (a?.do === "fill") {
 				if (typeof a.value !== "string")
 					throw new Error(`${label}: fill action needs a string 'value'`);
+				if (ENV_LIKE.test(a.value) && !ENV_REF.test(a.value))
+					throw new Error(`${label}: only $DG_DEMO_* variables can be typed`);
 			} else if (a?.do !== "click")
 				throw new Error(`${label}: 'action.do' must be 'click' or 'fill'`);
 		}
 	});
+}
+
+function validateChapter(value: unknown, key: string): void {
+	const c = value as Record<string, unknown> | null;
+	if (
+		!c ||
+		typeof c !== "object" ||
+		!["eyebrow", "title", "detail"].every(
+			(field) => typeof c[field] === "string" && /^[^|"\n]+$/.test(c[field] as string),
+		)
+	)
+		throw new Error(`script.${key} must be "Eyebrow | Title | Detail", with no | or " in a part`);
 }
 
 /** Structural validation — the extension trusts what the CLI encodes. */
@@ -73,6 +93,8 @@ export function validate(script: unknown): TourScript {
 		if (typeof setup.includeInTour !== "boolean")
 			throw new Error("script.setup.includeInTour must be a boolean");
 	}
+	for (const key of ["intro", "outro"] as const)
+		if (s[key] !== undefined) validateChapter(s[key], key);
 	return script as TourScript;
 }
 
@@ -138,6 +160,48 @@ export function parseAction(meta: string): StepAction | undefined {
 	return undefined;
 }
 
+// --- chapter card <-> frontmatter value ---
+
+/** Parse an `Eyebrow | Title | Detail` frontmatter value; anything else is kept for validate to name. */
+export function parseChapter(value: string): TourChapter | { invalid: string } {
+	const parts = value.split("|").map((part) => part.trim());
+	if (parts.length !== 3 || parts.some((part) => !part)) return { invalid: value };
+	const [eyebrow, title, detail] = parts as [string, string, string];
+	return { eyebrow, title, detail };
+}
+
+export function formatChapter(chapter: TourChapter): string {
+	return `"${chapter.eyebrow} | ${chapter.title} | ${chapter.detail}"`;
+}
+
+// --- @type="$NAME" env references ---
+
+const ENV_REF = /^\$(DG_DEMO_[A-Z0-9_]+)$/;
+const ENV_LIKE = /^\$[A-Z_][A-Z0-9_]*$/;
+
+export class MissingEnvError extends Error {
+	constructor(readonly variable: string) {
+		super(`$${variable} is not set`);
+	}
+}
+
+/** The env variable a fill value names, or undefined for literal text. */
+export function envReference(value: string): string | undefined {
+	return value.match(ENV_REF)?.[1];
+}
+
+/** Resolve a fill value: literal text as is, `$NAME` from env. */
+export function resolveFill(
+	value: string,
+	env: Record<string, string | undefined>,
+): string {
+	const name = envReference(value);
+	if (!name) return value;
+	const resolved = env[name];
+	if (resolved === undefined || resolved === "") throw new MissingEnvError(name);
+	return resolved;
+}
+
 // --- markdown <-> TourScript ---
 
 /** Render a validated script as a readable, re-runnable plan (Markdown). */
@@ -148,6 +212,8 @@ export function toPlanMarkdown(script: TourScript): string {
 		`startUrl: ${script.startUrl}`,
 		`mode: ${script.mode ?? "walkthrough"}`,
 		...(script.setup ? [`includeSetup: ${script.setup.includeInTour}`] : []),
+		...(script.intro ? [`intro: ${formatChapter(script.intro)}`] : []),
+		...(script.outro ? [`outro: ${formatChapter(script.outro)}`] : []),
 		"---",
 	];
 	const lines = [
@@ -174,7 +240,7 @@ export function toPlanMarkdown(script: TourScript): string {
 	};
 	if (script.setup) {
 		lines.push(
-			"<!-- Setup fill text is persisted. Never store credentials, passwords, tokens, or MFA codes; enter them manually. -->",
+			"<!-- Setup fill text is persisted. Never store credentials; type a password as @type=\"$NAME\" and set the env var, or enter it manually. -->",
 			"",
 		);
 		appendSteps("## Setup", script.setup.steps);

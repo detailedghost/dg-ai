@@ -92,7 +92,7 @@ describe("createHookRunner", () => {
 		addContact(db, { npub: "npub1them", handle: "velora", relays: [], keyId: "default", addedAt: NOW, via: "accept" });
 		const { target, outFile } = countedHook(0);
 
-		await createHookRunner(db, target, fakeSchedule().schedule).notify();
+		await createHookRunner(db, target, fakeSchedule().schedule, paths.phoneRoot).notify();
 
 		expect(db.unreadMessages()).toEqual([]);
 		const payloads = deliveredPayloads(outFile);
@@ -105,7 +105,7 @@ describe("createHookRunner", () => {
 		db.addMessage(message("b", NOW + 1));
 		const { target, outFile } = countedHook(1);
 		const { schedule, delays, fireNext } = fakeSchedule();
-		const runner = createHookRunner(db, target, schedule);
+		const runner = createHookRunner(db, target, schedule, paths.phoneRoot);
 
 		await runner.notify();
 		expect(delays()).toEqual([5000]);
@@ -123,7 +123,7 @@ describe("createHookRunner", () => {
 		db.addMessage(message("a", NOW));
 		const { target } = countedHook(2);
 		const { schedule, delays, fireNext } = fakeSchedule();
-		const runner = createHookRunner(db, target, schedule);
+		const runner = createHookRunner(db, target, schedule, paths.phoneRoot);
 
 		await runner.notify();
 		expect(delays()).toEqual([5000]);
@@ -144,7 +144,7 @@ describe("createHookRunner", () => {
 		db.addMessage(message("m2", NOW + 1, { sender: "npub1other", contact: "npub1other" }));
 		const succeeds: CommandPushTarget = { kind: "command", argv: [process.execPath, "-e", "process.exit(0)"], timeoutMs: 2000 };
 		const { schedule, fireNext } = fakeSchedule();
-		const runner = createHookRunner(db, ALWAYS_FAILS, schedule);
+		const runner = createHookRunner(db, ALWAYS_FAILS, schedule, paths.phoneRoot);
 
 		await runner.notify();
 		for (let i = 0; i < ON_MESSAGE_MAX_ATTEMPTS - 1; i++) {
@@ -154,7 +154,7 @@ describe("createHookRunner", () => {
 
 		expect(db.recentMessages(2).find((m) => m.id === "m1")).toMatchObject({ attempts: ON_MESSAGE_MAX_ATTEMPTS, read_at: null });
 
-		const succeedRunner = createHookRunner(db, succeeds, fakeSchedule().schedule);
+		const succeedRunner = createHookRunner(db, succeeds, fakeSchedule().schedule, paths.phoneRoot);
 		await succeedRunner.notify();
 
 		expect(db.recentMessages(2).find((m) => m.id === "m2")?.read_at).not.toBeNull();
@@ -164,7 +164,7 @@ describe("createHookRunner", () => {
 	it("stop cancels a pending retry and keeps an attempt that resolves afterward from arming a new one", async () => {
 		db.addMessage(message("a", NOW));
 		const { schedule, delays } = fakeSchedule();
-		const runner = createHookRunner(db, ALWAYS_FAILS, schedule);
+		const runner = createHookRunner(db, ALWAYS_FAILS, schedule, paths.phoneRoot);
 
 		const notified = runner.notify();
 		runner.stop();
@@ -178,7 +178,7 @@ describe("createHookRunner", () => {
 	it("settle waits for the delivery already in flight, even after a coalesced notify and a stop", async () => {
 		db.addMessage(message("a", NOW));
 		const { target, outFile } = countedHook(0);
-		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule, paths.phoneRoot);
 
 		runner.notify();
 		runner.notify();
@@ -192,7 +192,7 @@ describe("createHookRunner", () => {
 	it("keeps the backoff when another message arrives, and does not stack a second timer", async () => {
 		db.addMessage(message("a", NOW));
 		const { schedule, delays, fireNext } = fakeSchedule();
-		const runner = createHookRunner(db, ALWAYS_FAILS, schedule);
+		const runner = createHookRunner(db, ALWAYS_FAILS, schedule, paths.phoneRoot);
 
 		const first = runner.notify();
 		const second = runner.notify();
@@ -216,7 +216,7 @@ describe("createHookRunner", () => {
 	it("a notify that arrives while a delivery is already in flight does not recurse forever once the queue drains", async () => {
 		db.addMessage(message("a", NOW));
 		const { target } = countedHook(0);
-		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule, paths.phoneRoot);
 
 		const first = runner.notify();
 		const second = runner.notify();
@@ -231,7 +231,7 @@ describe("createHookRunner", () => {
 		db.addMessage(message("m1", NOW));
 		for (let i = 0; i < ON_MESSAGE_MAX_ATTEMPTS; i++) db.bumpAttempts("m1");
 		const { target } = countedHook(0);
-		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule, paths.phoneRoot);
 
 		await runner.retryStuck();
 
@@ -243,7 +243,7 @@ describe("createHookRunner", () => {
 		for (let i = 0; i < ON_MESSAGE_MAX_ATTEMPTS; i++) db.bumpAttempts("stuck");
 		db.addMessage(message("live", NOW + 1));
 		const { target } = countedHook(0);
-		const runner = createHookRunner(db, target, fakeSchedule().schedule);
+		const runner = createHookRunner(db, target, fakeSchedule().schedule, paths.phoneRoot);
 
 		const notified = runner.notify();
 		const retried = runner.retryStuck();
@@ -254,5 +254,22 @@ describe("createHookRunner", () => {
 		const rows = db.recentMessages(2);
 		expect(rows.find((m) => m.id === "live")?.read_at).not.toBeNull();
 		expect(rows.find((m) => m.id === "stuck")?.read_at).not.toBeNull();
+	});
+
+	it("adds the stored file, marked untrusted, to a direct and a thread payload", async () => {
+		const sha = "a".repeat(64);
+		const file = JSON.stringify({ sha256: sha, type: "image/png", size: 7 });
+		db.ensureKeyRow("default", () => ({ nsec: null, in_store: 1 }));
+		addContact(db, { npub: "npub1them", handle: "velora", relays: [], keyId: "default", addedAt: NOW, via: "accept" });
+		db.insertThread({ id: "room", handle: "#ops", subject: "ops", key_id: "default", created_at: NOW, via: "admit" });
+		db.addMessage({ ...message("direct", NOW, { text: "[image]" }), file });
+		db.addMessage({ ...message("room-img", NOW + 1, { text: "[image]" }), file, thread_id: "room" });
+		const { target, outFile } = countedHook(0);
+
+		await createHookRunner(db, target, fakeSchedule().schedule, paths.phoneRoot).notify();
+
+		const expected = { path: join(paths.phoneRoot, "files", `${sha}.png`), type: "image/png", size: 7, sha256: sha, untrusted: true };
+		const payloads = deliveredPayloads(outFile);
+		expect(payloads.map((payload) => payload.file)).toEqual([expected, expected]);
 	});
 });

@@ -9,7 +9,7 @@ import { CHAT_SESSIONS_LOCAL_PATH } from "../session-connect";
 import { DgCliError, describeError } from "../errors";
 import { noteSecret } from "../redact";
 import { readOwnerToken } from "./owner-token";
-import { type DgPaths, resolveDgPaths } from "./paths";
+import { type DgPaths, resolveDgPaths } from "./dg-paths";
 import { loopbackHostHeader, readPidFile, requireMatchingProtocol } from "./pidfile";
 import {
 	readSessionFiles,
@@ -92,6 +92,7 @@ async function fetchLocalSessions(
 export async function resolveCliSession(
 	explicitSessionId?: string,
 	paths: DgPaths = resolveDgPaths(),
+	env: NodeJS.ProcessEnv = process.env,
 ): Promise<ResolvedSession & { agentIdentity: string }> {
 	const handle = readPidFile(paths);
 	if (!handle) throw new DgCliError("no live dg-daemon pid file was found");
@@ -108,13 +109,14 @@ export async function resolveCliSession(
 		records = [];
 	}
 	if (records.length === 0) records = readSessionFiles(paths.sessionsDir);
+	const requestedSessionId = explicitSessionId ?? (env.DG_SESSION_ID || undefined);
 	const chosen =
-		explicitSessionId === undefined
+		requestedSessionId === undefined
 			? selectSoleSession(records)
-			: records.find((record) => record.sessionId === explicitSessionId);
+			: records.find((record) => record.sessionId === requestedSessionId);
 	if (!chosen) {
 		throw new DgCliError(
-			`no usable session ${explicitSessionId} is registered on the daemon.`,
+			`no usable session ${requestedSessionId} is registered on the daemon.`,
 		);
 	}
 	let token = chosen.token;

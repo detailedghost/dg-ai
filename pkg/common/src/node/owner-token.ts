@@ -1,8 +1,9 @@
 import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { DgCliError, EXIT_GENERAL_FAILURE } from "../errors";
 import { noteSecret } from "../redact";
 import { ensurePrivateDir, writeFileAtomic } from "./fs";
-import type { DgPaths } from "./paths";
+import type { DgPaths } from "./dg-paths";
 import { mintToken } from "./session-tokens";
 
 export function ownerTokenPath(paths: DgPaths): string {
@@ -32,4 +33,15 @@ export function readOwnerToken(paths: DgPaths): string | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+export function requireOwnerToken(paths: DgPaths): string {
+	const token = readOwnerToken(paths);
+	if (token === undefined) {
+		throw new DgCliError(
+			"No owner token found. Run dg-daemon start, then try again.",
+			EXIT_GENERAL_FAILURE,
+		);
+	}
+	return token;
 }

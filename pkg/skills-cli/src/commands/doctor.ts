@@ -1,21 +1,17 @@
 import type { Command } from "commander";
-import { DOCTOR_REGISTRY } from "../doctor/registry";
-import {
-	doctorExitCode,
-	formatReport,
-	runDoctor,
-	unknownItems,
-} from "../doctor/runner";
 
 export function registerDoctor(program: Command): void {
 	program
 		.command("doctor")
 		.description(
-			"check that each dg-skills item has the tools, credentials and settings it needs (read-only)",
+			"check that each dg-skills item has the tools, credentials and settings it needs; on a terminal, browse the results and apply a fix after a yes",
 		)
 		.argument("[item...]", "items to check; all items when omitted")
 		.option("--json", "print the report as JSON")
-		.action(async (items: string[], opts: { json?: boolean }) => {
+		.option("--plain", "print the text report, even on a terminal")
+		.action(async (items: string[], opts: { json?: boolean; plain?: boolean }) => {
+			const [{ DOCTOR_REGISTRY }, { doctorExitCode, formatReport, runDoctor, unknownItems }] =
+				await Promise.all([import("../doctor/registry"), import("../doctor/runner")]);
 			const unknown = unknownItems(items, DOCTOR_REGISTRY);
 			if (unknown.length > 0) {
 				process.stderr.write(
@@ -24,7 +20,19 @@ export function registerDoctor(program: Command): void {
 				process.exitCode = 2;
 				return;
 			}
-			const report = await runDoctor(items, DOCTOR_REGISTRY);
+			const check = () => runDoctor(items, DOCTOR_REGISTRY);
+			let report = await check();
+			if (!opts.json && !opts.plain && process.stdin.isTTY && process.stdout.isTTY) {
+				const { runTui, terminalDeps } = await import("../doctor/tui");
+				const deps = terminalDeps(check);
+				try {
+					report = await runTui(report, deps);
+				} finally {
+					deps.close();
+				}
+				process.exitCode = doctorExitCode(report);
+				return;
+			}
 			process.stdout.write(
 				opts.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report),
 			);

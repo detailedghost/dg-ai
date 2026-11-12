@@ -37,6 +37,73 @@ export function keychainAccountFor(
 	return `${ACCOUNT}:${scope}`;
 }
 
+/** The keychain account scoped by the state root, and the one the old flat home used. */
+export function keychainAccountsForPaths(
+	paths: Pick<DgPaths, "legacyHome" | "stateDir">,
+	homeDir: string = homedir(),
+): { current: string; legacy: string } {
+	return {
+		current: keychainAccountFor(paths.stateDir, homeDir),
+		legacy: keychainAccountFor(paths.legacyHome, homeDir),
+	};
+}
+
+/**
+ * Reads the key from the current account and moves an old-account entry into it: write, read back, compare,
+ * and only then delete the old entry. A failed step keeps the old entry, reads from it, and warns once with the
+ * key name, never its value.
+ */
+export function migratingKeychainBackend(
+	current: KeychainBackend,
+	legacy: KeychainBackend,
+	warn: (line: string) => void,
+): KeychainBackend {
+	let warned = false;
+	const warnOnce = (reason: string, outcome = "dg keeps the old entry and reads it from the old account") => {
+		if (warned) return;
+		warned = true;
+		warn(`dg: keychain secret ${ACCOUNT} ${reason}; ${outcome}`);
+	};
+	const dropLegacy = async () => {
+		const removed = await legacy.remove?.().catch(() => "unreachable" as const);
+		if (removed !== "removed")
+			warnOnce(
+				"moved to the new account, but the old entry could not be deleted",
+				"dg reads the new account, and a copy stays in the old one",
+			);
+	};
+	return {
+		sourceLabel: current.sourceLabel,
+		async lookup(): Promise<KeychainLookupResult> {
+			const found = await current.lookup();
+			const old = await legacy.lookup().catch((): KeychainLookupResult => ({ status: "unreachable" }));
+			if (old.status === "unreachable" && found.status === "absent") return old;
+			if (old.status !== "found") return found;
+			if (found.status === "found") {
+				if (found.keyBase64 === old.keyBase64) {
+					await dropLegacy();
+					return found;
+				}
+				warnOnce("differs between the old and the new account");
+				return old;
+			}
+			if (found.status === "unreachable" || (await current.store(old.keyBase64)) !== "stored") {
+				warnOnce("could not be written to the new account");
+				return old;
+			}
+			const check = await current.lookup();
+			if (check.status !== "found" || check.keyBase64 !== old.keyBase64) {
+				warnOnce("did not read back the same from the new account");
+				return old;
+			}
+			await dropLegacy();
+			return check;
+		},
+		store: (keyBase64) => current.store(keyBase64),
+		remove: current.remove ? () => current.remove?.() ?? Promise.resolve("unreachable" as const) : undefined,
+	};
+}
+
 export function secretToolBackend(account: string): KeychainBackend {
 	assertNotUnderTest("secret-tool");
 	return {
@@ -75,6 +142,14 @@ export function secretToolBackend(account: string): KeychainBackend {
 					{ stdin: keyBase64 },
 				);
 				return result.status === 0 ? "stored" : "unreachable";
+			} catch {
+				return "unreachable";
+			}
+		},
+		async remove(): Promise<"removed" | "unreachable"> {
+			try {
+				const result = await runCapture("secret-tool", ["clear", "service", SERVICE, "account", account]);
+				return result.status === 0 ? "removed" : "unreachable";
 			} catch {
 				return "unreachable";
 			}
@@ -121,6 +196,14 @@ export function macKeychainBackend(account: string): KeychainBackend {
 				return "unreachable";
 			}
 		},
+		async remove(): Promise<"removed" | "unreachable"> {
+			try {
+				const result = await runCapture("security", ["delete-generic-password", "-a", account, "-s", SERVICE]);
+				return result.status === 0 ? "removed" : "unreachable";
+			} catch {
+				return "unreachable";
+			}
+		},
 	};
 }
 
@@ -163,14 +246,22 @@ export function dpapiBackend(dpapiPath: string): KeychainBackend {
 	};
 }
 
+const warnOnStderr = (line: string) => {
+	process.stderr.write(`${line}\n`);
+};
+
 export function createKeychainBackendForPlatform(
-	paths: Pick<DgPaths, "stateDir" | "daemonDir">,
+	paths: Pick<DgPaths, "legacyHome" | "stateDir" | "daemonDir">,
+	warn: (line: string) => void = warnOnStderr,
 ): KeychainBackend | undefined {
+	const accounts = () => keychainAccountsForPaths(paths);
 	if (process.platform === "linux") {
-		return secretToolBackend(keychainAccountFor(paths.stateDir));
+		const { current, legacy } = accounts();
+		return migratingKeychainBackend(secretToolBackend(current), secretToolBackend(legacy), warn);
 	}
 	if (process.platform === "darwin") {
-		return macKeychainBackend(keychainAccountFor(paths.stateDir));
+		const { current, legacy } = accounts();
+		return migratingKeychainBackend(macKeychainBackend(current), macKeychainBackend(legacy), warn);
 	}
 	if (process.platform === "win32") {
 		return dpapiBackend(join(paths.daemonDir, "key.dpapi"));

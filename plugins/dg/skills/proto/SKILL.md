@@ -3,14 +3,17 @@ name: proto
 description: Build a throwaway prototype before committing to a design. The local mode, which is the default, routes to a runnable terminal app for state and logic questions, five UI variations toggled from one route (set the count with -n or name them with -o), or a clickable walkthrough across a plan's workflows, with a refine chain and -c resume. Add --ext to prototype app-native variations inside a live page with the dg-ai-extension instead. Use when the user wants to prototype, sanity-check a data model or state machine, mock up a UI, explore design options, review or rework alternatives on a real page, or says "prototype this", "show me all the workflows", "let me play with it". Flags: --ext, -n, -o, -c, --light, --publish, --self-contained, --series.
 ---
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills prototype --help >/dev/null 2>&1 ||
+dg-skills prototype --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" prototype --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor proto prototype stash.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor proto prototype stash.
 
 `dg-skills --version` prints a sha1 of its entry file. If a flag documented here (`--selftest`, `--require-pending`, `--source=`) errors as unknown, the installed binary predates it; refresh it with the curl line above.
 
@@ -106,8 +109,8 @@ this look right?" about a page you have not confirmed renders.
 round, builds no new variants, and shows C again for a pick. `approve C: <note>` makes C the base
 of a new round: `-n` new variants that change only what the note asks. Every round shows in the
 same browser tab: reuse one chain key. The chain ends on an approval with no note, or on "done"
-or "stop" (`~/.dg/bin/dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
-`~/.dg/bin/dg-skills prototype status <name>` is the one command for checking a pick, in every
+or "stop" (`dg-skills prototype stop <chain>`). Resume a later session with `/dg:proto -c`.
+`dg-skills prototype status <name>` is the one command for checking a pick, in every
 shape: local, a chain, a series, in-app, and an unclaimed `--ext` verdict.
 
 **Series exception.** When prototypes run one after another (a planned set, such as one screen per

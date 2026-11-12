@@ -10,14 +10,17 @@ Pick the best-fit primary engineering agent, plus any QA agents, for a piece of 
 Annotating the slices of a `/dg:spec` spec is one *application* of that pick — the one that persists its answer — not the
 premise. Most work has no spec bundle anywhere near it, and "who should do this?" is a valid question on its own.
 
-First run: install or refresh the CLI when it is missing or too old. Every later call uses the literal path, so each Bash call works alone:
+First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
 ```bash
-~/.dg/bin/dg-skills spec --help >/dev/null 2>&1 ||
+dg-skills spec --help >/dev/null 2>&1 ||
+  "${DG_HOME:-$HOME/.local}/bin/dg-skills" spec --help >/dev/null 2>&1 ||
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh -s -- --cli-only
 ```
 
-If a step fails, run ~/.dg/bin/dg-skills doctor assign proxy spec.
+Call `dg-skills` in every later step. If `dg-skills` alone does not answer, also after the bootstrap, call `${DG_HOME:-$HOME/.local}/bin/dg-skills` instead.
+
+If a step fails, run dg-skills doctor assign proxy spec.
 
 ## Invocation
 
@@ -69,8 +72,8 @@ without a spec path is an error, not a no-op.
 
 ### Common — pick the agents
 
-1. **Load roster.** Run `~/.dg/bin/dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
-   lines (`~/.dg/bin/dg-skills spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
+1. **Load roster.** Run `dg-skills spec roster` — one call, emits the live capability list as compact `name<TAB>description`
+   lines (`dg-skills spec roster --full` appends each agent's first prose paragraph). With no local agents directory it lists the packaged `dg:<name>` personas.
    Prefer this over globbing the agents directory and reading each file.
 2. **Pick.** For the work in hand (standalone) or each unassigned slice (spec mode), choose:
    - `primary` — one agent. The dominant language/domain wins. Default to a generalist (`dg:shell` or no assignment +
@@ -83,6 +86,8 @@ without a spec path is an error, not a no-op.
      time), so emitting the default value would only restate derivable state. Set `effort` to `low`, `medium` or `xhigh`
      (never `high`; the table skips it) only to deviate. A complex slice (cross-cutting architecture, security-sensitive
      design, ambiguous trade-offs, even on a `sonnet` primary) may get `xhigh` with no question.
+   - `complexity` — `low|medium|high`, spec mode only, always written; rubric in `references/spec-mode.md`. `/dg:assign`
+     never writes `agents.model`, which is a human override.
    - `confidence` — `high` or `low`, always written. `high` means the roster, heuristics and the slice text agree on one
      primary. `low` means two or more agents fit about equally, or the slice text is too thin to choose.
 3. **Validate.** Every name must exist in that roster. Mismatch → fail loud, write nothing.

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { CHAT_MARKER_KEY, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { CHAT_CODE_KEY, CHAT_PROTOCOL_VERSION } from "@dg/common";
+import { exchangeReply, pageFragment as fragment } from "./utils/page-code";
 import { Window } from "happy-dom";
 
 const BOOTSTRAP = {
@@ -43,10 +44,6 @@ afterEach(async () => {
 	openWindow = undefined;
 });
 
-function fragment(value: unknown): string {
-	return `${CHAT_MARKER_KEY}=${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
-}
-
 type SocketListener = (event: unknown) => void;
 
 type FakeSocketHandle = {
@@ -75,7 +72,9 @@ const BOARD_JSON = JSON.stringify({
 	merges: [],
 });
 
-const STORED_BOOTSTRAP_KEY = "dg_local_bootstrap";
+const HELD_BOOTSTRAPS_KEY = "dg_local_bootstraps";
+const EMPTY_STATE_TEXT =
+	"Run dg-agent start --open to open this page for an agent.";
 const SESSION_ENDED_TEXT =
 	"Your session has ended, so run dg-agent start --open again to get a new link.";
 
@@ -171,6 +170,8 @@ function installGlobals(href: string): Net {
 		sessionStorage: win.sessionStorage,
 		WebSocket: FakeSocket,
 		fetch: (url: string, init?: RequestInit) => {
+			const exchanged = exchangeReply(url, init);
+			if (exchanged) return Promise.resolve(exchanged);
 			net.fetches.push({ url, init });
 			return net.respond(url);
 		},
@@ -205,10 +206,22 @@ async function runTimeouts(net: Net): Promise<void> {
 	await settle();
 }
 
+function storedHeld(net: Net): unknown[] {
+	return JSON.parse(
+		net.win.sessionStorage.getItem(HELD_BOOTSTRAPS_KEY) ?? "[]",
+	);
+}
+
 function railSessionIds(net: Net): string[] {
 	return [...net.win.document.querySelectorAll(".chat-rail__row")].map(
 		(row) => row.getAttribute("data-session-id") ?? "",
 	);
+}
+
+function heldRows(net: Net): string[] {
+	return [
+		...net.win.document.querySelectorAll('.chat-rail__row[data-held="true"]'),
+	].map((row) => row.getAttribute("data-session-id") ?? "");
 }
 
 function summary(sessionId: string, agentIdentity: string) {
@@ -287,7 +300,7 @@ describe("board page entry wiring", () => {
 			net.intervals.findIndex((interval) => interval.ms === 5000) + 1;
 		expect(pollHandle).toBeGreaterThan(0);
 		expect(net.cleared).toContain(pollHandle);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 		expect(net.win.document.body.textContent).toContain(SESSION_ENDED_TEXT);
 		expect(net.win.document.body.textContent).not.toContain(
 			"Daemon unreachable",
@@ -312,7 +325,7 @@ describe("board page entry wiring after a refused action", () => {
 		await settle();
 
 		expect(actionPosts(net)).toBe(1);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 
 		const requests = net.fetches.length;
 		clickApprove(net);
@@ -345,11 +358,9 @@ describe("chat page entry wiring", () => {
 
 		await loadEntry("../src/chat/page");
 
-		expect(
-			JSON.parse(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY) ?? "{}"),
-		).toMatchObject({ token: BOOTSTRAP.token });
-		expect(net.win.localStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeNull();
-		expect(net.win.location.href).not.toContain(CHAT_MARKER_KEY);
+		expect(storedHeld(net)).toMatchObject([{ token: BOOTSTRAP.token }]);
+		expect(net.win.localStorage.getItem(HELD_BOOTSTRAPS_KEY)).toBeNull();
+		expect(net.win.location.href).not.toContain(CHAT_CODE_KEY);
 	});
 
 	test("drops the stored bootstrap when the socket closes before it opens and the daemon refuses the token", async () => {
@@ -366,7 +377,7 @@ describe("chat page entry wiring", () => {
 		expect(net.fetches.at(-1)?.url).toBe(
 			`http://127.0.0.1:${BOOTSTRAP.port}/overwatch`,
 		);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 	});
 
 	test("keeps the stored bootstrap when the socket closes before it opens and the daemon is unreachable", async () => {
@@ -379,7 +390,7 @@ describe("chat page entry wiring", () => {
 		net.socketHandles[0]?.fire("close");
 		await settle();
 
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		expect(storedHeld(net)).toHaveLength(1);
 	});
 
 	test("keeps the stored bootstrap when a socket that opened closes later", async () => {
@@ -399,7 +410,7 @@ describe("chat page entry wiring", () => {
 		expect(net.fetches.map(({ url }) => url)).not.toContain(
 			`http://127.0.0.1:${BOOTSTRAP.port}/overwatch`,
 		);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		expect(storedHeld(net)).toHaveLength(1);
 	});
 
 	test("reconnects with a session it still holds after New chat and the original session closes", async () => {
@@ -425,13 +436,13 @@ describe("chat page entry wiring", () => {
 
 		const second = net.socketHandles[1];
 		expect(second?.url).toEndWith(`?token=${encodeURIComponent("tok-b")}`);
-		expect(
-			JSON.parse(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY) ?? "{}"),
-		).toMatchObject({
-			port: BOOTSTRAP.port,
-			sessionId: "session-b",
-			token: "tok-b",
-		});
+		expect(storedHeld(net)).toMatchObject([
+			{
+				port: BOOTSTRAP.port,
+				sessionId: "session-b",
+				token: "tok-b",
+			},
+		]);
 
 		second?.fire("close");
 		await settle();
@@ -441,7 +452,7 @@ describe("chat page entry wiring", () => {
 		expect(probe?.init?.headers).toMatchObject({
 			Authorization: "Bearer tok-b",
 		});
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 	});
 
 	test("keeps the surviving New chat session stored when the original session closes", async () => {
@@ -461,9 +472,9 @@ describe("chat page entry wiring", () => {
 		socket?.receive({ type: "session-closed", sessionId: BOOTSTRAP.sessionId });
 		await settle();
 
-		expect(
-			JSON.parse(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY) ?? "{}"),
-		).toMatchObject({ sessionId: "session-b", token: "tok-b" });
+		expect(storedHeld(net)).toMatchObject([
+			{ sessionId: "session-b", token: "tok-b" },
+		]);
 	});
 
 	test("clears the stored bootstrap when the last held session closes", async () => {
@@ -484,7 +495,7 @@ describe("chat page entry wiring", () => {
 		socket?.receive({ type: "session-closed", sessionId: "session-b" });
 		await settle();
 
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 	});
 
 	test("presents no refused token again on a reconnect", async () => {
@@ -503,7 +514,7 @@ describe("chat page entry wiring", () => {
 		expect(net.sockets.slice(1).join(" ")).not.toContain(
 			encodeURIComponent(BOOTSTRAP.token),
 		);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 	});
 
 	test("drops the stored bootstrap when the daemon closes the session", async () => {
@@ -518,7 +529,7 @@ describe("chat page entry wiring", () => {
 		socket?.receive({ type: "session-closed", sessionId: BOOTSTRAP.sessionId });
 		await settle();
 
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 	});
 
 	test("drops the stored bootstrap and stops presenting the token after an invalid-session error", async () => {
@@ -540,13 +551,13 @@ describe("chat page entry wiring", () => {
 		await settle();
 		await runTimeouts(net);
 
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeFalsy();
+		expect(storedHeld(net)).toEqual([]);
 		expect(net.sockets.slice(1).join(" ")).not.toContain(
 			encodeURIComponent(BOOTSTRAP.token),
 		);
 	});
 
-	test("lists only the sessions this page holds, including one it creates", async () => {
+	test("lists every agent session, marks the ones this page holds, and holds one it creates", async () => {
 		const net = installGlobals(
 			`http://127.0.0.1:${BOOTSTRAP.port}/chat#${fragment(BOOTSTRAP)}`,
 		);
@@ -564,7 +575,8 @@ describe("chat page entry wiring", () => {
 			],
 		});
 		await settle();
-		expect(railSessionIds(net)).toEqual([BOOTSTRAP.sessionId]);
+		expect(railSessionIds(net)).toEqual([BOOTSTRAP.sessionId, "session-other"]);
+		expect(heldRows(net)).toEqual([BOOTSTRAP.sessionId]);
 
 		socket?.receive({
 			type: "session-list",
@@ -583,6 +595,9 @@ describe("chat page entry wiring", () => {
 		await settle();
 
 		expect(railSessionIds(net).sort()).toEqual(
+			[BOOTSTRAP.sessionId, "session-b", "session-other"].sort(),
+		);
+		expect(heldRows(net).sort()).toEqual(
 			[BOOTSTRAP.sessionId, "session-b"].sort(),
 		);
 	});
@@ -616,7 +631,7 @@ describe("page recovery after a daemon restart", () => {
 
 		expect(net.win.document.body.textContent).toContain("Daemon unreachable");
 		expect(net.cleared).toEqual([]);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		expect(storedHeld(net)).toHaveLength(1);
 		expect(net.delays.length).toBeGreaterThan(0);
 
 		net.respond = () => Promise.resolve(new Response(LANE_BOARD_JSON));
@@ -659,7 +674,7 @@ describe("page recovery after a daemon restart", () => {
 		const retryDelays = net.delays.filter((ms) => ms > 0);
 		expect(retryDelays.length).toBeGreaterThanOrEqual(3);
 		expect(retryDelays.at(-1)).toBeGreaterThan(retryDelays[0] ?? 0);
-		expect(net.win.sessionStorage.getItem(STORED_BOOTSTRAP_KEY)).toBeTruthy();
+		expect(storedHeld(net)).toHaveLength(1);
 		const connects = net.sent
 			.map((raw) => JSON.parse(raw))
 			.filter((frame) => frame.type === "connect");
@@ -737,12 +752,13 @@ describe("session ended text", () => {
 		expect(noticeText(net)).toContain(SESSION_ENDED_TEXT);
 	});
 
-	test("chat shows the sentence when it opens with no session link", async () => {
+	test("chat shows the empty state, not the sentence, when it opens with no session link", async () => {
 		const net = installGlobals(`http://127.0.0.1:${BOOTSTRAP.port}/chat`);
 
 		await loadEntry("../src/chat/page");
 
-		expect(noticeText(net)).toEqual([SESSION_ENDED_TEXT]);
+		expect(noticeText(net)).toEqual([]);
+		expect(net.win.document.body.textContent).toContain(EMPTY_STATE_TEXT);
 	});
 
 	test("chat does not show the sentence while the daemon is only unreachable", async () => {

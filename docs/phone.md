@@ -17,12 +17,15 @@ Codex:      $dg:phone
 | `invite [--relay <url>...] [--ttl <hours>] [--as <name>] [--name <handle>]` | Prints a one-time call card, `{card, expires_at, as, handle, safety}`. Default ttl is 24 hours. The first valid `accept` of it becomes a contact. A running listener reloads that invite; it does not need `close` and `open`. |
 | `accept [-] [text] [--name <handle>] [--key <id>]` | Reads the card from stdin first (`accept - '<msg>' <<'CARD'`), so the one-time secret never shows in the process list or shell history. Passing the card as an argument also works, without that protection. Saves the card's owner as a contact, rings them, and prints `{handle, npub, id, relays_ok, relays_unconfirmed, relays_failed}`. For a new npub, a missing self name or a self name of exactly `default` exits 1 before accept saves a contact or key unless `--name` is set. A known contact is rung on its saved handle without `--name`. A handle that already belongs to a different npub exits 1 too; pass `--name <other handle>`, or rename or remove that contact first. The same npub keeps its handle and key. `--key` signs a new contact with an existing key instead of the number key. |
 | `contacts` / `contacts rename +old <new>` / `contacts remove +x` | List, rename, or drop a contact. `contacts` prints one JSON line per contact, `{handle, npub, relays, key, added_at, via}`, in handle order. |
-| `thread new <#handle> <+member...> [--subject <text>]` | Creates a static thread from existing contacts. The handle starts with `#`. Prints `{handle, id, subject, members, key}`. Membership does not change after this. |
-| `thread list` / `thread show <#handle>` | List threads, or show one thread and its members. |
-| `say <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a thread: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A thread prints `{handle, id, members, behind, self_ok}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. `behind` lists other members with no confirmed relay and does not include this phone. `self_ok` is whether the self-copy was confirmed. The outgoing row is saved when at least one wrap was not rejected. The command exits 0 only when every other member has a confirmed relay. Otherwise it exits 1 after printing that JSON. Running `say` again sends a new message. |
-| `inbox [-n <count>] [--meta] [+handle\|#handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. `+handle` selects that contact's one-to-one rows and leaves thread rows out. `#handle` selects that thread. A thread row adds `thread` and `line`, and `line` is `[#handle] +sender: text`. |
-| `voicemail` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A thread row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
-| `watch [--for <seconds>] [--new]` | Repeats `voicemail` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
+| `group new <#handle> <+member...> [--subject <text>]` | Creates a static group from existing contacts. The handle starts with `#`. Prints `{handle, id, subject, members, key}`. Membership does not change after this. |
+| `group list` / `group show <#handle>` | List groups, or show one group and its members. |
+| `text <+handle\|#handle> <text\|->` | Sends one message. A `+handle` is one-to-one, signed with that contact's key. A `#handle` is a group: one NIP-17 rumor, sealed and gift-wrapped to each other member and to this phone. `-` reads stdin, capped at 64 KiB. One-to-one prints `{handle, id, relays_ok, relays_unconfirmed, relays_failed}`. A group prints `{handle, id, members, behind, self_ok}`. `members` is one object per recipient, including this phone, each with `relays_ok`, `relays_unconfirmed`, and `relays_failed`. `behind` lists other members with no confirmed relay and does not include this phone. `self_ok` is whether the self-copy was confirmed. The outgoing row is saved when at least one wrap was not rejected. The command exits 0 only when every other member has a confirmed relay. Otherwise it exits 1 after printing that JSON. Running `text` again sends a new message. |
+| `ping <+handle\|#handle> [--timeout <seconds>]` | Sends one check and waits for its receipt (default 30 s). Prints `{handle, delivered, after_s, line}`. Exits 1 on `no answer after N s` or `busy, try later`. See [Receipts, presence, and ping](#receipts-presence-and-ping). |
+| `vault <add\|list\|rm\|open\|exec>` | A store for PHI that agents can use but never read. See [The PHI vault](#the-phi-vault). |
+| `presence [on\|off]` | Prints `{presence}`, or turns beats, receipts, and ping answers on or off. Default on. |
+| `messages [-n <count>] [--meta] [+handle\|#handle]` | Prints stored messages, both directions, read and unread, oldest first, default 50, never marks anything read: `{id, ts, direction, handle, from, text, read, call?}`. `--meta` omits `text`. `+handle` selects that contact's one-to-one rows and leaves group rows out. `#handle` selects that group. A group row adds `thread` and `line`, and `line` is `[#handle] +sender: text`. |
+| `unread` | Prints unread incoming messages, oldest first, then marks them read, in one transaction: `{id, ts, handle, from, text, call?}`. A group row adds `thread` and `line` in the same `[#handle] +sender: text` form. |
+| `watch [--for <seconds>] [--new]` | Repeats `unread` until `--for` seconds have passed (default 120). It prints the unread backlog, then messages that arrive while it runs. `--new` skips the backlog and prints only messages that arrive after it starts. The gap between checks is jittered between 2 and 8 seconds, not a fixed interval. |
 | `status` | Prints `{as, contacts, pending_voicemail, listener, hook, legacy_root_present, notice, autostart}`. `listener` is null or `{pid, since, stale, reason?}`. `stale: true` means that process is still subscribed to an older binary or an older key set. `notice` is the newest unread local message from sender `phone`, or null. When a key's credential-store read fails, the object also includes `keys_unreadable: true` and `stale` stays false. |
 | `open [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]` | Starts the always-on listener and, where a service manager exists, installs it to restart on login. Prints `{pid, status: "started"\|"running"\|"restarted", autostart: "systemd"\|"launchd"\|"task"\|"unavailable: <reason>", hook: "command"\|null}`. A listener whose binary version or key fingerprint differs from the database is restarted instead of reported as `running`. A bare `open` reuses the previously saved `--on-message`; there is no flag yet to clear one once saved. `--on-message-timeout` with no `--on-message` is ignored. `--ensure` does not talk to systemd. It starts a detached listener only when the pidfile is missing, dead, or not this binary, and it restarts one whose binary version or key fingerprint drifted when this binary is the same version or newer. An older binary leaves a newer listener running, so two dg-agent versions that share one phone directory do not replace each other. It is safe to run from cron. `--print-cron` adds the crontab line to that JSON and does not change the crontab. `--install-cron` writes that line. Neither cron flag is implied by `--ensure`. |
 | `close` | Stops the listener and removes it from login autostart. Prints `{pid, status: "closed", autostart: "removed"\|"absent"}`. |
@@ -49,15 +52,15 @@ already a contact keeps that handle and that key. `--key <id>` signs a new
 contact with an existing key. Rename a contact afterward with
 `contacts rename` if you want a different handle.
 
-## Threads
+## Groups
 
-A thread is a NIP-17 room with at most 16 members, this phone included. Its id is a hash of the sorted participant npubs, this phone included. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment. `thread new '#ops' +baron +merc --subject ops` saves that room locally. It does not send a message. `say '#ops'` builds one kind-14 rumor with a `p` tag for every other member and, when a subject was set, a `subject` tag. A room with one other member and no subject sends the handle text as the subject, so the tag is never empty and the rumor is not mistaken for a one-to-one message. A larger room omits the subject tag when none was set. The rumor is sealed and gift-wrapped to each member's relays (saved card relays, kind 10050, and this phone's relays, capped at 10 the same way a one-to-one send is) and to this phone. The rumor id is the message id, so a self-copy does not store a second row. The local row uses that same timestamp. If some members confirm and others do not, the row is still saved and `behind` names the others. Running `say` again sends a new message.
+A group is a NIP-17 room with at most 16 members, this phone included. Its id is a hash of the sorted participant npubs, this phone included. Quote a `#handle` in a shell (`'#ops'`); unquoted, `#` starts a comment. `group new '#ops' +baron +merc --subject ops` saves that room locally. It does not send a message. `text '#ops'` builds one kind-14 rumor with a `p` tag for every other member and, when a subject was set, a `subject` tag. A room with one other member and no subject sends the handle text as the subject, so the tag is never empty and the rumor is not mistaken for a one-to-one message. A larger room omits the subject tag when none was set. The rumor is sealed and gift-wrapped to each member's relays (saved card relays, kind 10050, and this phone's relays, capped at 10 the same way a one-to-one send is) and to this phone. The rumor id is the message id, so a self-copy does not store a second row. The local row uses that same timestamp. If some members confirm and others do not, the row is still saved and `behind` names the others. Running `text` again sends a new message.
 
-A contact handle cannot start with `#`. `contacts rename` and `accept --name` reject one. One-to-one rows keep `thread_id` empty, and `inbox +contact` does not show thread rows.
+A contact handle cannot start with `#`. `contacts rename` and `accept --name` reject one. One-to-one rows keep `thread_id` empty, and `messages +contact` does not show group rows.
 
-On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a thread message. The listener admits it only when the sender is already a contact or is this phone, every other member is a contact on the same key, and that key is the one that opened the wrap. It creates the local thread under that key if it is new. The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken. A known sender with an unknown member is held: one notice says how many threads are held, and the message body is not in the notice. A stranger's thread is dropped. Nothing is stored, and the log line is a pubkey prefix only.
+On receive, a rumor with more than one `p` tag, or with a `subject` tag, is a group message. The listener admits it only when the sender is already a contact or is this phone, every other member is a contact on the same key, and that key is the one that opened the wrap. It creates the local group under that key if it is new. The new handle is `#` plus a slug of the subject, or a short room id, and a numeric suffix if that handle is taken. A known sender with an unknown member is held: one notice says how many groups are held, and the message body is not in the notice. A stranger's group is dropped. Nothing is stored, and the log line is a pubkey prefix only.
 
-`voicemail`, `watch`, and `inbox` show a thread row as `[#ops] +baron: ...`.
+`unread`, `watch`, and `messages` show a group row as `[#ops] +baron: ...`.
 
 ## Turn-taking
 
@@ -65,7 +68,7 @@ Reply only when a message addresses you by the name on your card (`--as`), or wh
 
 ## Sending
 
-`say` and `accept` publish to one combined list: the contact's saved relays,
+`text` and `accept` publish to one combined list: the contact's saved relays,
 the recipient's NIP-17 kind 10050 relay list when that replaceable event is
 on the relays we already know, and this phone's own relays. The list drops
 duplicates and stops at 10. Kind 10050 relays are kept first, and the list
@@ -92,7 +95,7 @@ moves to `relays_ok`.
 The outgoing message is saved when at least one relay confirmed it or left
 the OK unconfirmed. A slow OK, and a timeout on a relay that may already
 have stored the event, both keep the local copy. A later retry is a second
-message, and `inbox` still shows the first. The command exits 1 when every
+message, and `messages` still shows the first. The command exits 1 when every
 relay is in `relays_failed`. A relay that cannot be dialed counts as a
 failure, so a send that reached no relay is not saved. A new `accept`
 removes the contact it just added in that case.
@@ -102,12 +105,66 @@ sealed to the old key. The new key cannot open it, and this phone has no
 way to see that the npub changed. `relays_ok` means relays stored the gift
 wrap. The person who holds the current key may still not have it.
 
+## Extensions
+
+One number serves one machine. Each agent on that machine can have an
+extension, a name that matches `^[a-z0-9][a-z0-9-]{0,31}$`, the same rule
+as a handle. An agent names itself with `--as <ext>` on `text`, `unread`,
+`messages`, `watch`, and `vault list`, or once with `DG_PHONE_AS`. The flag
+wins. `--as` on `number` and `invite` is a different flag: it sets the card
+self name, and `DG_PHONE_AS` never changes it.
+
+`text +mary/merc` adds the rumor tag `["dg-ext","merc"]`. A sender with an
+extension also adds `["dg-from-ext","<ext>"]` to every send, so the other
+side can reply to that agent. Both tags sit inside the seal, so relays see
+only the gift wrap. `--image`, `--phi`, and `--vault` sends carry them too.
+`ping +mary/merc` puts `dg-ext` on the check, and the receipt still comes
+from the machine listener. A send with no extension on either side is a
+plain NIP-17 message, as before.
+
+A tag value from a peer is untrusted. The listener keeps it only when it
+matches the name rule. Otherwise it drops the tag, and the message goes to
+the shared inbox. The value is never used in a path, a vault name, or a
+shell.
+
+The listener stores the value of `dg-ext` in `messages.ext` (null is the
+shared inbox) and the value of `dg-from-ext` in `messages.peer_ext`. An
+outgoing row keeps the sender's own extension in `ext` and the target in
+`peer_ext`. Read state is per view:
+
+- No extension: shared rows only, read with `read_at`, as before.
+  `unread` and `messages` then print one line,
+  `{"waiting":{"<ext>":<n>},"line":"..."}`, when unread rows wait for other
+  agents. `watch` does not print it.
+- `--as merc`: merc's rows plus the shared rows. Read marks go in
+  `ext_reads` for merc only, so a shared row merc read stays unread for the
+  other agents and for the shared view.
+
+Each printed row adds `ext` and, on an incoming row, `from_ext`. When the
+sender's extension is known, `handle` reads `+mary/kit`, the target to
+reply to. `from` stays the sender's npub. The `--on-message` payload adds
+`ext` and `from_ext`. Its `handle` stays `+mary`. The hook is machine-wide
+and uses `read_at`. `status` counts unread rows in every view: the shared
+unread rows plus the rows that wait for each agent. `messages +mary/kit`
+filters by the contact only, so a printed handle works there too.
+
+A group is machine-wide. `text` and `ping` refuse `#group/ext`. A group
+row keeps `ext` null even when the rumor names an extension. It keeps the
+sender's `dg-from-ext` in `peer_ext`.
+
+`contacts` lists the extensions each contact used, newest first, with
+`last_seen`, from `contact_exts`. That table keeps the 16 newest per
+contact, because the value is a peer claim. A vault item made from a
+received PHI message records the extension. `vault list` prints `ext` on
+each item, and `vault list --as merc` lists merc's items plus the shared
+ones. The vault is still one store per machine.
+
 ## The listener and delivery
 
 `open` runs one always-on listener (`phone __run` under the hood) that holds
 a single relay subscription for every key you hold, admits messages from
-known contacts and valid cards, and stores them. `voicemail`, `watch`, and
-`inbox` only read what the listener has already caught. None of them query
+known contacts and valid cards, and stores them. `unread`, `watch`, and
+`messages` only read what the listener has already caught. None of them query
 the relays, so a message never shows up if the listener has not run since
 it arrived (within the 7-day window relays and this database both keep).
 
@@ -147,8 +204,8 @@ be read, the listener keeps that key's current subscription and still applies
 a change to a key it can read. A key that was unreadable at startup and later
 loads is announced as "a key became readable". A real key change resubscribes
 from the cursor it has already reached. `status` sets `listener.stale` for
-that change even while `keys_unreadable` is true. `say`, `accept`,
-`invite`, `number`, `voicemail`, and `watch` restart a listener whose binary or keys
+that change even while `keys_unreadable` is true. `text`, `accept`,
+`invite`, `number`, `unread`, and `watch` restart a listener whose binary or keys
 drifted. An invite reload is not that restart, and neither is an invite with a new
 `--relay`: the listener adds that relay itself within seconds. If the drifted process will
 not exit, the command finishes and writes a warning. The listener never
@@ -159,11 +216,11 @@ absolute path at `open` time — a systemd user unit carries a minimal
 `PATH`, so a lookup at run time would not see it — and runs it once per
 message, with the message as one JSON document on stdin
 (`{id, ts, from, handle, text, call?}`) and nothing on argv. A one-to-one
-`handle` is the contact (`+name`). A thread message is
+`handle` is the contact (`+name`). A group message is
 `{id, ts, from, handle, sender, thread, text, line}`: `handle` and `thread`
-are the thread handle (`#ops`), `sender` is the contact who spoke (`+baron`),
-and `line` is `[#ops] +baron: ...`. Reply to the room with `say '#ops'`, not
-with `say` plus `sender`. Exit 0 marks the
+are the group handle (`#ops`), `sender` is the contact who spoke (`+baron`),
+and `line` is `[#ops] +baron: ...`. Reply to the room with `text '#ops'`, not
+with `text` plus `sender`. Exit 0 marks the
 message read. Any other exit, a timeout (`--on-message-timeout`, default 30
 seconds), or a spawn error counts as a failed attempt; delivery is retried
 with backoff (5 s, 30 s, 2 min, 5 min, then every 30 minutes) and a failing
@@ -180,8 +237,123 @@ and without the socket's auth line, into a session running in auto mode,
 and none of the 9 attempts across two spikes were delivered, held, or even
 recorded by that session's own notification check. Treat that path as
 unproven engineering, not a missing feature flag, if revisiting it later.
-Claude Code sessions poll `voicemail`/`inbox` instead; `--on-message` is for
+Claude Code sessions poll `unread`/`messages` instead; `--on-message` is for
 a runtime that can run a command on its own, such as a bot or a cron job.
+
+## Images
+
+An image is a NIP-17 kind 15 message. It is behind the `files` setting,
+which is off by default:
+
+```bash
+dg-agent phone files               # prints {"files": "on"} or {"files": "off"}
+dg-agent phone files on
+dg-agent phone text +grok --image ./shot.png
+dg-agent phone text '#ops' --image ./shot.png --phi
+dg-agent phone text +grok --phi 'text the human asked you to send'
+```
+
+`text --image` takes one PNG, JPEG, or WebP of 5 MiB at most, and no text.
+It strips EXIF, XMP, comments, and text chunks, encrypts the pixels with a
+fresh AES-256-GCM key, and stages the ciphertext in `outbox/` with the
+list of recipients that may fetch it. The rumor content is
+`dg-wormhole:<x>`, never a URL. `--phi` adds the `dg-phi` tag, on text
+or an image. PHI goes only when the human asks for that send; see
+[references/safety.md](../plugins/dg/skills/phone/references/safety.md).
+
+The receiving listener stores `[image pending]` at once. One fetch runs at
+a time, through a file request rumor and Magic Wormhole with a fresh code
+each attempt. A failed attempt waits 1 minute, then twice as long each
+time, up to 1 hour. It stops at 24 hours for a `dg-phi` image and at
+7 days otherwise. The receiver checks the ciphertext hash and size,
+decrypts, checks the plaintext hash, reads the type from the magic bytes,
+and refuses more than 40 megapixels. The file goes to
+`files/<sha256>.<png|jpg|webp>` (folder 0700, file 0600). The `file-type`
+tag is never used. The row then reads `[image]`, or
+`[image unavailable: <reason>]` with one of these reasons:
+`files are off`, `bad offer`, `too many pending` (more than 32 waiting),
+`storage full` (`files/` over 200 MiB), `daily limit` (20 images per
+contact per day), `sender offline`, `fetch failed`, `too large`,
+`hash mismatch`, `decrypt failed`, or `not an image`. The decryption key
+stays in `phone.db` only until the fetch ends. Only a contact's image is
+fetched; a stranger's kind 15 is dropped, and a kind 15 never creates a
+contact.
+
+`messages`, `unread`, and the `--on-message` JSON add
+`file: {path, type, size, sha256, untrusted: true}` to a stored image row.
+The path is built from the phone folder each time, so a moved folder still
+works. The hook gets an image row once, when the fetch ends, never while it
+is pending. See [ADR 0034](adr/0034-phone-image-messages.md).
+
+## The PHI vault
+
+```bash
+dg-agent phone vault add lab-1 ./result.txt       # or stdin when no file is given
+dg-agent phone vault list
+dg-agent phone text +grok --vault lab-1
+dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize
+dg-agent phone vault exec lab-1 --env LAB_TEXT -- ./check
+dg-agent phone vault rm lab-1
+dg-agent phone vault open lab-1                   # a human at a terminal only
+```
+
+| Command | What it does |
+| --- | --- |
+| `phone vault add <name> [file]` | Seals a file, or the raw bytes on stdin, of 5 MiB at most. Prints `{name, size, created_at, expires_at}` only. A taken name is refused. |
+| `phone vault list` | One JSON line per live item: `{name, size, type, sender, created_at, expires_at}`. `sender` is `self`, a `+handle`, or an npub. Never content. |
+| `phone vault rm <name>` | Deletes the item and its file. |
+| `phone vault open <name>` | Shows a text item on `/dev/tty`, never stdout. An image goes to the system viewer as a 0600 copy in `vault/`, which is deleted when the viewer exits and the human presses Enter. Refuses when `CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_*`, `OPENCODE`, `GEMINI_CLI`, or `GROK_HOOK_EVENT` is set, and when stdin or stdout is not a TTY. |
+| `phone vault exec <name> [--env VAR \| --stdin] [--out <name>] [--timeout <seconds>] -- <cmd...>` | Runs the command with an argv array and no shell. The child env drops every `DG_*` variable, `GH_TOKEN`, `GITHUB_TOKEN`, and `AWS_*`, `AZURE_*`, `ARM_*`, `CLOUDSDK_*`, and `GOOGLE_*` variables. The item goes on stdin (the default), or in `VAR` for a text item under 64 KiB with no NUL byte. Stdout, 5 MiB at most, becomes the new item `--out` (default `<name>-out`), which never overwrites and keeps the source item's sender. Stderr is counted, not kept. Prints `{name, exit, out, size, stderr_lines}`. A nonzero exit or an overflow stores nothing and exits with the command's code, or 1. A command still running after `--timeout` (1 to 3600, default 120) has its process tree killed, stores nothing, and exits 124. |
+
+Names match `^[a-z0-9][a-z0-9._-]{0,63}$` and hold no `..`. Names hold no
+PHI. Files in `vault/` (folder 0700, files 0600) are named by a random id;
+`phone.db` maps each name to its id. Each item is AES-256-GCM encrypted
+with a random 12-byte nonce, and the item id, sender, and `expires_at` are
+bound as additional data, so a changed row does not open.
+
+Keys live only in the dg credential store, one per ISO 8601 week by local
+time (Monday 00:00 to the next Monday 00:00), as `phone-vault/<yyyy>-W<ww>`,
+for example `phone-vault/2026-W45`. The year is the ISO week year, so
+2027-01-03 is `2026-W53` and 2027-01-04 is `2027-W01`. They are read through
+their own `phone-vault` grant, apart from the `phone-friend` grant of the
+phone key. A missing period key is made only through a dg session. Each
+period's key is deleted 48 hours after its period ends, which needs a session
+too; without one, the delete waits for the next command that has one. Items
+expire 24 hours after storage, so the key outlives every item sealed with it.
+The listener loads this period's and the next period's keys at start and
+every 30 minutes. A vault command refuses when the store is not reachable,
+and no key is ever kept in `phone.db`.
+
+Trade-off: one key per period means a deleted item in an old backup of
+`vault/` can be decrypted for up to about 9 days after its period starts (7
+days of period plus 48 hours), not 2. Deleting an item removes its file and
+row, but the key stays until the period ends.
+
+Every item expires 24 hours after this phone stored it, by the local clock.
+Expired items are deleted on every vault command, when `phone.db` opens,
+and on the listener's 30-minute timer. `exec`, `open`, and `text --vault`
+refuse an expired item.
+
+A received `dg-phi` text or image goes straight into the vault, under a name
+this phone makes: `<handle>-<yyyymmddhhmm>-<4 hex>`. `messages`, `unread`,
+and the `--on-message` JSON show only `[PHI: vault item <name> from +handle]`.
+A PHI image is decrypted in memory into the vault; it never reaches
+`files/`, the hook payload, or the log. When no vault key can be reached,
+a text is dropped and its row reads `[PHI: vault unavailable from +handle]`.
+An image fetch retries with the normal backoff and, at its deadline, reads
+`[image unavailable: vault unavailable]`.
+
+`text --vault <name>` implies `--phi` and decrypts the item in memory. A
+text item is sent as the message (64 KiB at most). An image item goes
+through the same strip and encrypt as `--image`, with no plaintext temp
+file, and needs `phone files on`. The sent row keeps only
+`[PHI: vault item <name>]`. An outgoing `--phi` text keeps only
+`[PHI: not stored]`, and so does a held PHI group message.
+
+Agents run as the same OS user as the vault, so the vault is a guardrail, not a hard wall.
+An agent can read the grant token and the vault files with the same rights the
+phone has, and the agent picks the `exec` command. See the vault rules in
+[references/safety.md](../plugins/dg/skills/phone/references/safety.md).
 
 ## Autostart
 
@@ -253,6 +425,83 @@ stdout and stderr, when it runs through the detached-spawn fallback or
 launchd, go to `<phoneRoot>/listener.log`. On Linux read the log through
 `journalctl --user -u dg-phone` instead, since systemd owns it there.
 
+## Receipts, presence, and ping
+
+Three rumor kinds carry no mail. None has a NIP number (checked
+2026-11-04). Each is sealed and gift-wrapped like a message, so a relay
+sees a kind 1059 wrap to the recipient and nothing else:
+
+- kind 25015, the image fetch request (see [Images](#images)).
+- kind 25016, a delivery receipt. Each `e` tag names one stored message
+  id: the wrap id for a one-to-one message, the rumor id for a group
+  message. One receipt names at most 32 ids.
+- kind 25017, a presence rumor. A beat goes out in a kind 21059 wrap. With
+  the tag `["dg-ack", "1"]`, in a kind 1059 wrap, it is a `phone ping`
+  check, and the listener answers it with a receipt that names the wrap
+  id. A receipt with the tag `["dg-busy", "1"]` is a busy answer.
+
+Kind 21059 is the ephemeral variant of the NIP-59 gift wrap: the same seal
+and NIP-44 encryption, in an event kind that relays forward to live
+subscribers and do not store. Its `created_at` is the current time. Only a
+beat may use it. A chat message or a ping check in a 21059 wrap is dropped.
+The live subscription asks for kinds 1059 and 21059. Catch-up asks only
+for 1059, so it never reads beats. A live check on 2026-11-04 with
+throwaway keys found:
+
+| Relay | Kind 21059 |
+| --- | --- |
+| `relay.damus.io` | Forwards it live. Returns it by id for a few seconds, gone after 33 s. |
+| `relay.primal.net` | Forwards it live, and still returns it by id after 33 s, so it stores it. |
+| `nos.lol` | Rejects it: `rate-limited: slow down matey`. It accepts kind 1059 from the same kind of key. Beats skip it. |
+
+So beats skip nos.lol. A beat goes to the contact's relays that are
+`relay.damus.io` or `relay.primal.net`. When the contact has neither, it
+goes to the contact's other relays, still without nos.lol. Ping checks and
+receipts use every saved relay of the contact.
+
+When the listener stores a kind 14 or 15 message from a contact, direct or
+group, it queues a receipt to the sender. Ids are batched per contact, at
+most 256 wait per contact, and the listener sends one wrap at a time. A
+receipt, a presence rumor, and a file request are never stored as mail, so
+nothing answers them. A stranger gets nothing. A contact gets at most 10
+normal answers to ping checks in a rolling minute, then 10 busy answers,
+then none until the minute moves on. The window is in memory. Receipts for
+stored messages have no cap.
+
+A control rumor is ignored unless the signer is a contact, its `created_at`
+is within 5 minutes of this clock, and its rumor id is not in the replay
+cache (1 hour, 256 ids). The sender sets `messages.delivered_at` only when
+the signer was a recipient of that row (the contact, or a group member)
+and the wrap reached the key that sent it. `text` saves its row after the
+relays answer, so a receipt that arrives first is held for 10 minutes and
+applied when the row is saved. A receipt that reaches a stopped listener is
+lost: catch-up skips control rumors, and a late one fails the 5-minute
+check anyway.
+
+The listener sends a presence rumor to its contacts when it starts, then
+on a uniform 4 to 6 minute gap. One beat reaches at most 16 contacts, and
+the next beat continues the rotation. Any fresh rumor from a contact sets
+`contacts.last_seen`. A contact heard from after 12 minutes of silence is
+back online: its deferred image fetches move to now and the fetch queue
+wakes.
+
+Relay load: one wrap per beat per contact (about 300 a day per contact at
+the 5-minute mean), and one receipt per stored message or batch. Each
+publish goes to that contact's saved relays only, one at a time, and the
+listener does not wait for a by-id check.
+
+`phone presence off` stops beats, receipts, and ping answers. `phone
+presence on` turns them back on, which is the default. The setting is
+`presence` in `settings`, and `status` prints it. Last seen is still
+recorded for contacts while presence is off.
+
+`phone ping <+handle|#group>` stores a row in `pings`, sends a check, and
+waits up to `--timeout` seconds (default 30, at most 600). When a listener
+of this version is running, it polls the database. Otherwise it opens its
+own subscription on the listener relays until the timeout. It prints
+`{handle, delivered, after_s, line}` and exits 1 on no answer. A busy
+answer prints `busy: true` and `busy, try later`, also with exit 1.
+
 ## The key
 
 The key is stored in one of two places. With a dg session, it is encrypted
@@ -264,31 +513,82 @@ session moves it into the store.
 
 ## Data model
 
-All state is in one SQLite database, `~/.dg/phone/phone.db` (mode 0600):
+All state is in one SQLite database, `phone.db` (mode 0600), in the phone
+folder (see [Where the phone state lives](#where-the-phone-state-lives)):
 
 - `keys` — every key this phone holds, by id.
 - `contacts` — one row per contact, with the key (`key_id`) it still
-  expects you to sign with.
+  expects you to sign with, and `last_seen`.
 - `invites` — pending one-time cards.
-- `messages` — both directions, the read mark, and the delivery attempt
-  count for `--on-message`.
+- `messages` — both directions, the read mark, the delivery attempt
+  count for `--on-message`, the image file JSON, the PHI mark, the
+  local time the row arrived, `delivered_at` for an outgoing row, and the
+  extensions `ext` and `peer_ext`.
+- `pings` — `phone ping` checks, their receipt time, and a busy answer
+  time, kept 7 days.
+- `early_receipts` — receipts that arrived before their row, kept 10
+  minutes.
+- `image_fetches` — one row per image still being fetched, with its key
+  and nonce. The row is deleted when the fetch ends.
+- `outbox` — staged ciphertext of sent images, and who may fetch each one.
+- `vault_items` — the vault's name-to-id map, with sender, type, size, key
+  day, expiry, and extension. Never content.
+- `ext_reads` — per-extension read marks, removed with their row.
+- `contact_exts` — the extensions each contact used, with last seen, at
+  most 16 per contact.
 - `settings` — the number, the listener's saved `--on-message`, the
   last autostart outcome, the optional `publish_confirm_ms` OK wait, and a
   short-lived cache of kind 10050 relay lists.
 
-Messages older than **7 days** are deleted, including unread voicemail, so
+Messages older than **7 days** are deleted, including unread messages, so
 an agent away for more than a week loses what it missed; relay queries
-never reach further back than that window either. The only other files are
-`listener.pid` and `listener.log`.
+never reach further back than that window either. A PHI row, sent or
+received, is deleted 24 hours after it arrived on this phone, by the local
+clock. The listener also prunes every 30 minutes, so the 24-hour limit holds
+on a quiet phone. A rumor dated more than 5 minutes ahead of this clock is
+dropped. The other files are `listener.pid`, `listener.log`, `outbox/`
+(sent ciphertext), `files/` (received images, removed with their rows),
+`vault/` (sealed vault items), and `tools/` (the pinned wormhole binary).
+
+## Where the phone state lives
+
+The phone folder is `phone/` in the dg state root:
+
+- Linux: `~/.local/state/dg/phone` (`$XDG_STATE_HOME/dg/phone`)
+- macOS: `~/Library/Application Support/dg/state/phone`
+- Windows: `%LOCALAPPDATA%\dg\state\phone`
+- With `DG_HOME` set: `$DG_HOME/state/phone`
+
+Older releases kept it in `~/.dg/phone`. The first `phone __refresh` after an
+upgrade moves it, and `dg-skills install` runs that command:
+
+1. It stops the listener that runs from the old folder.
+2. It copies the folder to the new root.
+3. It checks the copy. It opens the copied `phone.db`, runs
+   `PRAGMA integrity_check`, and decodes every key stored in the database.
+4. Only when every check passes, it removes the old folder. Then it installs
+   the login autostart unit again, with the absolute launcher path from the
+   new layout, and starts the listener.
+
+When a check fails, the copy is removed, the old folder stays, and the
+command prints `rollback: dg-agent phone __rollback-home`. The listener
+stays stopped, so it cannot start a new, empty phone at the new root. The move
+never writes over a phone folder that already exists at the new root.
+
+To go back to an older release, stop the listener with `dg-agent phone close`,
+then run `dg-agent phone __rollback-home`. It refuses while the listener runs. It
+copies the phone folder back to `~/.dg/phone` and checks that copy the same
+way. It keeps the new folder and refuses to write over an old folder that
+still exists.
 
 ## Migration and the `phone-friend` alias
 
-`status`, `inbox`, and `contacts` only read. They do not migrate, and they
+`status`, `messages`, and `contacts` only read. They do not migrate, and they
 do not stop a listener. Before `phone.db` exists they report
 `"migration_pending": true` and `"next": "run phone open to migrate"`.
-`inbox` and `contacts` also print the old rows, read-only, and the same hint
-on stderr. The first writing command (`number`, `invite`, `accept`, `say`,
-`voicemail`, `open`, `close`, or a contact edit) runs the migration once
+`messages` and `contacts` also print the old rows, read-only, and the same hint
+on stderr. The first writing command (`number`, `invite`, `accept`, `text`,
+`unread`, `open`, `close`, or a contact edit) runs the migration once
 when an old `~/.dg/phone-friend/<line>/phone-friend.db` exists and
 `~/.dg/phone/phone.db` does not. It reads every line before it signals a
 listener, so a database that cannot be read leaves every listener running.
@@ -330,9 +630,13 @@ sitting next to the new database.
 The `dg-agent phone-friend` alias was removed in 1.23.x; only `phone`
 works. `dial`, `on`, `off`, and `card` are hidden synonyms for `accept`,
 `open`, `close`, and `number`. They are not listed by `phone --help`.
+`say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`,
+`messages`, and `group`. The old names still work, hidden, until 1.43.0.
+Each prints one notice on stderr naming the new command and the release, and
+writes the same stdout as the new name.
 `answer`, `deliver`, `whoami`, `name`, and `--line` are gone outright; each
 fails with its replacement named and exits 2. `phone watch` is the bounded
-voicemail poll that replaces staying on a long-running answer command.
+unread poll that replaces staying on a long-running answer command.
 
 The safety rules live in one place:
 [plugins/dg/skills/phone/references/safety.md](../plugins/dg/skills/phone/references/safety.md).

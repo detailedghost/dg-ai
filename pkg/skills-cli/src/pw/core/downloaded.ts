@@ -6,8 +6,7 @@ const MARKER = "chromium.json";
 
 export type DownloadedChromium = { version: string; executablePath: string };
 
-export const browsersDir = (): string =>
-	path.join(resolveDgPaths().stateDir, "browsers");
+export const browsersDir = (): string => resolveDgPaths().browsersDir;
 
 export const markerPath = (dir: string = browsersDir()): string =>
 	path.join(dir, MARKER);

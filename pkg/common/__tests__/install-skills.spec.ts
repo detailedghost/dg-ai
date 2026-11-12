@@ -16,9 +16,11 @@ import { join, relative, sep } from "node:path";
 import {
 	installSkillTree,
 	listSkillTreeFiles,
+	personasDest,
 	posixPath,
 	skillsInstallDest,
 } from "../src/node/install-skills";
+import { resolveDgPaths } from "../src/node/dg-paths";
 
 const SENTINEL_NAME = "executed-by-skill.txt";
 
@@ -68,15 +70,23 @@ describe("posixPath", () => {
 });
 
 describe("skillsInstallDest", () => {
-	test("prefers DG_SKILLS_DEST, then DG_HOME/skills, then ~/.dg/skills", () => {
+	test("prefers DG_SKILLS_DEST, then the data dir's skills folder", () => {
 		expect(skillsInstallDest({ DG_SKILLS_DEST: "/opt/skills", DG_HOME: "/opt/dg" }, "/home/u")).toBe(
 			"/opt/skills",
 		);
-		expect(skillsInstallDest({ DG_HOME: "/opt/dg" }, "/home/u")).toBe("/opt/dg/skills");
-		expect(skillsInstallDest({}, "/home/u")).toBe("/home/u/.dg/skills");
+		expect(skillsInstallDest({ DG_HOME: "/opt/dg" }, "/home/u")).toBe("/opt/dg/data/skills");
 		expect(skillsInstallDest({ DG_SKILLS_DEST: "", DG_HOME: "" }, "/home/u")).toBe(
-			"/home/u/.dg/skills",
+			skillsInstallDest({}, "/home/u"),
 		);
+	});
+
+	test("defaults to <dataDir>/skills", () => {
+		const env = { XDG_DATA_HOME: "/xdg/data", LOCALAPPDATA: "/xdg/data", HOME: "/home/u" };
+		expect(skillsInstallDest(env, "/home/u")).toBe(resolveDgPaths({ env, homeDir: "/home/u" }).skillsDir);
+	});
+
+	test("puts personas beside the skills folder in the data dir", () => {
+		expect(personasDest(skillsInstallDest({ DG_HOME: "/opt/dg" }, "/home/u"))).toBe("/opt/dg/data/agents");
 	});
 });
 

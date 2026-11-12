@@ -11,8 +11,11 @@ import {
 	cleanupDgHome,
 	createCleanupSlot,
 	freshDgHome,
+	ownerTokenHeader,
 	spawnServe,
 	stopServe,
+	waitForDaemonExit,
+	waitForHealth,
 } from "../utils/daemon-harness";
 
 const cleanupSlot = createCleanupSlot();
@@ -37,6 +40,7 @@ describe("request bodies the daemon refuses at the socket layer", () => {
 			method: "POST",
 			headers: {
 				Host: `127.0.0.1:${port}`,
+				...ownerTokenHeader(port),
 				"Content-Type": "application/json",
 			},
 			body: bloated,
@@ -52,6 +56,7 @@ describe("request bodies the daemon refuses at the socket layer", () => {
 			method: "POST",
 			headers: {
 				Host: `127.0.0.1:${port}`,
+				...ownerTokenHeader(port),
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({ cwd: process.cwd() }),
@@ -77,7 +82,7 @@ describe("GET /healthz", () => {
 		expect(await legacy.json()).toEqual(await current.json());
 	});
 
-	it("returns exactly the three published fields, matching CHAT_PROTOCOL_VERSION", async () => {
+	it("returns exactly the four published fields, matching CHAT_PROTOCOL_VERSION", async () => {
 		const { port } = await bootServe();
 		const resp = await fetch(`http://127.0.0.1:${port}/healthz`, {
 			headers: { Host: `127.0.0.1:${port}` },
@@ -85,11 +90,37 @@ describe("GET /healthz", () => {
 		expect(resp.status).toBe(200);
 		const body = await resp.json();
 		expect(Object.keys(body).sort()).toEqual(
-			["daemon", "instanceId", "protocolVersion"].sort(),
+			["daemon", "daemonId", "instanceId", "protocolVersion"].sort(),
 		);
 		expect(body.protocolVersion).toBe(CHAT_PROTOCOL_VERSION);
 		expect(typeof body.instanceId).toBe("string");
 		expect((body.instanceId as string).length).toBeGreaterThan(0);
+		expect((body.daemonId as string).length).toBeGreaterThan(0);
+	});
+
+	it("keeps daemonId across a restart while instanceId changes", async () => {
+		const { dgHome, port, proc } = await bootDaemonServe();
+		const health = async () =>
+			(await (
+				await fetch(`http://127.0.0.1:${port}${CHAT_HEALTH_PATH}`, {
+					headers: { Host: `127.0.0.1:${port}` },
+				})
+			).json()) as { daemonId: string; instanceId: string };
+		const first = await health();
+		await stopServe(proc);
+		await waitForDaemonExit(dgHome);
+		const second = spawnServe(dgHome, port);
+		cleanupSlot.set(async () => {
+			await stopServe(second);
+			cleanupDgHome(dgHome);
+		});
+		await waitForHealth(port);
+
+		const restarted = await health();
+
+		expect(first.daemonId).toBeString();
+		expect(restarted.daemonId).toBe(first.daemonId);
+		expect(restarted.instanceId).not.toBe(first.instanceId);
 	});
 
 	it("204s a caller whose Host header is not the loopback authority", async () => {

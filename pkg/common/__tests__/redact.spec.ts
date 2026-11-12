@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import { buildBootstrapUrl } from "../src/node/marker";
 import {
 	clearNotedSecrets,
 	emitRedacted,
@@ -73,12 +72,15 @@ describe("redactText", () => {
 	});
 
 	it("redacts a bootstrap url and a query token", () => {
-		const url = buildBootstrapUrl(47823, {
-			port: 47823,
-			sessionId: "11111111-1111-1111-1111-111111111111",
-			token: TOKEN,
-			agentIdentity: "claude",
-		});
+		const payload = Buffer.from(
+			JSON.stringify({
+				port: 47823,
+				sessionId: "11111111-1111-1111-1111-111111111111",
+				token: TOKEN,
+				agentIdentity: "claude",
+			}),
+		).toString("base64url");
+		const url = `http://127.0.0.1:47823/chat#_chat=${payload}`;
 		const line = redactText(`${url} http://127.0.0.1:9/cb?access_token=${TOKEN}`);
 		expect(line).not.toContain(TOKEN);
 		expect(line).toContain("#_chat=[redacted]");
@@ -176,7 +178,6 @@ describe("logging paths", () => {
 				sessionIds: ["sess-abc123", "22222222-2222-4222-8222-222222222222"],
 				port: 47823,
 				socket: { readyState: "closed", url: "ws://127.0.0.1:47823/ws" },
-				sidePanel: { open: true, lifecycle: "open" },
 				serviceWorker: { active: true, lifecycle: "running" },
 				lastMessages: [
 					{
@@ -195,7 +196,6 @@ describe("logging paths", () => {
 			sessionIds: string[];
 			port: number;
 			socket: { readyState: string };
-			sidePanel: { open: boolean };
 			serviceWorker: { lifecycle: string };
 			lastMessages: { direction: string; type: string; summary: string }[];
 			daemon: { reachable: boolean };
@@ -208,7 +208,7 @@ describe("logging paths", () => {
 		]);
 		expect(report.port).toBe(47823);
 		expect(report.socket.readyState).toBe("closed");
-		expect(report.sidePanel.open).toBe(true);
+		expect(report).not.toHaveProperty("sidePanel");
 		expect(report.serviceWorker.lifecycle).toBe("running");
 		expect(report.lastMessages[0]).toMatchObject({
 			direction: "out",
@@ -243,5 +243,22 @@ describe("logging paths", () => {
 		} finally {
 			error.mockRestore();
 		}
+	});
+});
+
+describe("redactText without a process global", () => {
+	it("still redacts in an extension service worker", () => {
+		const descriptor = Object.getOwnPropertyDescriptor(globalThis, "process");
+		Object.defineProperty(globalThis, "process", {
+			configurable: true,
+			value: undefined,
+		});
+		let output: string;
+		try {
+			output = redactText("token ghp_abcdefghijklmnop");
+		} finally {
+			if (descriptor) Object.defineProperty(globalThis, "process", descriptor);
+		}
+		expect(output).toBe("token [redacted]");
 	});
 });

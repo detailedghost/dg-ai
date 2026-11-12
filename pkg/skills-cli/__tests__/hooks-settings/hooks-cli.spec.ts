@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { main } from "../../src/hooks/cli";
 import { HOOKS } from "../../src/hooks/manifest";
@@ -198,6 +198,20 @@ describe("hooks usage errors", () => {
 		expect(world.text(world.paths.claude)).toBe(before);
 	});
 
+	test("the default launcher on Windows is the dg-skills.cmd shim the installer writes", async () => {
+		world.seed(world.paths.claude, {});
+		const result = await world.cli(["enable", "format"], {
+			launcher: undefined,
+			platform: "win32",
+		});
+		expect(result.code).toBe(0);
+		const command = world.readJson(world.paths.claude).hooks?.PostToolUse?.[0]
+			?.hooks[0]?.command;
+		expect(command).toBe(
+			`${join(world.dgHome, "bin", "dg-skills.cmd")} hooks run format`,
+		);
+	});
+
 	test("a launcher path with a space is refused or written quoted", async () => {
 		world.seed(world.paths.claude, {});
 		const spaced = join(world.dgHome, "my bin", "dg-skills");
@@ -345,7 +359,7 @@ describe("hooks cli edge cases", () => {
 		expect(ownedObjects(world.readJson(world.paths.claude))).toHaveLength(1);
 	});
 
-	test("a relative DG_HOME is refused with exit 2 and nothing is written", async () => {
+	test("a relative DG_HOME resolves against the working folder, so hooks name an absolute launcher", async () => {
 		world.seed(world.paths.claude, {});
 		const result = await main(["enable", "spelling"], {
 			stdin: Readable.from([]),
@@ -359,7 +373,7 @@ describe("hooks cli edge cases", () => {
 				stderr: () => {},
 			},
 		});
-		expect(result).toBe(2);
-		expect(world.text(world.paths.claude)).toBe("{}");
+		expect(result).toBe(0);
+		expect(world.text(world.paths.claude)).toContain(join(resolve("relative/dg"), "bin", "dg-skills"));
 	});
 });

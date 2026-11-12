@@ -132,7 +132,8 @@ describe("spelling hook", () => {
 	});
 
 	test("a config.json holding invalid JSON falls back to en-US", async () => {
-		writeFileSync(join(world.dgHome, "config.json"), "{nope");
+		mkdirSync(join(world.dgHome, "config"), { recursive: true });
+		writeFileSync(join(world.dgHome, "config", "config.json"), "{nope");
 		const r = await world.run("spelling", editInput("const colour = 1;"));
 		expect(r.code).toBe(2);
 		expect(r.stderr).toContain("colour -> color");
@@ -219,7 +220,8 @@ describe("spelling hook", () => {
 	});
 
 	test("reports an unreadable config on stderr and falls back to en-US", async () => {
-		writeFileSync(join(world.dgHome, "config.json"), "{nope");
+		mkdirSync(join(world.dgHome, "config"), { recursive: true });
+		writeFileSync(join(world.dgHome, "config", "config.json"), "{nope");
 		const r = await world.run("spelling", editInput("const colour = 1;"));
 		expect(r.code).toBe(2);
 		expect(r.stderr).toContain("config.json is unreadable");

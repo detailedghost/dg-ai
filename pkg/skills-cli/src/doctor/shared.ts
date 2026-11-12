@@ -1,7 +1,9 @@
-import { resolve } from "node:path";
-import { resolveDgPaths, scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
+import { scratchRoot, shellCommand, stateRoot } from "@dg/common/node";
+import { readCurrent } from "../install/current";
 import { bootstrapCommand, PLUGIN_INSTALL, PLUGIN_UPDATE } from "./checks";
-import { installedPlugins, isOlder, writableDirectory } from "./probes";
+import { cliLauncher, installedPlugins, isOlder, toolVersion, writableDirectory } from "./probes";
 import { type DoctorCheck, type DoctorContext, fail, ok, warn } from "./types";
 
 export function rootCheck(
@@ -27,6 +29,13 @@ export function rootCheck(
 
 export const SHARED_ITEM = "shared";
 
+/** The shell line that puts the launcher folder first on PATH: PowerShell on Windows, POSIX sh elsewhere. */
+export function launcherPathFix(binDir: string, platform: NodeJS.Platform = process.platform): string {
+	if (platform !== "win32") return `export PATH="${binDir}:$PATH"`;
+	const quoted = binDir.replaceAll("'", "''");
+	return `[Environment]::SetEnvironmentVariable('Path', '${quoted};' + [Environment]::GetEnvironmentVariable('Path', 'User'), 'User')`;
+}
+
 export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "plugin-installed",
@@ -39,30 +48,52 @@ export const sharedChecks: DoctorCheck[] = [
 	{
 		id: "version-match",
 		run(ctx) {
+			const installed = readCurrent(ctx.paths.dataDir, "lib") ?? ctx.installedVersion;
 			const plugin = installedPlugins(ctx.home)[0];
-			if (!plugin)
-				return ok(`dg-skills ${ctx.installedVersion}; no plugin to compare`);
-			if (isOlder(ctx.installedVersion, plugin.version))
+			if (!plugin) return ok(`dg-skills ${installed}; no plugin to compare`);
+			if (isOlder(installed, plugin.version))
 				return fail(
-					`dg-skills ${ctx.installedVersion} is older than the dg plugin ${plugin.version}`,
+					`dg-skills ${installed} is older than the dg plugin ${plugin.version}`,
 					bootstrapCommand(ctx),
 				);
-			if (isOlder(plugin.version, ctx.installedVersion))
+			if (isOlder(plugin.version, installed))
 				return warn(
-					`the dg plugin ${plugin.version} is older than dg-skills ${ctx.installedVersion}`,
+					`the dg plugin ${plugin.version} is older than dg-skills ${installed}`,
 					PLUGIN_UPDATE,
 				);
-			return ok(`dg-skills and the dg plugin are both ${ctx.installedVersion}`);
+			return ok(`dg-skills and the dg plugin are both ${installed}`);
+		},
+	},
+	{
+		id: "runtime-present",
+		run(ctx) {
+			if (!readCurrent(ctx.paths.dataDir, "lib")) return ok("no bundle installed; running from source");
+			const bun = join(ctx.paths.runtimeDir, "current", process.platform === "win32" ? "bun.exe" : "bun");
+			if (!existsSync(bun)) return fail(`the Bun runtime ${bun} is missing`, bootstrapCommand(ctx));
+			const version = toolVersion(bun);
+			return version
+				? ok(`the Bun runtime ${bun} runs (bun ${version})`)
+				: fail(`the Bun runtime ${bun} did not run --version`, bootstrapCommand(ctx));
 		},
 	},
 	{
 		id: "dg-home",
-		run({ env, home }) {
-			const defaultHome = resolveDgPaths({ homeDir: home, env: {} }).stateDir;
+		run({ env }) {
 			if (!env.DG_HOME) return ok("DG_HOME is unset");
-			return resolve(env.DG_HOME) !== resolve(defaultHome)
-				? warn(`DG_HOME=${env.DG_HOME} moves the dg state directory away from ~/.dg`, "unset DG_HOME")
-				: ok("DG_HOME uses the default state directory");
+			return warn(`DG_HOME=${env.DG_HOME} keeps every dg folder there instead of in the per-OS folders`, "unset DG_HOME");
+		},
+	},
+	{
+		id: "launcher-on-path",
+		run(ctx) {
+			const launcher = cliLauncher(ctx.paths.binDir);
+			if (!existsSync(launcher)) return ok(`no dg-skills launcher in ${ctx.paths.binDir}`);
+			if ((ctx.env.PATH ?? "").split(delimiter).includes(ctx.paths.binDir))
+				return ok(`${ctx.paths.binDir} is on PATH`);
+			return warn(
+				`${ctx.paths.binDir} is not on PATH, so skills fall back to the full launcher path`,
+				launcherPathFix(ctx.paths.binDir),
+			);
 		},
 	},
 	rootCheck("scratch-root", "scratch", ({ env }) => scratchRoot(env)),

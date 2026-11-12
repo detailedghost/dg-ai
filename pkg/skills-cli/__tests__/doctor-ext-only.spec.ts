@@ -25,8 +25,8 @@ afterEach(() => world.cleanup());
 
 function contextFor(cliOnly: boolean) {
 	const dgHome = join(world.home, ".dg");
-	mkdirSync(dgHome, { recursive: true });
-	if (cliOnly) writeFileSync(join(dgHome, "cli-only"), "");
+	mkdirSync(join(dgHome, "config"), { recursive: true });
+	if (cliOnly) writeFileSync(join(dgHome, "config", "cli-only"), "");
 	return createContext({
 		home: world.home,
 		env: world.env({ DG_HOME: dgHome }),
@@ -90,8 +90,8 @@ describe("extOnly", () => {
 describe("dg-skills doctor on a CLI-only home", () => {
 	const cliOnlyEnv = () => ({ DG_HOME: join(world.home, ".dg") });
 	beforeEach(() => {
-		mkdirSync(join(world.home, ".dg"), { recursive: true });
-		writeFileSync(join(world.home, ".dg", "cli-only"), "");
+		mkdirSync(join(world.home, ".dg", "config"), { recursive: true });
+		writeFileSync(join(world.home, ".dg", "config", "cli-only"), "");
 	});
 
 	test("batch-open exits 0 and prints the info lines", async () => {
@@ -117,7 +117,9 @@ describe("dg-skills doctor on a CLI-only home", () => {
 			false,
 		);
 		const infoCount = checks.filter((c) => c.status === "info").length;
-		expect(formatReport(report)).toContain(`${infoCount} info, 0 to review`);
+		const sharedWarnings = checksOf(report, "shared").filter((c) => c.status === "warn").length;
+		expect(formatReport(report)).toContain(`${infoCount} info, ${sharedWarnings} to review`);
+		expect(checksOf(report, "shared").filter((c) => c.status === "warn").map((c) => c.id)).toEqual(["dg-home"]);
 	});
 
 	test("launch keeps the extension checks and does not downgrade them to info", async () => {
@@ -147,8 +149,8 @@ describe("dg-skills doctor batch-open on a full install", () => {
 
 describe("dg-skills doctor require-extension on a CLI-only home", () => {
 	test("reports the extension checks as info with the --ext only prefix", async () => {
-		mkdirSync(join(world.home, ".dg"), { recursive: true });
-		writeFileSync(join(world.home, ".dg", "cli-only"), "");
+		mkdirSync(join(world.home, ".dg", "config"), { recursive: true });
+		writeFileSync(join(world.home, ".dg", "config", "cli-only"), "");
 		const { report } = await world.report(["require-extension"], {
 			DG_HOME: join(world.home, ".dg"),
 		});

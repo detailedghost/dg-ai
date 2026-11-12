@@ -138,7 +138,7 @@ describe("stale-entries", () => {
 		expect(result.status).toBe("warn");
 		expect(result.detail).toContain("claude:format codex:spelling");
 		expect(result.fix).toContain(
-			"hooks disable format --runtime claude; ~/.dg/bin/dg-skills hooks disable spelling --runtime codex",
+			"hooks disable format --runtime claude; dg-skills hooks disable spelling --runtime codex",
 		);
 	});
 

@@ -6,18 +6,16 @@ import {
 	type DgCliError,
 	EXIT_PROTOCOL_MISMATCH,
 	EXIT_WSL_NAT_NETWORKING,
-	validateSessionBootstrap,
 } from "@dg/common";
 import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
-	decodeChatMarker,
-	extractUrl,
 	freshDgHome,
 	killDaemonByPidFile,
 	readPidFile,
 	registerSession,
+	sessionCredentials,
 	spawnServe,
 	waitForHealth,
 	waitForPidFile,
@@ -72,7 +70,7 @@ async function cmdStartFromSource(
 	try {
 		await withDgEnv(
 			{ DG_HOME: dgHome, DG_PORT: String(port), DG_KEY_SOURCE: "file" },
-			() => cmdStart({}, startFromSource),
+			() => cmdStart({ json: true }, startFromSource),
 		);
 	} finally {
 		capture.restore();
@@ -113,11 +111,11 @@ describe("cmdStart — cold start", () => {
 		expect(handle.port).toBe(port);
 	});
 
-	it("prints a bootstrap URL whose fragment decodes to a valid session", () => {
-		const bootstrap = validateSessionBootstrap(decodeChatMarker(url));
-		expect(bootstrap.port).toBe(port);
-		expect(bootstrap.sessionId.length).toBeGreaterThan(0);
-		expect(bootstrap.token.length).toBeGreaterThan(0);
+	it("prints the session id and port with no token", () => {
+		const printed = JSON.parse(url) as Record<string, unknown>;
+		expect(printed.port).toBe(port);
+		expect(String(printed.sessionId).length).toBeGreaterThan(0);
+		expect(url).not.toContain("token");
 	});
 });
 
@@ -169,28 +167,23 @@ describe("dg-agent start session id output", () => {
 		await waitForHealth(port);
 	}, 20_000);
 
-	it("prints the session id before the bootstrap URL", async () => {
+	it("prints only the session id with --print-session-id", async () => {
 		const result = await runCli(dgHome, port, ["start", "--print-session-id"]);
 		expect(result.exitCode).toBe(0);
-		const [sessionId, url] = result.stdout.trim().split("\n");
-		const bootstrap = validateSessionBootstrap(decodeChatMarker(url));
-		expect(sessionId).toBe(bootstrap.sessionId);
-		expect(bootstrap.port).toBe(port);
+		expect(result.stdout).toMatch(/^[0-9a-f-]{36}\n$/);
+		expect(result.stderr).toContain("No browser extension is connected");
 	});
 
-	it("prints JSON with the session id, port, and url", async () => {
+	it("prints JSON with the session id, port, and extensionLinked", async () => {
 		const result = await runCli(dgHome, port, ["start", "--json"]);
 		expect(result.exitCode).toBe(0);
-		const parsed = JSON.parse(result.stdout) as {
-			sessionId: string;
-			port: number;
-			url: string;
-			token?: string;
-		};
-		const bootstrap = validateSessionBootstrap(decodeChatMarker(parsed.url));
-		expect(parsed.sessionId).toBe(bootstrap.sessionId);
+		const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+		expect(Object.keys(parsed).sort()).toEqual([
+			"extensionLinked",
+			"port",
+			"sessionId",
+		]);
 		expect(parsed.port).toBe(port);
-		expect(parsed.token).toBeUndefined();
 		expect(result.stdout.trim().split("\n")).toHaveLength(1);
 	});
 });
@@ -215,7 +208,7 @@ describe("a second dg-agent start on a live daemon", () => {
 		firstBootstrap = await registerSession(port);
 		firstHandle = readPidFile(dgHome);
 
-		secondResult = await runCli(dgHome, port, ["start"]);
+		secondResult = await runCli(dgHome, port, ["start", "--json"]);
 	}, 20_000);
 
 	it("reuses the same daemon process rather than binding a second port", () => {
@@ -225,12 +218,14 @@ describe("a second dg-agent start on a live daemon", () => {
 		expect(secondHandle.pid).toBe(firstHandle.pid);
 	});
 
-	it("registers a second session with its own distinct id and token", () => {
-		const secondBootstrap = validateSessionBootstrap(
-			decodeChatMarker(extractUrl(secondResult.stdout)),
-		);
-		expect(secondBootstrap.sessionId).not.toBe(firstBootstrap.sessionId);
-		expect(secondBootstrap.token).not.toBe(firstBootstrap.token);
+	it("registers a second session with its own id and leaks its token on neither stream", async () => {
+		const { sessionId } = JSON.parse(secondResult.stdout) as {
+			sessionId: string;
+		};
+		const { token } = await sessionCredentials(dgHome, sessionId);
+		expect(sessionId).not.toBe(firstBootstrap.sessionId);
+		expect(secondResult.stdout).not.toContain(token);
+		expect(secondResult.stderr).not.toContain(token);
 	});
 });
 
@@ -259,7 +254,7 @@ describe("dg-agent start — protocol version mismatch on attach", () => {
 
 			expect(result.exitCode).toBe(EXIT_PROTOCOL_MISMATCH);
 			expect(result.stderr).toContain("never auto-restarts a shared daemon");
-			expect(result.stdout).not.toMatch(/https?:\/\//);
+			expect(result.stdout).toBe("");
 		} finally {
 			killDaemonByPidFile(dgHome);
 			cleanupDgHome(dgHome);

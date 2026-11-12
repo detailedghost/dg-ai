@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { type NextRequest, NextResponse } from "next/server";
 
 interface ConfirmBody {
@@ -47,9 +47,16 @@ function validName(name: unknown): name is string {
 	return typeof name === "string" && NAME.test(name);
 }
 
+const BIN = process.env.DG_SKILLS_BIN;
 const CLI =
-	process.env.DG_SKILLS_BIN ??
-	join(process.env.HOME ?? "", ".dg", "bin", "dg-skills");
+	BIN && !/[\\/]/.test(BIN)
+		? BIN
+		: resolve(
+				BIN ||
+					(process.env.DG_HOME
+						? join(process.env.DG_HOME, "bin", "dg-skills")
+						: join(process.env.HOME ?? "", ".local", "bin", "dg-skills")),
+			);
 
 function gitRoot(): string {
 	try {

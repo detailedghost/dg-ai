@@ -10,19 +10,21 @@ import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
+	readFileSync,
 	rmSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { filesToInstall } from "../skill-files";
+import { resolveDgPaths } from "./dg-paths";
 
 export function skillsInstallDest(
 	env: Record<string, string | undefined>,
 	home: string = homedir(),
 ): string {
 	if (env.DG_SKILLS_DEST) return env.DG_SKILLS_DEST;
-	const root = env.DG_HOME || join(home, ".dg");
-	return join(root, "skills");
+	return resolveDgPaths({ env, homeDir: home }).skillsDir;
 }
 
 /** Relative path with `/` separators. `pathSep` is injectable so tests can cover Windows. */
@@ -53,7 +55,34 @@ export function listSkillTreeFiles(root: string): string[] {
 	return files;
 }
 
-export const RETIRED_SKILLS = ["phone-friend"];
+export const RETIRED_SKILLS = ["phone-friend", "teach", "wait-what"];
+
+/** SHA-256 of every SKILL.md dg shipped for a retired name that another plugin now provides. */
+export const RETIRED_SKILL_HASHES: Record<string, string[]> = {
+	teach: [
+		"b32cdde3ab7f7239d157dd2225c984e48c02aa981cb962b42cdda5cdd1c4dc68",
+		"bb06ec5c6763216f76a7af5fbbea839476008747740ded023d285a5afddbd3c9",
+		"f5c44555744159f345cfdd1ab1eede4977f06cf31b911edffc48e35747b313a9",
+		"d173128190d9450759d3ca5a261987448e176665fabb9cd7a0ffba4d4f006020",
+	],
+	"wait-what": [
+		"3ff07fa007759e417d95c4885ed333a84119cc0d621f7e3d805ca46b6ffb3dd6",
+		"6f40fe8148898ee8cb306b8fec3f8f674ee346f5ef54bf9f2d2790e43e1e1f4a",
+		"9b0cee4706ad7eb61490d3cb997b1dad7cfebd2dc974e4735b5a2fb65a1bcb3e",
+		"f923f0a108954acb787d4b9d331bc44525ab70721df0e00e719284007a773bd0",
+	],
+};
+
+function isRemovableRetired(dest: string, name: string): boolean {
+	const known = RETIRED_SKILL_HASHES[name];
+	if (!known) return true;
+	const skill = join(dest, name, "SKILL.md");
+	try {
+		return known.includes(createHash("sha256").update(readFileSync(skill)).digest("hex"));
+	} catch {
+		return false;
+	}
+}
 
 /**
  * Replace each skill directory in dest with the files selected from source.
@@ -68,7 +97,7 @@ export function installSkillTree(source: string, dest: string): string[] {
 	const skillNames = new Set(files.map((file) => file.split("/")[0]));
 	mkdirSync(dest, { recursive: true });
 	for (const name of RETIRED_SKILLS) {
-		rmSync(join(dest, name), { recursive: true, force: true });
+		if (isRemovableRetired(dest, name)) rmSync(join(dest, name), { recursive: true, force: true });
 	}
 	for (const name of skillNames) {
 		rmSync(join(dest, name), { recursive: true, force: true });

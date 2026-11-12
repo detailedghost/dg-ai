@@ -2,6 +2,11 @@
 export const wait = (ms: number): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, ms));
 
+/** A promise that never settles; a command that leaves a server running returns it so `main` never returns. */
+export const forever = (): Promise<never> => new Promise(() => {});
+
+export { exitAfterDrain } from "./exit";
+
 /** Resolves with `work`, or with `onTimeout()` after `ms`; a throwing `onTimeout` rejects. */
 export function withTimeout<T, U = undefined>(
 	work: Promise<T>,

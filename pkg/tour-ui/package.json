@@ -8,7 +8,6 @@
 		"./host": "./src/host.ts"
 	},
 	"scripts": {
-		"build": "bun build.ts",
 		"lint": "tsc --noEmit",
 		"test": "bun test"
 	},

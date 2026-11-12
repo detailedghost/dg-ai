@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -13,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
+import { removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
 import {
 	assertExtensionInstalled,
 	cliOnlyMarker,
@@ -50,7 +50,7 @@ describe("cli-only marker", () => {
 		expect(isCliOnly()).toBe(false);
 		setCliOnly(true);
 		expect(isCliOnly()).toBe(true);
-		expect(cliOnlyMarker()).toBe(join(home, ".dg", "cli-only"));
+		expect(cliOnlyMarker()).toBe(join(home, ".dg", "config", "cli-only"));
 	});
 
 	test("is removed by a full install", () => {
@@ -220,116 +220,90 @@ describe("skill metadata", () => {
 	});
 });
 
-describe.skipIf(process.platform === "win32")("bootstrap.sh flag", () => {
-	const run = async (args: string[], env: Record<string, string> = {}) => {
-		const bin = join(home, "stub-bin");
-		mkdirSync(bin, { recursive: true });
-		const os = process.platform === "darwin" ? "macos" : "linux";
-		const cpu = process.arch === "arm64" ? "arm64" : "x64";
-		const asset = `dg-skills-${os}-${cpu}`;
-		writeFileSync(
-			join(bin, "curl"),
-			`#!/bin/sh
-out=""
-prev=""
-for arg in "$@"; do
-  [ "$prev" = "-o" ] && out="$arg"
-  prev="$arg"
-done
-if [ -n "$REFUSE_OUT" ] && [ "$out" = "$REFUSE_OUT" ]; then
-  echo "curl: (23) client returned ERROR on write" >&2
-  exit 23
-fi
-if [ -z "$out" ]; then
-  printf '[{"tag_name":"v9.9.9","assets":[{"browser_download_url":"https://example.test/download/v9.9.9/${asset}"}]}]'
-else
-  printf '#!/bin/sh\\necho "$@" >> "%s/calls"\\n' "${home}" > "$out"
-fi
-`,
-		);
-		chmodSync(join(bin, "curl"), 0o755);
-		const child = Bun.spawn(["sh", bootstrap, ...args], {
-			env: { PATH: `${bin}:${process.env.PATH}`, HOME: home, ...env },
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const exitCode = await child.exited;
-		const calls = existsSync(join(home, "calls"))
-			? readFileSync(join(home, "calls"), "utf8").trim()
-			: "";
-		return { exitCode, calls };
+describe.skipIf(
+	process.platform === "win32" || process.env.DG_BOOTSTRAP_E2E !== "1",
+)("bootstrap.sh flag", () => {
+	afterEach(removeBootstrapDirs);
+	afterAll(removeBootstrapFixtures);
+
+	const run = async (args: string[], env: Record<string, string> = {}, version?: string) => {
+		const result = await runBootstrap({ args, env, version });
+		return { exitCode: result.code, calls: result.installCall ?? "" };
 	};
 
 	test("runs the full install by default", async () => {
-		expect(await run([])).toEqual({ exitCode: 0, calls: "install" });
+		expect(await run([])).toEqual({ exitCode: 0, calls: "dg-skills install" });
 	});
 
 	test("passes --cli-only to install when given the flag", async () => {
-		expect(await run(["--cli-only"])).toEqual({ exitCode: 0, calls: "install --cli-only" });
+		expect(await run(["--cli-only"])).toEqual({ exitCode: 0, calls: "dg-skills install --cli-only" });
 	});
 
 	test("passes --cli-only to install when DG_CLI_ONLY is 1", async () => {
-		expect(await run([], { DG_CLI_ONLY: "1" })).toEqual({
-			exitCode: 0,
-			calls: "install --cli-only",
-		});
+		expect(await run([], { DG_CLI_ONLY: "1" })).toEqual({ exitCode: 0, calls: "dg-skills install --cli-only" });
 	});
 
 	test("passes --agent-only to install when given the flag", async () => {
-		expect(await run(["--agent-only"])).toEqual({ exitCode: 0, calls: "install --agent-only" });
+		expect(await run(["--agent-only"])).toEqual({ exitCode: 0, calls: "dg-skills install --agent-only" });
 	});
 
 	test("passes --agent-only to install when DG_AGENT_ONLY is 1", async () => {
-		expect(await run([], { DG_AGENT_ONLY: "1" })).toEqual({
-			exitCode: 0,
-			calls: "install --agent-only",
-		});
+		expect(await run([], { DG_AGENT_ONLY: "1" })).toEqual({ exitCode: 0, calls: "dg-skills install --agent-only" });
 	});
 
 	test("refuses to combine --cli-only and --agent-only, before any download", async () => {
-		const result = await run(["--cli-only", "--agent-only"]);
+		const result = await runBootstrap({ args: ["--cli-only", "--agent-only"] });
 
-		expect(result.exitCode).not.toBe(0);
-		expect(result.calls).toBe("");
+		expect(result.code).not.toBe(0);
+		expect(result.installCall).toBeUndefined();
+		expect(result.requests).toEqual([]);
 	});
 
 	test("passes --version to install when given the flag", async () => {
-		expect(await run(["--version", "9.9.9"])).toEqual({
+		expect(await run(["--version", "9.9.9"], {}, "9.9.9")).toEqual({
 			exitCode: 0,
-			calls: "install --version 9.9.9",
+			calls: "dg-skills install --version 9.9.9",
 		});
 	});
 
 	test("passes --version to install when DG_VERSION is set", async () => {
-		expect(await run([], { DG_VERSION: "9.9.9" })).toEqual({
+		expect(await run([], { DG_VERSION: "9.9.9" }, "9.9.9")).toEqual({
 			exitCode: 0,
-			calls: "install --version 9.9.9",
+			calls: "dg-skills install --version 9.9.9",
 		});
 	});
 
 	test("combines --version with --cli-only", async () => {
-		expect(await run(["--cli-only", "--version", "9.9.9"])).toEqual({
+		expect(await run(["--cli-only", "--version", "9.9.9"], {}, "9.9.9")).toEqual({
 			exitCode: 0,
-			calls: "install --cli-only --version 9.9.9",
+			calls: "dg-skills install --cli-only --version 9.9.9",
 		});
 	});
 
-	test("replaces a busy binary by rename instead of writing over it", async () => {
-		const dest = join(home, ".dg", "bin", "dg-skills");
-		mkdirSync(join(home, ".dg", "bin"), { recursive: true });
-		writeFileSync(dest, "old");
-		const result = await run([], { DG_HOME: join(home, ".dg"), REFUSE_OUT: dest });
+	test("replaces a busy compiled binary with the shim by rename instead of writing over it", async () => {
+		let before = 0;
+		const result = await runBootstrap({
+			seed: (root) => {
+				mkdirSync(join(root, "bin"), { recursive: true });
+				writeFileSync(join(root, "bin", "dg-skills"), "old");
+				before = statSync(join(root, "bin", "dg-skills")).ino;
+			},
+		});
+		const dest = join(result.root, "bin", "dg-skills");
 
-		expect(result).toEqual({ exitCode: 0, calls: "install" });
-		expect(readFileSync(dest, "utf8")).not.toBe("old");
+		expect(result.code, result.stderr).toBe(0);
+		expect(readFileSync(dest, "utf8")).toContain("lib/current/dg.js");
+		expect(statSync(dest).ino).not.toBe(before);
 		expect(statSync(dest).mode & 0o777).toBe(0o755);
-		expect(readdirSync(join(home, ".dg", "bin")).filter((f) => f.startsWith(".dg-skills-installer"))).toEqual([]);
+		expect(readdirSync(join(result.root, "bin")).filter((f) => f.startsWith("."))).toEqual([]);
 	});
 
-	test("delegates through the newest binary even when the pinned version matches no release", async () => {
-		const result = await run(["--version", "1.0.0"]);
+	test("fails before any asset download when the pinned version matches no release", async () => {
+		const result = await runBootstrap({ args: ["--version", "1.0.1"] });
 
-		expect(result.exitCode).toBe(0);
-		expect(result.calls).toBe("install --version 1.0.0");
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("no release named v1.0.1 found");
+		expect(result.requests.every((url) => url.includes("/releases?"))).toBe(true);
+		expect(result.installCall).toBeUndefined();
 	});
 });

@@ -8,6 +8,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { installBundleShim } from "./bundle-build";
 import { mergeEnv } from "./module-call";
 import {
 	collectRun,
@@ -77,18 +78,7 @@ function utcDay(): string {
 
 beforeAll(() => {
 	context = newSpecContext();
-	binary = join(context.base, "moved ' install", "dg-skills");
-	mkdirSync(join(binary, ".."), { recursive: true });
-	const build = Bun.spawnSync(
-		[
-			process.execPath,
-			join(import.meta.dir, "../build.ts"),
-			"--outfile",
-			binary,
-		],
-		{ stdout: "pipe", stderr: "pipe" },
-	);
-	if (build.exitCode !== 0) throw new Error(build.stderr.toString());
+	binary = installBundleShim(join(context.base, "moved ' install", "dg-skills"));
 	skills = join(context.base, "relocated plugin", "skills");
 	cpSync(join(SOURCE_SKILLS, "spec"), join(skills, "spec"), {
 		recursive: true,

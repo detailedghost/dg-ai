@@ -232,8 +232,8 @@ export function showRecordPrompt(
 	return mountCentered(host, "dg-demo-modal", (card) => {
 		const b = el("div");
 		b.textContent = opts.shortcut
-			? "This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon — or press the shortcut below — to start recording, then sit back and watch."
-			: "This tour records itself and saves a video to your Downloads. Click the DeeGee toolbar icon to start recording, then sit back and watch.";
+			? `This tour records itself and saves a video to your Downloads. Open the DeeGee popup and choose Record demo, or press ${opts.shortcut}, to start recording, then sit back and watch.`
+			: "This tour records itself and saves a video to your Downloads. Open the DeeGee popup and choose Record demo to start recording, then sit back and watch.";
 		const narrationRow = el("div", {
 			marginTop: "0.875rem",
 			fontSize: "0.8125rem",
@@ -254,7 +254,7 @@ export function showRecordPrompt(
 				fontSize: "0.8125rem",
 				color: "var(--accent2)",
 			});
-			line.textContent = `No keyboard shortcut is assigned to DeeGee — usually something else already holds it, most often an older unpacked copy of this extension. Use the toolbar icon, or assign one at ${opts.shortcutsUrl}.`;
+			line.textContent = `No keyboard shortcut is assigned to DeeGee — usually something else already holds it, most often an older unpacked copy of this extension. Open the DeeGee popup and choose Record demo, or assign a shortcut at ${opts.shortcutsUrl}.`;
 		}
 		card.append(heading("🎬 Video demo ready"), b, narrationRow, line);
 	});

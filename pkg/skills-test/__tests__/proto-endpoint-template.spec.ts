@@ -307,3 +307,15 @@ describe("framework endpoint templates", () => {
 		},
 	);
 });
+
+describe("prototype endpoint launcher path", () => {
+	test.each(["prototype-endpoint.ts", "prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"])(
+		"%s keeps a bare DG_SKILLS_BIN as a PATH lookup and resolves a launcher path before it runs it from the git root",
+		(file) => {
+			const text = readFileSync(join(ASSETS, file), "utf8");
+			expect(text).toContain("const BIN = process.env.DG_SKILLS_BIN;");
+			expect(text).toContain("BIN && !/[\\\\/]/.test(BIN)");
+			expect(text).not.toMatch(/resolve\(\s*process\.env\.DG_SKILLS_BIN/);
+		},
+	);
+});

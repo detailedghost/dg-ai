@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { installBundleShim } from "./bundle-build";
 import * as cliFixtures from "./cli-fixtures";
 import { writeFakeCli } from "./fake-cli";
 import { makeTempDir } from "./git-repo-fixtures";
@@ -1005,17 +1006,11 @@ describe("relocated compiled chain and file commands", () => {
 	beforeAll(() => {
 		bundleRoot = makeTempDir("dg-chain-file-bundle-");
 		const stage = join(bundleRoot, "build stage with spaces");
-		const compiled = join(stage, "dg-skills");
 		const install = join(bundleRoot, "relocated install with spaces");
 		installedSkills = join(install, "skills");
 		binary = join(install, "bin", "dg-skills");
 		mkdirSync(stage, { recursive: true });
-		mkdirSync(join(install, "bin"), { recursive: true });
-		const build = Bun.spawnSync([BUN_BIN, join(import.meta.dir, "../build.ts"), "--outfile", compiled], {
-			cwd: join(import.meta.dir, "../../.."), env: process.env,
-		});
-		if (build.exitCode !== 0) throw new Error(`Compile failed: ${build.stderr.toString()}`);
-		renameSync(compiled, binary);
+		installBundleShim(binary);
 
 		const copiedRepo = join(stage, "copied repository");
 		const copiedBootstrap = join(copiedRepo, "pkg", "skills-cli", "bootstrap.sh");

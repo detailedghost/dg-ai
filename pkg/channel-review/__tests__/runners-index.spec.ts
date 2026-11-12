@@ -12,7 +12,7 @@ import {
 const HOME = "/home/dev";
 const URL = "https://github.com/o/r/pull/12";
 const CLAUDE_HEADLESS_NOTE =
-	"This run is headless, and no one can approve a command. The dg-skills CLI is installed and current, so skip the skill's first-run install check. Run each ~/.dg/bin/dg-skills command as its own Bash call, with no pipes, redirects, || or &&.";
+	"This run is headless, and no one can approve a command. The dg-skills CLI is installed and current, so skip the skill's first-run install check. Run each dg-skills command as its own Bash call, with no pipes, redirects, || or &&.";
 const DRAFT_NOTE = "Review the pull request whether it is a draft or open.";
 const CODEX_HEADLESS_NOTE =
 	"This run is headless. No one can answer questions. Post the review without asking for confirmation.";

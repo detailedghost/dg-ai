@@ -25,8 +25,9 @@ release tag. Fixes still land on `master` first.
 bootstrap script from the latest `skills-v*` tag, after a security release. The extension update
 is the unpacked zip from the `ext-v*` release.
 
-Installed binary versions are recorded in `~/.dg/bin/.dg-skills.version`,
-`~/.dg/bin/.dg-daemon.version`, and `~/.dg/bin/.dg-agent.version`. The
+Installed binary versions are recorded in `.dg-skills.version`,
+`.dg-daemon.version`, and `.dg-agent.version` in the launcher folder
+(`~/.local/bin` on Linux and macOS, `%LOCALAPPDATA%\dg\bin` on Windows). The
 extension version is the `version` field of the loaded extension manifest.
 
 ## Reporting a vulnerability

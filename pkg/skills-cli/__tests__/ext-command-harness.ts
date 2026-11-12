@@ -27,8 +27,8 @@ export function extCommandWorld(options: {
 }): ExtCommandWorld {
 	const home = mkdtempSync(join(tmpdir(), "dg-ext-command-"));
 	const dgHome = join(home, ".dg");
-	mkdirSync(dgHome, { recursive: true });
-	if (options.cliOnly) writeFileSync(join(dgHome, "cli-only"), "");
+	mkdirSync(join(dgHome, "config"), { recursive: true });
+	if (options.cliOnly) writeFileSync(join(dgHome, "config", "cli-only"), "");
 
 	const script = (args: string[]) => `
 import { mock } from "bun:test";

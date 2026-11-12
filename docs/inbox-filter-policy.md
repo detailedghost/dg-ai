@@ -20,7 +20,7 @@ folder paths, and an observed copy of what Proton returned. A later sync uses th
 edit from a change made in the Proton UI.
 
 ```sh
-~/.dg/bin/dg-skills inbox filters import --account-profile NAME --session "$S"
+dg-skills inbox filters import --account-profile NAME --session "$S"
 ```
 
 Import refuses to replace an existing file. Pass `--replace` to capture Proton again. `--replace` keeps
@@ -32,7 +32,7 @@ The pattern is a plus-alias glob from that file, such as `owner+*@example.test`.
 Sync reads the declared file and the live mailbox, then prints a plan. Dry run is the default.
 
 ```sh
-~/.dg/bin/dg-skills inbox filters sync --dry-run --account-profile NAME --session "$S"
+dg-skills inbox filters sync --dry-run --account-profile NAME --session "$S"
 ```
 
 Stdout is a redacted summary. The `review` field lists each line. The full plan, including Sieve text,
@@ -81,7 +81,7 @@ Apply only after you have read the dry run. `--apply` checks that the hash still
 including the same pull, revert, and delete flags.
 
 ```sh
-~/.dg/bin/dg-skills inbox filters sync --apply PLAN_HASH --account-profile NAME --session "$S"
+dg-skills inbox filters sync --apply PLAN_HASH --account-profile NAME --session "$S"
 ```
 
 On a terminal you can use `--confirm` and type `apply`. A non-interactive shell must use `--apply` and

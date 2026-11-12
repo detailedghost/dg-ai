@@ -51,6 +51,7 @@ const SUBCOMMANDS = [
 	"roster",
 	"scaffold",
 	"lint-waves",
+	"estimate",
 	"prototype-ref",
 ];
 
@@ -826,7 +827,7 @@ describe("dg-skills spec lint-waves", () => {
 		const fromPlan = await spec(["lint-waves", "plan.md"]);
 		expect(fromBlob.exitCode).toBe(1);
 		expect(fromPlan).toEqual(fromBlob);
-		expect(fromBlob.stdout).toContain("FAIL: same-layer slices share files");
+		expect(fromBlob.stdout).toContain("FAIL: independent slices share files");
 		expect(fromBlob.stdout).toContain("fix: add 1 to slice 2 depends_on");
 	});
 
@@ -850,7 +851,7 @@ describe("dg-skills spec lint-waves", () => {
 		const clear = await spec(["lint-waves", "serial.json"]);
 		expect(clear.exitCode).toBe(0);
 		expect(clear.stdout).toBe(
-			"layer 0: 1\nlayer 1: 2\nok: no same-layer overlap\n",
+			"layer 0: 1\nlayer 1: 2\nok: no overlap between independent slices\n",
 		);
 	});
 
@@ -864,8 +865,86 @@ describe("dg-skills spec lint-waves", () => {
 		const run = await spec(["lint-waves", "blob.json"]);
 		expect(run.exitCode).toBe(0);
 		expect(run.stdout).toBe(
-			"layer 0: 1\nlayer 1: 2\nok: no same-layer overlap\n",
+			"layer 0: 1\nlayer 1: 2\nok: no overlap between independent slices\n",
 		);
+	});
+
+	test("an overlap between independent slices in different layers fails and names the pair", async () => {
+		put(
+			"blob.json",
+			JSON.stringify({
+				slices: [
+					slice(1, ["a/**"]),
+					slice(2, ["b/**"], [1]),
+					slice(3, ["a/**"]),
+				],
+			}),
+		);
+		const run = await spec(["lint-waves", "blob.json"]);
+		expect(run.exitCode).toBe(1);
+		expect(run.stdout).toContain("OVERLAP: slice 1 <-> slice 3 (independent)");
+		expect(run.stdout).toContain("fix: add");
+		expect(run.stdout).toContain(
+			"FAIL: independent slices share files; serialize them with depends_on",
+		);
+	});
+
+	test("the same three slices pass once slice 3 depends on slice 1", async () => {
+		put(
+			"blob.json",
+			JSON.stringify({
+				slices: [
+					slice(1, ["a/**"]),
+					slice(2, ["b/**"], [1]),
+					slice(3, ["a/**"], [1]),
+				],
+			}),
+		);
+		const run = await spec(["lint-waves", "blob.json"]);
+		expect(run.exitCode).toBe(0);
+		expect(run.stdout).toEndWith(
+			"ok: no overlap between independent slices\n",
+		);
+	});
+
+	test("a transitive dependency path makes two overlapping slices dependent", async () => {
+		put(
+			"blob.json",
+			JSON.stringify({
+				slices: [
+					slice(1, ["a/**"]),
+					slice(2, ["b/**"], [1]),
+					slice(3, ["a/**"], [2]),
+				],
+			}),
+		);
+		const run = await spec(["lint-waves", "blob.json"]);
+		expect(run.exitCode).toBe(0);
+	});
+
+	test("scaffold refuses an independent-pair overlap with the independent wording", async () => {
+		put(
+			"overlap.json",
+			JSON.stringify({
+				feature: "F",
+				slug: "f",
+				purpose: "p",
+				scope: {},
+				slices: [slice(1, ["a/**"]), slice(2, ["a/x.ts"])],
+			}),
+		);
+		const run = await spec([
+			"scaffold",
+			"--home",
+			"specs",
+			"--slug",
+			"f",
+			"--from-json",
+			"overlap.json",
+		]);
+		expect(run.exitCode).toBe(2);
+		expect(run.stderr).toContain("refusing to scaffold: independent slices overlap");
+		expect(run.stderr).not.toContain("same-layer");
 	});
 
 	test("scaffold --allow-overlap proceeds past an overlap but never past a cycle", async () => {
@@ -1059,7 +1138,7 @@ describe("dg-skills spec defects the TypeScript port must not carry over", () =>
 		);
 		initRepo(context.root);
 		runFixtureGit(
-			["commit", "-q", "--allow-empty", "-m", "slice-1: model"],
+			["commit", "-q", "--allow-empty", "-m", "feat(cli): slice-1: model"],
 			context.root,
 		);
 		const run = await spec(["ready", "spec.md", "3"]);

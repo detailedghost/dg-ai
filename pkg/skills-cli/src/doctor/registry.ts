@@ -22,11 +22,13 @@ import { monolithChecks } from "../monolith/doctor";
 import { overwatchSnapshotChecks } from "../overwatch-snapshot/doctor";
 import { polishChecks } from "../polish/doctor";
 import { protoChecks, prototypeChecks } from "../proto/doctor";
+import { updateChecks } from "../update/doctor";
 import { verifyChecks } from "../verify/doctor";
 import { proxyChecks } from "../proxy/doctor";
 import { pwChecks, pwCodeChecks } from "../pw/doctor";
 import { requireExtensionChecks } from "../require-extension/doctor";
 import { rerunChecks } from "../rerun/doctor";
+import { skillChecks } from "../skill/doctor";
 import { sniffChecks } from "../sniff/doctor";
 import { ssmsChecks } from "../ssms/doctor";
 import { specChecks } from "../spec/doctor";
@@ -64,6 +66,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"clipboard-image": clipboardImageChecks,
 	proto: protoChecks,
 	prototype: prototypeChecks,
+	update: updateChecks,
 	verify: verifyChecks,
 	proxy: proxyChecks,
 	"overwatch-snapshot": overwatchSnapshotChecks,
@@ -75,6 +78,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	bg: bgChecks,
 	stat: statChecks,
 	sniff: sniffChecks,
+	skill: skillChecks,
 	ssms: ssmsChecks,
 	hooks: hooksChecks,
 	"require-extension": requireExtensionChecks,

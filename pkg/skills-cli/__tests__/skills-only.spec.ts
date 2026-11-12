@@ -11,11 +11,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveDgPaths } from "@dg/common/node";
 import {
 	assertSkillsOnlyFlags,
 	runSkillsOnlyInstall,
 	skillsOnlyReport,
-} from "../src/commands/skills-only";
+} from "../src/install/skills-only";
 
 const PERSONAS = [
 	"arch",
@@ -97,7 +98,7 @@ describe("skills-only helpers", () => {
 				env: {},
 				home: directory,
 			});
-			expect(fallback.dest).toBe(join(directory, ".dg", "skills"));
+			expect(fallback.dest).toBe(resolveDgPaths({ env: {}, homeDir: directory }).skillsDir);
 			expect(fallback.files).toEqual(["from-repo/SKILL.md"]);
 			expect(() =>
 				runSkillsOnlyInstall({

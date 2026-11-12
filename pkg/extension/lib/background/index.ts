@@ -1,4 +1,5 @@
-export { registerChat } from "./chat";
+export { registerAgentTabs } from "./agent-tabs";
+export { registerDaemonLink } from "./daemon-link";
 export { registerProto } from "./proto";
 export { registerRecording } from "./recording";
 export { registerTabGrouping } from "./tab-grouping";

@@ -1,7 +1,7 @@
 # Prototype templates
 
 Copyable templates for the local `/dg:proto` mode. Run
-`~/.dg/bin/dg-skills prototype components` to print the installed directory that holds this file,
+`dg-skills prototype components` to print the installed directory that holds this file,
 then copy the template that fits instead of writing one from scratch.
 
 | File | Framework | Use |
@@ -21,7 +21,7 @@ It handles both UI-variant selection and plan-walkthrough decisions. The endpoin
 a switcher mounted inside an app dev server.
 
 The endpoint templates run `dg-skills prototype path <name>` to find the sentinel. They use
-`$DG_SKILLS_BIN` when set, else the binary installed under `$HOME/.dg/bin`. Export
+`$DG_SKILLS_BIN` when set, else the binary installed under `$HOME/.local/bin`. Export
 `PROTOTYPE_LIGHT=1` in the dev server's environment for a `--light` prototype.
 
 The endpoint templates accept only a same-origin JSON `POST` from `localhost`, `127.0.0.1`, or

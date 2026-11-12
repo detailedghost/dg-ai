@@ -7,7 +7,7 @@ import {
 } from "@dg/common";
 import { MSG } from "../chat-messages";
 import { patchKeyedList } from "../dom-keyed-list";
-import type { PageRuntime, PairingControl, PairingMount } from "../runtime";
+import type { PageRuntime } from "../runtime";
 import {
 	connectOverwatchApi,
 	formatCountdown,
@@ -22,7 +22,6 @@ import {
 export type RenderOverwatchOptions = {
 	root: HTMLElement;
 	runtime?: Partial<PageRuntime>;
-	mountPairing?: PairingMount;
 	offlineLabel?: () => string;
 	connect?: (knownPort?: number) => Promise<OverwatchApi | undefined>;
 	now?: () => Date;
@@ -119,7 +118,6 @@ export function renderOverwatchPage(
 	let retryTimer: number | undefined;
 	let stopped = false;
 	let actionControlId = 0;
-	let pairing: PairingControl | undefined;
 
 	const laneRefs = new WeakMap<HTMLElement, LaneRefs>();
 	const backgroundRefs = new WeakMap<HTMLElement, BackgroundRefs>();
@@ -155,7 +153,6 @@ export function renderOverwatchPage(
 	connection.hidden = true;
 	top.append(countdown, need);
 	const dates = element("div", "overwatch__dates");
-	const pairHost = element("div", "overwatch__pair");
 	const axis = element("div", "overwatch__axis");
 	for (const label of ["Chat", "Review", "CI", "E2E", "Merge"]) {
 		axis.append(element("span", undefined, label));
@@ -194,7 +191,6 @@ export function renderOverwatchPage(
 	page.append(
 		top,
 		connection,
-		pairHost,
 		dates,
 		axis,
 		lanes,
@@ -213,14 +209,7 @@ export function renderOverwatchPage(
 	async function ensureApi(): Promise<OverwatchApi | undefined> {
 		if (api) return api;
 		api = await connect(lastPort);
-		if (api) {
-			lastPort = overwatchPort(api);
-			if (!pairing && runtime.sendMessage) {
-				pairing = options.mountPairing?.(pairHost, {
-					findPort: () => Promise.resolve(lastPort),
-				});
-			}
-		}
+		if (api) lastPort = overwatchPort(api);
 		return api;
 	}
 
@@ -557,12 +546,6 @@ export function renderOverwatchPage(
 	}
 
 	function onMessage(message: unknown): void {
-		if (typeof message === "object" && message !== null) {
-			const payload = message as Record<string, unknown>;
-			if (payload.type === MSG.connection) {
-				pairing?.setConnected(payload.state === "connected");
-			}
-		}
 		const frame = relayFrame(message);
 		if (frame?.type === "overwatch-state") acceptBoard(frame.board);
 	}
@@ -611,7 +594,6 @@ export function renderOverwatchPage(
 			cancel(timer);
 			if (retryTimer !== undefined) cancelDeferred(retryTimer);
 			runtime.onMessage?.removeListener?.(onMessage);
-			pairing?.destroy();
 		},
 	};
 }
