@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.0.0 (2026-11-12)
+
+### Breaking
+
+- refactor(layout)!: one layout module for all dg state ([#152](https://github.com/detailedghost/dg-ai/pull/152))
+
+### Features
+
+- feat(pw): browser-approved unmask and select/date/time fill for pw --ext ([#166](https://github.com/detailedghost/dg-ai/pull/166))
+- feat(verify): gate verify on the accepted prototype layout ([#133](https://github.com/detailedghost/dg-ai/pull/133))
+
 ## v4.2.0 (2026-11-12)
 
 ### Features
