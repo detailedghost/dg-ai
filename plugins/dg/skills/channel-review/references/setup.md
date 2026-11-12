@@ -290,7 +290,7 @@ to a `bot/fix/*` branch.
 | `deps.enabled` | boolean | `false` | Run scheduled upgrades. |
 | `deps.timeoutMinutes` | number | `90` | Time limit for one upgrade job. |
 | `deps.ciTimeoutMinutes` | number | `60` | How long the daemon waits for CI on a draft PR before it reports a timeout. |
-| `deps.cooldownDays` | whole number | `7` | The skill only upgrades to versions published at least this many days ago. |
+| `deps.cooldownDays` | whole number | `0` | The skill only upgrades to versions published at least this many days ago. `0` turns the cooldown off. The scheduled run passes this value as `--cooldown-days`, so `DG_DEPS_COOLDOWN_DAYS` does not apply to it. |
 | `deps.branchPrefix` | string | `chore/deps-update-` | Branch prefix of upgrade PRs. A repo with an open PR on this prefix is skipped. |
 | `deps.allowedTools` | string array | Clone-root file tools, build and test tools, `git`, `gh`, `Bash(dg-skills deps-upgrade:*)`, and `Read(~/.claude/plugins/cache/*/dg/*/plugins/dg/skills/deps-upgrade/**)` | Tools the upgrade agent may use. |
 | `deps.schedule.every` | string | `week` | Default cadence: `day` or `week`. |

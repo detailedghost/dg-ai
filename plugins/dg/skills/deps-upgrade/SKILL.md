@@ -7,13 +7,13 @@ description: Create a dedicated worktree on a timestamped branch, apply all open
 
 Batch-apply all open Dependabot PRs (GitHub) or Renovate MRs (GitLab) into a single branch, fix security vulnerabilities, resolve breaking changes, verify the project builds/lints/tests, and open one combined PR/MR.
 
-**Usage:** `/dg:deps-upgrade [--cooldown-days N] [--ext]` — only upgrade to versions published at least N days ago (default 7, `0` turns it off). Pass the same N to every `cooldown` call.
+**Usage:** `/dg:deps-upgrade [--cooldown-days N] [--ext]` — only upgrade to versions published at least N days ago. Without the flag the CLI uses `$DG_DEPS_COOLDOWN_DAYS`, else `0`, which turns the cooldown off. Pass N to every `cooldown` call only when the user gave the flag; otherwise omit it.
 
 ## Flags
 
 | Flag | Short | Effect | Default |
 |---|---|---|---|
-| `--cooldown-days N` | none | Only upgrade to versions published at least N days ago. `0` turns the cooldown off. | `7` |
+| `--cooldown-days N` | none | Only upgrade to versions published at least N days ago. `0` turns the cooldown off. | `$DG_DEPS_COOLDOWN_DAYS`, else `0` |
 | `--ext` | none | Open the PR through the dg-ai-extension so it lands in the `Deps` tab group. | off (local is the default) |
 
 **Keep it light.** Each step is mechanical. Do not over-explain, do not speculate, do not refactor unrelated code. Read only the files you need. Produce minimal diffs.
@@ -66,7 +66,7 @@ Read `.agents/school/DEPS.md` before Step 1 for past upgrade notes (recurring is
 | 1 | **Prepare** — Fetch default branch, create worktree + `<prefix>deps_update_<ts>` branch (prefix: `$DG_DEPS_BRANCH_PREFIX`, default `chore/`), then `cd` into it | `prepare` | In the worktree on the deps-update branch, clean tree |
 | 2 | **Discover** — List open Dependabot PRs (GitHub) or Renovate MRs (GitLab), categorize by severity | `list-prs` | Update list exists (may be empty) |
 | 3 | **Security Audit** — Run ecosystem audit, find fixable vulns | `audit` | At least one update to apply |
-| 4 | **Apply Updates** — Check each target with `cooldown <pkg> <old> <new> --cooldown-days N` first; bump to the verdict's `version` (`ok`/`fallback`), skip `held`/`unknown`. Update manifests, clean lockfile | `cooldown`, `bump-dep`, `bump-action` | Install succeeds, lockfile clean |
+| 4 | **Apply Updates** — Check each target with `cooldown <pkg> <old> <new> [--cooldown-days N]` first; bump to the verdict's `version` (`ok`/`fallback`), skip `held`/`unknown`. Update manifests, clean lockfile | `cooldown`, `bump-dep`, `bump-action` | Install succeeds, lockfile clean |
 | 5 | **Fix Breaking Changes** — Migrate for major bumps | `pr-body <n>` for changelogs; commit migrated files via `commit chore deps "<msg>" --files …` | Migration changes applied |
 | 6 | **Verify** — Build, lint, test (all must pass) | *native project build/lint/test commands* | All green |
 | 7 | **Validate** — Optional qa-devops + security re-audit | `audit` again | Clean or skipped |

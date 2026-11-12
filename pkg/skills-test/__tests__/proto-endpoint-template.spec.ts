@@ -319,3 +319,25 @@ describe("prototype endpoint launcher path", () => {
 		},
 	);
 });
+
+describe("prototype endpoint Windows launcher lookup", () => {
+	const FILES = ["prototype-endpoint.ts", "prototype-endpoint.next.ts", "prototype-endpoint.astro.ts"];
+
+	test.each(FILES)("%s looks for the dg-skills.cmd shim and the per-OS default bin folder on win32", (file) => {
+		const text = readFileSync(join(ASSETS, file), "utf8");
+		expect(text).toContain('const WINDOWS = process.platform === "win32";');
+		expect(text).toContain('WINDOWS ? "dg-skills.cmd" : "dg-skills"');
+		expect(text).toContain("process.env.LOCALAPPDATA");
+		expect(text).toMatch(/"dg",\s*"bin"/);
+	});
+
+	test.each(FILES)("%s runs the launcher through a shell with the path quoted on win32 and not elsewhere", (file) => {
+		const text = readFileSync(join(ASSETS, file), "utf8");
+		expect(text).toContain("shell: WINDOWS");
+		expect(text).toContain('WINDOWS ? \'"%DG_SKILLS_LAUNCHER%"\' : CLI');
+		expect(text).toMatch(/env: \{ \.\.\.process\.env, DG_SKILLS_LAUNCHER: CLI \}/);
+		expect(text).not.toContain('`"${CLI}"`');
+		expect(text.match(/execFileSync\(/g)?.length).toBe(2);
+		expect(text).not.toMatch(/execFileSync\(CLI/);
+	});
+});

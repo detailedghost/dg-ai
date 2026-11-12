@@ -47,16 +47,33 @@ function validName(name: unknown): name is string {
 	return typeof name === "string" && NAME.test(name);
 }
 
+const WINDOWS = process.platform === "win32";
+const LAUNCHER = WINDOWS ? "dg-skills.cmd" : "dg-skills";
 const BIN = process.env.DG_SKILLS_BIN;
+
+function defaultBinDir(): string {
+	if (process.env.DG_HOME) return join(process.env.DG_HOME, "bin");
+	if (!WINDOWS) return join(process.env.HOME ?? "", ".local", "bin");
+	const local =
+		process.env.LOCALAPPDATA ??
+		join(process.env.USERPROFILE ?? "", "AppData", "Local");
+	return join(local, "dg", "bin");
+}
+
 const CLI =
 	BIN && !/[\\/]/.test(BIN)
 		? BIN
-		: resolve(
-				BIN ||
-					(process.env.DG_HOME
-						? join(process.env.DG_HOME, "bin", "dg-skills")
-						: join(process.env.HOME ?? "", ".local", "bin", "dg-skills")),
-			);
+		: resolve(BIN || join(defaultBinDir(), LAUNCHER));
+
+function runLauncher(args: string[], cwd: string): string {
+	return execFileSync(WINDOWS ? '"%DG_SKILLS_LAUNCHER%"' : CLI, args, {
+		encoding: "utf8",
+		cwd,
+		env: { ...process.env, DG_SKILLS_LAUNCHER: CLI },
+		shell: WINDOWS,
+		windowsHide: true,
+	});
+}
 
 function gitRoot(): string {
 	try {
@@ -72,10 +89,7 @@ function resolveSentinelPath(name: string): string {
 	const light = process.env.PROTOTYPE_LIGHT === "1" ? ["--light"] : [];
 	const cwd = gitRoot();
 	try {
-		return execFileSync(CLI, ["prototype", "path", name, ...light], {
-			encoding: "utf8",
-			cwd,
-		}).trim();
+		return runLauncher(["prototype", "path", name, ...light], cwd).trim();
 	} catch {
 		return join(cwd, ".agents", "prototype", name, ".selection");
 	}
