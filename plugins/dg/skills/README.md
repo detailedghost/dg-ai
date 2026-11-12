@@ -28,7 +28,7 @@ binaries. The skills-root README itself is not installed.
 | `prd/` | Prepare a spec bundle for handoff |
 | `proxy/` | Delegate to codex, copilot, pi, opencode, or grok |
 | `pushup/` | Push a branch, open its PR, and group the PR in the browser |
-| `refactor/` | Find architectural improvements and discuss a chosen approach |
+| `refactor/` | Find architectural improvements, verify each candidate against the code, and discuss a chosen approach |
 | `rename-session/` | Suggest or apply a session name |
 | `standard-test/` | Apply portable rules for meaningful tests |
 | `stash/` | Resolve scratch, state, current-worktree, or main-worktree artifact paths |
@@ -58,6 +58,7 @@ binaries. The skills-root README itself is not installed.
 | `eli5/` | Explain a concept, file, error, or codebase as if the reader is five |
 | `erd/` | Generate an architecture map or any Mermaid diagram as Markdown or HTML |
 | `test-live/` | Deploy the current branch, wait for it to go live, then drop the temp commits (`dg-skills test-live`) |
+| `thrash/` | Tiered PR and MR review from a code checkout, with a verify stage before the verdict (`dg-skills thrash`) |
 | `ticket/` | File a Jira ticket from the registered project, assignee, sprint, and issue types |
 
 ## Structure

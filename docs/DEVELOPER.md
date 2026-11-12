@@ -233,6 +233,62 @@ exit code, and backend session ID when available. See the
 `DG_SKILLS_DIR` relocates the real canonical skill tree for shared resource
 lookup; compiled code must not use virtual Bun module paths for external files.
 
+#### Thrash review pipeline
+
+`/dg:thrash` runs these stages in order. Each stage reads the files of the stages before it. The scratch files live in the `thrash` scratch folder.
+
+| Stage | Command or agent | Scratch file written |
+| --- | --- | --- |
+| checkout | `dg-skills thrash diff` (also `stack`) | `repo` in the plan file (`root`, `headSha`, `source`) |
+| diff | `dg-skills thrash diff <target>` | `<slug>.diff`, `<slug>.chunk<id>.annotated.diff`, `<slug>.context.md`, plan file |
+| investigate | `dg-skills thrash investigate`, run inside `diff` | `<slug>.chunk<id>.bundle.md` |
+| review | `dg:thrash` agent, one per chunk | `<slug>.chunk<id>.findings.md` |
+| triage merge | `dg-skills thrash triage --stage merge` | `<slug>.merged.json`, `<slug>.verify.tasks.json`, `<slug>.verify.task.<id>.json` |
+| verify | `dg:thrash-verify` agent, one per task | `<slug>.verdict.<id>.json` |
+| triage apply | `dg-skills thrash triage --stage apply` | `<slug>.verdicts.json`, `<slug>.consolidate.input.json` |
+| consolidate | `dg:thrash-consolidate` agent | `<slug>.consolidated.md` (one fenced `json` block) |
+| compile | `dg-skills thrash compile` | `<slug>.review.json` |
+| post | `dg-skills thrash post` | `<slug>.posted.json` |
+
+`compile` reads its findings from three sources. It uses the first source that exists and parses:
+
+1. The consolidated file, with the consolidate input beside it.
+2. The consolidate input.
+3. The chunk findings files.
+
+A consolidated file that does not parse, or that has no consolidate input, produces a warning. `compile` then uses the next source.
+
+`post` removes the checkout tree after it finishes. It also removes the tree after `--dry-run`.
+
+`thrash diff` falls back to a diff-only review when `repo.source` is `none`. The review file then carries a limit note.
+When `repo.source` is `api`, the checkout holds only the files of the diff. The skill adds `REPO_PARTIAL: yes` to the agent prompts.
+`--no-repo` skips the checkout on `diff` and `stack`. The review then runs from the diff only.
+The checkout design is in [ADR 0042](adr/0042-thrash-review-checkout.md).
+
+When the verifier rejects a finding, `compile` does not post or count it. The review carries the note `<N> findings rejected on verification.`
+The review file keeps each rejected finding in its top-level `rejected` list. A rejected finding still holds the prior thread that it matches.
+
+##### Bundles and limits
+
+Grouping by concern splits the diff into review chunks. The limits come from constants in `pkg/skills-cli/src/thrash`:
+
+| Limit | Value | Rule |
+| --- | --- | --- |
+| `TINY_DIFF_LINES` | 100 | A diff of 100 changed lines or fewer is one bundle. |
+| `BUNDLE_TARGET_LINES` | 400 | Above 100 lines, each concern is one bundle. A larger concern splits at about 400 changed lines per bundle. |
+| `MAX_CHUNKS` | 8 | The diff yields 8 bundles at most. The limit of 8 wins over the 400-line target. |
+| `VERIFY_TASK_CAP` | 16 | `triage --stage merge` writes 16 verify tasks at most. Findings past the cap stay unverified. |
+
+The investigate budget (`INVESTIGATE_BUDGET_MS`, 60 s) does not stop the import graph step. Only the per-file steps stop when the budget ends.
+A chunk `contextPath` names the bundle file `<slug>.chunk<id>.bundle.md`.
+The top-level plan `contextPath` names `<slug>.context.md`. The two paths are different files.
+
+##### Consolidator authority
+
+The consolidator can change `title`, `body`, `class`, `otherPlaces`, `changed`, `strengths` and `opportunities`.
+It cannot change `tier`, `path`, `line` or `side`. It cannot add a finding.
+When the consolidator drops a finding without naming it in `otherPlaces`, `compile` adds the finding back.
+
 #### Meaningful tests
 
 The real-git suite is `pkg/skills-cli/__tests__/meaningful.spec.ts`. It
