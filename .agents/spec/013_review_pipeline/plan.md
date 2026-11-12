@@ -51,19 +51,10 @@ slices:
       primary: dg:js
       confidence: high
       complexity: low
-  - id: 6
-    name: "channel-review-bedrock-and-timeouts"
-    depends_on: []
-    files: ["pkg/channel-review/src/config.ts", "pkg/channel-review/src/engine.ts", "pkg/channel-review/src/trigger.ts", "pkg/channel-review/src/errors.ts", "pkg/channel-review/src/runners/index.ts", "pkg/channel-review/src/runners/spawn.ts", "pkg/channel-review/__tests__/core-config.spec.ts", "pkg/channel-review/__tests__/core-engine.spec.ts", "pkg/channel-review/__tests__/core-engine-fallback.spec.ts", "pkg/channel-review/__tests__/core-trigger.spec.ts", "pkg/channel-review/__tests__/core-errors.spec.ts", "pkg/channel-review/__tests__/runners-index.spec.ts", "pkg/channel-review/__tests__/runners-spawn.spec.ts", "plugins/dg/skills/channel-review/references/setup.md", "plugins/dg/skills/channel-review/references/commands.md", "plugins/dg/skills/channel-review/references/config.example.json", "pkg/skills-test/__tests__/channel-review-skill.spec.ts", "docs/adr/0019-review-execution-context.md"]
-    agents:
-      primary: dg:js
-      confidence: high
-      complexity: medium
-      qa: [dg:qa-code, dg:security]
   - id: 7
     name: "docs"
-    depends_on: [5, 6]
-    files: ["docs/DEVELOPER.md", "docs/channel-review.md", "pkg/skills-cli/README.md", "pkg/channel-review/README.md", "plugins/dg/skills/README.md", "README.md"]
+    depends_on: [5]
+    files: ["docs/DEVELOPER.md", "pkg/skills-cli/README.md", "plugins/dg/skills/README.md", "README.md"]
     agents:
       primary: dg:lore
       confidence: high
@@ -75,7 +66,7 @@ execution:
 # Review pipeline: investigate, group, verify, consolidate
 
 ## Purpose
-/dg:thrash reviews a diff with no view of the code around it, so it misses defects that need context and posts claims that nobody checked. This feature gives each review a checkout at the PR head, bundles that group the changed files by concern with their callers and tests, an opus verifier for each serious finding, and a consolidator for reviews with more than one bundle. /dg:refactor reuses the investigate and verify stages. The channel-review daemon gets per-tier Bedrock models and a spice-scaled time limit so the longer pipeline can finish.
+/dg:thrash reviews a diff with no view of the code around it, so it misses defects that need context and posts claims that nobody checked. This feature gives each review a checkout at the PR head, bundles that group the changed files by concern with their callers and tests, an opus verifier for each serious finding, and a consolidator for reviews with more than one bundle. /dg:refactor reuses the investigate and verify stages.
 
 ## Scope
 ### Included
@@ -86,7 +77,6 @@ execution:
 - Personas `dg:thrash-verify` and `dg:thrash-consolidate` (opus), `dg:thrash` rules conditional on a `REPO` input
 - /dg:thrash skill pipeline in waves of 16 or fewer agents, version probe on the new CLI surface
 - /dg:refactor uses `thrash investigate` and `dg:thrash-verify` and shows only verified candidates
-- channel-review: `runner.claude.bedrock.models`, `runner.timeoutMinutesBySpice`, `~model` with `[1m]`, logged fallback model switch, ADR 0019 amendment
 - New ADR for the review checkout; README and developer docs in one final slice
 ### Excluded
 - Thrashley CI action behavior (it only passes `--no-repo`)
@@ -99,6 +89,7 @@ execution:
 - Built-in default values for `runner.timeoutMinutesBySpice`, and a time multiplier for `~stacked`
 - A new top-level dg-skills command or doctor item (new verbs live under `thrash` and reuse `thrashChecks`)
 - Changes to pkg/channel-review/stryker.conf.mjs
+- channel-review Bedrock tiers, spice-scaled timeouts, `~model` `[1m]` and the ADR 0019 amendment: moved to the dg-code-reviewer package (spec 014 decision D9)
 
 ### Slice 1 — checkout-and-file-fetch
 
@@ -525,68 +516,6 @@ execution:
 - [ ] Given candidates that all fail verification, when step 3 runs, then the skill says that no candidate passed verification and how many had no verdict, and asks for the user's own candidate
 - [ ] Given a dg-skills binary with no `thrash investigate`, when the first-run block runs, then it starts the bootstrap
 
-### Slice 6 — channel-review-bedrock-and-timeouts
-
-#### Engineering
-- [ ] pkg/channel-review/src/config.ts: parse optional `runner.claude.bedrock.models` with the keys `opus`, `sonnet`, `haiku`, `fable`; each value is a non-empty string that matches `/^\S+$/`; an unknown key is rejected with the path `runner.claude.bedrock.models`; add `models` to the `bedrock` allow-list in `parseBedrock`, so the existing `section()` helper makes the unknown-key message
-- [ ] pkg/channel-review/src/runners/index.ts `bedrockEnv`: for each tier that is set, add `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` or `ANTHROPIC_DEFAULT_FABLE_MODEL`; a tier that is not set adds no key; `bedrock.model` keeps its current use; `bedrockEnv` reads one `Record<Tier, string>` table, so each key has one literal
-- [ ] pkg/channel-review/src/runners/spawn.ts: `ProcessRequest` gains one optional boolean that a Claude run with `bedrock` sets; with it, `childEnv` removes each parent `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` and `ANTHROPIC_DEFAULT_FABLE_MODEL`, and `request.env` then adds the configured tiers; a run without it keeps the environment of today
-- [ ] config.ts: parse optional `runner.timeoutMinutesBySpice` with the keys `1` to `5`; each value passes the existing `minutes` check; an unknown key is rejected with the path `runner.timeoutMinutesBySpice`; config.ts holds no default values for this map; add `timeoutMinutesBySpice` to the `runner` allow-list in `parseRunner`; the type is `Partial<Record<"1" | "2" | "3" | "4" | "5", number>>`, read with a validated `String(spice)`
-- [ ] config.ts: export one pure `effectiveTimeoutMs(config, spice)`: the map value for the spice when present, else `runner.timeoutMinutes`, times 60000; an undefined spice uses `SPICE_DEFAULT` from `@dg/common` (pkg/channel-review/src/help.ts imports it today); add no new constant
-- [ ] pkg/channel-review/src/engine.ts: the review run time limit is `effectiveTimeoutMs(config, job.spice)`, with no multiplier for `~stacked`; address jobs keep `runner.addressTimeoutMinutes`; delete the module-level `timeoutMs` constant of engine.ts, so no reader keeps `runner.timeoutMinutes`; keep the literal `rec.timeoutMinutes ?? 30` in config.ts (channel-review-skill.spec.ts reads that text)
-- [ ] engine.ts: `longestTimeoutMs` is `Math.max` over `effectiveTimeoutMs(config, s)` for each of the five levels, in place of `runner.timeoutMinutes`, together with the address, autoFix and deps minutes
-- [ ] engine.ts: the CR-204 reply for a review job reports the effective minutes for that job's spice (`effectiveTimeoutMs(config, job.spice) / 60_000`); the address branch of `fail()` keeps `addressTimeoutMinutes`
-- [ ] pkg/channel-review/src/trigger.ts: `~model` accepts one optional `[1m]` at the end of the name (`/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}(\[1m\])?$/`: the name stays case-insensitive and the suffix is lower case only, so `a[1M]` returns CR-108); each runner gets the string unchanged, with no check for each runner; every other rule stays
-- [ ] pkg/channel-review/src/errors.ts CR-108 text: `The ~model flag needs a model name made of letters, numbers, dots, underscores, colons, slashes, or hyphens, with an optional [1m] at the end. Fix the name and try again.`
-- [ ] engine.ts fallback: the fallback run never gets the requested `~model`; it uses the fallback runner's configured model, or that runner's default when none is configured (today's behavior, kept)
-- [ ] engine.ts fallback: on each fallback after CR-207, write one `log.info` line inside `if (available)`, before `selection.model = undefined`; the exact text is `fallback <name> runs model <model|default>`, plus `; requested model <m> is not kept` only when the request had a `~model`; the model text is `resolveModel(fallback.name, undefined, config).model ?? "default"`; one line for each job
-- [ ] docs/adr/0019-review-execution-context.md: add a dated Amendment section (the heading form of docs/adr/0001) for the four per-tier Bedrock variables (a tier that is not set is not exported, and a parent value is removed for a Claude run with `bedrock`), the per-spice time limit that is now the original timeout of the fallback, and the logged model switch; the status stays Proposed; do not edit docs/adr/toc.md
-- [ ] plugins/dg/skills/channel-review/references/setup.md: add a `runner.timeoutMinutesBySpice` row (Default: unset; the values 20, 30, 45, 60, 90 shown as an example) and describe `models` in the `runner.claude.bedrock` row; that row lists the four tier variables and has one worked `models` example with Bedrock inference profile IDs
-- [ ] plugins/dg/skills/channel-review/references/commands.md: update the CR-108 row to the new text and the `~model` row to name `[1m]`; change errors.ts and commands.md in the same change, including the backticked CR-108 row; update the fallback prose and name the log line; add one sentence that `[1m]` is for Claude models
-- [ ] plugins/dg/skills/channel-review/references/config.example.json: add `runner.timeoutMinutesBySpice` with the example values 20, 30, 45, 60, 90 and the string keys `"1"` to `"5"`
-- [ ] pkg/skills-test/__tests__/channel-review-skill.spec.ts: add `runner.timeoutMinutesBySpice` and `runner.claude.bedrock` to the required setup.md keys
-- [ ] Leave pkg/channel-review/stryker.conf.mjs unchanged (thresholds high 95, low 90, break 90; mutate `src/runners/**/*.ts`)
-
-#### Testing Criteria
-##### Contracts
-- [ ] Contract: `runner.claude.bedrock.models?: { opus?: string; sonnet?: string; haiku?: string; fable?: string }`
-- [ ] Contract: `runner.timeoutMinutesBySpice?: { "1"?: number; "2"?: number; "3"?: number; "4"?: number; "5"?: number }` in positive minutes; an absent map or an absent level uses `runner.timeoutMinutes`
-- [ ] Contract: `effectiveTimeoutMs(config: ChannelConfig, spice: number | undefined): number`; an undefined spice uses `SPICE_DEFAULT` (2)
-- [ ] Contract: `~model` values `claude-opus-4-7[1m]` and `us.anthropic.claude-opus-4-7-v1:0[1m]` parse; `a[1m]b`, `[1m]`, `a[2m]`, `a[1M]` and `a[1m][1m]` return CR-108
-- [ ] runners-index.spec.ts: one case per tier (opus, sonnet, haiku, fable): with only that tier set, a `toEqual` on the picked `ANTHROPIC_DEFAULT_*` keys of the seam `request.env` shows exactly that `ANTHROPIC_DEFAULT_<TIER>_MODEL` key with the configured value and none of the other three; the fable case asserts `ANTHROPIC_DEFAULT_FABLE_MODEL`
-- [ ] runners-index.spec.ts: with `bedrock` set and no `models`, the env has none of the four tier keys; with no `bedrock`, the env has none of the four tier keys and no `CLAUDE_CODE_USE_BEDROCK`
-- [ ] runners-index.spec.ts: a non-Claude runner never gets a tier key
-- [ ] runners-index.spec.ts: a Claude run with `bedrock` sets the strip boolean of the process request; a Claude run with no `bedrock` and a non-Claude run do not
-- [ ] runners-spawn.spec.ts: with all four parent variables set and the strip boolean on, each one is absent in the child env (one assertion for each name, because each regex alternative is one Stryker mutant); with the boolean off, the four parent variables stay
-- [ ] core-config.spec.ts: `models` with an unknown key, an empty string, or a non-string value fails with a message that names `runner.claude.bedrock.models`
-- [ ] core-config.spec.ts: `timeoutMinutesBySpice` with the key `6`, a zero, or a negative value fails with a message that names `runner.timeoutMinutesBySpice`
-- [ ] core-config.spec.ts: `effectiveTimeoutMs` returns the map value for a level in the map, `timeoutMinutes` for a level not in a partial map, and `timeoutMinutes` for every level when the map is absent
-- [ ] core-config.spec.ts: a config with `timeoutMinutes` 30 and no map gives 30 minutes for spice 1 and for spice 5 (no built-in 20 or 90)
-- [ ] core-config.spec.ts: `effectiveTimeoutMs` with `{ "2": 45 }` and an undefined spice gives 45 minutes
-- [ ] core-config.spec.ts: a `models` value with a space or a control character fails with a message that names `runner.claude.bedrock.models`
-- [ ] core-engine.spec.ts: a spice 5 review with `{ "5": 90 }` is not stopped at 30 minutes and is stopped at 90; its CR-204 reply says 90
-- [ ] core-engine.spec.ts: a `~stacked` review at spice 3 with `{ "3": 45 }` is stopped at 45 minutes
-- [ ] core-engine.spec.ts: an orphan job younger than the largest per-spice limit is not swept
-- [ ] core-engine.spec.ts: with no map the orphan sweep age is the same as before this change
-- [ ] core-trigger.spec.ts: the accept and reject cases of the `~model` contract above
-- [ ] core-errors.spec.ts: the CR-108 text is the exact new sentence
-- [ ] core-engine-fallback.spec.ts: a fallback after CR-207 with a requested `~model` runs the fallback with no requested model and writes one log line with the exact text `fallback <name> runs model <model|default>; requested model <m> is not kept`; first make sure that the spec harness can read `log` calls
-- [ ] core-engine-fallback.spec.ts: a fallback with no requested model writes one log line with the exact text `fallback <name> runs model <model|default>`
-- [ ] channel-review-skill.spec.ts: config.example.json still loads with `loadConfig`, setup.md lists both new keys, and the required-key list of the spec gains `runner.timeoutMinutesBySpice`
-- [ ] `bun scripts/skill-bootstrap-block.ts --check` exits 0 after the edits below plugins/dg/skills/channel-review (this slice never runs `--write`)
-- [ ] `mise run test:runners:mutate` passes with the unchanged thresholds
-
-#### Acceptance Criteria
-- [ ] Given `runner.claude.bedrock.models.opus` set to a Bedrock model ID, when the daemon starts a Claude review, then the child process has `ANTHROPIC_DEFAULT_OPUS_MODEL` with that ID
-- [ ] Given a Bedrock config with no `models`, when the daemon starts a Claude review, then the child environment has none of the four tier variables, also when the environment of the daemon sets them
-- [ ] Given a config with no `bedrock`, when the daemon starts a Claude review, then the child environment is the same as before this change
-- [ ] Given `runner.claude.bedrock.models.fable` set to a model ID, when the daemon starts a Claude review, then the child process has `ANTHROPIC_DEFAULT_FABLE_MODEL` with that ID
-- [ ] Given `timeoutMinutesBySpice` `{ "5": 90 }` and `timeoutMinutes` 30, when a spice 5 review runs for 31 minutes, then it is not stopped; when a spice 2 review runs for 31 minutes, then it fails with CR-204 and the reply says 30
-- [ ] Given a config with no `timeoutMinutesBySpice`, when any review runs, then its time limit is `runner.timeoutMinutes`
-- [ ] Given the chat message `$review <url> ~model claude-opus-4-7[1m]`, when the trigger parses it, then the run request carries the model `claude-opus-4-7[1m]`
-- [ ] Given a Claude review that reaches its usage limit and a ready fallback runner, when the fallback starts, then it uses its own configured model and the job log names the switch
-- [ ] Given the runner mutation run, when it finishes, then the score is 90 or higher
-
 ### Slice 7 — docs
 
 #### Engineering
@@ -594,38 +523,24 @@ execution:
 - [ ] docs/DEVELOPER.md, below that table: the three compile sources in order, the `post` cleanup of the checkout (also after `--dry-run`), the diff-only fallback for `repo.source` `none`, the `REPO_PARTIAL` rule for `repo.source` `api`, `--no-repo`, the `<N> findings rejected on verification.` note and the `rejected` list of the review file, and a link to the checkout ADR (read docs/adr/toc.md for the file name)
 - [ ] docs/DEVELOPER.md: describe grouping by concern (one bundle for 100 changed lines or fewer; above that one bundle per concern, a target of 400 changed lines per bundle, 8 bundles at most, and the limit of 8 wins) and the limit of 16 verify tasks; say that the investigate budget does not stop the import graph step and that the chunk `contextPath` and the top-level plan `contextPath` name different files
 - [ ] docs/DEVELOPER.md: list what the consolidator can change (`title`, `body`, `class`, `otherPlaces`, `changed`, `strengths`, `opportunities`) and what it cannot (`tier`, `path`, `line`, `side`; it cannot add a finding, and `compile` adds a dropped finding back)
-- [ ] docs/DEVELOPER.md, section `## Channel review integration`: describe `runner.claude.bedrock.models`, `runner.timeoutMinutesBySpice` (no built-in default; 20, 30, 45, 60, 90 as an example), the `[1m]` suffix for `~model`, and the logged fallback model switch; link ADR 0019
-- [ ] docs/DEVELOPER.md, same section: correct three sentences: '`~model` passes its model ID unchanged' (add the `[1m]` rule); 'The fallback keeps the remaining timeout, uses its own default model' (the fallback uses its configured model, or its default; the requested `~model` is not kept; one log line names the change); the remaining time now comes from `effectiveTimeoutMs` and scales with spice
-- [ ] docs/DEVELOPER.md, same section: `models` sets `ANTHROPIC_DEFAULT_<TIER>_MODEL` so the persona tiers resolve to Bedrock IDs; a tier that is not set adds no variable; `bedrock.model` stays the default review model; `~model` overrides the run model; link the `runner.claude.bedrock` row of setup.md and do not copy the table
-- [ ] docs/DEVELOPER.md: state the agent count of one review (one sonnet reviewer per bundle, 8 at most; one opus verifier per verify task, 16 at most per review; one opus consolidator when there is more than one bundle; waves of 16 agents at most), that a review uses more tokens and more time, and that `runner.timeoutMinutesBySpice` exists for that reason
-- [ ] docs/channel-review.md: tell a chat user about `~model <name>[1m]` for Claude models, that a review can take longer, and this sentence: 'A review can get more time at a higher `~spice` when the operator sets `runner.timeoutMinutesBySpice`.'
-- [ ] pkg/skills-cli/README.md: add `## Thrash review` before `## Channel review`, with one short code block and one line for each verb: `thrash diff` (with `--no-repo`), `investigate`, `triage`, `compile`, `post`
-- [ ] pkg/channel-review/README.md: add one paragraph after the line that points to setup.md, with no new heading; it names `runner.claude.bedrock.models` and `runner.timeoutMinutesBySpice` (no built-in default) and links setup.md
-- [ ] plugins/dg/skills/README.md: add a `thrash/` row to the table and a `thrash/` entry to the Structure tree, and update the `refactor/` row to name the verify stage; put the new row after `stash/` or near `hunt/`; keep `channel-review/` directly after `inbox-cleanup/` and put no blank line between table rows
 - [ ] README.md: update the `refactor` row to name the verify stage; add no other row
-- [ ] Correct the four markdownlint errors that exist before this slice: docs/DEVELOPER.md:308 and docs/DEVELOPER.md:684 (MD013), docs/channel-review.md:7 (MD038, two times)
 - [ ] Keep every prose line at 160 characters or fewer (tables and code blocks are exempt); use simple American English, active voice and one claim in each sentence; give each code block a language tag (`sh`, `json`, `text`); add no Mermaid diagram
 - [ ] Write nothing about model attribution of the verifier and the consolidator; take each number and each name from the merged code of slices 2, 3 and 6, not from this plan
 
 #### Testing Criteria
 ##### Contracts
 - [ ] Contract: this slice changes Markdown only and edits only the files in its `files` list; no source file, test file or skill file changes (do not check this with `git diff --name-only`: the tree also holds the work of other slices)
-- [ ] `bun test` in pkg/skills-test passes (channel-review-skill.spec.ts and skill-index-docs.spec.ts read these files)
 - [ ] `markdownlint -c .markdownlint.jsonc` on the six files of this slice reports no error
 - [ ] Every relative link added in the six files resolves to an existing file
 
 #### Acceptance Criteria
 - [ ] Given docs/DEVELOPER.md, when a reader searches for `triage`, then the reader finds the stage order from diff to post and the file each stage writes
 - [ ] Given docs/DEVELOPER.md, when a reader searches for `concern`, then the reader finds the 100-line rule for one bundle, the 400-line bundle target and the limit of 8 bundles
-- [ ] Given docs/channel-review.md, when a chat user searches for `[1m]`, then the user finds a `~model` example
 - [ ] Given pkg/skills-cli/README.md, when a reader looks at the thrash commands, then `investigate` and `triage` are listed
 - [ ] Given docs/DEVELOPER.md, when a reader follows the checkout link in the thrash pipeline section, then it opens the checkout ADR that slice 1 wrote
-- [ ] Given the merged docs, when `rg "timeoutMinutesBySpice" docs/DEVELOPER.md pkg/channel-review/README.md` runs, then both files have a hit
-- [ ] Given the merged docs, when `rg "bedrock.models" docs/DEVELOPER.md pkg/channel-review/README.md` runs, then both files have a hit
 - [ ] Given the merged docs, when `rg "investigate" docs/DEVELOPER.md pkg/skills-cli/README.md` runs, then both files have a hit
 - [ ] Given plugins/dg/skills/README.md, when `rg "verify"` runs on it, then the `thrash/` row and the `refactor/` row show
 - [ ] Given docs/DEVELOPER.md, when a reader looks at the thrash pipeline section, then it states 100, 400, 8 and 16 beside `TINY_DIFF_LINES`, `BUNDLE_TARGET_LINES`, `MAX_CHUNKS` and `VERIFY_TASK_CAP`
-- [ ] Given docs/DEVELOPER.md, when a reader searches for `opus`, then the reader finds the agent count of one review and the reason for `runner.timeoutMinutesBySpice`
 - [ ] Given README.md, when a reader looks at the `refactor` row, then it names the verify stage
 
 ## Slice Summaries
@@ -639,10 +554,9 @@ execution:
 Ratified code-surface contracts from structure pass 1.5:
 
 - **Thrash pipeline file homes.** New `pkg/skills-cli/src/thrash/checkout.ts`, `investigate.ts`, `bundles.ts` and `triage.ts`; `erd/graph.ts` exports one `invertEdges(edges: CodeEdge[])` and stays the owner of `CodeEdge`. Applies to: 1, 2, 3. Why: `thrash/core.ts` is already 1658 lines and erd is a diagram tool. Beat: putting investigate in erd.
-- **Clone helper home.** The shallow clone lives in `thrash/checkout.ts`; channel-review's branch clones (`address.ts`, `automation/repo-job.ts`) are not hoisted. Applies to: 1, 6. Why: different shape (branch clone vs head-SHA tree); hoist when a third caller appears. Beat: an `@dg/common/node` helper now.
+- **Clone helper home.** The shallow clone lives in `thrash/checkout.ts`; channel-review's branch clones (`address.ts`, `automation/repo-job.ts`) are not hoisted. Applies to: 1. Why: different shape (branch clone vs head-SHA tree); hoist when a third caller appears. Beat: an `@dg/common/node` helper now.
 - **Provider file fetch.** `Provider.getFileAtRef(ref, path, sha): Promise<string | null>` on `provider/types.ts`, `github.ts`, `gitlab.ts`; `null` on 404. Applies to: 1, 2. Why: the provider interface is the seam for gh/glab divergence and is mockable. Beat: shelling to `gh api` inside thrash.
 - **plan.json additions (additive only).** Chunk gains optional `bundle: {files, symbols, dependents, tests, related}` and `contextPath`; top level gains optional `repo: {root, headSha, source: cwd|clone|api|none}` and `consolidatedPath`. Paths are plan-relative except an absolute `repo.root` for a local target. `thrash compile` copies `repo` into the stored review file (`{ target, review, repo? }`, absolute `root`); `thrash post` reads it and never reads plan.json. Applies to: 1, 2, 3, 4. Why: triage, verify and compile need machine-readable paths. Beat: context markdown only.
 - **Finding id and evidence.** `id` is `c<chunk>-<n>`, assigned by `thrash triage --stage merge`; reviewers never set it. `evidence?: Array<{path, line: number | null, note}>`. Applies to: 3, 4. Why: parallel reviewers cannot coordinate ids. Beat: content-hash ids.
 - **triage CLI and files.** `thrash triage --diff <diffPath> --stage merge [--spice N]` writes `<slug>.merged.json` and `<slug>.verify.tasks.json` (task: `{id, path, line, tier, title, body, evidence, bundleContextPath, verdictPath}`), plus one `<slug>.verify.task.<id>.json` for each task, and prints `tasks: [{id, taskPath, verdictPath}]`; `--stage apply` collects verdict files into `<slug>.verdicts.json` (`{verdicts: [{id, verdict: confirmed|rejected|adjusted, tier?, reason, evidence?}]}`) and writes `<slug>.consolidate.input.json`. Compile reads consolidated, then consolidate input, then chunk files. A missing verdict means unverified and kept. Stdout paths and the paths in a verify task are absolute; plan.json paths stay plan-relative. Applies to: 3, 4. Why: one verb, two stages, deterministic verdict application. Beat: a separate apply-verdicts verb.
 - **investigate output.** `thrash investigate <paths> [--max-hits N]` prints `{root, files: [{path, symbols, dependents, callers: [{path, line, symbol}], tests, truncated}]}`; the same functions fill plan bundle fields. Applies to: 2, 5. Why: refactor skill text depends on stable field names. Beat: markdown output.
-- **channel-review config.** `runner.claude.bedrock.models?: {opus?, sonnet?, haiku?, fable?}` exported as `ANTHROPIC_DEFAULT_<TIER>_MODEL`; `runner.timeoutMinutesBySpice?: {1..5: minutes}` with no built-in defaults (absent or partial uses `timeoutMinutes`); one pure `effectiveTimeoutMs(config, spice)` in `channel-review/src/config.ts` feeds the run timeout, `longestTimeoutMs` and the CR-204 message. Applies to: 6, 7. Why: one source for three timeout readers. Beat: factor-times-base.

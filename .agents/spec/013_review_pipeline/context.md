@@ -108,44 +108,13 @@ slices:
     agents:
       primary: "dg:js"
       complexity: "low"
-  - id: 6
-    name: "channel-review-bedrock-and-timeouts"
-    depends_on: []
-    files:
-      - "pkg/channel-review/src/config.ts"
-      - "pkg/channel-review/src/engine.ts"
-      - "pkg/channel-review/src/trigger.ts"
-      - "pkg/channel-review/src/errors.ts"
-      - "pkg/channel-review/src/runners/index.ts"
-      - "pkg/channel-review/src/runners/spawn.ts"
-      - "pkg/channel-review/__tests__/core-config.spec.ts"
-      - "pkg/channel-review/__tests__/core-engine.spec.ts"
-      - "pkg/channel-review/__tests__/core-engine-fallback.spec.ts"
-      - "pkg/channel-review/__tests__/core-trigger.spec.ts"
-      - "pkg/channel-review/__tests__/core-errors.spec.ts"
-      - "pkg/channel-review/__tests__/runners-index.spec.ts"
-      - "pkg/channel-review/__tests__/runners-spawn.spec.ts"
-      - "plugins/dg/skills/channel-review/references/setup.md"
-      - "plugins/dg/skills/channel-review/references/commands.md"
-      - "plugins/dg/skills/channel-review/references/config.example.json"
-      - "pkg/skills-test/__tests__/channel-review-skill.spec.ts"
-      - "docs/adr/0019-review-execution-context.md"
-    agents:
-      primary: "dg:js"
-      complexity: "medium"
-      qa:
-        - "dg:qa-code"
-        - "dg:security"
   - id: 7
     name: "docs"
     depends_on:
       - 5
-      - 6
     files:
       - "docs/DEVELOPER.md"
-      - "docs/channel-review.md"
       - "pkg/skills-cli/README.md"
-      - "pkg/channel-review/README.md"
       - "plugins/dg/skills/README.md"
       - "README.md"
     agents:
