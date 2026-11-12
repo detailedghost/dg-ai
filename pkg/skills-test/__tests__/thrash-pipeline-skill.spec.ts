@@ -119,6 +119,14 @@ describe("verifier and consolidator rules", () => {
 	});
 });
 
+describe("thrash-verify old-side rule", () => {
+	test("names diffPath and the old-side rule", () => {
+		expect(verify).toContain("`diffPath`");
+		expect(verify).toContain("When `side` is `old`");
+		expect(verify).toContain("Never reject only because the head file differs");
+	});
+});
+
 describe("model tiers", () => {
 	for (const name of ["thrash-verify", "thrash-consolidate"]) {
 		test(`${name} resolves to opus on claude`, () => {

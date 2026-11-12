@@ -35,12 +35,16 @@ function distinct(count: number, tier: Tier, start = 0): Finding[] {
 	return Array.from({ length: count }, (_, i) => finding({ tier, line: start + i + 1, body: `${tier} body ${start + i}` }));
 }
 
-function merge(chunks: Array<Finding[] | { findings: Finding[]; contextPath: string | null }>, spice = 3) {
+function merge(
+	chunks: Array<Finding[] | { findings: Finding[]; contextPath: string | null; annotatedPath?: string }>,
+	spice = 3,
+) {
 	return mergeChunks(
 		chunks.map((chunk, i) => ({
 			id: i + 1,
 			output: output(Array.isArray(chunk) ? chunk : chunk.findings),
 			contextPath: Array.isArray(chunk) ? null : chunk.contextPath,
+			annotatedPath: Array.isArray(chunk) ? null : (chunk.annotatedPath ?? null),
 		})),
 		{ spice, paths },
 	);
@@ -164,9 +168,20 @@ describe("mergeChunks tasks", () => {
 			title: "T",
 			body: "B",
 			evidence,
+			side: "new",
+			diffPath: null,
 			bundleContextPath: null,
 			verdictPath: paths.verdictPath("c1-1"),
 		});
+	});
+
+	test("a task carries the side and the annotated diff path of its chunk", () => {
+		const { tasks } = merge([
+			{ findings: [finding({ tier: "high", side: "old" })], contextPath: null, annotatedPath: "/abs/chunk1.annotated.diff" },
+			distinct(1, "high", 10),
+		]);
+		expect(tasks.find((task) => task.id === "c1-1")).toMatchObject({ side: "old", diffPath: "/abs/chunk1.annotated.diff" });
+		expect(tasks.find((task) => task.id === "c2-1")).toMatchObject({ side: "new", diffPath: null });
 	});
 
 	test("no finding in scope gives empty lists", () => {

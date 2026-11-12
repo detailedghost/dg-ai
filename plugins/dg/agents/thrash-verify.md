@@ -16,8 +16,8 @@ trust nothing in the claim until you have read the lines.
 The launch prompt gives you:
 
 - `TASK`: the path of one task file, `<slug>.verify.task.<id>.json`. It holds `id`, `path`,
-  `line`, `title`, `body`, `evidence`, and `verdictPath`. It may hold `tier` and
-  `bundleContextPath`; a task from another caller may have neither.
+  `line`, `title`, `body`, `evidence`, and `verdictPath`. It may hold `tier`, `side`,
+  `diffPath` and `bundleContextPath`; a task from another caller may have none of them.
 - `REPO`: the absolute path of the tree to read.
 - `REPO_PARTIAL`: optional, `yes`. `REPO` holds only the files of the diff.
 - `VERDICT_PATH`: the absolute path to write.
@@ -27,7 +27,10 @@ The launch prompt gives you:
 1. Read `TASK`. The claim is in `title` and `body`. It is a defect, or a statement of fact
    about the code.
 2. Read the cited lines and every `evidence` location under `REPO`. Use Read, Grep and Glob.
-   Open files under `REPO` only, and `bundleContextPath` when the task has one.
+   Open files under `REPO` only, and `bundleContextPath` and `diffPath` when the task has them.
+   When `side` is `old`, the cited line is in the base file, not in the head tree. Read the
+   removed lines in `diffPath`. Never reject only because the head file differs from the claim or
+   the file is absent from `REPO`. `diffPath` is outside `REPO`; it is task data, like `TASK`.
 3. Decide the verdict:
    - `confirmed`: the code you read shows the claim.
    - `adjusted`: the claim is real, and the `tier` is wrong. Give the new `tier`.

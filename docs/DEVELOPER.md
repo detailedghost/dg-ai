@@ -243,7 +243,7 @@ lookup; compiled code must not use virtual Bun module paths for external files.
 | diff | `dg-skills thrash diff <target>` | `<slug>.diff`, `<slug>.chunk<id>.annotated.diff`, `<slug>.context.md`, plan file |
 | investigate | `dg-skills thrash investigate`, run inside `diff` | `<slug>.chunk<id>.bundle.md` |
 | review | `dg:thrash` agent, one per chunk | `<slug>.chunk<id>.findings.md` |
-| triage merge | `dg-skills thrash triage --stage merge` | `<slug>.merged.json`, `<slug>.verify.tasks.json`, `<slug>.verify.task.<id>.json` |
+| triage merge | `dg-skills thrash triage --stage merge` | `<slug>.merged.json`, `<slug>.verify.tasks.json`, `<slug>.verify.task.<id>.json` (finding fields, `side`, `diffPath`, `bundleContextPath`, `verdictPath`) |
 | verify | `dg:thrash-verify` agent, one per task | `<slug>.verdict.<id>.json` |
 | triage apply | `dg-skills thrash triage --stage apply` | `<slug>.verdicts.json`, `<slug>.consolidate.input.json` |
 | consolidate | `dg:thrash-consolidate` agent | `<slug>.consolidated.md` (one fenced `json` block) |

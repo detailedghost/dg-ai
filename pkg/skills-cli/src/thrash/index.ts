@@ -487,6 +487,7 @@ function triageMerge(diffPath: string, spice: number): number {
 		id: chunk.id,
 		output: readChunkOutput(chunk, planRoot),
 		contextPath: chunk.contextPath ? resolvePlanPath(planRoot, chunk.contextPath) : null,
+		annotatedPath: chunk.annotatedPath ? resolvePlanPath(planRoot, chunk.annotatedPath) : null,
 	}));
 	removeTriageFiles(diffPath);
 	const { merged, tasks, overCap } = mergeChunks(chunks, { spice, paths });

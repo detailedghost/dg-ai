@@ -48,7 +48,7 @@ const TAB = 0x09;
 const LINE_FEED = 0x0a;
 const CARRIAGE_RETURN = 0x0d;
 
-function resolveGlabBin(): string {
+export function resolveGlabBin(): string {
 	return process.env.GLAB_BIN ?? "glab";
 }
 

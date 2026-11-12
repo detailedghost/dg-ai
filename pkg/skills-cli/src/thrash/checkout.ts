@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isPathInside, killProcessTree, scratchDir } from "@dg/common/node";
+import { resolveGhBin } from "../provider/github";
+import { resolveGlabBin } from "../provider/gitlab";
 import { type PrRef, parseRepoRef, type ProviderKind, type RepoRef } from "../provider/types";
 import type { DiffFile } from "./core";
 
@@ -57,6 +59,8 @@ const ENV_ALLOWLIST = [
 	"GIT_SSH_COMMAND",
 	"GH_TOKEN",
 	"GITHUB_TOKEN",
+	"GH_ENTERPRISE_TOKEN",
+	"GITHUB_ENTERPRISE_TOKEN",
 	"GH_HOST",
 	"GH_CONFIG_DIR",
 	"GITLAB_TOKEN",
@@ -177,7 +181,7 @@ function removeDir(dir: string): void {
 
 function providerCloneArgs(target: RemoteCheckoutTarget, dir: string): { command: string; args: string[] } {
 	const { host, owner, repo } = target.repo;
-	const command = target.provider === "github" ? "gh" : "glab";
+	const command = target.provider === "github" ? resolveGhBin() : resolveGlabBin();
 	const source =
 		target.provider === "github"
 			? [host, owner, repo].filter(Boolean).join("/")

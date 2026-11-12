@@ -47,7 +47,7 @@ const DEFAULT_HOST = "github.com";
 
 const FAILING_CONCLUSIONS = new Set(["failure", "timed_out", "action_required", "startup_failure"]);
 
-function resolveGhBin(): string {
+export function resolveGhBin(): string {
 	return process.env.GH_BIN ?? "gh";
 }
 

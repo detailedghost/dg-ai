@@ -139,6 +139,13 @@ function cloningGlab(fx: Fixture): FakeGh {
 	return { log };
 }
 
+function cloningGhAt(fx: Fixture, dir: string): FakeGh {
+	const log = join(dir, "gh.log");
+	const script = `#!/bin/sh\necho "gh $*" >> "${log}"\nif [ "$1" = repo ] && [ "$2" = clone ]; then dir="$4"; shift 5; exec git clone "$@" "file://${fx.remote}" "$dir"; fi\nexit 1\n`;
+	writeFileSync(join(dir, "gh-custom"), script, { mode: 0o755 });
+	return { log };
+}
+
 function failingGh(): FakeGh {
 	return fakeGh("exit 1");
 }
@@ -325,6 +332,22 @@ describe("clone step", () => {
 		expect(call).toContain("-- --depth 1 --no-checkout --no-tags --no-recurse-submodules");
 		expect(call).toContain("core.hooksPath=/dev/null");
 		expect(call).not.toContain("credential.helper");
+	});
+
+	it("clones with the executable named by GH_BIN when gh is not on PATH", async () => {
+		const fx = fixtureRemote();
+		const dir = tmp("checkout-gh-bin-");
+		const gh = cloningGhAt(fx, dir);
+		const saved = process.env.GH_BIN;
+		process.env.GH_BIN = join(dir, "gh-custom");
+		try {
+			const result = await resolveCheckout(input(fx, []), { cwd: unrelatedCwd() });
+			expect(result.source).toBe("clone");
+			expect(lines(gh.log)[0]).toContain("repo clone github.com/acme/widgets");
+		} finally {
+			if (saved === undefined) delete process.env.GH_BIN;
+			else process.env.GH_BIN = saved;
+		}
 	});
 
 	it("does not run a post-checkout hook from the git templates", async () => {
@@ -749,10 +772,15 @@ describe("credentials in the scratch tree", () => {
 		number: 12,
 	};
 	const TOKEN = "tok-known-value-123";
-	const saved = { GH_TOKEN: process.env.GH_TOKEN, GITLAB_TOKEN: process.env.GITLAB_TOKEN };
+	const saved = {
+		GH_TOKEN: process.env.GH_TOKEN,
+		GH_ENTERPRISE_TOKEN: process.env.GH_ENTERPRISE_TOKEN,
+		GITLAB_TOKEN: process.env.GITLAB_TOKEN,
+	};
 
 	beforeEach(() => {
 		process.env.GH_TOKEN = TOKEN;
+		process.env.GH_ENTERPRISE_TOKEN = TOKEN;
 		process.env.GITLAB_TOKEN = TOKEN;
 	});
 
@@ -773,6 +801,21 @@ describe("credentials in the scratch tree", () => {
 		const fx = fixtureRemote();
 		cloningGh(fx);
 		const result = await resolveCheckout(input(fx, []), { cwd: unrelatedCwd() });
+		expect(result.source).toBe("clone");
+		expectClean(result.root);
+	});
+
+	it("passes GH_ENTERPRISE_TOKEN to the gh clone and keeps it out of the tree config", async () => {
+		const fx = fixtureRemote();
+		const dir = tmp("checkout-fake-gh-");
+		const log = join(dir, "gh.log");
+		writeFakeCli(
+			dir,
+			"gh",
+			`#!/bin/sh\necho "token=$GH_ENTERPRISE_TOKEN" >> "${log}"\nif [ "$1" = repo ] && [ "$2" = clone ]; then dir="$4"; shift 5; exec git clone "$@" "file://${fx.remote}" "$dir"; fi\nexit 1\n`,
+		);
+		const result = await resolveCheckout(input(fx, []), { cwd: unrelatedCwd() });
+		expect(readFileSync(log, "utf8")).toContain(`token=${TOKEN}`);
 		expect(result.source).toBe("clone");
 		expectClean(result.root);
 	});

@@ -111,8 +111,9 @@ function git(root: string, args: string[], timeout?: number) {
 	}
 }
 
-export function listTrackedFiles(root: string, pathspec?: string): string[] {
-	const result = git(root, ["ls-files", "-z", ...(pathspec === undefined ? [] : ["--", pathspec])]);
+function lsFiles(root: string, pathspec?: string, timeoutMs?: number): string[] | "timeout" {
+	const result = git(root, ["ls-files", "-z", ...(pathspec === undefined ? [] : ["--", pathspec])], timeoutMs);
+	if (result.exitedDueToTimeout) return "timeout";
 	if (result.exitCode !== 0) {
 		throw new InvestigateError(`git ls-files failed with exit code ${result.exitCode}: ${result.stderr.toString().trim()}`);
 	}
@@ -120,6 +121,11 @@ export function listTrackedFiles(root: string, pathspec?: string): string[] {
 		.toString()
 		.split("\0")
 		.filter((file) => file !== "" && isPathInside(path.resolve(root, file), root));
+}
+
+export function listTrackedFiles(root: string, pathspec?: string): string[] {
+	const files = lsFiles(root, pathspec);
+	return files === "timeout" ? [] : files;
 }
 
 function pairedTests(filePath: string, tracked: string[]): string[] {
@@ -208,7 +214,8 @@ export function investigate(root: string, paths: string[], options: InvestigateO
 	if (bounded && now() >= deadline) return { root, files: paths.map(cut) };
 
 	const dependentsOf = invertEdges(collectImportGraph({ scopePath: root }).edges);
-	const tracked = listTrackedFiles(root);
+	const tracked = lsFiles(root, undefined, bounded ? Math.max(1, deadline - now()) : undefined);
+	if (tracked === "timeout") return { root, files: paths.map(cut) };
 	const files: InvestigatedFile[] = [];
 
 	for (const filePath of paths) {

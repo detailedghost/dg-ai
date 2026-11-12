@@ -150,7 +150,7 @@ describe("investigate", () => {
 		commitAll({ "a.ts": "export const one = 1;\n", "b.ts": "export const two = 2;\n" });
 		let calls = 0;
 		const now = () => calls++ * 250;
-		const result = investigate(root, ["a.ts", "b.ts"], options({ budgetMs: 1000, now }));
+		const result = investigate(root, ["a.ts", "b.ts"], options({ budgetMs: 1250, now }));
 		expect(result.files.map((file) => file.truncated)).toEqual([false, true]);
 		expect(result.files[1].callers).toEqual([]);
 	});
@@ -247,6 +247,23 @@ describe("investigate git behavior", () => {
 				expect(file.callers).toEqual([]);
 				expect(file.dependents).toEqual([]);
 				expect(file.tests).toEqual([]);
+			},
+		);
+	});
+
+	test("truncates every file when git ls-files outlasts the budget", () => {
+		commitAll({ "a.ts": "export const total = 1;\n", "b.ts": "total;\n" });
+		withGitShim(
+			(realGit) => `#!/bin/sh\ncase "$*" in *ls-files*) sleep 5;; esac\nexec "${realGit}" "$@"\n`,
+			() => {
+				const started = Date.now();
+				const result = investigate(root, ["a.ts", "b.ts"], options({ budgetMs: 1500 }));
+				expect(Date.now() - started).toBeLessThan(4000);
+				for (const file of result.files) {
+					expect(file.truncated).toBe(true);
+					expect(file.callers).toEqual([]);
+					expect(file.tests).toEqual([]);
+				}
 			},
 		);
 	});

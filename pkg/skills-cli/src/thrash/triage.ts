@@ -14,6 +14,7 @@ import {
 	placeOf,
 	type RejectedFinding,
 	SPICE_DEFAULT,
+	type Side,
 	stringList,
 	type Tier,
 	tierRank,
@@ -69,6 +70,8 @@ export interface VerifyTask {
 	title: string;
 	body: string;
 	evidence: Evidence[];
+	side: Side;
+	diffPath: string | null;
 	bundleContextPath: string | null;
 	verdictPath: string;
 }
@@ -77,6 +80,7 @@ export interface TriageChunk {
 	id: number;
 	output: AgentOutput;
 	contextPath: string | null;
+	annotatedPath: string | null;
 }
 
 export interface MergeResult {
@@ -113,6 +117,7 @@ export function mergeChunks(
 	opts: { spice: number; paths: Pick<TriagePaths, "verdictPath"> },
 ): MergeResult {
 	const contextByChunk = new Map(chunks.map((chunk) => [chunk.id, chunk.contextPath]));
+	const diffByChunk = new Map(chunks.map((chunk) => [chunk.id, chunk.annotatedPath]));
 	const merged = mergeOutputs(
 		chunks.map((chunk) => ({
 			...chunk.output,
@@ -130,6 +135,8 @@ export function mergeChunks(
 			title: finding.title,
 			body: finding.body,
 			evidence: finding.evidence ?? [],
+			side: finding.side,
+			diffPath: diffByChunk.get(idParts(id)[0]) ?? null,
 			bundleContextPath: contextByChunk.get(idParts(id)[0]) ?? null,
 			verdictPath: opts.paths.verdictPath(id),
 		};

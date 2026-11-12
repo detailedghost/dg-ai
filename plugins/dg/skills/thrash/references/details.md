@@ -259,7 +259,8 @@ run, and the limit wins over the target. Each bundle has a context file (`contex
 with its files, symbols, dependents and tests; the reviewer gets it as `BUNDLE`.
 
 `triage --stage merge` numbers each finding `c<chunk>-<n>` and writes one verify task for each
-finding in scope. Every `critical`, `high` and `medium` finding is in scope. A `low` finding is in
+finding in scope. A task holds the finding fields, `side`, `diffPath` (the annotated diff of the
+finding's chunk, or null), `bundleContextPath` and `verdictPath`. Every `critical`, `high` and `medium` finding is in scope. A `low` finding is in
 scope only when the verdict table of the spice limits `low` (spice 5). Nits and improvements are
 never in scope. At most `VERIFY_TASK_CAP` (16) tasks run for a review, highest tier first. The rest are listed in
 `overCap` and stay unverified. A verifier writes `confirmed`, `rejected` or `adjusted` (a new tier)
