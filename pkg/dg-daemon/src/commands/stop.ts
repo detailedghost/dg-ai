@@ -17,6 +17,7 @@ import {
 	killProcessTree,
 	loopbackHostHeader,
 	readOwnerToken,
+	readPidFile,
 	removePidFile,
 	resolveDgPaths,
 	resolveLiveDaemon,
@@ -147,7 +148,7 @@ async function forceStop(
 			EXIT_GENERAL_FAILURE,
 		);
 	}
-	removePidFile(paths);
+	removeOwnPidFile(paths, handle);
 	if (listFailure !== undefined) {
 		throw new DgCliError(
 			`could not list the services (${listFailure}); a service process can still run`,
@@ -171,7 +172,7 @@ async function regularStop(
 			EXIT_GENERAL_FAILURE,
 		);
 	}
-	removePidFile(paths);
+	removeOwnPidFile(paths, handle);
 	console.log(`dg-daemon stopped (pid ${handle.pid})`);
 }
 
@@ -198,6 +199,11 @@ async function stopSilentDaemon(
 	await forceStop(paths, handle, seams, "the daemon does not answer");
 }
 
+function removeOwnPidFile(paths: DgPaths, handle: DaemonHandle): void {
+	if (readPidFile(paths)?.instanceId === handle.instanceId)
+		removePidFile(paths);
+}
+
 async function stopDaemon(
 	paths: DgPaths,
 	options: StopOptions,
@@ -206,6 +212,12 @@ async function stopDaemon(
 	const resolved = await resolveLiveDaemon(paths, seams.kill);
 	if (!resolved) return;
 	const { handle } = resolved;
+	if (!isSignalablePid(handle.pid)) {
+		throw new DgCliError(
+			`the pid file names pid ${handle.pid}, which is not a daemon pid; nothing was signaled — remove ${paths.pidPath}`,
+			EXIT_GENERAL_FAILURE,
+		);
+	}
 	if (!resolved.live) {
 		await stopSilentDaemon(paths, handle, options, seams);
 		return;

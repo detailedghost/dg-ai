@@ -11,6 +11,7 @@ import {
 import {
 	type DgPaths,
 	ensureOwnerToken,
+	readPidFile as readHandle,
 	resolveDgPaths,
 	writePidFileAtomic,
 } from "@dg/common/node";
@@ -633,6 +634,52 @@ describe("dg-daemon stop seams", () => {
 			new Set([424242, 424243]),
 		);
 		expect(lines()).toEqual(["dg-daemon stopped (pid 424242, forced)"]);
+	});
+
+	it.each([0])(
+		"refuses a pid file that names pid %d and signals nothing",
+		async (pid) => {
+			const { paths } = seamHome();
+			const table = fakeProcessTable([pid]);
+			writePidFileAtomic(paths, handleFor({ pid, port: allocatePort() }));
+
+			const failure = await cmdStop(
+				{ force: true },
+				{
+					platform: "linux",
+					kill: table.kill,
+					exec: table.exec,
+					waitMs: 100,
+					identify: () => "ours",
+				},
+			).catch((err: unknown) => err);
+
+			expect(failure).toBeInstanceOf(DgCliError);
+			expect((failure as DgCliError).message).toContain(
+				"which is not a daemon pid",
+			);
+			expect(table.signals().filter((call) => call.signal !== 0)).toEqual([]);
+			expect(existsSync(paths.pidPath)).toBe(true);
+		},
+	);
+
+	it("keeps the pid file of a daemon that started while the stop waited", async () => {
+		const { paths } = seamHome();
+		const table = fakeProcessTable([424242, 424243]);
+		fakeDaemonWithServices(paths, 424242, [424243]);
+		const replacement = handleFor({ pid: 525252, port: allocatePort() });
+		const kill = (pid: number, signal: NodeJS.Signals | 0) => {
+			table.kill(pid, signal);
+			if (pid === 424242 && signal === "SIGKILL")
+				writePidFileAtomic(paths, replacement);
+		};
+
+		await cmdStop(
+			{ force: true },
+			{ platform: "linux", kill, exec: table.exec, waitMs: 2000 },
+		);
+
+		expect(readHandle(paths)?.instanceId).toBe(replacement.instanceId);
 	});
 
 	it("sends no signal when no daemon is live", async () => {
