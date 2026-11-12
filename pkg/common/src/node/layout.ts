@@ -228,6 +228,9 @@ export function assertNotBlocked(paths: DgPaths, name: EntryName): void {
 		if (cached.kind === "kept" && exists(cached.from) && !exists(cached.to)) {
 			throw new DgCliError(blockedText({ reason: "no-hook", from: cached.from, to: cached.to }));
 		}
+		if (cached.kind === "kept" && cached.reason === "child-kept" && exists(cached.from)) {
+			throw new DgCliError(`dg: kept ${cached.from}; a folder inside it did not move. dg-skills doctor names it`);
+		}
 		return;
 	}
 	const entry = moveEntries.find((candidate) => candidate.name === name);

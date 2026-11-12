@@ -822,27 +822,52 @@ posix("ensureLayout pending removals", () => {
 		expect(existsSync(legacyAt(".pending-removal.json"))).toBe(false);
 	});
 
+	const inboxDir = (): string => join(paths.stateDir, "inbox");
+
+	const seedInboxPending = (): void => {
+		put(legacyAt("inbox", "profile.json"), "profile");
+		put(join(inboxDir(), "profile.json"), "profile");
+		put(
+			legacyAt(".pending-removal.json"),
+			JSON.stringify([{ name: nameOf("inbox"), from: legacyAt("inbox"), to: inboxDir() }]),
+		);
+	};
+
 	test("keeps and names a source whose copy no longer holds every file", async () => {
-		seedPending();
-		writeFileSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"), "other bytes");
-		put(join(paths.runtimeDir, "extra"), "x");
+		seedInboxPending();
+		writeFileSync(join(inboxDir(), "profile.json"), "other bytes");
+		put(join(inboxDir(), "extra"), "x");
 
 		const result = await run();
 
-		expect(outcomeAt(result, "runtime")).toMatchObject({ kind: "kept", reason: "copy-incomplete" });
-		expect(readFileSync(legacyAt("runtime", "bun-v1.4.1", "bun"), "utf8")).toBe("bun");
-		expect(lines).toEqual([`dg: kept ${legacyAt("runtime")}; its copy at ${paths.runtimeDir} no longer holds every file`]);
+		expect(outcomeAt(result, "inbox")).toMatchObject({ kind: "kept", reason: "copy-incomplete" });
+		expect(readFileSync(legacyAt("inbox", "profile.json"), "utf8")).toBe("profile");
+		expect(lines).toEqual([`dg: kept ${legacyAt("inbox")}; its copy at ${inboxDir()} no longer holds every file`]);
 	});
 
 	test("refuses the entry while its copy no longer holds every file", async () => {
-		seedPending();
-		rmSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"));
+		seedInboxPending();
+		rmSync(join(inboxDir(), "profile.json"));
 
 		await run();
-		const error = thrown(() => assertNotBlocked(paths, "runtime"));
+		const error = thrown(() => assertNotBlocked(paths, "inbox"));
 
 		expect(error).toBeInstanceOf(DgCliError);
-		expect((error as Error).message).toContain(`then remove ${legacyAt("runtime")}`);
+		expect((error as Error).message).toContain(`then remove ${legacyAt("inbox")}`);
+	});
+
+	test("removes a legacy lib whose copy lost an old bundle version to pruning", async () => {
+		put(legacyAt("lib", "1.0.0", "dg.js"), "old bundle");
+		put(legacyAt("lib", "1.1.0", "dg.js"), "bundle");
+		put(join(paths.libDir, "1.1.0", "dg.js"), "bundle");
+		put(join(paths.libDir, "1.2.0", "dg.js"), "new bundle");
+		put(legacyAt(".pending-removal.json"), JSON.stringify([{ name: nameOf("lib"), from: legacyAt("lib"), to: paths.libDir }]));
+
+		const result = await run();
+
+		expect(outcomeAt(result, "lib")).toMatchObject({ kind: "moved" });
+		expect(existsSync(legacyAt("lib"))).toBe(false);
+		expect(thrown(() => assertNotBlocked(paths, "lib"))).toBeUndefined();
 	});
 });
 
@@ -1058,6 +1083,21 @@ posix("assertNotBlocked", () => {
 		expect(error).toBeInstanceOf(DgCliError);
 		expect((error as Error).message).toBe(notMoved(legacyAt("daemon"), paths.daemonDir));
 		expect(existsSync(paths.daemonDir)).toBe(false);
+	});
+
+	test("throws for a child-kept parent whose target exists but is empty", async () => {
+		put(legacyAt("daemon", "daemon.db"), "db");
+		put(legacyAt("daemon", "logs", "daemon-1.log"), "legacy log");
+		put(join(paths.logDir, "daemon-2.log"), "current log");
+		mkdirSync(paths.daemonDir, { recursive: true });
+		const result = await run();
+		expect(outcomeAt(result, "daemon")).toMatchObject({ kind: "kept", reason: "child-kept" });
+
+		const error = thrown(() => assertNotBlocked(paths, "daemon"));
+
+		expect(error).toBeInstanceOf(DgCliError);
+		expect((error as Error).message).toBe(`dg: kept ${legacyAt("daemon")}; a folder inside it did not move. dg-skills doctor names it`);
+		expect(readdirSync(paths.daemonDir)).toEqual([]);
 	});
 
 	test("returns for a target-used kept entry because its target exists", async () => {

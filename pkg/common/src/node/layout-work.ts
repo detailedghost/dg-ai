@@ -14,6 +14,7 @@ import {
 	LAYOUT_TABLE,
 	isMoveEntry,
 	type MoveEntry,
+	moveEntries,
 	type Outcome,
 	type StopKey,
 	type StopResult,
@@ -298,9 +299,12 @@ const runningInside = (seams: LayoutSeams, root: string): boolean => {
 	return files.some((file) => holdsFile(resolve(root), resolve(file)) || holdsFile(realOr(root), realOr(file)));
 };
 
+const launcherBound = (record: Pending): boolean =>
+	moveEntries.find((entry) => entry.name === record.name)?.launcherBound === true;
+
 function retryRecord(record: Pending, { seams, say }: Context): "removed" | "incomplete" | "held" {
 	if (!exists(seams, record.from)) return "removed";
-	if (!exists(seams, record.to) || !treeContained(record.from, record.to)) {
+	if (!exists(seams, record.to) || (!launcherBound(record) && !treeContained(record.from, record.to))) {
 		say(`dg: kept ${record.from}; its copy at ${record.to} no longer holds every file`);
 		return "incomplete";
 	}
