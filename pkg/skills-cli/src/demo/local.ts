@@ -18,7 +18,7 @@ import { downloadedChromium } from "../pw/core/downloaded";
 import { timestampedName } from "../pw/core/response";
 import { exePath } from "../pw/core/windows";
 import type { TourScript } from "../utils/plan-format";
-import { demosDir } from "./paths";
+import { demosDir, demosWriteDir } from "./paths";
 import { loadScript, savePlan } from "./plan-file";
 import {
 	DEFAULT_TIMEOUT_MIN,
@@ -228,7 +228,7 @@ export async function playLocal(
 		console.error(`a player for ${slug} is already running (pid ${running})`);
 		return 1;
 	}
-	const dir = join(demosDir(), slug);
+	const dir = join(demosWriteDir(), slug);
 	ensurePrivateDir(demosDir());
 	ensurePrivateDir(dir);
 	rmSync(join(dir, `${slug}.result.json`), { force: true });
@@ -244,7 +244,7 @@ export async function playLocal(
 		timeoutMin: opts.timeout ?? DEFAULT_TIMEOUT_MIN,
 	};
 	const { pid } = deps.spawn(
-		selfCommand(["demo", "__player", JSON.stringify(job)]),
+		selfCommand(["demo", "player", JSON.stringify(job)]),
 		join(dir, timestampedName("player", "log")),
 	);
 	writeFileAtomic(join(dir, "player.pid"), String(pid), 0o600);

@@ -14,6 +14,7 @@ import { erdChecks } from "../erd/doctor";
 import { fileChecks } from "../file/doctor";
 import { hooksChecks } from "../hooks/doctor";
 import { inboxChecks } from "../inbox/doctor";
+import { cleanChecks } from "../install/clean-doctor";
 import { installChecks } from "../install/doctor";
 import { jotChecks } from "../jot/doctor";
 import { launchChecks } from "../launch/doctor";
@@ -50,6 +51,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	erd: erdChecks,
 	"test-live": testLiveChecks,
 	install: installChecks,
+	clean: cleanChecks,
 	"batch-open": batchOpenChecks,
 	launch: launchChecks,
 	demo: demoChecks,

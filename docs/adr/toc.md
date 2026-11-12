@@ -29,6 +29,8 @@ flowchart LR
 - [0001 — Skills-only installation](0001-skills-only-install.md)
 - [0032 — Ship one pinned Bun runtime and one minified bundle](0032-shared-runtime-bundle.md) — Accepted:
   three shims run one runtime and one code-split bundle in place of three compiled binaries.
+- [0025 — Keep dg files in the per-OS layout](0025-per-os-layout.md) — Accepted:
+  dg files live in the per-OS roots that `resolveDgPaths` returns, and install moves the old `~/.dg` into them.
 
 ## Platform
 
@@ -67,12 +69,13 @@ flowchart LR
 - [0022 — Keep Proton filters in one declared file](0022-proton-filter-policy.md)
 - [0023 — Review finished work on a local page with a claimed verdict](0023-verify-local-review.md)
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
-- [0025 — Keep dg files in the per-OS layout](0025-per-os-layout.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
 - [0027 — Offer pinned third-party plugins as an opt-in install](0027-optional-third-party-plugins.md)
 - [0033 — Gate verify on the layout of the accepted prototype](0033-accepted-prototype-layout-gate.md)
 - [0034 — Send images over the phone](0034-phone-image-messages.md) — Proposed:
   kind 15 behind a default-off `files` setting; the receiver pulls the ciphertext over Magic Wormhole with a kind 25015 request.
+- [0036 — Move the legacy `~/.dg` through one layout module](0036-one-layout-module.md) — Proposed:
+  one `ensureLayout` at every program start moves the legacy home, and a manual rollback replaces the rollback command.
 
 ## Skills
 

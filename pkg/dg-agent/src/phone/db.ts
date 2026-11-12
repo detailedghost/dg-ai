@@ -8,6 +8,7 @@ import {
 	runMigrations,
 } from "@dg/common/node";
 import { join } from "node:path";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { FILE_NAME_PATTERN, FILES_DIR, imageFileName, parseImageFile } from "./image";
 import { migrateThreadSchema } from "./thread-schema";
 
@@ -331,6 +332,7 @@ export class PhoneDb {
 	}
 
 	static open(paths: DgPaths, now: () => number = () => Math.floor(Date.now() / 1000)): PhoneDb {
+		assertNotBlocked(paths, "phone");
 		return PhoneDb.openAt(PhoneDb.path(paths), paths.phoneRoot, now);
 	}
 

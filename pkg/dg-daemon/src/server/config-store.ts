@@ -5,6 +5,7 @@ import {
 	ensurePrivateDir,
 	writeFileAtomic,
 } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 
 export function readConfig(paths: DgPaths): Record<string, unknown> {
 	const file = paths.daemonConfigPath;
@@ -25,6 +26,7 @@ export function writeConfig(
 	paths: DgPaths,
 	patch: Record<string, unknown>,
 ): void {
+	assertNotBlocked(paths, "daemon");
 	const file = paths.daemonConfigPath;
 	ensurePrivateDir(dirname(file));
 	const next = { ...readConfig(paths), ...patch };

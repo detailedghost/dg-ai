@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { posix, resolve, win32 } from "node:path";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, posix, resolve, win32 } from "node:path";
 import { normalizeDgHome, resolveDgPaths } from "@dg/common/node";
 
 const home = "/h";
@@ -236,6 +238,101 @@ describe("resolveDgPaths legacyHome", () => {
 		});
 
 		expect(paths.legacyHome).toBe("C:\\Users\\u\\.dg");
+	});
+});
+
+describe("resolveDgPaths memoization", () => {
+	const linux = (env: Record<string, string | undefined> = {}) => ({
+		platform: "linux" as const,
+		homeDir: home,
+		env,
+	});
+
+	it("returns the same object for two default calls", () => {
+		expect(resolveDgPaths()).toBe(resolveDgPaths());
+	});
+
+	it("returns the default object for explicit seams that carry the same inputs", () => {
+		expect(resolveDgPaths({ env: { ...process.env } })).toBe(resolveDgPaths());
+	});
+
+	it("returns the same object for two calls with equal explicit seams built separately", () => {
+		expect(resolveDgPaths(linux({ XDG_DATA_HOME: "/x" }))).toBe(resolveDgPaths(linux({ XDG_DATA_HOME: "/x" })));
+	});
+
+	it("returns a different object when DG_HOME differs", () => {
+		const other = resolveDgPaths({ env: { ...process.env, DG_HOME: "/other-dg-home" } });
+
+		expect(other).not.toBe(resolveDgPaths());
+		expect(other.dataDir).toBe("/other-dg-home/data");
+	});
+
+	it("resolves a relative DG_HOME against the working directory of each call", () => {
+		const start = process.cwd();
+		const first = realpathSync(mkdtempSync(join(tmpdir(), "dg-paths-a-")));
+		const second = realpathSync(mkdtempSync(join(tmpdir(), "dg-paths-b-")));
+		try {
+			process.chdir(first);
+			const before = resolveDgPaths(linux({ DG_HOME: "rel-home" }));
+			process.chdir(second);
+			const after = resolveDgPaths(linux({ DG_HOME: "rel-home" }));
+
+			expect(before.dataDir).toBe(join(first, "rel-home", "data"));
+			expect(after.dataDir).toBe(join(second, "rel-home", "data"));
+		} finally {
+			process.chdir(start);
+			rmSync(first, { recursive: true, force: true });
+			rmSync(second, { recursive: true, force: true });
+		}
+	});
+
+	it("returns a different object when any XDG value, the home or the platform differs", () => {
+		const base = resolveDgPaths(linux());
+
+		expect(resolveDgPaths(linux({ XDG_STATE_HOME: "/s" }))).not.toBe(base);
+		expect(resolveDgPaths(linux({ XDG_CONFIG_HOME: "/c" }))).not.toBe(base);
+		expect(resolveDgPaths({ ...linux(), homeDir: "/other-home" })).not.toBe(base);
+		expect(resolveDgPaths({ ...linux(), platform: "darwin" })).not.toBe(base);
+	});
+
+	it("follows a mutated env object because the key is its values, not its identity", () => {
+		const env: Record<string, string | undefined> = {};
+		const before = resolveDgPaths(linux(env));
+		env.XDG_DATA_HOME = "/moved";
+		const after = resolveDgPaths(linux(env));
+
+		expect(after).not.toBe(before);
+		expect(after.dataDir).toBe("/moved/dg");
+		expect(before.dataDir).toBe("/h/.local/share/dg");
+	});
+
+	it("ignores env names that the resolver never reads", () => {
+		const base = resolveDgPaths(linux());
+
+		expect(resolveDgPaths(linux({ PATH: "/bin", EDITOR: "vi" }))).toBe(base);
+	});
+
+	it("treats an env name set to undefined the same as an absent one", () => {
+		expect(resolveDgPaths(linux({ DG_HOME: undefined }))).toBe(resolveDgPaths(linux()));
+	});
+
+	it("returns a different object per win32 root variable", () => {
+		const win = (env: Record<string, string | undefined>) => ({ platform: "win32" as const, homeDir: "C:\\Users\\h", env });
+		const base = resolveDgPaths(win({}));
+
+		expect(resolveDgPaths(win({ LOCALAPPDATA: "D:\\local" }))).not.toBe(base);
+		expect(resolveDgPaths(win({ APPDATA: "D:\\roaming" }))).not.toBe(base);
+		expect(resolveDgPaths(win({ USERPROFILE: "D:\\profile" }))).not.toBe(base);
+		expect(resolveDgPaths(win({ LOCALAPPDATA: "D:\\local" }))).toBe(resolveDgPaths(win({ LOCALAPPDATA: "D:\\local" })));
+	});
+
+	it("keeps one object per home when two homes interleave", () => {
+		const first = resolveDgPaths({ ...linux(), homeDir: "/home-a" });
+		const second = resolveDgPaths({ ...linux(), homeDir: "/home-b" });
+
+		expect(first).not.toBe(second);
+		expect(resolveDgPaths({ ...linux(), homeDir: "/home-a" })).toBe(first);
+		expect(resolveDgPaths({ ...linux(), homeDir: "/home-b" })).toBe(second);
 	});
 });
 

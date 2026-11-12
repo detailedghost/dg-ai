@@ -111,7 +111,7 @@ export function formatReport(report: DoctorReport): string {
 	for (const entry of report.items) {
 		lines.push(entry.item);
 		for (const check of entry.checks) {
-			lines.push(`  ${STATUS_ICON[check.status]} ${check.id}: ${check.detail}`);
+			lines.push(`  ${STATUS_ICON[check.status]} ${check.id}: ${check.detail.replaceAll("\n", "\n      ")}`);
 			if (check.fix) lines.push(`      Fix: ${check.fix}`);
 		}
 	}

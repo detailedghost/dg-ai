@@ -32,7 +32,7 @@ import { programCommand } from "@dg/common/node/program";
 import { startNotice } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
-	return programCommand("dg-daemon", ["__serve"]);
+	return programCommand("dg-daemon", ["serve"]);
 }
 
 export type StartSeams = {

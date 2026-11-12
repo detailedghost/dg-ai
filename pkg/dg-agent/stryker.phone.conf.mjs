@@ -15,8 +15,8 @@ const config = {
 		"src/phone/thread-schema.ts",
 		"src/phone/listener.ts:690-711",
 		"src/phone/listener.ts:729-768",
-		"src/phone/commands.ts:653-667",
-		"src/phone/commands.ts:681-685",
+		"src/phone/commands.ts:809-821",
+		"src/phone/commands.ts:836-840",
 	],
 	testFiles: [
 		"__tests__/phone/admit-pass.spec.ts",

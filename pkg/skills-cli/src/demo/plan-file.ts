@@ -8,11 +8,11 @@ import {
 	toPlanMarkdown,
 	validate,
 } from "../utils/plan-format";
-import { demosDir, legacyDemosDir, planFileName } from "./paths";
+import { demosDir, demosWriteDir, legacyDemosDir, planFileName } from "./paths";
 
 export function savePlan(
 	script: TourScript,
-	dir = join(demosDir(), slugify(script.title ?? "demo")),
+	dir = join(demosWriteDir(), slugify(script.title ?? "demo")),
 ): string {
 	ensurePrivateDir(dir);
 	const path = join(dir, planFileName(slugify(script.title ?? "demo")));

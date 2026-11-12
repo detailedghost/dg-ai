@@ -139,11 +139,11 @@ export function windowsTaskXmlBytes(spec: AutostartSpec): Uint8Array {
 	return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
 }
 
-/** Task Scheduler has no environment block, so a set `DG_HOME` is passed as `--dg-home` after `__run`. */
+/** Task Scheduler has no environment block, so a set `DG_HOME` is passed as `--dg-home` after `listen`. */
 function windowsTaskArgs(spec: AutostartSpec): string[] {
 	const args = spec.argv.slice(1);
 	if (!spec.dgHome) return args;
-	const runAt = args.indexOf("__run");
+	const runAt = args.indexOf("listen");
 	const insertAt = runAt === -1 ? args.length : runAt + 1;
 	args.splice(insertAt, 0, "--dg-home", spec.dgHome);
 	return args;

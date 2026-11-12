@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { Command } from "commander";
 import * as realJot from "../src/jot";
 import * as realStash from "../src/stash";
 
@@ -21,7 +22,7 @@ mock.module("../src/jot", () => ({
 	},
 }));
 
-const { main } = await import("../src/main");
+const { main, registerListenerRestart } = await import("../src/main");
 
 const realExit = process.exit;
 const realError = console.error;
@@ -136,5 +137,95 @@ describe("dg-skills main through feature modules that used to exit", () => {
 	])("keeps %s free of a bare process.exit so the entry point can drain output", (file) => {
 		const source = readFileSync(join(import.meta.dir, "..", "src", file), "utf8");
 		expect(source).not.toContain("process.exit(");
+	});
+});
+
+describe("registerListenerRestart", () => {
+	const run = async (name: string, phone: { kind: string; stopped?: boolean } | undefined): Promise<string[]> => {
+		const calls: string[] = [];
+		const program = new Command().exitOverride();
+		program.command(name).action(() => {
+			calls.push("body");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => phone,
+			restart: async () => {
+				calls.push("restart");
+			},
+		});
+		await program.parseAsync([name], { from: "user" });
+		return calls;
+	};
+
+	it("restarts the listener after the install body when phone moved and its listener was stopped", async () => {
+		expect(await run("install", { kind: "moved", stopped: true })).toEqual(["body", "restart"]);
+	});
+
+	it("restarts the listener after the install body when phone was set aside and its listener was stopped", async () => {
+		expect(await run("install", { kind: "setAside", stopped: true })).toEqual(["body", "restart"]);
+	});
+
+	it.each([
+		[{ kind: "moved", stopped: false }],
+		[{ kind: "absent" }],
+		[undefined],
+	])("does not restart the listener for the phone outcome %p", async (phone) => {
+		expect(await run("install", phone)).toEqual(["body"]);
+	});
+
+	it("restarts the listener once when the install body throws, and rethrows the error", async () => {
+		const calls: string[] = [];
+		const program = new Command().exitOverride();
+		program.command("install").action(() => {
+			calls.push("body");
+			throw new Error("install failed");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => ({ kind: "moved", stopped: true }),
+			restart: async () => {
+				calls.push("restart");
+			},
+		});
+
+		await expect(program.parseAsync(["install"], { from: "user" })).rejects.toThrow("install failed");
+
+		expect(calls).toEqual(["body", "restart"]);
+	});
+
+	it("keeps the install error when the restart also fails", async () => {
+		const program = new Command().exitOverride();
+		program.command("install").action(() => {
+			throw new Error("install failed");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => ({ kind: "moved", stopped: true }),
+			restart: async () => {
+				throw new Error("restart failed");
+			},
+		});
+
+		await expect(program.parseAsync(["install"], { from: "user" })).rejects.toThrow("install failed");
+	});
+
+	it("does not restart the listener after a failing command other than install", async () => {
+		const calls: string[] = [];
+		const program = new Command().exitOverride();
+		program.command("doctor").action(() => {
+			throw new Error("doctor failed");
+		});
+		registerListenerRestart(program, {
+			phoneOutcome: async () => ({ kind: "moved", stopped: true }),
+			restart: async () => {
+				calls.push("restart");
+			},
+		});
+
+		await expect(program.parseAsync(["doctor"], { from: "user" })).rejects.toThrow("doctor failed");
+
+		expect(calls).toEqual([]);
+	});
+
+	it("does not restart the listener after a command other than install", async () => {
+		expect(await run("doctor", { kind: "moved", stopped: true })).toEqual(["body"]);
 	});
 });

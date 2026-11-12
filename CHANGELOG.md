@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.2.0 (2026-11-12)
+
+### Features
+
+- feat(deps-upgrade): default the cooldown to 0 and read DG_DEPS_COOLDOWN_DAYS ([#119](https://github.com/detailedghost/dg-ai/pull/119))
+
+### Fixes
+
+- fix(install): close the minor review notes from the bundle and layout PRs ([#138](https://github.com/detailedghost/dg-ai/pull/138))
+
 ## v4.1.0 (2026-11-11)
 
 ### Features

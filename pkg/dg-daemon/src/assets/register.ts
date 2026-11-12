@@ -2,8 +2,9 @@ import { closeSync, constants, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { AssetTooLargeError, CHAT_MAX_ASSET_BYTES } from "@dg/common";
 import { type DgPaths, ensurePrivateDir } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import type { ChatStore } from "../store";
-import { getConfiguredAssetDirectory } from "./config";
+import { getAssetDirectorySetting, getConfiguredAssetDirectory } from "./config";
 import { assertFlatSegment, assertRealDirectory } from "./safe-path";
 
 export type RegisterAssetDeps = {
@@ -53,6 +54,7 @@ export async function registerAsset(
 		envelope.ciphertext,
 	]);
 
+	if (getAssetDirectorySetting(deps.paths) === deps.paths.assetsDir) assertNotBlocked(deps.paths, "assets");
 	const root = getConfiguredAssetDirectory(deps.paths);
 	ensurePrivateDir(root);
 	assertRealDirectory(root, `asset root ${root} is not a real directory`);

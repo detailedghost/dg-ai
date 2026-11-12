@@ -78,48 +78,197 @@ second install. Each role then gets its own subfolder: `$DG_HOME/bin`,
 ### Move from ~/.dg
 
 Releases before this layout kept everything in `~/.dg` (or flat in `DG_HOME`).
-The first `dg-skills install` of a new release moves it:
+Any start of `dg-skills`, `dg-agent` or `dg-daemon` moves what is left, before
+the command runs. When nothing is left, the check is one folder listing.
+[ADR 0036](adr/0036-one-layout-module.md) records the design.
 
-1. Each folder and file moves to its new root. Install copies it, checks that
-   the copy has the same files and bytes, and only then removes the old copy.
-   When the check fails, the old copy stays and install names it.
-2. Install never writes over a destination that exists. It keeps the old copy
-   and says so. When an old folder is still in use after the copy, for example
-   the runtime that runs install on Windows, install leaves it and the next
-   `dg-skills install` removes it.
-3. Install keeps a folder when a process that writes it is still running,
-   such as `dg-daemon`. Stop the process and run install again.
-4. The phone state moves on the next `dg-agent phone __refresh`, which install
-   runs. See [phone](phone.md#where-the-phone-state-lives).
-5. On Linux and macOS, the daemon moves its key in the OS keychain to an
-   account named after the new state root the first time it opens. It copies
-   the key, reads it back, compares it, and only then deletes the old entry.
-   If a step fails, it keeps the old entry, reads from it, and prints one
-   warning that names the key, never its value.
-6. The staged extension folder moves to the data root. The browser remembers
+Three terms have one meaning here:
+
+- A target is unused when it holds no rows and no files.
+- dg keeps an old copy when it leaves that copy in place and does not remove it.
+- An entry is blocked when dg cannot move it now. dg keeps the old copy, and
+  the program that writes that state refuses to open it and prints the line
+  that says why.
+
+The move follows these rules:
+
+1. Each folder and file moves to its new root. dg copies it, checks that the
+   copy has the same files and bytes, and only then removes the old copy.
+   When the check fails, dg keeps the old copy and names it.
+2. dg never writes over a target that holds data. It keeps the old copy, keeps
+   the target, and says so. `dg-skills doctor install` then names both copies.
+3. When the target exists and is unused, dg sets it aside as
+   `<name>.empty-<ts>`, then moves the old copy in. `dg-skills clean` removes
+   the set-aside copy. See [Clean up](#clean-up).
+4. When an old folder is still in use after the copy, for example the runtime
+   that runs install on Windows, dg leaves it. The next start of any dg
+   program removes it and prints one line.
+5. When a process that writes a folder is still running, dg blocks that entry.
+   Only the daemon's own start and `dg-skills install` stop an old daemon.
+   On Linux and macOS they send SIGTERM. When the old daemon is hung and does
+   not answer its health check, they first confirm the pid is the dg daemon
+   that wrote the pid file, then send SIGTERM and, if it stays, SIGKILL; a pid
+   that another program reused gets no signal, and a pid dg cannot identify
+   blocks the move. On Windows dg never stops it: it
+   prints the service line, and you stop the `dg-daemon` service, then run
+   `dg-skills install` again.
+6. The phone state moves on any `dg-agent phone` command and on
+   `dg-skills install`. See [phone](phone.md#where-the-phone-state-lives).
+7. On Linux and macOS, the daemon moves its key in the OS keychain to an
+   account named after the new state root. The move runs only when the daemon
+   starts to serve, not at the first open. It copies the key, reads it back,
+   compares it, and only then deletes the old entry. On macOS, dg passes the
+   key to the keychain tool on stdin, so it never appears in the process
+   arguments. If any step fails, dg keeps both entries, reads the old account
+   when the new one is empty, and prints one warning that names the key,
+   never its value. The move is one-way. See the
+   [keychain warnings](#keychain-warnings).
+8. The staged extension folder moves to the data root. The browser remembers
    the old folder, so install prints one line: open `chrome://extensions`
    once, remove the old `dg-ai-extension` entry, and load unpacked from the
    new folder. Later installs update that folder in place.
-7. `ssms` state moves to the state root, and its fixed `config.yaml` moves to
-   the config folder under the passwd home. See [ssms](ssms.md).
-8. Install leaves files it does not know in `~/.dg` and names them once.
+9. `ssms` state moves to the state root. Its fixed `config.yaml` moves to
+   the config folder under the passwd home, and only `dg-skills install`
+   moves it. See [ssms](ssms.md).
+10. dg leaves files it does not know in `~/.dg`.
+11. A symlinked `~/.dg` keeps its link. dg moves the contents and never
+    removes or renames the link.
+12. With `DG_HOME` set, the role folders under it stay in place and dg
+    moves only the old files next to them.
 
 `~/.dg/bin` keeps small launchers for `dg-skills`, `dg-agent` and
 `dg-daemon`. Each prints one line on stderr that names the new launcher and
 the release that removes it, then runs the new launcher. The removal release
 is two minor releases after the release that moved the data: a move by 1.34.x
 names 1.36.0. Install deletes these launchers when it installs that release or
-a later one.
+a later one. `dg-skills clean` removes them earlier.
 
 Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
 stop matching. `dg-skills doctor` warns and names the new rule,
 `Bash(dg-skills <sub>:*)`.
 
-To go back to an older release, first stop the phone listener with
-`dg-agent phone close`, then run `dg-agent phone __rollback-home` to copy the
-phone state back to `~/.dg/phone`. Then run
-`dg-skills install --version <old>`. The older release writes its launchers to
-`~/.dg/bin` again. Data under the new roots stays where it is.
+#### When does it move
+
+| Command | What moves |
+| --- | --- |
+| `--help`, `-h` anywhere before a `--`, `--version` | Nothing. |
+| `dg-skills hooks run`, `dg-agent phone listen`, `dg-daemon status` | Nothing. These commands skip the move. |
+| `dg-skills install` | Everything. It stops an old daemon and an old phone listener, moves `runtime/` and `lib/`, then rewrites the launchers and restarts the listener, also when the install fails. |
+| `dg-skills doctor` | What it can, before it reports. The `layout` check then lists what is left. |
+| `dg-skills clean` | What it can, then it removes the leftovers. |
+| `dg-skills spec`, `dg-agent memory` and other commands | The daemon, memory, grants and config. They leave `runtime/`, `lib/`, `phone/` and the ssms config until install (or, for `phone/`, a `dg-agent phone` command) runs. Old `~/.dg/bin` launchers read `runtime/` and `lib/`, and only install rewrites them. |
+| `dg-agent phone <verb>` | The phone folder, then the phone-friend lines. |
+| `dg-agent start` | The same as `dg-agent` commands. It starts `dg-daemon`, and the daemon's own start moves the daemon folder. |
+
+The keychain key moves only when the daemon serves. The daemon folder can move
+days before the key does.
+
+#### Layout lines
+
+Every line goes to stderr. `<from>` is the old path and `<to>` is the new one.
+dg prints each line once for each process.
+
+<!-- markdownlint-disable MD013 -->
+
+| Line | Cause | Fix |
+| --- | --- | --- |
+| `dg: kept <from>; a process that writes it is running. Stop it, then run dg-skills install again` | A live writer holds the entry. dg blocked it. | Stop the process, then run `dg-skills install`. |
+| `dg: kept <from>; stop the dg-daemon service, then run dg-skills install again` | On Windows, dg never stops the daemon. | Stop the `dg-daemon` service, then run `dg-skills install`. |
+| `dg: <from> has not moved to <to>; run dg-skills install` | A program tried to open an entry that has not moved. This command lacks a step the move needs, such as the phone check or the ssms config folder. | Run `dg-skills install`, or for the phone any `dg-agent phone` command. |
+| `dg: copied <from> to <to>; it is in use, so the next dg start removes it` | The copy is complete, but dg could not remove the old copy. The removal is scheduled. | Nothing. The next dg start removes it. |
+| `dg: removed <from>; its copy at <to> was complete` | A scheduled removal finished on a later start. | Nothing. |
+| `dg: kept <from>; its copy at <to> no longer holds every file` | A scheduled removal found the copy incomplete. | Compare the two folders before you remove either. |
+| `dg: set aside unused <to> as <to>.empty-<ts>; dg-skills clean removes it` | The target was unused, so dg renamed it and moved the old copy in. | Run `dg-skills clean` when you want the set-aside copy gone. |
+| `dg: kept <from>; <to> already exists and holds data. dg-skills doctor reports both copies` | Both copies hold data. | Run `dg-skills doctor install`, compare the copies, then remove one. |
+| `dg: kept <from>; <to> already exists` | A target existed when the copy began. | Run `dg-skills doctor install`, then compare the copies. |
+| `dg: kept <from>; the copy failed its check: <problem>` | The copy did not pass the check, for example the phone key check. dg removed the copy. | Fix the problem named, then run `dg-skills install`. |
+| `dg: kept <from>; moving it to <to> failed: <reason>` | The copy or its byte check failed. dg removed the copy. | Fix the reason, then run `dg-skills install`. |
+| `dg: kept <from>; setting aside <to> failed: <reason>` | dg could not rename the unused target. | Fix the reason, then run `dg-skills install`. |
+| `dg: phone-friend lines wait for conversion; run dg-agent phone status` | `dg-agent phone listen` found old phone-friend lines that no command has converted. It exits 1. | Run `dg-agent phone status`. |
+
+<!-- markdownlint-enable MD013 -->
+
+#### Layout check in doctor
+
+`dg-skills doctor install` runs a check with the id `layout`. The check only
+reads. It writes nothing.
+
+When every file is in its per-OS folder, the check reports `ok`:
+`every dg file is in its per-OS folder`. Otherwise it reports `warn` with one
+line for each entry that is left:
+
+| Warn line | Meaning | Who acts |
+| --- | --- | --- |
+| `<from> has not moved to <to>; run dg-skills install` | dg has not moved the entry. | `dg-skills install` fixes it. |
+| `dg: kept <from>; a process that writes it is running. Stop it, then run dg-skills install again` | A live writer blocks the entry. | Stop the process, then `dg-skills install` fixes it. |
+| `<from> is copied and waits for removal` | The copy is complete. The old copy waits for removal. | `dg-skills install` or any dg start removes it. |
+| `<from> is copied but the copy is incomplete; dg keeps it` | The copy lacks files. dg keeps the old copy. | A human decides. Check both folders first. |
+| `<from> and <to> both hold data; compare them, then remove the one you do not need` | A split: both copies hold data. | A human decides. Compare, then remove one. |
+
+The fix line of the warn is `dg-skills install`. On Windows with a live
+daemon, it is the service line instead.
+
+#### Keychain warnings
+
+Each line starts with `dg: keychain secret chat-store-kek`. None holds the key.
+
+<!-- markdownlint-disable MD013 -->
+
+| Line, after the prefix | Meaning |
+| --- | --- |
+| `could not be read from the old account; dg leaves both accounts as they are` | dg cannot read the old entry. It changes nothing. |
+| `could not be written to the new account; dg keeps the old entry and reads it from the old account` | The new account refused the key. |
+| `did not read back the same from the new account; dg keeps the old entry and reads it from the old account` | The read-back differs from the copy. |
+| `differs between the old and the new account; dg reads the new account. If the daemon refuses the key, delete the entry <account> and start the daemon again` | The accounts hold different keys. |
+| `moved to the new account, but the old entry could not be deleted; dg reads the new account, and a copy stays in the old one` | The copy succeeded. The old entry stays. |
+
+<!-- markdownlint-enable MD013 -->
+
+### Clean up
+
+`dg-skills clean` removes what the move left behind. It moves what it can
+first, then removes these paths:
+
+- Each unused `<name>.empty-<ts>` copy that a move set aside, such as
+  `phone.empty-<ts>`. A pending removal that is complete also finishes.
+- The `~/.dg/bin` folder, only when every name in it is a dg launcher.
+- `~/.dg`, only when it is empty.
+
+It prints one line for each removed path, and a final count:
+
+```text
+dg: removed <path>
+dg: removed 2 path(s)
+```
+
+When it removes `~/.dg/bin`, it also prints one notice:
+
+```text
+dg: ~/.dg/bin/dg-skills, ~/.dg/bin/dg-agent and ~/.dg/bin/dg-daemon stop working; the launchers are in <launcher folder>
+```
+
+The `~/.dg/bin/<name>` paths stop working now, not at the removal release.
+Claude Code allow rules in the old form, `Bash(~/.dg/bin/dg-skills <sub>:*)`,
+stop matching. `dg-skills doctor` names the new rule. A later install does not
+bring `~/.dg/bin` back.
+
+`dg-skills clean` leaves these paths in place:
+
+- `dg-ai-*` folders. Install removes them.
+- A set-aside copy that holds data. It prints
+  `dg: kept <path>; it holds data`.
+- A `bin` folder that holds other files, or launchers with no replacement in the new launcher folder. It prints
+  `dg: kept <path>; it holds files that are not dg launchers with a replacement: <names>`.
+- A pending copy that is still in use.
+
+When a removal fails, it prints
+`dg: kept <path>; removing it failed: <reason>`, continues, and exits 1.
+
+It refuses to run while a folder has not moved or an old writer is running. It
+prints the fix lines from [Layout lines](#layout-lines), then
+`dg: cleaned nothing; fix the lines above, then run dg-skills clean again`,
+and exits 1. When nothing is left, it prints `dg: nothing to clean`. It is
+safe to run again.
 
 ## Install layout
 
@@ -181,6 +330,69 @@ ln -sfn <previous version> ~/.local/share/dg/lib/current
 
 A version from before the bundle needs that release's own bootstrap script, as
 the error message says.
+
+### Roll back to a release that uses ~/.dg
+
+No command copies the data back. A release from before the per-OS layout reads
+`~/.dg`, so you copy each folder back by hand.
+
+1. Stop every writer.
+   - Daemon: it has no `stop` command. Stop the `dg-daemon` service in your
+     service manager, or send SIGTERM to the pid in
+     `<state>/daemon/daemon.pid` (Linux and macOS).
+   - Phone: run `dg-agent phone close`.
+   - Channel review: run `dg-skills channel-review stop --env <env>`.
+   - ssms: `dg-skills ssms` has no stop command. Let a running `dg-skills ssms`
+     command end.
+2. Copy each folder back to its `~/.dg` name with a copy that keeps
+   attributes. On Linux and macOS, use `cp -a <from> <to>`. On Windows, use
+   `robocopy <from> <to> /E /COPY:DAT` for a folder. The table lists the Linux
+   paths. `resolveDgPaths` in `pkg/common/src/node/dg-paths.ts` gives the other
+   OSes. `memory.db`, `memory.db-wal` and `memory.db-shm` move together. Create
+   `~/.dg` with mode 0700 when it does not exist.
+3. Run `dg-skills install --version <old>` right away. Every later start on
+   the new release logs kept lines until you remove the copies.
+
+| Entry | Per-OS path on Linux | Copy it to |
+| --- | --- | --- |
+| runtime | `~/.local/share/dg/runtime` | `~/.dg/runtime` |
+| lib | `~/.local/share/dg/lib` | `~/.dg/lib` |
+| skills | `~/.local/share/dg/skills` | `~/.dg/skills` |
+| browsers | `~/.local/share/dg/browsers` | `~/.dg/browsers` |
+| demo-narration | `~/.local/share/dg/demo-narration` | `~/.dg/demo-narration` |
+| sessions | `~/.local/state/dg/agents/sessions` | `~/.dg/agents/sessions` |
+| assets | `~/.local/state/dg/agents/assets` | `~/.dg/agents/assets` |
+| memory | `~/.local/state/dg/agents/memory.db`, `memory.db-wal`, `memory.db-shm` | `~/.dg/agents/` |
+| personas | `~/.local/share/dg/agents` | `~/.dg/agents` |
+| daemon-logs | `~/.local/state/dg/log` | `~/.dg/daemon/logs` |
+| daemon | `~/.local/state/dg/daemon` | `~/.dg/daemon` |
+| grants | `~/.local/state/dg/grants` | `~/.dg/grants` |
+| phone | `~/.local/state/dg/phone` | `~/.dg/phone` |
+| phone-friend | `~/.local/state/dg/phone-friend` | `~/.dg/phone-friend` |
+| inbox | `~/.local/state/dg/inbox` | `~/.dg/inbox` |
+| browser-profiles | `~/.local/state/dg/browser-profiles` | `~/.dg/browser-profiles` |
+| demo-profile | `~/.local/state/dg/demo-profile` | `~/.dg/demo-profile` |
+| channel-review-config | `~/.config/dg/channel-review/config.json` | `~/.dg/channel-review/config.json` |
+| channel-review | `~/.local/state/dg/channel-review` | `~/.dg/channel-review` |
+| ssms-config | `ssms/config.yaml` in the config folder under the passwd home | `~/.dg/ssms/config.yaml` |
+| ssms | `~/.local/state/dg/ssms` | `~/.dg/ssms` |
+| proto | `~/.cache/dg/proto` | `~/.dg/proto` |
+| demos | `~/.cache/dg/demos` | `~/.dg/demos` |
+| config | `~/.config/dg/config.json` | `~/.dg/config.json` |
+| cli-only | `~/.config/dg/cli-only` | `~/.dg/cli-only` |
+
+Copy a parent folder before the folder inside it: `daemon` before
+`daemon-logs`, `agents` (personas) before `sessions`, `assets` and `memory`, and
+`channel-review` before its `config.json`. The `bin` entry is a marker, not a
+copy. The older release writes its own launchers to `~/.dg/bin`.
+
+After a rollback, the old release owns `~/.dg`. Before you upgrade again,
+remove the per-OS copies you no longer want. Otherwise dg keeps both, and
+`dg-skills doctor install` reports a split.
+
+The keychain move is one-way. A daemon from before the per-OS layout (#136)
+cannot read the key. The encrypted credentials in `daemon.db` do not decrypt.
+Pair again and add the credentials again.
 
 ## Bump the Bun runtime
 

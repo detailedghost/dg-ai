@@ -26,7 +26,7 @@ import { runCli } from "./cli-wire";
 const DAEMON_ENTRY = join(import.meta.dir, "../../dg-daemon/src/index.ts");
 
 function sourceDaemonArgv(): string[] {
-	return [process.execPath, DAEMON_ENTRY, "__serve"];
+	return [process.execPath, DAEMON_ENTRY, "serve"];
 }
 
 const startFromSource: StartSeams = { daemonArgv: sourceDaemonArgv };
@@ -303,7 +303,7 @@ describe("a daemon of another protocol", () => {
 				() =>
 					cmdStart(
 						{},
-						{ daemonArgv: () => [process.execPath, FIXTURE, "__serve"] },
+						{ daemonArgv: () => [process.execPath, FIXTURE, "serve"] },
 					),
 			);
 		} catch (err) {

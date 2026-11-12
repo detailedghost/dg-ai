@@ -1,6 +1,6 @@
 # 0025 — Keep dg files in the per-OS layout
 
-Status: Proposed
+Status: Accepted
 Date: 2026-11-03
 
 ## Context
@@ -23,14 +23,14 @@ data, state, cache and log roots for the current OS. A set `DG_HOME` maps each
 role to `<DG_HOME>/<role>`; an empty one counts as unset. Install writes the
 launchers to the per-OS bin folder (`~/.local/bin` on Linux and macOS,
 `%LOCALAPPDATA%\dg\bin` on Windows). Install moves the old `~/.dg` into the
-new roots: copy, check, then remove. `phone __refresh` moves the phone state
-and checks the copied database and keys before it removes the old folder.
+new roots: copy, check, then remove (moved by [0036](0036-one-layout-module.md)). `phone __refresh` moves the phone state
+and checks the copied database and keys before it removes the old folder (moved by [0036](0036-one-layout-module.md)).
 Skills call `dg-skills` by name, with one generated first-run block that falls
 back to `${DG_HOME:-$HOME/.local}/bin/dg-skills`. `~/.dg/bin/*` keep notice-printing
 launchers for two minor releases. The daemon keychain account moves to one scoped by the state root. On first
 use the daemon copies the old entry to the new account, reads it back, compares
 it, and only then deletes the old entry; a failed step keeps the old entry and
-reads from it.
+reads from it (moved by [0036](0036-one-layout-module.md)).
 
 ## Consequences
 

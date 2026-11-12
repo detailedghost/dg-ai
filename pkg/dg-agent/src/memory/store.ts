@@ -8,6 +8,7 @@ import {
 	readSchemaVersion,
 	runMigrations,
 } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import { MEMORY_SCHEMA_STEPS } from "./schema";
 
 export const MEMORY_PAGE_SIZE = 20;
@@ -146,6 +147,7 @@ export class MemoryStore {
 	) {}
 
 	static open(paths: DgPaths, seams: MemorySeams = {}): MemoryStore {
+		assertNotBlocked(paths, "memory");
 		ensurePrivateDir(paths.agentsDir);
 		const db = new Database(paths.memoryDbPath, {
 			strict: true,

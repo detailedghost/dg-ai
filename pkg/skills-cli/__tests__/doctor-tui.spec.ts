@@ -286,6 +286,23 @@ describe("render fits the terminal", () => {
 		expect(screen.replace(/\s/g, "")).toContain(fix.replace(/\s/g, ""));
 	});
 
+	test("shows a multi-line detail as one row per line", () => {
+		const detail = "~/.dg/inbox has not moved\n~/.dg/grants has not moved";
+		const two = check("layout", "warn", detail, "dg-skills install");
+		const groups = groupReport({ ok: false, items: [{ item: "install", checks: [two, check("x", "warn", "y", "dg-skills install")] }] });
+		const screen = plain(render({ groups, cursor: 0, open: new Set([groups[0]?.key ?? ""]), status: "" }, { rows: 40, columns: 30 }));
+		const lines = screen.split("\n");
+		expect(lines.some((line) => line.startsWith("        ~/.dg/grants"))).toBe(true);
+		for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(30);
+	});
+
+	test("puts only the first line of a one-check detail in the header", () => {
+		const groups = groupReport({ ok: false, items: [{ item: "install", checks: [check("layout", "warn", "first\nsecond")] }] });
+		const screen = plain(render({ groups, cursor: 0, open: new Set(), status: "" }, { rows: 40, columns: 80 }));
+		expect(screen).toContain("install: first");
+		expect(screen).not.toContain("second");
+	});
+
 	test("an open allow-rules row lists the exact rules", () => {
 		const groups = groupReport(report());
 		const allow = groups.find((g) => g.action?.kind === "allow-rule");

@@ -8,6 +8,7 @@ import {
 	openDaemonDatabase,
 } from "@dg/common/daemon-db";
 import { DEFAULT_BUSY_TIMEOUT_MS, ForwardOnlyVersionError, readSchemaVersion } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import type { ChannelReviewPaths } from "./paths";
 import { EFFORT_LEVELS, type Effort, RUNNER_NAMES, type RunnerName } from "./runners/types";
 import type { PrHost } from "./verdict/types";
@@ -348,12 +349,14 @@ function initialize(db: Database, paths: StateLocation, legacyChatId?: string): 
 }
 
 export function createStateStore(
-	paths: StateLocation,
+	paths: StateLocation & Pick<ChannelReviewPaths, "dg">,
 	clock: () => Date = () => new Date(),
 	eventSaveIntervalMs = EVENT_SAVE_INTERVAL_MS,
 	legacyChatId?: string,
 	onSaveError?: (error: unknown) => void,
 ): StateStore {
+	assertNotBlocked(paths.dg, "channel-review");
+	assertNotBlocked(paths.dg, "daemon");
 	const db = openDaemonDatabase({ dbPath: paths.dbPath, daemonDir: dirname(paths.dbPath) });
 	let row: StateRow;
 	let state: ChannelState;

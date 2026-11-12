@@ -7,6 +7,7 @@ import {
 } from "@dg/common/node";
 import { main, redactPublicValue, type InboxRuntime } from "@dg/inbox";
 import { assertExtensionInstalled } from "../utils/cli-only";
+import { assertEntryMoved } from "../utils/layout-guard";
 import {
 	assertProtonSignedIn,
 	protonDataDir,
@@ -369,6 +370,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 		}
 		if (args[1] !== "sign-in" || args.length !== 2)
 			throw new Error("Use dg-skills inbox proton sign-in.");
+		assertEntryMoved("inbox");
 		await runProtonSignIn(protonDataDir());
 		return;
 	}
@@ -400,6 +402,7 @@ export async function runInbox(rawArgs: string[]): Promise<void> {
 		);
 		return;
 	}
+	if (args[0] !== "profile") assertEntryMoved("inbox");
 	const daemon = daemonRuntime(session);
 	const pw = ext ? undefined : protonPwRuntime(protonDataDir());
 	const onSignal = (signal: NodeJS.Signals) => {

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { validateCredentialGrantPrefix } from "../credentials-format";
 import { ensurePrivateDir, writeFileAtomic } from "./fs";
 import type { DgPaths } from "./dg-paths";
+import { assertNotBlocked } from "./layout";
 
 export function credentialGrantTokenPath(
 	paths: DgPaths,
@@ -20,6 +21,7 @@ export function writeCredentialGrantToken(
 	prefix: string,
 	token: string,
 ): string {
+	assertNotBlocked(paths, "grants");
 	ensurePrivateDir(paths.grantsDir);
 	const path = credentialGrantTokenPath(paths, prefix);
 	writeFileAtomic(path, token, 0o600);

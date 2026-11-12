@@ -71,7 +71,7 @@ run = "bun scripts/test-chrome.ts"
 
 [tasks.daemon]
 description = "Run dg-daemon in the foreground for local harness testing"
-run = "bun pkg/dg-daemon/src/index.ts __serve"
+run = "bun pkg/dg-daemon/src/index.ts serve"
 
 [tasks.api]
 description = "Run dg-agent, the chat harness CLI. Extra args follow --, for example: mise run api -- start"

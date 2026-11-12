@@ -92,8 +92,9 @@ the skills that do not declare `requires: [extension]` reach `$CODEX_HOME/skills
 - The extension folder is in the dg data root, for example
   `~/.local/share/dg/dg-ai-extension-chrome` on Linux and
   `%LOCALAPPDATA%\dg\dg-ai-extension-chrome` on Windows and WSL. Releases
-  before the per-OS layout used `~/.dg`. The first install after the move
-  prints one line. The human must then do one manual step: open
+  before the per-OS layout used `~/.dg`. The move happens on the first start
+  of any dg program, not only on install. When the extension folder moves,
+  install prints one line. The human must then do one manual step: open
   `chrome://extensions`, remove the old `dg-ai-extension` entry, and load
   unpacked from the new folder. An agent cannot do this step.
 
@@ -282,9 +283,10 @@ bundled script, the snippet downloads `bootstrap.sh` from the repository.
 - On **WSL**, the daemon needs **mirrored** networking mode. Under NAT the
   Windows-side browser cannot reach the loopback port; `dg-daemon` exits with
   code 3 rather than pretending to be reachable.
-- `~/.dg` holds two independent trees: `daemon/`, with the encrypted
-  `daemon.db` behind the chat commands, and `agents/`, with session files and
-  the plain-text `memory.db` behind `dg-agent memory`. An agent can also send
+- The state root holds two independent trees. On Linux it is
+  `~/.local/state/dg`; `resolveDgPaths` gives the other OSes. `daemon/` holds
+  the encrypted `daemon.db` behind the chat commands. `agents/` holds session
+  files and the plain-text `memory.db` behind `dg-agent memory`. An agent can also send
   another agent identity a message with `dg-agent send --to <identity>`
   instead of the human. Neither needs the daemon running: `memory` opens
   `agents/memory.db` directly.
@@ -328,7 +330,8 @@ If a bare name does not answer, call `${DG_HOME:-$HOME/.local}/bin/<name>` inste
 `dg-agent --help` should list `start`, `recv`, `send`, `progress`,
 `spawn`, `stage`, `close`, `manifest` and `memory`. `status` is a `dg-daemon` command,
 not a `dg-agent` one. `dg-daemon status` reports that no daemon is running
-yet, though `memory` works regardless. It opens `~/.dg/agents/memory.db`
+yet, though `memory` works regardless. It opens `agents/memory.db` in the
+state root (`~/.local/state/dg/agents/memory.db` on Linux)
 directly rather than asking the daemon. Claude Code uses the
 `/dg:*` namespace; Codex uses `$dg:*`. The extension acts only on URLs it marked,
 so nothing happens until it is loaded in that browser profile.
