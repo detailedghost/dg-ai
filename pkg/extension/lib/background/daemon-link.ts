@@ -54,6 +54,7 @@ import {
 	type PwExtContext,
 } from "./pw-ext";
 import { createUnmaskGrants } from "./unmask-grants";
+import { createWebMcpGrants } from "./webmcp-approval";
 import {
 	createRelayDispatcher,
 	type RelayHandler,
@@ -194,6 +195,9 @@ export function registerDaemonLink(
 	const unmaskGrants = createUnmaskGrants({
 		storage: api.storage as unknown as AgentTabsStorage,
 	});
+	const webmcpGrants = createWebMcpGrants({
+		storage: api.storage as unknown as AgentTabsStorage,
+	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	} = {
@@ -207,6 +211,7 @@ export function registerDaemonLink(
 			browserApi: api as unknown as PwExtBrowserApi,
 			agentTabs,
 			grants: unmaskGrants,
+			webmcpGrants,
 		}),
 		...options.relayHandlers,
 	};
@@ -411,7 +416,11 @@ export function registerDaemonLink(
 	}
 
 	function forgetAgentTabs(sessionId: string): void {
-		for (const cleanup of [() => agentTabs.forget({ sessionId }), () => unmaskGrants.forget(sessionId)])
+		for (const cleanup of [
+			() => agentTabs.forget({ sessionId }),
+			() => unmaskGrants.forget(sessionId),
+			() => webmcpGrants.forget(sessionId),
+		])
 			void Promise.resolve()
 				.then(cleanup)
 				.catch((error: unknown) =>

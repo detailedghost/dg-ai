@@ -302,6 +302,29 @@ describe("dg-agent mcp server tools/call", () => {
 		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { tab: "settings" } }]);
 	});
 
+	it.each([
+		["allOf", { allOf: [{ type: "object", properties: { tab: { type: "string" } } }] }],
+		["anyOf", { anyOf: [{ properties: { q: {} } }, { properties: { tab: {} } }] }],
+		["a $ref into $defs", { $ref: "#/$defs/args", $defs: { args: { properties: { tab: {} } } } }],
+		["a nested $ref into definitions", { allOf: [{ $ref: "#/definitions/a~1b" }], definitions: { "a/b": { oneOf: [{ properties: { tab: {} } }] } } }],
+		["an allOf chain too deep to walk", JSON.parse(`${'{"allOf":['.repeat(40)}{"properties":{"q":{}}}${"]}".repeat(40)}`)],
+	])("routes with dg_tab when the tool's own tab input sits in %s", async (_, own) => {
+		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
+		const { tools } = await client.listTools();
+		expect(tools[0]?.inputSchema.properties).toEqual({ dg_tab: expect.objectContaining({ type: "integer" }) });
+		await client.callTool({ name: "dg_example_read", arguments: { dg_tab: 2, tab: "settings" } });
+		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { tab: "settings" } }]);
+	});
+
+	it.each([
+		["a self-referential $ref", { $ref: "#/$defs/loop", $defs: { loop: { allOf: [{ $ref: "#/$defs/loop" }] } } }],
+		["a remote $ref", { $ref: "https://example.test/schema.json#/properties" }],
+	])("routes with tab and stops cleanly on %s", async (_, own) => {
+		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
+		await client.callTool({ name: "dg_example_read", arguments: { tab: 2 } });
+		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: {} }]);
+	});
+
 	it("finds the tool schema before routing when the client calls without a listing", async () => {
 		const own = { type: "object", properties: { tab: { type: "string" }, dg_tab: { type: "string" } } };
 		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);

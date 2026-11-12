@@ -165,4 +165,13 @@ describe("createWebMcpGrants", () => {
 		storage.data["webmcpGrants:s1"] = "bad";
 		expect(await grants.has("s1", { origin: ORIGIN, tool: "dg_outlook_move", groupId: 10 })).toBe(false);
 	});
+
+	it("forgets one session's grants after a pending add and keeps the others", async () => {
+		const { grants, storage } = setup();
+		storage.data["webmcpGrants:s2"] = [{ origin: ORIGIN, tool: "dg_outlook_move", groupId: 11 }];
+		const added = grants.add("s1", { origin: ORIGIN, tool: "dg_outlook_move", groupId: 10 });
+		await Promise.all([added, grants.forget("s1")]);
+		expect(storage.data["webmcpGrants:s1"]).toBeUndefined();
+		expect(storage.data["webmcpGrants:s2"]).toHaveLength(1);
+	});
 });

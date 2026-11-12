@@ -48,13 +48,12 @@ describe("console hook", () => {
 		});
 	});
 
-	it("masks email addresses unless unmasked, and always masks tokens", () => {
+	it("returns raw entries and leaves all masking to the background", () => {
 		const console = pageConsole();
 		pwExtConsoleHook();
-		console.warn("ada@clinic.test token=abc123def456");
-		expect(pwExtConsoleHook()).toEqual({ entries: ["[warning] [redacted] token=[redacted]"] });
-		expect(pwExtConsoleHook(undefined, true)).toEqual({
-			entries: ["[warning] ada@clinic.test token=[redacted]"],
+		console.warn("ada@clinic.test token=abc123def456 Bearer sk-abcdefgh12345678");
+		expect(pwExtConsoleHook()).toEqual({
+			entries: ["[warning] ada@clinic.test token=abc123def456 Bearer sk-abcdefgh12345678"],
 		});
 	});
 
@@ -65,7 +64,7 @@ describe("console hook", () => {
 		const { entries } = pwExtConsoleHook() as { entries: string[] };
 		expect(entries).toHaveLength(50);
 		expect(entries[0]).toStartWith("[warning] w30 ");
-		expect(entries.every((entry) => entry.length <= 520)).toBe(true);
+		expect(entries.every((entry) => entry.length <= 2001 && entry.endsWith("…"))).toBe(true);
 	});
 });
 
@@ -124,7 +123,7 @@ describe("WebMCP", () => {
 			inputSchema: '{"type":"object","properties":{"q":{"type":"string"}}}',
 			annotations: '{"readOnlyHint":true}',
 		});
-		expect(result.tools[1]?.description.length).toBeLessThanOrEqual(1001);
+		expect(result.tools[1]?.description.length).toBeLessThanOrEqual(2001);
 		expect(result.tools[1]?.inputSchema).toBeUndefined();
 	});
 
@@ -203,7 +202,7 @@ describe("review round 3 hardening", () => {
 		expect(pwExtConsoleHook("https://app.example.test/")).toEqual({ entries: [] });
 	});
 
-	it("bounds and redacts a hostile console buffer", () => {
+	it("bounds a hostile console buffer", () => {
 		pageConsole();
 		const key = Symbol.for("dg.pwExt.consoleHook");
 		(window as unknown as Record<symbol, unknown>)[key] = Object.assign(
@@ -212,16 +211,35 @@ describe("review round 3 hardening", () => {
 		);
 		const result = pwExtConsoleHook() as { entries: string[] };
 		expect(result.entries).toHaveLength(50);
-		expect(result.entries.every((entry) => entry.length <= 520)).toBe(true);
-		expect(result.entries.join("")).not.toContain("secret-");
+		expect(result.entries.every((entry) => entry.length <= 2001)).toBe(true);
+		expect(result.entries).not.toContain("forged");
 	});
 
-	it("redacts tokens in tool descriptions and outputs", async () => {
-		installModelContext([{ name: "t", description: "Bearer sensitive-access-token" }], "Bearer sensitive-output-token");
-		expect(JSON.stringify(await pwExtWebMcp({ kind: "tools" }))).not.toContain("sensitive");
-		expect(
-			JSON.stringify(await pwExtWebMcp({ kind: "call", tool: "t", args: {}, timeoutMs: 100 })),
-		).not.toContain("sensitive");
+	it("returns tool text raw and bounded, for the background to mask", async () => {
+		installModelContext(
+			[{ name: "t", description: `Bearer sk-abcdefgh12345678 ${"d".repeat(5000)}` }],
+			`Bearer sk-output-12345678 ${"o".repeat(200_000)}`,
+		);
+		const listed = (await pwExtWebMcp({ kind: "tools" })) as { tools: { description: string }[] };
+		expect(listed.tools[0]?.description).toStartWith("Bearer sk-abcdefgh12345678 ");
+		expect(listed.tools[0]?.description.length).toBeLessThanOrEqual(2001);
+		expect(listed.tools[0]?.description).toEndWith("…");
+		const called = (await pwExtWebMcp({ kind: "call", tool: "t", args: {}, timeoutMs: 100 })) as { output: string };
+		expect(called.output).toStartWith("Bearer sk-output-12345678 ");
+		expect(called.output.length).toBeLessThanOrEqual(100_001);
+	});
+
+	it("stops listing tools before the result outgrows the background cap", async () => {
+		installModelContext(
+			Array.from({ length: 100 }, (_, i) => ({
+				name: `t${i}`,
+				description: "d".repeat(2000),
+				inputSchema: { x: "y".repeat(7000) },
+			})),
+		);
+		const listed = await pwExtWebMcp({ kind: "tools" });
+		expect(JSON.stringify(listed).length).toBeLessThan(150_000);
+		expect((listed as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
 	});
 
 	it("does not run a tool when the URL changed during discovery", async () => {
@@ -348,11 +366,11 @@ describe("WebMCP dg tool registry", () => {
 });
 
 describe("WebMCP schemas", () => {
-	it("omits a schema over the limit instead of clipping it", async () => {
+	it("omits a schema over the raw limit instead of clipping it", async () => {
 		installModelContext([
-			{ name: "big", description: "d", inputSchema: { type: "object", note: "n".repeat(5000) } },
+			{ name: "big", description: "d", inputSchema: { type: "object", note: "n".repeat(9000) } },
 			{ name: "small", description: "d", inputSchema: { type: "object", properties: { q: { type: "string" } } } },
-			{ name: "hints", description: "d", annotations: { note: "n".repeat(900) } },
+			{ name: "hints", description: "d", annotations: { note: "n".repeat(1100) } },
 		]);
 		const { tools } = (await pwExtWebMcp({ kind: "tools" })) as { tools: Record<string, string>[] };
 		expect(tools[0]).toEqual({ name: "big", description: "d" });
@@ -360,11 +378,10 @@ describe("WebMCP schemas", () => {
 		expect(tools[2]).toEqual({ name: "hints", description: "d" });
 	});
 
-	it("redacts a token in a schema before the length check", async () => {
+	it("returns a valid schema raw, for the background to mask", async () => {
 		installModelContext([{ name: "t", description: "d", inputSchema: { default: "token=abc123def456" } }]);
 		const { tools } = (await pwExtWebMcp({ kind: "tools" })) as { tools: Record<string, string>[] };
-		expect(tools[0]?.inputSchema).not.toContain("abc123def456");
-		expect(() => JSON.parse(tools[0]!.inputSchema!)).not.toThrow();
+		expect(tools[0]?.inputSchema).toBe('{"default":"token=abc123def456"}');
 	});
 });
 

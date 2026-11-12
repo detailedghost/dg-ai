@@ -1099,7 +1099,7 @@ describe("pw --ext round 3 review fixes", () => {
 		const answer = await h.run({ verb: "console" });
 		const main = h.executed().find((call) => call.world === "MAIN");
 
-		expect(main?.args).toEqual([WEB_TAB.url, false]);
+		expect(main?.args).toEqual([WEB_TAB.url]);
 		expect(answer.ok).toBe(true);
 		if (answer.ok) {
 			const lines = answer.data.text
@@ -1211,15 +1211,82 @@ describe("pw --ext unmask", () => {
 		expect(JSON.stringify(await h.run({ verb: "snapshot" }))).not.toContain("739123");
 	});
 
-	it("tells the MAIN-world console hook about the grant", async () => {
-		const h = harness({
-			approval: "allow",
-			pageResult: { started: false, entries: [] },
-			mainResult: () => ({ entries: [] }),
-		});
+	it("tells the MAIN world nothing about the grant or the held secrets", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: (action: unknown) =>
+				typeof action === "object" ? { api: "modelContext", tools: [] } : { entries: [] },
+		};
+		const h = harness(options);
 		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#otp", value: "orchid-maple", secret: true });
+		options.pageResult = { started: false, entries: [] };
 		await h.run({ verb: "console" });
-		expect(h.executed().find((call) => call.world === "MAIN")?.args).toEqual([WEB_TAB.url, true]);
+		await h.run({ verb: "tools" });
+		const main = h.executed().filter((call) => call.world === "MAIN");
+		expect(main.map((call) => call.args)).toEqual([[WEB_TAB.url], [{ kind: "tools" }, WEB_TAB.url]]);
+		expect(JSON.stringify(main)).not.toContain("orchid-maple");
+	});
+
+	it("masks a held secret with a token-shaped part in raw MAIN-world console output", async () => {
+		const secret = "sk-abcdefgh12345678 tail-passphrase";
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ entries: [`[warning] login ${secret} done`] }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: secret, secret: true });
+		options.pageResult = { started: false, entries: [] };
+		const text = outcome(await h.run({ verb: "console" }));
+		expect(text).toContain("[warning] login [redacted] done");
+		expect(text).not.toContain("tail-passphrase");
+		expect(text).not.toContain("abcdefgh");
+	});
+
+	it("masks a held secret before it shortens a long MAIN-world console entry", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ entries: [`${"x".repeat(498)}739123x8 after`] }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#otp", value: "739123x8", secret: true });
+		options.pageResult = { started: false, entries: [] };
+		expect(outcome(await h.run({ verb: "console" }))).not.toContain("73");
+	});
+
+	it("masks and bounds raw MAIN-world WebMCP text in the background", async () => {
+		const h = harness({
+			mainResult: (action) =>
+				(action as { kind: string }).kind === "tools"
+					? {
+							api: "modelContext",
+							tools: [
+								{
+									name: "search",
+									description: `Bearer sk-abcdefgh12345678 ${"d".repeat(1900)}…`,
+									inputSchema: '{"type":"object","default":"token=zzzzzzzzzzzz"}',
+									annotations: `{"x":"${"a".repeat(900)}"}`,
+								},
+							],
+						}
+					: { api: "modelContext", output: `ada@clinic.test sk-outputzz12345678 ${"o".repeat(90_000)}` },
+		});
+		const listed = await h.run({ verb: "tools" });
+		const tool = listed.ok ? listed.data.tools?.[0] : undefined;
+		expect(tool?.description).toStartWith("Bearer [redacted] ");
+		expect(tool?.description.length).toBeLessThanOrEqual(1001);
+		expect(tool?.inputSchema).toBe('{"type":"object","default":"token=[redacted]"}');
+		expect(tool?.annotations).toBeUndefined();
+		expect(JSON.stringify(listed)).not.toContain("abcdefgh");
+		const called = outcome(await h.run({ verb: "call", tool: "search", args: {} }));
+		expect(called).not.toContain("ada@clinic.test");
+		expect(called).not.toContain("sk-outputzz");
+		expect(called.length).toBeLessThan(52_000);
 	});
 
 	it("masks the clipped start of a filled secret in MAIN-world console output", async () => {
