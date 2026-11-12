@@ -55,6 +55,7 @@ const GOLDEN_COMMANDS = [
 	"skill",
 	"ssms",
 	"doctor",
+	"clean",
 	"require-extension",
 ];
 

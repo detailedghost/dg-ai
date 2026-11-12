@@ -55,7 +55,8 @@ Upgrading from a release without the pairing popup? Read
 An agent can also address another agent directly — `dg-agent send --to <identity>`
 queues a message for that identity instead of the human, and the recipient's
 `recv` names both sides in `from` and `to`. Each agent keeps its own long-term
-memory in a separate, plain-text, full-text-searchable `~/.dg/agents/memory.db`,
+memory in a separate, plain-text, full-text-searchable `agents/memory.db` in the dg state root
+(`~/.local/state/dg/agents/memory.db` on Linux; `resolveDgPaths` gives the other OSes),
 which four `dg-agent memory` verbs (`write`, `search`, `read`, `forget`) read and
 write with no daemon running at all.
 

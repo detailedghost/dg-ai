@@ -40,9 +40,9 @@ export type MigrationResult =
 			contacts: number;
 			messages: number;
 			numberKey: string;
-			/** `adopted` keeps a listener that is already `phone __run`. `replaced` stopped the old
+			/** `adopted` keeps a listener that is already `phone listen`. `replaced` stopped the old
 			 * ones and started exactly one new listener, with its pid recorded. `none` means nothing
-			 * was listening. A failed replacement throws: one `phone __run` is started against the
+			 * was listening. A failed replacement throws: one `phone listen` is started against the
 			 * kept `phone.db` and the message says so only when that process stays up. */
 			listener: "adopted" | "replaced" | "none";
 			/** Resolves once every `dg-daemon job disable` attempt has settled; the one-time stderr
@@ -118,6 +118,11 @@ export function legacyRoot(paths: DgPaths): string | undefined {
 	return hasLegacyLines(paths.phoneFriendRoot) ? paths.phoneFriendRoot : undefined;
 }
 
+/** True while phone-friend lines still wait for conversion, at the per-OS root or in a legacy home no program has moved yet. */
+export function linesAwaitConversion(paths: DgPaths): boolean {
+	return legacyRoot(paths) !== undefined || (!existsSync(PhoneDb.path(paths)) && hasLegacyLines(join(paths.legacyHome, "phone-friend")));
+}
+
 /** True once `phone.db` exists but the old root is still sitting next to it unrenamed: the
  * one-way migration ran, but its last step (renaming the old root for rollback) failed. A
  * `status` command surfaces this as `legacy_root_present`. */
@@ -183,8 +188,8 @@ type ListenerPlan =
 	| { action: "keep"; pid: number; stop: number[] }
 	| { action: "replace"; pids: number[] };
 
-/** This process's own `phone __run` is kept: it loads `phone.db` after this migration. Any other
- * live listener, including a `phone __run` that is not this process, is stopped and exactly one
+/** This process's own `phone listen` is kept: it loads `phone.db` after this migration. Any other
+ * live listener, including a `phone listen` that is not this process, is stopped and exactly one
  * new listener is started so it subscribes to the keys just written. A pid `classifyListener`
  * rejects is left alone. */
 function planListeners(lines: LegacyLine[], deps: MigrateDeps): ListenerPlan {
@@ -385,14 +390,7 @@ function releaseMigrationLock(paths: DgPaths): void {
 	rmSync(migrationLockPath(paths), { force: true });
 }
 
-/**
- * A writing `phone` command calls this first. Runs once: reads every legacy line, then moves its
- * key, contact, invite, and message into one `phone.db`. This process's own `phone __run` is
- * kept. Any other listener is stopped and exactly one new listener is started against
- * `phone.db`, with its pid recorded. If that start throws, one `phone __run` is started against
- * the kept `phone.db` and reported only if it stays up. This binary rejects `phone-friend --line`.
- * Read-only commands do not call this.
- */
+/** Converts every legacy phone-friend line into one `phone.db`; the phone group preAction calls it once per phone command. */
 export function migrateIfNeeded(paths: DgPaths, deps: MigrateDeps = defaultMigrateDeps()): MigrationResult {
 	if (!legacyRoot(paths)) return { migrated: false };
 
@@ -411,15 +409,15 @@ const RESTORE_SETTLE_MS = 500;
 
 /**
  * An argv this binary will keep running. `phone-friend --line` exits 2, so a captured legacy
- * command is not re-executed. A captured `phone __run` (no `--line`) is. Otherwise the stable
- * launcher's `phone __run` is used, which writes `phone.db`.
+ * command is not re-executed. A captured `phone listen` (no `--line`) is. Otherwise the stable
+ * launcher's `phone listen` is used, which writes `phone.db`.
  */
 function argvThisBinaryAccepts(paths: DgPaths, saved: SavedListener[]): string[] {
 	for (const entry of saved) {
 		const argv = entry.argv?.filter((part) => part.length > 0);
 		if (!argv || argv.length === 0) continue;
 		if (argv.includes("--line") || argv.includes("phone-friend")) continue;
-		if (argv.includes("phone") && argv.includes("__run")) return argv;
+		if (argv.includes("phone") && argv.includes("listen")) return argv;
 	}
 	return listenerArgvFor(paths, []);
 }
@@ -500,7 +498,7 @@ function runMigration(paths: DgPaths, deps: MigrateDeps): MigrationResult {
 			const detail = describeError(err);
 			if (restored.stayedUp) {
 				throw new DgCliError(
-					`the replacement phone listener failed to start (${detail}). A phone __run listener (pid ${restored.pid}) stayed up against phone.db. The old per-line listeners were not restarted.`,
+					`the replacement phone listener failed to start (${detail}). A phone listen listener (pid ${restored.pid}) stayed up against phone.db. The old per-line listeners were not restarted.`,
 				);
 			}
 			throw new DgCliError(

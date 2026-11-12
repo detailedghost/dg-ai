@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { accountHome, allowSendHome } from "@dg/ssms";
+import { moveVerified, withInstallLock } from "@dg/common/node";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node/dg-paths";
+import { isLive } from "@dg/common/node/layout-work";
 import { syncCompatLaunchers } from "./compat-launchers";
-import { withInstallLock } from "./lock";
-import { liveWriterFolders, migrateLegacyHome, moveVerified } from "./migrate-home";
 import { writeShims } from "./shims";
 
 type LayoutOptions = {
@@ -33,30 +33,35 @@ function moveSsmsAllowFile(passwdLegacy: string, trustedConfig: string, log: (li
 	const ssmsDir = join(passwdLegacy, "ssms");
 	const allowFile = join(ssmsDir, "config.yaml");
 	if (!existsSync(allowFile)) return;
-	if (liveWriterFolders(passwdLegacy).includes(ssmsDir)) {
+	if (isLive(passwdLegacy, "ssms/*.pid")) {
 		log(`dg: kept ${allowFile}; a process that writes it is running. Stop it, then run dg-skills install again`);
 		return;
 	}
 	moveVerified(allowFile, join(trustedConfig, "ssms", "config.yaml"), { log });
 }
 
-/** Moves an old flat `~/.dg` into the per-OS roots, and the fixed ssms allow file by the passwd home alone. */
+function passwdLocations(passwdHome: string | undefined): { legacy: string; trusted: string } | undefined {
+	const legacy = passwdHome && resolveDgPaths({ homeDir: passwdHome, env: {} }).legacyHome;
+	const trusted = passwdHome && allowSendHome(passwdHome);
+	return legacy && trusted ? { legacy, trusted } : undefined;
+}
+
+/** The folder that holds ssms config: the trusted passwd-home folder when it shares this legacy home, else the config dir. */
+export function ssmsConfigDir(paths: DgPaths, passwdHome: string | undefined = installPasswdHome()): string {
+	const found = passwdLocations(passwdHome);
+	return found && resolve(found.legacy) === resolve(paths.legacyHome) ? found.trusted : paths.configDir;
+}
+
+/** Moves the fixed ssms allow file from the passwd home into the trusted config folder. */
 export async function migrateBeforeInstall(
 	paths: DgPaths = resolveDgPaths(),
 	log: (line: string) => void = console.log,
 	passwdHome: string | undefined = installPasswdHome(),
 ): Promise<void> {
-	await withInstallLock(paths.dataDir, async () => migrateLocked(paths, log, passwdHome));
-}
-
-function migrateLocked(paths: DgPaths, log: (line: string) => void, passwdHome: string | undefined): void {
-	const passwdLegacy = passwdHome && resolveDgPaths({ homeDir: passwdHome, env: {} }).legacyHome;
-	const trustedConfig = passwdHome && allowSendHome(passwdHome);
-	const sameHome = !!passwdLegacy && resolve(passwdLegacy) === resolve(paths.legacyHome);
-	const ssmsConfigDir = sameHome && trustedConfig ? trustedConfig : paths.configDir;
-	const result = migrateLegacyHome(paths, { log, ssmsConfigDir });
-	if (result.moved.length > 0) log(`dg: moved ${result.moved.length} items from ${paths.legacyHome} to the per-OS folders`);
-	if (passwdLegacy && trustedConfig && !sameHome) moveSsmsAllowFile(passwdLegacy, trustedConfig, log);
+	const found = passwdLocations(passwdHome);
+	if (!found) return;
+	const { legacy: passwdLegacy, trusted: trustedConfig } = found;
+	await withInstallLock(paths.dataDir, () => moveSsmsAllowFile(passwdLegacy, trustedConfig, log));
 }
 
 /** Launchers in the bin dir that run the data dir bundle, the old-path notice launchers, and the PATH hint. */

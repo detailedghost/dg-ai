@@ -167,7 +167,8 @@ yours.
 ## Memory
 
 Four verbs read and write this agent's own long-term memory, and none of them
-need a live daemon: the CLI opens `~/.dg/agents/memory.db` itself, so every verb
+need a live daemon: the CLI opens `agents/memory.db` in the dg state root itself
+(`~/.local/state/dg/agents/memory.db` on Linux; `resolveDgPaths` gives the other OSes), so every verb
 below works with no daemon running at all.
 
 - `memory write <title> [body] [--kind <kind>] [--workset <label>] [--identity
@@ -260,7 +261,8 @@ point of publishing it.
   the live daemon.
 - Messages and staged assets are encrypted at rest. The data key comes from the
   OS keychain when one is available, and from a file-backed key otherwise.
-- `~/.dg` is two independent trees: `daemon/` holds the encrypted `daemon.db`
+- The dg state root (`~/.local/state/dg` on Linux; `resolveDgPaths` gives the other OSes)
+  is two independent trees: `daemon/` holds the encrypted `daemon.db`
   that stores those messages and assets, and `agents/` holds session files
   plus the plain-text `memory.db` behind `memory` — plain text on purpose,
   since FTS5 cannot index ciphertext.

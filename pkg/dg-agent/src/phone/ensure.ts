@@ -265,7 +265,7 @@ export function ensureCronLine(argv: string[], dgHome?: string): string {
 	return `*/5 * * * * ${cronJitterCommand()}; ${env}${command} >/dev/null 2>&1 # ${ensureMarker(dgHome)}`;
 }
 
-/** Argv for the cron line: the same binary `listenerArgv` would run, but `phone open --ensure` instead of `phone __run`. */
+/** Argv for the cron line: the same binary `listenerArgv` would run, but `phone open --ensure` instead of `phone listen`. */
 export function openEnsureArgv(listenerArgv: (extra: string[]) => string[]): string[] {
 	const sample = listenerArgv([]);
 	const at = sample.lastIndexOf("phone");

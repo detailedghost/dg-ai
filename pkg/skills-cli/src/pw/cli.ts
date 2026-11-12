@@ -20,7 +20,7 @@ export async function main(
 	env: ClientEnv = defaultEnv(),
 	commands: readonly CommandEntry[] = COMMANDS,
 ): Promise<number> {
-	if (argv[0] === "__daemon") {
+	if (argv[0] === "daemon") {
 		await (await import("./daemon")).runDaemon(argv[1]);
 		return new Promise<number>(() => undefined);
 	}

@@ -1,5 +1,21 @@
 import type { SessionRole } from "@dg/common";
+import type { LayoutHooks } from "@dg/common/node/layout";
 import type { Command } from "commander";
+
+const SKIP = new Set(["phone listen"]);
+
+const topLevelName = (command: Command): string => (command.parent?.parent ? topLevelName(command.parent) : command.name());
+
+export function hooksFor(action: Command): LayoutHooks {
+	const hooks: LayoutHooks = {
+		load: async () => {
+			const { phoneLayoutHooks } = await import("./layout-hooks");
+			const { "phone.verify": verify, "phone.stop": stop } = phoneLayoutHooks();
+			Object.assign(hooks, { "phone.verify": verify }, topLevelName(action) === "phone" ? { "phone.stop": stop } : {});
+		},
+	};
+	return hooks;
+}
 
 export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
@@ -12,12 +28,16 @@ export async function main(argv: readonly string[]): Promise<number> {
 		{ registerAgentCommands },
 		{ registerMemoryCommands },
 		{ registerLazyPhoneCommands },
+		{ ensureLayout },
+		{ installLayoutPreAction },
 	] = await Promise.all([
 		import("commander"),
 		import("@dg/common"),
 		import("./commands"),
 		import("./memory/commands"),
 		import("./phone/register"),
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/layout-preaction"),
 	]);
 	const program = new Command();
 	program
@@ -66,6 +86,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 				});
 			},
 		);
+
+	installLayoutPreAction(program, {
+		skip: SKIP,
+		hooksFor,
+		ensure: ensureLayout,
+	});
 
 	try {
 		await program.parseAsync([...argv], { from: "user" });

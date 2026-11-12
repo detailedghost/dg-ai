@@ -1,7 +1,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { linkCurrent, readCurrent } from "../pkg/skills-cli/src/install/current";
-import { withInstallLock } from "../pkg/skills-cli/src/install/lock";
+import { withInstallLock } from "../pkg/common/src/node/install-lock";
 
 /** Installs a local build as `lib/<version>` under the install-root lock and prunes older builds of `base`. */
 export async function installLocal(root: string, source: string, base: string, version: string): Promise<void> {

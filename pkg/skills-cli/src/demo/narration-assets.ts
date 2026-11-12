@@ -13,6 +13,7 @@ import {
 import { join, normalize, sep } from "node:path";
 import { narrationZipName } from "@dg/common";
 import { ensurePrivateDir, resolveDgPaths } from "@dg/common/node";
+import { assertEntryMoved } from "../utils/layout-guard";
 import { expectedSha256, extractZip, REPO } from "../utils/lib";
 
 export type AssetDeps = { fetch?: typeof fetch };
@@ -109,6 +110,7 @@ export async function ensureNarrationAssets(
 ): Promise<string> {
 	const dest = join(narrationRoot(), version);
 	if (complete(dest)) return dest;
+	assertEntryMoved("demo-narration");
 	const fetcher = deps.fetch ?? fetch;
 	const name = narrationZipName(version);
 	const base = `https://github.com/${REPO}/releases/download/v${version}`;

@@ -20,6 +20,7 @@ import {
 	wslChromiumArgs,
 } from "@dg/common/node";
 import { promptHidden } from "../credentials/cli";
+import { guardedDest } from "../utils/layout-guard";
 
 export const CONNECT_TOKEN_NAME = "channel-review-daemon";
 export const CONNECT_PROVIDERS = ["datadog", "sentry", "relay"] as const;
@@ -128,8 +129,8 @@ export type ConnectDeps = {
 	sleep(ms: number): Promise<void>;
 };
 
-async function launchChrome(): Promise<BrowserSession> {
-	const profiles = join(resolveDgPaths().stateDir, "browser-profiles");
+export async function launchChrome(): Promise<BrowserSession> {
+	const profiles = guardedDest("browser-profiles", join(resolveDgPaths().stateDir, "browser-profiles"));
 	const profileDir = join(profiles, "connect");
 	ensurePrivateDir(profiles);
 	ensurePrivateDir(profileDir);

@@ -65,13 +65,17 @@ export function wrap(line: string, columns: number, indent = ""): string[] {
 
 function header(group: Group, selected: boolean): string {
 	const tail = hint(group);
-	return `${selected ? ">" : " "} ${ICON[group.status]} ${group.title}${tail ? `    ${tail}` : ""}`;
+	return `${selected ? ">" : " "} ${ICON[group.status]} ${group.title.split("\n")[0]}${tail ? `    ${tail}` : ""}`;
 }
 
 function details(group: Group, room: number, columns: number): string[] {
 	const pad = "      ";
 	const rules = group.action?.kind === "allow-rule" ? group.action.rules : null;
-	const entries = rules ?? group.members.map(({ item, check }) => `${item} · ${check.id}: ${check.detail}`);
+	const entries =
+		rules ??
+		group.members.flatMap(({ item, check }) =>
+			check.detail.split("\n").map((line, index) => (index === 0 ? `${item} · ${check.id}: ${line}` : `  ${line}`)),
+		);
 	const lines: string[] = [];
 	let shown = 0;
 	for (const entry of entries) {

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { writeFilePreserving } from "./fs";
 import { resolveDgPaths } from "./dg-paths";
+import { assertNotBlocked } from "./layout";
 
 export type DgConfig = Record<string, unknown>;
 type ConfigEnv = Record<string, string | undefined>;
@@ -50,6 +51,7 @@ export function writeDgConfig(
 	patch: DgConfig,
 	env: ConfigEnv = process.env,
 ): DgConfig {
+	assertNotBlocked(resolveDgPaths({ env }), "config");
 	const next = merge(readDgConfig(env), patch);
 	const file = configFile(env);
 	mkdirSync(dirname(file), { recursive: true });

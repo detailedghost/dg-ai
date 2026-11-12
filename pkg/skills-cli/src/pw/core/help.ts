@@ -64,5 +64,6 @@ export function indexHelp(specs: readonly CommandSpec[]): string {
 				`  ${usageLine(spec).padEnd(width)}${spec.help.split("\n")[0]}`,
 			);
 	}
+	lines.push("", "internal:", `  ${"daemon".padEnd(width)}Run the pw daemon; dg starts this for you`);
 	return lines.join("\n");
 }

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { type DgPaths, ensurePrivateDir, isAlive, readCappedStdin, readCappedStdinBytes, resolveDgPaths, writeFileAtomic, writeStdout } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 import type { Command } from "commander";
 import { type AcceptOpts, resolveAcceptHandle, signingKeyForAccept } from "./accept-name";
 import { type AutostartDeps, formatAutostartState, installAutostart, managedRestartCommands, removeAutostart } from "./autostart";
@@ -52,8 +53,7 @@ import {
 	type ListenerPid,
 } from "./listener";
 import { acceptControl, applyReceipt, replayGuard } from "./presence";
-import { legacyRoot, legacyRootPresent, migrateIfNeeded, readOnlyLegacyView, runArgv } from "./migrate";
-import { movePhoneState, phoneRootUnused, rollbackPhoneState, setAsideUnusedRoot } from "./migrate-home";
+import { legacyRoot, legacyRootPresent, linesAwaitConversion, readOnlyLegacyView, runArgv } from "./migrate";
 import { DG_AGENT_PACKAGE_VERSION } from "../version";
 import { watchSkipIds } from "./watch";
 import {
@@ -169,13 +169,15 @@ const MAX_SEND_BYTES = 64 * 1024;
 export type SayOpts = { image?: string; phi?: boolean; vault?: string; as?: string };
 const STOP_WAIT_MS = 5000;
 
-function isManagedKind(kind: string | undefined): kind is "systemd" | "launchd" | "task" {
+type ManagedKind = "systemd" | "launchd" | "task";
+
+function isManagedKind(kind: string | undefined): kind is ManagedKind {
 	return kind === "systemd" || kind === "launchd" || kind === "task";
 }
 
 /** Stops a listener this binary started when its version or keys no longer match the database.
  * Does nothing unless `kill` and `isOurListener` are injected, and never signals this process.
- * A managed restart runs only from a separate command. `phone __run` signals the other pid and
+ * A managed restart runs only from a separate command. `phone listen` signals the other pid and
  * then subscribes itself, so it cannot restart the unit it is running under. */
 async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): Promise<void> {
 	if (!deps.kill || !deps.isOurListener) return;
@@ -208,19 +210,14 @@ async function restartStaleListener(deps: PhoneDeps, opts: { spawn: boolean }): 
 	deps.spawnListener(deps.listenerArgv(onMessageArgvFor(saved?.onMessage)), listenerLogPath(deps.paths));
 }
 
-/** The CLI entry point. `db` migrates on first use, and only then, so a read-only command can
- * look at `paths` without creating `phone.db`. Migration must still run before `PhoneDb.open`
- * creates that file, since `legacyRoot` stops seeing a legacy install the moment it exists. */
+/** The CLI entry point. `db` opens on first use, so a read-only command can look at `paths` without creating `phone.db`. */
 function defaultDeps(session?: string): PhoneDeps {
 	const paths = resolveDgPaths();
 	let db: PhoneDb | undefined;
 	return {
 		paths,
 		get db() {
-			if (!db) {
-				migrateIfNeeded(paths);
-				db = PhoneDb.open(paths);
-			}
+			if (!db) db = PhoneDb.open(paths);
 			return db;
 		},
 		...defaultKeyClients(paths, session),
@@ -334,7 +331,6 @@ export async function phoneNumber(
 	opts: { as?: string; rotate?: boolean; relay?: string[] },
 	deps: PhoneDeps,
 ): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	if (opts.as !== undefined) {
 		assertContactHandle(opts.as);
 		if (!isHandle(opts.as)) {
@@ -377,7 +373,6 @@ export async function phoneInvite(
 	opts: { relay?: string[]; ttl?: string; as?: string; name?: string },
 	deps: PhoneDeps,
 ): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	const hours = opts.ttl === undefined ? DEFAULT_INVITE_HOURS : Number(opts.ttl);
 	if (!Number.isFinite(hours) || hours <= 0) {
 		throw new DgCliError(`ttl must be a positive number of hours, got "${opts.ttl}"`);
@@ -413,7 +408,6 @@ export async function phoneAccept(
 	deps: PhoneDeps,
 	opts: AcceptOpts = {},
 ): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	const pasted = cardArg === undefined || cardArg === "-" ? await deps.readStdin() : cardArg;
 	if (!pasted) throw new DgCliError("no call card given");
 	const card = decodeCard(pasted, deps.now());
@@ -503,14 +497,12 @@ function extensionsField(rows: ContactExtRow[]): { extensions?: { ext: string; l
 }
 
 export function phoneContactsRename(oldHandleArg: string, newHandleArg: string, deps: PhoneDeps): void {
-	migrateIfNeeded(deps.paths);
 	const oldHandle = normalizeHandle(oldHandleArg);
 	const renamed = renameContact(deps.db, oldHandle, normalizeHandle(newHandleArg));
 	printJson(deps, { handle: `+${renamed.handle}`, renamed_from: `+${oldHandle}` });
 }
 
 export function phoneContactsRemove(handleArg: string, deps: PhoneDeps): void {
-	migrateIfNeeded(deps.paths);
 	const removed = removeContact(deps.db, normalizeHandle(handleArg));
 	printJson(deps, { removed: `+${removed.handle}` });
 }
@@ -591,7 +583,6 @@ async function phoneThreadNewAt(
 	opts: { subject?: string },
 	deps: PhoneDeps,
 ): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	const handle = parseThreadHandle(handleArg);
 	if (deps.db.getThreadByHandle(handle)) throw new DgCliError(`"${handle}" is already a group`);
 	if (memberArgs.length === 0) throw new DgCliError("name at least one contact");
@@ -856,7 +847,6 @@ async function phoneSayThread(
 }
 
 export async function phoneSay(handleArg: string, textArg: string | undefined, deps: PhoneDeps, opts: SayOpts = {}): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	const { target, ext } = splitTarget(handleArg);
 	const fromExt = selfExtension(opts.as, deps.env ?? {});
 	const sent = await prepareOutgoing(textArg, opts, deps);
@@ -926,7 +916,6 @@ function listenerServes(deps: PhoneDeps): boolean {
 
 /** Sends a check to a contact or each thread member and waits for the first receipt; exit 1 when none comes in time. */
 export async function phonePing(handleArg: string, opts: { timeout?: string }, deps: PhoneDeps): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	const seconds = opts.timeout === undefined ? PING_DEFAULT_TIMEOUT_S : Number(opts.timeout);
 	if (!Number.isFinite(seconds) || seconds < 1 || seconds > PING_MAX_TIMEOUT_S) {
 		throw new DgCliError(`--timeout must be a number of seconds from 1 to ${PING_MAX_TIMEOUT_S}, got "${opts.timeout}"`);
@@ -1085,7 +1074,6 @@ function emitUnread(deps: PhoneDeps, ext: string | undefined, skip?: ReadonlySet
 
 export async function phoneVoicemail(deps: PhoneDeps, opts: { as?: string } = {}): Promise<void> {
 	const ext = selfExtension(opts.as, deps.env ?? {});
-	migrateIfNeeded(deps.paths);
 	await restartStaleListener(deps, { spawn: true });
 	emitUnread(deps, ext);
 	if (!ext) printWaiting(deps);
@@ -1108,7 +1096,6 @@ export async function phoneWatch(
 	random: () => number = Math.random,
 ): Promise<void> {
 	const ext = selfExtension(opts.as, deps.env ?? {});
-	migrateIfNeeded(deps.paths);
 	const seconds = opts.for === undefined ? WATCH_DEFAULT_FOR_S : Number(opts.for);
 	if (!Number.isFinite(seconds) || seconds <= 0) {
 		throw new DgCliError(`--for must be a positive number of seconds, got "${opts.for}"`);
@@ -1184,7 +1171,8 @@ export async function phoneStatus(deps: PhoneDeps): Promise<void> {
 }
 
 export async function phoneRun(opts: { onMessage?: string[]; onMessageTimeout?: string }, deps: RunDeps): Promise<void> {
-	migrateIfNeeded(deps.paths);
+	if (linesAwaitConversion(deps.paths)) throw new DgCliError("dg: phone-friend lines wait for conversion; run dg-agent phone status");
+	assertNotBlocked(deps.paths, "phone");
 	await restartStaleListener(deps, { spawn: false });
 	const timeoutSeconds = parseOnMessageTimeoutSeconds(opts.onMessageTimeout);
 	const hook: CommandPushTarget | undefined = opts.onMessage?.length
@@ -1237,12 +1225,15 @@ function liveListener(deps: OpenCloseDeps): ReturnType<typeof readListenerPid> {
 /** Sends SIGTERM, through `isOurListener`'s extra check against a reused pid, and waits for the
  * listener's own pid file to go away before returning; `open`/`close` both need the old listener
  * fully stopped before installing or reporting on the next one, so neither ever runs two at once. */
-async function stopRunningListener(deps: OpenCloseDeps, pid: number, paths: DgPaths = deps.paths): Promise<void> {
+export async function stopRunningListener(
+	deps: Pick<OpenCloseDeps, "isOurListener" | "kill" | "sleep"> & { paths: Pick<DgPaths, "phoneRoot"> },
+	pid: number,
+): Promise<void> {
 	if (deps.isOurListener(pid)) deps.kill(pid, "SIGTERM");
-	for (let waited = 0; readListenerPid(paths)?.pid === pid && waited < STOP_WAIT_MS; waited += 100) {
+	for (let waited = 0; readListenerPid(deps.paths)?.pid === pid && waited < STOP_WAIT_MS; waited += 100) {
 		await deps.sleep(100);
 	}
-	if (readListenerPid(paths)?.pid === pid) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
+	if (readListenerPid(deps.paths)?.pid === pid) throw new DgCliError(`the phone listener (pid ${pid}) did not stop`);
 }
 
 async function phoneOpenEnsure(
@@ -1295,7 +1286,6 @@ export async function phoneOpen(
 	opts: { onMessage?: string[]; onMessageTimeout?: string; ensure?: boolean; printCron?: boolean; installCron?: boolean },
 	deps: OpenCloseDeps,
 ): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	if (opts.ensure || opts.printCron || opts.installCron) {
 		await phoneOpenEnsure(opts, deps);
 		return;
@@ -1357,11 +1347,10 @@ export async function phoneOpen(
 }
 
 export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
-	migrateIfNeeded(deps.paths);
 	const running = liveListener(deps);
 
 	const autostart = await removeAutostart(deps, deps.paths);
-	const saved = readListener(deps.db);
+	const saved = existsSync(PhoneDb.path(deps.paths)) ? readListener(deps.db) : undefined;
 	if (saved?.autostart) writeListener(deps.db, { ...saved, autostart: undefined });
 
 	if (running) await stopRunningListener(deps, running.pid);
@@ -1369,55 +1358,27 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	printJson(deps, { pid: running?.pid ?? null, status: "closed", autostart });
 }
 
-/**
- * Moves phone state out of the old flat home into the state dir, stopping a listener that runs from
- * there first. Returns true when a listener was running, so the caller starts it from the new layout.
- */
-export async function moveLegacyPhoneHome(deps: OpenCloseDeps): Promise<boolean> {
-	const oldRoot = join(deps.paths.legacyHome, "phone");
-	if (oldRoot === deps.paths.phoneRoot || !existsSync(oldRoot)) return false;
-	if (existsSync(deps.paths.phoneRoot) && !(phoneRootUnused(deps.paths.phoneRoot) && setAsideUnusedRoot(deps.paths.phoneRoot))) return false;
-	const oldPaths = { ...deps.paths, phoneRoot: oldRoot };
-	const running = readListenerPid(oldPaths);
-	const live = !!running && running.pid !== process.pid && deps.isOurListener(running.pid);
-	if (running && live) await stopRunningListener(deps, running.pid, oldPaths);
-	const log = (line: string) => (deps.writeErr ?? ((text: string) => process.stderr.write(text)))(`${line}\n`);
-	const moved = movePhoneState(oldRoot, deps.paths.phoneRoot, log).moved;
-	if (live && !moved)
-		log(`dg: stopped the phone listener at ${oldRoot}, and its state did not move. Fix the cause above, then run dg-skills install again`);
-	return moved && live;
-}
-
-/** Copies phone state back to the old flat home so an older release can read it. */
-export function phoneRollbackHome(deps: PhoneDeps): void {
-	const running = readListenerPid(deps.paths);
-	if (running && running.pid !== process.pid && (deps.isOurListener ?? isOurListener)(running.pid))
-		throw new DgCliError(
-			"the phone listener is running; stop it with dg-agent phone close, then run dg-agent phone __rollback-home again",
-		);
-	const log = (line: string) => (deps.writeErr ?? ((text: string) => process.stderr.write(text)))(`${line}\n`);
-	const result = rollbackPhoneState(deps.paths.phoneRoot, join(deps.paths.legacyHome, "phone"), log);
-	if (!result.moved) throw new DgCliError(`phone state was not copied back: ${result.failures.join("; ")}`);
-}
-
 /** Restarts a listener whose binary or keys drifted. No-ops when this install has never used phone. */
+async function reinstallManaged(deps: OpenCloseDeps, saved: ReturnType<typeof readListener>, kind: ManagedKind): Promise<void> {
+	const argv = deps.listenerArgv(onMessageArgvFor(saved?.onMessage));
+	await installAutostart(deps, deps.paths, { argv, dgHome: deps.env.DG_HOME, logPath: listenerLogPath(deps.paths) });
+	for (const restart of managedRestartCommands(kind, deps.uid)) await deps.run(restart);
+}
+
 export async function phoneRefresh(deps: OpenCloseDeps): Promise<void> {
-	if (await moveLegacyPhoneHome(deps)) {
-		await phoneOpen({}, deps);
+	if (!existsSync(PhoneDb.path(deps.paths))) return;
+	const saved = readListener(deps.db);
+	const kind = saved?.autostart?.kind;
+	const running = readListenerPid(deps.paths);
+	if (!running || running.pid === process.pid || !deps.isOurListener(running.pid)) {
+		if (isManagedKind(kind)) await reinstallManaged(deps, saved, kind);
 		return;
 	}
-	if (!existsSync(PhoneDb.path(deps.paths)) && !legacyRoot(deps.paths)) return;
-	migrateIfNeeded(deps.paths);
-	if (!existsSync(PhoneDb.path(deps.paths))) return;
-	const running = readListenerPid(deps.paths);
-	if (!running || running.pid === process.pid || !deps.isOurListener(running.pid)) return;
 	const drift = await listenerDrift(deps, running);
 	if (!drift.restart) return;
 	if (drift.token && drift.notice) notePhoneDrift(deps.db, drift.token, drift.notice, deps.now());
-	const saved = readListener(deps.db);
-	const kind = saved?.autostart?.kind;
 	if (isManagedKind(kind)) {
-		for (const argv of managedRestartCommands(kind, deps.uid)) await deps.run(argv);
+		await reinstallManaged(deps, saved, kind);
 		return;
 	}
 	await stopRunningListener(deps, running.pid);
@@ -1442,8 +1403,6 @@ export const defaultPhoneApi: PhoneApi = {
 	phoneOpen,
 	phoneClose,
 	phoneRefresh,
-	moveLegacyPhoneHome,
-	phoneRollbackHome,
 	phoneRun,
 	phoneThreadNew,
 	phoneThreadList,
@@ -1460,7 +1419,8 @@ export const defaultPhoneApi: PhoneApi = {
 };
 
 function runDepsFor(deps: PhoneDeps): RunDeps {
-	return { ...deps, pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal };
+	const run = { pid: process.pid, schedule: defaultSchedule, onSignal: defaultOnSignal };
+	return Object.defineProperties(run, Object.getOwnPropertyDescriptors(deps)) as RunDeps;
 }
 
 export function registerPhoneCommands(

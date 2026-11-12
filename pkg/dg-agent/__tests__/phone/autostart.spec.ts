@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
@@ -15,6 +16,7 @@ import {
 	windowsTaskXmlBytes,
 	windowsTaskXmlPath,
 } from "../../src/phone/autostart";
+import { listenerArgvFor } from "../../src/phone/listener";
 
 const paths = resolveDgPaths({ platform: "linux", homeDir: "/home/u", env: {} });
 
@@ -79,7 +81,7 @@ function unquoteSystemdExecStart(execStart: string): string[] {
 	return args;
 }
 
-const spec: AutostartSpec = { argv: ["/fake/execPath", "/fake/src/index.ts", "phone", "__run"], logPath: "/home/u/.dg/phone/listener.log" };
+const spec: AutostartSpec = { argv: ["/fake/execPath", "/fake/src/index.ts", "phone", "listen"], logPath: "/home/u/.dg/phone/listener.log" };
 
 describe("systemdUnitText", () => {
 	it("matches the expected unit snapshot for a fake execPath", () => {
@@ -89,7 +91,7 @@ describe("systemdUnitText", () => {
 				"Description=dg phone listener",
 				"",
 				"[Service]",
-				'ExecStart="/fake/execPath" "/fake/src/index.ts" "phone" "__run"',
+				'ExecStart="/fake/execPath" "/fake/src/index.ts" "phone" "listen"',
 				"Restart=on-failure",
 				"RestartSec=5",
 				"",
@@ -106,7 +108,7 @@ describe("systemdUnitText", () => {
 	});
 
 	it("round-trips an --on-message exe with a space and an embedded quote through ExecStart's quoting", () => {
-		const argv = ["/fake/execPath", "phone", "__run", "--on-message", "/usr/bin/notify", "a b", 'c"d'];
+		const argv = ["/fake/execPath", "phone", "listen", "--on-message", "/usr/bin/notify", "a b", 'c"d'];
 		const text = systemdUnitText({ argv, logPath: "" });
 		const execStart = text.split("\n").find((line) => line.startsWith("ExecStart="))?.slice("ExecStart=".length) ?? "";
 
@@ -147,7 +149,7 @@ describe("launchdPlistText", () => {
 describe("windowsTaskXml", () => {
 	it("holds a LogonTrigger and RestartOnFailure, and quotes the arguments CommandLineToArgvW-style", () => {
 		const text = windowsTaskXml({
-			argv: ["C:\\dg\\dg-agent.exe", "phone", "__run", "--on-message", "C:\\Program Files\\notify.exe", "a b", 'c"d'],
+			argv: ["C:\\dg\\dg-agent.exe", "phone", "listen", "--on-message", "C:\\Program Files\\notify.exe", "a b", 'c"d'],
 			logPath: "",
 		});
 
@@ -155,18 +157,18 @@ describe("windowsTaskXml", () => {
 		expect(text).toContain("<RestartOnFailure>\n\t\t\t<Interval>PT1M</Interval>\n\t\t\t<Count>10</Count>\n\t\t</RestartOnFailure>");
 		expect(text).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>");
 		expect(text).toContain("<Command>C:\\dg\\dg-agent.exe</Command>");
-		expect(text).toContain('<Arguments>phone __run --on-message "C:\\Program Files\\notify.exe" "a b" "c\\"d"</Arguments>');
+		expect(text).toContain('<Arguments>phone listen --on-message "C:\\Program Files\\notify.exe" "a b" "c\\"d"</Arguments>');
 		expect(text).not.toContain("--dg-home");
 	});
 
-	it("passes DG_HOME as --dg-home after __run, because a task has no environment block", () => {
+	it("passes DG_HOME as --dg-home after listen, because a task has no environment block", () => {
 		const text = windowsTaskXml({
-			argv: ["C:\\dg\\dg-agent.exe", "phone", "__run", "--on-message", "C:\\Program Files\\notify.exe"],
+			argv: ["C:\\dg\\dg-agent.exe", "phone", "listen", "--on-message", "C:\\Program Files\\notify.exe"],
 			dgHome: "D:\\custom dg&home",
 			logPath: "",
 		});
 
-		expect(text).toContain('<Arguments>phone __run --dg-home "D:\\custom dg&amp;home" --on-message "C:\\Program Files\\notify.exe"</Arguments>');
+		expect(text).toContain('<Arguments>phone listen --dg-home "D:\\custom dg&amp;home" --on-message "C:\\Program Files\\notify.exe"</Arguments>');
 	});
 
 	it("encodes the task XML as UTF-16 LE with a BOM, matching the declared encoding", () => {
@@ -354,5 +356,17 @@ describe("formatAutostartState", () => {
 		expect(formatAutostartState(undefined)).toBeNull();
 		expect(formatAutostartState({ kind: "systemd" })).toBe("systemd");
 		expect(formatAutostartState({ kind: "unavailable", reason: "no systemd user bus" })).toBe("unavailable: no systemd user bus");
+	});
+});
+
+describe("listener unit text", () => {
+	const spec = { argv: listenerArgvFor(paths, []), logPath: join(paths.phoneRoot, "listener.log") };
+
+	it("names the absolute launcher path and never ~ or $HOME", () => {
+		for (const text of [systemdUnitText(spec), launchdPlistText(spec), windowsTaskXml(spec)]) {
+			expect(text).toContain("/home/u/.local/share/dg/runtime/current/bun");
+			expect(text).not.toContain("~");
+			expect(text).not.toContain("$HOME");
+		}
 	});
 });

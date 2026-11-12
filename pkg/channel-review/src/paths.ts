@@ -1,9 +1,10 @@
 import { posix, win32 } from "node:path";
-import { type SystemSeams, resolveDgPaths } from "@dg/common/node";
+import { type DgPaths, type SystemSeams, resolveDgPaths } from "@dg/common/node";
 import type { EnvName } from "./config";
 
 export type ChannelReviewPaths = {
 	env: EnvName;
+	dg: DgPaths;
 	dbPath: string;
 	configPath: string;
 	/** Legacy JSON source, retained after import. Never written by the new store. */
@@ -23,6 +24,7 @@ export function channelReviewPaths(
 	const dir = path.join(dg.stateDir, "channel-review");
 	return {
 		env,
+		dg,
 		dbPath: dg.dbPath,
 		configPath: path.join(dg.configDir, "channel-review", "config.json"),
 		statePath: path.join(dir, `state.${env}.json`),

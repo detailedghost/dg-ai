@@ -45,3 +45,11 @@ export function isEnoent(err: unknown): boolean {
 		(err as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
+
+export function isMissingPath(err: unknown): boolean {
+	const code =
+		typeof err === "object" && err !== null
+			? (err as NodeJS.ErrnoException).code
+			: undefined;
+	return code === "ENOENT" || code === "ENOTDIR";
+}

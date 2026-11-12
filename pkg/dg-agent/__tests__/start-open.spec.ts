@@ -41,7 +41,7 @@ async function runStart(
 ) {
 	const opened: string[] = [];
 	const seams: StartSeams = {
-		daemonArgv: () => [process.execPath, DAEMON_ENTRY, "__serve"],
+		daemonArgv: () => [process.execPath, DAEMON_ENTRY, "serve"],
 		tryOpen: async (url) => {
 			opened.push(url);
 			return tryOpenResult;

@@ -119,24 +119,12 @@ posix("ssms allow config move", () => {
 
 	test("moves the passwd home allow file when HOME is the passwd home and XDG_CONFIG_HOME points elsewhere", async () => {
 		putFile(allowFile, "allow_send: true\n");
-		putFile(join(passwd, ".dg", "ssms", "drafts", "d1.json"), "{}");
 		const paths = resolveDgPaths({ platform: "linux", homeDir: passwd, env: { XDG_CONFIG_HOME: join(base, "xdg") } });
 
 		await migrateBeforeInstall(paths, () => {}, passwd);
 
 		expect(readFileSync(trusted, "utf8")).toBe("allow_send: true\n");
 		expect(existsSync(join(base, "xdg", "dg", "ssms", "config.yaml"))).toBe(false);
-		expect(readFileSync(join(paths.stateDir, "ssms", "drafts", "d1.json"), "utf8")).toBe("{}");
-	});
-
-	test("never moves a DG_HOME ssms config into the passwd config folder", async () => {
-		const paths = redirected();
-		putFile(join(paths.legacyHome, "ssms", "config.yaml"), "allow_send: true\n");
-
-		await migrateBeforeInstall(paths, () => {}, passwd);
-
-		expect(existsSync(trusted)).toBe(false);
-		expect(readFileSync(join(paths.configDir, "ssms", "config.yaml"), "utf8")).toBe("allow_send: true\n");
 	});
 
 	test("never writes over an allow file that already exists in the passwd config folder", async () => {
@@ -159,19 +147,6 @@ posix("ssms allow config move", () => {
 
 		expect(existsSync(trusted)).toBe(false);
 		expect(readFileSync(allowFile, "utf8")).toBe("allow_send: true\n");
-	});
-
-	test("moves the old home while it holds the install lock in the data root", async () => {
-		putFile(allowFile, "allow_send: true\n");
-		const paths = redirected();
-		putFile(join(paths.legacyHome, "proto", "p.html"), "<p>");
-		const held: boolean[] = [];
-
-		await migrateBeforeInstall(paths, () => held.push(existsSync(join(paths.dataDir, ".install.lock"))), passwd);
-
-		expect(held.length).toBeGreaterThan(0);
-		expect(held.every(Boolean)).toBe(true);
-		expect(existsSync(join(paths.dataDir, ".install.lock"))).toBe(false);
 	});
 
 	test("finds no passwd home under the test runner so spawned installs never reach the real account", () => {

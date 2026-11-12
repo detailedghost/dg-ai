@@ -266,7 +266,8 @@ extension can pin again. `/start` also caps how many sessions can be active
 at once (`DG_MAX_SESSIONS`, default 256), so a runaway local caller cannot
 grow the session directory or the in-memory registry without limit.
 
-`~/.dg` separates daemon and agent data. `daemon/` holds `daemon.db`, with
+The dg state root separates daemon and agent data. On Linux it is
+`~/.local/state/dg`; `resolveDgPaths` gives the other OSes. `daemon/` holds `daemon.db`, with
 encrypted private fields and plaintext operational metadata.
 `agents/` holds session files, staged assets, and a second database,
 `memory.db`, that keeps its records in plain text **on purpose**: FTS5
@@ -681,7 +682,8 @@ A proxy persona does not select a model. Distinct worker backends/models remain 
 compiled artifact and public label; the parent model is not substituted.
 
 Public bodies, previews, tallies, and compile/post JSON show `Automatic (daemon)`,
-`Automatic (CI)` (origin `action`, set by a GitHub Actions or GitLab CI runner) or `Manual (CLI)` and reviewer models. No private runtime fields belong in public metadata.
+`Automatic (CI)` (origin `action`, set by a GitHub Actions or GitLab CI runner) or `Manual (CLI)`
+and reviewer models. No private runtime fields belong in public metadata.
 The helper freezes origin in a unique diff plan and does not trust review contents for
 attribution. It preserves verdicts, dedupe, partial coverage, gates, and provider fallback.
 Ship the helper and the skill instructions together with the runner change; old

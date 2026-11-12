@@ -270,7 +270,7 @@ export const STUCK_RETRY_INTERVAL_MS = 30 * 60 * 1000;
 /** How often the running listener re-reads keys and resubscribes when they changed. */
 export const KEY_WATCH_INTERVAL_MS = 5_000;
 
-export function listenerPidPath(paths: DgPaths): string {
+export function listenerPidPath(paths: Pick<DgPaths, "phoneRoot">): string {
 	return join(paths.phoneRoot, "listener.pid");
 }
 
@@ -278,9 +278,9 @@ export function listenerLogPath(paths: DgPaths): string {
 	return join(paths.phoneRoot, "listener.log");
 }
 
-/** True for the argv of either the current `phone __run` listener or the old `phone-friend __run` one. */
+/** True for the argv of either the current `phone listen` listener or the old `phone-friend __run` one. */
 export function isListenerArgs(args: string[]): boolean {
-	return (args.includes("phone") || args.includes("phone-friend")) && args.includes("__run");
+	return (args.includes("phone") || args.includes("phone-friend")) && (args.includes("listen") || args.includes("__run"));
 }
 
 export type ProcessArgs = { kind: "dead" } | { kind: "unknown" } | { kind: "args"; args: string[] };
@@ -380,7 +380,7 @@ export function holderVerdict(pid: number): HolderVerdict {
 	return isListenerArgs(found.args) ? "ours" : "foreign";
 }
 
-/** `current` is already `phone __run`. `legacy` is the old `phone-friend __run` process. */
+/** `current` is already `phone listen`. `legacy` is the old `phone-friend __run` process. */
 export function listenerGeneration(pid: number): ListenerGeneration | undefined {
 	const args = listenerCommandArgs(pid);
 	if (!args || !isListenerArgs(args)) return undefined;
@@ -389,7 +389,7 @@ export function listenerGeneration(pid: number): ListenerGeneration | undefined 
 
 /** Undefined for no file, a parse failure, a pid that is not a safe positive integer, or a pid that is dead or a zombie. */
 export function readListenerPid(
-	paths: DgPaths,
+	paths: Pick<DgPaths, "phoneRoot">,
 	alive: (pid: number) => boolean = (pid) => listenerProcessAlive(pid),
 ): ListenerPid | undefined {
 	const path = listenerPidPath(paths);
@@ -533,7 +533,7 @@ function claimExclusive(tmp: string, path: string, pid: number, link: (src: stri
 }
 
 /**
- * Exclusive claim so a second `phone __run` exits instead of subscribing beside the first.
+ * Exclusive claim so a second `phone listen` exits instead of subscribing beside the first.
  * The lock file is linked into place already containing the pid. A filesystem that cannot hard
  * link falls back to an exclusive create that writes the pid before anyone else reads it.
  * Only a command line that is positively not a listener is taken over. A lookup that cannot
@@ -624,7 +624,7 @@ export function ignoreHangup(): void {
 
 /** argv for a listener unit or detached spawn, through the stable runtime and lib links. */
 export function defaultListenerArgv(root: string, extraArgs: string[]): string[] {
-	return launcherCommand(root, "dg-agent", ["phone", "__run", ...extraArgs]);
+	return launcherCommand(root, "dg-agent", ["phone", "listen", ...extraArgs]);
 }
 
 /** The listener argv for this install: the launcher links in the data dir. */
@@ -632,7 +632,7 @@ export function listenerArgvFor(paths: Pick<DgPaths, "dataDir">, extraArgs: stri
 	return defaultListenerArgv(paths.dataDir, extraArgs);
 }
 
-/** Detached listener process. `detached` calls setsid, so the child is its own session. It writes `listener.pid` once `phone __run` is up. */
+/** Detached listener process. `detached` calls setsid, so the child is its own session. It writes `listener.pid` once `phone listen` is up. */
 export function spawnDetachedListener(argv: string[], logPath: string): number {
 	ensurePrivateDir(dirname(logPath));
 	const log = openSync(logPath, "a", 0o600);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { pidAlive, readProcStart } from "@dg/common/node";
+import { pidAlive, readProcStart } from "./plugin-cache";
 
 const LOCK_TRIES = 600;
 const LOCK_WAIT_MS = 100;

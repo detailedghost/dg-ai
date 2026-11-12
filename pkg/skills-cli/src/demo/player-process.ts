@@ -19,6 +19,7 @@ import pkg from "../../package.json" with { type: "json" };
 import { ensureNarrationAssets, isNetworkFailure } from "./narration-assets";
 import { assembleNarrationWav } from "./narration";
 import { profileDir } from "./paths";
+import { guardedDest } from "../utils/layout-guard";
 import {
 	DEFAULT_TIMEOUT_MIN,
 	type BrowserPlan,
@@ -112,12 +113,12 @@ async function restoreState(context: BrowserContext, state: StorageState): Promi
 	}
 }
 
-async function launchLocal(
+export async function launchLocal(
 	job: PlayerJob,
 	plan: LocalPlan,
 ): Promise<PlayerSession> {
 	const { chromium } = await import("playwright-core");
-	const profile = job.profile ?? profileDir();
+	const profile = job.profile ?? guardedDest("demo-profile", profileDir());
 	ensurePrivateDir(profile);
 	let current: BrowserContext | undefined;
 	return {

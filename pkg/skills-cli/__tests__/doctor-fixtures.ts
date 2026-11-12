@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import {
 	chmodSync,
 	lstatSync,
@@ -11,7 +12,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { resolveDgPaths } from "@dg/common/node";
+import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 
 const CHANNEL_REVIEW_CONFIG = {
 	envs: { dev: { baseUrl: "https://relay.example.test/api", awsProfile: "example-dev", botName: "Review Bot" } },
@@ -329,4 +330,81 @@ export function allChecks(report: DoctorReport): DoctorCheck[] {
 
 export function mentions(check: DoctorCheck, pattern: RegExp): boolean {
 	return pattern.test(`${check.id} ${check.detail}`);
+}
+
+export type LegacyLayoutShape =
+	| "clean"
+	| "split"
+	| "blocked"
+	| "no-hook"
+	| "pending"
+	| "pending-incomplete";
+
+export interface LegacyLayoutHome {
+	paths: DgPaths;
+	legacy: string;
+	close(): void;
+}
+
+function walDb(file: string, open: Database[], rows: boolean): void {
+	mkdirSync(join(file, ".."), { recursive: true });
+	const db = new Database(file);
+	open.push(db);
+	db.exec("PRAGMA journal_mode = WAL");
+	db.exec("CREATE TABLE keys (id TEXT)");
+	if (rows) db.exec("INSERT INTO keys (id) VALUES ('row')");
+}
+
+function writeFiles(dir: string, files: Record<string, string>): void {
+	mkdirSync(dir, { recursive: true });
+	for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+}
+
+export function legacyLayoutHome(
+	home: string,
+	shape: LegacyLayoutShape,
+): LegacyLayoutHome {
+	const paths = resolveDgPaths({
+		platform: process.platform,
+		homeDir: home,
+		env: {},
+	});
+	const legacy = paths.legacyHome;
+	const open: Database[] = [];
+	mkdirSync(home, { recursive: true });
+	if (shape === "clean") {
+		writeFiles(join(legacy, "bin"), { "dg-skills": "#!/bin/sh\n" });
+		writeFiles(join(legacy, "dg-ai-extension"), { "marker.txt": "x" });
+		writeFileSync(join(legacy, ".pending-removal.json"), "[]");
+	}
+	if (shape === "split") {
+		walDb(join(legacy, "phone", "phone.db"), open, true);
+		walDb(join(paths.phoneRoot, "phone.db"), open, true);
+	}
+	if (shape === "no-hook") walDb(join(legacy, "phone", "phone.db"), open, true);
+	if (shape === "blocked") {
+		writeFiles(join(legacy, "daemon"), {
+			"daemon.db": "daemon-bytes",
+			"daemon.pid": JSON.stringify({ pid: process.pid }),
+		});
+	}
+	if (shape === "pending" || shape === "pending-incomplete") {
+		const from = join(legacy, "phone");
+		writeFiles(from, { "a.txt": "a", "b.txt": "b" });
+		writeFiles(
+			paths.phoneRoot,
+			shape === "pending" ? { "a.txt": "a", "b.txt": "b" } : { "a.txt": "a" },
+		);
+		writeFileSync(
+			join(legacy, ".pending-removal.json"),
+			JSON.stringify([{ name: "phone", from, to: paths.phoneRoot }]),
+		);
+	}
+	return {
+		paths,
+		legacy,
+		close() {
+			for (const db of open.splice(0)) db.close();
+		},
+	};
 }

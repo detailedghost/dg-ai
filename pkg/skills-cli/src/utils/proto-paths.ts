@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { slugify } from "@dg/common";
 import { resolveDgPaths, type SystemSeams } from "@dg/common/node";
+import { assertNotBlocked } from "@dg/common/node/layout";
 
 /** Stable collision-resistant slug derived from a URL's host/path and full URL. */
 export function protoSlug(url: string): string {
@@ -23,6 +24,15 @@ export function protoSlug(url: string): string {
  */
 export function answerPagePath(slug: string, file: string): string {
 	return resolve(process.cwd(), ".agents", "prototype", slug, file);
+}
+
+/** Throws while the legacy proto folder has not moved and the scratch root is the per-OS cache. */
+export function assertProtoScratchWritable(
+	seams: Pick<SystemSeams, "env" | "homeDir"> = {},
+): void {
+	const env = seams.env ?? process.env;
+	if (env.AI_SCRATCH_DIR) return;
+	assertNotBlocked(resolveDgPaths({ env, homeDir: seams.homeDir ?? homedir() }), "proto");
 }
 
 /** Stable agent output path; never points into Downloads or repository state. */

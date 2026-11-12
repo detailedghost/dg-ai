@@ -98,3 +98,10 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)pkg/extension/wxt\.config\.ts$''']
 regexes = ['''^MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA''']
+
+[[allowlists]]
+description = "Fake store-check key, base64 of test-key-bytes-for-store-check, in the keychain backend spec"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)pkg/dg-daemon/__tests__/crypto/keychain-backends\.spec\.ts$''']
+regexes = ['''dGVzdC1rZXktYnl0ZXMtZm9yLXN0b3JlLWNoZWNr''']

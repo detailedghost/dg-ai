@@ -5,6 +5,7 @@ export * from "./credential-grants";
 export * from "./credentials-client";
 export * from "./dg-config";
 export * from "./fs";
+export * from "./install-lock";
 export * from "./install-skills";
 export * from "./manifest-load";
 export * from "./marker";
