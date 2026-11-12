@@ -258,9 +258,11 @@ export function pwExtPageAction(
 		...new Set(
 			secrets
 				.filter((secret) => secret.length > 0)
-				.flatMap((secret) => [secret, secret.replace(/\s+/g, " ")]),
+				.flatMap((secret) => [secret, secret.replace(/\s+/g, " "), secret.replace(/[\r\n]/g, "")]),
 		),
-	].sort((a, b) => b.length - a.length);
+	]
+		.filter((secret) => secret.length > 0)
+		.sort((a, b) => b.length - a.length);
 	const redactTokens = (value: string): string => {
 		const masked = new Uint8Array(value.length);
 		for (const secret of literals)

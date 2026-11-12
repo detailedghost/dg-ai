@@ -1393,6 +1393,22 @@ describe("pw --ext unmask", () => {
 		expect(text).not.toContain("pass");
 	});
 
+	it("masks the whole filled secret when part of it looks like a token", async () => {
+		const secret = "sk-abcdefgh12345678 tail-passphrase";
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [{ ...WEB_TAB, title: `Hi ${secret}` }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: secret, secret: true });
+		expect(outcome(await h.run({ verb: "current" }))).not.toContain("tail-passphrase");
+		expect(outcome(await h.run({ verb: "tabs" }))).not.toContain("tail-passphrase");
+	});
+
+	it("masks a filled secret after the browser drops its line breaks", async () => {
+		const h = harness({ approval: "allow", pageResult: { detail: "filled" }, tabs: [{ ...WEB_TAB, title: "Hi orchidmaple" }] });
+		await h.run({ verb: "unmask", minutes: 15 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid\nmaple", secret: true });
+		expect(outcome(await h.run({ verb: "current" }))).not.toContain("orchidmaple");
+	});
+
 	it("keeps masking a secret that one fill wrote when a concurrent fill of it fails", async () => {
 		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown };
 		const h = harness(options);

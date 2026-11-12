@@ -204,13 +204,15 @@ function cap(text: string): string {
 		: text;
 }
 
-const SECRET_PAIR =
-	/\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi;
+const SECRET_PAIR = {
+	pattern: /\b((?:access_|refresh_|id_)?token|secret|password|passwd|api[-_]?key|session)(\s*[:=]\s*)[^\s&,;"']+/gi,
+	replacement: "$1$2[redacted]",
+};
 
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
 function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
 	const redact = unmasked ? redactSecrets : redactText;
-	return redactLiterals(redact(text).replace(SECRET_PAIR, "$1$2[redacted]"), secrets);
+	return redactLiterals(redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR] }), secrets);
 }
 
 function clean(text: string, options: { unmasked?: boolean; secrets?: string[] } = {}): string {
@@ -224,22 +226,22 @@ function unmaskLine(grant: UnmaskGrant): string {
 unmasked on ${grant.origin} until ${clock(grant.until)} (approved in the browser)`;
 }
 
-function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false): string {
+function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url)) return "(browser page)";
 	if (mailbox(tab.url)) return "(protected mailbox)";
-	return (unmasked ? redactSecrets : redactText)(tab.url);
+	return mask(tab.url as string, { unmasked, secrets });
 }
 
-function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false): string {
+function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
-	return (unmasked ? redactSecrets : redactText)(tab.title ?? "");
+	return mask(tab.title ?? "", { unmasked, secrets });
 }
 
-function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false): string[] {
-	const title = shownTitle(tab, unmasked);
+function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
+	const title = shownTitle(tab, unmasked, secrets);
 	return [
 		"### Page",
-		`- Page URL: ${shownUrl(tab, unmasked)}`,
+		`- Page URL: ${shownUrl(tab, unmasked, secrets)}`,
 		...(title ? [`- Page Title: ${title}`] : []),
 	];
 }
@@ -380,10 +382,10 @@ export function createPwExtHandler({
 		return frame?.result;
 	}
 
-	function tabListing(rows: readonly AgentTab[]): string {
+	function tabListing(rows: readonly AgentTab[], secrets: string[]): string {
 		const lines = rows.slice(0, MAX_AGENT_TABS).map((row) => {
-			const title = shownTitle(row);
-			return `- ${row.selected ? "[selected] " : ""}${row.tabId}: ${title ? `${title} — ` : ""}${shownUrl(row)}`;
+			const title = shownTitle(row, false, secrets);
+			return `- ${row.selected ? "[selected] " : ""}${row.tabId}: ${title ? `${title} — ` : ""}${shownUrl(row, false, secrets)}`;
 		});
 		const hidden = rows.length - MAX_AGENT_TABS;
 		return ["### Tabs", ...lines, ...(hidden > 0 ? [`- … ${hidden} more`] : [])].join(
@@ -475,7 +477,7 @@ export function createPwExtHandler({
 			await release();
 			return CANCELED;
 		}
-		const page = () => pageLines(tab, unmasked);
+		const page = () => pageLines(tab, unmasked, secrets);
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
 			data: { text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, { unmasked, secrets }) },
@@ -634,7 +636,7 @@ export function createPwExtHandler({
 				const fitted = await fitPreviewDataUrl(captured);
 				if (!fitted.dataUrl)
 					return { ok: false, error: `Screenshot failed: ${fitted.reason}.` };
-				return ok(pageLines(tab).join("\n"), fitted.dataUrl);
+				return ok(pageLines(tab, false, secrets).join("\n"), fitted.dataUrl);
 			}
 			default: {
 				const action: PwExtPageAction =
@@ -713,7 +715,7 @@ export function createPwExtHandler({
 		if (!isTabVerb(request)) {
 			const rows = await agentTabs.list({ sessionId: context.sessionId });
 			if (!rows.length) throw new Refusal(NO_TAB);
-			return ok(tabListing(rows));
+			return ok(tabListing(rows, await grants.secrets(context.sessionId)));
 		}
 		const tab = await resolveTab(request, context.sessionId);
 		if (signal?.aborted) return CANCELED;

@@ -302,3 +302,24 @@ describe("redactLiterals", () => {
 		expect(redactLiterals("code 739123 73…", ["739123"])).toBe("code [redacted] 73…");
 	});
 });
+
+describe("redactText with literals", () => {
+	it("masks a whole literal that holds a token-shaped part", () => {
+		const secret = "sk-abcdefgh12345678 tail-passphrase";
+		expect(redactText(`title ${secret} end`, [], { literals: [secret] })).toBe("title [redacted] end");
+	});
+
+	it("keeps a credential label masked when a literal is part of the label", () => {
+		const out = redactText("password=opensesame-value", [], {
+			literals: ["pass"],
+			extraPatterns: [{ pattern: /\b(password)(=)\S+/gi, replacement: "$1$2[redacted]" }],
+		});
+		expect(out).not.toContain("opensesame");
+		expect(out).not.toContain("pass");
+	});
+
+	it("masks the line-break-free form of a literal", () => {
+		expect(redactText("value orchidmaple", [], { literals: ["orchid\nmaple"] })).toBe("value [redacted]");
+		expect(redactLiterals("value orchidmaple", ["orchid\r\nmaple"])).toBe("value [redacted]");
+	});
+});
