@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { type DgPaths, resolveDgPaths, withInstallLock } from "@dg/common/node";
 import {
 	assertNotBlocked,
+	DAEMON_ASIDE_MARK,
 	blockedText,
 	ensureLayout,
 	LAYOUT_TABLE,
@@ -713,6 +714,23 @@ posix("ensureLayout targets", () => {
 		expect(lines).toEqual([`dg: set aside unused ${paths.daemonDir} as ${outcome?.asideTo}; dg-skills clean removes it`]);
 	});
 
+	test("marks the daemon folder for the keychain step only when it moved over a set-aside target", async () => {
+		put(legacyAt("daemon", "daemon.db"), "db bytes");
+		mkdirSync(paths.daemonDir, { recursive: true });
+
+		await run();
+
+		expect(existsSync(join(paths.daemonDir, DAEMON_ASIDE_MARK))).toBe(true);
+	});
+
+	test("writes no mark when the daemon folder moved into an absent target", async () => {
+		put(legacyAt("daemon", "daemon.db"), "db bytes");
+
+		await run();
+
+		expect(readdirSync(paths.daemonDir)).toEqual(["daemon.db"]);
+	});
+
 	test("fails the entry, keeps the source and logs one line when the set-aside name is already taken", async () => {
 		const now = 1_700_000_000_000;
 		put(legacyAt("daemon", "daemon.db"), "db bytes");
@@ -814,6 +832,17 @@ posix("ensureLayout pending removals", () => {
 		expect(outcomeAt(result, "runtime")).toMatchObject({ kind: "kept", reason: "copy-incomplete" });
 		expect(readFileSync(legacyAt("runtime", "bun-v1.4.1", "bun"), "utf8")).toBe("bun");
 		expect(lines).toEqual([`dg: kept ${legacyAt("runtime")}; its copy at ${paths.runtimeDir} no longer holds every file`]);
+	});
+
+	test("refuses the entry while its copy no longer holds every file", async () => {
+		seedPending();
+		rmSync(join(paths.runtimeDir, "bun-v1.4.1", "bun"));
+
+		await run();
+		const error = thrown(() => assertNotBlocked(paths, "runtime"));
+
+		expect(error).toBeInstanceOf(DgCliError);
+		expect((error as Error).message).toContain(`then remove ${legacyAt("runtime")}`);
 	});
 });
 

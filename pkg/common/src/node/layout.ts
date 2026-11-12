@@ -7,6 +7,9 @@ import { withInstallLock } from "./install-lock";
 export const PENDING_FILE = ".pending-removal.json";
 export const DETACHED_PREFIX = ".removing-";
 
+/** Written into the daemon folder when it moved over a set-aside target, until the keychain step runs. */
+export const DAEMON_ASIDE_MARK = ".moved-over-set-aside";
+
 export type StopResult = "stopped" | "still-running" | "refused";
 
 type OwnerHooks = {
@@ -46,6 +49,7 @@ export type MoveEntry = {
 	verify?: "phone.verify";
 	needsKey?: "ssms.configDir";
 	launcherBound?: true;
+	asideMark?: string;
 };
 
 type MarkerEntry = { name: string; from: string; marker: true };
@@ -71,7 +75,14 @@ export const LAYOUT_TABLE = [
 	},
 	{ name: "personas", from: "agents", to: (paths) => paths.personasDir },
 	{ name: "daemon-logs", from: "daemon/logs", to: (paths) => paths.logDir, ...DAEMON },
-	{ name: "daemon", from: "daemon", to: (paths) => paths.daemonDir, unused: "folder", ...DAEMON },
+	{
+		name: "daemon",
+		from: "daemon",
+		to: (paths) => paths.daemonDir,
+		unused: "folder",
+		asideMark: DAEMON_ASIDE_MARK,
+		...DAEMON,
+	},
 	{ name: "grants", from: "grants", to: (paths) => paths.grantsDir },
 	{
 		name: "phone",
@@ -203,12 +214,17 @@ const exists = (path: string): boolean => {
 	}
 };
 
-/** Throws the kept, failed or has-not-moved text when a writer holds the entry, its move failed, or it stayed with no data at its target. */
+/** Throws when a writer holds the entry, its move failed, its pending copy is incomplete, or it stayed with no data at its target. */
 export function assertNotBlocked(paths: DgPaths, name: EntryName): void {
 	const cached = results.get(paths)?.[name];
 	if (cached) {
 		if (cached.kind === "blocked") throw new DgCliError(cached.fix);
 		if (cached.kind === "failed") throw new DgCliError(cached.error);
+		if (cached.kind === "kept" && cached.reason === "copy-incomplete") {
+			throw new DgCliError(
+				`dg: kept ${cached.from}; its copy at ${cached.to} no longer holds every file. Copy what you need into ${cached.to}, then remove ${cached.from}`,
+			);
+		}
 		if (cached.kind === "kept" && exists(cached.from) && !exists(cached.to)) {
 			throw new DgCliError(blockedText({ reason: "no-hook", from: cached.from, to: cached.to }));
 		}
