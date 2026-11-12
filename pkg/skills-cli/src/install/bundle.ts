@@ -52,7 +52,7 @@ export async function fetchBundle(
 		const tarball = new Uint8Array(await res.arrayBuffer());
 		await verifyReleaseAsset(release.sumsUrl, release.assetName, tarball, `v${release.version}`);
 		mkdirSync(lib, { recursive: true });
-		const staging = mkdtempSync(join(lib, `.${release.version}.staging-`));
+		const staging = mkdtempSync(join(lib, `install-${release.version}-`));
 		const scratch = mkdtempSync(join(tmpdir(), "dg-bundle-"));
 		try {
 			const archive = join(scratch, release.assetName);

@@ -421,7 +421,7 @@ fi
 mkdir -p "${ROOT}/runtime" "${ROOT}/lib" "${BIN}"
 
 if [ "${NEED_BUN}" = "1" ]; then
-  stage=$(mktemp -d "${ROOT}/runtime/.stage.XXXXXX")
+  stage=$(mktemp -d "${ROOT}/runtime/install-XXXXXX")
   track_tmp "${stage}"
   unzip -q "${WORK}/${BUN_FILE}" -d "${stage}"
   inner=${BUN_FILE%.zip}
@@ -432,7 +432,7 @@ if [ "${NEED_BUN}" = "1" ]; then
 fi
 
 if [ "${NEED_LIB}" = "1" ]; then
-  stage=$(mktemp -d "${ROOT}/lib/.stage.XXXXXX")
+  stage=$(mktemp -d "${ROOT}/lib/install-XXXXXX")
   track_tmp "${stage}"
   tar -xzf "${WORK}/${LIB_ASSET}" -C "${stage}"
   [ -f "${stage}/dg.js" ] || die "${LIB_ASSET} has no dg.js"
@@ -445,7 +445,7 @@ link_current "${ROOT}/runtime/current" "bun-v${BUN_VERSION}"
 link_current "${ROOT}/lib/current" "${VERSION}"
 
 for program in dg-skills dg-agent dg-daemon; do
-  shim=$(mktemp "${BIN}/.${program}.XXXXXX")
+  shim=$(mktemp "${BIN}/${program}.install-XXXXXX")
   track_tmp "${shim}"
   printf '#!/bin/sh\nexec "%s/runtime/current/bun" "%s/lib/current/dg.js" %s "$@"\n' \
     "${ROOT}" "${ROOT}" "${program}" >"${shim}"
