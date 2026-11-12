@@ -188,8 +188,6 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		readEnvNumber(process.env, "DG_JOB_TICK_MS", JOB_TICK_INTERVAL_MS),
 	);
 
-	supervisor.autostart();
-
 	const sessionTtlMs = readEnvNumber(
 		process.env,
 		"DG_SESSION_TTL_MS",
@@ -352,5 +350,6 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	logger.info(
 		`dg-daemon listening on 127.0.0.1:${boundPortNumber} (instance ${instanceId})`,
 	);
+	supervisor.autostart();
 	return "serving";
 }

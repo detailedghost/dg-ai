@@ -69,7 +69,6 @@ function fixture(
 		loadConfig: () => ({ services }),
 		logger: { info: () => {}, warn: () => {} },
 		backoffMs: () => 25,
-		stopGraceMs: 500,
 		...tuning,
 	});
 	supervisors.push(supervisor);
@@ -92,7 +91,7 @@ const botRunning = (
 ) =>
 	fixture(
 		({ root, script }) => ({
-			bot: { argv: script(source), cwd: root, ...extra },
+			bot: { argv: script(source), cwd: root, stopTimeoutMs: 500, ...extra },
 		}),
 		tuning,
 	);

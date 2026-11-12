@@ -26,7 +26,6 @@ import { type ParsedService, parseServices, type ServiceDecl } from "./config";
 export const BACKOFF_BASE_MS = 1_000;
 export const BACKOFF_MAX_MS = 60_000;
 export const STABLE_RUN_MS = 60_000;
-export const STOP_GRACE_MS = 5_000;
 export const LOG_CHECK_MS = 30_000;
 export const MAX_LOG_BYTES = 5_000_000;
 
@@ -61,7 +60,6 @@ export type SupervisorDeps = {
 	loadConfig: () => Record<string, unknown>;
 	logger: Pick<Logger, "info" | "warn">;
 	backoffMs?: (failures: number) => number;
-	stopGraceMs?: number;
 	logCheckMs?: number;
 	maxLogBytes?: number;
 };
@@ -76,6 +74,7 @@ type Entry = {
 	restarts: number;
 	startedAt?: Date;
 	lastExit?: string;
+	termination?: Promise<void>;
 	abort: AbortController;
 	loop: Promise<void>;
 };
@@ -110,7 +109,6 @@ function openLog(logDir: string, logFile: string, maxBytes: number): number {
 export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const { logger } = deps;
 	const backoffMs = deps.backoffMs ?? exponentialBackoffMs;
-	const stopGraceMs = deps.stopGraceMs ?? STOP_GRACE_MS;
 	const logCheckMs = deps.logCheckMs ?? LOG_CHECK_MS;
 	const maxLogBytes = deps.maxLogBytes ?? MAX_LOG_BYTES;
 	const pidDir = join(deps.paths.daemonDir, "services");
@@ -120,6 +118,21 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		join(deps.paths.logDir, `service-${label}.log`);
 	const pidFileFor = (label: string) => join(pidDir, `${label}.pid`);
 
+	function passedEnv(decl: ServiceDecl): Record<string, string> {
+		return Object.fromEntries(
+			decl.passEnv.flatMap((name) => {
+				const value = process.env[name];
+				if (value === undefined) {
+					logger.warn(
+						`service ${decl.label}: passEnv name ${name} is not set in the daemon environment`,
+					);
+					return [];
+				}
+				return [[name, value]];
+			}),
+		);
+	}
+
 	function launch(decl: ServiceDecl): Subprocess {
 		const fd = openLog(deps.paths.logDir, logFileFor(decl.label), maxLogBytes);
 		try {
@@ -127,6 +140,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 				cwd: decl.cwd,
 				env: {
 					...buildAllowedEnv(),
+					...passedEnv(decl),
 					...(decl.envFile ? loadEnvFile(decl.envFile) : {}),
 				},
 				stdin: "ignore",
@@ -142,6 +156,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	async function runOnce(entry: Entry): Promise<number | undefined> {
 		const { decl } = entry;
 		let proc: Subprocess;
+		entry.termination = undefined;
 		try {
 			proc = launch(decl);
 		} catch (err) {
@@ -165,11 +180,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			}
 		}, logCheckMs);
 		const code = await proc.exited.finally(() => clearInterval(rotation));
-		killProcessGroup(proc.pid, stopGraceMs);
+		entry.lastExit = describeExit(proc);
+		if (process.platform !== "win32") {
+			entry.termination ??= killProcessGroup(proc.pid, decl.stopTimeoutMs);
+		}
+		await entry.termination;
 		entry.proc = undefined;
 		entry.pid = undefined;
 		rmSync(pidFileFor(decl.label), { force: true });
-		entry.lastExit = describeExit(proc);
 		return code;
 	}
 
@@ -292,8 +310,12 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 					};
 		}
 		entry.abort.abort();
-		if (entry.pid !== undefined) killProcessGroup(entry.pid, stopGraceMs);
-		entry.proc?.kill();
+		if (entry.pid !== undefined) {
+			entry.termination ??= killProcessGroup(
+				entry.pid,
+				entry.decl.stopTimeoutMs,
+			);
+		}
 		await entry.loop;
 		return { ok: true, status: statusOf(label) };
 	}
