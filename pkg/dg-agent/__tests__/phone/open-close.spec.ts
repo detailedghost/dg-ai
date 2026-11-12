@@ -357,6 +357,22 @@ describe("phoneClose", () => {
 		expect(lines()[0]).toEqual({ pid: null, status: "closed", autostart: "absent" });
 	});
 
+	it("opens no database when the phone has none", async () => {
+		const h = harness();
+		const deps = Object.create(h.deps, {
+			paths: { value: resolveDgPaths({ env: { DG_HOME: freshHome() } }) },
+			db: {
+				get: () => {
+					throw new Error("the database must not open");
+				},
+			},
+		}) as OpenCloseDeps;
+
+		await phoneClose(deps);
+
+		expect(lines()[0]).toEqual({ pid: null, status: "closed", autostart: "absent" });
+	});
+
 	it("reports pid null and never tries to kill a pid file that is not ours", async () => {
 		const h = harness({ isOurListener: () => false });
 		writeRunningPid(h, process.pid);

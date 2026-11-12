@@ -1350,7 +1350,7 @@ export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
 	const running = liveListener(deps);
 
 	const autostart = await removeAutostart(deps, deps.paths);
-	const saved = readListener(deps.db);
+	const saved = existsSync(PhoneDb.path(deps.paths)) ? readListener(deps.db) : undefined;
 	if (saved?.autostart) writeListener(deps.db, { ...saved, autostart: undefined });
 
 	if (running) await stopRunningListener(deps, running.pid);
