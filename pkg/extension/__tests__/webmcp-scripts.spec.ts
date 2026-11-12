@@ -44,13 +44,24 @@ function memoryStorage() {
 	};
 }
 
+const OUTLOOK_ON = {
+	id: "outlook",
+	name: "Outlook on the web",
+	matches: ["https://outlook.office.com/*", "https://outlook.live.com/*"],
+	sha256: "0".repeat(64),
+	source: "built-in",
+	enabled: true,
+};
+
 function setup({
 	userScripts = true,
 	failIds = [] as string[],
 	probeFails = false,
 	signer = freshSigner(),
+	outlookEnabled = false,
 } = {}) {
 	const storage = memoryStorage();
+	if (outlookEnabled) storage.data.webmcpScripts = [OUTLOOK_ON];
 	const live = { content: new Set<string>(), user: new Set<string>() };
 	const calls = {
 		register: [] as { id: string; [key: string]: unknown }[],
@@ -264,14 +275,14 @@ describe("remove", () => {
 });
 
 describe("list", () => {
-	it("returns the outlook built-in enabled by default ahead of third-party scripts", async () => {
+	it("returns the outlook built-in disabled by default ahead of third-party scripts", async () => {
 		const { scripts } = setup();
 		await scripts.addThirdParty(draft());
 
 		const records = await scripts.list();
 
 		expect(records.map((record) => [record.id, record.source, record.enabled])).toEqual([
-			["outlook", "built-in", true],
+			["outlook", "built-in", false],
 			["s1", "paste", false],
 		]);
 	});
@@ -285,8 +296,40 @@ describe("list", () => {
 });
 
 describe("reconcile", () => {
-	it("registers the enabled outlook built-in in the MAIN world at document_start", async () => {
+	it("registers nothing for the outlook built-in by default", async () => {
 		const { scripts, calls } = setup();
+
+		await scripts.reconcile();
+
+		expect(calls.register).toEqual([]);
+		expect(calls.unregister).toContain("dg-webmcp-outlook");
+	});
+
+	it("registers the outlook built-in once it is turned on", async () => {
+		const { scripts, calls } = setup();
+
+		await scripts.setEnabled("outlook", true);
+
+		expect((await scripts.list())[0]?.enabled).toBe(true);
+		expect(calls.register.map((script) => script.id)).toEqual(["dg-webmcp-outlook"]);
+	});
+
+	it("warns and goes on when a stored enabled outlook built-in cannot register", async () => {
+		const { scripts, calls, live } = setup({ outlookEnabled: true, failIds: ["dg-webmcp-outlook"] });
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await scripts.reconcile();
+
+			expect(warn.mock.calls.some((call) => String(call.join(" ")).includes("registration of dg-webmcp-outlook failed"))).toBe(true);
+		} finally {
+			warn.mockRestore();
+		}
+		expect(calls.register).toEqual([]);
+		expect(live.content.has("dg-webmcp-outlook")).toBe(false);
+	});
+
+	it("registers the enabled outlook built-in in the MAIN world at document_start", async () => {
+		const { scripts, calls } = setup({ outlookEnabled: true });
 
 		await scripts.reconcile();
 
@@ -302,7 +345,7 @@ describe("reconcile", () => {
 	});
 
 	it("unregisters the outlook built-in when it is disabled", async () => {
-		const { scripts, calls } = setup();
+		const { scripts, calls } = setup({ outlookEnabled: true });
 		await scripts.reconcile();
 
 		await scripts.setEnabled("outlook", false);
@@ -339,7 +382,7 @@ describe("reconcile", () => {
 	});
 
 	it("registers built-ins and skips third-party scripts without throwing when userScripts is unavailable", async () => {
-		const { scripts, calls } = setup({ userScripts: false });
+		const { scripts, calls } = setup({ userScripts: false, outlookEnabled: true });
 		const { id } = await scripts.addThirdParty(draft());
 		await approveNow(scripts, id);
 
@@ -473,7 +516,7 @@ describe("orphan registrations", () => {
 	});
 
 	it("unregisters a live built-in id that is no longer wanted", async () => {
-		const { scripts, live, calls } = setup();
+		const { scripts, live, calls } = setup({ outlookEnabled: true });
 		live.content.add("dg-webmcp-gone");
 
 		await scripts.reconcile();
@@ -498,6 +541,7 @@ describe("built-in spoofing", () => {
 	it("never registers or lists a stored record that claims built-in with an unknown id", async () => {
 		const { scripts, storage, calls } = setup();
 		storage.data.webmcpScripts = [
+			OUTLOOK_ON,
 			{
 				id: "foo",
 				name: "Foo",
@@ -588,7 +632,7 @@ describe("reconcile writes", () => {
 
 describe("reconcile userScripts probe", () => {
 	it("skips third-party scripts without throwing when getScripts throws", async () => {
-		const { scripts, calls } = setup({ probeFails: true });
+		const { scripts, calls } = setup({ probeFails: true, outlookEnabled: true });
 		const { id } = await scripts.addThirdParty(draft());
 
 		await approveNow(scripts, id);
@@ -699,7 +743,7 @@ describe("approval signing", () => {
 	const macKey = (id: string) => `webmcpMac:${id}`;
 
 	async function approved() {
-		const harness = setup();
+		const harness = setup({ outlookEnabled: true });
 		const { id } = await harness.scripts.addThirdParty(draft());
 		await approveNow(harness.scripts, id);
 		harness.calls.userRegister.length = 0;

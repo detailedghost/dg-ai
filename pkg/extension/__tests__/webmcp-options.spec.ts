@@ -92,14 +92,14 @@ async function mount({ available = true } = {}) {
 }
 
 describe("web mcp scripts panel", () => {
-	it("shows the heading, the outlook built-in row with a checked checkbox and the third-party form", async () => {
+	it("shows the heading, the outlook built-in row with an unchecked checkbox and the third-party form", async () => {
 		const { container, q } = await mount();
 
 		expect(container.textContent).toContain("Web MCP scripts");
 		const row = q<HTMLElement>('[data-webmcp-row="outlook"]');
 		expect(row.textContent).toContain("Outlook on the web");
 		expect(row.textContent).toContain("https://outlook.live.com/*");
-		expect(q<HTMLInputElement>('[data-webmcp-row="outlook"] input[type="checkbox"]').checked).toBe(true);
+		expect(q<HTMLInputElement>('[data-webmcp-row="outlook"] input[type="checkbox"]').checked).toBe(false);
 		expect(q("[data-webmcp-name]")).not.toBeNull();
 		expect(q("[data-webmcp-sites]")).not.toBeNull();
 		expect(q("[data-webmcp-code]")).not.toBeNull();
@@ -206,12 +206,12 @@ describe("web mcp scripts panel", () => {
 		const { q, scripts, writes } = await mount();
 		const box = q<HTMLInputElement>('[data-webmcp-row="outlook"] input[type="checkbox"]');
 
-		box.checked = false;
+		box.checked = true;
 		change(box);
 		await settle();
 
-		expect((await scripts.list())[0]?.enabled).toBe(false);
-		expect(writes()).toEqual([{ type: "dg-webmcp:set-enabled", id: "outlook", enabled: false }]);
+		expect((await scripts.list())[0]?.enabled).toBe(true);
+		expect(writes()).toEqual([{ type: "dg-webmcp:set-enabled", id: "outlook", enabled: true }]);
 	});
 
 	it("replaces the code from a chosen file and returns the row to needs approval", async () => {

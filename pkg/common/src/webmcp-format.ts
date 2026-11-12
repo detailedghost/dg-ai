@@ -17,13 +17,14 @@ export type WebMcpScriptRecord = {
 	approvedAt?: number;
 };
 
-export type BuiltInWebMcpScript = Pick<WebMcpScriptRecord, "id" | "name" | "matches">;
+export type BuiltInWebMcpScript = Pick<WebMcpScriptRecord, "id" | "name" | "matches"> & { enabledByDefault: boolean };
 
 export const BUILT_IN_SCRIPTS = [
 	{
 		id: "outlook",
 		name: "Outlook on the web",
 		matches: ["https://outlook.office.com/*", "https://outlook.live.com/*"],
+		enabledByDefault: false,
 	},
 ] as const satisfies readonly BuiltInWebMcpScript[];
 

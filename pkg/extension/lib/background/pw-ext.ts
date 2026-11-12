@@ -156,9 +156,10 @@ async function storedEnabledBuiltIns(storage: unknown): Promise<Set<string>> {
 	const stored = (await local.get(BUILT_INS_KEY))[BUILT_INS_KEY];
 	const records = Array.isArray(stored) ? (stored as { id?: unknown; source?: unknown; enabled?: unknown }[]) : [];
 	return new Set(
-		BUILT_IN_SCRIPTS.filter(
-			(script) => !records.some((record) => record?.id === script.id && record.source === "built-in" && record.enabled === false),
-		).map((script) => script.id),
+		BUILT_IN_SCRIPTS.filter((script) => {
+			const record = records.find((entry) => entry?.id === script.id && entry.source === "built-in");
+			return typeof record?.enabled === "boolean" ? record.enabled : script.enabledByDefault;
+		}).map((script) => script.id),
 	);
 }
 
