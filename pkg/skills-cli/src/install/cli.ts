@@ -210,7 +210,7 @@ async function installBundleLocked(root: string, release: PickedBundle): Promise
 	console.log(
 		present && installed === release.version
 			? currentBinaryLine("dg-skills", release.version)
-			: `dg-skills ${installed ? "updated to" : "installed"} v${release.version} at ${bundleDir}`,
+			: `dg bundle ${installed ? "updated to" : "installed"} v${release.version} at ${bundleDir}`,
 	);
 }
 

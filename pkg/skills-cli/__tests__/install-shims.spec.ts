@@ -35,6 +35,19 @@ describe("writeShims on a Windows host", () => {
 		expect(text).toContain("100%%PATH%%");
 		expect(text).not.toMatch(/[^%]%PATH%/);
 	});
+
+	test("turns delayed expansion off before the launch line so an exclamation mark in the root stays literal", () => {
+		const root = join(sandbox.root, "dg!home!");
+		writeShims(join(root, "bin"), root, "win32");
+
+		for (const name of NAMES) {
+			const lines = readFileSync(join(root, "bin", `${name}.cmd`), "utf8").split("\r\n");
+			const disable = lines.findIndex((line) => line.toLowerCase() === "setlocal disabledelayedexpansion");
+			const launch = lines.findIndex((line) => line.includes("dg!home!"));
+			expect(disable).toBeGreaterThanOrEqual(0);
+			expect(launch).toBeGreaterThan(disable);
+		}
+	});
 });
 
 posix("writeShims on a POSIX host", () => {
