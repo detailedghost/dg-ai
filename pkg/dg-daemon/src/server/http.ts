@@ -4,39 +4,35 @@ import {
 	AssetTooLargeError,
 	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
+	CHAT_CLI_PATH,
 	CHAT_CODE_PATH,
 	CHAT_EXCHANGE_PATH,
-	CHAT_CLI_PATH,
 	CHAT_HEALTH_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_SERVICES_PATH,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
-	CHAT_SERVICES_PATH,
-	SERVICE_API_CREDENTIALS_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
 	CHAT_WS_PATH,
-	OWNER_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	decideLocalAttach,
 	describeError,
 	noteSecret,
-	type OverwatchAction,
 	OVERWATCH_SESSION_ID,
+	type OverwatchAction,
+	OWNER_TOKEN_HEADER,
+	SERVICE_API_CREDENTIALS_PATH,
 	type SessionRole,
-	decideLocalAttach,
 	validateAttachRequest,
 	validateOverwatchAction,
 } from "@dg/common";
-import {
-	type DgPaths,
-	readOwnerToken,
-	tokensEqual,
-} from "@dg/common/node";
-import type { Server, ServerWebSocket } from "bun";
+import { type DgPaths, readOwnerToken, tokensEqual } from "@dg/common/node";
+import type { Server } from "bun";
 import { installAssetLifecycle } from "../assets/cleanup";
 import {
 	assetContentDisposition,
@@ -48,35 +44,28 @@ import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
 import type { Supervisor } from "../services/supervisor";
-import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
-import type {
-	CreateSessionInput,
-	SessionRegistry,
-} from "../session/registry";
-import type { ChatStore } from "../store";
-import type { CredentialStore } from "../store/credentials-store";
 import {
 	DEFAULT_ARCHIVE_MAX_ROWS,
 	DEFAULT_ARCHIVE_TTL_MS,
 	WAL_CHECKPOINT_PAGE_THRESHOLD,
 } from "../session/archive";
+import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import { projectLocalSessions } from "../session/local-sessions";
+import type { CreateSessionInput, SessionRegistry } from "../session/registry";
+import type { ChatStore } from "../store";
+import type { CredentialStore } from "../store/credentials-store";
 import { readEnvNumber } from "../utils/env";
+import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
+import { readCappedBody } from "./capped-body";
 import {
 	abortPendingWork,
 	type ConnectionManager,
 	createSocketState,
-	isExtensionPeer,
 	resolveDrainWaiters,
-	sendViaQueue,
 	type SocketState,
 } from "./connection";
-import { readCappedBody } from "./capped-body";
 import { hasCredentialGrant } from "./credentials";
 import { handleSocketMessage } from "./frame-handlers";
-import { handleServiceApiCredentials } from "./service-api";
-import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
-import { createPageCodes, type PageCodes } from "./page-codes";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
@@ -85,12 +74,14 @@ import {
 	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
-	isTrustedExtensionOrigin,
 	isLocalPageOrigin,
+	isTrustedExtensionOrigin,
 	pinOriginIfUnset,
 	requireLocalPageOrigin,
 } from "./origin";
+import { createPageCodes, type PageCodes } from "./page-codes";
 import { localPageResponse } from "./pages";
+import { handleServiceApiCredentials } from "./service-api";
 import { renderStatus, type StatusDeps } from "./status";
 
 const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
@@ -170,19 +161,25 @@ function requirePinnedExtensionOrigin(
 	const origin = req.headers.get("origin");
 	const pinnedOrigin = getPinnedOrigin(paths);
 	if (pinnedOrigin === undefined) {
-		return new Response("refused: no authenticated extension origin is pinned", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return new Response(
+			"refused: no authenticated extension origin is pinned",
+			{
+				status: 400,
+				headers: NOSNIFF_HEADERS,
+			},
+		);
 	}
 	if (origin === null) {
 		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
 	}
 	if (!isExtensionOrigin(origin) || origin !== pinnedOrigin) {
-		return new Response("refused: Origin does not match a pinned extension origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
+		return new Response(
+			"refused: Origin does not match a pinned extension origin",
+			{
+				status: 400,
+				headers: NOSNIFF_HEADERS,
+			},
+		);
 	}
 	return undefined;
 }
@@ -400,7 +397,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 			}
 
 			if (url.pathname === SERVICE_API_CREDENTIALS_PATH) {
-				return handleServiceApiCredentials(req, deps.credentials);
+				return handleServiceApiCredentials(req, deps.credentials, deps.logger);
 			}
 
 			if (
@@ -473,10 +470,7 @@ async function handleOverwatchRoute(
 			},
 		}),
 	});
-	return json(
-		{ ok: true },
-		{ headers: { "Cache-Control": "no-store" } },
-	);
+	return json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
 
 async function handleRegisterSession(
@@ -613,9 +607,8 @@ async function handleLocalAttach(
 	});
 	const decision = decideLocalAttach({
 		sessionId: request.sessionId,
-		callerSessionId: records.find((record) =>
-			tokensEqual(record.token, bearer),
-		)?.sessionId,
+		callerSessionId: records.find((record) => tokensEqual(record.token, bearer))
+			?.sessionId,
 		registry: records.map((record) => ({
 			sessionId: record.sessionId,
 			role: record.role,
@@ -666,7 +659,8 @@ async function handleChatCodeMint(
 					})
 					.find(
 						(candidate) =>
-							candidate.state === "active" && tokensEqual(candidate.token, bearer),
+							candidate.state === "active" &&
+							tokensEqual(candidate.token, bearer),
 					);
 	if (bearer === undefined || record === undefined) {
 		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
@@ -735,7 +729,8 @@ async function handleChatCodeExchange(
 		return refuse("refused: body must carry a code", 400);
 	}
 	const sessionId = codes.redeem(code);
-	const record = sessionId === undefined ? undefined : deps.registry.get(sessionId);
+	const record =
+		sessionId === undefined ? undefined : deps.registry.get(sessionId);
 	if (record === undefined || record.state !== "active") {
 		return refuse("no such code", 404);
 	}
@@ -797,7 +792,8 @@ function handleLocalSessions(
 	if (refused) return refused;
 	const sessions = deps.registry.list().flatMap((summary) => {
 		const record = deps.registry.get(summary.sessionId);
-		if (!record || record.state !== "active" || record.token.length === 0) return [];
+		if (!record || record.state !== "active" || record.token.length === 0)
+			return [];
 		return [
 			{
 				sessionId: record.sessionId,
@@ -807,7 +803,10 @@ function handleLocalSessions(
 			},
 		];
 	});
-	const projected = projectLocalSessions(sessions, url.searchParams.get("session"));
+	const projected = projectLocalSessions(
+		sessions,
+		url.searchParams.get("session"),
+	);
 	if (projected.status === 404) {
 		return new Response("refused", { status: 404, headers: NOSNIFF_HEADERS });
 	}
@@ -880,7 +879,7 @@ async function handleServiceRoute(
 	const [label, verb, ...extra] = segments as string[];
 
 	if (label === undefined && req.method === "GET") {
-		return json({ services: supervisor.status() });
+		return json({ instanceId: deps.instanceId, services: supervisor.status() });
 	}
 
 	const isAction =
@@ -1159,5 +1158,3 @@ async function handleAssetGet(
 export function newInstanceId(): string {
 	return randomUUID();
 }
-
-export { readCappedBody };

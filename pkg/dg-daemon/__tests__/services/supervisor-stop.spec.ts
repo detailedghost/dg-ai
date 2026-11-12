@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
-import {
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { wait } from "@dg/common";
 import { isAlive } from "@dg/common/node";
@@ -14,6 +8,7 @@ import {
 	IGNORE_SIGTERM,
 	rig,
 	SLEEPER,
+	scratchDir,
 	until,
 } from "./supervisor-kit";
 
@@ -21,10 +16,7 @@ afterEach(disposeRigs);
 
 const READY = "console.log('ready');";
 
-const botDecl = (
-	source: string,
-	extra: Record<string, unknown> = {},
-) =>
+const botDecl = (source: string, extra: Record<string, unknown> = {}) =>
 	rig(({ root, script }) => ({
 		bot: { argv: script(source), cwd: root, ...extra },
 	}));
@@ -94,7 +86,7 @@ describe("supervisor stop grace period", () => {
 	});
 
 	it("sends SIGTERM to the group of the second run after a crash and restart", async () => {
-		const runs = mkdtempSync(join(tmpdir(), "dg-runs-"));
+		const runs = scratchDir("dg-runs-");
 		const counter = join(runs, "runs");
 		const r = botDecl(
 			`const fs = require("node:fs");
@@ -116,7 +108,9 @@ describe("supervisor stop grace period", () => {
 			recorder.restore();
 		}
 		expect(
-			recorder.calls.filter((c) => c.pid === -secondPid && c.signal === "SIGTERM"),
+			recorder.calls.filter(
+				(c) => c.pid === -secondPid && c.signal === "SIGTERM",
+			),
 		).toHaveLength(1);
 		expect(isAlive(secondPid)).toBe(false);
 		expect(r.status().state).toBe("stopped");
@@ -126,6 +120,38 @@ describe("supervisor stop grace period", () => {
 		const r = botDecl(SLEEPER);
 		const result = await r.supervisor.stop("bot");
 		expect(result).toMatchObject({ ok: true, status: { state: "stopped" } });
+	});
+});
+
+describe("supervisor status after a declaration is removed", () => {
+	it("lists a stopped service while declared and drops it once it is no longer declared", async () => {
+		let declared = true;
+		const r = rig(({ root, script }) =>
+			declared ? { bot: { argv: script(SLEEPER), cwd: root } } : {},
+		);
+		r.supervisor.start("bot");
+		await until(() => r.status().pid !== null);
+		await r.supervisor.stop("bot");
+		expect(r.supervisor.status().map((entry) => entry.label)).toEqual(["bot"]);
+
+		declared = false;
+
+		expect(r.supervisor.status()).toEqual([]);
+	});
+
+	it("keeps listing a running service whose declaration was removed", async () => {
+		let declared = true;
+		const r = rig(({ root, script }) =>
+			declared ? { bot: { argv: script(SLEEPER), cwd: root } } : {},
+		);
+		r.supervisor.start("bot");
+		await until(() => r.status().pid !== null);
+
+		declared = false;
+
+		expect(
+			r.supervisor.status().map((entry) => [entry.label, entry.state]),
+		).toEqual([["bot", "running"]]);
 	});
 });
 
@@ -142,7 +168,7 @@ describe("supervisor crash with a surviving child", () => {
 		}`;
 
 	it("kills the leftover child before the next start and delays the restart by stopTimeoutMs at most", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "dg-crash-"));
+		const dir = scratchDir("dg-crash-");
 		const pidsFile = join(dir, "pids");
 		const counter = join(dir, "runs");
 		writeFileSync(pidsFile, "");
@@ -176,7 +202,7 @@ describe("supervisor crash with a surviving child", () => {
 	}, 15_000);
 
 	it("reports running with the pid of the group while its child outlives the lead process", async () => {
-		const dir = mkdtempSync(join(tmpdir(), "dg-crash-"));
+		const dir = scratchDir("dg-crash-");
 		const pidsFile = join(dir, "pids");
 		const counter = join(dir, "runs");
 		writeFileSync(pidsFile, "");
@@ -189,7 +215,10 @@ describe("supervisor crash with a surviving child", () => {
 		await until(() => readFileSync(pidsFile, "utf8").trim() !== "");
 		const child = Number(readFileSync(pidsFile, "utf8").trim().split("\n")[0]);
 
-		await until(() => !isAlive(leadPid) || r.status().state !== "running", 3000);
+		await until(
+			() => !isAlive(leadPid) || r.status().state !== "running",
+			3000,
+		);
 
 		expect(isAlive(child)).toBe(true);
 		expect(r.status()).toMatchObject({ state: "running", pid: leadPid });

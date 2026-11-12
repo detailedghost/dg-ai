@@ -78,13 +78,20 @@ describe("dg-daemon main", () => {
 	}
 
 	it.each([
-		["start", "start the daemon in the background, or report the live one", "--json"],
+		[
+			"start",
+			"start the daemon in the background, or report the live one",
+			"--json",
+		],
 		["stop", "stop the daemon and its services", "--force"],
 		["restart", "stop the daemon, then start it again", "--force"],
-	])("registers %s with its description and %s flag", async (name, description, flag) => {
-		const { code, help } = await helpOf(name);
-		expect(code).toBe(0);
-		expect(help).toContain(description);
-		expect(help).toContain(flag);
-	});
+	])(
+		"registers %s with its description and %s flag",
+		async (name, description, flag) => {
+			const { code, help } = await helpOf(name);
+			expect(code).toBe(0);
+			expect(help).toContain(description);
+			expect(help).toContain(flag);
+		},
+	);
 });

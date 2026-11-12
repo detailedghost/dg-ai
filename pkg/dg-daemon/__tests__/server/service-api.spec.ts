@@ -184,10 +184,19 @@ describe("POST /service-api/v1/credentials get", () => {
 
 describe("POST /service-api/v1/credentials 401", () => {
 	const cases: [string, Call][] = [
-		["an absent grant prefix header", { headers: { [CLI_GRANT_PREFIX_HEADER]: null } }],
-		["an absent grant token header", { headers: { [CLI_GRANT_TOKEN_HEADER]: null } }],
+		[
+			"an absent grant prefix header",
+			{ headers: { [CLI_GRANT_PREFIX_HEADER]: null } },
+		],
+		[
+			"an absent grant token header",
+			{ headers: { [CLI_GRANT_TOKEN_HEADER]: null } },
+		],
 		["an unknown prefix", { headers: { [CLI_GRANT_PREFIX_HEADER]: "nobody" } }],
-		["an incorrect token", { headers: { [CLI_GRANT_TOKEN_HEADER]: "wrong-token" } }],
+		[
+			"an incorrect token",
+			{ headers: { [CLI_GRANT_TOKEN_HEADER]: "wrong-token" } },
+		],
 		[
 			"the token of another prefix",
 			{ headers: { [CLI_GRANT_PREFIX_HEADER]: "b" } },
@@ -211,7 +220,10 @@ describe("POST /service-api/v1/credentials 401", () => {
 
 	it("answers 401 before it checks the content type", async () => {
 		const response = await post({
-			headers: { [CLI_GRANT_TOKEN_HEADER]: "wrong", "Content-Type": "text/plain" },
+			headers: {
+				[CLI_GRANT_TOKEN_HEADER]: "wrong",
+				"Content-Type": "text/plain",
+			},
 		});
 		expect(response.status).toBe(401);
 	});
@@ -247,9 +259,9 @@ describe("POST /service-api/v1/credentials 403", () => {
 			expect(await response.json()).toEqual(NOT_ALLOWED);
 		}
 		expect((await cliCall({ operation: "list" })).value).toEqual(before);
-		expect((await cliCall({ operation: "get", name: "a/x" })).value).toMatchObject(
-			{ value: SEEDED["a/x"] },
-		);
+		expect(
+			(await cliCall({ operation: "get", name: "a/x" })).value,
+		).toMatchObject({ value: SEEDED["a/x"] });
 		expect(
 			((await cliCall({ operation: "grant-list" })).value as unknown[]).length,
 		).toBe(3);
@@ -263,7 +275,9 @@ describe("POST /service-api/v1/credentials 403", () => {
 	});
 
 	it("checks the name prefix before the name syntax", async () => {
-		const response = await post({ body: { operation: "get", name: "b/UPPER CASE" } });
+		const response = await post({
+			body: { operation: "get", name: "b/UPPER CASE" },
+		});
 		expect(response.status).toBe(403);
 	});
 });
@@ -286,7 +300,12 @@ describe("POST /service-api/v1/credentials 400 JSON", () => {
 	});
 
 	it("rejects an operation that is not a string", async () => {
-		for (const body of [{}, { operation: 1 }, { operation: null }, { operation: ["list"] }])
+		for (const body of [
+			{},
+			{ operation: 1 },
+			{ operation: null },
+			{ operation: ["list"] },
+		])
 			expect(await reasonOf({ body })).toBe('"operation" must be a string');
 	});
 
@@ -330,8 +349,13 @@ describe("POST /service-api/v1/credentials 400 JSON", () => {
 		const responses = [
 			await post({ body: { operation: marker } }),
 			await post({ body: { operation: "list", [marker]: marker } }),
-			await post({ body: { operation: "get", name: `a/${marker.toUpperCase()}` } }),
-			await post({ headers: { "X-Marker": marker }, body: { operation: "get", name: 5, extra: marker } }),
+			await post({
+				body: { operation: "get", name: `a/${marker.toUpperCase()}` },
+			}),
+			await post({
+				headers: { "X-Marker": marker },
+				body: { operation: "get", name: 5, extra: marker },
+			}),
 		];
 		for (const response of responses)
 			expect((await response.text()).toLowerCase()).not.toContain(marker);
@@ -341,11 +365,16 @@ describe("POST /service-api/v1/credentials 400 JSON", () => {
 
 describe("POST /service-api/v1/credentials content type and Origin", () => {
 	it("answers 415 with the plain text for another content type", async () => {
-		for (const contentType of ["text/plain", "application/x-www-form-urlencoded"]) {
+		for (const contentType of [
+			"text/plain",
+			"application/x-www-form-urlencoded",
+		]) {
 			const response = await post({ headers: { "Content-Type": contentType } });
 			expect(response.status).toBe(415);
 			expectHardened(response);
-			expect(await response.text()).toBe("Content-Type must be application/json");
+			expect(await response.text()).toBe(
+				"Content-Type must be application/json",
+			);
 		}
 	});
 
@@ -363,7 +392,9 @@ describe("POST /service-api/v1/credentials content type and Origin", () => {
 	});
 
 	it("answers 400 with the plain text for a browser Origin, even with a valid grant", async () => {
-		const response = await post({ headers: { Origin: "https://evil.example" } });
+		const response = await post({
+			headers: { Origin: "https://evil.example" },
+		});
 		expect(response.status).toBe(400);
 		expectHardened(response);
 		expect(await response.text()).toBe(BROWSER_TEXT);
@@ -371,7 +402,10 @@ describe("POST /service-api/v1/credentials content type and Origin", () => {
 
 	it("checks the browser Origin before the grant", async () => {
 		const response = await post({
-			headers: { Origin: "https://evil.example", [CLI_GRANT_TOKEN_HEADER]: null },
+			headers: {
+				Origin: "https://evil.example",
+				[CLI_GRANT_TOKEN_HEADER]: null,
+			},
 		});
 		expect(response.status).toBe(400);
 		expect(await response.text()).toBe(BROWSER_TEXT);
@@ -406,7 +440,12 @@ describe("service API routing", () => {
 describe("service API grant lifecycle", () => {
 	it("answers 401 for the same token after revoke", async () => {
 		await grant("gone");
-		await cliCall({ operation: "set", name: "gone/v", value: "gone-fixture-1a2b", meta: {} });
+		await cliCall({
+			operation: "set",
+			name: "gone/v",
+			value: "gone-fixture-1a2b",
+			meta: {},
+		});
 		expect((await post({ as: "gone" })).status).toBe(200);
 		await cliCall({ operation: "revoke", prefix: "gone" });
 		const response = await post({ as: "gone" });
@@ -436,7 +475,7 @@ describe("service API secrecy", () => {
 });
 
 describe("handleServiceApiCredentials with a failing store", () => {
-	it("answers 500 with the storage text when the store throws", async () => {
+	function failingStoreRequest(logger: { error: (message: string) => void }) {
 		const store = {
 			verifyCredentialGrant: () => true,
 			listCredentials: () => {
@@ -444,7 +483,7 @@ describe("handleServiceApiCredentials with a failing store", () => {
 			},
 			getCredential: () => undefined,
 		};
-		const response = await handleServiceApiCredentials(
+		return handleServiceApiCredentials(
 			new Request("http://127.0.0.1/service-api/v1/credentials", {
 				method: "POST",
 				headers: {
@@ -455,7 +494,25 @@ describe("handleServiceApiCredentials with a failing store", () => {
 				body: JSON.stringify({ operation: "list" }),
 			}),
 			store,
+			logger,
 		);
+	}
+
+	it("logs only the error name when the store throws", async () => {
+		const logged: string[] = [];
+
+		await failingStoreRequest({
+			error: (message) => void logged.push(message),
+		});
+
+		expect(logged).toHaveLength(1);
+		expect(logged[0]).toContain("Error");
+		expect(logged[0]).not.toContain("disk failure marker");
+		expect(logged[0]).not.toContain(CLI_GRANT_PREFIX_HEADER);
+	});
+
+	it("answers 500 with the storage text when the store throws", async () => {
+		const response = await failingStoreRequest({ error: () => {} });
 		expect(response.status).toBe(500);
 		expectHardened(response);
 		expect(await response.json()).toEqual({

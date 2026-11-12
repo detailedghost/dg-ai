@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import type { spawn } from "node:child_process";
 import {
 	CHAT_PROTOCOL_VERSION,
 	CHAT_START_PATH,
@@ -7,21 +7,20 @@ import {
 	DgCliError,
 	EXIT_PROTOCOL_MISMATCH,
 	OWNER_TOKEN_HEADER,
-	type SessionBootstrap,
 	type SessionRole,
 	validateSessionBootstrap,
 } from "@dg/common";
 import {
 	buildCodeUrl,
-	ensureDaemonRunning,
 	type DgPaths,
+	ensureDaemonRunning,
 	loopbackHostHeader,
 	mintPageCode,
+	type OpenSeams,
+	openFailedHint,
 	requireMatchingProtocol,
 	requireOwnerToken,
 	resolveDgPaths,
-	type OpenSeams,
-	openFailedHint,
 	tryOpen,
 } from "@dg/common/node";
 import { startNotice } from "./next-step";

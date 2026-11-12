@@ -21,8 +21,8 @@ import type { Subprocess } from "bun";
 import { buildAllowedEnv } from "../dispatch/env-allowlist";
 import { killProcessGroup } from "../dispatch/exec";
 import type { Logger } from "../server/log";
-import { loadEnvFile } from "./env-file";
 import { type ParsedService, parseServices, type ServiceDecl } from "./config";
+import { loadEnvFile } from "./env-file";
 
 export const BACKOFF_BASE_MS = 1_000;
 export const BACKOFF_MAX_MS = 60_000;
@@ -370,7 +370,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			const parsed = declared();
 			const labels = new Set([
 				...parsed.map((service) => service.label),
-				...entries.keys(),
+				...[...entries]
+					.filter(([, entry]) => entry.state !== "stopped")
+					.map(([label]) => label),
 			]);
 			return [...labels].map((label) =>
 				statusOf(

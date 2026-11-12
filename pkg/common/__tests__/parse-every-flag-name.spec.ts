@@ -3,8 +3,12 @@ import { parseEvery } from "../src/chat-format";
 
 describe("parseEvery flag name", () => {
 	it("defaults the flag name to --every in both errors", () => {
-		expect(() => parseEvery("30")).toThrow('--every: expected a count and a unit of s, m or h (for example 15m), got "30"');
-		expect(() => parseEvery("0s")).toThrow('--every: interval must be greater than zero, got "0s"');
+		expect(() => parseEvery("30")).toThrow(
+			'--every: expected a count and a unit of s, m or h (for example 15m), got "30"',
+		);
+		expect(() => parseEvery("0s")).toThrow(
+			'--every: interval must be greater than zero, got "0s"',
+		);
 	});
 
 	it("uses the given flag name in both errors", () => {

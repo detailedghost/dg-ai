@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanupDgHome, freshDgHome, freshTempDir } from "../utils/daemon-harness";
+import {
+	cleanupDgHome,
+	freshDgHome,
+	freshTempDir,
+} from "../utils/daemon-harness";
 import { runCli } from "./service-cli-helpers";
 
 const homes: string[] = [];
@@ -11,8 +15,17 @@ async function prepared() {
 	const dgHome = freshDgHome();
 	homes.push(dgHome);
 	const add = await runCli(dgHome, [
-		"job", "add", "--label", "x", "--every", "15m", "--cwd", freshTempDir("job-cwd"),
-		"--", "printf", '{"id":"a","title":"A"}\n',
+		"job",
+		"add",
+		"--label",
+		"x",
+		"--every",
+		"15m",
+		"--cwd",
+		freshTempDir("job-cwd"),
+		"--",
+		"printf",
+		'{"id":"a","title":"A"}\n',
 	]);
 	expect(add.code).toBe(0);
 	return dgHome;

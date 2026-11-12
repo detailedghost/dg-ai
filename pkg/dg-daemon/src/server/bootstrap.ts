@@ -16,12 +16,22 @@ import {
 	readPidFile,
 	removePidFile,
 	resolveDgPaths,
+	resolveLiveDaemon,
 	writePidFileAtomic,
 } from "@dg/common/node";
 import { DispatchScheduler } from "../dispatch";
 import { isDaemonIdle } from "../jobs/idle";
 import { JOB_TICK_INTERVAL_MS, startJobRunner } from "../jobs/runner";
 import { createSupervisor } from "../services/supervisor";
+import {
+	DEFAULT_ARCHIVE_MAX_ROWS,
+	DEFAULT_ARCHIVE_TTL_MS,
+	WAL_CHECKPOINT_PAGE_THRESHOLD,
+} from "../session/archive";
+import {
+	DEFAULT_AGENT_GONE_MS,
+	DEFAULT_CLI_REATTACH_GRACE_MS,
+} from "../session/liveness";
 import { type CloseReason, SessionRegistry } from "../session/registry";
 import {
 	AGENT_MESSAGE_RETENTION_DAYS,
@@ -39,15 +49,6 @@ import { readConfig } from "./config-store";
 import { ConnectionManager, isExtensionPeer, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
-import {
-	DEFAULT_ARCHIVE_MAX_ROWS,
-	DEFAULT_ARCHIVE_TTL_MS,
-	WAL_CHECKPOINT_PAGE_THRESHOLD,
-} from "../session/archive";
-import {
-	DEFAULT_AGENT_GONE_MS,
-	DEFAULT_CLI_REATTACH_GRACE_MS,
-} from "../session/liveness";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
 import { DG_DAEMON_PACKAGE_VERSION } from "./status";
@@ -73,14 +74,13 @@ async function awaitBindRival(
 export async function cmdStatus(): Promise<void> {
 	const paths = resolveDgPaths();
 	assertNotBlocked(paths, "daemon");
-	const handle = readPidFile(paths);
-	if (!handle) {
-		console.log("dg-daemon: no live daemon");
-		return;
-	}
-	if (!(await isDaemonLive(handle))) {
-		removePidFile(paths);
-		console.log("dg-daemon: no live daemon (stale pid file removed)");
+	const resolved = await resolveLiveDaemon(paths);
+	if (!resolved) return;
+	const { handle } = resolved;
+	if (!resolved.live) {
+		console.log(
+			`dg-daemon (pid ${handle.pid}) does not answer — run dg-daemon stop --force`,
+		);
 		return;
 	}
 	const resp = await fetch(`http://127.0.0.1:${handle.port}/status`, {

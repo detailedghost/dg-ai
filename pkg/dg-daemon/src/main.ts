@@ -121,7 +121,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 		return typeof process.exitCode === "number" ? process.exitCode : 0;
 	} catch (err) {
 		if (err instanceof CommanderError) return err.exitCode;
-		emitRedacted((line) => console.error(line), `dg-daemon: ${describeError(err)}`);
+		emitRedacted(
+			(line) => console.error(line),
+			`dg-daemon: ${describeError(err)}`,
+		);
 		return err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE;
 	}
 }

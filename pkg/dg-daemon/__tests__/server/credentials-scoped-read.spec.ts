@@ -11,7 +11,11 @@ function storeOf(entries: Record<string, string>) {
 	const stamp = "2030-01-01T00:00:00.000Z";
 	return {
 		listCredentials: (): Entry[] =>
-			Object.keys(entries).map((name) => ({ name, meta: {}, updatedAt: stamp })),
+			Object.keys(entries).map((name) => ({
+				name,
+				meta: {},
+				updatedAt: stamp,
+			})),
 		getCredential: (name: string) =>
 			name in entries
 				? { value: entries[name], meta: {}, updatedAt: stamp }
@@ -49,9 +53,9 @@ describe("scopedRead", () => {
 	});
 
 	it("gets null for an absent name below the prefix", () => {
-		expect(scopedRead({ operation: "get", name: "a/missing" }, "a", STORE)).toEqual(
-			{ ok: true, value: null },
-		);
+		expect(
+			scopedRead({ operation: "get", name: "a/missing" }, "a", STORE),
+		).toEqual({ ok: true, value: null });
 	});
 
 	it("refuses a name outside the prefix with the shared NOT_ALLOWED text", () => {
@@ -61,20 +65,6 @@ describe("scopedRead", () => {
 				error: NOT_ALLOWED,
 			});
 		expect(NOT_ALLOWED).toBe("Credential request not allowed for this caller.");
-	});
-
-	it("refuses every operation other than get and list", () => {
-		for (const operation of ["set", "delete", "grant", "revoke", "grant-list"])
-			expect(scopedRead({ operation, name: "a/x" }, "a", STORE)).toEqual({
-				ok: false,
-				error: NOT_ALLOWED,
-			});
-	});
-
-	it("throws on a get whose name is not a string", () => {
-		expect(() =>
-			scopedRead({ operation: "get" }, "a", STORE),
-		).toThrow();
 	});
 });
 

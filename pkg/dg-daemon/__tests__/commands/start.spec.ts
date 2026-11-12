@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import {
 	CHAT_PROTOCOL_VERSION,
-	EXIT_WSL_NAT_NETWORKING,
 	type DaemonHandle,
+	EXIT_WSL_NAT_NETWORKING,
 } from "@dg/common";
 import { resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
 import {
@@ -39,7 +39,12 @@ async function dg(
 	return { code, stdout, stderr };
 }
 
-type StartJson = { started: boolean; pid: number; port: number; version: string };
+type StartJson = {
+	started: boolean;
+	pid: number;
+	port: number;
+	version: string;
+};
 
 const cleanups: (() => Promise<void> | void)[] = [];
 
@@ -85,7 +90,9 @@ describe("dg-daemon start", () => {
 
 	it("does not start a second daemon and reports the same pid and port", async () => {
 		const { dgHome, port } = homeWithPort();
-		const first = JSON.parse((await dg(dgHome, port, ["start", "--json"])).stdout) as StartJson;
+		const first = JSON.parse(
+			(await dg(dgHome, port, ["start", "--json"])).stdout,
+		) as StartJson;
 
 		const second = await dg(dgHome, port, ["start", "--json"]);
 
@@ -167,22 +174,32 @@ describe("dg-daemon start", () => {
 			expect(result.code).toBe(EXIT_WSL_NAT_NETWORKING);
 			expect(result.stdout).toBe("");
 			expect(result.stderr).toContain(".wslconfig");
-			expect(existsSync(resolveDgPaths({ env: { DG_HOME: dgHome } }).pidPath)).toBe(false);
-			expect(await fetch(`http://127.0.0.1:${port}/healthz`).catch(() => undefined)).toBeUndefined();
+			expect(
+				existsSync(resolveDgPaths({ env: { DG_HOME: dgHome } }).pidPath),
+			).toBe(false);
+			expect(
+				await fetch(`http://127.0.0.1:${port}/healthz`).catch(() => undefined),
+			).toBeUndefined();
 		});
 	}
 
 	for (const args of [["start"], ["start", "--json"]]) {
 		it(`exits 1 on the startup timeout with no stdout (${args.join(" ")})`, async () => {
 			const { dgHome, port } = homeWithPort();
-			const blocker = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response("busy") });
+			const blocker = Bun.serve({
+				hostname: "127.0.0.1",
+				port,
+				fetch: () => new Response("busy"),
+			});
 			cleanups.push(() => blocker.stop(true));
 
 			const result = await dg(dgHome, port, args);
 
 			expect(result.code).toBe(1);
 			expect(result.stdout).toBe("");
-			expect(result.stderr).toContain("dg-daemon did not become healthy within the startup timeout");
+			expect(result.stderr).toContain(
+				"dg-daemon did not become healthy within the startup timeout",
+			);
 		}, 30_000);
 	}
 });

@@ -8,9 +8,11 @@ import {
 import { ENV_KEY } from "../../src/services/env-file";
 
 const base = { argv: ["bot"], cwd: "/srv" };
-const declared = (entry: unknown) => parseServices({ services: { bot: entry } });
+const declared = (entry: unknown) =>
+	parseServices({ services: { bot: entry } });
 
-const PASS_ENV_ERROR = '"passEnv" must be an array of environment variable names';
+const PASS_ENV_ERROR =
+	'"passEnv" must be an array of environment variable names';
 const STOP_ERROR = '"stopTimeoutMs" must be an integer from 1 to 240000';
 const GRANT_ERROR = '"grant" must be a credential grant prefix';
 
@@ -61,29 +63,43 @@ describe("parseServices passEnv, stopTimeoutMs and grant", () => {
 
 	it.each([
 		["a non-array passEnv", { passEnv: "A" }, PASS_ENV_ERROR],
-		["a passEnv name with a leading digit", { passEnv: ["1BAD"] }, PASS_ENV_ERROR],
+		[
+			"a passEnv name with a leading digit",
+			{ passEnv: ["1BAD"] },
+			PASS_ENV_ERROR,
+		],
 		["a non-string passEnv name", { passEnv: [1] }, PASS_ENV_ERROR],
 		["stopTimeoutMs 0", { stopTimeoutMs: 0 }, STOP_ERROR],
-		["stopTimeoutMs 240001", { stopTimeoutMs: MAX_STOP_TIMEOUT_MS + 1 }, STOP_ERROR],
+		[
+			"stopTimeoutMs 240001",
+			{ stopTimeoutMs: MAX_STOP_TIMEOUT_MS + 1 },
+			STOP_ERROR,
+		],
 		["stopTimeoutMs 1.5", { stopTimeoutMs: 1.5 }, STOP_ERROR],
 		["a null stopTimeoutMs", { stopTimeoutMs: null }, STOP_ERROR],
 		["a string stopTimeoutMs", { stopTimeoutMs: "5000" }, STOP_ERROR],
 		["an uppercase grant", { grant: "UPPER" }, GRANT_ERROR],
 		["a non-string grant", { grant: 5 }, GRANT_ERROR],
-	])("rejects %s with the exact error and leaves other entries valid", (_n, extra, error) => {
-		const results = parseServices({
-			services: { bad: { ...base, ...extra }, good: base },
-		});
-		expect(results[0]).toEqual({ ok: false, label: "bad", error });
-		expect(results[1].ok).toBe(true);
-	});
+	])(
+		"rejects %s with the exact error and leaves other entries valid",
+		(_n, extra, error) => {
+			const results = parseServices({
+				services: { bad: { ...base, ...extra }, good: base },
+			});
+			expect(results[0]).toEqual({ ok: false, label: "bad", error });
+			expect(results[1].ok).toBe(true);
+		},
+	);
 
-	it.each([1, MAX_STOP_TIMEOUT_MS])("accepts stopTimeoutMs %d", (stopTimeoutMs) => {
-		expect(declared({ ...base, stopTimeoutMs })[0]).toMatchObject({
-			ok: true,
-			stopTimeoutMs,
-		});
-	});
+	it.each([1, MAX_STOP_TIMEOUT_MS])(
+		"accepts stopTimeoutMs %d",
+		(stopTimeoutMs) => {
+			expect(declared({ ...base, stopTimeoutMs })[0]).toMatchObject({
+				ok: true,
+				stopTimeoutMs,
+			});
+		},
+	);
 });
 
 describe("parseServiceEntry", () => {
@@ -104,6 +120,9 @@ describe("parseServiceEntry", () => {
 	});
 
 	it("accepts a valid entry", () => {
-		expect(parseServiceEntry("bot", base)).toMatchObject({ ok: true, label: "bot" });
+		expect(parseServiceEntry("bot", base)).toMatchObject({
+			ok: true,
+			label: "bot",
+		});
 	});
 });

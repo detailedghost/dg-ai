@@ -15,7 +15,6 @@ const DAEMON_URL = "http://127.0.0.1:43210";
 const TOKEN = "fixture-grant-token-9c41d7e2";
 const GRANT_KEYS = ["DG_CREDENTIAL_GRANT_PREFIX", "DG_CREDENTIAL_GRANT_FILE"];
 
-
 function grantsDirOf(root: string): string {
 	return join(root, "grants");
 }
@@ -37,7 +36,9 @@ async function withDaemonEnv<T>(
 	vars: Record<string, string>,
 	run: () => Promise<T>,
 ): Promise<T> {
-	const saved = Object.keys(vars).map((key) => [key, process.env[key]] as const);
+	const saved = Object.keys(vars).map(
+		(key) => [key, process.env[key]] as const,
+	);
 	for (const [key, value] of Object.entries(vars)) process.env[key] = value;
 	try {
 		return await run();
@@ -51,7 +52,10 @@ async function withDaemonEnv<T>(
 
 async function dumpedEnv(
 	extra: Record<string, unknown>,
-	options: { token?: boolean; prepare?: (root: string) => Record<string, unknown> } = {},
+	options: {
+		token?: boolean;
+		prepare?: (root: string) => Record<string, unknown>;
+	} = {},
 ): Promise<{ env: Record<string, string>; rig: Rig; tokenPath?: string }> {
 	let dump = "";
 	const r = rig(
@@ -88,7 +92,10 @@ describe("supervisor service API environment", () => {
 	});
 
 	it("gives a service with grant the five keys and no token value", async () => {
-		const { env, tokenPath } = await dumpedEnv({ grant: "bot" }, { token: true });
+		const { env, tokenPath } = await dumpedEnv(
+			{ grant: "bot" },
+			{ token: true },
+		);
 		expect(env.DG_SERVICE_API).toBe("1");
 		expect(env.DG_SERVICE_LABEL).toBe("bot");
 		expect(env.DG_DAEMON_URL).toBe(DAEMON_URL);
@@ -112,12 +119,12 @@ describe("supervisor service API environment", () => {
 
 	it("lets the injected keys win over envFile and passEnv", async () => {
 		const envFileLines = [
-				"DG_SERVICE_LABEL=other",
-				"DG_SERVICE_API=0",
-				"DG_DAEMON_URL=http://evil.example",
-				"DG_CREDENTIAL_GRANT_PREFIX=other",
-				"DG_CREDENTIAL_GRANT_FILE=/etc/passwd",
-			];
+			"DG_SERVICE_LABEL=other",
+			"DG_SERVICE_API=0",
+			"DG_DAEMON_URL=http://evil.example",
+			"DG_CREDENTIAL_GRANT_PREFIX=other",
+			"DG_CREDENTIAL_GRANT_FILE=/etc/passwd",
+		];
 		const { env, tokenPath } = await withDaemonEnv(
 			{ DG_SERVICE_LABEL: "from-daemon" },
 			() =>

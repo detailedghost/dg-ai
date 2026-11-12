@@ -4,16 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
+	type DaemonHandle,
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
 	EXIT_WSL_NAT_NETWORKING,
-	type DaemonHandle,
 } from "../src";
+import { type DgPaths, resolveDgPaths, writePidFileAtomic } from "../src/node";
 import { ensureDaemonRunning } from "../src/node/daemon-start";
-import { resolveDgPaths, writePidFileAtomic, type DgPaths } from "../src/node";
 import { setProgramName } from "../src/node/program";
 
-const TIMEOUT_TEXT = "dg-daemon did not become healthy within the startup timeout";
+const TIMEOUT_TEXT =
+	"dg-daemon did not become healthy within the startup timeout";
 
 type Fake = { handle: DaemonHandle; stop: () => void };
 
@@ -34,12 +35,20 @@ function fakeDaemon(overrides: Partial<DaemonHandle> = {}): Fake {
 	return { handle, stop: () => server.stop(true) };
 }
 
-type SpawnCall = { command: string; args: string[]; options: Record<string, unknown> };
+type SpawnCall = {
+	command: string;
+	args: string[];
+	options: Record<string, unknown>;
+};
 
 function recordingSpawn(onSpawn: () => void = () => {}) {
 	const calls: SpawnCall[] = [];
 	let unrefs = 0;
-	const spawn = ((command: string, args: string[], options: Record<string, unknown>) => {
+	const spawn = ((
+		command: string,
+		args: string[],
+		options: Record<string, unknown>,
+	) => {
 		calls.push({ command, args, options });
 		onSpawn();
 		return { unref: () => void unrefs++ };

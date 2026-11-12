@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname } from "node:path";
 import { resolveDgPaths } from "@dg/common/node";
 import {
 	allocatePort,
@@ -19,13 +19,24 @@ export type ServiceDaemon = {
 	dispose: () => Promise<void>;
 };
 
+export const configPathOf = (dgHome: string): string =>
+	resolveDgPaths({ env: { DG_HOME: dgHome } }).daemonConfigPath;
+
+export function writeConfigFile(dgHome: string, contents: unknown): string {
+	const file = configPathOf(dgHome);
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(
+		file,
+		typeof contents === "string" ? contents : JSON.stringify(contents),
+	);
+	return file;
+}
+
 export function writeServiceConfig(
 	dgHome: string,
 	services: Record<string, unknown>,
 ): void {
-	const { daemonConfigPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
-	mkdirSync(join(daemonConfigPath, ".."), { recursive: true });
-	writeFileSync(daemonConfigPath, JSON.stringify({ services }));
+	writeConfigFile(dgHome, { services });
 }
 
 /** Writes the config before the daemon boots, so autostart sees it. */

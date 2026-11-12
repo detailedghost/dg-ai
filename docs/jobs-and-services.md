@@ -148,6 +148,18 @@ for the `stopTimeoutMs` of each service, 240 s at most. `dg-daemon stop
 does not kill a job command or a dispatch command that runs at that time. On
 Windows, each stop of the daemon is a forced stop.
 
+`--force` lists the services with `GET /services`. The answer carries the
+`instanceId` of the daemon. The command compares it with the pid file and uses
+no service pid from an answer of another instance. It also ignores a pid that
+is not an integer above 1.
+
+If the pid in the pid file still runs but `/healthz` does not answer (a hung or
+stopped daemon), `dg-daemon stop` keeps the pid file and exits 1 with
+`does not answer`. `dg-daemon stop --force` then kills that pid only if its
+command line names `dg-daemon` (Linux only; on another platform it kills
+nothing). It cannot list the services, so it exits 1 and says that a service
+process can still run.
+
 `dg-daemon restart` stops the daemon, which ends each session, then starts it
 again. The restart starts only the `autostart` services, and it prints
 `started on` or `already running on` with the port. The new daemon has the environment of the

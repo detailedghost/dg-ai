@@ -4,8 +4,8 @@ import {
 	lstatSync,
 	mkdirSync,
 	readFileSync,
-	symlinkSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -81,11 +81,15 @@ describe("config-store services writer", () => {
 		symlinkSync(target, paths.daemonConfigPath);
 		store.writeServiceEntry(paths, "one", entry);
 		expect(lstatSync(paths.daemonConfigPath).isSymbolicLink()).toBe(true);
-		expect(JSON.parse(readFileSync(target, "utf8")).services.one).toEqual(entry);
+		expect(JSON.parse(readFileSync(target, "utf8")).services.one).toEqual(
+			entry,
+		);
 	});
 
 	it("leaves services as {} after the last entry is deleted", () => {
-		const paths = setup(JSON.stringify({ pinnedOrigin: "p", services: { one: entry } }));
+		const paths = setup(
+			JSON.stringify({ pinnedOrigin: "p", services: { one: entry } }),
+		);
 		store.writeServiceEntry(paths, "one", undefined);
 		expect(JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"))).toEqual({
 			pinnedOrigin: "p",
@@ -112,7 +116,9 @@ describe("config-store services writer", () => {
 
 	it("throws on invalid JSON and leaves the bytes alone", () => {
 		const paths = setup('{"a":');
-		expect(() => store.writeServiceEntry(paths, "one", entry)).toThrow(paths.daemonConfigPath);
+		expect(() => store.writeServiceEntry(paths, "one", entry)).toThrow(
+			paths.daemonConfigPath,
+		);
 		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe('{"a":');
 	});
 });

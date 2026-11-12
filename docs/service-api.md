@@ -2,7 +2,7 @@
 
 A service that the daemon runs can read its own credentials over HTTP. The
 service needs no dg code: it needs `fetch`, environment variables and one file
-read. Version 1 is provisional. The shape can change before it is final.
+read. Version 1 is provisional. A breaking change arrives as a new environment key or a v2 route. The v1 keys and route are not changed in place.
 
 ## Set up a grant
 

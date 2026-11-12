@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import {
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { disposeRigs, type Rig, rig, SLEEPER, until } from "./supervisor-kit";
@@ -113,8 +108,12 @@ describe("supervisor passEnv and envFile layering", () => {
 		r.supervisor.start("bot");
 		await until(() => r.status().restarts >= 2);
 		await r.supervisor.stop("bot");
-		const launches = r.infos.filter((m) => m.startsWith("service bot started")).length;
-		const passWarns = r.warns.filter((w) => w === passEnvWarning("bot", "DG_TEST_ABSENT"));
+		const launches = r.infos.filter((m) =>
+			m.startsWith("service bot started"),
+		).length;
+		const passWarns = r.warns.filter(
+			(w) => w === passEnvWarning("bot", "DG_TEST_ABSENT"),
+		);
 		expect(passWarns.length).toBe(launches);
 		expect(launches).toBeGreaterThanOrEqual(3);
 		expect(readFileSync(counter, "utf8").length).toBeGreaterThanOrEqual(2);

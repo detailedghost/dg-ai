@@ -36,13 +36,18 @@ export async function disposeRigs(): Promise<void> {
 	}
 }
 
+export function scratchDir(prefix: string): string {
+	const dir = mkdtempSync(join(tmpdir(), prefix));
+	roots.push(dir);
+	return dir;
+}
+
 export function rig(
 	build: (kit: Kit) => Record<string, unknown>,
 	backoffMs = 25,
 	extra: Partial<SupervisorDeps> = {},
 ): Rig {
-	const root = mkdtempSync(join(tmpdir(), "dg-svc-kit-"));
-	roots.push(root);
+	const root = scratchDir("dg-svc-kit-");
 	let scripts = 0;
 	const kit: Kit = {
 		root,
@@ -92,10 +97,7 @@ export function rig(
 	};
 }
 
-export async function until(
-	check: () => boolean,
-	ms = 5000,
-): Promise<void> {
+export async function until(check: () => boolean, ms = 5000): Promise<void> {
 	const deadline = Date.now() + ms;
 	while (!check()) {
 		if (Date.now() > deadline) throw new Error("condition not met in time");

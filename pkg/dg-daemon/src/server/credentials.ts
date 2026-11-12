@@ -11,12 +11,14 @@ import {
 	writeCredentialGrantToken,
 } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
-import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
 import type { CredentialStore } from "../store/credentials-store";
+import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
 import type { FrameHandlerDeps } from "./frame-handlers";
 
 type Socket = ServerWebSocket<SocketState>;
-export type Result = { ok: true; value: unknown } | { ok: false; error: string };
+export type Result =
+	| { ok: true; value: unknown }
+	| { ok: false; error: string };
 type Access = { scope: "session" } | { scope: "prefix"; prefix: string };
 
 export const EXTENSION_CREDENTIAL_PREFIX = "extension";
@@ -66,9 +68,13 @@ function resolveAccess(
 		: undefined;
 }
 
-/** Reads under one prefix; a `get` input must carry a string name. */
+export type ScopedReadInput =
+	| { operation: "list" }
+	| { operation: "get"; name: string };
+
+/** Reads under one prefix. */
 export function scopedRead(
-	input: { operation: string; name?: string },
+	input: ScopedReadInput,
 	prefix: string,
 	store: Pick<CredentialStore, "listCredentials" | "getCredential">,
 ): Result {
@@ -79,8 +85,20 @@ export function scopedRead(
 				.listCredentials()
 				.filter((entry) => credentialNameInPrefix(entry.name, prefix)),
 		};
-	if (input.operation === "get" && credentialNameInPrefix(input.name!, prefix))
-		return { ok: true, value: store.getCredential(input.name!) ?? null };
+	if (credentialNameInPrefix(input.name, prefix))
+		return { ok: true, value: store.getCredential(input.name) ?? null };
+	return { ok: false, error: NOT_ALLOWED };
+}
+
+function prefixRead(
+	frame: CredentialsCliRequest,
+	prefix: string,
+	store: Pick<CredentialStore, "listCredentials" | "getCredential">,
+): Result {
+	if (frame.operation === "list")
+		return scopedRead({ operation: "list" }, prefix, store);
+	if (frame.operation === "get" && typeof frame.name === "string")
+		return scopedRead({ operation: "get", name: frame.name }, prefix, store);
 	return { ok: false, error: NOT_ALLOWED };
 }
 
@@ -142,7 +160,7 @@ export async function handleCredentialsRequest(
 		const access = resolveAccess(requester, frame, deps);
 		if (!access) answer = { ok: false, error: NOT_ALLOWED };
 		else if (access.scope === "prefix")
-			answer = scopedRead(frame, access.prefix, deps.credentials);
+			answer = prefixRead(frame, access.prefix, deps.credentials);
 		else answer = { ok: true, value: sessionOperation(frame, deps) };
 	} catch {
 		answer = {

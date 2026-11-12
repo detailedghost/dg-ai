@@ -139,7 +139,9 @@ describe("createSupervisor", () => {
 		);
 		expect(f.supervisor.start("bot").ok).toBe(true);
 		await until(
-			() => existsSync(dump) && readFileSync(dump, "utf8").trim().split("\n").length >= 2,
+			() =>
+				existsSync(dump) &&
+				readFileSync(dump, "utf8").trim().split("\n").length >= 2,
 		);
 		await f.supervisor.stop("bot");
 		const seen = readFileSync(dump, "utf8").trim().split("\n");

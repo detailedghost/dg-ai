@@ -1,7 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { resolveDgPaths } from "@dg/common/node";
+import { readFileSync } from "node:fs";
 import { ENTRY, subprocessEnv } from "../utils/daemon-harness";
+import { configPathOf } from "../utils/service-daemon";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 
@@ -24,17 +23,7 @@ export async function runCli(
 	return { code, stdout, stderr };
 }
 
-export const configPathOf = (dgHome: string): string =>
-	resolveDgPaths({ env: { DG_HOME: dgHome } }).daemonConfigPath;
-
-export function writeConfigFile(dgHome: string, contents: unknown): string {
-	const file = configPathOf(dgHome);
-	mkdirSync(dirname(file), { recursive: true });
-	writeFileSync(file, typeof contents === "string" ? contents : JSON.stringify(contents));
-	return file;
-}
-
-export const readConfigFile = (dgHome: string): Record<string, any> =>
+export const readConfigFile = (dgHome: string): unknown =>
 	JSON.parse(readFileSync(configPathOf(dgHome), "utf8"));
 
 export const lines = (text: string): string[] =>

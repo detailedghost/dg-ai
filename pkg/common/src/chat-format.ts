@@ -558,7 +558,7 @@ export function applyOverwatchLaneUpdate(
 		stage: validated.stage ?? existing?.stage,
 		mr: validated.mr ?? existing?.mr,
 		eta: validated.eta ?? existing?.eta,
-		next: validated.clearNext ? undefined : validated.next ?? existing?.next,
+		next: validated.clearNext ? undefined : (validated.next ?? existing?.next),
 		url: validated.url ?? existing?.url,
 		kind: validated.kind ?? existing?.kind ?? "chat",
 		publisher,

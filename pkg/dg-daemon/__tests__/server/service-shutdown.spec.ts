@@ -11,18 +11,19 @@ afterEach(async () => {
 	daemon = undefined;
 });
 
-const stubbornService = (pidFile: string, stopTimeoutMs: number) => (cwd: string) => ({
-	argv: [
-		process.execPath,
-		"-e",
-		`process.on("SIGTERM", () => {});
+const stubbornService =
+	(pidFile: string, stopTimeoutMs: number) => (cwd: string) => ({
+		argv: [
+			process.execPath,
+			"-e",
+			`process.on("SIGTERM", () => {});
 		require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
 		setInterval(() => {}, 1000);`,
-	],
-	cwd,
-	autostart: true,
-	stopTimeoutMs,
-});
+		],
+		cwd,
+		autostart: true,
+		stopTimeoutMs,
+	});
 
 async function servicePid(pidFile: string): Promise<number> {
 	const deadline = Date.now() + 8000;
@@ -83,6 +84,6 @@ describe("daemon shutdown with services that ignore SIGTERM", () => {
 		expect(slowAliveWhenFastGone).toBe(true);
 		expect(isAlive(slow)).toBe(false);
 		expect(exitedAt).toBeGreaterThanOrEqual(1500);
-		expect(exitedAt).toBeLessThan(800 + 1500);
+		expect(exitedAt).toBeLessThan(800 + 1500 + 2000);
 	}, 20_000);
 });

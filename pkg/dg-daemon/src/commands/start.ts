@@ -6,7 +6,9 @@ export function startedLine(handle: DaemonHandle, started: boolean): string {
 	return `dg-daemon ${state} 127.0.0.1:${handle.port} (pid ${handle.pid}, version ${handle.versions.package})`;
 }
 
-export async function cmdStart(options: { json?: boolean } = {}): Promise<void> {
+export async function cmdStart(
+	options: { json?: boolean } = {},
+): Promise<void> {
 	const { handle, started } = await ensureDaemonRunning(resolveDgPaths());
 	if (options.json) {
 		console.log(

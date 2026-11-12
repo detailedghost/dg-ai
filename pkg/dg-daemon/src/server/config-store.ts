@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { isRecord } from "@dg/common";
 import {
 	type DgPaths,
 	ensurePrivateDir,
@@ -13,11 +14,7 @@ export function readConfig(paths: DgPaths): Record<string, unknown> {
 	if (!existsSync(file)) return {};
 	try {
 		const parsed = JSON.parse(readFileSync(file, "utf8"));
-		return typeof parsed === "object" &&
-			parsed !== null &&
-			!Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: {};
+		return isRecord(parsed) ? parsed : {};
 	} catch {
 		return {};
 	}
@@ -64,9 +61,9 @@ export function writeServiceEntry(
 	) {
 		throw new Error(`${file}: "services" must be an object`);
 	}
-	const kept = Object.entries((current as Record<string, unknown>) ?? {}).filter(
-		([key]) => key !== label,
-	);
+	const kept = Object.entries(
+		(current as Record<string, unknown>) ?? {},
+	).filter(([key]) => key !== label);
 	const services = Object.fromEntries(
 		entry === undefined ? kept : [...kept, [label, entry]],
 	);

@@ -1,11 +1,13 @@
 import {
 	CLI_GRANT_PREFIX_HEADER,
 	credentialNameInPrefix,
+	isRecord,
 	validateCredentialName,
 } from "@dg/common";
 import type { CredentialStore } from "../store/credentials-store";
 import { readCappedBody } from "./capped-body";
 import { hasCredentialGrant, NOT_ALLOWED, scopedRead } from "./credentials";
+import type { Logger } from "./log";
 import { isBrowserOrigin } from "./origin";
 
 export type ServiceApiStore = Pick<
@@ -66,9 +68,7 @@ async function readJsonObject(
 	if (!bytes) return "too-large";
 	try {
 		const parsed: unknown = JSON.parse(bytes.toString("utf8"));
-		return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-			? (parsed as Record<string, unknown>)
-			: undefined;
+		return isRecord(parsed) ? parsed : undefined;
 	} catch {
 		return undefined;
 	}
@@ -78,6 +78,7 @@ async function readJsonObject(
 export async function handleServiceApiCredentials(
 	req: Request,
 	store: ServiceApiStore,
+	logger: Pick<Logger, "error">,
 ): Promise<Response> {
 	if (req.method !== "POST") return text("not found", 404);
 	if (isBrowserOrigin(req.headers.get("origin")))
@@ -113,7 +114,10 @@ export async function handleServiceApiCredentials(
 			return refuse((err as Error).message, 400);
 		}
 		return json(scopedRead({ operation, name }, prefix, store), 200);
-	} catch {
+	} catch (err) {
+		logger.error(
+			`service API credential request failed: ${err instanceof Error ? err.name : typeof err}`,
+		);
 		return refuse(STORAGE_FAILED, 500);
 	}
 }

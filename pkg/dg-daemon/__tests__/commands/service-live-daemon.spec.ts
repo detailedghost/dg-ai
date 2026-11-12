@@ -9,12 +9,8 @@ import {
 	stopServe,
 	waitForPidFile,
 } from "../utils/daemon-harness";
-import {
-	configPathOf,
-	lines,
-	runCli,
-	writeConfigFile,
-} from "./service-cli-helpers";
+import { configPathOf, writeConfigFile } from "../utils/service-daemon";
+import { lines, runCli } from "./service-cli-helpers";
 
 const cleanupSlot = createCleanupSlot();
 afterEach(() => cleanupSlot.run());
@@ -84,6 +80,28 @@ describe("service commands against a live daemon", () => {
 		});
 	});
 
+	it("service status no longer lists a service that ran, was stopped and was removed", async () => {
+		const { dgHome, port } = await boot((home) => ({
+			bot: sleeper(home),
+			keep: sleeper(home),
+		}));
+		expect((await post(port, "bot/start")).ok).toBe(true);
+		expect((await post(port, "bot/stop")).ok).toBe(true);
+		expect(
+			(await runCli(dgHome, ["service", "rm", "bot"], { port })).code,
+		).toBe(0);
+
+		const json = await runCli(dgHome, ["service", "status", "--json"], {
+			port,
+		});
+		const text = await runCli(dgHome, ["service", "status"], { port });
+
+		expect(
+			JSON.parse(json.stdout).services.map((s: { label: string }) => s.label),
+		).toEqual(["keep"]);
+		expect(text.stdout).not.toContain("bot");
+	});
+
 	it("service add prints the live-daemon next line", async () => {
 		const { dgHome, port } = await boot(() => ({}));
 		const result = await runCli(
@@ -106,20 +124,32 @@ describe("service commands against a live daemon", () => {
 		expect(all.code).toBe(0);
 		expect(lines(all.stdout)).toHaveLength(1);
 		const parsed = JSON.parse(all.stdout);
-		expect(parsed.services.map((s: { label: string }) => s.label).sort()).toEqual(["alpha", "beta"]);
+		expect(
+			parsed.services.map((s: { label: string }) => s.label).sort(),
+		).toEqual(["alpha", "beta"]);
 
-		const one = await runCli(dgHome, ["service", "status", "alpha", "--json"], { port });
-		expect(JSON.parse(one.stdout).services.map((s: { label: string }) => s.label)).toEqual(["alpha"]);
+		const one = await runCli(dgHome, ["service", "status", "alpha", "--json"], {
+			port,
+		});
+		expect(
+			JSON.parse(one.stdout).services.map((s: { label: string }) => s.label),
+		).toEqual(["alpha"]);
 
-		const unknown = await runCli(dgHome, ["service", "status", "ghost", "--json"], { port });
+		const unknown = await runCli(
+			dgHome,
+			["service", "status", "ghost", "--json"],
+			{ port },
+		);
 		expect(unknown.code).toBe(1);
 		expect(unknown.stdout).toBe("");
 		expect(unknown.stderr).toContain('no service labelled "ghost"');
 	});
 
-	it("service status --json prints {\"services\":[]} with nothing declared, while plain status exits 1", async () => {
+	it('service status --json prints {"services":[]} with nothing declared, while plain status exits 1', async () => {
 		const { dgHome, port } = await boot(() => ({}));
-		const json = await runCli(dgHome, ["service", "status", "--json"], { port });
+		const json = await runCli(dgHome, ["service", "status", "--json"], {
+			port,
+		});
 		expect(json.code).toBe(0);
 		expect(json.stdout.trim()).toBe('{"services":[]}');
 		const plain = await runCli(dgHome, ["service", "status"], { port });
@@ -138,9 +168,16 @@ describe("service commands against a live daemon", () => {
 
 	it("a declaration with passEnv, stopTimeoutMs and grant is not invalid", async () => {
 		const { dgHome, port } = await boot((home) => ({
-			bot: { ...sleeper(home), passEnv: ["A"], stopTimeoutMs: 1000, grant: "bot" },
+			bot: {
+				...sleeper(home),
+				passEnv: ["A"],
+				stopTimeoutMs: 1000,
+				grant: "bot",
+			},
 		}));
-		const result = await runCli(dgHome, ["service", "status", "--json"], { port });
+		const result = await runCli(dgHome, ["service", "status", "--json"], {
+			port,
+		});
 		const [entry] = JSON.parse(result.stdout).services;
 		expect(entry.state).not.toBe("invalid");
 	});

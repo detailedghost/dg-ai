@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readCappedBody } from "../../src/server/http";
+import { readCappedBody } from "../../src/server/capped-body";
 
 describe("readCappedBody", () => {
 	function post(body: BodyInit | null): Request {

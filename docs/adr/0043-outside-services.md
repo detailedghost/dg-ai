@@ -13,7 +13,7 @@ Date: 2026-11-12
 
 ## Decision
 
-The consumer is an outside service. This record accepts the design below. Service API v1 is provisional: a change arrives as a new environment key, and the keys and route of v1 stay as they are.
+The consumer is an outside service. This record accepts the design below. Service API v1 is provisional: a breaking change arrives as a new environment key or a v2 route, and the keys and route of v1 are not changed in place.
 
 The daemon runs each declared service with the allowlist (`PATH`, `HOME`, `LANG`, `TZ`), then the `passEnv` names, then the `envFile` lines, then the injected keys `DG_SERVICE_API`, `DG_SERVICE_LABEL`, `DG_DAEMON_URL`, `DG_CREDENTIAL_GRANT_PREFIX` and `DG_CREDENTIAL_GRANT_FILE`. The injected keys win. `passEnv` values come from the environment of the process that started the daemon. A name that is absent logs a warning at each launch.
 

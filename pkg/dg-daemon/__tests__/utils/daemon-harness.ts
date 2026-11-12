@@ -16,9 +16,9 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	type DaemonHandle,
 	DG_CHROME_EXTENSION_ORIGIN,
 	OWNER_TOKEN_HEADER,
-	type DaemonHandle,
 	type SessionBootstrap,
 	type SessionRole,
 	validateDaemonHandle,
@@ -436,7 +436,9 @@ export async function sessionCredentials(
 	const body = (await response.json()) as {
 		sessions?: { sessionId?: string; token?: string }[];
 	};
-	const match = body.sessions?.find((session) => session.sessionId === sessionId);
+	const match = body.sessions?.find(
+		(session) => session.sessionId === sessionId,
+	);
 	if (!match || typeof match.token !== "string") {
 		throw new Error(`session ${sessionId} is not in the daemon database`);
 	}

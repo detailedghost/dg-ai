@@ -18,7 +18,11 @@ import {
 	startWithSession,
 	waitForValue,
 } from "../utils/daemon-harness";
-import { bootWithServices, type ServiceDaemon, writeServiceConfig } from "../utils/service-daemon";
+import {
+	bootWithServices,
+	type ServiceDaemon,
+	writeServiceConfig,
+} from "../utils/service-daemon";
 
 const FIXTURE = join(import.meta.dir, "../fixtures/outside-service.ts");
 const VALUE = "outside-fixture-value-8d3f61a0";
@@ -47,7 +51,12 @@ async function bootWithCredentials(minted: boolean) {
 	const call = (fields: Record<string, unknown>) =>
 		credentialResult(frames, credentialRequest(cli, fields));
 	await call({ operation: "set", name: "bot/token-x", value: VALUE, meta: {} });
-	await call({ operation: "set", name: "other/token-y", value: "other-value", meta: {} });
+	await call({
+		operation: "set",
+		name: "other/token-y",
+		value: "other-value",
+		meta: {},
+	});
 	if (minted) await call({ operation: "grant", prefix: "bot" });
 	const paths = resolveDgPaths({ env: { DG_HOME: started.dgHome } });
 	writeServiceConfig(started.dgHome, {
@@ -68,9 +77,12 @@ function serviceAction(port: number, verb: "start" | "stop") {
 }
 
 async function serviceStatus(port: number) {
-	const response = await fetch(`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`, {
-		headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
-	});
+	const response = await fetch(
+		`http://127.0.0.1:${port}${CHAT_SERVICES_PATH}`,
+		{
+			headers: { Host: `127.0.0.1:${port}`, ...ownerTokenHeader(port) },
+		},
+	);
 	return (await response.json()).services[0] as {
 		state: string;
 		restarts: number;

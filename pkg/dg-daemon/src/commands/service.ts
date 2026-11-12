@@ -5,6 +5,7 @@ import {
 	DgCliError,
 	describeError,
 	EXIT_GENERAL_FAILURE,
+	isRecord,
 	OWNER_TOKEN_HEADER,
 	parseEvery,
 } from "@dg/common";
@@ -21,7 +22,7 @@ import { readConfigStrict, writeServiceEntry } from "../server/config-store";
 import { parseServiceEntry, SERVICES_CONFIG_KEY } from "../services/config";
 import type { ServiceStatus } from "../services/supervisor";
 
-async function liveDaemon(
+async function findLiveDaemon(
 	paths: ReturnType<typeof resolveDgPaths>,
 ): Promise<ReturnType<typeof readPidFile>> {
 	const handle = readPidFile(paths);
@@ -31,10 +32,9 @@ async function liveDaemon(
 async function callDaemon(
 	path: string,
 	method: "GET" | "POST",
-	known?: ReturnType<typeof readPidFile>,
 ): Promise<unknown> {
 	const paths = resolveDgPaths();
-	const handle = known ?? (await liveDaemon(paths));
+	const handle = await findLiveDaemon(paths);
 	if (!handle) {
 		throw new DgCliError(
 			"no live dg-daemon — services run inside it, so start it with dg-daemon start",
@@ -56,12 +56,39 @@ async function callDaemon(
 
 function isDeclared(config: Record<string, unknown>, label: string): boolean {
 	const table = config[SERVICES_CONFIG_KEY];
+	return isRecord(table) && Object.hasOwn(table, label);
+}
+
+function resolveExecutable(command: string): string {
+	const fail = (message: string): never => {
+		throw new DgCliError(message, EXIT_GENERAL_FAILURE);
+	};
+	if (command.includes(sep)) {
+		const executable = resolve(command);
+		if (!existsSync(executable) || !statSync(executable).isFile()) {
+			fail(`service add: executable not found: ${executable}`);
+		}
+		if (checkExecutableResolves(executable)) {
+			fail(`service add: file is not executable: ${executable}`);
+		}
+		return executable;
+	}
+	const problem = checkExecutableResolves(command);
+	if (problem) fail(`service add: ${problem}`);
 	return (
-		typeof table === "object" &&
-		table !== null &&
-		!Array.isArray(table) &&
-		Object.hasOwn(table, label)
+		Bun.which(command) ??
+		fail(`service add: executable "${command}" does not resolve on PATH`)
 	);
+}
+
+function nextStepLine(
+	live: boolean,
+	autostart: boolean,
+	label: string,
+): string {
+	if (live) return `next: dg-daemon service start ${label}`;
+	if (autostart) return "next: dg-daemon start";
+	return `next: dg-daemon start, then dg-daemon service start ${label}`;
 }
 
 function guardConfig<T>(run: () => T): T {
@@ -145,22 +172,7 @@ export function registerServiceCommands(program: Command): void {
 						? undefined
 						: parseEvery(options.stopTimeout, "--stop-timeout");
 				const [command, ...rest] = argv;
-				let executable: string;
-				if (command.includes(sep)) {
-					executable = resolve(command);
-					if (!existsSync(executable) || !statSync(executable).isFile()) {
-						fail(`service add: executable not found: ${executable}`);
-					}
-					if (checkExecutableResolves(executable)) {
-						fail(`service add: file is not executable: ${executable}`);
-					}
-				} else {
-					const problem = checkExecutableResolves(command);
-					if (problem) fail(`service add: ${problem}`);
-					executable =
-						Bun.which(command) ??
-						fail(`service add: executable "${command}" does not resolve on PATH`);
-				}
+				const executable = resolveExecutable(command);
 				const entry = {
 					argv: [executable, ...rest],
 					cwd,
@@ -168,7 +180,9 @@ export function registerServiceCommands(program: Command): void {
 					...(options.envFile === undefined
 						? {}
 						: { envFile: resolve(options.envFile) }),
-					...(options.passEnv === undefined ? {} : { passEnv: options.passEnv }),
+					...(options.passEnv === undefined
+						? {}
+						: { passEnv: options.passEnv }),
 					...(stopTimeoutMs === undefined ? {} : { stopTimeoutMs }),
 					...(options.grant === undefined ? {} : { grant: options.grant }),
 				};
@@ -176,15 +190,13 @@ export function registerServiceCommands(program: Command): void {
 				if (!parsed.ok) fail(`service add: ${parsed.error}`);
 				guardConfig(() => writeServiceEntry(paths, label, entry));
 				console.log(`added service "${label}"`);
-				if (await liveDaemon(paths)) {
-					console.log(`next: dg-daemon service start ${label}`);
-				} else if (options.autostart) {
-					console.log("next: dg-daemon start");
-				} else {
-					console.log(
-						`next: dg-daemon start, then dg-daemon service start ${label}`,
-					);
-				}
+				console.log(
+					nextStepLine(
+						Boolean(await findLiveDaemon(paths)),
+						Boolean(options.autostart),
+						label,
+					),
+				);
 			},
 		);
 
@@ -201,13 +213,8 @@ export function registerServiceCommands(program: Command): void {
 					EXIT_GENERAL_FAILURE,
 				);
 			}
-			const live = await liveDaemon(paths);
-			if (live) {
-				const { services } = (await callDaemon(
-					CHAT_SERVICES_PATH,
-					"GET",
-					live,
-				)) as {
+			if (await findLiveDaemon(paths)) {
+				const { services } = (await callDaemon(CHAT_SERVICES_PATH, "GET")) as {
 					services: ServiceStatus[];
 				};
 				const state = services.find((entry) => entry.label === label)?.state;
