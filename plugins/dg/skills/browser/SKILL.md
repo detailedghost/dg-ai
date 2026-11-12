@@ -11,7 +11,7 @@ the companion `dg-ai-extension`.
 
 Commands run the **compiled `dg-skills` CLI** from your PATH — a
 self-contained binary, no Bun needed at runtime. On first use, bootstrap it once
-(downloads the binary for your platform from the latest `skills-v*` release):
+(downloads the binary for your platform from the latest `vX.Y.Z` release):
 
 ```bash
 dg-skills install --help >/dev/null 2>&1 ||
@@ -52,7 +52,7 @@ current.
 | `--dry-run` | none | launch: show what would run without starting the browser. | off |
 | `--video` | none | rerun (with `--ext`): record the replay as a video. | off |
 | `--local` | none | install: build the extension from source. | off (download the release) |
-| `--version <x.y.z>` | none | install: pin the skills-v/daemon-v/agent-v/ext-v release to install, instead of each one's newest. | unset (newest) |
+| `--version <x.y.z>` | none | install: pin the `vX.Y.Z` release to install, instead of the newest. | unset (newest) |
 
 ## Local mode
 

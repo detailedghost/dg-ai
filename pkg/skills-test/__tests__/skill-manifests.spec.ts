@@ -175,9 +175,10 @@ describe("chat-harness SKILL.md drives the compiled dg-agent binary", () => {
 			expect(md).not.toMatch(/dg-skills \S+ --help [^\n]*\|\|\n\s+curl/);
 		});
 
-		test(`${name}: names both release tags its two binaries ship under`, () => {
-			expect(md).toMatch(/agent-v/);
-			expect(md).toMatch(/daemon-v/);
+		test(`${name}: pulls both binaries from the one vX.Y.Z release`, () => {
+			expect(md).toMatch(/`dg-agent`[^`]*`dg-daemon`|`dg-daemon`[^`]*`dg-agent`/);
+			expect(md).toMatch(/`vX\.Y\.Z` release/);
+			expect(md).not.toMatch(/(agent|daemon|skills|ext)-v\*/);
 		});
 
 		test(`${name}: says the two binaries must be installed together, which autostart depends on`, () => {
