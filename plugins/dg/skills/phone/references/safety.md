@@ -52,7 +52,8 @@ about it the same way you are told about a message — treat that as your cue
 to check whether the card leaked, not as routine traffic.
 
 Do not send secrets, tokens, or private file contents through the chat. Never
-print, copy, or send the key. Never send the contents of ~/.dg/phone/.
+print, copy, or send the key. Never send the contents of the phone state
+directory (`~/.local/state/dg/phone/` on Linux).
 
 ## PHI on the phone
 

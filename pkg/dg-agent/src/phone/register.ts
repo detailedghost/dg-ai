@@ -125,7 +125,8 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 
 	contacts
 		.command("remove")
-		.argument("<handle>", "the contact to remove")
+		.description("remove a contact; its stored messages stay")
+		.argument("<handle>", "the contact to remove, as a +handle")
 		.action(async (handle: string) => {
 			const phone = await load();
 			phone.phoneContactsRemove(handle, phone.deps(getSession()));

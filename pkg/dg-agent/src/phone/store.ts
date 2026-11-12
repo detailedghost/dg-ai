@@ -261,6 +261,9 @@ export function renameContact(db: PhoneDb, handle: string, newHandle: string): C
 }
 
 export function removeContact(db: PhoneDb, handle: string): ContactRecord {
+	if (handle.startsWith("#")) {
+		throw new DgCliError(`${handle} is a group, not a contact; groups have no remove verb, and contacts remove takes a +handle`);
+	}
 	const existing = db.getContactByHandle(handle);
 	if (!existing) throw new DgCliError(`no contact +${handle}`);
 	db.removeContact(existing.npub);

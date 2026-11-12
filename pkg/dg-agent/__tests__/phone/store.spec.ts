@@ -169,6 +169,10 @@ describe("contacts", () => {
 		expect(() => removeContact(db, "velora")).toThrow("no contact +velora");
 	});
 
+	it("refuses a #group handle and says groups have no remove verb", () => {
+		expect(() => removeContact(db, "#ops")).toThrow("#ops is a group, not a contact; groups have no remove verb");
+	});
+
 	it("moves a contact to the key its ring was addressed to", () => {
 		const who = npub();
 		addContact(db, { npub: who, handle: "velora", relays: DEFAULT_RELAYS, keyId: "work", addedAt: NOW, via: "accept" });
