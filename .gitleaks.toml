@@ -105,3 +105,15 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)pkg/dg-daemon/__tests__/crypto/keychain-backends\.spec\.ts$''']
 regexes = ['''dGVzdC1rZXktYnl0ZXMtZm9yLXN0b3JlLWNoZWNr''']
+
+[[allowlists]]
+description = "Fake token and API key fixtures in the pw --ext redaction specs"
+condition = "AND"
+regexTarget = "secret"
+paths = [
+  '''(?:^|/)pkg/common/__tests__/redact\.spec\.ts$''',
+  '''(?:^|/)pkg/extension/__tests__/pw-ext-background\.spec\.ts$''',
+  '''(?:^|/)pkg/extension/__tests__/pw-ext-main\.spec\.ts$''',
+  '''(?:^|/)pkg/extension/__tests__/pw-ext-page\.spec\.ts$''',
+]
+regexes = ['''abc123def456''', '''sk-abcdefgh12345678''']
