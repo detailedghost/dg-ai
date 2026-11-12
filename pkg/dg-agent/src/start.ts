@@ -5,22 +5,18 @@ import {
 	CHAT_STATUS_PATH,
 	type DaemonHandle,
 	DgCliError,
-	EXIT_GENERAL_FAILURE,
 	EXIT_PROTOCOL_MISMATCH,
 	OWNER_TOKEN_HEADER,
 	type SessionBootstrap,
 	type SessionRole,
 	validateSessionBootstrap,
-	wait,
 } from "@dg/common";
 import {
 	buildCodeUrl,
-	checkWslNetworking,
+	ensureDaemonRunning,
 	type DgPaths,
-	isDaemonLive,
 	loopbackHostHeader,
 	mintPageCode,
-	readPidFile,
 	requireMatchingProtocol,
 	requireOwnerToken,
 	resolveDgPaths,
@@ -28,12 +24,7 @@ import {
 	openFailedHint,
 	tryOpen,
 } from "@dg/common/node";
-import { programCommand } from "@dg/common/node/program";
 import { startNotice } from "./next-step";
-
-function siblingDaemonArgv(): string[] {
-	return programCommand("dg-daemon", ["serve"]);
-}
 
 export type StartSeams = {
 	daemonArgv?: () => string[];
@@ -41,30 +32,6 @@ export type StartSeams = {
 	tryOpen?: (url: string) => Promise<boolean>;
 	openFailedHint?: () => string;
 };
-
-function spawnDaemonProcess(seams: StartSeams): void {
-	const argv = seams.daemonArgv?.() ?? siblingDaemonArgv();
-	const child = (seams.spawn ?? spawn)(argv[0], argv.slice(1), {
-		detached: true,
-		stdio: "ignore",
-		windowsHide: process.platform === "win32",
-		env: process.env,
-	});
-	child.unref();
-}
-
-async function waitForFreshDaemon(paths: DgPaths, timeoutMs = 15000) {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const handle = readPidFile(paths);
-		if (handle && (await isDaemonLive(handle))) return handle;
-		await wait(100);
-	}
-	throw new DgCliError(
-		"dg-daemon did not become healthy within the startup timeout",
-		EXIT_GENERAL_FAILURE,
-	);
-}
 
 type RegisterInput = {
 	cwd: string;
@@ -136,13 +103,7 @@ async function attachToRunningDaemon(existing: DaemonHandle): Promise<number> {
 	return existing.port;
 }
 
-async function bootstrapFreshDaemon(
-	paths: DgPaths,
-	seams: StartSeams,
-): Promise<number> {
-	await checkWslNetworking();
-	spawnDaemonProcess(seams);
-	const handle = await waitForFreshDaemon(paths);
+function requireFreshDaemonProtocol(handle: DaemonHandle): number {
 	requireMatchingProtocol(
 		handle,
 		"The dg-daemon binary beside this dg-agent is from another release. " +
@@ -174,13 +135,13 @@ export async function cmdStart(
 	seams: StartSeams = {},
 ): Promise<void> {
 	const paths = resolveDgPaths();
-	const existing = readPidFile(paths);
-	const existingLive = existing ? await isDaemonLive(existing) : false;
-
-	const targetPort =
-		existing && existingLive
-			? await attachToRunningDaemon(existing)
-			: await bootstrapFreshDaemon(paths, seams);
+	const { handle, started } = await ensureDaemonRunning(paths, {
+		daemonArgv: seams.daemonArgv,
+		spawn: seams.spawn,
+	});
+	const targetPort = started
+		? requireFreshDaemonProtocol(handle)
+		: await attachToRunningDaemon(handle);
 
 	const { bootstrap, extensionLinked } = await registerSession(
 		targetPort,

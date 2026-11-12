@@ -62,4 +62,29 @@ describe("dg-daemon main", () => {
 		expect(code).toBe(0);
 		expect(exitCalls).toEqual([]);
 	});
+
+	async function helpOf(name: string): Promise<{ code: number; help: string }> {
+		const realWrite = process.stdout.write;
+		let help = "";
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			help += String(chunk);
+			return true;
+		}) as typeof process.stdout.write;
+		try {
+			return { code: await main([name, "--help"]), help };
+		} finally {
+			process.stdout.write = realWrite;
+		}
+	}
+
+	it.each([
+		["start", "start the daemon in the background, or report the live one", "--json"],
+		["stop", "stop the daemon and its services", "--force"],
+		["restart", "stop the daemon, then start it again", "--force"],
+	])("registers %s with its description and %s flag", async (name, description, flag) => {
+		const { code, help } = await helpOf(name);
+		expect(code).toBe(0);
+		expect(help).toContain(description);
+		expect(help).toContain(flag);
+	});
 });

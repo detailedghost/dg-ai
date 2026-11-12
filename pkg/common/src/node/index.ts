@@ -11,6 +11,7 @@ export * from "./manifest-load";
 export * from "./marker";
 export * from "./oauth-loopback";
 export * from "./daemon-id";
+export * from "./daemon-start";
 export * from "./owner-token";
 export * from "./page-code";
 export * from "./dg-paths";
