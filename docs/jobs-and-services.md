@@ -150,8 +150,11 @@ Windows, each stop of the daemon is a forced stop.
 
 `--force` lists the services with `GET /services`. The answer carries the
 `instanceId` of the daemon. The command compares it with the pid file and uses
-no service pid from an answer of another instance. It also ignores a pid that
-is not an integer above 1.
+no service pid from an answer of another instance. A daemon from before this
+change sends no `instanceId`; the command then trusts the `/healthz` check it
+made just before. It also ignores a pid that is not an integer above 1. On
+Windows, `--force` ends the daemon process alone and then each service process
+tree, so a job or dispatch command keeps running.
 
 If the pid in the pid file still runs but `/healthz` does not answer (a hung or
 stopped daemon), `dg-daemon stop` keeps the pid file and exits 1 with

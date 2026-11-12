@@ -327,7 +327,7 @@ describe("dg-daemon stop seams", () => {
 		paths: DgPaths,
 		pid: number,
 		servicePids: number[],
-		servicesInstanceId?: string,
+		servicesInstanceId?: string | null,
 	): FakeServices {
 		const instanceId = crypto.randomUUID();
 		const requests: string[] = [];
@@ -340,7 +340,10 @@ describe("dg-daemon stop seams", () => {
 				if (path === "/healthz") return Response.json({ instanceId });
 				if (path === CHAT_SERVICES_PATH) {
 					return Response.json({
-						instanceId: servicesInstanceId ?? instanceId,
+						instanceId:
+							servicesInstanceId === null
+								? undefined
+								: (servicesInstanceId ?? instanceId),
 						services: servicePids.map((servicePid, index) => ({
 							label: `svc${index}`,
 							state: "running",
@@ -569,13 +572,31 @@ describe("dg-daemon stop seams", () => {
 			{ platform: "win32", kill: table.kill, exec: table.exec, waitMs: 2000 },
 		);
 
-		expect(table.execs).toEqual(
-			[424242, 424243, 424244].map((pid) => ({
+		expect(table.execs).toEqual([
+			{ command: "taskkill", args: ["/F", "/PID", "424242"] },
+			...[424243, 424244].map((pid) => ({
 				command: "taskkill",
 				args: ["/T", "/F", "/PID", String(pid)],
 			})),
-		);
+		]);
 		expect(table.signals()).toEqual([]);
+		expect(lines()).toEqual(["dg-daemon stopped (pid 424242, forced)"]);
+	});
+
+	it("accepts a /services answer with no instanceId from a daemon before this change", async () => {
+		const { paths } = seamHome();
+		const table = fakeProcessTable([424242, 424243]);
+		fakeDaemonWithServices(paths, 424242, [424243], null);
+		const lines = captureStdout();
+
+		await cmdStop(
+			{ force: true },
+			{ platform: "linux", kill: table.kill, exec: table.exec, waitMs: 2000 },
+		);
+
+		expect(new Set(table.calls.map((call) => Math.abs(call.pid)))).toEqual(
+			new Set([424242, 424243]),
+		);
 		expect(lines()).toEqual(["dg-daemon stopped (pid 424242, forced)"]);
 	});
 

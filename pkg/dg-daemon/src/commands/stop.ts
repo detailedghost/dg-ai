@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import {
 	CHAT_SERVICES_PATH,
@@ -84,7 +85,7 @@ async function listServicePids(
 	const body: unknown = await resp.json();
 	if (
 		!isRecord(body) ||
-		body.instanceId !== handle.instanceId ||
+		(body.instanceId !== undefined && body.instanceId !== handle.instanceId) ||
 		!Array.isArray(body.services)
 	) {
 		throw new Error("the answer is not from this daemon instance");
@@ -114,6 +115,15 @@ function isDaemonCommandLine(argv: string[] | undefined): boolean {
 	);
 }
 
+function killDaemonOnly(pid: number, seams: StopSeams): void {
+	const exec =
+		seams.exec ??
+		((command: string, args: string[]) => {
+			spawnSync(command, args, { stdio: "ignore", windowsHide: true });
+		});
+	exec("taskkill", ["/F", "/PID", String(pid)]);
+}
+
 async function forceStop(
 	paths: DgPaths,
 	handle: DaemonHandle,
@@ -131,7 +141,7 @@ async function forceStop(
 			listFailure = describeError(err);
 		}
 	}
-	if (platform === "win32") killProcessTree(handle.pid, seams);
+	if (platform === "win32") killDaemonOnly(handle.pid, seams);
 	else signalDaemon(kill, handle.pid, "SIGKILL");
 	for (const pid of servicePids) killProcessTree(pid, seams);
 	const gone = await waitUntilGone(
