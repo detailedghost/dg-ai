@@ -4,6 +4,7 @@ import {
 	type DgPaths,
 	ensurePrivateDir,
 	writeFileAtomic,
+	writeFilePreserving,
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
 
@@ -31,4 +32,48 @@ export function writeConfig(
 	ensurePrivateDir(dirname(file));
 	const next = { ...readConfig(paths), ...patch };
 	writeFileAtomic(file, JSON.stringify(next, null, 2));
+}
+
+export function readConfigStrict(paths: DgPaths): Record<string, unknown> {
+	const file = paths.daemonConfigPath;
+	if (!existsSync(file)) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(file, "utf8"));
+	} catch (err) {
+		throw new Error(`${file}: not valid JSON (${(err as Error).message})`);
+	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		throw new Error(`${file}: top level must be an object`);
+	}
+	return parsed as Record<string, unknown>;
+}
+
+/** Sets one entry of the `services` table, or deletes it when `entry` is undefined. */
+export function writeServiceEntry(
+	paths: DgPaths,
+	label: string,
+	entry: Record<string, unknown> | undefined,
+): void {
+	const file = paths.daemonConfigPath;
+	const config = readConfigStrict(paths);
+	const current = config.services;
+	if (
+		current !== undefined &&
+		(typeof current !== "object" || current === null || Array.isArray(current))
+	) {
+		throw new Error(`${file}: "services" must be an object`);
+	}
+	const kept = Object.entries((current as Record<string, unknown>) ?? {}).filter(
+		([key]) => key !== label,
+	);
+	const services = Object.fromEntries(
+		entry === undefined ? kept : [...kept, [label, entry]],
+	);
+	ensurePrivateDir(dirname(file));
+	writeFilePreserving(
+		file,
+		JSON.stringify({ ...config, services }, null, 2),
+		0o600,
+	);
 }
