@@ -3,7 +3,7 @@ feature: "Review pipeline: investigate, group, verify, consolidate"
 feature_snake_case: review_pipeline
 date: "2026-11-10"
 version: "1.0"
-status: draft
+status: in-progress
 current_slice: 0
 pr_strategy: single
 slices:
@@ -61,6 +61,13 @@ slices:
       complexity: low
 execution:
   profile: balance
+permissions:
+  run_commands: true
+  git_push: true
+  gh_pr_create: true
+  auto_cleanup_worktree: true
+  slice_commits: true
+  housekeeping_commit: true
 ---
 
 # Review pipeline: investigate, group, verify, consolidate
@@ -547,8 +554,19 @@ execution:
 
 ## Agent Notes
 
+- (slice 1, user) `resolveCheckout({ target, pr, files, provider }, { cloneTimeoutMs?, apiFetchMaxFiles? })`; the tree folder name comes from `target` inside checkout.ts.
+- (slice 1, user) Each `stack --diff` row carries `repo: { root, headSha, source }` (absolute root; headSha from listPullRequests), the same shape as `plan.repo`.
+- (slice 1, user) The checkout clone keeps a minimal allowlist env. The hook-hardening tests inject GIT_CONFIG_GLOBAL through an env seam and prove that the hook never fires.
+- (slice 1, user) Add a test for the single 120 s deadline shared by the cwd-fetch step and the clone step: inject a short deadline, stall the cwd fetch, assert the clone gets only the rest and the step order.
+
 ## Issues Remediation
 
+| id | slice | from | severity | status | description |
+|----|-------|------|----------|--------|-------------|
+| 1 | 1 | deferral | high | resolved | SPEC: resolveCheckout call shape is not in the spec. The red tests assume resolveCheckout({ target, pr, files, provider }, { cloneTimeoutMs?, apiFetchMaxFiles? }); the tree slug comes from target inside checkout.ts. Confirm or give the real signature. |
+| 2 | 1 | deferral | high | resolved | SPEC: stack --diff row shape. The tests assume each row carries repo: { root, headSha, source } (absolute root), with headSha from listPullRequests. Confirm the key name. |
+| 3 | 1 | deferral | high | resolved | TEST: the hook-hardening tests set GIT_CONFIG_GLOBAL in process.env. They test checkout.ts only if its spawn env passes GIT_CONFIG_GLOBAL through; with a minimal allowlist env they pass with no check. Decide whether the checkout spawn env inherits process.env. |
+| 4 | 1 | deferral | high | resolved | TEST: no automated test for the single 120 s deadline shared by the cwd step and the clone step, or for the step order when the cwd fetch times out. Accept as untested or ask for a test. |
 ## Code Structure
 
 Ratified code-surface contracts from structure pass 1.5:
