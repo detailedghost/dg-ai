@@ -31,12 +31,12 @@ function linksToDirectory(link: string): boolean {
 	}
 }
 
-/** Copies a file, folder or link to a new path with its modes; an absolute link into `from` is rebased into `to`. */
-export function copyTree(from: string, to: string): void {
+/** Copies a file, folder or link to a new path with its modes; an absolute link into `from` is rebased into `linkRoot`. */
+export function copyTree(from: string, to: string, linkRoot = to): void {
 	const walk = (source: string, dest: string): void => {
 		const stat = lstatSync(source);
 		if (stat.isSymbolicLink()) {
-			const target = rebaseLink(readlinkSync(source), from, to);
+			const target = rebaseLink(readlinkSync(source), from, linkRoot);
 			if (process.platform === "win32" && linksToDirectory(source))
 				symlinkSync(resolve(dirname(dest), target), dest, "junction");
 			else symlinkSync(target, dest);
@@ -81,10 +81,10 @@ function shape(root: string, rebase: (target: string) => string): Map<string, st
 	return out;
 }
 
-/** True when `to` holds the same entries, file bytes and link targets as `from`, after `copyTree` rebasing. */
-export function treeMatches(from: string, to: string): boolean {
-	const source = shape(from, (target) => rebaseLink(target, from, to));
-	const copy = shape(to, (target) => target);
+/** True when `to` holds the same entries, file bytes and link targets as `from`, after `copyTree` rebasing into `linkRoot`. */
+export function treeMatches(from: string, to: string, linkRoot = to): boolean {
+	const source = shape(from, (target) => rebaseLink(target, from, linkRoot));
+	const copy = shape(to, (target) => rebaseLink(target, to, linkRoot));
 	if (source.size !== copy.size) return false;
 	for (const [key, value] of source) if (copy.get(key) !== value) return false;
 	return true;
@@ -105,6 +105,7 @@ export type MoveSeams = {
 	log?: (line: string) => void;
 	verify?: (copy: string) => string[];
 	afterCopy?: (from: string, to: string) => void;
+	place?: (stage: string, to: string) => void;
 	rename?: (from: string, to: string) => void;
 	removeTree?: (path: string) => void;
 	inUse?: (from: string) => boolean;
@@ -113,6 +114,10 @@ export type MoveSeams = {
 export type MoveResult = "moved" | "failed" | "kept" | "scheduled";
 
 type Pair = { from: string; to: string };
+
+type Staged = Pair & { stageDir: string; stage: string };
+
+const STAGE_SUFFIX = ".dg-partial";
 
 function present(path: string): boolean {
 	try {
@@ -142,33 +147,57 @@ export function removeSource(from: string, seams: Pick<MoveSeams, "rename" | "re
 	return true;
 }
 
-const pairsOf = (from: string | readonly string[], to: string): Pair[] =>
-	typeof from === "string"
+const pairsOf = (from: string | readonly string[], to: string): Staged[] =>
+	(typeof from === "string"
 		? [{ from, to }]
-		: from.map((source) => ({ from: source, to: join(to, basename(source)) }));
+		: from.map((source) => ({ from: source, to: join(to, basename(source)) }))
+	).map((pair) => {
+		const stageDir = `${pair.to}${STAGE_SUFFIX}`;
+		return { ...pair, stageDir, stage: join(stageDir, basename(pair.to)) };
+	});
 
-function copyChecked(pair: Pair, seams: MoveSeams): string | undefined {
+const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+function copyChecked(pair: Staged, seams: MoveSeams): string | undefined {
 	try {
 		mkdirSync(dirname(pair.to), { recursive: true, mode: 0o700 });
-		copyTree(pair.from, pair.to);
-		seams.afterCopy?.(pair.from, pair.to);
-		if (!treeMatches(pair.from, pair.to)) throw new Error("the copy does not match the source");
+		rmSync(pair.stageDir, { recursive: true, force: true });
+		mkdirSync(pair.stageDir, { mode: 0o700 });
+		copyTree(pair.from, pair.stage, pair.to);
+		seams.afterCopy?.(pair.from, pair.stage);
+		if (!treeMatches(pair.from, pair.stage, pair.to)) throw new Error("the copy does not match the source");
 		return undefined;
 	} catch (err) {
-		return `moving it to ${pair.to} failed: ${err instanceof Error ? err.message : err}`;
+		return `moving it to ${pair.to} failed: ${reason(err)}`;
 	}
 }
 
-function copyAllChecked(pairs: readonly Pair[], seams: MoveSeams): string | undefined {
+function copyAllChecked(pairs: readonly Staged[], seams: MoveSeams): string | undefined {
 	for (const pair of pairs) {
 		const failure = copyChecked(pair, seams);
 		if (failure) return failure;
 	}
-	const [problem] = pairs.flatMap((pair) => seams.verify?.(pair.to) ?? []);
+	const [problem] = pairs.flatMap((pair) => seams.verify?.(pair.stage) ?? []);
 	return problem === undefined ? undefined : `the copy failed its check: ${problem}`;
 }
 
-/** Copies `from` (or a list of files into the folder `to`) to `to`, checks every copy, then removes the sources; never writes over an existing `to`. */
+function placeAll(pairs: readonly Staged[], seams: MoveSeams): string | undefined {
+	const placed: string[] = [];
+	for (const pair of [...pairs].reverse()) {
+		try {
+			if (present(pair.to)) throw new Error(`${pair.to} appeared during the copy`);
+			(seams.place ?? renameSync)(pair.stage, pair.to);
+			placed.push(pair.to);
+			rmSync(pair.stageDir, { recursive: true, force: true });
+		} catch (err) {
+			for (const path of placed) rmSync(path, { recursive: true, force: true });
+			return `moving it to ${pair.to} failed: ${reason(err)}`;
+		}
+	}
+	return undefined;
+}
+
+/** Copies `from` (or a list of files into the folder `to`) beside `to`, checks every copy, renames it into `to`, then removes the sources; never writes over an existing `to`. */
 export function moveVerified(from: string | readonly string[], to: string, seams: MoveSeams = {}): MoveResult {
 	const log = seams.log ?? (() => {});
 	const pairs = pairsOf(from, to);
@@ -177,9 +206,9 @@ export function moveVerified(from: string | readonly string[], to: string, seams
 		log(`dg: kept ${taken.from}; ${taken.to} already exists`);
 		return "kept";
 	}
-	const failure = copyAllChecked(pairs, seams);
+	const failure = copyAllChecked(pairs, seams) ?? placeAll(pairs, seams);
 	if (failure) {
-		for (const pair of pairs) rmSync(pair.to, { recursive: true, force: true });
+		for (const pair of pairs) rmSync(pair.stageDir, { recursive: true, force: true });
 		log(`dg: kept ${pairs[0]?.from}; ${failure}`);
 		return "failed";
 	}

@@ -193,10 +193,39 @@ describe("moveVerified", () => {
 		});
 
 		expect(result).toBe("failed");
-		expect(seen).toEqual([to]);
+		expect(seen).toEqual([join(`${to}.dg-partial`, "to")]);
 		expect(existsSync(to)).toBe(false);
+		expect(existsSync(`${to}.dg-partial`)).toBe(false);
 		expect(existsSync(join(from, "sub", "run"))).toBe(true);
 		expect(lines.join("\n")).toContain("row count differs");
+	});
+
+	it("creates no target until the copy is checked", async () => {
+		const seenTarget: boolean[] = [];
+
+		const result = await moveVerified(from, to, {
+			log: () => {},
+			afterCopy: () => seenTarget.push(existsSync(to)),
+			verify: () => {
+				seenTarget.push(existsSync(to));
+				return [];
+			},
+		});
+
+		expect(result).toBe("moved");
+		expect(seenTarget).toEqual([false, false]);
+		expect(readlinkSync(join(to, "absolute"))).toBe(join(to, "sub"));
+		expect(readlinkSync(join(to, "relative"))).toBe("sub");
+		expect(existsSync(`${to}.dg-partial`)).toBe(false);
+	});
+
+	it("keeps the source and leaves no copy when the target appears during the copy", async () => {
+		const result = await moveVerified(from, to, { log: () => {}, verify: () => (mkdirSync(to), []) });
+
+		expect(result).toBe("failed");
+		expect(readdirSync(to)).toEqual([]);
+		expect(existsSync(join(from, "sub", "run"))).toBe(true);
+		expect(existsSync(`${to}.dg-partial`)).toBe(false);
 	});
 
 	it("moves when verify returns no problem", async () => {
@@ -206,7 +235,7 @@ describe("moveVerified", () => {
 	it("returns failed and removes the copy when the copy does not match the source", async () => {
 		const result = await moveVerified(from, to, {
 			log: () => {},
-			afterCopy: () => writeFileSync(join(to, "sub", "run"), "changed after the copy"),
+			afterCopy: (_from, copy) => writeFileSync(join(copy, "sub", "run"), "changed after the copy"),
 		});
 
 		expect(result).toBe("failed");
@@ -244,6 +273,19 @@ describe("moveVerified with a list of files", () => {
 		expect(existsSync(files[0] as string)).toBe(false);
 		expect(existsSync(files[1] as string)).toBe(true);
 		expect(readdirSync(to).sort()).toEqual(["memory.db", "memory.db-wal"]);
+	});
+
+	it("removes the files it placed and keeps every source when a later file cannot be placed", async () => {
+		const files = seed();
+
+		const result = await moveVerified(files, to, {
+			log: () => {},
+			place: (stage, target) => (target.endsWith("memory.db") ? busy() : renameSync(stage, target)),
+		});
+
+		expect(result).toBe("failed");
+		expect(readdirSync(to)).toEqual([]);
+		expect(files.every((file) => existsSync(file))).toBe(true);
 	});
 
 	it("moves every file into the folder as one unit", async () => {
