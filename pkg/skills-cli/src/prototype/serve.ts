@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { forever } from "@dg/common";
 import { exitAfterDrain } from "@dg/common/async";
 import { resolveSkillAsset } from "../utils/skill-assets";
+import { assertLoopbackUrl } from "../verify/urls";
 import { injectScript } from "./inject";
 import { protoDir, type SentinelPaths, sentinelPaths } from "./paths";
 import { writeSentinel } from "./sentinels";
@@ -126,6 +127,14 @@ function text(value: unknown): string {
 	return typeof value === "string" ? value : "";
 }
 
+function loopbackPage(value: unknown): string | undefined {
+	try {
+		return assertLoopbackUrl(text(value), "page url");
+	} catch {
+		return undefined;
+	}
+}
+
 function recordDecision(
 	paths: SentinelPaths,
 	body: Record<string, unknown>,
@@ -176,6 +185,8 @@ function recordDecision(
 			{ status: 400 },
 		);
 	if (notes) writeSentinel(target.notes, notes);
+	const page = loopbackPage(body.url);
+	if (page) writeSentinel(target.url, `${page}\n`);
 	writeSentinel(target.source, "browser\n");
 	writeSentinel(target.selection, `${variant}\n`);
 	return Response.json({ ok: true });

@@ -1,5 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { pngSize } from "../src/verify/capture-model";
+import { type CaptureRequest, type CaptureShot, pngSize } from "../src/verify/capture-model";
+import { type Difference, diffReadings } from "../src/layout/diff";
+import type { ControlRow } from "../src/layout/fingerprint";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -77,6 +79,162 @@ describe("playwright capture", () => {
 			await capturer.close();
 			server.stop(true);
 		}
+	});
+});
+
+describe("layout fingerprint in a browser", () => {
+	const ROOT = '[data-verify-root="demo"]';
+	const PAGE = `<!doctype html><html lang="en"><head><title>Demo</title><style>
+body{margin:0;font:16px sans-serif}
+main{min-height:100vh;display:flex;flex-direction:column;padding:16px;box-sizing:border-box}
+#header-action{display:none}
+#add-note{margin-top:auto;height:40px}
+#bottom-bar{position:fixed;left:0;right:0;bottom:0;height:80px;background:#222;z-index:10}
+.spacer{height:2400px}
+</style></head><body>
+<main data-verify-root="demo">
+<button id="header-action" type="button">Share</button>
+<button id="top-link" type="button">Top action</button>
+<div class="spacer"></div>
+<button id="add-note" type="button" data-testid="add-note">Add a note...</button>
+</main>
+<div id="bottom-bar"></div>
+<div id="protobar" role="toolbar" aria-label="Prototype decision"><button type="button">Approve</button></div>
+</body></html>`;
+
+	const bare = (body: string) =>
+		`<!doctype html><html lang="en"><head><title>Demo</title><style>body{margin:0;font:16px sans-serif}</style></head><body><main data-verify-root="demo">${body}</main></body></html>`;
+
+	async function withPage<T>(run: (request: (extra?: Partial<CaptureRequest>) => CaptureRequest, capturer: Awaited<ReturnType<typeof openPlaywrightCapturer>>) => Promise<T>, page = PAGE): Promise<T> {
+		const server = Bun.serve({
+			hostname: "127.0.0.1",
+			port: 0,
+			fetch: () => new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } }),
+		});
+		const capturer = await openPlaywrightCapturer({ noSandbox: true });
+		try {
+			return await run(
+				(extra = {}) => ({
+					url: `http://127.0.0.1:${server.port}/`,
+					headers: {},
+					cookies: [],
+					width: 1440,
+					height: 900,
+					theme: "light",
+					state: "default",
+					menuSelector: "[data-verify-menu]",
+					fingerprintRoot: ROOT,
+					...extra,
+				}),
+				capturer,
+			);
+		} finally {
+			await capturer.close();
+			server.stop(true);
+		}
+	}
+
+	function controls(shot: CaptureShot): ControlRow[] {
+		if (!shot.fingerprint || "error" in shot.fingerprint) throw new Error("no fingerprint");
+		return shot.fingerprint.controls;
+	}
+
+	test.skipIf(!browser)("reports a control under a fixed bar as occluded and a display:none control as hidden", async () => {
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request());
+			const rows = controls(shot);
+			const share = rows.find((row) => row.name === "Share");
+			const note = rows.find((row) => row.testid === "add-note");
+			expect(share?.visible).toBe(false);
+			expect(note?.visible).toBe(true);
+			expect(note?.occluded).toBe(true);
+			expect(note?.occluder).toBe("div#bottom-bar");
+			expect(rows.map((row) => row.name)).not.toContain("Approve");
+			expect(note?.band).toBe("bottom");
+			const top = rows.find((row) => row.name === "Top action");
+			expect(top?.band).toBe("top");
+			expect(top?.occluded).toBe(false);
+			expect(note?.box.x).toBeGreaterThanOrEqual(0);
+			expect(note?.box.y).toBeGreaterThan(top?.box.y ?? 0);
+		});
+	});
+
+	test.skipIf(!browser)("scrolls a control below the fold into view before testing occlusion", async () => {
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request({ height: 700 }));
+			const note = controls(shot).find((row) => row.testid === "add-note");
+			expect(note?.occluded).toBe(true);
+			expect(note?.box.y).toBeGreaterThan(2000);
+		});
+	});
+
+	test.skipIf(!browser)("does not call a rounded button occluded by its own container", async () => {
+		const page = bare('<div style="padding:20px"><button id="pill" type="button" style="border-radius:999px;width:120px;height:40px">Pill</button></div>');
+		await withPage(async (request, capturer) => {
+			const pill = controls(await capturer.shot(request())).find((row) => row.name === "Pill");
+			expect(pill?.visible).toBe(true);
+			expect(pill?.occluded).toBe(false);
+		}, page);
+	});
+
+	test.skipIf(!browser)("reports a button clipped by its own ancestor as occluded", async () => {
+		const page = bare('<div style="height:300px"><header style="height:0;overflow:hidden"><button type="button">Menu</button></header></div>');
+		await withPage(async (request, capturer) => {
+			const menu = controls(await capturer.shot(request())).find((row) => row.name === "Menu");
+			expect(menu?.visible).toBe(true);
+			expect(menu?.occluded).toBe(true);
+		}, page);
+	});
+
+	test.skipIf(!browser)("reports a header button clipped in the prototype but shown in the build", async () => {
+		const clipped = bare('<header style="max-height:0;overflow:hidden"><button type="button">Menu</button></header><section style="height:300px">Content</section>');
+		const shown = bare('<header><button type="button">Menu</button></header><section style="height:300px">Content</section>');
+		const read = (page: string) =>
+			withPage(async (request, capturer) => {
+				const shot = await capturer.shot(request());
+				if (!shot.fingerprint || "error" in shot.fingerprint) throw new Error("no fingerprint");
+				return {
+					viewport: "desktop",
+					width: 1440,
+					height: 900,
+					theme: "light",
+					themeApplied: shot.fingerprint.themeApplied,
+					root: shot.fingerprint.root,
+					controls: shot.fingerprint.controls,
+				} as const;
+			}, page);
+		const expected = await read(clipped);
+		const found = await read(shown);
+		expect(expected.controls[0]?.occluded).toBe(true);
+		expect(found.controls[0]?.occluded).toBe(false);
+		const rows = diffReadings(expected, found, { viewport: "desktop", theme: "light", role: "admin" });
+		expect(rows.map((row) => row.kind)).toEqual(["occluded"]);
+	});
+
+	test.skipIf(!browser)("reports the applied theme from the color scheme", async () => {
+		await withPage(async (request, capturer) => {
+			const dark = await capturer.shot(request({ theme: "dark" }));
+			const light = await capturer.shot(request({ theme: "light" }));
+			expect(dark.fingerprint && "themeApplied" in dark.fingerprint && dark.fingerprint.themeApplied).toBe("dark");
+			expect(light.fingerprint && "themeApplied" in light.fingerprint && light.fingerprint.themeApplied).toBe("light");
+		});
+	});
+
+	test.skipIf(!browser)("reports a missing root as an error object", async () => {
+		await withPage(async (request, capturer) => {
+			const shot = await capturer.shot(request({ fingerprintRoot: '[data-verify-root="other"]' }));
+			expect(shot.fingerprint).toEqual({ error: 'root: found 0 visible [data-verify-root="other"]' });
+		});
+	});
+
+	test.skipIf(!browser)("hides the prototype chrome only when a fingerprint root is requested", async () => {
+		await withPage(async (request, capturer) => {
+			const plain = await capturer.shot(request({ fingerprintRoot: undefined }));
+			const read = await capturer.shot(request());
+			expect(plain.fingerprint).toBeUndefined();
+			expect(plain.html).not.toMatch(/id="protobar"[^>]*display: none/);
+			expect(read.html).toMatch(/id="protobar"[^>]*display: none/);
+		});
 	});
 });
 
@@ -517,6 +675,116 @@ describe("review board in a browser", () => {
 			await page.waitForFunction(() => location.hash === "#overview");
 			expect(readVerdicts(paths)["nav-r1"]).toMatchObject({ status: "approved", note: "", variant: "B" });
 			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test.skipIf(!browser)("the layout pill and table gate approve until each difference is accepted", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-layout-"));
+		const paths = verifyPaths(dir);
+		const side = (band: string) => ({ path: `button.add-${band}`, box: { x: 0, y: 0, w: 100, h: 40 }, band, hband: "left", visible: true });
+		const row = (id: string, kind: Difference["kind"], theme: Difference["theme"]): Difference => ({
+			id,
+			viewport: "desktop",
+			theme,
+			role: "admin",
+			kind,
+			control: { role: "button", name: "Add note", testid: null },
+			expected: side("bottom"),
+			found: side("top"),
+		});
+		writeBoard(paths, {
+			name: "layout",
+			sections: [
+				{
+					id: "notes-r1",
+					title: "Notes",
+					round: 1,
+					images: [{ label: "desktop · light · default", before: "missing", after: "missing" }],
+					checks: { layout: { status: "fail", differences: [row("d-1", "moved", "light"), row("d-2", "visibility", "dark")] } },
+				},
+			],
+			pending: [],
+		});
+		const server = await startVerifyServer({ name: "layout", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			const errors: string[] = [];
+			page.on("pageerror", (error) => errors.push(String(error)));
+			await page.addInitScript(() => localStorage.setItem("verify-mode", "light"));
+			await page.goto(`http://127.0.0.1:${server.port}/#notes-r1`);
+			await page.waitForSelector(".layout-table");
+			expect(await page.textContent('#sec-checks [data-check="Layout"]')).toBe("Layout: 2 differences, 2 unaccepted");
+			expect(await page.locator(".layout-table tbody tr").count()).toBe(2);
+			expect(await page.textContent(".layout-table tbody tr:first-child")).toContain("bottom left, visible");
+			expect(await page.textContent(".layout-table tbody tr:first-child")).toContain("top left, visible");
+
+			await page.click("#approve");
+			await page.waitForFunction(() => document.getElementById("toast")?.textContent === "accept each layout difference or add a note");
+			expect(readVerdicts(paths)).toEqual({});
+			expect(await page.evaluate(() => location.hash)).toBe("#notes-r1");
+
+			await page.check('input[aria-label="Accept all layout differences"]');
+			expect(await page.textContent('#sec-checks [data-check="Layout"]')).toBe("Layout: 2 differences, 0 unaccepted");
+			await page.uncheck(".layout-table tbody tr:last-child input");
+			expect(await page.textContent('#sec-checks [data-check="Layout"]')).toBe("Layout: 2 differences, 1 unaccepted");
+			await page.check(".layout-table tbody tr:last-child input");
+			await page.setViewportSize({ width: 390, height: 844 });
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+			expect(await page.evaluate(() => { const box = document.querySelector(".layout-diff") as HTMLElement; return box.scrollWidth <= box.clientWidth; })).toBe(true);
+			expect(await page.isVisible('input[aria-label="Accept all layout differences"]')).toBe(true);
+			expect(await page.locator(".layout-table tbody tr:first-child td").evaluateAll((cells) => cells.map((cell) => (cell as HTMLElement).dataset.label))).toEqual(["Viewport", "Theme", "Role", "Kind", "Control", "Expected", "Found", "Accept"]);
+			await page.click("#approve");
+			await page.waitForFunction(() => location.hash === "#overview");
+			expect(readVerdicts(paths)["notes-r1"]).toMatchObject({ status: "approved", note: "", layout: ["d-1", "d-2"] });
+			expect(errors).toEqual([]);
+		} finally {
+			await pw.close();
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test.skipIf(!browser)("the overview stays open while a stored approve leaves a layout difference unaccepted", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "dg-verify-board-layout-open-"));
+		const paths = verifyPaths(dir);
+		const side = { path: "button.add", box: { x: 0, y: 0, w: 100, h: 40 }, band: "bottom", hband: "left", visible: true };
+		const difference: Difference = {
+			id: "d-1",
+			viewport: "desktop",
+			theme: "light",
+			role: "admin",
+			kind: "moved",
+			control: { role: "button", name: "Add note", testid: null },
+			expected: side,
+			found: { ...side, band: "top" },
+		};
+		writeBoard(paths, {
+			name: "layout",
+			sections: [
+				{
+					id: "notes-r1",
+					title: "Notes",
+					round: 1,
+					images: [{ label: "desktop · light · default", before: "missing", after: "missing" }],
+					checks: { layout: { status: "fail", differences: [difference] } },
+				},
+			],
+			pending: [],
+		});
+		writeFileSync(paths.verdicts, JSON.stringify({ "notes-r1": { status: "approved", note: "", at: "t" } }));
+		const server = await startVerifyServer({ name: "layout", paths, port: 0 });
+		const pw = await chromium.launch({ executablePath: resolveVerifyBrowser(), args: ["--no-sandbox"] });
+		try {
+			const page = await pw.newPage();
+			await page.goto(`http://127.0.0.1:${server.port}/#overview`);
+			await page.waitForSelector("#sum-body tr");
+			expect(await page.textContent("#sum-body")).toContain("Needs review");
+			expect(await page.locator("#end h2", { hasText: "All approved" }).count()).toBe(0);
 		} finally {
 			await pw.close();
 			server.stop();

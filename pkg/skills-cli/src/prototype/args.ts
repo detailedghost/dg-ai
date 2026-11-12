@@ -13,6 +13,7 @@ export interface Flags {
 	timeoutSec: number;
 	notes: string;
 	source: string;
+	url?: string;
 	rest: string[];
 }
 
@@ -57,6 +58,8 @@ export function parseFlags(argv: string[], allowed: readonly string[]): Flags {
 			flags.notes = arg.slice("--notes=".length);
 		else if (arg.startsWith("--source="))
 			flags.source = arg.slice("--source=".length).trim() || "cli";
+		else if (arg.startsWith("--url="))
+			flags.url = arg.slice("--url=".length).trim() || undefined;
 		else flags.rest.push(arg);
 	}
 	return flags;

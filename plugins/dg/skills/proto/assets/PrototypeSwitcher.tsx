@@ -353,7 +353,7 @@ export default function PrototypeSwitcher({
         ? `${window.location.protocol}//${window.location.hostname}:${basePort}`
         : window.location.origin;
       const url = `${base}${basePath}/prototype-confirm`;
-      const payload = JSON.stringify({ name: prototypeName, variant: current, variants, notes, action });
+      const payload = JSON.stringify({ name: prototypeName, variant: current, variants, notes, action, url: window.location.href });
 
       const closeAfter = action === "confirm" && notes.trim().length === 0;
 

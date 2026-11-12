@@ -1,6 +1,10 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { axeSummary, mergeAxe } from "./axe";
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { type Difference, diffReadings, type LayoutCheck, layoutCheck, notChecked } from "../layout/diff";
+import { isLayoutError, type LayoutResult, type Reading } from "../layout/fingerprint";
+import { type AcceptedRecord, RECORD_FILE, readRecord } from "../layout/record";
+import { protoDir } from "../prototype/paths";
+import { type AxeReport, axeSummary, mergeAxe } from "./axe";
 import type { BoardImage, Section, VerifyPaths } from "./board";
 import {
 	STATES,
@@ -23,6 +27,7 @@ export interface CapturedItem {
 	sectionId: string;
 	records: ShotRecord[];
 	tests: TestReport;
+	layout?: LayoutCheck;
 }
 
 export function sidesFor(item: VerifyItem): SideName[] {
@@ -38,6 +43,38 @@ function sideUrl(item: VerifyItem, side: SideName): string {
 	return item.targetUrl;
 }
 
+const noAxe = (): AxeReport => ({ tool: "dg-axe-summary", engine: "local-static", violations: [], passes: [] });
+
+function compareLayout(
+	accepted: AcceptedRecord,
+	found: LayoutResult,
+	at: { viewport: (typeof VIEWPORTS)[number]; theme: (typeof THEMES)[number]; role: string },
+): Difference[] | string {
+	const expected = accepted.fingerprint?.readings.find(
+		(reading) => reading.viewport === at.viewport.id && reading.theme === at.theme,
+	);
+	if (!expected) return `record has no ${at.viewport.id} ${at.theme} reading`;
+	const reading: Reading = isLayoutError(found)
+		? { viewport: at.viewport.id, width: at.viewport.width, height: at.viewport.height, theme: at.theme, themeApplied: "unknown", root: null, controls: [] }
+		: { viewport: at.viewport.id, width: at.viewport.width, height: at.viewport.height, theme: at.theme, themeApplied: found.themeApplied, root: found.root, controls: found.controls };
+	return diffReadings(expected, reading, { viewport: at.viewport.id, theme: at.theme, role: at.role }, isLayoutError(found) ? found.error : undefined);
+}
+
+function referenceDir(accepted: AcceptedRecord | undefined, cwd: string): string | undefined {
+	const shots = accepted?.shots;
+	if (!shots) return undefined;
+	for (const light of [false, true]) {
+		try {
+			const sandbox = protoDir(accepted.name, { cwd, light });
+			const current = readRecord(join(sandbox, RECORD_FILE));
+			if (current.at !== accepted.at || current.variant !== accepted.variant) continue;
+			const dir = join(sandbox, shots);
+			if (existsSync(dir)) return dir;
+		} catch {}
+	}
+	return undefined;
+}
+
 /** Capture each target item at every viewport, theme, and state into the target's section folder. */
 export async function captureSession(options: {
 	manifest: VerifyManifest;
@@ -51,6 +88,9 @@ export async function captureSession(options: {
 		if (!item) throw new Error(`unknown item ${JSON.stringify(target.itemId)}`);
 		return { item, sectionId: target.sectionId };
 	});
+	const accepted = new Map(
+		items.flatMap(({ item }) => (item.record ? [[item.id, readRecord(resolve(options.cwd, item.record))] as const] : [])),
+	);
 	const sessionTests = await runDeclaredTests(options.manifest.tests, options.cwd);
 	const captured: CapturedItem[] = [];
 	for (const { item, sectionId } of items) {
@@ -58,12 +98,16 @@ export async function captureSession(options: {
 		rmSync(root, { recursive: true, force: true });
 		const itemTests = await runDeclaredTests(item.tests, options.cwd);
 		const records: ShotRecord[] = [];
+		const record = accepted.get(item.id);
+		const differences: Difference[] = [];
+		const unread = new Map<string, string>();
 		for (const side of sidesFor(item)) {
 			for (const role of item.roles) {
 				for (const viewport of VIEWPORTS) {
 					for (const theme of THEMES) {
 						for (const state of STATES) {
 							const url = sideUrl(item, side);
+							const reads = side === "after" && state === "default" && !!record?.fingerprint;
 							let shot;
 							try {
 								shot = await options.capturer.shot({
@@ -75,6 +119,7 @@ export async function captureSession(options: {
 									theme,
 									state,
 									menuSelector: item.menuSelector,
+									...(reads ? { fingerprintRoot: item.rootSelector } : {}),
 								});
 							} catch (error) {
 								const message = error instanceof Error ? error.message : String(error);
@@ -83,6 +128,15 @@ export async function captureSession(options: {
 							const dir = join(root, side, role.id, viewport.id, theme);
 							mkdirSync(dir, { recursive: true });
 							writeFileSync(join(dir, `${state}.png`), shot.png);
+							if (reads && record) {
+								const result = shot.fingerprint
+									? compareLayout(record, shot.fingerprint, { viewport, theme, role: role.id })
+									: shot.engine === "http"
+										? "http engine reads no layout"
+										: "no layout reading returned";
+								if (typeof result === "string") unread.set(role.id, result);
+								else differences.push(...result);
+							}
 							records.push({
 								itemId: item.id,
 								side,
@@ -105,7 +159,48 @@ export async function captureSession(options: {
 				}
 			}
 		}
-		captured.push({ item, sectionId, records, tests: itemTests.status === "not-run" ? sessionTests : itemTests });
+		const reference = item.targetUrl ? undefined : referenceDir(record, options.cwd);
+		for (const role of reference ? item.roles : []) {
+			for (const viewport of VIEWPORTS) {
+				for (const theme of THEMES) {
+					const from = join(reference as string, `${viewport.id}-${theme}.png`);
+					if (!existsSync(from)) continue;
+					const dir = join(root, "target", role.id, viewport.id, theme);
+					mkdirSync(dir, { recursive: true });
+					copyFileSync(from, join(dir, "default.png"));
+					records.push({
+						itemId: item.id,
+						side: "target",
+						role: role.id,
+						viewport: viewport.id,
+						width: viewport.width,
+						height: viewport.height,
+						theme,
+						state: "default",
+						url: "",
+						finalUrl: "",
+						engine: "playwright",
+						menuFound: false,
+						scrolled: false,
+						src: `/shots/${sectionId}/target/${role.id}/${viewport.id}/${theme}/default.png`,
+						axe: noAxe(),
+					});
+				}
+			}
+		}
+		const rows = record
+			? item.roles.flatMap((role) => {
+					const reason = record.fingerprint ? unread.get(role.id) : (record.skipped ?? "no fingerprint recorded");
+					return reason === undefined ? differences.filter((row) => row.role === role.id) : [notChecked(role.id, reason)];
+				})
+			: undefined;
+		captured.push({
+			item,
+			sectionId,
+			records,
+			tests: itemTests.status === "not-run" ? sessionTests : itemTests,
+			...(rows ? { layout: layoutCheck(rows) } : {}),
+		});
 	}
 	return captured;
 }
@@ -146,6 +241,7 @@ export function sectionFromCapture(
 		},
 		images,
 	};
+	if (captured.layout) section.checks = { ...section.checks, layout: captured.layout };
 	if (round.summary) section.summary = round.summary;
 	if (round.follows) section.follows = round.follows;
 	if (item.afterRef) section.branch = item.afterRef;

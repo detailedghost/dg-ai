@@ -8,6 +8,7 @@ interface ConfirmBody {
 	variant: string;
 	variants: string[];
 	notes?: string;
+	url?: string;
 	action?: "confirm" | "reject" | "status";
 	selftest?: boolean;
 }
@@ -144,6 +145,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 	}
 	if (typeof body.notes === "string" && body.notes.trim()) {
 		writeFileSync(join(protoDir, ".notes"), body.notes, "utf8");
+	}
+	if (typeof body.url === "string" && isLocalOrigin(body.url)) {
+		writeFileSync(join(protoDir, ".url"), `${body.url}\n`, "utf8");
 	}
 	writeFileSync(join(protoDir, ".source"), "browser\n", "utf8");
 	writeFileSync(sentinelPath, `${body.variant}\n`, "utf8");

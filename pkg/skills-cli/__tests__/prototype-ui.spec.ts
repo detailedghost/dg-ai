@@ -25,6 +25,8 @@ interface Session {
 	port: number;
 	sentinelDir: string;
 	cwd: string;
+	prototype?: string;
+	recordDir?: string;
 }
 
 let root: string;
@@ -49,6 +51,7 @@ afterEach(() => {
 		"idle",
 		"pinned",
 		"plan-chain",
+		"described",
 	]) {
 		const state = readState(chain);
 		if (state) {
@@ -235,6 +238,36 @@ describe("prototype ui", () => {
 			chain: "round",
 			found: false,
 		});
+	});
+
+	test("the session state names the prototype and its record directory, and a reused session refreshes both", async () => {
+		const first = cli([
+			"ui",
+			manifest("described-one", "described"),
+			"--no-open",
+			`--port=${port()}`,
+			"--timeout=60",
+		]);
+		const session = await sessionFor("described");
+		expect(readState("described")).toMatchObject({
+			prototype: "described-one",
+			recordDir: join(outside, ".agents", "prototype", "described-one"),
+		});
+		await decide(session.port, { action: "reject", notes: "again" });
+		await first.done;
+		const second = cli([
+			"ui",
+			manifest("described-two", "described"),
+			"--no-open",
+			"--timeout=60",
+		]);
+		await Bun.sleep(800);
+		expect(readState("described")).toMatchObject({
+			prototype: "described-two",
+			recordDir: join(outside, ".agents", "prototype", "described-two"),
+		});
+		await decide(session.port, { action: "confirm", variant: "A", notes: "" });
+		await second.done;
 	});
 
 	test("a series keeps the server after an approve with no notes", async () => {

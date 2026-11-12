@@ -71,6 +71,7 @@ flowchart LR
 - [0024 — Host SMS provider commands on dg-skills](0024-ssms-on-dg-skills.md)
 - [0026 — Opt-in hooks that write tool settings](0026-opt-in-hooks.md)
 - [0027 — Offer pinned third-party plugins as an opt-in install](0027-optional-third-party-plugins.md)
+- [0033 — Gate verify on the layout of the accepted prototype](0033-accepted-prototype-layout-gate.md)
 - [0034 — Send images over the phone](0034-phone-image-messages.md) — Proposed:
   kind 15 behind a default-off `files` setting; the receiver pulls the ciphertext over Magic Wormhole with a kind 25015 request.
 - [0036 — Move the legacy `~/.dg` through one layout module](0036-one-layout-module.md) — Proposed:

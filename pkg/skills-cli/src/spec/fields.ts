@@ -1,8 +1,9 @@
-import { copyFileSync, mkdirSync } from "node:fs";
-import { basename } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { isRecord } from "@dg/common";
 import { scratchRoot, stateRoot } from "@dg/common/node";
 import { type Document, isSeq, parseDocument } from "yaml";
+import { type AcceptedRecord, RECORD_FILE, readRecord, renderAccepted } from "../layout/record";
 import { frontmatterOf, parseYaml, splitDocument } from "./frontmatter";
 import { type FieldSpec, loadSchema, type SchemaFields } from "./schema";
 import {
@@ -209,6 +210,25 @@ function coerce(value: string): string | number | boolean {
 	return /^-?\d+$/.test(value) ? Number(value) : value;
 }
 
+async function deleteFields(spec: string, fieldPaths: string[]): Promise<void> {
+	const { front, body } = splitDocument(await readText(spec));
+	const doc = parseDocument(front, { uniqueKeys: false });
+	let changed = false;
+	for (const fieldPath of fieldPaths) {
+		const tokens = parseFieldPath(fieldPath);
+		const target = tokens && resolveNegativeIndices(doc, tokens);
+		if (target && doc.hasIn(target)) {
+			doc.deleteIn(target);
+			changed = true;
+		}
+	}
+	if (changed)
+		replaceText(
+			spec,
+			`---\n${doc.toString({ lineWidth: 0, flowCollectionPadding: false })}---\n${body}`,
+		);
+}
+
 async function setField(
 	spec: string,
 	fieldPath: string,
@@ -267,13 +287,43 @@ export async function setCommand(args: string[]): Promise<number> {
 	return 0;
 }
 
+const IMAGE_ASSET = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico|tiff?)$/i;
+
+interface AcceptedSource {
+	record: AcceptedRecord;
+	recordFile: string;
+	asset?: string;
+}
+
+function acceptedSource(path: string): AcceptedSource | undefined {
+	const isDirectory = statSync(path).isDirectory();
+	const sandbox = isDirectory ? path : dirname(path);
+	const recordFile = isDirectory ? join(path, RECORD_FILE) : basename(path) === RECORD_FILE ? path : join(sandbox, RECORD_FILE);
+	if (!existsSync(recordFile)) {
+		if (isDirectory) deny(`no ${RECORD_FILE} in ${path}`);
+		return undefined;
+	}
+	try {
+		const record = readRecord(recordFile);
+		return { record, recordFile, ...(isDirectory || recordFile === path ? {} : { asset: path }) };
+	} catch (error) {
+		return deny(error instanceof Error ? error.message : String(error));
+	}
+}
+
 export async function prototypeRefCommand(args: string[]): Promise<number> {
 	const [bundle, ...flags] = args;
 	const syntax = "prototype-ref <bundle> --slice <N> --path <p> --variant <k>";
 	if (bundle === undefined) return usageError(syntax);
 	const values: Record<string, string> = {};
+	let waived = false;
 	for (let i = 0; i < flags.length; ) {
 		const flag = flags[i] as string;
+		if (flag === "--no-fingerprint") {
+			waived = true;
+			i += 1;
+			continue;
+		}
 		if (flag !== "--slice" && flag !== "--path" && flag !== "--variant")
 			die(`unknown prototype-ref flag: ${flag}`);
 		values[flag] = flagValue(flags, i, flag);
@@ -285,19 +335,53 @@ export async function prototypeRefCommand(args: string[]): Promise<number> {
 	if (slice === "" || path === "" || variant === "") return usageError(syntax);
 	if (!/^\d+$/.test(slice)) die(`slice number must be integer: ${slice}`);
 	if (Number(slice) < 1) die(`slice number must be 1 or greater: ${slice}`);
+	if (IMAGE_ASSET.test(path))
+		deny(`refusing image asset ${path}: screenshots stay gitignored`);
 	const plan = `${bundle}/plan.md`;
 	needFile(plan);
-	needFile(path);
+	if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) needFile(path);
 	const index = Number(slice) - 1;
 	const parsed = parseYaml(frontmatterOf(await readText(plan)));
 	const slices = parsed.ok ? lookup(parsed.value, ["slices"]) : undefined;
 	if (!Array.isArray(slices) || index >= slices.length)
 		die(`slice ${slice} does not exist in ${plan}`);
-	const destRel = `prototype/slice_${slice}_${basename(path)}`;
+	const source = acceptedSource(path);
+	if (source) {
+		const { record, recordFile } = source;
+		if (record.variant !== variant)
+			deny(`accepted.json says variant ${record.variant}, --variant says ${variant}`);
+		if (record.mode === "local" && !record.fingerprint && !waived)
+			deny(
+				`no layout fingerprint in ${recordFile}; run prototype fingerprint ${record.name} --url=<url> or pass --no-fingerprint`,
+			);
+	}
 	mkdirSync(`${bundle}/prototype`, { recursive: true });
-	copyFileSync(path, `${bundle}/${destRel}`);
+	const copy = (name: string) => `prototype/slice_${slice}_${name}`;
+	const destRel = source && !source.asset ? copy("ACCEPTED.md") : copy(basename(path));
+	if (source) {
+		const inside = relative(process.cwd(), dirname(source.recordFile)) || ".";
+		const sandbox =
+			inside.startsWith("..") || isAbsolute(inside)
+				? `.agents/prototype/${source.record.name} (scratch sandbox, --light)`
+				: inside;
+		writeFileSync(
+			`${bundle}/${copy("accepted.json")}`,
+			`${JSON.stringify({ ...source.record, url: null }, null, 2)}\n`,
+		);
+		writeFileSync(
+			`${bundle}/${copy("ACCEPTED.md")}`,
+			renderAccepted(source.record, { sandbox, waived }),
+		);
+	}
+	if (!source || source.asset) copyFileSync(path, `${bundle}/${destRel}`);
 	await setField(plan, `slices[${index}].prototype.path`, destRel);
 	await setField(plan, `slices[${index}].prototype.variant`, variant);
+	if (source) {
+		await setField(plan, `slices[${index}].prototype.accepted`, copy("ACCEPTED.md"));
+		await setField(plan, `slices[${index}].prototype.record`, copy("accepted.json"));
+	} else {
+		await deleteFields(plan, [`slices[${index}].prototype.accepted`, `slices[${index}].prototype.record`]);
+	}
 	say(`${plan}: recorded prototype for slice ${slice} -> ${destRel}\n`);
 	return 0;
 }

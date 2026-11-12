@@ -224,6 +224,7 @@ describe("proto plant answer export", () => {
 			"write:/answer/styles.css",
 			"write-binary:/answer/preview.jpg",
 			"write:/answer/lineage.md",
+			"write:/answer/accepted.json",
 			"write:/answer/NOTES.md",
 		]);
 	});
@@ -302,6 +303,44 @@ describe("proto plant answer export", () => {
 		expect(notes).toMatch(/styles\.css.+do not propagate.+index\.html/is);
 	});
 
+	test("records an ext acceptance next to the answer, with the lineage round", async () => {
+		const verdict = {
+			slug: "account-accepted",
+			action: "approve",
+			selectedKey: "compact",
+			notes: "tighten the header",
+			ts: 1_721_234_568_010,
+		} satisfies Verdict;
+		const harness = await protoHarness(verdict);
+		const plant = () =>
+			runCli(
+				harness.projectRoot,
+				["proto", "--ext", "plant", harness.planPath, "--timeout", "500"],
+				harness.env,
+			);
+		const recordPath = join(harness.answerDirectory, "accepted.json");
+
+		expect((await plant()).code).toBe(0);
+		const first = JSON.parse(await readFile(recordPath, "utf8"));
+		expect(first).toMatchObject({
+			version: 1,
+			name: "account-accepted",
+			mode: "ext",
+			variant: "compact",
+			label: "Compact",
+			round: 1,
+			notes: "tighten the header",
+			final: false,
+			fingerprint: null,
+		});
+		expect(first.skipped).toMatch(/^ext: /);
+
+		harness.setVerdict({ ...verdict, notes: undefined, ts: verdict.ts + 1 });
+		expect((await plant()).code).toBe(0);
+		const second = JSON.parse(await readFile(recordPath, "utf8"));
+		expect(second).toMatchObject({ round: 2, final: true, notes: "" });
+	});
+
 	test("re-approve overwrites an existing answer but refuses an unrelated NOTES question", async () => {
 		const verdict = {
 			slug: "account-reapprove",
@@ -376,6 +415,7 @@ describe("proto plant answer export", () => {
 		"preview.png",
 		"preview.jpg",
 		"lineage.md",
+		"accepted.json",
 		"NOTES.md",
 	]) {
 		test(`refuses symlinked ${outputFile} before contacting the daemon`, async () => {

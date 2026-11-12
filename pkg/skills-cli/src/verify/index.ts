@@ -49,7 +49,8 @@ export const USAGE = `Usage: verify <command> <name> [options]
   stop <name>                                   Stop the board server
   title <name> <text>                           Set the board title shown in the nav and the tab; empty text clears it
   capture <name> [--manifest=FILE] [--items=a,b] [--summary=S] [--engine=http|playwright]
-                                                Capture items from the manifest as their next round
+                                                Capture items from the manifest as their next round;
+                                                an item with a record also diffs the accepted layout
   rerun <name> [--summary=S] [--engine=http|playwright]
                                                 Recapture rounds sent back or approved with a note
 

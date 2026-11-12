@@ -54,6 +54,8 @@ Write the plan in one line in `NOTES.md`: "Five variants of the settings page, s
 
 ### 2. Generate radically different variants
 
+Mark the feature root of every variant with `data-verify-root="<prototype name>"`, on the one element that wraps the feature. Exactly one visible marked element must exist per variant. The acceptance record below reads the layout from it, and the built feature carries the same attribute.
+
 Hold each variant to the page's purpose and data, the project's component library and styling system, and a clear exported component name such as `VariantA`. Variants must be **structurally different**: a different layout, information hierarchy, and primary affordance, not only different colors. Three tweaked card grids is wallpaper. If two drafts come out too similar, redo one with explicit "do not use a card grid" guidance.
 
 ### 3. Wire them together
@@ -136,6 +138,10 @@ The second command consumes the decision. Use `prototype status <name>` with no 
 
 **Do not rely on a live foreground `wait` surviving the session.** If you background it, or hand the prototype off while a pick is outstanding, leave a breadcrumb. Record the prototype name and the literal `dg-skills prototype wait <name>` command both in the handoff note and in `NOTES.md`. A note that only says "awaiting the user's pick" strands the selection.
 
+**The CLI writes the acceptance record when it claims an approve.** `prototype wait` and `prototype ui` write `<sandbox>/accepted.json` (gitignored) with the variant, round, notes, and a layout fingerprint. They also write six reference screenshots to `<sandbox>/accepted/`. The decision clients send the page URL, so the claim can open the page in a local browser and read the controls under the feature root. Stdout does not change. One stderr line names the record and either `6 readings` or `skipped: <reason>` with the repair command.
+
+When a pick came with no page URL or no browser, the record says why. Repair it from a running page with `dg-skills prototype fingerprint <name> --url=<loopback-url>`. To record an old prototype that predates the record, run `prototype confirm <name> <key> --source=agent-migrated`, then `prototype wait <name> --timeout=1`, then `prototype fingerprint`. `prototype stop <chain>` marks the latest record final, and `prototype status <name> --json` reports it as `accepted`.
+
 The selected variant is then available as `$variant` for later steps such as `--publish`. The interesting feedback is usually "the header from B with the sidebar from C".
 
 ### 5.5 Refine chain
@@ -204,6 +210,8 @@ Once a variant has won, write down which one and why (commit message, ADR, issue
 
 - **Sub-shape A**: delete the losing variants and the switcher, and fold the winner into the existing page.
 - **Sub-shape B**: promote the winning variant to a real route, and delete the throwaway route and the switcher.
+
+Wait to clean up until `accepted.json` holds a fingerprint or an explicit skip reason that you reported to the user.
 
 Do not leave variant components or the switcher in the repo. They rot fast and confuse the next reader.
 

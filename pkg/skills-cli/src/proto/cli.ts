@@ -27,6 +27,7 @@ import {
 } from "@dg/common";
 import { CliClient, resolveCliSession } from "@dg/common/node";
 import { Command } from "commander";
+import { type AcceptedRecord, RECORD_FILE } from "../layout/record";
 import { USAGE as PROTOTYPE_USAGE, main as runPrototype } from "../prototype";
 import { DEFAULT_TIMEOUT_SEC } from "../prototype/args";
 import { assertExtensionInstalled } from "../utils/cli-only";
@@ -371,6 +372,35 @@ function lineageContents(
 	return `${rounds.join("\n\n")}\n`;
 }
 
+function extRecord(
+	plan: ProtoPlan,
+	verdict: Extract<Verdict, { action: "approve" }>,
+	label: string,
+	round: number,
+): AcceptedRecord {
+	const notes = verdict.notes ?? "";
+	const at = new Date(verdict.ts).toISOString();
+	return {
+		version: 1,
+		name: plan.slug,
+		chain: plan.slug,
+		mode: "ext",
+		variant: verdict.selectedKey,
+		label,
+		round,
+		notes,
+		final: notes === "",
+		source: "extension",
+		at,
+		url: null,
+		root: null,
+		fingerprint: null,
+		skipped: "ext: the variation lives in the user's browser session",
+		shots: null,
+		history: [{ round, variant: verdict.selectedKey, notes, at }],
+	};
+}
+
 function answerNotes(
 	plan: ProtoPlan,
 	verdict: Extract<Verdict, { action: "approve" }>,
@@ -400,6 +430,7 @@ function answerNotes(
 }
 
 type AnswerPaths = {
+	accepted: string;
 	index: string;
 	lineage: string;
 	notes: string;
@@ -409,6 +440,7 @@ type AnswerPaths = {
 
 function answerPaths(plan: ProtoPlan, seams: AnswerExportSeams): AnswerPaths {
 	return {
+		accepted: seams.answerPath(plan.slug, RECORD_FILE),
 		index: seams.answerPath(plan.slug, "index.html"),
 		lineage: seams.answerPath(plan.slug, "lineage.md"),
 		styles: seams.answerPath(plan.slug, "styles.css"),
@@ -424,6 +456,7 @@ function answerPathList(paths: AnswerPaths): string[] {
 	return [
 		paths.index,
 		paths.lineage,
+		paths.accepted,
 		paths.styles,
 		paths.previews.jpg,
 		paths.previews.png,
@@ -534,6 +567,10 @@ export async function exportApprovedAnswer(
 	await seams.writeText(
 		paths.lineage,
 		lineageContents(plan, verdict, earlierRounds, tweaks),
+	);
+	await seams.writeText(
+		paths.accepted,
+		`${JSON.stringify(extRecord(plan, verdict, selected.label, earlierRounds.length + 1), null, 2)}\n`,
 	);
 	await seams.writeText(paths.notes, answerNotes(plan, verdict));
 	return paths.index;

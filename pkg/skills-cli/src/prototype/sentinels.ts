@@ -18,6 +18,20 @@ export type DecisionResult =
 	| { status: "ok"; contents: string; decision: string }
 	| { status: "timeout" };
 
+export interface ApprovedClaim {
+	variant: string;
+	notes: string;
+	source: string;
+	url?: string;
+}
+
+export type ApproveHook = (claim: ApprovedClaim) => Promise<void>;
+
+interface Claimed {
+	result: WaitResult;
+	approved?: ApprovedClaim;
+}
+
 const POLL_MS = 200;
 
 function readTrimmed(path: string): string {
@@ -28,6 +42,15 @@ export function writeSentinel(path: string, contents: string): void {
 	const temp = `${path}.${process.pid}.tmp`;
 	writeFileSync(temp, contents);
 	renameSync(temp, path);
+}
+
+function readOptional(path: string): string | undefined {
+	try {
+		const value = readTrimmed(path);
+		return value.length > 0 ? value : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function sleep(ms: number): Promise<void> {
@@ -51,7 +74,7 @@ export function removeSentinels(...paths: string[]): void {
 		);
 }
 
-function claim(paths: SentinelPaths): WaitResult | undefined {
+function claim(paths: SentinelPaths): Claimed | undefined {
 	try {
 		return claimExisting(paths);
 	} catch (error) {
@@ -60,24 +83,29 @@ function claim(paths: SentinelPaths): WaitResult | undefined {
 	}
 }
 
-function claimExisting(paths: SentinelPaths): WaitResult | undefined {
+function claimExisting(paths: SentinelPaths): Claimed | undefined {
 	if (existsSync(paths.selection)) {
 		const variant = (
 			readFileSync(paths.selection, "utf8").split("\n")[0] ?? ""
 		).replace(/[\r\s]/g, "");
 		const notes = existsSync(paths.notes) ? readTrimmed(paths.notes) : "";
-		removeSentinels(paths.selection, paths.notes, paths.source);
-		return { status: "ok", variant, notes };
+		const source = readSource(paths) ?? "cli";
+		const url = readOptional(paths.url);
+		removeSentinels(paths.selection, paths.notes, paths.source, paths.url);
+		return {
+			result: { status: "ok", variant, notes },
+			approved: { variant, notes, source, ...(url ? { url } : {}) },
+		};
 	}
 	if (existsSync(paths.reject)) {
 		const notes = readTrimmed(paths.reject);
-		removeSentinels(paths.reject, paths.notes, paths.source);
-		return { status: "rejected", notes };
+		removeSentinels(paths.reject, paths.notes, paths.source, paths.url);
+		return { result: { status: "rejected", notes } };
 	}
 	if (existsSync(paths.more)) {
 		const notes = readTrimmed(paths.more);
-		removeSentinels(paths.more, paths.notes, paths.source);
-		return { status: "more", notes };
+		removeSentinels(paths.more, paths.notes, paths.source, paths.url);
+		return { result: { status: "more", notes } };
 	}
 	return undefined;
 }
@@ -87,12 +115,7 @@ function claimExisting(paths: SentinelPaths): WaitResult | undefined {
  * from a direct `prototype confirm`, or whatever `--source=` named.
  */
 export function readSource(paths: SentinelPaths): string | undefined {
-	try {
-		const value = readTrimmed(paths.source);
-		return value.length > 0 ? value : undefined;
-	} catch {
-		return undefined;
-	}
+	return readOptional(paths.source);
 }
 
 async function poll<T>(
@@ -155,8 +178,12 @@ export function readDecision(paths: SentinelPaths): DecisionSnapshot {
 export async function wait(
 	paths: SentinelPaths,
 	timeoutSec: number,
+	onApprove?: ApproveHook,
 ): Promise<WaitResult> {
-	return (await poll(timeoutSec, () => claim(paths))) ?? { status: "timeout" };
+	const claimed = await poll(timeoutSec, () => claim(paths));
+	if (!claimed) return { status: "timeout" };
+	if (claimed.approved && onApprove) await onApprove(claimed.approved);
+	return claimed.result;
 }
 
 /** Block until a plan-walkthrough decision file exists, consume it, and report it. */

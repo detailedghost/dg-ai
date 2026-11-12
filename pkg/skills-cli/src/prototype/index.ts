@@ -4,6 +4,7 @@ import { validateVerdict } from "@dg/common";
 import { resolveSkillAsset } from "../utils/skill-assets";
 import { protoScratchPath } from "../utils/proto-paths";
 import { type Flags, parseFlags } from "./args";
+import { acceptanceHook, acceptedSummary, refingerprint } from "./accepted";
 import {
 	assertNotSelftestName,
 	protoDir,
@@ -75,6 +76,7 @@ function reportStatus(
 	resolved: DecisionSnapshot,
 	flags: Flags,
 	name: string,
+	recordDir = paths.dir,
 ): number {
 	if (flags.requirePending && resolved.status !== "pending") {
 		process.stderr.write(
@@ -83,8 +85,9 @@ function reportStatus(
 		return 1;
 	}
 	if (flags.json) {
+		const accepted = acceptedSummary(recordDir);
 		write(
-			`${JSON.stringify({ status: resolved.status, source: readSource(paths) ?? null, decision: resolved.decision })}\n`,
+			`${JSON.stringify({ status: resolved.status, source: readSource(paths) ?? null, decision: resolved.decision, ...(accepted ? { accepted } : {}) })}\n`,
 		);
 	} else {
 		write(`${resolved.status}\n`);
@@ -118,6 +121,8 @@ export const USAGE = `Usage: prototype <command> [options]
                                                  --source names who decided (default "cli").
   status <name> [--light] [--json] [--require-pending]
                                                  Print the selection, "rejected", "more", or "pending"
+  fingerprint <name> --url=LOOPBACK_URL [--light]
+                                                 Read the accepted layout again from a running page
   stop <name>                                    Stop a ui session's server and drop its state
   path <name> [--light]                          Print the selection sentinel path
   await-decision <name> [--timeout=SEC] [--light] [--json]
@@ -134,6 +139,7 @@ const NAME_COMMANDS: Record<string, readonly string[]> = {
 	wait: ["--timeout", "--light", "--json"],
 	confirm: ["--light", "--notes", "--selftest", "--source"],
 	status: ["--light", "--json", "--require-pending"],
+	fingerprint: ["--light", "--url"],
 	path: ["--light"],
 	"await-decision": ["--timeout", "--light", "--json"],
 	"decision-path": ["--light"],
@@ -168,14 +174,28 @@ async function runNamed(command: string, argv: string[]): Promise<number> {
 			readDecision(sentinelPaths(session.sentinelDir)),
 			flags,
 			name,
+			session.recordDir,
 		);
+	}
+	if (command === "fingerprint") {
+		const dir = protoDir(name, { cwd: process.cwd(), light: flags.light });
+		if (!flags.url) throw new Error("fingerprint requires --url=<loopback-url>");
+		const record = await refingerprint(dir, name, flags.url);
+		write(
+			`recorded ${join(dir, "accepted.json")} (${record.fingerprint ? `${record.fingerprint.readings.length} readings` : `skipped: ${record.skipped}`})\n`,
+		);
+		return record.fingerprint ? 0 : 1;
 	}
 	if (command === "confirm" && !flags.selftest) assertNotSelftestName(name);
 	const targetName = flags.selftest ? `${name}-selftest` : name;
 	const paths = locate(targetName, flags);
 	switch (command) {
 		case "wait": {
-			const result = await wait(paths, flags.timeoutSec);
+			const result = await wait(
+				paths,
+				flags.timeoutSec,
+				acceptanceHook({ dir: paths.dir, name: targetName, chain: targetName }),
+			);
 			write(formatWait(result, flags.json));
 			return result.status === "timeout" ? 1 : 0;
 		}
