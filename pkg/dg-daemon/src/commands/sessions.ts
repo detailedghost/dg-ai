@@ -14,9 +14,7 @@ export function registerSessionCommands(program: Command): void {
 
 	sessions
 		.command("clear")
-		.description(
-			"close sessions no CLI is attached to, leaving sessions that are waiting for an agent",
-		)
+		.description("close sessions no CLI is attached to")
 		.action(async () => {
 			const paths = resolveDgPaths();
 			const handle = readPidFile(paths);

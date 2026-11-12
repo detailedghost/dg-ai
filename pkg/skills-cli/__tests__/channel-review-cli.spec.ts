@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { channelReviewPaths, createStateStore } from "@dg/channel-review";
@@ -68,15 +68,15 @@ function writeConfig(body: Record<string, unknown> = {}): void {
 }
 
 describe("channel-review help", () => {
-	test("lists start, stop, status, logs, run, and env", async () => {
+	test("lists start, stop, status, logs, run, env, and setup", async () => {
 		const result = await run(["--help"]);
 		expect(result.code).toBe(0);
-		for (const name of ["start", "stop", "status", "logs", "run", "env"]) {
+		for (const name of ["start", "stop", "status", "logs", "run", "env", "setup"]) {
 			expect(result.stdout).toMatch(new RegExp(`^\\s+${name}\\b`, "m"));
 		}
 	});
 
-	test.each(["start", "stop", "status", "logs", "run", "env"])("%s --help exits 0", async (name) => {
+	test.each(["start", "stop", "status", "logs", "run", "env", "setup"])("%s --help exits 0", async (name) => {
 		const result = await run([name, "--help"]);
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain(name);
@@ -284,6 +284,21 @@ describe("channel-review start and stop", () => {
 		const result = await run(["start"]);
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain(configPath());
+		expect(result.stderr).toContain("run: dg-skills channel-review setup");
+	});
+
+	test("setup without a terminal writes a template, not config.json, and exits 1", async () => {
+		const result = await run(["setup"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("config.example.json");
+		expect(existsSync(configPath())).toBe(false);
+	});
+
+	test("setup refuses to replace a config without --force", async () => {
+		writeConfig();
+		const result = await run(["setup"]);
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("--force");
 	});
 
 	test("start without the aws CLI exits 1 naming aws", async () => {

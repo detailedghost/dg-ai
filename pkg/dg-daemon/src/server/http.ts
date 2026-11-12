@@ -4,18 +4,16 @@ import {
 	AssetTooLargeError,
 	CHAT_ASSETS_PATH,
 	CHAT_ATTACH_PATH,
+	CHAT_CODE_PATH,
+	CHAT_EXCHANGE_PATH,
 	CHAT_CLI_PATH,
-	CHAT_FEED_PATH,
 	CHAT_HEALTH_PATH,
-	CHAT_JOBS_PATH,
 	CHAT_LEGACY_HEALTH_PATH,
 	CHAT_MAX_ASSET_BYTES,
 	CHAT_MAX_PAYLOAD_BYTES,
-	CHAT_PAIR_PATH,
 	CHAT_PROTOCOL_VERSION,
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
-	CHAT_SESSIONS_PATH,
 	CHAT_SERVICES_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
@@ -26,21 +24,20 @@ import {
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
 	describeError,
+	noteSecret,
 	type OverwatchAction,
 	OVERWATCH_SESSION_ID,
-	type PairRequest,
 	type SessionRole,
-	decideAttach,
+	decideLocalAttach,
 	validateAttachRequest,
 	validateOverwatchAction,
-	validatePairRequest,
 } from "@dg/common";
 import {
 	type DgPaths,
 	readOwnerToken,
 	tokensEqual,
 } from "@dg/common/node";
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import { installAssetLifecycle } from "../assets/cleanup";
 import {
 	assetContentDisposition,
@@ -51,15 +48,13 @@ import { registerAsset } from "../assets/register";
 import { assertFlatSegment } from "../assets/safe-path";
 import { type AssetServeResult, resolveAssetForServing } from "../assets/serve";
 import type { DispatchScheduler } from "../dispatch";
-import { runJobNow } from "../jobs/runner";
-import { consumePairingAttempt } from "../pairing";
 import type { Supervisor } from "../services/supervisor";
 import { SESSION_MAX_ACTIVE_DEFAULT } from "../session/limits";
 import type {
 	CreateSessionInput,
 	SessionRegistry,
 } from "../session/registry";
-import { type ChatStore, SCHEDULER_SESSION_ID } from "../store";
+import type { ChatStore } from "../store";
 import type { CredentialStore } from "../store/credentials-store";
 import {
 	DEFAULT_ARCHIVE_MAX_ROWS,
@@ -72,18 +67,25 @@ import {
 	abortPendingWork,
 	type ConnectionManager,
 	createSocketState,
+	isExtensionPeer,
 	resolveDrainWaiters,
+	sendViaQueue,
 	type SocketState,
 } from "./connection";
 import { handleSocketMessage } from "./frame-handlers";
+import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
+import { createPageCodes, type PageCodes } from "./page-codes";
 import { isLoopbackHost } from "./host-guard";
 import type { Logger } from "./log";
 import {
+	bearerToken,
 	claimsLocalPage,
 	getPinnedOrigin,
 	isBrowserOrigin,
 	isExtensionOrigin,
+	isTrustedExtensionOrigin,
 	isLocalPageOrigin,
+	pinOriginIfUnset,
 	requireLocalPageOrigin,
 } from "./origin";
 import { localPageResponse } from "./pages";
@@ -94,6 +96,7 @@ const ASSET_TOO_LARGE_MESSAGE = "refused: asset exceeds CHAT_MAX_ASSET_BYTES";
 export type HttpServerDeps = {
 	port: number;
 	instanceId: string;
+	daemonId: string;
 	paths: DgPaths;
 	registry: SessionRegistry;
 	connections: ConnectionManager;
@@ -106,6 +109,7 @@ export type HttpServerDeps = {
 	supervisor: Supervisor;
 };
 
+export const WS_PAYLOAD_HEADROOM_BYTES = 4096;
 const NOSNIFF_HEADERS = { "X-Content-Type-Options": "nosniff" };
 
 function json(body: unknown, init: ResponseInit = {}): Response {
@@ -139,8 +143,8 @@ function requireExtensionOrigin(
 	paths: DgPaths,
 ): Response | undefined {
 	const origin = req.headers.get("origin");
-	if (!isExtensionOrigin(origin)) {
-		return new Response("refused: requires an extension-scheme Origin", {
+	if (!isTrustedExtensionOrigin(origin)) {
+		return new Response("refused: requires the DeeGee extension Origin", {
 			status: 400,
 			headers: NOSNIFF_HEADERS,
 		});
@@ -194,24 +198,6 @@ function requireLocalOrPinnedOrigin(
 	return requirePinnedExtensionOrigin(req, deps.paths);
 }
 
-function requirePairOrigin(req: Request, paths: DgPaths): Response | undefined {
-	const origin = req.headers.get("origin");
-	if (origin === null || !isExtensionOrigin(origin)) {
-		return new Response("refused: /pair requires an extension-scheme Origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	const pinnedOrigin = getPinnedOrigin(paths);
-	if (pinnedOrigin !== undefined && pinnedOrigin !== origin) {
-		return new Response(
-			"refused: another extension origin is pinned; run `dg-daemon origin clear` and try again",
-			{ status: 409, headers: NOSNIFF_HEADERS },
-		);
-	}
-	return undefined;
-}
-
 function requireLoopbackHost(req: Request, port: number): Response | undefined {
 	if (isLoopbackHost(req.headers.get("host"), port)) return undefined;
 	return new Response("refused: Host header is not the loopback authority", {
@@ -219,14 +205,10 @@ function requireLoopbackHost(req: Request, port: number): Response | undefined {
 	});
 }
 
-function bootstrapPageHtml(): string {
-	return "<!doctype html><html><head><title>dg chat</title></head><body><p>Starting chat session…</p></body></html>";
-}
-
 function handleHealthCheck(
 	req: Request,
 	port: number,
-	instanceId: string,
+	ids: { instanceId: string; daemonId: string },
 ): Response {
 	const failsHostOrOrigin =
 		!isLoopbackHost(req.headers.get("host"), port) ||
@@ -237,7 +219,7 @@ function handleHealthCheck(
 	return json({
 		daemon: "dg-daemon",
 		protocolVersion: CHAT_PROTOCOL_VERSION,
-		instanceId,
+		...ids,
 	});
 }
 
@@ -263,8 +245,14 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		store,
 		credentials,
 		dispatchScheduler,
+		port,
+		daemonId: deps.daemonId,
 		overwatchOpenRequests: new Map(),
 	};
+
+	const attachLimiter = createAttachLimiter();
+	const pageCodes = createPageCodes();
+	const exchangeLimiter = createAttachLimiter();
 
 	const boundServer = Bun.serve<SocketState>({
 		hostname: "127.0.0.1",
@@ -286,7 +274,7 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 		websocket: {
 			idleTimeout: 120,
 			sendPings: true,
-			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + 4096,
+			maxPayloadLength: CHAT_MAX_PAYLOAD_BYTES + WS_PAYLOAD_HEADROOM_BYTES,
 			open(ws) {
 				connections.add(ws);
 				noteActivity();
@@ -327,7 +315,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				url.pathname === CHAT_HEALTH_PATH ||
 				url.pathname === CHAT_LEGACY_HEALTH_PATH;
 			if (isHealth) {
-				return handleHealthCheck(req, port, deps.instanceId);
+				return handleHealthCheck(req, port, {
+					instanceId: deps.instanceId,
+					daemonId: deps.daemonId,
+				});
 			}
 
 			const hostError = requireLoopbackHost(req, port);
@@ -349,25 +340,20 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				if (page) return page;
 			}
 
-			if (url.pathname === CHAT_START_PATH && req.method === "GET") {
-				return new Response(bootstrapPageHtml(), {
-					headers: {
-						"Content-Type": "text/html; charset=utf-8",
-						...NOSNIFF_HEADERS,
-					},
-				});
-			}
-
 			if (url.pathname === CHAT_START_PATH && req.method === "POST") {
 				return handleRegisterSession(req, deps);
 			}
 
-			if (url.pathname === CHAT_PAIR_PATH && req.method === "POST") {
-				return handlePair(req, deps);
+			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
+				return handleAttach(req, url, deps, attachLimiter);
 			}
 
-			if (url.pathname === CHAT_ATTACH_PATH && req.method === "POST") {
-				return handleAttach(req, deps);
+			if (url.pathname === CHAT_CODE_PATH && req.method === "POST") {
+				return handleChatCodeMint(req, deps, pageCodes, attachLimiter);
+			}
+
+			if (url.pathname === CHAT_EXCHANGE_PATH && req.method === "POST") {
+				return handleChatCodeExchange(req, deps, pageCodes, exchangeLimiter);
 			}
 
 			if (url.pathname === CHAT_SESSIONS_CLEAR_PATH && req.method === "POST") {
@@ -376,13 +362,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 
 			if (url.pathname === CHAT_SESSIONS_LOCAL_PATH && req.method === "GET") {
 				return handleLocalSessions(req, url, deps);
-			}
-			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "GET") {
-				return handleSessionCatalog(req, url, deps);
-			}
-
-			if (url.pathname === CHAT_SESSIONS_PATH && req.method === "POST") {
-				return handleExtensionSessionCreate(req, deps);
 			}
 
 			if (url.pathname === CHAT_WS_PATH) {
@@ -409,15 +388,6 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				req.method === "DELETE"
 			) {
 				return handleAssetDelete(req, url, deps);
-			}
-
-			if (
-				url.pathname === CHAT_JOBS_PATH ||
-				url.pathname.startsWith(`${CHAT_JOBS_PATH}/`) ||
-				url.pathname === CHAT_FEED_PATH ||
-				url.pathname.startsWith(`${CHAT_FEED_PATH}/`)
-			) {
-				return handleSchedulerRoute(req, url, deps, dispatchScheduler);
 			}
 
 			if (
@@ -507,11 +477,14 @@ async function handleRegisterSession(
 	req: Request,
 	deps: HttpServerDeps,
 ): Promise<Response> {
-	if (isBrowserOrigin(req.headers.get("origin"))) {
-		return new Response("refused: /start rejects a browser Origin", {
+	if (req.headers.get("origin") !== null) {
+		return new Response("refused: /start accepts only local CLI callers", {
 			status: 400,
+			headers: NOSNIFF_HEADERS,
 		});
 	}
+	const ownerRefused = requireOwnerCredential(req, deps.paths);
+	if (ownerRefused) return ownerRefused;
 	const capacityError = requireSessionCapacity(deps);
 	if (capacityError) return capacityError;
 	const contentType = (req.headers.get("content-type") ?? "")
@@ -553,7 +526,6 @@ async function handleRegisterSession(
 		agentIdentity,
 		workset,
 		role,
-		awaitingAgent: input.awaitingAgent === true,
 	});
 }
 
@@ -583,8 +555,186 @@ function createSessionResponse(
 		return new Response(`cwd does not resolve: ${input.cwd}`, { status: 400 });
 	}
 	deps.noteActivity();
+	const extensionLinked =
+		deps.connections.pushSessionAdopt(record, {
+			port: deps.port,
+			daemonId: deps.daemonId,
+		}) > 0;
 
 	return json({
+		port: deps.port,
+		sessionId: record.sessionId,
+		token: record.token,
+		agentIdentity: record.agentIdentity,
+		extensionLinked,
+	});
+}
+
+const PAIR_HEADERS = { ...NOSNIFF_HEADERS, "Cache-Control": "no-store" };
+
+function pairJson(body: unknown, status = 200): Response {
+	return json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+async function handleLocalAttach(
+	req: Request,
+	url: URL,
+	deps: HttpServerDeps,
+	limiter: AttachLimiter,
+	bearer: string,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: NOSNIFF_HEADERS });
+	const originError =
+		req.headers.get("origin") === null
+			? refuse("refused", 400)
+			: requireLocalPageOrigin(req, url, deps.port, (token) =>
+					deps.registry.tokenIsLive(token),
+				);
+	if (originError) return originError;
+	if (!limiter.allow(bearer)) {
+		return refuse("too many attach requests", 429);
+	}
+	let request: ReturnType<typeof validateAttachRequest>;
+	try {
+		request = validateAttachRequest(await req.json());
+	} catch (err) {
+		return refuse(describeError(err), 400);
+	}
+	const records = deps.registry.list().flatMap((summary) => {
+		const record = deps.registry.get(summary.sessionId);
+		return record ? [record] : [];
+	});
+	const decision = decideLocalAttach({
+		sessionId: request.sessionId,
+		callerSessionId: records.find((record) =>
+			tokensEqual(record.token, bearer),
+		)?.sessionId,
+		registry: records.map((record) => ({
+			sessionId: record.sessionId,
+			role: record.role,
+			presence: deps.registry.presence(record),
+			state: record.state,
+		})),
+	});
+	if (decision.action === "reject") {
+		return refuse(decision.message, decision.status);
+	}
+	const match = records.find(
+		(record) => record.sessionId === decision.sessionIds[0],
+	);
+	if (!match) return refuse("That session is not active.", 404);
+	noteSecret(match.token);
+	return json({
+		sessions: [
+			{
+				port: deps.port,
+				sessionId: match.sessionId,
+				token: match.token,
+				agentIdentity: match.agentIdentity,
+			},
+		],
+	});
+}
+
+async function handleChatCodeMint(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Promise<Response> {
+	if (req.headers.has(OWNER_TOKEN_HEADER)) {
+		return handleOwnerCodeMint(req, deps, codes, limiter);
+	}
+	const originError = requireExtensionOrigin(req, deps.paths);
+	if (originError) return originError;
+	const bearer = bearerToken(req);
+	const record =
+		bearer === undefined
+			? undefined
+			: deps.registry
+					.list()
+					.flatMap((summary) => {
+						const found = deps.registry.get(summary.sessionId);
+						return found ? [found] : [];
+					})
+					.find(
+						(candidate) =>
+							candidate.state === "active" && tokensEqual(candidate.token, bearer),
+					);
+	if (bearer === undefined || record === undefined) {
+		return new Response("refused", { status: 403, headers: NOSNIFF_HEADERS });
+	}
+	if (!limiter.allow(bearer)) {
+		return new Response("too many requests", {
+			status: 429,
+			headers: NOSNIFF_HEADERS,
+		});
+	}
+	return pairJson({ code: codes.mint(record.sessionId) });
+}
+
+const OWNER_MINT_LIMIT_KEY = "owner";
+
+async function handleOwnerCodeMint(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: PAIR_HEADERS });
+	if (req.headers.get("origin") !== null) {
+		return refuse("refused: the owner token takes no Origin", 400);
+	}
+	if (!hasOwnerCredential(req, deps.paths)) return refuse("refused", 401);
+	if (!limiter.allow(OWNER_MINT_LIMIT_KEY)) {
+		return refuse("too many requests", 429);
+	}
+	let sessionId: unknown;
+	try {
+		sessionId = ((await req.json()) as { sessionId?: unknown }).sessionId;
+	} catch {
+		return refuse("invalid JSON body", 400);
+	}
+	if (typeof sessionId !== "string" || sessionId.length === 0) {
+		return refuse("body must carry a sessionId", 400);
+	}
+	const record = deps.registry.get(sessionId);
+	if (record === undefined || record.state !== "active") {
+		return refuse("no such session", 404);
+	}
+	return pairJson({ code: codes.mint(record.sessionId) });
+}
+
+async function handleChatCodeExchange(
+	req: Request,
+	deps: HttpServerDeps,
+	codes: PageCodes,
+	limiter: AttachLimiter,
+): Promise<Response> {
+	const refuse = (text: string, status: number) =>
+		new Response(text, { status, headers: PAIR_HEADERS });
+	if (!isLocalPageOrigin(req.headers.get("origin"), deps.port)) {
+		return refuse("refused", 400);
+	}
+	if (!limiter.allow("exchange")) return refuse("too many requests", 429);
+	let code: unknown;
+	try {
+		code = ((await req.json()) as { code?: unknown }).code;
+	} catch {
+		return refuse("invalid JSON body", 400);
+	}
+	if (typeof code !== "string" || code.length === 0) {
+		return refuse("refused: body must carry a code", 400);
+	}
+	const sessionId = codes.redeem(code);
+	const record = sessionId === undefined ? undefined : deps.registry.get(sessionId);
+	if (record === undefined || record.state !== "active") {
+		return refuse("no such code", 404);
+	}
+	noteSecret(record.token);
+	return pairJson({
 		port: deps.port,
 		sessionId: record.sessionId,
 		token: record.token,
@@ -592,248 +742,19 @@ function createSessionResponse(
 	});
 }
 
-async function handlePair(
-	req: Request,
-	deps: HttpServerDeps,
-): Promise<Response> {
-	const originError = requirePairOrigin(req, deps.paths);
-	if (originError) return originError;
-	const capacityError = requireSessionCapacity(deps);
-	if (capacityError) return capacityError;
-	const contentType = (req.headers.get("content-type") ?? "")
-		.split(";")[0]
-		.trim();
-	if (contentType !== "application/json") {
-		return new Response("Content-Type must be application/json", {
-			status: 415,
-		});
-	}
-
-	let request: PairRequest;
-	try {
-		request = validatePairRequest(await req.json());
-	} catch (err) {
-		return new Response(describeError(err), {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-
-	const attempt = consumePairingAttempt(deps.paths, request.code);
-	if (attempt.outcome === "missing") {
-		return new Response("no pairing code is pending; run `dg-daemon pair`", {
-			status: 404,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "expired") {
-		return new Response("pairing code expired; run `dg-daemon pair`", {
-			status: 410,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "incorrect") {
-		return new Response(
-			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
-			{ status: 401, headers: NOSNIFF_HEADERS },
-		);
-	}
-
-	return createSessionResponse(deps, {
-		cwd: process.cwd(),
-		agentIdentity: "extension",
-		workset: "paired",
-		role: "agent",
-	});
-}
-
-function pairingAttemptResponse(
-	attempt: ReturnType<typeof consumePairingAttempt>,
-): Response {
-	if (attempt.outcome === "missing") {
-		return new Response("no pairing code is pending; run `dg-daemon pair`", {
-			status: 404,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "expired") {
-		return new Response("pairing code expired; run `dg-daemon pair`", {
-			status: 410,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (attempt.outcome === "incorrect") {
-		return new Response(
-			`incorrect pairing code; ${attempt.attemptsLeft} attempts left`,
-			{ status: 401, headers: NOSNIFF_HEADERS },
-		);
-	}
-	return new Response("pairing code was not accepted", {
-		status: 401,
-		headers: NOSNIFF_HEADERS,
-	});
-}
-
 async function handleAttach(
-	req: Request,
-	deps: HttpServerDeps,
-): Promise<Response> {
-	const originError = requirePairOrigin(req, deps.paths);
-	if (originError) return originError;
-	let body: unknown;
-	try {
-		body = await req.json();
-	} catch {
-		return new Response("invalid JSON body", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	let request: ReturnType<typeof validateAttachRequest>;
-	try {
-		request = validateAttachRequest(body);
-	} catch (err) {
-		return new Response(describeError(err), {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	const origin = req.headers.get("origin");
-	const pinned = getPinnedOrigin(deps.paths) === origin;
-	let codeAccepted = false;
-	if (request.code !== undefined) {
-		const attempt = consumePairingAttempt(deps.paths, request.code);
-		if (attempt.outcome !== "accepted") return pairingAttemptResponse(attempt);
-		codeAccepted = true;
-	}
-	const candidates = activeCandidates(deps);
-	const decision = decideAttach({
-		intent: request.intent,
-		sessionId: request.sessionId,
-		all: request.all,
-		pinned,
-		codeAccepted,
-		sessions: candidates,
-	});
-	if (decision.action === "reject") {
-		return new Response(decision.message, {
-			status: decision.status,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (decision.action === "create") {
-		const capacityError = requireSessionCapacity(deps);
-		if (capacityError) return capacityError;
-		return createSessionResponse(deps, {
-			cwd: process.cwd(),
-			agentIdentity: request.agentIdentity ?? "agent",
-			workset: request.workset,
-			role: request.role ?? "agent",
-			awaitingAgent: true,
-		});
-	}
-	return json({
-		sessions: candidates
-			.filter((session) => decision.sessionIds.includes(session.sessionId))
-			.map((session) => ({
-				port: deps.port,
-				sessionId: session.sessionId,
-				token: session.token,
-				agentIdentity: session.agentIdentity,
-			})),
-	});
-}
-
-function activeCandidates(deps: HttpServerDeps): {
-	sessionId: string;
-	token: string;
-	agentIdentity: string;
-	state: "active" | "closed";
-}[] {
-	const listed = deps.registry.list();
-	return listed.flatMap((summary) => {
-		const record = deps.registry.get(summary.sessionId);
-		if (!record || record.state !== "active") return [];
-		return [
-			{
-				sessionId: record.sessionId,
-				token: record.token,
-				agentIdentity: record.agentIdentity,
-				state: record.state,
-			},
-		];
-	});
-}
-
-function handleSessionCatalog(
 	req: Request,
 	url: URL,
 	deps: HttpServerDeps,
-): Response {
-	const origin = req.headers.get("origin");
-	if (isBrowserOrigin(origin)) {
-		return new Response("refused: /sessions rejects a browser Origin", {
-			status: 400,
-			headers: NOSNIFF_HEADERS,
-		});
-	}
-	if (origin !== null) {
-		const originError = requirePairOrigin(req, deps.paths);
-		if (originError) return originError;
-	}
-	const waitingOnly = url.searchParams.get("waiting") === "1";
-	const includeCwd = origin === null;
-	const sessions = deps.registry
-		.list()
-		.flatMap((summary) => {
-			const record = deps.registry.get(summary.sessionId);
-			if (!record || record.state !== "active") return [];
-			if (waitingOnly && !record.awaitingAgent) return [];
-			return [
-				{
-					sessionId: record.sessionId,
-					agentIdentity: record.agentIdentity,
-					role: record.role,
-					presence: summary.presence,
-					awaitingAgent: record.awaitingAgent,
-					...(record.workset !== undefined ? { workset: record.workset } : {}),
-					...(includeCwd ? { cwd: record.cwd } : {}),
-				},
-			];
-		});
-	return json({ sessions });
-}
-
-async function handleExtensionSessionCreate(
-	req: Request,
-	deps: HttpServerDeps,
+	limiter: AttachLimiter,
 ): Promise<Response> {
-	const originError = requirePinnedExtensionOrigin(req, deps.paths);
-	if (originError) return originError;
-	const capacityError = requireSessionCapacity(deps);
-	if (capacityError) return capacityError;
-	let body: Record<string, unknown> = {};
-	try {
-		const parsed = await req.json();
-		if (typeof parsed === "object" && parsed !== null) {
-			body = parsed as Record<string, unknown>;
-		}
-	} catch {
-		body = {};
+	const bearer = bearerToken(req);
+	if (bearer !== undefined && claimsLocalPage(req, url, deps.port)) {
+		return handleLocalAttach(req, url, deps, limiter, bearer);
 	}
-	const role: SessionRole = body.role === "orchestrator" ? "orchestrator" : "agent";
-	const workset =
-		typeof body.workset === "string" ? body.workset.trim() || undefined : undefined;
-	const agentIdentity =
-		typeof body.agentIdentity === "string" && body.agentIdentity.trim().length > 0
-			? body.agentIdentity.trim()
-			: "agent";
-	return createSessionResponse(deps, {
-		cwd: process.cwd(),
-		agentIdentity,
-		workset,
-		role,
-		awaitingAgent: true,
+	return new Response("refused: attach requires a local page", {
+		status: 400,
+		headers: NOSNIFF_HEADERS,
 	});
 }
 
@@ -853,14 +774,6 @@ function requireOwnerCredential(
 ): Response | undefined {
 	if (hasOwnerCredential(req, paths)) return undefined;
 	return new Response("refused", { status: 401, headers: NOSNIFF_HEADERS });
-}
-
-function hasLiveSessionBearer(req: Request, deps: HttpServerDeps): boolean {
-	const authorization = req.headers.get("authorization");
-	return (
-		authorization?.startsWith("Bearer ") === true &&
-		deps.registry.tokenIsLive(authorization.slice(7))
-	);
 }
 
 function handleLocalSessions(
@@ -925,25 +838,6 @@ function handleSessionClear(req: Request, deps: HttpServerDeps): Response {
 	return json({ closed });
 }
 
-function parseLimit(raw: string | null): number | undefined | "invalid" {
-	if (raw === null) return undefined;
-	const value = Number(raw);
-	if (!Number.isInteger(value) || value <= 0) return "invalid";
-	return value;
-}
-
-async function readIdentity(req: Request): Promise<string | undefined> {
-	try {
-		const body = (await req.json()) as Record<string, unknown>;
-		const identity = body.identity;
-		return typeof identity === "string" && identity.length > 0
-			? identity
-			: undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 function decodeSegment(segment: string): string | undefined {
 	try {
 		return decodeURIComponent(segment);
@@ -1000,136 +894,6 @@ async function handleServiceRoute(
 			});
 }
 
-async function handleSchedulerRoute(
-	req: Request,
-	url: URL,
-	deps: HttpServerDeps,
-	scheduler: DispatchScheduler,
-): Promise<Response> {
-	const originError = refuseForeignOrigin(req, deps.paths, () =>
-		hasLiveSessionBearer(req, deps),
-	);
-	if (originError) return originError;
-	const { store, logger } = deps;
-	const runnerDeps = { store, scheduler, logger };
-	const isJobs = url.pathname.startsWith(CHAT_JOBS_PATH);
-	const base = isJobs ? CHAT_JOBS_PATH : CHAT_FEED_PATH;
-	const rest = url.pathname
-		.slice(base.length)
-		.split("/")
-		.filter((segment) => segment.length > 0)
-		.map((segment) => decodeURIComponent(segment));
-
-	if (isJobs && rest.length === 0 && req.method === "GET") {
-		const unread = store.countUnreadByJob();
-		return json({
-			jobs: store.listJobSummaries().map((job) => ({
-				id: job.id,
-				label: job.label,
-				intervalMs: job.intervalMs ?? null,
-				cronExpr: job.cronExpr ?? null,
-				enabled: job.enabled,
-				nextRunAt: job.nextRunAt,
-				lastRunAt: job.lastRunAt ?? null,
-				lastExitCode: job.lastExitCode ?? null,
-				lastError: job.lastError ?? null,
-				notifyIdentity: job.notifyIdentity ?? null,
-				unread: unread[job.id] ?? 0,
-			})),
-		});
-	}
-
-	if (
-		isJobs &&
-		rest.length === 2 &&
-		rest[1] === "run" &&
-		req.method === "POST"
-	) {
-		const outcome = await runJobNow(rest[0], runnerDeps);
-		if (!outcome) {
-			return new Response("no such job", {
-				status: 404,
-				headers: NOSNIFF_HEADERS,
-			});
-		}
-		return json(outcome);
-	}
-
-	if (!isJobs && rest.length === 0 && req.method === "GET") {
-		const limit = parseLimit(url.searchParams.get("limit"));
-		if (limit === "invalid") {
-			return new Response("refused: limit must be a positive integer", {
-				status: 400,
-				headers: NOSNIFF_HEADERS,
-			});
-		}
-		const items = store.listFeedItems({
-			jobId: url.searchParams.get("jobId") ?? undefined,
-			unreadOnly: url.searchParams.get("unread") === "true",
-			limit,
-		});
-		return json({
-			items: items.map((item) => ({
-				id: item.id,
-				jobId: item.jobId,
-				createdAt: item.createdAt,
-				title: item.title,
-				meta: item.meta ?? null,
-				url: item.url ?? null,
-				read: item.readAt !== undefined,
-			})),
-		});
-	}
-
-	if (
-		!isJobs &&
-		rest.length === 1 &&
-		rest[0] === "read-all" &&
-		req.method === "POST"
-	) {
-		return json({ marked: store.markAllRead() });
-	}
-
-	if (!isJobs && rest.length === 2 && req.method === "POST") {
-		const [itemId, action] = rest;
-		if (action === "read") {
-			if (!store.markFeedItemRead(itemId)) {
-				return new Response("no such item", {
-					status: 404,
-					headers: NOSNIFF_HEADERS,
-				});
-			}
-			return json({ ok: true });
-		}
-		if (action === "queue") {
-			const identity = await readIdentity(req);
-			if (!identity) {
-				return new Response("refused: body must carry a non-empty identity", {
-					status: 400,
-					headers: NOSNIFF_HEADERS,
-				});
-			}
-			const item = store.getFeedItem(itemId);
-			if (!item) {
-				return new Response("no such item", {
-					status: 404,
-					headers: NOSNIFF_HEADERS,
-				});
-			}
-			store.insertAgentMessage({
-				senderSessionId: SCHEDULER_SESSION_ID,
-				senderIdentity: "dashboard",
-				recipientIdentity: identity,
-				id: randomUUID(),
-				body: [item.title, item.meta, item.url].filter(Boolean).join("\n"),
-			});
-			return json({ ok: true });
-		}
-	}
-
-	return new Response("not found", { status: 404, headers: NOSNIFF_HEADERS });
-}
-
 function handleWsUpgrade(
 	req: Request,
 	url: URL,
@@ -1144,9 +908,13 @@ function handleWsUpgrade(
 			)
 		: requireExtensionOrigin(req, deps.paths);
 	if (originError) return originError;
+	if (!localPage) pinOriginIfUnset(deps.paths, origin as string);
 	const data = localPage
 		? { ...createSocketState("ws", deps.logger), localPage: true }
-		: createSocketState("ws", deps.logger, origin as string);
+		: {
+				...createSocketState("ws", deps.logger, origin as string),
+				stillPinned: () => getPinnedOrigin(deps.paths) === origin,
+			};
 	const upgraded = server.upgrade(req, { data });
 	if (!upgraded) return new Response("upgrade failed", { status: 500 });
 	return new Response(null, { status: 101 });

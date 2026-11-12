@@ -7,12 +7,12 @@ import { demosDir, demosWriteDir, legacyDemosDir } from "./paths";
 export type DemoResult = {
 	slug: string;
 	outcome: "done" | "stopped" | "error";
-	mode: "walkthrough" | "video";
+	mode: "video";
 	steps: number;
 	video?: string;
-	audio?: "muxed" | "sidecar" | "none";
+	encoded: boolean;
+	audio: "muxed" | "sidecar" | "none";
 	startOffsetMs?: number;
-	trimmed?: boolean;
 	plan: string;
 	startedAt: string;
 	endedAt: string;

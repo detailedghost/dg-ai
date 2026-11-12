@@ -91,7 +91,7 @@ async function runProtoBrowserRequest(input: {
 		client = await CliClient.connect(resolved);
 	} catch (error) {
 		throw new Error(
-			"Prototype --ext requires a dg daemon session with a paired extension. Run dg-agent start --ext --open, then pass --session ID (or use that session's working directory), open the printed /start#_chat= URL in the paired browser, and run dg-skills install if the binaries need updating. " +
+			"Prototype --ext requires a dg daemon session with a connected extension. Run dg-agent start. If no extension is connected, install it with dg-skills install. Then pass --session ID (or use that session's working directory). " +
 				(error instanceof Error ? error.message : String(error)),
 		);
 	}

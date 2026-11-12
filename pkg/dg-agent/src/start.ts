@@ -7,27 +7,29 @@ import {
 	DgCliError,
 	EXIT_GENERAL_FAILURE,
 	EXIT_PROTOCOL_MISMATCH,
+	OWNER_TOKEN_HEADER,
 	type SessionBootstrap,
 	type SessionRole,
 	validateSessionBootstrap,
 	wait,
 } from "@dg/common";
 import {
-	buildBootstrapUrl,
+	buildCodeUrl,
 	checkWslNetworking,
 	type DgPaths,
 	isDaemonLive,
 	loopbackHostHeader,
+	mintPageCode,
 	readPidFile,
 	requireMatchingProtocol,
+	requireOwnerToken,
 	resolveDgPaths,
 	type OpenSeams,
 	openFailedHint,
 	tryOpen,
 } from "@dg/common/node";
 import { programCommand } from "@dg/common/node/program";
-import { claimWaitingSession } from "./attach";
-import { cliNextStep } from "./next-step";
+import { startNotice } from "./next-step";
 
 function siblingDaemonArgv(): string[] {
 	return programCommand("dg-daemon", ["serve"]);
@@ -71,12 +73,18 @@ type RegisterInput = {
 	agentIdentity?: string;
 };
 
-async function registerSession(port: number, input: RegisterInput) {
+async function registerSession(
+	port: number,
+	paths: DgPaths,
+	input: RegisterInput,
+) {
+	const owner = requireOwnerToken(paths);
 	const resp = await fetch(`http://127.0.0.1:${port}${CHAT_START_PATH}`, {
 		method: "POST",
 		headers: {
 			...loopbackHostHeader(port),
 			"Content-Type": "application/json",
+			[OWNER_TOKEN_HEADER]: owner,
 		},
 		body: JSON.stringify(input),
 	});
@@ -85,7 +93,12 @@ async function registerSession(port: number, input: RegisterInput) {
 			`session registration failed: ${resp.status} ${await resp.text()}`,
 		);
 	}
-	return validateSessionBootstrap(await resp.json());
+	const body: unknown = await resp.json();
+	return {
+		bootstrap: validateSessionBootstrap(body),
+		extensionLinked:
+			(body as { extensionLinked?: unknown }).extensionLinked === true,
+	};
 }
 
 export type StartOptions = {
@@ -93,11 +106,8 @@ export type StartOptions = {
 	role?: SessionRole;
 	agentIdentity?: string;
 	open?: boolean;
-	fresh?: boolean;
-	sessionId?: string;
 	printSessionId?: boolean;
 	json?: boolean;
-	ext?: boolean;
 };
 
 async function fetchStatus(port: number) {
@@ -142,22 +152,6 @@ async function bootstrapFreshDaemon(
 	return handle.port;
 }
 
-function sessionUrl(
-	port: number,
-	bootstrap: SessionBootstrap,
-	options: StartOptions,
-): string {
-	return buildBootstrapUrl(port, bootstrap, options.ext ? "/start" : "/chat");
-}
-
-async function openIfRequested(
-	url: string,
-	options: StartOptions,
-	seams: StartSeams,
-): Promise<void> {
-	if (options.open) await openUrlOrHint(url, seams);
-}
-
 /** Open a dg-agent URL; on WSL the Windows browser needs DG_OPEN_WINDOWS=1. */
 export function tryOpenAgentUrl(
 	url: string,
@@ -188,44 +182,33 @@ export async function cmdStart(
 			? await attachToRunningDaemon(existing)
 			: await bootstrapFreshDaemon(paths, seams);
 
-	if (!options.fresh) {
-		const claimed = await claimWaitingSession(
-			targetPort,
-			process.cwd(),
-			"start",
-			options.sessionId,
-		);
-		if (claimed) {
-			console.error(cliNextStep("claimed", claimed.sessionId));
-			const url = sessionUrl(targetPort, claimed, options);
-			printSession(targetPort, claimed.sessionId, url, options);
-			await openIfRequested(url, options, seams);
-			return;
-		}
+	const { bootstrap, extensionLinked } = await registerSession(
+		targetPort,
+		paths,
+		{
+			cwd: process.cwd(),
+			role: options.role ?? "agent",
+			workset: options.workset,
+			agentIdentity: options.agentIdentity,
+		},
+	);
+	console.error(startNotice(bootstrap, extensionLinked));
+	printSession(bootstrap.sessionId, targetPort, extensionLinked, options);
+	if (options.open) {
+		const code = await mintPageCode(bootstrap);
+		await openUrlOrHint(buildCodeUrl(targetPort, code), seams);
 	}
-
-	const bootstrap = await registerSession(targetPort, {
-		cwd: process.cwd(),
-		role: options.role ?? "agent",
-		workset: options.workset,
-		agentIdentity: options.agentIdentity,
-	});
-	const url = sessionUrl(targetPort, bootstrap, options);
-	console.error(cliNextStep("registered", bootstrap.sessionId));
-	printSession(targetPort, bootstrap.sessionId, url, options);
-	await openIfRequested(url, options, seams);
 }
 
 function printSession(
-	port: number,
 	sessionId: string,
-	url: string,
+	port: number,
+	extensionLinked: boolean,
 	options: StartOptions,
 ): void {
 	if (options.json) {
-		console.log(JSON.stringify({ sessionId, port, url }));
+		console.log(JSON.stringify({ sessionId, port, extensionLinked }));
 		return;
 	}
 	if (options.printSessionId) console.log(sessionId);
-	console.log(url);
 }

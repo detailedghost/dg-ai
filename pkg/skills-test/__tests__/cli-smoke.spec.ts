@@ -70,6 +70,7 @@ describe("dg-skills CLI", () => {
 			"bg",
 			"stat",
 			"sniff",
+			"skill",
 			"doctor",
 			"db",
 			"erd",
@@ -225,7 +226,7 @@ describe("dg-skills CLI", () => {
 			const checklist = await runCli(["stat", "checklist"], env);
 			expect(checklist.code).toBe(0);
 			expect(checklist.out).toBe(
-				"1. 🔄 Phone feature to PR [~1 hr]\n\nTotal: ~1 hr (critical path: 1 Phone feature to PR)\n",
+				"1. 🔄 Phone feature to PR [~1 hr]  ← you are here\n\nTotal: ~1 hr (critical path: 1 Phone feature to PR)\n",
 			);
 			const done = await runCli(["stat", "done", "Phone feature"], env);
 			expect(done.code).toBe(0);

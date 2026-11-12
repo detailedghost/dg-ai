@@ -10,6 +10,7 @@ import {
 	EXTENSION_ORIGIN,
 	FILE_ONLY_SEAMS,
 	registerSession,
+	runStatus,
 	stopServe,
 } from "../utils/daemon-harness";
 
@@ -210,41 +211,12 @@ describe("pinned-origin gate with no Origin header", () => {
 		store.close();
 	});
 
-	it("refuses POST /sessions with no Origin after a pin", async () => {
-		const { port } = await boot();
+	it("answers POST /sessions from the pinned extension Origin with 404", async () => {
+		const { port, dgHome } = await boot();
 		await pinExtensionOrigin(port);
-
-		const response = await fetch(`http://127.0.0.1:${port}/sessions`, {
-			method: "POST",
-			headers: { ...headers(port), "Content-Type": "application/json" },
-			body: JSON.stringify({ agentIdentity: "intruder" }),
-		});
-
-		expect(response.status).toBe(403);
-		expect(await response.text()).not.toContain("token");
-	});
-
-	it("refuses POST /sessions with no Origin even with a live Bearer token", async () => {
-		const { port } = await boot();
-		const session = await registerSession(port);
-		await pinExtensionOrigin(port);
-
-		const response = await fetch(`http://127.0.0.1:${port}/sessions`, {
-			method: "POST",
-			headers: {
-				...headers(port),
-				Authorization: `Bearer ${session.token}`,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({ agentIdentity: "intruder" }),
-		});
-
-		expect(response.status).toBe(403);
-	});
-
-	it("still creates a session for the pinned extension Origin", async () => {
-		const { port } = await boot();
-		await pinExtensionOrigin(port);
+		const before = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
 
 		const response = await fetch(`http://127.0.0.1:${port}/sessions`, {
 			method: "POST",
@@ -255,22 +227,18 @@ describe("pinned-origin gate with no Origin header", () => {
 			body: JSON.stringify({ agentIdentity: "claude" }),
 		});
 
-		expect(response.status).toBe(200);
+		expect(response.status).toBe(404);
+		const status = JSON.parse((await runStatus(dgHome)).stdout) as {
+			sessionCount: number;
+		};
+		expect(status.sessionCount).toBe(before.sessionCount);
 	});
 
-	it("passes the extension board read with no Origin and the token from its own session create", async () => {
+	it("passes the extension board read with no Origin and a registered session token", async () => {
 		const { port, dgHome } = await boot();
 		await pinExtensionOrigin(port);
 		await seedLane(dgHome);
-		const created = await fetch(`http://127.0.0.1:${port}/sessions`, {
-			method: "POST",
-			headers: {
-				...headers(port, EXTENSION_ORIGIN),
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({ agentIdentity: "claude" }),
-		});
-		const { token } = (await created.json()) as { token: string };
+		const { token } = await registerSession(port);
 
 		const read = await fetch(`http://127.0.0.1:${port}/overwatch`, {
 			headers: { ...headers(port), Authorization: `Bearer ${token}` },

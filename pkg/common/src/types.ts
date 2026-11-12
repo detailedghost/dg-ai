@@ -27,6 +27,13 @@ export type TourSetup = {
 	includeInTour: boolean;
 };
 
+/** A full-screen card shown before or after the recorded steps. */
+export type TourChapter = {
+	eyebrow: string;
+	title: string;
+	detail: string;
+};
+
 /** Durable guided-tour contract shared by the CLI and browser extension. */
 export type TourScript = {
 	title?: string;
@@ -34,6 +41,8 @@ export type TourScript = {
 	steps: TourStep[];
 	mode?: TourMode;
 	setup?: TourSetup;
+	intro?: TourChapter;
+	outro?: TourChapter;
 };
 
 /** One representative form control, captured with its host classes so a planted variation can reuse them verbatim. */

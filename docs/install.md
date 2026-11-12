@@ -410,6 +410,51 @@ they disagree. The next release ships the new `runtime.json`.
 `dg-skills install` then downloads the new runtime once, checks the bundle on
 it, and points `runtime/current` at it.
 
+## Update everything
+
+One command brings every dg part to the newest release:
+
+```bash
+dg-skills update --check   # print installed and newest versions; change nothing
+dg-skills update           # update, then run doctor
+```
+
+`update` runs these steps in order. A failed step does not stop the rest, and
+the command exits 1 when any step failed:
+
+1. The Bun runtime, the dg bundle, the launchers, and the staged
+   dg-ai-extension, pinned to the newest release. A CLI-only install stays
+   CLI-only, the staged browser extension is refreshed (with both Chrome and
+   Firefox staged, Chrome is refreshed and the step names the command for
+   Firefox, so the bundle is fetched once), and an install with no
+   staged extension (such as a skills-only install) gets only the runtime and
+   bundle. The step fails
+   when the installed version is not the newest afterward.
+2. The Claude plugin: `claude plugin marketplace update detailedghost`, then
+   `claude plugin update dg@detailedghost` (or `install` when it is missing).
+   Skipped when `claude` is not on `PATH`.
+3. The Codex plugin, when the Codex config (`$CODEX_HOME`, default
+   `~/.codex`) enables `dg@detailedghost`:
+   `codex plugin marketplace upgrade detailedghost`, then
+   `codex plugin add dg@detailedghost`. A marketplace that points at a local
+   folder is replaced with `detailedghost/dg-ai` first.
+4. `dg-skills doctor`, as one summary line. It is information only. Doctor
+   also reports things `update` does not own, such as a stopped daemon, so it
+   does not change the exit code.
+
+Skills copied into `$CODEX_HOME/skills` by a `DG_INSTALL_CODEX=1` bootstrap
+are not refreshed by `update`. When Codex has no dg plugin but has that
+folder, `update` and `--check` print the bootstrap command that refreshes it.
+
+The Claude step updates the user scope. A project or local install that is
+still behind gets a warning line with the command to run in that project.
+
+`update` always goes to the newest release, because the plugins follow their
+marketplace. To install one exact release, use `dg-skills install --version
+<x.y.z>`. Restart Claude Code and Codex
+sessions afterward, and reload the extension. The `/dg:update` skill runs
+`--check`, asks, and then runs the update.
+
 ## Update the Claude Code plugin
 
 Pin the marketplace once to the `latest` tag. Do not pin `master`. Set the

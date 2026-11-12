@@ -1,24 +1,25 @@
-import { afterEach, expect, test } from "bun:test";
-import type { OverwatchBoard, OverwatchLane } from "@dg/common";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import {
+	type OverwatchAction,
+	type OverwatchBoard,
+	type OverwatchLane,
+	CHAT_PROTOCOL_VERSION,
+	OVERWATCH_SESSION_ID,
+} from "@dg/common";
 import { Window } from "happy-dom";
+import { MSG } from "../src/chat-messages";
 import { renderOverwatchPage } from "../src/board/main";
+import {
+	type OverwatchActionResult,
+	connectOverwatchApi,
+	createOverwatchApi,
+	formatCountdown,
+	needYouCount,
+} from "../src/board/overwatch";
+import { click } from "./utils/dom-events";
+import { captureGlobal } from "./utils/globals";
 
 const NOW = new Date("2026-10-02T10:30:00.000Z");
-const windows = new Set<Window>();
-
-afterEach(async () => {
-	await Promise.all([...windows].map((window) => window.happyDOM.close()));
-	windows.clear();
-});
-
-function newRoot(): HTMLElement {
-	const window = new Window();
-	windows.add(window);
-	const document = window.document as unknown as Document;
-	const root = document.createElement("div");
-	document.body.append(root);
-	return root as unknown as HTMLElement;
-}
 
 function buildLane(overrides: Partial<OverwatchLane> = {}): OverwatchLane {
 	return {
@@ -34,39 +35,104 @@ function buildLane(overrides: Partial<OverwatchLane> = {}): OverwatchLane {
 	};
 }
 
-function buildBoard(lanes: OverwatchLane[]): OverwatchBoard {
+function buildBoard(overrides: Partial<OverwatchBoard> = {}): OverwatchBoard {
 	return {
 		goLive: "2026-10-04T12:45:00.000Z",
 		goNoGo: "2026-10-03T15:00:00.000Z",
-		lanes,
+		lanes: [buildLane()],
 		merges: [],
+		...overrides,
 	};
 }
 
-async function mount(board: OverwatchBoard) {
+const testWindows = new Set<Window>();
+
+afterEach(async () => {
+	await Promise.all([...testWindows].map((window) => window.happyDOM.close()));
+	testWindows.clear();
+});
+
+function newRoot(): HTMLElement {
+	const window = new Window();
+	testWindows.add(window);
+	const document = window.document as unknown as Document;
+	const root = document.createElement("div");
+	document.body.append(root);
+	return root as unknown as HTMLElement;
+}
+
+type RuntimeListener = (message: unknown) => void;
+
+function runtimeHarness() {
+	let listener: RuntimeListener | undefined;
+	return {
+		runtime: {
+			onMessage: {
+				addListener(next: RuntimeListener) {
+					listener = next;
+				},
+				removeListener(next: RuntimeListener) {
+					if (listener === next) listener = undefined;
+				},
+			},
+		},
+		emit(board: OverwatchBoard) {
+			listener?.({
+				type: MSG.overwatchState,
+				frame: {
+					type: "overwatch-state",
+					sessionId: OVERWATCH_SESSION_ID,
+					protocolVersion: CHAT_PROTOCOL_VERSION,
+					board,
+				},
+			});
+		},
+	};
+}
+
+function button(root: HTMLElement, name: string): HTMLButtonElement {
+	const match = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find(
+		(candidate) => candidate.textContent === name,
+	);
+	if (!match) throw new Error(`button not found: ${name}`);
+	return match;
+}
+
+async function mount(
+	board: OverwatchBoard = buildBoard(),
+	actionResult: OverwatchActionResult = { ok: true },
+) {
 	const root = newRoot();
+	const relay = runtimeHarness();
+	const actions: OverwatchAction[] = [];
+	const api = {
+		baseUrl: "http://127.0.0.1:47823",
+		getBoard: () => Promise.resolve(board),
+		sendAction: (action: OverwatchAction) => {
+			actions.push(action);
+			return Promise.resolve(actionResult);
+		},
+	};
 	const handle = renderOverwatchPage({
 		root,
-		connect: () =>
-			Promise.resolve({
-				baseUrl: "http://127.0.0.1:47823",
-				getBoard: () => Promise.resolve(board),
-				sendAction: () => Promise.resolve({ ok: true }),
-			}),
+		runtime: relay.runtime,
+		connect: () => Promise.resolve(api),
 		now: () => NOW,
 		schedule: () => 1,
 		cancel: () => undefined,
 	});
 	await handle.ready;
-	return { root, handle };
+	return { root, relay, actions, handle };
 }
 
-test("renderOverwatchPage renders one lane per chat from a board fixture", async () => {
+test("renders one lane per chat from a board fixture", async () => {
 	const { root, handle } = await mount(
-		buildBoard([
-			buildLane(),
-			buildLane({ chat: "infra", task: "Rotate keys", stage: "review" }),
-		]),
+		buildBoard({
+			lanes: [
+				buildLane(),
+				buildLane({ chat: "infra", task: "Rotate keys", stage: "review" }),
+			],
+		}),
 	);
 
 	expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(2);
@@ -75,8 +141,8 @@ test("renderOverwatchPage renders one lane per chat from a board fixture", async
 	handle.stop();
 });
 
-test("renderOverwatchPage shows the empty state when no lanes are reporting", async () => {
-	const { root, handle } = await mount(buildBoard([]));
+test("shows the empty state when no lanes are reporting", async () => {
+	const { root, handle } = await mount(buildBoard({ lanes: [] }));
 
 	expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(0);
 	expect((root.querySelector(".overwatch__empty") as HTMLElement).hidden).toBe(
@@ -85,7 +151,7 @@ test("renderOverwatchPage shows the empty state when no lanes are reporting", as
 	handle.stop();
 });
 
-test("renderOverwatchPage polls the board api again on refresh", async () => {
+test("polls the board api again on refresh", async () => {
 	let reads = 0;
 	const root = newRoot();
 	const handle = renderOverwatchPage({
@@ -95,7 +161,7 @@ test("renderOverwatchPage polls the board api again on refresh", async () => {
 				baseUrl: "http://127.0.0.1:47823",
 				getBoard: () => {
 					reads += 1;
-					return Promise.resolve(buildBoard([buildLane()]));
+					return Promise.resolve(buildBoard());
 				},
 				sendAction: () => Promise.resolve({ ok: true }),
 			}),
@@ -110,4 +176,469 @@ test("renderOverwatchPage polls the board api again on refresh", async () => {
 
 	expect(reads).toBeGreaterThan(before);
 	handle.stop();
+});
+
+describe("the overwatch page", () => {
+	test("renders one lane per chat with the current stage active", async () => {
+		const { root, handle } = await mount(
+			buildBoard({
+				lanes: [
+					buildLane(),
+					buildLane({ chat: "infra", stage: "ci", publisher: "infra-agent" }),
+				],
+			}),
+		);
+
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(2);
+		const active = root.querySelector(
+			"[data-key=\"infra\"] .overwatch__cell--now",
+		) as HTMLElement;
+		expect(active.dataset.stage).toBe("CI");
+		expect(active.textContent).toBe("active");
+		handle.stop();
+	});
+
+	test("removes a missing lane from a later state without replacing the page", async () => {
+		const { root, relay, handle } = await mount(
+			buildBoard({
+				lanes: [
+					buildLane(),
+					buildLane({ chat: "infra", publisher: "infra-agent" }),
+				],
+			}),
+		);
+		const shell = root.firstElementChild;
+
+		relay.emit(buildBoard({ lanes: [buildLane({ chat: "infra" })] }));
+
+		expect(root.firstElementChild).toBe(shell);
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(1);
+		expect(root.querySelector("[data-key=\"print\"]")).toBeNull();
+		handle.stop();
+	});
+
+	test("sends exactly one approve POST with the lane chat", async () => {
+		const restoreFetch = captureGlobal("fetch");
+		const requests: { url: string; init?: RequestInit }[] = [];
+		const fetchStub = mock(
+			(input: string | URL | Request, init?: RequestInit) => {
+				requests.push({ url: String(input), init });
+				return Promise.resolve(
+					init?.method === "POST"
+						? Response.json({ ok: true })
+						: Response.json(buildBoard()),
+				);
+			},
+		);
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			value: fetchStub,
+		});
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () =>
+				Promise.resolve(createOverwatchApi("http://127.0.0.1:47823")),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		try {
+			await handle.ready;
+			click(button(root, "Actions"));
+			click(button(root, "Approve"));
+			await Bun.sleep(0);
+
+			const posts = requests.filter(
+				(request) => request.init?.method === "POST",
+			);
+			expect(posts).toHaveLength(1);
+			expect(posts[0]?.url).toBe(
+				"http://127.0.0.1:47823/overwatch/action",
+			);
+			expect(posts[0]?.init?.body).toBe(
+				JSON.stringify({ chat: "print", action: "approve" }),
+			);
+			expect(root.querySelector(".overwatch__action-status")?.textContent).toBe(
+				"Sent",
+			);
+		} finally {
+			handle.stop();
+			restoreFetch();
+		}
+	});
+
+	test("blocks a reject until its note is present", async () => {
+		const { root, actions, handle } = await mount();
+
+		click(button(root, "Actions"));
+		click(button(root, "Reject"));
+		click(button(root, "Send rejection"));
+		await Bun.sleep(0);
+
+		expect(actions).toEqual([]);
+		expect(root.querySelector("[role=\"alert\"]")?.textContent).toContain(
+			"note is required",
+		);
+		handle.stop();
+	});
+
+	test("allows only one action request per lane while a request is pending", async () => {
+		let resolveAction: ((result: OverwatchActionResult) => void) | undefined;
+		const pending = new Promise<OverwatchActionResult>((resolve) => {
+			resolveAction = resolve;
+		});
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const sendAction = mock(() => pending);
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () =>
+				Promise.resolve({
+					baseUrl: "http://127.0.0.1:47823",
+					getBoard: () => Promise.resolve(buildBoard()),
+					sendAction,
+				}),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		await handle.ready;
+
+		click(button(root, "Actions"));
+		const approve = button(root, "Approve");
+		click(approve);
+		click(approve);
+		await Bun.sleep(0);
+
+		expect(sendAction).toHaveBeenCalledTimes(1);
+		expect(approve.disabled).toBe(true);
+		resolveAction?.({ ok: true });
+		await Bun.sleep(0);
+		expect(approve.disabled).toBe(false);
+		handle.stop();
+	});
+
+	test("shows an error toast when the daemon rejects an action", async () => {
+		const { root, handle } = await mount(buildBoard(), {
+			ok: false,
+			error: "no such overwatch lane",
+		});
+
+		click(button(root, "Actions"));
+		click(button(root, "Approve"));
+		await Bun.sleep(0);
+
+		const toast = root.querySelector(".overwatch__toast") as HTMLElement;
+		expect(toast.hidden).toBe(false);
+		expect(toast.textContent).toBe("no such overwatch lane");
+		handle.stop();
+	});
+
+	test("shows the empty state when no lanes are reporting", async () => {
+		const { root, handle } = await mount(buildBoard({ lanes: [] }));
+
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(0);
+		expect((root.querySelector(".overwatch__empty") as HTMLElement).hidden).toBe(
+			false,
+		);
+		handle.stop();
+	});
+
+	test("shows the launch-lane empty state when only background lanes exist", async () => {
+		const { root, handle } = await mount(
+			buildBoard({ lanes: [buildLane({ kind: "background" })] }),
+		);
+
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(0);
+		expect((root.querySelector(".overwatch__empty") as HTMLElement).hidden).toBe(
+			false,
+		);
+		handle.stop();
+	});
+
+	test("puts background lanes and today's merges in the footer", async () => {
+		const { root, handle } = await mount(
+			buildBoard({
+				lanes: [
+					buildLane(),
+					buildLane({
+						chat: "arch",
+						kind: "background",
+						next: "sign in to Proton",
+					}),
+				],
+				merges: [
+					{ mr: "!300", title: "stage 2FA", at: NOW.toISOString() },
+				],
+			}),
+		);
+
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(1);
+		expect(root.querySelector(".overwatch__background")?.textContent).toContain(
+			"arch",
+		);
+		expect(root.querySelector(".overwatch__merges")?.textContent).toContain(
+			"!300 stage 2FA",
+		);
+		expect(root.querySelector(".overwatch__need")?.textContent).toBe(
+			"1 NEED YOU",
+		);
+		handle.stop();
+	});
+
+	test("removes every prohibited dash glyph from visible board data", async () => {
+		const dashes = "-‐‑‒–—―−─";
+		const { root, handle } = await mount(
+			buildBoard({
+				lanes: [
+					buildLane({
+						chat: `chat${dashes}`,
+						task: `task${dashes}`,
+						mr: `!1${dashes}`,
+						eta: `soon${dashes}`,
+						next: `approve${dashes}`,
+					}),
+					buildLane({
+						chat: `background${dashes}`,
+						kind: "background",
+					}),
+				],
+				merges: [
+					{
+						mr: `!2${dashes}`,
+						title: `merged${dashes}`,
+						at: NOW.toISOString(),
+					},
+				],
+			}),
+		);
+
+		expect(root.querySelector(".overwatch")?.textContent).not.toMatch(
+			/[-‐‑‒–—―−─]/,
+		);
+		handle.stop();
+	});
+
+	test("uses ordinary disclosure buttons with an explicit controlled region", async () => {
+		const { root, handle } = await mount();
+		const trigger = button(root, "Actions");
+		const controlled = root.querySelector(
+			`#${trigger.getAttribute("aria-controls")}`,
+		);
+
+		expect(controlled).not.toBeNull();
+		expect(controlled?.getAttribute("role")).toBeNull();
+		expect(button(root, "Approve").getAttribute("role")).toBeNull();
+		handle.stop();
+	});
+
+	test("shows the chat status pill when the daemon is unreachable", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => Promise.resolve(undefined),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+
+		await handle.ready;
+
+		const pill = root.querySelector(".chat-rail__connection") as HTMLElement;
+		expect(pill.hidden).toBe(false);
+		expect(pill.getAttribute("role")).toBe("status");
+		expect(pill.textContent).toBe("Daemon unreachable");
+		handle.stop();
+	});
+
+	test("retries a failed initial load with a bounded reconciliation timer", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const retries: Array<() => void> = [];
+		const cancelDeferred = mock(() => undefined);
+		let connectCount = 0;
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => {
+				connectCount += 1;
+				return Promise.resolve(
+					connectCount === 1
+						? undefined
+						: {
+								baseUrl: "http://127.0.0.1:47823",
+								getBoard: () => Promise.resolve(buildBoard()),
+								sendAction: () => Promise.resolve({ ok: true as const }),
+							},
+				);
+			},
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+			defer: (callback) => {
+				retries.push(callback);
+				return retries.length;
+			},
+			cancelDeferred,
+		});
+		await handle.ready;
+		expect(retries).toHaveLength(1);
+
+		retries[0]?.();
+		await Bun.sleep(0);
+		await Bun.sleep(0);
+
+		expect(connectCount).toBe(2);
+		expect(root.querySelectorAll(".overwatch__lane")).toHaveLength(1);
+		handle.stop();
+		expect(cancelDeferred).not.toHaveBeenCalled();
+	});
+
+	test("cancels a pending reconciliation retry when the page stops", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		const cancelDeferred = mock(() => undefined);
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => Promise.resolve(undefined),
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+			defer: () => 42,
+			cancelDeferred,
+		});
+		await handle.ready;
+
+		handle.stop();
+
+		expect(cancelDeferred).toHaveBeenCalledWith(42);
+	});
+
+	test("invalidates an unreachable action API before the next action", async () => {
+		const root = newRoot();
+		const relay = runtimeHarness();
+		let connectCount = 0;
+		const firstAction = mock(() =>
+			Promise.resolve({ ok: false as const, error: "Daemon unreachable" }),
+		);
+		const secondAction = mock(() => Promise.resolve({ ok: true as const }));
+		const handle = renderOverwatchPage({
+			root,
+			runtime: relay.runtime,
+			connect: () => {
+				connectCount += 1;
+				return Promise.resolve({
+					baseUrl: `http://127.0.0.1:${47822 + connectCount}`,
+					getBoard: () => Promise.resolve(buildBoard()),
+					sendAction: connectCount === 1 ? firstAction : secondAction,
+				});
+			},
+			now: () => NOW,
+			schedule: () => 1,
+			cancel: () => undefined,
+		});
+		await handle.ready;
+		click(button(root, "Actions"));
+		click(button(root, "Approve"));
+		await Bun.sleep(0);
+		click(button(root, "Approve"));
+		await Bun.sleep(0);
+
+		expect(connectCount).toBe(2);
+		expect(firstAction).toHaveBeenCalledTimes(1);
+		expect(secondAction).toHaveBeenCalledTimes(1);
+		handle.stop();
+	});
+});
+
+test("a pinned-origin HTTP error is surfaced instead of scanning fallback ports", async () => {
+	const restoreFetch = captureGlobal("fetch");
+	const fetchStub = mock(() =>
+		Promise.resolve(new Response("origin pin required", { status: 400 })),
+	);
+	Object.defineProperty(globalThis, "fetch", {
+		configurable: true,
+		value: fetchStub,
+	});
+	try {
+		await expect(connectOverwatchApi(47823)).rejects.toThrow(
+			"origin pin required",
+		);
+		expect(fetchStub).toHaveBeenCalledTimes(1);
+	} finally {
+		restoreFetch();
+	}
+});
+
+test("the countdown and need-you count derive from board data", () => {
+	const board = buildBoard({
+		lanes: [
+			buildLane({ next: "choose layout" }),
+			buildLane({ chat: "infra", next: "grant access" }),
+			buildLane({ chat: "arch", kind: "background" }),
+		],
+	});
+
+	expect(formatCountdown(board.goLive, NOW)).toBe("2d 02h 15m");
+	expect(needYouCount(board.lanes)).toBe(2);
+});
+
+describe("board token stays with its own daemon port", () => {
+	type Call = { url: string; authorization: string | null };
+
+	function stubFetch(respond: (url: string) => Promise<Response>): {
+		calls: Call[];
+		restore: () => void;
+	} {
+		const restore = captureGlobal("fetch");
+		const calls: Call[] = [];
+		Object.defineProperty(globalThis, "fetch", {
+			configurable: true,
+			value: (url: string, init?: RequestInit) => {
+				calls.push({
+					url,
+					authorization: new Headers(init?.headers).get("authorization"),
+				});
+				return respond(url);
+			},
+		});
+		return { calls, restore };
+	}
+
+	test("sends no token to a port that port discovery found", async () => {
+		const { calls, restore } = stubFetch((url) => {
+			if (url === "http://127.0.0.1:47824/healthz") {
+				return Promise.resolve(
+					Response.json({ daemon: "dg-daemon", instanceId: "other" }),
+				);
+			}
+			if (url === "http://127.0.0.1:47824/overwatch") {
+				return Promise.resolve(Response.json({ lanes: [], merges: [] }));
+			}
+			return Promise.reject(new TypeError("Failed to fetch"));
+		});
+		try {
+			const api = await connectOverwatchApi(47823, "tok-a");
+			await api?.getBoard();
+		} finally {
+			restore();
+		}
+
+		expect(
+			calls.find((call) => call.url === "http://127.0.0.1:47823/overwatch")
+				?.authorization,
+		).toBe("Bearer tok-a");
+		const discovered = calls.filter(
+			(call) => call.url === "http://127.0.0.1:47824/overwatch",
+		);
+		expect(discovered.length).toBeGreaterThan(0);
+		for (const call of discovered) expect(call.authorization).toBeNull();
+	});
 });

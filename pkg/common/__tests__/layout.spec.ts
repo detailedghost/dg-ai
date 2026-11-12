@@ -110,7 +110,6 @@ function seedLegacy(): string {
 	put(join(legacy, "agents", "sessions", "s1.json"), "{}");
 	put(join(legacy, "config.json"), '{"hooks":{}}');
 	put(join(legacy, "cli-only"), "");
-	put(join(legacy, "pairing.json"), "{}");
 	put(join(legacy, "phone-friend", "state.json"), "{}");
 	put(join(legacy, "channel-review", "config.json"), '{"env":{}}');
 	put(join(legacy, "channel-review", "state.dev.json"), "{}");
@@ -160,7 +159,6 @@ describe("LAYOUT_TABLE", () => {
 			"daemon/logs",
 			"daemon",
 			"grants",
-			"pairing.json",
 			"phone-friend",
 			"inbox",
 			"browser-profiles",
@@ -363,7 +361,6 @@ posix("ensureLayout moves", () => {
 		expect(readFileSync(join(paths.sessionsDir, "s1.json"), "utf8")).toBe("{}");
 		expect(readFileSync(paths.configPath, "utf8")).toBe('{"hooks":{}}');
 		expect(existsSync(paths.cliOnlyMarker)).toBe(true);
-		expect(existsSync(paths.pairingPath)).toBe(true);
 		expect(existsSync(join(paths.phoneFriendRoot, "state.json"))).toBe(true);
 		expect(readFileSync(join(paths.configDir, "channel-review", "config.json"), "utf8")).toBe('{"env":{}}');
 		expect(existsSync(join(paths.stateDir, "channel-review", "state.dev.json"))).toBe(true);

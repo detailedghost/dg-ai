@@ -97,7 +97,9 @@ posix("dg-skills writers refuse an unmoved legacy entry", () => {
 		const result: DemoResult = {
 			slug: "tour",
 			outcome: "done",
-			mode: "walkthrough",
+			mode: "video",
+			encoded: false,
+			audio: "none",
 			steps: 1,
 			plan: "p",
 			startedAt: "a",
@@ -125,7 +127,7 @@ posix("dg-skills writers refuse an unmoved legacy entry", () => {
 
 	test("launchLocal creates no demo-profile folder while the legacy folder holds data", async () => {
 		legacy("demo-profile/Default/Preferences");
-		const job = { video: false, dir: world.home } as Parameters<typeof launchLocal>[0];
+		const job = { dir: world.home } as unknown as Parameters<typeof launchLocal>[0];
 		const plan = { mode: "local", headless: true, pick: { channel: "chrome" }, label: "chrome" } as Parameters<typeof launchLocal>[1];
 
 		await expect(launchLocal(job, plan)).rejects.toBeInstanceOf(DgCliError);

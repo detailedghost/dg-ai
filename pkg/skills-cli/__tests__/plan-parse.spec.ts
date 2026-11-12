@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 import type { TourScript } from "@dg/common";
 import {
 	formatAction,
+	envReference,
+	MissingEnvError,
+	resolveFill,
 	parseAction,
 	toPlanMarkdown,
 	validate,
@@ -159,5 +162,102 @@ describe("parseAction()", () => {
 
 	it("returns undefined when the meta segment has no action", () => {
 		expect(parseAction("\`#sel\` → https://x.test")).toBeUndefined();
+	});
+});
+
+describe("chapter cards", () => {
+	const md = (fm: string) =>
+		`---\ntitle: Dash\nstartUrl: https://app.example\n${fm}\n---\n\n## Steps\n\n1. **Home** — Hi.\n`;
+
+	it("reads intro and outro as eyebrow, title and detail", () => {
+		const parsed = validate(
+			parsePlanMarkdown(
+				md('intro: "Getting started | Your dashboard | Where things are"\noutro: "Wrap-up | Done | Next: forms"'),
+			),
+		);
+		expect(parsed.intro).toEqual({ eyebrow: "Getting started", title: "Your dashboard", detail: "Where things are" });
+		expect(parsed.outro).toEqual({ eyebrow: "Wrap-up", title: "Done", detail: "Next: forms" });
+	});
+
+	it("round-trips chapters through toPlanMarkdown", () => {
+		const withChapters: TourScript = {
+			...script,
+			intro: { eyebrow: "Demo", title: "Search", detail: "Find things" },
+			outro: { eyebrow: "Wrap-up", title: "Done", detail: "Bye" },
+		};
+		expect(validate(parsePlanMarkdown(toPlanMarkdown(withChapters)))).toEqual(withChapters);
+	});
+
+	it.each([["|"], ['"'], ["\n"]])("rejects a chapter field that holds %j, which the saved plan cannot carry", (bad) => {
+		const intro = { eyebrow: "Demo", title: "Search", detail: `A ${bad} B` };
+		expect(() => validate({ ...script, intro })).toThrow("script.intro");
+	});
+
+	it.each([["intro"], ["outro"]])("rejects a %s without three parts, naming the key", (key) => {
+		expect(() => validate(parsePlanMarkdown(md(`${key}: "Only | two"`)))).toThrow(key);
+	});
+});
+
+describe("resolveFill()", () => {
+	it("returns literal text unchanged", () => {
+		expect(resolveFill("cute puppies", {})).toBe("cute puppies");
+	});
+
+	it("reads a $NAME reference from the environment", () => {
+		expect(resolveFill("$DG_DEMO_VELORA_PW", { DG_DEMO_VELORA_PW: "s3cret" })).toBe("s3cret");
+	});
+
+	it("throws MissingEnvError naming the variable, never a value", () => {
+		const error = (() => {
+			try {
+				resolveFill("$DG_DEMO_VELORA_PW", { OTHER: "s3cret" });
+			} catch (e) {
+				return e;
+			}
+		})();
+		expect(error).toBeInstanceOf(MissingEnvError);
+		expect((error as Error).message).toContain("DG_DEMO_VELORA_PW");
+		expect((error as Error).message).not.toContain("s3cret");
+	});
+
+	it("treats a lowercase or partial $ string as literal text", () => {
+		expect(resolveFill("$lower", {})).toBe("$lower");
+		expect(resolveFill("pay $5", {})).toBe("pay $5");
+	});
+
+	it("reads only $DG_DEMO_* names as references", () => {
+		expect(envReference("$DG_DEMO_X1")).toBe("DG_DEMO_X1");
+		expect(envReference("$AWS_SECRET_ACCESS_KEY")).toBeUndefined();
+	});
+});
+
+describe("validate() fill references", () => {
+	const fill = (value: string) => ({
+		startUrl: "https://app.example/",
+		steps: [
+			{ body: "a" },
+			{ body: "b", selector: "#p", action: { do: "fill", value } },
+		],
+	});
+
+	it("accepts a $DG_DEMO_* reference and literal text", () => {
+		expect(() => validate(fill("$DG_DEMO_PW"))).not.toThrow();
+		expect(() => validate(fill("pay $5"))).not.toThrow();
+		expect(() => validate(fill("$lower"))).not.toThrow();
+	});
+
+	it("rejects a variable-looking value without the prefix", () => {
+		expect(() => validate(fill("$AWS_SECRET_ACCESS_KEY"))).toThrow(
+			"step 1: only $DG_DEMO_* variables can be typed",
+		);
+	});
+
+	it("rejects it in setup steps too", () => {
+		expect(() =>
+			validate({
+				...fill("x"),
+				setup: { includeInTour: false, steps: [{ body: "s", selector: "#p", action: { do: "fill", value: "$HOME" } }] },
+			}),
+		).toThrow("setup step 0: only $DG_DEMO_* variables can be typed");
 	});
 });

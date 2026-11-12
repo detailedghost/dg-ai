@@ -73,7 +73,6 @@ export const LAYOUT_TABLE = [
 	{ name: "daemon-logs", from: "daemon/logs", to: (paths) => paths.logDir, ...DAEMON },
 	{ name: "daemon", from: "daemon", to: (paths) => paths.daemonDir, unused: "folder", ...DAEMON },
 	{ name: "grants", from: "grants", to: (paths) => paths.grantsDir },
-	{ name: "pairing", from: "pairing.json", to: (paths) => paths.pairingPath },
 	{
 		name: "phone",
 		from: "phone",

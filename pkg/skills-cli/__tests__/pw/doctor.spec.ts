@@ -79,6 +79,16 @@ describe("pwChecks browser check", () => {
 		expect(result.detail).toBe("browser: chrome (system)");
 	});
 
+	test("reports an installed Brave before the downloaded chromium", async () => {
+		recordDownload("131.0.1");
+		const result = await createBrowserCheck(
+			systemOnly(),
+			() => "/usr/bin/brave-browser-beta",
+		).run(context());
+		expect(result.status).toBe("ok");
+		expect(result.detail).toBe("browser: /usr/bin/brave-browser-beta (installed)");
+	});
+
 	test("reports a downloaded chromium as ok with its version", async () => {
 		recordDownload("131.0.1");
 		const result = await createBrowserCheck(systemOnly()).run(context());

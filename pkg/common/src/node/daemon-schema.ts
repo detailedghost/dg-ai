@@ -366,6 +366,18 @@ function addColumn(
 	db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
+function dropColumn(db: Database, table: string, column: string): void {
+	const columns = db.query(`PRAGMA table_info(${table})`).all() as {
+		name: string;
+	}[];
+	if (!columns.some((entry) => entry.name === column)) return;
+	db.run(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+}
+
+function createV13DropAwaitingAgent(db: Database): void {
+	dropColumn(db, "sessions", "awaiting_agent");
+}
+
 function createV11ChatSessions(db: Database): void {
 	addColumn(db, "sessions", "cwd", "TEXT");
 	addColumn(db, "sessions", "agent_identity", "TEXT");
@@ -458,6 +470,7 @@ export const SCHEMA_STEPS: MigrationStep[] = [
 	{ version: 10, run: createV10Inbox },
 	{ version: 11, run: createV11ChatSessions },
 	{ version: CHANNEL_REVIEW_SCHEMA_VERSION, run: createV12ChannelReview },
+	{ version: 13, run: createV13DropAwaitingAgent },
 ];
 
 export const CURRENT_SCHEMA_VERSION =

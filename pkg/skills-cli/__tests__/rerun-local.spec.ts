@@ -34,7 +34,7 @@ describe("rerun <plan>", () => {
 		expect(run.code).toBe(0);
 		expect(played).toHaveLength(0);
 		expect(world.spawned).toHaveLength(1);
-		expect(run.out).toContain("start screen open in");
+		expect(run.out).toContain("recording in");
 	});
 
 	test("resolves a bare plan file name through the legacy demos dir", async () => {
@@ -43,9 +43,10 @@ describe("rerun <plan>", () => {
 		expect(world.spawned).toHaveLength(1);
 	});
 
-	test("passes --video through to the player job", async () => {
-		await world.drive(registerRerun, ["rerun", "--video", legacyPlan], deps());
-		expect(job().video).toBe(true);
+	test("accepts --video and always records", async () => {
+		const run = await world.drive(registerRerun, ["rerun", "--video", legacyPlan], deps());
+		expect(run.code).toBe(0);
+		expect(job()).not.toHaveProperty("video");
 	});
 
 	test("--ext replays through playScript and spawns no player", async () => {

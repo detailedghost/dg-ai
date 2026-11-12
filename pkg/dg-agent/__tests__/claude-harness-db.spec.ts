@@ -1,16 +1,16 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { readdirSync } from "node:fs";
-import { validateSessionBootstrap } from "@dg/common";
+import type { SessionBootstrap } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
 	collectFrames,
-	decodeChatMarker,
 	deliverUserMessage,
 	freshDgHome,
 	killDaemonByPidFile,
+	sessionCredentials,
 	spawnServe,
 	waitForHealth,
 	waitForOpen,
@@ -22,6 +22,16 @@ import { sendConnectHandshake } from "@dg/dg-daemon/test-harness";
 import { runCli } from "./cli-wire";
 
 let dgHome: string;
+
+async function startedBootstrap(
+	stdout: string,
+	port: number,
+	agentIdentity: string,
+): Promise<SessionBootstrap> {
+	const { sessionId } = JSON.parse(stdout) as { sessionId: string };
+	const { token } = await sessionCredentials(dgHome, sessionId);
+	return { port, sessionId, token, agentIdentity };
+}
 
 afterEach(() => {
 	killDaemonByPidFile(dgHome);
@@ -44,12 +54,11 @@ describe("Claude as the runner, with sessions stored in the daemon database", ()
 		spawnServe(dgHome, port);
 		await waitForHealth(port);
 
-		const started = await runCli(dgHome, port, ["start", "-a", "claude"]);
+		const started = await runCli(dgHome, port, ["start", "-a", "claude", "--json"]);
 		expect(started.exitCode).toBe(0);
-		expect(started.stderr).toContain("open the extension side panel and choose Connect");
+		expect(started.stderr).toContain("No browser extension is connected");
 		expect(started.stderr).not.toContain("sk-");
-		const bootstrap = validateSessionBootstrap(decodeChatMarker(started.stdout.trim()));
-		expect(bootstrap.agentIdentity).toBe("claude");
+		const bootstrap = await startedBootstrap(started.stdout, port, "claude");
 		expect(started.stderr).not.toContain(bootstrap.token);
 		expect(sessionFiles()).toEqual([]);
 
@@ -111,11 +120,13 @@ describe("Claude as the runner, with sessions stored in the daemon database", ()
 			"start",
 			"-a",
 			"reviewer",
-			"--fresh",
+			"--json",
 		]);
 		expect(reviewer.exitCode).toBe(0);
-		const reviewerBootstrap = validateSessionBootstrap(
-			decodeChatMarker(reviewer.stdout.trim()),
+		const reviewerBootstrap = await startedBootstrap(
+			reviewer.stdout,
+			port,
+			"reviewer",
 		);
 		const forwarded = await runCli(dgHome, port, [
 			"send",

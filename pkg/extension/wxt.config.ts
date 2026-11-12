@@ -2,6 +2,9 @@ import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 
+const CHROME_EXTENSION_KEY =
+	"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvumVC2wz6oN/mWDZ/RrOdlErvIeUpFpJeE3mKmV2L700HN+DsKvezPYwKJ7g16Z6aR9UQbhari+klvQCtNCT+nbmnyIaVoqtTgrWCa31ZdoNq8Nd5v0TM7OMEUwtpAoO+J1qLdruL0zVpKa0CWPN6cQr62OuicK8x7k/KN7A4ugxzXU0CiHtcuNEp9zXRQ3Wq+TdP7mxIWbKYNGmS1vjGJdqMpTtllteD2zmhgldSrq+8BALtyknU/6XoctkW5GIM3BVT+OE+YXH33CFdalsq0u4Afcx/7wnabYJEN2hb1rsunu+FJVcnosnVQELfVo15bAzJt+FTyQaPqyXSmtlqQIDAQAB";
+
 // Manifest name is prefixed dg-ai- so the loaded extension is identifiable as ours.
 export default defineConfig({
 	// Pin the zip base name; package name (@dg/extension) sanitizes unpredictably,
@@ -30,6 +33,7 @@ export default defineConfig({
 		const firefox = browser === "firefox";
 		return {
 			name: "dg-ai-extension",
+			...(firefox ? {} : { key: CHROME_EXTENSION_KEY }),
 			description:
 				"Groups marked tabs, plays guided browser tours, and runs local live-page prototype comparisons.",
 			// Prototype artifacts use downloads everywhere; video capture's
@@ -40,10 +44,9 @@ export default defineConfig({
 				"storage",
 				"scripting",
 				"downloads",
-				...(firefox ? [] : ["sidePanel"]),
 				// activeTab is what getMediaStreamId means by "invoked for the current page";
 				// <all_urls> does not satisfy it, so without this every record gesture throws.
-				...(firefox ? [] : ["activeTab", "tabCapture", "offscreen"]),
+				...(firefox ? [] : ["activeTab", "tabCapture", "offscreen", "alarms"]),
 			],
 			// Kokoro fetches its model from Hugging Face; ONNX wasm ships locally.
 			// Keep jsDelivr fallback access and permit local wasm compilation.
@@ -69,16 +72,6 @@ export default defineConfig({
 						// 118: @scope, used to isolate planted variation CSS.
 						// Also covers the Chrome 116 service-worker WebSocket keepalive.
 						minimum_chrome_version: "118",
-					}),
-			action: {
-				default_title: "DeeGee chat",
-			},
-			...(firefox
-				? {}
-				: {
-						side_panel: {
-							default_path: "chat.html",
-						},
 					}),
 			commands: {
 				"start-demo-recording": {

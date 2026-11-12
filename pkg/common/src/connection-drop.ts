@@ -22,7 +22,6 @@ export type ConnectionDropInput = {
 	sessionIds?: readonly string[];
 	port?: number;
 	socket?: { readyState?: string; url?: string };
-	sidePanel?: { open?: boolean; url?: string; lifecycle?: string };
 	serviceWorker?: { lifecycle?: string; active?: boolean };
 	lastMessages?: readonly DropMessage[];
 	timers?: {
@@ -53,7 +52,6 @@ export function formatConnectionDrop(input: ConnectionDropInput): string {
 		sessionIds: (input.sessionIds ?? []).map(redactSessionId),
 		port: input.port ?? null,
 		socket: input.socket ?? null,
-		sidePanel: input.sidePanel ?? null,
 		serviceWorker: input.serviceWorker ?? null,
 		lastMessages: (input.lastMessages ?? []).map((message) => ({
 			direction: message.direction,

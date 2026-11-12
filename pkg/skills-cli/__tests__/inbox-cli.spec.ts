@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { InboxCliResult } from "@dg/common";
-import { CliClient } from "@dg/common/node";
+import {
+	CliClient,
+	ensureOwnerToken,
+	resolveDgPaths,
+} from "@dg/common/node";
 import {
 	bootServe,
 	cleanupDgHome,
@@ -329,7 +333,7 @@ describe("dg-skills inbox daemon integration", () => {
 });
 
 describe("dg-skills inbox daemon response boundary", () => {
-	test("a missing extension names the session, bootstrap URL, reload step, and version", async () => {
+	test("a missing extension names the session, the start command, reload step, and version", async () => {
 		const h = inboxCliHarness();
 		const server = inboxDaemonFixture(h, (request, reply) => {
 			reply({
@@ -339,7 +343,9 @@ describe("dg-skills inbox daemon response boundary", () => {
 				requestId: request.requestId,
 				ok: false,
 				error:
-					"Connect the dg extension to this session and open an authenticated Proton Mail tab.",
+					`No extension peer on session ${request.sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install. ` +
+					"Then open or reload an authenticated Proton Mail tab and retry. " +
+					"Inbox requires dg extension 1.11.0 or newer.",
 			});
 		});
 		try {
@@ -353,12 +359,10 @@ describe("dg-skills inbox daemon response boundary", () => {
 				`No extension peer on session ${server.sessionId}`,
 			);
 			expect(result.stderr).toContain(server.sessionId);
-			expect(result.stderr).toContain(
-				`http://127.0.0.1:${server.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`,
-			);
-			expect(result.stderr).toContain(
-				`dg-skills inbox bootstrap-url --session ${server.sessionId}`,
-			);
+			expect(result.stderr).toContain("dg-agent start");
+			expect(result.stderr).toContain("dg-skills install");
+			expect(result.stderr).not.toContain("/start");
+			expect(result.stderr).not.toContain("#_chat=");
 			expect(result.stderr).not.toContain(server.token);
 			expect(result.stdout).not.toContain(server.token);
 			expect(result.stderr).toMatch(/reload/i);
@@ -369,13 +373,16 @@ describe("dg-skills inbox daemon response boundary", () => {
 		}
 	}, 6000);
 
-	test("bootstrap-url prints the real start URL only when asked", async () => {
+	test("bootstrap-url prints a one-time-code URL and never the session token", async () => {
 		const h = inboxCliHarness();
+		const paths = resolveDgPaths({ env: { DG_HOME: h.dgHome } });
+		const ownerToken = ensureOwnerToken(paths);
 		const server = inboxDaemonFixture(h, () => {});
 		try {
 			const help = await h.run(["bootstrap-url", "--help"]);
 			expect(help.code, help.stderr).toBe(0);
 			expect(help.stdout).toContain("bootstrap-url");
+			expect(help.stdout).toContain("works once, within 60 seconds");
 			expect(help.stdout).not.toContain(server.token);
 			const printed = await h.run([
 				"bootstrap-url",
@@ -383,20 +390,15 @@ describe("dg-skills inbox daemon response boundary", () => {
 				server.sessionId,
 			]);
 			expect(printed.code, printed.stderr).toBe(0);
-			expect(printed.stdout).toContain(
-				`http://127.0.0.1:${server.port}/start#_chat=`,
+			expect(printed.stdout.trim()).toBe(
+				`http://127.0.0.1:${server.port}/chat#_chatcode=one-time-code`,
 			);
+			expect(printed.stdout).not.toContain("_chat=");
+			expect(printed.stdout).not.toContain(server.token);
 			expect(printed.stderr).not.toContain(server.token);
-			const fragment = printed.stdout.trim().split("#_chat=")[1] ?? "";
-			const decoded = JSON.parse(
-				Buffer.from(fragment, "base64url").toString("utf8"),
-			);
-			expect(decoded).toMatchObject({
-				port: server.port,
-				sessionId: server.sessionId,
-				token: server.token,
-				agentIdentity: "fixture-model",
-			});
+			expect(server.mints).toEqual([
+				{ sessionId: server.sessionId, owner: ownerToken },
+			]);
 		} finally {
 			server.stop();
 			h.cleanup();

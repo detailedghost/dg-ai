@@ -34,8 +34,8 @@ timeout. If scrape or plant times out anyway, report:
 
 > Prototype scrape timed out. Run the browser skill's `install` command, confirm
 > the extension is enabled in the browser that opened, confirm it is paired to
-> this session (open the daemon's printed `/start#_chat=` URL in that browser),
-> and retry.
+> this session (run `dg-agent start`; it names the install step when no
+> extension is connected), and retry.
 
 A typed not-ready error (`login-page`, `http-error`, `redirected`, or
 `mount-missing`) means the extension reached a page it could not scrape or

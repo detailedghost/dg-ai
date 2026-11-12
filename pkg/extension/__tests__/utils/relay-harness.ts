@@ -1,11 +1,10 @@
-import { mock } from "bun:test";
+import { type Mock, mock, spyOn } from "bun:test";
 import {
 	CHAT_DEFAULT_PORT,
 	CHAT_PROTOCOL_VERSION,
 	type SessionBootstrap,
 } from "@dg/common";
-import { registerChat } from "@/lib/background/chat";
-import { MSG } from "@dg/pages/chat-messages";
+import { type RegisterDaemonLinkOptions, registerDaemonLink } from "@/lib/background/daemon-link";
 
 export type Listener = (
 	msg: unknown,
@@ -50,9 +49,7 @@ export function frameEvent(frame: Record<string, unknown>) {
 export const settle = (): Promise<void> =>
 	new Promise((resolve) => setTimeout(resolve, 0));
 
-export async function flushMicrotasks(times = 40): Promise<void> {
-	for (let i = 0; i < times; i++) await Promise.resolve();
-}
+export { flushMicrotasks } from "./dom-events";
 
 export function makeBootstrapFactory(
 	defaults: SessionBootstrap,
@@ -67,15 +64,36 @@ export const makeBootstrap = makeBootstrapFactory({
 	agentIdentity: "claude-orchestrator",
 });
 
-/** Captures a globalThis property's descriptor and returns a closure that restores it. */
-export function captureGlobal(name: string): () => void {
-	const original = Object.getOwnPropertyDescriptor(globalThis, name);
-	return () => {
-		if (original) {
-			Object.defineProperty(globalThis, name, original);
-		} else {
-			Reflect.deleteProperty(globalThis, name);
-		}
+export { captureGlobal } from "../../../pages/__tests__/utils/globals";
+
+export type LocalArea = {
+	data: Record<string, unknown>;
+	get: Mock<(keys?: unknown) => Promise<Record<string, unknown>>>;
+	set: Mock<(items: Record<string, unknown>) => Promise<void>>;
+	remove: Mock<(keys: string | string[]) => Promise<void>>;
+};
+
+export function makeLocalArea(initial: Record<string, unknown> = {}): LocalArea {
+	const data = { ...initial };
+	return {
+		data,
+		get: mock(async (_keys?: unknown) => ({ ...data })),
+		set: mock(async (items: Record<string, unknown>) => {
+			Object.assign(data, items);
+		}),
+		remove: mock(async (keys: string | string[]) => {
+			for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key];
+		}),
+	};
+}
+
+export function makeStorage(local: LocalArea = makeLocalArea()) {
+	return {
+		local,
+		session: {
+			set: mock(() => Promise.resolve()),
+			remove: mock((_key: string) => Promise.resolve()),
+		},
 	};
 }
 
@@ -83,6 +101,8 @@ export type BootRelayOptions = {
 	confirmSession?: boolean;
 	sessionId?: string;
 	token?: string;
+	relayHandlers?: RegisterDaemonLinkOptions["relayHandlers"];
+	local?: LocalArea;
 };
 
 export type BootedRelay = {
@@ -90,11 +110,11 @@ export type BootedRelay = {
 	posted: unknown[];
 	postAs(senderUrl: string, message: unknown): Promise<unknown>;
 	postAsOptionsPage(message: unknown): Promise<unknown>;
-	postAsChatPage(message: unknown): Promise<unknown>;
 	extensionUrl(path: string): string;
 	sessionId: string;
 	token: string;
 	sentFrames(): Record<string, unknown>[];
+	local: LocalArea;
 };
 
 export async function bootRelay(
@@ -105,6 +125,7 @@ export async function bootRelay(
 	const socket = makeFakeSocket();
 	let onMessage: Listener | undefined;
 	const posted: unknown[] = [];
+	const storage = makeStorage(options.local);
 	const api = {
 		action: { onClicked: { addListener: mock(() => undefined) } },
 		runtime: {
@@ -115,19 +136,16 @@ export async function bootRelay(
 			},
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			sendMessage: mock((_m: unknown) => Promise.resolve(undefined)),
+			openOptionsPage: mock(() => Promise.resolve()),
 		},
 		tabs: { create: mock(() => Promise.resolve()) },
-		storage: {
-			session: {
-				set: mock(() => Promise.resolve()),
-				remove: mock(() => Promise.resolve()),
-			},
-		},
+		storage,
 	};
-	registerChat({
+	installDaemonHealthStub();
+	const link = registerDaemonLink({
 		browserApi: api,
 		openSocket: () => socket,
-		maybeStartRecording: () => Promise.resolve(false),
+		relayHandlers: options.relayHandlers,
 	});
 
 	function postAs(senderUrl: string, message: unknown): Promise<unknown> {
@@ -138,19 +156,12 @@ export async function bootRelay(
 		});
 	}
 
-	onMessage?.(
-		{
-			type: MSG.markerCaptured,
-			bootstrap: {
-				port: CHAT_DEFAULT_PORT,
-				sessionId,
-				token,
-				agentIdentity: "claude-orchestrator",
-			},
-		},
-		{},
-		mock(() => undefined),
-	);
+	await link.adopt({
+		port: CHAT_DEFAULT_PORT,
+		sessionId,
+		token,
+		agentIdentity: "claude-orchestrator",
+	});
 	await settle();
 	socket.dispatch("open");
 	await settle();
@@ -173,14 +184,36 @@ export async function bootRelay(
 		postAs,
 		postAsOptionsPage: (message) =>
 			postAs(api.runtime.getURL("options.html"), message),
-		postAsChatPage: (message) =>
-			postAs(api.runtime.getURL("chat.html"), message),
 		extensionUrl: (path) => api.runtime.getURL(path),
 		sessionId,
 		token,
+		local: storage.local,
 		sentFrames: () =>
 			socket.send.mock.calls.map(
 				([raw]) => JSON.parse(raw as string) as Record<string, unknown>,
 			),
 	};
+}
+
+export const TEST_DAEMON_ID = "daemon-test";
+
+export const TEST_PAGE_CODE = "test-page-code";
+
+export function installDaemonHealthStub(daemonId: string = TEST_DAEMON_ID) {
+	const realFetch = globalThis.fetch;
+	return spyOn(globalThis, "fetch").mockImplementation(((
+		input: Parameters<typeof fetch>[0],
+		init?: Parameters<typeof fetch>[1],
+	) => {
+		const url = String(input);
+		if (/\/healthz$/.test(url)) {
+			return Promise.resolve(
+				Response.json({ daemon: "dg-daemon", instanceId: "inst-test", daemonId }),
+			);
+		}
+		if (/\/chat\/code$/.test(url)) {
+			return Promise.resolve(Response.json({ code: TEST_PAGE_CODE }));
+		}
+		return realFetch(input, init);
+	}) as typeof fetch);
 }

@@ -1,4 +1,5 @@
-import { fail, requireRecord } from "./assert";
+import { fail, requireRecord, requireString } from "./assert";
+import type { RelayWire } from "./relay-format";
 
 /** Maximum metadata page size, independent of a workflow's total message limit. */
 export const INBOX_MAX_PAGE_SIZE = 200;
@@ -526,3 +527,66 @@ export function validateInboxCliRequest(value: unknown): InboxCliRequest {
 	if (operation === "cache-set") validateInboxAuthCache(v.cache);
 	return value as InboxCliRequest;
 }
+
+export type InboxRelayBodies = {
+	cliRequest: InboxCliRequest;
+	browserRequest: { requestId: string; request: InboxBrowserRequest };
+	browserResult: {
+		requestId: string;
+		ok: boolean;
+		data?: InboxBrowserResponse;
+		error?: string;
+	};
+};
+
+export const INBOX_WIRE = {
+	name: "inbox",
+	frames: {
+		cliRequest: "cli-inbox-request",
+		cliResult: "cli-inbox-result",
+		browserRequest: "inbox-browser-request",
+		browserResult: "inbox-browser-result",
+	},
+	validators: {
+		"inbox-browser-request": (value, path) => {
+			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("inbox requestId exceeds 128 characters");
+			validateInboxBrowserRequest(value.request);
+		},
+		"inbox-browser-result": (value, path) => {
+			requireString(value.requestId, path + ".requestId", { nonEmpty: true });
+			if ((value.requestId as string).length > 128)
+				fail("inbox requestId exceeds 128 characters");
+			if (typeof value.ok !== "boolean")
+				fail("inbox result.ok must be a boolean");
+			if (value.ok) {
+				if (value.error !== undefined)
+					fail("successful inbox result must not contain an error");
+				validateInboxBrowserResponse(value.data);
+			} else {
+				if (value.data !== undefined)
+					fail("failed inbox result must not contain data");
+				requireString(value.error, "inbox result.error", { nonEmpty: true });
+				if ((value.error as string).length > 2048)
+					fail("inbox result.error exceeds 2048 characters");
+			}
+			for (const key of Object.keys(value)) {
+				if (
+					![
+						"type",
+						"protocolVersion",
+						"sessionId",
+						"token",
+						"requestId",
+						"ok",
+						"data",
+						"error",
+					].includes(key)
+				)
+					fail("unknown inbox result field");
+			}
+		},
+	},
+	inbound: ["inbox-browser-result"],
+} as const satisfies RelayWire;

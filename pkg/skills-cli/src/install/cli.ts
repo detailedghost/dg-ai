@@ -194,6 +194,11 @@ async function installBundle(release: PickedBundle): Promise<void> {
 	await withInstallLock(root, () => installBundleLocked(root, release));
 }
 
+/** Installs the runtime and bundle of one release, and nothing else. */
+export async function installBundleOnly(version: string): Promise<void> {
+	await installBundle(pickBundle(await listReleases(), version));
+}
+
 async function installBundleLocked(root: string, release: PickedBundle): Promise<void> {
 	const installed = readCurrentVersion(root);
 	const bundleDir = join(root, "lib", release.version);

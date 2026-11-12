@@ -92,6 +92,7 @@ Claude Code also accepts the bare `/<name>`.
 | `stat` | Show this session's in-flight work, status, and ETA in one table |
 | `test-live` | Deploy the current branch to dev, stage, or prod, then clean up; `dg-skills test-live` |
 | `ticket` | File a Jira ticket using the registered project, assignee, sprint, and issue types |
+| `update` | Update every dg part to the newest release; `dg-skills update` |
 | `walk` | Go through the open questions one at a time |
 | `wayfinder` | Map work too big for one session as decision tickets |
 | `what-changed` | Write release notes from tags, PRs, and commits |
@@ -133,6 +134,10 @@ Read the [proxy skill](plugins/dg/skills/proxy/SKILL.md) for result and resume r
 `powershell.exe`), Wayland (`wl-paste`), or X11 (`xclip`); `-` writes PNG bytes to
 stdout. The clipboard skill resolves its default destination through stash.
 
+`dg-skills skill audit [dirs] [--threshold N] [--json] [--fix]` reports token weight and hygiene issues for skill folders, and
+`dg-skills skill split --list <dir>` / `--apply <manifest.json>` moves `SKILL.md` sections into reference files after a backup
+under the AI state root. Run `dg-skills skill --help` for the manifest shape and exit codes.
+
 Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-cutover) steps after each wave.
 
 ## Supported browsers
@@ -149,4 +154,5 @@ Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-
 - [Developer guide](docs/DEVELOPER.md)
 
 - [Contributing](docs/contributing.md)
+
 - [Security](SECURITY.md)

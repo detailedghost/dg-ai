@@ -220,7 +220,9 @@ describe("skill metadata", () => {
 	});
 });
 
-describe.skipIf(process.platform === "win32")("bootstrap.sh flag", () => {
+describe.skipIf(
+	process.platform === "win32" || process.env.DG_BOOTSTRAP_E2E !== "1",
+)("bootstrap.sh flag", () => {
 	afterEach(removeBootstrapDirs);
 	afterAll(removeBootstrapFixtures);
 

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { readSessionToken, resolveDgPaths } from "@dg/common/node";
 import {
 	allocatePort,
 	cleanupDgHome,
@@ -15,6 +14,7 @@ import {
 	waitForHealth,
 	waitForOpen,
 } from "../utils/daemon-harness";
+import { readSessionList } from "../utils/session-list";
 
 let dgHome: string;
 
@@ -68,9 +68,6 @@ describe("a session left active with no CLI or page ever attached to it", () => 
 
 		await new Promise((r) => setTimeout(r, SESSION_TTL_MS * 6));
 
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(() => readSessionToken(paths, bootstrap.sessionId)).toThrow();
-
 		const reuse = cliSocket(port, {
 			sessionId: bootstrap.sessionId,
 			token: bootstrap.token,
@@ -115,9 +112,6 @@ describe("a session with a live page socket holding its capability", () => {
 			sessionCount: number;
 		};
 		expect(status.sessionCount).toBe(0);
-
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		expect(() => readSessionToken(paths, bootstrap.sessionId)).toThrow();
 
 		page.close();
 	}, WALL_CLOCK_BUDGET_MS);
@@ -184,13 +178,9 @@ describe("a claimed session between short-lived CLI commands", () => {
 			sessionCount: number;
 		};
 		expect(during.sessionCount).toBe(1);
-		const catalog = await fetch(`http://127.0.0.1:${port}/sessions`, {
-			headers: { Host: `127.0.0.1:${port}` },
-		});
-		const listed = (await catalog.json()) as {
-			sessions: { presence: string }[];
-		};
-		expect(listed.sessions[0]?.presence).toBe("cli");
+		expect(
+			(await readSessionList(port, bootstrap)).map((session) => session.presence),
+		).toEqual(["cli"]);
 
 		const second = cliSocket(port, bootstrap);
 		await waitForOpen(second);

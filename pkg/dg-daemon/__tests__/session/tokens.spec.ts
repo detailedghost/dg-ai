@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
+import * as node from "@dg/common/node";
 import {
-	readSessionToken,
+	readSessionFiles,
 	removeSessionToken,
 	resolveDgPaths,
 	writeSessionToken,
@@ -11,74 +12,52 @@ import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 let dgHome: string;
 const SESSION_ID = "session-tokens-1";
 
+function record(token: string) {
+	return {
+		sessionId: SESSION_ID,
+		token,
+		cwd: "/tmp/some/repo",
+		agentIdentity: "agent-1",
+	};
+}
+
 beforeEach(() => {
 	dgHome = freshDgHome();
 });
 
 afterEach(() => {
-	delete process.env.DG_SESSION_TOKEN;
 	cleanupDgHome(dgHome);
 });
 
-describe("writeSessionToken / readSessionToken", () => {
-	it("reads back the exact token just written, with no override set", () => {
+describe("writeSessionToken / readSessionFiles", () => {
+	it("reads back the record just written", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		writeSessionToken(paths, SESSION_ID, {
-			sessionId: SESSION_ID,
-			token: "on-disk-token-abc",
-			cwd: "/tmp/some/repo",
-			agentIdentity: "agent-1",
-		});
+		const written = record("on-disk-token-abc");
+		writeSessionToken(paths, SESSION_ID, written);
 
-		expect(readSessionToken(paths, SESSION_ID)).toBe("on-disk-token-abc");
+		expect(readSessionFiles(paths.sessionsDir)).toEqual([written]);
 	});
 
-	it("DG_SESSION_TOKEN overrides the on-disk file when both are present", () => {
+	it("keeps the on-disk JSON shape equal to the record written", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		writeSessionToken(paths, SESSION_ID, {
-			sessionId: SESSION_ID,
-			token: "on-disk-token-xyz",
-			cwd: "/tmp/some/repo",
-			agentIdentity: "agent-1",
-		});
-		process.env.DG_SESSION_TOKEN = "override-token-123";
-
-		expect(readSessionToken(paths, SESSION_ID)).toBe("override-token-123");
-	});
-
-	it("DG_SESSION_TOKEN is honored even with no on-disk file at all", () => {
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		process.env.DG_SESSION_TOKEN = "override-only-token";
-
-		expect(readSessionToken(paths, SESSION_ID)).toBe("override-only-token");
-	});
-
-	it("the on-disk JSON shape matches exactly what writeSessionToken emitted — the object the CLI must parse", () => {
-		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		const record = {
-			sessionId: SESSION_ID,
-			token: "shape-check-token",
-			cwd: "/tmp/shape/repo",
-			agentIdentity: "agent-shape",
-		};
-		writeSessionToken(paths, SESSION_ID, record);
+		const written = record("shape-check-token");
+		writeSessionToken(paths, SESSION_ID, written);
 
 		const onDisk = JSON.parse(
 			readFileSync(`${paths.sessionsDir}/${SESSION_ID}.json`, "utf8"),
 		);
-		expect(onDisk).toEqual(record);
+		expect(onDisk).toEqual(written);
 	});
 
-	it("readSessionToken throws once the record has been removed and no override is set", () => {
+	it("lists nothing once the record has been removed", () => {
 		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
-		writeSessionToken(paths, SESSION_ID, {
-			sessionId: SESSION_ID,
-			token: "will-be-removed",
-			cwd: "/tmp/some/repo",
-			agentIdentity: "agent-1",
-		});
+		writeSessionToken(paths, SESSION_ID, record("will-be-removed"));
 		removeSessionToken(paths, SESSION_ID);
 
-		expect(() => readSessionToken(paths, SESSION_ID)).toThrow();
+		expect(readSessionFiles(paths.sessionsDir)).toEqual([]);
+	});
+
+	it("no longer exports a single-token reader", () => {
+		expect("readSessionToken" in node).toBe(false);
 	});
 });

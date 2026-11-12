@@ -12,7 +12,7 @@ import {
 	validateOverwatchLaneUpdate,
 	validateIsoTimestamp,
 } from "@dg/common";
-import { buildBootstrapUrl, openFailedHint } from "@dg/common/node";
+import { buildCodeUrl, openFailedHint } from "@dg/common/node";
 import type { Command } from "commander";
 
 const COMMAND_TIMEOUT_MS = 5_000;
@@ -33,6 +33,7 @@ export type OverwatchCommandDependencies = {
 	write(value: string): Promise<void>;
 	writeError(value: string): Promise<void>;
 	tryOpen(url: string): Promise<boolean>;
+	mintPageCode(bootstrap: SessionBootstrap): Promise<string>;
 	openFailedHint?: () => string;
 	localBootstrap(command: Command): Promise<SessionBootstrap>;
 };
@@ -181,8 +182,8 @@ async function openLocalBoard(
 	command: Command,
 ): Promise<void> {
 	const bootstrap = await dependencies.localBootstrap(command);
-	const url = buildBootstrapUrl(bootstrap.port, bootstrap, "/board");
-	await dependencies.write(`${url}\n`);
+	const code = await dependencies.mintPageCode(bootstrap);
+	const url = buildCodeUrl(bootstrap.port, code, "/board");
 	if (!(await dependencies.tryOpen(url))) {
 		const hint = (dependencies.openFailedHint ?? openFailedHint)();
 		await dependencies.writeError(`${hint}\n`);
@@ -332,7 +333,7 @@ export function registerOverwatchCommands(
 	overwatch
 		.command("open")
 		.description("open the overwatch board in the default browser")
-		.option("--ext", "focus the board in the dg-ai-extension instead")
+		.option("--ext", "open the board in the paired browser through the dg-ai-extension")
 		.action(async (options: { ext?: boolean }, command: Command) => {
 			await openBoard(dependencies, command, options.ext === true);
 		});

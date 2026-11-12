@@ -41,7 +41,9 @@ const fixture = (): DemoResult => ({
 	outcome: "done",
 	mode: "video",
 	steps: 2,
-	video: join(world.demosDir, slug, `${slug}-20260101-1200.webm`),
+	video: join(world.demosDir, slug, `${slug}-20260101-1200.mp4`),
+	encoded: true,
+	audio: "none",
 	plan: join(world.demosDir, slug, `${slug}.demo.md`),
 	startedAt: "2026-01-01T12:00:00.000Z",
 	endedAt: "2026-01-01T12:01:00.000Z",
@@ -67,7 +69,7 @@ describe("generated slugs", () => {
 
 describe("player pid matching", () => {
 	const jobFor = (jobSlug: string) =>
-		JSON.stringify({ slug: jobSlug, dir: join(world.demosDir, jobSlug), planPath: "p", video: true });
+		JSON.stringify({ slug: jobSlug, dir: join(world.demosDir, jobSlug), planPath: "p" });
 
 	const livePlayerFor = (jobSlug: string, extra: string[] = []) => {
 		const child = liveChild([

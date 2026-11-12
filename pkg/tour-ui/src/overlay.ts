@@ -83,7 +83,6 @@ export function buildOverlay(
 		zIndex: "2147483647",
 	});
 
-	if (video) layer.appendChild(recIndicator());
 
 	// Setup and tutorial share this overlay but must read as different moments —
 	// orange marks "preparation, not the demo yet", blue is the tour proper.
@@ -277,32 +276,5 @@ export function positionCard(card: HTMLElement, target: HTMLElement | null): voi
 	card.style.top = `${top}px`;
 }
 
-// --- video-mode chrome (REC badge + centered modals) ---
+// --- video-mode chrome (centered modals) ---
 
-export function recIndicator(): HTMLElement {
-	const wrap = el("div", {
-		position: "fixed",
-		top: "0.875rem",
-		right: "1rem",
-		display: "flex",
-		alignItems: "center",
-		gap: "0.375rem",
-		padding: "0.3125rem 0.625rem",
-		borderRadius: "62.4375rem",
-		background: "rgba(20,10,12,0.82)",
-		color: "#ffd7d7",
-		font: "600 0.75rem system-ui, sans-serif",
-		pointerEvents: "none",
-	});
-	const dot = el("span", {
-		width: "0.5625rem",
-		height: "0.5625rem",
-		borderRadius: "50%",
-		background: "#ff4d4f",
-		boxShadow: "0 0 0.375rem #ff4d4f",
-	});
-	const label = el("span");
-	label.textContent = "REC";
-	wrap.append(dot, label);
-	return wrap;
-}

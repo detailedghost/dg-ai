@@ -296,6 +296,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 			(n) => n !== "channel-review",
 		);
 		expect(top).toEqual([
+			"setup",
 			"start",
 			"stop",
 			"status",
@@ -319,6 +320,7 @@ describe("channel-review docs do not drift from the shipped CLI", () => {
 				"--env",
 				"--file",
 				"--follow",
+				"--force",
 				"--keep-backup",
 				"--lines",
 				"--org",

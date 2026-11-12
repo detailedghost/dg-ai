@@ -8,7 +8,6 @@ import { DEFAULT_ON_MESSAGE_TIMEOUT_SECONDS } from "./push";
 
 export const DEFAULT_INVITE_HOURS = 24;
 export const WATCH_DEFAULT_FOR_S = 120;
-export const ALIAS_REMOVAL_VERSION = "1.43.0";
 
 export type PhoneApi = Pick<
 	typeof Commands,
@@ -58,15 +57,6 @@ const REMOVED_VERBS: Record<string, string> = {
 	name: "name is gone; use phone contacts rename +old <new>",
 };
 
-/** A hidden command that stands in for a renamed one and prints one stderr notice before it runs. */
-function renamedAlias(group: Command, oldName: string, newName: string): Command {
-	return group
-		.command(oldName, { hidden: true })
-		.hook("preAction", () => {
-			process.stderr.write(`phone ${oldName} is now phone ${newName}; this alias goes away in ${ALIAS_REMOVAL_VERSION}\n`);
-		});
-}
-
 type PhoneLoader = () => Promise<PhoneApi>;
 
 function phoneWritable(paths: DgPaths): boolean {
@@ -79,7 +69,7 @@ function phoneWritable(paths: DgPaths): boolean {
 	}
 }
 
-/** Attaches every phone verb to `group`, plus the hidden renamed-verb aliases, the one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
+/** Attaches every phone verb to `group`, plus the one-to-one synonyms `dial`/`on`/`off`/`card` and the removed verbs that fail outright. */
 function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => string | undefined): void {
 	group
 		.command("number")
@@ -154,7 +144,6 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 				await phone.phoneSay(handle, text, phone.deps(getSession()), opts);
 			});
 	sendText(group.command("text").description("send one message to a contact, or to a #group"));
-	sendText(renamedAlias(group, "say", "text"));
 
 	group
 		.command("ping")
@@ -267,7 +256,6 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		});
 
 	attachGroupVerbs(group.command("group").description("a static multi-party room with a #handle"));
-	attachGroupVerbs(renamedAlias(group, "thread", "group"));
 
 	const printMessages = (command: Command): Command =>
 		command
@@ -280,7 +268,6 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 				phone.phoneInbox({ n: opts.count, handle, meta: opts.meta, as: opts.as }, phone.deps(getSession()));
 			});
 	printMessages(group.command("messages").description("print stored messages, oldest first; never marks anything read"));
-	printMessages(renamedAlias(group, "inbox", "messages"));
 
 	const printUnread = (command: Command): Command =>
 		command.option("--as <ext>", "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)").action(async (opts: { as?: string }) => {
@@ -288,7 +275,6 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 			await phone.phoneVoicemail(phone.deps(getSession()), opts);
 		});
 	printUnread(group.command("unread").description("print unread messages, oldest first, and mark them read"));
-	printUnread(renamedAlias(group, "voicemail", "unread"));
 
 	group
 		.command("watch")

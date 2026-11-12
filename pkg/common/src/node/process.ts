@@ -66,7 +66,7 @@ function openers(seams: OpenSeams): Opener[] {
 	return [["xdg-open", (u) => [u]]];
 }
 
-const OPEN_FAILED_HINT = "could not open a browser; open the URL above";
+const OPEN_FAILED_HINT = "could not open a browser";
 
 /** The stderr line for a failed open; on WSL it names the DG_OPEN_WINDOWS opt-in. */
 export function openFailedHint(wsl: boolean = isWSL()): string {

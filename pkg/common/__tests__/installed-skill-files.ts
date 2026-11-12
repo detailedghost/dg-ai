@@ -195,6 +195,7 @@ export const INSTALLED_SKILL_FILES = [
 	"thrash/references/agent-prompt.md",
 	"thrash/references/details.md",
 	"ticket/SKILL.md",
+	"update/SKILL.md",
 	"verify/SKILL.md",
 	"verify/assets/board.css",
 	"verify/assets/board.js",

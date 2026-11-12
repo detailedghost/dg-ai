@@ -215,3 +215,14 @@ sequenceDiagram
 - `pkg/extension/lib/background/pw-ext.ts`
 - `pkg/extension/lib/features/pw-ext-page.ts`
 - `pkg/skills-cli/src/pw/ext.ts`
+- `pkg/common/src/relay-format.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
+- `pkg/dg-daemon/src/server/browser-relay.ts` (relay lifecycle moved by [0037](0037-one-browser-relay.md))
+
+## Amended 2026-11-07: pairing popup and agent tab groups (ADR 0038)
+
+[ADR 0038](0038-extension-pairing-only.md) changed which tab `pw --ext` acts on and removed the `side panel`. The text above stays as the record of the first decision. Where it says the extension acts on the active tab, or weighs the `side panel` for approval, this amendment replaces it.
+
+- `pw --ext` acts on the selected tab of the agent's own tab group. `--tab <id>` names another tab of the group.
+- `pw --ext new <url>` opens a tab in the group. `tabs`, `select` and `close` manage the group. The human can hand a tab over with `Add this tab`.
+- The extension has no panel beside the pairing popup. The `chat` and `overwatch` pages live on the daemon.
+- The approval popup in this record and the pairing popup in ADR 0038 are unrelated. The approval popup is gone. The pairing popup shows the pairing code and the paired agents.

@@ -9,7 +9,11 @@ const DAEMON_HEALTH_NAMES = ["dg-daemon", "dg-server"] as const;
 const HEALTH_PROBE_TIMEOUT_MS = 2_000;
 
 export type DaemonName = (typeof DAEMON_HEALTH_NAMES)[number];
-export type ChatHealth = { daemon: DaemonName; instanceId: string };
+export type ChatHealth = {
+	daemon: DaemonName;
+	instanceId: string;
+	daemonId?: string;
+};
 
 function asDaemonName(value: unknown): DaemonName | undefined {
 	return DAEMON_HEALTH_NAMES.find((name) => name === value);
@@ -26,24 +30,32 @@ export async function fetchDaemonHealth(
 		const body = (await res.json()) as {
 			daemon?: unknown;
 			instanceId?: unknown;
+			daemonId?: unknown;
 		};
 		const daemon = asDaemonName(body.daemon);
 		if (!daemon || typeof body.instanceId !== "string") return undefined;
-		return { daemon, instanceId: body.instanceId };
+		return {
+			daemon,
+			instanceId: body.instanceId,
+			...(typeof body.daemonId === "string" ? { daemonId: body.daemonId } : {}),
+		};
 	} catch {
 		return undefined;
 	}
 }
+
+const daemonPorts = () =>
+	Array.from(
+		{ length: CHAT_PORT_FALLBACK_COUNT + 1 },
+		(_, index) => CHAT_DEFAULT_PORT + index,
+	);
 
 /** Probe the port range the daemon binds, preferring the instance we last talked to. */
 export async function findDaemonPort(
 	preferInstanceId?: string,
 	probe: (port: number) => Promise<ChatHealth | undefined> = fetchDaemonHealth,
 ): Promise<number | undefined> {
-	const candidates = Array.from(
-		{ length: CHAT_PORT_FALLBACK_COUNT + 1 },
-		(_, index) => CHAT_DEFAULT_PORT + index,
-	);
+	const candidates = daemonPorts();
 	const healths = await Promise.all(candidates.map(probe));
 	if (preferInstanceId !== undefined) {
 		const preferred = candidates.find(
@@ -53,4 +65,24 @@ export async function findDaemonPort(
 	}
 	const fallbackIndex = healths.findIndex((health) => health !== undefined);
 	return fallbackIndex === -1 ? undefined : candidates[fallbackIndex];
+}
+
+/** True only for a port whose daemon reports the pinned stable identity. */
+export async function portHasDaemonId(
+	port: number,
+	daemonId: string,
+	probe: (port: number) => Promise<ChatHealth | undefined> = fetchDaemonHealth,
+): Promise<boolean> {
+	return (await probe(port))?.daemonId === daemonId;
+}
+
+/** Finds the port of the daemon with this stable identity, never any other daemon. */
+export async function findPinnedDaemonPort(
+	daemonId: string,
+	probe: (port: number) => Promise<ChatHealth | undefined> = fetchDaemonHealth,
+): Promise<number | undefined> {
+	const candidates = daemonPorts();
+	const healths = await Promise.all(candidates.map(probe));
+	const index = healths.findIndex((health) => health?.daemonId === daemonId);
+	return index === -1 ? undefined : candidates[index];
 }

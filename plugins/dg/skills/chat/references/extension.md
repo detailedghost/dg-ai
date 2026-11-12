@@ -1,25 +1,46 @@
-# Chat through the extension (`--ext`)
+# Chat through the extension
 
-Pass `--ext` to `dg-agent start` to hand the session to the dg-ai-extension
-instead of the local chat page. Gate it first:
+The extension pairs with every new session on its own. The agent runs one
+command:
+
+```bash
+dg-agent start
+```
+
+Expected output on stderr, with nothing on stdout:
+
+```text
+Paired <identity> (<id8>) with the browser extension.
+```
+
+If no extension is connected, the command prints this line instead:
+
+```text
+No browser extension is connected. Install it with: dg-skills install
+```
+
+Run `dg-skills install`. Then ask the human to load the extension once.
+
+- The human opens `chrome://extensions`, turns on Developer mode, and chooses
+  **Load unpacked**. The folder path is in the `dg-skills install` output.
+  This is the only human step.
+- Run `dg-agent start` again. It prints the Paired line.
+- Pass `--ext` to require the extension. Gate it first:
 
 ```text
 --ext only: dg-skills require-extension chat || exit 1
 dg-agent start --ext --open
 ```
 
-- The extension side panel connects in both directions. From the panel, **Attach CLI session** (after `dg-daemon pair`) links an already-open CLI session, and **New session for CLI** creates one that `dg-agent attach` or the next `dg-agent start` claims. From the CLI, `dg-agent start --ext --open` still hands the session to the extension.
+- `dg-agent start --open` opens the daemon's local chat page through a
+  one-time code and prints no URL. The code works once, within 60 seconds.
+- The extension keeps a link to its daemon and adopts each new session. It
+  stays paired until the session closes. If the human clicks **Unpair** in the
+  popup, that session stays unpaired until it closes.
+- After a daemon home reset, the popup shows "The daemon changed". The human
+  chooses **Trust this daemon**. This step is rare.
 - On WSL the daemon needs **mirrored** networking mode. NAT mode cannot reach
   the loopback port from the Windows-side browser, and the daemon exits with
   code 3 rather than pretending to be reachable.
-- If the extension is waiting on exactly one session, `dg-agent start` claims
-  it instead of registering another one, including when a service-installed
-  daemon recorded a different directory. When several sessions are waiting,
-  pass `-s <id>`.
-- `dg-agent attach [-s <id>] [--open]` claims a session the extension created
-  and is waiting on. On WSL, `--open` prints the URL unless `DG_OPEN_WINDOWS=1`
-  is set. Use it when Claude is already running and the side panel
-  says it is waiting for an agent. A single waiting session is claimed even if
-  the daemon recorded a different directory.
 
 If a step fails, run dg-skills doctor require-extension install.

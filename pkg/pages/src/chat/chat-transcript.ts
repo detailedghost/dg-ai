@@ -31,8 +31,12 @@ export type TranscriptViewOptions = {
 	assetOrigin?: string;
 };
 
+export const NOT_DELIVERED_TEXT =
+	"The daemon did not confirm this message. Check that the agent is running.";
+
 export type TranscriptView = {
-	appendUserMessage(body: string): void;
+	appendUserMessage(body: string, messageId?: string): void;
+	setDelivery(messageId: string, delivery: "delivered" | "not-delivered"): void;
 	appendAgentMessage(
 		frame: Extract<ChatFrame, { type: "agent-message" }>,
 		token: string,
@@ -106,6 +110,7 @@ export function createTranscriptView(
 		buildDefaultFetchAsset(options.port, options.assetOrigin);
 	const doc = container.ownerDocument;
 	let progressEl: HTMLElement | undefined;
+	const pendingRows = new Map<string, HTMLElement>();
 
 	function makeEl(tag: string, className: string): HTMLElement {
 		const node = doc.createElement(tag);
@@ -127,14 +132,6 @@ export function createTranscriptView(
 		message.appendChild(bodyEl);
 		if (attachmentNode) message.appendChild(attachmentNode);
 		return message;
-	}
-
-	function appendMessage(
-		role: "user" | "agent",
-		body: string,
-		attachmentNode?: HTMLElement,
-	): void {
-		container.appendChild(buildMessageEl(role, body, attachmentNode));
 	}
 
 	const renderedHistoryIds = new Set<string>();
@@ -192,9 +189,26 @@ export function createTranscriptView(
 	}
 
 	return {
-		appendUserMessage(body: string): void {
+		appendUserMessage(body: string, messageId?: string): void {
 			noteLiveRendered("user", body);
-			appendMessage("user", body);
+			const row = buildMessageEl("user", body);
+			row.dataset.delivery = messageId === undefined ? "delivered" : "pending";
+			if (messageId !== undefined) pendingRows.set(messageId, row);
+			container.appendChild(row);
+		},
+
+		setDelivery(messageId, delivery): void {
+			const row = pendingRows.get(messageId);
+			if (!row) return;
+			row.dataset.delivery = delivery;
+			row.querySelector(".chat-transcript__delivery")?.remove();
+			if (delivery === "delivered") {
+				pendingRows.delete(messageId);
+				return;
+			}
+			const note = makeEl("div", "chat-transcript__delivery");
+			note.textContent = NOT_DELIVERED_TEXT;
+			row.appendChild(note);
 		},
 
 		appendAgentMessage(frame, token): Promise<void> {

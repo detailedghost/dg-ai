@@ -100,21 +100,22 @@ export async function runDoctor(
 	return { items, ok: !failed };
 }
 
+export function summarizeReport(report: DoctorReport): string {
+	const counts = { ok: 0, info: 0, warn: 0, fail: 0 };
+	for (const entry of report.items) for (const check of entry.checks) counts[check.status]++;
+	return `${counts.ok} passed, ${counts.info} info, ${counts.warn} to review, ${counts.fail} failed`;
+}
+
 export function formatReport(report: DoctorReport): string {
 	const lines: string[] = [];
-	const counts = { ok: 0, info: 0, warn: 0, fail: 0 };
 	for (const entry of report.items) {
 		lines.push(entry.item);
 		for (const check of entry.checks) {
-			counts[check.status]++;
 			lines.push(`  ${STATUS_ICON[check.status]} ${check.id}: ${check.detail.replaceAll("\n", "\n      ")}`);
 			if (check.fix) lines.push(`      Fix: ${check.fix}`);
 		}
 	}
-	lines.push(
-		"",
-		`${counts.ok} passed, ${counts.info} info, ${counts.warn} to review, ${counts.fail} failed`,
-	);
+	lines.push("", summarizeReport(report));
 	return `${lines.join("\n")}\n`;
 }
 

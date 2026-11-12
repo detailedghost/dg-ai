@@ -1,8 +1,9 @@
 import {
-	isPwExtWebUrl,
 	PW_EXT_MAX_TEXT_CHARS,
+	type PW_EXT_RELAY,
 	type PwExtRequest,
 	type PwExtResponse,
+	type PwExtVerb,
 	redactText,
 	validatePwExtRequest,
 } from "@dg/common";
@@ -16,17 +17,27 @@ import {
 	type PwExtPageResult,
 	pwExtPageAction,
 } from "@/lib/features/pw-ext-page";
-import { isProtonMailOrigin } from "@/lib/features/inbox-proton-observer";
+import {
+	AgentGroupFullError,
+	type AgentTab,
+	type AgentTabs,
+	type AgentTabsBrowserApi,
+	type AgentTabsStorage,
+	type BrowserTab,
+	createAgentTabs,
+	MAX_AGENT_TABS,
+} from "./agent-tabs";
 import { fitPreviewDataUrl } from "./proto";
+import type { RelayHandler } from "./relay-dispatch";
+import {
+	allowedPage,
+	mailbox,
+	PW_EXT_BLOCKED_ERROR,
+	PW_EXT_MAILBOX_ERROR,
+	PW_EXT_PRIVATE_ERROR,
+} from "./tab-guards";
 
-type Tab = {
-	id?: number;
-	windowId?: number;
-	url?: string;
-	title?: string;
-	active?: boolean;
-	incognito?: boolean;
-};
+type LiveTab = BrowserTab & { id: number };
 
 type TabEvent<T> = {
 	addListener(listener: T): void;
@@ -34,20 +45,14 @@ type TabEvent<T> = {
 };
 
 /** Promise-based Chromium MV3 surface the handler needs. */
-export type PwExtBrowserApi = {
+export type PwExtBrowserApi = AgentTabsBrowserApi & {
 	windows: {
-		getLastFocused(options: {
-			windowTypes: ["normal"];
-		}): Promise<{ id?: number }>;
+		update(
+			windowId: number,
+			props: { focused: boolean; state?: "normal" },
+		): Promise<unknown>;
 	};
 	tabs: {
-		query(query: { active?: boolean; windowId?: number }): Promise<Tab[]>;
-		get(tabId: number): Promise<Tab>;
-		create(props: {
-			url: string;
-			windowId?: number;
-			active: boolean;
-		}): Promise<Tab>;
 		captureVisibleTab(
 			windowId: number,
 			options: { format: "jpeg"; quality: number },
@@ -64,26 +69,66 @@ export type PwExtBrowserApi = {
 			args: unknown[];
 		}): Promise<Array<{ result?: unknown }>>;
 	};
+	storage: AgentTabsStorage;
 };
 
 export type PwExtResult =
 	| { ok: true; data: PwExtResponse }
 	| { ok: false; error: string };
 
-export const PW_EXT_BLOCKED_ERROR =
-	"pw --ext does not read or change browser settings pages, extension pages, or other non-web pages. Switch to a web page tab and retry.";
-const STORE_HOSTS = new Set([
-	"chromewebstore.google.com",
-	"chrome.google.com",
-	"microsoftedge.microsoft.com",
-]);
-export const PW_EXT_MAILBOX_ERROR =
-	"pw --ext does not read or change the signed-in Proton Mail tab. Use dg-skills inbox.";
-const MAX_TABS = 200;
+const NEW_TAB_URL = "chrome://newtab/";
 const CANCELED: PwExtResult = {
 	ok: false,
 	error: "The request was canceled before it ran.",
 };
+const NO_SESSION = "pw --ext needs a paired session.";
+const NO_TAB = "This agent has no tab yet. Run pw --ext new <url> first.";
+const SELECTED_GONE =
+	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
+const GROUP_FULL = `This agent's tab group is full (${MAX_AGENT_TABS} tabs). Close some with pw --ext close <id>.`;
+const notInGroup = (tabId: number) =>
+	`pw --ext: tab ${tabId} is not in this agent's tab group; run pw --ext tabs to list them.`;
+const discardedTab = (tabId: number) =>
+	`This agent's tab was discarded by the browser. Run pw --ext select ${tabId} again after it reloads.`;
+
+const PAGE_VERBS = [
+	"snapshot",
+	"click",
+	"count",
+	"fill",
+	"upload",
+	"selection",
+	"console",
+	"tools",
+	"call",
+] as const satisfies readonly PwExtVerb[];
+const BLOCKS_BROWSER_PAGE: ReadonlySet<PwExtVerb> = new Set([
+	...PAGE_VERBS,
+	"current",
+	"screenshot",
+	"select",
+]);
+const BLOCKS_MAILBOX: ReadonlySet<PwExtVerb> = new Set([
+	...PAGE_VERBS,
+	"screenshot",
+	"close",
+	"open",
+]);
+const NEEDS_LOADED_TAB: ReadonlySet<PwExtVerb> = new Set([
+	...PAGE_VERBS,
+	"screenshot",
+]);
+
+type TabVerbRequest = PwExtRequest & {
+	verb: Exclude<PwExtVerb, "tabs" | "new">;
+};
+
+function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
+	return request.verb !== "tabs" && request.verb !== "new";
+}
+
+class Refusal extends Error {}
+
 const MAX_PAGE_RESULT_CHARS = 150_000;
 const PAGE_RESULT_KEYS = [
 	["tree", "text"],
@@ -98,6 +143,8 @@ const TOOL_TIMEOUT_MS = 30_000;
 
 /** Per-request seams that need the session capability. */
 export type PwExtContext = {
+	sessionId: string;
+	agentIdentity: string;
 	fetchAsset(assetId: string): Promise<Blob>;
 	deleteAsset(assetId: string): Promise<void>;
 };
@@ -131,19 +178,6 @@ function pageResult(raw: unknown): PwExtPageResult {
 }
 const JPEG_QUALITY = 70;
 
-function allowedPage(url: string | undefined): url is string {
-	if (!url || !isPwExtWebUrl(url)) return false;
-	return !STORE_HOSTS.has(new URL(url).hostname);
-}
-
-function mailbox(url: string | undefined): boolean {
-	try {
-		return isProtonMailOrigin(new URL(url ?? "").origin);
-	} catch {
-		return false;
-	}
-}
-
 function cap(text: string): string {
 	const marker = "\n[truncated]";
 	return text.length > PW_EXT_MAX_TEXT_CHARS
@@ -158,17 +192,17 @@ function clean(text: string): string {
 	return cap(redactText(text).replace(SECRET_PAIR, "$1$2[redacted]"));
 }
 
-function shownUrl(tab: Tab): string {
+function shownUrl(tab: Pick<BrowserTab, "url">): string {
 	if (!allowedPage(tab.url)) return "(browser page)";
 	return mailbox(tab.url) ? "(protected mailbox)" : redactText(tab.url);
 }
 
-function shownTitle(tab: Tab): string {
+function shownTitle(tab: Pick<BrowserTab, "url" | "title">): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
 	return redactText(tab.title ?? "");
 }
 
-function pageLines(tab: Tab): string[] {
+function pageLines(tab: Pick<BrowserTab, "url" | "title">): string[] {
 	const title = shownTitle(tab);
 	return [
 		"### Page",
@@ -217,25 +251,29 @@ function defaultIsChromium(): boolean {
 	return typeof runtime?.getBrowserInfo !== "function";
 }
 
-/** Runs one pw --ext verb against the active tab of the last focused window. */
+function nextFrame(): Promise<void> {
+	return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/** Runs one pw --ext verb against the agent's own tab group. */
 export function createPwExtHandler({
 	browserApi: api,
+	agentTabs = createAgentTabs({ browserApi: api, storage: api.storage }),
 	isChromium = defaultIsChromium,
 }: {
 	browserApi: PwExtBrowserApi;
+	agentTabs?: AgentTabs;
 	isChromium?: () => boolean;
 }) {
-	async function activeTab(): Promise<Tab | undefined> {
-		const window = await api.windows.getLastFocused({ windowTypes: ["normal"] });
-		if (window.id === undefined) return undefined;
-		const [tab] = await api.tabs.query({ active: true, windowId: window.id });
-		return tab;
-	}
+	const ok = (text: string, image?: string): PwExtResult => ({
+		ok: true,
+		data: { text: clean(text), ...(image ? { image } : {}) },
+	});
 
-	function watchTab(tab: Tab & { id: number }) {
+	function watchTab(tab: LiveTab) {
 		let changed = false;
-		const onActivated = (info: { windowId: number }) => {
-			if (info.windowId === tab.windowId) changed = true;
+		const onActivated = (info: { tabId: number; windowId: number }) => {
+			if (info.windowId === tab.windowId && info.tabId !== tab.id) changed = true;
 		};
 		const onUpdated = (tabId: number, change: { url?: string; status?: string }) => {
 			if (tabId === tab.id && (change.url !== undefined || change.status === "loading"))
@@ -257,7 +295,7 @@ export function createPwExtHandler({
 		};
 	}
 
-	async function inPage(tab: Tab & { id: number }, action: PwExtPageAction) {
+	async function inPage(tab: LiveTab, action: PwExtPageAction) {
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
 			func: pwExtPageAction,
@@ -267,7 +305,7 @@ export function createPwExtHandler({
 	}
 
 	async function inMain(
-		tab: Tab & { id: number },
+		tab: LiveTab,
 		func: (...args: never[]) => unknown,
 		args: unknown[],
 	): Promise<unknown> {
@@ -280,44 +318,90 @@ export function createPwExtHandler({
 		return frame?.result;
 	}
 
-	async function listTabs(active: Tab): Promise<string> {
-		const tabs = (await api.tabs.query({}))
-			.filter((tab) => !tab.incognito)
-			.slice(0, MAX_TABS);
-		const rows = tabs.map((tab) => {
-			const mark = tab.id === active.id ? "[active] " : "";
-			const title = shownTitle(tab);
-			return `- ${mark}${tab.id}: ${title ? `${title} — ` : ""}${shownUrl(tab)}`;
+	function tabListing(rows: readonly AgentTab[]): string {
+		const lines = rows.slice(0, MAX_AGENT_TABS).map((row) => {
+			const title = shownTitle(row);
+			return `- ${row.selected ? "[selected] " : ""}${row.tabId}: ${title ? `${title} — ` : ""}${shownUrl(row)}`;
 		});
-		return [...pageLines(active), "### Tabs", ...rows].join("\n");
+		const hidden = rows.length - MAX_AGENT_TABS;
+		return ["### Tabs", ...lines, ...(hidden > 0 ? [`- … ${hidden} more`] : [])].join(
+			"\n",
+		);
+	}
+
+	async function liveTab(tabId: number): Promise<LiveTab> {
+		return { ...(await api.tabs.get(tabId)), id: tabId };
+	}
+
+	async function resolveTab(
+		request: PwExtRequest,
+		sessionId: string,
+	): Promise<LiveTab | undefined> {
+		if (request.tabId !== undefined) {
+			if (!(await agentTabs.owns({ sessionId, tabId: request.tabId })))
+				throw new Refusal(notInGroup(request.tabId));
+			return liveTab(request.tabId);
+		}
+		const selected = await agentTabs.selected({ sessionId });
+		return selected ? liveTab(selected.tabId) : undefined;
+	}
+
+	function guard(verb: PwExtVerb, tab: LiveTab): void {
+		if (tab.incognito) throw new Refusal(PW_EXT_PRIVATE_ERROR);
+		if (BLOCKS_BROWSER_PAGE.has(verb) && !allowedPage(tab.url))
+			throw new Refusal(PW_EXT_BLOCKED_ERROR);
+		if (BLOCKS_MAILBOX.has(verb) && mailbox(tab.url))
+			throw new Refusal(PW_EXT_MAILBOX_ERROR);
+		if (NEEDS_LOADED_TAB.has(verb) && tab.discarded)
+			throw new Refusal(discardedTab(tab.id));
+	}
+
+	async function openInGroup(
+		url: string,
+		{ sessionId, agentIdentity }: PwExtContext,
+	): Promise<PwExtResult> {
+		const { tabId } = await agentTabs
+			.open({ sessionId, agentIdentity, url })
+			.catch((error: unknown) => {
+				throw error instanceof AgentGroupFullError ? new Refusal(GROUP_FULL) : error;
+			});
+		await agentTabs.select({ sessionId, tabId });
+		return ok(`### Result\nOpened ${url} in tab ${tabId}`);
 	}
 
 	async function run(
-		request: PwExtRequest,
-		tab: Tab & { id: number },
-		watch?: { changed(): boolean },
-		context?: PwExtContext,
-		signal?: AbortSignal,
+		request: TabVerbRequest,
+		tab: LiveTab,
+		context: PwExtContext,
+		signal: AbortSignal | undefined,
 	): Promise<PwExtResult> {
-		const ok = (text: string, image?: string): PwExtResult => ({
-			ok: true,
-			data: { text: clean(text), ...(image ? { image } : {}) },
-		});
 		switch (request.verb) {
 			case "current":
-				return ok(await listTabs(tab));
+				return ok(pageLines(tab).join("\n"));
 			case "open": {
-				const opened = await api.tabs.create({
-					url: request.url as string,
-					windowId: tab.windowId,
-					active: true,
+				await api.tabs.update(tab.id, { url: request.url as string });
+				return ok(`### Result\nOpened ${request.url} in tab ${tab.id}`);
+			}
+			case "select": {
+				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id });
+				return ok(`### Result\nSelected tab ${tab.id}`);
+			}
+			case "close": {
+				const { selectedTabId } = await agentTabs.close({
+					sessionId: context.sessionId,
+					tabId: tab.id,
 				});
-				return ok(`### Result\nOpened ${request.url} in tab ${opened.id}`);
+				return ok(
+					[
+						"### Result",
+						`Closed tab ${tab.id}`,
+						...(selectedTabId === undefined ? [] : [`Selected tab ${selectedTabId}`]),
+					].join("\n"),
+				);
 			}
 			case "upload": {
 				if (new URL(tab.url as string).protocol !== "https:")
 					return { ok: false, error: "pw --ext uploads files only to https pages." };
-				if (!context) return { ok: false, error: "Upload needs a paired session." };
 				let blob: Blob;
 				try {
 					blob = await context.fetchAsset(request.assetId as string);
@@ -382,25 +466,40 @@ export function createPwExtHandler({
 				);
 			}
 			case "screenshot": {
-				const captured = await api.tabs.captureVisibleTab(tab.windowId as number, {
-					format: "jpeg",
-					quality: JPEG_QUALITY,
+				const windowId = tab.windowId as number;
+				await api.tabs.update(tab.id, { active: true });
+				const { state } = await api.windows.get(windowId);
+				await api.windows.update(windowId, {
+					focused: true,
+					...(state === "minimized" ? { state: "normal" as const } : {}),
 				});
-				const after = await api.tabs.get(tab.id);
-				const [shown] = await api.tabs.query({
-					active: true,
-					windowId: tab.windowId,
+				await api.scripting.executeScript({
+					target: { tabId: tab.id },
+					func: nextFrame,
+					args: [],
 				});
-				if (
-					watch?.changed() ||
-					after.url !== tab.url ||
-					after.active === false ||
-					shown?.id !== tab.id
-				)
-					return {
-						ok: false,
-						error: "The tab changed during the screenshot; it was discarded.",
-					};
+				const watch = watchTab(tab);
+				let captured: string;
+				try {
+					captured = await api.tabs.captureVisibleTab(windowId, {
+						format: "jpeg",
+						quality: JPEG_QUALITY,
+					});
+					const after = await api.tabs.get(tab.id);
+					const [shown] = await api.tabs.query({ active: true, windowId });
+					if (
+						watch.changed() ||
+						after.url !== tab.url ||
+						after.active === false ||
+						shown?.id !== tab.id
+					)
+						return {
+							ok: false,
+							error: "The tab changed during the screenshot; it was discarded.",
+						};
+				} finally {
+					watch.stop();
+				}
 				const fitted = await fitPreviewDataUrl(captured);
 				if (!fitted.dataUrl)
 					return { ok: false, error: `Screenshot failed: ${fitted.reason}.` };
@@ -408,8 +507,8 @@ export function createPwExtHandler({
 			}
 			default: {
 				const action: PwExtPageAction =
-					request.verb === "click"
-						? { kind: "click", target: request.target as string }
+					request.verb === "click" || request.verb === "count"
+						? { kind: request.verb, target: request.target as string }
 						: request.verb === "fill"
 							? {
 									kind: "fill",
@@ -461,11 +560,36 @@ export function createPwExtHandler({
 		}
 	}
 
-	return async (
-		raw: PwExtRequest,
-		signal?: AbortSignal,
-		context?: PwExtContext,
-	): Promise<PwExtResult> => {
+	async function execute(
+		request: PwExtRequest,
+		context: PwExtContext,
+		signal: AbortSignal | undefined,
+	): Promise<PwExtResult> {
+		if (signal?.aborted) return CANCELED;
+		if (request.verb === "new")
+			return openInGroup(request.url ?? NEW_TAB_URL, context);
+		if (!isTabVerb(request)) {
+			const rows = await agentTabs.list({ sessionId: context.sessionId });
+			if (!rows.length) throw new Refusal(NO_TAB);
+			return ok(tabListing(rows));
+		}
+		const tab = await resolveTab(request, context.sessionId);
+		if (signal?.aborted) return CANCELED;
+		if (!tab) {
+			const rows = await agentTabs.list({ sessionId: context.sessionId });
+			if (rows.length) throw new Refusal(SELECTED_GONE);
+			if (request.verb === "open") return openInGroup(request.url as string, context);
+			throw new Refusal(NO_TAB);
+		}
+		guard(request.verb, tab);
+		return run(request, tab, context, signal);
+	}
+
+	return async ({
+		request: raw,
+		signal,
+		context,
+	}: Parameters<RelayHandler<typeof PW_EXT_RELAY>>[0]): Promise<PwExtResult> => {
 		let request: PwExtRequest;
 		try {
 			request = validatePwExtRequest(raw);
@@ -477,27 +601,11 @@ export function createPwExtHandler({
 				ok: false,
 				error: "pw --ext works only in Chromium-family browsers (Chrome, Edge, Brave, Vivaldi).",
 			};
+		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
 		try {
-			const tab = await activeTab();
-			if (!tab || tab.id === undefined || tab.incognito)
-				return {
-					ok: false,
-					error: "No active tab in a normal, non-private browser window.",
-				};
-			const scoped = request.verb !== "current" && request.verb !== "open";
-			if (scoped && !allowedPage(tab.url))
-				return { ok: false, error: PW_EXT_BLOCKED_ERROR };
-			if (scoped && mailbox(tab.url))
-				return { ok: false, error: PW_EXT_MAILBOX_ERROR };
-			const target = { ...tab, id: tab.id };
-			const watch = request.verb === "screenshot" ? watchTab(target) : undefined;
-			try {
-				if (signal?.aborted) return CANCELED;
-				return await run(request, target, watch, context, signal);
-			} finally {
-				watch?.stop();
-			}
+			return await execute(request, context, signal);
 		} catch (error) {
+			if (error instanceof Refusal) return { ok: false, error: error.message };
 			return {
 				ok: false,
 				error: clean(

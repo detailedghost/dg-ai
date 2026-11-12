@@ -182,9 +182,14 @@ checking connectivity again.
 ## Configuration
 
 Read this reference and [commands](commands.md) before changing
-`DG_HOME/channel-review/config.json`. `DG_HOME` defaults to the user's `.dg`
-directory. Start from [config.example.json](config.example.json), which sets
-every required key with placeholder values.
+`config.json` in the `channel-review` folder of the dg config directory
+(`~/.config/dg/channel-review/config.json` on Linux). To create it, run
+`dg-skills channel-review setup` in a terminal. It asks for each required key,
+checks the answers, writes the file with mode 0600, and offers to store the relay
+secret. `--force` replaces an existing file. Without a terminal, setup writes
+[config.example.json](config.example.json) beside it as a template and exits 1.
+`start` and `run` offer setup when the file is missing, and
+`dg-skills doctor channel-review` checks it.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |

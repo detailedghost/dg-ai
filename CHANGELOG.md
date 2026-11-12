@@ -1,5 +1,57 @@
 # Changelog
 
+## v4.1.0 (2026-11-11)
+
+### Features
+
+- feat(stat): show the checklist in plan order ([#170](https://github.com/detailedghost/dg-ai/pull/170))
+
+## v4.0.0 (2026-11-10)
+
+### Breaking
+
+- feat(demo)!: record local demos with a Node Playwright recorder ([#160](https://github.com/detailedghost/dg-ai/pull/160))
+
+### Features
+
+- feat(skills-cli): add dg-skills skill audit and split ([#168](https://github.com/detailedghost/dg-ai/pull/168))
+
+## v3.1.0 (2026-11-09)
+
+### Features
+
+- feat(pw): add pw --ext count, --session, and a verb handshake ([#164](https://github.com/detailedghost/dg-ai/pull/164))
+- feat(skills-cli): add dg-skills update and the /dg:update skill ([#162](https://github.com/detailedghost/dg-ai/pull/162))
+- feat(skills-cli): interactive dg-skills doctor ([#163](https://github.com/detailedghost/dg-ai/pull/163))
+
+### Fixes
+
+- fix(channel-review): add a setup step for a missing config ([#161](https://github.com/detailedghost/dg-ai/pull/161))
+
+## v3.0.1 (2026-11-08)
+
+### Fixes
+
+- fix(demo): voice on strict-CSP pages and no REC badge in videos ([#159](https://github.com/detailedghost/dg-ai/pull/159))
+
+## v3.0.0 (2026-11-08)
+
+### Breaking
+
+- feat(pairing)!: pair the CLI and extension with no codes ([#157](https://github.com/detailedghost/dg-ai/pull/157))
+
+## v2.0.1 (2026-11-08)
+
+### Fixes
+
+- fix(pairing): close the deferred Known Issues from #155 ([#156](https://github.com/detailedghost/dg-ai/pull/156))
+
+## v2.0.0 (2026-11-08)
+
+### Breaking
+
+- feat(extension)!: pair agents from a toolbar popup and drop the extension pages ([#155](https://github.com/detailedghost/dg-ai/pull/155))
+
 ## v1.43.0 (2026-11-06)
 
 ### Features

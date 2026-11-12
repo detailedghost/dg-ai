@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { DgCliError } from "@dg/common";
 import { resolveDgPaths } from "@dg/common/node/dg-paths";
 import { registerAsset } from "../src/assets/register";
-import { createPairingCode } from "../src/pairing";
 import { writeConfig } from "../src/server/config-store";
 import type { ChatStore } from "../src/store";
 
@@ -33,15 +32,6 @@ posix("dg-daemon writers refuse an unmoved legacy entry", () => {
 
 		expect(() => writeConfig(paths, { pinnedOrigin: undefined })).toThrow(DgCliError);
 		expect(existsSync(paths.daemonDir)).toBe(false);
-	});
-
-	it("createPairingCode creates no pairing.json while the legacy pairing.json holds data", () => {
-		const paths = resolveDgPaths({ env: {}, homeDir: home });
-		put(join(paths.legacyHome, "pairing.json"), "{}");
-
-		expect(() => createPairingCode(paths)).toThrow(DgCliError);
-		expect(existsSync(paths.pairingPath)).toBe(false);
-		expect(existsSync(`${paths.pairingPath}.lock`)).toBe(false);
 	});
 
 	it("registerAsset creates no assets folder while the legacy agents/assets folder holds data", async () => {

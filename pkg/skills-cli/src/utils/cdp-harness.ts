@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { wait } from "@dg/common";
 import { wslChromiumArgs } from "@dg/common/node";
+import { findInstalledChromium, PATH_CANDIDATES } from "./find-browser";
 
 export type OverlayState =
 	| { kind: "none" }
@@ -30,19 +31,6 @@ type CdpMessage = {
 	error?: { message: string };
 	sessionId?: string;
 };
-
-/** Chromium-family binaries to try, in preference order. Chrome's *stable* channel
- *  disabled `--load-extension` on the CLI, so it's deliberately not a candidate here
- *  (see docs on `launch`'s `chrome-stable` handling) — Brave, Chromium, and
- *  Chrome-for-Testing builds all still honor it. */
-const BROWSER_CANDIDATES = [
-	"brave-browser",
-	"brave",
-	"chromium",
-	"chromium-browser",
-	"google-chrome-for-testing",
-	"chrome-for-testing",
-];
 
 /** Whether to hand the browser --no-sandbox. Chrome's zygote host aborts where the
  *  kernel gives it no usable sandbox — a CI container, most notably — and then never
@@ -78,15 +66,11 @@ export function browserArgs(
 }
 
 export function resolveBrowserBinary(): string {
-	const override = process.env.DG_VERIFY_BROWSER;
-	if (override) return override;
-	for (const name of BROWSER_CANDIDATES) {
-		const found = Bun.which(name);
-		if (found) return found;
-	}
+	const found = findInstalledChromium();
+	if (found) return found;
 	throw new Error(
-		`demo --verify needs a CDP-capable Chromium-family browser (Brave, Chromium, or Chrome-for-Testing) on PATH; ` +
-			`none of [${BROWSER_CANDIDATES.join(", ")}] were found. Set DG_VERIFY_BROWSER to an explicit binary path.`,
+		`demo --verify needs a CDP-capable Chromium-family browser (Brave, Chromium, Vivaldi, or Chrome-for-Testing); ` +
+			`none of [${PATH_CANDIDATES.join(", ")}] or their usual app folders were found. Set DG_BROWSER (or DG_VERIFY_BROWSER) to an explicit binary path.`,
 	);
 }
 

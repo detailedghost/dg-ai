@@ -4,6 +4,7 @@ import {
 	bootServe as bootDaemonServe,
 	cleanupDgHome,
 	createCleanupSlot,
+	ownerTokenHeader,
 	stopServe,
 } from "../utils/daemon-harness";
 
@@ -27,6 +28,7 @@ function registerRequest(port: number): Promise<Response> {
 		method: "POST",
 		headers: {
 			Host: `127.0.0.1:${port}`,
+			...ownerTokenHeader(port),
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({ cwd: process.cwd(), role: "agent" }),

@@ -1,6 +1,6 @@
 {
 	"name": "@dg/dg-daemon",
-	"version": "1.43.0",
+	"version": "4.1.0",
 	"private": true,
 	"type": "module",
 	"description": "Loopback HTTP+WebSocket daemon hosting many chat sessions for the dg:start chat harness.",
@@ -18,11 +18,11 @@
 	},
 	"dependencies": {
 		"@dg/common": "workspace:*",
-		"commander": "^15.0.0",
+		"commander": "^15.1.0",
 		"croner": "^10"
 	},
 	"devDependencies": {
-		"bun-types": "^1.4.3",
+		"bun-types": "^1.4.4",
 		"typescript": "^7.0.2"
 	}
 }

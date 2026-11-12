@@ -49,8 +49,7 @@ async function resolveDeps(deps: Partial<DemoDeps>): Promise<DemoDeps> {
 	return { ...(await defaultDemoDeps()), ...deps };
 }
 
-export type CommandOpts = PlayOpts &
-	Omit<LocalOpts, "video"> & { verify?: string };
+export type CommandOpts = PlayOpts & LocalOpts & { verify?: string };
 
 const LOCAL_ONLY_FLAGS = [
 	["out", "--out"],

@@ -30,7 +30,6 @@ export type DgPaths = DgRoots & {
 	credentialsDbPath: string;
 	keyPath: string;
 	daemonConfigPath: string;
-	pairingPath: string;
 	agentsDir: string;
 	sessionsDir: string;
 	assetsDir: string;
@@ -137,7 +136,6 @@ function computeDgPaths(platform: NodeJS.Platform, home: string, env: Env): DgPa
 		credentialsDbPath: path.join(daemonDir, "credentials.db"),
 		keyPath: path.join(daemonDir, "key"),
 		daemonConfigPath: path.join(daemonDir, "config.json"),
-		pairingPath: path.join(r.stateDir, "pairing.json"),
 		agentsDir,
 		sessionsDir: path.join(agentsDir, "sessions"),
 		assetsDir: path.join(agentsDir, "assets"),

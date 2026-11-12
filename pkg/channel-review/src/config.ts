@@ -767,7 +767,8 @@ function parseConfig(raw: unknown, seams: SystemSeams): ChannelConfig {
 }
 
 function readText(path: string): string {
-	if (!existsSync(path)) throw new DgCliError(`config file ${path} does not exist`);
+	if (!existsSync(path))
+		throw new DgCliError(`no channel-review config at ${path}; run: dg-skills channel-review setup`);
 	return readFileSync(path, "utf8");
 }
 
@@ -780,7 +781,11 @@ function parseJson(path: string, source: string): unknown {
 }
 
 export function loadConfig(path: string, seams: SystemSeams = {}): ChannelConfig {
-	const raw = parseJson(path, readText(path));
+	return validateConfig(parseJson(path, readText(path)), path, seams);
+}
+
+/** Parses a config object, naming `path` in the error. */
+export function validateConfig(raw: unknown, path: string, seams: SystemSeams = {}): ChannelConfig {
 	try {
 		return parseConfig(raw, seams);
 	} catch (err) {

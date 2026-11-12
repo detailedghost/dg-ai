@@ -4,11 +4,14 @@ import {
 	PW_EXT_MAX_IMAGE_CHARS,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MAX_TIMEOUT_MS,
+	PW_EXT_MIN_EXTENSION_VERSION,
+	type PwExtCliRequest,
 	validatePwExtCliRequest,
 	validatePwExtRequest,
 	validatePwExtResponse,
 	validatePwExtCliCancel,
 } from "../src/pw-ext-format";
+import { PW_EXT_RELAY } from "../src/relay-features";
 
 describe("validatePwExtRequest", () => {
 	it.each([
@@ -23,6 +26,8 @@ describe("validatePwExtRequest", () => {
 		{ verb: "click", target: "#save" },
 		{ verb: "fill", target: "e3", value: "" },
 		{ verb: "fill", target: "input[name=q]", value: "hello" },
+		{ verb: "count", target: "input[type=file]" },
+		{ verb: "count", target: "e4", tabId: 3 },
 	])("accepts %p", (request) => {
 		expect(validatePwExtRequest(request)).toEqual(request);
 	});
@@ -46,6 +51,9 @@ describe("validatePwExtRequest", () => {
 		{ verb: "fill", target: "e1" },
 		{ verb: "fill", target: "e1", value: "v".repeat(5000) },
 		{ verb: "fill", target: "e1", value: 3 },
+		{ verb: "count" },
+		{ verb: "count", target: "" },
+		{ verb: "count", target: "#q", value: "x" },
 	])("rejects %p", (request) => {
 		expect(() => validatePwExtRequest(request)).toThrow();
 	});
@@ -207,5 +215,245 @@ describe("pw --ext upload cap", () => {
 		const { CHAT_MAX_ASSET_BYTES } = await import("../src/chat-format");
 		const { PW_EXT_MAX_UPLOAD_BYTES } = await import("../src/pw-ext-format");
 		expect(PW_EXT_MAX_UPLOAD_BYTES).toBe(CHAT_MAX_ASSET_BYTES);
+	});
+});
+
+describe("PW_EXT_RELAY table", () => {
+	const minVersion = PW_EXT_MIN_EXTENSION_VERSION.join(".");
+	const versionCheck = PW_EXT_RELAY.checks.find(
+		(entry) => entry.check === "version",
+	);
+	const caps = PW_EXT_RELAY.checks.filter((entry) => entry.check === "cap");
+	const peers = PW_EXT_RELAY.checks.find((entry) => entry.check === "peers");
+	const active = PW_EXT_RELAY.checks.find((entry) => entry.check === "active");
+
+	it("names its frames", () => {
+		expect(PW_EXT_RELAY.name).toBe("pw-ext");
+		expect(PW_EXT_RELAY.frames).toEqual({
+			cliRequest: "cli-pw-ext-request",
+			cliResult: "cli-pw-ext-result",
+			cliCancel: "cli-pw-ext-cancel",
+			browserRequest: "pw-ext-browser-request",
+			browserResult: "pw-ext-browser-result",
+			browserCancel: "pw-ext-browser-cancel",
+		});
+	});
+
+	it("pins the caps and flags", () => {
+		expect(PW_EXT_RELAY.caps).toEqual({
+			pending: 16,
+			perRequester: 2,
+			sessionIds: 10_000,
+		});
+		expect(PW_EXT_RELAY.flags.failAllOnUnreadable).toBe(false);
+		expect(PW_EXT_RELAY.rejected?.afterOversized).toBe("continue");
+	});
+
+	it("keeps the check order", () => {
+		expect(PW_EXT_RELAY.checks.map((entry) => entry.check)).toEqual([
+			"active",
+			"replay",
+			"cap",
+			"cap",
+			"peers",
+			"burn",
+			"version",
+			"supports",
+		]);
+		expect(caps.map((entry) => (entry.check === "cap" ? entry.of : []))).toEqual(
+			[["sessionIds"], ["requester", "pending"]],
+		);
+	});
+
+	it("keeps the refusal strings", () => {
+		expect(
+			PW_EXT_RELAY.checks.map((entry) =>
+				"refusal" in entry && typeof entry.refusal === "string" ? entry.refusal : undefined,
+			),
+		).toEqual([
+			"pw --ext requires an active dg session.",
+			"pw --ext requestId was already used on this session; send a new one.",
+			"pw --ext request capacity reached; start a new session.",
+			"pw --ext has too many pending requests; wait for the open requests to finish.",
+			undefined,
+			undefined,
+			`pw --ext requires dg-ai-extension ${minVersion} or newer; update the extension, reload it, and reconnect this session.`,
+			undefined,
+		]);
+		expect(peers?.check === "peers" && peers.multiple).toBe(
+			"Multiple extension peers make the pw --ext request ambiguous; keep one extension connected to this session.",
+		);
+		expect(
+			peers?.check === "peers" &&
+				peers.none({
+					sessionId: "s-1",
+					cli: { type: "cli-pw-ext-request", requestId: "r", request: { verb: "current" } },
+					timeoutMs: 1,
+				}),
+		).toBe(
+			"No extension peer on session s-1. Pair the dg-ai-extension with this session, then retry. Run dg-skills doctor pw for the steps.",
+		);
+	});
+
+	it("reuses the active refusal as strings.activeRequired", () => {
+		expect(active?.check === "active" && active.refusal).toBe(
+			PW_EXT_RELAY.strings.activeRequired,
+		);
+	});
+
+	it.each([
+		[minVersion, true],
+		["1.99.0", true],
+		[`${minVersion}+build.1`, true],
+		["1.41.99", false],
+		[undefined, false],
+		["1.42", false],
+	])("accepts extension version %p: %p", (version, expected) => {
+		expect(
+			versionCheck?.check === "version" && versionCheck.accepts(version),
+		).toBe(expected);
+	});
+
+	it.each([
+		[{}, "current", true],
+		[{}, "count", false],
+		[{ pwExtVerbs: ["current"] }, "count", false],
+		[{ pwExtVerbs: ["current", "count"] }, "count", true],
+	])("supports peer %p for verb %p: %p", (peer, verb, expected) => {
+		const supports = PW_EXT_RELAY.checks.find((entry) => entry.check === "supports");
+		const cli = { type: "cli-pw-ext-request" as const, requestId: "r", request: { verb: verb as never } };
+		expect(supports?.check === "supports" && supports.accepts(peer, cli)).toBe(expected);
+	});
+
+	it("maps a CLI request to the browser request fields", () => {
+		const cli = {
+			type: "cli-pw-ext-request" as const,
+			requestId: "r-1",
+			request: { verb: "current" as const },
+		};
+		expect(PW_EXT_RELAY.timeoutMs(cli)).toBe(120_000);
+		expect(PW_EXT_RELAY.timeoutMs({ ...cli, timeoutMs: 5 })).toBe(5);
+		expect(PW_EXT_RELAY.toBrowserRequest(cli, 120_000)).toEqual({
+			request: { verb: "current" },
+			timeoutMs: 120_000,
+		});
+		expect(
+			Object.keys(PW_EXT_RELAY.toBrowserRequest(cli, 120_000)),
+		).toEqual(["request", "timeoutMs"]);
+	});
+
+	it("maps a browser request back to its request", () => {
+		expect(
+			PW_EXT_RELAY.fromBrowserRequest({
+				requestId: "r-1",
+				request: { verb: "click", target: "e4" },
+				timeoutMs: 10,
+			}),
+		).toEqual({ verb: "click", target: "e4" });
+	});
+
+	it("maps a browser result to the CLI result fields", () => {
+		expect(
+			PW_EXT_RELAY.toCliResult({
+				requestId: "r-1",
+				ok: true,
+				data: { text: "x" },
+			}),
+		).toEqual({ ok: true, data: { text: "x" } });
+		expect(
+			PW_EXT_RELAY.toCliResult({ requestId: "r-1", ok: false, error: "tab closed" }),
+		).toEqual({ ok: false, error: "tab closed" });
+	});
+
+	it("words the lifecycle strings", () => {
+		const { strings } = PW_EXT_RELAY;
+		const cli = {
+			type: "cli-pw-ext-request" as const,
+			requestId: "r",
+			request: { verb: "current" as const },
+		};
+		expect(strings.timeout({ sessionId: "s", cli, timeoutMs: 20 })).toBe(
+			"pw --ext timed out after 20ms; the extension was told to cancel it.",
+		);
+		expect(strings.rejected?.("x".repeat(3000))).toHaveLength(2048);
+		expect(strings.rejected?.("bad")).toBe(
+			"pw --ext result could not be delivered: bad",
+		);
+		expect(strings.canceled).toBe("pw --ext request canceled.");
+		expect(strings.extensionFailed).toBe(
+			"pw --ext failed in the extension before it reported a result.",
+		);
+	});
+});
+
+describe("validatePwExtRequest tab verbs and tabId", () => {
+	const TAB_ID_ERROR = "pw-ext request.tabId must be a non-negative integer";
+	const MAX_TAB_ID = 2_147_483_647;
+
+	it.each([
+		{ verb: "snapshot", tabId: 7 },
+		{ verb: "snapshot", tabId: 0 },
+		{ verb: "snapshot", tabId: MAX_TAB_ID },
+		{ verb: "click", target: "e4", tabId: 3 },
+		{ verb: "fill", target: "e4", value: "v", tabId: 3 },
+		{ verb: "open", url: "https://example.com/", tabId: 3 },
+		{ verb: "screenshot", tabId: 3 },
+		{ verb: "tabs" },
+		{ verb: "new" },
+		{ verb: "new", url: "https://example.com/a?b=1" },
+		{ verb: "select", tabId: 12 },
+		{ verb: "close" },
+		{ verb: "close", tabId: 12 },
+	])("accepts %p", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request);
+	});
+
+	it.each([
+		[{ verb: "snapshot", tabId: -1 }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: 1.5 }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: MAX_TAB_ID + 1 }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: "7" }, TAB_ID_ERROR],
+		[{ verb: "snapshot", tabId: Number.NaN }, TAB_ID_ERROR],
+		[{ verb: "close", tabId: -1 }, TAB_ID_ERROR],
+		[{ verb: "select" }, TAB_ID_ERROR],
+		[{ verb: "tabs", tabId: 1 }, 'pw-ext request.tabId is not used by "tabs"'],
+		[{ verb: "new", tabId: 1 }, 'pw-ext request.tabId is not used by "new"'],
+		[
+			{ verb: "new", url: "javascript:alert(1)" },
+			"pw-ext request.url must be an http or https URL",
+		],
+		[
+			{ verb: "new", url: "chrome://settings" },
+			"pw-ext request.url must be an http or https URL",
+		],
+		[
+			{ verb: "new", url: `https://example.com/${"a".repeat(2100)}` },
+			"pw-ext request.url exceeds 2048 characters",
+		],
+		[{ verb: "new", url: "" }, "pw-ext request.url must be a non-empty string"],
+		[{ verb: "tabs", surprise: true }, 'pw-ext request has unknown field "surprise"'],
+		[{ verb: "close", url: "https://example.com/" }, 'pw-ext request has unknown field "url"'],
+		[{ verb: "select", tabId: 1, url: "https://example.com/" }, 'pw-ext request has unknown field "url"'],
+	])("rejects %p with %s", (request, message) => {
+		expect(() => validatePwExtRequest(request)).toThrow(new TypeError(message));
+	});
+
+	it("accepts the tab verbs inside a CLI request", () => {
+		const frame: PwExtCliRequest = {
+			type: "cli-pw-ext-request",
+			requestId: "r1",
+			request: { verb: "select", tabId: 4 },
+		};
+
+		expect(validatePwExtCliRequest(frame)).toEqual(frame);
+	});
+});
+
+describe("PW_EXT_MIN_EXTENSION_VERSION", () => {
+	it("is at least the first release with per-agent tab groups", () => {
+		const [major, minor, patch] = PW_EXT_MIN_EXTENSION_VERSION;
+		const floor = major * 1_000_000 + minor * 1_000 + patch;
+
+		expect(floor).toBeGreaterThanOrEqual(1_044_000);
 	});
 });

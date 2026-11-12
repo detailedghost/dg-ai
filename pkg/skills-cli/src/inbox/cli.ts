@@ -1,10 +1,8 @@
 import {
-	buildBootstrapUrl,
+	buildCodeUrl,
 	CliClient,
-	readSessionFiles,
-	readSessionIdentities,
+	mintPageCode,
 	resolveCliSession,
-	resolveDgPaths,
 	type ResolvedSession,
 } from "@dg/common/node";
 import { main, redactPublicValue, type InboxRuntime } from "@dg/inbox";
@@ -290,44 +288,27 @@ function output(value: unknown): void {
 }
 
 function isExtensionConnectError(error: string): boolean {
-	return /connect the dg extension/i.test(error);
+	return /connect the dg extension|no extension peer on session/i.test(error);
 }
 
 const bootstrapUrlHelp = `inbox bootstrap-url [--session ID]
-Prints this session's start URL to stdout. The URL contains the session token.
-Connect errors keep a placeholder URL and do not include the token.`;
+Prints a local chat URL that carries a one-time code, not the session token.
+The URL works once, within 60 seconds. Run the command again for a new URL.`;
 
-/** Session id, a placeholder start URL, the reload step, and the extension version. The token stays out of this text. */
+/** Session id, the start step, the reload step, and the extension version. The token stays out of this text. */
 function extensionConnectError(session: ResolvedSession): string {
-	const url = `http://127.0.0.1:${session.port}/start#_chat=<base64url JSON of port, sessionId, token, and agentIdentity>`;
 	return [
-		`No extension peer on session ${session.sessionId}. Connect the dg extension to session ${session.sessionId} and open an authenticated Proton Mail tab.`,
-		`Open ${url} in the browser where the extension is loaded.`,
-		`Run dg-skills inbox bootstrap-url --session ${session.sessionId} to print the real URL.`,
+		`No extension peer on session ${session.sessionId}. Start the session with dg-agent start. If no extension is connected, install it with dg-skills install.`,
 		"Then reload the Proton Mail tab so the extension observes session headers.",
 		"Inbox requires dg extension 1.11.0 or newer.",
 	].join(" ");
 }
 
-/** Prints the real start URL. Callers must opt in; connect errors use a placeholder instead. */
+/** Prints a one-time-code chat URL. Callers must opt in. */
 async function printBootstrapUrl(sessionId: string | undefined): Promise<void> {
 	const resolved = await resolveCliSession(sessionId);
-	const paths = resolveDgPaths();
-	const record =
-		readSessionFiles(paths.sessionsDir).find(
-			(item) => item.sessionId === resolved.sessionId,
-		) ??
-		readSessionIdentities(paths.dbPath).find(
-			(item) => item.sessionId === resolved.sessionId,
-		);
-	console.log(
-		buildBootstrapUrl(resolved.port, {
-			port: resolved.port,
-			sessionId: resolved.sessionId,
-			token: resolved.token,
-			agentIdentity: record?.agentIdentity ?? "agent",
-		}),
-	);
+	const code = await mintPageCode(resolved);
+	console.log(buildCodeUrl(resolved.port, code));
 }
 
 const VALUE_FLAGS = new Set([

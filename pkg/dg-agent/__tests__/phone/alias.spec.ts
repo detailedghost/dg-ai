@@ -1,11 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 import { DgCliError } from "@dg/common";
-import pkg from "../../package.json" with { type: "json" };
 import { resolveDgPaths } from "@dg/common/node";
 import { Command } from "commander";
 import { registerPhoneCommands, type OpenCloseDeps, type PhoneDeps } from "../../src/phone/commands";
-import { ALIAS_REMOVAL_VERSION } from "../../src/phone/register";
 import { PhoneDb } from "../../src/phone/db";
 import type { KeyClient } from "../../src/phone/keys";
 import { listenerPidPath } from "../../src/phone/listener";
@@ -197,103 +195,15 @@ describe("phone hidden synonyms and removed verbs", () => {
 		);
 	});
 
-	it("phone-friend is an unknown command and prints no notice", async () => {
+	it.each(["phone-friend", "say", "voicemail", "inbox", "thread"])("%s is an unknown command", async (name) => {
 		const h = harness();
-		const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+		const argv = name === "phone-friend" ? [name, "number"] : ["phone", name];
 
-		try {
-			await expect(h.program.parseAsync(["phone-friend", "number"], { from: "user" })).rejects.toThrow("unknown command");
-			expect(stderr.mock.calls.map((call) => String(call[0])).join("")).not.toContain("this alias goes away");
-		} finally {
-			stderr.mockRestore();
-		}
+		await expect(h.program.parseAsync(argv, { from: "user" })).rejects.toThrow(/unknown command/);
 	});
 });
 
-type Renamed = { old: string[]; current: string[]; notice: string };
-
-const RENAMED: Renamed[] = [
-	{ old: ["say", "+nobody", "hi"], current: ["text", "+nobody", "hi"], notice: "phone say is now phone text" },
-	{ old: ["voicemail"], current: ["unread"], notice: "phone voicemail is now phone unread" },
-	{ old: ["inbox"], current: ["messages"], notice: "phone inbox is now phone messages" },
-	{ old: ["thread", "list"], current: ["group", "list"], notice: "phone thread is now phone group" },
-];
-
-async function captureStderr(run: () => Promise<unknown>): Promise<string> {
-	const spy = spyOn(process.stderr, "write").mockImplementation(() => true);
-	let written = "";
-	try {
-		await run();
-	} catch {
-	} finally {
-		written = spy.mock.calls.map((call) => String(call[0])).join("");
-		spy.mockRestore();
-	}
-	return written;
-}
-
-describe("phone texting-name aliases", () => {
-	it.each(RENAMED)("phone $old.0 prints one stderr notice naming $current.0 and the removal release", async ({ old, notice }) => {
-		const h = harness();
-
-		const stderr = await captureStderr(() => h.program.parseAsync(["phone", ...old], { from: "user" }));
-
-		expect(stderr).toBe(`${notice}; this alias goes away in ${ALIAS_REMOVAL_VERSION}\n`);
-	});
-
-	it.each(RENAMED.filter(({ old }) => old[0] !== "say"))("phone $old.0 writes the same stdout as phone $current.0", async ({ old, current }) => {
-		const h = harness();
-		await h.program.parseAsync(["phone", ...current], { from: "user" });
-		const currentOut = out.slice();
-		out = [];
-
-		await captureStderr(() => h.program.parseAsync(["phone", ...old], { from: "user" }));
-
-		expect(out).toEqual(currentOut);
-	});
-
-	it("phone text prints no stderr notice", async () => {
-		const h = harness();
-
-		const stderr = await captureStderr(() => h.program.parseAsync(["phone", "text", "+nobody", "hi"], { from: "user" }));
-
-		expect(stderr).not.toContain("this alias goes away");
-	});
-
-	it("phone say fails the same way phone text does when the contact is unknown", async () => {
-		const h = harness();
-		const failure = async (verb: string): Promise<string> => {
-			try {
-				await h.program.parseAsync(["phone", verb, "+nobody", "hi"], { from: "user" });
-				return "no error";
-			} catch (err) {
-				return (err as Error).message;
-			}
-		};
-
-		const current = await failure("text");
-		let old = "";
-		await captureStderr(async () => {
-			old = await failure("say");
-		});
-
-		expect(old).toBe(current);
-		expect(old).not.toBe("no error");
-	});
-
-	it("phone thread new, list, and show each print the group notice", async () => {
-		const h = harness();
-
-		const stderr = await captureStderr(() => h.program.parseAsync(["phone", "thread", "show", "#none"], { from: "user" }));
-
-		expect(stderr).toBe(`phone thread is now phone group; this alias goes away in ${ALIAS_REMOVAL_VERSION}\n`);
-	});
-
-	it("keeps the removal version a literal two minors after the next release", () => {
-		expect(ALIAS_REMOVAL_VERSION).toMatch(/^\d+\.\d+\.0$/);
-		expect(ALIAS_REMOVAL_VERSION).not.toBe(pkg.version);
-	});
-
+describe("phone help", () => {
 	it("lists the new names and hides the old ones in phone --help", () => {
 		const h = harness();
 		const help = h.program.commands.find((command) => command.name() === "phone")?.helpInformation() ?? "";

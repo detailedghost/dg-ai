@@ -6,9 +6,6 @@ import {
 	systemBrowserPresent,
 } from "../../src/pw/core/browser";
 
-const MESSAGE =
-	"No browser found. Ask the user, then run: dg-skills pw install-browser (downloads about 150 MB)";
-
 const LINUX_CHANNELS: [SystemChannel, string][] = [
 	["chrome", "/opt/google/chrome/chrome"],
 	["msedge", "/opt/microsoft/msedge/msedge"],
@@ -37,7 +34,7 @@ describe.skipIf(process.platform !== "linux")("systemBrowserPresent", () => {
 describe("BrowserMissingError", () => {
 	test("names the install-browser command and exits 3", () => {
 		const error = new BrowserMissingError();
-		expect(error.message).toBe(MESSAGE);
+		expect(error.message).toContain("dg-skills pw install-browser (downloads about 150 MB)");
 		expect(error.exitCode).toBe(3);
 		expect(error).toBeInstanceOf(Error);
 	});

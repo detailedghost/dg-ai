@@ -1,151 +1,189 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import type { PwExtRequest } from "@dg/common";
+import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
+import { createPwExtHandler } from "@/lib/background/pw-ext";
 import {
-	createPwExtHandler,
-	type PwExtBrowserApi,
-} from "@/lib/background/pw-ext";
+	createFakeBrowser,
+	createLock,
+	type FakeTab,
+	recordOf,
+	tabOf,
+	windowOf,
+} from "./utils/fake-browser";
 
-type Tab = {
-	incognito?: boolean;
-	id: number;
-	windowId: number;
-	url: string;
-	title: string;
-	active: boolean;
-};
+const SESSION = "session-1";
+const OTHER_SESSION = "session-2";
+const IDENTITY = "claude-orchestrator";
+const WINDOW = 3;
+const GROUP = 10;
+const OTHER_GROUP = 11;
+const GROUP_TAB_LIMIT = 200;
 
-const WEB_TAB: Tab = {
+const NOT_IN_GROUP = (id: number) =>
+	`pw --ext: tab ${id} is not in this agent's tab group; run pw --ext tabs to list them.`;
+const SELECTED_GONE =
+	"This agent's selected tab was closed or moved out of its group. Run pw --ext tabs, then pw --ext select <id>.";
+const NO_TAB = "This agent has no tab yet. Run pw --ext new <url> first.";
+const DISCARDED = (id: number) =>
+	`This agent's tab was discarded by the browser. Run pw --ext select ${id} again after it reloads.`;
+const FULL =
+	"This agent's tab group is full (200 tabs). Close some with pw --ext close <id>.";
+const NO_SESSION = "pw --ext needs a paired session.";
+
+const WEB_TAB: FakeTab = tabOf({
 	id: 7,
-	windowId: 3,
+	windowId: WINDOW,
+	groupId: GROUP,
 	url: "https://app.example.test/home?token=zzzzzzzzzzzzzzzz",
 	title: "Home",
 	active: true,
+});
+
+const groupTab = (id: number, overrides: Partial<FakeTab> = {}) =>
+	tabOf({ id, windowId: WINDOW, groupId: GROUP, ...overrides });
+
+type Options = {
+	tabs?: FakeTab[];
+	selected?: number | null;
+	record?: boolean;
+	pageResult?: unknown;
+	mainResult?: (action: unknown) => unknown;
+	asset?: Blob;
+	chromium?: boolean;
+	signal?: AbortSignal;
+	windowState?: "normal" | "minimized" | "maximized";
 };
 
-function harness(
-	options: {
-		tabs?: Tab[];
-		pageResult?: unknown;
-		mainResult?: (action: unknown) => unknown;
-		asset?: Blob;
-		chromium?: boolean;
-		capture?: string;
-		duringCapture?: Partial<Tab>;
-		signal?: AbortSignal;
-		switchBackDuringCapture?: boolean;
-	} = {},
-) {
-	let tabs = options.tabs ?? [WEB_TAB];
-	const executed: unknown[] = [];
+type Executed = {
+	args: unknown[];
+	world?: string;
+	target: { tabId: number };
+};
+
+function harness(options: Options = {}) {
+	const tabs = options.tabs ?? [WEB_TAB];
 	const fetched: string[] = [];
 	const deleted: string[] = [];
-	const created: unknown[] = [];
-	const activated: Array<(info: { tabId: number; windowId: number }) => void> = [];
-	const updated: Array<(tabId: number) => void> = [];
-	const api = {
-		windows: {
-			getLastFocused: mock(async () => ({ id: 3, type: "normal" })),
-		},
-		tabs: {
-			query: mock(async (query: { active?: boolean; windowId?: number }) =>
-				tabs.filter(
-					(tab) =>
-						(query.active === undefined || tab.active === query.active) &&
-						(query.windowId === undefined || tab.windowId === query.windowId),
-				),
-			),
-			onActivated: {
-				addListener: (fn: (info: { tabId: number; windowId: number }) => void) =>
-					activated.push(fn),
-				removeListener: () => {},
-			},
-			onUpdated: {
-				addListener: (fn: (tabId: number) => void) => updated.push(fn),
-				removeListener: () => {},
-			},
-			onRemoved: {
-				addListener: () => {},
-				removeListener: () => {},
-			},
-			get: mock(async (id: number) => {
-				const tab = tabs.find((candidate) => candidate.id === id);
-				if (!tab) throw new Error("No tab");
-				return tab;
+	const fake = createFakeBrowser({
+		windows: [windowOf({ id: WINDOW, state: options.windowState ?? "normal" })],
+		lastFocusedWindowId: WINDOW,
+		tabs: [
+			...tabs,
+			tabOf({ id: 20, windowId: WINDOW, groupId: OTHER_GROUP, title: "Other agent" }),
+			tabOf({ id: 21, windowId: WINDOW, title: "User tab" }),
+		],
+		groups: [
+			{ id: GROUP, windowId: WINDOW, title: "mine" },
+			{ id: OTHER_GROUP, windowId: WINDOW, title: "theirs" },
+		],
+	});
+	if (options.record !== false)
+		fake.seedRecord(
+			recordOf({
+				sessionId: SESSION,
+				agentIdentity: IDENTITY,
+				groupId: GROUP,
+				...(options.selected === null
+					? {}
+					: { selectedTabId: options.selected ?? 7 }),
 			}),
-			create: mock(async (props: unknown) => {
-				created.push(props);
-				return { id: 99, windowId: 3, url: (props as { url: string }).url };
-			}),
-			captureVisibleTab: mock(async () => {
-				if (options.switchBackDuringCapture) {
-					for (const fn of activated) fn({ tabId: 8, windowId: 3 });
-					for (const fn of activated) fn({ tabId: 7, windowId: 3 });
-				}
-				if (options.duringCapture)
-					tabs = tabs.map((tab) =>
-						tab.id === WEB_TAB.id ? { ...tab, ...options.duringCapture } : tab,
-					);
-				return options.capture ?? "data:image/jpeg;base64,AAAA";
-			}),
-		},
-		scripting: {
-			executeScript: mock(
-				async (details: { args: unknown[]; world?: string }) => {
-					const first = details.args[0] as { kind?: string } | undefined;
-					executed.push(details);
-					if (details.world === "MAIN")
-						return [{ frameId: 0, result: options.mainResult?.(first) }];
-					return [{ frameId: 0, result: options.pageResult }];
-				},
-			),
-		},
-	} as unknown as PwExtBrowserApi;
+		);
+	fake.seedRecord(
+		recordOf({ sessionId: OTHER_SESSION, groupId: OTHER_GROUP, selectedTabId: 20 }),
+	);
+	fake.state.script = (details) => {
+		const call = details as { args: unknown[]; world?: string };
+		if (call.world === "MAIN") return options.mainResult?.(call.args[0]);
+		return options.pageResult;
+	};
+	const agentTabs = createAgentTabs({
+		browserApi: fake.api,
+		storage: fake.api.storage,
+		lock: createLock(),
+	});
 	const handler = createPwExtHandler({
-		browserApi: api,
+		browserApi: fake.api,
+		agentTabs,
 		isChromium: () => options.chromium ?? true,
 	});
+	const call = (
+		request: PwExtRequest,
+		context: unknown = {
+			sessionId: SESSION,
+			agentIdentity: IDENTITY,
+			deleteAsset: async (assetId: string) => {
+				deleted.push(assetId);
+			},
+			fetchAsset: async (assetId: string) => {
+				fetched.push(assetId);
+				if (!options.asset) throw new Error("no asset");
+				return options.asset;
+			},
+		},
+	) =>
+		handler({
+			request,
+			timeoutMs: 60_000,
+			signal: options.signal ?? new AbortController().signal,
+			progress: () => undefined,
+			context,
+		} as never);
 	return {
+		run: (request: PwExtRequest) => call(request),
 		runWith:
 			(context: { fetchAsset(id: string): Promise<Blob> }) =>
 			(request: PwExtRequest) =>
-				handler(request, options.signal, {
-					deleteAsset: async (assetId: string) => {
-						deleted.push(assetId);
-					},
+				call(request, {
+					sessionId: SESSION,
+					agentIdentity: IDENTITY,
+					deleteAsset: async () => undefined,
 					...context,
 				}),
-		run: (request: PwExtRequest) =>
-			handler(request, options.signal, {
-					fetchAsset: async (assetId: string) => {
-						fetched.push(assetId);
-						if (!options.asset) throw new Error("no asset");
-						return options.asset;
-					},
-					deleteAsset: async (assetId: string) => {
-						deleted.push(assetId);
-					},
-				},
-			),
-		api,
-		executed,
+		runWithoutContext: (request: PwExtRequest) => call(request, null),
+		fake,
+		agentTabs,
 		fetched,
 		deleted,
-		created,
+		executed: () =>
+			fake.raw.scripting.executeScript.mock.calls.map(
+				([details]) => details as Executed,
+			),
+		created: () => fake.raw.tabs.create.mock.calls.map(([props]) => props),
+		createdTab: async (index = 0) =>
+			(await fake.raw.tabs.create.mock.results[index]?.value) as FakeTab,
+		selectedId: () => fake.record(SESSION)?.selectedTabId,
 	};
+}
+
+function outcome(answer: {
+	ok: boolean;
+	data?: { text: string };
+	error?: string;
+}) {
+	return answer.ok ? (answer.data?.text ?? "") : (answer.error ?? "");
 }
 
 describe("pw --ext background handler", () => {
 	it("discards a screenshot when the window switched tabs during capture", async () => {
-		const h = harness({ duringCapture: { active: false } });
-		const answer = await h.run({ verb: "screenshot" });
-		expect(answer).toEqual({
+		const h = harness();
+		h.fake.state.duringCapture = () => {
+			const tab = h.fake.tabs.get(7);
+			if (tab) tab.active = false;
+		};
+
+		expect(await h.run({ verb: "screenshot" })).toEqual({
 			ok: false,
 			error: expect.stringContaining("changed"),
 		});
 	});
 
 	it("discards a screenshot when the window switched away and back during capture", async () => {
-		const h = harness({ switchBackDuringCapture: true });
+		const h = harness();
+		h.fake.state.duringCapture = () => {
+			h.fake.fireActivated({ tabId: 8, windowId: WINDOW });
+			h.fake.fireActivated({ tabId: 7, windowId: WINDOW });
+		};
+
 		expect(await h.run({ verb: "screenshot" })).toEqual({
 			ok: false,
 			error: expect.stringContaining("changed"),
@@ -154,19 +192,31 @@ describe("pw --ext background handler", () => {
 
 	it("runs a click with no approval step and binds it to the page URL", async () => {
 		const h = harness({ pageResult: { detail: "clicked" } });
+
 		expect(await h.run({ verb: "click", target: "e1" })).toMatchObject({ ok: true });
-		expect((h.executed[0] as { args: unknown[] }).args).toEqual([
+		expect(h.executed()[0]?.args).toEqual([
 			{ kind: "click", target: "e1" },
 			WEB_TAB.url,
 		]);
+		expect(h.executed()[0]?.target.tabId).toBe(7);
+	});
+
+	it("runs a count in the page and prints its match list", async () => {
+		const h = harness({ pageResult: { detail: "#q matches 1 element\n1. <input id=\"q\">" } });
+		const answer = await h.run({ verb: "count", target: "#q" });
+
+		expect(answer).toMatchObject({ ok: true });
+		if (answer.ok) expect(answer.data.text).toContain("#q matches 1 element");
+		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url]);
 	});
 
 	it("runs a fill and keeps the typed value out of the result", async () => {
 		const h = harness({ pageResult: { detail: 'filled textbox "Search"' } });
 		const answer = await h.run({ verb: "fill", target: "e2", value: "cats" });
+
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).not.toContain("cats");
-		expect((h.executed[0] as { args: unknown[] }).args[0]).toEqual({
+		expect(h.executed()[0]?.args[0]).toEqual({
 			kind: "fill",
 			target: "e2",
 			value: "cats",
@@ -177,11 +227,28 @@ describe("pw --ext background handler", () => {
 		const cancel = new AbortController();
 		cancel.abort();
 		const h = harness({ signal: cancel.signal });
+
 		expect(await h.run({ verb: "click", target: "e1" })).toEqual({
 			ok: false,
 			error: expect.stringContaining("canceled"),
 		});
-		expect(h.executed).toEqual([]);
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("does not navigate when the request is canceled while the tab is read", async () => {
+		const cancel = new AbortController();
+		const h = harness({ signal: cancel.signal });
+		h.fake.raw.tabs.get.mockImplementationOnce(async () => {
+			cancel.abort();
+			return WEB_TAB;
+		});
+
+		expect(await h.run({ verb: "open", url: "https://example.test/" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("canceled"),
+		});
+		expect(h.fake.tabs.get(7)?.url).toBe(WEB_TAB.url);
+		expect(h.fake.raw.tabs.update).not.toHaveBeenCalled();
 	});
 
 	it("rejects a malformed or oversized page result", async () => {
@@ -191,6 +258,7 @@ describe("pw --ext background handler", () => {
 			{ surprise: true },
 		]) {
 			const h = harness({ pageResult });
+
 			expect(await h.run({ verb: "snapshot" })).toMatchObject({ ok: false });
 		}
 	});
@@ -203,6 +271,7 @@ describe("pw --ext background handler", () => {
 			},
 		});
 		const answer = await h.run({ verb: "snapshot" });
+
 		expect(answer.ok).toBe(true);
 		if (!answer.ok) return;
 		expect(answer.data.text).toContain("### Page");
@@ -223,101 +292,211 @@ describe("pw --ext background handler", () => {
 		"https://chromewebstore.google.com/detail/x",
 	])("blocks %s", async (url) => {
 		const h = harness({ tabs: [{ ...WEB_TAB, url }] });
-		const answer = await h.run({ verb: "snapshot" });
-		expect(answer).toEqual({
+
+		expect(await h.run({ verb: "snapshot" })).toEqual({
 			ok: false,
 			error: expect.stringContaining("browser settings"),
 		});
-		expect(h.executed).toEqual([]);
+		expect(h.executed()).toEqual([]);
 	});
 
-	it("blocks a click on a browser page without running the page script", async () => {
+	it.each([
+		{ verb: "snapshot" },
+		{ verb: "click", target: "e1" },
+		{ verb: "fill", target: "e1", value: "x" },
+		{ verb: "selection" },
+		{ verb: "console" },
+		{ verb: "tools" },
+		{ verb: "current" },
+		{ verb: "screenshot" },
+	] as PwExtRequest[])("blocks a browser page for %p without running a script", async (request) => {
 		const h = harness({ tabs: [{ ...WEB_TAB, url: "chrome://settings" }] });
-		expect(await h.run({ verb: "click", target: "e1" })).toEqual({
+
+		expect(await h.run(request)).toEqual({
 			ok: false,
 			error: expect.stringContaining("browser settings"),
 		});
-		expect(h.executed).toEqual([]);
+		expect(h.executed()).toEqual([]);
 	});
 
-	it("blocks a fill on the signed-in Proton Mail tab without running the page script", async () => {
-		const h = harness({ tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
-		expect(await h.run({ verb: "fill", target: "e1", value: "x" })).toEqual({
-			ok: false,
-			error: expect.stringContaining("Proton Mail"),
-		});
-		expect(h.executed).toEqual([]);
-	});
-
-	it("blocks the signed-in Proton Mail tab", async () => {
+	it.each([
+		{ verb: "snapshot" },
+		{ verb: "click", target: "e1" },
+		{ verb: "fill", target: "e1", value: "x" },
+		{ verb: "screenshot" },
+		{ verb: "close" },
+		{ verb: "open", url: "https://example.test/" },
+	] as PwExtRequest[])("blocks %p on the signed-in Proton Mail tab", async (request) => {
 		const h = harness({
-			tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox", title: "Secret subject" }],
+			tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }],
 		});
-		expect(await h.run({ verb: "snapshot" })).toEqual({
+
+		expect(await h.run(request)).toEqual({
 			ok: false,
 			error: expect.stringContaining("Proton Mail"),
 		});
-		const listing = await h.run({ verb: "current" });
-		expect(listing.ok).toBe(true);
-		if (listing.ok) {
-			expect(listing.data.text).toContain("(protected mailbox)");
-			expect(listing.data.text).not.toContain("Secret subject");
-		}
+		expect(h.executed()).toEqual([]);
+		expect(h.fake.tabs.has(7)).toBe(true);
+		expect(h.fake.tabs.get(7)?.url).toBe("https://mail.proton.me/u/0/inbox");
 	});
 
-	it("never acts on or lists private windows", async () => {
-		const h = harness({ tabs: [{ ...WEB_TAB, incognito: true }] });
-		expect(await h.run({ verb: "snapshot" })).toEqual({
-			ok: false,
-			error: expect.stringContaining("non-private"),
-		});
-		const mixed = harness({
+	it("hides the title and URL of the Proton Mail tab in listings", async () => {
+		const h = harness({
 			tabs: [
-				WEB_TAB,
-				{ ...WEB_TAB, id: 9, windowId: 5, active: false, incognito: true, title: "Private" },
+				{
+					...WEB_TAB,
+					url: "https://mail.proton.me/u/0/inbox",
+					title: "Secret subject",
+				},
 			],
 		});
-		const listing = await mixed.run({ verb: "current" });
-		expect(listing.ok && listing.data.text).not.toContain("Private");
+		const listing = await h.run({ verb: "tabs" });
+
+		expect(listing.ok).toBe(true);
+		const text = outcome(listing);
+		expect(text).toContain("(protected mailbox)");
+		expect(text).not.toContain("Secret subject");
+		expect(text).not.toContain("mail.proton.me");
+	});
+
+	it("never acts on a private tab or lists it", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, incognito: true }] });
+
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("private"),
+		});
+		expect(h.executed()).toEqual([]);
+
+		const mixed = harness({
+			tabs: [WEB_TAB, groupTab(9, { incognito: true, title: "Private" })],
+		});
+		const listing = await mixed.run({ verb: "tabs" });
+
+		expect(listing.ok).toBe(true);
+		expect(outcome(listing)).not.toContain("Private");
+		expect(outcome(listing)).toContain("7:");
+	});
+
+	it("refuses to navigate a private selected tab", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, incognito: true }] });
+
+		expect(await h.run({ verb: "open", url: "https://example.test/" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("private"),
+		});
+		expect(h.fake.raw.tabs.update).not.toHaveBeenCalled();
 	});
 
 	it("refuses a non-Chromium browser", async () => {
 		const h = harness({ chromium: false });
+
 		expect(await h.run({ verb: "current" })).toEqual({
 			ok: false,
 			error: expect.stringContaining("Chromium"),
 		});
 	});
 
-	it("lists open tabs without exposing browser page URLs", async () => {
+	it("reports the selected tab URL and title and no tab list for current", async () => {
+		const h = harness({
+			tabs: [WEB_TAB, groupTab(8, { title: "Second" })],
+		});
+		const answer = await h.run({ verb: "current" });
+
+		expect(answer.ok).toBe(true);
+		const text = outcome(answer);
+		expect(text).toContain("### Page");
+		expect(text).toContain("- Page URL: https://app.example.test/home?token=[redacted]");
+		expect(text).toContain("- Page Title: Home");
+		expect(text).not.toContain("### Tabs");
+		expect(text).not.toContain("Second");
+	});
+
+	it("lists only the group's tabs with the selected one marked", async () => {
 		const h = harness({
 			tabs: [
 				WEB_TAB,
-				{ id: 8, windowId: 3, url: "chrome://settings", title: "Settings", active: false },
+				groupTab(8, { url: "chrome://settings", title: "Settings" }),
 			],
 		});
-		const answer = await h.run({ verb: "current" });
+		const answer = await h.run({ verb: "tabs" });
+
 		expect(answer.ok).toBe(true);
-		if (!answer.ok) return;
-		expect(answer.data.text).toContain("- Page URL: https://app.example.test/home?token=[redacted]");
-		expect(answer.data.text).toContain("[active] 7: Home");
-		expect(answer.data.text).toContain("- 8: (browser page)");
-		expect(answer.data.text).not.toContain("chrome://settings");
+		const text = outcome(answer);
+		expect(text).toContain("### Tabs");
+		expect(text).toContain(
+			"- [selected] 7: Home — https://app.example.test/home?token=[redacted]",
+		);
+		expect(text).toContain("- 8: (browser page)");
+		expect(text).not.toContain("chrome://settings");
+		expect(text).not.toContain("Other agent");
+		expect(text).not.toContain("User tab");
+		expect(text).not.toMatch(/\b2[01]:/);
 	});
 
-	it("opens a new tab", async () => {
+	it("cuts a long tab list and counts the rest", async () => {
+		const extra = GROUP_TAB_LIMIT + 5 - 1;
+		const h = harness({
+			tabs: [
+				WEB_TAB,
+				...Array.from({ length: extra }, (_, i) => groupTab(2000 + i)),
+			],
+		});
+		const text = outcome(await h.run({ verb: "tabs" }));
+		const rows = text
+			.split("\n")
+			.filter((line) => /^- (\[selected\] )?\d+:/.test(line));
+
+		expect(rows).toHaveLength(GROUP_TAB_LIMIT);
+		expect(text).toContain("- … 5 more");
+	});
+
+	it("opens a grouped inactive tab and selects it when the agent has none", async () => {
+		const h = harness({ record: false, tabs: [] });
+		const answer = await h.run({ verb: "open", url: "https://example.test/" });
+		const tab = await h.createdTab();
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(outcome(answer)).toContain(`Opened https://example.test/ in tab ${tab.id}`);
+		expect(h.created()).toHaveLength(1);
+		const stored = h.fake.tabs.get(tab.id);
+		expect(stored?.active).toBe(false);
+		expect(stored?.groupId).not.toBe(-1);
+		expect(h.fake.groups.get(stored?.groupId as number)?.title).toBe(
+			groupTitle({ agentIdentity: IDENTITY, sessionId: SESSION }),
+		);
+		expect(h.selectedId()).toBe(tab.id);
+	});
+
+	it("navigates the same tab on a second open", async () => {
+		const h = harness({ record: false, tabs: [] });
+		await h.run({ verb: "open", url: "https://example.test/" });
+		const tab = await h.createdTab();
+		const answer = await h.run({ verb: "open", url: "https://second.example.test/" });
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.created()).toHaveLength(1);
+		expect(h.fake.raw.tabs.update).toHaveBeenCalledWith(tab.id, {
+			url: "https://second.example.test/",
+		});
+		expect(h.selectedId()).toBe(tab.id);
+	});
+
+	it("navigates the selected tab on open", async () => {
 		const h = harness();
 		const answer = await h.run({ verb: "open", url: "https://example.test/" });
-		expect(h.created).toEqual([
-			{ url: "https://example.test/", windowId: 3, active: true },
-		]);
+
 		expect(answer).toMatchObject({ ok: true });
+		expect(h.created()).toEqual([]);
+		expect(h.fake.raw.tabs.update).toHaveBeenCalledWith(7, {
+			url: "https://example.test/",
+		});
 	});
 
-	it("returns a screenshot of the active tab", async () => {
+	it("returns a screenshot of the selected tab", async () => {
 		const h = harness();
-		const answer = await h.run({ verb: "screenshot" });
-		expect(answer).toMatchObject({
+
+		expect(await h.run({ verb: "screenshot" })).toMatchObject({
 			ok: true,
 			data: { image: "data:image/jpeg;base64,AAAA" },
 		});
@@ -325,6 +504,7 @@ describe("pw --ext background handler", () => {
 
 	it("reports a page error without data", async () => {
 		const h = harness({ pageResult: { error: "No element matches .x." } });
+
 		expect(await h.run({ verb: "click", target: ".x" })).toEqual({
 			ok: false,
 			error: "No element matches .x.",
@@ -333,9 +513,412 @@ describe("pw --ext background handler", () => {
 
 	it("rejects a request that fails validation", async () => {
 		const h = harness();
+
 		expect(
 			await h.run({ verb: "eval" } as unknown as PwExtRequest),
 		).toMatchObject({ ok: false });
+	});
+
+	it("refuses a request that carries no paired session", async () => {
+		const h = harness();
+
+		expect(await h.runWithoutContext({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: NO_SESSION,
+		});
+		expect(h.executed()).toEqual([]);
+	});
+});
+
+describe("pw --ext agent tab ownership", () => {
+	it.each([
+		["another agent's group", 20],
+		["no group", 21],
+		["a tab that does not exist", 424242],
+	])("refuses --tab for a tab in %s and runs no script", async (_name, tabId) => {
+		const h = harness({ pageResult: { detail: "clicked" } });
+
+		expect(await h.run({ verb: "click", target: "e4", tabId })).toEqual({
+			ok: false,
+			error: NOT_IN_GROUP(tabId),
+		});
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("targets an owned tab once and leaves the selection alone", async () => {
+		const h = harness({
+			tabs: [WEB_TAB, groupTab(8, { url: "https://second.example.test/" })],
+			pageResult: { tree: "- button", text: "t" },
+		});
+		const answer = await h.run({ verb: "snapshot", tabId: 8 });
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.executed()[0]?.target.tabId).toBe(8);
+		expect(h.executed()[0]?.args[1]).toBe("https://second.example.test/");
+		expect(h.selectedId()).toBe(7);
+	});
+
+	it("tells the agent to reselect when its selected tab moved into another group", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, groupId: OTHER_GROUP }, groupTab(8)],
+		});
+
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: SELECTED_GONE,
+		});
+		expect(h.executed()).toEqual([]);
+		expect(h.fake.tabs.get(8)?.active).toBe(false);
+	});
+
+	it("tells the agent to reselect when its selected tab was closed", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8)] });
+		h.fake.removeTab(7);
+
+		expect(await h.run({ verb: "click", target: "e1" })).toEqual({
+			ok: false,
+			error: SELECTED_GONE,
+		});
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("says the agent has no tab when it has no record", async () => {
+		const h = harness({ record: false, tabs: [] });
+
+		expect(await h.run({ verb: "snapshot" })).toEqual({ ok: false, error: NO_TAB });
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("says the agent has no tab when its group is empty", async () => {
+		const h = harness({ tabs: [], selected: null });
+
+		expect(await h.run({ verb: "snapshot" })).toEqual({ ok: false, error: NO_TAB });
+	});
+
+	it("never lists a tab outside the group", async () => {
+		const h = harness();
+		const text = outcome(await h.run({ verb: "tabs" }));
+
+		expect(text).not.toContain("Other agent");
+		expect(text).not.toContain("User tab");
+	});
+
+	it("refuses every page verb on a discarded tab", async () => {
+		for (const request of [
+			{ verb: "snapshot" },
+			{ verb: "click", target: "e1" },
+			{ verb: "selection" },
+			{ verb: "screenshot" },
+		] as PwExtRequest[]) {
+			const h = harness({ tabs: [{ ...WEB_TAB, discarded: true }] });
+
+			expect(await h.run(request)).toEqual({ ok: false, error: DISCARDED(7) });
+			expect(h.executed()).toEqual([]);
+		}
+	});
+});
+
+describe("pw --ext new, select and close", () => {
+	it("creates an inactive tab in the group and selects it", async () => {
+		const h = harness();
+		const answer = await h.run({ verb: "new", url: "https://fresh.example.test/" });
+		const tab = await h.createdTab();
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.fake.tabs.get(tab.id)).toMatchObject({
+			url: "https://fresh.example.test/",
+			groupId: GROUP,
+			active: false,
+		});
+		expect(h.selectedId()).toBe(tab.id);
+	});
+
+	it("opens chrome://newtab/ when new has no URL", async () => {
+		const h = harness();
+		await h.run({ verb: "new" });
+
+		expect(h.created()).toEqual([
+			expect.objectContaining({ url: "chrome://newtab/", active: false }),
+		]);
+	});
+
+	it("allows new, tabs and close while the selected tab is a browser page", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, url: "chrome://settings" }, groupTab(8)],
+		});
+
+		expect(await h.run({ verb: "tabs" })).toMatchObject({ ok: true });
+		expect(
+			await h.run({ verb: "new", url: "https://fresh.example.test/" }),
+		).toMatchObject({ ok: true });
+		expect(await h.run({ verb: "close", tabId: 8 })).toMatchObject({ ok: true });
+	});
+
+	it("allows open to navigate a selected browser page", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, url: "chrome://settings" }] });
+
+		expect(
+			await h.run({ verb: "open", url: "https://example.test/" }),
+		).toMatchObject({ ok: true });
+		expect(h.fake.tabs.get(7)?.url).toBe("https://example.test/");
+	});
+
+	it("lets open navigate the tab that new created", async () => {
+		const h = harness({ record: false, tabs: [] });
+		await h.run({ verb: "new" });
+		const tab = await h.createdTab();
+		const answer = await h.run({ verb: "open", url: "https://example.test/" });
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.created()).toHaveLength(1);
+		expect(h.fake.raw.tabs.update).toHaveBeenCalledWith(tab.id, {
+			url: "https://example.test/",
+		});
+	});
+
+	it("refuses new beyond the group limit", async () => {
+		const h = harness({
+			tabs: [
+				WEB_TAB,
+				...Array.from({ length: GROUP_TAB_LIMIT - 1 }, (_, i) =>
+					groupTab(2000 + i),
+				),
+			],
+		});
+
+		expect(
+			await h.run({ verb: "new", url: "https://fresh.example.test/" }),
+		).toEqual({ ok: false, error: FULL });
+		expect(h.created()).toEqual([]);
+	});
+
+	it("refuses open and creates no tab when the selected tab was closed", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8)] });
+		h.fake.removeTab(7);
+
+		expect(await h.run({ verb: "open", url: "https://a.example.test/" })).toEqual({
+			ok: false,
+			error: SELECTED_GONE,
+		});
+		expect(h.created()).toEqual([]);
+		expect(h.fake.raw.tabs.update).not.toHaveBeenCalled();
+	});
+
+	it("refuses open and creates no tab when the selected tab moved out of the group", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, groupId: OTHER_GROUP }, groupTab(8)],
+		});
+
+		expect(await h.run({ verb: "open", url: "https://a.example.test/" })).toEqual({
+			ok: false,
+			error: SELECTED_GONE,
+		});
+		expect(h.created()).toEqual([]);
+		expect(h.fake.tabs.get(7)?.url).toBe(WEB_TAB.url);
+	});
+
+	it("lets exactly one of two concurrent new calls take the last slot", async () => {
+		const h = harness({
+			tabs: [
+				WEB_TAB,
+				...Array.from({ length: GROUP_TAB_LIMIT - 2 }, (_, i) =>
+					groupTab(2000 + i),
+				),
+			],
+		});
+
+		const answers = await Promise.all([
+			h.run({ verb: "new", url: "https://one.example.test/" }),
+			h.run({ verb: "new", url: "https://two.example.test/" }),
+		]);
+
+		expect(answers.filter((answer) => answer.ok)).toHaveLength(1);
+		expect(answers.filter((answer) => !answer.ok)).toEqual([
+			{ ok: false, error: FULL },
+		]);
+		expect(h.created()).toHaveLength(1);
+		expect(h.fake.tabsInGroup(GROUP)).toHaveLength(GROUP_TAB_LIMIT);
+	});
+
+	it("selects an owned tab without activating it", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8)] });
+		const answer = await h.run({ verb: "select", tabId: 8 });
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.selectedId()).toBe(8);
+		expect(h.fake.tabs.get(8)?.active).toBe(false);
+	});
+
+	it.each([
+		["another agent's group", 20],
+		["no group", 21],
+	])("refuses to select a tab in %s", async (_name, tabId) => {
+		const h = harness();
+
+		expect(await h.run({ verb: "select", tabId })).toEqual({
+			ok: false,
+			error: NOT_IN_GROUP(tabId),
+		});
+		expect(h.selectedId()).toBe(7);
+	});
+
+	it("refuses to select a browser page", async () => {
+		const h = harness({
+			tabs: [WEB_TAB, groupTab(8, { url: "chrome://settings" })],
+		});
+
+		expect(await h.run({ verb: "select", tabId: 8 })).toEqual({
+			ok: false,
+			error: expect.stringContaining("browser settings"),
+		});
+		expect(h.selectedId()).toBe(7);
+	});
+
+	it("closes the selected tab, moves the selection to the last tab and reports it", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8), groupTab(9)] });
+		const answer = await h.run({ verb: "close" });
+
+		expect(answer.ok).toBe(true);
+		expect(outcome(answer)).toContain("Closed tab 7");
+		expect(outcome(answer)).toContain("Selected tab 9");
+		expect(h.fake.tabs.has(7)).toBe(false);
+		expect(h.selectedId()).toBe(9);
+	});
+
+	it("closes a named tab without moving the selection", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8)] });
+		const answer = await h.run({ verb: "close", tabId: 8 });
+
+		expect(outcome(answer)).toContain("Closed tab 8");
+		expect(outcome(answer)).not.toContain("Selected tab");
+		expect(h.selectedId()).toBe(7);
+	});
+
+	it("clears the selection when the last tab closes", async () => {
+		const h = harness();
+		const answer = await h.run({ verb: "close" });
+
+		expect(outcome(answer)).toContain("Closed tab 7");
+		expect(outcome(answer)).not.toContain("Selected tab");
+		expect(h.selectedId()).toBeUndefined();
+		expect(await h.run({ verb: "snapshot" })).toEqual({ ok: false, error: NO_TAB });
+	});
+
+	it.each([
+		["another agent's group", 20],
+		["no group", 21],
+	])("refuses to close a tab in %s", async (_name, tabId) => {
+		const h = harness();
+
+		expect(await h.run({ verb: "close", tabId })).toEqual({
+			ok: false,
+			error: NOT_IN_GROUP(tabId),
+		});
+		expect(h.fake.tabs.has(tabId)).toBe(true);
+	});
+});
+
+describe("pw --ext screenshot", () => {
+	const originalFrame = (globalThis as { requestAnimationFrame?: unknown })
+		.requestAnimationFrame;
+
+	afterEach(() => {
+		(globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame =
+			originalFrame;
+	});
+
+	it("brings a background tab to the front, waits one frame, captures and leaves it in front", async () => {
+		let frames = 0;
+		(globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = (
+			callback: (time: number) => void,
+		) => {
+			frames += 1;
+			callback(0);
+			return frames;
+		};
+		const h = harness({
+			windowState: "minimized",
+			tabs: [{ ...WEB_TAB, active: false }, groupTab(8, { active: true })],
+		});
+		h.fake.state.script = (details) => {
+			const call = details as {
+				func: (...args: unknown[]) => unknown;
+				args: unknown[];
+			};
+			return call.func(...call.args);
+		};
+		const answer = await h.run({ verb: "screenshot" });
+		const first = (mock: { mock: { invocationCallOrder: number[] } }) =>
+			mock.mock.invocationCallOrder[0] as number;
+
+		expect(answer).toMatchObject({
+			ok: true,
+			data: { image: "data:image/jpeg;base64,AAAA" },
+		});
+		expect(h.fake.raw.tabs.update).toHaveBeenCalledWith(7, { active: true });
+		expect(h.fake.raw.windows.update).toHaveBeenCalledWith(WINDOW, {
+			focused: true,
+			state: "normal",
+		});
+		expect(h.fake.windows.get(WINDOW)?.state).toBe("normal");
+		expect(frames).toBe(1);
+		expect(h.executed()).toHaveLength(1);
+		expect(h.executed()[0]?.target.tabId).toBe(7);
+		expect(first(h.fake.raw.tabs.update)).toBeLessThan(
+			first(h.fake.raw.scripting.executeScript),
+		);
+		expect(first(h.fake.raw.scripting.executeScript)).toBeLessThan(
+			first(h.fake.raw.tabs.captureVisibleTab),
+		);
+		expect(h.fake.tabs.get(7)?.active).toBe(true);
+		expect(h.fake.tabs.get(8)?.active).toBe(false);
+		expect(h.fake.raw.tabs.update).toHaveBeenCalledTimes(1);
+	});
+
+	it("focuses a maximized window without changing its state", async () => {
+		const h = harness({
+			windowState: "maximized",
+			tabs: [{ ...WEB_TAB, active: false }],
+		});
+		const answer = await h.run({ verb: "screenshot" });
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.fake.raw.windows.update).toHaveBeenCalledTimes(1);
+		expect(h.fake.raw.windows.update).toHaveBeenCalledWith(WINDOW, {
+			focused: true,
+		});
+		expect(h.fake.windows.get(WINDOW)?.state).toBe("maximized");
+	});
+
+	it("does not discard the capture for the activation's own event", async () => {
+		const h = harness({ tabs: [{ ...WEB_TAB, active: false }] });
+		const answer = await h.run({ verb: "screenshot" });
+
+		expect(answer).toMatchObject({ ok: true });
+	});
+
+	it("still discards the capture when the user switches tabs after it began", async () => {
+		const h = harness({
+			tabs: [{ ...WEB_TAB, active: false }, groupTab(8)],
+		});
+		h.fake.state.duringCapture = () =>
+			h.fake.fireActivated({ tabId: 8, windowId: WINDOW });
+
+		expect(await h.run({ verb: "screenshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("changed"),
+		});
+	});
+
+	it("captures the tab chosen with --tab without changing the selection", async () => {
+		const h = harness({
+			tabs: [WEB_TAB, groupTab(8, { active: false })],
+		});
+		const answer = await h.run({ verb: "screenshot", tabId: 8 });
+
+		expect(answer).toMatchObject({ ok: true });
+		expect(h.fake.raw.tabs.update).toHaveBeenCalledWith(8, { active: true });
+		expect(h.selectedId()).toBe(7);
 	});
 });
 
@@ -356,9 +939,10 @@ describe("pw --ext round 3", () => {
 			asset: new Blob(["hello"], { type: "video/webm" }),
 		});
 		const answer = await h.run(UPLOAD);
+
 		expect(h.fetched).toEqual([UPLOAD.assetId as string]);
 		expect(h.deleted).toEqual([UPLOAD.assetId as string]);
-		expect((h.executed[0] as { args: unknown[] }).args).toEqual([
+		expect(h.executed()[0]?.args).toEqual([
 			{
 				kind: "upload",
 				target: "#file",
@@ -373,15 +957,17 @@ describe("pw --ext round 3", () => {
 
 	it("refuses an upload whose staged bytes do not match the declared size", async () => {
 		const h = harness({ asset: new Blob(["longer than five"]) });
+
 		expect(await h.run(UPLOAD)).toEqual({
 			ok: false,
 			error: expect.stringContaining("size"),
 		});
-		expect(h.executed).toEqual([]);
+		expect(h.executed()).toEqual([]);
 	});
 
 	it("refuses an upload to a plain http page", async () => {
 		const h = harness({ tabs: [{ ...WEB_TAB, url: "http://app.example.test/" }] });
+
 		expect(await h.run(UPLOAD)).toEqual({
 			ok: false,
 			error: expect.stringContaining("https"),
@@ -391,6 +977,7 @@ describe("pw --ext round 3", () => {
 	it("lists WebMCP tools, or says there are none", async () => {
 		const none = harness({ mainResult: () => ({ api: "none", tools: [] }) });
 		const empty = await none.run({ verb: "tools" });
+
 		expect(empty.ok && empty.data.text).toContain("This page exposes no WebMCP tools.");
 		const some = harness({
 			mainResult: () => ({
@@ -405,6 +992,7 @@ describe("pw --ext round 3", () => {
 			}),
 		});
 		const listed = await some.run({ verb: "tools" });
+
 		expect(listed.ok && listed.data.text).toContain("- search: Search issues");
 		expect(listed.ok && listed.data.text).toContain('input: {"type":"object"}');
 		expect(listed.ok && listed.data.text).not.toContain("zzzzzzzzzzzz");
@@ -419,6 +1007,7 @@ describe("pw --ext round 3", () => {
 			},
 		});
 		const answer = await h.run({ verb: "call", tool: "search", args: { q: "bug" } });
+
 		expect(actions).toHaveLength(1);
 		expect(actions[0]).toMatchObject({ kind: "call", tool: "search", args: { q: "bug" } });
 		expect(answer.ok && answer.data.text).toContain("3 results");
@@ -428,6 +1017,7 @@ describe("pw --ext round 3", () => {
 		const h = harness({
 			mainResult: () => ({ error: "No WebMCP tool named search on this page." }),
 		});
+
 		expect(await h.run({ verb: "call", tool: "search", args: {} })).toEqual({
 			ok: false,
 			error: expect.stringContaining("No WebMCP tool"),
@@ -440,6 +1030,7 @@ describe("pw --ext round 3", () => {
 			mainResult: () => ({ entries: ["[warning] careful"] }),
 		});
 		const answer = await h.run({ verb: "console" });
+
 		expect(answer.ok && answer.data.text).toContain("[error] Boom");
 		expect(answer.ok && answer.data.text).toContain("[warning] careful");
 	});
@@ -459,6 +1050,7 @@ describe("pw --ext round 3 review fixes", () => {
 				return new Blob(["hello"]);
 			},
 		});
+
 		expect(
 			await run({
 				verb: "upload",
@@ -470,7 +1062,7 @@ describe("pw --ext round 3 review fixes", () => {
 				filePath: "a.txt",
 			}),
 		).toEqual({ ok: false, error: expect.stringContaining("canceled") });
-		expect(h.executed).toEqual([]);
+		expect(h.executed()).toEqual([]);
 	});
 
 	it("passes the tab URL to the console hook and caps its entries", async () => {
@@ -481,13 +1073,14 @@ describe("pw --ext round 3 review fixes", () => {
 			}),
 		});
 		const answer = await h.run({ verb: "console" });
-		const main = h.executed.find(
-			(call) => (call as { world?: string }).world === "MAIN",
-		) as { args: unknown[] };
-		expect(main.args).toEqual([WEB_TAB.url]);
+		const main = h.executed().find((call) => call.world === "MAIN");
+
+		expect(main?.args).toEqual([WEB_TAB.url]);
 		expect(answer.ok).toBe(true);
 		if (answer.ok) {
-			const lines = answer.data.text.split("\n").filter((line) => line.startsWith("[warning]"));
+			const lines = answer.data.text
+				.split("\n")
+				.filter((line) => line.startsWith("[warning]"));
 			expect(lines).toHaveLength(50);
 			expect(lines.every((line) => line.length <= 520)).toBe(true);
 		}

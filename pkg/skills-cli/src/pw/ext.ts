@@ -4,6 +4,7 @@ import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import {
 	PW_EXT_DEFAULT_TIMEOUT_MS,
+	PW_EXT_MAX_TAB_ID,
 	type PwExtCliCancel,
 	type PwExtCliRequest,
 	type PwExtCliResult,
@@ -12,6 +13,7 @@ import {
 	PW_EXT_READ_VERBS,
 	PW_EXT_MAX_UPLOAD_BYTES,
 	PW_EXT_WRITE_VERBS,
+	describeError,
 	redactText,
 	validatePwExtRequest,
 	validatePwExtResponse,
@@ -42,14 +44,14 @@ export type ExtClient = {
 };
 
 export type ExtDeps = {
-	connect(): Promise<ExtClient>;
+	connect(sessionId?: string): Promise<ExtClient>;
 	cliOnly(): boolean;
 	onInterrupt(handler: () => void): () => void;
 };
 
 const DEFAULT_DEPS: ExtDeps = {
-	async connect() {
-		const session = await resolveCliSession();
+	async connect(sessionId) {
+		const session = await resolveCliSession(sessionId);
 		const client = await CliClient.connect(session);
 		return {
 			request: (frame, accept, timeoutMs) =>
@@ -174,30 +176,51 @@ const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
 	screenshot: [],
 	selection: [],
 	console: [],
+	tabs: [],
 	open: ["url"],
+	new: ["url?"],
+	select: ["tabId"],
+	close: ["tabId?"],
 	click: ["target"],
+	count: ["target"],
 	fill: ["target", "value"],
 	upload: ["target", "file"],
 	tools: [],
 	call: ["tool", "json-args"],
 };
+const OPTIONS = {
+	ext: { type: "boolean" },
+	help: { type: "boolean" },
+	tab: { type: "string" },
+	session: { type: "string" },
+} as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
-export const EXT_HELP = `Usage: dg-skills pw --ext <verb> [args]
+export const EXT_HELP = `Usage: dg-skills pw --ext [--session <id>] [--tab <id>] <verb> [args]
 
 Drive your real browser through the paired dg-ai-extension.
-Passing --ext gives the CLI control of the active tab. The browser asks for no approval per call.
+Passing --ext gives the CLI control of the tabs in the agent's own tab group. The browser asks for no approval per call.
+Every verb acts on the agent's selected tab. --tab <id> targets one tab of the group once, without changing the selection.
+
+Session: each dg session has its own tab group. The CLI picks the session from --session <id>,
+then the DG_SESSION_ID environment variable, then the one session registered for the working directory.
+Under --ext, --session takes a dg session id, not a pw browser session name.
 
 Read verbs (they never change the page):
-  current                 active tab URL and title, plus open tabs
+  current                 the agent's selected tab URL and title
+  tabs                    tabs in the agent's group, the selected one marked
   snapshot                accessibility tree with refs, and visible text
-  screenshot              visible part of the active tab, saved to scratch
+  screenshot              visible part of the agent's selected tab, saved to scratch; brings the tab to the front
   selection               selected text
   console                 errors and console warnings since the first call
+  count <ref|selector>    how many elements match, with tag, type, id and name for each; use it to test a selector before click, fill or upload
   tools                   WebMCP tools the page exposes
 
 Write verbs (they change the page):
-  open <url>              open an http(s) URL in a new tab
+  open <url>              open an http(s) URL in the agent's selected tab, or in a new tab when it has none
+  new [url]               open a new tab in the agent's group and select it
+  select <tabId>          make a tab of the group the agent's selected tab
+  close [tabId]           close a tab of the group (the agent's selected tab by default)
   click <ref|selector>    click one element
   fill <ref|selector> <text>  set the value of one text field
   upload <ref|selector> <file>  set one file on a file input (https pages only)
@@ -205,20 +228,34 @@ Write verbs (they change the page):
 
 class ExtUsageError extends Error {}
 
-type Parsed = { request: PwExtRequest; staged?: StagedFile };
+type Parsed = { request: PwExtRequest; staged?: StagedFile; session?: string };
+
+function readArgs(argv: readonly string[]) {
+	return parseArgs({
+		args: [...argv],
+		options: OPTIONS,
+		allowPositionals: true,
+		strict: true,
+	});
+}
+
+function tabIdOf(text: string, usage: string): number {
+	if (!/^\d+$/.test(text) || Number(text) > PW_EXT_MAX_TAB_ID)
+		throw new ExtUsageError(usage);
+	return Number(text);
+}
+
+function positionalLabel(name: string): string {
+	return name.endsWith("?") ? `[<${name.slice(0, -1)}>]` : `<${name}>`;
+}
 
 function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
-	let parsed: ReturnType<typeof parseArgs>;
+	let parsed: ReturnType<typeof readArgs>;
 	try {
-		parsed = parseArgs({
-			args: [...argv],
-			options: { ext: { type: "boolean" }, help: { type: "boolean" } },
-			allowPositionals: true,
-			strict: true,
-		});
+		parsed = readArgs(argv);
 	} catch (error) {
 		throw new ExtUsageError(
-			`${error instanceof Error ? error.message : String(error)}\npw --ext takes no other flags. Run: dg-skills pw --ext --help`,
+			`${describeError(error)}\nRun: dg-skills pw --ext --help`,
 		);
 	}
 	if (parsed.values.help) return "help";
@@ -228,10 +265,21 @@ function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
 			`Unknown pw --ext verb: ${verb ?? "(none)"}. Use one of: ${[...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS].join(", ")}.`,
 		);
 	const names = POSITIONALS[verb as PwExtVerb];
-	if (rest.length !== names.length)
+	const tab =
+		parsed.values.tab === undefined
+			? undefined
+			: tabIdOf(parsed.values.tab, "pw --ext --tab takes a tab id from pw --ext tabs.");
+	if (tab !== undefined && verb === "select")
+		throw new ExtUsageError("pw --ext select takes a tab id, not --tab.");
+	const required = names.filter((name) => !name.endsWith("?")).length;
+	if (rest.length < required || rest.length > names.length)
 		throw new ExtUsageError(
-			`pw --ext ${verb} takes ${names.length ? names.map((name) => `<${name}>`).join(" ") : "no arguments"}.`,
+			`pw --ext ${verb} takes ${names.length ? names.map(positionalLabel).join(" ") : "no arguments"}.`,
 		);
+	if (tab !== undefined && (verb === "tabs" || verb === "new"))
+		throw new ExtUsageError(`pw --ext ${verb} does not take --tab.`);
+	if (tab !== undefined && verb === "close" && rest.length)
+		throw new ExtUsageError("pw --ext close takes a tab id or --tab, not both.");
 	const request: Record<string, unknown> = { verb };
 	let staged: StagedFile | undefined;
 	if (verb === "upload") {
@@ -256,10 +304,21 @@ function parseRequest(argv: readonly string[], cwd: string): Parsed | "help" {
 		Object.assign(request, { tool: rest[0], args });
 	} else
 		names.forEach((name, i) => {
-			request[name] = rest[i];
+			const key = name.replace(/\?$/, "");
+			const value = rest[i];
+			if (value === undefined) return;
+			request[key] =
+				key === "tabId"
+					? tabIdOf(value, `pw --ext ${verb} takes a tab id from pw --ext tabs.`)
+					: value;
 		});
+	if (tab !== undefined) request.tabId = tab;
 	try {
-		return { request: validatePwExtRequest(request), ...(staged ? { staged } : {}) };
+		return {
+			request: validatePwExtRequest(request),
+			...(staged ? { staged } : {}),
+			...(parsed.values.session === undefined ? {} : { session: parsed.values.session }),
+		};
 	} catch (error) {
 		throw new ExtUsageError(error instanceof Error ? error.message : String(error));
 	}
@@ -312,7 +371,7 @@ export async function runExt(
 	}
 	let client: ExtClient;
 	try {
-		client = await deps.connect();
+		client = await deps.connect(parsed.session);
 	} catch (error) {
 		env.err(
 			`pw --ext needs a dg-daemon session with the paired dg-ai-extension. Run dg-skills doctor pw for the steps. ${redactText(error instanceof Error ? error.message : String(error))}`,

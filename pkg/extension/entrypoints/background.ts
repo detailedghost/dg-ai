@@ -1,5 +1,6 @@
 import {
-	registerChat,
+	registerAgentTabs,
+	registerDaemonLink,
 	registerProto,
 	registerRecording,
 	registerTabGrouping,
@@ -13,5 +14,8 @@ export default defineBackground(() => {
 	registerTourState();
 	registerProto();
 	registerRecording();
-	registerChat();
+	const link = registerDaemonLink();
+	registerAgentTabs({
+		busy: ({ sessionId }) => link.pending(sessionId).length > 0,
+	});
 });

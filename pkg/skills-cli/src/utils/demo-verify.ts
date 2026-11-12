@@ -19,6 +19,7 @@ export type Finding =
 	| { step: number; kind: "selector-unresolved"; selector: string }
 	| { step: number; kind: "unrecorded-navigation"; url: string }
 	| { step: number; kind: "page-mismatch"; expected: string; actual: string }
+	| { step: number; kind: "env-unset"; variable: string }
 	| { step: number; kind: "plan-unreadable"; message: string }
 	| { step: number; kind: "harness-error"; message: string };
 

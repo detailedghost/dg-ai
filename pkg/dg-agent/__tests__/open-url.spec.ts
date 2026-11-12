@@ -43,7 +43,7 @@ describe("openUrlOrHint", () => {
 		});
 
 		expect(errors).toEqual([
-			"could not open a browser; open the URL above (set DG_OPEN_WINDOWS=1 to open the Windows browser)",
+			"could not open a browser (set DG_OPEN_WINDOWS=1 to open the Windows browser)",
 		]);
 	});
 });

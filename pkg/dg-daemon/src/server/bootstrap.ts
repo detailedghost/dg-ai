@@ -9,6 +9,7 @@ import { assertNotBlocked } from "@dg/common/node/layout";
 import {
 	checkWslNetworking,
 	type DgPaths,
+	ensureDaemonId,
 	ensureOwnerToken,
 	isDaemonLive,
 	loopbackHostHeader,
@@ -35,7 +36,7 @@ import {
 	setUserVersionProvider,
 } from "../utils/key-source";
 import { readConfig } from "./config-store";
-import { ConnectionManager, sendViaQueue } from "./connection";
+import { ConnectionManager, isExtensionPeer, sendViaQueue } from "./connection";
 import { createHttpServer, type HttpServerDeps, newInstanceId } from "./http";
 import { createIdleController, DEFAULT_IDLE_TTL_MS } from "./idle-ttl";
 import {
@@ -46,7 +47,6 @@ import {
 import {
 	DEFAULT_AGENT_GONE_MS,
 	DEFAULT_CLI_REATTACH_GRACE_MS,
-	DEFAULT_UNCLAIMED_TTL_MS,
 } from "../session/liveness";
 import { createLogger } from "./log";
 import { candidatePorts } from "./ports";
@@ -95,6 +95,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 
 	const logger = createLogger(paths);
 	ensureOwnerToken(paths);
+	const daemonId = ensureDaemonId(paths);
 	const store = await ChatStore.open(paths);
 	const credentials = await CredentialStore.open(paths, store.cryptoMeta());
 	store.recoverStaleClaims();
@@ -127,6 +128,7 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 			server = createHttpServer({
 				port: candidate,
 				instanceId,
+				daemonId,
 				paths,
 				registry,
 				connections,
@@ -198,11 +200,6 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		"DG_AGENT_GONE_MS",
 		DEFAULT_AGENT_GONE_MS,
 	);
-	const unclaimedTtlMs = readEnvNumber(
-		process.env,
-		"DG_UNCLAIMED_TTL_MS",
-		DEFAULT_UNCLAIMED_TTL_MS,
-	);
 	const reattachGraceMs = readEnvNumber(
 		process.env,
 		"DG_CLI_REATTACH_GRACE_MS",
@@ -230,7 +227,6 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		() => {
 			registry.reapExpired(sessionTtlMs, hasLiveCliSocket, {
 				agentGoneMs,
-				unclaimedTtlMs,
 				reattachGraceMs,
 			});
 			const pruned = store.maintainArchive(
@@ -276,18 +272,26 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		"closed",
 		({ sessionId, reason }: { sessionId: string; reason: CloseReason }) => {
 			logger.info(`session ${sessionId} closed (${reason})`);
-			connections.forEachCapableOf(sessionId, (ws) => {
-				const send = sendViaQueue(
-					ws,
-					JSON.stringify({
-						sessionId,
-						protocolVersion: CHAT_PROTOCOL_VERSION,
-						type: "session-closed",
-					}),
-				);
+			const payload = JSON.stringify({
+				sessionId,
+				protocolVersion: CHAT_PROTOCOL_VERSION,
+				type: "session-closed",
+			});
+			const notified = new Set<object>();
+			const notify = (ws: Parameters<typeof sendViaQueue>[0]) => {
+				const send = sendViaQueue(ws, payload);
 				pendingCloseSends.add(send);
 				void send.finally(() => pendingCloseSends.delete(send));
+				notified.add(ws);
+			};
+			const keepsExtensionState = reason === "daemon-shutdown";
+			connections.forEachCapableOf(sessionId, (ws) => {
+				if (!(keepsExtensionState && isExtensionPeer(ws))) notify(ws);
 				ws.data.capabilities.delete(sessionId);
+			});
+			if (keepsExtensionState) return;
+			connections.forEachExtension((ws) => {
+				if (!notified.has(ws)) notify(ws);
 			});
 		},
 	);
