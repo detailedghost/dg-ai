@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Fingerprint, Reading } from "../layout/fingerprint";
 import {
@@ -193,12 +193,14 @@ export async function refingerprint(
 	if (!prior) throw new Error(`nothing accepted for "${name}"`);
 	if (!isLoopbackUrl(new URL(url))) throw new Error("refused non-loopback url");
 	const captured = await readLayouts(dir, name, prior.variant, url, { ...DEFAULT_SEAMS, ...overrides });
+	const shotsDir = join(dir, SHOTS_DIR);
+	const keptShots = existsSync(shotsDir) && readdirSync(shotsDir).length > 0;
 	const updated: AcceptedRecord = {
 		...prior,
 		url,
 		fingerprint: captured.fingerprint,
 		skipped: captured.skipped,
-		shots: captured.shots ? `${SHOTS_DIR}/` : existsSync(join(dir, SHOTS_DIR)) ? prior.shots : null,
+		shots: captured.shots ? `${SHOTS_DIR}/` : keptShots ? prior.shots : null,
 	};
 	store(dir, updated);
 	return updated;

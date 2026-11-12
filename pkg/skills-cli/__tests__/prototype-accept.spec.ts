@@ -21,7 +21,7 @@ import {
 	renderAccepted,
 } from "../src/layout/record";
 import type { LayoutResult } from "../src/layout/fingerprint";
-import { recordAcceptance } from "../src/prototype/accepted";
+import { recordAcceptance, refingerprint } from "../src/prototype/accepted";
 import type { Capturer, CaptureRequest } from "../src/verify/capture-model";
 import { verifyBrowserAvailable } from "../src/verify/playwright-capturer";
 import { makeTempDir } from "./git-repo-fixtures";
@@ -431,6 +431,21 @@ describe("recordAcceptance", () => {
 		const second = await recordAcceptance(target(), claim, { open: fake(found), now });
 		expect(second.round).toBe(1);
 		expect(second.history).toHaveLength(1);
+	});
+
+	test("refingerprint drops the shots path when a failed repair leaves the shots folder empty", async () => {
+		const first = await recordAcceptance(target(), claim, { open: fake(found), now });
+		expect(first.shots).toBe("accepted/");
+		const failing = async (): Promise<Capturer> => ({
+			async shot() {
+				throw new Error("page crashed");
+			},
+			async close() {},
+		});
+		const repaired = await refingerprint(target().dir, "demo", claim.url, { open: failing, now });
+		expect(repaired.skipped).toContain("capture failed");
+		expect(readdirSync(join(root, "sandbox", "accepted"))).toHaveLength(0);
+		expect(repaired.shots).toBeNull();
 	});
 });
 
