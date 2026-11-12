@@ -136,6 +136,12 @@ describe("mergeChunks tasks", () => {
 		expect(overCap).toEqual([pre as string]);
 	});
 
+	test("a task carries class and otherPlaces, empty when the finding has none", () => {
+		const { tasks } = merge([[finding({ class: "npe", otherPlaces: ["o.ts:7"] }), finding({ line: 2, body: "other" })]]);
+		expect(tasks[0]).toMatchObject({ class: "npe", otherPlaces: ["o.ts:7"] });
+		expect(tasks[1]).toMatchObject({ class: null, otherPlaces: [] });
+	});
+
 	test("orders ties by chunk id then position", () => {
 		const { tasks } = merge([[finding({ body: "a" })], [finding({ line: 2, body: "b" })]]);
 		expect(tasks.map((task) => task.id)).toEqual(["c1-1", "c2-1"]);
@@ -169,6 +175,8 @@ describe("mergeChunks tasks", () => {
 			body: "B",
 			evidence,
 			side: "new",
+			class: null,
+			otherPlaces: [],
 			diffPath: null,
 			bundleContextPath: null,
 			verdictPath: paths.verdictPath("c1-1"),
@@ -203,6 +211,37 @@ describe("applyVerdicts", () => {
 	function run(base: ReturnType<typeof setup>, texts: Record<string, string | null>) {
 		return applyVerdicts({ ...base, verdictTexts: new Map(Object.entries(texts)) });
 	}
+
+	test("a confirmed verdict with a subset narrows otherPlaces", () => {
+		const base = setup([finding({ class: "npe", otherPlaces: ["o.ts:7", "p.ts:3"] })]);
+		const result = run(base, { "c1-1": verdictText("c1-1", { verdict: "confirmed", otherPlaces: ["p.ts:3"] }) });
+		expect(result.input.findings[0]?.otherPlaces).toEqual(["p.ts:3"]);
+	});
+
+	test("an adjusted verdict narrows otherPlaces too", () => {
+		const base = setup([finding({ class: "npe", otherPlaces: ["o.ts:7", "p.ts:3"] })]);
+		const result = run(base, { "c1-1": verdictText("c1-1", { verdict: "adjusted", tier: "low", otherPlaces: [] }) });
+		expect(result.input.findings[0]?.otherPlaces).toEqual([]);
+	});
+
+	test("a verdict cannot add a place that the finding did not list", () => {
+		const base = setup([finding({ class: "npe", otherPlaces: ["o.ts:7"] })]);
+		const result = run(base, { "c1-1": verdictText("c1-1", { verdict: "confirmed", otherPlaces: ["o.ts:7", "new.ts:1"] }) });
+		expect(result.input.findings[0]?.otherPlaces).toEqual(["o.ts:7"]);
+	});
+
+	test("a verdict without otherPlaces leaves them unchanged", () => {
+		const base = setup([finding({ class: "npe", otherPlaces: ["o.ts:7", "p.ts:3"] })]);
+		const result = run(base, { "c1-1": verdictText("c1-1", { verdict: "confirmed" }) });
+		expect(result.input.findings[0]?.otherPlaces).toEqual(["o.ts:7", "p.ts:3"]);
+	});
+
+	test("a rejected verdict still rejects the finding and ignores otherPlaces", () => {
+		const base = setup([finding({ class: "npe", otherPlaces: ["o.ts:7"] })]);
+		const result = run(base, { "c1-1": verdictText("c1-1", { verdict: "rejected", otherPlaces: ["o.ts:7"] }) });
+		expect(result.input.findings).toHaveLength(0);
+		expect(result.input.rejected).toHaveLength(1);
+	});
 
 	test("confirmed, adjusted, rejected and one missing verdict", () => {
 		const base = setup(distinct(4, "high"));

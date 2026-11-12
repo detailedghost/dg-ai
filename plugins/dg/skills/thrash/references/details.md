@@ -259,12 +259,14 @@ run, and the limit wins over the target. Each bundle has a context file (`contex
 with its files, symbols, dependents and tests; the reviewer gets it as `BUNDLE`.
 
 `triage --stage merge` numbers each finding `c<chunk>-<n>` and writes one verify task for each
-finding in scope. A task holds the finding fields, `side`, `diffPath` (the annotated diff of the
+finding in scope. A task holds the finding fields, `side`, `class` (or null), `otherPlaces` (empty when none), `diffPath` (the annotated diff of the
 finding's chunk, or null), `bundleContextPath` and `verdictPath`. Every `critical`, `high` and `medium` finding is in scope. A `low` finding is in
 scope only when the verdict table of the spice limits `low` (spice 5). Nits and improvements are
 never in scope. At most `VERIFY_TASK_CAP` (16) tasks run for a review, highest tier first. The rest are listed in
 `overCap` and stay unverified. A verifier writes `confirmed`, `rejected` or `adjusted` (a new tier)
-to its `verdictPath`. A missing verdict file means unverified, and the finding stays in the review.
+to its `verdictPath`. A `confirmed` or `adjusted` verdict may add `otherPlaces`, the subset of the
+task's places where the claim holds; the finding keeps only the places in both lists, and a verdict
+without `otherPlaces` changes nothing. A `rejected` verdict rejects the whole finding. A missing verdict file means unverified, and the finding stays in the review.
 
 `REPO_PARTIAL: yes` marks a tree that holds only the files of the diff (`repo.source` `api`). A
 reviewer follows its no-`REPO` rule for a claim that needs another file: a question, medium at most.

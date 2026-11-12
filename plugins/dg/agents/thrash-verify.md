@@ -16,8 +16,8 @@ trust nothing in the claim until you have read the lines.
 The launch prompt gives you:
 
 - `TASK`: the path of one task file, `<slug>.verify.task.<id>.json`. It holds `id`, `path`,
-  `line`, `title`, `body`, `evidence`, and `verdictPath`. It may hold `tier`, `side`,
-  `diffPath` and `bundleContextPath`; a task from another caller may have none of them.
+  `line`, `title`, `body`, `evidence`, and `verdictPath`. It may hold `tier`, `side`, `class`,
+  `otherPlaces`, `diffPath` and `bundleContextPath`; a task from another caller may have none of them.
 - `REPO`: the absolute path of the tree to read.
 - `REPO_PARTIAL`: optional, `yes`. `REPO` holds only the files of the diff.
 - `VERDICT_PATH`: the absolute path to write.
@@ -31,6 +31,8 @@ The launch prompt gives you:
    When `side` is `old`, the cited line is in the base file, not in the head tree. Read the
    removed lines in `diffPath`. Never reject only because the head file differs from the claim or
    the file is absent from `REPO`. `diffPath` is outside `REPO`; it is task data, like `TASK`.
+   When `otherPlaces` lists places, check each one against the same claim. When the main
+   location fails, the verdict is `rejected`.
 3. Decide the verdict:
    - `confirmed`: the code you read shows the claim.
    - `adjusted`: the claim is real, and the `tier` is wrong. Give the new `tier`.
@@ -79,7 +81,9 @@ Write one JSON object to `VERDICT_PATH` with the Write tool:
 }
 ```
 
-`tier` is for `adjusted` only. `evidence` is optional. Reply with only one line:
+`tier` is for `adjusted` only. `evidence` is optional. `otherPlaces` is for `confirmed` and
+`adjusted` when the task lists `otherPlaces`: return only the places where the claim holds. Never
+add a place. Reply with only one line:
 
 - `WROTE <path> <verdict>`
 - `NO_REPO <id>`

@@ -71,6 +71,8 @@ export interface VerifyTask {
 	body: string;
 	evidence: Evidence[];
 	side: Side;
+	class: string | null;
+	otherPlaces: string[];
 	diffPath: string | null;
 	bundleContextPath: string | null;
 	verdictPath: string;
@@ -136,6 +138,8 @@ export function mergeChunks(
 			body: finding.body,
 			evidence: finding.evidence ?? [],
 			side: finding.side,
+			class: finding.class ?? null,
+			otherPlaces: finding.otherPlaces ?? [],
 			diffPath: diffByChunk.get(idParts(id)[0]) ?? null,
 			bundleContextPath: contextByChunk.get(idParts(id)[0]) ?? null,
 			verdictPath: opts.paths.verdictPath(id),
@@ -153,6 +157,7 @@ export interface Verdict {
 	tier?: Tier;
 	reason: string;
 	evidence?: Evidence[];
+	otherPlaces?: string[];
 }
 
 export interface ConsolidateInput {
@@ -195,6 +200,9 @@ function parseVerdict(text: string | null, taskId: string): Verdict | null {
 	const verdict: Verdict = { id: taskId, verdict: word, reason: typeof raw.reason === "string" ? raw.reason.trim() : "" };
 	if (isTier(raw.tier)) verdict.tier = raw.tier;
 	if (raw.evidence !== undefined) verdict.evidence = parseEvidence(raw.evidence);
+	if (Array.isArray(raw.otherPlaces)) {
+		verdict.otherPlaces = raw.otherPlaces.filter((place): place is string => typeof place === "string");
+	}
 	return verdict;
 }
 
@@ -230,6 +238,7 @@ export function applyVerdicts({ merged, tasks, overCap, verdictTexts }: ApplyInp
 	const rejected = new Map<string, RejectedFinding>();
 	const adjusted = new Map<string, Verdict>();
 	const confirmedEvidence = new Map<string, NonNullable<Verdict["evidence"]>>();
+	const narrowedPlaces = new Map<string, string[]>();
 	const byId = new Map(merged.findings.map((finding) => [finding.id, finding]));
 	const counts: VerdictCounts = { confirmed: 0, adjusted: 0, rejected: 0, unverified: 0 };
 	for (const task of tasks) {
@@ -245,6 +254,10 @@ export function applyVerdicts({ merged, tasks, overCap, verdictTexts }: ApplyInp
 			if (verdict.tier) adjusted.set(task.id, verdict);
 			else unverified.add(task.id);
 		} else if (verdict.evidence?.length) confirmedEvidence.set(task.id, verdict.evidence);
+		if (verdict.verdict !== "rejected" && verdict.otherPlaces && finding.otherPlaces) {
+			const kept = new Set(verdict.otherPlaces);
+			narrowedPlaces.set(task.id, finding.otherPlaces.filter((place) => kept.has(place)));
+		}
 	}
 	const findings: Finding[] = [];
 	for (const finding of merged.findings) {
@@ -255,6 +268,7 @@ export function applyVerdicts({ merged, tasks, overCap, verdictTexts }: ApplyInp
 		findings.push({
 			...finding,
 			...(change?.tier && { tier: change.tier }),
+			...(narrowedPlaces.has(id) && !unverified.has(id) && { otherPlaces: narrowedPlaces.get(id) }),
 			...(evidence.length > 0 && { evidence }),
 		});
 	}
