@@ -36,6 +36,8 @@ flowchart LR
 
 - [0002 — The daemon owns durable sessions and work](0002-daemon-hub.md)
 - [0003 — SQLite for daemon state; JSON for channel review](0003-storage-by-writer.md)
+- [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md) — Accepted:
+  `passEnv`, `stopTimeoutMs`, `grant`, `POST /service-api/v1/credentials`, and `dg-daemon start`, `stop` and `restart`.
 
 ## Security
 

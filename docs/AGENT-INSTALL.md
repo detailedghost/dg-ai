@@ -470,7 +470,7 @@ ______________________________________________________________________
 Older releases paired through pages inside the extension. The first release with the pairing popup removes those pages. Follow these steps in order:
 
 1. Run `dg-skills install`. It updates the daemon before the extension.
-1. Restart the daemon. `dg-daemon` has no stop command, so read the `pid` field of `daemon.pid` in the daemon folder and stop that process. The next session start launches the new one.
+1. Restart the daemon. Run `dg-daemon restart`. It stops the running daemon, ends each session, and starts the new daemon.
 1. Reload the extension in `chrome://extensions`, then open the popup.
 1. In each agent session, run `dg-agent start`. The extension adopts the session.
 1. Run `dg-skills pw --ext open <url>`, or click **Add this tab** in the popup, so the agent has a tab.
@@ -529,7 +529,7 @@ database schema user_version 13 is newer than this binary's supported version 12
 
 Before it runs step 13, the daemon writes `pre-migration-v13-<ts>-<rand>.db` into the daemon folder that holds `daemon.db`, `<state>/daemon`. The [install guide](install.md#where-dg-keeps-its-files) lists `<state>` for each OS. To roll back:
 
-1. Stop every process that holds the database. That means the daemon and any channel-review process. `dg-daemon` has no stop command, so read the `pid` field of `daemon.pid` in the daemon folder and stop that process. Stop channel-review with `dg-skills channel-review stop --env dev` or `--env prod`.
+1. Stop every process that holds the database. That means the daemon and any channel-review process. Run `dg-daemon stop` for the daemon. Stop channel-review with `dg-skills channel-review stop --env dev` or `--env prod`.
 1. Delete `daemon.db-wal` and `daemon.db-shm` from the daemon folder. The daemon runs SQLite in WAL mode, and a leftover journal from the schema-13 database corrupts the restored file.
 1. Install the older release.
 1. Restore that snapshot as `daemon.db`.
