@@ -2183,6 +2183,19 @@ describe("thrash review checkout", () => {
 		expect(cloneCalls(e)).toBe(0);
 	});
 
+	test("stack --diff plans bundles for each PR from its own tree", () => {
+		const e = setup(makeRemote());
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const rows = JSON.parse(result.stdout) as Array<{
+			chunks: Array<{ bundle?: object; contextPath: string }>;
+		}>;
+		const contextPaths = rows.map((row) => row.chunks[0].contextPath);
+		expect(rows.every((row) => row.chunks[0].bundle !== undefined)).toBe(true);
+		expect(contextPaths.every((p) => isAbsolute(p) && existsSync(p))).toBe(true);
+		expect(new Set(contextPaths).size).toBe(2);
+	});
+
 	test("stack --diff makes no per-PR clone when the shared clone fails", () => {
 		const e = setup(makeRemote(), { cloneFails: true });
 		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
@@ -2194,5 +2207,205 @@ describe("thrash review checkout", () => {
 	test("--help names --no-repo", () => {
 		const result = run(["--help"]);
 		expect(`${result.stdout}${result.stderr}`).toContain("--no-repo");
+	});
+});
+
+describe("thrash review bundles", () => {
+	function lines(prefix: string, count: number): string {
+		return Array.from({ length: count }, (_, i) => `export const ${prefix}${i} = ${i};\n`).join("");
+	}
+
+	function twoConcernRepo(): string {
+		const dir = makeTempDir("thrash-bundle-repo-");
+		createdDirs.push(dir);
+		cliFixtures.runGit(["init", "-q"], dir);
+		cliFixtures.runGit(["symbolic-ref", "HEAD", "refs/heads/main"], dir);
+		cliFixtures.runGit(["config", "user.email", "t@t.t"], dir);
+		cliFixtures.runGit(["config", "user.name", "T"], dir);
+		mkdirSync(join(dir, "src"));
+		mkdirSync(join(dir, "lib"));
+		cliFixtures.commitFile(dir, "src/x.ts", "export const base = 0;\n", "chore: base x");
+		cliFixtures.commitFile(dir, "lib/y.ts", "export const other = 0;\n", "chore: base y");
+		cliFixtures.runGit(["checkout", "-q", "-b", "feature"], dir);
+		writeFileSync(join(dir, "src/x.ts"), `export const base = 0;\n${lines("xv", 250)}`);
+		writeFileSync(join(dir, "lib/y.ts"), `export const other = 0;\n${lines("yv", 250)}`);
+		return dir;
+	}
+
+	function shimGit(script: (realGit: string) => string): Record<string, string> {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-git-shim-");
+		const realGit = Bun.which("git") ?? "git";
+		writeFileSync(join(dir, "git"), script(realGit), { mode: 0o755 });
+		return { PATH: `${dir}:${process.env.PATH}` };
+	}
+
+	function diffOut(repo: string, args: string[] = ["."], env: Record<string, string> = {}) {
+		const result = run(["diff", ...args], { cwd: repo, env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		return { result, out: JSON.parse(result.stdout) };
+	}
+
+	test("diff . writes one bundle per unrelated concern with an existing context file", () => {
+		const repo = twoConcernRepo();
+		const { out } = diffOut(repo);
+		expect(out.chunks).toHaveLength(2);
+		for (const chunk of out.chunks) {
+			expect(chunk.bundle).toBeDefined();
+			expect(existsSync(chunk.contextPath)).toBe(true);
+		}
+		expect(out.chunks.map((c: { files: string[] }) => c.files)).toEqual([["lib/y.ts"], ["src/x.ts"]]);
+	});
+
+	test("diff --no-repo on the same change gives one chunk with no bundle fields", () => {
+		const repo = twoConcernRepo();
+		const { out } = diffOut(repo, [".", "--no-repo"]);
+		expect(out.chunks).toHaveLength(1);
+		expect(out.chunks[0]).not.toHaveProperty("bundle");
+		expect(out.chunks[0]).not.toHaveProperty("contextPath");
+	});
+
+	test("diff . warns and plans plain chunks when git grep exits 2", () => {
+		const repo = twoConcernRepo();
+		const env = shimGit(
+			(realGit) => `#!/bin/sh\nfor a in "$@"; do [ "$a" = grep ] && exit 2; done\nexec ${realGit} "$@"\n`,
+		);
+		const { result, out } = diffOut(repo, ["."], env);
+		expect(result.stderr).toContain("investigate failed");
+		expect(out.chunks).toHaveLength(1);
+		expect(out.chunks[0]).not.toHaveProperty("bundle");
+		expect(out.chunks[0]).not.toHaveProperty("contextPath");
+	});
+
+	test("DG_THRASH_INVESTIGATE_BUDGET_MS=0 warns, lists truncated files and still plans bundles", () => {
+		const repo = twoConcernRepo();
+		const { result, out } = diffOut(repo, ["."], { DG_THRASH_INVESTIGATE_BUDGET_MS: "0" });
+		expect(result.stderr).toContain("investigate budget ended; 2 file(s) truncated");
+		expect(out.chunks).toHaveLength(2);
+		const context = readFileSync(out.chunks[0].contextPath, "utf8");
+		expect(context).toContain("## Truncated files");
+		expect(context).toContain("- lib/y.ts");
+	});
+
+	test("diff rejects a budget that is not a whole number", () => {
+		const repo = twoConcernRepo();
+		const result = run(["diff", "."], { cwd: repo, env: { DG_THRASH_INVESTIGATE_BUDGET_MS: "soon" } });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("DG_THRASH_INVESTIGATE_BUDGET_MS");
+	});
+
+	test("diff prints an absolute contextPath and plan.json keeps a plan-relative one", () => {
+		const repo = twoConcernRepo();
+		const { out } = diffOut(repo);
+		const plan = JSON.parse(readFileSync(out.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		for (const [i, chunk] of out.chunks.entries()) {
+			expect(isAbsolute(chunk.contextPath)).toBe(true);
+			expect(isAbsolute(plan.chunks[i].contextPath)).toBe(false);
+			expect(join(dirname(out.diffPath), plan.chunks[i].contextPath)).toBe(chunk.contextPath);
+		}
+	});
+
+	test("a second diff with fewer bundles leaves no bundle file of the first run", () => {
+		const repo = twoConcernRepo();
+		const first = diffOut(repo).out;
+		expect(first.chunks).toHaveLength(2);
+		const stale = first.chunks[1].contextPath as string;
+		expect(existsSync(stale)).toBe(true);
+		cliFixtures.runGit(["checkout", "--", "lib/y.ts"], repo);
+		const second = diffOut(repo).out;
+		expect(second.chunks).toHaveLength(1);
+		expect(existsSync(second.chunks[0].contextPath)).toBe(true);
+		expect(existsSync(stale)).toBe(false);
+	});
+
+	test("the bundle context names a caller of a changed function with its call line", () => {
+		const repo = makeTempDir("thrash-caller-repo-");
+		createdDirs.push(repo);
+		cliFixtures.runGit(["init", "-q"], repo);
+		cliFixtures.runGit(["symbolic-ref", "HEAD", "refs/heads/main"], repo);
+		cliFixtures.runGit(["config", "user.email", "t@t.t"], repo);
+		cliFixtures.runGit(["config", "user.name", "T"], repo);
+		mkdirSync(join(repo, "src"));
+		cliFixtures.commitFile(repo, "src/a.ts", "export function total(x: number) {\n\treturn x;\n}\n", "chore: a");
+		cliFixtures.commitFile(
+			repo,
+			"src/b.ts",
+			'import { total } from "./a";\n\nexport const sum = total(1);\n',
+			"chore: b",
+		);
+		cliFixtures.runGit(["checkout", "-q", "-b", "feature"], repo);
+		writeFileSync(join(repo, "src/a.ts"), "export function total(x: number, y: number) {\n\treturn x + y;\n}\n");
+		const { out } = diffOut(repo);
+		const context = readFileSync(out.chunks[0].contextPath, "utf8");
+		expect(context).toContain("src/b.ts:3");
+		expect(out.chunks[0].bundle.dependents).toContain("src/b.ts");
+	});
+
+	test("investigate prints the investigation JSON for a file", () => {
+		const repo = twoConcernRepo();
+		const result = run(["investigate", "src/x.ts"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(result.stdout);
+		expect(out.root).toBe(repo);
+		expect(out.files).toHaveLength(1);
+		expect(out.files[0]).toMatchObject({ path: "src/x.ts", truncated: false });
+	});
+
+	test("investigate with no path fails", () => {
+		const result = run(["investigate"], { cwd: twoConcernRepo() });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("investigate requires one or more paths");
+	});
+
+	test("investigate accepts --max-hits of 1 or more and rejects anything else", () => {
+		const repo = twoConcernRepo();
+		for (const bad of ["0", "abc", "1.5"]) {
+			const result = run(["investigate", "src/x.ts", "--max-hits", bad], { cwd: repo });
+			expect(result.exitCode, bad).not.toBe(EXIT.OK);
+			expect(result.stderr).toContain("--max-hits");
+		}
+		const ok = run(["investigate", "--max-hits", "5", "src/x.ts"], { cwd: repo });
+		expect(ok.exitCode, ok.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(ok.stdout).files.map((f: { path: string }) => f.path)).toEqual(["src/x.ts"]);
+	});
+
+	test("investigate caps callers at --max-hits and marks the file truncated", () => {
+		const repo = twoConcernRepo();
+		cliFixtures.commitFile(repo, "src/use.ts", "x1();\nx1();\nx1();\n", "chore: use");
+		cliFixtures.commitFile(repo, "src/x.ts", "export const x1 = 1;\n", "chore: x1");
+		const out = JSON.parse(run(["investigate", "src/x.ts", "--max-hits", "2"], { cwd: repo }).stdout);
+		expect(out.files[0].callers).toHaveLength(2);
+		expect(out.files[0].truncated).toBe(true);
+	});
+
+	test("investigate expands a directory to tracked files only", () => {
+		const repo = twoConcernRepo();
+		writeFileSync(join(repo, "src/untracked.ts"), "export const u = 1;\n");
+		const result = run(["investigate", "src"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).files.map((f: { path: string }) => f.path)).toEqual(["src/x.ts"]);
+	});
+
+	test("investigate resolves paths from a subdirectory and prints them relative to the root", () => {
+		const repo = twoConcernRepo();
+		const result = run(["investigate", "x.ts"], { cwd: join(repo, "src") });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).files[0].path).toBe("src/x.ts");
+	});
+
+	test("investigate rejects a path outside the repository", () => {
+		const repo = twoConcernRepo();
+		const outside = cliFixtures.tmp(createdDirs, "thrash-outside-");
+		writeFileSync(join(outside, "o.ts"), "export const o = 1;\n");
+		const result = run(["investigate", join(outside, "o.ts")], { cwd: repo });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("outside the repository");
+	});
+
+	test("investigate outside a git repository gives a clear error", () => {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-nogit-");
+		writeFileSync(join(dir, "o.ts"), "export const o = 1;\n");
+		const result = run(["investigate", "o.ts"], { cwd: dir });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("not inside a git repository");
 	});
 });

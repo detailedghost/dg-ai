@@ -1,6 +1,6 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
+import { escapeRegExp, oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
 import { isPathInside, scratchPath } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProviderForUrl } from "../provider/index";
@@ -17,6 +17,8 @@ import {
 import { git, resolveBaseSha } from "../utils/git";
 import { type CheckoutResult, prepareSharedClone, removeCheckoutTree, resolveCheckout, type SharedClone } from "./checkout";
 import { CLASS_HISTORY_PRS } from "./constants";
+import { planReviewChunks } from "./bundles";
+import { INVESTIGATE_BUDGET_MS, investigate, listTrackedFiles, MAX_HITS_DEFAULT } from "./investigate";
 import { parsePolicy } from "./policy";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { optionalOption, requireOption } from "../utils/options";
@@ -38,7 +40,6 @@ import {
 	parseSpice,
 	parseTier,
 	parseUnifiedDiff,
-	planChunks,
 	relativePlanPath,
 	resolvePlanPath,
 	renderAddressFile,
@@ -79,7 +80,7 @@ interface PlanFile extends Coverage {
 	reReview?: ReReview;
 	prDiffPath?: string;
 	repo?: CheckoutResult;
-	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string }>;
+	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string; contextPath?: string }>;
 }
 
 interface ReviewFile {
@@ -101,7 +102,7 @@ function isUrl(arg: string): boolean {
 	return /^https?:\/\//.test(arg);
 }
 
-function positional(args: string[], commandName: string, valueFlags: string[] = []): string {
+function positionals(args: string[], valueFlags: string[] = []): string[] {
 	const consumed = new Set<number>();
 	for (const flag of valueFlags) {
 		const index = args.indexOf(flag);
@@ -110,7 +111,11 @@ function positional(args: string[], commandName: string, valueFlags: string[] = 
 			consumed.add(index + 1);
 		}
 	}
-	const value = args.find((a, i) => !consumed.has(i) && !a.startsWith("--"));
+	return args.filter((a, i) => !consumed.has(i) && !a.startsWith("--"));
+}
+
+function positional(args: string[], commandName: string, valueFlags: string[] = []): string {
+	const [value] = positionals(args, valueFlags);
 	if (!value) throw new Error(`${commandName} requires a target: a PR/MR URL, ".", or a path`);
 	return value;
 }
@@ -207,6 +212,18 @@ function planPathFor(diffPath: string): string {
 }
 
 const BODY_LIMIT = 4000;
+const BUDGET_ENV = "DG_THRASH_INVESTIGATE_BUDGET_MS";
+
+function investigateBudgetMs(): number {
+	return parseOptionalFlag(wholeNumber(0), process.env[BUDGET_ENV], BUDGET_ENV) ?? INVESTIGATE_BUDGET_MS;
+}
+
+function removeBundleFiles(slug: string): void {
+	const dir = path.dirname(scratchPath(TOOL, `${slug}.diff`));
+	const stale = new RegExp(`^${escapeRegExp(slug)}\\.chunk\\d+\\.bundle\\.md$`);
+	for (const name of readdirSync(dir)) if (stale.test(name)) rmSync(path.join(dir, name), { force: true });
+}
+
 const NO_REPO = "--no-repo";
 
 async function renderContext(
@@ -275,14 +292,22 @@ async function writeDiff(target: DiffTarget, { reviewer, checkout }: WriteDiffOp
 	const reReview = since === undefined ? undefined : { sha: since, files: stats.files, lines: stats.changed };
 	const slug = targetSlug(target);
 	const diffPath = scratchPath(TOOL, `${slug}.diff`);
-	const plan = planChunks(files);
+	removeBundleFiles(slug);
+	const { plan, contexts, warnings } = planReviewChunks(files, repo, {
+		investigate,
+		maxHits: MAX_HITS_DEFAULT,
+		budgetMs: investigateBudgetMs(),
+	});
+	for (const warning of new Set(warnings)) process.stderr.write(`${warning}\n`);
 	const contextPath = scratchPath(TOOL, `${slug}.context.md`);
 	const chunks = plan.chunks.map((chunk) => ({
 		...chunkSummary(chunk),
 		annotatedPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.annotated.diff`),
 		findingsPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.findings.md`),
+		...(contexts.has(chunk.id) && { contextPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.bundle.md`) }),
 	}));
 	for (const { findingsPath } of chunks) rmSync(findingsPath, { force: true });
+	for (const { id, contextPath: bundlePath } of chunks) if (bundlePath) writeFileSync(bundlePath, contexts.get(id) ?? "");
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
 	const prDiffPath = scratchPath(TOOL, `${slug}.pr.diff`);
@@ -299,6 +324,7 @@ async function writeDiff(target: DiffTarget, { reviewer, checkout }: WriteDiffOp
 			...chunk,
 			annotatedPath: relativePlanPath(planRoot, chunk.annotatedPath),
 			findingsPath: relativePlanPath(planRoot, chunk.findingsPath),
+			...(chunk.contextPath && { contextPath: relativePlanPath(planRoot, chunk.contextPath) }),
 		})),
 		skipped: plan.skipped,
 	};
@@ -331,6 +357,30 @@ async function cmdDiff(args: string[]): Promise<number> {
 		...written,
 		untracked,
 	});
+	return EXIT.OK;
+}
+
+function investigatePaths(args: string[], root: string): string[] {
+	const given = positionals(args, ["--max-hits"]);
+	if (given.length === 0) throw new Error("investigate requires one or more paths");
+	const found = new Set<string>();
+	for (const arg of given) {
+		const abs = path.resolve(arg);
+		if (!isPathInside(abs, root)) throw new Error(`path is outside the repository: ${arg}`);
+		if (!existsSync(abs)) throw new Error(`path not found: ${arg}`);
+		const rel = path.relative(root, abs) || ".";
+		if (statSync(abs).isDirectory()) for (const file of listTrackedFiles(root, rel)) found.add(file);
+		else found.add(rel);
+	}
+	return [...found];
+}
+
+function cmdInvestigate(args: string[]): number {
+	const maxHits =
+		parseOptionalFlag(wholeNumber(1), optionalOption(args, "--max-hits"), "--max-hits") ?? MAX_HITS_DEFAULT;
+	const root = gitToplevel(process.cwd());
+	const paths = investigatePaths(args, root);
+	printJson(investigate(root, paths, { maxHits, budgetMs: Number.POSITIVE_INFINITY }));
 	return EXIT.OK;
 }
 
@@ -649,9 +699,15 @@ const command = defineCommand({
 	subcommands: {
 		diff: {
 			description:
-				"Fetch the diff for a URL or path, split it into review chunks, write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local; --no-repo skips the code checkout",
+				"Fetch the diff for a URL or path, split it into review chunks (bundles of related files with a context file when a code tree is available), write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local; --no-repo skips the code checkout",
 			args: ["target"],
 			run: cmdDiff,
+		},
+		investigate: {
+			description:
+				"Print JSON with each path's declared symbols, dependents, callers with line numbers and tests; a directory expands to its tracked files; paths resolve from the working directory inside the git repository; [--max-hits N] caps callers for each file (default 20)",
+			args: ["path..."],
+			run: (args) => Promise.resolve(cmdInvestigate(args)),
 		},
 		compile: {
 			description:

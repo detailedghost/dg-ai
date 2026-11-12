@@ -411,11 +411,21 @@ export function relativePlanPath(root: string, absolute: string): string {
 	return rel;
 }
 
+export interface ChunkBundle {
+	files: string[];
+	symbols: string[];
+	dependents: string[];
+	tests: string[];
+	related: string[];
+}
+
 export interface PlanChunk {
 	id: number;
 	label: string;
 	files: string[];
 	changed: number;
+	bundle?: ChunkBundle;
+	contextPath?: string;
 }
 
 export interface Coverage {
@@ -621,6 +631,8 @@ export function planChunks(files: DiffFile[], limit = LARGE_DIFF_LINES, cap = MA
 	});
 	return { chunks, skipped };
 }
+
+export { byPath, CATEGORY_ORDER, categoryOf, type ChunkCategory, commonDirectory, mergeNeighbors, splitIntoChunks, sumChanged };
 
 export function chunkSummary(chunk: DiffChunk): PlanChunk {
 	return { ...chunk, files: [...new Set(chunk.files.map((f) => f.path))] };
