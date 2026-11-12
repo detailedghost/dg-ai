@@ -6,7 +6,7 @@ import type { DgPaths } from "./dg-paths";
 import { assertNotBlocked } from "./layout";
 
 export function credentialGrantTokenPath(
-	paths: DgPaths,
+	paths: Pick<DgPaths, "grantsDir">,
 	prefix: string,
 ): string {
 	return join(

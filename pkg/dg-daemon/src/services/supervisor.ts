@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describeError } from "@dg/common";
 import {
 	checkExecutableResolves,
+	credentialGrantTokenPath,
 	type DgPaths,
 	ensurePrivateDir,
 	isAlive,
@@ -56,7 +57,8 @@ export type Supervisor = {
 };
 
 export type SupervisorDeps = {
-	paths: Pick<DgPaths, "daemonDir" | "logDir">;
+	paths: Pick<DgPaths, "daemonDir" | "logDir" | "grantsDir">;
+	daemonUrl: () => string;
 	loadConfig: () => Record<string, unknown>;
 	logger: Pick<Logger, "info" | "warn">;
 	backoffMs?: (failures: number) => number;
@@ -133,16 +135,34 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 		);
 	}
 
+	function serviceEnv(decl: ServiceDecl): Record<string, string> {
+		const env: Record<string, string> = {
+			...buildAllowedEnv(),
+			...passedEnv(decl),
+			...(decl.envFile ? loadEnvFile(decl.envFile) : {}),
+			DG_SERVICE_API: "1",
+			DG_SERVICE_LABEL: decl.label,
+			DG_DAEMON_URL: deps.daemonUrl(),
+		};
+		if (decl.grant) {
+			env.DG_CREDENTIAL_GRANT_PREFIX = decl.grant;
+			env.DG_CREDENTIAL_GRANT_FILE = credentialGrantTokenPath(
+				deps.paths,
+				decl.grant,
+			);
+		} else {
+			delete env.DG_CREDENTIAL_GRANT_PREFIX;
+			delete env.DG_CREDENTIAL_GRANT_FILE;
+		}
+		return env;
+	}
+
 	function launch(decl: ServiceDecl): Subprocess {
 		const fd = openLog(deps.paths.logDir, logFileFor(decl.label), maxLogBytes);
 		try {
 			return Bun.spawn(decl.argv, {
 				cwd: decl.cwd,
-				env: {
-					...buildAllowedEnv(),
-					...passedEnv(decl),
-					...(decl.envFile ? loadEnvFile(decl.envFile) : {}),
-				},
+				env: serviceEnv(decl),
 				stdin: "ignore",
 				stdout: fd,
 				stderr: fd,
@@ -235,6 +255,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			if (decl.envFile) loadEnvFile(decl.envFile);
 		} catch (err) {
 			return describeError(err);
+		}
+		if (decl.grant) {
+			let tokenPath = `<grantsDir>/${decl.grant}.token`;
+			try {
+				tokenPath = credentialGrantTokenPath(deps.paths, decl.grant);
+				if (!statSync(tokenPath).isFile()) throw new Error("not a file");
+			} catch {
+				return `grant token file not found: ${tokenPath} — create it with dg-skills credentials grant ${decl.grant}`;
+			}
 		}
 		return checkExecutableResolves(decl.argv[0]);
 	}

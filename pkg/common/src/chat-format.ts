@@ -63,6 +63,7 @@ export const CHAT_WS_PATH = "/ws";
 export const CHAT_CLI_PATH = "/cli";
 export const CHAT_ASSETS_PATH = "/assets";
 export const CHAT_SERVICES_PATH = "/services";
+export const SERVICE_API_CREDENTIALS_PATH = "/service-api/v1/credentials";
 
 export type JobState = "ok" | "failed" | "paused";
 

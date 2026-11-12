@@ -5,11 +5,13 @@ import {
 	CHAT_FRAME_TYPES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_SERVICES_PATH,
 	type ChatFrame,
 	fitHistoryPage,
 	INBOUND_FRAME_TYPES,
 	PROTO_MAX_TIMEOUT_MS,
 	RELAY_FEATURES,
+	SERVICE_API_CREDENTIALS_PATH,
 	type RelayChatFrame,
 	type RelayCliFrame,
 	relayFrameTypes,
@@ -1072,4 +1074,13 @@ describe("validateLinkFrame", () => {
 			expect(() => validateLinkFrame(value)).toThrow();
 		},
 	);
+});
+
+describe("SERVICE_API_CREDENTIALS_PATH", () => {
+	it("names the versioned credentials route and stays outside the /services tree", () => {
+		expect(SERVICE_API_CREDENTIALS_PATH).toBe("/service-api/v1/credentials");
+		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_SERVICES_PATH)).toBe(
+			false,
+		);
+	});
 });

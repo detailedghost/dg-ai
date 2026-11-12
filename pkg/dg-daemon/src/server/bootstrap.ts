@@ -104,8 +104,13 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 	const registry = new SessionRegistry(paths, { store });
 	const connections = new ConnectionManager();
 	const dispatchScheduler = new DispatchScheduler();
+	let boundPort: number | undefined;
 	const supervisor = createSupervisor({
 		paths,
+		daemonUrl: () => {
+			if (boundPort === undefined) throw new Error("daemon port is not bound");
+			return `http://127.0.0.1:${boundPort}`;
+		},
 		loadConfig: () => readConfig(paths),
 		logger,
 	});
@@ -120,7 +125,6 @@ export async function cmdServe(): Promise<"serving" | "deferred"> {
 		getExtensionVersion: () => connections.extensionVersion(),
 	};
 
-	let boundPort: number | undefined;
 	let server: ReturnType<typeof createHttpServer> | undefined;
 	let lastBindError: unknown;
 	for (const candidate of candidatePorts()) {

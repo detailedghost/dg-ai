@@ -1,18 +1,26 @@
-import { type CredentialsCliRequest, credentialNameInPrefix, validateCredentialGrantPrefix } from "@dg/common";
+import {
+	CLI_GRANT_PREFIX_HEADER,
+	CLI_GRANT_TOKEN_HEADER,
+	CLI_SESSION_ID_HEADER,
+	type CredentialsCliRequest,
+	credentialNameInPrefix,
+	validateCredentialGrantPrefix,
+} from "@dg/common";
 import {
 	removeCredentialGrantToken,
 	writeCredentialGrantToken,
 } from "@dg/common/node";
 import type { ServerWebSocket } from "bun";
 import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
+import type { CredentialStore } from "../store/credentials-store";
 import type { FrameHandlerDeps } from "./frame-handlers";
 
 type Socket = ServerWebSocket<SocketState>;
-type Result = { ok: true; value: unknown } | { ok: false; error: string };
+export type Result = { ok: true; value: unknown } | { ok: false; error: string };
 type Access = { scope: "session" } | { scope: "prefix"; prefix: string };
 
 export const EXTENSION_CREDENTIAL_PREFIX = "extension";
-const NOT_ALLOWED = "Credential request not allowed for this caller.";
+export const NOT_ALLOWED = "Credential request not allowed for this caller.";
 const TRANSPORT_ERROR_SESSION_ID = "transport-error";
 
 function socketSessionId(socket: Socket): string | undefined {
@@ -58,24 +66,36 @@ function resolveAccess(
 		: undefined;
 }
 
-function scopedRead(
-	frame: CredentialsCliRequest,
+/** Reads under one prefix; a `get` input must carry a string name. */
+export function scopedRead(
+	input: { operation: string; name?: string },
 	prefix: string,
-	deps: FrameHandlerDeps,
+	store: Pick<CredentialStore, "listCredentials" | "getCredential">,
 ): Result {
-	if (frame.operation === "list")
+	if (input.operation === "list")
 		return {
 			ok: true,
-			value: deps.credentials
+			value: store
 				.listCredentials()
 				.filter((entry) => credentialNameInPrefix(entry.name, prefix)),
 		};
-	if (frame.operation === "get" && credentialNameInPrefix(frame.name!, prefix))
-		return {
-			ok: true,
-			value: deps.credentials.getCredential(frame.name!) ?? null,
-		};
+	if (input.operation === "get" && credentialNameInPrefix(input.name!, prefix))
+		return { ok: true, value: store.getCredential(input.name!) ?? null };
 	return { ok: false, error: NOT_ALLOWED };
+}
+
+export function hasCredentialGrant(
+	req: Request,
+	store: Pick<CredentialStore, "verifyCredentialGrant">,
+): boolean {
+	const prefix = req.headers.get(CLI_GRANT_PREFIX_HEADER);
+	const token = req.headers.get(CLI_GRANT_TOKEN_HEADER);
+	return (
+		prefix !== null &&
+		token !== null &&
+		!req.headers.has(CLI_SESSION_ID_HEADER) &&
+		store.verifyCredentialGrant(prefix, token)
+	);
 }
 
 function sessionOperation(
@@ -122,7 +142,7 @@ export async function handleCredentialsRequest(
 		const access = resolveAccess(requester, frame, deps);
 		if (!access) answer = { ok: false, error: NOT_ALLOWED };
 		else if (access.scope === "prefix")
-			answer = scopedRead(frame, access.prefix, deps);
+			answer = scopedRead(frame, access.prefix, deps.credentials);
 		else answer = { ok: true, value: sessionOperation(frame, deps) };
 	} catch {
 		answer = {

@@ -15,11 +15,10 @@ import {
 	CHAT_SESSIONS_CLEAR_PATH,
 	CHAT_SESSIONS_LOCAL_PATH,
 	CHAT_SERVICES_PATH,
+	SERVICE_API_CREDENTIALS_PATH,
 	CHAT_START_PATH,
 	CHAT_STATUS_PATH,
 	CHAT_WS_PATH,
-	CLI_GRANT_PREFIX_HEADER,
-	CLI_GRANT_TOKEN_HEADER,
 	OWNER_TOKEN_HEADER,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
@@ -72,7 +71,10 @@ import {
 	sendViaQueue,
 	type SocketState,
 } from "./connection";
+import { readCappedBody } from "./capped-body";
+import { hasCredentialGrant } from "./credentials";
 import { handleSocketMessage } from "./frame-handlers";
+import { handleServiceApiCredentials } from "./service-api";
 import { type AttachLimiter, createAttachLimiter } from "./attach-limiter";
 import { createPageCodes, type PageCodes } from "./page-codes";
 import { isLoopbackHost } from "./host-guard";
@@ -395,6 +397,10 @@ export function createHttpServer(deps: HttpServerDeps): Server<SocketState> {
 				url.pathname === "/overwatch/action"
 			) {
 				return handleOverwatchRoute(req, url, deps);
+			}
+
+			if (url.pathname === SERVICE_API_CREDENTIALS_PATH) {
+				return handleServiceApiCredentials(req, deps.credentials);
 			}
 
 			if (
@@ -935,17 +941,6 @@ function requireSessionCredentials(
 	return { sessionId, token };
 }
 
-function hasCredentialGrant(req: Request, store: CredentialStore): boolean {
-	const prefix = req.headers.get(CLI_GRANT_PREFIX_HEADER);
-	const token = req.headers.get(CLI_GRANT_TOKEN_HEADER);
-	return (
-		prefix !== null &&
-		token !== null &&
-		!req.headers.has(CLI_SESSION_ID_HEADER) &&
-		store.verifyCredentialGrant(prefix, token)
-	);
-}
-
 function handleCliUpgrade(
 	req: Request,
 	server: Server<SocketState>,
@@ -976,28 +971,6 @@ function isPlainAssetFilename(filename: string): boolean {
 	} catch {
 		return false;
 	}
-}
-
-/** Buffers the body, abandoning it the moment it passes the cap; undefined means it did. */
-export async function readCappedBody(
-	req: Request,
-	capBytes: number,
-): Promise<Buffer | undefined> {
-	if (!req.body) return Buffer.alloc(0);
-	const reader = req.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let total = 0;
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		total += value.byteLength;
-		if (total > capBytes) {
-			await reader.cancel();
-			return undefined;
-		}
-		chunks.push(value);
-	}
-	return Buffer.concat(chunks);
 }
 
 async function handleAssetPost(
@@ -1186,3 +1159,5 @@ async function handleAssetGet(
 export function newInstanceId(): string {
 	return randomUUID();
 }
+
+export { readCappedBody };

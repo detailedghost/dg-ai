@@ -729,3 +729,39 @@ export async function waitForValue<T>(
 	}
 	throw new Error(`timed out waiting for ${label}`);
 }
+
+export type CredentialsResult = {
+	type: string;
+	sessionId: string;
+	requestId: string;
+	ok: boolean;
+	value?: unknown;
+	error?: string;
+};
+
+export function credentialRequest(
+	cli: WebSocket,
+	fields: Record<string, unknown>,
+): string {
+	const requestId = randomUUID();
+	send(cli, { type: "cli-credentials-request", requestId, ...fields });
+	return requestId;
+}
+
+export function credentialResult(
+	frames: unknown[],
+	requestId: string,
+): Promise<CredentialsResult> {
+	return waitForValue(
+		() =>
+			frames.find((raw) => {
+				const frame = raw as CredentialsResult;
+				return (
+					frame.type === "cli-credentials-result" &&
+					frame.requestId === requestId
+				);
+			}) as CredentialsResult | undefined,
+		2000,
+		`credentials result ${requestId}`,
+	);
+}

@@ -6,6 +6,7 @@ import {
 	createSupervisor,
 	type ServiceStatus,
 	type Supervisor,
+	type SupervisorDeps,
 } from "../../src/services/supervisor";
 
 export const SLEEPER = "setInterval(() => {}, 1000);";
@@ -38,6 +39,7 @@ export async function disposeRigs(): Promise<void> {
 export function rig(
 	build: (kit: Kit) => Record<string, unknown>,
 	backoffMs = 25,
+	extra: Partial<SupervisorDeps> = {},
 ): Rig {
 	const root = mkdtempSync(join(tmpdir(), "dg-svc-kit-"));
 	roots.push(root);
@@ -54,7 +56,12 @@ export function rig(
 	const warns: string[] = [];
 	const listeners: Array<(message: string) => void> = [];
 	const supervisor = createSupervisor({
-		paths: { daemonDir: join(root, "daemon"), logDir: join(root, "logs") },
+		paths: {
+			daemonDir: join(root, "daemon"),
+			logDir: join(root, "logs"),
+			grantsDir: join(root, "grants"),
+		},
+		daemonUrl: () => "http://127.0.0.1:1",
 		loadConfig: () => ({ services: build(kit) }),
 		logger: {
 			info: (message: string) => {
@@ -66,6 +73,7 @@ export function rig(
 			},
 		},
 		backoffMs: () => backoffMs,
+		...extra,
 	});
 	supervisors.push(supervisor);
 	return {

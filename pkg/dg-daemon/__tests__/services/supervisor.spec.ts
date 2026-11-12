@@ -32,9 +32,8 @@ afterEach(async () => {
 
 const SLEEPER = "setInterval(() => {}, 1000);";
 
-type Tuning = Pick<
-	SupervisorDeps,
-	"backoffMs" | "logCheckMs" | "maxLogBytes"
+type Tuning = Partial<
+	Pick<SupervisorDeps, "backoffMs" | "logCheckMs" | "maxLogBytes" | "daemonUrl">
 >;
 
 type Kit = {
@@ -65,10 +64,15 @@ function fixture(
 	};
 	const services = build(kit);
 	const supervisor = createSupervisor({
-		paths: { daemonDir: join(root, "daemon"), logDir: join(root, "logs") },
+		paths: {
+			daemonDir: join(root, "daemon"),
+			logDir: join(root, "logs"),
+			grantsDir: join(root, "grants"),
+		},
 		loadConfig: () => ({ services }),
 		logger: { info: () => {}, warn: () => {} },
 		backoffMs: () => 25,
+		daemonUrl: () => "http://127.0.0.1:1",
 		...tuning,
 	});
 	supervisors.push(supervisor);
@@ -123,6 +127,25 @@ describe("exponentialBackoffMs", () => {
 });
 
 describe("createSupervisor", () => {
+	it("reads the daemonUrl getter at each launch", async () => {
+		const urls = ["http://127.0.0.1:41001", "http://127.0.0.1:41002"];
+		let calls = 0;
+		const dump = join(tmpdir(), `dg-url-${process.pid}-${Date.now()}.log`);
+		roots.push(dump);
+		const f = botRunning(
+			`require("node:fs").appendFileSync(${JSON.stringify(dump)}, process.env.DG_DAEMON_URL + "\\n"); process.exit(1);`,
+			{},
+			{ daemonUrl: () => urls[Math.min(calls++, urls.length - 1)] },
+		);
+		expect(f.supervisor.start("bot").ok).toBe(true);
+		await until(
+			() => existsSync(dump) && readFileSync(dump, "utf8").trim().split("\n").length >= 2,
+		);
+		await f.supervisor.stop("bot");
+		const seen = readFileSync(dump, "utf8").trim().split("\n");
+		expect(seen.slice(0, 2)).toEqual(urls);
+	});
+
 	it("streams a script's output to its log file and stops it with its pid file", async () => {
 		const f = botRunning(`console.log("hello from bot"); ${SLEEPER}`);
 		expect(f.supervisor.start("bot").ok).toBe(true);
