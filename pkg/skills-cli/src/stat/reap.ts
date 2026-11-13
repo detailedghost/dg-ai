@@ -207,7 +207,7 @@ function namesDeletedPath(proc: ProcRow, ctx: ReapContext): boolean {
 
 function cwdDeleted(proc: ProcRow, ctx: ReapContext): boolean {
 	const cwd = cwdPath(proc);
-	return !!cwd && cwd.deleted && (ctx.roots.some((root) => inside(cwd.dir, root)) || worktreeGone(cwd.dir, ctx));
+	return !!cwd && cwd.deleted && worktreeGone(cwd.dir, ctx);
 }
 
 function ancestors(rows: Map<number, ProcRow>, pid: number): Set<number> {
@@ -258,7 +258,7 @@ export function waitPatterns(script: string): string[] {
 		if (!flags.includes("f")) continue;
 		const pattern = m[2] ?? m[3] ?? m[4];
 		if (!pattern) continue;
-		if (/[^fonilaA]/.test(flags)) patterns.push(`(?${flags})${pattern}`);
+		if (/[^fonila]/.test(flags)) patterns.push(`(?${flags})${pattern}`);
 		else patterns.push(flags.includes("i") ? `(?i)${pattern}` : pattern);
 	}
 	return patterns;
@@ -344,7 +344,6 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		else if (!orphan) skip("parent alive");
 		else skip("younger than min-age");
 	}
-	const loopPids = new Set(loops.map((l) => l.proc.pid));
 	const ignored = new Set<number>(self);
 	const helpers = new Map<number, ProcRow[]>();
 	for (const { proc, patterns } of loops) {
@@ -359,7 +358,14 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		helpers.set(proc.pid, mineOnly);
 		for (const child of mineOnly) ignored.add(child.pid);
 	}
-	const others = rows.filter((proc) => !loopPids.has(proc.pid) && !ignored.has(proc.pid) && !proc.state.startsWith("Z"));
+	const selfKeeping = new Set(
+		loops
+			.filter(({ proc, patterns }) =>
+				patterns.every((pattern) => matcher(pattern)?.(proc.argv.join(" ")) ?? false),
+			)
+			.map(({ proc }) => proc.pid),
+	);
+	const others = rows.filter((proc) => !selfKeeping.has(proc.pid) && !ignored.has(proc.pid) && !proc.state.startsWith("Z"));
 	const stuckLoops: StuckLoop[] = [];
 	for (const { proc, patterns } of loops) {
 		const command = shortCommand(proc.argv);

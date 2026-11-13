@@ -116,6 +116,11 @@ describe("stat reap classifier", () => {
 		expect(out.candidates).toEqual([10]);
 	});
 
+	test("a deleted subdirectory of a live worktree does not override a live parent", () => {
+		const out = verdict([row(10, ["bun", "test"], { ppid: CLAUDE, cwd: `${REPO}/temp (deleted)` })]);
+		expect(out.skipped[10]).toBe("parent alive");
+	});
+
 	test("bg job processes and service units are never touched", () => {
 		const out = verdict(
 			[row(10, ["sleep", "600"]), row(11, ["gh", "run", "watch", "1"], { service: true })],
@@ -320,6 +325,21 @@ describe("stat reap stuck wait loops", () => {
 		const out = verdict([loop(30, "until pgrep -fx service-name; do sleep 15; done")]);
 		expect(out.loops).toEqual([]);
 		expect(out.skipped[30]).toBe("wait pattern not supported");
+	});
+
+	test("pgrep -A excludes the loop itself, so it is left alone", () => {
+		const out = verdict([loop(30, 'while pgrep -Af "codex review"; do sleep 15; done')]);
+		expect(out.skipped[30]).toBe("wait pattern not supported");
+	});
+
+	test("a working loop counts as a live target for another loop", () => {
+		const out = verdict([
+			loop(30, 'until ! pgrep -f "touch out"; do sleep 15; done'),
+			loop(31, "while pgrep -f '[b]uild'; do sleep 15; done; touch out"),
+			row(32, ["build"], { ppid: 31, cwd: SCRATCHPAD }),
+		]);
+		expect(out.loops).toEqual([]);
+		expect(out.skipped[30]).toBe("wait target alive");
 	});
 
 	test("a login shell loop is found", () => {
