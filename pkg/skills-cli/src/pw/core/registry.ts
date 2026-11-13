@@ -82,7 +82,9 @@ export function defaultOutputDir(): string {
 }
 
 export const DAEMON_PATTERN =
-	"^([^ ]*/)?bun(\\.exe)? (run )?[^ ]*(dg\\.js dg-skills|launcher/src/dg\\.ts dg-skills|skills-cli/src/index\\.ts) pw (__)?daemon |^[^ ]*/dg-skills pw (__)?daemon ";
+	"^([^ ]*/)?bun(\\.exe)? (run )?[^ ]*" +
+	"(dg\\.js dg-skills|launcher/src/dg\\.ts dg-skills|skills-cli/src/index\\.ts) " +
+	"pw (__)?daemon |^[^ ]*/dg-skills pw (__)?daemon ";
 
 const daemonPattern = new RegExp(DAEMON_PATTERN);
 

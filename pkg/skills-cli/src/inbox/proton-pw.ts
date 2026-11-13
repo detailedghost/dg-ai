@@ -284,12 +284,12 @@ export async function openProtonSession(
 						"/api/",
 						"--clear",
 					]);
-					const reloaded = await run([session, "reload"]);
 					if (cleared.code !== 0)
 						throw pwCommandError(
 							"Could not reset the Proton request log.",
 							cleared,
 						);
+					const reloaded = await run([session, "reload"]);
 					if (reloaded.code !== 0)
 						throw pwCommandError(
 							"Could not reset the Proton request log.",

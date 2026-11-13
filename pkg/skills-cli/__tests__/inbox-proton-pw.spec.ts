@@ -237,6 +237,29 @@ describe("proton-pw openProtonSession", () => {
 		expect(calls.at(-1)).toEqual(["-s=inbox-proton", "reload"]);
 	});
 
+	test("observedHeaders does not reload when a two-uid log cannot be cleared", async () => {
+		const listing = [
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-0",
+			"GET https://mail.proton.me/api/core/v4/users",
+			"  x-pm-uid: uid-account-1",
+		].join("\n");
+		const calls: string[][] = [];
+		const run: PwRunner = async (argv) => {
+			calls.push(argv);
+			if (argv.includes("--clear"))
+				return { code: 1, out: "", err: "clear failed" };
+			if (argv.includes("network"))
+				return { code: 0, out: listing, err: "" };
+			return { code: 0, out: "", err: "" };
+		};
+		const session = await openProtonSession(spec(true), run);
+		await expect(session.page.observedHeaders()).rejects.toThrow(
+			"Could not reset the Proton request log. code=1 err=clear failed",
+		);
+		expect(calls.some((argv) => argv.includes("reload"))).toBe(false);
+	});
+
 	test("observedHeaders does not clear a log with one repeated uid", async () => {
 		const listing = [
 			"GET https://mail.proton.me/api/core/v4/users",
