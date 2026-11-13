@@ -85,7 +85,7 @@ for line in "dg-skills st" "dg-skills stat ch" "dg-skills stat " "dg-skills chan
 	printf '%s\\n' "\${COMPREPLY[@]}"
 done
 `;
-		expect(shell(["bash"], script)).toEqual(["stash", "stat", "checklist", "checklist", "add", "done", "status", "dev"]);
+		expect(shell(["bash"], script)).toEqual(["stash", "stat", "checklist", "checklist", "add", "done", "status", "reap", "loops", "dev"]);
 	});
 
 	test.skipIf(!which("zsh"))("zsh autoloads the file from fpath, completes stat ch to checklist, and a path flag to files", () => {
