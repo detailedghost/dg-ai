@@ -299,6 +299,46 @@ was.
 
 On Linux x64 without AVX2, the installer picks Bun's `-baseline` build.
 
+## Shell completion
+
+Every install and update writes tab completion for `dg-skills`, `dg-agent`
+and `dg-daemon` in bash, zsh and fish. That includes a CLI-only, agent-only
+or skills-only install. The installer does not edit a shell startup file.
+
+| Shell | File | Loaded by |
+| ----- | ---- | --------- |
+| bash | `~/.local/share/bash-completion/completions/<program>` | bash-completion, on first use |
+| zsh | `~/.local/share/zsh/site-functions/_<program>` | `compinit`, when the folder is on `fpath` |
+| fish | `~/.config/fish/completions/<program>.fish` | fish, on first use |
+
+`XDG_DATA_HOME` replaces `~/.local/share` and `XDG_CONFIG_HOME` replaces
+`~/.config`. With `DG_HOME` set, the files go to `$DG_HOME/share/...` and
+`$DG_HOME/config/fish/...` instead, so a test install does not touch your
+shell. Windows gets no completion files.
+
+zsh reads that folder only when it is on `fpath` before `compinit` runs. When
+zsh is installed and `FPATH` does not hold the folder, the installer prints
+one line. Add it to `~/.zshrc` above `compinit`:
+
+```zsh
+fpath=(~/.local/share/zsh/site-functions $fpath)
+```
+
+The scripts call the program back for each word
+(`dg-skills __complete <words>`), so new commands complete as soon as an
+update installs them. To write, refresh or remove the files by hand:
+
+```bash
+dg-skills completion --install
+dg-skills completion --uninstall
+```
+
+To load a script for the current shell only, without files, run
+`source <(dg-skills completion bash)` (or `zsh`), or
+`dg-skills completion fish | source` in fish. `dg-agent completion <shell>`
+and `dg-daemon completion <shell>` print their own scripts.
+`dg-skills doctor completion` reports missing or old files and names the fix.
+
 ## Update from a compiled-binary install
 
 The bootstrap URLs above never change. Each release publishes `bootstrap.sh`

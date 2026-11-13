@@ -338,6 +338,14 @@ so nothing happens until it is loaded in that browser profile.
 
 ______________________________________________________________________
 
+### Shell completion
+
+The install also writes bash, zsh and fish completion files for the three
+programs to the per-user shell folders. It does not edit a shell startup file.
+`dg-skills doctor completion` reports their state. zsh needs one `fpath` line
+in `~/.zshrc`; the installer prints it, and an agent must not add it without
+the human's yes. See [Shell completion](install.md#shell-completion).
+
 ## What an agent can and cannot automate
 
 | Task | Agent-runnable? |
