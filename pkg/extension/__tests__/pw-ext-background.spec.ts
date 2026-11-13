@@ -1204,6 +1204,7 @@ describe("pw --ext unmask", () => {
 		it.each([
 			"https://outlook.live.com/mail/0/",
 			"https://outlook.office.com/mail/",
+			"https://outlook.office365.com/mail/",
 			"https://outlook.cloud.microsoft/mail/",
 		])("masks the account name in the title on %s", async (url) => {
 			const h = harness({ tabs: outlookTab(url, "Mail - Test Person - Outlook") });
@@ -1227,6 +1228,9 @@ describe("pw --ext unmask", () => {
 			["localized text", "Correo - Persona de Prueba - Outlook", "[redacted] - [redacted]"],
 			["a new-app title", "Outlook (new)", "[redacted]"],
 			["a known word alone", "Calendar", "Calendar"],
+			["an unread count", "(3) Mail - Test Person - Outlook", "(3) Mail - [redacted]"],
+			["a count with text", "(Test Person) Mail - Outlook", "[redacted] - [redacted]"],
+			["a count on an unknown word", "(3) Test Person - Outlook", "(3) [redacted] - [redacted]"],
 		])("fails closed on %s", async (_name, title, shown) => {
 			const h = harness({ tabs: outlookTab("https://outlook.office.com/mail/", title) });
 			const text = outcome(await h.run({ verb: "current" }));

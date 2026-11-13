@@ -378,7 +378,9 @@ const OUTLOOK_WORDS = new Set([
 
 function outlookTitle(title: string): string {
 	const [first = "", ...rest] = title.split(" - ");
-	const head = OUTLOOK_WORDS.has(first.trim().toLowerCase()) ? first : "[redacted]";
+	const count = /^\(\d+\) /.exec(first)?.[0] ?? "";
+	const word = first.slice(count.length);
+	const head = count + (OUTLOOK_WORDS.has(word.trim().toLowerCase()) ? word : "[redacted]");
 	return rest.length ? `${head} - [redacted]` : head;
 }
 

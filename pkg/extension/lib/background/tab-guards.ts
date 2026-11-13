@@ -27,7 +27,12 @@ export function mailbox(url: string | undefined): boolean {
 	}
 }
 
-const OUTLOOK_HOSTS = new Set(["outlook.live.com", "outlook.office.com", "outlook.cloud.microsoft"]);
+const OUTLOOK_HOSTS = new Set([
+	"outlook.live.com",
+	"outlook.office.com",
+	"outlook.office365.com",
+	"outlook.cloud.microsoft",
+]);
 
 export function outlookWeb(url: string | undefined): boolean {
 	try {
