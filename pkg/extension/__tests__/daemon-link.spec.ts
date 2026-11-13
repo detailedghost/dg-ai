@@ -1936,7 +1936,7 @@ test("the popup lists Web MCP session and remembered grants and revokes one or a
 	expect(Object.keys(sessionData)).toEqual([`pwExtSites:${FIRST.sessionId}`]);
 });
 
-test("Web MCP grant messages from any sender but this extension's popup page do nothing", async () => {
+test("Web MCP grant messages from any sender but this extension's popup and options pages do nothing", async () => {
 	const { remembered, sessionData, session } = webMcpStores();
 	await remembered.add({ site: "https://live.com", tool: "dg_outlook_move" });
 	const { api, getOnMessage } = bootWithStored([], { rememberedWebMcpGrants: remembered });
@@ -1947,7 +1947,7 @@ test("Web MCP grant messages from any sender but this extension's popup page do 
 	const before = structuredClone(sessionData);
 	for (const sender of [
 		{ id: "other-extension", url: popup },
-		{ id: api.runtime.id, url: api.runtime.getURL("options.html") },
+		{ id: api.runtime.id, url: api.runtime.getURL("review.html") },
 		{ id: api.runtime.id, tab: { id: 7 }, url: "https://outlook.live.com/mail/0/" },
 		{ url: popup },
 	])
@@ -2551,4 +2551,24 @@ describe("daemon identity pin", () => {
 
 		await expectNoSessionFrames(boot.sockets);
 	});
+});
+
+test("the options page may list and revoke Web MCP grants through the popup messages", async () => {
+	const { remembered, session } = webMcpStores();
+	await remembered.add({ site: "https://live.com", tool: "dg_outlook_move" });
+	const { api, getOnMessage } = bootWithStored([], { rememberedWebMcpGrants: remembered });
+	Object.assign(api.storage.session, session);
+	await settle();
+	const listener = getOnMessage();
+	const options = { id: api.runtime.id, tab: { id: 9 }, url: `${api.runtime.getURL("options.html")}#mcp` };
+	const send = (message: Record<string, unknown>) =>
+		new Promise<unknown>((resolve) => {
+			if (!listener?.(message, options, resolve)) resolve(undefined);
+		});
+
+	expect(await send({ type: MSG.webmcpGrantsRequest })).toEqual({
+		grants: expect.arrayContaining([{ kind: "remembered", site: "https://live.com", tool: "dg_outlook_move", expiresAt: expect.any(Number) }]),
+	});
+	expect(await send({ type: MSG.webmcpRevoke, grant: { kind: "remembered", site: "https://live.com", tool: "dg_outlook_move" } })).toEqual({ ok: true });
+	expect(await remembered.list()).toEqual([]);
 });

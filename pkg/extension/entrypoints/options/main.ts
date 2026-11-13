@@ -21,6 +21,7 @@ import { loadKokoro } from "@/utils/kokoro";
 import { userScriptsAvailable } from "@/lib/background/webmcp-scripts";
 import { mountAssetDirectoryPanel } from "./asset-directory";
 import { mountTabs } from "./tabs";
+import { mountWebMcpGrantsPanel } from "./webmcp-grants";
 import { mountWebMcpScriptsPanel } from "./webmcp-scripts";
 import "./style.css";
 
@@ -192,6 +193,8 @@ mountAssetDirectoryPanel($<HTMLElement>("assetDirectoryPanel"), {
 mountWebMcpScriptsPanel($<HTMLElement>("webmcpScriptsPanel"), {
 	available: userScriptsAvailable(),
 });
+
+mountWebMcpGrantsPanel($<HTMLElement>("webmcpGrantsPanel"));
 
 mountTabs($<HTMLElement>("tabs"), { fallback: "general" });
 

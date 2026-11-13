@@ -13,6 +13,7 @@ import {
 } from "@dg/pages/chat-messages";
 import { browser } from "wxt/browser";
 import { button, element } from "./dom";
+import { parseWebMcpGrants, webMcpGrantRow } from "./webmcp-grants";
 
 const TICK_MS = 2000;
 const LOGO_PIXELS = "44";
@@ -184,21 +185,6 @@ function parseTabs(value: unknown): AgentTabView[] {
 	});
 }
 
-function parseWebMcpGrants(reply: unknown): WebMcpGrantView[] {
-	const list = (reply as { grants?: unknown } | undefined)?.grants;
-	if (!Array.isArray(list)) return [];
-	return list.flatMap((item): WebMcpGrantView[] => {
-		const grant = (item ?? {}) as Record<string, unknown>;
-		if (typeof grant.site !== "string" || typeof grant.tool !== "string") return [];
-		if (grant.kind === "session" && typeof grant.sessionId === "string")
-			return [{ kind: "session", sessionId: grant.sessionId, site: grant.site, tool: grant.tool }];
-		if (grant.kind === "remembered" && typeof grant.expiresAt === "number")
-			return [{ kind: "remembered", site: grant.site, tool: grant.tool, expiresAt: grant.expiresAt }];
-		return [];
-	});
-}
-
-const siteName = (site: string) => (site.startsWith("https://") ? site.slice("https://".length) : site);
 
 function parseGroups(reply: unknown): Map<string, GroupView> | undefined {
 	const list = (reply as { groups?: unknown } | undefined)?.groups;
@@ -593,26 +579,10 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	}
 
 	function webMcpRow(grant: WebMcpGrantView): HTMLElement {
-		const row = element(doc, "div", "drive");
-		const line = element(doc, "div", "row");
-		const identity = element(doc, "div", "grow");
-		const who =
-			grant.kind === "session"
-				? driveLabel(grant.sessionId)
-				: `Remembered until ${new Date(grant.expiresAt).toISOString().slice(0, 10)}`;
-		const scope = grant.kind === "session" ? "this session" : "30 days";
-		identity.append(element(doc, "b", "", grant.tool), element(doc, "div", "mono", `${siteName(grant.site)} · ${scope}`));
-		identity.append(element(doc, "div", "mono", who));
-		const revoke = button(doc, "btn btn-sm", "Revoke", () => {
-			revoke.disabled = true;
-			void revokeWebMcp({ type: MSG.webmcpRevoke, grant }).finally(() => {
-				revoke.disabled = false;
-			});
+		return webMcpGrantRow(doc, grant, {
+			sessionLabel: driveLabel,
+			onRevoke: (picked) => revokeWebMcp({ type: MSG.webmcpRevoke, grant: picked }),
 		});
-		revoke.setAttribute("aria-label", `Revoke ${grant.tool} on ${siteName(grant.site)}, ${who}`);
-		line.append(identity, revoke);
-		row.append(line);
-		return row;
 	}
 
 	function showWebMcp(): void {
