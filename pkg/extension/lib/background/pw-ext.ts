@@ -514,7 +514,8 @@ export function createPwExtHandler({
 	lock?: AgentTabsLock;
 	control?: SessionControl;
 }) {
-	const live = new Map<string, Set<AbortController>>();
+	type Running = { controller: AbortController; stopped(): void };
+	const live = new Map<string, Set<Running>>();
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
 
 	/** Asks the person once per origin and session before the agent reads or changes a page there. */
@@ -551,7 +552,10 @@ export function createPwExtHandler({
 	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
 	async function stop(sessionId: string): Promise<void> {
 		await control.stop(sessionId);
-		for (const controller of live.get(sessionId) ?? []) controller.abort();
+		for (const run of live.get(sessionId) ?? []) {
+			run.controller.abort();
+			run.stopped();
+		}
 		await Promise.allSettled([
 			grants.forget(sessionId),
 			webmcpGrants.forget(sessionId),
@@ -1213,14 +1217,14 @@ export function createPwExtHandler({
 		const relay = () => controller.abort();
 		signal?.addEventListener("abort", relay, { once: true });
 		if (signal?.aborted) controller.abort();
-		const running = live.get(sessionId) ?? new Set<AbortController>();
-		running.add(controller);
+		let markStopped = () => undefined as void;
+		const stopped = new Promise<"stopped">((resolve) => {
+			markStopped = () => resolve("stopped");
+		});
+		const run: Running = { controller, stopped: markStopped };
+		const running = live.get(sessionId) ?? new Set<Running>();
+		running.add(run);
 		live.set(sessionId, running);
-		const stopped = new Promise<"stopped">((resolve) =>
-			controller.signal.addEventListener("abort", () => void control.stopped(sessionId).then((yes) => yes && resolve("stopped")), {
-				once: true,
-			}),
-		);
 		try {
 			const result = await Promise.race([execute(request, context, controller.signal), stopped]);
 			if (result === "stopped" || (await control.stopped(sessionId))) return STOPPED;
@@ -1238,7 +1242,7 @@ export function createPwExtHandler({
 			};
 		} finally {
 			signal?.removeEventListener("abort", relay);
-			running.delete(controller);
+			running.delete(run);
 			if (running.size === 0) live.delete(sessionId);
 		}
 	};

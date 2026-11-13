@@ -480,6 +480,7 @@ export function createAgentTabs({
 				if (!record || closing === undefined)
 					throw new Error("This agent has no tab to close.");
 				await requireInGroup(record, closing);
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				await api.tabs.remove(closing);
 				if (closing !== record.selectedTabId) return {};
 				const last = (await rows(record)).at(-1);

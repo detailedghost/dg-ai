@@ -2497,6 +2497,16 @@ describe("pw --ext Stop", () => {
 		expect(h.executed().filter((call) => (call as { func?: { name?: string } }).func?.name === "pwExtPageAction")).toEqual([]);
 	});
 
+	it("settles a verb that the relay canceled earlier as soon as Stop comes", async () => {
+		const relay = new AbortController();
+		const h = harness({ sites: "ask", approval: "allow", signal: relay.signal, pageResult: new Promise(() => {}) });
+		const running = h.run({ verb: "snapshot" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		relay.abort();
+		await h.handler.stop(SESSION);
+		expect(await running).toEqual({ ok: false, error: STOPPED });
+	});
+
 	it("stops the session that owns the tab, and nothing for a user tab", async () => {
 		const h = harness({ sites: "ask" });
 		await h.handler.stopTab(21);
