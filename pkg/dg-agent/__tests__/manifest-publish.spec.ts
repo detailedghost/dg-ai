@@ -18,7 +18,7 @@ import {
 	writeJsonFile,
 	wsExtensionSocket,
 } from "@dg/dg-daemon/test-harness";
-import { nextParsedMessage, runCli } from "./cli-wire";
+import { nextFrameOfType, nextParsedMessage, runCli } from "./cli-wire";
 
 let dgHome: string;
 let scratchDir: string;
@@ -66,7 +66,7 @@ describe("dg-daemon manifest", () => {
 		);
 		expect(result.exitCode).toBe(0);
 
-		const frame = await nextParsedMessage(page);
+		const frame = await nextFrameOfType(page, "manifest-publish");
 		page.close();
 		const validated = validateChatFrame(frame);
 		expect(validated.type).toBe("manifest-publish");
@@ -102,7 +102,7 @@ describe("dg-daemon manifest", () => {
 		]);
 		expect(result.exitCode).toBe(0);
 
-		const frame = await nextParsedMessage(page);
+		const frame = await nextFrameOfType(page, "manifest-publish");
 		page.close();
 		expect((frame as { subagents?: string[] }).subagents).toEqual([
 			"reviewer",
