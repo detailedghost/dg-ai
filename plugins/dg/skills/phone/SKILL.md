@@ -119,7 +119,8 @@ If that handle already belongs to a different npub, accept exits 1 and tells
 you to pass `--name <other handle>`, or rename or remove that contact first. It does not replace the contact
 and it does not invent a `-2` handle. Accepting a card whose npub you already
 have keeps that contact's handle and key. Rename a contact afterward with
-`phone contacts rename +<old> <new>`.
+`phone contacts rename +<old> <new>`. Remove one with
+`phone contacts remove +<handle>`. Do not edit `phone.db` by hand.
 
 `--key <id>` signs a new contact with an existing key instead of the number
 key. The number key is `default` on a fresh phone, or whichever line migration
@@ -444,12 +445,18 @@ Follow the vault rules in [references/safety.md](references/safety.md).
 ```bash
 dg-agent phone contacts                 # one JSON line per contact, in handle order
 dg-agent phone contacts rename +old new  # prints {"handle": "+new", "renamed_from": "+old"}
-dg-agent phone contacts remove +old      # prints {"removed": "+old"}
+dg-agent phone contacts remove +old      # prints {"removed": "+old", "npub": "npub1..."}
 ```
+
+`contacts remove` deletes the contact and the extensions it used. Its stored
+messages stay until the 7-day expiry. An unknown handle exits 1. A `#group`
+handle exits 1: groups have no remove verb.
 
 ## Where data lives
 
-All state is in one SQLite database, `~/.dg/phone/phone.db` (mode 0600):
+All state is in one SQLite database, `phone/phone.db` under the dg state
+directory (`~/.local/state/dg/phone/phone.db` on Linux; `resolveDgPaths` gives
+the other OSes), mode 0600:
 every key, every contact, every invite, every message with its read mark,
 and your saved number and listener settings. The only other files are
 `listener.pid` and `listener.log` next to it. Messages are kept for

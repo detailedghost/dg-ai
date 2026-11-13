@@ -504,7 +504,7 @@ export function phoneContactsRename(oldHandleArg: string, newHandleArg: string, 
 
 export function phoneContactsRemove(handleArg: string, deps: PhoneDeps): void {
 	const removed = removeContact(deps.db, normalizeHandle(handleArg));
-	printJson(deps, { removed: `+${removed.handle}` });
+	printJson(deps, { removed: `+${removed.handle}`, npub: removed.npub });
 }
 
 function selfNames(deps: PhoneDeps): Map<string, string> {

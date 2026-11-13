@@ -1190,6 +1190,22 @@ describe("messages", () => {
 		expect((lines()[0] as { text: string }).text).toBe(text);
 	});
 
+	it("contacts remove prints the handle and npub, drops the extensions, and keeps the messages", async () => {
+		const d = deps(freshHome());
+		await phoneNumber({}, d);
+		addTestContact(d.db, { npub: "npub1a", handle: "velora" });
+		d.db.touchContactExt("npub1a", "web", NOW);
+		d.db.addMessage({ id: "m1", direction: "in", ts: NOW, sender: "npub1a", contact: "npub1a", text: "hi", call: 0 });
+		out = [];
+
+		phoneContactsRemove("+velora", d);
+
+		expect(lines()).toEqual([{ removed: "+velora", npub: "npub1a" }]);
+		expect(d.db.getContactByHandle("velora")).toBeUndefined();
+		expect(d.db.contactExts("npub1a")).toEqual([]);
+		expect(d.db.recentMessages(20).map((row) => row.id)).toEqual(["m1"]);
+	});
+
 	it("prints handle null for a message whose contact has since been removed", async () => {
 		const d = deps(freshHome());
 		await phoneNumber({}, d);
@@ -1407,7 +1423,7 @@ describe("contacts", () => {
 		out = [];
 
 		phoneContactsRemove("+ccc", d);
-		expect(lines()[0]).toEqual({ removed: "+ccc" });
+		expect(lines()[0]).toEqual({ removed: "+ccc", npub: "npub1a" });
 	});
 
 	it("fails rename on a taken target and remove on an unknown handle", async () => {
