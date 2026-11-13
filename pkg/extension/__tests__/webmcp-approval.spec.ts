@@ -145,6 +145,14 @@ describe("requestWebMcpApproval", () => {
 		expect(requests).toHaveLength(1);
 	});
 
+	it("asks again after a denied concurrent ask settles", async () => {
+		const { requests, ask } = setup("deny");
+		const move = { tool: "dg_outlook_move", class: "session" } as const;
+		await Promise.all([ask(move), ask(move)]);
+		expect(await ask(move)).toBe("deny");
+		expect(requests).toHaveLength(2);
+	});
+
 	it.each([
 		["another session", { sessionId: "s2" }],
 		["another tool", { tool: "dg_outlook_flag" }],

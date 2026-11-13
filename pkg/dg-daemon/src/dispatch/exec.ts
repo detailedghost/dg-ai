@@ -1,4 +1,5 @@
 import { describeError, wait } from "@dg/common";
+import { killProcessTree } from "@dg/common/node";
 import type { Subprocess } from "bun";
 import { buildAllowedEnv } from "./env-allowlist";
 import { DISPATCH_KILL_GRACE_MS } from "./limits";
@@ -19,20 +20,60 @@ function describeSpawnFailure(executable: string, error: unknown): string {
 	return `failed to start "${executable}": ${describeError(error)}`;
 }
 
+export type KillGroupSeams = {
+	platform?: NodeJS.Platform;
+	kill?: (pid: number, signal: NodeJS.Signals | 0) => void;
+	exec?: (command: string, args: string[]) => void;
+};
+
+const GROUP_PROBE_MS = 50;
+
+const isGone = (error: unknown): boolean =>
+	(error as NodeJS.ErrnoException).code === "ESRCH";
+
 export function killProcessGroup(
 	pid: number,
 	graceMs = DISPATCH_KILL_GRACE_MS,
-): void {
-	try {
-		process.kill(-pid, "SIGTERM");
-	} catch {
-		return;
+	seams: KillGroupSeams = {},
+): Promise<void> {
+	const {
+		platform = process.platform,
+		kill = (target, signal) => {
+			process.kill(target, signal);
+		},
+		exec,
+	} = seams;
+	if (platform === "win32") {
+		killProcessTree(pid, { platform, exec });
+		return Promise.resolve();
 	}
-	setTimeout(() => {
-		try {
-			process.kill(-pid, "SIGKILL");
-		} catch {}
-	}, graceMs);
+	try {
+		kill(-pid, "SIGTERM");
+	} catch {
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => {
+		const finish = () => {
+			clearInterval(probe);
+			clearTimeout(deadline);
+			resolve();
+		};
+		const probe = setInterval(() => {
+			try {
+				kill(-pid, 0);
+			} catch (error) {
+				if (isGone(error)) finish();
+			}
+		}, GROUP_PROBE_MS);
+		const deadline = setTimeout(() => {
+			try {
+				kill(-pid, "SIGKILL");
+			} catch {}
+			finish();
+		}, graceMs);
+		probe.unref();
+		deadline.unref();
+	});
 }
 
 async function drainCapped(
@@ -54,6 +95,7 @@ export async function executeCommand(
 	argv: string[],
 	cwd: string,
 	limits: ExecLimits,
+	seams?: Pick<KillGroupSeams, "platform" | "exec">,
 ): Promise<ExecResult> {
 	let proc: Subprocess<"ignore", "pipe", "pipe">;
 	try {
@@ -86,14 +128,14 @@ export async function executeCommand(
 		if (totalBytes > limits.maxOutputBytes) {
 			capped = true;
 			killedFor = "output-cap";
-			killProcessGroup(pid);
+			void killProcessGroup(pid, undefined, seams);
 		}
 		return capped;
 	};
 
 	const timeoutTimer = setTimeout(() => {
 		killedFor = "timeout";
-		killProcessGroup(pid);
+		void killProcessGroup(pid, undefined, seams);
 	}, limits.timeoutMs);
 
 	const stdoutChunks: Buffer[] = [];

@@ -57,7 +57,7 @@ Subcommands:
   prototype-ref  record an accepted prototype asset on a slice
 `;
 
-const HANDLERS = new Map<string, Handler>([
+export const HANDLERS = new Map<string, Handler>([
 	["perms", permsCommand],
 	["perms-batch", permsBatchCommand],
 	["next-nnn", nextNnnCommand],

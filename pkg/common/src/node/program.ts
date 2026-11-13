@@ -1,6 +1,7 @@
 import { isAbsolute, join } from "node:path";
 
-export type ProgramName = "dg-skills" | "dg-agent" | "dg-daemon";
+export const PROGRAM_NAMES = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+export type ProgramName = (typeof PROGRAM_NAMES)[number];
 
 let recorded: ProgramName | undefined;
 

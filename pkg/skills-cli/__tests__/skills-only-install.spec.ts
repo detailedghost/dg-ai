@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { INSTALLED_SKILL_FILES } from "../../common/__tests__/installed-skill-files";
+import { zshHint } from "../src/completion/files";
 import { PROGRAMS, RUNTIME, present, removeBootstrapDirs, removeBootstrapFixtures, runBootstrap } from "./bootstrap-fixtures";
 import { fetchedUrls, writeReleaseServer } from "./runtime-bundle-fixtures";
 
@@ -252,6 +253,8 @@ describe("dg-skills install --skills-only", () => {
 			expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: `note: DG_HOME=${home}; installing there\n` });
 			expectReport(result.stdout, dest, INSTALLED_SKILL_FILES, personasPath(dest), [
 				`Add to PATH:  export PATH="${join(home, "bin")}:$PATH"`,
+				"dg: shell completion written for bash, zsh and fish (9 file(s))",
+				...[zshHint(join(home, "share", "zsh", "site-functions"), childEnv(home))].filter((line) => line !== undefined),
 				`dg bundle installed v9.9.9 at ${join(home, "data", "lib", "9.9.9")}`,
 			]);
 			expectExactCopy(REPO_SKILLS, dest, INSTALLED_SKILL_FILES);

@@ -16,9 +16,9 @@ import {
 	CHAT_PROTOCOL_VERSION,
 	CLI_SESSION_ID_HEADER,
 	CLI_SESSION_TOKEN_HEADER,
+	type DaemonHandle,
 	DG_CHROME_EXTENSION_ORIGIN,
 	OWNER_TOKEN_HEADER,
-	type DaemonHandle,
 	type SessionBootstrap,
 	type SessionRole,
 	validateDaemonHandle,
@@ -436,7 +436,9 @@ export async function sessionCredentials(
 	const body = (await response.json()) as {
 		sessions?: { sessionId?: string; token?: string }[];
 	};
-	const match = body.sessions?.find((session) => session.sessionId === sessionId);
+	const match = body.sessions?.find(
+		(session) => session.sessionId === sessionId,
+	);
 	if (!match || typeof match.token !== "string") {
 		throw new Error(`session ${sessionId} is not in the daemon database`);
 	}
@@ -728,4 +730,40 @@ export async function waitForValue<T>(
 		await new Promise((r) => setTimeout(r, 25));
 	}
 	throw new Error(`timed out waiting for ${label}`);
+}
+
+export type CredentialsResult = {
+	type: string;
+	sessionId: string;
+	requestId: string;
+	ok: boolean;
+	value?: unknown;
+	error?: string;
+};
+
+export function credentialRequest(
+	cli: WebSocket,
+	fields: Record<string, unknown>,
+): string {
+	const requestId = randomUUID();
+	send(cli, { type: "cli-credentials-request", requestId, ...fields });
+	return requestId;
+}
+
+export function credentialResult(
+	frames: unknown[],
+	requestId: string,
+): Promise<CredentialsResult> {
+	return waitForValue(
+		() =>
+			frames.find((raw) => {
+				const frame = raw as CredentialsResult;
+				return (
+					frame.type === "cli-credentials-result" &&
+					frame.requestId === requestId
+				);
+			}) as CredentialsResult | undefined,
+		2000,
+		`credentials result ${requestId}`,
+	);
 }

@@ -134,6 +134,23 @@ or the extension, and it does not execute skill content. From the repo root,
 `mise run install:skills` is the same command. `bootstrap.sh --skills-only`
 and `DG_SKILLS_ONLY=1` do that copy on a machine without Bun.
 
+## Shell completion
+
+`completion <bash|zsh|fish>` prints the completion script.
+`completion --install` writes the files for `dg-skills`, `dg-agent` and
+`dg-daemon`; every bundle install does this too. `completion --uninstall`
+removes them. The scripts call `dg-skills __complete <words>`, a hidden fast
+path that reads `src/completion/tree.json` and loads no command module. After
+you add or change a command, a subcommand or a flag, regenerate the trees of
+all three programs:
+
+```bash
+bun scripts/completion-trees.ts
+```
+
+A test in each package fails while a tree is out of date. See
+[Shell completion](../../docs/install.md#shell-completion) for the file paths.
+
 ## Build the bundle
 
 ```bash

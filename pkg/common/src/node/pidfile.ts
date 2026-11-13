@@ -7,8 +7,9 @@ import {
 	validateDaemonHandle,
 } from "../chat-format";
 import { DgCliError, EXIT_PROTOCOL_MISMATCH } from "../errors";
-import { ensurePrivateDir, writeFileAtomic } from "./fs";
 import type { DgPaths } from "./dg-paths";
+import { ensurePrivateDir, writeFileAtomic } from "./fs";
+import { isAlive } from "./process";
 
 export function readPidFile(paths: Pick<DgPaths, "pidPath">): DaemonHandle | undefined {
 	if (!existsSync(paths.pidPath)) return undefined;
@@ -68,4 +69,21 @@ export async function isDaemonLive(
 	} catch {
 		return false;
 	}
+}
+
+/** Reads the pid file; `live` is false for a pid that still runs but does not answer /healthz. A dead pid loses its file. */
+export async function resolveLiveDaemon(
+	paths: DgPaths,
+	probe?: (pid: number, signal: 0) => void,
+): Promise<{ handle: DaemonHandle; live: boolean } | undefined> {
+	const handle = readPidFile(paths);
+	if (!handle) {
+		console.log("dg-daemon: no live daemon");
+		return undefined;
+	}
+	if (await isDaemonLive(handle)) return { handle, live: true };
+	if (isAlive(handle.pid, probe)) return { handle, live: false };
+	removePidFile(paths);
+	console.log("dg-daemon: no live daemon (stale pid file removed)");
+	return undefined;
 }

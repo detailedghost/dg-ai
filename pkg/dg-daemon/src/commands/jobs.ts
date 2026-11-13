@@ -189,6 +189,7 @@ export function registerJobCommands(program: Command): void {
 
 	job
 		.command("run")
+		.alias("exec")
 		.description("run a job now, without waiting for its schedule")
 		.argument("<label>")
 		.action(async (label: string) => {

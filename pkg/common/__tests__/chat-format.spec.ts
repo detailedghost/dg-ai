@@ -5,6 +5,7 @@ import {
 	CHAT_FRAME_TYPES,
 	CHAT_MAX_PAYLOAD_BYTES,
 	CHAT_PROTOCOL_VERSION,
+	CHAT_SERVICES_PATH,
 	type ChatFrame,
 	fitHistoryPage,
 	INBOUND_FRAME_TYPES,
@@ -14,6 +15,7 @@ import {
 	type RelayCliFrame,
 	relayFrameTypes,
 	relayValidators,
+	SERVICE_API_CREDENTIALS_PATH,
 	tryValidateSessionBootstrap,
 	validateChatFrame,
 	validateCommandManifest,
@@ -269,7 +271,9 @@ function buildInboxBrowserResultFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function buildProtoBrowserRequestFrame(overrides: Record<string, unknown> = {}) {
+function buildProtoBrowserRequestFrame(
+	overrides: Record<string, unknown> = {},
+) {
 	return {
 		type: "proto-browser-request",
 		sessionId: "session-a",
@@ -408,8 +412,14 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["keepalive", buildKeepaliveFrame],
 	["session-close", buildSessionCloseFrame],
 	["session-closed", buildSessionClosedFrame],
-	["session-disconnect", () => buildSessionCloseFrame({ type: "session-disconnect" })],
-	["session-disconnected", () => buildSessionClosedFrame({ type: "session-disconnected" })],
+	[
+		"session-disconnect",
+		() => buildSessionCloseFrame({ type: "session-disconnect" }),
+	],
+	[
+		"session-disconnected",
+		() => buildSessionClosedFrame({ type: "session-disconnected" }),
+	],
 	["history-request", buildHistoryRequestFrame],
 	["history-response", buildHistoryResponseFrame],
 	["config-get", buildConfigGetFrame],
@@ -574,12 +584,15 @@ describe("validateChatFrame — session-list SessionSummary entries", () => {
 		expect(() => validateChatFrame(frame)).toThrow();
 	});
 
-	it.each(["cli", "gone", "idle", undefined])("accepts a summary entry whose presence is %p", (presence) => {
-		const frame = buildSessionListFrame({
-			sessions: [buildSessionSummary({ presence })],
-		});
-		expect(() => validateChatFrame(frame)).not.toThrow();
-	});
+	it.each(["cli", "gone", "idle", undefined])(
+		"accepts a summary entry whose presence is %p",
+		(presence) => {
+			const frame = buildSessionListFrame({
+				sessions: [buildSessionSummary({ presence })],
+			});
+			expect(() => validateChatFrame(frame)).not.toThrow();
+		},
+	);
 
 	it('rejects a summary entry whose presence is "waiting"', () => {
 		const frame = buildSessionListFrame({
@@ -878,9 +891,7 @@ describe("relay tables drive the frame validation", () => {
 			const build = FIXTURE_BY_TYPE.get(type);
 			const inbound = feature.inbound.includes(type);
 			it(
-				inbound
-					? `requires a token on ${type}`
-					: `refuses a token on ${type}`,
+				inbound ? `requires a token on ${type}` : `refuses a token on ${type}`,
 				() => {
 					const frame = build?.() as Record<string, unknown>;
 					expect(() => validateChatFrame(frame)).not.toThrow();
@@ -972,7 +983,12 @@ describe("ChatFrame relay members keep their wire shape", () => {
 	it("keeps the pw-ext request keys with a required timeoutMs and no token", () => {
 		const keys: KeysEqual<
 			keyof PwRequest,
-			"type" | "sessionId" | "protocolVersion" | "requestId" | "request" | "timeoutMs"
+			| "type"
+			| "sessionId"
+			| "protocolVersion"
+			| "requestId"
+			| "request"
+			| "timeoutMs"
 		> = true;
 		const timeout: PwRequest["timeoutMs"] extends number ? true : false = true;
 		expect([keys, timeout]).toEqual([true, true]);
@@ -1016,7 +1032,9 @@ describe("tryValidateSessionBootstrap", () => {
 	});
 
 	it("returns undefined instead of throwing for an invalid bootstrap", () => {
-		expect(tryValidateSessionBootstrap({ ...bootstrap, token: "" })).toBeUndefined();
+		expect(
+			tryValidateSessionBootstrap({ ...bootstrap, token: "" }),
+		).toBeUndefined();
 		expect(tryValidateSessionBootstrap("nope")).toBeUndefined();
 	});
 });
@@ -1049,7 +1067,9 @@ describe("validateSessionAdopt", () => {
 	);
 
 	it("rejects a frame of another type", () => {
-		expect(() => validateSessionAdopt({ ...frame, type: "session-list" })).toThrow();
+		expect(() =>
+			validateSessionAdopt({ ...frame, type: "session-list" }),
+		).toThrow();
 	});
 });
 
@@ -1066,10 +1086,22 @@ describe("validateLinkFrame", () => {
 		});
 	});
 
-	it.each([{ type: "link-other" }, { type: "keepalive" }, {}, "link-ready", null])(
-		"rejects %p",
-		(value) => {
-			expect(() => validateLinkFrame(value)).toThrow();
-		},
-	);
+	it.each([
+		{ type: "link-other" },
+		{ type: "keepalive" },
+		{},
+		"link-ready",
+		null,
+	])("rejects %p", (value) => {
+		expect(() => validateLinkFrame(value)).toThrow();
+	});
+});
+
+describe("SERVICE_API_CREDENTIALS_PATH", () => {
+	it("names the versioned credentials route and stays outside the /services tree", () => {
+		expect(SERVICE_API_CREDENTIALS_PATH).toBe("/service-api/v1/credentials");
+		expect(SERVICE_API_CREDENTIALS_PATH.startsWith(CHAT_SERVICES_PATH)).toBe(
+			false,
+		);
+	});
 });

@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { skillDirectoryNames } from "@dg/common";
 import { assertSkillsDestMoved, moveVerified, personasDest, removeSource, resolveDgPaths, run, skillsInstallDest, withInstallLock } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
+import { writeCompletions } from "../completion/files";
 import { fetchBundle } from "./bundle";
 import { refreshPhoneListener } from "./phone-listener";
 import { activateRuntime, fetchRuntimePin, stageRuntime } from "./runtime";
@@ -185,6 +186,14 @@ export function removeRetiredBinaries(): void {
 	}
 }
 
+function installCompletions(): void {
+	try {
+		writeCompletions();
+	} catch (err) {
+		console.warn(`⚠ shell completion skipped: ${err instanceof Error ? err.message : err}`);
+	}
+}
+
 /** Installs the pinned runtime and the bundle, then points the three shims at them. */
 async function installBundle(release: PickedBundle): Promise<void> {
 	const root = installRoot();
@@ -208,6 +217,7 @@ async function installBundleLocked(root: string, release: PickedBundle): Promise
 	const runtimeBin = pin ? await stageRuntime(root, pin) : currentBun;
 	await fetchBundle(root, release, runtimeBin, pin && (() => activateRuntime(root, pin)));
 	finishLauncherLayout(release.version);
+	installCompletions();
 	removeRetiredBinaries();
 	console.log(
 		present && installed === release.version
