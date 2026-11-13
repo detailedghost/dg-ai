@@ -1296,6 +1296,19 @@ describe("pw --ext unmask", () => {
 		expect(outcome(answer).length).toBeLessThan(2_200);
 	});
 
+	it("keeps the old MAIN-world patterns: credential name suffixes and unsigned JWTs", async () => {
+		const leaky = "client_secret=abcd1234xyz eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.";
+		const h = harness({
+			pageResult: { started: false, entries: [] },
+			mainResult: (action) =>
+				typeof action === "object" ? { api: "modelContext", output: leaky } : { entries: [leaky] },
+		});
+		for (const text of [outcome(await h.run({ verb: "console" })), outcome(await h.run({ verb: "call", tool: "t", args: {} }))]) {
+			expect(text).not.toContain("abcd1234xyz");
+			expect(text).not.toContain("eyJzdWIi");
+		}
+	});
+
 	it("masks and bounds raw MAIN-world WebMCP text in the background", async () => {
 		const h = harness({
 			mainResult: (action) =>

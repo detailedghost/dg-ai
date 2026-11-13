@@ -230,10 +230,23 @@ const SECRET_PAIR = {
 	replacement: "$1$2[redacted]",
 };
 
+const NAMED_SECRET = {
+	pattern: /((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi,
+	replacement: "$1[redacted]",
+};
+
+const UNSIGNED_JWT = {
+	pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g,
+	replacement: "[redacted]",
+};
+
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
 function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
 	const redact = unmasked ? redactSecrets : redactText;
-	return redactLiterals(redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR] }), secrets);
+	return redactLiterals(
+		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT] }),
+		secrets,
+	);
 }
 
 function clean(text: string, options: { unmasked?: boolean; secrets?: string[] } = {}): string {
