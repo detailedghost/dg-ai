@@ -114,7 +114,7 @@ export function pwExtDialogs(
 		};
 		if (action.kind === "read" && action.markSeen) for (const dialog of slot.dialogs) dialog.seen = true;
 		return state;
-	} catch (error) {
-		return { error: `Dialog handling failed: ${String(error).slice(0, 200)}` };
+	} catch {
+		return { error: "Dialog handling failed on this page." };
 	}
 }

@@ -80,9 +80,7 @@ export type PwExtBrowserApi = AgentTabsBrowserApi & {
 			options: { format: "jpeg"; quality: number },
 		): Promise<string>;
 		onActivated: TabEvent<(info: { tabId: number; windowId: number }) => void>;
-		onUpdated: TabEvent<
-			(tabId: number, change: { url?: string; status?: string; groupId?: number }, tab?: BrowserTab) => void
-		>;
+		onUpdated: TabEvent<(tabId: number, change: { url?: string; status?: string; groupId?: number }) => void>;
 		onRemoved: TabEvent<(tabId: number) => void>;
 	};
 	scripting: {
@@ -469,6 +467,28 @@ function nextFrame(): Promise<void> {
 	return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+/** Restores native dialogs in the tabs of a session that ends; call it before its agent tab record is forgotten. */
+export async function releaseDialogShims({
+	browserApi: api,
+	agentTabs,
+	sessionId,
+}: {
+	browserApi: Pick<PwExtBrowserApi, "scripting">;
+	agentTabs: Pick<AgentTabs, "list">;
+	sessionId: string;
+}): Promise<void> {
+	const action: PwExtDialogAction = { kind: "remove" };
+	await Promise.all(
+		(await agentTabs.list({ sessionId }))
+			.filter((row) => allowedPage(row.url) && !mailbox(row.url))
+			.map((row) =>
+				api.scripting
+					.executeScript({ target: { tabId: row.tabId }, world: "MAIN", func: pwExtDialogs as never, args: [action, row.url] })
+					.catch(() => undefined),
+			),
+	);
+}
+
 /** Runs one pw --ext verb against the agent's own tab group. */
 export function createPwExtHandler({
 	browserApi: api,
@@ -507,12 +527,17 @@ export function createPwExtHandler({
 		}
 	}
 
-	/** Installs the dialog shim in an agent tab, and on a group change removes it from a tab that is no longer one; never touches a mailbox, browser or private page. */
-	async function shimDialogs(tabId: number, given: BrowserTab | undefined, regrouped: boolean): Promise<void> {
-		const tab = given ?? (await api.tabs.get(tabId));
+	const shimTurns = new Map<number, number>();
+
+	/** Installs the dialog shim in an agent tab, and on a group change removes it from a tab that is no longer one; a later event for the tab cancels an earlier one. */
+	async function shimDialogs(tabId: number, regrouped: boolean): Promise<void> {
+		const turn = (shimTurns.get(tabId) ?? 0) + 1;
+		shimTurns.set(tabId, turn);
+		const groups = await agentGroupIds({ storage: api.storage });
+		const tab = await api.tabs.get(tabId);
+		if (shimTurns.get(tabId) !== turn) return;
 		if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
-		const agent =
-			tab.groupId !== undefined && tab.groupId >= 0 && (await agentGroupIds({ storage: api.storage })).has(tab.groupId);
+		const agent = tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId);
 		if (!agent && !regrouped) return;
 		const action: PwExtDialogAction = { kind: agent ? "install" : "remove" };
 		await api.scripting.executeScript({
@@ -524,11 +549,12 @@ export function createPwExtHandler({
 		});
 	}
 
-	api.tabs.onUpdated.addListener((tabId, change, tab) => {
+	api.tabs.onUpdated.addListener((tabId, change) => {
 		const regrouped = change.groupId !== undefined;
 		if (!regrouped && change.status !== "loading" && change.status !== "complete") return;
-		void shimDialogs(tabId, tab, regrouped).catch(() => undefined);
+		void shimDialogs(tabId, regrouped).catch(() => undefined);
 	});
+	api.tabs.onRemoved.addListener((tabId) => shimTurns.delete(tabId));
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
 		if (result.ok)

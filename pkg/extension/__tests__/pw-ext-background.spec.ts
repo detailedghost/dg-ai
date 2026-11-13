@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
-import { createPwExtHandler } from "@/lib/background/pw-ext";
+import { createPwExtHandler, releaseDialogShims } from "@/lib/background/pw-ext";
 import {
 	createFakeBrowser,
 	createLock,
@@ -2101,6 +2101,23 @@ describe("pw --ext dialog", () => {
 			[7, { kind: "remove" }],
 			[21, { kind: "install" }],
 		]);
+	});
+
+	it("does not install from a load event that a later group change overtook", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "remove" }]);
+	});
+
+	it("removes the shim from a forgotten session's tabs, and skips mailbox and browser pages", async () => {
+		const h = harness({
+			tabs: [WEB_TAB, groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }), groupTab(10, { url: "chrome://settings/" })],
+		});
+		await releaseDialogShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }, WEB_TAB.url]]]);
 	});
 
 	it("masks a page-made dialog error with the held secrets", async () => {

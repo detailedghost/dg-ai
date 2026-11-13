@@ -50,6 +50,7 @@ import { isExtensionPageSender, isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
+	releaseDialogShims,
 	type PwExtBrowserApi,
 	type PwExtContext,
 } from "./pw-ext";
@@ -198,6 +199,7 @@ export function registerDaemonLink(
 	const webmcpGrants = createWebMcpGrants({
 		storage: api.storage as unknown as AgentTabsStorage,
 	});
+	const pwExtApi = api as unknown as PwExtBrowserApi;
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	} = {
@@ -208,7 +210,7 @@ export function registerDaemonLink(
 			browserApi: api as unknown as ProtoBrowserApi,
 		}),
 		"pw-ext": createPwExtHandler({
-			browserApi: api as unknown as PwExtBrowserApi,
+			browserApi: pwExtApi,
 			agentTabs,
 			grants: unmaskGrants,
 			webmcpGrants,
@@ -417,7 +419,10 @@ export function registerDaemonLink(
 
 	function forgetAgentTabs(sessionId: string): void {
 		for (const cleanup of [
-			() => agentTabs.forget({ sessionId }),
+			async () => {
+				await releaseDialogShims({ browserApi: pwExtApi, agentTabs, sessionId }).catch(() => undefined);
+				await agentTabs.forget({ sessionId });
+			},
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 		])

@@ -120,6 +120,15 @@ describe("dialog shim", () => {
 		expect(page().alert).toBe(native);
 	});
 
+	it("returns an opaque error, never page text, when the shim fails", () => {
+		Object.defineProperty(window, Symbol.for("dg.pwExt.dialogs"), {
+			get() {
+				throw new Error(`${"x".repeat(195)}orchid-maple`);
+			},
+		});
+		expect(pwExtDialogs({ kind: "read", markSeen: false })).toEqual({ error: "Dialog handling failed on this page." });
+	});
+
 	it("refuses a document other than the tab's", () => {
 		expect(pwExtDialogs({ kind: "install" }, "https://other.example.test/")).toEqual({
 			error: expect.stringContaining("changed"),
