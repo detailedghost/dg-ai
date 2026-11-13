@@ -1231,27 +1231,29 @@ export function createPwExtHandler({
 		const running = live.get(sessionId) ?? new Set<Running>();
 		running.add(run);
 		live.set(sessionId, running);
-		try {
-			if (await isStopped(sessionId)) return STOPPED;
-			const result = await Promise.race([execute(request, context, controller.signal), stopped]);
-			if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
-			return scrub(result, await held());
-		} catch (error) {
-			if (await isStopped(sessionId).catch(() => false)) return STOPPED;
-			if (error instanceof Refusal || error instanceof AgentTabOpenCanceledError) return { ok: false, error: error.message };
-			if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
-			return {
-				ok: false,
-				error: clean(
-					`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
-					{ secrets: await held() },
-				).slice(0, 2048),
-			};
-		} finally {
-			signal?.removeEventListener("abort", relay);
-			running.delete(run);
-			if (running.size === 0) live.delete(sessionId);
-		}
+		const outcome = await (async (): Promise<PwExtResult> => {
+			try {
+				if (await isStopped(sessionId)) return STOPPED;
+				const result = await Promise.race([execute(request, context, controller.signal), stopped]);
+				if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
+				return scrub(result, await held());
+			} catch (error) {
+				if (await isStopped(sessionId).catch(() => false)) return STOPPED;
+				if (error instanceof Refusal || error instanceof AgentTabOpenCanceledError) return { ok: false, error: error.message };
+				if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
+				return {
+					ok: false,
+					error: clean(
+						`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
+						{ secrets: await held() },
+					).slice(0, 2048),
+				};
+			}
+		})();
+		signal?.removeEventListener("abort", relay);
+		running.delete(run);
+		if (running.size === 0) live.delete(sessionId);
+		return halted.has(sessionId) ? STOPPED : outcome;
 	};
 	return Object.assign(handler, { stop, stopTab });
 }

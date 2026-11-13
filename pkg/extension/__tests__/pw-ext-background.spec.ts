@@ -2539,6 +2539,20 @@ describe("pw --ext Stop", () => {
 		expect(h.created()).toEqual([]);
 	});
 
+	it("returns the Stop error when Stop comes during the final secret read", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { text: "page text" } });
+		await h.run({ verb: "selection" });
+		const get = h.fake.raw.storage.session.get;
+		const original = get.getMockImplementation();
+		let stopping: Promise<void> | undefined;
+		get.mockImplementation(async (keys?: string | string[] | null) => {
+			if (keys === `pwExtSecrets:${SESSION}` && !stopping) stopping = h.handler.stop(SESSION);
+			return (original as (k?: unknown) => Promise<Record<string, unknown>>)(keys);
+		});
+		expect(await h.run({ verb: "selection" })).toEqual({ ok: false, error: STOPPED });
+		await stopping;
+	});
+
 	it("stops the session that owns the tab, and nothing for a user tab", async () => {
 		const h = harness({ sites: "ask" });
 		await h.handler.stopTab(21);
