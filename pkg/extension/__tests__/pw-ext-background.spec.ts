@@ -2118,7 +2118,19 @@ describe("pw --ext dialog", () => {
 		h.fake.fireUpdated(7, { groupId: -1 });
 		h.fake.fireUpdated(7, { status: "complete" });
 		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }]);
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }, { kind: "remove" }]);
+	});
+
+	it("keeps sending removals on later loads of a tab it once shimmed, for pages the back-forward cache restores", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }, { kind: "remove" }]);
 	});
 
 	it("installs the shim right after new opens a tab", async () => {

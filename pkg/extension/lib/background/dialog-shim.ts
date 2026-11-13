@@ -45,7 +45,7 @@ function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, str
 	});
 }
 
-/** Installs the shim in an agent tab and removes it from a tab that stopped being one; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
+/** Installs the shim in an agent tab and removes it from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
 export async function syncDialogShim({
 	browserApi: api,
 	storage,
@@ -71,7 +71,6 @@ export async function syncDialogShim({
 		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId]);
 		if ((await owned()).agent) return;
 	} else if (!regrouped && !shimmed.has(tabId)) return;
-	shimmed.delete(tabId);
 	await inject(api, tabId, [{ kind: "remove" }]);
 }
 
