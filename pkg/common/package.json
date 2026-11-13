@@ -7,6 +7,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./async": "./src/async.ts",
+		"./completion": "./src/completion.ts",
 		"./exit": "./src/exit.ts",
 		"./node": "./src/node/index.ts",
 		"./node/program": "./src/node/program.ts",

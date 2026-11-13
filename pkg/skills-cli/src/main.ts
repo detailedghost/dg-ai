@@ -1,9 +1,10 @@
+import type { CompletionNode } from "@dg/common/completion";
 import type { Command } from "commander";
 import type { LayoutHooks } from "@dg/common/node/layout";
 
 export const VERSION = process.env.DG_BUILD_VERSION ?? "dev";
 
-const SKIP = new Set(["hooks run"]);
+const SKIP = new Set(["hooks run", "completion"]);
 
 type HookSeams = { platform?: NodeJS.Platform };
 
@@ -67,6 +68,13 @@ export async function main(argv: readonly string[]): Promise<number> {
 	if (argv.length === 1 && argv[0] === "--version") {
 		process.stdout.write(`${VERSION}\n`);
 		return 0;
+	}
+	if (argv[0] === "__complete") {
+		const [{ printCompletions }, { default: tree }] = await Promise.all([
+			import("@dg/common/completion"),
+			import("./completion/tree.json", { with: { type: "json" } }),
+		]);
+		return printCompletions(tree as CompletionNode, argv.slice(1));
 	}
 	const [{ Command, CommanderError }, { registerAll }, { ensureLayout }, { installLayoutPreAction }] =
 		await Promise.all([

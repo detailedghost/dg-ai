@@ -47,3 +47,10 @@ export function callBrowserApi<T>(
 		if (result) void Promise.resolve(result).then(finish, fail);
 	});
 }
+
+export function defaultIsChromium(): boolean {
+	const runtime = (
+		globalThis as { browser?: { runtime?: { getBrowserInfo?: unknown } } }
+	).browser?.runtime;
+	return typeof runtime?.getBrowserInfo !== "function";
+}

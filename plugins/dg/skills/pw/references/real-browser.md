@@ -54,8 +54,12 @@ group, until the human hands you a tab from the extension popup.
 
 - `--ext` gives you the agent's tab group. The first verb on a new site in a
   session, `open` and `new` too, asks the human in a popup to allow that site
-  for the session. Ask for sites only as the task needs them; a denied site
-  touches no page. Act only on what the human asked for.
+  for the session. A site is a registrable domain with its scheme and any
+  non-default port: one Allow on `login.live.com` covers `outlook.live.com` too,
+  but `a.github.io`, `b.github.io` and `example.com:8080` ask apart. IPs,
+  `localhost` and single-label hosts ask per origin, port included. Ask for sites only as the task needs them; a denied
+  site touches no page. Do not retry a denied site in a loop. Act only on what
+  the human asked for.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
   The toolbar popup has the same Stop for each session that drives tabs.
   If the human clicks Stop, every verb fails with an error that names Stop.
