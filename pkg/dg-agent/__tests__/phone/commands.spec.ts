@@ -1459,6 +1459,7 @@ describe("status", () => {
 			autostart: null,
 			files: "off",
 			presence: "on",
+			roster: "on",
 		});
 	});
 

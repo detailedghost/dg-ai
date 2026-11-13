@@ -1,20 +1,30 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import { generateSecretKey, getPublicKey, nip19, nip59 } from "nostr-tools";
 import { fetchNew, ROSTER_KIND, wrap, wrapTagged, type KeyEntry } from "../../src/phone/chat";
-import { phoneAccept, phoneClose, phoneNumber, type OpenCloseDeps, type PhoneDeps } from "../../src/phone/commands";
+import { phoneAccept, phoneClose, phoneNumber, phoneRoster, phoneStatus, type OpenCloseDeps, type PhoneDeps } from "../../src/phone/commands";
 import { createFileKey } from "../../src/phone/keys";
 import {
+	activitySeconds,
+	chooseSessionName,
 	claudeNameFromJson,
 	codexNameFromLine,
 	currentSelfName,
 	type DiscoveredAgent,
 	discoverAgents,
+	fallbackHandle,
 	namesForRoster,
+	preferNewer,
+	ROSTER_ACTIVE_WINDOW_S,
+	rosterEligible,
+	slugDropsText,
 	slugHandle,
+	tailLines,
+	TITLE_MAX_WORDS,
 } from "../../src/phone/names";
 import {
+	announceRoster,
 	applyRoster,
 	clearMachineContacts,
 	handleIncomingRoster,
@@ -33,11 +43,13 @@ import {
 	rosterDocument,
 	rosterHash,
 	flushRosterPush,
+	localRoster,
 	sendRoster,
 	setupSelfName,
+	syncIdentities,
 	type RosterAgent,
 } from "../../src/phone/roster";
-import { addContact, findContactByHandle, gateFor, listContacts, numberKeyId, readAdmissionEpoch, readNumber } from "../../src/phone/store";
+import { addContact, findContactByHandle, gateFor, listContacts, numberKeyId, readAdmissionEpoch, readNumber, readRosterOn, writeRosterOn } from "../../src/phone/store";
 import { createFakePool, freshNpub, makeHomeTracker, makePhoneDeps, parseNdjson, type FakePool } from "./fake-pool";
 
 const NOW = Math.floor(Date.now() / 1000);
@@ -159,6 +171,185 @@ describe("session names", () => {
 			).map((agent) => agent.handle),
 		).toEqual(["zzz", "aaa"]);
 	});
+
+	it("uses a real title, then a short summary, and does not slug prompt text", () => {
+		expect(TITLE_MAX_WORDS).toBe(6);
+		expect(slugDropsText("Merc", "merc")).toBe(false);
+		expect(slugDropsText("can we have a new worktree and a branch", "can-we-have-a-new-worktree-and-a")).toBe(true);
+		const prompt = "can we have a new worktree and a branch";
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: "Merc" })).toBe("Merc");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", titles: ["Roster names"], label: prompt, prompt })).toBe("Roster names");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", titles: ["Custom title", prompt], label: prompt, prompt })).toBe("Custom title");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: prompt, prompt })).toBe("codex-thr1");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: "continue", bareWordIsPrompt: true })).toBe("codex-thr1");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: "a b c d e f" })).toBe("a b c d e f");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: "a b c d e f g" })).toBe("codex-thr1");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: "abcd efg", prompt: "abcd efg and then the rest of the prompt" })).toBe("codex-thr1");
+		expect(chooseSessionName({ runtime: "codex", id: "thr-1", label: "ab cd", prompt: "ab cd and then the rest of the prompt" })).toBe("ab cd");
+		expect(chooseSessionName({ runtime: "claude", label: "agent" })).toBeUndefined();
+		expect(chooseSessionName({ runtime: "claude", id: "sess-1" })).toBeUndefined();
+		expect(chooseSessionName({ runtime: "grok", label: "can we have a new worktree and a branch" })).toBeUndefined();
+		expect(fallbackHandle("codex", "ab", new Set())).toBeUndefined();
+		expect(fallbackHandle("codex", "thr-1", new Set())).toBe("codex-thr1");
+		const long = "019a3f2c1111222233334444";
+		expect(fallbackHandle("codex", long, new Set())).toBe("codex-019a3f2c1111");
+		expect(fallbackHandle("codex", long, new Set(["codex-019a3f2c1111"]))).toBe("codex-019a3f2c11112");
+		expect(codexNameFromLine(JSON.stringify({ id: "thr-1", thread_name: prompt }), "thr-1")).toEqual({ name: "codex-thr1", current: true });
+		expect(codexNameFromLine(JSON.stringify({ id: "thr-1", thread_name: "continue" }), "thr-1")).toEqual({ name: "codex-thr1", current: true });
+		expect(
+			claudeNameFromJson(JSON.stringify({ name: prompt, summary: "roster names", id: "sess-1" }), "sess-1"),
+		).toEqual({ name: "roster names", current: true });
+		expect(activitySeconds(1_700_000_000)).toBe(1_700_000_000);
+		expect(activitySeconds(1_700_000_000_000)).toBe(1_700_000_000);
+		expect(activitySeconds(0)).toBeUndefined();
+		expect(activitySeconds("not-a-time")).toBeUndefined();
+	});
+
+	it("keeps the newest Codex row for a thread and drops a stale one from the roster", () => {
+		const now = 1_700_000_000;
+		const home = tracker.freshHome();
+		const prompt = "from the latest origin master branch please continue";
+		const recent = new Date(now * 1000).toISOString();
+		const stale = new Date((now - ROSTER_ACTIVE_WINDOW_S - 1) * 1000).toISOString();
+		mkdirSync(join(home, ".codex"), { recursive: true });
+		writeFileSync(
+			join(home, ".codex", "session_index.jsonl"),
+			[
+				JSON.stringify({ id: "thr-old", thread_name: prompt, updated_at: stale }),
+				JSON.stringify({ id: "thr-live", thread_name: prompt, updated_at: recent }),
+				JSON.stringify({ id: "thr-live", thread_name: "can we have a new worktree and a branch", updated_at: stale }),
+				JSON.stringify({ id: "thr-live", thread_name: "Merc", updated_at: recent }),
+				JSON.stringify({ id: "thr-current", thread_name: "continue", updated_at: stale }),
+			].join("\n"),
+		);
+		const found = discoverAgents({
+			env: { CODEX_THREAD_ID: "thr-current", CODEX_HOME: join(home, ".codex") },
+			homeDir: home,
+			now,
+		});
+		expect(found.map((agent) => [agent.handle, agent.current])).toEqual([
+			["codex-thrcurrent", true],
+			["merc", false],
+		]);
+		expect(namesForRoster(found, 16, now).map((agent) => agent.handle)).toEqual(["codex-thrcurrent", "merc"]);
+	});
+
+	it("gives a shared title to the current session and then to the most recently active", () => {
+		const now = Math.floor(Date.now() / 1000);
+		const home = tracker.freshHome();
+		const sessions = join(home, ".claude", "sessions");
+		mkdirSync(sessions, { recursive: true });
+		const stalePath = join(sessions, "a-old.json");
+		const livePath = join(sessions, "b-live.json");
+		writeFileSync(stalePath, JSON.stringify({ name: "Dante", id: "sess-old" }));
+		writeFileSync(livePath, JSON.stringify({ name: "Dante", id: "sess-live" }));
+		const staleAt = new Date((now - ROSTER_ACTIVE_WINDOW_S - 10) * 1000);
+		utimesSync(stalePath, staleAt, staleAt);
+		utimesSync(livePath, new Date(now * 1000), new Date(now * 1000));
+		const dropped = discoverAgents({ env: { CLAUDE_CODE_SESSION_ID: "sess-live" }, homeDir: home, now });
+		expect(dropped.map((agent) => [agent.handle, agent.current])).toEqual([["dante", true]]);
+
+		const other = tracker.freshHome();
+		const otherSessions = join(other, ".claude", "sessions");
+		mkdirSync(otherSessions, { recursive: true });
+		const newerPath = join(otherSessions, "a-newer.json");
+		const olderPath = join(otherSessions, "b-older.json");
+		writeFileSync(newerPath, JSON.stringify({ name: "Dante", id: "sess-newer" }));
+		writeFileSync(olderPath, JSON.stringify({ name: "Dante", id: "sess-older" }));
+		utimesSync(olderPath, new Date((now - 100) * 1000), new Date((now - 100) * 1000));
+		utimesSync(newerPath, new Date((now - 1) * 1000), new Date((now - 1) * 1000));
+		const shared = discoverAgents({ env: { CLAUDE_CODE_SESSION_ID: "sess-older" }, homeDir: other, now });
+		expect(shared.map((agent) => [agent.handle, agent.current])).toEqual([
+			["dante", true],
+			["claude-sessnewer", false],
+		]);
+	});
+
+	it("leaves a session quiet for more than a day off the roster and keeps the one that is running", () => {
+		expect(ROSTER_ACTIVE_WINDOW_S).toBe(24 * 60 * 60);
+		const now = 1_800_000_000;
+		const row = (handle: string, activeAt: number | undefined, current = false): DiscoveredAgent => ({
+			runtime: "codex",
+			name: handle,
+			handle,
+			current,
+			...(activeAt === undefined ? {} : { activeAt }),
+		});
+		expect(rosterEligible(row("fresh", now - ROSTER_ACTIVE_WINDOW_S), now)).toBe(true);
+		expect(rosterEligible(row("stale", now - ROSTER_ACTIVE_WINDOW_S - 1), now)).toBe(false);
+		expect(rosterEligible(row("running", now - ROSTER_ACTIVE_WINDOW_S - 1, true), now)).toBe(true);
+		expect(rosterEligible(row("undated", undefined), now)).toBe(true);
+		expect(preferNewer({ activeAt: 5, index: 0 }, { activeAt: 4, index: 9 })).toBe(true);
+		expect(preferNewer({ activeAt: 4, index: 9 }, { activeAt: 5, index: 0 })).toBe(false);
+		expect(preferNewer({ activeAt: 5, index: 0 }, { index: 9 })).toBe(true);
+		expect(preferNewer({ index: 0 }, { activeAt: 5, index: 9 })).toBe(false);
+		expect(preferNewer({ activeAt: 5, index: 1 }, { activeAt: 5, index: 2 })).toBe(false);
+		expect(preferNewer({ index: 3 }, { index: 2 })).toBe(true);
+		expect(tailLines("a\n\nb\nc\n", 2)).toEqual(["b", "c"]);
+		expect(tailLines("a\nb\n", 5)).toEqual(["a", "b"]);
+		expect(tailLines("a\nb\n", 0)).toEqual([]);
+		const ranked = namesForRoster(
+			[row("old", now - 10), row("new", now - 1), row("same", now - 1), row("undated", undefined), row("running", now - 100, true)],
+			2,
+			now,
+		);
+		expect(ranked.map((agent) => agent.handle)).toEqual(["running", "new"]);
+		expect(namesForRoster([row("mmm", now - 1), row("aaa", now - 1)], 1, now).map((agent) => agent.handle)).toEqual(["aaa"]);
+		const home = tracker.freshHome();
+		const sessions = join(home, ".claude", "sessions");
+		mkdirSync(sessions, { recursive: true });
+		const stalePath = join(sessions, "old.json");
+		const livePath = join(sessions, "live.json");
+		writeFileSync(stalePath, JSON.stringify({ name: "Oldie", id: "sess-old" }));
+		writeFileSync(livePath, JSON.stringify({ name: "Live", id: "sess-live" }));
+		const old = new Date((now - ROSTER_ACTIVE_WINDOW_S - 5) * 1000);
+		utimesSync(stalePath, old, old);
+		utimesSync(livePath, new Date(now * 1000), new Date(now * 1000));
+		const found = discoverAgents({ env: { CLAUDE_CODE_SESSION_ID: "sess-old" }, homeDir: home });
+		expect(namesForRoster(found, 16, now).map((agent) => agent.handle).sort()).toEqual(["live", "oldie"]);
+		expect(chooseSessionName({ runtime: "claude", titles: ["agent"], id: "sess-abcdef" })).toBeUndefined();
+		expect(chooseSessionName({ runtime: "claude", titles: ["default"], label: "continue", bareWordIsPrompt: true, id: "sess-abcdef" })).toBe(
+			"claude-sessabcdef",
+		);
+		const wide = "b".repeat(26);
+		const taken = new Set<string>();
+		for (let length = 12; length < 26; length += 1) taken.add(`codex-${"b".repeat(length)}`);
+		expect(fallbackHandle("codex", wide, taken)).toBe(`codex-${wide}`);
+		taken.add(`codex-${wide}`);
+		expect(fallbackHandle("codex", "b".repeat(30), taken)).toBeUndefined();
+	});
+
+	it("reads a dg session file and a live daemon row, and skips a placeholder and a duplicate", async () => {
+		const { Database } = await import("bun:sqlite");
+		const home = tracker.freshHome();
+		const sessions = join(home, "sessions");
+		mkdirSync(sessions, { recursive: true });
+		writeFileSync(
+			join(sessions, "file-1.json"),
+			JSON.stringify({ sessionId: "file-1", token: "tok", cwd: "/tmp/work", agentIdentity: "Dee Gee" }),
+		);
+		writeFileSync(
+			join(sessions, "dup.json"),
+			JSON.stringify({ sessionId: "dup", token: "tok", cwd: "/tmp/work", agentIdentity: "dee gee" }),
+		);
+		writeFileSync(
+			join(sessions, "agent.json"),
+			JSON.stringify({ sessionId: "agent-1", token: "tok", cwd: "/tmp/work", agentIdentity: "agent" }),
+		);
+		const dbPath = join(home, "daemon.db");
+		const database = new Database(dbPath);
+		database.run("CREATE TABLE sessions (id TEXT, cwd TEXT, agent_identity TEXT, state TEXT)");
+		database.run("INSERT INTO sessions (id, cwd, agent_identity, state) VALUES ('file-1', '/tmp/work', 'Dee Gee', 'active')");
+		database.run("INSERT INTO sessions (id, cwd, agent_identity, state) VALUES ('db-1', '/tmp/work', 'From Db', 'active')");
+		database.run("INSERT INTO sessions (id, cwd, agent_identity, state) VALUES ('gone', '/tmp/work', 'Gone', 'closed')");
+		database.close();
+		const found = discoverAgents({ env: {}, homeDir: home, sessionsDir: sessions, daemonDb: dbPath, sessionId: "file-1" });
+		const dg = found.filter((agent) => agent.runtime === "dg");
+		expect(dg.map((agent) => [agent.handle, agent.current, agent.activeAt !== undefined])).toEqual([
+			["dee-gee", true, true],
+			["from-db", false, false],
+		]);
+	});
 });
 
 describe("roster documents", () => {
@@ -237,10 +428,20 @@ describe("applying a roster", () => {
 		applyRoster(d.db, sender, [kit, merc], NOW, new Set());
 		expect(readAdmissionEpoch(d.db)).toBe(epoch + 1);
 		applyRoster(d.db, other, [agent("ada", "codex")], NOW, new Set());
+		addContact(d.db, {
+			npub: freshNpub(),
+			handle: "pal",
+			relays: ["wss://a.example"],
+			keyId: numberKeyId(d.db),
+			addedAt: NOW,
+			via: "accept",
+			originNpub: sender,
+		});
 		const again = applyRoster(d.db, sender, [kit, merc], NOW, new Set());
 		expect(again).toMatchObject({ ok: true, added: [], removed: [] });
 		expect(readAdmissionEpoch(d.db)).toBe(epoch + 2);
 		expect(applyRoster(d.db, sender, [kit], NOW, new Set())).toMatchObject({ removed: ["merc"] });
+		expect(findContactByHandle(d.db, "pal")?.via).toBe("accept");
 		expect(readAdmissionEpoch(d.db)).toBe(epoch + 3);
 		applyRoster(d.db, sender, [{ handle: "kite", npub: kit.npub, runtime: "claude" }], NOW, new Set());
 		expect(findContactByHandle(d.db, "kite")?.npub).toBe(kit.npub);
@@ -407,9 +608,29 @@ describe("machine exchange", () => {
 		["claude", "codex"],
 	] as const;
 
+	function plantRuntime(home: string, handle: string, runtime: string): Record<string, string> {
+		const updated = new Date().toISOString();
+		if (runtime === "claude") {
+			mkdirSync(join(home, ".claude", "sessions"), { recursive: true });
+			writeFileSync(join(home, ".claude", "sessions", `${handle}.json`), JSON.stringify({ name: handle, id: `sess-${handle}`, updatedAt: updated }));
+			return { CLAUDE_CODE_SESSION_ID: `sess-${handle}` };
+		}
+		if (runtime === "codex") {
+			mkdirSync(join(home, ".codex"), { recursive: true });
+			writeFileSync(
+				join(home, ".codex", "session_index.jsonl"),
+				`${JSON.stringify({ id: `thr-${handle}`, title: handle, updated_at: updated })}\n`,
+			);
+			return { CODEX_THREAD_ID: `thr-${handle}`, CODEX_HOME: join(home, ".codex") };
+		}
+		return { GROK_AGENT_NAME: handle };
+	}
+
 	async function side(handle: string, runtime: string): Promise<{ deps: PhoneDeps; sk: Uint8Array; npub: string; agent: RosterAgent }> {
-		const d = deps(tracker.freshHome());
+		const home = tracker.freshHome();
+		const d = deps(home, { homeDir: home });
 		await phoneNumber({}, d);
+		d.env = plantRuntime(home, handle, runtime);
 		const sk = createFileKey(d.db, numberKeyId(d.db)) ?? createFileKey(d.db, "default");
 		if (!sk) throw new Error("number key");
 		const npub = nip19.npubEncode(getPublicKey(sk));
@@ -459,8 +680,20 @@ describe("machine exchange", () => {
 	it("stores a mixed Claude, Codex, and Grok roster from one machine", async () => {
 		pool = createFakePool();
 		out = [];
-		const box = deps(tracker.freshHome());
+		const home = tracker.freshHome();
+		const box = deps(home, { homeDir: home });
 		await phoneNumber({}, box);
+		const updated = new Date().toISOString();
+		mkdirSync(join(home, ".claude", "sessions"), { recursive: true });
+		writeFileSync(join(home, ".claude", "sessions", "dante.json"), JSON.stringify({ name: "Dante", id: "sess-dante", updatedAt: updated }));
+		mkdirSync(join(home, ".codex"), { recursive: true });
+		writeFileSync(join(home, ".codex", "session_index.jsonl"), `${JSON.stringify({ id: "thr-merc", thread_name: "Merc", updated_at: updated })}\n`);
+		box.env = {
+			CLAUDE_CODE_SESSION_ID: "sess-dante",
+			CODEX_THREAD_ID: "thr-merc",
+			CODEX_HOME: join(home, ".codex"),
+			GROK_AGENT_NAME: "Warren",
+		};
 		const boxSk = createFileKey(box.db, numberKeyId(box.db));
 		if (!boxSk) throw new Error("key");
 		const boxNpub = nip19.npubEncode(getPublicKey(boxSk));
@@ -636,6 +869,164 @@ describe("machine exchange", () => {
 		expect(findContactByHandle(d.db, "box")).toBeDefined();
 		await expect(phoneClose(d as OpenCloseDeps, { clear: true })).rejects.toThrow("--with");
 	});
+
+	it("close --with --clear keeps a hand-added contact and drops only via:roster rows", async () => {
+		pool = createFakePool();
+		out = [];
+		const d = deps(tracker.freshHome());
+		createFileKey(d.db, "default");
+		const merc = freshNpub();
+		addContact(d.db, { npub: merc, handle: "merc", relays: ["wss://a.example"], keyId: numberKeyId(d.db), addedAt: NOW, via: "accept" });
+		addContact(d.db, { npub: freshNpub(), handle: "ada", relays: ["wss://a.example"], keyId: numberKeyId(d.db), addedAt: NOW, via: "invite" });
+		applyRoster(d.db, merc, [agent("kit", "grok")], NOW, new Set());
+		addContact(d.db, {
+			npub: freshNpub(),
+			handle: "pal",
+			relays: ["wss://a.example"],
+			keyId: numberKeyId(d.db),
+			addedAt: NOW,
+			via: "accept",
+			originNpub: merc,
+		});
+		writeRosterOn(d.db, false);
+		await phoneClose(d as OpenCloseDeps, { with: "+merc", clear: true });
+		expect(lines()[0]).toEqual({ machine: "+merc", removed: ["+kit"], status: "cleared" });
+		expect(findContactByHandle(d.db, "merc")?.via).toBe("accept");
+		expect(findContactByHandle(d.db, "ada")?.via).toBe("invite");
+		expect(findContactByHandle(d.db, "pal")?.via).toBe("accept");
+		expect(findContactByHandle(d.db, "kit")).toBeUndefined();
+	});
+
+	it("does not send a roster on accept or on an update when roster is off", async () => {
+		pool = createFakePool();
+		out = [];
+		const home = tracker.freshHome();
+		const owner = deps(home);
+		await phoneNumber({}, owner);
+		const printed = lines()[0] as { card: string; npub: string };
+		const peerHome = tracker.freshHome();
+		const peer = deps(peerHome, { homeDir: peerHome, env: { GROK_AGENT_NAME: "Warren" } });
+		identity(peer.db, "warren", "grok");
+		writeRosterOn(peer.db, false);
+		pool.events.length = 0;
+		await phoneAccept(printed.card, "hi", peer);
+		const ownerSk = createFileKey(owner.db, numberKeyId(owner.db));
+		if (!ownerSk) throw new Error("key");
+		const rosterSent = pool.events.some((event) => {
+			try {
+				return rumorTags(event, ownerSk).some((tag) => tag[0] === ROSTER_TAG);
+			} catch {
+				return false;
+			}
+		});
+		expect(rosterSent).toBe(false);
+		expect(pool.events.length).toBeGreaterThan(0);
+		pool.events.length = 0;
+		await announceRoster(peer, printed.npub);
+		expect(pool.events).toEqual([]);
+		let clock = peer.now();
+		const ticking = { ...peer, now: () => clock };
+		expect(await flushRosterPush(ticking)).toBe(0);
+		clock += ROSTER_DEBOUNCE_MAX_S;
+		expect(await flushRosterPush(ticking)).toBe(0);
+		expect(pool.events).toEqual([]);
+		writeRosterOn(peer.db, true);
+		expect(await flushRosterPush(ticking)).toBe(0);
+		clock += ROSTER_DEBOUNCE_S;
+		expect(await flushRosterPush(ticking)).toBe(1);
+	});
+
+	it("ignores an incoming roster when roster is off and still accepts the text", async () => {
+		pool = createFakePool();
+		out = [];
+		const d = deps(tracker.freshHome());
+		const sk = createFileKey(d.db, "default");
+		if (!sk) throw new Error("key");
+		const peerSk = generateSecretKey();
+		const peerNpub = nip19.npubEncode(getPublicKey(peerSk));
+		pairContact(d.db, peerNpub, "peer");
+		writeRosterOn(d.db, false);
+		const roster = wrapTagged(
+			{ kind: ROSTER_KIND, content: "", tags: [[ROSTER_TAG, "offer"], [ROSTER_BODY_TAG, rosterDocument([agent("kit", "claude")])] ] },
+			peerSk,
+			getPublicKey(sk),
+		);
+		pool.events.push(roster, wrap("hello from claude", peerSk, getPublicKey(sk)));
+		const keys: KeyEntry[] = [{ id: "default", pub: getPublicKey(sk), sk }];
+		const caught = await fetchNew(pool, ["wss://a.example"], keys, gateFor(d.db), { cursor: 0, ids: [] }, () => NOW + 10);
+		expect(caught.messages.map((message) => message.text)).toEqual(["hello from claude"]);
+		const notes: string[] = [];
+		const control = {
+			id: "x",
+			wrapId: "y",
+			kind: ROSTER_KIND,
+			from: getPublicKey(peerSk),
+			keyId: "default",
+			createdAt: NOW,
+			tags: [[ROSTER_TAG, "offer"], [ROSTER_BODY_TAG, rosterDocument([agent("kit", "claude")])]],
+		};
+		await handleIncomingRoster({ ...d, debug: (line) => notes.push(line) }, control);
+		await handleIncomingRoster({ ...d, debug: (line) => notes.push(line) }, { ...control, id: "x2" });
+		expect(notes).toEqual(["phone: roster is off; ignoring a roster\n"]);
+		expect(findContactByHandle(d.db, "kit")).toBeUndefined();
+		expect(d.db.takeHeldRoster(peerNpub)).toBeUndefined();
+		expect(listContacts(d.db).map((contact) => contact.handle)).toEqual(["peer"]);
+	});
+
+	it("still gives a live agent a key when stale identities already fill the send cap", async () => {
+		const home = tracker.freshHome();
+		const d = deps(home, { homeDir: home, env: { GROK_AGENT_NAME: "Warren" } });
+		for (let index = 0; index < 16; index += 1) d.db.putIdentity(`old${index}`, `agent-old${index}`, "codex");
+		await syncIdentities(d);
+		expect(d.db.listIdentities().some((row) => row.handle === "warren")).toBe(true);
+		expect((await localRoster(d)).map((agent) => agent.handle)).toEqual(["warren"]);
+		const have = d.db.listIdentities().length;
+		for (let index = have; index < 64; index += 1) d.db.putIdentity(`pad${index}`, `agent-pad${index}`, "codex");
+		expect(d.db.listIdentities()).toHaveLength(64);
+		d.env = { GROK_AGENT_NAME: "Kitten" };
+		await syncIdentities(d);
+		expect(d.db.listIdentities().some((row) => row.handle === "kitten")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "old0")).toBe(false);
+		expect(d.db.listIdentities().some((row) => row.handle === "warren")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "pad63")).toBe(true);
+		expect(d.db.listIdentities()).toHaveLength(64);
+	});
+
+	it("evicts the oldest ineligible identity and keeps an eligible one stored earlier", async () => {
+		const home = tracker.freshHome();
+		const d = deps(home, { homeDir: home, env: { GROK_AGENT_NAME: "Warren" } });
+		await syncIdentities(d);
+		for (let index = 0; index < 63; index += 1) d.db.putIdentity(`pad${index}`, `agent-pad${index}`, "codex");
+		expect(d.db.identityHandlesByAge()[0]).toBe("warren");
+		expect(d.db.listIdentities()).toHaveLength(64);
+		mkdirSync(join(home, ".codex"), { recursive: true });
+		writeFileSync(
+			join(home, ".codex", "session_index.jsonl"),
+			`${JSON.stringify({ id: "thr-kitten", title: "Kitten", updated_at: new Date().toISOString() })}\n`,
+		);
+		d.env = { GROK_AGENT_NAME: "Warren", CODEX_HOME: join(home, ".codex"), CODEX_THREAD_ID: "thr-kitten" };
+		await syncIdentities(d);
+		expect(d.db.listIdentities().some((row) => row.handle === "warren")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "kitten")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "pad0")).toBe(false);
+		expect(d.db.listIdentities().some((row) => row.handle === "pad62")).toBe(true);
+		expect(d.db.listIdentities()).toHaveLength(64);
+	});
+
+	it("prints and stores the roster setting, and status shows it", async () => {
+		pool = createFakePool();
+		out = [];
+		const d = deps(tracker.freshHome());
+		await phoneNumber({}, d);
+		out = [];
+		phoneRoster(undefined, d);
+		phoneRoster("off", d);
+		expect(readRosterOn(d.db)).toBe(false);
+		await phoneStatus(d);
+		phoneRoster("on", d);
+		expect(lines().map((line) => (line as { roster?: string }).roster)).toEqual(["on", "off", "off", "on"]);
+		expect(() => phoneRoster("maybe", d)).toThrow('roster takes on or off, got "maybe"');
+	});
 });
 
 describe("roster hash", () => {
@@ -644,7 +1035,7 @@ describe("roster hash", () => {
 		out = [];
 		let clock = 100;
 		const home = tracker.freshHome();
-		const base = deps(home);
+		const base = deps(home, { homeDir: home, env: { GROK_AGENT_NAME: "Warren" } });
 		const d = { ...base, now: () => clock };
 		createFileKey(d.db, "default");
 		identity(d.db, "warren", "grok");

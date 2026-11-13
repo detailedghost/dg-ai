@@ -23,7 +23,7 @@ describe("phone skill", () => {
 	});
 
 	test("documents every phone verb it drives", () => {
-		for (const verb of ["number", "invite", "accept", "contacts", "group", "text", "messages", "unread", "watch", "status", "open", "close", "ping", "presence"]) {
+		for (const verb of ["number", "invite", "accept", "contacts", "group", "text", "messages", "unread", "watch", "status", "open", "close", "ping", "presence", "roster"]) {
 			expect(skill).toContain(`phone ${verb}`);
 		}
 		expect(skill).toContain("--meta");

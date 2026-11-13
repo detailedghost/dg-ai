@@ -45,6 +45,8 @@ export const PUBLISH_CONFIRM_SETTING = "publish_confirm_ms";
 /** Whether `say --image` may send; off until someone runs `phone files on`. */
 const FILES_SETTING = "files";
 const PRESENCE_SETTING = "presence";
+/** Roster exchange stays on until `phone roster off`. */
+const ROSTER_SETTING = "roster";
 /** Short-lived kind 10050 lookup results, keyed by recipient pubkey hex. */
 const INBOX_RELAYS_SETTING = "inbox_relays";
 
@@ -175,6 +177,15 @@ export function readPresenceOn(db: PhoneDb): boolean {
 
 export function writePresenceOn(db: PhoneDb, on: boolean): void {
 	db.set(PRESENCE_SETTING, on);
+}
+
+/** Sending and accepting rosters stays on until the human runs `phone roster off`. */
+export function readRosterOn(db: PhoneDb): boolean {
+	return db.get<boolean>(ROSTER_SETTING) !== false;
+}
+
+export function writeRosterOn(db: PhoneDb, on: boolean): void {
+	db.set(ROSTER_SETTING, on);
 }
 
 /** Cached kind 10050 relays for `pubkey`, or undefined when missing or older than `ttlSeconds`. */

@@ -683,6 +683,15 @@ export class PhoneDb {
 		return this.db.query("SELECT handle, key_id, runtime FROM identities ORDER BY handle").all() as IdentityRow[];
 	}
 
+	/** Insertion order, oldest first. Eviction walks this when the store is full. */
+	identityHandlesByAge(): string[] {
+		return (this.db.query("SELECT handle FROM identities ORDER BY rowid").all() as { handle: string }[]).map((row) => row.handle);
+	}
+
+	removeIdentity(handle: string): void {
+		this.db.query("DELETE FROM identities WHERE handle = $handle").run({ handle });
+	}
+
 	readRosterSent(npub: string): string | undefined {
 		const row = this.db.query("SELECT hash FROM roster_sent WHERE npub = $npub").get({ npub }) as { hash: string } | null;
 		return row?.hash;
