@@ -148,6 +148,16 @@ async function readRecords(storage: AgentTabsStorage): Promise<AgentRecord[]> {
 		.map(([, record]) => record as AgentRecord);
 }
 
+async function ownerRecords(storage: AgentTabsStorage): Promise<AgentRecord[]> {
+	const live = await readRecords(storage);
+	const known = new Set(live.map((record) => record.sessionId));
+	const saved = Object.entries((await storage.local?.get(null)) ?? {})
+		.filter(([key]) => key.startsWith(PERSIST_PREFIX))
+		.map(([, record]) => record as AgentRecord)
+		.filter((record) => !known.has(record.sessionId));
+	return [...live, ...saved];
+}
+
 /** Agent group ids read under the agent tab lock, so an adopt in flight saves its record first. */
 export function lockedAgentGroupIds({
 	storage,
@@ -167,7 +177,7 @@ export async function agentSessionOfGroup({
 	storage: AgentTabsStorage;
 	groupId: number;
 }): Promise<string | undefined> {
-	return (await readRecords(storage)).find((record) => record.groupId === groupId)?.sessionId;
+	return (await ownerRecords(storage)).find((record) => record.groupId === groupId)?.sessionId;
 }
 
 /** Session ids that hold an agent tab group. */
@@ -176,7 +186,7 @@ export async function agentSessionIds({
 }: {
 	storage: AgentTabsStorage;
 }): Promise<Set<string>> {
-	return new Set((await readRecords(storage)).map((record) => record.sessionId));
+	return new Set((await ownerRecords(storage)).map((record) => record.sessionId));
 }
 
 /** Chrome tab group ids that belong to an agent session. */
@@ -185,13 +195,7 @@ export async function agentGroupIds({
 }: {
 	storage: AgentTabsStorage;
 }): Promise<Set<number>> {
-	const saved = Object.entries((await storage.local?.get(null)) ?? {})
-		.filter(([key]) => key.startsWith(PERSIST_PREFIX))
-		.map(([, record]) => (record as AgentRecord).groupId);
-	return new Set([
-		...(await readRecords(storage)).map((record) => record.groupId),
-		...saved,
-	]);
+	return new Set((await ownerRecords(storage)).map((record) => record.groupId));
 }
 
 function withoutSelection(record: AgentRecord): AgentRecord {

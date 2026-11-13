@@ -4,6 +4,8 @@ import { MSG } from "@dg/pages/chat-messages";
 import {
 	AgentGroupFullError,
 	agentGroupIds,
+	agentSessionIds,
+	agentSessionOfGroup,
 	createAgentTabs,
 	groupTitle,
 	MAX_AGENT_TABS,
@@ -245,6 +247,15 @@ describe("agent tabs open", () => {
 
 		expect(await agentGroupIds({ storage: fake.api.storage })).toEqual(
 			new Set([groupOf(fake, first.tabId)]),
+		);
+		expect(
+			await agentSessionOfGroup({
+				storage: fake.api.storage,
+				groupId: groupOf(fake, first.tabId),
+			}),
+		).toBe(SESSION_A);
+		expect(await agentSessionIds({ storage: fake.api.storage })).toEqual(
+			new Set([SESSION_A]),
 		);
 		await agentTabs.clearPersisted();
 		expect((await agentGroupIds({ storage: fake.api.storage })).size).toBe(0);
