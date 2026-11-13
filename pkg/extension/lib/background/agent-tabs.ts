@@ -476,7 +476,7 @@ export function createAgentTabs({
 
 		async groups(): Promise<AgentTabsReply["groups"]> {
 			return Promise.all(
-				(await ownerRecords(storage)).map(async (record) => {
+				(await readRecords(storage)).map(async (record) => {
 					const group = await api.tabGroups
 						.get(record.groupId)
 						.catch(() => undefined);
@@ -490,8 +490,7 @@ export function createAgentTabs({
 		},
 
 		async list({ sessionId }: { sessionId: string }): Promise<AgentTab[]> {
-			const record = (await read(sessionId)) ??
-				(await ownerRecords(storage)).find((other) => other.sessionId === sessionId);
+			const record = await read(sessionId);
 			return record ? rows(record) : [];
 		},
 
