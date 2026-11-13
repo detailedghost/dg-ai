@@ -8,6 +8,7 @@ import {
 import { DgCliError, EXIT_GENERAL_FAILURE } from "./errors";
 import { INBOX_WIRE } from "./inbox-format";
 import { PROTO_WIRE, validateProtoIdentifier } from "./proto-format";
+import { validatePwExtCredentialStore, validatePwExtCredentialStored } from "./pw-ext-credential-format";
 import type { RELAY_FEATURES } from "./relay-features";
 import {
 	type RelayChatFrame,
@@ -287,6 +288,22 @@ export type ChatFrame =
 			requestId: string;
 	  })
 	| (Envelope & {
+			type: "pw-ext-credential-store";
+			token: string;
+			requestId: string;
+			site: string;
+			name: string;
+			value: string;
+			meta: Record<string, unknown>;
+	  })
+	| (Envelope & {
+			type: "pw-ext-credential-stored";
+			requestId: string;
+			ok: boolean;
+			name?: string;
+			error?: string;
+	  })
+	| (Envelope & {
 			type: "overwatch-open-result";
 			token: string;
 			requestId: string;
@@ -319,6 +336,8 @@ const HAND_FRAME_TYPES = [
 	"overwatch-state",
 	"overwatch-open",
 	"overwatch-open-result",
+	"pw-ext-credential-store",
+	"pw-ext-credential-stored",
 ] as const;
 
 const HAND_INBOUND_TYPES = [
@@ -332,6 +351,7 @@ const HAND_INBOUND_TYPES = [
 	"config-get",
 	"config-set",
 	"overwatch-open-result",
+	"pw-ext-credential-store",
 ] as const;
 
 /** Relay tables whose frames reach the chat and board pages. */
@@ -741,6 +761,12 @@ function validateFrameBody(
 			if (value.error !== undefined) {
 				requireString(value.error, `${path}.error`);
 			}
+			return;
+		case "pw-ext-credential-store":
+			validatePwExtCredentialStore(value, path);
+			return;
+		case "pw-ext-credential-stored":
+			validatePwExtCredentialStored(value, path);
 			return;
 		case "overwatch-state":
 			requireOverwatchSessionId(value.sessionId, `${path}.sessionId`);

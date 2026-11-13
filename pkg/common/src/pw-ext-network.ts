@@ -373,3 +373,91 @@ export function formatNetwork(
 	lines.push(`Newest request at ${newest}. Run pw --ext network --since ${newest} to see only later ones.`);
 	return lines;
 }
+
+export const PW_EXT_STORAGE_MAX_KEYS = 200;
+
+/** One localStorage or sessionStorage entry as the page hook reports it; value only on a values read. */
+export type StorageItem = { key: string; length: number; type: "json" | "text"; shape?: NetworkShape; value?: string };
+
+/** Checks the raw storage result of the page hook. */
+export function validateStorageResult(raw: unknown): { items: StorageItem[]; total: number } {
+	const path = "storage result";
+	requireRecord(raw, path);
+	onlyKeys(raw, ["items", "total"], path);
+	if (!Number.isSafeInteger(raw.total) || (raw.total as number) < 0) fail(`${path}.total must be a count`);
+	if (!Array.isArray(raw.items) || raw.items.length > PW_EXT_STORAGE_MAX_KEYS) fail(`${path}.items must be a short array`);
+	for (const [index, item] of raw.items.entries()) {
+		const at = `${path}.items[${index}]`;
+		requireRecord(item, at);
+		onlyKeys(item, ["key", "length", "type", "shape", "value"], at);
+		requireString(item.key, `${at}.key`);
+		if (item.key.length > 256) fail(`${at}.key is too long`);
+		if (!Number.isSafeInteger(item.length) || (item.length as number) < 0) fail(`${at}.length must be a count`);
+		if (item.type !== "json" && item.type !== "text") fail(`${at}.type must be json or text`);
+		if (item.shape !== undefined) validateShape(item.shape, `${at}.shape`, 0, { nodes: PW_EXT_NETWORK_MAX_SHAPE_NODES });
+		if (item.value !== undefined) {
+			requireString(item.value, `${at}.value`);
+			if (item.value.length > PW_EXT_NETWORK_MAX_BODY_CHARS) fail(`${at}.value is too long`);
+		}
+	}
+	return raw as { items: StorageItem[]; total: number };
+}
+
+const TOKEN_LIKE = /^[A-Za-z0-9._~+/=-]{20,}$/;
+
+/** True for a string with no spaces that looks like a token or key rather than text. */
+export function looksLikeToken(value: string): boolean {
+	return TOKEN_LIKE.test(value) && /\d/.test(value) && /[A-Za-z]/.test(value);
+}
+
+function maskTokenTree(value: unknown): unknown {
+	if (typeof value === "string") return looksLikeToken(value) ? "[redacted]" : value;
+	if (Array.isArray(value)) return value.map(maskTokenTree);
+	if (typeof value !== "object" || value === null) return value;
+	return Object.fromEntries(
+		Object.entries(value).map(([key, inner]) => [key, CREDENTIAL_FIELD.test(key) ? "[redacted]" : maskTokenTree(inner)]),
+	);
+}
+
+/** A storage value with credential fields and every token-like string masked; a credential-named key masks the whole value. */
+export function maskStorageValue(key: string, raw: string, cut: boolean): string {
+	if (key.split(/[.:|/_-]/).some((part) => CREDENTIAL_FIELD.test(part)) || CREDENTIAL_FIELD.test(key)) return "[redacted]";
+	if (!cut && /^\s*[[{]/.test(raw))
+		try {
+			return JSON.stringify(maskTokenTree(JSON.parse(raw)));
+		} catch {}
+	if (looksLikeToken(raw.trim())) return "[redacted]";
+	return maskCredentialFields(raw)
+		.split(/(\s+|"|,)/)
+		.map((part) => (looksLikeToken(part) ? "[redacted]" : part))
+		.join("");
+}
+
+function storageKey(key: string): string {
+	return key
+		.split(/([.:|/])/)
+		.map((part) => (/^[.:|/]$/.test(part) || !looksLikeOpaqueId(part) ? part : MASK))
+		.join("");
+}
+
+/** Formats storage entries: key, type, length and JSON shape by default, and value() of each masked value on a values read. */
+export function formatStorage(
+	items: readonly StorageItem[],
+	total: number,
+	{ values, value }: { values: boolean; value: (text: string) => string },
+): string[] {
+	if (!items.length) return [total ? "No key matches." : "This storage is empty."];
+	const lines = [
+		`${items.length} of ${total} keys. ${values ? "Values shown; tokens, credentials and held secrets stay masked." : "Shape only: no values."}`,
+	];
+	for (const item of items) {
+		const shape = item.shape === undefined ? "" : ` ${clipShape(renderNetworkShape(item.shape))}`;
+		lines.push(`- ${storageKey(item.key)}: ${item.type}, ${item.length} chars${values ? "" : shape}`);
+		if (values && item.value !== undefined) {
+			const cut = item.value.length < item.length;
+			const masked = maskStorageValue(item.key, item.value, cut);
+			lines.push(`    ${value(cut && masked !== "[redacted]" ? `${masked}…` : masked).replace(/\s+/g, " ")}`);
+		}
+	}
+	return lines;
+}

@@ -22,6 +22,7 @@ export * from "./protected-branch";
 export * from "./proto-format";
 export * from "./pw-ext-format";
 export * from "./pw-ext-network";
+export * from "./pw-ext-credential-format";
 export * from "./regex";
 export * from "./relay-features";
 export * from "./relay-format";

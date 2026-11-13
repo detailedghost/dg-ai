@@ -325,12 +325,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 19 verbs for an unknown verb", async () => {
+	test("lists all 22 verbs for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(19);
+		expect(verbs).toHaveLength(22);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});
@@ -596,8 +596,8 @@ describe("pw --ext network", () => {
 		[["network", "--since", "soon"], "--since takes a time in ms or clear"],
 		[["network", "--since", "clear", "--values"], "--since clear takes no other option"],
 		[["network", "extra"], "pw --ext network takes no arguments."],
-		[["snapshot", "--values"], "--filter, --limit, --since and --values work only with pw --ext network."],
-		[["snapshot", "--filter", "x"], "--filter, --limit, --since and --values work only with pw --ext network."],
+		[["snapshot", "--values"], "--values works only with pw --ext network, storage or fetch."],
+		[["snapshot", "--filter", "x"], "--filter, --limit and --since work only with pw --ext network."],
 	])("rejects %p", async (args, message) => {
 		const env = clientEnv();
 		const d = deps(ok);

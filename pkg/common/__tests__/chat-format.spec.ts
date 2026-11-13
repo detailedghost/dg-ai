@@ -380,6 +380,33 @@ function buildOverwatchOpenFrame(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function buildPwExtCredentialStoreFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "pw-ext-credential-store" as const,
+		sessionId: "session-a",
+		token: "token-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "store-1",
+		site: "example.test",
+		name: "owa-token",
+		value: "fake-marker-value-for-tests",
+		meta: { site: "https://mail.example.test", source: "header:authorization", createdBy: "pw --ext credential save" },
+		...overrides,
+	};
+}
+
+function buildPwExtCredentialStoredFrame(overrides: Record<string, unknown> = {}) {
+	return {
+		type: "pw-ext-credential-stored" as const,
+		sessionId: "session-a",
+		protocolVersion: CHAT_PROTOCOL_VERSION,
+		requestId: "store-1",
+		ok: true,
+		name: "pw/example.test/owa-token",
+		...overrides,
+	};
+}
+
 function buildOverwatchOpenResultFrame(
 	overrides: Record<string, unknown> = {},
 ) {
@@ -427,6 +454,8 @@ const FRAME_FIXTURES: ReadonlyArray<[string, () => Record<string, unknown>]> = [
 	["overwatch-state", buildOverwatchStateFrame],
 	["overwatch-open", buildOverwatchOpenFrame],
 	["overwatch-open-result", buildOverwatchOpenResultFrame],
+	["pw-ext-credential-store", buildPwExtCredentialStoreFrame],
+	["pw-ext-credential-stored", buildPwExtCredentialStoredFrame],
 ];
 
 function ratifiedDiscriminants(): string[] {
@@ -814,6 +843,8 @@ const MASTER_CHAT_FRAME_TYPES = [
 	"overwatch-state",
 	"overwatch-open",
 	"overwatch-open-result",
+	"pw-ext-credential-store",
+	"pw-ext-credential-stored",
 ];
 
 const MASTER_INBOUND_FRAME_TYPES = [
@@ -831,7 +862,27 @@ const MASTER_INBOUND_FRAME_TYPES = [
 	"config-get",
 	"config-set",
 	"overwatch-open-result",
+	"pw-ext-credential-store",
 ];
+
+describe("pw-ext-credential-store frame", () => {
+	it.each([
+		["a name with a slash", { name: "a/b" }],
+		["a site with a port", { site: "localhost:3000" }],
+		["an empty value", { value: "" }],
+		["secret-looking meta", { meta: { tokenValue: "x" } }],
+		["no token", { token: undefined }],
+	])("rejects %s and never echoes the value", (_, overrides) => {
+		let message = "";
+		try {
+			validateChatFrame(buildPwExtCredentialStoreFrame(overrides));
+		} catch (error) {
+			message = String(error);
+		}
+		expect(message).not.toBe("");
+		expect(message).not.toContain("fake-marker-value-for-tests");
+	});
+});
 
 const FIXTURE_BY_TYPE = new Map(FRAME_FIXTURES);
 

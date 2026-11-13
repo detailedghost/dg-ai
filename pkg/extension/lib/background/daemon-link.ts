@@ -159,7 +159,7 @@ function pwExtContext({
 	bootstrap,
 }: {
 	bootstrap: SessionBootstrap;
-}): PwExtContext {
+}): Omit<PwExtContext, "storeCredential"> {
 	return {
 		sessionId: bootstrap.sessionId,
 		agentIdentity: bootstrap.agentIdentity,
@@ -252,7 +252,12 @@ export function registerDaemonLink(
 				bootstrapsBySession.get(sessionId) === bootstrap &&
 				keepaliveEligible.has(sessionId);
 		},
-		contextFor: { "pw-ext": pwExtContext },
+		contextFor: {
+			"pw-ext": ({ bootstrap }) => ({
+				...pwExtContext({ bootstrap }),
+				storeCredential: (entry) => storeCredential(bootstrap, entry),
+			}),
+		},
 	});
 
 	function stopKeepalive(): void {
@@ -322,6 +327,46 @@ export function registerDaemonLink(
 			if (!result || !sendOverwatchOpenCompletion(result)) return;
 			pendingOverwatchOpenCompletions.shift();
 		}
+	}
+
+	const credentialWaiters = new Map<string, (reply: { ok: boolean; name?: string; error?: string }) => void>();
+
+	/** Sends a captured value straight to the daemon store over the extension socket; the reply carries only the name. */
+	function storeCredential(
+		bootstrap: SessionBootstrap,
+		entry: { site: string; name: string; value: string; meta: Record<string, unknown> },
+	): Promise<string> {
+		const socket = currentSocket;
+		if (!socket) return Promise.reject(new Error("dg-daemon is not connected; nothing was saved."));
+		const requestId = crypto.randomUUID();
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				credentialWaiters.delete(requestId);
+				reject(new Error("dg-daemon did not confirm the save in time; check dg-skills credentials list."));
+			}, CONFIG_ROUND_TRIP_TIMEOUT_MS);
+			credentialWaiters.set(requestId, (reply) => {
+				clearTimeout(timer);
+				credentialWaiters.delete(requestId);
+				if (reply.ok && reply.name) resolve(reply.name);
+				else reject(new Error(reply.error ?? "dg-daemon refused the save; nothing was saved."));
+			});
+			try {
+				socket.send(
+					JSON.stringify({
+						type: "pw-ext-credential-store",
+						sessionId: bootstrap.sessionId,
+						token: bootstrap.token,
+						protocolVersion: CHAT_PROTOCOL_VERSION,
+						requestId,
+						...entry,
+					}),
+				);
+			} catch {
+				clearTimeout(timer);
+				credentialWaiters.delete(requestId);
+				reject(new Error("The save could not be sent to dg-daemon; nothing was saved."));
+			}
+		});
 	}
 
 	function requestDaemonConfig(
@@ -621,6 +666,14 @@ export function registerDaemonLink(
 
 	client.onFrame((frame) => {
 		if (dispatcher.dispatch(frame)) return;
+		if (frame.type === "pw-ext-credential-stored") {
+			credentialWaiters.get(frame.requestId)?.({
+				ok: frame.ok,
+				...(frame.name === undefined ? {} : { name: frame.name }),
+				...(frame.error === undefined ? {} : { error: frame.error }),
+			});
+			return;
+		}
 		if (frame.type === "error" && handshakeOutcome(frame) === "drop") {
 			client.forgetSession(frame.sessionId);
 			bootstrapsBySession.delete(frame.sessionId);

@@ -2606,7 +2606,7 @@ describe("pw --ext network", () => {
 	const reads = (h: ReturnType<typeof harness>) =>
 		networkCalls(h)
 			.map((call) => call.args[0] as { kind: string; values?: boolean; since?: number })
-			.filter((action) => action.kind !== "install");
+			.filter((action) => action.kind !== "install" && action.kind !== "seal");
 	const page = (entries: unknown[]) => (action: unknown, func?: string) =>
 		func === "pwExtNetwork"
 			? (action as { kind: string }).kind === "clear"
@@ -2614,7 +2614,7 @@ describe("pw --ext network", () => {
 				: { entries: (action as { values?: boolean }).values ? entries.map((one) => (one === entry ? valued : one)) : entries }
 			: { dialogs: [] };
 	const valuesAsks = (h: ReturnType<typeof harness>) =>
-		h.approvalRequests.filter((request) => (request as { title: string }).title === "Let the agent see network values?");
+		h.approvalRequests.filter((request) => (request as { title: string }).title === "Let the agent see values and use your sign-in on this site?");
 
 	it("shows the request shape with no values and asks nothing", async () => {
 		const h = harness({ mainResult: page([entry]) });

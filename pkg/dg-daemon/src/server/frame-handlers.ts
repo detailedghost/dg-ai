@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	type AnyRelayFeature,
 	authorizeFrame,
+	pwExtCredentialName,
 	applyOverwatchLaneUpdate,
 	CHAT_MAX_MANIFEST_BYTES,
 	CHAT_MAX_MESSAGE_BODY_BYTES,
@@ -1028,6 +1029,28 @@ async function handleHistoryRequest(
 	});
 }
 
+/** Stores a value that the extension captured, under pw/<site>/<name>; only the extension socket may send it, and the reply never holds the value. */
+async function handlePwExtCredentialStore(
+	ws: ServerWebSocket<SocketState>,
+	frame: Extract<ChatFrame, { type: "pw-ext-credential-store" }>,
+	deps: FrameHandlerDeps,
+): Promise<void> {
+	const reply = (answer: { ok: true; name: string } | { ok: false; error: string }) =>
+		sendFrame(ws, frame.sessionId, { type: "pw-ext-credential-stored", requestId: frame.requestId, ...answer });
+	if (!isExtensionPeer(ws))
+		return reply({ ok: false, error: "pw-ext-credential-store is accepted only on the extension socket" });
+	if (deps.registry.get(frame.sessionId)?.state !== "active")
+		return reply({ ok: false, error: "The dg session is not active; nothing was saved." });
+	let name: string;
+	try {
+		name = pwExtCredentialName(frame.site, frame.name);
+		deps.credentials.setCredential(name, frame.value, frame.meta);
+	} catch {
+		return reply({ ok: false, error: "Credential storage failed; check daemon health and encryption key access. Nothing was saved." });
+	}
+	return reply({ ok: true, name });
+}
+
 async function handleConfigFrame(
 	ws: ServerWebSocket<SocketState>,
 	frame: Extract<ChatFrame, { type: "config-get" | "config-set" }>,
@@ -1168,6 +1191,8 @@ async function dispatchFrame(
 		case "config-get":
 		case "config-set":
 			return handleConfigFrame(ws, frame, deps);
+		case "pw-ext-credential-store":
+			return handlePwExtCredentialStore(ws, frame, deps);
 		case "command-invocation":
 			return handleCommandInvocation(ws, frame, deps);
 		case "overwatch-open-result": {

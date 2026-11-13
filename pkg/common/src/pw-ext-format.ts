@@ -1,6 +1,7 @@
 import { fail, requireRecord, requireString } from "./assert";
 import { PROTO_PREVIEW_MAX_CHARS } from "./proto-format";
 import { PW_EXT_NETWORK_MAX_FILTER_CHARS, PW_EXT_NETWORK_MAX_LIMIT } from "./pw-ext-network";
+import { PW_EXT_CREDENTIAL_NAME, PW_EXT_CREDENTIAL_SOURCES, type PwExtCredentialSource } from "./pw-ext-credential-format";
 import type { RelayWire } from "./relay-format";
 
 export const PW_EXT_READ_VERBS = [
@@ -13,6 +14,7 @@ export const PW_EXT_READ_VERBS = [
 	"tabs",
 	"count",
 	"network",
+	"storage",
 ] as const;
 export const PW_EXT_WRITE_VERBS = [
 	"open",
@@ -25,6 +27,8 @@ export const PW_EXT_WRITE_VERBS = [
 	"close",
 	"unmask",
 	"dialog",
+	"fetch",
+	"credential",
 ] as const;
 export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
@@ -83,9 +87,33 @@ export type PwExtRequest = {
 	limit?: number;
 	/** network only: requests that started after this time in ms, or clear to empty the buffer. */
 	since?: number | "clear";
-	/** network only: show values, after a once-per-session approval in the browser. */
+	/** network, storage and fetch: show values, after a once-per-session approval in the browser. */
 	values?: boolean;
+	/** fetch only. */
+	method?: string;
+	body?: string;
+	contentType?: string;
+	headers?: [string, string][];
+	/** fetch only: attach the page's own sign-in headers, which never leave the page. */
+	auth?: "page";
+	/** storage only. */
+	area?: "local" | "session";
+	/** storage: one key; credential: the cookie, header or storage key to save. */
+	key?: string;
+	keysOnly?: boolean;
+	/** credential only: the short name under pw/<site>/. */
+	name?: string;
+	source?: PwExtCredentialSource;
+	/** credential only: a dotted path into a JSON value. */
+	path?: string;
 };
+
+export const PW_EXT_FETCH_MAX_BODY_BYTES = 16_384;
+export const PW_EXT_FETCH_MAX_HEADERS = 20;
+export const PW_EXT_MAX_KEY_CHARS = 512;
+export const PW_EXT_MAX_PATH_CHARS = 256;
+const HEADER_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
+const JSON_PATH = /^[A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+)*$/;
 
 export type PwExtTool = {
 	name: string;
@@ -160,6 +188,9 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	call: ["tabId", "tool", "args"],
 	dialog: ["tabId", "answer", "text"],
 	network: ["tabId", "filter", "limit", "since", "values"],
+	storage: ["tabId", "area", "key", "keysOnly", "values"],
+	fetch: ["tabId", "url", "method", "body", "contentType", "headers", "auth", "values"],
+	credential: ["tabId", "name", "source", "key", "path"],
 };
 
 const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -207,6 +238,64 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 			value.tabId > PW_EXT_MAX_TAB_ID)
 	)
 		fail(`${path}.tabId must be a non-negative integer`);
+	if (verb === "storage") {
+		if (value.area !== undefined && value.area !== "local" && value.area !== "session")
+			fail(`${path}.area must be local or session`);
+		if (value.key !== undefined) {
+			requireString(value.key, `${path}.key`, { nonEmpty: true });
+			if (value.key.length > PW_EXT_MAX_KEY_CHARS) fail(`${path}.key is too long`);
+		}
+		if (value.keysOnly !== undefined && value.keysOnly !== true) fail(`${path}.keysOnly must be true when set`);
+		if (value.values !== undefined && value.values !== true) fail(`${path}.values must be true when set`);
+		if (value.keysOnly && (value.values || value.key !== undefined))
+			fail(`${path}.keysOnly takes no key and no values`);
+	}
+	if (verb === "fetch") {
+		requireString(value.url, `${path}.url`, { nonEmpty: true });
+		if (value.url.length > PW_EXT_MAX_URL_CHARS) fail(`${path}.url exceeds ${PW_EXT_MAX_URL_CHARS} characters`);
+		if (!value.url.startsWith("/") && !isPwExtWebUrl(value.url))
+			fail(`${path}.url must be a path that starts with / or an http or https URL`);
+		if (value.method !== undefined && (typeof value.method !== "string" || !/^[A-Z]{1,16}$/.test(value.method)))
+			fail(`${path}.method must be an upper-case HTTP method`);
+		if (value.body !== undefined) {
+			requireString(value.body, `${path}.body`);
+			if (bytes(value.body) > PW_EXT_FETCH_MAX_BODY_BYTES)
+				fail(`${path}.body exceeds ${PW_EXT_FETCH_MAX_BODY_BYTES} bytes`);
+			if (value.method === undefined || value.method === "GET" || value.method === "HEAD")
+				fail(`${path}.body needs a method other than GET or HEAD`);
+		}
+		if (value.contentType !== undefined) {
+			requireString(value.contentType, `${path}.contentType`);
+			if (!MIME.test(value.contentType.split(";")[0]?.trim() ?? "") || value.contentType.length > 128)
+				fail(`${path}.contentType must be a MIME type`);
+		}
+		if (value.headers !== undefined) {
+			if (!Array.isArray(value.headers) || value.headers.length > PW_EXT_FETCH_MAX_HEADERS)
+				fail(`${path}.headers must be at most ${PW_EXT_FETCH_MAX_HEADERS} pairs`);
+			for (const [index, pair] of (value.headers as unknown[]).entries()) {
+				if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string")
+					fail(`${path}.headers[${index}] must be a name and a value`);
+				if (!HEADER_TOKEN.test(pair[0])) fail(`${path}.headers[${index}] has a bad header name`);
+				if (bytes(pair[1]) > PW_EXT_MAX_VALUE_BYTES) fail(`${path}.headers[${index}] value is too long`);
+			}
+		}
+		if (value.auth !== undefined && value.auth !== "page") fail(`${path}.auth must be page`);
+		if (value.values !== undefined && value.values !== true) fail(`${path}.values must be true when set`);
+	}
+	if (verb === "credential") {
+		if (typeof value.name !== "string" || !PW_EXT_CREDENTIAL_NAME.test(value.name))
+			fail(`${path}.name must be 1 to 64 lower-case letters, digits, dots, underscores or hyphens`);
+		if (!(PW_EXT_CREDENTIAL_SOURCES as readonly unknown[]).includes(value.source))
+			fail(`${path}.source must be cookie, header, local or session`);
+		requireString(value.key, `${path}.key`, { nonEmpty: true });
+		if (value.key.length > PW_EXT_MAX_KEY_CHARS) fail(`${path}.key is too long`);
+		if (value.source === "header" && !HEADER_TOKEN.test(value.key)) fail(`${path}.key must be a header name`);
+		if (value.path !== undefined) {
+			requireString(value.path, `${path}.path`);
+			if (value.path.length > PW_EXT_MAX_PATH_CHARS || !JSON_PATH.test(value.path))
+				fail(`${path}.path must be a dotted path such as accessToken or auth.token`);
+		}
+	}
 	if (verb === "open" || (verb === "new" && value.url !== undefined)) {
 		requireString(value.url, `${path}.url`, { nonEmpty: true });
 		if (value.url.length > PW_EXT_MAX_URL_CHARS)
