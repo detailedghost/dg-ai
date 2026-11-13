@@ -232,12 +232,13 @@ export function waitPatterns(script: string): string[] {
 	return patterns;
 }
 
-function matcher(pattern: string): (text: string) => boolean {
+function matcher(pattern: string): ((text: string) => boolean) | null {
+	if (/[$`\\]|\[\[:|\[\[\.|\[\[=/.test(pattern)) return null;
 	try {
 		const re = new RegExp(pattern);
 		return (text) => re.test(text);
 	} catch {
-		return (text) => text.includes(pattern);
+		return null;
 	}
 }
 
@@ -314,10 +315,21 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 			skipped.push({ pid: proc.pid, reason: "younger than loop-min-age", command });
 			continue;
 		}
-		const alive = patterns.some((pattern) => {
-			const test = matcher(pattern);
-			return others.some((other) => test(other.argv.join(" ")));
-		});
+		const tests = patterns.map(matcher);
+		if (tests.some((test) => test === null)) {
+			skipped.push({ pid: proc.pid, reason: "wait pattern not supported", command });
+			continue;
+		}
+		const own = proc.argv.join(" ");
+		if (!tests.every((test) => test?.(own))) {
+			skipped.push({ pid: proc.pid, reason: "wait pattern does not match the loop itself", command });
+			continue;
+		}
+		if (descendants(rows, proc.pid).some((child) => !ignored.has(child.pid))) {
+			skipped.push({ pid: proc.pid, reason: "loop shell runs other work", command });
+			continue;
+		}
+		const alive = tests.some((test) => others.some((other) => test?.(other.argv.join(" "))));
 		if (alive) {
 			skipped.push({ pid: proc.pid, reason: "wait target alive", command });
 			continue;
@@ -480,9 +492,26 @@ function psRows(): ProcRow[] {
 	return rows;
 }
 
-/** The current process table: /proc on Linux, `ps` on macOS. */
-export function readProcTable(): ProcRow[] {
-	return process.platform === "linux" ? linuxRows() : psRows();
+function lsofCwds(uid: number): Map<number, string> {
+	const out = spawnSync("lsof", ["-a", "-d", "cwd", "-u", String(uid), "-Fpn"], {
+		encoding: "utf8",
+		env: { ...process.env, LC_ALL: "C" },
+		maxBuffer: 64 * 1024 * 1024,
+	});
+	const cwds = new Map<number, string>();
+	let pid = 0;
+	for (const line of (out.stdout ?? "").split("\n")) {
+		if (line.startsWith("p")) pid = Number(line.slice(1));
+		else if (line.startsWith("n") && pid > 0) cwds.set(pid, line.slice(1));
+	}
+	return cwds;
+}
+
+/** The current process table: /proc on Linux; `ps` plus `lsof` working directories on macOS. */
+export function readProcTable(uid: number): ProcRow[] {
+	if (process.platform === "linux") return linuxRows();
+	const cwds = lsofCwds(uid);
+	return psRows().map((proc) => ({ ...proc, cwd: cwds.get(proc.pid) ?? null }));
 }
 
 /** Start token in the same format `readProcTable` records, or null when the process is gone or a zombie. */

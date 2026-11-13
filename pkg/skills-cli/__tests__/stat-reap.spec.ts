@@ -278,6 +278,27 @@ describe("stat reap stuck wait loops", () => {
 		expect(out.loops.map((l) => [l.pid, l.session])).toEqual([[30, "other"]]);
 	});
 
+	test("a self-excluding pattern can end, so its loop is not stuck", () => {
+		const out = verdict([loop(30, "while pgrep -f '[g]h pr checks 180'; do sleep 1; done; bun test")]);
+		expect(out.loops).toEqual([]);
+		expect(out.skipped[30]).toBe("wait pattern does not match the loop itself");
+	});
+
+	test("a loop shell that runs other work is not stuck", () => {
+		const out = verdict([loop(30, until), row(31, ["bun", "test"], { ppid: 30, cwd: SCRATCHPAD })]);
+		expect(out.loops).toEqual([]);
+		expect(out.skipped[30]).toBe("loop shell runs other work");
+	});
+
+	test("patterns with shell expansions or POSIX classes are left alone", () => {
+		const out = verdict([
+			loop(30, 'p="bun test"; while pgrep -f "$p"; do sleep 15; done'),
+			loop(31, 'while pgrep -f "bun[[:space:]]test"; do sleep 15; done'),
+		]);
+		expect(out.loops).toEqual([]);
+		expect([out.skipped[30], out.skipped[31]]).toEqual(["wait pattern not supported", "wait pattern not supported"]);
+	});
+
 	test("a young loop is left alone", () => {
 		const out = verdict([loop(30, until, { ageSec: 20 * 60 })]);
 		expect(out.loops).toEqual([]);

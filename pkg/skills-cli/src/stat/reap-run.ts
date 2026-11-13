@@ -84,7 +84,7 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 	if (uid === 0) throw new Error("reap: refusing to run as root");
 	const cwd = real(path.resolve(options.cwd));
 	const { roots, prefix } = await scopeOf(cwd);
-	const rows = readProcTable();
+	const rows = readProcTable(uid);
 	const sessionPid = options.sessionPid ?? sessionAncestor(rows, process.pid);
 	const result = classify(rows, {
 		uid,
