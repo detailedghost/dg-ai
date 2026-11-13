@@ -257,6 +257,10 @@ describe("agent tabs open", () => {
 		expect(await agentSessionIds({ storage: fake.api.storage })).toEqual(
 			new Set([SESSION_A]),
 		);
+		expect(await agentTabs.list({ sessionId: SESSION_A })).toMatchObject([
+			{ tabId: first.tabId },
+		]);
+		expect(await agentTabs.groups()).toMatchObject([{ sessionId: SESSION_A }]);
 		await agentTabs.clearPersisted();
 		expect((await agentGroupIds({ storage: fake.api.storage })).size).toBe(0);
 	});
