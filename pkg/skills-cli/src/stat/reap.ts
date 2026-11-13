@@ -21,7 +21,7 @@ export interface ReapContext {
 	selfPid: number;
 	roots: string[];
 	worktreePrefix: string | null;
-	installedDgJs: string | null;
+	installedLibDir: string | null;
 	minAgeSec: number;
 	loopMinAgeSec: number;
 	sessionPid: number | null;
@@ -125,11 +125,11 @@ function devDaemon(proc: ProcRow, ctx: ReapContext): boolean {
 	const argv = proc.argv;
 	const i = argv.findIndex((word) => base(word) === "dg.js");
 	if (i < 1 || argv[i + 1] !== "dg-daemon" || argv[i + 2] !== "serve") return false;
-	if (!ctx.installedDgJs) return false;
+	if (!ctx.installedLibDir) return false;
 	const script = argv[i] ?? "";
 	const dir = cwdPath(proc)?.dir;
 	if (!path.isAbsolute(script) && !dir) return false;
-	return ctx.realpath(path.resolve(dir ?? "/", script)) !== ctx.installedDgJs;
+	return !inside(ctx.realpath(path.resolve(dir ?? "/", script)), ctx.installedLibDir);
 }
 
 function playwrightScript(argv: string[]): boolean {
@@ -256,10 +256,13 @@ function shellScript(proc: ProcRow): string | null {
 
 /** The `pgrep -f` patterns of a shell that waits in a while/until loop or on `tail --pid=$(pgrep ...)`. */
 export function waitPatterns(script: string): string[] {
-	if (!/\b(while|until)\b/.test(script) && !/\btail\s+--pid=/.test(script)) return [];
+	const controls = [
+		...[...script.matchAll(/\b(?:while|until)\b([\s\S]*?)(?:;|\n)\s*do\b/g)].map((m) => m[1] ?? ""),
+		...[...script.matchAll(/\btail\s+--pid=\$\(([^)]*)\)/g)].map((m) => m[1] ?? ""),
+	];
 	const patterns: string[] = [];
-	const pgrep = /\bpgrep((?:\s+-[A-Za-z]+)+)\s+(?:"([^"]*)"|'([^']*)'|([^\s;|&)'"]+))/g;
-	for (const m of script.matchAll(pgrep)) {
+	const pgrep = /\bpgrep((?:\s+-[A-Za-z]+)+)(?:\s+--)?\s+(?:"([^"]*)"|'([^']*)'|([^\s;|&)'"]+))/g;
+	for (const m of controls.flatMap((control) => [...control.matchAll(pgrep)])) {
 		const flags = (m[1] ?? "").replace(/[\s-]/g, "");
 		if (!flags.includes("f")) continue;
 		const pattern = m[2] ?? m[3] ?? m[4];

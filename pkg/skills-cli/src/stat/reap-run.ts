@@ -84,9 +84,9 @@ async function scopeOf(cwd: string): Promise<{ roots: string[]; prefix: string |
 	return { roots: entries.map((entry) => entry.path), prefix: worktreePrefix(origin) };
 }
 
-function installedDgJs(): string | null {
+function installedLibDir(): string | null {
 	try {
-		return realpathSync(path.join(installRoot(), "lib", "current", "dg.js"));
+		return realpathSync(path.join(installRoot(), "lib"));
 	} catch {
 		return null;
 	}
@@ -110,7 +110,7 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 		selfPid: process.pid,
 		roots,
 		worktreePrefix: prefix,
-		installedDgJs: installedDgJs(),
+		installedLibDir: installedLibDir(),
 		minAgeSec: options.minAgeMinutes * 60,
 		loopMinAgeSec: options.loopMinAgeMinutes * 60,
 		sessionPid,

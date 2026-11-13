@@ -42,7 +42,7 @@ function ctx(extra: Partial<ReapContext> = {}): ReapContext {
 		selfPid: 99_999,
 		roots: [REPO, WT, GONE_WT],
 		worktreePrefix: "/home/u/code/worktrees/dg-ai-",
-		installedDgJs: INSTALLED,
+		installedLibDir: "/home/u/.local/share/dg/lib",
 		minAgeSec: 10 * 60,
 		loopMinAgeSec: 60 * 60,
 		sessionPid: CLAUDE,
@@ -229,10 +229,15 @@ describe("stat reap classifier", () => {
 		expect(out.candidates).toEqual([]);
 	});
 
+	test("a daemon of an older installed version is protected", () => {
+		const out = verdict([row(10, ["bun", "/home/u/.local/share/dg/lib/5.4.0/dg.js", "dg-daemon", "serve"])]);
+		expect(out.candidates).toEqual([]);
+	});
+
 	test("no installed lib means no daemon is reaped", () => {
 		const out = verdict(
 			[row(10, ["bun", `${WT}/pkg/launcher/dist/lib/dg.js`, "dg-daemon", "serve"])],
-			ctx({ installedDgJs: null }),
+			ctx({ installedLibDir: null }),
 		);
 		expect(out.candidates).toEqual([]);
 	});
@@ -276,6 +281,10 @@ describe("stat reap stuck wait loops", () => {
 		expect(waitPatterns('tail --pid=$(pgrep -of "codex review") -f /dev/null')).toEqual(["codex review"]);
 		expect(waitPatterns('pgrep -f "codex review"')).toEqual([]);
 		expect(waitPatterns('while pgrep codex; do sleep 1; done')).toEqual([]);
+		expect(waitPatterns("while pgrep -f -- worker; do sleep 10; done")).toEqual(["worker"]);
+		expect(
+			waitPatterns("while true; do pgrep -f worker >/dev/null; echo beat >> hb.log; sleep 10; done"),
+		).toEqual([]);
 	});
 
 	test("a loop of this session that only matches itself is stuck, children first", () => {
