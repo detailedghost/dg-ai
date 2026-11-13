@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.3.0 (2026-11-13)
+
+### Features
+
+- feat(pw): handle page dialogs in pw --ext ([#183](https://github.com/detailedghost/dg-ai/pull/183))
+
 ## v5.2.1 (2026-11-13)
 
 ### Fixes
