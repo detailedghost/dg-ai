@@ -550,3 +550,20 @@ describe("delayed echo in headers and cut bodies", () => {
 		expect(JSON.stringify(read(true))).not.toContain(first.slice(0, 10));
 	});
 });
+
+describe("short and padded sealed values", () => {
+	it("masks a short sealed value and a trimmed XHR value in an echo", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "X-Csrf-Token": "ab12c" } });
+		const xhr = new (page().XMLHttpRequest)();
+		xhr.open("GET", "https://mail.example.test/x");
+		xhr.setRequestHeader("Authorization", "Bearer fake-padded-token-for-tests ");
+		xhr.send();
+		await settle();
+		reply = async () =>
+			new window.Response("csrf=ab12c tok=fake-padded-token-for-tests", { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		const text = JSON.stringify(await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true }));
+		expect(text).not.toContain("ab12c");
+		expect(text).not.toContain("fake-padded-token-for-tests");
+	});
+});

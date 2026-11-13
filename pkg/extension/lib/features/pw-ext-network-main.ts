@@ -226,9 +226,10 @@ export function pwExtNetwork(
 					if (sealed.anchor !== undefined && sealed.anchor !== anchor) sealed.values.clear();
 					sealed.anchor = anchor;
 				}
-				for (const [name, value] of pairs) {
+				for (const [name, raw] of pairs) {
 					const lower = name.trim().toLowerCase();
-					if (HEADER_NAME.test(lower) && SENSITIVE.test(lower) && !/cookie/.test(lower) && value.length <= SEALED_MAX) {
+					const value = raw.trim();
+					if (HEADER_NAME.test(lower) && SENSITIVE.test(lower) && !/cookie/.test(lower) && value.length >= 4 && value.length <= SEALED_MAX) {
 						sealed.values.set(lower, value);
 						if (!sealed.seen.includes(value)) {
 							sealed.seen.push(value);
@@ -247,7 +248,7 @@ export function pwExtNetwork(
 				});
 			const maskEntry = (entry: NetworkEntry, values: string[]) => {
 				const forms = [...new Set(values.flatMap(formsOf))]
-					.filter((form) => form.length >= 8)
+					.filter((form) => form.length >= 4)
 					.sort((a, b) => b.length - a.length);
 				const scrub = (text: string, cut: boolean) => {
 					const out = forms.reduce((done, form) => done.split(form).join("[redacted]"), text);
@@ -275,7 +276,7 @@ export function pwExtNetwork(
 			const ownSecrets = new WeakMap<NetworkEntry, string[]>();
 			const keepOwn = (entry: NetworkEntry, pairs: [string, string][]) => {
 				if (!sealed.on) return;
-				const own = pairs.filter(([name]) => SENSITIVE.test(name)).map(([, value]) => value);
+				const own = pairs.filter(([name]) => SENSITIVE.test(name)).map(([, value]) => value.trim());
 				if (own.length) ownSecrets.set(entry, own);
 			};
 			const scrubOwn = (entry: NetworkEntry) => {
@@ -490,7 +491,7 @@ export function pwExtNetwork(
 				},
 				hidden() {
 					return [...new Set([...sealed.values.values(), ...sealed.seen].flatMap(formsOf))]
-						.filter((form) => form.length >= 8)
+						.filter((form) => form.length >= 4)
 						.sort((a, b) => b.length - a.length);
 				},
 				sealedGet(name) {
