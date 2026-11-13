@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
-import { createPwExtHandler, releaseDialogShims } from "@/lib/background/pw-ext";
+import { createPwExtHandler } from "@/lib/background/pw-ext";
+import { forgetDialogShim, releaseDialogShims } from "@/lib/background/dialog-shim";
 import {
 	createFakeBrowser,
 	createLock,
@@ -1986,6 +1987,9 @@ describe("pw --ext data.tools redaction", () => {
 });
 
 describe("pw --ext dialog", () => {
+	afterEach(() => {
+		for (const tabId of [7, 8, 9, 10, 20, 21]) forgetDialogShim(tabId);
+	});
 	const at = Date.UTC(2026, 10, 12, 9, 0);
 	const confirmDelete = {
 		type: "confirm",
@@ -2110,6 +2114,32 @@ describe("pw --ext dialog", () => {
 		h.fake.fireUpdated(7, { groupId: -1 });
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "remove" }]);
+	});
+
+	it("still removes the shim when a load event follows the group change", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }]);
+	});
+
+	it("installs the shim right after new opens a tab", async () => {
+		const h = harness({ record: false });
+		await h.run({ verb: "new", url: "https://app.example.test/" });
+		const tab = await h.createdTab();
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([[tab.id, { kind: "install" }]]);
+	});
+
+	it("stops waiting on a tab that does not answer when the session ends", async () => {
+		const h = harness();
+		h.fake.state.script = () => new Promise(() => {});
+		const started = Date.now();
+		await releaseDialogShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION, deadlineMs: 20 });
+		expect(Date.now() - started).toBeLessThan(1000);
 	});
 
 	it("removes the shim from a forgotten session's tabs, and skips mailbox and browser pages", async () => {

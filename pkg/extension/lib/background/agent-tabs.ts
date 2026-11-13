@@ -494,7 +494,8 @@ function adoptRequest(message: unknown) {
 /** Keep agent records in step with the browser and answer the popup's tab requests. */
 export function registerAgentTabs({
 	busy,
-}: { busy?(agent: { sessionId: string }): boolean } = {}): void {
+	onAdopted,
+}: { busy?(agent: { sessionId: string }): boolean; onAdopted?(tabId: number): void } = {}): void {
 	const storage = browser.storage as unknown as AgentTabsStorage;
 	const agentTabs = createAgentTabs({
 		browserApi: browser as unknown as AgentTabsBrowserApi,
@@ -519,6 +520,7 @@ export function registerAgentTabs({
 			);
 			if (!held) return { ok: false, error: "this agent is not paired" };
 			await agentTabs.adopt({ ...request, agentIdentity: held.agentIdentity });
+			onAdopted?.(request.tabId);
 			return { ok: true };
 		} catch (error) {
 			return { ok: false, error: describeError(error) };

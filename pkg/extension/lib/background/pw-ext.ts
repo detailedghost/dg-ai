@@ -36,7 +36,6 @@ import {
 } from "@/lib/features/pw-ext-page";
 import {
 	AgentGroupFullError,
-	agentGroupIds,
 	type AgentTab,
 	type AgentTabs,
 	type AgentTabsBrowserApi,
@@ -47,6 +46,7 @@ import {
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
+import { forgetDialogShim, noteDialogShim, syncDialogShim } from "./dialog-shim";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createWebMcpGrants, requestWebMcpApproval, type WebMcpGrants } from "./webmcp-approval";
@@ -467,28 +467,6 @@ function nextFrame(): Promise<void> {
 	return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-/** Restores native dialogs in the tabs of a session that ends; call it before its agent tab record is forgotten. */
-export async function releaseDialogShims({
-	browserApi: api,
-	agentTabs,
-	sessionId,
-}: {
-	browserApi: Pick<PwExtBrowserApi, "scripting">;
-	agentTabs: Pick<AgentTabs, "list">;
-	sessionId: string;
-}): Promise<void> {
-	const action: PwExtDialogAction = { kind: "remove" };
-	await Promise.all(
-		(await agentTabs.list({ sessionId }))
-			.filter((row) => allowedPage(row.url) && !mailbox(row.url))
-			.map((row) =>
-				api.scripting
-					.executeScript({ target: { tabId: row.tabId }, world: "MAIN", func: pwExtDialogs as never, args: [action, row.url] })
-					.catch(() => undefined),
-			),
-	);
-}
-
 /** Runs one pw --ext verb against the agent's own tab group. */
 export function createPwExtHandler({
 	browserApi: api,
@@ -527,34 +505,14 @@ export function createPwExtHandler({
 		}
 	}
 
-	const shimTurns = new Map<number, number>();
-
-	/** Installs the dialog shim in an agent tab, and on a group change removes it from a tab that is no longer one; a later event for the tab cancels an earlier one. */
-	async function shimDialogs(tabId: number, regrouped: boolean): Promise<void> {
-		const turn = (shimTurns.get(tabId) ?? 0) + 1;
-		shimTurns.set(tabId, turn);
-		const groups = await agentGroupIds({ storage: api.storage });
-		const tab = await api.tabs.get(tabId);
-		if (shimTurns.get(tabId) !== turn) return;
-		if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
-		const agent = tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId);
-		if (!agent && !regrouped) return;
-		const action: PwExtDialogAction = { kind: agent ? "install" : "remove" };
-		await api.scripting.executeScript({
-			target: { tabId },
-			world: "MAIN",
-			injectImmediately: true,
-			func: pwExtDialogs as never,
-			args: [action, tab.url],
-		});
-	}
+	const syncShim = (tabId: number, regrouped: boolean) =>
+		syncDialogShim({ browserApi: api, storage: api.storage, tabId, regrouped }).catch(() => undefined);
 
 	api.tabs.onUpdated.addListener((tabId, change) => {
 		const regrouped = change.groupId !== undefined;
-		if (!regrouped && change.status !== "loading" && change.status !== "complete") return;
-		void shimDialogs(tabId, regrouped).catch(() => undefined);
+		if (regrouped || change.status === "loading" || change.status === "complete") void syncShim(tabId, regrouped);
 	});
-	api.tabs.onRemoved.addListener((tabId) => shimTurns.delete(tabId));
+	api.tabs.onRemoved.addListener(forgetDialogShim);
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
 		if (result.ok)
@@ -632,6 +590,7 @@ export function createPwExtHandler({
 		action: PwExtDialogAction,
 		options: { unmasked: boolean; secrets: string[] },
 	): Promise<PwExtDialogState> {
+		noteDialogShim(tab.id);
 		const state = dialogState(await beforeDeadline(inMain(tab, pwExtDialogs as never, [action, tab.url])));
 		if ("error" in state) throw new Refusal(maskRaw(state.error, RAW_ERROR_MAX, options));
 		return state;
@@ -704,6 +663,7 @@ export function createPwExtHandler({
 				throw error instanceof AgentGroupFullError ? new Refusal(GROUP_FULL) : error;
 			});
 		await agentTabs.select({ sessionId, tabId });
+		await syncShim(tabId, false);
 		return ok(`### Result\nOpened ${url} in tab ${tabId}`);
 	}
 
@@ -801,6 +761,7 @@ export function createPwExtHandler({
 			}
 			case "select": {
 				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id });
+				await syncShim(tab.id, false);
 				return ok(`### Result\nSelected tab ${tab.id}`);
 			}
 			case "close": {

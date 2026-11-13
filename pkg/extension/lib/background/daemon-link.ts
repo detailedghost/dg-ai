@@ -50,12 +50,12 @@ import { isExtensionPageSender, isPopupSender } from "./popup-sender";
 import { createProtoHandler, type ProtoBrowserApi } from "./proto";
 import {
 	createPwExtHandler,
-	releaseDialogShims,
 	type PwExtBrowserApi,
 	type PwExtContext,
 } from "./pw-ext";
 import { createUnmaskGrants } from "./unmask-grants";
 import { createWebMcpGrants } from "./webmcp-approval";
+import { releaseDialogShims } from "./dialog-shim";
 import {
 	createRelayDispatcher,
 	type RelayHandler,

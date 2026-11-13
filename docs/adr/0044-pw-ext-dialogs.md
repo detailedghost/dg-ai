@@ -23,8 +23,9 @@ Date: 2026-11-12
 The worker puts a MAIN-world shim (`pwExtDialogs` in
 `pkg/extension/lib/features/pw-ext-dialog-main.ts`) over `alert`, `confirm` and
 `prompt` in an agent tab. It injects the shim with `injectImmediately` when a
-tab of any agent group reports `loading` or `complete`, and again from the
-`dialog` and `snapshot` verbs, which install it when it is missing. Each
+tab of any agent group reports `loading` or `complete`, after `new`, `open`,
+`select` and a tab hand-off from the popup, and from the `dialog` and
+`snapshot` verbs, which install it when it is missing. Each
 injection checks the document URL, so a page that changed in between gets
 nothing. When a tab leaves its agent group, or its dg session ends, the worker
 removes the shim and the native dialogs come back. A later event for a tab
@@ -85,6 +86,7 @@ sequenceDiagram
 ## References
 
 - `pkg/extension/lib/features/pw-ext-dialog-main.ts`
+- `pkg/extension/lib/background/dialog-shim.ts`
 - `pkg/extension/lib/background/pw-ext.ts`
 - `pkg/common/src/pw-ext-format.ts`
 - `pkg/common/src/relay-features.ts`
