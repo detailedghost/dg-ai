@@ -24,8 +24,11 @@ The worker puts a MAIN-world shim (`pwExtDialogs` in
 `pkg/extension/lib/features/pw-ext-dialog-main.ts`) over `alert`, `confirm` and
 `prompt` in an agent tab. It injects the shim with `injectImmediately` when a
 tab of any agent group reports `loading` or `complete`, and again from the
-`dialog` and `snapshot` verbs, which install it when it is missing. It never
-injects into a user tab, a private tab, a mailbox origin or a browser page. The
+`dialog` and `snapshot` verbs, which install it when it is missing. Each
+injection checks the document URL, so a page that changed in between gets
+nothing. When a tab leaves its agent group, the worker removes the shim and the
+native dialogs come back. It never injects into a user tab, a private tab, a
+mailbox origin or a browser page. The
 shim answers each dialog at once from a one-shot policy: dismiss by default, or
 the answer that `pw --ext dialog accept [--text <answer>]` or
 `pw --ext dialog dismiss` set. Each new document starts again at dismiss. The

@@ -95,6 +95,31 @@ describe("dialog shim", () => {
 		expect(dialogs[0]?.message).toBe("token=abc123def456 ada@clinic.test");
 	});
 
+	it("restores the native dialogs on remove, even through a kept reference, and wraps them again on install", () => {
+		let nativeCalls = 0;
+		const native = () => {
+			nativeCalls++;
+			return true;
+		};
+		(window as unknown as Record<string, unknown>).confirm = native;
+		pwExtDialogs({ kind: "install" });
+		const kept = page().confirm;
+		pwExtDialogs({ kind: "answer", answer: "accept" });
+		pwExtDialogs({ kind: "remove" });
+		expect(page().confirm).toBe(native);
+		expect(kept.call(window, "x")).toBe(true);
+		expect(nativeCalls).toBe(1);
+		expect((pwExtDialogs({ kind: "read", markSeen: false }) as { pending?: unknown }).pending).toBeUndefined();
+		expect(page().confirm("again")).toBe(false);
+		expect(nativeCalls).toBe(1);
+	});
+
+	it("installs nothing on remove when the page has no shim", () => {
+		const native = page().alert;
+		expect(pwExtDialogs({ kind: "remove" })).toEqual({ dialogs: [] });
+		expect(page().alert).toBe(native);
+	});
+
 	it("refuses a document other than the tab's", () => {
 		expect(pwExtDialogs({ kind: "install" }, "https://other.example.test/")).toEqual({
 			error: expect.stringContaining("changed"),

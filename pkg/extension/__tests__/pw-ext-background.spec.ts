@@ -2085,7 +2085,36 @@ describe("pw --ext dialog", () => {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		const installs = dialogCalls(h);
 		expect(installs.map((call) => call.target.tabId)).toEqual([7, 20]);
-		expect(installs[0]).toMatchObject({ world: "MAIN", injectImmediately: true, args: [{ kind: "install" }] });
+		expect(installs[0]).toMatchObject({ world: "MAIN", injectImmediately: true, args: [{ kind: "install" }, WEB_TAB.url] });
+	});
+
+	it("removes the shim when a tab leaves its agent group, and installs it when a tab joins one", async () => {
+		const h = harness();
+		const tab = h.fake.tabs.get(7) as FakeTab;
+		tab.groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		const user = h.fake.tabs.get(21) as FakeTab;
+		user.groupId = GROUP;
+		h.fake.fireUpdated(21, { groupId: GROUP });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([
+			[7, { kind: "remove" }],
+			[21, { kind: "install" }],
+		]);
+	});
+
+	it("masks a page-made dialog error with the held secrets", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ error: "Dialog handling failed: orchid-maple" }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		const answer = await h.run({ verb: "dialog" });
+		expect(answer.ok).toBe(false);
+		expect(outcome(answer)).not.toContain("orchid-maple");
 	});
 
 	it("names a possible dialog when the page does not answer in time", async () => {

@@ -2,6 +2,7 @@ export type PwExtDialogAnswer = "accept" | "dismiss";
 
 export type PwExtDialogAction =
 	| { kind: "install" }
+	| { kind: "remove" }
 	| { kind: "read"; markSeen: boolean }
 	| { kind: "answer"; answer: PwExtDialogAnswer; text?: string };
 
@@ -41,12 +42,30 @@ export function pwExtDialogs(
 		type Slot = {
 			dialogs: PwExtDialogRecord[];
 			policy?: { answer: PwExtDialogAnswer; text?: string };
+			active: boolean;
+			wrap(): void;
+			unwrap(): void;
 		};
 		const KEY = Symbol.for("dg.pwExt.dialogs");
 		const win = document.defaultView as unknown as Window & Record<symbol, unknown>;
-		let slot = win[KEY] as Slot | undefined;
-		if (slot === undefined || slot === null) {
-			const fresh: Slot = { dialogs: [] };
+		let slot = (win[KEY] ?? undefined) as Slot | undefined;
+		if (slot === undefined && action.kind === "remove") return { dialogs: [] };
+		if (slot === undefined) {
+			const target = win as unknown as Record<"alert" | "confirm" | "prompt", (...args: unknown[]) => unknown>;
+			const native = { alert: target.alert, confirm: target.confirm, prompt: target.prompt };
+			const fresh: Slot = {
+				dialogs: [],
+				active: false,
+				wrap() {
+					Object.assign(target, wrappers);
+					fresh.active = true;
+				},
+				unwrap() {
+					Object.assign(target, native);
+					fresh.active = false;
+					fresh.policy = undefined;
+				},
+			};
 			Object.defineProperty(win, KEY, { value: fresh, configurable: false });
 			const record = (type: PwExtDialogRecord["type"], message: unknown, defaultValue?: unknown) => {
 				const policy = fresh.policy;
@@ -64,20 +83,27 @@ export function pwExtDialogs(
 				if (fresh.dialogs.length > MAX_DIALOGS) fresh.dialogs.shift();
 				return { answer, text: policy?.text };
 			};
-			const target = win as unknown as Record<"alert" | "confirm" | "prompt", unknown>;
-			target.alert = function alert(message?: unknown): void {
-				record("alert", message);
-			};
-			target.confirm = function confirm(message?: unknown): boolean {
-				return record("confirm", message).answer === "accept";
-			};
-			target.prompt = function prompt(message?: unknown, defaultValue?: unknown): string | null {
-				const { answer, text: given } = record("prompt", message, defaultValue);
-				if (answer !== "accept") return null;
-				return given ?? (defaultValue === undefined ? "" : text(defaultValue));
+			const wrappers = {
+				alert: function alert(this: unknown, ...args: unknown[]): unknown {
+					if (!fresh.active) return native.alert.apply(this, args);
+					record("alert", args[0]);
+					return undefined;
+				},
+				confirm: function confirm(this: unknown, ...args: unknown[]): unknown {
+					if (!fresh.active) return native.confirm.apply(this, args);
+					return record("confirm", args[0]).answer === "accept";
+				},
+				prompt: function prompt(this: unknown, ...args: unknown[]): unknown {
+					if (!fresh.active) return native.prompt.apply(this, args);
+					const { answer, text: given } = record("prompt", args[0], args[1]);
+					if (answer !== "accept") return null;
+					return given ?? (args[1] === undefined ? "" : text(args[1]));
+				},
 			};
 			slot = fresh;
 		}
+		if (action.kind === "remove") slot.unwrap();
+		else if (!slot.active) slot.wrap();
 		if (action.kind === "answer")
 			slot.policy = { answer: action.answer, ...(action.text === undefined ? {} : { text: action.text }) };
 		const state: PwExtDialogState = {
