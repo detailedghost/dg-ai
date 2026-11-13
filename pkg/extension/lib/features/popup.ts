@@ -430,12 +430,13 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 			runtime.sendMessage({ type: MSG.agentTabsRequest }).catch(() => undefined),
 		]);
 		if (destroyed || version !== readVersion) return;
+		groups = parseGroups(tabsReply) ?? groups;
 		if ((reply as { daemonChanged?: unknown } | undefined)?.daemonChanged === true) {
+			showDriving();
 			showDaemonChanged();
 			return;
 		}
 		sessions = parseSessions(reply);
-		groups = parseGroups(tabsReply) ?? groups;
 		showDriving();
 		const daemonReachable =
 			sessions.some((session) => session.connected) ||
@@ -446,10 +447,9 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	}
 
 	function driveLabel(sessionId: string): string {
-		return (
-			sessions.find((session) => session.sessionId === sessionId)?.agentIdentity ??
-			sessionId.slice(0, 8)
-		);
+		const shortId = sessionId.slice(0, 8);
+		const identity = sessions.find((session) => session.sessionId === sessionId)?.agentIdentity;
+		return identity === undefined ? shortId : `${identity} (${shortId})`;
 	}
 
 	function showDriveError(view: DriveView, text: string | undefined): void {

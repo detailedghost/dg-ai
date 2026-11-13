@@ -1523,6 +1523,8 @@ describe("mountPopup Stop for agents that drive tabs", () => {
 	const beta = session({ sessionId: BETA_ID, agentIdentity: "beta" });
 
 	const driving = (root: HTMLElement) => root.querySelector<HTMLElement>("section.driving");
+	const ALPHA = `alpha (${ALPHA_ID.slice(0, 8)})`;
+	const BETA = `beta (${BETA_ID.slice(0, 8)})`;
 	const stopButton = (root: HTMLElement, label: string) =>
 		root.querySelector<HTMLButtonElement>(`[aria-label="Stop ${label}"]`);
 
@@ -1537,7 +1539,7 @@ describe("mountPopup Stop for agents that drive tabs", () => {
 		harness.handle.destroy();
 	});
 
-	test("lists each session that drives tabs with its label, tab count and a Stop button", async () => {
+	test("lists each session that drives tabs with its name and short id, tab count and a Stop button", async () => {
 		const harness = await mounted(
 			withTabs(
 				[alpha, beta],
@@ -1549,10 +1551,10 @@ describe("mountPopup Stop for agents that drive tabs", () => {
 		);
 
 		const rows = [...(driving(harness.root)?.querySelectorAll(".drive") ?? [])];
-		expect(rows.map((row) => row.querySelector("b")?.textContent)).toEqual(["alpha", "beta"]);
+		expect(rows.map((row) => row.querySelector("b")?.textContent)).toEqual([ALPHA, BETA]);
 		expect(rows.map((row) => row.querySelector(".tabs")?.textContent)).toEqual(["1 tab", "2 tabs"]);
-		expect(stopButton(harness.root, "alpha")?.textContent).toBe("Stop");
-		expect(stopButton(harness.root, "beta")?.textContent).toBe("Stop");
+		expect(stopButton(harness.root, ALPHA)?.textContent).toBe("Stop");
+		expect(stopButton(harness.root, BETA)?.textContent).toBe("Stop");
 		harness.handle.destroy();
 	});
 
@@ -1565,19 +1567,30 @@ describe("mountPopup Stop for agents that drive tabs", () => {
 		harness.handle.destroy();
 	});
 
+	test("keeps the Stop list while the popup shows that the daemon changed", async () => {
+		const harness = await mounted({
+			connection: { connected: false, sessions: [], daemonChanged: true },
+			agentTabs: { groups: [groupOf(ALPHA_ID, "blue", [tabRow(11)])] },
+		});
+
+		expect(harness.root.querySelector(".sub")?.textContent).toBe("daemon changed");
+		expect(stopButton(harness.root, ALPHA_ID.slice(0, 8))).not.toBeNull();
+		harness.handle.destroy();
+	});
+
 	test("Stop sends the stop message for that session and then shows Stopped after the tabs go", async () => {
 		const harness = await mounted(withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11)])]));
 		harness.world.agentTabs = { groups: [] };
 
-		stopButton(harness.root, "alpha")?.click();
+		stopButton(harness.root, ALPHA)?.click();
 		await settle();
 		await settle();
 
 		expect(harness.sent(MSG.pwExtStop)).toEqual([{ type: MSG.pwExtStop, sessionId: ALPHA_ID }]);
 		const row = driving(harness.root)?.querySelector(".drive");
-		expect(row?.querySelector("b")?.textContent).toBe("alpha");
+		expect(row?.querySelector("b")?.textContent).toBe(ALPHA);
 		expect(row?.querySelector("[role='status']")?.textContent).toBe("Stopped");
-		expect(stopButton(harness.root, "alpha")).toBeNull();
+		expect(stopButton(harness.root, ALPHA)).toBeNull();
 		harness.handle.destroy();
 	});
 
@@ -1587,13 +1600,13 @@ describe("mountPopup Stop for agents that drive tabs", () => {
 			replies: { [MSG.pwExtStop]: { ok: false, error: "This session drives no agent tab." } },
 		});
 
-		stopButton(harness.root, "alpha")?.click();
+		stopButton(harness.root, ALPHA)?.click();
 		await settle();
 		await settle();
 
 		const row = driving(harness.root)?.querySelector(".drive");
 		expect(row?.querySelector(".err")?.textContent).toBe("This session drives no agent tab.");
-		expect(stopButton(harness.root, "alpha")?.disabled).toBe(false);
+		expect(stopButton(harness.root, ALPHA)?.disabled).toBe(false);
 		harness.handle.destroy();
 	});
 });
