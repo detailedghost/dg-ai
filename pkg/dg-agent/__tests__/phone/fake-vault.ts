@@ -62,6 +62,7 @@ export function createFakeCredentials(opts: { session?: boolean; granted?: boole
 				down();
 				if (fake.hideRead) return undefined;
 				const canonical = validateCredentialName(name);
+				fake.calls.push(`get ${canonical}`);
 				const value = fake.store.get(canonical);
 				return value === undefined ? undefined : { value, meta: {}, updatedAt: "" };
 			},
@@ -76,8 +77,7 @@ export function createFakeCredentials(opts: { session?: boolean; granted?: boole
 				down();
 				const canonical = validateCredentialName(name);
 				fake.calls.push(`delete ${canonical}`);
-				const removed = fake.store.delete(canonical);
-				return (name === canonical ? false : fake.store.delete(name)) || removed;
+				return fake.store.delete(canonical);
 			},
 			async grant(prefix) {
 				down();

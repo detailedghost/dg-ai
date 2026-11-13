@@ -11,6 +11,7 @@ import {
 	deleteVaultItem,
 	dropOldKeys,
 	ensurePeriodKey,
+	requireVaultStore,
 	isVaultName,
 	keyPeriod,
 	openVaultItem,
@@ -231,7 +232,7 @@ describe("vault period keys", () => {
 	it("refuses when the new key cannot be read back", async () => {
 		creds.hideRead = true;
 
-		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/no dg session can make it/);
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/was not stored/);
 	});
 
 	it("reads an existing key through the session when the grant is gone", async () => {
@@ -253,6 +254,49 @@ describe("vault period keys", () => {
 
 		creds.sessionFailure = new Error("cannot connect to dg-daemon on port 1");
 		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
+	});
+
+	it("requireVaultStore reports a live rejection and closes the grant client", async () => {
+		let closed = 0;
+		const deps = creds.deps();
+		const open = deps.vaultClient!;
+		deps.vaultClient = () => {
+			const client = open();
+			return {
+				...client,
+				close: () => {
+					closed += 1;
+					client.close();
+				},
+			};
+		};
+
+		const noSession = async () => undefined;
+		await expect(requireVaultStore({ sessionClient: noSession })).rejects.toThrow(/not reachable/);
+		await expect(requireVaultStore({ vaultClient: () => undefined as never, sessionClient: noSession })).rejects.toThrow(/not reachable/);
+
+		creds.granted = true;
+		closed = 0;
+		await requireVaultStore(deps);
+		expect(closed).toBe(1);
+
+		creds.granted = false;
+		creds.calls.length = 0;
+		await requireVaultStore(deps);
+		expect(creds.calls).toContain("get phone-vault/probe");
+
+		creds.sessionFailure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(requireVaultStore(deps)).rejects.toThrow(/credential name must be/);
+
+		creds.sessionFailure = undefined;
+		creds.session = false;
+		creds.failure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(requireVaultStore(deps)).rejects.toThrow(/credential name must be/);
+
+		creds.session = true;
+		creds.failure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		creds.sessionFailure = new Error("cannot connect to dg-daemon on port 1");
+		await expect(requireVaultStore(deps)).rejects.toThrow(/not reachable/);
 	});
 
 	it("says the store is unreachable when nothing can read it, rather than quoting a missing grant", async () => {
@@ -339,15 +383,16 @@ describe("vault period keys", () => {
 		expect([...creds.store.keys()].sort()).toEqual([-1, 0, 1].map((offset) => vaultKeyName(keyPeriod(monday, offset))).sort());
 	});
 
-	it("deletes a period key spelled with either week marker", async () => {
+	it("selects either week marker and deletes only the folded name", async () => {
 		creds.granted = true;
 		creds.store.set("phone-vault/2026-W45", "a".repeat(64));
 		creds.store.set("phone-vault/2026-w44", "b".repeat(64));
 
 		await dropOldKeys(creds.deps(), at(2026, 11, 16));
 
-		expect(creds.store.has("phone-vault/2026-W45")).toBe(false);
+		expect(creds.calls.filter((call) => call.startsWith("delete ")).sort()).toEqual(["delete phone-vault/2026-w44", "delete phone-vault/2026-w45"]);
 		expect(creds.store.has("phone-vault/2026-w44")).toBe(false);
+		expect(creds.store.has("phone-vault/2026-W45")).toBe(true);
 	});
 
 	it("ignores credential names that are not period keys", async () => {

@@ -220,8 +220,32 @@ describe("CredentialStore credentials", () => {
 			expect(credentials.getCredential("Phone-Vault/2026-W46")?.value).toBe("fixture-week-key-rotated");
 			expect(credentials.deleteCredential("Phone-Vault/2026-W46")).toBe(true);
 			expect(credentials.getCredential("phone-vault/2026-w46")).toBeUndefined();
+			expect(credentials.deleteCredential("phone-vault/2026-W46")).toBe(false);
 			expect(credentials.deleteCredential("Warren-Probe")).toBe(true);
 			expect(credentials.listCredentials()).toEqual([]);
+		});
+	});
+
+	it("reads and deletes the folded name when a mixed-case row is also present", async () => {
+		await withStores(({ paths, credentials }) => {
+			credentials.setCredential("phone-vault/2026-w46", "fixture-week-key");
+			const raw = new Database(paths.credentialsDbPath);
+			raw.run(
+				"INSERT INTO credentials (name, value_ciphertext, value_iv, value_tag, meta_json, created_at, updated_at) VALUES (?, ?, ?, ?, '{}', ?, ?)",
+				["phone-vault/2026-W46", Buffer.from([1]), Buffer.alloc(12), Buffer.alloc(16), "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z"],
+			);
+			raw.close();
+
+			expect(credentials.getCredential("phone-vault/2026-W46")?.value).toBe("fixture-week-key");
+			expect(credentials.deleteCredential("Phone-Vault/2026-W46")).toBe(true);
+			expect(credentials.getCredential("phone-vault/2026-w46")).toBeUndefined();
+
+			const left = new Database(paths.credentialsDbPath, { readonly: true });
+			try {
+				expect(left.query("SELECT name FROM credentials").all()).toEqual([{ name: "phone-vault/2026-W46" }]);
+			} finally {
+				left.close();
+			}
 		});
 	});
 

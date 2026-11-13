@@ -225,9 +225,7 @@ export class CredentialStore {
 	/** Removes a named credential and reports whether one existed. */
 	deleteCredential(name: string): boolean {
 		const canonical = validateCredentialName(name);
-		return (
-			this.db.run("DELETE FROM credentials WHERE name = ? OR name = ?", [canonical, name]).changes > 0
-		);
+		return this.db.run("DELETE FROM credentials WHERE name = ?", [canonical]).changes > 0;
 	}
 
 	/** Mints a service token for the prefix, keeping only its SHA-256; a repeat rotates it. */
@@ -286,8 +284,6 @@ export class CredentialStore {
 	/** Removes a grant and reports whether one existed. */
 	deleteCredentialGrant(prefix: string): boolean {
 		const canonical = validateCredentialGrantPrefix(prefix);
-		return (
-			this.db.run("DELETE FROM credential_grants WHERE prefix = ? OR prefix = ?", [canonical, prefix]).changes > 0
-		);
+		return this.db.run("DELETE FROM credential_grants WHERE prefix = ?", [canonical]).changes > 0;
 	}
 }

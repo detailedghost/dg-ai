@@ -181,7 +181,7 @@ async function readPeriodKey(deps: VaultDeps, period: string): Promise<Buffer | 
 		}
 	} catch (err) {
 		const via = await sessionWork(deps, async (client) => (await client.get(name))?.value);
-		if (via.ok) value = via.value;
+		if (via.ok === true) value = via.value;
 		else if (via.error) throw via.error;
 		else if (!storeDown(err) && !grantMiss(err)) throw err;
 		else throw unreachable();
@@ -216,13 +216,14 @@ async function makePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer
 			throw err;
 		}
 	});
-	if (!made.ok) {
-		if (made.error) throw made.error;
-		if (made.down) throw unreachable();
-		throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
+	if (made.ok === true) {
+		if (!made.value) throw new DgCliError(`the vault key for ${period} was not stored`);
+		return made.value;
 	}
-	if (!made.value) throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
-	return made.value;
+	if (made.down === true) throw unreachable();
+	if (made.error) throw made.error;
+	if (made.ok === false) throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
+	throw new DgCliError(`the vault key for ${period} was not stored`);
 }
 
 /** Deletes every period key whose period ended 48 hours ago or more; needs a session, so it waits for one. */
@@ -262,9 +263,9 @@ export async function requireVaultStore(deps: VaultDeps): Promise<void> {
 	} catch (err) {
 		const via = await sessionWork(deps, async (client) => {
 			await client.get(vaultKeyName("probe"));
-			return true;
 		});
-		if (via.ok) return;
+		if (via.ok === true) return;
+		if (via.down === true) throw unreachable();
 		if (via.error) throw via.error;
 		if (!storeDown(err) && !grantMiss(err)) throw err;
 		throw unreachable();
