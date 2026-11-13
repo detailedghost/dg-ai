@@ -54,7 +54,7 @@ function patternCoversOrigin(pattern: string, origin: string): boolean {
 		const { protocol, hostname } = new URL(origin);
 		if (protocol !== "https:" || !pattern.startsWith("https://")) return false;
 		const host = pattern.slice("https://".length).split("/")[0] ?? "";
-		return host.startsWith("*.") ? hostname.endsWith(host.slice(1)) : hostname === host;
+		return host.startsWith("*.") ? hostname === host.slice(2) || hostname.endsWith(host.slice(1)) : hostname === host;
 	} catch {
 		return false;
 	}
@@ -64,7 +64,7 @@ function builtInOwning(name: string) {
 	return BUILT_IN_SCRIPTS.find((script) => name.startsWith(`dg_${script.id}_`));
 }
 
-/** True when an https match pattern's host covers the origin; the path part is ignored. */
+/** True when an https match pattern's host covers the origin, a wildcard's base host included; the path part is ignored. */
 export function matchesCoverOrigin(matches: readonly string[], origin: string): boolean {
 	return matches.some((pattern) => patternCoversOrigin(pattern, origin));
 }

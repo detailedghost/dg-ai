@@ -31,6 +31,11 @@ export const USER_SCRIPTS_OFF =
 const NOT_KEPT = "The browser did not keep the registration.";
 
 const RECORDS_KEY = "webmcpScripts";
+export const STOPPED_SCRIPTS_KEY = "webmcpStoppedScripts";
+const STOPPED_MAX = 100;
+
+/** Sites of a third-party script that stopped; documents loaded before stoppedAt may still hold its tools. */
+export type WebMcpStoppedScript = { matches: string[]; stoppedAt: number };
 const codeKey = (id: string) => `webmcpScriptCode:${id}`;
 const approvalKey = (id: string) => `webmcpApproval:${id}`;
 const macKey = (id: string) => `webmcpMac:${id}`;
@@ -55,7 +60,7 @@ export type WebMcpScripting = {
 export type WebMcpUserScripts = {
 	register(scripts: Record<string, unknown>[]): Promise<void>;
 	unregister(filter: { ids: string[] }): Promise<void>;
-	getScripts(): Promise<{ id: string }[]>;
+	getScripts(): Promise<{ id: string; matches?: string[] }[]>;
 };
 
 export type WebMcpScriptDraft = {
@@ -213,6 +218,17 @@ export function createWebMcpScripts({
 			.catch(() => undefined);
 	};
 
+	async function noteStopped(matches: string[]): Promise<void> {
+		const stored = (await storage.local.get(STOPPED_SCRIPTS_KEY))[STOPPED_SCRIPTS_KEY];
+		const held = Array.isArray(stored) ? (stored as WebMcpStoppedScript[]) : [];
+		await storage.local.set({ [STOPPED_SCRIPTS_KEY]: [...held, { matches: [...matches], stoppedAt: now() }].slice(-STOPPED_MAX) });
+	}
+
+	async function stopUser(id: string, matches: string[]): Promise<void> {
+		await unregisterUser(id);
+		await noteStopped(matches);
+	}
+
 	const macPayload = async (record: WebMcpScriptRecord, code: string, approvedAt: number) =>
 		new TextEncoder().encode(
 			JSON.stringify([record.id, record.sha256, record.matches, approvedAt, await approvalDigest(code, record.matches)]),
@@ -299,8 +315,13 @@ export function createWebMcpScripts({
 		records: WebMcpScriptRecord[],
 		approved: Map<string, string>,
 	): Promise<boolean> {
-		const live = await liveIds(() => registrar.getScripts());
-		if (live === null) return false;
+		let entries: { id: string; matches?: string[] }[];
+		try {
+			entries = await registrar.getScripts();
+		} catch {
+			return false;
+		}
+		const live = entries.map((entry) => entry.id);
 		const own = records.filter((record) => !builtInIds.has(record.id));
 		const wanted = new Map<string, WebMcpScriptRecord>(
 			own
@@ -311,7 +332,12 @@ export function createWebMcpScripts({
 			...live.filter((id) => id.startsWith(USER_PREFIX)),
 			...own.map((record) => `${USER_PREFIX}${record.id}`),
 		]);
-		for (const id of stale) if (!wanted.has(id)) await unregisterUser(id);
+		for (const id of stale) {
+			if (wanted.has(id)) continue;
+			const running = entries.find((entry) => entry.id === id);
+			if (running) await stopUser(id, running.matches ?? []);
+			else await unregisterUser(id);
+		}
 		for (const [id, record] of wanted) {
 			await unregisterUser(id);
 			await recorded(record.id, id, () =>
@@ -469,7 +495,7 @@ export function createWebMcpScripts({
 
 		replaceCode(id: string, code: string): Promise<void> {
 			return locked(async () => {
-				await requireThirdParty(id);
+				const before = await requireThirdParty(id);
 				assertCodeSize(code);
 				const sha256 = await digest(code);
 				await storage.local.set({ [codeKey(id)]: code });
@@ -477,7 +503,7 @@ export function createWebMcpScripts({
 				await mutate((records) =>
 					records.map((record) => (record.id === id ? { ...withoutApproval(record), sha256 } : record)),
 				);
-				await unregisterUser(`${USER_PREFIX}${id}`);
+				await stopUser(`${USER_PREFIX}${id}`, before.matches);
 				await runReconcile();
 			});
 		},
@@ -485,10 +511,10 @@ export function createWebMcpScripts({
 		remove(id: string): Promise<void> {
 			return locked(async () => {
 				if (builtInIds.has(id)) throw new Error("Built-in scripts cannot be removed");
-				await requireThirdParty(id);
+				const before = await requireThirdParty(id);
 				await mutate((records) => records.filter((record) => record.id !== id));
 				await storage.local.remove([codeKey(id), approvalKey(id), macKey(id)]);
-				await unregisterUser(`${USER_PREFIX}${id}`);
+				await stopUser(`${USER_PREFIX}${id}`, before.matches);
 				await runReconcile();
 			});
 		},

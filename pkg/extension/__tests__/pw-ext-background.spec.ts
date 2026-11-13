@@ -73,7 +73,8 @@ type Options = {
 	onApproval?: () => void | Promise<void>;
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	builtInOwned?: boolean;
-	thirdPartyMatches?: string[];
+	thirdPartySites?: { active: string[]; stopped: { matches: string[]; stoppedAt: number }[] };
+	documentStart?: number;
 	remember?: boolean;
 	pageDeadlineMs?: number;
 	sites?: "ask";
@@ -118,6 +119,7 @@ function harness(options: Options = {}) {
 	);
 	fake.state.script = (details) => {
 		const call = details as { args: unknown[]; world?: string };
+		if ((details as { func?: { name?: string } }).func?.name === "pwExtDocumentStart") return options.documentStart;
 		if (call.world === "MAIN") return options.mainResult?.(call.args[0]);
 		return options.pageResult;
 	};
@@ -158,7 +160,7 @@ function harness(options: Options = {}) {
 			: options.builtInOwned
 				? { enabledBuiltIns: async () => new Set(["outlook"]) }
 				: {}),
-		...(options.thirdPartyMatches ? { thirdPartyMatches: async () => options.thirdPartyMatches as string[] } : {}),
+		...(options.thirdPartySites ? { thirdPartySites: async () => options.thirdPartySites as never } : {}),
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		lock: agentTabsLock,
 		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
@@ -1723,7 +1725,7 @@ describe("pw --ext WebMCP approval", () => {
 	it("treats dg_outlook_move as each when an enabled third-party script also runs on the origin", async () => {
 		const h = harness({
 			builtInOwned: true,
-			thirdPartyMatches: ["https://*.live.com/*"],
+			thirdPartySites: { active: ["https://*.outlook.live.com/*"], stopped: [] },
 			tabs: [owaTab],
 			approval: "allow",
 			remember: true,
@@ -1736,6 +1738,37 @@ describe("pw --ext WebMCP approval", () => {
 		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
 		expect(await h.remembered.list()).toEqual([]);
+	});
+
+	it.each([
+		["the document loaded before the script stopped", 1_000, 2_000, 2],
+		["the document start cannot be read", undefined, 2_000, 2],
+		["the document loaded after the script stopped", 3_000, 2_000, 1],
+	] as const)("asks for a built-in session tool by stopped third-party sites when %s", async (_label, documentStart, stoppedAt, asks) => {
+		const h = harness({
+			builtInOwned: true,
+			thirdPartySites: { active: [], stopped: [{ matches: ["https://outlook.live.com/*"], stoppedAt }] },
+			...(documentStart === undefined ? {} : { documentStart }),
+			tabs: [owaTab],
+			approval: "allow",
+			mainResult: ran,
+		});
+		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"] } } as const;
+		await h.run(move);
+		await h.run(move);
+		expect(h.approvalRequests).toHaveLength(asks);
+	});
+
+	it("ignores stopped third-party sites that do not cover the origin", async () => {
+		const h = harness({
+			builtInOwned: true,
+			thirdPartySites: { active: [], stopped: [{ matches: ["https://example.com/*"], stoppedAt: 9_000 }] },
+			tabs: [owaTab],
+			approval: "deny",
+			mainResult: ran,
+		});
+		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([]);
 	});
 
 	it("remembers a built-in session tool for 30 days across sessions until it is revoked", async () => {

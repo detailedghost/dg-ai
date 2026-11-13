@@ -57,6 +57,7 @@ import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { siteOf } from "./site-key";
+import { STOPPED_SCRIPTS_KEY, type WebMcpStoppedScript } from "./webmcp-scripts";
 import {
 	createRememberedWebMcpGrants,
 	createWebMcpGrants,
@@ -203,16 +204,35 @@ async function storedEnabledBuiltIns(storage: unknown): Promise<Set<string>> {
 	);
 }
 
-async function storedThirdPartyMatches(storage: unknown): Promise<string[]> {
-	const local = (storage as { local?: { get(key: string): Promise<Record<string, unknown>> } }).local;
-	if (!local) return [];
-	const stored = (await local.get(BUILT_INS_KEY))[BUILT_INS_KEY];
-	const records = Array.isArray(stored) ? (stored as { source?: unknown; enabled?: unknown; matches?: unknown }[]) : [];
-	return records.flatMap((record) =>
-		record?.source !== "built-in" && record?.enabled === true && Array.isArray(record.matches)
-			? record.matches.filter((match): match is string => typeof match === "string")
-			: [],
-	);
+/** Sites of enabled third-party scripts, and of stopped ones whose tools may live on in documents loaded earlier. */
+export type ThirdPartySites = { active: string[]; stopped: WebMcpStoppedScript[] };
+
+const textList = (value: unknown): string[] =>
+	Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+
+async function storedThirdPartySites(storage: unknown): Promise<ThirdPartySites> {
+	const local = (storage as { local?: { get(keys: string[]): Promise<Record<string, unknown>> } }).local;
+	if (!local) return { active: [], stopped: [] };
+	const stored = await local.get([BUILT_INS_KEY, STOPPED_SCRIPTS_KEY]);
+	const records = Array.isArray(stored[BUILT_INS_KEY])
+		? (stored[BUILT_INS_KEY] as { source?: unknown; enabled?: unknown; matches?: unknown }[])
+		: [];
+	const stopped = Array.isArray(stored[STOPPED_SCRIPTS_KEY])
+		? (stored[STOPPED_SCRIPTS_KEY] as { matches?: unknown; stoppedAt?: unknown }[])
+		: [];
+	return {
+		active: records.flatMap((record) =>
+			record?.source !== "built-in" && record?.enabled === true ? textList(record.matches) : [],
+		),
+		stopped: stopped.map((entry) => ({
+			matches: textList(entry?.matches),
+			stoppedAt: typeof entry?.stoppedAt === "number" ? entry.stoppedAt : Number.POSITIVE_INFINITY,
+		})),
+	};
+}
+
+function pwExtDocumentStart(): number {
+	return performance.timeOrigin;
 }
 
 function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
@@ -522,7 +542,7 @@ export function createPwExtHandler({
 		now,
 	}),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
-	thirdPartyMatches = () => storedThirdPartyMatches(api.storage),
+	thirdPartySites = () => storedThirdPartySites(api.storage),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
@@ -536,7 +556,7 @@ export function createPwExtHandler({
 	webmcpGrants?: WebMcpGrants;
 	rememberedWebMcpGrants?: RememberedWebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
-	thirdPartyMatches?: () => Promise<string[]>;
+	thirdPartySites?: () => Promise<ThirdPartySites>;
 	pageDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
@@ -1139,11 +1159,18 @@ export function createPwExtHandler({
 		}
 	}
 
-	/** A tool keeps its class-table class only when its enabled built-in covers the origin and no third-party script runs there. */
-	async function builtInOwned(tool: string, origin: string): Promise<boolean> {
+	/** A tool keeps its class-table class only when its enabled built-in covers the origin and no third-party script ran in this document. */
+	async function builtInOwned(tab: LiveTab, tool: string, origin: string): Promise<boolean> {
 		if (!mailboxToolAllowed(tool, origin, await enabledOrNone())) return false;
-		const others = await thirdPartyMatches().catch(() => undefined);
-		return others !== undefined && !matchesCoverOrigin(others, origin);
+		const sites = await thirdPartySites().catch(() => undefined);
+		if (!sites || matchesCoverOrigin(sites.active, origin)) return false;
+		const stopped = sites.stopped.filter((entry) => matchesCoverOrigin(entry.matches, origin));
+		if (stopped.length === 0) return true;
+		const started = await api.scripting
+			.executeScript({ target: { tabId: tab.id }, func: pwExtDocumentStart, args: [] })
+			.then(([frame]) => frame?.result)
+			.catch(() => undefined);
+		return typeof started === "number" && stopped.every((entry) => entry.stoppedAt < started);
 	}
 
 	async function approveDgTool(
@@ -1156,7 +1183,7 @@ export function createPwExtHandler({
 		if (tab.url === undefined) return { ok: false, error: `This tab has no page address; ${tool} did not run.` };
 		const origin = new URL(tab.url).origin;
 		const tableClass = approvalClassOf(tool, origin) ?? "each";
-		const approvalClass = tableClass !== "each" && (await builtInOwned(tool, origin)) ? tableClass : "each";
+		const approvalClass = tableClass !== "each" && (await builtInOwned(tab, tool, origin)) ? tableClass : "each";
 		if (approvalClass === "read") return undefined;
 		const answer = await requestWebMcpApproval({
 			approvals: approvals ?? browserApprovals(),

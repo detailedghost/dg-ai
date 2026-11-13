@@ -114,6 +114,8 @@ describe("matchesCoverOrigin", () => {
 	it.each([
 		[["https://outlook.live.com/*"], "https://outlook.live.com", true],
 		[["https://*.live.com/mail/*"], "https://outlook.live.com", true],
+		[["https://*.outlook.live.com/*"], "https://outlook.live.com", true],
+		[["https://*.outlook.live.com/*"], "https://xoutlook.live.com", false],
 		[["https://example.com/*", "https://outlook.live.com/x/*"], "https://outlook.live.com", true],
 		[["https://outlook.office.com/*"], "https://outlook.live.com", false],
 		[["http://localhost/*"], "https://outlook.live.com", false],

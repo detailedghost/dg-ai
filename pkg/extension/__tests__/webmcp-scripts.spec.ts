@@ -65,6 +65,7 @@ function setup({
 	const storage = memoryStorage();
 	if (outlookEnabled) storage.data.webmcpScripts = [OUTLOOK_ON];
 	const live = { content: new Set<string>(), user: new Set<string>() };
+	const userMatches = new Map<string, unknown>();
 	const calls = {
 		register: [] as { id: string; [key: string]: unknown }[],
 		unregister: [] as string[],
@@ -92,6 +93,7 @@ function setup({
 			for (const script of scripts) {
 				if (failIds.includes(script.id)) throw new Error(`cannot register ${script.id}`);
 				calls.userRegister.push(script);
+				userMatches.set(script.id, (script as { matches?: unknown }).matches);
 				if (!dropIds.includes(script.id)) live.user.add(script.id);
 			}
 		},
@@ -103,7 +105,7 @@ function setup({
 		},
 		getScripts: async () => {
 			if (probeFails) throw new Error("toggle off");
-			return [...live.user].map((id) => ({ id }));
+			return [...live.user].map((id) => ({ id, matches: userMatches.get(id) as string[] | undefined }));
 		},
 	};
 	let counter = 0;
@@ -117,7 +119,7 @@ function setup({
 			now: () => 1000,
 		});
 	const scripts = make(true);
-	return { storage, calls, live, scripts, make, signer };
+	return { storage, calls, live, userMatches, scripts, make, signer };
 }
 
 const approveNow = async (scripts: ReturnType<typeof setup>["scripts"], id: string) =>
@@ -842,6 +844,39 @@ describe("registration status", () => {
 			[disabled.id, undefined],
 			[unapproved.id, undefined],
 		]);
+	});
+});
+
+describe("stopped third-party sites", () => {
+	const stopped = (storage: ReturnType<typeof memoryStorage>) => storage.data.webmcpStoppedScripts;
+
+	it("records the sites of a running script when it is disabled, replaced or removed", async () => {
+		const { scripts, storage } = setup();
+		const { id } = await scripts.addThirdParty(draft());
+		await approveNow(scripts, id);
+		expect(stopped(storage)).toBeUndefined();
+
+		await scripts.setEnabled(id, false);
+		await scripts.setEnabled(id, true);
+		await scripts.replaceCode(id, "other();");
+		await scripts.remove(id);
+
+		expect(stopped(storage)).toEqual([
+			{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 },
+			{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 },
+			{ matches: ["https://flights.example.com/*"], stoppedAt: 1000 },
+		]);
+	});
+
+	it("records the sites of an orphan registration that reconcile removes", async () => {
+		const { scripts, storage, live, userMatches } = setup();
+		live.user.add("dg-webmcp-user-gone");
+		userMatches.set("dg-webmcp-user-gone", ["https://*.orphan.example.com/*"]);
+
+		await scripts.reconcile();
+
+		expect(live.user.has("dg-webmcp-user-gone")).toBe(false);
+		expect(stopped(storage)).toEqual([{ matches: ["https://*.orphan.example.com/*"], stoppedAt: 1000 }]);
 	});
 });
 
