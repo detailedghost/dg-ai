@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.6.0 (2026-11-13)
+
+### Features
+
+- feat(dg-daemon): supervise outside services with service add and a service API ([#173](https://github.com/detailedghost/dg-ai/pull/173))
+
 ## v5.5.1 (2026-11-13)
 
 ### Fixes
