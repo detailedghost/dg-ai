@@ -114,6 +114,13 @@ describe("dialog shim", () => {
 		expect(nativeCalls).toBe(1);
 	});
 
+	it("drops the dialog records on remove, so the next session cannot read them", () => {
+		pwExtDialogs({ kind: "install" });
+		page().alert("orchid-maple");
+		pwExtDialogs({ kind: "remove" });
+		expect(pwExtDialogs({ kind: "read", markSeen: false })).toEqual({ dialogs: [] });
+	});
+
 	it("installs nothing on remove when the page has no shim", () => {
 		const native = page().alert;
 		expect(pwExtDialogs({ kind: "remove" })).toEqual({ dialogs: [] });

@@ -83,11 +83,15 @@ export async function forgetAgentTabsAndShims({
 	deadlineMs?: number;
 }): Promise<void> {
 	const rows = await agentTabs.list({ sessionId }).catch(() => []);
-	for (const row of rows) {
-		turns.set(row.tabId, (turns.get(row.tabId) ?? 0) + 1);
-		shimmed.delete(row.tabId);
-	}
+	const cancel = () => {
+		for (const row of rows) {
+			turns.set(row.tabId, (turns.get(row.tabId) ?? 0) + 1);
+			shimmed.delete(row.tabId);
+		}
+	};
+	cancel();
 	await agentTabs.forget({ sessionId });
+	cancel();
 	await Promise.all(
 		rows
 			.filter((row) => allowedPage(row.url) && !mailbox(row.url))

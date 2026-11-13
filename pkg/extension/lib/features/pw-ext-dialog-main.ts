@@ -64,6 +64,7 @@ export function pwExtDialogs(
 					Object.assign(target, native);
 					fresh.active = false;
 					fresh.policy = undefined;
+					fresh.dialogs.length = 0;
 				},
 			};
 			Object.defineProperty(win, KEY, { value: fresh, configurable: false });
