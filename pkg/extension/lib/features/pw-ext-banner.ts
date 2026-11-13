@@ -13,6 +13,7 @@ export function bannerTitle({ title, sessionId }: { title: string; sessionId: st
 /** Self-contained isolated-world banner that says an agent drives the tab, with a Stop button; the text sits in a closed shadow root. */
 export function pwExtBanner(show: boolean, title = ""): void {
 	const KEY = "__dgPwExtBanner";
+	const TITLE_KEY = "__dgPwExtBannerTitle";
 	const STOP = "dg-pw-ext:stop";
 	const SVG = "http://www.w3.org/2000/svg";
 	const CSS = `
@@ -31,13 +32,15 @@ export function pwExtBanner(show: boolean, title = ""): void {
 @media (max-width:340px){.k{display:none}.t{flex-shrink:1}}
 `;
 	const slot = globalThis as unknown as Record<string, HTMLElement | undefined>;
+	const titles = globalThis as unknown as Record<string, string | undefined>;
 	const existing = slot[KEY];
 	if (!show) {
 		existing?.remove();
 		slot[KEY] = undefined;
 		return;
 	}
-	if (existing?.isConnected) return;
+	if (existing?.isConnected && titles[TITLE_KEY] === title) return;
+	existing?.remove();
 	const host = document.createElement("dg-agent-banner");
 	for (const [name, value] of [
 		["position", "fixed"],
@@ -94,4 +97,5 @@ export function pwExtBanner(show: boolean, title = ""): void {
 	root.append(style, bar);
 	(document.body ?? document.documentElement).append(host);
 	slot[KEY] = host;
+	titles[TITLE_KEY] = title;
 }

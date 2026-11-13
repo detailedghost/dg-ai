@@ -89,6 +89,15 @@ describe("agent banner", () => {
 		expect(root.textContent).toContain("claude-code · 3f9a");
 	});
 
+	it("shows the new group title when the tab moves to another agent group", () => {
+		const opened = captureShadow();
+		pwExtBanner(true, "first · aaaa");
+		pwExtBanner(true, "second · bbbb");
+		expect(hosts()).toHaveLength(1);
+		expect(opened.root?.textContent).toContain("second · bbbb");
+		expect(opened.root?.textContent).not.toContain("first · aaaa");
+	});
+
 	it("renders the group title as text, never as HTML", () => {
 		const opened = captureShadow();
 		pwExtBanner(true, '<img src=x onerror="alert(1)"><b>x</b>');
