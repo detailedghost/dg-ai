@@ -293,8 +293,9 @@ export function registerCredentials(
 			const raw = rawArgs.slice(rawArgs.indexOf("exec") + 1);
 			const split = raw.indexOf("--");
 			if (split === -1) throw new Error("Put -- between the credential names and the command.");
-			const names = raw.slice(0, split).filter((arg, index, list) => !arg.startsWith("--session") && list[index - 1] !== "--session");
-			const bindings = parseBindings(names);
+			if (raw.slice(0, split).some((arg) => arg.startsWith("--session")))
+				throw new Error("Put --session before exec, for example: dg-skills credentials --session <id> exec <name> -- <command>.");
+			const bindings = parseBindings(raw.slice(0, split));
 			const argv = raw.slice(split + 1);
 			if (argv.length === 0) throw new Error("Give a command to run after --.");
 			if (bindings.length === 0) throw new Error("Name at least one credential before --.");

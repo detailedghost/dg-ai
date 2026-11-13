@@ -71,10 +71,11 @@ describe("credentials exec", () => {
 		expect("get" in h.client).toBe(false);
 	});
 
-	test("accepts --session after exec and keeps it out of the names", async () => {
+	test("refuses --session after exec and says where it goes", async () => {
 		const h = harness(async () => 0);
 		await h.run(["exec", "pw/x/y=X", "--session", "session-a", "--", "true"]);
-		expect(h.specs[0]?.bindings).toEqual([{ name: "pw/x/y", env: "X" }]);
+		expect(h.specs).toEqual([]);
+		expect(h.err.join("\n")).toContain("Put --session before exec");
 	});
 
 	test.each([

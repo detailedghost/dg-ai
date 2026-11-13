@@ -546,6 +546,7 @@ export function pwExtNetwork(
 						entry.failed = true;
 					} finally {
 						clearTimeout(timer);
+						controller.abort();
 					}
 					return { entries: [outEntry(entry, request.values, [...used, ...fresh.hidden()].sort((a, b) => b.length - a.length))] };
 				},

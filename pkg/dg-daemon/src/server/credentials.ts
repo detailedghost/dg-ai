@@ -184,6 +184,8 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 	const values = Object.values(injected);
 	const sealedNames = spec.bindings.map((binding) => binding.name).filter((name) => sealed(name));
 	let argv = spec.argv;
+	if (sealedNames.length && spec.bindings.some((binding) => INJECTION_ENV.test(binding.env)))
+		return { ok: false, error: "credentials exec with pw/ values refuses to bind a loader, runtime or PATH variable." };
 	if (sealedNames.length) {
 		const allowed = checkExecAllowlist({
 			file: deps.paths.execAllowlistPath,

@@ -302,6 +302,19 @@ describe("pw --ext credential save through the daemon", () => {
 		expect(out).toContain("ld=none node=none keep=yes");
 	});
 
+	it("refuses to bind a pw/ value to a loader variable", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const tool = script("console.log('ran')");
+		allow([tool]);
+		const frame = execFrame([tool]);
+		frame.exec.bindings = [{ name: "pw/live.com/owa-token", env: "LD_PRELOAD" }];
+		send(cli, frame);
+		expect(await find(cliFrames, "cli-credentials-result", frame.requestId)).toMatchObject({ ok: false, error: expect.stringContaining("loader") });
+	});
+
 	it("kills a process group that ignores SIGTERM", async () => {
 		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		const store = storeFrame(bootstrap);
