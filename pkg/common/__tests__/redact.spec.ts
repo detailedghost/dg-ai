@@ -265,6 +265,13 @@ describe("redactText without a process global", () => {
 	});
 });
 
+describe("token prefixes", () => {
+	it("masks GitHub app and GitLab personal tokens", () => {
+		expect(redactText("a ghs_abcdefgh12345678 b glpat-abcdefgh12345678")).toBe("a [redacted] b [redacted]");
+		expect(redactSecrets("ghs_abcdefgh12345678")).toBe("[redacted]");
+	});
+});
+
 describe("redactSecrets", () => {
 	it("keeps email addresses but masks tokens, keys and literal secrets", () => {
 		const text = "user ada@example.test token=abc123def456 key sk-abcdefgh12345678 pass Hunter2-secret";

@@ -244,8 +244,17 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 
 const CONSOLE_ENTRIES = 50;
 const RAW_ENTRY_MAX = 2000;
+const RAW_ERROR_MAX = 2000;
 const ENTRY_MAX = 500;
 const TOOL_OUTPUT_MAX = 50_000;
+const RAW_OUTPUT_MAX = 100_000;
+
+/** Masks raw MAIN-world text cut at rawMax; the word at the cut is masked too, as a partial token may not match. */
+function maskRaw(raw: string, rawMax: number, options: { unmasked: boolean; secrets: string[] }): string {
+	const cut = raw.length > rawMax || raw.endsWith("…");
+	const masked = mask(clip(raw, rawMax), options);
+	return cut ? masked.replace(/\S*…$/, "[redacted]…") : masked;
+}
 
 /** Masks raw MAIN-world console entries before it shortens them, so a cut cannot split a held secret. */
 function consoleWarnings(raw: unknown, options: { unmasked: boolean; secrets: string[] }): string[] {
@@ -254,7 +263,7 @@ function consoleWarnings(raw: unknown, options: { unmasked: boolean; secrets: st
 	return entries
 		.slice(-CONSOLE_ENTRIES)
 		.filter((entry): entry is string => typeof entry === "string")
-		.map((entry) => clip(mask(clip(entry, RAW_ENTRY_MAX), options).replace(/\s+/g, " "), ENTRY_MAX));
+		.map((entry) => clip(maskRaw(entry, RAW_ENTRY_MAX, options).replace(/\s+/g, " "), ENTRY_MAX));
 }
 
 function wholeJson(raw: string | undefined, max: number, options: { unmasked: boolean; secrets: string[] }): string | undefined {
@@ -273,10 +282,10 @@ function wholeJson(raw: string | undefined, max: number, options: { unmasked: bo
 function boundTools(tools: PwExtTool[], options: { unmasked: boolean; secrets: string[] }): PwExtTool[] {
 	return tools.map((tool) => {
 		const entry: PwExtTool = {
-			name: clip(mask(tool.name, options), 128),
-			description: clip(mask(tool.description, options), 1000),
+			name: clip(maskRaw(tool.name, 256, options), 128),
+			description: clip(maskRaw(tool.description, 2000, options), 1000),
 		};
-		if (tool.title !== undefined) entry.title = clip(mask(tool.title, options), 200);
+		if (tool.title !== undefined) entry.title = clip(maskRaw(tool.title, 400, options), 200);
 		const schema = wholeJson(tool.inputSchema, 4000, options);
 		if (schema) entry.inputSchema = schema;
 		const annotations = wholeJson(tool.annotations, 500, options);
@@ -335,7 +344,7 @@ function webMcpResult(raw: unknown): PwExtWebMcpResult {
 	const value = raw as Record<string, unknown> | null;
 	if (typeof value !== "object" || value === null)
 		throw new Error("The page returned an unexpected WebMCP result.");
-	if (typeof value.error === "string") return { error: value.error };
+	if (typeof value.error === "string") return { error: clip(value.error, RAW_ERROR_MAX) };
 	if (!["modelContext", "modelContextTesting", "none"].includes(value.api as string))
 		throw new Error("The page returned an unexpected WebMCP result.");
 	if (JSON.stringify(value).length > MAX_PAGE_RESULT_CHARS)
@@ -706,7 +715,6 @@ export function createPwExtHandler({
 							timeoutMs: TOOL_TIMEOUT_MS,
 						},
 						tab.url,
-						unmasked,
 					]),
 				);
 				if ("error" in called) return pageError(called.error);
@@ -716,7 +724,7 @@ export function createPwExtHandler({
 					[
 						`### Result`,
 						`WebMCP tool ${request.tool} returned:`,
-						clip(mask(called.output, { unmasked, secrets }), TOOL_OUTPUT_MAX),
+						clip(maskRaw(called.output, RAW_OUTPUT_MAX, { unmasked, secrets }), TOOL_OUTPUT_MAX),
 						...page(),
 					].join("\n"),
 				);

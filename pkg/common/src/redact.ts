@@ -45,7 +45,7 @@ const SECRET_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> =
 	},
 	{
 		pattern:
-			/\b(?:sk|pk|rk|ghp|gho|github_pat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g,
+			/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g,
 		replacement: REDACTED,
 	},
 	{

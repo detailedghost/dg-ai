@@ -316,6 +316,14 @@ describe("dg-agent mcp server tools/call", () => {
 		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { tab: "settings" } }]);
 	});
 
+	it("keeps nested names it found when another branch is too deep to walk", async () => {
+		const deep = JSON.parse(`${'{"allOf":['.repeat(40)}{"properties":{"q":{}}}${"]}".repeat(40)}`);
+		const own = { allOf: [{ properties: { dg_tab: { type: "string" } } }, deep] };
+		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
+		await client.callTool({ name: "dg_example_read", arguments: { dg_tab_2: 2, dg_tab: "settings" } });
+		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { dg_tab: "settings" } }]);
+	});
+
 	it.each([
 		["a self-referential $ref", { $ref: "#/$defs/loop", $defs: { loop: { allOf: [{ $ref: "#/$defs/loop" }] } } }],
 		["a remote $ref", { $ref: "https://example.test/schema.json#/properties" }],

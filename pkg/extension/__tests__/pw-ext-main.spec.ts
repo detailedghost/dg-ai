@@ -229,6 +229,13 @@ describe("review round 3 hardening", () => {
 		expect(called.output.length).toBeLessThanOrEqual(100_001);
 	});
 
+	it("keeps an escape-heavy tool output inside the background cap", async () => {
+		installModelContext([{ name: "t", description: "d" }], "\u0001".repeat(90_000));
+		const called = await pwExtWebMcp({ kind: "call", tool: "t", args: {}, timeoutMs: 100 });
+		expect(JSON.stringify(called).length).toBeLessThan(150_000);
+		expect((called as { output: string }).output.length).toBeGreaterThan(1000);
+	});
+
 	it("stops listing tools before the result outgrows the background cap", async () => {
 		installModelContext(
 			Array.from({ length: 100 }, (_, i) => ({

@@ -116,8 +116,8 @@ function localRef(root: unknown, ref: string): unknown {
 	return at;
 }
 
-/** Property names a schema declares through local $ref, allOf, anyOf and oneOf; undefined when the walk goes too deep. */
-function declaredNames(schema: Record<string, unknown>): Set<string> | undefined {
+/** Property names a schema declares through local $ref, allOf, anyOf and oneOf, and whether the walk went too deep. */
+function declaredNames(schema: Record<string, unknown>): { names: Set<string>; tooDeep: boolean } {
 	const names = new Set<string>();
 	const seen = new Set<object>();
 	let tooDeep = false;
@@ -139,14 +139,13 @@ function declaredNames(schema: Record<string, unknown>): Set<string> | undefined
 		}
 	};
 	walk(schema, 0);
-	return tooDeep ? undefined : names;
+	return { names, tooDeep };
 }
 
 /** The argument that picks the tab: the first of tab, dg_tab, dg_tab_2, … that the tool does not use. */
 function tabKey(raw: string | undefined): string {
-	const { schema, properties } = parseSchema(raw);
-	const names = declaredNames(schema);
-	const taken = (key: string) => (names ? names.has(key) : key === "tab" || Object.hasOwn(properties, key));
+	const { names, tooDeep } = declaredNames(parseSchema(raw).schema);
+	const taken = (key: string) => names.has(key) || (tooDeep && key === "tab");
 	if (!taken("tab")) return "tab";
 	let key = "dg_tab";
 	for (let n = 2; taken(key); n++) key = `dg_tab_${n}`;

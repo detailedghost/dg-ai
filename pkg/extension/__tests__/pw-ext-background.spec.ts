@@ -1259,6 +1259,31 @@ describe("pw --ext unmask", () => {
 		expect(outcome(await h.run({ verb: "console" }))).not.toContain("73");
 	});
 
+	it("masks the word at a MAIN-world cut, where a partial token no longer matches", async () => {
+		const jwtStart = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0";
+		const raw = `${" ".repeat(1960)}${jwtStart}`.slice(0, 2000);
+		const h = harness({
+			pageResult: { started: false, entries: [] },
+			mainResult: () => ({ entries: [`${raw}…`] }),
+		});
+		const text = outcome(await h.run({ verb: "console" }));
+		expect(text).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+		expect(text).toContain("[redacted]…");
+	});
+
+	it("sends neither the grant nor held secrets with a WebMCP call", async () => {
+		const h = harness({ approval: "allow", mainResult: () => ({ api: "modelContext", output: "ok" }) });
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "call", tool: "search", args: {} });
+		expect(h.executed().find((call) => call.world === "MAIN")?.args).toHaveLength(2);
+	});
+
+	it("shortens a huge MAIN-world error before it masks it", async () => {
+		const h = harness({ mainResult: () => ({ error: `boom ${"e".repeat(3_000_000)}` }) });
+		const answer = await h.run({ verb: "call", tool: "search", args: {} });
+		expect(outcome(answer).length).toBeLessThan(2_200);
+	});
+
 	it("masks and bounds raw MAIN-world WebMCP text in the background", async () => {
 		const h = harness({
 			mainResult: (action) =>

@@ -84,6 +84,7 @@ export async function pwExtWebMcp(
 	const SCHEMA_MAX = 8000;
 	const ANNOTATIONS_MAX = 1000;
 	const OUTPUT_MAX = 100_000;
+	const ENCODED_MAX = 140_000;
 	const clip = (value: string, max: number) => (value.length > max ? `${value.slice(0, max)}…` : value);
 	const changed = () => expectUrl !== undefined && document.URL !== expectUrl;
 	const CHANGED = { error: "The page changed; nothing was done. Retry." };
@@ -229,10 +230,13 @@ export async function pwExtWebMcp(
 					: legacy!.executeTool(action.tool, JSON.stringify(action.args)),
 				timeout,
 			]);
-			return {
-				api,
-				output: clip(json(output), OUTPUT_MAX),
-			};
+			let text = clip(json(output), OUTPUT_MAX);
+			for (let round = 0; round < 4; round++) {
+				const encoded = JSON.stringify(text).length;
+				if (encoded <= ENCODED_MAX) break;
+				text = clip(text, Math.floor((text.length * ENCODED_MAX) / encoded / 1.1));
+			}
+			return { api, output: text };
 		} finally {
 			clearTimeout(timer);
 		}
