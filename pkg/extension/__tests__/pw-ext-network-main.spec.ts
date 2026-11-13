@@ -362,13 +362,21 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 		pwExtNetwork({ kind: "install", seal: true });
 		await page().fetch("/a", { headers: { Authorization: `Bearer ${token}` } });
 		await settle();
+		let rotated = false;
 		reply = async () => {
-			await page().fetch("/b", { headers: { Authorization: "Bearer fake-rotated-value-for-tests" } });
+			if (!rotated) {
+				rotated = true;
+				await page().fetch("/b", { headers: { Authorization: "Bearer fake-rotated-value-for-tests" } });
+			}
 			return new window.Response(JSON.stringify({ a: encodeURIComponent(token), b: token }), {
 				headers: { "content-type": "application/json" },
 			}) as unknown as Response;
 		};
-		const result = await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true });
+		const result = (await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true })) as {
+			entries: NetworkEntry[];
+		};
+		expect(result.entries[0]?.status).toBe(200);
+		expect(result.entries[0]?.response?.text).toContain("[redacted]");
 		const text = JSON.stringify(result);
 		expect(text).not.toContain("marker+value");
 		expect(text).not.toContain(encodeURIComponent(token));
@@ -466,5 +474,40 @@ describe("sealed values in storage and long bodies", () => {
 		const [entry] = read(true);
 		expect(entry?.response?.text?.length).toBeLessThanOrEqual(8000);
 		expect(entry?.response?.cut).toBe(true);
+	});
+});
+
+describe("cut edges and delayed responses", () => {
+	it("masks a sealed value cut at the body bound", async () => {
+		const token = "fake-cut-edge-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(`${"x".repeat(7990)}${token}`, { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: token } });
+		await settle();
+		const [entry] = read(true);
+		expect(entry?.response?.text).not.toContain(token.slice(0, 10));
+		expect(entry?.response?.text?.endsWith("[redacted]")).toBe(true);
+	});
+
+	it("masks a delayed response that echoes its own sign-in value after the history moved on", async () => {
+		const first = "fake-delayed-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		const fast = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		let release: (() => void) | undefined;
+		const slow = new Promise<Response>((resolve) => {
+			release = () =>
+				resolve(new window.Response(JSON.stringify({ echo: first }), { headers: { "content-type": "application/json" } }) as unknown as Response);
+		});
+		reply = () => slow;
+		const pending = page().fetch("/slow", { headers: { Authorization: `Bearer ${first}` } });
+		reply = fast;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		release?.();
+		await pending;
+		await settle();
+		const text = JSON.stringify(read(true));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(first);
 	});
 });

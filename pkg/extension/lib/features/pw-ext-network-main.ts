@@ -74,7 +74,14 @@ export function pwExtNetwork(
 			storageGet(area: "local" | "session", key: string): PwExtNetworkResult;
 		};
 		const outEntry = (entry: NetworkEntry, values: boolean, hidden: readonly string[] = []): NetworkEntry => {
-			const scrub = (text: string) => hidden.reduce((out, secret) => out.split(secret).join("[redacted]"), text);
+			const whole = (text: string) => hidden.reduce((out, secret) => out.split(secret).join("[redacted]"), text);
+			const tail = (text: string) => {
+				for (const secret of hidden)
+					for (let size = secret.length - 1; size >= 4; size--)
+						if (text.endsWith(secret.slice(0, size))) return `${text.slice(0, text.length - size)}[redacted]`;
+				return text;
+			};
+			const scrub = (text: string, cut = false) => (cut ? tail(whole(text)) : whole(text));
 			const bound = (text: string, max: number) => (text.length > max ? text.slice(0, max) : text);
 			const strip = (body: NetworkBody | undefined): NetworkBody | undefined =>
 				body === undefined
@@ -85,14 +92,18 @@ export function pwExtNetwork(
 							...(body.shape === undefined ? {} : { shape: body.shape }),
 							...(values && body.text !== undefined
 								? (() => {
-										const text = scrub(body.text);
+										const text = scrub(body.text, body.cut === true);
 										const cut = body.cut === true || text.length > BODY_MAX;
 										return { text: bound(text, BODY_MAX), ...(cut ? { cut: true as const } : {}) };
 									})()
 								: {}),
 						};
 			const names = (list: NetworkHeader[]) =>
-				list.map(({ name, value }) => (values && value !== undefined ? { name, value: bound(scrub(value), HEADER_VALUE_MAX) } : { name }));
+				list.map(({ name, value }) =>
+					values && value !== undefined
+						? { name, value: bound(scrub(value, value.length >= HEADER_VALUE_MAX), HEADER_VALUE_MAX) }
+						: { name },
+				);
 			const request = strip(entry.request);
 			const response = strip(entry.response);
 			return JSON.parse(
@@ -100,7 +111,7 @@ export function pwExtNetwork(
 					at: entry.at,
 					via: entry.via,
 					method: entry.method,
-					url: values ? bound(scrub(entry.url), URL_MAX) : entry.url,
+					url: values ? bound(scrub(entry.url, entry.url.length >= URL_MAX), URL_MAX) : entry.url,
 					...(entry.status === undefined ? {} : { status: entry.status }),
 					...(entry.failed ? { failed: true as const } : {}),
 					requestHeaders: names(entry.requestHeaders),
@@ -251,6 +262,19 @@ export function pwExtNetwork(
 				if (source !== undefined) new win.Headers(source).forEach((value, name) => pairs.push([name, value]));
 				return pairs;
 			};
+			const ownSecrets = new WeakMap<NetworkEntry, string[]>();
+			const keepOwn = (entry: NetworkEntry, pairs: [string, string][]) => {
+				if (!sealed.on) return;
+				const own = pairs.filter(([name]) => SENSITIVE.test(name)).map(([, value]) => value);
+				if (own.length) ownSecrets.set(entry, own);
+			};
+			const scrubOwn = (entry: NetworkEntry) => {
+				const own = ownSecrets.get(entry);
+				if (!own || !entry.response?.text) return;
+				const forms = [...new Set(own.flatMap(formsOf))].filter((form) => form.length >= 8).sort((a, b) => b.length - a.length);
+				entry.response.text = forms.reduce((out, form) => out.split(form).join("[redacted]"), entry.response.text);
+				ownSecrets.delete(entry);
+			};
 			const record = (entry: NetworkEntry) => {
 				fresh.entries.push(entry);
 				if (fresh.entries.length > MAX_ENTRIES) fresh.entries.shift();
@@ -290,6 +314,7 @@ export function pwExtNetwork(
 				const { text, bytes, cut } = await readBounded(body);
 				if (!fresh.active) return;
 				entry.response = textBody(type, text, cut ? size : bytes, cut);
+				scrubOwn(entry);
 			};
 			const wrappedFetch = function fetch(this: unknown, ...args: Parameters<typeof win.fetch>) {
 				if (!fresh.active) return nativeFetch.apply(this, args);
@@ -318,6 +343,7 @@ export function pwExtNetwork(
 						responseHeaders: [],
 					};
 					entry = made;
+					keepOwn(made, pairs);
 					const body = requestBody(init?.body, contentType(requestHeaders));
 					if (body) made.request = body;
 					else if (request && request.body !== null && !request.bodyUsed) {
@@ -387,6 +413,7 @@ export function pwExtNetwork(
 								responseHeaders: [],
 							};
 							sealHeaders(held.url, held.sensitive);
+							keepOwn(entry, held.sensitive);
 							held.sensitive = [];
 							const sentBody = requestBody(body, contentType(held.headers));
 							if (sentBody) entry.request = sentBody;
@@ -416,6 +443,7 @@ export function pwExtNetwork(
 										else if (xhr.response instanceof win.Blob)
 											entry.response = { type: clip(type, TYPE_MAX), size: xhr.response.size };
 										else entry.response = { type: clip(type, TYPE_MAX), size: -1 };
+										scrubOwn(entry);
 									} catch {}
 								},
 								{ once: true },
