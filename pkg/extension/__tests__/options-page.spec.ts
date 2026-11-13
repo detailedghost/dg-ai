@@ -163,7 +163,7 @@ describe("settings tabs", () => {
 		const { document } = tabbedPage();
 		const tabs = [...document.querySelectorAll('[role="tablist"] > [role="tab"]')];
 
-		expect(tabs.map((node) => node.textContent)).toEqual(["General", "MCP", "Narration", "About"]);
+		expect(tabs.map((node) => node.textContent)).toEqual(["General", "MCP", "Recording", "About"]);
 		for (const node of tabs) {
 			const panel = document.getElementById(node.getAttribute("aria-controls") as string) as Element;
 			expect(panel.getAttribute("role")).toBe("tabpanel");
@@ -204,10 +204,10 @@ describe("settings tabs", () => {
 
 	it("switches on click and writes the hash", () => {
 		const { window, document } = tabbedPage();
-		tab(document, "narration").click();
+		tab(document, "recording").click();
 
-		expect(visiblePanels(document)).toEqual(["narration"]);
-		expect(window.location.hash).toBe("#narration");
+		expect(visiblePanels(document)).toEqual(["recording"]);
+		expect(window.location.hash).toBe("#recording");
 	});
 
 	it("follows hash changes made outside the page", async () => {
@@ -239,6 +239,14 @@ describe("settings tabs", () => {
 		expect(visiblePanels(document)).toEqual(["general"]);
 	});
 
+	it("uses tab keys that collide with no element id", () => {
+		const { document } = tabbedPage();
+
+		for (const node of document.querySelectorAll('[role="tab"]')) {
+			expect(document.getElementById((node as HTMLElement).dataset.tab as string)).toBeNull();
+		}
+	});
+
 	it("ignores other keys", () => {
 		const { window, document } = tabbedPage();
 		press(window, tab(document, "general"), "a");
@@ -248,12 +256,12 @@ describe("settings tabs", () => {
 });
 
 describe("review page settings link", () => {
-	it("targets the Narration tab", () => {
+	it("targets the Recording tab", () => {
 		const html = readFileSync(
 			fileURLToPath(new URL("../entrypoints/review/index.html", import.meta.url)),
 			"utf8",
 		);
 
-		expect(html).toContain('href="/options.html#narration"');
+		expect(html).toContain('href="/options.html#recording"');
 	});
 });
