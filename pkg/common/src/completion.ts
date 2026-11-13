@@ -65,6 +65,7 @@ export function completeWords(root: CompletionNode, words: readonly string[]): s
 	let pending: CompletionOption | undefined;
 	let positional = false;
 	let literal = false;
+	let consumed = 0;
 	for (const word of words.slice(0, -1)) {
 		const node = stack.at(-1) as CompletionNode;
 		if (pending) {
@@ -83,8 +84,13 @@ export function completeWords(root: CompletionNode, words: readonly string[]): s
 			continue;
 		}
 		const child = positional || literal ? undefined : node.commands?.find((command) => command.name === word);
-		if (child) stack.push(child);
-		else positional = true;
+		if (child) {
+			stack.push(child);
+			consumed = 0;
+		} else {
+			positional = true;
+			consumed += 1;
+		}
 	}
 	const node = stack.at(-1) as CompletionNode;
 	if (pending) return valueCandidates(pending, current);
@@ -100,7 +106,7 @@ export function completeWords(root: CompletionNode, words: readonly string[]): s
 		return node.commands
 			.filter((command) => command.name.startsWith(current))
 			.map((command) => candidate(command.name, command.description));
-	if (node.values) return node.values.filter((value) => value.startsWith(current));
+	if (node.values && consumed === 0) return node.values.filter((value) => value.startsWith(current));
 	return node.path ? [FILES_DIRECTIVE] : [];
 }
 

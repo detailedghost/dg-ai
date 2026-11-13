@@ -1660,6 +1660,22 @@
 							{
 								"name": "dialog"
 							}
+						],
+						"options": [
+							{
+								"flags": [
+									"--session"
+								],
+								"description": "the paired chat session",
+								"value": "any"
+							},
+							{
+								"flags": [
+									"--tab"
+								],
+								"description": "the tab id to act on",
+								"value": "any"
+							}
 						]
 					}
 				}

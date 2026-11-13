@@ -35,7 +35,13 @@ function pwFlag(flag: FlagLike): CompletionOption {
 }
 
 function fromPw(specs: readonly PwSpecLike[]): Shape {
-	const ext = names([...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS]);
+	const ext: Shape = {
+		...names([...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS]),
+		options: [
+			{ flags: ["--session"], description: "the paired chat session", value: "any" },
+			{ flags: ["--tab"], description: "the tab id to act on", value: "any" },
+		],
+	};
 	return {
 		commands: specs.map((spec) => ({
 			...described(spec.name, spec.help.split("\n")[0]),

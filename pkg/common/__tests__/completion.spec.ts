@@ -70,8 +70,9 @@ describe("completeWords", () => {
 		expect(completeWords(tree, ["sniff", ""])).toEqual([FILES_DIRECTIVE]);
 	});
 
-	test("argument choices complete", () => {
+	test("argument choices complete only the first argument", () => {
 		expect(completeWords(tree, ["completion", "z"])).toEqual(["zsh"]);
+		expect(completeWords(tree, ["completion", "zsh", ""])).toEqual([]);
 	});
 
 	test("an unknown word gives no candidates", () => {

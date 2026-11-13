@@ -59,6 +59,7 @@ describe("dg-skills __complete", () => {
 		expect(complete("stat", "ch")).toEqual(["checklist"]);
 		expect(complete("credentials", "re")).toEqual(["revoke"]);
 		expect(complete("pw", "--ext", "sn")).toEqual(["snapshot"]);
+		expect(complete("pw", "--ext", "--tab", "42", "sn")).toEqual(["snapshot"]);
 		expect(complete("completion", "--in")).toEqual(["--install"]);
 		expect(complete("completion", "f")).toEqual(["fish"]);
 	});
