@@ -56,6 +56,7 @@ export function pwExtNetwork(
 		const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 		const SEALED_MAX = 8192;
 		const AGENT_FETCH_MS = 30_000;
+		const SEEN_MAX = 64;
 		const STORAGE_MAX_KEYS = 200;
 		const STORAGE_VALUE_MAX = 65_536;
 		type Slot = {
@@ -189,7 +190,12 @@ export function pwExtNetwork(
 				return /^[A-Za-z]{1,16}$/.test(method) ? method.toUpperCase() : "OTHER";
 			};
 			const pageOrigin = win.location.origin;
-			const sealed = { on: false, anchor: undefined as string | undefined, values: new Map<string, string>() };
+			const sealed = {
+				on: false,
+				anchor: undefined as string | undefined,
+				values: new Map<string, string>(),
+				seen: [] as string[],
+			};
 			const sealHeaders = (url: string, pairs: [string, string][]) => {
 				if (!sealed.on) return;
 				let origin = "";
@@ -204,8 +210,13 @@ export function pwExtNetwork(
 				}
 				for (const [name, value] of pairs) {
 					const lower = name.trim().toLowerCase();
-					if (HEADER_NAME.test(lower) && SENSITIVE.test(lower) && !/cookie/.test(lower) && value.length <= SEALED_MAX)
+					if (HEADER_NAME.test(lower) && SENSITIVE.test(lower) && !/cookie/.test(lower) && value.length <= SEALED_MAX) {
 						sealed.values.set(lower, value);
+						if (!sealed.seen.includes(value)) {
+							sealed.seen.push(value);
+							if (sealed.seen.length > SEEN_MAX) sealed.seen.shift();
+						}
+					}
 				}
 			};
 			const headerPairs = (source: HeadersInit | Headers | undefined): [string, string][] => {
@@ -409,6 +420,7 @@ export function pwExtNetwork(
 					sealed.on = on;
 					if (!on) {
 						sealed.values.clear();
+						sealed.seen.length = 0;
 						sealed.anchor = undefined;
 					}
 				},
@@ -416,7 +428,7 @@ export function pwExtNetwork(
 					const lowerHex = (text: string) => text.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
 					return [
 						...new Set(
-							[...sealed.values.values()].flatMap((value) =>
+							[...sealed.values.values(), ...sealed.seen].flatMap((value) =>
 								[value, value.replace(/^\S+\s+/, "")].flatMap((form) => {
 									const encoded = encodeURIComponent(form);
 									const query = new win.URLSearchParams({ v: form }).toString().slice(2);

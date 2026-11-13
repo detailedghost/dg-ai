@@ -418,3 +418,17 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 		expect(pwExtNetwork({ kind: "storage-get", area: "local", key: "none" })).toEqual({ missing: true });
 	});
 });
+
+describe("sealed history", () => {
+	it("keeps masking a rotated sign-in value in retained responses", async () => {
+		const old = "fake-old-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(JSON.stringify({ echo: old }), { headers: { "content-type": "application/json" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: `Bearer ${old}` } });
+		await settle();
+		await page().fetch("/b", { headers: { Authorization: "Bearer fake-new-token-value-for-tests" } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(old);
+	});
+});

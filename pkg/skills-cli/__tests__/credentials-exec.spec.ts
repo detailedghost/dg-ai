@@ -238,3 +238,16 @@ describe("scrubber", () => {
 		}
 	});
 });
+
+describe("scrubber hold-back", () => {
+	test("emits a prompt at once when no tail could start a secret", () => {
+		const scrubber = createScrubber(["fake-marker-value-for-tests"]);
+		expect(scrubber.push("Continue? [y/N]: ")).toBe("Continue? [y/N]: ");
+	});
+
+	test("holds only a tail that could start a secret, and still masks the split value", () => {
+		const scrubber = createScrubber(["fake-marker-value-for-tests"]);
+		expect(scrubber.push("token: fake-mar")).toBe("token: ");
+		expect(scrubber.push("ker-value-for-tests done") + scrubber.flush()).toBe("[redacted] done");
+	});
+});

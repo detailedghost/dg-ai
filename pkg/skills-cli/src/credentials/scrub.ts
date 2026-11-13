@@ -50,7 +50,7 @@ export type Scrubber = {
 	flush(): string;
 };
 
-/** Scrubs a chunked stream; the last (longest form - 1) characters are held back until more data or flush so a split value is still caught. */
+/** Scrubs a chunked stream; only a tail that could start a secret form is held back until more data or flush, so a split value is caught and a prompt still shows. */
 export function createScrubber(values: readonly string[]): Scrubber {
 	const forms = secretForms(values);
 	const pattern = matcher(forms);
@@ -60,7 +60,15 @@ export function createScrubber(values: readonly string[]): Scrubber {
 		push(chunk) {
 			if (!pattern) return chunk;
 			buffer += chunk;
-			const cut = buffer.length - hold;
+			let keep = 0;
+			for (let size = Math.min(hold, buffer.length); size > 0; size--) {
+				const tail = buffer.slice(-size);
+				if (forms.some((form) => form.length > size && form.startsWith(tail))) {
+					keep = size;
+					break;
+				}
+			}
+			const cut = buffer.length - keep;
 			let out = "";
 			let consumed = 0;
 			for (const match of buffer.matchAll(pattern)) {

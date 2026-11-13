@@ -2934,10 +2934,20 @@ describe("pw --ext storage, fetch and credential save", () => {
 
 	it("forgets saved values when the session ends", async () => {
 		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
-		const h = harness({ approval: "allow", tabs: [MAIL_TAB], cookies: { S: { value: MARKER } }, mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })) });
-		await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" });
+		const h = harness({ sites: "ask", approval: "allow", tabs: [MAIL_TAB], cookies: { S: { value: MARKER } }, mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })) });
+		expect((await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" })).ok).toBe(true);
+		expect(outcome(await h.run({ verb: "network", values: true }))).toContain("echo [redacted]");
 		h.handler.forgetSession(SESSION);
 		expect(outcome(await h.run({ verb: "network", values: true }))).toContain(`echo ${MARKER}`);
+	});
+
+	it("refuses a new save when the session holds the most saved values", async () => {
+		const jar = Object.fromEntries(Array.from({ length: 51 }, (_, i) => [`c${i}`, { value: `fake-saved-value-${i}` }]));
+		const h = harness({ sites: "ask", approval: "allow", tabs: [MAIL_TAB], cookies: jar });
+		for (let i = 0; i < 50; i++) expect(outcome(await h.run({ verb: "credential", name: `n${i}`, source: "cookie", key: `c${i}` }))).toContain("Saved");
+		const last = await h.run({ verb: "credential", name: "n50", source: "cookie", key: "c50" });
+		expect(outcome(last)).toContain("already saved 50 values");
+		expect(h.storedCredentials).toHaveLength(50);
 	});
 
 	it("refuses a save on an http page", async () => {

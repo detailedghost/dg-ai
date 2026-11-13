@@ -1285,6 +1285,9 @@ export function createPwExtHandler({
 				};
 				if (signal?.aborted) return CANCELED;
 				if (await isStopped(context.sessionId)) return STOPPED;
+				const saved = savedValues.get(context.sessionId) ?? [];
+				if (!saved.includes(value) && saved.length >= MAX_FILLED_SECRETS)
+					return failed(`This session already saved ${MAX_FILLED_SECRETS} values; start a new dg session to save more. ${NOT_SAVED}`);
 				const live = await api.tabs.get(tab.id).catch(() => undefined);
 				if (
 					!live ||
@@ -1301,7 +1304,7 @@ export function createPwExtHandler({
 					return { ok: false, error: clip(redactLiterals(reason, [value]), 300) };
 				}
 				const kept = savedValues.get(context.sessionId) ?? [];
-				savedValues.set(context.sessionId, [...kept.filter((held) => held !== value), value].slice(-MAX_FILLED_SECRETS));
+				if (!kept.includes(value)) savedValues.set(context.sessionId, [...kept, value]);
 				return ok(
 					[
 						"### Result",
