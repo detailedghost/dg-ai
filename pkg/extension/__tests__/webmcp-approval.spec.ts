@@ -115,6 +115,13 @@ describe("requestWebMcpApproval", () => {
 		expect(requests).toHaveLength(1);
 	});
 
+	it.each(["allow", "deny"] as const)("shows one popup when two calls of a session tool ask at the same time (%s)", async (answer) => {
+		const { requests, ask } = setup(answer);
+		const move = { tool: "dg_outlook_move", class: "session" } as const;
+		expect(await Promise.all([ask(move), ask(move)])).toEqual([answer, answer]);
+		expect(requests).toHaveLength(1);
+	});
+
 	it.each([
 		["another session", { sessionId: "s2" }],
 		["another tool", { tool: "dg_outlook_flag" }],
