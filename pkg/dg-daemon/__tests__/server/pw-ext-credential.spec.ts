@@ -285,13 +285,13 @@ describe("pw --ext credential save through the daemon", () => {
 		expect(await find(cliFrames, "cli-credentials-result", plain.requestId)).toMatchObject({ ok: true });
 	});
 
-	it("drops loader and runtime injection variables for a pw/ exec", async () => {
+	it("passes only locale and terminal variables from the caller for a pw/ exec", async () => {
 		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
 		const tool = script(
-			"const e = process.env; console.log('ld=' + (e.LD_PRELOAD ?? 'none') + ' node=' + (e.NODE_OPTIONS ?? 'none') + ' proxy=' + (e.HTTPS_PROXY ?? 'none') + ' git=' + (e.GIT_CONFIG_GLOBAL ?? 'none') + ' home=' + e.HOME + ' keep=' + e.KEEP_ME)",
+			"const e = process.env; console.log('ld=' + (e.LD_PRELOAD ?? 'none') + ' node=' + (e.NODE_OPTIONS ?? 'none') + ' proxy=' + (e.HTTPS_PROXY ?? 'none') + ' git=' + (e.GIT_CONFIG_GLOBAL ?? 'none') + ' lua=' + (e.LUA_INIT ?? 'none') + ' other=' + (e.OTHER_VAR ?? 'none') + ' home=' + e.HOME + ' lang=' + e.LANG)",
 		);
 		allow([execAllowlistLine(tool)]);
 		const frame = execFrame([tool]);
@@ -302,7 +302,9 @@ describe("pw --ext credential save through the daemon", () => {
 			HTTPS_PROXY: "http://fake-proxy.test:1",
 			GIT_CONFIG_GLOBAL: "/tmp/fake-gitconfig",
 			HOME: "/tmp/fake-home",
-			KEEP_ME: "yes",
+			LUA_INIT: "os.exit(9)",
+			OTHER_VAR: "x",
+			LANG: "C.UTF-8",
 		};
 		send(cli, frame);
 		await find(cliFrames, "cli-credentials-result", frame.requestId);
@@ -310,9 +312,9 @@ describe("pw --ext credential save through the daemon", () => {
 			.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).stream === "stdout")
 			.map((raw) => (raw as Frame).data)
 			.join("");
-		expect(out).toContain("ld=none node=none proxy=none git=none");
+		expect(out).toContain("ld=none node=none proxy=none git=none lua=none other=none");
 		expect(out).not.toContain("home=/tmp/fake-home");
-		expect(out).toContain("keep=yes");
+		expect(out).toContain("lang=C.UTF-8");
 	});
 
 	it("refuses to bind a pw/ value to a loader variable", async () => {
@@ -326,6 +328,10 @@ describe("pw --ext credential save through the daemon", () => {
 		frame.exec.bindings = [{ name: "pw/live.com/owa-token", env: "LD_PRELOAD" }];
 		send(cli, frame);
 		expect(await find(cliFrames, "cli-credentials-result", frame.requestId)).toMatchObject({ ok: false, error: expect.stringContaining("loader") });
+		const lua = execFrame([tool]);
+		lua.exec.bindings = [{ name: "pw/live.com/owa-token", env: "LUA_INIT" }];
+		send(cli, lua);
+		expect(await find(cliFrames, "cli-credentials-result", lua.requestId)).toMatchObject({ ok: false, error: expect.stringContaining("loader") });
 	});
 
 	it("kills a process group that ignores SIGTERM", async () => {

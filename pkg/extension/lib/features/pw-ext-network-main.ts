@@ -111,7 +111,7 @@ export function pwExtNetwork(
 					at: entry.at,
 					via: entry.via,
 					method: entry.method,
-					url: values ? bound(scrub(entry.url, entry.url.length >= URL_MAX), URL_MAX) : entry.url,
+					url: bound(scrub(entry.url, entry.url.length >= URL_MAX), values ? URL_MAX : Number.POSITIVE_INFINITY),
 					...(entry.status === undefined ? {} : { status: entry.status }),
 					...(entry.failed ? { failed: true as const } : {}),
 					requestHeaders: names(entry.requestHeaders),

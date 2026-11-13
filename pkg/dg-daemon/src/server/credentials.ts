@@ -162,11 +162,13 @@ class SealedError extends Error {}
 
 const KILL_GRACE_MS = 2000;
 const INJECTION_ENV =
-	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$)/i;
+	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|LUA_|TCL|R_PROFILE|R_ENVIRON|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$)/i;
 
-/** The caller's environment without loader, runtime, proxy and config injection variables, with the daemon's own PATH, HOME and XDG_CONFIG_HOME. */
+const SAFE_ENV = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ|TERM|COLORTERM|NO_COLOR|COLUMNS|LINES|USER|LOGNAME|TMPDIR)$/;
+
+/** Only locale, terminal and user names from the caller, with the daemon's own PATH, HOME and XDG_CONFIG_HOME. */
 function sealedEnv(env: Record<string, string>): Record<string, string> {
-	const kept = Object.fromEntries(Object.entries(env).filter(([name]) => !INJECTION_ENV.test(name)));
+	const kept = Object.fromEntries(Object.entries(env).filter(([name]) => SAFE_ENV.test(name)));
 	const own = (name: string) => (process.env[name] === undefined ? {} : { [name]: process.env[name] as string });
 	return { ...kept, PATH: process.env.PATH ?? "", ...own("HOME"), ...own("XDG_CONFIG_HOME") };
 }

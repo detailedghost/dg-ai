@@ -92,9 +92,11 @@ general tool whose arguments can run code or send data anywhere (`sh`, `bash`,
 `make`, `docker`, `vim`, `less`, `find`, `awk`, `sed`, `xargs` and similar)
 unless its line has `allow-any-args`. Listing one undoes the guard. For a
 `pw/` value the command runs with the daemon's own `PATH`, `HOME` and
-`XDG_CONFIG_HOME`, and without loader, runtime, proxy, certificate or Git
-config variables such as `LD_PRELOAD`, `NODE_OPTIONS`, `HTTPS_PROXY` or
-`GIT_CONFIG_GLOBAL`.
+`XDG_CONFIG_HOME`. From your environment it keeps only locale, terminal and
+user names (`LANG`, `LC_*`, `TZ`, `TERM`, `USER` and similar). It drops all
+other variables, such as `LD_PRELOAD`, `NODE_OPTIONS`, `LUA_INIT`,
+`HTTPS_PROXY` or `GIT_CONFIG_GLOBAL`. Set any other variable in the wrapper
+script.
 
 List only paths that the agent cannot write. A script the agent can edit is
 the same as an interpreter; the pin catches an edit, but deny writes to it too.

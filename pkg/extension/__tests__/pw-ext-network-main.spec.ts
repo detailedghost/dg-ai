@@ -357,6 +357,16 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 		expect(JSON.stringify(read(true))).not.toContain(MARKER);
 	});
 
+	it("removes a sealed value from a later request URL in a shape-only read", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "x-api-key": MARKER } });
+		await page().fetch(`/echo/${MARKER}?k=${MARKER}`);
+		await settle();
+		const text = JSON.stringify(read(false));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(MARKER);
+	});
+
 	it("removes encoded forms and a token that rotated while the fetch was pending", async () => {
 		const token = "fake/marker+value=for-tests";
 		pwExtNetwork({ kind: "install", seal: true });

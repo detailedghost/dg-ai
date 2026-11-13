@@ -164,8 +164,8 @@ conditions only:
   `tar`, `make`, `docker`, editors and pagers) unless the line has
   `allow-any-args`. `dg-skills credentials allow <path> [glob]` prints a pinned
   line and never writes the file. The recommended entry is a small fixed
-  wrapper script that the person owns. For a `pw/` exec the daemon drops
-  loader, runtime, proxy, certificate and Git config variables, and sets
+  wrapper script that the person owns. For a `pw/` exec the daemon keeps only
+  locale, terminal and user variables from the caller, and sets
   `PATH`, `HOME` and `XDG_CONFIG_HOME` to its own. On disconnect it sends
   SIGTERM to the process group, then SIGKILL after 2 seconds; on Windows it
   ends the process tree. Names outside `pw/` do not use the allowlist.
