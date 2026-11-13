@@ -1,7 +1,7 @@
 import { createSerialQueue } from "@dg/common";
 import type { AgentTabsStorage } from "./agent-tabs";
 
-/** Most origins one session keeps allowed; the oldest drops out first. */
+/** Most sites one session keeps allowed; the oldest drops out first. */
 export const MAX_SESSION_SITES = 100;
 
 const sitesKey = (sessionId: string) => `pwExtSites:${sessionId}`;
@@ -23,16 +23,16 @@ export function createSessionControl({ storage }: { storage: AgentTabsStorage })
 	return {
 		stopped,
 
-		async allowed(sessionId: string, origin: string): Promise<boolean> {
-			return (await sites(sessionId)).includes(origin);
+		async allowed(sessionId: string, site: string): Promise<boolean> {
+			return (await sites(sessionId)).includes(site);
 		},
 
-		allow(sessionId: string, origin: string): Promise<void> {
+		allow(sessionId: string, site: string): Promise<void> {
 			return enqueue(async () => {
 				if (await stopped(sessionId)) return;
 				const held = await sites(sessionId);
-				if (held.includes(origin)) return;
-				await storage.session.set({ [sitesKey(sessionId)]: [...held, origin].slice(-MAX_SESSION_SITES) });
+				if (held.includes(site)) return;
+				await storage.session.set({ [sitesKey(sessionId)]: [...held, site].slice(-MAX_SESSION_SITES) });
 			});
 		},
 

@@ -65,7 +65,7 @@ type Options = {
 	windowState?: "normal" | "minimized" | "maximized";
 	approval?: "allow" | "deny" | "closed" | "timeout" | "unopened";
 	clock?: { now: number };
-	onApproval?: () => void;
+	onApproval?: () => void | Promise<void>;
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	pageDeadlineMs?: number;
 	sites?: "ask";
@@ -128,7 +128,7 @@ function harness(options: Options = {}) {
 		approvals: {
 			request: async (request) => {
 				approvalRequests.push(request);
-				options.onApproval?.();
+				await options.onApproval?.();
 				return options.approval ?? "deny";
 			},
 		},
@@ -2305,9 +2305,9 @@ describe("pw --ext site allowlist", () => {
 		expect((await h.run({ verb: "snapshot" })).ok).toBe(true);
 		expect(h.approvalRequests).toEqual([
 			expect.objectContaining({
-				title: "Let the agent use this site?",
+				title: "Allow the agent on example.test and its subdomains for this session?",
 				origin: ORIGIN,
-				lines: expect.arrayContaining([`Agent: ${IDENTITY}`]),
+				lines: expect.arrayContaining([`Agent: ${IDENTITY}`, "Host: app.example.test"]),
 			}),
 		]);
 	});
@@ -2316,7 +2316,7 @@ describe("pw --ext site allowlist", () => {
 		const h = harness({ sites: "ask", approval: "deny", pageResult: { tree: "t", text: "x" } });
 		expect(await h.run({ verb: "snapshot" })).toEqual({
 			ok: false,
-			error: expect.stringContaining("did not allow https://app.example.test"),
+			error: expect.stringContaining("may not use example.test and its subdomains"),
 		});
 		expect(h.executed()).toEqual([]);
 	});
@@ -2324,11 +2324,11 @@ describe("pw --ext site allowlist", () => {
 	it("asks for the target origin of open and new", async () => {
 		const h = harness({ sites: "ask", approval: "allow" });
 		await h.run({ verb: "open", url: "https://next.example.test/a" });
-		await h.run({ verb: "new", url: "https://third.example.test/" });
+		await h.run({ verb: "new", url: "https://third.example.org/" });
 		await h.run({ verb: "new" });
 		expect(h.approvalRequests.map((request) => (request as { origin: string }).origin)).toEqual([
 			"https://next.example.test",
-			"https://third.example.test",
+			"https://third.example.org",
 		]);
 	});
 
@@ -2374,7 +2374,122 @@ describe("pw --ext site allowlist", () => {
 		const first = h.handler({ request: { verb: "selection" }, timeoutMs: 60_000, signal: controller.signal, progress: () => undefined, context: { sessionId: SESSION, agentIdentity: IDENTITY } } as never);
 		const second = h.run({ verb: "selection" });
 		await Promise.all([first, second]);
-		expect(h.fake.session.get(`pwExtSites:${SESSION}`)).toEqual(["https://app.example.test"]);
+		expect(h.fake.session.get(`pwExtSites:${SESSION}`)).toEqual(["https://example.test"]);
+	});
+
+	it("asks once for login.live.com, then not for other live.com hosts", async () => {
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			pageResult: { text: "x" },
+			tabs: [{ ...WEB_TAB, url: "https://login.live.com/oauth20_authorize.srf" }],
+		});
+		expect((await h.run({ verb: "selection" })).ok).toBe(true);
+		(h.fake.tabs.get(7) as FakeTab).url = "https://account.live.com/proofs";
+		expect((await h.run({ verb: "selection" })).ok).toBe(true);
+		expect((await h.run({ verb: "open", url: "https://outlook.live.com/mail/0/" })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({
+				title: "Allow the agent on live.com and its subdomains for this session?",
+				origin: "https://login.live.com",
+				lines: expect.arrayContaining(["Host: login.live.com"]),
+			}),
+		]);
+	});
+
+	it("asks separately for outlook.cloud.microsoft and microsoft.com", async () => {
+		const h = harness({ sites: "ask", approval: "allow" });
+		await h.run({ verb: "new", url: "https://www.microsoft.com/" });
+		await h.run({ verb: "new", url: "https://outlook.cloud.microsoft/mail/" });
+		await h.run({ verb: "new", url: "https://learn.microsoft.com/" });
+		expect(h.approvalRequests.map((request) => (request as { title: string }).title)).toEqual([
+			"Allow the agent on microsoft.com and its subdomains for this session?",
+			"Allow the agent on cloud.microsoft and its subdomains for this session?",
+		]);
+	});
+
+	it("asks separately for two github.io tenants", async () => {
+		const h = harness({ sites: "ask", approval: "allow" });
+		await h.run({ verb: "new", url: "https://a.github.io/" });
+		await h.run({ verb: "new", url: "https://b.github.io/" });
+		await h.run({ verb: "new", url: "https://a.github.io/other" });
+		expect(h.approvalRequests.map((request) => (request as { origin: string }).origin)).toEqual([
+			"https://a.github.io",
+			"https://b.github.io",
+		]);
+	});
+
+	it("names an exact host without subdomains for localhost", async () => {
+		const h = harness({ sites: "ask", approval: "allow" });
+		await h.run({ verb: "new", url: "http://localhost:3000/" });
+		await h.run({ verb: "new", url: "http://localhost:8080/" });
+		expect(h.approvalRequests.map((request) => (request as { title: string }).title)).toEqual([
+			"Allow the agent on http://localhost:3000 for this session?",
+			"Allow the agent on http://localhost:8080 for this session?",
+		]);
+	});
+
+	it("shows one popup when verbs reach two hosts of one domain at the same time", async () => {
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			onApproval: () => new Promise((resolve) => setTimeout(resolve, 10)),
+		});
+		const answers = await Promise.all([
+			h.run({ verb: "new", url: "https://login.live.com/" }),
+			h.run({ verb: "new", url: "https://outlook.live.com/mail/0/" }),
+			h.run({ verb: "new", url: "https://live.com/" }),
+		]);
+		expect(answers.map((answer) => answer.ok)).toEqual([true, true, true]);
+		expect(h.approvalRequests).toHaveLength(1);
+	});
+
+	it("asks once in a redirect chain on one domain, and once more for a new domain", async () => {
+		const options = {
+			sites: "ask" as const,
+			approval: "allow" as const,
+			pageResult: { text: "x" },
+			tabs: [{ ...WEB_TAB, url: "https://login.live.com/oauth20_authorize.srf" }],
+			onApproval: () => undefined as void,
+		};
+		const h = harness(options);
+		options.onApproval = () => {
+			(h.fake.tabs.get(7) as FakeTab).url = "https://account.live.com/proofs";
+		};
+		expect(await h.run({ verb: "selection" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("The page changed while the site question was open"),
+		});
+		options.onApproval = () => undefined;
+		(h.fake.tabs.get(7) as FakeTab).url = "https://outlook.live.com/owa/";
+		expect((await h.run({ verb: "open", url: "https://login.live.com/ppsecure" })).ok).toBe(true);
+		expect(h.approvalRequests).toHaveLength(1);
+		(h.fake.tabs.get(7) as FakeTab).url = "https://login.microsoftonline.com/common/oauth2";
+		expect((await h.run({ verb: "selection" })).ok).toBe(true);
+		expect((await h.run({ verb: "selection" })).ok).toBe(true);
+		expect(h.approvalRequests.map((request) => (request as { origin: string }).origin)).toEqual([
+			"https://login.live.com",
+			"https://login.microsoftonline.com",
+		]);
+	});
+
+	it("does not ask again after a Deny for verbs sent before the answer, and asks a later verb", async () => {
+		const options = {
+			sites: "ask" as const,
+			approval: "deny" as const,
+			pageResult: { text: "x" },
+			onApproval: () => undefined as void,
+		};
+		const h = harness(options);
+		let queued: ReturnType<typeof h.run> | undefined;
+		options.onApproval = () => {
+			queued ??= h.run({ verb: "selection" });
+		};
+		expect((await h.run({ verb: "selection" })).ok).toBe(false);
+		expect(await queued).toEqual({ ok: false, error: expect.stringContaining("clicked Deny") });
+		expect(h.approvalRequests).toHaveLength(1);
+		expect((await h.run({ verb: "selection" })).ok).toBe(false);
+		expect(h.approvalRequests).toHaveLength(2);
 	});
 
 	it("asks nothing for tabs, select and close", async () => {

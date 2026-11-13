@@ -12,5 +12,8 @@
 	"devDependencies": {
 		"@hughescr/stryker-bun-runner": "^1.6.0",
 		"@stryker-mutator/core": "^10.1.1"
+	},
+	"overrides": {
+		"tldts-core": "7.4.19"
 	}
 }

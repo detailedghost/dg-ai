@@ -49,11 +49,13 @@ import {
 	groupTitle,
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
+import { defaultIsChromium } from "@/lib/browser-call";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dialog-shim";
 import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
+import { siteOf } from "./site-key";
 import { createWebMcpGrants, requestWebMcpApproval, type WebMcpGrants } from "./webmcp-approval";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
@@ -477,13 +479,6 @@ function pendingLine(state: PwExtDialogState): string[] {
 	return state.pending ? [`- next: ${state.pending.answer}${state.pending.withText ? ", with your text" : ""}`] : [];
 }
 
-export function defaultIsChromium(): boolean {
-	const runtime = (
-		globalThis as { browser?: { runtime?: { getBrowserInfo?: unknown } } }
-	).browser?.runtime;
-	return typeof runtime?.getBrowserInfo !== "function";
-}
-
 function nextFrame(): Promise<void> {
 	return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
@@ -519,27 +514,35 @@ export function createPwExtHandler({
 	const halted = new Set<string>();
 	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
+	const deniedThrough = new Map<string, number>();
+	let verbs = 0;
 
-	/** Asks the person once per origin and session before the agent reads or changes a page there. */
-	async function allowSite(url: string | undefined, context: PwExtContext, signal: AbortSignal): Promise<void> {
+	/** Asks the person once per registrable domain and session before the agent reads or changes a page there. */
+	async function allowSite(url: string | undefined, context: PwExtContext, signal: AbortSignal, verb: number): Promise<void> {
 		if (!url || !isPwExtWebUrl(url)) return;
-		const origin = new URL(url).origin;
-		if (await control.allowed(context.sessionId, origin)) return;
-		const key = `${context.sessionId}\n${origin}`;
+		const site = siteOf(url);
+		const named = site.grouped ? `${site.name} and its subdomains` : site.name;
+		if (await control.allowed(context.sessionId, site.key)) return;
+		const key = `${context.sessionId}\n${site.key}`;
+		if ((deniedThrough.get(key) ?? 0) >= verb)
+			throw new Refusal(`${SITE_REFUSED.deny}; the agent may not use ${named}. Nothing ran.`);
 		let pending = asking.get(key);
 		if (!pending) {
+			const { origin, host } = new URL(url);
 			pending = (async () => {
 				const answer = await (approvals ?? browserApprovals()).request({
-					title: "Let the agent use this site?",
+					title: `Allow the agent on ${named} for this session?`,
 					origin,
 					lines: [
+						`Host: ${host}`,
 						`Agent: ${context.agentIdentity}`,
 						`Tab group: ${groupTitle(context)}`,
-						"The agent can read and change pages on this site, in its own tab group only.",
+						`The agent can read and change pages on ${named}, in its own tab group only.`,
 						"Until this dg session ends, or until you click Stop on the page.",
 					],
 				});
-				if (answer === "allow" && !signal.aborted) await control.allow(context.sessionId, origin);
+				if (answer === "deny") deniedThrough.set(key, verbs);
+				if (answer === "allow" && !signal.aborted) await control.allow(context.sessionId, site.key);
 				return answer;
 			})();
 			asking.set(key, pending);
@@ -547,8 +550,8 @@ export function createPwExtHandler({
 		}
 		const answer = await pending;
 		if (signal.aborted) throw new Refusal("The request was canceled before it ran.");
-		if (answer !== "allow") throw new Refusal(`${SITE_REFUSED[answer]}; the agent did not allow ${origin}. Nothing ran.`);
-		await control.allow(context.sessionId, origin);
+		if (answer !== "allow") throw new Refusal(`${SITE_REFUSED[answer]}; the agent may not use ${named}. Nothing ran.`);
+		await control.allow(context.sessionId, site.key);
 	}
 
 	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
@@ -559,6 +562,7 @@ export function createPwExtHandler({
 			run.stopped();
 		}
 		await control.stop(sessionId);
+		for (const key of deniedThrough.keys()) if (key.startsWith(`${sessionId}\n`)) deniedThrough.delete(key);
 		await Promise.allSettled([
 			grants.forget(sessionId),
 			webmcpGrants.forget(sessionId),
@@ -1158,10 +1162,11 @@ export function createPwExtHandler({
 		request: PwExtRequest,
 		context: PwExtContext,
 		signal: AbortSignal,
+		verb: number,
 	): Promise<PwExtResult> {
 		if (signal.aborted) return CANCELED;
 		if (request.verb === "new") {
-			await allowSite(request.url, context, signal);
+			await allowSite(request.url, context, signal, verb);
 			if (signal.aborted) return CANCELED;
 			return openInGroup(request.url ?? NEW_TAB_URL, context, signal);
 		}
@@ -1176,7 +1181,7 @@ export function createPwExtHandler({
 			const rows = await agentTabs.list({ sessionId: context.sessionId });
 			if (rows.length) throw new Refusal(SELECTED_GONE);
 			if (request.verb === "open") {
-				await allowSite(request.url, context, signal);
+				await allowSite(request.url, context, signal, verb);
 				if (signal.aborted) return CANCELED;
 				return openInGroup(request.url as string, context, signal);
 			}
@@ -1184,7 +1189,7 @@ export function createPwExtHandler({
 		}
 		await guard(request.verb, tab, request.tool);
 		if (!NO_SITE_ASK.has(request.verb)) {
-			await allowSite(request.verb === "open" ? request.url : tab.url, context, signal);
+			await allowSite(request.verb === "open" ? request.url : tab.url, context, signal, verb);
 			const live = await api.tabs.get(tab.id).catch(() => undefined);
 			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
 				throw new Refusal(SELECTED_GONE);
@@ -1219,6 +1224,7 @@ export function createPwExtHandler({
 		if (halted.has(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
 		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
+		const verb = ++verbs;
 		const controller = new AbortController();
 		const relay = () => controller.abort();
 		signal?.addEventListener("abort", relay, { once: true });
@@ -1234,7 +1240,7 @@ export function createPwExtHandler({
 		const outcome = await (async (): Promise<PwExtResult> => {
 			try {
 				if (await isStopped(sessionId)) return STOPPED;
-				const result = await Promise.race([execute(request, context, controller.signal), stopped]);
+				const result = await Promise.race([execute(request, context, controller.signal, verb), stopped]);
 				if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
 				return scrub(result, await held());
 			} catch (error) {
