@@ -1,5 +1,11 @@
 import { type PwExtDialogAction, pwExtDialogs } from "@/lib/features/pw-ext-dialog-main";
-import { type AgentTabs, type AgentTabsStorage, agentGroupIds, type BrowserTab } from "./agent-tabs";
+import {
+	type AgentTabs,
+	type AgentTabsLock,
+	type AgentTabsStorage,
+	type BrowserTab,
+	lockedAgentGroupIds,
+} from "./agent-tabs";
 import { allowedPage, mailbox } from "./tab-guards";
 
 /** The browser surface the dialog shim needs. */
@@ -45,13 +51,15 @@ export async function syncDialogShim({
 	storage,
 	tabId,
 	regrouped,
+	lock,
 }: {
 	browserApi: DialogShimApi;
 	storage: AgentTabsStorage;
 	tabId: number;
 	regrouped: boolean;
+	lock?: AgentTabsLock;
 }): Promise<void> {
-	const groups = await agentGroupIds({ storage });
+	const groups = await lockedAgentGroupIds({ storage, ...(lock ? { lock } : {}) });
 	const tab = await api.tabs.get(tabId);
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
 	const agent = tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId);

@@ -134,6 +134,17 @@ async function readRecords(storage: AgentTabsStorage): Promise<AgentRecord[]> {
 		.map(([, record]) => record as AgentRecord);
 }
 
+/** Agent group ids read under the agent tab lock, so an adopt in flight saves its record first. */
+export function lockedAgentGroupIds({
+	storage,
+	lock = navigator.locks,
+}: {
+	storage: AgentTabsStorage;
+	lock?: AgentTabsLock;
+}): Promise<Set<number>> {
+	return lock.request(LOCK_NAME, () => agentGroupIds({ storage }));
+}
+
 /** Chrome tab group ids that belong to an agent session. */
 export async function agentGroupIds({
 	storage,

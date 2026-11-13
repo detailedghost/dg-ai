@@ -109,7 +109,13 @@ export function pwExtDialogs(
 			slot = fresh;
 		}
 		if (action.kind === "remove") slot.unwrap();
-		if (slot.removed) return { dialogs: [] };
+		if (slot.removed)
+			return action.kind === "read" || action.kind === "answer"
+				? {
+						error:
+							"This page lost its dialog shim when it left an agent tab group. Its dialogs show in the browser until the page loads again.",
+					}
+				: { dialogs: [] };
 		if (owner !== undefined && slot.owner !== owner) {
 			slot.dialogs.length = 0;
 			slot.policy = undefined;

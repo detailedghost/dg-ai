@@ -39,6 +39,7 @@ import {
 	type AgentTab,
 	type AgentTabs,
 	type AgentTabsBrowserApi,
+	type AgentTabsLock,
 	type AgentTabsStorage,
 	type BrowserTab,
 	createAgentTabs,
@@ -177,6 +178,9 @@ function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
 }
 
 class Refusal extends Error {}
+
+/** A page failure; the handler masks it again with the held secrets of the moment. */
+class PageError extends Error {}
 
 const MAX_PAGE_RESULT_CHARS = 150_000;
 const PAGE_RESULT_KEYS = [
@@ -478,6 +482,7 @@ export function createPwExtHandler({
 	webmcpGrants = createWebMcpGrants({ storage: api.storage }),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
+	lock,
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
@@ -488,6 +493,7 @@ export function createPwExtHandler({
 	webmcpGrants?: WebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	pageDeadlineMs?: number;
+	lock?: AgentTabsLock;
 }) {
 	const enabledOrNone = () => enabledBuiltIns().catch(() => new Set<string>());
 
@@ -506,7 +512,9 @@ export function createPwExtHandler({
 	}
 
 	const syncShim = (tabId: number, regrouped: boolean) =>
-		syncDialogShim({ browserApi: api, storage: api.storage, tabId, regrouped }).catch(() => undefined);
+		syncDialogShim({ browserApi: api, storage: api.storage, tabId, regrouped, ...(lock ? { lock } : {}) }).catch(
+			() => undefined,
+		);
 
 	api.tabs.onUpdated.addListener((tabId, change) => {
 		const regrouped = change.groupId !== undefined;
@@ -594,7 +602,7 @@ export function createPwExtHandler({
 		const state = dialogState(
 			await beforeDeadline(inMain(tab, pwExtDialogs as never, [action, tab.url, tab.groupId ?? -1])),
 		);
-		if ("error" in state) throw new Refusal(maskRaw(state.error, RAW_ERROR_MAX, options));
+		if ("error" in state) throw new PageError(maskRaw(state.error, RAW_ERROR_MAX, options));
 		return state;
 	}
 
@@ -1104,6 +1112,7 @@ export function createPwExtHandler({
 			return scrub(result, await held());
 		} catch (error) {
 			if (error instanceof Refusal) return { ok: false, error: error.message };
+			if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
 			return {
 				ok: false,
 				error: clean(

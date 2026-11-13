@@ -108,12 +108,9 @@ describe("dialog shim", () => {
 		pwExtDialogs({ kind: "remove" });
 		expect(page().confirm).toBe(native);
 		expect(kept.call(window, "x")).toBe(true);
-		for (const action of [
-			{ kind: "install" },
-			{ kind: "read", markSeen: false },
-			{ kind: "answer", answer: "accept" },
-		] as const)
-			expect(pwExtDialogs(action, undefined, 10)).toEqual({ dialogs: [] });
+		expect(pwExtDialogs({ kind: "install" }, undefined, 10)).toEqual({ dialogs: [] });
+		for (const action of [{ kind: "read", markSeen: false }, { kind: "answer", answer: "accept" }] as const)
+			expect(pwExtDialogs(action, undefined, 10)).toEqual({ error: expect.stringContaining("until the page loads again") });
 		expect(page().confirm).toBe(native);
 		expect(page().confirm("again")).toBe(true);
 		expect(nativeCalls).toBe(2);
@@ -123,7 +120,7 @@ describe("dialog shim", () => {
 		pwExtDialogs({ kind: "install" });
 		page().alert("orchid-maple");
 		pwExtDialogs({ kind: "remove" });
-		expect(pwExtDialogs({ kind: "read", markSeen: false })).toEqual({ dialogs: [] });
+		expect(JSON.stringify(pwExtDialogs({ kind: "read", markSeen: false }))).not.toContain("orchid-maple");
 	});
 
 	it("clears the records and the pending answer when another agent group takes the tab", () => {

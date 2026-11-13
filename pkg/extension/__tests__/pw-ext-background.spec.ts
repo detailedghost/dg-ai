@@ -103,10 +103,11 @@ function harness(options: Options = {}) {
 		if (call.world === "MAIN") return options.mainResult?.(call.args[0]);
 		return options.pageResult;
 	};
+	const agentTabsLock = createLock();
 	const agentTabs = createAgentTabs({
 		browserApi: fake.api,
 		storage: fake.api.storage,
-		lock: createLock(),
+		lock: agentTabsLock,
 	});
 	const approvalRequests: unknown[] = [];
 	const clock = options.clock ?? { now: Date.UTC(2026, 10, 9, 15, 0) };
@@ -124,6 +125,7 @@ function harness(options: Options = {}) {
 		now: () => clock.now,
 		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
+		lock: agentTabsLock,
 	});
 	const call = (
 		request: PwExtRequest,
@@ -149,6 +151,7 @@ function harness(options: Options = {}) {
 		} as never);
 	return {
 		approvalRequests,
+		agentTabsLock,
 		clock,
 		run: (request: PwExtRequest) => call(request),
 		runAs: (sessionId: string, request: PwExtRequest) =>
@@ -2148,6 +2151,39 @@ describe("pw --ext dialog", () => {
 		const h = harness();
 		h.fake.state.script = () => new Promise(() => {});
 		expect((await h.run({ verb: "select", tabId: 7 })).ok).toBe(true);
+	});
+
+	it("masks a dialog error with a secret that a concurrent fill holds", async () => {
+		let release: (() => void) | undefined;
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () =>
+				new Promise((resolve) => {
+					release = () => resolve({ error: "Dialog handling failed: lilac-harbor" });
+				}),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		const reading = h.run({ verb: "dialog" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await h.run({ verb: "fill", target: "#pw", value: "lilac-harbor", secret: true });
+		release?.();
+		expect(outcome(await reading)).not.toContain("lilac-harbor");
+	});
+
+	it("waits for an adopt in flight before it decides a regrouped tab is no agent tab", async () => {
+		const h = harness();
+		let finish: (() => void) | undefined;
+		const holding = h.agentTabsLock.request("agentTabs", () => new Promise<void>((resolve) => (finish = resolve)));
+		(h.fake.tabs.get(21) as FakeTab).groupId = 30;
+		h.fake.fireUpdated(21, { groupId: 30 });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		h.fake.seedRecord(recordOf({ sessionId: "adopting", groupId: 30 }));
+		finish?.();
+		await holding;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }]);
 	});
 
 	it("masks a page-made dialog error with the held secrets", async () => {
