@@ -75,7 +75,7 @@ import {
 	type ThreadRecipient,
 } from "./thread";
 import { parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
-import { announceRoster, clearMachineContacts, discoveredAgents, sendRoster, setupSelfName, syncIdentities } from "./roster";
+import { announceRoster, clearMachineContacts, discoveredAgents, setupSelfName, syncIdentities } from "./roster";
 import { DEFAULT_INVITE_HOURS, type PhoneApi, registerPhoneGroup, WATCH_DEFAULT_FOR_S } from "./register";
 import {
 	addContact,
@@ -460,7 +460,7 @@ export async function phoneAccept(
 			call: 1,
 		});
 		if (!existing) addPhoneNotice(deps.db, `accepted +${handle}`, deps.now());
-		await sendRoster(deps, card.npub, "offer", { force: true }).catch(() => false);
+		await announceRoster(deps, card.npub).catch(() => undefined);
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, npub: card.npub, id: event.id, ...relayFields(report) });
 	} finally {

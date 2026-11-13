@@ -147,11 +147,15 @@ export function rosterFromControl(control: { kind: number; tags: string[][] }): 
 	return { intent, agents };
 }
 
-export type ApplyResult = { ok: false; reason: "stranger" } | { ok: true; added: string[]; skipped: string[]; removed: string[] };
+export type ApplyResult =
+	| { ok: false; reason: "stranger" | "imported" }
+	| { ok: true; added: string[]; skipped: string[]; removed: string[] };
 
 /**
  * Stores the far machine's agents as contacts tagged with that machine.
- * The signer must already be a contact. A handle or npub we already keep for someone else is skipped.
+ * The signer must be a contact we paired directly. A contact that arrived `via: "roster"`
+ * cannot admit more contacts. A handle or npub we already keep for someone else is skipped.
+ * The writes commit together.
  */
 export function applyRoster(
 	db: PhoneDb,
@@ -162,6 +166,19 @@ export function applyRoster(
 ): ApplyResult {
 	const sender = findContactByNpub(db, senderNpub);
 	if (!sender) return { ok: false, reason: "stranger" };
+	if (sender.via === "roster") return { ok: false, reason: "imported" };
+	return db.transaction(() => applyRosterBody(db, senderNpub, sender.relays, sender.keyId, agents, now, ownNpubs));
+}
+
+function applyRosterBody(
+	db: PhoneDb,
+	senderNpub: string,
+	senderRelays: string[],
+	senderKeyId: string,
+	agents: readonly RosterAgent[],
+	now: number,
+	ownNpubs: ReadonlySet<string>,
+): ApplyResult {
 	const added: string[] = [];
 	const skipped: string[] = [];
 	const wanted = new Set<string>();
@@ -199,8 +216,8 @@ export function applyRoster(
 		const inserted = insertNewContact(db, {
 			npub: agent.npub,
 			handle: agent.handle,
-			relays: sender.relays,
-			keyId: sender.keyId,
+			relays: senderRelays,
+			keyId: senderKeyId,
 			addedAt: now,
 			via: "roster",
 			originNpub: senderNpub,
@@ -405,7 +422,7 @@ export async function handleIncomingRoster(deps: RosterDeps, control: ControlRum
 	if (own.has(sender)) return;
 	const result = applyRoster(deps.db, sender, parsed.agents, deps.now(), own);
 	if (!result.ok) {
-		deps.db.holdRoster(sender, rosterDocument(parsed.agents), parsed.intent);
+		if (result.reason === "stranger") deps.db.holdRoster(sender, rosterDocument(parsed.agents), parsed.intent);
 		return;
 	}
 	if (parsed.intent === "offer") await sendRoster(deps, sender, "reply", { force: true });

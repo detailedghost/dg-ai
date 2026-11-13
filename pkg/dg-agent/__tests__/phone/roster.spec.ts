@@ -109,7 +109,9 @@ describe("session names", () => {
 
 	it("reads a Claude session, a Codex thread, and a Grok bot, and ignores a missing tree", () => {
 		expect(claudeNameFromJson('{"name":"Dante","id":"sess-1"}', "sess-1")).toEqual({ name: "Dante", current: true });
-		expect(claudeNameFromJson('{"name":"Dante","cwd":"/tmp/sess-9"}', "sess-9")).toEqual({ name: "Dante", current: true });
+		expect(claudeNameFromJson('{"name":"Dante","sessionId":"sess-2"}', "sess-2")).toEqual({ name: "Dante", current: true });
+		expect(claudeNameFromJson('{"name":"Dante","session_id":"sess-3"}', "sess-3")).toEqual({ name: "Dante", current: true });
+		expect(claudeNameFromJson('{"name":"Dante","cwd":"/tmp/sess-9"}', "sess-9")).toEqual({ name: "Dante", current: false });
 		expect(claudeNameFromJson('{"name":"Other"}', "sess-1")).toEqual({ name: "Other", current: false });
 		expect(claudeNameFromJson('{"name":"Dante","id":"sess-1"}', "   ")?.current).toBe(false);
 		expect(claudeNameFromJson("not-json", "sess-1")).toBeUndefined();
@@ -247,6 +249,63 @@ describe("applying a roster", () => {
 		expect(findContactByHandle(d.db, "ada")?.originNpub).toBe(other);
 		expect(findContactByHandle(d.db, "manual")).toBeDefined();
 		expect(findContactByHandle(d.db, "box")).toBeDefined();
+	});
+
+	it("does not apply a roster signed by a contact that arrived via roster", async () => {
+		const home = tracker.freshHome();
+		pool = createFakePool();
+		out = [];
+		const d = deps(home);
+		createFileKey(d.db, "default");
+		const importedSk = generateSecretKey();
+		const importedNpub = nip19.npubEncode(getPublicKey(importedSk));
+		addContact(d.db, {
+			npub: importedNpub,
+			handle: "ada",
+			relays: ["wss://a.example"],
+			keyId: numberKeyId(d.db),
+			addedAt: NOW,
+			via: "roster",
+			originNpub: freshNpub(),
+		});
+		const kit = agent("kit", "claude");
+		expect(applyRoster(d.db, importedNpub, [kit], NOW, new Set())).toEqual({ ok: false, reason: "imported" });
+		await handleIncomingRoster(d, {
+			id: "imported",
+			wrapId: "wrap",
+			kind: ROSTER_KIND,
+			from: getPublicKey(importedSk),
+			keyId: "default",
+			createdAt: NOW,
+			tags: [
+				[ROSTER_TAG, "offer"],
+				[ROSTER_BODY_TAG, rosterDocument([kit])],
+			],
+		});
+		expect(findContactByHandle(d.db, "kit")).toBeUndefined();
+		expect(d.db.takeHeldRoster(importedNpub)).toBeUndefined();
+		expect(pool.events).toEqual([]);
+	});
+
+	it("rolls back every roster write when a later insert in the same apply throws", () => {
+		const home = tracker.freshHome();
+		pool = createFakePool();
+		out = [];
+		const d = deps(home);
+		createFileKey(d.db, "default");
+		const sender = freshNpub();
+		pairContact(d.db, sender, "box");
+		const original = d.db.insertContact.bind(d.db);
+		let calls = 0;
+		d.db.insertContact = (row) => {
+			calls += 1;
+			if (calls === 2) throw new Error("boom");
+			return original(row);
+		};
+		expect(() => applyRoster(d.db, sender, [agent("kit", "claude"), agent("merc", "codex")], NOW, new Set())).toThrow("boom");
+		expect(findContactByHandle(d.db, "kit")).toBeUndefined();
+		expect(findContactByHandle(d.db, "merc")).toBeUndefined();
+		expect(findContactByHandle(d.db, "box")?.via).toBe("accept");
 	});
 
 	it("skips this machine's own npub and the sender's npub", () => {
@@ -510,6 +569,22 @@ describe("machine exchange", () => {
 		await phoneNumber({}, d);
 		expect(lines()[0]).toMatchObject({ as: "dg" });
 		expect(d.db.listIdentities().map((row) => row.handle)).toEqual(["dante"]);
+	});
+
+	it("accept applies a roster held for that card before sending our own", async () => {
+		pool = createFakePool();
+		out = [];
+		const owner = deps(tracker.freshHome());
+		await phoneNumber({}, owner);
+		const printed = lines()[0] as { card: string; npub: string };
+		const peer = deps(tracker.freshHome());
+		const kit = agent("kit", "claude");
+		peer.db.holdRoster(printed.npub, rosterDocument([kit]), "offer");
+		pool.events.length = 0;
+		await phoneAccept(printed.card, "hi", peer);
+		expect(findContactByHandle(peer.db, "kit")?.npub).toBe(kit.npub);
+		expect(peer.db.takeHeldRoster(printed.npub)).toBeUndefined();
+		expect(pool.events.length).toBeGreaterThanOrEqual(2);
 	});
 
 	it("answers an update from a paired machine and holds one from a stranger", async () => {

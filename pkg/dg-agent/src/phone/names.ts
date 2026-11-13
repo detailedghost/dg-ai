@@ -138,7 +138,8 @@ export function claudeNameFromJson(text: string, sessionId: string | undefined):
 	const name = trimmed(value.name);
 	if (name === undefined) return undefined;
 	const id = trimmed(sessionId);
-	return { name, current: id !== undefined && text.includes(id) };
+	const marked = id !== undefined && [value.id, value.sessionId, value.session_id].some((field) => trimmed(field) === id);
+	return { name, current: marked };
 }
 
 function firstString(record: Record<string, unknown>, keys: readonly string[]): string | undefined {
