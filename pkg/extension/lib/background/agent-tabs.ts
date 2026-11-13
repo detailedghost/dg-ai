@@ -99,7 +99,7 @@ export type AgentRecord = {
 	selectedTabId?: number;
 };
 
-type SavedRecord = AgentRecord & { windowId?: number; groupTitle?: string; tabIds?: number[] };
+type SavedRecord = AgentRecord & { windowId?: number; groupTitle?: string };
 
 export type AgentTab = {
 	tabId: number;
@@ -225,13 +225,9 @@ export function createAgentTabs({
 
 	async function persist(record: AgentRecord): Promise<void> {
 		const group = await api.tabGroups.get(record.groupId).catch(() => undefined);
-		const tabs = await api.tabs
-			.query({ groupId: record.groupId })
-			.catch(() => []);
 		const saved: SavedRecord = {
 			...withoutSelection(record),
 			...(group ? { windowId: group.windowId, groupTitle: group.title } : {}),
-			tabIds: tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
 		};
 		await storage.local?.set({ [persistKey(record.sessionId)]: saved });
 	}
@@ -269,13 +265,12 @@ export function createAgentTabs({
 			taken.has(saved.groupId) ||
 			(await liveGroupWindow(saved)) === undefined ||
 			group?.windowId !== saved.windowId ||
-			group?.title !== saved.groupTitle ||
-			!tabIds.some((tabId) => saved.tabIds?.includes(tabId))
+			group?.title !== saved.groupTitle
 		) {
 			await storage.local?.remove(key);
 			return undefined;
 		}
-		const { windowId: _window, groupTitle: _title, tabIds: _tabs, ...record } = saved;
+		const { windowId: _window, groupTitle: _title, ...record } = saved;
 		await write(record);
 		return { record, tabIds };
 	}
