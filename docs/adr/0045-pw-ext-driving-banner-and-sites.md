@@ -106,3 +106,46 @@ session as stopped after.
 
 - `pkg/extension/lib/features/popup.ts`
 - `pkg/extension/lib/background/popup-sender.ts`
+
+## Amended 2026-11-13: one Allow per registrable domain
+
+A sign-in moves between hosts of one company, for example `login.live.com`,
+`account.live.com` and `outlook.live.com`. With one entry per origin, the person
+clicked Allow for each host. Now the allowlist keys each site by scheme and
+registrable domain (eTLD+1) from the Public Suffix List, with its private
+section (`siteOf` in `pkg/extension/lib/background/site-key.ts`).
+
+- One Allow covers every host of that domain for the session. A redirect to
+  another host of an allowed domain does not ask again. A redirect to a new
+  domain asks once on the next verb.
+- Private suffixes stay apart: `a.github.io`, `b.github.io`, `*.vercel.app` and
+  `*.azurewebsites.net` tenants are separate sites. `outlook.cloud.microsoft`
+  and `microsoft.com` are separate sites.
+- The scheme stays in the key, so `http` and `https` are separate sites. A
+  grouped key has no port, so it covers every port of the domain. An IP
+  address, `localhost`, a single-label host or a bare public suffix has no
+  registrable domain; it keys by its exact origin, port included.
+- Verbs that ask for one site of one session at the same time share one popup.
+  After a Deny, the verbs that were sent before the answer fail without a new
+  popup. A verb sent after the answer can ask again.
+- The popup title names the domain ("Allow the agent on live.com and its
+  subdomains for this session?") and lists the host that asked.
+- The worker bundles `tldts` (pinned, with its `tldts-core` pinned through the
+  root `overrides`). Only the background worker imports it. The options page
+  no longer imports `pw-ext.ts`, so the list stays out of the extension pages
+  and out of `pkg/pages`. The worker grows by about 270 KB.
+- The mailbox guard, Stop and unmask grants do not change. Stop still drops the
+  allowed sites. The "page changed while the site question was open" refusal
+  stays, because the mailbox guard ran on the old page.
+- Concurrent `dg_` tool calls that ask for one session grant now share one
+  popup (`once` in `pkg/extension/lib/background/webmcp-approval.ts`). The grant
+  scope stays session, origin, tool and tab group.
+
+**Bad:** an Allow is wider than before. It covers hosts of the domain that the
+person did not see, such as other subdomains of a large provider. The private
+section of the list limits this for hosting platforms that give each customer a
+subdomain.
+
+- `pkg/extension/lib/background/site-key.ts`
+- `pkg/extension/lib/background/pw-ext.ts`
+- `pkg/extension/lib/background/webmcp-approval.ts`

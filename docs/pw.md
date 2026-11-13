@@ -65,6 +65,15 @@ Rules:
 - Passing `--ext` gives the CLI the agent's tab group. The first verb on a new
   site in a session, `open` and `new` too, opens a small extension popup that
   asks you to allow that site for the session. Reads and writes both need it.
+  A site is a scheme with a registrable domain from the Public Suffix List, so
+  one Allow covers `login.live.com`, `outlook.live.com` and `live.com`, and
+  redirects between them do not ask again. The private suffixes count too:
+  `a.github.io` and `b.github.io` are two sites. `http` and `https` are two
+  sites. An IP address, `localhost` or a host with one label is its own site,
+  port included. The popup names the domain and the host that asked.
+  Verbs that ask for the same site at the same time share one popup. After a
+  Deny, verbs that were sent before the answer fail without a new popup; a
+  later verb can ask again.
   Deny, no answer in 60 seconds, or a closed window allows nothing, and no page
   is touched. Allowed sites live in `storage.session` and go away when the
   session ends. `tabs`, `select` and `close` ask nothing. Mailbox origins keep
