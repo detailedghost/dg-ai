@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.5.0 (2026-11-13)
+
+### Features
+
+- feat(phone): exchange agent rosters on setup, self-name from session, clear on hang-up ([#185](https://github.com/detailedghost/dg-ai/pull/185))
+- feat(extension): add Stop for driving sessions to the toolbar popup ([#186](https://github.com/detailedghost/dg-ai/pull/186))
+
 ## v5.4.0 (2026-11-13)
 
 ### Features
