@@ -47,3 +47,11 @@ describe("scrubber hold-back", () => {
 		expect(scrubber.push("ker-value-for-tests done") + scrubber.flush()).toBe("[redacted] done");
 	});
 });
+
+describe("JSON-escaped forms", () => {
+	test("scrubs a value with quotes, backslashes and a newline inside JSON output", () => {
+		const value = 'fake"quote\\slash\nline-value';
+		const text = JSON.stringify({ data: value });
+		expect(scrubText(text, [value])).toBe('{"data":"[redacted]"}');
+	});
+});

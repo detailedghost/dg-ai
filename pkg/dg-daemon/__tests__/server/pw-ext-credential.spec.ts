@@ -109,7 +109,7 @@ function execFrame(argv: string[], name = "pw/live.com/owa-token") {
 		type: "cli-credentials-request",
 		requestId: randomUUID(),
 		operation: "exec",
-		exec: { bindings: [{ name, env: "TOKEN" }], argv, cwd: process.cwd(), env: { PATH: process.env.PATH ?? "" } },
+		exec: { bindings: [{ name, env: "TOKEN" }], argv, cwd: process.cwd(), env: { PATH: process.env.PATH ?? "" } as Record<string, string> },
 	};
 }
 
@@ -282,6 +282,53 @@ describe("pw --ext credential save through the daemon", () => {
 		const plain = execFrame(["true"], "tools/plain");
 		send(cli, plain);
 		expect(await find(cliFrames, "cli-credentials-result", plain.requestId)).toMatchObject({ ok: true });
+	});
+
+	it("drops loader and runtime injection variables for a pw/ exec", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const tool = script("console.log('ld=' + (process.env.LD_PRELOAD ?? 'none') + ' node=' + (process.env.NODE_OPTIONS ?? 'none') + ' keep=' + process.env.KEEP_ME)");
+		allow([tool]);
+		const frame = execFrame([tool]);
+		frame.exec.env = { ...frame.exec.env, LD_PRELOAD: "/nonexistent/fake.so", NODE_OPTIONS: "--require /x", KEEP_ME: "yes" };
+		send(cli, frame);
+		await find(cliFrames, "cli-credentials-result", frame.requestId);
+		const out = cliFrames
+			.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).stream === "stdout")
+			.map((raw) => (raw as Frame).data)
+			.join("");
+		expect(out).toContain("ld=none node=none keep=yes");
+	});
+
+	it("kills a process group that ignores SIGTERM", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		allow([`${realpathSync(Bun.which("sh") as string)} allow-interpreter`]);
+		const frame = execFrame(["sh", "-c", "trap '' TERM; sleep 30 & echo $!; wait"]);
+		send(cli, frame);
+		const line = await waitForValue(
+			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).requestId === frame.requestId) as Frame | undefined,
+			5000,
+			"pid",
+		);
+		const pid = Number(String(line.data).trim());
+		cli.close();
+		await waitForValue(
+			() => {
+				try {
+					process.kill(pid, 0);
+					return undefined;
+				} catch {
+					return true;
+				}
+			},
+			6000,
+			"ignored TERM ended by KILL",
+		);
 	});
 
 	it("refuses exec for a value too short to scrub", async () => {

@@ -160,6 +160,16 @@ function sessionOperation(
 
 class SealedError extends Error {}
 
+const KILL_GRACE_MS = 2000;
+const INJECTION_ENV =
+	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$)/i;
+
+/** The caller's environment without loader and runtime injection variables, with the daemon's own PATH. */
+function sealedEnv(env: Record<string, string>): Record<string, string> {
+	const kept = Object.fromEntries(Object.entries(env).filter(([name]) => !INJECTION_ENV.test(name)));
+	return { ...kept, PATH: process.env.PATH ?? "" };
+}
+
 /** Runs a command with stored values in env vars, streams its scrubbed output, and resolves to its exit code; values never leave the daemon. */
 async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: FrameHandlerDeps): Promise<Result> {
 	const spec = frame.exec!;
@@ -188,7 +198,7 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 	try {
 		child = Bun.spawn(argv, {
 			cwd: spec.cwd,
-			env: { ...spec.env, ...injected },
+			env: { ...(sealedNames.length ? sealedEnv(spec.env) : spec.env), ...injected },
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
@@ -198,10 +208,21 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 		return { ok: false, error: `Could not start ${spec.argv[0]}.` };
 	}
 	const kill = () => {
-		try {
-			if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
-		} catch {}
+		const group = (signal: NodeJS.Signals) => {
+			try {
+				process.kill(-child.pid, signal);
+			} catch {}
+		};
+		if (process.platform === "win32") {
+			try {
+				Bun.spawn(["taskkill", "/T", "/F", "/PID", String(child.pid)], { stdout: "ignore", stderr: "ignore" });
+			} catch {}
+			child.kill();
+			return;
+		}
+		group("SIGTERM");
 		child.kill();
+		setTimeout(() => group("SIGKILL"), KILL_GRACE_MS).unref?.();
 	};
 	requester.data.closeWaiters.add(kill);
 	const pump = async (stream: ReadableStream<Uint8Array>, name: "stdout" | "stderr") => {

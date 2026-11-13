@@ -82,7 +82,9 @@ path (a bare name through the daemon's own `PATH`, symlinks followed), and
 runs that path. With no file, or no matching line, it refuses. It also refuses
 a shell, interpreter or launcher (`sh`, `bash`, `env`, `python`, `node`, `bun`,
 `perl`, `ruby`, `osascript`, `xargs` and similar) unless its line has
-`allow-interpreter`. Listing one undoes the guard, because it can run any code.
+`allow-interpreter`. Listing one undoes the guard, because it can run any code. For a `pw/` value the
+command runs with the daemon's own `PATH` and without loader or runtime
+injection variables such as `LD_PRELOAD` or `NODE_OPTIONS`.
 
 The agent runs as the same user, so it can edit this file unless its harness
 blocks writes there. In Claude Code, add a deny rule for that path, for

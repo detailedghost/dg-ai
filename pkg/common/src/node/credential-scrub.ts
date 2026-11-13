@@ -12,6 +12,7 @@ function formsOf(value: string): string[] {
 	const form = new URLSearchParams({ v: value }).toString().slice(2);
 	return [
 		value,
+		JSON.stringify(value).slice(1, -1),
 		base64,
 		base64.replace(/=+$/, ""),
 		base64url,

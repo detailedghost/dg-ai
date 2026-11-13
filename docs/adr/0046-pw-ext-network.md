@@ -159,7 +159,12 @@ conditions only:
   refuses unless a line lists that path and its optional glob covers every
   `pw/` name. It refuses a shell, interpreter or launcher even when listed,
   unless the line has `allow-interpreter`. With no file it refuses and names
-  the file. Names outside `pw/` do not use the allowlist.
+  the file. Names outside `pw/` do not use the allowlist. For a `pw/` exec the
+  daemon drops loader and runtime injection variables (`LD_*`, `DYLD_*`,
+  `NODE_OPTIONS`, `PYTHON*`, `BASH_ENV` and similar) from the caller's
+  environment and uses its own `PATH`. On disconnect it sends SIGTERM to the
+  process group, then SIGKILL after 2 seconds; on Windows it ends the process
+  tree.
 - **What the allowlist does not block.** The agent runs as the same user, so
   it can edit the file unless the agent harness blocks writes to it; the docs
   suggest a Claude Code deny rule for that path. A listed command that prints,
