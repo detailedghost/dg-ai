@@ -580,7 +580,6 @@ export function createPwExtHandler({
 	const halted = new Set<string>();
 	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
-	const savedValues = new Map<string, string[]>();
 
 	/** Asks the person once per origin and session before the agent reads or changes a page there. */
 	async function allowSite(url: string | undefined, context: PwExtContext, signal: AbortSignal): Promise<void> {
@@ -664,7 +663,6 @@ export function createPwExtHandler({
 	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.add(sessionId);
-		savedValues.delete(sessionId);
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
@@ -931,7 +929,7 @@ export function createPwExtHandler({
 		release: () => Promise<void>,
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
-		const secrets = [...(await grants.secrets(context.sessionId)), ...(savedValues.get(context.sessionId) ?? [])];
+		const secrets = await grants.secrets(context.sessionId);
 		if (signal?.aborted) {
 			await release();
 			return CANCELED;
@@ -1285,9 +1283,6 @@ export function createPwExtHandler({
 				};
 				if (signal?.aborted) return CANCELED;
 				if (await isStopped(context.sessionId)) return STOPPED;
-				const saved = savedValues.get(context.sessionId) ?? [];
-				if (!saved.includes(value) && saved.length >= MAX_FILLED_SECRETS)
-					return failed(`This session already saved ${MAX_FILLED_SECRETS} values; start a new dg session to save more. ${NOT_SAVED}`);
 				const live = await api.tabs.get(tab.id).catch(() => undefined);
 				if (
 					!live ||
@@ -1296,6 +1291,8 @@ export function createPwExtHandler({
 					!(await control.valuesAllowed(context.sessionId, valuesSiteOf(tab.url as string)))
 				)
 					return failed(`The tab or its approval changed during the save. ${NOT_SAVED}`);
+				if ((await grants.reserve(context.sessionId, value)) === "full")
+					return failed(`This session already holds ${MAX_FILLED_SECRETS} secret values; start a new dg session to save more. ${NOT_SAVED}`);
 				let stored: string;
 				try {
 					stored = await context.storeCredential({ site, name: request.name as string, value, meta });
@@ -1303,8 +1300,6 @@ export function createPwExtHandler({
 					const reason = error instanceof Error ? error.message : "dg-daemon refused the save.";
 					return { ok: false, error: clip(redactLiterals(reason, [value]), 300) };
 				}
-				const kept = savedValues.get(context.sessionId) ?? [];
-				if (!kept.includes(value)) savedValues.set(context.sessionId, [...kept, value]);
 				return ok(
 					[
 						"### Result",
@@ -1540,11 +1535,7 @@ export function createPwExtHandler({
 		const { sessionId } = context;
 		if (halted.has(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
-		const held = async () => [
-			...typed,
-			...(await grants.secrets(sessionId).catch(() => [])),
-			...(savedValues.get(sessionId) ?? []),
-		];
+		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
 		const controller = new AbortController();
 		const relay = () => controller.abort();
 		signal?.addEventListener("abort", relay, { once: true });
@@ -1581,9 +1572,5 @@ export function createPwExtHandler({
 		if (running.size === 0) live.delete(sessionId);
 		return halted.has(sessionId) ? STOPPED : outcome;
 	};
-	/** Drops the values a session saved, when the session ends. */
-	function forgetSession(sessionId: string): void {
-		savedValues.delete(sessionId);
-	}
-	return Object.assign(handler, { stop, stopTab, forgetSession });
+	return Object.assign(handler, { stop, stopTab });
 }

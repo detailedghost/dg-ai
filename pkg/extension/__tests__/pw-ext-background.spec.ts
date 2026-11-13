@@ -3,6 +3,7 @@ import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
+import { createUnmaskGrants } from "@/lib/background/unmask-grants";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
 
@@ -2795,7 +2796,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 	const expectNoMarker = (h: ReturnType<typeof harness>, results: { ok: boolean; data?: { text: string }; error?: string }[]) => {
 		expect(outputs(results)).not.toContain(MARKER);
 		expect(JSON.stringify(h.approvalRequests)).not.toContain(MARKER);
-		expect(JSON.stringify([...h.fake.session.entries()])).not.toContain(MARKER);
+		expect(JSON.stringify([...h.fake.session.entries()].filter(([key]) => !key.startsWith("pwExtSecrets:")))).not.toContain(MARKER);
 	};
 
 	it("shows storage shapes with no ask, and masked values after one Allow", async () => {
@@ -2937,7 +2938,7 @@ describe("pw --ext storage, fetch and credential save", () => {
 		const h = harness({ sites: "ask", approval: "allow", tabs: [MAIL_TAB], cookies: { S: { value: MARKER } }, mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })) });
 		expect((await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" })).ok).toBe(true);
 		expect(outcome(await h.run({ verb: "network", values: true }))).toContain("echo [redacted]");
-		h.handler.forgetSession(SESSION);
+		await createUnmaskGrants({ storage: h.fake.api.storage }).forget(SESSION);
 		expect(outcome(await h.run({ verb: "network", values: true }))).toContain(`echo ${MARKER}`);
 	});
 
@@ -2946,8 +2947,22 @@ describe("pw --ext storage, fetch and credential save", () => {
 		const h = harness({ sites: "ask", approval: "allow", tabs: [MAIL_TAB], cookies: jar });
 		for (let i = 0; i < 50; i++) expect(outcome(await h.run({ verb: "credential", name: `n${i}`, source: "cookie", key: `c${i}` }))).toContain("Saved");
 		const last = await h.run({ verb: "credential", name: "n50", source: "cookie", key: "c50" });
-		expect(outcome(last)).toContain("already saved 50 values");
+		expect(outcome(last)).toContain("already holds 50 secret values");
 		expect(h.storedCredentials).toHaveLength(50);
+	});
+
+	it("keeps masking a value whose save outcome is unknown", async () => {
+		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			tabs: [MAIL_TAB],
+			cookies: { S: { value: MARKER } },
+			store: async () => Promise.reject(new Error("dg-daemon did not confirm the save in time")),
+			mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })),
+		});
+		expect((await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" })).ok).toBe(false);
+		expect(outcome(await h.run({ verb: "network", values: true }))).toContain("echo [redacted]");
 	});
 
 	it("refuses a save on an http page", async () => {

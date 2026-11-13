@@ -482,7 +482,6 @@ export function registerDaemonLink(
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 			() => sessionControl.forget(sessionId),
-			() => pwExtRelay.forgetSession(sessionId),
 		])
 			void Promise.resolve()
 				.then(cleanup)

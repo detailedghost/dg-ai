@@ -135,6 +135,11 @@ conditions only:
   extension peer still cannot `get` it. `dg-skills credentials exec` gives a
   command the value in its environment or arguments and replaces each value
   form in its output with `[redacted]`.
+- **Saved values mask later output.** Before the store frame goes out, the
+  worker reserves the value with the session's held secrets in
+  `storage.session`, so all later output of the session masks it, also after
+  a worker restart. The page hook keeps masking a rotated sign-in value while
+  a retained response may hold it.
 - **Storage.** `storage` reads localStorage or sessionStorage through the
   hook: keys, type, length and JSON shape by default; values after the Allow,
   with credential-named keys and token-like strings always masked.

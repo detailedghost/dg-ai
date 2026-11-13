@@ -214,9 +214,29 @@ export function pwExtNetwork(
 						sealed.values.set(lower, value);
 						if (!sealed.seen.includes(value)) {
 							sealed.seen.push(value);
-							if (sealed.seen.length > SEEN_MAX) sealed.seen.shift();
+							const gone = sealed.seen.length > SEEN_MAX ? sealed.seen.shift() : undefined;
+							if (gone !== undefined) forget(gone);
 						}
 					}
+				}
+			};
+			const lowerHex = (text: string) => text.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
+			const formsOf = (value: string) =>
+				[value, value.replace(/^\S+\s+/, "")].flatMap((form) => {
+					const encoded = encodeURIComponent(form);
+					const query = new win.URLSearchParams({ v: form }).toString().slice(2);
+					return [form, JSON.stringify(form).slice(1, -1), encoded, lowerHex(encoded), query, lowerHex(query)];
+				});
+			const forget = (value: string) => {
+				const forms = formsOf(value)
+					.filter((form) => form.length >= 8)
+					.sort((a, b) => b.length - a.length);
+				const scrub = (text: string) => forms.reduce((out, form) => out.split(form).join("[redacted]"), text);
+				for (const entry of fresh.entries) {
+					entry.url = scrub(entry.url);
+					for (const list of [entry.requestHeaders, entry.responseHeaders])
+						for (const held of list) if (held.value !== undefined) held.value = scrub(held.value);
+					for (const body of [entry.request, entry.response]) if (body?.text !== undefined) body.text = scrub(body.text);
 				}
 			};
 			const headerPairs = (source: HeadersInit | Headers | undefined): [string, string][] => {
@@ -425,18 +445,7 @@ export function pwExtNetwork(
 					}
 				},
 				hidden() {
-					const lowerHex = (text: string) => text.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
-					return [
-						...new Set(
-							[...sealed.values.values(), ...sealed.seen].flatMap((value) =>
-								[value, value.replace(/^\S+\s+/, "")].flatMap((form) => {
-									const encoded = encodeURIComponent(form);
-									const query = new win.URLSearchParams({ v: form }).toString().slice(2);
-									return [form, JSON.stringify(form).slice(1, -1), encoded, lowerHex(encoded), query, lowerHex(query)];
-								}),
-							),
-						),
-					]
+					return [...new Set([...sealed.values.values(), ...sealed.seen].flatMap(formsOf))]
 						.filter((form) => form.length >= 8)
 						.sort((a, b) => b.length - a.length);
 				},

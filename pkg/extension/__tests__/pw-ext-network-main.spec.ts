@@ -420,6 +420,19 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 });
 
 describe("sealed history", () => {
+	it("scrubs a value from retained entries when it leaves the history", async () => {
+		const first = "fake-first-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(JSON.stringify({ echo: first }), { headers: { "content-type": "application/json" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: `Bearer ${first}` } });
+		await settle();
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(first);
+	});
+
 	it("keeps masking a rotated sign-in value in retained responses", async () => {
 		const old = "fake-old-token-value-for-tests";
 		pwExtNetwork({ kind: "install", seal: true });
