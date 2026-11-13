@@ -83,7 +83,10 @@ export function tryOpen(url: string, seams: OpenSeams = {}): Promise<boolean> {
 		const attempt = (i: number) => {
 			if (i >= candidates.length) return resolve(false);
 			const [cmd, build] = candidates[i];
-			const child = launch(cmd, build(url), { stdio: "ignore", detached: true });
+			const child = launch(cmd, build(url), {
+				stdio: "ignore",
+				detached: true,
+			});
 			child.on("error", () => attempt(i + 1));
 			child.on("spawn", () => {
 				child.unref();
@@ -304,6 +307,11 @@ export function isAlive(
 	}
 }
 
+/** Pids 0 and 1 and every non-integer would signal a group or init, never one process. */
+export function isSignalablePid(pid: number): boolean {
+	return Number.isInteger(pid) && pid > 1;
+}
+
 /** Kills a process and its children; on POSIX tries the group (-pid) before the pid. */
 export function killProcessTree(
 	pid: number,
@@ -315,6 +323,7 @@ export function killProcessTree(
 		},
 	}: KillSeams = {},
 ): void {
+	if (!isSignalablePid(pid)) return;
 	if (platform === "win32") {
 		exec("taskkill", ["/T", "/F", "/PID", String(Math.trunc(pid))]);
 		return;

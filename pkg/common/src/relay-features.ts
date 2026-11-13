@@ -35,7 +35,7 @@ function inboxExtensionSupported(version: string | undefined): boolean {
 const MIN_VERSION = PW_EXT_MIN_EXTENSION_VERSION.join(".");
 
 /** Verbs an extension must name in its handshake; older extensions drop them silently. */
-const PW_EXT_LISTED_VERBS: ReadonlySet<string> = new Set(["count", "unmask", "dialog"]);
+const PW_EXT_LISTED_VERBS: ReadonlySet<string> = new Set(["count", "unmask", "dialog", "network"]);
 
 function versionAtLeastMinimum(version: string | undefined): boolean {
 	const match = version?.match(/^(\d+)\.(\d+)\.(\d+)(?:[+-].*)?$/);

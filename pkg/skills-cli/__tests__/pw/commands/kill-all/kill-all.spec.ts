@@ -42,6 +42,26 @@ describe("DAEMON_PATTERN", () => {
 		expect(matches('/home/me/.dg/bin/dg-skills pw daemon {"name":"x"}')).toBe(
 			true,
 		);
+		expect(
+			matches(
+				'/home/me/.bun/bin/bun /repo/pkg/launcher/src/dg.ts dg-skills pw daemon {"name":"x"}',
+			),
+		).toBe(true);
+		expect(
+			matches(
+				'bun run /repo/pkg/launcher/src/dg.ts dg-skills pw daemon {"name":"x"}',
+			),
+		).toBe(true);
+		expect(
+			matches(
+				'/usr/local/lib/pnpm/bun/bin/bun.exe /tmp/pw-fake-daemon-x/skills-cli/src/index.ts pw daemon {"name":"x"}',
+			),
+		).toBe(true);
+		expect(
+			matches(
+				'/usr/local/lib/pnpm/bun/bin/bun.exe /repo/pkg/launcher/src/dg.ts dg-skills pw daemon {"name":"x"}',
+			),
+		).toBe(true);
 	});
 
 	test("does not match a shell or tool whose command text merely mentions the daemon", () => {
@@ -50,6 +70,9 @@ describe("DAEMON_PATTERN", () => {
 		expect(matches("/usr/bin/vim /home/me/dg.js")).toBe(false);
 		expect(matches("/home/me/.dg/bin/dg-skills pw list")).toBe(false);
 		expect(matches("/usr/bin/rg dg.js dg-skills pw daemon  src")).toBe(false);
+		expect(
+			matches("/usr/bin/rg launcher/src/dg.ts dg-skills pw daemon  src"),
+		).toBe(false);
 		expect(
 			matches("/usr/bin/rg skills-cli/src/index.ts pw daemon  src"),
 		).toBe(false);

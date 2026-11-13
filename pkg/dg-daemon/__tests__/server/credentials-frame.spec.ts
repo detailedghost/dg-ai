@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_GRANT_PREFIX_HEADER, CLI_GRANT_TOKEN_HEADER } from "@dg/common";
@@ -14,6 +13,8 @@ import {
 	killDaemonByPidFile,
 	readDaemonLog,
 	removeScratchDirs,
+	credentialRequest as request,
+	credentialResult as result,
 	scanFileForBytes,
 	send,
 	startWithSession,
@@ -22,14 +23,6 @@ import {
 	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
-type CredentialsResult = {
-	type: string;
-	sessionId: string;
-	requestId: string;
-	ok: boolean;
-	value?: unknown;
-	error?: string;
-};
 const NOT_ALLOWED = "Credential request not allowed for this caller.";
 const sockets: WebSocket[] = [];
 
@@ -70,27 +63,6 @@ async function boot() {
 	const cli = await connectCli(started.port, started.bootstrap);
 	sockets.push(cli);
 	return { ...started, cli, results: collectFrames(cli) };
-}
-
-function request(cli: WebSocket, fields: Record<string, unknown>) {
-	const requestId = randomUUID();
-	send(cli, { type: "cli-credentials-request", requestId, ...fields });
-	return requestId;
-}
-
-function result(frames: unknown[], requestId: string) {
-	return waitForValue(
-		() =>
-			frames.find((raw) => {
-				const frame = raw as CredentialsResult;
-				return (
-					frame.type === "cli-credentials-result" &&
-					frame.requestId === requestId
-				);
-			}) as CredentialsResult | undefined,
-		2000,
-		`credentials result ${requestId}`,
-	);
 }
 
 describe("daemon credentials frame", () => {

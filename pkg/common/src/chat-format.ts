@@ -63,6 +63,7 @@ export const CHAT_WS_PATH = "/ws";
 export const CHAT_CLI_PATH = "/cli";
 export const CHAT_ASSETS_PATH = "/assets";
 export const CHAT_SERVICES_PATH = "/services";
+export const SERVICE_API_CREDENTIALS_PATH = "/service-api/v1/credentials";
 
 export type JobState = "ok" | "failed" | "paused";
 
@@ -114,18 +115,18 @@ const UNIT_MS: Record<string, number> = {
 const EVERY_RE = /^(\d+)([smh])$/;
 
 /** Read an interval written the way a person writes one: `30s`, `15m`, `2h`. */
-export function parseEvery(raw: string): number {
+export function parseEvery(raw: string, flag = "--every"): number {
 	const match = EVERY_RE.exec(raw.trim());
 	if (!match) {
 		throw new DgCliError(
-			`--every: expected a count and a unit of s, m or h (for example 15m), got "${raw}"`,
+			`${flag}: expected a count and a unit of s, m or h (for example 15m), got "${raw}"`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
 	const count = Number(match[1]);
 	if (count <= 0) {
 		throw new DgCliError(
-			`--every: interval must be greater than zero, got "${raw}"`,
+			`${flag}: interval must be greater than zero, got "${raw}"`,
 			EXIT_GENERAL_FAILURE,
 		);
 	}
@@ -557,7 +558,7 @@ export function applyOverwatchLaneUpdate(
 		stage: validated.stage ?? existing?.stage,
 		mr: validated.mr ?? existing?.mr,
 		eta: validated.eta ?? existing?.eta,
-		next: validated.clearNext ? undefined : validated.next ?? existing?.next,
+		next: validated.clearNext ? undefined : (validated.next ?? existing?.next),
 		url: validated.url ?? existing?.url,
 		kind: validated.kind ?? existing?.kind ?? "chat",
 		publisher,

@@ -325,12 +325,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 18 verbs for an unknown verb", async () => {
+	test("lists all 19 verbs for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(18);
+		expect(verbs).toHaveLength(19);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});
@@ -572,6 +572,44 @@ describe("pw --ext dialog", () => {
 		const env = clientEnv();
 		await runExt(["--ext", "--help"], env, deps(ok).value);
 		expect(env.stdout.join("\n")).toContain("dialog accept [--text <answer>]");
+	});
+});
+
+describe("pw --ext network", () => {
+	const ok = () => ({ ok: true, data: { text: "done" } });
+
+	test.each([
+		[["network"], { verb: "network" }],
+		[["network", "--filter", "service.svc", "--limit", "20"], { verb: "network", filter: "service.svc", limit: 20 }],
+		[["network", "--since", "1731500000123", "--values"], { verb: "network", since: 1731500000123, values: true }],
+		[["network", "--since", "clear"], { verb: "network", since: "clear" }],
+		[["--tab", "4", "network"], { verb: "network", tabId: 4 }],
+	] as [string[], PwExtRequest][])("sends %p", async (args, request) => {
+		const d = deps(ok);
+		expect(await runExt(["--ext", ...args], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual(request);
+	});
+
+	test.each([
+		[["network", "--limit", "0"], "--limit takes a whole number from 1 to 200"],
+		[["network", "--limit", "2x"], "--limit takes a whole number from 1 to 200"],
+		[["network", "--since", "soon"], "--since takes a time in ms or clear"],
+		[["network", "--since", "clear", "--values"], "--since clear takes no other option"],
+		[["network", "extra"], "pw --ext network takes no arguments."],
+		[["snapshot", "--values"], "--filter, --limit, --since and --values work only with pw --ext network."],
+		[["snapshot", "--filter", "x"], "--filter, --limit, --since and --values work only with pw --ext network."],
+	])("rejects %p", async (args, message) => {
+		const env = clientEnv();
+		const d = deps(ok);
+		expect(await runExt(["--ext", ...args], env, d.value)).toBe(2);
+		expect(env.stderr.join("\n")).toContain(message);
+		expect(d.sent).toHaveLength(0);
+	});
+
+	test("lists network in the help", async () => {
+		const env = clientEnv();
+		await runExt(["--ext", "--help"], env, deps(ok).value);
+		expect(env.stdout.join("\n")).toContain("network [--filter <text>] [--limit N] [--since <ms>|clear] [--values]");
 	});
 });
 

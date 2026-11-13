@@ -44,7 +44,8 @@ popup.
 | `selection` | read | Selected text |
 | `console` | read | Errors, and console warnings and errors after the first call |
 | `tools` | read | Web MCP bridge: WebMCP tools the page exposes: name, description, input schema |
-| `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. Test a selector with it before `click`, `fill` or `upload` |
+| `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. An id or name that looks like a generated id shows as `[redacted]`. Test a selector with it before `click`, `fill` or `upload` |
+| `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's `fetch` and `XMLHttpRequest` calls, shape only: method, address with query values removed, status, header names, and the key structure and value types of JSON bodies. `--values` shows values after one Allow per site and session |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
@@ -65,20 +66,22 @@ Rules:
 - Passing `--ext` gives the CLI the agent's tab group. The first verb on a new
   site in a session, `open` and `new` too, opens a small extension popup that
   asks you to allow that site for the session. Reads and writes both need it.
-  A site is a scheme with a registrable domain from the Public Suffix List, so
-  one Allow covers `login.live.com`, `outlook.live.com` and `live.com`, and
-  redirects between them do not ask again. The private suffixes count too:
-  `a.github.io` and `b.github.io` are two sites. `http` and `https` are two
-  sites. An IP address, `localhost`, a host with one label or a host with a
-  trailing dot is its own site, port included. The popup names the domain and the host that asked.
-  Verbs that ask for the same site at the same time share one popup. After a
-  Deny, verbs that were sent before the answer fail without a new popup; a
-  later verb can ask again.
+  A site is a scheme with a registrable domain from the Public Suffix List,
+  plus any port that is not the default. One Allow covers `login.live.com`,
+  `outlook.live.com` and `live.com`, and redirects between them do not ask
+  again. `example.com:8080` is a separate site from `example.com`. The private
+  suffixes count too: `a.github.io` and `b.github.io` are two sites. `http` and
+  `https` are two sites. An IP address, `localhost`, a host with one label or a
+  host with a trailing dot is its own site, port included. The popup names the
+  domain and the host that asked. Verbs that ask for the same site at the same
+  time share one popup.
   Deny, no answer in 60 seconds, or a closed window allows nothing, and no page
-  is touched. Allowed sites live in `storage.session` and go away when the
-  session ends. `tabs`, `select` and `close` ask nothing. `tools` and `call`
-  are the Web MCP bridge: this site question does not gate them, and `call`
-  uses [Web MCP approvals](webmcp.md) instead. Mailbox origins keep their guard.
+  is touched. After a Deny, verbs that were sent before the answer fail without
+  a new popup; a later verb can ask again. Allowed sites live in
+  `storage.session` and go away when the session ends. `tabs`, `select` and
+  `close` ask nothing. `tools` and `call` are the Web MCP bridge: this site
+  question does not gate them, and `call` uses [Web MCP approvals](webmcp.md)
+  instead. Mailbox origins keep their guard.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
   The banner sits in a closed shadow root in the extension's own script world.
   Stop ends that session's control at once: verbs in flight fail, unmask
@@ -152,6 +155,49 @@ Rules:
   that asks you to close the dialog. The page can read the answer text that
   `--text` sets, so `dialog accept --text` refuses a value the session filled
   as a secret. An extension that does not list `dialog` refuses the verb at once.
+- `network` reads a small hook that the extension puts over `fetch` and
+  `XMLHttpRequest` in the page's own context. The hook has the same life as the
+  dialog shim: it goes in when an agent tab loads, never in a user tab, on a
+  mailbox origin or on a browser page, and it goes away when the tab leaves the
+  group or the session ends. It keeps the newest 100 calls of the page. A new
+  page load starts an empty list, and calls that ran before the hook was in
+  place are not in it. Run `open` on the same address to load the page again
+  with the hook in place. It sees the top frame only, not frames and not
+  service workers.
+  - By default the output has no values. The address keeps the host, the path
+    and the query parameter names. Path parts that look like generated ids show
+    as `*`, and each query value shows as `*`. Only `action` and `app` keep
+    their value, and only when it is a plain API name such as `FindConversation`.
+    Headers show by name. A JSON body shows its keys and value types, with an
+    array as `[n x <shape>]` and an id-like key as `*`. Any other body shows its
+    content type and size. A path part that is a readable word, such as a
+    name, still shows; only id-like parts are masked.
+  - `--filter` matches the address as shown, so it cannot test for a hidden
+    value. `--limit` keeps the newest N (default 50, at most 200). `--since <ms>`
+    keeps calls that started after that time; each output ends with the time to
+    pass next. `--since clear` empties the list.
+  - `--values` shows header values, the full address and body text up to 8000
+    characters each. The first `--values` on a site asks the human in the
+    browser. The popup says that request and response values can hold personal
+    or health data. One Allow lasts until the dg session ends or the human
+    clicks Stop; it never asks again in that session. Deny, a closed window or
+    no answer in 60 seconds refuses the verb with a message that names the
+    popup. The grant is per origin until per-domain site keys land.
+  - Even with `--values`, the hook never stores the value of `Authorization`,
+    `Cookie`, `Set-Cookie`, `X-OWA-CANARY` or any header whose name holds auth,
+    token, secret, key, session, canary, csrf, credential, pass, signature,
+    jwt, dpop, bearer or assertion; such a header shows as `name (hidden)`. A JSON field or a form
+    or query parameter whose name names a credential (password, token, secret,
+    key, auth, session, cookie, code and similar) shows as `[redacted]`, with
+    its whole nested value. User info in an address is masked too. All
+    output goes through
+    the same redaction as other `pw --ext` output, which masks held secrets and
+    token patterns. Email addresses stay masked unless an `unmask` grant covers
+    the site.
+  - An extension that does not list `network` refuses the verb at once.
+  - Outlook is not a mailbox origin today, so `network` works there. When
+    Outlook joins the mailbox origins, `network` there needs the new area
+    approval or stays blocked.
 - `console` adds a small wrapper to the page's own `console.warn` and
   `console.error` on the first call. It runs in the page's own context, stays
   for the life of the document, and sees only messages after that first call.

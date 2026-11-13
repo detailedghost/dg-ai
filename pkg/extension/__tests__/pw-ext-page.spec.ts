@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
+import { looksLikeOpaqueId } from "@dg/common";
 import { pwExtPageAction } from "@/lib/features/pw-ext-page";
 
 let window: Window;
@@ -112,6 +113,34 @@ describe("click", () => {
 			'3. <input type="file" id="file-mark"> button',
 		]);
 		expect(changed).toBe(0);
+	});
+
+	it("masks an id or name that looks like a generated id when counting, and keeps readable ones", () => {
+		page(`
+			<div role="option" id="AAMkADU3ZmFrZWZha2VmYWtl" name="fake%2Fid%3D%3D0"></div>
+			<div role="option" id="message-row" name="row"></div>
+		`);
+		const result = pwExtPageAction({ kind: "count", target: "[role=option]" }) as { detail: string };
+		expect(result.detail).toContain('<div id="[redacted]" name="[redacted]">');
+		expect(result.detail).toContain('<div id="message-row" name="row">');
+		expect(result.detail).not.toContain("AAMkAD");
+	});
+
+	it.each([
+		"AAMkADU3ZmFrZWZha2VmYWtl",
+		"3f2c9a1e-0b7d-4c55-9e21-7a0f00c0ffee",
+		"x7Kq2mPz9Lw4Rt6Yv8Nb1Hc3",
+		"QWERTYuiopASDFGhjklZXCVbnm",
+		"1234567",
+		"conversationlistview",
+		"FindConversationResponseMessage",
+		"message-row",
+		"fake%2Fid%3D%3D0",
+		"ab cd 1234567890 xyz",
+	])("masks %s in count exactly when the shared id rule does", (id) => {
+		page(`<div id="${id}"></div>`);
+		const result = pwExtPageAction({ kind: "count", target: "div" }) as { detail: string };
+		expect(result.detail.includes('id="[redacted]"')).toBe(looksLikeOpaqueId(id));
 	});
 
 	it("counts zero matches as a result, not an error", () => {

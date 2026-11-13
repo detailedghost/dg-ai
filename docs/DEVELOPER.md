@@ -576,12 +576,12 @@ take any non-secret JSON.
 
 Only dg-daemon opens `credentials.db`. Callers send the
 `cli-credentials-request` frame over the loopback daemon, and three callers
-may read:
+may read; a background service sends the frame or calls the HTTP route:
 
 | Caller | Authenticates with | May do |
 | --- | --- | --- |
 | A dg session (`dg-skills`, agents) | Session token on `/cli` | `set`, `get`, `list`, `delete`, `grant`, `revoke`, `grant-list` |
-| A background service | Service grant token | `get` and `list` under `<prefix>/` |
+| A background service | Service grant token, in the frame or in the `POST /service-api/v1/credentials` headers | `get` and `list` under `<prefix>/` |
 | The paired extension | Its chat socket handshake | `get` and `list` under `extension/` |
 
 A scoped caller gets the same "not allowed" error for any other operation or
@@ -626,6 +626,10 @@ const credentials = createCredentialClient({ paths: resolveDgPaths(), grant: { p
 const apiKey = await credentials.resolveCredential("consumer/provider", { env: ["PROVIDER_API_KEY"] });
 credentials.close();
 ```
+
+A background service can also use the HTTP route
+`POST /service-api/v1/credentials` with `fetch` and no dg code. See
+[Service API v1](service-api.md).
 
 Leave out `grant` to authenticate with the dg session for the working
 directory (or pass `session`). If dg-daemon is not running, the client fails

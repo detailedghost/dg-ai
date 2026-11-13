@@ -1,8 +1,9 @@
+import type { CompletionNode } from "@dg/common/completion";
 import type { SessionRole } from "@dg/common";
 import type { LayoutHooks } from "@dg/common/node/layout";
 import type { Command } from "commander";
 
-const SKIP = new Set(["phone listen"]);
+const SKIP = new Set(["phone listen", "completion"]);
 
 const topLevelName = (command: Command): string => (command.parent?.parent ? topLevelName(command.parent) : command.name());
 
@@ -17,27 +18,20 @@ export function hooksFor(action: Command): LayoutHooks {
 	return hooks;
 }
 
-export async function main(argv: readonly string[]): Promise<number> {
-	if (argv.length === 1 && argv[0] === "--version") {
-		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
-		return 0;
-	}
+/** The dg-agent program with every command registered and nothing parsed. */
+export async function buildProgram(): Promise<Command> {
 	const [
-		{ Command, CommanderError },
-		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
+		{ Command },
 		{ registerAgentCommands },
 		{ registerMemoryCommands },
 		{ registerLazyPhoneCommands },
-		{ ensureLayout },
-		{ installLayoutPreAction },
+		{ registerCompletionCommand },
 	] = await Promise.all([
 		import("commander"),
-		import("@dg/common"),
 		import("./commands"),
 		import("./memory/commands"),
 		import("./phone/register"),
-		import("@dg/common/node/layout"),
-		import("@dg/common/node/layout-preaction"),
+		import("@dg/common/completion"),
 	]);
 	const program = new Command();
 	program
@@ -86,6 +80,35 @@ export async function main(argv: readonly string[]): Promise<number> {
 				});
 			},
 		);
+	registerCompletionCommand(program);
+	return program;
+}
+
+export async function main(argv: readonly string[]): Promise<number> {
+	if (argv.length === 1 && argv[0] === "--version") {
+		process.stdout.write(`${process.env.DG_BUILD_VERSION ?? "dev"}\n`);
+		return 0;
+	}
+	if (argv[0] === "__complete") {
+		const [{ printCompletions }, { default: tree }] = await Promise.all([
+			import("@dg/common/completion"),
+			import("./completion-tree.json", { with: { type: "json" } }),
+		]);
+		return printCompletions(tree as CompletionNode, argv.slice(1));
+	}
+	const [
+		{ CommanderError },
+		{ DgCliError, describeError, emitRedacted, EXIT_GENERAL_FAILURE },
+		{ ensureLayout },
+		{ installLayoutPreAction },
+		program,
+	] = await Promise.all([
+		import("commander"),
+		import("@dg/common"),
+		import("@dg/common/node/layout"),
+		import("@dg/common/node/layout-preaction"),
+		buildProgram(),
+	]);
 
 	installLayoutPreAction(program, {
 		skip: SKIP,

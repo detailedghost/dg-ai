@@ -1,0 +1,227 @@
+{
+	"name": "dg-daemon",
+	"description": "Loopback HTTP+WebSocket daemon hosting many chat sessions for dg:start.",
+	"commands": [
+		{
+			"name": "serve",
+			"description": "Run the daemon in the foreground; dg starts this for you"
+		},
+		{
+			"name": "status",
+			"description": "report the live daemon's status, or that none is running"
+		},
+		{
+			"name": "start",
+			"description": "start the daemon in the background, or report the live one",
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print one JSON line"
+				}
+			]
+		},
+		{
+			"name": "stop",
+			"description": "stop the daemon and its services",
+			"options": [
+				{
+					"flags": [
+						"--force"
+					],
+					"description": "kill the daemon and each service process tree at once"
+				}
+			]
+		},
+		{
+			"name": "restart",
+			"description": "stop the daemon, then start it again",
+			"options": [
+				{
+					"flags": [
+						"--force"
+					],
+					"description": "kill the daemon and each service process tree at once"
+				}
+			]
+		},
+		{
+			"name": "job",
+			"description": "manage the background jobs the daemon runs on a schedule",
+			"commands": [
+				{
+					"name": "add",
+					"description": "schedule a command that prints one JSON object per item",
+					"options": [
+						{
+							"flags": [
+								"--label"
+							],
+							"description": "unique name for the job",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--every"
+							],
+							"description": "how often to run it, e.g. 15m",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--cron"
+							],
+							"description": "a cron expression, e.g. \"0 9 * * 1-5\"",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--cwd"
+							],
+							"description": "working directory for the command",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--notify"
+							],
+							"description": "agent identity to queue new items to",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "list",
+					"description": "show every scheduled job and its last result"
+				},
+				{
+					"name": "rm",
+					"description": "remove a job and everything it collected"
+				},
+				{
+					"name": "enable",
+					"description": "enable a job without removing it"
+				},
+				{
+					"name": "disable",
+					"description": "disable a job without removing it"
+				},
+				{
+					"name": "run",
+					"description": "run a job now, without waiting for its schedule"
+				}
+			]
+		},
+		{
+			"name": "origin",
+			"description": "inspect or forget the extension origin the daemon has pinned",
+			"commands": [
+				{
+					"name": "show",
+					"description": "print the pinned extension origin, or say none is pinned"
+				},
+				{
+					"name": "clear",
+					"description": "forget the pinned origin so the next connecting extension can pin"
+				}
+			]
+		},
+		{
+			"name": "sessions",
+			"description": "inspect or clear chat sessions on the running daemon",
+			"commands": [
+				{
+					"name": "clear",
+					"description": "close sessions no CLI is attached to"
+				}
+			]
+		},
+		{
+			"name": "service",
+			"description": "run the long-lived scripts declared under `services` in the daemon config",
+			"commands": [
+				{
+					"name": "add",
+					"description": "declare a service in the daemon config",
+					"options": [
+						{
+							"flags": [
+								"--cwd"
+							],
+							"description": "working directory for the service",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--autostart"
+							],
+							"description": "start it when the daemon starts"
+						},
+						{
+							"flags": [
+								"--env-file"
+							],
+							"description": "env file to load",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--pass-env"
+							],
+							"description": "environment variable to pass through (repeatable)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--stop-timeout"
+							],
+							"description": "grace period on stop, e.g. 30s",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--grant"
+							],
+							"description": "credential grant prefix",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "rm",
+					"description": "remove a service declaration"
+				},
+				{
+					"name": "status",
+					"description": "show every declared service, or one by label",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print one JSON line"
+						}
+					]
+				},
+				{
+					"name": "start",
+					"description": "start a declared service"
+				},
+				{
+					"name": "stop",
+					"description": "stop a declared service"
+				}
+			]
+		},
+		{
+			"name": "completion",
+			"description": "print the bash, zsh or fish completion script for this program",
+			"values": [
+				"bash",
+				"zsh",
+				"fish"
+			]
+		}
+	]
+}

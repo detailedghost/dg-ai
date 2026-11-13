@@ -48,7 +48,7 @@ const USAGE = `usage: hooks <command>
 `;
 
 const RUNTIMES: readonly HookRuntime[] = ["claude", "codex", "opencode"];
-const COMMANDS = ["list", "status", "enable", "disable", "set"];
+export const COMMANDS = ["list", "status", "enable", "disable", "set"];
 const NOTICE = "(takes effect in new sessions)";
 const isGit = (def: HookDefinition) => def.event === "commit-msg";
 

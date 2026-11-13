@@ -122,20 +122,24 @@ section (`siteOf` in `pkg/extension/lib/background/site-key.ts`).
   `*.azurewebsites.net` tenants are separate sites. `outlook.cloud.microsoft`
   and `microsoft.com` are separate sites.
 - The scheme stays in the key, so `http` and `https` are separate sites. A
-  grouped key has no port, so it covers every port of the domain. An IP
-  address, `localhost`, a single-label host or a bare public suffix has no
-  registrable domain; it keys by its exact origin, port included. A host with
-  a trailing dot (`example.com.`) also keys by its exact origin, because the
+  grouped key also keeps a non-default port (any port other than 80 for
+  `http` or 443 for `https`). `example.com` and `www.example.com` share one
+  Allow, and `example.com:8080` is its own site, as is `app.example.com:3000`
+  (shared with `example.com:3000`). An IP address, `localhost`, a single-label
+  host or a bare public suffix has no registrable domain; it keys by its exact
+  origin, port included. A host with a trailing dot (`example.com.`) also keys by its exact origin, because the
   list lookup would read it as a bare top-level domain.
 - Verbs that ask for one site of one session at the same time share one popup.
   After a Deny, the verbs that were sent before the answer fail without a new
   popup. A verb sent after the answer can ask again.
-- The popup title names the domain ("Allow the agent on live.com and its
-  subdomains for this session?") and lists the host that asked.
-- The worker bundles `tldts` (pinned, with its `tldts-core` pinned through the
-  root `overrides`). Only the background worker imports it. The options page
-  no longer imports `pw-ext.ts`, so the list stays out of the extension pages
-  and out of `pkg/pages`. The worker grows by about 270 KB.
+- The popup title names the domain, with the port when it is not the default
+  ("Allow the agent on live.com and its subdomains for this session?") and
+  lists the host that asked.
+- The worker bundles `tldts` 7.4.19 (pinned, with its `tldts-core` pinned to
+  the same version through the root `overrides`). Bump both together, or drop
+  the override once `tldts` pins a matching `tldts-core` itself. Only the
+  background worker imports it. The options page no longer imports `pw-ext.ts`,
+  so the list stays out of the extension pages and out of `pkg/pages`. The worker grows by about 270 KB.
 - The mailbox guard, Stop and unmask grants do not change. Stop still drops the
   allowed sites. The "page changed while the site question was open" refusal
   stays, because the mailbox guard ran on the old page.
@@ -148,8 +152,16 @@ person did not see, such as other subdomains of a large provider. The private
 section of the list limits this for hosting platforms that give each customer a
 subdomain.
 
+Two more accepted risks:
+
+- Wildcard DNS services such as `nip.io` group as one site, so one Allow covers
+  every address under that domain.
+- Concurrent `dg_` calls that share one popup show only the arguments of the
+  first call.
+
 - `pkg/extension/lib/background/site-key.ts`
 - `pkg/extension/lib/background/pw-ext.ts`
+- `pkg/extension/lib/browser-call.ts`
 - `pkg/extension/lib/background/webmcp-approval.ts`
 
 ## Amended 2026-11-13: Web MCP is apart from pw --ext

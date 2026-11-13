@@ -12,6 +12,7 @@ import {
 	type PwExtVerb,
 	PW_EXT_READ_VERBS,
 	PW_EXT_MAX_UPLOAD_BYTES,
+	PW_EXT_NETWORK_MAX_LIMIT,
 	PW_EXT_UNMASK_DEFAULT_MINUTES,
 	PW_EXT_UNMASK_MAX_MINUTES,
 	PW_EXT_WRITE_VERBS,
@@ -199,6 +200,7 @@ const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
 	tools: [],
 	call: ["tool", "json-args"],
 	dialog: ["answer?"],
+	network: [],
 };
 const OPTIONS = {
 	ext: { type: "boolean" },
@@ -210,6 +212,10 @@ const OPTIONS = {
 	"value-env": { type: "string" },
 	"value-stdin": { type: "boolean" },
 	text: { type: "string" },
+	filter: { type: "string" },
+	limit: { type: "string" },
+	since: { type: "string" },
+	values: { type: "boolean" },
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
@@ -235,6 +241,14 @@ Read verbs (they never change the page):
   console                 errors and console warnings since the first call
   count <ref|selector>    how many elements match, with tag, type, id and name for each; use it to test a selector before click, fill or upload
   tools                   Web MCP bridge: WebMCP tools the page exposes
+  network [--filter <text>] [--limit N] [--since <ms>|clear] [--values]
+                          fetch and XMLHttpRequest calls of the page since it loaded in the agent tab, newest last:
+                          method, address with query values removed, status, header names, and the key
+                          structure and value types of JSON bodies, never values. --filter keeps calls whose
+                          shown address holds the text, --limit keeps the newest N (default 50, up to ${PW_EXT_NETWORK_MAX_LIMIT}),
+                          --since <ms> keeps calls that started after that time, --since clear empties the list.
+                          --values shows values too, after the user clicks Allow once in the browser for this site
+                          and session; passwords, cookies, sign-in headers and secrets stay masked
 
 Write verbs (they change the page):
   open <url>              open an http(s) URL in the agent's selected tab, or in a new tab when it has none
@@ -334,6 +348,13 @@ function parseRequest(
 		throw new ExtUsageError("--minutes and --off work only with pw --ext unmask.");
 	if (parsed.values.text !== undefined && (verb !== "dialog" || rest[0] !== "accept"))
 		throw new ExtUsageError("--text works only with pw --ext dialog accept.");
+	const networkOption =
+		parsed.values.filter !== undefined ||
+		parsed.values.limit !== undefined ||
+		parsed.values.since !== undefined ||
+		parsed.values.values === true;
+	if (networkOption && verb !== "network")
+		throw new ExtUsageError("--filter, --limit, --since and --values work only with pw --ext network.");
 	if (verb === "dialog" && rest.length === 1 && rest[0] !== "accept" && rest[0] !== "dismiss")
 		throw new ExtUsageError("pw --ext dialog takes accept or dismiss.");
 	if (parsed.values.off && parsed.values.minutes !== undefined)
@@ -408,6 +429,7 @@ function parseRequest(
 		}
 	}
 	if (parsed.values.text !== undefined) request.text = parsed.values.text;
+	if (verb === "network") Object.assign(request, networkOptions(parsed.values));
 	if (tab !== undefined) request.tabId = tab;
 	try {
 		return {
@@ -424,6 +446,29 @@ function parseRequest(
 			),
 		);
 	}
+}
+
+function networkOptions(values: { filter?: string; limit?: string; since?: string; values?: boolean }): Partial<PwExtRequest> {
+	const options: Partial<PwExtRequest> = {};
+	if (values.since === "clear") {
+		if (values.filter !== undefined || values.limit !== undefined || values.values)
+			throw new ExtUsageError("pw --ext network --since clear takes no other option.");
+		return { since: "clear" };
+	}
+	if (values.since !== undefined) {
+		if (!/^\d{1,16}$/.test(values.since))
+			throw new ExtUsageError("pw --ext network --since takes a time in ms or clear.");
+		options.since = Number(values.since);
+	}
+	if (values.limit !== undefined) {
+		const limit = Number(values.limit);
+		if (!/^\d+$/.test(values.limit) || limit < 1 || limit > PW_EXT_NETWORK_MAX_LIMIT)
+			throw new ExtUsageError(`pw --ext network --limit takes a whole number from 1 to ${PW_EXT_NETWORK_MAX_LIMIT}.`);
+		options.limit = limit;
+	}
+	if (values.filter !== undefined) options.filter = values.filter;
+	if (values.values) options.values = true;
+	return options;
 }
 
 async function saveImage(dataUrl: string): Promise<string> {

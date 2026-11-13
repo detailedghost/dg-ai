@@ -36,6 +36,8 @@ flowchart LR
 
 - [0002 — The daemon owns durable sessions and work](0002-daemon-hub.md)
 - [0003 — SQLite for daemon state; JSON for channel review](0003-storage-by-writer.md)
+- [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md) — Accepted:
+  `passEnv`, `stopTimeoutMs`, `grant`, `POST /service-api/v1/credentials`, and `dg-daemon start`, `stop` and `restart`.
 
 ## Security
 
@@ -113,6 +115,9 @@ flowchart LR
 
 - [0046 — Web MCP approvals apart from pw --ext browser control](0046-webmcp-approvals-apart-from-pw-ext.md) — Proposed:
   the pw --ext site allowlist and Stop no longer gate or revoke Web MCP; grants are keyed by session, site and tool, a session-class Allow can be remembered for 30 days with a signed record, and the toolbar popup revokes grants. Amends 0035 and 0045.
+
+- [0046 — pw --ext: read the network calls of an agent tab, shape first](0046-pw-ext-network.md) — Accepted:
+  a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044.
 
 ## Adding an ADR
 

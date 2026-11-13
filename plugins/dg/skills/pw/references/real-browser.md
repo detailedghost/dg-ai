@@ -31,6 +31,7 @@ group, until the human hands you a tab from the extension popup.
 | `console` | read | Errors and console warnings since the first `console` call |
 | `tools` | read | Web MCP bridge: WebMCP tools of the page: name, description, input schema |
 | `count <ref or selector>` | read | How many elements match, with tag, type, id and name for each. Test a selector with it before `click`, `fill` or `upload` |
+| `network [--filter <text>] [--limit N] [--since <ms>\|clear] [--values]` | read | The page's fetch and XHR calls: method, address with query values removed, status, header names, JSON key structure. No values unless `--values` |
 | `open <url>` | write | Opens an http or https URL in the selected tab, or in a new tab when the agent has none |
 | `new [url]` | write | Opens a new tab in the agent's group and selects it; with no URL it opens a blank tab |
 | `select <tabId>` | write | Makes a tab of the group the selected tab |
@@ -50,9 +51,10 @@ group, until the human hands you a tab from the extension popup.
 
 - `--ext` gives you the agent's tab group. The first verb on a new site in a
   session, `open` and `new` too, asks the human in a popup to allow that site
-  for the session. A site is a registrable domain with its scheme: one Allow on
-  `login.live.com` covers `outlook.live.com` too, but `a.github.io` and
-  `b.github.io` ask apart. Ask for sites only as the task needs them; a denied
+  for the session. A site is a registrable domain with its scheme and any
+  non-default port: one Allow on `login.live.com` covers `outlook.live.com` too,
+  but `a.github.io`, `b.github.io` and `example.com:8080` ask apart. IPs,
+  `localhost` and single-label hosts ask per origin, port included. Ask for sites only as the task needs them; a denied
   site touches no page. Do not retry a denied site in a loop. Act only on what
   the human asked for.
 - Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
@@ -91,6 +93,13 @@ group, until the human hands you a tab from the extension popup.
   The answer is used once, and a new page starts again at dismiss. `dialog`
   shows the last dialog, and `snapshot` lists new ones under `### Dialog`. If a
   verb stops with "It may show a dialog", ask the human to close it.
+- `network` shows the shape of the page's API calls, never values. Use it to
+  learn endpoint names, header names and JSON keys. To see only new calls, run
+  `pw --ext network --since clear`, do the action, then `pw --ext network`.
+  Calls from before the page loaded in your tab are not listed; `open` the same
+  address to load it again. `--values` asks the human once per site and
+  session. Ask for it only when the shape is not enough. Sign-in headers,
+  cookies and secrets stay masked even then.
 - Browser settings pages, extension pages, private windows and the signed-in
   Proton Mail tab are refused. Ask the human to hand you a web page tab.
   `tabs`, `new` and `close` still work when the selected tab is a settings page,

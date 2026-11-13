@@ -1,10 +1,21 @@
 import { isAbsolute } from "node:path";
-import { isRecord } from "@dg/common";
+import { CREDENTIAL_GRANT_PREFIX_PATTERN, isRecord } from "@dg/common";
+import { ENV_KEY } from "./env-file";
 
 export const SERVICES_CONFIG_KEY = "services";
 
 const SERVICE_LABEL = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const SERVICE_KEYS = new Set(["argv", "cwd", "envFile", "autostart"]);
+const SERVICE_KEYS = new Set([
+	"argv",
+	"cwd",
+	"envFile",
+	"autostart",
+	"passEnv",
+	"stopTimeoutMs",
+	"grant",
+]);
+export const DEFAULT_STOP_TIMEOUT_MS = 5_000;
+export const MAX_STOP_TIMEOUT_MS = 240_000;
 
 export type ServiceDecl = {
 	label: string;
@@ -12,6 +23,9 @@ export type ServiceDecl = {
 	cwd: string;
 	envFile?: string;
 	autostart: boolean;
+	passEnv: string[];
+	stopTimeoutMs: number;
+	grant?: string;
 };
 
 export type ParsedService =
@@ -32,7 +46,7 @@ const isArgv = (value: unknown): value is string[] =>
 			typeof part === "string" && part.length > 0 && !part.includes("\0"),
 	);
 
-function parseOne(label: string, raw: unknown): ParsedService {
+export function parseServiceEntry(label: string, raw: unknown): ParsedService {
 	if (!SERVICE_LABEL.test(label)) {
 		return invalid(
 			label,
@@ -62,6 +76,42 @@ function parseOne(label: string, raw: unknown): ParsedService {
 	if (raw.autostart !== undefined && typeof raw.autostart !== "boolean") {
 		return invalid(label, '"autostart" must be a boolean');
 	}
+	if (
+		raw.passEnv !== undefined &&
+		!(
+			Array.isArray(raw.passEnv) &&
+			raw.passEnv.every(
+				(name) => typeof name === "string" && ENV_KEY.test(name),
+			)
+		)
+	) {
+		return invalid(
+			label,
+			'"passEnv" must be an array of environment variable names',
+		);
+	}
+	const stopTimeoutMs =
+		raw.stopTimeoutMs === undefined
+			? DEFAULT_STOP_TIMEOUT_MS
+			: raw.stopTimeoutMs;
+	if (
+		typeof stopTimeoutMs !== "number" ||
+		!Number.isInteger(stopTimeoutMs) ||
+		stopTimeoutMs < 1 ||
+		stopTimeoutMs > MAX_STOP_TIMEOUT_MS
+	) {
+		return invalid(
+			label,
+			`"stopTimeoutMs" must be an integer from 1 to ${MAX_STOP_TIMEOUT_MS}`,
+		);
+	}
+	if (
+		raw.grant !== undefined &&
+		(typeof raw.grant !== "string" ||
+			!CREDENTIAL_GRANT_PREFIX_PATTERN.test(raw.grant))
+	) {
+		return invalid(label, '"grant" must be a credential grant prefix');
+	}
 	return {
 		ok: true,
 		label,
@@ -69,6 +119,9 @@ function parseOne(label: string, raw: unknown): ParsedService {
 		cwd: raw.cwd,
 		...(raw.envFile === undefined ? {} : { envFile: raw.envFile }),
 		autostart: raw.autostart ?? false,
+		passEnv: [...new Set((raw.passEnv as string[] | undefined) ?? [])],
+		stopTimeoutMs,
+		...(raw.grant === undefined ? {} : { grant: raw.grant }),
 	};
 }
 
@@ -81,5 +134,7 @@ export function parseServices(
 	if (!isRecord(raw)) {
 		return [invalid(SERVICES_CONFIG_KEY, "must be an object keyed by label")];
 	}
-	return Object.entries(raw).map(([label, entry]) => parseOne(label, entry));
+	return Object.entries(raw).map(([label, entry]) =>
+		parseServiceEntry(label, entry),
+	);
 }
