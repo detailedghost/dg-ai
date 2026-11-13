@@ -105,6 +105,9 @@ flowchart LR
 - [0042 — thrash: review from a scratch checkout of the PR head](0042-thrash-review-checkout.md) — Accepted:
   `thrash diff` builds a hardened scratch tree of the PR head (cwd, clone, api, none) and `thrash post` deletes it; a stack shares one clone.
 
+- [0044 — pw --ext: answer page dialogs with a shim in agent tabs](0044-pw-ext-dialogs.md) — Accepted:
+  a MAIN-world shim in agent tabs answers `alert`, `confirm` and `prompt` at once from a one-shot policy that `pw --ext dialog` sets; no new permission. Amends 0035.
+
 ## Adding an ADR
 
 Use [the template](template.md). Store each record in `docs/adr/NNNN-kebab-title.md`.

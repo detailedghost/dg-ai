@@ -198,6 +198,7 @@ const POSITIONALS: Record<PwExtVerb, readonly string[]> = {
 	unmask: [],
 	tools: [],
 	call: ["tool", "json-args"],
+	dialog: ["answer?"],
 };
 const OPTIONS = {
 	ext: { type: "boolean" },
@@ -208,6 +209,7 @@ const OPTIONS = {
 	off: { type: "boolean" },
 	"value-env": { type: "string" },
 	"value-stdin": { type: "boolean" },
+	text: { type: "string" },
 } as const;
 const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 
@@ -244,7 +246,10 @@ Write verbs (they change the page):
   call <tool> <json-args> run one WebMCP tool of the page
   unmask [--minutes N]    ask the user, in the browser, to show email addresses and allow secret fill
                           on this tab's site for N minutes (1-${PW_EXT_UNMASK_MAX_MINUTES}, default ${PW_EXT_UNMASK_DEFAULT_MINUTES})
-  unmask --off            end the unmask now`;
+  unmask --off            end the unmask now
+  dialog                  the page's last alert, confirm or prompt, how it was answered, and the answer set for the next one
+  dialog accept [--text <answer>]  accept the next dialog on this page; --text is the answer a prompt gets
+  dialog dismiss          dismiss the next dialog on this page; each new page starts at dismiss`;
 
 class ExtUsageError extends Error {}
 
@@ -323,6 +328,10 @@ function parseRequest(
 		throw new ExtUsageError("--value-env and --value-stdin work only with pw --ext fill.");
 	if ((parsed.values.minutes !== undefined || parsed.values.off) && verb !== "unmask")
 		throw new ExtUsageError("--minutes and --off work only with pw --ext unmask.");
+	if (parsed.values.text !== undefined && (verb !== "dialog" || rest[0] !== "accept"))
+		throw new ExtUsageError("--text works only with pw --ext dialog accept.");
+	if (verb === "dialog" && rest.length === 1 && rest[0] !== "accept" && rest[0] !== "dismiss")
+		throw new ExtUsageError("pw --ext dialog takes accept or dismiss.");
 	if (parsed.values.off && parsed.values.minutes !== undefined)
 		throw new ExtUsageError("pw --ext unmask takes --minutes or --off, not both.");
 	if (secretFill && rest.length !== 1)
@@ -394,6 +403,7 @@ function parseRequest(
 			request.minutes = minutes;
 		}
 	}
+	if (parsed.values.text !== undefined) request.text = parsed.values.text;
 	if (tab !== undefined) request.tabId = tab;
 	try {
 		return {

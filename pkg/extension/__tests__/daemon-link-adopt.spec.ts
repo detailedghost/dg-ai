@@ -63,7 +63,7 @@ function bootLink(local: LocalArea = makeLocalArea()) {
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			sendMessage: mock((_message: unknown) => Promise.resolve(undefined)),
 		},
-		tabs: { create: mock(() => Promise.resolve()) },
+		tabs: { create: mock(() => Promise.resolve()), onUpdated: { addListener: () => undefined, removeListener: () => undefined } },
 		storage: makeStorage(local),
 	};
 	registerDaemonLink({

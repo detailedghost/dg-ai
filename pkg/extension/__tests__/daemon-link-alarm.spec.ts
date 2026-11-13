@@ -40,7 +40,7 @@ function bootLink() {
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			sendMessage: mock(() => Promise.resolve(undefined)),
 		},
-		tabs: { create: mock(() => Promise.resolve()) },
+		tabs: { create: mock(() => Promise.resolve()), onUpdated: { addListener: () => undefined, removeListener: () => undefined } },
 		storage: makeStorage(makeLocalArea()),
 		alarms,
 	};

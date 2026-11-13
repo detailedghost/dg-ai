@@ -57,6 +57,7 @@ type Options = {
 	clock?: { now: number };
 	onApproval?: () => void;
 	enabledBuiltIns?: () => Promise<Set<string>>;
+	pageDeadlineMs?: number;
 };
 
 type Executed = {
@@ -121,6 +122,7 @@ function harness(options: Options = {}) {
 		},
 		now: () => clock.now,
 		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
+		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 	});
 	const call = (
 		request: PwExtRequest,
@@ -1980,5 +1982,117 @@ describe("pw --ext data.tools redaction", () => {
 		await h.run({ verb: "unmask", minutes: 15 });
 		const answer = await h.run({ verb: "tools" });
 		expect(answer.ok && JSON.stringify(answer.data.tools)).toContain("ada@clinic.test");
+	});
+});
+
+describe("pw --ext dialog", () => {
+	const at = Date.UTC(2026, 10, 12, 9, 0);
+	const confirmDelete = {
+		type: "confirm",
+		message: "Delete the item? token=abc123def456 ada@clinic.test",
+		answer: "dismiss",
+		by: "default",
+		seen: false,
+		at,
+	};
+	const dialogCalls = (h: ReturnType<typeof harness>) =>
+		h.executed().filter((call) => call.world === "MAIN" && (call as { func?: { name?: string } }).func?.name === "pwExtDialogs");
+
+	it("shows the last dialog, how it was answered, and the answer set for the next one, all masked", async () => {
+		const h = harness({
+			mainResult: () => ({ dialogs: [confirmDelete], pending: { answer: "accept", withText: false } }),
+		});
+		const text = outcome(await h.run({ verb: "dialog" }));
+		expect(text).toContain("### Dialog");
+		expect(text).toContain('- last: confirm "Delete the item? token=[redacted] [redacted]", dismissed by default');
+		expect(text).toContain("- next: accept");
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([[{ kind: "read", markSeen: true }, WEB_TAB.url]]);
+	});
+
+	it("says when the page showed no dialog", async () => {
+		const h = harness({ mainResult: () => ({ dialogs: [] }) });
+		expect(outcome(await h.run({ verb: "dialog" }))).toContain("No dialog on this page since pw --ext began to watch it.");
+	});
+
+	it("sets a one-shot answer with prompt text", async () => {
+		const h = harness({ mainResult: () => ({ dialogs: [], pending: { answer: "accept", withText: true } }) });
+		const answer = await h.run({ verb: "dialog", answer: "accept", text: "Grace" });
+		expect(outcome(answer)).toContain("The next dialog on this page gets accept, with your text.");
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([
+			[{ kind: "answer", answer: "accept", text: "Grace" }, WEB_TAB.url],
+		]);
+	});
+
+	it("refuses prompt text that holds a filled secret and sends nothing to the page", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ dialogs: [] }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		const answer = await h.run({ verb: "dialog", answer: "accept", text: "my orchid-maple" });
+		expect(answer.ok).toBe(false);
+		expect(outcome(answer)).toContain("filled as a secret");
+		expect(outcome(answer)).not.toContain("orchid-maple");
+		expect(dialogCalls(h)).toEqual([]);
+	});
+
+	it("refuses the mailbox and browser pages", async () => {
+		const proton = harness({ tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
+		expect((await proton.run({ verb: "dialog" })).ok).toBe(false);
+		const settings = harness({ tabs: [{ ...WEB_TAB, url: "chrome://settings/" }] });
+		expect((await settings.run({ verb: "dialog", answer: "dismiss" })).ok).toBe(false);
+		expect([...dialogCalls(proton), ...dialogCalls(settings)]).toEqual([]);
+	});
+
+	it("rejects a malformed dialog reply from the page", async () => {
+		const h = harness({ mainResult: () => ({ dialogs: [{ ...confirmDelete, type: "beforeunload" }] }) });
+		expect(await h.run({ verb: "dialog" })).toEqual({ ok: false, error: "The page returned an unexpected dialog result." });
+	});
+
+	it("lists unseen dialogs and the next answer at the top of a snapshot, read before the page action", async () => {
+		const h = harness({
+			pageResult: { tree: 'button "Delete" [ref=e1]', text: "Items" },
+			mainResult: () => ({ dialogs: [{ ...confirmDelete, seen: true }, { ...confirmDelete, type: "alert", message: "Gone" }], pending: { answer: "dismiss", withText: false } }),
+		});
+		const text = outcome(await h.run({ verb: "snapshot" }));
+		expect(text).toContain('### Dialog\n- alert "Gone", dismissed by default\n- next: dismiss');
+		expect(text).not.toContain("Delete the item?");
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([[{ kind: "read", markSeen: true }, WEB_TAB.url]]);
+		expect(h.executed().at(-1)?.world).toBeUndefined();
+	});
+
+	it("keeps the snapshot when the dialog read fails", async () => {
+		const h = harness({ pageResult: { tree: 'button "Go" [ref=e1]', text: "Go" }, mainResult: () => "nonsense" });
+		const answer = await h.run({ verb: "snapshot" });
+		expect(answer.ok).toBe(true);
+		expect(outcome(answer)).not.toContain("### Dialog");
+	});
+
+	it("installs the shim as early as it can in agent tabs of any session, and in no user tab", async () => {
+		const h = harness({
+			tabs: [
+				WEB_TAB,
+				groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }),
+				groupTab(9, { url: "https://app.example.test/", incognito: true }),
+				groupTab(10, { url: "chrome://settings/" }),
+			],
+		});
+		for (const tabId of [7, 8, 9, 10, 20, 21]) h.fake.fireUpdated(tabId, { status: "loading" });
+		h.fake.fireUpdated(7, { title: "x" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const installs = dialogCalls(h);
+		expect(installs.map((call) => call.target.tabId)).toEqual([7, 20]);
+		expect(installs[0]).toMatchObject({ world: "MAIN", injectImmediately: true, args: [{ kind: "install" }] });
+	});
+
+	it("names a possible dialog when the page does not answer in time", async () => {
+		const h = harness({ pageResult: new Promise(() => {}), pageDeadlineMs: 20 });
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("It may show a dialog that pw --ext could not catch"),
+		});
 	});
 });
