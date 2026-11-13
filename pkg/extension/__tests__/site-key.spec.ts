@@ -32,6 +32,9 @@ describe("siteOf", () => {
 		["http://[::1]/", "http://[::1]"],
 		["http://intranet/home", "http://intranet"],
 		["https://github.io/", "https://github.io"],
+		["https://example.com./", "https://example.com."],
+		["https://foo.github.io./", "https://foo.github.io."],
+		["http://app.localhost./", "http://app.localhost."],
 	])("keys %s by its exact host", (url, key) => {
 		expect(siteOf(url)).toEqual({ key, name: key.replace(/^https:\/\//, ""), grouped: false });
 	});

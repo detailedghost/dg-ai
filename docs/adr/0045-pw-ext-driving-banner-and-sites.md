@@ -124,7 +124,9 @@ section (`siteOf` in `pkg/extension/lib/background/site-key.ts`).
 - The scheme stays in the key, so `http` and `https` are separate sites. A
   grouped key has no port, so it covers every port of the domain. An IP
   address, `localhost`, a single-label host or a bare public suffix has no
-  registrable domain; it keys by its exact origin, port included.
+  registrable domain; it keys by its exact origin, port included. A host with
+  a trailing dot (`example.com.`) also keys by its exact origin, because the
+  list lookup would read it as a bare top-level domain.
 - Verbs that ask for one site of one session at the same time share one popup.
   After a Deny, the verbs that were sent before the answer fail without a new
   popup. A verb sent after the answer can ask again.
