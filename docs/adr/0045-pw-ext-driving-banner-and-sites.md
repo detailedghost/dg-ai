@@ -49,6 +49,9 @@ The mailbox guard runs first and does not change.
   banner text through the closed shadow root.
 - **Bad:** work that a stopped verb already started in the page, such as a
   click, can still finish; only its result is dropped.
+- **Bad:** while a page shows its own modal `<dialog>`, the rest of the page,
+  the banner too, is inert, so Stop cannot be clicked until the modal closes.
+  Closing the tab or its group still takes the tab back.
 - **Bad:** a mailbox tab gets no banner, because the worker never injects into
   a mailbox origin. Only the WebMCP verbs that the mailbox guard lets through
   run there.

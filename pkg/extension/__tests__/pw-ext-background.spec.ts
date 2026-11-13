@@ -2521,6 +2521,24 @@ describe("pw --ext Stop", () => {
 		expect(h.fake.raw.tabs.captureVisibleTab).not.toHaveBeenCalled();
 	});
 
+	it("runs nothing for a verb whose first Stop check was still pending when Stop came", async () => {
+		const h = harness({ sites: "ask", record: false, approval: "allow" });
+		const get = h.fake.raw.storage.session.get;
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		get.mockImplementationOnce(async (keys?: string | string[] | null) => {
+			await gate;
+			return {} as never;
+		});
+		const opening = h.run({ verb: "new", url: "https://next.example.test/" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await h.handler.stop(SESSION);
+		release?.();
+		expect(await opening).toEqual({ ok: false, error: STOPPED });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.created()).toEqual([]);
+	});
+
 	it("stops the session that owns the tab, and nothing for a user tab", async () => {
 		const h = harness({ sites: "ask" });
 		await h.handler.stopTab(21);

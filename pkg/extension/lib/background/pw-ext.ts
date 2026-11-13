@@ -1216,7 +1216,7 @@ export function createPwExtHandler({
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;
-		if (await isStopped(sessionId)) return STOPPED;
+		if (halted.has(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
 		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
 		const controller = new AbortController();
@@ -1232,6 +1232,7 @@ export function createPwExtHandler({
 		running.add(run);
 		live.set(sessionId, running);
 		try {
+			if (await isStopped(sessionId)) return STOPPED;
 			const result = await Promise.race([execute(request, context, controller.signal), stopped]);
 			if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
 			return scrub(result, await held());
