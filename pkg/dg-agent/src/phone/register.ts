@@ -19,6 +19,7 @@ export type PhoneApi = Pick<
 	| "phoneContactsRemove"
 	| "phoneFiles"
 	| "phonePresence"
+	| "phoneRoster"
 	| "phoneSay"
 	| "phonePing"
 	| "phoneInbox"
@@ -172,6 +173,15 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.action(async (state: string | undefined) => {
 			const phone = await load();
 			phone.phonePresence(state, phone.deps(getSession()));
+		});
+
+	group
+		.command("roster")
+		.description("print whether this phone exchanges rosters, or turn that on or off")
+		.argument("[state]", "on or off")
+		.action(async (state: string | undefined) => {
+			const phone = await load();
+			phone.phoneRoster(state, phone.deps(getSession()));
 		});
 
 	const attachGroupVerbs = (parent: Command): void => {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { debuglog } from "node:util";
 import { DgCliError, isRecord } from "@dg/common";
 import { getPublicKey, nip19 } from "nostr-tools";
 import {
@@ -35,6 +36,7 @@ import {
 	normalizeHandle,
 	pubkeyHex,
 	readPublishConfirmSetting,
+	readRosterOn,
 } from "./store";
 
 export const ROSTER_VERSION = 1;
@@ -64,7 +66,12 @@ export type RosterDeps = KeyDeps & {
 	homeDir?: string;
 	sessionId?: string;
 	writeErr?: (text: string) => void;
+	/** Debug line for a roster this phone is ignoring. Absent uses NODE_DEBUG=dg-phone. */
+	debug?: (text: string) => void;
 };
+
+const rosterDebug = debuglog("dg-phone");
+const rosterIgnored = new WeakSet<object>();
 
 const RUNTIMES = new Set<AgentRuntime>(["claude", "codex", "grok", "dg"]);
 
@@ -228,7 +235,7 @@ function applyRosterBody(
 	}
 	const removed: string[] = [];
 	for (const contact of listContacts(db)) {
-		if (contact.originNpub !== senderNpub || wanted.has(contact.npub)) continue;
+		if (contact.via !== "roster" || contact.originNpub !== senderNpub || wanted.has(contact.npub)) continue;
 		db.removeContact(contact.npub);
 		removed.push(contact.handle);
 	}
@@ -244,7 +251,7 @@ export function clearMachineContacts(db: PhoneDb, handleArg: string): { machine:
 	const machineNpub = named.originNpub ?? named.npub;
 	const removed: string[] = [];
 	for (const contact of listContacts(db)) {
-		if (contact.originNpub !== machineNpub) continue;
+		if (contact.via !== "roster" || contact.originNpub !== machineNpub) continue;
 		db.removeContact(contact.npub);
 		removed.push(contact.handle);
 	}
@@ -339,20 +346,23 @@ async function ownNpubs(deps: RosterDeps): Promise<Set<string>> {
 export async function syncIdentities(deps: RosterDeps): Promise<void> {
 	const found = namesForRoster(discoveredAgents(deps), ROSTER_LIMIT);
 	const have = new Set(deps.db.listIdentities().map((row) => row.handle));
+	let stored = have.size;
 	for (const agent of found) {
 		if (have.has(agent.handle)) continue;
-		if (deps.db.listIdentities().length >= ROSTER_LIMIT) break;
+		if (stored >= ROSTER_HARD_CAP) break;
 		const keyId = `agent-${agent.handle}`;
 		await ensureKey(deps, keyId);
 		deps.db.putIdentity(agent.handle, keyId, agent.runtime);
 		have.add(agent.handle);
+		stored += 1;
 	}
 }
 
 export async function localRoster(deps: RosterDeps): Promise<RosterAgent[]> {
+	const wanted = new Set(namesForRoster(discoveredAgents(deps), ROSTER_LIMIT).map((agent) => agent.handle));
 	const agents: RosterAgent[] = [];
 	for (const row of deps.db.listIdentities()) {
-		if (!isHandle(row.handle)) continue;
+		if (!wanted.has(row.handle) || !isHandle(row.handle)) continue;
 		const loaded = await loadKey(deps, row.key_id);
 		if (!loaded) continue;
 		const runtime = runtimeOf(row.runtime);
@@ -375,6 +385,7 @@ export async function sendRoster(
 	intent: RosterIntent,
 	opts: { force?: boolean; agents?: RosterAgent[]; hash?: string } = {},
 ): Promise<boolean> {
+	if (!readRosterOn(deps.db)) return false;
 	const contact = findContactByNpub(deps.db, npub);
 	if (!contact) return false;
 	const agents = opts.agents ?? (await localRoster(deps));
@@ -412,8 +423,20 @@ function npubFromHex(hex: string): string | undefined {
 	}
 }
 
+function noteRosterIgnored(deps: RosterDeps): void {
+	if (rosterIgnored.has(deps.db)) return;
+	rosterIgnored.add(deps.db);
+	const line = "phone: roster is off; ignoring a roster\n";
+	if (deps.debug) deps.debug(line);
+	else rosterDebug(line.trimEnd());
+}
+
 /** Applies one roster rumor. An offer from a contact gets one reply. A stranger is held, not stored. */
 export async function handleIncomingRoster(deps: RosterDeps, control: ControlRumor): Promise<void> {
+	if (!readRosterOn(deps.db)) {
+		noteRosterIgnored(deps);
+		return;
+	}
 	const parsed = rosterFromControl(control);
 	if (!parsed) return;
 	const sender = npubFromHex(control.from);
@@ -431,6 +454,7 @@ export async function handleIncomingRoster(deps: RosterDeps, control: ControlRum
 // Stryker disable all
 /** After a new contact lands: apply a roster that arrived first, and offer ours when they did not. */
 export async function announceRoster(deps: RosterDeps, npub: string): Promise<void> {
+	if (!readRosterOn(deps.db)) return;
 	const held = deps.db.takeHeldRoster(npub);
 	if (held) {
 		const agents = parseRosterBody(held.body);
@@ -461,6 +485,7 @@ export async function settleCaughtRosters(deps: RosterDeps, controls: readonly C
 
 // Stryker restore all
 export async function flushRosterPush(deps: RosterDeps): Promise<number> {
+	if (!readRosterOn(deps.db)) return 0;
 	await syncIdentities(deps);
 	const agents = await localRoster(deps);
 	const hash = rosterHash(agents);
