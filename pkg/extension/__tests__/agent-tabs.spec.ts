@@ -262,6 +262,38 @@ describe("agent tabs open", () => {
 		expect(fake.record(SESSION_A)).toBeUndefined();
 	});
 
+	it("adopts no person-made group whose id matches a record saved before a browser restart", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.tabs.clear();
+		fake.groups.clear();
+		fake.addTab({ id: 900, groupId: group });
+		fake.addGroup({ id: group, windowId: 1, title: "Reading list" });
+		fake.reload();
+
+		expect(await agentTabs.restore()).toEqual([]);
+		expect(fake.record(SESSION_A)).toBeUndefined();
+		expect(agentTabs.list({ sessionId: SESSION_A })).resolves.toEqual([]);
+		const next = await open(SESSION_A, "https://b.example.test/");
+		expect(groupOf(fake, next.tabId)).not.toBe(group);
+	});
+
+	it("drops saved records of sessions that are not paired when it restores", async () => {
+		const { fake, agentTabs, open } = setup();
+		await open(SESSION_A);
+		await open(SESSION_B);
+		fake.reload();
+
+		await agentTabs.restore({ paired: new Set([SESSION_B]) });
+
+		expect(fake.record(SESSION_A)).toBeUndefined();
+		expect(fake.record(SESSION_B)).toBeDefined();
+		fake.reload();
+		await agentTabs.restore();
+		expect(fake.record(SESSION_A)).toBeUndefined();
+	});
+
 	it("reports the tabs of a recovered group", async () => {
 		const { fake, open } = setup();
 		const first = await open();

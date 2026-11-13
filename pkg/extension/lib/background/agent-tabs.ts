@@ -98,6 +98,8 @@ export type AgentRecord = {
 	selectedTabId?: number;
 };
 
+type SavedRecord = AgentRecord & { windowId?: number; tabIds?: number[] };
+
 export type AgentTab = {
 	tabId: number;
 	title: string;
@@ -220,18 +222,29 @@ export function createAgentTabs({
 		return (await storage.session.get(key))[key] as AgentRecord | undefined;
 	}
 
-	async function write(record: AgentRecord): Promise<void> {
-		await storage.session.set({ [recordKey(record.sessionId)]: record });
-		await storage.local?.set({
-			[persistKey(record.sessionId)]: withoutSelection(record),
-		});
+	async function persist(record: AgentRecord): Promise<void> {
+		const group = await api.tabGroups.get(record.groupId).catch(() => undefined);
+		const tabs = await api.tabs
+			.query({ groupId: record.groupId })
+			.catch(() => []);
+		const saved: SavedRecord = {
+			...withoutSelection(record),
+			...(group ? { windowId: group.windowId } : {}),
+			tabIds: tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
+		};
+		await storage.local?.set({ [persistKey(record.sessionId)]: saved });
 	}
 
-	async function persisted(): Promise<AgentRecord[]> {
+	async function write(record: AgentRecord): Promise<void> {
+		await storage.session.set({ [recordKey(record.sessionId)]: record });
+		await persist(record);
+	}
+
+	async function persisted(): Promise<SavedRecord[]> {
 		const stored = (await storage.local?.get(null)) ?? {};
 		return Object.entries(stored)
 			.filter(([key]) => key.startsWith(PERSIST_PREFIX))
-			.map(([, record]) => record as AgentRecord);
+			.map(([, record]) => record as SavedRecord);
 	}
 
 	async function drop(sessionId: string): Promise<void> {
@@ -245,22 +258,24 @@ export function createAgentTabs({
 		const taken = await agentGroupIds({ storage });
 		const key = persistKey(sessionId);
 		const saved = ((await storage.local?.get(key)) ?? {})[key] as
-			| AgentRecord
+			| SavedRecord
 			| undefined;
 		if (!saved) return undefined;
+		const group = await api.tabGroups.get(saved.groupId).catch(() => undefined);
+		const tabs = group ? await api.tabs.query({ groupId: saved.groupId }) : [];
+		const tabIds = tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id]));
 		if (
 			taken.has(saved.groupId) ||
-			(await liveGroupWindow(saved)) === undefined
+			(await liveGroupWindow(saved)) === undefined ||
+			group?.windowId !== saved.windowId ||
+			!tabIds.some((tabId) => saved.tabIds?.includes(tabId))
 		) {
 			await storage.local?.remove(key);
 			return undefined;
 		}
-		await write(saved);
-		const tabs = await api.tabs.query({ groupId: saved.groupId });
-		return {
-			record: saved,
-			tabIds: tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
-		};
+		const { windowId: _window, tabIds: _tabs, ...record } = saved;
+		await write(record);
+		return { record, tabIds };
 	}
 
 	async function rows(record: AgentRecord): Promise<AgentTab[]> {
@@ -398,6 +413,7 @@ export function createAgentTabs({
 						windowId: tab.windowId,
 					});
 					if (joined !== record) await write(joined);
+					else await persist(joined);
 					return { tabId, recoveredTabIds: recovered?.tabIds ?? [] };
 				} catch (error) {
 					await api.tabs.remove(tabId).catch(() => undefined);
@@ -576,12 +592,16 @@ export function createAgentTabs({
 			});
 		},
 
-		restore(): Promise<number[]> {
+		restore({ paired }: { paired?: ReadonlySet<string> } = {}): Promise<number[]> {
 			return locked(async () => {
 				const tabIds: number[] = [];
 				const known = new Set((await readRecords(storage)).map((r) => r.sessionId));
 				for (const record of await persisted()) {
 					if (known.has(record.sessionId)) continue;
+					if (paired && !paired.has(record.sessionId)) {
+						await storage.local?.remove(persistKey(record.sessionId));
+						continue;
+					}
 					const recovered = await recover(record.sessionId);
 					if (recovered) tabIds.push(...recovered.tabIds);
 				}
@@ -677,8 +697,11 @@ export function registerAgentTabs({
 		() => void agentTabs.clearAll().catch(logCleanupFailure),
 	);
 
-	void agentTabs
-		.restore()
+	void pairings
+		.list()
+		.then((held) =>
+			agentTabs.restore({ paired: new Set(held.map((h) => h.sessionId)) }),
+		)
 		.then((tabIds) => tabIds.forEach((tabId) => onAdopted?.(tabId)))
 		.catch(logCleanupFailure);
 
