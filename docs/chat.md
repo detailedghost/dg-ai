@@ -104,8 +104,10 @@ bytes that run are the bytes that matched the pin, and a script keeps its `#!`
 line. A listed script cannot load files next to it by a relative path, because
 it runs from that copy. The command runs in the daemon's home directory, not
 in your working directory, and gets a private per-run `TMPDIR`. For a `pw/`
-value the command runs with the daemon's own `PATH`, `HOME` and
-`XDG_CONFIG_HOME`. From your environment it keeps only locale, terminal and
+value the command runs with a fixed system `PATH`
+(`/usr/local/bin:/usr/bin:/bin`, plus `/opt/homebrew/bin` on macOS when you
+cannot write it; Windows keeps the daemon's `PATH`), and with the daemon's own
+`HOME` and `XDG_CONFIG_HOME`. From your environment it keeps only locale, terminal and
 user names (`LANG`, `LC_*`, `TZ`, `TERM`, `USER` and similar). It drops all
 other variables, such as `LD_PRELOAD`, `NODE_OPTIONS`, `LUA_INIT`,
 `HTTPS_PROXY` or `GIT_CONFIG_GLOBAL`. Set any other variable in the wrapper
@@ -114,6 +116,9 @@ script.
 A wrapper must not pass `"$@"` or any other agent input to a general tool.
 If it does, the agent picks the arguments, and the wrapper is the same as that
 tool. Give the wrapper fixed arguments.
+A pinned script pins only its own bytes. It should call tools by absolute
+path and must not import from user-writable places (for example user
+site-packages or node_modules).
 
 List only paths that the agent cannot write. A script the agent can edit is
 the same as an interpreter; the pin catches an edit, but deny writes to it too.

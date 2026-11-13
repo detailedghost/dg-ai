@@ -10,6 +10,7 @@ import {
 	PW_EXT_WRITE_VERBS,
 } from "@dg/common";
 import { execAllowlistLine } from "@dg/common/node";
+import { sealedPath } from "../../src/server/credentials";
 import {
 	cleanupDgHome,
 	closeSockets,
@@ -341,13 +342,19 @@ describe("pw --ext credential save through the daemon", () => {
 		expect(done).toMatchObject({ ok: true, value: { exitCode: code } });
 	});
 
+	it("gives a pw/ exec a fixed system PATH, with Homebrew on macOS only when it is not writable", () => {
+		expect(sealedPath("linux")).toBe("/usr/local/bin:/usr/bin:/bin");
+		expect(sealedPath("darwin", () => false)).toBe("/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin");
+		expect(sealedPath("darwin", () => true)).toBe("/usr/local/bin:/usr/bin:/bin");
+	});
+
 	it("runs a private copy of the pinned bytes from the daemon's home with a private TMPDIR, then deletes it", async () => {
 		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
 		const tool = script(
-			"const fs = require('node:fs'); const me = process.argv[1]; console.log(JSON.stringify({ me, mode: (fs.statSync(me).mode & 0o777).toString(8), dir: (fs.statSync(require('node:path').dirname(require('node:path').dirname(me))).mode & 0o777).toString(8), cwd: process.cwd(), tmp: process.env.TMPDIR, tmpMode: (fs.statSync(process.env.TMPDIR).mode & 0o777).toString(8) }));",
+			"const fs = require('node:fs'); const me = process.argv[1]; console.log(JSON.stringify({ path: process.env.PATH, me, mode: (fs.statSync(me).mode & 0o777).toString(8), dir: (fs.statSync(require('node:path').dirname(require('node:path').dirname(me))).mode & 0o777).toString(8), cwd: process.cwd(), tmp: process.env.TMPDIR, tmpMode: (fs.statSync(process.env.TMPDIR).mode & 0o777).toString(8) }));",
 		);
 		allow([execAllowlistLine(tool)]);
 		const frame = execFrame([tool]);
@@ -358,7 +365,9 @@ describe("pw --ext credential save through the daemon", () => {
 			.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).stream === "stdout")
 			.map((raw) => (raw as Frame).data)
 			.join("");
-		const seen = JSON.parse(out) as { me: string; mode: string; dir: string; cwd: string; tmp: string; tmpMode: string };
+		const seen = JSON.parse(out) as { path: string; me: string; mode: string; dir: string; cwd: string; tmp: string; tmpMode: string };
+		expect(seen.path).toBe(sealedPath());
+		if (process.platform === "linux") expect(seen.path).toBe("/usr/local/bin:/usr/bin:/bin");
 		expect(seen.me).not.toBe(tool);
 		expect(seen.mode).toBe("500");
 		expect(seen.dir).toBe("700");

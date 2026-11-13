@@ -170,8 +170,14 @@ conditions only:
   per-run `TMPDIR`, and deletes it after the run. `dg-skills credentials allow <path> [glob]` prints a pinned
   line and never writes the file. The recommended entry is a small fixed
   wrapper script that the person owns. For a `pw/` exec the daemon keeps only
-  locale, terminal and user variables from the caller, and sets
-  `PATH`, `HOME` and `XDG_CONFIG_HOME` to its own. On disconnect it sends
+  locale, terminal and user variables from the caller, sets `HOME` and
+  `XDG_CONFIG_HOME` to its own, and sets a fixed system `PATH`
+  (`/usr/local/bin:/usr/bin:/bin`, plus `/opt/homebrew/bin` on macOS when it
+  is not user-writable; Windows keeps the daemon's `PATH`). argv[0] still
+  resolves through the daemon's `PATH`, and the pin covers it. A pinned
+  script pins only its own bytes. It should call tools by absolute path and
+  must not import from user-writable places (for example user site-packages
+  or node_modules). On disconnect it sends
   SIGTERM to the process group, then SIGKILL after 2 seconds; on Windows it
   ends the process tree. Names outside `pw/` do not use the allowlist.
 - **What the allowlist does not block.** The agent runs as the same user, so

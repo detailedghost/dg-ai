@@ -8,7 +8,7 @@ import {
 	validateCredentialGrantPrefix,
 } from "@dg/common";
 import { createScrubber } from "@dg/common/node";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -169,11 +169,27 @@ const INJECTION_ENV =
 
 const SAFE_ENV = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ|TERM|COLORTERM|NO_COLOR|COLUMNS|LINES|USER|LOGNAME)$/;
 
-/** Only locale, terminal and user names from the caller, with the daemon's own PATH, HOME and XDG_CONFIG_HOME, and a private TMPDIR. */
+function writable(path: string): boolean {
+	try {
+		accessSync(path, constants.W_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** A fixed system PATH for a pw/ exec; Windows keeps the daemon's own. */
+export function sealedPath(platform = process.platform, canWrite = writable): string {
+	if (platform === "win32") return process.env.PATH ?? "";
+	const homebrew = platform === "darwin" && !canWrite("/opt/homebrew/bin") ? ["/opt/homebrew/bin"] : [];
+	return ["/usr/local/bin", "/usr/bin", "/bin", ...homebrew].join(":");
+}
+
+/** Only locale, terminal and user names from the caller, with a fixed PATH, the daemon's HOME and XDG_CONFIG_HOME, and a private TMPDIR. */
 function sealedEnv(env: Record<string, string>, tmp: string): Record<string, string> {
 	const kept = Object.fromEntries(Object.entries(env).filter(([name]) => SAFE_ENV.test(name)));
 	const own = (name: string) => (process.env[name] === undefined ? {} : { [name]: process.env[name] as string });
-	return { ...kept, PATH: process.env.PATH ?? "", ...own("HOME"), ...own("XDG_CONFIG_HOME"), TMPDIR: tmp };
+	return { ...kept, PATH: sealedPath(), ...own("HOME"), ...own("XDG_CONFIG_HOME"), TMPDIR: tmp };
 }
 
 /** Writes the checked bytes to a private 0700 dir as a 0500 file, with a private tmp dir beside it. */
