@@ -2184,7 +2184,7 @@ describe("pw --ext dialog", () => {
 	it("installs the shim in the tabs of a recovered group when new reuses it", async () => {
 		const h = harness({ record: false });
 		await h.fake.raw.storage.local.set({
-			[`agentTabsGroup:${SESSION}`]: { ...recordOf({ sessionId: SESSION, agentIdentity: IDENTITY, groupId: GROUP }), windowId: WINDOW, tabIds: [7] },
+			[`agentTabsGroup:${SESSION}`]: { ...recordOf({ sessionId: SESSION, agentIdentity: IDENTITY, groupId: GROUP }), windowId: WINDOW, groupTitle: "mine", tabIds: [7] },
 		});
 		await h.run({ verb: "new", url: "https://app.example.test/" });
 		const tab = await h.createdTab();

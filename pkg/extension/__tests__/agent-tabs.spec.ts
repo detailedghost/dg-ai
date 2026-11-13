@@ -53,6 +53,8 @@ mock.module("wxt/browser", () => ({
 					addListener: (fn: (group: { id: number }) => void) =>
 						currentGroupRemoved.add(fn),
 				},
+				onUpdated: { addListener: () => undefined },
+				onMoved: { addListener: () => undefined },
 			};
 		},
 		get runtime() {
@@ -294,6 +296,32 @@ describe("agent tabs open", () => {
 		expect(fake.record(SESSION_A)).toBeUndefined();
 	});
 
+	it("reuses a group the person moved to another window", async () => {
+		const { fake, agentTabs, open } = setup({
+			windows: [windowOf({ id: 1 }), windowOf({ id: 2, focused: false })],
+		});
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.windowId = 2;
+		fake.tabs.get(first.tabId)!.windowId = 2;
+		await agentTabs.groupChanged({ groupId: group });
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).toBe(group);
+	});
+
+	it("does not adopt a group whose title no longer matches the saved one", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = "Reading list";
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).not.toBe(group);
+	});
+
 	it("reports the tabs of a recovered group", async () => {
 		const { fake, open } = setup();
 		const first = await open();
@@ -306,10 +334,11 @@ describe("agent tabs open", () => {
 	});
 
 	it("reuses a renamed group through the saved group id", async () => {
-		const { fake, open } = setup();
+		const { fake, agentTabs, open } = setup();
 		const first = await open();
 		const group = groupOf(fake, first.tabId);
 		fake.groups.get(group)!.title = "my rename";
+		await agentTabs.groupChanged({ groupId: group });
 		fake.reload();
 		const second = await open(SESSION_A, "https://b.example.test/");
 
@@ -363,6 +392,7 @@ describe("agent tabs open", () => {
 		const first = await open();
 		const group = groupOf(fake, first.tabId);
 		fake.groups.get(group)!.title = "my rename";
+		await agentTabs.groupChanged({ groupId: group });
 		fake.reload();
 		await agentTabs.clearAll();
 		const second = await open(SESSION_A, "https://b.example.test/");

@@ -68,6 +68,7 @@ export type AgentTabsBrowserApi = {
 		get(groupId: number): Promise<{
 			windowId: number;
 			color?: GroupColor;
+			title?: string;
 		}>;
 	};
 };
@@ -98,7 +99,7 @@ export type AgentRecord = {
 	selectedTabId?: number;
 };
 
-type SavedRecord = AgentRecord & { windowId?: number; tabIds?: number[] };
+type SavedRecord = AgentRecord & { windowId?: number; groupTitle?: string; tabIds?: number[] };
 
 export type AgentTab = {
 	tabId: number;
@@ -229,7 +230,7 @@ export function createAgentTabs({
 			.catch(() => []);
 		const saved: SavedRecord = {
 			...withoutSelection(record),
-			...(group ? { windowId: group.windowId } : {}),
+			...(group ? { windowId: group.windowId, groupTitle: group.title } : {}),
 			tabIds: tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
 		};
 		await storage.local?.set({ [persistKey(record.sessionId)]: saved });
@@ -268,12 +269,13 @@ export function createAgentTabs({
 			taken.has(saved.groupId) ||
 			(await liveGroupWindow(saved)) === undefined ||
 			group?.windowId !== saved.windowId ||
+			group?.title !== saved.groupTitle ||
 			!tabIds.some((tabId) => saved.tabIds?.includes(tabId))
 		) {
 			await storage.local?.remove(key);
 			return undefined;
 		}
-		const { windowId: _window, tabIds: _tabs, ...record } = saved;
+		const { windowId: _window, groupTitle: _title, tabIds: _tabs, ...record } = saved;
 		await write(record);
 		return { record, tabIds };
 	}
@@ -609,6 +611,13 @@ export function createAgentTabs({
 			});
 		},
 
+		groupChanged({ groupId }: { groupId: number }): Promise<void> {
+			return locked(async () => {
+				for (const record of await readRecords(storage))
+					if (record.groupId === groupId) await persist(record);
+			});
+		},
+
 		clearAll(): Promise<void> {
 			return locked(async () => {
 				for (const record of await readRecords(storage))
@@ -704,6 +713,11 @@ export function registerAgentTabs({
 		)
 		.then((tabIds) => tabIds.forEach((tabId) => onAdopted?.(tabId)))
 		.catch(logCleanupFailure);
+
+	const groupChanged = (group: { id: number }) =>
+		void agentTabs.groupChanged({ groupId: group.id }).catch(logCleanupFailure);
+	browser.tabGroups.onUpdated.addListener(groupChanged);
+	browser.tabGroups.onMoved.addListener(groupChanged);
 
 	browser.tabGroups.onRemoved.addListener(
 		(group) =>
