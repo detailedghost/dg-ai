@@ -6,7 +6,19 @@ import type { Gate } from "./chat";
 import { PHONE_SYSTEM_SENDER, type ContactRow, type InviteRow, type PhoneDb } from "./db";
 
 export type NumberRecord = { secret: string; as: string; rotatedAt?: number };
-export type ContactRecord = { npub: string; handle: string; relays: string[]; keyId: string; addedAt: number; via: string; lastSeen?: number };
+export type ContactRecord = {
+	npub: string;
+	handle: string;
+	relays: string[];
+	keyId: string;
+	addedAt: number;
+	via: string;
+	lastSeen?: number;
+	/** Paired machine this roster contact came from. */
+	originNpub?: string;
+	/** Runtime label carried by the roster entry. */
+	runtime?: string;
+};
 export type InviteRecord = { secret: string; expiresAt: number; asName: string; name?: string; keyId: string; relays: string[] };
 export type OnMessageConfig = { argv: string[]; timeoutMs: number };
 /** The `--on-message` hook `open` installed and the autostart manager it last reported, so a bare
@@ -189,6 +201,8 @@ function toContactRecord(row: ContactRow): ContactRecord {
 		addedAt: row.added_at,
 		via: row.via,
 		...(row.last_seen === null ? {} : { lastSeen: row.last_seen }),
+		...(row.origin_npub ? { originNpub: row.origin_npub } : {}),
+		...(row.runtime ? { runtime: row.runtime } : {}),
 	};
 }
 
@@ -238,6 +252,8 @@ export function addContact(db: PhoneDb, record: ContactRecord): void {
 		key_id: record.keyId,
 		added_at: record.addedAt,
 		via: record.via,
+		origin_npub: record.originNpub ?? null,
+		runtime: record.runtime ?? null,
 	});
 }
 
@@ -249,6 +265,8 @@ export function insertNewContact(db: PhoneDb, record: ContactRecord): boolean {
 		key_id: record.keyId,
 		added_at: record.addedAt,
 		via: record.via,
+		origin_npub: record.originNpub ?? null,
+		runtime: record.runtime ?? null,
 	});
 }
 
@@ -256,7 +274,7 @@ export function renameContact(db: PhoneDb, handle: string, newHandle: string): C
 	const existing = db.getContactByHandle(handle);
 	if (!existing) throw new DgCliError(`no contact +${handle}`);
 	requireFreeHandle(db, newHandle);
-	db.putContact({ ...existing, handle: newHandle });
+	db.putContact({ ...existing, handle: newHandle, origin_npub: existing.origin_npub, runtime: existing.runtime });
 	return toContactRecord({ ...existing, handle: newHandle });
 }
 

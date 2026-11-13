@@ -83,11 +83,13 @@ export const FILE_REQUEST_KIND = 25015;
 export const RECEIPT_KIND = 25016;
 /** Rumor kind of a presence beat or a `phone ping` check. Unregistered as of 2026-11-04. */
 export const PRESENCE_KIND = 25017;
+/** Rumor kind of a machine roster. Unregistered. Older peers do not list it, so they drop it and keep kind 14 mail. */
+export const ROSTER_KIND = 25018;
 /** On a presence rumor, asks the listener to answer with a receipt naming the wrap id. */
 export const ACK_TAG = "dg-ack";
 /** On a receipt, says the ping was rate limited and the sender should try later. */
 export const BUSY_TAG = "dg-busy";
-const CONTROL_KINDS: ReadonlySet<number> = new Set([FILE_REQUEST_KIND, RECEIPT_KIND, PRESENCE_KIND]);
+const CONTROL_KINDS: ReadonlySet<number> = new Set([FILE_REQUEST_KIND, RECEIPT_KIND, PRESENCE_KIND, ROSTER_KIND]);
 export const CALL_TAG = "dg-call";
 /** Carries the caller's self-reported name, so a fresh admit can name the new contact after it. */
 export const SELF_NAME_TAG = "dg-as";
@@ -451,6 +453,8 @@ export type FetchResult = {
 	reacceptByMessageId: Map<string, Reaccept>;
 	/** Thread rumors that were not admitted. The listener holds these and does not store them as mail. */
 	held: HeldThread[];
+	/** Roster rumors in this batch. They are not mail. */
+	controls: ControlRumor[];
 };
 
 /** Opens the whole batch first, then admits in time order, so the earliest valid call wins. */
@@ -471,13 +475,21 @@ export async function fetchNew(
 	const ownPubs = keys.map((held) => held.pub);
 	const opened: { event: NostrEvent; rumor: Rumor; keyId: string }[] = [];
 	const skipped: string[] = [];
+	const controls: ControlRumor[] = [];
 	for (const event of events) {
 		if (known.has(event.id)) continue;
 		known.add(event.id);
 		const key = pickKey(event, keys);
 		if (!key) continue;
 		const rumor = open(event, key.sk);
-		if (!rumor) continue;
+		if (!rumor) {
+			const classified = classifyIncoming(event, keys, gate, startedAt, ownPubs);
+			if ("control" in classified && classified.control.kind === ROSTER_KIND) {
+				controls.push(classified.control);
+				skipped.push(event.id);
+			}
+			continue;
+		}
 		if (isSelfProbe(rumor, ownPubs)) {
 			skipped.push(event.id);
 			continue;
@@ -559,6 +571,7 @@ export async function fetchNew(
 		reaccepts,
 		reacceptByMessageId,
 		held,
+		controls,
 	};
 }
 // Stryker disable all

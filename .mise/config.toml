@@ -131,8 +131,23 @@ description = "Run the dg-agent unit tests"
 dir = "pkg/dg-agent"
 run = "bun test"
 
+[tasks."test:phone"]
+description = "Run the dg-agent phone unit tests"
+dir = "pkg/dg-agent"
+run = "bun test __tests__/phone"
+
+[tasks."test:phone:roster"]
+description = "Run the phone roster exchange tests"
+dir = "pkg/dg-agent"
+run = "bun test __tests__/phone/roster.spec.ts"
+
+[tasks."test:phone:roster:mutate"]
+description = "Mutation-test phone roster exchange and session naming"
+dir = "pkg/dg-agent"
+run = "bunx stryker run stryker.roster.conf.mjs"
+
 [tasks."test:phone:mutate"]
-description = "Mutation-test phone catch-up, ensure, and thread modules"
+description = "Mutation-test phone roster, catch-up, ensure, and thread modules"
 dir = "pkg/dg-agent"
 run = "bunx stryker run stryker.phone.conf.mjs"
 

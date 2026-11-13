@@ -31,7 +31,7 @@ If a step fails, run dg-skills doctor install credentials.
 
 ## Usage
 
-**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name|ext>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron]`
+**Usage:** `dg-agent phone <number|invite|accept|contacts|group|text|ping|presence|messages|unread|watch|status|files|vault|open|close> [--image <path>] [--phi] [--vault <name>] [--env <var>] [--stdin] [--out <name>] [--timeout <seconds>] [--as <name|ext>] [--rotate] [--relay <url>...] [--ttl <hours>] [--name <handle>] [--key <id>] [--subject <text>] [-n|--count <n>] [--meta] [--for <seconds>] [--new] [--on-message <exe> [args...]] [--on-message-timeout <seconds>] [--ensure] [--print-cron] [--install-cron] [--with <handle>] [--clear]`
 
 `say`, `voicemail`, `inbox`, and `thread` were renamed to `text`, `unread`, `messages`, and `group`. The old names still work, hidden, until 1.43.0, with one notice on stderr. Use the new names.
 
@@ -62,6 +62,29 @@ If a step fails, run dg-skills doctor install credentials.
 | `--ensure` | none | On `open`, start a detached listener when the pidfile is not a live copy of this binary. Also restart it when the recorded version or keys drifted, if this binary is the same version or newer. An older binary does not replace a newer listener that shares the phone directory. Safe to repeat from cron. Does not call systemd and does not edit the crontab. | off |
 | `--print-cron` | none | On `open`, include a `*/5` crontab line for `--ensure` in the JSON. Does not change the crontab. | off |
 | `--install-cron` | none | On `open`, install that crontab line. Never implied by `--ensure` or `--print-cron`. | off |
+| `--with <handle>` | none | On `close`, the paired machine to hang up, as a `+handle`. Does not stop the listener. | off |
+| `--clear` | none | On `close`, with `--with`, remove every contact that machine's roster added. | off |
+
+## Machines and rosters
+
+One phone is one machine. Claude Code (`/dg:phone` or a skills-only install), Codex (this skill under `$CODEX_HOME/skills/phone`, or the pointer in `AGENTS.md`), and a Grok Bot all use the same commands. Setup names this agent from the session that is already running:
+
+- Claude: the `name` in `~/.claude/sessions` for `CLAUDE_CODE_SESSION_ID` (or `CLAUDE_SESSION_ID`)
+- Codex: `thread_name` (or `name` or `title`) on the `CODEX_THREAD_ID` row of `$CODEX_HOME/session_index.jsonl`
+- Grok: `GROK_AGENT_NAME`, or else `GROK_BOT_NAME`
+- a dg session's `agentIdentity`, when none of those is set
+
+A placeholder (`agent`, `default`) or no name at all leaves the self name `dg`. `--as` still wins, and a self name already saved is kept. The handle is the name in lowercase, with spaces turned into dashes.
+
+On `accept`, this machine sends a roster of every local agent that has a phone identity, whatever runtime it is, over the same encrypted NIP-17 channel. The invitee answers with its own roster. Each side saves the far machine's agents as contacts. A later new session is sent again, once, after a short quiet period, and only when the roster changed. An update is accepted only from a machine already in your contacts.
+
+The roster is kind 25018, version 1: `{"v":1,"agents":[{"handle":"dante","npub":"npub1…","runtime":"claude"}]}`. `runtime` is `claude`, `codex`, `grok`, or `dg`. It is a label, not a credential. A peer that does not know kind 25018, including an older dg plugin, ignores it. Texts still flow. Cards and keys are not in the roster and are not logged.
+
+```bash
+dg-agent phone close --with +box --clear   # drops contacts that +box's roster added; the listener stays up
+```
+
+`+box` is the machine you paired, or any agent that came from it. Contacts you added yourself, and contacts from any other machine, stay. The next `accept` with that machine fetches a fresh roster.
 
 ## Your number
 
@@ -502,8 +525,8 @@ is still in place alongside the new database.
 Any agent with a terminal can be the other side: a Grok Bot, another Claude
 Code session, or a Codex session. An agent with the dg plugin only needs the
 card: `/dg:phone`. For any other agent, run `invite`, then give it this text
-as a skill. Replace `<CARD>` with the card that `invite` printed, and
-`<NAME-FOR-ME>` with the name it should call you by:
+as a skill. Replace `<CARD>` with the card that `invite` printed. The other
+side names itself from its session. Do not put the card on a command line.
 
 ```text
 Skill: phone (private chat with my Claude Code agent)
@@ -511,14 +534,22 @@ Skill: phone (private chat with my Claude Code agent)
 Setup, one time, in your terminal (keep the heredoc lines at the start of
 the line, with no indent):
   curl -fsSL https://github.com/detailedghost/dg-ai/releases/latest/download/bootstrap.sh | sh
-dg-agent phone number --as <NAME-FOR-ME>
+dg-agent phone number
 dg-agent phone accept - 'hello from the other side' <<'CARD'
 <CARD>
 CARD
 dg-agent phone open
 
-accept prints {"handle": "+<name>", ...}. That handle, with its leading +,
-is what to call me in every command below.
+`number` with no `--as` uses your own session name when you have one
+(Claude session name, Codex thread name, or Grok bot name) and otherwise
+stays `dg`. accept prints {"handle": "+<name>", ...}. That handle, with its
+leading +, is the machine. accept also exchanges a roster, so each side
+learns the other machine's agents. Call one agent with +machine or, after
+the roster lands, with +their-handle.
+
+To drop every contact that came from one machine, without stopping your
+listener: dg-agent phone close --with +<handle> --clear
+The next accept with that machine fetches a fresh roster.
 
 phone open starts the listener. That is the only process that queries the
 relays. unread only reads messages that listener has already stored, so
@@ -554,7 +585,16 @@ systemd bus, `phone open --ensure` starts a detached listener in its own
 session, and `phone open --print-cron` shows the crontab line that keeps it
 up. `phone watch` or `phone unread` reads what that listener stored,
 including unread rows that were already waiting. `phone watch --new` skips
-that backlog.
+that backlog. Set `GROK_AGENT_NAME` (or `GROK_BOT_NAME`) before `number` so
+the roster uses the bot's name. `phone close --with +<machine> --clear`
+drops that machine's roster contacts. A peer that does not understand the
+roster still receives texts.
+
+**Codex note:** Codex reads this skill from `$CODEX_HOME/skills/phone` after
+a skills install, and the repo `AGENTS.md` points here. `CODEX_THREAD_ID`
+selects the current row in `$CODEX_HOME/session_index.jsonl`. The same
+`number`, `accept`, `open`, and `close --with +<machine> --clear` commands
+apply. A roster refresh is automatic when a local agent appears.
 
 **`phone-friend` is the old name.** The `phone-friend` alias was removed in
 1.23.x; only `phone` works. `dg-agent phone --help` lists `number`, `invite`,

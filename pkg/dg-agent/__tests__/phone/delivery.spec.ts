@@ -957,7 +957,7 @@ describe("phoneSay and phoneAccept delivery", () => {
 
 		await phoneAccept(card, "hi", peer);
 
-		expect(script.armed).toEqual([7000]);
+		expect(script.armed).toEqual([7000, 7000]);
 	});
 
 	it("closes the card relays when the inbox lookup throws before the send", async () => {

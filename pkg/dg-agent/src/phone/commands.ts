@@ -75,6 +75,7 @@ import {
 	type ThreadRecipient,
 } from "./thread";
 import { parseOnMessageTimeoutSeconds, PHONE_SAFETY_REF, type CommandPushTarget } from "./push";
+import { announceRoster, clearMachineContacts, discoveredAgents, setupSelfName, syncIdentities } from "./roster";
 import { DEFAULT_INVITE_HOURS, type PhoneApi, registerPhoneGroup, WATCH_DEFAULT_FOR_S } from "./register";
 import {
 	addContact,
@@ -141,6 +142,10 @@ export type PhoneDeps = KeyDeps & {
 	terminal?: Terminal;
 	/** Where `DG_PHONE_AS` is read; absent reads nothing. */
 	env?: Record<string, string | undefined>;
+	/** Home directory for Claude, Codex, and Grok name files. Absent skips those trees. */
+	homeDir?: string;
+	/** dg session id, when the command was started with `--session`. */
+	sessionId?: string;
 };
 
 export type RunDeps = PhoneDeps & {
@@ -231,6 +236,8 @@ function defaultDeps(session?: string): PhoneDeps {
 		vaultClient: defaultVaultClient(paths),
 		terminal: defaultTerminal(),
 		env: process.env,
+		homeDir: homedir(),
+		sessionId: session,
 		now: () => Math.floor(Date.now() / 1000),
 		kill: (pid, signal) => process.kill(pid, signal),
 		spawnListener: defaultSpawnListener,
@@ -344,7 +351,8 @@ export async function phoneNumber(
 	}
 	const relays = readRelays(deps.db);
 	const existing = readNumber(deps.db);
-	const as = opts.as ?? existing?.as ?? FALLBACK_SELF_NAME;
+	await syncIdentities(deps);
+	const as = setupSelfName(opts.as, existing?.as, discoveredAgents(deps));
 	const rotated = Boolean(opts.rotate);
 	const secret = rotated || !existing ? randomBytes(SECRET_BYTES).toString("hex") : existing.secret;
 	const rotatedAt = rotated ? deps.now() : existing?.rotatedAt;
@@ -387,7 +395,8 @@ export async function phoneInvite(
 	const relays = opts.relay?.length ? opts.relay : readRelays(deps.db);
 	if (!isCardRelays(relays)) throw new DgCliError(`--relay must be 1 to ${MAX_CARD_RELAYS} wss:// URLs`);
 	const { sk } = await ensureNumberKey(deps);
-	const selfName = opts.as ?? resolvedSelfName(deps.db);
+	await syncIdentities(deps);
+	const selfName = setupSelfName(opts.as, readNumber(deps.db)?.as, discoveredAgents(deps));
 	const secret = randomBytes(SECRET_BYTES).toString("hex");
 	const expiresAt = deps.now() + Math.round(hours * 3600);
 	addInvite(deps.db, { secret, expiresAt, asName: selfName, name: opts.name, keyId: numberKeyId(deps.db), relays });
@@ -413,7 +422,8 @@ export async function phoneAccept(
 	const card = decodeCard(pasted, deps.now());
 	const { handle, existing } = resolveAcceptHandle(deps.db, card.handle, card.npub, opts.name);
 	const { keyId, sk } = await signingKeyForAccept(deps, existing, opts.key);
-	const selfName = resolvedSelfName(deps.db);
+	await syncIdentities(deps);
+	const selfName = setupSelfName(undefined, readNumber(deps.db)?.as, discoveredAgents(deps));
 	const words = textArg || "hello";
 	if (!existing) {
 		const inserted = insertNewContact(deps.db, {
@@ -450,6 +460,7 @@ export async function phoneAccept(
 			call: 1,
 		});
 		if (!existing) addPhoneNotice(deps.db, `accepted +${handle}`, deps.now());
+		await announceRoster(deps, card.npub).catch(() => undefined);
 		await restartStaleListener(deps, { spawn: true });
 		printJson(deps, { handle: `+${handle}`, npub: card.npub, id: event.id, ...relayFields(report) });
 	} finally {
@@ -487,9 +498,16 @@ export function phoneContacts(deps: PhoneDeps): void {
 			via: contact.via,
 			last_seen: contact.lastSeen === undefined ? null : isoOf(contact.lastSeen),
 			...(marker ? { marker } : {}),
+			...(contact.runtime ? { runtime: contact.runtime } : {}),
+			...(contact.originNpub ? { origin: originLabel(deps.db, contact.originNpub) } : {}),
 			...extensionsField(deps.db.contactExts(contact.npub)),
 		});
 	}
+}
+
+function originLabel(db: PhoneDeps["db"], originNpub: string): string {
+	const machine = findContactByNpub(db, originNpub);
+	return machine ? `+${machine.handle}` : originNpub;
 }
 
 function extensionsField(rows: ContactExtRow[]): { extensions?: { ext: string; last_seen: string }[] } {
@@ -1346,7 +1364,15 @@ export async function phoneOpen(
 	}
 }
 
-export async function phoneClose(deps: OpenCloseDeps): Promise<void> {
+export async function phoneClose(deps: OpenCloseDeps, opts: { with?: string; clear?: boolean } = {}): Promise<void> {
+	if (opts.with !== undefined || opts.clear) {
+		if (opts.with === undefined || !opts.clear) {
+			throw new DgCliError("pass --with +<handle> and --clear together to drop that machine's roster contacts");
+		}
+		const cleared = clearMachineContacts(deps.db, opts.with);
+		printJson(deps, { machine: cleared.machine, removed: cleared.removed, status: "cleared" });
+		return;
+	}
 	const running = liveListener(deps);
 
 	const autostart = await removeAutostart(deps, deps.paths);

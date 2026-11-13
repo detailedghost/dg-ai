@@ -77,7 +77,18 @@ export type ContactRow = {
 	via: string;
 	/** Latest rumor time seen from this contact, else null. */
 	last_seen: number | null;
+	/** The paired machine this contact was imported from, else null. */
+	origin_npub: string | null;
+	/** Runtime label from a roster entry, else null. */
+	runtime: string | null;
 };
+
+export type ContactWrite = Omit<ContactRow, "last_seen" | "origin_npub" | "runtime"> & {
+	origin_npub?: string | null;
+	runtime?: string | null;
+};
+
+export type IdentityRow = { handle: string; key_id: string; runtime: string };
 
 /** One `phone ping` check: `sender` is our npub that signed it, `contact` the npub it went to. */
 export type PingRow = { id: string; contact: string; sender: string; sent_at: number; delivered_at: number | null; busy_at: number | null };
@@ -314,6 +325,29 @@ const SCHEMA: MigrationStep[] = [
 				ext TEXT NOT NULL,
 				last_seen INTEGER NOT NULL,
 				PRIMARY KEY (npub, ext)
+			) STRICT`);
+		},
+	},
+	{
+		version: 10,
+		run: (db) => {
+			db.run("ALTER TABLE contacts ADD COLUMN origin_npub TEXT");
+			db.run("ALTER TABLE contacts ADD COLUMN runtime TEXT");
+			db.run(`CREATE TABLE identities (
+				handle TEXT PRIMARY KEY,
+				key_id TEXT NOT NULL,
+				runtime TEXT NOT NULL
+			) STRICT`);
+			db.run(`CREATE TABLE roster_sent (
+				npub TEXT PRIMARY KEY,
+				hash TEXT NOT NULL,
+				at INTEGER NOT NULL
+			) STRICT`);
+			db.run(`CREATE TABLE roster_held (
+				npub TEXT PRIMARY KEY,
+				body TEXT NOT NULL,
+				intent TEXT NOT NULL,
+				at INTEGER NOT NULL
 			) STRICT`);
 		},
 	},
@@ -579,11 +613,11 @@ export class PhoneDb {
 	}
 
 	/** Inserts only when neither the npub nor the handle exists; false means another writer got there first. */
-	insertContact(row: Omit<ContactRow, "last_seen">): boolean {
+	insertContact(row: ContactWrite): boolean {
 		const { changes } = this.db
 			.query(
-				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
-				VALUES ($npub, $handle, $relays, $keyId, $addedAt, $via)
+				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via, origin_npub, runtime)
+				VALUES ($npub, $handle, $relays, $keyId, $addedAt, $via, $origin, $runtime)
 				ON CONFLICT DO NOTHING`,
 			)
 			.run({
@@ -593,16 +627,19 @@ export class PhoneDb {
 				keyId: row.key_id,
 				addedAt: row.added_at,
 				via: row.via,
+				origin: row.origin_npub ?? null,
+				runtime: row.runtime ?? null,
 			});
 		return changes > 0;
 	}
 
-	putContact(row: Omit<ContactRow, "last_seen">): void {
+	putContact(row: ContactWrite): void {
 		this.db
 			.query(
-				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via)
-				VALUES ($npub, $handle, $relays, $keyId, $addedAt, $via)
-				ON CONFLICT(npub) DO UPDATE SET handle = $handle, relays = $relays, key_id = $keyId, via = $via`,
+				`INSERT INTO contacts (npub, handle, relays, key_id, added_at, via, origin_npub, runtime)
+				VALUES ($npub, $handle, $relays, $keyId, $addedAt, $via, $origin, $runtime)
+				ON CONFLICT(npub) DO UPDATE SET handle = $handle, relays = $relays, key_id = $keyId, via = $via,
+					origin_npub = $origin, runtime = $runtime`,
 			)
 			.run({
 				npub: row.npub,
@@ -611,6 +648,8 @@ export class PhoneDb {
 				keyId: row.key_id,
 				addedAt: row.added_at,
 				via: row.via,
+				origin: row.origin_npub ?? null,
+				runtime: row.runtime ?? null,
 			});
 	}
 
@@ -629,6 +668,65 @@ export class PhoneDb {
 
 	removeContact(npub: string): void {
 		this.db.query("DELETE FROM contacts WHERE npub = $npub").run({ npub });
+	}
+
+	putIdentity(handle: string, keyId: string, runtime: string): void {
+		this.db
+			.query(
+				`INSERT INTO identities (handle, key_id, runtime) VALUES ($handle, $keyId, $runtime)
+				ON CONFLICT(handle) DO UPDATE SET key_id = $keyId, runtime = $runtime`,
+			)
+			.run({ handle, keyId, runtime });
+	}
+
+	listIdentities(): IdentityRow[] {
+		return this.db.query("SELECT handle, key_id, runtime FROM identities ORDER BY handle").all() as IdentityRow[];
+	}
+
+	readRosterSent(npub: string): string | undefined {
+		const row = this.db.query("SELECT hash FROM roster_sent WHERE npub = $npub").get({ npub }) as { hash: string } | null;
+		return row?.hash;
+	}
+
+	writeRosterSent(npub: string, hash: string): void {
+		this.db
+			.query(
+				`INSERT INTO roster_sent (npub, hash, at) VALUES ($npub, $hash, $at)
+				ON CONFLICT(npub) DO UPDATE SET hash = $hash, at = $at`,
+			)
+			.run({ npub, hash, at: this.now() });
+	}
+
+	clearRosterSent(npub: string): void {
+		this.db.query("DELETE FROM roster_sent WHERE npub = $npub").run({ npub });
+	}
+
+	/** Keeps at most 8 held rosters. A repeat from the same npub replaces its row. */
+	holdRoster(npub: string, body: string, intent: string): void {
+		this.transaction(() => {
+			const known = this.db.query("SELECT 1 FROM roster_held WHERE npub = $npub").get({ npub });
+			if (!known) {
+				const count = (this.db.query("SELECT count(*) AS n FROM roster_held").get() as { n: number }).n;
+				if (count >= 8) {
+					this.db.query("DELETE FROM roster_held WHERE npub = (SELECT npub FROM roster_held ORDER BY at, npub LIMIT 1)").run();
+				}
+			}
+			this.db
+				.query(
+					`INSERT INTO roster_held (npub, body, intent, at) VALUES ($npub, $body, $intent, $at)
+					ON CONFLICT(npub) DO UPDATE SET body = $body, intent = $intent, at = $at`,
+				)
+				.run({ npub, body, intent, at: this.now() });
+		});
+	}
+
+	takeHeldRoster(npub: string): { body: string; intent: string } | undefined {
+		const row = this.db.query("SELECT body, intent FROM roster_held WHERE npub = $npub").get({ npub }) as
+			| { body: string; intent: string }
+			| null;
+		if (!row) return undefined;
+		this.db.query("DELETE FROM roster_held WHERE npub = $npub").run({ npub });
+		return row;
 	}
 
 	/** Notes that a contact's message named `ext` as its sender; a pubkey that is not a contact is ignored. */
