@@ -748,7 +748,11 @@ describe("agent tabs messages", () => {
 
 	function boot(
 		seed: Seed = {},
-		options: { busy?: (arg: { sessionId: string }) => boolean; held?: string[] } = {},
+		options: {
+			busy?: (arg: { sessionId: string }) => boolean;
+			held?: string[];
+			onAdopted?: (tabId: number) => void;
+		} = {},
 	) {
 		const fake = createFakeBrowser(seed);
 		currentBrowser = fake.api;
@@ -761,7 +765,10 @@ describe("agent tabs messages", () => {
 		});
 		for (const sessionId of options.held ?? [SESSION_A, SESSION_B])
 			holdPairing(sessionId, `agent-${sessionId.slice(0, 2)}`);
-		registerAgentTabs(options.busy ? { busy: options.busy } : undefined);
+		registerAgentTabs({
+			...(options.busy ? { busy: options.busy } : {}),
+			...(options.onAdopted ? { onAdopted: options.onAdopted } : {}),
+		});
 		const [listener] = [...currentListeners];
 		const send = (
 			message: unknown,
@@ -888,6 +895,14 @@ describe("agent tabs messages", () => {
 			});
 			expect(groupOf(fake, 5)).toBe(record?.groupId as number);
 			expect(fake.groups.get(record?.groupId as number)?.title).toBe(record?.title as string);
+		});
+
+		it("reports the adopted tab once its record is saved", async () => {
+			const adopted: number[] = [];
+			const { fake, adopt } = boot({ tabs: [plain(5)] }, { onAdopted: (tabId) => adopted.push(fake.record(SESSION_A) ? tabId : -1) });
+			holdPairing(SESSION_A, "claude");
+			await adopt(SESSION_A, 5, "claude");
+			expect(adopted).toEqual([5]);
 		});
 
 		it("names the group after the held pairing, not the identity in the message", async () => {

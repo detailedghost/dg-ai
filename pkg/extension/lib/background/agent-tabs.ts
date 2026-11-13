@@ -134,6 +134,17 @@ async function readRecords(storage: AgentTabsStorage): Promise<AgentRecord[]> {
 		.map(([, record]) => record as AgentRecord);
 }
 
+/** Agent group ids read under the agent tab lock, so an adopt in flight saves its record first. */
+export function lockedAgentGroupIds({
+	storage,
+	lock = navigator.locks,
+}: {
+	storage: AgentTabsStorage;
+	lock?: AgentTabsLock;
+}): Promise<Set<number>> {
+	return lock.request(LOCK_NAME, () => agentGroupIds({ storage }));
+}
+
 /** Chrome tab group ids that belong to an agent session. */
 export async function agentGroupIds({
 	storage,
@@ -494,7 +505,8 @@ function adoptRequest(message: unknown) {
 /** Keep agent records in step with the browser and answer the popup's tab requests. */
 export function registerAgentTabs({
 	busy,
-}: { busy?(agent: { sessionId: string }): boolean } = {}): void {
+	onAdopted,
+}: { busy?(agent: { sessionId: string }): boolean; onAdopted?(tabId: number): void } = {}): void {
 	const storage = browser.storage as unknown as AgentTabsStorage;
 	const agentTabs = createAgentTabs({
 		browserApi: browser as unknown as AgentTabsBrowserApi,
@@ -519,6 +531,7 @@ export function registerAgentTabs({
 			);
 			if (!held) return { ok: false, error: "this agent is not paired" };
 			await agentTabs.adopt({ ...request, agentIdentity: held.agentIdentity });
+			onAdopted?.(request.tabId);
 			return { ok: true };
 		} catch (error) {
 			return { ok: false, error: describeError(error) };

@@ -519,3 +519,17 @@ describe("unmask grant", () => {
 		expect(el<HTMLInputElement>("#p").value).toBe("Temp-Pass-123");
 	});
 });
+
+describe("page deadline", () => {
+	it("does not click when the action reaches the page after its deadline", () => {
+		page(`<button id="go">Go</button>`);
+		let clicks = 0;
+		document.getElementById("go")?.addEventListener("click", () => clicks++);
+		expect(pwExtPageAction({ kind: "click", target: "#go" }, undefined, false, [], Date.now() - 1)).toEqual({
+			error: expect.stringContaining("too late"),
+		});
+		expect(clicks).toBe(0);
+		expect(pwExtPageAction({ kind: "click", target: "#go" }, undefined, false, [], Date.now() + 60_000)).not.toHaveProperty("error");
+		expect(clicks).toBe(1);
+	});
+});

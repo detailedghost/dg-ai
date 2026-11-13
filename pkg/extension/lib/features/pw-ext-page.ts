@@ -26,6 +26,7 @@ export function pwExtPageAction(
 	expectUrl?: string,
 	unmask = false,
 	secrets: string[] = [],
+	until?: number,
 ): PwExtPageResult {
 	const TREE_MAX = 60_000;
 	const TEXT_MAX = 30_000;
@@ -601,6 +602,8 @@ export function pwExtPageAction(
 		return {
 			error: "The page changed; nothing was done. Retry.",
 		};
+	if (until !== undefined && Date.now() > until)
+		return { error: "The action reached the page too late, so it did not run. Check the page, then retry." };
 	const run = (): PwExtPageResult => {
 		switch (action.kind) {
 			case "snapshot":

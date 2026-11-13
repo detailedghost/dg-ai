@@ -39,7 +39,7 @@ export type AgentRecord = {
 
 type Listeners = {
 	activated: Set<(info: { tabId: number; windowId: number }) => void>;
-	updated: Set<(tabId: number, change: Record<string, unknown>) => void>;
+	updated: Set<(tabId: number, change: Record<string, unknown>, tab?: unknown) => void>;
 	removed: Set<(tabId: number) => void>;
 };
 
@@ -365,6 +365,10 @@ export function createFakeBrowser(
 		flushActivations,
 		fireActivated(info: { tabId: number; windowId: number }) {
 			for (const fn of listeners.activated) fn(info);
+		},
+		fireUpdated(tabId: number, change: Record<string, unknown>) {
+			const tab = tabs.get(tabId);
+			for (const fn of listeners.updated) fn(tabId, change, tab ? { ...tab } : undefined);
 		},
 		seedRecord(record: AgentRecord) {
 			session.set(agentRecordKey(record.sessionId), structuredClone(record));

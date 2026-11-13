@@ -56,6 +56,9 @@ popup.
 | `unmask [--minutes N]` | write | Asks you for a time-boxed unmask of the selected tab's origin. `N` is 1 to 60, default 15. `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input |
 | `call <tool> <json-args>` | write | Runs one WebMCP tool of the page |
+| `dialog` | write | Shows the page's last `alert`, `confirm` or `prompt`, how it was answered, and the answer set for the next one |
+| `dialog accept [--text <answer>]` | write | Accepts the next dialog on the page. `--text` is the answer a `prompt` gets |
+| `dialog dismiss` | write | Dismisses the next dialog on the page. Each new page starts at dismiss |
 
 Rules:
 
@@ -110,6 +113,20 @@ Rules:
 - There is no code execution of agent code: no `eval`, no `run-code`, and no
   pw flags besides `--tab`. `call` runs the site's own WebMCP tool code, so it
   is a write verb.
+- A page dialog never blocks a verb. When an agent tab starts to load, the
+  extension puts a small shim over `alert`, `confirm` and `prompt` in that page.
+  The shim answers each dialog at once: dismiss by default, or the one answer
+  that `dialog accept` or `dialog dismiss` set. It keeps the last 10 dialogs.
+  `dialog` shows the last one, and `snapshot` lists the ones not yet shown under
+  `### Dialog`. Dialog text is page content and is redacted like other output.
+  The shim never runs in a user tab, on a mailbox origin or on a browser page.
+  When a tab leaves the agent's group or the session ends, the shim goes away,
+  and that page keeps its native dialogs until it navigates.
+  A dialog that opens while a page loads, before the shim is in place, shows
+  in the browser as usual. A verb then stops after 15 seconds with an error
+  that asks you to close the dialog. The page can read the answer text that
+  `--text` sets, so `dialog accept --text` refuses a value the session filled
+  as a secret. An extension that does not list `dialog` refuses the verb at once.
 - `console` adds a small wrapper to the page's own `console.warn` and
   `console.error` on the first call. It runs in the page's own context, stays
   for the life of the document, and sees only messages after that first call.

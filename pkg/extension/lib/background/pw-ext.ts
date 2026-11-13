@@ -19,6 +19,12 @@ import {
 	validatePwExtRequest,
 } from "@dg/common";
 import {
+	type PwExtDialogAction,
+	type PwExtDialogRecord,
+	type PwExtDialogState,
+	pwExtDialogs,
+} from "@/lib/features/pw-ext-dialog-main";
+import {
 	type PwExtWebMcpResult,
 	pwExtConsoleHook,
 	pwExtWebMcp,
@@ -33,6 +39,7 @@ import {
 	type AgentTab,
 	type AgentTabs,
 	type AgentTabsBrowserApi,
+	type AgentTabsLock,
 	type AgentTabsStorage,
 	type BrowserTab,
 	createAgentTabs,
@@ -40,6 +47,7 @@ import {
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
+import { forgetDialogShim, syncDialogShim } from "./dialog-shim";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createWebMcpGrants, requestWebMcpApproval, type WebMcpGrants } from "./webmcp-approval";
@@ -73,13 +81,14 @@ export type PwExtBrowserApi = AgentTabsBrowserApi & {
 			options: { format: "jpeg"; quality: number },
 		): Promise<string>;
 		onActivated: TabEvent<(info: { tabId: number; windowId: number }) => void>;
-		onUpdated: TabEvent<(tabId: number, change: { url?: string; status?: string }) => void>;
+		onUpdated: TabEvent<(tabId: number, change: { url?: string; status?: string; groupId?: number }) => void>;
 		onRemoved: TabEvent<(tabId: number) => void>;
 	};
 	scripting: {
 		executeScript(details: {
 			target: { tabId: number };
 			world?: "MAIN" | "ISOLATED";
+			injectImmediately?: boolean;
 			func: (...args: never[]) => unknown;
 			args: unknown[];
 		}): Promise<Array<{ result?: unknown }>>;
@@ -124,6 +133,7 @@ const PAGE_VERBS = [
 	"console",
 	"tools",
 	"call",
+	"dialog",
 ] as const satisfies readonly PwExtVerb[];
 const BLOCKS_BROWSER_PAGE: ReadonlySet<PwExtVerb> = new Set([
 	...PAGE_VERBS,
@@ -169,6 +179,9 @@ function isTabVerb(request: PwExtRequest): request is TabVerbRequest {
 
 class Refusal extends Error {}
 
+/** A page failure; the handler masks it again with the held secrets of the moment. */
+class PageError extends Error {}
+
 const MAX_PAGE_RESULT_CHARS = 150_000;
 const PAGE_RESULT_KEYS = [
 	["tree", "text"],
@@ -180,6 +193,13 @@ const PAGE_RESULT_KEYS = [
 ];
 const ELEMENT_KEYS = ["href", "name", "role", "tag", "text"];
 const TOOL_TIMEOUT_MS = 30_000;
+const PAGE_DEADLINE_MS = 15_000;
+const pageStuck = (seconds: number) =>
+	`The page did not answer within ${seconds} seconds. It may show a dialog that pw --ext could not catch, for example one that opened while the page loaded. Close it in the browser, then retry.`;
+const DIALOG_TEXT_SECRET =
+	"pw --ext dialog --text holds a value that this session filled as a secret; the page could read it. Nothing was set.";
+const DIALOG_TYPES = ["alert", "confirm", "prompt"];
+const DIALOG_ANSWERS = ["accept", "dismiss"];
 
 /** Per-request seams that need the session capability. */
 export type PwExtContext = {
@@ -381,6 +401,65 @@ function webMcpResult(raw: unknown): PwExtWebMcpResult {
 	throw new Error("The page returned an unexpected WebMCP result.");
 }
 
+const BAD_DIALOG = "The page returned an unexpected dialog result.";
+
+function dialogState(raw: unknown): PwExtDialogState | { error: string } {
+	const fail = () => {
+		throw new Refusal(BAD_DIALOG);
+	};
+	const value = raw as { dialogs?: unknown; pending?: unknown; error?: unknown } | null;
+	if (typeof value !== "object" || value === null) fail();
+	const state = value as { dialogs?: unknown; pending?: unknown; error?: unknown };
+	if (typeof state.error === "string") return { error: state.error };
+	if (!Array.isArray(state.dialogs) || state.dialogs.length > 10) fail();
+	for (const entry of state.dialogs as unknown[]) {
+		const dialog = entry as Record<string, unknown> | null;
+		if (
+			typeof dialog !== "object" ||
+			dialog === null ||
+			!DIALOG_TYPES.includes(dialog.type as string) ||
+			typeof dialog.message !== "string" ||
+			(dialog.defaultValue !== undefined && typeof dialog.defaultValue !== "string") ||
+			!DIALOG_ANSWERS.includes(dialog.answer as string) ||
+			(dialog.by !== "policy" && dialog.by !== "default") ||
+			typeof dialog.seen !== "boolean" ||
+			typeof dialog.at !== "number"
+		)
+			fail();
+	}
+	const pending = state.pending as { answer?: unknown; withText?: unknown } | undefined;
+	if (
+		pending !== undefined &&
+		(typeof pending !== "object" ||
+			pending === null ||
+			!DIALOG_ANSWERS.includes(pending.answer as string) ||
+			typeof pending.withText !== "boolean")
+	)
+		fail();
+	return state as PwExtDialogState;
+}
+
+function dialogLine(dialog: PwExtDialogRecord, options: { unmasked: boolean; secrets: string[] }): string {
+	const quoted = (text: string) => `"${maskRaw(text, RAW_ENTRY_MAX, options).replace(/\s+/g, " ")}"`;
+	const given = dialog.defaultValue === undefined ? "" : ` (default ${quoted(dialog.defaultValue)})`;
+	const how = dialog.by === "policy" ? "by your answer" : "by default";
+	return `${dialog.type} ${quoted(dialog.message)}${given}, ${dialog.answer === "accept" ? "accepted" : "dismissed"} ${how}`;
+}
+
+function dialogNotice(
+	state: PwExtDialogState | undefined,
+	options: { unmasked: boolean; secrets: string[] },
+): string[] {
+	if (!state) return [];
+	const fresh = state.dialogs.filter((dialog) => !dialog.seen).map((dialog) => `- ${dialogLine(dialog, options)}`);
+	const lines = [...fresh, ...pendingLine(state)];
+	return lines.length ? ["### Dialog", ...lines] : [];
+}
+
+function pendingLine(state: PwExtDialogState): string[] {
+	return state.pending ? [`- next: ${state.pending.answer}${state.pending.withText ? ", with your text" : ""}`] : [];
+}
+
 export function defaultIsChromium(): boolean {
 	const runtime = (
 		globalThis as { browser?: { runtime?: { getBrowserInfo?: unknown } } }
@@ -402,6 +481,8 @@ export function createPwExtHandler({
 	grants = createUnmaskGrants({ storage: api.storage, now }),
 	webmcpGrants = createWebMcpGrants({ storage: api.storage }),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
+	pageDeadlineMs = PAGE_DEADLINE_MS,
+	lock,
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
@@ -411,8 +492,35 @@ export function createPwExtHandler({
 	grants?: UnmaskGrants;
 	webmcpGrants?: WebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
+	pageDeadlineMs?: number;
+	lock?: AgentTabsLock;
 }) {
 	const enabledOrNone = () => enabledBuiltIns().catch(() => new Set<string>());
+
+	async function beforeDeadline<T>(work: Promise<T>): Promise<T> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				work,
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Refusal(pageStuck(Math.round(pageDeadlineMs / 1000)))), pageDeadlineMs);
+				}),
+			]);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
+
+	const syncShim = (tabId: number, regrouped: boolean) =>
+		syncDialogShim({ browserApi: api, storage: api.storage, tabId, regrouped, ...(lock ? { lock } : {}) }).catch(
+			() => undefined,
+		);
+
+	api.tabs.onUpdated.addListener((tabId, change) => {
+		const regrouped = change.groupId !== undefined;
+		if (regrouped || change.status === "loading" || change.status === "complete") void syncShim(tabId, regrouped);
+	});
+	api.tabs.onRemoved.addListener((tabId) => void forgetDialogShim(api.storage, tabId).catch(() => undefined));
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
 		if (result.ok)
@@ -475,12 +583,27 @@ export function createPwExtHandler({
 	}
 
 	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false, secrets: string[] = []) {
-		const [frame] = await api.scripting.executeScript({
-			target: { tabId: tab.id },
-			func: pwExtPageAction,
-			args: [action, tab.url as string, unmasked, secrets],
-		});
+		const [frame] = await beforeDeadline(
+			api.scripting.executeScript({
+				target: { tabId: tab.id },
+				func: pwExtPageAction,
+				args: [action, tab.url as string, unmasked, secrets, Date.now() + pageDeadlineMs],
+			}),
+		);
 		return pageResult(frame?.result);
+	}
+
+	async function dialogs(
+		tab: LiveTab,
+		action: PwExtDialogAction,
+		options: { unmasked: boolean; secrets: string[] },
+	): Promise<PwExtDialogState> {
+		await beforeDeadline(syncShim(tab.id, false));
+		const state = dialogState(
+			await beforeDeadline(inMain(tab, pwExtDialogs as never, [action, tab.url, tab.groupId ?? -1])),
+		);
+		if ("error" in state) throw new PageError(maskRaw(state.error, RAW_ERROR_MAX, options));
+		return state;
 	}
 
 	async function inMain(
@@ -550,6 +673,7 @@ export function createPwExtHandler({
 				throw error instanceof AgentGroupFullError ? new Refusal(GROUP_FULL) : error;
 			});
 		await agentTabs.select({ sessionId, tabId });
+		void syncShim(tabId, false);
 		return ok(`### Result\nOpened ${url} in tab ${tabId}`);
 	}
 
@@ -647,6 +771,7 @@ export function createPwExtHandler({
 			}
 			case "select": {
 				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id });
+				void syncShim(tab.id, false);
 				return ok(`### Result\nSelected tab ${tab.id}`);
 			}
 			case "close": {
@@ -746,6 +871,41 @@ export function createPwExtHandler({
 					].join("\n"),
 				);
 			}
+			case "dialog": {
+				if (request.answer === undefined) {
+					const state = await dialogs(tab, { kind: "read", markSeen: true }, { unmasked, secrets });
+					const last = state.dialogs.at(-1);
+					return shown(
+						[
+							...page(),
+							"### Dialog",
+							last
+								? `- last: ${dialogLine(last, { unmasked, secrets })}`
+								: "No dialog on this page since pw --ext began to watch it.",
+							...pendingLine(state),
+						].join("\n"),
+					);
+				}
+				if (request.text !== undefined && redactLiterals(request.text, secrets) !== request.text)
+					return { ok: false, error: DIALOG_TEXT_SECRET };
+				await dialogs(
+					tab,
+					{
+						kind: "answer",
+						answer: request.answer,
+						...(request.text === undefined ? {} : { text: request.text }),
+						until: Date.now() + pageDeadlineMs,
+					},
+					{ unmasked, secrets },
+				);
+				return shown(
+					[
+						"### Result",
+						`The next dialog on this page gets ${request.answer}${request.text === undefined ? "" : ", with your text"}. A new page starts again at dismiss.`,
+						...page(),
+					].join("\n"),
+				);
+			}
 			case "screenshot": {
 				const windowId = tab.windowId as number;
 				await api.tabs.update(tab.id, { active: true });
@@ -805,6 +965,13 @@ export function createPwExtHandler({
 						return failed(UNMASK_ENDED);
 					}
 				}
+				const seen =
+					request.verb === "snapshot"
+						? await dialogs(tab, { kind: "read", markSeen: true }, { unmasked, secrets }).catch((error: unknown) => {
+								if (error instanceof Refusal && error.message.startsWith("The page did not answer")) throw error;
+								return undefined;
+							})
+						: undefined;
 				const result = await inPage(tab, action, unmasked, secrets);
 				if ("error" in result) {
 					await release();
@@ -814,6 +981,7 @@ export function createPwExtHandler({
 					return shown(
 						[
 							...page(),
+							...dialogNotice(seen, { unmasked, secrets }),
 							"### Snapshot",
 							result.tree,
 							"### Visible text",
@@ -945,6 +1113,7 @@ export function createPwExtHandler({
 			return scrub(result, await held());
 		} catch (error) {
 			if (error instanceof Refusal) return { ok: false, error: error.message };
+			if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
 			return {
 				ok: false,
 				error: clean(

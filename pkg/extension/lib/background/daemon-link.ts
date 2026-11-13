@@ -55,6 +55,7 @@ import {
 } from "./pw-ext";
 import { createUnmaskGrants } from "./unmask-grants";
 import { createWebMcpGrants } from "./webmcp-approval";
+import { forgetAgentTabsAndShims } from "./dialog-shim";
 import {
 	createRelayDispatcher,
 	type RelayHandler,
@@ -198,6 +199,7 @@ export function registerDaemonLink(
 	const webmcpGrants = createWebMcpGrants({
 		storage: api.storage as unknown as AgentTabsStorage,
 	});
+	const pwExtApi = api as unknown as PwExtBrowserApi;
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	} = {
@@ -208,7 +210,7 @@ export function registerDaemonLink(
 			browserApi: api as unknown as ProtoBrowserApi,
 		}),
 		"pw-ext": createPwExtHandler({
-			browserApi: api as unknown as PwExtBrowserApi,
+			browserApi: pwExtApi,
 			agentTabs,
 			grants: unmaskGrants,
 			webmcpGrants,
@@ -417,7 +419,13 @@ export function registerDaemonLink(
 
 	function forgetAgentTabs(sessionId: string): void {
 		for (const cleanup of [
-			() => agentTabs.forget({ sessionId }),
+			() =>
+				forgetAgentTabsAndShims({
+					browserApi: pwExtApi,
+					storage: api.storage as unknown as AgentTabsStorage,
+					agentTabs,
+					sessionId,
+				}),
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 		])
