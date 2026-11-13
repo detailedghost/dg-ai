@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Window } from "happy-dom";
-import { PW_EXT_STOP_MESSAGE, pwExtBanner } from "@/lib/features/pw-ext-banner";
+import { bannerTitle, PW_EXT_STOP_MESSAGE, pwExtBanner } from "@/lib/features/pw-ext-banner";
 
 let window: Window;
 const saved = {
@@ -28,6 +28,27 @@ afterEach(async () => {
 
 const hosts = () => window.document.querySelectorAll("dg-agent-banner");
 
+function captureShadow(): { root?: ShadowRoot } {
+	const opened: { root?: ShadowRoot } = {};
+	const attach = window.HTMLElement.prototype.attachShadow;
+	window.HTMLElement.prototype.attachShadow = function (this: HTMLElement, init: ShadowRootInit) {
+		opened.root = attach.call(this, init) as unknown as ShadowRoot;
+		return opened.root as never;
+	};
+	return opened;
+}
+
+describe("banner title", () => {
+	it("strips control and format characters, trims, and caps the length", () => {
+		expect(bannerTitle({ title: "  claude\u0000-code\u202e · 3f9a\n", sessionId: "3f9a1234" })).toBe("claude-code · 3f9a");
+		expect(bannerTitle({ title: "x".repeat(80), sessionId: "3f9a" })).toHaveLength(40);
+	});
+
+	it("falls back to the short session id when the title is empty", () => {
+		expect(bannerTitle({ title: " \u200b ", sessionId: "3f9a1234" })).toBe("3f9a");
+	});
+});
+
 describe("agent banner", () => {
 	it("shows one banner with no page-readable text", () => {
 		pwExtBanner(true);
@@ -38,11 +59,43 @@ describe("agent banner", () => {
 		expect(host.textContent).toBe("");
 	});
 
-	it("keeps the banner host out of the page layout", () => {
+	it("keeps the banner host out of the page layout as a strip over the page top", () => {
 		pwExtBanner(true);
 		const host = hosts()[0] as unknown as HTMLElement;
-		expect(host.style.getPropertyValue("position")).toBe("fixed");
-		expect(host.style.getPropertyPriority("position")).toBe("important");
+		for (const [name, value] of [
+			["position", "fixed"],
+			["top", "0px"],
+			["left", "0px"],
+			["right", "0px"],
+			["bottom", "auto"],
+			["height", "auto"],
+			["z-index", "2147483647"],
+		]) {
+			expect(host.style.getPropertyValue(name)).toBe(value);
+			expect(host.style.getPropertyPriority(name)).toBe("important");
+		}
+	});
+
+	it("shows the ghost as inline SVG, the agent text, and the group title in the shadow root", () => {
+		const opened = captureShadow();
+		pwExtBanner(true, "claude-code · 3f9a");
+		const root = opened.root as ShadowRoot;
+		expect(root.querySelector("svg")).not.toBeNull();
+		expect(root.querySelector("img")).toBeNull();
+		expect(root.querySelector("style")?.textContent).toContain("prefers-color-scheme: dark");
+		expect(root.querySelector('[role="status"]')).not.toBeNull();
+		expect(root.textContent).toContain("DeeGee");
+		expect(root.textContent).toContain("Agent is driving this tab");
+		expect(root.textContent).toContain("claude-code · 3f9a");
+	});
+
+	it("renders the group title as text, never as HTML", () => {
+		const opened = captureShadow();
+		pwExtBanner(true, '<img src=x onerror="alert(1)"><b>x</b>');
+		const root = opened.root as ShadowRoot;
+		expect(root.querySelector("b")).toBeNull();
+		expect(root.querySelector("img")).toBeNull();
+		expect(root.textContent).toContain("<b>x</b>");
 	});
 
 	it("shows the banner again after the page removed it", () => {
@@ -59,12 +112,7 @@ describe("agent banner", () => {
 	});
 
 	it("sends Stop only for a trusted click", () => {
-		const opened: { root?: ShadowRoot } = {};
-		const attach = window.HTMLElement.prototype.attachShadow;
-		window.HTMLElement.prototype.attachShadow = function (this: HTMLElement, init: ShadowRootInit) {
-			opened.root = attach.call(this, init) as unknown as ShadowRoot;
-			return opened.root as never;
-		};
+		const opened = captureShadow();
 		pwExtBanner(true);
 		const button = opened.root?.querySelector("button") as unknown as HTMLButtonElement;
 		expect(button.textContent).toBe("Stop");

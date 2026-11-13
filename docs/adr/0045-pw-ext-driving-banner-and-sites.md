@@ -106,3 +106,28 @@ session as stopped after.
 
 - `pkg/extension/lib/features/popup.ts`
 - `pkg/extension/lib/background/popup-sender.ts`
+
+## Amended 2026-11-13: the banner is a top strip in the DeeGee style
+
+Variant C, "Top strip", was picked in the `/dg:proto` round on 2026-11-13. The
+banner is now a full-width strip over the top of the page. It overlays the page
+and does not push the page content down. It shows the ghost as an inline SVG,
+"DeeGee", "Agent is driving this tab" in uppercase, and the agent tab group
+title in a mono font. Stop has the outline style of the popup `.btn-danger`.
+A diagonal-stripe band in the accent color sits below the strip. The colors
+come from the tokens in `pkg/extension/entrypoints/options/style.css`, with a
+`prefers-color-scheme: dark` rule in the shadow root.
+
+The worker reads the group title from the agent record under the agent tab
+lock and passes it in the banner call (`bannerTitle` in
+`pkg/extension/lib/features/pw-ext-banner.ts`). It removes control and format
+characters and keeps at most 40 characters. If the title is empty, the banner
+shows the short session id. The banner sets the title as text, never as HTML.
+The extension has no web-accessible resources, so the banner loads no image.
+
+The closed shadow root, the trusted-click-only Stop, and the Stop behavior of
+the banner and the toolbar popup do not change.
+
+- **Bad:** the strip covers about 50 pixels at the top of the page, so it can
+  hide part of a page's own fixed header. The page below the strip still takes
+  clicks.

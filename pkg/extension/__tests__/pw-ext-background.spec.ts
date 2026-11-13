@@ -2574,8 +2574,16 @@ describe("pw --ext agent banner", () => {
 		h.fake.fireUpdated(7, { groupId: -1 });
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(bannerCalls(h).map((call) => [call.world, call.args])).toEqual([
-			[undefined, [true]],
+			[undefined, [true, "agent · sess"]],
 			[undefined, [false]],
 		]);
+	});
+
+	it("shows the short session id when the group record has no title", async () => {
+		const h = harness({ record: false });
+		h.fake.seedRecord(recordOf({ sessionId: SESSION, groupId: GROUP, title: "", selectedTabId: 7 }));
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).map((call) => call.args)).toEqual([[true, "sess"]]);
 	});
 });

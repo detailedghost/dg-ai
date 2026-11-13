@@ -1,12 +1,12 @@
 import { createSerialQueue } from "@dg/common";
-import { pwExtBanner } from "@/lib/features/pw-ext-banner";
+import { bannerTitle, pwExtBanner } from "@/lib/features/pw-ext-banner";
 import { type PwExtDialogAction, pwExtDialogs } from "@/lib/features/pw-ext-dialog-main";
 import {
 	type AgentTabs,
 	type AgentTabsLock,
 	type AgentTabsStorage,
 	type BrowserTab,
-	lockedAgentGroupIds,
+	lockedAgentRecords,
 } from "./agent-tabs";
 import { allowedPage, mailbox } from "./tab-guards";
 
@@ -49,9 +49,13 @@ export function forgetDialogShim(storage: AgentTabsStorage, tabId: number): Prom
 	});
 }
 
-function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?]) {
+function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?], title?: string) {
 	const banner = api.scripting
-		.executeScript({ target: { tabId }, func: pwExtBanner as never, args: [args[0].kind === "install"] })
+		.executeScript({
+			target: { tabId },
+			func: pwExtBanner as never,
+			args: args[0].kind === "install" ? [true, title ?? ""] : [false],
+		})
 		.catch(() => undefined);
 	return Promise.all([
 		api.scripting.executeScript({
@@ -80,16 +84,17 @@ export async function syncDialogShim({
 	lock?: AgentTabsLock;
 }): Promise<void> {
 	const owned = async () => {
-		const groups = await lockedAgentGroupIds({ storage, ...(lock ? { lock } : {}) });
+		const records = await lockedAgentRecords({ storage, ...(lock ? { lock } : {}) });
 		const tab = await api.tabs.get(tabId);
-		return { tab, agent: tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId) };
+		const record = tab.groupId !== undefined && tab.groupId >= 0 ? records.find((r) => r.groupId === tab.groupId) : undefined;
+		return { tab, record };
 	};
-	const { tab, agent } = await owned();
+	const { tab, record } = await owned();
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
-	if (agent) {
+	if (record) {
 		await noteDialogShim(storage, tabId);
-		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId]);
-		if ((await owned()).agent) return;
+		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId], bannerTitle(record));
+		if ((await owned()).record) return;
 	} else if (!regrouped && !(await shimmedTabs(storage)).includes(tabId)) return;
 	await inject(api, tabId, [{ kind: "remove" }]);
 }
