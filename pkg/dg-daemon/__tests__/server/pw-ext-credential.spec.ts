@@ -317,6 +317,29 @@ describe("pw --ext credential save through the daemon", () => {
 		expect(out).toContain("lang=C.UTF-8");
 	});
 
+	it.each([
+		["SIGABRT", 134],
+		["SIGSEGV", 139],
+		["SIGPIPE", 141],
+	])("reports 128 plus the signal number when the child dies by %s", async (signal, code) => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const tool = join(dgHome as string, "die.sh");
+		writeFileSync(tool, `#!/bin/sh\nulimit -c 0\nkill -s ${signal.slice(3)} $$\n`);
+		chmodSync(tool, 0o755);
+		allow([execAllowlistLine(tool)]);
+		const frame = execFrame([tool]);
+		send(cli, frame);
+		const done = await waitForValue(
+			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-result" && (raw as Frame).requestId === frame.requestId) as Frame | undefined,
+			10_000,
+			"exec result",
+		);
+		expect(done).toMatchObject({ ok: true, value: { exitCode: code } });
+	});
+
 	it("refuses to bind a pw/ value to a loader variable", async () => {
 		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
 		const store = storeFrame(bootstrap);

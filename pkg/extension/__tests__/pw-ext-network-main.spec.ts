@@ -367,6 +367,23 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 		expect(text).not.toContain(MARKER);
 	});
 
+	it("keeps a scrubbed shape-only URL within the wire bound", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "X-Csrf-Token": "ab12c" } });
+		await page().fetch(`/${"x".repeat(4054)}?t=ab12c&u=ab12c`);
+		await settle();
+		const text = JSON.stringify(read(false));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain("ab12c");
+	});
+
+	it("asks for a reload when the page holds a capture slot from an older build", () => {
+		Object.defineProperty(window, Symbol.for("dg.pwExt.network"), { value: { entries: [], active: true, removed: false, wrap() {}, unwrap() {} } });
+		expect(pwExtNetwork({ kind: "read", values: false })).toEqual({
+			error: "This page has network capture from an older extension build. Reload the page to use this one.",
+		});
+	});
+
 	it("removes encoded forms and a token that rotated while the fetch was pending", async () => {
 		const token = "fake/marker+value=for-tests";
 		pwExtNetwork({ kind: "install", seal: true });

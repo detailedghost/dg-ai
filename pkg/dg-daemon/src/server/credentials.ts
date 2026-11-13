@@ -254,17 +254,12 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 			pump(child.stdout as ReadableStream<Uint8Array>, "stdout"),
 			pump(child.stderr as ReadableStream<Uint8Array>, "stderr"),
 		]);
-		const code = await child.exited;
-		const signal = child.signalCode;
-		return { ok: true, value: { exitCode: typeof signal === "string" ? 128 + (signalNumber(signal) ?? 1) : code } };
+		return { ok: true, value: { exitCode: await child.exited } };
 	} finally {
 		requester.data.closeWaiters.delete(kill);
 	}
 }
 
-function signalNumber(signal: string): number | undefined {
-	return ({ SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 } as Record<string, number>)[signal];
-}
 
 /** Serves a session with full access, and a service grant or the extension with get/list under one prefix. */
 export async function handleCredentialsRequest(

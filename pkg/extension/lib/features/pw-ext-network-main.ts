@@ -111,7 +111,7 @@ export function pwExtNetwork(
 					at: entry.at,
 					via: entry.via,
 					method: entry.method,
-					url: bound(scrub(entry.url, entry.url.length >= URL_MAX), values ? URL_MAX : Number.POSITIVE_INFINITY),
+					url: bound(scrub(entry.url, entry.url.length >= URL_MAX), URL_MAX),
 					...(entry.status === undefined ? {} : { status: entry.status }),
 					...(entry.failed ? { failed: true as const } : {}),
 					requestHeaders: names(entry.requestHeaders),
@@ -124,6 +124,8 @@ export function pwExtNetwork(
 		const KEY = Symbol.for("dg.pwExt.network");
 		const win = document.defaultView as unknown as Window & typeof globalThis & Record<symbol, unknown>;
 		let slot = (win[KEY] ?? undefined) as Slot | undefined;
+		if (slot !== undefined && typeof slot.hidden !== "function")
+			return { error: "This page has network capture from an older extension build. Reload the page to use this one." };
 		if (slot === undefined && action.kind !== "install") return action.kind === "clear" ? { cleared: 0 } : { entries: [] };
 		if (slot === undefined) {
 			const nativeFetch = win.fetch;
