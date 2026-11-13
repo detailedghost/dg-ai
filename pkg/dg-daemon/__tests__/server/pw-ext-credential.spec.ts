@@ -229,6 +229,22 @@ describe("pw --ext credential save through the daemon", () => {
 		);
 	});
 
+	it("refuses exec for a value too short to scrub", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap, { name: "short", value: "abc" });
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const requestId = randomUUID();
+		send(cli, {
+			type: "cli-credentials-request",
+			requestId,
+			operation: "exec",
+			exec: { bindings: [{ name: "pw/live.com/short", env: "X" }], argv: ["sh", "-c", "echo $X"], cwd: process.cwd(), env: {} },
+		});
+		expect(await find(cliFrames, "cli-credentials-result", requestId)).toMatchObject({ ok: false, error: expect.stringContaining("shorter than 4") });
+		expect(cliFrames.some((raw) => (raw as Frame).type === "cli-credentials-exec-output")).toBe(false);
+	});
+
 	it("refuses exec from the extension socket and for a missing name, with no value", async () => {
 		const { cli, cliFrames, socket, extensionFrames } = await boot();
 		const exec = (name: string) => ({

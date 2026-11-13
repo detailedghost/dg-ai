@@ -526,3 +526,27 @@ describe("cut edges after history eviction", () => {
 		expect(JSON.stringify(read(true))).not.toContain(token.slice(0, 10));
 	});
 });
+
+describe("delayed echo in headers and cut bodies", () => {
+	it("masks a delayed response header and cut body with the request's own value", async () => {
+		const first = "fake-delayed-header-token-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		let release: (() => void) | undefined;
+		const slow = new Promise<Response>((resolve) => {
+			release = () =>
+				resolve(
+					new window.Response(`${"x".repeat(7990)}${first}`, {
+						headers: { "content-type": "text/plain", "x-echo": first },
+					}) as unknown as Response,
+				);
+		});
+		reply = () => slow;
+		const pending = page().fetch("/slow", { headers: { Authorization: first } });
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		release?.();
+		await pending;
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(first.slice(0, 10));
+	});
+});

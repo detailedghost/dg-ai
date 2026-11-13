@@ -245,8 +245,8 @@ export function pwExtNetwork(
 					const query = new win.URLSearchParams({ v: form }).toString().slice(2);
 					return [form, JSON.stringify(form).slice(1, -1), encoded, lowerHex(encoded), query, lowerHex(query)];
 				});
-			const forget = (value: string) => {
-				const forms = formsOf(value)
+			const maskEntry = (entry: NetworkEntry, values: string[]) => {
+				const forms = [...new Set(values.flatMap(formsOf))]
 					.filter((form) => form.length >= 8)
 					.sort((a, b) => b.length - a.length);
 				const scrub = (text: string, cut: boolean) => {
@@ -257,14 +257,15 @@ export function pwExtNetwork(
 							if (out.endsWith(form.slice(0, size))) return `${out.slice(0, out.length - size)}[redacted]`;
 					return out;
 				};
-				for (const entry of fresh.entries) {
-					entry.url = scrub(entry.url, entry.url.length >= URL_MAX);
-					for (const list of [entry.requestHeaders, entry.responseHeaders])
-						for (const held of list)
-							if (held.value !== undefined) held.value = scrub(held.value, held.value.length >= HEADER_VALUE_MAX);
-					for (const body of [entry.request, entry.response])
-						if (body?.text !== undefined) body.text = scrub(body.text, body.cut === true);
-				}
+				entry.url = scrub(entry.url, entry.url.length >= URL_MAX);
+				for (const list of [entry.requestHeaders, entry.responseHeaders])
+					for (const held of list)
+						if (held.value !== undefined) held.value = scrub(held.value, held.value.length >= HEADER_VALUE_MAX);
+				for (const body of [entry.request, entry.response])
+					if (body?.text !== undefined) body.text = scrub(body.text, body.cut === true);
+			};
+			const forget = (value: string) => {
+				for (const entry of fresh.entries) maskEntry(entry, [value]);
 			};
 			const headerPairs = (source: HeadersInit | Headers | undefined): [string, string][] => {
 				const pairs: [string, string][] = [];
@@ -279,9 +280,8 @@ export function pwExtNetwork(
 			};
 			const scrubOwn = (entry: NetworkEntry) => {
 				const own = ownSecrets.get(entry);
-				if (!own || !entry.response?.text) return;
-				const forms = [...new Set(own.flatMap(formsOf))].filter((form) => form.length >= 8).sort((a, b) => b.length - a.length);
-				entry.response.text = forms.reduce((out, form) => out.split(form).join("[redacted]"), entry.response.text);
+				if (!own) return;
+				maskEntry(entry, own);
 				ownSecrets.delete(entry);
 			};
 			const record = (entry: NetworkEntry) => {

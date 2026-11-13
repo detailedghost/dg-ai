@@ -132,6 +132,8 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 	for (const binding of spec.bindings) {
 		const record = deps.credentials.getCredential(binding.name);
 		if (!record) return { ok: false, error: `No credential named ${binding.name}.` };
+		if (record.value.length < 4)
+			return { ok: false, error: `The credential ${binding.name} is shorter than 4 characters, so its output cannot be scrubbed; exec refuses it.` };
 		injected[binding.env] = record.value;
 	}
 	const values = Object.values(injected);
