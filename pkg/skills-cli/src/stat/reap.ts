@@ -404,9 +404,10 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		stuckLoops.push({ pid: proc.pid, ppid: proc.ppid, ageSec: proc.ageSec, patterns, session, command, members });
 	}
 	const chosen = new Set(candidates.map((c) => c.pid));
+	const members = new Set(stuckLoops.flatMap((loop) => loop.members.map((m) => m.pid)));
 	return {
 		candidates,
-		skipped,
+		skipped: skipped.filter((skip) => !members.has(skip.pid)),
 		zombies: zombies.map((z) => ({ pid: z.pid, ppid: z.ppid, parentIsCandidate: chosen.has(z.ppid) })),
 		stuckLoops,
 		longPipes,

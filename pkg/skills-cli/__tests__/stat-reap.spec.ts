@@ -289,6 +289,12 @@ describe("stat reap stuck wait loops", () => {
 		expect(out.candidates).toEqual([]);
 	});
 
+	test("a loop member appears only in its loop, not in skipped", () => {
+		const out = verdict([loop(30, until), row(31, ["sleep", "15"], { ppid: 30, ageSec: 5, cwd: SCRATCHPAD })]);
+		expect(out.loops.map((l) => l.members)).toEqual([[31, 30]]);
+		expect(out.skipped[31]).toBeUndefined();
+	});
+
 	test("a loop whose target is alive is not stuck", () => {
 		const out = verdict([
 			loop(30, until),

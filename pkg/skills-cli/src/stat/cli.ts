@@ -180,7 +180,7 @@ function registerReap(stat: Command): void {
 		.option("--loop-min-age <minutes>", "skip wait loops younger than this (default 60)")
 		.option("--session-pid <pid>", "PID of this agent session (default: the nearest claude or codex ancestor)")
 		.option("--other-sessions", "also stop stuck wait loops of other live sessions")
-		.option("--pid <pid>", "stop only this PID if it still qualifies; repeat for more", collectPid)
+		.option("--pid <pid>", "stop only this process, and its loop members when it is a stuck loop, if it still qualifies; repeat for more", collectPid)
 		.action(
 			async (options: {
 				dryRun?: boolean;
