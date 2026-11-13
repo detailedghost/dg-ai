@@ -1,0 +1,804 @@
+{
+	"name": "dg-agent",
+	"description": "CLI an agent drives the dg-daemon with — chat, assets, and session lifecycle.",
+	"commands": [
+		{
+			"name": "overwatch",
+			"description": "publish and inspect the live overwatch board",
+			"commands": [
+				{
+					"name": "set",
+					"description": "create a lane or update only the provided fields",
+					"options": [
+						{
+							"flags": [
+								"--task"
+							],
+							"description": "short task summary; defaults to chat for a new lane",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--stage"
+							],
+							"description": "review, ci, e2e, merge, or done; required for a new lane",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--mr"
+							],
+							"description": "merge request reference",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--eta"
+							],
+							"description": "estimated completion",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--next"
+							],
+							"description": "next action needed",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--clear-next"
+							],
+							"description": "remove the current next action"
+						},
+						{
+							"flags": [
+								"--url"
+							],
+							"description": "claude.ai chat URL",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--background"
+							],
+							"description": "mark a new or existing lane as a background agent"
+						}
+					]
+				},
+				{
+					"name": "remove",
+					"description": "remove a chat lane"
+				},
+				{
+					"name": "merged",
+					"description": "record a merge completed today"
+				},
+				{
+					"name": "launch",
+					"description": "set launch milestones",
+					"options": [
+						{
+							"flags": [
+								"--go-live"
+							],
+							"description": "go-live date and time",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--go-no-go"
+							],
+							"description": "go/no-go date and time",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "open",
+					"description": "open the overwatch board in the default browser",
+					"options": [
+						{
+							"flags": [
+								"--ext"
+							],
+							"description": "open the board in the paired browser through the dg-ai-extension"
+						}
+					]
+				},
+				{
+					"name": "snapshot",
+					"description": "print the current overwatch board",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print machine-readable board JSON"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "recv",
+			"description": "receive the next queued human message",
+			"options": [
+				{
+					"flags": [
+						"--block"
+					],
+					"description": "wait until a message arrives"
+				},
+				{
+					"flags": [
+						"--timeout"
+					],
+					"description": "blocking receive timeout in milliseconds",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "send",
+			"description": "send one complete agent message",
+			"options": [
+				{
+					"flags": [
+						"--to"
+					],
+					"description": "address the message to an agent identity instead of the human",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "progress",
+			"description": "publish an explicit running or awaiting-input state",
+			"options": [
+				{
+					"flags": [
+						"--state"
+					],
+					"description": "running or awaiting-input",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "spawn",
+			"description": "spawn another background chat session",
+			"options": [
+				{
+					"flags": [
+						"--workset"
+					],
+					"description": "workset label for the new session",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--orchestrator"
+					],
+					"description": "give the new session the orchestrator role"
+				},
+				{
+					"flags": [
+						"--agent-identity"
+					],
+					"description": "bind the spawned session to a different agent identity",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "mcp",
+			"description": "serve the dg tools of the agent's tabs as an MCP server on stdio"
+		},
+		{
+			"name": "stage",
+			"description": "stage an asset for later presentation",
+			"path": true
+		},
+		{
+			"name": "close",
+			"description": "close a chat session"
+		},
+		{
+			"name": "manifest",
+			"description": "publish command and subagent manifests",
+			"options": [
+				{
+					"flags": [
+						"--commands"
+					],
+					"description": "command manifest JSON path",
+					"value": "path"
+				},
+				{
+					"flags": [
+						"--subagents"
+					],
+					"description": "subagent manifest JSON path",
+					"value": "path"
+				}
+			]
+		},
+		{
+			"name": "memory",
+			"description": "read and write this agent's own long-term memory",
+			"commands": [
+				{
+					"name": "write",
+					"description": "record one memory, replacing what this agent knew by that title",
+					"options": [
+						{
+							"flags": [
+								"--identity"
+							],
+							"description": "record under another agent identity",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--workset"
+							],
+							"description": "scope the memory to one workset",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--kind"
+							],
+							"description": "what kind of memory this is",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "search",
+					"description": "find this agent's memories, most relevant first",
+					"options": [
+						{
+							"flags": [
+								"--identity"
+							],
+							"description": "search another agent identity",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--workset"
+							],
+							"description": "restrict the search to one workset",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--limit"
+							],
+							"description": "hits to return (at most 100)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--offset"
+							],
+							"description": "hits to skip",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--full"
+							],
+							"description": "print the whole record as JSON instead of one line"
+						}
+					]
+				},
+				{
+					"name": "read",
+					"description": "print one memory",
+					"options": [
+						{
+							"flags": [
+								"--full"
+							],
+							"description": "print the whole record as JSON instead of the text"
+						}
+					]
+				},
+				{
+					"name": "forget",
+					"description": "remove one memory"
+				}
+			]
+		},
+		{
+			"name": "phone",
+			"description": "one phone number, many contacts: private NIP-17 chat over public Nostr relays",
+			"commands": [
+				{
+					"name": "number",
+					"description": "print your number card, with your npub, relays, and listener state",
+					"options": [
+						{
+							"flags": [
+								"--as"
+							],
+							"description": "self name your card carries, saved for next time",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--rotate"
+							],
+							"description": "roll a new secret, so every card printed before this stops admitting"
+						},
+						{
+							"flags": [
+								"--relay"
+							],
+							"description": "relays your own card should use from now on",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "invite",
+					"description": "make a one-time call card; the first ring it admits becomes a new contact",
+					"options": [
+						{
+							"flags": [
+								"--relay"
+							],
+							"description": "relays this card should use instead of the saved ones",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--ttl"
+							],
+							"description": "hours until the card expires",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--as"
+							],
+							"description": "self name this card carries instead of your saved one",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--name"
+							],
+							"description": "handle to give the contact once the call is answered",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "accept",
+					"description": "accept a call card: ring its owner and save them as a contact",
+					"options": [
+						{
+							"flags": [
+								"--name"
+							],
+							"description": "handle for a new contact; required when the card self name is missing, \"default\", or taken",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--key"
+							],
+							"description": "existing key id to sign a new contact with, instead of the number key",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "contacts",
+					"description": "list every contact, in handle order",
+					"commands": [
+						{
+							"name": "rename"
+						},
+						{
+							"name": "remove",
+							"description": "remove a contact; its stored messages stay"
+						}
+					]
+				},
+				{
+					"name": "text",
+					"description": "send one message to a contact, or to a #group",
+					"options": [
+						{
+							"flags": [
+								"--as"
+							],
+							"description": "your own extension, sent so replies route back (default DG_PHONE_AS)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--image"
+							],
+							"description": "send one PNG, JPEG, or WebP image instead of text",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--phi"
+							],
+							"description": "mark the message as PHI: tags it, stores only a placeholder row, and keeps any outbox copy 24 hours, not 7 days"
+						},
+						{
+							"flags": [
+								"--vault"
+							],
+							"description": "send a vault item, text or image, without printing it; implies --phi",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "ping",
+					"description": "check that a contact's or #group's listener answers; exit 1 when no receipt comes in time",
+					"options": [
+						{
+							"flags": [
+								"--timeout"
+							],
+							"description": "seconds to wait for the receipt",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "files",
+					"description": "print whether text --image may send, or turn it on or off"
+				},
+				{
+					"name": "presence",
+					"description": "print whether beats, receipts, and ping answers go out, or turn them on or off"
+				},
+				{
+					"name": "roster",
+					"description": "print whether this phone exchanges rosters, or turn that on or off"
+				},
+				{
+					"name": "vault",
+					"description": "a store for PHI that agents can use but never read",
+					"commands": [
+						{
+							"name": "add",
+							"description": "seal a file, or stdin, as a vault item; prints the name, size, and dates only",
+							"path": true
+						},
+						{
+							"name": "list",
+							"description": "list item names, sizes, types, senders, and dates; never content",
+							"options": [
+								{
+									"flags": [
+										"--as"
+									],
+									"description": "list only this extension's items plus the shared ones (default DG_PHONE_AS)",
+									"value": "any"
+								}
+							]
+						},
+						{
+							"name": "rm",
+							"description": "delete one vault item"
+						},
+						{
+							"name": "open",
+							"description": "human only: show an item on this terminal; refuses in an agent session or without a TTY"
+						},
+						{
+							"name": "exec",
+							"description": "run a command with the item on stdin or in one env var; its stdout becomes a new item",
+							"options": [
+								{
+									"flags": [
+										"--env"
+									],
+									"description": "pass a text item under 64 KiB in this env var instead of stdin",
+									"value": "any"
+								},
+								{
+									"flags": [
+										"--stdin"
+									],
+									"description": "pass the item on stdin (the default)"
+								},
+								{
+									"flags": [
+										"--out"
+									],
+									"description": "name of the new item; never overwrites (default <name>-out)",
+									"value": "any"
+								},
+								{
+									"flags": [
+										"--timeout"
+									],
+									"description": "seconds before the command is killed; nothing is stored and the exit code is 124",
+									"value": "any"
+								}
+							]
+						}
+					]
+				},
+				{
+					"name": "group",
+					"description": "a static multi-party room with a #handle",
+					"commands": [
+						{
+							"name": "new",
+							"description": "create a group from existing contacts",
+							"options": [
+								{
+									"flags": [
+										"--subject"
+									],
+									"description": "subject stored on the group and sent with each message",
+									"value": "any"
+								}
+							]
+						},
+						{
+							"name": "list",
+							"description": "list groups, in handle order"
+						},
+						{
+							"name": "show",
+							"description": "show one group and its members"
+						}
+					]
+				},
+				{
+					"name": "messages",
+					"description": "print stored messages, oldest first; never marks anything read",
+					"options": [
+						{
+							"flags": [
+								"--count",
+								"-n"
+							],
+							"description": "how many messages to print",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--meta"
+							],
+							"description": "print metadata only, omitting message text"
+						},
+						{
+							"flags": [
+								"--as"
+							],
+							"description": "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "unread",
+					"description": "print unread messages, oldest first, and mark them read",
+					"options": [
+						{
+							"flags": [
+								"--as"
+							],
+							"description": "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "watch",
+					"description": "print unread messages until --for seconds elapse, waiting a jittered gap between checks",
+					"options": [
+						{
+							"flags": [
+								"--for"
+							],
+							"description": "seconds to keep checking",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--new"
+							],
+							"description": "print only messages that arrive after watch starts; the default also prints the unread backlog"
+						},
+						{
+							"flags": [
+								"--as"
+							],
+							"description": "read as this extension: its messages plus the shared ones (default DG_PHONE_AS)",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "status",
+					"description": "print your self name, contact count, and unread message count"
+				},
+				{
+					"name": "open",
+					"description": "start the listener and install it to start on login, where a service manager exists",
+					"options": [
+						{
+							"flags": [
+								"--on-message"
+							],
+							"description": "command and args to run for each delivered message, saved for next time",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--on-message-timeout"
+							],
+							"description": "seconds before --on-message is killed",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--ensure"
+							],
+							"description": "start a detached listener when the pidfile is not a live copy of this binary; safe to repeat from cron"
+						},
+						{
+							"flags": [
+								"--print-cron"
+							],
+							"description": "include a crontab line for --ensure in the output; does not change the crontab"
+						},
+						{
+							"flags": [
+								"--install-cron"
+							],
+							"description": "install that crontab line; never implied by --ensure"
+						}
+					]
+				},
+				{
+					"name": "close",
+					"description": "stop the listener, or with --with and --clear drop one machine's roster contacts",
+					"options": [
+						{
+							"flags": [
+								"--with"
+							],
+							"description": "machine to hang up, as a +handle; leaves the listener running",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--clear"
+							],
+							"description": "with --with, remove every contact that machine's roster added"
+						}
+					]
+				},
+				{
+					"name": "refresh",
+					"description": "Restart a listener whose binary or keys drifted; dg starts this for you"
+				},
+				{
+					"name": "listen",
+					"description": "Run the phone listener; dg starts this for you",
+					"options": [
+						{
+							"flags": [
+								"--on-message"
+							],
+							"description": "command and args to run for each delivered message",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--on-message-timeout"
+							],
+							"description": "seconds before --on-message is killed",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--dg-home"
+							],
+							"description": "state directory for this listener; overrides DG_HOME",
+							"value": "path"
+						}
+					]
+				}
+			],
+			"options": [
+				{
+					"flags": [
+						"--line"
+					],
+					"description": "removed; one phone holds every contact now",
+					"value": "any"
+				}
+			]
+		},
+		{
+			"name": "start",
+			"description": "start (or reuse) the daemon and register a new chat session",
+			"options": [
+				{
+					"flags": [
+						"--workset",
+						"-w"
+					],
+					"description": "workset label to attach to this session",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--orchestrator"
+					],
+					"description": "register this session with the orchestrator role"
+				},
+				{
+					"flags": [
+						"--agent-identity",
+						"-a"
+					],
+					"description": "agent identity to record",
+					"value": "any"
+				},
+				{
+					"flags": [
+						"--open"
+					],
+					"description": "open the chat page in the default browser, paired through a one-time code"
+				},
+				{
+					"flags": [
+						"--ext"
+					],
+					"description": "accepted for skills that require the dg-ai-extension; behaves like the default"
+				},
+				{
+					"flags": [
+						"--print-session-id"
+					],
+					"description": "print only the session id"
+				},
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print sessionId, port, and extensionLinked as one JSON object"
+				}
+			]
+		},
+		{
+			"name": "completion",
+			"description": "print the bash, zsh or fish completion script for this program",
+			"values": [
+				"bash",
+				"zsh",
+				"fish"
+			]
+		}
+	],
+	"options": [
+		{
+			"flags": [
+				"--session",
+				"-s"
+			],
+			"description": "session id (otherwise resolve the sole realpath-matching cwd session)",
+			"value": "any"
+		}
+	]
+}
