@@ -4,10 +4,13 @@ import { isRecord } from "@dg/common";
 import {
 	type DgPaths,
 	ensurePrivateDir,
+	withInstallLockSync,
 	writeFileAtomic,
 	writeFilePreserving,
 } from "@dg/common/node";
 import { assertNotBlocked } from "@dg/common/node/layout";
+
+const WRITE_LOCK = { tries: 40, waitMs: 50 };
 
 export function readConfig(paths: DgPaths): Record<string, unknown> {
 	const file = paths.daemonConfigPath;
@@ -27,8 +30,14 @@ export function writeConfig(
 	assertNotBlocked(paths, "daemon");
 	const file = paths.daemonConfigPath;
 	ensurePrivateDir(dirname(file));
-	const next = { ...readConfig(paths), ...patch };
-	writeFileAtomic(file, JSON.stringify(next, null, 2));
+	withInstallLockSync(
+		dirname(file),
+		() => {
+			const next = { ...readConfig(paths), ...patch };
+			writeFileAtomic(file, JSON.stringify(next, null, 2));
+		},
+		WRITE_LOCK,
+	);
 }
 
 export function readConfigStrict(paths: DgPaths): Record<string, unknown> {
@@ -46,7 +55,7 @@ export function readConfigStrict(paths: DgPaths): Record<string, unknown> {
 	return parsed as Record<string, unknown>;
 }
 
-/** Sets one entry of the `services` table, or deletes it when `entry` is undefined. */
+/** Sets or deletes one `services` entry; the caller must hold the config lock. */
 export function writeServiceEntry(
 	paths: DgPaths,
 	label: string,

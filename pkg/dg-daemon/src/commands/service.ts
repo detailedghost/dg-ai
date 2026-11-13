@@ -227,7 +227,7 @@ export function registerServiceCommands(program: Command): void {
 		.argument("<label>")
 		.action(async (label: string) => {
 			const paths = resolveDgPaths();
-			await withConfigLock(paths, async () => {
+			const requireDeclared = () => {
 				const config = guardConfig(() => readConfigStrict(paths));
 				if (!isDeclared(config, label)) {
 					throw new DgCliError(
@@ -235,29 +235,30 @@ export function registerServiceCommands(program: Command): void {
 						EXIT_GENERAL_FAILURE,
 					);
 				}
-				const pidHandle = readPidFile(paths);
-				const live = await findLiveDaemon(paths);
-				if (!live && pidHandle && isAlive(pidHandle.pid)) {
+			};
+			requireDeclared();
+			const pidHandle = readPidFile(paths);
+			const live = await findLiveDaemon(paths);
+			if (!live && pidHandle && isAlive(pidHandle.pid)) {
+				throw new DgCliError(
+					`dg-daemon (pid ${pidHandle.pid}) does not answer, so the state of service "${label}" is unknown — run dg-daemon stop --force first`,
+					EXIT_GENERAL_FAILURE,
+				);
+			}
+			if (live) {
+				const { services } = (await callDaemon(CHAT_SERVICES_PATH, "GET")) as {
+					services: ServiceStatus[];
+				};
+				const state = services.find((entry) => entry.label === label)?.state;
+				if (state === "running" || state === "backoff") {
 					throw new DgCliError(
-						`dg-daemon (pid ${pidHandle.pid}) does not answer, so the state of service "${label}" is unknown — run dg-daemon stop --force first`,
+						`service "${label}" is ${state} — stop it first with dg-daemon service stop ${label}`,
 						EXIT_GENERAL_FAILURE,
 					);
 				}
-				if (live) {
-					const { services } = (await callDaemon(
-						CHAT_SERVICES_PATH,
-						"GET",
-					)) as {
-						services: ServiceStatus[];
-					};
-					const state = services.find((entry) => entry.label === label)?.state;
-					if (state === "running" || state === "backoff") {
-						throw new DgCliError(
-							`service "${label}" is ${state} — stop it first with dg-daemon service stop ${label}`,
-							EXIT_GENERAL_FAILURE,
-						);
-					}
-				}
+			}
+			await withConfigLock(paths, () => {
+				requireDeclared();
 				const instance = servicePidFile(paths.daemonDir, label);
 				const instancePid = readInstancePid(instance);
 				if (instancePid !== undefined) {

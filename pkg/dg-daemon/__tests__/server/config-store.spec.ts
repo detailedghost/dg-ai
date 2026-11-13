@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
 	chmodSync,
+	existsSync,
 	lstatSync,
 	mkdirSync,
 	readFileSync,
@@ -8,8 +9,8 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
-import { resolveDgPaths } from "@dg/common/node";
+import { dirname, join, resolve } from "node:path";
+import { resolveDgPaths, withInstallLockSync } from "@dg/common/node";
 import * as store from "../../src/server/config-store";
 import { cleanupDgHome, freshDgHome } from "../utils/daemon-harness";
 
@@ -120,5 +121,64 @@ describe("config-store services writer", () => {
 			paths.daemonConfigPath,
 		);
 		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe('{"a":');
+	});
+});
+
+const HOLD_MS = 400;
+const holderScript = (storePath: string, dgHome: string) => `
+import { dirname } from "node:path";
+import { resolveDgPaths, withInstallLock } from "@dg/common/node";
+import { writeServiceEntry } from ${JSON.stringify(storePath)};
+const paths = resolveDgPaths({ env: { DG_HOME: ${JSON.stringify(dgHome)} } });
+await withInstallLock(dirname(paths.daemonConfigPath), async () => {
+	console.log("held");
+	await Bun.sleep(${HOLD_MS});
+	writeServiceEntry(paths, "svc", { argv: ["/bin/x"], cwd: "/srv" });
+});
+`;
+
+describe("config-store writeConfig locking", () => {
+	it("waits for the config lock a service command holds and keeps both writes", async () => {
+		const dgHome = freshDgHome();
+		homes.push(dgHome);
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		const lockFile = join(dirname(paths.daemonConfigPath), ".install.lock");
+		mkdirSync(dirname(paths.daemonConfigPath), { recursive: true });
+		const holder = Bun.spawn(
+			[
+				"bun",
+				"-e",
+				holderScript(
+					resolve(import.meta.dir, "../../src/server/config-store"),
+					dgHome,
+				),
+			],
+			{
+				cwd: resolve(import.meta.dir, ".."),
+				stdout: "pipe",
+				stderr: "inherit",
+			},
+		);
+		const reader = holder.stdout.getReader();
+		await reader.read();
+		expect(existsSync(lockFile)).toBe(true);
+
+		const started = performance.now();
+		store.writeConfig(paths, { pinnedOrigin: "chrome-extension://x" });
+		const waited = performance.now() - started;
+		await holder.exited;
+
+		expect(waited).toBeGreaterThanOrEqual(HOLD_MS / 2);
+		const config = JSON.parse(readFileSync(paths.daemonConfigPath, "utf8"));
+		expect(config.pinnedOrigin).toBe("chrome-extension://x");
+		expect(config.services.svc).toEqual(entry);
+	});
+
+	it("throws instead of skipping the write when the config lock stays held", () => {
+		const paths = setup("{}");
+		withInstallLockSync(dirname(paths.daemonConfigPath), () => {
+			expect(() => store.writeConfig(paths, { a: 1 })).toThrow("is held");
+		});
+		expect(readFileSync(paths.daemonConfigPath, "utf8")).toBe("{}");
 	});
 });
