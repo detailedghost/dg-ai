@@ -157,7 +157,8 @@ Rules:
     their value, and only when it is a plain API name such as `FindConversation`.
     Headers show by name. A JSON body shows its keys and value types, with an
     array as `[n x <shape>]` and an id-like key as `*`. Any other body shows its
-    content type and size.
+    content type and size. A path part that is a readable word, such as a
+    name, still shows; only id-like parts are masked.
   - `--filter` matches the address as shown, so it cannot test for a hidden
     value. `--limit` keeps the newest N (default 50, at most 200). `--since <ms>`
     keeps calls that started after that time; each output ends with the time to
@@ -171,10 +172,11 @@ Rules:
     popup. The grant is per origin until per-domain site keys land.
   - Even with `--values`, the hook never stores the value of `Authorization`,
     `Cookie`, `Set-Cookie`, `X-OWA-CANARY` or any header whose name holds auth,
-    token, secret, key, session, canary, csrf, credential, password or
-    signature; such a header shows as `name (hidden)`. A JSON field or a form
+    token, secret, key, session, canary, csrf, credential, pass, signature,
+    jwt, dpop, bearer or assertion; such a header shows as `name (hidden)`. A JSON field or a form
     or query parameter whose name names a credential (password, token, secret,
-    key, auth, session, cookie, code and similar) shows as `[redacted]`. All
+    key, auth, session, cookie, code and similar) shows as `[redacted]`, with
+    its whole nested value. User info in an address is masked too. All
     output goes through
     the same redaction as other `pw --ext` output, which masks held secrets and
     token patterns. Email addresses stay masked unless an `unmask` grant covers

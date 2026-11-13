@@ -294,6 +294,12 @@ describe("redactSecrets", () => {
 });
 
 describe("redactLiterals", () => {
+	it("masks the URL-encoded and form-encoded forms of a secret", () => {
+		const secret = "Tr0ub4dor&3 x/y";
+		const text = `a=${encodeURIComponent(secret)} b=${encodeURIComponent(secret).replace(/%20/g, "+")} c=${encodeURIComponent(secret).replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase())}`;
+		expect(redactLiterals(text, [secret])).toBe("a=[redacted] b=[redacted] c=[redacted]");
+	});
+
 	it("masks a given secret of any length, and ignores an empty one", () => {
 		expect(redactLiterals("cvv 123 ok 123", ["123", ""])).toBe("cvv [redacted] ok [redacted]");
 		expect(redactLiterals("plain", [])).toBe("plain");

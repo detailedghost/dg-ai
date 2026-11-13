@@ -569,6 +569,8 @@ export function createPwExtHandler({
 	async function allowValues(tab: LiveTab, context: PwExtContext, signal: AbortSignal | undefined): Promise<PwExtResult | undefined> {
 		const site = valuesSiteOf(tab.url as string);
 		if (await control.valuesAllowed(context.sessionId, site)) return undefined;
+		const ownsLive = async () =>
+			(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })) && !(await isStopped(context.sessionId));
 		const key = `values\n${context.sessionId}\n${site}`;
 		let pending = asking.get(key);
 		if (!pending) {
@@ -585,7 +587,7 @@ export function createPwExtHandler({
 						"You are asked once. It lasts until this dg session ends or you click Stop.",
 					],
 				});
-				if (answer === "allow" && !signal?.aborted) await control.allowValues(context.sessionId, site);
+				if (answer === "allow" && (await ownsLive())) await control.allowValues(context.sessionId, site);
 				return answer;
 			})();
 			asking.set(key, pending);
@@ -594,14 +596,10 @@ export function createPwExtHandler({
 		const answer = await pending;
 		if (signal?.aborted) return CANCELED;
 		if (answer !== "allow") return { ok: false, error: valuesRefused(answer, site) };
-		await control.allowValues(context.sessionId, site);
+		if (!(await ownsLive()))
+			return { ok: false, error: "The tab left the agent's group while the approval was open; nothing was read." };
 		const live = await api.tabs.get(tab.id).catch(() => undefined);
-		if (
-			!live ||
-			live.groupId !== tab.groupId ||
-			live.url !== tab.url ||
-			!(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id }))
-		)
+		if (!live || live.groupId !== tab.groupId || live.url !== tab.url)
 			return { ok: false, error: "The tab changed while the approval was open; nothing was read. Retry." };
 		return undefined;
 	}

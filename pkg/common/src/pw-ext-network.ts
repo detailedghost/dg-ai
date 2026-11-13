@@ -44,10 +44,14 @@ export type NetworkEntry = {
 };
 
 const CREDENTIAL_FIELD =
-	/pass(?:word|wd|code|phrase)|secret|token|api[-_]?key|auth|credential|session|cookie|canary|csrf|xsrf|signature|^otp$|^pin$|^code$/i;
+	/pass|pwd|secret|token|key|auth|credential|session|cookie|canary|csrf|xsrf|signature|jwt|dpop|bearer|assertion|^otp$|^pin$|^code$/i;
 const JSON_FIELD = /"((?:[^"\\]|\\.){1,256})"(\s*:\s*)("(?:[^"\\]|\\.)*"?|-?\d[\d.eE+-]*|true|false)/g;
+const JSON_NESTED = /"((?:[^"\\]|\\.){1,256})"\s*:\s*[[{]/g;
+const USER_INFO = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i;
+const CONTENT_TYPE = /^\s*([\w.+-]{1,60}\/[\w.+-]{1,60})\s*(?:;\s*charset=["']?([\w-]{1,32}))?/i;
 const FORM_FIELD = /(^|[?&;\s])([^=&;\s?#]{1,256})=([^&;\s#]*)/g;
-const SENSITIVE_HEADER = /auth|cookie|token|secret|api-?key|session|canary|csrf|xsrf|credential|password|signature/i;
+const SENSITIVE_HEADER =
+	/auth|cookie|token|secret|key|session|canary|csrf|xsrf|credential|pass|signature|jwt|dpop|bearer|assertion/i;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 const PLAIN_KEY = /^[@$_]{0,2}[A-Za-z][A-Za-z0-9_.:$-]{0,63}$/;
 const PLAIN_SEGMENT = /^[A-Za-z0-9._~$!-]{1,64}$/;
@@ -55,15 +59,49 @@ const API_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const API_NAME_PARAMS = new Set(["action", "app"]);
 const MASK = "*";
 
-/** Masks the value of each JSON field or form and query parameter whose name names a credential, also in cut text. */
+function credentialName(raw: string): boolean {
+	let name = raw;
+	try {
+		name = JSON.parse(`"${raw}"`) as string;
+	} catch {}
+	return CREDENTIAL_FIELD.test(name);
+}
+
+function maskTree(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(maskTree);
+	if (typeof value !== "object" || value === null) return value;
+	return Object.fromEntries(
+		Object.entries(value).map(([key, inner]) => [key, CREDENTIAL_FIELD.test(key) ? "[redacted]" : maskTree(inner)]),
+	);
+}
+
+function maskJsonText(text: string): string {
+	if (/^\s*[[{]/.test(text))
+		try {
+			return JSON.stringify(maskTree(JSON.parse(text)));
+		} catch {}
+	const flat = text.replace(JSON_FIELD, (match, name: string, gap: string) =>
+		credentialName(name) ? `"${name}"${gap}"[redacted]"` : match,
+	);
+	for (const match of flat.matchAll(JSON_NESTED))
+		if (credentialName(match[1] as string))
+			return `${flat.slice(0, (match.index ?? 0) + match[0].length - 1)}"[redacted]" [rest hidden]`;
+	return flat;
+}
+
+/** Masks each JSON field, nested value or form and query parameter whose name names a credential, and URL user info; cut text is masked too. */
 export function maskCredentialFields(text: string): string {
-	return text
-		.replace(JSON_FIELD, (match, name: string, gap: string) =>
-			CREDENTIAL_FIELD.test(name) ? `"${name}"${gap}"[redacted]"` : match,
-		)
-		.replace(FORM_FIELD, (match, lead: string, name: string) =>
-			CREDENTIAL_FIELD.test(decoded(name)) ? `${lead}${name}=[redacted]` : match,
-		);
+	return maskJsonText(text.replace(USER_INFO, "$1[redacted]@")).replace(FORM_FIELD, (match, lead: string, name: string) =>
+		CREDENTIAL_FIELD.test(decoded(name)) ? `${lead}${name}=[redacted]` : match,
+	);
+}
+
+/** The media type and charset of a content-type value, or * when it is not one; other parameters are dropped. */
+export function shownContentType(raw: string): string {
+	if (raw.trim() === "") return "no content type";
+	const match = CONTENT_TYPE.exec(raw);
+	if (!match) return MASK;
+	return match[2] ? `${match[1]}; charset=${match[2]}` : (match[1] as string);
 }
 
 /** True for a header whose value can carry a credential; such a value is never captured or shown. */
@@ -229,7 +267,7 @@ const clock = (at: number) => new Date(at).toTimeString().slice(0, 8);
 function bodyLine(label: string, body: NetworkBody, values: boolean, value: (text: string) => string): string[] {
 	const size = body.size >= 0 ? `, ${body.size} bytes` : "";
 	const shape = body.shape === undefined ? "" : ` ${clipShape(renderNetworkShape(body.shape))}`;
-	const head = `  ${label}: ${body.type || "no content type"}${size}`;
+	const head = `  ${label}: ${shownContentType(body.type)}${size}`;
 	if (!values) return [`${head}${shape}`];
 	if (body.text === undefined) return [head];
 	const text = maskCredentialFields(body.text);

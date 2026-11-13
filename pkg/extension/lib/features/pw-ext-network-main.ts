@@ -24,7 +24,8 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 		const SHAPE_KEYS = 40;
 		const SHAPE_NODES = 400;
 		const KEY_MAX = 256;
-		const SENSITIVE = /auth|cookie|token|secret|api-?key|session|canary|csrf|xsrf|credential|password|signature/i;
+		const SENSITIVE =
+			/auth|cookie|token|secret|key|session|canary|csrf|xsrf|credential|pass|signature|jwt|dpop|bearer|assertion/i;
 		const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 		type Slot = {
 			entries: NetworkEntry[];
@@ -146,7 +147,8 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 			};
 			const readResponse = async (entry: NetworkEntry, response: Response) => {
 				const type = contentType(entry.responseHeaders);
-				const length = Number(response.headers.get("content-length"));
+				const declared = response.headers.get("content-length");
+				const length = declared === null || declared.trim() === "" ? Number.NaN : Number(declared);
 				const size = Number.isSafeInteger(length) && length >= 0 ? length : -1;
 				if (!readable(type) || response.body === null) {
 					entry.response = { type: clip(type, TYPE_MAX), size };
@@ -165,9 +167,16 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 					const [input, init] = args;
 					const request = input instanceof win.Request ? input : undefined;
 					const requestHeaders: NetworkHeader[] = [];
-					if (init?.headers !== undefined)
-						new win.Headers(init.headers).forEach((value, name) => addHeader(requestHeaders, name, value));
-					else request?.headers.forEach((value, name) => addHeader(requestHeaders, name, value));
+					const given = init?.headers;
+					const plain =
+						given instanceof win.Headers ||
+						Array.isArray(given) ||
+						(typeof given === "object" &&
+							given !== null &&
+							[Object.prototype, null].includes(Object.getPrototypeOf(given)));
+					if (given !== undefined && plain)
+						new win.Headers(given).forEach((value, name) => addHeader(requestHeaders, name, value));
+					else if (given === undefined) request?.headers.forEach((value, name) => addHeader(requestHeaders, name, value));
 					const made: NetworkEntry = {
 						at: Date.now(),
 						via: "fetch",

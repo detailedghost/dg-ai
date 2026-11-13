@@ -43,8 +43,8 @@ page keeps a ring of the newest 100 calls. Each entry holds the method, the
 full address, the status, header names, header values up to 512 characters,
 body text up to 8000 characters, and the JSON key structure of the body. The
 hook never stores the value of a header whose name holds auth, cookie, token,
-secret, api-key, session, canary, csrf, xsrf, credential, password or
-signature, so `Authorization`, `Cookie`, `Set-Cookie` and `X-OWA-CANARY` values
+secret, key, session, canary, csrf, xsrf, credential, pass, signature, jwt,
+dpop, bearer or assertion, so `Authorization`, `Cookie`, `Set-Cookie` and `X-OWA-CANARY` values
 are never captured.
 
 **Default output: shape only.** The worker asks the hook for a read without
@@ -75,10 +75,15 @@ The grant key is the origin today (`valuesSiteOf` in `pw-ext.ts`); it moves to
 the registrable-domain site key when PR #191 lands. There is no UI to remove
 one grant yet; Stop removes all of them.
 
-**Masking.** `maskCredentialFields` first masks the value of each JSON field
-and each form or query parameter whose name names a credential (password,
-token, secret, api key, auth, session, cookie, canary, csrf, signature, `code`,
-`otp`, `pin`), also in cut text. Then every shown value goes through `maskRaw`, the same span-union
+**Masking.** `maskCredentialFields` first masks URL user info, and the value
+of each JSON field (with the whole nested value) and each form or query
+parameter whose name names a credential (pass, pwd, token, secret, key, auth,
+session, cookie, canary, csrf, signature, jwt, assertion, `code`, `otp`,
+`pin`). It decodes JSON-escaped names. In cut JSON text it hides the rest of
+the text after a credential field with a nested value. The content type shows
+only its media type and charset. The shared `redactLiterals` now also masks
+the URL-encoded and form-encoded forms of a held secret. Then every shown
+value goes through `maskRaw`, the same span-union
 redaction as other `pw --ext` output (held secrets, token patterns, and email
 addresses unless an unmask grant covers the site). A value the page cut ends in
 an ellipsis, so the worker also masks the word at the cut. A sensitive header
@@ -112,6 +117,12 @@ selector. `snapshot` never prints these attributes.
   `Symbol.for` key. A same-origin page script can read it, but it holds only
   what the page already had, minus sensitive header values. A page script can
   also forge entries; the worker validates them as untrusted page data.
+- **Bad:** shape output masks only path parts and keys that look like
+  generated ids, email addresses or numbers. A path part or a JSON key that is
+  a readable word, such as a person's name in `/patients/<name>` or a
+  condition in `/search/<term>`, still shows without `--values`. Most API
+  paths use ids, not names, so this record accepts that risk. A stricter
+  allowlist of path words would hide the endpoint names the verb is for.
 - **Bad:** a long response body is read up to 1 MiB through a clone. A stream
   that never ends holds that clone open until the page closes.
 - **Neutral:** a values grant has no time box, by Dante's decision. The first

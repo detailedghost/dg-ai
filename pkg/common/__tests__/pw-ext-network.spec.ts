@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
 	formatNetwork,
 	maskCredentialFields,
+	shownContentType,
 	isSensitiveHeader,
 	looksLikeOpaqueId,
 	type NetworkEntry,
@@ -90,11 +91,27 @@ describe("maskCredentialFields", () => {
 		["user=ada&passwd=hunter2&remember=1", "user=ada&passwd=[redacted]&remember=1"],
 		["https://a.test/cb?code=fake-code&state=s1#x", "https://a.test/cb?code=[redacted]&state=s1#x"],
 		['{"Subject":"token talk","Count":2}', '{"Subject":"token talk","Count":2}'],
+		['{"password":["hunter2"],"token":{"value":"fake-opaque"},"Id":1}', '{"password":"[redacted]","token":"[redacted]","Id":1}'],
+		['{"pass\\u0077ord":"hunter2"}', '{"password":"[redacted]"}'],
+		['{"A":1,"session":{"v":"fake-cut', '{"A":1,"session":"[redacted]" [rest hidden]'],
+		['{"pa\\u0073s":"fake-cut-escaped', '{"pa\\u0073s":"[redacted]"'],
+		['{"x-functions-key":"fake-hex","refresh_token":"0.fake"}', '{"x-functions-key":"[redacted]","refresh_token":"[redacted]"}'],
+		["https://alice:hunter2@127.0.0.1/api?x=1", "https://[redacted]@127.0.0.1/api?x=1"],
+		["pwd=fake-pass&otp=123456", "pwd=[redacted]&otp=[redacted]"],
 	])("masks %s", (input, output) => expect(maskCredentialFields(input)).toBe(output));
 });
 
+describe("shownContentType", () => {
+	it.each([
+		["application/json; charset=utf-8", "application/json; charset=utf-8"],
+		["text/html; boundary=fake-person@example.test", "text/html"],
+		["", "no content type"],
+		["fake person data", "*"],
+	])("shows %s as %s", (raw, shown) => expect(shownContentType(raw)).toBe(shown));
+});
+
 describe("isSensitiveHeader", () => {
-	it.each(["Authorization", "cookie", "Set-Cookie", "X-OWA-CANARY", "x-csrf-token", "X-Api-Key", "proxy-authorization"])(
+	it.each(["Authorization", "cookie", "Set-Cookie", "X-OWA-CANARY", "x-csrf-token", "X-Api-Key", "proxy-authorization", "ocp-apim-subscription-key", "x-functions-key", "dpop", "x-ms-jwt"])(
 		"withholds %s",
 		(name) => expect(isSensitiveHeader(name)).toBe(true),
 	);

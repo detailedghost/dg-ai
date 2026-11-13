@@ -2695,6 +2695,25 @@ describe("pw --ext network", () => {
 		expect(ended.fake.session.has(`pwExtValues:${SESSION}`)).toBe(false);
 	});
 
+	it("writes no values grant when the session ends while the popup is open", async () => {
+		let ended: Promise<void> | undefined;
+		let h: ReturnType<typeof harness> | undefined;
+		h = harness({
+			sites: "ask",
+			approval: "allow",
+			mainResult: page([entry]),
+			onApproval: () => {
+				if (h && h.approvalRequests.length === 2) ended = h.agentTabs.forget({ sessionId: SESSION });
+			},
+		});
+		await h.run({ verb: "current" });
+		const answer = await h.run({ verb: "network", values: true });
+		await ended;
+		expect(answer.ok).toBe(false);
+		expect(h.fake.session.has(`pwExtValues:${SESSION}`)).toBe(false);
+		expect(reads(h)).toEqual([]);
+	});
+
 	it("refuses the mailbox and browser pages and injects nothing there", async () => {
 		const proton = harness({ approval: "allow", tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
 		expect(await proton.run({ verb: "network" })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });

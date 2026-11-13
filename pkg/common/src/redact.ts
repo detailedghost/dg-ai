@@ -78,17 +78,23 @@ function literalForms(secrets: readonly string[]): string[] {
 		...new Set(
 			secrets
 				.filter((secret) => secret.length > 0)
-				.flatMap((secret) => [
-					secret,
-					secret.replace(/\s+/g, " "),
-					JSON.stringify(secret).slice(1, -1),
-					secret.replace(/[\r\n]/g, ""),
-				]),
+				.flatMap((secret) => {
+					const encoded = encodeURIComponent(secret);
+					return [
+						secret,
+						secret.replace(/\s+/g, " "),
+						JSON.stringify(secret).slice(1, -1),
+						secret.replace(/[\r\n]/g, ""),
+						encoded,
+						encoded.replace(/%20/g, "+"),
+						encoded.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase()),
+					];
+				}),
 		),
 	].filter((form) => form.length > 0);
 }
 
-/** Masks each given secret, its whitespace-collapsed, JSON-escaped and line-break-free forms, and a clipped start of 3+ characters before an ellipsis. */
+/** Masks each given secret, its whitespace-collapsed, JSON-escaped, line-break-free and URL-encoded forms, and a clipped start of 3+ characters before an ellipsis. */
 export function redactLiterals(message: string, secrets: readonly string[]): string {
 	const literals = literalForms(secrets).sort((a, b) => b.length - a.length);
 	const whole = literals.reduce((out, secret) => out.split(secret).join(REDACTED), message);

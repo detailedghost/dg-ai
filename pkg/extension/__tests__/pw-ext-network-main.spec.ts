@@ -130,7 +130,7 @@ describe("network hook", () => {
 	});
 
 	it("withholds exactly the header values that the shared rule calls sensitive", async () => {
-		const names = ["authorization", "cookie", "x-owa-canary", "x-csrf-token", "x-api-key", "x-owa-sessionid", "action", "accept", "x-req-source", "content-type"];
+		const names = ["authorization", "cookie", "x-owa-canary", "x-csrf-token", "x-api-key", "x-owa-sessionid", "ocp-apim-subscription-key", "dpop", "action", "accept", "x-req-source", "content-type"];
 		pwExtNetwork({ kind: "install" });
 		await page().fetch("https://mail.example.test/h", { headers: Object.fromEntries(names.map((name) => [name, "fake-value"])) });
 		await settle();
@@ -146,6 +146,26 @@ describe("network hook", () => {
 		await settle();
 		const [entry] = read();
 		expect(entry?.requestHeaders).toEqual([{ name: "content-type" }]);
+	});
+
+	it("reports an unknown size when a response has no content-length", async () => {
+		pwExtNetwork({ kind: "install" });
+		reply = async () => new window.Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }) as unknown as Response;
+		await page().fetch("https://mail.example.test/img");
+		await settle();
+		expect(read()[0]?.response).toEqual({ type: "image/png", size: -1 });
+	});
+
+	it("leaves a one-shot header iterable to the page", async () => {
+		pwExtNetwork({ kind: "install" });
+		function* once() {
+			yield ["x-one", "1"] as [string, string];
+		}
+		const headers = once();
+		await page().fetch("https://mail.example.test/gen", { headers: headers as unknown as HeadersInit });
+		await settle();
+		expect([...(calls.at(-1)?.init?.headers as Iterable<unknown>)]).toEqual([["x-one", "1"]]);
+		expect(read()[0]?.requestHeaders).toEqual([]);
 	});
 
 	it("reads a Request body only up to the bound", async () => {
