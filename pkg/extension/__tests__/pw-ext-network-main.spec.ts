@@ -567,3 +567,20 @@ describe("short and padded sealed values", () => {
 		expect(text).not.toContain("fake-padded-token-for-tests");
 	});
 });
+
+describe("late request body capture", () => {
+	it("masks a request body read after the response and after the history moved on", async () => {
+		const first = "fake-late-body-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		const request = new window.Request("https://mail.example.test/up", {
+			method: "POST",
+			headers: { "content-type": "application/json", Authorization: first },
+			body: JSON.stringify({ token: first, note: first }),
+		});
+		await page().fetch(request as unknown as Request);
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(first);
+	});
+});

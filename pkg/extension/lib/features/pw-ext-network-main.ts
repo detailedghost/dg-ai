@@ -283,7 +283,6 @@ export function pwExtNetwork(
 				const own = ownSecrets.get(entry);
 				if (!own) return;
 				maskEntry(entry, own);
-				ownSecrets.delete(entry);
 			};
 			const record = (entry: NetworkEntry) => {
 				fresh.entries.push(entry);
@@ -363,6 +362,7 @@ export function pwExtNetwork(
 							void readBounded(stream)
 								.then(({ text, bytes, cut }) => {
 									made.request = textBody(type, text, cut ? -1 : bytes, cut);
+								scrubOwn(made);
 								})
 								.catch(() => undefined);
 						else made.request = { type: clip(type, TYPE_MAX), size: -1 };

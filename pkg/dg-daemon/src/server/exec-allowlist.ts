@@ -69,15 +69,14 @@ export function checkExecAllowlist({
 	}
 	const resolved = resolveExecutable(command, cwd, daemonPath);
 	if (!resolved) return { ok: false, error: `credentials exec could not find ${command} as an executable file.` };
-	const entry = parseExecAllowlist(text).find(
-		(candidate) => real(candidate.path) === resolved && names.every((name) => !candidate.glob || globMatches(candidate.glob, name)),
-	);
-	if (!entry)
+	const entries = parseExecAllowlist(text).filter((candidate) => real(candidate.path) === resolved);
+	const covers = (entry: ExecAllowEntry, name: string) => !entry.glob || globMatches(entry.glob, name);
+	if (!names.every((name) => entries.some((entry) => covers(entry, name))))
 		return {
 			ok: false,
 			error: `${resolved} is not listed in ${file} for ${names.join(", ")}. The person adds it there to allow it.`,
 		};
-	if (isInterpreter(resolved) && !entry.allowInterpreter)
+	if (isInterpreter(resolved) && !names.every((name) => entries.some((entry) => covers(entry, name) && entry.allowInterpreter)))
 		return {
 			ok: false,
 			error: `${resolved} is a shell or interpreter, which can run any code, so credentials exec refuses it with pw/ values even though ${file} lists it. Only an entry with allow-interpreter allows it.`,

@@ -65,6 +65,12 @@ describe("exec allowlist", () => {
 		expect(check(file, "tool.sh", "/", undefined, "/nonexistent")).toMatchObject({ ok: false });
 	});
 
+	it("lets separate lines allow separate names in one call", () => {
+		const { file, tool, dir } = setup(["$TOOL pw/one.test/*", "$TOOL pw/two.test/*"]);
+		expect(check(file, tool, dir, ["pw/one.test/a", "pw/two.test/b"])).toEqual({ ok: true, path: tool });
+		expect(check(file, tool, dir, ["pw/one.test/a", "pw/three.test/c"])).toMatchObject({ ok: false });
+	});
+
 	it("refuses a name outside the entry glob", () => {
 		const { file, tool, dir } = setup(["$TOOL pw/live.com/*"]);
 		expect(check(file, tool, dir, ["pw/example.com/key"])).toMatchObject({ ok: false });
