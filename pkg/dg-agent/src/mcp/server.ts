@@ -99,12 +99,56 @@ function parseSchema(raw: string | undefined): { schema: Record<string, unknown>
 	return { schema, properties };
 }
 
+const SCHEMA_DEPTH_MAX = 16;
+
+function localRef(root: unknown, ref: string): unknown {
+	if (!ref.startsWith("#")) return undefined;
+	let at = root;
+	try {
+		for (const part of ref.slice(1).split("/").slice(1)) {
+			const key = decodeURIComponent(part).replace(/~1/g, "/").replace(/~0/g, "~");
+			if (typeof at !== "object" || at === null || !Object.hasOwn(at, key)) return undefined;
+			at = (at as Record<string, unknown>)[key];
+		}
+	} catch {
+		return undefined;
+	}
+	return at;
+}
+
+/** Property names a schema declares through local $ref, allOf, anyOf and oneOf, and whether the walk went too deep. */
+function declaredNames(schema: Record<string, unknown>): { names: Set<string>; tooDeep: boolean } {
+	const names = new Set<string>();
+	const seen = new Set<object>();
+	let tooDeep = false;
+	const walk = (node: unknown, depth: number): void => {
+		if (typeof node !== "object" || node === null || seen.has(node)) return;
+		if (depth > SCHEMA_DEPTH_MAX) {
+			tooDeep = true;
+			return;
+		}
+		seen.add(node);
+		const record = node as Record<string, unknown>;
+		const properties = record.properties;
+		if (typeof properties === "object" && properties !== null && !Array.isArray(properties))
+			for (const name of Object.keys(properties)) names.add(name);
+		if (typeof record.$ref === "string") walk(localRef(schema, record.$ref), depth + 1);
+		for (const key of ["allOf", "anyOf", "oneOf"]) {
+			const list = record[key];
+			if (Array.isArray(list)) for (const item of list) walk(item, depth + 1);
+		}
+	};
+	walk(schema, 0);
+	return { names, tooDeep };
+}
+
 /** The argument that picks the tab: the first of tab, dg_tab, dg_tab_2, … that the tool does not use. */
 function tabKey(raw: string | undefined): string {
-	const { properties } = parseSchema(raw);
-	if (!Object.hasOwn(properties, "tab")) return "tab";
+	const { names, tooDeep } = declaredNames(parseSchema(raw).schema);
+	const taken = (key: string) => names.has(key) || (tooDeep && (raw ?? "").includes(JSON.stringify(key)));
+	if (!taken("tab")) return "tab";
 	let key = "dg_tab";
-	for (let n = 2; Object.hasOwn(properties, key); n++) key = `dg_tab_${n}`;
+	for (let n = 2; taken(key); n++) key = `dg_tab_${n}`;
 	return key;
 }
 

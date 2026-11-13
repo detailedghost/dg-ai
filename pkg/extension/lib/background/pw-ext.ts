@@ -230,14 +230,83 @@ const SECRET_PAIR = {
 	replacement: "$1$2[redacted]",
 };
 
+const NAMED_SECRET = {
+	pattern: /((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi,
+	replacement: "$1[redacted]",
+};
+
+const UNSIGNED_JWT = {
+	pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g,
+	replacement: "[redacted]",
+};
+
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
 function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
 	const redact = unmasked ? redactSecrets : redactText;
-	return redactLiterals(redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR] }), secrets);
+	return redactLiterals(
+		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT] }),
+		secrets,
+	);
 }
 
 function clean(text: string, options: { unmasked?: boolean; secrets?: string[] } = {}): string {
 	return cap(mask(text, options));
+}
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+
+const CONSOLE_ENTRIES = 50;
+const RAW_ENTRY_MAX = 2000;
+const RAW_ERROR_MAX = 2000;
+const ENTRY_MAX = 500;
+const TOOL_OUTPUT_MAX = 50_000;
+const RAW_OUTPUT_MAX = 100_000;
+
+/** Masks raw MAIN-world text cut at rawMax; the word at the cut is masked too, as a partial token may not match. */
+function maskRaw(raw: string, rawMax: number, options: { unmasked: boolean; secrets: string[] }): string {
+	const masked = mask(clip(raw, rawMax), options);
+	if (!masked.endsWith("…") || (raw.length <= rawMax && !raw.endsWith("…"))) return masked;
+	let start = masked.length - 1;
+	while (start > 0 && !/\s/.test(masked[start - 1] as string)) start--;
+	return `${masked.slice(0, start)}[redacted]…`;
+}
+
+/** Masks raw MAIN-world console entries before it shortens them, so a cut cannot split a held secret. */
+function consoleWarnings(raw: unknown, options: { unmasked: boolean; secrets: string[] }): string[] {
+	const entries = (raw as { entries?: unknown } | null | undefined)?.entries;
+	if (!Array.isArray(entries)) return [];
+	return entries
+		.slice(-CONSOLE_ENTRIES)
+		.filter((entry): entry is string => typeof entry === "string")
+		.map((entry) => clip(maskRaw(entry, RAW_ENTRY_MAX, options).replace(/\s+/g, " "), ENTRY_MAX));
+}
+
+function wholeJson(raw: string | undefined, max: number, options: { unmasked: boolean; secrets: string[] }): string | undefined {
+	if (raw === undefined) return undefined;
+	const out = mask(raw, options);
+	if (out.length > max) return undefined;
+	try {
+		JSON.parse(out);
+		return out;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Masks raw MAIN-world tool text, then bounds each field. */
+function boundTools(tools: PwExtTool[], options: { unmasked: boolean; secrets: string[] }): PwExtTool[] {
+	return tools.map((tool) => {
+		const entry: PwExtTool = {
+			name: clip(maskRaw(tool.name, 256, options), 128),
+			description: clip(maskRaw(tool.description, 2000, options), 1000),
+		};
+		if (tool.title !== undefined) entry.title = clip(maskRaw(tool.title, 400, options), 200);
+		const schema = wholeJson(tool.inputSchema, 4000, options);
+		if (schema) entry.inputSchema = schema;
+		const annotations = wholeJson(tool.annotations, 500, options);
+		if (annotations) entry.annotations = annotations;
+		return entry;
+	});
 }
 
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5);
@@ -537,7 +606,9 @@ export function createPwExtHandler({
 		}
 		const page = () => pageLines(tab, unmasked, secrets);
 		const pageError = (error: string): PwExtResult =>
-			mailbox(tab.url) ? { ok: false, error: MAILBOX_TOOL_FAILED } : failed(error);
+			mailbox(tab.url)
+				? { ok: false, error: MAILBOX_TOOL_FAILED }
+				: failed(maskRaw(error, RAW_ERROR_MAX, { unmasked, secrets }));
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
 			data: { text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, { unmasked, secrets }) },
@@ -622,13 +693,16 @@ export function createPwExtHandler({
 			}
 			case "tools": {
 				const listed = webMcpResult(
-					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url, unmasked]),
+					await inMain(tab, pwExtWebMcp as never, [{ kind: "tools" }, tab.url]),
 				);
 				if ("error" in listed) return pageError(listed.error);
 				const found = "tools" in listed ? listed.tools : [];
 				const enabled = mailbox(tab.url) ? await enabledOrNone() : undefined;
 				const origin = new URL(tab.url as string).origin;
-				const listedTools = enabled ? found.filter((tool) => mailboxToolAllowed(tool.name, origin, enabled)) : found;
+				const listedTools = boundTools(
+					enabled ? found.filter((tool) => mailboxToolAllowed(tool.name, origin, enabled)) : found,
+					{ unmasked, secrets },
+				);
 				if (listedTools.length === 0)
 					return withTools(
 						shown([...page(), "### WebMCP tools", "This page exposes no WebMCP tools."].join("\n")),
@@ -641,7 +715,7 @@ export function createPwExtHandler({
 				]);
 				return withTools(
 					shown([...page(), `### WebMCP tools (${listed.api})`, ...rows].join("\n")),
-					mapTools(listedTools, (value) => mask(value, { unmasked, secrets })),
+					listedTools,
 				);
 			}
 			case "call": {
@@ -658,14 +732,18 @@ export function createPwExtHandler({
 							timeoutMs: TOOL_TIMEOUT_MS,
 						},
 						tab.url,
-						unmasked,
 					]),
 				);
 				if ("error" in called) return pageError(called.error);
 				if (!("output" in called))
 					return { ok: false, error: "The page returned an unexpected WebMCP result." };
 				return shown(
-					[`### Result`, `WebMCP tool ${request.tool} returned:`, called.output, ...page()].join("\n"),
+					[
+						`### Result`,
+						`WebMCP tool ${request.tool} returned:`,
+						clip(maskRaw(called.output, RAW_OUTPUT_MAX, { unmasked, secrets }), TOOL_OUTPUT_MAX),
+						...page(),
+					].join("\n"),
 				);
 			}
 			case "screenshot": {
@@ -745,15 +823,10 @@ export function createPwExtHandler({
 				if ("detail" in result)
 					return shown([`### Result`, result.detail, ...page()].join("\n"));
 				if ("entries" in result) {
-					const hooked = (await inMain(tab, pwExtConsoleHook as never, [tab.url, unmasked])) as
-						| { entries?: unknown }
-						| undefined;
-					const warnings = Array.isArray(hooked?.entries)
-						? (hooked.entries as unknown[])
-								.filter((entry): entry is string => typeof entry === "string")
-								.slice(-50)
-								.map((entry) => (entry.length > 500 ? `${entry.slice(0, 500)}…` : entry))
-						: [];
+					const warnings = consoleWarnings(await inMain(tab, pwExtConsoleHook as never, [tab.url]), {
+						unmasked,
+						secrets,
+					});
 					const entries = [...result.entries, ...warnings];
 					return shown(
 						[

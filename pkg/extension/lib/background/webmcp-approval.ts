@@ -31,6 +31,11 @@ export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
 				await storage.session.set({ [keyOf(sessionId)]: [...held, grant] });
 			});
 		},
+
+		/** Drops every grant of an ended session. */
+		forget(sessionId: string): Promise<void> {
+			return enqueue(() => storage.session.remove(keyOf(sessionId)));
+		},
 	};
 }
 
