@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Window } from "happy-dom";
+import { mountTabs } from "../entrypoints/options/tabs";
 
 const TOKEN_BLOCK_SHA256 =
 	"2093195ba40ed729a120cd0a135a75a44f6f30135cac2e1040c04aa218e738df";
@@ -53,7 +54,7 @@ describe("slim settings page", () => {
 		expect(document.body.textContent).toContain("Test narration");
 	});
 
-	it("has no pairing panel, theme toggle, nav or hash routing", () => {
+	it("has no pairing panel, theme toggle or nav landmark", () => {
 		const { html, document } = settingsDocument();
 
 		expect(html).not.toContain("pairPanel");
@@ -127,5 +128,132 @@ describe("options/style.css token block", () => {
 				new RegExp(`${selector.replace(".", "\\.")}[\\s{,.:>]`),
 			);
 		}
+	});
+});
+
+function tabbedPage(hash = ""): { window: Window; document: Document } {
+	const window = new Window({ url: `chrome-extension://abc/options.html${hash}` });
+	windows.add(window);
+	window.document.documentElement.innerHTML = readEntry("index.html");
+	const document = window.document as unknown as Document;
+	mountTabs(document.getElementById("tabs") as HTMLElement, { fallback: "general" });
+	return { window, document };
+}
+
+function visiblePanels(document: Document): string[] {
+	return [...document.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+		.filter((panel) => !panel.hidden)
+		.map((panel) => panel.dataset.panel as string);
+}
+
+function tab(document: Document, id: string): HTMLElement {
+	return document.querySelector(`[role="tab"][data-tab="${id}"]`) as HTMLElement;
+}
+
+function press(window: Window, target: Element, key: string): void {
+	target.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }) as unknown as Event);
+}
+
+describe("settings tabs", () => {
+	it("opens the settings page in its own browser tab", () => {
+		expect(readEntry("index.html")).toContain('<meta name="manifest.open_in_tab" content="true" />');
+	});
+
+	it("uses tablist, tab and tabpanel roles wired by aria", () => {
+		const { document } = tabbedPage();
+		const tabs = [...document.querySelectorAll('[role="tablist"] > [role="tab"]')];
+
+		expect(tabs.map((node) => node.textContent)).toEqual(["General", "MCP", "Narration", "About"]);
+		for (const node of tabs) {
+			const panel = document.getElementById(node.getAttribute("aria-controls") as string) as Element;
+			expect(panel.getAttribute("role")).toBe("tabpanel");
+			expect(panel.getAttribute("aria-labelledby")).toBe(node.id);
+		}
+	});
+
+	it("keeps the Web MCP scripts panel only in the MCP tab", () => {
+		const { document } = tabbedPage();
+		const mcp = document.getElementById("panel-mcp") as Element;
+
+		expect(mcp.querySelector("#webmcpScriptsPanel")).not.toBeNull();
+		for (const id of ["color", "assetDirectoryPanel", "narration", "testTts"]) {
+			expect(mcp.querySelector(`#${id}`), id).toBeNull();
+		}
+	});
+
+	it("shows General by default with one selected, focusable tab", () => {
+		const { document } = tabbedPage();
+
+		expect(visiblePanels(document)).toEqual(["general"]);
+		expect(tab(document, "general").getAttribute("aria-selected")).toBe("true");
+		expect(tab(document, "mcp").getAttribute("aria-selected")).toBe("false");
+		expect(tab(document, "general").tabIndex).toBe(0);
+		expect(tab(document, "mcp").tabIndex).toBe(-1);
+	});
+
+	it("opens the tab named in the URL hash", () => {
+		const { document } = tabbedPage("#mcp");
+
+		expect(visiblePanels(document)).toEqual(["mcp"]);
+		expect(tab(document, "mcp").getAttribute("aria-selected")).toBe("true");
+	});
+
+	it("falls back to General for an unknown hash", () => {
+		expect(visiblePanels(tabbedPage("#nope").document)).toEqual(["general"]);
+	});
+
+	it("switches on click and writes the hash", () => {
+		const { window, document } = tabbedPage();
+		tab(document, "narration").click();
+
+		expect(visiblePanels(document)).toEqual(["narration"]);
+		expect(window.location.hash).toBe("#narration");
+	});
+
+	it("follows hash changes made outside the page", async () => {
+		const { window, document } = tabbedPage();
+		window.location.hash = "about";
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+		expect(visiblePanels(document)).toEqual(["about"]);
+	});
+
+	it("moves between tabs with the arrow, Home and End keys, wrapping at the ends", () => {
+		const { window, document } = tabbedPage();
+
+		press(window, tab(document, "general"), "ArrowRight");
+		expect(visiblePanels(document)).toEqual(["mcp"]);
+		expect(document.activeElement).toBe(tab(document, "mcp"));
+		expect(window.location.hash).toBe("#mcp");
+
+		press(window, tab(document, "mcp"), "ArrowLeft");
+		press(window, tab(document, "general"), "ArrowLeft");
+		expect(visiblePanels(document)).toEqual(["about"]);
+
+		press(window, tab(document, "about"), "ArrowRight");
+		expect(visiblePanels(document)).toEqual(["general"]);
+
+		press(window, tab(document, "general"), "End");
+		expect(visiblePanels(document)).toEqual(["about"]);
+		press(window, tab(document, "about"), "Home");
+		expect(visiblePanels(document)).toEqual(["general"]);
+	});
+
+	it("ignores other keys", () => {
+		const { window, document } = tabbedPage();
+		press(window, tab(document, "general"), "a");
+
+		expect(visiblePanels(document)).toEqual(["general"]);
+	});
+});
+
+describe("review page settings link", () => {
+	it("targets the Narration tab", () => {
+		const html = readFileSync(
+			fileURLToPath(new URL("../entrypoints/review/index.html", import.meta.url)),
+			"utf8",
+		);
+
+		expect(html).toContain('href="/options.html#narration"');
 	});
 });

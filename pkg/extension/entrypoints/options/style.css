@@ -62,7 +62,7 @@
 
 @layer base {
 	body {
-		@apply mx-auto max-w-2xl px-5 pt-10 pb-16;
+		@apply mx-auto max-w-3xl px-5 pt-10 pb-16;
 		font-family: var(--sans);
 		background: var(--bg);
 		color: var(--ink);
@@ -89,6 +89,31 @@
 	.sub {
 		@apply text-sm;
 		color: var(--muted);
+	}
+	.tablist {
+		@apply mb-7 flex flex-wrap gap-2;
+	}
+	.tab {
+		@apply cursor-pointer border-2 px-4 py-2 text-sm font-semibold uppercase;
+		letter-spacing: 0.08em;
+		border-color: var(--line);
+		background: var(--panel);
+		color: var(--ink);
+		flex: 1 1 auto;
+	}
+	.tab:hover {
+		color: var(--accent);
+	}
+	.tab[aria-selected="true"] {
+		background: var(--accent);
+		border-color: var(--line);
+		color: #000;
+		box-shadow: 0.25rem 0.25rem 0 var(--accent2);
+	}
+	.tab:focus-visible,
+	[role="tabpanel"]:focus-visible {
+		outline: 0.1875rem solid var(--accent2);
+		outline-offset: 0.125rem;
 	}
 	.panel {
 		@apply border-2 p-5 mb-7;
