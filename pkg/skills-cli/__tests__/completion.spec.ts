@@ -95,12 +95,14 @@ done
 autoload -U _dg-skills
 compadd() { print -l -- "\${(@P)argv[-1]}" }
 compdef() { : }
+compset() { : }
 _files() { print files }
 words=(dg-skills st); CURRENT=2; _dg-skills
 words=(dg-skills stat ch); CURRENT=3; _dg-skills
 words=(dg-skills install --repo ""); CURRENT=4; _dg-skills
+words=(dg-skills install --repo=/x); CURRENT=3; PREFIX=--repo=/x; _dg-skills
 `;
-		expect(shell(["zsh", "-f"], script)).toEqual(["stash", "stat", "checklist", "files"]);
+		expect(shell(["zsh", "-f"], script)).toEqual(["stash", "stat", "checklist", "files", "files"]);
 	});
 
 	test.skipIf(!which("fish"))("fish completes stat ch to checklist", () => {

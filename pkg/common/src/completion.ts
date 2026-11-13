@@ -149,12 +149,20 @@ const functionName = (program: string): string => `_${program.replace(/[^A-Za-z0
 function bashScript(program: string): string {
 	const fn = functionName(program);
 	return `${fn}() {
-	local cur="\${COMP_WORDS[COMP_CWORD]}" line="\${COMP_LINE:0:COMP_POINT}" IFS=$'\\n' tab=$'\\t' prefix
+	local cur="\${COMP_WORDS[COMP_CWORD]}" IFS=$'\\n' tab=$'\\t' word last prefix i n
 	local -a words lines
-	IFS=$' \\t\\n' read -ra words <<< "$line"
-	[[ "$line" == *[[:space:]] ]] && words+=("")
-	prefix="\${words[-1]%"$cur"}"
-	lines=($(${program} __complete "\${words[@]:1}" 2>/dev/null))
+	for ((i = 1; i <= COMP_CWORD; i++)); do
+		word="\${COMP_WORDS[i]}"
+		n=\${#words[@]}
+		if ((n > 0)) && [[ "\${words[n - 1]}" == -* ]] && [[ "$word" == "=" || "\${words[n - 1]}" == *= ]]; then
+			words[n - 1]="\${words[n - 1]}$word"
+		else
+			words+=("$word")
+		fi
+	done
+	last="\${words[\${#words[@]} - 1]}"
+	prefix="\${last%"$cur"}"
+	lines=($(${program} __complete "\${words[@]}" 2>/dev/null))
 	if [[ "\${lines[0]}" == "${FILES_DIRECTIVE}" ]]; then
 		compopt -o filenames 2>/dev/null
 		COMPREPLY=($(compgen -f -- "$cur"))
@@ -175,6 +183,7 @@ ${fn}() {
 	local line tab=$'\\t'
 	lines=("\${(@f)$(${program} __complete "\${(@)words[2,CURRENT]}" 2>/dev/null)}")
 	if [[ "\${lines[1]}" == "${FILES_DIRECTIVE}" ]]; then
+		[[ "$PREFIX" == -*=* ]] && compset -P '*='
 		_files
 		return
 	fi
