@@ -587,7 +587,7 @@ export function createPwExtHandler({
 			api.scripting.executeScript({
 				target: { tabId: tab.id },
 				func: pwExtPageAction,
-				args: [action, tab.url as string, unmasked, secrets],
+				args: [action, tab.url as string, unmasked, secrets, Date.now() + pageDeadlineMs],
 			}),
 		);
 		return pageResult(frame?.result);
@@ -894,7 +894,7 @@ export function createPwExtHandler({
 						kind: "answer",
 						answer: request.answer,
 						...(request.text === undefined ? {} : { text: request.text }),
-						until: now() + pageDeadlineMs,
+						until: Date.now() + pageDeadlineMs,
 					},
 					{ unmasked, secrets },
 				);

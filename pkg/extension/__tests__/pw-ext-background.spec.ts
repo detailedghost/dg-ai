@@ -225,6 +225,7 @@ describe("pw --ext background handler", () => {
 			WEB_TAB.url,
 			false,
 			[],
+			expect.any(Number),
 		]);
 		expect(h.executed()[0]?.target.tabId).toBe(7);
 	});
@@ -235,7 +236,7 @@ describe("pw --ext background handler", () => {
 
 		expect(answer).toMatchObject({ ok: true });
 		if (answer.ok) expect(answer.data.text).toContain("#q matches 1 element");
-		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false, []]);
+		expect(h.executed()[0]?.args).toEqual([{ kind: "count", target: "#q" }, WEB_TAB.url, false, [], expect.any(Number)]);
 	});
 
 	it("runs a fill and keeps the typed value out of the result", async () => {
@@ -981,6 +982,7 @@ describe("pw --ext round 3", () => {
 			WEB_TAB.url,
 			false,
 			[],
+			expect.any(Number),
 		]);
 		expect(answer).toMatchObject({ ok: true });
 	});
@@ -1490,6 +1492,14 @@ describe("pw --ext unmask", () => {
 		await h.run({ verb: "unmask", minutes: 15 });
 		await h.run({ verb: "fill", target: "#otp", value: "739123", secret: true });
 		expect(JSON.stringify(await h.run({ verb: "tabs" }))).not.toContain("739123");
+	});
+
+	it("gives each page action a deadline the page checks", async () => {
+		const h = harness({ pageResult: { tree: "t", text: "x" } });
+		const before = Date.now();
+		await h.run({ verb: "snapshot" });
+		const call = h.executed().find((entry) => (entry as { func?: { name?: string } }).func?.name === "pwExtPageAction");
+		expect(call?.args[4]).toBeGreaterThanOrEqual(before + 15_000);
 	});
 
 	it("passes held secrets to the page so it masks them before it shortens text", async () => {
