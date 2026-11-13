@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.2.1 (2026-11-13)
+
+### Fixes
+
+- fix(pw): close the open pw --ext redaction and grant gaps ([#181](https://github.com/detailedghost/dg-ai/pull/181))
+
 ## v5.2.0 (2026-11-13)
 
 ### Features

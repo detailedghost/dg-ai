@@ -1,2 +1,2 @@
 /** The version this binary was built from. Kept equal to `package.json`. */
-export const DG_AGENT_PACKAGE_VERSION = "5.2.0";
+export const DG_AGENT_PACKAGE_VERSION = "5.2.1";
