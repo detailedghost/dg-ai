@@ -324,10 +324,13 @@ export function createAgentTabs({
 						MAX_AGENT_TABS
 				)
 					throw new AgentGroupFullError();
-				const tab = await createTab(url, groupWindow ?? (await normalWindow()));
+				const windowId = groupWindow ?? (await normalWindow());
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
+				const tab = await createTab(url, windowId);
 				const tabId = tab.id;
 				if (tabId === undefined) throw new Error("The browser opened no tab.");
 				try {
+					if (canceled?.()) throw new AgentTabOpenCanceledError();
 					await api.tabs.update(tabId, { autoDiscardable: false });
 					const joined = await joinGroup({
 						record,
