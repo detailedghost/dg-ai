@@ -414,7 +414,7 @@ export function createAgentTabs({
 			sessionId: string;
 			agentIdentity: string;
 			tabId: number;
-		}): Promise<void> {
+		}): Promise<{ recoveredTabIds: number[] }> {
 			return locked(async () => {
 				const tab = await api.tabs.get(tabId).catch(() => undefined);
 				if (!tab) throw new Error("tab not found");
@@ -422,12 +422,13 @@ export function createAgentTabs({
 				if (!allowedPage(tab.url) || mailbox(tab.url))
 					throw new Error(BLOCKED_TAB_ERROR);
 				const records = await readRecords(storage);
-				const record =
-					records.find((other) => other.sessionId === sessionId) ??
-					(await recover(sessionId))?.record;
+				const found = records.find((other) => other.sessionId === sessionId);
+				const recovered = found ? undefined : await recover(sessionId);
+				const record = found ?? recovered?.record;
+				const recoveredTabIds = recovered?.tabIds ?? [];
 				if (record && tab.groupId === record.groupId) {
 					await write({ ...record, selectedTabId: tabId });
-					return;
+					return { recoveredTabIds };
 				}
 				const owner = records.find(
 					(other) => other.groupId === tab.groupId && other.sessionId !== sessionId,
@@ -459,6 +460,7 @@ export function createAgentTabs({
 							: withoutSelection(owner),
 					);
 				}
+				return { recoveredTabIds };
 			});
 		},
 
@@ -629,8 +631,12 @@ export function registerAgentTabs({
 				({ sessionId }) => sessionId === request.sessionId,
 			);
 			if (!held) return { ok: false, error: "this agent is not paired" };
-			await agentTabs.adopt({ ...request, agentIdentity: held.agentIdentity });
-			onAdopted?.(request.tabId);
+			const { recoveredTabIds } = await agentTabs.adopt({
+				...request,
+				agentIdentity: held.agentIdentity,
+			});
+			for (const tabId of new Set([request.tabId, ...recoveredTabIds]))
+				onAdopted?.(tabId);
 			return { ok: true };
 		} catch (error) {
 			return { ok: false, error: describeError(error) };

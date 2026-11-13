@@ -1328,6 +1328,21 @@ describe("createAgentTabs adopt", () => {
 		expect(fake.record(SESSION_B)).toBeUndefined();
 	});
 
+	it("reports the tabs of a group an adopt recovered", async () => {
+		const { fake, agentTabs, open } = setup({ tabs: [tabOf({ id: 5 })] });
+		const first = await open();
+		fake.reload();
+
+		const adopted = await agentTabs.adopt({
+			sessionId: SESSION_A,
+			agentIdentity: "agent",
+			tabId: 5,
+		});
+
+		expect(adopted.recoveredTabIds).toEqual([first.tabId]);
+		expect(fake.groups.size).toBe(1);
+	});
+
 	it("adopts a loose tab and makes it the selected tab", async () => {
 		const { fake, agentTabs } = setup({ tabs: [tabOf({ id: 5 })] });
 
