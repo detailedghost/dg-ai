@@ -238,18 +238,6 @@ describe("agent tabs open", () => {
 		expect(fake.groups.size).toBe(2);
 	});
 
-	it("keeps a saved group id reserved after a reload", async () => {
-		const { fake, agentTabs, open } = setup();
-		const first = await open();
-		fake.reload();
-
-		expect(await agentGroupIds({ storage: fake.api.storage })).toEqual(
-			new Set([groupOf(fake, first.tabId)]),
-		);
-		await agentTabs.clearPersisted();
-		expect((await agentGroupIds({ storage: fake.api.storage })).size).toBe(0);
-	});
-
 	it("reports the tabs of a recovered group", async () => {
 		const { fake, open } = setup();
 		const first = await open();

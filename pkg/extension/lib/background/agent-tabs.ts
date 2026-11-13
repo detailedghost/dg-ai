@@ -185,13 +185,7 @@ export async function agentGroupIds({
 }: {
 	storage: AgentTabsStorage;
 }): Promise<Set<number>> {
-	const saved = Object.entries((await storage.local?.get(null)) ?? {})
-		.filter(([key]) => key.startsWith(PERSIST_PREFIX))
-		.map(([, record]) => (record as AgentRecord).groupId);
-	return new Set([
-		...(await readRecords(storage)).map((record) => record.groupId),
-		...saved,
-	]);
+	return new Set((await readRecords(storage)).map((record) => record.groupId));
 }
 
 function withoutSelection(record: AgentRecord): AgentRecord {
@@ -248,7 +242,7 @@ export function createAgentTabs({
 	async function recover(
 		sessionId: string,
 	): Promise<{ record: AgentRecord; tabIds: number[] } | undefined> {
-		const taken = new Set((await readRecords(storage)).map((r) => r.groupId));
+		const taken = await agentGroupIds({ storage });
 		const key = persistKey(sessionId);
 		const saved = ((await storage.local?.get(key)) ?? {})[key] as
 			| AgentRecord
