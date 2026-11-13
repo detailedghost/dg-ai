@@ -144,7 +144,7 @@ export function createRememberedWebMcpGrants({
 					entry.approvedAt <= at &&
 					entry.expiresAt > at &&
 					(await signer.verify(payload(entry), entry.mac).catch(() => false)) &&
-					(await nonces.has(entry.nonce).catch(() => false)),
+					(await nonces.has(entry.nonce, entry).catch(() => false)),
 			),
 		);
 		return entries.filter((_, index) => checks[index]);
@@ -162,8 +162,8 @@ export function createRememberedWebMcpGrants({
 				const record = { site: grant.site, tool: grant.tool, approvedAt, expiresAt: approvedAt + REMEMBER_MS, nonce };
 				const mac = await signer.sign(payload(record));
 				const held = await live();
-				for (const entry of held) if (same(entry, grant)) await nonces.remove(entry.nonce);
-				await nonces.add(nonce);
+				await nonces.removeGrant(grant);
+				await nonces.add(nonce, grant);
 				await storage.local.set({
 					[REMEMBERED_KEY]: [...held.filter((entry) => !same(entry, grant)), { ...record, mac }],
 				});
@@ -176,8 +176,8 @@ export function createRememberedWebMcpGrants({
 
 		revoke(grant: WebMcpGrant): Promise<void> {
 			return enqueue(async () => {
+				await nonces.removeGrant(grant);
 				const held = await live();
-				for (const entry of held) if (same(entry, grant)) await nonces.remove(entry.nonce);
 				await storage.local.set({ [REMEMBERED_KEY]: held.filter((entry) => !same(entry, grant)) });
 			});
 		},

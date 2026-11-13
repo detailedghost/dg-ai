@@ -328,6 +328,16 @@ describe("remember for 30 days", () => {
 		expect(requests).toHaveLength(2);
 	});
 
+	it("refuses a record hidden during Revoke and written back after", async () => {
+		const { storage, remembered } = setup();
+		await remembered.add({ site: SITE, tool: "dg_outlook_move" });
+		const saved = structuredClone(storage.localData.webmcpRemembered);
+		storage.localData.webmcpRemembered = [];
+		await remembered.revoke({ site: SITE, tool: "dg_outlook_move" });
+		storage.localData.webmcpRemembered = saved;
+		expect(await remembered.list()).toEqual([]);
+	});
+
 	it("refuses every record written back after Revoke all", async () => {
 		const { storage, remembered } = setup();
 		await remembered.add({ site: SITE, tool: "dg_outlook_move" });

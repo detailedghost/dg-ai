@@ -33,8 +33,9 @@ When the person ticks it, the worker stores the site and tool, the approval
 time, the expiry time and a random nonce in `storage.local`, with an HMAC from
 the non-extractable key of `pkg/extension/lib/background/webmcp-signing.ts` over
 a `webmcp-grant:v1` payload. The live nonces sit in the extension origin's
-IndexedDB (`pkg/extension/lib/background/webmcp-grant-nonces.ts`); Revoke
-deletes the nonce. A remembered grant holds for every session until it expires
+IndexedDB (`pkg/extension/lib/background/webmcp-grant-nonces.ts`), each with
+its site and tool; Revoke deletes every nonce of that site and tool there, so it
+does not depend on the `storage.local` list. A remembered grant holds for every session until it expires
 or its nonce goes; use does not extend it. pw --ext Stop no longer drops Web MCP grants.
 Session grants still end with the dg session (`forgetAgentTabs` in
 `pkg/extension/lib/background/daemon-link.ts`). The toolbar popup
