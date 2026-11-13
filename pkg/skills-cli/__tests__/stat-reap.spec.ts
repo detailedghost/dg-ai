@@ -307,6 +307,29 @@ describe("stat reap stuck wait loops", () => {
 		expect(out.loops).toEqual([]);
 	});
 
+	test("a sleep the loop waits on is a live target, not a helper", () => {
+		const out = verdict([
+			loop(30, "sleep 14400 & while pgrep -f 'sleep 14400'; do sleep 15; done"),
+			row(31, ["sleep", "14400"], { ppid: 30, cwd: SCRATCHPAD }),
+			row(32, ["sleep", "15"], { ppid: 30, cwd: SCRATCHPAD }),
+		]);
+		expect(out.loops).toEqual([]);
+	});
+
+	test("pgrep flags that change matching are left alone", () => {
+		const out = verdict([loop(30, "until pgrep -fx service-name; do sleep 15; done")]);
+		expect(out.loops).toEqual([]);
+		expect(out.skipped[30]).toBe("wait pattern not supported");
+	});
+
+	test("a login shell loop is found", () => {
+		const out = verdict([
+			row(30, ["bash", "-lc", until], { ppid: CLAUDE, ageSec: 3 * 24 * HOUR, cwd: SCRATCHPAD }),
+			row(31, ["zsh", "-l", "-c", until], { ppid: CLAUDE, ageSec: 3 * 24 * HOUR, cwd: SCRATCHPAD }),
+		]);
+		expect(out.loops.map((l) => l.pid)).toEqual([30, 31]);
+	});
+
 	test("a loop with no session ancestor is marked none", () => {
 		const out = verdict([loop(30, until, { ppid: 1 })]);
 		expect(out.loops.map((l) => [l.pid, l.session])).toEqual([[30, "none"]]);

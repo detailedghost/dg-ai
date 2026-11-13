@@ -169,10 +169,9 @@ function kindOf(proc: ProcRow, ctx: ReapContext): string | null {
 			: null;
 	}
 	if (head === "sleep") return "poll";
-	if (SHELLS.has(head) && !proc.tty && argv[1] === "-c") {
-		const script = argv.slice(2).join(" ");
+	const script = shellScript(proc);
+	if (script !== null)
 		return /\b(while|until)\b/.test(script) && /\bsleep\b/.test(script) ? "poll-loop" : null;
-	}
 	if (devDaemon(proc, ctx)) return "dev-daemon";
 	return null;
 }
@@ -243,8 +242,10 @@ function initPids(rows: ProcRow[], uid: number): Set<number> {
 }
 
 function shellScript(proc: ProcRow): string | null {
-	if (proc.tty || !SHELLS.has(base(proc.argv[0])) || proc.argv[1] !== "-c") return null;
-	return proc.argv.slice(2).join(" ");
+	if (proc.tty || !SHELLS.has(base(proc.argv[0]))) return null;
+	for (let i = 1; i < proc.argv.length && proc.argv[i]?.startsWith("-"); i++)
+		if (/^-[A-Za-z]*c[A-Za-z]*$/.test(proc.argv[i] ?? "")) return proc.argv.slice(i + 1).join(" ");
+	return null;
 }
 
 /** The `pgrep -f` patterns of a shell that waits in a while/until loop or on `tail --pid=$(pgrep ...)`. */
@@ -253,16 +254,19 @@ export function waitPatterns(script: string): string[] {
 	const patterns: string[] = [];
 	const pgrep = /\bpgrep((?:\s+-[A-Za-z]+)+)\s+(?:"([^"]*)"|'([^']*)'|([^\s;|&)'"]+))/g;
 	for (const m of script.matchAll(pgrep)) {
-		const flags = m[1] ?? "";
-		if (!/f/.test(flags)) continue;
+		const flags = (m[1] ?? "").replace(/[\s-]/g, "");
+		if (!flags.includes("f")) continue;
 		const pattern = m[2] ?? m[3] ?? m[4];
-		if (pattern) patterns.push(/i/.test(flags) ? `(?i)${pattern}` : pattern);
+		if (!pattern) continue;
+		if (/[^fonilaA]/.test(flags)) patterns.push(`(?${flags})${pattern}`);
+		else patterns.push(flags.includes("i") ? `(?i)${pattern}` : pattern);
 	}
 	return patterns;
 }
 
 function matcher(pattern: string): ((text: string) => boolean) | null {
 	const caseless = pattern.startsWith("(?i)");
+	if (!caseless && pattern.startsWith("(?")) return null;
 	const body = caseless ? pattern.slice(4) : pattern;
 	if (body.length > 200 || /[+*}]\)[+*{]/.test(body)) return null;
 	if (/[$`\\]|\[\[:|\[\[\.|\[\[=/.test(body)) return null;
@@ -343,11 +347,15 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 	const loopPids = new Set(loops.map((l) => l.proc.pid));
 	const ignored = new Set<number>(self);
 	const helpers = new Map<number, ProcRow[]>();
-	for (const { proc } of loops) {
+	for (const { proc, patterns } of loops) {
 		const own = proc.argv.join("\0");
-		const mineOnly = descendants(rows, proc.pid).filter(
-			(child) => LOOP_HELPERS.has(base(child.argv[0])) || child.argv.join("\0") === own,
-		);
+		const tests = patterns.map(matcher);
+		const mineOnly = descendants(rows, proc.pid).filter((child) => {
+			const head = base(child.argv[0]);
+			if (head === "pgrep" || child.argv.join("\0") === own) return true;
+			const text = child.argv.join(" ");
+			return LOOP_HELPERS.has(head) && !tests.some((test) => test?.(text));
+		});
 		helpers.set(proc.pid, mineOnly);
 		for (const child of mineOnly) ignored.add(child.pid);
 	}
@@ -563,11 +571,22 @@ function lsofCwds(uid: number): Map<number, string> {
 	return cwds;
 }
 
-/** The current process table: /proc on Linux; `ps` plus `lsof` working directories on macOS. */
+function launchdPids(): Set<number> {
+	const out = spawnSync("launchctl", ["list"], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+	const pids = new Set<number>();
+	for (const line of (out.stdout ?? "").split("\n")) {
+		const pid = Number(line.split(/\s+/)[0]);
+		if (Number.isSafeInteger(pid) && pid > 1) pids.add(pid);
+	}
+	return pids;
+}
+
+/** The current process table: /proc on Linux; `ps`, `lsof` working directories and `launchctl` jobs on macOS. */
 export function readProcTable(uid: number): ProcRow[] {
 	if (process.platform === "linux") return linuxRows();
 	const cwds = lsofCwds(uid);
-	return psRows().map((proc) => ({ ...proc, cwd: cwds.get(proc.pid) ?? null }));
+	const services = launchdPids();
+	return psRows().map((proc) => ({ ...proc, cwd: cwds.get(proc.pid) ?? null, service: services.has(proc.pid) }));
 }
 
 /** Start token in the same format `readProcTable` records, or null when the process is gone or a zombie. */
