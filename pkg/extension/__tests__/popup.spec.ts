@@ -1610,3 +1610,63 @@ describe("mountPopup Stop for agents that drive tabs", () => {
 		harness.handle.destroy();
 	});
 });
+
+describe("popup Web MCP grants", () => {
+	const alpha = session({ sessionId: ALPHA_ID, agentIdentity: "alpha" });
+	const EXPIRES = Date.UTC(2026, 11, 13);
+	const sessionGrant = { kind: "session", sessionId: ALPHA_ID, site: "https://live.com", tool: "dg_outlook_move" };
+	const rememberedGrant = { kind: "remembered", site: "https://live.com", tool: "dg_outlook_flag", expiresAt: EXPIRES };
+	const section = (root: HTMLElement) => root.querySelector<HTMLElement>("section.webmcp");
+	const revokeOf = (root: HTMLElement, tool: string) =>
+		section(root)?.querySelector<HTMLButtonElement>(`[aria-label^="Revoke ${tool} "]`) ?? null;
+
+	test("shows no Web MCP section when no grant is active", async () => {
+		const harness = await mounted(paired(alpha));
+		expect(section(harness.root)).toBeNull();
+		harness.handle.destroy();
+	});
+
+	test("lists session and remembered grants with session label, site, tool and class, apart from the Stop list", async () => {
+		const harness = await mounted({
+			...withTabs([alpha], [groupOf(ALPHA_ID, "blue", [tabRow(11)])]),
+			replies: { [MSG.webmcpGrantsRequest]: { grants: [sessionGrant, rememberedGrant] } },
+		});
+		const rows = [...(section(harness.root)?.querySelectorAll(".drive") ?? [])].map((row) => row.textContent);
+		expect(rows).toEqual([
+			`dg_outlook_movelive.com · this sessionalpha (${ALPHA_ID.slice(0, 8)})Revoke`,
+			"dg_outlook_flaglive.com · 30 daysRemembered until 2026-12-13Revoke",
+		]);
+		expect(harness.root.querySelector("section.driving")?.contains(section(harness.root))).toBe(false);
+		harness.handle.destroy();
+	});
+
+	test("Revoke sends that grant and Revoke all sends the revoke-all message", async () => {
+		const harness = await mounted({
+			...paired(alpha),
+			replies: { [MSG.webmcpGrantsRequest]: { grants: [sessionGrant, rememberedGrant] } },
+		});
+		revokeOf(harness.root, "dg_outlook_move")?.click();
+		await settle();
+		expect(harness.sent(MSG.webmcpRevoke)).toEqual([{ type: MSG.webmcpRevoke, grant: sessionGrant }]);
+		byText<HTMLButtonElement>(harness.root, "button", "Revoke all")?.click();
+		await settle();
+		expect(harness.sent(MSG.webmcpRevokeAll)).toEqual([{ type: MSG.webmcpRevokeAll }]);
+		expect(harness.sent(MSG.pwExtStop)).toEqual([]);
+		harness.handle.destroy();
+	});
+
+	test("shows a failed revoke in the Web MCP section", async () => {
+		const harness = await mounted({
+			...paired(alpha),
+			replies: {
+				[MSG.webmcpGrantsRequest]: { grants: [sessionGrant] },
+				[MSG.webmcpRevoke]: { ok: false, error: "Unknown Web MCP grant." },
+			},
+		});
+		revokeOf(harness.root, "dg_outlook_move")?.click();
+		await settle();
+		await settle();
+		expect(section(harness.root)?.querySelector(".err")?.textContent).toBe("Unknown Web MCP grant.");
+		harness.handle.destroy();
+	});
+});

@@ -105,6 +105,22 @@ function fakeWindows() {
 const REQUEST = { title: "Let the agent see personal data?", origin: "https://app.example.test", lines: ["a"] };
 
 describe("approvals", () => {
+	it("keeps the remember choice only for an Allow on a request that offered it", async () => {
+		const w = fakeWindows();
+		let next = 0;
+		const approvals = createApprovals({ windows: w.windows, pageUrl: (p) => p, newId: () => `id${++next}` });
+		const offered = approvals.ask({ ...REQUEST, remember: "Remember for 30 days" });
+		const plain = approvals.ask(REQUEST);
+		const denied = approvals.ask({ ...REQUEST, remember: "Remember for 30 days" });
+		await Bun.sleep(0);
+		approvals.answer("id1", true, true);
+		approvals.answer("id2", true, true);
+		approvals.answer("id3", false, true);
+		expect(await offered).toEqual({ answer: "allow", remember: true });
+		expect(await plain).toEqual({ answer: "allow", remember: false });
+		expect(await denied).toEqual({ answer: "deny", remember: false });
+	});
+
 	it("opens the approval page, shows the request, and allows on a click", async () => {
 		const w = fakeWindows();
 		const approvals = createApprovals({ windows: w.windows, pageUrl: (p) => `ext:${p}`, newId: () => "id1" });

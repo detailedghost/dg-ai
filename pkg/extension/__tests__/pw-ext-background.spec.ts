@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
+import type { ApprovalRequest } from "@/lib/background/approval";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
+import { createRememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
+import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
 
@@ -121,18 +124,28 @@ function harness(options: Options = {}) {
 	});
 	const approvalRequests: unknown[] = [];
 	const clock = options.clock ?? { now: Date.UTC(2026, 10, 9, 15, 0) };
+	const local: Record<string, unknown> = {};
+	const answerApproval = async (request: ApprovalRequest) => {
+		approvalRequests.push(request);
+		await options.onApproval?.();
+		return options.approval ?? "deny";
+	};
 	const handler = createPwExtHandler({
 		browserApi: fake.api,
 		agentTabs,
 		isChromium: () => options.chromium ?? true,
 		approvals: {
-			request: async (request) => {
-				approvalRequests.push(request);
-				await options.onApproval?.();
-				return options.approval ?? "deny";
-			},
+			request: answerApproval,
+			ask: async (request) => ({ answer: await answerApproval(request), remember: false }),
 		},
 		now: () => clock.now,
+		rememberedWebMcpGrants: createRememberedWebMcpGrants({
+			storage: { local: { get: async (key: string) => ({ [key]: local[key] }), set: async (items) => void Object.assign(local, items) } },
+			signer: createWebMcpSigner({
+				loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+			}),
+			now: () => clock.now,
+		}),
 		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		lock: agentTabsLock,
@@ -1046,6 +1059,7 @@ describe("pw --ext round 3", () => {
 	it("calls a WebMCP tool with its exact args", async () => {
 		const actions: unknown[] = [];
 		const h = harness({
+			approval: "allow",
 			mainResult: (action) => {
 				actions.push(action);
 				return { api: "modelContext", output: "3 results" };
@@ -1060,6 +1074,7 @@ describe("pw --ext round 3", () => {
 
 	it("refuses to call a tool the page does not expose", async () => {
 		const h = harness({
+			approval: "allow",
 			mainResult: () => ({ error: "No WebMCP tool named search on this page." }),
 		});
 
@@ -1621,7 +1636,7 @@ describe("pw --ext WebMCP approval", () => {
 		const answer = await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["AAMkADQ1="] } });
 		expect(h.approvalRequests).toEqual([
 			expect.objectContaining({
-				title: "Allow dg_outlook_delete on https://outlook.live.com?",
+				title: "Allow dg_outlook_delete on live.com?",
 				origin: "https://outlook.live.com",
 				lines: expect.arrayContaining([`Agent: ${IDENTITY}`, 'Args: {"ids":["AAMkADQ1="]}']),
 			}),
@@ -1668,21 +1683,46 @@ describe("pw --ext WebMCP approval", () => {
 		expect(h.approvalRequests).toHaveLength(2);
 	});
 
-	it("asks again when the stored session grant names another tab group", async () => {
+	it("keys a session grant by session, site and tool, with no tab group", async () => {
 		const h = harness({ tabs: [owaTab], approval: "allow", mainResult: ran });
 		const move = { verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } } as const;
-		h.fake.api.storage.session.set({
-			[`webmcpGrants:${SESSION}`]: [{ origin: "https://outlook.live.com", tool: "dg_outlook_move", groupId: OTHER_GROUP }],
-		});
 		await h.run(move);
-		expect(h.approvalRequests).toHaveLength(1);
+		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({
+			[`webmcpGrants:${SESSION}`]: [{ site: "https://live.com", tool: "dg_outlook_move" }],
+		});
 	});
 
-	it("runs a read tool and a site tool without asking", async () => {
+	it("runs a read tool without asking", async () => {
 		const h = harness({ tabs: [owaTab], approval: "deny", mainResult: ran });
 		expect((await h.run({ verb: "call", tool: "dg_outlook_list", args: {} })).ok).toBe(true);
-		expect((await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } })).ok).toBe(true);
 		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("asks every time for a site's own tool with no dg_ name", async () => {
+		const h = harness({ approval: "allow", mainResult: ran });
+		await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } });
+		await h.run({ verb: "call", tool: "search_flights", args: { to: "LIS" } });
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({ title: expect.stringContaining("search_flights") }),
+			expect.objectContaining({ title: expect.stringContaining("search_flights") }),
+		]);
+		expect(h.approvalRequests[0]).not.toHaveProperty("remember");
+	});
+
+	it("does not run a site's own tool on Deny", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ approval: "deny", mainResult: (action) => void actions.push(action) });
+		expect((await h.run({ verb: "call", tool: "search_flights", args: {} })).ok).toBe(false);
+		expect(actions).toEqual([]);
+	});
+
+	it("does not ask the pw --ext site question for tools or call", async () => {
+		const h = harness({ sites: "ask", tabs: [owaTab], approval: "allow", mainResult: () => ({ ...ran(), tools: [] }) });
+		await h.run({ verb: "tools" });
+		await h.run({ verb: "call", tool: "dg_outlook_list", args: {} });
+		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
+		expect(h.approvalRequests).toEqual([expect.objectContaining({ title: "Allow dg_outlook_move on live.com?" })]);
+		expect(h.fake.session.has(`pwExtSites:${SESSION}`)).toBe(false);
 	});
 
 	it("asks every time for an unknown dg_ tool", async () => {
@@ -2524,23 +2564,30 @@ describe("pw --ext Stop", () => {
 		expect(await running).toEqual({ ok: false, error: STOPPED });
 	});
 
-	it("keeps no dg_ grant that an Allow gives after Stop", async () => {
-		let asked = 0;
+	it("leaves the session's Web MCP grants in place", async () => {
+		const h = harness({
+			approval: "allow",
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" }],
+			mainResult: () => ({ api: "modelContext", output: "done" }),
+		});
+		await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
+		await h.handler.stop(SESSION);
+		expect(h.fake.session.get(`webmcpGrants:${SESSION}`)).toEqual([{ site: "https://live.com", tool: "dg_outlook_move" }]);
+	});
+
+	it("leaves a Web MCP grant that an Allow gives while Stop runs", async () => {
 		const options = {
-			sites: "ask" as const,
 			approval: "allow" as const,
 			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" }],
 			mainResult: () => ({ api: "modelContext", output: "done" }),
 			onApproval: () => undefined as void,
 		};
 		const h = harness(options);
-		options.onApproval = () => {
-			if (++asked === 2) void h.handler.stop(SESSION);
-		};
+		options.onApproval = () => void h.handler.stop(SESSION);
 		const answer = await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
 		expect(answer).toEqual({ ok: false, error: STOPPED });
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		expect(h.fake.session.has(`webmcpGrants:${SESSION}`)).toBe(false);
+		expect(h.fake.session.has(`webmcpGrants:${SESSION}`)).toBe(true);
 	});
 
 	it("closes no tab when Stop comes while close waits for the agent tab lock", async () => {

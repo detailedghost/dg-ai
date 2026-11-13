@@ -56,7 +56,15 @@ import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { siteOf } from "./site-key";
-import { createWebMcpGrants, requestWebMcpApproval, type WebMcpGrants } from "./webmcp-approval";
+import {
+	createRememberedWebMcpGrants,
+	createWebMcpGrants,
+	type RememberedWebMcpGrants,
+	type RememberStorage,
+	requestWebMcpApproval,
+	type WebMcpGrants,
+} from "./webmcp-approval";
+import { createWebMcpSigner } from "./webmcp-signing";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
@@ -124,7 +132,7 @@ const SITE_REFUSED = {
 	timeout: "No answer in the browser within 60 seconds",
 	unopened: "The approval window could not open",
 } satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
-const NO_SITE_ASK: ReadonlySet<PwExtVerb> = new Set(["tabs", "select", "close"]);
+const NO_SITE_ASK: ReadonlySet<PwExtVerb> = new Set(["tabs", "select", "close", "tools", "call"]);
 const UNMASK_REFUSED = {
 	deny: "The user clicked Deny in the browser; nothing was unmasked.",
 	closed: "The approval window was closed without an answer; nothing was unmasked.",
@@ -492,6 +500,11 @@ export function createPwExtHandler({
 	now = Date.now,
 	grants = createUnmaskGrants({ storage: api.storage, now }),
 	webmcpGrants = createWebMcpGrants({ storage: api.storage }),
+	rememberedWebMcpGrants = createRememberedWebMcpGrants({
+		storage: api.storage as unknown as RememberStorage,
+		signer: createWebMcpSigner(),
+		now,
+	}),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
 	lock,
@@ -500,10 +513,11 @@ export function createPwExtHandler({
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
 	isChromium?: () => boolean;
-	approvals?: Pick<Approvals, "request">;
+	approvals?: Pick<Approvals, "request" | "ask">;
 	now?: () => number;
 	grants?: UnmaskGrants;
 	webmcpGrants?: WebMcpGrants;
+	rememberedWebMcpGrants?: RememberedWebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	pageDeadlineMs?: number;
 	lock?: AgentTabsLock;
@@ -554,7 +568,7 @@ export function createPwExtHandler({
 		await control.allow(context.sessionId, site.key);
 	}
 
-	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
+	/** Ends a session's control at once: verbs in flight end, unmask grants and sites go, and its tabs return to the person; Web MCP grants stay. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.add(sessionId);
 		for (const run of live.get(sessionId) ?? []) {
@@ -565,7 +579,6 @@ export function createPwExtHandler({
 		for (const key of deniedThrough.keys()) if (key.startsWith(`${sessionId}\n`)) deniedThrough.delete(key);
 		await Promise.allSettled([
 			grants.forget(sessionId),
-			webmcpGrants.forget(sessionId),
 			forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
 		]);
 	}
@@ -1117,23 +1130,20 @@ export function createPwExtHandler({
 		const tool = request.tool as string;
 		if (tab.url === undefined) return { ok: false, error: `This tab has no page address; ${tool} did not run.` };
 		const origin = new URL(tab.url).origin;
-		const approvalClass = approvalClassOf(tool, origin);
-		if (approvalClass === undefined || approvalClass === "read") return undefined;
+		const approvalClass = approvalClassOf(tool, origin) ?? "each";
+		if (approvalClass === "read") return undefined;
 		const answer = await requestWebMcpApproval({
 			approvals: approvals ?? browserApprovals(),
 			grants: webmcpGrants,
+			remembered: rememberedWebMcpGrants,
 			sessionId: context.sessionId,
 			agentIdentity: context.agentIdentity,
 			tool,
 			args: request.args ?? {},
 			origin,
-			groupId: tab.groupId ?? -1,
 			class: approvalClass,
 		});
-		if (signal?.aborted) {
-			if (await isStopped(context.sessionId)) await webmcpGrants.forget(context.sessionId);
-			return CANCELED;
-		}
+		if (signal?.aborted) return CANCELED;
 		if (answer !== "allow") {
 			const reason =
 				answer === "timeout"

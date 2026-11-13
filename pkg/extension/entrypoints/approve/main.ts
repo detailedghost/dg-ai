@@ -6,7 +6,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const id = new URLSearchParams(location.search).get("id") ?? "";
 
 async function answer(allow: boolean): Promise<void> {
-	await browser.runtime.sendMessage({ type: APPROVAL_MSG.answer, id, allow });
+	const remember = $<HTMLInputElement>("remember").checked;
+	await browser.runtime.sendMessage({ type: APPROVAL_MSG.answer, id, allow, remember });
 	window.close();
 }
 
@@ -25,6 +26,10 @@ async function show(): Promise<void> {
 		const item = document.createElement("li");
 		item.textContent = line;
 		list.append(item);
+	}
+	if (request.remember !== undefined) {
+		$("remember-label").textContent = request.remember;
+		$("remember-row").hidden = false;
 	}
 	$("actions").hidden = false;
 	$<HTMLButtonElement>("allow").addEventListener("click", () => void answer(true));

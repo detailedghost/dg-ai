@@ -12,6 +12,8 @@ import {
 	validateChatFrame,
 } from "@dg/common";
 import { handleOverwatchFrameSafely } from "@/lib/background/local-pages";
+import { createRememberedWebMcpGrants, type RememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
+import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
@@ -1505,7 +1507,11 @@ function storedPairings(...bootstraps: SessionBootstrap[]) {
 
 function bootWithStored(
 	bootstraps: SessionBootstrap[],
-	options: { local?: LocalArea; relayHandlers?: Record<string, unknown> } = {},
+	options: {
+		local?: LocalArea;
+		relayHandlers?: Record<string, unknown>;
+		rememberedWebMcpGrants?: RememberedWebMcpGrants;
+	} = {},
 ) {
 	const local = options.local ?? makeLocalArea(storedPairings(...bootstraps));
 	const harness = makeBrowserApi(local);
@@ -1519,6 +1525,7 @@ function bootWithStored(
 		browserApi: harness.api,
 		openSocket,
 		relayHandlers: options.relayHandlers as never,
+		...(options.rememberedWebMcpGrants ? { rememberedWebMcpGrants: options.rememberedWebMcpGrants } : {}),
 	});
 	const ask = (payload: Record<string, unknown>) =>
 		new Promise<Record<string, unknown> | undefined>((resolve) => {
@@ -1860,6 +1867,107 @@ test("a popup Stop reaches the pw --ext stop path only from this extension's pop
 	expect(stop.mock.calls).toEqual([]);
 	expect(await send(stopFirst, { id: api.runtime.id, url: `${popup}?from=toolbar` })).toEqual({ ok: true });
 	expect(stop.mock.calls).toEqual([[FIRST.sessionId]]);
+});
+
+function webMcpStores() {
+	const localData: Record<string, unknown> = {};
+	const remembered = createRememberedWebMcpGrants({
+		storage: {
+			local: {
+				get: async (key: string) => ({ [key]: localData[key] }),
+				set: async (items: Record<string, unknown>) => void Object.assign(localData, items),
+			},
+		},
+		signer: createWebMcpSigner({
+			loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
+		}),
+	});
+	const sessionData: Record<string, unknown> = {
+		[`webmcpGrants:${FIRST.sessionId}`]: [{ site: "https://live.com", tool: "dg_outlook_move" }],
+		[`webmcpGrants:${SECOND.sessionId}`]: [{ site: "https://live.com", tool: "dg_outlook_flag" }],
+		[`pwExtSites:${FIRST.sessionId}`]: ["https://example.test"],
+	};
+	const session = {
+		get: mock(async (key: string | null) => (key === null ? { ...sessionData } : { [key]: sessionData[key] })),
+		set: mock(async (items: Record<string, unknown>) => void Object.assign(sessionData, items)),
+		remove: mock(async (key: string) => void delete sessionData[key]),
+	};
+	return { remembered, sessionData, session };
+}
+
+test("the popup lists Web MCP session and remembered grants and revokes one or all", async () => {
+	const { remembered, sessionData, session } = webMcpStores();
+	await remembered.add({ site: "https://live.com", tool: "dg_outlook_move" });
+	const { api, getOnMessage } = bootWithStored([], { rememberedWebMcpGrants: remembered });
+	Object.assign(api.storage.session, session);
+	await settle();
+	const listener = getOnMessage();
+	const popup = { id: api.runtime.id, url: api.runtime.getURL("popup.html") };
+	const send = (message: Record<string, unknown>) =>
+		new Promise<unknown>((resolve) => {
+			if (!listener?.(message, popup, resolve)) resolve(undefined);
+		});
+
+	expect(await send({ type: MSG.webmcpGrantsRequest })).toEqual({
+		grants: [
+			{ kind: "session", sessionId: FIRST.sessionId, site: "https://live.com", tool: "dg_outlook_move" },
+			{ kind: "session", sessionId: SECOND.sessionId, site: "https://live.com", tool: "dg_outlook_flag" },
+			{ kind: "remembered", site: "https://live.com", tool: "dg_outlook_move", expiresAt: expect.any(Number) },
+		],
+	});
+	expect(
+		await send({
+			type: MSG.webmcpRevoke,
+			grant: { kind: "session", sessionId: FIRST.sessionId, site: "https://live.com", tool: "dg_outlook_move" },
+		}),
+	).toEqual({ ok: true });
+	expect(sessionData[`webmcpGrants:${FIRST.sessionId}`]).toBeUndefined();
+	expect(sessionData[`webmcpGrants:${SECOND.sessionId}`]).toHaveLength(1);
+	expect(
+		await send({ type: MSG.webmcpRevoke, grant: { kind: "remembered", site: "https://live.com", tool: "dg_outlook_move" } }),
+	).toEqual({ ok: true });
+	expect(await remembered.list()).toEqual([]);
+	await remembered.add({ site: "https://live.com", tool: "dg_outlook_move" });
+	expect(await send({ type: MSG.webmcpRevokeAll })).toEqual({ ok: true });
+	expect(await remembered.list()).toEqual([]);
+	expect(Object.keys(sessionData)).toEqual([`pwExtSites:${FIRST.sessionId}`]);
+});
+
+test("Web MCP grant messages from any sender but this extension's popup page do nothing", async () => {
+	const { remembered, sessionData, session } = webMcpStores();
+	await remembered.add({ site: "https://live.com", tool: "dg_outlook_move" });
+	const { api, getOnMessage } = bootWithStored([], { rememberedWebMcpGrants: remembered });
+	Object.assign(api.storage.session, session);
+	await settle();
+	const listener = getOnMessage();
+	const popup = api.runtime.getURL("popup.html");
+	const before = structuredClone(sessionData);
+	for (const sender of [
+		{ id: "other-extension", url: popup },
+		{ id: api.runtime.id, url: api.runtime.getURL("options.html") },
+		{ id: api.runtime.id, tab: { id: 7 }, url: "https://outlook.live.com/mail/0/" },
+		{ url: popup },
+	])
+		for (const type of [MSG.webmcpGrantsRequest, MSG.webmcpRevokeAll])
+			expect(await new Promise((resolve) => (listener?.({ type }, sender, resolve) ? undefined : resolve(undefined)))).toBeUndefined();
+	await settle();
+	expect(sessionData).toEqual(before);
+	expect(await remembered.list()).toHaveLength(1);
+});
+
+test("a session end drops its Web MCP session grants and keeps remembered grants", async () => {
+	const { remembered, sessionData, session } = webMcpStores();
+	await remembered.add({ site: "https://live.com", tool: "dg_outlook_move" });
+	const local = makeLocalArea(storedPairings(FIRST));
+	const { ask, api } = bootWithStored([], { local, rememberedWebMcpGrants: remembered });
+	Object.assign(api.storage.session, session);
+	await settle();
+	await ask({ type: MSG.sessionDisconnect, sessionId: FIRST.sessionId });
+	await settle();
+
+	expect(sessionData[`webmcpGrants:${FIRST.sessionId}`]).toBeUndefined();
+	expect(sessionData[`webmcpGrants:${SECOND.sessionId}`]).toHaveLength(1);
+	expect(await remembered.list()).toHaveLength(1);
 });
 
 test("adopt writes no key until a session-list confirms the session", async () => {
