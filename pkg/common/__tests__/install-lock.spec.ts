@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
-import { withInstallLock } from "@dg/common/node";
+import { withInstallLock, withInstallLockSync } from "@dg/common/node";
 import { makeTempDir, removeTempDirs } from "./utils/temp-dirs";
 
 let root: string;
@@ -63,19 +70,26 @@ describe("withInstallLock", () => {
 		const old = new Date(Date.now() - 24 * 3_600_000);
 		utimesSync(lockPath(), old, old);
 
-		await expect(withInstallLock(root, () => "ran", FAST)).rejects.toThrow(`pid ${process.pid}`);
+		await expect(withInstallLock(root, () => "ran", FAST)).rejects.toThrow(
+			`pid ${process.pid}`,
+		);
 		expect(readFileSync(lockPath(), "utf8")).toBe(body(process.pid));
 	});
 
-	test.skipIf(process.platform !== "linux")("takes over a lock whose pid was reused by a process with another start time", async () => {
-		writeFileSync(lockPath(), `${process.pid}:1:reused`);
+	test.skipIf(process.platform !== "linux")(
+		"takes over a lock whose pid was reused by a process with another start time",
+		async () => {
+			writeFileSync(lockPath(), `${process.pid}:1:reused`);
 
-		expect(await withInstallLock(root, () => "ran", FAST)).toBe("ran");
-	});
+			expect(await withInstallLock(root, () => "ran", FAST)).toBe("ran");
+		},
+	);
 
 	test("takes over an empty lock only after the grace period", async () => {
 		writeFileSync(lockPath(), "");
-		await expect(withInstallLock(root, () => "ran", FAST)).rejects.toThrow(lockPath());
+		await expect(withInstallLock(root, () => "ran", FAST)).rejects.toThrow(
+			lockPath(),
+		);
 
 		const old = new Date(Date.now() - 60_000);
 		utimesSync(lockPath(), old, old);
@@ -85,7 +99,9 @@ describe("withInstallLock", () => {
 	test("fails with a message naming the lock and the owner pid when a live owner keeps it", async () => {
 		writeFileSync(lockPath(), body(process.pid));
 
-		await expect(withInstallLock(root, () => "ran", FAST)).rejects.toThrow(lockPath());
+		await expect(withInstallLock(root, () => "ran", FAST)).rejects.toThrow(
+			lockPath(),
+		);
 		expect(readFileSync(lockPath(), "utf8")).toBe(body(process.pid));
 	});
 
@@ -116,5 +132,23 @@ describe("withInstallLock", () => {
 		utimesSync(`${lockPath()}.reclaim`, old, old);
 
 		expect(await withInstallLock(root, () => "ran", FAST)).toBe("ran");
+	});
+});
+
+describe("withInstallLockSync", () => {
+	test("runs fn, returns its value and removes the lock", () => {
+		expect(withInstallLockSync(root, () => 7)).toBe(7);
+		expect(existsSync(lockPath())).toBe(false);
+	});
+
+	test("throws when a live owner holds the lock", () => {
+		writeFileSync(lockPath(), body(process.pid));
+		expect(() => withInstallLockSync(root, () => 1, FAST)).toThrow("is held");
+		expect(readFileSync(lockPath(), "utf8")).toBe(body(process.pid));
+	});
+
+	test("reclaims a lock whose owner is dead", () => {
+		writeFileSync(lockPath(), body(deadPid()));
+		expect(withInstallLockSync(root, () => "ok", FAST)).toBe("ok");
 	});
 });

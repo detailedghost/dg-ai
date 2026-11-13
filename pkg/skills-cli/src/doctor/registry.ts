@@ -6,6 +6,7 @@ import { catchupChecks } from "../catchup/doctor";
 import { chainChecks } from "../chain/doctor";
 import { channelReviewChecks } from "../channel-review/doctor";
 import { clipboardImageChecks } from "../clipboard-image/doctor";
+import { completionChecks } from "../completion/doctor";
 import { credentialsChecks } from "../credentials/doctor";
 import { dbChecks } from "../db/doctor";
 import { demoChecks } from "../demo/doctor";
@@ -52,6 +53,7 @@ export const DOCTOR_REGISTRY: DoctorRegistry = {
 	"test-live": testLiveChecks,
 	install: installChecks,
 	clean: cleanChecks,
+	completion: completionChecks,
 	"batch-open": batchOpenChecks,
 	launch: launchChecks,
 	demo: demoChecks,

@@ -21,6 +21,7 @@ export * from "./plan-format";
 export * from "./protected-branch";
 export * from "./proto-format";
 export * from "./pw-ext-format";
+export * from "./pw-ext-network";
 export * from "./regex";
 export * from "./relay-features";
 export * from "./relay-format";

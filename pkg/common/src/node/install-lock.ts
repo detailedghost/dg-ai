@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
+import {
+	closeSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeSync,
+} from "node:fs";
 import { join } from "node:path";
 import { pidAlive, readProcStart } from "./plugin-cache";
 
@@ -14,14 +22,17 @@ export type InstallLockOptions = {
 	onStaleObserved?: () => void;
 };
 
-const errno = (error: unknown): string | undefined => (error as NodeJS.ErrnoException).code;
+const errno = (error: unknown): string | undefined =>
+	(error as NodeJS.ErrnoException).code;
 
 type Owner = { pid: number; procStart?: string };
 
 function parseOwner(body: string): Owner | undefined {
 	const [pidText, procStart] = body.split(":");
 	const pid = Number(pidText);
-	return Number.isSafeInteger(pid) && pid > 1 ? { pid, procStart: procStart || undefined } : undefined;
+	return Number.isSafeInteger(pid) && pid > 1
+		? { pid, procStart: procStart || undefined }
+		: undefined;
 }
 
 function isStale(body: string, mtimeMs: number): boolean {
@@ -48,19 +59,25 @@ function tryCreate(lock: string, token: string): boolean {
 function tryGuard(guard: string, token: string): boolean {
 	if (tryCreate(guard, token)) return true;
 	try {
-		if (Date.now() - statSync(guard).mtimeMs > GUARD_STALE_MS) rmSync(guard, { force: true });
+		if (Date.now() - statSync(guard).mtimeMs > GUARD_STALE_MS)
+			rmSync(guard, { force: true });
 	} catch (error) {
 		if (errno(error) !== "ENOENT") throw error;
 	}
 	return tryCreate(guard, token);
 }
 
-function reclaimIfStale(lock: string, token: string, onStaleObserved?: () => void): boolean {
+function reclaimIfStale(
+	lock: string,
+	token: string,
+	onStaleObserved?: () => void,
+): boolean {
 	const guard = `${lock}.reclaim`;
 	if (!tryGuard(guard, token)) return false;
 	try {
 		onStaleObserved?.();
-		if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs)) rmSync(lock, { force: true });
+		if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs))
+			rmSync(lock, { force: true });
 	} catch (error) {
 		if (errno(error) !== "ENOENT") throw error;
 	} finally {
@@ -85,6 +102,41 @@ function release(lock: string, token: string): void {
 	}
 }
 
+type Attempt = "acquired" | "retry" | "wait";
+
+function attempt(
+	lock: string,
+	token: string,
+	onStaleObserved?: () => void,
+): Attempt {
+	if (tryCreate(lock, token)) return "acquired";
+	try {
+		if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs)) {
+			if (reclaimIfStale(lock, token, onStaleObserved)) return "retry";
+		}
+	} catch (error) {
+		if (errno(error) === "ENOENT") return "retry";
+		throw error;
+	}
+	return "wait";
+}
+
+function heldError(lock: string): Error {
+	const owner = parseOwner(readOwnerBody(lock));
+	return new Error(
+		`${lock} is held${owner ? ` by pid ${owner.pid}` : ""}; wait for that install to finish or remove the file if it is not running`,
+	);
+}
+
+function newToken(): string {
+	return `${process.pid}:${readProcStart(process.pid) ?? ""}:${randomUUID()}`;
+}
+
+function lockPathOf(root: string): string {
+	mkdirSync(root, { recursive: true });
+	return join(root, ".install.lock");
+}
+
 /**
  * Runs `fn` while holding `<root>/.install.lock`. A lock whose owner is alive is held however old
  * it is. Only a dead owner, or a pid reused by a process with another start time, makes it stale.
@@ -94,31 +146,51 @@ function release(lock: string, token: string): void {
 export async function withInstallLock<T>(
 	root: string,
 	fn: () => T | Promise<T>,
-	{ tries = LOCK_TRIES, waitMs = LOCK_WAIT_MS, onStaleObserved }: InstallLockOptions = {},
+	{
+		tries = LOCK_TRIES,
+		waitMs = LOCK_WAIT_MS,
+		onStaleObserved,
+	}: InstallLockOptions = {},
 ): Promise<T> {
-	mkdirSync(root, { recursive: true });
-	const lock = join(root, ".install.lock");
-	const token = `${process.pid}:${readProcStart(process.pid) ?? ""}:${randomUUID()}`;
-	for (let attempt = 0; attempt < tries; attempt++) {
-		if (tryCreate(lock, token)) {
+	const lock = lockPathOf(root);
+	const token = newToken();
+	for (let n = 0; n < tries; n++) {
+		const state = attempt(lock, token, onStaleObserved);
+		if (state === "acquired") {
 			try {
 				return await fn();
 			} finally {
 				release(lock, token);
 			}
 		}
-		try {
-			if (isStale(readFileSync(lock, "utf8"), statSync(lock).mtimeMs)) {
-				if (reclaimIfStale(lock, token, onStaleObserved)) continue;
-			}
-		} catch (error) {
-			if (errno(error) === "ENOENT") continue;
-			throw error;
-		}
-		await Bun.sleep(waitMs);
+		if (state === "wait") await Bun.sleep(waitMs);
 	}
-	const owner = parseOwner(readOwnerBody(lock));
-	throw new Error(
-		`${lock} is held${owner ? ` by pid ${owner.pid}` : ""}; wait for that install to finish or remove the file if it is not running`,
-	);
+	throw heldError(lock);
+}
+
+/** Blocking twin of `withInstallLock` for synchronous callers; it stalls the event loop while it waits. */
+export function withInstallLockSync<T>(
+	root: string,
+	fn: () => T,
+	{
+		tries = LOCK_TRIES,
+		waitMs = LOCK_WAIT_MS,
+		onStaleObserved,
+	}: InstallLockOptions = {},
+): T {
+	const lock = lockPathOf(root);
+	const token = newToken();
+	const pause = new Int32Array(new SharedArrayBuffer(4));
+	for (let n = 0; n < tries; n++) {
+		const state = attempt(lock, token, onStaleObserved);
+		if (state === "acquired") {
+			try {
+				return fn();
+			} finally {
+				release(lock, token);
+			}
+		}
+		if (state === "wait") Atomics.wait(pause, 0, 0, waitMs);
+	}
+	throw heldError(lock);
 }

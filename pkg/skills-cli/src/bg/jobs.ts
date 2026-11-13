@@ -54,7 +54,7 @@ export interface JobMeta {
 	noShell?: boolean;
 }
 
-interface JobState extends JobMeta {
+export interface JobState extends JobMeta {
 	state: "running" | "done" | "unknown" | "canceled";
 	exitCode: number | null;
 	pendingUpdate: string | null;
@@ -277,14 +277,18 @@ function metaFileNames(dir: string): string[] {
 	}
 }
 
-async function cmdList(): Promise<void> {
+/** Every known job with its derived state, newest first. */
+export function listJobs(): JobState[] {
 	const dir = path.join(stateRoot(), "bg");
-	const jobs = metaFileNames(dir)
+	return metaFileNames(dir)
 		.map((f) => readMetaFile(path.join(dir, f)))
 		.filter((meta): meta is JobMeta => meta !== null)
 		.map(deriveState)
 		.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-	emitJson({ jobs });
+}
+
+async function cmdList(): Promise<void> {
+	emitJson({ jobs: listJobs() });
 }
 
 async function cmdPrune(args: string[]): Promise<void> {

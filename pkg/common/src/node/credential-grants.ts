@@ -1,12 +1,12 @@
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { validateCredentialGrantPrefix } from "../credentials-format";
-import { ensurePrivateDir, writeFileAtomic } from "./fs";
 import type { DgPaths } from "./dg-paths";
 import { assertNotBlocked } from "./layout";
+import { ensurePrivateDir, writeFileAtomic } from "./fs";
 
 export function credentialGrantTokenPath(
-	paths: DgPaths,
+	paths: Pick<DgPaths, "grantsDir">,
 	prefix: string,
 ): string {
 	return join(

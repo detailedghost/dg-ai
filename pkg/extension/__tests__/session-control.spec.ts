@@ -54,6 +54,27 @@ describe("session control", () => {
 		expect(await control.stopped("s1")).toBe(true);
 	});
 
+	it("keeps a network values grant for the session until it is forgotten", async () => {
+		const storage = memoryStorage();
+		const control = createSessionControl({ storage });
+		await control.allowValues("s1", "https://a.test");
+		expect(await control.valuesAllowed("s1", "https://a.test")).toBe(true);
+		expect(await control.valuesAllowed("s1", "https://b.test")).toBe(false);
+		expect(await control.valuesAllowed("s2", "https://a.test")).toBe(false);
+		await control.forget("s1");
+		expect(await control.valuesAllowed("s1", "https://a.test")).toBe(false);
+		expect(storage.data).toEqual({});
+	});
+
+	it("drops values grants on Stop and gives none after it", async () => {
+		const control = createSessionControl({ storage: memoryStorage() });
+		await control.allowValues("s1", "https://a.test");
+		await control.stop("s1");
+		expect(await control.valuesAllowed("s1", "https://a.test")).toBe(false);
+		await control.allowValues("s1", "https://a.test");
+		expect(await control.valuesAllowed("s1", "https://a.test")).toBe(false);
+	});
+
 	it("ignores a malformed stored value", async () => {
 		const storage = memoryStorage();
 		storage.data["pwExtSites:s1"] = "bad";

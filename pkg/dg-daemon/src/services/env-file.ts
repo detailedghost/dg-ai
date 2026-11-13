@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 
-const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const GROUP_AND_WORLD_BITS = 0o077;
 
 function unquote(value: string): string {

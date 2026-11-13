@@ -37,4 +37,49 @@ describe("executeCommand", () => {
 		expect(result.failureReason ?? "").toMatch(/timed out/i);
 		expect(result.stdout).toContain("hello-before-timeout");
 	}, 10_000);
+
+	it("kills the process tree immediately on win32 when the timeout fires", async () => {
+		const execs: Array<[string, string[]]> = [];
+		const scriptPath = writeScript("while true; do sleep 0.2; done");
+		let pid = 0;
+		const result = await executeCommand(
+			[scriptPath],
+			tmpdir(),
+			{ timeoutMs: 200, maxOutputBytes: 262_144 },
+			{
+				platform: "win32",
+				exec: (command, args) => {
+					execs.push([command, args]);
+					pid = Number(args.at(-1));
+					process.kill(-pid, "SIGKILL");
+				},
+			},
+		);
+
+		expect(execs).toEqual([["taskkill", ["/T", "/F", "/PID", String(pid)]]]);
+		expect(result.failureReason ?? "").toMatch(/timed out/i);
+	}, 10_000);
+
+	it("kills the process tree immediately on win32 when the output cap is hit", async () => {
+		const execs: Array<[string, string[]]> = [];
+		const scriptPath = writeScript(
+			"while true; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; sleep 0.05; done",
+		);
+		const result = await executeCommand(
+			[scriptPath],
+			tmpdir(),
+			{ timeoutMs: 5000, maxOutputBytes: 100 },
+			{
+				platform: "win32",
+				exec: (command, args) => {
+					execs.push([command, args]);
+					process.kill(-Number(args.at(-1)), "SIGKILL");
+				},
+			},
+		);
+
+		expect(execs).toHaveLength(1);
+		expect(execs[0]?.[0]).toBe("taskkill");
+		expect(result.truncated).toBe(true);
+	}, 10_000);
 });

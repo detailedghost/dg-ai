@@ -1,6 +1,8 @@
 ---
 name: jobs
 description: List and control the generic dg-daemon (scheduled jobs and long-running services) and the channel-review daemon. Read-only by default; starting, stopping, or restarting any of them needs a named target.
+  Also adds and removes services, runs a job now, and starts, stops or restarts
+  dg-daemon, each only on a request from the human that names the target.
 ---
 
 # Jobs
@@ -40,8 +42,9 @@ dg-skills channel-review status --env prod
 
 `job list` reads the daemon's store directly and works with no daemon running.
 `service status` needs a live daemon and calls it over loopback; with none
-running it fails cleanly with `no live dg-daemon — services run inside it, so
-start it first` instead of starting one. Report that message as the service
+running it fails cleanly with
+`no live dg-daemon — services run inside it, so start it with dg-daemon start`
+instead of starting one. Report that message as the service
 section's status, and do not start the daemon yourself to work around it —
 that is a `start` action, not part of a status check.
 
@@ -64,8 +67,42 @@ target and no "restart everything."
 | Stop | `dg-skills channel-review stop --env <env>` | `dg-daemon service stop <label>` |
 
 A scheduled job (from `job list`) is not started or stopped here; use
-`dg-daemon job enable|disable|run <label>` directly for those, outside this
-skill.
+`dg-daemon job enable|disable|run <label>` or `dg-daemon job exec <label>`
+directly for those, outside this skill.
+
+### Add and remove a service
+
+Run these only on a request from the human that names the label. A `service
+add` request also needs the argv and `--cwd` from the human; never invent them.
+
+```sh
+dg-daemon service add <label> --cwd <absolute-path> -- <command> [args...]
+dg-daemon service rm <label>
+```
+
+`service add` also takes `--autostart`, `--env-file <path>`, `--pass-env
+<NAME>`, `--stop-timeout <duration>` and `--grant <prefix>`; pass one only when
+the human names it. Both commands edit the daemon config and work with no
+daemon running. `service rm` refuses a service that is running. This skill
+does not stop a running service to make `service rm` pass; tell the human to
+ask for the stop.
+
+### Start, stop or restart dg-daemon itself
+
+Run these only on a request from the human that names `dg-daemon`:
+
+```sh
+dg-daemon start
+dg-daemon stop
+dg-daemon restart
+```
+
+`dg-daemon start` is idempotent and starts the daemon in the background, or
+reports the one that runs. Before a stop or a restart, tell the human that each
+service stops and each session ends, then wait for the go-ahead. A regular
+stop waits for the `stopTimeoutMs` of each service. This skill uses `--force`
+only when the human says so; it kills the daemon and each service process tree
+at once. A `restart` starts only the `autostart` services.
 
 ### Restart
 
@@ -115,6 +152,5 @@ before you print the block, because each session starts in its own folder:
 `channel-review start` already refuses a second start against a pid it finds
 running and exits nonzero without starting a duplicate, so this hook is safe
 to run on every session start; the redirect only keeps that expected
-already-running case quiet. There is no autostart for `dg-daemon` itself: the
-`dg-agent` and `dg-skills` CLIs already start it on demand when a command
-needs it and none is running.
+already-running case quiet. There is no autostart for `dg-daemon` itself: `dg-agent start` and
+`dg-daemon start` start it, and `dg-skills` does not.

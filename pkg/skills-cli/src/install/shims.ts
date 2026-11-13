@@ -1,9 +1,10 @@
 import { chmodSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PROGRAM_NAMES } from "@dg/common/node/program";
 import cmdTemplate from "../../../launcher/shims/dg.cmd" with { type: "text" };
 import shTemplate from "../../../launcher/shims/dg.sh" with { type: "text" };
 
-export const PROGRAMS = ["dg-skills", "dg-agent", "dg-daemon"] as const;
+export const PROGRAMS = PROGRAM_NAMES;
 
 const quotePosix = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 const escapeCmd = (value: string): string => value.replaceAll("%", "%%");

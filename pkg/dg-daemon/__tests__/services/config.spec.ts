@@ -20,6 +20,8 @@ describe("parseServices", () => {
 				argv: ["bun", "run", "bot.ts"],
 				cwd: "/srv/bot",
 				autostart: false,
+				passEnv: [],
+				stopTimeoutMs: 5000,
 			},
 		]);
 	});

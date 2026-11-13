@@ -1,6 +1,7 @@
 import { createSerialQueue } from "@dg/common";
 import { bannerTitle, pwExtBanner } from "@/lib/features/pw-ext-banner";
 import { type PwExtDialogAction, pwExtDialogs } from "@/lib/features/pw-ext-dialog-main";
+import { pwExtNetwork } from "@/lib/features/pw-ext-network-main";
 import {
 	type AgentTabs,
 	type AgentTabsLock,
@@ -66,11 +67,18 @@ function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, str
 			func: pwExtDialogs as never,
 			args,
 		}),
+		api.scripting.executeScript({
+			target: { tabId },
+			world: "MAIN",
+			injectImmediately: true,
+			func: pwExtNetwork as never,
+			args,
+		}),
 		banner,
 	]);
 }
 
-/** Installs the shim and the agent banner in an agent tab and removes both from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too, also after a worker restart; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
+/** Installs the dialog shim, the network hook and the agent banner in an agent tab and removes them from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too, also after a worker restart; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
 export async function syncDialogShim({
 	browserApi: api,
 	storage,

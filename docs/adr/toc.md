@@ -36,6 +36,8 @@ flowchart LR
 
 - [0002 — The daemon owns durable sessions and work](0002-daemon-hub.md)
 - [0003 — SQLite for daemon state; JSON for channel review](0003-storage-by-writer.md)
+- [0043 — Run outside services under the daemon with a provisional service API](0043-outside-services.md) — Accepted:
+  `passEnv`, `stopTimeoutMs`, `grant`, `POST /service-api/v1/credentials`, and `dg-daemon start`, `stop` and `restart`.
 
 ## Security
 
@@ -110,6 +112,9 @@ flowchart LR
 
 - [0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session](0045-pw-ext-driving-banner-and-sites.md) — Accepted:
   each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too.
+
+- [0046 — pw --ext: read the network calls of an agent tab, shape first](0046-pw-ext-network.md) — Accepted:
+  a MAIN-world hook in agent tabs records `fetch` and XHR calls; `pw --ext network` shows their shape with no values, and `--values` shows masked values after one Allow per site and session. Amends 0044.
 
 ## Adding an ADR
 
