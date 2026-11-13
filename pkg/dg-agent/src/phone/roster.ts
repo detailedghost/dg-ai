@@ -323,6 +323,7 @@ function seamsFor(deps: RosterDeps): NameSeams {
 		sessionsDir: deps.paths.sessionsDir,
 		daemonDb: deps.paths.dbPath,
 		sessionId: deps.sessionId,
+		now: deps.now(),
 	};
 }
 
@@ -345,10 +346,20 @@ async function ownNpubs(deps: RosterDeps): Promise<Set<string>> {
 
 export async function syncIdentities(deps: RosterDeps): Promise<void> {
 	const found = namesForRoster(discoveredAgents(deps), ROSTER_LIMIT);
+	const wanted = new Set(found.map((agent) => agent.handle));
 	const have = new Set(deps.db.listIdentities().map((row) => row.handle));
+	const missing = found.filter((agent) => !have.has(agent.handle));
 	let stored = have.size;
-	for (const agent of found) {
-		if (have.has(agent.handle)) continue;
+	if (stored + missing.length > ROSTER_HARD_CAP) {
+		for (const handle of deps.db.identityHandlesByAge()) {
+			if (stored + missing.length <= ROSTER_HARD_CAP) break;
+			if (wanted.has(handle)) continue;
+			deps.db.removeIdentity(handle);
+			have.delete(handle);
+			stored -= 1;
+		}
+	}
+	for (const agent of missing) {
 		if (stored >= ROSTER_HARD_CAP) break;
 		const keyId = `agent-${agent.handle}`;
 		await ensureKey(deps, keyId);

@@ -23,6 +23,8 @@ export type NameSeams = {
 	sessionsDir?: string;
 	daemonDb?: string;
 	sessionId?: string;
+	/** Unix seconds. Eligibility uses this clock so a test can freeze time. */
+	now?: number;
 };
 
 const FILE_CAP = 200;
@@ -188,7 +190,7 @@ export function latestTime(left: number | undefined, right: number | undefined):
  * The running session is always on the roster. Everyone else needs activity inside the
  * window, or no timestamp at all (the runtime did not record one).
  */
-export function rosterEligible(agent: DiscoveredAgent, now: number): boolean {
+export function rosterEligible(agent: { current: boolean; activeAt?: number }, now: number): boolean {
 	if (agent.current) return true;
 	if (agent.activeAt === undefined) return true;
 	return now - agent.activeAt <= ROSTER_ACTIVE_WINDOW_S;
@@ -399,6 +401,72 @@ function collapseCodex(rows: readonly CodexRow[]): CodexRow[] {
 	});
 }
 
+type NameCandidate = {
+	runtime: AgentRuntime;
+	name: string;
+	current: boolean;
+	activeAt?: number;
+	id?: string;
+	/** A taken dg identity is skipped. Claude, Codex, and Grok fall back to runtime-<id>. */
+	fallback: boolean;
+};
+
+function pushCandidate(
+	out: NameCandidate[],
+	runtime: AgentRuntime,
+	name: string,
+	current: boolean,
+	activeAt: number | undefined,
+	id: string | undefined,
+	fallback: boolean,
+): void {
+	out.push({
+		runtime,
+		name,
+		current,
+		fallback,
+		...(activeAt !== undefined ? { activeAt } : {}),
+		...(id !== undefined ? { id } : {}),
+	});
+}
+
+/** Current sessions first, then the most recently active. Ties break by name, runtime, and id. */
+function compareCandidates(left: NameCandidate, right: NameCandidate): number {
+	if (left.current !== right.current) return left.current ? -1 : 1;
+	const leftAt = left.activeAt ?? Number.NEGATIVE_INFINITY;
+	const rightAt = right.activeAt ?? Number.NEGATIVE_INFINITY;
+	if (leftAt !== rightAt) return rightAt - leftAt;
+	return left.name.localeCompare(right.name) || left.runtime.localeCompare(right.runtime) || (left.id ?? "").localeCompare(right.id ?? "");
+}
+
+/**
+ * Drops sessions that are quiet, then gives the title to the current session
+ * and after that to the most recently active. A stale row cannot hold a shared
+ * title that the live session should wear.
+ */
+function assignHandles(candidates: readonly NameCandidate[], now: number): DiscoveredAgent[] {
+	const ranked = candidates.filter((candidate) => rosterEligible(candidate, now)).sort(compareCandidates);
+	const used = new Set<string>();
+	const out: DiscoveredAgent[] = [];
+	for (const candidate of ranked) {
+		if (!candidate.fallback) {
+			const handle = slugHandle(candidate.name);
+			if (handle === undefined || used.has(handle)) continue;
+			used.add(handle);
+			out.push({
+				runtime: candidate.runtime,
+				name: candidate.name,
+				handle,
+				current: candidate.current,
+				...(candidate.activeAt !== undefined ? { activeAt: candidate.activeAt } : {}),
+			});
+			continue;
+		}
+		pushClaimed(out, candidate.runtime, candidate.name, candidate.current, candidate.activeAt, candidate.id, used);
+	}
+	return out;
+}
+
 function claimHandle(
 	runtime: AgentRuntime,
 	name: string,
@@ -434,7 +502,7 @@ function pushClaimed(
 	});
 }
 
-function claudeAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>): void {
+function claudeAgents(seams: NameSeams, out: NameCandidate[]): void {
 	const home = seams.homeDir;
 	if (home === undefined) return;
 	const config = seams.env.CLAUDE_CONFIG_DIR;
@@ -449,11 +517,11 @@ function claudeAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string
 		if (name === undefined) continue;
 		const id = firstString(record, ["id", "sessionId", "session_id"]);
 		const current = sessionId !== undefined && [record.id, record.sessionId, record.session_id].some((field) => trimmed(field) === sessionId);
-		pushClaimed(out, "claude", name, current, latestTime(recordActivity(record), mtimeSeconds(path)), id, used);
+		pushCandidate(out, "claude", name, current, latestTime(recordActivity(record), mtimeSeconds(path)), id, true);
 	}
 }
 
-function codexAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>): void {
+function codexAgents(seams: NameSeams, out: NameCandidate[]): void {
 	const home = seams.homeDir;
 	if (home === undefined) return;
 	const configured = seams.env.CODEX_HOME;
@@ -467,20 +535,20 @@ function codexAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>
 		if (parsed) rows.push(parsed);
 	}
 	for (const row of collapseCodex(rows)) {
-		pushClaimed(out, "codex", row.name, row.current, row.activeAt, row.id, used);
+		pushCandidate(out, "codex", row.name, row.current, row.activeAt, row.id, true);
 	}
 }
 
-function grokAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>): void {
+function grokAgents(seams: NameSeams, out: NameCandidate[]): void {
 	const agent = trimmed(seams.env.GROK_AGENT_NAME);
 	const bot = trimmed(seams.env.GROK_BOT_NAME);
 	if (agent !== undefined) {
 		const name = chooseSessionName({ runtime: "grok", label: agent });
-		if (name !== undefined) pushClaimed(out, "grok", name, true, undefined, undefined, used);
+		if (name !== undefined) pushCandidate(out, "grok", name, true, undefined, undefined, true);
 	}
 	if (bot !== undefined && bot !== agent) {
 		const name = chooseSessionName({ runtime: "grok", label: bot });
-		if (name !== undefined) pushClaimed(out, "grok", name, agent === undefined, undefined, undefined, used);
+		if (name !== undefined) pushCandidate(out, "grok", name, agent === undefined, undefined, undefined, true);
 	}
 	const home = seams.homeDir;
 	if (home === undefined) return;
@@ -502,7 +570,7 @@ function grokAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>)
 			prompt: firstString(record, ["prompt", "preview"]),
 		});
 		if (name === undefined) continue;
-		pushClaimed(out, "grok", name, false, latestTime(recordActivity(record), mtimeSeconds(path)), id, used);
+		pushCandidate(out, "grok", name, false, latestTime(recordActivity(record), mtimeSeconds(path)), id, true);
 	}
 }
 
@@ -512,7 +580,7 @@ function fileStem(path: string): string | undefined {
 	return trimmed(stem);
 }
 
-function dgAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>): void {
+function dgAgents(seams: NameSeams, out: NameCandidate[]): void {
 	const files = seams.sessionsDir === undefined ? [] : readSessionFiles(seams.sessionsDir);
 	const fromDb =
 		seams.daemonDb === undefined
@@ -529,27 +597,17 @@ function dgAgents(seams: NameSeams, out: DiscoveredAgent[], used: Set<string>): 
 	}
 	// Stryker restore all
 	for (const record of [...files, ...fromDb]) {
-		const handle = slugHandle(record.agentIdentity);
-		if (handle === undefined || used.has(handle)) continue;
-		used.add(handle);
 		const activeAt = seams.sessionsDir === undefined ? undefined : mtimeSeconds(join(seams.sessionsDir, `${record.sessionId}.json`));
-		out.push({
-			runtime: "dg",
-			name: record.agentIdentity,
-			handle,
-			current: record.sessionId === sessionId,
-			...(activeAt !== undefined ? { activeAt } : {}),
-		});
+		pushCandidate(out, "dg", record.agentIdentity, record.sessionId === sessionId, activeAt, record.sessionId, false);
 	}
 }
 
 /** Every named local agent this machine can see, from whichever runtime stored the name. */
 export function discoverAgents(seams: NameSeams): DiscoveredAgent[] {
-	const out: DiscoveredAgent[] = [];
-	const used = new Set<string>();
-	claudeAgents(seams, out, used);
-	codexAgents(seams, out, used);
-	grokAgents(seams, out, used);
-	dgAgents(seams, out, used);
-	return out;
+	const candidates: NameCandidate[] = [];
+	claudeAgents(seams, candidates);
+	codexAgents(seams, candidates);
+	grokAgents(seams, candidates);
+	dgAgents(seams, candidates);
+	return assignHandles(candidates, seams.now ?? Math.floor(Date.now() / 1000));
 }

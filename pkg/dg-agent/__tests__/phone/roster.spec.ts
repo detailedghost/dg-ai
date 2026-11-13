@@ -225,13 +225,44 @@ describe("session names", () => {
 		const found = discoverAgents({
 			env: { CODEX_THREAD_ID: "thr-current", CODEX_HOME: join(home, ".codex") },
 			homeDir: home,
+			now,
 		});
 		expect(found.map((agent) => [agent.handle, agent.current])).toEqual([
-			["codex-throld", false],
-			["merc", false],
 			["codex-thrcurrent", true],
+			["merc", false],
 		]);
 		expect(namesForRoster(found, 16, now).map((agent) => agent.handle)).toEqual(["codex-thrcurrent", "merc"]);
+	});
+
+	it("gives a shared title to the current session and then to the most recently active", () => {
+		const now = Math.floor(Date.now() / 1000);
+		const home = tracker.freshHome();
+		const sessions = join(home, ".claude", "sessions");
+		mkdirSync(sessions, { recursive: true });
+		const stalePath = join(sessions, "a-old.json");
+		const livePath = join(sessions, "b-live.json");
+		writeFileSync(stalePath, JSON.stringify({ name: "Dante", id: "sess-old" }));
+		writeFileSync(livePath, JSON.stringify({ name: "Dante", id: "sess-live" }));
+		const staleAt = new Date((now - ROSTER_ACTIVE_WINDOW_S - 10) * 1000);
+		utimesSync(stalePath, staleAt, staleAt);
+		utimesSync(livePath, new Date(now * 1000), new Date(now * 1000));
+		const dropped = discoverAgents({ env: { CLAUDE_CODE_SESSION_ID: "sess-live" }, homeDir: home, now });
+		expect(dropped.map((agent) => [agent.handle, agent.current])).toEqual([["dante", true]]);
+
+		const other = tracker.freshHome();
+		const otherSessions = join(other, ".claude", "sessions");
+		mkdirSync(otherSessions, { recursive: true });
+		const newerPath = join(otherSessions, "a-newer.json");
+		const olderPath = join(otherSessions, "b-older.json");
+		writeFileSync(newerPath, JSON.stringify({ name: "Dante", id: "sess-newer" }));
+		writeFileSync(olderPath, JSON.stringify({ name: "Dante", id: "sess-older" }));
+		utimesSync(olderPath, new Date((now - 100) * 1000), new Date((now - 100) * 1000));
+		utimesSync(newerPath, new Date((now - 1) * 1000), new Date((now - 1) * 1000));
+		const shared = discoverAgents({ env: { CLAUDE_CODE_SESSION_ID: "sess-older" }, homeDir: other, now });
+		expect(shared.map((agent) => [agent.handle, agent.current])).toEqual([
+			["dante", true],
+			["claude-sessnewer", false],
+		]);
 	});
 
 	it("leaves a session quiet for more than a day off the roster and keeps the one that is running", () => {
@@ -954,7 +985,31 @@ describe("machine exchange", () => {
 		expect(d.db.listIdentities()).toHaveLength(64);
 		d.env = { GROK_AGENT_NAME: "Kitten" };
 		await syncIdentities(d);
-		expect(d.db.listIdentities().some((row) => row.handle === "kitten")).toBe(false);
+		expect(d.db.listIdentities().some((row) => row.handle === "kitten")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "old0")).toBe(false);
+		expect(d.db.listIdentities().some((row) => row.handle === "warren")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "pad63")).toBe(true);
+		expect(d.db.listIdentities()).toHaveLength(64);
+	});
+
+	it("evicts the oldest ineligible identity and keeps an eligible one stored earlier", async () => {
+		const home = tracker.freshHome();
+		const d = deps(home, { homeDir: home, env: { GROK_AGENT_NAME: "Warren" } });
+		await syncIdentities(d);
+		for (let index = 0; index < 63; index += 1) d.db.putIdentity(`pad${index}`, `agent-pad${index}`, "codex");
+		expect(d.db.identityHandlesByAge()[0]).toBe("warren");
+		expect(d.db.listIdentities()).toHaveLength(64);
+		mkdirSync(join(home, ".codex"), { recursive: true });
+		writeFileSync(
+			join(home, ".codex", "session_index.jsonl"),
+			`${JSON.stringify({ id: "thr-kitten", title: "Kitten", updated_at: new Date().toISOString() })}\n`,
+		);
+		d.env = { GROK_AGENT_NAME: "Warren", CODEX_HOME: join(home, ".codex"), CODEX_THREAD_ID: "thr-kitten" };
+		await syncIdentities(d);
+		expect(d.db.listIdentities().some((row) => row.handle === "warren")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "kitten")).toBe(true);
+		expect(d.db.listIdentities().some((row) => row.handle === "pad0")).toBe(false);
+		expect(d.db.listIdentities().some((row) => row.handle === "pad62")).toBe(true);
 		expect(d.db.listIdentities()).toHaveLength(64);
 	});
 
