@@ -108,6 +108,13 @@ const TITLE_SESSION_CHARS = 4;
 
 export const MAX_AGENT_TABS = 200;
 
+/** The open was canceled while it waited for the agent tab lock. */
+export class AgentTabOpenCanceledError extends Error {
+	constructor() {
+		super("The request was canceled before it ran.");
+	}
+}
+
 export class AgentGroupFullError extends Error {
 	constructor() {
 		super(`The agent tab group is full (${MAX_AGENT_TABS} tabs).`);
@@ -143,6 +150,17 @@ export function lockedAgentGroupIds({
 	lock?: AgentTabsLock;
 }): Promise<Set<number>> {
 	return lock.request(LOCK_NAME, () => agentGroupIds({ storage }));
+}
+
+/** The session whose agent tab group has this id, if any. */
+export async function agentSessionOfGroup({
+	storage,
+	groupId,
+}: {
+	storage: AgentTabsStorage;
+	groupId: number;
+}): Promise<string | undefined> {
+	return (await readRecords(storage)).find((record) => record.groupId === groupId)?.sessionId;
 }
 
 /** Chrome tab group ids that belong to an agent session. */
@@ -287,12 +305,16 @@ export function createAgentTabs({
 			sessionId,
 			agentIdentity,
 			url,
+			canceled,
 		}: {
 			sessionId: string;
 			agentIdentity: string;
 			url: string;
+			/** Checked inside the lock; a true answer opens nothing. */
+			canceled?: () => boolean;
 		}): Promise<{ tabId: number }> {
 			return locked(async () => {
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				const record = await read(sessionId);
 				const groupWindow = await liveGroupWindow(record);
 				if (

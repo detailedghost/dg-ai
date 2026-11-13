@@ -1,4 +1,5 @@
 import { createSerialQueue } from "@dg/common";
+import { pwExtBanner } from "@/lib/features/pw-ext-banner";
 import { type PwExtDialogAction, pwExtDialogs } from "@/lib/features/pw-ext-dialog-main";
 import {
 	type AgentTabs,
@@ -15,7 +16,7 @@ export type DialogShimApi = {
 	scripting: {
 		executeScript(details: {
 			target: { tabId: number };
-			world: "MAIN";
+			world?: "MAIN";
 			injectImmediately?: boolean;
 			func: (...args: never[]) => unknown;
 			args: unknown[];
@@ -49,16 +50,22 @@ export function forgetDialogShim(storage: AgentTabsStorage, tabId: number): Prom
 }
 
 function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?]) {
-	return api.scripting.executeScript({
-		target: { tabId },
-		world: "MAIN",
-		injectImmediately: true,
-		func: pwExtDialogs as never,
-		args,
-	});
+	const banner = api.scripting
+		.executeScript({ target: { tabId }, func: pwExtBanner as never, args: [args[0].kind === "install"] })
+		.catch(() => undefined);
+	return Promise.all([
+		api.scripting.executeScript({
+			target: { tabId },
+			world: "MAIN",
+			injectImmediately: true,
+			func: pwExtDialogs as never,
+			args,
+		}),
+		banner,
+	]);
 }
 
-/** Installs the shim in an agent tab and removes it from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too, also after a worker restart; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
+/** Installs the shim and the agent banner in an agent tab and removes both from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too, also after a worker restart; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
 export async function syncDialogShim({
 	browserApi: api,
 	storage,

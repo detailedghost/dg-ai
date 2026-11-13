@@ -216,7 +216,9 @@ const STAGED_PLACEHOLDER = "00000000-0000-4000-8000-000000000000";
 export const EXT_HELP = `Usage: dg-skills pw --ext [--session <id>] [--tab <id>] <verb> [args]
 
 Drive your real browser through the paired dg-ai-extension.
-Passing --ext gives the CLI control of the tabs in the agent's own tab group. The browser asks for no approval per call.
+Passing --ext gives the CLI control of the tabs in the agent's own tab group.
+The browser asks the user once per site in each session, on the first verb there (open and new too).
+An "Agent is driving" banner on each agent tab has a Stop button. Stop ends the session's control: every later verb fails until a new dg session starts.
 Every verb acts on the agent's selected tab. --tab <id> targets one tab of the group once, without changing the selection.
 
 Session: each dg session has its own tab group. The CLI picks the session from --session <id>,

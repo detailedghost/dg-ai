@@ -223,7 +223,8 @@ describe("pw --ext", () => {
 		const env = clientEnv();
 		expect(await runExt(["--ext", "--help"], env, deps(() => ({})).value)).toBe(0);
 		expect(env.stdout.join("\n")).toContain("snapshot");
-		expect(env.stdout.join("\n")).toContain("no approval per call");
+		expect(env.stdout.join("\n")).toContain("once per site in each session");
+		expect(env.stdout.join("\n")).toContain("Stop ends the session's control");
 		expect(env.stdout.join("\n")).not.toContain("approve every call");
 	});
 });

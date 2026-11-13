@@ -62,8 +62,19 @@ popup.
 
 Rules:
 
-- Passing `--ext` is the grant. The browser asks for no approval per call. The
-  CLI controls the agent's tab group until the command ends.
+- Passing `--ext` gives the CLI the agent's tab group. The first verb on a new
+  site in a session, `open` and `new` too, opens a small extension popup that
+  asks you to allow that site for the session. Reads and writes both need it.
+  Deny, no answer in 60 seconds, or a closed window allows nothing, and no page
+  is touched. Allowed sites live in `storage.session` and go away when the
+  session ends. `tabs`, `select` and `close` ask nothing. Mailbox origins keep
+  their guard.
+- Each agent tab shows an "Agent is driving this tab" banner with a Stop button.
+  The banner sits in a closed shadow root in the extension's own script world.
+  Stop ends that session's control at once: verbs in flight fail, unmask and
+  `dg_` grants and allowed sites go away, the tab group returns to you, and
+  each later verb fails with an error that names Stop until a new dg session
+  starts. Only a real click counts; a page script cannot press it.
 - Each dg session has its own tab group. The CLI picks the session from
   `--session <id>`, then the `DG_SESSION_ID` environment variable, then the one
   session registered for the working directory. Under `--ext`, `--session` takes
