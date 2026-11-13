@@ -27,7 +27,7 @@ function minutes(value: string | undefined, name: string, fallback: number): num
 	return parseOptionalFlag(wholeNumber(0), value, name) ?? fallback;
 }
 
-function collectPid(value: string, previous: number[]): number[] {
+function collectPid(value: string, previous: number[] = []): number[] {
 	return [...previous, parseFlag(wholeNumber(2), value, "--pid")];
 }
 
@@ -180,7 +180,7 @@ function registerReap(stat: Command): void {
 		.option("--loop-min-age <minutes>", "skip wait loops younger than this (default 60)")
 		.option("--session-pid <pid>", "PID of this agent session (default: the nearest claude or codex ancestor)")
 		.option("--other-sessions", "also stop stuck wait loops of other live sessions")
-		.option("--pid <pid>", "stop only this PID if it still qualifies; repeat for more", collectPid, [])
+		.option("--pid <pid>", "stop only this PID if it still qualifies; repeat for more", collectPid)
 		.action(
 			async (options: {
 				dryRun?: boolean;
@@ -190,7 +190,7 @@ function registerReap(stat: Command): void {
 				loopMinAge?: string;
 				sessionPid?: string;
 				otherSessions?: boolean;
-				pid: number[];
+				pid?: number[];
 			}) => {
 				if (process.platform === "win32") {
 					console.log(options.json ? JSON.stringify({ supported: false }) : "stat reap: not supported on Windows");
@@ -203,7 +203,7 @@ function registerReap(stat: Command): void {
 					loopMinAgeMinutes: minutes(options.loopMinAge, "--loop-min-age", 60),
 					sessionPid: parseOptionalFlag(wholeNumber(2), options.sessionPid, "--session-pid"),
 					otherSessions: !!options.otherSessions,
-					pids: options.pid,
+					pids: options.pid ?? [],
 				});
 				if (options.json) console.log(JSON.stringify(report));
 				else process.stdout.write(renderReap(report));
