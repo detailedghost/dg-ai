@@ -210,6 +210,86 @@ describe("agent tabs open", () => {
 		expect(fake.record(SESSION_A)?.groupId).toBe(newGroup);
 	});
 
+	it("reuses the group after a reload cleared the session record", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).toBe(group);
+		expect(fake.groups.size).toBe(1);
+		expect(fake.record(SESSION_A)?.groupId).toBe(group);
+	});
+
+	it("reuses a group that has the session title but no saved record", async () => {
+		const title = groupTitle({ agentIdentity: "agent", sessionId: SESSION_A });
+		const { fake, open } = setup({
+			tabs: [tabOf({ id: 7, groupId: 40 })],
+			groups: [{ id: 40, windowId: 1, title }],
+		});
+		const { tabId } = await open();
+
+		expect(groupOf(fake, tabId)).toBe(40);
+		expect(fake.groups.size).toBe(1);
+		expect(fake.record(SESSION_A)?.groupId).toBe(40);
+	});
+
+	it("reuses a renamed group through the saved group id", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = "my rename";
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).toBe(group);
+		expect(fake.groups.size).toBe(1);
+	});
+
+	it("does not reuse another session's group or a group the person made", async () => {
+		const { fake, open } = setup({
+			tabs: [tabOf({ id: 7, groupId: 40 }), tabOf({ id: 8, groupId: 41 })],
+			groups: [
+				{
+					id: 40,
+					windowId: 1,
+					title: groupTitle({ agentIdentity: "agent", sessionId: SESSION_B }),
+				},
+				{ id: 41, windowId: 1, title: "Reading list" },
+			],
+		});
+		const { tabId } = await open();
+
+		expect([40, 41]).not.toContain(groupOf(fake, tabId));
+		expect(fake.groups.size).toBe(3);
+	});
+
+	it("does not take a group that another session's record holds", async () => {
+		const { fake, open } = setup();
+		const first = await open(SESSION_A);
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = groupTitle({
+			agentIdentity: "agent",
+			sessionId: SESSION_B,
+		});
+		const { tabId } = await open(SESSION_B);
+
+		expect(groupOf(fake, tabId)).not.toBe(group);
+	});
+
+	it("makes a new group after a reload when the saved group is gone", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.dropGroup(group);
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).not.toBe(group);
+		expect(fake.record(SESSION_A)?.groupId).toBe(groupOf(fake, second.tabId));
+	});
+
 	it("makes one group for two concurrent first opens of one session", async () => {
 		const { fake, open } = setup();
 		const [a, b] = await Promise.all([

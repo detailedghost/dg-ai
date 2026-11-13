@@ -69,11 +69,19 @@ export type AgentTabsBrowserApi = {
 			windowId: number;
 			color?: GroupColor;
 		}>;
+		query(query: { title: string }): Promise<
+			Array<{ id: number; windowId: number; title?: string }>
+		>;
 	};
 };
 
 export type AgentTabsStorage = {
 	session: {
+		get(keys: string | null): Promise<Record<string, unknown>>;
+		set(items: Record<string, unknown>): Promise<void>;
+		remove(keys: string): Promise<void>;
+	};
+	local?: {
 		get(keys: string | null): Promise<Record<string, unknown>>;
 		set(items: Record<string, unknown>): Promise<void>;
 		remove(keys: string): Promise<void>;
@@ -102,6 +110,7 @@ export type AgentTab = {
 };
 
 const RECORD_PREFIX = "agentTabs:";
+const PERSIST_PREFIX = "agentTabsGroup:";
 const LOCK_NAME = "agentTabs";
 const TITLE_IDENTITY_CHARS = 33;
 const TITLE_SESSION_CHARS = 4;
@@ -122,6 +131,7 @@ export class AgentGroupFullError extends Error {
 }
 
 const recordKey = (sessionId: string) => `${RECORD_PREFIX}${sessionId}`;
+const persistKey = (sessionId: string) => `${PERSIST_PREFIX}${sessionId}`;
 
 /** At most 40 characters, so the session suffix always survives. */
 export function groupTitle({
@@ -215,6 +225,43 @@ export function createAgentTabs({
 
 	async function write(record: AgentRecord): Promise<void> {
 		await storage.session.set({ [recordKey(record.sessionId)]: record });
+		await storage.local?.set({
+			[persistKey(record.sessionId)]: withoutSelection(record),
+		});
+	}
+
+	async function drop(sessionId: string): Promise<void> {
+		await storage.session.remove(recordKey(sessionId));
+		await storage.local?.remove(persistKey(sessionId));
+	}
+
+	async function recover(
+		sessionId: string,
+		agentIdentity: string,
+	): Promise<AgentRecord | undefined> {
+		const taken = await agentGroupIds({ storage });
+		const free = (groupId: number) => !taken.has(groupId);
+		const title = groupTitle({ agentIdentity, sessionId });
+		const key = persistKey(sessionId);
+		const saved = ((await storage.local?.get(key)) ?? {})[key] as AgentRecord | undefined;
+		const candidates: AgentRecord[] = [];
+		if (saved && free(saved.groupId)) candidates.push(saved);
+		for (const group of await api.tabGroups.query({ title }).catch(() => []))
+			if (group.title === title && free(group.id))
+				candidates.push({
+					sessionId,
+					agentIdentity,
+					groupId: group.id,
+					title,
+					color: saved?.color ?? leastUsedColor(await readRecords(storage)),
+				});
+		for (const candidate of candidates) {
+			if ((await liveGroupWindow(candidate)) === undefined) continue;
+			await write(candidate);
+			return candidate;
+		}
+		await storage.local?.remove(key);
+		return undefined;
 	}
 
 	async function rows(record: AgentRecord): Promise<AgentTab[]> {
@@ -324,7 +371,8 @@ export function createAgentTabs({
 		}): Promise<{ tabId: number }> {
 			return locked(async () => {
 				if (canceled?.()) throw new AgentTabOpenCanceledError();
-				const record = await read(sessionId);
+				const record =
+					(await read(sessionId)) ?? (await recover(sessionId, agentIdentity));
 				const groupWindow = await liveGroupWindow(record);
 				if (
 					record &&
@@ -374,7 +422,9 @@ export function createAgentTabs({
 				if (!allowedPage(tab.url) || mailbox(tab.url))
 					throw new Error(BLOCKED_TAB_ERROR);
 				const records = await readRecords(storage);
-				const record = records.find((other) => other.sessionId === sessionId);
+				const record =
+					records.find((other) => other.sessionId === sessionId) ??
+					(await recover(sessionId, agentIdentity));
 				if (record && tab.groupId === record.groupId) {
 					await write({ ...record, selectedTabId: tabId });
 					return;
@@ -514,7 +564,7 @@ export function createAgentTabs({
 		},
 
 		forget({ sessionId }: { sessionId: string }): Promise<void> {
-			return locked(() => storage.session.remove(recordKey(sessionId)));
+			return locked(() => drop(sessionId));
 		},
 
 		tabRemoved({ tabId }: { tabId: number }): Promise<void> {
@@ -527,8 +577,7 @@ export function createAgentTabs({
 		groupRemoved({ groupId }: { groupId: number }): Promise<void> {
 			return locked(async () => {
 				for (const record of await readRecords(storage))
-					if (record.groupId === groupId)
-						await storage.session.remove(recordKey(record.sessionId));
+					if (record.groupId === groupId) await drop(record.sessionId);
 			});
 		},
 	};
