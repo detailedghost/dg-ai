@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
@@ -89,6 +89,30 @@ async function credentials(cli: WebSocket, frames: unknown[], operation: "list" 
 	return find(frames, "cli-credentials-result", requestId);
 }
 
+function allow(lines: string[]) {
+	const dir = join(dgHome as string, "config");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "exec-allowlist"), `${lines.join("\n")}\n`);
+}
+
+function script(body: string): string {
+	const dir = join(dgHome as string, "tools");
+	mkdirSync(dir, { recursive: true });
+	const path = join(dir, "show-token");
+	writeFileSync(path, `#!${process.execPath}\n${body}\n`);
+	chmodSync(path, 0o755);
+	return realpathSync(path);
+}
+
+function execFrame(argv: string[], name = "pw/live.com/owa-token") {
+	return {
+		type: "cli-credentials-request",
+		requestId: randomUUID(),
+		operation: "exec",
+		exec: { bindings: [{ name, env: "TOKEN" }], argv, cwd: process.cwd(), env: { PATH: process.env.PATH ?? "" } },
+	};
+}
+
 function filesUnder(dir: string): string[] {
 	return readdirSync(dir).flatMap((entry) => {
 		const path = join(dir, entry);
@@ -153,7 +177,7 @@ describe("pw --ext credential save through the daemon", () => {
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
-		const script = [
+		const source = [
 			"const v = process.env.TOKEN;",
 			"const forms = [v, Buffer.from(v).toString('base64'), Buffer.from(v).toString('base64url'), encodeURIComponent(v), new URLSearchParams({ v }).toString().slice(2)];",
 			"process.stdout.write('len=' + v.length + ' ' + forms.join(' ') + ' ' + v.slice(0, 9));",
@@ -162,18 +186,11 @@ describe("pw --ext credential save through the daemon", () => {
 			"process.stderr.write('err ' + v + '\\n');",
 			"process.exit(7);",
 		].join("\n");
-		const requestId = randomUUID();
-		send(cli, {
-			type: "cli-credentials-request",
-			requestId,
-			operation: "exec",
-			exec: {
-				bindings: [{ name: "pw/live.com/owa-token", env: "TOKEN" }],
-				argv: [process.execPath, "-e", script],
-				cwd: process.cwd(),
-				env: { PATH: process.env.PATH ?? "" },
-			},
-		});
+		const tool = script(source);
+		allow([`${tool} pw/live.com/*`]);
+		const frame = execFrame([tool]);
+		const requestId = frame.requestId;
+		send(cli, frame);
 		const done = await waitForValue(
 			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-result" && (raw as Frame).requestId === requestId) as Frame | undefined,
 			10_000,
@@ -195,18 +212,10 @@ describe("pw --ext credential save through the daemon", () => {
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
-		const requestId = randomUUID();
-		send(cli, {
-			type: "cli-credentials-request",
-			requestId,
-			operation: "exec",
-			exec: {
-				bindings: [{ name: "pw/live.com/owa-token", env: "X" }],
-				argv: ["sh", "-c", "sleep 30 & echo $!; wait"],
-				cwd: process.cwd(),
-				env: { PATH: process.env.PATH ?? "" },
-			},
-		});
+		allow([`${realpathSync(Bun.which("sh") as string)} allow-interpreter`]);
+		const frame = execFrame(["sh", "-c", "sleep 30 & echo $!; wait"]);
+		const requestId = frame.requestId;
+		send(cli, frame);
 		const line = await waitForValue(
 			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).requestId === requestId) as Frame | undefined,
 			5000,
@@ -227,6 +236,52 @@ describe("pw --ext credential save through the daemon", () => {
 			5000,
 			"background job ended",
 		);
+	});
+
+	it("refuses exec of pw/ values with no allowlist, when not listed, and for a listed shell, with no value in any frame", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const tool = script("console.log(process.env.TOKEN)");
+		const shell = realpathSync(Bun.which("sh") as string);
+		const attempts: [string[] | undefined, string[], string][] = [
+			[undefined, [tool], "does not exist"],
+			[["/usr/bin/true"], [tool], "is not listed"],
+			[[shell], ["sh", "-c", "echo $TOKEN"], "shell or interpreter"],
+		];
+		for (const [lines, argv, message] of attempts) {
+			if (lines) allow(lines);
+			const frame = execFrame(argv);
+			send(cli, frame);
+			const answer = await find(cliFrames, "cli-credentials-result", frame.requestId);
+			expect(answer.ok).toBe(false);
+			expect(String(answer.error)).toContain(message);
+		}
+		expect(cliFrames.some((raw) => (raw as Frame).type === "cli-credentials-exec-output")).toBe(false);
+		expect(JSON.stringify(cliFrames)).not.toContain(MARKER);
+	});
+
+	it("runs a listed command through a symlink and leaves names outside pw/ unchanged", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const tool = script("console.log('got ' + process.env.TOKEN.length)");
+		allow([tool]);
+		const link = join(dgHome as string, "tools", "link");
+		symlinkSync(tool, link);
+		const frame = execFrame([link]);
+		send(cli, frame);
+		expect(await find(cliFrames, "cli-credentials-result", frame.requestId)).toMatchObject({ ok: true, value: { exitCode: 0 } });
+		const out = cliFrames.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output").map((raw) => (raw as Frame).data).join("");
+		expect(out).toContain(`got ${MARKER.length}`);
+		const setId = randomUUID();
+		send(cli, { type: "cli-credentials-request", requestId: setId, operation: "set", name: "tools/plain", value: "plain-fake-value", meta: {} });
+		await find(cliFrames, "cli-credentials-result", setId);
+		const plain = execFrame(["true"], "tools/plain");
+		send(cli, plain);
+		expect(await find(cliFrames, "cli-credentials-result", plain.requestId)).toMatchObject({ ok: true });
 	});
 
 	it("refuses exec for a value too short to scrub", async () => {

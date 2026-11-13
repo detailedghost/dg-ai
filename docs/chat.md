@@ -70,9 +70,25 @@ with the named values in environment variables. The CLI never receives a value.
 The daemon replaces each value in the command's output, also in base64 and
 URL-encoded form, with `[redacted]`. The command gets no stdin. Values under
 `pw/`, which `pw --ext credential save` writes, are never returned by `get`;
-only `exec` and `list` reach them. A command that changes the value before it
-prints it (for example reverses it) can still show it, so `exec` keeps values
-out of the agent's view by accident, not against an agent that tries.
+only `exec` and `list` reach them.
+
+`exec` runs a command with `pw/` values only when the person lists it in
+`exec-allowlist` in the dg config directory (for example
+`~/.config/dg/exec-allowlist`). Each line holds the absolute path of an
+executable, then an optional name glob such as `pw/live.com/*`, then an
+optional `allow-interpreter` flag. Lines that start with `#` are comments.
+The daemon reads the file on each `exec`, resolves the command to its real
+path (a bare name through the daemon's own `PATH`, symlinks followed), and
+runs that path. With no file, or no matching line, it refuses. It also refuses
+a shell, interpreter or launcher (`sh`, `bash`, `env`, `python`, `node`, `bun`,
+`perl`, `ruby`, `osascript`, `xargs` and similar) unless its line has
+`allow-interpreter`. Listing one undoes the guard, because it can run any code.
+
+The agent runs as the same user, so it can edit this file unless its harness
+blocks writes there. In Claude Code, add a deny rule for that path, for
+example `Edit(~/.config/dg/exec-allowlist)` and `Write(~/.config/dg/exec-allowlist)`
+under `permissions.deny`. A listed command that prints or sends the value in a
+changed form can still show it.
 Start a session with `dg-agent start` first. See the
 [developer guide](DEVELOPER.md#credential-store).
 

@@ -15,6 +15,7 @@ import {
 import type { ServerWebSocket } from "bun";
 import type { CredentialStore } from "../store/credentials-store";
 import { isExtensionPeer, type SocketState, sendViaQueue } from "./connection";
+import { checkExecAllowlist } from "./exec-allowlist";
 import type { FrameHandlerDeps } from "./frame-handlers";
 
 type Socket = ServerWebSocket<SocketState>;
@@ -171,9 +172,21 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 		injected[binding.env] = record.value;
 	}
 	const values = Object.values(injected);
+	const sealedNames = spec.bindings.map((binding) => binding.name).filter((name) => sealed(name));
+	let argv = spec.argv;
+	if (sealedNames.length) {
+		const allowed = checkExecAllowlist({
+			file: deps.paths.execAllowlistPath,
+			command: spec.argv[0] as string,
+			cwd: spec.cwd,
+			names: sealedNames,
+		});
+		if (!allowed.ok) return allowed;
+		argv = [allowed.path, ...spec.argv.slice(1)];
+	}
 	let child: ReturnType<typeof Bun.spawn>;
 	try {
-		child = Bun.spawn(spec.argv, {
+		child = Bun.spawn(argv, {
 			cwd: spec.cwd,
 			env: { ...spec.env, ...injected },
 			stdin: "ignore",

@@ -281,7 +281,7 @@ export function registerCredentials(
 	credentials
 		.command("exec")
 		.description(
-			"Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, and output is scrubbed",
+			"Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, output is scrubbed, and pw/ values need the command in the dg exec-allowlist file",
 		)
 		.usage("<name>[=ENV_VAR]... -- <command...>")
 		.argument("[args...]", "credential names, then -- and the command")

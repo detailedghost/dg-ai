@@ -99,7 +99,8 @@ group, until the human hands you a tab from the extension popup.
   (or `cookie:`, `local:`, `session:`), then
   `dg-skills credentials exec pw/<site>/<name>=TOKEN -- <command>`. dg-daemon
   runs the command, the value is only in its environment, and its output is
-  scrubbed. The command gets no stdin. You never see the value, and you must
+  scrubbed. The command gets no stdin. It runs only a command that the human
+  listed in the dg `exec-allowlist` file; never edit that file yourself. You never see the value, and you must
   not try to print or transform it. These ask the human once per site and
   session.
 - Browser settings pages, extension pages, private windows and the signed-in

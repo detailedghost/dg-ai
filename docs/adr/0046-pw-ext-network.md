@@ -152,6 +152,19 @@ conditions only:
   exposure in agent output, not against an agent that tries on purpose. A
   stronger step, an allowlist of exec commands that the human sets, is an
   open decision and is not built.
+- **Exec allowlist (Dante, 2026-11-13, option a).** For an `exec` that uses
+  any `pw/` name, dg-daemon reads `exec-allowlist` in the dg config directory
+  on each call. It resolves argv[0] to its real absolute path (a bare name
+  through the daemon's own `PATH`, symlinks followed) and runs that path. It
+  refuses unless a line lists that path and its optional glob covers every
+  `pw/` name. It refuses a shell, interpreter or launcher even when listed,
+  unless the line has `allow-interpreter`. With no file it refuses and names
+  the file. Names outside `pw/` do not use the allowlist.
+- **What the allowlist does not block.** The agent runs as the same user, so
+  it can edit the file unless the agent harness blocks writes to it; the docs
+  suggest a Claude Code deny rule for that path. A listed command that prints,
+  stores or sends the value in a changed form can still expose it. An
+  `allow-interpreter` line undoes the interpreter guard for that executable.
 - **Saved values mask later output.** Before the store frame goes out, the
   worker reserves the value with the session's held secrets in
   `storage.session`, so all later output of the session masks it, also after
