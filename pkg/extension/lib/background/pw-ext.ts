@@ -591,7 +591,9 @@ export function createPwExtHandler({
 		options: { unmasked: boolean; secrets: string[] },
 	): Promise<PwExtDialogState> {
 		noteDialogShim(tab.id);
-		const state = dialogState(await beforeDeadline(inMain(tab, pwExtDialogs as never, [action, tab.url])));
+		const state = dialogState(
+			await beforeDeadline(inMain(tab, pwExtDialogs as never, [action, tab.url, tab.groupId ?? -1])),
+		);
 		if ("error" in state) throw new Refusal(maskRaw(state.error, RAW_ERROR_MAX, options));
 		return state;
 	}

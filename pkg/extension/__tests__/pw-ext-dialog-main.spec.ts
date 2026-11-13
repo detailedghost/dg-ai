@@ -121,6 +121,23 @@ describe("dialog shim", () => {
 		expect(pwExtDialogs({ kind: "read", markSeen: false })).toEqual({ dialogs: [] });
 	});
 
+	it("clears the records and the pending answer when another agent group takes the tab", () => {
+		pwExtDialogs({ kind: "install" }, undefined, 10);
+		page().alert("orchid-maple");
+		pwExtDialogs({ kind: "answer", answer: "accept" }, undefined, 10);
+		expect(pwExtDialogs({ kind: "read", markSeen: false }, undefined, 11)).toEqual({ dialogs: [] });
+		expect(page().confirm("Sure?")).toBe(false);
+	});
+
+	it("removes the shim even after the page changed its URL in place", () => {
+		const native = () => true;
+		(window as unknown as Record<string, unknown>).confirm = native;
+		pwExtDialogs({ kind: "install" });
+		window.history.pushState({}, "", "/other");
+		pwExtDialogs({ kind: "remove" });
+		expect(page().confirm).toBe(native);
+	});
+
 	it("installs nothing on remove when the page has no shim", () => {
 		const native = page().alert;
 		expect(pwExtDialogs({ kind: "remove" })).toEqual({ dialogs: [] });

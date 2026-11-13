@@ -31,13 +31,13 @@ export function forgetDialogShim(tabId: number): void {
 	shimmed.delete(tabId);
 }
 
-function inject(api: DialogShimApi, tabId: number, action: PwExtDialogAction, url: string | undefined) {
+function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?]) {
 	return api.scripting.executeScript({
 		target: { tabId },
 		world: "MAIN",
 		injectImmediately: true,
 		func: pwExtDialogs as never,
-		args: [action, url],
+		args,
 	});
 }
 
@@ -62,12 +62,12 @@ export async function syncDialogShim({
 	const agent = tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId);
 	if (agent) {
 		shimmed.add(tabId);
-		await inject(api, tabId, { kind: "install" }, tab.url);
+		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId]);
 		return;
 	}
 	if (!regrouped && !shimmed.has(tabId)) return;
 	shimmed.delete(tabId);
-	await inject(api, tabId, { kind: "remove" }, tab.url);
+	await inject(api, tabId, [{ kind: "remove" }]);
 }
 
 /** Forgets a session's agent tabs and then restores native dialogs in them, so no pending install can follow; each removal waits at most a short time. */
@@ -98,7 +98,7 @@ export async function forgetAgentTabsAndShims({
 			.map(async (row) => {
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				await Promise.race([
-					inject(api, row.tabId, { kind: "remove" }, row.url).catch(() => undefined),
+					inject(api, row.tabId, [{ kind: "remove" }]).catch(() => undefined),
 					new Promise((resolve) => {
 						timer = setTimeout(resolve, deadlineMs);
 					}),

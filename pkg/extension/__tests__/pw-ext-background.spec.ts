@@ -2010,7 +2010,7 @@ describe("pw --ext dialog", () => {
 		expect(text).toContain("### Dialog");
 		expect(text).toContain('- last: confirm "Delete the item? token=[redacted] [redacted]", dismissed by default');
 		expect(text).toContain("- next: accept");
-		expect(dialogCalls(h).map((call) => call.args)).toEqual([[{ kind: "read", markSeen: true }, WEB_TAB.url]]);
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([[{ kind: "read", markSeen: true }, WEB_TAB.url, GROUP]]);
 	});
 
 	it("says when the page showed no dialog", async () => {
@@ -2023,7 +2023,7 @@ describe("pw --ext dialog", () => {
 		const answer = await h.run({ verb: "dialog", answer: "accept", text: "Grace" });
 		expect(outcome(answer)).toContain("The next dialog on this page gets accept, with your text.");
 		expect(dialogCalls(h).map((call) => call.args)).toEqual([
-			[{ kind: "answer", answer: "accept", text: "Grace" }, WEB_TAB.url],
+			[{ kind: "answer", answer: "accept", text: "Grace" }, WEB_TAB.url, GROUP],
 		]);
 	});
 
@@ -2064,7 +2064,7 @@ describe("pw --ext dialog", () => {
 		const text = outcome(await h.run({ verb: "snapshot" }));
 		expect(text).toContain('### Dialog\n- alert "Gone", dismissed by default\n- next: dismiss');
 		expect(text).not.toContain("Delete the item?");
-		expect(dialogCalls(h).map((call) => call.args)).toEqual([[{ kind: "read", markSeen: true }, WEB_TAB.url]]);
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([[{ kind: "read", markSeen: true }, WEB_TAB.url, GROUP]]);
 		expect(h.executed().at(-1)?.world).toBeUndefined();
 	});
 
@@ -2089,7 +2089,7 @@ describe("pw --ext dialog", () => {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		const installs = dialogCalls(h);
 		expect(installs.map((call) => call.target.tabId)).toEqual([7, 20]);
-		expect(installs[0]).toMatchObject({ world: "MAIN", injectImmediately: true, args: [{ kind: "install" }, WEB_TAB.url] });
+		expect(installs[0]).toMatchObject({ world: "MAIN", injectImmediately: true, args: [{ kind: "install" }, WEB_TAB.url, GROUP] });
 	});
 
 	it("removes the shim when a tab leaves its agent group, and installs it when a tab joins one", async () => {
@@ -2149,7 +2149,7 @@ describe("pw --ext dialog", () => {
 			tabs: [WEB_TAB, groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }), groupTab(10, { url: "chrome://settings/" })],
 		});
 		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
-		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }, WEB_TAB.url]]]);
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }]]]);
 		expect(h.fake.record(SESSION)).toBeUndefined();
 	});
 

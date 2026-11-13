@@ -25,6 +25,7 @@ export type PwExtDialogState = {
 export function pwExtDialogs(
 	action: PwExtDialogAction,
 	expectUrl?: string,
+	owner?: number,
 ): PwExtDialogState | { error: string } {
 	try {
 		if (expectUrl !== undefined && document.URL !== expectUrl)
@@ -43,6 +44,7 @@ export function pwExtDialogs(
 			dialogs: PwExtDialogRecord[];
 			policy?: { answer: PwExtDialogAnswer; text?: string };
 			active: boolean;
+			owner?: number;
 			wrap(): void;
 			unwrap(): void;
 		};
@@ -104,7 +106,14 @@ export function pwExtDialogs(
 			slot = fresh;
 		}
 		if (action.kind === "remove") slot.unwrap();
-		else if (!slot.active) slot.wrap();
+		else {
+			if (owner !== undefined && slot.owner !== owner) {
+				slot.dialogs.length = 0;
+				slot.policy = undefined;
+				slot.owner = owner;
+			}
+			if (!slot.active) slot.wrap();
+		}
 		if (action.kind === "answer")
 			slot.policy = { answer: action.answer, ...(action.text === undefined ? {} : { text: action.text }) };
 		const state: PwExtDialogState = {
