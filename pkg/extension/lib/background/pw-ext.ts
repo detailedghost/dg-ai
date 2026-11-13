@@ -663,7 +663,7 @@ export function createPwExtHandler({
 				throw error instanceof AgentGroupFullError ? new Refusal(GROUP_FULL) : error;
 			});
 		await agentTabs.select({ sessionId, tabId });
-		await syncShim(tabId, false);
+		void syncShim(tabId, false);
 		return ok(`### Result\nOpened ${url} in tab ${tabId}`);
 	}
 
@@ -761,7 +761,7 @@ export function createPwExtHandler({
 			}
 			case "select": {
 				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id });
-				await syncShim(tab.id, false);
+				void syncShim(tab.id, false);
 				return ok(`### Result\nSelected tab ${tab.id}`);
 			}
 			case "close": {

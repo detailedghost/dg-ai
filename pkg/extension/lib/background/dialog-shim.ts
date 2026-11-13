@@ -70,29 +70,35 @@ export async function syncDialogShim({
 	await inject(api, tabId, { kind: "remove" }, tab.url);
 }
 
-/** Restores native dialogs in the tabs of a session that ends, waiting at most a short time on each tab; call it before its agent tab record is forgotten. */
-export async function releaseDialogShims({
+/** Forgets a session's agent tabs and then restores native dialogs in them, so no pending install can follow; each removal waits at most a short time. */
+export async function forgetAgentTabsAndShims({
 	browserApi: api,
 	agentTabs,
 	sessionId,
 	deadlineMs = RELEASE_DEADLINE_MS,
 }: {
 	browserApi: DialogShimApi;
-	agentTabs: Pick<AgentTabs, "list">;
+	agentTabs: Pick<AgentTabs, "list" | "forget">;
 	sessionId: string;
 	deadlineMs?: number;
 }): Promise<void> {
-	const rows = (await agentTabs.list({ sessionId })).filter((row) => allowedPage(row.url) && !mailbox(row.url));
+	const rows = await agentTabs.list({ sessionId }).catch(() => []);
+	for (const row of rows) {
+		turns.set(row.tabId, (turns.get(row.tabId) ?? 0) + 1);
+		shimmed.delete(row.tabId);
+	}
+	await agentTabs.forget({ sessionId });
 	await Promise.all(
-		rows.map(async (row) => {
-			shimmed.delete(row.tabId);
-			let timer: ReturnType<typeof setTimeout> | undefined;
-			await Promise.race([
-				inject(api, row.tabId, { kind: "remove" }, row.url).catch(() => undefined),
-				new Promise((resolve) => {
-					timer = setTimeout(resolve, deadlineMs);
-				}),
-			]).finally(() => clearTimeout(timer));
-		}),
+		rows
+			.filter((row) => allowedPage(row.url) && !mailbox(row.url))
+			.map(async (row) => {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				await Promise.race([
+					inject(api, row.tabId, { kind: "remove" }, row.url).catch(() => undefined),
+					new Promise((resolve) => {
+						timer = setTimeout(resolve, deadlineMs);
+					}),
+				]).finally(() => clearTimeout(timer));
+			}),
 	);
 }

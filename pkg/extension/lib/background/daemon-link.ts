@@ -55,7 +55,7 @@ import {
 } from "./pw-ext";
 import { createUnmaskGrants } from "./unmask-grants";
 import { createWebMcpGrants } from "./webmcp-approval";
-import { releaseDialogShims } from "./dialog-shim";
+import { forgetAgentTabsAndShims } from "./dialog-shim";
 import {
 	createRelayDispatcher,
 	type RelayHandler,
@@ -419,10 +419,7 @@ export function registerDaemonLink(
 
 	function forgetAgentTabs(sessionId: string): void {
 		for (const cleanup of [
-			async () => {
-				await releaseDialogShims({ browserApi: pwExtApi, agentTabs, sessionId }).catch(() => undefined);
-				await agentTabs.forget({ sessionId });
-			},
+			() => forgetAgentTabsAndShims({ browserApi: pwExtApi, agentTabs, sessionId }),
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 		])

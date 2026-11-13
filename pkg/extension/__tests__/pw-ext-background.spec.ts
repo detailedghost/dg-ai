@@ -3,7 +3,7 @@ import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
-import { forgetDialogShim, releaseDialogShims } from "@/lib/background/dialog-shim";
+import { forgetAgentTabsAndShims, forgetDialogShim } from "@/lib/background/dialog-shim";
 import {
 	createFakeBrowser,
 	createLock,
@@ -2131,6 +2131,7 @@ describe("pw --ext dialog", () => {
 		const h = harness({ record: false });
 		await h.run({ verb: "new", url: "https://app.example.test/" });
 		const tab = await h.createdTab();
+		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([[tab.id, { kind: "install" }]]);
 	});
 
@@ -2138,16 +2139,32 @@ describe("pw --ext dialog", () => {
 		const h = harness();
 		h.fake.state.script = () => new Promise(() => {});
 		const started = Date.now();
-		await releaseDialogShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION, deadlineMs: 20 });
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION, deadlineMs: 20 });
 		expect(Date.now() - started).toBeLessThan(1000);
+		expect(h.fake.record(SESSION)).toBeUndefined();
 	});
 
 	it("removes the shim from a forgotten session's tabs, and skips mailbox and browser pages", async () => {
 		const h = harness({
 			tabs: [WEB_TAB, groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }), groupTab(10, { url: "chrome://settings/" })],
 		});
-		await releaseDialogShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
 		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }, WEB_TAB.url]]]);
+		expect(h.fake.record(SESSION)).toBeUndefined();
+	});
+
+	it("lets no install that was in flight follow the session cleanup", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).at(-1)?.args[0]).toEqual({ kind: "remove" });
+	});
+
+	it("does not wait on the shim before new and select answer", async () => {
+		const h = harness();
+		h.fake.state.script = () => new Promise(() => {});
+		expect((await h.run({ verb: "select", tabId: 7 })).ok).toBe(true);
 	});
 
 	it("masks a page-made dialog error with the held secrets", async () => {
