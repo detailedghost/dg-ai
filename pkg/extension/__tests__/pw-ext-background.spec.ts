@@ -1198,6 +1198,46 @@ describe("pw --ext unmask", () => {
 		expect(h.approvalRequests).toEqual([]);
 	});
 
+	describe("Outlook page title", () => {
+		const outlookTab = (url: string, title: string) => [{ ...WEB_TAB, url, title }];
+
+		it.each([
+			"https://outlook.live.com/mail/0/",
+			"https://outlook.office.com/mail/",
+			"https://outlook.cloud.microsoft/mail/",
+		])("masks the account name in the title on %s", async (url) => {
+			const h = harness({ tabs: outlookTab(url, "Mail - Test Person - Outlook") });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - [redacted] - Outlook");
+			expect(text).not.toContain("Test Person");
+		});
+
+		it("masks the email address in the title", async () => {
+			const h = harness({
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Inbox - test.person@example.com - Outlook"),
+			});
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).not.toContain("test.person@example.com");
+			expect(text).not.toContain("Test Person");
+		});
+
+		it("shows the full title during an unmask grant", async () => {
+			const h = harness({
+				approval: "allow",
+				tabs: outlookTab("https://outlook.live.com/mail/0/", "Mail - Test Person - Outlook"),
+			});
+			await h.run({ verb: "unmask", minutes: 5 });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - Test Person - Outlook");
+		});
+
+		it("leaves other sites' titles alone", async () => {
+			const h = harness({ tabs: outlookTab("https://app.example.test/", "Mail - Test Person - Outlook") });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain("- Page Title: Mail - Test Person - Outlook");
+		});
+	});
+
 	it("shows email addresses in the page title and on console output during a grant", async () => {
 		const h = harness({
 			approval: "allow",

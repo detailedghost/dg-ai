@@ -14,6 +14,7 @@ import {
 	type PwExtResponse,
 	type PwExtTool,
 	type PwExtVerb,
+	type RedactPattern,
 	redactLiterals,
 	redactSecrets,
 	redactText,
@@ -59,6 +60,7 @@ import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGr
 import {
 	allowedPage,
 	mailbox,
+	outlookWeb,
 	PW_EXT_BLOCKED_ERROR,
 	PW_EXT_MAILBOX_ERROR,
 	PW_EXT_PRIVATE_ERROR,
@@ -278,10 +280,13 @@ const UNSIGNED_JWT = {
 };
 
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
-function mask(text: string, { unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {}): string {
+function mask(
+	text: string,
+	{ unmasked = false, secrets = [], extra = [] }: { unmasked?: boolean; secrets?: string[]; extra?: RedactPattern[] } = {},
+): string {
 	const redact = unmasked ? redactSecrets : redactText;
 	return redactLiterals(
-		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT] }),
+		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT, ...extra] }),
 		secrets,
 	);
 }
@@ -359,9 +364,14 @@ function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: strin
 	return mask(tab.url as string, { unmasked, secrets });
 }
 
+const OUTLOOK_ACCOUNT = {
+	pattern: /^(.+? - ).+?( - Outlook)$/g,
+	replacement: "$1[redacted]$2",
+};
+
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
-	return mask(tab.title ?? "", { unmasked, secrets });
+	return mask(tab.title ?? "", { unmasked, secrets, extra: !unmasked && outlookWeb(tab.url) ? [OUTLOOK_ACCOUNT] : [] });
 }
 
 function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {
