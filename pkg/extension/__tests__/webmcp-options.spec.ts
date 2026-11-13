@@ -167,6 +167,18 @@ describe("web mcp scripts panel", () => {
 		expect(q<HTMLElement>('[data-webmcp-row="s1"]').textContent).toContain("approved");
 	});
 
+	it("shows why an approved script is not running", async () => {
+		const { q, add, button } = await mount();
+		await add();
+
+		button("Approve").click();
+		await settle();
+
+		expect(q<HTMLElement>('[data-webmcp-row="s1"] [data-webmcp-problem]').textContent).toContain(
+			"Allow User Scripts is off for dg-ai-extension",
+		);
+	});
+
 	it("shows the stored code read-only and every site next to Approve", async () => {
 		const { q, add } = await mount();
 

@@ -9,6 +9,7 @@ import { createWebMcpSigner, type WebMcpSigner } from "@/lib/background/webmcp-s
 import {
 	createWebMcpScripts,
 	registerWebMcpScripts,
+	USER_SCRIPTS_OFF,
 	userScriptsAvailable,
 } from "@/lib/background/webmcp-scripts";
 
@@ -56,6 +57,7 @@ const OUTLOOK_ON = {
 function setup({
 	userScripts = true,
 	failIds = [] as string[],
+	dropIds = [] as string[],
 	probeFails = false,
 	signer = freshSigner(),
 	outlookEnabled = false,
@@ -90,7 +92,7 @@ function setup({
 			for (const script of scripts) {
 				if (failIds.includes(script.id)) throw new Error(`cannot register ${script.id}`);
 				calls.userRegister.push(script);
-				live.user.add(script.id);
+				if (!dropIds.includes(script.id)) live.user.add(script.id);
 			}
 		},
 		unregister: async ({ ids }: { ids: string[] }) => {
@@ -736,6 +738,110 @@ describe("lazy userScripts", () => {
 		} finally {
 			warn.mockRestore();
 		}
+	});
+});
+
+describe("registration status", () => {
+	function toggled() {
+		const live = new Set<string>();
+		const api = {
+			register: async (scripts: { id: string }[]) => {
+				for (const script of scripts) live.add(script.id);
+			},
+			unregister: async ({ ids }: { ids: string[] }) => {
+				for (const id of ids) live.delete(id);
+			},
+			getScripts: async () => [...live].map((id) => ({ id })),
+		};
+		let on = false;
+		const scripts = createWebMcpScripts({
+			signer: freshSigner(),
+			storage: memoryStorage(),
+			scripting: null,
+			userScripts: () => (on ? api : undefined),
+			newId: () => "s1",
+			now: () => 1000,
+		});
+		return { scripts, live, turnOn: () => void (on = true) };
+	}
+
+	const rowOf = async (scripts: ReturnType<typeof setup>["scripts"], id: string) =>
+		(await scripts.list()).find((record) => record.id === id);
+
+	it("registers an approved script on the next list once Allow User Scripts turns on, with no reload", async () => {
+		const { scripts, live, turnOn } = toggled();
+		const { id, sha256 } = await scripts.addThirdParty(draft());
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await scripts.approve(id, sha256);
+			expect((await rowOf(scripts, id))?.problem).toBe(USER_SCRIPTS_OFF);
+
+			turnOn();
+			const row = await rowOf(scripts, id);
+
+			expect(live.has(`dg-webmcp-user-${id}`)).toBe(true);
+			expect(row?.problem).toBeUndefined();
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("shows the browser's register error for an approved script and does not throw", async () => {
+		const { scripts } = setup({ failIds: ["dg-webmcp-user-s1"] });
+		const { id } = await scripts.addThirdParty(draft());
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await approveNow(scripts, id);
+
+			expect((await rowOf(scripts, id))?.problem).toBe("Not running: cannot register dg-webmcp-user-s1");
+			expect(warn.mock.calls.some((call) => String(call.join(" ")).includes("cannot register dg-webmcp-user-s1"))).toBe(true);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("reports a registration the browser accepted but did not keep", async () => {
+		const { scripts } = setup({ dropIds: ["dg-webmcp-user-s1"] });
+		const { id } = await scripts.addThirdParty(draft());
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await approveNow(scripts, id);
+
+			expect((await rowOf(scripts, id))?.problem).toBe("Not running: The browser did not keep the registration.");
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("shows why an enabled built-in did not register", async () => {
+		const { scripts } = setup({ outlookEnabled: true, failIds: ["dg-webmcp-outlook"] });
+		const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await scripts.reconcile();
+
+			expect((await rowOf(scripts, "outlook"))?.problem).toBe("Not running: cannot register dg-webmcp-outlook");
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("shows no problem for a running, a disabled or an unapproved script", async () => {
+		const { scripts } = setup({ outlookEnabled: true });
+		const running = await scripts.addThirdParty(draft());
+		const disabled = await scripts.addThirdParty(draft({ name: "Off" }));
+		const unapproved = await scripts.addThirdParty(draft({ name: "New" }));
+		await approveNow(scripts, running.id);
+		await approveNow(scripts, disabled.id);
+		await scripts.setEnabled(disabled.id, false);
+
+		const rows = await scripts.list();
+
+		expect(rows.map((row) => [row.id, row.problem])).toEqual([
+			["outlook", undefined],
+			[running.id, undefined],
+			[disabled.id, undefined],
+			[unapproved.id, undefined],
+		]);
 	});
 });
 
