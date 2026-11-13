@@ -28,6 +28,10 @@ export { PROTON_SIGN_IN_COMMAND, ProtonSignedOutError, protonProfilePaths };
 const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
 const OPEN_REFUSED = /is open from|Could not close the browser for session/;
 const SIGN_IN_POLL_MS = 2_000;
+const CONTEXT_DESTROYED =
+	/Execution context was destroyed|most likely because of a navigation/;
+const EVAL_ATTEMPTS = 5;
+const EVAL_RETRY_MS = 300;
 
 export type PwRunner = (
 	argv: string[],
@@ -189,6 +193,15 @@ function headerValue(text: string, name: string): string | undefined {
 	return headerValues(text, name).at(-1);
 }
 
+function pwCommandError(
+	message: string,
+	result: { code: number; out: string; err: string },
+): Error {
+	return new Error(
+		`${message} code=${result.code} err=${result.err} out=${result.out}`,
+	);
+}
+
 export async function openProtonSession(
 	spec: ProtonPwSessionSpec,
 	run: PwRunner = runPw,
@@ -212,9 +225,16 @@ export async function openProtonSession(
 		);
 	}
 	const evaluate = async (source: string): Promise<unknown> => {
-		const result = await run([session, "--raw", "eval", source]);
-		if (result.code !== 0) throw new Error("Proton page evaluation failed.");
-		return JSON.parse(result.out);
+		let last = { code: 1, out: "", err: "unknown error" };
+		for (let attempt = 1; attempt <= EVAL_ATTEMPTS; attempt++) {
+			if (attempt > 1)
+				await new Promise((resolve) => setTimeout(resolve, EVAL_RETRY_MS));
+			const result = await run([session, "--raw", "eval", source]);
+			last = result;
+			if (result.code === 0) return JSON.parse(result.out);
+			if (!CONTEXT_DESTROYED.test(result.err)) break;
+		}
+		throw pwCommandError("Proton page evaluation failed.", last);
 	};
 	return {
 		page: {
@@ -228,10 +248,17 @@ export async function openProtonSession(
 					"/api/",
 					"--clear",
 				]);
-				const reloaded =
-					cleared.code === 0 ? await run([session, "reload"]) : undefined;
-				if (cleared.code !== 0 || reloaded?.code !== 0)
-					throw new Error("Could not reset the Proton request log.");
+				if (cleared.code !== 0)
+					throw pwCommandError(
+						"Could not reset the Proton request log.",
+						cleared,
+					);
+				const reloaded = await run([session, "reload"]);
+				if (reloaded.code !== 0)
+					throw pwCommandError(
+						"Could not reset the Proton request log.",
+						reloaded,
+					);
 			},
 			observedHeaders: async () => {
 				const listing = await run([
@@ -243,7 +270,10 @@ export async function openProtonSession(
 					"/api/",
 				]);
 				if (listing.code !== 0)
-					throw new Error("Could not read the Proton request headers.");
+					throw pwCommandError(
+						"Could not read the Proton request headers.",
+						listing,
+					);
 				const uids = new Set(headerValues(listing.out, "x-pm-uid"));
 				if (uids.size > 1) {
 					const cleared = await run([
@@ -255,8 +285,16 @@ export async function openProtonSession(
 						"--clear",
 					]);
 					const reloaded = await run([session, "reload"]);
-					if (cleared.code !== 0 || reloaded.code !== 0)
-						throw new Error("Could not reset the Proton request log.");
+					if (cleared.code !== 0)
+						throw pwCommandError(
+							"Could not reset the Proton request log.",
+							cleared,
+						);
+					if (reloaded.code !== 0)
+						throw pwCommandError(
+							"Could not reset the Proton request log.",
+							reloaded,
+						);
 					return undefined;
 				}
 				const uid = headerValue(listing.out, "x-pm-uid");
@@ -275,7 +313,7 @@ export async function openProtonSession(
 		close: async () => {
 			const closed = await run([session, "close"]);
 			if (closed.code !== 0)
-				throw new Error("Could not close the Proton pw session.");
+				throw pwCommandError("Could not close the Proton pw session.", closed);
 		},
 	};
 }
@@ -366,6 +404,7 @@ export async function runProtonSignIn(
 		untrap?.();
 		throw error;
 	}
+	let failed: unknown;
 	try {
 		deps.log(
 			"Sign in to Proton Mail in the browser window. This command waits.",
@@ -386,11 +425,16 @@ export async function runProtonSignIn(
 			await deps.sleep(SIGN_IN_POLL_MS);
 		}
 		if (canceled) throw new Error("Proton sign-in was canceled.");
+	} catch (error) {
+		failed = error;
+		throw error;
 	} finally {
 		untrap?.();
 		try {
 			if (cancelling) await cancelling;
 			else await session.close();
+		} catch (closeError) {
+			if (failed === undefined) throw closeError;
 		} finally {
 			release();
 		}

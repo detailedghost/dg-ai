@@ -285,7 +285,7 @@ describe("proton-pw openProtonSession", () => {
 				: { code: 0, out: "", err: "" };
 		const session = await openProtonSession(spec(true), run);
 		await expect(session.page.clearObservedHeaders()).rejects.toThrow(
-			"Could not reset the Proton request log.",
+			"Could not reset the Proton request log. code=1 err=reload failed",
 		);
 	});
 
@@ -296,7 +296,7 @@ describe("proton-pw openProtonSession", () => {
 				: { code: 0, out: "", err: "" };
 		const session = await openProtonSession(spec(true), run);
 		await expect(session.page.clearObservedHeaders()).rejects.toThrow(
-			"Could not reset the Proton request log.",
+			"Could not reset the Proton request log. code=1 err=clear failed",
 		);
 	});
 
@@ -306,18 +306,103 @@ describe("proton-pw openProtonSession", () => {
 		expect(await session.page.observedHeaders()).toBeUndefined();
 	});
 
-	test("a non-zero pw eval code rejects with a fixed message that leaks no page output", async () => {
-		const run: PwRunner = async (argv) =>
-			argv.includes("eval")
-				? { code: 1, out: "", err: "page crashed\nstack" }
-				: { code: 0, out: "", err: "" };
+
+	function evalDelays() {
+		const delays: number[] = [];
+		const timers = spyOn(globalThis, "setTimeout").mockImplementation(((
+			callback: () => void,
+			ms?: number,
+		) => {
+			delays.push(Number(ms));
+			callback();
+			return 0;
+		}) as never);
+		return {
+			delays,
+			restore: () => timers.mockRestore(),
+		};
+	}
+
+	test("retries eval after a destroyed-context navigation error", async () => {
+		const wait = evalDelays();
+		let evals = 0;
+		const run: PwRunner = async (argv) => {
+			if (argv.includes("eval")) {
+				evals += 1;
+				if (evals === 1)
+					return {
+						code: 1,
+						out: "",
+						err: "evaluate: Execution context was destroyed, most likely because of a navigation",
+					};
+				return {
+					code: 0,
+					out: JSON.stringify("https://account.proton.me/mail"),
+					err: "",
+				};
+			}
+			return { code: 0, out: "", err: "" };
+		};
+		try {
+			const session = await openProtonSession(spec(true), run);
+			expect(await session.page.url()).toBe("https://account.proton.me/mail");
+			expect(evals).toBe(2);
+			expect(wait.delays).toEqual([300]);
+		} finally {
+			wait.restore();
+		}
+	});
+
+	test("stops retrying eval after a non-navigation error and includes pw output", async () => {
+		let evals = 0;
+		const run: PwRunner = async (argv) => {
+			if (argv.includes("eval")) {
+				evals += 1;
+				return { code: 1, out: "partial", err: "page crashed\nstack" };
+			}
+			return { code: 0, out: "", err: "" };
+		};
 		const session = await openProtonSession(spec(true), run);
 		const error = await Promise.resolve(session.page.url()).then(
 			() => undefined,
-			(caught: unknown) => caught,
+			(caught: unknown) => caught as Error,
 		);
-		expect((error as Error).message).toBe("Proton page evaluation failed.");
-		expect((error as Error).message).not.toContain("page crashed");
+		expect(evals).toBe(1);
+		expect(error?.message).toContain("Proton page evaluation failed.");
+		expect(error?.message).toContain("code=1");
+		expect(error?.message).toContain("err=page crashed");
+		expect(error?.message).toContain("out=partial");
+	});
+
+	test("exhausted navigation retries still reject with the last pw error", async () => {
+		const wait = evalDelays();
+		let evals = 0;
+		const run: PwRunner = async (argv) => {
+			if (argv.includes("eval")) {
+				evals += 1;
+				return {
+					code: 1,
+					out: "",
+					err: "evaluate: Execution context was destroyed, most likely because of a navigation",
+				};
+			}
+			return { code: 0, out: "", err: "" };
+		};
+		try {
+			const session = await openProtonSession(spec(true), run);
+			const error = await Promise.resolve(session.page.url()).then(
+				() => undefined,
+				(caught: unknown) => caught as Error,
+			);
+			expect(evals).toBe(5);
+			expect(wait.delays).toEqual([300, 300, 300, 300]);
+			expect(error?.message).toContain("Proton page evaluation failed.");
+			expect(error?.message).toContain(
+				"Execution context was destroyed, most likely because of a navigation",
+			);
+		} finally {
+			wait.restore();
+		}
 	});
 
 	test("non-JSON pw eval output rejects instead of returning a value", async () => {
@@ -337,7 +422,7 @@ describe("proton-pw openProtonSession", () => {
 				: { code: 0, out: "", err: "" };
 		const session = await openProtonSession(spec(true), run);
 		await expect(session.close()).rejects.toThrow(
-			"Could not close the Proton pw session.",
+			"Could not close the Proton pw session. code=1 err=close failed",
 		);
 	});
 
@@ -348,7 +433,7 @@ describe("proton-pw openProtonSession", () => {
 				: { code: 0, out: "", err: "" };
 		const session = await openProtonSession(spec(true), run);
 		await expect(session.page.observedHeaders()).rejects.toThrow(
-			"Could not read the Proton request headers.",
+			"Could not read the Proton request headers. code=1 err=network failed",
 		);
 	});
 
@@ -473,6 +558,43 @@ describe("proton-pw runProtonSignIn", () => {
 			await expect(runProtonSignIn(data.dir, failing as never)).rejects.toThrow(
 				"Could not close the Proton pw session.",
 			);
+			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(false);
+			expect(lines.join("\n")).not.toContain("profile is saved");
+		} finally {
+			data.cleanup();
+		}
+	});
+
+
+	test("a failed close after a sign-in error keeps the original error", async () => {
+		const data = tempDataDir();
+		try {
+			const lines: string[] = [];
+			const deps = {
+				openSession: async () => ({
+					page: {
+						url: async () => {
+							throw new Error(
+								"Proton page evaluation failed. code=1 err=evaluate: Execution context was destroyed out=",
+							);
+						},
+						clearObservedHeaders: async () => {},
+						observedHeaders: async () => undefined,
+						evaluate: async () => ({}),
+					},
+					close: async () => {
+						throw new Error("Could not close the Proton pw session.");
+					},
+				}),
+				sleep: async () => {},
+				log: (line: string) => void lines.push(line),
+			};
+			const error = await runProtonSignIn(data.dir, deps as never).then(
+				() => undefined,
+				(caught: unknown) => caught as Error,
+			);
+			expect(error?.message).toContain("Proton page evaluation failed.");
+			expect(error?.message).not.toContain("Could not close the Proton pw session.");
 			expect(existsSync(protonProfilePaths(data.dir).markerPath)).toBe(false);
 			expect(lines.join("\n")).not.toContain("profile is saved");
 		} finally {
