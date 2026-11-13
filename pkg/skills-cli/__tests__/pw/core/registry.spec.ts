@@ -190,6 +190,25 @@ describe("isDaemonOf", () => {
 				'{"key":"gh"}',
 			]),
 		).toBe(true);
+		expect(
+			isDaemonOf({ pid: 1, key: "gh" }, [
+				"/h/.bun/bin/bun",
+				"/r/pkg/launcher/src/dg.ts",
+				"dg-skills",
+				"pw",
+				"daemon",
+				'{"key":"gh"}',
+			]),
+		).toBe(true);
+		expect(
+			isDaemonOf({ pid: 1, key: "gh" }, [
+				"/usr/local/lib/pnpm/bun/bin/bun.exe",
+				"/tmp/pw-fake-daemon-x/skills-cli/src/index.ts",
+				"pw",
+				"daemon",
+				'{"key":"gh"}',
+			]),
+		).toBe(true);
 	});
 
 	test("rejects a daemon that serves another key", () => {

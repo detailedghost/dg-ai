@@ -77,6 +77,33 @@ export async function main(argv: readonly string[]): Promise<number> {
 			await cmdStatus();
 		});
 
+	program
+		.command("start")
+		.description("start the daemon in the background, or report the live one")
+		.option("--json", "print one JSON line")
+		.action(async (options: { json?: boolean }) => {
+			const { cmdStart } = await import("./commands/start");
+			await cmdStart(options);
+		});
+
+	program
+		.command("stop")
+		.description("stop the daemon and its services")
+		.option("--force", "kill the daemon and each service process tree at once")
+		.action(async (options: { force?: boolean }) => {
+			const { cmdStop } = await import("./commands/stop");
+			await cmdStop(options);
+		});
+
+	program
+		.command("restart")
+		.description("stop the daemon, then start it again")
+		.option("--force", "kill the daemon and each service process tree at once")
+		.action(async (options: { force?: boolean }) => {
+			const { cmdRestart } = await import("./commands/stop");
+			await cmdRestart(options);
+		});
+
 	registerJobCommands(program);
 	registerOriginCommands(program);
 	registerSessionCommands(program);
@@ -94,7 +121,10 @@ export async function main(argv: readonly string[]): Promise<number> {
 		return typeof process.exitCode === "number" ? process.exitCode : 0;
 	} catch (err) {
 		if (err instanceof CommanderError) return err.exitCode;
-		emitRedacted((line) => console.error(line), `dg-daemon: ${describeError(err)}`);
+		emitRedacted(
+			(line) => console.error(line),
+			`dg-daemon: ${describeError(err)}`,
+		);
 		return err instanceof DgCliError ? err.exitCode : EXIT_GENERAL_FAILURE;
 	}
 }

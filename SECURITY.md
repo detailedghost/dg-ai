@@ -107,10 +107,14 @@ or `password`.
 `<DG_HOME>/grants/<prefix>.token` (mode `0600`, directory mode `0700`). The
 daemon stores only the SHA-256 hash of that token.
 
-A supervised service may set `envFile` in `<DG_HOME>/daemon/config.json`. The
+A supervised service may set `envFile` in `<state>/daemon/config.json`
+(see the [layout table](docs/install.md#where-dg-keeps-its-files)). The
 path is absolute. On macOS and Linux the daemon refuses a file other
 users can read and tells you to run `chmod 600` on it. The child receives
-`PATH`, `HOME`, `LANG`, `TZ`, and the `KEY=VALUE` lines from that file. A
+`PATH`, `HOME`, `LANG`, `TZ`, the `passEnv` names, the `KEY=VALUE` lines of
+the `envFile`, and the injected `DG_*` keys. The grant token reaches the child
+as a file path only. The loopback route `POST /service-api/v1/credentials`
+refuses a browser `Origin` and answers each denial with one text. A
 scheduled job receives only `PATH`, `HOME`, `LANG`, and `TZ`.
 
 `<DG_HOME>/agents/memory.db` is plaintext so full-text search can index it.

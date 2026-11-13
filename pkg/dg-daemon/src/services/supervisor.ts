@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { describeError } from "@dg/common";
 import {
 	checkExecutableResolves,
+	credentialGrantTokenPath,
 	type DgPaths,
 	ensurePrivateDir,
 	isAlive,
@@ -20,13 +21,12 @@ import type { Subprocess } from "bun";
 import { buildAllowedEnv } from "../dispatch/env-allowlist";
 import { killProcessGroup } from "../dispatch/exec";
 import type { Logger } from "../server/log";
-import { loadEnvFile } from "./env-file";
 import { type ParsedService, parseServices, type ServiceDecl } from "./config";
+import { loadEnvFile } from "./env-file";
 
 export const BACKOFF_BASE_MS = 1_000;
 export const BACKOFF_MAX_MS = 60_000;
 export const STABLE_RUN_MS = 60_000;
-export const STOP_GRACE_MS = 5_000;
 export const LOG_CHECK_MS = 30_000;
 export const MAX_LOG_BYTES = 5_000_000;
 
@@ -57,11 +57,11 @@ export type Supervisor = {
 };
 
 export type SupervisorDeps = {
-	paths: Pick<DgPaths, "daemonDir" | "logDir">;
+	paths: Pick<DgPaths, "daemonDir" | "logDir" | "grantsDir">;
+	daemonUrl: () => string;
 	loadConfig: () => Record<string, unknown>;
 	logger: Pick<Logger, "info" | "warn">;
 	backoffMs?: (failures: number) => number;
-	stopGraceMs?: number;
 	logCheckMs?: number;
 	maxLogBytes?: number;
 };
@@ -76,6 +76,7 @@ type Entry = {
 	restarts: number;
 	startedAt?: Date;
 	lastExit?: string;
+	termination?: Promise<void>;
 	abort: AbortController;
 	loop: Promise<void>;
 };
@@ -107,10 +108,14 @@ function openLog(logDir: string, logFile: string, maxBytes: number): number {
 	return openSync(logFile, "a", 0o600);
 }
 
+/** Pid file the supervisor writes for a running service. */
+export function servicePidFile(daemonDir: string, label: string): string {
+	return join(daemonDir, "services", `${label}.pid`);
+}
+
 export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	const { logger } = deps;
 	const backoffMs = deps.backoffMs ?? exponentialBackoffMs;
-	const stopGraceMs = deps.stopGraceMs ?? STOP_GRACE_MS;
 	const logCheckMs = deps.logCheckMs ?? LOG_CHECK_MS;
 	const maxLogBytes = deps.maxLogBytes ?? MAX_LOG_BYTES;
 	const pidDir = join(deps.paths.daemonDir, "services");
@@ -118,17 +123,52 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 
 	const logFileFor = (label: string) =>
 		join(deps.paths.logDir, `service-${label}.log`);
-	const pidFileFor = (label: string) => join(pidDir, `${label}.pid`);
+	const pidFileFor = (label: string) =>
+		servicePidFile(deps.paths.daemonDir, label);
+
+	function passedEnv(decl: ServiceDecl): Record<string, string> {
+		return Object.fromEntries(
+			decl.passEnv.flatMap((name) => {
+				const value = process.env[name];
+				if (value === undefined) {
+					logger.warn(
+						`service ${decl.label}: passEnv name ${name} is not set in the daemon environment`,
+					);
+					return [];
+				}
+				return [[name, value]];
+			}),
+		);
+	}
+
+	function serviceEnv(decl: ServiceDecl): Record<string, string> {
+		const env: Record<string, string> = {
+			...buildAllowedEnv(),
+			...passedEnv(decl),
+			...(decl.envFile ? loadEnvFile(decl.envFile) : {}),
+			DG_SERVICE_API: "1",
+			DG_SERVICE_LABEL: decl.label,
+			DG_DAEMON_URL: deps.daemonUrl(),
+		};
+		if (decl.grant) {
+			env.DG_CREDENTIAL_GRANT_PREFIX = decl.grant;
+			env.DG_CREDENTIAL_GRANT_FILE = credentialGrantTokenPath(
+				deps.paths,
+				decl.grant,
+			);
+		} else {
+			delete env.DG_CREDENTIAL_GRANT_PREFIX;
+			delete env.DG_CREDENTIAL_GRANT_FILE;
+		}
+		return env;
+	}
 
 	function launch(decl: ServiceDecl): Subprocess {
 		const fd = openLog(deps.paths.logDir, logFileFor(decl.label), maxLogBytes);
 		try {
 			return Bun.spawn(decl.argv, {
 				cwd: decl.cwd,
-				env: {
-					...buildAllowedEnv(),
-					...(decl.envFile ? loadEnvFile(decl.envFile) : {}),
-				},
+				env: serviceEnv(decl),
 				stdin: "ignore",
 				stdout: fd,
 				stderr: fd,
@@ -142,6 +182,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 	async function runOnce(entry: Entry): Promise<number | undefined> {
 		const { decl } = entry;
 		let proc: Subprocess;
+		entry.termination = undefined;
 		try {
 			proc = launch(decl);
 		} catch (err) {
@@ -165,11 +206,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			}
 		}, logCheckMs);
 		const code = await proc.exited.finally(() => clearInterval(rotation));
-		killProcessGroup(proc.pid, stopGraceMs);
+		entry.lastExit = describeExit(proc);
+		if (process.platform !== "win32") {
+			entry.termination ??= killProcessGroup(proc.pid, decl.stopTimeoutMs);
+		}
+		await entry.termination;
 		entry.proc = undefined;
 		entry.pid = undefined;
 		rmSync(pidFileFor(decl.label), { force: true });
-		entry.lastExit = describeExit(proc);
 		return code;
 	}
 
@@ -217,6 +261,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			if (decl.envFile) loadEnvFile(decl.envFile);
 		} catch (err) {
 			return describeError(err);
+		}
+		if (decl.grant) {
+			let tokenPath = `<grantsDir>/${decl.grant}.token`;
+			try {
+				tokenPath = credentialGrantTokenPath(deps.paths, decl.grant);
+				if (!statSync(tokenPath).isFile()) throw new Error("not a file");
+			} catch {
+				return `grant token file not found: ${tokenPath} — create it with dg-skills credentials grant ${decl.grant}`;
+			}
 		}
 		return checkExecutableResolves(decl.argv[0]);
 	}
@@ -292,8 +345,12 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 					};
 		}
 		entry.abort.abort();
-		if (entry.pid !== undefined) killProcessGroup(entry.pid, stopGraceMs);
-		entry.proc?.kill();
+		if (entry.pid !== undefined) {
+			entry.termination ??= killProcessGroup(
+				entry.pid,
+				entry.decl.stopTimeoutMs,
+			);
+		}
 		await entry.loop;
 		return { ok: true, status: statusOf(label) };
 	}
@@ -319,7 +376,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 			const parsed = declared();
 			const labels = new Set([
 				...parsed.map((service) => service.label),
-				...entries.keys(),
+				...[...entries]
+					.filter(([, entry]) => entry.state !== "stopped")
+					.map(([label]) => label),
 			]);
 			return [...labels].map((label) =>
 				statusOf(

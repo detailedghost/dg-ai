@@ -337,9 +337,9 @@ No command copies the data back. A release from before the per-OS layout reads
 `~/.dg`, so you copy each folder back by hand.
 
 1. Stop every writer.
-   - Daemon: it has no `stop` command. Stop the `dg-daemon` service in your
-     service manager, or send SIGTERM to the pid in
-     `<state>/daemon/daemon.pid` (Linux and macOS).
+   - Daemon: run `dg-daemon stop`. An older release has no `stop`
+     command: send SIGTERM to the pid in `<state>/daemon/daemon.pid` (Linux
+     and macOS).
    - Phone: run `dg-agent phone close`.
    - Channel review: run `dg-skills channel-review stop --env <env>`.
    - ssms: `dg-skills ssms` has no stop command. Let a running `dg-skills ssms`

@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { CHAT_PROTOCOL_VERSION } from "@dg/common";
-import { isWSL, resolveDgPaths } from "@dg/common/node";
+import { isWSL, resolveDgPaths, writePidFileAtomic } from "@dg/common/node";
 import { CURRENT_SCHEMA_VERSION } from "../../src/store/schema";
 import {
 	allocatePort,
 	cleanupDgHome,
 	collectFrames,
-	sendConnectHandshake,
-	waitForClose,
-	waitForOpen,
-	wsExtensionSocket,
 	freshDgHome,
 	killDaemonByPidFile,
 	readPidFile,
 	registerSession,
 	runStatus,
+	sendConnectHandshake,
 	spawnServe,
+	waitForClose,
 	waitForHealth,
+	waitForOpen,
+	wsExtensionSocket,
 } from "../utils/daemon-harness";
 
 let dgHome: string;
@@ -129,4 +129,30 @@ describe("dg-daemon status", () => {
 		expect(status.stdout).toContain("no live daemon");
 		expect(existsSync(paths.pidPath)).toBe(false);
 	}, 20000);
+
+	it("keeps the pid file and says the daemon does not answer when its pid runs but healthz is silent", async () => {
+		dgHome = freshDgHome();
+		const sleeper = Bun.spawn(
+			[process.execPath, "-e", "setInterval(() => {}, 1000)"],
+			{ stdout: "ignore", stderr: "ignore" },
+		);
+		const paths = resolveDgPaths({ env: { DG_HOME: dgHome } });
+		writePidFileAtomic(paths, {
+			pid: sleeper.pid,
+			port: allocatePort(),
+			instanceId: crypto.randomUUID(),
+			versions: { package: "9.9.9", protocol: CHAT_PROTOCOL_VERSION },
+		});
+
+		try {
+			const result = await runStatus(dgHome);
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout).toContain(
+				`dg-daemon (pid ${sleeper.pid}) does not answer`,
+			);
+			expect(existsSync(paths.pidPath)).toBe(true);
+		} finally {
+			sleeper.kill("SIGKILL");
+		}
+	});
 });

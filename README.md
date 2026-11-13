@@ -149,6 +149,8 @@ Maintainers follow the [post-merge cutover](docs/DEVELOPER.md#manual-post-merge-
 
 - [Scheduled jobs, services, and dashboard](docs/jobs-and-services.md)
 
+- [Service API v1 (provisional)](docs/service-api.md)
+
 - [Architecture decisions](docs/adr/toc.md)
 
 - [Developer guide](docs/DEVELOPER.md)
