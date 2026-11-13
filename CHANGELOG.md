@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.6.1 (2026-11-13)
+
+### Fixes
+
+- fix(inbox): retry Proton sign-in eval across redirect navigation ([#190](https://github.com/detailedghost/dg-ai/pull/190))
+
 ## v5.6.0 (2026-11-13)
 
 ### Features
