@@ -1,5 +1,16 @@
 # Changelog
 
+## v5.2.0 (2026-11-13)
+
+### Features
+
+- feat(thrash): add checkout, investigate, verify and consolidate stages to reviews ([#177](https://github.com/detailedghost/dg-ai/pull/177))
+
+### Fixes
+
+- fix(phone): make contacts remove clear about groups, npub and kept messages ([#179](https://github.com/detailedghost/dg-ai/pull/179))
+- fix(proto): refingerprint keeps no stale prior.shots after a failed repair ([#178](https://github.com/detailedghost/dg-ai/pull/178))
+
 ## v5.1.1 (2026-11-12)
 
 ### Fixes
