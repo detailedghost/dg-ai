@@ -1,4 +1,4 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { isPathInside } from "@dg/common/node";
 
 /** The fields of a `dg-skills bg` job that the stall check reads. */
@@ -37,13 +37,10 @@ export function findStalled(jobs: JobView[], options: LoopOptions): StalledJob[]
 		const ageMinutes = Number.isNaN(started) ? 0 : Math.floor((options.now - started) / 60_000);
 		const touched = options.logMtime(job.logFile) ?? started;
 		const idleMinutes = Number.isNaN(touched) ? 0 : Math.floor((options.now - touched) / 60_000);
-		const reason =
-			idleMinutes >= options.stallMinutes
-				? "no log growth"
-				: ageMinutes >= options.maxAgeMinutes
-					? "past max age"
-					: null;
-		if (!reason) continue;
+		let reason: StalledJob["reason"];
+		if (idleMinutes >= options.stallMinutes) reason = "no log growth";
+		else if (ageMinutes >= options.maxAgeMinutes) reason = "past max age";
+		else continue;
 		out.push({ id: job.id, reason, idleMinutes, ageMinutes, logFile: job.logFile, lastLine: options.lastLine(job.logFile) });
 	}
 	return out;
@@ -63,7 +60,7 @@ export function lastLogLine(file: string): string {
 	let fd: number | undefined;
 	try {
 		fd = openSync(file, "r");
-		const size = statSync(file).size;
+		const size = fstatSync(fd).size;
 		const length = Math.min(size, 4096);
 		const buffer = Buffer.alloc(length);
 		readSync(fd, buffer, 0, length, size - length);

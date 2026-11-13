@@ -37,6 +37,7 @@ export interface ReapReport extends ReapResult {
 	wouldReap: { pid: number; ageSec: number; kind: string; command: string }[];
 	stuckLoops: (Omit<Classified["stuckLoops"][number], "members"> & { action: "reaped" | "would-reap" | "not-reaped" | "reported" })[];
 	longPipes: Classified["longPipes"];
+	liveDevDaemons: { pid: number; ageSec: number; script: string }[];
 	zombies: Classified["zombies"];
 }
 
@@ -65,7 +66,11 @@ function jobPids(rows: ProcRow[]): Set<number> {
 		.flatMap((job) => [job.launcherPid, readPid(job)])
 		.filter((pid): pid is number => typeof pid === "number" && pid > 1);
 	const children = new Map<number, number[]>();
-	for (const proc of rows) children.set(proc.ppid, [...(children.get(proc.ppid) ?? []), proc.pid]);
+	for (const proc of rows) {
+		const list = children.get(proc.ppid);
+		if (list) list.push(proc.pid);
+		else children.set(proc.ppid, [proc.pid]);
+	}
 	const out = new Set<number>();
 	const walk = (pid: number) => {
 		if (out.has(pid)) return;
@@ -121,14 +126,21 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 	});
 	const wanted = new Set(options.pids);
 	const picked = (pid: number) => wanted.size === 0 || wanted.has(pid);
-	const orphans = result.candidates.filter((c) => picked(c.pid));
+	const orphans = [
+		...result.candidates.filter((c) => picked(c.pid)),
+		...result.liveDevDaemons.filter((d) => wanted.has(d.pid)),
+	];
 	const actOnLoop = (loop: Classified["stuckLoops"][number]) =>
 		wanted.size > 0
 			? wanted.has(loop.pid)
 			: loop.session === "current" || (loop.session === "other" && options.otherSessions);
 	const loops = result.stuckLoops.filter(actOnLoop);
 	const targets = [...new Map([...orphans, ...loops.flatMap((loop) => loop.members)].map((c) => [c.pid, c])).values()];
-	const known = new Set([...result.candidates.map((c) => c.pid), ...result.stuckLoops.map((l) => l.pid)]);
+	const known = new Set([
+		...result.candidates.map((c) => c.pid),
+		...result.liveDevDaemons.map((d) => d.pid),
+		...result.stuckLoops.map((l) => l.pid),
+	]);
 	const notCandidates: Skip[] = [...wanted]
 		.filter((pid) => !known.has(pid) && !result.skipped.some((skip) => skip.pid === pid))
 		.map((pid) => ({ pid, reason: "not a reap candidate", command: "" }));
@@ -137,7 +149,7 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 		: await reapCandidates(targets, {
 				identity: liveIdentity,
 				kill: (pid, signal) => {
-					if (pid <= 1 || pid === process.pid) throw Object.assign(new Error("self"), { code: "EPERM" });
+					if (pid <= 1 || pid === process.pid) throw Object.assign(new Error("refused"), { code: "REFUSED" });
 					process.kill(pid, signal);
 				},
 				sleep: (ms) => Bun.sleep(ms),
@@ -165,6 +177,9 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 						: "not-reaped",
 		})),
 		longPipes: result.longPipes,
+		liveDevDaemons: result.liveDevDaemons
+			.filter((d) => !wanted.has(d.pid))
+			.map((d) => ({ pid: d.pid, ageSec: d.ageSec, script: d.script })),
 	};
 }
 
@@ -193,6 +208,10 @@ export function renderReap(report: ReapReport): string {
 			`stuck loop ${loop.pid} (${loop.session} session, ${formatAge(loop.ageSec)}) waits on ${loop.patterns.map((p) => JSON.stringify(p)).join(", ")}: ${how}`,
 		);
 	}
+	for (const d of report.liveDevDaemons)
+		lines.push(
+			`dev daemon ${d.pid} (${formatAge(d.ageSec)}) from live worktree ${d.script}: not stopped; stop it with: dg-skills stat reap --pid ${d.pid}`,
+		);
 	for (const p of report.longPipes)
 		lines.push(`long pipe ${p.pid} (${formatAge(p.ageSec)}, parent ${p.ppid}): ${p.command}`);
 	for (const z of report.zombies)
@@ -208,7 +227,7 @@ export function renderReap(report: ReapReport): string {
 	const head = report.dryRun ? "Would reap" : "Reaped";
 	lines.push(
 		`${head}: ${done.length} processes${detail ? ` (${detail})` : ""}. Skipped: ${report.skipped.length}.` +
-			(reported ? ` Stuck loops in other sessions: ${reported}.` : "") +
+			(reported ? ` Stuck loops reported: ${reported}.` : "") +
 			(report.failed.length ? ` Failed: ${report.failed.length}.` : ""),
 	);
 	return `${lines.join("\n")}\n`;

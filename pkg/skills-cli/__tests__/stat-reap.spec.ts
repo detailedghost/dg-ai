@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLI_ENTRY, runCli } from "./module-call";
-import { classify, launchdPidsFrom, serviceCgroup, sessionAncestor, waitPatterns, type ProcRow, type ReapContext, reapCandidates } from "../src/stat/reap";
+import { classify, launchdPidsFrom, liveIdentity, serviceCgroup, sessionAncestor, waitPatterns, type ProcRow, type ReapContext, reapCandidates } from "../src/stat/reap";
 
 const ME = 1000;
 const REPO = "/home/u/code/dg-ai";
@@ -64,6 +64,7 @@ function verdict(rows: ProcRow[], context: ReapContext = ctx()) {
 			members: l.members.map((m) => m.pid),
 		})),
 		pipes: result.longPipes.map((p) => p.pid),
+		liveDaemons: result.liveDevDaemons.map((d) => [d.pid, d.script]),
 		candidates: result.candidates.map((c) => c.pid),
 		skipped: Object.fromEntries(result.skipped.map((s) => [s.pid, s.reason])),
 		zombies: result.zombies,
@@ -195,7 +196,7 @@ describe("stat reap classifier", () => {
 			row(16, ["sleep", "15"]),
 			row(17, ["timeout", "600", "bun", "test"]),
 			row(18, ["/usr/bin/zsh", "-c", "until [ -s out ]; do sleep 15; done; tail out"]),
-			row(19, ["/home/u/.local/share/dg/runtime/current/bun", `${WT}/pkg/launcher/dist/lib/dg.js`, "dg-daemon", "serve"]),
+			row(19, ["/home/u/.local/share/dg/runtime/current/bun", `${GONE_WT}/pkg/launcher/dist/lib/dg.js`, "dg-daemon", "serve"]),
 		]);
 		expect(out.candidates).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
 	});
@@ -229,6 +230,19 @@ describe("stat reap classifier", () => {
 		expect(out.candidates).toEqual([]);
 	});
 
+	test("a dev daemon from a live worktree is reported, never a candidate", () => {
+		const script = `${WT}/pkg/launcher/dist/lib/dg.js`;
+		const out = verdict([row(10, ["bun", script, "dg-daemon", "serve"])]);
+		expect(out.candidates).toEqual([]);
+		expect(out.liveDaemons).toEqual([[10, script]]);
+	});
+
+	test("a dev daemon from a deleted worktree is a candidate", () => {
+		const out = verdict([row(10, ["bun", `${GONE_WT}/pkg/launcher/dist/lib/dg.js`, "dg-daemon", "serve"])]);
+		expect(out.candidates).toEqual([10]);
+		expect(out.liveDaemons).toEqual([]);
+	});
+
 	test("a daemon of an older installed version is protected", () => {
 		const out = verdict([row(10, ["bun", "/home/u/.local/share/dg/lib/5.4.0/dg.js", "dg-daemon", "serve"])]);
 		expect(out.candidates).toEqual([]);
@@ -259,10 +273,10 @@ describe("stat reap classifier", () => {
 const OTHER_CLAUDE = 777;
 const HOUR = 3600;
 const SNAPSHOT = "source /home/u/.claude/shell-snapshots/snapshot-zsh-1.sh 2>/dev/null || true && eval";
-const tail = "&& pwd -P >| /tmp/claude-f170-cwd";
+const TAIL = "&& pwd -P >| /tmp/claude-f170-cwd";
 
 function loop(pid: number, body: string, extra: Partial<ProcRow> = {}): ProcRow {
-	return row(pid, ["/usr/bin/zsh", "-c", `${SNAPSHOT} '${body}' < /dev/null ${tail}`], {
+	return row(pid, ["/usr/bin/zsh", "-c", `${SNAPSHOT} '${body}' < /dev/null ${TAIL}`], {
 		ppid: CLAUDE,
 		ageSec: 3 * 24 * HOUR,
 		cwd: SCRATCHPAD,
@@ -280,7 +294,7 @@ describe("stat reap stuck wait loops", () => {
 		]);
 		expect(waitPatterns('tail --pid=$(pgrep -of "codex review") -f /dev/null')).toEqual(["codex review"]);
 		expect(waitPatterns('pgrep -f "codex review"')).toEqual([]);
-		expect(waitPatterns('while pgrep codex; do sleep 1; done')).toEqual([]);
+		expect(waitPatterns("while pgrep codex; do sleep 1; done")).toEqual([]);
 		expect(waitPatterns("while pgrep -f -- worker; do sleep 10; done")).toEqual(["worker"]);
 		expect(
 			waitPatterns("while true; do pgrep -f worker >/dev/null; echo beat >> hb.log; sleep 10; done"),
@@ -552,7 +566,9 @@ describe.skipIf(process.platform === "win32")("dg-skills stat reap", () => {
 			expect(run.exitCode).toBe(0);
 			const report = JSON.parse(run.stdout);
 			expect(report.killed.map((k: { pid: number; signal: string }) => [k.pid, k.signal])).toEqual([[pid, "SIGTERM"]]);
-			expect(() => process.kill(pid, 0)).toThrow();
+			const deadline = Date.now() + 2000;
+			while (liveIdentity(pid) !== null && Date.now() < deadline) await Bun.sleep(20);
+			expect(liveIdentity(pid)).toBeNull();
 		} finally {
 			try {
 				if (pid > 1) process.kill(pid, "SIGKILL");

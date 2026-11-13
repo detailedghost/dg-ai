@@ -65,8 +65,14 @@ export interface LongPipe {
 	command: string;
 }
 
+/** A dev daemon whose dg.js still exists; only an explicit `--pid` stops it. */
+export interface LiveDevDaemon extends Candidate {
+	script: string;
+}
+
 export interface Classified {
 	candidates: Candidate[];
+	liveDevDaemons: LiveDevDaemon[];
 	skipped: Skip[];
 	zombies: Zombie[];
 	stuckLoops: StuckLoop[];
@@ -121,15 +127,17 @@ function codexKind(argv: string[]): boolean {
 	return false;
 }
 
-function devDaemon(proc: ProcRow, ctx: ReapContext): boolean {
+/** The dg.js path of a `dg-daemon serve` that does not run from the installed lib directory. */
+function devDaemonScript(proc: ProcRow, ctx: ReapContext): string | null {
 	const argv = proc.argv;
 	const i = argv.findIndex((word) => base(word) === "dg.js");
-	if (i < 1 || argv[i + 1] !== "dg-daemon" || argv[i + 2] !== "serve") return false;
-	if (!ctx.installedLibDir) return false;
+	if (i < 1 || argv[i + 1] !== "dg-daemon" || argv[i + 2] !== "serve") return null;
+	if (!ctx.installedLibDir) return null;
 	const script = argv[i] ?? "";
 	const dir = cwdPath(proc)?.dir;
-	if (!path.isAbsolute(script) && !dir) return false;
-	return !inside(ctx.realpath(path.resolve(dir ?? "/", script)), ctx.installedLibDir);
+	if (!path.isAbsolute(script) && !dir) return null;
+	const resolved = path.resolve(dir ?? "/", script);
+	return inside(ctx.realpath(resolved), ctx.installedLibDir) ? null : resolved;
 }
 
 function playwrightScript(argv: string[]): boolean {
@@ -172,7 +180,7 @@ function kindOf(proc: ProcRow, ctx: ReapContext): string | null {
 	const script = shellScript(proc);
 	if (script !== null)
 		return /\b(while|until)\b/.test(script) && /\bsleep\b/.test(script) ? "poll-loop" : null;
-	if (devDaemon(proc, ctx)) return "dev-daemon";
+	if (devDaemonScript(proc, ctx)) return "dev-daemon";
 	return null;
 }
 
@@ -318,6 +326,7 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 	const zombies: ProcRow[] = [];
 	const loops: { proc: ProcRow; patterns: string[] }[] = [];
 	const longPipes: LongPipe[] = [];
+	const liveDevDaemons: LiveDevDaemon[] = [];
 	const mine = rows.filter(
 		(proc) =>
 			proc.uid === ctx.uid &&
@@ -339,7 +348,9 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		const inScope = cwdInScope || (kind ? namesDeletedPath(proc, ctx) : false);
 		const orphan = init.has(proc.ppid) || deletedCwd;
 		if (kind && inScope && orphan && proc.ageSec >= ctx.minAgeSec) {
-			candidates.push({ ...proc, kind });
+			const script = kind === "dev-daemon" ? devDaemonScript(proc, ctx) : null;
+			if (script && ctx.exists(script)) liveDevDaemons.push({ ...proc, kind, script });
+			else candidates.push({ ...proc, kind });
 			continue;
 		}
 		const script = shellScript(proc);
@@ -417,10 +428,11 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		stuckLoops.push({ pid: proc.pid, ppid: proc.ppid, ageSec: proc.ageSec, patterns, session, command, members });
 	}
 	const chosen = new Set(candidates.map((c) => c.pid));
-	const members = new Set(stuckLoops.flatMap((loop) => loop.members.map((m) => m.pid)));
+	const memberPids = new Set(stuckLoops.flatMap((loop) => loop.members.map((m) => m.pid)));
 	return {
 		candidates,
-		skipped: skipped.filter((skip) => !members.has(skip.pid)),
+		liveDevDaemons,
+		skipped: skipped.filter((skip) => !memberPids.has(skip.pid)),
 		zombies: zombies.map((z) => ({ pid: z.pid, ppid: z.ppid, parentIsCandidate: chosen.has(z.ppid) })),
 		stuckLoops,
 		longPipes,

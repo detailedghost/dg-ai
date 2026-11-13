@@ -180,7 +180,8 @@ After section 4, the main loop does these steps on every `/dg:stat`. A running j
 
 Run `dg-skills stat reap` (not `--dry-run`) once, from the repo. It stops only:
 
-- Orphans: processes of the current user whose parent is init or the user's `systemd --user`, whose cwd is in this repo or one of its worktrees (or whose command line names a deleted worktree of it), that are older than 10 minutes (`--min-age`), and whose command is on an allowlist of agent tooling: `gh pr checks --watch`, `gh run watch`, `codex review` or `codex exec`, `bun test`, Playwright, a headless Chromium with a temporary `--user-data-dir`, `sleep`, `timeout` around one of these, a non-interactive shell `while`/`until` sleep loop, or a `dg-daemon serve` that does not run from a version under the installed lib directory.
+- Orphans: processes of the current user whose parent is init or the user's `systemd --user`, whose cwd is in this repo or one of its worktrees (or whose command line names a deleted worktree of it), that are older than 10 minutes (`--min-age`), and whose command is on an allowlist of agent tooling: `gh pr checks --watch`, `gh run watch`, `codex review` or `codex exec`, `bun test`, Playwright, a headless Chromium with a temporary `--user-data-dir`, `sleep`, `timeout` around one of these, a non-interactive shell `while`/`until` sleep loop, or a `dg-daemon serve` that does not run from a version under the installed lib directory and whose `dg.js` no longer exists (its worktree was deleted).
+- A dev daemon whose `dg.js` still exists, in a live worktree, is never stopped by default. `stat reap` prints `dev daemon <pid> (...) from live worktree <path>: not stopped`. Relay that line. Stop it only when the user asks, with `dg-skills stat reap --pid <pid>`.
 - Allowlisted processes whose cwd is a deleted worktree of this repo, with a live parent or not.
 - Stuck `pgrep -f` wait loops of this session (see b).
 
