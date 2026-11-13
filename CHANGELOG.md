@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.4.0 (2026-11-13)
+
+### Features
+
+- feat(pw): show "Agent is driving" with Stop, and a per-session site allowlist ([#184](https://github.com/detailedghost/dg-ai/pull/184))
+
 ## v5.3.0 (2026-11-13)
 
 ### Features
