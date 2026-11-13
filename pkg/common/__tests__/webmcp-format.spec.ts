@@ -125,6 +125,9 @@ describe("validateWebMcpScriptRecord", () => {
 		["no matches", { ...RECORD, matches: [] }],
 		["too many matches", { ...RECORD, matches: Array.from({ length: WEBMCP_MAX_MATCHES + 1 }, (_, i) => `https://h${i}.example.test/*`) }],
 		["an http match", { ...RECORD, matches: ["http://notes.example.test/*"] }],
+		["an http match on a host that starts with localhost", { ...RECORD, matches: ["http://localhost.example.test/*"] }],
+		["an http loopback match with a port", { ...RECORD, matches: ["http://localhost:8000/*"] }],
+		["an http loopback match with no path", { ...RECORD, matches: ["http://127.0.0.1"] }],
 		["a match with no path", { ...RECORD, matches: ["https://notes.example.test"] }],
 		["a match for every host", { ...RECORD, matches: ["https://*/*"] }],
 		["a wildcard scheme", { ...RECORD, matches: ["*://notes.example.test/*"] }],
@@ -136,6 +139,11 @@ describe("validateWebMcpScriptRecord", () => {
 		["a non-number approvedAt", { ...RECORD, approvedAt: "now" }],
 	])("rejects %s", (_label, value) => {
 		expect(() => validateWebMcpScriptRecord(value)).toThrow();
+	});
+
+	it.each(["http://localhost/*", "http://127.0.0.1/fixture/*"])("accepts the loopback http match %s", (match) => {
+		const value = { ...RECORD, matches: [match] };
+		expect(validateWebMcpScriptRecord(value)).toEqual(value);
 	});
 
 	it("accepts a wildcard subdomain match", () => {

@@ -87,6 +87,7 @@ const SCRIPT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const MATCH_PATTERN =
 	/^https:\/\/(?:\*\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)\/\S*$/;
+const LOOPBACK_MATCH_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)\/\S*$/;
 const RECORD_KEYS = ["id", "name", "matches", "sha256", "source", "enabled", "approvedAt"];
 
 export function validateWebMcpScriptRecord(value: unknown): WebMcpScriptRecord {
@@ -102,8 +103,8 @@ export function validateWebMcpScriptRecord(value: unknown): WebMcpScriptRecord {
 		fail(`${path}.matches must hold 1 to ${WEBMCP_MAX_MATCHES} patterns`);
 	for (const [index, match] of value.matches.entries()) {
 		requireString(match, `${path}.matches[${index}]`);
-		if (match.length > 200 || !MATCH_PATTERN.test(match))
-			fail(`${path}.matches[${index}] must be an https://<host>/<path> match pattern`);
+		if (match.length > 200 || !(MATCH_PATTERN.test(match) || LOOPBACK_MATCH_PATTERN.test(match)))
+			fail(`${path}.matches[${index}] must be an https://<host>/<path>, http://localhost/<path> or http://127.0.0.1/<path> match pattern`);
 	}
 	requireString(value.sha256, `${path}.sha256`);
 	if (!SHA256.test(value.sha256)) fail(`${path}.sha256 must be 64 lowercase hex characters`);
