@@ -1,5 +1,12 @@
 # Changelog
 
+## v5.5.1 (2026-11-13)
+
+### Fixes
+
+- fix(phone): case-insensitive vault and credential names ([#189](https://github.com/detailedghost/dg-ai/pull/189))
+- fix(phone): keep roster names live and add a roster switch ([#188](https://github.com/detailedghost/dg-ai/pull/188))
+
 ## v5.5.0 (2026-11-13)
 
 ### Features
