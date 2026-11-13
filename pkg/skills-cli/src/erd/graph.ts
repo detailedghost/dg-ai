@@ -211,3 +211,13 @@ export function mergeGraph(parts: MergeGraphInput): ArchitectureGraph {
 		generatedAt: new Date().toISOString(),
 	};
 }
+
+export function invertEdges(edges: CodeEdge[]): Map<string, string[]> {
+	const inverted = new Map<string, Set<string>>();
+	for (const edge of edges) {
+		const sources = inverted.get(edge.to) ?? new Set<string>();
+		sources.add(edge.from);
+		inverted.set(edge.to, sources);
+	}
+	return new Map([...inverted].map(([to, sources]) => [to, [...sources].sort()]));
+}

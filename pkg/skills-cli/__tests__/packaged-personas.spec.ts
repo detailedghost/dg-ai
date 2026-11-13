@@ -31,16 +31,19 @@ const PERSONAS = [
 	"security",
 	"shell",
 	"thrash",
+	"thrash-consolidate",
+	"thrash-verify",
 	"wave",
 ];
+
+const FILES = PERSONAS.map((name) => `${name}.md`).sort();
 
 describe("packaged personas", () => {
 	test("embed every file in plugins/dg/agents", () => {
 		const shipped = readdirSync(AGENTS)
 			.filter((file) => file.endsWith(".md"))
-			.map((file) => file.slice(0, -3))
 			.sort();
-		expect(shipped).toEqual(PERSONAS);
+		expect(shipped).toEqual(FILES);
 		expect(Object.keys(packagedPersonas).sort()).toEqual(PERSONAS);
 		for (const name of PERSONAS) {
 			expect(packagedPersonas[name]).toBe(readFileSync(join(AGENTS, `${name}.md`), "utf8"));
@@ -92,11 +95,11 @@ describe("installPackagedPersonas", () => {
 		rmSync(directory, { recursive: true, force: true });
 	});
 
-	test("writes all 20 personas beside the skills directory", () => {
+	test("writes all 22 personas beside the skills directory", () => {
 		const written = installPackagedPersonas(join(directory, "skills"));
-		expect(written).toEqual(PERSONAS.map((name) => `${name}.md`));
+		expect([...written].sort()).toEqual(FILES);
 		const installed = join(directory, "agents");
-		expect(readdirSync(installed).sort()).toEqual(PERSONAS.map((name) => `${name}.md`));
+		expect(readdirSync(installed).sort()).toEqual(FILES);
 		for (const name of PERSONAS) {
 			expect(readFileSync(join(installed, `${name}.md`), "utf8")).toBe(
 				readFileSync(join(AGENTS, `${name}.md`), "utf8"),

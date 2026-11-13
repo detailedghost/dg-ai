@@ -117,7 +117,7 @@ async function prepare(cfg: Config): Promise<void> {
 	const headSha = await forge.readHeadSha(event);
 	const botLogin =
 		gitlab.isGitlabCi(env) && !env.THRASHLEY_BOT_LOGIN ? await gitlab.readTokenLogin(event) : cfg.botLogin;
-	const diff = dgSkills(["thrash", "diff", event.url, "--reviewer", botLogin], scratchEnv());
+	const diff = dgSkills(["thrash", "diff", event.url, "--no-repo", "--reviewer", botLogin], scratchEnv());
 	const [reviews, rules, policy, extraPrompt, agent] = await Promise.all([
 		forge.listReviews(event),
 		forge.readBaseFile(event, cfg.reviewRules),

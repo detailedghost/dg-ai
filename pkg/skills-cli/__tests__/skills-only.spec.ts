@@ -38,8 +38,10 @@ const PERSONAS = [
 	"security",
 	"shell",
 	"thrash",
+	"thrash-consolidate",
+	"thrash-verify",
 	"wave",
-].map((name) => `${name}.md`);
+].map((name) => `${name}.md`).sort();
 
 const SUMMARY =
 	"Skills-only install: no skill content was executed. Fetching the dg bundle with the dg-skills, dg-agent and dg-daemon launchers (no extension).";

@@ -111,6 +111,8 @@ function rawMr(n: number, state: "opened" | "closed" | "merged" | "locked", over
 		source_branch: `feature-${n}`,
 		target_branch: "main",
 		description: `body of MR ${n}`,
+		sha: `sha${n}`,
+		diff_refs: { head_sha: "diff-refs-sha" },
 		merged_at: state === "merged" ? "2026-01-01T00:00:00Z" : null,
 		...overrides,
 	};
@@ -313,6 +315,7 @@ describe("viewPullRequest", () => {
 		expect(pr.mergedAt).toBe("2026-01-01T00:00:00Z");
 		expect(pr.headRefName).toBe("feature-42");
 		expect(pr.baseRefName).toBe("main");
+		expect(pr.headSha).toBe("sha42");
 		expect(readCalls(log)).toEqual(["mr view 42 --output json"]);
 	});
 
@@ -1194,6 +1197,7 @@ describe("listPullRequests", () => {
 		const merged = result.find((r) => r.number === 2);
 		expect(merged?.state).toBe("MERGED");
 		expect(merged?.merged).toBe(true);
+		expect(merged?.headSha).toBe("sha2");
 		const closed = result.find((r) => r.number === 3);
 		expect(closed?.state).toBe("CLOSED");
 		expect(closed?.merged).toBe(false);
@@ -1718,6 +1722,64 @@ describe("fetchDiff", () => {
 
 		expect(diff).toStartWith("diff --git a/x b/x");
 		expect(readCalls(log)).toEqual(["mr diff 7 --raw -R acme/widgets"]);
+	});
+});
+
+describe("getFileAtRef", () => {
+	const ref = { number: 7, repo: { host: "gitlab.com", owner: "acme", repo: "widgets" } };
+	const script = (body: string) =>
+		glabScript(`
+  *"repository/files/"*)
+    ${body}
+    ;;`);
+
+	test("returns the file text for a 200 from the raw endpoint at the sha", async () => {
+		const log = callLogPath();
+		fakeGlab(script("printf 'hello\\n'; exit 0"));
+
+		expect(await createGitlabProvider().getFileAtRef(ref, "src/a.ts", "abc1234")).toBe("hello\n");
+		expect(readCalls(log)).toEqual(["api projects/acme%2Fwidgets/repository/files/src%2Fa.ts/raw?ref=abc1234"]);
+	});
+
+	test("returns null for a 404, which is also what a directory or submodule path gets", async () => {
+		fakeGlab(script("echo '404 Not Found' >&2; exit 1"));
+		expect(await createGitlabProvider().getFileAtRef(ref, "src", "abc1234")).toBeNull();
+	});
+
+	test("encodes a path with a space", async () => {
+		const log = callLogPath();
+		fakeGlab(script("echo ok; exit 0"));
+
+		await createGitlabProvider().getFileAtRef(ref, "my docs/a b.md", "abc1234");
+
+		expect(readCalls(log)[0]).toContain("/repository/files/my%20docs%2Fa%20b.md/raw?ref=abc1234");
+	});
+
+	test("encodes a colon so a glab placeholder cannot expand", async () => {
+		const log = callLogPath();
+		fakeGlab(script("echo ok; exit 0"));
+
+		await createGitlabProvider().getFileAtRef(ref, "docs/:id/a.md", "abc1234");
+
+		expect(readCalls(log)[0]).toContain("/repository/files/docs%2F%3Aid%2Fa.md/raw?ref=abc1234");
+	});
+
+	test("routes a self-hosted host through --hostname", async () => {
+		const log = callLogPath();
+		fakeGlab(script("echo ok; exit 0"));
+
+		await createGitlabProvider().getFileAtRef(
+			{ number: 1, repo: { host: "gl.corp.test", owner: "acme", repo: "widgets" } },
+			"a.ts",
+			"abc1234",
+		);
+
+		expect(readCalls(log)[0]).toEndWith("--hostname gl.corp.test");
+	});
+
+	test("rejects on any other failure", async () => {
+		fakeGlab(script("echo '401 Unauthorized' >&2; exit 1"));
+		await expect(createGitlabProvider().getFileAtRef(ref, "a.ts", "abc1234")).rejects.toThrow();
 	});
 });
 

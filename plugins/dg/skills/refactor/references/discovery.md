@@ -1,6 +1,6 @@
 # /dg:refactor Discovery Reference
 
-Covers domain context, Explore briefing, and candidate format. Load at Step 1.
+Covers domain context, Explore briefing, investigation, verification, and candidate format. Load at Step 1.
 
 ---
 
@@ -42,16 +42,65 @@ Launch the **Explore** agent on the scope path. Brief it verbatim:
 
 ---
 
-## §3 — Candidate Format Spec
+## §3 — Investigate and Verify
 
-Synthesize Explore findings into **exactly 4 candidates** for `AskUserQuestion` (single-select). Each candidate:
+### Investigate call
+
+After the Explore agent returns, run one call with the files from its areas. Pass each path as given, relative to the working directory. Never pass a directory. Pass 40 paths at most, and say how many you left out:
+
+```bash
+dg-skills thrash investigate <path...>
+```
+
+The call prints JSON. When it exits non-zero, skip this section's attach step, say so, and continue. The skill reads these fields:
+
+| Field | Use |
+|---|---|
+| `root` | Absolute path of the tree. It is `REPO` for each verifier. |
+| `files[].path` | The file that the entry describes. |
+| `symbols` | Symbols that the file declares. |
+| `dependents` | Files that import the file. |
+| `callers[].path` | File of one caller hit. |
+| `callers[].line` | Line of that hit. |
+| `callers[].symbol` | Symbol that the hit names. |
+| `tests` | Test files that pair with the file. |
+| `truncated` | `true` when the caller list of the file was cut. |
+
+Attach the entries to the area of their file. They give each candidate its callers, dependents and tests.
+
+### Verify task
+
+Write one task file per candidate at `$(dg-skills stash refactor <id>.task.json)`. Its fields are `id`, `path`, `line`, `title`, `body`, `evidence`. It has no `tier`.
+
+- `title` and `body` are statements of fact that can be checked: the files, the call counts, the deletion-test claim.
+- `evidence` has 5 entries at most `{ "path", "line", "note" }`: the top caller hits (`note` is the symbol name) and the dependents (`line: null`).
+
+The verdict file is `$(dg-skills stash refactor <id>.verdict.json)`. Before the verifiers launch, delete the old verdict file of each candidate, so that a verifier that writes nothing leaves no stale verdict:
+
+```bash
+rm -f "$(dg-skills stash refactor <id>.verdict.json)"
+```
+
+Launch one `dg:thrash-verify` agent per candidate, all in one message, 4 agents at most. The prompt gives `TASK`, `REPO` (the `root`, or the scope path when investigate did not run) and `VERDICT_PATH`, and has this line: `verify the facts in title and body about the code`.
+
+The verifier has no shell step. It reads with Read, Grep and Glob and writes only the verdict file. It replies `WROTE <path> <verdict>` or `NO_REPO <id>`.
+
+A verdict file counts only when it parses and its `id` is the id of its task. Never resume a verifier. Keep `confirmed` and `adjusted` candidates. Drop `rejected` candidates and candidates with no verdict. An `adjusted` verdict ignores its `tier` and adds its `reason` to the candidate description.
+
+---
+
+## §4 — Candidate Format Spec
+
+Turn the verified candidates into **4 at most** for `AskUserQuestion` (single-select). Each candidate:
 
 - **header** — short concept name (≤12 chars), drawn from `monolith.md` if possible.
 - **label** — concept-level action ("merge X into Y intake module").
 - **description** — `Files: ... | Problem: ... | Solution: ... | Benefits: ...` packed into ~300 chars. Use **locality** and **leverage** when describing benefits.
+- **Verified** — `confirmed` or `adjusted`.
+- **Callers** — the count of different caller paths over the files of the area, without the files of the area. Show `N+` when a file of the area is `truncated`.
 
-If fewer than 4 high-confidence candidates surfaced, fill remaining slots with `[low-confidence]`-tagged ones rather than fabricate. Note this honestly.
+Do not fill empty slots. With 2 to 4 candidates, show them all. With 1, give two options: accept it, or give my own. With 0, send a plain message with no `AskUserQuestion`: no candidate passed verification, and how many had no verdict.
 
 The user's "Other" option (always available in `AskUserQuestion`) lets them type their own refactor target. Treat it as the chosen candidate and skip to step 4.
 
-**GATE:** User picked one candidate (or supplied their own). If they decline all four with no "Other" input, exit gracefully: `"No candidate chosen. Run /dg:refactor again or pick a different scope."`
+**GATE:** User picked one candidate (or supplied their own). If they decline each candidate with no "Other" input, exit gracefully: `"No candidate chosen. Run /dg:refactor again or pick a different scope."`

@@ -54,6 +54,18 @@ dg-skills ssms google status
 dg-skills ssms signal link
 ```
 
+## Thrash
+
+`dg-skills thrash` runs the steps of a `/dg:thrash` review. See the
+[thrash pipeline](../../docs/DEVELOPER.md#thrash-review-pipeline) for the stage order.
+
+- `diff` fetches a diff, plans the review chunks, and writes the plan.
+- `investigate` prints the symbols, dependents, callers, and tests of each path.
+- `triage` merges findings into verify tasks (`--stage merge`) and applies the verdicts (`--stage apply`).
+- `compile` merges the findings and writes the review file.
+- `post` publishes a compiled review.
+- `stack` lists every PR or MR in a stack.
+
 ## Channel review
 
 The installed `dg-skills channel-review` command runs local thrash reviews for

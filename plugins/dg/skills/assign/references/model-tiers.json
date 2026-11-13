@@ -25,6 +25,8 @@
 		"security": "opus",
 		"shell": "sonnet",
 		"thrash": "sonnet",
+		"thrash-consolidate": "opus",
+		"thrash-verify": "opus",
 		"wave": "haiku"
 	},
 	"tiers": {

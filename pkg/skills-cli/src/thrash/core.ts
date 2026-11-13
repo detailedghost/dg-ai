@@ -62,7 +62,14 @@ const ADDRESS_SEVERITY: Record<Tier, "high" | "medium" | "low"> = {
 
 export type Side = "new" | "old";
 
+export interface Evidence {
+	path: string;
+	line: number | null;
+	note: string;
+}
+
 export interface Finding {
+	id?: string;
 	path: string;
 	line: number | null;
 	side: Side;
@@ -74,6 +81,20 @@ export interface Finding {
 	preExisting?: boolean;
 	tag?: string;
 	kind?: "improvement";
+	evidence?: Evidence[];
+	/** Class or title of the finding as first reported; prior-thread matching and the thread key use it over `class` and `title`. */
+	matchKey?: string;
+}
+
+export interface RejectedFinding extends Finding {
+	reason: string;
+}
+
+export interface RejectedEntry {
+	id: string;
+	tier: Tier;
+	title: string;
+	reason: string;
 }
 
 export interface AgentOutput {
@@ -145,6 +166,8 @@ export interface CompileOptions {
 	improvements?: boolean;
 	maxImprovements?: number;
 	reReview?: ReReview;
+	/** Adds the "Reviewed from the diff only" item to the Review limits section. */
+	diffOnly?: boolean;
 	cleared?: Cleared;
 	headSha?: string;
 	classHistory?: Readonly<Record<string, number>>;
@@ -152,7 +175,12 @@ export interface CompileOptions {
 	prFiles?: DiffFile[];
 	/** Thread ids an earlier review cleared; they stay out of the open tally and are written forward. */
 	clearedThreads?: string[];
+	/** Findings the verifier rejected: never posted or counted, but each still holds the prior thread it matches. */
+	rejected?: RejectedFinding[];
+	unverified?: number;
 }
+
+const DIFF_ONLY_LIMIT = "Reviewed from the diff only: the code checkout was not available.";
 
 export interface ReReview {
 	sha: string;
@@ -208,6 +236,7 @@ export interface CompiledReview {
 	preExisting: Finding[];
 	classes: BugClass[];
 	improvements?: number;
+	rejected?: RejectedEntry[];
 	trigger: ReviewTrigger;
 	heading?: string;
 	round?: number;
@@ -407,11 +436,21 @@ export function relativePlanPath(root: string, absolute: string): string {
 	return rel;
 }
 
+export interface ChunkBundle {
+	files: string[];
+	symbols: string[];
+	dependents: string[];
+	tests: string[];
+	related: string[];
+}
+
 export interface PlanChunk {
 	id: number;
 	label: string;
 	files: string[];
 	changed: number;
+	bundle?: ChunkBundle;
+	contextPath?: string;
 }
 
 export interface Coverage {
@@ -618,6 +657,8 @@ export function planChunks(files: DiffFile[], limit = LARGE_DIFF_LINES, cap = MA
 	return { chunks, skipped };
 }
 
+export { byPath, CATEGORY_ORDER, categoryOf, type ChunkCategory, commonDirectory, mergeNeighbors, splitIntoChunks, sumChanged };
+
 export function chunkSummary(chunk: DiffChunk): PlanChunk {
 	return { ...chunk, files: [...new Set(chunk.files.map((f) => f.path))] };
 }
@@ -693,7 +734,7 @@ function publicationAnchor(files: DiffFile[], prFiles: DiffFile[] | undefined, f
 
 const FENCED_JSON_RE = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
 
-function extractJsonText(text: string): string {
+export function extractJsonText(text: string): string {
 	const blocks = [...text.matchAll(FENCED_JSON_RE)].map((m) => m[1]);
 	if (blocks.length > 0) return blocks[blocks.length - 1];
 	const start = text.indexOf("{");
@@ -733,21 +774,7 @@ export function parseAgentOutput(text: string): AgentOutput {
 	if (typeof parsed !== "object" || parsed === null || !Array.isArray(parsed.findings)) {
 		throw new Error('agent output must be an object with a "findings" array');
 	}
-	const findings: Finding[] = parsed.findings.map((raw: Record<string, unknown>, index: number) => {
-		const path = typeof raw.path === "string" ? raw.path.trim() : "";
-		const body = typeof raw.body === "string" ? raw.body.trim() : "";
-		if (!body) throw new Error(`finding ${index}: body is required`);
-		const improvement = raw.kind === "improvement";
-		return {
-			path,
-			line: coerceLine(raw.line, index),
-			side: raw.side === "old" ? "old" : "new",
-			tier: improvement && raw.tier === undefined ? "nit" : coerceTier(raw.tier, index),
-			title: typeof raw.title === "string" ? raw.title.trim() : "",
-			body,
-			...optionalFields(raw, improvement),
-		};
-	});
+	const findings = parsed.findings.map(parseFinding);
 	return {
 		changed: typeof parsed.changed === "string" ? parsed.changed.trim() : "",
 		strengths: stringList(parsed.strengths),
@@ -756,11 +783,31 @@ export function parseAgentOutput(text: string): AgentOutput {
 	};
 }
 
+export function parseFinding(raw: Record<string, unknown>, index: number): Finding {
+	const path = typeof raw.path === "string" ? raw.path.trim() : "";
+	const body = typeof raw.body === "string" ? raw.body.trim() : "";
+	if (!body) throw new Error(`finding ${index}: body is required`);
+	const improvement = raw.kind === "improvement";
+	return {
+		path,
+		line: coerceLine(raw.line, index),
+		side: raw.side === "old" ? "old" : "new",
+		tier: improvement && raw.tier === undefined ? "nit" : coerceTier(raw.tier, index),
+		title: typeof raw.title === "string" ? raw.title.trim() : "",
+		body,
+		...optionalFields(raw, improvement),
+	};
+}
+
 function optionalFields(raw: Record<string, unknown>, improvement: boolean): Partial<Finding> {
 	const bugClass = typeof raw.class === "string" ? raw.class.trim() : "";
 	const tag = typeof raw.tag === "string" ? raw.tag.trim() : "";
 	const otherPlaces = stringList(raw.otherPlaces);
+	const id = typeof raw.id === "string" ? raw.id.trim() : "";
+	const evidence = parseEvidence(raw.evidence);
 	return {
+		...(id && { id }),
+		...(evidence.length > 0 && { evidence }),
 		...(bugClass && { class: bugClass }),
 		...(bugClass && otherPlaces.length > 0 && { otherPlaces }),
 		...(raw.preExisting === true && { preExisting: true }),
@@ -769,7 +816,29 @@ function optionalFields(raw: Record<string, unknown>, improvement: boolean): Par
 	};
 }
 
-function stringList(raw: unknown): string[] {
+const EVIDENCE_NOTE_MAX = 200;
+
+function evidenceLine(raw: unknown): number | null {
+	try {
+		return coerceLine(raw, 0);
+	} catch {
+		return null;
+	}
+}
+
+/** Entries with no path or no note are dropped; a bad line becomes null. */
+export function parseEvidence(raw: unknown): Evidence[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((entry: unknown) => {
+		if (typeof entry !== "object" || entry === null) return [];
+		const { path, line, note } = entry as Record<string, unknown>;
+		const cleanPath = typeof path === "string" ? path.replaceAll("`", "").trim() : "";
+		const cleanNote = typeof note === "string" ? note.replace(/\s+/g, " ").trim().slice(0, EVIDENCE_NOTE_MAX) : "";
+		return cleanPath && cleanNote ? [{ path: cleanPath, line: evidenceLine(line), note: cleanNote }] : [];
+	});
+}
+
+export function stringList(raw: unknown): string[] {
 	if (!Array.isArray(raw)) return [];
 	return raw.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim());
 }
@@ -829,6 +898,15 @@ export function capVerdict(decided: Verdict, maxEvent: ReviewVerdict | undefined
 	};
 }
 
+const EVIDENCE_SHOWN = 3;
+
+function renderEvidence(evidence: Evidence[] | undefined): string {
+	if (!evidence?.length) return "";
+	const shown = evidence.slice(0, EVIDENCE_SHOWN).map((e) => `\`${placeOf(e)}\` ${e.note}`);
+	const more = evidence.length > EVIDENCE_SHOWN ? ` (+${evidence.length - EVIDENCE_SHOWN} more)` : "";
+	return `\n\nEvidence: ${shown.join("; ")}${more}`;
+}
+
 export function renderComment(finding: Finding): string {
 	const tag = finding.tag ? ` \`${finding.tag}\`` : "";
 	if (finding.kind === "improvement") {
@@ -836,10 +914,11 @@ export function renderComment(finding: Finding): string {
 	}
 	const preExisting = finding.preExisting ? ` ${PRE_EXISTING_MARKER}` : "";
 	const note = finding.preExisting ? " This PR did not add it, and it does not block." : "";
+	const evidence = renderEvidence(finding.evidence);
 	const sameClass = finding.otherPlaces?.length
 		? `\n\nSame class (${finding.class}) at: ${finding.otherPlaces.join(", ")}`
 		: "";
-	return `${TIER_EMOJI[finding.tier]} **${TIER_LABEL[finding.tier]}**${tag}${preExisting} ${finding.body}${note}${sameClass}`;
+	return `${TIER_EMOJI[finding.tier]} **${TIER_LABEL[finding.tier]}**${tag}${preExisting} ${finding.body}${note}${evidence}${sameClass}`;
 }
 
 /** Escapes `>` so no hidden value can close its own HTML comment. */
@@ -858,6 +937,7 @@ export function renderInlineBody(finding: Finding): string {
 
 /** The class key when a class is set, else the title key; empty when the finding names neither. */
 function findingKey(finding: Finding): string {
+	if (finding.matchKey !== undefined) return classKey(finding.matchKey);
 	return classKey(finding.class ?? "") || classKey(finding.title);
 }
 
@@ -1040,7 +1120,7 @@ export function classKey(name: string): string {
 	return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function placeOf(finding: Finding): string {
+export function placeOf(finding: Pick<Finding, "path" | "line">): string {
 	return finding.line === null ? finding.path : `${finding.path}:${finding.line}`;
 }
 
@@ -1078,6 +1158,7 @@ function clearedText({ fixed, sha, answered }: Cleared): string {
 interface BodySlots {
 	reconsider: boolean;
 	reReview?: ReReview;
+	reviewLimits: string[];
 	cleared?: Cleared;
 	hints: Array<{ name: string; text: string }>;
 	unposted: string[];
@@ -1129,6 +1210,7 @@ function renderBody(review: Omit<CompiledReview, "body">, slots: BodySlots): str
 						]
 					: [],
 			},
+			{ heading: "Review limits", items: slots.reviewLimits },
 		]),
 		...renderAlert("TIP", [{ heading: "Strengths", items: review.strengths }]),
 		...renderAlert("WARNING", [
@@ -1197,6 +1279,20 @@ interface Reconciled {
 
 type AnchorOf = (finding: Finding) => Anchor | null;
 
+interface Open {
+	thread: ReviewThread;
+	tier: Tier;
+}
+
+/** Index of the open thread a finding holds: the thread at its anchor first, else the same finding recorded in an outdated or grouped thread. */
+function matchThread(unmatched: Open[], finding: Finding, anchor: Anchor | null): number {
+	const index = anchor ? unmatched.findIndex(({ thread }) => threadAtAnchor(thread, anchor)) : -1;
+	if (index !== -1) return index;
+	return unmatched.findIndex(
+		({ thread }) => (isOutdatedThread(thread) || recordsPlaces(thread)) && isSameFinding(thread, finding),
+	);
+}
+
 function reconcileThreads(files: DiffFile[], anchorOf: AnchorOf, findings: Finding[], opts: CompileOptions): Reconciled {
 	const alreadyCleared = new Set(opts.clearedThreads);
 	const open = opts.existing.filter((thread) => !alreadyCleared.has(thread.threadId));
@@ -1219,17 +1315,16 @@ function reconcileThreads(files: DiffFile[], anchorOf: AnchorOf, findings: Findi
 	};
 	for (const finding of [...findings].sort((a, b) => tierRank(a.tier) - tierRank(b.tier))) {
 		const anchor = anchorOf(finding);
-		const index = anchor ? unmatched.findIndex(({ thread }) => threadAtAnchor(thread, anchor)) : -1;
-		const recorded = unmatched.findIndex(
-			({ thread }) => (isOutdatedThread(thread) || recordsPlaces(thread)) && isSameFinding(thread, finding),
-		);
-		if (index !== -1) {
-			consume(index, finding);
-		} else if (recorded !== -1) {
-			consume(recorded, finding);
+		const matched = matchThread(unmatched, finding, anchor);
+		if (matched !== -1) {
+			consume(matched, finding);
 		} else if (!anchor || priorThreadAt(anchor, opts.existing, opts.reviewer) !== "resolved" || tierRank(finding.tier) <= tierRank("high")) {
 			tally[finding.tier] += 1;
 		}
+	}
+	for (const finding of [...(opts.rejected ?? [])].sort((a, b) => tierRank(a.tier) - tierRank(b.tier))) {
+		const matched = matchThread(unmatched, finding, anchorOf(finding));
+		if (matched !== -1) unmatched.splice(matched, 1);
 	}
 	const cleared: string[] = [];
 	for (const { thread, tier } of unmatched) {
@@ -1428,6 +1523,7 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 			body: renderComment(finding),
 		});
 	}
+	const rejected = opts.rejected ?? [];
 	const tally = (phase || opts.reReview) ? reconciled.tally : tallyFindings(counted);
 	const decided = phase
 		? verdictWithin(tally, phase.block, opts.commentOnly, phase.name ? `in a ${phase.name} round` : "by policy")
@@ -1469,6 +1565,9 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		preExisting: kept.filter((p) => p.finding.preExisting).map((p) => p.finding),
 		classes: groupClasses(kept.filter((p) => !p.finding.preExisting).map((p) => p.finding)),
 		improvements: improvementsOn ? suggestionComments.length : undefined,
+		...(rejected.length > 0 && {
+			rejected: rejected.map(({ id, tier, title, reason }) => ({ id: id ?? "", tier, title, reason })),
+		}),
 		trigger: opts.trigger ?? "manual",
 		heading: opts.heading,
 		round: opts.round,
@@ -1483,13 +1582,18 @@ export function compileReview(files: DiffFile[], output: AgentOutput, opts: Comp
 		const count = opts.classHistory?.[classKey(name)] ?? 0;
 		return count >= CLASS_HINT_MIN_PRS ? [{ name, text: classHint(count) }] : [];
 	});
+	const reviewLimits = [
+		...(opts.diffOnly ? [DIFF_ONLY_LIMIT] : []),
+		...(opts.unverified ? [`${plural(opts.unverified, "finding")} not verified.`] : []),
+		...(rejected.length > 0 ? [`${plural(rejected.length, "finding")} rejected on verification.`] : []),
+	];
 	const reconsider =
 		decided.verdict === "request_changes" &&
 		opts.round !== undefined &&
 		opts.round > (opts.policy?.reconsiderAfter ?? DEFAULT_RECONSIDER_AFTER);
 	return {
 		...compiled,
-		body: renderBody(compiled, { reconsider, reReview: opts.reReview, cleared, hints, unposted, clearedThreads }),
+		body: renderBody(compiled, { reconsider, reReview: opts.reReview, reviewLimits, cleared, hints, unposted, clearedThreads }),
 	};
 }
 
@@ -1530,6 +1634,11 @@ export function renderPreview(review: CompiledReview, target: string): string {
 			`${review.unanchored.length} unanchored.`,
 		"",
 	];
+	if (review.rejected?.length) {
+		lines.push("Rejected on verification:");
+		for (const r of review.rejected) lines.push(`  ${TIER_EMOJI[r.tier]} ${r.id} ${r.title}: ${r.reason}`);
+		lines.push("");
+	}
 	for (const c of review.comments) {
 		lines.push(`${c.path}:${previewLine(c)}`, `  ${c.body}`, "");
 	}

@@ -19,7 +19,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { shellCommand } from "@dg/common/node";
 import { BACKENDS } from "../src/proxy";
 import { THRASH_REVIEW_MARKER } from "../src/thrash/constants";
@@ -195,6 +195,7 @@ describe("local mode", () => {
 		expect(out.mode).toBe("local");
 		expect(out.stats).toMatchObject({ files: 1, added: 2, deleted: 1 });
 		expect(out.untracked).toEqual(["untracked.txt"]);
+		expect(out.repo).toMatchObject({ root: repo, source: "cwd" });
 		expect(readFileSync(out.chunks[0].annotatedPath, "utf8")).toContain(
 			"old:- new:2 + const b = 3;",
 		);
@@ -238,7 +239,8 @@ describe("local mode", () => {
 			nit: 0,
 		});
 		const stored = JSON.parse(readFileSync(output.reviewPath, "utf8"));
-		expect(Object.keys(stored).sort()).toEqual(["review", "target"]);
+		expect(Object.keys(stored).sort()).toEqual(["repo", "review", "target"]);
+		expect(stored.repo).toMatchObject({ root: repo, source: "cwd" });
 		expect(stored.target).toBe(".");
 		expect(stored.review).toMatchObject({
 			verdict: output.verdict,
@@ -1884,5 +1886,820 @@ describe("thrash review hardening", () => {
 		});
 		expect(result.exitCode).toBe(EXIT.OK);
 		expect(JSON.parse(result.stdout)[0]).toMatchObject({ number: 12, changed: 3 });
+	});
+});
+
+describe("thrash review checkout", () => {
+	const PR_13 = PR_URL.replace("12", "13");
+	const HEAD_FILE = "const a = 1;\nconst b = 3;\nconst c = 4;\nexport { a, b };\n";
+
+	interface Remote {
+		path: string;
+		sha12: string;
+		sha13: string;
+	}
+
+	function makeRemote(): Remote {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-remote-");
+		cliFixtures.runGit(["init", "-q"], dir);
+		cliFixtures.runGit(["symbolic-ref", "HEAD", "refs/heads/main"], dir);
+		cliFixtures.runGit(["config", "user.email", "t@t.t"], dir);
+		cliFixtures.runGit(["config", "user.name", "T"], dir);
+		mkdirSync(join(dir, "src"));
+		cliFixtures.commitFile(dir, "src/a.ts", "const a = 1;\nconst b = 2;\nexport { a, b };\n", "chore: base");
+		cliFixtures.runGit(["checkout", "-q", "-b", "pr"], dir);
+		const sha12 = cliFixtures.commitFile(dir, "src/a.ts", HEAD_FILE, "feat: head 12");
+		cliFixtures.runGit(["update-ref", "refs/pull/12/head", sha12], dir);
+		const sha13 = cliFixtures.commitFile(dir, "src/a.ts", `${HEAD_FILE}// 13\n`, "feat: head 13");
+		cliFixtures.runGit(["update-ref", "refs/pull/13/head", sha13], dir);
+		cliFixtures.runGit(["checkout", "-q", "main"], dir);
+		return { path: dir, sha12, sha13 };
+	}
+
+	interface Env {
+		env: Record<string, string>;
+		cwd: string;
+		gh: ReturnType<typeof fakeGh>;
+		cloneLog: string;
+		headFile: string;
+		postFlag: string;
+	}
+
+	function setup(remote: Remote, opts: { cloneFails?: boolean; cloneSleep?: number; postFails?: boolean } = {}): Env {
+		const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+		const inputs = cliFixtures.tmp(createdDirs, "thrash-inputs-");
+		const cloneLog = join(inputs, "clones.log");
+		const headFile = join(inputs, "head");
+		const diffFixture = join(inputs, "pr.diff");
+		const pulls = join(inputs, "pulls.json");
+		writeFileSync(headFile, remote.sha12);
+		writeFileSync(diffFixture, GH_DIFF);
+		const pr = (number: number, sha: string, head: string, base: string) => ({
+			number,
+			title: `PR ${number}`,
+			html_url: PR_URL.replace("12", String(number)),
+			state: "open",
+			merged_at: null,
+			head: { ref: head, sha },
+			base: { ref: base },
+		});
+		writeFileSync(pulls, JSON.stringify([pr(12, remote.sha12, "a", "main"), pr(13, remote.sha13, "b", "a")]));
+		const clone = opts.cloneFails
+			? `echo clone >> "${cloneLog}"\n    exit 1`
+			: `echo clone >> "${cloneLog}"\n    sleep ${opts.cloneSleep ?? 0}\n    dir="$4"; shift 5\n    exec git clone "$@" "file://${remote.path}" "$dir"`;
+		const gh = fakeGh(
+			cliFixtures.shScript(`
+  *"repo clone"*)
+    ${clone}
+    ;;
+  *"contents/"*)
+    echo 'gh: Not Found (HTTP 404)' >&2
+    exit 1
+    ;;
+  *"pr diff"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"pr view"*)
+    printf '{"number":12,"title":"t","body":"","headRefName":"a","baseRefName":"main","headRefOid":"%s"}' "$(cat "${headFile}")"
+    ;;
+  *"api graphql"*)
+    echo '${EMPTY_THREADS}'
+    ;;
+  *"pulls --method GET"*)
+    cat "${pulls}"
+    ;;
+  *"--method POST"*)
+    ${opts.postFails ? "echo 'post failed' >&2; exit 1" : `cat > /dev/null; echo '{"html_url":"${PR_URL}#pullrequestreview-1"}'`}
+    ;;
+  *"pulls/"*"/reviews"*)
+    echo '[[]]'
+    ;;`),
+		);
+		return {
+			env: { GH_BIN: gh.bin, FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFixture },
+			cwd,
+			gh,
+			cloneLog,
+			headFile,
+			postFlag: "",
+		};
+	}
+
+	function cloneCalls(e: Env): number {
+		return cliFixtures.readCalls(e.cloneLog).length;
+	}
+
+	function diffOf(e: Env, args: string[] = [PR_URL]) {
+		const result = run(["diff", ...args], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(result.stdout);
+		const plan = JSON.parse(readFileSync(out.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		return { out, plan };
+	}
+
+	function compileOf(e: Env, out: { diffPath: string; chunks: Array<{ findingsPath: string }> }, url = PR_URL) {
+		findingsFile(out, []);
+		const result = run(["compile", url, "--diff", out.diffPath, "--json"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const reviewPath = JSON.parse(result.stdout).reviewPath as string;
+		return { reviewPath, review: JSON.parse(readFileSync(reviewPath, "utf8")) };
+	}
+
+	function post(e: Env, reviewPath: string, url = PR_URL, extra: string[] = ["--confirm"]) {
+		return run(["post", url, "--review", reviewPath, ...extra], { cwd: e.cwd, env: e.env });
+	}
+
+	test("diff builds a scratch tree at the PR head and reports it in the plan and on stdout", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		const { out, plan } = diffOf(e);
+		expect(plan.repo).toMatchObject({ headSha: remote.sha12, source: "clone" });
+		expect(isAbsolute(plan.repo.root)).toBe(false);
+		expect(out.repo).toMatchObject({ headSha: remote.sha12, source: "clone" });
+		expect(isAbsolute(out.repo.root)).toBe(true);
+		expect(out.repo.root).toBe(join(dirname(out.diffPath), plan.repo.root));
+		expect(out.repo.root.startsWith(scratch)).toBe(true);
+		expect(readFileSync(join(out.repo.root, "src/a.ts"), "utf8")).toBe(HEAD_FILE);
+	});
+
+	test("diff exits 0 with source none when the clone fails", () => {
+		const e = setup(makeRemote(), { cloneFails: true });
+		const { out, plan } = diffOf(e);
+		expect(plan.repo).toMatchObject({ root: "", source: "none" });
+		expect(out.repo.source).toBe("none");
+	});
+
+	test("a second diff after the head moved gives a tree at the new head SHA", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		diffOf(e);
+		writeFileSync(e.headFile, remote.sha13);
+		cliFixtures.runGit(["update-ref", "refs/pull/12/head", remote.sha13], remote.path);
+		const { out } = diffOf(e);
+		expect(out.repo.headSha).toBe(remote.sha13);
+		expect(readFileSync(join(out.repo.root, "src/a.ts"), "utf8")).toBe(`${HEAD_FILE}// 13\n`);
+	});
+
+	test("stack --diff checks out the freshly viewed head when it moved after the listing", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		writeFileSync(e.headFile, remote.sha13);
+		cliFixtures.runGit(["update-ref", "refs/pull/12/head", remote.sha13], remote.path);
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const row = JSON.parse(result.stdout).find((r: { number: number }) => r.number === 12);
+		expect(row.repo.headSha).toBe(remote.sha13);
+		expect(readFileSync(join(row.repo.root, "src/a.ts"), "utf8")).toBe(`${HEAD_FILE}// 13\n`);
+	});
+
+	test.each([
+		["before", ["--no-repo", PR_URL]],
+		["after", [PR_URL, "--no-repo"]],
+	])("diff --no-repo %s the URL skips the checkout and writes no repo key", (_label, args) => {
+		const e = setup(makeRemote());
+		const { out, plan } = diffOf(e, args);
+		expect(out.target).toBe(PR_URL);
+		expect("repo" in plan).toBe(false);
+		expect("repo" in out).toBe(false);
+		expect(cloneCalls(e)).toBe(0);
+		expect(cliFixtures.readCalls(e.gh.log).some((call) => call.includes("contents/"))).toBe(false);
+	});
+
+	test("compile copies repo with an absolute root and notes a diff-only review only for source none", () => {
+		const remote = makeRemote();
+		const e = setup(remote);
+		const { out } = diffOf(e);
+		const { review } = compileOf(e, out);
+		expect(review.repo).toEqual({ ...out.repo });
+		expect(review.review.body).not.toContain("Review limits");
+
+		const failing = setup(remote, { cloneFails: true });
+		const none = diffOf(failing);
+		expect(compileOf(failing, none.out).review.review.body).toContain(
+			"Reviewed from the diff only: the code checkout was not available.",
+		);
+	});
+
+	test("compile on a --no-repo plan has no diff-only line and no repo key", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e, [PR_URL, "--no-repo"]);
+		const { review } = compileOf(e, out);
+		expect("repo" in review).toBe(false);
+		expect(review.review.body).not.toContain("Review limits");
+	});
+
+	test("post removes the scratch tree after a publish", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath } = compileOf(e, out);
+		expect(existsSync(out.repo.root)).toBe(true);
+		const result = post(e, reviewPath);
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(false);
+	});
+
+	test("post leaves a repo.root outside thrash scratch in place", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath, review } = compileOf(e, out);
+		const outside = cliFixtures.tmp(createdDirs, "thrash-outside-");
+		writeFileSync(join(outside, "keep.txt"), "x");
+		writeFileSync(reviewPath, JSON.stringify({ ...review, repo: { ...review.repo, root: outside } }));
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+		expect(existsSync(join(outside, "keep.txt"))).toBe(true);
+	});
+
+	test.each(["/", "scratch"])("post with repo.root %s deletes nothing", (which) => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath, review } = compileOf(e, out);
+		const root = which === "/" ? "/" : dirname(out.repo.root);
+		writeFileSync(reviewPath, JSON.stringify({ ...review, repo: { ...review.repo, root } }));
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+		expect(existsSync(out.diffPath)).toBe(true);
+	});
+
+	test("post --dry-run removes the scratch tree and makes no provider call", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath } = compileOf(e, out);
+		const before = cliFixtures.readCalls(e.gh.log).length;
+		const result = post(e, reviewPath, PR_URL, ["--dry-run"]);
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(false);
+		expect(cliFixtures.readCalls(e.gh.log).slice(before)).toEqual([]);
+	});
+
+	test("post keeps the tree after a failed publish and after a refusal for a missing --confirm", () => {
+		const e = setup(makeRemote(), { postFails: true });
+		const { out } = diffOf(e);
+		const { reviewPath } = compileOf(e, out);
+		expect(post(e, reviewPath, PR_URL, []).exitCode).not.toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+		expect(post(e, reviewPath).exitCode).not.toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+	});
+
+	test("post exits as before for a review file with no repo", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e, [PR_URL, "--no-repo"]);
+		const { reviewPath } = compileOf(e, out);
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+	});
+
+	test("post reads repo from the review file and never from plan.json", () => {
+		const e = setup(makeRemote());
+		const { out } = diffOf(e);
+		const { reviewPath, review } = compileOf(e, out);
+		const { repo: _repo, ...bare } = review;
+		writeFileSync(reviewPath, JSON.stringify(bare));
+		expect(post(e, reviewPath).exitCode).toBe(EXIT.OK);
+		expect(existsSync(out.repo.root)).toBe(true);
+	});
+
+	test("stack --diff makes one clone for two open PRs and each post removes only its own tree", () => {
+		const e = setup(makeRemote(), { cloneSleep: 0.2 });
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const rows = JSON.parse(result.stdout) as Array<{
+			number: number;
+			diffPath: string;
+			chunks: Array<{ findingsPath: string }>;
+			repo: { root: string; headSha: string; source: string };
+		}>;
+		expect(cloneCalls(e)).toBe(1);
+		expect(rows.map((row) => row.repo.source)).toEqual(["clone", "clone"]);
+		expect(new Set(rows.map((row) => row.repo.root)).size).toBe(2);
+		expect(rows.every((row) => isAbsolute(row.repo.root))).toBe(true)
+		const shared = readdirSync(dirname(rows[0].repo.root)).find((name) => name.startsWith("clone-"));
+		expect(shared).toBeDefined();
+		const sharedDir = join(dirname(rows[0].repo.root), shared ?? "");
+
+		const [first, second] = rows.map((row) => compileOf(e, row, PR_URL.replace("12", String(row.number))));
+		expect(post(e, first.reviewPath, PR_URL).exitCode).toBe(EXIT.OK);
+		expect(existsSync(rows[0].repo.root)).toBe(false);
+		expect(existsSync(rows[1].repo.root)).toBe(true);
+		expect(existsSync(sharedDir)).toBe(true);
+		const last = post(e, second.reviewPath, PR_13);
+		expect(last.exitCode, last.stderr).toBe(EXIT.OK);
+		expect(existsSync(rows[1].repo.root)).toBe(false);
+		expect(existsSync(sharedDir)).toBe(false);
+	});
+
+	test("stack --diff --no-repo prints no repo key and makes no clone", () => {
+		const e = setup(makeRemote());
+		const result = run(["stack", PR_URL, "--diff", "--no-repo"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).some((row: object) => "repo" in row)).toBe(false);
+		expect(cloneCalls(e)).toBe(0);
+	});
+
+	test("stack --diff plans bundles for each PR from its own tree", () => {
+		const e = setup(makeRemote());
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const rows = JSON.parse(result.stdout) as Array<{
+			chunks: Array<{ bundle?: object; contextPath: string }>;
+		}>;
+		const contextPaths = rows.map((row) => row.chunks[0].contextPath);
+		expect(rows.every((row) => row.chunks[0].bundle !== undefined)).toBe(true);
+		expect(contextPaths.every((p) => isAbsolute(p) && existsSync(p))).toBe(true);
+		expect(new Set(contextPaths).size).toBe(2);
+	});
+
+	test("stack --diff makes no per-PR clone when the shared clone fails", () => {
+		const e = setup(makeRemote(), { cloneFails: true });
+		const result = run(["stack", PR_URL, "--diff"], { cwd: e.cwd, env: e.env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(cloneCalls(e)).toBe(1);
+		expect(JSON.parse(result.stdout).map((row: { repo: { source: string } }) => row.repo.source)).toEqual(["none", "none"]);
+	});
+
+	test("--help names --no-repo", () => {
+		const result = run(["--help"]);
+		expect(`${result.stdout}${result.stderr}`).toContain("--no-repo");
+	});
+});
+
+describe("thrash review bundles", () => {
+	function lines(prefix: string, count: number): string {
+		return Array.from({ length: count }, (_, i) => `export const ${prefix}${i} = ${i};\n`).join("");
+	}
+
+	function twoConcernRepo(): string {
+		const dir = makeTempDir("thrash-bundle-repo-");
+		createdDirs.push(dir);
+		cliFixtures.runGit(["init", "-q"], dir);
+		cliFixtures.runGit(["symbolic-ref", "HEAD", "refs/heads/main"], dir);
+		cliFixtures.runGit(["config", "user.email", "t@t.t"], dir);
+		cliFixtures.runGit(["config", "user.name", "T"], dir);
+		mkdirSync(join(dir, "src"));
+		mkdirSync(join(dir, "lib"));
+		cliFixtures.commitFile(dir, "src/x.ts", "export const base = 0;\n", "chore: base x");
+		cliFixtures.commitFile(dir, "lib/y.ts", "export const other = 0;\n", "chore: base y");
+		cliFixtures.runGit(["checkout", "-q", "-b", "feature"], dir);
+		writeFileSync(join(dir, "src/x.ts"), `export const base = 0;\n${lines("xv", 250)}`);
+		writeFileSync(join(dir, "lib/y.ts"), `export const other = 0;\n${lines("yv", 250)}`);
+		return dir;
+	}
+
+	function shimGit(script: (realGit: string) => string): Record<string, string> {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-git-shim-");
+		const realGit = Bun.which("git") ?? "git";
+		writeFileSync(join(dir, "git"), script(realGit), { mode: 0o755 });
+		return { PATH: `${dir}:${process.env.PATH}` };
+	}
+
+	function diffOut(repo: string, args: string[] = ["."], env: Record<string, string> = {}) {
+		const result = run(["diff", ...args], { cwd: repo, env });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		return { result, out: JSON.parse(result.stdout) };
+	}
+
+	test("diff . writes one bundle per unrelated concern with an existing context file", () => {
+		const repo = twoConcernRepo();
+		const { out } = diffOut(repo);
+		expect(out.chunks).toHaveLength(2);
+		for (const chunk of out.chunks) {
+			expect(chunk.bundle).toBeDefined();
+			expect(existsSync(chunk.contextPath)).toBe(true);
+		}
+		expect(out.chunks.map((c: { files: string[] }) => c.files)).toEqual([["lib/y.ts"], ["src/x.ts"]]);
+	});
+
+	test("diff --no-repo on the same change gives one chunk with no bundle fields", () => {
+		const repo = twoConcernRepo();
+		const { out } = diffOut(repo, [".", "--no-repo"]);
+		expect(out.chunks).toHaveLength(1);
+		expect(out.chunks[0]).not.toHaveProperty("bundle");
+		expect(out.chunks[0]).not.toHaveProperty("contextPath");
+	});
+
+	test("diff . warns and plans plain chunks when git grep exits 2", () => {
+		const repo = twoConcernRepo();
+		const env = shimGit(
+			(realGit) => `#!/bin/sh\nfor a in "$@"; do [ "$a" = grep ] && exit 2; done\nexec ${realGit} "$@"\n`,
+		);
+		const { result, out } = diffOut(repo, ["."], env);
+		expect(result.stderr).toContain("investigate failed");
+		expect(out.chunks).toHaveLength(1);
+		expect(out.chunks[0]).not.toHaveProperty("bundle");
+		expect(out.chunks[0]).not.toHaveProperty("contextPath");
+	});
+
+	test("DG_THRASH_INVESTIGATE_BUDGET_MS=0 warns, lists truncated files and still plans bundles", () => {
+		const repo = twoConcernRepo();
+		const { result, out } = diffOut(repo, ["."], { DG_THRASH_INVESTIGATE_BUDGET_MS: "0" });
+		expect(result.stderr).toContain("investigate budget ended; 2 file(s) truncated");
+		expect(out.chunks).toHaveLength(2);
+		const context = readFileSync(out.chunks[0].contextPath, "utf8");
+		expect(context).toContain("## Truncated files");
+		expect(context).toContain("- lib/y.ts");
+	});
+
+	test("diff rejects a budget that is not a whole number", () => {
+		const repo = twoConcernRepo();
+		const result = run(["diff", "."], { cwd: repo, env: { DG_THRASH_INVESTIGATE_BUDGET_MS: "soon" } });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("DG_THRASH_INVESTIGATE_BUDGET_MS");
+	});
+
+	test("diff prints an absolute contextPath and plan.json keeps a plan-relative one", () => {
+		const repo = twoConcernRepo();
+		const { out } = diffOut(repo);
+		const plan = JSON.parse(readFileSync(out.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		for (const [i, chunk] of out.chunks.entries()) {
+			expect(isAbsolute(chunk.contextPath)).toBe(true);
+			expect(isAbsolute(plan.chunks[i].contextPath)).toBe(false);
+			expect(join(dirname(out.diffPath), plan.chunks[i].contextPath)).toBe(chunk.contextPath);
+		}
+	});
+
+	test("a second diff with fewer bundles leaves no bundle file of the first run", () => {
+		const repo = twoConcernRepo();
+		const first = diffOut(repo).out;
+		expect(first.chunks).toHaveLength(2);
+		const stale = first.chunks[1].contextPath as string;
+		expect(existsSync(stale)).toBe(true);
+		cliFixtures.runGit(["checkout", "--", "lib/y.ts"], repo);
+		const second = diffOut(repo).out;
+		expect(second.chunks).toHaveLength(1);
+		expect(existsSync(second.chunks[0].contextPath)).toBe(true);
+		expect(existsSync(stale)).toBe(false);
+	});
+
+	test("the bundle context names a caller of a changed function with its call line", () => {
+		const repo = makeTempDir("thrash-caller-repo-");
+		createdDirs.push(repo);
+		cliFixtures.runGit(["init", "-q"], repo);
+		cliFixtures.runGit(["symbolic-ref", "HEAD", "refs/heads/main"], repo);
+		cliFixtures.runGit(["config", "user.email", "t@t.t"], repo);
+		cliFixtures.runGit(["config", "user.name", "T"], repo);
+		mkdirSync(join(repo, "src"));
+		cliFixtures.commitFile(repo, "src/a.ts", "export function total(x: number) {\n\treturn x;\n}\n", "chore: a");
+		cliFixtures.commitFile(
+			repo,
+			"src/b.ts",
+			'import { total } from "./a";\n\nexport const sum = total(1);\n',
+			"chore: b",
+		);
+		cliFixtures.runGit(["checkout", "-q", "-b", "feature"], repo);
+		writeFileSync(join(repo, "src/a.ts"), "export function total(x: number, y: number) {\n\treturn x + y;\n}\n");
+		const { out } = diffOut(repo);
+		const context = readFileSync(out.chunks[0].contextPath, "utf8");
+		expect(context).toContain("src/b.ts:3");
+		expect(out.chunks[0].bundle.dependents).toContain("src/b.ts");
+	});
+
+	test("investigate prints the investigation JSON for a file", () => {
+		const repo = twoConcernRepo();
+		const result = run(["investigate", "src/x.ts"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(result.stdout);
+		expect(out.root).toBe(repo);
+		expect(out.files).toHaveLength(1);
+		expect(out.files[0]).toMatchObject({ path: "src/x.ts", truncated: false });
+	});
+
+	test("investigate with no path fails", () => {
+		const result = run(["investigate"], { cwd: twoConcernRepo() });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("investigate requires one or more paths");
+	});
+
+	test("investigate accepts --max-hits of 1 or more and rejects anything else", () => {
+		const repo = twoConcernRepo();
+		for (const bad of ["0", "abc", "1.5"]) {
+			const result = run(["investigate", "src/x.ts", "--max-hits", bad], { cwd: repo });
+			expect(result.exitCode, bad).not.toBe(EXIT.OK);
+			expect(result.stderr).toContain("--max-hits");
+		}
+		const ok = run(["investigate", "--max-hits", "5", "src/x.ts"], { cwd: repo });
+		expect(ok.exitCode, ok.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(ok.stdout).files.map((f: { path: string }) => f.path)).toEqual(["src/x.ts"]);
+	});
+
+	test("investigate caps callers at --max-hits and marks the file truncated", () => {
+		const repo = twoConcernRepo();
+		cliFixtures.commitFile(repo, "src/use.ts", "x1();\nx1();\nx1();\n", "chore: use");
+		cliFixtures.commitFile(repo, "src/x.ts", "export const x1 = 1;\n", "chore: x1");
+		const out = JSON.parse(run(["investigate", "src/x.ts", "--max-hits", "2"], { cwd: repo }).stdout);
+		expect(out.files[0].callers).toHaveLength(2);
+		expect(out.files[0].truncated).toBe(true);
+	});
+
+	test("investigate expands a directory to tracked files only", () => {
+		const repo = twoConcernRepo();
+		writeFileSync(join(repo, "src/untracked.ts"), "export const u = 1;\n");
+		const result = run(["investigate", "src"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).files.map((f: { path: string }) => f.path)).toEqual(["src/x.ts"]);
+	});
+
+	test("investigate resolves paths from a subdirectory and prints them relative to the root", () => {
+		const repo = twoConcernRepo();
+		const result = run(["investigate", "x.ts"], { cwd: join(repo, "src") });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		expect(JSON.parse(result.stdout).files[0].path).toBe("src/x.ts");
+	});
+
+	test("investigate rejects a path outside the repository", () => {
+		const repo = twoConcernRepo();
+		const outside = cliFixtures.tmp(createdDirs, "thrash-outside-");
+		writeFileSync(join(outside, "o.ts"), "export const o = 1;\n");
+		const result = run(["investigate", join(outside, "o.ts")], { cwd: repo });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("outside the repository");
+	});
+
+	test("investigate outside a git repository gives a clear error", () => {
+		const dir = cliFixtures.tmp(createdDirs, "thrash-nogit-");
+		writeFileSync(join(dir, "o.ts"), "export const o = 1;\n");
+		const result = run(["investigate", "o.ts"], { cwd: dir });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("not inside a git repository");
+	});
+});
+
+describe("thrash triage review", () => {
+	const GOLDEN = join(import.meta.dir, "fixtures", "thrash", "no-triage.review.json");
+	const CRITICAL = { path: "src/a.ts", line: 3, tier: "critical", title: "Crash", body: "Crashes on empty input." };
+	const HIGH = { path: "src/a.ts", line: 2, tier: "high", title: "Leak", body: "Leaks a handle." };
+	const MEDIUM = { path: "src/a.ts", line: 2, tier: "medium", title: "Slow", body: "Scans twice." };
+
+	interface Flow {
+		repo: string;
+		diff: { diffPath: string; chunks: Array<{ findingsPath: string }> };
+		consolidated: string;
+		inputPath: string;
+	}
+
+	function localDiff(extra: string[] = []) {
+		const repo = fixtureRepo();
+		const result = run(["diff", ".", ...extra], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		return { repo, diff: JSON.parse(result.stdout) };
+	}
+
+	function triaged(findings: unknown[], spice = "3"): Flow {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, findings);
+		const merge = run(["triage", "--diff", diff.diffPath, "--stage", "merge", "--spice", spice], { cwd: repo });
+		expect(merge.exitCode, merge.stderr).toBe(EXIT.OK);
+		const apply = run(["triage", "--diff", diff.diffPath, "--stage", "apply"], { cwd: repo });
+		expect(apply.exitCode, apply.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(apply.stdout);
+		return { repo, diff, consolidated: out.consolidatedPath, inputPath: out.consolidateInputPath };
+	}
+
+	function compile(flow: Flow) {
+		const result = run(["compile", ".", "--diff", flow.diff.diffPath, "--json"], { cwd: flow.repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const out = JSON.parse(result.stdout);
+		const stored = JSON.parse(readFileSync(out.reviewPath, "utf8"));
+		return { out, stored, review: stored.review, stderr: result.stderr };
+	}
+
+	function consolidate(flow: Flow, findings: unknown[], extra: Record<string, unknown> = {}) {
+		writeFileSync(flow.consolidated, JSON.stringify({ changed: "", strengths: [], opportunities: [], findings, ...extra }));
+	}
+
+	test("compile with no triage files writes the same review file as before triage existed", () => {
+		const { repo, diff } = localDiff(["--no-repo"]);
+		findingsFile(diff, [
+			{ path: "src/a.ts", line: 2, tier: "critical", body: "Breaks callers." },
+			{ path: "src/a.ts", line: 3, tier: "low", body: "Rename this." },
+		]);
+		const result = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const stored = readFileSync(JSON.parse(result.stdout).reviewPath, "utf8");
+		expect(stored).toBe(readFileSync(GOLDEN, "utf8"));
+	});
+
+	test("compile with neither a consolidated file nor a consolidate input posts the chunk findings", () => {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, [HIGH]);
+		const result = run(["compile", ".", "--diff", diff.diffPath, "--json"], { cwd: repo });
+		expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+		const stored = JSON.parse(readFileSync(JSON.parse(result.stdout).reviewPath, "utf8"));
+		expect(stored.review.comments).toHaveLength(1);
+		expect(stored).not.toHaveProperty("rejected");
+		expect(result.stderr).not.toContain("consolidated");
+	});
+
+	test("compile posts the findings of a parseable consolidated file", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [{ id: "c1-1", title: "New title", body: "New body." }]);
+		const { review, stderr } = compile(flow);
+		expect(stderr).toBe("");
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0]).toMatchObject({ title: "New title", tier: "high" });
+		expect(review.comments[0].body).toContain("New body.");
+	});
+
+	test("compile warns about a broken consolidated file and posts the consolidate input findings", () => {
+		const flow = triaged([HIGH]);
+		writeFileSync(flow.consolidated, "not json at all");
+		const { review, stderr } = compile(flow);
+		expect(stderr).toContain("thrash: consolidated file does not parse");
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0].body).toContain("Leaks a handle.");
+	});
+
+	test("compile keeps the tier and the anchor of the verified set when the consolidated file changes them", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [{ id: "c1-1", title: "New title", body: "New body.", tier: "low", line: 9 }]);
+		const { review } = compile(flow);
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0]).toMatchObject({ tier: "high", newLine: 2, title: "New title" });
+		expect(review.comments[0].body).toContain("New body.");
+	});
+
+	test("compile drops a consolidated finding with an unknown id and names it on stderr", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [
+			{ id: "c1-1", body: "Kept." },
+			{ id: "c9-9", body: "Ghost." },
+		]);
+		const { review, stderr } = compile(flow);
+		expect(stderr).toContain("c9-9");
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0].body).not.toContain("Ghost.");
+	});
+
+	test("compile keeps a critical finding the consolidated file leaves out", () => {
+		const flow = triaged([HIGH, CRITICAL]);
+		consolidate(flow, [{ id: "c1-1", body: "Kept." }]);
+		const { review } = compile(flow);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.comments.map((c: { tier: string }) => c.tier).sort()).toEqual(["critical", "high"]);
+	});
+
+	test("compile groups a higher finding under a keeper and gives one comment with the higher tier", () => {
+		const flow = triaged([MEDIUM, { ...HIGH, line: 3, title: "Leak", body: "Leaks elsewhere." }]);
+		consolidate(flow, [{ id: "c1-1", body: "One class.", class: "resource-use", otherPlaces: ["src/a.ts:3"] }]);
+		const { review } = compile(flow);
+		expect(review.comments).toHaveLength(1);
+		expect(review.comments[0].tier).toBe("high");
+	});
+
+	test("compile does not group a critical finding under a pre-existing keeper", () => {
+		const flow = triaged([{ ...MEDIUM, preExisting: true, line: 1 }, CRITICAL]);
+		consolidate(flow, [{ id: "c1-1", body: "Old issue.", class: "resource-use", otherPlaces: ["src/a.ts:3"] }]);
+		const { review } = compile(flow);
+		expect(review.verdict).toBe("request_changes");
+		expect(review.comments.map((c: { tier: string }) => c.tier)).toContain("critical");
+	});
+
+	test("compile does not count an unverified finding that the consolidator grouped under another", () => {
+		const flow = triaged([MEDIUM, { ...HIGH, line: 3 }]);
+		const ungrouped = compile(flow);
+		expect(ungrouped.review.body).toContain("2 findings not verified.");
+		consolidate(flow, [{ id: "c1-1", body: "One class.", class: "resource-use", otherPlaces: ["src/a.ts:3"] }]);
+		const { review } = compile(flow);
+		expect(review.body).toContain("1 finding not verified.");
+		expect(review.body).not.toContain("2 findings not verified.");
+	});
+
+	test("compile lists two rejected findings in the summary and in the review file with their reasons", () => {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, [HIGH, CRITICAL]);
+		const merge = JSON.parse(
+			run(["triage", "--diff", diff.diffPath, "--stage", "merge"], { cwd: repo }).stdout,
+		) as { tasks: Array<{ id: string; verdictPath: string }> };
+		for (const task of merge.tasks) {
+			writeFileSync(task.verdictPath, JSON.stringify({ id: task.id, verdict: "rejected", reason: `no ${task.id}` }));
+		}
+		const apply = run(["triage", "--diff", diff.diffPath, "--stage", "apply"], { cwd: repo });
+		expect(JSON.parse(apply.stdout)).toMatchObject({ rejected: 2, confirmed: 0 });
+		const { stored, review } = compile({ repo, diff, consolidated: "", inputPath: "" });
+		expect(review.comments).toHaveLength(0);
+		expect(review.body).toContain("2 findings rejected on verification.");
+		expect(stored.rejected).toEqual([
+			{ id: "c1-2", tier: "critical", title: "Crash", reason: "no c1-2" },
+			{ id: "c1-1", tier: "high", title: "Leak", reason: "no c1-1" },
+		]);
+		expect(review).not.toHaveProperty("rejected");
+	});
+
+	test("a second diff removes the consolidate input and the consolidated file of the first run", () => {
+		const flow = triaged([HIGH]);
+		consolidate(flow, [{ id: "c1-1", body: "Kept." }]);
+		expect(existsSync(flow.inputPath)).toBe(true);
+		const again = run(["diff", "."], { cwd: flow.repo });
+		expect(again.exitCode, again.stderr).toBe(EXIT.OK);
+		expect(existsSync(flow.inputPath)).toBe(false);
+		expect(existsSync(flow.consolidated)).toBe(false);
+	});
+
+	test("triage with a missing or invalid --stage exits non-zero and names both values", () => {
+		const { repo, diff } = localDiff();
+		for (const args of [["--stage"], ["--stage", "bogus"], []]) {
+			const result = run(["triage", "--diff", diff.diffPath, ...args], { cwd: repo });
+			expect(result.exitCode).not.toBe(EXIT.OK);
+			expect(result.stderr).toContain("merge");
+			expect(result.stderr).toContain("apply");
+		}
+	});
+
+	test("triage rejects a spice outside 1 to 5 with the error compile gives", () => {
+		const { repo, diff } = localDiff();
+		findingsFile(diff, [HIGH]);
+		const triage = run(["triage", "--diff", diff.diffPath, "--stage", "merge", "--spice", "9"], { cwd: repo });
+		const compileResult = run(["compile", ".", "--diff", diff.diffPath, "--spice", "9"], { cwd: repo });
+		expect(triage.exitCode).not.toBe(EXIT.OK);
+		const message = (stderr: string) => stderr.replace(/^thrash \w+: /, "");
+		expect(message(triage.stderr)).toBe(message(compileResult.stderr));
+	});
+
+	test("apply with a merged file and no tasks file exits non-zero and names the tasks file", () => {
+		const flow = triaged([HIGH]);
+		rmSync(flow.inputPath);
+		const tasks = flow.consolidated.replace(/\.consolidated\.md$/, ".verify.tasks.json");
+		rmSync(tasks);
+		const result = run(["triage", "--diff", flow.diff.diffPath, "--stage", "apply"], { cwd: flow.repo });
+		expect(result.exitCode).not.toBe(EXIT.OK);
+		expect(result.stderr).toContain("verify.tasks.json");
+	});
+
+	describe("prior threads", () => {
+		const FINDING = { path: "src/a.ts", line: 2, tier: "critical", title: "Crash", body: "Crashes on empty input." };
+
+		function remote(thread: unknown | null) {
+			const dir = cliFixtures.tmp(createdDirs, "thrash-shield-");
+			const diffFile = join(dir, "pr.diff");
+			const threads = join(dir, "threads.json");
+			writeFileSync(diffFile, GH_DIFF);
+			const gh = fakeGh(
+				cliFixtures.shScript(`
+  *"pr diff 12"*)
+    cat "$FAKE_DIFF"
+    ;;
+  *"pr view 12"*)
+    echo '{"headRefOid":"abc123"}'
+    ;;
+  *"api graphql"*)
+    cat "$FAKE_THREADS"
+    ;;
+  *"reviews"*)
+    echo '[[]]'
+    ;;`),
+			);
+			const env = { GH_BIN: gh.bin, AI_VCS_PROVIDER: "github", FAKE_CALL_LOG: gh.log, FAKE_DIFF: diffFile, FAKE_THREADS: threads };
+			const cwd = cliFixtures.tmp(createdDirs, "thrash-cwd-");
+			const diff = JSON.parse(run(["diff", PR_URL], { cwd, env }).stdout);
+			findingsFile(diff, [FINDING]);
+			const first = run(["compile", PR_URL, "--diff", diff.diffPath, "--json"], { cwd, env });
+			expect(first.exitCode, first.stderr).toBe(EXIT.OK);
+			const body = JSON.parse(readFileSync(JSON.parse(first.stdout).reviewPath, "utf8")).review.comments[0].body;
+			const nodes = thread
+				? [
+						{
+							id: "thread-1",
+							isResolved: false,
+							isOutdated: true,
+							path: "src/a.ts",
+							line: null,
+							originalLine: 2,
+							comments: {
+								nodes: [
+									{ databaseId: 1, author: { login: "thrashley[bot]" }, body, createdAt: "2026-02-01T00:00:00Z", diffHunk: GH_DIFF },
+								],
+							},
+						},
+					]
+				: [];
+			writeFileSync(
+				threads,
+				JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo: { hasNextPage: false } } } } } }),
+			);
+			return { cwd, env, diff };
+		}
+
+		function compileWithInput(setup: ReturnType<typeof remote>, rejected: unknown[]) {
+			const input = setup.diff.diffPath.replace(/\.diff$/, ".consolidate.input.json");
+			writeFileSync(
+				input,
+				JSON.stringify({ changed: "Adds a.", strengths: [], opportunities: [], findings: [], rejected, unverified: [] }),
+			);
+			const policy = join(dirname(input), "policy.yml");
+			writeFileSync(policy, "phases:\n  - block:\n      critical: 0\n");
+			const result = run(["compile", PR_URL, "--diff", setup.diff.diffPath, "--policy", policy, "--json"], {
+				cwd: setup.cwd,
+				env: setup.env,
+			});
+			expect(result.exitCode, result.stderr).toBe(EXIT.OK);
+			return JSON.parse(result.stdout);
+		}
+
+		test("compile with the consolidate input and one rejected entry keeps the prior blocker thread open", () => {
+			const setup = remote(true);
+			const cleared = compileWithInput(setup, []);
+			expect(cleared.tally.critical).toBe(0);
+			const shielded = compileWithInput(setup, [{ ...FINDING, side: "new", id: "c1-1", reason: "guarded upstream" }]);
+			expect(shielded.tally.critical).toBe(1);
+			expect(shielded.verdict).toBe("request_changes");
+		});
 	});
 });

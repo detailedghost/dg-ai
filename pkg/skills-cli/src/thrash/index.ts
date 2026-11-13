@@ -1,7 +1,7 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
-import { scratchPath } from "@dg/common/node";
+import { escapeRegExp, oneOf, parseOptionalFlag, wholeNumber } from "@dg/common";
+import { isPathInside, scratchPath } from "@dg/common/node";
 import { detectProvider } from "../provider/detect";
 import { getProviderForUrl } from "../provider/index";
 import {
@@ -15,8 +15,24 @@ import {
 	type ReviewVerdict,
 } from "../provider/types";
 import { git, resolveBaseSha } from "../utils/git";
+import { type CheckoutResult, prepareSharedClone, removeCheckoutTree, resolveCheckout, type SharedClone } from "./checkout";
 import { CLASS_HISTORY_PRS } from "./constants";
+import { planReviewChunks } from "./bundles";
+import { INVESTIGATE_BUDGET_MS, investigate, listTrackedFiles, MAX_HITS_DEFAULT } from "./investigate";
 import { parsePolicy } from "./policy";
+import {
+	applyVerdicts,
+	type ConsolidatedOutput,
+	type ConsolidateInput,
+	mergeChunks,
+	parseConsolidateInput,
+	parseConsolidated,
+	readVerdictTexts,
+	removeTriageFiles,
+	resolveCompileFindings,
+	triagePaths,
+	type VerifyTask,
+} from "./triage";
 import { defineCommand, EXIT } from "../utils/legacy-command";
 import { optionalOption, requireOption } from "../utils/options";
 import {
@@ -24,11 +40,13 @@ import {
 	annotateDiff,
 	classPrCounts,
 	type ChunkPlan,
+	type AgentOutput,
 	type CompiledReview,
 	type Coverage,
 	chunkSummary,
 	clearedThreadIds,
 	compileReview,
+	type DiffFile,
 	diffStats,
 	lastReviewedSha,
 	mergeOutputs,
@@ -36,7 +54,7 @@ import {
 	parseSpice,
 	parseTier,
 	parseUnifiedDiff,
-	planChunks,
+	type RejectedEntry,
 	relativePlanPath,
 	resolvePlanPath,
 	renderAddressFile,
@@ -76,19 +94,32 @@ interface PlanFile extends Coverage {
 	contextPath: string;
 	reReview?: ReReview;
 	prDiffPath?: string;
-	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string }>;
+	repo?: CheckoutResult;
+	consolidatedPath?: string;
+	chunks: Array<Coverage["chunks"][number] & { annotatedPath: string; findingsPath: string; contextPath?: string }>;
 }
 
 interface ReviewFile {
 	target: string;
 	review: CompiledReview;
+	repo?: CheckoutResult;
+	rejected?: RejectedEntry[];
 }
+
+type CheckoutRunner = (pr: PullRequest | null, files: DiffFile[]) => Promise<CheckoutResult>;
+
+interface WriteDiffOptions {
+	reviewer?: string;
+	checkout?: CheckoutRunner;
+}
+
+const NO_REMOTE_FILES = { getFileAtRef: () => Promise.resolve(null) };
 
 function isUrl(arg: string): boolean {
 	return /^https?:\/\//.test(arg);
 }
 
-function positional(args: string[], commandName: string, valueFlags: string[] = []): string {
+function positionals(args: string[], valueFlags: string[] = []): string[] {
 	const consumed = new Set<number>();
 	for (const flag of valueFlags) {
 		const index = args.indexOf(flag);
@@ -97,7 +128,11 @@ function positional(args: string[], commandName: string, valueFlags: string[] = 
 			consumed.add(index + 1);
 		}
 	}
-	const value = args.find((a, i) => !consumed.has(i) && !a.startsWith("--"));
+	return args.filter((a, i) => !consumed.has(i) && !a.startsWith("--"));
+}
+
+function positional(args: string[], commandName: string, valueFlags: string[] = []): string {
+	const [value] = positionals(args, valueFlags);
 	if (!value) throw new Error(`${commandName} requires a target: a PR/MR URL, ".", or a path`);
 	return value;
 }
@@ -194,18 +229,30 @@ function planPathFor(diffPath: string): string {
 }
 
 const BODY_LIMIT = 4000;
+const BUDGET_ENV = "DG_THRASH_INVESTIGATE_BUDGET_MS";
+
+function investigateBudgetMs(): number {
+	return parseOptionalFlag(wholeNumber(0), process.env[BUDGET_ENV], BUDGET_ENV) ?? INVESTIGATE_BUDGET_MS;
+}
+
+function removeBundleFiles(slug: string): void {
+	const dir = path.dirname(scratchPath(TOOL, `${slug}.diff`));
+	const stale = new RegExp(`^${escapeRegExp(slug)}\\.chunk\\d+\\.bundle\\.md$`);
+	for (const name of readdirSync(dir)) if (stale.test(name)) rmSync(path.join(dir, name), { force: true });
+}
+
+const NO_REPO = "--no-repo";
 
 async function renderContext(
 	target: DiffTarget,
 	files: ReturnType<typeof parseUnifiedDiff>,
 	plan: ChunkPlan,
+	pr: PullRequest | null,
 	since?: string,
 ): Promise<string> {
 	const lines: string[] = ["# Change context", ""];
 	if (target.mode === "remote") {
-		try {
-			const provider = await getProviderForUrl(target.url);
-			const pr = await provider.viewPullRequest(prRef(target));
+		if (pr) {
 			lines.push(
 				`Title: ${pr.title}`,
 				`Head: ${pr.headRefName}`,
@@ -215,9 +262,6 @@ async function renderContext(
 				pr.body.slice(0, BODY_LIMIT) || "(none)",
 				"",
 			);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			process.stderr.write(`thrash diff: could not read PR details, context has files only: ${message}\n`);
 		}
 	} else {
 		lines.push(`Local review of ${target.relPath} against ${target.base}`, "");
@@ -236,41 +280,74 @@ async function renderContext(
 	return `${lines.join("\n")}\n`;
 }
 
-async function writeDiff(target: DiffTarget, reviewer?: string) {
+async function viewPr(target: DiffTarget): Promise<PullRequest | null> {
+	if (target.mode === "local") return null;
+	try {
+		const provider = await getProviderForUrl(target.url);
+		return await provider.viewPullRequest(prRef(target));
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`thrash diff: could not read PR details, context has files only: ${message}\n`);
+		return null;
+	}
+}
+
+function absoluteRepoRoot(planRoot: string, root: string): string {
+	return !root || path.isAbsolute(root) ? root : resolvePlanPath(planRoot, root);
+}
+
+function planRepoRoot(planRoot: string, repo: CheckoutResult): string {
+	return !repo.root || !isPathInside(repo.root, planRoot) ? repo.root : relativePlanPath(planRoot, repo.root);
+}
+
+async function writeDiff(target: DiffTarget, { reviewer, checkout }: WriteDiffOptions = {}) {
 	const { text, since, prText } = await fetchReviewDiff(target, reviewer);
 	const files = parseUnifiedDiff(text);
 	const stats = diffStats(files);
+	const pr = await viewPr(target);
+	const repo = checkout ? await checkout(pr, files) : undefined;
 	const reReview = since === undefined ? undefined : { sha: since, files: stats.files, lines: stats.changed };
 	const slug = targetSlug(target);
 	const diffPath = scratchPath(TOOL, `${slug}.diff`);
-	const plan = planChunks(files);
+	removeBundleFiles(slug);
+	removeTriageFiles(diffPath);
+	const { plan, contexts, warnings } = planReviewChunks(files, repo, {
+		investigate,
+		maxHits: MAX_HITS_DEFAULT,
+		budgetMs: investigateBudgetMs(),
+	});
+	for (const warning of new Set(warnings)) process.stderr.write(`${warning}\n`);
 	const contextPath = scratchPath(TOOL, `${slug}.context.md`);
 	const chunks = plan.chunks.map((chunk) => ({
 		...chunkSummary(chunk),
 		annotatedPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.annotated.diff`),
 		findingsPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.findings.md`),
+		...(contexts.has(chunk.id) && { contextPath: scratchPath(TOOL, `${slug}.chunk${chunk.id}.bundle.md`) }),
 	}));
 	for (const { findingsPath } of chunks) rmSync(findingsPath, { force: true });
+	for (const { id, contextPath: bundlePath } of chunks) if (bundlePath) writeFileSync(bundlePath, contexts.get(id) ?? "");
 	plan.chunks.forEach((chunk, i) => writeFileSync(chunks[i].annotatedPath, annotateDiff(chunk.files)));
 	writeFileSync(diffPath, text);
 	const prDiffPath = scratchPath(TOOL, `${slug}.pr.diff`);
 	if (prText !== undefined) writeFileSync(prDiffPath, prText);
-	writeFileSync(contextPath, await renderContext(target, files, plan, since));
+	writeFileSync(contextPath, await renderContext(target, files, plan, pr, since));
 	const planPath = planPathFor(diffPath);
 	const planRoot = path.dirname(planPath);
 	const planFile: PlanFile = {
 		contextPath: relativePlanPath(planRoot, contextPath),
+		...(repo && { repo: { ...repo, root: planRepoRoot(planRoot, repo) } }),
 		...(reReview && { reReview }),
 		...(prText !== undefined && { prDiffPath: relativePlanPath(planRoot, prDiffPath) }),
 		chunks: chunks.map((chunk) => ({
 			...chunk,
 			annotatedPath: relativePlanPath(planRoot, chunk.annotatedPath),
 			findingsPath: relativePlanPath(planRoot, chunk.findingsPath),
+			...(chunk.contextPath && { contextPath: relativePlanPath(planRoot, chunk.contextPath) }),
 		})),
 		skipped: plan.skipped,
 	};
 	writeFileSync(planPath, JSON.stringify(planFile, null, 2));
-	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats, ...(reReview && { reReview }) };
+	return { diffPath, contextPath, chunks, skipped: plan.skipped, stats, ...(reReview && { reReview }), ...(repo && { repo }) };
 }
 
 async function cmdDiff(args: string[]): Promise<number> {
@@ -280,7 +357,16 @@ async function cmdDiff(args: string[]): Promise<number> {
 		resolved.mode === "local"
 			? { ...resolved, base: await resolveBaseSha(optionalOption(args, "--base"), "thrash") }
 			: resolved;
-	const written = await writeDiff(target, optionalOption(args, "--reviewer"));
+	const checkout: CheckoutRunner | undefined = args.includes(NO_REPO)
+		? undefined
+		: async (pr, files) =>
+				resolveCheckout({
+					target,
+					pr,
+					files,
+					provider: target.mode === "remote" ? await getProviderForUrl(target.url) : NO_REMOTE_FILES,
+				});
+	const written = await writeDiff(target, { reviewer: optionalOption(args, "--reviewer"), checkout });
 	const untracked = target.mode === "local" ? await listUntracked(target) : [];
 	printJson({
 		target: arg,
@@ -289,6 +375,30 @@ async function cmdDiff(args: string[]): Promise<number> {
 		...written,
 		untracked,
 	});
+	return EXIT.OK;
+}
+
+function investigatePaths(args: string[], root: string): string[] {
+	const given = positionals(args, ["--max-hits"]);
+	if (given.length === 0) throw new Error("investigate requires one or more paths");
+	const found = new Set<string>();
+	for (const arg of given) {
+		const abs = path.resolve(arg);
+		if (!isPathInside(abs, root)) throw new Error(`path is outside the repository: ${arg}`);
+		if (!existsSync(abs)) throw new Error(`path not found: ${arg}`);
+		const rel = path.relative(root, abs) || ".";
+		if (statSync(abs).isDirectory()) for (const file of listTrackedFiles(root, rel)) found.add(file);
+		else found.add(rel);
+	}
+	return [...found];
+}
+
+function cmdInvestigate(args: string[]): number {
+	const maxHits =
+		parseOptionalFlag(wholeNumber(1), optionalOption(args, "--max-hits"), "--max-hits") ?? MAX_HITS_DEFAULT;
+	const root = gitToplevel(process.cwd());
+	const paths = investigatePaths(args, root);
+	printJson(investigate(root, paths, { maxHits, budgetMs: Number.POSITIVE_INFINITY }));
 	return EXIT.OK;
 }
 
@@ -351,6 +461,98 @@ function parseMaxEvent(raw: string | undefined): ReviewVerdict | undefined {
 	return event === "request-changes" ? "request_changes" : event;
 }
 
+function readPlan(diffPath: string): { plan: PlanFile; planPath: string; planRoot: string } {
+	const planPath = planPathFor(diffPath);
+	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
+	return { plan, planPath, planRoot: path.dirname(path.resolve(planPath)) };
+}
+
+function readChunkOutput(chunk: PlanFile["chunks"][number], planRoot: string) {
+	const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
+	if (!existsSync(findingsPath)) {
+		throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${findingsPath}`);
+	}
+	return parseAgentOutput(readFileSync(findingsPath, "utf8"));
+}
+
+function readTriageFile<T>(file: string, label: string): T {
+	if (!existsSync(file)) throw new Error(`${label} not found at ${file}; run thrash triage --stage merge first`);
+	return JSON.parse(readFileSync(file, "utf8")) as T;
+}
+
+function triageMerge(diffPath: string, spice: number): number {
+	const { plan, planRoot } = readPlan(diffPath);
+	const paths = triagePaths(diffPath);
+	const chunks = plan.chunks.map((chunk) => ({
+		id: chunk.id,
+		output: readChunkOutput(chunk, planRoot),
+		contextPath: chunk.contextPath ? resolvePlanPath(planRoot, chunk.contextPath) : null,
+		annotatedPath: chunk.annotatedPath ? resolvePlanPath(planRoot, chunk.annotatedPath) : null,
+	}));
+	removeTriageFiles(diffPath);
+	const { merged, tasks, overCap } = mergeChunks(chunks, { spice, paths });
+	writeFileSync(paths.merged, JSON.stringify(merged, null, 2));
+	writeFileSync(paths.tasks, JSON.stringify({ tasks, overCap }, null, 2));
+	for (const task of tasks) writeFileSync(paths.taskPath(task.id), JSON.stringify(task, null, 2));
+	printJson({
+		mergedPath: paths.merged,
+		tasksPath: paths.tasks,
+		tasks: tasks.map(({ id, verdictPath }) => ({ id, taskPath: paths.taskPath(id), verdictPath })),
+		overCap,
+	});
+	return EXIT.OK;
+}
+
+function triageApply(diffPath: string): number {
+	const { planPath, planRoot } = readPlan(diffPath);
+	const paths = triagePaths(diffPath);
+	const merged = readTriageFile<AgentOutput>(paths.merged, "merged findings file");
+	const { tasks, overCap } = readTriageFile<{ tasks: VerifyTask[]; overCap: string[] }>(paths.tasks, "verify tasks file");
+	rmSync(paths.consolidated, { force: true });
+	const { verdicts, input, counts } = applyVerdicts({ merged, tasks, overCap, verdictTexts: readVerdictTexts(tasks) });
+	writeFileSync(paths.verdicts, JSON.stringify({ verdicts }, null, 2));
+	writeFileSync(paths.consolidateInput, JSON.stringify(input, null, 2));
+	const raw = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
+	raw.consolidatedPath = relativePlanPath(planRoot, paths.consolidated);
+	writeFileSync(planPath, JSON.stringify(raw, null, 2));
+	printJson({ consolidateInputPath: paths.consolidateInput, consolidatedPath: paths.consolidated, ...counts });
+	return EXIT.OK;
+}
+
+function cmdTriage(args: string[]): number {
+	const diffPath = requireOption(args, "--diff");
+	const index = args.indexOf("--stage");
+	const stage = index === -1 ? undefined : args[index + 1];
+	if (stage !== "merge" && stage !== "apply") {
+		throw new Error(`--stage must be merge or apply${stage ? `, got "${stage}"` : ""}`);
+	}
+	const spice = parseSpice(optionalOption(args, "--spice"));
+	return stage === "merge" ? triageMerge(diffPath, spice) : triageApply(diffPath);
+}
+
+function readConsolidated(plan: PlanFile, planRoot: string): ConsolidatedOutput | { error: string } | null {
+	if (!plan.consolidatedPath) return null;
+	const file = resolvePlanPath(planRoot, plan.consolidatedPath);
+	if (!existsSync(file)) return null;
+	try {
+		return parseConsolidated(readFileSync(file, "utf8"));
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : String(err) };
+	}
+}
+
+function readConsolidateInput(file: string): ConsolidateInput | null {
+	if (!existsSync(file)) return null;
+	try {
+		return parseConsolidateInput(readFileSync(file, "utf8"));
+	} catch (err) {
+		process.stderr.write(
+			`thrash: consolidate input does not parse (${err instanceof Error ? err.message : String(err)}), using the chunk findings\n`,
+		);
+		return null;
+	}
+}
+
 async function cmdCompile(args: string[], opts: { json: boolean }): Promise<number> {
 	const arg = positional(args, "compile", [
 		"--diff",
@@ -367,21 +569,23 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 	const target = await resolveTarget(arg);
 	const diffPath = requireOption(args, "--diff");
 	const files = parseUnifiedDiff(readFileSync(diffPath, "utf8"));
-	const planPath = planPathFor(diffPath);
-	const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlanFile;
-	const planRoot = path.dirname(path.resolve(planPath));
+	const { plan, planRoot } = readPlan(diffPath);
 	const prFiles = plan.prDiffPath
 		? parseUnifiedDiff(readFileSync(resolvePlanPath(planRoot, plan.prDiffPath), "utf8"))
 		: undefined;
-	const output = mergeOutputs(
-		plan.chunks.map((chunk) => {
-			const findingsPath = resolvePlanPath(planRoot, chunk.findingsPath);
-			if (!existsSync(findingsPath)) {
-				throw new Error(`chunk ${chunk.id} (${chunk.label}) has no findings file at ${findingsPath}`);
-			}
-			return parseAgentOutput(readFileSync(findingsPath, "utf8"));
+	const resolved = resolveCompileFindings({
+		consolidated: readConsolidated(plan, planRoot),
+		input: readConsolidateInput(triagePaths(diffPath).consolidateInput),
+		chunkOutput: () => mergeOutputs(plan.chunks.map((chunk) => readChunkOutput(chunk, planRoot))),
+	});
+	for (const warning of new Set(resolved.warnings)) process.stderr.write(`thrash: ${warning}\n`);
+	const output: AgentOutput = {
+		...resolved.output,
+		findings: resolved.output.findings.map((finding) => {
+			const key = finding.id === undefined ? undefined : resolved.matchKeys.get(finding.id);
+			return key ? { ...finding, matchKey: key.class ?? key.title } : finding;
 		}),
-	);
+	};
 	const minTierRaw = optionalOption(args, "--min-tier");
 	const policyPath = optionalOption(args, "--policy");
 	const round = parseOptionalFlag(wholeNumber(1), optionalOption(args, "--round"), "--round");
@@ -402,14 +606,26 @@ async function cmdCompile(args: string[], opts: { json: boolean }): Promise<numb
 		reviewer,
 		headSha: optionalOption(args, "--head-sha"),
 		reReview: plan.reReview,
+		diffOnly: plan.repo?.source === "none" || undefined,
 		prFiles,
+		rejected: resolved.rejected.length > 0 ? resolved.rejected : undefined,
+		unverified: resolved.unverified || undefined,
 		classHistory: output.findings.some((f) => f.class) ? await readClassHistory(target, reviewer) : undefined,
 		improvements: args.includes("--improvements") || undefined,
 		sassSeed: args.includes("--sass") ? (target.mode === "remote" ? target.number : 0) * 1000 + (round ?? 1) : undefined,
 	});
 	const reviewPath = scratchPath(TOOL, `${targetSlug(target)}.review.json`);
 	rmSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), { force: true });
-	writeFileSync(reviewPath, JSON.stringify({ target: arg, review } satisfies ReviewFile, null, 2));
+	const repo = plan.repo && { ...plan.repo, root: absoluteRepoRoot(planRoot, plan.repo.root) };
+	const { rejected, ...postable } = review;
+	writeFileSync(
+		reviewPath,
+		JSON.stringify(
+			{ target: arg, review: postable, ...(repo && { repo }), ...(rejected && { rejected }) } satisfies ReviewFile,
+			null,
+			2,
+		),
+	);
 
 	let addressFile: string | undefined;
 	if (target.mode === "local") {
@@ -445,6 +661,7 @@ async function cmdPost(args: string[]): Promise<number> {
 	input.commitId = optionalOption(args, "--head-sha");
 	if (isPostDryRun(args)) {
 		// Report-only: no provider lookup, no gh or glab call, no .posted.json.
+		await removeCheckoutTree(stored.repo?.root ?? "");
 		printJson({ dryRun: true, url: arg, requestedVerdict: stored.review.verdict, review: input });
 		return EXIT.OK;
 	}
@@ -458,6 +675,7 @@ async function cmdPost(args: string[]): Promise<number> {
 	const provider = await getProviderForUrl(target.url);
 	const posted = await provider.postReview(prRef(target), input);
 	writeFileSync(scratchPath(TOOL, `${targetSlug(target)}.posted.json`), JSON.stringify(posted, null, 2));
+	await removeCheckoutTree(stored.repo?.root ?? "");
 	printJson({ ...posted, requestedVerdict: stored.review.verdict });
 	return EXIT.OK;
 }
@@ -508,6 +726,23 @@ async function stackCandidates(
 	}
 }
 
+async function stackCheckouts(
+	provider: Awaited<ReturnType<typeof getProviderForUrl>>,
+	target: RemoteTarget,
+	stack: PullRequest[],
+): Promise<(prTarget: RemoteTarget, listed: PullRequest) => CheckoutRunner> {
+	const sharedClone: SharedClone | null = stack.some((pr) => stackState(pr) === "open")
+		? await prepareSharedClone(target)
+		: null;
+	let queue: Promise<unknown> = Promise.resolve();
+	return (prTarget, listed) => (viewed, files) => {
+		const pr = viewed?.headSha ? { ...listed, headSha: viewed.headSha } : listed;
+		const next = queue.then(() => resolveCheckout({ target: prTarget, pr, files, provider }, { sharedClone }));
+		queue = next;
+		return next;
+	};
+}
+
 async function cmdStack(args: string[]): Promise<number> {
 	const arg = positional(args, "stack");
 	const target = await resolveTarget(arg);
@@ -528,6 +763,7 @@ async function cmdStack(args: string[]): Promise<number> {
 		return EXIT.OK;
 	}
 	const merged = stack.filter((pr) => stackState(pr) === "merged");
+	const checkouts = args.includes(NO_REPO) ? undefined : await stackCheckouts(provider, target, stack);
 	const rows = await Promise.all(
 		stack.map(async (pr) => {
 			const state = stackState(pr);
@@ -538,10 +774,9 @@ async function cmdStack(args: string[]): Promise<number> {
 				writeFileSync(statusPath, JSON.stringify(status, null, 2));
 				return { number: pr.number, url: pr.url, state, reviewed: false, statusPath };
 			}
-			const { diffPath, contextPath, chunks, skipped, stats } = await writeDiff({
-				...target,
-				url: pr.url,
-				number: pr.number,
+			const prTarget = { ...target, url: pr.url, number: pr.number };
+			const { diffPath, contextPath, chunks, skipped, stats, repo } = await writeDiff(prTarget, {
+				checkout: checkouts?.(prTarget, pr),
 			});
 			appendFileSync(contextPath, mergedContextSection(merged));
 			return {
@@ -554,6 +789,7 @@ async function cmdStack(args: string[]): Promise<number> {
 				chunks,
 				skipped: skipped.length,
 				changed: stats.changed,
+				...(repo && { repo }),
 			};
 		}),
 	);
@@ -586,9 +822,15 @@ const command = defineCommand({
 	subcommands: {
 		diff: {
 			description:
-				"Fetch the diff for a URL or path, split it into review chunks, write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local",
+				"Fetch the diff for a URL or path, split it into review chunks (bundles of related files with a context file when a code tree is available), write raw and per-chunk line-annotated copies plus a context file to scratch, print the chunk plan; --base <ref> for local; --no-repo skips the code checkout",
 			args: ["target"],
 			run: cmdDiff,
+		},
+		investigate: {
+			description:
+				"Print JSON with each path's declared symbols, dependents, callers with line numbers and tests; a directory expands to its tracked files; paths resolve from the working directory inside the git repository; [--max-hits N] caps callers for each file (default 20)",
+			args: ["path..."],
+			run: (args) => Promise.resolve(cmdInvestigate(args)),
 		},
 		compile: {
 			description:
@@ -601,9 +843,15 @@ const command = defineCommand({
 			args: ["target"],
 			run: cmdPost,
 		},
+		triage: {
+			description:
+				"Verify findings in two stages; --diff <file> --stage merge [--spice N] numbers every chunk finding c<chunk>-<n>, writes the merged findings and one verify task for each finding in scope (16 at most), and prints their paths as JSON; --stage apply reads the verdict files, writes the consolidate input and prints the counts as JSON",
+			args: [],
+			run: (args) => Promise.resolve(cmdTriage(args)),
+		},
 		stack: {
 			description:
-				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed",
+				"List every PR or MR in the target's stack, root first, with its state; --diff writes diffs for open ones only, marks merged ones as context and closed ones as not reviewed; --no-repo skips the code checkout",
 			args: ["target"],
 			run: cmdStack,
 		},
