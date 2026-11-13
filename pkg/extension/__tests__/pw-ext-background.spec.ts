@@ -4,6 +4,15 @@ import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
+import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
+
+const allowAllSites: SessionControl = {
+	allowed: async () => true,
+	allow: async () => undefined,
+	stopped: async () => false,
+	stop: async () => undefined,
+	forget: async () => undefined,
+};
 import {
 	createFakeBrowser,
 	createLock,
@@ -59,6 +68,7 @@ type Options = {
 	onApproval?: () => void;
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	pageDeadlineMs?: number;
+	sites?: "ask";
 };
 
 type Executed = {
@@ -126,6 +136,7 @@ function harness(options: Options = {}) {
 		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
 		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
 		lock: agentTabsLock,
+		control: options.sites === "ask" ? createSessionControl({ storage: fake.api.storage }) : allowAllSites,
 	});
 	const call = (
 		request: PwExtRequest,
@@ -150,6 +161,7 @@ function harness(options: Options = {}) {
 			context,
 		} as never);
 	return {
+		handler,
 		approvalRequests,
 		agentTabsLock,
 		clock,
@@ -582,8 +594,9 @@ describe("pw --ext agent tab ownership", () => {
 		const answer = await h.run({ verb: "snapshot", tabId: 8 });
 
 		expect(answer).toMatchObject({ ok: true });
-		expect(h.executed()[0]?.target.tabId).toBe(8);
-		expect(h.executed()[0]?.args[1]).toBe("https://second.example.test/");
+		const pageCall = h.executed().find((call) => (call as { func?: { name?: string } }).func?.name === "pwExtPageAction");
+		expect(pageCall?.target.tabId).toBe(8);
+		expect(pageCall?.args[1]).toBe("https://second.example.test/");
 		expect(h.selectedId()).toBe(7);
 	});
 
@@ -2280,5 +2293,289 @@ describe("pw --ext dialog", () => {
 			ok: false,
 			error: expect.stringContaining("It may show a dialog that pw --ext could not catch"),
 		});
+	});
+});
+
+describe("pw --ext site allowlist", () => {
+	const ORIGIN = "https://app.example.test";
+
+	it("asks once per origin in a session, then runs", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { tree: "t", text: "x" } });
+		expect((await h.run({ verb: "snapshot" })).ok).toBe(true);
+		expect((await h.run({ verb: "snapshot" })).ok).toBe(true);
+		expect(h.approvalRequests).toEqual([
+			expect.objectContaining({
+				title: "Let the agent use this site?",
+				origin: ORIGIN,
+				lines: expect.arrayContaining([`Agent: ${IDENTITY}`]),
+			}),
+		]);
+	});
+
+	it("touches no page when the person denies the site", async () => {
+		const h = harness({ sites: "ask", approval: "deny", pageResult: { tree: "t", text: "x" } });
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("did not allow https://app.example.test"),
+		});
+		expect(h.executed()).toEqual([]);
+	});
+
+	it("asks for the target origin of open and new", async () => {
+		const h = harness({ sites: "ask", approval: "allow" });
+		await h.run({ verb: "open", url: "https://next.example.test/a" });
+		await h.run({ verb: "new", url: "https://third.example.test/" });
+		await h.run({ verb: "new" });
+		expect(h.approvalRequests.map((request) => (request as { origin: string }).origin)).toEqual([
+			"https://next.example.test",
+			"https://third.example.test",
+		]);
+	});
+
+	it("does not act on a tab that left the group while the site popup was open", async () => {
+		const options = {
+			sites: "ask" as const,
+			approval: "allow" as const,
+			pageResult: { detail: "clicked" },
+			onApproval: () => undefined as void,
+		};
+		const h = harness(options);
+		options.onApproval = () => {
+			(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		};
+		const answer = await h.run({ verb: "click", target: "e1" });
+		expect(answer.ok).toBe(false);
+		expect(h.executed().filter((call) => (call as { func?: { name?: string } }).func?.name === "pwExtPageAction")).toEqual([]);
+	});
+
+	it("does nothing when the page changed while the site popup was open", async () => {
+		const options = { sites: "ask" as const, approval: "allow" as const, onApproval: () => undefined as void };
+		const h = harness(options);
+		options.onApproval = () => {
+			(h.fake.tabs.get(7) as FakeTab).url = "https://mail.proton.me/u/0/inbox";
+		};
+		expect(await h.run({ verb: "open", url: "https://app.example.test/next" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("The page changed while the site question was open"),
+		});
+		expect(h.fake.raw.tabs.update).not.toHaveBeenCalled();
+	});
+
+	it("asks once when two verbs reach a new site at the same time", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { text: "x" } });
+		const answers = await Promise.all([h.run({ verb: "selection" }), h.run({ verb: "selection" })]);
+		expect(answers.map((answer) => answer.ok)).toEqual([true, true]);
+		expect(h.approvalRequests).toHaveLength(1);
+	});
+
+	it("saves a shared Allow for a request that is still live when the asking one was canceled", async () => {
+		const controller = new AbortController();
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { text: "x" }, onApproval: () => controller.abort() });
+		const first = h.handler({ request: { verb: "selection" }, timeoutMs: 60_000, signal: controller.signal, progress: () => undefined, context: { sessionId: SESSION, agentIdentity: IDENTITY } } as never);
+		const second = h.run({ verb: "selection" });
+		await Promise.all([first, second]);
+		expect(h.fake.session.get(`pwExtSites:${SESSION}`)).toEqual(["https://app.example.test"]);
+	});
+
+	it("asks nothing for tabs, select and close", async () => {
+		const h = harness({ sites: "ask", tabs: [WEB_TAB, groupTab(8, { url: "https://other.example.test/" })] });
+		await h.run({ verb: "tabs" });
+		await h.run({ verb: "select", tabId: 8 });
+		await h.run({ verb: "close", tabId: 8 });
+		expect(h.approvalRequests).toEqual([]);
+	});
+});
+
+describe("pw --ext Stop", () => {
+	const STOPPED = expect.stringContaining("clicked Stop");
+
+	it("ends the session's control: grants, sites and tab record go, and later verbs are refused", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { tree: "t", text: "x" } });
+		await h.run({ verb: "snapshot" });
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.handler.stop(SESSION);
+		expect(await h.run({ verb: "snapshot" })).toEqual({ ok: false, error: STOPPED });
+		expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
+		expect(h.fake.record(SESSION)).toBeUndefined();
+		expect([...h.fake.session.keys()].filter((key) => key.endsWith(SESSION))).toEqual([`pwExtStopped:${SESSION}`]);
+		expect((await h.runAs(OTHER_SESSION, { verb: "tabs" })).ok).toBe(true);
+	});
+
+	it("cancels a verb in flight at once with the Stop error", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: new Promise(() => {}) });
+		const running = h.run({ verb: "snapshot" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await h.handler.stop(SESSION);
+		expect(await running).toEqual({ ok: false, error: STOPPED });
+	});
+
+	it("keeps no dg_ grant that an Allow gives after Stop", async () => {
+		let asked = 0;
+		const options = {
+			sites: "ask" as const,
+			approval: "allow" as const,
+			tabs: [{ ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" }],
+			mainResult: () => ({ api: "modelContext", output: "done" }),
+			onApproval: () => undefined as void,
+		};
+		const h = harness(options);
+		options.onApproval = () => {
+			if (++asked === 2) void h.handler.stop(SESSION);
+		};
+		const answer = await h.run({ verb: "call", tool: "dg_outlook_move", args: { ids: ["a"], folder: "archive" } });
+		expect(answer).toEqual({ ok: false, error: STOPPED });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(h.fake.session.has(`webmcpGrants:${SESSION}`)).toBe(false);
+	});
+
+	it("closes no tab when Stop comes while close waits for the agent tab lock", async () => {
+		const h = harness({ sites: "ask", tabs: [WEB_TAB, groupTab(8)] });
+		let release: (() => void) | undefined;
+		const holding = h.agentTabsLock.request("agentTabs", () => new Promise<void>((resolve) => (release = resolve)));
+		const closing = h.run({ verb: "close", tabId: 8 });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const stopping = h.handler.stop(SESSION);
+		expect(await closing).toEqual({ ok: false, error: STOPPED });
+		release?.();
+		await holding;
+		await stopping;
+		expect(h.fake.raw.tabs.remove).not.toHaveBeenCalled();
+	});
+
+	it("opens no tab when Stop comes while new waits for the agent tab lock", async () => {
+		const h = harness({ sites: "ask", record: false, approval: "allow" });
+		await h.run({ verb: "new", url: "https://next.example.test/" });
+		const before = h.created().length;
+		let release: (() => void) | undefined;
+		const holding = h.agentTabsLock.request("agentTabs", () => new Promise<void>((resolve) => (release = resolve)));
+		const opening = h.run({ verb: "new", url: "https://next.example.test/b" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		await Promise.race([h.handler.stop(SESSION), new Promise((resolve) => setTimeout(resolve, 20))]);
+		expect(await opening).toEqual({ ok: false, error: STOPPED });
+		release?.();
+		await holding;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(h.created()).toHaveLength(before);
+	});
+
+	it("saves no site that the person allows after the request was canceled", async () => {
+		const controller = new AbortController();
+		const options = { sites: "ask" as const, approval: "allow" as const, signal: controller.signal, onApproval: () => controller.abort() };
+		const h = harness(options);
+		expect((await h.run({ verb: "snapshot" })).ok).toBe(false);
+		expect(h.fake.session.has(`pwExtSites:${SESSION}`)).toBe(false);
+	});
+
+	it("opens no tab when Stop comes while the site popup is open", async () => {
+		const options = { sites: "ask" as const, record: false, approval: "allow" as const, onApproval: () => undefined as void };
+		const h = harness(options);
+		options.onApproval = () => void h.handler.stop(SESSION);
+		expect(await h.run({ verb: "new", url: "https://next.example.test/" })).toEqual({ ok: false, error: STOPPED });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.created()).toEqual([]);
+	});
+
+	it("starts no new page work in a verb that Stop ended", async () => {
+		let releaseRead: (() => void) | undefined;
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			pageResult: { tree: "t", text: "x" },
+			mainResult: (action) =>
+				(action as { kind: string }).kind === "read"
+					? new Promise((resolve) => {
+							releaseRead = () => resolve({ dialogs: [] });
+						})
+					: { dialogs: [] },
+		});
+		const running = h.run({ verb: "snapshot" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		await h.handler.stop(SESSION);
+		expect(await running).toEqual({ ok: false, error: STOPPED });
+		releaseRead?.();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.executed().filter((call) => (call as { func?: { name?: string } }).func?.name === "pwExtPageAction")).toEqual([]);
+	});
+
+	it("settles a verb that the relay canceled earlier as soon as Stop comes", async () => {
+		const relay = new AbortController();
+		const h = harness({ sites: "ask", approval: "allow", signal: relay.signal, pageResult: new Promise(() => {}) });
+		const running = h.run({ verb: "snapshot" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		relay.abort();
+		await h.handler.stop(SESSION);
+		expect(await running).toEqual({ ok: false, error: STOPPED });
+	});
+
+	it("captures no screenshot when Stop comes while the tab comes forward", async () => {
+		const h = harness({ sites: "ask", approval: "allow" });
+		const update = h.fake.raw.tabs.update;
+		let stopping: Promise<void> | undefined;
+		update.mockImplementationOnce(async () => {
+			stopping = h.handler.stop(SESSION);
+			return undefined as never;
+		});
+		expect(await h.run({ verb: "screenshot" })).toEqual({ ok: false, error: STOPPED });
+		await stopping;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.fake.raw.tabs.captureVisibleTab).not.toHaveBeenCalled();
+	});
+
+	it("runs nothing for a verb whose first Stop check was still pending when Stop came", async () => {
+		const h = harness({ sites: "ask", record: false, approval: "allow" });
+		const get = h.fake.raw.storage.session.get;
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => (release = resolve));
+		get.mockImplementationOnce(async (keys?: string | string[] | null) => {
+			await gate;
+			return {} as never;
+		});
+		const opening = h.run({ verb: "new", url: "https://next.example.test/" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await h.handler.stop(SESSION);
+		release?.();
+		expect(await opening).toEqual({ ok: false, error: STOPPED });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.created()).toEqual([]);
+	});
+
+	it("returns the Stop error when Stop comes during the final secret read", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { text: "page text" } });
+		await h.run({ verb: "selection" });
+		const get = h.fake.raw.storage.session.get;
+		const original = get.getMockImplementation();
+		let stopping: Promise<void> | undefined;
+		get.mockImplementation(async (keys?: string | string[] | null) => {
+			if (keys === `pwExtSecrets:${SESSION}` && !stopping) stopping = h.handler.stop(SESSION);
+			return (original as (k?: unknown) => Promise<Record<string, unknown>>)(keys);
+		});
+		expect(await h.run({ verb: "selection" })).toEqual({ ok: false, error: STOPPED });
+		await stopping;
+	});
+
+	it("stops the session that owns the tab, and nothing for a user tab", async () => {
+		const h = harness({ sites: "ask" });
+		await h.handler.stopTab(21);
+		expect((await h.run({ verb: "tabs" })).ok).toBe(true);
+		await h.handler.stopTab(7);
+		expect(await h.run({ verb: "tabs" })).toEqual({ ok: false, error: STOPPED });
+	});
+});
+
+describe("pw --ext agent banner", () => {
+	const bannerCalls = (h: ReturnType<typeof harness>) =>
+		h.executed().filter((call) => (call as { func?: { name?: string } }).func?.name === "pwExtBanner");
+
+	it("shows the banner in the isolated world with the shim, and hides it with the shim", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).map((call) => [call.world, call.args])).toEqual([
+			[undefined, [true]],
+			[undefined, [false]],
+		]);
 	});
 });

@@ -108,6 +108,13 @@ const TITLE_SESSION_CHARS = 4;
 
 export const MAX_AGENT_TABS = 200;
 
+/** A tab change was canceled while it waited for the agent tab lock. */
+export class AgentTabOpenCanceledError extends Error {
+	constructor() {
+		super("The request was canceled before it ran.");
+	}
+}
+
 export class AgentGroupFullError extends Error {
 	constructor() {
 		super(`The agent tab group is full (${MAX_AGENT_TABS} tabs).`);
@@ -143,6 +150,17 @@ export function lockedAgentGroupIds({
 	lock?: AgentTabsLock;
 }): Promise<Set<number>> {
 	return lock.request(LOCK_NAME, () => agentGroupIds({ storage }));
+}
+
+/** The session whose agent tab group has this id, if any. */
+export async function agentSessionOfGroup({
+	storage,
+	groupId,
+}: {
+	storage: AgentTabsStorage;
+	groupId: number;
+}): Promise<string | undefined> {
+	return (await readRecords(storage)).find((record) => record.groupId === groupId)?.sessionId;
 }
 
 /** Chrome tab group ids that belong to an agent session. */
@@ -287,12 +305,16 @@ export function createAgentTabs({
 			sessionId,
 			agentIdentity,
 			url,
+			canceled,
 		}: {
 			sessionId: string;
 			agentIdentity: string;
 			url: string;
+			/** Checked inside the lock; a true answer opens nothing. */
+			canceled?: () => boolean;
 		}): Promise<{ tabId: number }> {
 			return locked(async () => {
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				const record = await read(sessionId);
 				const groupWindow = await liveGroupWindow(record);
 				if (
@@ -302,10 +324,13 @@ export function createAgentTabs({
 						MAX_AGENT_TABS
 				)
 					throw new AgentGroupFullError();
-				const tab = await createTab(url, groupWindow ?? (await normalWindow()));
+				const windowId = groupWindow ?? (await normalWindow());
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
+				const tab = await createTab(url, windowId);
 				const tabId = tab.id;
 				if (tabId === undefined) throw new Error("The browser opened no tab.");
 				try {
+					if (canceled?.()) throw new AgentTabOpenCanceledError();
 					await api.tabs.update(tabId, { autoDiscardable: false });
 					const joined = await joinGroup({
 						record,
@@ -422,11 +447,15 @@ export function createAgentTabs({
 		select({
 			sessionId,
 			tabId,
+			canceled,
 		}: {
 			sessionId: string;
 			tabId: number;
+			/** Checked inside the lock; a true answer changes nothing. */
+			canceled?: () => boolean;
 		}): Promise<void> {
 			return locked(async () => {
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				const record = await read(sessionId);
 				if (!record) throw new Error("This session has no agent tab group.");
 				await requireInGroup(record, tabId);
@@ -437,16 +466,21 @@ export function createAgentTabs({
 		close({
 			sessionId,
 			tabId,
+			canceled,
 		}: {
 			sessionId: string;
 			tabId?: number;
+			/** Checked inside the lock; a true answer closes nothing. */
+			canceled?: () => boolean;
 		}): Promise<{ selectedTabId?: number }> {
 			return locked(async () => {
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				const record = await read(sessionId);
 				const closing = tabId ?? record?.selectedTabId;
 				if (!record || closing === undefined)
 					throw new Error("This agent has no tab to close.");
 				await requireInGroup(record, closing);
+				if (canceled?.()) throw new AgentTabOpenCanceledError();
 				await api.tabs.remove(closing);
 				if (closing !== record.selectedTabId) return {};
 				const last = (await rows(record)).at(-1);

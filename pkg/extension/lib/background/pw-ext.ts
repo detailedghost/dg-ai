@@ -3,6 +3,7 @@ import {
 	approvalClassOf,
 	BUILT_IN_SCRIPTS,
 	isDgToolName,
+	isPwExtWebUrl,
 	mailboxToolAllowed,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
@@ -36,6 +37,8 @@ import {
 } from "@/lib/features/pw-ext-page";
 import {
 	AgentGroupFullError,
+	AgentTabOpenCanceledError,
+	agentSessionOfGroup,
 	type AgentTab,
 	type AgentTabs,
 	type AgentTabsBrowserApi,
@@ -47,7 +50,8 @@ import {
 	MAX_AGENT_TABS,
 } from "./agent-tabs";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
-import { forgetDialogShim, syncDialogShim } from "./dialog-shim";
+import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dialog-shim";
+import { createSessionControl, type SessionControl } from "./session-control";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { createWebMcpGrants, requestWebMcpApproval, type WebMcpGrants } from "./webmcp-approval";
@@ -60,7 +64,8 @@ import {
 	PW_EXT_PRIVATE_ERROR,
 } from "./tab-guards";
 
-type LiveTab = BrowserTab & { id: number };
+type LiveTab = BrowserTab & { id: number; signal?: AbortSignal };
+const STOPPED_WORK = "The request was canceled before it ran.";
 
 type TabEvent<T> = {
 	addListener(listener: T): void;
@@ -106,6 +111,18 @@ const CANCELED: PwExtResult = {
 	error: "The request was canceled before it ran.",
 };
 const NO_SESSION = "pw --ext needs a paired session.";
+const STOPPED: PwExtResult = {
+	ok: false,
+	error:
+		"The person clicked Stop in the browser. This dg session no longer controls the browser; start a new dg session to drive it again.",
+};
+const SITE_REFUSED = {
+	deny: "The user clicked Deny in the browser",
+	closed: "The approval window was closed without an answer",
+	timeout: "No answer in the browser within 60 seconds",
+	unopened: "The approval window could not open",
+} satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
+const NO_SITE_ASK: ReadonlySet<PwExtVerb> = new Set(["tabs", "select", "close"]);
 const UNMASK_REFUSED = {
 	deny: "The user clicked Deny in the browser; nothing was unmasked.",
 	closed: "The approval window was closed without an answer; nothing was unmasked.",
@@ -483,6 +500,7 @@ export function createPwExtHandler({
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
 	lock,
+	control = createSessionControl({ storage: api.storage }),
 }: {
 	browserApi: PwExtBrowserApi;
 	agentTabs?: AgentTabs;
@@ -494,7 +512,67 @@ export function createPwExtHandler({
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	pageDeadlineMs?: number;
 	lock?: AgentTabsLock;
+	control?: SessionControl;
 }) {
+	type Running = { controller: AbortController; stopped(): void };
+	const live = new Map<string, Set<Running>>();
+	const halted = new Set<string>();
+	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
+	const asking = new Map<string, Promise<ApprovalAnswer>>();
+
+	/** Asks the person once per origin and session before the agent reads or changes a page there. */
+	async function allowSite(url: string | undefined, context: PwExtContext, signal: AbortSignal): Promise<void> {
+		if (!url || !isPwExtWebUrl(url)) return;
+		const origin = new URL(url).origin;
+		if (await control.allowed(context.sessionId, origin)) return;
+		const key = `${context.sessionId}\n${origin}`;
+		let pending = asking.get(key);
+		if (!pending) {
+			pending = (async () => {
+				const answer = await (approvals ?? browserApprovals()).request({
+					title: "Let the agent use this site?",
+					origin,
+					lines: [
+						`Agent: ${context.agentIdentity}`,
+						`Tab group: ${groupTitle(context)}`,
+						"The agent can read and change pages on this site, in its own tab group only.",
+						"Until this dg session ends, or until you click Stop on the page.",
+					],
+				});
+				if (answer === "allow" && !signal.aborted) await control.allow(context.sessionId, origin);
+				return answer;
+			})();
+			asking.set(key, pending);
+			void pending.finally(() => asking.delete(key)).catch(() => undefined);
+		}
+		const answer = await pending;
+		if (signal.aborted) throw new Refusal("The request was canceled before it ran.");
+		if (answer !== "allow") throw new Refusal(`${SITE_REFUSED[answer]}; the agent did not allow ${origin}. Nothing ran.`);
+		await control.allow(context.sessionId, origin);
+	}
+
+	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
+	async function stop(sessionId: string): Promise<void> {
+		halted.add(sessionId);
+		for (const run of live.get(sessionId) ?? []) {
+			run.controller.abort();
+			run.stopped();
+		}
+		await control.stop(sessionId);
+		await Promise.allSettled([
+			grants.forget(sessionId),
+			webmcpGrants.forget(sessionId),
+			forgetAgentTabsAndShims({ browserApi: api, storage: api.storage, agentTabs, sessionId, ...(lock ? { lock } : {}) }),
+		]);
+	}
+
+	/** Stops the session whose agent group holds this tab; a tab of no agent group stops nothing. */
+	async function stopTab(tabId: number): Promise<void> {
+		const tab = await api.tabs.get(tabId);
+		if (tab.groupId === undefined || tab.groupId < 0) return;
+		const sessionId = await agentSessionOfGroup({ storage: api.storage, groupId: tab.groupId });
+		if (sessionId) await stop(sessionId);
+	}
 	const enabledOrNone = () => enabledBuiltIns().catch(() => new Set<string>());
 
 	async function beforeDeadline<T>(work: Promise<T>): Promise<T> {
@@ -583,6 +661,7 @@ export function createPwExtHandler({
 	}
 
 	async function inPage(tab: LiveTab, action: PwExtPageAction, unmasked = false, secrets: string[] = []) {
+		if (tab.signal?.aborted) throw new Refusal(STOPPED_WORK);
 		const [frame] = await beforeDeadline(
 			api.scripting.executeScript({
 				target: { tabId: tab.id },
@@ -611,6 +690,7 @@ export function createPwExtHandler({
 		func: (...args: never[]) => unknown,
 		args: unknown[],
 	): Promise<unknown> {
+		if (tab.signal?.aborted) throw new Refusal(STOPPED_WORK);
 		const [frame] = await api.scripting.executeScript({
 			target: { tabId: tab.id },
 			world: "MAIN",
@@ -666,11 +746,14 @@ export function createPwExtHandler({
 	async function openInGroup(
 		url: string,
 		{ sessionId, agentIdentity }: PwExtContext,
+		signal: AbortSignal,
 	): Promise<PwExtResult> {
 		const { tabId } = await agentTabs
-			.open({ sessionId, agentIdentity, url })
+			.open({ sessionId, agentIdentity, url, canceled: () => signal.aborted })
 			.catch((error: unknown) => {
-				throw error instanceof AgentGroupFullError ? new Refusal(GROUP_FULL) : error;
+				if (error instanceof AgentGroupFullError) throw new Refusal(GROUP_FULL);
+				if (error instanceof AgentTabOpenCanceledError) throw new Refusal(error.message);
+				throw error;
 			});
 		await agentTabs.select({ sessionId, tabId });
 		void syncShim(tabId, false);
@@ -766,11 +849,12 @@ export function createPwExtHandler({
 				return ok(`### Result\nUnmasked on ${origin} until ${clock(until)}, approved in the browser.`);
 			}
 			case "open": {
+				if (signal?.aborted) return CANCELED;
 				await api.tabs.update(tab.id, { url: request.url as string });
 				return ok(`### Result\nOpened ${request.url} in tab ${tab.id}`);
 			}
 			case "select": {
-				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id });
+				await agentTabs.select({ sessionId: context.sessionId, tabId: tab.id, canceled: () => signal?.aborted === true });
 				void syncShim(tab.id, false);
 				return ok(`### Result\nSelected tab ${tab.id}`);
 			}
@@ -778,6 +862,7 @@ export function createPwExtHandler({
 				const { selectedTabId } = await agentTabs.close({
 					sessionId: context.sessionId,
 					tabId: tab.id,
+					canceled: () => signal?.aborted === true,
 				});
 				return ok(
 					[
@@ -907,18 +992,22 @@ export function createPwExtHandler({
 				);
 			}
 			case "screenshot": {
+				if (signal?.aborted) return CANCELED;
 				const windowId = tab.windowId as number;
 				await api.tabs.update(tab.id, { active: true });
 				const { state } = await api.windows.get(windowId);
+				if (signal?.aborted) return CANCELED;
 				await api.windows.update(windowId, {
 					focused: true,
 					...(state === "minimized" ? { state: "normal" as const } : {}),
 				});
+				if (signal?.aborted) return CANCELED;
 				await api.scripting.executeScript({
 					target: { tabId: tab.id },
 					func: nextFrame,
 					args: [],
 				});
+				if (signal?.aborted) return CANCELED;
 				const watch = watchTab(tab);
 				let captured: string;
 				try {
@@ -1037,7 +1126,10 @@ export function createPwExtHandler({
 			groupId: tab.groupId ?? -1,
 			class: approvalClass,
 		});
-		if (signal?.aborted) return CANCELED;
+		if (signal?.aborted) {
+			if (await isStopped(context.sessionId)) await webmcpGrants.forget(context.sessionId);
+			return CANCELED;
+		}
 		if (answer !== "allow") {
 			const reason =
 				answer === "timeout"
@@ -1065,11 +1157,14 @@ export function createPwExtHandler({
 	async function execute(
 		request: PwExtRequest,
 		context: PwExtContext,
-		signal: AbortSignal | undefined,
+		signal: AbortSignal,
 	): Promise<PwExtResult> {
-		if (signal?.aborted) return CANCELED;
-		if (request.verb === "new")
-			return openInGroup(request.url ?? NEW_TAB_URL, context);
+		if (signal.aborted) return CANCELED;
+		if (request.verb === "new") {
+			await allowSite(request.url, context, signal);
+			if (signal.aborted) return CANCELED;
+			return openInGroup(request.url ?? NEW_TAB_URL, context, signal);
+		}
 		if (!isTabVerb(request)) {
 			const rows = await agentTabs.list({ sessionId: context.sessionId });
 			if (!rows.length) throw new Refusal(NO_TAB);
@@ -1080,14 +1175,28 @@ export function createPwExtHandler({
 		if (!tab) {
 			const rows = await agentTabs.list({ sessionId: context.sessionId });
 			if (rows.length) throw new Refusal(SELECTED_GONE);
-			if (request.verb === "open") return openInGroup(request.url as string, context);
+			if (request.verb === "open") {
+				await allowSite(request.url, context, signal);
+				if (signal.aborted) return CANCELED;
+				return openInGroup(request.url as string, context, signal);
+			}
 			throw new Refusal(NO_TAB);
 		}
 		await guard(request.verb, tab, request.tool);
+		if (!NO_SITE_ASK.has(request.verb)) {
+			await allowSite(request.verb === "open" ? request.url : tab.url, context, signal);
+			const live = await api.tabs.get(tab.id).catch(() => undefined);
+			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
+				throw new Refusal(SELECTED_GONE);
+			if (live.url !== tab.url)
+				throw new Refusal("The page changed while the site question was open; nothing ran. Retry.");
+		}
+		tab.signal = signal;
+		if (signal.aborted) return CANCELED;
 		return run(request, tab, context, signal);
 	}
 
-	return async ({
+	const handler = async ({
 		request: raw,
 		signal,
 		context,
@@ -1106,21 +1215,45 @@ export function createPwExtHandler({
 		if (!context?.sessionId) return { ok: false, error: NO_SESSION };
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
+		const { sessionId } = context;
+		if (halted.has(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
-		const held = async () => [...typed, ...(await grants.secrets(context.sessionId).catch(() => []))];
-		try {
-			const result = await execute(request, context, signal);
-			return scrub(result, await held());
-		} catch (error) {
-			if (error instanceof Refusal) return { ok: false, error: error.message };
-			if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
-			return {
-				ok: false,
-				error: clean(
-					`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
-					{ secrets: await held() },
-				).slice(0, 2048),
-			};
-		}
+		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
+		const controller = new AbortController();
+		const relay = () => controller.abort();
+		signal?.addEventListener("abort", relay, { once: true });
+		if (signal?.aborted) controller.abort();
+		let markStopped = () => undefined as void;
+		const stopped = new Promise<"stopped">((resolve) => {
+			markStopped = () => resolve("stopped");
+		});
+		const run: Running = { controller, stopped: markStopped };
+		const running = live.get(sessionId) ?? new Set<Running>();
+		running.add(run);
+		live.set(sessionId, running);
+		const outcome = await (async (): Promise<PwExtResult> => {
+			try {
+				if (await isStopped(sessionId)) return STOPPED;
+				const result = await Promise.race([execute(request, context, controller.signal), stopped]);
+				if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
+				return scrub(result, await held());
+			} catch (error) {
+				if (await isStopped(sessionId).catch(() => false)) return STOPPED;
+				if (error instanceof Refusal || error instanceof AgentTabOpenCanceledError) return { ok: false, error: error.message };
+				if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
+				return {
+					ok: false,
+					error: clean(
+						`pw --ext failed in the browser: ${error instanceof Error ? error.message : String(error)}`,
+						{ secrets: await held() },
+					).slice(0, 2048),
+				};
+			}
+		})();
+		signal?.removeEventListener("abort", relay);
+		running.delete(run);
+		if (running.size === 0) live.delete(sessionId);
+		return halted.has(sessionId) ? STOPPED : outcome;
 	};
+	return Object.assign(handler, { stop, stopTab });
 }

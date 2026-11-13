@@ -1222,3 +1222,16 @@ describe("createAgentTabs adopt", () => {
 		expect(fake.groups.size).toBe(1);
 	});
 });
+
+describe("agent tab open cancel", () => {
+	it("closes a tab it created after the open was canceled, and saves no record", async () => {
+		const fake = createFakeBrowser({ windows: [windowOf({ id: 1 })], lastFocusedWindowId: 1 });
+		const agentTabs = createAgentTabs({ browserApi: fake.api, storage: fake.api.storage, lock: createLock() });
+		let calls = 0;
+		await expect(
+			agentTabs.open({ sessionId: "s1", agentIdentity: "agent", url: "https://a.test/", canceled: () => ++calls > 2 }),
+		).rejects.toThrow("canceled");
+		expect(fake.raw.tabs.remove).toHaveBeenCalled();
+		expect(fake.record("s1")).toBeUndefined();
+	});
+});

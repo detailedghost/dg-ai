@@ -56,6 +56,8 @@ import {
 import { createUnmaskGrants } from "./unmask-grants";
 import { createWebMcpGrants } from "./webmcp-approval";
 import { forgetAgentTabsAndShims } from "./dialog-shim";
+import { createSessionControl } from "./session-control";
+import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import {
 	createRelayDispatcher,
 	type RelayHandler,
@@ -91,6 +93,7 @@ export type ChatBrowserApi = PagesBrowserApi & {
 				) => boolean | undefined,
 			): void;
 		};
+		id?: string;
 		getManifest?(): { version: string };
 		onStartup?: { addListener(listener: () => void): void };
 		onInstalled?: { addListener(listener: () => void): void };
@@ -200,6 +203,14 @@ export function registerDaemonLink(
 		storage: api.storage as unknown as AgentTabsStorage,
 	});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
+	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
+	const pwExtRelay = createPwExtHandler({
+		browserApi: pwExtApi,
+		agentTabs,
+		grants: unmaskGrants,
+		webmcpGrants,
+		control: sessionControl,
+	});
 	const relayHandlers: {
 		[N in RelayFeatureName]: RelayHandler<FeatureNamed<N>>;
 	} = {
@@ -209,12 +220,7 @@ export function registerDaemonLink(
 		proto: createProtoHandler({
 			browserApi: api as unknown as ProtoBrowserApi,
 		}),
-		"pw-ext": createPwExtHandler({
-			browserApi: pwExtApi,
-			agentTabs,
-			grants: unmaskGrants,
-			webmcpGrants,
-		}),
+		"pw-ext": pwExtRelay,
 		...options.relayHandlers,
 	};
 	const bootstrapsBySession = new Map<string, PairedBootstrap>();
@@ -428,6 +434,7 @@ export function registerDaemonLink(
 				}),
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
+			() => sessionControl.forget(sessionId),
 		])
 			void Promise.resolve()
 				.then(cleanup)
@@ -732,6 +739,16 @@ export function registerDaemonLink(
 
 	api.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (typeof message !== "object" || message === null) return undefined;
+		if ((message as { type?: unknown }).type === PW_EXT_STOP_MESSAGE) {
+			const from = sender as { id?: unknown; tab?: { id?: unknown } } | null;
+			const tabId = from?.tab?.id;
+			const stopper = relayHandlers["pw-ext"] as Partial<Pick<typeof pwExtRelay, "stopTab">>;
+			if (api.runtime.id !== undefined && from?.id === api.runtime.id && typeof tabId === "number")
+				void stopper.stopTab?.(tabId).catch((error: unknown) =>
+					emitRedacted((line) => console.warn(line), `[dg-chat] pw --ext stop failed: ${describeError(error)}`),
+				);
+			return undefined;
+		}
 		if (!isExtensionPageSender(sender, api.runtime.getURL(""))) return undefined;
 		const payload = message as Record<string, unknown>;
 		try {

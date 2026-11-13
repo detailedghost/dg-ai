@@ -12,6 +12,7 @@ import {
 	validateChatFrame,
 } from "@dg/common";
 import { handleOverwatchFrameSafely } from "@/lib/background/local-pages";
+import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
 	captureGlobal,
@@ -103,6 +104,7 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 					onMessageListener = cb;
 				}),
 			},
+			id: "test-ext",
 			getURL: mock((path: string) => `chrome-extension://test-ext/${path}`),
 			getManifest: () => ({ version: "1.9.3" }),
 			sendMessage,
@@ -1806,6 +1808,30 @@ test("a failed unmask cleanup still drops the session's dg_ Web MCP grants", asy
 	await settle();
 
 	expect(api.storage.session.remove).toHaveBeenCalledWith(`webmcpGrants:${FIRST.sessionId}`);
+});
+
+test("MSG.sessionDisconnect drops the session's allowed sites but keeps its Stop state", async () => {
+	const local = makeLocalArea(storedPairings(FIRST));
+	const { ask, api } = bootWithStored([], { local });
+	await settle();
+	await ask({ type: MSG.sessionDisconnect, sessionId: FIRST.sessionId });
+	await settle();
+
+	expect(api.storage.session.remove).toHaveBeenCalledWith(`pwExtSites:${FIRST.sessionId}`);
+	expect(api.storage.session.remove).not.toHaveBeenCalledWith(`pwExtStopped:${FIRST.sessionId}`);
+});
+
+test("a Stop click from this extension's banner in a tab reaches the pw --ext handler; any other sender does nothing", async () => {
+	const stopTab = mock(async (_tabId: number) => undefined);
+	const handler = Object.assign(async () => ({ ok: true, data: { text: "" } }), { stop: async () => undefined, stopTab });
+	const { api, getOnMessage } = bootWithStored([], { relayHandlers: { "pw-ext": handler } });
+	await settle();
+	const listener = getOnMessage();
+	listener?.({ type: PW_EXT_STOP_MESSAGE }, { id: "other-extension", tab: { id: 7 }, url: "https://app.example.test/" }, () => undefined);
+	listener?.({ type: PW_EXT_STOP_MESSAGE }, { id: api.runtime.id, url: "https://app.example.test/" }, () => undefined);
+	listener?.({ type: PW_EXT_STOP_MESSAGE }, { id: api.runtime.id, tab: { id: 7 }, url: "https://app.example.test/" }, () => undefined);
+	await settle();
+	expect(stopTab.mock.calls).toEqual([[7]]);
 });
 
 test("adopt writes no key until a session-list confirms the session", async () => {
