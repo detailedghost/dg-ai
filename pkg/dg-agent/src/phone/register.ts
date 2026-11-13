@@ -219,7 +219,7 @@ function attachPhoneVerbs(group: Command, load: PhoneLoader, getSession: () => s
 		.command("add")
 		.description("seal a file, or stdin, as a vault item; prints the name, size, and dates only")
 		.argument("<name>", "item name; names hold no PHI")
-		.argument("[file]", "file to read; stdin when omitted")
+		.argument("[file]", "file to read, or - for stdin; stdin when omitted")
 		.action(async (name: string, file: string | undefined) => {
 			const phone = await load();
 			await phone.phoneVaultAdd(name, file, phone.deps(getSession()));

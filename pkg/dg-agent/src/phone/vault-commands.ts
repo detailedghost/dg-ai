@@ -71,7 +71,7 @@ function senderLabel(deps: PhoneDeps, sender: string): string {
 async function readInput(file: string | undefined, deps: PhoneDeps): Promise<Buffer> {
 	const tooLarge = () => new DgCliError("vault item is larger than 5 MiB");
 	let bytes: Buffer | undefined;
-	if (file === undefined) {
+	if (file === undefined || file === "-") {
 		bytes = await deps.readStdinBytes?.(MAX_VAULT_BYTES);
 	} else {
 		const stat = statSync(file, { throwIfNoEntry: false });
@@ -96,14 +96,14 @@ function assertStorageRoom(deps: PhoneDeps, incomingBytes: number): void {
 }
 
 export async function phoneVaultAdd(name: string, file: string | undefined, deps: PhoneDeps): Promise<void> {
-	assertVaultName(name);
+	const vaultName = assertVaultName(name);
 	await prepareVault(deps);
-	if (deps.db.vaultNameTaken(name)) throw new DgCliError(`vault item ${name} exists`);
+	if (deps.db.vaultNameTaken(vaultName)) throw new DgCliError(`vault item ${vaultName} exists`);
 	const plain = await readInput(file, deps);
 	const key = await currentKey(deps);
 	const row = withVaultWriteLock(deps.paths.phoneRoot, () => {
 		assertStorageRoom(deps, plain.length + SEALED_OVERHEAD_BYTES);
-		return storeVaultItem(deps.db, deps.paths.phoneRoot, { name, sender: SELF_SENDER, plain, key }, deps.now());
+		return storeVaultItem(deps.db, deps.paths.phoneRoot, { name: vaultName, sender: SELF_SENDER, plain, key }, deps.now());
 	});
 	printJson(deps, { name: row.name, size: row.size, created_at: row.created_at, expires_at: row.expires_at });
 }
@@ -126,8 +126,9 @@ export async function phoneVaultList(deps: PhoneDeps, opts: { as?: string } = {}
 
 export async function phoneVaultRm(name: string, deps: PhoneDeps): Promise<void> {
 	await prepareVault(deps);
-	deleteVaultItem(deps.db, deps.paths.phoneRoot, liveItem(deps, name));
-	printJson(deps, { removed: name });
+	const row = liveItem(deps, name);
+	deleteVaultItem(deps.db, deps.paths.phoneRoot, row);
+	printJson(deps, { removed: row.name });
 }
 
 /** Decrypts an item in memory for `text --vault`; only text and images can be sent. */

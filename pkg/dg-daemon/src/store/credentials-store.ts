@@ -158,15 +158,15 @@ export class CredentialStore {
 
 	/** Encrypts the secret under AAD bound to the table, column and name; meta stays plaintext. */
 	setCredential(name: string, value: string, meta: unknown = {}): void {
-		validateCredentialName(name);
+		const canonical = validateCredentialName(name);
 		const secret = validateCredentialValue(value);
 		const validatedMeta = validateCredentialMeta(meta);
-		const enc = this.cipherBox.encryptRecord(secret, this.#aad(name));
+		const enc = this.cipherBox.encryptRecord(secret, this.#aad(canonical));
 		const now = new Date().toISOString();
 		this.db.run(
 			"INSERT INTO credentials (name, value_ciphertext, value_iv, value_tag, meta_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET value_ciphertext = excluded.value_ciphertext, value_iv = excluded.value_iv, value_tag = excluded.value_tag, meta_json = excluded.meta_json, updated_at = excluded.updated_at",
 			[
-				name,
+				canonical,
 				enc.ciphertext,
 				enc.iv,
 				enc.tag,
@@ -179,12 +179,12 @@ export class CredentialStore {
 
 	/** Decrypts a named credential, returning undefined when it is absent. */
 	getCredential(name: string): CredentialRecord | undefined {
-		validateCredentialName(name);
+		const canonical = validateCredentialName(name);
 		const row = this.db
 			.query(
 				"SELECT value_ciphertext, value_iv, value_tag, meta_json, updated_at FROM credentials WHERE name = ?",
 			)
-			.get(name) as {
+			.get(canonical) as {
 			value_ciphertext: Uint8Array;
 			value_iv: Uint8Array;
 			value_tag: Uint8Array;
@@ -197,7 +197,7 @@ export class CredentialStore {
 				Buffer.from(row.value_ciphertext),
 				Buffer.from(row.value_iv),
 				Buffer.from(row.value_tag),
-				this.#aad(name),
+				this.#aad(canonical),
 			)
 			.toString("utf8");
 		return {
@@ -224,28 +224,32 @@ export class CredentialStore {
 
 	/** Removes a named credential and reports whether one existed. */
 	deleteCredential(name: string): boolean {
-		validateCredentialName(name);
-		return (
-			this.db.run("DELETE FROM credentials WHERE name = ?", [name]).changes > 0
-		);
+		const canonical = validateCredentialName(name);
+		return this.db.run("DELETE FROM credentials WHERE name = ?", [canonical]).changes > 0;
 	}
 
 	/** Mints a service token for the prefix, keeping only its SHA-256; a repeat rotates it. */
 	createCredentialGrant(prefix: string): string {
-		validateCredentialGrantPrefix(prefix);
+		const canonical = validateCredentialGrantPrefix(prefix);
 		const token = mintToken();
 		this.db.run(
 			"INSERT INTO credential_grants (prefix, token_hash, created_at, last_used_at) VALUES (?, ?, ?, NULL) ON CONFLICT(prefix) DO UPDATE SET token_hash = excluded.token_hash, created_at = excluded.created_at, last_used_at = NULL",
-			[prefix, hashToken(token), new Date().toISOString()],
+			[canonical, hashToken(token), new Date().toISOString()],
 		);
 		return token;
 	}
 
 	/** Compares token hashes in constant time and records the use on success. */
 	verifyCredentialGrant(prefix: string, token: string): boolean {
+		let canonical: string;
+		try {
+			canonical = validateCredentialGrantPrefix(prefix);
+		} catch {
+			return false;
+		}
 		const row = this.db
 			.query("SELECT token_hash FROM credential_grants WHERE prefix = ?")
-			.get(prefix) as { token_hash: string } | null;
+			.get(canonical) as { token_hash: string } | null;
 		const matches = tokensEqual(
 			row?.token_hash ?? UNKNOWN_GRANT_HASH,
 			hashToken(token),
@@ -253,7 +257,7 @@ export class CredentialStore {
 		if (!row || !matches) return false;
 		this.db.run(
 			"UPDATE credential_grants SET last_used_at = ? WHERE prefix = ?",
-			[new Date().toISOString(), prefix],
+			[new Date().toISOString(), canonical],
 		);
 		return true;
 	}
@@ -279,10 +283,7 @@ export class CredentialStore {
 
 	/** Removes a grant and reports whether one existed. */
 	deleteCredentialGrant(prefix: string): boolean {
-		validateCredentialGrantPrefix(prefix);
-		return (
-			this.db.run("DELETE FROM credential_grants WHERE prefix = ?", [prefix])
-				.changes > 0
-		);
+		const canonical = validateCredentialGrantPrefix(prefix);
+		return this.db.run("DELETE FROM credential_grants WHERE prefix = ?", [canonical]).changes > 0;
 	}
 }

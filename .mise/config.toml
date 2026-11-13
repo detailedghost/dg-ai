@@ -151,6 +151,21 @@ description = "Mutation-test phone roster, catch-up, ensure, and thread modules"
 dir = "pkg/dg-agent"
 run = "bunx stryker run stryker.phone.conf.mjs"
 
+[tasks."test:phone:vault:mutate"]
+description = "Mutation-test phone vault names, period keys, and credential-store errors"
+dir = "pkg/dg-agent"
+run = "bunx stryker run stryker.vault-name.conf.mjs"
+
+[tasks."test:credentials:name:mutate"]
+description = "Mutation-test case-insensitive credential name folding"
+dir = "pkg/common"
+run = "bunx stryker run stryker.credential-name.conf.mjs"
+
+[tasks."test:daemon:credentials:mutate"]
+description = "Mutation-test credential store name folding"
+dir = "pkg/dg-daemon"
+run = "bunx stryker run stryker.credential-name.conf.mjs"
+
 [tasks."test:daemon"]
 description = "Run the dg-daemon unit tests"
 dir = "pkg/dg-daemon"

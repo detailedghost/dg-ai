@@ -135,15 +135,54 @@ describe("phone vault add", () => {
 	});
 
 	it("refuses a bad name or a name with dot-dot, and stores nothing", async () => {
-		for (const name of ["Lab", "../x", "a..b", "-a"]) {
+		for (const name of ["../x", "a..b", "-a", "Has Space"]) {
 			await expect(phoneVaultAdd(name, file("in.txt", SECRET), deps)).rejects.toThrow(/vault name/);
 		}
+		expect(deps.db.listVaultItems()).toEqual([]);
+	});
+
+	it("stores a mixed-case name in lowercase and treats every spelling as that item", async () => {
+		await phoneVaultAdd("Warren-Probe", file("in.txt", SECRET), deps);
+
+		expect(lines()[0]?.name).toBe("warren-probe");
+		expect((await content("WARREN-PROBE")).toString()).toBe(SECRET);
+		out = "";
+		await phoneVaultList(deps);
+		expect(lines().map((line) => line.name)).toEqual(["warren-probe"]);
+		await expect(phoneVaultAdd("WARREN-PROBE", file("in.txt", "other"), deps)).rejects.toThrow(/warren-probe exists/);
+		expect((await content("warren-probe")).toString()).toBe(SECRET);
+		out = "";
+		await phoneVaultRm("Warren-Probe", deps);
+		expect(lines()).toEqual([{ removed: "warren-probe" }]);
+		expect(deps.db.vaultItem("warren-probe")).toBeUndefined();
+	});
+
+	it("reads stdin when the file argument is -", async () => {
+		stdin = Buffer.from(SECRET);
+
+		await phoneVaultAdd("lab", "-", deps);
+
+		expect((await content("lab")).toString()).toBe(SECRET);
+	});
+
+	it("reports an empty stdin read when the reader is absent", async () => {
+		await expect(phoneVaultAdd("lab", "-", { ...deps, readStdinBytes: undefined })).rejects.toThrow(/5 MiB/);
+	});
+
+	it("reports a credential-store rejection instead of saying the store is down", async () => {
+		const message = "credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit";
+		creds.beforeSet = async () => {
+			throw new TypeError(message);
+		};
+
+		await expect(phoneVaultAdd("lab", file("in.txt", SECRET), deps)).rejects.toThrow(message);
 		expect(deps.db.listVaultItems()).toEqual([]);
 	});
 
 	it("never overwrites an existing name", async () => {
 		await phoneVaultAdd("lab", file("a.txt", "one"), deps);
 
+		await expect(phoneVaultAdd("lab", join(home, "missing.txt"), deps)).rejects.toThrow(/exists/);
 		await expect(phoneVaultAdd("lab", file("b.txt", "two"), deps)).rejects.toThrow(/exists/);
 		expect((await content("lab")).toString()).toBe("one");
 	});
@@ -519,5 +558,20 @@ describe("phone vault wiring", () => {
 		expect(lines().map((line) => line.name ?? line.removed)).toEqual(["lab", "lab", "lab", "res", "lab"]);
 		expect((await content("res")).toString()).toBe(SECRET.toUpperCase());
 		expect(out.includes("Jane")).toBe(false);
+	});
+
+	it("folds a mixed-case name through the CLI and reads stdin from -", async () => {
+		stdin = Buffer.from(SECRET);
+		const program = new Command();
+		program.exitOverride();
+		registerPhoneCommands(program, () => deps);
+
+		await program.parseAsync(["phone", "vault", "add", "Warren-Probe", "-"], { from: "user" });
+		await program.parseAsync(["phone", "vault", "list"], { from: "user" });
+		await program.parseAsync(["phone", "vault", "rm", "WARREN-PROBE"], { from: "user" });
+
+		expect(lines().map((line) => line.name ?? line.removed)).toEqual(["warren-probe", "warren-probe", "warren-probe"]);
+		expect(deps.db.vaultItem("warren-probe")).toBeUndefined();
+		expect(creds.store.has(vaultKeyName(keyPeriod(deps.now())))).toBe(true);
 	});
 });

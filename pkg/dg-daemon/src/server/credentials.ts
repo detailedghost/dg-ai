@@ -1,4 +1,4 @@
-import { type CredentialsCliRequest, credentialNameInPrefix } from "@dg/common";
+import { type CredentialsCliRequest, credentialNameInPrefix, validateCredentialGrantPrefix } from "@dg/common";
 import {
 	removeCredentialGrantToken,
 	writeCredentialGrantToken,
@@ -46,7 +46,7 @@ function resolveAccess(
 			frame.grant.prefix,
 			frame.grant.token,
 		)
-			? { scope: "prefix", prefix: frame.grant.prefix }
+			? { scope: "prefix", prefix: validateCredentialGrantPrefix(frame.grant.prefix) }
 			: undefined;
 	const sessionId = socketSessionId(requester);
 	if (!sessionId) return undefined;
@@ -94,15 +94,18 @@ function sessionOperation(
 		case "delete":
 			return store.deleteCredential(frame.name!);
 		case "grant": {
-			const token = store.createCredentialGrant(frame.prefix!);
+			const prefix = validateCredentialGrantPrefix(frame.prefix!);
+			const token = store.createCredentialGrant(prefix);
 			return {
-				prefix: frame.prefix,
-				path: writeCredentialGrantToken(deps.paths, frame.prefix!, token),
+				prefix,
+				path: writeCredentialGrantToken(deps.paths, prefix, token),
 			};
 		}
-		case "revoke":
-			removeCredentialGrantToken(deps.paths, frame.prefix!);
-			return store.deleteCredentialGrant(frame.prefix!);
+		case "revoke": {
+			const prefix = validateCredentialGrantPrefix(frame.prefix!);
+			removeCredentialGrantToken(deps.paths, prefix);
+			return store.deleteCredentialGrant(prefix);
+		}
 		case "grant-list":
 			return store.listCredentialGrants();
 	}

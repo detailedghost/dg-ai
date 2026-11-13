@@ -2,14 +2,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DgCliError } from "@dg/common";
+import { DgCliError, validateCredentialName } from "@dg/common";
 import { type DgPaths, resolveDgPaths } from "@dg/common/node";
 import { PhoneDb } from "../../src/phone/db";
 import {
 	createVaultKeyCache,
+	keyPeriodEnd,
 	deleteVaultItem,
 	dropOldKeys,
 	ensurePeriodKey,
+	requireVaultStore,
 	isVaultName,
 	keyPeriod,
 	openVaultItem,
@@ -55,13 +57,32 @@ describe("vault names", () => {
 		for (const name of ["a", "lab-1.txt", "mom_2", "0", "a".repeat(64)]) expect(isVaultName(name)).toBe(true);
 	});
 
-	it("rejects empty, upper case, leading punctuation, slashes, dot-dot, and long names", () => {
-		for (const name of ["", "A", "-x", ".x", "a/b", "a..b", "a b", "a".repeat(65), "é"]) expect(isVaultName(name)).toBe(false);
+	it("accepts either letter case, and rejects empty, leading punctuation, slashes, dot-dot, and long names", () => {
+		for (const name of ["A", "Warren-Probe", "LAB_1.TXT"]) expect(isVaultName(name)).toBe(true);
+		for (const name of ["", "-x", ".x", "a/b", "a..b", "A..B", "a b", "a".repeat(65), "é"]) expect(isVaultName(name)).toBe(false);
 	});
 
 	it("names a received item by handle, local minute, and four random hex digits", () => {
 		const at = new Date(2026, 10, 4, 9, 7).getTime() / 1000;
 		expect(receivedName("mom", at, () => false)).toMatch(/^mom-202611040907-[0-9a-f]{4}$/);
+	});
+
+	it("stores one row for every spelling of a name", () => {
+		const row = {
+			id: "a".repeat(32),
+			name: "Foo",
+			sender: "self",
+			type: "text/plain",
+			size: 1,
+			key_period: "2026-w46",
+			created_at: now,
+			expires_at: now + VAULT_TTL_SECONDS,
+			ext: null,
+		};
+		expect(db.addVaultItem(row)).toBe(true);
+		expect(db.vaultItem("FOO")?.name).toBe("foo");
+		expect(db.vaultNameTaken("fOo")).toBe(true);
+		expect(db.addVaultItem({ ...row, id: "b".repeat(32), name: "FOO" })).toBe(false);
 	});
 
 	it("uses unknown when the sender has no handle, and skips a taken name", () => {
@@ -82,29 +103,47 @@ function at(y: number, m: number, d: number, h = 0, min = 0, sec = 0): number {
 
 describe("keyPeriod", () => {
 	it("names the ISO week of the local date", () => {
-		expect(keyPeriod(at(2026, 11, 4, 12))).toBe("2026-W45");
-		expect(keyPeriod(at(2026, 11, 2, 0, 0, 0))).toBe("2026-W45");
-		expect(keyPeriod(at(2026, 11, 1, 23, 59, 59))).toBe("2026-W44");
-		expect(keyPeriod(at(2026, 11, 8, 23, 59, 59))).toBe("2026-W45");
+		expect(keyPeriod(at(2026, 11, 4, 12))).toBe("2026-w45");
+		expect(keyPeriod(at(2026, 11, 2, 0, 0, 0))).toBe("2026-w45");
+		expect(keyPeriod(at(2026, 11, 1, 23, 59, 59))).toBe("2026-w44");
+		expect(keyPeriod(at(2026, 11, 8, 23, 59, 59))).toBe("2026-w45");
 	});
 
 	it("stays unambiguous across year ends", () => {
-		expect(keyPeriod(at(2026, 12, 31))).toBe("2026-W53");
-		expect(keyPeriod(at(2027, 1, 3, 23, 59))).toBe("2026-W53");
-		expect(keyPeriod(at(2027, 1, 4))).toBe("2027-W01");
-		expect(keyPeriod(at(2024, 12, 30))).toBe("2025-W01");
-		expect(keyPeriod(at(2021, 1, 1))).toBe("2020-W53");
+		expect(keyPeriod(at(2026, 12, 31))).toBe("2026-w53");
+		expect(keyPeriod(at(2027, 1, 3, 23, 59))).toBe("2026-w53");
+		expect(keyPeriod(at(2027, 1, 4))).toBe("2027-w01");
+		expect(keyPeriod(at(2024, 12, 30))).toBe("2025-w01");
+		expect(keyPeriod(at(2021, 1, 1))).toBe("2020-w53");
 	});
 
 	it("steps whole periods", () => {
-		expect(keyPeriod(at(2026, 12, 30), 1)).toBe("2027-W01");
-		expect(keyPeriod(at(2026, 12, 30), -1)).toBe("2026-W52");
-		expect(keyPeriod(at(2027, 1, 5), -1)).toBe("2026-W53");
+		expect(keyPeriod(at(2026, 12, 30), 1)).toBe("2027-w01");
+		expect(keyPeriod(at(2026, 12, 30), -1)).toBe("2026-w52");
+		expect(keyPeriod(at(2027, 1, 5), -1)).toBe("2026-w53");
 	});
 
 	it("pads the week number so names sort in time order", () => {
-		expect(keyPeriod(at(2026, 1, 12))).toBe("2026-W03");
-		expect(vaultKeyName(keyPeriod(at(2026, 1, 12)))).toBe("phone-vault/2026-W03");
+		expect(keyPeriod(at(2026, 1, 12))).toBe("2026-w03");
+		expect(vaultKeyName(keyPeriod(at(2026, 1, 12)))).toBe("phone-vault/2026-w03");
+	});
+
+	it("emits a lowercase week the credential store accepts", () => {
+		expect(keyPeriod(at(2026, 11, 13))).toBe("2026-w46");
+		expect(validateCredentialName(vaultKeyName(keyPeriod(at(2026, 11, 13))))).toBe("phone-vault/2026-w46");
+		expect(validateCredentialName("phone-vault/2026-W46")).toBe("phone-vault/2026-w46");
+		expect(validateCredentialName("Warren-Probe")).toBe("warren-probe");
+	});
+
+	it("parses an uppercase or lowercase week as the same end, and rejects other text", () => {
+		const end = keyPeriodEnd("2026-W46");
+		expect(end).toBe(at(2026, 11, 16));
+		expect(keyPeriodEnd("2026-w46")).toBe(end);
+		expect(keyPeriodEnd("2026-w6")).toBeUndefined();
+		expect(keyPeriodEnd("2026-X46")).toBeUndefined();
+		expect(keyPeriodEnd("2026-w46extra")).toBeUndefined();
+		expect(keyPeriodEnd("x2026-w46")).toBeUndefined();
+		expect(keyPeriodEnd("phone-vault/2026-w46")).toBeUndefined();
 	});
 });
 
@@ -117,6 +156,19 @@ describe("vault period keys", () => {
 		expect(creds.store.get(vaultKeyName(day))).toBe(key.toString("hex"));
 		expect(vaultKeyName(day)).toBe(`phone-vault/${day}`);
 		expect(creds.calls).toContain("grant phone-vault");
+	});
+
+	it("stores the lowercase week and reads the uppercase spelling as the same key", async () => {
+		const period = keyPeriod(now);
+		const key = await ensurePeriodKey(creds.keyDeps(paths), period);
+		const upper = period.replace("-w", "-W");
+
+		const again = await ensurePeriodKey(creds.keyDeps(paths), upper);
+
+		expect(creds.store.has(`phone-vault/${period}`)).toBe(true);
+		expect(creds.store.has(`phone-vault/${upper}`)).toBe(false);
+		expect(again.equals(key)).toBe(true);
+		expect(creds.calls.filter((call) => call.startsWith("set "))).toHaveLength(1);
 	});
 
 	it("reads an existing period key without writing a new one", async () => {
@@ -142,6 +194,116 @@ describe("vault period keys", () => {
 		creds.up = false;
 
 		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
+	});
+
+	it("keeps the not-reachable message for connection failures only", async () => {
+		for (const message of [
+			"not reachable",
+			"dg-daemon is not running",
+			"no live dg-daemon pid file",
+			"cannot connect to dg-daemon",
+			"timed out connecting to dg-daemon",
+		]) {
+			creds.failure = new Error(`prefix ${message} suffix`);
+			await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
+		}
+	});
+
+	it("surfaces a name rejection when the store is up, including with no session", async () => {
+		creds.session = false;
+		creds.granted = true;
+
+		await expect(ensurePeriodKey(creds.keyDeps(paths), "Not A Name")).rejects.toThrow(/credential name must be/);
+	});
+
+	it("surfaces the session error when the grant client has no grant", async () => {
+		await expect(ensurePeriodKey(creds.keyDeps(paths), "Not A Name")).rejects.toThrow(/credential name must be/);
+	});
+
+	it("reports a connection failure while saving the key as not reachable", async () => {
+		creds.granted = true;
+		creds.beforeSet = async () => {
+			throw new Error("cannot connect to dg-daemon on port 1");
+		};
+
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
+	});
+
+	it("refuses when the new key cannot be read back", async () => {
+		creds.hideRead = true;
+
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/was not stored/);
+	});
+
+	it("reads an existing key through the session when the grant is gone", async () => {
+		const period = keyPeriod(now);
+		const key = await ensurePeriodKey(creds.keyDeps(paths), period);
+		creds.granted = false;
+		creds.calls.length = 0;
+
+		const again = await ensurePeriodKey(creds.keyDeps(paths), period);
+
+		expect(again.equals(key)).toBe(true);
+		expect(creds.calls.some((call) => call.startsWith("set "))).toBe(false);
+	});
+
+	it("reports a session rejection, and a session connection failure as not reachable", async () => {
+		creds.granted = true;
+		creds.sessionFailure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/credential name must be/);
+
+		creds.sessionFailure = new Error("cannot connect to dg-daemon on port 1");
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
+	});
+
+	it("requireVaultStore reports a live rejection and closes the grant client", async () => {
+		let closed = 0;
+		const deps = creds.deps();
+		const open = deps.vaultClient!;
+		deps.vaultClient = () => {
+			const client = open();
+			return {
+				...client,
+				close: () => {
+					closed += 1;
+					client.close();
+				},
+			};
+		};
+
+		const noSession = async () => undefined;
+		await expect(requireVaultStore({ sessionClient: noSession })).rejects.toThrow(/not reachable/);
+		await expect(requireVaultStore({ vaultClient: () => undefined as never, sessionClient: noSession })).rejects.toThrow(/not reachable/);
+
+		creds.granted = true;
+		closed = 0;
+		await requireVaultStore(deps);
+		expect(closed).toBe(1);
+
+		creds.granted = false;
+		creds.calls.length = 0;
+		await requireVaultStore(deps);
+		expect(creds.calls).toContain("get phone-vault/probe");
+
+		creds.sessionFailure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(requireVaultStore(deps)).rejects.toThrow(/credential name must be/);
+
+		creds.sessionFailure = undefined;
+		creds.session = false;
+		creds.failure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(requireVaultStore(deps)).rejects.toThrow(/credential name must be/);
+
+		creds.session = true;
+		creds.failure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		creds.sessionFailure = new Error("cannot connect to dg-daemon on port 1");
+		await expect(requireVaultStore(deps)).rejects.toThrow(/not reachable/);
+	});
+
+	it("says the store is unreachable when nothing can read it, rather than quoting a missing grant", async () => {
+		creds.session = false;
+
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.toThrow(/not reachable/);
+		await expect(ensurePeriodKey(creds.keyDeps(paths), keyPeriod(now))).rejects.not.toThrow(/no credential grant/);
 	});
 
 	it("refuses a stored value that is not a vault key", async () => {
@@ -221,6 +383,18 @@ describe("vault period keys", () => {
 		expect([...creds.store.keys()].sort()).toEqual([-1, 0, 1].map((offset) => vaultKeyName(keyPeriod(monday, offset))).sort());
 	});
 
+	it("selects either week marker and deletes only the folded name", async () => {
+		creds.granted = true;
+		creds.store.set("phone-vault/2026-W45", "a".repeat(64));
+		creds.store.set("phone-vault/2026-w44", "b".repeat(64));
+
+		await dropOldKeys(creds.deps(), at(2026, 11, 16));
+
+		expect(creds.calls.filter((call) => call.startsWith("delete ")).sort()).toEqual(["delete phone-vault/2026-w44", "delete phone-vault/2026-w45"]);
+		expect(creds.store.has("phone-vault/2026-w44")).toBe(false);
+		expect(creds.store.has("phone-vault/2026-W45")).toBe(true);
+	});
+
 	it("ignores credential names that are not period keys", async () => {
 		creds.store.set("phone-vault/junk", "a".repeat(64));
 		creds.store.set("phone-vault/2026-11-04", "a".repeat(64));
@@ -255,14 +429,14 @@ describe("vault key cache", () => {
 		now = at(2026, 11, 8, 23, 59, 59);
 		const cache = createVaultKeyCache(creds.keyDeps(paths), () => now);
 		await cache.refresh();
-		expect(creds.store.has("phone-vault/2026-W46")).toBe(true);
-		const next = creds.store.get("phone-vault/2026-W46");
+		expect(creds.store.has("phone-vault/2026-w46")).toBe(true);
+		const next = creds.store.get("phone-vault/2026-w46");
 		creds.up = false;
 
 		now = at(2026, 11, 9);
 		const hit = cache.peek();
 
-		expect(hit?.period).toBe("2026-W46");
+		expect(hit?.period).toBe("2026-w46");
 		expect(hit?.key.toString("hex")).toBe(next);
 	});
 
@@ -274,7 +448,7 @@ describe("vault key cache", () => {
 		now = at(2026, 11, 9);
 		await cache.refresh();
 
-		expect(creds.store.has("phone-vault/2026-W47")).toBe(true);
+		expect(creds.store.has("phone-vault/2026-w47")).toBe(true);
 	});
 
 	it("loads the key on demand through current()", async () => {
@@ -321,6 +495,24 @@ describe("vault items", () => {
 		await expect(openVaultItem(creds.deps(), paths.phoneRoot, { ...row, expires_at: row.expires_at + 1 })).rejects.toThrow(/cannot be opened/);
 	});
 
+	it("reports a store rejection while opening, and a bad stored key as cannot be opened", async () => {
+		const row = storeVaultItem(db, paths.phoneRoot, { name: "a", sender: "self", plain: Buffer.from("x"), key: await todayKey() }, now);
+		creds.failure = new TypeError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/credential name must be/);
+		creds.failure = new DgCliError("credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit");
+		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/credential name must be/);
+
+		creds.failure = new Error("cannot connect to dg-daemon on port 1");
+		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/not reachable/);
+		creds.failure = new Error("boom");
+		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/cannot be opened/);
+
+		creds.failure = undefined;
+		creds.granted = true;
+		creds.store.set(vaultKeyName(row.key_period), "nope");
+		await expect(openVaultItem(creds.deps(), paths.phoneRoot, row)).rejects.toThrow(/cannot be opened/);
+	});
+
 	it("cannot open an item once its period key is gone", async () => {
 		const row = storeVaultItem(db, paths.phoneRoot, { name: "a", sender: "self", plain: Buffer.from("x"), key: await todayKey() }, now);
 		creds.store.clear();
@@ -359,7 +551,7 @@ describe("vault key lifetime", () => {
 	it("opens an item sealed in the last second of its period until the item expires", async () => {
 		now = at(2026, 11, 8, 23, 59, 59);
 		const row = storeVaultItem(db, paths.phoneRoot, { name: "late", sender: "self", plain: Buffer.from("late"), key: await todayKey() }, now);
-		expect(row.key_period).toBe("2026-W45");
+		expect(row.key_period).toBe("2026-w45");
 
 		for (const t of [now + 1, now + VAULT_TTL_SECONDS - 1]) {
 			await dropOldKeys(creds.deps(), t);

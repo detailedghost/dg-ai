@@ -1,3 +1,4 @@
+import { validateCredentialName } from "@dg/common";
 import { DaemonNotRunningError } from "@dg/common/node";
 import type { KeyClient } from "../../src/phone/keys";
 import type { VaultClient, VaultDeps, VaultKeyDeps } from "../../src/phone/vault";
@@ -11,6 +12,12 @@ export type FakeCredentials = {
 	calls: string[];
 	/** Awaited inside each session set, so a spec can hold one write open. */
 	beforeSet?: () => Promise<void>;
+	/** Thrown by every store call, in place of the usual up/grant checks. */
+	failure?: Error;
+	/** Thrown by the session factory itself, before a client is returned. */
+	sessionFailure?: Error;
+	/** A get that succeeds as "no such credential", so a write cannot be read back. */
+	hideRead?: boolean;
 	deps: () => VaultDeps;
 	keyDeps: (paths: VaultKeyDeps["paths"]) => VaultKeyDeps;
 };
@@ -26,14 +33,17 @@ export function createFakeCredentials(opts: { session?: boolean; granted?: boole
 		keyDeps: (paths) => ({ vaultClient, sessionClient, paths }),
 	};
 	const down = () => {
+		if (fake.failure) throw fake.failure;
 		if (!fake.up) throw new DaemonNotRunningError();
 	};
 	const vaultClient = (): VaultClient => ({
 		async get(name) {
 			down();
 			if (!fake.granted) throw new Error("no credential grant for phone-vault");
-			fake.calls.push(`get ${name}`);
-			const value = fake.store.get(name);
+			if (fake.hideRead) return undefined;
+			const canonical = validateCredentialName(name);
+			fake.calls.push(`get ${canonical}`);
+			const value = fake.store.get(canonical);
 			return value === undefined ? undefined : { value, meta: {}, updatedAt: "" };
 		},
 		async list() {
@@ -45,23 +55,29 @@ export function createFakeCredentials(opts: { session?: boolean; granted?: boole
 		close() {},
 	});
 	const sessionClient = async (): Promise<KeyClient | undefined> => {
+		if (fake.sessionFailure) throw fake.sessionFailure;
 		if (!fake.session || !fake.up) return undefined;
 		return {
 			async get(name) {
 				down();
-				const value = fake.store.get(name);
+				if (fake.hideRead) return undefined;
+				const canonical = validateCredentialName(name);
+				fake.calls.push(`get ${canonical}`);
+				const value = fake.store.get(canonical);
 				return value === undefined ? undefined : { value, meta: {}, updatedAt: "" };
 			},
 			async set(name, value) {
 				down();
+				const canonical = validateCredentialName(name);
 				await fake.beforeSet?.();
-				fake.calls.push(`set ${name}`);
-				fake.store.set(name, value);
+				fake.calls.push(`set ${canonical}`);
+				fake.store.set(canonical, value);
 			},
 			async delete(name) {
 				down();
-				fake.calls.push(`delete ${name}`);
-				return fake.store.delete(name);
+				const canonical = validateCredentialName(name);
+				fake.calls.push(`delete ${canonical}`);
+				return fake.store.delete(canonical);
 			},
 			async grant(prefix) {
 				down();

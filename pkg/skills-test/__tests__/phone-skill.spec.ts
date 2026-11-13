@@ -100,6 +100,14 @@ describe("phone skill", () => {
 		expect(skill).toContain("[PHI: vault item <name> from +handle]");
 		expect(guide).toContain("[PHI: vault item <name> from +handle]");
 		expect(safety).toContain("Vault names hold no PHI.");
+		expect(skill).toContain("phone-vault/<yyyy>-w<ww>");
+		expect(skill).toContain("yyyy-W<ww>");
+		expect(skill).toContain("dg-agent phone vault add lab-1 -");
+		expect(skill).toContain("`Lab` and `lab` are one item");
+		expect(guide).toContain("phone-vault/2026-w45");
+		expect(guide).toContain("phone vault add <name> [file");
+		expect(guide).toContain("`-` means stdin");
+		expect(guide).toContain("`Foo`, `FOO`, and `foo` are one item");
 		expect(safety).toContain("An agent can still learn an item's name, size, type, dates, and sender, and the exit code, output size, and stderr line count of `vault exec`.");
 		expect(safety).toContain("Never `vault exec` a received item into sh, bash, python, node, eval, or any other command that runs its input as code.");
 		expect(safety).toContain("Never pick a `vault exec` command that writes the item to a file, another program, or the network.");
