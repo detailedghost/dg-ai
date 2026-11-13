@@ -886,7 +886,7 @@ export function createPwExtHandler({
 						].join("\n"),
 					);
 				}
-				if (request.text !== undefined && secrets.some((secret) => (request.text as string).includes(secret)))
+				if (request.text !== undefined && redactLiterals(request.text, secrets) !== request.text)
 					return { ok: false, error: DIALOG_TEXT_SECRET };
 				await dialogs(
 					tab,

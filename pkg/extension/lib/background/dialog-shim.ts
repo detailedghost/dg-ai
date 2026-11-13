@@ -59,46 +59,52 @@ export async function syncDialogShim({
 	regrouped: boolean;
 	lock?: AgentTabsLock;
 }): Promise<void> {
-	const groups = await lockedAgentGroupIds({ storage, ...(lock ? { lock } : {}) });
-	const tab = await api.tabs.get(tabId);
+	const owned = async () => {
+		const groups = await lockedAgentGroupIds({ storage, ...(lock ? { lock } : {}) });
+		const tab = await api.tabs.get(tabId);
+		return { tab, agent: tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId) };
+	};
+	const { tab, agent } = await owned();
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
-	const agent = tab.groupId !== undefined && tab.groupId >= 0 && groups.has(tab.groupId);
 	if (agent) {
 		shimmed.add(tabId);
 		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId]);
-		return;
-	}
-	if (!regrouped && !shimmed.has(tabId)) return;
+		if ((await owned()).agent) return;
+	} else if (!regrouped && !shimmed.has(tabId)) return;
 	shimmed.delete(tabId);
 	await inject(api, tabId, [{ kind: "remove" }]);
 }
 
-/** Forgets a session's agent tabs and then restores native dialogs in them; each removal waits at most a short time. */
+/** Forgets a session's agent tabs and then syncs every tab it listed or that this worker shimmed, so each one that is no longer an agent tab gets its native dialogs back; each sync waits at most a short time. */
 export async function forgetAgentTabsAndShims({
 	browserApi: api,
+	storage,
+	lock,
 	agentTabs,
 	sessionId,
 	deadlineMs = RELEASE_DEADLINE_MS,
 }: {
 	browserApi: DialogShimApi;
+	storage: AgentTabsStorage;
+	lock?: AgentTabsLock;
 	agentTabs: Pick<AgentTabs, "list" | "forget">;
 	sessionId: string;
 	deadlineMs?: number;
 }): Promise<void> {
 	const rows = await agentTabs.list({ sessionId }).catch(() => []);
-	for (const row of rows) shimmed.delete(row.tabId);
 	await agentTabs.forget({ sessionId });
+	const tabIds = new Set([...rows.map((row) => row.tabId), ...shimmed]);
 	await Promise.all(
-		rows
-			.filter((row) => allowedPage(row.url) && !mailbox(row.url))
-			.map(async (row) => {
-				let timer: ReturnType<typeof setTimeout> | undefined;
-				await Promise.race([
-					inject(api, row.tabId, [{ kind: "remove" }]).catch(() => undefined),
-					new Promise((resolve) => {
-						timer = setTimeout(resolve, deadlineMs);
-					}),
-				]).finally(() => clearTimeout(timer));
-			}),
+		[...tabIds].map(async (tabId) => {
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			await Promise.race([
+				syncDialogShim({ browserApi: api, storage, tabId, regrouped: true, ...(lock ? { lock } : {}) }).catch(
+					() => undefined,
+				),
+				new Promise((resolve) => {
+					timer = setTimeout(resolve, deadlineMs);
+				}),
+			]).finally(() => clearTimeout(timer));
+		}),
 	);
 }

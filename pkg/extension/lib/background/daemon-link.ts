@@ -419,7 +419,13 @@ export function registerDaemonLink(
 
 	function forgetAgentTabs(sessionId: string): void {
 		for (const cleanup of [
-			() => forgetAgentTabsAndShims({ browserApi: pwExtApi, agentTabs, sessionId }),
+			() =>
+				forgetAgentTabsAndShims({
+					browserApi: pwExtApi,
+					storage: api.storage as unknown as AgentTabsStorage,
+					agentTabs,
+					sessionId,
+				}),
 			() => unmaskGrants.forget(sessionId),
 			() => webmcpGrants.forget(sessionId),
 		])

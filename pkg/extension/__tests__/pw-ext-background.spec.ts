@@ -2133,16 +2133,28 @@ describe("pw --ext dialog", () => {
 		const h = harness();
 		h.fake.state.script = () => new Promise(() => {});
 		const started = Date.now();
-		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION, deadlineMs: 20 });
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs: h.agentTabs, sessionId: SESSION, deadlineMs: 20 });
 		expect(Date.now() - started).toBeLessThan(1000);
 		expect(h.fake.record(SESSION)).toBeUndefined();
+	});
+
+	it("also removes the shim from a tab the session got after the cleanup listed its tabs", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8, { url: "https://late.example.test/" })] });
+		h.fake.fireUpdated(8, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const agentTabs = { list: async () => [], forget: h.agentTabs.forget.bind(h.agentTabs) };
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs, sessionId: SESSION });
+		expect(dialogCalls(h).filter((call) => call.target.tabId === 8).map((call) => call.args[0])).toEqual([
+			{ kind: "install" },
+			{ kind: "remove" },
+		]);
 	});
 
 	it("removes the shim from a forgotten session's tabs, and skips mailbox and browser pages", async () => {
 		const h = harness({
 			tabs: [WEB_TAB, groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }), groupTab(10, { url: "chrome://settings/" })],
 		});
-		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs: h.agentTabs, sessionId: SESSION });
 		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }]]]);
 		expect(h.fake.record(SESSION)).toBeUndefined();
 	});
@@ -2151,6 +2163,27 @@ describe("pw --ext dialog", () => {
 		const h = harness();
 		h.fake.state.script = () => new Promise(() => {});
 		expect((await h.run({ verb: "select", tabId: 7 })).ok).toBe(true);
+	});
+
+	it("refuses prompt text that holds a filled secret without its line breaks", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown, mainResult: () => ({ dialogs: [] }) };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid\nmaple", secret: true });
+		expect((await h.run({ verb: "dialog", answer: "accept", text: "orchidmaple" })).ok).toBe(false);
+		expect(dialogCalls(h)).toEqual([]);
+	});
+
+	it("removes the shim again when the tab stopped being an agent tab during the install", async () => {
+		const h = harness();
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[] };
+			if ((call.args[0] as { kind?: string }).kind === "install") h.fake.session.delete("agentTabs:" + SESSION);
+			return { dialogs: [] };
+		};
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }]);
 	});
 
 	it("masks a dialog error with a secret that a concurrent fill holds", async () => {
