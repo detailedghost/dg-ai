@@ -46,6 +46,7 @@ function ctx(extra: Partial<ReapContext> = {}): ReapContext {
 		minAgeSec: 10 * 60,
 		loopMinAgeSec: 60 * 60,
 		sessionPid: CLAUDE,
+		protectedPids: new Set(),
 		tempRoots: ["/tmp"],
 		exists: (path) => [...existing].some((p) => path === p || path.startsWith(`${p}/`)),
 		realpath: (path) => path,
@@ -98,9 +99,37 @@ describe("stat reap classifier", () => {
 		expect(verdict([row(10, ["codex", "exec", "x"], { cwd: `${WT}/pkg` })]).candidates).toEqual([10]);
 	});
 
-	test("a live parent does not save a process that names a deleted worktree path", () => {
+	test("a deleted worktree path in argv brings an orphan into scope", () => {
+		const out = verdict([row(10, ["bun", "test", `${GONE_WT}/pkg/a.spec.ts`], { cwd: SCRATCHPAD })]);
+		expect(out.candidates).toEqual([10]);
+	});
+
+	test("a deleted worktree path in argv does not override a live parent", () => {
 		const out = verdict([
 			row(10, ["bun", "test", `${GONE_WT}/pkg/a.spec.ts`], { ppid: CLAUDE, cwd: SCRATCHPAD }),
+		]);
+		expect(out.skipped[10]).toBe("parent alive");
+	});
+
+	test("a live parent does not save a process whose cwd was deleted", () => {
+		const out = verdict([row(10, ["bun", "test"], { ppid: CLAUDE, cwd: `${GONE_WT}/pkg (deleted)` })]);
+		expect(out.candidates).toEqual([10]);
+	});
+
+	test("bg job processes and service units are never touched", () => {
+		const out = verdict(
+			[row(10, ["sleep", "600"]), row(11, ["gh", "run", "watch", "1"], { service: true })],
+			ctx({ protectedPids: new Set([10]) }),
+		);
+		expect(out.candidates).toEqual([]);
+		expect(Object.keys(out.skipped)).toEqual([]);
+	});
+
+	test("timeout counts only when the wrapped command is on the allowlist", () => {
+		const out = verdict([
+			row(10, ["timeout", "600", "gh", "run", "watch", "1"]),
+			row(11, ["timeout", "900", "git", "worktree", "add", "x"]),
+			row(12, ["/opt/chromium/chrome", "--user-data-dir=/tmp/profile"]),
 		]);
 		expect(out.candidates).toEqual([10]);
 	});
@@ -158,7 +187,7 @@ describe("stat reap classifier", () => {
 			row(14, ["node", "/repo/node_modules/playwright/cli.js", "test"]),
 			row(15, ["/opt/chromium/chrome", "--headless", "--user-data-dir=/tmp/pw-profile-x"]),
 			row(16, ["sleep", "15"]),
-			row(17, ["timeout", "600", "gh", "pr", "view"]),
+			row(17, ["timeout", "600", "bun", "test"]),
 			row(18, ["/usr/bin/zsh", "-c", "until [ -s out ]; do sleep 15; done; tail out"]),
 			row(19, ["/home/u/.local/share/dg/runtime/current/bun", `${WT}/pkg/launcher/dist/lib/dg.js`, "dg-daemon", "serve"]),
 		]);
@@ -268,6 +297,19 @@ describe("stat reap stuck wait loops", () => {
 		const body = "while pgrep -f run-local-filtered >/dev/null; do sleep 15; done";
 		const out = verdict([loop(30, body), loop(31, body)]);
 		expect(out.loops.map((l) => l.pid)).toEqual([30, 31]);
+	});
+
+	test("a loop whose target is its own background child is not stuck", () => {
+		const out = verdict([
+			loop(30, "bash ./build.sh & while pgrep -f build.sh; do sleep 5; done"),
+			row(31, ["bash", "./build.sh"], { ppid: 30, cwd: SCRATCHPAD }),
+		]);
+		expect(out.loops).toEqual([]);
+	});
+
+	test("a loop with no session ancestor is marked none", () => {
+		const out = verdict([loop(30, until, { ppid: 1 })]);
+		expect(out.loops.map((l) => [l.pid, l.session])).toEqual([[30, "none"]]);
 	});
 
 	test("a loop of another live session is reported as other", () => {

@@ -1,12 +1,14 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { scratchRoot } from "@dg/common/node";
+import { listJobs, readPid } from "../bg/jobs";
 import { installRoot } from "../utils/lib";
 import { git, parseWorktrees, worktreePrefix } from "../worktree/shared";
 import {
 	type Candidate,
 	type Classified,
+	type ProcRow,
 	classify,
 	liveIdentity,
 	type ReapResult,
@@ -50,11 +52,28 @@ function real(file: string): string {
 
 function exists(file: string): boolean {
 	try {
-		realpathSync(file);
+		statSync(file);
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code !== "ENOENT";
 	}
+}
+
+function jobPids(rows: ProcRow[]): Set<number> {
+	const roots = listJobs()
+		.filter((job) => job.state === "running")
+		.flatMap((job) => [job.launcherPid, readPid(job)])
+		.filter((pid): pid is number => typeof pid === "number" && pid > 1);
+	const children = new Map<number, number[]>();
+	for (const proc of rows) children.set(proc.ppid, [...(children.get(proc.ppid) ?? []), proc.pid]);
+	const out = new Set<number>();
+	const walk = (pid: number) => {
+		if (out.has(pid)) return;
+		out.add(pid);
+		for (const child of children.get(pid) ?? []) walk(child);
+	};
+	for (const pid of roots) walk(pid);
+	return out;
 }
 
 async function scopeOf(cwd: string): Promise<{ roots: string[]; prefix: string | null }> {
@@ -95,6 +114,7 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 		minAgeSec: options.minAgeMinutes * 60,
 		loopMinAgeSec: options.loopMinAgeMinutes * 60,
 		sessionPid,
+		protectedPids: jobPids(rows),
 		tempRoots: [...new Set([tmpdir(), "/tmp", scratchRoot()].map(real))],
 		exists,
 		realpath: real,
@@ -103,7 +123,9 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 	const picked = (pid: number) => wanted.size === 0 || wanted.has(pid);
 	const orphans = result.candidates.filter((c) => picked(c.pid));
 	const actOnLoop = (loop: Classified["stuckLoops"][number]) =>
-		wanted.size > 0 ? wanted.has(loop.pid) : loop.session === "current" || options.otherSessions;
+		wanted.size > 0
+			? wanted.has(loop.pid)
+			: loop.session === "current" || (loop.session === "other" && options.otherSessions);
 	const loops = result.stuckLoops.filter(actOnLoop);
 	const targets = [...new Map([...orphans, ...loops.flatMap((loop) => loop.members)].map((c) => [c.pid, c])).values()];
 	const known = new Set([...result.candidates.map((c) => c.pid), ...result.stuckLoops.map((l) => l.pid)]);

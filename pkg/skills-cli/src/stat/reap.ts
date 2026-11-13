@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, readlinkSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import path from "node:path";
 
 /** One process as the reaper sees it; `startId` is the token the PID-reuse check compares. */
@@ -13,6 +13,7 @@ export interface ProcRow {
 	argv: string[];
 	cwd: string | null;
 	startId: string;
+	service?: boolean;
 }
 
 export interface ReapContext {
@@ -24,6 +25,7 @@ export interface ReapContext {
 	minAgeSec: number;
 	loopMinAgeSec: number;
 	sessionPid: number | null;
+	protectedPids: Set<number>;
 	tempRoots: string[];
 	exists: (file: string) => boolean;
 	realpath: (file: string) => string;
@@ -51,7 +53,7 @@ export interface StuckLoop {
 	ppid: number;
 	ageSec: number;
 	patterns: string[];
-	session: "current" | "other";
+	session: "current" | "other" | "none";
 	command: string;
 	members: Candidate[];
 }
@@ -96,7 +98,7 @@ function inside(child: string, parent: string): boolean {
 
 /** Printable, one-line, capped form of a command line. */
 export function shortCommand(argv: string[], max = 80): string {
-	const text = argv.join(" ").replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+	const text = argv.join(" ").replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
 	return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
@@ -119,15 +121,38 @@ function codexKind(argv: string[]): boolean {
 	return false;
 }
 
-function devDaemon(argv: string[], ctx: ReapContext): boolean {
+function devDaemon(proc: ProcRow, ctx: ReapContext): boolean {
+	const argv = proc.argv;
 	const i = argv.findIndex((word) => base(word) === "dg.js");
 	if (i < 1 || argv[i + 1] !== "dg-daemon" || argv[i + 2] !== "serve") return false;
 	if (!ctx.installedDgJs) return false;
-	return ctx.realpath(argv[i] ?? "") !== ctx.installedDgJs;
+	const script = argv[i] ?? "";
+	const dir = cwdPath(proc)?.dir;
+	if (!path.isAbsolute(script) && !dir) return false;
+	return ctx.realpath(path.resolve(dir ?? "/", script)) !== ctx.installedDgJs;
+}
+
+function playwrightScript(argv: string[]): boolean {
+	const script = argv.slice(1).find((word) => !word.startsWith("-")) ?? "";
+	return /(^|[/\\])(node_modules[/\\](@playwright[/\\]test|playwright(-core)?)[/\\]|playwright$)/.test(script) ||
+		(base(argv[1]) === "x" && argv[2] === "playwright");
+}
+
+function headless(argv: string[]): boolean {
+	return argv.some((word) => /^--(headless|remote-debugging-(port|pipe))(=|$)/.test(word));
+}
+
+function wrappedArgv(argv: string[]): string[] {
+	const i = argv.findIndex((word, index) => index > 0 && /^[0-9]/.test(word));
+	return i < 0 ? [] : argv.slice(i + 1);
 }
 
 function kindOf(proc: ProcRow, ctx: ReapContext): string | null {
 	const argv = proc.argv;
+	if (base(argv[0]) === "timeout") {
+		const inner = wrappedArgv(argv);
+		return inner.length > 0 && kindOf({ ...proc, argv: inner }, ctx) ? "poll" : null;
+	}
 	const head = base(argv[0]);
 	if (head === "gh") {
 		if (argv[1] === "pr" && argv[2] === "checks" && argv.includes("--watch")) return "gh-watch";
@@ -136,18 +161,19 @@ function kindOf(proc: ProcRow, ctx: ReapContext): string | null {
 	}
 	if (codexKind(argv)) return "codex";
 	if (head === "bun" && argv[1] === "test") return "bun-test";
-	if (RUNTIMES.has(head) && argv.slice(1).some((word) => /(^|[/\\])playwright([/\\]|$)/.test(word)))
-		return "playwright";
+	if (RUNTIMES.has(head) && playwrightScript(argv)) return "playwright";
 	if (BROWSERS.has(head)) {
 		const dir = userDataDir(argv);
-		return dir && ctx.tempRoots.some((root) => inside(path.resolve(dir), root)) ? "browser" : null;
+		return dir && headless(argv) && ctx.tempRoots.some((root) => inside(path.resolve(dir), root))
+			? "browser"
+			: null;
 	}
-	if (head === "sleep" || head === "timeout") return "poll";
+	if (head === "sleep") return "poll";
 	if (SHELLS.has(head) && !proc.tty && argv[1] === "-c") {
 		const script = argv.slice(2).join(" ");
 		return /\b(while|until)\b/.test(script) && /\bsleep\b/.test(script) ? "poll-loop" : null;
 	}
-	if (devDaemon(argv, ctx)) return "dev-daemon";
+	if (devDaemon(proc, ctx)) return "dev-daemon";
 	return null;
 }
 
@@ -177,10 +203,12 @@ function cwdPath(proc: ProcRow): { dir: string; deleted: boolean } | null {
 }
 
 function namesDeletedPath(proc: ProcRow, ctx: ReapContext): boolean {
+	return namedPaths(proc).some((file) => worktreeGone(file, ctx));
+}
+
+function cwdDeleted(proc: ProcRow, ctx: ReapContext): boolean {
 	const cwd = cwdPath(proc);
-	const paths = namedPaths(proc);
-	if (cwd) paths.push(cwd.dir);
-	return paths.some((file) => worktreeGone(file, ctx));
+	return !!cwd && cwd.deleted && (ctx.roots.some((root) => inside(cwd.dir, root)) || worktreeGone(cwd.dir, ctx));
 }
 
 function ancestors(rows: Map<number, ProcRow>, pid: number): Set<number> {
@@ -225,18 +253,22 @@ export function waitPatterns(script: string): string[] {
 	const patterns: string[] = [];
 	const pgrep = /\bpgrep((?:\s+-[A-Za-z]+)+)\s+(?:"([^"]*)"|'([^']*)'|([^\s;|&)'"]+))/g;
 	for (const m of script.matchAll(pgrep)) {
-		if (!/f/.test(m[1] ?? "")) continue;
+		const flags = m[1] ?? "";
+		if (!/f/.test(flags)) continue;
 		const pattern = m[2] ?? m[3] ?? m[4];
-		if (pattern) patterns.push(pattern);
+		if (pattern) patterns.push(/i/.test(flags) ? `(?i)${pattern}` : pattern);
 	}
 	return patterns;
 }
 
 function matcher(pattern: string): ((text: string) => boolean) | null {
-	if (/[$`\\]|\[\[:|\[\[\.|\[\[=/.test(pattern)) return null;
+	const caseless = pattern.startsWith("(?i)");
+	const body = caseless ? pattern.slice(4) : pattern;
+	if (body.length > 200 || /[+*}]\)[+*{]/.test(body)) return null;
+	if (/[$`\\]|\[\[:|\[\[\.|\[\[=/.test(body)) return null;
 	try {
-		const re = new RegExp(pattern);
-		return (text) => re.test(text);
+		const re = new RegExp(body, caseless ? "i" : "");
+		return (text) => re.test(text.slice(0, 8192));
 	} catch {
 		return null;
 	}
@@ -270,7 +302,12 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 	const loops: { proc: ProcRow; patterns: string[] }[] = [];
 	const longPipes: LongPipe[] = [];
 	const mine = rows.filter(
-		(proc) => proc.uid === ctx.uid && !self.has(proc.pid) && !init.has(proc.pid),
+		(proc) =>
+			proc.uid === ctx.uid &&
+			!self.has(proc.pid) &&
+			!init.has(proc.pid) &&
+			!ctx.protectedPids.has(proc.pid) &&
+			!proc.service,
 	);
 	for (const proc of mine) {
 		if (proc.state.startsWith("Z")) {
@@ -280,10 +317,11 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		const skip = (reason: string) => skipped.push({ pid: proc.pid, reason, command: shortCommand(proc.argv) });
 		const kind = kindOf(proc, ctx);
 		const cwd = cwdPath(proc);
-		const cwdInScope = !!cwd && ctx.roots.some((root) => inside(cwd.dir, root));
-		const stale = kind ? namesDeletedPath(proc, ctx) : false;
-		const orphan = init.has(proc.ppid);
-		if (kind && (cwdInScope || stale) && (orphan || stale) && proc.ageSec >= ctx.minAgeSec) {
+		const deletedCwd = kind ? cwdDeleted(proc, ctx) : false;
+		const cwdInScope = deletedCwd || (!!cwd && ctx.roots.some((root) => inside(cwd.dir, root)));
+		const inScope = cwdInScope || (kind ? namesDeletedPath(proc, ctx) : false);
+		const orphan = init.has(proc.ppid) || deletedCwd;
+		if (kind && inScope && orphan && proc.ageSec >= ctx.minAgeSec) {
 			candidates.push({ ...proc, kind });
 			continue;
 		}
@@ -298,15 +336,21 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 			continue;
 		}
 		if (!kind) continue;
-		if (!cwdInScope && !stale) skip("cwd outside repo");
-		else if (!orphan && !stale) skip("parent alive");
+		if (!inScope) skip("cwd outside repo");
+		else if (!orphan) skip("parent alive");
 		else skip("younger than min-age");
 	}
 	const loopPids = new Set(loops.map((l) => l.proc.pid));
 	const ignored = new Set<number>(self);
-	for (const pid of loopPids)
-		for (const child of descendants(rows, pid))
-			if (LOOP_HELPERS.has(base(child.argv[0])) || SHELLS.has(base(child.argv[0]))) ignored.add(child.pid);
+	const helpers = new Map<number, ProcRow[]>();
+	for (const { proc } of loops) {
+		const own = proc.argv.join("\0");
+		const mineOnly = descendants(rows, proc.pid).filter(
+			(child) => LOOP_HELPERS.has(base(child.argv[0])) || child.argv.join("\0") === own,
+		);
+		helpers.set(proc.pid, mineOnly);
+		for (const child of mineOnly) ignored.add(child.pid);
+	}
 	const others = rows.filter((proc) => !loopPids.has(proc.pid) && !ignored.has(proc.pid) && !proc.state.startsWith("Z"));
 	const stuckLoops: StuckLoop[] = [];
 	for (const { proc, patterns } of loops) {
@@ -335,8 +379,12 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 			continue;
 		}
 		const session =
-			ctx.sessionPid !== null && ancestors(byPid, proc.ppid).has(ctx.sessionPid) ? "current" : "other";
-		const members = [...descendants(rows, proc.pid), proc]
+			ctx.sessionPid !== null && ancestors(byPid, proc.ppid).has(ctx.sessionPid)
+				? "current"
+				: hasSessionAncestor(byPid, proc)
+					? "other"
+					: "none";
+		const members = [...(helpers.get(proc.pid) ?? []), proc]
 			.filter((member) => member.uid === ctx.uid)
 			.map((member) => ({ ...member, kind: "wait-loop" }));
 		stuckLoops.push({ pid: proc.pid, ppid: proc.ppid, ageSec: proc.ageSec, patterns, session, command, members });
@@ -426,6 +474,12 @@ function procStat(pid: number): { ppid: number; state: string; tty: boolean; sta
 	}
 }
 
+function procUid(pid: number): number {
+	const line = /^Uid:\s+(.*)$/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1] ?? "";
+	const ids = line.trim().split(/\s+/).map(Number);
+	return ids.length === 4 && ids.every((id) => id === ids[0]) ? (ids[0] ?? -1) : -1;
+}
+
 function linuxRows(): ProcRow[] {
 	const ticks = clockTicks();
 	const uptime = Number(readFileSync("/proc/uptime", "utf8").split(" ")[0]);
@@ -436,7 +490,8 @@ function linuxRows(): ProcRow[] {
 		try {
 			const stat = procStat(pid);
 			if (!stat) continue;
-			const uid = statSync(`/proc/${pid}`).uid;
+			const uid = procUid(pid);
+			const service = /\.service$/.test(readFileSync(`/proc/${pid}/cgroup`, "utf8").trim().split("\n")[0] ?? "");
 			const argv = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
 			if (argv.at(-1) === "") argv.pop();
 			let cwd: string | null = null;
@@ -453,6 +508,7 @@ function linuxRows(): ProcRow[] {
 				argv,
 				cwd,
 				startId: stat.start,
+				service,
 			});
 		} catch {}
 	}
