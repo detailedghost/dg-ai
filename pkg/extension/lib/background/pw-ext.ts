@@ -14,7 +14,6 @@ import {
 	type PwExtResponse,
 	type PwExtTool,
 	type PwExtVerb,
-	type RedactPattern,
 	redactLiterals,
 	redactSecrets,
 	redactText,
@@ -282,11 +281,11 @@ const UNSIGNED_JWT = {
 /** Redacts page output; an unmask grant leaves email addresses, and a secret fill value is always removed. */
 function mask(
 	text: string,
-	{ unmasked = false, secrets = [], extra = [] }: { unmasked?: boolean; secrets?: string[]; extra?: RedactPattern[] } = {},
+	{ unmasked = false, secrets = [] }: { unmasked?: boolean; secrets?: string[] } = {},
 ): string {
 	const redact = unmasked ? redactSecrets : redactText;
 	return redactLiterals(
-		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT, ...extra] }),
+		redact(text, [], { literals: secrets, extraPatterns: [SECRET_PAIR, NAMED_SECRET, UNSIGNED_JWT] }),
 		secrets,
 	);
 }
@@ -364,14 +363,29 @@ function shownUrl(tab: Pick<BrowserTab, "url">, unmasked = false, secrets: strin
 	return mask(tab.url as string, { unmasked, secrets });
 }
 
-const OUTLOOK_ACCOUNT = {
-	pattern: /^(.+? - ).+?( - Outlook)$/g,
-	replacement: "$1[redacted]$2",
-};
+const OUTLOOK_WORDS = new Set([
+	"mail",
+	"inbox",
+	"calendar",
+	"people",
+	"tasks",
+	"to do",
+	"files",
+	"search",
+	"settings",
+	"outlook",
+]);
+
+function outlookTitle(title: string): string {
+	const [first = "", ...rest] = title.split(" - ");
+	const head = OUTLOOK_WORDS.has(first.trim().toLowerCase()) ? first : "[redacted]";
+	return rest.length ? `${head} - [redacted]` : head;
+}
 
 function shownTitle(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string {
 	if (!allowedPage(tab.url) || mailbox(tab.url)) return "";
-	return mask(tab.title ?? "", { unmasked, secrets, extra: !unmasked && outlookWeb(tab.url) ? [OUTLOOK_ACCOUNT] : [] });
+	const title = tab.title ?? "";
+	return mask(!unmasked && outlookWeb(tab.url) && title ? outlookTitle(title) : title, { unmasked, secrets });
 }
 
 function pageLines(tab: Pick<BrowserTab, "url" | "title">, unmasked = false, secrets: string[] = []): string[] {

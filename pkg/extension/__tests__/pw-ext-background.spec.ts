@@ -1208,7 +1208,7 @@ describe("pw --ext unmask", () => {
 		])("masks the account name in the title on %s", async (url) => {
 			const h = harness({ tabs: outlookTab(url, "Mail - Test Person - Outlook") });
 			const text = outcome(await h.run({ verb: "current" }));
-			expect(text).toContain("- Page Title: Mail - [redacted] - Outlook");
+			expect(text).toContain("- Page Title: Mail - [redacted]");
 			expect(text).not.toContain("Test Person");
 		});
 
@@ -1219,6 +1219,20 @@ describe("pw --ext unmask", () => {
 			const text = outcome(await h.run({ verb: "current" }));
 			expect(text).not.toContain("test.person@example.com");
 			expect(text).not.toContain("Test Person");
+		});
+
+		it.each([
+			["no suffix", "Mail - Test Person", "Mail - [redacted]"],
+			["one part", "Test Person", "[redacted]"],
+			["localized text", "Correo - Persona de Prueba - Outlook", "[redacted] - [redacted]"],
+			["a new-app title", "Outlook (new)", "[redacted]"],
+			["a known word alone", "Calendar", "Calendar"],
+		])("fails closed on %s", async (_name, title, shown) => {
+			const h = harness({ tabs: outlookTab("https://outlook.office.com/mail/", title) });
+			const text = outcome(await h.run({ verb: "current" }));
+			expect(text).toContain(`- Page Title: ${shown}`);
+			expect(text).not.toContain("Test Person");
+			expect(text).not.toContain("Persona");
 		});
 
 		it("shows the full title during an unmask grant", async () => {
