@@ -95,7 +95,7 @@ describe("dialog shim", () => {
 		expect(dialogs[0]?.message).toBe("token=abc123def456 ada@clinic.test");
 	});
 
-	it("restores the native dialogs on remove, even through a kept reference, and wraps them again on install", () => {
+	it("restores the native dialogs on remove, even through a kept reference, and never wraps that page again", () => {
 		let nativeCalls = 0;
 		const native = () => {
 			nativeCalls++;
@@ -108,10 +108,15 @@ describe("dialog shim", () => {
 		pwExtDialogs({ kind: "remove" });
 		expect(page().confirm).toBe(native);
 		expect(kept.call(window, "x")).toBe(true);
-		expect(nativeCalls).toBe(1);
-		expect((pwExtDialogs({ kind: "read", markSeen: false }) as { pending?: unknown }).pending).toBeUndefined();
-		expect(page().confirm("again")).toBe(false);
-		expect(nativeCalls).toBe(1);
+		for (const action of [
+			{ kind: "install" },
+			{ kind: "read", markSeen: false },
+			{ kind: "answer", answer: "accept" },
+		] as const)
+			expect(pwExtDialogs(action, undefined, 10)).toEqual({ dialogs: [] });
+		expect(page().confirm).toBe(native);
+		expect(page().confirm("again")).toBe(true);
+		expect(nativeCalls).toBe(2);
 	});
 
 	it("drops the dialog records on remove, so the next session cannot read them", () => {

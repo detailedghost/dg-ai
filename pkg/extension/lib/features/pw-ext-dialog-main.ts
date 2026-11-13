@@ -21,7 +21,7 @@ export type PwExtDialogState = {
 	pending?: { answer: PwExtDialogAnswer; withText: boolean };
 };
 
-/** Self-contained MAIN-world shim that answers alert, confirm and prompt from a one-shot policy, so a dialog never blocks the page; it returns raw, bounded records. */
+/** Self-contained MAIN-world shim that answers alert, confirm and prompt from a one-shot policy, so a dialog never blocks the page; once removed, the document keeps its native dialogs. */
 export function pwExtDialogs(
 	action: PwExtDialogAction,
 	expectUrl?: string,
@@ -44,6 +44,7 @@ export function pwExtDialogs(
 			dialogs: PwExtDialogRecord[];
 			policy?: { answer: PwExtDialogAnswer; text?: string };
 			active: boolean;
+			removed: boolean;
 			owner?: number;
 			wrap(): void;
 			unwrap(): void;
@@ -58,6 +59,7 @@ export function pwExtDialogs(
 			const fresh: Slot = {
 				dialogs: [],
 				active: false,
+				removed: false,
 				wrap() {
 					Object.assign(target, wrappers);
 					fresh.active = true;
@@ -67,6 +69,7 @@ export function pwExtDialogs(
 					fresh.active = false;
 					fresh.policy = undefined;
 					fresh.dialogs.length = 0;
+					fresh.removed = true;
 				},
 			};
 			Object.defineProperty(win, KEY, { value: fresh, configurable: false });
@@ -106,14 +109,13 @@ export function pwExtDialogs(
 			slot = fresh;
 		}
 		if (action.kind === "remove") slot.unwrap();
-		else {
-			if (owner !== undefined && slot.owner !== owner) {
-				slot.dialogs.length = 0;
-				slot.policy = undefined;
-				slot.owner = owner;
-			}
-			if (!slot.active) slot.wrap();
+		if (slot.removed) return { dialogs: [] };
+		if (owner !== undefined && slot.owner !== owner) {
+			slot.dialogs.length = 0;
+			slot.policy = undefined;
+			slot.owner = owner;
 		}
+		if (!slot.active) slot.wrap();
 		if (action.kind === "answer")
 			slot.policy = { answer: action.answer, ...(action.text === undefined ? {} : { text: action.text }) };
 		const state: PwExtDialogState = {

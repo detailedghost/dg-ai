@@ -2107,15 +2107,6 @@ describe("pw --ext dialog", () => {
 		]);
 	});
 
-	it("does not install from a load event that a later group change overtook", async () => {
-		const h = harness();
-		h.fake.fireUpdated(7, { status: "loading" });
-		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
-		h.fake.fireUpdated(7, { groupId: -1 });
-		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "remove" }]);
-	});
-
 	it("still removes the shim when a load event follows the group change", async () => {
 		const h = harness();
 		h.fake.fireUpdated(7, { status: "loading" });
@@ -2151,14 +2142,6 @@ describe("pw --ext dialog", () => {
 		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
 		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }]]]);
 		expect(h.fake.record(SESSION)).toBeUndefined();
-	});
-
-	it("lets no install that was in flight follow the session cleanup", async () => {
-		const h = harness();
-		h.fake.fireUpdated(7, { status: "loading" });
-		await forgetAgentTabsAndShims({ browserApi: h.fake.api, agentTabs: h.agentTabs, sessionId: SESSION });
-		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(dialogCalls(h).at(-1)?.args[0]).toEqual({ kind: "remove" });
 	});
 
 	it("does not wait on the shim before new and select answer", async () => {

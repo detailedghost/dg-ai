@@ -28,8 +28,11 @@ tab of any agent group reports `loading` or `complete`, after `new`, `open`,
 `snapshot` verbs, which install it when it is missing. Each
 injection checks the document URL, so a page that changed in between gets
 nothing. When a tab leaves its agent group, or its dg session ends, the worker
-removes the shim and the native dialogs come back. A later event for a tab
-cancels an earlier one that is still in flight. It never injects into a user tab, a private tab, a
+removes the shim and the native dialogs come back. A page that lost its shim
+keeps its native dialogs until it navigates; the shim then refuses every later
+call, so a late call cannot turn it back on. A tab handed straight from one
+agent session to another keeps the shim, and the shim clears its records and
+pending answer for the new owner. It never injects into a user tab, a private tab, a
 mailbox origin or a browser page. The
 shim answers each dialog at once from a one-shot policy: dismiss by default, or
 the answer that `pw --ext dialog accept [--text <answer>]` or
@@ -55,6 +58,9 @@ verb at once.
   policy, including `--text`, and can forge dialog records. `dialog accept
   --text` therefore refuses a value the session filled as a secret, and the
   worker treats the records as untrusted page text.
+- **Bad:** a page that left an agent group, or whose session ended, keeps
+  native dialogs until it navigates, even when an agent takes it again. The
+  first verb that waits on such a page can stop at the 15 second deadline.
 - **Neutral:** `onbeforeunload` prompts are not handled.
 
 ## Alternatives considered

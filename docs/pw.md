@@ -120,6 +120,8 @@ Rules:
   `dialog` shows the last one, and `snapshot` lists the ones not yet shown under
   `### Dialog`. Dialog text is page content and is redacted like other output.
   The shim never runs in a user tab, on a mailbox origin or on a browser page.
+  When a tab leaves the agent's group or the session ends, the shim goes away,
+  and that page keeps its native dialogs until it navigates.
   A dialog that opens while a page loads, before the shim is in place, shows
   in the browser as usual. A verb then stops after 15 seconds with an error
   that asks you to close the dialog. The page can read the answer text that
