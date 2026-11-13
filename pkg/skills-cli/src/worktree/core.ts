@@ -8,7 +8,6 @@ import {
 	statSync,
 	utimesSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import {
 	branchExists,
@@ -17,6 +16,7 @@ import {
 	listWorktrees,
 	originBase,
 	warnLine,
+	worktreePrefix,
 } from "./shared";
 
 /** Create options shared by the worktree command and deps-upgrade. */
@@ -126,11 +126,7 @@ export async function createWorktree(
 	const origin = (worktrees[0] as { path: string }).path;
 	const prefix = options.prefix ?? "feature/";
 	const branch = `${prefix.endsWith("/") ? prefix : `${prefix}/`}${slug}`;
-	const homeCode = path.join(process.env.HOME ?? homedir(), "code");
-	const parent = origin.startsWith(`${homeCode}${path.sep}`)
-		? path.join(homeCode, "worktrees")
-		: path.dirname(origin);
-	let target = path.join(parent, `${path.basename(origin)}-${slug}`);
+	let target = `${worktreePrefix(origin)}${slug}`;
 	let base = options.base;
 	if (!base) {
 		base = await originBase(origin);
@@ -194,7 +190,7 @@ export async function createWorktree(
 			warn(`fetch origin/${base} failed — proceeding with local ref`);
 		}
 		info(`creating worktree: ${target} (branch ${branch} from origin/${base})`);
-		mkdirSync(parent, { recursive: true });
+		mkdirSync(path.dirname(target), { recursive: true });
 		try {
 			await gitOrThrow(
 				origin,
