@@ -265,6 +265,23 @@ describe("redactText without a process global", () => {
 	});
 });
 
+describe("email pattern", () => {
+	it("masks an email and scans a long run without an at sign in linear time", () => {
+		expect(redactText("to a.b+c@clinic.test now")).toBe("to [redacted] now");
+		expect(redactText("a@b.co,c@d.co")).toBe("[redacted],[redacted]");
+		const started = performance.now();
+		redactText(`${"a".repeat(200_000)} token=abcdefgh`);
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
+});
+
+describe("token prefixes", () => {
+	it("masks GitHub app and GitLab personal tokens", () => {
+		expect(redactText("a ghs_abcdefgh12345678 b glpat-abcdefgh12345678")).toBe("a [redacted] b [redacted]");
+		expect(redactSecrets("ghs_abcdefgh12345678")).toBe("[redacted]");
+	});
+});
+
 describe("redactSecrets", () => {
 	it("keeps email addresses but masks tokens, keys and literal secrets", () => {
 		const text = "user ada@example.test token=abc123def456 key sk-abcdefgh12345678 pass Hunter2-secret";

@@ -1776,6 +1776,32 @@ test("MSG.sessionDisconnect drops the session's unmask grants and remembered sec
 	expect(api.storage.session.remove).toHaveBeenCalledWith(`pwExtSecrets:${FIRST.sessionId}`);
 });
 
+test("MSG.sessionDisconnect drops the session's dg_ Web MCP grants", async () => {
+	const local = makeLocalArea(storedPairings(FIRST));
+	const { ask, api } = bootWithStored([], { local });
+	await settle();
+	await ask({ type: MSG.sessionDisconnect, sessionId: FIRST.sessionId });
+	await settle();
+
+	expect(api.storage.session.remove).toHaveBeenCalledWith(`webmcpGrants:${FIRST.sessionId}`);
+});
+
+test("a failed unmask cleanup still drops the session's dg_ Web MCP grants", async () => {
+	const local = makeLocalArea(storedPairings(FIRST));
+	const { ask, api } = bootWithStored([], { local });
+	await settle();
+	const remove = api.storage.session.remove as unknown as {
+		mockImplementation(fn: (key: string) => Promise<void>): void;
+	};
+	remove.mockImplementation(async (key: string) => {
+		if (key.startsWith("pwExtUnmask:")) throw new Error("storage broke");
+	});
+	await ask({ type: MSG.sessionDisconnect, sessionId: FIRST.sessionId });
+	await settle();
+
+	expect(api.storage.session.remove).toHaveBeenCalledWith(`webmcpGrants:${FIRST.sessionId}`);
+});
+
 test("adopt writes no key until a session-list confirms the session", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();

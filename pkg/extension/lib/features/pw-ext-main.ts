@@ -14,30 +14,15 @@ export type PwExtWebMcpResult =
 	| { api: "modelContext" | "modelContextTesting"; output: string }
 	| { error: string };
 
-/** Self-contained MAIN-world hook that records console.warn and console.error from its first call on. */
-export function pwExtConsoleHook(
-	expectUrl?: string,
-	unmask = false,
-): { entries: string[] } | { error: string } {
+/** Self-contained MAIN-world hook that records console.warn and console.error from its first call on; it returns raw, bounded entries. */
+export function pwExtConsoleHook(expectUrl?: string): { entries: string[] } | { error: string } {
 	try {
 		if (expectUrl !== undefined && document.URL !== expectUrl)
 			return { error: "The page changed; nothing was done. Retry." };
 		const MAX_ENTRIES = 50;
-		const MAX_CHARS = 500;
-		const REDACTED = "[redacted]";
-		const PATTERNS: [RegExp, string][] = [
-			[/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, `Bearer ${REDACTED}`],
-			[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
-			[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, REDACTED],
-			[/((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi, `$1${REDACTED}`],
-			...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
-		];
-		const bounded = (value: string): string => {
-			let out = value.length > 20_000 ? value.slice(0, 20_000) : value;
-			for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
-			out = out.replace(/\s+/g, " ");
-			return out.length > MAX_CHARS ? `${out.slice(0, MAX_CHARS)}…` : out;
-		};
+		const RAW_MAX = 2000;
+		const bounded = (value: string): string =>
+			value.length > RAW_MAX ? `${value.slice(0, RAW_MAX)}…` : value;
 		const KEY = Symbol.for("dg.pwExt.consoleHook");
 		const win = document.defaultView as unknown as Window &
 			Record<symbol, unknown>;
@@ -88,29 +73,19 @@ export function pwExtConsoleHook(
 	}
 }
 
-/** Self-contained MAIN-world WebMCP reader and caller; it runs the page's own tool code only for call. */
+/** Self-contained MAIN-world WebMCP reader and caller; it runs the page's own tool code only for call, and returns raw, bounded text. */
 export async function pwExtWebMcp(
 	action: PwExtWebMcpAction,
 	expectUrl?: string,
-	unmask = false,
 ): Promise<PwExtWebMcpResult> {
 	const MAX_TOOLS = 100;
-	const DESCRIPTION_MAX = 1000;
-	const SCHEMA_MAX = 4000;
-	const OUTPUT_MAX = 50_000;
-	const REDACTED = "[redacted]";
-	const PATTERNS: [RegExp, string][] = [
-		[/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, `Bearer ${REDACTED}`],
-		[/\b(?:sk|pk|rk|ghp|gho|ghs|github_pat|glpat|xox[baprs]|AKIA)[-_A-Za-z0-9]{8,}\b/g, REDACTED],
-		[/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, REDACTED],
-		[/((?:password|passwd|secret|token|api[-_]?key|session)\s*[:=]\s*)[^\s&,;"']+/gi, `$1${REDACTED}`],
-		...(unmask ? [] : [[/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED] as [RegExp, string]]),
-	];
-	const clip = (value: string, max: number) => {
-		let out = value.length > max * 4 ? value.slice(0, max * 4) : value;
-		for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
-		return out.length > max ? `${out.slice(0, max)}…` : out;
-	};
+	const LIST_BUDGET = 120_000;
+	const DESCRIPTION_MAX = 2000;
+	const SCHEMA_MAX = 8000;
+	const ANNOTATIONS_MAX = 1000;
+	const OUTPUT_MAX = 100_000;
+	const ENCODED_MAX = 140_000;
+	const clip = (value: string, max: number) => (value.length > max ? `${value.slice(0, max)}…` : value);
 	const changed = () => expectUrl !== undefined && document.URL !== expectUrl;
 	const CHANGED = { error: "The page changed; nothing was done. Retry." };
 	const withTimeout = async <T,>(work: Promise<T>, ms: number, what: string): Promise<T> => {
@@ -126,25 +101,22 @@ export async function pwExtWebMcp(
 			clearTimeout(timer);
 		}
 	};
-	const json = (value: unknown, max: number): string | undefined => {
-		if (value === undefined || value === null) return undefined;
+	const json = (value: unknown): string => {
+		if (value === undefined || value === null) return "";
 		try {
 			const out = typeof value === "string" ? value : JSON.stringify(value);
-			return typeof out === "string" ? clip(out, max) : undefined;
+			return typeof out === "string" ? out : "";
 		} catch {
-			return undefined;
+			return "";
 		}
 	};
 	const wholeJson = (value: unknown, max: number): string | undefined => {
 		if (value === undefined || value === null) return undefined;
 		try {
 			const raw = typeof value === "string" ? value : JSON.stringify(value);
-			if (typeof raw !== "string" || raw.length > max * 4) return undefined;
-			let out = raw;
-			for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
-			if (out.length > max) return undefined;
-			JSON.parse(out);
-			return out;
+			if (typeof raw !== "string" || raw.length > max) return undefined;
+			JSON.parse(raw);
+			return raw;
 		} catch {
 			return undefined;
 		}
@@ -222,18 +194,22 @@ export async function pwExtWebMcp(
 			if (changed()) return CHANGED;
 		}
 		if (action.kind === "tools") {
-			const tools: PwExtTool[] = list.map((tool) => {
+			const tools: PwExtTool[] = [];
+			let used = 0;
+			for (const tool of list) {
 				const entry: PwExtTool = {
-					name: clip(String(tool.name ?? ""), 128),
+					name: clip(String(tool.name ?? ""), 256),
 					description: clip(String(tool.description ?? ""), DESCRIPTION_MAX),
 				};
-				if (typeof tool.title === "string") entry.title = clip(tool.title, 200);
+				if (typeof tool.title === "string") entry.title = clip(tool.title, 400);
 				const schema = wholeJson(tool.inputSchema, SCHEMA_MAX);
 				if (schema) entry.inputSchema = schema;
-				const annotations = wholeJson(tool.annotations, 500);
+				const annotations = wholeJson(tool.annotations, ANNOTATIONS_MAX);
 				if (annotations) entry.annotations = annotations;
-				return entry;
-			});
+				used += JSON.stringify(entry).length;
+				if (used > LIST_BUDGET) break;
+				tools.push(entry);
+			}
 			return { api, tools };
 		}
 		const tool = list.find((candidate) => candidate.name === action.tool);
@@ -254,10 +230,13 @@ export async function pwExtWebMcp(
 					: legacy!.executeTool(action.tool, JSON.stringify(action.args)),
 				timeout,
 			]);
-			return {
-				api,
-				output: clip(json(output, OUTPUT_MAX + 1) ?? "", OUTPUT_MAX),
-			};
+			let text = clip(json(output), OUTPUT_MAX);
+			for (let round = 0; round < 4; round++) {
+				const encoded = JSON.stringify(text).length;
+				if (encoded <= ENCODED_MAX) break;
+				text = clip(text, Math.floor((text.length * ENCODED_MAX) / encoded / 1.1));
+			}
+			return { api, output: text };
 		} finally {
 			clearTimeout(timer);
 		}

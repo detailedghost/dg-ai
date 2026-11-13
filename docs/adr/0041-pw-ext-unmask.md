@@ -62,6 +62,12 @@ session (at most 50 values) and removes it from all later output of that
 session, and the result says only `filled <field>`. Without a grant, the refusal
 names `pw --ext unmask`.
 
+The page MAIN world gets no grant state and no held secret. The `console` hook
+and the WebMCP reader in that world do not mask. They return raw text with size
+caps, and an ellipsis marks each cut. The worker then masks the held secrets and
+the token patterns in one pass, and only after that shortens the text. A pattern
+match can thus not split a held secret and leave part of it in the output.
+
 An extension that does not list `unmask` in its `pwExtVerbs` handshake refuses
 the verb at once.
 
