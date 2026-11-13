@@ -65,13 +65,14 @@ write with no daemon running at all.
 `dg-skills credentials set|list|delete` keeps secrets encrypted in
 dg-daemon's `credentials.db`. `set` reads the value from stdin or a hidden
 prompt, and no command prints it. `grant|revoke` manage read-only service
-tokens. `exec <name>[=ENV_VAR]... -- <command>` runs a command with stored
-values in environment variables or `{{cred:<name>}}` arguments, and replaces
-each value in the command's output, also in base64 and URL-encoded form, with
-`[redacted]`. A `{{cred:<name>}}` argument shows in the process list to other
-local users, so prefer an environment variable. Output that the command
-transforms (for example reversed or hex) cannot be scrubbed. `pw --ext
-credential save` writes values under `pw/<site>/`.
+tokens. `exec <name>[=ENV_VAR]... -- <command>` has dg-daemon run the command
+with the named values in environment variables. The CLI never receives a value.
+The daemon replaces each value in the command's output, also in base64 and
+URL-encoded form, with `[redacted]`. The command gets no stdin. Values under
+`pw/`, which `pw --ext credential save` writes, are never returned by `get`;
+only `exec` and `list` reach them. A command that changes the value before it
+prints it (for example reverses it) can still show it, so `exec` keeps values
+out of the agent's view by accident, not against an agent that tries.
 Start a session with `dg-agent start` first. See the
 [developer guide](DEVELOPER.md#credential-store).
 

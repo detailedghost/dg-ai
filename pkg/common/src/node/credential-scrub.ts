@@ -1,4 +1,4 @@
-import { REDACTED } from "@dg/common";
+import { REDACTED } from "../redact";
 
 const MIN_FORM_LENGTH = 4;
 

@@ -132,9 +132,26 @@ conditions only:
   reads it; it accepts it only from the extension peer with a valid session
   token for an active session, stores it encrypted as
   `pw/<registrable domain>/<name>`, and replies with the name only. The
-  extension peer still cannot `get` it. `dg-skills credentials exec` gives a
-  command the value in its environment or arguments and replaces each value
-  form in its output with `[redacted]`.
+  extension peer still cannot `get` it.
+- **Exec in the daemon (Dante, 2026-11-13, option a).** A session `get`, and
+  a grant-scoped `get`, is refused for every name under `pw/`, with an error
+  that holds no value. `dg-skills credentials exec <name>[=ENV]... -- <cmd>`
+  sends only names, the command, the working directory and the CLI's
+  environment to dg-daemon. The daemon resolves the values, spawns the child
+  with the values in environment variables and no stdin, scrubs its stdout
+  and stderr (literal, base64, base64url, URL-encoded and form forms, also
+  split across chunks), and streams only scrubbed text back. It kills the
+  child when the CLI disconnects. The CLI process never holds a value, and no
+  value is in a process argument list. The `{{cred:name}}` argument form is
+  removed.
+- **What this does not block.** The agent chooses the command. A command
+  that transforms the value before it prints it (for example
+  `sh -c 'echo $X | rev'`), writes it to a file, or sends it over the network
+  can still expose it. A process of the same user can also read the child's
+  environment while it runs. So `pw/` values are protected against accidental
+  exposure in agent output, not against an agent that tries on purpose. A
+  stronger step, an allowlist of exec commands that the human sets, is an
+  open decision and is not built.
 - **Saved values mask later output.** Before the store frame goes out, the
   worker reserves the value with the session's held secrets in
   `storage.session`, so all later output of the session masks it, also after

@@ -11,9 +11,7 @@ import {
 	resolveDgPaths,
 } from "@dg/common/node";
 import type { Command } from "commander";
-import { constants } from "node:os";
 import { runSubtree } from "../utils/lazy-command";
-import { scrubStream, scrubText } from "./scrub";
 
 const EXPIRING_WITHIN_MS = 14 * 86_400_000;
 
@@ -22,47 +20,17 @@ export type CredentialsDeps = {
 		session?: string,
 	): Pick<
 		CredentialClient,
-		"set" | "get" | "list" | "delete" | "grant" | "revoke" | "listGrants" | "close"
+		"set" | "exec" | "list" | "delete" | "grant" | "revoke" | "listGrants" | "close"
 	>;
 	readValue(): Promise<string>;
 	write(line: string): void;
 	now(): Date;
-	spawn?(command: string[], env: Record<string, string>): SpawnedChild;
 	stdout?(text: string): void;
 	stderr?(text: string): void;
 	exit?(code: number): void;
 };
 
-export type SpawnedChild = {
-	stdout: ReadableStream<Uint8Array>;
-	stderr: ReadableStream<Uint8Array>;
-	exited: Promise<number>;
-};
-
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const PLACEHOLDER = /\{\{cred:([^}]*)\}\}/g;
-
-/** Spawns with the parent env plus extras, inherited stdin and piped output; a signal exit maps to 128 plus its number. */
-export function spawnChild(
-	command: string[],
-	env: Record<string, string>,
-): SpawnedChild {
-	const proc = Bun.spawn(command, {
-		env: { ...process.env, ...env },
-		stdin: "inherit",
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	return {
-		stdout: proc.stdout,
-		stderr: proc.stderr,
-		exited: proc.exited.then((code) => {
-			const signal = proc.signalCode;
-			if (!signal) return code;
-			return 128 + (constants.signals[signal as keyof typeof constants.signals] ?? -127);
-		}),
-	};
-}
 
 export function derivedEnvName(name: string): string {
 	return name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
@@ -139,7 +107,6 @@ export async function readCredentialValue(): Promise<string> {
 }
 
 const defaultDeps: CredentialsDeps = {
-	spawn: spawnChild,
 	stdout: (text) => process.stdout.write(text),
 	stderr: (text) => process.stderr.write(text),
 	exit: (code) => {
@@ -189,7 +156,7 @@ function listEntry(credential: CredentialSummary, now: Date) {
 	};
 }
 
-/** Registers list, set, delete, grant, revoke and exec; no subcommand prints a stored value or token. */
+/** Registers list, set, delete, grant, revoke and exec; no subcommand prints a stored value or token, and exec runs in the daemon. */
 export function registerCredentials(
 	program: Command,
 	deps: CredentialsDeps = defaultDeps,
@@ -314,7 +281,7 @@ export function registerCredentials(
 	credentials
 		.command("exec")
 		.description(
-			"Run a command with credentials in env vars or {{cred:<name>}} args; values are scrubbed from its output",
+			"Have dg-daemon run a command with credentials in env vars; the CLI never holds a value, and output is scrubbed",
 		)
 		.usage("<name>[=ENV_VAR]... -- <command...>")
 		.argument("[args...]", "credential names, then -- and the command")
@@ -327,56 +294,20 @@ export function registerCredentials(
 			const split = raw.indexOf("--");
 			if (split === -1) throw new Error("Put -- between the credential names and the command.");
 			const bindings = parseBindings(raw.slice(0, split));
-			const template = raw.slice(split + 1);
-			if (template.length === 0) throw new Error("Give a command to run after --.");
-			if (bindings.length === 0 && !template.some((arg) => arg.includes("{{cred:")))
-				throw new Error("Name at least one credential or use a {{cred:<name>}} placeholder.");
-
-			const wanted = new Map<string, string | undefined>();
-			for (const { name } of bindings) wanted.set(name, undefined);
-			const placeholders = template.flatMap((arg) =>
-				[...arg.matchAll(PLACEHOLDER)].map((match) => validateCredentialName(match[1])),
-			);
-			for (const name of placeholders) wanted.set(name, undefined);
-
-			const known = () => [...wanted.values()].filter((v): v is string => v !== undefined);
-			const safe = (error: unknown) =>
-				scrubText(error instanceof Error ? error.message : String(error), known());
-
-			await withClient(command, async (client) => {
-				for (const name of wanted.keys()) {
-					let record: Awaited<ReturnType<typeof client.get>>;
-					try {
-						record = await client.get(name);
-					} catch {
-						throw new Error(`Could not read credential "${name}" from the store.`);
-					}
-					if (!record) throw new Error(`Credential "${name}" not found.`);
-					wanted.set(name, record.value);
-				}
-			});
-
-			const env: Record<string, string> = {};
-			for (const { name, env: envName } of bindings) env[envName] = wanted.get(name) ?? "";
-			const argv = template.map((arg) =>
-				arg.replace(PLACEHOLDER, (_, name: string) => wanted.get(validateCredentialName(name)) ?? ""),
-			);
-			const values = known();
+			const argv = raw.slice(split + 1);
+			if (argv.length === 0) throw new Error("Give a command to run after --.");
+			if (bindings.length === 0) throw new Error("Name at least one credential before --.");
 			const out = deps.stdout ?? process.stdout.write.bind(process.stdout);
 			const err = deps.stderr ?? process.stderr.write.bind(process.stderr);
-
-			let child: SpawnedChild;
-			try {
-				child = (deps.spawn ?? spawnChild)(argv, env);
-			} catch (error) {
-				throw new Error(`Could not start "${scrubText(template[0], values)}": ${safe(error)}`);
-			}
-			const [, , code] = await Promise.all([
-				scrubStream(child.stdout, out, values),
-				scrubStream(child.stderr, err, values),
-				child.exited,
-			]);
-			(deps.exit ?? ((c) => { process.exitCode = c; }))(code);
+			const env = Object.fromEntries(
+				Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string" && ENV_NAME.test(entry[0])),
+			);
+			await withClient(command, async (client) => {
+				const code = await client.exec({ bindings, argv, cwd: process.cwd(), env }, (stream, data) =>
+					(stream === "stdout" ? out : err)(data),
+				);
+				(deps.exit ?? ((c) => { process.exitCode = c; }))(code);
+			});
 		});
 }
 

@@ -128,10 +128,9 @@ describe("pw --ext credential save through the daemon", () => {
 		const listed = await credentials(cli, cliFrames, "list");
 		expect(JSON.stringify(listed)).toContain("pw/live.com/owa-token");
 		const got = await credentials(cli, cliFrames, "get", "pw/live.com/owa-token");
-		expect((got.value as { value: string }).value).toBe(MARKER);
+		expect(got).toMatchObject({ ok: false, error: expect.stringContaining("never returned") });
 
-		const toCli = cliFrames.filter((frame) => (frame as Frame).requestId !== got.requestId);
-		expect(JSON.stringify(toCli)).not.toContain(MARKER);
+		expect(JSON.stringify(cliFrames)).not.toContain(MARKER);
 		expect(JSON.stringify(extensionFrames)).not.toContain(MARKER);
 		for (const file of filesUnder(dgHome as string))
 			expect(readFileSync(file).includes(Buffer.from(MARKER))).toBe(false);
@@ -147,6 +146,67 @@ describe("pw --ext credential save through the daemon", () => {
 		const listed = await credentials(cli, cliFrames, "list");
 		expect(JSON.stringify(listed)).not.toContain("pw/");
 		expect(JSON.stringify([...cliFrames, ...extensionFrames])).not.toContain(MARKER);
+	});
+
+	it("runs exec in the daemon: the child gets the value, and every frame to the CLI is scrubbed", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const script = [
+			"const v = process.env.TOKEN;",
+			"const forms = [v, Buffer.from(v).toString('base64'), Buffer.from(v).toString('base64url'), encodeURIComponent(v), new URLSearchParams({ v }).toString().slice(2)];",
+			"process.stdout.write('len=' + v.length + ' ' + forms.join(' ') + ' ' + v.slice(0, 9));",
+			"await Bun.sleep(30);",
+			"process.stdout.write(v.slice(9) + '\\n');",
+			"process.stderr.write('err ' + v + '\\n');",
+			"process.exit(7);",
+		].join("\n");
+		const requestId = randomUUID();
+		send(cli, {
+			type: "cli-credentials-request",
+			requestId,
+			operation: "exec",
+			exec: {
+				bindings: [{ name: "pw/live.com/owa-token", env: "TOKEN" }],
+				argv: [process.execPath, "-e", script],
+				cwd: process.cwd(),
+				env: { PATH: process.env.PATH ?? "" },
+			},
+		});
+		const done = await waitForValue(
+			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-result" && (raw as Frame).requestId === requestId) as Frame | undefined,
+			10_000,
+			"exec result",
+		);
+		expect(done).toMatchObject({ ok: true, value: { exitCode: 7 } });
+		const output = cliFrames
+			.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).requestId === requestId)
+			.map((raw) => `${(raw as Frame).stream}:${(raw as Frame).data}`)
+			.join("");
+		expect(output).toContain(`len=${MARKER.length}`);
+		expect(output).toContain("[redacted]");
+		for (const form of [MARKER, Buffer.from(MARKER).toString("base64"), Buffer.from(MARKER).toString("base64url"), encodeURIComponent(MARKER)])
+			expect(JSON.stringify(cliFrames)).not.toContain(form);
+	});
+
+	it("refuses exec from the extension socket and for a missing name, with no value", async () => {
+		const { cli, cliFrames, socket, extensionFrames } = await boot();
+		const exec = (name: string) => ({
+			type: "cli-credentials-request",
+			requestId: randomUUID(),
+			operation: "exec",
+			exec: { bindings: [{ name, env: "X" }], argv: ["true"], cwd: process.cwd(), env: {} },
+		});
+		const fromExtension = exec("pw/live.com/owa-token");
+		send(socket, fromExtension);
+		expect(await find(extensionFrames, "cli-credentials-result", fromExtension.requestId)).toMatchObject({ ok: false });
+		const missing = exec("pw/live.com/none");
+		send(cli, missing);
+		expect(await find(cliFrames, "cli-credentials-result", missing.requestId)).toMatchObject({
+			ok: false,
+			error: "No credential named pw/live.com/none.",
+		});
 	});
 
 	it("does not let the extension read a saved value back", async () => {

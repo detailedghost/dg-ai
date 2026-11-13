@@ -97,9 +97,11 @@ group, until the human hands you a tab from the extension popup.
   `pw --ext fetch /path --auth page`. To use a sign-in value outside the
   browser, run `pw --ext credential save <name> --from header:Authorization`
   (or `cookie:`, `local:`, `session:`), then
-  `dg-skills credentials exec pw/<site>/<name>=TOKEN -- <command>`. You never
-  see the value, and you must not try to print it. These ask the human once
-  per site and session.
+  `dg-skills credentials exec pw/<site>/<name>=TOKEN -- <command>`. dg-daemon
+  runs the command, the value is only in its environment, and its output is
+  scrubbed. The command gets no stdin. You never see the value, and you must
+  not try to print or transform it. These ask the human once per site and
+  session.
 - Browser settings pages, extension pages, private windows and the signed-in
   Proton Mail tab are refused. Ask the human to hand you a web page tab.
   `tabs`, `new` and `close` still work when the selected tab is a settings page,

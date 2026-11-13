@@ -59,13 +59,37 @@ export type CredentialsCliRequest = {
 		| "delete"
 		| "grant"
 		| "revoke"
-		| "grant-list";
+		| "grant-list"
+		| "exec";
 	name?: string;
+	exec?: CredentialExecSpec;
 	value?: string;
 	meta?: CredentialMeta;
 	prefix?: string;
 	grant?: CredentialGrantAuth;
 };
+/** A command that dg-daemon runs with stored values in env vars; the CLI never receives the values. */
+export type CredentialExecSpec = {
+	bindings: { name: string; env: string }[];
+	argv: string[];
+	cwd: string;
+	env: Record<string, string>;
+};
+/** One scrubbed chunk of the output of a command that dg-daemon runs for exec. */
+export type CredentialsExecOutput = {
+	type: "cli-credentials-exec-output";
+	sessionId: string;
+	requestId: string;
+	stream: "stdout" | "stderr";
+	data: string;
+};
+export const CREDENTIAL_EXEC_MAX_BINDINGS = 16;
+export const CREDENTIAL_EXEC_MAX_ARGS = 256;
+export const CREDENTIAL_EXEC_MAX_BYTES = 262_144;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+/** Names under this prefix are refused to session get; only exec and list reach them. */
+export const CREDENTIAL_SEALED_PREFIX = "pw";
+
 /** Daemon reply matched to the session/request pair; a get value must never be printed. */
 export type CredentialsCliResult = {
 	type: "cli-credentials-result";
@@ -183,6 +207,7 @@ export function validateCredentialsCliRequest(
 		grant: ["prefix"],
 		revoke: ["prefix"],
 		"grant-list": [],
+		exec: ["exec"],
 	};
 	requireOneOf(value.operation, "credentials CLI request.operation", [
 		"set",
@@ -192,6 +217,7 @@ export function validateCredentialsCliRequest(
 		"grant",
 		"revoke",
 		"grant-list",
+		"exec",
 	]);
 	const allowed = [
 		"type",
@@ -223,5 +249,30 @@ export function validateCredentialsCliRequest(
 		validateCredentialValue(value.value);
 		validateCredentialMeta(value.meta);
 	}
+	if (value.operation === "exec") validateExecSpec(value.exec);
 	return value as CredentialsCliRequest;
+}
+
+function validateExecSpec(value: unknown): void {
+	const path = "credentials CLI request.exec";
+	requireRecord(value, path);
+	for (const key of Object.keys(value))
+		if (!["bindings", "argv", "cwd", "env"].includes(key)) fail(`${path}.${key} is not supported`);
+	if (!Array.isArray(value.bindings) || value.bindings.length === 0 || value.bindings.length > CREDENTIAL_EXEC_MAX_BINDINGS)
+		fail(`${path}.bindings must hold 1 to ${CREDENTIAL_EXEC_MAX_BINDINGS} entries`);
+	for (const binding of value.bindings as unknown[]) {
+		requireRecord(binding, `${path}.bindings[]`);
+		binding.name = validateCredentialName(binding.name);
+		if (typeof binding.env !== "string" || !ENV_NAME.test(binding.env))
+			fail(`${path}.bindings[].env must be an environment variable name`);
+	}
+	requireStringArray(value.argv, `${path}.argv`);
+	if ((value.argv as string[]).length === 0 || (value.argv as string[]).length > CREDENTIAL_EXEC_MAX_ARGS)
+		fail(`${path}.argv must hold 1 to ${CREDENTIAL_EXEC_MAX_ARGS} arguments`);
+	requireString(value.cwd, `${path}.cwd`, { nonEmpty: true });
+	if (!/^(\/|[A-Za-z]:[\\/])/.test(value.cwd as string)) fail(`${path}.cwd must be an absolute path`);
+	requireRecord(value.env, `${path}.env`);
+	for (const [key, entry] of Object.entries(value.env))
+		if (!ENV_NAME.test(key) || typeof entry !== "string") fail(`${path}.env must map names to strings`);
+	if (byteLength(JSON.stringify(value)) > CREDENTIAL_EXEC_MAX_BYTES) fail(`${path} exceeds ${CREDENTIAL_EXEC_MAX_BYTES} bytes`);
 }
