@@ -431,7 +431,8 @@ received PHI image goes into the vault instead; see [The PHI vault](#the-phi-vau
 ## The PHI vault
 
 ```bash
-dg-agent phone vault add lab-1 ./result.txt       # or stdin; prints name, size, and dates only
+dg-agent phone vault add lab-1 ./result.txt       # or - for stdin; prints the lowercase name, size, and dates only
+dg-agent phone vault add lab-1 -
 dg-agent phone vault list                         # names, sizes, types, senders, dates; never content
 dg-agent phone text +grok --vault lab-1           # sends the item; implies --phi
 dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize   # item on stdin, stdout to a new item
@@ -440,9 +441,10 @@ dg-agent phone vault rm lab-1
 
 The vault holds PHI that you can use but never read. Each item is
 AES-256-GCM encrypted under a weekly key in the dg credential store
-(`phone-vault/<yyyy>-W<ww>`, one per ISO week by local time), and each key is
-deleted 48 hours after its week ends. Every item expires 24 hours after it was stored. Vault commands
-refuse when the credential store is not reachable.
+(`phone-vault/<yyyy>-w<ww>`, one per ISO week by local time; `yyyy-W<ww>` is the same week), and each key is
+deleted 48 hours after its week ends. Every item expires 24 hours after it was stored. A name's letters may be
+any case; it is stored in lowercase, so `Lab` and `lab` are one item. `vault add` reads stdin when the file is omitted or is `-`.
+Vault commands refuse when the credential store is not reachable. A store that is up and rejects a name reports that rejection.
 
 A received `dg-phi` text or image goes straight into the vault. `unread`,
 `messages`, and the `--on-message` JSON show only

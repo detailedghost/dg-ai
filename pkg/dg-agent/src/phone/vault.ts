@@ -41,16 +41,17 @@ export type VaultKeyDeps = VaultDeps & { paths: Pick<DgPaths, "phoneRoot"> };
 export type PeriodKey = { period: string; key: Buffer };
 
 export function isVaultName(name: string): boolean {
-	return NAME_PATTERN.test(name) && !name.includes("..");
+	return NAME_PATTERN.test(name.toLowerCase()) && !name.includes("..");
 }
 
+/** Accepts either letter case and returns the lowercase form that is stored and looked up. */
 export function assertVaultName(name: string): string {
-	if (!isVaultName(name)) throw new DgCliError(`vault name "${name}" must match ^[a-z0-9][a-z0-9._-]{0,63}$ with no ..`);
-	return name;
+	if (!isVaultName(name)) throw new DgCliError(`vault name "${name}" must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ with no ..`);
+	return name.toLowerCase();
 }
 
 export function vaultKeyName(period: string): string {
-	return `${VAULT_GRANT_PREFIX}/${period}`;
+	return `${VAULT_GRANT_PREFIX}/${period.toLowerCase()}`;
 }
 
 function pad(value: number): string {
@@ -59,7 +60,7 @@ function pad(value: number): string {
 
 const PERIOD_DAYS = 7;
 const KEY_GRACE_SECONDS = 48 * 60 * 60;
-const PERIOD_PATTERN = /^(\d{4})-W(\d{2})$/;
+const PERIOD_PATTERN = /^(\d{4})-[Ww](\d{2})$/;
 
 function isoWeekMonday(at: Date): Date {
 	const monday = new Date(at.getFullYear(), at.getMonth(), at.getDate());
@@ -67,7 +68,7 @@ function isoWeekMonday(at: Date): Date {
 	return monday;
 }
 
-/** The ISO 8601 week, by local time, that holds `at` (epoch seconds) moved by `offset` whole weeks, as yyyy-Www. */
+/** The ISO 8601 week, by local time, that holds `at` (epoch seconds) moved by `offset` whole weeks, as yyyy-wnn. */
 export function keyPeriod(at: number, offset = 0): string {
 	const date = new Date(at * 1000);
 	date.setDate(date.getDate() + offset * PERIOD_DAYS);
@@ -76,11 +77,11 @@ export function keyPeriod(at: number, offset = 0): string {
 	const year = thursday.getFullYear();
 	const dayOfYear = Math.round((thursday.getTime() - new Date(year, 0, 1).getTime()) / 86_400_000);
 	const week = Math.floor(dayOfYear / PERIOD_DAYS) + 1;
-	return `${year}-W${pad(week)}`;
+	return `${year}-w${pad(week)}`;
 }
 
-/** Epoch seconds when the period ends, the next Monday 00:00 local; undefined when `period` is not a period name. */
-function periodEnd(period: string): number | undefined {
+/** Epoch seconds when the period ends, the next Monday 00:00 local; undefined when `period` is not `yyyy-wnn` or `yyyy-Wnn`. */
+export function keyPeriodEnd(period: string): number | undefined {
 	const match = PERIOD_PATTERN.exec(period);
 	if (!match) return undefined;
 	const year = Number(match[1]);
@@ -122,6 +123,35 @@ function unreachable(): DgCliError {
 	return new DgCliError("the vault needs the dg credential store, which is not reachable; start it with dg-agent start");
 }
 
+/** A failure to reach the daemon, not a rejection of a request the daemon could answer. */
+function storeDown(err: unknown): boolean {
+	return err instanceof Error && /not reachable|dg-daemon is not running|no live dg-daemon pid file|cannot connect to dg-daemon|timed out connecting to dg-daemon/.test(err.message);
+}
+
+function grantMiss(err: unknown): boolean {
+	return err instanceof Error && err.message.includes("no credential grant");
+}
+
+type SessionOutcome<T> = { ok: true; value: T } | { ok: false; error?: unknown; down?: boolean };
+
+/** Runs `work` on a session. `down` is a connection failure; `error` is a rejection from a store that answered. */
+async function sessionWork<T>(deps: VaultDeps, work: (client: KeyClient) => Promise<T>): Promise<SessionOutcome<T>> {
+	let client: KeyClient | undefined;
+	try {
+		client = await deps.sessionClient();
+	} catch (error) {
+		return storeDown(error) ? { ok: false, down: true } : { ok: false, error };
+	}
+	if (!client) return { ok: false };
+	try {
+		return { ok: true, value: await work(client) };
+	} catch (error) {
+		return storeDown(error) ? { ok: false, down: true } : { ok: false, error };
+	} finally {
+		client.close();
+	}
+}
+
 function decodeKey(period: string, value: string): Buffer {
 	if (!/^[0-9a-f]{64}$/.test(value)) throw new DgCliError(`the credential ${vaultKeyName(period)} does not hold a vault key`);
 	return Buffer.from(value, "hex");
@@ -137,7 +167,7 @@ async function withSession<T>(deps: VaultDeps, work: (client: KeyClient) => Prom
 	}
 }
 
-/** Reads a period key through the grant, else a session; throws when neither reaches the store. */
+/** Reads a period key through the grant, else a session. A rejection is rethrown; only a missed connection becomes unreachable. */
 async function readPeriodKey(deps: VaultDeps, period: string): Promise<Buffer | undefined> {
 	const name = vaultKeyName(period);
 	let value: string | undefined;
@@ -149,10 +179,12 @@ async function readPeriodKey(deps: VaultDeps, period: string): Promise<Buffer | 
 		} finally {
 			client.close();
 		}
-	} catch {
-		const viaSession = await withSession(deps, async (client) => ({ value: (await client.get(name))?.value })).catch(() => undefined);
-		if (!viaSession) throw unreachable();
-		value = viaSession.value;
+	} catch (err) {
+		const via = await sessionWork(deps, async (client) => (await client.get(name))?.value);
+		if (via.ok) value = via.value;
+		else if (via.error) throw via.error;
+		else if (!storeDown(err) && !grantMiss(err)) throw err;
+		else throw unreachable();
 	}
 	return value === undefined ? undefined : decodeKey(period, value);
 }
@@ -174,18 +206,23 @@ async function makePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer
 	if (stored) return stored;
 	const name = vaultKeyName(period);
 	const value = randomBytes(KEY_BYTES).toString("hex");
-	const made = await withSession(deps, async (client) => {
+	const made = await sessionWork(deps, async (client) => {
 		try {
 			await client.set(name, value, { createdBy: "dg-agent phone vault" });
 			await client.grant(VAULT_GRANT_PREFIX);
 			return await readPeriodKey(deps, period);
-		} catch {
+		} catch (err) {
 			await cleanUpOrphan(client, name, value);
-			throw unreachable();
+			throw err;
 		}
 	});
-	if (!made) throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
-	return made;
+	if (!made.ok) {
+		if (made.error) throw made.error;
+		if (made.down) throw unreachable();
+		throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
+	}
+	if (!made.value) throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
+	return made.value;
 }
 
 /** Deletes every period key whose period ended 48 hours ago or more; needs a session, so it waits for one. */
@@ -201,8 +238,8 @@ export async function dropOldKeys(deps: VaultDeps, now: number): Promise<void> {
 		client.close();
 	}
 	const doomed = names.filter((name) => {
-		if (!name.startsWith(`${VAULT_GRANT_PREFIX}/`)) return false;
-		const end = periodEnd(name.slice(VAULT_GRANT_PREFIX.length + 1));
+		if (!name.toLowerCase().startsWith(`${VAULT_GRANT_PREFIX}/`)) return false;
+		const end = keyPeriodEnd(name.slice(VAULT_GRANT_PREFIX.length + 1));
 		return end !== undefined && end + KEY_GRACE_SECONDS <= now;
 	});
 	if (doomed.length === 0) return;
@@ -211,7 +248,7 @@ export async function dropOldKeys(deps: VaultDeps, now: number): Promise<void> {
 	}).catch(() => undefined);
 }
 
-/** Throws unless the grant or a session reaches the store. */
+/** Throws unless the grant or a session reaches the store. A rejection from a live store is reported as itself. */
 export async function requireVaultStore(deps: VaultDeps): Promise<void> {
 	try {
 		const client = deps.vaultClient?.();
@@ -222,12 +259,16 @@ export async function requireVaultStore(deps: VaultDeps): Promise<void> {
 		} finally {
 			client.close();
 		}
-	} catch {}
-	const ok = await withSession(deps, async (client) => {
-		await client.get(vaultKeyName("probe"));
-		return true;
-	}).catch(() => undefined);
-	if (!ok) throw unreachable();
+	} catch (err) {
+		const via = await sessionWork(deps, async (client) => {
+			await client.get(vaultKeyName("probe"));
+			return true;
+		});
+		if (via.ok) return;
+		if (via.error) throw via.error;
+		if (!storeDown(err) && !grantMiss(err)) throw err;
+		throw unreachable();
+	}
 }
 
 export type VaultKeyCache = {
@@ -302,11 +343,11 @@ export function storeVaultItem(
 	item: { name: string; sender: string; plain: Buffer; key: PeriodKey; ext?: string | null },
 	now: number,
 ): VaultItemRow {
-	assertVaultName(item.name);
-	if (db.vaultNameTaken(item.name)) throw new DgCliError(`vault item ${item.name} exists`);
+	const name = assertVaultName(item.name);
+	if (db.vaultNameTaken(name)) throw new DgCliError(`vault item ${name} exists`);
 	const row: VaultItemRow = {
 		id: randomBytes(16).toString("hex"),
-		name: item.name,
+		name,
 		sender: item.sender,
 		type: itemType(item.plain),
 		size: item.plain.length,
@@ -324,7 +365,7 @@ export function storeVaultItem(
 	writeFileAtomic(path, sealed, 0o600);
 	if (!db.addVaultItem(row)) {
 		rmSync(path, { force: true });
-		throw new DgCliError(`vault item ${item.name} exists`);
+		throw new DgCliError(`vault item ${name} exists`);
 	}
 	return row;
 }
@@ -333,7 +374,9 @@ export function storeVaultItem(
 export async function openVaultItem(deps: VaultDeps, root: string, row: VaultItemRow): Promise<Buffer> {
 	const failed = () => new DgCliError(`vault item ${row.name} cannot be opened`);
 	const key = await readPeriodKey(deps, row.key_period).catch((err: unknown) => {
-		throw err instanceof DgCliError && err.message.includes("not reachable") ? err : failed();
+		if (err instanceof DgCliError && err.message.includes("does not hold a vault key")) throw failed();
+		if (err instanceof DgCliError || err instanceof TypeError) throw err;
+		throw failed();
 	});
 	if (!key) throw failed();
 	try {

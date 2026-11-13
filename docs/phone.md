@@ -317,7 +317,8 @@ is pending. See [ADR 0034](adr/0034-phone-image-messages.md).
 ## The PHI vault
 
 ```bash
-dg-agent phone vault add lab-1 ./result.txt       # or stdin when no file is given
+dg-agent phone vault add lab-1 ./result.txt       # or - to read stdin
+dg-agent phone vault add lab-1 -
 dg-agent phone vault list
 dg-agent phone text +grok --vault lab-1
 dg-agent phone vault exec lab-1 --out lab-1-sum -- ./summarize
@@ -328,30 +329,31 @@ dg-agent phone vault open lab-1                   # a human at a terminal only
 
 | Command | What it does |
 | --- | --- |
-| `phone vault add <name> [file]` | Seals a file, or the raw bytes on stdin, of 5 MiB at most. Prints `{name, size, created_at, expires_at}` only. A taken name is refused. |
+| `phone vault add <name> [file\|-]` | Seals a file, or the raw bytes on stdin, of 5 MiB at most. `-` means stdin, the same as omitting the file. Prints `{name, size, created_at, expires_at}` only. The stored name is lowercase. A taken name, in any letter case, is refused. |
 | `phone vault list` | One JSON line per live item: `{name, size, type, sender, created_at, expires_at}`. `sender` is `self`, a `+handle`, or an npub. Never content. |
 | `phone vault rm <name>` | Deletes the item and its file. |
 | `phone vault open <name>` | Shows a text item on `/dev/tty`, never stdout. An image goes to the system viewer as a 0600 copy in `vault/`, which is deleted when the viewer exits and the human presses Enter. Refuses when `CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_*`, `OPENCODE`, `GEMINI_CLI`, or `GROK_HOOK_EVENT` is set, and when stdin or stdout is not a TTY. |
 | `phone vault exec <name> [--env VAR \| --stdin] [--out <name>] [--timeout <seconds>] -- <cmd...>` | Runs the command with an argv array and no shell. The child env drops every `DG_*` variable, `GH_TOKEN`, `GITHUB_TOKEN`, and `AWS_*`, `AZURE_*`, `ARM_*`, `CLOUDSDK_*`, and `GOOGLE_*` variables. The item goes on stdin (the default), or in `VAR` for a text item under 64 KiB with no NUL byte. Stdout, 5 MiB at most, becomes the new item `--out` (default `<name>-out`), which never overwrites and keeps the source item's sender. Stderr is counted, not kept. Prints `{name, exit, out, size, stderr_lines}`. A nonzero exit or an overflow stores nothing and exits with the command's code, or 1. A command still running after `--timeout` (1 to 3600, default 120) has its process tree killed, stores nothing, and exits 124. |
 
-Names match `^[a-z0-9][a-z0-9._-]{0,63}$` and hold no `..`. Names hold no
+Names match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and hold no `..`. Letters of either case are the same name: `Foo`, `FOO`, and `foo` are one item, stored as `foo`. Names hold no
 PHI. Files in `vault/` (folder 0700, files 0600) are named by a random id;
 `phone.db` maps each name to its id. Each item is AES-256-GCM encrypted
 with a random 12-byte nonce, and the item id, sender, and `expires_at` are
 bound as additional data, so a changed row does not open.
 
 Keys live only in the dg credential store, one per ISO 8601 week by local
-time (Monday 00:00 to the next Monday 00:00), as `phone-vault/<yyyy>-W<ww>`,
-for example `phone-vault/2026-W45`. The year is the ISO week year, so
-2027-01-03 is `2026-W53` and 2027-01-04 is `2027-W01`. They are read through
+time (Monday 00:00 to the next Monday 00:00), as `phone-vault/<yyyy>-w<ww>`,
+for example `phone-vault/2026-w45`. `yyyy-W<ww>` is the same week and is stored as `yyyy-w<ww>`. The year is the ISO week year, so
+2027-01-03 is `2026-w53` and 2027-01-04 is `2027-w01`. They are read through
 their own `phone-vault` grant, apart from the `phone-friend` grant of the
 phone key. A missing period key is made only through a dg session. Each
 period's key is deleted 48 hours after its period ends, which needs a session
 too; without one, the delete waits for the next command that has one. Items
 expire 24 hours after storage, so the key outlives every item sealed with it.
 The listener loads this period's and the next period's keys at start and
-every 30 minutes. A vault command refuses when the store is not reachable,
-and no key is ever kept in `phone.db`.
+every 30 minutes. A vault command refuses when the store is not reachable.
+A store that is up and rejects the request reports that rejection.
+No key is ever kept in `phone.db`.
 
 Trade-off: one key per period means a deleted item in an old backup of
 `vault/` can be decrypted for up to about 9 days after its period starts (7

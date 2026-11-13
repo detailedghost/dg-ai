@@ -80,27 +80,30 @@ function byteLength(value: string): number {
 	return new TextEncoder().encode(value).length;
 }
 
-/** Validates the lowercase storage selector before it reaches SQL or AAD. */
+const CREDENTIAL_NAME_RULE =
+	"credential name must be 1 to 128 letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit";
+const CREDENTIAL_GRANT_PREFIX_RULE =
+	"credential grant prefix must be 1 to 64 letters, digits, dots, underscores or hyphens, starting with a letter or digit";
+
+/** Folds letters to lowercase, then checks the storage selector before it reaches SQL or AAD. */
 export function validateCredentialName(value: unknown): string {
-	if (typeof value !== "string" || !CREDENTIAL_NAME_PATTERN.test(value))
-		fail(
-			"credential name must be 1 to 128 lowercase letters, digits, dots, underscores, slashes or hyphens, starting with a letter or digit",
-		);
-	return value;
+	if (typeof value !== "string") fail(CREDENTIAL_NAME_RULE);
+	const name = value.toLowerCase();
+	if (!CREDENTIAL_NAME_PATTERN.test(name)) fail(CREDENTIAL_NAME_RULE);
+	return name;
 }
 
-/** Validates the consumer prefix a service grant is scoped to. */
+/** Folds letters to lowercase, then checks the consumer prefix a service grant is scoped to. */
 export function validateCredentialGrantPrefix(value: unknown): string {
-	if (typeof value !== "string" || !CREDENTIAL_GRANT_PREFIX_PATTERN.test(value))
-		fail(
-			"credential grant prefix must be 1 to 64 lowercase letters, digits, dots, underscores or hyphens, starting with a letter or digit",
-		);
-	return value;
+	if (typeof value !== "string") fail(CREDENTIAL_GRANT_PREFIX_RULE);
+	const prefix = value.toLowerCase();
+	if (!CREDENTIAL_GRANT_PREFIX_PATTERN.test(prefix)) fail(CREDENTIAL_GRANT_PREFIX_RULE);
+	return prefix;
 }
 
-/** True when the name sits under `<prefix>/`. */
+/** True when the name sits under `<prefix>/`, ignoring letter case. */
 export function credentialNameInPrefix(name: string, prefix: string): boolean {
-	return name.startsWith(`${prefix}/`);
+	return name.toLowerCase().startsWith(`${prefix.toLowerCase()}/`);
 }
 
 function validateGrantAuth(value: unknown): void {
@@ -108,7 +111,7 @@ function validateGrantAuth(value: unknown): void {
 	for (const key of Object.keys(value))
 		if (key !== "prefix" && key !== "token")
 			fail(`credentials CLI request.grant.${key} is not supported`);
-	validateCredentialGrantPrefix(value.prefix);
+	value.prefix = validateCredentialGrantPrefix(value.prefix);
 	if (
 		typeof value.token !== "string" ||
 		!value.token ||
@@ -213,9 +216,9 @@ export function validateCredentialsCliRequest(
 		fail("credentials CLI request.protocolVersion must be 1");
 	if (value.grant !== undefined) validateGrantAuth(value.grant);
 	if (["set", "get", "delete"].includes(value.operation))
-		validateCredentialName(value.name);
+		value.name = validateCredentialName(value.name);
 	if (value.operation === "grant" || value.operation === "revoke")
-		validateCredentialGrantPrefix(value.prefix);
+		value.prefix = validateCredentialGrantPrefix(value.prefix);
 	if (value.operation === "set") {
 		validateCredentialValue(value.value);
 		validateCredentialMeta(value.meta);

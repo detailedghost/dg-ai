@@ -460,7 +460,7 @@ export class PhoneDb {
 			)
 			.run({
 				id: row.id,
-				name: row.name,
+				name: row.name.toLowerCase(),
 				sender: row.sender,
 				type: row.type,
 				size: row.size,
@@ -475,8 +475,9 @@ export class PhoneDb {
 	/** The live item with this name; an expired one is never returned. */
 	vaultItem(name: string): VaultItemRow | undefined {
 		return (
-			(this.db.query("SELECT * FROM vault_items WHERE name = $name AND expires_at > $now").get({ name, now: this.now() }) as VaultItemRow | null) ??
-			undefined
+			(this.db
+				.query("SELECT * FROM vault_items WHERE name = $name AND expires_at > $now")
+				.get({ name: name.toLowerCase(), now: this.now() }) as VaultItemRow | null) ?? undefined
 		);
 	}
 
@@ -490,7 +491,7 @@ export class PhoneDb {
 
 	/** True while any row, live or not yet pruned, holds the name. */
 	vaultNameTaken(name: string): boolean {
-		return this.db.query("SELECT 1 FROM vault_items WHERE name = $name").get({ name }) !== null;
+		return this.db.query("SELECT 1 FROM vault_items WHERE name = $name").get({ name: name.toLowerCase() }) !== null;
 	}
 
 	removeVaultItem(id: string): void {

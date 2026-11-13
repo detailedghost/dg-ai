@@ -208,6 +208,23 @@ describe("CredentialStore credentials", () => {
 		},
 	);
 
+	it("stores one credential for every spelling of a name", async () => {
+		await withStores(({ credentials }) => {
+			credentials.setCredential("Phone-Vault/2026-W46", "fixture-week-key");
+			credentials.setCredential("WARREN-PROBE", "fixture-probe");
+			expect(credentials.listCredentials().map((entry) => entry.name)).toEqual(["phone-vault/2026-w46", "warren-probe"]);
+			expect(credentials.getCredential("phone-vault/2026-w46")?.value).toBe("fixture-week-key");
+			expect(credentials.getCredential("PHONE-VAULT/2026-w46")?.value).toBe("fixture-week-key");
+			credentials.setCredential("phone-vault/2026-w46", "fixture-week-key-rotated");
+			expect(credentials.listCredentials().filter((entry) => entry.name.startsWith("phone-vault/"))).toHaveLength(1);
+			expect(credentials.getCredential("Phone-Vault/2026-W46")?.value).toBe("fixture-week-key-rotated");
+			expect(credentials.deleteCredential("Phone-Vault/2026-W46")).toBe(true);
+			expect(credentials.getCredential("phone-vault/2026-w46")).toBeUndefined();
+			expect(credentials.deleteCredential("Warren-Probe")).toBe(true);
+			expect(credentials.listCredentials()).toEqual([]);
+		});
+	});
+
 	it("lists sorted names and metadata without values, and deletes", async () => {
 		await withStores(({ credentials }) => {
 			const value = "fixture-listed-value-0b7e44";
@@ -228,6 +245,10 @@ describe("CredentialStore credentials", () => {
 describe("CredentialStore grants", () => {
 	it("stores only the token hash, verifies, records use, rotates and revokes", async () => {
 		await withStores(({ paths, credentials }) => {
+			const folded = credentials.createCredentialGrant("Phone-Vault");
+			expect(credentials.listCredentialGrants().map((entry) => entry.prefix)).toEqual(["phone-vault"]);
+			expect(credentials.verifyCredentialGrant("PHONE-VAULT", folded)).toBe(true);
+			expect(credentials.deleteCredentialGrant("Phone-Vault")).toBe(true);
 			const token = credentials.createCredentialGrant("channel-review");
 			expect(Buffer.from(token, "base64url")).toHaveLength(32);
 			expect(scanFileForBytes(paths.credentialsDbPath, token)).toBe(false);
@@ -237,11 +258,12 @@ describe("CredentialStore grants", () => {
 			expect(JSON.stringify(credentials.listCredentialGrants())).not.toContain(
 				token,
 			);
-			expect(credentials.verifyCredentialGrant("channel-review", token)).toBe(
+			expect(credentials.verifyCredentialGrant("Channel-Review", token)).toBe(
 				true,
 			);
 			expect(credentials.listCredentialGrants()[0].lastUsedAt).not.toBeNull();
 			expect(credentials.verifyCredentialGrant("other", token)).toBe(false);
+			expect(credentials.verifyCredentialGrant("not a prefix", token)).toBe(false);
 			expect(
 				credentials.verifyCredentialGrant("channel-review", `${token}x`),
 			).toBe(false);
@@ -253,6 +275,7 @@ describe("CredentialStore grants", () => {
 				true,
 			);
 			expect(credentials.deleteCredentialGrant("channel-review")).toBe(true);
+			expect(credentials.deleteCredentialGrant("channel-review")).toBe(false);
 			expect(credentials.verifyCredentialGrant("channel-review", rotated)).toBe(
 				false,
 			);

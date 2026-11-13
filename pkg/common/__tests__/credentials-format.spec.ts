@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
 	CREDENTIAL_MAX_VALUE_BYTES,
+	credentialNameInPrefix,
+	validateCredentialGrantPrefix,
 	validateCredentialMeta,
 	validateCredentialName,
 	validateCredentialsCliRequest,
@@ -17,12 +19,25 @@ describe("validateCredentialName", () => {
 		expect(validateCredentialName(name)).toBe(name);
 	});
 
-	it.each(["", "Upper", "/lead", "-lead", "has space", "x".repeat(129), 1])(
+	it.each(["", "/lead", "-lead", "has space", "x".repeat(129), 1])(
 		"rejects %p",
 		(name) => {
-			expect(() => validateCredentialName(name)).toThrow();
+			expect(() => validateCredentialName(name)).toThrow(/credential name must be/);
 		},
 	);
+
+	it("folds letter case so every spelling is one credential", () => {
+		expect(validateCredentialName("Phone-Vault/2026-W46")).toBe("phone-vault/2026-w46");
+		expect(validateCredentialName("WARREN-PROBE")).toBe("warren-probe");
+		expect(validateCredentialName("Foo")).toBe(validateCredentialName("FOO"));
+		expect(validateCredentialName("X".repeat(128))).toBe("x".repeat(128));
+		expect(validateCredentialGrantPrefix("Phone-Vault")).toBe("phone-vault");
+		expect(() => validateCredentialGrantPrefix(1)).toThrow(/credential grant prefix must be/);
+		expect(() => validateCredentialGrantPrefix("")).toThrow(/credential grant prefix must be/);
+		expect(credentialNameInPrefix("Phone-Vault/2026-W46", "phone-vault")).toBe(true);
+		expect(credentialNameInPrefix("phone-vault/2026-w46", "Phone-Vault")).toBe(true);
+		expect(credentialNameInPrefix("phone-vault-extra", "phone-vault")).toBe(false);
+	});
 });
 
 describe("validateCredentialValue", () => {
@@ -101,11 +116,32 @@ describe("validateCredentialsCliRequest", () => {
 		{ operation: "grant", prefix: "has/slash" },
 		{ operation: "revoke" },
 		{ operation: "list", grant: { prefix: "channel-review" } },
-		{ operation: "list", grant: { prefix: "Bad", token: "t" } },
+		{ operation: "list", grant: { prefix: "bad prefix", token: "t" } },
 		{ operation: "list", grant: { prefix: "a", token: "t", extra: 1 } },
 	])("rejects %p", (fields) => {
 		expect(() =>
 			validateCredentialsCliRequest({ ...base, ...fields }),
 		).toThrow();
+	});
+
+	it("stores mixed-case names and grant prefixes in lowercase", () => {
+		const set = validateCredentialsCliRequest({
+			...base,
+			operation: "set",
+			name: "Phone-Vault/2026-W46",
+			value: "v",
+			meta: {},
+		});
+		expect(set.name).toBe("phone-vault/2026-w46");
+		const grant = validateCredentialsCliRequest({ ...base, operation: "grant", prefix: "Phone-Vault" });
+		expect(grant.prefix).toBe("phone-vault");
+		const authed = validateCredentialsCliRequest({
+			...base,
+			operation: "get",
+			name: "Phone-Vault/2026-W46",
+			grant: { prefix: "Phone-Vault", token: "t" },
+		});
+		expect(authed.name).toBe("phone-vault/2026-w46");
+		expect(authed.grant?.prefix).toBe("phone-vault");
 	});
 });

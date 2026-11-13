@@ -165,6 +165,17 @@ describe("dg-skills credentials", () => {
 		expect(cli.calls).toEqual([]);
 	});
 
+	test("set and grant fold mixed-case names before they are stored", async () => {
+		const cli = fakeCli();
+		await cli.run(["set", "Phone-Vault/2026-W46"]);
+		expect(cli.calls.at(-1)).toEqual({ op: "set", args: ["phone-vault/2026-w46", secret, {}] });
+		expect(JSON.parse(cli.lines[0]).name).toBe("phone-vault/2026-w46");
+		const grant = fakeCli();
+		await grant.run(["grant", "Phone-Vault"]);
+		expect(grant.calls.at(-1)).toEqual({ op: "grant", args: ["phone-vault"] });
+		expect(JSON.parse(grant.lines[0]).prefix).toBe("phone-vault");
+	});
+
 	test("set rejects an invalid name before connecting", async () => {
 		const cli = fakeCli();
 		await expect(cli.run(["set", "Not Valid"])).rejects.toThrow(
@@ -253,7 +264,7 @@ describe("dg-skills credentials", () => {
 		});
 	});
 
-	test.each([["Bad"], ["has/slash"]])(
+	test.each([["bad prefix"], ["has/slash"]])(
 		"grant rejects the invalid prefix %p before connecting",
 		async (prefix) => {
 			const cli = fakeCli();
