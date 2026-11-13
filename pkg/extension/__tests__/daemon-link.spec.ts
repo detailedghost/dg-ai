@@ -14,6 +14,8 @@ import {
 import { handleOverwatchFrameSafely } from "@/lib/background/local-pages";
 import { createRememberedWebMcpGrants, type RememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
 import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
+import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
+import { IDBFactory } from "fake-indexeddb";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
 import { buildSessionListFrame as buildSessionListFrameShared } from "./utils/frame-fixtures";
 import {
@@ -1881,6 +1883,7 @@ function webMcpStores() {
 		signer: createWebMcpSigner({
 			loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
 		}),
+		nonces: createIdbGrantNonces(new IDBFactory()),
 	});
 	const sessionData: Record<string, unknown> = {
 		[`webmcpGrants:${FIRST.sessionId}`]: [{ site: "https://live.com", tool: "dg_outlook_move" }],

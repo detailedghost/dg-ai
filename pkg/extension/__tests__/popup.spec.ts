@@ -1667,6 +1667,7 @@ describe("popup Web MCP grants", () => {
 		await settle();
 		await settle();
 		expect(section(harness.root)?.querySelector(".err")?.textContent).toBe("Unknown Web MCP grant.");
+		expect(revokeOf(harness.root, "dg_outlook_move")?.disabled).toBe(false);
 		harness.handle.destroy();
 	});
 });

@@ -6,6 +6,8 @@ import type { ApprovalRequest } from "@/lib/background/approval";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
 import { createRememberedWebMcpGrants } from "@/lib/background/webmcp-approval";
 import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
+import { createIdbGrantNonces } from "@/lib/background/webmcp-grant-nonces";
+import { IDBFactory } from "fake-indexeddb";
 import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import { createSessionControl, type SessionControl } from "@/lib/background/session-control";
 
@@ -144,6 +146,7 @@ function harness(options: Options = {}) {
 			signer: createWebMcpSigner({
 				loadKey: () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]),
 			}),
+			nonces: createIdbGrantNonces(new IDBFactory()),
 			now: () => clock.now,
 		}),
 		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
@@ -1754,6 +1757,39 @@ describe("pw --ext WebMCP approval", () => {
 		expect(await h.run({ verb: "call", tool, args: { ids: ["a"] } })).toEqual({ ok: false, error });
 		expect(actions).toEqual([]);
 		expect(await h.fake.api.storage.session.get(`webmcpGrants:${SESSION}`)).toEqual({});
+	});
+
+	it("refuses a read tool and runs nothing when the tab leaves the group before it runs", async () => {
+		const actions: unknown[] = [];
+		const h = harness({ tabs: [owaTab], mainResult: (action) => void actions.push(action) });
+		const get = h.fake.raw.tabs.get;
+		const original = get.getMockImplementation();
+		let reads = 0;
+		get.mockImplementation((async (tabId: number) => {
+			const tab = (await original?.(tabId)) as { groupId?: number } | undefined;
+			return ++reads > 1 && tab ? { ...tab, groupId: -1 } : tab;
+		}) as never);
+		expect((await h.run({ verb: "call", tool: "dg_outlook_read", args: { id: "1" } })).ok).toBe(false);
+		expect(actions).toEqual([]);
+	});
+
+	it("refuses and runs nothing when the page changes while the approval is open", async () => {
+		const actions: unknown[] = [];
+		let h: ReturnType<typeof harness>;
+		h = harness({
+			tabs: [owaTab],
+			approval: "allow",
+			onApproval: () => {
+				const tab = h.fake.tabs.get(7);
+				if (tab) tab.url = "https://evil.example.test/";
+			},
+			mainResult: (action) => void actions.push(action),
+		});
+		expect(await h.run({ verb: "call", tool: "dg_outlook_delete", args: { ids: ["a"] } })).toEqual({
+			ok: false,
+			error: "The page changed while the approval was open; dg_outlook_delete did not run. Retry.",
+		});
+		expect(actions).toEqual([]);
 	});
 
 	it("refuses and runs nothing when the tab leaves the group while the approval is open", async () => {

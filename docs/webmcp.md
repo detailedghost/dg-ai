@@ -35,6 +35,8 @@ class:
   A grant is not tied to a tab group.
 - On a mailbox tab, only the enabled built-in `dg_` tools for that site run.
   Other tools are refused or left out of `tools`.
+- `tools` asks nothing. It shows the tool list of any page in the agent's
+  group, also a page the tab reached by a link or a redirect.
 
 ## Remember for 30 days
 
@@ -46,8 +48,10 @@ ticked by default.
   session, also after a browser restart. Use on the grant does not extend it.
 - An `each` tool never shows the checkbox and never stores a grant.
 - Remembered grants live in the extension's `storage.local`, each one signed
-  with the extension's HMAC key from IndexedDB. A record with a bad or missing
-  signature, or past its expiry, grants nothing.
+  with the extension's HMAC key from IndexedDB. Each record also carries a
+  random nonce that must still be in the extension's own IndexedDB. A record
+  with a bad or missing signature, a revoked nonce, or a past expiry grants
+  nothing, so a revoked grant cannot be written back.
 - Removing the extension or clearing its data removes them.
 
 ## Revoke

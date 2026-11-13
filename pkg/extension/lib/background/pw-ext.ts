@@ -65,6 +65,7 @@ import {
 	type WebMcpGrants,
 } from "./webmcp-approval";
 import { createWebMcpSigner } from "./webmcp-signing";
+import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { createUnmaskGrants, MAX_FILLED_SECRETS, type UnmaskGrant, type UnmaskGrants } from "./unmask-grants";
 import {
 	allowedPage,
@@ -132,7 +133,8 @@ const SITE_REFUSED = {
 	timeout: "No answer in the browser within 60 seconds",
 	unopened: "The approval window could not open",
 } satisfies Record<Exclude<ApprovalAnswer, "allow">, string>;
-const NO_SITE_ASK: ReadonlySet<PwExtVerb> = new Set(["tabs", "select", "close", "tools", "call"]);
+const NO_SITE_ASK: ReadonlySet<PwExtVerb> = new Set(["tabs", "select", "close"]);
+const WEB_MCP_VERBS: ReadonlySet<PwExtVerb> = new Set(["tools", "call"]);
 const UNMASK_REFUSED = {
 	deny: "The user clicked Deny in the browser; nothing was unmasked.",
 	closed: "The approval window was closed without an answer; nothing was unmasked.",
@@ -503,6 +505,7 @@ export function createPwExtHandler({
 	rememberedWebMcpGrants = createRememberedWebMcpGrants({
 		storage: api.storage as unknown as RememberStorage,
 		signer: createWebMcpSigner(),
+		nonces: createIdbGrantNonces(),
 		now,
 	}),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
@@ -1165,6 +1168,8 @@ export function createPwExtHandler({
 			!(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id }))
 		)
 			return { ok: false, error: `The tab left the agent's group; ${tool} did not run.` };
+		if (live.url !== tab.url)
+			return { ok: false, error: `The page changed while the approval was open; ${tool} did not run. Retry.` };
 		return undefined;
 	}
 
@@ -1199,7 +1204,8 @@ export function createPwExtHandler({
 		}
 		await guard(request.verb, tab, request.tool);
 		if (!NO_SITE_ASK.has(request.verb)) {
-			await allowSite(request.verb === "open" ? request.url : tab.url, context, signal, verb);
+			if (!WEB_MCP_VERBS.has(request.verb))
+				await allowSite(request.verb === "open" ? request.url : tab.url, context, signal, verb);
 			const live = await api.tabs.get(tab.id).catch(() => undefined);
 			if (!live || live.groupId !== tab.groupId || !(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })))
 				throw new Refusal(SELECTED_GONE);

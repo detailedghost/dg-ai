@@ -30,10 +30,12 @@ registrable-domain key of `siteOf` in
 `pkg/extension/lib/background/site-key.ts`; no tab group is part of the key. A
 `session` approval popup offers an unticked "Remember for 30 days" checkbox.
 When the person ticks it, the worker stores the site and tool, the approval
-time and the expiry time in `storage.local`, with an HMAC from the
-non-extractable key of `pkg/extension/lib/background/webmcp-signing.ts` over a
-`webmcp-grant:v1` payload. A remembered grant holds for every session until it
-expires; use does not extend it. pw --ext Stop no longer drops Web MCP grants.
+time, the expiry time and a random nonce in `storage.local`, with an HMAC from
+the non-extractable key of `pkg/extension/lib/background/webmcp-signing.ts` over
+a `webmcp-grant:v1` payload. The live nonces sit in the extension origin's
+IndexedDB (`pkg/extension/lib/background/webmcp-grant-nonces.ts`); Revoke
+deletes the nonce. A remembered grant holds for every session until it expires
+or its nonce goes; use does not extend it. pw --ext Stop no longer drops Web MCP grants.
 Session grants still end with the dg session (`forgetAgentTabs` in
 `pkg/extension/lib/background/daemon-link.ts`). The toolbar popup
 (`pkg/extension/lib/features/popup.ts`) lists session and remembered grants
@@ -49,11 +51,16 @@ extension's own `popup.html` (`isOwnPageSender`).
 - **Good:** a site's own WebMCP tool now asks every time; before, one site
   Allow let it run with no further question.
 - **Bad:** a `read` `dg_` tool, such as `dg_outlook_read`, now runs with no
-  question at all. The person's consent is enabling the built-in script. The
-  `area` class of R-10 is the planned seam for a per-area ask.
+  question at all, also when an agent tab reached the site by a link or a
+  redirect and no site question was asked. The person's consent is enabling the
+  built-in script. The `area` class of R-10 is the planned seam for a per-area
+  ask.
+- **Bad:** `tools` asks nothing, so the agent can read the tool list, title and
+  URL of any page its tab reaches. The mailbox filter still applies.
 - **Bad:** a remembered grant covers every agent session for 30 days. A content
   script can read or delete the record in `storage.local`, but it cannot forge
-  or extend one without the key.
+  or extend one without the key, and it cannot write back a revoked one, because
+  its nonce is gone from IndexedDB.
 - **Neutral:** after Stop the session's tabs return to the person and every
   verb fails, so its Web MCP grants stay but have no tab to run in until the
   session ends.
@@ -69,6 +76,8 @@ extension's own `popup.html` (`isOwnPageSender`).
   high-risk tools always ask.
 - **Store remembered grants unsigned.** Content scripts can write
   `storage.local`, so an unsigned record could be forged.
+- **Sign the record with no nonce.** A content script could save a signed record
+  and write it back after a Revoke.
 
 ## Diagrams
 
@@ -89,6 +98,7 @@ flowchart LR
 ## References
 
 - `pkg/extension/lib/background/webmcp-approval.ts`
+- `pkg/extension/lib/background/webmcp-grant-nonces.ts`
 - `pkg/extension/lib/background/pw-ext.ts`
 - `pkg/extension/lib/background/approval.ts`
 - `pkg/extension/lib/background/daemon-link.ts`

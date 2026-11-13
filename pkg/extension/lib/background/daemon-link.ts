@@ -62,6 +62,7 @@ import {
 	type RememberStorage,
 } from "./webmcp-approval";
 import { createWebMcpSigner } from "./webmcp-signing";
+import { createIdbGrantNonces } from "./webmcp-grant-nonces";
 import { forgetAgentTabsAndShims } from "./dialog-shim";
 import { createSessionControl } from "./session-control";
 import { PW_EXT_STOP_MESSAGE } from "@/lib/features/pw-ext-banner";
@@ -215,7 +216,11 @@ export function registerDaemonLink(
 	});
 	const rememberedWebMcpGrants =
 		options.rememberedWebMcpGrants ??
-		createRememberedWebMcpGrants({ storage: api.storage as unknown as RememberStorage, signer: createWebMcpSigner() });
+		createRememberedWebMcpGrants({
+			storage: api.storage as unknown as RememberStorage,
+			signer: createWebMcpSigner(),
+			nonces: createIdbGrantNonces(),
+		});
 	const pwExtApi = api as unknown as PwExtBrowserApi;
 	const sessionControl = createSessionControl({ storage: api.storage as unknown as AgentTabsStorage });
 	const pwExtRelay = createPwExtHandler({

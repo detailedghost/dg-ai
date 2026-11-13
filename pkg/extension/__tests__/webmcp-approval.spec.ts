@@ -7,6 +7,8 @@ import {
 	requestWebMcpApproval,
 } from "@/lib/background/webmcp-approval";
 import { createWebMcpSigner } from "@/lib/background/webmcp-signing";
+import { createIdbGrantNonces, type GrantNonces } from "@/lib/background/webmcp-grant-nonces";
+import { IDBFactory } from "fake-indexeddb";
 
 function memoryStorage() {
 	const data: Record<string, unknown> = {};
@@ -33,15 +35,20 @@ const START = Date.UTC(2026, 10, 13, 12, 0);
 
 const keyLoader = () => crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 
-function setup(answer: ApprovalAnswer = "allow", options: { remember?: boolean; key?: Promise<CryptoKey> } = {}) {
+function setup(
+	answer: ApprovalAnswer = "allow",
+	options: { remember?: boolean; key?: Promise<CryptoKey>; nonces?: GrantNonces } = {},
+) {
 	const requests: ApprovalRequest[] = [];
 	const storage = memoryStorage();
 	const clock = { now: START };
 	const key = options.key ?? keyLoader();
+	const nonces = options.nonces ?? createIdbGrantNonces(new IDBFactory());
 	const grants = createWebMcpGrants({ storage });
 	const remembered = createRememberedWebMcpGrants({
 		storage,
 		signer: createWebMcpSigner({ loadKey: () => key }),
+		nonces,
 		now: () => clock.now,
 	});
 	const approvals = {
@@ -63,7 +70,7 @@ function setup(answer: ApprovalAnswer = "allow", options: { remember?: boolean; 
 			class: "each",
 			...overrides,
 		});
-	return { requests, storage, grants, remembered, ask, clock, key };
+	return { requests, storage, grants, remembered, ask, clock, key, nonces };
 }
 
 describe("requestWebMcpApproval", () => {
@@ -261,9 +268,10 @@ describe("remember for 30 days", () => {
 	});
 
 	it("keeps a remembered grant across sessions and a simulated restart", async () => {
-		const first = setup("allow", { remember: true });
+		const factory = new IDBFactory();
+		const first = { ...setup("allow", { remember: true, nonces: createIdbGrantNonces(factory) }), factory };
 		await first.ask(move);
-		const restarted = setup("deny", { key: first.key });
+		const restarted = setup("deny", { key: first.key, nonces: createIdbGrantNonces(first.factory) });
 		Object.assign(restarted.storage.localData, structuredClone(first.storage.localData));
 		expect(await restarted.ask({ ...move, sessionId: "s9" })).toBe("allow");
 		expect(restarted.requests).toEqual([]);
@@ -297,6 +305,7 @@ describe("remember for 30 days", () => {
 		["a changed tool", (entry: Record<string, unknown>) => ({ ...entry, tool: "dg_outlook_flag" })],
 		["a bad mac", (entry: Record<string, unknown>) => ({ ...entry, mac: "00".repeat(32) })],
 		["no mac", ({ mac: _mac, ...entry }: Record<string, unknown>) => entry],
+		["a changed nonce", (entry: Record<string, unknown>) => ({ ...entry, nonce: "00".repeat(16) })],
 	])("refuses a record with %s", async (_label, tamper) => {
 		const { storage, remembered, ask, requests } = setup("allow", { remember: true });
 		await ask(move);
@@ -306,6 +315,26 @@ describe("remember for 30 days", () => {
 		await ask({ ...move, tool: "dg_outlook_flag", sessionId: "s2" });
 		await ask({ ...move, sessionId: "s2" });
 		expect(requests).toHaveLength(3);
+	});
+
+	it("refuses a revoked record that is written back", async () => {
+		const { storage, remembered, ask, requests } = setup("allow", { remember: true });
+		await ask(move);
+		const saved = structuredClone(storage.localData.webmcpRemembered);
+		await remembered.revoke({ site: SITE, tool: "dg_outlook_move" });
+		storage.localData.webmcpRemembered = saved;
+		expect(await remembered.has({ site: SITE, tool: "dg_outlook_move" })).toBe(false);
+		await ask({ ...move, sessionId: "s2" });
+		expect(requests).toHaveLength(2);
+	});
+
+	it("refuses every record written back after Revoke all", async () => {
+		const { storage, remembered } = setup();
+		await remembered.add({ site: SITE, tool: "dg_outlook_move" });
+		const saved = structuredClone(storage.localData.webmcpRemembered);
+		await remembered.forgetAll();
+		storage.localData.webmcpRemembered = saved;
+		expect(await remembered.list()).toEqual([]);
 	});
 
 	it("refuses a record signed with another key", async () => {

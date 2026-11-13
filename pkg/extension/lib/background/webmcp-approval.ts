@@ -2,6 +2,7 @@ import { createSerialQueue, type WebMcpApprovalClass } from "@dg/common";
 import type { AgentTabsStorage } from "./agent-tabs";
 import type { ApprovalAnswer, Approvals } from "./approval";
 import { siteOf } from "./site-key";
+import type { GrantNonces } from "./webmcp-grant-nonces";
 import type { WebMcpSigner } from "./webmcp-signing";
 
 /** One tool on one site, keyed by the registrable-domain site key that the pw --ext allowlist also uses. */
@@ -103,27 +104,34 @@ export type RememberStorage = {
 	};
 };
 
-type StoredRemembered = WebMcpRememberedGrant & { mac: string };
+type StoredRemembered = WebMcpRememberedGrant & { nonce: string; mac: string };
 
 const isStoredRemembered = (entry: unknown): entry is StoredRemembered =>
 	isGrant(entry) &&
 	Number.isSafeInteger((entry as StoredRemembered).approvedAt) &&
 	Number.isSafeInteger((entry as StoredRemembered).expiresAt) &&
+	typeof (entry as StoredRemembered).nonce === "string" &&
 	typeof (entry as StoredRemembered).mac === "string";
 
-/** 30-day grants in storage.local, signed with the extension's HMAC key so a content script cannot forge or extend one. */
+const newNonce = () => [...crypto.getRandomValues(new Uint8Array(16))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** 30-day grants in storage.local, signed so a content script cannot forge or extend one, and tied to a live nonce so it cannot replay a revoked one. */
 export function createRememberedWebMcpGrants({
 	storage,
 	signer,
+	nonces,
 	now = Date.now,
 }: {
 	storage: RememberStorage;
 	signer: WebMcpSigner;
+	nonces: GrantNonces;
 	now?: () => number;
 }) {
 	const enqueue = createSerialQueue();
-	const payload = (grant: WebMcpRememberedGrant) =>
-		new TextEncoder().encode(MAC_PREFIX + JSON.stringify([grant.site, grant.tool, grant.approvedAt, grant.expiresAt]));
+	const payload = (grant: WebMcpRememberedGrant & { nonce: string }) =>
+		new TextEncoder().encode(
+			MAC_PREFIX + JSON.stringify([grant.site, grant.tool, grant.approvedAt, grant.expiresAt, grant.nonce]),
+		);
 
 	async function live(): Promise<StoredRemembered[]> {
 		const at = now();
@@ -135,7 +143,8 @@ export function createRememberedWebMcpGrants({
 					entry.expiresAt - entry.approvedAt === REMEMBER_MS &&
 					entry.approvedAt <= at &&
 					entry.expiresAt > at &&
-					(await signer.verify(payload(entry), entry.mac).catch(() => false)),
+					(await signer.verify(payload(entry), entry.mac).catch(() => false)) &&
+					(await nonces.has(entry.nonce).catch(() => false)),
 			),
 		);
 		return entries.filter((_, index) => checks[index]);
@@ -149,10 +158,15 @@ export function createRememberedWebMcpGrants({
 		add(grant: WebMcpGrant): Promise<void> {
 			return enqueue(async () => {
 				const approvedAt = now();
-				const record = { site: grant.site, tool: grant.tool, approvedAt, expiresAt: approvedAt + REMEMBER_MS };
+				const nonce = newNonce();
+				const record = { site: grant.site, tool: grant.tool, approvedAt, expiresAt: approvedAt + REMEMBER_MS, nonce };
 				const mac = await signer.sign(payload(record));
-				const kept = (await live()).filter((entry) => !same(entry, grant));
-				await storage.local.set({ [REMEMBERED_KEY]: [...kept, { ...record, mac }] });
+				const held = await live();
+				for (const entry of held) if (same(entry, grant)) await nonces.remove(entry.nonce);
+				await nonces.add(nonce);
+				await storage.local.set({
+					[REMEMBERED_KEY]: [...held.filter((entry) => !same(entry, grant)), { ...record, mac }],
+				});
 			});
 		},
 
@@ -162,13 +176,17 @@ export function createRememberedWebMcpGrants({
 
 		revoke(grant: WebMcpGrant): Promise<void> {
 			return enqueue(async () => {
-				const kept = (await live()).filter((entry) => !same(entry, grant));
-				await storage.local.set({ [REMEMBERED_KEY]: kept });
+				const held = await live();
+				for (const entry of held) if (same(entry, grant)) await nonces.remove(entry.nonce);
+				await storage.local.set({ [REMEMBERED_KEY]: held.filter((entry) => !same(entry, grant)) });
 			});
 		},
 
 		forgetAll(): Promise<void> {
-			return enqueue(() => storage.local.set({ [REMEMBERED_KEY]: [] }));
+			return enqueue(async () => {
+				await nonces.clear();
+				await storage.local.set({ [REMEMBERED_KEY]: [] });
+			});
 		},
 	};
 }

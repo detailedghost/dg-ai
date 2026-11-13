@@ -605,7 +605,9 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 		identity.append(element(doc, "div", "mono", who));
 		const revoke = button(doc, "btn btn-sm", "Revoke", () => {
 			revoke.disabled = true;
-			void revokeWebMcp({ type: MSG.webmcpRevoke, grant });
+			void revokeWebMcp({ type: MSG.webmcpRevoke, grant }).finally(() => {
+				revoke.disabled = false;
+			});
 		});
 		revoke.setAttribute("aria-label", `Revoke ${grant.tool} on ${siteName(grant.site)}, ${who}`);
 		line.append(identity, revoke);
