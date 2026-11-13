@@ -14,6 +14,7 @@ import {
 	PW_EXT_READ_VERBS,
 	PW_EXT_WRITE_VERBS,
 	type PwExtCliRequest,
+	type PwExtRequest,
 } from "@dg/common";
 import { main } from "../../src/pw/cli";
 import { type ExtClient, type ExtDeps, runExt } from "../../src/pw/ext";
@@ -323,12 +324,12 @@ describe("pw --ext tab verbs and --tab", () => {
 		expect(env.stderr.join("\n")).toContain("pw --ext new takes [<url>].");
 	});
 
-	test("lists all 17 verbs for an unknown verb", async () => {
+	test("lists all 18 verbs for an unknown verb", async () => {
 		const env = clientEnv();
 		await runExt(["--ext", "nope"], env, deps(() => ({})).value);
 		const verbs = [...PW_EXT_READ_VERBS, ...PW_EXT_WRITE_VERBS];
 
-		expect(verbs).toHaveLength(17);
+		expect(verbs).toHaveLength(18);
 		for (const verb of verbs) expect(env.stderr.join("\n")).toContain(verb);
 		expect(env.stderr.join("\n")).toContain(`Use one of: ${verbs.join(", ")}.`);
 	});
@@ -537,6 +538,41 @@ function afterEachCleanup(dirs: string[]) {
 		for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 	});
 }
+
+describe("pw --ext dialog", () => {
+	const ok = () => ({ ok: true, data: { text: "done" } });
+
+	test.each([
+		[["dialog"], { verb: "dialog" }],
+		[["dialog", "dismiss"], { verb: "dialog", answer: "dismiss" }],
+		[["dialog", "accept"], { verb: "dialog", answer: "accept" }],
+		[["dialog", "accept", "--text", "Grace Hopper"], { verb: "dialog", answer: "accept", text: "Grace Hopper" }],
+		[["--tab", "4", "dialog", "accept", "--text", ""], { verb: "dialog", answer: "accept", text: "", tabId: 4 }],
+	] as [string[], PwExtRequest][])("sends %p", async (args, request) => {
+		const d = deps(ok);
+		expect(await runExt(["--ext", ...args], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual(request);
+	});
+
+	test.each([
+		[["dialog", "maybe"], "pw --ext dialog takes accept or dismiss."],
+		[["dialog", "dismiss", "--text", "x"], "--text works only with pw --ext dialog accept."],
+		[["dialog", "--text", "x"], "--text works only with pw --ext dialog accept."],
+		[["snapshot", "--text", "x"], "--text works only with pw --ext dialog accept."],
+	])("rejects %p", async (args, message) => {
+		const env = clientEnv();
+		const d = deps(ok);
+		expect(await runExt(["--ext", ...args], env, d.value)).toBe(2);
+		expect(env.stderr.join("\n")).toContain(message);
+		expect(d.sent).toHaveLength(0);
+	});
+
+	test("lists dialog in the help", async () => {
+		const env = clientEnv();
+		await runExt(["--ext", "--help"], env, deps(ok).value);
+		expect(env.stdout.join("\n")).toContain("dialog accept [--text <answer>]");
+	});
+});
 
 describe("pw --ext unmask and secret fill", () => {
 	const ok = () => ({ ok: true, data: { text: "done" } });

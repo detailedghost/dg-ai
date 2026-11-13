@@ -42,6 +42,9 @@ group, until the human hands you a tab from the extension popup.
 | `unmask [--minutes N]` | write | Asks the human, in a browser popup, to unmask the selected tab's origin for `N` minutes (1 to 60, default 15). `unmask --off` ends it |
 | `upload <ref or selector> <file>` | write | Sets one file on a file input of an https page |
 | `call <tool> <json-args>` | write | Runs one WebMCP tool; `json-args` is a JSON object |
+| `dialog` | write | Shows the page's last `alert`, `confirm` or `prompt`, how it was answered, and the answer set for the next one |
+| `dialog accept [--text <answer>]` | write | Accepts the next dialog on the page; `--text` answers a `prompt` |
+| `dialog dismiss` | write | Dismisses the next dialog on the page |
 
 ## Rules
 
@@ -67,6 +70,12 @@ group, until the human hands you a tab from the extension popup.
   the dg scratch directory or the dg demos directory. No hidden files, no
   symbolic link as the file, and not from the home folder itself.
 - `call` runs the site's own code. Treat it like a click.
+- Page dialogs never block you. Each `alert`, `confirm` and `prompt` in your tab
+  is answered at once: dismissed by default. To accept one, run
+  `pw --ext dialog accept [--text <answer>]` first, then do the action again.
+  The answer is used once, and a new page starts again at dismiss. `dialog`
+  shows the last dialog, and `snapshot` lists new ones under `### Dialog`. If a
+  verb stops with "It may show a dialog", ask the human to close it.
 - Browser settings pages, extension pages, private windows and the signed-in
   Proton Mail tab are refused. Ask the human to hand you a web page tab.
   `tabs`, `new` and `close` still work when the selected tab is a settings page,

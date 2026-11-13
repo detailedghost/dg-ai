@@ -3,6 +3,7 @@ import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
+import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import {
 	createFakeBrowser,
 	createLock,
@@ -57,6 +58,7 @@ type Options = {
 	clock?: { now: number };
 	onApproval?: () => void;
 	enabledBuiltIns?: () => Promise<Set<string>>;
+	pageDeadlineMs?: number;
 };
 
 type Executed = {
@@ -101,10 +103,11 @@ function harness(options: Options = {}) {
 		if (call.world === "MAIN") return options.mainResult?.(call.args[0]);
 		return options.pageResult;
 	};
+	const agentTabsLock = createLock();
 	const agentTabs = createAgentTabs({
 		browserApi: fake.api,
 		storage: fake.api.storage,
-		lock: createLock(),
+		lock: agentTabsLock,
 	});
 	const approvalRequests: unknown[] = [];
 	const clock = options.clock ?? { now: Date.UTC(2026, 10, 9, 15, 0) };
@@ -121,6 +124,8 @@ function harness(options: Options = {}) {
 		},
 		now: () => clock.now,
 		...(options.enabledBuiltIns ? { enabledBuiltIns: options.enabledBuiltIns } : {}),
+		...(options.pageDeadlineMs ? { pageDeadlineMs: options.pageDeadlineMs } : {}),
+		lock: agentTabsLock,
 	});
 	const call = (
 		request: PwExtRequest,
@@ -146,6 +151,7 @@ function harness(options: Options = {}) {
 		} as never);
 	return {
 		approvalRequests,
+		agentTabsLock,
 		clock,
 		run: (request: PwExtRequest) => call(request),
 		runAs: (sessionId: string, request: PwExtRequest) =>
@@ -1980,5 +1986,289 @@ describe("pw --ext data.tools redaction", () => {
 		await h.run({ verb: "unmask", minutes: 15 });
 		const answer = await h.run({ verb: "tools" });
 		expect(answer.ok && JSON.stringify(answer.data.tools)).toContain("ada@clinic.test");
+	});
+});
+
+describe("pw --ext dialog", () => {
+	const at = Date.UTC(2026, 10, 12, 9, 0);
+	const confirmDelete = {
+		type: "confirm",
+		message: "Delete the item? token=zzzzzzzzzzzz ada@clinic.test",
+		answer: "dismiss",
+		by: "default",
+		seen: false,
+		at,
+	};
+	const dialogCalls = (h: ReturnType<typeof harness>) =>
+		h.executed().filter((call) => call.world === "MAIN" && (call as { func?: { name?: string } }).func?.name === "pwExtDialogs");
+
+	it("shows the last dialog, how it was answered, and the answer set for the next one, all masked", async () => {
+		const h = harness({
+			mainResult: () => ({ dialogs: [confirmDelete], pending: { answer: "accept", withText: false } }),
+		});
+		const text = outcome(await h.run({ verb: "dialog" }));
+		expect(text).toContain("### Dialog");
+		expect(text).toContain('- last: confirm "Delete the item? token=[redacted] [redacted]", dismissed by default');
+		expect(text).toContain("- next: accept");
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([
+			[{ kind: "install" }, WEB_TAB.url, GROUP],
+			[{ kind: "read", markSeen: true }, WEB_TAB.url, GROUP],
+		]);
+	});
+
+	it("says when the page showed no dialog", async () => {
+		const h = harness({ mainResult: () => ({ dialogs: [] }) });
+		expect(outcome(await h.run({ verb: "dialog" }))).toContain("No dialog on this page since pw --ext began to watch it.");
+	});
+
+	it("sets a one-shot answer with prompt text", async () => {
+		const h = harness({ mainResult: () => ({ dialogs: [], pending: { answer: "accept", withText: true } }) });
+		const answer = await h.run({ verb: "dialog", answer: "accept", text: "Grace" });
+		expect(outcome(answer)).toContain("The next dialog on this page gets accept, with your text.");
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([
+			[{ kind: "install" }, WEB_TAB.url, GROUP],
+			[{ kind: "answer", answer: "accept", text: "Grace", until: expect.any(Number) }, WEB_TAB.url, GROUP],
+		]);
+	});
+
+	it("refuses prompt text that holds a filled secret and sends nothing to the page", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ dialogs: [] }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		const answer = await h.run({ verb: "dialog", answer: "accept", text: "my orchid-maple" });
+		expect(answer.ok).toBe(false);
+		expect(outcome(answer)).toContain("filled as a secret");
+		expect(outcome(answer)).not.toContain("orchid-maple");
+		expect(dialogCalls(h)).toEqual([]);
+	});
+
+	it("refuses the mailbox and browser pages", async () => {
+		const proton = harness({ tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
+		expect((await proton.run({ verb: "dialog" })).ok).toBe(false);
+		const settings = harness({ tabs: [{ ...WEB_TAB, url: "chrome://settings/" }] });
+		expect((await settings.run({ verb: "dialog", answer: "dismiss" })).ok).toBe(false);
+		expect([...dialogCalls(proton), ...dialogCalls(settings)]).toEqual([]);
+	});
+
+	it("rejects a malformed dialog reply from the page", async () => {
+		const h = harness({ mainResult: () => ({ dialogs: [{ ...confirmDelete, type: "beforeunload" }] }) });
+		expect(await h.run({ verb: "dialog" })).toEqual({ ok: false, error: "The page returned an unexpected dialog result." });
+	});
+
+	it("lists unseen dialogs and the next answer at the top of a snapshot, read before the page action", async () => {
+		const h = harness({
+			pageResult: { tree: 'button "Delete" [ref=e1]', text: "Items" },
+			mainResult: () => ({ dialogs: [{ ...confirmDelete, seen: true }, { ...confirmDelete, type: "alert", message: "Gone" }], pending: { answer: "dismiss", withText: false } }),
+		});
+		const text = outcome(await h.run({ verb: "snapshot" }));
+		expect(text).toContain('### Dialog\n- alert "Gone", dismissed by default\n- next: dismiss');
+		expect(text).not.toContain("Delete the item?");
+		expect(dialogCalls(h).map((call) => call.args)).toEqual([
+			[{ kind: "install" }, WEB_TAB.url, GROUP],
+			[{ kind: "read", markSeen: true }, WEB_TAB.url, GROUP],
+		]);
+		expect(h.executed().at(-1)?.world).toBeUndefined();
+	});
+
+	it("keeps the snapshot when the dialog read fails", async () => {
+		const h = harness({ pageResult: { tree: 'button "Go" [ref=e1]', text: "Go" }, mainResult: () => "nonsense" });
+		const answer = await h.run({ verb: "snapshot" });
+		expect(answer.ok).toBe(true);
+		expect(outcome(answer)).not.toContain("### Dialog");
+	});
+
+	it("installs the shim as early as it can in agent tabs of any session, and in no user tab", async () => {
+		const h = harness({
+			tabs: [
+				WEB_TAB,
+				groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }),
+				groupTab(9, { url: "https://app.example.test/", incognito: true }),
+				groupTab(10, { url: "chrome://settings/" }),
+			],
+		});
+		for (const tabId of [7, 8, 9, 10, 20, 21]) h.fake.fireUpdated(tabId, { status: "loading" });
+		h.fake.fireUpdated(7, { title: "x" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const installs = dialogCalls(h);
+		expect(installs.map((call) => call.target.tabId)).toEqual([7, 20]);
+		expect(installs[0]).toMatchObject({ world: "MAIN", injectImmediately: true, args: [{ kind: "install" }, WEB_TAB.url, GROUP] });
+	});
+
+	it("removes the shim when a tab leaves its agent group, and installs it when a tab joins one", async () => {
+		const h = harness();
+		const tab = h.fake.tabs.get(7) as FakeTab;
+		tab.groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		const user = h.fake.tabs.get(21) as FakeTab;
+		user.groupId = GROUP;
+		h.fake.fireUpdated(21, { groupId: GROUP });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([
+			[7, { kind: "remove" }],
+			[21, { kind: "install" }],
+		]);
+	});
+
+	it("still removes the shim when a load event follows the group change", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }, { kind: "remove" }]);
+	});
+
+	it("keeps sending removals on later loads of a tab it once shimmed, for pages the back-forward cache restores", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		h.fake.fireUpdated(7, { groupId: -1 });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }, { kind: "remove" }]);
+	});
+
+	it("still removes the shim from a released tab after a worker restart", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		const restarted = createPwExtHandler({ browserApi: h.fake.api, agentTabs: h.agentTabs, isChromium: () => true, lock: h.agentTabsLock });
+		expect(restarted).toBeInstanceOf(Function);
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toContainEqual({ kind: "remove" });
+		expect(h.fake.session.get("pwExtDialogShims")).toEqual([7]);
+	});
+
+	it("installs the shim right after new opens a tab", async () => {
+		const h = harness({ record: false });
+		await h.run({ verb: "new", url: "https://app.example.test/" });
+		const tab = await h.createdTab();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args[0]])).toEqual([[tab.id, { kind: "install" }]]);
+	});
+
+	it("stops waiting on a tab that does not answer when the session ends", async () => {
+		const h = harness();
+		h.fake.state.script = () => new Promise(() => {});
+		const started = Date.now();
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs: h.agentTabs, sessionId: SESSION, deadlineMs: 20 });
+		expect(Date.now() - started).toBeLessThan(1000);
+		expect(h.fake.record(SESSION)).toBeUndefined();
+	});
+
+	it("also removes the shim from a tab the session got after the cleanup listed its tabs", async () => {
+		const h = harness({ tabs: [WEB_TAB, groupTab(8, { url: "https://late.example.test/" })] });
+		h.fake.fireUpdated(8, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		const agentTabs = { list: async () => [], forget: h.agentTabs.forget.bind(h.agentTabs) };
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs, sessionId: SESSION });
+		expect(dialogCalls(h).filter((call) => call.target.tabId === 8).map((call) => call.args[0])).toEqual([
+			{ kind: "install" },
+			{ kind: "remove" },
+		]);
+	});
+
+	it("removes the shim from a forgotten session's tabs, and skips mailbox and browser pages", async () => {
+		const h = harness({
+			tabs: [WEB_TAB, groupTab(8, { url: "https://mail.proton.me/u/0/inbox" }), groupTab(10, { url: "chrome://settings/" })],
+		});
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs: h.agentTabs, sessionId: SESSION });
+		expect(dialogCalls(h).map((call) => [call.target.tabId, call.args])).toEqual([[7, [{ kind: "remove" }]]]);
+		expect(h.fake.record(SESSION)).toBeUndefined();
+	});
+
+	it("does not wait on the shim before new and select answer", async () => {
+		const h = harness();
+		h.fake.state.script = () => new Promise(() => {});
+		expect((await h.run({ verb: "select", tabId: 7 })).ok).toBe(true);
+	});
+
+	it("refuses prompt text that holds a filled secret without its line breaks", async () => {
+		const options = { approval: "allow" as const, pageResult: { detail: "filled" } as unknown, mainResult: () => ({ dialogs: [] }) };
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid\nmaple", secret: true });
+		expect((await h.run({ verb: "dialog", answer: "accept", text: "orchidmaple" })).ok).toBe(false);
+		expect(dialogCalls(h)).toEqual([]);
+	});
+
+	it("removes the shim again when the tab stopped being an agent tab during the install", async () => {
+		const h = harness();
+		h.fake.state.script = (details) => {
+			const call = details as { args: unknown[] };
+			if ((call.args[0] as { kind?: string }).kind === "install") h.fake.session.delete("agentTabs:" + SESSION);
+			return { dialogs: [] };
+		};
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }]);
+	});
+
+	it("masks a dialog error with a secret that a concurrent fill holds", async () => {
+		let release: (() => void) | undefined;
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: (action: unknown) =>
+				(action as { kind: string }).kind === "install"
+					? { dialogs: [] }
+					: new Promise((resolve) => {
+							release = () => resolve({ error: "Dialog handling failed: lilac-harbor" });
+						}),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		const reading = h.run({ verb: "dialog" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		await h.run({ verb: "fill", target: "#pw", value: "lilac-harbor", secret: true });
+		release?.();
+		expect(outcome(await reading)).not.toContain("lilac-harbor");
+	});
+
+	it("waits for an adopt in flight before it decides a regrouped tab is no agent tab", async () => {
+		const h = harness();
+		let finish: (() => void) | undefined;
+		const holding = h.agentTabsLock.request("agentTabs", () => new Promise<void>((resolve) => (finish = resolve)));
+		(h.fake.tabs.get(21) as FakeTab).groupId = 30;
+		h.fake.fireUpdated(21, { groupId: 30 });
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		h.fake.seedRecord(recordOf({ sessionId: "adopting", groupId: 30 }));
+		finish?.();
+		await holding;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }]);
+	});
+
+	it("masks a page-made dialog error with the held secrets", async () => {
+		const options = {
+			approval: "allow" as const,
+			pageResult: { detail: "filled" } as unknown,
+			mainResult: () => ({ error: "Dialog handling failed: orchid-maple" }),
+		};
+		const h = harness(options);
+		await h.run({ verb: "unmask", minutes: 5 });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple", secret: true });
+		const answer = await h.run({ verb: "dialog" });
+		expect(answer.ok).toBe(false);
+		expect(outcome(answer)).not.toContain("orchid-maple");
+	});
+
+	it("names a possible dialog when the page does not answer in time", async () => {
+		const h = harness({ pageResult: new Promise(() => {}), pageDeadlineMs: 20 });
+		expect(await h.run({ verb: "snapshot" })).toEqual({
+			ok: false,
+			error: expect.stringContaining("It may show a dialog that pw --ext could not catch"),
+		});
 	});
 });

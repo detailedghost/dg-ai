@@ -53,6 +53,7 @@ function boot() {
 			onInstalled: { addListener: mock(() => undefined) },
 		},
 		tabs: {
+			onUpdated: { addListener: () => undefined, removeListener: () => undefined }, onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			create: tabsCreate,
 			query: mock(() => Promise.resolve([])),
 			update: mock(() => Promise.resolve()),

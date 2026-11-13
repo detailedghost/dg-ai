@@ -550,6 +550,30 @@ describe("pw --ext unmask and secret fill", () => {
 	});
 });
 
+describe("pw --ext dialog", () => {
+	it.each([
+		{ verb: "dialog" },
+		{ verb: "dialog", tabId: 3 },
+		{ verb: "dialog", answer: "dismiss" },
+		{ verb: "dialog", answer: "accept" },
+		{ verb: "dialog", answer: "accept", text: "Ada" },
+		{ verb: "dialog", answer: "accept", text: "" },
+	])("accepts %o", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request);
+	});
+
+	it.each([
+		[{ verb: "dialog", answer: "maybe" }, "answer"],
+		[{ verb: "dialog", answer: "dismiss", text: "x" }, "text"],
+		[{ verb: "dialog", text: "x" }, "text"],
+		[{ verb: "dialog", answer: "accept", text: 3 }, "text"],
+		[{ verb: "dialog", answer: "accept", text: "x".repeat(4097) }, "text"],
+		[{ verb: "click", target: "#b", answer: "accept" }, "unknown field"],
+	])("rejects %o", (request, message) => {
+		expect(() => validatePwExtRequest(request)).toThrow(message);
+	});
+});
+
 describe("isPwExtSecretTooShort", () => {
 	it.each([
 		["", true],

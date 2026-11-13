@@ -22,6 +22,7 @@ export const PW_EXT_WRITE_VERBS = [
 	"select",
 	"close",
 	"unmask",
+	"dialog",
 ] as const;
 export type PwExtVerb =
 	| (typeof PW_EXT_READ_VERBS)[number]
@@ -71,6 +72,10 @@ export type PwExtRequest = {
 	secret?: boolean;
 	minutes?: number;
 	off?: boolean;
+	/** dialog only: how the page's next alert, confirm or prompt is answered. */
+	answer?: "accept" | "dismiss";
+	/** dialog accept only: the answer a prompt gets. */
+	text?: string;
 };
 
 export type PwExtTool = {
@@ -144,6 +149,7 @@ const FIELDS: Record<PwExtVerb, readonly string[]> = {
 	],
 	tools: ["tabId"],
 	call: ["tabId", "tool", "args"],
+	dialog: ["tabId", "answer", "text"],
 };
 
 const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -244,6 +250,16 @@ export function validatePwExtRequest(value: unknown): PwExtRequest {
 				(value.minutes as number) > PW_EXT_UNMASK_MAX_MINUTES)
 		)
 			fail(`${path}.minutes must be an integer from 1 to ${PW_EXT_UNMASK_MAX_MINUTES}`);
+	}
+	if (verb === "dialog") {
+		if (value.answer !== undefined && value.answer !== "accept" && value.answer !== "dismiss")
+			fail(`${path}.answer must be accept or dismiss`);
+		if (value.text !== undefined) {
+			if (value.answer !== "accept") fail(`${path}.text is used only with answer accept`);
+			requireString(value.text, `${path}.text`);
+			if (bytes(value.text) > PW_EXT_MAX_VALUE_BYTES)
+				fail(`${path}.text exceeds ${PW_EXT_MAX_VALUE_BYTES} bytes`);
+		}
 	}
 	if (verb === "fill") {
 		if (value.secret !== undefined && value.secret !== true) fail(`${path}.secret must be true when set`);
