@@ -576,8 +576,23 @@ export function createAgentTabs({
 			});
 		},
 
-		clearPersisted(): Promise<void> {
+		restore(): Promise<number[]> {
 			return locked(async () => {
+				const tabIds: number[] = [];
+				const known = new Set((await readRecords(storage)).map((r) => r.sessionId));
+				for (const record of await persisted()) {
+					if (known.has(record.sessionId)) continue;
+					const recovered = await recover(record.sessionId);
+					if (recovered) tabIds.push(...recovered.tabIds);
+				}
+				return tabIds;
+			});
+		},
+
+		clearAll(): Promise<void> {
+			return locked(async () => {
+				for (const record of await readRecords(storage))
+					await drop(record.sessionId);
 				for (const record of await persisted())
 					await storage.local?.remove(persistKey(record.sessionId));
 			});
@@ -659,8 +674,13 @@ export function registerAgentTabs({
 	);
 
 	browser.runtime.onStartup.addListener(
-		() => void agentTabs.clearPersisted().catch(logCleanupFailure),
+		() => void agentTabs.clearAll().catch(logCleanupFailure),
 	);
+
+	void agentTabs
+		.restore()
+		.then((tabIds) => tabIds.forEach((tabId) => onAdopted?.(tabId)))
+		.catch(logCleanupFailure);
 
 	browser.tabGroups.onRemoved.addListener(
 		(group) =>

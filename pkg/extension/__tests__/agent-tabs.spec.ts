@@ -4,6 +4,7 @@ import { MSG } from "@dg/pages/chat-messages";
 import {
 	AgentGroupFullError,
 	agentGroupIds,
+	agentSessionIds,
 	createAgentTabs,
 	groupTitle,
 	MAX_AGENT_TABS,
@@ -238,6 +239,29 @@ describe("agent tabs open", () => {
 		expect(fake.groups.size).toBe(2);
 	});
 
+	it("restores saved records into session storage and reports their tabs", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+
+		expect(await agentTabs.restore()).toEqual([first.tabId]);
+		expect(fake.record(SESSION_A)?.groupId).toBe(group);
+		expect(await agentSessionIds({ storage: fake.api.storage })).toEqual(
+			new Set([SESSION_A]),
+		);
+	});
+
+	it("drops a saved record whose group is gone when it restores", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		fake.dropGroup(groupOf(fake, first.tabId));
+		fake.reload();
+
+		expect(await agentTabs.restore()).toEqual([]);
+		expect(fake.record(SESSION_A)).toBeUndefined();
+	});
+
 	it("reports the tabs of a recovered group", async () => {
 		const { fake, open } = setup();
 		const first = await open();
@@ -308,7 +332,7 @@ describe("agent tabs open", () => {
 		const group = groupOf(fake, first.tabId);
 		fake.groups.get(group)!.title = "my rename";
 		fake.reload();
-		await agentTabs.clearPersisted();
+		await agentTabs.clearAll();
 		const second = await open(SESSION_A, "https://b.example.test/");
 
 		expect(groupOf(fake, second.tabId)).not.toBe(group);
