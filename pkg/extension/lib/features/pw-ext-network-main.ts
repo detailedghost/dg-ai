@@ -249,12 +249,21 @@ export function pwExtNetwork(
 				const forms = formsOf(value)
 					.filter((form) => form.length >= 8)
 					.sort((a, b) => b.length - a.length);
-				const scrub = (text: string) => forms.reduce((out, form) => out.split(form).join("[redacted]"), text);
+				const scrub = (text: string, cut: boolean) => {
+					const out = forms.reduce((done, form) => done.split(form).join("[redacted]"), text);
+					if (!cut) return out;
+					for (const form of forms)
+						for (let size = form.length - 1; size >= 4; size--)
+							if (out.endsWith(form.slice(0, size))) return `${out.slice(0, out.length - size)}[redacted]`;
+					return out;
+				};
 				for (const entry of fresh.entries) {
-					entry.url = scrub(entry.url);
+					entry.url = scrub(entry.url, entry.url.length >= URL_MAX);
 					for (const list of [entry.requestHeaders, entry.responseHeaders])
-						for (const held of list) if (held.value !== undefined) held.value = scrub(held.value);
-					for (const body of [entry.request, entry.response]) if (body?.text !== undefined) body.text = scrub(body.text);
+						for (const held of list)
+							if (held.value !== undefined) held.value = scrub(held.value, held.value.length >= HEADER_VALUE_MAX);
+					for (const body of [entry.request, entry.response])
+						if (body?.text !== undefined) body.text = scrub(body.text, body.cut === true);
 				}
 			};
 			const headerPairs = (source: HeadersInit | Headers | undefined): [string, string][] => {

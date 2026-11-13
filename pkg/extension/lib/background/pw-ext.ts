@@ -1293,6 +1293,8 @@ export function createPwExtHandler({
 					return failed(`The tab or its approval changed during the save. ${NOT_SAVED}`);
 				if ((await grants.reserve(context.sessionId, value)) === "full")
 					return failed(`This session already holds ${MAX_FILLED_SECRETS} secret values; start a new dg session to save more. ${NOT_SAVED}`);
+				if (signal?.aborted) return CANCELED;
+				if (await isStopped(context.sessionId)) return STOPPED;
 				let stored: string;
 				try {
 					stored = await context.storeCredential({ site, name: request.name as string, value, meta });

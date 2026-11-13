@@ -511,3 +511,18 @@ describe("cut edges and delayed responses", () => {
 		expect(text).not.toContain(first);
 	});
 });
+
+describe("cut edges after history eviction", () => {
+	it("keeps a cut token prefix masked after the token leaves the history", async () => {
+		const token = "fake-evicted-cut-token-value-for-tests";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(`${"x".repeat(7990)}${token}`, { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: token } });
+		await settle();
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+		await settle();
+		expect(JSON.stringify(read(true))).not.toContain(token.slice(0, 10));
+	});
+});
