@@ -38,6 +38,13 @@ describe("agent banner", () => {
 		expect(host.textContent).toBe("");
 	});
 
+	it("keeps the banner host out of the page layout", () => {
+		pwExtBanner(true);
+		const host = hosts()[0] as unknown as HTMLElement;
+		expect(host.style.getPropertyValue("position")).toBe("fixed");
+		expect(host.style.getPropertyPriority("position")).toBe("important");
+	});
+
 	it("shows the banner again after the page removed it", () => {
 		pwExtBanner(true);
 		hosts()[0]?.remove();

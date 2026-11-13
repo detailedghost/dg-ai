@@ -14,14 +14,19 @@ export function pwExtBanner(show: boolean): void {
 	}
 	if (existing?.isConnected) return;
 	const host = document.createElement("dg-agent-banner");
+	for (const [name, value] of [
+		["position", "fixed"],
+		["right", "16px"],
+		["bottom", "16px"],
+		["z-index", "2147483647"],
+		["display", "block"],
+		["margin", "0"],
+	])
+		host.style.setProperty(name, value, "important");
 	const root = host.attachShadow({ mode: "closed" });
 	const bar = document.createElement("div");
 	bar.setAttribute("role", "status");
 	Object.assign(bar.style, {
-		position: "fixed",
-		right: "16px",
-		bottom: "16px",
-		zIndex: "2147483647",
 		display: "flex",
 		gap: "12px",
 		alignItems: "center",
