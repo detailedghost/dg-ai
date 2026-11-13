@@ -111,6 +111,7 @@ function makeBrowserApi(local: LocalArea = makeLocalArea()) {
 			onStartup: { addListener: onStartupAdd },
 			onInstalled: { addListener: onInstalledAdd },
 		},
+		tabGroups: { onUpdated: { addListener: () => undefined, removeListener: () => undefined } },
 		tabs: {
 			onUpdated: { addListener: () => undefined, removeListener: () => undefined }, onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			create: tabsCreate,
@@ -236,6 +237,9 @@ test("registerDaemonLink falls back to the wxt browser global when no browserApi
 	};
 	const hadTabs = Object.hasOwn(globalBrowser, "tabs");
 	const tabs = globalBrowser.tabs;
+	const hadGroups = Object.hasOwn(globalBrowser, "tabGroups");
+	const groups = globalBrowser.tabGroups;
+	globalBrowser.tabGroups = { onUpdated: { addListener: mock(() => undefined) } };
 	globalBrowser.tabs = { onUpdated: { addListener: mock(() => undefined) }, onRemoved: { addListener: mock(() => undefined) } };
 	try {
 		expect(() => registerDaemonLink()).not.toThrow();
@@ -244,6 +248,8 @@ test("registerDaemonLink falls back to the wxt browser global when no browserApi
 		delete globalBrowser.runtime;
 		if (hadTabs) globalBrowser.tabs = tabs;
 		else delete globalBrowser.tabs;
+		if (hadGroups) globalBrowser.tabGroups = groups;
+		else delete globalBrowser.tabGroups;
 	}
 });
 

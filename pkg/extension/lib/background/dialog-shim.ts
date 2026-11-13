@@ -13,6 +13,7 @@ import { allowedPage, mailbox } from "./tab-guards";
 /** The browser surface the dialog shim needs. */
 export type DialogShimApi = {
 	tabs: { get(tabId: number): Promise<BrowserTab> };
+	tabGroups: { get(groupId: number): Promise<{ title?: string }> };
 	scripting: {
 		executeScript(details: {
 			target: { tabId: number };
@@ -93,7 +94,8 @@ export async function syncDialogShim({
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
 	if (record) {
 		await noteDialogShim(storage, tabId);
-		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId], bannerTitle(record));
+		const live = (await api.tabGroups.get(record.groupId).catch(() => undefined))?.title;
+		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId], bannerTitle({ ...record, title: live?.trim() || record.title }));
 		if ((await owned()).record) return;
 	} else if (!regrouped && !(await shimmedTabs(storage)).includes(tabId)) return;
 	await inject(api, tabId, [{ kind: "remove" }]);

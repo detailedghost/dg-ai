@@ -68,6 +68,7 @@ export type AgentTabsBrowserApi = {
 		get(groupId: number): Promise<{
 			windowId: number;
 			color?: GroupColor;
+			title?: string;
 		}>;
 	};
 };

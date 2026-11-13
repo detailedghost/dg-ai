@@ -41,6 +41,7 @@ type Listeners = {
 	activated: Set<(info: { tabId: number; windowId: number }) => void>;
 	updated: Set<(tabId: number, change: Record<string, unknown>, tab?: unknown) => void>;
 	removed: Set<(tabId: number) => void>;
+	groupUpdated: Set<(group: { id: number }) => void>;
 };
 
 export const TAB_GROUP_ID_NONE = -1;
@@ -111,6 +112,7 @@ export function createFakeBrowser(
 		activated: new Set(),
 		updated: new Set(),
 		removed: new Set(),
+		groupUpdated: new Set(),
 	};
 	const state = {
 		lastFocusedWindowId: seed.lastFocusedWindowId ?? [...windows.keys()][0],
@@ -302,6 +304,10 @@ export function createFakeBrowser(
 			},
 		},
 		tabGroups: {
+			onUpdated: {
+				addListener: (fn: (group: { id: number }) => void) => listeners.groupUpdated.add(fn),
+				removeListener: (fn: (group: { id: number }) => void) => listeners.groupUpdated.delete(fn),
+			},
 			update: mock(
 				async (id: number, props: { title?: string; color?: string }) => {
 					const group = groups.get(id);
@@ -365,6 +371,11 @@ export function createFakeBrowser(
 		flushActivations,
 		fireActivated(info: { tabId: number; windowId: number }) {
 			for (const fn of listeners.activated) fn(info);
+		},
+		renameGroup(id: number, title: string) {
+			const group = groups.get(id);
+			if (group) group.title = title;
+			for (const fn of listeners.groupUpdated) fn({ id });
 		},
 		fireUpdated(tabId: number, change: Record<string, unknown>) {
 			const tab = tabs.get(tabId);

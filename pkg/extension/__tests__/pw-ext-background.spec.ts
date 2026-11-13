@@ -90,7 +90,7 @@ function harness(options: Options = {}) {
 			tabOf({ id: 21, windowId: WINDOW, title: "User tab" }),
 		],
 		groups: [
-			{ id: GROUP, windowId: WINDOW, title: "mine" },
+			{ id: GROUP, windowId: WINDOW, title: "agent · sess" },
 			{ id: OTHER_GROUP, windowId: WINDOW, title: "theirs" },
 		],
 	});
@@ -2579,9 +2579,38 @@ describe("pw --ext agent banner", () => {
 		]);
 	});
 
+	it("updates the strip when the person renames the agent group", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		h.fake.renameGroup(GROUP, "Sammy review");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).map((call) => call.args)).toEqual([
+			[true, "agent · sess"],
+			[true, "Sammy review"],
+		]);
+	});
+
+	it("shows the renamed title on a new load after the rename", async () => {
+		const h = harness();
+		h.fake.renameGroup(GROUP, "Sammy review");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).at(-1)?.args).toEqual([true, "Sammy review"]);
+	});
+
+	it("falls back to the record title when the live group title is empty", async () => {
+		const h = harness();
+		h.fake.renameGroup(GROUP, "");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(bannerCalls(h).at(-1)?.args).toEqual([true, "agent · sess"]);
+	});
+
 	it("shows the short session id when the group record has no title", async () => {
 		const h = harness({ record: false });
 		h.fake.seedRecord(recordOf({ sessionId: SESSION, groupId: GROUP, title: "", selectedTabId: 7 }));
+		(h.fake.groups.get(GROUP) as { title: string }).title = "";
 		h.fake.fireUpdated(7, { status: "loading" });
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(bannerCalls(h).map((call) => call.args)).toEqual([[true, "sess"]]);
