@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import path from "node:path";
 import { runCapture } from "@dg/common/node";
 
 /** A failure the dispatcher reports as `dg-skills worktree: <message>` with exit 2. */
@@ -91,4 +93,13 @@ export async function branchExists(
 
 export function lastSegment(branch: string): string {
 	return branch.slice(branch.lastIndexOf("/") + 1);
+}
+
+/** Path every new linked worktree of `origin` starts with, slug appended. */
+export function worktreePrefix(origin: string): string {
+	const homeCode = path.join(process.env.HOME ?? homedir(), "code");
+	const parent = origin.startsWith(`${homeCode}${path.sep}`)
+		? path.join(homeCode, "worktrees")
+		: path.dirname(origin);
+	return path.join(parent, `${path.basename(origin)}-`);
 }
