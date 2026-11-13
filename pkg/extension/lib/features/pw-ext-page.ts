@@ -400,10 +400,22 @@ export function pwExtPageAction(
 		return matches[0] as Element;
 	};
 
+	const opaqueId = (value: string): boolean => {
+		if (/^\d{5,}$/.test(value)) return true;
+		if (/\s/.test(value)) return false;
+		if (value.length >= 12 && /[%=+/]/.test(value)) return true;
+		if (value.length < 16) return false;
+		if (/\d/.test(value) && /[A-Za-z]/.test(value)) return true;
+		const letters = value.replace(/[^A-Za-z]/g, "");
+		const upper = value.replace(/[^A-Z]/g, "").length;
+		return value.length >= 20 && /[a-z]/.test(value) && upper >= letters.length * 0.3;
+	};
+
 	const tagOf = (el: Element): string => {
 		const attrs = ["type", "id", "name"].flatMap((attr) => {
 			const value = el.getAttribute(attr);
-			return value === null ? [] : [` ${attr}="${squash(value, 80)}"`];
+			if (value === null) return [];
+			return [` ${attr}="${attr !== "type" && opaqueId(value) ? REDACTED : squash(value, 80)}"`];
 		});
 		return `<${el.tagName.toLowerCase()}${attrs.join("")}>`;
 	};
