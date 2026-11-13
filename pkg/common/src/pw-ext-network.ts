@@ -47,7 +47,7 @@ const CREDENTIAL_FIELD =
 	/pass|pwd|secret|token|key|auth|credential|session|cookie|canary|csrf|xsrf|signature|jwt|dpop|bearer|assertion|^otp$|^pin$|^code$/i;
 const JSON_FIELD = /"((?:[^"\\]|\\.){1,256})"(\s*:\s*)("(?:[^"\\]|\\.)*"?|-?\d[\d.eE+-]*|true|false)/g;
 const JSON_NESTED = /"((?:[^"\\]|\\.){1,256})"\s*:\s*[[{]/g;
-const USER_INFO = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i;
+const USER_INFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@"'<>]*@/gi;
 const CONTENT_TYPE = /^\s*([\w.+-]{1,60}\/[\w.+-]{1,60})\s*(?:;\s*charset=["']?([\w-]{1,32}))?/i;
 const FORM_NAME = /(^|[?&;\s])([^=&;\s?#]{1,256})=/g;
 const XML_OPEN = /<([A-Za-z_][\w.:-]{0,128})(\s[^<>]*)?>/g;
@@ -108,6 +108,18 @@ function localName(name: string): string {
 	return name.slice(name.lastIndexOf(":") + 1);
 }
 
+function closingTag(text: string, name: string, from: number): number {
+	const tag = new RegExp(`<(/?)${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[\\s/>])[^>]*>`, "g");
+	tag.lastIndex = from;
+	let depth = 1;
+	for (let match = tag.exec(text); match; match = tag.exec(text)) {
+		if (match[1]) depth--;
+		else if (!match[0].endsWith("/>")) depth++;
+		if (depth === 0) return match.index;
+	}
+	return text.length;
+}
+
 function maskXmlFields(text: string): string {
 	const out = text.replace(XML_ATTRIBUTE, (match, gap: string, name: string, eq: string) =>
 		CREDENTIAL_FIELD.test(localName(name)) ? `${gap}${name}${eq}"[redacted]"` : match,
@@ -118,8 +130,7 @@ function maskXmlFields(text: string): string {
 		const name = match[1] as string;
 		const start = (match.index ?? 0) + match[0].length;
 		if (start < from || match[0].endsWith("/>") || !CREDENTIAL_FIELD.test(localName(name))) continue;
-		const close = out.indexOf(`</${name}`, start);
-		const end = close === -1 ? out.length : close;
+		const end = closingTag(out, name, start);
 		if (end === start) continue;
 		parts.push(out.slice(from, start), "[redacted]");
 		from = end;

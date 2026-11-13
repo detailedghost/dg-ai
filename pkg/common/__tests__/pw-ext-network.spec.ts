@@ -104,6 +104,9 @@ describe("maskCredentialFields", () => {
 		["<a><Password><![CDATA[hunter2]]></Password><B>1</B></a>", "<a><Password>[redacted]</Password><B>1</B></a>"],
 		["<a><t:Credentials><User>ada</User><Pin>12</Pin></t:Credentials></a>", "<a><t:Credentials>[redacted]</t:Credentials></a>"],
 		["<a><Secret>fake-cut", "<a><Secret>[redacted]"],
+		["<Token><TokenType>Bearer</TokenType><Value>hunter2</Value></Token><B>1</B>", "<Token>[redacted]</Token><B>1</B>"],
+		["<Key><Key>a</Key><V>hunter2</V></Key><B>1</B>", "<Key>[redacted]</Key><B>1</B>"],
+		['{"endpoint":"https://alice:hunter2@127.0.0.1/api","n":1}', '{"endpoint":"https://[redacted]@127.0.0.1/api","n":1}'],
 		['<s:Envelope><t:Token type="x">fake-tok</t:Token><Item AuthKey="fake-attr" Id="1"/>', '<s:Envelope><t:Token type="x">[redacted]</t:Token><Item AuthKey=[redacted] Id="1"/>'],
 	])("masks %s", (input, output) => expect(maskCredentialFields(input)).toBe(output));
 });
