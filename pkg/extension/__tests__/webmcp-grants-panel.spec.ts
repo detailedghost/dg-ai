@@ -113,6 +113,7 @@ describe("options Web MCP grants panel", () => {
 
 		expect(container.querySelector('[role="status"]')?.textContent).toBe("Storage read failed.");
 		expect(container.querySelectorAll(".drive")).toHaveLength(0);
+		expect(container.querySelector("[data-webmcp-grants-empty]")?.hasAttribute("hidden")).toBe(true);
 	});
 
 	it("shows a failed revoke", async () => {

@@ -19,6 +19,7 @@ export function mountWebMcpGrantsPanel(
 	const list = element(doc, "div");
 	const empty = element(doc, "p", "note", NO_WEBMCP_GRANTS);
 	empty.setAttribute("data-webmcp-grants-empty", "");
+	empty.hidden = true;
 	const status = element(doc, "div", "status err");
 	status.setAttribute("role", "status");
 
