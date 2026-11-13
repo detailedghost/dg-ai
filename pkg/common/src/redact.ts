@@ -15,8 +15,8 @@ export function clearNotedSecrets(): void {
 }
 
 const EMAIL = {
-	pattern: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
-	replacement: REDACTED,
+	pattern: /(^|[^A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+	replacement: `$1${REDACTED}`,
 };
 
 const SECRET_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
