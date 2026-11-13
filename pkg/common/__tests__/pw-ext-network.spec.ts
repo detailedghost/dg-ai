@@ -101,6 +101,9 @@ describe("maskCredentialFields", () => {
 		["https://a.test/login?password=;hunter2&x=1", "https://a.test/login?password=[redacted]&x=1"],
 		["a=1;password=fake-pass", "a=1;password=[redacted]"],
 		["<login><User>ada</User><Password>hunter2</Password></login>", "<login><User>ada</User><Password>[redacted]</Password></login>"],
+		["<a><Password><![CDATA[hunter2]]></Password><B>1</B></a>", "<a><Password>[redacted]</Password><B>1</B></a>"],
+		["<a><t:Credentials><User>ada</User><Pin>12</Pin></t:Credentials></a>", "<a><t:Credentials>[redacted]</t:Credentials></a>"],
+		["<a><Secret>fake-cut", "<a><Secret>[redacted]"],
 		['<s:Envelope><t:Token type="x">fake-tok</t:Token><Item AuthKey="fake-attr" Id="1"/>', '<s:Envelope><t:Token type="x">[redacted]</t:Token><Item AuthKey=[redacted] Id="1"/>'],
 	])("masks %s", (input, output) => expect(maskCredentialFields(input)).toBe(output));
 });
@@ -198,6 +201,14 @@ describe("formatNetwork", () => {
 		expect(out).toContain('"access_token":"[redacted]"');
 		expect(out).toContain('"token_type":"[redacted]"}…');
 		for (const secret of ["fake-refresh", "hunter2", "fake-opaque"]) expect(out).not.toContain(secret);
+	});
+
+	it("masks credential fields inside a header value", () => {
+		const out = formatNetwork(
+			[entry({ responseHeaders: [{ name: "location", value: "https://b.test/cb?pwd=fake-pass&x=1" }] })],
+			{ values: true, value },
+		).join("\n");
+		expect(out).toContain("location: https://b.test/cb?pwd=[redacted]&x=1");
 	});
 
 	it("filters on the shape URL so a hidden value cannot be probed", () => {

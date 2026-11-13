@@ -1072,7 +1072,7 @@ export function createPwExtHandler({
 				}
 				const lines = formatNetwork(entries, {
 					values,
-					value: (text) => maskRaw(text.replace(/%40/gi, "@"), RAW_OUTPUT_MAX, options),
+					value: (text) => maskRaw(maskRaw(text, RAW_OUTPUT_MAX, options).replace(/%40/gi, "@"), RAW_OUTPUT_MAX, options),
 					...(request.filter === undefined ? {} : { filter: request.filter }),
 					...(request.limit === undefined ? {} : { limit: request.limit }),
 				});

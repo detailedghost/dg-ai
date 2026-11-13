@@ -2684,6 +2684,15 @@ describe("pw --ext network", () => {
 		expect(text).not.toContain("clinic.test");
 	});
 
+	it("masks a held secret in URL-encoded form that also holds an at sign", async () => {
+		const secret = "orchid@maple/leaf";
+		const encoded = { ...entry, url: `https://app.example.test/x?data=${encodeURIComponent(secret)}` };
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { detail: "filled" }, mainResult: page([encoded]) });
+		await h.run({ verb: "fill", target: "#pw", value: secret, secret: true });
+		const text = outcome(await h.run({ verb: "network", values: true }));
+		expect(text).not.toContain("maple");
+	});
+
 	it("keeps emails only under an unmask grant", async () => {
 		const h = harness({ sites: "ask", approval: "allow", mainResult: page([entry]) });
 		await h.run({ verb: "unmask", minutes: 5 });

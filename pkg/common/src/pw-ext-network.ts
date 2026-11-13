@@ -50,7 +50,7 @@ const JSON_NESTED = /"((?:[^"\\]|\\.){1,256})"\s*:\s*[[{]/g;
 const USER_INFO = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i;
 const CONTENT_TYPE = /^\s*([\w.+-]{1,60}\/[\w.+-]{1,60})\s*(?:;\s*charset=["']?([\w-]{1,32}))?/i;
 const FORM_NAME = /(^|[?&;\s])([^=&;\s?#]{1,256})=/g;
-const XML_ELEMENT = /<([A-Za-z_][\w.:-]{0,128})(\s[^<>]*)?>([^<]*)/g;
+const XML_OPEN = /<([A-Za-z_][\w.:-]{0,128})(\s[^<>]*)?>/g;
 const XML_ATTRIBUTE = /(\s)([A-Za-z_][\w.:-]{0,128})(\s*=\s*)("[^"]*"?|'[^']*'?)/g;
 const SENSITIVE_HEADER =
 	/auth|cookie|token|secret|key|session|canary|csrf|xsrf|credential|pass|signature|jwt|dpop|bearer|assertion/i;
@@ -109,13 +109,23 @@ function localName(name: string): string {
 }
 
 function maskXmlFields(text: string): string {
-	return text
-		.replace(XML_ATTRIBUTE, (match, gap: string, name: string, eq: string) =>
-			CREDENTIAL_FIELD.test(localName(name)) ? `${gap}${name}${eq}"[redacted]"` : match,
-		)
-		.replace(XML_ELEMENT, (match, name: string, attributes: string | undefined, inner: string) =>
-			CREDENTIAL_FIELD.test(localName(name)) && inner !== "" ? `<${name}${attributes ?? ""}>[redacted]` : match,
-		);
+	const out = text.replace(XML_ATTRIBUTE, (match, gap: string, name: string, eq: string) =>
+		CREDENTIAL_FIELD.test(localName(name)) ? `${gap}${name}${eq}"[redacted]"` : match,
+	);
+	const parts: string[] = [];
+	let from = 0;
+	for (const match of out.matchAll(XML_OPEN)) {
+		const name = match[1] as string;
+		const start = (match.index ?? 0) + match[0].length;
+		if (start < from || match[0].endsWith("/>") || !CREDENTIAL_FIELD.test(localName(name))) continue;
+		const close = out.indexOf(`</${name}`, start);
+		const end = close === -1 ? out.length : close;
+		if (end === start) continue;
+		parts.push(out.slice(from, start), "[redacted]");
+		from = end;
+	}
+	parts.push(out.slice(from));
+	return parts.join("");
 }
 
 /** Masks each JSON field, nested value, XML element or attribute and form or query parameter whose name names a credential, and URL user info; cut text is masked too. */
@@ -312,7 +322,7 @@ function headerLine(label: string, headers: NetworkHeader[], values: boolean, va
 			? name
 			: raw === undefined || isSensitiveHeader(name)
 				? `${name} (hidden)`
-				: `${name}: ${value(raw.length >= PW_EXT_NETWORK_MAX_HEADER_VALUE_CHARS ? `${raw}…` : raw)}`,
+				: `${name}: ${value(maskCredentialFields(raw.length >= PW_EXT_NETWORK_MAX_HEADER_VALUE_CHARS ? `${raw}…` : raw))}`,
 	);
 	return [`  ${label}: ${shown.join(", ")}`];
 }
