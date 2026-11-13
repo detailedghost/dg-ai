@@ -2917,6 +2917,28 @@ describe("pw --ext storage, fetch and credential save", () => {
 		if (!flags.storeDown) expect(h.storedCredentials).toEqual([]);
 	});
 
+	it("masks a saved value in later output of the session", async () => {
+		const echoed = { at: 1, via: "fetch", method: "GET", url: "https://outlook.live.com/x", status: 200, requestHeaders: [], responseHeaders: [], response: { type: "text/plain", size: 30, text: `echo ${MARKER}` } };
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			tabs: [MAIL_TAB],
+			cookies: { SessionCookie: { value: MARKER } },
+			mainResult: hook((action) => (action.kind === "read" ? { entries: [echoed] } : { entries: [] })),
+		});
+		expect((await h.run({ verb: "credential", name: "n", source: "cookie", key: "SessionCookie" })).ok).toBe(true);
+		const later = await h.run({ verb: "network", values: true });
+		expect(outcome(later)).toContain("echo [redacted]");
+		expectNoMarker(h, [later]);
+	});
+
+	it("refuses a save on an http page", async () => {
+		const h = harness({ sites: "ask", approval: "allow", tabs: [{ ...MAIL_TAB, url: "http://outlook.live.com/mail/" }], cookies: { S: { value: MARKER } } });
+		const result = await h.run({ verb: "credential", name: "n", source: "cookie", key: "S" });
+		expect(outcome(result)).toContain("only on https pages");
+		expect(h.storedCredentials).toEqual([]);
+	});
+
 	it("returns the cancel error with no value when the relay cancels during a save", async () => {
 		const controller = new AbortController();
 		const h = harness({

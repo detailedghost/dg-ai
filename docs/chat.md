@@ -68,7 +68,10 @@ prompt, and no command prints it. `grant|revoke` manage read-only service
 tokens. `exec <name>[=ENV_VAR]... -- <command>` runs a command with stored
 values in environment variables or `{{cred:<name>}}` arguments, and replaces
 each value in the command's output, also in base64 and URL-encoded form, with
-`[redacted]`. `pw --ext credential save` writes values under `pw/<site>/`.
+`[redacted]`. A `{{cred:<name>}}` argument shows in the process list to other
+local users, so prefer an environment variable. Output that the command
+transforms (for example reversed or hex) cannot be scrubbed. `pw --ext
+credential save` writes values under `pw/<site>/`.
 Start a session with `dg-agent start` first. See the
 [developer guide](DEVELOPER.md#credential-store).
 

@@ -241,6 +241,7 @@ const valuesRefused = (answer: Exclude<ApprovalAnswer, "allow">, site: string) =
 	`${VALUES_REFUSED[answer]}; pw --ext network --values shows values on ${site} only after the user clicks Allow in the dg approval window. Run it again to ask once more. Without --values, network shows the shape only.`;
 const valuesSiteOf = (url: string) => siteOf(url).key;
 const BAD_STORAGE = "The page returned an unexpected storage result.";
+const FETCH_DEADLINE_MS = 35_000;
 const NOT_SAVED = "Nothing was saved.";
 
 /** The site segment of a saved credential name: the registrable domain, or the host when it has none. */
@@ -579,6 +580,7 @@ export function createPwExtHandler({
 	const halted = new Set<string>();
 	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
+	const savedValues = new Map<string, string[]>();
 
 	/** Asks the person once per origin and session before the agent reads or changes a page there. */
 	async function allowSite(url: string | undefined, context: PwExtContext, signal: AbortSignal): Promise<void> {
@@ -662,6 +664,7 @@ export function createPwExtHandler({
 	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
 	async function stop(sessionId: string): Promise<void> {
 		halted.add(sessionId);
+		savedValues.delete(sessionId);
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
@@ -682,6 +685,20 @@ export function createPwExtHandler({
 		if (sessionId) await stop(sessionId);
 	}
 	const enabledOrNone = () => enabledBuiltIns().catch(() => new Set<string>());
+
+	async function withDeadline<T>(ms: number, work: Promise<T>): Promise<T> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				work,
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Refusal(`The request did not finish within ${Math.round(ms / 1000)} seconds.`)), ms);
+				}),
+			]);
+		} finally {
+			clearTimeout(timer);
+		}
+	}
 
 	async function beforeDeadline<T>(work: Promise<T>): Promise<T> {
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -914,7 +931,7 @@ export function createPwExtHandler({
 		release: () => Promise<void>,
 	): Promise<PwExtResult> {
 		const unmasked = grant !== undefined;
-		const secrets = await grants.secrets(context.sessionId);
+		const secrets = [...(await grants.secrets(context.sessionId)), ...(savedValues.get(context.sessionId) ?? [])];
 		if (signal?.aborted) {
 			await release();
 			return CANCELED;
@@ -1185,7 +1202,7 @@ export function createPwExtHandler({
 					if (refused) return refused;
 				}
 				await beforeDeadline(syncShim(tab.id, false));
-				const raw = (await inMain(tab, pwExtNetwork as never, [
+				const raw = (await withDeadline(FETCH_DEADLINE_MS, inMain(tab, pwExtNetwork as never, [
 					{
 						kind: "fetch",
 						url: target.href,
@@ -1198,7 +1215,7 @@ export function createPwExtHandler({
 					},
 					tab.url,
 					tab.groupId ?? -1,
-				])) as { error?: unknown } | null;
+				]))) as { error?: unknown } | null;
 				if (typeof raw?.error === "string") return failed(maskRaw(raw.error, RAW_ERROR_MAX, options));
 				let entries: ReturnType<typeof validateNetworkEntries>;
 				try {
@@ -1215,6 +1232,8 @@ export function createPwExtHandler({
 			case "credential": {
 				const refused = await allowValues(tab, context, signal);
 				if (refused) return refused;
+				if (new URL(tab.url as string).protocol !== "https:")
+					return failed(`pw --ext credential save works only on https pages. ${NOT_SAVED}`);
 				const site = credentialSite(tab.url as string);
 				if (!site) return failed(`pw --ext credential save needs a site with a domain name or an IP address. ${NOT_SAVED}`);
 				const source = request.source as NonNullable<PwExtRequest["source"]>;
@@ -1264,13 +1283,25 @@ export function createPwExtHandler({
 					capturedAt: new Date(now()).toISOString(),
 					...(expiresAt === undefined ? {} : { expiresAt }),
 				};
+				if (signal?.aborted) return CANCELED;
+				if (await isStopped(context.sessionId)) return STOPPED;
+				const live = await api.tabs.get(tab.id).catch(() => undefined);
+				if (
+					!live ||
+					live.url !== tab.url ||
+					!(await agentTabs.owns({ sessionId: context.sessionId, tabId: tab.id })) ||
+					!(await control.valuesAllowed(context.sessionId, valuesSiteOf(tab.url as string)))
+				)
+					return failed(`The tab or its approval changed during the save. ${NOT_SAVED}`);
 				let stored: string;
 				try {
 					stored = await context.storeCredential({ site, name: request.name as string, value, meta });
 				} catch (error) {
 					const reason = error instanceof Error ? error.message : "dg-daemon refused the save.";
-					return { ok: false, error: redactLiterals(clip(reason, 300), [value]) };
+					return { ok: false, error: clip(redactLiterals(reason, [value]), 300) };
 				}
+				const kept = savedValues.get(context.sessionId) ?? [];
+				savedValues.set(context.sessionId, [...kept.filter((held) => held !== value), value].slice(-MAX_FILLED_SECRETS));
 				return ok(
 					[
 						"### Result",
@@ -1506,7 +1537,11 @@ export function createPwExtHandler({
 		const { sessionId } = context;
 		if (halted.has(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
-		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
+		const held = async () => [
+			...typed,
+			...(await grants.secrets(sessionId).catch(() => [])),
+			...(savedValues.get(sessionId) ?? []),
+		];
 		const controller = new AbortController();
 		const relay = () => controller.abort();
 		signal?.addEventListener("abort", relay, { once: true });

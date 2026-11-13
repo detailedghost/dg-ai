@@ -55,6 +55,7 @@ export function pwExtNetwork(
 			/auth|cookie|token|secret|key|session|canary|csrf|xsrf|credential|pass|signature|jwt|dpop|bearer|assertion/i;
 		const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 		const SEALED_MAX = 8192;
+		const AGENT_FETCH_MS = 30_000;
 		const STORAGE_MAX_KEYS = 200;
 		const STORAGE_VALUE_MAX = 65_536;
 		type Slot = {
@@ -65,12 +66,14 @@ export function pwExtNetwork(
 			wrap(): void;
 			unwrap(): void;
 			seal(on: boolean): void;
+			hidden(): string[];
 			sealedGet(name: string): string | undefined;
 			agentFetch(request: PwExtAgentFetch): Promise<PwExtNetworkResult>;
 			storage(area: "local" | "session", key: string | undefined, keysOnly: boolean, values: boolean): PwExtNetworkResult;
 			storageGet(area: "local" | "session", key: string): PwExtNetworkResult;
 		};
-		const outEntry = (entry: NetworkEntry, values: boolean): NetworkEntry => {
+		const outEntry = (entry: NetworkEntry, values: boolean, hidden: readonly string[] = []): NetworkEntry => {
+			const scrub = (text: string) => hidden.reduce((out, secret) => out.split(secret).join("[redacted]"), text);
 			const strip = (body: NetworkBody | undefined): NetworkBody | undefined =>
 				body === undefined
 					? undefined
@@ -78,9 +81,10 @@ export function pwExtNetwork(
 							type: body.type,
 							size: body.size,
 							...(body.shape === undefined ? {} : { shape: body.shape }),
-							...(values && body.text !== undefined ? { text: body.text, ...(body.cut ? { cut: true as const } : {}) } : {}),
+							...(values && body.text !== undefined ? { text: scrub(body.text), ...(body.cut ? { cut: true as const } : {}) } : {}),
 						};
-			const names = (list: NetworkHeader[]) => list.map(({ name, value }) => (values && value !== undefined ? { name, value } : { name }));
+			const names = (list: NetworkHeader[]) =>
+				list.map(({ name, value }) => (values && value !== undefined ? { name, value: scrub(value) } : { name }));
 			const request = strip(entry.request);
 			const response = strip(entry.response);
 			return JSON.parse(
@@ -88,7 +92,7 @@ export function pwExtNetwork(
 					at: entry.at,
 					via: entry.via,
 					method: entry.method,
-					url: entry.url,
+					url: values ? scrub(entry.url) : entry.url,
 					...(entry.status === undefined ? {} : { status: entry.status }),
 					...(entry.failed ? { failed: true as const } : {}),
 					requestHeaders: names(entry.requestHeaders),
@@ -325,7 +329,8 @@ export function pwExtNetwork(
 						const held = fresh.active ? tracked.get(this) : undefined;
 						if (held) {
 							addHeader(held.headers, String(name), String(value), true);
-							if (sealed.on && SENSITIVE.test(String(name))) held.sensitive.push([String(name), String(value)]);
+							if (sealed.on && (SENSITIVE.test(String(name)) || /anchor/i.test(String(name))))
+								held.sensitive.push([String(name), String(value)]);
 						}
 					} catch {}
 					return native.setRequestHeader.call(this, name, value);
@@ -407,6 +412,12 @@ export function pwExtNetwork(
 						sealed.anchor = undefined;
 					}
 				},
+				hidden() {
+					return [...sealed.values.values()].flatMap((value) => {
+						const bare = value.replace(/^\S+\s+/, "");
+						return [value, bare].filter((form) => form.length >= 8);
+					});
+				},
 				sealedGet(name) {
 					return sealed.on ? sealed.values.get(name.toLowerCase()) : undefined;
 				},
@@ -440,6 +451,8 @@ export function pwExtNetwork(
 					headers.forEach((value, name) => addHeader(entry.requestHeaders, name, value));
 					if (request.body !== undefined)
 						entry.request = textBody(contentType(entry.requestHeaders), request.body, byteLength(request.body));
+					const controller = new AbortController();
+					const timer = setTimeout(() => controller.abort(), AGENT_FETCH_MS);
 					try {
 						const response = await nativeFetch.call(win, target.href, {
 							method: request.method,
@@ -447,14 +460,17 @@ export function pwExtNetwork(
 							...(request.body === undefined ? {} : { body: request.body }),
 							credentials: "same-origin",
 							redirect: "manual",
+							signal: controller.signal,
 						});
 						entry.status = response.status;
 						response.headers.forEach((value, name) => addHeader(entry.responseHeaders, name, value));
 						await readResponse(entry, response);
 					} catch {
 						entry.failed = true;
+					} finally {
+						clearTimeout(timer);
 					}
-					return { entries: [outEntry(entry, request.values)] };
+					return { entries: [outEntry(entry, request.values, fresh.hidden())] };
 				},
 				storage(area, key, keysOnly, values) {
 					const store = area === "session" ? win.sessionStorage : win.localStorage;
@@ -518,7 +534,9 @@ export function pwExtNetwork(
 		const since = action.since;
 		const values = action.values;
 		return {
-			entries: slot.entries.filter((entry) => since === undefined || entry.at > since).map((entry) => outEntry(entry, values)),
+			entries: slot.entries
+				.filter((entry) => since === undefined || entry.at > since)
+				.map((entry) => outEntry(entry, values, (slot as Slot).hidden())),
 		};
 	} catch {
 		return { error: "Network capture failed on this page." };

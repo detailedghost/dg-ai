@@ -249,6 +249,8 @@ describe("storage helpers", () => {
 		expect(maskStorageValue("pref", `theme=dark&session_id=${MARKER}`, false)).toBe("theme=dark&session_id=[redacted]");
 		expect(maskStorageValue("pref", "x1y2z3a4b5c6d7e8f9g0h1", false)).toBe("[redacted]");
 		expect(maskStorageValue("pref", "plain words", false)).toBe("plain words");
+		expect(maskStorageValue("cache", '{"refresh_token":"abc","n":1}', false)).toBe('{"refresh_token":"[redacted]","n":1}');
+		expect(maskStorageValue("cache", '{"refresh_token":"abc","n":1', true)).toBe('{"refresh_token":"[redacted]","n":1');
 	});
 
 	it("formats shapes without values, and masks values on a values read", () => {

@@ -343,6 +343,32 @@ describe("sealed sign-in headers, agent fetch and storage", () => {
 		expect(JSON.stringify(result)).not.toContain(MARKER);
 	});
 
+	it("removes sealed values from an echoed response and from network reads", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		reply = async () =>
+			new window.Response(JSON.stringify({ echo: `Bearer ${MARKER}`, raw: MARKER }), {
+				headers: { "content-type": "application/json", "x-echo": MARKER },
+			}) as unknown as Response;
+		const result = await pwExtNetwork({ kind: "fetch", url: "/echo", method: "GET", headers: [], auth: true, values: true });
+		await settle();
+		expect(JSON.stringify(result)).not.toContain(MARKER);
+		expect(JSON.stringify(read(true))).not.toContain(MARKER);
+	});
+
+	it("drops sealed values when an XHR changes the account anchor", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		const xhr = new (page().XMLHttpRequest)();
+		xhr.open("POST", "https://mail.example.test/owa/service.svc");
+		xhr.setRequestHeader("X-AnchorMailbox", "PUID:9@fake");
+		xhr.send("{}");
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
 	it("refuses an agent fetch to another origin, and auth before any sign-in was seen", async () => {
 		pwExtNetwork({ kind: "install", seal: true });
 		const base = { method: "GET", headers: [] as [string, string][], values: false };
