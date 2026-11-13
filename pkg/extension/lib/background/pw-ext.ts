@@ -520,7 +520,7 @@ export function createPwExtHandler({
 		const regrouped = change.groupId !== undefined;
 		if (regrouped || change.status === "loading" || change.status === "complete") void syncShim(tabId, regrouped);
 	});
-	api.tabs.onRemoved.addListener(forgetDialogShim);
+	api.tabs.onRemoved.addListener((tabId) => void forgetDialogShim(api.storage, tabId).catch(() => undefined));
 
 	function scrub(result: PwExtResult, secrets: string[]): PwExtResult {
 		if (result.ok)
@@ -598,7 +598,7 @@ export function createPwExtHandler({
 		action: PwExtDialogAction,
 		options: { unmasked: boolean; secrets: string[] },
 	): Promise<PwExtDialogState> {
-		noteDialogShim(tab.id);
+		await noteDialogShim(api.storage, tab.id);
 		const state = dialogState(
 			await beforeDeadline(inMain(tab, pwExtDialogs as never, [action, tab.url, tab.groupId ?? -1])),
 		);

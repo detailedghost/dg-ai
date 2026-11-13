@@ -1,3 +1,4 @@
+import { createSerialQueue } from "@dg/common";
 import { type PwExtDialogAction, pwExtDialogs } from "@/lib/features/pw-ext-dialog-main";
 import {
 	type AgentTabs,
@@ -23,16 +24,28 @@ export type DialogShimApi = {
 };
 
 const RELEASE_DEADLINE_MS = 2000;
-const shimmed = new Set<number>();
+const SHIMMED_KEY = "pwExtDialogShims";
+const enqueue = createSerialQueue();
 
-/** Records that a verb installed the shim in a tab, so a later group change removes it. */
-export function noteDialogShim(tabId: number): void {
-	shimmed.add(tabId);
+async function shimmedTabs(storage: AgentTabsStorage): Promise<number[]> {
+	const stored = (await storage.session.get(SHIMMED_KEY))[SHIMMED_KEY];
+	return Array.isArray(stored) ? stored.filter((id): id is number => typeof id === "number") : [];
+}
+
+/** Records in storage.session that a tab got the shim, so a later load removes it even after a worker restart. */
+export function noteDialogShim(storage: AgentTabsStorage, tabId: number): Promise<void> {
+	return enqueue(async () => {
+		const held = await shimmedTabs(storage);
+		if (!held.includes(tabId)) await storage.session.set({ [SHIMMED_KEY]: [...held, tabId] });
+	});
 }
 
 /** Forgets a closed tab. */
-export function forgetDialogShim(tabId: number): void {
-	shimmed.delete(tabId);
+export function forgetDialogShim(storage: AgentTabsStorage, tabId: number): Promise<void> {
+	return enqueue(async () => {
+		const held = await shimmedTabs(storage);
+		if (held.includes(tabId)) await storage.session.set({ [SHIMMED_KEY]: held.filter((id) => id !== tabId) });
+	});
 }
 
 function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, string?, number?]) {
@@ -45,7 +58,7 @@ function inject(api: DialogShimApi, tabId: number, args: [PwExtDialogAction, str
 	});
 }
 
-/** Installs the shim in an agent tab and removes it from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
+/** Installs the shim in an agent tab and removes it from a tab that stopped being one, on each load until the tab closes, so a page restored from the back-forward cache is covered too, also after a worker restart; a removed page never takes the shim again, and a mailbox, browser or private page is never touched. */
 export async function syncDialogShim({
 	browserApi: api,
 	storage,
@@ -67,10 +80,10 @@ export async function syncDialogShim({
 	const { tab, agent } = await owned();
 	if (tab.incognito || !allowedPage(tab.url) || mailbox(tab.url)) return;
 	if (agent) {
-		shimmed.add(tabId);
+		await noteDialogShim(storage, tabId);
 		await inject(api, tabId, [{ kind: "install" }, tab.url, tab.groupId]);
 		if ((await owned()).agent) return;
-	} else if (!regrouped && !shimmed.has(tabId)) return;
+	} else if (!regrouped && !(await shimmedTabs(storage)).includes(tabId)) return;
 	await inject(api, tabId, [{ kind: "remove" }]);
 }
 
@@ -92,7 +105,7 @@ export async function forgetAgentTabsAndShims({
 }): Promise<void> {
 	const rows = await agentTabs.list({ sessionId }).catch(() => []);
 	await agentTabs.forget({ sessionId });
-	const tabIds = new Set([...rows.map((row) => row.tabId), ...shimmed]);
+	const tabIds = new Set([...rows.map((row) => row.tabId), ...(await shimmedTabs(storage))]);
 	await Promise.all(
 		[...tabIds].map(async (tabId) => {
 			let timer: ReturnType<typeof setTimeout> | undefined;

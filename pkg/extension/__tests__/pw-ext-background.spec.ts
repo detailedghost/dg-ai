@@ -3,7 +3,7 @@ import { PW_EXT_MAX_TEXT_CHARS, type PwExtRequest } from "@dg/common";
 import { PW_EXT_MAILBOX_ERROR } from "@/lib/background/tab-guards";
 import { createAgentTabs, groupTitle } from "@/lib/background/agent-tabs";
 import { createPwExtHandler } from "@/lib/background/pw-ext";
-import { forgetAgentTabsAndShims, forgetDialogShim } from "@/lib/background/dialog-shim";
+import { forgetAgentTabsAndShims } from "@/lib/background/dialog-shim";
 import {
 	createFakeBrowser,
 	createLock,
@@ -1990,9 +1990,6 @@ describe("pw --ext data.tools redaction", () => {
 });
 
 describe("pw --ext dialog", () => {
-	afterEach(() => {
-		for (const tabId of [7, 8, 9, 10, 20, 21]) forgetDialogShim(tabId);
-	});
 	const at = Date.UTC(2026, 10, 12, 9, 0);
 	const confirmDelete = {
 		type: "confirm",
@@ -2131,6 +2128,19 @@ describe("pw --ext dialog", () => {
 		h.fake.fireUpdated(7, { status: "complete" });
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(dialogCalls(h).map((call) => call.args[0])).toEqual([{ kind: "install" }, { kind: "remove" }, { kind: "remove" }]);
+	});
+
+	it("still removes the shim from a released tab after a worker restart", async () => {
+		const h = harness();
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		(h.fake.tabs.get(7) as FakeTab).groupId = -1;
+		const restarted = createPwExtHandler({ browserApi: h.fake.api, agentTabs: h.agentTabs, isChromium: () => true, lock: h.agentTabsLock });
+		expect(restarted).toBeInstanceOf(Function);
+		h.fake.fireUpdated(7, { status: "complete" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(dialogCalls(h).map((call) => call.args[0])).toContainEqual({ kind: "remove" });
+		expect(h.fake.session.get("pwExtDialogShims")).toEqual([7]);
 	});
 
 	it("installs the shim right after new opens a tab", async () => {
