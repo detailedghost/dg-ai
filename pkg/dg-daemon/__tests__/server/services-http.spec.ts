@@ -30,7 +30,9 @@ async function boot(declare: (dgHome: string) => unknown = () => ({})) {
 		await stopServe(proc);
 		cleanupDgHome(dgHome);
 	});
-	const { daemonConfigPath: configPath } = resolveDgPaths({ env: { DG_HOME: dgHome } });
+	const { daemonConfigPath: configPath } = resolveDgPaths({
+		env: { DG_HOME: dgHome },
+	});
 	mkdirSync(join(configPath, ".."), { recursive: true });
 	writeFileSync(configPath, JSON.stringify({ services: declare(dgHome) }));
 	return { dgHome, port };
@@ -72,8 +74,22 @@ const botDecl = (cwd: string) => ({
 });
 
 describe("GET/POST /services", () => {
+	it("names the daemon instance beside the services so a client can check whose pids it reads", async () => {
+		const { port } = await boot(botDecl);
+
+		const listed = await (
+			await fetchService(port, "", "GET", EXTENSION_ORIGIN)
+		).json();
+		const health = await (
+			await fetch(`http://127.0.0.1:${port}/healthz`)
+		).json();
+
+		expect(listed.instanceId).toBe(health.instanceId);
+		expect(Array.isArray(listed.services)).toBe(true);
+	});
+
 	it("lists, starts and stops a declared service for the extension", async () => {
-		const { dgHome, port } = await boot(botDecl);
+		const { port } = await boot(botDecl);
 
 		const listed = await fetchService(port, "", "GET", EXTENSION_ORIGIN);
 		expect((await listed.json()).services[0]).toMatchObject({
@@ -119,7 +135,7 @@ describe("GET/POST /services", () => {
 	});
 
 	it("refuses a browser page origin", async () => {
-		const { dgHome, port } = await boot(botDecl);
+		const { port } = await boot(botDecl);
 		const resp = await fetchService(
 			port,
 			"bot/start",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	isAlive,
+	isSignalablePid,
 	killProcessTree,
 	type OpenSeams,
 	openFailedHint,
@@ -36,7 +37,10 @@ describe("isAlive", () => {
 describe("killProcessTree", () => {
 	it("kills the group first on POSIX", () => {
 		const calls: [number, string][] = [];
-		killProcessTree(42, { platform: "linux", kill: (pid, sig) => calls.push([pid, sig]) });
+		killProcessTree(42, {
+			platform: "linux",
+			kill: (pid, sig) => calls.push([pid, sig]),
+		});
 		expect(calls).toEqual([[-42, "SIGKILL"]]);
 	});
 
@@ -63,9 +67,23 @@ describe("killProcessTree", () => {
 		).not.toThrow();
 	});
 
+	it.each([0, 1, -5, Number.NaN, 1.5, Number.POSITIVE_INFINITY])(
+		"sends no signal and runs no command for pid %p",
+		(pid) => {
+			const calls: unknown[] = [];
+			const record = (...args: unknown[]) => calls.push(args);
+			killProcessTree(pid, { platform: "linux", kill: record });
+			killProcessTree(pid, { platform: "win32", exec: record });
+			expect(calls).toEqual([]);
+		},
+	);
+
 	it("runs taskkill on win32", () => {
 		const calls: [string, string[]][] = [];
-		killProcessTree(42, { platform: "win32", exec: (c, a) => calls.push([c, a]) });
+		killProcessTree(42, {
+			platform: "win32",
+			exec: (c, a) => calls.push([c, a]),
+		});
 		expect(calls).toEqual([["taskkill", ["/T", "/F", "/PID", "42"]]]);
 	});
 });
@@ -223,9 +241,17 @@ describe("openFailedHint", () => {
 	});
 
 	it("keeps the short hint off WSL", () => {
-		expect(openFailedHint(false)).toBe(
-			"could not open a browser",
-		);
+		expect(openFailedHint(false)).toBe("could not open a browser");
 	});
 });
 
+describe("isSignalablePid", () => {
+	it("accepts an integer above 1", () => {
+		expect(isSignalablePid(2)).toBe(true);
+		expect(isSignalablePid(424242)).toBe(true);
+	});
+
+	it.each([0, 1, -1, Number.NaN, 1.5])("refuses %p", (pid) => {
+		expect(isSignalablePid(pid)).toBe(false);
+	});
+});
