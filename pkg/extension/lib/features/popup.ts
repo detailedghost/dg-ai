@@ -107,6 +107,15 @@ type PairedView = {
 
 type OpenMenu = { trigger: HTMLButtonElement; panel: HTMLElement };
 
+type DriveView = {
+	row: HTMLElement;
+	name: HTMLElement;
+	tabs: HTMLElement;
+	stop: HTMLButtonElement;
+	status?: HTMLElement;
+	error?: HTMLElement;
+};
+
 function setText(node: HTMLElement, text: string): void {
 	if (node.textContent !== text) node.textContent = text;
 }
@@ -276,6 +285,8 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	let sessions: PairingSession[] = [];
 	let adopting = 0;
 	let ticking = false;
+	const driveViews = new Map<string, DriveView>();
+	const stopped = new Set<string>();
 
 	const sub = element(doc, "div", "sub");
 	const title = element(doc, "div", "grow");
@@ -288,6 +299,10 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 	const menuHost = element(doc, "div", "menu-host");
 	const header = element(doc, "div", "row head");
 	const body = element(doc, "div", "body");
+	const driving = element(doc, "section", "driving");
+	driving.setAttribute("aria-label", "Agents driving tabs");
+	const drivingList = element(doc, "div", "agents");
+	driving.append(element(doc, "div", "cnt", "Agents driving tabs"), drivingList);
 
 	function closeMenu(returnFocus: boolean): void {
 		if (!openMenu) return;
@@ -415,18 +430,120 @@ export function mountPopup(root: HTMLElement, deps: PopupDeps): PopupHandle {
 			runtime.sendMessage({ type: MSG.agentTabsRequest }).catch(() => undefined),
 		]);
 		if (destroyed || version !== readVersion) return;
+		groups = parseGroups(tabsReply) ?? groups;
 		if ((reply as { daemonChanged?: unknown } | undefined)?.daemonChanged === true) {
+			showDriving();
 			showDaemonChanged();
 			return;
 		}
 		sessions = parseSessions(reply);
-		groups = parseGroups(tabsReply) ?? groups;
+		showDriving();
 		const daemonReachable =
 			sessions.some((session) => session.connected) ||
 			(await findPort()) !== undefined;
 		if (destroyed || version !== readVersion) return;
 		if (sessions.length === 0) showEmpty(daemonReachable);
 		else showPaired(sessions, !daemonReachable);
+	}
+
+	function driveLabel(sessionId: string): string {
+		const shortId = sessionId.slice(0, 8);
+		const identity = sessions.find((session) => session.sessionId === sessionId)?.agentIdentity;
+		return identity === undefined ? shortId : `${identity} (${shortId})`;
+	}
+
+	function showDriveError(view: DriveView, text: string | undefined): void {
+		if (text === undefined) {
+			view.error?.remove();
+			view.error = undefined;
+			return;
+		}
+		if (!view.error) {
+			view.error = element(doc, "p", "note err");
+			view.error.setAttribute("role", "status");
+			view.row.append(view.error);
+		}
+		setText(view.error, text);
+	}
+
+	async function stopSession(sessionId: string, view: DriveView): Promise<void> {
+		view.stop.disabled = true;
+		showDriveError(view, undefined);
+		const reply = (await runtime
+			.sendMessage({ type: MSG.pwExtStop, sessionId })
+			.catch(() => undefined)) as { ok?: unknown; error?: unknown } | undefined;
+		if (destroyed) return;
+		view.stop.disabled = false;
+		const error = replyError(reply);
+		if (error === undefined) stopped.add(sessionId);
+		showDriveError(view, error);
+		await readAgents();
+	}
+
+	function createDriveView(sessionId: string): DriveView {
+		const row = element(doc, "div", "drive");
+		const name = element(doc, "b");
+		const tabs = element(doc, "div", "mono tabs");
+		const identity = element(doc, "div", "grow");
+		identity.append(name, tabs);
+		const line = element(doc, "div", "row");
+		const view: DriveView = {
+			row,
+			name,
+			tabs,
+			stop: button(doc, "btn btn-sm btn-danger", "Stop", () => {
+				void stopSession(sessionId, view);
+			}),
+		};
+		line.append(identity, view.stop);
+		row.append(line);
+		return view;
+	}
+
+	function updateDriveView(view: DriveView, sessionId: string, count: number): void {
+		const label = driveLabel(sessionId);
+		setText(view.name, label);
+		view.stop.setAttribute("aria-label", `Stop ${label}`);
+		const isStopped = count === 0;
+		setText(view.tabs, isStopped ? "" : `${count} tab${count === 1 ? "" : "s"}`);
+		view.tabs.hidden = isStopped;
+		if (!isStopped) {
+			view.status?.replaceWith(view.stop);
+			view.status = undefined;
+			return;
+		}
+		if (!view.status) {
+			view.status = element(doc, "span", "pill", "Stopped");
+			view.status.setAttribute("role", "status");
+			view.stop.replaceWith(view.status);
+		}
+	}
+
+	function showDriving(): void {
+		const counts = new Map<string, number>();
+		for (const [sessionId, group] of groups) {
+			if (group.tabs.length === 0) continue;
+			counts.set(sessionId, group.tabs.length);
+			stopped.delete(sessionId);
+		}
+		for (const sessionId of stopped) counts.set(sessionId, 0);
+		for (const [sessionId, view] of driveViews) {
+			if (counts.has(sessionId)) continue;
+			view.row.remove();
+			driveViews.delete(sessionId);
+		}
+		[...counts].forEach(([sessionId, count], index) => {
+			let view = driveViews.get(sessionId);
+			if (!view) {
+				view = createDriveView(sessionId);
+				driveViews.set(sessionId, view);
+			}
+			updateDriveView(view, sessionId, count);
+			if (drivingList.children[index] !== view.row)
+				drivingList.insertBefore(view.row, drivingList.children[index] ?? null);
+		});
+		if (counts.size === 0) driving.remove();
+		else if (!driving.isConnected) header.after(driving);
 	}
 
 	async function unpair(view: CardView): Promise<void> {

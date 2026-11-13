@@ -15,3 +15,14 @@ export function isPopupSender(sender: unknown, extensionRoot: string): boolean {
 		(sender as { tab?: unknown }).tab === undefined
 	);
 }
+
+/** True only for a message from this extension's page at pageUrl, with any query or hash dropped. */
+export function isOwnPageSender(
+	sender: unknown,
+	runtimeId: string | undefined,
+	pageUrl: string,
+): boolean {
+	if (typeof sender !== "object" || sender === null || runtimeId === undefined) return false;
+	const { id, url } = sender as { id?: unknown; url?: unknown };
+	return id === runtimeId && typeof url === "string" && url.split(/[?#]/)[0] === pageUrl;
+}

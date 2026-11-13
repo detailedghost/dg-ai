@@ -1834,6 +1834,34 @@ test("a Stop click from this extension's banner in a tab reaches the pw --ext ha
 	expect(stopTab.mock.calls).toEqual([[7]]);
 });
 
+test("a popup Stop reaches the pw --ext stop path only from this extension's popup page and only for a session that holds an agent group", async () => {
+	const stop = mock(async (_sessionId: string) => undefined);
+	const handler = Object.assign(async () => ({ ok: true, data: { text: "" } }), { stop, stopTab: async () => undefined });
+	const { api, getOnMessage } = bootWithStored([], { relayHandlers: { "pw-ext": handler } });
+	const stored: Record<string, unknown> = { [`agentTabs:${FIRST.sessionId}`]: { sessionId: FIRST.sessionId, groupId: 5 } };
+	Object.assign(api.storage.session, { get: mock(async () => stored) });
+	await settle();
+	const listener = getOnMessage();
+	const popup = api.runtime.getURL("popup.html");
+	const send = (message: Record<string, unknown>, sender: Record<string, unknown>) =>
+		new Promise<unknown>((resolve) => {
+			if (!listener?.(message, sender, resolve)) resolve(undefined);
+		});
+	const stopFirst = { type: MSG.pwExtStop, sessionId: FIRST.sessionId };
+
+	expect(await send(stopFirst, { id: "other-extension", url: popup })).toBeUndefined();
+	expect(await send(stopFirst, { id: api.runtime.id, url: api.runtime.getURL("options.html") })).toBeUndefined();
+	expect(await send(stopFirst, { url: popup })).toBeUndefined();
+	expect(await send({ type: MSG.pwExtStop }, { id: api.runtime.id, url: popup })).toBeUndefined();
+	expect(await send({ type: MSG.pwExtStop, sessionId: "not-driving" }, { id: api.runtime.id, url: popup })).toEqual({
+		ok: false,
+		error: "This session drives no agent tab.",
+	});
+	expect(stop.mock.calls).toEqual([]);
+	expect(await send(stopFirst, { id: api.runtime.id, url: `${popup}?from=toolbar` })).toEqual({ ok: true });
+	expect(stop.mock.calls).toEqual([[FIRST.sessionId]]);
+});
+
 test("adopt writes no key until a session-list confirms the session", async () => {
 	const { api, local, getOnMessage } = makeBrowserApi();
 	const socket = makeFakeSocket();

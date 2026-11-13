@@ -109,7 +109,7 @@ flowchart LR
   a MAIN-world shim in agent tabs answers `alert`, `confirm` and `prompt` at once from a one-shot policy that `pw --ext dialog` sets; no new permission. Amends 0035.
 
 - [0045 — pw --ext: an "Agent is driving" banner with Stop, and a site allowlist per session](0045-pw-ext-driving-banner-and-sites.md) — Accepted:
-  each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035.
+  each agent tab shows a banner with Stop, which ends the session's control; the first verb on a new site in a session asks the person to allow it. Amends 0035. Amended 2026-11-13: the toolbar popup has Stop too.
 
 ## Adding an ADR
 

@@ -93,3 +93,16 @@ sequenceDiagram
 - `pkg/extension/lib/background/dialog-shim.ts`
 - `pkg/extension/lib/background/daemon-link.ts`
 - [ADR 0035](0035-pw-ext-real-browser.md), [ADR 0044](0044-pw-ext-dialogs.md)
+
+## Amended 2026-11-13: Stop in the toolbar popup
+
+A page's own modal `<dialog>` makes the banner inert, so Stop on the page cannot
+be clicked. The toolbar popup now lists each session that drives agent tabs,
+with its tab count and a Stop button. The popup sends a typed message
+(`MSG.pwExtStop`). The worker accepts it only from this extension's own
+`popup.html`, by sender id and URL, and only for a session that holds an agent
+tab group. It then runs the same `stop` as the banner. The popup shows the
+session as stopped after.
+
+- `pkg/extension/lib/features/popup.ts`
+- `pkg/extension/lib/background/popup-sender.ts`
