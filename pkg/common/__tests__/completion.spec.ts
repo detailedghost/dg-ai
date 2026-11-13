@@ -60,6 +60,12 @@ describe("completeWords", () => {
 		expect(values(completeWords(tree, ["stash", "--kind", "html", "--k"]))).toEqual(["--kind"]);
 	});
 
+	test("flags still complete after a positional argument, but not after --", () => {
+		expect(values(completeWords(tree, ["stash", "notes", "--k"]))).toEqual(["--kind"]);
+		expect(completeWords(tree, ["stash", "notes", "--kind", "m"])).toEqual(["md"]);
+		expect(completeWords(tree, ["stash", "--", "--k"])).toEqual([]);
+	});
+
 	test("a path argument asks the shell for files", () => {
 		expect(completeWords(tree, ["sniff", ""])).toEqual([FILES_DIRECTIVE]);
 	});

@@ -72,16 +72,19 @@ describe("dg-skills __complete", () => {
 const which = (name: string): boolean => Bun.which(name) !== null;
 
 describe("the completion scripts in a real shell", () => {
-	test.skipIf(!which("bash"))("bash completes st to stat and stat ch to checklist", () => {
+	test.skipIf(!which("bash"))("bash completes st to stat, stat ch to checklist, and an option value after an equals sign", () => {
 		const script = `source /dev/stdin <<'EOF'\n${completionScript("bash", "dg-skills")}EOF
-for line in "dg-skills st" "dg-skills stat ch"; do
-	read -ra COMP_WORDS <<< "$line"
+for line in "dg-skills st" "dg-skills stat ch" "dg-skills stat " "dg-skills channel-review start --env=d"; do
+	COMP_LINE="$line"
+	COMP_POINT=\${#line}
+	read -ra COMP_WORDS <<< "\${line//=/ = }"
+	[[ "$line" == *" " ]] && COMP_WORDS+=("")
 	COMP_CWORD=$((\${#COMP_WORDS[@]} - 1))
 	_dg_skills
 	printf '%s\\n' "\${COMPREPLY[@]}"
 done
 `;
-		expect(shell(["bash"], script)).toEqual(["stash", "stat", "checklist"]);
+		expect(shell(["bash"], script)).toEqual(["stash", "stat", "checklist", "checklist", "add", "done", "status", "dev"]);
 	});
 
 	test.skipIf(!which("zsh"))("zsh autoloads the file from fpath, completes stat ch to checklist, and a path flag to files", () => {
@@ -104,8 +107,17 @@ words=(dg-skills install --repo ""); CURRENT=4; _dg-skills
 		const script = `${completionScript("fish", "dg-skills")}
 complete -C "dg-skills st"
 complete -C "dg-skills stat ch"
+complete -C "dg-skills stat "
 `;
-		expect(shell(["fish", "--no-config"], script).map((line) => line.split("\t")[0])).toEqual(["stash", "stat", "checklist"]);
+		expect(shell(["fish", "--no-config"], script).map((line) => line.split("\t")[0])).toEqual([
+			"stash",
+			"stat",
+			"checklist",
+			"add",
+			"checklist",
+			"done",
+			"status",
+		]);
 	});
 });
 

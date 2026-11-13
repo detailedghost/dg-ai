@@ -64,30 +64,31 @@ export function completeWords(root: CompletionNode, words: readonly string[]): s
 	const stack: CompletionNode[] = [root];
 	let pending: CompletionOption | undefined;
 	let positional = false;
+	let literal = false;
 	for (const word of words.slice(0, -1)) {
 		const node = stack.at(-1) as CompletionNode;
 		if (pending) {
 			pending = undefined;
 			continue;
 		}
-		if (word === "--") {
-			positional = true;
+		if (!literal && word === "--") {
+			literal = true;
 			continue;
 		}
-		if (!positional && word.startsWith("-") && word.length > 1) {
+		if (!literal && word.startsWith("-") && word.length > 1) {
 			const [flag = word, inline] = word.split("=", 2);
 			const option = findOption(stack, flag);
 			if (option?.mode) stack.push(option.mode);
 			else if (option?.value && inline === undefined) pending = option;
 			continue;
 		}
-		const child = positional ? undefined : node.commands?.find((command) => command.name === word);
+		const child = positional || literal ? undefined : node.commands?.find((command) => command.name === word);
 		if (child) stack.push(child);
 		else positional = true;
 	}
 	const node = stack.at(-1) as CompletionNode;
 	if (pending) return valueCandidates(pending, current);
-	if (!positional && current.startsWith("-")) {
+	if (!literal && current.startsWith("-")) {
 		const eq = current.indexOf("=");
 		if (eq > 0) {
 			const option = findOption(stack, current.slice(0, eq));
@@ -95,7 +96,7 @@ export function completeWords(root: CompletionNode, words: readonly string[]): s
 		}
 		return optionCandidates(stack, current);
 	}
-	if (!positional && node.commands?.length)
+	if (!positional && !literal && node.commands?.length)
 		return node.commands
 			.filter((command) => command.name.startsWith(current))
 			.map((command) => candidate(command.name, command.description));
@@ -148,15 +149,19 @@ const functionName = (program: string): string => `_${program.replace(/[^A-Za-z0
 function bashScript(program: string): string {
 	const fn = functionName(program);
 	return `${fn}() {
-	local cur="\${COMP_WORDS[COMP_CWORD]}" IFS=$'\\n' tab=$'\\t'
-	local -a lines
-	lines=($(${program} __complete "\${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null))
+	local cur="\${COMP_WORDS[COMP_CWORD]}" line="\${COMP_LINE:0:COMP_POINT}" IFS=$'\\n' tab=$'\\t' prefix
+	local -a words lines
+	IFS=$' \\t\\n' read -ra words <<< "$line"
+	[[ "$line" == *[[:space:]] ]] && words+=("")
+	prefix="\${words[-1]%"$cur"}"
+	lines=($(${program} __complete "\${words[@]:1}" 2>/dev/null))
 	if [[ "\${lines[0]}" == "${FILES_DIRECTIVE}" ]]; then
 		compopt -o filenames 2>/dev/null
 		COMPREPLY=($(compgen -f -- "$cur"))
 		return 0
 	fi
-	COMPREPLY=($(printf '%s\\n' "\${lines[@]%%\${tab}*}"))
+	lines=("\${lines[@]%%\${tab}*}")
+	COMPREPLY=("\${lines[@]#"$prefix"}")
 }
 complete -F ${fn} ${program}
 `;
@@ -195,11 +200,12 @@ fi
 function fishScript(program: string): string {
 	const fn = `_${functionName(program)}`;
 	return `function ${fn}
-	set -l words (commandline -opc) (commandline -ct)
+	set -l words (commandline -opc)
 	set -e words[1]
-	set -l lines (${program} __complete $words 2>/dev/null)
+	set -l current (commandline -ct)
+	set -l lines (${program} __complete $words "$current" 2>/dev/null)
 	if test "$lines[1]" = "${FILES_DIRECTIVE}"
-		__fish_complete_path (commandline -ct)
+		__fish_complete_path "$current"
 		return
 	end
 	printf '%s\\n' $lines
