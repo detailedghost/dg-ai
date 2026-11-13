@@ -23,7 +23,11 @@ export function mountWebMcpGrantsPanel(
 	status.setAttribute("role", "status");
 
 	async function render(): Promise<void> {
-		const grants = parseWebMcpGrants(await request({ type: MSG.webmcpGrantsRequest }));
+		const reply = await request({ type: MSG.webmcpGrantsRequest });
+		const failure = reply as { ok?: unknown; error?: unknown } | undefined;
+		if (!reply || failure?.ok === false)
+			throw new Error(typeof failure?.error === "string" ? failure.error : "The extension background did not answer");
+		const grants = parseWebMcpGrants(reply);
 		list.replaceChildren(
 			...grants.map((grant) =>
 				webMcpGrantRow(doc, grant, {
@@ -58,7 +62,14 @@ export function mountWebMcpGrantsPanel(
 		status,
 	);
 	container.appendChild(panel);
-	void render().catch((error: unknown) => {
-		status.textContent = describeError(error);
-	});
+	const refresh = () => {
+		status.textContent = "";
+		void render().catch((error: unknown) => {
+			status.textContent = describeError(error);
+		});
+	};
+	const win = doc.defaultView;
+	win?.addEventListener("focus", refresh);
+	win?.addEventListener("hashchange", refresh);
+	refresh();
 }

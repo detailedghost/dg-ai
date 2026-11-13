@@ -18,7 +18,7 @@ async function settle(): Promise<void> {
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function mount(initial: WebMcpGrantView[], reply: unknown = { ok: true }) {
+function mount(initial: WebMcpGrantView[], reply: unknown = { ok: true }, listReply?: unknown) {
 	const window = new Window();
 	windows.add(window);
 	const container = window.document.createElement("div");
@@ -28,13 +28,20 @@ function mount(initial: WebMcpGrantView[], reply: unknown = { ok: true }) {
 	mountWebMcpGrantsPanel(container as unknown as HTMLElement, {
 		request: async (message) => {
 			sent.push(message);
-			if (message.type === MSG.webmcpGrantsRequest) return { grants };
+			if (message.type === MSG.webmcpGrantsRequest) return listReply ?? { grants };
 			if (message.type === MSG.webmcpRevoke) grants = grants.filter((grant) => grant.tool !== message.grant?.tool);
 			if (message.type === MSG.webmcpRevokeAll) grants = [];
 			return reply;
 		},
 	});
-	return { container: container as unknown as HTMLElement, sent };
+	return {
+		container: container as unknown as HTMLElement,
+		sent,
+		window,
+		setGrants: (next: WebMcpGrantView[]) => {
+			grants = next;
+		},
+	};
 }
 
 function revokeButton(container: HTMLElement): HTMLElement {
@@ -84,6 +91,28 @@ describe("options Web MCP grants panel", () => {
 
 		expect(container.querySelector("[data-webmcp-grants-empty]")?.hasAttribute("hidden")).toBe(false);
 		expect(revokeAllButton(container).hidden).toBe(true);
+	});
+
+	it("reloads the list when the page regains focus or the hash changes", async () => {
+		const { container, window, setGrants } = mount([]);
+		await settle();
+		setGrants([session]);
+		window.dispatchEvent(new window.Event("focus"));
+		await settle();
+		expect(container.querySelectorAll(".drive")).toHaveLength(1);
+
+		setGrants([session, remembered]);
+		window.location.hash = "mcp";
+		await settle();
+		expect(container.querySelectorAll(".drive")).toHaveLength(2);
+	});
+
+	it("reports a failed grant list instead of showing the empty state as truth", async () => {
+		const { container } = mount([], { ok: true }, { ok: false, error: "Storage read failed." });
+		await settle();
+
+		expect(container.querySelector('[role="status"]')?.textContent).toBe("Storage read failed.");
+		expect(container.querySelectorAll(".drive")).toHaveLength(0);
 	});
 
 	it("shows a failed revoke", async () => {
