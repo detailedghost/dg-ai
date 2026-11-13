@@ -137,6 +137,7 @@ describe("stat reap classifier", () => {
 			row(11, ["timeout", "900", "git", "worktree", "add", "x"]),
 			row(12, ["/opt/chromium/chrome", "--user-data-dir=/tmp/profile"]),
 			row(13, ["/opt/chromium/chrome", "--headless", "--user-data-dir=profile"], { cwd: "/tmp" }),
+			row(14, ["/opt/chromium/chrome", "--remote-debugging-port=9222", "--user-data-dir=/tmp/p"]),
 		]);
 		expect(out.candidates).toEqual([10]);
 	});
@@ -352,7 +353,7 @@ describe("stat reap stuck wait loops", () => {
 	});
 
 	test("pgrep flags that change matching are left alone", () => {
-		const out = verdict([loop(30, "until pgrep -fx service-name; do sleep 15; done")]);
+		const out = verdict([loop(30, "while pgrep -fx service-name; do sleep 15; done")]);
 		expect(out.loops).toEqual([]);
 		expect(out.skipped[30]).toBe("wait pattern not supported");
 	});
@@ -427,6 +428,31 @@ describe("stat reap stuck wait loops", () => {
 	test("a quantified group pattern is left alone", () => {
 		const out = verdict([loop(30, 'while pgrep -f "(a|aa)+x"; do sleep 15; done')]);
 		expect(out.skipped[30]).toBe("wait pattern not supported");
+	});
+
+	test("a loop with another way out is not a wait loop", () => {
+		expect(waitPatterns("while pgrep -f worker && [ ! -e stop ]; do sleep 15; done")).toEqual([]);
+		expect(waitPatterns('until ! pgrep -f "x" || [ -e stop ]; do sleep 15; done')).toEqual([]);
+		expect(waitPatterns('while pgrep -f "x"; do [ -e stop ] && break; sleep 15; done')).toEqual([]);
+		expect(waitPatterns("until pgrep -f worker; do sleep 15; done")).toEqual([]);
+	});
+
+	test("a tail wait on a live PID outside the loop is not stuck", () => {
+		const out = verdict([
+			loop(30, 'tail --pid=$(pgrep -of "build.sh") -f /dev/null'),
+			row(31, ["tail", "--pid=40", "-f", "/dev/null"], { ppid: 30, cwd: SCRATCHPAD }),
+			row(40, ["node", "renamed"], { ppid: CLAUDE, cwd: SCRATCHPAD }),
+		]);
+		expect(out.loops).toEqual([]);
+		expect(out.skipped[30]).toBe("wait target alive");
+	});
+
+	test("a tail wait on the loop shell itself is stuck", () => {
+		const out = verdict([
+			loop(30, 'tail --pid=$(pgrep -of "build.sh") -f /dev/null'),
+			row(31, ["tail", "--pid=30", "-f", "/dev/null"], { ppid: 30, cwd: SCRATCHPAD }),
+		]);
+		expect(out.loops.map((l) => l.members)).toEqual([[31, 30]]);
 	});
 
 	test("a ppid cycle in the table does not hang the walk", () => {

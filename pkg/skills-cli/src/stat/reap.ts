@@ -147,7 +147,7 @@ function playwrightScript(argv: string[]): boolean {
 }
 
 function headless(argv: string[]): boolean {
-	return argv.some((word) => /^--(headless|remote-debugging-(port|pipe))(=|$)/.test(word));
+	return argv.some((word) => /^--headless(=|$)/.test(word));
 }
 
 function wrappedArgv(argv: string[]): string[] {
@@ -263,9 +263,18 @@ function shellScript(proc: ProcRow): string | null {
 }
 
 /** The `pgrep -f` patterns of a shell that waits in a while/until loop or on `tail --pid=$(pgrep ...)`. */
+function onlyPgrep(keyword: string, condition: string): boolean {
+	const c = condition.replace(/"[^"]*"|'[^']*'/g, "Q").replace(/\s*(?:[0-9]*>>?|&>)\s*\S+|\s*[0-9]*>&[0-9]+/g, "").trim();
+	if (keyword === "while") return /^pgrep\s[^;&|]*$/.test(c);
+	return !c.includes("||") && /^(?:[^;|]*&&\s*)?!\s*pgrep\s[^;&|]*$/.test(c);
+}
+
 export function waitPatterns(script: string): string[] {
+	if (/\b(break|exit|return)\b/.test(script)) return [];
 	const controls = [
-		...[...script.matchAll(/\b(?:while|until)\b([\s\S]*?)(?:;|\n)\s*do\b/g)].map((m) => m[1] ?? ""),
+		...[...script.matchAll(/\b(while|until)\b([\s\S]*?)(?:;|\n)\s*do\b/g)]
+			.filter((m) => onlyPgrep(m[1] ?? "", m[2] ?? ""))
+			.map((m) => m[2] ?? ""),
 		...[...script.matchAll(/\btail\s+--pid=\$\(([^)]*)\)/g)].map((m) => m[1] ?? ""),
 	];
 	const patterns: string[] = [];
@@ -409,6 +418,16 @@ export function classify(rows: ProcRow[], ctx: ReapContext): Classified {
 		}
 		if (descendants(rows, proc.pid).some((child) => !ignored.has(child.pid))) {
 			skipped.push({ pid: proc.pid, reason: "loop shell runs other work", command });
+			continue;
+		}
+		const tree = new Set([proc.pid, ...descendants(rows, proc.pid).map((d) => d.pid)]);
+		const tailTarget = (helpers.get(proc.pid) ?? [])
+			.filter((child) => base(child.argv[0]) === "tail")
+			.flatMap((child) => child.argv.map((word) => /^--pid=([0-9]+)$/.exec(word)?.[1]))
+			.map(Number)
+			.some((pid) => pid > 0 && byPid.has(pid) && !tree.has(pid) && !ancestors(byPid, proc.pid).has(pid));
+		if (tailTarget) {
+			skipped.push({ pid: proc.pid, reason: "wait target alive", command });
 			continue;
 		}
 		const alive = tests.some((test) => others.some((other) => test?.(other.argv.join(" "))));
