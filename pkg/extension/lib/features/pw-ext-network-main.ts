@@ -75,6 +75,7 @@ export function pwExtNetwork(
 		};
 		const outEntry = (entry: NetworkEntry, values: boolean, hidden: readonly string[] = []): NetworkEntry => {
 			const scrub = (text: string) => hidden.reduce((out, secret) => out.split(secret).join("[redacted]"), text);
+			const bound = (text: string, max: number) => (text.length > max ? text.slice(0, max) : text);
 			const strip = (body: NetworkBody | undefined): NetworkBody | undefined =>
 				body === undefined
 					? undefined
@@ -82,10 +83,16 @@ export function pwExtNetwork(
 							type: body.type,
 							size: body.size,
 							...(body.shape === undefined ? {} : { shape: body.shape }),
-							...(values && body.text !== undefined ? { text: scrub(body.text), ...(body.cut ? { cut: true as const } : {}) } : {}),
+							...(values && body.text !== undefined
+								? (() => {
+										const text = scrub(body.text);
+										const cut = body.cut === true || text.length > BODY_MAX;
+										return { text: bound(text, BODY_MAX), ...(cut ? { cut: true as const } : {}) };
+									})()
+								: {}),
 						};
 			const names = (list: NetworkHeader[]) =>
-				list.map(({ name, value }) => (values && value !== undefined ? { name, value: scrub(value) } : { name }));
+				list.map(({ name, value }) => (values && value !== undefined ? { name, value: bound(scrub(value), HEADER_VALUE_MAX) } : { name }));
 			const request = strip(entry.request);
 			const response = strip(entry.response);
 			return JSON.parse(
@@ -93,7 +100,7 @@ export function pwExtNetwork(
 					at: entry.at,
 					via: entry.via,
 					method: entry.method,
-					url: values ? scrub(entry.url) : entry.url,
+					url: values ? bound(scrub(entry.url), URL_MAX) : entry.url,
 					...(entry.status === undefined ? {} : { status: entry.status }),
 					...(entry.failed ? { failed: true as const } : {}),
 					requestHeaders: names(entry.requestHeaders),
@@ -518,7 +525,9 @@ export function pwExtNetwork(
 							length: raw.length,
 							type: shape === undefined ? "text" : "json",
 							...(shape === undefined ? {} : { shape }),
-							...(values && !keysOnly ? { value: clip(raw, BODY_MAX) } : {}),
+							...(values && !keysOnly
+								? { value: clip(fresh.hidden().reduce((out, secret) => out.split(secret).join("[redacted]"), raw), BODY_MAX) }
+								: {}),
 						});
 					}
 					return { items, total: key === undefined ? total : items.length };

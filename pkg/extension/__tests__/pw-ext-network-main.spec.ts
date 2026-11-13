@@ -445,3 +445,26 @@ describe("sealed history", () => {
 		expect(JSON.stringify(read(true))).not.toContain(old);
 	});
 });
+
+describe("sealed values in storage and long bodies", () => {
+	it("removes a sealed value from storage values", async () => {
+		const token = "fake-csrf-value-for-tests";
+		window.localStorage.setItem("data", JSON.stringify({ data: token }));
+		pwExtNetwork({ kind: "install", seal: true });
+		await page().fetch("/a", { headers: { "X-Csrf-Token": token } });
+		await settle();
+		expect(JSON.stringify(pwExtNetwork({ kind: "storage", area: "local", values: true }))).not.toContain(token);
+	});
+
+	it("keeps a masked body within the wire bound", async () => {
+		const short = "fake8chr";
+		pwExtNetwork({ kind: "install", seal: true });
+		reply = async () =>
+			new window.Response(`${"x".repeat(7992)}${short}`, { headers: { "content-type": "text/plain" } }) as unknown as Response;
+		await page().fetch("/a", { headers: { Authorization: short } });
+		await settle();
+		const [entry] = read(true);
+		expect(entry?.response?.text?.length).toBeLessThanOrEqual(8000);
+		expect(entry?.response?.cut).toBe(true);
+	});
+});

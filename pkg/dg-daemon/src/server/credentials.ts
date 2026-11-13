@@ -143,11 +143,17 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
+			detached: process.platform !== "win32",
 		});
 	} catch {
 		return { ok: false, error: `Could not start ${spec.argv[0]}.` };
 	}
-	const kill = () => child.kill();
+	const kill = () => {
+		try {
+			if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+		} catch {}
+		child.kill();
+	};
 	requester.data.closeWaiters.add(kill);
 	const pump = async (stream: ReadableStream<Uint8Array>, name: "stdout" | "stderr") => {
 		const scrubber = createScrubber(values);

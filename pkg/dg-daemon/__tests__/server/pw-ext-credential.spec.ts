@@ -190,6 +190,45 @@ describe("pw --ext credential save through the daemon", () => {
 			expect(JSON.stringify(cliFrames)).not.toContain(form);
 	});
 
+	it("kills the whole process group when the CLI disconnects", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const requestId = randomUUID();
+		send(cli, {
+			type: "cli-credentials-request",
+			requestId,
+			operation: "exec",
+			exec: {
+				bindings: [{ name: "pw/live.com/owa-token", env: "X" }],
+				argv: ["sh", "-c", "sleep 30 & echo $!; wait"],
+				cwd: process.cwd(),
+				env: { PATH: process.env.PATH ?? "" },
+			},
+		});
+		const line = await waitForValue(
+			() => cliFrames.find((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).requestId === requestId) as Frame | undefined,
+			5000,
+			"background pid",
+		);
+		const pid = Number(String(line.data).trim());
+		expect(Number.isInteger(pid)).toBe(true);
+		cli.close();
+		await waitForValue(
+			() => {
+				try {
+					process.kill(pid, 0);
+					return undefined;
+				} catch {
+					return true;
+				}
+			},
+			5000,
+			"background job ended",
+		);
+	});
+
 	it("refuses exec from the extension socket and for a missing name, with no value", async () => {
 		const { cli, cliFrames, socket, extensionFrames } = await boot();
 		const exec = (name: string) => ({
