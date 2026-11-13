@@ -27,16 +27,33 @@ describe("siteOf", () => {
 	});
 
 	it.each([
-		["http://localhost:3000/a", "http://localhost:3000"],
-		["http://127.0.0.1:8080/", "http://127.0.0.1:8080"],
-		["http://[::1]/", "http://[::1]"],
-		["http://intranet/home", "http://intranet"],
-		["https://github.io/", "https://github.io"],
-		["https://example.com./", "https://example.com."],
-		["https://foo.github.io./", "https://foo.github.io."],
-		["http://app.localhost./", "http://app.localhost."],
-	])("keys %s by its exact host", (url, key) => {
-		expect(siteOf(url)).toEqual({ key, name: key.replace(/^https:\/\//, ""), grouped: false });
+		["http://localhost:3000/a", "http://localhost:3000", "http://localhost:3000"],
+		["http://127.0.0.1:8080/", "http://127.0.0.1:8080", "http://127.0.0.1:8080"],
+		["http://[::1]/", "http://[::1]", "http://[::1]"],
+		["http://intranet/home", "http://intranet", "http://intranet"],
+		["https://github.io/", "https://github.io", "github.io"],
+		["https://example.com./", "https://example.com.", "example.com."],
+		["https://foo.github.io./", "https://foo.github.io.", "foo.github.io."],
+		["http://app.localhost./", "http://app.localhost.", "http://app.localhost."],
+	])("keys %s by its exact host", (url, key, name) => {
+		expect(siteOf(url)).toEqual({ key, name, grouped: false });
+	});
+
+	it("drops a default port and keeps a non-default one in a grouped key", () => {
+		expect(siteOf("https://www.example.com:443/").key).toBe("https://example.com");
+		expect(siteOf("http://www.example.com:80/").key).toBe("http://example.com");
+		expect(siteOf("https://example.com:8080/").key).toBe("https://example.com:8080");
+		expect(siteOf("https://app.example.com:3000/")).toEqual({
+			key: "https://example.com:3000",
+			name: "example.com:3000",
+			grouped: true,
+		});
+	});
+
+	it("shares a grouped key across hosts on one port and splits ports", () => {
+		expect(siteOf("https://app.example.com:3000/").key).toBe(siteOf("https://example.com:3000/").key);
+		expect(siteOf("https://app.example.com:3000/").key).not.toBe(siteOf("https://example.com:8080/").key);
+		expect(siteOf("https://example.com:8080/").key).not.toBe(siteOf("https://example.com/").key);
 	});
 
 	it("keeps two local ports apart", () => {
