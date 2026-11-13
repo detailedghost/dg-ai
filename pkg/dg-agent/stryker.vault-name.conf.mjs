@@ -12,7 +12,7 @@ const config = {
 		"src/phone/vault.ts:127-133",
 		"src/phone/vault.ts:138-149",
 		"src/phone/vault.ts:183-189",
-		"src/phone/vault.ts:219-224",
+		"src/phone/vault.ts:219-227",
 		"src/phone/vault.ts:253-275",
 		"src/phone/vault.ts:376-380",
 		"src/phone/vault-commands.ts:74-75",
