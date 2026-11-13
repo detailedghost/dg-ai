@@ -251,9 +251,11 @@ const RAW_OUTPUT_MAX = 100_000;
 
 /** Masks raw MAIN-world text cut at rawMax; the word at the cut is masked too, as a partial token may not match. */
 function maskRaw(raw: string, rawMax: number, options: { unmasked: boolean; secrets: string[] }): string {
-	const cut = raw.length > rawMax || raw.endsWith("…");
 	const masked = mask(clip(raw, rawMax), options);
-	return cut ? masked.replace(/\S*…$/, "[redacted]…") : masked;
+	if (!masked.endsWith("…") || (raw.length <= rawMax && !raw.endsWith("…"))) return masked;
+	let start = masked.length - 1;
+	while (start > 0 && !/\s/.test(masked[start - 1] as string)) start--;
+	return `${masked.slice(0, start)}[redacted]…`;
 }
 
 /** Masks raw MAIN-world console entries before it shortens them, so a cut cannot split a held secret. */
@@ -344,7 +346,7 @@ function webMcpResult(raw: unknown): PwExtWebMcpResult {
 	const value = raw as Record<string, unknown> | null;
 	if (typeof value !== "object" || value === null)
 		throw new Error("The page returned an unexpected WebMCP result.");
-	if (typeof value.error === "string") return { error: clip(value.error, RAW_ERROR_MAX) };
+	if (typeof value.error === "string") return { error: value.error };
 	if (!["modelContext", "modelContextTesting", "none"].includes(value.api as string))
 		throw new Error("The page returned an unexpected WebMCP result.");
 	if (JSON.stringify(value).length > MAX_PAGE_RESULT_CHARS)
@@ -591,7 +593,9 @@ export function createPwExtHandler({
 		}
 		const page = () => pageLines(tab, unmasked, secrets);
 		const pageError = (error: string): PwExtResult =>
-			mailbox(tab.url) ? { ok: false, error: MAILBOX_TOOL_FAILED } : failed(error);
+			mailbox(tab.url)
+				? { ok: false, error: MAILBOX_TOOL_FAILED }
+				: failed(maskRaw(error, RAW_ERROR_MAX, { unmasked, secrets }));
 		const shown = (text: string): PwExtResult => ({
 			ok: true,
 			data: { text: clean(grant ? `${unmaskLine(grant)}\n${text}` : text, { unmasked, secrets }) },

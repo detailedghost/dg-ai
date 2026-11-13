@@ -15,7 +15,7 @@ export function clearNotedSecrets(): void {
 }
 
 const EMAIL = {
-	pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+	pattern: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
 	replacement: REDACTED,
 };
 

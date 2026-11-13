@@ -307,7 +307,7 @@ describe("dg-agent mcp server tools/call", () => {
 		["anyOf", { anyOf: [{ properties: { q: {} } }, { properties: { tab: {} } }] }],
 		["a $ref into $defs", { $ref: "#/$defs/args", $defs: { args: { properties: { tab: {} } } } }],
 		["a nested $ref into definitions", { allOf: [{ $ref: "#/definitions/a~1b" }], definitions: { "a/b": { oneOf: [{ properties: { tab: {} } }] } } }],
-		["an allOf chain too deep to walk", JSON.parse(`${'{"allOf":['.repeat(40)}{"properties":{"q":{}}}${"]}".repeat(40)}`)],
+		["an allOf chain too deep to walk", JSON.parse(`${'{"allOf":['.repeat(40)}{"properties":{"tab":{}}}${"]}".repeat(40)}`)],
 	])("routes with dg_tab when the tool's own tab input sits in %s", async (_, own) => {
 		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
 		const { tools } = await client.listTools();
@@ -320,7 +320,14 @@ describe("dg-agent mcp server tools/call", () => {
 		const deep = JSON.parse(`${'{"allOf":['.repeat(40)}{"properties":{"q":{}}}${"]}".repeat(40)}`);
 		const own = { allOf: [{ properties: { dg_tab: { type: "string" } } }, deep] };
 		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", own)], 2: [tool("dg_example_read", own)] })]);
-		await client.callTool({ name: "dg_example_read", arguments: { dg_tab_2: 2, dg_tab: "settings" } });
+		await client.callTool({ name: "dg_example_read", arguments: { tab: 2, dg_tab: "settings" } });
+		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { dg_tab: "settings" } }]);
+	});
+
+	it("does not route with a name that sits deeper than the walk goes", async () => {
+		const deep = JSON.parse(`${'{"allOf":['.repeat(40)}{"properties":{"dg_tab":{"type":"string"}}}${"]}".repeat(40)}`);
+		const { client, sent } = await connectClient([mailbox({ 1: [tool("dg_example_read", deep)], 2: [tool("dg_example_read", deep)] })]);
+		await client.callTool({ name: "dg_example_read", arguments: { tab: 2, dg_tab: "settings" } });
 		expect(calls(sent)).toEqual([{ verb: "call", tabId: 2, tool: "dg_example_read", args: { dg_tab: "settings" } }]);
 	});
 

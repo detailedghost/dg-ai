@@ -145,7 +145,7 @@ function declaredNames(schema: Record<string, unknown>): { names: Set<string>; t
 /** The argument that picks the tab: the first of tab, dg_tab, dg_tab_2, … that the tool does not use. */
 function tabKey(raw: string | undefined): string {
 	const { names, tooDeep } = declaredNames(parseSchema(raw).schema);
-	const taken = (key: string) => names.has(key) || (tooDeep && key === "tab");
+	const taken = (key: string) => names.has(key) || (tooDeep && (raw ?? "").includes(JSON.stringify(key)));
 	if (!taken("tab")) return "tab";
 	let key = "dg_tab";
 	for (let n = 2; taken(key); n++) key = `dg_tab_${n}`;

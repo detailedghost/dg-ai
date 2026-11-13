@@ -1278,6 +1278,18 @@ describe("pw --ext unmask", () => {
 		expect(h.executed().find((call) => call.world === "MAIN")?.args).toHaveLength(2);
 	});
 
+	it("masks the word at the cut of a MAIN-world error", async () => {
+		const h = harness({ mainResult: () => ({ error: `WebMCP failed: ${"x ".repeat(240)}eyJhbGciOiJIUzI1NiJ9.eyJzdWIi…` }) });
+		expect(outcome(await h.run({ verb: "call", tool: "search", args: {} }))).not.toContain("eyJhbGci");
+	});
+
+	it("masks a long cut output that ends in a credential pair quickly", async () => {
+		const h = harness({ mainResult: () => ({ api: "modelContext", output: `${"a".repeat(99_000)} token=abcdefgh…` }) });
+		const started = Date.now();
+		expect(outcome(await h.run({ verb: "call", tool: "search", args: {} }))).not.toContain("abcdefgh");
+		expect(Date.now() - started).toBeLessThan(2000);
+	});
+
 	it("shortens a huge MAIN-world error before it masks it", async () => {
 		const h = harness({ mainResult: () => ({ error: `boom ${"e".repeat(3_000_000)}` }) });
 		const answer = await h.run({ verb: "call", tool: "search", args: {} });
