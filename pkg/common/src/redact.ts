@@ -79,15 +79,19 @@ function literalForms(secrets: readonly string[]): string[] {
 			secrets
 				.filter((secret) => secret.length > 0)
 				.flatMap((secret) => {
+					const lowerHex = (text: string) => text.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase());
 					const encoded = encodeURIComponent(secret);
+					const form = new URLSearchParams({ v: secret }).toString().slice(2);
 					return [
 						secret,
 						secret.replace(/\s+/g, " "),
 						JSON.stringify(secret).slice(1, -1),
 						secret.replace(/[\r\n]/g, ""),
 						encoded,
+						lowerHex(encoded),
 						encoded.replace(/%20/g, "+"),
-						encoded.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase()),
+						form,
+						lowerHex(form),
 					];
 				}),
 		),

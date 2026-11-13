@@ -2677,6 +2677,13 @@ describe("pw --ext network", () => {
 		expect(valuesAsks(h)).toHaveLength(1);
 	});
 
+	it("masks a URL-encoded email address in values without an unmask grant", async () => {
+		const encoded = { ...entry, url: "https://app.example.test/search?q=ada%40clinic.test" };
+		const h = harness({ sites: "ask", approval: "allow", mainResult: page([encoded]) });
+		const text = outcome(await h.run({ verb: "network", values: true }));
+		expect(text).not.toContain("clinic.test");
+	});
+
 	it("keeps emails only under an unmask grant", async () => {
 		const h = harness({ sites: "ask", approval: "allow", mainResult: page([entry]) });
 		await h.run({ verb: "unmask", minutes: 5 });

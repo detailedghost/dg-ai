@@ -76,13 +76,15 @@ the registrable-domain site key when PR #191 lands. There is no UI to remove
 one grant yet; Stop removes all of them.
 
 **Masking.** `maskCredentialFields` first masks URL user info, and the value
-of each JSON field (with the whole nested value) and each form or query
-parameter whose name names a credential (pass, pwd, token, secret, key, auth,
+of each JSON field (with the whole nested value), each XML element or
+attribute, and each form or query parameter (up to the next `&`, so a `;`
+inside the value does not end it) whose name names a credential (pass, pwd, token, secret, key, auth,
 session, cookie, canary, csrf, signature, jwt, assertion, `code`, `otp`,
 `pin`). It decodes JSON-escaped names. In cut JSON text it hides the rest of
 the text after a credential field with a nested value. The content type shows
 only its media type and charset. The shared `redactLiterals` now also masks
-the URL-encoded and form-encoded forms of a held secret. Then every shown
+the URL-encoded and form-serializer forms of a held secret. The worker decodes
+`%40` before it masks a value, so a URL-encoded email address is masked too. Then every shown
 value goes through `maskRaw`, the same span-union
 redaction as other `pw --ext` output (held secrets, token patterns, and email
 addresses unless an unmask grant covers the site). A value the page cut ends in

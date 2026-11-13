@@ -101,12 +101,13 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 				if (!HEADER_NAME.test(lower)) return undefined;
 				return SENSITIVE.test(lower) ? { name: lower } : { name: lower, value: clip(value, HEADER_VALUE_MAX) };
 			};
-			const addHeader = (list: NetworkHeader[], name: string, value: string) => {
-				const entry = header(name, value);
-				if (!entry || list.length >= MAX_HEADERS) return;
-				const at = list.findIndex((held) => held.name === entry.name);
-				if (at === -1) list.push(entry);
-				else list[at] = entry;
+			const addHeader = (list: NetworkHeader[], name: string, value: string, append = false) => {
+				const at = list.findIndex((held) => held.name === name.trim().toLowerCase());
+				const before = at === -1 ? undefined : list[at]?.value;
+				const entry = header(name, append && before !== undefined ? `${before}, ${value}` : value);
+				if (!entry) return;
+				if (at !== -1) list[at] = entry;
+				else if (list.length < MAX_HEADERS) list.push(entry);
 			};
 			const contentType = (list: NetworkHeader[]) => list.find((held) => held.name === "content-type")?.value ?? "";
 			const absolute = (raw: unknown): string => {
@@ -232,7 +233,7 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 				setRequestHeader: function setRequestHeader(this: XMLHttpRequest, name: string, value: string) {
 					try {
 						const held = fresh.active ? tracked.get(this) : undefined;
-						if (held) addHeader(held.headers, String(name), String(value));
+						if (held) addHeader(held.headers, String(name), String(value), true);
 					} catch {}
 					return native.setRequestHeader.call(this, name, value);
 				},

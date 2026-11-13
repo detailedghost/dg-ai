@@ -186,6 +186,8 @@ describe("network hook", () => {
 		const xhr = new (page().XMLHttpRequest)();
 		xhr.open("put", "https://mail.example.test/api/items/AAMkADU3ZmFrZWZha2VmYWtlZmFrZQ?x=1");
 		xhr.setRequestHeader("Authorization", `Bearer ${TOKEN}`);
+		xhr.setRequestHeader("Accept", "application/json");
+		xhr.setRequestHeader("Accept", "text/plain");
 		xhr.send('{"Name":"x"}');
 		await settle();
 		const [entry] = read();
@@ -193,12 +195,13 @@ describe("network hook", () => {
 			via: "xhr",
 			method: "PUT",
 			status: 201,
-			requestHeaders: [{ name: "authorization" }],
+			requestHeaders: [{ name: "authorization" }, { name: "accept" }],
 			responseHeaders: [{ name: "content-type" }, { name: "cookie2" }],
 			request: { shape: { keys: [["Name", "string"]] } },
 			response: { shape: { keys: [["Ok", "boolean"], ["List", { n: 0 }]] } },
 		});
 		expect(xhr.sent).toEqual(['{"Name":"x"}']);
+		expect(read(true)[0]?.requestHeaders).toContainEqual({ name: "accept", value: "application/json, text/plain" });
 		expect(JSON.stringify(slotEntries())).not.toContain(TOKEN);
 	});
 

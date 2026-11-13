@@ -49,7 +49,9 @@ const JSON_FIELD = /"((?:[^"\\]|\\.){1,256})"(\s*:\s*)("(?:[^"\\]|\\.)*"?|-?\d[\
 const JSON_NESTED = /"((?:[^"\\]|\\.){1,256})"\s*:\s*[[{]/g;
 const USER_INFO = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i;
 const CONTENT_TYPE = /^\s*([\w.+-]{1,60}\/[\w.+-]{1,60})\s*(?:;\s*charset=["']?([\w-]{1,32}))?/i;
-const FORM_FIELD = /(^|[?&;\s])([^=&;\s?#]{1,256})=([^&;\s#]*)/g;
+const FORM_NAME = /(^|[?&;\s])([^=&;\s?#]{1,256})=/g;
+const XML_ELEMENT = /<([A-Za-z_][\w.:-]{0,128})(\s[^<>]*)?>([^<]*)/g;
+const XML_ATTRIBUTE = /(\s)([A-Za-z_][\w.:-]{0,128})(\s*=\s*)("[^"]*"?|'[^']*'?)/g;
 const SENSITIVE_HEADER =
 	/auth|cookie|token|secret|key|session|canary|csrf|xsrf|credential|pass|signature|jwt|dpop|bearer|assertion/i;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
@@ -89,11 +91,36 @@ function maskJsonText(text: string): string {
 	return flat;
 }
 
-/** Masks each JSON field, nested value or form and query parameter whose name names a credential, and URL user info; cut text is masked too. */
+function maskFormFields(text: string): string {
+	const spans: [number, number][] = [];
+	for (const match of text.matchAll(FORM_NAME)) {
+		if (!CREDENTIAL_FIELD.test(decoded(match[2] as string))) continue;
+		const start = (match.index ?? 0) + match[0].length;
+		const end = text.slice(start).search(/[&\s#]/);
+		spans.push([start, end === -1 ? text.length : start + end]);
+	}
+	let out = text;
+	for (const [start, end] of spans.reverse()) out = `${out.slice(0, start)}[redacted]${out.slice(end)}`;
+	return out;
+}
+
+function localName(name: string): string {
+	return name.slice(name.lastIndexOf(":") + 1);
+}
+
+function maskXmlFields(text: string): string {
+	return text
+		.replace(XML_ATTRIBUTE, (match, gap: string, name: string, eq: string) =>
+			CREDENTIAL_FIELD.test(localName(name)) ? `${gap}${name}${eq}"[redacted]"` : match,
+		)
+		.replace(XML_ELEMENT, (match, name: string, attributes: string | undefined, inner: string) =>
+			CREDENTIAL_FIELD.test(localName(name)) && inner !== "" ? `<${name}${attributes ?? ""}>[redacted]` : match,
+		);
+}
+
+/** Masks each JSON field, nested value, XML element or attribute and form or query parameter whose name names a credential, and URL user info; cut text is masked too. */
 export function maskCredentialFields(text: string): string {
-	return maskJsonText(text.replace(USER_INFO, "$1[redacted]@")).replace(FORM_FIELD, (match, lead: string, name: string) =>
-		CREDENTIAL_FIELD.test(decoded(name)) ? `${lead}${name}=[redacted]` : match,
-	);
+	return maskFormFields(maskXmlFields(maskJsonText(text.replace(USER_INFO, "$1[redacted]@"))));
 }
 
 /** The media type and charset of a content-type value, or * when it is not one; other parameters are dropped. */

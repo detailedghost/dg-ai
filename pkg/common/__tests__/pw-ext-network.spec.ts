@@ -98,6 +98,10 @@ describe("maskCredentialFields", () => {
 		['{"x-functions-key":"fake-hex","refresh_token":"0.fake"}', '{"x-functions-key":"[redacted]","refresh_token":"[redacted]"}'],
 		["https://alice:hunter2@127.0.0.1/api?x=1", "https://[redacted]@127.0.0.1/api?x=1"],
 		["pwd=fake-pass&otp=123456", "pwd=[redacted]&otp=[redacted]"],
+		["https://a.test/login?password=;hunter2&x=1", "https://a.test/login?password=[redacted]&x=1"],
+		["a=1;password=fake-pass", "a=1;password=[redacted]"],
+		["<login><User>ada</User><Password>hunter2</Password></login>", "<login><User>ada</User><Password>[redacted]</Password></login>"],
+		['<s:Envelope><t:Token type="x">fake-tok</t:Token><Item AuthKey="fake-attr" Id="1"/>', '<s:Envelope><t:Token type="x">[redacted]</t:Token><Item AuthKey=[redacted] Id="1"/>'],
 	])("masks %s", (input, output) => expect(maskCredentialFields(input)).toBe(output));
 });
 

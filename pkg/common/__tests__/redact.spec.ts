@@ -294,6 +294,12 @@ describe("redactSecrets", () => {
 });
 
 describe("redactLiterals", () => {
+	it("masks the form serializer's form of a secret", () => {
+		const secret = "s3cr3t!~ ('x')";
+		const form = new URLSearchParams({ q: secret }).toString();
+		expect(redactLiterals(form, [secret])).toBe("q=[redacted]");
+	});
+
 	it("masks the URL-encoded and form-encoded forms of a secret", () => {
 		const secret = "Tr0ub4dor&3 x/y";
 		const text = `a=${encodeURIComponent(secret)} b=${encodeURIComponent(secret).replace(/%20/g, "+")} c=${encodeURIComponent(secret).replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase())}`;
