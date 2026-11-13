@@ -11,6 +11,42 @@
 			"description": "report the live daemon's status, or that none is running"
 		},
 		{
+			"name": "start",
+			"description": "start the daemon in the background, or report the live one",
+			"options": [
+				{
+					"flags": [
+						"--json"
+					],
+					"description": "print one JSON line"
+				}
+			]
+		},
+		{
+			"name": "stop",
+			"description": "stop the daemon and its services",
+			"options": [
+				{
+					"flags": [
+						"--force"
+					],
+					"description": "kill the daemon and each service process tree at once"
+				}
+			]
+		},
+		{
+			"name": "restart",
+			"description": "stop the daemon, then start it again",
+			"options": [
+				{
+					"flags": [
+						"--force"
+					],
+					"description": "kill the daemon and each service process tree at once"
+				}
+			]
+		},
+		{
 			"name": "job",
 			"description": "manage the background jobs the daemon runs on a schedule",
 			"commands": [
@@ -106,8 +142,67 @@
 			"description": "run the long-lived scripts declared under `services` in the daemon config",
 			"commands": [
 				{
+					"name": "add",
+					"description": "declare a service in the daemon config",
+					"options": [
+						{
+							"flags": [
+								"--cwd"
+							],
+							"description": "working directory for the service",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--autostart"
+							],
+							"description": "start it when the daemon starts"
+						},
+						{
+							"flags": [
+								"--env-file"
+							],
+							"description": "env file to load",
+							"value": "path"
+						},
+						{
+							"flags": [
+								"--pass-env"
+							],
+							"description": "environment variable to pass through (repeatable)",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--stop-timeout"
+							],
+							"description": "grace period on stop, e.g. 30s",
+							"value": "any"
+						},
+						{
+							"flags": [
+								"--grant"
+							],
+							"description": "credential grant prefix",
+							"value": "any"
+						}
+					]
+				},
+				{
+					"name": "rm",
+					"description": "remove a service declaration"
+				},
+				{
 					"name": "status",
-					"description": "show every declared service, or one by label"
+					"description": "show every declared service, or one by label",
+					"options": [
+						{
+							"flags": [
+								"--json"
+							],
+							"description": "print one JSON line"
+						}
+					]
 				},
 				{
 					"name": "start",
