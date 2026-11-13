@@ -157,12 +157,17 @@ conditions only:
   config directory on each call. Each line needs an absolute path and a
   `sha256=<hex>` pin; it may add a name glob (`*` stops at `/`) and the
   `allow-any-args` flag. The daemon resolves argv[0] to its real path (a bare
-  name through the daemon's own `PATH`, symlinks followed), hashes that file,
-  and runs it only when a pinned line matches the hash and covers every `pw/`
-  name. It refuses shells, interpreters and general tools whose arguments can
-  run code or send data anywhere (for example `curl`, `git`, `ssh`, `rsync`,
-  `tar`, `make`, `docker`, editors and pagers) unless the line has
-  `allow-any-args`. `dg-skills credentials allow <path> [glob]` prints a pinned
+  name through the daemon's own `PATH`, symlinks followed), reads its bytes
+  once, and hashes them. Each `pw/` name needs a covering line with the
+  current pin; stale lines are ignored. It refuses shells, interpreters and
+  general tools whose arguments can run code or send data anywhere (for
+  example `npm`, `curl`, `git`, `ssh`, `rsync`, `tar`, `make`, `docker`,
+  editors and pagers) unless the line has `allow-any-args`. It classifies the
+  typed name, the real file name, and the `#!` interpreter (after `env`); a
+  shell or interpreter in the `#!` line is fine, because it runs the pinned
+  script. The daemon writes the hashed bytes to a private 0700 directory as a
+  0500 file, runs that copy from the daemon's home directory with a private
+  per-run `TMPDIR`, and deletes it after the run. `dg-skills credentials allow <path> [glob]` prints a pinned
   line and never writes the file. The recommended entry is a small fixed
   wrapper script that the person owns. For a `pw/` exec the daemon keeps only
   locale, terminal and user variables from the caller, and sets
@@ -175,8 +180,12 @@ conditions only:
   The pin refuses a listed file after an edit, but a file the agent can write
   and the person pins again is the same as an interpreter. A listed command
   that prints, stores or sends the value in a changed form can still expose
-  it. An `allow-any-args` line undoes the guard for that executable. A file
-  can change between the hash check and the start of the process.
+  it. An `allow-any-args` line undoes the guard for that executable. A
+  wrapper that passes `"$@"` or other agent input to a general tool is the
+  same as that tool. The private copy closes the gap between the hash check
+  and the start, but a same-user process can still write the private
+  directory while the copy exists, and a listed script can load other files
+  that are not pinned.
 - **Saved values mask later output.** Before the store frame goes out, the
   worker reserves the value with the session's held secrets in
   `storage.session`, so all later output of the session masks it, also after

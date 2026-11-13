@@ -83,20 +83,37 @@ Lines that start with `#` are comments. `dg-skills credentials allow <path>
 [glob]` prints a ready line with its pin; it never writes the file, so you add
 the line yourself.
 
-The daemon reads the file on each `exec`, resolves the command to its real
-path (a bare name through the daemon's own `PATH`, symlinks followed), checks
-its sha256 against the pin, and runs that path. With no file, no matching line,
-no pin, or a changed hash, it refuses. It also refuses a shell, interpreter or
-general tool whose arguments can run code or send data anywhere (`sh`, `bash`,
-`env`, `python`, `node`, `bun`, `curl`, `wget`, `git`, `ssh`, `rsync`, `tar`,
-`make`, `docker`, `vim`, `less`, `find`, `awk`, `sed`, `xargs` and similar)
-unless its line has `allow-any-args`. Listing one undoes the guard. For a
-`pw/` value the command runs with the daemon's own `PATH`, `HOME` and
+The daemon reads the file on each `exec` and resolves the command to its real
+path (a bare name through the daemon's own `PATH`, symlinks followed). It reads
+the file bytes once and hashes them. Each `pw/` name needs at least one line
+that covers it and has the current pin; other lines for the same path, for
+example an old pin, are ignored. With no file, no covering line, no pin, or a
+changed hash, it refuses. It also refuses a shell, interpreter or general tool
+whose arguments can run code or send data anywhere (`sh`, `bash`, `env`,
+`python`, `node`, `bun`, `npm`, `npx`, `curl`, `wget`, `git`, `ssh`, `rsync`,
+`tar`, `make`, `docker`, `vim`, `less`, `find`, `awk`, `sed`, `xargs` and
+similar) unless the line has `allow-any-args`. It checks the name you typed,
+the real file name, and the `#!` line of a script: a script that runs through
+a general tool such as `#!/usr/bin/env curl` needs the flag too. A `#!` line
+that names a shell or interpreter is fine, because that interpreter runs the
+pinned script. Listing a general tool undoes the guard.
+
+The daemon writes the bytes it hashed to a new private directory (mode 0700)
+as a file with mode 0500, runs that copy, and deletes it after the run. So the
+bytes that run are the bytes that matched the pin, and a script keeps its `#!`
+line. A listed script cannot load files next to it by a relative path, because
+it runs from that copy. The command runs in the daemon's home directory, not
+in your working directory, and gets a private per-run `TMPDIR`. For a `pw/`
+value the command runs with the daemon's own `PATH`, `HOME` and
 `XDG_CONFIG_HOME`. From your environment it keeps only locale, terminal and
 user names (`LANG`, `LC_*`, `TZ`, `TERM`, `USER` and similar). It drops all
 other variables, such as `LD_PRELOAD`, `NODE_OPTIONS`, `LUA_INIT`,
 `HTTPS_PROXY` or `GIT_CONFIG_GLOBAL`. Set any other variable in the wrapper
 script.
+
+A wrapper must not pass `"$@"` or any other agent input to a general tool.
+If it does, the agent picks the arguments, and the wrapper is the same as that
+tool. Give the wrapper fixed arguments.
 
 List only paths that the agent cannot write. A script the agent can edit is
 the same as an interpreter; the pin catches an edit, but deny writes to it too.

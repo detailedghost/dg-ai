@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execAllowlistLine } from "@dg/common/node";
@@ -53,7 +53,7 @@ describe("exec allowlist", () => {
 		const line = execAllowlistLine(script);
 		expect(line.startsWith(`"${spaced}/run \\"it\\".sh" sha256=`)).toBe(true);
 		writeFileSync(file, `${line}\n`);
-		expect(check(file, script, dir)).toEqual({ ok: true, path: script });
+		expect(check(file, script, dir)).toMatchObject({ ok: true, path: script });
 	});
 
 	it("prints a pinned line and never writes the allowlist", () => {
@@ -90,10 +90,10 @@ describe("exec allowlist", () => {
 		const { file, tool: path, dir } = setup(({ tool: t }) => [execAllowlistLine(t, "pw/live.com/*")]);
 		const link = join(dir, "link");
 		symlinkSync(path, link);
-		expect(check(file, path, dir)).toEqual({ ok: true, path });
-		expect(check(file, link, dir)).toEqual({ ok: true, path });
-		expect(check(file, "./tool.sh", dir)).toEqual({ ok: true, path });
-		expect(check(file, "tool.sh", "/", undefined, dir)).toEqual({ ok: true, path });
+		expect(check(file, path, dir)).toMatchObject({ ok: true, path });
+		expect(check(file, link, dir)).toMatchObject({ ok: true, path });
+		expect(check(file, "./tool.sh", dir)).toMatchObject({ ok: true, path });
+		expect(check(file, "tool.sh", "/", undefined, dir)).toMatchObject({ ok: true, path });
 		expect(check(file, "tool.sh", "/", undefined, "/nonexistent")).toMatchObject({ ok: false });
 	});
 
@@ -114,7 +114,7 @@ describe("exec allowlist", () => {
 
 	it("lets separate lines allow separate names in one call", () => {
 		const { file, tool: path, dir } = setup(({ tool: t }) => [execAllowlistLine(t, "pw/one.test/*"), execAllowlistLine(t, "pw/two.test/*")]);
-		expect(check(file, path, dir, ["pw/one.test/a", "pw/two.test/b"])).toEqual({ ok: true, path });
+		expect(check(file, path, dir, ["pw/one.test/a", "pw/two.test/b"])).toMatchObject({ ok: true, path });
 		expect(check(file, path, dir, ["pw/one.test/a", "pw/three.test/c"])).toMatchObject({ ok: false });
 	});
 
@@ -131,4 +131,55 @@ describe("exec allowlist", () => {
 			expect(check(file, path, dir)).toMatchObject({ ok: true });
 		},
 	);
+
+	it("ignores a stale line when another covering line has the current pin", () => {
+		const { file, tool: path, dir } = setup(({ tool: t }) => [execAllowlistLine(t)]);
+		appendFileSync(path, "echo edited\n");
+		appendFileSync(file, `\n${execAllowlistLine(path)}\n`);
+		expect(check(file, path, dir)).toMatchObject({ ok: true, path });
+	});
+
+	it("needs a current pin for each name, not just for one of them", () => {
+		const { file, tool: path, dir } = setup(({ tool: t }) => [execAllowlistLine(t, "pw/one.test/*"), execAllowlistLine(t, "pw/two.test/*")]);
+		writeFileSync(file, readFileSync(file, "utf8").replace(/^(.*pw\/two\.test.*)$/m, (line) => line.replace(/sha256=[0-9a-f]+/, `sha256=${"0".repeat(64)}`)));
+		expect(check(file, path, dir, ["pw/one.test/a"])).toMatchObject({ ok: true });
+		expect(check(file, path, dir, ["pw/one.test/a", "pw/two.test/b"])).toMatchObject({ ok: false, error: expect.stringContaining("changed") });
+	});
+
+	it("returns the exact bytes it hashed", () => {
+		const { file, tool: path, dir } = setup(({ tool: t }) => [execAllowlistLine(t)]);
+		const result = check(file, path, dir);
+		expect(result.ok && Buffer.from(result.bytes).toString()).toBe(readFileSync(path, "utf8"));
+	});
+
+	it("classifies the invoked name too, so a pinned npm link needs allow-any-args", () => {
+		const { dir } = setup();
+		const cli = join(dir, "npm-cli.js");
+		writeFileSync(cli, "#!/usr/bin/env node\nconsole.log(1)\n");
+		chmodSync(cli, 0o755);
+		const link = join(dir, "npm");
+		symlinkSync(cli, link);
+		const file = join(dir, "list");
+		writeFileSync(file, execAllowlistLine(cli));
+		expect(check(file, cli, dir)).toMatchObject({ ok: true });
+		expect(check(file, link, dir)).toMatchObject({ ok: false, error: expect.stringContaining("allow-any-args") });
+		expect(check(file, "npm", "/", undefined, dir)).toMatchObject({ ok: false, error: expect.stringContaining("allow-any-args") });
+	});
+
+	it.each([
+		["#!/usr/bin/curl -K\n", false],
+		["#!/usr/bin/env -S curl -K\n", false],
+		["#!/bin/sh\necho ok\n", true],
+		["#!/usr/bin/env python3\nprint(1)\n", true],
+	])("classifies the #! line %p of a pinned script", (body, allowed) => {
+		const { dir } = setup();
+		const path = join(dir, "wrapper");
+		writeFileSync(path, body);
+		chmodSync(path, 0o755);
+		const file = join(dir, "list");
+		writeFileSync(file, execAllowlistLine(path));
+		expect(check(file, path, dir)).toMatchObject(allowed ? { ok: true } : { ok: false, error: expect.stringContaining("allow-any-args") });
+		writeFileSync(file, execAllowlistLine(path, undefined, true));
+		expect(check(file, path, dir)).toMatchObject({ ok: true });
+	});
 });

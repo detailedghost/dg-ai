@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import {
 	CHAT_PROTOCOL_VERSION,
@@ -338,6 +339,34 @@ describe("pw --ext credential save through the daemon", () => {
 			"exec result",
 		);
 		expect(done).toMatchObject({ ok: true, value: { exitCode: code } });
+	});
+
+	it("runs a private copy of the pinned bytes from the daemon's home with a private TMPDIR, then deletes it", async () => {
+		const { cli, cliFrames, socket, extensionFrames, bootstrap } = await boot();
+		const store = storeFrame(bootstrap);
+		send(socket, store);
+		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
+		const tool = script(
+			"const fs = require('node:fs'); const me = process.argv[1]; console.log(JSON.stringify({ me, mode: (fs.statSync(me).mode & 0o777).toString(8), dir: (fs.statSync(require('node:path').dirname(require('node:path').dirname(me))).mode & 0o777).toString(8), cwd: process.cwd(), tmp: process.env.TMPDIR, tmpMode: (fs.statSync(process.env.TMPDIR).mode & 0o777).toString(8) }));",
+		);
+		allow([execAllowlistLine(tool)]);
+		const frame = execFrame([tool]);
+		frame.exec.env = { ...frame.exec.env, TMPDIR: "/tmp/fake-agent-tmp" };
+		send(cli, frame);
+		await find(cliFrames, "cli-credentials-result", frame.requestId);
+		const out = cliFrames
+			.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).stream === "stdout")
+			.map((raw) => (raw as Frame).data)
+			.join("");
+		const seen = JSON.parse(out) as { me: string; mode: string; dir: string; cwd: string; tmp: string; tmpMode: string };
+		expect(seen.me).not.toBe(tool);
+		expect(seen.mode).toBe("500");
+		expect(seen.dir).toBe("700");
+		expect(realpathSync(seen.cwd)).toBe(realpathSync(homedir()));
+		expect(seen.tmp).not.toBe("/tmp/fake-agent-tmp");
+		expect(seen.tmpMode).toBe("700");
+		expect(existsSync(seen.me)).toBe(false);
+		expect(existsSync(seen.tmp)).toBe(false);
 	});
 
 	it("refuses to bind a pw/ value to a loader variable", async () => {

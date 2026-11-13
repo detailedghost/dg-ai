@@ -8,6 +8,9 @@ import {
 	validateCredentialGrantPrefix,
 } from "@dg/common";
 import { createScrubber } from "@dg/common/node";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import {
 	removeCredentialGrantToken,
 	writeCredentialGrantToken,
@@ -164,13 +167,25 @@ const KILL_GRACE_MS = 2000;
 const INJECTION_ENV =
 	/^(?:LD_|DYLD_|_RLD|MALLOC_|GCONV_PATH$|NODE_OPTIONS$|NODE_PATH$|NODE_EXTRA_CA_CERTS$|BUN_|PYTHON|PERL5|PERLLIB$|RUBY|LUA_|TCL|R_PROFILE|R_ENVIRON|BASH_ENV$|ENV$|ZDOTDIR$|PS4$|SHELLOPTS$|BASHOPTS$|PROMPT_COMMAND$|JAVA_TOOL_OPTIONS$|_JAVA_OPTIONS$|JDK_JAVA_OPTIONS$|CLASSPATH$|GIT_|SSH_ASKPASS$|EDITOR$|VISUAL$|PAGER$|LESSOPEN$|PATH$|HOME$|XDG_CONFIG_HOME$|CURL_HOME$|CURL_CA_BUNDLE$|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|SSL_CERT_FILE$|SSL_CERT_DIR$|REQUESTS_CA_BUNDLE$|WGETRC$)/i;
 
-const SAFE_ENV = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ|TERM|COLORTERM|NO_COLOR|COLUMNS|LINES|USER|LOGNAME|TMPDIR)$/;
+const SAFE_ENV = /^(?:LANG|LANGUAGE|LC_[A-Z]+|TZ|TERM|COLORTERM|NO_COLOR|COLUMNS|LINES|USER|LOGNAME)$/;
 
-/** Only locale, terminal and user names from the caller, with the daemon's own PATH, HOME and XDG_CONFIG_HOME. */
-function sealedEnv(env: Record<string, string>): Record<string, string> {
+/** Only locale, terminal and user names from the caller, with the daemon's own PATH, HOME and XDG_CONFIG_HOME, and a private TMPDIR. */
+function sealedEnv(env: Record<string, string>, tmp: string): Record<string, string> {
 	const kept = Object.fromEntries(Object.entries(env).filter(([name]) => SAFE_ENV.test(name)));
 	const own = (name: string) => (process.env[name] === undefined ? {} : { [name]: process.env[name] as string });
-	return { ...kept, PATH: process.env.PATH ?? "", ...own("HOME"), ...own("XDG_CONFIG_HOME") };
+	return { ...kept, PATH: process.env.PATH ?? "", ...own("HOME"), ...own("XDG_CONFIG_HOME"), TMPDIR: tmp };
+}
+
+/** Writes the checked bytes to a private 0700 dir as a 0500 file, with a private tmp dir beside it. */
+function privateCopy(path: string, bytes: Uint8Array): { dir: string; copy: string; tmp: string } {
+	const dir = mkdtempSync(join(tmpdir(), "dg-exec-"));
+	const bin = join(dir, "bin");
+	const tmp = join(dir, "tmp");
+	mkdirSync(bin, { mode: 0o700 });
+	mkdirSync(tmp, { mode: 0o700 });
+	const copy = join(bin, basename(path));
+	writeFileSync(copy, bytes, { mode: 0o500 });
+	return { dir, copy, tmp };
 }
 
 /** Runs a command with stored values in env vars, streams its scrubbed output, and resolves to its exit code; values never leave the daemon. */
@@ -187,6 +202,7 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 	const values = Object.values(injected);
 	const sealedNames = spec.bindings.map((binding) => binding.name).filter((name) => sealed(name));
 	let argv = spec.argv;
+	let run: ReturnType<typeof privateCopy> | undefined;
 	if (sealedNames.length && spec.bindings.some((binding) => INJECTION_ENV.test(binding.env)))
 		return { ok: false, error: "credentials exec with pw/ values refuses to bind a loader, runtime or PATH variable." };
 	if (sealedNames.length) {
@@ -197,19 +213,28 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 			names: sealedNames,
 		});
 		if (!allowed.ok) return allowed;
-		argv = [allowed.path, ...spec.argv.slice(1)];
+		try {
+			run = privateCopy(allowed.path, allowed.bytes);
+		} catch {
+			return { ok: false, error: `Could not make a private copy of ${allowed.path} to run.` };
+		}
+		argv = [run.copy, ...spec.argv.slice(1)];
 	}
+	const cleanup = () => {
+		if (run) rmSync(run.dir, { recursive: true, force: true });
+	};
 	let child: ReturnType<typeof Bun.spawn>;
 	try {
 		child = Bun.spawn(argv, {
-			cwd: spec.cwd,
-			env: { ...(sealedNames.length ? sealedEnv(spec.env) : spec.env), ...injected },
+			cwd: run ? homedir() : spec.cwd,
+			env: { ...(run ? sealedEnv(spec.env, run.tmp) : spec.env), ...injected },
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
 			detached: process.platform !== "win32",
 		});
 	} catch {
+		cleanup();
 		return { ok: false, error: `Could not start ${spec.argv[0]}.` };
 	}
 	const kill = () => {
@@ -257,6 +282,7 @@ async function runExec(requester: Socket, frame: CredentialsCliRequest, deps: Fr
 		return { ok: true, value: { exitCode: await child.exited } };
 	} finally {
 		requester.data.closeWaiters.delete(kill);
+		cleanup();
 	}
 }
 
