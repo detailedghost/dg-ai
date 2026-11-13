@@ -230,6 +230,13 @@ export function createAgentTabs({
 		});
 	}
 
+	async function persisted(): Promise<AgentRecord[]> {
+		const stored = (await storage.local?.get(null)) ?? {};
+		return Object.entries(stored)
+			.filter(([key]) => key.startsWith(PERSIST_PREFIX))
+			.map(([, record]) => record as AgentRecord);
+	}
+
 	async function drop(sessionId: string): Promise<void> {
 		await storage.session.remove(recordKey(sessionId));
 		await storage.local?.remove(persistKey(sessionId));
@@ -240,6 +247,8 @@ export function createAgentTabs({
 		agentIdentity: string,
 	): Promise<AgentRecord | undefined> {
 		const taken = await agentGroupIds({ storage });
+		for (const other of await persisted())
+			if (other.sessionId !== sessionId) taken.add(other.groupId);
 		const free = (groupId: number) => !taken.has(groupId);
 		const title = groupTitle({ agentIdentity, sessionId });
 		const key = persistKey(sessionId);
@@ -574,6 +583,13 @@ export function createAgentTabs({
 			});
 		},
 
+		clearPersisted(): Promise<void> {
+			return locked(async () => {
+				for (const record of await persisted())
+					await storage.local?.remove(persistKey(record.sessionId));
+			});
+		},
+
 		groupRemoved({ groupId }: { groupId: number }): Promise<void> {
 			return locked(async () => {
 				for (const record of await readRecords(storage))
@@ -643,6 +659,10 @@ export function registerAgentTabs({
 
 	browser.tabs.onRemoved.addListener(
 		(tabId) => void agentTabs.tabRemoved({ tabId }).catch(logCleanupFailure),
+	);
+
+	browser.runtime.onStartup.addListener(
+		() => void agentTabs.clearPersisted().catch(logCleanupFailure),
 	);
 
 	browser.tabGroups.onRemoved.addListener(

@@ -29,6 +29,7 @@ type Listener = (
 let currentBrowser: FakeBrowser["api"];
 let currentLocal = makeLocalArea();
 let currentListeners = new Set<Listener>();
+let currentStartup = new Set<() => void>();
 let currentGroupRemoved = new Set<(group: { id: number }) => void>();
 
 const EXTENSION_ID = "ext-self";
@@ -58,6 +59,9 @@ mock.module("wxt/browser", () => ({
 				id: EXTENSION_ID,
 				onMessage: {
 					addListener: (fn: Listener) => currentListeners.add(fn),
+				},
+				onStartup: {
+					addListener: (fn: () => void) => currentStartup.add(fn),
 				},
 			};
 		},
@@ -276,6 +280,28 @@ describe("agent tabs open", () => {
 		const { tabId } = await open(SESSION_B);
 
 		expect(groupOf(fake, tabId)).not.toBe(group);
+	});
+
+	it("does not take a group saved for another session with the same title", async () => {
+		const { fake, open } = setup();
+		const first = await open(SESSION_A);
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+		const { tabId } = await open("ab12cdef-9999");
+
+		expect(groupOf(fake, tabId)).not.toBe(group);
+	});
+
+	it("forgets saved groups when the browser starts", async () => {
+		const { fake, agentTabs, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.groups.get(group)!.title = "my rename";
+		fake.reload();
+		await agentTabs.clearPersisted();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(groupOf(fake, second.tabId)).not.toBe(group);
 	});
 
 	it("makes a new group after a reload when the saved group is gone", async () => {
