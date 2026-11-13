@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CredentialExecSpec } from "@dg/common";
 import { Command } from "commander";
 import { type CredentialsDeps, registerCredentials } from "../src/credentials/cli";
@@ -104,5 +107,21 @@ describe("credentials exec", () => {
 		await h.run(["list"]);
 		expect(h.out.join("\n")).toContain("pw/live.com/owa-auth");
 		expect(h.out.join("\n")).not.toContain(marker);
+	});
+});
+
+describe("credentials allow", () => {
+	test("prints a pinned line and writes no file", async () => {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "dg-allow-cli-")));
+		const script = join(dir, "show-len");
+		writeFileSync(script, "#!/bin/sh\necho ok\n");
+		chmodSync(script, 0o755);
+		const before = new Set(require("node:fs").readdirSync(dir));
+		const h = harness(async () => 0);
+		await h.run(["allow", script, "pw/live.com/*"]);
+		expect(h.out.join("\n")).toMatch(new RegExp(`^${script} sha256=[0-9a-f]{64} pw/live.com/\\*$`));
+		expect(new Set(require("node:fs").readdirSync(dir))).toEqual(before);
+		expect(existsSync(join(dir, "exec-allowlist"))).toBe(false);
+		rmSync(dir, { recursive: true, force: true });
 	});
 });

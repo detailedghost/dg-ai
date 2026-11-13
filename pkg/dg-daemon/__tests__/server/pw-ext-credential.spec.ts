@@ -8,6 +8,7 @@ import {
 	PW_EXT_READ_VERBS,
 	PW_EXT_WRITE_VERBS,
 } from "@dg/common";
+import { execAllowlistLine } from "@dg/common/node";
 import {
 	cleanupDgHome,
 	closeSockets,
@@ -187,7 +188,7 @@ describe("pw --ext credential save through the daemon", () => {
 			"process.exit(7);",
 		].join("\n");
 		const tool = script(source);
-		allow([`${tool} pw/live.com/*`]);
+		allow([execAllowlistLine(tool, "pw/live.com/*")]);
 		const frame = execFrame([tool]);
 		const requestId = frame.requestId;
 		send(cli, frame);
@@ -212,7 +213,7 @@ describe("pw --ext credential save through the daemon", () => {
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
-		allow([`${realpathSync(Bun.which("sh") as string)} allow-interpreter`]);
+		allow([execAllowlistLine(Bun.which("sh") as string, undefined, true)]);
 		const frame = execFrame(["sh", "-c", "sleep 30 & echo $!; wait"]);
 		const requestId = frame.requestId;
 		send(cli, frame);
@@ -248,7 +249,7 @@ describe("pw --ext credential save through the daemon", () => {
 		const attempts: [string[] | undefined, string[], string][] = [
 			[undefined, [tool], "does not exist"],
 			[["/usr/bin/true"], [tool], "is not listed"],
-			[[shell], ["sh", "-c", "echo $TOKEN"], "shell or interpreter"],
+			[[execAllowlistLine(shell)], ["sh", "-c", "echo $TOKEN"], "allow-any-args"],
 		];
 		for (const [lines, argv, message] of attempts) {
 			if (lines) allow(lines);
@@ -268,7 +269,7 @@ describe("pw --ext credential save through the daemon", () => {
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
 		const tool = script("console.log('got ' + process.env.TOKEN.length)");
-		allow([tool]);
+		allow([execAllowlistLine(tool)]);
 		const link = join(dgHome as string, "tools", "link");
 		symlinkSync(tool, link);
 		const frame = execFrame([link]);
@@ -289,17 +290,29 @@ describe("pw --ext credential save through the daemon", () => {
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
-		const tool = script("console.log('ld=' + (process.env.LD_PRELOAD ?? 'none') + ' node=' + (process.env.NODE_OPTIONS ?? 'none') + ' keep=' + process.env.KEEP_ME)");
-		allow([tool]);
+		const tool = script(
+			"const e = process.env; console.log('ld=' + (e.LD_PRELOAD ?? 'none') + ' node=' + (e.NODE_OPTIONS ?? 'none') + ' proxy=' + (e.HTTPS_PROXY ?? 'none') + ' git=' + (e.GIT_CONFIG_GLOBAL ?? 'none') + ' home=' + e.HOME + ' keep=' + e.KEEP_ME)",
+		);
+		allow([execAllowlistLine(tool)]);
 		const frame = execFrame([tool]);
-		frame.exec.env = { ...frame.exec.env, LD_PRELOAD: "/nonexistent/fake.so", NODE_OPTIONS: "--require /x", KEEP_ME: "yes" };
+		frame.exec.env = {
+			...frame.exec.env,
+			LD_PRELOAD: "/nonexistent/fake.so",
+			NODE_OPTIONS: "--require /x",
+			HTTPS_PROXY: "http://fake-proxy.test:1",
+			GIT_CONFIG_GLOBAL: "/tmp/fake-gitconfig",
+			HOME: "/tmp/fake-home",
+			KEEP_ME: "yes",
+		};
 		send(cli, frame);
 		await find(cliFrames, "cli-credentials-result", frame.requestId);
 		const out = cliFrames
 			.filter((raw) => (raw as Frame).type === "cli-credentials-exec-output" && (raw as Frame).stream === "stdout")
 			.map((raw) => (raw as Frame).data)
 			.join("");
-		expect(out).toContain("ld=none node=none keep=yes");
+		expect(out).toContain("ld=none node=none proxy=none git=none");
+		expect(out).not.toContain("home=/tmp/fake-home");
+		expect(out).toContain("keep=yes");
 	});
 
 	it("refuses to bind a pw/ value to a loader variable", async () => {
@@ -308,7 +321,7 @@ describe("pw --ext credential save through the daemon", () => {
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
 		const tool = script("console.log('ran')");
-		allow([tool]);
+		allow([execAllowlistLine(tool)]);
 		const frame = execFrame([tool]);
 		frame.exec.bindings = [{ name: "pw/live.com/owa-token", env: "LD_PRELOAD" }];
 		send(cli, frame);
@@ -320,7 +333,7 @@ describe("pw --ext credential save through the daemon", () => {
 		const store = storeFrame(bootstrap);
 		send(socket, store);
 		await find(extensionFrames, "pw-ext-credential-stored", store.requestId);
-		allow([`${realpathSync(Bun.which("sh") as string)} allow-interpreter`]);
+		allow([execAllowlistLine(Bun.which("sh") as string, undefined, true)]);
 		const frame = execFrame(["sh", "-c", "trap '' TERM; sleep 30 & echo $!; wait"]);
 		send(cli, frame);
 		const line = await waitForValue(

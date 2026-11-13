@@ -1,11 +1,13 @@
 import { readFileSync, realpathSync } from "node:fs";
+import { EXEC_ALLOW_ANY_ARGS as ALLOW_ANY_ARGS, fileSha256 } from "@dg/common/node";
 import { basename, isAbsolute, resolve } from "node:path";
 
-/** One allowlist line: an absolute executable, an optional pw/ name glob, and the interpreter opt-in. */
-export type ExecAllowEntry = { path: string; glob?: string; allowInterpreter: boolean };
+/** One allowlist line: an absolute executable, its sha256 pin, an optional pw/ name glob, and the any-args opt-in. */
+export type ExecAllowEntry = { path: string; sha256?: string; glob?: string; allowAnyArgs: boolean };
 
-const INTERPRETER =
-	/^(?:sh|bash|zsh|fish|dash|ksh|mksh|csh|tcsh|ash|busybox|env|python[\d.]*|pypy[\d.]*|node(?:js)?|bun|bunx|deno|npx|perl[\d.]*|ruby[\d.]*|php[\d.]*|lua[\d.]*|tclsh[\d.]*|osascript|pwsh|powershell|cmd|xargs|parallel|nohup|timeout|nice|ionice|setsid|stdbuf|sudo|doas|su|runuser|chroot|unshare|script|watch|find|awk|gawk|mawk|nawk|sed|expect|ssh|time)$/i;
+
+const GENERAL_TOOL =
+	/^(?:sh|bash|zsh|fish|dash|ksh|mksh|csh|tcsh|ash|busybox|toybox|env|python[\d.]*|pypy[\d.]*|node(?:js)?|bun|bunx|deno|npx|npm|pnpm|yarn|perl[\d.]*|ruby[\d.]*|php[\d.]*|lua[\d.]*|tclsh[\d.]*|osascript|pwsh|powershell|cmd|xargs|parallel|nohup|timeout|nice|ionice|setsid|stdbuf|sudo|doas|su|runuser|chroot|unshare|script|watch|find|awk|gawk|mawk|nawk|sed|expect|ssh|scp|sftp|rsync|time|curl|wget|httpie|http|https|nc|ncat|netcat|socat|telnet|ftp|git|hg|svn|tar|zip|unzip|make|cmake|docker|podman|kubectl|vi|vim|nvim|emacs|nano|less|more|man|tee|dd|cp|mv|install|openssl|gpg|jq|aws|gcloud|az|gh|glab)$/i;
 
 /** Parses the allowlist text: one entry per line, # starts a comment. */
 export function parseExecAllowlist(text: string): ExecAllowEntry[] {
@@ -13,14 +15,21 @@ export function parseExecAllowlist(text: string): ExecAllowEntry[] {
 		const fields = line.replace(/#.*$/, "").trim().split(/\s+/).filter(Boolean);
 		const [path, ...rest] = fields;
 		if (!path || !isAbsolute(path)) return [];
-		const allowInterpreter = rest.includes("allow-interpreter");
-		const glob = rest.find((field) => field !== "allow-interpreter");
-		return [{ path, ...(glob === undefined ? {} : { glob }), allowInterpreter }];
+		const pin = rest.find((field) => field.startsWith("sha256="))?.slice("sha256=".length).toLowerCase();
+		const glob = rest.find((field) => field !== ALLOW_ANY_ARGS && !field.startsWith("sha256="));
+		return [
+			{
+				path,
+				...(pin === undefined ? {} : { sha256: pin }),
+				...(glob === undefined ? {} : { glob }),
+				allowAnyArgs: rest.includes(ALLOW_ANY_ARGS),
+			},
+		];
 	});
 }
 
 function globMatches(glob: string, name: string): boolean {
-	const pattern = glob.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+	const pattern = glob.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*");
 	return new RegExp(`^${pattern}$`).test(name);
 }
 
@@ -32,9 +41,9 @@ function real(path: string): string | undefined {
 	}
 }
 
-/** True for a shell, interpreter or launcher that can run any code it is given. */
-export function isInterpreter(path: string): boolean {
-	return INTERPRETER.test(basename(path).replace(/\.exe$/i, ""));
+/** True for a shell, interpreter, launcher, network, VCS or other general tool whose arguments can run code or send data anywhere. */
+export function isGeneralTool(path: string): boolean {
+	return GENERAL_TOOL.test(basename(path).replace(/\.exe$/i, ""));
 }
 
 /** Resolves argv[0] to a real absolute path: a bare name through the daemon's own PATH, a path from the working directory. */
@@ -64,7 +73,7 @@ export function checkExecAllowlist({
 	} catch {
 		return {
 			ok: false,
-			error: `credentials exec runs commands with pw/ values only when ${file} lists them. The file does not exist. The person adds a line with the absolute path of the command, for example: /usr/bin/curl pw/live.com/*`,
+			error: `credentials exec runs commands with pw/ values only when ${file} lists them. The file does not exist. The person makes a small fixed wrapper script that the agent cannot write, then runs dg-skills credentials allow <script> [glob] and adds the line it prints.`,
 		};
 	}
 	const resolved = resolveExecutable(command, cwd, daemonPath);
@@ -76,10 +85,19 @@ export function checkExecAllowlist({
 			ok: false,
 			error: `${resolved} is not listed in ${file} for ${names.join(", ")}. The person adds it there to allow it.`,
 		};
-	if (isInterpreter(resolved) && !names.every((name) => entries.some((entry) => covers(entry, name) && entry.allowInterpreter)))
+	const used = entries.filter((entry) => names.some((name) => covers(entry, name)));
+	const hash = fileSha256(resolved);
+	if (!hash || used.some((entry) => entry.sha256 !== hash))
 		return {
 			ok: false,
-			error: `${resolved} is a shell or interpreter, which can run any code, so credentials exec refuses it with pw/ values even though ${file} lists it. Only an entry with allow-interpreter allows it.`,
+			error: used.some((entry) => entry.sha256 === undefined)
+				? `${file} lists ${resolved} without a sha256 pin. Run dg-skills credentials allow ${resolved} and use the line it prints.`
+				: `The sha256 of ${resolved} changed since ${file} pinned it, so credentials exec refuses it. The person checks the file, then pins it again with dg-skills credentials allow.`,
+		};
+	if (isGeneralTool(resolved) && !names.every((name) => entries.some((entry) => covers(entry, name) && entry.allowAnyArgs)))
+		return {
+			ok: false,
+			error: `${resolved} is a shell, interpreter or general tool whose arguments can run code or send data anywhere, so credentials exec refuses it with pw/ values even though ${file} lists it. Only a line with ${ALLOW_ANY_ARGS} allows it; prefer a small fixed wrapper script.`,
 		};
 	return { ok: true, path: resolved };
 }

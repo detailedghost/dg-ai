@@ -74,18 +74,29 @@ only `exec` and `list` reach them.
 
 `exec` runs a command with `pw/` values only when the person lists it in
 `exec-allowlist` in the dg config directory (for example
-`~/.config/dg/exec-allowlist`). Each line holds the absolute path of an
-executable, then an optional name glob such as `pw/live.com/*`, then an
-optional `allow-interpreter` flag. Lines that start with `#` are comments.
-The daemon reads the file on each `exec`, resolves the command to its real
-path (a bare name through the daemon's own `PATH`, symlinks followed), and
-runs that path. With no file, or no matching line, it refuses. It also refuses
-a shell, interpreter or launcher (`sh`, `bash`, `env`, `python`, `node`, `bun`,
-`perl`, `ruby`, `osascript`, `xargs` and similar) unless its line has
-`allow-interpreter`. Listing one undoes the guard, because it can run any code. For a `pw/` value the
-command runs with the daemon's own `PATH` and without loader or runtime
-injection variables such as `LD_PRELOAD` or `NODE_OPTIONS`.
+`~/.config/dg/exec-allowlist`). List a small fixed wrapper script that you own
+and that does one job, not a general tool. Each line holds the absolute path of
+the executable, a required `sha256=<hex>` pin, an optional name glob such as
+`pw/live.com/*` (`*` stops at `/`), and an optional `allow-any-args` flag.
+Lines that start with `#` are comments. `dg-skills credentials allow <path>
+[glob]` prints a ready line with its pin; it never writes the file, so you add
+the line yourself.
 
+The daemon reads the file on each `exec`, resolves the command to its real
+path (a bare name through the daemon's own `PATH`, symlinks followed), checks
+its sha256 against the pin, and runs that path. With no file, no matching line,
+no pin, or a changed hash, it refuses. It also refuses a shell, interpreter or
+general tool whose arguments can run code or send data anywhere (`sh`, `bash`,
+`env`, `python`, `node`, `bun`, `curl`, `wget`, `git`, `ssh`, `rsync`, `tar`,
+`make`, `docker`, `vim`, `less`, `find`, `awk`, `sed`, `xargs` and similar)
+unless its line has `allow-any-args`. Listing one undoes the guard. For a
+`pw/` value the command runs with the daemon's own `PATH`, `HOME` and
+`XDG_CONFIG_HOME`, and without loader, runtime, proxy, certificate or Git
+config variables such as `LD_PRELOAD`, `NODE_OPTIONS`, `HTTPS_PROXY` or
+`GIT_CONFIG_GLOBAL`.
+
+List only paths that the agent cannot write. A script the agent can edit is
+the same as an interpreter; the pin catches an edit, but deny writes to it too.
 The agent runs as the same user, so it can edit this file unless its harness
 blocks writes there. In Claude Code, add a deny rule for that path, for
 example `Edit(~/.config/dg/exec-allowlist)` and `Write(~/.config/dg/exec-allowlist)`

@@ -152,24 +152,31 @@ conditions only:
   exposure in agent output, not against an agent that tries on purpose. A
   stronger step, an allowlist of exec commands that the human sets, is an
   open decision and is not built.
-- **Exec allowlist (Dante, 2026-11-13, option a).** For an `exec` that uses
-  any `pw/` name, dg-daemon reads `exec-allowlist` in the dg config directory
-  on each call. It resolves argv[0] to its real absolute path (a bare name
-  through the daemon's own `PATH`, symlinks followed) and runs that path. It
-  refuses unless a line lists that path and its optional glob covers every
-  `pw/` name. It refuses a shell, interpreter or launcher even when listed,
-  unless the line has `allow-interpreter`. With no file it refuses and names
-  the file. Names outside `pw/` do not use the allowlist. For a `pw/` exec the
-  daemon drops loader and runtime injection variables (`LD_*`, `DYLD_*`,
-  `NODE_OPTIONS`, `PYTHON*`, `BASH_ENV` and similar) from the caller's
-  environment and uses its own `PATH`. On disconnect it sends SIGTERM to the
-  process group, then SIGKILL after 2 seconds; on Windows it ends the process
-  tree.
+- **Exec allowlist (Dante, 2026-11-13, option a; Sammy's review).** For an
+  `exec` that uses any `pw/` name, dg-daemon reads `exec-allowlist` in the dg
+  config directory on each call. Each line needs an absolute path and a
+  `sha256=<hex>` pin; it may add a name glob (`*` stops at `/`) and the
+  `allow-any-args` flag. The daemon resolves argv[0] to its real path (a bare
+  name through the daemon's own `PATH`, symlinks followed), hashes that file,
+  and runs it only when a pinned line matches the hash and covers every `pw/`
+  name. It refuses shells, interpreters and general tools whose arguments can
+  run code or send data anywhere (for example `curl`, `git`, `ssh`, `rsync`,
+  `tar`, `make`, `docker`, editors and pagers) unless the line has
+  `allow-any-args`. `dg-skills credentials allow <path> [glob]` prints a pinned
+  line and never writes the file. The recommended entry is a small fixed
+  wrapper script that the person owns. For a `pw/` exec the daemon drops
+  loader, runtime, proxy, certificate and Git config variables, and sets
+  `PATH`, `HOME` and `XDG_CONFIG_HOME` to its own. On disconnect it sends
+  SIGTERM to the process group, then SIGKILL after 2 seconds; on Windows it
+  ends the process tree. Names outside `pw/` do not use the allowlist.
 - **What the allowlist does not block.** The agent runs as the same user, so
   it can edit the file unless the agent harness blocks writes to it; the docs
-  suggest a Claude Code deny rule for that path. A listed command that prints,
-  stores or sends the value in a changed form can still expose it. An
-  `allow-interpreter` line undoes the interpreter guard for that executable.
+  suggest a Claude Code deny rule for that path and for every listed script.
+  The pin refuses a listed file after an edit, but a file the agent can write
+  and the person pins again is the same as an interpreter. A listed command
+  that prints, stores or sends the value in a changed form can still expose
+  it. An `allow-any-args` line undoes the guard for that executable. A file
+  can change between the hash check and the start of the process.
 - **Saved values mask later output.** Before the store frame goes out, the
   worker reserves the value with the session's held secrets in
   `storage.session`, so all later output of the session masks it, also after

@@ -8,6 +8,7 @@ import {
 import {
 	type CredentialClient,
 	createCredentialClient,
+	execAllowlistLine,
 	resolveDgPaths,
 } from "@dg/common/node";
 import type { Command } from "commander";
@@ -276,6 +277,18 @@ export function registerCredentials(
 					revoked: await client.revoke(prefix),
 				});
 			});
+		});
+
+	credentials
+		.command("allow")
+		.description(
+			"Print a pinned exec-allowlist line for a command; it never writes the allowlist file",
+		)
+		.argument("<path>", "the command to allow, best a small fixed wrapper script the agent cannot write")
+		.argument("[glob]", "the pw/ names it may get, for example pw/live.com/*")
+		.option("--any-args", "add allow-any-args for a shell, interpreter or general tool; this undoes the guard")
+		.action((path: string, glob: string | undefined, options: { anyArgs?: boolean }) => {
+			deps.write(execAllowlistLine(path, glob, options.anyArgs === true));
 		});
 
 	credentials
