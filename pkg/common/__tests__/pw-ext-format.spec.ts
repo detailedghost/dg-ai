@@ -574,6 +574,34 @@ describe("pw --ext dialog", () => {
 	});
 });
 
+describe("pw --ext network", () => {
+	it.each([
+		{ verb: "network" },
+		{ verb: "network", tabId: 3 },
+		{ verb: "network", filter: "service.svc", limit: 200, since: 0 },
+		{ verb: "network", since: 1_731_500_000_000, values: true },
+		{ verb: "network", since: "clear" },
+	])("accepts %o", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request);
+	});
+
+	it.each([
+		[{ verb: "network", filter: "" }, "filter"],
+		[{ verb: "network", filter: "x".repeat(201) }, "filter"],
+		[{ verb: "network", limit: 0 }, "limit"],
+		[{ verb: "network", limit: 201 }, "limit"],
+		[{ verb: "network", limit: 1.5 }, "limit"],
+		[{ verb: "network", since: -1 }, "since"],
+		[{ verb: "network", since: "later" }, "since"],
+		[{ verb: "network", values: false }, "values"],
+		[{ verb: "network", since: "clear", values: true }, "since clear"],
+		[{ verb: "network", since: "clear", filter: "x" }, "since clear"],
+		[{ verb: "snapshot", values: true }, "unknown field"],
+	])("rejects %o", (request, message) => {
+		expect(() => validatePwExtRequest(request)).toThrow(message);
+	});
+});
+
 describe("isPwExtSecretTooShort", () => {
 	it.each([
 		["", true],

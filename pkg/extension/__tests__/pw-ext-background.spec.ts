@@ -9,6 +9,8 @@ import { createSessionControl, type SessionControl } from "@/lib/background/sess
 const allowAllSites: SessionControl = {
 	allowed: async () => true,
 	allow: async () => undefined,
+	valuesAllowed: async () => false,
+	allowValues: async () => undefined,
 	stopped: async () => false,
 	stop: async () => undefined,
 	forget: async () => undefined,
@@ -58,7 +60,7 @@ type Options = {
 	selected?: number | null;
 	record?: boolean;
 	pageResult?: unknown;
-	mainResult?: (action: unknown) => unknown;
+	mainResult?: (action: unknown, func?: string) => unknown;
 	asset?: Blob;
 	chromium?: boolean;
 	signal?: AbortSignal;
@@ -109,8 +111,8 @@ function harness(options: Options = {}) {
 		recordOf({ sessionId: OTHER_SESSION, groupId: OTHER_GROUP, selectedTabId: 20 }),
 	);
 	fake.state.script = (details) => {
-		const call = details as { args: unknown[]; world?: string };
-		if (call.world === "MAIN") return options.mainResult?.(call.args[0]);
+		const call = details as { args: unknown[]; world?: string; func?: { name?: string } };
+		if (call.world === "MAIN") return options.mainResult?.(call.args[0], call.func?.name);
 		return options.pageResult;
 	};
 	const agentTabsLock = createLock();
@@ -2577,5 +2579,187 @@ describe("pw --ext agent banner", () => {
 			[undefined, [true]],
 			[undefined, [false]],
 		]);
+	});
+});
+
+describe("pw --ext network", () => {
+	const at = Date.UTC(2026, 10, 13, 9, 0);
+	const TOKEN = "fake-token-value-for-tests";
+	const entry = {
+		at,
+		via: "fetch",
+		method: "POST",
+		url: "https://app.example.test/owa/service.svc?action=GetItem&app=Mail&n=7&q=ada@clinic.test",
+		status: 200,
+		requestHeaders: [{ name: "authorization" }, { name: "action" }],
+		responseHeaders: [{ name: "content-type" }],
+		request: { type: "application/json", size: 30, shape: { keys: [["Body", { keys: [["Id", "string"]] }]] } },
+		response: { type: "text/html", size: 99 },
+	};
+	const valued = {
+		...entry,
+		requestHeaders: [{ name: "authorization" }, { name: "action", value: "GetItem" }, { name: "x-note", value: `Bearer ${TOKEN}` }],
+		request: { ...entry.request, text: '{"Body":{"Id":"fake-item"},"secret":"orchid-maple-fake","to":"ada@clinic.test"}' },
+	};
+	const networkCalls = (h: ReturnType<typeof harness>) =>
+		h.executed().filter((call) => call.world === "MAIN" && (call as { func?: { name?: string } }).func?.name === "pwExtNetwork");
+	const reads = (h: ReturnType<typeof harness>) =>
+		networkCalls(h)
+			.map((call) => call.args[0] as { kind: string; values?: boolean; since?: number })
+			.filter((action) => action.kind !== "install");
+	const page = (entries: unknown[]) => (action: unknown, func?: string) =>
+		func === "pwExtNetwork"
+			? (action as { kind: string }).kind === "clear"
+				? { cleared: 4 }
+				: { entries: (action as { values?: boolean }).values ? entries.map((one) => (one === entry ? valued : one)) : entries }
+			: { dialogs: [] };
+	const valuesAsks = (h: ReturnType<typeof harness>) =>
+		h.approvalRequests.filter((request) => (request as { title: string }).title === "Let the agent see network values?");
+
+	it("shows the request shape with no values and asks nothing", async () => {
+		const h = harness({ mainResult: page([entry]) });
+		const text = outcome(await h.run({ verb: "network" }));
+		expect(text).toContain("### Network");
+		expect(text).toContain("fetch POST https://app.example.test/owa/service.svc?action=GetItem&app=Mail&n=*&q=* → 200");
+		expect(text).toContain("  request headers: authorization, action");
+		expect(text).toContain("  request body: application/json, 30 bytes {Body {Id string}}");
+		expect(text).not.toContain("clinic.test");
+		expect(reads(h)).toEqual([{ kind: "read", values: false }]);
+		expect(h.approvalRequests).toEqual([]);
+	});
+
+	it("passes since to the page and filter and limit to the formatter", async () => {
+		const other = { ...entry, at: at + 1, url: "https://app.example.test/other" };
+		const h = harness({ mainResult: page([entry, other]) });
+		const text = outcome(await h.run({ verb: "network", since: at - 5, filter: "service.svc", limit: 1 }));
+		expect(text).toContain("1 of 1 requests");
+		expect(text).not.toContain("/other");
+		expect(reads(h)).toEqual([{ kind: "read", values: false, since: at - 5 }]);
+	});
+
+	it("clears the page buffer", async () => {
+		const h = harness({ mainResult: page([]) });
+		expect(outcome(await h.run({ verb: "network", since: "clear" }))).toContain("Cleared 4 captured requests on this page.");
+		expect(reads(h)).toEqual([{ kind: "clear" }]);
+	});
+
+	it.each([["deny"], ["closed"], ["timeout"], ["unopened"]] as const)(
+		"refuses --values after a %s answer and reads no values",
+		async (approval) => {
+			const h = harness({ approval, mainResult: page([entry]) });
+			const answer = await h.run({ verb: "network", values: true });
+			expect(answer.ok).toBe(false);
+			expect(outcome(answer)).toContain("only after the user clicks Allow in the dg approval window");
+			expect(reads(h)).toEqual([]);
+		},
+	);
+
+	it("shows values after one Allow, with auth headers, held secrets and emails still masked", async () => {
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { detail: "filled" }, mainResult: page([entry]) });
+		await h.run({ verb: "fill", target: "#pw", value: "orchid-maple-fake", secret: true });
+		const text = outcome(await h.run({ verb: "network", values: true }));
+		expect(text).toContain("n=7");
+		expect(text).toContain("action: GetItem");
+		expect(text).toContain("authorization (hidden)");
+		expect(text).toContain('"Id":"fake-item"');
+		expect(text).not.toContain(TOKEN);
+		expect(text).not.toContain("orchid-maple-fake");
+		expect(text).not.toContain("ada@clinic.test");
+		expect(valuesAsks(h)).toHaveLength(1);
+		expect((valuesAsks(h)[0] as { lines: string[] }).lines.join(" ")).toContain("personal or health data");
+		expect(reads(h)).toEqual([{ kind: "read", values: true }]);
+	});
+
+	it("asks once per session and site, also for calls at the same time", async () => {
+		const h = harness({ sites: "ask", approval: "allow", mainResult: page([entry]) });
+		await Promise.all([h.run({ verb: "network", values: true }), h.run({ verb: "network", values: true })]);
+		expect((await h.run({ verb: "network", values: true })).ok).toBe(true);
+		expect(valuesAsks(h)).toHaveLength(1);
+	});
+
+	it("masks a URL-encoded email address in values without an unmask grant", async () => {
+		const encoded = { ...entry, url: "https://app.example.test/search?q=ada%40clinic.test" };
+		const h = harness({ sites: "ask", approval: "allow", mainResult: page([encoded]) });
+		const text = outcome(await h.run({ verb: "network", values: true }));
+		expect(text).not.toContain("clinic.test");
+	});
+
+	it("masks a held secret in URL-encoded form that also holds an at sign", async () => {
+		const secret = "orchid@maple/leaf";
+		const encoded = { ...entry, url: `https://app.example.test/x?data=${encodeURIComponent(secret)}` };
+		const h = harness({ sites: "ask", approval: "allow", pageResult: { detail: "filled" }, mainResult: page([encoded]) });
+		await h.run({ verb: "fill", target: "#pw", value: secret, secret: true });
+		const text = outcome(await h.run({ verb: "network", values: true }));
+		expect(text).not.toContain("maple");
+	});
+
+	it("keeps emails only under an unmask grant", async () => {
+		const h = harness({ sites: "ask", approval: "allow", mainResult: page([entry]) });
+		await h.run({ verb: "unmask", minutes: 5 });
+		expect(outcome(await h.run({ verb: "network", values: true }))).toContain("ada@clinic.test");
+	});
+
+	it("ends the values grant on Stop and at the session end", async () => {
+		const h = harness({ sites: "ask", approval: "allow", mainResult: page([entry]) });
+		await h.run({ verb: "network", values: true });
+		expect(h.fake.session.has(`pwExtValues:${SESSION}`)).toBe(true);
+		await h.handler.stop(SESSION);
+		expect(h.fake.session.has(`pwExtValues:${SESSION}`)).toBe(false);
+		const ended = harness({ sites: "ask", approval: "allow", mainResult: page([entry]) });
+		await ended.run({ verb: "network", values: true });
+		await createSessionControl({ storage: ended.fake.api.storage }).forget(SESSION);
+		expect(ended.fake.session.has(`pwExtValues:${SESSION}`)).toBe(false);
+	});
+
+	it("writes no values grant when the session ends while the popup is open", async () => {
+		let ended: Promise<void> | undefined;
+		let h: ReturnType<typeof harness> | undefined;
+		h = harness({
+			sites: "ask",
+			approval: "allow",
+			mainResult: page([entry]),
+			onApproval: () => {
+				if (h && h.approvalRequests.length === 2) ended = h.agentTabs.forget({ sessionId: SESSION });
+			},
+		});
+		await h.run({ verb: "current" });
+		const answer = await h.run({ verb: "network", values: true });
+		await ended;
+		expect(answer.ok).toBe(false);
+		expect(h.fake.session.has(`pwExtValues:${SESSION}`)).toBe(false);
+		expect(reads(h)).toEqual([]);
+	});
+
+	it("refuses the mailbox and browser pages and injects nothing there", async () => {
+		const proton = harness({ approval: "allow", tabs: [{ ...WEB_TAB, url: "https://mail.proton.me/u/0/inbox" }] });
+		expect(await proton.run({ verb: "network" })).toEqual({ ok: false, error: PW_EXT_MAILBOX_ERROR });
+		expect((await proton.run({ verb: "network", values: true })).ok).toBe(false);
+		const settings = harness({ tabs: [{ ...WEB_TAB, url: "chrome://settings/" }] });
+		expect((await settings.run({ verb: "network" })).ok).toBe(false);
+		expect([...networkCalls(proton), ...networkCalls(settings)]).toEqual([]);
+		expect(proton.approvalRequests).toEqual([]);
+	});
+
+	it("installs the hook with the dialog shim and removes it with the shim", async () => {
+		const h = harness({ mainResult: page([]) });
+		await h.run({ verb: "network" });
+		expect(networkCalls(h)[0]?.args).toEqual([{ kind: "install" }, WEB_TAB.url, GROUP]);
+		await forgetAgentTabsAndShims({ browserApi: h.fake.api, storage: h.fake.api.storage, lock: h.agentTabsLock, agentTabs: h.agentTabs, sessionId: SESSION });
+		expect(networkCalls(h).at(-1)?.args).toEqual([{ kind: "remove" }]);
+	});
+
+	it("rejects a malformed reply and masks a page error", async () => {
+		const bad = harness({ mainResult: (_, func) => (func === "pwExtNetwork" ? { entries: [{ ...entry, via: "ws" }] } : { dialogs: [] }) });
+		expect(await bad.run({ verb: "network" })).toEqual({ ok: false, error: "The page returned an unexpected network result." });
+		const failing = harness({
+			mainResult: (action, func) =>
+				func === "pwExtNetwork" && (action as { kind: string }).kind === "read"
+					? { error: `broke at ada@clinic.test Bearer ${TOKEN}` }
+					: { dialogs: [] },
+		});
+		const answer = await failing.run({ verb: "network" });
+		expect(answer.ok).toBe(false);
+		expect(outcome(answer)).not.toContain(TOKEN);
+		expect(outcome(answer)).not.toContain("ada@clinic.test");
 	});
 });
