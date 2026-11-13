@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLI_ENTRY, runCli } from "./module-call";
-import { classify, sessionAncestor, waitPatterns, type ProcRow, type ReapContext, reapCandidates } from "../src/stat/reap";
+import { classify, launchdPidsFrom, serviceCgroup, sessionAncestor, waitPatterns, type ProcRow, type ReapContext, reapCandidates } from "../src/stat/reap";
 
 const ME = 1000;
 const REPO = "/home/u/code/dg-ai";
@@ -135,6 +135,7 @@ describe("stat reap classifier", () => {
 			row(10, ["timeout", "600", "gh", "run", "watch", "1"]),
 			row(11, ["timeout", "900", "git", "worktree", "add", "x"]),
 			row(12, ["/opt/chromium/chrome", "--user-data-dir=/tmp/profile"]),
+			row(13, ["/opt/chromium/chrome", "--headless", "--user-data-dir=profile"], { cwd: "/tmp" }),
 		]);
 		expect(out.candidates).toEqual([10]);
 	});
@@ -400,6 +401,28 @@ describe("stat reap stuck wait loops", () => {
 		expect(verdict([loop(30, until, { tty: true })]).loops).toEqual([]);
 	});
 
+	test("a quantified group pattern is left alone", () => {
+		const out = verdict([loop(30, 'while pgrep -f "(a|aa)+x"; do sleep 15; done')]);
+		expect(out.skipped[30]).toBe("wait pattern not supported");
+	});
+
+	test("a ppid cycle in the table does not hang the walk", () => {
+		const out = verdict([loop(30, until, { ppid: 31 }), row(31, ["sleep", "15"], { ppid: 30, cwd: SCRATCHPAD })]);
+		expect(out.loops.map((l) => l.members)).toEqual([[31, 30]]);
+	});
+
+	test("a runtime-wrapped codex and grok count as sessions", () => {
+		const rows = [
+			...BASE,
+			row(60, ["node", "/usr/lib/node_modules/@openai/codex/bin/codex.js"], { tty: true }),
+			row(61, ["/usr/bin/zsh", "-c", "x"], { ppid: 60 }),
+			row(62, ["grok"], { tty: true }),
+			row(63, ["/usr/bin/zsh", "-c", "x"], { ppid: 62 }),
+		];
+		expect(sessionAncestor(rows, 61)).toBe(60);
+		expect(sessionAncestor(rows, 63)).toBe(62);
+	});
+
 	test("the session is the nearest claude or codex ancestor", () => {
 		const rows = [...BASE, row(50, ["/usr/bin/zsh", "-c", "x"], { ppid: CLAUDE }), row(51, ["bun"], { ppid: 50 })];
 		expect(sessionAncestor(rows, 51)).toBe(CLAUDE);
@@ -413,6 +436,24 @@ describe("stat reap stuck wait loops", () => {
 			loop(32, "rg foo . || true"),
 		]);
 		expect(out.pipes).toEqual([30]);
+	});
+});
+
+describe("stat reap platform readers", () => {
+	test("the innermost systemd unit decides whether a cgroup is a service", () => {
+		const user = "0::/user.slice/user-1000.slice/user@1000.service";
+		expect(serviceCgroup(`${user}/tmux-spawn-1.scope\n`)).toBe(false);
+		expect(serviceCgroup(`${user}/app.slice/dg-daemon.service\n`)).toBe(true);
+		expect(serviceCgroup(`${user}/app.slice/foo.service/sub\n`)).toBe(true);
+		expect(serviceCgroup("12:blkio:/\n1:name=systemd:/system.slice/cron.service\n")).toBe(true);
+	});
+
+	test("a failed launchctl list fails closed", () => {
+		expect(() => launchdPidsFrom({ status: 1, stdout: "" })).toThrow("nothing is reaped");
+		expect(() => launchdPidsFrom({ status: null, error: new Error("ENOENT") })).toThrow("ENOENT");
+		expect([...launchdPidsFrom({ status: 0, stdout: "PID\tStatus\tLabel\n412\t0\tcom.x\n-\t0\tcom.y\n" })]).toEqual([
+			412,
+		]);
 	});
 });
 
@@ -482,9 +523,10 @@ describe("stat reap signaling", () => {
 describe.skipIf(process.platform === "win32")("dg-skills stat reap", () => {
 	test("reaps an orphaned sleep in its own temp dir and nothing else", async () => {
 		const dir = realpathSync(mkdtempSync(join(tmpdir(), "dg-stat-reap-")));
+		let pid = 0;
 		try {
 			const spawn = Bun.spawnSync(["sh", "-c", "sleep 613 >/dev/null 2>&1 & echo $!"], { cwd: dir });
-			const pid = Number(spawn.stdout.toString().trim());
+			pid = Number(spawn.stdout.toString().trim());
 			await Bun.sleep(100);
 			const reap = (args: string[]) =>
 				runCli(["bun", CLI_ENTRY], ["stat", "reap", "--json", "--cwd", dir, "--min-age", "0", "--pid", String(pid), ...args], {
@@ -493,7 +535,6 @@ describe.skipIf(process.platform === "win32")("dg-skills stat reap", () => {
 				});
 			const dry = JSON.parse((await reap(["--dry-run"])).stdout);
 			if (dry.wouldReap.length === 0) {
-				process.kill(pid, "SIGKILL");
 				console.warn("stat reap integration: the sleep was not reparented to init; skipped");
 				return;
 			}
@@ -504,6 +545,9 @@ describe.skipIf(process.platform === "win32")("dg-skills stat reap", () => {
 			expect(report.killed.map((k: { pid: number; signal: string }) => [k.pid, k.signal])).toEqual([[pid, "SIGTERM"]]);
 			expect(() => process.kill(pid, 0)).toThrow();
 		} finally {
+			try {
+				if (pid > 1) process.kill(pid, "SIGKILL");
+			} catch {}
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});

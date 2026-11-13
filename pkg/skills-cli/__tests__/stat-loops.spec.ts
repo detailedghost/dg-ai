@@ -63,6 +63,25 @@ describe("stat loops", () => {
 		expect(out.map((j) => j.id)).toEqual(["sub"]);
 	});
 
+	test("exactly the stall time or the max age is flagged", () => {
+		const out = stalled(
+			[job("idle"), job("old", { startedAt: new Date(NOW - 180 * MIN).toISOString() }), job("fresh")],
+			{ "/logs/idle.log": NOW - 20 * MIN, "/logs/old.log": NOW, "/logs/fresh.log": NOW - 19 * MIN },
+		);
+		expect(out.map((j) => [j.id, j.reason])).toEqual([
+			["idle", "no log growth"],
+			["old", "past max age"],
+		]);
+	});
+
+	test("a job with an unreadable start time is flagged only by its log", () => {
+		const out = stalled([job("a", { startedAt: "bad" }), job("b", { startedAt: "bad" })], {
+			"/logs/a.log": NOW - 30 * MIN,
+			"/logs/b.log": NOW,
+		});
+		expect(out.map((j) => [j.id, j.ageMinutes])).toEqual([["a", 0]]);
+	});
+
 	test("a missing log counts from the job start", () => {
 		expect(stalled([job("a")], {}).map((j) => j.idleMinutes)).toEqual([30]);
 	});

@@ -86,7 +86,7 @@ const BROWSERS = new Set([
 const DELETED_SUFFIX = " (deleted)";
 const LOOP_HELPERS = new Set(["sleep", "pgrep", "tail", "timeout"]);
 const PIPE_MIN_AGE_SEC = 86_400;
-const SESSION_HEADS = new Set(["claude", "codex"]);
+const SESSION_HEADS = new Set(["claude", "codex", "grok"]);
 
 function base(word: string | undefined): string {
 	return path.basename(word ?? "").replace(/\.exe$/i, "");
@@ -164,7 +164,7 @@ function kindOf(proc: ProcRow, ctx: ReapContext): string | null {
 	if (RUNTIMES.has(head) && playwrightScript(argv)) return "playwright";
 	if (BROWSERS.has(head)) {
 		const dir = userDataDir(argv);
-		return dir && headless(argv) && ctx.tempRoots.some((root) => inside(path.resolve(dir), root))
+		return dir && path.isAbsolute(dir) && headless(argv) && ctx.tempRoots.some((root) => inside(path.resolve(dir), root))
 			? "browser"
 			: null;
 	}
@@ -218,11 +218,17 @@ function ancestors(rows: Map<number, ProcRow>, pid: number): Set<number> {
 
 function descendants(rows: ProcRow[], pid: number): ProcRow[] {
 	const children = new Map<number, ProcRow[]>();
-	for (const proc of rows) children.set(proc.ppid, [...(children.get(proc.ppid) ?? []), proc]);
+	for (const proc of rows) {
+		const list = children.get(proc.ppid);
+		if (list) list.push(proc);
+		else children.set(proc.ppid, [proc]);
+	}
 	const out: ProcRow[] = [];
+	const seen = new Set([pid]);
 	const walk = (parent: number) => {
 		for (const child of children.get(parent) ?? []) {
-			if (out.includes(child)) continue;
+			if (seen.has(child.pid)) continue;
+			seen.add(child.pid);
 			walk(child.pid);
 			out.push(child);
 		}
@@ -268,7 +274,7 @@ function matcher(pattern: string): ((text: string) => boolean) | null {
 	const caseless = pattern.startsWith("(?i)");
 	if (!caseless && pattern.startsWith("(?")) return null;
 	const body = caseless ? pattern.slice(4) : pattern;
-	if (body.length > 200 || /[+*}]\)[+*{]/.test(body)) return null;
+	if (body.length > 200 || /\)[+*?{]/.test(body)) return null;
 	if (/[$`\\]|\[\[:|\[\[\.|\[\[=/.test(body)) return null;
 	try {
 		const re = new RegExp(body, caseless ? "i" : "");
@@ -278,19 +284,23 @@ function matcher(pattern: string): ((text: string) => boolean) | null {
 	}
 }
 
+function isSession(proc: ProcRow | undefined): boolean {
+	if (!proc) return false;
+	const head = base(proc.argv[0]);
+	if (SESSION_HEADS.has(head)) return true;
+	return RUNTIMES.has(head) && SESSION_HEADS.has(base(proc.argv[1]).replace(/\.[cm]?js$/, ""));
+}
+
 function hasSessionAncestor(byPid: Map<number, ProcRow>, proc: ProcRow): boolean {
-	for (const pid of ancestors(byPid, proc.ppid)) {
-		const head = base(byPid.get(pid)?.argv[0]);
-		if (SESSION_HEADS.has(head)) return true;
-	}
+	for (const pid of ancestors(byPid, proc.ppid)) if (isSession(byPid.get(pid))) return true;
 	return false;
 }
 
-/** Nearest `claude` or `codex` ancestor of `pid`, the session that owns this run. */
+/** Nearest `claude`, `codex` or `grok` ancestor of `pid`, the session that owns this run. */
 export function sessionAncestor(rows: ProcRow[], pid: number): number | null {
 	const byPid = new Map(rows.map((proc) => [proc.pid, proc]));
 	for (const cur of ancestors(byPid, pid)) {
-		if (cur !== pid && SESSION_HEADS.has(base(byPid.get(cur)?.argv[0]))) return cur;
+		if (cur !== pid && isSession(byPid.get(cur))) return cur;
 	}
 	return null;
 }
@@ -489,6 +499,14 @@ function procStat(pid: number): { ppid: number; state: string; tty: boolean; sta
 	}
 }
 
+/** True when the innermost systemd unit in a /proc cgroup file is a `.service`. */
+export function serviceCgroup(text: string): boolean {
+	const lines = text.trim().split("\n");
+	const line = lines.find((l) => l.startsWith("0::")) ?? lines.find((l) => l.includes("name=systemd")) ?? "";
+	const units = line.split(":").slice(2).join(":").split("/").filter((seg) => /\.(service|scope)$/.test(seg));
+	return units.at(-1)?.endsWith(".service") ?? false;
+}
+
 function procUid(pid: number): number {
 	const line = /^Uid:\s+(.*)$/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1] ?? "";
 	const ids = line.trim().split(/\s+/).map(Number);
@@ -506,7 +524,7 @@ function linuxRows(): ProcRow[] {
 			const stat = procStat(pid);
 			if (!stat) continue;
 			const uid = procUid(pid);
-			const service = /\.service$/.test(readFileSync(`/proc/${pid}/cgroup`, "utf8").trim().split("\n")[0] ?? "");
+			const service = serviceCgroup(readFileSync(`/proc/${pid}/cgroup`, "utf8"));
 			const argv = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
 			if (argv.at(-1) === "") argv.pop();
 			let cwd: string | null = null;
@@ -542,7 +560,7 @@ function psRows(): ProcRow[] {
 		["-axww", "-o", "pid=,ppid=,uid=,etime=,stat=,tty=,lstart=,command="],
 		{ encoding: "utf8", env: { ...process.env, LC_ALL: "C" }, maxBuffer: 64 * 1024 * 1024 },
 	);
-	if (out.status !== 0) throw new Error(`ps failed: ${out.stderr?.trim()}`);
+	if (out.status !== 0) throw new Error(`ps failed: ${out.error?.message ?? out.stderr?.trim() ?? `exit ${out.status}`}`);
 	const rows: ProcRow[] = [];
 	const line = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.*)$/;
 	for (const text of out.stdout.split("\n")) {
@@ -578,14 +596,24 @@ function lsofCwds(uid: number): Map<number, string> {
 	return cwds;
 }
 
-function launchdPids(): Set<number> {
-	const out = spawnSync("launchctl", ["list"], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+/** PIDs that `launchctl list` reports; throws when the list cannot be read, so reap fails closed. */
+export function launchdPidsFrom(out: { status: number | null; stdout?: string | null; error?: Error }): Set<number> {
+	if (out.error || out.status !== 0)
+		throw new Error(
+			`reap: launchctl list failed (${out.error?.message ?? `exit ${out.status}`}); launchd jobs cannot be told apart, so nothing is reaped`,
+		);
 	const pids = new Set<number>();
 	for (const line of (out.stdout ?? "").split("\n")) {
 		const pid = Number(line.split(/\s+/)[0]);
 		if (Number.isSafeInteger(pid) && pid > 1) pids.add(pid);
 	}
 	return pids;
+}
+
+function launchdPids(): Set<number> {
+	return launchdPidsFrom(
+		spawnSync("launchctl", ["list"], { encoding: "utf8", env: { ...process.env, LC_ALL: "C" } }),
+	);
 }
 
 /** The current process table: /proc on Linux; `ps`, `lsof` working directories and `launchctl` jobs on macOS. */

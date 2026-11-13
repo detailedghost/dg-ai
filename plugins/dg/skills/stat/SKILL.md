@@ -5,7 +5,7 @@ description: Report this session's in-flight work as a priority-ordered checklis
 
 # /dg:stat: What's In Flight
 
-A four-keystroke glance at this session's work, rendered as one numbered checklist. **Read-only, with three exceptions:** it cleans up background jobs that have FINISHED (section 4), it reaps leftover agent processes (section 5), and it stops loops that are clearly stuck (section 5). Never edit, commit, push, or resume anything, and **never stop a running job that makes progress**. If reading cannot answer something, report the gap instead of acting.
+A four-keystroke glance at this session's work, rendered as one numbered checklist. **Read-only, with three exceptions:** it cleans up background jobs that have FINISHED (section 4), it reaps leftover agent processes (section 5), and it stops work that is clearly stuck: wait loops, stalled bg jobs, silent background Agents, and cron jobs with no effect (section 5). Never edit, commit, push, or resume anything, and **never stop a running job that makes progress**. If reading cannot answer something, report the gap instead of acting.
 
 First run: install or refresh the CLI when it is missing or too old. Each Bash call works alone:
 
@@ -186,11 +186,11 @@ Run `dg-skills stat reap` (not `--dry-run`) once, from the repo. It stops only:
 
 It never touches running `dg-skills bg` jobs and their children, systemd `.service` units, launchd jobs, the installed `dg-daemon`, the phone listener, service-manager units, Claude Code, Codex, or Grok sessions, editors, interactive shells, other users' processes, or anything off the allowlist. A live `codex review` that another session runs in its scratchpad has a live parent and a cwd outside the repo, so it stays. Before each signal it reads the start time again and skips the process when it changed. It sends SIGTERM, then SIGKILL after 5 seconds.
 
-Print one line under the checklist (prefix it with `# ` on `--long`):
+Print the reap summary line under the checklist. The CLI prints it as its last line, with no `#`. On `--long`, add the `# ` prefix yourself:
 
 `Reaped: 2 processes (1 gh-watch, 1 codex). Skipped: 3.`
 
-The CLI prints this line last. Relay it as is. Report zombies (state `Z`) that it lists with their parent. A zombie cannot be stopped; reaping its parent clears it. If the command fails, report the error in one line and continue.
+Relay the text of that line as is. Report zombies (state `Z`) that it lists with their parent. A zombie cannot be stopped; reaping its parent clears it. If the command fails, report the error in one line and continue.
 
 ### b. Stuck loops
 
@@ -203,7 +203,7 @@ The CLI prints this line last. Relay it as is. Report zombies (state `Z`) that i
 
 Subagents cannot call `TaskStop` or `CronDelete`. A subagent reports these items and stops there.
 
-Report what this step stopped in one line under the reap line, for example `Stopped: 1 stuck bg job, 1 Agent, 1 cron job.` Print nothing when nothing stopped.
+Report what this step stopped in one line after the reap line (also `# `-prefixed on `--long`), for example `Stopped: 1 stuck bg job, 1 Agent, 1 cron job.` Print nothing when nothing stopped.
 
 ## Keeping the list current
 

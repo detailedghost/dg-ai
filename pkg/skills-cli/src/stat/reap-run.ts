@@ -35,7 +35,7 @@ export interface ReapReport extends ReapResult {
 	roots: string[];
 	sessionPid: number | null;
 	wouldReap: { pid: number; ageSec: number; kind: string; command: string }[];
-	stuckLoops: (Omit<Classified["stuckLoops"][number], "members"> & { action: "reaped" | "reported" })[];
+	stuckLoops: (Omit<Classified["stuckLoops"][number], "members"> & { action: "reaped" | "would-reap" | "not-reaped" | "reported" })[];
 	longPipes: Classified["longPipes"];
 	zombies: Classified["zombies"];
 }
@@ -130,7 +130,7 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 	const targets = [...new Map([...orphans, ...loops.flatMap((loop) => loop.members)].map((c) => [c.pid, c])).values()];
 	const known = new Set([...result.candidates.map((c) => c.pid), ...result.stuckLoops.map((l) => l.pid)]);
 	const notCandidates: Skip[] = [...wanted]
-		.filter((pid) => !known.has(pid))
+		.filter((pid) => !known.has(pid) && !result.skipped.some((skip) => skip.pid === pid))
 		.map((pid) => ({ pid, reason: "not a reap candidate", command: "" }));
 	const signaled: ReapResult = options.dryRun
 		? { killed: [], skipped: [], failed: [] }
@@ -156,7 +156,13 @@ export async function runReap(options: ReapOptions): Promise<ReapReport> {
 		zombies: result.zombies,
 		stuckLoops: result.stuckLoops.map(({ members: _members, ...loop }) => ({
 			...loop,
-			action: acted.has(loop.pid) ? "reaped" : "reported",
+			action: !acted.has(loop.pid)
+				? "reported"
+				: options.dryRun
+					? "would-reap"
+					: signaled.killed.some((k) => k.pid === loop.pid)
+						? "reaped"
+						: "not-reaped",
 		})),
 		longPipes: result.longPipes,
 	};
@@ -180,11 +186,9 @@ export function renderReap(report: ReapReport): string {
 	for (const f of report.failed) lines.push(`failed ${f.pid} (${f.error}): ${f.command}`);
 	for (const loop of report.stuckLoops) {
 		const how =
-			loop.action === "reaped"
-				? report.dryRun
-					? "would reap"
-					: "reaped"
-				: `reported; stop it with: dg-skills stat reap --pid ${loop.pid}`;
+			loop.action === "reported"
+				? `reported; stop it with: dg-skills stat reap --pid ${loop.pid}`
+				: loop.action.replace("-", " ");
 		lines.push(
 			`stuck loop ${loop.pid} (${loop.session} session, ${formatAge(loop.ageSec)}) waits on ${loop.patterns.map((p) => JSON.stringify(p)).join(", ")}: ${how}`,
 		);
