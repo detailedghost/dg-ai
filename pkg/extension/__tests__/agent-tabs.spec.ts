@@ -226,7 +226,7 @@ describe("agent tabs open", () => {
 		expect(fake.record(SESSION_A)?.groupId).toBe(group);
 	});
 
-	it("reuses a group that has the session title but no saved record", async () => {
+	it("does not match a group by title when no group id was saved", async () => {
 		const title = groupTitle({ agentIdentity: "agent", sessionId: SESSION_A });
 		const { fake, open } = setup({
 			tabs: [tabOf({ id: 7, groupId: 40 })],
@@ -234,9 +234,19 @@ describe("agent tabs open", () => {
 		});
 		const { tabId } = await open();
 
-		expect(groupOf(fake, tabId)).toBe(40);
-		expect(fake.groups.size).toBe(1);
-		expect(fake.record(SESSION_A)?.groupId).toBe(40);
+		expect(groupOf(fake, tabId)).not.toBe(40);
+		expect(fake.groups.size).toBe(2);
+	});
+
+	it("reports the tabs of a recovered group", async () => {
+		const { fake, open } = setup();
+		const first = await open();
+		const group = groupOf(fake, first.tabId);
+		fake.reload();
+		const second = await open(SESSION_A, "https://b.example.test/");
+
+		expect(group).toBe(groupOf(fake, second.tabId));
+		expect(second.recoveredTabIds).toEqual([first.tabId]);
 	});
 
 	it("reuses a renamed group through the saved group id", async () => {

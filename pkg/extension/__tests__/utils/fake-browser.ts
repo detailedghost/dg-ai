@@ -316,11 +316,6 @@ export function createFakeBrowser(
 				if (!group) throw new Error(`No group with id: ${id}`);
 				return { ...group };
 			}),
-			query: mock(async (query: { title?: string }) =>
-				[...groups.values()]
-					.filter((group) => query.title === undefined || group.title === query.title)
-					.map((group) => ({ ...group })),
-			),
 		},
 		scripting: {
 			executeScript: mock(async (details: unknown) => [

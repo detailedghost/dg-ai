@@ -69,9 +69,6 @@ export type AgentTabsBrowserApi = {
 			windowId: number;
 			color?: GroupColor;
 		}>;
-		query(query: { title: string }): Promise<
-			Array<{ id: number; windowId: number; title?: string }>
-		>;
 	};
 };
 
@@ -244,33 +241,26 @@ export function createAgentTabs({
 
 	async function recover(
 		sessionId: string,
-		agentIdentity: string,
-	): Promise<AgentRecord | undefined> {
+	): Promise<{ record: AgentRecord; tabIds: number[] } | undefined> {
 		const taken = await agentGroupIds({ storage });
-		for (const other of await persisted())
-			if (other.sessionId !== sessionId) taken.add(other.groupId);
-		const free = (groupId: number) => !taken.has(groupId);
-		const title = groupTitle({ agentIdentity, sessionId });
 		const key = persistKey(sessionId);
-		const saved = ((await storage.local?.get(key)) ?? {})[key] as AgentRecord | undefined;
-		const candidates: AgentRecord[] = [];
-		if (saved && free(saved.groupId)) candidates.push(saved);
-		for (const group of await api.tabGroups.query({ title }).catch(() => []))
-			if (group.title === title && free(group.id))
-				candidates.push({
-					sessionId,
-					agentIdentity,
-					groupId: group.id,
-					title,
-					color: saved?.color ?? leastUsedColor(await readRecords(storage)),
-				});
-		for (const candidate of candidates) {
-			if ((await liveGroupWindow(candidate)) === undefined) continue;
-			await write(candidate);
-			return candidate;
+		const saved = ((await storage.local?.get(key)) ?? {})[key] as
+			| AgentRecord
+			| undefined;
+		if (!saved) return undefined;
+		if (
+			taken.has(saved.groupId) ||
+			(await liveGroupWindow(saved)) === undefined
+		) {
+			await storage.local?.remove(key);
+			return undefined;
 		}
-		await storage.local?.remove(key);
-		return undefined;
+		await write(saved);
+		const tabs = await api.tabs.query({ groupId: saved.groupId });
+		return {
+			record: saved,
+			tabIds: tabs.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
+		};
 	}
 
 	async function rows(record: AgentRecord): Promise<AgentTab[]> {
@@ -377,11 +367,12 @@ export function createAgentTabs({
 			url: string;
 			/** Checked inside the lock; a true answer opens nothing. */
 			canceled?: () => boolean;
-		}): Promise<{ tabId: number }> {
+		}): Promise<{ tabId: number; recoveredTabIds: number[] }> {
 			return locked(async () => {
 				if (canceled?.()) throw new AgentTabOpenCanceledError();
-				const record =
-					(await read(sessionId)) ?? (await recover(sessionId, agentIdentity));
+				const existing = await read(sessionId);
+				const recovered = existing ? undefined : await recover(sessionId);
+				const record = existing ?? recovered?.record;
 				const groupWindow = await liveGroupWindow(record);
 				if (
 					record &&
@@ -407,7 +398,7 @@ export function createAgentTabs({
 						windowId: tab.windowId,
 					});
 					if (joined !== record) await write(joined);
-					return { tabId };
+					return { tabId, recoveredTabIds: recovered?.tabIds ?? [] };
 				} catch (error) {
 					await api.tabs.remove(tabId).catch(() => undefined);
 					throw error;
@@ -433,7 +424,7 @@ export function createAgentTabs({
 				const records = await readRecords(storage);
 				const record =
 					records.find((other) => other.sessionId === sessionId) ??
-					(await recover(sessionId, agentIdentity));
+					(await recover(sessionId))?.record;
 				if (record && tab.groupId === record.groupId) {
 					await write({ ...record, selectedTabId: tabId });
 					return;
