@@ -64,8 +64,13 @@ function builtInOwning(name: string) {
 	return BUILT_IN_SCRIPTS.find((script) => name.startsWith(`dg_${script.id}_`));
 }
 
+/** True when an https match pattern's host covers the origin; the path part is ignored. */
+export function matchesCoverOrigin(matches: readonly string[], origin: string): boolean {
+	return matches.some((pattern) => patternCoversOrigin(pattern, origin));
+}
+
 function builtInCovers(owner: BuiltInWebMcpScript | undefined, origin: string): boolean {
-	return owner?.matches.some((pattern) => patternCoversOrigin(pattern, origin)) === true;
+	return owner !== undefined && matchesCoverOrigin(owner.matches, origin);
 }
 
 /** The approval class of a tool; with an origin, a dg_ tool keeps its table class only on the origins of the built-in script that owns its prefix. */

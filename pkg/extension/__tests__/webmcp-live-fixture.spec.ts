@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Window } from "happy-dom";
-import { approvalClassOf, isDgToolName, WEBMCP_SCRIPT_MAX_BYTES } from "@dg/common";
+import { isDgToolName, WEBMCP_SCRIPT_MAX_BYTES } from "@dg/common";
 import { installModelContextShim } from "@/lib/features/webmcp-shim";
 
 const code = readFileSync(join(import.meta.dir, "fixtures/webmcp-live/dummy-tools.js"), "utf8");
@@ -34,20 +34,12 @@ describe("Web MCP live fixture script", () => {
 	});
 
 	it("returns fixed strings that hold no page data", async () => {
-		const context = run("https://outlook.live.com/mail/0/");
+		const context = run("http://localhost:8765/");
 
 		expect(await context!.executeTool({ name: "dg_outlook_move" }, { id: "fixture-2" }, {})).toBe(
 			"Fixture: moved fixture-2 to Archive. Nothing changed.",
 		);
 		expect(await context!.executeTool({ name: "dg_fixture_echo" }, { text: "hi" }, {})).toBe('Fixture echo: {"text":"hi"}');
-	});
-
-	it("covers the read, session and each classes on Outlook and only each on localhost", () => {
-		const outlook = "https://outlook.live.com";
-		expect(
-			["dg_outlook_list", "dg_outlook_move", "dg_outlook_delete", "dg_fixture_echo"].map((name) => approvalClassOf(name, outlook)),
-		).toEqual(["read", "session", "each", "each"]);
-		expect(approvalClassOf("dg_outlook_list", "http://localhost:8765")).toBe("each");
 	});
 
 	it("fails loudly when the shim was not injected first", () => {

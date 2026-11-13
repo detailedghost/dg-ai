@@ -4,6 +4,7 @@ import {
 	BUILT_IN_SCRIPTS,
 	isDgToolName,
 	mailboxToolAllowed,
+	matchesCoverOrigin,
 	validateWebMcpScriptRecord,
 	WEBMCP_MAX_MATCHES,
 	WEBMCP_TOOL_CLASSES,
@@ -106,6 +107,19 @@ describe("BUILT_IN_SCRIPTS", () => {
 				enabledByDefault: false,
 			},
 		]);
+	});
+});
+
+describe("matchesCoverOrigin", () => {
+	it.each([
+		[["https://outlook.live.com/*"], "https://outlook.live.com", true],
+		[["https://*.live.com/mail/*"], "https://outlook.live.com", true],
+		[["https://example.com/*", "https://outlook.live.com/x/*"], "https://outlook.live.com", true],
+		[["https://outlook.office.com/*"], "https://outlook.live.com", false],
+		[["http://localhost/*"], "https://outlook.live.com", false],
+		[[], "https://outlook.live.com", false],
+	])("gives %p on %s the answer %p", (matches, origin, expected) => {
+		expect(matchesCoverOrigin(matches, origin)).toBe(expected);
 	});
 });
 

@@ -5,6 +5,7 @@ import {
 	isDgToolName,
 	isPwExtWebUrl,
 	mailboxToolAllowed,
+	matchesCoverOrigin,
 	isPwExtSecretTooShort,
 	PW_EXT_MAX_TEXT_CHARS,
 	PW_EXT_MIN_SECRET_CHARS,
@@ -199,6 +200,18 @@ async function storedEnabledBuiltIns(storage: unknown): Promise<Set<string>> {
 			const record = records.find((entry) => entry?.id === script.id && entry.source === "built-in");
 			return typeof record?.enabled === "boolean" ? record.enabled : script.enabledByDefault;
 		}).map((script) => script.id),
+	);
+}
+
+async function storedThirdPartyMatches(storage: unknown): Promise<string[]> {
+	const local = (storage as { local?: { get(key: string): Promise<Record<string, unknown>> } }).local;
+	if (!local) return [];
+	const stored = (await local.get(BUILT_INS_KEY))[BUILT_INS_KEY];
+	const records = Array.isArray(stored) ? (stored as { source?: unknown; enabled?: unknown; matches?: unknown }[]) : [];
+	return records.flatMap((record) =>
+		record?.source !== "built-in" && record?.enabled === true && Array.isArray(record.matches)
+			? record.matches.filter((match): match is string => typeof match === "string")
+			: [],
 	);
 }
 
@@ -509,6 +522,7 @@ export function createPwExtHandler({
 		now,
 	}),
 	enabledBuiltIns = () => storedEnabledBuiltIns(api.storage),
+	thirdPartyMatches = () => storedThirdPartyMatches(api.storage),
 	pageDeadlineMs = PAGE_DEADLINE_MS,
 	lock,
 	control = createSessionControl({ storage: api.storage }),
@@ -522,6 +536,7 @@ export function createPwExtHandler({
 	webmcpGrants?: WebMcpGrants;
 	rememberedWebMcpGrants?: RememberedWebMcpGrants;
 	enabledBuiltIns?: () => Promise<Set<string>>;
+	thirdPartyMatches?: () => Promise<string[]>;
 	pageDeadlineMs?: number;
 	lock?: AgentTabsLock;
 	control?: SessionControl;
@@ -1124,6 +1139,13 @@ export function createPwExtHandler({
 		}
 	}
 
+	/** A tool keeps its class-table class only when its enabled built-in covers the origin and no third-party script runs there. */
+	async function builtInOwned(tool: string, origin: string): Promise<boolean> {
+		if (!mailboxToolAllowed(tool, origin, await enabledOrNone())) return false;
+		const others = await thirdPartyMatches().catch(() => undefined);
+		return others !== undefined && !matchesCoverOrigin(others, origin);
+	}
+
 	async function approveDgTool(
 		request: TabVerbRequest,
 		tab: LiveTab,
@@ -1133,7 +1155,8 @@ export function createPwExtHandler({
 		const tool = request.tool as string;
 		if (tab.url === undefined) return { ok: false, error: `This tab has no page address; ${tool} did not run.` };
 		const origin = new URL(tab.url).origin;
-		const approvalClass = approvalClassOf(tool, origin) ?? "each";
+		const tableClass = approvalClassOf(tool, origin) ?? "each";
+		const approvalClass = tableClass !== "each" && (await builtInOwned(tool, origin)) ? tableClass : "each";
 		if (approvalClass === "read") return undefined;
 		const answer = await requestWebMcpApproval({
 			approvals: approvals ?? browserApprovals(),

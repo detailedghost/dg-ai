@@ -5,7 +5,7 @@
 	const tools = [
 		{
 			name: "dg_outlook_list",
-			description: "Fixture: lists two fake messages. Read class on Outlook; asks each time on any other site.",
+			description: "Fixture: lists two fake messages.",
 			inputSchema: { type: "object", properties: {} },
 			execute: () =>
 				JSON.stringify({
@@ -17,19 +17,19 @@
 		},
 		{
 			name: "dg_outlook_move",
-			description: "Fixture: pretends to move a fake message. Session class on Outlook.",
+			description: "Fixture: pretends to move a fake message.",
 			inputSchema: object,
 			execute: (args) => `Fixture: moved ${args.id ?? "fixture-1"} to Archive. Nothing changed.`,
 		},
 		{
 			name: "dg_outlook_delete",
-			description: "Fixture: pretends to delete a fake message. Each class everywhere.",
+			description: "Fixture: pretends to delete a fake message.",
 			inputSchema: object,
 			execute: (args) => `Fixture: deleted ${args.id ?? "fixture-1"}. Nothing changed.`,
 		},
 		{
 			name: "dg_fixture_echo",
-			description: "Fixture: returns its arguments. Each class everywhere.",
+			description: "Fixture: returns its arguments.",
 			inputSchema: { type: "object", properties: { text: { type: "string" } } },
 			execute: (args) => `Fixture echo: ${JSON.stringify(args)}`,
 		},
