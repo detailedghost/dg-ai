@@ -139,6 +139,27 @@ describe("network hook", () => {
 			expect(entry?.requestHeaders.find((header) => header.name === name)?.value).toBe(isSensitiveHeader(name) ? undefined : "fake-value");
 	});
 
+	it("records the init headers, not the Request headers they replace", async () => {
+		pwExtNetwork({ kind: "install" });
+		const request = new window.Request("https://mail.example.test/r", { method: "POST", headers: { "x-old": "1" }, body: '{"A":1}' });
+		await page().fetch(request as unknown as Request, { headers: { "content-type": "application/json" } });
+		await settle();
+		const [entry] = read();
+		expect(entry?.requestHeaders).toEqual([{ name: "content-type" }]);
+	});
+
+	it("reads a Request body only up to the bound", async () => {
+		pwExtNetwork({ kind: "install" });
+		const big = `{"A":"${"x".repeat(1_100_000)}"}`;
+		const request = new window.Request("https://mail.example.test/up", { method: "POST", headers: { "content-type": "application/json" }, body: big });
+		await page().fetch(request as unknown as Request);
+		await settle();
+		const [entry] = read(true);
+		expect(entry?.request).toMatchObject({ type: "application/json", size: -1, cut: true });
+		expect(entry?.request?.shape).toBeUndefined();
+		expect(entry?.request?.text?.length).toBe(8000);
+	});
+
 	it("records an XMLHttpRequest", async () => {
 		pwExtNetwork({ kind: "install" });
 		FakeXhr.next = { status: 201, headers: "Content-Type: application/json\r\nCookie2: x\r\n", body: '{"Ok":true,"List":[]}' };

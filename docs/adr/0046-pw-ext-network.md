@@ -75,7 +75,10 @@ The grant key is the origin today (`valuesSiteOf` in `pw-ext.ts`); it moves to
 the registrable-domain site key when PR #191 lands. There is no UI to remove
 one grant yet; Stop removes all of them.
 
-**Masking.** Every shown value goes through `maskRaw`, the same span-union
+**Masking.** `maskCredentialFields` first masks the value of each JSON field
+and each form or query parameter whose name names a credential (password,
+token, secret, api key, auth, session, cookie, canary, csrf, signature, `code`,
+`otp`, `pin`), also in cut text. Then every shown value goes through `maskRaw`, the same span-union
 redaction as other `pw --ext` output (held secrets, token patterns, and email
 addresses unless an unmask grant covers the site). A value the page cut ends in
 an ellipsis, so the worker also masks the word at the cut. A sensitive header

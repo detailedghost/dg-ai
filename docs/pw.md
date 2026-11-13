@@ -172,7 +172,10 @@ Rules:
   - Even with `--values`, the hook never stores the value of `Authorization`,
     `Cookie`, `Set-Cookie`, `X-OWA-CANARY` or any header whose name holds auth,
     token, secret, key, session, canary, csrf, credential, password or
-    signature; such a header shows as `name (hidden)`. All output goes through
+    signature; such a header shows as `name (hidden)`. A JSON field or a form
+    or query parameter whose name names a credential (password, token, secret,
+    key, auth, session, cookie, code and similar) shows as `[redacted]`. All
+    output goes through
     the same redaction as other `pw --ext` output, which masks held secrets and
     token patterns. Email addresses stay masked unless an `unmask` grant covers
     the site.

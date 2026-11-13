@@ -124,16 +124,8 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 				if (fresh.entries.length > MAX_ENTRIES) fresh.entries.shift();
 			};
 			const readable = (type: string) => /json|^text\/(?!event-stream)|xml|javascript|x-www-form-urlencoded/i.test(type);
-			const readResponse = async (entry: NetworkEntry, response: Response) => {
-				const type = contentType(entry.responseHeaders);
-				const length = Number(response.headers.get("content-length"));
-				const size = Number.isSafeInteger(length) && length >= 0 ? length : -1;
-				if (!readable(type) || response.body === null) {
-					entry.response = { type: clip(type, TYPE_MAX), size };
-					return;
-				}
-				const reader = response.clone().body?.getReader();
-				if (!reader) return;
+			const readBounded = async (stream: ReadableStream<Uint8Array>) => {
+				const reader = stream.getReader();
 				const decoder = new TextDecoder();
 				let text = "";
 				let bytes = 0;
@@ -143,13 +135,26 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 					if (done) break;
 					bytes += value.byteLength;
 					if (bytes > READ_MAX_BYTES) {
+						text += decoder.decode(value.subarray(0, value.byteLength - (bytes - READ_MAX_BYTES)), { stream: true });
 						cut = true;
 						void reader.cancel().catch(() => undefined);
 						break;
 					}
 					text += decoder.decode(value, { stream: true });
 				}
-				text += decoder.decode();
+				return { text: text + decoder.decode(), bytes, cut };
+			};
+			const readResponse = async (entry: NetworkEntry, response: Response) => {
+				const type = contentType(entry.responseHeaders);
+				const length = Number(response.headers.get("content-length"));
+				const size = Number.isSafeInteger(length) && length >= 0 ? length : -1;
+				if (!readable(type) || response.body === null) {
+					entry.response = { type: clip(type, TYPE_MAX), size };
+					return;
+				}
+				const body = response.clone().body;
+				if (!body) return;
+				const { text, bytes, cut } = await readBounded(body);
 				if (!fresh.active) return;
 				entry.response = textBody(type, text, cut ? size : bytes, cut);
 			};
@@ -160,9 +165,9 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 					const [input, init] = args;
 					const request = input instanceof win.Request ? input : undefined;
 					const requestHeaders: NetworkHeader[] = [];
-					request?.headers.forEach((value, name) => addHeader(requestHeaders, name, value));
 					if (init?.headers !== undefined)
 						new win.Headers(init.headers).forEach((value, name) => addHeader(requestHeaders, name, value));
+					else request?.headers.forEach((value, name) => addHeader(requestHeaders, name, value));
 					const made: NetworkEntry = {
 						at: Date.now(),
 						via: "fetch",
@@ -174,14 +179,17 @@ export function pwExtNetwork(action: PwExtNetworkAction, expectUrl?: string, own
 					entry = made;
 					const body = requestBody(init?.body, contentType(requestHeaders));
 					if (body) made.request = body;
-					else if (request && request.body !== null && !request.bodyUsed)
-						void request
-							.clone()
-							.text()
-							.then((text) => {
-								made.request = textBody(contentType(requestHeaders), text, byteLength(text));
-							})
-							.catch(() => undefined);
+					else if (request && request.body !== null && !request.bodyUsed) {
+						const type = contentType(requestHeaders);
+						const stream = readable(type) ? request.clone().body : null;
+						if (stream)
+							void readBounded(stream)
+								.then(({ text, bytes, cut }) => {
+									made.request = textBody(type, text, cut ? -1 : bytes, cut);
+								})
+								.catch(() => undefined);
+						else made.request = { type: clip(type, TYPE_MAX), size: -1 };
+					}
 				} catch {
 					entry = undefined;
 				}

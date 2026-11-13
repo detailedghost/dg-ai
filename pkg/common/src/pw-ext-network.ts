@@ -43,6 +43,10 @@ export type NetworkEntry = {
 	response?: NetworkBody;
 };
 
+const CREDENTIAL_FIELD =
+	/pass(?:word|wd|code|phrase)|secret|token|api[-_]?key|auth|credential|session|cookie|canary|csrf|xsrf|signature|^otp$|^pin$|^code$/i;
+const JSON_FIELD = /"((?:[^"\\]|\\.){1,256})"(\s*:\s*)("(?:[^"\\]|\\.)*"?|-?\d[\d.eE+-]*|true|false)/g;
+const FORM_FIELD = /(^|[?&;\s])([^=&;\s?#]{1,256})=([^&;\s#]*)/g;
 const SENSITIVE_HEADER = /auth|cookie|token|secret|api-?key|session|canary|csrf|xsrf|credential|password|signature/i;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
 const PLAIN_KEY = /^[@$_]{0,2}[A-Za-z][A-Za-z0-9_.:$-]{0,63}$/;
@@ -50,6 +54,17 @@ const PLAIN_SEGMENT = /^[A-Za-z0-9._~$!-]{1,64}$/;
 const API_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const API_NAME_PARAMS = new Set(["action", "app"]);
 const MASK = "*";
+
+/** Masks the value of each JSON field or form and query parameter whose name names a credential, also in cut text. */
+export function maskCredentialFields(text: string): string {
+	return text
+		.replace(JSON_FIELD, (match, name: string, gap: string) =>
+			CREDENTIAL_FIELD.test(name) ? `"${name}"${gap}"[redacted]"` : match,
+		)
+		.replace(FORM_FIELD, (match, lead: string, name: string) =>
+			CREDENTIAL_FIELD.test(decoded(name)) ? `${lead}${name}=[redacted]` : match,
+		);
+}
 
 /** True for a header whose value can carry a credential; such a value is never captured or shown. */
 export function isSensitiveHeader(name: string): boolean {
@@ -216,7 +231,9 @@ function bodyLine(label: string, body: NetworkBody, values: boolean, value: (tex
 	const shape = body.shape === undefined ? "" : ` ${clipShape(renderNetworkShape(body.shape))}`;
 	const head = `  ${label}: ${body.type || "no content type"}${size}`;
 	if (!values) return [`${head}${shape}`];
-	return [head, ...(body.text === undefined ? [] : [`    ${value(body.cut ? `${body.text}…` : body.text).replace(/\s+/g, " ")}`])];
+	if (body.text === undefined) return [head];
+	const text = maskCredentialFields(body.text);
+	return [head, `    ${value(body.cut ? `${text}…` : text).replace(/\s+/g, " ")}`];
 }
 
 function clipShape(text: string): string {
@@ -259,7 +276,7 @@ export function formatNetwork(
 	for (const { entry, shape } of shown) {
 		const outcome = entry.failed ? "failed" : entry.status === undefined ? "pending" : String(entry.status);
 		lines.push(
-			`- ${clock(entry.at)} ${entry.via} ${entry.method.toUpperCase()} ${values ? value(entry.url.length >= PW_EXT_NETWORK_MAX_URL_CHARS ? `${entry.url}…` : entry.url) : shape} → ${outcome}`,
+			`- ${clock(entry.at)} ${entry.via} ${entry.method.toUpperCase()} ${values ? value(maskCredentialFields(entry.url.length >= PW_EXT_NETWORK_MAX_URL_CHARS ? `${entry.url}…` : entry.url)) : shape} → ${outcome}`,
 			...headerLine("request headers", entry.requestHeaders, values, value),
 			...(entry.request ? bodyLine("request body", entry.request, values, value) : []),
 			...headerLine("response headers", entry.responseHeaders, values, value),

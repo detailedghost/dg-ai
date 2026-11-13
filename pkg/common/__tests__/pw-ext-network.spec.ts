@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	formatNetwork,
+	maskCredentialFields,
 	isSensitiveHeader,
 	looksLikeOpaqueId,
 	type NetworkEntry,
@@ -79,6 +80,19 @@ describe("renderNetworkShape", () => {
 	});
 });
 
+describe("maskCredentialFields", () => {
+	it.each([
+		['{"access_token":"fake-opaque-1","refresh_token":"fake-opaque-2","expires_in":3600}', '{"access_token":"[redacted]","refresh_token":"[redacted]","expires_in":3600}'],
+		['{"user":"ada","password":"hunter2"}', '{"user":"ada","password":"[redacted]"}'],
+		['{"Body":{"SessionId":12345,"Subject":"Hi"}}', '{"Body":{"SessionId":"[redacted]","Subject":"Hi"}}'],
+		['{"apiKey":"fake-key","note":"a \\"quoted\\" word"}', '{"apiKey":"[redacted]","note":"a \\"quoted\\" word"}'],
+		['{"client_secret":"fake-cut-val', '{"client_secret":"[redacted]"'],
+		["user=ada&passwd=hunter2&remember=1", "user=ada&passwd=[redacted]&remember=1"],
+		["https://a.test/cb?code=fake-code&state=s1#x", "https://a.test/cb?code=[redacted]&state=s1#x"],
+		['{"Subject":"token talk","Count":2}', '{"Subject":"token talk","Count":2}'],
+	])("masks %s", (input, output) => expect(maskCredentialFields(input)).toBe(output));
+});
+
 describe("isSensitiveHeader", () => {
 	it.each(["Authorization", "cookie", "Set-Cookie", "X-OWA-CANARY", "x-csrf-token", "X-Api-Key", "proxy-authorization"])(
 		"withholds %s",
@@ -145,6 +159,24 @@ describe("formatNetwork", () => {
 		expect(out).toContain("action: FindConversation");
 		expect(out).toContain('{"Body":{"Id":"[masked]"}}');
 		expect(out).not.toContain("fake-token-value-for-tests");
+	});
+
+	it("masks credential fields in bodies and addresses before value()", () => {
+		const out = formatNetwork(
+			[
+				entry({
+					url: "https://a.test/token?grant=x&refresh_token=fake-refresh",
+					request: { type: "application/x-www-form-urlencoded", size: 30, text: "username=ada&password=hunter2" },
+					response: { type: "application/json", size: 60, text: '{"access_token":"fake-opaque","token_type":"Bearer"}', cut: true },
+				}),
+			],
+			{ values: true, value },
+		).join("\n");
+		expect(out).toContain("refresh_token=[redacted]");
+		expect(out).toContain("password=[redacted]");
+		expect(out).toContain('"access_token":"[redacted]"');
+		expect(out).toContain('"token_type":"[redacted]"}…');
+		for (const secret of ["fake-refresh", "hunter2", "fake-opaque"]) expect(out).not.toContain(secret);
 	});
 
 	it("filters on the shape URL so a hidden value cannot be probed", () => {
