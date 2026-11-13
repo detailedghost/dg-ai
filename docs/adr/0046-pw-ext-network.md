@@ -103,6 +103,42 @@ prints `[redacted]` for an `id` or `name` value that passes
 `looksLikeOpaqueId`, and keeps readable ones so it stays useful to test a
 selector. `snapshot` never prints these attributes.
 
+## Amendment 2026-11-13: sealed sign-in headers, cookies and credential save
+
+Dante approved three changes (spec 018 R-9 follow-up). They reverse the
+statement above that sign-in header values are never captured, under these
+conditions only:
+
+- **One Allow covers more.** The values grant is now keyed by registrable
+  domain (`siteOf` from PR #191, copied unchanged) and is the one Allow per
+  session and site for `network --values`, `storage --values`, `fetch` with a
+  method other than GET or HEAD, `fetch --auth page`, and `credential save`.
+  The popup names all of these. It never asks again in the session and ends
+  at the session end or on Stop.
+- **Sealed headers.** After that Allow, the hook keeps the newest value of
+  each sign-in header that the page sends to its own origin, in a closure
+  separate from the ring buffer. `network` reads never include it, and no
+  error, log or output carries it. It is used only to attach to the agent's
+  same-origin `fetch --auth page` (which does not follow redirects) and to
+  hand to `credential save --from header:`. A change of an account anchor
+  header drops it; leaving the agent group, a new owner or Stop clears it.
+  The closure is reachable through the page-visible slot by a page script,
+  which already holds these values.
+- **Cookies.** The extension adds the `cookies` permission, a new install-time
+  prompt. It is used only for `credential save --from cookie:` on the agent
+  tab's URL, after the Allow. Host scope does not change.
+- **Daemon-only write.** The worker sends a captured value in a
+  `pw-ext-credential-store` frame on the extension socket. Only the daemon
+  reads it; it accepts it only from the extension peer with a valid session
+  token for an active session, stores it encrypted as
+  `pw/<registrable domain>/<name>`, and replies with the name only. The
+  extension peer still cannot `get` it. `dg-skills credentials exec` gives a
+  command the value in its environment or arguments and replaces each value
+  form in its output with `[redacted]`.
+- **Storage.** `storage` reads localStorage or sessionStorage through the
+  hook: keys, type, length and JSON shape by default; values after the Allow,
+  with credential-named keys and token-like strings always masked.
+
 ## Consequences
 
 - **Good:** the agent learns endpoint names, header names and body keys with no

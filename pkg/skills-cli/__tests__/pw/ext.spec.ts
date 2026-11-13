@@ -613,6 +613,56 @@ describe("pw --ext network", () => {
 	});
 });
 
+describe("pw --ext storage, fetch and credential save", () => {
+	const ok = () => ({ ok: true, data: { text: "done" } });
+
+	test.each([
+		[["storage"], { verb: "storage" }],
+		[["storage", "session", "--key", "note", "--values"], { verb: "storage", area: "session", key: "note", values: true }],
+		[["storage", "--keys"], { verb: "storage", keysOnly: true }],
+		[["fetch", "/api/me"], { verb: "fetch", url: "/api/me" }],
+		[
+			["fetch", "/api/x", "--json", '{"a":1}', "--header", "X-Req-Source: Mail", "--auth", "page", "--values"],
+			{ verb: "fetch", url: "/api/x", method: "POST", body: '{"a":1}', contentType: "application/json", headers: [["X-Req-Source", "Mail"]], auth: "page", values: true },
+		],
+		[["fetch", "/api/x", "--method", "delete"], { verb: "fetch", url: "/api/x", method: "DELETE" }],
+		[["credential", "save", "owa-token", "--from", "header:Authorization"], { verb: "credential", name: "owa-token", source: "header", key: "Authorization" }],
+		[["credential", "save", "msal", "--from", "local:msal.account", "--path", "accessToken"], { verb: "credential", name: "msal", source: "local", key: "msal.account", path: "accessToken" }],
+	] as [string[], PwExtRequest][])("sends %p", async (args, request) => {
+		const d = deps(ok);
+		expect(await runExt(["--ext", ...args], clientEnv(), d.value)).toBe(0);
+		expect(d.sent[0]?.request).toEqual(request);
+	});
+
+	test.each([
+		[["storage", "disk"], "pw --ext storage takes local or session."],
+		[["fetch", "/x", "--json", "{bad"], "--json needs valid JSON"],
+		[["fetch", "/x", "--auth", "token"], "--auth takes page"],
+		[["fetch", "/x", "--header", "NoColon"], "--header takes Name:Value"],
+		[["credential", "save", "x"], "needs --from"],
+		[["credential", "save", "x", "--from", "disk:y"], "needs --from"],
+		[["credential", "load", "x", "--from", "cookie:y"], "takes save"],
+		[["credential", "save", "Bad/Name", "--from", "cookie:y"], "name must be"],
+		[["snapshot", "--from", "cookie:y"], "--from and --path work only with pw --ext credential."],
+		[["snapshot", "--auth", "page"], "work only with pw --ext fetch."],
+	])("rejects %p", async (args, message) => {
+		const env = clientEnv();
+		const d = deps(ok);
+		expect(await runExt(["--ext", ...args], env, d.value)).toBe(2);
+		expect(env.stderr.join("\n")).toContain(message);
+		expect(d.sent).toHaveLength(0);
+	});
+
+	test("sends no value in a credential save request", async () => {
+		const marker = "fake-marker-value-for-tests";
+		const env = clientEnv();
+		const d = deps(() => ({ ok: true, data: { text: `### Result\nSaved pw/live.com/owa-token. ${marker}` } }));
+		expect(await runExt(["--ext", "credential", "save", "owa-token", "--from", "cookie:S"], env, d.value)).toBe(0);
+		expect(JSON.stringify(d.sent)).not.toContain(marker);
+		expect(env.stdout.join("\n")).toContain("Saved pw/live.com/owa-token.");
+	});
+});
+
 describe("pw --ext unmask and secret fill", () => {
 	const ok = () => ({ ok: true, data: { text: "done" } });
 

@@ -65,7 +65,11 @@ write with no daemon running at all.
 `dg-skills credentials set|list|delete` keeps secrets encrypted in
 dg-daemon's `credentials.db`. `set` reads the value from stdin or a hidden
 prompt, and no command prints it. `grant|revoke` manage read-only service
-tokens. Start a session with `dg-agent start` first. See the
+tokens. `exec <name>[=ENV_VAR]... -- <command>` runs a command with stored
+values in environment variables or `{{cred:<name>}}` arguments, and replaces
+each value in the command's output, also in base64 and URL-encoded form, with
+`[redacted]`. `pw --ext credential save` writes values under `pw/<site>/`.
+Start a session with `dg-agent start` first. See the
 [developer guide](DEVELOPER.md#credential-store).
 
 See the [chat skill](../plugins/dg/skills/chat/SKILL.md) for commands and the

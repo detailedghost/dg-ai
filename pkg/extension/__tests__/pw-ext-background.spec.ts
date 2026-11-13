@@ -71,6 +71,8 @@ type Options = {
 	enabledBuiltIns?: () => Promise<Set<string>>;
 	pageDeadlineMs?: number;
 	sites?: "ask";
+	cookies?: Record<string, { value: string; expirationDate?: number }>;
+	store?: (entry: { site: string; name: string; value: string; meta: Record<string, unknown> }) => Promise<string>;
 };
 
 type Executed = {
@@ -115,6 +117,17 @@ function harness(options: Options = {}) {
 		if (call.world === "MAIN") return options.mainResult?.(call.args[0], call.func?.name);
 		return options.pageResult;
 	};
+	if (options.cookies) {
+		const jar = options.cookies;
+		(fake.api as unknown as { cookies: unknown }).cookies = {
+			get: async ({ name }: { url: string; name: string }) => jar[name] ?? null,
+		};
+	}
+	const storedCredentials: { site: string; name: string; value: string; meta: Record<string, unknown> }[] = [];
+	const storeCredential = async (entry: { site: string; name: string; value: string; meta: Record<string, unknown> }) => {
+		storedCredentials.push(entry);
+		return options.store ? options.store(entry) : `pw/${entry.site}/${entry.name}`;
+	};
 	const agentTabsLock = createLock();
 	const agentTabs = createAgentTabs({
 		browserApi: fake.api,
@@ -153,6 +166,7 @@ function harness(options: Options = {}) {
 				if (!options.asset) throw new Error("no asset");
 				return options.asset;
 			},
+			storeCredential,
 		},
 	) =>
 		handler({
@@ -164,6 +178,7 @@ function harness(options: Options = {}) {
 		} as never);
 	return {
 		handler,
+		storedCredentials,
 		approvalRequests,
 		agentTabsLock,
 		clock,
@@ -2761,5 +2776,169 @@ describe("pw --ext network", () => {
 		expect(answer.ok).toBe(false);
 		expect(outcome(answer)).not.toContain(TOKEN);
 		expect(outcome(answer)).not.toContain("ada@clinic.test");
+	});
+});
+
+describe("pw --ext storage, fetch and credential save", () => {
+	const MARKER = "fake-marker-value-for-tests";
+	const MAIL_TAB = { ...WEB_TAB, url: "https://outlook.live.com/mail/0/", title: "Mail" };
+	const asks = (h: ReturnType<typeof harness>) =>
+		h.approvalRequests.filter((request) => (request as { title: string }).title.startsWith("Let the agent see values"));
+	const mainCalls = (h: ReturnType<typeof harness>) =>
+		h.executed()
+			.filter((call) => call.world === "MAIN" && (call as { func?: { name?: string } }).func?.name === "pwExtNetwork")
+			.map((call) => call.args[0] as Record<string, unknown>);
+	const hook =
+		(answer: (action: { kind: string; values?: boolean }) => unknown) => (action: unknown, func?: string) =>
+			func === "pwExtNetwork" ? answer(action as { kind: string }) : { dialogs: [] };
+	const outputs = (results: { ok: boolean; data?: { text: string }; error?: string }[]) => results.map(outcome).join("\n");
+	const expectNoMarker = (h: ReturnType<typeof harness>, results: { ok: boolean; data?: { text: string }; error?: string }[]) => {
+		expect(outputs(results)).not.toContain(MARKER);
+		expect(JSON.stringify(h.approvalRequests)).not.toContain(MARKER);
+		expect(JSON.stringify([...h.fake.session.entries()])).not.toContain(MARKER);
+	};
+
+	it("shows storage shapes with no ask, and masked values after one Allow", async () => {
+		const item = { key: "msal.account", length: 60, type: "json", shape: { keys: [["username", "string"], ["accessToken", "string"]] } };
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			mainResult: hook((action) =>
+				action.kind === "storage"
+					? {
+							items: [action.values ? { ...item, value: JSON.stringify({ username: "ada", accessToken: `x1${MARKER}9` }) } : item],
+							total: 1,
+						}
+					: { entries: [] },
+			),
+		});
+		const shape = outcome(await h.run({ verb: "storage" }));
+		expect(shape).toContain("- msal.account: json, 60 chars {username string, accessToken string}");
+		expect(asks(h)).toHaveLength(0);
+		const valued = await h.run({ verb: "storage", values: true });
+		expect(outcome(valued)).toContain('"username":"ada","accessToken":"[redacted]"');
+		expect(asks(h)).toHaveLength(1);
+		expectNoMarker(h, [valued]);
+	});
+
+	it("refuses a fetch to another origin and asks before a write or --auth page", async () => {
+		const h = harness({
+			approval: "deny",
+			mainResult: hook(() => ({ entries: [{ at: 1, via: "fetch", method: "GET", url: "https://app.example.test/x", status: 200, requestHeaders: [], responseHeaders: [] }] })),
+		});
+		expect(outcome(await h.run({ verb: "fetch", url: "https://other.example.test/x" }))).toContain("only to the tab's own origin");
+		h.approvalRequests.length = 0;
+		const write = await h.run({ verb: "fetch", url: "/x", method: "POST", body: "{}", contentType: "application/json" });
+		const auth = await h.run({ verb: "fetch", url: "/x", auth: "page" });
+		expect([write.ok, auth.ok]).toEqual([false, false]);
+		expect(mainCalls(h).filter((action) => action.kind === "fetch")).toEqual([]);
+	});
+
+	it("sends a plain GET with no ask and shows the response shape", async () => {
+		const h = harness({
+			mainResult: hook(() => ({
+				entries: [
+					{
+						at: 1,
+						via: "fetch",
+						method: "GET",
+						url: "https://app.example.test/api/me?x=1",
+						status: 200,
+						requestHeaders: [{ name: "authorization" }],
+						responseHeaders: [{ name: "content-type" }],
+						response: { type: "application/json", size: 20, shape: { keys: [["Name", "string"]] } },
+					},
+				],
+			})),
+		});
+		const text = outcome(await h.run({ verb: "fetch", url: "/api/me?x=1" }));
+		expect(text).toContain("### Fetch");
+		expect(text).toContain("GET https://app.example.test/api/me?x=* → 200");
+		expect(text).toContain("{Name string}");
+		expect(h.approvalRequests).toEqual([]);
+		expect(mainCalls(h).find((action) => action.kind === "fetch")).toMatchObject({ url: "https://app.example.test/api/me?x=1", auth: false });
+	});
+
+	it.each([
+		["cookie", "SessionCookie", undefined],
+		["header", "Authorization", undefined],
+		["local", "msal.account", "accessToken"],
+		["session", "token", undefined],
+	] as const)("saves a %s value to the store and never shows it", async (source, key, path) => {
+		const raw = path ? JSON.stringify({ [path]: MARKER, username: "ada" }) : MARKER;
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			tabs: [MAIL_TAB],
+			cookies: { SessionCookie: { value: MARKER, expirationDate: 1_900_000_000 } },
+			mainResult: hook((action) =>
+				action.kind === "sealed-get" || action.kind === "storage-get" ? { value: raw } : { entries: [] },
+			),
+		});
+		const result = await h.run({ verb: "credential", name: "owa-token", source, key, ...(path ? { path } : {}) });
+		expect(result.ok).toBe(true);
+		expect(outcome(result)).toContain("Saved pw/live.com/owa-token");
+		expect(h.storedCredentials).toEqual([
+			{
+				site: "live.com",
+				name: "owa-token",
+				value: MARKER,
+				meta: expect.objectContaining({ site: "https://outlook.live.com", createdBy: "pw --ext credential save" }),
+			},
+		]);
+		expect(JSON.stringify(h.storedCredentials[0]?.meta)).not.toContain(MARKER);
+		expectNoMarker(h, [result]);
+	});
+
+	it.each([
+		["the grant is denied", { approval: "deny" as const }, { verb: "credential", name: "n", source: "cookie", key: "SessionCookie" }],
+		["the cookie is missing", {}, { verb: "credential", name: "n", source: "cookie", key: "Nope" }],
+		["no header was seen", { missing: true }, { verb: "credential", name: "n", source: "header", key: "Authorization" }],
+		["the path is wrong", {}, { verb: "credential", name: "n", source: "local", key: "k", path: "nope" }],
+		["the store is down", { storeDown: true }, { verb: "credential", name: "n", source: "cookie", key: "SessionCookie" }],
+		["the page throws", { pageThrows: true }, { verb: "credential", name: "n", source: "local", key: "k" }],
+	] as const)("fails with no value in the error when %s", async (_, setup, request) => {
+		const flags = setup as { approval?: "deny"; missing?: boolean; storeDown?: boolean; pageThrows?: boolean };
+		const h = harness({
+			sites: "ask",
+			approval: flags.approval ?? "allow",
+			tabs: [MAIL_TAB],
+			cookies: { SessionCookie: { value: MARKER } },
+			mainResult: hook((action) => {
+				if (flags.pageThrows && action.kind === "storage-get") throw new Error(`boom ${MARKER}`);
+				if (flags.missing) return { missing: true };
+				return action.kind === "storage-get" || action.kind === "sealed-get" ? { value: JSON.stringify({ a: MARKER }) } : { entries: [] };
+			}),
+			...(flags.storeDown ? { store: async () => Promise.reject(new Error(`store down near ${MARKER}`)) } : {}),
+		});
+		const result = await h.run(request as PwExtRequest);
+		expect(result.ok).toBe(false);
+		expectNoMarker(h, [result]);
+		if (!flags.storeDown) expect(h.storedCredentials).toEqual([]);
+	});
+
+	it("returns the cancel error with no value when the relay cancels during a save", async () => {
+		const controller = new AbortController();
+		const h = harness({
+			sites: "ask",
+			approval: "allow",
+			tabs: [MAIL_TAB],
+			signal: controller.signal,
+			cookies: { SessionCookie: { value: MARKER } },
+			onApproval: () => controller.abort(),
+		});
+		const result = await h.run({ verb: "credential", name: "n", source: "cookie", key: "SessionCookie" });
+		expect(result.ok).toBe(false);
+		expect(h.storedCredentials).toEqual([]);
+		expectNoMarker(h, [result]);
+	});
+
+	it("turns on the seal when the tab loads in a session that approved the site", async () => {
+		const h = harness({ sites: "ask", approval: "allow", tabs: [MAIL_TAB], mainResult: hook(() => ({ entries: [] })) });
+		await h.run({ verb: "network", values: true });
+		expect(mainCalls(h)).toContainEqual({ kind: "seal" });
+		h.fake.fireUpdated(7, { status: "loading" });
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(mainCalls(h)).toContainEqual({ kind: "install", seal: true });
 	});
 });

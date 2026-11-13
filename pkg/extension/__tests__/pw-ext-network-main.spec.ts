@@ -267,3 +267,111 @@ describe("network hook", () => {
 		});
 	});
 });
+
+describe("sealed sign-in headers, agent fetch and storage", () => {
+	const MARKER = "fake-marker-value-for-tests";
+	const globalsText = () => {
+		const win = window as unknown as Record<string | symbol, unknown>;
+		const parts: string[] = [];
+		for (const key of [...Object.getOwnPropertyNames(win), ...Object.getOwnPropertySymbols(win)]) {
+			try {
+				parts.push(JSON.stringify((win as Record<string | symbol, unknown>)[key as string]) ?? "");
+			} catch {}
+		}
+		return parts.join("\n");
+	};
+	const sealedGet = (name: string) => pwExtNetwork({ kind: "sealed-get", name });
+	const signIn = (url = "/owa/service.svc?action=GetItem", anchor = "PUID:1@fake") =>
+		page().fetch(url, { headers: { Authorization: `Bearer ${MARKER}`, "X-AnchorMailbox": anchor } });
+
+	it("keeps no sign-in header before the approval", async () => {
+		pwExtNetwork({ kind: "install" });
+		await signIn();
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("keeps same-origin sign-in headers after the approval, never in reads or page globals", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ value: `Bearer ${MARKER}` });
+		expect(JSON.stringify(read(true))).not.toContain(MARKER);
+		expect(JSON.stringify(slotEntries())).not.toContain(MARKER);
+		expect(globalsText()).not.toContain(MARKER);
+	});
+
+	it("ignores cross-origin requests and drops the values when the account anchor changes", async () => {
+		pwExtNetwork({ kind: "install" });
+		pwExtNetwork({ kind: "seal" });
+		await signIn("https://other.example.test/x");
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+		await signIn();
+		await page().fetch("/x", { headers: { "X-AnchorMailbox": "PUID:2@fake" } });
+		await settle();
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("forgets sealed values on remove and on a new owner", async () => {
+		pwExtNetwork({ kind: "install", seal: true }, undefined, 1);
+		await signIn();
+		await settle();
+		pwExtNetwork({ kind: "read", values: false }, undefined, 2);
+		expect(sealedGet("authorization")).toEqual({ missing: true });
+	});
+
+	it("attaches sealed headers to the agent's own fetch and returns no sign-in value", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		await signIn();
+		await settle();
+		const result = (await pwExtNetwork({
+			kind: "fetch",
+			url: "https://mail.example.test/owa/service.svc?action=FindItem",
+			method: "POST",
+			body: '{"A":1}',
+			contentType: "application/json",
+			headers: [],
+			auth: true,
+			values: true,
+		})) as { entries: NetworkEntry[] };
+		const sent = calls.at(-1)?.init?.headers as Headers;
+		expect(sent.get("authorization")).toBe(`Bearer ${MARKER}`);
+		expect(calls.at(-1)?.init?.credentials).toBe("same-origin");
+		expect(result.entries[0]).toMatchObject({ method: "POST", status: 200 });
+		expect(result.entries[0]?.requestHeaders).toContainEqual({ name: "authorization" });
+		expect(JSON.stringify(result)).not.toContain(MARKER);
+	});
+
+	it("refuses an agent fetch to another origin, and auth before any sign-in was seen", async () => {
+		pwExtNetwork({ kind: "install", seal: true });
+		const base = { method: "GET", headers: [] as [string, string][], values: false };
+		expect(await pwExtNetwork({ kind: "fetch", url: "https://other.example.test/", auth: false, ...base })).toEqual({
+			error: "pw --ext fetch sends requests only to the page's own origin.",
+		});
+		expect(await pwExtNetwork({ kind: "fetch", url: "/x", auth: true, ...base })).toMatchObject({
+			error: expect.stringContaining("No sign-in header"),
+		});
+	});
+
+	it("reads storage shapes, values only on request, and one raw value for a save", () => {
+		window.localStorage.setItem("msal.account", JSON.stringify({ username: "ada", accessToken: MARKER }));
+		window.sessionStorage.setItem("note", "hello");
+		pwExtNetwork({ kind: "install" });
+		const shape = pwExtNetwork({ kind: "storage", area: "local", values: false });
+		expect(shape).toEqual({
+			items: [{ key: "msal.account", length: expect.any(Number), type: "json", shape: { keys: [["username", "string"], ["accessToken", "string"]] } }],
+			total: 1,
+		});
+		expect(JSON.stringify(shape)).not.toContain(MARKER);
+		expect(pwExtNetwork({ kind: "storage", area: "session", values: true })).toMatchObject({ items: [{ key: "note", value: "hello" }] });
+		expect(pwExtNetwork({ kind: "storage", area: "local", keysOnly: true, values: false })).toEqual({
+			items: [{ key: "msal.account", length: expect.any(Number), type: "text" }],
+			total: 1,
+		});
+		expect(pwExtNetwork({ kind: "storage-get", area: "local", key: "msal.account" })).toEqual({
+			value: JSON.stringify({ username: "ada", accessToken: MARKER }),
+		});
+		expect(pwExtNetwork({ kind: "storage-get", area: "local", key: "none" })).toEqual({ missing: true });
+	});
+});

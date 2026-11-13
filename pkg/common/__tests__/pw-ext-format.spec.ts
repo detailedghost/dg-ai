@@ -9,6 +9,7 @@ import {
 	PW_EXT_MAX_TIMEOUT_MS,
 	PW_EXT_MIN_EXTENSION_VERSION,
 	type PwExtCliRequest,
+	type PwExtRequest,
 	validatePwExtCliRequest,
 	validatePwExtRequest,
 	validatePwExtResponse,
@@ -597,6 +598,37 @@ describe("pw --ext network", () => {
 		[{ verb: "network", since: "clear", values: true }, "since clear"],
 		[{ verb: "network", since: "clear", filter: "x" }, "since clear"],
 		[{ verb: "snapshot", values: true }, "unknown field"],
+	])("rejects %o", (request, message) => {
+		expect(() => validatePwExtRequest(request)).toThrow(message);
+	});
+});
+
+describe("pw --ext storage, fetch and credential", () => {
+	it.each([
+		{ verb: "storage" },
+		{ verb: "storage", area: "session", key: "k", values: true },
+		{ verb: "storage", keysOnly: true },
+		{ verb: "fetch", url: "/api/me" },
+		{ verb: "fetch", url: "https://a.test/x", method: "POST", body: "{}", contentType: "application/json", headers: [["X-A", "1"]], auth: "page", values: true },
+		{ verb: "credential", name: "owa-token", source: "header", key: "Authorization" },
+		{ verb: "credential", name: "msal", source: "local", key: "msal.account", path: "a.b_c" },
+	] as unknown as PwExtRequest[])("accepts %o", (request) => {
+		expect(validatePwExtRequest(request)).toEqual(request);
+	});
+
+	it.each([
+		[{ verb: "storage", area: "disk" }, "area"],
+		[{ verb: "storage", keysOnly: true, values: true }, "keysOnly"],
+		[{ verb: "fetch", url: "ftp://a.test/" }, "url"],
+		[{ verb: "fetch", url: "/x", body: "{}" }, "body"],
+		[{ verb: "fetch", url: "/x", method: "post" }, "method"],
+		[{ verb: "fetch", url: "/x", headers: [["bad name", "1"]] }, "header name"],
+		[{ verb: "fetch", url: "/x", auth: "token" }, "auth"],
+		[{ verb: "credential", name: "a/b", source: "cookie", key: "s" }, "name"],
+		[{ verb: "credential", name: "a", source: "disk", key: "s" }, "source"],
+		[{ verb: "credential", name: "a", source: "header", key: "bad name" }, "header name"],
+		[{ verb: "credential", name: "a", source: "local", key: "k", path: "a..b" }, "path"],
+		[{ verb: "credential", name: "a", source: "local", key: "k", value: "x" }, "unknown field"],
 	])("rejects %o", (request, message) => {
 		expect(() => validatePwExtRequest(request)).toThrow(message);
 	});
