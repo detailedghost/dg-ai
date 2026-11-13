@@ -59,7 +59,6 @@ import { defaultIsChromium } from "@/lib/browser-call";
 import { type ApprovalAnswer, type Approvals, browserApprovals } from "./approval";
 import { forgetAgentTabsAndShims, forgetDialogShim, syncDialogShim } from "./dialog-shim";
 import { createSessionControl, type SessionControl } from "./session-control";
-import { siteOf } from "./site-key";
 import { fitPreviewDataUrl } from "./proto";
 import type { RelayHandler } from "./relay-dispatch";
 import { siteOf } from "./site-key";
