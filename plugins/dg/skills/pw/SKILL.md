@@ -85,7 +85,7 @@ Snapshots, screenshots, downloads, traces, and videos land in `dg-skills stash p
 ## Real browser (`--ext`)
 
 Use `--ext` only when the human asks you to look at or act on a page in their real browser. You act only on tabs in your own tab group, until the human hands you one from the extension popup. Plain `pw` stays the default for tests, recording, mocking and isolated runs.
-Passing `--ext` gives you the agent's tab group; the browser asks the human once per site in a session, and a Stop click on the page ends your control, so act only on what the human asked for. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
+Passing `--ext` gives you the agent's tab group; the browser asks the human once per site in a session, and a Stop click on the page ends your control, so act only on what the human asked for. `tools` and `call` are the Web MCP bridge and use Web MCP approvals, not that site question. To save tokens, run `pw --ext tools` first and prefer a WebMCP tool; else use refs from one snapshot. Verbs, tabs, refs, uploads and blocked pages: `references/real-browser.md`.
 
 ## Security
 

@@ -226,3 +226,10 @@ sequenceDiagram
 - `pw --ext new <url>` opens a tab in the group. `tabs`, `select` and `close` manage the group. The human can hand a tab over with `Add this tab`.
 - The extension has no panel beside the pairing popup. The `chat` and `overwatch` pages live on the daemon.
 - The approval popup in this record and the pairing popup in ADR 0038 are unrelated. The approval popup is gone. The pairing popup shows the pairing code and the paired agents.
+
+## Amended 2026-11-13: Web MCP approvals (ADR 0046)
+
+`tools` and `call` stay the CLI bridge to Web MCP, but
+[ADR 0046](0046-webmcp-approvals-apart-from-pw-ext.md) gives them their own
+approvals: the pw --ext site allowlist and Stop of
+[ADR 0045](0045-pw-ext-driving-banner-and-sites.md) no longer apply to them.
