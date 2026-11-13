@@ -41,6 +41,8 @@
 		"./plugins/dg/agents/reviewer.md",
 		"./plugins/dg/agents/security.md",
 		"./plugins/dg/agents/shell.md",
+		"./plugins/dg/agents/thrash-consolidate.md",
+		"./plugins/dg/agents/thrash-verify.md",
 		"./plugins/dg/agents/thrash.md",
 		"./plugins/dg/agents/wave.md"
 	]

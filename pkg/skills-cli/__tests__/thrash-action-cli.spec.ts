@@ -102,6 +102,14 @@ describe("thrash action commit binding", () => {
 		expect(f.prepared().headSha).toBe("abc123");
 	});
 
+	test("prepare diffs with --no-repo so the saved plan has no repo key", () => {
+		const f = fixture();
+		const state = f.prepared();
+		expect("repo" in state.plan).toBe(false);
+		const plan = JSON.parse(readFileSync(state.plan.diffPath.replace(/\.diff$/, ".plan.json"), "utf8"));
+		expect("repo" in plan).toBe(false);
+	});
+
 	test("prepare rejects a push while fetching the diff", () => {
 		const f = fixture();
 		const result = f.run("prepare", { FAKE_PUSH_DURING_DIFF: "1" });

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectCodeGraph } from "../src/erd/code-graph";
-import { mergeGraph } from "../src/erd/graph";
+import { invertEdges, mergeGraph } from "../src/erd/graph";
 import { collectImportGraph } from "../src/erd/import-graph";
 import { writeScopedFile } from "./cli-fixtures";
 
@@ -223,5 +223,19 @@ describe("mergeGraph", () => {
 		});
 		expect(result.crossLinks).toHaveLength(1);
 		expect(result.crossLinks[0]).toMatchObject({ codeNodeId: "src/Library.ts", dbNodeId: "public.libraries" });
+	});
+});
+
+describe("invertEdges", () => {
+	test("maps each target to its sorted, unique importers on the code-graph fixture", () => {
+		const { edges } = collectImportGraph({ scopePath: fixture });
+		const inverted = invertEdges([...edges, ...edges]);
+		const importers = edges.filter((edge) => edge.to === "src/utils.ts").map((edge) => edge.from);
+		expect(importers.length).toBeGreaterThan(0);
+		expect(inverted.get("src/utils.ts")).toEqual([...new Set(importers)].sort());
+	});
+
+	test("returns an empty map for no edges", () => {
+		expect(invertEdges([]).size).toBe(0);
 	});
 });

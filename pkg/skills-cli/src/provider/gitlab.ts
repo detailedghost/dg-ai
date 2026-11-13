@@ -48,7 +48,7 @@ const TAB = 0x09;
 const LINE_FEED = 0x0a;
 const CARRIAGE_RETURN = 0x0d;
 
-function resolveGlabBin(): string {
+export function resolveGlabBin(): string {
 	return process.env.GLAB_BIN ?? "glab";
 }
 
@@ -147,6 +147,7 @@ function normalizeGlMr(raw: Record<string, unknown>): PullRequest {
 		state,
 		headRefName,
 		baseRefName,
+		headSha: raw[FIELD_MAP.headSha.gitlab] as string | undefined,
 		body: (raw.description as string) ?? "",
 		mergedAt,
 		merged: state === "MERGED",
@@ -457,6 +458,17 @@ function selectHeadPipeline(
 	return String(id);
 }
 
+async function getFileAtRef(tag: ShellTag, ref: PrRef, path: string, sha: string): Promise<string | null> {
+	try {
+		const result =
+			await tag`api projects/${glProjectPath(ref.repo)}/repository/files/${encodeURIComponent(path)}/raw?ref=${sha} ${apiHostFlags(ref.repo)}`;
+		return result.stdout.toString();
+	} catch (err) {
+		if (isCliErrorContaining(err, "404 not found")) return null;
+		throw err;
+	}
+}
+
 async function listCiFailures(tag: ShellTag, ref: PrRef): Promise<CiFailure[]> {
 	const project = glProjectPath(ref.repo);
 	const hostFlags = apiHostFlags(ref.repo);
@@ -705,6 +717,7 @@ export function createGitlabProvider(): Provider {
 		createIssue: (input, repo) => createIssue(tag, input, repo),
 		addLabelsToIssue: (number, labels, repo) => addLabelsToIssue(tag, number, labels, repo),
 		ensureLabel: (name, repo) => ensureLabel(tag, name, repo),
+		getFileAtRef: (ref, path, sha) => getFileAtRef(tag, ref, path, sha),
 		checkAuth: () => checkAuthStatus(tag),
 	};
 }

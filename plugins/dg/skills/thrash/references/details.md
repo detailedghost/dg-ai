@@ -249,6 +249,55 @@ folder therefore compiles from its own findings. A stored path that escapes the 
 (`..` or an absolute path elsewhere) is refused. An older plan with absolute paths still
 works while those paths sit inside its folder; otherwise `compile` asks you to run `diff` again.
 
+## Bundles, verification and consolidation
+
+With a code tree (`repo.source` `cwd`, `clone` or `api`), `diff` plans one bundle for each concern
+instead of splitting by size. A concern is a group of changed files that depend on each other, or
+that share a test, found by `investigate`. A diff of `TINY_DIFF_LINES` (100) changed lines or fewer is one
+bundle. A concern over `BUNDLE_TARGET_LINES` (400) splits into parts. `MAX_CHUNKS` (8) bundles at most
+run, and the limit wins over the target. Each bundle has a context file (`contextPath` of the chunk)
+with its files, symbols, dependents and tests; the reviewer gets it as `BUNDLE`.
+
+`triage --stage merge` numbers each finding `c<chunk>-<n>` and writes one verify task for each
+finding in scope. A task holds the finding fields, `side`, `class` (or null), `otherPlaces` (empty when none), `diffPath` (the annotated diff of the
+finding's chunk, or null), `bundleContextPath` and `verdictPath`. Every `critical`, `high` and `medium` finding is in scope. A `low` finding is in
+scope only when the verdict table of the spice limits `low` (spice 5). Nits and improvements are
+never in scope. At most `VERIFY_TASK_CAP` (16) tasks run for a review, highest tier first. The rest are listed in
+`overCap` and stay unverified. A verifier writes `confirmed`, `rejected` or `adjusted` (a new tier)
+to its `verdictPath`. A `confirmed` or `adjusted` verdict may add `otherPlaces`, the subset of the
+task's places where the claim holds; the finding keeps only the places in both lists, and a verdict
+without `otherPlaces` changes nothing. A `rejected` verdict rejects the whole finding. A missing verdict file means unverified, and the finding stays in the review.
+
+`REPO_PARTIAL: yes` marks a tree that holds only the files of the diff (`repo.source` `api`). A
+reviewer follows its no-`REPO` rule for a claim that needs another file: a question, medium at most.
+A verifier replies `NO_REPO <id>` and writes no verdict when a file that it needs is missing. The
+finding stays unverified; it is never rejected for a missing file.
+
+A rejected finding posts no comment and does not count in the tally or the verdict. It still holds
+the earlier thrash thread that it matches, so that thread is not cleared as fixed. The summary adds `<N> findings rejected on verification.` The review
+file lists each rejected finding with its reason. A finding that no verifier checked adds
+`<N> findings not verified.`
+
+`triage --stage apply` writes `<slug>.verdicts.json` and `<slug>.consolidate.input.json`, and prints
+`consolidatedPath`. With more than one bundle, a `dg:thrash-consolidate` agent reads the input and
+writes the consolidated file. It may change only `title`, `body`, `class`, `otherPlaces`, `changed`,
+`strengths` and `opportunities`. It never changes `tier`, `path`, `line` or `side`, never adds a
+finding, and never adds back a finding from `rejected`. A repeat in more than one bundle becomes one
+finding with `class` and `otherPlaces`, and no input finding is left out.
+
+`compile` reads three sources in this order: the consolidated file, then the consolidate input,
+then the chunk findings files. A file that does not parse, or a consolidate input that is missing
+or corrupt, prints a warning and `compile` falls back to the next source.
+
+### Checkout cleanup
+
+`diff` puts a clone or an API tree in the thrash scratch folder. A local target uses the live
+working tree, and nothing ever deletes it. `post` removes a scratch tree after it publishes, and
+`post --dry-run` removes it too, so a report-only run leaves no tree. `post` removes only a tree
+inside the thrash scratch folder. A stacked run shares one clone and uses one detached worktree for
+each PR; its `post --dry-run` loop removes each of them. A verifier or a consolidator never changes
+`REPO`.
+
 ## Report-only (`--dry-run`)
 
 `post --dry-run`, or `DG_THRASH_DRY_RUN=1` (also `true` or `yes`) in the environment,

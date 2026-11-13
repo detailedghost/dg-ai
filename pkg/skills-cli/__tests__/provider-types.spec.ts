@@ -224,6 +224,7 @@ describe("FIELD_MAP", () => {
 		expect(FIELD_MAP.headRefName).toEqual({ github: "headRefName", gitlab: "source_branch" });
 		expect(FIELD_MAP.baseRefName).toEqual({ github: "baseRefName", gitlab: "target_branch" });
 		expect(FIELD_MAP.mergedAt).toEqual({ github: "mergedAt", gitlab: "merged_at" });
+		expect(FIELD_MAP.headSha).toEqual({ github: "headRefOid", gitlab: "sha" });
 	});
 });
 

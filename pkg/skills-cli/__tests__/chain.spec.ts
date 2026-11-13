@@ -348,7 +348,7 @@ function rawMr(n: number, state: "opened" | "closed" | "merged" | "locked", over
 	};
 }
 
-const PR_VIEW_101 = "pr view 101 --json number,title,url,state,headRefName,baseRefName,body,mergedAt";
+const PR_VIEW_101 = "pr view 101 --json number,title,url,state,headRefName,baseRefName,body,mergedAt,headRefOid";
 const MR_VIEW_101 = "mr view 101 --output json";
 
 /** A retarget names a PR, but git needs its head branch — the fake resolves 101 to feature-101. */

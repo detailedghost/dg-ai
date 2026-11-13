@@ -80,7 +80,7 @@ Claude Code also accepts the bare `/<name>`.
 | `pw` | Drive a browser with `dg-skills pw`; `pw-code` always needs approval. See [Pw](docs/pw.md) |
 | `proxy` | Delegate to one of five external CLI agents with persona and background support |
 | `pushup` | Push the branch, open its PR, and open the PR in a tab group |
-| `refactor` | Find refactor candidates and discuss the chosen one |
+| `refactor` | Find refactor candidates, verify each against the code, and discuss the chosen one |
 | `rename-session` | Suggest names for the current session |
 | `review-loop` | Loop Copilot or a local backend over a branch and address the findings |
 | `sdlc` | Run a feature brief through worktree, slice waves, review, and a draft PR |

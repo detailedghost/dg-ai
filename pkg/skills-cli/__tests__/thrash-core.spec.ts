@@ -17,6 +17,8 @@ import {
 	NIT_LADDER,
 	openPriorTally,
 	parseAgentOutput,
+	parseEvidence,
+	placeOf,
 	parseSpice,
 	parseTier,
 	parseUnifiedDiff,
@@ -1278,6 +1280,19 @@ describe("review rounds, slice A", () => {
 			expect(review.body).toContain("- **Cleared:** 2 fixed in `9f3c2e1`, 1 answered.");
 		});
 
+		test("adds the Review limits section after Re-review only when diffOnly is set", () => {
+			const output = { changed: "Adds a.", strengths: [], opportunities: [], findings: [] };
+			const reReview = { sha: "4b7a9d0aaaa", files: 3, lines: 42 };
+			const plain = compileReview(FILES, output, { ...NO_OPTS, reReview });
+			const limited = compileReview(FILES, output, { ...NO_OPTS, reReview, diffOnly: true });
+			expect(plain.body).not.toContain("Review limits");
+			expect(limited.body).toContain(
+				"> **Review limits**\n>\n> - Reviewed from the diff only: the code checkout was not available.\n",
+			);
+			expect(limited.body.indexOf("Re-review")).toBeLessThan(limited.body.indexOf("Review limits"));
+			expect(compileReview(FILES, output, { ...NO_OPTS, reReview, diffOnly: false }).body).toBe(plain.body);
+		});
+
 		test("leaves the Re-review and Cleared slots out when no data is given", () => {
 			const review = compileReview(FILES, { ...NO_SWOT, changed: "Adds a.", findings: [] }, NO_OPTS);
 			expect(review.body).not.toContain("Re-review");
@@ -1857,6 +1872,262 @@ diff --git a/src/reverted.ts b/src/reverted.ts
 		test("leaves findings without a class alone", () => {
 			const review = compile(FILES, [finding("src/a.ts", 2, "high"), finding("src/new.ts", 1, "high")]);
 			expect(review.comments).toHaveLength(2);
+		});
+	});
+});
+
+describe("finding evidence and verification", () => {
+	const awaitFinding: Finding = { ...finding("src/a.ts", 2, "critical"), title: "Missing await", body: "Not awaited." };
+	const outdated = (source: Finding): ReviewThread => ({
+		...thread("src/a.ts", 2, renderInlineBody(source)),
+		line: null,
+		originalLine: 2,
+		outdated: true,
+	});
+	const SINCE = { sha: "aaa1111222", files: 1, lines: 2 };
+	const compile = (findings: Finding[], extra = {}) =>
+		compileReview(FILES, { ...NO_SWOT, findings }, { ...NO_OPTS, reReview: SINCE, ...extra });
+	const evidence = (count: number) =>
+		Array.from({ length: count }, (_, i) => ({ path: `src/e${i}.ts`, line: i + 1, note: `note ${i}` }));
+
+	describe("parseAgentOutput", () => {
+		const parse = (finding: object) => parseAgentOutput(JSON.stringify({ findings: [finding] })).findings[0];
+		const base = { path: "a", line: 1, tier: "high", body: "b" };
+
+		test("keeps a valid evidence entry and the reviewer id", () => {
+			const parsed = parse({ ...base, id: " c1-1 ", evidence: [{ path: "x.ts", line: 4, note: "calls it" }] });
+			expect(parsed.id).toBe("c1-1");
+			expect(parsed.evidence).toEqual([{ path: "x.ts", line: 4, note: "calls it" }]);
+		});
+
+		test("drops an entry with no note or no path", () => {
+			const parsed = parse({
+				...base,
+				evidence: [{ path: "x.ts", line: 4 }, { path: "", note: "n" }, { path: "y.ts", line: null, note: "ok" }, "junk"],
+			});
+			expect(parsed.evidence).toEqual([{ path: "y.ts", line: null, note: "ok" }]);
+		});
+
+		test("accepts output with no evidence and no id", () => {
+			const parsed = parse(base);
+			expect(parsed).not.toHaveProperty("evidence");
+			expect(parsed).not.toHaveProperty("id");
+			expect(parse({ ...base, evidence: [] })).not.toHaveProperty("evidence");
+		});
+	});
+
+	describe("parseEvidence", () => {
+		test("makes the note one line, strips backticks from the path and cuts the note at 200 characters", () => {
+			const [entry] = parseEvidence([{ path: "`x.ts`", line: "7", note: `a\n  b\r\nc ${"z".repeat(300)}` }]);
+			expect(entry.path).toBe("x.ts");
+			expect(entry.line).toBe(7);
+			expect(entry.note).not.toMatch(/\s{2}|[\r\n]/);
+			expect(entry.note.startsWith("a b c z")).toBe(true);
+			expect(entry.note).toHaveLength(200);
+		});
+
+		test("reads a bad line as null and a non-array as empty", () => {
+			expect(parseEvidence([{ path: "x", line: 0, note: "n" }])[0].line).toBeNull();
+			expect(parseEvidence([{ path: "x", line: "abc", note: "n" }])[0].line).toBeNull();
+			expect(parseEvidence("nope")).toEqual([]);
+			expect(parseEvidence(undefined)).toEqual([]);
+		});
+	});
+
+	describe("placeOf", () => {
+		test("gives path:line, or the path for a null line", () => {
+			expect(placeOf(finding("src/a.ts", 3, "low"))).toBe("src/a.ts:3");
+			expect(placeOf(finding("src/a.ts", null, "low"))).toBe("src/a.ts");
+		});
+	});
+
+	describe("renderComment evidence", () => {
+		const plain = finding("src/a.ts", 2, "high", "Body.");
+
+		test("renders 3 entries and (+1 more) for 4", () => {
+			expect(renderComment({ ...plain, evidence: evidence(4) })).toBe(
+				`${renderComment(plain)}\n\nEvidence: \`src/e0.ts:1\` note 0; \`src/e1.ts:2\` note 1; \`src/e2.ts:3\` note 2 (+1 more)`,
+			);
+		});
+
+		test("renders a null line as the bare path and no more-suffix for 3", () => {
+			const text = renderComment({ ...plain, evidence: [{ path: "x.ts", line: null, note: "n" }] });
+			expect(text.endsWith("Evidence: `x.ts` n")).toBe(true);
+			expect(renderComment({ ...plain, evidence: evidence(3) })).not.toContain("more");
+		});
+
+		test("is identical to today with no evidence", () => {
+			expect(renderComment({ ...plain, evidence: [] })).toBe(renderComment(plain));
+			expect(renderComment(plain)).toBe(`${TIER_EMOJI.high} **High** Body.`);
+		});
+
+		test("sits after the pre-existing note and before the Same class line", () => {
+			const text = renderComment({
+				...plain,
+				preExisting: true,
+				class: "Missing await",
+				otherPlaces: ["src/new.ts:1"],
+				evidence: evidence(1),
+			});
+			const order = ["does not block.", "Evidence:", "Same class"].map((part) => text.indexOf(part));
+			expect(order.every((i) => i >= 0)).toBe(true);
+			expect(order).toEqual([...order].sort((a, b) => a - b));
+		});
+
+		test("keeps a note with a newline and a backtick on one Evidence line", () => {
+			const parsed = parseAgentOutput(
+				JSON.stringify({ findings: [{ path: "a", line: 1, tier: "high", body: "b", evidence: [{ path: "x.ts", line: 2, note: "first\nsecond `code`" }] }] }),
+			).findings[0];
+			const line = renderComment(parsed).split("\n").find((l) => l.startsWith("Evidence:"));
+			expect(line).toBe("Evidence: `x.ts:2` first second `code`");
+		});
+
+		test("renders none for an improvement", () => {
+			const improvement: Finding = { ...plain, kind: "improvement", evidence: evidence(2) };
+			expect(renderComment(improvement)).not.toContain("Evidence");
+		});
+	});
+
+	describe("reviewer id on the chunk-file path", () => {
+		test("changes neither the comments nor the body", () => {
+			const plain = [finding("src/a.ts", 2, "high"), finding("src/a.ts", 3, "low")];
+			const withIds = plain.map((f, i) => ({ ...f, id: `c9-${i + 1}` }));
+			const a = compile(plain);
+			const b = compile(withIds);
+			expect(b.body).toBe(a.body);
+			expect(b.comments).toEqual(a.comments);
+			expect(b.tally).toEqual(a.tally);
+		});
+	});
+
+	describe("rejected findings", () => {
+		test("are in no posted comment and in no tally count", () => {
+			const review = compile([], { rejected: [awaitFinding, finding("src/a.ts", 3, "critical")] });
+			expect(review.comments).toHaveLength(0);
+			expect(review.tally).toEqual(emptyTally());
+			expect(review.verdict).not.toBe("request_changes");
+		});
+
+		test("keep an open prior blocker thread open and the verdict at request changes", () => {
+			const existing = [outdated(awaitFinding)];
+			const cleared = compile([], { existing });
+			expect(cleared.tally.critical).toBe(0);
+			const shielded = compile([], { existing, rejected: [awaitFinding] });
+			expect(shielded.tally.critical).toBe(1);
+			expect(shielded.verdict).toBe("request_changes");
+			expect(shielded.body).not.toContain("Cleared");
+		});
+
+		test("keep the thread open when the anchor moved", () => {
+			const moved = { ...awaitFinding, line: 4 };
+			const review = compile([], { existing: [outdated(awaitFinding)], rejected: [moved] });
+			expect(review.tally.critical).toBe(1);
+			expect(review.verdict).toBe("request_changes");
+		});
+
+		test("keep a thread at the same anchor open", () => {
+			const existing = [thread("src/a.ts", 2, renderInlineBody(awaitFinding))];
+			const review = compile([], { existing, rejected: [{ ...awaitFinding, title: "Other", body: "x" }] });
+			expect(review.tally.critical).toBe(1);
+			expect(review.comments).toHaveLength(0);
+		});
+
+		test("keep a thread open for a rejected pre-existing finding", () => {
+			const review = compile([], {
+				existing: [outdated(awaitFinding)],
+				rejected: [{ ...awaitFinding, preExisting: true }],
+			});
+			expect(review.tally.critical).toBe(1);
+		});
+
+		test("add nothing when they match no thread", () => {
+			const base = compile([finding("src/a.ts", 3, "medium")]);
+			const review = compile([finding("src/a.ts", 3, "medium")], { rejected: [awaitFinding] });
+			expect(review.tally).toEqual(base.tally);
+			expect(review.comments).toEqual(base.comments);
+		});
+
+		test("do not change a re-review tally when a counted finding is also present", () => {
+			const review = compile([finding("src/new.ts", 1, "medium")], {
+				existing: [outdated(awaitFinding)],
+				rejected: [awaitFinding],
+			});
+			expect(review.tally.critical).toBe(1);
+			expect(review.tally.medium).toBe(1);
+			expect(review.comments).toHaveLength(1);
+		});
+
+		test("render 2 findings rejected on verification and list them with a reason", () => {
+			const rejected = [
+				{ ...awaitFinding, id: "c1-1", reason: "guarded upstream" },
+				{ ...finding("src/a.ts", 3, "low"), id: "c1-2", reason: "dead code" },
+			];
+			const review = compile([], { rejected });
+			expect(review.body).toContain("> **Review limits**\n>\n> - 2 findings rejected on verification.\n");
+			expect(review.rejected).toEqual([
+				{ id: "c1-1", tier: "critical", title: "Missing await", reason: "guarded upstream" },
+				{ id: "c1-2", tier: "low", title: "low title", reason: "dead code" },
+			]);
+			expect(toPostReviewInput(review)).not.toHaveProperty("rejected");
+		});
+
+		test("leave the review unchanged when the list is empty", () => {
+			const base = compile([finding("src/a.ts", 3, "medium")]);
+			const review = compile([finding("src/a.ts", 3, "medium")], { rejected: [] });
+			expect(review).toEqual(base);
+			expect(review).not.toHaveProperty("rejected");
+		});
+	});
+
+	describe("matchKey", () => {
+		const consolidated: Finding = { ...awaitFinding, title: "Reworded problem", matchKey: "Missing await" };
+
+		test("keeps an outdated prior blocker thread open when the title changed", () => {
+			const review = compile([consolidated], { existing: [outdated(awaitFinding)] });
+			expect(review.tally.critical).toBe(1);
+			expect(review.comments).toHaveLength(0);
+			expect(review.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
+			expect(review.body).not.toContain("Cleared");
+		});
+
+		test("without matchKey the reworded finding no longer matches", () => {
+			const review = compile([{ ...consolidated, matchKey: undefined }], { existing: [outdated(awaitFinding)] });
+			expect(review.comments).toHaveLength(1);
+		});
+
+		test("records the original key in the hidden marker", () => {
+			const body = renderInlineBody(consolidated);
+			expect(body).toContain('<!-- dg:thrash-finding "missing await" -->');
+			expect(body).not.toContain("reworded");
+		});
+	});
+
+	describe("Review limits notes", () => {
+		const output = { ...NO_SWOT, findings: [] as Finding[] };
+
+		test("renders 3 findings not verified in the Note callout", () => {
+			const review = compileReview(FILES, output, { ...NO_OPTS, unverified: 3 });
+			expect(review.body).toContain("> **Review limits**\n>\n> - 3 findings not verified.\n");
+		});
+
+		test("leaves the summary unchanged for 0 or no value", () => {
+			const base = compileReview(FILES, output, NO_OPTS);
+			expect(compileReview(FILES, output, { ...NO_OPTS, unverified: 0 }).body).toBe(base.body);
+			expect(base.body).not.toContain("Review limits");
+		});
+
+		test("orders diff-only, unverified, then rejected", () => {
+			const review = compileReview(FILES, output, {
+				...NO_OPTS,
+				diffOnly: true,
+				unverified: 2,
+				rejected: [{ ...awaitFinding, reason: "no" }],
+			});
+			const order = ["from the diff only", "2 findings not verified.", "1 finding rejected on verification."].map((t) =>
+				review.body.indexOf(t),
+			);
+			expect(order.every((i) => i >= 0)).toBe(true);
+			expect(order).toEqual([...order].sort((a, b) => a - b));
 		});
 	});
 });
