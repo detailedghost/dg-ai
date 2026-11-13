@@ -2507,6 +2507,20 @@ describe("pw --ext Stop", () => {
 		expect(await running).toEqual({ ok: false, error: STOPPED });
 	});
 
+	it("captures no screenshot when Stop comes while the tab comes forward", async () => {
+		const h = harness({ sites: "ask", approval: "allow" });
+		const update = h.fake.raw.tabs.update;
+		let stopping: Promise<void> | undefined;
+		update.mockImplementationOnce(async () => {
+			stopping = h.handler.stop(SESSION);
+			return undefined as never;
+		});
+		expect(await h.run({ verb: "screenshot" })).toEqual({ ok: false, error: STOPPED });
+		await stopping;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(h.fake.raw.tabs.captureVisibleTab).not.toHaveBeenCalled();
+	});
+
 	it("stops the session that owns the tab, and nothing for a user tab", async () => {
 		const h = harness({ sites: "ask" });
 		await h.handler.stopTab(21);

@@ -516,6 +516,8 @@ export function createPwExtHandler({
 }) {
 	type Running = { controller: AbortController; stopped(): void };
 	const live = new Map<string, Set<Running>>();
+	const halted = new Set<string>();
+	const isStopped = async (sessionId: string) => halted.has(sessionId) || (await control.stopped(sessionId));
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
 
 	/** Asks the person once per origin and session before the agent reads or changes a page there. */
@@ -551,11 +553,12 @@ export function createPwExtHandler({
 
 	/** Ends a session's control at once: verbs in flight end, grants and sites go, and its tabs return to the person. */
 	async function stop(sessionId: string): Promise<void> {
-		await control.stop(sessionId);
+		halted.add(sessionId);
 		for (const run of live.get(sessionId) ?? []) {
 			run.controller.abort();
 			run.stopped();
 		}
+		await control.stop(sessionId);
 		await Promise.allSettled([
 			grants.forget(sessionId),
 			webmcpGrants.forget(sessionId),
@@ -993,15 +996,18 @@ export function createPwExtHandler({
 				const windowId = tab.windowId as number;
 				await api.tabs.update(tab.id, { active: true });
 				const { state } = await api.windows.get(windowId);
+				if (signal?.aborted) return CANCELED;
 				await api.windows.update(windowId, {
 					focused: true,
 					...(state === "minimized" ? { state: "normal" as const } : {}),
 				});
+				if (signal?.aborted) return CANCELED;
 				await api.scripting.executeScript({
 					target: { tabId: tab.id },
 					func: nextFrame,
 					args: [],
 				});
+				if (signal?.aborted) return CANCELED;
 				const watch = watchTab(tab);
 				let captured: string;
 				try {
@@ -1121,7 +1127,7 @@ export function createPwExtHandler({
 			class: approvalClass,
 		});
 		if (signal?.aborted) {
-			if (await control.stopped(context.sessionId)) await webmcpGrants.forget(context.sessionId);
+			if (await isStopped(context.sessionId)) await webmcpGrants.forget(context.sessionId);
 			return CANCELED;
 		}
 		if (answer !== "allow") {
@@ -1210,7 +1216,7 @@ export function createPwExtHandler({
 		if (request.verb === "fill" && request.secret && isPwExtSecretTooShort(request.value as string))
 			return { ok: false, error: SECRET_TOO_SHORT };
 		const { sessionId } = context;
-		if (await control.stopped(sessionId)) return STOPPED;
+		if (await isStopped(sessionId)) return STOPPED;
 		const typed = request.verb === "fill" && request.secret ? [request.value as string] : [];
 		const held = async () => [...typed, ...(await grants.secrets(sessionId).catch(() => []))];
 		const controller = new AbortController();
@@ -1227,10 +1233,10 @@ export function createPwExtHandler({
 		live.set(sessionId, running);
 		try {
 			const result = await Promise.race([execute(request, context, controller.signal), stopped]);
-			if (result === "stopped" || (await control.stopped(sessionId))) return STOPPED;
+			if (result === "stopped" || (await isStopped(sessionId))) return STOPPED;
 			return scrub(result, await held());
 		} catch (error) {
-			if (await control.stopped(sessionId).catch(() => false)) return STOPPED;
+			if (await isStopped(sessionId).catch(() => false)) return STOPPED;
 			if (error instanceof Refusal || error instanceof AgentTabOpenCanceledError) return { ok: false, error: error.message };
 			if (error instanceof PageError) return { ok: false, error: clean(error.message, { secrets: await held() }) };
 			return {
