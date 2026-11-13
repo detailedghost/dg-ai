@@ -132,7 +132,7 @@ function grantMiss(err: unknown): boolean {
 	return err instanceof Error && err.message.includes("no credential grant");
 }
 
-type SessionOutcome<T> = { ok: true; value: T } | { ok: false; error?: unknown; down?: boolean; value?: T };
+type SessionOutcome<T> = { ok: true; value: T } | { ok: false; error?: unknown; down?: boolean };
 
 /** Runs `work` on a session. `down` is a connection failure; `error` is a rejection from a store that answered. */
 async function sessionWork<T>(deps: VaultDeps, work: (client: KeyClient) => Promise<T>): Promise<SessionOutcome<T>> {
@@ -142,7 +142,7 @@ async function sessionWork<T>(deps: VaultDeps, work: (client: KeyClient) => Prom
 	} catch (error) {
 		return storeDown(error) ? { ok: false, down: true } : { ok: false, error };
 	}
-	if (!client) return { ok: false, value: Buffer.alloc(0) as T };
+	if (!client) return { ok: false };
 	try {
 		return { ok: true, value: await work(client) };
 	} catch (error) {
@@ -216,13 +216,15 @@ async function makePeriodKey(deps: VaultKeyDeps, period: string): Promise<Buffer
 			throw err;
 		}
 	});
-	if (made.ok === true && made.value) return made.value;
-	if (made.ok === false) {
-		if (made.down === true) throw unreachable();
-		if (made.error) throw made.error;
-		throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
+	switch (made.ok) {
+		case true:
+			if (!made.value) throw new DgCliError(`the vault key for ${period} was not stored`);
+			return made.value;
+		case false:
+			if (made.down === true) throw unreachable();
+			if (made.error) throw made.error;
+			throw new DgCliError(`the vault key for ${period} is not in the dg credential store, and no dg session can make it`);
 	}
-	throw new DgCliError(`the vault key for ${period} was not stored`);
 }
 
 /** Deletes every period key whose period ended 48 hours ago or more; needs a session, so it waits for one. */
