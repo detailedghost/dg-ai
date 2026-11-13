@@ -12,8 +12,9 @@ const GENERAL_TOOL =
 /** Parses the allowlist text: one entry per line, # starts a comment. */
 export function parseExecAllowlist(text: string): ExecAllowEntry[] {
 	return text.split(/\r?\n/).flatMap((line) => {
-		const fields = line.replace(/#.*$/, "").trim().split(/\s+/).filter(Boolean);
-		const [path, ...rest] = fields;
+		const split = splitAllowlistLine(line);
+		if (!split) return [];
+		const { path, rest } = split;
 		if (!path || !isAbsolute(path)) return [];
 		const pin = rest.find((field) => field.startsWith("sha256="))?.slice("sha256=".length).toLowerCase();
 		const glob = rest.find((field) => field !== ALLOW_ANY_ARGS && !field.startsWith("sha256="));
@@ -26,6 +27,18 @@ export function parseExecAllowlist(text: string): ExecAllowEntry[] {
 			},
 		];
 	});
+}
+
+function splitAllowlistLine(line: string): { path: string; rest: string[] } | undefined {
+	const trimmed = line.trimStart();
+	const fields = (text: string) => text.replace(/#.*$/, "").trim().split(/\s+/).filter(Boolean);
+	if (!trimmed.startsWith('"')) {
+		const [path, ...rest] = fields(trimmed);
+		return path ? { path, rest } : undefined;
+	}
+	const quoted = /^"((?:[^"\\]|\\.)*)"(?=\s|$)/.exec(trimmed);
+	if (!quoted) return undefined;
+	return { path: quoted[1].replace(/\\(.)/g, "$1"), rest: fields(trimmed.slice(quoted[0].length)) };
 }
 
 function globMatches(glob: string, name: string): boolean {

@@ -34,7 +34,8 @@ export type CredentialsDeps = {
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function derivedEnvName(name: string): string {
-	return name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+	const env = name.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+	return /^[0-9]/.test(env) ? `_${env}` : env;
 }
 
 type Binding = { name: string; env: string };

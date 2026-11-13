@@ -74,6 +74,13 @@ describe("credentials exec", () => {
 		expect("get" in h.client).toBe(false);
 	});
 
+	test("prefixes _ to a default env name that would start with a digit", async () => {
+		const h = harness(async () => 0);
+		await h.run(["exec", "1password/api", "--", "true"]);
+		expect(h.err.join("\n")).toBe("");
+		expect(h.specs.map((spec) => spec.bindings)).toEqual([[{ name: "1password/api", env: "_1PASSWORD_API" }]]);
+	});
+
 	test("refuses --session after exec and says where it goes", async () => {
 		const h = harness(async () => 0);
 		await h.run(["exec", "pw/x/y=X", "--session", "session-a", "--", "true"]);

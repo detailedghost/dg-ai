@@ -18,5 +18,10 @@ export function execAllowlistLine(path: string, glob?: string, anyArgs = false):
 	const real = realpathSync(path);
 	const hash = fileSha256(real);
 	if (!hash) throw new Error(`Cannot read ${real}.`);
-	return [real, `sha256=${hash}`, ...(glob ? [glob] : []), ...(anyArgs ? [EXEC_ALLOW_ANY_ARGS] : [])].join(" ");
+	return [quoteAllowlistPath(real), `sha256=${hash}`, ...(glob ? [glob] : []), ...(anyArgs ? [EXEC_ALLOW_ANY_ARGS] : [])].join(" ");
+}
+
+/** Quotes a path for the allowlist when it holds whitespace, a quote, a backslash or a #. */
+export function quoteAllowlistPath(path: string): string {
+	return /[\s"\\#]/.test(path) ? `"${path.replace(/[\\"]/g, "\\$&")}"` : path;
 }

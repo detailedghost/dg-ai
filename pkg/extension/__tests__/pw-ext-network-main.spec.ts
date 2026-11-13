@@ -551,6 +551,47 @@ describe("delayed echo in headers and cut bodies", () => {
 	});
 });
 
+describe("rotated value in response headers", () => {
+	const first = "fake-rotated-header-token-for-tests";
+	const rotate = async () => {
+		reply = async () => new window.Response("{}", { headers: { "content-type": "application/json" } }) as unknown as Response;
+		for (let i = 0; i < 70; i++) await page().fetch(`/r${i}`, { headers: { Authorization: `Bearer fake-rotated-value-${i}-for-tests` } });
+	};
+	const delayed = async (make: () => Response) => {
+		pwExtNetwork({ kind: "install", seal: true });
+		let release: (() => void) | undefined;
+		const slow = new Promise<Response>((resolve) => {
+			release = () => resolve(make());
+		});
+		reply = () => slow;
+		const pending = page().fetch("/slow", { headers: { Authorization: first } });
+		await rotate();
+		release?.();
+		await pending;
+		await settle();
+	};
+
+	it("masks the header of a null-body response", async () => {
+		await delayed(() => new window.Response(null, { status: 204, headers: { "x-echo": first } }) as unknown as Response);
+		const text = JSON.stringify(read(true));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(first.slice(0, 10));
+	});
+
+	it("masks the header while the body is still being read", async () => {
+		const stream = new window.ReadableStream({ start() {} });
+		await delayed(
+			() =>
+				new window.Response(stream as never, {
+					headers: { "content-type": "application/json", "x-echo": first },
+				}) as unknown as Response,
+		);
+		const text = JSON.stringify(read(true));
+		expect(text).toContain("[redacted]");
+		expect(text).not.toContain(first.slice(0, 10));
+	});
+});
+
 describe("short and padded sealed values", () => {
 	it("masks a short sealed value and a trimmed XHR value in an echo", async () => {
 		pwExtNetwork({ kind: "install", seal: true });

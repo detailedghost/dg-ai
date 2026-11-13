@@ -78,6 +78,7 @@ only `exec` and `list` reach them.
 and that does one job, not a general tool. Each line holds the absolute path of
 the executable, a required `sha256=<hex>` pin, an optional name glob such as
 `pw/live.com/*` (`*` stops at `/`), and an optional `allow-any-args` flag.
+Put a path with spaces in double quotes, with `\"` and `\\` as escapes.
 Lines that start with `#` are comments. `dg-skills credentials allow <path>
 [glob]` prints a ready line with its pin; it never writes the file, so you add
 the line yourself.

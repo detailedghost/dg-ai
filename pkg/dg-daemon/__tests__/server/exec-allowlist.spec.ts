@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { appendFileSync, chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execAllowlistLine } from "@dg/common/node";
@@ -37,6 +37,23 @@ describe("exec allowlist", () => {
 			{ path: "/opt/x", sha256: "ab", glob: "pw/live.com/*", allowAnyArgs: false },
 			{ path: "/bin/sh", sha256: "cd", allowAnyArgs: true },
 		]);
+	});
+
+	it("parses a double-quoted path with spaces and escapes, and drops a bad quote", () => {
+		expect(parseExecAllowlist(`"/opt/my tools/a \\"b\\" \\\\ #c" sha256=ab pw/x/* # note\n"/opt/open sha256=ab\n"/opt/x"y sha256=ab\n`)).toEqual([
+			{ path: '/opt/my tools/a "b" \\ #c', sha256: "ab", glob: "pw/x/*", allowAnyArgs: false },
+		]);
+	});
+
+	it("quotes a path with spaces in the printed line, and the printed line allows it", () => {
+		const { dir, file } = setup();
+		const spaced = join(dir, "my tools");
+		mkdirSync(spaced);
+		const script = tool(spaced, 'run "it".sh');
+		const line = execAllowlistLine(script);
+		expect(line.startsWith(`"${spaced}/run \\"it\\".sh" sha256=`)).toBe(true);
+		writeFileSync(file, `${line}\n`);
+		expect(check(file, script, dir)).toEqual({ ok: true, path: script });
 	});
 
 	it("prints a pinned line and never writes the allowlist", () => {

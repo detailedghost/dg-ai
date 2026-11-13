@@ -362,7 +362,7 @@ export function pwExtNetwork(
 							void readBounded(stream)
 								.then(({ text, bytes, cut }) => {
 									made.request = textBody(type, text, cut ? -1 : bytes, cut);
-								scrubOwn(made);
+									scrubOwn(made);
 								})
 								.catch(() => undefined);
 						else made.request = { type: clip(type, TYPE_MAX), size: -1 };
@@ -379,6 +379,7 @@ export function pwExtNetwork(
 						try {
 							held.status = response.status;
 							response.headers.forEach((value, name) => addHeader(held.responseHeaders, name, value));
+							scrubOwn(held);
 							void readResponse(held, response).catch(() => undefined);
 						} catch {}
 					},
@@ -441,6 +442,7 @@ export function pwExtNetwork(
 											const at = line.indexOf(":");
 											if (at > 0) addHeader(entry.responseHeaders, line.slice(0, at), line.slice(at + 1).trim());
 										}
+										scrubOwn(entry);
 										const type = contentType(entry.responseHeaders);
 										if (xhr.responseType === "" || xhr.responseType === "text") {
 											const text = xhr.responseText;
