@@ -3,7 +3,7 @@ feature: "dg-daemon outside services"
 feature_snake_case: dg_daemon_outside_services
 date: "2026-11-11"
 version: "1.0"
-status: in-progress
+status: complete
 current_slice: 5
 pr_strategy: single
 slices:
