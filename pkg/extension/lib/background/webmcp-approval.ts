@@ -24,12 +24,29 @@ const isGrant = (value: unknown): value is WebMcpGrant =>
 	typeof (value as WebMcpGrant).site === "string" &&
 	typeof (value as WebMcpGrant).tool === "string";
 
+/** A serial queue whose task rejection reaches the caller, so a failed revoke is not reported as done. */
+function createRejectingQueue() {
+	const enqueue = createSerialQueue();
+	return (task: () => Promise<void>): Promise<void> => {
+		let failure: { error: unknown } | undefined;
+		return enqueue(async () => {
+			try {
+				await task();
+			} catch (error) {
+				failure = { error };
+			}
+		}).then(() => {
+			if (failure) throw failure.error;
+		});
+	};
+}
+
 /** Classes whose Allow may be kept for the session or remembered; read and each never store a grant. */
 const GRANTABLE: ReadonlySet<WebMcpApprovalClass> = new Set(["session"]);
 
 /** Session grants in storage.session; they end with the MCP session, not with pw --ext Stop. */
 export function createWebMcpGrants({ storage }: { storage: AgentTabsStorage }) {
-	const enqueue = createSerialQueue();
+	const enqueue = createRejectingQueue();
 	const asking = new Map<string, Promise<ApprovalAnswer>>();
 
 	async function read(sessionId: string): Promise<WebMcpGrant[]> {
@@ -127,7 +144,7 @@ export function createRememberedWebMcpGrants({
 	nonces: GrantNonces;
 	now?: () => number;
 }) {
-	const enqueue = createSerialQueue();
+	const enqueue = createRejectingQueue();
 	const payload = (grant: WebMcpRememberedGrant & { nonce: string }) =>
 		new TextEncoder().encode(
 			MAC_PREFIX + JSON.stringify([grant.site, grant.tool, grant.approvedAt, grant.expiresAt, grant.nonce]),

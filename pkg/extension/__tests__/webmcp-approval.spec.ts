@@ -338,6 +338,40 @@ describe("remember for 30 days", () => {
 		expect(await remembered.list()).toEqual([]);
 	});
 
+	it("rejects a revoke whose nonce delete fails, and keeps working after", async () => {
+		const nonces = createIdbGrantNonces(new IDBFactory());
+		let broken = true;
+		const flaky: GrantNonces = {
+			...nonces,
+			removeGrant: async (grant) => {
+				if (broken) throw new Error("idb broke");
+				await nonces.removeGrant(grant);
+			},
+			clear: async () => {
+				if (broken) throw new Error("idb broke");
+				await nonces.clear();
+			},
+		};
+		const { remembered } = setup("allow", { nonces: flaky });
+		await nonces.add("n1", { site: SITE, tool: "dg_outlook_flag" });
+		await expect(remembered.revoke({ site: SITE, tool: "dg_outlook_move" })).rejects.toThrow("idb broke");
+		await expect(remembered.forgetAll()).rejects.toThrow("idb broke");
+		broken = false;
+		await remembered.add({ site: SITE, tool: "dg_outlook_move" });
+		await remembered.revoke({ site: SITE, tool: "dg_outlook_move" });
+		expect(await remembered.list()).toEqual([]);
+	});
+
+	it("rejects a session revoke whose storage write fails", async () => {
+		const { grants, storage } = setup();
+		await grants.add("s1", { site: SITE, tool: "dg_outlook_move" });
+		storage.session.remove = async () => {
+			throw new Error("session broke");
+		};
+		await expect(grants.revoke("s1", { site: SITE, tool: "dg_outlook_move" })).rejects.toThrow("session broke");
+		await expect(grants.forgetAll()).rejects.toThrow("session broke");
+	});
+
 	it("refuses every record written back after Revoke all", async () => {
 		const { storage, remembered } = setup();
 		await remembered.add({ site: SITE, tool: "dg_outlook_move" });
